@@ -37,9 +37,12 @@ export const TIMELINE_WAKE_HOURS = [6, 22] as const;
 /** Visible lanes of overlapping bands and of all-day items; more overlaps collapse into a "+n" entry in the last lane. */
 export const TIMELINE_BAND_LANES = 3;
 export const TIMELINE_ALL_DAY_LANES = 2;
+/** Visible items stacked in one night or fold; more collapse into a "+n" entry in the last place. */
+export const TIMELINE_FOLD_LANES = 3;
 /** Free time shorter than this gets no label. */
 const MIN_GAP = 3_600_000;
 const HOUR = 3_600_000;
+const DAY = 86_400_000;
 
 const ZERO: TimelineSpan = [0, 0, 0, 0, 0];
 const NIGHT: TimelineSpan = [0, 1, 0, 0, 0];
@@ -91,9 +94,10 @@ export type TimelineSegment = {
 };
 
 type EntryBase = {
-  /** Entry id: the item id, or `more:<first hidden id>` for a "+n" entry. */
+  /** Entry id: the item id, or for a "+n" entry `more:<first hidden id>`, made unique among the item ids. */
   id: string;
   group: number;
+  /** The item's own times, also beyond the loaded range; for all-day entries, group indexes. */
   start: number;
   end: number;
   /** Main-axis place relative to the group, and length. */
@@ -113,7 +117,7 @@ export type TimelineItemEntry = EntryBase & {
 
 export type TimelineMoreEntry = EntryBase & {
   kind: "more";
-  area: "band" | "all-day";
+  area: "band" | "fold" | "all-day";
   hidden: TimelineItemEntry[];
 };
 
@@ -209,15 +213,20 @@ export const shiftDayKey = (key: string, days: number): string => {
   return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
 };
 
-/** The instant of a whole hour (0–24) on a day in the context's time zone; a skipped hour resolves to the one after. */
+/**
+ * The instant of a whole hour (0–24) on a day in the context's time zone. As stdlib's `compatible` disambiguation, a
+ * repeated hour resolves to its first occurrence and a skipped one to the time after the gap.
+ */
 export const timelineHourOf = (key: string, hour: number, context?: DateContext): number => {
   const [year = 1970, month = 1, day = 1] = key.split("-").map(Number);
   if (!context?.timeZone) return new Date(year, month - 1, day, hour).getTime();
+  const zone = context.timeZone;
   const wall = Date.UTC(year, month - 1, day, hour);
-  const guess = wall - zoneOffset(wall, context.timeZone);
-  const offset = zoneOffset(guess, context.timeZone);
-  const exact = wall - offset;
-  return zoneOffset(exact, context.timeZone) === offset ? exact : Math.max(guess, exact);
+  // The offsets a day before and after are the ones on either side of a clock change at this time.
+  const before = wall - zoneOffset(wall - DAY, zone);
+  const after = wall - zoneOffset(wall + DAY, zone);
+  const valid = [before, after].filter((time) => zoneOffset(time, zone) === wall - time);
+  return valid.length > 0 ? Math.min(...valid) : before;
 };
 
 type Normalized = {
@@ -353,8 +362,16 @@ export const buildTimelineModel = ({ from, to, today, items, context }: Timeline
   };
   const normalized = items.flatMap((item) => normalize(item, keyOf, context) ?? []);
 
-  // Days with timed items in their waking hours stay open; today always does.
+  // Days with timed items in their waking hours stay open; today always does. So does a day at either edge whose
+  // waking hours are loaded only in part: whether it is empty is not known yet, and folding it now would reshape it
+  // when the rest loads.
   const busy = new Set<string>([todayKey]);
+  if (valid) {
+    const [firstOpen, firstClose] = wakeOf(firstKey);
+    if (from > firstOpen && from < firstClose) busy.add(firstKey);
+    const [lastOpen, lastClose] = wakeOf(lastKey);
+    if (to > lastOpen && to < lastClose) busy.add(lastKey);
+  }
   const covered = new Set<string>();
   for (const entry of valid ? normalized : []) {
     if (entry.allDay) {
@@ -409,12 +426,14 @@ export const buildTimelineModel = ({ from, to, today, items, context }: Timeline
     if (row) push("row", time, time, ROW);
   };
 
-  for (let key = firstKey; valid && key <= lastKey && time < to; ) {
+  // Every loaded day gets a group, also one whose time an earlier night already reaches to the end: its items are
+  // placed in that night.
+  for (let key = firstKey; valid && key <= lastKey; ) {
     const next = shiftDayKey(key, 1);
     if (busy.has(key)) {
       const [open, close] = wakeOf(key);
       openGroup("day", key, key);
-      if (time < open) {
+      if (time < to && time < open) {
         const end = Math.min(open, to);
         push("night", time, end, NIGHT);
         time = end;
@@ -532,6 +551,7 @@ export const buildTimelineModel = ({ from, to, today, items, context }: Timeline
       allDay.push(placed);
       continue;
     }
+    // Placed by the part inside the range, labelled by the item's own times.
     const start = entry.point ? entry.start : Math.max(entry.start, from);
     const end = entry.point ? entry.start : Math.min(entry.end, to);
     if (entry.point ? start < from || start >= to : end <= start) continue;
@@ -547,8 +567,8 @@ export const buildTimelineModel = ({ from, to, today, items, context }: Timeline
       id: entry.item.id,
       item: entry.item,
       group: groupIndex,
-      start,
-      end,
+      start: entry.start,
+      end: entry.end,
       at: relative(group, at),
       size: folded ? startSegment.size : entry.point ? ZERO : subtractSpan(posOf(end), at),
       lane: 0,
@@ -562,33 +582,51 @@ export const buildTimelineModel = ({ from, to, today, items, context }: Timeline
     if (folded) foldStacks.set(startSegment, [...(foldStacks.get(startSegment) ?? []), placed]);
   }
 
-  // Items inside a fold stack in its middle, in time order.
+  // Items inside a fold stack in its middle, in time order, in up to three places; the rest share a "+n" entry.
+  const foldRuns: TimelineItemEntry[][] = [];
   for (const stack of foldStacks.values()) {
-    for (const [lane, entry] of stack.sort(byStart).entries()) {
+    stack.sort(byStart);
+    const shown = stack.length > TIMELINE_FOLD_LANES ? TIMELINE_FOLD_LANES - 1 : stack.length;
+    for (const [lane, entry] of stack.slice(0, shown).entries()) {
       entry.lane = lane;
-      entry.lanes = stack.length;
+      entry.lanes = Math.min(stack.length, TIMELINE_FOLD_LANES);
     }
+    if (shown < stack.length) foldRuns.push(stack.slice(shown));
   }
 
   const more: TimelineMoreEntry[] = [];
+  // Item ids are the application's, so a "+n" id steps aside where an item already has it.
+  const ids = new Set(normalized.map((entry) => entry.item.id));
   const collapse = (runs: TimelineItemEntry[][], area: TimelineMoreEntry["area"], lanes: number) => {
     for (const run of runs) {
       const first = run[0]!;
       const group = groups[first.group]!;
-      const start = Math.min(...run.map((entry) => entry.start));
-      const end = Math.max(...run.map((entry) => entry.end));
-      // All-day entries count in groups: `end` is the index after their last group.
-      const lastGroup = groups[Math.max(first.group, end - 1)]!;
+      let start = first.start;
+      let end = first.end;
+      for (const entry of run) {
+        start = Math.min(start, entry.start);
+        end = Math.max(end, entry.end);
+      }
+      let id = `more:${first.id}`;
+      for (let suffix = 2; ids.has(id); suffix++) id = `more:${first.id}:${suffix}`;
+      ids.add(id);
+      // A fold's "+n" takes the place of the fold; all-day entries count in groups, `end` is the index after their last.
+      const lastGroup = area === "all-day" ? groups[Math.max(first.group, end - 1)]! : group;
       const placed: TimelineMoreEntry = {
         kind: "more",
         area,
-        id: `more:${first.id}`,
+        id,
         hidden: run,
         group: first.group,
         start,
         end,
-        at: area === "band" ? relative(group, posOf(start)) : ZERO,
-        size: area === "band" ? subtractSpan(posOf(end), posOf(start)) : subtractSpan(addSpan(lastGroup.at, lastGroup.size), group.at),
+        at: area === "band" ? relative(group, posOf(start)) : area === "fold" ? first.at : ZERO,
+        size:
+          area === "band"
+            ? subtractSpan(posOf(end), posOf(start))
+            : area === "fold"
+              ? first.size
+              : subtractSpan(addSpan(lastGroup.at, lastGroup.size), group.at),
         lane: lanes - 1,
         lanes,
       };
@@ -598,6 +636,7 @@ export const buildTimelineModel = ({ from, to, today, items, context }: Timeline
     }
   };
   collapse(laneEntries(bands, TIMELINE_BAND_LANES), "band", TIMELINE_BAND_LANES);
+  collapse(foldRuns, "fold", TIMELINE_FOLD_LANES);
   collapse(laneEntries(allDay, TIMELINE_ALL_DAY_LANES), "all-day", TIMELINE_ALL_DAY_LANES);
 
   const visibleAllDay = [...allDay.filter((entry) => entries.has(entry.id)), ...more.filter((entry) => entry.area === "all-day")];
@@ -605,7 +644,7 @@ export const buildTimelineModel = ({ from, to, today, items, context }: Timeline
     groups[entry.group]!.entries.push(entry);
     for (let index = entry.start + 1; index < entry.end; index++) groups[index]?.echoes.push(entry);
   }
-  const visibleTimed = [...timedEntries.filter((entry) => entries.has(entry.id)), ...more.filter((entry) => entry.area === "band")];
+  const visibleTimed = [...timedEntries.filter((entry) => entries.has(entry.id)), ...more.filter((entry) => entry.area !== "all-day")];
   for (const entry of visibleTimed.sort(byStart)) groups[entry.group]!.entries.push(entry);
   for (const group of groups) {
     for (const entry of group.entries) {

@@ -1,7 +1,20 @@
 import type { DateContext } from "@k2b/stdlib";
-import { createEffect, createMemo, createSignal, createUniqueId, For, Index, type JSX, on, onCleanup, onMount, Show } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  createUniqueId,
+  For,
+  Index,
+  type JSX,
+  on,
+  onCleanup,
+  onMount,
+  Show,
+  untrack,
+} from "solid-js";
 import { Dynamic, isServer } from "solid-js/web";
-import Dropdown from "../actions/Dropdown";
+import Dropdown, { type DropdownItem } from "../actions/Dropdown";
 import { announce } from "../feedback/announce";
 import { useDateConfigLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
@@ -66,6 +79,12 @@ type Axis = "horizontal" | "vertical";
 const HORIZONTAL_UNITS: TimelineUnits = [54, 48, 160, 0, 0];
 /** How far beyond the visible area the first render reaches, in pixels. */
 const INITIAL_REACH = 3200;
+/** A scroll rests once this many frames passed without a scroll event and no finger is down. */
+const REST_FRAMES = 8;
+/** A pause between wheel events that starts a new gesture. */
+const GESTURE_GAP_MS = 150;
+/** Wheel steps from this size on, such as a mouse wheel's notches, glide; smaller ones, such as a trackpad's, apply at once. */
+const GLIDE_FROM = 50;
 const COLOR_TOKENS = new Set(["blue", "emerald", "amber", "red", "violet", "cyan", "zinc"]);
 const HEX_COLOR = /^#[0-9a-f]{3,8}$/i;
 
@@ -80,15 +99,15 @@ const isAllDay = (entry: TimelineEntry) => entry.kind === "all-day" || (entry.ki
 const asItem = (entry: TimelineEntry): TimelineItemEntry | undefined => (entry.kind === "more" ? undefined : entry);
 const asMore = (entry: TimelineEntry): TimelineMoreEntry | undefined => (entry.kind === "more" ? entry : undefined);
 
-/** A scrollable ancestor in the block direction makes the page the primary scroll area, so the wheel stays native. */
-const pageScrollsVertically = (from: Element): boolean => {
+/** The nearest ancestor that scrolls vertically, the page included. */
+const verticalScroller = (from: Element): Element | undefined => {
   for (let element = from.parentElement; element; element = element.parentElement) {
     if (element.scrollHeight <= element.clientHeight + 1) continue;
     const overflow = getComputedStyle(element).overflowY;
-    if (overflow === "auto" || overflow === "scroll" || element === document.scrollingElement) return true;
+    if (overflow === "auto" || overflow === "scroll" || element === document.scrollingElement) return element;
   }
   const root = document.scrollingElement;
-  return Boolean(root && root.scrollHeight > root.clientHeight + 1);
+  return root && root.scrollHeight > root.clientHeight + 1 ? root : undefined;
 };
 
 /**
@@ -105,7 +124,7 @@ export default function Timeline(props: TimelineProps): JSX.Element {
     return Number.isFinite(fixed) ? fixed : clock();
   });
   const today = createMemo(() => timelineDayKey(now(), context()));
-  const model = createMemo<TimelineModel>(() =>
+  const latest = createMemo<TimelineModel>(() =>
     buildTimelineModel({
       from: parseTimelineTime(props.from, context()),
       to: parseTimelineTime(props.to, context()),
@@ -114,6 +133,8 @@ export default function Timeline(props: TimelineProps): JSX.Element {
       context: context(),
     }),
   );
+  /** The model on screen: the latest one, unless that one waits for the reader's scroll to rest (see `resting`). */
+  const [model, setModel] = createSignal<TimelineModel>(untrack(latest));
   const groupsByKey = createMemo(() => new Map(model().groups.map((group) => [group.key, group])));
 
   // Formatting.
@@ -152,6 +173,11 @@ export default function Timeline(props: TimelineProps): JSX.Element {
     if (item.checked !== undefined) parts.push(item.checked ? messages().timelineDone : messages().timelineOpen);
     return parts.join(", ");
   };
+  /** When an item happens, for a "+n" menu row. */
+  const when = (entry: TimelineItemEntry): string => {
+    if (entry.kind === "all-day") return `${messages().allDay}, ${dayRange(entry.firstKey, entry.lastKey, dayFormat())}`;
+    return entry.end > entry.start ? `${formatTime(entry.start)}–${formatTime(entry.end)}` : formatTime(entry.start);
+  };
   const isPast = (entry: TimelineEntry): boolean => {
     if (entry.kind === "more") return entry.hidden.every(isPast);
     if (entry.kind === "all-day") return entry.lastKey < today();
@@ -187,12 +213,14 @@ export default function Timeline(props: TimelineProps): JSX.Element {
     const start = Math.max(portStart, 0) - boxStart;
     return [start, Math.max(start, Math.min(portEnd, limit) - boxStart)];
   };
-  const scrollBy = (delta: number, behavior: ScrollBehavior = "auto") => {
+  const scrollBy = (distance: number, behavior: ScrollBehavior = "instant") => {
+    // In device pixels: positions are sums of unit sizes, and an engine that cuts 4671.9999 to 4671 would move the view.
+    const delta = Math.round(distance * window.devicePixelRatio) / window.devicePixelRatio;
     if (!viewport || Math.abs(delta) < 0.5) return;
     const horizontal = layout().axis === "horizontal";
     const scrollable = horizontal ? viewport.scrollWidth > viewport.clientWidth : viewport.scrollHeight > viewport.clientHeight;
     if (scrollable) viewport.scrollBy({ [horizontal ? "left" : "top"]: delta, behavior });
-    else if (!horizontal) window.scrollBy({ top: delta, behavior });
+    else if (!horizontal) verticalScroller(viewport)?.scrollBy({ top: delta, behavior });
   };
 
   // Bounded rendering: groups whose reach meets the visible time range, widened by a screen, plus the focused group.
@@ -220,8 +248,24 @@ export default function Timeline(props: TimelineProps): JSX.Element {
       .map((group) => group.key);
   });
 
-  // Reading position: the time at the start edge, kept when days load or the axis changes.
-  let anchor: { time: number; offset: number } | undefined;
+  // Reading position: the time at the start edge stays in place when days load or the axis changes.
+  /** The time at the start edge after the last refresh, for an axis change. */
+  let edgeTime: number | undefined;
+  /**
+   * The time to hold in place. A load at the start spreads a leading night or fold over other times, so where the start
+   * edge lies in one, the end of that segment holds instead, and with it everything after.
+   */
+  const anchorAt = (built: TimelineModel, start: number, units: TimelineUnits) => {
+    const time = built.timeAt(start, units);
+    const first = built.segments.find((segment) => segment.t1 > segment.t0);
+    return first && first.kind !== "wake" && time < first.t1 ? first.t1 : time;
+  };
+  /** How far what the reader sees moves from one model to the next. */
+  const shiftOf = (before: TimelineModel, after: TimelineModel) => {
+    const { units } = layout();
+    const time = anchorAt(before, visible()[0], units);
+    return spanPx(after.posOf(time), units) - spanPx(before.posOf(time), units);
+  };
   let requestedFrom: number | undefined;
   let requestedTo: number | undefined;
   let pendingEarlier = false;
@@ -244,8 +288,7 @@ export default function Timeline(props: TimelineProps): JSX.Element {
     const { units } = layout();
     const [start, end] = visible();
     const reach = Math.max(end - start, 600);
-    const time = built.timeAt(start, units);
-    anchor = { time, offset: spanPx(built.posOf(time), units) - start };
+    edgeTime = built.timeAt(start, units);
     const [low, high] = range() ?? [Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY];
     if (built.timeAt(start - reach / 2, units) < low || built.timeAt(end + reach / 2, units) > high)
       setRange([built.timeAt(start - reach, units), built.timeAt(end + reach, units)]);
@@ -260,10 +303,6 @@ export default function Timeline(props: TimelineProps): JSX.Element {
       requestedTo = built.to;
       loadEdge("later");
     }
-  };
-  const restore = () => {
-    if (anchor) scrollBy(px(anchor.time) - anchor.offset - visible()[0]);
-    refresh();
   };
 
   const scrollToTime = (time: number, align: "start" | "center" = "start") => {
@@ -329,42 +368,38 @@ export default function Timeline(props: TimelineProps): JSX.Element {
     }
   };
 
-  // The wheel scrolls a horizontal strip sideways only where nothing else scrolls vertically.
-  let wheelTarget: number | undefined;
-  let wheelFrame = 0;
-  let primaryUntil = 0;
+  // The wheel scrolls a horizontal strip sideways only where nothing else scrolls vertically, decided once per gesture.
+  let wheelAt = Number.NEGATIVE_INFINITY;
   let primary = false;
+  /** Pixels a gliding wheel still moves. Relative, so a scroll from elsewhere, such as days loading, adds to it. */
+  let wheelLeft = 0;
+  let wheelFrame = 0;
+  const glide = () => {
+    wheelFrame = 0;
+    if (!viewport) return;
+    // Whole pixels, so every frame moves until the glide is done or meets an edge.
+    const step = Math.abs(wheelLeft) <= 1 ? wheelLeft : Math.trunc(wheelLeft * 0.35) || Math.sign(wheelLeft);
+    const before = viewport.scrollLeft;
+    viewport.scrollLeft = before + step;
+    wheelLeft -= step;
+    if (wheelLeft !== 0 && viewport.scrollLeft !== before) wheelFrame = requestAnimationFrame(glide);
+    else wheelLeft = 0;
+  };
   const onWheel = (event: WheelEvent) => {
     if (!viewport || layout().axis !== "horizontal" || event.ctrlKey || event.shiftKey) return;
     if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
-    if (performance.now() > primaryUntil) {
-      primary = !pageScrollsVertically(viewport);
-      primaryUntil = performance.now() + 500;
-    }
+    const time = performance.now();
+    if (time - wheelAt > GESTURE_GAP_MS) primary = !verticalScroller(viewport);
+    wheelAt = time;
     if (!primary) return;
     event.preventDefault();
-    const scale = event.deltaMode === 1 ? 40 : event.deltaMode === 2 ? viewport.clientWidth : 1;
-    const limit = viewport.scrollWidth - viewport.clientWidth;
-    wheelTarget = Math.max(0, Math.min(limit, (wheelTarget ?? viewport.scrollLeft) + event.deltaY * scale));
-    if (reducedMotion()) {
-      viewport.scrollLeft = wheelTarget;
-      wheelTarget = undefined;
+    const delta = event.deltaY * (event.deltaMode === 1 ? 40 : event.deltaMode === 2 ? viewport.clientWidth : 1);
+    if (reducedMotion() || (Math.abs(delta) < GLIDE_FROM && !wheelFrame)) {
+      viewport.scrollLeft += delta;
       return;
     }
-    if (wheelFrame) return;
-    const step = () => {
-      if (!viewport || wheelTarget === undefined) return;
-      const distance = wheelTarget - viewport.scrollLeft;
-      if (Math.abs(distance) < 1) {
-        viewport.scrollLeft = wheelTarget;
-        wheelTarget = undefined;
-        wheelFrame = 0;
-        return;
-      }
-      viewport.scrollLeft += distance * 0.35;
-      wheelFrame = requestAnimationFrame(step);
-    };
-    wheelFrame = requestAnimationFrame(step);
+    wheelLeft += delta;
+    if (!wheelFrame) wheelFrame = requestAnimationFrame(glide);
   };
 
   const activate = (event: MouseEvent, entry: TimelineItemEntry) => {
@@ -380,8 +415,80 @@ export default function Timeline(props: TimelineProps): JSX.Element {
     props.onActivate(entry.item);
   };
 
-  // Loading days at either end keeps what the reader sees in place.
-  createEffect(on(model, restore, { defer: true }));
+  // While the reader scrolls, a scroll write that keeps the view in place would fight a finger or momentum, as on iOS.
+  // So a new model that moves what they see waits until the scroll rests: frames without a scroll event, no finger
+  // down. Counted in frames, as scrolling and momentum report every frame, also when a busy page draws slowly.
+  const [resting, setResting] = createSignal(true);
+  const fingers = new Set<number>();
+  let quietFrames = 0;
+  let restFrame = 0;
+  const countQuiet = () => {
+    restFrame = 0;
+    if (fingers.size > 0) return;
+    if (++quietFrames >= REST_FRAMES) setResting(true);
+    else restFrame = requestAnimationFrame(countQuiet);
+  };
+  const scrolled = () => {
+    setResting(false);
+    quietFrames = 0;
+    if (!restFrame) restFrame = requestAnimationFrame(countQuiet);
+  };
+  const onTouchStart = (event: TouchEvent) => {
+    const target = event.target;
+    if (!target) return;
+    const touches = [...event.changedTouches].map((touch) => touch.identifier);
+    for (const touch of touches) fingers.add(touch);
+    setResting(false);
+    // Touch events keep going to where they began, also after that element left the timeline.
+    const release = (ended: Event) => {
+      for (const touch of (ended as TouchEvent).changedTouches) fingers.delete(touch.identifier);
+      if (touches.some((touch) => fingers.has(touch))) return;
+      target.removeEventListener("touchend", release);
+      target.removeEventListener("touchcancel", release);
+      scrolled();
+    };
+    target.addEventListener("touchend", release);
+    target.addEventListener("touchcancel", release);
+  };
+  /** The item that had focus when the model changed, to keep focus in the timeline if its element goes. */
+  let focused: string | undefined;
+  createEffect(() => {
+    const next = latest();
+    const rest = resting();
+    untrack(() => {
+      const shown = model();
+      if (next === shown || (!rest && viewport && Math.abs(shiftOf(shown, next)) >= 0.5)) return;
+      focused = root?.contains(document.activeElement) && !document.activeElement?.closest("[role='menu']") ? activeId() : undefined;
+      setModel(next);
+    });
+  });
+  /** The entry that stands in for `id` in the next model: itself, the "+n" entry that hides it, or its nearest neighbour. */
+  const successor = (before: TimelineModel, after: TimelineModel, id: string): string | undefined => {
+    if (after.entries.has(id)) return id;
+    for (const entry of after.entries.values())
+      if (entry.kind === "more" && entry.hidden.some((hidden) => hidden.id === id)) return entry.id;
+    const index = before.order.indexOf(id);
+    return [...before.order.slice(index + 1), ...before.order.slice(0, Math.max(0, index)).reverse()].find((other) =>
+      after.entries.has(other),
+    );
+  };
+  // Days loading at either end, and items changing, keep what the reader sees in place, and keep focus.
+  createEffect(
+    on(model, (current, previous) => {
+      if (!previous) return;
+      scrollBy(shiftOf(previous, current));
+      const id = focused === undefined ? undefined : successor(previous, current, focused);
+      focused = undefined;
+      if (id !== undefined && !root?.contains(document.activeElement)) {
+        setActive(id);
+        // A day that only now holds the tab stop renders right after this update.
+        const focus = () => elementOf(id)?.focus({ preventScroll: true });
+        if (!elementOf(id)) queueMicrotask(focus);
+        else focus();
+      }
+      refresh();
+    }),
+  );
 
   onMount(() => {
     if (isServer || !viewport || !root) return;
@@ -395,11 +502,11 @@ export default function Timeline(props: TimelineProps): JSX.Element {
         refresh();
       });
     };
-    const onScroll = () => {
-      // The anchor follows every scroll at once, so a load right after it keeps the latest position.
-      const [start] = visible();
-      const time = model().timeAt(start, layout().units);
-      anchor = { time, offset: px(time) - start };
+    // Scrolls of the strip and of the areas around it, which move it too.
+    const onScroll = (event: Event) => {
+      const target = event.target;
+      if (target !== document && !(target instanceof Node && viewport && target.contains(viewport))) return;
+      scrolled();
       schedule();
     };
     const resize = new ResizeObserver(() => {
@@ -407,24 +514,25 @@ export default function Timeline(props: TimelineProps): JSX.Element {
       const previous = layout();
       if (next.axis !== previous.axis || next.units.some((value, index) => value !== previous.units[index])) {
         setLayout(next);
-        if (anchor) anchor = { time: anchor.time, offset: 0 };
-        restore();
+        if (edgeTime !== undefined) scrollBy(px(edgeTime) - visible()[0]);
+        refresh();
       } else schedule();
     });
     resize.observe(viewport);
-    viewport.addEventListener("scroll", onScroll, { passive: true });
     viewport.addEventListener("wheel", onWheel, { passive: false });
+    viewport.addEventListener("touchstart", onTouchStart, { passive: true });
     root.addEventListener("keydown", onKeyDown, true);
-    window.addEventListener("scroll", schedule, { passive: true, capture: true });
+    window.addEventListener("scroll", onScroll, { passive: true, capture: true });
     const timer = props.now === undefined ? setInterval(() => setClock(Date.now()), 30_000) : undefined;
     onCleanup(() => {
       resize.disconnect();
-      viewport?.removeEventListener("scroll", onScroll);
       viewport?.removeEventListener("wheel", onWheel);
+      viewport?.removeEventListener("touchstart", onTouchStart);
       root?.removeEventListener("keydown", onKeyDown, true);
-      window.removeEventListener("scroll", schedule, { capture: true });
+      window.removeEventListener("scroll", onScroll, { capture: true });
       cancelAnimationFrame(frame);
       cancelAnimationFrame(wheelFrame);
+      cancelAnimationFrame(restFrame);
       if (timer) clearInterval(timer);
     });
     props.controller?.({
@@ -492,17 +600,27 @@ export default function Timeline(props: TimelineProps): JSX.Element {
     const label = () => {
       const current = entry();
       const count = messages().timelineMore({ count: current.hidden.length });
-      return current.area === "band"
-        ? `${count}, ${messages().timelineTimeRange({ start: formatTime(current.start), end: formatTime(current.end) })}`
-        : count;
+      return current.area === "all-day"
+        ? count
+        : `${count}, ${messages().timelineTimeRange({ start: formatTime(current.start), end: formatTime(current.end) })}`;
     };
-    const items = () =>
-      entry().hidden.map((hidden) => {
-        const time = `${formatTime(hidden.start)}–${formatTime(hidden.end)}`;
-        const base = { label: hidden.item.label, description: hidden.item.detail ? `${time}, ${hidden.item.detail}` : time };
-        if (props.onActivate) return { ...base, action: () => props.onActivate?.(hidden.item) };
-        if (hidden.item.href) return { ...base, href: hidden.item.href };
-        return { ...base, disabled: true as const };
+    // A row opens its item as a click on it does. Where only the checkbox may change, the row is that checkbox.
+    const items = (): DropdownItem[] =>
+      entry().hidden.map((hidden): DropdownItem => {
+        const { item } = hidden;
+        const parts = [when(hidden), ...(item.detail ? [item.detail] : [])];
+        const state = item.checked === undefined ? [] : [item.checked ? messages().timelineDone : messages().timelineOpen];
+        const icon = item.checked === undefined ? undefined : item.checked ? "ti ti-circle-check" : "ti ti-circle";
+        const base = { label: item.label, description: [...parts, ...state].join(", "), icon };
+        const open = props.onActivate;
+        if (open) return item.href ? { ...base, href: item.href, action: () => open(item) } : { ...base, action: () => open(item) };
+        if (item.href) return { ...base, href: item.href };
+        const toggle = props.onToggle;
+        if (toggle && item.checked !== undefined) {
+          const checked = item.checked;
+          return { label: item.label, description: parts.join(", "), choice: "checkbox", checked, action: () => toggle(item, !checked) };
+        }
+        return { ...base, disabled: true };
       });
     return (
       <Dropdown.Root items={items()} label={label()} class="k2b-timeline__more-root">

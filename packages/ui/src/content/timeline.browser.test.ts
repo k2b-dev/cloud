@@ -19,7 +19,7 @@ const css = readFileSync(resolve(packageRoot, "dist/styles.css"), "utf8");
 const axeSource = readFileSync(Bun.resolveSync("axe-core/axe.min.js", import.meta.dir), "utf8");
 const entry = resolve(import.meta.dir, "timeline.fixture.ts");
 const fixture = `
-import { createComponent, createSignal } from "solid-js";
+import { batch, createComponent, createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { Timeline } from ${JSON.stringify(resolve(packageRoot, "dist/browser/index.js"))};
 import { timelineFrom, timelineItems, timelineNow, timelineTo, timelineZone } from ${JSON.stringify(resolve(packageRoot, "test/timeline-data.ts"))};
@@ -36,9 +36,23 @@ const year = () =>
     const start = new Date(Date.UTC(2026, 9, 7 + day, 6 + (index % 6) * 2));
     return { id: "y" + index, label: "Meeting " + index, start: start.toISOString(), end: new Date(start.getTime() + 90 * 60_000).toISOString() };
   });
-const [from, setFrom] = createSignal(timelineFrom);
+// A quiet weekend with nightly backups and tasks due at 23:59, and a third all-day item on Thursday.
+const nights = [
+  ...["10T02:00", "11T02:00", "12T02:00"].map((at, index) => ({ id: "b" + index, label: "Backup", start: "2026-10-" + at + ":00+02:00", kind: "marker" })),
+  ...["10T23:59", "11T23:59"].map((at, index) => ({ id: "d" + index, label: "Report " + index, start: "2026-10-" + at + ":00+02:00", kind: "marker", checked: false })),
+  { id: "h", label: "Harbour festival", start: "2026-10-08", allDay: true },
+];
+const base = timelineItems.filter((item) => !(options.drop ?? []).includes(item.id));
+// What the week before holds: the same week, nothing, or one meeting on the morning of the first loaded day.
+const before = (count) =>
+  options.earlier === "empty"
+    ? []
+    : options.earlier === "wednesday"
+      ? count === 1 ? [{ id: "w", label: "Planning", start: "2026-10-07T10:00:00+02:00", end: "2026-10-07T11:00:00+02:00" }] : []
+      : week(timelineItems, -7 * count, "-" + count);
+const [from, setFrom] = createSignal(options.from ?? timelineFrom);
 const [to, setTo] = createSignal(options.long ? shift(timelineTo, 358) : timelineTo);
-const [items, setItems] = createSignal(options.long ? year() : timelineItems);
+const [items, setItems] = createSignal(options.long ? year() : options.nights ? [...base, ...nights] : base);
 window.loads = [];
 window.activated = [];
 window.toggled = [];
@@ -62,7 +76,7 @@ render(
       now: timelineNow,
       timeZone: timelineZone,
       label: "Product team",
-      onActivate: (item) => window.activated.push(item.id),
+      onActivate: options.noActivate ? undefined : (item) => window.activated.push(item.id),
       onToggle: (item, checked) => {
         window.toggled.push([item.id, checked]);
         setItems((current) => current.map((value) => (value.id === item.id ? { ...value, checked } : value)));
@@ -72,8 +86,10 @@ render(
             window.loads.push("earlier");
             return gate(() => {
               earlier++;
-              setItems((current) => [...week(timelineItems, -7 * earlier, "-" + earlier), ...current]);
-              setFrom(shift(from(), -7));
+              batch(() => {
+                setItems((current) => [...before(earlier), ...current]);
+                setFrom(shift(from(), -7));
+              });
             });
           }
         : undefined,
@@ -82,8 +98,10 @@ render(
             window.loads.push("later");
             return gate(() => {
               later++;
-              setItems((current) => [...current, ...week(timelineItems, 7 * later, "+" + later)]);
-              setTo(shift(to(), 7));
+              batch(() => {
+                setItems((current) => [...current, ...week(timelineItems, 7 * later, "+" + later)]);
+                setTo(shift(to(), 7));
+              });
             });
           }
         : undefined,
@@ -142,7 +160,21 @@ const desktop: BrowserContextOptions = { viewport: { width: 1280, height: 760 } 
 const ipad: BrowserContextOptions = { viewport: { width: 1024, height: 768 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true };
 const phone: BrowserContextOptions = { viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true };
 
-type Options = { load?: boolean; long?: boolean; theme?: "dark"; tallPage?: boolean };
+type Options = {
+  load?: boolean;
+  long?: boolean;
+  theme?: "dark";
+  tallPage?: boolean;
+  /** Start of the loaded range instead of Wednesday 18:00. */
+  from?: string;
+  /** Fixture items to leave out. */
+  drop?: readonly string[];
+  /** What loading the week before adds: the same week (default), nothing, or a meeting on the first loaded day. */
+  earlier?: "week" | "empty" | "wednesday";
+  /** Adds a weekend of night items and a third all-day item on Thursday. */
+  nights?: boolean;
+  noActivate?: boolean;
+};
 
 const open = async (context: BrowserContextOptions, options: Options = {}): Promise<Page> => {
   const page = await browser.newPage(context);
@@ -181,6 +213,48 @@ const inView = (page: Page, id: string) =>
     const rect = document.querySelector(`[data-entry-id="${value}"]`)!.getBoundingClientRect();
     return rect.left >= port.left - 1 && rect.right <= port.right + 1 && rect.top >= port.top - 1 && rect.bottom <= port.bottom + 1;
   }, id);
+type Fixture = {
+  loads: string[];
+  toggled: Array<[string, boolean]>;
+  release: () => number;
+  probe: { start: (id: string) => void; stop: () => { frames: number; drift: number } };
+};
+const loads = (page: Page) => page.evaluate(() => (window as unknown as Fixture).loads);
+const release = (page: Page) => page.evaluate(() => (window as unknown as Fixture).release());
+const probeStart = (page: Page, id: string) => page.evaluate((value) => (window as unknown as Fixture).probe.start(value), id);
+const probeStop = (page: Page) => page.evaluate(() => (window as unknown as Fixture).probe.stop());
+const scrollWidth = (page: Page) => page.evaluate(() => document.querySelector(".k2b-timeline__viewport")!.scrollWidth);
+/** An item well inside the view. */
+const watchedItem = (page: Page) =>
+  page.evaluate(() => {
+    const port = document.querySelector(".k2b-timeline__viewport")!.getBoundingClientRect();
+    return [...document.querySelectorAll<HTMLElement>("[data-entry-id]")].find((element) => {
+      const rect = element.getBoundingClientRect();
+      return rect.left > port.left + 150 && rect.right < port.right - 150 && rect.top >= port.top && rect.bottom <= port.bottom;
+    })!.dataset.entryId!;
+  });
+/** Scrolls forward until the timeline renders an entry, then puts it in the middle of the view. */
+const reveal = (page: Page, id: string) =>
+  page.evaluate(async (value) => {
+    const port = document.querySelector(".k2b-timeline__viewport")!;
+    const find = () => document.querySelector(`[data-entry-id="${value}"]`);
+    for (let step = 0; step < 50 && !find(); step++) {
+      port.scrollBy({ left: 400, top: 400 });
+      await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+    }
+    find()!.scrollIntoView({ block: "center", inline: "center" });
+    await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+  }, id);
+/** Releases the first load at the start, then scrolls near the start again, where the week before that is asked for. */
+const nearStartWithLoadPending = async (page: Page) => {
+  await page.waitForFunction(() => (window as unknown as Fixture).loads.length === 1);
+  await release(page);
+  await frames(page, 4);
+  await page.evaluate(() => {
+    document.querySelector(".k2b-timeline__viewport")!.scrollLeft = 600;
+  });
+  await page.waitForFunction(() => (window as unknown as Fixture).loads.length === 2);
+};
 const scrollPosition = (page: Page) =>
   page.evaluate(() => {
     const port = document.querySelector(".k2b-timeline__viewport")!;
@@ -326,6 +400,183 @@ describe(`@k2b/ui Timeline in ${browserName}`, () => {
       }
     }, 30_000);
   }
+
+  for (const [axisName, context] of [
+    ["horizontal", desktop],
+    ["vertical", phone],
+  ] as const) {
+    for (const [name, options] of [
+      ["from midnight, in a night", { from: "2026-10-08T00:00:00+02:00" }],
+      ["on an empty first day", { from: "2026-10-07T00:00:00+02:00", drop: ["e1"], earlier: "empty" }],
+      ["on a partly loaded first day whose morning is busy", { from: "2026-10-07T18:00:00+02:00", drop: ["e1"], earlier: "wednesday" }],
+    ] as const) {
+      test(`loading earlier days moves nothing the reader sees when the range starts ${name} (${axisName})`, async () => {
+        const page = await open({ ...context, reducedMotion: "reduce" }, { load: true, ...options });
+        try {
+          await page.waitForFunction(() => (window as unknown as Fixture).loads.length === 1);
+          // Thursday's stand-up, in view from the start on both axes.
+          await probeStart(page, "e2");
+          await frames(page, 2);
+          expect(await release(page)).toBe(1);
+          await frames(page, 4);
+          expect((await probeStop(page)).drift).toBeLessThan(1);
+        } finally {
+          await page.close();
+        }
+      }, 30_000);
+    }
+  }
+
+  test("a mouse wheel glides the strip by its notch, then stops and leaves other scrolls alone", async () => {
+    const page = await open(desktop);
+    try {
+      const port = await page.evaluate(() => {
+        const rect = document.querySelector(".k2b-timeline__viewport")!.getBoundingClientRect();
+        return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+      });
+      await page.mouse.move(port.x, port.y);
+      await page.mouse.wheel(0, 100);
+      await page.waitForFunction(() => document.querySelector(".k2b-timeline__viewport")!.scrollLeft >= 100);
+      await frames(page, 10);
+      expect((await scrollPosition(page)).left).toBe(100);
+      // Nothing pulls a later scroll back to where the wheel went.
+      await page.evaluate(() => {
+        document.querySelector(".k2b-timeline__viewport")!.scrollLeft = 1500;
+      });
+      await frames(page, 30);
+      expect((await scrollPosition(page)).left).toBe(1500);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  test("days that load while the wheel glides keep what the reader sees, and the glide still goes its whole way", async () => {
+    const page = await open(desktop, { load: true });
+    try {
+      await nearStartWithLoadPending(page);
+      const watched = await watchedItem(page);
+      const [before, width] = [await box(page, watched), await scrollWidth(page)];
+      await page.mouse.move(640, 400);
+      await page.mouse.wheel(0, -100);
+      await frames(page, 2);
+      expect(await release(page)).toBe(1);
+      await page.waitForFunction((value) => document.querySelector(".k2b-timeline__viewport")!.scrollWidth > value, width);
+      await frames(page, 20);
+      // Back by one notch: the item moved right by exactly that, and nothing else loaded.
+      expect(Math.abs((await box(page, watched)).left - before.left - 100)).toBeLessThan(1);
+      expect(await loads(page)).toEqual(["earlier", "earlier"]);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  test("days that load while the reader scrolls wait until the scroll rests, then keep what the reader sees", async () => {
+    const page = await open({ ...desktop, reducedMotion: "reduce" }, { load: true });
+    try {
+      await nearStartWithLoadPending(page);
+      const width = await scrollWidth(page);
+      // A scroll that keeps going, as momentum does: the load arrives in its middle and waits.
+      const widths = await page.evaluate(async () => {
+        const port = document.querySelector(".k2b-timeline__viewport")!;
+        const seen: number[] = [];
+        for (let frame = 0; frame < 30; frame++) {
+          if (frame === 5) (window as unknown as Fixture).release();
+          port.scrollLeft -= 4;
+          await new Promise(requestAnimationFrame);
+          seen.push(port.scrollWidth);
+        }
+        return seen;
+      });
+      expect(new Set(widths)).toEqual(new Set([width]));
+      const watched = await watchedItem(page);
+      await probeStart(page, watched);
+      await page.waitForFunction((value) => document.querySelector(".k2b-timeline__viewport")!.scrollWidth > value, width);
+      await frames(page, 4);
+      expect((await probeStop(page)).drift).toBeLessThan(1);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  // A finger that stays down needs a touch the page creates; WebKit's Touch constructor throws "Illegal constructor".
+  test.skipIf(browserName === "webkit")(
+    "days that load while a finger is on the strip wait until it lifts",
+    async () => {
+      const page = await open({ ...ipad, reducedMotion: "reduce" }, { load: true });
+      try {
+        await nearStartWithLoadPending(page);
+        const width = await scrollWidth(page);
+        await page.evaluate(() => {
+          const target = document.querySelector(".k2b-timeline__track")!;
+          const touch = new Touch({ identifier: 1, target, clientX: 400, clientY: 400 });
+          target.dispatchEvent(new TouchEvent("touchstart", { touches: [touch], changedTouches: [touch], bubbles: true }));
+          (window as unknown as { lift: () => void }).lift = () =>
+            target.dispatchEvent(new TouchEvent("touchend", { touches: [], changedTouches: [touch], bubbles: true }));
+        });
+        expect(await release(page)).toBe(1);
+        await page.waitForTimeout(400);
+        expect(await scrollWidth(page)).toBe(width);
+        const watched = await watchedItem(page);
+        await probeStart(page, watched);
+        await page.evaluate(() => (window as unknown as { lift: () => void }).lift());
+        await page.waitForFunction((value) => document.querySelector(".k2b-timeline__viewport")!.scrollWidth > value, width);
+        await frames(page, 4);
+        expect((await probeStop(page)).drift).toBeLessThan(1);
+      } finally {
+        await page.close();
+      }
+    },
+    30_000,
+  );
+
+  for (const [axisName, context] of [
+    ["horizontal", desktop],
+    ["vertical", phone],
+  ] as const) {
+    test(`keeps a busy night or fold inside the strip and puts the rest behind +n (${axisName})`, async () => {
+      const page = await open({ ...context, reducedMotion: "reduce" }, { nights: true });
+      try {
+        await reveal(page, "more:b1");
+        for (const id of ["b0", "d0", "more:b1"]) expect(await inView(page, id)).toBe(true);
+        expect(await page.evaluate(() => ["b1", "d1", "b2"].filter((id) => document.querySelector(`[data-entry-id="${id}"]`)))).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    }, 30_000);
+  }
+
+  test("a +n menu says when its items happen, and checks a task that only its checkbox may change", async () => {
+    const page = await open({ ...phone, reducedMotion: "reduce" }, { nights: true, noActivate: true });
+    const rows = () =>
+      page.evaluate(() =>
+        [...document.querySelectorAll("[role='menu']:popover-open :is([role='menuitem'], [role='menuitemcheckbox'])")].map((row) => [
+          row.getAttribute("role"),
+          row.textContent,
+        ]),
+      );
+    try {
+      await page.click('[data-entry-id="more:a2"]');
+      await page.waitForFunction(() => document.querySelector("[role='menu']:popover-open"));
+      expect(await rows()).toEqual([
+        ["menuitem", "October onboarding workshopAll day, Thu, Oct 8 – Fri, Oct 9"],
+        ["menuitem", "Harbour festivalAll day, Thu, Oct 8"],
+      ]);
+      await page.keyboard.press("Escape");
+
+      await reveal(page, "more:b1");
+      await page.click('[data-entry-id="more:b1"]');
+      await page.waitForFunction(() => document.querySelector("[role='menu']:popover-open"));
+      expect(await rows()).toEqual([
+        ["menuitem", "Backup02:00"],
+        ["menuitemcheckbox", "Report 123:59"],
+        ["menuitem", "Backup02:00"],
+      ]);
+      await page.click("[role='menu']:popover-open [role='menuitemcheckbox']");
+      expect(await page.evaluate(() => (window as unknown as Fixture).toggled)).toEqual([["d1", true]]);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
 
   test("the wheel scrolls the strip sideways where it is the page's scroll area, and the page where the page scrolls", async () => {
     const primary = await open({ ...desktop, reducedMotion: "reduce" });

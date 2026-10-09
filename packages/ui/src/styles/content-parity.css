@@ -2681,7 +2681,7 @@
   border-left: 2px dashed var(--k2b-timeline-accent);
 }
 
-.k2b-ui .k2b-timeline__slot[data-kind="folded"] {
+.k2b-ui .k2b-timeline__slot:is([data-kind="folded"], [data-area="fold"]) {
   z-index: 2;
   top: calc(var(--k2b-timeline-band-start) + 0.5rem + var(--k2b-timeline-lane) * 1.75rem);
   left: calc(var(--k2b-timeline-at) + var(--k2b-timeline-size) / 2);
@@ -2785,7 +2785,8 @@
   display: none;
 }
 
-.k2b-ui :is(.k2b-timeline__slot[data-kind="marker"], .k2b-timeline__slot[data-kind="folded"]) .k2b-timeline__item {
+.k2b-ui :is(.k2b-timeline__slot[data-kind="marker"], .k2b-timeline__slot[data-kind="folded"], .k2b-timeline__slot[data-area="fold"])
+  .k2b-timeline__item {
   position: absolute;
   align-items: center;
   gap: 0.375rem;
@@ -2810,7 +2811,7 @@
   font-weight: 500;
 }
 
-.k2b-ui .k2b-timeline__slot[data-kind="folded"] .k2b-timeline__item {
+.k2b-ui .k2b-timeline__slot:is([data-kind="folded"], [data-area="fold"]) .k2b-timeline__item {
   left: 0;
   height: 1.5rem;
   padding-inline: 0.375rem;
@@ -2873,6 +2874,12 @@
   background: var(--k2b-surface-muted);
   font-size: 0.75rem;
   font-weight: 600;
+}
+
+/* A chip like the items beside it in the fold, without their colour. */
+.k2b-ui .k2b-timeline__slot[data-area="fold"] .k2b-timeline__item.k2b-timeline__more {
+  background: var(--k2b-surface);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--k2b-text) 18%, transparent);
 }
 
 .k2b-ui .k2b-timeline__now {
@@ -3098,13 +3105,13 @@
     display: none;
   }
 
-  .k2b-ui .k2b-timeline__slot[data-kind="folded"] {
+  .k2b-ui .k2b-timeline__slot:is([data-kind="folded"], [data-area="fold"]) {
     top: calc(var(--k2b-timeline-at) + var(--k2b-timeline-size) / 2 - 0.75rem);
     right: calc(0.5rem + var(--k2b-timeline-lane) * 5rem);
     left: auto;
   }
 
-  .k2b-ui .k2b-timeline__slot[data-kind="folded"] .k2b-timeline__item {
+  .k2b-ui .k2b-timeline__slot:is([data-kind="folded"], [data-area="fold"]) .k2b-timeline__item {
     right: 0;
     left: auto;
     transform: none;

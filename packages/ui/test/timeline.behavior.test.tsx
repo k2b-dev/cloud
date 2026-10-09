@@ -149,8 +149,44 @@ describe("Timeline keyboard and activation", () => {
       expect(focused(dom)).toBe("e6");
       expect(tabStops(dom.root)).toEqual(["e6"]);
       setList((current) => current.filter((entry) => entry.id !== "e6"));
-      // The tab stop falls back to the next item after now.
-      expect(tabStops(dom.root)).toEqual(["t1"]);
+      // Focus and the tab stop move to the next item, as when an application hides a task once it is done.
+      expect(focused(dom)).toBe("t2");
+      expect(tabStops(dom.root)).toEqual(["t2"]);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+
+  test("keeps focus when its day is drawn anew or its item moves into a +n entry", async () => {
+    const dom = createDomTestHarness();
+    dom.root.classList.add("k2b-ui");
+    delegateEvents(["click", "keydown", "focusin"], dom.document);
+    const { Timeline } = await import("../src/content");
+    const night = { id: "n", label: "Backup", start: "2026-10-10T23:00:00+02:00", kind: "marker" as const };
+    const [from, setFrom] = createSignal("2026-10-10T00:00:00+02:00");
+    const [list, setList] = createSignal<TimelineItem[]>([night, ...timelineItems.filter((item) => item.start >= "2026-10-12")]);
+    const dispose = render(
+      () => <Timeline items={list()} from={from()} to={timelineTo} now={timelineNow} timeZone={timelineZone} />,
+      dom.root,
+    );
+    try {
+      const heading = () => dom.root.querySelector(".k2b-timeline__heading")?.textContent;
+      dom.root.querySelector<HTMLElement>('[data-entry-id="n"]')!.focus();
+      expect(heading()).toBe("Sat, Oct 10 – Sun, Oct 11");
+      // An empty Friday loads: the weekend fold becomes Friday to Sunday, a group of its own.
+      setFrom("2026-10-09T00:00:00+02:00");
+      expect(heading()).toBe("Fri, Oct 9 – Sun, Oct 11");
+      expect(focused(dom)).toBe("n");
+      // Three more items in the same night: the focused one is hidden behind "+2".
+      setList((current) => [
+        { id: "m1", label: "Early", start: "2026-10-10T22:30:00+02:00", kind: "marker" },
+        { id: "m2", label: "Earlier", start: "2026-10-10T22:15:00+02:00", kind: "marker" },
+        { id: "m3", label: "Late", start: "2026-10-11T01:00:00+02:00", kind: "marker" },
+        ...current,
+      ]);
+      expect(focused(dom)).toBe("more:n");
+      expect(tabStops(dom.root)).toEqual(["more:n"]);
     } finally {
       dispose();
       dom.cleanup();

@@ -40,7 +40,8 @@ export type DropdownAction =
   | (DropdownActionBase & {
       href: string;
       external?: boolean;
-      action?: never;
+      /** Runs on a plain click instead of following the link; modified clicks, middle-click, and the link's menu keep it. */
+      action?: () => void;
     })
   | (DropdownActionBase & {
       disabled: true;
@@ -114,6 +115,7 @@ export type DropdownItemProps = {
   variant?: "danger";
   href?: string;
   external?: boolean;
+  /** Runs when the item is chosen. With `href`, a plain click runs it instead of following the link. */
   onSelect?: () => void;
   class?: string;
 };
@@ -225,9 +227,15 @@ export function DropdownItem(props: DropdownItemProps): JSX.Element {
           tabIndex={-1}
           class={`k2b-dropdown__item ${props.class ?? ""}`}
           data-danger={danger() ? "true" : undefined}
-          onClick={() => {
+          onClick={(event) => {
+            // With `onSelect`, a plain click runs it in place of the link; a modified click keeps its browser meaning.
+            if (props.onSelect && !(event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)) {
+              event.preventDefault();
+              menu?.close();
+              props.onSelect();
+              return;
+            }
             menu?.close(false);
-            props.onSelect?.();
           }}
         >
           {content}

@@ -26,7 +26,10 @@ Give the timeline a bounded height, such as the growing part of a flex
 column, and place it on a surface: day headings use the surface color.
 
 Without `now`, the timeline reads the clock and moves the now line every 30
-seconds. Pass `now` for a fixed time, for example in tests.
+seconds. Pass `now` for a fixed time, for example in tests. The server and
+the browser read their own clocks, so a page rendered just before midnight
+can hydrate on the next day. Where that matters, pass the request's time as
+`now` and update it in the browser if the now line should move.
 
 ### Items
 
@@ -34,7 +37,9 @@ Every `TimelineItem` has a unique `id`, a `label`, and a `start`:
 
 - With an `end` after `start`, the item is a band whose length is its
   duration. Without `end`, or with `kind: "marker"`, it is a point in time,
-  such as a deadline, drawn as a dashed line with a label.
+  such as a deadline, drawn as a dashed line with a label. A band that starts
+  before `from` or ends after `to` shows only its loaded part, but its label
+  keeps its own times.
 - `allDay: true` puts the item in the all-day row above the strip. A
   date-only `start` such as `"2026-10-08"` is that day in the time zone; an
   `end` at midnight is exclusive.
@@ -51,14 +56,23 @@ Every `TimelineItem` has a unique `id`, a `label`, and a `start`:
 Waking hours from 06:00 to 22:00 take 54 px per hour, 48 px on the vertical
 axis. Every night from 22:00 to 06:00 is one narrow fold, and a run of days
 without timed items in their waking hours is one fold that says "Nothing
-planned". Today always stays open. Items inside a fold show as small time
-markers in it.
+planned". Today always stays open, and so does a day at either end of the
+range whose waking hours are loaded only in part. Items inside a fold show as
+small time markers in it, up to three; from a fourth on, all but the first
+two collapse into a "+n" entry in the third place.
 
 Overlapping bands share up to three lanes. Where more overlap, the extra
 bands and the ones they meet in the third lane collapse into a "+n" entry
-there; it opens a menu of the hidden items. All-day items get two lanes in
-the same way. Free time of an hour or more between bands is labelled, in half
+there. All-day items get two lanes in the same way; the days of a fold share
+one place, so all-day items on different days of one fold can collapse
+together. Free time of an hour or more between bands is labelled, in half
 hours; three hours or more stand out.
+
+A "+n" entry opens a menu of its items with their times, or "All day" and
+their days. A row opens its item as a click on it does, also as a link with
+modified clicks when the item has `href`, and shows a checkbox state where
+the item has one. An item that cannot be opened but whose checkbox the reader
+may change gets a checkbox row instead.
 
 Positions come only from the times and the items, never from measurement, so
 nothing moves when the page hydrates, fonts load, or the now line advances.
@@ -76,11 +90,20 @@ an all-day row; all-day items that cover several days repeat there.
 
 Set `onLoadEarlier` and `onLoadLater` to load days when the reader nears
 either end. The timeline calls each once, and again after `from` or `to`
-changed. Extend the range and add the items of the new days together; what
-the reader sees stays in place, to the pixel, also when days load at the
-start. Days fold only once their range is loaded, so an empty weekend at the
-edge does not change size later. Return a promise to have the timeline wait
-for it before it asks again, and set `busy` while a load runs.
+changed. Extend the range and add the items of the new days together, in one
+`batch`; what the reader sees stays in place, to the pixel, also when days
+load at the start. Days fold only once their waking hours are loaded, so an
+empty weekend at the edge does not change size later. Where the view starts
+in a night or a fold at the start of the range, which spreads over other
+times once earlier days load, everything from the end of that night or fold
+stays in place.
+
+While the reader scrolls or has a finger on the strip, a change that would
+move what they see waits until the scroll rests: a scroll write can stop
+or fight touch momentum, as on iOS. Changes after the visible start, such as
+days loading at the end or a checked task, apply at once. Return a promise to
+have the timeline wait for it before it asks again, and set `busy` while a
+load runs.
 
 ### Scrolling
 
@@ -89,7 +112,10 @@ adds no touch handling. Sideways overscroll does not turn into history
 navigation. A mouse wheel scrolls a horizontal strip sideways only when
 nothing around it scrolls vertically, so the strip is the view's scroll
 area; inside a scrolling page the wheel scrolls the page, and Shift with the
-wheel scrolls the strip.
+wheel scrolls the strip. The timeline decides this once per wheel gesture. A
+wheel's notches glide; small steps, such as a trackpad's, follow at once.
+A vertical strip without a bounded height scrolls with the nearest scrolling
+area around it, which then keeps the reading position too.
 
 The `controller` callback receives `scrollToTime(time, { align })` and
 `scrollToNow()`, for example for a "Today" button. Scrolling is smooth unless
@@ -118,7 +144,10 @@ axis) move to the previous or next item, also across days. Page Up and Page
 Down go to the first item of the previous or next day, Home and End to the
 first or last item of the day, and T to the item happening now or next. Day
 and now jumps are announced. Focus scrolls only as far as needed. A
-description of these keys is attached to the region.
+description of these keys is attached to the region. When the focused item
+is drawn anew, moves behind a "+n" entry, or goes, focus stays in the
+timeline: on the item, on the "+n" entry that holds it, or on its nearest
+neighbour.
 
 ## Runtime
 
