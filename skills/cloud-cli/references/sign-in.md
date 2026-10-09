@@ -28,7 +28,7 @@ Waiting for approval…
 ✓ Signed in as Valentin Kolb (profile "default")
 ```
 
-The user opens the URL on a laptop or phone, signs in, checks that the code matches, and approves. `cld` polls until then and stores the login exactly like a browser login, including `--fd0` and the refresh token. The code expires after ten minutes; a denied or expired code exits with status 1 and stores nothing.
+The user opens the URL on a laptop or phone, signs in, checks that the code matches, and approves. The page then says the device is connected and the tab can be closed. `cld` polls until then and stores the login exactly like a browser login, including `--fd0` and the refresh token. The code expires after ten minutes; a denied or expired code exits with status 1 and stores nothing.
 
 As an agent on a headless box, run the command, show the user the URL and code, and wait. Do not ask for a password, session cookie, or API key instead. The user should approve only a code they expect; the approval page says so.
 

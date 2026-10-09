@@ -9,6 +9,7 @@
     "./cli": "./src/cli.ts"
   },
   "scripts": {
+    "test": "bun test --isolate --preload ../../scripts/fixtures/test-infra.ts --path-ignore-patterns '**/*.behavior.test.*'",
     "typecheck": "tsc -p tsconfig.json --noEmit --pretty false"
   },
   "dependencies": {
@@ -24,6 +25,7 @@
   },
   "devDependencies": {
     "@types/bun": "catalog:",
+    "bun-plugin-tailwind": "catalog:",
     "playwright": "catalog:",
     "typescript": "catalog:"
   },
