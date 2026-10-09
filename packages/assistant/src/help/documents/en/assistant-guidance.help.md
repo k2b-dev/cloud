@@ -41,7 +41,7 @@ You can also ask Assistant to create or improve a Skill. Cloud initially provide
 
 When a request looks like it will come back, for example because you say "again" or correct the format of a result a second time, Assistant may offer once to save the approach as a Skill. If you agree, it drafts the Skill from the chat: the steps, your corrections, and the output format, without names, amounts, or content from your attachments. The usual review shows the Skill before it is saved. If you decline, Assistant does not ask again in that chat. The offer needs Skill Creator; if you disabled it, Assistant does not offer.
 
-If you correct the result of a built-in or shared Skill, Assistant does not change that Skill for everyone unless you ask. If you correct its tone and **Use personalization in Assistant chats** is on, Assistant offers to remember the correction instead and suggests a short rule, such as "always write mails formally". A plain yes is not enough: send that rule back in your own words, and it remembers it for you.
+If you correct the tone of a draft, such as a mail that is too formal, and **Use personalization in Assistant chats** is on, Assistant offers to remember the correction and suggests a short rule, such as "always write mails formally". A plain yes is not enough: send that rule back in your own words, and it remembers it for you. If your correction already says "always" or "from now on", it remembers it right away. Assistant does not change a built-in or shared Skill for everyone unless you ask.
 
 Skills and Projects require sign-in. Share them with users, groups, service accounts, or all signed-in identities; public access is not supported.
 

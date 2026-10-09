@@ -5,7 +5,7 @@ section: AI
 order: 1050
 description: Give AI controlled access to chat files, shared Project context and Skills, and durable personal preferences.
 tags: [ai, files, projects, skills, memory]
-updated: 2026-10-08
+updated: 2026-10-09
 ---
 
 # Files, Projects, Skills, and personalization
@@ -296,12 +296,14 @@ that applies:
    the approach as a personal Skill.
 2. The user corrected a result that their own Skill shaped: it offers to add
    the correction to that Skill.
-3. The user corrected the tone of a result that a built-in or shared Skill
-   shaped: it offers to remember the correction as a preference. Because
+3. The user corrected the tone of a result, such as a mail that is too
+   formal, without stating a lasting rule: it offers to remember the
+   correction as a preference. This does not depend on a Skill. Because
    memory saves only text the user wrote in that turn, a plain yes cannot be
-   saved, so the model suggests a one-line rule the user can send back.
-   Built-in and shared Skills change for everyone, so they change only when
-   the user asks for that.
+   saved, so the model suggests a one-line rule the user can send back. A
+   correction with "always" or "from now on" is saved directly under the
+   memory rules. Built-in and shared Skills change for everyone, so they
+   change only when the user asks for that.
 4. The user says the request recurs ("again", "every week", "like last
    time", "always"), pastes a long reusable instruction, or a personalization
    workflow default covers it: it offers a Skill or a scheduled task.
@@ -322,6 +324,48 @@ question or waiting for approval, after a reply that already ended with an
 offer, or once the user declined or asked for no suggestions. Asking for a
 shorter draft is a correction, not a request for silence. Scheduled task runs
 do not get these rules.
+
+Cloud does not leave these cases to the model alone. At the start of a new
+followed turn, the server checks the user's message and the latest messages of
+the chat with fixed word lists in English and German. When one case fits, it
+adds one short turn instruction that starts with "Offer once at the end":
+
+- the user corrects the format of a delivered result, such as a table or
+  list, for the second time in a row, such as "Bitte als Tabelle" and then
+  "Fast. Fristen bitte als TT.MM., überfällige fett": a Skill offer;
+- the user corrects the tone of a mail draft in the previous reply, such as
+  "too stiff, write casually": an offer to remember the preference;
+- the user refers to earlier work by time, such as "like last week" or "wie
+  letztes Mal": a Skill offer if the model finds and reuses that work.
+
+The checks prefer missing a case to inventing one, because the instruction
+states the case as a fact. A correction is a short follow-up that names a
+format and points back at the result, such as "bitte als", "instead", "sort
+them by", or "make it bold". Questions, new tasks that name a format ("Create
+a sales report as a table", "Füg eine Spalte Telefon hinzu"), and edits that
+only got a short confirmation do not count. Messages with attached files or
+Cloud items start new work; the file names are not read as text. A tone
+correction needs a tone phrase such as "zu steif", "too formal", or
+"lockerer", and a request for a new mail is not one. "Wie immer" or "as usual"
+do not count as earlier work, because they are just as often thanks or small
+talk.
+
+The server adds no instruction when the previous reply ended with a question
+or an offer, after the user said no to one, when the message asks for only a
+short answer, when the user's messages, memories, or the organization or
+Project instructions ask for no suggestions, or when the offer needs
+`skill-creator` or the memory tool and the turn does not have it. A Skill the
+user selected for the turn suppresses Skill offers. The checks read at most
+one page of the current chat, about the last few turns, and only when the
+message alone could start a case; a decline or request older than that page
+is not seen. Messages the user sends while a turn runs count as part of that
+turn. Because word lists miss phrasings, the instruction itself repeats the
+limits: the model skips the offer when it ends with a question, waits for
+approval, or could not finish, when its previous reply already ended with an
+offer, when the user declined one in the chat, or when the user, their
+preferences, or instructions ask for no suggestions or only a short answer.
+Turns that continue after an approval and scheduled task runs get no
+instruction.
 
 After a yes to a Skill offer, the model loads `skill-creator` and drafts from
 the conversation. Its template first picks the lightest place: memory for a
@@ -518,13 +562,16 @@ Cloud composes the system prompt in this order:
    first when the turn allows it. Turns a person follows also get the
    visibility and suggestion rules below;
 2. Organization instructions;
-3. Optional turn-specific instructions such as retry style;
+3. Optional turn-specific instructions such as retry style or one offer
+   hint;
 4. The bounded readable Skill catalog;
 5. Project instructions;
 6. The Project context manifest as untrusted data;
 7. The bounded conversation file manifest as untrusted data;
-8. Relevant personal facts, preferences, and workflow defaults;
-9. The Cloud resource-link output rule.
+8. The Recent work summary as untrusted data, only when the user asks what
+   the Assistant can do;
+9. Relevant personal facts, preferences, and workflow defaults;
+10. The Cloud resource-link output rule.
 
 See [AI resources and access](/en/docs/ai/resources-and-access) for authorized
 domain context and [Tools and approvals](/en/docs/ai/tools-and-approvals) for
@@ -557,9 +604,19 @@ there either. The preview in **Assistant settings > System prompt** and
   answer. A request to shorten a draft does not count as that. It never
   searches data only to justify an offer. Organization, Project, and user
   instructions about suggestions take precedence. Asked what it can do, the
-  model first looks, where its tools allow it, at what the user already works
-  with, such as Spaces, recent chats, or files, leads with that, and leaves out
-  apps without data for them.
+  model leads with what the user already works with and leaves out apps
+  without data for them, such as mail without a mailbox. When the server
+  recognizes this question ("What can you do for me?", "Was kannst du für
+  mich tun?"), alone or after a greeting, it adds a **Recent work** section:
+  the number of the user's other active chats with up to five titles, pinned
+  chats first, and up to eight distinct Cloud items, such as Spaces or notes,
+  that tools used in those other chats. The titles are untrusted data. The
+  section holds only Assistant data: it does not show which apps have data
+  for the user, so the model still checks an unlisted app before featuring
+  it. A question that quotes this one, such as "Translate: What can you do?",
+  or that comes with an attached file does not get the section. Without it
+  the model first looks, where its tools allow it, at the user's Spaces,
+  recent chats, or files.
 
 Scheduled task runs keep the global rules and give their result without these
 sections. If the platform template fails to render, the minimal fallback prompt

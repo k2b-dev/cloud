@@ -71,6 +71,7 @@ import {
   aiTurnReasonFromThrown,
   rememberProviderErrors,
 } from "./turn-failure";
+import { type AiTurnGuidance, loadAiTurnGuidance } from "./turn-guidance";
 import { type AiTurnPolicyToolCall, applyAiTurnPolicy } from "./turn-policy";
 import { createTurnTimingRecorder, withDurableTurnTiming } from "./turn-timing";
 import type {
@@ -1148,13 +1149,43 @@ export class AiTurnExecutor {
       skillSubject,
       activeTools.some((tool) => tool.def.name === "load_skill"),
     );
-    const workingPlan = (await aiConversations.getConversation({ conversationId }))?.todoPlan;
+    const chat = await aiConversations.getConversation({ conversationId });
+    const workingPlan = chat?.todoPlan;
+    const skillCatalogOffered = activeTools.some((tool) => tool.def.name === "load_skill");
+    const skillCreatorAvailable = availableSkills.some((skill) => skill.name === "skill-creator");
+    // Offer hints and the recent-work summary only guide a fresh turn a person follows; a resumed
+    // attempt after an approval or a scheduled run gets neither.
+    let guidance: AiTurnGuidance = {};
+    if (isFresh && !config.background && defaultToolSource && user && chat) {
+      try {
+        guidance = await loadAiTurnGuidance(
+          {
+            chat,
+            turnId,
+            ownerUserId: user.id,
+            input: config.input,
+            instructions: [settings.globalInstructions, config.project?.instructions, memory?.text],
+            skillOffers: skillCatalogOffered && skillCreatorAvailable && loadedSkills.length === 0,
+            memoryOffers: memoryToolEnabled,
+            hasAttachments: Boolean(config.files?.attached.length),
+          },
+          aiConversations,
+        );
+      } catch (error) {
+        log.warn("AI turn guidance unavailable; continuing without it", {
+          conversationId,
+          turnId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
     const systemPrompt = composeAiSystemPrompt({
       globalInstructions: settings.globalInstructions,
       loadedSkills,
       turnInstructions: [
         material.systemPrompt,
         audioUnavailableInstruction,
+        guidance.offerHint,
         workingPlan
           ? `Current working plan (new todo_write results supersede this):\n${JSON.stringify({ todos: workingPlan.todos })}`
           : undefined,
@@ -1170,7 +1201,7 @@ export class AiTurnExecutor {
       project: config.project,
       files: config.files,
       projectToolEnabled,
-      skills: activeTools.some((tool) => tool.def.name === "load_skill") ? skillCatalog.skills : undefined,
+      skills: skillCatalogOffered ? skillCatalog.skills : undefined,
       omittedSkillCount: activeTools.some((tool) => tool.def.name === "search_skills") ? skillCatalog.omitted : 0,
       user,
       memoryEnabled: memoryActive,
@@ -1183,7 +1214,8 @@ export class AiTurnExecutor {
       timeZone,
       locale: promptLocale,
       interactive: !config.background,
-      skillCreatorAvailable: availableSkills.some((skill) => skill.name === "skill-creator"),
+      skillCreatorAvailable,
+      recentWork: guidance.recentWork,
     });
     // The turn policy counts the whole turn, including rounds that compaction archived.
     const turnMessages = await aiConversations.listTurnMessages({ conversationId, loopId: turnId, includeCompacted: true });

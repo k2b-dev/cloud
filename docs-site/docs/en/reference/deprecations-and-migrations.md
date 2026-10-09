@@ -10,6 +10,22 @@ updated: 2026-10-09
 
 # Deprecations and migrations
 
+## Assistant notices when an offer fits
+
+At the start of a followed turn, Cloud now checks the message and the latest
+messages of the chat for three offer cases: a second format correction in a
+row, a tone correction of a mail draft, and a reference to earlier work such
+as "like last week". When one fits, the turn gets one short instruction to
+offer a Skill or to remember the preference once at the end, so models that
+skip the general Suggestions rules still make the offer. The tone case no
+longer requires a Skill to have shaped the result. A question such as "What
+can you do for me?" adds a bounded summary of the user's other chats and of
+the Cloud items used in them; it holds only Assistant data, not which apps
+have data for the user. Suggestion limits, organization instructions, and a
+user's request for no suggestions still take precedence, and the instruction
+repeats them. No setting changes; scheduled task runs are unaffected. See
+[Turn recurring work into a Skill](/en/docs/ai/files-projects-and-personalization#turn-recurring-work-into-a-skill).
+
 ## Security fix: the gateway keeps requests on the application's host
 
 This release contains a security fix in the gateway. Update promptly.
