@@ -229,7 +229,18 @@ order:
    steps between them as groups, with reasoning inside its group. Every step
    stays there, including results and actions, so input and output remain
    reachable. Failed steps say "failed" in muted text; a rejected approval says
-   "rejected".
+   "rejected". An app check (`code_check`) reads "Checking the app" while it
+   runs, and its row names the outcome in words with its own icon: "passed",
+   "3 findings", or "not passed", with warnings counted separately, such as
+   "passed · 2 warnings". When the host provides `fileUrl`, an expanded
+   `view_image` step of a chat image shows that image below its input and
+   output, as a small thumbnail with a fixed box that loads lazily through the
+   chat's file route, so it shows only what the reader may open and nothing
+   above it moves when the result arrives. Its alt text is the start of what
+   the step saw, the image description or the answer to its prompt. With the
+   host's `onOpenFile`, the thumbnail is a button that opens the file larger;
+   its name is that action, and the alt text describes it. Without `fileUrl`,
+   such as in a background run transcript, the step shows no thumbnail.
 2. **Results.** Presented files, `code_present` apps, cards, and
    capability tables in the order they were made. A later result with the same
    target, the same file path for `present` or the same title for
@@ -326,7 +337,10 @@ Capability titles and application icons come from the saved presentation.
 Approval prompts retain their application identity and explicit decision
 controls. Surveys, cards, presented files, editors, and capability tables remain
 visible results. The saved presentation remains readable when an application
-is temporarily unavailable. Ordinary Nessi tools use generic tool labels.
+is temporarily unavailable. Cloud's built-in tools, including every Studio
+tool, show a name in the reader's language, such as "App check" or
+"App-Prüfung"; a test fails when a built-in tool has no English or German name.
+Other tools without a presentation show their tool name in words.
 
 A successful result with valid `presentation.kind: "table"` renders inline,
 outside tool summaries. Rendering depends on the result itself, including in

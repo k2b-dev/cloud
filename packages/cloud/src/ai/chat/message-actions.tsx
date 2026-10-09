@@ -218,7 +218,7 @@ const openAssistantResponseInfo = (entries: AiStoredMessage[], locale: string) =
                   {(tool) => (
                     <li>
                       <i class={aiToolIcon(tool.name)} aria-hidden="true" />
-                      {displayToolName(tool.name)}
+                      {displayToolName(tool.name, locale)}
                       <Show when={tool.count > 1}>
                         <span class="text-dimmed tabular-nums">×{tool.count}</span>
                       </Show>

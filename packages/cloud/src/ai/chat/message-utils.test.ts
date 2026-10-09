@@ -102,9 +102,9 @@ describe("AI usage selectors", () => {
 
 describe("AI tool icons", () => {
   test("humanizes technical fallback names without metadata", () => {
-    expect(displayToolName("search_tools")).toBe("Search tools");
-    expect(displayToolName("custom_tool")).toBe("Custom tool");
-    expect(displayToolName("local_bash")).toBe("Local Bash");
+    expect(displayToolName("search_tools", "en")).toBe("Search tools");
+    expect(displayToolName("custom_tool", "en")).toBe("Custom tool");
+    expect(displayToolName("local_bash", "en")).toBe("Local Bash");
   });
 
   test.each([

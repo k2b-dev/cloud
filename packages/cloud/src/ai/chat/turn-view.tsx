@@ -127,7 +127,8 @@ const stepPhrase = (block: AiTurnBlock | null, t: Messages, withTargets: boolean
   if (["code_write", "code_create", "code_update", "code_fork", "code_remove", "code_restore"].includes(name))
     return withTarget(t.stepWritingCode);
   if (["code_run", "code_action", "code_sql"].includes(name)) return withTarget(t.stepRunningCode);
-  if (name === "code_inspect") return t.stepCheckingApp;
+  if (name === "code_check") return t.stepCheckingApp;
+  if (name === "code_inspect") return t.stepCheckingRun;
   if (name.startsWith("code_")) return t.stepCode;
   if (["markdown_to_pdf", "html_to_pdf"].includes(name)) return withTarget(t.stepPdf);
   if (["load_skill", "load_tools", "search_tools", "list_apps"].includes(name)) return t.stepLoading;
@@ -369,6 +370,7 @@ function ResultLinks(props: { links: Record<string, unknown>[] }) {
 
 /** The summary and links of a table result, unless its receipt in place 4 already shows them. */
 function CapabilityResultRow(props: { block: ToolBlock }) {
+  const locale = useLocale();
   const block = () => props.block;
   const summary = () => resultSummary(block());
   const links = () => resultLinks(block());
@@ -377,7 +379,7 @@ function CapabilityResultRow(props: { block: ToolBlock }) {
       <Chat.Activity
         icon={aiToolIcon(block().name, block().presentation?.appIcon)}
         accent={block().presentation?.appAccent}
-        label={summary() || (block().presentation?.title ?? displayToolName(block().name))}
+        label={summary() || (block().presentation?.title ?? displayToolName(block().name, locale()))}
         trailing={links().length > 0 ? <ResultLinks links={links()} /> : undefined}
       />
     </Show>
@@ -385,6 +387,7 @@ function CapabilityResultRow(props: { block: ToolBlock }) {
 }
 
 function AiTurnResultView(props: { result: Accessor<AiTurnResult | undefined>; receipt: Accessor<boolean> }) {
+  const locale = useLocale();
   const actions = useAiChatActions();
   const block = () => props.result()?.block;
   return (
@@ -414,7 +417,10 @@ function AiTurnResultView(props: { result: Accessor<AiTurnResult | undefined>; r
             <Show when={!props.receipt()}>
               <CapabilityResultRow block={current()} />
             </Show>
-            <CapabilityTablePreview result={current().result} label={current().presentation?.title ?? displayToolName(current().name)} />
+            <CapabilityTablePreview
+              result={current().result}
+              label={current().presentation?.title ?? displayToolName(current().name, locale())}
+            />
           </Match>
         </Switch>
       )}
@@ -426,7 +432,7 @@ function AiReceipt(props: { action: AiTurnAction; stopped: boolean }) {
   const locale = useLocale();
   const t = () => aiChatMessages(locale());
   const block = () => props.action.block;
-  const title = () => block().presentation?.title ?? displayToolName(block().name);
+  const title = () => block().presentation?.title ?? displayToolName(block().name, locale());
   const links = () => (props.action.state === "done" ? resultLinks(block()) : []);
   const label = () => {
     const state = props.action.state;
@@ -465,7 +471,9 @@ function AiTurnActionView(props: { action: Accessor<AiTurnAction | undefined>; t
       const current = action();
       if (next !== "open" || previous === "open" || !isLive(props.phase) || current?.block.status !== "awaiting_approval") return;
       announce(
-        aiChatMessages(locale()).approvalNeeded({ title: current.block.presentation?.title ?? displayToolName(current.block.name) }),
+        aiChatMessages(locale()).approvalNeeded({
+          title: current.block.presentation?.title ?? displayToolName(current.block.name, locale()),
+        }),
       );
     }),
   );
@@ -500,7 +508,7 @@ function AiTurnActionView(props: { action: Accessor<AiTurnAction | undefined>; t
               <Switch
                 fallback={
                   <Chat.Activity
-                    label={current().block.presentation?.title ?? displayToolName(current().block.name)}
+                    label={current().block.presentation?.title ?? displayToolName(current().block.name, locale())}
                     icon={aiToolIcon(current().block.name)}
                     busy={current().block.status === "awaiting_client"}
                   />
@@ -516,7 +524,7 @@ function AiTurnActionView(props: { action: Accessor<AiTurnAction | undefined>; t
             </Match>
             <Match when={current().state === "running"}>
               <Chat.Activity
-                label={current().block.presentation?.title ?? displayToolName(current().block.name)}
+                label={current().block.presentation?.title ?? displayToolName(current().block.name, locale())}
                 icon={aiToolIcon(current().block.name, current().block.presentation?.appIcon)}
                 accent={current().block.presentation?.appAccent}
                 busy

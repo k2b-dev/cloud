@@ -106,6 +106,7 @@ function SearchToolsView(props: { block: ToolBlock }) {
   const result = () => (isRecord(props.block.result) ? props.block.result : {});
   const tools = () => records(result().tools);
   const t = useMessages();
+  const locale = useLocale();
   const query = () => text(args().query) || t().tools;
   return (
     <CompletedActivity block={props.block} label={t().searchTools({ query: query() })} description={t().found({ count: tools().length })}>
@@ -115,7 +116,8 @@ function SearchToolsView(props: { block: ToolBlock }) {
             {(tool) => (
               <ResultRow
                 icon={tool.kind === "action" ? "ti-bolt" : tool.kind === "query" ? "ti-search" : aiToolIcon(text(tool.name))}
-                title={text(tool.title) || displayToolName(text(tool.name))}
+                // The catalog titles a built-in tool in English, so the reader's language names it; a capability brings its own title.
+                title={tool.kind !== "builtin" && text(tool.title) ? text(tool.title) : displayToolName(text(tool.name), locale())}
                 description={text(tool.description)}
                 meta={text(tool.appId) || text(tool.kind)}
               />

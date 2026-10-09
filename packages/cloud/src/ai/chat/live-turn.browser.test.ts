@@ -55,6 +55,15 @@ beforeAll(async () => {
     fetch: (request) => {
       const url = new URL(request.url);
       if (url.pathname === "/harness.js") return new Response(harness, { headers: { "content-type": "text/javascript" } });
+      // A tall screenshot that arrives late, so a thumbnail that sized itself by its image would move the rows below it.
+      if (url.pathname === "/files")
+        return Bun.sleep(400).then(
+          () =>
+            new Response(
+              '<svg xmlns="http://www.w3.org/2000/svg" width="390" height="1200"><rect width="390" height="1200" fill="#e4e4e7"/><rect x="24" y="24" width="342" height="64" fill="#a1a1aa"/></svg>',
+              { headers: { "content-type": "image/svg+xml" } },
+            ),
+        );
       if (url.pathname !== "/") return new Response(null, { status: 404 });
       const lang = url.searchParams.get("lang") ?? "en";
       const theme = url.searchParams.get("theme") ?? "light";
@@ -335,6 +344,125 @@ for (const view of [
         expect(await page.evaluate(() => (window as unknown as { continued: string[] }).continued)).toEqual([
           de ? "Mach an der Stelle weiter, an der du aufgehört hast." : "Continue where you left off.",
         ]);
+      } finally {
+        await context.close();
+      }
+    }, 30_000);
+
+for (const view of [
+  { name: "desktop", width: 1280, height: 800, touch: false },
+  { name: "phone", width: 390, height: 844, touch: true },
+] as const)
+  for (const theme of ["light", "dark"] as const)
+    test(`an app check shows its outcome and the screenshot it looked at without moving the steps (${view.name}, ${theme})`, async () => {
+      const context = await browser.newContext({
+        viewport: { width: view.width, height: view.height },
+        isMobile: view.touch,
+        hasTouch: view.touch,
+        reducedMotion: "reduce",
+      });
+      try {
+        const page = await context.newPage();
+        await page.clock.setFixedTime(new Date("2026-10-07T10:00:00Z"));
+        const de = theme === "dark";
+        await page.goto(`http://127.0.0.1:${server.port}/?lang=${de ? "de" : "en"}&theme=${theme}`);
+        const check = { id: "tool-check", kind: "tool" as const, callId: "check", name: "code_check", args: { id: "budget" } };
+        const issues = [
+          { severity: "error", kind: "layout", message: "Row is misaligned" },
+          { severity: "warning", kind: "layout", message: "Value is cut off" },
+        ];
+        await emit(page, { ...base, seq: 1, type: "turn_started", modelProfileId: "m", providerModel: "m", blocks: [] });
+        await emit(page, { ...base, seq: 2, type: "block_set", block: { ...check, status: "running" } });
+        expect(await page.locator(".ai-turn-work summary").innerText()).toContain(de ? "Prüft die App" : "Checking the app");
+        await page.locator(".ai-turn-work > summary").click();
+        await frames(page);
+        // Without its shimmer, a busy label keeps a visible text colour, in the work line and in the steps below it.
+        const fills = await page.$$eval(".ai-turn-work strong", (labels) =>
+          labels.map((label) => getComputedStyle(label).webkitTextFillColor),
+        );
+        expect(fills.length).toBeGreaterThanOrEqual(2);
+        expect(fills).not.toContain("rgba(0, 0, 0, 0)");
+        const before = await layout(page);
+
+        // The outcome arrives in the step's own row: in words and with its own icon, and nothing moves.
+        await emit(page, {
+          ...base,
+          seq: 3,
+          type: "block_set",
+          block: { ...check, status: "completed", result: { passed: false, issues } },
+        });
+        const checked = await layout(page);
+        expect(checked.nodes.map(({ box }) => box)).toEqual(before.nodes.map(({ box }) => box));
+        const row = page.locator(".ai-turn-steps .k2b-chat-activity").first();
+        expect(await row.innerText()).toContain(de ? "App-Prüfung" : "App check");
+        expect(await row.innerText()).toContain(de ? "1 Befund · 1 Warnung" : "1 finding · 1 warning");
+        expect(await row.locator(".ti-alert-triangle").count()).toBe(1);
+        expect(checked.overflowX).toBeLessThanOrEqual(0);
+
+        // The screenshot step shows the image in a box that is fixed before the image arrives.
+        const path = "/checks/3f9a/desktop.png";
+        await emit(page, {
+          ...base,
+          seq: 4,
+          type: "block_delta",
+          blockId: "text-1",
+          blockKind: "text",
+          delta: "Looking at the screenshot.",
+        });
+        const view = { id: "tool-view", kind: "tool" as const, callId: "view", name: "view_image", args: { path } };
+        await emit(page, { ...base, seq: 5, type: "block_set", block: { ...view, status: "running" } });
+        const label = de ? "Bild ansehen" : "View image";
+        // While the turn runs, both steps share one group; the step is the innermost activity that names it.
+        await page.locator(".ai-turn-steps .k2b-chat-activity").first().locator("summary").first().click();
+        const step = page.locator(".ai-turn-steps .k2b-chat-activity", { hasText: label }).last();
+        await step.locator("summary").click();
+        await frames(page);
+        // A reader who opened the step while it ran keeps the step and its input in place when the image arrives.
+        const opened = async () => {
+          const { nodes } = await layout(page);
+          const index = nodes.findLastIndex((node) => node.text.includes(label));
+          const region = await step.getByRole("region").evaluate((node) => {
+            const content = document.querySelector(".k2b-chat-timeline__content")!.getBoundingClientRect();
+            const box = node.getBoundingClientRect();
+            return [box.left - content.left, box.top - content.top].map(Math.round);
+          });
+          return { above: nodes.slice(0, index + 1).map(({ box }) => box.slice(0, 2)), region };
+        };
+        const running = await opened();
+        await emit(page, {
+          ...base,
+          seq: 6,
+          type: "block_set",
+          block: {
+            ...view,
+            status: "completed",
+            result: { path, mediaType: "image/png", description: "A budget table whose totals row sits lower than its label." },
+          },
+        });
+        expect(await opened()).toEqual(running);
+        await emit(page, { ...base, seq: 7, type: "block_delta", blockId: "text-2", blockKind: "text", delta: "I fix the totals row." });
+        const thumbnail = page.getByRole("button", { name: de ? "Bild desktop.png öffnen" : "Open image desktop.png" });
+        await thumbnail.waitFor();
+        const loading = await layout(page);
+        const size = await thumbnail.boundingBox();
+        await page.waitForFunction(() => {
+          const image = document.querySelector<HTMLImageElement>(".ai-step-image img");
+          return Boolean(image?.complete && image.naturalWidth > 0);
+        });
+        await frames(page);
+        expect((await layout(page)).nodes).toEqual(loading.nodes);
+        expect(await thumbnail.boundingBox()).toEqual(size);
+        expect(size!.width).toBeLessThanOrEqual(192);
+        expect(size!.height).toBeLessThanOrEqual(128);
+        expect(await thumbnail.locator("img").getAttribute("alt")).toBe("A budget table whose totals row sits lower than its label.");
+        // The button is named for opening the image and described by what the step saw in it.
+        expect(
+          await thumbnail.evaluate((button) => document.getElementById(button.getAttribute("aria-describedby") ?? "")?.getAttribute("alt")),
+        ).toBe("A budget table whose totals row sits lower than its label.");
+        expect((await layout(page)).overflowX).toBeLessThanOrEqual(0);
+
+        await thumbnail.click();
+        expect(await page.evaluate(() => (window as unknown as { opened: string[] }).opened)).toEqual([path]);
       } finally {
         await context.close();
       }

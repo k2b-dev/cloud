@@ -3,12 +3,14 @@ import { fileIcons } from "@k2b/stdlib";
 import { formatBytes as sharedFormatBytes } from "../../shared/format";
 import { type AiAttachmentRef, parseAiAttachmentMarkers } from "../attachments";
 import { AI_AUDIO_EXTENSIONS } from "../audio-format";
+import { aiProjectFilePathFromMount, aiSkillFilePathFromMount } from "../file-mount";
 import { AI_IMAGE_INPUT_MAX_BYTES, AI_TURN_ATTACHMENT_MAX_ITEMS } from "../limits";
 import { type AiResourceMarker, parseAiResourceMarker } from "../resource-markers";
 import { assistantVisibleTextFromMessage } from "../timeline";
 import type { AiStoredMessage, AiUserContentPart } from "../types";
 import { AI_IMAGE_MEDIA_TYPES, isAiImageMediaType } from "../types";
 import { aiChatMessages } from "./messages";
+import { aiBuiltinToolName } from "./tool-names";
 
 type AssistantToolResultMessage = Extract<Message, { role: "tool_result" }>;
 
@@ -313,11 +315,10 @@ export const isSurveyToolName = (name: string) => name === "survey" || name === 
 
 export const isTextEditorToolName = (name: string) => name === "text_editor" || name === "cloud_text_editor";
 
-export const displayToolName = (name: string) => {
-  if (isCardToolName(name)) return "card";
-  if (isSurveyToolName(name)) return "survey";
-  if (isTextEditorToolName(name)) return "text editor";
-  if (name === "local_bash") return "Local Bash";
+/** A tool's name for people: the localized name of a built-in tool, otherwise its name in words. */
+export const displayToolName = (name: string, locale: string) => {
+  const builtin = aiBuiltinToolName(name, locale);
+  if (builtin) return builtin;
   const words = name.split("_").filter(Boolean).join(" ");
   return `${words.slice(0, 1).toUpperCase()}${words.slice(1)}`;
 };
@@ -341,6 +342,7 @@ const BUILT_IN_TOOL_ICONS = new Map<string, string>([
   ["web_search", "ti ti-search"],
   ["web_extract", "ti ti-world-download"],
   ["view_image", "ti ti-photo-spark"],
+  ["code_check", "ti ti-checklist"],
   ["memory", "ti ti-brain"],
   ["search_project", "ti ti-folder-search"],
   ["read_project_knowledge", "ti ti-notebook"],
@@ -353,6 +355,25 @@ const BUILT_IN_TOOL_ICONS = new Map<string, string>([
   ["list_apps", "ti ti-apps"],
   ["read_cloud_resource", "ti ti-ai-gateway"],
 ]);
+
+/** What an app check found: errors stop it from passing, warnings are counted separately. */
+export type AiCodeCheckOutcome = { passed: boolean; errors: number; warnings: number };
+
+export const codeCheckOutcome = (name: string, result: unknown): AiCodeCheckOutcome | null => {
+  if (name !== "code_check" || !isRecord(result) || typeof result.passed !== "boolean") return null;
+  const issues = Array.isArray(result.issues) ? result.issues.filter(isRecord) : [];
+  const warnings = issues.filter((issue) => issue.severity === "warning").length;
+  return { passed: result.passed, errors: issues.length - warnings, warnings };
+};
+
+/** The chat image a view_image call looked at. Project and skill files are not chat files and have no preview here. */
+export const viewedChatImage = (name: string, result: unknown): { path: string; description: string } | null => {
+  if (name !== "view_image" || !isRecord(result)) return null;
+  const { path, mediaType, description } = result;
+  if (typeof path !== "string" || typeof mediaType !== "string" || !isAiImageMediaType(mediaType)) return null;
+  if (aiProjectFilePathFromMount(path) !== null || aiSkillFilePathFromMount(path) !== null) return null;
+  return { path, description: typeof description === "string" ? description.trim() : "" };
+};
 
 export const aiToolIcon = (name: string, appIcon?: string | null): string => {
   if (appIcon) return appIcon;

@@ -10593,8 +10593,9 @@
 @media (prefers-reduced-motion: reduce), (forced-colors: active) {
   .k2b-ui .k2b-chat-composer__loading strong { animation: none; background-image: none; -webkit-text-fill-color: currentColor; }
   .k2b-ui .k2b-chat-composer__loading .k2b-spin { animation: none; }
-  .k2b-ui .k2b-chat-activity[data-busy="true"] .k2b-chat-activity__leading,
-  .k2b-ui .k2b-chat-activity[data-busy="true"] .k2b-chat-activity__copy strong { -webkit-text-fill-color: currentColor; }
+  /* As specific as the shimmer rule it undoes, or a busy label stays transparent and disappears. */
+  .k2b-ui .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="danger"]) .k2b-chat-activity__leading,
+  .k2b-ui .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="danger"]) .k2b-chat-activity__copy strong { -webkit-text-fill-color: currentColor; }
 }
 
 .k2b-ui .k2b-chat-tasks { border: 1px solid var(--k2b-border); border-radius: 0.75rem; overflow: hidden; }

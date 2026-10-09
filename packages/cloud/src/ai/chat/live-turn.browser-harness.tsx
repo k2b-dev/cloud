@@ -10,14 +10,17 @@ import { AiChatActionsProvider, createAiChatTimeline } from "./presentation";
  * The live chat timeline for a browser test, folded from wire events like the
  * controller does. `window.emit(event)` applies one event,
  * `window.steer(text)` appends a pending steer as the controller does,
- * `window.reconnect(on)` sets whether the stream reconnects, and
- * `window.continued` lists the messages that **Continue** sent.
+ * `window.reconnect(on)` sets whether the stream reconnects,
+ * `window.continued` lists the messages that **Continue** sent, and
+ * `window.opened` lists the chat files the timeline opened. Chat files load from `/files?path=`.
  */
 const [state, setState] = createStore(emptyProjection());
 const [reconnecting, setReconnecting] = createSignal(false);
 const continued: string[] = [];
+const opened: string[] = [];
 Object.assign(window, {
   continued,
+  opened,
   reconnect: (on: boolean) => setReconnecting(on),
   emit: (event: AiWireEvent) => setState(reconcile(reduceProjection(state, event), { key: "id", merge: true })),
   steer: (text: string) =>
@@ -32,7 +35,13 @@ root.style.cssText = "display: flex; flex-direction: column; height: 100dvh; max
 document.body.append(root);
 render(
   () => (
-    <AiChatActionsProvider actions={{ onContinueTurn: (message) => void continued.push(message) }}>
+    <AiChatActionsProvider
+      actions={{
+        onContinueTurn: (message) => void continued.push(message),
+        fileUrl: (path) => `/files?path=${encodeURIComponent(path)}`,
+        onOpenFile: (path) => void opened.push(path),
+      }}
+    >
       {(() => {
         const items = createAiChatTimeline({
           messages: createMemo(() => visibleMessages(state)),
