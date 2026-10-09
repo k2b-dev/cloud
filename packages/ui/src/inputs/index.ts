@@ -79,10 +79,14 @@ export type { ChoiceAppearance, SelectGridSize, SelectGroup, SelectOption, Selec
 export { Select } from "./Select";
 export type { SelectChipOption, SelectChipProps } from "./SelectChip";
 export { SelectChip } from "./SelectChip";
+export type { SignatureInputProps } from "./SignatureInput";
+export { SignatureInput } from "./SignatureInput";
 export type { IconInputProps, IconOption } from "./SpecialInputs";
 export { IconInput } from "./SpecialInputs";
 export type { SwitchProps } from "./Switch";
 export { Switch } from "./Switch";
+export type { SignaturePngOptions, SignatureValue } from "./signature";
+export { signatureToPng } from "./signature";
 export type { TagEditorItem, TagEditorLabels, TagEditorProps, TagEditorValue } from "./TagEditor";
 export { TagEditor } from "./TagEditor";
 export type { TagsInputProps } from "./TagsInput";
