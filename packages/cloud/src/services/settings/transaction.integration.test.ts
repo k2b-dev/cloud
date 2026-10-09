@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
 import { sql } from "bun";
+import { tinyJpeg, withCameraMetadata } from "../../../../../scripts/fixtures/image-metadata";
 import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
+import { decryptValue } from "./crypto";
 import { registerSettings } from "./defaults";
 import * as settings from "./index";
 
@@ -24,6 +26,23 @@ const rowFor = async (key: string) => {
 };
 
 suite("settings writes inside a caller's transaction", () => {
+  test("inline image settings lose metadata before encryption; invalid containers cannot be written", async () => {
+    const key = probeKey();
+    registerSettings([{ key, kind: "image", default: "", label: "Photo probe", description: "Test only.", group: "test" }]);
+    try {
+      const jpeg = await tinyJpeg();
+      const dataUrl = (bytes: Uint8Array) => `data:image/jpeg;base64,${Buffer.from(bytes).toString("base64")}`;
+      await sql.begin((tx) => settings.set(key, dataUrl(withCameraMetadata(jpeg, 1)), tx));
+      const [row] = await sql<{ value: string }[]>`SELECT value FROM settings.entries WHERE key=${key}`;
+      expect(await decryptValue(row!.value)).toBe(dataUrl(jpeg));
+      await expect(sql.begin((tx) => settings.set(key, dataUrl(new Uint8Array([255, 216, 255, 219, 0])), tx))).rejects.toMatchObject({
+        status: 422,
+      });
+    } finally {
+      await sql`DELETE FROM settings.entries WHERE key=${key}`;
+    }
+  });
+
   test("a later failure rolls the earlier write back", async () => {
     const key = probeKey();
     registerSettings([{ key, kind: "string", default: "", label: "Transaction probe", description: "Test only.", group: "test" }]);

@@ -4,6 +4,7 @@ const catalog = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      malformedImage: "This image could not be read. Export it again or choose another file.",
       invalidRequest: "The Spaces request is invalid",
       resourceNotFound: "The requested Spaces resource was not found",
       conflictingChange: "The Spaces change conflicts with the current state",
@@ -198,6 +199,7 @@ const catalog = i18n.define({
       starterReview: "Review",
     },
     de: {
+      malformedImage: "Dieses Bild konnte nicht gelesen werden. Exportiere es erneut oder wähle eine andere Datei.",
       invalidRequest: "Die Spaces-Anfrage ist ungültig",
       resourceNotFound: "Die angeforderte Spaces-Ressource wurde nicht gefunden",
       conflictingChange: "Die Spaces-Änderung steht im Konflikt mit dem aktuellen Stand",

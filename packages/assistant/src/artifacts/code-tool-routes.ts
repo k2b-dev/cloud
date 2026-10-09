@@ -1,5 +1,6 @@
 import { aiConversations, CODE_CAPABILITY_TOKEN_HEADER, CODE_SOURCE_TOOLS } from "@k2b/cloud/ai";
 import { type AuthContext, getLocale, getTimeZone, requireInvocation } from "@k2b/cloud/server";
+import { ImageMetadataError } from "@k2b/cloud/services/image-metadata";
 import { readThemeFromCookieHeader } from "@k2b/cloud/shared";
 import { ok } from "@k2b/stdlib";
 import { Hono } from "hono";
@@ -10,6 +11,7 @@ import { artifactCodeHandlers, type CodeToolContext } from "./code-tools";
 import { LIMITS } from "./contracts";
 
 export const codeToolRoutes = new Hono<AuthContext>().use("*", bodyLimit({ maxSize: LIMITS.rpcBytes })).onError((error, c) => {
+  if (error instanceof ImageMetadataError) return c.json({ ok: false, error: { code: error.code, message: error.message } }, 422);
   if (error instanceof z.ZodError) return c.json({ ok: false, error: { code: "INVALID_INPUT", message: "Invalid code tool input." } }, 400);
   console.error("Assistant code tool failed", error);
   return c.json(

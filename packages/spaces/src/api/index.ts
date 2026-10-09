@@ -13,6 +13,7 @@ import {
   v,
 } from "@k2b/cloud/server";
 import { coreSettings, isStandaloneServiceAccountKind } from "@k2b/cloud/services";
+import { ImageMetadataError } from "@k2b/cloud/services/image-metadata";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -998,6 +999,7 @@ const app = new Hono<AuthContext>()
         404: jsonResponse(ErrorResponseSchema, "Task not found"),
         409: jsonResponse(ErrorResponseSchema, "Attachment limit reached"),
         413: jsonResponse(ErrorResponseSchema, "File too large"),
+        422: jsonResponse(ErrorResponseSchema, "Malformed image container or EXIF"),
       },
     }),
     bodyLimit({
@@ -1018,17 +1020,25 @@ const app = new Hono<AuthContext>()
       if (!(file instanceof File)) return respond(c, fail(err.badInput("Missing 'file' field")));
       if (file.size > MAX_TASK_ATTACHMENT_SIZE_BYTES) return attachmentTooLarge(c);
 
-      return respond(
-        c,
-        spacesService.item.attachments.upload({
-          itemId: item.data.id,
-          spaceId: access.internalId!,
-          filename: file.name || "untitled",
-          mimeType: file.type || "application/octet-stream",
-          content: new Uint8Array(await file.arrayBuffer()),
-          userId: access.user?.id ?? null,
-        }),
-      );
+      try {
+        return await respond(
+          c,
+          spacesService.item.attachments.upload({
+            itemId: item.data.id,
+            spaceId: access.internalId!,
+            filename: file.name || "untitled",
+            mimeType: file.type || "application/octet-stream",
+            content: new Uint8Array(await file.arrayBuffer()),
+            userId: access.user?.id ?? null,
+          }),
+        );
+      } catch (error) {
+        if (error instanceof ImageMetadataError) {
+          c.header("Content-Language", getLocale(c));
+          return respond(c, { ok: false, error: spacesMessages(getLocale(c)).malformedImage, status: 422, code: error.code });
+        }
+        throw error;
+      }
     },
   )
   .get(

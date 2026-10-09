@@ -3,7 +3,9 @@ import { z } from "zod";
 import { getCapability } from "../_internal/registry";
 import { CloudResourceRefSchema, cloudResourceRefAppId, resolveCapabilityResourceReader } from "../contracts/capabilities";
 import { AuthenticatedPrincipalSchema } from "../contracts/shared";
-import { type AuthContext, auth, err, fail, ok, rateLimit, respond, v } from "../server";
+import { type AuthContext, auth, err, fail, getLocale, ok, rateLimit, respond, v } from "../server";
+import { ImageMetadataError } from "../services/image-metadata";
+import { aiChatMessages } from "./chat/messages";
 import { decodeAiFileContent } from "./files-store";
 import {
   AI_PROJECT_DESCRIPTION_MAX_CHARS,
@@ -188,6 +190,8 @@ const buildAiProjectsRoutes = (dependencies: AiProjectsRouteDependencies = {}) =
           : null;
         return file ? respond(c, ok({ file: publicFile(file, project!.shortId) }), 201) : notFound(c);
       } catch (error) {
+        if (error instanceof ImageMetadataError)
+          return respond(c, { ok: false, error: aiChatMessages(getLocale(c)).malformedImage, status: 422, code: error.code });
         return respond(c, fail(err.badInput(error instanceof Error ? error.message : "Invalid project file.")));
       }
     })

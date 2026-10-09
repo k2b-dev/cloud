@@ -5,6 +5,7 @@
  * and needs a typed client without depending on the core app package. The
  * core app mounts it under `/api/admin/core/settings`.
  */
+
 import { sql } from "bun";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
@@ -20,13 +21,19 @@ import {
   splitAiModelAccess,
 } from "../ai/model-access";
 import { listAiRequestHeaderNames, planAiProfileRequestHeaders, storeAiRequestHeaderPlan } from "../ai/request-headers";
-import { parseAiModelProfiles, planAiProfileCredentials, validateAiSettingsConfiguration } from "../ai/settings";
+import {
+  parseAiModelProfiles,
+  planAiProfileCredentials,
+  prepareAiModelProfileImages,
+  validateAiSettingsConfiguration,
+} from "../ai/settings";
 import { type AiSettingsIssueWithMessage, aiSettingsNotSavedMessage, describeAiSettingsIssues } from "../ai/settings-messages";
 import { type AuthContext, auth, getLocale, jsonResponse, requiresAdmin, v } from "../server";
 import { settingsDeleteLegacyKeys, settingsListLegacyKeys } from "../services";
 import { readAccountCategoryPolicy } from "../services/account-category-policy";
 import { audit } from "../services/audit";
 import { validateFreeIpaCaCert } from "../services/freeipa-config";
+import { ImageMetadataError } from "../services/image-metadata";
 import { testFreeIpaConnection } from "../services/ipa/connection";
 import { GotenbergRenderError, testGotenberg } from "../services/pdf";
 import * as settings from "../services/settings";
@@ -363,6 +370,13 @@ const app = new Hono<AuthContext>()
     let accessChanges: AiModelAccessChange[] = [];
     if (aiSplit) {
       try {
+        aiSplit.profilesJson = prepareAiModelProfileImages(aiSplit.profilesJson);
+      } catch (error) {
+        if (error instanceof ImageMetadataError)
+          return c.json({ message: error.message, code: error.code, errors: { [AI_PROFILES_KEY]: error.message } }, 422);
+        throw error;
+      }
+      try {
         const split = splitAiModelAccess(aiSplit.profilesJson);
         aiSplit.profilesJson = split.profilesJson;
         accessChanges = split.changes;
@@ -460,6 +474,7 @@ const app = new Hono<AuthContext>()
         }
       });
     } catch (error) {
+      if (error instanceof ImageMetadataError) return c.json({ message: error.message, code: error.code, errors: fieldErrors }, 422);
       if (error instanceof AiModelAccessConflict || error instanceof AiModelAccessInvalid) {
         return c.json(
           { message: error.message, errors: { [AI_PROFILES_KEY]: error.message } },

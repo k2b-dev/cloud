@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { sql } from "bun";
 import { MAX_AVATAR_BYTES, MAX_AVATAR_DATA_URL_LENGTH } from "../../contracts/profile";
 import type { MutationResult } from "../../contracts/shared";
+import { stripImageMetadata } from "../image-metadata";
 
 export { MAX_AVATAR_BYTES, MAX_AVATAR_DATA_URL_LENGTH } from "../../contracts/profile";
 
@@ -95,10 +96,12 @@ export const setAvatar = async (params: { id: string; dataUrl: string }): Promis
   const parsed = parseAvatarDataUrl(params.dataUrl);
   if (!parsed.ok) return parsed;
 
+  const bytes = Buffer.from(stripImageMetadata(parsed.data.bytes));
+  const dataUrl = `data:${parsed.data.contentType};base64,${bytes.toString("base64")}`;
   const rows = await sql<{ avatar_hash: string }[]>`
     UPDATE auth.users
-    SET avatar_data_url = ${parsed.data.dataUrl},
-        avatar_hash = ${parsed.data.hash}
+    SET avatar_data_url = ${dataUrl},
+        avatar_hash = ${hashAvatar(dataUrl)}
     WHERE id = ${params.id}::uuid
     RETURNING avatar_hash
   `;

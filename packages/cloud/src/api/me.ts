@@ -438,6 +438,7 @@ const app = new Hono<AuthContext>()
         200: jsonResponse(UpdateAvatarResponseSchema, "Avatar updated"),
         400: jsonResponse(ErrorResponseSchema, "Failed to update avatar"),
         401: jsonResponse(ErrorResponseSchema, "Authentication required"),
+        422: jsonResponse(ErrorResponseSchema, "Malformed image container or EXIF"),
       },
     }),
     v("json", UpdateAvatarSchema),

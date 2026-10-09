@@ -17,6 +17,7 @@ import { sql } from "bun";
 import { HTTPException } from "hono/http-exception";
 import { hasRole, type User } from "../../contracts/shared";
 import { claimCacheFill, completeCacheFill, MISSING_SETTING } from "../cache-fill";
+import { stripImageDataUrlMetadata } from "../image-metadata";
 import { toPgTextArray } from "../postgres";
 import { requestCacheRedis } from "../request-cache-redis";
 import { decryptValue, encryptValue } from "./crypto";
@@ -193,7 +194,9 @@ export const writeKey = async (key: string, value: unknown, db?: SqlClient): Pro
   const validated = validateSettingValue(def, value);
   if (!validated.ok) throw new Error(validated.error);
 
-  const encrypted = await encryptValue(validated.value);
+  const storedValue =
+    def.kind === "image" && typeof validated.value === "string" ? stripImageDataUrlMetadata(validated.value) : validated.value;
+  const encrypted = await encryptValue(storedValue);
   await (db ?? sql)`
     INSERT INTO settings.entries (key, value, updated_at)
     VALUES (${key}, ${encrypted}, now())

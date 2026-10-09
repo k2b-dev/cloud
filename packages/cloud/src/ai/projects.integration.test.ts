@@ -1,5 +1,6 @@
 import { beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
+import { tinyJpeg, withCameraMetadata } from "../../../../scripts/fixtures/image-metadata";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { aiFileContentVersion } from "./file-content-version";
 import { migrateCloudAi } from "./migrate";
@@ -31,6 +32,26 @@ databaseSuite()("aiProjects (integration)", () => {
   beforeAll(async () => {
     await migrateCloudAi();
   });
+  test("shared Project images lose camera metadata before storage and content hashing", async () => {
+    const userId = await insertUser("photo");
+    const subject = { type: "user" as const, userId };
+    const project = await aiProjects.create({ subject, name: "Photo privacy" });
+    try {
+      const jpeg = await tinyJpeg();
+      const input = { path: "photo.jpg", bytes: withCameraMetadata(jpeg, 1), mediaType: "application/octet-stream" };
+      const stored = await aiProjects.writeFile(project.id, subject, input);
+      expect(stored?.size).toBe(jpeg.length);
+      const content = await aiProjects.readFileByPath(project.id, input.path, subject);
+      expect(content?.bytes).toEqual(jpeg);
+      await expect(aiProjects.writeFile(project.id, subject, { ...input, bytes: input.bytes.subarray(0, 30) })).rejects.toMatchObject({
+        status: 422,
+      });
+    } finally {
+      await sql`DELETE FROM ai.projects WHERE id=${project.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  });
+
   test("project file paths are NFC and legacy spellings migrate", async () => {
     const userId = await insertUser("unicode");
     const subject = { type: "user" as const, userId };

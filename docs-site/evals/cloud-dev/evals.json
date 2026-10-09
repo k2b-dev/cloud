@@ -213,6 +213,18 @@
         "It treats stream attachments as consumed once and keeps SMTP credentials in operator-managed profiles.",
         "It uses the idempotency key to deduplicate acceptance while retaining the at-least-once SMTP caveat."
       ]
+    },
+    {
+      "id": 19,
+      "prompt": "Add an image attachment upload to a Cloud application. Readers must not receive camera location or device metadata, and image quality must stay unchanged.",
+      "expected_output": "Authorizes and bounds the upload, classifies the image using the application contract, calls the public image-metadata helper in the owning service before persistence, derives size and hashes from returned bytes, preserves HTTP 422 for malformed recognized containers, and documents unchanged formats and Files originals.",
+      "files": [],
+      "expectations": [
+        "The upload service uses @k2b/cloud/services/image-metadata for all callers, including CLI and capabilities.",
+        "The implementation avoids decoding or re-encoding and derives stored size and hashes from stripped bytes.",
+        "Malformed recognized containers return 422 and tests fail when stripping is removed.",
+        "Documentation identifies unsupported formats that keep metadata and preserves Files originals."
+      ]
     }
   ]
 }

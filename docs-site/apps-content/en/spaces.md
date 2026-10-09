@@ -353,3 +353,15 @@ An open writable item contributes explicitly named edit and completion actions.
 Blocked or completed tasks do not offer completion.
 
 Cmd/Ctrl+Shift+K searches the current Space. Cmd/Ctrl+Alt+N opens a new task, or an event in calendar view. Outside inputs, E edits the selected item, M assigns it to you, and D marks it done or reopens it. Completion remains unavailable while blocked. Search actions update the open palette in place. Actions for the selected object appear before page actions.
+
+## Image upload privacy
+
+New JPEG, PNG, and WebP image uploads remove location and device metadata
+without changing image quality. JPEG orientation, colour profiles,
+transparency, and supported animation data remain. Malformed containers are
+rejected with HTTP 422. This applies to task attachments.
+
+Files keeps originals. HEIC, AVIF, TIFF, SVG, video, GIF, BMP, and unknown
+formats remain unchanged and can retain metadata. Previously uploaded images
+are not rewritten. See [Image upload privacy](/en/docs/platform/image-upload-privacy)
+for the supported formats and limits.

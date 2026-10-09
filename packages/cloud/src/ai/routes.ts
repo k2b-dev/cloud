@@ -18,6 +18,7 @@ import {
   v,
 } from "../server";
 import { isRequestCredentialCurrent } from "../server/middleware/auth";
+import { ImageMetadataError } from "../services/image-metadata";
 import { logger } from "../services/logging";
 import { coreSettings } from "../services/settings/api";
 import { readThemeFromCookieHeader } from "../shared/theme";
@@ -25,6 +26,7 @@ import type { AiToolApprovalContext } from "./approvals";
 import { assistantAiSettingsState, listAssistantAiModels, resolveAssistantAudioModel, selectAssistantAiModelId } from "./assistant-models";
 import { AI_AUDIO_MAX_BYTES } from "./audio-format";
 import { buildAiCapabilityCatalog } from "./capabilities";
+import { aiChatMessages } from "./chat/messages";
 import { getAiChatQuotas } from "./chat-quotas";
 import { createConfiguredDefaultCloudAiTools } from "./default-tools";
 import { enqueueAiDictation } from "./dictation-runtime";
@@ -1316,6 +1318,8 @@ export const aiRoutes = (() => {
           });
           return respond(c, ok({ file: stat }));
         } catch (error) {
+          if (error instanceof ImageMetadataError)
+            return respond(c, { ok: false, error: aiChatMessages(getLocale(c)).malformedImage, status: 422, code: error.code });
           logger("ai:files").warn("Conversation upload failed", {
             code: "file_upload_failed",
             conversationId: conversation.id,
@@ -1376,6 +1380,8 @@ export const aiRoutes = (() => {
             allowUserOverwrite: existing?.origin === "user",
           });
         } catch (error) {
+          if (error instanceof ImageMetadataError)
+            return respond(c, { ok: false, error: aiChatMessages(getLocale(c)).malformedImage, status: 422, code: error.code });
           return respond(c, fail(err.badInput(error instanceof Error ? error.message : "Failed to write file")));
         }
         return respond(c, ok({ file: await aiFileStore.stat({ conversationId: conversation.id, path }) }));
