@@ -132,5 +132,5 @@ Der Feldtyp bestimmt die gespeicherte Bedeutung. Ansichten und Spalteneinstellun
 :::note Begrenzte HTML-Exporte
 CSV- und JSON-Exporte lassen HTML-Vorlagenfelder standardmäßig aus. Wähle ein solches Feld ausdrücklich aus und setze ein Abfragelimit von höchstens 1.000 Datensätzen, wenn der gerenderte HTML-Inhalt in den Export gehört.
 
-Ein Lesevorgang oder Export rendert höchstens 2.000 HTML-Zellen und insgesamt 32 MiB HTML-Ausgabe. Zellen oberhalb dieses gemeinsamen Budgets zeigen einen Renderfehler, statt den Server zu überlasten. Fordere weniger Datensätze oder HTML-Felder an.
+Ein Lesevorgang oder Export rendert höchstens 2.000 HTML-Zellen mit einem gemeinsamen Budget von insgesamt 32 MiB HTML-Ausgabe und 2 Sekunden Template-Rendering. Zellen oberhalb dieses gemeinsamen Budgets zeigen einen Renderfehler, statt den Server zu überlasten. Fordere weniger Datensätze oder HTML-Felder an.
 :::

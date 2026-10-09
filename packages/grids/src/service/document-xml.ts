@@ -1,8 +1,8 @@
-import { renderLiquidTemplate } from "@k2b/cloud/shared";
+import { LiquidTemplateError, renderLiquidTemplate } from "@k2b/cloud/shared";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { DOMParser, onWarningStopParsing } from "@xmldom/xmldom";
 import { documentLiquidFilters, validateDocumentLiquidTemplate } from "./document-liquid";
-import { documentServiceText } from "./document-messages";
+import { documentServiceText, liquidBudgetFailureMessage } from "./document-messages";
 
 const xmlRoots = new Set(["rows", "columns", "document"]);
 const invalidXmlCharacter = /[^\u0009\u000a\u000d\u0020-\ud7ff\ue000-\ufffd\u{10000}-\u{10ffff}]/u;
@@ -123,7 +123,10 @@ export const renderDocumentXml = (source: string, data: Record<string, unknown>,
     const rendered = renderLiquidTemplate(source, data, { filters: documentLiquidFilters, escapeOutput: escapeXmlValue });
     const xml = validateDocumentXml(rendered, locale);
     return xml.ok ? ok(rendered) : xml;
-  } catch {
-    return fail(err.badInput(documentServiceText(locale).xmlOutputInvalid));
+  } catch (error) {
+    const t = documentServiceText(locale);
+    return fail(
+      err.badInput((error instanceof LiquidTemplateError ? liquidBudgetFailureMessage(error.reason, t) : undefined) ?? t.xmlOutputInvalid),
+    );
   }
 };

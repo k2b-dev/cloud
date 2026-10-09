@@ -1,4 +1,4 @@
-import { type LiquidTemplateOptions, renderLiquidTemplate } from "../../shared/template-rendering";
+import { LiquidTemplateError, type LiquidTemplateOptions, renderLiquidTemplate } from "../../shared/template-rendering";
 import {
   type GotenbergConfig,
   GotenbergRenderError,
@@ -84,6 +84,7 @@ export const renderTemplatePdfPreview = async (
       ok: false,
       error: {
         phase: "template",
+        ...(error instanceof LiquidTemplateError ? { code: error.reason } : {}),
         message: error instanceof Error ? error.message : "Template rendering failed.",
         status: 400,
       },
