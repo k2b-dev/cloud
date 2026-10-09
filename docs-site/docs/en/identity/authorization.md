@@ -417,7 +417,9 @@ the old one.
 
 If your application's precedence lets one entry shadow another, such as a
 `none` that overrides `admin` in the same tier, drop the shadowed entries from
-both lists before the check, and check a new `none` grant as well. Changes
+both lists before the check, and check a new `none` grant as well. Share that
+function with the permission editor, as
+[Show the last manager](#show-the-last-manager) describes. Changes
 outside the grants are not checked: deleting an account, a group, or a service
 account, and changing group membership. Some built-in applications still use
 their own older check; see
@@ -471,6 +473,23 @@ accessible description. The row
 keeps its size, so granting a second manager unlocks it without moving
 anything. The editor counts only the entries it shows; the service stays the
 authority, and its `LAST_MANAGER` message reaches the person as an error.
+
+If your service drops shadowed entries before the check, pass the same function
+as `effectiveEntries`. The editor calls it with its current entries and counts
+managers only among the entries it returns, so it locks exactly the row whose
+change the service refuses. Without it, a person and a manager whose `admin` a
+same-principal `none` overrides look like two managers: the editor offers to
+lower the person, and the service refuses.
+
+```tsx
+<PermissionEditor
+  initialEntries={entries}
+  effectiveEntries={unshadowedGrants}
+  grantAccess={grantAccess}
+  updateAccess={updateAccess}
+  revokeAccess={revokeAccess}
+/>
+```
 
 Pass the editor every entry that can count as a manager. Agents and standalone
 service accounts manage a resource like people do, so they keep their row and

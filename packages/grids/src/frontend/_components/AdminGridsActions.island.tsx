@@ -4,6 +4,7 @@ import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Dropdown, IconButton, prompts, toast, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, Show } from "solid-js";
+import { unshadowedGrants } from "@/access-precedence";
 import { apiClient } from "@/api/client";
 import { gridsAdminMessages } from "../admin-messages";
 
@@ -78,6 +79,7 @@ const openPermissionDialog = async (props: AdminGridsActionsProps, entries: Scop
             initialEntries={baseEntries()}
             canEdit
             allowPublic={false}
+            effectiveEntries={unshadowedGrants}
             grantAccess={async (principal, permission) => {
               const response = await apiClient.admin.bases[":baseId"].access.$post({
                 param: { baseId: props.baseId },

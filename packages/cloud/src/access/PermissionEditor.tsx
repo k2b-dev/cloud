@@ -1,6 +1,6 @@
 import { mutation } from "@k2b/stdlib/solid";
 import { IconButton, Placeholder, prompts, SelectChip, Tooltip, useLocale } from "@k2b/ui";
-import { For, Show } from "solid-js";
+import { createMemo, For, Show } from "solid-js";
 import { createStore } from "solid-js/store";
 import { CloudAvatar } from "../account/Avatar";
 import type { AccessEntry, PermissionLevel, Principal, ServiceAccountKind } from "../contracts/shared";
@@ -51,6 +51,13 @@ type PermissionEditorProps = {
    *  person, group, all signed-in users, or a standalone or agent service
    *  account), its row can neither be lowered nor removed. */
   revokeAccess: (accessId: string) => Promise<void>;
+
+  /** The entries that still apply when the resource lets one entry shadow
+   *  another, such as a `none` that overrides the same principal's `admin`.
+   *  The editor counts managers only among them, so pass the same function
+   *  the service applies before `ensureManagerRemains()`. Defaults to every
+   *  entry. */
+  effectiveEntries?: (entries: readonly AccessEntry[]) => readonly AccessEntry[];
 
   /** Allow granting `public` access from this editor. */
   allowPublic?: boolean;
@@ -218,10 +225,10 @@ export default function PermissionEditor(props: PermissionEditorProps) {
   });
   const busy = () => grantMut.loading() || updateMut.loading() || revokeMut.loading();
   // The service refuses to remove the last manager; the row says so up front.
-  const lastManagerId = () => {
-    const managers = entries.filter(isManagerEntry);
+  const lastManagerId = createMemo(() => {
+    const managers = (props.effectiveEntries?.(entries) ?? entries).filter(isManagerEntry);
     return managers.length === 1 ? managers[0]!.id : null;
-  };
+  });
 
   return (
     <div class="flex flex-col gap-3">

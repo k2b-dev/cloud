@@ -204,6 +204,81 @@ describe("Grids base keeps a manager", () => {
   });
 });
 
+// The same grants as ScopedPermissionEditor.behavior.test.tsx, where the editor locks exactly these rows.
+const precedenceCases: {
+  name: string;
+  build: (baseId: string) => Promise<Record<string, string>>;
+  locked: string[];
+}[] = [
+  {
+    name: "a duplicate none grant shadows the second manager",
+    build: async (baseId) => {
+      const qdt = await insertUser("Quentin Dorn");
+      const lym = await insertUser("Lya Meyer");
+      return {
+        qdt: await grant(baseId, { type: "user", userId: qdt.id }, "admin"),
+        lym: await grant(baseId, { type: "user", userId: lym.id }, "admin"),
+        "lym-deny": await grant(baseId, { type: "user", userId: lym.id }, "none"),
+      };
+    },
+    locked: ["qdt"],
+  },
+  {
+    name: "a group deny shadows the group's own Manage grant",
+    build: async (baseId) => {
+      const qdt = await insertUser("Quentin Dorn");
+      const staff = await insertGroup(`Staff ${testShortId()}`, [qdt.id]);
+      return {
+        qdt: await grant(baseId, { type: "user", userId: qdt.id }, "admin"),
+        staff: await grant(baseId, { type: "group", groupId: staff }, "admin"),
+        "staff-deny": await grant(baseId, { type: "group", groupId: staff }, "none"),
+      };
+    },
+    locked: ["qdt"],
+  },
+  {
+    name: "a deny for another group shadows nothing",
+    build: async (baseId) => {
+      const staff = await insertGroup(`Staff ${testShortId()}`);
+      const interns = await insertGroup(`Interns ${testShortId()}`);
+      return {
+        staff: await grant(baseId, { type: "group", groupId: staff }, "admin"),
+        "interns-deny": await grant(baseId, { type: "group", groupId: interns }, "none"),
+      };
+    },
+    locked: ["staff"],
+  },
+  {
+    name: "two unshadowed managers",
+    build: async (baseId) => {
+      const qdt = await insertUser("Quentin Dorn");
+      const lym = await insertUser("Lya Meyer");
+      return {
+        qdt: await grant(baseId, { type: "user", userId: qdt.id }, "admin"),
+        lym: await grant(baseId, { type: "user", userId: lym.id }, "admin"),
+      };
+    },
+    locked: [],
+  },
+];
+
+describe("Grids base access editor and service agree", () => {
+  for (const scenario of precedenceCases) {
+    postgresTest(`the service refuses exactly the rows the editor locks: ${scenario.name}`, async () => {
+      const keys = Object.keys(await scenario.build(await insertBase()));
+      const refused: Record<string, boolean[]> = {};
+      for (const key of keys) {
+        // Every change starts from the same grants, so one accepted change cannot unlock the next.
+        const lowered = await updateAccessLevel((await scenario.build(await insertBase()))[key]!, "read", null);
+        const revoked = await revokeAccess((await scenario.build(await insertBase()))[key]!, null);
+        for (const result of [lowered, revoked]) if (!result.ok) expectLastManager(result);
+        refused[key] = [!lowered.ok, !revoked.ok];
+      }
+      expect(refused).toEqual(Object.fromEntries(keys.map((key) => [key, scenario.locked.includes(key) ? [true, true] : [false, false]])));
+    });
+  }
+});
+
 describe("Grids access names", () => {
   postgresTest("lists people by display name with their photo, like every other permission editor", async () => {
     const baseId = await insertBase();
