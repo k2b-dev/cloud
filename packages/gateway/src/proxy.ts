@@ -72,6 +72,20 @@ const shouldLogError = (appId: string): boolean => {
   return true;
 };
 
+const SAFE_ERROR_CODE = /^[A-Za-z0-9_]{1,40}$/;
+
+/**
+ * Loggable fields of a transport failure. Messages and `err.path` can carry the
+ * upstream URL and query, so keep only the error type and an enum-like code
+ * (Bun reports every fetch failure as `TypeError`; `ConnectionRefused` or
+ * `ENOTFOUND` tells the operator what failed).
+ */
+export const transportErrorFields = (err: unknown): { error: string; code?: string } => {
+  const error = err instanceof Error ? err.name : "UnknownError";
+  const code = err instanceof Error && "code" in err ? err.code : undefined;
+  return typeof code === "string" && SAFE_ERROR_CODE.test(code) ? { error, code } : { error };
+};
+
 /** Bound the shared, redacted fallback template for requests without an app template. */
 const fallbackPathTemplate = (appId: string, pathname: string): string => boundTemplateCardinality(appId, derivePathTemplate(pathname));
 
@@ -213,9 +227,9 @@ export const proxyRequest = async (
     if (shouldLogError(match.appId)) {
       log("Upstream unavailable", {
         appId: match.appId,
-        path: pathTemplate,
-        // Transport error messages can include the full upstream URL and query.
-        error: err instanceof Error ? err.name : "UnknownError",
+        // Unbounded by the telemetry budget: this log is already throttled per app.
+        path: derivePathTemplate(url.pathname),
+        ...transportErrorFields(err),
       });
     }
 

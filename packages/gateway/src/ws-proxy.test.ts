@@ -81,29 +81,37 @@ afterEach(() => {
 });
 
 describe("gateway WebSocket proxy", () => {
-  test("does not log the upstream URL from a WebSocket constructor failure", () => {
-    const token = "abcdefghijklmnopqrstuvwxyzABCDEF";
-    Reflect.set(
-      globalThis,
-      "WebSocket",
-      class {
-        constructor(url: string) {
-          throw new Error(`Cannot connect to ${url}`);
-        }
-      },
-    );
-    const entries: Array<{ message: string; metadata?: Record<string, unknown> }> = [];
-    const response = tryUpgradeWebSocket(
-      new Request(`http://cloud.test/share/demo/${token}?secret=query-secret`),
-      { upgrade: () => true },
-      buildRouteTable([{ prefix: "/share/demo", appId: "demo", baseUrl: "http://upstream" }]),
-      (message, metadata) => entries.push({ message, metadata }),
-    );
-    expect(response?.status).toBe(502);
-    expect(entries).toHaveLength(1);
-    expect(JSON.stringify(entries)).not.toContain(token);
-    expect(JSON.stringify(entries)).not.toContain("query-secret");
-  });
+  test.each(["ConnectionRefused", "ENOTFOUND", "ECONNRESET", "http://upstream/?secret=query-secret", "x".repeat(41), 42])(
+    "logs only safe transport code %s from a WebSocket constructor failure",
+    (code) => {
+      const token = "abcdefghijklmnopqrstuvwxyzABCDEF";
+      Reflect.set(
+        globalThis,
+        "WebSocket",
+        class {
+          constructor(url: string) {
+            throw Object.assign(new TypeError(`Cannot connect to ${url}`), { code, path: url });
+          }
+        },
+      );
+      const entries: Array<{ message: string; metadata?: Record<string, unknown> }> = [];
+      const response = tryUpgradeWebSocket(
+        new Request(`http://cloud.test/share/demo/${token}?secret=query-secret`),
+        { upgrade: () => true },
+        buildRouteTable([{ prefix: "/share/demo", appId: "demo", baseUrl: "http://upstream" }]),
+        (message, metadata) => entries.push({ message, metadata }),
+      );
+      expect(response?.status).toBe(502);
+      expect(entries).toHaveLength(1);
+      const expected = { appId: "demo", path: "/share/demo/:token", error: "TypeError" };
+      expect(entries[0]?.metadata).toEqual(
+        typeof code === "string" && /^[A-Za-z0-9_]{1,40}$/.test(code) ? { ...expected, code } : expected,
+      );
+      expect(JSON.stringify(entries)).not.toContain("http://");
+      expect(JSON.stringify(entries)).not.toContain(token);
+      expect(JSON.stringify(entries)).not.toContain("query-secret");
+    },
+  );
 
   test("forwards the resolved client address instead of the client's own headers", () => {
     FakeUpstream.instances = [];

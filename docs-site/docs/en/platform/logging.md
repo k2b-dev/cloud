@@ -73,12 +73,23 @@ Cloud redacts metadata keys containing terms such as `password`,
 `secret`, `token`, `cookie`, `authorization`, `apiKey`, `privateKey`, or
 `session`.
 
-HTTP request logs replace everything below `/share/<app>/` with one
-`:token` segment. The same rule protects `/api/mail/public-attachments/`
-and `/app/mail/a/`. Query strings are omitted. For application-owned request
-logs, use `redactSensitivePath(pathname)` from `@k2b/cloud/services` before
-putting a path in a message or metadata. It accepts a pathname, not a full URL;
-do not log transport error messages that may contain a full request URL.
+HTTP request logs record the matched route template, such as
+`/api/inventory/items/:id`. When no route pattern answered, they record the
+redacted pathname.
+
+To put a path in your own log, pass it through `redactSensitivePath(pathname)`
+from `@k2b/cloud/services`. It takes a pathname, not a full URL, and:
+
+- drops queries and fragments;
+- replaces everything below `/share/<app>/`, `/api/mail/public-attachments/`,
+  and `/app/mail/a/` with `:token`, whatever the token looks like;
+- elsewhere replaces UUIDs with `:id` and credential-shaped segments with
+  `:token`: at least 16 letters, digits, `-`, or `_` that do not read like a
+  lowercase word slug, also next to a dot as in `<token>.ics`.
+
+Outside the share and mail prefixes this is a shape check, so readable slugs and
+filenames stay. Do not log transport error messages; they can contain the full
+request URL.
 
 Do not log request bodies, credentials, or personal records. Redaction is only
 a safety net.

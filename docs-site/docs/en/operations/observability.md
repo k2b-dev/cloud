@@ -150,12 +150,16 @@ metrics separate from gateway duration and development-server timings.
 Route telemetry uses the route template, not the concrete URL. This keeps one
 series for `/api/inventory/items/:id`.
 
-Gateway fallback templates and request logs collapse everything below
-`/share/<app>/` into one `:token` segment, regardless of the token's length
-or alphabet. The same rule covers `/api/mail/public-attachments/` and
-`/app/mail/a/`. Queries are omitted. Upstream connection failure logs
-include a safe path and the error type; transport error messages may contain
-credentials, so they are omitted.
+When no application reported a template (unmatched route, upstream failure,
+or an app without the platform middleware), the gateway derives one with the
+[shared path redaction](/en/docs/platform/logging). It also replaces numbers
+with `:n`, keeps at most eight segments, and reports `(other)` after 200
+distinct derived templates per app.
+
+The `Upstream unavailable` log carries the same redacted template without the
+200-template limit, the error type, and a transport error code such as
+`ConnectionRefused` or `ENOTFOUND`. It never includes the error message or the
+query.
 
 Sort by error rate to find unhealthy routes. Sort by requests to find the
 highest traffic.

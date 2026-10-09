@@ -46,3 +46,48 @@ test("keeps normal paths and skips successful responses and static assets", asyn
   expect(entries).toHaveLength(1);
   expect(entries[0]?.[2]).toMatchObject({ path: "/api/demo" });
 });
+
+test("logs the matched calendar handler template in messages and metadata", async () => {
+  const token = "0123456789abcdef".repeat(3);
+  const app = new Hono<AuthContext>().use("*", requestLogger).get("/api/demo/calendar/:token", (c) => c.text("failed", 500));
+  expect((await app.request(`/api/demo/calendar/${token}.ics?secret=query-secret`)).status).toBe(500);
+  expect(entries).toHaveLength(1);
+  expect(entries[0]?.[1]).toContain("/api/demo/calendar/:token");
+  expect(entries[0]?.[2]).toMatchObject({ path: "/api/demo/calendar/:token", status: 500 });
+  expect(JSON.stringify(entries)).not.toContain(token);
+  expect(JSON.stringify(entries)).not.toContain("query-secret");
+});
+
+test("logs the sub-router middleware pattern when it answers early", async () => {
+  const api = new Hono<AuthContext>().use("*", async (c) => c.text("rate limited", 429)).get("/calendar/:token", (c) => c.text("ok"));
+  const app = new Hono<AuthContext>().use("*", requestLogger).route("/api/demo", api);
+  expect((await app.request(`/api/demo/calendar/${"0123456789abcdef".repeat(3)}.ics`)).status).toBe(429);
+  expect(entries).toHaveLength(1);
+  expect(entries[0]?.[1]).toContain("/api/demo/*");
+  expect(entries[0]?.[2]).toMatchObject({ path: "/api/demo/*", status: 429 });
+});
+
+test("redacts the fallback when root middleware answers without a route template", async () => {
+  const token = "AbCdEfGhIjKlMnOpQrStUv";
+  const app = new Hono<AuthContext>()
+    .use("*", requestLogger)
+    .use("*", async (c) => c.text("unauthorized", 401))
+    .get("/api/demo/forms/public/:token", (c) => c.text("ok"));
+  expect((await app.request(`/api/demo/forms/public/${token}?secret=query-secret`)).status).toBe(401);
+  expect(entries).toHaveLength(1);
+  expect(entries[0]?.[1]).toContain("/api/demo/forms/public/:token");
+  expect(entries[0]?.[2]).toMatchObject({ path: "/api/demo/forms/public/:token", status: 401 });
+  expect(JSON.stringify(entries)).not.toContain(token);
+  expect(JSON.stringify(entries)).not.toContain("query-secret");
+});
+
+test("logs the matched template after a handler throws", async () => {
+  const app = new Hono<AuthContext>()
+    .use("*", requestLogger)
+    .get("/api/demo/items/:itemId", () => {
+      throw new Error("failed");
+    })
+    .onError((_, c) => c.text("failed", 500));
+  expect((await app.request("/api/demo/items/4711")).status).toBe(500);
+  expect(entries[0]?.[2]).toMatchObject({ path: "/api/demo/items/:itemId", status: 500 });
+});

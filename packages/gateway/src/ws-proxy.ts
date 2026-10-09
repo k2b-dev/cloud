@@ -16,6 +16,7 @@
 import type { ServerWebSocket } from "bun";
 import type { ClientAddress } from "./client-address";
 import { derivePathTemplate } from "./path-template";
+import { transportErrorFields } from "./proxy";
 import { isInternalPath } from "./request-boundary";
 import { matchRoute, type RouteTable } from "./trie";
 
@@ -150,8 +151,7 @@ export const tryUpgradeWebSocket = (
     logFn("WebSocket upstream connect failed", {
       appId: match.appId,
       path: derivePathTemplate(url.pathname),
-      // Constructor errors may contain the upstream URL, including its query.
-      error: err instanceof Error ? err.name : "UnknownError",
+      ...transportErrorFields(err),
     });
     return new Response("WebSocket: upstream connect failed", { status: 502 });
   }

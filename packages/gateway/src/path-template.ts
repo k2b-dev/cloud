@@ -10,19 +10,12 @@ import { redactSensitivePath } from "@k2b/cloud/services";
  * died in flight). Both are exactly the cases worth investigating, so we
  * derive a template from the path instead of dropping it.
  *
- * A heuristic cannot beat the app's own answer, and it is not meant to:
- * real routes carry params that look nothing like ids (`/help/:topic`,
- * `/hostgroups/:cn`, `/admin/settings/:key`). We therefore collapse only
- * segments that are unmistakably opaque and keep everything else, then
- * bound the result so a path scanner cannot inflate the telemetry table.
+ * The shared path rule redacts sensitive segments. This layer additionally
+ * collapses numbers and bounds depth and cardinality so a path scanner cannot
+ * inflate the telemetry table.
  */
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DIGITS = /^\d+$/;
-const OPAQUE_TOKEN = /^[A-Za-z0-9_-]+$/;
-
-/** Shortest string we treat as an opaque token rather than a readable slug. */
-const MIN_TOKEN_LENGTH = 16;
 
 /** Deeper paths add cardinality without adding meaning. */
 const MAX_SEGMENTS = 8;
@@ -34,36 +27,16 @@ const MAX_TEMPLATES_PER_APP = 200;
 export const OVERFLOW_TEMPLATE = "(other)";
 
 /**
- * A segment is opaque when it cannot plausibly be a human-authored slug:
- * a UUID, a bare number, or a long id-ish string containing a digit.
- * The digit requirement keeps `getting-started-with-grids` intact, and
- * rejecting dots keeps filenames like `tabler-icons.woff2` intact.
- */
-const isOpaqueSegment = (segment: string): boolean => {
-  if (UUID.test(segment)) return true;
-  if (DIGITS.test(segment)) return true;
-  return segment.length >= MIN_TOKEN_LENGTH && OPAQUE_TOKEN.test(segment) && /\d/.test(segment);
-};
-
-const placeholderFor = (segment: string): string => {
-  if (UUID.test(segment)) return ":id";
-  if (DIGITS.test(segment)) return ":n";
-  return ":token";
-};
-
-/**
  * Collapses opaque segments in a pathname into placeholders.
  * Expects a pathname — never pass a full URL, the query string must not
  * reach telemetry.
  */
 export const derivePathTemplate = (pathname: string): string => {
   const redacted = redactSensitivePath(pathname);
-  // The shared rule already produced a bounded template; keep its app prefix.
-  if (redacted.endsWith("/:token")) return redacted;
   const segments = redacted.split("/").filter(Boolean);
   if (segments.length === 0) return "/";
 
-  const kept = segments.slice(0, MAX_SEGMENTS).map((segment) => (isOpaqueSegment(segment) ? placeholderFor(segment) : segment));
+  const kept = segments.slice(0, MAX_SEGMENTS).map((segment) => (DIGITS.test(segment) ? ":n" : segment));
   if (segments.length > MAX_SEGMENTS) kept.push("...");
 
   return `/${kept.join("/")}`;

@@ -24,10 +24,22 @@ describe("derivePathTemplate", () => {
     expect(derivePathTemplate("/api/demo/01HXYZ8QF3K2M9P4R7T6V0W5Z1")).toBe("/api/demo/:token");
   });
 
+  test.each([
+    ["/api/demo/123456/:token", "/api/demo/:n/:token"],
+    ["/a/b/c/d/e/f/g/h/i/j/:token", "/a/b/c/d/e/f/g/h/..."],
+    ["/api/grids/bases/20838fd2-8c26-42fa-a22d-904cfccda342/:token", "/api/grids/bases/:id/:token"],
+    [`/api/venue/calendar/${"0123456789abcdef".repeat(3)}.ics`, "/api/venue/calendar/:token"],
+    ["/api/grids/forms/public/AbCdEfGhIjKlMnOpQrStUv", "/api/grids/forms/public/:token"],
+  ])("redacts and bounds %s even with a literal token marker", (path, expected) => {
+    expect(derivePathTemplate(path)).toBe(expected);
+  });
+
   test("keeps human-readable route params", () => {
     // These are real param shapes in the repo (:topic, :cn, :key) — a
     // heuristic that collapsed them would destroy the useful breakdown.
     expect(derivePathTemplate("/admin/gateway/help/getting-started")).toBe("/admin/gateway/help/getting-started");
+    expect(derivePathTemplate("/help/getting-started-with-grids")).toBe("/help/getting-started-with-grids");
+    expect(derivePathTemplate("/settings/some_setting_key_name")).toBe("/settings/some_setting_key_name");
     expect(derivePathTemplate("/api/ipa-hosts/hostgroups/webservers")).toBe("/api/ipa-hosts/hostgroups/webservers");
   });
 

@@ -2,6 +2,7 @@ import { createMiddleware } from "hono/factory";
 import { logger } from "../../services/logging";
 import { redactSensitivePath } from "../../services/logging/redaction";
 import type { AuthContext } from "./auth";
+import { matchedRouteTemplate } from "./route-template";
 
 const log = logger("http");
 
@@ -19,9 +20,15 @@ export const requestLogger = createMiddleware<AuthContext>(async (c, next) => {
   const requestPath = c.req.path;
   if (SKIP_PREFIXES.some((p) => requestPath.startsWith(p))) return next();
 
-  const path = redactSensitivePath(requestPath);
   const start = Date.now();
   await next();
+  let path: string | null = null;
+  try {
+    path = matchedRouteTemplate(c);
+  } catch {
+    // Best-effort: an unrouted context must never break request logging.
+  }
+  path ??= redactSensitivePath(requestPath);
   const status = c.res.status;
   const duration = Date.now() - start;
 

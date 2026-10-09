@@ -19,24 +19,52 @@ export const redactMetadata = (input: unknown): unknown => {
   return out;
 };
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const CREDENTIAL = /^[A-Za-z0-9_-]{16,}$/;
+const WORD_SLUG = /^[a-z]+(?:[-_][a-z]+)*$/;
+
+const decodeSegment = (segment: string): string => {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
+};
+
 /**
- * Safe pathname for request logs and fallback route templates. Share URLs
- * carry bearer credentials, so collapse their entire suffix into one marker.
- * Match raw, case-sensitive segments and ignore empty segments, like the
- * gateway trie; percent-encoded token segments need no decoding.
+ * Redact a pathname for logs and fallback templates; drop queries and fragments.
+ * Compare safely decoded, case-sensitive prefixes, ignoring empty segments.
+ * Collapse the suffix below /share/<app>/ (keeping the raw app segment),
+ * /api/mail/public-attachments/, and /app/mail/a/ into one :token marker.
+ * Elsewhere, use a shape heuristic: decoded UUID segments become :id; a segment
+ * becomes :token if its decoded value or any dot-separated part has at least
+ * 16 characters, only A-Z, a-z, 0-9, _ or -, and is not a lowercase word slug
+ * (words separated by single hyphens or underscores). Preserve other raw segments.
+ * This keeps readable params and filenames while covering tokens with file suffixes.
  */
 export const redactSensitivePath = (pathname: string): string => {
   const path = pathname.split(/[?#]/, 1)[0] ?? "";
   const segments = path.split("/").filter(Boolean);
-  if (segments[0] === "share" && segments.length > 2) {
-    return `/${segments.slice(0, 2).join("/")}/:token`;
+  const decoded = segments.map(decodeSegment);
+  if (decoded[0] === "share" && segments.length > 2) {
+    return `/share/${segments[1]}/:token`;
   }
   if (
     segments.length > 3 &&
-    segments[1] === "mail" &&
-    ((segments[0] === "api" && segments[2] === "public-attachments") || (segments[0] === "app" && segments[2] === "a"))
+    decoded[1] === "mail" &&
+    ((decoded[0] === "api" && decoded[2] === "public-attachments") || (decoded[0] === "app" && decoded[2] === "a"))
   ) {
-    return `/${segments.slice(0, 3).join("/")}/:token`;
+    return `/${decoded.slice(0, 3).join("/")}/:token`;
   }
-  return path;
+  return path
+    .split("/")
+    .map((segment) => {
+      const value = decodeSegment(segment);
+      if (UUID.test(value)) return ":id";
+      // Dot-separated parts cover signed tokens and credential filenames such as .ics.
+      // Lowercase word slugs preserve readable routes like getting-started-with-grids.
+      if (value.split(".").some((part) => CREDENTIAL.test(part) && !WORD_SLUG.test(part))) return ":token";
+      return segment;
+    })
+    .join("/");
 };
