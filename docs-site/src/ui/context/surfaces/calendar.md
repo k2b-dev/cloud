@@ -1,8 +1,9 @@
 # Calendar
 
 `Calendar` renders portable day, week, month, year, and compact mobile-month
-views. The application owns the selected date and view, canonical URLs, event
-data, permissions, and editor flows.
+views, and hosts views an application adds, such as a
+[Timeline](/en/ui/content/timeline). The application owns the selected date
+and view, canonical URLs, event data, permissions, and editor flows.
 
 ## Use Calendar
 
@@ -16,6 +17,7 @@ calendar is a primary application surface.
 import {
   Calendar,
   type CalendarAttendee,
+  type CalendarCustomView,
   type CalendarDayBadge,
   type CalendarEvent,
   type CalendarEventColor,
@@ -71,6 +73,32 @@ Limit the switcher with `views`. `getDateHref`, `getViewHref`, and
 `getEventHref` keep navigation functional in the server response.
 `onNavigate` progressively enhances those links after hydration.
 
+### Add a view
+
+`customViews` adds views after the built-in ones, each with a `value` and a
+`label`. While `view` is one of them, the calendar keeps its header and
+`toolbarContent` and shows `children` as the body; `events` are not drawn.
+The header names the day of `date` and pages by one day, as in the day view.
+The view's value reaches `getViewHref`, `getDateHref`, `onViewChange`, and
+`onDateChange` like a built-in one, and JSX infers its type from
+`customViews`. The application renders the body from its own data, for
+example a `Timeline` of the loaded days.
+
+```tsx
+<Calendar
+  view={view()}
+  customViews={[{ value: "timeline", label: "Timeline" }]}
+  date={date()}
+  events={events()}
+  getViewHref={(next) => `?view=${next}`}
+  getDateHref={(next, current) => `?view=${current}&date=${dateKey(next)}`}
+>
+  <Show when={view() === "timeline"}>
+    <Timeline items={items()} from={range().from} to={range().to} />
+  </Show>
+</Calendar>;
+```
+
 In the month view, the empty day surface follows `getDateHref` to the day view
 when `onSlotActivate` is absent. Passing `onSlotActivate` deliberately turns
 that surface into an empty-slot action instead; the day number remains a
@@ -120,7 +148,10 @@ event and `{ start: Date; end: Date; allDay?: boolean }`.
 The host validates permissions and persists changes.
 
 `toolbarActions` and `toolbarContent` add bounded application controls without
-replacing the calendar navigation.
+replacing the calendar navigation. On a narrow screen the header's actions
+wrap onto another row rather than run out of the header; keep
+`toolbarActions` compact there, for example an icon with a visually hidden
+label.
 
 ## API reference
 
@@ -158,6 +189,10 @@ type CalendarDayBadge = {
   icon?: string; label: string;
 };
 
+type CalendarCustomView<V extends string = string> = {
+  value: V; label: string;
+};
+
 ```
 
 ### Callback data
@@ -177,18 +212,18 @@ type CalendarEventTimeChange = {
 ### Calendar props
 
 ```ts
-type CalendarProps = {
-  date: Date | string; events: CalendarEvent[]; view?: CalendarView; views?: CalendarView[];
-  labels?: CalendarLabels; dateConfig?: DateContext; timeZone?: string; firstDayOfWeek?: 0 | 1;
+type CalendarProps<V extends string = never> = {
+  date: Date | string; events: CalendarEvent[]; view?: CalendarView | V; views?: CalendarView[];
+  customViews?: CalendarCustomView<V>[]; children?: JSX.Element; labels?: CalendarLabels; dateConfig?: DateContext; timeZone?: string; firstDayOfWeek?: 0 | 1;
   withWeekNumbers?: boolean; startHour?: number; endHour?: number; visibleStartHour?: number;
   visibleEndHour?: number; allDayMaxHeightRem?: number; hideAllDay?: boolean; selectedDate?: Date | string;
   selectedEventId?: string; dayBadges?: Record<string, CalendarDayBadge>;
-  getViewHref?: (view: CalendarView) => string; getDateHref?: (date: Date, view: CalendarView) => string;
+  getViewHref?(view: CalendarView | V): string; getDateHref?(date: Date, view: CalendarView | V): string;
   getEventHref?: (event: CalendarEvent) => string | undefined;
   renderEvent?: (event: CalendarEvent, context: CalendarEventRenderContext) => JSX.Element;
   onNavigate?: (event: LinkNavigateEvent) => void | Promise<void>; onNavigateHref?: (href: string) => void;
   onPrefetch?: (href: string) => void; navigationPending?: boolean;
-  onViewChange?: (view: CalendarView) => void; onDateChange?: (date: Date, view: CalendarView) => void;
+  onViewChange?(view: CalendarView | V): void; onDateChange?(date: Date, view: CalendarView | V): void;
   onEventActivate?: (event: CalendarEvent) => void; eventActivation?: "single" | "double";
   onEventDrop?: (event: CalendarEvent, next: CalendarEventTimeChange) => void;
   onEventResize?: (event: CalendarEvent, next: CalendarEventTimeChange) => void;
