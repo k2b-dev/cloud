@@ -1086,7 +1086,7 @@ test("the browser file chooser browses and reads a provider through Core's route
   const [source] = await loadFileProviders(caller);
   expect(source).toMatchObject({ appId: "drive", list: "folder.list", read: "file.read", maxBytes: 64 });
   const page = await listProviderFolder(source!, {}, caller);
-  expect(page).toEqual({ items: [listed], next: null });
+  expect(page).toEqual({ items: [listed], next: null, writable: false });
   const file = await readProviderFile(source!, listed, { ...caller, maxBytes: 64, accept: "text/*" });
   expect(await file.text()).toBe(bytes);
   expect(file.type).toStartWith("text/plain");
@@ -1095,4 +1095,146 @@ test("the browser file chooser browses and reads a provider through Core's route
   expect(streamIds[0]).not.toContain("private:report");
   expect(upstream).toEqual(["queries/folder.list", "queries/file.read", "streams/queries/file.read/read"]);
   await expect(readProviderFile(source!, listed, { ...caller, maxBytes: 4 })).rejects.toMatchObject({ code: "FILE_TOO_LARGE" });
+});
+
+test("the browser saves into a provider through Core's routes: it creates once, keeps a taken name, and stops where it may not write", async () => {
+  const { invokeCompiledCapability } = await import("../_internal/capabilities");
+  const { invokeCapabilityStream } = await import("../_internal/capability-streams");
+  const contract = await import("../contracts/file-provider");
+  const { loadFileProviders, saveProviderFile } = await import("../browser/file-providers");
+  const stored = new Map<string, string>([["docs/taken.txt", "old"]]);
+  const refuse = (code: string, status: number) => {
+    throw { code, message: code, status };
+  };
+  const provider = compileCapabilities(
+    "drive",
+    defineCapabilities({
+      protocolVersion: 2,
+      queries: {
+        "folder.list": {
+          title: "List",
+          description: "List one folder.",
+          input: contract.FileProviderListInputSchema,
+          data: contract.FileProviderListDataSchema,
+          openWorld: false,
+          run: async () => ok({ data: { writable: true, items: [], next: null } }),
+        },
+        "file.read": {
+          title: "Read",
+          description: "Read one file.",
+          input: contract.FileProviderReadInputSchema,
+          data: contract.FileProviderReadDataSchema,
+          openWorld: false,
+          stream: { direction: "read", maxBytes: 64, read: async () => new Response("") },
+          run: async () => refuse("not_found", 404),
+        },
+      },
+      actions: {
+        "file.save": {
+          title: "Save",
+          description: "Create one new file.",
+          input: contract.FileProviderSaveInputSchema,
+          data: contract.FileProviderSaveDataSchema,
+          openWorld: false,
+          destructive: false,
+          idempotency: "required",
+          stream: {
+            direction: "write",
+            maxBytes: 64,
+            write: async (stream, body) => {
+              const path = stream.id.replace(/^private:/, "");
+              if (stored.has(path)) refuse(contract.FILE_PROVIDER_NAME_CONFLICT, 409);
+              stored.set(path, await new Response(body).text());
+              return {
+                data: { file: { id: `id:${path}`, name: stream.name!, size: stream.size } },
+                links: [{ rel: "open", href: "/app/drive" }],
+              };
+            },
+            status: async () => ({ state: "open" }),
+            abort: async () => undefined,
+          },
+          run: async (input) => {
+            // The caller may browse this folder but not write into it; listing it is not a grant.
+            if (input.parent === "shared") refuse("forbidden", 403);
+            if (stored.has(`${input.parent}/${input.name}`)) refuse(contract.FILE_PROVIDER_NAME_CONFLICT, 409);
+            return ok({
+              data: {},
+              stream: {
+                id: `private:${input.parent}/${input.name}`,
+                direction: "write",
+                name: input.name,
+                mediaType: input.mediaType,
+                size: input.size,
+                expiresAt: new Date(Date.now() + 60_000).toISOString(),
+              },
+            });
+          },
+        },
+      },
+      fileProvider: { list: "folder.list", read: "file.read", save: "file.save" },
+    }),
+  );
+  const app: CapabilityRegistryEntry = { ...entry("drive"), appName: "Drive", manifest: provider.manifest };
+  const context = {
+    actor: resourceAuthority.actor,
+    accessSubject: resourceAuthority.accessSubject,
+    user: null,
+    requestId: "file-saver-wire",
+    locale: "en",
+    origin: "http" as const,
+    signal: new AbortController().signal,
+  };
+  const upstream: string[] = [];
+  const routes = createCapabilityRoutes({
+    listApps: async () => [summary(app)],
+    getCapability: async (appId) => (appId === app.appId ? app : null),
+    authenticate,
+    fetch: async (url, init) => {
+      const request = new Request(url, init);
+      const path = new URL(request.url).pathname.split("/").map(decodeURIComponent);
+      upstream.push(path.slice(path.indexOf("v1") + 1).join("/"));
+      if (path.includes("streams")) {
+        const kind = path.at(-3) === "actions" ? "actions" : "queries";
+        return invokeCapabilityStream({ compiled: provider, kind, localId: path.at(-2)!, verb: path.at(-1)!, request, context });
+      }
+      const { input } = (await request.json()) as { input: unknown };
+      const result = await invokeCompiledCapability({
+        compiled: provider,
+        kind: path.includes("actions") ? "action" : "query",
+        localId: path.at(-1)!,
+        input,
+        expectedSchemaHash: request.headers.get("x-cloud-capability-schema-hash"),
+        context: { ...context, idempotencyKey: request.headers.get("idempotency-key") ?? undefined },
+      });
+      if (result.ok) return Response.json(result.data);
+      const { status, ...error } = result.error;
+      return Response.json(error, { status });
+    },
+  });
+  const streamIds: string[] = [];
+  const caller = {
+    locale: "en",
+    fetch: async (url: string | URL | Request, init?: RequestInit) => {
+      const streamId = new Headers(init?.headers).get("x-cloud-stream-id");
+      if (streamId) streamIds.push(streamId);
+      return routes.request(String(url).replace(/^\/api/, ""), init);
+    },
+  };
+
+  const [source] = await loadFileProviders(caller);
+  expect(source?.save).toEqual({ id: "file.save", maxBytes: 64 });
+  const body = new Blob(["quarterly numbers"], { type: "text/plain" });
+  const saved = await saveProviderFile(source!, { parent: "docs", name: "q3.txt", body, idempotencyKey: crypto.randomUUID() }, caller);
+  expect(saved).toEqual({ id: "id:docs/q3.txt", name: "q3.txt", size: 17, href: "/app/drive" });
+  expect(stored.get("docs/q3.txt")).toBe("quarterly numbers");
+  // The browser only holds Core's sealed stream ID, never the provider's.
+  expect(streamIds).toHaveLength(1);
+  expect(streamIds[0]).not.toContain("private:");
+
+  const save = (parent: string, name: string) =>
+    saveProviderFile(source!, { parent, name, body, idempotencyKey: crypto.randomUUID() }, caller);
+  await expect(save("docs", "taken.txt")).rejects.toMatchObject({ code: contract.FILE_PROVIDER_NAME_CONFLICT, status: 409 });
+  expect(stored.get("docs/taken.txt")).toBe("old");
+  await expect(save("shared", "q3.txt")).rejects.toMatchObject({ code: "forbidden", status: 403 });
+  expect(upstream.filter((path) => path.startsWith("streams"))).toEqual(["streams/actions/file.save/write"]);
 });

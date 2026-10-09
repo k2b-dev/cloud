@@ -1,5 +1,6 @@
 import type { AiConversationSource, AiFileStat, AiProject, AiProjectFile, AiChatTaskView as AssistantChatTask } from "@k2b/cloud/ai";
 import { type ConversationFileSource, conversationFileSource } from "@k2b/cloud/ai/solid";
+import { SAVE_FILES_ICON, type SaveFileSource, SaveFilesButton, saveFiles, saveFilesLabel } from "@k2b/cloud/browser/files";
 import {
   BottomSheet,
   Button,
@@ -110,6 +111,14 @@ const kindIcon: Record<FileKind, string> = {
 };
 
 const fileName = (path: string) => path.slice(path.lastIndexOf("/") + 1);
+/** What "Save to Files" reads for a chat result: its download route, which only some sources have. */
+const resultSaveSource = (
+  files: ConversationFileSource,
+  file: { path: string; mediaType: string; size: number },
+): SaveFileSource | null => {
+  const href = files.downloadHref?.(file.path);
+  return href ? { name: fileName(file.path), content: href, mediaType: file.mediaType, size: file.size } : null;
+};
 const extension = (path: string) => {
   const name = fileName(path);
   const dot = name.lastIndexOf(".");
@@ -393,6 +402,7 @@ function ResultButtons(props: { result: AssistantChatResult; actions: ChatSideba
               <i class="ti ti-download" aria-hidden="true" />
               {copy().download}
             </ButtonLink>
+            <Show when={resultSaveSource(props.files, file())}>{(source) => <SaveFilesButton size="xs" files={() => [source()]} />}</Show>
           </>
         )}
       </Show>
@@ -437,6 +447,7 @@ function ResultRow(props: {
 }) {
   const text = useAssistantText();
   const copy = useSidebarCopy();
+  const locale = useLocale();
   const open = () => {
     const result = props.result;
     if (result.file) props.actions.onOpenFile({ path: result.file.path, title: result.title });
@@ -463,6 +474,18 @@ function ResultRow(props: {
                 link.href = href;
                 link.download = fileName(result.file!.path);
                 link.click();
+              },
+            },
+          ]
+        : []),
+      ...(result.file && resultSaveSource(props.files, result.file)
+        ? [
+            {
+              label: saveFilesLabel(locale()),
+              icon: SAVE_FILES_ICON,
+              action: () => {
+                const source = result.file && resultSaveSource(props.files, result.file);
+                if (source) void saveFiles([source]);
               },
             },
           ]

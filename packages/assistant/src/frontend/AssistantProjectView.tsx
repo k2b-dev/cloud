@@ -1,5 +1,5 @@
 import type { AiConversation, AiConversationPage, AiProject, AiProjectKnowledge } from "@k2b/cloud/ai";
-import { chooseFiles } from "@k2b/cloud/browser/files";
+import { chooseFiles, SAVE_FILES_ICON, saveFilesLabel } from "@k2b/cloud/browser/files";
 import { openCloudResourcePicker } from "@k2b/cloud/browser/resource-picker";
 import { openGlobalSearch } from "@k2b/cloud/browser/search";
 import { coreClient } from "@k2b/cloud/clients/core";
@@ -17,6 +17,7 @@ import {
   prompts,
   ScrollArea,
   toast,
+  useLocale,
 } from "@k2b/ui";
 import { createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { assistantApi } from "../api/client";
@@ -37,6 +38,7 @@ import {
   openAssistantContextFiles,
   openAssistantKnowledgeSearch,
   openAssistantMarkdown,
+  saveAssistantContextFile,
 } from "./AssistantContextContent";
 import { openAssistantConversationEditor } from "./AssistantConversationEditor";
 import { AssistantProjectApps } from "./AssistantProjectApps";
@@ -59,6 +61,7 @@ const CONTEXT_PREVIEW_LIMIT = 3;
 
 export default function AssistantProjectView(props: Props) {
   const text = useAssistantText();
+  const locale = useLocale();
   const copy = useAssistantCopy();
   const chats = solidQuery.createInfinite<string, AiConversationPage, number, AssistantLiveInvalidation>({
     source: () => props.project.id,
@@ -261,6 +264,10 @@ export default function AssistantProjectView(props: Props) {
     );
   };
 
+  // Only reading a file without a download route can fail here; the save dialog explains its own failures.
+  const saveFile = (file: AssistantContextFile) =>
+    saveAssistantContextFile(file).catch((error: unknown) => toast.error(error instanceof Error ? error.message : String(error)));
+
   const downloadFile = async (file: AssistantContextFile) => {
     try {
       await downloadAssistantContextFile(file);
@@ -287,6 +294,7 @@ export default function AssistantProjectView(props: Props) {
 
   const fileMenu = (file: AssistantContextFile): DropdownItem[] => [
     { icon: "ti ti-download", label: text("Download"), action: () => void downloadFile(file) },
+    { icon: SAVE_FILES_ICON, label: saveFilesLabel(locale()), action: () => void saveFile(file) },
     ...(canWrite()
       ? ([
           {

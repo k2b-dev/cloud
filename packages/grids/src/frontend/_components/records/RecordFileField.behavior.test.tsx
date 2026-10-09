@@ -9,7 +9,12 @@ const domTest = isServer ? test.skip : test;
 /** The shared chooser stands in for "This device" and every Cloud app; each call answers with the next result. */
 const choices: { options: ChooseFilesOptions; files: File[] }[] = [];
 let nextChoice: File[] = [];
+// "Save to Files" is not under test here; its own tests cover it.
 mock.module("@k2b/cloud/browser/files", () => ({
+  SAVE_FILES_ICON: "ti ti-folder-down",
+  SaveFilesButton: () => null,
+  saveFiles: async () => [],
+  saveFilesLabel: () => "Save to…",
   chooseFiles: async (options: ChooseFilesOptions) => {
     choices.push({ options, files: nextChoice });
     return nextChoice;

@@ -2,10 +2,19 @@ import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { useUiMessages } from "../intl/messages";
 
+/** One more thing to do with the shown image, beside Download: a short label, its icon class, and what it does. */
+export type LightboxAction = {
+  label: string;
+  icon: string;
+  onClick: () => void;
+};
+
 export type LightboxImage = {
   src: string;
   alt?: string;
   downloadUrl?: string;
+  /** Actions for this image, shown before Download in the same style. */
+  actions?: readonly LightboxAction[];
 };
 
 type LightboxProps = {
@@ -159,6 +168,14 @@ export default function Lightbox(props: LightboxProps) {
         </div>
 
         <div class="k2b-content-lightbox__actions">
+          <For each={current()?.actions ?? []}>
+            {(action) => (
+              <button type="button" onClick={() => action.onClick()} class="k2b-content-lightbox__button" aria-label={action.label}>
+                <i class={action.icon} aria-hidden="true" />
+                <span class="k2b-content-lightbox__button-label">{action.label}</span>
+              </button>
+            )}
+          </For>
           <Show when={current()?.downloadUrl}>
             <a href={current()!.downloadUrl} download="" class="k2b-content-lightbox__button" aria-label={messages().downloadImage}>
               <i class="ti ti-download" aria-hidden="true" />

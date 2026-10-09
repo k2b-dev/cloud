@@ -167,3 +167,28 @@
   gap: 0.5rem;
   margin-left: auto;
 }
+
+/* A saved file's progress, or the field for another name when its name is taken. Every row keeps the field's
+   height, so a conflict never moves the rows below. */
+.cloud-file-saver__slot {
+  display: flex;
+  align-items: center;
+  min-height: 2.25rem;
+}
+
+.cloud-file-saver__slot > .k2b-progress {
+  flex: 1 1 auto;
+}
+
+.cloud-file-saver__rename {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.cloud-file-saver__rename > :first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
