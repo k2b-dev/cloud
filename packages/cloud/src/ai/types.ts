@@ -300,7 +300,8 @@ export type AiStoredMessage = {
       trigger: "scheduled" | "manual";
     };
     toolPresentations?: Record<string, AiToolPresentation>;
-    toolOutcomes?: Record<string, "rejected" | "approved">;
+    /** How the person decided an approval; `expired` when the turn ended while it still waited. */
+    toolOutcomes?: Record<string, "rejected" | "approved" | "expired">;
     /** Why the turn failed, on the last message of its loop. The chat words it in the reader's language. */
     turnError?: AiTurnError;
   } | null;

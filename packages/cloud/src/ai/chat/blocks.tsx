@@ -183,11 +183,14 @@ function ToolResultDisclosure(props: {
   );
 }
 
+/** A decision the server accepted, for the call it answered. */
+export type AiApprovalDecision = { callId: string; approved: boolean };
+
 /**
  * The pending approval: a calm tinted card that says what will happen, with its fields and the decision. `onDecided`
- * hears an accepted decision, so the turn can show its receipt in the card's place right away.
+ * hears an accepted decision with the call it answered, so the turn can show its receipt in the card's place right away.
  */
-export function ApprovalBlockView(props: { turnId: string; block: ToolBlock; onDecided?: (approved: boolean) => void }) {
+export function ApprovalBlockView(props: { turnId: string; block: ToolBlock; onDecided?: (decision: AiApprovalDecision) => void }) {
   const actions = useAiChatActions();
   const locale = useLocale();
   const t = () => aiChatMessages(locale());
@@ -196,7 +199,8 @@ export function ApprovalBlockView(props: { turnId: string; block: ToolBlock; onD
   const actionDisabled = () => actions.actionDisabled?.() ?? false;
   const [submitted, setSubmitted] = createSignal(false);
   const [detailsOpen, setDetailsOpen] = createSignal(false);
-  let decision = false;
+  // The call this card answered: a later approval for the same block may already have arrived when the server accepts.
+  let decision: AiApprovalDecision | null = null;
   const approval = mutation.create<void, { approved: boolean; remember?: "always" }>({
     mutation: async (input) => {
       if (!actions.onApproval) throw new Error("Approval is unavailable.");
@@ -204,12 +208,12 @@ export function ApprovalBlockView(props: { turnId: string; block: ToolBlock; onD
     },
     onSuccess: () => {
       setSubmitted(true);
-      props.onDecided?.(decision);
+      if (decision) props.onDecided?.(decision);
     },
   });
   const submit = (input: { approved: boolean; remember?: "always" }) => {
     if (actionDisabled() || approval.loading()) return;
-    decision = input.approved;
+    decision = { callId: props.block.callId, approved: input.approved };
     void approval.mutate(input);
   };
   const title = () => props.block.presentation?.title ?? displayToolName(props.block.name, locale());

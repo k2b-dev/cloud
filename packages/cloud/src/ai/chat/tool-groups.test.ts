@@ -10,8 +10,8 @@ const tool = (id: string, name = "read_file"): Extract<AiTurnBlock, { kind: "too
   status: "completed",
 });
 
-const rows = (blocks: AiTurnBlock[], direct?: ReadonlySet<string>) =>
-  groupWorkBlocks(blocks, direct).items.map((item) =>
+const rows = (blocks: AiTurnBlock[], shown?: ReadonlySet<string>) =>
+  groupWorkBlocks(blocks, shown).map((item) =>
     item.kind === "housekeeping" ? item.entries.map((entry) => entry.id) : item.kind === "text" ? `text ${item.block.id}` : item.entry.id,
   );
 
@@ -39,14 +39,13 @@ test("housekeeping folds into one group with the reasoning between its steps, ke
     tool("data", "read_file"),
     tool("run", "code_run"),
   ]);
-  expect(work.items.map((item) => (item.kind === "housekeeping" ? [item.id, item.entries.map((entry) => entry.id)] : item.kind))).toEqual([
+  expect(work.map((item) => (item.kind === "housekeeping" ? [item.id, item.entries.map((entry) => entry.id)] : item.kind))).toEqual([
     "step",
     ["skill", ["skill", "r1", "ref", "tools"]],
     "step",
     "step",
     "step",
   ]);
-  expect(work.unfolded).toEqual([]);
   // A project file is work, not housekeeping.
   expect(rows([tool("a", "load_skill"), tool("b", "load_tools"), { ...tool("c"), args: { path: "/project/a.csv" } }, tool("d")])).toEqual([
     ["a", "b"],
@@ -58,13 +57,26 @@ test("housekeeping folds into one group with the reasoning between its steps, ke
 test("a group that would hold all but one step shows its steps directly, and steps a reader saw stay unfolded", () => {
   const loading = [tool("a", "load_skill"), tool("b", "search_tools"), tool("c", "load_tools"), tool("d", "read_help")];
   expect(rows(loading)).toEqual(["a", "b", "c", "d"]);
-  expect(groupWorkBlocks(loading).unfolded).toEqual(["a"]);
   expect(rows([...loading, tool("e", "code_run")])).toEqual(["a", "b", "c", "d", "e"]);
   const more = [...loading, tool("e", "code_run"), tool("f", "code_run")];
   expect(rows(more)).toEqual([["a", "b", "c", "d"], "e", "f"]);
-  expect(rows(more, new Set(["a"]))).toEqual(["a", "b", "c", "d", "e", "f"]);
+  expect(rows(more, new Set(["a", "b", "c", "d"]))).toEqual(["a", "b", "c", "d", "e", "f"]);
   // A single housekeeping step is not worth a group.
   expect(rows([tool("a", "load_skill"), tool("e", "code_run"), tool("f", "code_run")])).toEqual(["a", "e", "f"]);
+});
+
+test("a row already shown never joins a group, also when reasoning or arguments that would fold it arrive later", () => {
+  const work = [tool("x", "code_run"), tool("y", "code_run"), tool("a", "load_skill"), tool("b", "load_tools")];
+  const thought: AiTurnBlock = { id: "t", kind: "thinking", text: "Which reference?" };
+  expect(rows([...work, thought])).toEqual(["x", "y", ["a", "b"], "t"]);
+  // Housekeeping after the reasoning would pull it into the group; once shown, it stays and the group ends before it.
+  const next = [...work, thought, tool("c", "load_skill")];
+  expect(rows(next)).toEqual(["x", "y", ["a", "b", "t", "c"]]);
+  expect(rows(next, new Set(["x", "y", "t"]))).toEqual(["x", "y", ["a", "b"], "t", "c"]);
+  // A file read shown before its arguments arrived stays, though its path turns out to be a loaded skill's file.
+  const skillFile = { ...tool("r"), args: { path: "/skills/report/SKILL.md" } };
+  expect(rows([...work, skillFile])).toEqual(["x", "y", ["a", "b", "r"]]);
+  expect(rows([...work, skillFile], new Set(["x", "y", "r"]))).toEqual(["x", "y", ["a", "b"], "r"]);
 });
 
 test("failures and rejections are counted apart", () => {

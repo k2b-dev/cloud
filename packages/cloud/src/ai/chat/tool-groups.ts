@@ -53,29 +53,21 @@ const isStep = (entry: AiWorkEntry) => entry.kind === "tool" || entry.kind === "
 /**
  * The rows of the expanded work, in the original order. A run of at least two housekeeping steps, with the reasoning
  * between them, folds into one group, unless it would hold all but one of the work's steps: then the steps show
- * directly, so the work line never opens to a summary of itself. Runs listed in `direct` stay unfolded, so steps a
- * reader is watching never fold away; `unfolded` names every run this call left unfolded. A group is keyed by its
- * first tool, whose id is the same live and in history.
+ * directly, so the work line never opens to a summary of itself. Entries listed in `shown` already show as rows of
+ * their own and never fold into a group, so nothing a reader sees folds away under them. A group is keyed by its first
+ * tool, whose id is the same live and in history.
  */
-export function groupWorkBlocks(
-  blocks: readonly AiTurnBlock[],
-  direct: ReadonlySet<string> = new Set(),
-): { items: AiWorkItem[]; unfolded: string[] } {
+export function groupWorkBlocks(blocks: readonly AiTurnBlock[], shown: ReadonlySet<string> = new Set()): AiWorkItem[] {
   const entries = blocks.filter((block): block is AiWorkEntry | Text => block.kind !== "steer_message");
   const steps = entries.filter((entry) => entry.kind !== "text" && isStep(entry)).length;
   const items: AiWorkItem[] = [];
-  const unfolded: string[] = [];
   let run: AiWorkEntry[] = [];
   let trailing: AiWorkEntry[] = [];
   const flush = () => {
     if (run.length > 0) {
-      const id = run[0]!.id;
       const runSteps = run.filter(isStep).length;
-      if (runSteps >= 2 && steps - runSteps >= 2 && !direct.has(id)) items.push({ kind: "housekeeping", id, entries: run });
-      else {
-        unfolded.push(id);
-        for (const entry of run) items.push({ kind: "step", entry });
-      }
+      if (runSteps >= 2 && steps - runSteps >= 2) items.push({ kind: "housekeeping", id: run[0]!.id, entries: run });
+      else for (const entry of run) items.push({ kind: "step", entry });
     }
     // Reasoning after the last housekeeping step belongs to what comes next.
     for (const entry of trailing) items.push({ kind: "step", entry });
@@ -83,17 +75,18 @@ export function groupWorkBlocks(
     trailing = [];
   };
   for (const entry of entries) {
-    if (entry.kind === "tool" && isHousekeepingTool(entry)) {
+    const foldable = !shown.has(entry.id);
+    if (foldable && entry.kind === "tool" && isHousekeepingTool(entry)) {
       run.push(...trailing, entry);
       trailing = [];
-    } else if (entry.kind === "thinking" && run.length > 0) trailing.push(entry);
+    } else if (foldable && entry.kind === "thinking" && run.length > 0) trailing.push(entry);
     else {
       flush();
       items.push(entry.kind === "text" ? { kind: "text", block: entry } : { kind: "step", entry });
     }
   }
   flush();
-  return { items, unfolded };
+  return items;
 }
 
 /** "9 steps · 1 failed · 1 rejected" for a group of steps. */

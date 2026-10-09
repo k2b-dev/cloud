@@ -17,7 +17,14 @@ import {
 import { markdown } from "../../shared";
 import { AI_TURN_LEASE_MS, type AiTurnBlock } from "../protocol";
 import type { AiTurnError } from "../types";
-import { ApprovalBlockView, CompactionBlockView, CompactToolRow, SurveyToolView, TextEditorToolView } from "./blocks";
+import {
+  type AiApprovalDecision,
+  ApprovalBlockView,
+  CompactionBlockView,
+  CompactToolRow,
+  SurveyToolView,
+  TextEditorToolView,
+} from "./blocks";
 import { CapabilityTablePreview } from "./capability-table";
 import { PresentToolBlock } from "./file-tools";
 import { useAiChatActions } from "./message-actions";
@@ -88,10 +95,12 @@ export const formatWorkClock = (ms: number): string => {
 
 const basename = (value: string) => value.slice(value.lastIndexOf("/") + 1) || value;
 
+/** What a call acts on: the file name of its path, or its name, title, or query as given. */
 const toolTarget = (block: ToolBlock): string => {
   const args = isRecord(block.args) ? block.args : {};
-  const value = [args.path, args.name, args.title, args.query].find((entry) => typeof entry === "string" && entry.trim());
-  return typeof value === "string" ? basename(value.trim()) : "";
+  if (typeof args.path === "string" && args.path.trim()) return basename(args.path.trim());
+  const value = [args.name, args.title, args.query].find((entry) => typeof entry === "string" && entry.trim());
+  return typeof value === "string" ? value.trim() : "";
 };
 
 /** A step that runs longer than this shows its duration, so a long step does not look like a stalled one. */
@@ -295,15 +304,16 @@ const workItemKey = (item: AiWorkItem): string =>
 
 /**
  * Expanded work, one indent below the work line and one size: intermediate texts as quiet paragraphs, the steps between
- * them directly, and housekeeping folded at step level. Steps shown while this list is open never fold away under the
- * reader; the next time it opens, they fold like in history.
+ * them directly, and housekeeping folded at step level. A row shown while this list is open never folds away under the
+ * reader, also when reasoning or arguments that would fold it arrive later; the next time it opens, it folds like in
+ * history.
  */
 function AiWorkSteps(props: { blocks: AiTurnBlock[]; active: boolean }) {
-  const direct = new Set<string>();
+  const shown = new Set<string>();
   const items = createMemo(() => {
-    const work = groupWorkBlocks(props.blocks, direct);
-    for (const id of work.unfolded) direct.add(id);
-    return new Map(work.items.map((item) => [workItemKey(item), item]));
+    const work = groupWorkBlocks(props.blocks, shown);
+    for (const item of work) if (item.kind === "step") shown.add(item.entry.id);
+    return new Map(work.map((item) => [workItemKey(item), item]));
   });
   const keys = createMemo(() => [...items().keys()]);
   return (
@@ -492,18 +502,24 @@ function AiTurnActionView(props: { action: Accessor<AiTurnAction | undefined>; t
   let row!: HTMLDivElement;
   // Set while focus is in this place, including after the focused control disappeared with the decided card.
   let focusedHere = false;
-  // The decision the server accepted for the card here; its receipt replaces the card before the turn reports it.
-  const [decided, setDecided] = createSignal<boolean | null>(null);
+  // The decision the server accepted for a card here; its receipt replaces the card before the turn reports it. It
+  // belongs to the call it answered: code that asks again shows the next request on the same block as a new card.
+  const [decided, setDecided] = createSignal<AiApprovalDecision | null>(null);
   const action = () => props.action();
   const state = () => action()?.state;
+  const decision = () => {
+    const current = action();
+    const value = decided();
+    return current && value?.callId === current.block.callId ? value.approved : null;
+  };
   const card = () => {
     const current = action();
-    return current?.state === "open" && current.block.status === "awaiting_approval" && decided() === null ? current.block : undefined;
+    return current?.state === "open" && current.block.status === "awaiting_approval" && decision() === null ? current.block : undefined;
   };
   const receipt = (): ReceiptState | undefined => {
     const current = action();
     if (!current || card()) return undefined;
-    if (current.state === "open" && current.block.status === "awaiting_approval") return decided() ? "running" : "rejected";
+    if (current.state === "open" && current.block.status === "awaiting_approval") return decision() ? "running" : "rejected";
     return current.state === "open" || current.state === "interaction" ? undefined : current.state;
   };
   // Screen readers hear a waiting approval once, as one short line instead of the whole card, without moving focus.

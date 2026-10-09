@@ -130,14 +130,13 @@
   font-size: 1.125rem;
 }
 
+/* The title wraps, so it reads in full where the decision button has to shorten it. */
 .k2b-ui .ai-approval__title {
-  overflow: hidden;
   margin: 0;
   color: var(--k2b-text);
   font-size: 0.875rem;
   font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .k2b-ui .ai-approval__sub,
@@ -222,10 +221,20 @@
     margin-left: 0;
   }
 
+  /* The buttons share the width and may shrink below their labels: a long action title ends in an ellipsis instead
+     of pushing the menu out of the card. The title above shows it in full. */
   .k2b-ui .ai-approval__actions > *,
   .k2b-ui .ai-approval__actions .k2b-split-button__primary {
+    min-width: 0;
     flex: 1;
     justify-content: center;
+  }
+
+  .k2b-ui .ai-approval__actions .k2b-split-button__primary > .k2b-button__label {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 }
 

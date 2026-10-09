@@ -788,9 +788,10 @@ const messageSearchText = (message: Message): string => {
  * Record how a turn ended on its messages when its loop could not record it: a stop while an approval waits, a run
  * time limit, or a turn the sweep finalizes. History reads the ending from the last assistant message, so such a turn
  * never looks finished. A failure replaces the `aborted` that a loop cut off by its run time limit recorded, so the
- * limit never looks like a user stop. A call the user approved that never returned keeps its approval in history.
- * A failure's reason goes to the turn's last message, also when that is the user's own, so history can say why the
- * turn failed and what to do next.
+ * limit never looks like a user stop. A call the user approved that never returned keeps its approval in history, and
+ * one whose approval still waited records that the approval expired, so history shows it as not run. A failure's
+ * reason goes to the turn's last message, also when that is the user's own, so history can say why the turn failed and
+ * what to do next.
  */
 const recordTurnEnd = async (
   db: typeof sql,
@@ -829,8 +830,9 @@ const recordTurnEnd = async (
       )
         AND (loop_done_reason IS NULL OR loop_done_reason = ${replaces}::text)
     `;
-    // An approved call without a result keeps the decision on the message that holds the call. A decision on a custom
-    // approval belongs to the call that asked for it.
+    // An approved call without a result keeps the decision on the message that holds the call; an approval nobody
+    // answered is recorded as expired. A custom approval belongs to the call that asked for it, and one approved request
+    // of that call outweighs a later one that expired.
     await db`
       UPDATE ${db(table)} target
       SET meta = jsonb_set(
@@ -839,30 +841,35 @@ const recordTurnEnd = async (
         COALESCE(target.meta->'toolOutcomes', '{}'::jsonb) || outcomes.value
       )
       FROM (
-        SELECT message.id, jsonb_object_agg(approved.call_id, 'approved'::text) AS value
+        SELECT message.id, jsonb_object_agg(decided.call_id, decided.outcome) AS value
         FROM (
-          SELECT DISTINCT
+          SELECT
             CASE
               WHEN action.kind = 'custom_approval' THEN COALESCE(substring(action.call_id FROM '^(.*)-approval-[0-9]+$'), action.call_id)
               ELSE action.call_id
-            END AS call_id
+            END AS call_id,
+            CASE WHEN bool_or(action.resolved_event IS NOT NULL) THEN 'approved' ELSE 'expired' END AS outcome
           FROM ai.pending_actions action
           WHERE action.turn_id = ${input.turnId}
-            AND action.resolved_event->>'type' = 'approval_response'
-            AND action.resolved_event->>'approved' = 'true'
-        ) approved
+            AND action.kind IN ('approval', 'custom_approval')
+            AND (
+              action.resolved_event IS NULL
+              OR (action.resolved_event->>'type' = 'approval_response' AND action.resolved_event->>'approved' = 'true')
+            )
+          GROUP BY 1
+        ) decided
         JOIN ${db(table)} message
           ON message.conversation_id = ${input.conversationId}
           AND message.loop_id = ${input.turnId}::text
           AND message.role = 'assistant'
-          AND message.message->'content' @> jsonb_build_array(jsonb_build_object('type', 'tool_call', 'id', approved.call_id))
+          AND message.message->'content' @> jsonb_build_array(jsonb_build_object('type', 'tool_call', 'id', decided.call_id))
         WHERE NOT EXISTS (
           SELECT 1
           FROM ${db(table)} result
           WHERE result.conversation_id = ${input.conversationId}
             AND result.loop_id = ${input.turnId}::text
             AND result.role = 'tool_result'
-            AND result.message->>'callId' = approved.call_id
+            AND result.message->>'callId' = decided.call_id
         )
         GROUP BY message.id
       ) outcomes

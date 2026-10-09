@@ -206,6 +206,17 @@ describe("persisted tool outcomes", () => {
     expect(block).toMatchObject({ kind: "tool", status: "completed", approved: true });
   });
 
+  test("rebuilds a call whose approval expired with the turn as not approved, so history keeps its receipt", () => {
+    const [block] = buildBlocksFromMessages([
+      {
+        seq: 1,
+        message: { role: "assistant", content: [{ type: "tool_call", id: "call-1", name: "code_run", args: {} }] },
+        meta: { toolOutcomes: { "call-1": "expired" } },
+      },
+    ]);
+    expect(block).toMatchObject({ kind: "tool", status: "running", approved: false });
+  });
+
   test("a resolved approval marks the waiting call as approved", () => {
     const [block] = reconcileResolvedTurnActions(
       [

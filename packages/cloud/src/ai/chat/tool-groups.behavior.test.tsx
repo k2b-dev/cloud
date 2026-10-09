@@ -143,3 +143,40 @@ domTest("housekeeping folds at step level and opens in place; steps a reader wat
     view.cleanup();
   }
 });
+
+domTest("rows a reader sees in the open work list stay when later reasoning or arguments would fold them", async () => {
+  const work = [tool("x", "code_run"), tool("y", "code_run"), tool("a", "load_skill"), tool("b", "load_tools")];
+  const [blocks, setBlocks] = createSignal<AiTurnBlock[]>(work);
+  const view = await mount(blocks);
+  const labels = () => view.steps().map((step) => step.querySelector("summary")?.textContent ?? "");
+  try {
+    view.toggle(view.work());
+    expect(labels()).toEqual([
+      expect.stringContaining("Run code"),
+      expect.stringContaining("Run code"),
+      expect.stringContaining("Loaded tools and guidance"),
+    ]);
+    const group = view.steps()[2]!;
+
+    // Reasoning streams in after the group, then the next housekeeping step: the reasoning row stays.
+    setBlocks([...work, { id: "t", kind: "thinking", text: "Which reference?" }]);
+    const thought = view.steps()[3]!;
+    expect(thought.textContent).toContain("Which reference?");
+    setBlocks([...work, { id: "t", kind: "thinking", text: "Which reference?" }, tool("c", "load_skill")]);
+    expect(view.steps()[2]).toBe(group);
+    expect(view.steps()[3]).toBe(thought);
+    expect(group.querySelector("summary")?.textContent).toContain("2 steps");
+
+    // A file read starts without its arguments, so it shows as a step; its skill path arrives later and it stays.
+    const read = { id: "r", kind: "tool" as const, callId: "r", name: "read_file", status: "running" as const };
+    const before = [...blocks()];
+    setBlocks([...before, read]);
+    const row = view.steps().at(-1)!;
+    expect(row.textContent).toContain("Read file");
+    setBlocks([...before, { ...read, args: { path: "/skills/report/SKILL.md" } }]);
+    expect(view.steps().at(-1)).toBe(row);
+    expect(group.querySelector("summary")?.textContent).toContain("2 steps");
+  } finally {
+    view.cleanup();
+  }
+});

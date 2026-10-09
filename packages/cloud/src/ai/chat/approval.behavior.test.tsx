@@ -173,6 +173,22 @@ domTest("a rejected approval and one a stop left open read as receipts in the re
   }
 });
 
+domTest("a built-in tool's approval a stop left undecided becomes a quiet receipt where its card stood", async () => {
+  const view = await mountTurn([runCode], { locale: "de" });
+  try {
+    const place = view.place();
+    expect(place.querySelector(".ai-approval")).not.toBeNull();
+    // History records the approval as expired; the call is no Cloud action, and still keeps its place.
+    view.setBlocks([{ ...runCode, status: "running", approved: false, approval: undefined }]);
+    view.setPhase("stopped");
+    expect(view.place()).toBe(place);
+    expect(place.textContent).toBe("Nicht ausgeführt: Code ausführen · report.ts · gestoppt");
+    expect(place.querySelector(".ti-circle-off")).not.toBeNull();
+  } finally {
+    view.cleanup();
+  }
+});
+
 domTest("an approval a stop left undecided becomes a quiet receipt where its card stood", async () => {
   const send: Extract<AiTurnBlock, { kind: "tool" }> = {
     ...request,
@@ -190,6 +206,42 @@ domTest("an approval a stop left undecided becomes a quiet receipt where its car
     expect(place.querySelector(".ai-approval")).toBeNull();
     expect(place.textContent).toBe("Nicht ausgeführt: E-Mail senden · gestoppt");
     expect(place.querySelector(".ti-circle-off")).not.toBeNull();
+  } finally {
+    view.cleanup();
+  }
+});
+
+domTest("code that asks again gets a new card in the same place after each decision", async () => {
+  // Code asks for approvals one after another; each request has its own call, shown on the block of the code run.
+  const ask = (index: number): Extract<AiTurnBlock, { kind: "tool" }> => ({
+    ...runCode,
+    callId: `run-approval-${index}`,
+    approval: { message: `Step ${index}`, allowAlways: false },
+  });
+  const view = await mountTurn([ask(0)]);
+  try {
+    const place = view.place();
+    view.button("Run code").click();
+    await tick();
+    await tick();
+    expect(place.querySelector(".ai-turn-receipt")?.textContent).toBe("Running: Run code · report.ts");
+
+    // The turn reports the decision; the code runs on and asks again.
+    view.setBlocks([{ ...ask(0), status: "running", approved: true, approval: undefined }]);
+    view.setPhase("running");
+    view.setBlocks([{ ...ask(1), approved: true }]);
+    view.setPhase("waiting");
+    expect(place.querySelector(".ai-approval")?.textContent).toContain("Step 1");
+    view.button("Reject").click();
+    await tick();
+    await tick();
+    expect(view.decisions).toEqual([{ approved: true }, { approved: false }]);
+    expect(place.querySelector(".ai-turn-receipt")?.textContent).toBe("Rejected: Run code · report.ts");
+
+    // A rejected request does not decide the next one either.
+    view.setBlocks([{ ...ask(2), approved: true }]);
+    expect(place.querySelector(".ai-approval")?.textContent).toContain("Step 2");
+    expect(view.place()).toBe(place);
   } finally {
     view.cleanup();
   }

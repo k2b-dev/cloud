@@ -813,3 +813,58 @@ for (const view of [
         await context.close();
       }
     }, 60_000);
+
+for (const width of [390, 320])
+  test(`a long action title shortens the approve button on a phone instead of pushing it out of the card (${width} px)`, async () => {
+    const context = await browser.newContext({ viewport: { width, height: 844 }, isMobile: true, hasTouch: true, reducedMotion: "reduce" });
+    try {
+      const page = await context.newPage();
+      await page.goto(`http://127.0.0.1:${server.port}/?lang=de&theme=light`);
+      const title = "Lokale Anwendungseinstellungen aktualisieren";
+      await emit(page, { ...base, seq: 1, type: "turn_started", modelProfileId: "m", providerModel: "m", blocks: [] });
+      await emit(page, {
+        ...base,
+        seq: 2,
+        type: "block_set",
+        block: {
+          id: "tool-settings",
+          kind: "tool",
+          callId: "settings",
+          name: "settings__action__update",
+          args: {},
+          status: "awaiting_approval",
+          presentation: {
+            kind: "capability",
+            appId: "settings",
+            appName: "Einstellungen",
+            appIcon: "ti ti-settings",
+            title,
+            capabilityKind: "action",
+          },
+          approval: { allowAlways: false, message: "Einstellungen: " + title },
+        },
+      });
+      const card = ".ai-turn__action .ai-approval";
+      const boxes = await page.evaluate((query) => {
+        const box = (selector: string) => document.querySelector(`${query} ${selector}`)!.getBoundingClientRect();
+        const label = document.querySelector<HTMLElement>(`${query} .k2b-split-button__primary .k2b-button__label`)!;
+        return {
+          card: box("").right,
+          menu: box(".k2b-split-button__menu-trigger").right,
+          reject: box(".ai-approval__actions > .k2b-button").left,
+          truncated: label.scrollWidth > label.clientWidth,
+          document: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        };
+      }, card);
+      expect(boxes.menu).toBeLessThanOrEqual(boxes.card);
+      expect(boxes.reject).toBeGreaterThanOrEqual(0);
+      expect(boxes.truncated).toBe(true);
+      expect(boxes.document).toBeLessThanOrEqual(0);
+      expect((await layout(page)).overflowX).toBeLessThanOrEqual(0);
+      // The title reads in full above, and the button keeps it as its name.
+      expect(await page.locator(`${card} .ai-approval__title`).innerText()).toContain(title);
+      expect(await page.getByRole("button", { name: title, exact: true }).count()).toBe(1);
+    } finally {
+      await context.close();
+    }
+  }, 30_000);

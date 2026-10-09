@@ -232,11 +232,14 @@ order:
    "Loaded tools and guidance · 4 steps" at step level, with the reasoning
    between those steps; it opens in place without a second indent. A run of
    housekeeping that would hold all but one of the work's steps shows its
-   steps directly, so the line never opens to a summary of itself, and steps a
-   reader sees while the line is open never fold away under them. The line
-   opens on a click, Enter, or Space in every state, live or finished, also
-   while its clock ticks, and stays open while new steps stream in; the
-   conversation then keeps the line where it was instead of following the end.
+   steps directly, so the line never opens to a summary of itself. A row a
+   reader sees while the line is open never folds away under them, also when
+   reasoning after it or a call's arguments arrive later and would make it
+   housekeeping; the next time the line opens, it folds like in history. The
+   line opens on a click, Enter, or Space in every state, live or finished,
+   also while its clock ticks, and stays open while new steps stream in. Opening
+   or closing it never scrolls the conversation; afterwards the conversation
+   follows new steps only while its end is still in view.
    Every step stays there, including results and actions, so input and output
    remain reachable. Failed steps say "failed" in muted text; a rejected approval says
    "rejected". An app check (`code_check`) reads "Checking the app" while it
@@ -269,20 +272,29 @@ order:
    A pending approval is a calm card with a warning tint and no border: its
    title says what will happen, such as "Mail · Send email", with "Runs only
    after you approve it" below, then the review text and fields, and Reject
-   next to the action itself. On phones the fields stack under their labels and
-   the two buttons share the width. A receipt is one line that names the call
-   in the reader's language with what it acted on, never its raw tool name:
+   next to the action itself. The title wraps instead of being cut off. On
+   phones the fields stack under their labels and the two buttons share the
+   width; a long action name ends in an ellipsis on its button rather than
+   pushing the card wider, while the title above shows it in full. When code
+   asks for approval again, each new request is a new card in the same place.
+   A receipt is one line that names the call in the reader's language with what
+   it acted on, the file name of its path or its name or title as given, never
+   its raw tool name:
    "Email to Jana Berger sent" from the action's summary with its links,
    "Approved: Run code · report.ts" for an approved tool that is not a Cloud
    action, "Running: Send email" while it runs, "Rejected: Send email",
    "Failed: Send email", or "Not run: Send email · stopped" when the turn ended
-   before the call ran. Once the server accepts a decision, the card turns
+   before the call ran. An approval still waiting when the turn ends reads the
+   same, also for a tool that is not a Cloud action, such as "Not run: Run code
+   · report.ts · stopped", or "Not run: Run code · report.ts" after a time
+   limit or an expired wait. Once the server accepts a decision, the card turns
    into its receipt in place, before the turn reports the call; later updates
    change only the receipt's words. If the decision was made in that card,
    focus stays on its place without scrolling. An approved call carries `approved: true` on its
    tool block, live and in history, so its receipt survives a reload, also when
-   the turn ended before the call returned. Links without a title read "Open",
-   "Edit", or "Download" in the reader's language.
+   the turn ended before the call returned. A call whose approval still waited
+   when the turn ended carries `approved: false` in history. Links without a
+   title read "Open", "Edit", or "Download" in the reader's language.
 
 A turn without tool calls or compaction, such as a plain answer, a steering
 marker, or an answer with only reasoning, has no work line. Its texts form the
