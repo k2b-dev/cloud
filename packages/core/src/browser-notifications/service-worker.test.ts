@@ -3,13 +3,31 @@ import serviceWorkerSource from "./service-worker.js" with { type: "text" };
 
 type Listener = (event: Record<string, unknown>) => void;
 
-const loadWorker = (windows: Array<Record<string, unknown>>, navigator: Record<string, unknown> = {}) => {
+const createCaches = () => {
+  const entries = new Map<string, Response>();
+  return {
+    open: async (_name: string) => ({
+      match: async (key: string) => entries.get(key)?.clone(),
+      put: async (key: string, response: Response) => {
+        entries.set(key, response.clone());
+      },
+    }),
+  };
+};
+
+const loadWorker = (
+  windows: Array<Record<string, unknown>>,
+  navigator: Record<string, unknown> = {},
+  caches: ReturnType<typeof createCaches> = createCaches(),
+) => {
   const listeners = new Map<string, Listener>();
   const shown: Array<{ title: string; options: Record<string, unknown> }> = [];
   const opened: string[] = [];
-  const visible = new Map<unknown, unknown>();
+  const visible = new Map<unknown, { title: string; options: Record<string, unknown> }>();
   const worker = {
     navigator,
+    caches,
+    location: { origin: "https://cloud.example" },
     addEventListener: (type: string, listener: Listener) => listeners.set(type, listener),
     skipWaiting: () => Promise.resolve(),
     clients: {
@@ -21,6 +39,10 @@ const loadWorker = (windows: Array<Record<string, unknown>>, navigator: Record<s
       },
     },
     registration: {
+      getNotifications: async ({ tag }: { tag: string }) => {
+        const notification = visible.get(tag);
+        return notification ? [{ title: notification.title, ...notification.options }] : [];
+      },
       showNotification: (title: string, options: Record<string, unknown>) => {
         shown.push({ title, options });
         visible.set(options.tag, { title, options });
@@ -29,7 +51,7 @@ const loadWorker = (windows: Array<Record<string, unknown>>, navigator: Record<s
     },
   };
   new Function("self", serviceWorkerSource)(worker);
-  return { listeners, opened, shown, visible };
+  return { listeners, opened, shown, visible, worker };
 };
 
 const pushEvent = (payload: unknown) => {
@@ -115,7 +137,7 @@ describe("browser notification service worker", () => {
           icon: "/branding/logo",
           tag: "inventory:stock:one",
           renotify: true,
-          data: { targetHref: "/", group: "inventory:stock:one" },
+          data: { targetHref: "/" },
         },
       })),
     );
@@ -123,8 +145,186 @@ describe("browser notification service worker", () => {
     expect(visible.get("inventory:stock:one")).toEqual(shown[1]);
   });
 
+  test("keeps a newer grouped notification and badge when an older push arrives late", async () => {
+    const badges: number[] = [];
+    const { listeners, shown, visible } = loadWorker([], { setAppBadge: (count: number) => badges.push(count) });
+    for (const [title, createdAt, badge] of [
+      ["Second", 2000, 5],
+      ["First", 1000, 3],
+    ]) {
+      const push = pushEvent({ type: "cloud-notification", eventId: crypto.randomUUID(), title, createdAt, badge, group: "chat:one" });
+      listeners.get("push")!(push.event);
+      await push.completion();
+    }
+    expect(visible.get("chat:one")).toEqual({
+      title: "Second",
+      options: { icon: "/branding/logo", tag: "chat:one", data: { targetHref: "/", createdAt: 2000 } },
+    });
+    expect(shown[0]?.options.renotify).toBe(true);
+    expect(shown[1]?.options).not.toHaveProperty("renotify");
+    expect(badges).toEqual([5]);
+  });
+
+  test("renotifies and applies badges in order, including equal timestamps", async () => {
+    const badges: number[] = [];
+    const { listeners, shown } = loadWorker([], { setAppBadge: (count: number) => badges.push(count) });
+    for (const [createdAt, badge] of [
+      [1000, 3],
+      [2000, 5],
+      [2000, 6],
+    ]) {
+      const push = pushEvent({
+        type: "cloud-notification",
+        eventId: crypto.randomUUID(),
+        title: "Ready",
+        createdAt,
+        badge,
+        group: "chat:one",
+      });
+      listeners.get("push")!(push.event);
+      await push.completion();
+    }
+    expect(shown.map(({ options }) => options.renotify)).toEqual([true, true, true]);
+    expect(badges).toEqual([3, 5, 6]);
+  });
+
+  test("keeps the newer notification when same-group pushes overlap", async () => {
+    const { listeners, shown, visible } = loadWorker([]);
+    const pushes = [
+      [2000, "Second"],
+      [1000, "First"],
+    ].map(([createdAt, title]) =>
+      pushEvent({ type: "cloud-notification", eventId: crypto.randomUUID(), title, createdAt, group: "chat:one" }),
+    );
+    for (const push of pushes) listeners.get("push")!(push.event);
+    await Promise.all(pushes.map((push) => push.completion()));
+    expect(visible.get("chat:one")?.title).toBe("Second");
+    expect(shown[1]?.options).not.toHaveProperty("renotify");
+  });
+
+  test("serializes badge updates while concurrent notifications still display", async () => {
+    const badges: number[] = [];
+    let completeBadge: () => void = () => {};
+    const badgeDone = new Promise<void>((resolve) => {
+      completeBadge = resolve;
+    });
+    let badgeStarted: () => void = () => {};
+    const started = new Promise<void>((resolve) => {
+      badgeStarted = resolve;
+    });
+    const caches = createCaches();
+    const cache = await caches.open("cloud-notification-state");
+    const match = cache.match;
+    cache.match = async (key) => {
+      const previous = await match(key);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      return previous;
+    };
+    caches.open = async () => cache;
+    const { listeners, shown } = loadWorker(
+      [],
+      {
+        setAppBadge: (count: number) => {
+          badges.push(count);
+          badgeStarted();
+          return badgeDone;
+        },
+      },
+      caches,
+    );
+    const first = pushEvent({ type: "cloud-notification", eventId: crypto.randomUUID(), title: "Second", createdAt: 2000, badge: 5 });
+    listeners.get("push")!(first.event);
+    const second = pushEvent({ type: "cloud-notification", eventId: crypto.randomUUID(), title: "First", createdAt: 1000, badge: 3 });
+    listeners.get("push")!(second.event);
+    await started;
+    // Allow the second display to finish while the first badge call is still pending.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(shown.map(({ title }) => title)).toEqual(["Second", "First"]);
+    expect(badges).toEqual([5]);
+    completeBadge();
+    await Promise.all([first.completion(), second.completion()]);
+    expect(badges).toEqual([5]);
+  });
+
+  test("keeps badge recency across groups", async () => {
+    const badges: number[] = [];
+    const { listeners, shown } = loadWorker([], { setAppBadge: (count: number) => badges.push(count) });
+    for (const [group, createdAt, badge] of [
+      ["chat:x", 2000, 5],
+      ["chat:y", 1000, 3],
+    ]) {
+      const push = pushEvent({ type: "cloud-notification", eventId: crypto.randomUUID(), title: "Ready", group, createdAt, badge });
+      listeners.get("push")!(push.event);
+      await push.completion();
+    }
+    expect(shown.map(({ options }) => options.renotify)).toEqual([true, true]);
+    expect(badges).toEqual([5]);
+  });
+
+  test("keeps badge recency after the worker restarts", async () => {
+    const caches = createCaches();
+    const badges: number[] = [];
+    for (const [createdAt, badge] of [
+      [2000, 5],
+      [1000, 3],
+    ]) {
+      const { listeners, shown } = loadWorker([], { setAppBadge: (count: number) => badges.push(count) }, caches);
+      const push = pushEvent({ type: "cloud-notification", eventId: crypto.randomUUID(), title: "Ready", createdAt, badge });
+      listeners.get("push")!(push.event);
+      await push.completion();
+      expect(shown).toHaveLength(1);
+    }
+    expect(badges).toEqual([5]);
+  });
+
+  test.each(["notifications missing", "notifications throw", "caches missing", "caches throw", "cache read throws", "cache write throws"])(
+    "still displays and badges when %s",
+    async (failure) => {
+      const badges: number[] = [];
+      const { listeners, shown, worker } = loadWorker([], { setAppBadge: (count: number) => badges.push(count) });
+      if (failure === "notifications missing") Reflect.deleteProperty(worker.registration, "getNotifications");
+      if (failure === "notifications throw")
+        worker.registration.getNotifications = async () => {
+          throw new Error("Unavailable");
+        };
+      if (failure === "caches missing") Reflect.deleteProperty(worker, "caches");
+      if (failure === "caches throw")
+        worker.caches.open = async () => {
+          throw new Error("Unavailable");
+        };
+      if (failure === "cache read throws" || failure === "cache write throws") {
+        const cache = await worker.caches.open("cloud-notification-state");
+        if (failure === "cache read throws")
+          cache.match = async () => {
+            throw new Error("Unavailable");
+          };
+        else
+          cache.put = async () => {
+            throw new Error("Unavailable");
+          };
+        worker.caches.open = async () => cache;
+      }
+      const push = pushEvent({
+        type: "cloud-notification",
+        eventId: crypto.randomUUID(),
+        title: "Ready",
+        group: "chat:one",
+        createdAt: 1000,
+        badge: 3,
+      });
+      listeners.get("push")!(push.event);
+      await push.completion();
+      expect(shown).toHaveLength(1);
+      expect(badges).toEqual([3]);
+    },
+  );
+
   test.each([3, 0])("sets or clears the app badge for count %i within waitUntil", async (badge) => {
     const calls: unknown[] = [];
+    let badgeStarted: () => void = () => {};
+    const started = new Promise<void>((resolve) => {
+      badgeStarted = resolve;
+    });
     let completeBadge: () => void = () => {};
     const badgeDone = new Promise<void>((resolve) => {
       completeBadge = resolve;
@@ -132,10 +332,12 @@ describe("browser notification service worker", () => {
     const { listeners, shown } = loadWorker([], {
       setAppBadge: (count: number) => {
         calls.push(count);
+        badgeStarted();
         return badgeDone;
       },
       clearAppBadge: () => {
         calls.push("clear");
+        badgeStarted();
         return badgeDone;
       },
     });
@@ -146,7 +348,7 @@ describe("browser notification service worker", () => {
     const completion = push.completion()!.then(() => {
       finished = true;
     });
-    await Promise.resolve();
+    await started;
     expect(finished).toBe(false);
     expect(calls).toEqual([badge === 0 ? "clear" : badge]);
     completeBadge();
@@ -193,7 +395,8 @@ describe("browser notification service worker", () => {
   test.each([
     ...[null, 42, "", "group space", "group/one", " group", "group\n"].map((group) => ({ group })),
     ...[null, "2", -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1].map((badge) => ({ badge })),
-  ])("rejects invalid grouping or badge metadata: %j", (metadata) => {
+    ...[null, "1", -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1].map((createdAt) => ({ createdAt })),
+  ])("rejects invalid grouping, badge, or timestamp metadata: %j", (metadata) => {
     const { listeners, shown } = loadWorker([]);
     const push = pushEvent({ type: "cloud-notification", eventId: crypto.randomUUID(), title: "Ready", ...metadata });
     listeners.get("push")!(push.event);

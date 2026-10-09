@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 
 // Isolate provider/settings mocks so other notification suites keep real modules.
-test("browser delivery namespaces groups and collapses push topics without changing ungrouped payloads", async () => {
+test("browser delivery namespaces groups and keeps per-event push topics without changing ungrouped payloads", async () => {
   const script = `
     import { mock } from "bun:test";
     import assert from "node:assert/strict";
@@ -52,31 +52,48 @@ test("browser delivery namespaces groups and collapses push topics without chang
     for (const [appId, id, badge] of [
       ["inventory", eventId, 3], ["inventory", crypto.randomUUID(), 0], ["other", crypto.randomUUID(), 2],
     ]) {
+      const before = Date.now();
       const payload = driver.createPayload({
         ...input, event: { id, definitionId: appId + ".stockLow" },
         presentation: { ...input.presentation, group: "stock:one", badge },
       });
-      assert.deepEqual(payload, { ...plain, eventId: id, group: appId + ":stock:one", badge });
+      assert.ok(Number.isSafeInteger(payload.createdAt));
+      assert.ok(payload.createdAt >= before && payload.createdAt <= Date.now());
+      assert.deepEqual(payload, { ...plain, eventId: id, group: appId + ":stock:one", badge, createdAt: payload.createdAt });
       await driver.deliver(payload);
       const last = sent.at(-1);
       assert.deepEqual(JSON.parse(last.payload), {
-        type: "cloud-notification", eventId: id, title: "Ready", targetHref: "/app/inventory", group: appId + ":stock:one", badge,
+        type: "cloud-notification", eventId: id, title: "Ready", targetHref: "/app/inventory", group: appId + ":stock:one", badge, createdAt: payload.createdAt,
       });
-      assert.equal(last.options.topic, createHash("sha256").update(appId + ":stock:one").digest("base64url").slice(0, 32));
+      assert.equal(last.options.topic, createHash("sha256").update(id).digest("base64url").slice(0, 32));
     }
-    assert.equal(sent[1].options.topic, sent[2].options.topic);
+    assert.notEqual(sent[1].options.topic, sent[2].options.topic);
     assert.notEqual(sent[1].options.topic, sent[3].options.topic);
+    const beforeGroup = Date.now();
     const maxGroup = driver.createPayload({ ...input, presentation: { title: "Ready", group: "g".repeat(128) } });
+    assert.ok(Number.isSafeInteger(maxGroup.createdAt));
+    assert.ok(maxGroup.createdAt >= beforeGroup && maxGroup.createdAt <= Date.now());
     assert.equal(maxGroup.group, "inventory:" + "g".repeat(128));
     await driver.deliver(maxGroup);
+    const beforeBadge = Date.now();
     const badgeOnly = driver.createPayload({ ...input, presentation: { title: "Ready", badge: 0 } });
+    assert.ok(Number.isSafeInteger(badgeOnly.createdAt));
+    assert.ok(badgeOnly.createdAt >= beforeBadge && badgeOnly.createdAt <= Date.now());
     assert.equal(badgeOnly.badge, 0);
     assert.equal("group" in badgeOnly, false);
     await driver.deliver(badgeOnly);
     assert.equal(sent.at(-1).options.topic, sent[0].options.topic);
+    assert.equal(JSON.parse(sent.at(-1).payload).createdAt, badgeOnly.createdAt);
     for (const metadata of [{ group: null }, { group: 1 }, { group: "bad group" }, { badge: "2" }, { badge: -1 }, { badge: 1.5 }, { badge: Number.MAX_SAFE_INTEGER + 1 }]) {
       await assert.rejects(driver.deliver({ ...plain, ...metadata }));
     }
+    for (const createdAt of [null, "1", -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+      await assert.rejects(driver.deliver({ ...plain, createdAt }));
+    }
+    assert.throws(() => driver.createPayload({
+      ...input, event: { id: eventId, definitionId: "acme.chat.stockLow" },
+      presentation: { title: "Ready", group: "stock:one" },
+    }), /group/);
     const email = getNotificationChannel("email");
     const emailInput = { ...input, destination: { key: "email", label: "Email", context: { email: "reader@example.org" } } };
     assert.deepEqual(

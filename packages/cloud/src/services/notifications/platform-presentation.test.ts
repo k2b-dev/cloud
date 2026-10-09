@@ -39,8 +39,8 @@ test("send validates group and badge before persistence and retains them only fo
       }),
     }));
     const { sendTypedNotification } = await import(${JSON.stringify(new URL("./platform.ts", import.meta.url).pathname)});
-    const send = presentation => {
-      const definition = bindNotificationDefinitions("inventory", { stockLow: notification({
+    const send = (presentation, appId = "inventory") => {
+      const definition = bindNotificationDefinitions(appId, { stockLow: notification({
         recipient: "email", label: "Stock", description: "Stock", delivery: { required: ["email"] },
         data: z.object({}), render: () => ({ title: " Ready ", ...presentation }),
       }) }).stockLow;
@@ -55,6 +55,13 @@ test("send validates group and badge before persistence and retains them only fo
       const before = sqlCalls;
       await assert.rejects(send({ badge }), /badge/);
       assert.equal(sqlCalls, before);
+    }
+    for (const appId of ["acme.chat", "my_app", "Inventory", "3d-viewer"]) {
+      const before = sqlCalls;
+      await assert.rejects(send({ group: "g" }, appId), /group.*app ID.*lowercase letter.*lowercase letters, digits, and hyphens/);
+      assert.equal(sqlCalls, before);
+      await send({}, appId);
+      assert.deepEqual(delivered.at(-1), { title: "Ready" });
     }
     for (const metadata of [
       {}, { group: "g", badge: 0 }, { group: "conversation:abc_1.2-3", badge: 2 },

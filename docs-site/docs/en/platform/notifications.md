@@ -138,7 +138,7 @@ domain payload schema. `render()` returns:
 | `title` | Yes | Trimmed, non-empty, and at most 200 characters |
 | `body` | No | Trimmed and at most 4,000 characters; an empty body is omitted |
 | `targetHref` | No | Canonical same-origin absolute path beginning with `/` |
-| `group` | No | Stable browser group key: 1–128 characters matching `^[A-Za-z0-9._:-]+$`, with no whitespace |
+| `group` | No | Stable browser group key: 1–128 characters matching `^[A-Za-z0-9._:-]+$`, with no whitespace; grouping requires an application ID that starts with a lowercase letter and contains only lowercase letters, digits, and hyphens |
 | `badge` | No | Non-negative safe integer for the app badge; `0` clears it |
 
 `targetHref` must point to a route on the same Cloud origin. External URLs are
@@ -241,19 +241,23 @@ Notifications show the rendered title and Cloud icon. The presentation body
 stays out of the push payload. Clicking a notification opens or focuses its
 Cloud destination, where normal authentication and authorization apply.
 
-Set `group` in `render()` to replace notifications for the same topic on each
+Set `group` in `render()` to replace notifications for the same subject on each
 device. Cloud prefixes the key with the application's ID: `inventory` and
 `group: "stock:item-42"` use the tag `inventory:stock:item-42`. Other
 applications cannot collide with that tag. Each new notification in the group
 replaces the previous one and requests a fresh alert with `renotify: true`;
-the browser and operating system control the alert. The push service also
-keeps only the newest undelivered push for the group. Without `group`,
-notifications keep their event ID as the tag and derive the push topic from it.
+the browser and operating system control the alert. The push topic stays per
+event, so the push service cannot link pushes by group and an offline device
+receives each push when it reconnects. If an older notification arrives after
+a newer one in the same group, for example after a delivery retry, the device
+keeps the newer notification without a new alert. Without `group`, notifications
+keep their event ID as the tag.
 
 Set `badge` to the application's current unread count. A positive count calls
 the Badging API; `0` clears the badge. Omitting it leaves the badge unchanged.
-Badge support is optional: unsupported browsers and rejected badge requests
-silently leave it absent or unchanged, and the notification still appears.
+The device applies a badge only when it was rendered at or after the last badge
+it applied. Badge support is optional: unsupported browsers and rejected badge
+requests silently leave it absent or unchanged, and the notification still appears.
 The badge belongs to the installed Cloud application, so applications that
 set it must decide which count to use. Email ignores `group` and `badge`.
 Neither field is stored on the notification event; both travel only in the

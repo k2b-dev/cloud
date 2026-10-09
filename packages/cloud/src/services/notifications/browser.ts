@@ -25,6 +25,7 @@ type BrowserDeliveryPayload = {
   targetHref?: string;
   group?: string;
   badge?: number;
+  createdAt?: number;
 };
 
 const BrowserDeliveryPayloadSchema = z.object({
@@ -38,6 +39,7 @@ const BrowserDeliveryPayloadSchema = z.object({
     .regex(/^[A-Za-z0-9._:-]+$/)
     .optional(),
   badge: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
+  createdAt: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
 });
 
 const BrowserDestinationContextSchema = z.object({
@@ -151,7 +153,9 @@ const browserDriver = {
   createPayload: ({ presentation, destination, event }) => {
     const context = BrowserDestinationContextSchema.parse(destination.context);
     const group =
-      presentation.group === undefined ? undefined : notificationGroupTag(event.definitionId.split(".", 1)[0] ?? "", presentation.group);
+      presentation.group === undefined
+        ? undefined
+        : notificationGroupTag(event.definitionId.slice(0, event.definitionId.lastIndexOf(".")), presentation.group);
     if (group === null) throw new Error("Invalid notification group tag");
     return BrowserDeliveryPayloadSchema.parse({
       endpointId: context.endpointId,
@@ -161,6 +165,7 @@ const browserDriver = {
       targetHref: presentation.targetHref,
       ...(group !== undefined ? { group } : {}),
       ...(presentation.badge !== undefined ? { badge: presentation.badge } : {}),
+      ...(presentation.group !== undefined || presentation.badge !== undefined ? { createdAt: Date.now() } : {}),
     });
   },
   deliver: async (value: unknown) => {
@@ -188,14 +193,12 @@ const browserDriver = {
           targetHref: payload.targetHref,
           ...(payload.group !== undefined ? { group: payload.group } : {}),
           ...(payload.badge !== undefined ? { badge: payload.badge } : {}),
+          ...(payload.createdAt !== undefined ? { createdAt: payload.createdAt } : {}),
         }),
         {
           TTL: 24 * 60 * 60,
           urgency: "normal",
-          topic: createHash("sha256")
-            .update(payload.group ?? payload.eventId)
-            .digest("base64url")
-            .slice(0, 32),
+          topic: createHash("sha256").update(payload.eventId).digest("base64url").slice(0, 32),
         },
       );
     } catch (error) {

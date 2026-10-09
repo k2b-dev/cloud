@@ -1,6 +1,6 @@
 import { sql } from "bun";
 import type { output, ZodType } from "zod";
-import { isNotificationGroup } from "../../contracts/notification-group";
+import { isNotificationGroup, notificationGroupTag } from "../../contracts/notification-group";
 import type {
   BoundNotificationDefinition,
   EmailNotificationPresentation,
@@ -70,7 +70,7 @@ const preparationFailure = (input: { channel: string; required: boolean; routePr
   errorMessage: "Notification delivery could not be prepared.",
 });
 
-const validatePresentation = (presentation: NotificationPresentation): NotificationPresentation => {
+const validatePresentation = (presentation: NotificationPresentation, appId: string): NotificationPresentation => {
   const title = presentation.title.trim();
   const body = presentation.body?.trim();
   if (!title) throw new Error("Notification title is required");
@@ -80,6 +80,11 @@ const validatePresentation = (presentation: NotificationPresentation): Notificat
   if (presentation.group !== undefined && !isNotificationGroup(presentation.group)) {
     throw new Error(
       "Notification group must contain 1 to 128 characters using only letters, digits, dots, underscores, colons, or hyphens",
+    );
+  }
+  if (presentation.group !== undefined && notificationGroupTag(appId, presentation.group) === null) {
+    throw new Error(
+      "Notification group requires an app ID that starts with a lowercase letter and contains only lowercase letters, digits, and hyphens",
     );
   }
   if (presentation.badge !== undefined && (!Number.isSafeInteger(presentation.badge) || presentation.badge < 0)) {
@@ -256,7 +261,7 @@ export const sendTypedNotification = async <
 
   const data: output<S> = definition.data.parse(input.data);
   const renderContext = { locale: normalizeLocale(input.locale) };
-  const presentation = validatePresentation(await definition.render(data, renderContext));
+  const presentation = validatePresentation(await definition.render(data, renderContext), definition.appId);
   const resolved = await resolveRecipient(input.recipient);
   const candidateEventId = crypto.randomUUID();
   await ensureNotificationDefinition(definition);
