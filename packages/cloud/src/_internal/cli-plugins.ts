@@ -94,6 +94,24 @@ export const buildCliPlugin = async (params: {
     minify: true,
     // Playwright references this optional BiDi adapter lazily; Cloud uses CDP.
     external: ["chromium-bidi/*"],
+    plugins: [
+      {
+        name: "playwright-metadata",
+        setup(build) {
+          build.onLoad({ filter: /[/\\]playwright-core[/\\]lib[/\\](?:coreBundle|serverRegistry|package)\.js$/ }, async ({ path }) => ({
+            // Computed package-relative JSON requires evade Bun's dependency
+            // graph and retain the container's absolute path. Static requires
+            // carry the version and browser registry in the single-file plugin.
+            contents: (await readFile(path, "utf8")).replace(
+              /require\(import_path\d*\.default\.join\(packageRoot, "(package|browsers)\.json"\)\)/g,
+              (_, file: string) => `require("../${file}.json")`,
+            ),
+            loader: "js",
+            resolveDir: dirname(path),
+          }));
+        },
+      },
+    ],
   });
   if (!result.success) {
     throw new Error(`CLI module "${name}" failed to bundle:\n${result.logs.map((log) => String(log)).join("\n")}`);

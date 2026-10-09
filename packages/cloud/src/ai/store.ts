@@ -937,7 +937,7 @@ const insertMessageLocked = async (
     // 'auto' is reserved for enrichment-set titles.
     await db`
       UPDATE ai.conversations
-      SET title = ${title}, updated_at = now()
+      SET title = CASE WHEN title_source = 'default' THEN ${title} ELSE title END, updated_at = now()
       WHERE id = ${input.conversationId}
     `;
   } else {

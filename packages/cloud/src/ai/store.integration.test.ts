@@ -56,6 +56,35 @@ suite("AI conversation store integration", () => {
   beforeAll(async () => {
     await migrateCloudAi();
   });
+  test("a metadata-renamed title survives the first message while create-time placeholders get the snapshot", async () => {
+    const userId = await insertUser();
+    const defaultChat = await aiConversations.createConversation({ ownerUserId: userId, title: "Neuer Chat" });
+    const renamedChat = await aiConversations.createConversation({ ownerUserId: userId });
+    try {
+      expect(
+        await aiConversations.updateConversationMetadata({ conversationId: renamedChat.id, ownerUserId: userId, title: "Research" }),
+      ).toMatchObject({ title: "Research", titleSource: "user" });
+      for (const chat of [defaultChat, renamedChat]) {
+        await aiConversations.submitChatTurn({
+          conversationId: chat.id,
+          modelProfileId: "test-model",
+          runConfig,
+          userMessage: userMessage("First message"),
+        });
+      }
+      expect(await aiConversations.getConversation({ conversationId: defaultChat.id })).toMatchObject({
+        title: "First message",
+        titleSource: "default",
+      });
+      expect(await aiConversations.getConversation({ conversationId: renamedChat.id })).toMatchObject({
+        title: "Research",
+        titleSource: "user",
+      });
+    } finally {
+      await cleanupFixture({ userId, conversationIds: [defaultChat.id, renamedChat.id] });
+    }
+  });
+
   test("signed and redacted assistant messages round-trip through Postgres into the next provider request", async () => {
     const userId = await insertUser();
     const chat = await aiConversations.createConversation({ ownerUserId: userId });
