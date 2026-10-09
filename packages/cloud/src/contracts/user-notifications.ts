@@ -117,9 +117,15 @@ export const NotificationQuietSettingsSchema = z.object({
 });
 export type NotificationQuietSettings = z.infer<typeof NotificationQuietSettingsSchema>;
 
+/**
+ * Do not disturb is a pause, so it ends within a year (366 days covers the same date next year). Holding back
+ * browser notifications for longer is turning them off, which the notification preferences and the device do.
+ */
+export const NOTIFICATION_DO_NOT_DISTURB_MAX_DAYS = 366;
+
 export const UpdateNotificationQuietSettingsSchema = z
   .object({
-    /** A future instant pauses browser notifications until then; null resumes them. */
+    /** A future instant at most `NOTIFICATION_DO_NOT_DISTURB_MAX_DAYS` ahead pauses browser notifications until then; null resumes them. */
     doNotDisturbUntil: z.iso.datetime({ offset: true }).nullable().optional(),
     quietHours: NotificationQuietHoursSchema.optional(),
   })

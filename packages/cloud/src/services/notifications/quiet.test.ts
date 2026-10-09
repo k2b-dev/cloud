@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { NotificationQuietHoursSchema, UpdateNotificationQuietSettingsSchema } from "../../contracts/user-notifications";
+import {
+  NOTIFICATION_DO_NOT_DISTURB_MAX_DAYS,
+  NotificationQuietHoursSchema,
+  UpdateNotificationQuietSettingsSchema,
+} from "../../contracts/user-notifications";
 import { notificationQuietState, quietInputFromRow } from "./quiet";
 
 const BERLIN = "Europe/Berlin";
@@ -72,6 +76,25 @@ describe("notification quiet state", () => {
     expect(state(nights, "2026-10-24T21:00:00Z")).toMatchObject({ active: true, until: "2026-10-25T06:00:00.000Z" });
     expect(state(nights, "2026-10-25T05:30:00Z").active).toBe(true);
     expect(state(nights, "2026-10-25T06:00:00Z").active).toBe(false);
+  });
+
+  test("ends a period inside the repeated hour at its second occurrence", () => {
+    // 25 October 2026 in Berlin shows 02:00–02:59 twice: first in CEST (00:00Z), then in CET (01:00Z).
+    const early = { timeZone: BERLIN, periods: [{ days: [7], start: "01:00", end: "02:30" }] };
+    expect(state(early, "2026-10-25T00:15:00Z")).toMatchObject({ active: true, until: "2026-10-25T01:30:00.000Z" });
+    // The second 02:15 is still inside the period; the second 02:30 ends it.
+    expect(state(early, "2026-10-25T01:15:00Z")).toMatchObject({ active: true, until: "2026-10-25T01:30:00.000Z" });
+    expect(state(early, "2026-10-25T01:30:00Z").active).toBe(false);
+    // The same holds for a night that runs into the repeated hour.
+    const night = { timeZone: BERLIN, periods: [{ days: [6], start: "22:00", end: "02:30" }] };
+    expect(state(night, "2026-10-25T01:15:00Z")).toMatchObject({ active: true, until: "2026-10-25T01:30:00.000Z" });
+  });
+
+  test("evaluates the longest pause the contract allows", () => {
+    const nights = { timeZone: BERLIN, periods: [{ days: everyDay, start: "22:00", end: "07:00" }] };
+    const now = "2026-10-06T10:00:00Z";
+    const latest = new Date(Date.parse(now) + NOTIFICATION_DO_NOT_DISTURB_MAX_DAYS * 24 * 60 * 60_000).toISOString();
+    expect(state(nights, now, latest)).toMatchObject({ active: true, reason: "doNotDisturb" });
   });
 
   test("moves a start inside the skipped hour forward with the clock", () => {

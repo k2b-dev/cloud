@@ -37,17 +37,20 @@ const holdBackForQuietTime = async (delivery: DeliveryRow): Promise<boolean> => 
   if (!quiet?.active) return false;
   const code = quiet.reason === "doNotDisturb" ? "do_not_disturb" : "quiet_hours";
   const message = quiet.reason === "doNotDisturb" ? "Held back by do not disturb." : "Held back during quiet hours.";
-  await sql`
-    UPDATE notifications.deliveries
-    SET status = 'suppressed', attempt_count = attempt_count - 1, next_attempt_at = NULL,
-        error_code = ${code}, error_message = ${message}, payload_encrypted = NULL, updated_at = now()
-    WHERE id = ${delivery.id}::uuid AND status = 'sending'
-  `;
-  await sql`
-    UPDATE notifications.deliveries
-    SET status = 'suppressed', error_code = ${code}, error_message = ${message}, payload_encrypted = NULL, updated_at = now()
-    WHERE event_id = ${delivery.event_id}::uuid AND required = false AND status = 'deferred'
-  `;
+  // One transaction: a crash in between must not leave fallbacks waiting, with their payload, behind a dropped push.
+  await sql.begin(async (tx) => {
+    await tx`
+      UPDATE notifications.deliveries
+      SET status = 'suppressed', attempt_count = attempt_count - 1, next_attempt_at = NULL,
+          error_code = ${code}, error_message = ${message}, payload_encrypted = NULL, updated_at = now()
+      WHERE id = ${delivery.id}::uuid AND status = 'sending'
+    `;
+    await tx`
+      UPDATE notifications.deliveries
+      SET status = 'suppressed', error_code = ${code}, error_message = ${message}, payload_encrypted = NULL, updated_at = now()
+      WHERE event_id = ${delivery.event_id}::uuid AND required = false AND status = 'deferred'
+    `;
+  });
   return true;
 };
 

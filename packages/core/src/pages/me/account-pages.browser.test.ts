@@ -415,6 +415,51 @@ describe("account pages in a browser", () => {
     }
   }, 30_000);
 
+  test("keep the quiet time section still when its status or a period's error changes", async () => {
+    // What the island shows later: a long status instead of "Off", and the error of a period without days. The
+    // description shares its lines with whatever stands beside the heading, so the widths that move differ.
+    const change = () =>
+      Array.from(document.querySelectorAll(".k2b-settings-section"))
+        .filter((section) => section.querySelector("h2")?.textContent?.includes("Do not disturb"))
+        .map((section) => {
+          const field = (label: string) =>
+            Array.from(section.querySelectorAll(".k2b-field")).find(
+              (candidate) => candidate.querySelector(".k2b-field__label")?.textContent?.trim() === label,
+            )!;
+          const top = (element: Element) => Math.round(element.getBoundingClientRect().top);
+          const measure = () => ({
+            body: top(section.querySelector(".k2b-settings-section__body")!),
+            from: top(field("From")),
+            remove: top(section.querySelector('[aria-label="Remove quiet hours"]')!),
+          });
+          const label = section.querySelector(".k2b-status-badge__label")!;
+          const before = measure();
+          const off = label.textContent;
+          label.textContent = "Quiet hours until 10/12/2026, 11:30 PM";
+          field("Days").insertAdjacentHTML("beforeend", '<p class="k2b-field__error" data-test-error>Choose at least one day.</p>');
+          const after = measure();
+          label.textContent = off;
+          section.querySelector("[data-test-error]")!.remove();
+          return { before, after };
+        })[0]!;
+    for (const view of [desktop, phone]) {
+      const tab = await open(view, "/me/notifications", "en");
+      try {
+        // On a phone the times sit below the days, so the error moves them like any field below it.
+        const widths = view === phone ? [phone.width, narrowPhone.width] : [1440, 1280, 1152, 1024, 900, 768];
+        const still = view === phone ? ["body"] : ["body", "from", "remove"];
+        const pick = (at: Record<string, number>) => Object.fromEntries(still.map((key) => [key, at[key]]));
+        for (const width of widths) {
+          await tab.setViewportSize({ width, height: view.height });
+          const { before, after } = await tab.evaluate(change);
+          expect({ width, ...pick(after) }).toEqual({ width, ...pick(before) });
+        }
+      } finally {
+        await tab.close();
+      }
+    }
+  }, 60_000);
+
   test("let a long name wrap instead of cutting it off on a phone", async () => {
     user = ipaUser;
     const tab = await open(phone, "/me", "en");

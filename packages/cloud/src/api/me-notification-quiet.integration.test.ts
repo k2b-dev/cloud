@@ -74,6 +74,13 @@ suite("/api/me/notifications/quiet (isolated Postgres and Valkey)", () => {
         state: { reason: "doNotDisturb" },
       });
 
+      // The longest pause still evaluates against the saved quiet hours.
+      const latest = new Date(Date.now() + 365 * 24 * 60 * 60_000).toISOString();
+      expect((await call(token, "PATCH", { doNotDisturbUntil: latest })).status).toBe(200);
+      const longPause = await call(token, "GET");
+      expect(longPause.status).toBe(200);
+      expect(await longPause.json()).toMatchObject({ state: { active: true, reason: "doNotDisturb" } });
+
       const resumed = await call(token, "PATCH", { doNotDisturbUntil: null });
       expect(await resumed.json()).toMatchObject({ doNotDisturbUntil: null, quietHours: { timeZone: "America/New_York", periods } });
 
@@ -84,13 +91,16 @@ suite("/api/me/notifications/quiet (isolated Postgres and Valkey)", () => {
     }
   });
 
-  test("rejects a pause in the past and schedules that do not validate", async () => {
+  test("rejects a pause in the past or beyond a year and schedules that do not validate", async () => {
     const userId = await insertUser();
     const token = await signIn(userId);
     try {
       const past = await call(token, "PATCH", { doNotDisturbUntil: new Date(Date.now() - 60_000).toISOString() });
       expect(past.status).toBe(400);
       for (const body of [
+        // A pause is not a way to turn browser notifications off, and year 10000 has no wall-clock form.
+        { doNotDisturbUntil: new Date(Date.now() + 367 * 24 * 60 * 60_000).toISOString() },
+        { doNotDisturbUntil: "9999-12-31T23:00:00Z" },
         {},
         { quietHours: { timeZone: "Mars/Olympus", periods: [] } },
         { quietHours: { timeZone: "UTC", periods: [{ days: [8], start: "19:00", end: "07:00" }] } },

@@ -1,4 +1,4 @@
-import { expect, spyOn, test } from "bun:test";
+import { expect, jest, spyOn, test } from "bun:test";
 import type { NotificationQuietSettings } from "@k2b/cloud/contracts";
 import { createComponent } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
@@ -18,7 +18,7 @@ const off: NotificationQuietSettings = {
   state: { active: false, reason: null, until: null, nextStart: null },
 };
 
-const mockFetch = (route: (method: string, path: string, body: unknown) => Response | undefined) => {
+const mockFetch = (route: (method: string, path: string, body: unknown) => Response | Promise<Response> | undefined) => {
   const calls: { method: string; path: string; body: unknown }[] = [];
   const spy = spyOn(globalThis, "fetch").mockImplementation(
     Object.assign(
@@ -63,6 +63,15 @@ const mount = (dom: DomTestHarness, initial: NotificationQuietSettings, locale =
 const button = (dom: DomTestHarness, label: string) =>
   [...dom.document.querySelectorAll("button")].find((element) => element.textContent?.trim() === label) as HTMLButtonElement | undefined;
 const status = (dom: DomTestHarness) => dom.root.querySelector(".k2b-status-badge")?.textContent?.trim();
+const pauseTrigger = (dom: DomTestHarness) => dom.root.querySelector<HTMLButtonElement>(".k2b-date-trigger")!;
+const periodRows = (dom: DomTestHarness) => dom.root.querySelectorAll('[aria-label="Remove quiet hours"]').length;
+/** Run due fake timers, then let the requests they started settle. */
+const advance = async (ms: number) => {
+  jest.advanceTimersByTime(ms);
+  for (let turn = 0; turn < 20; turn += 1) await new Promise<void>((resolve) => queueMicrotask(resolve));
+};
+const iso = (offset: number) => new Date(Date.now() + offset).toISOString();
+const nights = { timeZone: "Europe/Berlin", periods: [{ days: [1, 2, 3, 4, 5, 6, 7], start: "22:00", end: "07:00" }] };
 
 if (isServer) test.skip("requires browser conditions", () => {});
 else {
@@ -119,6 +128,104 @@ else {
       dispose();
       fetch.restore();
       dom.cleanup();
+    }
+  });
+
+  test("keeps period edits made while saving and takes no pause meanwhile", async () => {
+    const dom = createDomTestHarness();
+    let answer: ((response: Response) => void) | undefined;
+    const fetch = mockFetch((method, path) => {
+      if (method !== "PATCH" || path !== "/api/me/notifications/quiet") return undefined;
+      return new Promise<Response>((resolve) => {
+        answer = resolve;
+      });
+    });
+    const dispose = mount(dom, off);
+    try {
+      button(dom, "Add quiet hours")!.click();
+      await waitFor(() => !button(dom, "Save")!.disabled, "save enabled");
+      button(dom, "Save")!.click();
+      await waitFor(() => fetch.calls.length === 1, "save request");
+      // A second write could land before this one and be overwritten by its older snapshot.
+      expect(pauseTrigger(dom).disabled).toBeTrue();
+      button(dom, "Add quiet hours")!.click();
+      await waitFor(() => periodRows(dom) === 2, "second period");
+      const submitted = (fetch.calls[0]!.body as { quietHours: NotificationQuietSettings["quietHours"] }).quietHours;
+      answer!(Response.json({ ...off, quietHours: submitted }));
+      await waitFor(() => !pauseTrigger(dom).disabled, "save finished");
+      expect(periodRows(dom)).toBe(2);
+      expect(button(dom, "Save")!.disabled).toBeFalse();
+    } finally {
+      dispose();
+      fetch.restore();
+      dom.cleanup();
+    }
+  });
+
+  test("refreshes when a pause ends inside quiet hours and again after a failed request", async () => {
+    jest.useFakeTimers();
+    const dom = createDomTestHarness();
+    let failures = 1;
+    const fetch = mockFetch((method, path) => {
+      if (method !== "GET" || path !== "/api/me/notifications/quiet") return undefined;
+      if (failures-- > 0) return Response.json({ code: "UNAVAILABLE" }, { status: 503 });
+      return Response.json({
+        ...off,
+        quietHours: nights,
+        state: { active: true, reason: "quietHours", until: iso(8 * 3_600_000), nextStart: null },
+      });
+    });
+    // Paused for one more minute; the quiet hours it ends in run for eight more hours.
+    const dispose = mount(dom, {
+      doNotDisturbUntil: iso(60_000),
+      quietHours: nights,
+      state: { active: true, reason: "doNotDisturb", until: iso(8 * 3_600_000), nextStart: null },
+    });
+    try {
+      expect(status(dom)).toStartWith("Paused until");
+      await advance(59_000);
+      expect(fetch.calls).toHaveLength(0);
+      await advance(3_000);
+      expect(fetch.calls).toHaveLength(1);
+      expect(status(dom)).toStartWith("Paused until");
+      await advance(30_000);
+      expect(fetch.calls).toHaveLength(2);
+      expect(status(dom)).toStartWith("Quiet hours until");
+      // Nothing else changes before the quiet hours end; long waits check in hourly.
+      await advance(59 * 60_000);
+      expect(fetch.calls).toHaveLength(2);
+    } finally {
+      dispose();
+      fetch.restore();
+      dom.cleanup();
+      jest.useRealTimers();
+    }
+  });
+
+  test("waits instead of polling while the server still reports a change this clock has passed", async () => {
+    jest.useFakeTimers();
+    const dom = createDomTestHarness();
+    const behind = {
+      ...off,
+      quietHours: nights,
+      state: { active: true, reason: "quietHours" as const, until: iso(-5_000), nextStart: null },
+    };
+    const fetch = mockFetch((method, path) =>
+      method === "GET" && path === "/api/me/notifications/quiet" ? Response.json(behind) : undefined,
+    );
+    const dispose = mount(dom, behind);
+    try {
+      await advance(29_000);
+      expect(fetch.calls).toHaveLength(0);
+      await advance(2_000);
+      expect(fetch.calls).toHaveLength(1);
+      await advance(10_000);
+      expect(fetch.calls).toHaveLength(1);
+    } finally {
+      dispose();
+      fetch.restore();
+      dom.cleanup();
+      jest.useRealTimers();
     }
   });
 }

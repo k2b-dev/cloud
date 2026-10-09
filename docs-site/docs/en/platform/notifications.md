@@ -352,7 +352,9 @@ On iPhone and iPad, Cloud must run as an installed Home Screen application.
 Each person can hold back browser notifications from every application under
 **My account → Notifications**:
 
-- **Do not disturb** pauses them until an instant the person chooses.
+- **Do not disturb** pauses them until an instant the person chooses, at most
+  366 days ahead. To stop browser notifications for longer, turn them off in
+  the preferences or on the device.
 - **Quiet hours** repeat every week: up to seven periods, each with weekdays
   and a `HH:MM` start and end in one IANA time zone the person chooses.
 
@@ -361,8 +363,10 @@ start, the period runs into the next day, so `19:00`–`07:00` on Friday keeps
 Saturday morning quiet. An equal start and end mean 24 hours, so
 `00:00`–`00:00` is the whole day. Cloud converts the wall-clock times for each
 date in the chosen time zone. A period keeps its local times across
-daylight-saving changes, and a start inside a skipped hour moves forward with
-the clock.
+daylight-saving changes, and a time inside a skipped hour moves forward with
+the clock. In the hour that repeats when daylight-saving time ends, a start
+takes the first occurrence and an end the second, so `01:00`–`02:30` stays
+quiet until the second `02:30`.
 
 The delivery worker checks quiet time when a recommended browser delivery
 would go out, including retries and fallbacks. During quiet time Cloud drops
@@ -375,7 +379,10 @@ store, so activity lists and unread counts keep updating.
 
 Quiet time leaves the other channels alone. Email that is the first recommended
 choice, deployment channels, and required deliveries of every channel, which
-belong to a protocol such as sign-in, still go out.
+belong to a protocol such as sign-in, still go out. A recommended security
+notice that goes by browser, because the person has no email address or put
+the browser first, is held back like any other and stays in notification
+history.
 
 Read the signed-in person's current state for display, for example a moon icon
 in a sidebar header:

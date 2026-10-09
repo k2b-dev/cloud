@@ -1,5 +1,6 @@
 import { apiClient } from "@k2b/cloud/clients/core";
 import {
+  NOTIFICATION_DO_NOT_DISTURB_MAX_DAYS,
   NOTIFICATION_QUIET_PERIOD_LIMIT,
   type NotificationQuietHours,
   type NotificationQuietPeriod,
@@ -23,6 +24,8 @@ import { createEffect, createMemo, createSignal, Index, onCleanup, onMount, Show
 import { type AccountMessages, accountMessages } from "./messages";
 
 const HOUR_MS = 60 * 60_000;
+/** How long to wait before asking again when a refresh failed or the server still reports a passed change. */
+const RETRY_MS = 30_000;
 const DEFAULT_PERIOD: NotificationQuietPeriod = { days: [1, 2, 3, 4, 5, 6, 7], start: "22:00", end: "07:00" };
 const HALF_HOURS = Array.from({ length: 48 }, (_, index) => `${String(Math.floor(index / 2)).padStart(2, "0")}:${index % 2 ? "30" : "00"}`);
 // 1 January 2024 was a Monday, so day n of that week is ISO weekday n.
@@ -38,6 +41,20 @@ const sameHours = (left: NotificationQuietHours, right: NotificationQuietHours) 
 const formatUntil = (until: string, now: number, context: DateContext): string =>
   dates.isSameDay(new Date(until), new Date(now), context) ? dates.formatTime(until, context) : dates.formatDateTime(until, context);
 
+/**
+ * How long until the state changes on its own: a pause ends (also inside quiet hours, where `until` lies later),
+ * the quiet time ends, or the next quiet hours start. Null when nothing changes within the next week.
+ */
+const quietRefreshDelay = (settings: NotificationQuietSettings, now: number): number | null => {
+  const { doNotDisturbUntil, state } = settings;
+  const changes = [doNotDisturbUntil, state.until, state.nextStart].filter((instant) => instant !== null).map(Date.parse);
+  if (changes.length === 0) return null;
+  const wait = Math.min(...changes) - now;
+  // A change the server still reports but this device's clock has passed means the clocks differ: ask again a
+  // little later instead of in a loop. Long waits check in hourly instead of relying on a timer that runs for days.
+  return wait > 0 ? Math.min(wait + 1_000, HOUR_MS) : RETRY_MS;
+};
+
 const statusLabel = (settings: NotificationQuietSettings, t: AccountMessages, now: number, context: DateContext): string => {
   const { state } = settings;
   if (!state.active) return t.quietOff;
@@ -52,6 +69,7 @@ export default function QuietTimeSettings(props: { initial: NotificationQuietSet
   const context = () => ({ ...props.dateConfig, locale: locale() });
   const [settings, setSettings] = createSignal(props.initial);
   const [draft, setDraft] = createSignal<NotificationQuietHours>(props.initial.quietHours);
+  // One write at a time: each response replaces the whole snapshot, so an earlier one must not land last.
   const [saving, setSaving] = createSignal<"pause" | "hours" | null>(null);
   const [now, setNow] = createSignal(Date.now());
   const dirty = () => !sameHours(draft(), settings().quietHours);
@@ -61,9 +79,20 @@ export default function QuietTimeSettings(props: { initial: NotificationQuietSet
     return zones.includes(draft().timeZone) ? zones : [draft().timeZone, ...zones];
   });
 
+  let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+  const scheduleRefresh = (delay: number | null) => {
+    clearTimeout(refreshTimer);
+    if (delay !== null) refreshTimer = setTimeout(() => void refresh(), delay);
+  };
   const refresh = async () => {
-    const response = await apiClient.me.notifications.quiet.$get();
-    if (response.ok) setSettings(await response.json());
+    try {
+      const response = await apiClient.me.notifications.quiet.$get();
+      if (!response.ok) throw new Error();
+      setSettings(await response.json());
+    } catch {
+      // Offline or the server is unavailable: keep the last state and try again.
+      scheduleRefresh(RETRY_MS);
+    }
   };
 
   onMount(() => {
@@ -71,15 +100,9 @@ export default function QuietTimeSettings(props: { initial: NotificationQuietSet
     const tick = setInterval(() => setNow(Date.now()), 30_000);
     onCleanup(() => clearInterval(tick));
   });
-  // Reload the state when it changes on its own: at the end of the quiet time or at the start of the next one.
-  createEffect(() => {
-    const { until, nextStart } = settings().state;
-    const change = until ?? nextStart;
-    if (!change) return;
-    // Long waits check in hourly instead of relying on a timer that runs for days.
-    const timer = setTimeout(() => void refresh(), Math.min(Math.max(Date.parse(change) - Date.now(), 0) + 1_000, HOUR_MS));
-    onCleanup(() => clearTimeout(timer));
-  });
+  // Reload the state when it changes on its own.
+  createEffect(() => scheduleRefresh(quietRefreshDelay(settings(), Date.now())));
+  onCleanup(() => clearTimeout(refreshTimer));
 
   const presets = () => {
     const at = now();
@@ -119,13 +142,18 @@ export default function QuietTimeSettings(props: { initial: NotificationQuietSet
       toast.error(t().pauseInPast);
       return;
     }
+    if (until && Date.parse(until) > Date.now() + NOTIFICATION_DO_NOT_DISTURB_MAX_DAYS * 24 * HOUR_MS) {
+      toast.error(t().pauseTooFar);
+      return;
+    }
     if (await save("pause", { doNotDisturbUntil: until })) toast.success(until ? t().pauseSaved : t().pauseResumed);
   };
 
   const saveHours = async () => {
     const hours = draft();
     if (await save("hours", { quietHours: hours })) {
-      setDraft(settings().quietHours);
+      // Take the saved form unless the periods changed while saving; those edits stay as unsaved changes.
+      if (sameHours(draft(), hours)) setDraft(settings().quietHours);
       toast.success(t().quietHoursSaved);
     }
   };
@@ -139,15 +167,20 @@ export default function QuietTimeSettings(props: { initial: NotificationQuietSet
   return (
     <SettingsSection
       title={t().quietTitle}
-      subtitle={t().quietDescription}
-      icon="ti ti-moon"
-      actions={
-        <StatusBadge
-          tone={settings().state.active ? "info" : "neutral"}
-          icon={settings().state.active ? "ti ti-moon" : null}
-          label={statusLabel(settings(), t(), now(), context())}
-        />
+      subtitle={
+        <>
+          {t().quietDescription}
+          {/* On a line of its own below the description: a longer status never rewraps the text or moves the fields. */}
+          <span class="mt-2 flex">
+            <StatusBadge
+              tone={settings().state.active ? "info" : "neutral"}
+              icon={settings().state.active ? "ti ti-moon" : null}
+              label={statusLabel(settings(), t(), now(), context())}
+            />
+          </span>
+        </>
       }
+      icon="ti ti-moon"
     >
       <SettingsGroup title={t().pauseTitle} description={t().pauseDescription}>
         <DateTimePicker
@@ -158,7 +191,7 @@ export default function QuietTimeSettings(props: { initial: NotificationQuietSet
           presets={presets()}
           dateConfig={context()}
           clearable
-          disabled={saving() === "pause"}
+          disabled={saving() !== null}
           onValueChange={(value) => void pause(value)}
         />
       </SettingsGroup>
@@ -169,7 +202,7 @@ export default function QuietTimeSettings(props: { initial: NotificationQuietSet
             type="button"
             size="sm"
             variant="primary"
-            disabled={!dirty() || invalid()}
+            disabled={saving() !== null || !dirty() || invalid()}
             loading={saving() === "hours"}
             loadingLabel={t().save}
             onClick={() => void saveHours()}
@@ -179,38 +212,40 @@ export default function QuietTimeSettings(props: { initial: NotificationQuietSet
         </SettingsGroup.Action>
         <div class="flex flex-col gap-4">
           <Show when={draft().periods.length > 0} fallback={<p class="text-sm text-dimmed">{t().quietNoPeriods}</p>}>
-            {/* Rows are keyed by position, so editing a period keeps its open controls. */}
+            {/* Rows are keyed by position, so editing a period keeps its open controls. The times and the remove
+                button share a cell of their own, so an error below the days moves nothing beside them. */}
             <Index each={draft().periods}>
               {(period, index) => (
-                <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
+                <div class="grid items-start gap-3 sm:grid-cols-2">
                   <MultiSelectInput
-                    class="col-span-3 sm:col-span-1"
                     label={t().quietDays}
                     options={weekdayOptions(locale())}
                     value={() => period().days.map(String)}
                     error={period().days.length === 0 ? t().quietDaysRequired : undefined}
                     onValueChange={(days) => updatePeriod(index, { days: days.map(Number).sort((left, right) => left - right) })}
                   />
-                  <Select
-                    label={t().quietFrom}
-                    options={timeOptions(period().start)}
-                    value={() => period().start}
-                    onValueChange={(start) => start && updatePeriod(index, { start })}
-                  />
-                  <Select
-                    label={t().quietTo}
-                    options={timeOptions(period().end)}
-                    value={() => period().end}
-                    onValueChange={(end) => end && updatePeriod(index, { end })}
-                  />
-                  <IconButton
-                    label={t().quietRemovePeriod}
-                    onClick={() =>
-                      setDraft((current) => ({ ...current, periods: current.periods.filter((_, position) => position !== index) }))
-                    }
-                  >
-                    <i class="ti ti-trash" aria-hidden="true" />
-                  </IconButton>
+                  <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-3">
+                    <Select
+                      label={t().quietFrom}
+                      options={timeOptions(period().start)}
+                      value={() => period().start}
+                      onValueChange={(start) => start && updatePeriod(index, { start })}
+                    />
+                    <Select
+                      label={t().quietTo}
+                      options={timeOptions(period().end)}
+                      value={() => period().end}
+                      onValueChange={(end) => end && updatePeriod(index, { end })}
+                    />
+                    <IconButton
+                      label={t().quietRemovePeriod}
+                      onClick={() =>
+                        setDraft((current) => ({ ...current, periods: current.periods.filter((_, position) => position !== index) }))
+                      }
+                    >
+                      <i class="ti ti-trash" aria-hidden="true" />
+                    </IconButton>
+                  </div>
                 </div>
               )}
             </Index>

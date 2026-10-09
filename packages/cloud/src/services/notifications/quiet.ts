@@ -2,6 +2,7 @@ import { dates } from "@k2b/stdlib";
 import { sql } from "bun";
 import type { MutationResult } from "../../contracts/shared";
 import {
+  NOTIFICATION_DO_NOT_DISTURB_MAX_DAYS,
   type NotificationQuietHours,
   NotificationQuietHoursSchema,
   type NotificationQuietSettings,
@@ -22,25 +23,27 @@ const pad2 = (value: number): string => String(value).padStart(2, "0");
 /**
  * The quiet-hours intervals that touch `[from - 1 day, from + days]`, as instants. Each period belongs to the
  * local day it starts on; wall-clock times are converted per date, so a period keeps its local times across
- * daylight-saving changes. A start inside a skipped hour moves forward like the clock does.
+ * daylight-saving changes. A time inside a skipped hour moves forward like the clock does. In a repeated hour a
+ * start takes the first occurrence and an end the second, so the period covers every instant the clock shows a
+ * time inside it.
  */
 const quietHourIntervals = (hours: NotificationQuietHours, from: number, days: number): Interval[] => {
   if (hours.periods.length === 0) return [];
   const timeZone = normalizeTimeZone(hours.timeZone);
   const [localDate = ""] = dates.instantToZonedInput(new Date(from), timeZone).split("T");
   const [year, month, day] = localDate.split("-").map(Number) as [number, number, number];
-  const instant = (offset: number, time: string): number => {
+  const instant = (offset: number, time: string, disambiguation: "compatible" | "later"): number => {
     const date = new Date(Date.UTC(year, month - 1, day + offset));
     const wallClock = `${date.getUTCFullYear()}-${pad2(date.getUTCMonth() + 1)}-${pad2(date.getUTCDate())}T${time}`;
-    return Date.parse(dates.zonedDateTimeToInstant(wallClock, timeZone, { disambiguation: "compatible" }));
+    return Date.parse(dates.zonedDateTimeToInstant(wallClock, timeZone, { disambiguation }));
   };
   const intervals: Interval[] = [];
   for (let offset = -1; offset <= days; offset += 1) {
     const isoWeekday = new Date(Date.UTC(year, month - 1, day + offset)).getUTCDay() || 7;
     for (const period of hours.periods) {
       if (!period.days.includes(isoWeekday)) continue;
-      const start = instant(offset, period.start);
-      const end = period.end > period.start ? instant(offset, period.end) : instant(offset + 1, period.end);
+      const start = instant(offset, period.start, "compatible");
+      const end = instant(period.end > period.start ? offset : offset + 1, period.end, "later");
       if (end > start) intervals.push({ start, end });
     }
   }
@@ -117,6 +120,9 @@ const updateQuietSettings = async (config: {
   const until = doNotDisturbUntil ? new Date(doNotDisturbUntil) : null;
   if (until && until.getTime() <= Date.now()) {
     return { ok: false, error: "Do not disturb must end in the future", status: 400 };
+  }
+  if (until && until.getTime() > Date.now() + NOTIFICATION_DO_NOT_DISTURB_MAX_DAYS * DAY_MS) {
+    return { ok: false, error: "Do not disturb must end within a year", status: 400 };
   }
   const timeZone = normalizeTimeZone(quietHours?.timeZone ?? config.fallbackTimeZone);
   const periods = quietHours ? JSON.stringify(quietHours.periods) : "[]";

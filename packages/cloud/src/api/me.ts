@@ -387,7 +387,7 @@ const app = new Hono<AuthContext>()
       tags: ["Me"],
       summary: "Update current user do not disturb and quiet hours",
       description:
-        "Pause browser notifications until a future instant (null resumes them) or replace the weekly quiet hours. Omitted fields stay unchanged.",
+        "Pause browser notifications until a future instant at most 366 days ahead (null resumes them) or replace the weekly quiet hours. Omitted fields stay unchanged.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(NotificationQuietSettingsSchema, "Updated quiet settings and current state"),

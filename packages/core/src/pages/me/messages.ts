@@ -314,8 +314,10 @@ export const accountMessages = i18n.define({
       pauseResumed: "Notifications resumed.",
       pauseSaveFailed: "Do not disturb could not be saved.",
       pauseInPast: "Choose a time in the future.",
+      pauseTooFar: "Choose a time within the next year.",
       quietHoursTitle: "Quiet hours",
-      quietHoursDescription: "The same times every week. A period that ends before it starts runs into the next day.",
+      quietHoursDescription:
+        "The same times every week. A period that ends before it starts runs into the next day; the same start and end mean 24 hours.",
       quietDays: "Days",
       quietFrom: "From",
       quietTo: "To",
@@ -752,8 +754,10 @@ export const accountMessages = i18n.define({
       pauseResumed: "Benachrichtigungen wieder aktiv.",
       pauseSaveFailed: "„Nicht stören“ konnte nicht gespeichert werden.",
       pauseInPast: "Wähle einen Zeitpunkt in der Zukunft.",
+      pauseTooFar: "Wähle einen Zeitpunkt innerhalb des nächsten Jahres.",
       quietHoursTitle: "Ruhezeiten",
-      quietHoursDescription: "Jede Woche zu denselben Zeiten. Endet ein Zeitraum vor seinem Beginn, reicht er in den nächsten Tag.",
+      quietHoursDescription:
+        "Jede Woche zu denselben Zeiten. Endet ein Zeitraum vor seinem Beginn, reicht er in den nächsten Tag; gleicher Beginn und gleiches Ende bedeuten 24 Stunden.",
       quietDays: "Tage",
       quietFrom: "Von",
       quietTo: "Bis",
