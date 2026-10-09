@@ -255,7 +255,7 @@ Every command takes `--json` (and `--jsonl` for lists), destructive commands nee
 
 ## JSON contracts
 
-`ls <space> --json` items carry `overdue`, true only for an open task with a deadline before today in your timezone, using the same rule as `--due overdue`.
+`ls <space> --json` items carry `overdue`: true only for an open task whose deadline is before today in your timezone (the same day boundary as `--due overdue`; completed tasks and events are never overdue).
 
 | Command | `--json` output |
 | --- | --- |

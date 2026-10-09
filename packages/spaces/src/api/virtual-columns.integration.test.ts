@@ -148,6 +148,11 @@ suite("Spaces automatic Kanban columns", () => {
       expect(allItems.find((entry) => entry.id === overdue.short_id)?.overdue).toBeTrue();
       expect(allItems.find((entry) => entry.id === finished.short_id)?.overdue).toBeFalse();
       expect(allItems.find((entry) => entry.id === plain.short_id)?.overdue).toBeFalse();
+      const overdueResponse = await member(`${base}/items/filter`, { method: "POST", body: { status: "all", deadlineFilter: "overdue" } });
+      expect(overdueResponse.status).toBe(200);
+      const overdueItems = ItemFilterResponseSchema.parse(await overdueResponse.json()).items;
+      expect(overdueItems.find((entry) => entry.id === finished.short_id)?.overdue).toBeFalse();
+      expect(overdueItems.find((entry) => entry.id === overdue.short_id)?.overdue).toBeTrue();
       const listed = async (filter: Record<string, unknown>) => {
         const response = await member(`${base}/items/filter`, { method: "POST", body: { sort: "title", ...filter } });
         expect(response.status).toBe(200);
