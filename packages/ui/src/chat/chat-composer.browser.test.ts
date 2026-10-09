@@ -202,12 +202,13 @@ const layout = (page: Page) =>
     };
   });
 
-/** Every formatting button: its box, and whether a tap on its middle reaches it. */
+/** Every formatting button: its box, and whether a tap on its middle reaches it; and where the field starts. */
 const formatButtons = (page: Page) =>
   page.evaluate(() => {
     const group = document.querySelector<HTMLElement>(".k2b-chat-composer__format")!;
     const buttons = [...group.querySelectorAll("button")];
     return {
+      fieldLeft: document.querySelector(".k2b-chat-composer__field")!.getBoundingClientRect().left,
       scrolls: group.scrollWidth > group.clientWidth,
       buttons: buttons.map((button) => {
         const rect = button.getBoundingClientRect();
@@ -302,8 +303,10 @@ describe(`conversation ChatComposer in ${browserName}`, () => {
       // The newest message stays right above the composer in every frame.
       expect(Math.max(...run.gaps) - Math.min(...run.gaps)).toBeLessThanOrEqual(1);
       const format = await formatButtons(page);
-      expect(format.buttons).toHaveLength(8);
+      expect(format.buttons).toHaveLength(3);
       expect(format.scrolls).toBe(false);
+      // The row starts where the field starts, not at the attach button.
+      expect(format.buttons[0]!.left).toBeCloseTo(format.fieldLeft, 1);
       for (const button of format.buttons) expect(button.reached).toBe(true);
 
       await page.evaluate(() => fixture.setHint("Everyone in this chat can open the reference, as far as their own access reaches."));
@@ -321,7 +324,7 @@ describe(`conversation ChatComposer in ${browserName}`, () => {
     }
   }, 30_000);
 
-  test("a phone shows the v5 row with 44 px controls, every formatting button at once, and Enter breaks the line", async () => {
+  test("a phone shows the v5 row with 44 px controls, the formatting row from the field's edge, and Enter breaks the line", async () => {
     for (const width of [390, 360]) {
       const page = await open({ width }, { hasTouch: true, isMobile: true });
       expect(await page.evaluate(() => matchMedia("(any-pointer: coarse) and (not (any-pointer: fine))").matches)).toBe(true);
@@ -357,14 +360,14 @@ describe(`conversation ChatComposer in ${browserName}`, () => {
       await frames(page, 2);
       expect((await layout(page)).row).toEqual(before.row);
       const format = await formatButtons(page);
-      // All eight fit the row: nothing scrolls, nothing overlaps, and each takes its own taps.
+      // Bold, Italic and List start at the field's edge: nothing scrolls, nothing overlaps, and each takes its own taps.
       expect(format.scrolls).toBe(false);
-      expect(format.buttons).toHaveLength(8);
+      expect(format.buttons).toHaveLength(3);
+      expect(format.buttons[0]!.left).toBeCloseTo(format.fieldLeft, 1);
       for (const [index, button] of format.buttons.entries()) {
         expect(button.reached).toBe(true);
-        expect(button.height).toBe(44);
-        expect(button.width).toBeGreaterThanOrEqual(width === 390 ? 44 : 40);
-        expect(button.left).toBeGreaterThanOrEqual(index === 0 ? 0 : format.buttons[index - 1]!.right);
+        expect([button.width, button.height]).toEqual([44, 44]);
+        if (index > 0) expect(button.left).toBeGreaterThanOrEqual(format.buttons[index - 1]!.right);
         expect(button.right).toBeLessThanOrEqual(width);
       }
       await page.locator('button[aria-label="Bold (Ctrl/Cmd+B)"]').tap();

@@ -24,7 +24,7 @@ import {
   suggestEmoji,
 } from "../inputs/emoji/emoji-index";
 import { FileDropTarget } from "../inputs/FileDropTarget";
-import { toggleBulletList, toggleCodeBlock, toggleInlineMarker, toggleQuote } from "../inputs/markdown/actions";
+import { toggleBulletList, toggleInlineMarker } from "../inputs/markdown/actions";
 import { openCodeFence } from "../inputs/markdown/code-zone";
 import { SelectChip } from "../inputs/SelectChip";
 import { useLocale } from "../intl/locale";
@@ -137,7 +137,10 @@ export type ChatComposerProps = {
   variant?: "default" | "conversation";
   /** `"enter"` (default): Enter sends and Shift+Enter breaks the line. `"mod-enter"`: Enter breaks the line. Ctrl/⌘+Enter always sends. */
   sendKey?: "enter" | "mod-enter";
-  /** Adds "Aa", which opens one row of Markdown formatting buttons above the field; the field and its controls stay put. */
+  /**
+   * Adds "Aa", which opens one row above the field with Bold, Italic and Bullet list (Ctrl/⌘+B, Ctrl/⌘+I, Ctrl/⌘+Shift+8);
+   * the field and its controls stay put. Other Markdown is typed by hand.
+   */
   formatting?: boolean;
   /** An emoji button at a fixed place. Touch-only devices hide it; their keyboard has emoji. */
   emoji?: ChatComposerEmoji;
@@ -158,30 +161,11 @@ type FormatTool = {
   shiftCode?: string;
 };
 
-const insertComposerLink = (textarea: HTMLTextAreaElement): void => {
-  const { value, selectionStart, selectionEnd } = textarea;
-  const label = value.slice(selectionStart, selectionEnd);
-  replaceTextareaRange(textarea, selectionStart, selectionEnd, `[${label}]()`);
-  // Without a selection the label comes first, otherwise the address.
-  const caret = label ? selectionStart + label.length + 3 : selectionStart + 1;
-  textarea.setSelectionRange(caret, caret);
-};
-
+/** The row stays short: what a chat message needs. Other Markdown, typed by hand, keeps working. */
 const formatTools: readonly FormatTool[] = [
   { id: "bold", icon: "ti ti-bold", label: (m) => m.boldShortcut, run: (textarea) => toggleInlineMarker(textarea, "**"), key: "b" },
   { id: "italic", icon: "ti ti-italic", label: (m) => m.italicShortcut, run: (textarea) => toggleInlineMarker(textarea, "*"), key: "i" },
-  {
-    id: "strikethrough",
-    icon: "ti ti-strikethrough",
-    label: (m) => m.strikethroughShortcut,
-    run: (textarea) => toggleInlineMarker(textarea, "~~"),
-    shiftCode: "KeyX",
-  },
-  { id: "code", icon: "ti ti-code", label: (m) => m.inlineCodeShortcut, run: (textarea) => toggleInlineMarker(textarea, "`"), key: "e" },
-  { id: "code-block", icon: "ti ti-source-code", label: (m) => m.codeBlock, run: toggleCodeBlock },
   { id: "bullet-list", icon: "ti ti-list", label: (m) => m.bulletListShortcut, run: toggleBulletList, shiftCode: "Digit8" },
-  { id: "quote", icon: "ti ti-quote", label: (m) => m.quote, run: toggleQuote },
-  { id: "link", icon: "ti ti-link", label: (m) => m.insertLink, run: insertComposerLink },
 ];
 
 const formatShortcut = (event: KeyboardEvent): FormatTool | undefined => {
@@ -811,7 +795,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
               disabled={!canSelectFiles()}
               onClick={chooseFiles}
             >
-              <i class={addingFiles() ? "ti ti-loader-2 k2b-spin" : "ti ti-paperclip"} aria-hidden="true" />
+              <i class={addingFiles() ? "ti ti-loader-2 k2b-spin" : "ti ti-plus"} aria-hidden="true" />
             </Tooltip.Trigger>
           )}
         </Show>

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { toggleCodeBlock, toggleHeading, toggleInlineMarker, toggleNumberedList } from "./actions";
+import { toggleHeading, toggleInlineMarker, toggleNumberedList } from "./actions";
 import { computeActiveFormats } from "./active-formats";
 import { handleListContinuation, handleShortcut, handleSmartPaste } from "./behaviors";
 import { isInCodeZone, openCodeFence } from "./code-zone";
@@ -65,57 +65,12 @@ describe("markdown editor helpers", () => {
     expect(list.value).toBe("1. alpha\n2. beta");
   });
 
-  test("wraps lines in a code block and inline markers without placeholder text", () => {
+  test("an inline marker at a caret inserts the pair without placeholder text", () => {
     installExecCommand();
-    const lines = textarea("a\nconst b = 1;", 2, 14);
-    toggleCodeBlock(lines);
-    expect(lines.value).toBe("a\n```\nconst b = 1;\n```");
-    expect([lines.selectionStart, lines.selectionEnd]).toEqual([6, 18]);
-    const fenced = textarea("```\nx\n```", 0, 9);
-    toggleCodeBlock(fenced);
-    expect(fenced.value).toBe("x");
-    const empty = textarea("", 0);
-    toggleCodeBlock(empty);
-    expect(empty.value).toBe("```\n\n```");
-    expect(empty.selectionStart).toBe(4);
-
     const caret = textarea("say ", 4);
     toggleInlineMarker(caret, "~~");
     expect(caret.value).toBe("say ~~~~");
     expect([caret.selectionStart, caret.selectionEnd]).toEqual([6, 6]);
-  });
-
-  test("a second Code block press removes the fences it added instead of nesting new ones", () => {
-    installExecCommand();
-    const line = textarea("x", 0, 1);
-    toggleCodeBlock(line);
-    expect(line.value).toBe("```\nx\n```");
-    toggleCodeBlock(line);
-    expect(line.value).toBe("x");
-    expect([line.selectionStart, line.selectionEnd]).toEqual([0, 1]);
-
-    const empty = textarea("", 0);
-    toggleCodeBlock(empty);
-    toggleCodeBlock(empty);
-    expect(empty.value).toBe("");
-
-    // Anywhere inside a block, also on its opening line, the press removes that block's fences.
-    const inside = textarea("say\n~~~js\na\nb\n~~~\nend", 11);
-    toggleCodeBlock(inside);
-    expect(inside.value).toBe("say\na\nb\nend");
-    expect([inside.selectionStart, inside.selectionEnd]).toEqual([4, 7]);
-    const opening = textarea("```\na", 2);
-    toggleCodeBlock(opening);
-    expect(opening.value).toBe("a");
-
-    // A selection that holds a fence gets a longer one, and a second press restores it.
-    const nested = "Intro\n```ts\nx\n```";
-    const withFence = textarea(nested, 0, nested.length);
-    toggleCodeBlock(withFence);
-    expect(withFence.value).toBe(`\`\`\`\`\n${nested}\n\`\`\`\``);
-    expect([withFence.selectionStart, withFence.selectionEnd]).toEqual([5, 5 + nested.length]);
-    toggleCodeBlock(withFence);
-    expect(withFence.value).toBe(nested);
   });
 
   test("italic uses `*`, which also works inside a word, and leaves a bold `**` pair alone", () => {

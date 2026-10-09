@@ -1,5 +1,4 @@
 import { replaceTextareaRange as replaceRange } from "../editor-dom";
-import { closesCodeFence, openCodeFence } from "./code-zone";
 
 const lineAt = (value: string, position: number): { lineStart: number; lineEnd: number; line: string } => {
   const lineStart = value.lastIndexOf("\n", position - 1) + 1;
@@ -104,38 +103,6 @@ export const toggleHeading = (textarea: HTMLTextAreaElement, level: 1 | 2 | 3): 
 };
 
 export const toggleBulletList = (textarea: HTMLTextAreaElement): void => togglePrefix(textarea, "- ");
-
-/** Puts the selected lines between ``` fences. Inside a fenced block, from its opening line on, it removes that block's fences. */
-export const toggleCodeBlock = (textarea: HTMLTextAreaElement): void => {
-  const { value } = textarea;
-  const { start, end, lines } = selectedLineRange(textarea);
-  const open = openCodeFence(value, lineAt(value, start).lineEnd);
-  if (open) {
-    const bodyStart = Math.min(lineAt(value, open.start).lineEnd + 1, value.length);
-    // An unclosed block runs to the end of the text.
-    let bodyEnd = value.length;
-    let blockEnd = value.length;
-    for (let lineStart = bodyStart; lineStart < value.length; ) {
-      const { lineEnd, line } = lineAt(value, lineStart);
-      if (closesCodeFence(line, open.marker)) {
-        bodyEnd = Math.max(bodyStart, lineStart - 1);
-        blockEnd = lineEnd;
-        break;
-      }
-      lineStart = lineEnd + 1;
-    }
-    const body = value.slice(bodyStart, bodyEnd);
-    replaceRange(textarea, open.start, blockEnd, body);
-    textarea.setSelectionRange(open.start, open.start + body.length);
-    return;
-  }
-  const body = lines.join("\n");
-  // A fence in the selection would close a ``` block early, so the new block's fence is longer than any of them.
-  const longest = Math.max(0, ...lines.map((line) => /^(?:[ \t]*>)*[ \t]*(`{3,})/.exec(line)?.[1]!.length ?? 0));
-  const fence = "`".repeat(Math.max(3, longest + 1));
-  replaceRange(textarea, start, end, `${fence}\n${body}\n${fence}`);
-  textarea.setSelectionRange(start + fence.length + 1, start + fence.length + 1 + body.length);
-};
 
 export const toggleQuote = (textarea: HTMLTextAreaElement): void => togglePrefix(textarea, "> ");
 
