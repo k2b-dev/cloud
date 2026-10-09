@@ -825,37 +825,51 @@ const AppWorkspaceSidebarItemStatus = (props: AppWorkspaceSidebarItemStatusProps
   const messages = useUiMessages();
   const count = () => (typeof props.unread === "number" && props.unread >= 1 ? Math.floor(props.unread) : 0);
   const dot = () => props.unread === true;
-  // The marks are decorative; the row's accessible name gets one phrase instead.
+  // The marks are decorative; the row's accessible name gets one phrase instead,
+  // which says no more than the "99+" a capped count shows.
   const description = () =>
     [
-      count() ? messages().sidebarUnread({ count: count() }) : dot() ? messages().sidebarNewActivity : "",
+      count() > 99
+        ? messages().sidebarUnreadMany
+        : count()
+          ? messages().sidebarUnread({ count: count() })
+          : dot()
+            ? messages().sidebarNewActivity
+            : "",
       props.mention ? messages().sidebarMentioned : "",
       props.muted ? messages().sidebarMuted : "",
     ]
       .filter(Boolean)
       .join(", ");
+  // The unread slot stays reserved at the end, and the marks that change most
+  // often sit outermost, so new activity or a mention never moves another mark.
   return (
     <Show when={description()}>
       <span class="k2b-app-workspace__sidebar-status" data-unread={count() ? "count" : dot() ? "dot" : undefined}>
-        <Show when={props.muted}>
-          <span class="k2b-app-workspace__sidebar-status-muted" aria-hidden="true">
-            <i class="ti ti-bell-off" />
-          </span>
-        </Show>
         <Show when={props.mention}>
           <span class="k2b-app-workspace__sidebar-status-mention" aria-hidden="true">
             @
           </span>
         </Show>
-        <Show when={count() || dot()}>
-          <span class="k2b-app-workspace__sidebar-status-unread" aria-hidden="true">
-            <Show when={count()} fallback={<span class="k2b-app-workspace__sidebar-status-dot" />}>
-              <span class="k2b-app-workspace__sidebar-status-count" data-mention={props.mention ? "true" : undefined}>
-                {count() > 99 ? "99+" : count()}
-              </span>
-            </Show>
+        <Show when={props.muted}>
+          <span class="k2b-app-workspace__sidebar-status-muted" aria-hidden="true">
+            <i class="ti ti-bell-off" />
           </span>
         </Show>
+        <span class="k2b-app-workspace__sidebar-status-unread" aria-hidden="true">
+          <Show
+            when={count()}
+            fallback={
+              <Show when={dot()}>
+                <span class="k2b-app-workspace__sidebar-status-dot" />
+              </Show>
+            }
+          >
+            <span class="k2b-app-workspace__sidebar-status-count" data-mention={props.mention ? "true" : undefined}>
+              {count() > 99 ? "99+" : count()}
+            </span>
+          </Show>
+        </span>
         <span class="k2b-sr-only">, {description()}</span>
       </span>
     </Show>
@@ -985,7 +999,11 @@ function AppWorkspaceSidebarItem(props: AppWorkspaceSidebarItemProps): JSX.Eleme
   const label = () => labelSlot()?.children ?? (legacy().length === 1 ? legacy()[0] : legacy());
   const icon = () => iconSlot()?.icon ?? props.icon;
   const iconContent = () => iconSlot()?.children;
-  const meta = () => metaSlot()?.children ?? props.meta;
+  // Resolved first, so a component that renders nothing, such as a status with
+  // nothing to show, leaves no empty slot in the browser either.
+  const meta = children(() => metaSlot()?.children ?? props.meta);
+  const hasMeta = () => meta.toArray().some(Boolean);
+  const metaId = createUniqueId();
   const metaVisibility = () => metaSlot()?.visibility ?? props.metaVisibility;
   const customActions = () => resolvedActions();
   const hasCustomActions = () => Boolean(customActions());
@@ -1018,12 +1036,14 @@ function AppWorkspaceSidebarItem(props: AppWorkspaceSidebarItemProps): JSX.Eleme
           <span class="k2b-app-workspace__sidebar-item-description">{props.description}</span>
         </Show>
       </span>
-      <Show when={meta()}>
-        {(value) => (
-          <span class="k2b-app-workspace__sidebar-item-meta" data-visibility={metaVisibility() === "hover" ? "hover" : undefined}>
-            {value()}
-          </span>
-        )}
+      <Show when={hasMeta()}>
+        <span
+          class="k2b-app-workspace__sidebar-item-meta"
+          id={props.preview?.trigger === "row" ? metaId : undefined}
+          data-visibility={metaVisibility() === "hover" ? "hover" : undefined}
+        >
+          {meta()}
+        </span>
       </Show>
     </>
   );
@@ -1081,6 +1101,7 @@ function AppWorkspaceSidebarItem(props: AppWorkspaceSidebarItemProps): JSX.Eleme
             trigger={preview().trigger}
             align={preview().align}
             viewportSize={preview().viewportSize}
+            describedBy={hasMeta() ? metaId : undefined}
             onOpenChange={preview().onOpenChange}
           >
             {preview().content}

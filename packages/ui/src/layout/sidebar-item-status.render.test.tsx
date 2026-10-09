@@ -37,19 +37,22 @@ const text = (html: string, className: string) => html.match(new RegExp(`class="
 describe("AppWorkspace.SidebarItemStatus", () => {
   test("renders nothing without unread items, a mention, or muting", () => {
     for (const status of [{}, { unread: 0 }, { unread: false }, { unread: -2 }, { unread: Number.NaN }]) {
-      expect(render(status)).not.toContain("k2b-app-workspace__sidebar-status");
+      expect(render(status)).not.toContain("k2b-app-workspace__sidebar-item-meta");
     }
   });
 
-  test("shows a count, caps it at 99+, and names the exact number", () => {
+  test("shows a count and caps what it shows and says at 99+", () => {
     const html = render({ unread: 3 });
     expect(html).toContain('data-unread="count"');
     expect(text(html, "k2b-app-workspace__sidebar-status-count")).toBe("3");
     expect(html).toContain(", 3 unread");
 
-    const many = render({ unread: 1234 });
-    expect(text(many, "k2b-app-workspace__sidebar-status-count")).toBe("99+");
-    expect(many).toContain(", 1234 unread");
+    // A backend that caps unread at 100 passes 100 for any larger number.
+    for (const unread of [100, 1234]) {
+      const many = render({ unread });
+      expect(text(many, "k2b-app-workspace__sidebar-status-count")).toBe("99+");
+      expect(many).toContain(", more than 99 unread<");
+    }
   });
 
   test("shows a quiet dot for new activity without a count", () => {
@@ -68,6 +71,12 @@ describe("AppWorkspace.SidebarItemStatus", () => {
     expect(html).toContain(", 2 unread, mentions you");
   });
 
+  test("keeps the unread slot without unread items", () => {
+    const html = render({ mention: true });
+    expect(html).toContain('<span class="k2b-app-workspace__sidebar-status-unread" aria-hidden="true"></span>');
+    expect(html).not.toContain("data-unread=");
+  });
+
   test("keeps the visible marks out of the accessible name and inside the row link", () => {
     const html = render({ unread: 5, mention: true, muted: true });
     const marks = html.match(/class="k2b-app-workspace__sidebar-status-(muted|mention|unread)"[^>]*>/g) ?? [];
@@ -79,5 +88,6 @@ describe("AppWorkspace.SidebarItemStatus", () => {
   test("describes the state in German", () => {
     expect(render({ unread: 4, mention: true, muted: true }, "de")).toContain(", 4 ungelesen, erwähnt dich, stummgeschaltet");
     expect(render({ unread: true }, "de")).toContain(", neue Aktivität");
+    expect(render({ unread: 100 }, "de")).toContain(", mehr als 99 ungelesen");
   });
 });

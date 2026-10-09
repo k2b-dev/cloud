@@ -1090,8 +1090,10 @@
 }
 
 /* Unread marks: each has a fixed width and at most the 1rem height of the
-   label line, so no state changes the row height or moves another mark. A
-   count and a dot share one slot; the dot sits where a one-digit count would. */
+   label line, so no state changes the row height. The unread slot is always
+   reserved at the end, with the bell and then "@" before it, so new activity
+   or a mention never moves another mark. A count and a dot share that slot;
+   the dot sits where a one-digit count would. */
 .k2b-ui .k2b-app-workspace__sidebar-status {
   display: inline-flex;
   align-items: center;
@@ -1149,11 +1151,24 @@
   background: var(--k2b-text-muted);
 }
 
-/* Unread is weight and count, never color alone. */
+/* Unread is weight and count, never color alone: the label gets stronger
+   than the regular label of its variant. Only the row's own label changes,
+   not the rows in a preview inside it. */
+.k2b-ui .k2b-app-workspace__sidebar-item {
+  --k2b-sidebar-item-unread-weight: 600;
+}
+
+.k2b-ui .k2b-app-workspace__sidebar-item[data-variant="object"] {
+  --k2b-sidebar-item-unread-weight: 700;
+}
+
 .k2b-ui
-  .k2b-app-workspace__sidebar-item:has(.k2b-app-workspace__sidebar-status[data-unread="count"])
-  .k2b-app-workspace__sidebar-item-label {
-  font-weight: 600;
+  :is(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main):has(
+    > .k2b-app-workspace__sidebar-item-meta .k2b-app-workspace__sidebar-status[data-unread="count"]
+  )
+  > :is(.k2b-app-workspace__sidebar-item-copy, .k2b-app-workspace__sidebar-item-label)
+  .k2b-app-workspace__sidebar-item-label-text {
+  font-weight: var(--k2b-sidebar-item-unread-weight);
 }
 
 @media (forced-colors: active) {
