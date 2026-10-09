@@ -23,10 +23,12 @@ import {
   ListWebAuthnPasskeysResponseSchema,
   MessageResponseSchema,
   NotificationDeliveryStatusSchema,
+  NotificationQuietSettingsSchema,
   RegisterBrowserNotificationEndpointSchema,
   ServiceAccountCredentialSchema,
   UpdateAvatarResponseSchema,
   UpdateAvatarSchema,
+  UpdateNotificationQuietSettingsSchema,
   UpdateProfileSchema,
   UpdateUserNotificationPreferenceSchema,
   UserNotificationHistoryResponseSchema,
@@ -36,7 +38,7 @@ import {
   WebAuthnPasskeySchema,
 } from "../contracts";
 import { CapabilityAppIdSchema } from "../contracts/capabilities";
-import { type AuthContext, auth, getLocale, jsonResponse, rateLimit, requiresAuth, respond, v } from "../server";
+import { type AuthContext, auth, getLocale, getTimeZone, jsonResponse, rateLimit, requiresAuth, respond, v } from "../server";
 import { APP_SESSION_FORBIDDEN } from "../server/middleware/auth";
 import {
   accountLifecycle,
@@ -360,6 +362,44 @@ const app = new Hono<AuthContext>()
           definitionId: c.req.valid("param").definitionId,
           locale: getLocale(c),
         }),
+      ),
+  )
+
+  .get(
+    "/notifications/quiet",
+    describeRoute({
+      tags: ["Me"],
+      summary: "Get current user do not disturb and quiet hours",
+      description:
+        "Return do not disturb, the weekly quiet hours, and whether browser notifications from every app are held back right now.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(NotificationQuietSettingsSchema, "Quiet settings and current state"),
+        401: jsonResponse(ErrorResponseSchema, "Authentication required"),
+      },
+    }),
+    async (c) => respond(c, async () => ok(await notifications.user.quiet.get(c.get("user").id, getTimeZone(c)))),
+  )
+
+  .patch(
+    "/notifications/quiet",
+    describeRoute({
+      tags: ["Me"],
+      summary: "Update current user do not disturb and quiet hours",
+      description:
+        "Pause browser notifications until a future instant at most 366 days ahead (null resumes them) or replace the weekly quiet hours. Omitted fields stay unchanged.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(NotificationQuietSettingsSchema, "Updated quiet settings and current state"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid quiet settings"),
+        401: jsonResponse(ErrorResponseSchema, "Authentication required"),
+      },
+    }),
+    v("json", UpdateNotificationQuietSettingsSchema),
+    async (c) =>
+      respond(
+        c,
+        notifications.user.quiet.update({ userId: c.get("user").id, update: c.req.valid("json"), fallbackTimeZone: getTimeZone(c) }),
       ),
   )
 

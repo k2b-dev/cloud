@@ -464,6 +464,28 @@ and gives up on one after a minute; requests asked for meanwhile share one
 read after it. Hidden tabs send nothing. Count these requests when sizing the
 application.
 
+### Hold back browser notifications during quiet time
+
+Deploy the updated platform package and Core together to enable
+[do not disturb and quiet hours](/en/docs/platform/notifications#do-not-disturb-and-quiet-hours).
+Core creates the `notifications.quiet_times` table when it starts, and no
+configuration is required. Nothing changes for a person until they pause
+notifications or save quiet hours under **My account → Notifications**.
+
+From then on, Core's delivery worker drops recommended browser notifications
+during that person's quiet time instead of postponing them. The delivery
+becomes `suppressed` with `do_not_disturb` or `quiet_hours`, and its waiting
+email or deployment-channel fallbacks end with the same code, so no email
+replaces the push. Required deliveries and email chosen first still go out.
+Expect these codes in notification history and under **Observability →
+Notifications**; they are not delivery failures.
+
+To verify, pause notifications for an hour on a test account with a registered
+browser, send it a test notification, and check that its history shows the
+browser delivery held back by do not disturb and no fallback email. Resume,
+send again, and confirm that the push arrives. An older release ignores the
+table, so a rollback turns quiet time off and keeps the saved settings.
+
 ## Coordinate an existing installation's identity upgrade
 
 Use one maintenance window for the gateway, Core, OAuth, applications, and
