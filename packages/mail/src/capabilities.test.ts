@@ -38,6 +38,7 @@ import {
   composeSafety,
   conversationAssignments,
   conversationContext,
+  conversationKeeps,
   conversationSummaries,
   drafts,
   draftUploads,
@@ -221,6 +222,7 @@ const tagFixture = {
 } as const;
 
 beforeEach(() => {
+  spyOn(conversationKeeps, "getConversationKeep").mockResolvedValue({ ok: true, data: null });
   spyOn(focus, "listMailboxCounts").mockResolvedValue({ ok: true, data: [{ mailboxId: internalMailboxId, unread: 7, needsAction: 3 }] });
   spyOn(resourceParents, "messageConversation").mockResolvedValue(internalConversationId);
   spyOn(publicResources, "resolvePublicId").mockImplementation(
@@ -409,6 +411,45 @@ describe("mail capabilities", () => {
     expect(checkMailCapabilityMessages()).toEqual([]);
   });
 
+  test("keep release requires Manage and its review explains deletion and kept-copy visibility", async () => {
+    spyOn(messages, "listConversationMessages").mockResolvedValue({
+      ok: true,
+      data: { items: [{ id: internalMessageId, subject: "Evidence" }], nextCursor: null },
+    } as never);
+    const access = spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue({ ok: true, data: "admin" });
+    const release = mailCapabilities.actions["conversation.keep.release"];
+    const review = await release.review({ mailboxId, conversationId }, context);
+    expect(access.mock.calls[0]?.[2]).toBe("admin");
+    expect(review).toMatchObject({ ok: true });
+    if (!review.ok) throw new Error(review.error.message);
+    expect(review.data.message).toContain("can be deleted again");
+    expect(review.data.message).toContain("disappear from view");
+    expect(review.data.message).toContain("stored contents remain");
+    expect(release.destructive).toBeTrue();
+    expect("approval" in release).toBeFalse();
+  });
+  test("kept conversations cannot be reviewed for a Trash move", async () => {
+    spyOn(messages, "listConversationMessages").mockResolvedValue({
+      ok: true,
+      data: { items: [{ id: internalMessageId, subject: "Evidence" }], nextCursor: null },
+    } as never);
+    spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue({ ok: true, data: "write" });
+    spyOn(conversationKeeps, "getConversationKeep").mockResolvedValue({
+      ok: true,
+      data: {
+        conversationId: internalConversationId,
+        keptAt: timestamp,
+        keptBy: { kind: "user", id: userId, displayName: "Ada", avatarHash: null },
+      },
+    });
+    expect(
+      await mailCapabilities.actions["conversation.move"].review(
+        { mailboxId, target: { conversationId, sourceFolderId: folderId }, destination: { kind: "role", role: "trash" } },
+        context,
+      ),
+    ).toMatchObject({ ok: false, error: { code: "CONVERSATION_KEPT", status: 409 } });
+  });
+
   test("compiles into a registrable v1 manifest", () => {
     const manifest = compileCapabilityManifest("mail", mailCapabilities);
     expect(manifest.appId).toBe("mail");
@@ -435,6 +476,7 @@ describe("mail capabilities", () => {
       "conversation.assign.batch",
       "conversation.comment.create",
       "conversation.comment.update",
+      "conversation.keep",
       "conversation.mark",
       "conversation.reminder.cancel",
       "conversation.reminder.set",
@@ -502,6 +544,8 @@ describe("mail capabilities", () => {
       "conversation.comment.create",
       "conversation.comment.delete",
       "conversation.comment.update",
+      "conversation.keep",
+      "conversation.keep.release",
       "conversation.mark",
       "conversation.move",
       "conversation.reminder.cancel",
@@ -534,6 +578,8 @@ describe("mail capabilities", () => {
       "conversation.comment.create",
       "conversation.comment.delete",
       "conversation.comment.update",
+      "conversation.keep",
+      "conversation.keep.release",
       "conversation.mark",
       "conversation.move",
       "conversation.reminder.cancel",
@@ -1032,6 +1078,7 @@ describe("mail capabilities", () => {
         { mailboxId, conversationId, expectedRevision: 4, status: "done" },
         context,
       ),
+      await mailCapabilities.actions["conversation.keep"].review({ mailboxId, conversationId }, context),
       await mailCapabilities.actions["conversation.snooze"].review(
         { mailboxId, conversationId, expectedRevision: 4, snoozedUntil: timestamp },
         context,
@@ -1066,6 +1113,18 @@ describe("mail capabilities", () => {
   });
 
   test("returns a schema-valid user outcome from every Mail action", async () => {
+    spyOn(conversationKeeps, "keepConversation").mockResolvedValue({
+      ok: true,
+      data: {
+        conversationId: internalConversationId,
+        keptAt: timestamp,
+        keptBy: { kind: "user", id: userId, displayName: "Test user", avatarHash: null },
+      },
+    });
+    spyOn(conversationKeeps, "releaseConversationKeep").mockResolvedValue({
+      ok: true,
+      data: { conversationId: internalConversationId, released: true },
+    });
     spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue({ ok: true, data: "write" });
     spyOn(messages, "listConversationMessages").mockResolvedValue({
       ok: true,
@@ -1305,6 +1364,16 @@ describe("mail capabilities", () => {
             { mailboxId, conversationId, expectedRevision: 4, status: "done" },
             context,
           ),
+      },
+      {
+        localId: "conversation.keep",
+        action: mailCapabilities.actions["conversation.keep"],
+        run: () => mailCapabilities.actions["conversation.keep"].run({ mailboxId, conversationId }, context),
+      },
+      {
+        localId: "conversation.keep.release",
+        action: mailCapabilities.actions["conversation.keep.release"],
+        run: () => mailCapabilities.actions["conversation.keep.release"].run({ mailboxId, conversationId }, idempotentContext),
       },
       {
         localId: "conversation.snooze",

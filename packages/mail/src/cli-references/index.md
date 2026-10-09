@@ -79,7 +79,7 @@ cld --json mail ls Support --view mine
 cld --json mail ls "Support:Projekte / 2025" --status needs_action --limit 20
 ```
 
-Without a folder, `ls` lists the mailbox's conversations across folders. `--view` takes `needs_action`, `mine`, `unassigned`, `waiting`, `done`, `snoozed`, or `recently_active`; `--status` takes `needs_action`, `waiting`, or `done`. The follow-up views leave out conversations that are only in Trash or Junk, and `unassigned` includes conversations whose assignee can no longer write in the mailbox. The JSON result is `{ "items": [...], "nextCursor": ... }`; pass `--cursor` for the next page.
+Without a folder, `ls` lists the mailbox's conversations across folders. `--view` takes `needs_action`, `mine`, `unassigned`, `waiting`, `done`, `snoozed`, `recently_active`, or `kept`; `--status` takes `needs_action`, `waiting`, or `done`. The follow-up views leave out conversations that are only in Trash or Junk, `unassigned` includes conversations whose assignee can no longer write in the mailbox, and `kept` lists the kept conversations from every folder. Each item carries `kept`. The JSON result is `{ "items": [...], "nextCursor": ... }`; pass `--cursor` for the next page.
 
 Show one conversation with its summary, status, assignee, tags, and latest messages, then print one message:
 
@@ -124,6 +124,18 @@ A batch continues when one conversation fails and then exits with status 1. The 
 ```
 
 `assign` returns `{ "assignee": ..., "results": [{ "conversationId", "status": "ok" | "not_found" }] }`. `tag add` returns `updatedConversationIds` and `unchangedConversationIds`; `tag rm` adds `failed`.
+
+## Keep conversations that must not be deleted
+
+```bash
+cld --json mail keep <conversation-id> <second-conversation-id>
+cld --json mail unkeep <conversation-id> --yes
+```
+
+- `keep` protects whole conversations, including replies that join them later. It needs write access, takes up to 50 IDs, and returns who kept each conversation and since when. Keeping an already kept conversation changes nothing.
+- While a conversation is kept, `rm`, moving it to Junk, deleting a folder that holds it, and the same actions from automations, workflows, and agents fail with status 409 and code `CONVERSATION_KEPT` (`FOLDER_HAS_KEPT_CONVERSATIONS` for a folder). `archive`, `mv` to other folders, `read`, and `flag` still work.
+- When the mail server or another client deletes a kept message, Cloud keeps its own copy in the folder where it was last. `cat --json` shows it with `deletedOnServer: true`; actions that need the mail server fail with `KEPT_COPY_ONLY`.
+- `unkeep` needs Manage access and `--yes`, because the conversation can be deleted again and messages of which only Cloud's copy is left disappear from the mailbox. It returns `{ "conversationId", "released" }`.
 
 ## Answer mail
 
@@ -624,7 +636,7 @@ Use `cld mail <group> help` for all flags. The durable day-to-day surface is:
 
 | Area | Commands |
 | --- | --- |
-| Everyday | `ls`, `show`, `cat`, `assign`, `archive`, `mv`, `read`, `unread`, `flag`, `unflag`, `rm`, `tag add|rm`, `reply`, `forward`, `send`, `comments list|add|update|delete` |
+| Everyday | `ls`, `show`, `cat`, `assign`, `archive`, `mv`, `read`, `unread`, `flag`, `unflag`, `rm`, `keep`, `unkeep`, `tag add|rm`, `reply`, `forward`, `send`, `comments list|add|update|delete` |
 | Mailboxes | `ls`, `create`, `use`, `current`, `mailbox get`, `mailbox deleted list|get`, `mailbox restore`, `mailbox wait`, `mailbox preferences|pin|unpin|hide|unhide`, `configure`, `delete` |
 | Access | `access list|search-principals|grant|set|revoke` |
 | Discovery | `provider discover|list`, `binding list|attach`, `identity list|add|setup-default|configure|verify|disable`, `folders`, `status` |

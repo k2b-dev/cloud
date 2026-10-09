@@ -32,6 +32,7 @@ import {
   composeSafety,
   conversationAssignments,
   conversationContext,
+  conversationKeeps,
   conversationSummaries,
   drafts,
   draftUploads,
@@ -51,6 +52,7 @@ import {
   senderIdentities,
   triage,
 } from "./service";
+import { keepError } from "./service/conversation-keep-rules";
 import { localizeMailError } from "./service/error-messages";
 import type { ConversationSummary, MessageSummary } from "./service/messages";
 
@@ -1145,7 +1147,7 @@ const queryDefinitions = {
   "conversation.list": {
     title: "List conversations",
     description:
-      "Browse compact conversation previews in one known mailbox, optionally by folder, work view, or unread state. Without folderId, every view except mine and send_problems leaves out conversations kept inside folder_only or hidden folders; pass folderId to list them. The result has enough state to choose a conversation or perform provider mark/move Actions; use conversation.read for collaboration details.",
+      "Browse compact conversation previews in one known mailbox, optionally by folder, work view, or unread state. Without folderId, every view except mine, send_problems, and kept leaves out conversations kept inside folder_only or hidden folders; pass folderId to list them. The result has enough state to choose a conversation or perform provider mark/move Actions; use conversation.read for collaboration details.",
     input: c.ConversationListInputSchema,
     data: c.ConversationListDataSchema,
     openWorld: true,
@@ -1369,7 +1371,7 @@ const queryDefinitions = {
       if (!conversation.ok) return conversation;
       const mailboxId = await resourceParents.conversation(conversation.data);
       if (!mailboxId) return fail(err.notFound("Conversation"));
-      const [summary, state, tags, page] = await Promise.all([
+      const [summary, state, tags, page, keep] = await Promise.all([
         conversationSummaries.getConversationSummary({
           context: mailContext,
           mailboxId,
@@ -1388,7 +1390,9 @@ const queryDefinitions = {
           limit: 5,
           latest: true,
         }),
+        conversationKeeps.getConversationKeep({ context: mailContext, mailboxId, conversationId: conversation.data }),
       ]);
+      if (!keep.ok) return keep;
       if (!summary.ok) return summary;
       if (!state.ok) return state;
       if (!tags.ok) return tags;
@@ -1412,6 +1416,7 @@ const queryDefinitions = {
           conversationId: input.id,
           summary: summary.data.summary,
           summaryRevision: summary.data.summaryRevision,
+          keep: keep.data ? { keptAt: keep.data.keptAt, keptBy: keep.data.keptBy.displayName } : null,
           collaboration: {
             assignee: state.data.assignee,
             workStatus: state.data.workStatus,
@@ -2245,7 +2250,7 @@ const requireConversationForReview = async (
   mailboxId: string,
   conversationId: string,
   context: CapabilityExecutionContext,
-  permission: "read" | "write" = "write",
+  permission: "read" | "write" | "admin" = "write",
 ) => {
   const scope = await resolveMailboxScope(mailboxId);
   if (!scope.ok) return scope;
@@ -2931,6 +2936,13 @@ const actionDefinitions = {
       const t = mailCapabilityMessages(context.locale);
       const conversation = await requireConversationForReview(input.mailboxId, input.target.conversationId, context);
       if (!conversation.ok) return conversation;
+      const keep = await conversationKeeps.getConversationKeep({
+        context: requestContext(context),
+        mailboxId: conversation.data.mailboxInternalId,
+        conversationId: conversation.data.conversationInternalId,
+      });
+      if (!keep.ok) return keep;
+      let destinationRole: string | null = input.destination.kind === "role" ? input.destination.role : null;
       let destination = input.destination.kind === "role" ? input.destination.role : input.destination.folderId;
       if (input.destination.kind === "folder") {
         const scope = await resolveMailboxScope(input.mailboxId);
@@ -2939,8 +2951,10 @@ const actionDefinitions = {
         if (!folderId.ok) return folderId;
         const folders = await messages.listFolders(requestContext(context), scope.data.id);
         if (!folders.ok) return folders;
+        destinationRole = folders.data.find((folder) => folder.id === folderId.data)?.role ?? null;
         destination = truncateText(mailFolderPaths(folders.data).get(folderId.data) ?? input.destination.folderId, 200).text;
       }
+      if (keep.data && (destinationRole === "trash" || destinationRole === "junk")) return fail(keepError("CONVERSATION_KEPT"));
       return ok({
         message: t.moveConversationReview({ subject: conversation.data.subject, destination }),
         details: [
@@ -3271,6 +3285,83 @@ const actionDefinitions = {
               ? t.completedConversation({ subject: conversation.data.subject })
               : t.reopenedConversation({ subject: conversation.data.subject }),
           ),
+          ...conversationMetadata(input.mailboxId, input.conversationId, conversation.data.subject),
+        }),
+      );
+    },
+  },
+  "conversation.keep": {
+    title: "Keep conversation",
+    description: "Protect the whole conversation, including later replies, against deletion through Cloud. Requires mailbox write access.",
+    input: c.ConversationKeepInputSchema,
+    data: c.ConversationKeepDataSchema,
+    destructive: false,
+    openWorld: false,
+    idempotency: "none",
+    approval: "rememberable",
+    review: async (input: z.output<typeof c.ConversationKeepInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
+      const conversation = await requireConversationForReview(input.mailboxId, input.conversationId, context, "write");
+      if (!conversation.ok) return conversation;
+      return ok({
+        message: t.keepReview({ subject: conversation.data.subject }),
+        details: [{ label: t.conversation, value: conversation.data.subject }],
+        links: [openLink(conversation.data.href)],
+        approvalScope: mailboxApprovalScope(input.mailboxId),
+      });
+    },
+    run: async (input: z.output<typeof c.ConversationKeepInputSchema>, context: CapabilityExecutionContext) => {
+      const conversation = await requireConversationForReview(input.mailboxId, input.conversationId, context, "write");
+      if (!conversation.ok) return conversation;
+      const result = await conversationKeeps.keepConversation({
+        context: requestContext(context),
+        mailboxId: conversation.data.mailboxInternalId,
+        conversationId: conversation.data.conversationInternalId,
+      });
+      return mapResult(
+        result,
+        (value) => ({ ...value, conversationId: input.conversationId }),
+        () => ({
+          summary: mailCapabilityMessages(context.locale).keptConversation({ subject: conversation.data.subject }),
+          ...conversationMetadata(input.mailboxId, input.conversationId, conversation.data.subject),
+        }),
+      );
+    },
+  },
+  "conversation.keep.release": {
+    title: "Stop keeping conversation",
+    description: "Allow deletion again and hide Cloud copies already deleted on the mail server. Requires mailbox admin access.",
+    input: c.ConversationKeepInputSchema,
+    data: c.ConversationKeepReleaseDataSchema,
+    destructive: true,
+    openWorld: false,
+    idempotency: "required",
+
+    review: async (input: z.output<typeof c.ConversationKeepInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
+      const conversation = await requireConversationForReview(input.mailboxId, input.conversationId, context, "admin");
+      if (!conversation.ok) return conversation;
+      return ok({
+        message: t.releaseKeepReview({ subject: conversation.data.subject }),
+        details: [{ label: t.conversation, value: conversation.data.subject }],
+        links: [openLink(conversation.data.href)],
+      });
+    },
+    run: async (input: z.output<typeof c.ConversationKeepInputSchema>, context: CapabilityExecutionContext) => {
+      const key = requireIdempotencyKey(context, "conversation.keep.release");
+      if (!key.ok) return key;
+      const conversation = await requireConversationForReview(input.mailboxId, input.conversationId, context, "admin");
+      if (!conversation.ok) return conversation;
+      const result = await conversationKeeps.releaseConversationKeep({
+        context: requestContext(context),
+        mailboxId: conversation.data.mailboxInternalId,
+        conversationId: conversation.data.conversationInternalId,
+      });
+      return mapResult(
+        result,
+        (value) => ({ ...value, conversationId: input.conversationId }),
+        () => ({
+          summary: mailCapabilityMessages(context.locale).releasedKeep({ subject: conversation.data.subject }),
           ...conversationMetadata(input.mailboxId, input.conversationId, conversation.data.subject),
         }),
       );

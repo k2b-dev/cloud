@@ -61,6 +61,33 @@ const applyBaseline = async (tx: SqlClient): Promise<void> => {
  * older Mail image, which records no version for them, still starts on it.
  */
 const applyAdditions = async (tx: SqlClient): Promise<void> => {
+  await tx`
+    CREATE TABLE IF NOT EXISTS mail.conversation_keeps (
+      conversation_id uuid PRIMARY KEY REFERENCES mail.conversations(id) ON DELETE CASCADE,
+      mailbox_id uuid NOT NULL REFERENCES mail.mailboxes(id) ON DELETE CASCADE,
+      kept_by_kind text NOT NULL CHECK (kept_by_kind IN ('user','service_account','workflow','system')),
+      kept_by_id uuid,
+      kept_at timestamptz NOT NULL DEFAULT now()
+    )
+  `.simple();
+  await tx`CREATE INDEX IF NOT EXISTS conversation_keeps_mailbox_idx
+    ON mail.conversation_keeps (mailbox_id, kept_at DESC, conversation_id)`.simple();
+  await tx`
+    CREATE OR REPLACE FUNCTION mail.carry_conversation_keep() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN
+      IF OLD.conversation_id IS DISTINCT FROM NEW.conversation_id THEN
+        INSERT INTO mail.conversation_keeps (conversation_id, mailbox_id, kept_by_kind, kept_by_id, kept_at)
+        SELECT NEW.conversation_id, mailbox_id, kept_by_kind, kept_by_id, kept_at
+        FROM mail.conversation_keeps WHERE conversation_id = OLD.conversation_id
+        ON CONFLICT DO NOTHING;
+      END IF;
+      RETURN NEW;
+    END;
+    $$
+  `.simple();
+  await tx`CREATE OR REPLACE TRIGGER carry_conversation_keep
+    AFTER UPDATE OF conversation_id ON mail.conversation_messages
+    FOR EACH ROW EXECUTE FUNCTION mail.carry_conversation_keep()`.simple();
   // Pinned and hidden mailboxes in the overview, kept per principal so they apply on every device.
   // A person's rows go with the person, a service account's with the account.
   await tx`

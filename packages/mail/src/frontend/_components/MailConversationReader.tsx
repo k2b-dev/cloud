@@ -8,6 +8,7 @@ import {
   Button,
   CheckboxCard,
   Dropdown,
+  type DropdownAction,
   type DropdownItem,
   IconButton,
   IconButtonLink,
@@ -32,6 +33,7 @@ import type {
   SenderIdentity,
 } from "../../contracts";
 import type { MailActivityEvent } from "../../service/collaboration";
+import type { ConversationKeep } from "../../service/conversation-keeps";
 import type { ConversationContentSummary } from "../../service/conversation-summary";
 import type { MessageDetail } from "../../service/messages";
 import { readApiError } from "./api-response";
@@ -90,6 +92,8 @@ export default function MailConversationReader(props: {
   unread: boolean;
   flagged: boolean;
   inJunk: boolean;
+  /** The conversation is kept: Cloud refuses to delete it or move it to Trash or Junk. */
+  keep: ConversationKeep | null;
   reference: string | null;
   subject: string;
   messages: MessageDetail[];
@@ -115,6 +119,8 @@ export default function MailConversationReader(props: {
   onMergeConversation: () => void | Promise<void>;
   onReassignMessage: (messageId: string) => void | Promise<void>;
   onSplitMessage: (messageId: string) => void | Promise<void>;
+  onKeep: () => void | Promise<void>;
+  onStopKeeping: () => void | Promise<void>;
   onSummarySaved: (conversationId: string, summary: ConversationContentSummary) => Promise<void>;
   onReconcile: () => Promise<void>;
   onReconcileAfterWrite: () => Promise<void>;
@@ -719,6 +725,28 @@ export default function MailConversationReader(props: {
 
   const canSplitConversation = () => props.canWrite && (props.totalMessageCount > 1 || props.messages.length > 1);
 
+  const keptLabel = (): string | null => {
+    const keep = props.keep;
+    return keep ? t().keptSince({ name: keep.keptBy.displayName, date: dates.formatDate(keep.keptAt, props.dateConfig) }) : null;
+  };
+  // Cloud refuses these for a kept conversation; the reader says so instead of offering them.
+  const keptBlocks = (actionId: MailActionId): string | null => {
+    if (!props.keep) return null;
+    if (actionId === "trash") return t().keptCannotDelete;
+    if (actionId === "junk") return t().keptCannotJunk;
+    return null;
+  };
+  const keepAction = (): { label: string; icon: string; description?: string; disabled: boolean; action: () => void } | null => {
+    if (props.keep) {
+      return props.canAdmin
+        ? { label: t().stopKeeping, icon: "ti ti-lock-open", disabled: props.actionPending, action: () => void props.onStopKeeping() }
+        : { label: t().kept, icon: "ti ti-lock", description: t().keptOnlyManagers, disabled: true, action: () => undefined };
+    }
+    return props.canWrite
+      ? { label: t().keep, icon: "ti ti-lock", disabled: props.actionPending, action: () => void props.onKeep() }
+      : null;
+  };
+
   const localizedActionLabel = (actionId: MailActionId): string =>
     actionId === "archive"
       ? t().archive
@@ -802,6 +830,10 @@ export default function MailConversationReader(props: {
         action: () => void props.onSplitMessage(message.id),
       };
     }
+    if (id === "keep") {
+      const keep = keepAction();
+      return keep ? { id, label: keep.label, icon: keep.icon, disabled: keep.disabled, action: keep.action } : null;
+    }
     if (!props.canWrite) return null;
     if (id === "tags") {
       return {
@@ -836,11 +868,12 @@ export default function MailConversationReader(props: {
               : "flag"
             : id;
     const action = getMailAction(actionId);
+    const blocked = keptBlocks(actionId);
     return {
       id,
-      label: localizedActionLabel(actionId),
+      label: blocked ?? localizedActionLabel(actionId),
       icon: action.icon,
-      disabled: props.actionPending,
+      disabled: props.actionPending || blocked !== null,
       action: () => void props.onAction(actionId),
     };
   };
@@ -861,6 +894,29 @@ export default function MailConversationReader(props: {
   const customizeToolbar = async () => {
     const next = await openMailConversationToolbarDialog(props.toolbarActions);
     if (next) props.onToolbarActionsChange(next);
+  };
+
+  const organizeItem = (actionId: "junk" | "not_spam" | "trash"): DropdownAction => {
+    const blocked = keptBlocks(actionId);
+    if (blocked) {
+      return { label: localizedActionLabel(actionId), icon: getMailAction(actionId).icon, description: blocked, disabled: true };
+    }
+    return {
+      label: localizedActionLabel(actionId),
+      icon: getMailAction(actionId).icon,
+      action: () => props.onAction(actionId),
+      ...(actionId === "trash" ? { variant: "danger" as const } : {}),
+    };
+  };
+
+  const keepMenuItem = (): DropdownAction[] => {
+    const keep = keepAction();
+    if (!keep) return [];
+    return [
+      keep.disabled && keep.description
+        ? { label: keep.label, icon: keep.icon, description: keep.description, disabled: true }
+        : { label: keep.label, icon: keep.icon, action: keep.action },
+    ];
   };
 
   const overflowActions = (): DropdownItem[] => {
@@ -900,17 +956,8 @@ export default function MailConversationReader(props: {
             icon: getMailAction("archive").icon,
             action: () => props.onAction("archive"),
           },
-          {
-            label: localizedActionLabel(props.inJunk ? "not_spam" : "junk"),
-            icon: getMailAction(props.inJunk ? "not_spam" : "junk").icon,
-            action: () => props.onAction(props.inJunk ? "not_spam" : "junk"),
-          },
-          {
-            label: localizedActionLabel("trash"),
-            icon: getMailAction("trash").icon,
-            action: () => props.onAction("trash"),
-            variant: "danger",
-          },
+          organizeItem(props.inJunk ? "not_spam" : "junk"),
+          organizeItem("trash"),
           {
             label: localizedActionLabel("move"),
             icon: getMailAction("move").icon,
@@ -952,6 +999,7 @@ export default function MailConversationReader(props: {
             icon: "ti ti-git-merge",
             action: props.onMergeConversation,
           },
+          ...keepMenuItem(),
           ...(canSplitConversation() && latestMessage()
             ? [
                 {
@@ -1052,6 +1100,20 @@ export default function MailConversationReader(props: {
                       <i class={getMailAction("flag").icon} aria-hidden="true" />
                     </span>
                   </Tooltip.Anchor>
+                </Show>
+                <Show when={keptLabel()}>
+                  {(label) => (
+                    <Tooltip.Anchor content={label()}>
+                      <span
+                        class="flex h-7 w-7 shrink-0 items-center justify-center text-secondary"
+                        role="img"
+                        aria-label={`${t().keptConversation}. ${label()}`}
+                        data-mail-kept-indicator
+                      >
+                        <i class="ti ti-lock" aria-hidden="true" />
+                      </span>
+                    </Tooltip.Anchor>
+                  )}
                 </Show>
                 <Show when={props.reference}>
                   <button

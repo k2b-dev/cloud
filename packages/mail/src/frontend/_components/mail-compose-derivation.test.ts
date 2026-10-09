@@ -61,6 +61,7 @@ const message = (overrides: Partial<MessageDetail> = {}): MessageDetail => ({
   hydrationStatus: "body",
   remoteAvailable: true,
   folderId: null,
+  deletedOnServer: false,
   contentType: "text/plain",
   sizeBytes: 8,
   plainText: "Question",

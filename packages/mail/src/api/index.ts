@@ -115,6 +115,7 @@ import {
   composeTemplates,
   conversationAssignments,
   conversationContext,
+  conversationKeeps,
   conversationPreviews,
   conversationSummaries,
   conversations,
@@ -326,6 +327,17 @@ const attachmentUploadQuerySchema = draftRevisionSchema.extend({
 const attachmentChunkQuerySchema = z.object({
   offset: z.coerce.number().int().nonnegative(),
 });
+const conversationKeepResponseSchema = z.object({
+  conversationId: ResourceShortIdSchema,
+  keptAt: z.string().datetime(),
+  keptBy: z.object({
+    kind: z.enum(["user", "service_account", "workflow", "system"]),
+    id: z.string().uuid().nullable(),
+    displayName: z.string(),
+    avatarHash: z.string().nullable(),
+  }),
+});
+const conversationKeepReleaseResponseSchema = z.object({ conversationId: ResourceShortIdSchema, released: z.boolean() });
 const acquireDraftLeaseSchema = z.object({ takeover: z.boolean().default(false) }).strict();
 const notificationTargetParamSchema = z.object({
   mailboxId: ResourceShortIdSchema,
@@ -579,6 +591,7 @@ export const aggregateResourcePaths = (data: unknown) => {
   many(["conversationLocalTags", "tags"], "tags");
   many(["comments"], "comments");
   one(["reminder"], "reminders");
+  if (typeof at(["keep", "conversationId"]) === "string") paths.push({ path: ["keep", "conversationId"], table: "conversations" });
   many(["organization", "savedViews"], "savedViews");
   many(["organization", "localTags"], "tags");
   many(["compose", "templates"], "composeTemplates");
@@ -1807,6 +1820,69 @@ const mailOperationsApi = new Hono<MailApiContext>()
         }),
       );
     },
+  )
+  .get(
+    "/mailboxes/:mailboxId/conversations/:conversationId/keep",
+    describeRoute({
+      summary: "Read conversation keep",
+      tags: ["Mail"],
+      responses: {
+        200: jsonResponse(conversationKeepResponseSchema.nullable(), "Conversation keep result"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Conversation not found"),
+      },
+    }),
+    v("param", mailboxAndIdParamSchema("conversationId")),
+    async (c) =>
+      respondPublic(
+        c,
+        conversationKeeps.getConversationKeep({
+          context: requestContext(c),
+          ...internalParams(c, c.req.valid("param") as { mailboxId: string; conversationId: string }),
+        }),
+      ),
+  )
+  .put(
+    "/mailboxes/:mailboxId/conversations/:conversationId/keep",
+    describeRoute({
+      summary: "Keep conversation",
+      tags: ["Mail"],
+      responses: {
+        200: jsonResponse(conversationKeepResponseSchema, "Conversation keep result"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Conversation not found"),
+      },
+    }),
+    v("param", mailboxAndIdParamSchema("conversationId")),
+    async (c) =>
+      respondPublic(
+        c,
+        conversationKeeps.keepConversation({
+          context: requestContext(c),
+          ...internalParams(c, c.req.valid("param") as { mailboxId: string; conversationId: string }),
+        }),
+      ),
+  )
+  .delete(
+    "/mailboxes/:mailboxId/conversations/:conversationId/keep",
+    describeRoute({
+      summary: "Stop keeping conversation",
+      tags: ["Mail"],
+      responses: {
+        200: jsonResponse(conversationKeepReleaseResponseSchema, "Conversation keep result"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Conversation not found"),
+      },
+    }),
+    v("param", mailboxAndIdParamSchema("conversationId")),
+    async (c) =>
+      respondPublic(
+        c,
+        conversationKeeps.releaseConversationKeep({
+          context: requestContext(c),
+          ...internalParams(c, c.req.valid("param") as { mailboxId: string; conversationId: string }),
+        }),
+      ),
   )
   .get("/mailboxes/:mailboxId/conversations/:conversationId/reminder", v("param", mailboxAndIdParamSchema("conversationId")), async (c) =>
     respondReminders(

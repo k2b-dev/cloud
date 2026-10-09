@@ -410,6 +410,25 @@ for lifecycle behavior, and [Troubleshooting](/en/docs/operations/troubleshootin
 for failed routes or dependencies. Plan rollback against both schema and key
 compatibility; replacing an image does not restore migrated data.
 
+### Mail storage for kept conversations
+
+Mail adds the table `mail.conversation_keeps` and a trigger on
+`mail.conversation_messages` on its next start. No configuration change is
+needed. Replicas of an older Mail image do not know kept conversations and
+still accept deletes, so update every Mail replica before people rely on
+[Keep](/en/apps/mail#keep-conversations-that-must-not-be-deleted).
+
+Mail stores every message it loads in Postgres: the original source, the
+attachments a second time as decoded files for previews and downloads, and the
+text for search. Identical files are stored once. Plan the Mail share of the
+database at up to about twice the size the loaded messages take on the mail
+server; one message is at most 128 MB. Mail keeps this data when the mail
+server deletes a message, also without Keep, so keeping a conversation adds
+only one small row and loads any of its messages that Mail had not loaded yet.
+Keep changes what people see and what Cloud refuses: the copies stay visible,
+and Cloud does not delete them. Like all Mail data, they stay in the database
+and its backups; Mail has no automatic cleanup for message data.
+
 ### Update browser notifications for grouping and badges
 
 Deploy the updated platform package and Core together to enable

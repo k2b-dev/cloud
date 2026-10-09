@@ -240,6 +240,13 @@ export default function MailConversationRow(props: {
                 </span>
               </Tooltip.Anchor>
             </Show>
+            <Show when={props.item.kept}>
+              <Tooltip.Anchor content={t().kept}>
+                <span class="inline-flex" role="img" aria-label={t().keptConversation} data-mail-kept-indicator>
+                  <i class="ti ti-lock" aria-hidden="true" />
+                </span>
+              </Tooltip.Anchor>
+            </Show>
             <Show when={props.item.flagged}>
               <Tooltip.Anchor content={t().flagged}>
                 <span class="inline-flex text-orange-600 dark:text-orange-400" role="img" aria-label={t().flaggedConversation}>
@@ -301,11 +308,23 @@ export default function MailConversationRow(props: {
                 icon: "ti ti-tags",
                 action: () => props.actions.manageTags(props.item),
               },
-              ...(["archive", "move", props.state.spamAction, "trash"] as const).map((actionId) => ({
-                label: actionLabel(actionId),
-                icon: getMailAction(actionId).icon,
-                action: () => props.actions.itemAction(props.item, actionId),
-              })),
+              ...(["archive", "move", props.state.spamAction, "trash"] as const).map((actionId) => {
+                // Cloud refuses to delete a kept conversation or move it to Junk; the menu says why.
+                const blocked = props.item.kept
+                  ? actionId === "trash"
+                    ? t().keptCannotDelete
+                    : actionId === "junk"
+                      ? t().keptCannotJunk
+                      : null
+                  : null;
+                return blocked
+                  ? { label: actionLabel(actionId), icon: getMailAction(actionId).icon, description: blocked, disabled: true as const }
+                  : {
+                      label: actionLabel(actionId),
+                      icon: getMailAction(actionId).icon,
+                      action: () => props.actions.itemAction(props.item, actionId),
+                    };
+              }),
               {
                 label: t().mergeWithConversation,
                 icon: "ti ti-git-merge",

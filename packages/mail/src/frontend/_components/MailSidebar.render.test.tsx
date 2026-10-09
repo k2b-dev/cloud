@@ -39,6 +39,7 @@ const sidebar = (overrides: Partial<Parameters<typeof MailSidebar>[0]> = {}) =>
       snoozed: 0,
       send_problems: 0,
       recently_active: 5,
+      kept: 2,
     },
     canWrite: true,
     canAdmin: true,
@@ -115,6 +116,7 @@ describe("Mail sidebar", () => {
         snoozed: 0,
         send_problems: 2,
         recently_active: 5,
+        kept: 2,
       },
       folders: [
         folder("00000000-0000-4000-8000-000000000001", "Inbox", "inbox", 20, 5),

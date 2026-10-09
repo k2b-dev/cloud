@@ -43,6 +43,7 @@ const item: MailListItem = {
   unreadFolderIds: [],
   localTags: [],
   revision: 1,
+  kept: false,
 };
 
 const renderRow = (value: MailListItem) =>
@@ -80,5 +81,18 @@ describe("Mail conversation attachment match row", () => {
 
   test("omits the download action without an attachment match", () => {
     expect(renderRow({ ...item, attachmentMatch: null })).not.toContain("Download matched attachment");
+  });
+});
+
+describe("Mail conversation kept marker", () => {
+  test("marks a kept conversation with an accessible lock", () => {
+    const html = renderRow({ ...item, kept: true });
+    expect(html).toContain("data-mail-kept-indicator");
+    expect(html).toContain('aria-label="Kept conversation"');
+    expect(html).toContain("ti ti-lock");
+  });
+
+  test("leaves other conversations unmarked", () => {
+    expect(renderRow(item)).not.toContain("data-mail-kept-indicator");
   });
 });

@@ -22,6 +22,7 @@ import { sha256Json } from "./canonical";
 import { enqueueMailCommand } from "./command-runtime";
 import { validateDraftComposeSafety } from "./compose-safety";
 import { renderComposeDraft } from "./compose-templates";
+import { checkCommandKeepProtection } from "./conversation-keep-rules";
 import { invalidateDraftLeaseAfterSend } from "./draft-leases";
 import { resolveMailExecution } from "./execution";
 import { mailLive } from "./live";
@@ -802,6 +803,8 @@ const createActorCommandInTransaction = async (params: CreateActorCommandInterna
     db: tx,
   });
   if (!targets.ok) return targets;
+  const protection = await checkCommandKeepProtection(tx, prepared);
+  if (!protection.ok) return protection;
   const execution = await resolveMailExecution({
     mailboxId: params.mailboxId,
     operation: params.context ? (prepared.kind === "send" ? "actorSend" : "actorMutation") : "automation",

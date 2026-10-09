@@ -5,7 +5,7 @@ section: Work
 order: 110
 description: Connected mailboxes with search, team context, reliable sending, and automation.
 tags: [mail, email, collaboration]
-updated: 2026-10-06
+updated: 2026-10-09
 ---
 
 # Mail
@@ -96,6 +96,50 @@ nothing for them, and only **Hidden** takes them out of the sidebar. `GET /api/m
 and `cld mail folders` show each folder's own display, the effective one, and
 the parent it comes from. Newly discovered folders show their mail everywhere,
 whether or not the account subscribes to them.
+
+## Keep conversations that must not be deleted
+
+Some mail is evidence, for example that a customer was informed. Anyone who can
+write in a mailbox can **Keep** a conversation; the lock it gets protects the
+whole conversation, including replies that join it later and messages that are
+split off or merged elsewhere. While a conversation is kept, Mail refuses to
+delete its messages, to move them to Trash or Junk, or to delete a folder that
+holds them, with status 409 and the code `CONVERSATION_KEPT` (for a folder,
+`FOLDER_HAS_KEPT_CONVERSATIONS`). The check sits where every Mail command is
+created and again right before the mail server is changed, so the web app,
+selections, incoming automations, workflows, the API, `cld`, and the Assistant
+all get the same answer, also for a delete queued shortly before the keep.
+Archiving, moving between other folders, marking, and replying stay allowed.
+
+Mail already stores the original source and the decoded attachments of every
+message it loads. Keeping a conversation loads its remaining messages first.
+When another client or the server deletes a kept message, Mail keeps showing
+its copy in the folder where it was last, marked as deleted on the server; the
+copy can be read, searched, and exported as `.eml`, and actions that need the
+mail server report `KEPT_COPY_ONLY`. A message the server deletes before Mail
+loaded it, or one larger than 128 MB, has no Cloud copy.
+
+Only mailbox administrators (**Manage**) lift the protection, after a
+confirmation that names the consequence: the conversation can be deleted
+again, and messages of which only Cloud's copy remains disappear from the
+mailbox. Keeping and lifting are recorded in the conversation activity and the
+audit log (`mail.conversation.keep`, `mail.conversation.keep.release`). There
+is no retention date.
+
+| Surface | Keep | Lift |
+| --- | --- | --- |
+| Web app | **More conversation actions > Keep**, or the toolbar | **Stop keeping** |
+| API | `PUT /api/mail/mailboxes/{mailboxId}/conversations/{conversationId}/keep` | `DELETE` on the same path |
+| `cld` | `cld mail keep <conversation-id>...` | `cld mail unkeep <conversation-id>` |
+| Capabilities | `conversation.keep` | `conversation.keep.release` |
+
+The **Kept** view (`view=kept`, `cld mail ls --view kept`) and the search
+condition `{"type":"kept"}` list a mailbox's kept conversations from every
+folder, newest first. Conversation rows carry `kept`, messages carry
+`deletedOnServer`, and `conversation.read` names who kept the conversation and
+since when. See
+[Mail storage for kept conversations](/en/docs/operations/deployment-requirements#mail-storage-for-kept-conversations)
+for the storage this takes.
 
 ## Delete and restore a mailbox
 

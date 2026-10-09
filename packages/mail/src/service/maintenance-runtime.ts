@@ -7,6 +7,7 @@ import { sql } from "bun";
 import { z } from "zod";
 import { type CommandState, type MaintenanceCommandInput, maintenanceCommandInputSchema } from "../contracts";
 import { commandStillAuthorized, type StoredCommandAuthorization } from "./command-authorization";
+import { keepLastKeptPlacements } from "./conversation-keep-rules";
 import { resolveMailExecution } from "./execution";
 import { withLeaseHeartbeat } from "./lease-heartbeat";
 import { executeOperatorAction, OPERATOR_MAINTENANCE_KINDS } from "./operator-actions";
@@ -182,6 +183,10 @@ const executeFolderRebuild = async (command: DbMaintenanceCommand, folderId: str
         )
       `;
     }
+    await keepLastKeptPlacements(
+      tx,
+      staleRefs.map((row) => row.id),
+    );
     await tx`
       UPDATE mail.folders
       SET

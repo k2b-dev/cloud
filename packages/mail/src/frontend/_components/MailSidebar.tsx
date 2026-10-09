@@ -131,6 +131,7 @@ export default function MailSidebar(props: {
   ]);
   const secondaryViewItems = createMemo<MailViewItem[]>(() => [
     { id: "recently_active", label: messages().recentActivity, icon: "ti ti-activity" },
+    { id: "kept", label: messages().kept, icon: "ti ti-lock", description: messages().keptDescription },
   ]);
   const sendProblemView = createMemo<MailViewItem>(() => ({
     id: "send_problems",

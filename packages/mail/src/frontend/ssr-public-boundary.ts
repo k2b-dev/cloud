@@ -105,6 +105,7 @@ export const projectMailConversationDetail = async (
     add(paths, "conversations", ["comments", index, "conversationId"], comment.conversationId);
     add(paths, "messages", ["comments", index, "referencedMessageId"], comment.referencedMessageId);
   });
+  if (data.keep) add(paths, "conversations", ["keep", "conversationId"], data.keep.conversationId);
   if (data.reminder) {
     add(paths, "reminders", ["reminder", "id"], data.reminder.id);
     add(paths, "conversations", ["reminder", "conversationId"], data.reminder.conversationId);
@@ -197,6 +198,7 @@ export const projectMailboxPageData = async (data: MailboxPageData, loadPublicId
     add(paths, "conversations", ["comments", index, "conversationId"], item.conversationId);
     add(paths, "messages", ["comments", index, "referencedMessageId"], item.referencedMessageId);
   });
+  if (data.keep) add(paths, "conversations", ["keep", "conversationId"], data.keep.conversationId);
   if (data.reminder) {
     add(paths, "reminders", ["reminder", "id"], data.reminder.id);
     add(paths, "conversations", ["reminder", "conversationId"], data.reminder.conversationId);

@@ -50,6 +50,7 @@ Die integrierten Ansichten unter **Nachverfolgung** zeigen, was als Nächstes ge
 | Zuordnung | Nicht zugewiesen | Unterhaltungen ohne zuständige Person oder deren zuständige Person in diesem Postfach nicht mehr schreiben darf |
 | Mail / Mehr | Alle E-Mails | E-Mails aus allen Anbieterordnern außer Papierkorb, Junk und Ordnern, deren E-Mails im Ordner bleiben |
 | Mehr | Letzte Aktivität | Kürzlich geänderte Unterhaltungen |
+| Mehr | Aufbewahrt | Vor dem Löschen geschützte Unterhaltungen aus jedem Ordner |
 | Mail | Geplant | Nachrichten, die auf eine spätere Zustellung warten |
 
 Anbieterordner bilden eine andere Ebene. Wenn du eine Unterhaltung in Archiv, Papierkorb, Junk oder einen anderen Anbieterordner verschiebst, ändert sich die entfernte Ablage. Die Änderung kann in anderen E-Mail-Programmen sichtbar sein. Wenn du eine Unterhaltung als **Erledigt** markierst, ändert sich nur der Cloud-Nachverfolgungsstatus. Die E-Mail wird weder archiviert noch verschoben.
@@ -94,7 +95,7 @@ In der **Nachrichtenansicht** ist jede Zeile eine Nachricht. Aktionen an einer Z
 
 - **Archivieren** verschiebt sie in den zugeordneten Archivordner. Gmail hat keinen Archivordner. Ohne Zuordnung entfernt Archivieren die Unterhaltung deshalb aus dem aktuellen Ordner, etwa dem Posteingang, und behält sie in **Alle Nachrichten**.
 - **In Junk verschieben** verschiebt sie in den zugeordneten Junk-Ordner. In Junk wird dieselbe Aktion zu **Kein Spam** und verschiebt die Unterhaltung zurück in den Posteingang.
-- **Löschen** verschiebt sie in den zugeordneten Papierkorb.
+- **Löschen** verschiebt sie in den zugeordneten Papierkorb. Eine aufbewahrte Unterhaltung lässt sich weder löschen noch in den Spam-Ordner verschieben.
 
 Diese Aktionen erfordern Schreibzugriff und die entsprechende Ordnerzuordnung. Meldet Mail, dass die Unterhaltung keine aktive Anbieterablage besitzt, aktualisiere das Postfach oder bitte eine Person mit Adminrechten, Ordnererkennung und Zuordnungen zu prüfen.
 
@@ -107,6 +108,20 @@ Wähle **Mail-Befehle** über der Unterhaltungsliste, um dieselben Aktionen zu d
 - **Alle von diesem Absender suchen** öffnet eine exakte, URL-gestützte Postfachsuche.
 - **Regel aus Absender erstellen**, **Absender blockieren** und **Absenderdomain blockieren** öffnen den geführten Regeleditor mit bereits eingetragenem Absender.
 - **Abbestellung verwalten** erscheint nur, wenn die Nachricht standardisierte Angaben zum Abbestellen einer Mailingliste enthält.
+
+## Unterhaltungen aufbewahren, die nicht gelöscht werden dürfen {icon="lock"}
+
+Manche E-Mails sind ein Nachweis, etwa dafür, dass eine Kundin informiert wurde. Wähle **Weitere Unterhaltungsaktionen > Aufbewahren**, um die ganze Unterhaltung zu schützen. Alle, die im Postfach schreiben dürfen, können eine Unterhaltung aufbewahren. Ein Schloss in der Unterhaltungsliste und neben dem Betreff zeigt, dass sie aufbewahrt wird. Zeigst du auf das Schloss neben dem Betreff, siehst du, wer sie seit wann aufbewahrt. Um mit einem Klick aufzubewahren, füge **Aufbewahren** unter **Weitere Unterhaltungsaktionen > Werkzeugleiste anpassen** hinzu.
+
+Der Schutz wächst mit der Unterhaltung. Antworten, die später dazukommen, werden ebenfalls aufbewahrt, ebenso Nachrichten, die jemand abtrennt oder mit einer anderen Unterhaltung zusammenführt.
+
+Solange eine Unterhaltung aufbewahrt wird, lehnt Cloud es ab, ihre Nachrichten zu löschen, sie in den Papierkorb oder in den Spam-Ordner zu verschieben oder einen Ordner zu löschen, der sie enthält. Das gilt für jeden Weg, auf dem Cloud E-Mails ändert: die Aktionen an Unterhaltungen und Nachrichten, eine Auswahl mehrerer Unterhaltungen, Eingangsregeln und andere Automatisierungen, Workflows, die Kommandozeile `cld` und den Assistenten. Jeder dieser Wege meldet, dass die Unterhaltung aufbewahrt wird. Archivieren, in andere Ordner verschieben, als gelesen oder markiert kennzeichnen und antworten bleiben möglich.
+
+Cloud behält von jeder aufbewahrten Nachricht eine eigene vollständige Kopie: die Originalnachricht mit ihren Anhängen. Andere E-Mail-Programme und der Mailserver liegen außerhalb von Cloud und können die Nachricht dort weiterhin löschen. Die Nachricht bleibt dann in Cloud in dem Ordner, in dem sie zuletzt lag, und trägt den Hinweis **Auf dem Server gelöscht, in Cloud aufbewahrt**. Du kannst diese Kopie lesen, durchsuchen und als `.eml` herunterladen. Der Mailserver kann sie aber nicht mehr ändern, deshalb melden Verschieben und Markieren das. Hat Cloud eine Nachricht noch nicht vollständig geladen, lädt das Aufbewahren sie zuerst. Von einer Nachricht, die der Server löscht, bevor Cloud sie geladen hat, oder von einer Nachricht über 128 MB hat Cloud keine Kopie.
+
+Unter **Mail > Mehr > Aufbewahrt** stehen alle aufbewahrten Unterhaltungen des Postfachs, die neuesten zuerst, aus jedem Ordner. In der Suche findet die Bedingung **Aufbewahrt** sie ebenfalls, lässt sich mit anderen Bedingungen kombinieren und als Ansicht speichern.
+
+Nur wer das Postfach verwaltet, kann den Schutz aufheben. Wähle **Weitere Unterhaltungsaktionen > Aufbewahrung aufheben** und bestätige. Danach kann die Unterhaltung in Cloud wieder gelöscht werden, und Nachrichten, von denen nur noch die Kopie in Cloud vorhanden ist, verschwinden aus dem Postfach. Aufbewahren und Aufheben werden mit Person und Zeitpunkt in der Aktivität der Unterhaltung und im Cloud-Audit-Log festgehalten. Eine aufbewahrte Unterhaltung hat kein Ablaufdatum; sie bleibt aufbewahrt, bis jemand die Aufbewahrung aufhebt.
 
 ## Eine einzelne Nachricht untersuchen {icon="file-search"}
 

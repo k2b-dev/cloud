@@ -74,6 +74,7 @@ const item = (index: number, overrides: Partial<MailListItem> = {}): MailListIte
   unreadFolderIds: [],
   localTags: [],
   revision: 1,
+  kept: false,
   ...overrides,
 });
 const tag = (name: string, color: string) => ({ id: name, name, color }) as unknown as MailListItem["localTags"][number];
@@ -175,6 +176,9 @@ const load = async (
     sidebarCollapsed?: boolean;
     folderOnlyHints?: MailFolderView[];
     reader?: boolean;
+    items?: MailListItem[];
+    toolbarActions?: MailListHarnessOptions["toolbarActions"];
+    deletedOnServer?: boolean;
   } = {},
 ) => {
   const page = await (await browser.newContext(options.context ?? desktop)).newPage();
@@ -198,12 +202,14 @@ const load = async (
   if (options.theme === "dark") await page.evaluate(() => document.documentElement.classList.replace("light", "dark"));
   await page.evaluate((harnessOptions: MailListHarnessOptions) => window.mountMailList(harnessOptions), {
     locale: options.locale ?? "en",
-    items,
+    items: options.items ?? items,
     selectedConversationId: options.selectedConversationId ?? null,
     selectionMode: options.selectionMode,
     sidebarCollapsed: options.sidebarCollapsed,
     folderOnlyHints: options.folderOnlyHints,
     reader: options.reader,
+    toolbarActions: options.toolbarActions,
+    deletedOnServer: options.deletedOnServer,
   } satisfies MailListHarnessOptions);
   await page.clock.pauseAt(NOW + 60_000);
   return Object.assign(page, { errors, requests });
@@ -839,4 +845,74 @@ describe("Mail conversation switching", () => {
       await close(page);
     }
   }, 30_000);
+});
+
+describe("Mail kept conversations", () => {
+  const keptItems = (id: string) => items.map((entry) => (entry.conversationId === id ? { ...entry, kept: true } : entry));
+  /** The reader's header and toolbar, and the open row: what keeping must not move. */
+  const keepLayout = (page: Page, id: string) =>
+    page.evaluate(
+      (selector) =>
+        [
+          ...document.querySelectorAll(
+            `#reader header, #reader [data-mail-reader-heading], #reader [data-mail-toolbar-action], ${selector}`,
+          ),
+        ].map((element) => {
+          const { top, left, width, height } = element.getBoundingClientRect();
+          return [top, left, width, height];
+        }),
+      row(id),
+    );
+
+  test("keeping the open conversation shows the lock without moving the header, toolbar, or row", async () => {
+    const page = await load({
+      reader: true,
+      selectedConversationId: "Cv0001",
+      toolbarActions: ["reply", "archive", "spam", "trash", "keep"],
+    });
+    try {
+      await page.waitForSelector("#reader [data-mail-reader-heading]");
+      const before = await keepLayout(page, "Cv0001");
+      await page.evaluate((next) => window.setMailItems(next), keptItems("Cv0001"));
+      await page.waitForSelector("#reader [data-mail-kept-indicator]");
+      expect(await keepLayout(page, "Cv0001")).toEqual(before);
+      // The harness loads no icon font, so the lock has no size here; the row carries it.
+      expect(await page.locator(`${row("Cv0001")} [data-mail-kept-indicator]`).count()).toBe(1);
+      // Cloud refuses Trash and Junk for a kept conversation, and only managers lift the keep.
+      expect(await page.isDisabled('#reader [data-mail-toolbar-action="trash"]')).toBe(true);
+      expect(await page.isDisabled('#reader [data-mail-toolbar-action="spam"]')).toBe(true);
+      expect(await page.getAttribute('#reader [data-mail-toolbar-action="keep"]', "aria-label")).toBe("Kept");
+      expect(page.errors).toEqual([]);
+    } finally {
+      await close(page);
+    }
+  });
+
+  test("fits a phone and names a message the server deleted", async () => {
+    for (const theme of ["light", "dark"] as const) {
+      const page = await load({
+        context: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true },
+        theme,
+        reader: true,
+        items: keptItems("Cv0001"),
+        selectedConversationId: "Cv0001",
+        deletedOnServer: true,
+      });
+      try {
+        await page.waitForSelector("#reader [data-mail-kept-indicator]");
+        expect(await page.isVisible("text=Deleted on the server, kept in Cloud")).toBe(true);
+        const overflow = await page.evaluate(() => {
+          const header = document.querySelector("#reader header");
+          return {
+            page: document.documentElement.scrollWidth - window.innerWidth,
+            header: header ? header.scrollWidth - header.clientWidth : 0,
+          };
+        });
+        expect(overflow).toEqual({ page: 0, header: 0 });
+        expect(page.errors).toEqual([]);
+      } finally {
+        await close(page);
+      }
+    }
+  });
 });

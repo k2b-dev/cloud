@@ -443,6 +443,7 @@ export const listSavedViewConversations = async (params: {
     nextCursor: result.data.nextCursor,
     items: result.data.items.map((item) => ({
       id: item.conversationId ?? item.id,
+      kept: item.kept,
       primaryReference: item.primaryReference,
       subject: item.subject,
       participantSummary: item.participantSummary,

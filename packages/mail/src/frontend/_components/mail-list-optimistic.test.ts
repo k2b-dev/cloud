@@ -25,6 +25,7 @@ const item = (unread: boolean, flagged: boolean, overrides: Partial<MailListItem
   unreadFolderIds: [],
   localTags: [],
   revision: 1,
+  kept: false,
   ...overrides,
 });
 

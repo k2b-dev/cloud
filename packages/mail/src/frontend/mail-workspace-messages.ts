@@ -107,6 +107,8 @@ export const mailWorkspaceMessages = i18n.define({
       failureNotAllowed: "The mail account no longer allows this change.",
       failureFolderUnavailable: "The folder is no longer available.",
       failureCancelled: "The change was cancelled.",
+      failureKept: "The conversation is kept, so Cloud does not delete it or move it to Trash or Junk.",
+      failureKeptCopyOnly: "Only Cloud's kept copy is left, so the mail server can't change it.",
       failureUnclear: "It is unclear whether the mail server made the change. Check the conversation.",
       failureNotApplied: "The mail server did not make the change.",
       tryAgain: "Try again",
@@ -214,6 +216,9 @@ export const mailWorkspaceMessages = i18n.define({
       failureNotAllowed: "Das Mailkonto erlaubt diese Änderung nicht mehr.",
       failureFolderUnavailable: "Der Ordner ist nicht mehr verfügbar.",
       failureCancelled: "Die Änderung wurde abgebrochen.",
+      failureKept:
+        "Die Unterhaltung wird aufbewahrt. Cloud löscht sie nicht und verschiebt sie weder in den Papierkorb noch in den Spam-Ordner.",
+      failureKeptCopyOnly: "Es ist nur noch die in Cloud aufbewahrte Kopie vorhanden. Der Mailserver kann sie nicht ändern.",
       failureUnclear: "Es ist unklar, ob der Mailserver die Änderung vorgenommen hat. Prüfe die Unterhaltung.",
       failureNotApplied: "Der Mailserver hat die Änderung nicht vorgenommen.",
       tryAgain: "Erneut versuchen",

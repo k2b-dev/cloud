@@ -38,6 +38,7 @@ const item: MailListItem = {
   unreadFolderIds: [],
   localTags: [],
   revision: 1,
+  kept: false,
 };
 
 describe("Mail search navigation", () => {

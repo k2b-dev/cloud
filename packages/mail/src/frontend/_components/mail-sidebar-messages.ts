@@ -15,6 +15,8 @@ export const mailSidebarMessages = i18n.define({
       recentActivity: "Recent activity",
       sendProblems: "Send problems",
       sendProblemsDescription: "Messages that need attention or will be retried.",
+      kept: "Kept",
+      keptDescription: "Conversations Cloud protects from deletion.",
       failedStartSync: "Failed to start synchronization",
       syncQueued: "Mailbox synchronization queued",
       browserHandlerInstructions:
@@ -71,6 +73,8 @@ export const mailSidebarMessages = i18n.define({
       recentActivity: "Letzte Aktivität",
       sendProblems: "Versandprobleme",
       sendProblemsDescription: "Nachrichten, die geprüft oder erneut gesendet werden.",
+      kept: "Aufbewahrt",
+      keptDescription: "Unterhaltungen, die Cloud vor dem Löschen schützt.",
       failedStartSync: "Synchronisierung konnte nicht gestartet werden",
       syncQueued: "Postfach-Synchronisierung eingeplant",
       browserHandlerInstructions:

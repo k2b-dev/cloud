@@ -16,6 +16,7 @@ import {
   mailSearchAssigneeSchema,
   mailSearchDateSchema,
   mailSearchFolderIdSchema,
+  mailSearchKeptSchema,
   mailSearchSizeSchema,
   mailSearchSnoozedSchema,
   mailSearchTermSchema,
@@ -62,6 +63,7 @@ const CapabilityMailSearchLeafSchema = z.discriminatedUnion("type", [
   mailSearchAssigneeSchema,
   mailSearchSnoozedSchema,
   mailSearchAllSchema,
+  mailSearchKeptSchema,
   mailSearchFolderIdSchema,
   mailSearchAssignedToMeSchema,
 ]);
@@ -73,6 +75,7 @@ const CapabilityMailSearchExpressionSchema: z.ZodType<MailSearchExpression> = z.
   mailSearchAssigneeSchema,
   mailSearchSnoozedSchema,
   mailSearchAllSchema,
+  mailSearchKeptSchema,
   mailSearchFolderIdSchema,
   mailSearchAssignedToMeSchema,
   z
@@ -327,7 +330,7 @@ export const ConversationListInputSchema = z
     workStatus: z.enum(["needs_action", "waiting", "done"]).nullable().optional().describe("Optional collaboration work-status filter."),
     unread: z.boolean().nullable().optional().describe("Optional unread-state filter; true returns only conversations with unread mail."),
     view: z
-      .enum(["needs_action", "mine", "unassigned", "waiting", "done", "snoozed", "recently_active"])
+      .enum(["needs_action", "mine", "unassigned", "waiting", "done", "snoozed", "recently_active", "kept"])
       .nullable()
       .optional()
       .describe("Optional saved work queue view."),
@@ -560,6 +563,7 @@ export const MessageDataSchema = MessageSummaryDataSchema.extend({
 
 export const ConversationGetDataSchema = z
   .object({
+    keep: z.object({ keptAt: TimestampSchema, keptBy: z.string() }).strict().nullable(),
     mailboxId: ResourceShortIdSchema,
     conversationId: ResourceShortIdSchema,
     summary: z
@@ -1004,6 +1008,24 @@ export const ConversationStatusUpdateInputSchema = z
     status: z.enum(["done", "open"]).describe("Mark the conversation done or reopen it."),
   })
   .strict();
+export const ConversationKeepInputSchema = z
+  .object({ mailboxId: MailboxIdInputSchema, conversationId: ConversationIdInputSchema })
+  .strict();
+export const ConversationKeepDataSchema = z
+  .object({
+    conversationId: ResourceShortIdSchema,
+    keptAt: TimestampSchema,
+    keptBy: z
+      .object({
+        kind: z.enum(["user", "service_account", "workflow", "system"]),
+        id: UuidSchema.nullable(),
+        displayName: z.string(),
+        avatarHash: NullableTextSchema,
+      })
+      .strict(),
+  })
+  .strict();
+export const ConversationKeepReleaseDataSchema = z.object({ conversationId: ResourceShortIdSchema, released: z.boolean() }).strict();
 export const ConversationSnoozeInputSchema = z
   .object({
     ...CollaborationMutationBaseShape,

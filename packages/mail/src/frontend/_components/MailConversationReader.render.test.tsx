@@ -7,6 +7,7 @@ import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { ConversationDraftSummary } from "../../contracts";
 import type { MailActivityEvent } from "../../service/collaboration";
+import type { ConversationKeep } from "../../service/conversation-keeps";
 import type { MessageDetail } from "../../service/messages";
 
 const root = mkdtempSync(join(tmpdir(), "mail-conversation-reader-render-tests-"));
@@ -50,6 +51,13 @@ const message: MessageDetail = {
   },
   delivery: null,
   attachments: [],
+  deletedOnServer: false,
+};
+
+const keep: ConversationKeep = {
+  conversationId: "Conv01",
+  keptAt: "2026-08-15T09:00:00.000Z",
+  keptBy: { kind: "user", id: "user-1", displayName: "Grace Hopper", avatarHash: null },
 };
 
 const draft: ConversationDraftSummary = {
@@ -63,7 +71,14 @@ const draft: ConversationDraftSummary = {
 
 const renderReader = (
   conversationDrafts: ConversationDraftSummary[],
-  options: { messages?: MessageDetail[]; activity?: MailActivityEvent[]; selectedMessageId?: string | null } = {},
+  options: {
+    messages?: MessageDetail[];
+    activity?: MailActivityEvent[];
+    selectedMessageId?: string | null;
+    keep?: ConversationKeep | null;
+    canAdmin?: boolean;
+    toolbarActions?: Array<"reply" | "reply_all" | "trash" | "spam" | "keep">;
+  } = {},
 ) => {
   const messages = options.messages ?? [message];
   return renderToString(() =>
@@ -71,7 +86,7 @@ const renderReader = (
       mailboxId: "Box001",
       requestUrl: "https://cloud.example.test/app/mail/Box001?conversation=Conv01",
       canWrite: true,
-      canAdmin: false,
+      canAdmin: options.canAdmin ?? false,
       identities: [],
       selectionKey: "Conv01",
       selectedConversationId: "Conv01",
@@ -79,6 +94,7 @@ const renderReader = (
       unread: false,
       flagged: false,
       inJunk: false,
+      keep: options.keep ?? null,
       reference: null,
       subject: message.subject,
       messages,
@@ -93,7 +109,7 @@ const renderReader = (
       calendarIntegrationAvailable: false,
       listCollapsed: false,
       detailsOpen: false,
-      toolbarActions: ["reply", "reply_all"],
+      toolbarActions: options.toolbarActions ?? ["reply", "reply_all"],
       onRestoreList: () => undefined,
       onToggleDetails: () => undefined,
       onToolbarActionsChange: () => undefined,
@@ -104,6 +120,8 @@ const renderReader = (
       onMergeConversation: () => undefined,
       onReassignMessage: () => undefined,
       onSplitMessage: () => undefined,
+      onKeep: () => undefined,
+      onStopKeeping: () => undefined,
       onSummarySaved: async () => undefined,
       onReconcile: async () => undefined,
       onReconcileAfterWrite: async () => undefined,
@@ -277,5 +295,35 @@ describe("Mail conversation reader", () => {
     expect(html).toContain("Workflow Invoice triage");
     expect(html).toContain("added a tag");
     expect(html.match(/<article/g)).toHaveLength(1);
+  });
+});
+
+describe("Mail conversation reader keep state", () => {
+  test("offers Keep to writers of a conversation that is not kept", () => {
+    const html = renderReader([], { toolbarActions: ["keep", "trash"] });
+    expect(html).toContain('data-mail-toolbar-action="keep"');
+    expect(html).toContain('aria-label="Keep"');
+    expect(html).not.toContain("data-mail-kept-indicator");
+  });
+
+  test("shows who kept the conversation and refuses Trash and Junk", () => {
+    const html = renderReader([], { keep, toolbarActions: ["keep", "spam", "trash"] });
+    expect(html).toContain("data-mail-kept-indicator");
+    expect(html).toContain("Kept since");
+    expect(html).toContain("Grace Hopper");
+    expect(html).toContain(`aria-label="Kept conversations can't be deleted."`);
+    expect(html).toContain(`aria-label="Kept conversations can't be moved to Junk."`);
+    // Only people who manage the mailbox may stop keeping it.
+    expect(html).not.toContain("Stop keeping");
+  });
+
+  test("lets mailbox managers stop keeping", () => {
+    const html = renderReader([], { keep, canAdmin: true, toolbarActions: ["keep"] });
+    expect(html).toContain('aria-label="Stop keeping"');
+  });
+
+  test("marks a message the server deleted while Cloud keeps it", () => {
+    const html = renderReader([], { keep, messages: [{ ...message, deletedOnServer: true }] });
+    expect(html).toContain("Deleted on the server, kept in Cloud");
   });
 });

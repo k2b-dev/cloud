@@ -40,6 +40,8 @@ export const mailActivityLabel = (event: MailActivityEvent, locale = "en"): stri
     "conversation.comment_created": t.activityCommentCreated,
     "conversation.comment_deleted": t.activityCommentDeleted,
     "conversation.comment_updated": t.activityCommentUpdated,
+    "conversation.kept": t.activityKept,
+    "conversation.keep_released": t.activityKeepReleased,
     "conversation.local_tag_added": t.activityTagAdded,
     "conversation.local_tag_removed": t.activityTagRemoved,
     "conversation.local_tags_added": t.activityTagsAdded,
@@ -61,6 +63,8 @@ export const mailActivityLabel = (event: MailActivityEvent, locale = "en"): stri
 
 const inlineActions = new Set([
   "conversation.collaboration_updated",
+  "conversation.kept",
+  "conversation.keep_released",
   "conversation.local_tag_added",
   "conversation.local_tag_removed",
   "conversation.local_tags_added",
@@ -80,6 +84,8 @@ export const mailActivityIcon = (event: MailActivityEvent): string => {
   if (event.action === "conversation.collaboration_updated" || event.action === "conversation.work_state_changed")
     return collaborationPresentation(event, "en").icon;
   if (event.action.includes("local_tag")) return "ti-tag";
+  if (event.action === "conversation.kept") return "ti-lock";
+  if (event.action === "conversation.keep_released") return "ti-lock-open";
   if (event.action === "conversation.summary_updated") return "ti-pencil";
   if (event.action.startsWith("draft.")) return event.action === "draft.discarded" ? "ti-file-x" : "ti-file-pencil";
   if (event.action === "conversation.reference_allocated") return "ti-hash";

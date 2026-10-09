@@ -32,6 +32,7 @@ test.skipIf(isServer)("assign and reminder Commands name an untitled conversatio
           assignableUsers: null,
           activity: null,
           reminder: null,
+          keep: null,
           reference: null,
           summary: null,
           drafts: null,

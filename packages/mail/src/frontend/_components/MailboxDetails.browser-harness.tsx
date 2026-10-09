@@ -25,7 +25,17 @@ declare global {
 window.detailsResults = [];
 
 const mailbox = { id: "Box001", name: "Support", description: null, health: "active" as const, healthReason: null };
-const viewCounts = { needs_action: 0, mine: 0, unassigned: 0, waiting: 0, done: 0, snoozed: 0, send_problems: 0, recently_active: 0 };
+const viewCounts = {
+  needs_action: 0,
+  mine: 0,
+  unassigned: 0,
+  waiting: 0,
+  done: 0,
+  snoozed: 0,
+  send_problems: 0,
+  recently_active: 0,
+  kept: 0,
+};
 const noop = () => {};
 
 window.mountMailboxDetails = (options) => {

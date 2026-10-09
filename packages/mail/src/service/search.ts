@@ -9,6 +9,7 @@ import { MAIL_ATTACHMENT_EXTRACTOR_VERSION } from "./attachment-extraction-contr
 import { type MailRequestContext, userBackedActor } from "./auth";
 import { sha256Json } from "./canonical";
 import { isUnassignedConversation, type LapsedAssignee, listLapsedAssignees } from "./collaborators";
+import { isKeptConversation } from "./conversation-keep-rules";
 import { hasSendProblem } from "./conversation-timeline";
 import { resolveMailExecution } from "./execution";
 import {
@@ -31,6 +32,7 @@ const log = logger("mail:search");
 export const RANKED_MATCH_WINDOW = 1_000;
 
 export type MessageSearchHit = {
+  kept: boolean;
   id: string;
   conversationId: string | null;
   primaryReference: string | null;
@@ -79,6 +81,7 @@ export type MessageSearchPage = {
 };
 
 type DbSearchHit = {
+  kept: boolean;
   id: string;
   result_id: string;
   conversation_id: string | null;
@@ -443,6 +446,7 @@ export const compileSearchExpression = (
       WHERE state.id = ${conversationId} AND state.assignee_user_id = ${currentUserId}::uuid
     )`;
   }
+  if (expression.type === "kept") return isKeptConversation(conversationId);
   if (expression.type === "text") return compileTextTerm(expression, conversationId);
   if (expression.type === "date") {
     const field = expression.field === "internal_date" ? sql`mc.internal_date` : sql`mc.sent_at`;
@@ -702,6 +706,7 @@ const isConversationOnlyExpression = (expression: MailSearchExpression): boolean
   }
   if (expression.type === "not") return isConversationOnlyExpression(expression.expression);
   if (
+    expression.type === "kept" ||
     expression.type === "work_status" ||
     expression.type === "assignee" ||
     expression.type === "snoozed" ||
@@ -760,6 +765,7 @@ const resultFolderPath = (folderIds: readonly string[], folders: ResultFolders):
 };
 
 const mapHit = (row: DbSearchHit, folders: ResultFolders): MessageSearchHit => ({
+  kept: row.kept,
   id: row.id,
   conversationId: row.conversation_id,
   primaryReference: row.primary_reference,
@@ -1277,6 +1283,7 @@ const runSearch = async (params: {
         deduplicated.id,
         deduplicated.result_id,
         deduplicated.conversation_id,
+        ${isKeptConversation(sql`deduplicated.conversation_id`)} AS kept,
         primary_reference.value AS primary_reference,
         CASE WHEN ${params.groupByConversation} THEN COALESCE(conversation.subject, deduplicated.subject) ELSE deduplicated.subject END AS subject,
         COALESCE(

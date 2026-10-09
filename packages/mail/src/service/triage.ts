@@ -5,6 +5,7 @@ import { type ConversationTriageInput, MAX_CONVERSATION_ACTION_MESSAGES, type Ma
 import { requireMailboxPermission } from "./access";
 import type { MailRequestContext } from "./auth";
 import { createActorCommands } from "./commands";
+import { isKeptConversation, keepError } from "./conversation-keep-rules";
 import { resolveMailExecution } from "./execution";
 import { resolveRoleFolder } from "./folders";
 import { applyStateChange, providerStateChange } from "./local-state-projection";
@@ -71,7 +72,17 @@ export const createConversationTriageCommands = async (params: {
     ORDER BY conversation_message.position, ref.uid, ref.id
     LIMIT ${MAX_CONVERSATION_ACTION_MESSAGES + 1}
   `;
-  if (targets.length === 0) return fail(err.notFound("Conversation messages in the selected folder"));
+  if (targets.length === 0) {
+    const [copy] = await sql`SELECT 1 FROM mail.conversation_messages link
+      JOIN mail.conversations conversation ON conversation.id = link.conversation_id
+      JOIN mail.message_placements placement ON placement.message_id = link.message_id
+      JOIN mail.remote_message_refs ref ON ref.id = placement.remote_message_ref_id
+      WHERE link.conversation_id = ${conversationId}::uuid AND conversation.mailbox_id = ${params.mailboxId}::uuid
+        AND ${isKeptConversation(sql`conversation.id`)} AND placement.folder_id = ${sourceFolderId}::uuid
+        AND (${messageIds}::uuid[] IS NULL OR link.message_id = ANY(${messageIds}::uuid[]))
+        AND placement.deleted_at IS NULL AND ref.stale_at IS NOT NULL LIMIT 1`;
+    return fail(copy ? keepError("KEPT_COPY_ONLY") : err.notFound("Conversation messages in the selected folder"));
+  }
   if (targets.length > MAX_CONVERSATION_ACTION_MESSAGES) {
     return fail(err.badInput(`Conversation action exceeds the ${MAX_CONVERSATION_ACTION_MESSAGES}-message safety limit`));
   }

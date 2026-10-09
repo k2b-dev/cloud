@@ -23,6 +23,8 @@ import {
 import type { MailRequestContext } from "./auth";
 import type { ConversationCollaboration, ConversationComment, MailActivityEvent, MailAssignableUser } from "./collaboration";
 import * as collaboration from "./collaboration";
+import type { ConversationKeep } from "./conversation-keeps";
+import * as conversationKeeps from "./conversation-keeps";
 import * as conversationReferences from "./conversation-reference";
 import type { ConversationContentSummary } from "./conversation-summary";
 import * as conversationSummaries from "./conversation-summary";
@@ -47,6 +49,7 @@ import * as senderIdentities from "./sender-identities";
 const log = logger("mail:workspace");
 
 export type MailListItem = {
+  kept: boolean;
   id: string;
   conversationId: string | null;
   selectionKind: "conversation" | "message";
@@ -82,6 +85,7 @@ const EMPTY_VIEW_COUNTS: ConversationViewCounts = {
   snoozed: 0,
   send_problems: 0,
   recently_active: 0,
+  kept: 0,
 };
 
 const workspaceMessages = i18n.define({
@@ -98,6 +102,7 @@ const workspaceMessages = i18n.define({
           snoozed: "Later",
           send_problems: "Send problems",
           recently_active: "Recent activity",
+          kept: "Kept",
         })[view],
       scheduled: "Scheduled",
       search: "Search",
@@ -116,6 +121,7 @@ const workspaceMessages = i18n.define({
           snoozed: "Später",
           send_problems: "Versandprobleme",
           recently_active: "Letzte Aktivität",
+          kept: "Aufbewahrt",
         })[view],
       scheduled: "Geplant",
       search: "Suche",
@@ -171,6 +177,7 @@ export type MailboxPageData = {
   assignableUsers: MailAssignableUser[];
   activity: MailActivityEvent[];
   reminder: ConversationReminder | null;
+  keep: ConversationKeep | null;
   collaborationError: string | null;
   detailErrors: MailDetailErrors;
   selectedSubject: string;
@@ -184,6 +191,7 @@ export type MailDetailErrors = {
   assignableUsers: string | null;
   activity: string | null;
   reminder: string | null;
+  keep: string | null;
   reference: string | null;
   summary: string | null;
   drafts: string | null;
@@ -202,6 +210,7 @@ export type MailSelectionDetail = Pick<
   | "assignableUsers"
   | "activity"
   | "reminder"
+  | "keep"
   | "collaborationError"
   | "detailErrors"
   | "selectedReference"
@@ -214,6 +223,7 @@ const EMPTY_DETAIL_ERRORS: MailDetailErrors = {
   assignableUsers: null,
   activity: null,
   reminder: null,
+  keep: null,
   reference: null,
   summary: null,
   drafts: null,
@@ -231,12 +241,14 @@ const EMPTY_SELECTION_DETAIL: MailSelectionDetail = {
   assignableUsers: [],
   activity: [],
   reminder: null,
+  keep: null,
   collaborationError: null,
   detailErrors: EMPTY_DETAIL_ERRORS,
   selectedReference: null,
 };
 
 const conversationToListItem = (conversation: ConversationSummary): MailListItem => ({
+  kept: conversation.kept,
   id: conversation.id,
   conversationId: conversation.id,
   selectionKind: "conversation",
@@ -275,6 +287,7 @@ export const searchHitToListItem = (item: search.MessageSearchHit, listMode: Mai
   return {
     id: listMode === "conversations" && item.conversationId ? item.conversationId : item.id,
     conversationId: item.conversationId,
+    kept: item.kept,
     selectionKind,
     primaryReference: item.primaryReference,
     subject: item.subject,
@@ -336,6 +349,7 @@ const loadConversationDetails = async (params: {
     usersResult,
     activityResult,
     reminderResult,
+    keepResult,
     referenceResult,
     summaryResult,
     draftsResult,
@@ -351,6 +365,7 @@ const loadConversationDetails = async (params: {
     }),
     collaboration.listActivity({ ...params, limit: 30 }),
     reminders.getConversationReminder(params),
+    conversationKeeps.getConversationKeep(params),
     conversationReferences.listConversationReferences(params),
     conversationSummaries.getConversationSummary(params),
     drafts.listConversationDrafts({ ...params, limit: 20 }),
@@ -368,7 +383,14 @@ const loadConversationDetails = async (params: {
     assignableUsers: usersResult.ok ? usersResult.data : [],
     activity: activityResult.ok ? activityResult.data.items : [],
     reminder: reminderResult.ok ? reminderResult.data : null,
-    collaborationError: !stateResult.ok ? errorMessage(stateResult.error) : !tagResult.ok ? errorMessage(tagResult.error) : null,
+    keep: keepResult.ok ? keepResult.data : null,
+    collaborationError: !keepResult.ok
+      ? errorMessage(keepResult.error)
+      : !stateResult.ok
+        ? errorMessage(stateResult.error)
+        : !tagResult.ok
+          ? errorMessage(tagResult.error)
+          : null,
     detailErrors: {
       collaboration: stateResult.ok ? null : errorMessage(stateResult.error),
       tags: tagResult.ok ? null : errorMessage(tagResult.error),
@@ -376,6 +398,7 @@ const loadConversationDetails = async (params: {
       assignableUsers: usersResult.ok ? null : errorMessage(usersResult.error),
       activity: activityResult.ok ? null : errorMessage(activityResult.error),
       reminder: reminderResult.ok ? null : errorMessage(reminderResult.error),
+      keep: keepResult.ok ? null : errorMessage(keepResult.error),
       reference: referenceResult.ok ? null : errorMessage(referenceResult.error),
       summary: summaryResult.ok ? null : errorMessage(summaryResult.error),
       drafts: draftsResult.ok ? null : errorMessage(draftsResult.error),
@@ -479,6 +502,7 @@ const loadListItems = async (params: {
       };
     if (params.activeView === "waiting") return { type: "and", expressions: [{ type: "work_status", value: "waiting" }, notSnoozed] };
     if (params.activeView === "done") return { type: "work_status", value: "done" };
+    if (params.activeView === "kept") return { type: "kept" };
     if (params.activeView === "snoozed") return { type: "snoozed", value: true };
     return { type: "all" };
   };

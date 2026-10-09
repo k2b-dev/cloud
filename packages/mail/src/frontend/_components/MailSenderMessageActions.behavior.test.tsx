@@ -20,6 +20,7 @@ const message: MessageDetail = {
   hydrationStatus: "complete",
   remoteAvailable: true,
   folderId: "Fold01",
+  deletedOnServer: false,
   contentType: "text/plain",
   sizeBytes: 128,
   replyTo: [],

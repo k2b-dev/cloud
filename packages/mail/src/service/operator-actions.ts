@@ -7,6 +7,7 @@ import type {
   OperatorActionSafety,
 } from "../contracts";
 import { withShortIdDb } from "../lib/short-id";
+import { isKeptMessage } from "./conversation-keep-rules";
 import { isUnsentOutboundMessage } from "./conversation-timeline";
 import { isInboxFolder, isSentFolder } from "./follow-up-scope";
 import { SEARCH_CHUNK_CHARACTERS, SEARCH_CHUNK_OVERLAP_CHARACTERS } from "./search-chunks";
@@ -258,6 +259,7 @@ const rebuildThreadProjection = async (db: SqlClient, mailboxId: string): Promis
     DELETE FROM mail.message_contents message
     USING mail.draft_provider_snapshots snapshot
     WHERE message.mailbox_id = ${mailboxId}::uuid
+      AND NOT ${isKeptMessage(sql`message.id`)}
       AND snapshot.mailbox_id = message.mailbox_id
       AND snapshot.direction = 'export'
       AND lower(snapshot.stable_message_id) = lower(message.message_id)
