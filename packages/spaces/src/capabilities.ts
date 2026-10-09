@@ -2575,7 +2575,7 @@ export const spacesCapabilities = defineCapabilities({
     "template.create": {
       title: "Create template",
       description:
-        "Create a task or event template in a Space the actor administers. Names are unique per Space and kind. A weekdays rule proposes the next matching days, an offset rule today plus days.",
+        "Create a template for new tasks or events in a Space the actor administers. Names are unique per Space and kind. A weekdays rule proposes the next matching days, an offset rule today plus days.",
       input: TemplateCreateInputSchema,
       data: TemplateDataSchema,
       destructive: false,

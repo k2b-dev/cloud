@@ -162,6 +162,7 @@ describe("Capability v2 provider conformance", () => {
       "spaces.item.delete",
       "spaces.task.checklist.delete",
       "spaces.task.create",
+      "spaces.template.delete",
       "venue.assignment.cancel",
       "venue.assignment.signup",
       "venue.assignment.signup_free",
