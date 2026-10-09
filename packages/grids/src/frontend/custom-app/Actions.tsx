@@ -176,6 +176,8 @@ export default function Actions(props: {
         <For each={visibleActions()}>
           {(action) => (
             <Show
+              // Keyed, so the run's `pending: false` report while it unmounts never reads this condition after it closed.
+              keyed
               when={action.kind === "workflow" && action.background ? action : undefined}
               fallback={
                 <Show
@@ -235,11 +237,11 @@ export default function Actions(props: {
             >
               {(backgroundAction) => (
                 <BackgroundAction
-                  disabled={disabled(backgroundAction().id) || anotherOperationPending(backgroundAction().id)}
-                  onPendingChange={(pending) => setBackgroundPending((current) => ({ ...current, [backgroundAction().id]: pending }))}
+                  disabled={disabled(backgroundAction.id) || anotherOperationPending(backgroundAction.id)}
+                  onPendingChange={(pending) => setBackgroundPending((current) => ({ ...current, [backgroundAction.id]: pending }))}
                   onCompleted={props.onCompleted}
-                  {...backgroundAction()}
-                  {...backgroundAction().background!}
+                  {...backgroundAction}
+                  {...backgroundAction.background!}
                 />
               )}
             </Show>
