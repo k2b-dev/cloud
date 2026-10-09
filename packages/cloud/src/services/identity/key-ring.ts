@@ -8,6 +8,7 @@ import {
   IDENTITY_CLOCK_TOLERANCE_SECONDS,
   IDENTITY_ROLLOUT_MARGIN_MS,
   IDENTITY_ROTATION_AGE_MS,
+  IDENTITY_SIGNER_REFRESH_TIMEOUT_MS,
   IDENTITY_SIGNING_CACHE_MS,
 } from "./constants";
 import { type IdentityKeyEncryptionConfig, readIdentityKeyEncryptionConfig } from "./key-config";
@@ -75,6 +76,31 @@ const PURPOSE_FALLBACK_TOKEN_TTL_MS: Record<SigningKeyPurpose, number> = {
 const date = (value: Date | string): Date => (value instanceof Date ? value : new Date(value));
 const publicJwk = (value: JWK | string): JWK => (typeof value === "string" ? (JSON.parse(value) as JWK) : value);
 const serializedSize = (value: unknown): number => encoder.encode(JSON.stringify(value)).byteLength;
+
+const formatDuration = (ms: number): string => (ms % 1_000 === 0 ? `${ms / 1_000} s` : `${ms} ms`);
+
+/**
+ * Stops waiting for `work` once `signal` aborts. The work itself keeps running
+ * (a pooled query or a shared refresh cannot be cancelled from here), but the
+ * caller is released at its deadline instead of whenever the stall ends.
+ */
+const untilAborted = <V>(work: Promise<V>, signal: AbortSignal): Promise<V> => {
+  if (signal.aborted) {
+    work.catch(() => undefined);
+    return Promise.reject(signal.reason);
+  }
+  return new Promise<V>((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    signal.addEventListener("abort", abort, { once: true });
+    work.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+  });
+};
+
+const timeoutSignal = (ms: number, reason: () => DOMException): { signal: AbortSignal; clear: () => void } => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(reason()), ms);
+  return { signal: controller.signal, clear: () => clearTimeout(timer) };
+};
 
 const assertRsaJwk = (value: JWK, privateRequired: boolean): void => {
   if (value.kty !== "RSA" || typeof value.n !== "string" || typeof value.e !== "string") {
@@ -205,6 +231,8 @@ const maintainPurpose = async (purpose: SigningKeyPurpose): Promise<SigningKeyRo
       ? await generateEncryptedKey(keys)
       : null;
   const active = await sql.begin(async (tx) => {
+    // Another replica's stuck rotation must not hold this refresh forever.
+    await tx`SELECT set_config('statement_timeout', ${`${IDENTITY_SIGNER_REFRESH_TIMEOUT_MS}ms`}, true)`;
     await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`cloud:identity-keyring:${purpose}`}, 0))`;
     const rows = await tx<SigningKeyRow[]>`
       SELECT id, purpose, state, kid, alg, public_jwk, encrypted_private_jwk, encryption_key_id,
@@ -289,10 +317,23 @@ export const prepareIdentitySigner = async (purpose: SigningKeyPurpose): Promise
   return signerRefreshes.run(
     purpose,
     async () => {
+      // Every caller joins this refresh. Bound it, so one hung connection
+      // cannot hold back every later issuance until TCP gives up.
+      const bound = timeoutSignal(
+        IDENTITY_SIGNER_REFRESH_TIMEOUT_MS,
+        () =>
+          new DOMException(
+            `Cloud identity signer refresh did not finish within ${formatDuration(IDENTITY_SIGNER_REFRESH_TIMEOUT_MS)}`,
+            "TimeoutError",
+          ),
+      );
       try {
-        const keys = await readIdentityKeyEncryptionConfig();
-        const row = await maintainPurpose(purpose);
-        const signer = await importRow(row, keys);
+        const refresh = async () => {
+          const keys = await readIdentityKeyEncryptionConfig();
+          const row = await maintainPurpose(purpose);
+          return importRow(row, keys);
+        };
+        const signer = await untilAborted(refresh(), bound.signal);
         if (signer.signUntil.getTime() <= now) throw new Error(`Active ${purpose} signing key is past sign_until`);
         return signer;
       } catch (error) {
@@ -300,6 +341,8 @@ export const prepareIdentitySigner = async (purpose: SigningKeyPurpose): Promise
         log.error("Cloud identity signer refresh failed", { purpose, error: error instanceof Error ? error.message : String(error) });
         if (cached && cached.signer.signUntil.getTime() > now) return cached.signer;
         throw error;
+      } finally {
+        bound.clear();
       }
     },
     (signer) => {
@@ -313,6 +356,10 @@ export const prepareIdentitySigner = async (purpose: SigningKeyPurpose): Promise
  * The shared row lock makes emergency revocation wait for already-started
  * issuance and prevents replicas from releasing a new result under that key
  * after the revocation commits.
+ *
+ * `timeoutMs` bounds the whole call: signer refresh, identity settings, the
+ * wait for a connection and the key check. The caller is released at the
+ * deadline with a `TimeoutError` that names the step that stalled.
  */
 export const withActiveIdentitySigner = async <T>(
   purpose: SigningKeyPurpose,
@@ -322,42 +369,54 @@ export const withActiveIdentitySigner = async <T>(
   const timeoutMs = options.timeoutMs ?? 30_000;
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new Error("Identity issuance timeout must be positive");
   const deadline = Date.now() + timeoutMs;
-  const checkDeadline = () => {
-    options.signal?.throwIfAborted();
-    if (Date.now() >= deadline) throw new DOMException("Identity issuance deadline exceeded", "TimeoutError");
+  let step = "signer refresh";
+  const bound = timeoutSignal(
+    timeoutMs,
+    () => new DOMException(`Identity service did not respond within ${formatDuration(timeoutMs)} (${step})`, "TimeoutError"),
+  );
+  const signal = options.signal ? AbortSignal.any([options.signal, bound.signal]) : bound.signal;
+  const wait = <V>(name: string, work: () => Promise<V>): Promise<V> => {
+    signal.throwIfAborted();
+    step = name;
+    return untilAborted(work(), signal);
   };
-  // Preparation can refresh/rotate keys using the pool. Never do it while
-  // holding a caller's transaction: every issuance needs just one connection.
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    checkDeadline();
-    const signer = await prepareIdentitySigner(purpose);
-    const { issuer } = await getIdentityRuntimeConfig();
-    checkDeadline();
-    const run = async (db: typeof sql): Promise<{ active: false } | { active: true; result: T }> => {
-      checkDeadline();
-      // A JS deadline alone cannot cancel a blocked PostgreSQL query. Bound
-      // each statement (including lock waits) on this connection, transaction-local.
-      await db`SELECT set_config('statement_timeout', ${`${Math.max(1, Math.floor(deadline - Date.now()))}ms`}, true)`;
-      const [active] = await db<Array<{ kid: string }>>`
-        SELECT kid
-        FROM auth.signing_keys
-        WHERE kid = ${signer.kid}
-          AND purpose = ${purpose}
-          AND state = 'active'
-          AND sign_until > now()
-        FOR SHARE
-      `;
-      checkDeadline();
-      if (!active) return { active: false };
-      const result = await callback({ ...signer, issuer }, db);
-      return { active: true, result };
-    };
-    const checked = await (options.pool ?? sql).begin(run);
-    checkDeadline();
-    if (checked.active) return checked.result;
-    invalidateIdentitySignerCache(purpose, signer.kid);
+  try {
+    // Preparation can refresh/rotate keys using the pool. Never do it while
+    // holding a caller's transaction: every issuance needs just one connection.
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const signer = await wait("signer refresh", () => prepareIdentitySigner(purpose));
+      const { issuer } = await wait("identity settings", getIdentityRuntimeConfig);
+      const run = async (db: typeof sql): Promise<{ active: false } | { active: true; result: T }> => {
+        // A caller released at its deadline must not sign once a connection frees up.
+        signal.throwIfAborted();
+        step = "signing key check";
+        // A JS deadline alone cannot cancel a blocked PostgreSQL query. Bound
+        // each statement (including lock waits) on this connection, transaction-local.
+        await db`SELECT set_config('statement_timeout', ${`${Math.max(1, Math.floor(deadline - Date.now()))}ms`}, true)`;
+        const [active] = await db<Array<{ kid: string }>>`
+          SELECT kid
+          FROM auth.signing_keys
+          WHERE kid = ${signer.kid}
+            AND purpose = ${purpose}
+            AND state = 'active'
+            AND sign_until > now()
+          FOR SHARE
+        `;
+        signal.throwIfAborted();
+        if (!active) return { active: false };
+        step = "signing";
+        const result = await callback({ ...signer, issuer }, db);
+        return { active: true, result };
+      };
+      const checked = await wait("database connection", () => (options.pool ?? sql).begin(run));
+      signal.throwIfAborted();
+      if (checked.active) return checked.result;
+      invalidateIdentitySignerCache(purpose, signer.kid);
+    }
+    throw new Error(`No active ${purpose} identity signer is available`);
+  } finally {
+    bound.clear();
   }
-  throw new Error(`No active ${purpose} identity signer is available`);
 };
 
 export const initializeIdentityAuthority = async (): Promise<void> => {

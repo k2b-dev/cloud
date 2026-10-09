@@ -5,7 +5,7 @@ section: Operations
 order: 1145
 description: Operate Core-owned signing keys, rotation, rewrap, and emergency revocation.
 tags: [identity, jwt, keys, rotation, recovery]
-updated: 2026-10-03
+updated: 2026-10-09
 ---
 
 # Identity key operations
@@ -153,9 +153,17 @@ stale signer cache refreshes once and otherwise fails closed. This guarantee
 does not invalidate tokens that were already released, so their normal token
 and verifier-cache windows still apply.
 
-Database lock waits are bounded by the issuance deadline. Core does not return
-a token after that deadline. A database failure may also prevent an audit entry
-from being saved; inspect service logs when no audit record is available.
+Each issuance has one deadline that covers the whole call: the signer refresh,
+the identity settings, the wait for a database connection, and the key check,
+including lock waits. Core does not return a token after that deadline. The
+caller fails at the deadline with a `TimeoutError` that names the step that
+stalled, for example
+`Identity service did not respond within 5 s (signer refresh)`. A signer
+refresh that all callers share gives up after 30 seconds. Core then keeps
+signing with the cached key while it is still valid, logs
+`Cloud identity signer refresh failed`, and the next issuance starts a new
+refresh. A database failure may also prevent an audit entry from being saved;
+inspect service logs when no audit record is available.
 
 Do not rotate `APP_SECRET` as a substitute. It encrypts settings and
 credentials and is deliberately not a signing-key or KEK fallback.
