@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { availableParallelism } from "node:os";
 import { join, resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
@@ -215,6 +216,38 @@ type View = { width: number; height: number; touch: boolean };
 const phone: View = { width: 390, height: 844, touch: true };
 const desktop: View = { width: 1440, height: 900, touch: false };
 
+/**
+ * The host's CPU counters on Linux, to tell a loaded host from a stalled page: jiffies per state from `/proc/stat`, and
+ * microseconds in which a runnable task waited for a CPU from `/proc/pressure/cpu`. Missing counters stay undefined.
+ */
+const hostCpu = () => {
+  const read = (path: string) => {
+    try {
+      return readFileSync(path, "utf8");
+    } catch {
+      return "";
+    }
+  };
+  // user nice system idle iowait irq softirq steal
+  const ticks = /^cpu +(.*)$/m.exec(read("/proc/stat"))?.[1]!.split(" ").slice(0, 8).map(Number);
+  const waited = /^some .*total=(\d+)$/m.exec(read("/proc/pressure/cpu"))?.[1];
+  return { at: performance.now(), ticks, waited: waited === undefined ? undefined : Number(waited) };
+};
+const percent = (part: number, whole: number) => `${Math.round((100 * part) / whole)}%`;
+/** How loaded the host was between two `hostCpu()` readings. */
+const hostLoad = (from: ReturnType<typeof hostCpu>, to: ReturnType<typeof hostCpu>) => {
+  const parts = [`${availableParallelism()} CPUs`];
+  if (from.ticks && to.ticks) {
+    const delta = to.ticks.map((value, index) => value - from.ticks![index]!);
+    const total = delta.reduce((sum, value) => sum + value, 0);
+    parts.push(`${percent(total - delta[3]! - delta[4]!, total)} busy`, `${percent(delta[7]!, total)} stolen by the hypervisor`);
+  }
+  if (from.waited !== undefined && to.waited !== undefined) {
+    parts.push(`a runnable task waited for a CPU ${percent(to.waited - from.waited, (to.at - from.at) * 1000)} of the time`);
+  }
+  return parts.join(", ");
+};
+
 const open = async (view: View, scenario: Scenario, theme: "light" | "dark" = "light") => {
   const id = `case${++caseCounter}`;
   pages.set(id, pageHtml(scenario, theme));
@@ -225,12 +258,60 @@ const open = async (view: View, scenario: Scenario, theme: "light" | "dark" = "l
     reducedMotion: "reduce",
   });
   const page = await context.newPage();
-  await page.goto(`${server.url}app/spaces/${spaceId}?item=Item01&case=${id}`);
-  await page.evaluate(() => window.document.fonts.ready);
-  // Hydrated icon buttons drop their server-only native title.
-  await page.waitForSelector('[aria-label="Close item details"]:not([title]), [aria-label="Eintragsdetails schließen"]:not([title])', {
-    timeout: 15_000,
-  });
+  // WebKit's page process can stall for many seconds on a loaded host (contributing/testing.md). When the page does
+  // not hydrate in time, the failure says what the page got and whether its main thread still answers.
+  const started = performance.now();
+  const cpuAtStart = hostCpu();
+  const at = () => `${Math.round(performance.now() - started)} ms`;
+  const pageErrors: string[] = [];
+  const failedRequests: string[] = [];
+  const modules = new Map<string, string>();
+  page.on("pageerror", (error) => pageErrors.push(`${at()} ${error.message}`));
+  page.on("requestfailed", (request) => failedRequests.push(`${at()} ${request.url()} ${request.failure()?.errorText ?? ""}`));
+  const islandModule = (url: string, status: string) => {
+    const path = new URL(url).pathname;
+    if (path.startsWith("/_ssr/")) modules.set(path, `${status} at ${at()}`);
+  };
+  page.on("request", (request) => islandModule(request.url(), "requested"));
+  page.on("requestfinished", (request) => islandModule(request.url(), "loaded"));
+  try {
+    await page.goto(`${server.url}app/spaces/${spaceId}?item=Item01&case=${id}`);
+    await page.evaluate(() => window.document.fonts.ready);
+    // Hydrated icon buttons drop their server-only native title.
+    await page.waitForSelector('[aria-label="Close item details"]:not([title]), [aria-label="Eintragsdetails schließen"]:not([title])', {
+      timeout: 15_000,
+    });
+  } catch (error) {
+    const failedAt = at();
+    const cpuAtFailure = hostCpu();
+    const probeStarted = performance.now();
+    const mainThread = await Promise.race([
+      page
+        .evaluate(() => {
+          const close = window.document.querySelector('[aria-label="Close item details"], [aria-label="Eintragsdetails schließen"]');
+          return `readyState ${window.document.readyState}, close button ${close ? (close.hasAttribute("title") ? "not hydrated" : "hydrated") : "missing"}`;
+        })
+        .then(
+          (state) => `answered in ${Math.round(performance.now() - probeStarted)} ms (${state})`,
+          (probeError) => `probe failed: ${String(probeError)}`,
+        ),
+      Bun.sleep(2_000).then(() => "no answer within 2 s"),
+    ]);
+    await context.close();
+    const list = (items: string[]) => (items.length > 0 ? `\n    ${items.join("\n    ")}` : " none");
+    throw new Error(
+      [
+        `The detail page did not hydrate (${view.width}x${view.height}, ${scenario.locale}, failed at ${failedAt}).`,
+        `  main thread: ${mainThread}`,
+        `  island modules:${list([...modules].map(([path, status]) => `${path} ${status}`))}`,
+        `  page errors:${list(pageErrors)}`,
+        `  failed requests:${list(failedRequests)}`,
+        `  host since the page opened: ${hostLoad(cpuAtStart, cpuAtFailure)}`,
+        `  ${error instanceof Error ? error.message : String(error)}`,
+      ].join("\n"),
+      { cause: error },
+    );
+  }
   await page.mouse.move(view.width - 2, view.height - 2);
   return page;
 };

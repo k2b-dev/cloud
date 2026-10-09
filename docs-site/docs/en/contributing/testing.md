@@ -158,6 +158,18 @@ Host networking lets the browser reach the servers that tests start on
 with `./packages/ui/node_modules/.bin/playwright install webkit` and leave
 `TEST_BROWSER_ENDPOINT` unset.
 
+WebKit in the Playwright image can stall the main thread of a fresh page for
+15 to 100 seconds when the host has no CPU to spare, for example while other
+test runs, builds, or a development stack share the machine. The page is right
+and becomes interactive afterwards, but a step that waits for it times out.
+Run WebKit tests on a machine with spare cores, and do not mistake a timeout
+that appears only under such load for a product bug. `bun run test --browser`
+runs one file at a time, so in CI a WebKit page shares its runner only with
+its own test file. When the Spaces item detail page does not become
+interactive in time, its suite reports whether the page's main thread still
+answers, which island modules loaded, page errors, failed requests, and how
+busy the host's CPUs were meanwhile.
+
 ### Engine differences
 
 Write each test so that it checks the same behavior in both engines. Where
