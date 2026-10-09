@@ -1555,9 +1555,9 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
           downloads: [],
           aria: "",
           screenshots: [
-            { view: "desktop-start", theme: "light", path: "/files/start.png" },
-            { view: "desktop", theme: "light", path: "/files/desktop.png" },
-            { view: "mobile", theme: "dark", path: "/files/mobile.png" },
+            { view: "desktop-start", theme: "light", path: "/files/start.png", cropped: false },
+            { view: "desktop", theme: "light", path: "/files/desktop.png", cropped: false },
+            { view: "mobile", theme: "dark", path: "/files/mobile.png", cropped: false },
           ],
         };
         await appChecks.record(report, { id: real.id }, conversationId, owner);
@@ -2502,9 +2502,9 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         calls: [],
         downloads: [],
         screenshots: [
-          { view: "desktop-start", theme: "light", path: "/files/start.png" },
-          { view: "desktop", theme: "light", path: "/files/desktop.png" },
-          { view: "mobile", theme: "dark", path: "/files/mobile.png" },
+          { view: "desktop-start", theme: "light", path: "/files/start.png", cropped: false },
+          { view: "desktop", theme: "light", path: "/files/desktop.png", cropped: false },
+          { view: "mobile", theme: "dark", path: "/files/mobile.png", cropped: false },
         ],
         aria: "",
       };

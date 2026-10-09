@@ -230,7 +230,7 @@ describe("AI tools", () => {
     expect(check?.kind).toBe("server");
     expect(browser.frontendModes.get("code_check")).toBeUndefined();
     expect(browser.approvalPolicies.get("code_check")).toBe("never");
-    expect(check?.def.description).toContain("EVERY screenshot");
+    expect(check?.def.description).toContain("for EVERY path in review.paths");
     const presentation = browser.tools.find((tool) => tool.def.name === "code_present");
     expect(presentation?.kind).toBe("server");
     expect(browser.frontendModes.get("code_present")).toBeUndefined();
