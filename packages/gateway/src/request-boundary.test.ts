@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createProxyStats, proxyRequest } from "./proxy";
-import { isInternalPath } from "./request-boundary";
+import { isInternalPath, upstreamUrl } from "./request-boundary";
 import { buildRouteTable } from "./trie";
 import { tryUpgradeWebSocket } from "./ws-proxy";
 
@@ -66,5 +66,15 @@ describe("public gateway request boundary", () => {
       expect(upgraded).toBe(false);
     }
     expect(forwarded).toBe(0);
+  });
+});
+
+describe("upstream address", () => {
+  test("keeps the application's origin and the client's path and query, as relative resolution did for ordinary paths", () => {
+    const at = (baseUrl: string, path: string) => upstreamUrl(baseUrl, new URL(`https://cloud.test${path}`)).href;
+    expect(at("http://files:3000", "/api/files/a//b?x=%2F")).toBe("http://files:3000/api/files/a//b?x=%2F");
+    expect(at("http://files:3000/ignored/base/?q=1#f", "/app/files")).toBe("http://files:3000/app/files");
+    expect(at("http://files:3000", "/")).toBe("http://files:3000/");
+    expect(at("http://files:3000", "//evil.example/x")).toBe("http://files:3000/evil.example/x");
   });
 });

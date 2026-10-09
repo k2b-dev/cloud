@@ -5,7 +5,7 @@ section: Platform services
 order: 555
 description: Publish a small, versioned RPC surface for cross-app calls, agents, CLI, and MCP.
 tags: [capabilities, rpc, agents, mcp]
-updated: 2026-10-06
+updated: 2026-10-09
 ---
 
 # App capabilities
@@ -1386,8 +1386,9 @@ The receiving app reads referenced resources with the current user's authority
 and shows the source visibly before submission.
 
 An optional `{ returnTo: "/app/contacts?contact=AbCd12" }` may be supplied as the
-third argument. Only internal root-relative paths are accepted. The destination
-app decides when returning makes sense, normally after completion or explicit
+third argument. Only internal root-relative paths are accepted, and a path
+whose dot segments resolve to `//host` is rejected. The destination app
+decides when returning makes sense, normally after completion or explicit
 cancellation. This is a return link, not a webhook or cross-page callback.
 Omit it when users should stay with their newly created content.
 

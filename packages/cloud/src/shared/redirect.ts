@@ -9,7 +9,8 @@ export const normalizeRedirectTo = (value: string | null | undefined): string | 
 
   try {
     const url = new URL(trimmed, REDIRECT_BASE);
-    if (url.origin !== REDIRECT_BASE) return undefined;
+    // Dot segments can resolve to `//host`, which a browser reads as another host.
+    if (url.origin !== REDIRECT_BASE || url.pathname.startsWith("//")) return undefined;
     return `${url.pathname}${url.search}${url.hash}`;
   } catch {
     return undefined;

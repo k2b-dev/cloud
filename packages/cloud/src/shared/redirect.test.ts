@@ -18,6 +18,10 @@ describe("redirect helpers", () => {
     expect(normalizeRedirectTo("//example.com/app")).toBeUndefined();
     expect(normalizeRedirectTo("app/dashboard")).toBeUndefined();
     expect(normalizeRedirectTo("/\\example.com")).toBeUndefined();
+    for (const target of ["/.//example.com/app", "/%2e//example.com", "/app/..//example.com", "/\t/example.com"]) {
+      expect(normalizeRedirectTo(target)).toBeUndefined();
+    }
+    expect(normalizeRedirectTo("/app/files/a//b")).toBe("/app/files/a//b");
   });
 
   test("preserves request query parameters for login redirects", () => {
