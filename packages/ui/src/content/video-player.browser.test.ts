@@ -46,7 +46,7 @@ window.skipTime = (ms) => {
 };
 // Media events do not bubble, but the document sees them on their way to the video, before the player does.
 window.mediaEvents = [];
-for (const type of ["loadeddata", "seeked", "canplay"])
+for (const type of ["loadedmetadata", "loadeddata", "seeked", "canplay", "playing", "timeupdate"])
   document.addEventListener(
     type,
     (event) => {
@@ -467,30 +467,41 @@ describe(`VideoPlayer (${browserName})`, () => {
     });
     try {
       await metadata(page);
-      await page.$eval(".k2b-video-player__video", (element) => {
+      // The engines fetch this short video whole while it loads, so a real expiry could not happen this late. The video
+      // element's own error event is what an expired address causes, here at the first second of playback. The page
+      // fails it in the same task that reads the time, so no round trip from the test adds to the delay. A page that
+      // runs no task for the two seconds the video still plays would fail it only at the end.
+      const stopped = await page.$eval(".k2b-video-player__video", (element) => {
         const video = element as HTMLVideoElement;
         video.muted = true;
-        return video.play();
+        return new Promise<number>((resolve, reject) => {
+          video.addEventListener("timeupdate", function expire() {
+            if (video.currentTime < 1) return;
+            video.removeEventListener("timeupdate", expire);
+            resolve(video.currentTime);
+            video.dispatchEvent(new Event("error"));
+          });
+          video.play().catch(reject);
+        });
       });
-      await page.waitForFunction(() => (document.querySelector(".k2b-video-player__video") as HTMLVideoElement).currentTime >= 1);
-      // The engines fetch this short video whole while it loads, so a real expiry could not happen this late. The video
-      // element's own error event is what an expired address causes, here at the point the test chooses.
-      const stopped = await page.$eval(".k2b-video-player__video", (element) => {
-        const time = (element as HTMLVideoElement).currentTime;
-        element.dispatchEvent(new Event("error"));
-        return time;
-      });
-      // Nobody presses play again: the renewed address continues by itself.
-      await page.waitForFunction(() => (document.querySelector(".k2b-video-player__video") as HTMLVideoElement).ended, undefined, {
-        timeout: 15_000,
-      });
+      // Nobody presses play again: the renewed address plays by itself. The test waits until it plays, not until it
+      // ends: on a heavily loaded machine, Linux WebKit's media engine can stop for good after it starts in the middle
+      // of a video, also in a bare video element without the player.
+      await page.waitForFunction(() =>
+        (window as unknown as { mediaEvents: { type: string; src: string }[] }).mediaEvents.some(
+          (event) => event.type === "playing" && event.src.includes("renewal=1"),
+        ),
+      );
       expect(await counters(page)).toEqual({ renewals: 1, fallbacks: 0 });
       expect((await state(page)).src).toContain("renewal=1");
       const events = await page.evaluate(
-        () => (window as unknown as { mediaEvents: { type: string; src: string; time: number }[] }).mediaEvents,
+        () => (window as unknown as { mediaEvents: { type: string; src: string; time: number; readyState: number }[] }).mediaEvents,
       );
-      // It showed the point where the first address stopped instead of starting over.
-      expect(events.some((event) => event.type === "seeked" && event.src.includes("renewal=1") && event.time >= stopped - 0.05)).toBe(true);
+      const renewed = events.filter((event) => event.src.includes("renewal=1"));
+      // It plays from the point where the first address stopped and never showed a frame before it: the renewed
+      // address starts there instead of starting over and seeking back.
+      expect(renewed.find((event) => event.type === "playing")?.time).toBeGreaterThanOrEqual(stopped - 0.05);
+      expect(renewed.filter((event) => event.readyState >= 2 && event.time < stopped - 0.05)).toEqual([]);
     } finally {
       await page.close();
     }
@@ -500,13 +511,18 @@ describe(`VideoPlayer (${browserName})`, () => {
    * The viewer pauses at 1.5 s, and the address expires during the pause. Each failure is the video element's own error
    * event, so the player sees what an expired address causes, at exactly the point it chooses.
    */
-  const renewWhilePaused = async () => {
+  const renewWhilePaused = async (renew = "/video/landscape.webm?renewal=RENEWAL") => {
     const page = await open({
       src: "/video/landscape.webm",
-      renew: "/video/landscape.webm?renewal=RENEWAL",
+      renew,
       host: "width:640px;height:360px",
     });
-    await metadata(page);
+    // The viewer seeks once the first frame shows: WebKit drops a seek that arrives while the player's own one to that
+    // frame is under way.
+    await page.waitForFunction(() => {
+      const video = document.querySelector(".k2b-video-player__video") as HTMLVideoElement | null;
+      return video !== null && !video.seeking && video.readyState >= 2;
+    });
     await page.$eval(".k2b-video-player__video", (element) => {
       const video = element as HTMLVideoElement;
       video.muted = true;
@@ -515,11 +531,11 @@ describe(`VideoPlayer (${browserName})`, () => {
     await expireAt(page, 1);
     return page;
   };
-  /** Fails the current address where the video stands and waits until renewal number `renewal` shows that point again. */
+  /** Fails the address once the video shows 1.5 s and waits until renewal number `renewal` shows that point again. */
   const expireAt = async (page: Page, renewal: number) => {
     await page.waitForFunction(() => {
       const video = document.querySelector(".k2b-video-player__video") as HTMLVideoElement;
-      return !video.seeking && video.readyState >= 2;
+      return !video.seeking && video.readyState >= 2 && Math.abs(video.currentTime - 1.5) < 0.05;
     });
     await page.$eval(".k2b-video-player__video", (video) => video.dispatchEvent(new Event("error")));
     await page.waitForFunction(
@@ -540,10 +556,8 @@ describe(`VideoPlayer (${browserName})`, () => {
       await expireAt(page, 2);
       expect(await counters(page)).toEqual({ renewals: 2, fallbacks: 0 });
       expect(await state(page)).toMatchObject({ paused: true, time: 1.5 });
+      // The twice renewed address plays: play() resolves once it does.
       await page.$eval(".k2b-video-player__video", (element) => (element as HTMLVideoElement).play());
-      await page.waitForFunction(() => (document.querySelector(".k2b-video-player__video") as HTMLVideoElement).ended, undefined, {
-        timeout: 15_000,
-      });
     } finally {
       await page.close();
     }
@@ -555,6 +569,21 @@ describe(`VideoPlayer (${browserName})`, () => {
       await page.$eval(".k2b-video-player__video", (video) => video.dispatchEvent(new Event("error")));
       await page.waitForSelector(".k2b-video-player__fallback");
       expect(await counters(page)).toEqual({ renewals: 1, fallbacks: 1 });
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("a renewed address that brings a media fragment of its own also continues where the video stopped", async () => {
+    // A host may hand out addresses with a fragment of their own. WebKit would start this one at its 0.001 s, not at the
+    // point where the video stopped.
+    const page = await renewWhilePaused("/video/landscape.webm?renewal=RENEWAL#t=0.001");
+    try {
+      expect(await state(page)).toMatchObject({ paused: true, time: 1.5 });
+      const events = await page.evaluate(
+        () => (window as unknown as { mediaEvents: { src: string; time: number; readyState: number }[] }).mediaEvents,
+      );
+      expect(events.filter((event) => event.src.includes("renewal=1") && event.readyState >= 2 && event.time < 1.45)).toEqual([]);
     } finally {
       await page.close();
     }

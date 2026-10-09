@@ -6,7 +6,7 @@
  * nothing moves while the video loads.
  */
 
-import { createEffect, createSignal, type JSX, Match, Switch } from "solid-js";
+import { batch, createEffect, createSignal, type JSX, Match, Switch } from "solid-js";
 import { useUiMessages } from "../intl/messages";
 import Placeholder from "../surfaces/Placeholder";
 
@@ -52,8 +52,8 @@ const SEEK_STEP = 5;
  */
 const RENEWED_GRACE_MS = 10_000;
 
-/** Safari on iOS shows no frame before playback without a poster; a media fragment makes it load and show the first one. */
-const withFirstFrame = (src: string) => (src.includes("#") ? src : `${src}#t=0.001`);
+/** How close to the point where a renewed address continues the video has to be to count as there, in seconds. */
+const RESUME_TOLERANCE = 0.05;
 
 /** Where focus goes when the fallback replaces the focused video. */
 const FALLBACK_FOCUS = ".k2b-video-player__fallback :is(a[href], button:not(:disabled))";
@@ -61,6 +61,8 @@ const FALLBACK_FOCUS = ".k2b-video-player__fallback :is(a[href], button:not(:dis
 export function VideoPlayer(props: VideoPlayerProps) {
   const messages = useUiMessages();
   const [source, setSource] = createSignal<string | null>(props.src);
+  /** Where the address in `source` starts, in seconds: 0 from the beginning, otherwise where a renewal continues. */
+  const [start, setStart] = createSignal(0);
   const [failed, setFailed] = createSignal(false);
   let frame: HTMLDivElement | undefined;
   let video: HTMLVideoElement | undefined;
@@ -81,13 +83,22 @@ export function VideoPlayer(props: VideoPlayerProps) {
     hostSrc = src;
     renewal = null;
     playing = false;
-    setFailed(false);
-    setSource(src);
+    batch(() => {
+      setFailed(false);
+      setStart(0);
+      setSource(src);
+    });
   });
 
+  // A media fragment makes the engine start where a renewed address continues, so no seek of the player's own competes
+  // with it: WebKit drops a seek that arrives while the fragment's is under way. It replaces a fragment the renewed
+  // address brings, which would start the engine at another point. Safari on iOS shows no frame before playback without
+  // a poster; a fragment just after the beginning makes it load and show the first one.
   const videoSource = () => {
     const src = source();
-    return src && !props.poster ? withFirstFrame(src) : (src ?? undefined);
+    if (!src) return undefined;
+    if (start() > 0) return `${src.replace(/#.*$/, "")}#t=${start().toFixed(3)}`;
+    return src.includes("#") || props.poster ? src : `${src}#t=0.001`;
   };
 
   const giveUp = () => {
@@ -104,12 +115,17 @@ export function VideoPlayer(props: VideoPlayerProps) {
     const recent = renewal && (renewal.readyAt === null || performance.now() - renewal.readyAt < RENEWED_GRACE_MS);
     if (!props.renew || recent) return giveUp();
     const requested = props.src;
-    renewal = { time: element.currentTime, rate: element.playbackRate, playing, loaded: false, readyAt: null };
+    const time = element.currentTime;
+    renewal = { time, rate: element.playbackRate, playing, loaded: false, readyAt: null };
     try {
       const renewed = await props.renew();
       if (requested !== props.src) return;
-      if (renewed === source()) element.load();
-      else setSource(renewed);
+      const before = videoSource();
+      batch(() => {
+        setStart(time);
+        setSource(renewed);
+      });
+      if (videoSource() === before) element.load();
     } catch {
       if (requested === props.src) giveUp();
     }
@@ -123,7 +139,9 @@ export function VideoPlayer(props: VideoPlayerProps) {
     if (element.videoWidth === 0 && element.videoHeight === 0) return giveUp();
     if (!renewal || renewal.loaded) return;
     renewal.loaded = true;
-    if (renewal.time > 0) element.currentTime = renewal.time;
+    // WebKit applies the fragment only once it has a frame, so it may still stand at the beginning here; the player
+    // seeks to the same point, and the fragment's seek that follows lands there too.
+    if (renewal.time > 0 && Math.abs(element.currentTime - renewal.time) > RESUME_TOLERANCE) element.currentTime = renewal.time;
     element.playbackRate = renewal.rate;
     if (renewal.playing) void element.play().catch(() => undefined);
   };
