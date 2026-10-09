@@ -1,7 +1,8 @@
 name: Nightly
 
 # Slow or environment-sensitive checks that do not gate pull requests.
-# Like ci.yml, no job installs from the runner's apt mirror.
+# Like ci.yml, no job installs from the runner's apt mirror or pulls from
+# Docker Hub: its images come from ghcr.io/k2b-dev/mirror, see ci.yml.
 
 on:
   schedule:
@@ -20,15 +21,20 @@ env:
 
 jobs:
   integration:
+    name: integration (Postgres ${{ matrix.postgres }})
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        postgres: [15, 17]
+        include:
+          - postgres: 15
+            image: ghcr.io/k2b-dev/mirror/postgres:15-alpine@sha256:f7d23353e1b15400d22ebe31189f4d314b87a4c129cc400c8c2d8d4ca127bf81
+          - postgres: 17
+            image: ghcr.io/k2b-dev/mirror/postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
     services:
       postgres:
-        image: postgres:${{ matrix.postgres }}-alpine
+        image: ${{ matrix.image }}
         env:
           POSTGRES_USER: cloud
           POSTGRES_PASSWORD: cloud
@@ -38,13 +44,13 @@ jobs:
           --health-cmd "pg_isready -U cloud -d cloud_nightly_test"
           --health-interval 5s --health-timeout 5s --health-retries 10
       valkey:
-        image: valkey/valkey:8-alpine
+        image: &valkey-image ghcr.io/k2b-dev/mirror/valkey/valkey:8-alpine@sha256:081c2f5cb575efc901aa80ff9cdbd1ec6a301682fd35e1ebb4b0990a4a4a8507
         ports: ["6379:6379"]
         options: >-
           --health-cmd "valkey-cli ping"
           --health-interval 5s --health-timeout 5s --health-retries 10
       gotenberg:
-        image: gotenberg/gotenberg:8.36.0
+        image: &gotenberg-image ghcr.io/k2b-dev/mirror/gotenberg/gotenberg:8.36.0@sha256:87c16b9f364279d321bc9772d31fa58aa6abe036423c270698bd636c3a8e9466
         ports: ["3001:3000"]
     env:
       CLOUD_TEST_DATABASE_URL: postgres://cloud:cloud@127.0.0.1:5432/cloud_nightly_test
@@ -58,7 +64,8 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - run: |
           set -euo pipefail
-          "$GITHUB_WORKSPACE/.github/pull-images.sh" nats:2.14.3-alpine
+          # The Files Filegate suites and the Notebooks shared-log suite start their own containers from these images.
+          "$GITHUB_WORKSPACE/.github/pull-images.sh" nats:2.14.3-alpine ghcr.io/k2b-dev/filegate:7.0.0 debian:13-slim
           docker run --detach --name nightly-nats --publish 127.0.0.1:4222:4222 --volume "$GITHUB_WORKSPACE/.github/nats-ci.conf:/etc/nats.conf:ro" nats:2.14.3-alpine --config /etc/nats.conf
           HOMEBREW_NO_AUTO_UPDATE=1 /home/linuxbrew/.linuxbrew/bin/brew install --quiet poppler
           sudo ln -s /home/linuxbrew/.linuxbrew/bin/{pdftotext,pdfinfo,pdffonts} /usr/local/bin/
@@ -76,13 +83,13 @@ jobs:
     timeout-minutes: 90
     services:
       valkey:
-        image: valkey/valkey:8-alpine
+        image: *valkey-image
         ports: ["6379:6379"]
         options: >-
           --health-cmd "valkey-cli ping"
           --health-interval 5s --health-timeout 5s --health-retries 10
       gotenberg:
-        image: gotenberg/gotenberg:8.36.0
+        image: *gotenberg-image
         ports: ["3001:3000"]
     env:
       CLOUD_TEST_DATABASE_URL: postgres://grids_test:grids_test@127.0.0.1:5432/grids_test
@@ -128,7 +135,10 @@ jobs:
       - name: Prepare the local NATS accounts
         run: bun -e 'import { prepareDevNats } from "./packages/gateway-ops/scripts/dev-nats"; await prepareDevNats(".local/nats-sync-test")'
       - name: Validate the generated NATS configuration
-        run: docker compose -f compose.sync-test.yml run --rm --no-deps nats-1 --config /etc/nats/nats.conf -t
+        run: |
+          set -euo pipefail
+          "$GITHUB_WORKSPACE/.github/pull-images.sh" nats:2.14.3-alpine postgres:15-alpine docker.io/valkey/valkey:8-alpine
+          docker compose -f compose.sync-test.yml run --rm --no-deps nats-1 --config /etc/nats/nats.conf -t
       - name: Start the three-node JetStream cluster
         run: |
           set -euo pipefail

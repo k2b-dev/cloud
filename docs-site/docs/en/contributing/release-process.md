@@ -75,6 +75,13 @@ declares `@k2b/ssr` as a peer range, so a release PR that moves `@k2b/ssr`
 outside it fails the `dependencies` check. Widen the range in a normal pull
 request on `main` first; the release PR then picks it up.
 
+The image builds take their base images, the Dockerfile frontend, and BuildKit
+from the public mirror `ghcr.io/k2b-dev/mirror` at the digests pinned in
+`.github/mirror-images.txt`, never from Docker Hub, so a release does not
+depend on Docker Hub's limit for anonymous pulls. The provenance attestation
+names the mirror reference with the same digest as the Docker Hub image. See
+[Where CI images come from](/en/docs/contributing/testing#where-ci-images-come-from).
+
 `release.json` lists every image with its tag and digest. Deployments pin the
 `vX.Y.Z` tag or the digest from that file; see
 [Build and deploy](/en/docs/operations/build-and-deploy#choose-an-image-tag).

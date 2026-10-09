@@ -466,9 +466,70 @@ Run the same commands locally before opening a pull request.
 An integration suite that starts its own container needs only Docker and its
 `CLOUD_TEST_*` targets, so it runs in the gate as well; the Files
 stable-reference suite starts a private Filegate this way. The integration job
-pulls such images first, with retries, because `docker run` does not retry a
-failed pull. When you add a suite like this or change its image, add the image
-to that pull step in `.github/workflows/ci.yml`.
+pulls such images first through `.github/pull-images.sh`, with retries, because
+`docker run` does not retry a failed pull. When you add a suite like this or
+change its image, add the image to that pull step in
+`.github/workflows/ci.yml` and `.github/workflows/nightly.yml`.
+
+### Where CI images come from
+
+No workflow pulls from Docker Hub: its limit for anonymous pulls failed CI runs.
+Every Docker Hub image that CI, the release workflows, or the image builds use
+is pinned by digest in `.github/mirror-images.txt` and comes from the public
+mirror `ghcr.io/k2b-dev/mirror/<name>:<tag>`, which serves the same digest:
+
+- Service containers, the `docker/setup-buildx-action` BuildKit image, and the
+  `# syntax=` and `FROM` lines of every Dockerfile name the mirror reference,
+  for example
+  `ghcr.io/k2b-dev/mirror/postgres:17-alpine@sha256:…`.
+- Steps and test fixtures that start an image by its Docker Hub name, such as
+  `docker run nats:2.14.3-alpine`, Compose, or the Files Filegate suites, get
+  it from `.github/pull-images.sh` in the same job. The script pulls the
+  mirrored digest and tags it with the Docker Hub name, so Docker finds the
+  image locally and never contacts Docker Hub. A script may name the mirror
+  reference instead, as the runtime recovery acceptance does.
+
+The `mirror` job in `ci.yml` runs `.github/mirror-images.sh` before every job
+that pulls an image. It copies each listed image whose digest the mirror does
+not serve yet, with its manifest list unchanged, and checks that every mirror
+package can be pulled without credentials. The same workflow,
+`mirror-images.yml`, also runs weekly and on demand. A new package created by
+the first copy must be public; if the check reports that it is not, change its
+visibility in the package settings on GitHub once.
+
+The `mirror-images` check fails when a workflow or Dockerfile would pull a
+Docker Hub image directly, when a mirror reference does not carry the digest
+from the list, and when a list entry is no longer used.
+
+To add or bump an image:
+
+1. Look up the digest of its manifest list:
+
+   ```bash
+   docker buildx imagetools inspect postgres:17-alpine --format '{{json .Manifest}}' | jq -r .digest
+   ```
+
+2. Add or change the `<name>:<tag>@sha256:<digest>` line in
+   `.github/mirror-images.txt`.
+3. Use `ghcr.io/k2b-dev/mirror/<name>:<tag>@sha256:<digest>` in Dockerfiles,
+   service containers, BuildKit, and scripts, or pass the Docker Hub name to
+   `.github/pull-images.sh` before a step starts it. Run
+   `bun scripts/check.ts mirror-images`; it names every reference that still
+   carries the old digest.
+
+The pull request mirrors the new digest in its own `mirror` job before its other
+jobs pull it. A pull request from a fork cannot write packages: its `mirror` job
+fails on a new digest until a maintainer runs the `Mirror images` workflow on a
+branch of this repository with the same list. Dependabot does not update Docker
+images in this repository; bump them through the list.
+
+To try the copy against a local registry:
+
+```bash
+docker run --detach --rm --name mirror-registry --publish 127.0.0.1:5000:5000 registry:2
+MIRROR=localhost:5000/mirror .github/mirror-images.sh
+docker rm --force mirror-registry
+```
 
 `gate` is the only required status check. It needs every other job in
 `ci.yml` and passes only when each one reports `success`, or `skipped` for a

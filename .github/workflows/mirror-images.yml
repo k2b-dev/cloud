@@ -1,0 +1,36 @@
+name: Mirror images
+
+# Copies the Docker Hub images of .github/mirror-images.txt to the public
+# ghcr.io/k2b-dev/mirror at their pinned digests. CI calls it before any job
+# pulls an image, so a pull request that adds or bumps an image mirrors it
+# first; otherwise every image is present and the run only verifies that.
+# The weekly run restores a removed image and re-checks that every package is
+# still public before the nightly and release workflows depend on it.
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  schedule:
+    - cron: "41 4 * * 1"
+  push:
+    branches: [main]
+    paths: [.github/mirror-images.txt, .github/mirror-images.sh]
+
+permissions:
+  contents: read
+
+jobs:
+  mirror:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - run: .github/mirror-images.sh
