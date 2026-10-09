@@ -234,7 +234,9 @@ describe("Cloud AI Skill seeds", () => {
     const seed = spyOn(aiSkills, "seedOnce").mockResolvedValue();
     await seedCloudAiSkills();
     const spaces = seed.mock.calls.map(([input]) => input).find((input) => input.key === "spaces:cloud-spaces");
-    expect(spaces?.version).toBe(2);
+    expect(spaces?.version).toBe(3);
+    expect(spaces?.instructions).toContain("spaces.template.list");
+    expect(spaces?.instructions).toContain("Never guess a date from a vague request");
     expect(spaces?.instructions).toContain("at most three assignees and tags");
     expect(spaces?.instructions).toContain("relationsTruncated");
     expect(spaces?.instructions).toContain("assigneeCount");

@@ -1,9 +1,13 @@
 import { CapabilitySemanticLinkSchema, CloudResourceRefSchema, CloudResourceViewSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import {
+  CreateItemTemplateSchema,
   CreateTaskChecklistEntrySchema,
   DeadlineFilterSchema,
   EstimatedDurationMinutesSchema,
+  ItemTemplateKindSchema,
+  LocalDateSchema,
+  MAX_ITEM_TEMPLATES_PER_KIND,
   MAX_TASK_ATTACHMENTS,
   MAX_TASK_CHECKLIST_ENTRIES,
   PrioritySchema,
@@ -14,6 +18,9 @@ import {
   SpaceTaskChecklistEntrySchema,
   SpaceTaskDependencySchema,
   SpaceTaskDependentSchema,
+  TemplateDateRuleSchema,
+  TimeOfDaySchema,
+  UpdateItemTemplateSchema,
   UpdateTaskChecklistEntrySchema,
 } from "./contracts";
 import {
@@ -363,11 +370,74 @@ const TaskFieldsInputShape = {
   priority: PrioritySchema.nullable().optional().describe("Optional task priority; null clears it."),
 };
 
+// ---------- Templates ----------
+
+const TemplateIdSchema = ResourceShortIdSchema.describe("Template ID returned by template.list.");
+const TimeZoneInputSchema = z
+  .string()
+  .min(1)
+  .max(100)
+  .optional()
+  .describe("IANA time zone of the person, such as Europe/Berlin; proposals and dates use it. The installation zone when omitted.");
+const TemplateDateInputSchema = LocalDateSchema.optional().describe(
+  "Local date for the new item as YYYY-MM-DD, usually one of the template's proposals; the first proposal when omitted. Do not guess a date from a vague request.",
+);
+
+export const TemplateListInputSchema = z
+  .object({
+    spaceId: SpaceIdSchema,
+    kind: ItemTemplateKindSchema.optional().describe("Only task or only event templates."),
+    timeZone: TimeZoneInputSchema,
+  })
+  .strict();
+const TemplateSummaryDataShape = {
+  id: ResourceShortIdSchema,
+  spaceId: ResourceShortIdSchema,
+  kind: ItemTemplateKindSchema,
+  name: z.string().min(1).max(100),
+  dateRule: TemplateDateRuleSchema,
+  timeOfDay: TimeOfDaySchema.nullable(),
+  rule: z.string().max(200).describe("The date rule as people read it, e.g. Wed or Thu · 17:00."),
+  proposals: z.array(LocalDateSchema).max(3).describe("Next proposed local dates in timeZone, earliest first."),
+  timeZone: z.string().max(100),
+};
+export const TemplateListDataSchema = z.array(z.object(TemplateSummaryDataShape).strict()).max(MAX_ITEM_TEMPLATES_PER_KIND * 2);
+export const TemplateReadInputSchema = z.object({ templateId: TemplateIdSchema, timeZone: TimeZoneInputSchema }).strict();
+export const TemplateDataSchema = z
+  .object({
+    ...TemplateSummaryDataShape,
+    title: z.string().max(200),
+    description: z.string().max(5000).nullable(),
+    priority: PrioritySchema.nullable(),
+    tags: z.array(ItemTagDataSchema).max(100),
+    assignees: z.array(ItemAssigneeDataSchema).max(100),
+    assignCreator: z.boolean(),
+    checklist: z.array(z.string().max(500)).max(MAX_TASK_CHECKLIST_ENTRIES),
+    estimatedDurationMinutes: EstimatedDurationMinutesSchema.nullable(),
+    location: z.string().max(500).nullable(),
+    url: z.string().max(2000).nullable(),
+    allDay: z.boolean(),
+    durationMinutes: EstimatedDurationMinutesSchema.nullable(),
+  })
+  .strict();
+export const TemplateCreateInputSchema = CreateItemTemplateSchema.safeExtend({ spaceId: SpaceIdSchema });
+export const TemplateUpdateInputSchema = UpdateItemTemplateSchema.safeExtend({ templateId: TemplateIdSchema });
+export const TemplateDeleteInputSchema = z.object({ templateId: TemplateIdSchema }).strict();
+export const TemplateDeleteDataSchema = z.object({ templateId: ResourceShortIdSchema, deleted: z.literal(true) }).strict();
+
+const TemplateUseInputShape = {
+  templateId: ResourceShortIdSchema.optional().describe(
+    "Template ID returned by template.list; its defaults fill every field you leave out, and given fields override them.",
+  ),
+  date: TemplateDateInputSchema,
+  timeZone: TimeZoneInputSchema,
+};
+
 export const TaskCreateInputSchema = z
   .object({
     spaceId: SpaceIdSchema,
     columnId: ResourceShortIdSchema.describe("Target column ID returned by Read space for the selected Space."),
-    title: z.string().trim().min(1).max(200).describe("Task title."),
+    title: z.string().trim().min(1).max(200).optional().describe("Task title; required unless the template has one."),
     description: z.string().max(5000).optional().describe("Optional task description."),
     deadline: TimestampSchema.optional().describe("Optional task deadline."),
     estimatedDurationMinutes: EstimatedDurationMinutesSchema.optional().describe("Optional estimate in minutes."),
@@ -375,8 +445,19 @@ export const TaskCreateInputSchema = z
     assigneeIds: UserIdListSchema.optional().describe("Optional assignee user UUIDs from this Space."),
     tagIds: ResourceIdListSchema.optional().describe("Optional tag IDs from this Space."),
     references: z.array(ItemResourceReferenceInputSchema).max(10).optional().describe("Cloud resources linked to the new task."),
+    ...TemplateUseInputShape,
+    noDate: z.boolean().optional().describe("With templateId: create the task without the template's due date."),
   })
-  .strict();
+  .strict()
+  .refine((value) => value.title !== undefined || value.templateId !== undefined, { message: "title is required", path: ["title"] })
+  .refine((value) => value.templateId !== undefined || (value.date === undefined && value.timeZone === undefined && !value.noDate), {
+    message: "date, timeZone, and noDate need a templateId",
+    path: ["templateId"],
+  })
+  .refine((value) => [value.date, value.deadline, value.noDate || undefined].filter((field) => field !== undefined).length <= 1, {
+    message: "Pass only one of date, deadline, or noDate",
+    path: ["date"],
+  });
 
 export const TaskUpdateInputSchema = z
   .object({ itemId: ItemIdSchema, ...ItemRelationInputShape, ...TaskFieldsInputShape })
@@ -403,20 +484,38 @@ export const EventCreateInputSchema = z
   .object({
     spaceId: SpaceIdSchema,
     columnId: ResourceShortIdSchema.describe("Target column ID returned by Read space for the selected Space."),
-    title: z.string().trim().min(1).max(200).describe("Event title."),
+    title: z.string().trim().min(1).max(200).optional().describe("Event title; required unless the template has one."),
     description: z.string().max(5000).optional().describe("Optional event description."),
     location: z.string().max(500).optional().describe("Optional event location."),
     url: z.string().url().max(2000).optional().describe("Optional event URL."),
-    startsAt: TimestampSchema.describe("Event start timestamp."),
-    endsAt: TimestampSchema.describe("Event end timestamp after startsAt."),
+    startsAt: TimestampSchema.optional().describe("Event start timestamp; required unless a template sets the time."),
+    endsAt: TimestampSchema.optional().describe("Event end timestamp after startsAt; give it together with startsAt."),
     allDay: z.boolean().optional().describe("Whether the event uses all-day presentation."),
     recurrence: RecurrenceDataSchema.optional().describe("Optional recurrence series."),
     assigneeIds: UserIdListSchema.optional().describe("Optional assignee user UUIDs from this Space."),
     tagIds: ResourceIdListSchema.optional().describe("Optional tag IDs from this Space."),
     references: z.array(ItemResourceReferenceInputSchema).max(10).optional().describe("Cloud resources linked to the new event."),
+    ...TemplateUseInputShape,
   })
   .strict()
-  .refine(validTimeRange, { message: "End time must be after start time", path: ["endsAt"] });
+  .refine(validTimeRange, { message: "End time must be after start time", path: ["endsAt"] })
+  .refine((value) => value.title !== undefined || value.templateId !== undefined, { message: "title is required", path: ["title"] })
+  .refine((value) => (value.startsAt === undefined) === (value.endsAt === undefined), {
+    message: "startsAt and endsAt go together",
+    path: ["endsAt"],
+  })
+  .refine((value) => value.startsAt !== undefined || value.templateId !== undefined, {
+    message: "startsAt and endsAt are required",
+    path: ["startsAt"],
+  })
+  .refine((value) => value.templateId !== undefined || (value.date === undefined && value.timeZone === undefined), {
+    message: "date and timeZone need a templateId",
+    path: ["templateId"],
+  })
+  .refine((value) => value.date === undefined || value.startsAt === undefined, {
+    message: "Pass either date or startsAt and endsAt",
+    path: ["date"],
+  });
 
 export const EventUpdateInputSchema = z
   .object({ itemId: ItemIdSchema, ...ItemRelationInputShape, ...EventFieldsInputShape })

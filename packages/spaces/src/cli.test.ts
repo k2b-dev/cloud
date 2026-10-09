@@ -39,6 +39,52 @@ const spaceDetail = {
   ],
   virtualColumns: [{ kind: "blocked", rank: "1536" }],
   tags: [{ id: "Tag001", spaceId: "Space1", name: "Backend", color: null }],
+  templates: [
+    {
+      id: "Tpl001",
+      spaceId: "Space1",
+      kind: "task",
+      name: "Weekly report",
+      title: "Weekly report {{week}}",
+      description: null,
+      priority: "medium",
+      tags: [{ id: "Tag001", spaceId: "Space1", name: "Backend", color: null }],
+      assignees: [],
+      assignCreator: true,
+      checklist: ["Collect numbers", "Send"],
+      estimatedDurationMinutes: null,
+      location: null,
+      url: null,
+      allDay: false,
+      durationMinutes: null,
+      timeOfDay: null,
+      dateRule: { type: "weekdays", weekdays: ["WE", "TH"] },
+      createdAt: "2026-08-11T08:00:00.000Z",
+      updatedAt: "2026-08-11T08:00:00.000Z",
+    },
+    {
+      id: "Tpl002",
+      spaceId: "Space1",
+      kind: "event",
+      name: "Weekly report",
+      title: "Review",
+      description: null,
+      priority: null,
+      tags: [],
+      assignees: [],
+      assignCreator: false,
+      checklist: [],
+      estimatedDurationMinutes: null,
+      location: "Room 2",
+      url: null,
+      allDay: false,
+      durationMinutes: 45,
+      timeOfDay: "10:00",
+      dateRule: { type: "offset", days: 2 },
+      createdAt: "2026-08-11T08:00:00.000Z",
+      updatedAt: "2026-08-11T08:00:00.000Z",
+    },
+  ],
 };
 const item = (id: string, title: string) => ({
   id,
@@ -143,6 +189,24 @@ beforeAll(async () => {
       if (path === "/api/spaces/Space1/assignable-users") return json([{ id: OTHER_ID, uid: "ada", displayName: "Ada", avatarHash: null }]);
       if (path === "/api/spaces/Space1/items/filter") return json({ items: [task], total: 1, page: 1, pageSize: 50, totalPages: 1 });
       if (path === "/api/spaces/Space1/items") return json({ ...task, ...(body as object), id: "New002" });
+      if (path === "/api/spaces/Space1/templates") return json(spaceDetail.templates);
+      if (path === "/api/spaces/Space1/templates/Tpl001/draft")
+        return json({
+          templateId: "Tpl001",
+          kind: "task",
+          proposals: ["2026-10-14", "2026-10-15", "2026-10-21"],
+          date: url.searchParams.get("noDate") ? null : (url.searchParams.get("date") ?? "2026-10-14"),
+          timeZone: url.searchParams.get("timeZone"),
+          item: {
+            title: "Weekly report 42",
+            priority: "medium",
+            tagIds: ["Tag001"],
+            assigneeIds: [],
+            assignCreator: true,
+            checklist: ["Collect numbers", "Send"],
+            ...(url.searchParams.get("noDate") ? {} : { deadline: "2026-10-14T15:00:00.000Z" }),
+          },
+        });
       if (path === "/api/spaces/calendar")
         return json([
           { id: "Evt001", spaceId: "Space1", spaceName: "Roadmap", title: "Launch", startsAt: "a", endsAt: "b" },
@@ -556,6 +620,64 @@ describe("secondary resources", () => {
   });
 });
 
+describe("templates", () => {
+  test("templates ls and show list rules and proposals; a name both kinds use needs --kind", async () => {
+    const listed = await run(["templates", "ls", "Roadmap", "--kind", "task"]);
+    expect(listed.json).toEqual(spaceDetail.templates);
+    expect(listed.requests.at(-1)?.path).toBe("/api/spaces/Space1/templates?kind=task");
+
+    const ambiguous = await failing(["templates", "show", "Roadmap:weekly report"]);
+    expect(ambiguous.stderr).toContain("--kind");
+    const shown = (await run(["templates", "show", "Roadmap:weekly report", "--kind", "event"])).json as {
+      id: string;
+      proposals: string[];
+      timeZone: string;
+    };
+    expect(shown).toMatchObject({ id: "Tpl002", timeZone: "Europe/Berlin" });
+    expect(shown.proposals).toHaveLength(1);
+    const text = await cld(["spaces", "templates", "ls", "Roadmap"]);
+    expect(text.stdout).toContain("Wed or Thu · 17:00");
+    expect(text.stdout).toContain("In 2 days · 10:00");
+  });
+
+  test("add --template drafts in the local zone, lets flags win, and needs no title", async () => {
+    const added = await run([
+      "add",
+      "Roadmap",
+      "--template",
+      "Weekly report",
+      "--kind",
+      "task",
+      "--date",
+      "2026-10-15",
+      "--priority",
+      "high",
+    ]);
+    expect(added.requests.find((entry) => entry.path.includes("/draft"))?.path).toBe(
+      "/api/spaces/Space1/templates/Tpl001/draft?date=2026-10-15&timeZone=Europe%2FBerlin",
+    );
+    expect(writes(added.requests)[0]?.body).toEqual({
+      columnId: "Col001",
+      title: "Weekly report 42",
+      priority: "high",
+      tagIds: ["Tag001"],
+      assigneeIds: [],
+      assignCreator: true,
+      checklist: ["Collect numbers", "Send"],
+      deadline: "2026-10-14T15:00:00.000Z",
+    });
+
+    const own = await run(["add", "Roadmap:Own title", "--template", "Tpl001", "--no-date", "--tag", "Backend", "--assignee", "ada"]);
+    expect(writes(own.requests)[0]?.body).toMatchObject({ title: "Own title", assigneeIds: [OTHER_ID], tagIds: ["Tag001"] });
+    expect(writes(own.requests)[0]?.body).not.toHaveProperty("deadline");
+
+    expect(
+      (await failing(["add", "Roadmap", "--template", "Tpl001", "--date", "2026-10-15", "--deadline", "2026-10-16"])).stderr,
+    ).toContain("--date");
+    expect((await failing(["add", "Roadmap:x", "--date", "2026-10-15"])).stderr).toContain("--template");
+  });
+});
+
 test("add takes the field flags of set except --title and --clear-*, as the reference says", async () => {
   const flags = async (command: string) =>
     [...(await cld(["spaces", command, "--help"])).stdout.matchAll(/^ {2}(--[a-z-]+)/gm)].map((match) => match[1]);
@@ -563,7 +685,7 @@ test("add takes the field flags of set except --title and --clear-*, as the refe
   expect(reference).toContain("`add` takes the field flags of `set` except `--title` and `--clear-*`");
   const add = await flags("add");
   expect(add).toContain("--from");
-  expect(add.filter((flag) => flag !== "--column")).toEqual(
+  expect(add.filter((flag) => !["--column", "--template", "--kind", "--date", "--no-date"].includes(flag ?? ""))).toEqual(
     (await flags("set")).filter((flag) => flag !== "--title" && !flag?.startsWith("--clear-")),
   );
 });
