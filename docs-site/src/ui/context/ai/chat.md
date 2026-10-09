@@ -400,6 +400,16 @@ Set `variant="conversation"` for messages between people, for example under a
 [message rows](/en/ui/content/message-rows). Without it, the composer keeps
 the assistant prompt's behavior.
 
+The conversation composer is one row without a card: an attach button, a
+quiet pill-shaped field, and a round Send button. The field is muted at rest
+and shows the surface with a ring while it has focus; only its paint changes.
+Formatting, emoji, and the microphone sit inside the field at its end. Send is
+dimmed until there is something to send. With `fileSelection` alone, the
+attach button opens the file choice directly; with `menuActions`, it opens the
+add menu. The footer props of the assistant prompt (`models`, `modelDetails`,
+`contextUsage`, `contextActions`, `contextPopupAction`, `footerTools`,
+`submitTools`, `footerContent`) have no place in this row and are not rendered.
+
 - **Size:** the field starts with one line and grows with its text up to a
   third of the nearest size container, then scrolls. Give the conversation's
   frame `container-type: size`; without one, the cap is a third of the small
@@ -428,20 +438,26 @@ breaks the line on Enter and sends on Ctrl/⌘+Enter.
 
 ### Formatting, emoji, and microphone
 
-These work in both variants and keep fixed places in the footer.
+These work in both variants. In the conversation variant they sit inside the
+field; in the default variant, in the footer.
 
-- **`formatting`** adds "Aa". It shows Bold, Italic, Strikethrough, Code,
-  Code block, Bullet list, Quote, and Link in the free space of the footer
-  row, which scrolls sideways when the row is narrow. The composer's height
-  and every other control stay where they are; faded edges show that the row
-  scrolls. The buttons write Markdown into the field and keep the selection.
+- **`formatting`** adds "Aa". It opens one row of fixed height with Bold,
+  Italic, Strikethrough, Code, Code block, Bullet list, Quote, and Link: above
+  the field in the conversation variant, above the footer in the default
+  variant. The composer grows upward by that row, like a new line of text, so
+  the field and every control stay where they are and a feed that follows the
+  newest message keeps it in view. All eight buttons show at once, also on a
+  phone: on a coarse pointer they share the row's width, 2.75rem each where it
+  fits, and the row never scrolls. The buttons write Markdown into the field
+  and keep the selection.
   Every button except Link removes its formatting on a second press; inside a
   fenced block, Code block removes that block's fences. Ctrl/⌘+B, I, and E, and
   Ctrl/⌘+Shift+X and 8 do the same while `formatting` is set.
 - **`emoji`** adds an emoji button. `onOpen` receives the button as `anchor`
   and an `insert` function that puts the chosen text at the caret. Touch-only
   devices hide the button, because their keyboard has emoji.
-- **`microphone`** adds a microphone before Send. Dictation comes first: a
+- **`microphone`** adds a microphone before Send, or at the end of the field
+  in the conversation variant. Dictation comes first: a
   tap calls `onDictate`, which starts or stops the application's live
   dictation. Holding the microphone for half a second calls `onVoiceMessage`
   instead, unless the composer was disabled during the press. The small menu

@@ -237,6 +237,10 @@ describe("@k2b/ui portable chat family", () => {
     expect(idle).toContain('aria-label="Dictate"');
     expect(idle).toContain('aria-label="Microphone options"');
     expect(idle).not.toContain('k2b-chat-composer__format"');
+    // One row: the field with its tools between attach and Send, and no footer.
+    expect(idle).toMatch(/class="k2b-chat-composer__row"[\s\S]*class="k2b-chat-composer__field"[\s\S]*class="k2b-chat-composer__send /);
+    expect(idle).not.toContain("<footer");
+    expect(idle).toContain("ti ti-send");
 
     const listening = conversation("de", "listening");
     expect(listening).toContain("Diktat läuft …");

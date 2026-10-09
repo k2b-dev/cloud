@@ -261,7 +261,7 @@ const ConversationComposerDemo = () => {
     <DemoCard
       id="chat-conversation-composer"
       chip={{ kind: "component", name: "Chat.Composer", from: "@k2b/ui" }}
-      description='The conversation variant: one line that grows to a third of its size container, "Aa" for formatting, emoji and microphone at fixed places, and a hint line that never moves the field. Tap the microphone to dictate, hold it for a voice message.'
+      description='The conversation variant: one row with attach, a pill field that grows from one line to a third of its size container, and Send. "Aa" opens one formatting row above the field, emoji and microphone sit inside it, and a hint line never moves it. Tap the microphone to dictate, hold it for a voice message.'
       code={`<Chat.Composer
   variant="conversation"
   value={draft()}

@@ -19,7 +19,6 @@ import { toggleBulletList, toggleCodeBlock, toggleInlineMarker, toggleQuote } fr
 import { openCodeFence } from "../inputs/markdown/code-zone";
 import { SelectChip } from "../inputs/SelectChip";
 import { type UiMessages, useUiMessages } from "../intl/messages";
-import { createScrollFade } from "../layout/scroll-fade";
 import { ChatContextUsage as ContextUsage } from "./ChatPrimitives";
 import { conversationEnterAction, executeChatAction, nextChatCommandIndex, reportChatFailure, runChatSubmission } from "./chat-behavior";
 import { chatCommandQuery, chatMentionSegments, reconcileChatMentions } from "./composer-document";
@@ -118,15 +117,15 @@ export type ChatComposerProps = {
   draftKey?: unknown;
   class?: string;
   /**
-   * `"conversation"` is the composer for messages between people. It starts with one line and grows to a third of
-   * its nearest size container, keeps a hint line of fixed height above the field, keeps the field focused when its
-   * buttons are pressed, and breaks the line on Enter inside an open code block and on touch-only devices. The
-   * default is the assistant prompt.
+   * `"conversation"` is the composer for messages between people: one row with attach, a pill-shaped field and Send,
+   * without the assistant prompt's footer. The field starts with one line and grows to a third of its nearest size
+   * container, a hint line of fixed height sits above it, its buttons keep it focused, and Enter breaks the line
+   * inside an open code block and on touch-only devices. The default is the assistant prompt.
    */
   variant?: "default" | "conversation";
   /** `"enter"` (default): Enter sends and Shift+Enter breaks the line. `"mod-enter"`: Enter breaks the line. Ctrl/⌘+Enter always sends. */
   sendKey?: "enter" | "mod-enter";
-  /** Adds "Aa", which shows Markdown formatting buttons in the footer without changing the composer's height. */
+  /** Adds "Aa", which opens one row of Markdown formatting buttons above the field; the field and its controls stay put. */
   formatting?: boolean;
   /** An emoji button at a fixed place. Touch-only devices hide it; their keyboard has emoji. */
   emoji?: ChatComposerEmoji;
@@ -205,18 +204,12 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   let fileInputRef: HTMLInputElement | undefined;
   let measureRef: HTMLTextAreaElement | undefined;
   let microphoneRef: HTMLDivElement | undefined;
-  let formatRef: HTMLDivElement | undefined;
   let sawRunning = props.state === "running";
   const conversation = () => props.variant === "conversation";
   const [formattingOpen, setFormattingOpen] = createSignal(false);
   const [microphoneMenuOpen, setMicrophoneMenuOpen] = createSignal(false);
   const dictation = () => props.microphone?.dictation ?? null;
   const showHint = () => conversation() || dictation() !== null || hasContent(hint.toArray());
-  // Faded edges show that a narrow formatting row scrolls to more buttons.
-  createScrollFade(
-    () => formatRef,
-    () => Boolean(props.formatting && formattingOpen()),
-  );
 
   const state = () => props.state ?? "idle";
   const running = () => state() === "running";
@@ -681,6 +674,335 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     }
   };
 
+  const fileInput = () => (
+    <Show when={props.fileSelection}>
+      <input
+        ref={fileInputRef}
+        class="k2b-sr-only"
+        type="file"
+        tabIndex={-1}
+        aria-hidden="true"
+        accept={props.fileSelection?.accept}
+        multiple={props.fileSelection?.multiple ?? true}
+        onChange={(event) => {
+          if (event.currentTarget.files?.length) void runFiles(event.currentTarget.files);
+        }}
+      />
+    </Show>
+  );
+
+  const addMenu = (icon: string, extraClass = "") => (
+    <Dropdown.Root position="top-right" label={messages().addToChat} items={menuItems()} disabled={blocked()}>
+      <Dropdown.Trigger
+        appearance="plain"
+        class={`k2b-chat-composer__icon-action${extraClass}`}
+        label={messages().addToChat}
+        tooltip={messages().addToChat}
+      >
+        <i class={icon} aria-hidden="true" />
+      </Dropdown.Trigger>
+    </Dropdown.Root>
+  );
+
+  /** The conversation's attach button opens the file choice directly; other actions turn it into the add menu. */
+  const attachControl = () => (
+    <Show
+      when={props.menuActions?.length}
+      fallback={
+        <Show when={props.fileSelection}>
+          {(selection) => (
+            <Tooltip.Trigger
+              type="button"
+              class="k2b-chat-composer__icon-action k2b-chat-composer__attach"
+              aria-label={selection().label ?? messages().attachFiles}
+              content={selection().label ?? messages().attachFiles}
+              disabled={!canSelectFiles()}
+              onClick={chooseFiles}
+            >
+              <i class={addingFiles() ? "ti ti-loader-2 k2b-spin" : "ti ti-paperclip"} aria-hidden="true" />
+            </Tooltip.Trigger>
+          )}
+        </Show>
+      }
+    >
+      {addMenu("ti ti-plus", " k2b-chat-composer__attach")}
+    </Show>
+  );
+
+  const formatToggle = () => (
+    <Show when={props.formatting}>
+      <Tooltip.Trigger
+        type="button"
+        class="k2b-chat-composer__icon-action k2b-chat-composer__format-toggle"
+        aria-label={messages().composerFormatting}
+        aria-pressed={formattingOpen()}
+        aria-controls={formattingOpen() ? formatGroupId : undefined}
+        content={messages().composerFormatting}
+        onMouseDown={keepFieldFocus}
+        onClick={() => setFormattingOpen((open) => !open)}
+      >
+        <i class="ti ti-letter-case" aria-hidden="true" />
+      </Tooltip.Trigger>
+    </Show>
+  );
+
+  /** One row of fixed height. It shows every button at once, also on a phone, so nothing hides behind a scroll. */
+  const formatRow = () => (
+    <Show when={props.formatting && formattingOpen()}>
+      <div id={formatGroupId} class="k2b-chat-composer__format" role="group" aria-label={messages().composerFormatting}>
+        <For each={formatTools}>
+          {(tool) => (
+            <Tooltip.Trigger
+              type="button"
+              class="k2b-chat-composer__icon-action"
+              aria-label={tool.label(messages())}
+              content={tool.label(messages())}
+              disabled={editBlocked()}
+              onMouseDown={keepFieldFocus}
+              onClick={() => {
+                if (textareaRef) tool.run(textareaRef);
+              }}
+            >
+              <i class={tool.icon} aria-hidden="true" />
+            </Tooltip.Trigger>
+          )}
+        </For>
+      </div>
+    </Show>
+  );
+
+  const emojiButton = () => (
+    <Show when={props.emoji}>
+      {(emoji) => (
+        <Tooltip.Trigger
+          type="button"
+          class="k2b-chat-composer__icon-action k2b-chat-composer__emoji"
+          aria-label={messages().insertEmoji}
+          content={messages().insertEmoji}
+          disabled={editBlocked()}
+          onMouseDown={keepFieldFocus}
+          onClick={(event) => {
+            const anchor = event.currentTarget;
+            reportChatFailure(() => emoji().onOpen({ anchor, insert: insertText }), props.onError);
+          }}
+        >
+          <i class="ti ti-mood-smile" aria-hidden="true" />
+        </Tooltip.Trigger>
+      )}
+    </Show>
+  );
+
+  const microphoneControl = () => (
+    <Show when={props.microphone?.onDictate || props.microphone?.onVoiceMessage ? props.microphone : undefined}>
+      {(microphone) => (
+        <div ref={microphoneRef} class="k2b-chat-composer__microphone">
+          <Tooltip.Trigger
+            type="button"
+            class="k2b-chat-composer__icon-action k2b-chat-composer__microphone-button"
+            data-state={dictation() ?? undefined}
+            disabled={microphoneDisabled()}
+            aria-pressed={microphone().onDictate ? dictation() === "listening" : undefined}
+            aria-haspopup={microphone().onDictate ? undefined : "menu"}
+            aria-expanded={microphone().onDictate ? undefined : microphoneMenuOpen()}
+            // A toggle keeps its name; the pressed state says that dictation runs.
+            aria-label={microphone().onDictate ? messages().dictate : messages().recordVoiceMessage}
+            content={
+              dictation() === "listening"
+                ? messages().stopDictation
+                : microphone().onDictate
+                  ? microphone().onVoiceMessage
+                    ? messages().dictateOrHold
+                    : messages().dictate
+                  : messages().recordVoiceMessage
+            }
+            onMouseDown={keepFieldFocus}
+            onContextMenu={(event) => event.preventDefault()}
+            onPointerDown={(event) => {
+              held = false;
+              releaseHold();
+              const record = microphone().onVoiceMessage;
+              if (event.button !== 0 || !record || dictation() === "listening") return;
+              holdTimer = setTimeout(() => {
+                // The composer may have become blocked, or recording withdrawn, during the press.
+                const current = props.microphone?.onVoiceMessage;
+                if (!current || microphoneDisabled()) return;
+                held = true;
+                reportChatFailure(current, props.onError);
+              }, microphoneHoldMs);
+            }}
+            onPointerUp={releaseHold}
+            onPointerCancel={releaseHold}
+            onPointerLeave={releaseHold}
+            onClick={(event) => {
+              // A press that already asked for a voice message ends here; a key press never holds.
+              if (held) {
+                held = false;
+                if (event.detail > 0) return;
+              }
+              const dictate = microphone().onDictate;
+              if (dictate) {
+                reportChatFailure(dictate, props.onError);
+                return;
+              }
+              setMicrophoneMenuOpen(true);
+              // From the keyboard it opens the menu like a menu button: the focus moves to the first item.
+              if (event.detail === 0) {
+                queueMicrotask(() => microphoneRef?.querySelector<HTMLElement>('[role="menuitem"]:not(:disabled)')?.focus());
+              }
+            }}
+          >
+            <i
+              class={
+                dictation() === "listening"
+                  ? "ti ti-player-stop"
+                  : dictation() === "refining"
+                    ? "ti ti-loader-2 k2b-spin"
+                    : "ti ti-microphone"
+              }
+              aria-hidden="true"
+            />
+          </Tooltip.Trigger>
+          <Show when={microphone().onVoiceMessage}>
+            <Dropdown.Root
+              position="top-left"
+              label={messages().microphoneOptions}
+              items={microphoneItems()}
+              disabled={microphoneDisabled()}
+              open={microphoneMenuOpen()}
+              onOpenChange={setMicrophoneMenuOpen}
+            >
+              <Dropdown.Trigger
+                appearance="plain"
+                class="k2b-chat-composer__icon-action k2b-chat-composer__microphone-menu"
+                label={messages().microphoneOptions}
+                tooltip={messages().microphoneOptions}
+              >
+                <i class="ti ti-chevron-up" aria-hidden="true" />
+              </Dropdown.Trigger>
+            </Dropdown.Root>
+          </Show>
+        </div>
+      )}
+    </Show>
+  );
+
+  const sendControl = () => (
+    <Show
+      when={running() && !hasDraft() && props.onStop}
+      fallback={
+        <Tooltip.Trigger
+          type="button"
+          class="k2b-chat-composer__send"
+          disabled={!canSubmit()}
+          onMouseDown={(event) => {
+            if (conversation()) keepFieldFocus(event);
+          }}
+          aria-label={
+            submitting()
+              ? running()
+                ? runningSubmitIntent() === "queue"
+                  ? messages().queueing
+                  : messages().steering
+                : messages().sending
+              : running()
+                ? runningSubmitIntent() === "queue"
+                  ? messages().queueMessage
+                  : messages().steerResponse
+                : messages().sendMessage
+          }
+          content={
+            running() ? (runningSubmitIntent() === "queue" ? messages().queueMessage : messages().steerResponse) : messages().sendMessage
+          }
+          onClick={() => void submit()}
+        >
+          <i class={submitting() ? "ti ti-loader-2 k2b-spin" : conversation() ? "ti ti-send" : "ti ti-arrow-up"} aria-hidden="true" />
+        </Tooltip.Trigger>
+      }
+    >
+      <Tooltip.Trigger
+        type="button"
+        class="k2b-chat-composer__stop"
+        disabled={stopping()}
+        aria-label={stopping() ? messages().stopping : messages().stopResponse}
+        content={messages().stopResponse}
+        onClick={() => reportChatFailure(() => props.onStop?.(), props.onError)}
+      >
+        <i class={stopping() ? "ti ti-loader-2 k2b-spin" : "ti ti-player-stop"} aria-hidden="true" />
+      </Tooltip.Trigger>
+    </Show>
+  );
+
+  const field = () => (
+    <div class="k2b-chat-composer__input" role="group" aria-label={messages().messageInput}>
+      <Show when={mentions().length > 0}>
+        <div ref={highlightRef} class="k2b-chat-composer__highlight" aria-hidden="true">
+          <For each={chatMentionSegments(props.value, mentions())}>
+            {(part) => <span classList={{ "k2b-chat-composer__mention": Boolean(part.mention) }}>{part.text}</span>}
+          </For>
+          {"\n"}
+        </div>
+      </Show>
+      {/* biome-ignore lint/a11y/useAriaPropsSupportedByRole: popup attributes are conditional with the combobox role */}
+      <textarea
+        ref={textareaRef}
+        classList={{ "k2b-chat-composer__textarea--highlighted": mentions().length > 0 }}
+        rows={1}
+        value={props.value}
+        disabled={editBlocked()}
+        enterkeyhint={conversation() ? "enter" : undefined}
+        placeholder={
+          props.placeholder ??
+          (running() ? messages().addGuidance : conversation() ? messages().writeConversationMessage : messages().writeMessage)
+        }
+        aria-label={props.inputLabel ?? messages().message}
+        role={commandsOpen() ? "combobox" : undefined}
+        aria-autocomplete={commandsOpen() ? "list" : undefined}
+        aria-controls={commandsOpen() ? commandListId : undefined}
+        aria-expanded={commandsOpen() ? "true" : undefined}
+        aria-activedescendant={selectedCommand() ? `${commandListId}-${selectedCommandIndex()}` : undefined}
+        onInput={(event) => {
+          edit(event.currentTarget.value);
+          syncCaret();
+          autoResize();
+        }}
+        onPaste={(event) => {
+          const clipboardData = event.clipboardData;
+          if (canSelectFiles() && clipboardData?.files.length) {
+            event.preventDefault();
+            void runFiles(clipboardData.files);
+            return;
+          }
+          props.onPaste?.(event);
+        }}
+        onSelect={syncCaret}
+        onBlur={() => setDismissed(true)}
+        onClick={() => {
+          setDismissed(false);
+          syncCaret();
+        }}
+        onKeyUp={syncCaret}
+        onCompositionStart={() => setComposing(true)}
+        onCompositionEnd={() => {
+          setComposing(false);
+          syncCaret();
+        }}
+        onScroll={() => {
+          if (highlightRef && textareaRef) highlightRef.scrollTop = textareaRef.scrollTop;
+        }}
+        onBeforeInput={(event) => {
+          if (event.inputType === "historyUndo" || event.inputType === "historyRedo") {
+            event.preventDefault();
+            restoreHistory(event.inputType === "historyUndo" ? -1 : 1);
+          }
+        }}
+        onKeyDown={onKeyDown}
+      />
+      <Show when={conversation()}>
+        <textarea ref={measureRef} class="k2b-chat-composer__measure" rows={1} tabIndex={-1} aria-hidden="true" readOnly />
+      </Show>
+    </div>
+  );
+
   return (
     <div class="k2b-chat-composer-shell">
       <Show when={commandsOpen() || hasAccessory()}>
@@ -842,367 +1164,112 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
           </div>
         </Show>
 
-        <div class="k2b-chat-composer__input" role="group" aria-label={messages().messageInput}>
-          <Show when={mentions().length > 0}>
-            <div ref={highlightRef} class="k2b-chat-composer__highlight" aria-hidden="true">
-              <For each={chatMentionSegments(props.value, mentions())}>
-                {(part) => <span classList={{ "k2b-chat-composer__mention": Boolean(part.mention) }}>{part.text}</span>}
-              </For>
-              {"\n"}
+        <Show
+          when={conversation()}
+          fallback={
+            <>
+              {field()}
+
+              <Show when={props.error}>
+                <div class="k2b-chat-composer__error" role="alert">
+                  <i class="ti ti-alert-circle" aria-hidden="true" />
+                  {props.error}
+                </div>
+              </Show>
+
+              {formatRow()}
+
+              <footer class="k2b-chat-composer__footer">
+                <Show
+                  when={props.footerContent}
+                  fallback={
+                    <>
+                      <div class="k2b-chat-composer__tools">
+                        {props.footerTools}
+                        <Show when={hasAddMenu()}>{addMenu("ti ti-plus")}</Show>
+                        {fileInput()}
+                        {formatToggle()}
+                        {emojiButton()}
+                        <Show when={(props.models?.length ?? 0) > 0}>
+                          <SelectChip
+                            aria-label={messages().chooseModel}
+                            position="top-right"
+                            class="k2b-chat-composer__model"
+                            menuWidth="15rem"
+                            placeholder={messages().model}
+                            value={() => props.selectedModelId ?? ""}
+                            options={(props.models ?? []).map((model) => ({
+                              value: model.id,
+                              label: model.label,
+                              description: model.description,
+                              icon: model.icon,
+                              image: model.image,
+                            }))}
+                            disabled={blocked() || running() || !props.onModelChange}
+                            onValueChange={(modelId) => {
+                              props.onModelChange?.(modelId);
+                              queueMicrotask(focus);
+                            }}
+                          />
+                        </Show>
+                        {props.modelDetails}
+                      </div>
+
+                      <div class="k2b-chat-composer__submit">
+                        <For each={props.contextActions}>
+                          {(action) => (
+                            <Tooltip.Trigger
+                              type="button"
+                              class="k2b-chat-composer__icon-action"
+                              data-tone={action.variant === "danger" ? "danger" : undefined}
+                              disabled={action.disabled}
+                              aria-pressed={action.pressed}
+                              aria-label={action.label}
+                              content={action.label}
+                              onClick={() => reportChatFailure(() => executeChatAction(action), props.onError)}
+                            >
+                              <i class={action.icon ?? "ti ti-dots"} aria-hidden="true" />
+                            </Tooltip.Trigger>
+                          )}
+                        </For>
+                        <Show when={hasContextUsage() ? (props.contextUsage ?? {}) : undefined}>
+                          {(usage) => <ContextUsage {...usage()} action={props.contextPopupAction} onActionError={props.onError} />}
+                        </Show>
+                        {props.submitTools}
+                        {microphoneControl()}
+                        {sendControl()}
+                      </div>
+                    </>
+                  }
+                >
+                  {(content) => content()}
+                </Show>
+              </footer>
+            </>
+          }
+        >
+          <Show when={props.error}>
+            <div class="k2b-chat-composer__error" role="alert">
+              <i class="ti ti-alert-circle" aria-hidden="true" />
+              {props.error}
             </div>
           </Show>
-          {/* biome-ignore lint/a11y/useAriaPropsSupportedByRole: popup attributes are conditional with the combobox role */}
-          <textarea
-            ref={textareaRef}
-            classList={{ "k2b-chat-composer__textarea--highlighted": mentions().length > 0 }}
-            rows={1}
-            value={props.value}
-            disabled={editBlocked()}
-            enterkeyhint={conversation() ? "enter" : undefined}
-            placeholder={
-              props.placeholder ??
-              (running() ? messages().addGuidance : conversation() ? messages().writeConversationMessage : messages().writeMessage)
-            }
-            aria-label={props.inputLabel ?? messages().message}
-            role={commandsOpen() ? "combobox" : undefined}
-            aria-autocomplete={commandsOpen() ? "list" : undefined}
-            aria-controls={commandsOpen() ? commandListId : undefined}
-            aria-expanded={commandsOpen() ? "true" : undefined}
-            aria-activedescendant={selectedCommand() ? `${commandListId}-${selectedCommandIndex()}` : undefined}
-            onInput={(event) => {
-              edit(event.currentTarget.value);
-              syncCaret();
-              autoResize();
-            }}
-            onPaste={(event) => {
-              const clipboardData = event.clipboardData;
-              if (canSelectFiles() && clipboardData?.files.length) {
-                event.preventDefault();
-                void runFiles(clipboardData.files);
-                return;
-              }
-              props.onPaste?.(event);
-            }}
-            onSelect={syncCaret}
-            onBlur={() => setDismissed(true)}
-            onClick={() => {
-              setDismissed(false);
-              syncCaret();
-            }}
-            onKeyUp={syncCaret}
-            onCompositionStart={() => setComposing(true)}
-            onCompositionEnd={() => {
-              setComposing(false);
-              syncCaret();
-            }}
-            onScroll={() => {
-              if (highlightRef && textareaRef) highlightRef.scrollTop = textareaRef.scrollTop;
-            }}
-            onBeforeInput={(event) => {
-              if (event.inputType === "historyUndo" || event.inputType === "historyRedo") {
-                event.preventDefault();
-                restoreHistory(event.inputType === "historyUndo" ? -1 : 1);
-              }
-            }}
-            onKeyDown={onKeyDown}
-          />
-          <Show when={conversation()}>
-            <textarea ref={measureRef} class="k2b-chat-composer__measure" rows={1} tabIndex={-1} aria-hidden="true" readOnly />
-          </Show>
-        </div>
-
-        <Show when={props.error}>
-          <div class="k2b-chat-composer__error" role="alert">
-            <i class="ti ti-alert-circle" aria-hidden="true" />
-            {props.error}
+          {formatRow()}
+          {/* One row: attach, the field with its tools, and Send. */}
+          <div class="k2b-chat-composer__row">
+            {attachControl()}
+            {fileInput()}
+            <div class="k2b-chat-composer__field">
+              {field()}
+              <div class="k2b-chat-composer__field-tools">
+                {formatToggle()}
+                {emojiButton()}
+                {microphoneControl()}
+              </div>
+            </div>
+            {sendControl()}
           </div>
         </Show>
-
-        <footer class="k2b-chat-composer__footer">
-          <Show
-            when={props.footerContent}
-            fallback={
-              <>
-                <div class="k2b-chat-composer__tools">
-                  {props.footerTools}
-                  <Show when={hasAddMenu()}>
-                    <Dropdown.Root position="top-right" label={messages().addToChat} items={menuItems()} disabled={blocked()}>
-                      <Dropdown.Trigger
-                        appearance="plain"
-                        class="k2b-chat-composer__icon-action"
-                        label={messages().addToChat}
-                        tooltip={messages().addToChat}
-                      >
-                        <i class="ti ti-plus" aria-hidden="true" />
-                      </Dropdown.Trigger>
-                    </Dropdown.Root>
-                  </Show>
-                  <Show when={props.fileSelection}>
-                    <input
-                      ref={fileInputRef}
-                      class="k2b-sr-only"
-                      type="file"
-                      tabIndex={-1}
-                      aria-hidden="true"
-                      accept={props.fileSelection?.accept}
-                      multiple={props.fileSelection?.multiple ?? true}
-                      onChange={(event) => {
-                        if (event.currentTarget.files?.length) void runFiles(event.currentTarget.files);
-                      }}
-                    />
-                  </Show>
-                  <Show when={props.formatting}>
-                    <Tooltip.Trigger
-                      type="button"
-                      class="k2b-chat-composer__icon-action"
-                      aria-label={messages().composerFormatting}
-                      aria-pressed={formattingOpen()}
-                      aria-controls={formattingOpen() ? formatGroupId : undefined}
-                      content={messages().composerFormatting}
-                      onMouseDown={keepFieldFocus}
-                      onClick={() => setFormattingOpen((open) => !open)}
-                    >
-                      <i class="ti ti-letter-case" aria-hidden="true" />
-                    </Tooltip.Trigger>
-                  </Show>
-                  <Show when={props.emoji}>
-                    {(emoji) => (
-                      <Tooltip.Trigger
-                        type="button"
-                        class="k2b-chat-composer__icon-action k2b-chat-composer__emoji"
-                        aria-label={messages().insertEmoji}
-                        content={messages().insertEmoji}
-                        disabled={editBlocked()}
-                        onMouseDown={keepFieldFocus}
-                        onClick={(event) => {
-                          const anchor = event.currentTarget;
-                          reportChatFailure(() => emoji().onOpen({ anchor, insert: insertText }), props.onError);
-                        }}
-                      >
-                        <i class="ti ti-mood-smile" aria-hidden="true" />
-                      </Tooltip.Trigger>
-                    )}
-                  </Show>
-                  <Show when={(props.models?.length ?? 0) > 0}>
-                    <SelectChip
-                      aria-label={messages().chooseModel}
-                      position="top-right"
-                      class="k2b-chat-composer__model"
-                      menuWidth="15rem"
-                      placeholder={messages().model}
-                      value={() => props.selectedModelId ?? ""}
-                      options={(props.models ?? []).map((model) => ({
-                        value: model.id,
-                        label: model.label,
-                        description: model.description,
-                        icon: model.icon,
-                        image: model.image,
-                      }))}
-                      disabled={blocked() || running() || !props.onModelChange}
-                      onValueChange={(modelId) => {
-                        props.onModelChange?.(modelId);
-                        queueMicrotask(focus);
-                      }}
-                    />
-                  </Show>
-                  {props.modelDetails}
-                  <Show when={props.formatting && formattingOpen()}>
-                    <div
-                      ref={formatRef}
-                      id={formatGroupId}
-                      class="k2b-chat-composer__format"
-                      role="group"
-                      aria-label={messages().composerFormatting}
-                      data-scroll-fade-mode="both"
-                      data-scroll-fade-axis="horizontal"
-                    >
-                      <For each={formatTools}>
-                        {(tool) => (
-                          <Tooltip.Trigger
-                            type="button"
-                            class="k2b-chat-composer__icon-action"
-                            aria-label={tool.label(messages())}
-                            content={tool.label(messages())}
-                            disabled={editBlocked()}
-                            onMouseDown={keepFieldFocus}
-                            onClick={() => {
-                              if (textareaRef) tool.run(textareaRef);
-                            }}
-                          >
-                            <i class={tool.icon} aria-hidden="true" />
-                          </Tooltip.Trigger>
-                        )}
-                      </For>
-                    </div>
-                  </Show>
-                </div>
-
-                <div class="k2b-chat-composer__submit">
-                  <For each={props.contextActions}>
-                    {(action) => (
-                      <Tooltip.Trigger
-                        type="button"
-                        class="k2b-chat-composer__icon-action"
-                        data-tone={action.variant === "danger" ? "danger" : undefined}
-                        disabled={action.disabled}
-                        aria-pressed={action.pressed}
-                        aria-label={action.label}
-                        content={action.label}
-                        onClick={() => reportChatFailure(() => executeChatAction(action), props.onError)}
-                      >
-                        <i class={action.icon ?? "ti ti-dots"} aria-hidden="true" />
-                      </Tooltip.Trigger>
-                    )}
-                  </For>
-                  <Show when={hasContextUsage() ? (props.contextUsage ?? {}) : undefined}>
-                    {(usage) => <ContextUsage {...usage()} action={props.contextPopupAction} onActionError={props.onError} />}
-                  </Show>
-                  {props.submitTools}
-                  <Show when={props.microphone?.onDictate || props.microphone?.onVoiceMessage ? props.microphone : undefined}>
-                    {(microphone) => (
-                      <div ref={microphoneRef} class="k2b-chat-composer__microphone">
-                        <Tooltip.Trigger
-                          type="button"
-                          class="k2b-chat-composer__icon-action k2b-chat-composer__microphone-button"
-                          data-state={dictation() ?? undefined}
-                          disabled={microphoneDisabled()}
-                          aria-pressed={microphone().onDictate ? dictation() === "listening" : undefined}
-                          aria-haspopup={microphone().onDictate ? undefined : "menu"}
-                          aria-expanded={microphone().onDictate ? undefined : microphoneMenuOpen()}
-                          // A toggle keeps its name; the pressed state says that dictation runs.
-                          aria-label={microphone().onDictate ? messages().dictate : messages().recordVoiceMessage}
-                          content={
-                            dictation() === "listening"
-                              ? messages().stopDictation
-                              : microphone().onDictate
-                                ? microphone().onVoiceMessage
-                                  ? messages().dictateOrHold
-                                  : messages().dictate
-                                : messages().recordVoiceMessage
-                          }
-                          onMouseDown={keepFieldFocus}
-                          onContextMenu={(event) => event.preventDefault()}
-                          onPointerDown={(event) => {
-                            held = false;
-                            releaseHold();
-                            const record = microphone().onVoiceMessage;
-                            if (event.button !== 0 || !record || dictation() === "listening") return;
-                            holdTimer = setTimeout(() => {
-                              // The composer may have become blocked, or recording withdrawn, during the press.
-                              const current = props.microphone?.onVoiceMessage;
-                              if (!current || microphoneDisabled()) return;
-                              held = true;
-                              reportChatFailure(current, props.onError);
-                            }, microphoneHoldMs);
-                          }}
-                          onPointerUp={releaseHold}
-                          onPointerCancel={releaseHold}
-                          onPointerLeave={releaseHold}
-                          onClick={(event) => {
-                            // A press that already asked for a voice message ends here; a key press never holds.
-                            if (held) {
-                              held = false;
-                              if (event.detail > 0) return;
-                            }
-                            const dictate = microphone().onDictate;
-                            if (dictate) {
-                              reportChatFailure(dictate, props.onError);
-                              return;
-                            }
-                            setMicrophoneMenuOpen(true);
-                            // From the keyboard it opens the menu like a menu button: the focus moves to the first item.
-                            if (event.detail === 0) {
-                              queueMicrotask(() => microphoneRef?.querySelector<HTMLElement>('[role="menuitem"]:not(:disabled)')?.focus());
-                            }
-                          }}
-                        >
-                          <i
-                            class={
-                              dictation() === "listening"
-                                ? "ti ti-player-stop"
-                                : dictation() === "refining"
-                                  ? "ti ti-loader-2 k2b-spin"
-                                  : "ti ti-microphone"
-                            }
-                            aria-hidden="true"
-                          />
-                        </Tooltip.Trigger>
-                        <Show when={microphone().onVoiceMessage}>
-                          <Dropdown.Root
-                            position="top-left"
-                            label={messages().microphoneOptions}
-                            items={microphoneItems()}
-                            disabled={microphoneDisabled()}
-                            open={microphoneMenuOpen()}
-                            onOpenChange={setMicrophoneMenuOpen}
-                          >
-                            <Dropdown.Trigger
-                              appearance="plain"
-                              class="k2b-chat-composer__icon-action k2b-chat-composer__microphone-menu"
-                              label={messages().microphoneOptions}
-                              tooltip={messages().microphoneOptions}
-                            >
-                              <i class="ti ti-chevron-up" aria-hidden="true" />
-                            </Dropdown.Trigger>
-                          </Dropdown.Root>
-                        </Show>
-                      </div>
-                    )}
-                  </Show>
-                  <Show
-                    when={running() && !hasDraft() && props.onStop}
-                    fallback={
-                      <Tooltip.Trigger
-                        type="button"
-                        class="k2b-chat-composer__send"
-                        disabled={!canSubmit()}
-                        onMouseDown={(event) => {
-                          if (conversation()) keepFieldFocus(event);
-                        }}
-                        aria-label={
-                          submitting()
-                            ? running()
-                              ? runningSubmitIntent() === "queue"
-                                ? messages().queueing
-                                : messages().steering
-                              : messages().sending
-                            : running()
-                              ? runningSubmitIntent() === "queue"
-                                ? messages().queueMessage
-                                : messages().steerResponse
-                              : messages().sendMessage
-                        }
-                        content={
-                          running()
-                            ? runningSubmitIntent() === "queue"
-                              ? messages().queueMessage
-                              : messages().steerResponse
-                            : messages().sendMessage
-                        }
-                        onClick={() => void submit()}
-                      >
-                        <i class={submitting() ? "ti ti-loader-2 k2b-spin" : "ti ti-arrow-up"} aria-hidden="true" />
-                      </Tooltip.Trigger>
-                    }
-                  >
-                    <Tooltip.Trigger
-                      type="button"
-                      class="k2b-chat-composer__stop"
-                      disabled={stopping()}
-                      aria-label={stopping() ? messages().stopping : messages().stopResponse}
-                      content={messages().stopResponse}
-                      onClick={() => reportChatFailure(() => props.onStop?.(), props.onError)}
-                    >
-                      <i class={stopping() ? "ti ti-loader-2 k2b-spin" : "ti ti-player-stop"} aria-hidden="true" />
-                    </Tooltip.Trigger>
-                  </Show>
-                </div>
-              </>
-            }
-          >
-            {(content) => content()}
-          </Show>
-        </footer>
         {/* Files dropped anywhere in the surrounding workspace area attach to the message. */}
         <Show when={props.fileSelection}>
           {(selection) => (

@@ -182,22 +182,44 @@ const frames = (page: Page, count: number) =>
     count,
   );
 
-/** The composer's box and the left edge of every footer control, which must not move. */
+/** The composer's box and the box of the field and every control in its row, which must not move. */
 const layout = (page: Page) =>
   page.evaluate(() => {
-    const box = document.querySelector(".k2b-chat-composer")!.getBoundingClientRect();
-    const left = (selector: string) => Math.round(document.querySelector(selector)!.getBoundingClientRect().left);
+    const box = (element: Element) => {
+      const rect = element.getBoundingClientRect();
+      return [rect.left, rect.top, rect.width, rect.height].map(Math.round);
+    };
+    const composer = document.querySelector(".k2b-chat-composer")!.getBoundingClientRect();
     return {
-      top: Math.round(box.top),
-      height: Math.round(box.height),
-      controls: [
-        left('[aria-label="Add to chat"]'),
-        left('[aria-label="Formatting"]'),
-        left('[aria-label="Insert emoji"]'),
-        left(".k2b-chat-composer__microphone-button"),
-        left('[aria-label="Microphone options"]'),
-        left(".k2b-chat-composer__send"),
-      ],
+      bottom: Math.round(composer.bottom),
+      height: Math.round(composer.height),
+      row: [".k2b-chat-composer__field", ...[...document.querySelectorAll(".k2b-chat-composer__row button")].map((_, index) => index)].map(
+        (item) =>
+          typeof item === "string"
+            ? box(document.querySelector(item)!)
+            : box(document.querySelectorAll(".k2b-chat-composer__row button")[item]!),
+      ),
+    };
+  });
+
+/** Every formatting button: its box, and whether a tap on its middle reaches it. */
+const formatButtons = (page: Page) =>
+  page.evaluate(() => {
+    const group = document.querySelector<HTMLElement>(".k2b-chat-composer__format")!;
+    const buttons = [...group.querySelectorAll("button")];
+    return {
+      scrolls: group.scrollWidth > group.clientWidth,
+      buttons: buttons.map((button) => {
+        const rect = button.getBoundingClientRect();
+        const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        return {
+          left: rect.left,
+          right: rect.right,
+          width: rect.width,
+          height: rect.height,
+          reached: Boolean(hit && button.contains(hit)),
+        };
+      }),
     };
   });
 
@@ -264,74 +286,102 @@ describe(`conversation ChatComposer in ${browserName}`, () => {
     await page.close();
   }, 30_000);
 
-  test("Aa, hints and dictation states change neither the composer's height nor the place of a control", async () => {
+  test("Aa adds one row above the field; it, hints and dictation states never move the field, a control, or the newest message", async () => {
     for (const width of [720, 360]) {
       const page = await open({ width });
       const before = await layout(page);
-      await page.locator('[aria-label="Formatting"]').click();
-      await frames(page, 2);
-      expect(await layout(page)).toEqual(before);
-      const format = await page.evaluate(() => {
-        const group = document.querySelector(".k2b-chat-composer__format")!;
-        return { scrolls: group.scrollWidth > group.clientWidth, buttons: group.querySelectorAll("button").length };
-      });
-      expect(format.buttons).toBe(8);
-      // A phone shows some buttons and scrolls to the others.
-      expect(format.scrolls).toBe(width === 360);
+      await page.evaluate(() => probe.start());
+      await page.locator('button[aria-label="Formatting"]').click();
+      await frames(page, 4);
+      const run = await page.evaluate(() => probe.stop());
+      const opened = await layout(page);
+      // The composer grows upward by the formatting row; the field and every control in its row stay put.
+      expect(opened.row).toEqual(before.row);
+      expect(opened.bottom).toBe(before.bottom);
+      expect(opened.height).toBeGreaterThan(before.height);
+      // The newest message stays right above the composer in every frame.
+      expect(Math.max(...run.gaps) - Math.min(...run.gaps)).toBeLessThanOrEqual(1);
+      const format = await formatButtons(page);
+      expect(format.buttons).toHaveLength(8);
+      expect(format.scrolls).toBe(false);
+      for (const button of format.buttons) expect(button.reached).toBe(true);
 
       await page.evaluate(() => fixture.setHint("Everyone in this chat can open the reference, as far as their own access reaches."));
       await frames(page, 2);
-      expect(await layout(page)).toEqual(before);
+      expect(await layout(page)).toEqual(opened);
       for (const state of ["listening", "refining", "refined", "unrefined", "interrupted", null]) {
         await page.evaluate((state) => fixture.setDictation(state), state);
         await frames(page, 2);
-        expect(await layout(page)).toEqual(before);
+        expect(await layout(page)).toEqual(opened);
       }
+      await page.locator('button[aria-label="Formatting"]').click();
+      await frames(page, 2);
+      expect(await layout(page)).toEqual(before);
       await page.close();
     }
   }, 30_000);
 
-  test("a phone hides the emoji button, gives every control 44 px, and Enter breaks the line", async () => {
-    const page = await open({ width: 390 }, { hasTouch: true, isMobile: true });
-    expect(await page.evaluate(() => matchMedia("(any-pointer: coarse) and (not (any-pointer: fine))").matches)).toBe(true);
-    expect(await page.locator('[aria-label="Insert emoji"]').isVisible()).toBe(false);
-    const widths = await page.evaluate(() =>
-      [...document.querySelectorAll<HTMLElement>(".k2b-chat-composer__footer button")]
-        .filter((button) => button.offsetParent)
-        .map((button) => Math.round(button.getBoundingClientRect().width)),
-    );
-    expect(widths.length).toBeGreaterThanOrEqual(5);
-    for (const width of widths) expect(width).toBe(44);
+  test("a phone shows the v5 row with 44 px controls, every formatting button at once, and Enter breaks the line", async () => {
+    for (const width of [390, 360]) {
+      const page = await open({ width }, { hasTouch: true, isMobile: true });
+      expect(await page.evaluate(() => matchMedia("(any-pointer: coarse) and (not (any-pointer: fine))").matches)).toBe(true);
+      expect(await page.locator('[aria-label="Insert emoji"]').isVisible()).toBe(false);
+      const row = await page.evaluate(() => {
+        const size = (selector: string) => {
+          const rect = document.querySelector(selector)!.getBoundingClientRect();
+          return [Math.round(rect.width), Math.round(rect.height)];
+        };
+        return {
+          attach: size('[aria-label="Attach files"]'),
+          field: size(".k2b-chat-composer__field"),
+          formatting: size('[aria-label="Formatting"]'),
+          microphone: size(".k2b-chat-composer__microphone-button"),
+          options: size('[aria-label="Microphone options"]'),
+          send: size(".k2b-chat-composer__send"),
+          fieldText: getComputedStyle(document.querySelector("textarea")!).fontSize,
+        };
+      });
+      expect(row).toEqual({
+        attach: [44, 44],
+        field: [row.field[0]!, 44],
+        formatting: [44, 44],
+        microphone: [44, 44],
+        options: [28, 44],
+        send: [44, 44],
+        // iOS zooms into a field with smaller text.
+        fieldText: "16px",
+      });
 
-    // The formatting row scrolls sideways only, and its buttons keep their taller tap areas.
-    const before = await layout(page);
-    await page.locator('button[aria-label="Formatting"]').tap();
-    await frames(page, 2);
-    expect(await layout(page)).toEqual(before);
-    const format = await page.evaluate(() => {
-      const group = document.querySelector<HTMLElement>(".k2b-chat-composer__format")!;
-      group.scrollTop = 20;
-      const bold = group.querySelector("button")!.getBoundingClientRect();
-      const tap = document.elementFromPoint(bold.left + bold.width / 2, bold.top - 6);
-      return {
-        scrollTop: group.scrollTop,
-        tall: group.scrollHeight - group.clientHeight,
-        wide: group.scrollWidth > group.clientWidth,
-        fade: group.dataset.scrollFade,
-        tapsBold: tap?.getAttribute("aria-label"),
-      };
-    });
-    expect(format).toEqual({ scrollTop: 0, tall: 0, wide: true, fade: "bottom", tapsBold: "Bold (Ctrl/Cmd+B)" });
-    await page.locator('button[aria-label="Formatting"]').tap();
+      const before = await layout(page);
+      await page.locator('button[aria-label="Formatting"]').tap();
+      await frames(page, 2);
+      expect((await layout(page)).row).toEqual(before.row);
+      const format = await formatButtons(page);
+      // All eight fit the row: nothing scrolls, nothing overlaps, and each takes its own taps.
+      expect(format.scrolls).toBe(false);
+      expect(format.buttons).toHaveLength(8);
+      for (const [index, button] of format.buttons.entries()) {
+        expect(button.reached).toBe(true);
+        expect(button.height).toBe(44);
+        expect(button.width).toBeGreaterThanOrEqual(width === 390 ? 44 : 40);
+        expect(button.left).toBeGreaterThanOrEqual(index === 0 ? 0 : format.buttons[index - 1]!.right);
+        expect(button.right).toBeLessThanOrEqual(width);
+      }
+      await page.locator('button[aria-label="Bold (Ctrl/Cmd+B)"]').tap();
+      expect(await page.locator("textarea").first().inputValue()).toBe("****");
+      await page.locator('button[aria-label="Formatting"]').tap();
+      await page.evaluate(() => fixture.setDraft(""));
 
-    const field = page.locator("textarea").first();
-    await field.tap();
-    await page.keyboard.type("Hello");
-    await page.keyboard.press("Enter");
-    expect(await field.inputValue()).toBe("Hello\n");
-    expect(await page.evaluate(() => (window as unknown as { sent: string[] }).sent.length)).toBe(0);
-    await page.locator(".k2b-chat-composer__send").tap();
-    expect(await page.evaluate(() => (window as unknown as { sent: string[] }).sent)).toEqual(["Hello\n"]);
-    await page.close();
+      const field = page.locator("textarea").first();
+      await field.tap();
+      await page.keyboard.type("Hello");
+      await page.keyboard.press("Enter");
+      expect(await field.inputValue()).toBe("Hello\n");
+      expect(await page.evaluate(() => (window as unknown as { sent: string[] }).sent.length)).toBe(0);
+      await page.locator(".k2b-chat-composer__send").tap();
+      expect(await page.evaluate(() => (window as unknown as { sent: string[] }).sent)).toEqual(["Hello\n"]);
+      expect(await field.evaluate((element) => element === document.activeElement)).toBe(true);
+      await page.close();
+    }
   }, 30_000);
 });

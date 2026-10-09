@@ -416,3 +416,45 @@ test("the emoji button inserts at the caret", async () => {
   expect(composer.value()).toBe("Good morning ☀️");
   composer.done();
 });
+
+test("the attach button opens the file choice directly, and the add menu once there are other actions", async () => {
+  const chosen: string[] = [];
+  const composer = await mount("", {
+    fileSelection: {
+      choose: async () => {
+        chosen.push("files");
+        return [];
+      },
+      onSelect: () => {},
+    },
+  });
+  expect(composer.button("Add to chat")).toBeNull();
+  composer.button("Attach files")!.click();
+  await composer.settle();
+  expect(chosen).toEqual(["files"]);
+  composer.done();
+
+  const ran: string[] = [];
+  const withActions = await mount("", {
+    fileSelection: { onSelect: () => {} },
+    menuActions: [{ id: "poll", label: "Poll", onSelect: () => void ran.push("poll") }],
+  });
+  expect(withActions.button("Attach files")).toBeNull();
+  withActions.button("Add to chat")!.click();
+  await withActions.settle();
+  const items = Array.from(withActions.dom.document.querySelectorAll('[role="menuitem"]')).map((item) => item.textContent?.trim());
+  expect(items).toEqual(["Attach files", "Poll"]);
+  withActions.done();
+});
+
+test("the conversation row leaves out the assistant prompt's footer controls", async () => {
+  const composer = await mount("", {
+    models: [{ id: "m", label: "Model" }],
+    contextActions: [{ id: "c", label: "Context action", onSelect: () => {} }],
+    footerTools: "footer tools",
+  });
+  expect(composer.dom.root.querySelector("footer")).toBeNull();
+  expect(composer.button("Context action")).toBeNull();
+  expect(composer.dom.root.textContent).not.toContain("footer tools");
+  composer.done();
+});
