@@ -2048,6 +2048,14 @@
   padding: 0.625rem var(--k2b-markdown-table-bleed, 0.5rem);
   border: 0;
   vertical-align: top;
+  /* break-word, not anywhere: anywhere lowers a column's min-content width to
+     one character, so a short column next to a long one breaks every word. */
+  overflow-wrap: break-word;
+}
+
+.k2b-ui .k2b-content-markdown th .k2b-reference,
+.k2b-ui .k2b-content-markdown td .k2b-reference {
+  overflow-wrap: break-word;
 }
 
 .k2b-ui .k2b-content-markdown th {

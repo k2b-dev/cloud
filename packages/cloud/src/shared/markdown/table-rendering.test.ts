@@ -33,7 +33,11 @@ describe("markdown tables", () => {
 
     expect(wrapper).toContain("overflow: clip");
     expect(wrapper).not.toContain("overflow-x");
-    expect(styles).toContain("overflow-wrap: anywhere");
+    // Cells wrap overlong words only when they would overflow: `anywhere` would
+    // shrink a column's minimum to one character and break every word.
+    const cell = styles.slice(styles.indexOf(".md-table-cell {"), styles.indexOf(".dark .md-table-cell"));
+    expect(cell).toContain("overflow-wrap: break-word");
+    expect(cell).not.toContain("overflow-wrap: anywhere");
   });
 
   test("keeps help table emphasis and paint on structural rows", () => {

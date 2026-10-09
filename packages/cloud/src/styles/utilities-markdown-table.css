@@ -84,7 +84,11 @@
   font-size: inherit;
   line-height: inherit;
   color: inherit;
-  overflow-wrap: anywhere;
+  /* break-word, not anywhere: anywhere lowers a column's min-content width to
+     one character, so auto table layout squeezes short columns until every
+     word breaks. break-word still wraps an overlong word, but only when it
+     would overflow. */
+  overflow-wrap: break-word;
 }
 
 .dark .md-table-cell {
