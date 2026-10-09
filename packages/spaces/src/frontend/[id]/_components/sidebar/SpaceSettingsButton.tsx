@@ -1,4 +1,5 @@
 import { refreshCurrentPath } from "@k2b/ssr/nav";
+import type { DateContext } from "@k2b/stdlib";
 import { AppWorkspace, prompts } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import { useSpaceMessages } from "../../messages";
@@ -9,9 +10,10 @@ type Props = {
   baseUrl: string;
   variant: "sidebar" | "icon";
   viewTransitionName?: string;
+  dateConfig?: DateContext;
 };
 
-export function createSpaceSettings(props: Pick<Props, "spaceId" | "baseUrl">) {
+export function createSpaceSettings(props: Pick<Props, "spaceId" | "baseUrl" | "dateConfig">) {
   const t = useSpaceMessages();
   const [open, setOpen] = createSignal(false);
 
@@ -25,6 +27,7 @@ export function createSpaceSettings(props: Pick<Props, "spaceId" | "baseUrl">) {
           <SpaceSettingsDialog
             spaceId={props.spaceId}
             baseUrl={props.baseUrl}
+            dateConfig={props.dateConfig}
             close={() => close()}
             onWorkspaceChange={() => {
               workspaceChanged = true;

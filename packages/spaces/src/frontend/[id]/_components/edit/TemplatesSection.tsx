@@ -1,3 +1,4 @@
+import type { DateContext } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import {
   Button,
@@ -48,6 +49,7 @@ function TemplateForm(props: {
   kind: ItemTemplateKind;
   initial?: SpaceItemTemplate;
   tags: SpaceTag[];
+  timeZone: string;
   loading: boolean;
   onCancel: () => void;
   onSave: (value: TemplateValue) => void;
@@ -86,10 +88,7 @@ function TemplateForm(props: {
   const timing = () => ({ kind: props.kind, allDay: isEvent && allDay(), timeOfDay: timeOfDay(), dateRule: dateRule() });
   const preview = createMemo(() => {
     if (ruleType() === "weekdays" && weekdays().length === 0) return t.chooseWeekday;
-    const dates = proposeTemplateDates(timing(), {
-      now: new Date(),
-      timeZone: browserTimeZone(),
-    });
+    const dates = proposeTemplateDates(timing(), { now: new Date(), timeZone: props.timeZone });
     return dates.length ? t.nextProposals({ dates: dates.map((date) => formatTemplateDate(date, locale())).join(", ") }) : t.noProposals;
   });
   const insertPlaceholder = (name: string) => {
@@ -356,6 +355,7 @@ export function TemplatesSection(props: {
   spaceId: string;
   templates: SpaceItemTemplate[];
   tags: SpaceTag[];
+  dateConfig?: DateContext;
   onWorkspaceChange?: () => void;
   onSettingsChange?: () => Promise<void>;
   onDirtyChange: (dirty: boolean) => void;
@@ -482,6 +482,7 @@ export function TemplatesSection(props: {
               kind={current.kind}
               initial={current.template}
               tags={props.tags}
+              timeZone={props.dateConfig?.timeZone ?? browserTimeZone()}
               loading={saveMutation.loading()}
               onCancel={() => setEditing(null)}
               onSave={(value) => void saveMutation.mutate({ id: current.template?.id, value })}

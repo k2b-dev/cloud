@@ -66,6 +66,9 @@ export default function SpaceNavigation(props: { ctx: SpaceContext; baseUrl: str
     get baseUrl() {
       return props.baseUrl;
     },
+    get dateConfig() {
+      return props.dateConfig;
+    },
   });
   const calendar = createIcalCopy({
     get icalToken() {

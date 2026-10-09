@@ -91,6 +91,7 @@ export default function SpaceEditPanel(props: SpaceEditPanelProps) {
                   spaceId={props.space.id}
                   templates={props.space.templates}
                   tags={props.space.tags}
+                  dateConfig={props.dateConfig}
                   onWorkspaceChange={props.onWorkspaceChange}
                   onSettingsChange={props.onSettingsChange}
                   onDirtyChange={setTemplatesDirty}
