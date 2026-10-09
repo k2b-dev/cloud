@@ -220,13 +220,17 @@ for applications that declare `mail:send` or `mail:read`. All filters combine:
 | `batchId` | Records of one `mail.enqueue` batch |
 | `status` | Any of `queued`, `sending`, `sent`, `failed`, `bounced`, `cancelled` |
 | `since`, `until` | ISO timestamps; `createdAt` from `since` (inclusive) to `until` (exclusive) |
-| `q` | 3–200 characters, case-insensitive, found anywhere in a recipient address or the subject; no control characters |
+| `q` | Up to 200 characters with at least three letters or digits in a row, case-insensitive, found anywhere in a recipient address or the subject; no control characters |
 | `recipient` | One address, matched exactly but case-insensitively |
-| `apps` | 1–100 application IDs to read; omitted means only your own |
+| `apps` | Application IDs to read, at most your own and the 100 an operator can grant; omitted means only your own |
 
 `q` and `recipient` are trimmed. `%` and `_` in `q` match literally. Search
 covers subjects and recipients, not message bodies. Indexes keep both searches
-fast on large logs; a `q` shorter than three characters is `bad_input`.
+fast on large logs; they need three letters or digits in a row, so a `q` such
+as `ab` or `...` is `bad_input`. A search may take five seconds. One that
+matches a large share of a big log, or that runs while Core still builds the
+search indexes after an upgrade, returns `bad_input` with a message that it took
+too long. Narrow it with a longer term, fewer `apps`, or `since` and `until`.
 
 `bounced` means a standard delivery status notification (RFC 3464) reported
 failed recipients after SMTP acceptance (`sent`). Core collects these reports
@@ -556,9 +560,11 @@ export const createEmailRoutes = (mayReadSentMail: (userId: string) => Promise<b
 lists that customer's March mail across the granted applications; a `bounced`
 status with its `failures` answers "Which mails to this address bounced?". Pass
 `nextCursor` back with the same search for the next page. A `bad_input`
-answer means the search itself is invalid, such as a `q` of fewer than three
-characters. If the operator revokes a grant between `readableApps()` and
-`list`, the call returns `app_not_allowed`; reload to use the current grants.
+answer means the person needs to change the search: it is invalid, such as a
+`q` without three letters or digits in a row, or it took too long and needs to
+be narrower. Show its `message`. If the operator revokes a grant between
+`readableApps()` and `list`, the call returns `app_not_allowed`; reload to use
+the current grants.
 
 ## Move from an application-owned SMTP account
 

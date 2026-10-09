@@ -124,14 +124,12 @@ export const AdminMailAppSchema = z.object({
   logApps: z.array(z.string()),
 });
 export type AdminMailApp = z.infer<typeof AdminMailAppSchema>;
-/** Application IDs as registered; Core's own mail is never readable by apps. */
-export const MailLogAppIdSchema = z
-  .string()
-  .min(1)
-  .max(80)
-  .regex(/^[a-z][a-z0-9-]*$/);
+/** Application IDs as registered, like sender access; Core's own mail is never readable by apps. */
+export const MailLogAppIdSchema = z.string().min(1);
+/** How many other apps' send logs an administrator can let one app read. */
+const MAIL_LOG_GRANT_LIMIT = 100;
 export const MailLogAccessSchema = z
-  .object({ apps: z.array(MailLogAppIdSchema).max(100) })
+  .object({ apps: z.array(MailLogAppIdSchema).max(MAIL_LOG_GRANT_LIMIT) })
   .strict()
   .refine(
     (value) => new Set(value.apps).size === value.apps.length && !value.apps.includes("core"),
@@ -240,20 +238,26 @@ export const MailFilterSchema = z
     since: z.iso.datetime({ offset: true }).optional(),
     /** Exclusive upper bound on `createdAt`. */
     until: z.iso.datetime({ offset: true }).optional(),
-    /** Apps whose records to read; omitted means only the calling app. Others need `mail:read` and an administrator grant. */
+    /**
+     * Apps whose records to read; omitted means only the calling app. Others need `mail:read` and an
+     * administrator grant. Holds everything `mail.readableApps()` returns: the caller and every grant.
+     */
     apps: z
       .array(MailLogAppIdSchema)
       .min(1)
-      .max(100)
+      .max(MAIL_LOG_GRANT_LIMIT + 1)
       .refine((apps) => new Set(apps).size === apps.length, "Choose distinct apps")
       .optional(),
-    /** Case-insensitive substring of a recipient address or the subject; at least three characters. */
+    /**
+     * Case-insensitive substring of a recipient address or the subject. Three letters or digits in a row
+     * give the trigram index something to look up; without them every record would be a candidate.
+     */
     q: z
       .string()
       .refine((value) => !/[\x00-\x1f\x7f]/.test(value), "Search must not contain control characters")
       .trim()
-      .min(3)
       .max(200)
+      .regex(/[\p{L}\p{N}]{3}/u, "Search needs three letters or digits in a row")
       .optional(),
     /** One recipient address, matched exactly but case-insensitively. */
     recipient: z.string().trim().pipe(mailAddress).optional(),

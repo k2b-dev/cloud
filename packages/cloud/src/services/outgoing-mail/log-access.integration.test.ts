@@ -1,9 +1,13 @@
 import { afterAll, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
+import { createSync, type Sync } from "@k2b/sync";
 import { sql } from "bun";
-import { databaseSuite, useFreshDatabase } from "../../../../../scripts/fixtures/test-infra";
+import { connectTestNats, suiteFor, testSyncNamespace, useFreshDatabase } from "../../../../../scripts/fixtures/test-infra";
+import { deleteTestNamespace } from "../../../../../scripts/fixtures/test-sync";
 import { migrate as migrateAudit } from "../../../../core/src/migrate/core/audit";
-import { migrate } from "../../../../core/src/migrate/core/outgoing-mail";
+import { migrate as migrateLogging } from "../../../../core/src/migrate/core/logging";
+import { buildSearchIndexes, migrate } from "../../../../core/src/migrate/core/outgoing-mail";
 import { bindProcessApplicationId, clearProcessApplicationId } from "../../_internal/process-identity";
+import { bindProcessSync, unbindProcessSync } from "../../_internal/process-sync";
 import * as registry from "../../_internal/registry";
 import type { MailFilter, MailPageParams } from "../../contracts/outgoing-mail";
 import { audit } from "../audit";
@@ -31,15 +35,26 @@ const insert = async (appId: string, subject = "Invoice", to = ["User@Example.or
   return id;
 };
 
-databaseSuite()("application mail log access and indexed search", () => {
+suiteFor("database", "nats")("application mail log access and indexed search", () => {
   let fresh: Awaited<ReturnType<typeof useFreshDatabase>>;
   let registered: ReturnType<typeof spyOn<typeof registry, "listApps">>;
+  let connection: Awaited<ReturnType<typeof connectTestNats>>;
+  let sync: Sync;
+  let namespace: string;
   beforeAll(async () => {
     fresh = await useFreshDatabase("mail_log_access");
     await sql`CREATE SCHEMA settings`.simple();
     await sql`CREATE TABLE settings.entries(key TEXT PRIMARY KEY, value TEXT NOT NULL)`.simple();
     await migrate();
     await migrateAudit();
+    await migrateLogging();
+    // Core builds the search indexes after setup, under a NATS lease.
+    connection = await connectTestNats({ ignoreClusterUpdates: true });
+    namespace = testSyncNamespace("mail-log-access");
+    sync = createSync({ connection, namespace, application: "core", defaults: { replicas: 1 } });
+    bindProcessSync(sync);
+    await sync.ready();
+    expect(await buildSearchIndexes()).toBe("built");
     registered = spyOn(registry, "listApps").mockResolvedValue([
       {
         id: "reader",
@@ -68,6 +83,10 @@ databaseSuite()("application mail log access and indexed search", () => {
   afterAll(async () => {
     clearProcessApplicationId();
     registered?.mockRestore();
+    unbindProcessSync();
+    await sync?.drain();
+    if (namespace) await deleteTestNamespace(namespace);
+    await connection?.drain();
     await sql.close();
     await fresh?.drop();
   });
@@ -122,7 +141,7 @@ databaseSuite()("application mail log access and indexed search", () => {
       ["core", []],
       ["offline", ["offline"]],
       ["offline", ["core"]],
-      ["UPPER", []],
+      ["", []],
       ["offline", ["a", "a"]],
     ] as const)
       await expect(outgoingMailStore.setAppLogAccess(appId, { apps: [...apps] }, context)).rejects.toMatchObject({
@@ -140,6 +159,44 @@ databaseSuite()("application mail log access and indexed search", () => {
     expect(await outgoingMailStore.setAppLogAccess("offline", { apps: [] }, context)).toMatchObject({ logApps: [] });
     expect(await outgoingMailStore.logAppsFor("offline")).toEqual([]);
   });
+  test("readableApps() at the grant limit and registry-style app IDs are valid filter.apps", async () => {
+    const sources = Array.from({ length: 100 }, (_, i) => `source_${String(i).padStart(3, "0")}`);
+    await outgoingMailStore.setAppLogAccess("erp_v2", { apps: sources }, context);
+    identity("erp_v2");
+    const own = await insert("erp_v2");
+    const granted = await insert("source_099");
+    const readable = await mail.readableApps();
+    expect(readable).toEqual({ ok: true, data: ["erp_v2", ...sources] });
+    if (!readable.ok) return;
+    expect((await list({ apps: readable.data })).items.map((row) => row.id).sort()).toEqual([own, granted].sort());
+    expect((await list({ apps: ["erp_v2"] })).items.map((row) => row.id)).toEqual([own]);
+  });
+  test("a search without a usable trigram is refused and every search is bounded in time", async () => {
+    const timeout = async () => (await sql<{ timeout: string }[]>`SELECT current_setting('statement_timeout') AS timeout`)[0]?.timeout;
+    const configured = await timeout();
+    await insert("reader", "Discount ... week");
+    expect(await mail.list({ q: "..." })).toMatchObject({ ok: false, error: { code: "bad_input", status: 400 } });
+    expect(await mail.list({ q: "%_%" })).toMatchObject({ ok: false, error: { code: "bad_input", status: 400 } });
+    // A search the database cannot answer within the budget stops and says so instead of running on.
+    const holder = await sql.reserve();
+    try {
+      await holder`BEGIN`.simple();
+      await holder`LOCK TABLE outgoing_mail.messages IN ACCESS EXCLUSIVE MODE`.simple();
+      const started = performance.now();
+      expect(await mail.list({ q: "discount" })).toMatchObject({
+        ok: false,
+        error: { code: "bad_input", status: 400, message: expect.stringContaining("took too long") },
+      });
+      expect(await mail.list({ recipient: "user@example.org" })).toMatchObject({ ok: false, error: { code: "bad_input" } });
+      expect(performance.now() - started).toBeLessThan(15_000);
+    } finally {
+      await holder`ROLLBACK`.simple();
+      holder.release();
+    }
+    // The limit belongs to the search's own transaction.
+    expect((await list({ q: "discount" })).total).toBe(1);
+    expect(await timeout()).toBe(configured);
+  }, 30_000);
   test("q matches individual subject/recipient fields case-insensitively with literal wildcards", async () => {
     const subject = await insert("reader", "Monthly INVOICE", ["other@example.net"]);
     const recipient = await insert("reader", "Other", ["Invoice@Example.net", "second@example.net"]);

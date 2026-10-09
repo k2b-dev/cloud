@@ -475,13 +475,18 @@ test("log-access PUT validates app IDs and bounded distinct grants and forwards 
   };
   const set = spyOn(outgoingMailStore, "setAppLogAccess").mockResolvedValue(item);
   try {
-    for (const apps of [["source"], []]) {
-      const response = await request(authorized(), "/apps/reader/log-access", "PUT", { apps });
+    // App IDs are taken as registered, like sender access.
+    for (const [appId, apps] of [
+      ["reader", ["source"]],
+      ["reader", []],
+      ["erp_v2", ["ERP", "1crm"]],
+    ] as const) {
+      const response = await request(authorized(), `/apps/${appId}/log-access`, "PUT", { apps });
       expect(response.status).toBe(200);
       expect(response.headers.get("Cache-Control")).toBe("no-store");
       expect(await response.json()).toEqual(item);
       expect(set).toHaveBeenLastCalledWith(
-        "reader",
+        appId,
         { apps },
         expect.objectContaining({ actor: expect.objectContaining({ userId: user.id }) }),
       );
@@ -491,7 +496,7 @@ test("log-access PUT validates app IDs and bounded distinct grants and forwards 
       { apps: "source" },
       { apps: ["core"] },
       { apps: ["a", "a"] },
-      { apps: ["UPPER"] },
+      { apps: [""] },
       { apps: [], extra: true },
       { apps: Array.from({ length: 101 }, (_, i) => `app-${i}`) },
     ]) {
@@ -499,8 +504,7 @@ test("log-access PUT validates app IDs and bounded distinct grants and forwards 
       expect(response.status).toBe(400);
       expect(await response.json()).toMatchObject({ code: "bad_input" });
     }
-    expect((await request(authorized(), "/apps/UPPER/log-access", "PUT", { apps: [] })).status).toBe(400);
-    expect(set).toHaveBeenCalledTimes(2);
+    expect(set).toHaveBeenCalledTimes(3);
   } finally {
     set.mockRestore();
   }

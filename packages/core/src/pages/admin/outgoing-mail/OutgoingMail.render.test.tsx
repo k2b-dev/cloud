@@ -162,6 +162,13 @@ test("shows whose sent mail each app may read, on the page and in its dialog", (
   expect(invoices).toContain(">Files<");
   expect(invoices).toContain("legacy · Not registered");
   expect(invoices).not.toContain("does not request send log access");
+  // The administrator sees every shared field before granting access.
+  expect(invoices).toContain(
+    "recipients, subject, status, delivery errors, who sent it, record references, and attachment names, but not the text",
+  );
+  expect(dialog("de", "invoices")).toContain(
+    "Empfänger, Betreff, Status, Zustellfehler, wer sie gesendet hat, Datensatzverweise und Anhangsnamen, aber nicht den Text",
+  );
   expect(dialog("de", "files")).toContain("liest daher unabhängig von dieser Auswahl nur ihre eigenen Mails");
 });
 

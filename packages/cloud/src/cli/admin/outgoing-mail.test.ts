@@ -312,6 +312,7 @@ test("apps list shows declared read access and comma-joined log grants", async (
 test("set-log-access requires exactly one mode and confirmation and validates readers and sources", async () => {
   for (const [flags, body] of [
     [{ apps: " a, b " }, { apps: ["a", "b"] }],
+    [{ apps: "erp_v2,ERP" }, { apps: ["erp_v2", "ERP"] }],
     [{ "own-only": true }, { apps: [] }],
   ] as const) {
     expect((await invoke(["apps", "set-log-access", "reader"], { ...flags, yes: true })).requests[0]).toEqual({
@@ -329,7 +330,6 @@ test("set-log-access requires exactly one mode and confirmation and validates re
     { apps: "a,a" },
     { apps: "core" },
     { apps: "reader" },
-    { apps: "UPPER" },
     { apps: Array.from({ length: 101 }, (_, i) => `app-${i}`).join(",") },
   ];
   for (const flags of invalid) {
@@ -337,6 +337,10 @@ test("set-log-access requires exactly one mode and confirmation and validates re
     await expect(invoke(["apps", "set-log-access", "reader"], { ...flags, yes: true }, {}, requests)).rejects.toThrow();
     expect(requests).toHaveLength(0);
   }
-  for (const appId of ["core", "UPPER", "a/b"])
+  for (const appId of ["core", ""])
     await expect(invoke(["apps", "set-log-access", appId], { "own-only": true, yes: true })).rejects.toThrow();
+  // App IDs are taken as registered and travel encoded in the path.
+  expect((await invoke(["apps", "set-log-access", "a/b"], { "own-only": true, yes: true })).requests[0]?.path).toBe(
+    "/api/admin/core/outgoing-mail/apps/a%2Fb/log-access",
+  );
 });

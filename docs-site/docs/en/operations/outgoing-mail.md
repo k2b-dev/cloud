@@ -241,11 +241,19 @@ the audit log. The administrator API is
 
 Grants are kept when the application stops declaring `mail:read`, but they
 have no effect until it declares it again. Core's mail cannot be granted, and
-Core cannot be a reader. A granted application sees the recipients, subject,
-status, delivery errors, actor, and attachment metadata of the chosen
-applications' mail, never its text, and it cannot cancel or change that mail.
-Which of its users see that information is the reading application's own
-decision: ask its author how the page is protected before you grant access.
+Core cannot be a reader. A granted application sees everything the chosen
+applications' send log holds except the message text: recipients, subject,
+status, delivery errors and failed recipients, the person or service account
+that sent the mail, the sender profile, the record reference and batch, and
+attachment names and sizes. It cannot cancel or change that mail. Which of its
+users see that information is the reading application's own decision: ask its
+author how the page is protected before you grant access.
+
+Grants follow application IDs, like sender access. When you remove an
+application for good, clear its own selection (`--own-only`) and remove it
+from the other applications' selections. Otherwise an application registered
+later under the same ID inherits both. The dialog marks applications that are
+no longer registered.
 
 ### Move an application's SMTP account
 
@@ -433,14 +441,19 @@ recipients.
 
 ## Upgrade and rollback
 
-Core adds the send log access table and two search indexes on recipients and
-subjects during setup. The indexes are built without blocking new mail, but
-on a large send log the first start of Core takes longer: about a minute per
-million records on a single core. Core needs the PostgreSQL extension
-`pg_trgm`, which Grids and Mail already use. An interrupted build is
-repeated on the next start. No application can read another application's mail until you
-grant it. Rolling back leaves the table and indexes in place; older versions
-ignore them.
+Core adds the send log access table during setup and then builds two search
+indexes on recipients and subjects in the background. Core starts and sends
+mail while they build; on a large send log the build takes about a minute per
+million records on a single core. Until it finishes, searches with `q` or
+`recipient` run without the indexes and can stop after five seconds with
+`bad_input`. One Core replica builds at a time, coordinated through a NATS
+lease and without session-level locks, so the build also works behind a
+transaction pooler. A build that fails or is interrupted is logged as a warning
+from `core:outgoing-mail` and repeated on the next start of Core. The indexes
+use the PostgreSQL extension `pg_trgm`, which Core already requires for the
+Assistant; Grids, Mail, and Pulse use it too. No application can read another
+application's mail until you grant it. Rolling back leaves the table and
+indexes in place; older versions ignore them.
 
 Core adds nullable IMAP configuration and cursor columns automatically during
 setup. Existing profiles keep bounce collection off. Enable it explicitly with

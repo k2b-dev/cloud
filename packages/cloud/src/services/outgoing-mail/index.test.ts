@@ -235,9 +235,15 @@ test("log filters bound and normalize search, app sets, recipients and timestamp
   expect(MailFilterSchema.parse({ q: "  AbC  ", recipient: " A@example.org " })).toEqual({ q: "AbC", recipient: "A@example.org" });
   for (const q of ["", "ab", "  ab ", "x".repeat(201), "abc\n", "\tabc", "ab\0c", "abc\x7f", "a\nbc"])
     expect(MailFilterSchema.safeParse({ q }).success).toBe(false);
-  for (const apps of [[], ["reader", "reader"], ["bad/app"], ["UPPER"], Array.from({ length: 101 }, (_, i) => `app-${i}`)])
+  // Without three letters or digits in a row, pg_trgm finds no trigram and every record would be a candidate.
+  for (const q of ["...", "%_%", "---", "___", "a.b.c", "x@y.de", "ab 12"]) expect(MailFilterSchema.safeParse({ q }).success).toBe(false);
+  for (const q of ["abc", "Müller", "@example.org", "50%_off", "RE: 123", "发票通知"])
+    expect(MailFilterSchema.safeParse({ q }).success).toBe(true);
+  // An app passes everything readableApps() returns: itself and up to 100 grants. App IDs are as registered.
+  for (const apps of [[], [""], ["reader", "reader"], Array.from({ length: 102 }, (_, i) => `app-${i}`)])
     expect(MailFilterSchema.safeParse({ apps }).success).toBe(false);
-  expect(MailFilterSchema.safeParse({ apps: Array.from({ length: 100 }, (_, i) => `app-${i}`), q: "x".repeat(200) }).success).toBe(true);
+  expect(MailFilterSchema.safeParse({ apps: Array.from({ length: 101 }, (_, i) => `app-${i}`), q: "x".repeat(200) }).success).toBe(true);
+  expect(MailFilterSchema.safeParse({ apps: ["erp_v2", "ERP", "1crm"] }).success).toBe(true);
   for (const until of ["yesterday", "2026-10-09", "2026-10-09T10:00:00", "2026-13-09T10:00:00Z"])
     expect(MailFilterSchema.safeParse({ until }).success).toBe(false);
   expect(MailFilterSchema.safeParse({ until: "2026-10-09T10:00:00+02:00" }).success).toBe(true);
