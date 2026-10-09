@@ -5,7 +5,7 @@ section: Build an app
 order: 140
 description: Publish route prefixes and make an application reachable through the gateway.
 tags: [applications, routing, gateway, registry]
-updated: 2026-10-04
+updated: 2026-10-09
 ---
 
 # Routes and service discovery
@@ -45,7 +45,10 @@ Do not list `/pwa` paths. An application adds pages to the mobile app with
 
 ## Mount the same paths in Hono
 
-The gateway preserves the original path:
+The gateway forwards the original path and query to the host and port of
+`baseUrl`, whatever the path looks like. Only a leading run of slashes becomes
+one, as route matching already treats it, so a request for `//app/inventory`
+reaches the application as `/app/inventory`. Mount the declared prefixes:
 
 ```ts
 const router = new Hono()

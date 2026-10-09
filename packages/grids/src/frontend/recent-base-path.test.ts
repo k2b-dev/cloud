@@ -14,4 +14,8 @@ describe("recentBasePath", () => {
     const internalBase = { shortId: "BASE01", id: "11111111-1111-4111-8111-111111111111" };
     expect(recentBasePath(cookie("/app/grids/11111111-1111-4111-8111-111111111111"), [internalBase])).toBeNull();
   });
+
+  test("stays below Grids when dot segments in the cookie would resolve to another host", () => {
+    expect(recentBasePath(cookie("/app/grids/../..//evil.example/BASE01"), [{ shortId: "BASE01" }])).toBeNull();
+  });
 });

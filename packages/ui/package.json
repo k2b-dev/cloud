@@ -63,6 +63,7 @@
     "axe-core": "4.11.0",
     "babel-preset-solid": "1.9.15",
     "bun-plugin-tailwind": "0.1.2",
+    "emojibase-data": "17.0.0",
     "happy-dom": "20.14.5",
     "hono": "4.13.9",
     "playwright": "1.63.0",

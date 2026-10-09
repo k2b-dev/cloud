@@ -5,7 +5,7 @@ section: Accounts & sign-in
 order: 1085
 description: Pair a sign-in app with QR or a copy link, and remove a lost sign-in device or app device yourself or as an administrator.
 tags: [accounts, administration, authentication]
-updated: 2026-10-06
+updated: 2026-10-09
 ---
 
 # Pair and manage sign-in devices
@@ -152,7 +152,9 @@ email address; choose how it reaches you under **My account → Notifications**
 (**Phones paired with the mobile app**).
 You get it once per pairing, also for a phone that was removed right away, but
 not when the app later renews its sign-in. The notice never contains the
-pairing link or code.
+pairing link or code. While do not disturb or your quiet hours are on, a
+notice that would go as a browser notification is held back; it then appears
+only in your notification history.
 
 ## Remove an app device for someone
 

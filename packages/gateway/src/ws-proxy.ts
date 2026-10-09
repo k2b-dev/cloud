@@ -17,7 +17,7 @@ import type { ServerWebSocket } from "bun";
 import type { ClientAddress } from "./client-address";
 import { derivePathTemplate } from "./path-template";
 import { transportErrorFields } from "./proxy";
-import { isInternalPath } from "./request-boundary";
+import { isInternalPath, upstreamUrl } from "./request-boundary";
 import { matchRoute, type RouteTable } from "./trie";
 
 const MAX_PENDING_FRAMES = 32;
@@ -115,8 +115,7 @@ export const tryUpgradeWebSocket = (
     return new Response("WebSocket: no app registered for this path", { status: 502 });
   }
 
-  // ws:// upstream URL — preserve path and query.
-  const upstream = new URL(url.pathname + url.search, match.baseUrl);
+  const upstream = upstreamUrl(match.baseUrl, url);
   upstream.protocol = "ws:";
 
   // Forward auth-relevant headers and the resolved client address so the

@@ -38,6 +38,10 @@ export type {
   DurationPreset,
 } from "./DatePicker";
 export { DatePicker, DateRangePicker, DateTimePicker } from "./DatePicker";
+export type { EmojiPickerPopoverProps, EmojiPickerProps } from "./emoji/EmojiPicker";
+export { EmojiPicker } from "./emoji/EmojiPicker";
+export type { EmojiSkinTone } from "./emoji/emoji-index";
+export { rememberEmoji } from "./emoji/emoji-index";
 export type { FileDropDetails, FileDropOptions, FileDropRejection, FileDropTargetProps } from "./FileDropTarget";
 export { FileDropTarget, fileDropTarget } from "./FileDropTarget";
 export type { FileDropzoneProps, ImageCropperProps, ImageInputProps } from "./FileInputs";

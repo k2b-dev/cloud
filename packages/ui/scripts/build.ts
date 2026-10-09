@@ -18,6 +18,7 @@ for (const [dependency, name] of [
   ["@fontsource/ibm-plex-sans", "ibm-plex-sans"],
   ["@fontsource/ibm-plex-mono", "ibm-plex-mono"],
   ["@tabler/icons-webfont", "tabler-icons"],
+  ["emojibase-data", "emojibase-data"],
 ] as const) {
   await copyFile(resolve(root, "node_modules", dependency, "LICENSE"), resolve(dist, "licenses", `${name}.txt`));
 }

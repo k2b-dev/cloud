@@ -264,6 +264,16 @@ export const migrate = async (): Promise<void> => {
     ON notifications.endpoints(channel, endpoint_hash)
     WHERE disabled_at IS NULL
   `.simple();
+  // Do not disturb and weekly quiet hours, one row per person; the delivery worker reads it per browser delivery.
+  await sql`
+    CREATE TABLE IF NOT EXISTS notifications.quiet_times (
+      user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+      do_not_disturb_until TIMESTAMPTZ,
+      time_zone TEXT NOT NULL,
+      periods JSONB NOT NULL DEFAULT '[]'::jsonb,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `.simple();
   console.log("  ✓ end-user notification tables");
 
   await sql`

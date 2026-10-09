@@ -1,3 +1,5 @@
+import type { EmojiSkinTone } from "../inputs/emoji/emoji-index";
+
 export type ChatRole = "user" | "assistant" | "system" | "tool";
 
 export type ChatMessageStatus = "pending" | "streaming" | "complete" | "error";
@@ -92,8 +94,15 @@ export type ChatComposerMicrophone = {
   disabled?: boolean;
 };
 
-/** The composer's emoji button. The application opens its own emoji choice. */
+/**
+ * The composer's emoji button and `:shortcode` completion. Typing a colon and two letters suggests emoji by their
+ * English or German name or GitHub shortcode; a complete `:thumbsup:` becomes 👍 when its closing colon is typed.
+ */
 export type ChatComposerEmoji = {
-  /** Opens the emoji choice next to `anchor`; `insert` puts the chosen text at the caret. */
+  /** Opens the emoji choice next to `anchor`, usually `EmojiPicker.Popover`; `insert` puts the chosen text at the caret. */
   onOpen: (context: { anchor: HTMLElement; insert: (text: string) => void }) => void;
+  /** The skin tone of completed emoji that have one, as in the picker. */
+  skinTone?: EmojiSkinTone;
+  /** Called with each emoji the completion inserted, for example to remember it with `rememberEmoji`. */
+  onPick?: (emoji: string) => void;
 };

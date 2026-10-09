@@ -8,7 +8,9 @@ export const CommandPathSchema = z
   .refine((value) => {
     if (!value.startsWith("/") || /[\\\u0000-\u0020]/u.test(value)) return false;
     try {
-      return new URL(value, "https://cloud.invalid").origin === "https://cloud.invalid";
+      const url = new URL(value, "https://cloud.invalid");
+      // Dot segments can resolve to `//host`, which a browser reads as another host.
+      return url.origin === "https://cloud.invalid" && !url.pathname.startsWith("//");
     } catch {
       return false;
     }

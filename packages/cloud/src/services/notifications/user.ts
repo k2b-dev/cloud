@@ -14,6 +14,7 @@ import type {
 import { normalizeLocale } from "../../shared/locale";
 import { toPgTextArray } from "../postgres";
 import { listNotificationChannels } from "./channels";
+import { userQuietTimes } from "./quiet";
 
 type PreferenceRow = {
   id: string;
@@ -164,6 +165,10 @@ const publicDeliveryError = (code: string | null, status: NotificationDeliverySt
       return { code, message: "This delivery channel is currently unavailable." };
     case "no_endpoint":
       return { code, message: "No registered destination is available for this channel." };
+    case "do_not_disturb":
+      return { code, message: "Held back because do not disturb was on." };
+    case "quiet_hours":
+      return { code, message: "Held back during your quiet hours." };
     case "fallback_not_needed":
       return { code, message: "Another preferred channel delivered this notification." };
     case "lease_recovered":
@@ -245,4 +250,5 @@ const listHistory = async (config: {
 export const userNotifications = {
   preferences: { list: listPreferences, set: setPreference, reset: resetPreference },
   history: { list: listHistory },
+  quiet: userQuietTimes,
 } as const;

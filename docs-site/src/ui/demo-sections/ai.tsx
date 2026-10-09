@@ -1,5 +1,16 @@
 import type { ChatDictationState, ChatMention } from "@k2b/ui";
-import { Button, Chat, type ChatTimelineItem, CodeDisplay, MessageRow, ProgressBar, ProgressRing, Toolbar } from "@k2b/ui";
+import {
+  Button,
+  Chat,
+  type ChatTimelineItem,
+  CodeDisplay,
+  EmojiPicker,
+  MessageRow,
+  ProgressBar,
+  ProgressRing,
+  rememberEmoji,
+  Toolbar,
+} from "@k2b/ui";
 import { createSignal, For, onCleanup } from "solid-js";
 import { DemoCard } from "../DemoCard";
 import { DemoGrid, type DemoSection } from "./types";
@@ -240,6 +251,9 @@ const ConversationComposerDemo = () => {
   const [dictation, setDictation] = createSignal<ChatDictationState | null>(null);
   const [hint, setHint] = createSignal<string | undefined>();
   const [sendKey, setSendKey] = createSignal<"enter" | "mod-enter">("enter");
+  const [emojiTarget, setEmojiTarget] = createSignal<{ anchor: HTMLElement; insert: (text: string) => void }>();
+  const [recent, setRecent] = createSignal<readonly string[]>([]);
+  const remember = (emoji: string) => setRecent(rememberEmoji(recent(), emoji));
   let original = "";
   let timer: ReturnType<typeof setTimeout> | undefined;
   onCleanup(() => clearTimeout(timer));
@@ -261,7 +275,7 @@ const ConversationComposerDemo = () => {
     <DemoCard
       id="chat-conversation-composer"
       chip={{ kind: "component", name: "Chat.Composer", from: "@k2b/ui" }}
-      description='The conversation variant: one row with attach, a pill field that grows from one line to a third of its size container, and Send. "Aa" opens one formatting row above the field, emoji and microphone sit inside it, and a hint line never moves it. Tap the microphone to dictate, hold it for a voice message.'
+      description='The conversation variant: one row with attach, a pill field that grows from one line to a third of its size container, and Send. "Aa" opens one formatting row above the field, emoji and microphone sit inside it, and a hint line never moves it. Type :tada: or :dau for emoji. Tap the microphone to dictate, hold it for a voice message.'
       code={`<Chat.Composer
   variant="conversation"
   value={draft()}
@@ -269,10 +283,19 @@ const ConversationComposerDemo = () => {
   onSubmit={({ text }) => send(text)}
   sendKey={settings.sendKey}
   formatting
-  emoji={{ onOpen: ({ anchor, insert }) => openEmojiPicker(anchor, insert) }}
+  emoji={{ onOpen: setEmojiTarget, onPick: remember }}
   microphone={{ onDictate: dictation.toggle, onVoiceMessage: recordVoiceMessage, dictation: dictation.state(), onRestoreOriginal: dictation.restore }}
   hint={hint()}
   placeholder="Message Workshop"
+/>
+<EmojiPicker.Popover
+  anchor={emojiTarget()?.anchor}
+  recent={recent()}
+  onPick={(emoji) => {
+    emojiTarget()?.insert(emoji);
+    remember(emoji);
+  }}
+  onClose={() => setEmojiTarget(undefined)}
 />`}
     >
       <div style={{ display: "flex", "flex-direction": "column", gap: "0.75rem" }}>
@@ -306,7 +329,7 @@ const ConversationComposerDemo = () => {
             sendKey={sendKey()}
             formatting
             fileSelection={{ onSelect: () => undefined }}
-            emoji={{ onOpen: ({ insert }) => insert("👍") }}
+            emoji={{ onOpen: setEmojiTarget, onPick: remember }}
             microphone={{
               onDictate: dictate,
               onVoiceMessage: () => setHint("A voice message would start recording now."),
@@ -318,6 +341,15 @@ const ConversationComposerDemo = () => {
             }}
             hint={hint()}
             placeholder="Message Workshop"
+          />
+          <EmojiPicker.Popover
+            anchor={emojiTarget()?.anchor}
+            recent={recent()}
+            onPick={(emoji) => {
+              emojiTarget()?.insert(emoji);
+              remember(emoji);
+            }}
+            onClose={() => setEmojiTarget(undefined)}
           />
         </div>
       </div>

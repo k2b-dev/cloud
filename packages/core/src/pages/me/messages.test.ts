@@ -20,6 +20,9 @@ describe("account messages", () => {
     expect(notificationErrorText("no_endpoint", "No configured browser destination is available.", "de-CH")).toBe(
       "Für diesen Zustellkanal ist kein Ziel eingerichtet.",
     );
+    expect(notificationErrorText("quiet_hours", "Held back during your quiet hours.", "de")).toBe(
+      "Während deiner Ruhezeit zurückgehalten.",
+    );
     expect(notificationErrorText("future_code", "Low-level English detail", "de")).toBe(
       "Die Benachrichtigung konnte nicht zugestellt werden.",
     );

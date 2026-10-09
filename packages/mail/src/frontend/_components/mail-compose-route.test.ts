@@ -51,6 +51,13 @@ describe("Mail compose routes", () => {
     expect(mailConversationHref("Box001", "Conv02", "https://attacker.example/path")).toBe("/app/mail/Box001?conversation=Conv02");
   });
 
+  test("never returns to another host, whatever the dot segments resolve to", () => {
+    for (const target of ["/.//attacker.example/x", "/%2e//attacker.example", "/app/..//attacker.example"]) {
+      expect(mailDraftReturnHref(target, "Box001")).toBe("/app/mail/Box001");
+      expect(mailConversationHref("Box001", "Conv02", target)).toBe("/app/mail/Box001?conversation=Conv02");
+    }
+  });
+
   test("a completed compose returns to an explicit cross-app context without adding Mail state", () => {
     expect(mailConversationHref("Box001", "Conv02", "/app/contacts?contact=AbCd12#details")).toBe("/app/contacts?contact=AbCd12#details");
   });
