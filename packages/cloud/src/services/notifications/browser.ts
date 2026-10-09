@@ -8,6 +8,7 @@ import { type BrowserPushSubscription, BrowserPushSubscriptionSchema } from "../
 import { decryptSecret, encryptSecret } from "../secrets";
 import { coreSettings } from "../settings/api";
 import { type NotificationDestination, registerNotificationChannel } from "./channels";
+import { NOTIFICATION_PREVIEW_LIMIT } from "./preview";
 import { sendPinnedWebPush } from "./web-push-transport";
 
 type EndpointRow = {
@@ -22,6 +23,7 @@ type BrowserDeliveryPayload = {
   subscription: BrowserPushSubscription;
   eventId: string;
   title: string;
+  preview?: string;
   targetHref?: string;
   group?: string;
   badge?: number;
@@ -33,6 +35,7 @@ const BrowserDeliveryPayloadSchema = z.object({
   subscription: BrowserPushSubscriptionSchema,
   eventId: z.uuid(),
   title: z.string().min(1).max(200),
+  preview: z.string().min(1).max(NOTIFICATION_PREVIEW_LIMIT).optional(),
   targetHref: z.string().max(4_000).refine(isSafeNotificationTargetHref).optional(),
   group: z
     .string()
@@ -162,6 +165,7 @@ const browserDriver = {
       subscription: context.subscription,
       eventId: event.id,
       title: presentation.title,
+      ...(presentation.preview !== undefined ? { preview: presentation.preview } : {}),
       targetHref: presentation.targetHref,
       ...(group !== undefined ? { group } : {}),
       ...(presentation.badge !== undefined ? { badge: presentation.badge } : {}),
@@ -190,6 +194,7 @@ const browserDriver = {
           type: "cloud-notification",
           eventId: payload.eventId,
           title: payload.title,
+          ...(payload.preview !== undefined ? { preview: payload.preview } : {}),
           targetHref: payload.targetHref,
           ...(payload.group !== undefined ? { group: payload.group } : {}),
           ...(payload.badge !== undefined ? { badge: payload.badge } : {}),

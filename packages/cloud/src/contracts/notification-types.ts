@@ -31,6 +31,8 @@ export const validateNotificationTargetHref = (value: string): `/${string}` => {
 export type NotificationPresentation = {
   title: string;
   body?: string;
+  /** Short text shown in the browser/OS notification, including the lock screen. Browser push only; email and history ignore it. */
+  preview?: string;
   /** Stable app-chosen browser group key, namespaced by Cloud per application. */
   group?: string;
   /** Non-negative safe integer for the app badge; zero clears it. Browser-only. */

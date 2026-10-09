@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-test("send validates group and badge before persistence and retains them only for delivery", async () => {
+test("send validates browser metadata before persistence and normalizes previews only for delivery", async () => {
   const script = `
     import { mock } from "bun:test";
     import assert from "node:assert/strict";
@@ -70,9 +70,35 @@ test("send validates group and badge before persistence and retains them only fo
       await send(metadata);
       assert.deepEqual(delivered.at(-1), { title: "Ready", ...metadata });
     }
+    for (const [preview, expected] of [
+      ["  Hello\\n\\tworld\\u0000\\u0085!  ", "Hello world !"],
+      ["x".repeat(200), "x".repeat(200)],
+      ["x".repeat(201), "x".repeat(199) + "…"],
+      ["x".repeat(198) + "😀", "x".repeat(198) + "😀"],
+      ["x".repeat(192) + "👩🏽‍💻" + "end", "x".repeat(192) + "👩🏽‍💻…"],
+      ["x".repeat(198) + "👩🏽‍💻" + "end", "x".repeat(198) + "…"],
+      ["x".repeat(198) + "e\\u0301" + "end", "x".repeat(198) + "…"],
+      ["x".repeat(197) + "e\\u0301" + "end", "x".repeat(197) + "e\\u0301…"],
+      ["x".repeat(198) + "😀" + "end", "x".repeat(198) + "…"],
+      ["x".repeat(197) + "😀" + "end", "x".repeat(197) + "😀…"],
+      ["x".repeat(100_000), "x".repeat(199) + "…"],
+      [" ".repeat(1_000) + "Unread suffix", undefined],
+      [" ".repeat(998) + "👩🏽‍💻" + "suffix", undefined],
+      ["", undefined], [" \\n\\t\\u0000\\u007f\\u0085 ", undefined],
+    ]) {
+      await send({ preview });
+      assert.deepEqual(delivered.at(-1), { title: "Ready", ...(expected ? { preview: expected } : {}) });
+      if (expected) assert.ok(expected.length <= 200);
+    }
+    for (const preview of [null, 1, {}]) {
+      const before = sqlCalls;
+      await assert.rejects(send({ preview }), /preview/);
+      assert.equal(sqlCalls, before);
+    }
     for (const { query, values } of eventWrites) {
-      assert.equal(/group|badge/.test(query), false);
+      assert.equal(/group|badge|preview/.test(query), false);
       assert.equal(values.includes("conversation:abc_1.2-3"), false);
+      assert.equal(values.includes("Hello world !"), false);
     }
   `;
   const child = Bun.spawn([process.execPath, "--no-env-file", "-e", script], { stdout: "pipe", stderr: "pipe" });

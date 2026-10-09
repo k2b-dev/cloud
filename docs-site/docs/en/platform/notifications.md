@@ -137,6 +137,7 @@ domain payload schema. `render()` returns:
 | --- | --- | --- |
 | `title` | Yes | Trimmed, non-empty, and at most 200 characters |
 | `body` | No | Trimmed and at most 4,000 characters; an empty body is omitted |
+| `preview` | No | Browser-only text; normalized and shortened at a grapheme boundary to at most 200 UTF-16 code units, including a final `…` when shortened; an empty result is omitted |
 | `targetHref` | No | Canonical same-origin absolute path beginning with `/` |
 | `group` | No | Stable browser group key: 1–128 characters matching `^[A-Za-z0-9._:-]+$`, with no whitespace; grouping requires an application ID that starts with a lowercase letter and contains only lowercase letters, digits, and hyphens |
 | `badge` | No | Non-negative safe integer for the app badge; `0` clears it |
@@ -237,9 +238,29 @@ does not suppress the notification. Multiple tabs in the same browser profile
 do not create extra deliveries. Browser and operating-system settings control
 when and how notifications appear.
 
-Notifications show the rendered title and Cloud icon. The presentation body
-stays out of the push payload. Clicking a notification opens or focuses its
-Cloud destination, where normal authentication and authorization apply.
+Notifications show the rendered title and Cloud icon, plus `preview` as the
+notification text when supplied. The presentation `body` stays out of the push
+payload; without `preview`, no text beyond the title is sent. Clicking a
+notification opens or focuses its Cloud destination, where normal
+authentication and authorization apply.
+
+Applications resolve `preview` in the `locale` received by `render()`, selected
+by `send()`. Cloud examines only the first 1,000 UTF-16 code units, collapses
+runs of whitespace and control characters to one space, and trims the result.
+It shortens long text at a grapheme boundary to at most 200 code units,
+including a single `…`; emoji and combining characters remain intact. A
+grapheme cut by the input bound is omitted. Empty previews are omitted, and
+long message text is shortened rather than rejected.
+
+Preview text is shown by the operating system, including on the lock screen
+and in notification centres, and may be mirrored to paired devices. It travels
+through the browser vendor's push service encrypted for the subscription
+([RFC 8291](https://www.rfc-editor.org/rfc/rfc8291)); the push service sees
+timing and size, but not the text. Cloud keeps the preview only inside the
+encrypted delivery payload until the attempt succeeds or fails permanently,
+never on the event or in history. Email ignores it. Send a preview only when
+the recipient may read the content at delivery time, and give operators and
+people a way to turn previews off where content is sensitive.
 
 Set `group` in `render()` to replace notifications for the same subject on each
 device. Cloud prefixes the key with the application's ID: `inventory` and
@@ -259,9 +280,10 @@ The device applies a badge only when it was rendered at or after the last badge
 it applied. Badge support is optional: unsupported browsers and rejected badge
 requests silently leave it absent or unchanged, and the notification still appears.
 The badge belongs to the installed Cloud application, so applications that
-set it must decide which count to use. Email ignores `group` and `badge`.
-Neither field is stored on the notification event; both travel only in the
-browser delivery payload. The presentation body still stays out of that payload.
+set it must decide which count to use. Email ignores `group`, `badge`, and
+`preview`. These fields are not stored on the notification event; they travel
+only in the browser delivery payload. The presentation `body` still stays out
+of that payload; applications opt into notification text through `preview`.
 
 Without an active endpoint, Cloud records `no_endpoint` for that browser
 delivery. A later configured recommended channel can still receive the event.

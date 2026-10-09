@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 
 // Isolate provider/settings mocks so other notification suites keep real modules.
-test("browser delivery namespaces groups and keeps per-event push topics without changing ungrouped payloads", async () => {
+test("browser delivery carries localized previews, namespaces groups, and preserves title-only payloads", async () => {
   const script = `
     import { mock } from "bun:test";
     import assert from "node:assert/strict";
@@ -13,16 +13,25 @@ test("browser delivery namespaces groups and keeps per-event push topics without
       keys: { p256dh: "p".repeat(65), auth: "a".repeat(24) },
     };
     const sent = [];
+    const prepared = [];
     const sql = async (parts) => {
       const query = parts.join("?");
       if (query.includes("SELECT id FROM notifications.endpoints")) return [{ id: endpointId }];
       if (query.includes("pg_advisory_xact_lock")) return [];
+      if (query.includes("SELECT id FROM notifications.events")) return [];
+      if (query.includes("AS delivery_count")) return [{ delivery_count: 0, preparation_failure_count: 0 }];
+      if (query.includes("FROM auth.users")) return [{ id: endpointId, mail: "reader@example.org" }];
+      if (query.includes("FROM notifications.preferences")) return [];
+      if (query.includes("SELECT id, endpoint_hash")) return [{ id: endpointId, endpoint_hash: "device", label: "Device", secret_encrypted: "subscription" }];
+      if (query.includes("INSERT INTO notifications.events") || query.includes("INSERT INTO notifications.deliveries")) return [{ id: eventId }];
+      if (query.includes("SELECT id, channel, required, status")) return [{ id: eventId, channel: "browser", required: true, status: "pending", error_code: null }];
+      if (query.includes("UPDATE notifications.events") || query.includes("UPDATE notifications.deliveries") || query.includes("DELETE FROM notifications.deliveries")) return [];
       throw new Error("Unexpected SQL: " + query);
     };
     sql.begin = async callback => callback(sql);
     globalThis.notificationBrowserSql = sql;
     Bun.plugin({ name: "notification-browser-sql", setup(build) {
-      build.onLoad({ filter: /[\\/]notifications[\\/]browser\\.ts$/ }, async ({ path }) => ({
+      build.onLoad({ filter: /[\\/]notifications[\\/](?:browser|platform)\\.ts$/ }, async ({ path }) => ({
         contents: (await Bun.file(path).text()).replace('import { sql } from "bun";', 'const sql = globalThis.notificationBrowserSql;'), loader: "ts",
       }));
     }});
@@ -32,6 +41,13 @@ test("browser delivery namespaces groups and keeps per-event push topics without
     }));
     mock.module(${JSON.stringify(new URL("./web-push-transport.ts", import.meta.url).pathname)}, () => ({
       sendPinnedWebPush: async (subscription, payload, options) => { sent.push({ subscription, payload, options }); },
+    }));
+    mock.module(${JSON.stringify(new URL("./catalog.ts", import.meta.url).pathname)}, () => ({ ensureNotificationDefinition: async () => {} }));
+    mock.module(${JSON.stringify(new URL("./dispatcher.ts", import.meta.url).pathname)}, () => ({ processNotificationDelivery: async () => ({ status: "pending" }) }));
+    mock.module(${JSON.stringify(new URL("./runtime.ts", import.meta.url).pathname)}, () => ({ enqueueNotificationDelivery: async () => {}, enqueueNotificationDeliveries: async () => {} }));
+    mock.module(${JSON.stringify(new URL("../secrets.ts", import.meta.url).pathname)}, () => ({
+      decryptSecret: async () => subscription,
+      encryptSecret: async payload => { prepared.push(payload); return "encrypted"; },
     }));
     await import(${JSON.stringify(new URL("./browser.ts", import.meta.url).pathname)});
     const { getNotificationChannel } = await import(${JSON.stringify(new URL("./channels.ts", import.meta.url).pathname)});
@@ -49,6 +65,15 @@ test("browser delivery namespaces groups and keeps per-event push topics without
       payload: JSON.stringify({ type: "cloud-notification", eventId, title: "Ready", targetHref: "/app/inventory" }),
       options: { TTL: 86400, urgency: "normal", topic: createHash("sha256").update(eventId).digest("base64url").slice(0, 32) },
     });
+    for (const preview of ["Short preview", "p".repeat(200)]) {
+      const payload = driver.createPayload({ ...input, presentation: { ...input.presentation, preview } });
+      assert.deepEqual(payload, { ...plain, preview });
+      await driver.deliver(payload);
+      assert.equal(JSON.parse(sent.at(-1).payload).preview, preview);
+      assert.equal("body" in payload, false);
+      assert.equal("body" in JSON.parse(sent.at(-1).payload), false);
+    }
+    const groupedStart = sent.length;
     for (const [appId, id, badge] of [
       ["inventory", eventId, 3], ["inventory", crypto.randomUUID(), 0], ["other", crypto.randomUUID(), 2],
     ]) {
@@ -67,8 +92,8 @@ test("browser delivery namespaces groups and keeps per-event push topics without
       });
       assert.equal(last.options.topic, createHash("sha256").update(id).digest("base64url").slice(0, 32));
     }
-    assert.notEqual(sent[1].options.topic, sent[2].options.topic);
-    assert.notEqual(sent[1].options.topic, sent[3].options.topic);
+    assert.notEqual(sent[groupedStart].options.topic, sent[groupedStart + 1].options.topic);
+    assert.notEqual(sent[groupedStart].options.topic, sent[groupedStart + 2].options.topic);
     const beforeGroup = Date.now();
     const maxGroup = driver.createPayload({ ...input, presentation: { title: "Ready", group: "g".repeat(128) } });
     assert.ok(Number.isSafeInteger(maxGroup.createdAt));
@@ -87,6 +112,9 @@ test("browser delivery namespaces groups and keeps per-event push topics without
     for (const metadata of [{ group: null }, { group: 1 }, { group: "bad group" }, { badge: "2" }, { badge: -1 }, { badge: 1.5 }, { badge: Number.MAX_SAFE_INTEGER + 1 }]) {
       await assert.rejects(driver.deliver({ ...plain, ...metadata }));
     }
+    for (const preview of [null, 1, {}, "", "p".repeat(201)]) {
+      await assert.rejects(driver.deliver({ ...plain, preview }));
+    }
     for (const createdAt of [null, "1", -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
       await assert.rejects(driver.deliver({ ...plain, createdAt }));
     }
@@ -94,10 +122,26 @@ test("browser delivery namespaces groups and keeps per-event push topics without
       ...input, event: { id: eventId, definitionId: "acme.chat.stockLow" },
       presentation: { title: "Ready", group: "stock:one" },
     }), /group/);
+    const { z } = await import("zod");
+    const { bindNotificationDefinitions, notification } = await import(${JSON.stringify(new URL("../../contracts/notification-types.ts", import.meta.url).pathname)});
+    const { sendTypedNotification } = await import(${JSON.stringify(new URL("./platform.ts", import.meta.url).pathname)});
+    const definition = bindNotificationDefinitions("inventory", { update: notification({
+      recipient: "user", label: "Update", description: "Localized update", delivery: { required: ["browser"] },
+      data: z.object({}), render: (_data, { locale }) => ({
+        title: "Ready", body: "Sensitive body", preview: locale === "de" ? "  Neue Nachricht\\nlesen  " : "  Read new\\nmessage  ",
+      }),
+    }) }).update;
+    for (const [locale, preview] of [["de", "Neue Nachricht lesen"], ["en", "Read new message"]]) {
+      await sendTypedNotification(definition, { recipient: { userId: endpointId }, data: {}, locale, idempotencyKey: locale });
+      assert.equal(prepared.at(-1).preview, preview);
+      await driver.deliver(prepared.at(-1));
+      assert.equal(JSON.parse(sent.at(-1).payload).preview, preview);
+      assert.equal("body" in JSON.parse(sent.at(-1).payload), false);
+    }
     const email = getNotificationChannel("email");
     const emailInput = { ...input, destination: { key: "email", label: "Email", context: { email: "reader@example.org" } } };
     assert.deepEqual(
-      email.createPayload({ ...emailInput, presentation: { ...input.presentation, group: "stock:one", badge: 3 } }),
+      email.createPayload({ ...emailInput, presentation: { ...input.presentation, group: "stock:one", badge: 3, preview: "Browser only" } }),
       email.createPayload(emailInput),
     );
   `;
