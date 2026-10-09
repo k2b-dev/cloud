@@ -380,7 +380,7 @@ const uiMessages = i18n.define({
       pdfPreviewHttpError: ({ status }: { status: number }) => `PDF preview failed with HTTP ${status}`,
       pdfPreviewTabBlocked: "The browser blocked the new tab. Allow pop-ups and try again.",
       pdfPreviewNoViewer: "This PDF cannot be shown here",
-      pdfPreviewNoViewerDescription: "Your browser cannot show PDFs inside a page. Open or download the document to view it.",
+      pdfPreviewNoViewerDescription: "Your browser cannot show PDFs inside a page. Open the document to view it.",
       pdfPreviewRendering: "Rendering PDF preview…",
       pickIcon: "Pick an icon...",
       postMessage: "Post message",
@@ -886,8 +886,7 @@ const uiMessages = i18n.define({
       pdfPreviewHttpError: ({ status }) => `PDF-Vorschau ist mit HTTP ${status} fehlgeschlagen`,
       pdfPreviewTabBlocked: "Der Browser hat den neuen Tab blockiert. Erlaube Pop-ups und versuche es erneut.",
       pdfPreviewNoViewer: "Dieses PDF kann hier nicht angezeigt werden",
-      pdfPreviewNoViewerDescription:
-        "Dein Browser kann PDFs nicht innerhalb einer Seite anzeigen. Öffne das Dokument oder lade es herunter, um es anzusehen.",
+      pdfPreviewNoViewerDescription: "Dein Browser kann PDFs nicht innerhalb einer Seite anzeigen. Öffne das Dokument, um es anzusehen.",
       pdfPreviewRendering: "PDF-Vorschau wird erstellt…",
       pickIcon: "Symbol auswählen...",
       postMessage: "Nachricht posten",

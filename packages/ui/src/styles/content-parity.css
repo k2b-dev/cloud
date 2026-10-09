@@ -2107,7 +2107,7 @@
   min-height: 0;
 }
 
-/* The placeholder lies over the frame until the frame has drawn its document. */
+/* The placeholder lies over the frame until the frame has loaded its document. */
 .k2b-ui :is(.k2b-content-pdf-preview__placeholder, .k2b-content-pdf-preview__frame) {
   position: absolute;
   inset: 0;
@@ -2128,7 +2128,7 @@
   background: #fff;
 }
 
-/* Transparent, not hidden: the frame still loads, draws, and takes focus. */
+/* Transparent and inert, not hidden: the frame still loads its document. */
 .k2b-ui .k2b-content-pdf-preview__frame:not([data-drawn]) {
   opacity: 0;
 }
