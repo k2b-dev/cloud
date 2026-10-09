@@ -23,7 +23,6 @@ export default function ItemDetailFixture(props: Props) {
             initialDetail={props.initialDetail}
             dateConfig={props.dateConfig}
             canWrite={props.canWrite}
-            isAdmin={props.isAdmin}
             mailIntegrationAvailable={props.mailIntegrationAvailable}
           />
         </AppWorkspace.Content>

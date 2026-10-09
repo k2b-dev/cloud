@@ -270,7 +270,7 @@ describe("Spaces Kanban drop indicator", () => {
     expect(slots()[0]).toBe("Open: A B C | D");
     pointer("pointerup", dom.window as unknown as EventTarget, columnX(0), cardCenter(2) + 10);
     await flush();
-    expect(moves).toEqual([{ itemId: "A", json: { columnId: "Col001", afterItemId: "C", completed: false } }]);
+    expect(moves).toEqual([{ itemId: "A", json: { columnId: "Col001", afterItemId: "C" } }]);
     expect(slots()).toEqual(["Open: B C A D", "Review: X Y", "Later: empty"]);
 
     dispose();
@@ -307,11 +307,11 @@ describe("Spaces Kanban drop indicator", () => {
     expect(slots()).toEqual(["Open: A Y C D Z X", "Review: empty", "Later: B"]);
 
     expect(moves).toEqual([
-      { itemId: "X", json: { columnId: "Col001", beforeItemId: "A", completed: false } },
-      { itemId: "Y", json: { columnId: "Col001", afterItemId: "A", completed: false } },
-      { itemId: "Z", json: { columnId: "Col001", afterItemId: "D", completed: false } },
-      { itemId: "B", json: { columnId: "Col003", completed: false } },
-      { itemId: "X", json: { columnId: "Col001", afterItemId: "Z", completed: false } },
+      { itemId: "X", json: { columnId: "Col001", beforeItemId: "A" } },
+      { itemId: "Y", json: { columnId: "Col001", afterItemId: "A" } },
+      { itemId: "Z", json: { columnId: "Col001", afterItemId: "D" } },
+      { itemId: "B", json: { columnId: "Col003" } },
+      { itemId: "X", json: { columnId: "Col001", afterItemId: "Z" } },
     ]);
     expect(errors).not.toHaveBeenCalled();
 
@@ -354,12 +354,12 @@ describe("Spaces Kanban drop indicator", () => {
     };
 
     await drop("Y", 0, cardCenter(2) + 10);
-    expect(moves.at(-1)).toEqual({ itemId: "Y", json: { columnId: "Col001", afterItemId: "C", completed: false } });
+    expect(moves.at(-1)).toEqual({ itemId: "Y", json: { columnId: "Col001", afterItemId: "C" } });
     expect(errors).toHaveBeenCalledWith("The neighboring item is no longer in the target column; reload and try again");
     await settle(["Open: A B", "Review: X Y", "Later: C"]);
 
     await drop("Y", 0, cardCenter(1) + 10);
-    expect(moves.at(-1)).toEqual({ itemId: "Y", json: { columnId: "Col001", afterItemId: "B", completed: false } });
+    expect(moves.at(-1)).toEqual({ itemId: "Y", json: { columnId: "Col001", afterItemId: "B" } });
     await settle(["Open: A B Y", "Review: X", "Later: C"]);
     expect(errors).toHaveBeenCalledTimes(1);
 

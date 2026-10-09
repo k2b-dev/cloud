@@ -44,7 +44,15 @@ import { createRetryToasts } from "../../../lib/feedback";
 import { readResponseError } from "../../../lib/response";
 import { useSpaceMessages } from "../../messages";
 import ClaimButton from "../shared/claim/ClaimButton";
-import { claimTask, ownClaimId, promptReleaseNote, releaseTask, takeOverTask } from "../shared/claim/claim";
+import {
+  type CompletionClaim,
+  claimTask,
+  ownClaimId,
+  promptReleaseNote,
+  releaseTask,
+  resolveCompletionClaim,
+  takeOverTask,
+} from "../shared/claim/claim";
 import { setItemCompleted } from "../shared/completion";
 import { openEditItemDialog } from "../shared/editItem";
 import { deadlinePresets } from "../shared/item-form/date";
@@ -87,8 +95,6 @@ type Props = {
   blocks?: SpaceTaskDependent[];
   dateConfig?: DateContext;
   canWrite: boolean;
-  /** Space admins may take over another account's claim. */
-  isAdmin?: boolean;
   mailIntegrationAvailable: boolean;
   scrollPreserveKey: string;
 };
@@ -412,12 +418,13 @@ export default function ItemDetailPanel(props: Props) {
     (tagIds) => ({ tagIds }),
   );
 
-  type CompleteIntent = { itemId: string; completed: boolean; claimId: string | undefined };
-  const completeIntent = (completed: boolean): CompleteIntent => ({
-    itemId: props.item.id,
-    completed,
-    claimId: ownClaimId(props.item.claim, props.currentUserId),
-  });
+  type CompleteIntent = { itemId: string; completed: boolean } & CompletionClaim;
+  /** Someone else's claim is taken over after one confirmation; declining changes nothing. */
+  const toggleCompleted = async () => {
+    const completed = !isCompleted();
+    const claim = await resolveCompletionClaim(props.item.claim, props.currentUserId, completed, t);
+    if (claim) await completeMutation.mutate({ itemId: props.item.id, completed, ...claim });
+  };
   const completeMutation = mutations.create<boolean, CompleteIntent, { intent: CompleteIntent }>({
     onBefore: (intent) => ({ intent }),
     mutation: async (intent) => {
@@ -465,12 +472,12 @@ export default function ItemDetailPanel(props: Props) {
     },
     onError: (err) => toast.error(err.message),
   });
-  /** Header: claim or release your own claim. Work section: admin take-over of somebody else's claim. */
+  /** Header: claim or release your own claim. Work section: any writer takes over somebody else's claim. */
   const claimButton = (options: { takeOver?: boolean } = {}) => (
     <ClaimButton
       claim={props.item.claim}
       currentUserId={props.currentUserId}
-      isAdmin={options.takeOver === true && props.isAdmin === true}
+      canTakeOver={options.takeOver === true}
       loading={claimMutation.loading()}
       disabled={isLoading() || isCompleted() || (!props.item.claim && completionBlocked())}
       onClaim={() => void claimMutation.mutate("claim")}
@@ -613,8 +620,7 @@ export default function ItemDetailPanel(props: Props) {
           icon: "ti ti-checkbox",
           shortcut: "d",
           action: () => {
-            if (props.item.id === itemId && canEditItem() && !isLoading() && !completionBlocked())
-              return completeMutation.mutate(completeIntent(!isCompleted()));
+            if (props.item.id === itemId && canEditItem() && !isLoading() && !completionBlocked()) return toggleCompleted();
           },
         }),
       );
@@ -1036,7 +1042,7 @@ export default function ItemDetailPanel(props: Props) {
                 <Show when={canEditItem()}>
                   <Button
                     type="button"
-                    onClick={() => completeMutation.mutate(completeIntent(!isCompleted()))}
+                    onClick={() => void toggleCompleted()}
                     disabled={isLoading() || completionBlocked()}
                     title={completionBlocked() ? t.completeBlockersFirst : undefined}
                     variant="secondary"

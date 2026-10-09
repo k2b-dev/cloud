@@ -2048,6 +2048,8 @@ export const move = async (params: {
   rank?: string;
   completed?: boolean;
   claimId?: string;
+  /** Takes over the claim given as `claimId` from another account; any writer may. */
+  force?: boolean;
   actor?: SpaceActivityIdentity;
 }): Promise<MutationResult<SpaceItem>> => {
   const { id, columnId, afterItemId, beforeItemId } = params;
@@ -2063,18 +2065,24 @@ export const move = async (params: {
     }
   }
 
-  const completedAt = typeof params.completed === "boolean" ? (params.completed ? new Date() : null) : undefined;
   const result = await sql.begin(async (tx): Promise<MutationResult<{ id: string }>> => {
     const [located] = await tx<{ space_id: string }[]>`SELECT space_id FROM spaces.items WHERE id = ${id}::uuid`;
     if (!located) return { ok: false, error: "Item not found", status: 404 };
     await tx`SELECT pg_advisory_xact_lock(hashtext('spaces.item-dependencies'), hashtext(${located.space_id}))`;
-    const [existing] = await tx<{ id: string; space_id: string; title: string }[]>`
-      SELECT id, space_id, title FROM spaces.items WHERE id = ${id} FOR UPDATE
+    const [existing] = await tx<{ id: string; space_id: string; title: string; completed_at: Date | null }[]>`
+      SELECT id, space_id, title, completed_at FROM spaces.items WHERE id = ${id} FOR UPDATE
     `;
     if (!existing) return { ok: false, error: "Item not found", status: 404 };
-    if (params.completed !== undefined) {
-      const claim = await taskWork.checkClaim(id, params.actor ?? systemActor, params.claimId, tx);
-      if (!claim.ok) return claim;
+    // Blockers guard a completion change, and a claim guards it and every move that names a claim. A move that keeps
+    // the state keeps its completion time and needs no claim, so anyone can move a claimed task between open statuses.
+    const completes = params.completed !== undefined && params.completed !== (existing.completed_at !== null);
+    const completedAt = completes ? (params.completed ? new Date() : null) : undefined;
+    let takenOver: Awaited<ReturnType<typeof taskWork.checkClaim>> | null = null;
+    if (completes || params.claimId) {
+      takenOver = await taskWork.checkClaim(id, params.actor ?? systemActor, params.claimId, tx, params.force);
+      if (!takenOver.ok) return takenOver;
+    }
+    if (completes) {
       if (params.completed) {
         const [blocked] = await tx<{ blocked: boolean }[]>`SELECT EXISTS (
           SELECT 1 FROM spaces.item_dependencies d JOIN spaces.items b ON b.id = d.blocker_item_id
@@ -2112,7 +2120,14 @@ export const move = async (params: {
           RETURNING id
         `;
     if (!row) return { ok: false, error: "Failed to move item", status: 500 };
-    if (params.completed) await taskWork.finish(id, undefined, undefined, params.actor ?? systemActor, tx);
+    const claim = takenOver?.ok ? takenOver.data : null;
+    // Completion ends any claim, and so does a take-over.
+    if ((completes && params.completed) || claim) await taskWork.finish(id, undefined, undefined, params.actor ?? systemActor, tx);
+    if (claim)
+      await taskWork.recordTakeOver(
+        { spaceId: existing.space_id, itemId: id, itemTitle: existing.title, actor: params.actor ?? systemActor, claim },
+        tx,
+      );
     await activity.record(
       {
         spaceId: existing.space_id,
@@ -2148,6 +2163,8 @@ export const setCompleted = async (params: {
   result?: string;
   commit?: string;
   claimId?: string;
+  /** Takes over the claim given as `claimId` from another account; any writer may. */
+  force?: boolean;
   actor?: SpaceActivityIdentity;
 }): Promise<MutationResult<SpaceItem>> => {
   const input = CompletionInputSchema.safeParse(params);
@@ -2162,14 +2179,20 @@ export const setCompleted = async (params: {
     if (!located) return { ok: false, error: "Item not found", status: 404 };
 
     await tx`SELECT pg_advisory_xact_lock(hashtext('spaces.item-dependencies'), hashtext(${located.space_id}))`;
-    const [current] = await tx<{ id: string; space_id: string; title: string; starts_at: Date | null; ends_at: Date | null }[]>`
-      SELECT id, space_id, title, starts_at, ends_at FROM spaces.items WHERE id = ${id}::uuid FOR UPDATE
+    const [current] = await tx<
+      { id: string; space_id: string; title: string; starts_at: Date | null; ends_at: Date | null; completed_at: Date | null }[]
+    >`
+      SELECT id, space_id, title, starts_at, ends_at, completed_at FROM spaces.items WHERE id = ${id}::uuid FOR UPDATE
     `;
     if (!current) return { ok: false, error: "Item not found", status: 404 };
     if (current.space_id !== located.space_id || (params.expectedSpaceId && current.space_id !== params.expectedSpaceId))
       return { ok: false, error: "Task moved to another Space; read its current location", status: 409 };
-    const claimCheck = await taskWork.checkClaim(id, params.actor ?? systemActor, params.claimId, tx);
-    if (!claimCheck.ok) return claimCheck;
+    // A claim guards a completion change and every call that names a claim; repeating the state changes no ownership.
+    let takenOver: Awaited<ReturnType<typeof taskWork.checkClaim>> | null = null;
+    if (completed !== (current.completed_at !== null) || params.claimId) {
+      takenOver = await taskWork.checkClaim(id, params.actor ?? systemActor, params.claimId, tx, params.force);
+      if (!takenOver.ok) return takenOver;
+    }
     if (params.result !== undefined && (current.starts_at || current.ends_at))
       return { ok: false, error: "Work results are only available for tasks", status: 400 };
     if (completed) {
@@ -2224,8 +2247,15 @@ export const setCompleted = async (params: {
       RETURNING item.id
     `;
     if (!row) return { ok: false, error: "Item not found", status: 404 };
-    if (completed && !current.starts_at && !current.ends_at)
-      await taskWork.finish(id, params.result, params.commit, params.actor ?? systemActor, tx);
+    const claim = takenOver?.ok ? takenOver.data : null;
+    // Completion ends any claim, and so does a take-over.
+    if ((completed || claim) && !current.starts_at && !current.ends_at)
+      await taskWork.finish(id, completed ? params.result : undefined, params.commit, params.actor ?? systemActor, tx);
+    if (claim)
+      await taskWork.recordTakeOver(
+        { spaceId: current.space_id, itemId: id, itemTitle: current.title, actor: params.actor ?? systemActor, claim },
+        tx,
+      );
     const activityKind = current.starts_at && current.ends_at ? "event" : "task";
     await activity.record(
       {

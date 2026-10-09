@@ -6,13 +6,13 @@ import type { spaceMessages } from "../../messages";
 import { invalidateSpacesData } from "../workspace/workspace-events";
 
 type Messages = ReturnType<typeof spaceMessages.resolve>["t"];
-type Completion = { spaceId: string; itemId: string; completed: boolean; claimId?: string };
+type Completion = { spaceId: string; itemId: string; completed: boolean; claimId?: string; force?: true };
 
 /** Completes or reopens one item; a refusal throws the server's reason, or `failure` when it gives none. */
-export const setItemCompleted = async ({ spaceId, itemId, completed, claimId }: Completion, failure: string): Promise<SpaceItem> => {
+export const setItemCompleted = async ({ spaceId, itemId, completed, claimId, force }: Completion, failure: string): Promise<SpaceItem> => {
   const response = await apiClient[":id"].items[":itemId"].completed.$post({
     param: { id: spaceId, itemId },
-    json: { completed, claimId },
+    json: { completed, claimId, force },
   });
   if (!response.ok) throw new Error(await readResponseError(response, failure));
   return response.json();
@@ -23,7 +23,7 @@ export const setItemCompleted = async ({ spaceId, itemId, completed, claimId }: 
  * a card a shortcut moved to the done column. Undo sets the previous state of the same item again. The toast outlives
  * the row or card that showed it, because they are gone by design.
  */
-export const confirmCompletion = (change: Omit<Completion, "claimId">, t: Messages): void => {
+export const confirmCompletion = (change: Omit<Completion, "claimId" | "force">, t: Messages): void => {
   const notice = toast.success(change.completed ? t.itemCompleted : t.itemReopened, {
     action: {
       label: t.undo,

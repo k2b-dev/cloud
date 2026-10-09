@@ -85,11 +85,16 @@ started; a holder who is not assigned is marked as such. A claim only marks who 
 assignment and the column do not change. CLI workers and service accounts claim
 the same way and appear the same way.
 
-Claims do not expire and cannot be overwritten. Completing a claimed task,
-including dragging it into a done column, is reserved for the holder and
-releases the claim. Space admins see **Take over** for another account's claim
-and confirm it in a dialog that names the current holder; ordinary
-collaborative edits remain available while a task is claimed.
+Claims do not expire, and they coordinate work instead of locking it: anyone
+who can edit the Space can move a claimed task between open columns, and
+ordinary collaborative edits remain available. Completing your own claimed task,
+including dragging it into a done column, releases the claim. Anyone who can
+edit the Space sees **Take over** for another account's claim and confirms it in
+a dialog that names the current holder. Completing a task someone else claimed,
+for example by dragging it into a done column, asks once, such as "Claimed by
+Jana Berger – take over and complete?", then takes the claim over and completes
+the task in one step. **Cancel** leaves the card where it was. The activity
+shows who took a claim over from whom.
 
 ## Prepare invitations from Cloud search {icon="calendar-event"}
 

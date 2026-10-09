@@ -5,7 +5,8 @@ import type { SpaceItem, SpaceItemClaim } from "@/contracts";
 import { createDomTestHarness } from "../../ui/test/dom";
 
 const now = "2026-09-26T08:00:00.000Z";
-const adminId = "33333333-3333-4333-8333-333333333333";
+/** A writer, not a Space admin: claims coordinate work, and anyone who may change the task may take one over. */
+const writerId = "33333333-3333-4333-8333-333333333333";
 const claim: SpaceItemClaim = {
   id: "55555555-5555-4555-8555-555555555555",
   actor: { kind: "user", id: "44444444-4444-4444-8444-444444444444" },
@@ -33,7 +34,7 @@ const item: SpaceItem = {
   recurrenceId: null,
   rank: "1024",
   completedAt: null,
-  createdBy: adminId,
+  createdBy: writerId,
   createdAt: now,
   updatedAt: now,
   assignees: [],
@@ -48,11 +49,17 @@ const release = mock(async (_input: { json: { claimId: string; force?: boolean }
 });
 const claimTask = mock(async (_input: { json: { claimId: string } }) => {
   calls.push("claim");
-  return Response.json({ claim: { ...claim, actor: { kind: "user", id: adminId } } });
+  return Response.json({ claim: { ...claim, actor: { kind: "user", id: writerId } } });
+});
+const complete = mock(async (_input: { json: { completed: boolean; claimId?: string; force?: boolean } }) => {
+  calls.push("complete");
+  return Response.json({ ...item, claim: null, completedAt: now });
 });
 if (!isServer) {
   mock.module("@/api/client", () => ({
-    apiClient: { [":id"]: { items: { [":itemId"]: { release: { $post: release }, claim: { $post: claimTask } } } } },
+    apiClient: {
+      [":id"]: { items: { [":itemId"]: { release: { $post: release }, claim: { $post: claimTask }, completed: { $post: complete } } } },
+    },
   }));
 }
 
@@ -94,12 +101,11 @@ describe("Spaces claim take-over", () => {
           wormholes: [],
           spaceId: item.spaceId,
           baseUrl: "/app/spaces/Space1",
-          currentUserId: adminId,
+          currentUserId: writerId,
           initialCommentsPage: { items: [], page: 1, perPage: 50, total: 0, hasNext: false },
           commentTarget: { itemId: item.id, recurrenceId: null },
           recurringContext: null,
           canWrite: true,
-          isAdmin: true,
           mailIntegrationAvailable: false,
           scrollPreserveKey: "test-detail",
         }),
@@ -131,12 +137,66 @@ describe("Spaces claim take-over", () => {
     dom.cleanup();
   });
 
+  test("completing somebody else's claimed task asks once, and takes the claim over in the same request", async () => {
+    calls.splice(0);
+    const dom = createDomTestHarness();
+    dom.root.className = "k2b-ui";
+    const { default: ItemDetailPanel } = await import("../src/frontend/[id]/_components/detail/ItemDetailPanel");
+    const dispose = render(
+      () =>
+        createComponent(ItemDetailPanel, {
+          item,
+          columns: [],
+          tags: [],
+          wormholes: [],
+          spaceId: item.spaceId,
+          baseUrl: "/app/spaces/Space1",
+          currentUserId: writerId,
+          initialCommentsPage: { items: [], page: 1, perPage: 50, total: 0, hasNext: false },
+          commentTarget: { itemId: item.id, recurrenceId: null },
+          recurringContext: null,
+          canWrite: true,
+          mailIntegrationAvailable: false,
+          scrollPreserveKey: "test-detail",
+        }),
+      dom.root,
+    );
+    const completeButton = () =>
+      [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Mark complete")!;
+    const dialog = () => dom.document.querySelector<HTMLDialogElement>('dialog[aria-label="Take over task"]');
+    const dialogButton = (label: string) =>
+      [...(dialog()?.querySelectorAll<HTMLButtonElement>("footer button") ?? [])].find((button) => button.textContent === label);
+
+    completeButton().click();
+    await waitFor(() => dialog() !== null);
+    expect(dialog()!.textContent).toContain("Claimed by Mira Beck – take over and complete?");
+    dialogButton("Cancel")!.click();
+    await waitFor(() => dialog() === null);
+    expect(calls).toEqual([]);
+
+    // The panel reloads the Space data once the completion is saved; the test ends after that, not before.
+    const { SPACES_DATA_INVALIDATED_EVENT } = await import("../src/frontend/[id]/_components/workspace/workspace-events");
+    let reloaded = false;
+    dom.window.addEventListener(SPACES_DATA_INVALIDATED_EVENT, () => {
+      reloaded = true;
+    });
+    completeButton().click();
+    await waitFor(() => dialogButton("Take over and complete") !== undefined);
+    dialogButton("Take over and complete")!.click();
+    await waitFor(() => reloaded);
+    expect(calls).toEqual(["complete"]);
+    expect(complete.mock.calls[0]![0].json).toEqual({ completed: true, claimId: claim.id, force: true });
+
+    dispose();
+    dom.cleanup();
+  });
+
   test("runs the shown claim action on click without reading the caller's prop expressions", async () => {
     const dom = createDomTestHarness();
     dom.root.className = "k2b-ui";
     const { default: ClaimButton } = await import("../src/frontend/[id]/_components/shared/claim/ClaimButton");
     const handled: string[] = [];
-    // Shaped like the getters Solid compiles for `isAdmin={a && b}` or `claim={x ? y : null}`: every read creates a memo.
+    // Shaped like the getters Solid compiles for `canTakeOver={a && b}` or `claim={x ? y : null}`: every read creates a memo.
     const dispose = render(
       () =>
         [false, true].map((compact) =>
@@ -145,9 +205,9 @@ describe("Spaces claim take-over", () => {
               return createMemo(() => true)() ? claim : null;
             },
             get currentUserId() {
-              return createMemo(() => adminId)();
+              return createMemo(() => writerId)();
             },
-            get isAdmin() {
+            get canTakeOver() {
               return createMemo(() => true)() && true;
             },
             compact,

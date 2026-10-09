@@ -219,6 +219,10 @@ export default function SpacesOverview(props: Props) {
       "task.completed": t.activityCompletedTask(params),
       "task.claimed": t.activityClaimed(params),
       "task.released": t.activityReleased(params),
+      "task.taken_over": t.activityTakenOver({
+        ...params,
+        from: typeof entry.metadata.fromName === "string" ? entry.metadata.fromName : t.activityFormerHolder,
+      }),
       "task.progress": t.activityProgress(params),
       "task.reopened": t.activityReopenedTask(params),
       "event.completed": t.activityCompletedEvent(params),

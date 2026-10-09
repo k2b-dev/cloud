@@ -746,8 +746,12 @@ export const MoveItemSchema = z
       .regex(/^-?\d+$/)
       .optional()
       .describe("Absolute rank stored as given; ignored when afterItemId or beforeItemId is set"),
-    completed: z.boolean().optional().describe("Optional completion state override after move"),
-    claimId: UuidSchema.optional().describe("Current worker claim ID; required to complete a claimed task by moving it"),
+    completed: z
+      .boolean()
+      .optional()
+      .describe("Completion state after the move; claims and blockers are checked only when this changes the current state"),
+    claimId: UuidSchema.optional().describe("Current worker claim ID; required when the move completes or reopens a claimed task"),
+    force: z.boolean().optional().describe("Take over another actor's claim given as its exact claimId; any writer may"),
   })
   .refine((data) => data.afterItemId === undefined || data.beforeItemId === undefined, {
     message: "Pass either afterItemId or beforeItemId, not both",

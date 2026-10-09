@@ -31,7 +31,7 @@ import { useSpaceMessages } from "../../messages";
 import { defaultFilter, type FilterState, hasActiveFilters } from "../filter/types";
 import AssigneeAvatars from "../shared/AssigneeAvatars";
 import ClaimButton from "../shared/claim/ClaimButton";
-import { claimTask, ownClaimId, releaseTask } from "../shared/claim/claim";
+import { type CompletionClaim, claimTask, releaseTask, resolveCompletionClaim } from "../shared/claim/claim";
 import { confirmCompletion, setItemCompleted } from "../shared/completion";
 import { isInactiveTask } from "../shared/item-activity";
 import CreateItemButton from "../sidebar/CreateItemButton";
@@ -92,8 +92,8 @@ type MoveContext = {
   targetColumnId: string;
   position: MovePosition;
   targetIndex: number;
-  targetCompleted: boolean;
-  claimId: string | undefined;
+  /** Sent only when the drop completes or reopens the item; a move that keeps the state needs no claim. */
+  completion: ({ completed: boolean } & CompletionClaim) | null;
 };
 
 /** Where a dragged column header lands: before the board column at this index, or at the end. */
@@ -448,10 +448,7 @@ export default function KanbanBoard(props: Props) {
         return;
       }
       if (isNoOpMove(active.meta.itemId, intent)) return;
-      moveMutation.mutate({
-        itemId: active.meta.itemId,
-        intent,
-      });
+      void dropCard(active.meta.itemId, intent);
     },
   });
 
@@ -569,8 +566,8 @@ export default function KanbanBoard(props: Props) {
     return next < 0 ? bucket.items.length : next;
   };
 
-  const moveMutation = mutations.create<SpaceItem, { itemId: string; intent: DropIntent }, MoveContext>({
-    onBefore: ({ itemId, intent }) => {
+  const moveMutation = mutations.create<SpaceItem, { itemId: string; intent: DropIntent; claim: CompletionClaim }, MoveContext>({
+    onBefore: ({ itemId, intent, claim }) => {
       if (intent.kind !== "column") throw new Error(t.invalidColumnTarget);
       const previousBuckets = buckets();
       const resolved = resolveMoveTargets({
@@ -594,10 +591,15 @@ export default function KanbanBoard(props: Props) {
 
       const targetItemsWithoutSource = resolved.targetBucket.items.filter((item) => item.id !== itemId);
       const targetIndexClamped = clamp(targetIndex, 0, targetItemsWithoutSource.length);
+      const changesCompletion = resolved.targetBucket.isDone !== Boolean(resolved.source.item.completedAt);
       const optimisticUpdated: SpaceItem = {
         ...resolved.source.item,
         columnId: targetColumnId,
-        completedAt: resolved.targetBucket.isDone ? new Date().toISOString() : null,
+        completedAt: changesCompletion
+          ? resolved.targetBucket.isDone
+            ? new Date().toISOString()
+            : null
+          : resolved.source.item.completedAt,
       };
       // Only completion ends blocked or overdue, so a card that lands in an open status shows under the
       // automatic column that still gathers it: one dragged out of it stays in place, one reopened from a
@@ -643,19 +645,13 @@ export default function KanbanBoard(props: Props) {
         // the top of the whole column, above cards an active filter hides.
         position: props.folded.has(resolved.targetBucket.key) ? {} : movePosition(targetItemsWithoutSource, targetIndexClamped),
         targetIndex: landingIndex,
-        targetCompleted: resolved.targetBucket.isDone,
-        claimId: resolved.targetBucket.isDone ? ownClaimId(resolved.source.item.claim, props.currentUserId) : undefined,
+        completion: changesCompletion ? { completed: resolved.targetBucket.isDone, ...claim } : null,
       };
     },
     mutation: async (vars, ctx) => {
       const moveRes = await apiClient[":id"].items[":itemId"].move.$post({
         param: { id: props.spaceId, itemId: vars.itemId },
-        json: {
-          columnId: ctx.targetColumnId,
-          ...ctx.position,
-          completed: ctx.targetCompleted,
-          claimId: ctx.claimId,
-        },
+        json: { columnId: ctx.targetColumnId, ...ctx.position, ...ctx.completion },
       });
       if (!moveRes.ok) {
         throw new Error(await readResponseError(moveRes, t.moveFailed));
@@ -710,6 +706,21 @@ export default function KanbanBoard(props: Props) {
     },
     onFinally: () => setMovingItemId(null),
   });
+
+  /**
+   * A drop that completes or reopens a task someone else claimed asks once to take the claim over. Declining leaves the
+   * card where it was, as after any drop that changes nothing: the board only moves it once the move is under way.
+   */
+  const dropCard = async (itemId: string, intent: DropIntent) => {
+    const resolved = intent.kind === "column" ? resolveMoveTargets({ itemId, bucketKey: intent.bucketKey }) : null;
+    const completed = resolved?.targetBucket.isDone ?? false;
+    const claim =
+      resolved && completed !== Boolean(resolved.source.item.completedAt)
+        ? await resolveCompletionClaim(resolved.source.item.claim, props.currentUserId, completed, t)
+        : {};
+    if (!claim || movingItemId() || moveMutation.loading() || transferMutation.loading()) return;
+    await moveMutation.mutate({ itemId, intent, claim });
+  };
 
   const transferMutation = mutations.create<WormholeTransferResult, { itemId: string; wormholeId: string }, TransferContext>({
     onBefore: ({ itemId }) => {
@@ -796,13 +807,10 @@ export default function KanbanBoard(props: Props) {
     onError: (error, context) => retryToast(error.message, t.retry, () => context && assignCardMutation.mutate(currentCard(context.item))),
   });
 
-  const completeCardMutation = mutations.create<SpaceItem, SpaceItem, { item: SpaceItem }>({
-    onBefore: (item) => ({ item }),
-    mutation: (item) =>
-      setItemCompleted(
-        { spaceId: props.spaceId, itemId: item.id, completed: true, claimId: ownClaimId(item.claim, props.currentUserId) },
-        t.updateFailed,
-      ),
+  type CardCompletion = { item: SpaceItem; claim: CompletionClaim };
+  const completeCardMutation = mutations.create<SpaceItem, CardCompletion, CardCompletion>({
+    onBefore: (vars) => vars,
+    mutation: ({ item, claim }) => setItemCompleted({ spaceId: props.spaceId, itemId: item.id, completed: true, ...claim }, t.updateFailed),
     // The shortcut moves the card away from where the user acted, often out of view, so it is confirmed with Undo.
     onSuccess: (item) => {
       setOptimisticBuckets(null);
@@ -810,7 +818,7 @@ export default function KanbanBoard(props: Props) {
       confirmCompletion({ spaceId: props.spaceId, itemId: item.id, completed: true }, t);
     },
     onError: (error, context) =>
-      retryToast(error.message, t.retry, () => context && completeCardMutation.mutate(currentCard(context.item))),
+      retryToast(error.message, t.retry, () => context && completeCardMutation.mutate({ ...context, item: currentCard(context.item) })),
   });
 
   const [claimingItemId, setClaimingItemId] = createSignal<string | null>(null);
@@ -909,7 +917,8 @@ export default function KanbanBoard(props: Props) {
           icon: "ti ti-check",
           shortcut: "d",
           action: async () => {
-            await completeCardMutation.mutate(item);
+            const claim = await resolveCompletionClaim(item.claim, props.currentUserId, true, t);
+            if (claim) await completeCardMutation.mutate({ item, claim });
           },
         }),
       );
@@ -1302,7 +1311,7 @@ export default function KanbanBoard(props: Props) {
                                         <ClaimButton
                                           claim={item.claim}
                                           currentUserId={props.currentUserId}
-                                          isAdmin={false}
+                                          canTakeOver={false}
                                           compact
                                           loading={claimingItemId() === item.id}
                                           disabled={claimCardMutation.loading() || (!item.claim && item.activeBlockerCount > 0)}

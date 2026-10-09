@@ -89,12 +89,18 @@ Aufgaben. In den Details steht diese Person mit demselben Ring, dem Hinweis
 Zuweisung und Spalte ändern sich nicht. CLI-Worker und Service-Accounts
 übernehmen auf demselben Weg und erscheinen gleich.
 
-Übernahmen laufen nicht automatisch ab und lassen sich nicht überschreiben.
-Eine übernommene Aufgabe erledigen, auch per Ziehen in eine Erledigt-Spalte,
-kann nur die Person, die sie hält; damit wird die Übernahme freigegeben.
-Personen mit Adminzugriff sehen bei fremden Übernahmen **Übernehmen** und
-bestätigen es in einem Dialog, der die bisherige Person nennt; gewöhnliche
-gemeinsame Bearbeitungen bleiben während einer Übernahme möglich.
+Übernahmen laufen nicht automatisch ab. Sie koordinieren die Arbeit, sperren sie
+aber nicht: Wer den Space bearbeiten darf, kann eine übernommene Aufgabe
+zwischen offenen Spalten verschieben, und gewöhnliche gemeinsame Bearbeitungen
+bleiben möglich. Erledigst du deine eigene übernommene Aufgabe, auch per Ziehen
+in eine Erledigt-Spalte, wird die Übernahme freigegeben. Wer den Space
+bearbeiten darf, sieht bei fremden Übernahmen **Übernehmen** und bestätigt es in
+einem Dialog, der die bisherige Person nennt. Erledigst du eine Aufgabe, die
+jemand anderes übernommen hat, etwa per Ziehen in eine Erledigt-Spalte, fragt
+Spaces einmal nach, zum Beispiel „Von Jana Berger übernommen – übernehmen und
+abschließen?“, und übernimmt und erledigt die Aufgabe dann in einem Schritt.
+**Abbrechen** lässt die Karte an ihrem Platz. Die Aktivität zeigt, wer eine
+Aufgabe von wem übernommen hat.
 
 ## Einladungen über die Cloud-Suche vorbereiten {icon="calendar-event"}
 

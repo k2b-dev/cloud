@@ -379,19 +379,30 @@ the `+N` overflow. In the task details, the holder leads the **Assigned** list
 in the same row style with the green ring and the time they started working.
 An assigned holder appears once; a holder who is not assigned, such as a
 service account, still leads and is marked as not assigned. People and service
-accounts render the same way. Somebody else's claim cannot be overwritten; a Space admin may **take
-over** after confirming, which is the admin recovery of the exact observed
-claim followed by a fresh claim.
-Completing a claimed task, including a drag into a done column, requires the
-holder's claim ID and releases the claim; the web UI sends it for your own
-claim.
+accounts render the same way.
+
+Claims coordinate work; they do not lock it. A claim guards completion, not the
+column: anyone who can edit the Space can move a claimed task between open
+columns, or between done columns, without a claim ID. Completing or reopening a
+claimed task, including a drag into a done column, needs the holder's claim ID,
+and completing ends the claim; the web UI sends it for your own claim. Anyone
+with write access may take over someone else's claim. In the task details,
+**Take over** ends the exact observed claim and claims the task for you.
+Completing or reopening a task someone else claimed, from the board, the list,
+the calendar tray, or the details, asks once, for example "Claimed by Jana
+Berger – take over and complete?", and then takes the claim over and completes
+the task in one step. Cancel leaves the task, and the card, where they were.
+Task activity records who took a claim over from whom. The previous holder's
+next call with the ended claim ID gets `409` "Task claim is no longer active".
 
 Use `cld spaces ls <space-id> --ready --json` to find open tasks without
 active blockers. Read `show <item> --context` before starting, then claim the task
 with a caller-generated UUID. Competing claims fail, including separate workers
 using the same account. Claims do not expire or lock ordinary edits. Release
 the claim when stopping, before a transfer, or before completing from another
-session. An administrator can recover an abandoned claim by its exact ID.
+session. Anyone with write access can take over an abandoned claim with
+`release --force` and its exact ID, or complete with `done --claim-id <id>
+--force`.
 
 `progress` accepts a full handoff as text or through `--from <file|->`. `done` can save
 an outcome with verification evidence and an optional commit SHA in the same
@@ -405,8 +416,9 @@ older work notes. Pages are fresh reads and may change during collaboration.
 The `comments list` output and the `blocks` field of `deps` are paginated objects.
 
 For capabilities, use `task.work.read`, `task.claim`, `task.release` and
-`task.progress`; `task.set-completed` accepts optional `result`, `commit` and
-`claimId`, and `task.list` and `task.focus` accept `claimed: true` to list
+`task.progress`; `task.release` and `task.set-completed` accept `force` to take
+over the exact claim named by `claimId`, `task.set-completed` also accepts
+optional `result` and `commit`, and `task.list` and `task.focus` accept `claimed: true` to list
 only claimed tasks. Results and progress notes each have the existing 5,000-character
 text budget. Keep the repository's Space ID in its agent instructions and
 use it in every item address.

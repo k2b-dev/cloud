@@ -50,7 +50,7 @@ const button = (props: Partial<Parameters<typeof ClaimButton>[0]>, locale = "en"
     createComponent(ClaimButton, {
       claim: null,
       currentUserId: me,
-      isAdmin: false,
+      canTakeOver: false,
       onClaim: noop,
       onRelease: noop,
       onTakeOver: noop,
@@ -87,14 +87,14 @@ describe("Spaces claim controls", () => {
     expect(button({ claim: ownClaim }, "de")).toContain(">Freigeben<");
   });
 
-  test("hides the control for another account's claim unless the person is a Space admin", () => {
+  test("hides the control for another account's claim unless the place offers a take-over", () => {
     expect(button({ claim: otherClaim })).toBe("");
     expect(button({ claim: botClaim })).toBe("");
 
-    const takeOver = button({ claim: otherClaim, isAdmin: true });
+    const takeOver = button({ claim: otherClaim, canTakeOver: true });
     expect(takeOver).toContain('data-spaces-claim-action="take-over"');
     expect(takeOver).toContain(">Take over<");
-    expect(button({ claim: botClaim, isAdmin: true }, "de")).toContain(">Übernehmen<");
+    expect(button({ claim: botClaim, canTakeOver: true }, "de")).toContain(">Übernehmen<");
   });
 
   test("renders a compact icon button with an accessible name and disabled, loading states", () => {
@@ -116,8 +116,8 @@ describe("Spaces claim controls", () => {
       { props: {}, locale: "de", label: "Ich übernehme" },
       { props: { claim: ownClaim }, locale: "en", label: "Release" },
       { props: { claim: ownClaim }, locale: "de", label: "Freigeben" },
-      { props: { claim: otherClaim, isAdmin: true }, locale: "en", label: "Take over" },
-      { props: { claim: otherClaim, isAdmin: true }, locale: "de", label: "Übernehmen" },
+      { props: { claim: otherClaim, canTakeOver: true }, locale: "en", label: "Take over" },
+      { props: { claim: otherClaim, canTakeOver: true }, locale: "de", label: "Übernehmen" },
     ];
     for (const { props, locale, label } of cases) {
       const compact = button({ ...props, compact: true }, locale);

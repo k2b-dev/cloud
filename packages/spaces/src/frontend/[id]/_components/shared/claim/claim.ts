@@ -11,9 +11,38 @@ type Target = { spaceId: string; itemId: string };
 export const isOwnClaim = (claim: SpaceItemClaim | null | undefined, currentUserId: string) =>
   claim?.actor.kind === "user" && claim.actor.id === currentUserId;
 
-/** The claim ID to send with completion or a completing move; only the holder's own claim can be completed. */
+/** The claim ID to send whenever completion changes; the holder completes or reopens a claimed task with it. */
 export const ownClaimId = (claim: SpaceItemClaim | null | undefined, currentUserId: string) =>
   isOwnClaim(claim, currentUserId) ? claim!.id : undefined;
+
+/** Someone else's claim, which a completion change by the signed-in person takes over. */
+export const othersClaim = (claim: SpaceItemClaim | null | undefined, currentUserId: string) =>
+  claim && !isOwnClaim(claim, currentUserId) ? claim : null;
+
+/** Claim fields of a completion change: the holder's own claim ID, or a confirmed take-over of the exact claim seen. */
+export type CompletionClaim = { claimId?: string; force?: true };
+
+/**
+ * Claims coordinate work and do not lock it: completing or reopening a task someone else claimed asks once and then
+ * takes their claim over in the same request. Resolves to null when the person declines, so nothing changes.
+ */
+export const resolveCompletionClaim = async (
+  claim: SpaceItemClaim | null | undefined,
+  currentUserId: string,
+  completed: boolean,
+  t: Messages,
+): Promise<CompletionClaim | null> => {
+  const other = othersClaim(claim, currentUserId);
+  if (!other) return { claimId: ownClaimId(claim, currentUserId) };
+  const name = other.displayName;
+  const confirmed = await prompts.confirm(completed ? t.takeOverAndComplete({ name }) : t.takeOverAndReopen({ name }), {
+    title: t.takeOverTitle,
+    icon: "ti ti-replace",
+    confirmText: completed ? t.takeOverAndCompleteAction : t.takeOverAndReopenAction,
+    cancelText: t.cancel,
+  });
+  return confirmed ? { claimId: other.id, force: true } : null;
+};
 
 /** Claims the task with a fresh browser-generated claim ID, exactly like a CLI worker. */
 export const claimTask = async (target: Target, t: Messages) => {
@@ -38,7 +67,7 @@ export const releaseTask = async (target: Target, claimId: string, t: Messages, 
   return response.json();
 };
 
-/** Admin recovery: force-release the exact observed claim, then claim the task for the current person. */
+/** Any writer takes over: force-release the exact observed claim, then claim the task for the current person. */
 export const takeOverTask = async (target: Target, claim: SpaceItemClaim, t: Messages) => {
   const response = await apiClient[":id"].items[":itemId"].release.$post({
     param: { id: target.spaceId, itemId: target.itemId },

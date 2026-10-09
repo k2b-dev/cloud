@@ -57,8 +57,7 @@ suite("Spaces agent work", () => {
         ok: false,
         status: 409,
       });
-      expect(await change({ ...context, operation: "release", claimId: crypto.randomUUID(), force: true })).toMatchObject({ status: 403 });
-      await sql`UPDATE auth.access SET permission = 'admin' WHERE id = ${grant!.id}::uuid`;
+      // A take-over names the exact claim it saw; any other claim ID is refused.
       expect(await change({ ...context, operation: "release", claimId: crypto.randomUUID(), force: true })).toMatchObject({ status: 409 });
 
       // A DB failure after updating the item must roll back completion AND preserve the claim/result.
@@ -129,6 +128,103 @@ suite("Spaces agent work", () => {
       await sql`DELETE FROM spaces.spaces WHERE id = ${spaceId}::uuid`;
       await sql`DELETE FROM auth.access WHERE id = ${grant!.id}::uuid`;
       await sql`DELETE FROM auth.service_accounts WHERE id = ${actor.id}::uuid`;
+    }
+  });
+
+  test("a claim guards completion, not column moves, and any writer can take it over", async () => {
+    const [space] = await sql<
+      { id: string }[]
+    >`INSERT INTO spaces.spaces (short_id, name) VALUES (${newShortId()}, 'Claimed moves') RETURNING id`;
+    const spaceId = space!.id;
+    const accounts = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts (name, kind, app_id, resource_type, resource_id)
+      VALUES ('Holder', 'resource_bound', 'spaces', 'space', ${spaceId}), ('Colleague', 'resource_bound', 'spaces', 'space', ${spaceId}),
+             ('Reader', 'resource_bound', 'spaces', 'space', ${spaceId})
+      RETURNING id`;
+    const [holder, colleague, reader] = accounts.map((row) => ({ kind: "service_account" as const, id: row.id }));
+    const grants = await sql<{ id: string }[]>`INSERT INTO auth.access (service_account_id, permission)
+      VALUES (${holder!.id}::uuid, 'write'), (${colleague!.id}::uuid, 'write'), (${reader!.id}::uuid, 'read') RETURNING id`;
+    for (const grant of grants)
+      await sql`INSERT INTO spaces.space_access (space_id, access_id) VALUES (${spaceId}::uuid, ${grant.id}::uuid)`;
+    const as = (actor: typeof holder) => ({ actor: actor!, subject: { type: "service_account" as const, serviceAccountId: actor!.id } });
+    try {
+      const [todo, doing, review, done, archived] = await sql<{ id: string }[]>`
+        INSERT INTO spaces.columns (short_id, space_id, name, rank, is_done)
+        VALUES (${newShortId()}, ${spaceId}::uuid, 'Todo', 1024, false), (${newShortId()}, ${spaceId}::uuid, 'Doing', 2048, false),
+               (${newShortId()}, ${spaceId}::uuid, 'Review', 3072, false), (${newShortId()}, ${spaceId}::uuid, 'Done', 4096, true),
+               (${newShortId()}, ${spaceId}::uuid, 'Archived', 5120, true)
+        RETURNING id`;
+      const [task] = await sql<{ id: string }[]>`INSERT INTO spaces.items (short_id, space_id, column_id, title)
+        VALUES (${newShortId()}, ${spaceId}::uuid, ${todo!.id}::uuid, 'Claimed task') RETURNING id`;
+      const itemId = task!.id;
+      const takeOvers = () => sql<{ actor_id: string; metadata: { from: { id: string }; fromName: string } }[]>`
+        SELECT actor_id, metadata FROM spaces.activity_events WHERE item_id = ${itemId}::uuid AND action = 'task.taken_over' ORDER BY id`;
+      const claimId = crypto.randomUUID();
+      expect((await change({ itemId, spaceId, ...as(holder), operation: "claim", claimId })).ok).toBe(true);
+
+      // A move that keeps the completion state needs no claim, for the holder or anyone else, and keeps the claim.
+      expect((await move({ id: itemId, columnId: doing!.id, completed: false, actor: holder })).ok).toBe(true);
+      expect((await move({ id: itemId, columnId: review!.id, completed: false, actor: colleague })).ok).toBe(true);
+      expect((await move({ id: itemId, columnId: todo!.id, actor: colleague })).ok).toBe(true);
+      expect((await setCompleted({ id: itemId, completed: false, actor: colleague })).ok).toBe(true);
+      expect((await read(itemId)).claim?.id).toBe(claimId);
+
+      // Completing needs the holder's claim ID or an explicit take-over of that exact claim.
+      expect(await move({ id: itemId, columnId: done!.id, completed: true, actor: colleague })).toMatchObject({ ok: false, status: 409 });
+      expect(await setCompleted({ id: itemId, completed: true, actor: colleague })).toMatchObject({ ok: false, status: 409 });
+      expect(await move({ id: itemId, columnId: done!.id, completed: true, actor: holder })).toMatchObject({ ok: false, status: 409 });
+      expect(
+        await move({ id: itemId, columnId: done!.id, completed: true, claimId: crypto.randomUUID(), force: true, actor: colleague }),
+      ).toMatchObject({ ok: false, status: 409, error: "Task claim changed; read its current state before taking it over" });
+      expect((await get({ id: itemId }))?.completedAt).toBeNull();
+      const completed = await move({ id: itemId, columnId: done!.id, completed: true, claimId, actor: holder });
+      expect(completed.ok && completed.data.completedAt !== null && completed.data.claim === null).toBe(true);
+      const completedAt = completed.ok ? completed.data.completedAt : null;
+      // A claim-bound call after the claim ended is refused, even when it would change nothing.
+      expect(await setCompleted({ id: itemId, completed: true, claimId, actor: holder })).toMatchObject({
+        status: 409,
+        error: "Task claim is no longer active",
+      });
+
+      // Between done statuses the completion time stays.
+      const archivedMove = await move({ id: itemId, columnId: archived!.id, completed: true, actor: colleague });
+      expect(archivedMove.ok && archivedMove.data.completedAt).toBe(completedAt);
+      const reopened = await move({ id: itemId, columnId: doing!.id, completed: false, actor: holder });
+      expect(reopened.ok && reopened.data.completedAt).toBeNull();
+      expect(await takeOvers()).toEqual([]);
+
+      // Any writer takes a claim over and completes in one step; the activity names who took it from whom.
+      const second = crypto.randomUUID();
+      expect((await change({ itemId, spaceId, ...as(holder), operation: "claim", claimId: second })).ok).toBe(true);
+      const takenOver = await move({ id: itemId, columnId: done!.id, completed: true, claimId: second, force: true, actor: colleague });
+      expect(takenOver.ok && takenOver.data.completedAt !== null && takenOver.data.claim === null).toBe(true);
+      expect(await takeOvers()).toEqual([
+        { actor_id: colleague!.id, metadata: expect.objectContaining({ from: holder, fromName: "Holder" }) },
+      ]);
+      // The holder's next claim-bound call learns that its claim ended.
+      expect(await change({ itemId, spaceId, ...as(holder), operation: "progress", claimId: second, content: "Late" })).toMatchObject({
+        status: 409,
+        error: "Task claim is no longer active",
+      });
+
+      // A take-over by release ends the claim the same way, and the new worker claims it.
+      expect((await setCompleted({ id: itemId, completed: false, actor: colleague })).ok).toBe(true);
+      const third = crypto.randomUUID();
+      expect((await change({ itemId, spaceId, ...as(holder), operation: "claim", claimId: third })).ok).toBe(true);
+      // A read-only member takes nothing over.
+      expect(await change({ itemId, spaceId, ...as(reader), operation: "release", claimId: third, force: true })).toMatchObject({
+        status: 403,
+      });
+      expect((await change({ itemId, spaceId, ...as(colleague), operation: "release", claimId: third, force: true })).ok).toBe(true);
+      expect((await change({ itemId, spaceId, ...as(colleague), operation: "claim", claimId: crypto.randomUUID() })).ok).toBe(true);
+      expect((await read(itemId)).claim?.actor).toEqual(colleague);
+      expect((await takeOvers()).map((row) => row.actor_id)).toEqual([colleague!.id, colleague!.id]);
+      // The holder completes its own claim with its claim ID, by setCompleted as well.
+      const own = await setCompleted({ id: itemId, completed: true, claimId: (await read(itemId)).claim!.id, actor: colleague });
+      expect(own.ok && own.data.claim === null).toBe(true);
+    } finally {
+      await sql`DELETE FROM spaces.spaces WHERE id = ${spaceId}::uuid`;
+      for (const grant of grants) await sql`DELETE FROM auth.access WHERE id = ${grant.id}::uuid`;
+      for (const account of accounts) await sql`DELETE FROM auth.service_accounts WHERE id = ${account.id}::uuid`;
     }
   });
 
