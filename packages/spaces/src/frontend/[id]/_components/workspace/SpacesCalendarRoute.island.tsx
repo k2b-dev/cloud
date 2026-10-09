@@ -7,10 +7,12 @@ import { createRetryToasts } from "../../../lib/feedback";
 import { useSpaceMessages } from "../../messages";
 import Calendar from "../calendar";
 import { type CalendarFilter, parseCalendarRoute } from "../calendar/filter";
-import { mergeTimelineItems, type TimelineRange, timelineBlock } from "../calendar/timeline";
+import { mergeTimelineItems, TIMELINE_MAX_DAYS, type TimelineRange, timelineBlock } from "../calendar/timeline";
 import type { CalendarView, DayWeather } from "../calendar/types";
 import { calendarViewSource, useSpacesCalendarQuery } from "./calendar-query";
 import { loadSpacesViewSnapshot } from "./view-query";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 type CalendarState = {
   view: CalendarView;
@@ -59,11 +61,14 @@ export default function SpacesCalendarRoute(props: Props) {
   });
   const state = navigation.current;
 
+  /** Counts snapshots taken over, so a week that loaded while a fresher snapshot came in does not overwrite it. */
+  let generation = 0;
   // A refresh of the same days merges into the strip; another filter or anchor day replaces it.
   createEffect(
     on(
       navigation.loaded,
       (loaded) => {
+        generation += 1;
         const incoming = loaded ? timelineOf(loaded.source, loaded.snapshot) : null;
         const current = untrack(timeline);
         setTimeline(
@@ -84,6 +89,7 @@ export default function SpacesCalendarRoute(props: Props) {
     const current = timeline();
     const block = current && timelineBlock(current, edge, props.dateConfig);
     if (!current || !block) return;
+    const started = generation;
     const load = new AbortController();
     loads.add(load);
     setLoadingBlocks((count) => count + 1);
@@ -93,7 +99,12 @@ export default function SpacesCalendarRoute(props: Props) {
       // A new filter, anchor day, or refresh in the meantime decides the days on its own.
       if (snapshot.kind !== "calendar" || !latest || latest.source !== current.source || latest.anchor !== current.anchor) return;
       if (edge === "earlier" ? latest.from !== block.to : latest.to !== block.from) return;
-      setTimeline({ ...latest, ...mergeTimelineItems(latest, { ...block, items: snapshot.items }) });
+      // The snapshot that came in meanwhile is fresher than this week's items at the edge; load the week again.
+      if (generation !== started) return loadBlock(edge);
+      const merged = mergeTimelineItems(latest, { ...block, items: snapshot.items });
+      // Weeks at both ends load at once; together they must stay within the range a refresh may ask for.
+      if (Date.parse(merged.to) - Date.parse(merged.from) > TIMELINE_MAX_DAYS * DAY_MS) return;
+      setTimeline({ ...latest, ...merged });
     } catch {
       if (!load.signal.aborted) retryToast(t.timelineLoadFailed, t.retry, () => loadBlock(edge));
     } finally {

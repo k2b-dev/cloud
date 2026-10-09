@@ -329,7 +329,7 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
 
     test("opens the timeline on the evening before its day and loads a range it already shows", async () => {
       const request = {
-        user: { id: USER_ID, roles: ["user"] },
+        user: { id: USER_ID, roles: ["user" as const] },
         spaceId: SPACE_ID,
         spaceShortId: SPACE_SHORT_ID,
         href: `/app/spaces/${SPACE_SHORT_ID}?view=calendar&cv=timeline&cd=2026-10-08`,

@@ -6,7 +6,7 @@ import { createConfig } from "@k2b/ssr";
 import { dates } from "@k2b/stdlib";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import type { CalendarEvent } from "./Calendar";
+import type { CalendarEvent, CalendarView } from "./Calendar";
 import type { DataTableProps } from "./DataTable";
 import { getFileViewPreviewKind } from "./file-view-preview";
 
@@ -222,6 +222,10 @@ describe("@k2b/ui Cloud content contract", () => {
     expect(html).toContain('<div class="k2b-calendar-body">Custom body</div>');
     expect(html).not.toContain("k2b-calendar-month");
     expect(html).not.toContain("Review");
+
+    // Never rendered: without custom views, JSX keeps the built-in view type in the callbacks.
+    const builtIn = (view: CalendarView) => view;
+    void (() => <Calendar date="2026-07-15" events={[]} onViewChange={(view) => builtIn(view)} />);
   });
 
   test("indexes year-view events once instead of rescanning them for every day", () => {

@@ -283,7 +283,7 @@ describe("Spaces calendar colors", () => {
         startsAt: "2026-10-08T14:00:00.000Z",
         endsAt: "2026-10-08T15:30:00.000Z",
         deadline: null,
-        tags: [{ id: "Tag1", name: "Release", color: "#8b5cf6" }],
+        tags: [{ id: "Tag1", spaceId: "Space1", name: "Release", color: "#8b5cf6" }],
       },
       {
         ...base,

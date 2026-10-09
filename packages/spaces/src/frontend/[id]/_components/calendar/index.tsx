@@ -587,7 +587,8 @@ export default function Calendar(props: CalendarProps) {
     if (timeline && timelineController && target.view === "timeline" && target.date === timeline.anchor) {
       if (timeline.anchor === calendar.today(props.dateConfig).toISOString()) timelineController.scrollToNow();
       else timelineController.scrollToTime(timeline.from);
-      return;
+      // A day the reader asked for before still loads; this link replaces it with the strip they see.
+      if (!props.navigationPending) return;
     }
     props.onNavigateHref?.(href);
   };

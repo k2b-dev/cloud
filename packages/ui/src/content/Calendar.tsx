@@ -1732,7 +1732,7 @@ const CalendarRoot = <V extends string = never>(props: CalendarProps<V>): JSX.El
 };
 
 /** JSX infers the values of `customViews`; inference from the last signature, as in `createComponent`, sees plain props. */
-function Calendar<V extends string>(props: CalendarProps<V>): JSX.Element;
+function Calendar<V extends string = never>(props: CalendarProps<V>): JSX.Element;
 function Calendar(props: CalendarProps): JSX.Element;
 function Calendar(props: CalendarProps<string>): JSX.Element {
   return CalendarRoot(props);
