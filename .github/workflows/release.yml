@@ -401,13 +401,15 @@ jobs:
               curl -fsS --max-time 60 -H 'Accept: application/vnd.npm.install-v1+json' "https://registry.npmjs.org/${name/\//%2f}" | jq -e --arg v "$version" '.versions[$v]' >/dev/null &&
               curl -fsS --max-time 120 -o /dev/null "$tarball"
           }
+          # Both budgets count from the same start, so the waits together stay within the job timeout.
+          start=$SECONDS
           for name in @k2b/ui @k2b/ssr; do
             version=$(jq -r --arg name "$name" '.dependencies[$name]' packages/cloud/package.json)
             [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || { echo "@k2b/cloud must pin an exact $name version, found '$version'." >&2; exit 1; }
             released=$([[ "$name" == "@k2b/ui" ]] && echo "$UI_RELEASED" || echo "$SSR_RELEASED")
             # A version published by this run may take minutes to become installable; an older pin must be installable already.
             budget=$([[ "$released" == "true" ]] && echo 1200 || echo 60)
-            deadline=$((SECONDS + budget))
+            deadline=$((start + budget))
             delay=10
             until installable "$name" "$version"; do
               remaining=$((deadline - SECONDS))
