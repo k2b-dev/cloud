@@ -78,6 +78,8 @@ const css =
   (await buildCss(resolve(import.meta.dir, "../../styles/app.css")));
 /** Milliseconds the content endpoint waits before it answers. */
 let delay = 0;
+/** Attachment ids whose content the page has read. */
+const reads: string[] = [];
 const server = Bun.serve({
   port: 0,
   hostname: "127.0.0.1",
@@ -85,8 +87,10 @@ const server = Bun.serve({
     const url = new URL(request.url);
     if (url.pathname === "/harness.js") return new Response(harness, { headers: { "Content-Type": "text/javascript; charset=utf-8" } });
     if (url.pathname === "/styles.css") return new Response(css, { headers: { "Content-Type": "text/css; charset=utf-8" } });
-    const file = files[/^\/api\/notebooks\/nb0001\/attachments\/(\w+)\/content$/u.exec(url.pathname)?.[1] ?? ""];
+    const id = /^\/api\/notebooks\/nb0001\/attachments\/(\w+)\/content$/u.exec(url.pathname)?.[1] ?? "";
+    const file = files[id];
     if (file) {
+      reads.push(id);
       if (delay) await Bun.sleep(delay);
       const inline = url.searchParams.get("inline") === "true";
       return new Response(file.body, { headers: { "Content-Type": inline ? file.mimeType : "application/octet-stream" } });
@@ -112,8 +116,14 @@ afterAll(async () => {
 const desktop: BrowserContextOptions = { viewport: { width: 1440, height: 900 } };
 const phone: BrowserContextOptions = { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true };
 
-const open = async (context: BrowserContextOptions, index: number, ready: string): Promise<Page> => {
+const open = async (context: BrowserContextOptions, index: number, ready: string, inlineViewer = true): Promise<Page> => {
   const page = await (await browser.newContext(context)).newPage();
+  // Chromium's headless shell reports no inline PDF viewer and Playwright's WebKit reports one, so every test says
+  // which browser it is: by default one with a viewer, as a desktop browser or Safari on iOS.
+  await page.addInitScript(
+    (enabled) => Object.defineProperty(Navigator.prototype, "pdfViewerEnabled", { get: () => enabled }),
+    inlineViewer,
+  );
   await page.goto(server.url.href);
   await page.evaluate((list) => window.mountAttachments(list, "en"), attachments);
   await page.locator(".notebooks-attachment-tile__open").nth(index).click();
@@ -221,6 +231,39 @@ describe("Notebook attachment preview layout", () => {
       }
     }, 30_000);
   }
+
+  test("on a phone without an inline PDF viewer, the hint takes the document's place and the PDF is not fetched", async () => {
+    reads.length = 0;
+    const page = await open(phone, 1, '.k2b-content-pdf-preview__placeholder[data-state="empty"]', false);
+    try {
+      const shown = await layout(page);
+      const hint = await page.evaluate(() => {
+        const body = document.querySelector(".k2b-dialog[open] .k2b-panel-dialog__body")!;
+        const placeholder = document.querySelector(".k2b-dialog[open] .k2b-content-pdf-preview__placeholder")!;
+        const box = placeholder.getBoundingClientRect();
+        return {
+          text: placeholder.textContent,
+          frames: document.querySelectorAll(".k2b-dialog[open] iframe").length,
+          height: box.height,
+          bottom: box.bottom,
+          inset: Number.parseFloat(getComputedStyle(body).paddingBottom),
+          overflow: placeholder.scrollHeight - placeholder.clientHeight,
+        };
+      });
+      expect(hint.text).toBe("This PDF cannot be shown hereYour browser cannot show PDFs inside a page. Open the document to view it.");
+      expect(hint.frames).toBe(0);
+      // The same box the document fills with a viewer, and the hint fits it without scrolling.
+      expect(hint.bottom).toBeCloseTo(shown.body.bottom - hint.inset, 0);
+      expect(hint.height).toBeGreaterThan(shown.frame.height / 2);
+      expect(hint.overflow).toBe(0);
+      expect(shown.overflow).toBeFalse();
+      // The preview could show only the hint, so it fetches nothing; the header's open action is the way to the PDF.
+      expect(reads).not.toContain("Att002");
+      expect(await page.locator('.k2b-dialog[open] a[target="_blank"][href*="/attachments/Att002/content"]').count()).toBe(1);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
 
   test("focus starts on the content, so Page Down scrolls a long document at once", async () => {
     const page = await open(desktop, 0, ".k2b-content-markdown");

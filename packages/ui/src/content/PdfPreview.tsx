@@ -1,4 +1,5 @@
 import { createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { announce } from "../feedback/announce";
 import { resolveUiMessages, useUiMessages } from "../intl/messages";
 import Placeholder from "../surfaces/Placeholder";
 
@@ -45,15 +46,26 @@ export default function PdfPreview(props: PdfPreviewProps) {
   const [error, setError] = createSignal<string | null>(null);
   const [failed, setFailed] = createSignal(false);
   const [tabBlocked, setTabBlocked] = createSignal(false);
+  // The frame has its document only once it fires `load`; until then the loading state covers it.
+  const [drawn, setDrawn] = createSignal(false);
   // An automatic preview shows one fixed document; the open action reuses it instead of requesting it again.
   let shownBlob: Blob | null = null;
   let openButton: HTMLElement | undefined;
   let frame: HTMLIFrameElement | undefined;
+  let viewer: HTMLDivElement | undefined;
   let renderButton: HTMLButtonElement | undefined;
   let errorRetryButton: HTMLButtonElement | undefined;
   let disposed = false;
   let loadGeneration = 0;
   let openGeneration = 0;
+
+  // Without an inline PDF viewer (`navigator.pdfViewerEnabled === false`, as in Chrome on Android) a frame stays empty
+  // or downloads the file, so the viewer explains that instead and leaves the document to the open and download actions.
+  const inlineViewer = () => typeof navigator === "undefined" || navigator.pdfViewerEnabled !== false;
+  // There an automatic preview could show only that hint, so it requests nothing: the open action fetches the document
+  // when someone asks for it, and is also the retry after it fails. An on-demand preview still renders, because its
+  // request also checks the caller's input.
+  const openOnly = () => Boolean(props.autoLoad) && !inlineViewer();
 
   const revokeCurrent = () => {
     const current = url();
@@ -95,12 +107,18 @@ export default function PdfPreview(props: PdfPreviewProps) {
       const previousUrl = url();
       shownBlob = blob;
       setFailed(false);
+      setDrawn(false);
       setUrl(nextUrl);
       setLoading(false);
       if (previousUrl) URL.revokeObjectURL(previousUrl);
-      // The shown document removes the retry action; keep keyboard focus in the actions instead of the page, or on the
-      // document itself when the host shows only the content.
-      if (retryFocused && document.activeElement === document.body) (openButton?.isConnected ? openButton : frame)?.focus();
+      // The loading status turns into the missing-viewer hint in place and stops being a live region, so say it here.
+      if (!inlineViewer()) {
+        announce(messages().pdfPreviewNoViewer);
+        announce(messages().pdfPreviewNoViewerDescription);
+      }
+      // The shown document removes the retry action; keep keyboard focus in the actions instead of the page, or, when
+      // the host shows only the content, in the viewer, which hands it on to the document once the frame has loaded it.
+      if (retryFocused && document.activeElement === document.body) (openButton?.isConnected ? openButton : viewer)?.focus();
     } catch (e) {
       if (disposed || generation !== loadGeneration) return;
       shownBlob = null;
@@ -113,9 +131,10 @@ export default function PdfPreview(props: PdfPreviewProps) {
   };
 
   onMount(() => {
-    // Hand the initial loading state to the request itself, which also covers a preview disabled by now.
+    // Hand the initial loading state to the request itself, which also covers a preview disabled by now or one that
+    // leaves the document to the open action.
     setLoading(false);
-    if (props.autoLoad) void load();
+    if (props.autoLoad && !openOnly()) void load();
   });
 
   const openInNewTab = async () => {
@@ -149,7 +168,7 @@ export default function PdfPreview(props: PdfPreviewProps) {
 
   // With autoLoad, rendering again would show the same document: offer it only until one is shown. After a failure the
   // default error state carries it as the retry; beside a caller's error content it stays in place while a retry loads.
-  const renderable = () => !props.autoLoad || (failed() ? Boolean(props.renderError) : !url() && !loading());
+  const renderable = () => !openOnly() && (!props.autoLoad || (failed() ? Boolean(props.renderError) : !url() && !loading()));
   const actions = () => (
     <div class="k2b-content-pdf-preview__actions">
       <Show
@@ -219,43 +238,70 @@ export default function PdfPreview(props: PdfPreviewProps) {
       </Show>
     </div>
   );
-  // Every state before a document is shown uses one placeholder in the viewer's box, so loading changes no layout.
-  const content = () => (
-    <Show
-      when={error()}
-      fallback={
-        <Show
-          when={url()}
-          fallback={
-            <Placeholder
-              class="k2b-content-pdf-preview__placeholder"
-              state={loading() ? "loading" : "empty"}
-              icon={loading() ? undefined : "ti ti-file-type-pdf"}
-              title={loading() ? messages().loading : undefined}
-              description={loading() ? undefined : (props.emptyText ?? messages().renderPdfPreview)}
-            />
-          }
-        >
-          {(currentUrl) => (
-            <iframe
-              ref={(element) => (frame = element)}
-              class="k2b-content-pdf-preview__frame"
-              src={currentUrl()}
-              title={props.title ?? messages().pdfPreview}
-            />
-          )}
-        </Show>
-      }
-    >
-      {(message) =>
-        props.renderError?.(message()) ?? (
+  // Every state uses one placeholder in the viewer's box, so loading changes no layout: idle and loading before a
+  // document arrives, loading over the frame until it has loaded the document, and the hint where no frame can.
+  const status = () => {
+    if (error()) return null;
+    if (!inlineViewer() && (url() || (openOnly() && !loading()))) return "no-viewer";
+    if (!url()) return loading() ? "loading" : "idle";
+    return drawn() ? null : "loading";
+  };
+  const viewerBox = () => (
+    // While it shows a placeholder, the viewer itself holds keyboard focus that has nowhere else to go.
+    <div ref={(element) => (viewer = element)} class="k2b-content-pdf-preview__viewer" tabIndex={status() ? -1 : undefined}>
+      <Show when={!error() && inlineViewer() && url()}>
+        {(currentUrl) => (
+          <iframe
+            ref={(element) => {
+              frame = element;
+              // A new frame loads its document again, also one that was shown before a failed reload.
+              setDrawn(false);
+            }}
+            class="k2b-content-pdf-preview__frame"
+            data-drawn={drawn() ? "" : undefined}
+            // Out of reach while the loading state covers it, so keyboard focus never lands on an invisible frame.
+            inert={!drawn()}
+            src={currentUrl()}
+            title={props.title ?? messages().pdfPreview}
+            onLoad={() => {
+              const waiting = document.activeElement === viewer;
+              setDrawn(true);
+              if (waiting) frame?.focus();
+            }}
+          />
+        )}
+      </Show>
+      <Show
+        when={error()}
+        fallback={
+          <Show when={status()}>
+            {(state) => (
+              <Placeholder
+                class="k2b-content-pdf-preview__placeholder"
+                state={state() === "loading" ? "loading" : "empty"}
+                icon={state() === "loading" ? undefined : "ti ti-file-type-pdf"}
+                title={state() === "loading" ? messages().loading : state() === "no-viewer" ? messages().pdfPreviewNoViewer : undefined}
+                description={
+                  state() === "idle"
+                    ? (props.emptyText ?? messages().renderPdfPreview)
+                    : state() === "no-viewer"
+                      ? messages().pdfPreviewNoViewerDescription
+                      : undefined
+                }
+              />
+            )}
+          </Show>
+        }
+      >
+        {(message) => (
           <Placeholder
             class="k2b-content-pdf-preview__placeholder"
             state="error"
             description={message()}
             action={
-              // One retry at a time: the render action moves here only where the toolbar no longer offers it.
-              renderable() ? undefined : (
+              // One retry at a time: the render action moves here only where the toolbar no longer offers it, and the
+              // open action is the retry of a preview that leaves the document to it.
+              renderable() || openOnly() ? undefined : (
                 <button
                   ref={(element) => (errorRetryButton = element)}
                   type="button"
@@ -270,8 +316,14 @@ export default function PdfPreview(props: PdfPreviewProps) {
               )
             }
           />
-        )
-      }
+        )}
+      </Show>
+    </div>
+  );
+  // A caller's error content replaces the whole viewer, as it brings its own layout.
+  const content = () => (
+    <Show when={props.renderError ? error() : null} fallback={viewerBox()}>
+      {(message) => props.renderError?.(message())}
     </Show>
   );
 
