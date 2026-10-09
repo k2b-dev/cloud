@@ -2096,14 +2096,24 @@
   color: var(--k2b-danger-text);
 }
 
-/* The placeholder and the document share one box: an iframe's default height
-   where nothing sizes the viewer, the remaining height of a sized column. */
-.k2b-ui :is(.k2b-content-pdf-preview__placeholder, .k2b-content-pdf-preview__frame) {
+/* Every state draws in one box: an iframe's default height where nothing
+   sizes the viewer, the remaining height of a sized column. */
+.k2b-ui .k2b-content-pdf-preview__viewer {
+  position: relative;
   flex: 1 1 auto;
   box-sizing: border-box;
   width: 100%;
   height: 150px;
   min-height: 0;
+}
+
+/* The placeholder lies over the frame until the frame has drawn its document. */
+.k2b-ui :is(.k2b-content-pdf-preview__placeholder, .k2b-content-pdf-preview__frame) {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
 }
 
 /* A long error scrolls from its top instead of overflowing above the box. */
@@ -2116,6 +2126,11 @@
   display: block;
   border: 0;
   background: #fff;
+}
+
+/* Transparent, not hidden: the frame still loads, draws, and takes focus. */
+.k2b-ui .k2b-content-pdf-preview__frame:not([data-drawn]) {
+  opacity: 0;
 }
 
 .k2b-ui .k2b-content-structured-data {

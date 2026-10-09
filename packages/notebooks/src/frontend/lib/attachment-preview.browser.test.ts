@@ -114,6 +114,9 @@ const phone: BrowserContextOptions = { viewport: { width: 390, height: 844 }, is
 
 const open = async (context: BrowserContextOptions, index: number, ready: string): Promise<Page> => {
   const page = await (await browser.newContext(context)).newPage();
+  // Chromium's headless shell reports no inline PDF viewer, where the preview shows a hint instead of the frame;
+  // these tests measure the frame a desktop or phone browser with a viewer shows.
+  await page.addInitScript(() => Object.defineProperty(Navigator.prototype, "pdfViewerEnabled", { get: () => true }));
   await page.goto(server.url.href);
   await page.evaluate((list) => window.mountAttachments(list, "en"), attachments);
   await page.locator(".notebooks-attachment-tile__open").nth(index).click();

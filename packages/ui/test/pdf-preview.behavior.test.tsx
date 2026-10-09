@@ -319,7 +319,10 @@ domTest(
       resolveRetry(new Blob(["%PDF-1.4"], { type: "application/pdf" }));
       await Bun.sleep(0);
       expect(calls).toBe(2);
-      expect(dom.root.querySelector("iframe")).not.toBeNull();
+      const frame = dom.root.querySelector("iframe")!;
+      // The same loading state stays over the frame until the frame has drawn the document.
+      expect(dom.root.querySelector('.k2b-content-pdf-preview__placeholder[data-state="loading"]')).toBe(status);
+      frame.dispatchEvent(new Event("load"));
       expect(dom.root.querySelector(".k2b-content-pdf-preview__placeholder")).toBeNull();
       // The removed retry hands keyboard focus to the open action.
       expect(dom.document.activeElement).toBe(open);
@@ -569,3 +572,105 @@ domTest("a caller's open address opens as a plain link, so reloading and the vie
     dom.cleanup();
   }
 });
+
+domTest("the loading state covers the frame until the frame has drawn each document it shows", async () => {
+  const dom = createDomTestHarness();
+  const browser = stubPdfBrowser(dom);
+  const { default: PdfPreview } = await import("../src/content/PdfPreview");
+  const dispose = render(() => <PdfPreview request={async () => new Blob(["%PDF-1.4"], { type: "application/pdf" })} />, dom.root);
+  try {
+    const renderPreview = dom.root.querySelector<HTMLButtonElement>(".k2b-content-pdf-preview__actions button:last-child")!;
+    const viewer = dom.root.querySelector<HTMLElement>(".k2b-content-pdf-preview__viewer")!;
+    click(renderPreview);
+    await Bun.sleep(0);
+    // The frame already loads the document in the viewer's box, still transparent under the loading state.
+    const frame = viewer.querySelector("iframe")!;
+    expect(frame.getAttribute("src")).toBe("blob:document-1");
+    expect(frame.hasAttribute("data-drawn")).toBe(false);
+    const status = viewer.querySelector<HTMLElement>('.k2b-content-pdf-preview__placeholder[data-state="loading"]')!;
+    expect(status.getAttribute("role")).toBe("status");
+    expect(renderPreview.disabled).toBe(false);
+    frame.dispatchEvent(new Event("load"));
+    expect(frame.hasAttribute("data-drawn")).toBe(true);
+    expect(viewer.querySelector(".k2b-content-pdf-preview__placeholder")).toBeNull();
+    // A new document in the same frame is covered again until it is drawn.
+    click(renderPreview);
+    await Bun.sleep(0);
+    expect(viewer.querySelector("iframe")).toBe(frame);
+    expect(frame.getAttribute("src")).toBe("blob:document-2");
+    expect(viewer.querySelector('[data-state="loading"]')).not.toBeNull();
+    frame.dispatchEvent(new Event("load"));
+    expect(viewer.querySelector(".k2b-content-pdf-preview__placeholder")).toBeNull();
+    expect(dom.root.querySelector(".k2b-content-pdf-preview__viewer")).toBe(viewer);
+  } finally {
+    dispose();
+    browser.restore();
+    dom.cleanup();
+  }
+});
+
+for (const host of ["actions", "content only"] as const) {
+  domTest(`without an inline PDF viewer, the viewer explains it in the inherited locale (${host})`, async () => {
+    const dom = createDomTestHarness();
+    dom.document.documentElement.lang = "de";
+    Object.defineProperty(navigator, "pdfViewerEnabled", { configurable: true, value: false });
+    const browser = stubPdfBrowser(dom);
+    const { default: PdfPreview } = await import("../src/content/PdfPreview");
+    let calls = 0;
+    let resolveRetry!: (blob: Blob) => void;
+    const request = () => {
+      if (++calls === 1) return Promise.reject(new Error("Netzwerkfehler"));
+      return new Promise<Blob>((resolve) => {
+        resolveRetry = resolve;
+      });
+    };
+    const dispose = render(
+      () =>
+        host === "actions" ? (
+          <PdfPreview autoLoad request={request} />
+        ) : (
+          <PdfPreview autoLoad request={request}>
+            {(parts) => <div>{parts.content}</div>}
+          </PdfPreview>
+        ),
+      dom.root,
+    );
+    try {
+      await Bun.sleep(0);
+      const retry = dom.root.querySelector<HTMLButtonElement>('[role="alert"] button')!;
+      retry.focus();
+      click(retry);
+      const status = dom.root.querySelector<HTMLElement>('.k2b-content-pdf-preview__placeholder[data-state="loading"]')!;
+      resolveRetry(new Blob(["%PDF-1.4"], { type: "application/pdf" }));
+      await Bun.sleep(0);
+      // No frame that would stay empty or download the file: the loading state turns into the hint in the same box.
+      expect(dom.root.querySelector("iframe")).toBeNull();
+      const hint = dom.root.querySelector<HTMLElement>(".k2b-content-pdf-preview__placeholder")!;
+      expect(hint).toBe(status);
+      expect(hint.dataset.state).toBe("empty");
+      expect(hint.getAttribute("role")).toBeNull();
+      expect(hint.textContent).toBe(
+        "Dieses PDF kann hier nicht angezeigt werden" +
+          "Dein Browser kann PDFs nicht innerhalb einer Seite anzeigen. Öffne das Dokument oder lade es herunter, um es anzusehen.",
+      );
+      // The way to the document is the open action, or the host's own actions when it leaves them out.
+      expect(hint.querySelector("button, a")).toBeNull();
+      const viewer = dom.root.querySelector<HTMLElement>(".k2b-content-pdf-preview__viewer")!;
+      if (host === "actions") {
+        expect(labels(dom.root)).toEqual(["Vorschau öffnen"]);
+        expect(dom.document.activeElement).toBe(dom.root.querySelector(".k2b-content-pdf-preview__actions button"));
+        click(dom.root.querySelector<HTMLButtonElement>(".k2b-content-pdf-preview__actions button")!);
+        await Bun.sleep(0);
+        expect(browser.tab.location.href).toBe("blob:document-2");
+      } else {
+        // Keyboard focus lands on the hint that replaced the retry instead of the page.
+        expect(dom.document.activeElement).toBe(viewer);
+      }
+    } finally {
+      dispose();
+      delete (navigator as { pdfViewerEnabled?: boolean }).pdfViewerEnabled;
+      browser.restore();
+      dom.cleanup();
+    }
+  });
+}

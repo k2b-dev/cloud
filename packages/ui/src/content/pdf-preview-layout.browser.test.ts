@@ -76,57 +76,105 @@ afterAll(async () => {
   await browser?.close();
 });
 
-/** The viewer box of every case: the placeholder, the document, or the error state in its place. */
-const viewerBoxes = (page: Page) =>
-  page.evaluate(() =>
-    Object.fromEntries(
-      Array.from(document.querySelectorAll<HTMLElement>("[data-case]"), (cell) => {
-        const viewer = cell.querySelector(".k2b-content-pdf-preview__placeholder, .k2b-content-pdf-preview__frame")!;
-        const box = viewer.getBoundingClientRect();
-        const state = viewer.getAttribute("data-state") ?? viewer.tagName.toLowerCase();
-        return [cell.dataset.case!, { state, box: [box.x, box.y, box.width, box.height].map((value) => Math.round(value * 100) / 100) }];
-      }),
-    ),
+type Viewer = { state: string; box: number[]; frame: { box: number[]; opacity: string } | null };
+type Fixture = { settlePreviews: () => void; viewerStates: () => Record<string, Viewer> };
+
+/** What every case shows: the placeholder on top, or the document, with its box and the frame beneath. */
+const viewerStates = (): Record<string, Viewer> => {
+  const rect = (element: Element) => {
+    const box = element.getBoundingClientRect();
+    return [box.x, box.y, box.width, box.height].map((value) => Math.round(value * 100) / 100);
+  };
+  return Object.fromEntries(
+    Array.from(document.querySelectorAll<HTMLElement>("[data-case]"), (cell) => {
+      const placeholder = cell.querySelector(".k2b-content-pdf-preview__placeholder");
+      const frame = cell.querySelector(".k2b-content-pdf-preview__frame");
+      const shown = placeholder ?? frame!;
+      const viewer: Viewer = {
+        state: placeholder?.getAttribute("data-state") ?? "document",
+        box: rect(shown),
+        frame: frame && { box: rect(frame), opacity: getComputedStyle(frame).opacity },
+      };
+      return [cell.dataset.case!, viewer];
+    }),
   );
+};
 
 describe("@k2b/ui PdfPreview viewer", () => {
   for (const [name, options] of Object.entries(viewports)) {
-    test(`keeps one box from loading to the document or the error state on ${name}`, async () => {
-      const page = await browser.newPage(options);
-      try {
-        await page.setContent(
-          `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css} .sized { height: 24rem } .column { display: flex; flex-direction: column; gap: 0.5rem }</style></head>` +
-            `<body class="k2b-ui" style="margin:0"><main id="app" style="display:grid;gap:16px;padding:16px"></main></body></html>`,
-        );
-        await page.addScriptTag({ content: script });
-        await page.locator('[data-case] [data-state="loading"]').first().waitFor();
-        const loading = await viewerBoxes(page);
-        expect(Object.values(loading).map(({ state }) => state)).toEqual(Array(11).fill("loading"));
-        await page.evaluate(() => (globalThis as unknown as { settlePreviews: () => void }).settlePreviews());
-        await page.locator('[data-case] [data-state="error"]').first().waitFor();
-        const settled = await viewerBoxes(page);
-        for (const [key, { state, box }] of Object.entries(settled)) {
-          expect([key, state]).toEqual([key, key.endsWith(" ok") ? "iframe" : "error"]);
-          expect([key, box]).toEqual([key, loading[key]!.box]);
+    for (const inlineViewer of [true, false]) {
+      test(`keeps one box from loading to the ${inlineViewer ? "drawn document" : "missing viewer hint"} or the error state on ${name}`, async () => {
+        const page = await browser.newPage(options);
+        try {
+          await page.setContent(
+            `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css} .sized { height: 24rem } .column { display: flex; flex-direction: column; gap: 0.5rem }</style></head>` +
+              `<body class="k2b-ui" style="margin:0"><main id="app" style="display:grid;gap:16px;padding:16px"></main></body></html>`,
+          );
+          await page.evaluate((enabled) => {
+            Object.defineProperty(Navigator.prototype, "pdfViewerEnabled", { configurable: true, get: () => enabled });
+          }, inlineViewer);
+          await page.addScriptTag({ content: `${script}\nglobalThis.viewerStates = ${viewerStates};` });
+          await page.locator('[data-case] [data-state="loading"]').first().waitFor();
+          const read = () => page.evaluate(() => (globalThis as unknown as Fixture).viewerStates());
+          const loading = await read();
+          expect(Object.values(loading).map(({ state }) => state)).toEqual(Array(11).fill("loading"));
+          // The documents arrive in microtasks of one task, and a frame fires `load` only in a later task: the observer
+          // sees every frame before any has drawn its document.
+          const arrived = await page.evaluate(
+            () =>
+              new Promise<Record<string, Viewer> | null>((resolve) => {
+                const fixture = globalThis as unknown as Fixture;
+                if (!navigator.pdfViewerEnabled) {
+                  fixture.settlePreviews();
+                  return resolve(null);
+                }
+                new MutationObserver((_records, observer) => {
+                  if (document.querySelectorAll(".k2b-content-pdf-preview__frame").length < 5) return;
+                  observer.disconnect();
+                  resolve(fixture.viewerStates());
+                }).observe(document.getElementById("app")!, { childList: true, subtree: true });
+                fixture.settlePreviews();
+              }),
+          );
+          await page.locator('[data-case] [data-state="error"]').first().waitFor();
+          // Neither engine draws a PDF in a frame (Chromium's headless shell has no viewer, Playwright's WebKit never
+          // loads one), so the frames report their drawn document here.
+          await page.evaluate(() => {
+            for (const frame of document.querySelectorAll(".k2b-content-pdf-preview__frame")) frame.dispatchEvent(new Event("load"));
+          });
+          const settled = await read();
+          for (const [key, { state, box, frame }] of Object.entries(settled)) {
+            const ok = key.endsWith(" ok");
+            expect([key, state]).toEqual([key, ok ? (inlineViewer ? "document" : "empty") : "error"]);
+            expect([key, box]).toEqual([key, loading[key]!.box]);
+            expect([key, frame]).toEqual([key, ok && inlineViewer ? { box, opacity: "1" } : null]);
+            // Until it has drawn the document, the frame lies transparent beneath the loading state in the same box.
+            if (ok && inlineViewer) expect([key, arrived?.[key]]).toEqual([key, { state: "loading", box, frame: { box, opacity: "0" } }]);
+          }
+          if (!inlineViewer) {
+            expect(await page.locator('[data-case="shell sized ok"] .k2b-content-pdf-preview__placeholder').textContent()).toBe(
+              "This PDF cannot be shown hereYour browser cannot show PDFs inside a page. Open or download the document to view it.",
+            );
+          }
+          // Sized containers hand the viewer their remaining height; unsized ones get an iframe's default height.
+          expect(loading["composed sized column ok"]!.box[3]).toBeGreaterThan(300);
+          expect(loading["composed unsized column ok"]!.box[3]).toBe(150);
+          expect(loading["composed block ok"]!.box[3]).toBe(150);
+          // A long error scrolls inside that box from its top instead of overflowing above it out of reach.
+          const long = await page.evaluate(() => {
+            const viewer = document.querySelector<HTMLElement>('[data-case="composed unsized column long"] [data-state="error"]')!;
+            const icon = viewer.querySelector(".k2b-placeholder__icon")!;
+            return {
+              overflow: viewer.scrollHeight - viewer.clientHeight,
+              iconOffset: icon.getBoundingClientRect().top - viewer.getBoundingClientRect().top,
+            };
+          });
+          expect(long.overflow).toBeGreaterThan(0);
+          expect(long.iconOffset).toBeGreaterThanOrEqual(0);
+        } finally {
+          await page.close();
         }
-        // Sized containers hand the viewer their remaining height; unsized ones get an iframe's default height.
-        expect(loading["composed sized column ok"]!.box[3]).toBeGreaterThan(300);
-        expect(loading["composed unsized column ok"]!.box[3]).toBe(150);
-        expect(loading["composed block ok"]!.box[3]).toBe(150);
-        // A long error scrolls inside that box from its top instead of overflowing above it out of reach.
-        const long = await page.evaluate(() => {
-          const viewer = document.querySelector<HTMLElement>('[data-case="composed unsized column long"] [data-state="error"]')!;
-          const icon = viewer.querySelector(".k2b-placeholder__icon")!;
-          return {
-            overflow: viewer.scrollHeight - viewer.clientHeight,
-            iconOffset: icon.getBoundingClientRect().top - viewer.getBoundingClientRect().top,
-          };
-        });
-        expect(long.overflow).toBeGreaterThan(0);
-        expect(long.iconOffset).toBeGreaterThanOrEqual(0);
-      } finally {
-        await page.close();
-      }
-    });
+      });
+    }
   }
 });
