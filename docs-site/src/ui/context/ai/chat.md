@@ -204,6 +204,7 @@ type ChatComposerMicrophone = {
 
 type ChatComposerEmoji = {
   onOpen: (context: { anchor: HTMLElement; insert: (text: string) => void }) => void;
+  skinTone?: EmojiSkinTone; onPick?: (emoji: string) => void;
 };
 
 ```
@@ -376,7 +377,8 @@ plain text; undo/redo restores both text and reference identity.
 
 Pass the task list through `accessory`. An empty conditional accessory reserves no
 row or spacing, including after hydration. Suggestions use that same location and
-restore the task list without changing its open state. Set `draftKey` when
+restore the task list without changing its open state. Without an accessory, they
+float above the composer, which does not move when they open or close. Set `draftKey` when
 switching conversations so undo cannot bring content from another chat back.
 
 When changing a controlled draft outside the composer, use
@@ -455,8 +457,23 @@ field; in the default variant, in the footer.
   already holds a fence gets a longer one. Ctrl/⌘+B, I, and E, and
   Ctrl/⌘+Shift+X and 8 do the same while `formatting` is set.
 - **`emoji`** adds an emoji button. `onOpen` receives the button as `anchor`
-  and an `insert` function that puts the chosen text at the caret. Touch-only
+  and an `insert` function that puts the chosen text at the caret; open
+  [`EmojiPicker.Popover`](/en/ui/input/emoji-picker) there. Touch-only
   devices hide the button, because their keyboard has emoji.
+  It also completes shortcodes: a colon after a space or at the start, then two
+  letters, such as `:th` or `:dau`, lists up to eight emoji whose GitHub
+  shortcode, English or German name, or keyword starts with them, above the
+  field. Emoticons such as `:DD`, `:-D`, or `:-P` match nothing and send as
+  typed; a sign counts only where a shortcode starts with it, as in `:+1`. Up
+  and Down choose, a plain Enter or Tab inserts, and Escape closes the list;
+  Shift+Enter still breaks the line and Ctrl/⌘+Enter still sends. Typing the
+  closing colon of a known shortcode, such as `:tada:`, turns it into 🎉.
+  Inline code, fenced code blocks, URLs, and times such as `10:30` stay text,
+  and the browser's undo brings the shortcode back. Emoji with skin tones come
+  in `skinTone`, and `onPick` reports every emoji the completion inserted, for
+  example to remember it with `rememberEmoji`. The emoji data loads with the
+  first colon typed; a shortcode closed before it arrived turns into its emoji
+  when it arrives, unless the draft changed in the meantime.
 - **`microphone`** adds a microphone before Send, or at the end of the field
   in the conversation variant. Dictation comes first: a
   tap calls `onDictate`, which starts or stops the application's live
@@ -483,7 +500,7 @@ state ends; the composer never records or sends anything itself.
   onSubmit={({ text }) => send(text)}
   sendKey={preferences.sendKey}
   formatting
-  emoji={{ onOpen: ({ anchor, insert }) => openEmojiPicker(anchor, insert) }}
+  emoji={{ onOpen: setEmojiTarget, skinTone: tone(), onPick: remember }}
   microphone={{
     onDictate: dictation.toggle,
     onVoiceMessage: recordVoiceMessage,
@@ -492,5 +509,16 @@ state ends; the composer never records or sends anything itself.
   }}
   hint={hint()}
   placeholder="Message Workshop"
+/>
+<EmojiPicker.Popover
+  anchor={emojiTarget()?.anchor}
+  recent={recent()}
+  skinTone={tone()}
+  onSkinToneChange={setTone}
+  onPick={(emoji) => {
+    emojiTarget()?.insert(emoji);
+    remember(emoji);
+  }}
+  onClose={() => setEmojiTarget(undefined)}
 />
 ```

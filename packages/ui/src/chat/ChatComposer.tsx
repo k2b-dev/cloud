@@ -14,10 +14,20 @@ import {
 import { Dropdown, type DropdownItem as DropdownItemData } from "../actions/Dropdown";
 import { Tooltip } from "../feedback/Tooltip";
 import { replaceTextareaRange } from "../inputs/editor-dom";
+import {
+  completedEmojiShortcode,
+  type EmojiIndex,
+  emojiInTone,
+  emojiName,
+  emojiShortcodeQuery,
+  loadEmojiIndex,
+  suggestEmoji,
+} from "../inputs/emoji/emoji-index";
 import { FileDropTarget } from "../inputs/FileDropTarget";
 import { toggleBulletList, toggleCodeBlock, toggleInlineMarker, toggleQuote } from "../inputs/markdown/actions";
 import { openCodeFence } from "../inputs/markdown/code-zone";
 import { SelectChip } from "../inputs/SelectChip";
+import { useLocale } from "../intl/locale";
 import { type UiMessages, useUiMessages } from "../intl/messages";
 import { ChatContextUsage as ContextUsage } from "./ChatPrimitives";
 import { conversationEnterAction, executeChatAction, nextChatCommandIndex, reportChatFailure, runChatSubmission } from "./chat-behavior";
@@ -35,6 +45,8 @@ import type {
 } from "./types";
 
 const composerMaxInputHeight = 309;
+/** Emoji suggestions for a `:shortcode`, as many as fit the list without scrolling on a phone. */
+const emojiSuggestionLimit = 8;
 // Keep editor undo text within approximately 2 MiB, plus the current edit.
 const composerUndoBudgetChars = 1_000_000;
 
@@ -227,6 +239,21 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   let highlightRef: HTMLDivElement | undefined;
   let commandListRef: HTMLDivElement | undefined;
   const mentions = () => props.mentions ?? [];
+  const locale = useLocale();
+  const [emojiIndex, setEmojiIndex] = createSignal<EmojiIndex>();
+  const emojiQuery = createMemo(() =>
+    !props.emoji || dismissed() || composing() ? null : emojiShortcodeQuery(props.value, caret(), selectionEnd()),
+  );
+  // The emoji data loads with the first `:shortcode`; a failed load only means no suggestions.
+  createEffect(() => {
+    if (emojiQuery() && !emojiIndex()) loadEmojiIndex().then(setEmojiIndex, () => undefined);
+  });
+  const emojiMatches = createMemo(() => {
+    const token = emojiQuery();
+    const index = emojiIndex();
+    return token && index ? suggestEmoji(index, token.query, emojiSuggestionLimit) : [];
+  });
+  const emojiOpen = () => emojiMatches().length > 0;
   const commandQuery = createMemo(() => (dismissed() || composing() ? null : chatCommandQuery(props.value, caret(), selectionEnd())));
   const commandMatches = createMemo(() => {
     const token = commandQuery();
@@ -236,9 +263,10 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       ...searchResults(),
     ];
   });
-  const commandsOpen = () => Boolean(commandQuery() && (props.commands?.length || props.searchCommands));
+  const commandsOpen = () => Boolean(!emojiOpen() && commandQuery() && (props.commands?.length || props.searchCommands));
+  const suggestionsOpen = () => commandsOpen() || emojiOpen();
   createEffect(() => {
-    if (!commandsOpen()) return;
+    if (!suggestionsOpen()) return;
     let disposed = false;
     const measure = () => {
       if (disposed || !commandListRef) return;
@@ -406,12 +434,14 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
 
   createEffect(() => {
     commandMatches();
+    emojiMatches();
     setSelectedCommandIndex(0);
   });
 
   createEffect(() => {
     const index = selectedCommandIndex();
     commandMatches();
+    emojiMatches();
     queueMicrotask(() => {
       const list = commandListRef;
       const item = list?.querySelector<HTMLElement>(`[id="${commandListId}-${index}"]`);
@@ -575,6 +605,47 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     });
   };
 
+  /** Replaces `start`–`end` with the emoji through the editing path, so the browser's undo restores the shortcode. */
+  const insertEmoji = (start: number, end: number, emoji: string) => {
+    if (!textareaRef || editBlocked()) return;
+    replaceTextareaRange(textareaRef, start, end, emoji);
+    syncCaret();
+    reportChatFailure(() => props.emoji?.onPick?.(emoji), props.onError);
+  };
+  const pickEmojiSuggestion = (position: number) => {
+    const token = emojiQuery();
+    const entry = emojiMatches()[position];
+    if (!token || !entry) return;
+    insertEmoji(token.start, token.end, emojiInTone(entry, props.emoji?.skinTone ?? 0));
+  };
+  /**
+   * A typed colon loads the emoji data, and the closing colon of a known `:shortcode:` turns it into its emoji. A
+   * shortcode closed before the data arrived turns when it arrives, as long as nothing changed in the meantime.
+   */
+  const completeShortcode = () => {
+    const textarea = textareaRef;
+    if (!props.emoji || !textarea) return;
+    const { value, selectionStart: caret } = textarea;
+    const completed = completedEmojiShortcode(value, caret);
+    const convert = (index: EmojiIndex) => {
+      const entry = completed && index.byShortcode.get(completed.shortcode.toLowerCase());
+      if (completed && entry) insertEmoji(completed.start, completed.end, emojiInTone(entry, props.emoji?.skinTone ?? 0));
+    };
+    const index = emojiIndex();
+    if (index) {
+      convert(index);
+      return;
+    }
+    loadEmojiIndex().then(
+      (loaded) => {
+        setEmojiIndex(loaded);
+        const untouched = textarea.value === value && textarea.selectionStart === caret && textarea.selectionEnd === caret;
+        if (untouched && textarea.matches(":focus")) convert(loaded);
+      },
+      () => undefined,
+    );
+  };
+
   const onKeyDown = (event: KeyboardEvent) => {
     // WebKit ends the composition before the keydown of the Enter that confirms it; that keydown keeps keyCode 229.
     if (event.isComposing || event.keyCode === 229 || composing()) return;
@@ -582,6 +653,25 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       event.preventDefault();
       restoreHistory(event.shiftKey ? 1 : -1);
       return;
+    }
+    if (emojiOpen()) {
+      if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+        event.preventDefault();
+        setSelectedCommandIndex((index) => nextChatCommandIndex(index, emojiMatches().length, event.key === "ArrowUp" ? -1 : 1));
+        return;
+      }
+      // Only a plain Enter or Tab picks: Shift+Enter still breaks the line, Shift+Tab still moves the focus back.
+      const plain = !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey;
+      if (plain && (event.key === "Enter" || event.key === "Tab")) {
+        event.preventDefault();
+        pickEmojiSuggestion(selectedCommandIndex());
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setDismissed(true);
+        return;
+      }
     }
     const matches = commandMatches();
     if (commandsOpen()) {
@@ -957,15 +1047,21 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
           (running() ? messages().addGuidance : conversation() ? messages().writeConversationMessage : messages().writeMessage)
         }
         aria-label={props.inputLabel ?? messages().message}
-        role={commandsOpen() ? "combobox" : undefined}
-        aria-autocomplete={commandsOpen() ? "list" : undefined}
-        aria-controls={commandsOpen() ? commandListId : undefined}
-        aria-expanded={commandsOpen() ? "true" : undefined}
-        aria-activedescendant={selectedCommand() ? `${commandListId}-${selectedCommandIndex()}` : undefined}
+        role={suggestionsOpen() ? "combobox" : undefined}
+        aria-autocomplete={suggestionsOpen() ? "list" : undefined}
+        aria-controls={suggestionsOpen() ? commandListId : undefined}
+        aria-expanded={suggestionsOpen() ? "true" : undefined}
+        aria-activedescendant={
+          (emojiOpen() ? emojiMatches()[selectedCommandIndex()] : selectedCommand())
+            ? `${commandListId}-${selectedCommandIndex()}`
+            : undefined
+        }
         onInput={(event) => {
           edit(event.currentTarget.value);
           syncCaret();
           autoResize();
+          const input = event as InputEvent;
+          if (input.inputType === "insertText" && input.data === ":") queueMicrotask(completeShortcode);
         }}
         onPaste={(event) => {
           const clipboardData = event.clipboardData;
@@ -1007,11 +1103,45 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
 
   return (
     <div class="k2b-chat-composer-shell">
-      <Show when={commandsOpen() || hasAccessory()}>
-        <div class="k2b-chat-composer-slot">
-          <div style={{ visibility: commandsOpen() ? "hidden" : undefined }} inert={commandsOpen()}>
+      <Show when={suggestionsOpen() || hasAccessory()}>
+        {/* Suggestions alone float above the composer; a row of the shell's grid would add its gap and move the composer. */}
+        <div class="k2b-chat-composer-slot" data-overlay={hasAccessory() ? undefined : "true"}>
+          <div style={{ visibility: suggestionsOpen() ? "hidden" : undefined }} inert={suggestionsOpen()}>
             {accessory()}
           </div>
+          <Show when={emojiOpen()}>
+            <div class="k2b-chat-composer-accessory">
+              <div
+                ref={commandListRef}
+                id={commandListId}
+                class="k2b-chat-composer__commands"
+                role="listbox"
+                aria-label={messages().emojiSuggestions}
+              >
+                <For each={emojiMatches()}>
+                  {(entry, index) => (
+                    <button
+                      id={`${commandListId}-${index()}`}
+                      type="button"
+                      role="option"
+                      tabIndex={-1}
+                      aria-selected={index() === selectedCommandIndex()}
+                      aria-label={emojiName(entry, locale())}
+                      data-active={index() === selectedCommandIndex() ? "true" : undefined}
+                      onPointerDown={(event) => event.preventDefault()}
+                      onClick={() => pickEmojiSuggestion(index())}
+                    >
+                      <span class="k2b-chat-composer__emoji-glyph" aria-hidden="true">
+                        {emojiInTone(entry, props.emoji?.skinTone ?? 0)}
+                      </span>
+                      <strong>{emojiName(entry, locale())}</strong>
+                      <Show when={entry.shortcodes[0]}>{(code) => <small>:{code()}:</small>}</Show>
+                    </button>
+                  )}
+                </For>
+              </div>
+            </div>
+          </Show>
           <Show when={commandsOpen()}>
             <div class="k2b-chat-composer-accessory">
               <div

@@ -4,6 +4,7 @@ import {
   AutocompleteSelect,
   type AutocompleteSelectOption,
   type AutocompleteSelectSearchResult,
+  Button,
   Checkbox,
   CheckboxCard,
   ChoiceChips,
@@ -14,6 +15,8 @@ import {
   DateRangePicker,
   type DateRangeValue,
   DateTimePicker,
+  EmojiPicker,
+  type EmojiSkinTone,
   FileDropTarget,
   FileDropzone,
   fileDropTarget,
@@ -25,6 +28,7 @@ import {
   MultiSelectInput,
   NumberInput,
   PinInput,
+  rememberEmoji,
   Select,
   SelectChip,
   Slider,
@@ -1257,7 +1261,65 @@ const ChoiceChipsDemo = () => {
   );
 };
 
+const EmojiPickerDemo = () => {
+  const [recent, setRecent] = createSignal<readonly string[]>(["👍", "🎉", "☕"]);
+  const [tone, setTone] = createSignal<EmojiSkinTone>(0);
+  const [picked, setPicked] = createSignal("");
+  const [anchor, setAnchor] = createSignal<HTMLElement>();
+  const pick = (emoji: string) => {
+    setPicked(emoji);
+    setRecent(rememberEmoji(recent(), emoji));
+  };
+  return (
+    <DemoCard
+      id="emoji-picker"
+      chip={{ kind: "component", name: "EmojiPicker", from: "@k2b/ui" }}
+      description="Search in English and German, recently used emoji, skin tones, and the whole grid with the keyboard: arrows move, Enter picks. The data loads when the picker first opens. EmojiPicker.Popover opens it next to a button."
+      code={`const [recent, setRecent] = createSignal<readonly string[]>(stored.recentEmoji);
+const [tone, setTone] = createSignal<EmojiSkinTone>(stored.skinTone);
+const [anchor, setAnchor] = createSignal<HTMLElement>();
+
+<Button onClick={(event) => setAnchor(event.currentTarget)}>Add reaction</Button>
+<EmojiPicker.Popover
+  anchor={anchor()}
+  recent={recent()}
+  skinTone={tone()}
+  onSkinToneChange={setTone}
+  onPick={(emoji) => {
+    react(emoji);
+    setRecent(rememberEmoji(recent(), emoji));
+  }}
+  onClose={() => setAnchor(undefined)}
+/>`}
+    >
+      <div style={{ display: "flex", "flex-wrap": "wrap", gap: "1.5rem", "align-items": "flex-start" }}>
+        <EmojiPicker recent={recent()} skinTone={tone()} onSkinToneChange={setTone} onPick={pick} />
+        <div style={{ display: "grid", gap: "0.75rem", "justify-items": "start" }}>
+          <Button variant="subtle" onClick={(event) => setAnchor(event.currentTarget)}>
+            <i class="ti ti-mood-plus" aria-hidden="true" />
+            Add reaction
+          </Button>
+          <EmojiPicker.Popover
+            anchor={anchor()}
+            recent={recent()}
+            skinTone={tone()}
+            onSkinToneChange={setTone}
+            onPick={pick}
+            onClose={() => setAnchor(undefined)}
+          />
+          <span>Picked: {picked() || "nothing yet"}</span>
+        </div>
+      </div>
+    </DemoCard>
+  );
+};
+
 const demos: DemoSection = {
+  "emoji-picker": () => (
+    <DemoGrid columns="one">
+      <EmojiPickerDemo />
+    </DemoGrid>
+  ),
   "qr-scanner": () => <QrScannerDemo />,
   text: () => (
     <DemoGrid columns="one">

@@ -54,7 +54,13 @@ try {
     throw new Error("packed @k2b/ui resolved outside the isolated consumer");
   }
 
-  for (const file of ["LICENSE", "dist/licenses/ibm-plex-sans.txt", "dist/licenses/ibm-plex-mono.txt", "dist/licenses/tabler-icons.txt"]) {
+  for (const file of [
+    "LICENSE",
+    "dist/licenses/ibm-plex-sans.txt",
+    "dist/licenses/ibm-plex-mono.txt",
+    "dist/licenses/tabler-icons.txt",
+    "dist/licenses/emojibase-data.txt",
+  ]) {
     if (!(await Bun.file(join(installedUi, file)).text()).trim()) throw new Error(`missing packed license: ${file}`);
   }
   const manifest = await Bun.file(join(installedUi, "package.json")).json();

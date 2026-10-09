@@ -199,7 +199,8 @@ the start.
 reactions highlighted. With `onToggleReaction`, every chip is a toggle button
 that reports its `key`; without it, the chips are not controls.
 `onAddReaction` adds an "Add reaction" button at the end of the bar and
-receives that button, so a picker can open next to it. A chip's `label`, for
+receives that button, so a picker such as
+[`EmojiPicker.Popover`](/en/ui/input/emoji-picker) can open next to it. A chip's `label`, for
 example "Nora, Tobias", is read by screen readers and shown as a tooltip.
 
 Each chip keeps its element for its `key`. A toggled chip keeps focus when the
@@ -390,7 +391,7 @@ const entry = (message?: ChatEntry) => message && { author: message.authorId, at
             : undefined
         }
         onToggleReaction={(emoji) => toggleReaction(message, emoji)}
-        onAddReaction={(anchor) => openEmojiPicker(anchor, message)}
+        onAddReaction={(anchor) => setReactionTarget({ anchor, message })}
         thread={message.replies > 0 ? { count: message.replies, lastReply: clock(message.lastReplyAt), onOpen: () => openThread(message) } : undefined}
         progress={message.streaming ? { status: "Writing", onStop: () => stopAnswer(message) } : undefined}
         actions={[{ id: "reply", label: "Reply", icon: "ti ti-arrow-back-up", onSelect: () => reply(message) }]}
