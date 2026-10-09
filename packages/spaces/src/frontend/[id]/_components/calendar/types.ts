@@ -1,5 +1,6 @@
 import type { DateContext } from "@k2b/stdlib";
 import type { CalendarItem, SpaceColumn, SpaceItemTemplate, SpaceTag } from "@/contracts";
+import type { TimelineTray } from "../workspace/workspace-types";
 import type { CalendarFilter } from "./filter";
 import type { TimelineRange } from "./timeline";
 
@@ -42,6 +43,8 @@ export type CalendarTimeline = TimelineRange & {
   /** The filter the strip's items were loaded with, which a pending filter change has not replaced yet. */
   filter: CalendarFilter;
   items: CalendarItem[];
+  /** Overdue and undated tasks below the strip, from the snapshot the strip loaded with. */
+  tray: TimelineTray | null;
   busy: boolean;
   onLoadEarlier: () => Promise<void>;
   onLoadLater: () => Promise<void>;

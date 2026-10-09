@@ -17,13 +17,13 @@ import { resolveRecurringOccurrence } from "@/service/recurrence";
 import { resolveReferenceViews } from "@/service/resource-reference-views";
 import { spaceMessages } from "../../messages";
 import { type CalendarFilter, parseCalendarFilter } from "../calendar/filter";
-import { type TimelineRange, timelineWindow } from "../calendar/timeline";
+import { TIMELINE_TRAY_SIZE, type TimelineRange, timelineTrayFilters, timelineWindow } from "../calendar/timeline";
 import type { CalendarView, DayWeather } from "../calendar/types";
 import { boardFilter, defaultFilter, type FilterState, hasActiveFilters, parseFilterFromUrl } from "../filter/types";
 import { kanbanBucketFilter } from "../kanban/bucket-filter";
 import type { KanbanBucketInitial } from "../kanban/types";
 import { isValidView, parseSpaceSettings, type SpaceUserSettings, type ViewType } from "../settings/SpaceSettingsStore";
-import type { SpaceItemDetail, SpacesViewSnapshot, SpacesWorkspaceState } from "./workspace-types";
+import type { SpaceItemDetail, SpacesViewSnapshot, SpacesWorkspaceState, TimelineTray } from "./workspace-types";
 
 type AuthUser = Pick<User, "id" | "roles">;
 
@@ -324,6 +324,38 @@ const loadCalendarWeather = async (params: { cookieHeader?: string; from: Date; 
   return weather;
 };
 
+/** The tray below the timeline: the first overdue tasks and the first undated tasks of the reader, with their totals. */
+const loadTimelineTray = async (params: {
+  spaceId: string;
+  filter: CalendarFilter;
+  userId: string;
+  dateConfig?: DateContext;
+}): Promise<TimelineTray | null> => {
+  const queries = timelineTrayFilters(params.filter);
+  if (!queries) return null;
+  const load = async (query: FilterState | null) => {
+    if (!query) return { items: [], total: 0 };
+    const { items, total } = await spacesService.item.listFiltered({
+      spaceId: params.spaceId,
+      filter: { ...toListFilter(query), pageSize: TIMELINE_TRAY_SIZE },
+      currentUserId: params.userId,
+      dateConfig: params.dateConfig,
+    });
+    return { items, total };
+  };
+  const [overdue, undated] = await Promise.all([load(queries.overdue), load(queries.undated)]);
+  return { overdue, undated };
+};
+
+const projectTimelineTray = async (tray: TimelineTray | null): Promise<TimelineTray | null> => {
+  if (!tray) return null;
+  const [overdue, undated] = await Promise.all([
+    spacesPublicResources.projectItems(tray.overdue.items),
+    spacesPublicResources.projectItems(tray.undated.items),
+  ]);
+  return { overdue: { ...tray.overdue, items: overdue }, undated: { ...tray.undated, items: undated } };
+};
+
 const loadCalendarState = async (params: {
   currentView: ViewType;
   calendarViewParam: CalendarView | null;
@@ -340,6 +372,7 @@ const loadCalendarState = async (params: {
   calendarRange: { from: Date; to: Date };
   calendarItems: CalendarItem[];
   calendarWeather: Record<string, DayWeather>;
+  calendarTray: TimelineTray | null;
 }> => {
   const calendarView = resolveCalendarView(params.calendarViewParam);
   const calendarDate = calendar.parseCalendarDate(params.calendarDateParam, params.dateConfig);
@@ -349,10 +382,12 @@ const loadCalendarState = async (params: {
     dateConfig: params.dateConfig,
     timelineRange: params.timelineRange,
   });
-  if (params.currentView !== "calendar") return { calendarView, calendarDate, calendarRange, calendarItems: [], calendarWeather: {} };
+  if (params.currentView !== "calendar") {
+    return { calendarView, calendarDate, calendarRange, calendarItems: [], calendarWeather: {}, calendarTray: null };
+  }
 
   const { from, to } = calendarRange;
-  const [accessibleItems, calendarWeather] = await Promise.all([
+  const [accessibleItems, calendarWeather, calendarTray] = await Promise.all([
     spacesService.item.calendar.list({
       subject: { type: "user", userId: params.user.id },
       spaceId: params.spaceId,
@@ -367,6 +402,9 @@ const loadCalendarState = async (params: {
     }),
     // The timeline shows no day badges, so it does not pay for the forecast.
     calendarView === "timeline" ? Promise.resolve({}) : loadCalendarWeather({ cookieHeader: params.cookieHeader, from, to }),
+    calendarView === "timeline"
+      ? loadTimelineTray({ spaceId: params.spaceId, filter: params.calendarFilter, userId: params.user.id, dateConfig: params.dateConfig })
+      : Promise.resolve(null),
   ]);
 
   return {
@@ -375,6 +413,7 @@ const loadCalendarState = async (params: {
     calendarRange,
     calendarItems: accessibleItems,
     calendarWeather,
+    calendarTray,
   };
 };
 
@@ -708,6 +747,7 @@ const toViewSnapshot = async (params: {
     range: serializeRange(params.calendarState.calendarRange),
     items: await spacesPublicResources.projectCalendarItems(params.calendarState.calendarItems),
     weather: params.calendarState.calendarWeather,
+    tray: await projectTimelineTray(params.calendarState.calendarTray),
   };
 };
 
@@ -866,10 +906,11 @@ export const loadSpacesWorkspaceState = async (params: WorkspaceRequest): Promis
     cookieHeader: params.cookieHeader,
     authorizationHeader: params.authorizationHeader,
   });
-  const [publicItemsResult, publicKanbanBuckets, publicCalendarItems, publicWormholes] = await Promise.all([
+  const [publicItemsResult, publicKanbanBuckets, publicCalendarItems, publicCalendarTray, publicWormholes] = await Promise.all([
     projectItemResult(itemsResult),
     projectKanbanBuckets(kanbanBuckets, columnIds),
     spacesPublicResources.projectCalendarItems(calendarState.calendarItems),
+    projectTimelineTray(calendarState.calendarTray),
     spacesPublicResources.projectWormholes(wormholes),
   ]);
 
@@ -895,6 +936,7 @@ export const loadSpacesWorkspaceState = async (params: WorkspaceRequest): Promis
     calendarRange: serializeRange(calendarState.calendarRange),
     calendarItems: publicCalendarItems,
     calendarWeather: calendarState.calendarWeather,
+    calendarTray: publicCalendarTray,
     selectedItemDetail,
     wormholes: publicWormholes,
   };

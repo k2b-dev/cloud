@@ -11,6 +11,7 @@ import { mergeTimelineItems, TIMELINE_MAX_DAYS, type TimelineRange, timelineBloc
 import type { CalendarView, DayWeather } from "../calendar/types";
 import { calendarViewSource, useSpacesCalendarQuery } from "./calendar-query";
 import { loadSpacesViewSnapshot } from "./view-query";
+import type { TimelineTray } from "./workspace-types";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -21,10 +22,20 @@ type CalendarState = {
   range: TimelineRange;
   items: CalendarItem[];
   weather: Record<string, DayWeather>;
+  tray: TimelineTray | null;
 };
 
-/** The days the timeline holds: the first window of its snapshot plus every week loaded since. */
-type TimelineState = TimelineRange & { source: string; anchor: string; filter: CalendarFilter; items: CalendarItem[] };
+/**
+ * The days the timeline holds: the first window of its snapshot plus every week loaded since. The tray comes with each
+ * snapshot, so a refresh or another filter renews it; the weeks loaded while the reader scrolls leave it as it is.
+ */
+type TimelineState = TimelineRange & {
+  source: string;
+  anchor: string;
+  filter: CalendarFilter;
+  items: CalendarItem[];
+  tray: TimelineTray | null;
+};
 
 type Props = {
   spaceId: string;
@@ -45,7 +56,7 @@ export default function SpacesCalendarRoute(props: Props) {
   const [selectedItemId, setSelectedItemId] = createSignal(props.selectedItemId);
   const timelineOf = (source: string, snapshot: CalendarState): TimelineState | null =>
     snapshot.view === "timeline"
-      ? { source, anchor: snapshot.date, filter: snapshot.filter, ...snapshot.range, items: snapshot.items }
+      ? { source, anchor: snapshot.date, filter: snapshot.filter, ...snapshot.range, items: snapshot.items, tray: snapshot.tray }
       : null;
   const [timeline, setTimeline] = createSignal(timelineOf(calendarViewSource(props.baseUrl), props.initialState));
   const [loadingBlocks, setLoadingBlocks] = createSignal(0);
@@ -76,7 +87,7 @@ export default function SpacesCalendarRoute(props: Props) {
         const current = untrack(timeline);
         setTimeline(
           incoming && current && current.source === incoming.source && current.anchor === incoming.anchor
-            ? { ...current, ...mergeTimelineItems(current, incoming) }
+            ? { ...current, ...mergeTimelineItems(current, incoming), tray: incoming.tray }
             : incoming,
         );
       },

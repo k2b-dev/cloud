@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { CalendarItem } from "@/contracts";
-import { mergeTimelineItems, TIMELINE_MAX_DAYS, timelineBlock, timelineWindow } from "./timeline";
+import { defaultCalendarFilter } from "./filter";
+import { mergeTimelineItems, TIMELINE_MAX_DAYS, timelineBlock, timelineTrayFilters, timelineWindow } from "./timeline";
 
 const berlin = { timeZone: "Europe/Berlin", locale: "de" };
 
@@ -74,5 +75,27 @@ describe("Spaces timeline window", () => {
     expect(merged.to).toBe("2026-10-16T22:00:00.000Z");
     expect(merged.items.map((entry) => entry.id).sort()).toEqual(["early-task", "kept-event", "moved-event"]);
     expect(merged.items.find((entry) => entry.id === "moved-event")?.startsAt).toBe("2026-10-09T08:00:00.000Z");
+  });
+});
+
+describe("Spaces timeline tray queries", () => {
+  test("ask for open tasks under the calendar's filter: overdue ones, and undated ones of the reader", () => {
+    const queries = timelineTrayFilters({ ...defaultCalendarFilter, assignedTo: "assigned", priorities: ["high"], columnIds: ["Col001"] });
+    expect(queries?.overdue).toMatchObject({
+      type: "task",
+      status: "active",
+      assignedTo: "assigned",
+      deadlineFilter: "overdue",
+      priority: ["high"],
+      columnIds: ["Col001"],
+      sort: "deadline",
+      sortDesc: true,
+    });
+    expect(queries?.undated).toMatchObject({ type: "task", status: "active", assignedTo: "me", deadlineFilter: "none", sort: "priority" });
+  });
+
+  test("rule out what the filter excludes", () => {
+    expect(timelineTrayFilters({ ...defaultCalendarFilter, type: "event" })).toBeNull();
+    expect(timelineTrayFilters({ ...defaultCalendarFilter, assignedTo: "unassigned" })?.undated).toBeNull();
   });
 });

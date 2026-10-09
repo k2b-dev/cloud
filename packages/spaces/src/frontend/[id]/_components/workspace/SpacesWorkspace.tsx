@@ -132,6 +132,7 @@ export default function SpacesWorkspace(props: { state: OkWorkspaceState; dateCo
                   range: state.calendarRange,
                   items: state.calendarItems,
                   weather: state.calendarWeather,
+                  tray: state.calendarTray,
                 }}
                 selectedItemId={selectedCalendarEventId}
                 dateConfig={props.dateConfig}

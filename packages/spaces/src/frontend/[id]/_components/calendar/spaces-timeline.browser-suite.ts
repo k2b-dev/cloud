@@ -8,8 +8,9 @@ import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import type { CalendarItem, SpaceTag } from "@/contracts";
+import type { CalendarItem, SpaceItem, SpaceTag } from "@/contracts";
 import { browserName, launchBrowser } from "../../../../../../ui/test/browser";
+import type { TimelineTray } from "../workspace/workspace-types";
 import { type CalendarFilter, defaultCalendarFilter, parseCalendarRoute } from "./filter";
 import { type TimelineRange, timelineWindow } from "./timeline";
 
@@ -102,6 +103,46 @@ const sample: CalendarItem[] = [
   task("Task04", "Angebot Stadtwerke senden", 12, "17:00", { priority: "urgent" }),
   event("Retr01", "Retro Release 4.2", 20, "14:00", "15:00", { tags: tag(0) }),
 ];
+const trayTask = (id: string, title: string, deadline: string | null = null): SpaceItem => ({
+  id,
+  spaceId: "Space1",
+  columnId: "Col001",
+  title,
+  description: null,
+  location: null,
+  url: null,
+  startsAt: null,
+  endsAt: null,
+  allDay: false,
+  deadline,
+  estimatedDurationMinutes: null,
+  activeBlockerCount: 0,
+  priority: null,
+  recurrence: null,
+  recurringEventId: null,
+  recurrenceId: null,
+  rank: "1024",
+  completedAt: null,
+  createdBy: null,
+  createdAt: "2026-09-01T10:00:00.000Z",
+  updatedAt: "2026-09-01T10:00:00.000Z",
+  assignees: [],
+  tags: [],
+});
+/** The tray of the mockup: two overdue tasks, and three undated tasks of the reader of which it shows two. */
+const sampleTray = (): TimelineTray => ({
+  overdue: {
+    items: [
+      trayTask("Late01", "Vertrag Stadtwerke gegenzeichnen", at(6, "17:00")),
+      trayTask("Late02", "Feedback zu Wireframes", at(5, "17:00")),
+    ],
+    total: 2,
+  },
+  undated: { items: [trayTask("Open01", "Kundenliste bereinigen"), trayTask("Open02", "Messe-Giveaways bestellen")], total: 3 },
+});
+const emptyTray = (): TimelineTray => ({ overdue: { items: [], total: 0 }, undated: { items: [], total: 0 } });
+/** What the server sends: no tray while the calendar shows only events. */
+const trayFor = (tray: TimelineTray, filter: CalendarFilter) => (filter.type === "event" ? null : tray);
 const touches = (item: CalendarItem, range: TimelineRange) => {
   const [from, to] = [Date.parse(range.from), Date.parse(range.to)];
   if (item.startsAt && item.endsAt) return Date.parse(item.startsAt) < to && Date.parse(item.endsAt) > from;
@@ -122,10 +163,10 @@ const anchorOf = (date: string) => dates.parseCalendarDate(date, dateConfig);
 /** The first window of the strip opened on today. */
 const opening = timelineWindow(anchorOf(TODAY), dateConfig);
 
-type Case = { html: string; items: CalendarItem[] };
+type Case = { html: string; items: CalendarItem[]; tray: TimelineTray };
 type ViewRequest = { href: string; from: string | null; to: string | null };
 
-const serverBody = (options: { canWrite: boolean; items: CalendarItem[]; date: string }) => {
+const serverBody = (options: { canWrite: boolean; items: CalendarItem[]; tray: TimelineTray; date: string }) => {
   setSystemTime(NOW);
   try {
     const anchor = anchorOf(options.date);
@@ -144,6 +185,7 @@ const serverBody = (options: { canWrite: boolean; items: CalendarItem[]; date: s
           range,
           items: itemsIn(options.items, range),
           weather: {},
+          tray: options.tray,
         },
         selectedItemId: "",
         dateConfig,
@@ -192,7 +234,14 @@ beforeAll(async () => {
           viewRequest.from && viewRequest.to
             ? { from: viewRequest.from, to: viewRequest.to }
             : timelineWindow(new Date(route.date), dateConfig);
-        const body = { kind: "calendar", ...route, range, items: itemsIn(data?.items ?? [], range, route.filter), weather: {} };
+        const body = {
+          kind: "calendar",
+          ...route,
+          range,
+          items: itemsIn(data?.items ?? [], range, route.filter),
+          weather: {},
+          tray: trayFor(data?.tray ?? emptyTray(), route.filter),
+        };
         await hold(viewRequest);
         return Response.json(body);
       }
@@ -200,7 +249,14 @@ beforeAll(async () => {
       if (completion && request.method === "POST" && data) {
         const body = (await request.json()) as { completed: boolean };
         completions.push({ itemId: completion[1], ...body });
-        if (body.completed) data.items = data.items.filter((item) => item.id !== completion[1]);
+        if (body.completed) {
+          data.items = data.items.filter((item) => item.id !== completion[1]);
+          for (const list of [data.tray.overdue, data.tray.undated]) {
+            const kept = list.items.filter((item) => item.id !== completion[1]);
+            list.total -= list.items.length - kept.length;
+            list.items = kept;
+          }
+        }
         return Response.json({ id: completion[1] });
       }
       return data
@@ -216,7 +272,7 @@ afterAll(async () => {
   server?.stop(true);
 });
 
-const pageHtml = (options: { canWrite: boolean; items: CalendarItem[]; date: string }) =>
+const pageHtml = (options: { canWrite: boolean; items: CalendarItem[]; tray: TimelineTray; date: string }) =>
   `<!doctype html><html lang="de" class="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
   `<link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><style>${css}</style>` +
   "<style>solid-client,solid-island{display:contents}</style></head>" +
@@ -232,12 +288,13 @@ const desktop: View = { width: 1440, height: 900, touch: false };
 
 const open = async (
   view: View,
-  options: { javaScript?: boolean; canWrite?: boolean; items?: CalendarItem[]; date?: string } = {},
+  options: { javaScript?: boolean; canWrite?: boolean; items?: CalendarItem[]; tray?: TimelineTray; date?: string } = {},
 ): Promise<Page> => {
   const id = `case${++caseCounter}`;
   const date = options.date ?? TODAY;
   const items = [...(options.items ?? sample)];
-  cases.set(id, { html: pageHtml({ canWrite: options.canWrite ?? true, items, date }), items });
+  const tray = structuredClone(options.tray ?? sampleTray());
+  cases.set(id, { html: pageHtml({ canWrite: options.canWrite ?? true, items, tray, date }), items, tray });
   const context = await browser.newContext({
     viewport: { width: view.width, height: view.height },
     isMobile: view.touch && browserName === "chromium",
@@ -544,6 +601,70 @@ describe(`Spaces timeline in ${browserName}`, () => {
       }
     }, 60_000);
   }
+
+  test("keeps the tray below the strip on every screen, and the strip in place whether the tray is full or empty", async () => {
+    const rounded = async (page: Page, selector: string) => {
+      const found = (await page.locator(selector).boundingBox())!;
+      return { x: Math.round(found.x), y: Math.round(found.y), width: Math.round(found.width), height: Math.round(found.height) };
+    };
+    for (const view of [desktop, tablet, phone]) {
+      const full = await open(view);
+      const strip = await rounded(full, ".k2b-timeline__viewport");
+      const tray = await rounded(full, "[data-spaces-timeline-tray]");
+      expect(tray.y).toBeGreaterThanOrEqual(strip.y + strip.height - 1);
+      expect(tray.y + tray.height).toBeLessThanOrEqual(view.height);
+      await full.getByText("Vertrag Stadtwerke gegenzeichnen").waitFor();
+      await full.context().close();
+      const empty = await open(view, { tray: emptyTray() });
+      expect(await rounded(empty, ".k2b-timeline__viewport")).toEqual(strip);
+      expect(await rounded(empty, "[data-spaces-timeline-tray]")).toEqual(tray);
+      await empty.getByText("Nichts überfällig und keine Aufgaben ohne Datum für dich").waitFor();
+      await empty.context().close();
+    }
+  }, 90_000);
+
+  test("reaches the overdue tasks with the keyboard before the strip", async () => {
+    const page = await open(desktop);
+    await page.getByRole("button", { name: "Status" }).focus();
+    let reached = "";
+    for (let presses = 0; presses < 10 && !reached; presses++) {
+      await page.keyboard.press("Tab");
+      reached = await page.evaluate(() => {
+        const focused = document.activeElement;
+        if (focused?.closest("[data-spaces-timeline-tray]")) return focused.getAttribute("aria-label") ?? "tray";
+        return focused?.closest(".k2b-timeline") ? "strip" : "";
+      });
+    }
+    expect(reached).toBe("Als erledigt markieren: Vertrag Stadtwerke gegenzeichnen");
+    await page.context().close();
+  }, 60_000);
+
+  test("checks a task off in the tray and opens another one in place, while the strip stays where it is", async () => {
+    const page = await open(desktop);
+    completions.splice(0);
+    const before = await box(page, "Daily8");
+    await page.locator('[data-spaces-tray-item="Late01"] .k2b-check').click();
+    await page.locator(".k2b-toast__description", { hasText: "Eintrag erledigt" }).waitFor();
+    expect(completions).toEqual([{ itemId: "Late01", completed: true }]);
+    await page.locator('[data-spaces-tray-item="Late01"]').waitFor({ state: "detached" });
+    expect(await box(page, "Daily8")).toEqual(before);
+
+    const opened = nextDetail(page);
+    await page.getByRole("link", { name: /Feedback zu Wireframes/ }).click();
+    expect(await opened).toContain("item=Late02");
+    // The reader has three undated tasks and sees two, so the tray links to the list with all of them.
+    expect(await page.getByRole("link", { name: "Alle 3 deiner Aufgaben ohne Datum anzeigen" }).getAttribute("href")).toBe(
+      "/app/spaces/Space1?view=list&type=task&assignedTo=me&deadline=none&sort=priority",
+    );
+    await page.context().close();
+  }, 60_000);
+
+  test("offers no tray checkbox to a reader who may not change tasks", async () => {
+    const page = await open(desktop, { canWrite: false });
+    await page.getByText("Vertrag Stadtwerke gegenzeichnen").waitFor();
+    await expect(page.locator("[data-spaces-timeline-tray] input[type=checkbox]").count()).resolves.toBe(0);
+    await page.context().close();
+  }, 60_000);
 
   test("fits the calendar header in one row and shows now after Today, on a phone and tablets", async () => {
     mkdirSync(shots, { recursive: true });

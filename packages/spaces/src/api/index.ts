@@ -776,7 +776,7 @@ const app = new Hono<AuthContext>()
       tags: ["Spaces"],
       summary: "Refresh the active workspace view",
       description:
-        "Load only the permission-checked list, table, kanban, or calendar snapshot selected by a Spaces URL. The timeline calendar view may pass `from` and `to` to load another range of at most 366 days, such as the next week while the reader scrolls.",
+        "Load only the permission-checked list, table, kanban, or calendar snapshot selected by a Spaces URL. The timeline calendar view may pass `from` and `to` to load another range of at most 366 days, such as the next week while the reader scrolls. A timeline snapshot also carries its tray: the first overdue tasks of the Space and the first undated tasks assigned to the reader, with their totals.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(SpacesViewSnapshotSchema, "Active workspace view snapshot"),

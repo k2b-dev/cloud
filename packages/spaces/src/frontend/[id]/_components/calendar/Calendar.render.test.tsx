@@ -6,7 +6,7 @@ import { createConfig } from "@k2b/ssr";
 import { LocaleProvider } from "@k2b/ui";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import type { CalendarItem, SpaceColumn } from "@/contracts";
+import type { CalendarItem, SpaceColumn, SpaceItem } from "@/contracts";
 import { CALENDAR_NEUTRAL_COLOR, CALENDAR_PRIORITY_COLORS, calendarPersonColor } from "./colors";
 import { type CalendarColorBy, defaultCalendarFilter } from "./filter";
 import type { CalendarView } from "./types";
@@ -328,6 +328,7 @@ describe("Spaces calendar colors", () => {
             from: "2026-10-07T20:00:00.000Z",
             to: "2026-10-16T00:00:00.000Z",
             items,
+            tray: null,
             busy: false,
             onLoadEarlier: async () => undefined,
             onLoadLater: async () => undefined,
@@ -357,5 +358,129 @@ describe("Spaces calendar colors", () => {
     expect(readOnly).toContain("Check invoice, 15:00, Priority: High, Thursday, October 8");
     expect(readOnly).not.toContain("Check invoice, 15:00, Priority: High, Thursday, October 8, open");
     expect(readOnly).not.toContain('class="k2b-timeline__check"');
+  });
+});
+
+describe("Spaces timeline tray", () => {
+  const task = (id: string, title: string, extra: Partial<SpaceItem> = {}): SpaceItem => ({
+    id,
+    spaceId: "Space1",
+    columnId: "Col001",
+    title,
+    description: null,
+    location: null,
+    url: null,
+    startsAt: null,
+    endsAt: null,
+    allDay: false,
+    deadline: null,
+    estimatedDurationMinutes: null,
+    activeBlockerCount: 0,
+    priority: null,
+    recurrence: null,
+    recurringEventId: null,
+    recurrenceId: null,
+    rank: "1024",
+    completedAt: null,
+    createdBy: null,
+    createdAt: "2026-09-01T10:00:00.000Z",
+    updatedAt: "2026-09-01T10:00:00.000Z",
+    assignees: [],
+    tags: [],
+    ...extra,
+  });
+  const overdue = [
+    task("Late01", "Countersign the contract", { deadline: "2026-10-06T15:00:00.000Z" }),
+    task("Late02", "Send wireframe feedback", { deadline: "2026-10-05T15:00:00.000Z", activeBlockerCount: 1 }),
+  ];
+  const undated = [task("Open01", "Clean up the customer list"), task("Open02", "Order trade fair giveaways")];
+  const render = (options: {
+    canWrite?: boolean;
+    locale?: string;
+    filter?: typeof defaultCalendarFilter;
+    tray: { overdue: { items: SpaceItem[]; total: number }; undated: { items: SpaceItem[]; total: number } } | null;
+  }) => {
+    const locale = options.locale ?? "en";
+    const filter = options.filter ?? defaultCalendarFilter;
+    return renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale,
+        get children() {
+          return createComponent(Calendar, {
+            spaceId: "Space1",
+            items: [],
+            columns: [],
+            tags: [],
+            filter,
+            view: "timeline",
+            date: new Date("2026-10-08T00:00:00.000Z"),
+            baseUrl: "/app/spaces/Space1?view=calendar&cv=timeline",
+            dateConfig: { locale, timeZone: "UTC", weekStartsOn: 1 },
+            canWrite: options.canWrite ?? true,
+            timeline: {
+              anchor: "2026-10-08T00:00:00.000Z",
+              filter,
+              from: "2026-10-07T20:00:00.000Z",
+              to: "2026-10-16T00:00:00.000Z",
+              items: [],
+              tray: options.tray,
+              busy: false,
+              onLoadEarlier: async () => undefined,
+              onLoadLater: async () => undefined,
+            },
+          });
+        },
+      }),
+    );
+  };
+
+  test("reads overdue tasks and the reader's undated tasks before the days of the strip", () => {
+    const html = render({ tray: { overdue: { items: overdue, total: 7 }, undated: { items: undated, total: 2 } } });
+    const tray = html.indexOf('aria-label="Overdue tasks and your tasks without a date"');
+    expect(tray).toBeGreaterThan(-1);
+    // First in the document, so overdue tasks come before every day of the strip; the stylesheet puts the row last.
+    expect(tray).toBeLessThan(html.indexOf('aria-label="Timeline"'));
+    expect(html).toMatch(/<section[^>]*class="[^"]*order-last/);
+    expect(html.indexOf(">Overdue</h3>")).toBeLessThan(html.indexOf(">Yours, no date</h3>"));
+    expect(html.indexOf("Countersign the contract")).toBeLessThan(html.indexOf("Clean up the customer list"));
+    // Items open their detail on the strip shown.
+    expect(html).toContain('href="/app/spaces/Space1?view=calendar&amp;cv=timeline&amp;cd=2026-10-08&amp;item=Late01"');
+    // A blocked task has no checkbox and says why; every other task can be checked off.
+    expect(html).toContain('aria-label="Mark complete: Countersign the contract"');
+    expect(html).not.toContain('aria-label="Mark complete: Send wireframe feedback"');
+    expect(html).toContain("Blocked by 1");
+    expect(html.match(/type="checkbox"/g)).toHaveLength(3);
+    // Only a part with more tasks than it shows links to the list with all of them, under the same query.
+    expect(html).toContain('aria-label="Show all 7 overdue tasks"');
+    expect(html).toContain('href="/app/spaces/Space1?view=list&amp;type=task&amp;deadline=overdue&amp;sortDesc=true"');
+    expect(html).not.toContain("Show all 2");
+  });
+
+  test("keeps the list link on the calendar's filter, and the reader's undated tasks on them", () => {
+    const filter = { ...defaultCalendarFilter, assignedTo: "assigned" as const, priorities: ["urgent" as const], tagIds: ["Tag001"] };
+    const html = render({ filter, tray: { overdue: { items: [], total: 0 }, undated: { items: undated, total: 9 } } });
+    expect(html).not.toContain(">Overdue</h3>");
+    expect(html).toContain(
+      'href="/app/spaces/Space1?view=list&amp;type=task&amp;priority=urgent&amp;tags=Tag001&amp;assignedTo=me&amp;deadline=none&amp;sort=priority"',
+    );
+  });
+
+  test("offers no checkbox to a reader who may not change tasks", () => {
+    const html = render({ canWrite: false, tray: { overdue: { items: overdue, total: 2 }, undated: { items: undated, total: 2 } } });
+    expect(html).toContain("Countersign the contract");
+    expect(html).not.toContain('type="checkbox"');
+  });
+
+  test("keeps its row with a quiet note when nothing waits, in German too", () => {
+    const empty = { overdue: { items: [], total: 0 }, undated: { items: [], total: 0 } };
+    expect(render({ tray: empty })).toContain("Nothing overdue, and no tasks of yours without a date");
+    const german = render({ locale: "de", tray: { overdue: { items: overdue, total: 2 }, undated: empty.undated } });
+    expect(german).toContain(">Überfällig</h3>");
+    expect(german).toContain('aria-label="Überfällige Aufgaben und deine Aufgaben ohne Datum"');
+    expect(render({ locale: "de", tray: empty })).toContain("Nichts überfällig und keine Aufgaben ohne Datum für dich");
+  });
+
+  test("shows no tray while the calendar shows only events", () => {
+    expect(render({ tray: null })).not.toContain("data-spaces-timeline-tray");
   });
 });
