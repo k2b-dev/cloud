@@ -246,6 +246,7 @@
     .k2b-chat-tasks,
     .k2b-chat-composer__commands,
     .k2b-chat-composer__attachments,
+    .k2b-chat-composer__format,
     .k2b-chat-context-popup
   ),
 .k2b-ui.k2b-context-menu {
@@ -286,6 +287,7 @@
     .k2b-chat-tasks,
     .k2b-chat-composer__commands,
     .k2b-chat-composer__attachments,
+    .k2b-chat-composer__format,
     .k2b-chat-context-popup
   )
   :where(:focus-visible),
@@ -9180,6 +9182,161 @@
   white-space: nowrap;
 }
 
+/* The conversation composer: one line that grows to a third of the nearest size container, a hint line of fixed
+   height above the field, and buttons at fixed places. Nothing in it changes the composer's height except the text. */
+.k2b-ui .k2b-chat-composer[data-variant="conversation"] {
+  padding-top: 0.25rem;
+}
+
+.k2b-ui .k2b-chat-composer[data-variant="conversation"]:focus-within {
+  border-color: var(--k2b-focus-ring);
+}
+
+.k2b-ui .k2b-chat-composer[data-variant="conversation"] .k2b-chat-composer__input :is(textarea, .k2b-chat-composer__highlight) {
+  max-height: max(2.25rem, 33.333cqh);
+}
+
+/* A hidden copy of the field measures the text, so the field itself never collapses to be measured. */
+.k2b-ui .k2b-chat-composer .k2b-chat-composer__input textarea.k2b-chat-composer__measure {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 0;
+  min-height: 0;
+  max-height: none;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.k2b-ui .k2b-chat-composer[data-variant="conversation"] .k2b-chat-composer__mention {
+  color: var(--k2b-action);
+  background: var(--k2b-selected);
+}
+
+.k2b-ui .k2b-chat-composer[data-variant="conversation"] .k2b-chat-composer__send {
+  color: var(--k2b-action);
+}
+
+.k2b-ui .k2b-chat-composer[data-variant="conversation"] .k2b-chat-composer__send:hover:not(:disabled) {
+  color: var(--k2b-action-hover);
+}
+
+.k2b-ui .k2b-chat-composer__hint {
+  display: flex;
+  height: 1.25rem;
+  min-width: 0;
+  align-items: center;
+  gap: 0.5rem;
+  overflow: hidden;
+  padding: 0 0.5rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-chat-composer__hint-text,
+.k2b-ui .k2b-chat-composer__dictation > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.k2b-ui .k2b-chat-composer__dictation {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.k2b-ui .k2b-chat-composer__dictation[data-state="listening"] > i {
+  color: var(--k2b-action);
+}
+
+.k2b-ui .k2b-chat-composer__dictation[data-state="interrupted"] > i {
+  color: var(--k2b-warning-text);
+}
+
+.k2b-ui .k2b-chat-composer__hint-action {
+  flex: none;
+  padding: 0;
+  border: 0;
+  color: var(--k2b-action);
+  background: none;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.k2b-ui .k2b-chat-composer__hint-action:hover {
+  color: var(--k2b-action-hover);
+}
+
+/* The formatting buttons take the free space of the footer row and scroll sideways when it is narrow. */
+.k2b-ui .k2b-chat-composer__format {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+  align-items: center;
+  gap: 0.25rem;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+
+.k2b-ui .k2b-chat-composer__format::-webkit-scrollbar {
+  display: none;
+}
+
+.k2b-ui .k2b-chat-composer__microphone {
+  display: flex;
+  align-items: center;
+}
+
+.k2b-ui .k2b-chat-composer__microphone-button {
+  -webkit-touch-callout: none;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.k2b-ui .k2b-chat-composer__microphone-button[data-state="listening"] {
+  color: var(--k2b-action);
+  background: var(--k2b-selected);
+}
+
+.k2b-ui .k2b-chat-composer__icon-action.k2b-chat-composer__microphone-menu {
+  width: 1.25rem;
+}
+
+/* Touch-only devices type emoji with the keyboard's emoji key. */
+@media (any-pointer: coarse) and (not (any-pointer: fine)) {
+  .k2b-ui .k2b-chat-composer__emoji {
+    display: none;
+  }
+}
+
+/* A finger gets 2.75rem wide controls; the height reaches 2.75rem through the footer's spacing. */
+@media (any-pointer: coarse) {
+  .k2b-ui
+    .k2b-chat-composer[data-variant="conversation"]
+    :is(.k2b-chat-composer__icon-action, .k2b-chat-composer__send, .k2b-chat-composer__stop),
+  .k2b-ui .k2b-chat-composer[data-variant="conversation"] .k2b-chat-composer__icon-action.k2b-chat-composer__microphone-menu {
+    position: relative;
+    width: 2.75rem;
+  }
+
+  .k2b-ui
+    .k2b-chat-composer[data-variant="conversation"]
+    :is(.k2b-chat-composer__icon-action, .k2b-chat-composer__send, .k2b-chat-composer__stop)::after {
+    content: "";
+    position: absolute;
+    inset: -0.4375rem 0;
+  }
+}
+
 @media (max-width: 40rem) {
   .k2b-ui .k2b-floating-window {
     inset: max(0.5rem, env(safe-area-inset-top)) max(0.5rem, env(safe-area-inset-right)) max(0.5rem, env(safe-area-inset-bottom))
@@ -9207,6 +9364,10 @@
 
   .k2b-ui .k2b-chat-composer__tools {
     flex-wrap: wrap;
+  }
+
+  .k2b-ui .k2b-chat-composer[data-variant="conversation"] .k2b-chat-composer__tools {
+    flex-wrap: nowrap;
   }
 
   .k2b-ui .k2b-chat-composer__model {

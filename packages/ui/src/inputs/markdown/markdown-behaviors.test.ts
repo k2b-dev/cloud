@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { toggleHeading, toggleNumberedList } from "./actions";
+import { toggleCodeBlock, toggleHeading, toggleInlineMarker, toggleNumberedList } from "./actions";
 import { computeActiveFormats } from "./active-formats";
 import { handleListContinuation, handleShortcut, handleSmartPaste } from "./behaviors";
 import { isInCodeZone } from "./code-zone";
@@ -63,6 +63,26 @@ describe("markdown editor helpers", () => {
     const list = textarea("alpha\nbeta", 0, "alpha\nbeta".length);
     toggleNumberedList(list);
     expect(list.value).toBe("1. alpha\n2. beta");
+  });
+
+  test("wraps lines in a code block and inline markers without placeholder text", () => {
+    installExecCommand();
+    const lines = textarea("a\nconst b = 1;", 2, 14);
+    toggleCodeBlock(lines);
+    expect(lines.value).toBe("a\n```\nconst b = 1;\n```");
+    expect([lines.selectionStart, lines.selectionEnd]).toEqual([6, 18]);
+    const fenced = textarea("```\nx\n```", 0, 9);
+    toggleCodeBlock(fenced);
+    expect(fenced.value).toBe("x");
+    const empty = textarea("", 0);
+    toggleCodeBlock(empty);
+    expect(empty.value).toBe("```\n\n```");
+    expect(empty.selectionStart).toBe(4);
+
+    const caret = textarea("say ", 4);
+    toggleInlineMarker(caret, "~~");
+    expect(caret.value).toBe("say ~~~~");
+    expect([caret.selectionStart, caret.selectionEnd]).toEqual([6, 6]);
   });
 
   test("continues and exits markdown lists", () => {

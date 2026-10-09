@@ -51,6 +51,8 @@ const toggleInlineWrap = (textarea: HTMLTextAreaElement, marker: string, placeho
 export const toggleBold = (textarea: HTMLTextAreaElement): void => toggleInlineWrap(textarea, "**", "bold text");
 export const toggleItalic = (textarea: HTMLTextAreaElement): void => toggleInlineWrap(textarea, "*", "italic text");
 export const toggleCode = (textarea: HTMLTextAreaElement): void => toggleInlineWrap(textarea, "`", "code");
+/** Wraps the selection in `marker`, or unwraps it; without a selection the caret lands between two markers. */
+export const toggleInlineMarker = (textarea: HTMLTextAreaElement, marker: string): void => toggleInlineWrap(textarea, marker, "");
 
 export const insertLink = (textarea: HTMLTextAreaElement, url?: string): void => {
   const { value, selectionStart, selectionEnd } = textarea;
@@ -92,6 +94,21 @@ export const toggleHeading = (textarea: HTMLTextAreaElement, level: 1 | 2 | 3): 
 };
 
 export const toggleBulletList = (textarea: HTMLTextAreaElement): void => togglePrefix(textarea, "- ");
+
+/** Puts the selected lines between ``` fences, or removes the fences when the selection is exactly one fenced block. */
+export const toggleCodeBlock = (textarea: HTMLTextAreaElement): void => {
+  const { start, end, lines } = selectedLineRange(textarea);
+  if (lines.length >= 2 && /^```/.test(lines[0]!) && lines[lines.length - 1]!.trim() === "```") {
+    const body = lines.slice(1, -1).join("\n");
+    replaceRange(textarea, start, end, body);
+    textarea.setSelectionRange(start, start + body.length);
+    return;
+  }
+  const body = lines.join("\n");
+  replaceRange(textarea, start, end, `\`\`\`\n${body}\n\`\`\``);
+  textarea.setSelectionRange(start + 4, start + 4 + body.length);
+};
+
 export const toggleQuote = (textarea: HTMLTextAreaElement): void => togglePrefix(textarea, "> ");
 
 export const toggleNumberedList = (textarea: HTMLTextAreaElement): void => {

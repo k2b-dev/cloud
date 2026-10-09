@@ -13,15 +13,26 @@ import {
 } from "solid-js";
 import { Dropdown, type DropdownItem as DropdownItemData } from "../actions/Dropdown";
 import { Tooltip } from "../feedback/Tooltip";
+import { replaceTextareaRange } from "../inputs/editor-dom";
 import { FileDropTarget } from "../inputs/FileDropTarget";
+import { toggleBulletList, toggleCodeBlock, toggleInlineMarker, toggleQuote } from "../inputs/markdown/actions";
 import { SelectChip } from "../inputs/SelectChip";
-import { useUiMessages } from "../intl/messages";
+import { type UiMessages, useUiMessages } from "../intl/messages";
 import { ChatContextUsage as ContextUsage } from "./ChatPrimitives";
-import { executeChatAction, nextChatCommandIndex, reportChatFailure, runChatSubmission } from "./chat-behavior";
+import {
+  conversationEnterAction,
+  executeChatAction,
+  isInsideCodeFence,
+  nextChatCommandIndex,
+  reportChatFailure,
+  runChatSubmission,
+} from "./chat-behavior";
 import { chatCommandQuery, chatMentionSegments, reconcileChatMentions } from "./composer-document";
 import type {
   ChatAction,
   ChatAttachment,
+  ChatComposerEmoji,
+  ChatComposerMicrophone,
   ChatComposerState,
   ChatContextUsageData,
   ChatMention,
@@ -111,23 +122,99 @@ export type ChatComposerProps = {
   focusToken?: unknown;
   draftKey?: unknown;
   class?: string;
+  /**
+   * `"conversation"` is the composer for messages between people. It starts with one line and grows to a third of
+   * its nearest size container, keeps a hint line of fixed height above the field, keeps the field focused when its
+   * buttons are pressed, and breaks the line on Enter inside an open code block and on touch-only devices. The
+   * default is the assistant prompt.
+   */
+  variant?: "default" | "conversation";
+  /** `"enter"` (default): Enter sends and Shift+Enter breaks the line. `"mod-enter"`: Enter breaks the line. Ctrl/⌘+Enter always sends. */
+  sendKey?: "enter" | "mod-enter";
+  /** Adds "Aa", which shows Markdown formatting buttons in the footer without changing the composer's height. */
+  formatting?: boolean;
+  /** An emoji button at a fixed place. Touch-only devices hide it; their keyboard has emoji. */
+  emoji?: ChatComposerEmoji;
+  /** A microphone at a fixed place: a tap dictates, holding it or its menu asks for a voice message. */
+  microphone?: ChatComposerMicrophone;
+  /** One line above the field. The conversation variant always keeps its height; the default shows it only with content. */
+  hint?: JSX.Element;
 };
+
+type FormatTool = {
+  id: string;
+  icon: string;
+  label: (messages: UiMessages) => string;
+  run: (textarea: HTMLTextAreaElement) => void;
+  /** Ctrl/⌘ plus this `event.key`. */
+  key?: string;
+  /** Ctrl/⌘+Shift plus this `event.code`, the physical key, so every keyboard layout agrees. */
+  shiftCode?: string;
+};
+
+const insertComposerLink = (textarea: HTMLTextAreaElement): void => {
+  const { value, selectionStart, selectionEnd } = textarea;
+  const label = value.slice(selectionStart, selectionEnd);
+  replaceTextareaRange(textarea, selectionStart, selectionEnd, `[${label}]()`);
+  // Without a selection the label comes first, otherwise the address.
+  const caret = label ? selectionStart + label.length + 3 : selectionStart + 1;
+  textarea.setSelectionRange(caret, caret);
+};
+
+const formatTools: readonly FormatTool[] = [
+  { id: "bold", icon: "ti ti-bold", label: (m) => m.boldShortcut, run: (textarea) => toggleInlineMarker(textarea, "**"), key: "b" },
+  { id: "italic", icon: "ti ti-italic", label: (m) => m.italicShortcut, run: (textarea) => toggleInlineMarker(textarea, "_"), key: "i" },
+  {
+    id: "strikethrough",
+    icon: "ti ti-strikethrough",
+    label: (m) => m.strikethroughShortcut,
+    run: (textarea) => toggleInlineMarker(textarea, "~~"),
+    shiftCode: "KeyX",
+  },
+  { id: "code", icon: "ti ti-code", label: (m) => m.inlineCodeShortcut, run: (textarea) => toggleInlineMarker(textarea, "`"), key: "e" },
+  { id: "code-block", icon: "ti ti-source-code", label: (m) => m.codeBlock, run: toggleCodeBlock },
+  { id: "bullet-list", icon: "ti ti-list", label: (m) => m.bulletListShortcut, run: toggleBulletList, shiftCode: "Digit8" },
+  { id: "quote", icon: "ti ti-quote", label: (m) => m.quote, run: toggleQuote },
+  { id: "link", icon: "ti ti-link", label: (m) => m.insertLink, run: insertComposerLink },
+];
+
+const formatShortcut = (event: KeyboardEvent): FormatTool | undefined => {
+  if (event.altKey || !(event.ctrlKey || event.metaKey)) return undefined;
+  return formatTools.find((tool) => (event.shiftKey ? tool.shiftCode === event.code : tool.key === event.key.toLowerCase()));
+};
+
+const touchOnlyQuery = "(any-pointer: coarse) and (not (any-pointer: fine))";
+const isTouchOnly = () => typeof matchMedia === "function" && matchMedia(touchOnlyQuery).matches;
+/** How long a press on the microphone lasts before it asks for a voice message instead of dictation. */
+const microphoneHoldMs = 500;
+/** Keeps the field focused (and a phone's keyboard open) when a composer button is pressed with a mouse or finger. */
+const keepFieldFocus = (event: MouseEvent) => event.preventDefault();
 
 const attachmentIcon = (attachment: ChatAttachment): string =>
   attachment.icon ?? (attachment.kind === "image" ? "ti ti-photo" : attachment.kind === "resource" ? "ti ti-link" : "ti ti-file");
 
+const hasContent = (items: unknown[]) => items.some((item) => item != null && typeof item !== "boolean" && item !== "");
+
 export function ChatComposer(props: ChatComposerProps): JSX.Element {
   const accessory = children(() => props.accessory);
-  const hasAccessory = () => accessory.toArray().some((item) => item != null && typeof item !== "boolean" && item !== "");
+  const hasAccessory = () => hasContent(accessory.toArray());
+  const hint = children(() => props.hint);
   const messages = useUiMessages();
   const commandListId = `k2b-chat-commands-${createUniqueId().replace(/[^A-Za-z0-9_-]/g, "-")}`;
+  const formatGroupId = `${commandListId}-format`;
   const [selectedCommandIndex, setSelectedCommandIndex] = createSignal(0);
   const [addingFiles, setAddingFiles] = createSignal(false);
   const [submitting, setSubmitting] = createSignal(false);
   let composerRef: HTMLElement | undefined;
   let textareaRef: HTMLTextAreaElement | undefined;
   let fileInputRef: HTMLInputElement | undefined;
+  let measureRef: HTMLTextAreaElement | undefined;
   let sawRunning = props.state === "running";
+  const conversation = () => props.variant === "conversation";
+  const [formattingOpen, setFormattingOpen] = createSignal(false);
+  const [microphoneMenuOpen, setMicrophoneMenuOpen] = createSignal(false);
+  const dictation = () => props.microphone?.dictation ?? null;
+  const showHint = () => conversation() || dictation() !== null || hasContent(hint.toArray());
 
   const state = () => props.state ?? "idle";
   const running = () => state() === "running";
@@ -294,6 +381,14 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
 
   const autoResize = () => {
     if (!textareaRef) return;
+    if (conversation()) {
+      // A hidden copy measures the text. Collapsing the field itself would shrink the composer for a frame, and
+      // WebKit then clamps the scroll position of the conversation above it. CSS caps the height.
+      if (!measureRef) return;
+      measureRef.value = textareaRef.value;
+      textareaRef.style.height = `${measureRef.scrollHeight}px`;
+      return;
+    }
     textareaRef.style.height = "auto";
     textareaRef.style.height = `${Math.min(textareaRef.scrollHeight, composerMaxInputHeight)}px`;
   };
@@ -303,6 +398,12 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   onMount(() => {
     autoResize();
     if (props.focusToken !== undefined) focus();
+    // The copy follows the field's width, so a narrower composer measures more lines.
+    if (measureRef && typeof ResizeObserver === "function") {
+      const observer = new ResizeObserver(() => autoResize());
+      observer.observe(measureRef);
+      onCleanup(() => observer.disconnect());
+    }
   });
 
   createEffect(() => {
@@ -490,9 +591,76 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         return;
       }
     }
-    if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+    const format = props.formatting && textareaRef ? formatShortcut(event) : undefined;
+    if (format && textareaRef) {
+      event.preventDefault();
+      format.run(textareaRef);
+      return;
+    }
+    if (event.key !== "Enter") return;
+    if (conversation()) {
+      const action = conversationEnterAction(event, {
+        sendKey: props.sendKey ?? "enter",
+        touchOnly: isTouchOnly(),
+        inCodeBlock: isInsideCodeFence(props.value, textareaRef?.selectionStart ?? props.value.length),
+      });
+      if (action === "send") {
+        event.preventDefault();
+        void submit();
+      }
+      return;
+    }
+    const send = props.sendKey === "mod-enter" ? event.ctrlKey || event.metaKey : !event.shiftKey;
+    if (send && !event.isComposing) {
       event.preventDefault();
       void submit();
+    }
+  };
+
+  const insertText = (text: string) => {
+    if (!textareaRef || blocked()) return;
+    replaceTextareaRange(textareaRef, textareaRef.selectionStart, textareaRef.selectionEnd, text);
+  };
+
+  let holdTimer: ReturnType<typeof setTimeout> | undefined;
+  let held = false;
+  const releaseHold = () => {
+    clearTimeout(holdTimer);
+    holdTimer = undefined;
+  };
+  onCleanup(releaseHold);
+  const microphoneDisabled = () => Boolean(props.microphone?.disabled || blocked() || dictation() === "refining");
+  const microphoneItems = (): readonly DropdownItemData[] => {
+    const microphone = props.microphone;
+    const items: DropdownItemData[] = [];
+    if (microphone?.onDictate) {
+      const dictate = microphone.onDictate;
+      items.push({ icon: "ti ti-microphone", label: messages().dictate, action: () => reportChatFailure(dictate, props.onError) });
+    }
+    if (microphone?.onVoiceMessage) {
+      const record = microphone.onVoiceMessage;
+      items.push({
+        icon: "ti ti-player-record",
+        label: messages().recordVoiceMessage,
+        action: () => reportChatFailure(record, props.onError),
+      });
+    }
+    return items;
+  };
+  const dictationStatus = (): { icon: string; text: string } | null => {
+    switch (dictation()) {
+      case "listening":
+        return { icon: "ti ti-microphone", text: messages().dictationListening };
+      case "refining":
+        return { icon: "ti ti-loader-2 k2b-spin", text: messages().dictationRefining };
+      case "refined":
+        return { icon: "ti ti-sparkles", text: messages().dictationRefined };
+      case "unrefined":
+        return { icon: "ti ti-microphone", text: messages().dictationUnrefined };
+      case "interrupted":
+        return { icon: "ti ti-alert-triangle", text: messages().dictationInterrupted };
+      default:
+        return null;
     }
   };
 
@@ -554,9 +722,36 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         ref={composerRef}
         class={`k2b-chat-composer ${props.class ?? ""}`}
         data-running={running() ? "true" : undefined}
+        data-variant={conversation() ? "conversation" : undefined}
         role="group"
         aria-label={props.label ?? messages().messageComposer}
       >
+        <Show when={showHint()}>
+          <div class="k2b-chat-composer__hint" aria-live="polite">
+            <Show when={dictationStatus()} fallback={<span class="k2b-chat-composer__hint-text">{hint()}</span>}>
+              {(status) => (
+                <>
+                  <span class="k2b-chat-composer__dictation" data-state={dictation() ?? undefined}>
+                    <i class={status().icon} aria-hidden="true" />
+                    <span>{status().text}</span>
+                  </span>
+                  <Show when={dictation() === "refined" ? props.microphone?.onRestoreOriginal : undefined}>
+                    {(restore) => (
+                      <button
+                        type="button"
+                        class="k2b-chat-composer__hint-action"
+                        onMouseDown={keepFieldFocus}
+                        onClick={() => reportChatFailure(restore(), props.onError)}
+                      >
+                        {messages().restoreOriginal}
+                      </button>
+                    )}
+                  </Show>
+                </>
+              )}
+            </Show>
+          </div>
+        </Show>
         <Show when={attachments().length > 0}>
           <div class="k2b-chat-composer__attachments" role="list" aria-label={messages().attachments} tabIndex={0}>
             <For each={attachments()}>
@@ -645,7 +840,11 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
             rows={1}
             value={props.value}
             disabled={blocked()}
-            placeholder={props.placeholder ?? (running() ? messages().addGuidance : messages().writeMessage)}
+            enterkeyhint={conversation() ? "enter" : undefined}
+            placeholder={
+              props.placeholder ??
+              (running() ? messages().addGuidance : conversation() ? messages().writeConversationMessage : messages().writeMessage)
+            }
             aria-label={props.inputLabel ?? messages().message}
             role={commandsOpen() ? "combobox" : undefined}
             aria-autocomplete={commandsOpen() ? "list" : undefined}
@@ -689,6 +888,9 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
             }}
             onKeyDown={onKeyDown}
           />
+          <Show when={conversation()}>
+            <textarea ref={measureRef} class="k2b-chat-composer__measure" rows={1} tabIndex={-1} aria-hidden="true" readOnly />
+          </Show>
         </div>
 
         <Show when={props.error}>
@@ -731,6 +933,38 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                       }}
                     />
                   </Show>
+                  <Show when={props.formatting}>
+                    <Tooltip.Trigger
+                      type="button"
+                      class="k2b-chat-composer__icon-action"
+                      aria-label={messages().composerFormatting}
+                      aria-pressed={formattingOpen()}
+                      aria-controls={formattingOpen() ? formatGroupId : undefined}
+                      content={messages().composerFormatting}
+                      onMouseDown={keepFieldFocus}
+                      onClick={() => setFormattingOpen((open) => !open)}
+                    >
+                      <i class="ti ti-letter-case" aria-hidden="true" />
+                    </Tooltip.Trigger>
+                  </Show>
+                  <Show when={props.emoji}>
+                    {(emoji) => (
+                      <Tooltip.Trigger
+                        type="button"
+                        class="k2b-chat-composer__icon-action k2b-chat-composer__emoji"
+                        aria-label={messages().insertEmoji}
+                        content={messages().insertEmoji}
+                        disabled={blocked()}
+                        onMouseDown={keepFieldFocus}
+                        onClick={(event) => {
+                          const anchor = event.currentTarget;
+                          reportChatFailure(() => emoji().onOpen({ anchor, insert: insertText }), props.onError);
+                        }}
+                      >
+                        <i class="ti ti-mood-smile" aria-hidden="true" />
+                      </Tooltip.Trigger>
+                    )}
+                  </Show>
                   <Show when={(props.models?.length ?? 0) > 0}>
                     <SelectChip
                       aria-label={messages().chooseModel}
@@ -754,6 +988,27 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                     />
                   </Show>
                   {props.modelDetails}
+                  <Show when={props.formatting && formattingOpen()}>
+                    <div id={formatGroupId} class="k2b-chat-composer__format" role="group" aria-label={messages().composerFormatting}>
+                      <For each={formatTools}>
+                        {(tool) => (
+                          <Tooltip.Trigger
+                            type="button"
+                            class="k2b-chat-composer__icon-action"
+                            aria-label={tool.label(messages())}
+                            content={tool.label(messages())}
+                            disabled={blocked()}
+                            onMouseDown={keepFieldFocus}
+                            onClick={() => {
+                              if (textareaRef) tool.run(textareaRef);
+                            }}
+                          >
+                            <i class={tool.icon} aria-hidden="true" />
+                          </Tooltip.Trigger>
+                        )}
+                      </For>
+                    </div>
+                  </Show>
                 </div>
 
                 <div class="k2b-chat-composer__submit">
@@ -777,6 +1032,86 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                     {(usage) => <ContextUsage {...usage()} action={props.contextPopupAction} onActionError={props.onError} />}
                   </Show>
                   {props.submitTools}
+                  <Show when={props.microphone?.onDictate || props.microphone?.onVoiceMessage ? props.microphone : undefined}>
+                    {(microphone) => (
+                      <div class="k2b-chat-composer__microphone">
+                        <Tooltip.Trigger
+                          type="button"
+                          class="k2b-chat-composer__icon-action k2b-chat-composer__microphone-button"
+                          data-state={dictation() ?? undefined}
+                          disabled={microphoneDisabled()}
+                          aria-pressed={microphone().onDictate ? dictation() === "listening" : undefined}
+                          aria-haspopup={microphone().onDictate ? undefined : "menu"}
+                          // A toggle keeps its name; the pressed state says that dictation runs.
+                          aria-label={microphone().onDictate ? messages().dictate : messages().recordVoiceMessage}
+                          content={
+                            dictation() === "listening"
+                              ? messages().stopDictation
+                              : microphone().onDictate
+                                ? microphone().onVoiceMessage
+                                  ? messages().dictateOrHold
+                                  : messages().dictate
+                                : messages().recordVoiceMessage
+                          }
+                          onMouseDown={keepFieldFocus}
+                          onContextMenu={(event) => event.preventDefault()}
+                          onPointerDown={(event) => {
+                            held = false;
+                            releaseHold();
+                            const record = microphone().onVoiceMessage;
+                            if (event.button !== 0 || !record || dictation() === "listening") return;
+                            holdTimer = setTimeout(() => {
+                              held = true;
+                              reportChatFailure(record, props.onError);
+                            }, microphoneHoldMs);
+                          }}
+                          onPointerUp={releaseHold}
+                          onPointerCancel={releaseHold}
+                          onPointerLeave={releaseHold}
+                          onClick={(event) => {
+                            // A press that already asked for a voice message ends here; a key press never holds.
+                            if (held) {
+                              held = false;
+                              if (event.detail > 0) return;
+                            }
+                            const dictate = microphone().onDictate;
+                            if (dictate) reportChatFailure(dictate, props.onError);
+                            else setMicrophoneMenuOpen(true);
+                          }}
+                        >
+                          <i
+                            class={
+                              dictation() === "listening"
+                                ? "ti ti-player-stop"
+                                : dictation() === "refining"
+                                  ? "ti ti-loader-2 k2b-spin"
+                                  : "ti ti-microphone"
+                            }
+                            aria-hidden="true"
+                          />
+                        </Tooltip.Trigger>
+                        <Show when={microphone().onVoiceMessage}>
+                          <Dropdown.Root
+                            position="top-left"
+                            label={messages().microphoneOptions}
+                            items={microphoneItems()}
+                            disabled={microphoneDisabled()}
+                            open={microphoneMenuOpen()}
+                            onOpenChange={setMicrophoneMenuOpen}
+                          >
+                            <Dropdown.Trigger
+                              appearance="plain"
+                              class="k2b-chat-composer__icon-action k2b-chat-composer__microphone-menu"
+                              label={messages().microphoneOptions}
+                              tooltip={messages().microphoneOptions}
+                            >
+                              <i class="ti ti-chevron-up" aria-hidden="true" />
+                            </Dropdown.Trigger>
+                          </Dropdown.Root>
+                        </Show>
+                      </div>
+                    )}
+                  </Show>
                   <Show
                     when={running() && !hasDraft() && props.onStop}
                     fallback={
@@ -784,6 +1119,9 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                         type="button"
                         class="k2b-chat-composer__send"
                         disabled={!canSubmit()}
+                        onMouseDown={(event) => {
+                          if (conversation()) keepFieldFocus(event);
+                        }}
                         aria-label={
                           submitting()
                             ? running()
