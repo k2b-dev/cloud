@@ -207,6 +207,8 @@ Liquid templates now stop during rendering when they exceed their time or
 output budget. The shared defaults are 1,000 ms and 300,000 UTF-8 bytes;
 application-specific output caps still apply. A template preview or send can
 fail with `render_timeout`, `render_too_large`, or `render_memory_limit`.
+Grids HTML cells share 2 seconds of template rendering per read or export;
+Mail signature segments share 1 second per composed body.
 Simplify an affected template or reduce its data. These budgets are application
 API options, not deployment settings; see
 [PDF and templates](/en/docs/platform/pdf-and-templates#render-a-liquid-template).

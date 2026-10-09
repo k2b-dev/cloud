@@ -22,6 +22,15 @@ describe("email templates", () => {
     expect(reads).toBe(3);
   });
 
+  test("captures long notes before truncating a short email subject", async () => {
+    const result = await renderEmailTemplate(
+      { subject: "{% capture s %}{{ data.notes }}{% endcapture %}Re: {{ s | truncate: 60 }}", html: "<p>Body</p>" },
+      { data: { notes: "Lorem ipsum ".repeat(100) } },
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.data.subject).toStartWith("Re: Lorem ipsum");
+  });
+
   test("renders allowed Liquid roots", async () => {
     const result = await renderEmailTemplate(
       {

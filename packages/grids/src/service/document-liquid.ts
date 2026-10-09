@@ -7,7 +7,7 @@ import {
 import { type DateContext, dates, err, fail, ok, type Result } from "@k2b/stdlib";
 import { type BarcodeFormat, BarcodeRenderError, barcodeDataUrl } from "../barcode-rendering";
 import type { DocumentTemplate } from "../contracts";
-import { documentServiceText, isGermanDocumentLocale } from "./document-messages";
+import { documentServiceText, isGermanDocumentLocale, liquidBudgetFailureMessage } from "./document-messages";
 
 const TEMPLATE_MAX_BYTES = 200_000;
 
@@ -188,7 +188,7 @@ const barcodeDataUrlFilter: LiquidTemplateFilter = (value, bcid = "code128", sho
 
 const localizedLiquidError = (error: unknown, locale?: string): string => {
   const t = documentServiceText(locale);
-  if (error instanceof LiquidTemplateError && error.reason === "render_too_large") return t.renderedTemplateTooLarge;
+  if (error instanceof LiquidTemplateError) return liquidBudgetFailureMessage(error.reason, t) ?? t.templateRenderFailed;
   if (!isGermanDocumentLocale(locale)) return error instanceof Error ? error.message : t.templateRenderFailed;
   return t.templateRenderFailed;
 };
@@ -219,9 +219,8 @@ export const validateDocumentLiquidTemplate = (
 const renderLiquid = async (
   template: string,
   data: Record<string, unknown>,
-  options: { maxBytes?: number; escapeOutput?: boolean; locale?: string } = {},
+  options: { maxBytes?: number; escapeOutput?: boolean; locale?: string; renderTimeoutMs?: number } = {},
 ): Promise<Result<string>> => {
-  const t = documentServiceText(options.locale);
   const valid = validateLiquidTemplate(template, options.locale);
   if (!valid.ok) return valid;
   try {
@@ -229,6 +228,7 @@ const renderLiquid = async (
       filters: documentLiquidFilters,
       escapeOutput: options.escapeOutput,
       renderMaxBytes: options.maxBytes ?? TEMPLATE_MAX_BYTES,
+      renderTimeoutMs: options.renderTimeoutMs,
     });
     return ok(rendered);
   } catch (error) {
@@ -241,7 +241,8 @@ export const renderLiquidText = async (
   data: Record<string, unknown>,
   maxBytes = TEMPLATE_MAX_BYTES,
   locale?: string,
-): Promise<Result<string>> => renderLiquid(template, data, { maxBytes, locale });
+  renderTimeoutMs?: number,
+): Promise<Result<string>> => renderLiquid(template, data, { maxBytes, locale, renderTimeoutMs });
 
 export const renderLiquidPlainText = async (
   template: string,

@@ -128,11 +128,16 @@ export const mailLiquidTemplateVariables = (source: string, output: MailTemplate
   }
 };
 
-export const renderMailLiquidTemplate = (source: string, data: MailTemplateData, output: MailTemplateOutput = "text"): Result<string> => {
+export const renderMailLiquidTemplate = (
+  source: string,
+  data: MailTemplateData,
+  output: MailTemplateOutput = "text",
+  options: { renderTimeoutMs?: number } = {},
+): Result<string> => {
   const valid = validateMailLiquidTemplate(source, { output });
   if (!valid.ok) return valid;
   try {
-    const rendered = renderLiquidTemplate(source, data, renderOptions(output));
+    const rendered = renderLiquidTemplate(source, data, { ...renderOptions(output), ...options });
     if (bytes(rendered) > MAX_MAIL_TEMPLATE_OUTPUT_BYTES) {
       return fail(err.badInput("Rendered Mail template is too large"));
     }

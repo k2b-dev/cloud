@@ -134,5 +134,5 @@ Field type controls stored meaning. Views and column settings control how that v
 :::note Bounded HTML exports
 Default CSV and JSON exports omit HTML template fields. Select one explicitly and set a query limit of at most 1,000 records when the rendered HTML belongs in an export.
 
-One read or export renders at most 2,000 HTML cells and 32 MB of combined HTML output. Cells beyond that shared budget show a render error instead of exhausting the server; request fewer records or HTML fields.
+One read or export renders at most 2,000 HTML cells with a shared budget of 32 MB of combined HTML output and 2 seconds of template rendering. Cells beyond that shared budget show a render error instead of exhausting the server; request fewer records or HTML fields.
 :::

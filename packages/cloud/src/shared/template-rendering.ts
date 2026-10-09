@@ -1,4 +1,15 @@
-import { AssertionError, Context, type Emitter, Liquid, LiquidError, toValue, toValueSync } from "liquidjs";
+import {
+  AssertionError,
+  Context,
+  defaultOperators,
+  type Emitter,
+  type FilterImplOptions,
+  Liquid,
+  LiquidError,
+  type Operators,
+  toValue,
+  toValueSync,
+} from "liquidjs";
 
 const TEMPLATE_MAX_BYTES = 200_000;
 const RENDER_MAX_BYTES = 300_000;
@@ -59,6 +70,7 @@ const byteLength = (value: string): number => new TextEncoder().encode(value).by
 class BoundedEmitter implements Emitter {
   buffer = "";
   private bytes = 0;
+  private lastCodeUnit = 0;
 
   constructor(private readonly maxBytes: number) {}
 
@@ -72,13 +84,14 @@ class BoundedEmitter implements Emitter {
     }
     const chunk = String(value);
     if (!chunk) return;
-    const last = this.buffer.charCodeAt(this.buffer.length - 1);
+    const last = this.lastCodeUnit;
     const first = chunk.charCodeAt(0);
     // A surrogate pair split across writes encodes as four bytes, rather than six.
     const paired = last >= 0xd800 && last <= 0xdbff && first >= 0xdc00 && first <= 0xdfff;
     const bytes = this.bytes + byteLength(chunk) - (paired ? 2 : 0);
     if (bytes > this.maxBytes) throw new LiquidTemplateError("render_too_large", "Rendered template is too large");
     this.bytes = bytes;
+    this.lastCodeUnit = chunk.charCodeAt(chunk.length - 1);
     this.buffer += chunk;
   }
 }
@@ -107,10 +120,28 @@ export const escapeTemplateOutput = (value: unknown): string =>
     }
   });
 
+const expandedTextLength = (input: unknown): number => {
+  const value: unknown = toValue(input);
+  if (typeof value === "string") return value.length;
+  if (Array.isArray(value)) return value.reduce((length: number, item: unknown) => length + expandedTextLength(item), 0);
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") return String(value).length;
+  return 0;
+};
+
 const createEngine = (options: LiquidTemplateOptions = {}) => {
   const outputEscape =
     typeof options.escapeOutput === "function" ? options.escapeOutput : options.escapeOutput === false ? undefined : escapeTemplateOutput;
+  const operators: Operators = {};
+  for (const [name, handler] of Object.entries(defaultOperators)) {
+    operators[name] = (...args: [unknown, Context] | [unknown, unknown, Context]): boolean => {
+      const result: boolean = Reflect.apply(handler, undefined, args);
+      const context = args[args.length - 1];
+      if (context instanceof Context) context.renderLimit.check(performance.now());
+      return result;
+    };
+  }
   const engine = new Liquid({
+    operators,
     strictVariables: true,
     strictFilters: true,
     ownPropertyOnly: true,
@@ -128,14 +159,39 @@ const createEngine = (options: LiquidTemplateOptions = {}) => {
   const renderTemplates = engine.renderer.renderTemplates.bind(engine.renderer);
   engine.renderer.renderTemplates = function* (templates, context, emitter) {
     // Capture renders without an emitter; bound its intermediate buffer as well.
-    const result = yield* renderTemplates(templates, context, emitter ?? new BoundedEmitter(options.renderMaxBytes ?? RENDER_MAX_BYTES));
+    const result = yield* renderTemplates(
+      templates,
+      context,
+      emitter ?? new BoundedEmitter(Math.max(options.renderMaxBytes ?? RENDER_MAX_BYTES, RENDER_MAX_BYTES)),
+    );
     // LiquidJS checks before templates and every loop body (even an empty one).
     // Check after them too, so a slow final filter cannot return over budget.
     context.renderLimit.check(performance.now());
     return result;
   };
 
+  for (const name of ["push", "concat", "unshift", "map"]) {
+    const filter = engine.filters[name];
+    if (!filter) continue;
+    const handler = typeof filter === "function" ? filter : filter.handler;
+    const bounded: FilterImplOptions = function* (...args: [unknown, ...unknown[]]): Generator<unknown, unknown, unknown> {
+      const result: unknown = yield handler.apply(this, args);
+      // Charge added text only; charging the left array again would compound.
+      this.context.memoryLimit.use(expandedTextLength(name === "map" ? result : args[1]));
+      return result;
+    };
+    engine.registerFilter(name, typeof filter === "function" ? bounded : { ...filter, handler: bounded });
+  }
   for (const [name, filter] of Object.entries(options.filters ?? {})) engine.registerFilter(name, filter);
+  for (const [name, filter] of Object.entries(engine.filters)) {
+    const handler = typeof filter === "function" ? filter : filter.handler;
+    const timed: FilterImplOptions = function* (...args: [unknown, ...unknown[]]): Generator<unknown, unknown, unknown> {
+      const result: unknown = yield handler.apply(this, args);
+      this.context.renderLimit.check(performance.now());
+      return result;
+    };
+    engine.registerFilter(name, typeof filter === "function" ? timed : { ...filter, handler: timed });
+  }
   return engine;
 };
 

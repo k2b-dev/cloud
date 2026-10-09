@@ -23,7 +23,7 @@ import {
   renderLiquidText,
   templatePatternContext,
 } from "./document-liquid";
-import { documentServiceText } from "./document-messages";
+import { documentServiceText, liquidBudgetFailureMessage } from "./document-messages";
 import type { RecordSnapshotDraft, SnapshotRecord } from "./document-snapshots";
 import { normalizeDocumentTags, safePdfFilename } from "./document-values";
 import { listByTable as listFields } from "./fields";
@@ -432,7 +432,7 @@ export const renderDocumentSource = async (
  * users who fixes it.
  */
 const renderFailureMessage = (error: TemplatePdfPreviewError, t: ReturnType<typeof documentServiceText>): string => {
-  if (error.phase === "template") return t.templateRenderFailed;
+  if (error.phase === "template") return liquidBudgetFailureMessage(error.code, t) ?? t.templateRenderFailed;
   log.warn("Document PDF rendering failed", { code: error.code, status: error.status, error: error.message });
   return error.code === "not_configured" ? t.pdfNotConfigured : t.pdfRenderFailed;
 };

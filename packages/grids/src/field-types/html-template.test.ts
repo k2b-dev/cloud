@@ -77,6 +77,27 @@ describe("HTML template field", () => {
     expect(record.data[invalidField.id]).toBe(HTML_TEMPLATE_ERROR);
   });
 
+  test("shares elapsed Liquid time across cells and stops an exhausted batch", async () => {
+    const budget = {
+      remainingCells: 2_000,
+      remainingRenderMs: 100,
+      remainingInlineWorkBytes: 32 * 1024 * 1024,
+      remainingOutputBytes: 32 * 1024 * 1024,
+      exhausted: false,
+      warningLogged: false,
+    };
+    const config = {
+      template: "{% for a in (1..1000) %}{% for b in (1..1000) %}{% for c in (1..1000) %}{% endfor %}{% endfor %}{% endfor %}",
+      css: "",
+    };
+    const start = performance.now();
+    for (let i = 0; i < 5; i++) expect((await renderHtmlTemplateValue(config, {}, budget)).ok).toBe(false);
+    expect(performance.now() - start).toBeLessThan(1_000);
+    expect(budget.exhausted).toBe(true);
+    expect(budget.remainingRenderMs).toBeLessThanOrEqual(0);
+    expect(createHtmlTemplateRenderBudget().remainingRenderMs).toBe(2_000);
+  });
+
   test("stops before CSS inlining when the shared batch budget is exhausted", async () => {
     const budget = createHtmlTemplateRenderBudget();
     budget.remainingInlineWorkBytes = 1;
