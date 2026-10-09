@@ -63,6 +63,9 @@ export function createChartInspection(options: {
   let moved = false;
   let pending: { x: number; y: number; target: Element | null } | undefined;
   let frame: number | undefined;
+  // The cursor this chart is subscribed to. Closing reads it instead of the cursor prop: a chart also closes
+  // while it unmounts, when a parent `<Show>` may already have dropped the value the prop came from.
+  let linkedCursor: ChartCursor | undefined;
 
   const records = () => {
     if (!entries || (entries.length > 0 && !entries[0]!.element.isConnected)) {
@@ -149,9 +152,9 @@ export function createChartInspection(options: {
     highlighted = [];
   };
   const close = (broadcast = true, cancelPending = true) => {
-    const state = options.cursor?.()?.read();
+    const state = linkedCursor?.read();
     if (broadcast && state && state.source !== source) return;
-    if (broadcast) options.cursor?.()?.clear(source);
+    if (broadcast) linkedCursor?.clear(source);
     options.container()?.removeAttribute("data-cursor-source");
     pinned = false;
     active = undefined;
@@ -292,10 +295,12 @@ export function createChartInspection(options: {
   };
   createEffect(() => {
     const cursor = options.cursor?.();
+    linkedCursor = cursor;
     const unsubscribe = cursor?.subscribe(receive);
     onCleanup(() => {
       unsubscribe?.();
       cursor?.clear(source);
+      linkedCursor = undefined;
     });
   });
   onCleanup(() => close(false));

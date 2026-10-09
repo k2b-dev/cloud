@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
-import { createComponent, createSignal } from "solid-js";
+import { createComponent, createSignal, Show } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "./dom";
 
@@ -471,6 +471,38 @@ describe("Chart runtime behavior", () => {
       expect(selections).toHaveLength(0);
       chart.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }) as unknown as KeyboardEvent);
       expect(selections[0]!.datum.index).toBe(1);
+    } finally {
+      dispose();
+    }
+  });
+
+  test("a closing non-keyed Show removes a cursor-linked chart without reading its props again", async () => {
+    const { createChartCursor } = await import("../src/content/chart-cursor");
+    const [group, setGroup] = createSignal<{ cursor: ReturnType<typeof createChartCursor> } | undefined>({ cursor: createChartCursor() });
+    const dispose = render(
+      () =>
+        Show({
+          get when() {
+            return group();
+          },
+          children: (current) =>
+            createComponent(Chart, {
+              kind: "line",
+              interactive: true,
+              get cursor() {
+                return current().cursor;
+              },
+              series: [{ label: "Latency", data: [{ x: 1, y: 3 }] }],
+            }),
+        }),
+      dom.root,
+    );
+    try {
+      await nextTurn();
+      expect(dom.root.querySelector(".k2b-chart")).not.toBeNull();
+      // The Show's accessor throws once its condition is false, which is exactly when the chart unmounts.
+      expect(() => setGroup(undefined)).not.toThrow();
+      expect(dom.root.querySelector(".k2b-chart")).toBeNull();
     } finally {
       dispose();
     }
