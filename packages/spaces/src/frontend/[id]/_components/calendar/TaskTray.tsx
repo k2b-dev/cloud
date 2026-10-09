@@ -1,42 +1,75 @@
 import type { DateContext } from "@k2b/stdlib";
-import { Checkbox, ScrollArea, useLocale } from "@k2b/ui";
-import { createComputed, createUniqueId, For, type JSX, onCleanup, Show } from "solid-js";
+import { Checkbox, ScrollArea, toast, useLocale } from "@k2b/ui";
+import { createComputed, createSignal, createUniqueId, For, type JSX, onCleanup, Show } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import type { SpaceItem } from "@/contracts";
 import { shouldHandleDetailClick } from "../../../lib/detail";
+import { createRetryToasts } from "../../../lib/feedback";
 import { useSpaceMessages } from "../../messages";
-import { requestSpacesRouteNavigation } from "../workspace/workspace-events";
-import type { TimelineTray as Tray } from "../workspace/workspace-types";
-import type { TimelineTraySection } from "./timeline";
+import { ownClaimId } from "../shared/claim/claim";
+import { confirmCompletion, setItemCompleted } from "../shared/completion";
+import { invalidateSpacesData, requestSpacesRouteNavigation } from "../workspace/workspace-events";
+import type { CalendarTray as Tray } from "../workspace/workspace-types";
+import type { TaskTraySection } from "./tray";
 
 type Props = {
-  tray: Tray;
+  spaceId: string;
+  /** The tasks to show, or null while the day that brings them loads; the row keeps its place meanwhile. */
+  tray: Tray | null;
   /** Whether the calendar's filter narrows the tray; an empty tray then says so. */
   filtered: boolean;
   /** Whether the reader may check tasks off. */
   canCheck: boolean;
-  /** Checkbox states the reader just set, shown until the refresh after the change is in. */
-  checking: Record<string, boolean>;
-  onToggle: (item: SpaceItem, completed: boolean) => void;
+  /** The reader, whose own claim on a task goes with checking it off. */
+  currentUserId?: string;
   itemHref: (item: SpaceItem) => string;
   /** The list view with every task of a part, or undefined where the filter rules the part out. */
-  listHref: (section: TimelineTraySection) => string | undefined;
+  listHref: (section: TaskTraySection) => string | undefined;
   dateConfig?: DateContext;
 };
 
+const emptyTray: Tray = { overdue: { items: [], total: 0 }, undated: { items: [], total: 0 } };
+
 /**
- * Tasks the timeline has no place for, in one fixed row below it: open tasks whose deadline passed before today, and
- * open tasks of the reader without a deadline. The row keeps its height whatever it holds, so the strip never moves
- * when tasks come or go; more tasks than fit scroll sideways. It follows the strip in the document as on screen, so Tab
+ * Tasks a day has no place for, in one fixed row below the day view: open tasks whose deadline passed before today,
+ * and open tasks of the reader without a deadline. The row keeps its height whatever it holds, so the day never moves
+ * when tasks come or go; more tasks than fit scroll sideways. It follows the day in the document as on screen, so Tab
  * and a screen reader reach it in the order the reader sees.
  */
-export default function TimelineTray(props: Props) {
+export default function TaskTray(props: Props) {
   const t = useSpaceMessages();
   const locale = useLocale();
+  const retryToast = createRetryToasts();
+  /** Checkbox states the reader just set, shown until the refresh after the change is in. */
+  const [checking, setChecking] = createSignal<Record<string, boolean>>({});
+  const settle = (id: string) =>
+    setChecking((current) => {
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
+  const refresh = (): Promise<void> => invalidateSpacesData().catch(() => retryToast(t.calendarRefreshFailed, t.retry, () => refresh()));
+  /** A task the reader claimed completes with that claim; one claimed by someone else is refused with the reason. */
+  const toggle = async (item: SpaceItem, completed: boolean) => {
+    if (item.id in checking()) return;
+    setChecking((current) => ({ ...current, [item.id]: completed }));
+    const claimId = props.currentUserId ? ownClaimId(item.claim, props.currentUserId) : undefined;
+    try {
+      await setItemCompleted({ spaceId: props.spaceId, itemId: item.id, completed, claimId }, t.updateFailed);
+    } catch (error) {
+      settle(item.id);
+      toast.error(error instanceof Error ? error.message : t.updateFailed);
+      return;
+    }
+    // A completed task leaves the tray with the refresh, so the toast confirms it and offers Undo.
+    confirmCompletion({ spaceId: props.spaceId, itemId: item.id, completed }, t);
+    await refresh();
+    settle(item.id);
+  };
   // A task keeps its row while it stays in the tray, so a refresh that brings the same tasks again, such as after a
   // change elsewhere in the Space, leaves keyboard focus where it is.
   const [tray, setTray] = createStore<Tray>({ overdue: { items: [], total: 0 }, undated: { items: [], total: 0 } });
-  createComputed(() => setTray(reconcile(props.tray)));
+  createComputed(() => setTray(reconcile(props.tray ?? emptyTray)));
   let region: HTMLElement | undefined;
 
   /**
@@ -69,7 +102,7 @@ export default function TimelineTray(props: Props) {
     );
   };
 
-  /** The due day as the strip's day headings name it, such as "Tue, Oct 6": a weekday alone is ambiguous here. */
+  /** The due day with its date, such as "Tue, Oct 6": a weekday alone is ambiguous here. */
   const dueDay = (deadline: string) =>
     new Intl.DateTimeFormat(props.dateConfig?.locale ?? locale(), {
       weekday: "short",
@@ -79,7 +112,7 @@ export default function TimelineTray(props: Props) {
     }).format(new Date(deadline));
   const empty = () => tray.overdue.items.length === 0 && tray.undated.items.length === 0;
 
-  const Section = (section: { kind: TimelineTraySection; label: string; allLabel: (count: number) => string }) => {
+  const Section = (section: { kind: TaskTraySection; label: string; allLabel: (count: number) => string }) => {
     const headingId = createUniqueId();
     const list = () => tray[section.kind];
     return (
@@ -104,14 +137,14 @@ export default function TimelineTray(props: Props) {
                   onClick={(event) => {
                     // Until the change is in, the box ignores another click or Space, so it cannot get out of step with
                     // the change. Unlike disabling it, this keeps keyboard focus on the box.
-                    if (event.target instanceof HTMLInputElement && item.id in props.checking) event.preventDefault();
+                    if (event.target instanceof HTMLInputElement && item.id in checking()) event.preventDefault();
                   }}
                 >
                   <Show when={props.canCheck && !blocked()}>
                     <Checkbox
                       aria-label={`${t.markComplete}: ${item.title}`}
-                      value={props.checking[item.id] ?? false}
-                      onValueChange={(completed) => props.onToggle(item, completed)}
+                      value={checking()[item.id] ?? false}
+                      onValueChange={(completed) => void toggle(item, completed)}
                     />
                   </Show>
                   <Show when={blocked()}>
@@ -151,7 +184,7 @@ export default function TimelineTray(props: Props) {
                 aria-label={section.allLabel(list().total)}
                 class="focus-ui flex h-7 items-center rounded-full px-2 text-xs font-medium text-dimmed hover:app-accent-text"
               >
-                {t.timelineTrayShowAll}
+                {t.taskTrayShowAll}
               </a>
             </Row>
           </Show>
@@ -165,23 +198,28 @@ export default function TimelineTray(props: Props) {
       ref={region}
       // Where focus lands once the last task left.
       tabIndex={-1}
-      aria-label={t.timelineTray}
+      aria-label={t.taskTray}
+      aria-busy={props.tray ? undefined : "true"}
       class="focus-ui flex h-11 shrink-0 items-center"
-      data-spaces-timeline-tray
+      data-spaces-task-tray
     >
       <Show
         when={!empty()}
         fallback={
-          <p class="flex items-center gap-1.5 px-1 text-xs text-dimmed">
-            <i class="ti ti-circle-check" aria-hidden="true" />
-            {props.filtered ? t.timelineTrayEmptyFiltered : t.timelineTrayEmpty}
-          </p>
+          <Show when={props.tray}>
+            <p class="flex items-center gap-1.5 px-1 text-xs text-dimmed">
+              <i class="ti ti-circle-check" aria-hidden="true" />
+              {props.filtered ? t.taskTrayEmptyFiltered : t.taskTrayEmpty}
+            </p>
+          </Show>
         }
       >
-        <ScrollArea orientation="horizontal" class="no-scrollbar min-w-0 flex-1">
+        {/* It contains the words only a screen reader hears, which sit absolutely, so they scroll with their task
+            instead of reaching past the page. */}
+        <ScrollArea orientation="horizontal" class="no-scrollbar relative min-w-0 flex-1">
           <div class="flex w-max items-center gap-2 px-1 py-2">
-            <Section kind="overdue" label={t.overdue} allLabel={(count) => t.timelineTrayAllOverdue({ count })} />
-            <Section kind="undated" label={t.timelineTrayUndated} allLabel={(count) => t.timelineTrayAllUndated({ count })} />
+            <Section kind="overdue" label={t.overdue} allLabel={(count) => t.taskTrayAllOverdue({ count })} />
+            <Section kind="undated" label={t.taskTrayUndated} allLabel={(count) => t.taskTrayAllUndated({ count })} />
           </div>
         </ScrollArea>
       </Show>

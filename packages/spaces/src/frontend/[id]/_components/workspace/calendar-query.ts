@@ -2,10 +2,9 @@ import { reloadOnce } from "@k2b/cloud/browser/reload";
 import { documentNavigate, listenPopState, navigate } from "@k2b/ssr/nav";
 import { query } from "@k2b/stdlib/solid";
 import { prompts, useLocale } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, onCleanup, onMount, untrack } from "solid-js";
+import { createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { useSpaceMessages } from "../../messages";
 import { CALENDAR_COLOR_PARAM, parseCalendarColorBy, parseCalendarRoute } from "../calendar/filter";
-import type { TimelineRange } from "../calendar/timeline";
 import { loadSpacesViewSnapshot, SpacesViewUnavailableError } from "./view-query";
 import {
   reconcileSpacesDetailRoute,
@@ -32,7 +31,7 @@ const selectionKey = (url: URL) => JSON.stringify([url.searchParams.get("item"),
  * calendar data, this query only loads the calendar view, and the order of the parameters means nothing. The page's
  * base URL names the view only when it overrides the saved one, while the calendar's own links always name it.
  */
-export const calendarViewSource = (href: string) => {
+const calendarViewSource = (href: string) => {
   const url = new URL(href, "http://spaces.local");
   url.searchParams.delete("item");
   url.searchParams.delete("occurrence");
@@ -48,11 +47,6 @@ export const useSpacesCalendarQuery = (params: {
   initialSource: string;
   initialSnapshot: CalendarSnapshot;
   dateConfig?: Parameters<typeof parseCalendarRoute>[1];
-  /**
-   * The range the timeline already shows for a source, so a refresh or a new filter covers all of it. Called once as
-   * each snapshot starts to load.
-   */
-  timelineRange?: (source: string) => TimelineRange | undefined;
 }) => {
   const locale = useLocale();
   const t = useSpaceMessages();
@@ -76,12 +70,7 @@ export const useSpacesCalendarQuery = (params: {
     source,
     initial: { source: initialSource, data: { source: initialSource, snapshot: params.initialSnapshot } },
     load: async (href, { abortSignal }) => {
-      const snapshot = await loadSpacesViewSnapshot(
-        href,
-        abortSignal,
-        locale(),
-        untrack(() => params.timelineRange?.(href)),
-      );
+      const snapshot = await loadSpacesViewSnapshot(href, abortSignal, locale());
       if (snapshot.kind !== "calendar") throw new SpacesViewUnavailableError(t.workspaceViewChanged);
       return { source: href, snapshot };
     },
@@ -184,7 +173,10 @@ export const useSpacesCalendarQuery = (params: {
       return;
     }
     const route = parseCalendarRoute(new URL(nextSource, window.location.origin), params.dateConfig);
-    setPreview((snapshot) => ({ ...snapshot, ...route, items: [], weather: {} }));
+    // The tray comes with the snapshot like the items, so the row waits empty for it: tasks of the old filter may not
+    // answer the new one, and their links would name a route the page has not reached, so opening one would load the
+    // whole page instead of its detail.
+    setPreview((snapshot) => ({ ...snapshot, ...route, items: [], weather: {}, tray: null }));
     setPending({
       id: ++nextNavigationId,
       href,
@@ -211,8 +203,6 @@ export const useSpacesCalendarQuery = (params: {
 
   return {
     current,
-    /** The last snapshot loaded, with its source; it stays while a navigation loads the next one. */
-    loaded: view.data,
     error: view.error,
     refresh: view.refresh,
     pending: () => pending() !== null || view.loading() || view.refreshing(),

@@ -10,6 +10,16 @@ updated: 2026-10-09
 
 # Deprecations and migrations
 
+## Spaces removes the calendar timeline
+
+The Spaces calendar no longer has a **Timeline** view. A saved link with
+`cv=timeline` opens the month view of its day instead of failing. The row of
+overdue tasks and the reader's undated tasks moves below the **Day** view.
+The internal `GET /api/spaces/workspace/view` endpoint no longer reads `from`,
+`to`, and `includeTray`, and a calendar snapshot no longer carries `range`;
+only the timeline used them. A day view snapshot carries `tray`. No setting,
+data, or migration is involved. See [Spaces](/en/apps/spaces).
+
 ## Applications can search their sent mail and read related apps' mail
 
 This change is additive; existing calls behave as before. `mail.list` gains

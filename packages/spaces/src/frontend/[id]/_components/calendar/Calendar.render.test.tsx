@@ -264,105 +264,20 @@ describe("Spaces calendar colors", () => {
     expect(renderView("month", "en")).not.toContain("ccolor=");
   });
 
-  test("shows the timeline with events as bands and due tasks as markers at their time, in the calendar's colors", () => {
-    const base = {
-      spaceId: "Space1",
-      spaceName: "Planning",
-      spaceColor: "#3b82f6",
-      descriptionPreview: null,
-      url: null,
-      allDay: false,
-      priority: null,
-      recurrence: null,
-      recurringEventId: null,
-      recurrenceId: null,
-      columnId: "Col001",
-      assignees: [],
-      activeBlockerCount: 0,
-    } satisfies Partial<CalendarItem>;
-    const event: CalendarItem = {
-      ...base,
-      id: "Event1",
-      title: "Release planning",
-      location: "Room Schlei",
-      startsAt: "2026-10-08T14:00:00.000Z",
-      endsAt: "2026-10-08T15:30:00.000Z",
-      deadline: null,
-      tags: [{ id: "Tag1", spaceId: "Space1", name: "Release", color: "#8b5cf6" }],
-    };
-    const task: CalendarItem = {
-      ...base,
-      id: "Task1",
-      title: "Check invoice",
-      location: null,
-      startsAt: null,
-      endsAt: null,
-      deadline: "2026-10-08T15:00:00.000Z",
-      priority: "high",
-    };
-    const blocked: CalendarItem = {
-      ...task,
-      id: "Task2",
-      title: "Send the offer",
-      deadline: "2026-10-08T17:00:00.000Z",
-      priority: null,
-      activeBlockerCount: 2,
-    };
-    const items = [event, task, blocked];
-    const render = (canWrite: boolean, colorBy: CalendarColorBy = "tag") =>
-      renderToString(() =>
-        createComponent(Calendar, {
-          spaceId: "Space1",
-          items,
-          columns: [{ id: "Col001", spaceId: "Space1", name: "To do", color: "#f59e0b", rank: "1", isDone: false }],
-          tags: [],
-          filter: { ...defaultCalendarFilter, colorBy },
-          view: "timeline",
-          date: new Date("2026-10-09T00:00:00.000Z"),
-          baseUrl: "/app/spaces/Space1?view=calendar&cv=timeline",
-          dateConfig: { locale: "en", timeZone: "UTC", weekStartsOn: 1 },
-          canWrite,
-          // The strip on screen still shows October 8 with all types, while October 9 and events only load.
-          timeline: {
-            anchor: "2026-10-08T00:00:00.000Z",
-            filter: defaultCalendarFilter,
-            from: "2026-10-07T20:00:00.000Z",
-            to: "2026-10-16T00:00:00.000Z",
-            items,
-            tray: null,
-            busy: false,
-            onLoadEarlier: async () => undefined,
-            onLoadLater: async () => undefined,
-          },
-        }),
-      );
-
-    const html = render(true);
-    expect(html).toMatch(/role="radio" aria-checked="true"[^>]*href="[^"]*cv=timeline[^"]*">Timeline<\/a>/);
-    expect(html).toContain('aria-label="Timeline"');
-    expect(html).toContain("Release planning, 14:00 to 15:30, Room Schlei, Thursday, October 8");
-    expect(html).toMatch(/data-kind="band"[^>]*data-span="m"[^>]*--k2b-timeline-accent:#8b5cf6/);
-    // A task without a tag takes its status color; its priority shows as text instead of a red flag.
-    expect(html).toContain("Check invoice, 15:00, Priority: High, Thursday, October 8, open");
-    expect(html).toMatch(/data-kind="marker"[^>]*--k2b-timeline-accent:#f59e0b/);
-    // A blocked task cannot be completed, so it has no checkbox and says why.
-    expect(html).toContain('Send the offer, 17:00, Blocked by 2, Thursday, October 8"');
-    expect(html.match(/class="k2b-timeline__check"/g)).toHaveLength(1);
-    // Item links keep the strip's own day and filter, so they open the detail in place while another strip loads.
-    expect(html).toContain("cv=timeline&amp;cd=2026-10-08&amp;item=Task1");
-    expect(html).not.toContain("cd=2026-10-09&amp;item=");
-    expect(html).not.toContain("k2b-calendar-month");
-
-    expect(render(true, "priority")).toMatch(/data-kind="marker"[^>]*--k2b-timeline-accent:#f97316/);
-
-    const readOnly = render(false);
-    expect(readOnly).toContain("Check invoice, 15:00, Priority: High, Thursday, October 8");
-    expect(readOnly).not.toContain("Check invoice, 15:00, Priority: High, Thursday, October 8, open");
-    expect(readOnly).not.toContain('class="k2b-timeline__check"');
+  test("offers the day, week, month, and year views, and no timeline", () => {
+    const html = renderView("month", "de");
+    expect([...html.matchAll(/role="radio"[^>]*href="[^"]*cv=(\w+)[^"]*"/g)].map(([, view]) => view)).toEqual([
+      "day",
+      "week",
+      "month",
+      "year",
+    ]);
+    expect(html).not.toContain("cv=timeline");
+    expect(html).not.toContain("Zeitleiste");
   });
 });
 
-describe("Spaces timeline tray", () => {
+describe("Spaces task tray below the day view", () => {
   const task = (id: string, title: string, extra: Partial<SpaceItem> = {}): SpaceItem => ({
     id,
     spaceId: "Space1",
@@ -399,6 +314,7 @@ describe("Spaces timeline tray", () => {
     canWrite?: boolean;
     locale?: string;
     filter?: typeof defaultCalendarFilter;
+    view?: CalendarView;
     tray: { overdue: { items: SpaceItem[]; total: number }; undated: { items: SpaceItem[]; total: number } } | null;
   }) => {
     const locale = options.locale ?? "en";
@@ -413,39 +329,29 @@ describe("Spaces timeline tray", () => {
             columns: [],
             tags: [],
             filter,
-            view: "timeline",
+            view: options.view ?? "day",
             date: new Date("2026-10-08T00:00:00.000Z"),
-            baseUrl: "/app/spaces/Space1?view=calendar&cv=timeline",
+            baseUrl: "/app/spaces/Space1?view=calendar&cv=day",
             dateConfig: { locale, timeZone: "UTC", weekStartsOn: 1 },
             canWrite: options.canWrite ?? true,
-            timeline: {
-              anchor: "2026-10-08T00:00:00.000Z",
-              filter,
-              from: "2026-10-07T20:00:00.000Z",
-              to: "2026-10-16T00:00:00.000Z",
-              items: [],
-              tray: options.tray,
-              busy: false,
-              onLoadEarlier: async () => undefined,
-              onLoadLater: async () => undefined,
-            },
+            tray: options.tray,
           });
         },
       }),
     );
   };
 
-  test("reads overdue tasks and the reader's undated tasks after the strip, where they show", () => {
+  test("reads overdue tasks and the reader's undated tasks after the day, where they show", () => {
     const html = render({ tray: { overdue: { items: overdue, total: 7 }, undated: { items: undated, total: 2 } } });
     const tray = html.indexOf('aria-label="Overdue tasks and your tasks without a date"');
     expect(tray).toBeGreaterThan(-1);
-    // The document follows the screen, so Tab and a screen reader reach the row below the strip after it.
-    expect(tray).toBeGreaterThan(html.indexOf('aria-label="Timeline"'));
+    // The document follows the screen, so Tab and a screen reader reach the row below the day after it.
+    expect(tray).toBeGreaterThan(html.lastIndexOf("k2b-calendar-time-grid__slot"));
     expect(html).not.toContain("order-last");
     expect(html.indexOf(">Overdue</h3>")).toBeLessThan(html.indexOf(">Yours, no date</h3>"));
     expect(html.indexOf("Countersign the contract")).toBeLessThan(html.indexOf("Clean up the customer list"));
-    // Items open their detail on the strip shown.
-    expect(html).toContain('href="/app/spaces/Space1?view=calendar&amp;cv=timeline&amp;cd=2026-10-08&amp;item=Late01"');
+    // Items open their detail on the day shown.
+    expect(html).toContain('href="/app/spaces/Space1?view=calendar&amp;cv=day&amp;cd=2026-10-08&amp;item=Late01"');
     // A blocked task has no checkbox and says why; every other task can be checked off.
     expect(html).toContain('aria-label="Mark complete: Countersign the contract"');
     expect(html).not.toContain('aria-label="Mark complete: Send wireframe feedback"');
@@ -508,12 +414,17 @@ describe("Spaces timeline tray", () => {
     // Voice control finds a link by what it shows only where its name contains those words.
     for (const locale of ["en", "de"]) {
       const { t } = spaceMessages.resolve([locale]);
-      expect(t.timelineTrayAllOverdue({ count: 7 }).startsWith(t.timelineTrayShowAll)).toBe(true);
-      expect(t.timelineTrayAllUndated({ count: 3 }).startsWith(t.timelineTrayShowAll)).toBe(true);
+      expect(t.taskTrayAllOverdue({ count: 7 }).startsWith(t.taskTrayShowAll)).toBe(true);
+      expect(t.taskTrayAllUndated({ count: 3 }).startsWith(t.taskTrayShowAll)).toBe(true);
     }
   });
 
-  test("shows no tray while the calendar shows only events", () => {
-    expect(render({ tray: null })).not.toContain("data-spaces-timeline-tray");
+  test("keeps the row free while the day loads, and shows none for events only or in the other views", () => {
+    const loading = render({ tray: null });
+    expect(loading).toMatch(/aria-busy="true"[^>]*data-spaces-task-tray/);
+    expect(loading).not.toContain("Nothing overdue");
+    expect(render({ filter: { ...defaultCalendarFilter, type: "event" }, tray: null })).not.toContain("data-spaces-task-tray");
+    const full = { overdue: { items: overdue, total: 2 }, undated: { items: undated, total: 2 } };
+    for (const view of ["week", "month", "year"] as const) expect(render({ view, tray: full })).not.toContain("data-spaces-task-tray");
   });
 });

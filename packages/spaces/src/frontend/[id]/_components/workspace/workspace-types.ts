@@ -21,7 +21,7 @@ import {
 import { SpaceUserSettingsSchema } from "@/settings-context";
 import { TaskWorkSchema } from "../../../../work-contracts";
 import { type CalendarFilter, CalendarFilterSchema, writeCalendarFilter } from "../calendar/filter";
-import { TIMELINE_TRAY_SIZE } from "../calendar/timeline";
+import { TASK_TRAY_SIZE } from "../calendar/tray";
 import { boardFilter, buildFilterUrl, type parseFilterFromUrl, QueryParams } from "../filter/types";
 
 type FilterState = ReturnType<typeof parseFilterFromUrl>;
@@ -35,18 +35,16 @@ const WorkspaceAccessDeniedSchema = z.object({
 });
 
 const WorkspaceTitleSchema = z.array(z.object({ title: z.string(), href: z.string().optional() }));
-const CalendarViewSchema = z.enum(["day", "week", "month", "year", "timeline"]);
-/** The time range a calendar snapshot loaded items for; the timeline extends it while the reader scrolls. */
-const CalendarRangeSchema = z.object({ from: z.string().datetime(), to: z.string().datetime() });
+const CalendarViewSchema = z.enum(["day", "week", "month", "year"]);
 const DayWeatherSchema = z.object({ tempMin: z.number(), tempMax: z.number(), icon: z.string() });
-/** One part of the tray below the timeline: its first tasks and how many it holds in all. */
-const TimelineTrayListSchema = z.object({
-  items: z.array(SpaceItemSchema).max(TIMELINE_TRAY_SIZE),
+/** One part of the tray below the day view: its first tasks and how many it holds in all. */
+const CalendarTrayListSchema = z.object({
+  items: z.array(SpaceItemSchema).max(TASK_TRAY_SIZE),
   total: z.number().int().nonnegative(),
 });
-/** Tasks the timeline has no place for; null outside the timeline and while the calendar shows only events. */
-const TimelineTraySchema = z.object({ overdue: TimelineTrayListSchema, undated: TimelineTrayListSchema }).nullable();
-export type TimelineTray = NonNullable<z.infer<typeof TimelineTraySchema>>;
+/** Tasks a day has no place for; null outside the day view and while the calendar shows only events. */
+const CalendarTraySchema = z.object({ overdue: CalendarTrayListSchema, undated: CalendarTrayListSchema }).nullable();
+export type CalendarTray = NonNullable<z.infer<typeof CalendarTraySchema>>;
 
 const KanbanBucketInitialSchema = z.object({
   key: z.string(),
@@ -105,10 +103,9 @@ export const SpacesViewSnapshotSchema = z.discriminatedUnion("kind", [
     view: CalendarViewSchema,
     date: z.string().datetime(),
     filter: CalendarFilterSchema,
-    range: CalendarRangeSchema,
     items: z.array(CalendarItemSchema),
     weather: z.record(z.string(), DayWeatherSchema),
-    tray: TimelineTraySchema,
+    tray: CalendarTraySchema,
   }),
 ]);
 export type SpacesViewSnapshot = z.infer<typeof SpacesViewSnapshotSchema>;
@@ -136,10 +133,9 @@ const SpacesWorkspaceStateSchema = z.discriminatedUnion("kind", [
     calendarView: CalendarViewSchema,
     calendarDate: z.string().datetime(),
     calendarFilter: CalendarFilterSchema,
-    calendarRange: CalendarRangeSchema,
     calendarItems: z.array(CalendarItemSchema),
     calendarWeather: z.record(z.string(), DayWeatherSchema),
-    calendarTray: TimelineTraySchema,
+    calendarTray: CalendarTraySchema,
     selectedItemDetail: SpaceItemDetailSchema.nullable(),
     wormholes: z.array(SpaceWormholeSchema),
   }),
