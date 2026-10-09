@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { renderAuthorizationState, sample } from "./authorization-page.test-fixture";
+import { type AuthorizationState, authorizationStates, renderAuthorizationState, sample } from "./authorization-page.test-fixture";
 
 /** The visible text of the page body, with tags removed and whitespace collapsed. */
 const text = (html: string) =>
@@ -12,9 +12,12 @@ const text = (html: string) =>
 
 const count = (html: string, pattern: RegExp) => html.match(pattern)?.length ?? 0;
 
+const title = (html: string) => /<title>([^<]*)<\/title>/.exec(html)?.[1];
+const heading = (html: string) => /<h1 id="oauth-page-title"[^>]*>([^<]*)<\/h1>/.exec(html)?.[1];
+
 describe("OAuth authorization pages", () => {
   test("every state is one centered card on the minimal layout, without Cloud chrome", async () => {
-    for (const state of ["entry", "confirm", "consent", "approved", "denied", "expired", "error"] as const) {
+    for (const state of Object.keys(authorizationStates) as AuthorizationState[]) {
       for (const locale of ["en", "de"] as const) {
         const html = await renderAuthorizationState(state, locale);
         const context = `${state} ${locale}`;
@@ -123,5 +126,23 @@ describe("OAuth authorization pages", () => {
     expect(text(failed)).toContain("Your account is not allowed to use this application.");
     expect(text(failed)).toContain("Error code: access_denied");
     expect(failed).toMatch(/<a href="\/"[^>]*>[\s\S]*Back to home/);
+
+    const blocked = await renderAuthorizationState("blocked", "en");
+    expect(blocked).toContain('role="status"');
+    expect(text(blocked)).toContain("Authorization failed");
+    expect(text(blocked)).toContain("The mobile app cannot grant access to other applications.");
+    expect(blocked).not.toContain("<form");
+  });
+
+  test("the tab names the task until the request has an answer, then the answer", async () => {
+    for (const locale of ["en", "de"] as const) {
+      const entry = await renderAuthorizationState("entry", locale);
+      expect(title(entry), locale).toBe(locale === "en" ? "Connect a device" : "Gerät verbinden");
+      for (const state of ["approved", "denied", "expired", "blocked"] as const) {
+        const html = await renderAuthorizationState(state, locale);
+        expect(heading(html), `${state} ${locale}`).toBeString();
+        expect(title(html), `${state} ${locale}`).toBe(heading(html));
+      }
+    }
   });
 });

@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { launchBrowser } from "../../../ui/test/browser";
@@ -7,38 +8,115 @@ import { type AuthorizationState, authorizationStates, renderAuthorizationState 
 
 // Where the card sits, whether it is framed or flat, and whether anything moves when a control is
 // hovered or focused is decided by the cascade of Cloud, @k2b/ui and Tailwind styles at a viewport
-// width, which only a real engine resolves.
+// width, with the fonts a person gets, which only a real engine resolves.
 
 const viewports = {
   phone: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true },
   desktop: { viewport: { width: 1440, height: 900 }, isMobile: false, hasTouch: false },
 } as const;
 
+const origin = "https://cloud.test";
+const uiDist = dirname(fileURLToPath(import.meta.resolve("@k2b/ui/fonts/plex.css")));
+
 let browser: Browser;
-let css: string;
+/** What the page template links, by path, as Core serves it from the @k2b/ui presets. */
+let stylesheets: Record<string, string>;
+let iconFont: string;
 beforeAll(async () => {
-  // As the page template links them: the layer order, the app's stylesheet, then the global one.
   const entries = [resolve(import.meta.dir, "../styles/app.css"), resolve(import.meta.dir, "../../../../styles.css")];
   const built = await Promise.all(entries.map((entry) => Bun.build({ entrypoints: [entry], plugins: [tailwind] })));
   for (const build of built) if (!build.success) throw new AggregateError(build.logs, "Could not compile the stylesheets.");
   const [appCss, globalCss] = await Promise.all(built.map((build) => build.outputs[0]!.text()));
-  css = ["@layer properties, theme, base, components, utilities;", appCss, globalCss].join("\n");
+  const icons = await Bun.file(resolve(uiDist, "tabler.css")).text();
+  iconFont = resolve(uiDist, /tabler-icons-[\w-]+\.woff2/.exec(icons)![0]);
+  stylesheets = {
+    "/public/fonts.css": (await Bun.file(resolve(uiDist, "plex.css")).text()).replaceAll("./fonts/", "/public/fonts/"),
+    "/public/tabler-icons.css": icons.replace(/\.\/tabler-icons-[\w-]+\.woff2(\?[^)]*)?/, "/public/tabler-icons.woff2"),
+    "/public/oauth/app.css": appCss!,
+    "/public/global.css": globalCss!,
+  };
   browser = await launchBrowser();
 }, 60_000);
 afterAll(async () => {
   await browser?.close();
 });
 
-/** The server-rendered document with its stylesheets inlined; the pages need no script to show their state. */
-const open = async (state: AuthorizationState, locale: "en" | "de", viewport: keyof typeof viewports): Promise<Page> => {
-  const html = (await renderAuthorizationState(state, locale))
-    .replace(/<script[\s\S]*?<\/script>/g, "")
-    .replace(/<link [^>]*>/g, "")
-    .replace("</head>", () => `<style>${css}</style></head>`);
+/**
+ * The server-rendered document with the stylesheets and fonts it links, once the fonts are in. The
+ * pages need no script to show their state; the platform's MinimalLayout test owns the first frame.
+ */
+const open = async (
+  state: AuthorizationState,
+  locale: "en" | "de",
+  viewport: keyof typeof viewports,
+  theme: "light" | "dark" = "light",
+): Promise<Page> => {
+  const html = (await renderAuthorizationState(state, locale, theme)).replace(/<script[\s\S]*?<\/script>/g, "");
   const page = await browser.newPage({ ...viewports[viewport], deviceScaleFactor: 1 });
-  await page.setContent(html);
+  await page.route(`${origin}/**`, (route) => {
+    const { pathname } = new URL(route.request().url());
+    if (pathname === "/authorization-page") return route.fulfill({ contentType: "text/html", body: html });
+    const stylesheet = stylesheets[pathname];
+    if (stylesheet !== undefined) return route.fulfill({ contentType: "text/css", body: stylesheet });
+    if (pathname === "/public/tabler-icons.woff2") return route.fulfill({ path: iconFont });
+    if (pathname.startsWith("/public/fonts/"))
+      return route.fulfill({ path: resolve(uiDist, "fonts", pathname.slice("/public/fonts/".length)) });
+    return route.fulfill({ status: 404, body: "" });
+  });
+  await page.goto(`${origin}/authorization-page`);
+  const fonts = await page.evaluate(async () => {
+    await document.fonts.ready;
+    const loaded: string[] = [];
+    document.fonts.forEach((font) => {
+      if (font.status === "loaded") loaded.push(font.family);
+    });
+    return loaded;
+  });
+  // Measured in a fallback font, a row that wraps for a person would pass.
+  expect(fonts, state).toEqual(expect.arrayContaining(["IBM Plex Sans", "tabler-icons"]));
   return page;
 };
+
+/**
+ * Text and icons in the card whose contrast against the surface behind them is below WCAG AA: 4.5:1
+ * for text and 3:1 for icons.
+ */
+const lowContrast = (page: Page) =>
+  page.evaluate(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 1;
+    const context = canvas.getContext("2d", { willReadFrequently: true })!;
+    /** The sRGB pixel that CSS colors painted over each other, the first at the bottom, leave. */
+    const paint = (colors: string[]) => {
+      for (const color of ["#fff", ...colors]) {
+        context.fillStyle = color;
+        context.fillRect(0, 0, 1, 1);
+      }
+      return Array.from(context.getImageData(0, 0, 1, 1).data).slice(0, 3);
+    };
+    const luminance = (rgb: number[]) => {
+      const [r, g, b] = rgb.map((value) => {
+        const channel = value / 255;
+        return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+    };
+    const card = document.querySelector('section[aria-labelledby="oauth-page-title"]')!;
+    const found: string[] = [];
+    for (const element of [card, ...card.querySelectorAll("*")]) {
+      const icon = element.matches("i.ti");
+      const text = Array.from(element.childNodes).some((node) => node.nodeType === Node.TEXT_NODE && node.textContent!.trim());
+      if (!(icon || text) || !element.checkVisibility()) continue;
+      const backgrounds: string[] = [];
+      for (let node: Element | null = element; node; node = node.parentElement) backgrounds.unshift(getComputedStyle(node).backgroundColor);
+      const [light, dark] = [luminance(paint(backgrounds)), luminance(paint([...backgrounds, getComputedStyle(element).color]))].sort(
+        (a, b) => b - a,
+      );
+      const ratio = (light! + 0.05) / (dark! + 0.05);
+      if (ratio < (icon ? 3 : 4.5)) found.push(`${element.tagName.toLowerCase()}.${element.className}: ${ratio.toFixed(2)}`);
+    }
+    return found;
+  });
 
 /** Every box in the card and the footer, rounded to hundredths of a pixel. */
 const boxes = (page: Page) =>
@@ -55,44 +133,52 @@ describe("OAuth authorization pages in a browser", () => {
   for (const viewport of Object.keys(viewports) as Array<keyof typeof viewports>) {
     const { width, height } = viewports[viewport].viewport;
 
-    test(`every state is one centered card without app chrome at ${width} px`, async () => {
-      for (const state of Object.keys(authorizationStates) as AuthorizationState[]) {
-        const page = await open(state, "en", viewport);
-        try {
-          const layout = await page.evaluate(() => {
-            const card = document.querySelector('section[aria-labelledby="oauth-page-title"]')!;
-            const box = card.getBoundingClientRect();
-            const style = getComputedStyle(card);
-            return {
-              mains: document.querySelectorAll("main").length,
-              mainBackground: getComputedStyle(document.querySelector("main")!).backgroundColor,
-              navs: Array.from(document.querySelectorAll("nav"), (nav) => nav.closest("footer") !== null),
-              headings: Array.from(document.querySelectorAll("h1"), (heading) => heading.id),
-              card: { left: box.left, right: box.right, top: box.top, bottom: box.bottom },
-              framed: style.borderTopWidth !== "0px" && style.boxShadow !== "none",
-              scrollWidth: document.documentElement.scrollWidth,
-            };
-          });
-          const context = `${state} at ${width} px`;
-          expect(layout.mains, context).toBe(1);
-          // One page background from top to footer: no band behind the card that ends at the footer.
-          expect(layout.mainBackground, context).toBe("rgba(0, 0, 0, 0)");
-          // The only navigation is the footer's legal links: no rail, header, or app navigation.
-          expect(layout.navs, context).toEqual([true]);
-          expect(layout.headings, context).toEqual(["oauth-page-title"]);
-          expect(layout.scrollWidth, context).toBeLessThanOrEqual(width);
-          expect(layout.card.left, context).toBeGreaterThanOrEqual(0);
-          expect(layout.card.right, context).toBeLessThanOrEqual(width);
-          // Centered: as much room on the left as on the right.
-          expect(Math.abs(layout.card.left - (width - layout.card.right)), context).toBeLessThan(1);
-          expect(layout.card.bottom, context).toBeLessThanOrEqual(height);
-          // A frame on the desktop, flat on the phone where the page padding is all the room there is.
-          expect(layout.framed, context).toBe(viewport === "desktop");
-        } finally {
-          await page.close();
+    for (const theme of ["light", "dark"] as const) {
+      test(`every state is one centered, readable card without app chrome in ${theme} mode at ${width} px`, async () => {
+        for (const state of Object.keys(authorizationStates) as AuthorizationState[]) {
+          const page = await open(state, "en", viewport, theme);
+          try {
+            const layout = await page.evaluate(() => {
+              const card = document.querySelector('section[aria-labelledby="oauth-page-title"]')!;
+              const box = card.getBoundingClientRect();
+              const style = getComputedStyle(card);
+              return {
+                mains: document.querySelectorAll("main").length,
+                mainBackground: getComputedStyle(document.querySelector("main")!).backgroundColor,
+                navs: Array.from(document.querySelectorAll("nav"), (nav) => nav.closest("footer") !== null),
+                headings: Array.from(document.querySelectorAll("h1"), (heading) => heading.id),
+                card: { left: box.left, right: box.right, top: box.top, bottom: box.bottom },
+                // A border, a shadow, and a surface of its own that stands out from the page.
+                framed:
+                  style.borderTopWidth !== "0px" &&
+                  style.boxShadow !== "none" &&
+                  style.backgroundColor !== "rgba(0, 0, 0, 0)" &&
+                  style.backgroundColor !== getComputedStyle(document.body).backgroundColor,
+                scrollWidth: document.documentElement.scrollWidth,
+              };
+            });
+            const context = `${state} ${theme} at ${width} px`;
+            expect(layout.mains, context).toBe(1);
+            // One page background from top to footer: no band behind the card that ends at the footer.
+            expect(layout.mainBackground, context).toBe("rgba(0, 0, 0, 0)");
+            // The only navigation is the footer's legal links: no rail, header, or app navigation.
+            expect(layout.navs, context).toEqual([true]);
+            expect(layout.headings, context).toEqual(["oauth-page-title"]);
+            expect(layout.scrollWidth, context).toBeLessThanOrEqual(width);
+            expect(layout.card.left, context).toBeGreaterThanOrEqual(0);
+            expect(layout.card.right, context).toBeLessThanOrEqual(width);
+            // Centered: as much room on the left as on the right.
+            expect(Math.abs(layout.card.left - (width - layout.card.right)), context).toBeLessThan(1);
+            expect(layout.card.bottom, context).toBeLessThanOrEqual(height);
+            // A frame on the desktop, flat on the phone where the page padding is all the room there is.
+            expect(layout.framed, context).toBe(viewport === "desktop");
+            expect(await lowContrast(page), context).toEqual([]);
+          } finally {
+            await page.close();
+          }
         }
-      }
-    }, 60_000);
+      }, 60_000);
+    }
 
     test(`hovering or focusing any control moves nothing at ${width} px`, async () => {
       for (const state of Object.keys(authorizationStates) as AuthorizationState[]) {

@@ -58,6 +58,12 @@ const signedIn: MiddlewareHandler<AuthContext> = async (c, next) => {
   await next();
 };
 
+/** The mobile app's session, which may not grant access to another application. */
+const appSession: MiddlewareHandler<AuthContext> = async (c, next) => {
+  c.set("sessionKind", "app" as never);
+  await next();
+};
+
 const confirmPage = ssr<AuthContext>(
   async (c) => () =>
     createComponent(AuthorizationPage, {
@@ -92,7 +98,9 @@ const consentPage = ssr<AuthContext>(
 
 const pages = new Hono<AuthContext>()
   .use("*", signedIn)
+  .use("/fixture/app-session/*", appSession)
   .get("/oauth/device", ...devicePage)
+  .get("/fixture/app-session/oauth/device", ...devicePage)
   .get("/oauth/error", ...errorPage)
   .get("/fixture/device-confirm", ...confirmPage)
   .get("/fixture/consent", ...consentPage);
@@ -105,16 +113,23 @@ export const authorizationStates = {
   approved: "/oauth/device?result=approved",
   denied: "/oauth/device?result=denied",
   expired: "/oauth/device?result=expired",
+  blocked: "/fixture/app-session/oauth/device",
   error: `/oauth/error?${new URLSearchParams({ error: "access_denied", error_description: "Your account is not allowed to use this application." })}`,
 } as const;
 
 export type AuthorizationState = keyof typeof authorizationStates;
 
-/** The complete HTML document of one state in one language. */
-export const renderAuthorizationState = async (state: AuthorizationState, locale: "en" | "de"): Promise<string> => {
+/** The complete HTML document of one state in one language and theme. */
+export const renderAuthorizationState = async (
+  state: AuthorizationState,
+  locale: "en" | "de",
+  theme: "light" | "dark" = "light",
+): Promise<string> => {
   const response = await pages.request(`https://cloud.test${authorizationStates[state]}`, {
-    headers: { "Accept-Language": locale, Cookie: "theme=light" },
+    headers: { "Accept-Language": locale, Cookie: `theme=${theme}` },
   });
-  if (response.status !== 200) throw new Error(`${state} answered ${response.status}`);
+  // A session that may not grant access gets its answer as 403.
+  const status = state === "blocked" ? 403 : 200;
+  if (response.status !== status) throw new Error(`${state} answered ${response.status}`);
   return response.text();
 };

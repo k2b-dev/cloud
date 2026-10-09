@@ -4,10 +4,18 @@ import { oauthMessages } from "../messages";
 import { CautionNote, DecisionForm, DecisionHeader, Outcome, RequestedAccess } from "./AuthorizationParts";
 import DeviceCodeForm from "./DeviceCodeForm.island";
 
+type DeviceOutcome = "approved" | "denied" | "expired" | "blocked";
+
 export type DeviceApprovalView =
   | { kind: "entry"; code?: string; error?: string }
   | { kind: "confirm"; request: string; code: string; client: { name: string; clientId: string }; scopes: string[] }
-  | { kind: "result"; outcome: "approved" | "denied" | "expired" | "blocked"; message?: string };
+  | { kind: "result"; outcome: DeviceOutcome; message?: string };
+
+/** The heading of a result, which is also the tab title once the request has an answer. */
+export const deviceResultTitle = (outcome: DeviceOutcome, t: ReturnType<typeof oauthMessages.resolve>["t"]): string =>
+  ({ approved: t.deviceApprovedTitle, denied: t.deviceDeniedTitle, expired: t.deviceExpiredTitle, blocked: t.authorizationFailed })[
+    outcome
+  ];
 
 /** The content of the device approval card; the server decides which state is shown. */
 export function DeviceApproval(props: { view: DeviceApprovalView }) {
@@ -50,20 +58,20 @@ export function DeviceApproval(props: { view: DeviceApprovalView }) {
         {(view) => (
           <Switch>
             <Match when={view().outcome === "approved"}>
-              <Outcome icon="ti ti-circle-check" success title={t().deviceApprovedTitle} body={t().deviceApprovedBody} />
+              <Outcome icon="ti ti-circle-check" success title={deviceResultTitle("approved", t())} body={t().deviceApprovedBody} />
             </Match>
             <Match when={view().outcome === "denied"}>
-              <Outcome icon="ti ti-circle-x" title={t().deviceDeniedTitle} body={t().deviceDeniedBody} />
+              <Outcome icon="ti ti-circle-x" title={deviceResultTitle("denied", t())} body={t().deviceDeniedBody} />
             </Match>
             <Match when={view().outcome === "expired"}>
-              <Outcome icon="ti ti-clock" title={t().deviceExpiredTitle} body={view().message ?? t().deviceExpiredBody}>
+              <Outcome icon="ti ti-clock" title={deviceResultTitle("expired", t())} body={view().message ?? t().deviceExpiredBody}>
                 <ButtonLink href="/oauth/device" variant="secondary" size="lg">
                   {t().deviceEnterAnother}
                 </ButtonLink>
               </Outcome>
             </Match>
             <Match when={view().outcome === "blocked"}>
-              <Outcome icon="ti ti-lock" title={t().authorizationFailed} body={view().message} />
+              <Outcome icon="ti ti-lock" title={deviceResultTitle("blocked", t())} body={view().message} />
             </Match>
           </Switch>
         )}

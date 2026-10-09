@@ -9,7 +9,7 @@
     "./cli": "./src/cli.ts"
   },
   "scripts": {
-    "test": "bun test --isolate --preload ../../scripts/fixtures/test-infra.ts --path-ignore-patterns '**/*.behavior.test.*'",
+    "test": "bun test --isolate --path-ignore-patterns '**/*.behavior.test.*'",
     "typecheck": "tsc -p tsconfig.json --noEmit --pretty false"
   },
   "dependencies": {
