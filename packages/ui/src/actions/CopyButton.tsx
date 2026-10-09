@@ -78,17 +78,18 @@ export function CopyButton(props: CopyButtonProps): JSX.Element {
     <Button
       {...rest}
       tooltip={tooltip}
-      disabled={local.disabled || local.loading}
+      disabled={local.disabled}
+      loading={local.loading}
+      loadingLabel={local.loadingLabel}
       type={local.type ?? "button"}
       class={`k2b-copy-button ${local.class ?? ""}`}
       size={local.size ?? "sm"}
       variant={local.variant ?? "ghost"}
-      aria-busy={local.loading ? "true" : undefined}
       aria-label={iconOnly() ? buttonLabel() : undefined}
       onClick={copy}
     >
-      <i class={local.loading ? "ti ti-loader-2 k2b-spin" : icon()} aria-hidden="true" />
-      {!iconOnly() && <span>{buttonLabel()}</span>}
+      <i class={icon()} aria-hidden="true" />
+      {!iconOnly() && <span>{visibleLabel()}</span>}
     </Button>
   );
 

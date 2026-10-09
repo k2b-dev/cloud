@@ -76,14 +76,18 @@ export function Button(props: ButtonProps): JSX.Element {
       disabled={local.disabled || local.loading}
       aria-busy={local.loading ? "true" : undefined}
     >
-      <Show when={local.loading}>
-        <i class="ti ti-loader-2 k2b-spin" aria-hidden="true" />
-      </Show>
-      <span class="k2b-button__label">
-        <Show when={local.loading && local.loadingLabel} fallback={local.children}>
-          {local.loadingLabel}
-        </Show>
+      {/* The idle content keeps its place, invisibly, so the button keeps its
+          size; the spinner is drawn over it and a loading label only replaces
+          the accessible name. */}
+      <span class="k2b-button__label" aria-hidden={local.loading && local.loadingLabel ? "true" : undefined}>
+        {local.children}
       </span>
+      <Show when={local.loading}>
+        <span class="k2b-button__busy">
+          <i class="ti ti-loader-2 k2b-spin" aria-hidden="true" />
+          <span class="k2b-sr-only">{local.loadingLabel}</span>
+        </span>
+      </Show>
     </button>
   );
 
@@ -214,7 +218,7 @@ export function IconButton(props: IconButtonProps): JSX.Element {
       title={iconTitle(local.title, tooltip())}
       tooltip={tooltip()}
     >
-      <Show when={!local.loading}>{local.children}</Show>
+      {local.children}
     </Button>
   );
 }

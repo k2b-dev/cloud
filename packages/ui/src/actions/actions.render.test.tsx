@@ -814,7 +814,33 @@ describe("@k2b/ui complete action migrations", () => {
     expect(html).toContain('aria-label="Saving"');
     expect(html).toContain("ti-loader-2");
     expect(html).not.toContain(">Saving<");
-    expect(html).not.toContain("save icon");
+    // The icon keeps its place under the spinner, invisibly.
+    expect(html).toContain("k2b-button__busy");
+    expect(html).toContain("save icon");
+  });
+
+  test("keeps a busy button's content in place and moves the loading label into its accessible name", () => {
+    const idle = renderToString(() => createComponent(Button, { loadingLabel: "Saving", children: "Save" }));
+    expect(idle).not.toContain("aria-busy");
+    expect(idle).not.toContain("k2b-button__busy");
+    expect(idle).not.toContain("Saving");
+
+    const busy = renderToString(() => createComponent(Button, { loading: true, loadingLabel: "Saving", children: "Save" }));
+    expect(busy).toContain('aria-busy="true"');
+    expect(busy).toContain("disabled");
+    expect(busy).toMatch(/<span[^>]*class="k2b-button__label"[^>]*aria-hidden="true"[^>]*>Save<\/span>/);
+    expect(busy).toMatch(
+      /class="k2b-button__busy"><i class="ti ti-loader-2 k2b-spin" aria-hidden="true"><\/i><span class="k2b-sr-only">Saving<\/span>/,
+    );
+
+    // Without a loading label the idle label stays the accessible name.
+    const unnamed = renderToString(() => createComponent(Button, { loading: true, children: "Save" }));
+    expect(unnamed).toMatch(/<span class="k2b-button__label">Save<\/span>/);
+    expect(unnamed).toMatch(/<span class="k2b-sr-only"><\/span>/);
+
+    const css = rule(".k2b-ui .k2b-button__busy");
+    expect(css).toContain("position: absolute");
+    expect(rule(".k2b-ui .k2b-button:has(> .k2b-button__busy) > .k2b-button__label")).toContain("opacity: 0");
   });
 
   test("gives every spotlight trigger variant a styled surface", () => {

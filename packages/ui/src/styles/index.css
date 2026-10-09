@@ -1668,6 +1668,27 @@
   justify-content: flex-start;
 }
 
+/* A busy button keeps exactly its idle box: the idle content stays in the
+ * layout, invisible but still named for assistive technology, and the spinner
+ * is centered over it. The zero-specificity `position` keeps component rules
+ * that already place a button in charge. */
+:where(.k2b-ui .k2b-button:has(> .k2b-button__busy)) {
+  position: relative;
+}
+
+.k2b-ui .k2b-button:has(> .k2b-button__busy) > .k2b-button__label {
+  opacity: 0;
+}
+
+.k2b-ui .k2b-button__busy {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
 .k2b-ui .k2b-icon-button {
   width: 2rem;
   padding: 0;
