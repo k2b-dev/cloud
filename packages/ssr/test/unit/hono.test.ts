@@ -1,8 +1,8 @@
-import { describe, test, expect } from "bun:test";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "fs";
+import { describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
+import { Hono } from "hono";
 import { tmpdir } from "os";
 import { join } from "path";
-import { Hono } from "hono";
 import { createUniqueId } from "solid-js";
 import { createSSRHandler, routes } from "../../src/adapter/hono";
 import { createConfig, type HtmlFn, type RenderFn } from "../../src/index";
@@ -245,9 +245,7 @@ describe("createSSRHandler", () => {
     const ssr = createSSRHandler(html);
 
     const handlers = ssr(async () => "content" as unknown as RenderFn);
-    const app = new Hono()
-      .onError((error, c) => c.text(error.message, 500))
-      .get("/test", ...handlers);
+    const app = new Hono().onError((error, c) => c.text(error.message, 500)).get("/test", ...handlers);
     const response = await app.request("/test");
 
     expect(response.status).toBe(500);
@@ -299,9 +297,7 @@ describe("routes", () => {
 
   test("rejects asset requests without a filename before file serving", async () => {
     const assetRoutes = routes({ dev: false, basePath: "", ssrPath: "/_ssr" });
-    const assetHandler = assetRoutes.routes.find(
-      (route) => route.path.endsWith("/:filename{.+\\.js$}"),
-    )?.handler;
+    const assetHandler = assetRoutes.routes.find((route) => route.path.endsWith("/:filename{.+\\.js$}"))?.handler;
     expect(assetHandler).toBeDefined();
 
     const app = new Hono().get("/", assetHandler!);
@@ -376,10 +372,7 @@ describe("routes", () => {
       mkdirSync(join(rootDir, "_ssr"), { recursive: true });
       writeFileSync(join(rootDir, "_ssr", "island.js"), "export default 1;");
 
-      const featureApp = new Hono().route(
-        "/_ssr",
-        routes({ dev: true, rootDir, basePath: "/docs", ssrPath: "/docs/_ssr" }),
-      );
+      const featureApp = new Hono().route("/_ssr", routes({ dev: true, rootDir, basePath: "/docs", ssrPath: "/docs/_ssr" }));
       const hostApp = new Hono().route("/docs", featureApp);
 
       const assetResponse = await hostApp.request("/docs/_ssr/island.js");

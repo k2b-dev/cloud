@@ -1,6 +1,6 @@
 {
   "name": "@k2b/ssr",
-  "version": "0.10.0",
+  "version": "0.15.0",
   "description": "Minimal SSR framework for SolidJS and Bun",
   "type": "module",
   "main": "src/index.ts",
@@ -13,7 +13,8 @@
     "./nav": "./src/nav.ts"
   },
   "scripts": {
-    "test": "bunx tsc -p test/tsconfig.json && bun test test/unit && bun test --conditions=browser --preload ./test/browser/setup.ts test/browser"
+    "test": "bun test test/unit && bun test --conditions=browser --preload ./test/browser/setup.ts test/browser",
+    "typecheck": "tsc -p tsconfig.json --noEmit --pretty false"
   },
   "peerDependencies": {
     "solid-js": "^1.9.0",
@@ -29,27 +30,31 @@
     }
   },
   "dependencies": {
-    "@babel/core": "^7.29.7",
-    "@babel/preset-typescript": "^7.29.7",
-    "@types/babel__core": "^7.20.5",
-    "babel-preset-solid": "^1.9.12",
-    "seroval": "^1.5.5"
+    "@babel/core": "7.29.7",
+    "@babel/preset-typescript": "7.29.7",
+    "@types/babel__core": "7.20.5",
+    "babel-preset-solid": "1.9.15",
+    "seroval": "1.6.7"
   },
   "devDependencies": {
-    "@happy-dom/global-registrator": "^20.10.6",
+    "@happy-dom/global-registrator": "20.14.5",
     "@types/bun": "1.4.2",
-    "elysia": "^1.4.29",
-    "file-type": "^21.3.1",
-    "hono": "^4.12.30",
-    "solid-js": "^1.9.14",
-    "typescript": "^5.9.3"
+    "elysia": "1.4.29",
+    "file-type": "21.3.4",
+    "happy-dom": "20.14.5",
+    "hono": "4.13.9",
+    "solid-js": "1.9.15",
+    "typescript": "7.0.2"
   },
   "license": "MIT",
   "author": "Valentin Kolb",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/k2b-dev/ssr.git"
+    "url": "git+https://github.com/k2b-dev/cloud.git",
+    "directory": "packages/ssr"
   },
+  "homepage": "https://github.com/k2b-dev/cloud/tree/main/packages/ssr",
+  "bugs": "https://github.com/k2b-dev/cloud/issues",
   "keywords": [
     "solid",
     "solidjs",
@@ -65,5 +70,8 @@
     "src/**/*.js",
     "README.md",
     "LICENSE"
-  ]
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
 }

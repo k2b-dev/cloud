@@ -5,7 +5,7 @@ section: Contributing
 order: 1302
 description: How a change on a feature branch becomes a versioned Cloud release with images, CLI, website, PWA, and npm packages.
 tags: [contributing, release, versioning, ci]
-updated: 2026-09-23
+updated: 2026-10-09
 ---
 
 # Release process
@@ -48,21 +48,27 @@ release-please runs on every push to `main`:
    `version` fields, updates `CHANGELOG.md`, and records the new version in
    `.release-please-manifest.json`.
 2. Merging the release PR creates the tag. The Cloud component tags
-   `cloud-vX.Y.Z`; the npm packages tag `npm-cloud-vX.Y.Z` and `npm-ui-vX.Y.Z`
-   as separate components with their own version lines.
+   `cloud-vX.Y.Z`; the npm packages tag `npm-cloud-vX.Y.Z`, `npm-ui-vX.Y.Z`,
+   and `npm-ssr-vX.Y.Z` as separate components with their own version lines.
 3. The `cloud-vX.Y.Z` tag triggers the release workflow. It builds the 26
    images of the release set (every application from `scripts/workspace.ts`
    plus `cloud-website` and `cloud-pwa-auth`) for `linux/amd64` and
    `linux/arm64`, the CLI binaries, and publishes a GitHub release with
    `release.json` and build attestations.
-4. The `npm-cloud-v*` and `npm-ui-v*` tags publish `@k2b/cloud` and `@k2b/ui`
-   with npm provenance. A prerelease version such as `0.8.0-rc.1` publishes
-   under the `next` dist-tag; a stable version publishes under `latest`.
-   `@k2b/cloud` pins an exact `@k2b/ui` version, so it publishes only after
-   that version is installable from npm. When the same release publishes
-   `@k2b/ui`, the workflow waits up to 20 minutes for it; otherwise the pinned
-   version must already be on npm, or `@k2b/cloud` stays unpublished and the
-   release fails.
+4. The `npm-cloud-v*`, `npm-ui-v*`, and `npm-ssr-v*` tags publish
+   `@k2b/cloud`, `@k2b/ui`, and `@k2b/ssr` with npm provenance. A prerelease
+   version such as `0.8.0-rc.1` publishes under the `next` dist-tag; a stable
+   version publishes under `latest`. `@k2b/cloud` pins exact `@k2b/ui` and
+   `@k2b/ssr` versions, so it publishes only after both are installable from
+   npm. When the same release publishes one of them, the workflow waits up to
+   20 minutes for it; otherwise the pinned version must already be on npm, or
+   `@k2b/cloud` stays unpublished and the release fails.
+
+release-please updates exact pins between workspace packages but leaves peer
+ranges alone. `@k2b/ui` declares `@k2b/ssr` as a peer range, so a release PR
+that moves `@k2b/ssr` outside it fails the `dependencies` check. Widen the
+range in a normal pull request on `main` first; the release PR then picks it
+up.
 
 `release.json` lists every image with its tag and digest. Deployments pin the
 `vX.Y.Z` tag or the digest from that file; see

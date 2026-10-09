@@ -2,11 +2,11 @@
  * Babel transform for SSR - wraps island/client components in custom elements
  * with serialized props. Handles both SSR (server) and DOM (client) modes.
  */
-import { transformAsync, types as t } from "@babel/core";
-// @ts-ignore - no types are available for this package
-import solidPreset from "babel-preset-solid";
+import { types as t, transformAsync } from "@babel/core";
 // @ts-ignore - no types are available for this package
 import tsPreset from "@babel/preset-typescript";
+// @ts-ignore - no types are available for this package
+import solidPreset from "babel-preset-solid";
 import { dirname } from "path";
 import { islandIdFromFile } from "./island-id";
 import { resolveIslandImport } from "./island-resolve";
@@ -27,10 +27,7 @@ const jsx = (tag: string, attrs: any[], children: any[] = []) =>
   );
 
 const attr = (name: string, value: any) =>
-  t.jsxAttribute(
-    t.jsxIdentifier(name),
-    typeof value === "string" ? t.stringLiteral(value) : t.jsxExpressionContainer(value),
-  );
+  t.jsxAttribute(t.jsxIdentifier(name), typeof value === "string" ? t.stringLiteral(value) : t.jsxExpressionContainer(value));
 
 // ============================================================================
 // Babel Plugin - Wraps island/client components
@@ -51,13 +48,8 @@ const componentWrapperPlugin = (filename: string, rootDir: string, dev: boolean)
 
         // Inject seroval serialize helper at the top
         programPath.node.body.unshift(
-          t.importDeclaration(
-            [t.importSpecifier(t.identifier("serialize"), t.identifier("serialize"))],
-            t.stringLiteral("seroval"),
-          ),
-          t.variableDeclaration("const", [
-            t.variableDeclarator(t.identifier("__seroval_serialize"), t.identifier("serialize")),
-          ]),
+          t.importDeclaration([t.importSpecifier(t.identifier("serialize"), t.identifier("serialize"))], t.stringLiteral("seroval")),
+          t.variableDeclaration("const", [t.variableDeclarator(t.identifier("__seroval_serialize"), t.identifier("serialize"))]),
         );
 
         programPath.traverse({
@@ -67,9 +59,7 @@ const componentWrapperPlugin = (filename: string, rootDir: string, dev: boolean)
             if (!type) return;
 
             if (parentType) {
-              console.warn(
-                `[ssr] Warning: ${parentType} imports ${type} (${source}) - nested islands/clients are not supported`,
-              );
+              console.warn(`[ssr] Warning: ${parentType} imports ${type} (${source}) - nested islands/clients are not supported`);
             }
 
             const spec = path.node.specifiers.find((s: any) => s.type === "ImportDefaultSpecifier");

@@ -150,10 +150,7 @@ describe("@k2b/ssr/nav browser behavior", () => {
     click(anchor);
     await flushPromises();
 
-    expect(consoleError).toHaveBeenCalledWith(
-      "[@k2b/ssr/nav] onNavigate failed; falling back to document navigation.",
-      error,
-    );
+    expect(consoleError).toHaveBeenCalledWith("[@k2b/ssr/nav] onNavigate failed; falling back to document navigation.", error);
     expect(window.location.pathname).toBe("/recovery");
     consoleError.mockRestore();
   });

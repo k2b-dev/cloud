@@ -3,13 +3,7 @@
  * Serves island chunks from _ssr and dev tools endpoints.
  */
 import type { SsrConfig } from "../index";
-import {
-  createAssetResponse,
-  getAssetPrefix,
-  createPingResponse,
-  getSsrDir,
-  createReloadResponse,
-} from "./utils";
+import { createAssetResponse, createPingResponse, createReloadResponse, getAssetPrefix, getSsrDir } from "./utils";
 
 type RouteHandler = (req: Request) => Response | Promise<Response>;
 type Routes = Record<string, RouteHandler>;

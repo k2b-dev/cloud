@@ -64,16 +64,16 @@ test("one instance failing on first render does not blank or block the others", 
   reported.mockRestore();
 });
 
-const buildTogether = async (
-  files: Record<string, string>,
-  options: { dev?: boolean; errorFallback?: string } = {},
-) => {
+const buildTogether = async (files: Record<string, string>, options: { dev?: boolean; errorFallback?: string } = {}) => {
   const directory = mkdtempSync(join(process.cwd(), ".ssr-island-errors-"));
   tempRoots.push(directory);
   for (const [name, source] of Object.entries(files)) writeFileSync(join(directory, name), source);
   const outdir = join(directory, "_ssr");
   await buildIslands({
-    pattern: "**/*.{island,client}.tsx", cwd: directory, outdir, verbose: false,
+    pattern: "**/*.{island,client}.tsx",
+    cwd: directory,
+    outdir,
+    verbose: false,
     dev: options.dev ?? true,
     errorFallback: options.errorFallback ? join(directory, options.errorFallback) : undefined,
   });
@@ -152,19 +152,22 @@ test("Try again remounts with fresh state and rereads the element's props", asyn
 });
 
 test.each([true, false])("shared signal writes keep other islands updating (dev=%s)", async (dev) => {
-  const bundle = await buildTogether({
-    "shared.ts": `import { createSignal } from "solid-js"; export const [count, setCount] = createSignal(0);`,
-    "Broken.island.tsx": `
+  const bundle = await buildTogether(
+    {
+      "shared.ts": `import { createSignal } from "solid-js"; export const [count, setCount] = createSignal(0);`,
+      "Broken.island.tsx": `
       import { createMemo } from "solid-js";
       import { count } from "./shared";
       export default function Broken() {
         const label = createMemo(() => { if (count() === 1) throw new Error("shared failure"); return count(); });
         return <b>{label()}</b>;
       }`,
-    "Healthy.island.tsx": `
+      "Healthy.island.tsx": `
       import { count, setCount } from "./shared";
       export default () => <button onClick={() => setCount(count() + 1)}>count {count()}</button>;`,
-  }, { dev });
+    },
+    { dev },
+  );
   document.body.innerHTML = `<solid-island data-id="${bundle.id("Broken.island.tsx")}"></solid-island><solid-island data-id="${bundle.id("Healthy.island.tsx")}"></solid-island>`;
   const reported = spyOn(globalThis, "reportError").mockImplementation(() => {});
   await bundle.load("Broken.island.tsx");
@@ -223,9 +226,16 @@ test("a failure outside the boundary does not interrupt mounting later elements"
   document.body.innerHTML = `<solid-island data-id="${id}"></solid-island><solid-island data-id="${id}"></solid-island>`;
   const [broken, healthy] = document.querySelectorAll("solid-island");
   const error = new Error("clearing failed");
-  Object.defineProperty(broken!, "innerHTML", { configurable: true, set() { throw error; } });
+  Object.defineProperty(broken!, "innerHTML", {
+    configurable: true,
+    set() {
+      throw error;
+    },
+  });
   let events = 0;
-  broken!.addEventListener("ssr:island-error", () => { events++; });
+  broken!.addEventListener("ssr:island-error", () => {
+    events++;
+  });
   const reported = spyOn(globalThis, "reportError").mockImplementation(() => {});
   await bundle.load("Ready.island.tsx");
   Reflect.deleteProperty(broken!, "innerHTML");
@@ -246,13 +256,16 @@ const retrySource = `
   }`;
 
 test("a custom error fallback receives the error and resets the component", async () => {
-  const bundle = await buildTogether({
-    "Retry.island.tsx": retrySource,
-    "IslandError.tsx": `
+  const bundle = await buildTogether(
+    {
+      "Retry.island.tsx": retrySource,
+      "IslandError.tsx": `
       export default function IslandError(props: { error: unknown; reset: () => void }) {
         return <div role="alert">Custom: {props.error instanceof Error ? props.error.message : "unknown"}<button onClick={props.reset}>Retry custom</button></div>;
       }`,
-  }, { errorFallback: "IslandError.tsx" });
+    },
+    { errorFallback: "IslandError.tsx" },
+  );
   document.body.innerHTML = `<solid-island data-id="${bundle.id("Retry.island.tsx")}"></solid-island>`;
   const reported = spyOn(globalThis, "reportError").mockImplementation(() => {});
   await bundle.load("Retry.island.tsx");
@@ -264,16 +277,21 @@ test("a custom error fallback receives the error and resets the component", asyn
 });
 
 test.each([false, true])("a throwing custom fallback uses the built-in fallback (reactive=%s)", async (reactive) => {
-  const bundle = await buildTogether({
-    "Retry.island.tsx": retrySource,
-    "IslandError.tsx": reactive ? `
+  const bundle = await buildTogether(
+    {
+      "Retry.island.tsx": retrySource,
+      "IslandError.tsx": reactive
+        ? `
       import { createMemo, createSignal } from "solid-js";
       export default function IslandError() {
         const [broken, setBroken] = createSignal(false);
         const label = createMemo(() => { if (broken()) throw new Error("fallback failure"); return "Break fallback"; });
         return <button onClick={() => setBroken(true)}>{label()}</button>;
-      }` : `export default function IslandError() { throw new Error("fallback failure"); }`,
-  }, { errorFallback: "IslandError.tsx" });
+      }`
+        : `export default function IslandError() { throw new Error("fallback failure"); }`,
+    },
+    { errorFallback: "IslandError.tsx" },
+  );
   document.body.innerHTML = `<solid-island data-id="${bundle.id("Retry.island.tsx")}"></solid-island>`;
   let events = 0;
   document.querySelector("solid-island")!.addEventListener("ssr:island-error", (event) => {

@@ -4,7 +4,7 @@
  * This is not a router. Links remain real anchors and apps decide whether an
  * enhanced click can update client state before committing browser history.
  */
-import { mergeProps, splitProps, type JSX } from "solid-js";
+import { type JSX, mergeProps, splitProps } from "solid-js";
 import { createDynamic } from "solid-js/web";
 
 type AnchorProps = JSX.AnchorHTMLAttributes<HTMLAnchorElement>;
@@ -144,8 +144,7 @@ export const listenPopState = (handler: (navigation: PopStateNavigationEvent) =>
   return () => window.removeEventListener("popstate", listener);
 };
 
-const resolveNavigationUrl = (href: string): URL =>
-  new URL(href, document.baseURI || window.location.href);
+const resolveNavigationUrl = (href: string): URL => new URL(href, document.baseURI || window.location.href);
 
 /**
  * Updates browser history without a document reload.

@@ -1,5 +1,5 @@
-import { afterEach, describe, test, expect } from "bun:test";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "fs";
+import { afterEach, describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { islandIdFromFile } from "../../src/island-id";
@@ -276,9 +276,7 @@ describe("transform() - Edge cases", () => {
       export default () => <Missing />;
     `;
 
-    await expect(transform(input, pagePath, "ssr", false, root)).rejects.toThrow(
-      /Failed to resolve island\/client import/,
-    );
+    await expect(transform(input, pagePath, "ssr", false, root)).rejects.toThrow(/Failed to resolve island\/client import/);
   });
 
   test("should handle .tsx extension in import", async () => {

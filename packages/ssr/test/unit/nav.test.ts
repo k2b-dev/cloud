@@ -1,14 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { renderToString } from "solid-js/web";
-import {
-  captureScroll,
-  currentPathWithQuery,
-  Link,
-  listenPopState,
-  navigate,
-  restoreScroll,
-  startViewTransition,
-} from "../../src/nav";
+import { captureScroll, currentPathWithQuery, Link, listenPopState, navigate, restoreScroll, startViewTransition } from "../../src/nav";
 
 const originalWindow = globalThis.window;
 const originalDocument = globalThis.document;
@@ -21,13 +13,7 @@ type ScrollRegion = {
 };
 
 const setupBrowserMocks = (
-  options: {
-    baseURI?: string;
-    href?: string;
-    historyState?: unknown;
-    regions?: ScrollRegion[];
-    startViewTransition?: boolean;
-  } = {},
+  options: { baseURI?: string; href?: string; historyState?: unknown; regions?: ScrollRegion[]; startViewTransition?: boolean } = {},
 ) => {
   const regions = options.regions ?? [];
   const scrollCalls: Array<[number, number]> = [];
@@ -36,7 +22,7 @@ const setupBrowserMocks = (
   const replaced: string[] = [];
   const popStateListeners = new Set<(event: PopStateEvent) => void>();
   let currentHref = options.href ?? "https://example.test/app?page=1#hash";
-  let currentState = options.historyState ?? null;
+  let currentState: unknown = options.historyState ?? null;
 
   const windowMock = {
     get location() {

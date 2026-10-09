@@ -19,7 +19,7 @@
   "dependencies": {
     "@xmldom/xmldom": "0.9.12",
     "@bwip-js/generic": "4.11.4",
-    "@k2b/ssr": "catalog:",
+    "@k2b/ssr": "workspace:*",
     "@k2b/stdlib": "catalog:",
     "@k2b/sync": "catalog:",
     "@k2b/ui": "workspace:*",

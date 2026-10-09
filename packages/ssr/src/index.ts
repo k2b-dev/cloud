@@ -4,16 +4,17 @@
  * - plugin: Bun plugin for build/dev that transforms islands
  * - html: Renders JSX to Response with hydration scripts
  */
-import { renderToString } from "solid-js/web";
-import type { JSX } from "solid-js";
+
 import type { BunPlugin } from "bun";
-import { transform } from "./transform";
-import { buildIslands, type DevSourcemap } from "./build";
-import { join, dirname, resolve } from "path";
-import { resolveIslandImport } from "./island-resolve";
-import { getAssetPrefix, getReloadId, normalizeBasePath, toSsrPath } from "./adapter/utils";
+import { dirname, join, resolve } from "path";
+import type { JSX } from "solid-js";
+import { renderToString } from "solid-js/web";
 // @ts-ignore - Bun text import
 import devClientCode from "./adapter/client.js" with { type: "text" };
+import { getAssetPrefix, getReloadId, normalizeBasePath, toSsrPath } from "./adapter/utils";
+import { buildIslands, type DevSourcemap } from "./build";
+import { resolveIslandImport } from "./island-resolve";
+import { transform } from "./transform";
 
 export type { IslandErrorProps } from "./mount";
 
@@ -147,8 +148,7 @@ export const createConfig = <T extends object = object>(options: SsrOptions<T> =
     ssrPath,
   };
 
-  const islandDisplayStyle =
-    "<style>solid-client,solid-island{display:contents}</style>";
+  const islandDisplayStyle = "<style>solid-client,solid-island{display:contents}</style>";
 
   // Hydration script - dynamically loads island/client bundles based on DOM
   const hydrationScript = `<script type="module">const p=${JSON.stringify(ssrPath + getAssetPrefix(dev))};document.querySelectorAll('solid-island,solid-client').forEach(e=>import(p+'/'+e.dataset.id+'.js'));</script>`;

@@ -42,11 +42,7 @@ class FakeLockManager {
   maxActive = 0;
   private queue: Promise<unknown> = Promise.resolve();
 
-  request(
-    name: string,
-    options: { signal?: AbortSignal },
-    callback: (lock: { mode: "exclusive"; name: string }) => unknown,
-  ) {
+  request(name: string, options: { signal?: AbortSignal }, callback: (lock: { mode: "exclusive"; name: string }) => unknown) {
     this.requests += 1;
     const request = this.queue.then(async () => {
       if (options.signal?.aborted) throw new DOMException("Aborted", "AbortError");
@@ -91,11 +87,7 @@ describe("SSR dev reload client", () => {
 
       pendingSignal = init?.signal ?? undefined;
       return new Promise((_resolve, reject) => {
-        pendingSignal?.addEventListener(
-          "abort",
-          () => reject(new DOMException("Aborted", "AbortError")),
-          { once: true },
-        );
+        pendingSignal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true });
       });
     });
 

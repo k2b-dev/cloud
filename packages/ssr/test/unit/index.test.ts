@@ -27,9 +27,7 @@ describe("createConfig() cache busting", () => {
     const output = await response.text();
 
     expect(output).toContain('const p="/docs/_ssr"');
-    expect(output).toMatch(
-      /globalThis\.__SSR_CONFIG=\{"ssrPath":"\/docs\/_ssr","reloadId":"[0-9a-f-]{36}"\}/,
-    );
+    expect(output).toMatch(/globalThis\.__SSR_CONFIG=\{"ssrPath":"\/docs\/_ssr","reloadId":"[0-9a-f-]{36}"\}/);
   });
 
   test("normalizes trailing slashes in basePath", async () => {
@@ -47,8 +45,7 @@ describe("createConfig() cache busting", () => {
   test("rejects async render functions", async () => {
     const { html } = createConfig({ dev: false });
 
-    await expect(html(async () => "content" as any)).rejects.toThrow(
-      "html() expects a synchronous render function",
-    );
+    // @ts-expect-error the runtime guard rejects what the type already forbids
+    await expect(html(async () => "content")).rejects.toThrow("html() expects a synchronous render function");
   });
 });

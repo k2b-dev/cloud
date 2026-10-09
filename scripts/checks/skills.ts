@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { isDirectory } from "./files";
 import type { Finding, Rule } from "./rule";
 
-const expectedSkills = ["cloud-cli"] as const;
+const expectedSkills = ["cloud-cli", "ssr"] as const;
 
 /** Keep repository skills as compact routers to their bundled references. */
 const MAX_SKILL_LINES = 260;

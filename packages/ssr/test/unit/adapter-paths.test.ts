@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { routes as bunRoutes } from "../../src/adapter/bun";
@@ -23,9 +23,7 @@ describe("adapter SSR paths", () => {
   test("bun adapter keeps the root SSR path by default", () => {
     const routeMap = bunRoutes({ dev: true, basePath: "", ssrPath: "/_ssr" });
 
-    expect(Object.keys(routeMap)).toEqual(
-      expect.arrayContaining(["/_ssr/*.js", "/_ssr/*.js.map", "/_ssr/_ping", "/_ssr/_reload"]),
-    );
+    expect(Object.keys(routeMap)).toEqual(expect.arrayContaining(["/_ssr/*.js", "/_ssr/*.js.map", "/_ssr/_ping", "/_ssr/_reload"]));
   });
 
   test("bun adapter serves source maps through the shared asset policy", async () => {

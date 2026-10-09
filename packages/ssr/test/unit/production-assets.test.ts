@@ -8,12 +8,15 @@ test("production adapters preserve one module URL through lazy imports", async (
   const root = mkdtempSync(join(process.cwd(), ".ssr-production-test-"));
   try {
     const source = join(root, "Counter.island.tsx");
-    writeFileSync(source, `
+    writeFileSync(
+      source,
+      `
       import { state } from "./state";
       export default function Counter() {
         return <button onClick={async () => { const lazy = await import("./lazy"); state.same = lazy.state === state; }}>Load</button>;
       }
-    `);
+    `,
+    );
     writeFileSync(join(root, "state.ts"), "export const state = { same: false };");
     writeFileSync(join(root, "lazy.ts"), 'export { state } from "./state";');
     await buildIslands({ pattern: "**/*.island.tsx", cwd: root, outdir: join(root, "_ssr"), dev: false, verbose: false });
@@ -21,7 +24,9 @@ test("production adapters preserve one module URL through lazy imports", async (
     // A separate process puts Bun.main next to the production _ssr directory.
     const runner = join(root, "server-test.ts");
     const core = resolve(import.meta.dir, "../../src");
-    writeFileSync(runner, `
+    writeFileSync(
+      runner,
+      `
       import { strict as assert } from "node:assert";
       import { Hono } from "hono";
       import { createConfig } from ${JSON.stringify(join(core, "index.ts"))};
@@ -82,9 +87,14 @@ test("production adapters preserve one module URL through lazy imports", async (
       }
       // Elysia schedules a delayed compiler-cache GC timer; all servers are already stopped.
       process.exit(0);
-    `);
+    `,
+    );
     const child = Bun.spawn([process.execPath, runner], { stdout: "pipe", stderr: "pipe" });
-    const [status, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
+    const [status, stdout, stderr] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+    ]);
     expect({ status, stdout, stderr }).toEqual({ status: 0, stdout: "", stderr: "" });
   } finally {
     rmSync(root, { recursive: true, force: true });

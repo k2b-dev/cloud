@@ -1,4 +1,4 @@
-import { describe, test, expect } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { hash, ISLAND_ID_LENGTH } from "../../src/island-id";
 
 describe("hash()", () => {

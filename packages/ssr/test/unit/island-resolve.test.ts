@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join, resolve } from "path";
 import { resolveIslandImport, withDefaultIslandExtension } from "../../src/island-resolve";
@@ -82,9 +82,7 @@ describe("resolveIslandImport()", () => {
     expect(() => resolveIslandImport("@/components/Missing.island", resolveDir, importer)).toThrow(
       /Failed to resolve island\/client import/,
     );
-    expect(() => resolveIslandImport("@/components/Missing.island", resolveDir, importer)).toThrow(
-      /Check your tsconfig paths\/baseUrl/,
-    );
+    expect(() => resolveIslandImport("@/components/Missing.island", resolveDir, importer)).toThrow(/Check your tsconfig paths\/baseUrl/);
   });
 
   test("normalizes absolute island import paths", () => {

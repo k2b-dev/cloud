@@ -86,20 +86,14 @@ if (!window.__ssr_reload) {
       const reset = { top: "", bottom: "", left: "", right: "" };
       const pos = positions[settings.position] ?? positions.bl;
       Object.assign(badge.style, reset, pos);
-      Object.assign(
-        panel.style,
-        reset,
-        pos,
-        pos.top ? { top: "32px" } : { bottom: "32px" },
-      );
+      Object.assign(panel.style, reset, pos, pos.top ? { top: "32px" } : { bottom: "32px" });
     };
 
     // UI
     const islandCount = document.querySelectorAll("solid-island").length;
     const clientCount = document.querySelectorAll("solid-client").length;
 
-    const el = (tag, props = {}, parent = document.body) =>
-      Object.assign(parent.appendChild(document.createElement(tag)), props);
+    const el = (tag, props = {}, parent = document.body) => Object.assign(parent.appendChild(document.createElement(tag)), props);
 
     const checkbox = (id, label, checked) => `
       <label style="display:block;margin:4px 0;cursor:pointer">
@@ -117,10 +111,7 @@ if (!window.__ssr_reload) {
           <label style="color:#888">Position:
             <select id="_ssr_pos" style="background:#222;color:#ccc;border:1px solid #444;padding:2px;margin-left:4px">
               ${Object.keys(positions)
-                .map(
-                  (p) =>
-                    `<option value="${p}" ${settings.position === p ? "selected" : ""}>${p.toUpperCase()}</option>`,
-                )
+                .map((p) => `<option value="${p}" ${settings.position === p ? "selected" : ""}>${p.toUpperCase()}</option>`)
                 .join("")}
             </select>
           </label>
@@ -142,9 +133,7 @@ if (!window.__ssr_reload) {
 
     const badge = el("div", {
       innerText: "[ssr]",
-      onclick: () =>
-        (panel.style.display =
-          panel.style.display === "none" ? "block" : "none"),
+      onclick: () => (panel.style.display = panel.style.display === "none" ? "block" : "none"),
     });
     Object.assign(badge.style, {
       fontFamily: "monospace",
@@ -160,8 +149,7 @@ if (!window.__ssr_reload) {
     // Event Handlers
     const bind = (id, key, onChange) => {
       panel.querySelector(`#${id}`).onchange = (e) => {
-        settings[key] =
-          e.target.type === "checkbox" ? e.target.checked : e.target.value;
+        settings[key] = e.target.type === "checkbox" ? e.target.checked : e.target.value;
         save(settings);
         onChange?.();
       };
@@ -202,11 +190,7 @@ if (!window.__ssr_reload) {
       }, 150);
     };
 
-    const shouldParticipate = () =>
-      pageActive &&
-      !reloadRequested &&
-      settings.autoReload &&
-      document.visibilityState === "visible";
+    const shouldParticipate = () => pageActive && !reloadRequested && settings.autoReload && document.visibilityState === "visible";
     const canConnect = () => shouldParticipate() && ownsLock;
 
     const closeSource = () => {
@@ -257,8 +241,7 @@ if (!window.__ssr_reload) {
       if (reloadId && nextReloadId !== reloadId) requestReload();
     };
 
-    const retryDelay = () =>
-      Math.min(2_000, 300 * 2 ** Math.min(retryAttempt, 3));
+    const retryDelay = () => Math.min(2_000, 300 * 2 ** Math.min(retryAttempt, 3));
 
     const scheduleRetry = () => {
       if (!canConnect() || retryTimer || retryController) return;
@@ -350,23 +333,19 @@ if (!window.__ssr_reload) {
       const controller = new AbortController();
       lockController = controller;
       void navigator.locks
-        .request(
-          reloadLockName,
-          { mode: "exclusive", signal: controller.signal },
-          async () => {
-            if (lockController === controller) lockController = null;
-            if (controller.signal.aborted || !shouldParticipate()) return;
+        .request(reloadLockName, { mode: "exclusive", signal: controller.signal }, async () => {
+          if (lockController === controller) lockController = null;
+          if (controller.signal.aborted || !shouldParticipate()) return;
 
-            ownsLock = true;
-            start();
-            await new Promise((resolve) => {
-              releaseLock = resolve;
-            });
-            releaseLock = null;
-            ownsLock = false;
-            stopConnection();
-          },
-        )
+          ownsLock = true;
+          start();
+          await new Promise((resolve) => {
+            releaseLock = resolve;
+          });
+          releaseLock = null;
+          ownsLock = false;
+          stopConnection();
+        })
         .catch((error) => {
           if (lockController === controller) lockController = null;
           if (error?.name === "AbortError" || !shouldParticipate()) return;
@@ -379,12 +358,7 @@ if (!window.__ssr_reload) {
 
     const syncConnection = () => {
       const knownReloadId = readStorage(reloadIdKey);
-      if (
-        shouldParticipate() &&
-        reloadId &&
-        knownReloadId &&
-        knownReloadId !== reloadId
-      ) {
+      if (shouldParticipate() && reloadId && knownReloadId && knownReloadId !== reloadId) {
         requestReload();
         return;
       }

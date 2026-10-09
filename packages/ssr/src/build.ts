@@ -2,12 +2,13 @@
  * Island bundler - discovers *.island.tsx and *.client.tsx files,
  * transforms them for the browser, and outputs chunks to _ssr directory.
  */
-import { join, relative, resolve } from "path";
+
 import { Glob } from "bun";
-import { readdir, stat, unlink } from "fs/promises";
 import { existsSync } from "fs";
+import { readdir, stat, unlink } from "fs/promises";
+import { join, relative, resolve } from "path";
+import { canonicalFilePath, ISLAND_ID_LENGTH, islandIdFromFile, toStableKey } from "./island-id";
 import { transform } from "./transform";
-import { ISLAND_ID_LENGTH, canonicalFilePath, islandIdFromFile, toStableKey } from "./island-id";
 
 type ComponentType = "island" | "client";
 
@@ -245,9 +246,7 @@ export const buildIslands = async (options: {
       console.log(`  ${rel} -> ${outdir}/${c.id}.js${t != null ? ` (transform: ${fmt(t)})` : ""}`);
     }
   }
-  console.log(
-    `Built ${files.size} component(s) to ${outdir}/ in ${fmt(performance.now() - totalStart)}${verbose ? " (total)" : ""}`,
-  );
+  console.log(`Built ${files.size} component(s) to ${outdir}/ in ${fmt(performance.now() - totalStart)}${verbose ? " (total)" : ""}`);
 
   if (!result.success) {
     console.error("Build failed:");

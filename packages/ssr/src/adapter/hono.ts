@@ -2,11 +2,12 @@
  * Hono adapter - provides Hono app to mount at /_ssr and SSR handler factory.
  * Serves island chunks and dev tools endpoints.
  */
+
+import type { Context, Env, Handler, MiddlewareHandler, TypedResponse } from "hono";
 import { Hono } from "hono";
 import { createFactory } from "hono/factory";
-import type { Context, Env, Handler, MiddlewareHandler, TypedResponse } from "hono";
-import type { SsrConfig, HtmlFn, RenderFn } from "../index";
-import { createAssetResponse, getAssetPrefix, createPingResponse, getSsrDir, createReloadResponse } from "./utils";
+import type { HtmlFn, RenderFn, SsrConfig } from "../index";
+import { createAssetResponse, createPingResponse, createReloadResponse, getAssetPrefix, getSsrDir } from "./utils";
 
 // ============================================================================
 // Types
@@ -23,9 +24,7 @@ type PageEnv<T extends object> = {
 type SsrHandlerResult = RenderFn | Response | TypedResponse;
 
 /** SSR handler function signature */
-type SsrHandler<E extends Env, T extends object> = (
-  c: Context<E & PageEnv<T>>,
-) => SsrHandlerResult | Promise<SsrHandlerResult>;
+type SsrHandler<E extends Env, T extends object> = (c: Context<E & PageEnv<T>>) => SsrHandlerResult | Promise<SsrHandlerResult>;
 
 /** Return type of ssr() - tuple of middlewares + handler for spread operator */
 type SsrHandlers = [MiddlewareHandler, ...MiddlewareHandler[], Handler];

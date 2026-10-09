@@ -16,8 +16,7 @@ const toPosixPath = (value: string): string => value.replace(/\\/g, "/");
 /**
  * Short deterministic hash helper used for island IDs.
  */
-export const hash = (value: string): string =>
-  new Bun.CryptoHasher("md5").update(value).digest("hex").slice(0, ISLAND_ID_LENGTH);
+export const hash = (value: string): string => new Bun.CryptoHasher("md5").update(value).digest("hex").slice(0, ISLAND_ID_LENGTH);
 
 /**
  * Canonicalize file path for stable hashing.
@@ -74,5 +73,4 @@ export const toStableKey = (file: string, rootDir: string): string => {
 /**
  * Build final stable island ID from canonical path key.
  */
-export const islandIdFromFile = (file: string, rootDir: string): string =>
-  hash(toStableKey(file, rootDir));
+export const islandIdFromFile = (file: string, rootDir: string): string => hash(toStableKey(file, rootDir));

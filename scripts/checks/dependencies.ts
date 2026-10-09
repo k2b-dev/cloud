@@ -7,6 +7,7 @@ type DependencySection = Record<string, string>;
 
 type PackageJson = {
   name?: string;
+  version?: string;
   private?: boolean;
   workspaces?: { packages?: string[]; catalog?: Record<string, string> };
   dependencies?: DependencySection;
@@ -27,6 +28,8 @@ const exactVersion = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
  * versions live in the catalog, private workspaces reference the catalog, and
  * published packages resolve to concrete versions. A concrete pin of a
  * catalog dependency matches the catalog, so the workspace installs one copy.
+ * A peer range on another workspace package accepts that package's version,
+ * because release-please bumps pins but leaves peer ranges alone.
  */
 export const rule: Rule = {
   name: "dependencies",
@@ -60,11 +63,13 @@ export const rule: Rule = {
       if (!exactVersion.test(version)) report("package.json", `catalog entry ${name} must use an exact version`);
     }
 
-    const workspaceNames = new Set<string>();
-    for (const workspace of workspacePackages(workspaceRoot)) {
+    const workspaces = workspacePackages(workspaceRoot).map((workspace) => {
       const file = join(workspace, "package.json");
-      const pkg = readPackage(join(workspaceRoot, file));
-      if (pkg.name) workspaceNames.add(pkg.name);
+      return { file, pkg: readPackage(join(workspaceRoot, file)) };
+    });
+    const workspaceVersions = new Map(workspaces.flatMap(({ pkg }) => (pkg.name ? [[pkg.name, pkg.version] as const] : [])));
+    const workspaceNames = new Set(workspaceVersions.keys());
+    for (const { file, pkg } of workspaces) {
       const published = pkg.private !== true;
 
       for (const section of ["dependencies", "devDependencies", "optionalDependencies"] as const) {
@@ -85,6 +90,10 @@ export const rule: Rule = {
 
       for (const [name, spec] of Object.entries(pkg.peerDependencies ?? {})) {
         if (spec.startsWith("catalog:")) report(file, `peerDependencies.${name} must be a compatibility range`);
+        const version = workspaceVersions.get(name);
+        if (version && !Bun.semver.satisfies(version, spec)) {
+          report(file, `peerDependencies.${name} is ${spec} but the workspace has ${name} ${version}; widen the range`);
+        }
       }
     }
 

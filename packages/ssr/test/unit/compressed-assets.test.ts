@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { brotliCompressSync, brotliDecompressSync, gzipSync, gunzipSync } from "node:zlib";
+import { brotliCompressSync, brotliDecompressSync, gunzipSync, gzipSync } from "node:zlib";
 import { createAssetResponse } from "../../src/adapter/utils";
 
 let directory: string;
@@ -19,14 +19,25 @@ beforeAll(async () => {
 afterAll(() => rm(directory, { recursive: true, force: true }));
 
 const get = (encoding = "", filename = "entry.js", method = "GET", dev = false) =>
-  createAssetResponse(new Request(`http://localhost/_ssr/${filename}`, {
-    method, headers: { "Accept-Encoding": encoding },
-  }), directory, filename, dev);
+  createAssetResponse(
+    new Request(`http://localhost/_ssr/${filename}`, {
+      method,
+      headers: { "Accept-Encoding": encoding },
+    }),
+    directory,
+    filename,
+    dev,
+  );
 
 test.each([
-  ["br, gzip", "br"], ["gzip", "gzip"], ["br;q=0, gzip", "gzip"],
-  ["br;q=0.5, gzip;q=0.9, identity;q=0", "gzip"], ["*", "br"],
-  ["", null], ["br;q=0, gzip;q=0", null], ["identity;q=1, br;q=0.5", null],
+  ["br, gzip", "br"],
+  ["gzip", "gzip"],
+  ["br;q=0, gzip", "gzip"],
+  ["br;q=0.5, gzip;q=0.9, identity;q=0", "gzip"],
+  ["*", "br"],
+  ["", null],
+  ["br;q=0, gzip;q=0", null],
+  ["identity;q=1, br;q=0.5", null],
 ])("negotiates %s without changing decoded JavaScript", async (accept, encoding) => {
   const response = await get(accept!);
   expect(response.headers.get("Content-Encoding")).toBe(encoding);
@@ -56,8 +67,13 @@ test("development ignores stale compressed siblings and retains validators", asy
   const response = await get("br", "entry.js", "GET", true);
   expect(response.headers.get("Content-Encoding")).toBeNull();
   expect(await response.text()).toBe(source);
-  const cached = await createAssetResponse(new Request("http://localhost/_ssr/entry.js", {
-    headers: { "If-None-Match": response.headers.get("ETag")!, "Accept-Encoding": "br" },
-  }), directory, "entry.js", true);
+  const cached = await createAssetResponse(
+    new Request("http://localhost/_ssr/entry.js", {
+      headers: { "If-None-Match": response.headers.get("ETag")!, "Accept-Encoding": "br" },
+    }),
+    directory,
+    "entry.js",
+    true,
+  );
   expect(cached.status).toBe(304);
 });

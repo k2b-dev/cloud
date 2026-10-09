@@ -31,6 +31,11 @@ try {
     run([npm, "pack", "--ignore-scripts", "--json", "--silent", "--pack-destination", packDir], packageRoot),
   ) as Array<{ filename: string }>;
   const archive = join(packDir, packed[0]?.filename ?? "");
+  // The peer @k2b/ssr is the workspace version that releases together with this @k2b/ui.
+  const ssrPacked = JSON.parse(
+    run([npm, "pack", "--ignore-scripts", "--json", "--silent", "--pack-destination", packDir], resolve(packageRoot, "../ssr")),
+  ) as Array<{ filename: string }>;
+  const ssrArchive = join(packDir, ssrPacked[0]?.filename ?? "");
   run([tar, "-xzf", archive, "-C", unpackDir], packageRoot);
 
   const extractedPackage = join(unpackDir, "package");
@@ -69,7 +74,7 @@ try {
     JSON.stringify({
       private: true,
       type: "module",
-      dependencies: { ...manifest.dependencies, ...manifest.peerDependencies },
+      dependencies: { ...manifest.dependencies, ...manifest.peerDependencies, "@k2b/ssr": ssrArchive },
     }),
   );
   // The consumer lives outside the repository and does not inherit its bunfig.toml.

@@ -1,6 +1,6 @@
+import { deserialize } from "seroval";
 import type { Component } from "solid-js";
 import { createComponent, ErrorBoundary, render } from "solid-js/web";
-import { deserialize } from "seroval";
 
 /** Props received by a configured island error fallback component. */
 export type IslandErrorProps = {
@@ -40,24 +40,28 @@ export const mount = <Props extends object>(
     const mountElement = (): void => {
       try {
         element.innerHTML = "";
-        render(() => createComponent(ErrorBoundary, {
-          fallback: (error: unknown, reset: () => void) => {
-            report(element, error, reset);
-            if (!Fallback) return defaultFallback(reset);
-            return createComponent(ErrorBoundary, {
-              fallback: (fallbackError: unknown) => {
-                globalThis.reportError(fallbackError);
-                return defaultFallback(reset);
+        render(
+          () =>
+            createComponent(ErrorBoundary, {
+              fallback: (error: unknown, reset: () => void) => {
+                report(element, error, reset);
+                if (!Fallback) return defaultFallback(reset);
+                return createComponent(ErrorBoundary, {
+                  fallback: (fallbackError: unknown) => {
+                    globalThis.reportError(fallbackError);
+                    return defaultFallback(reset);
+                  },
+                  get children() {
+                    return createComponent(Fallback, { error, reset });
+                  },
+                });
               },
               get children() {
-                return createComponent(Fallback, { error, reset });
+                return createComponent(Component, deserialize<Props>(element.dataset.props || "{}"));
               },
-            });
-          },
-          get children() {
-            return createComponent(Component, deserialize<Props>(element.dataset.props || "{}"));
-          },
-        }), element);
+            }),
+          element,
+        );
       } catch (error) {
         report(element, error, mountElement);
         element.replaceChildren(defaultFallback(mountElement));

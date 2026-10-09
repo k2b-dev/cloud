@@ -16,7 +16,7 @@ It uses file conventions:
 
 This framework is intentionally minimal and focused on SSR + islands only.
 
-Current source size in this repo (`packages/ssr-core/src`):
+Current source size (`packages/ssr/src`):
 
 | Component | Lines | Raw | Gzipped |
 | --- | ---: | ---: | ---: |
@@ -478,14 +478,23 @@ per-tab connections as a compatibility fallback.
 - props must be serializable via `seroval`; do not pass functions, callbacks, event handlers, Solid signals/stores, DOM nodes, or class instances as island/client props
 - nested island/client imports are not supported
 
-## Local monorepo example
+## Development
 
-This repo includes a current example app:
+`@k2b/ssr` is developed in [`packages/ssr`](https://github.com/k2b-dev/cloud/tree/main/packages/ssr)
+of the Cloud repository, which also releases it to npm. Report issues there.
+Releases up to v0.15.0, their history, and the example app live in the
+former [k2b-dev/ssr](https://github.com/k2b-dev/ssr) repository.
 
-- `packages/ssr-example`
-
-Run from workspace root:
+From the Cloud repository root:
 
 ```bash
-bun run dev:example
+bun install --frozen-lockfile
+bun run test --filter packages/ssr
+bun run --cwd packages/ssr typecheck
+```
+
+An agent skill for building with `@k2b/ssr` lives in `skills/ssr`:
+
+```bash
+bunx skills add k2b-dev/cloud --skill ssr
 ```

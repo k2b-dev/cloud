@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { dirname, join, resolve } from "path";
 import { routes as honoRoutes } from "../../src/adapter/hono";
 import { buildIslands, dedupeSharedChunkExports } from "../../src/build";
-import { islandIdFromFile } from "../../src/island-id";
 import { createConfig } from "../../src/index";
+import { islandIdFromFile } from "../../src/island-id";
 
 const tempRoots: string[] = [];
 
@@ -95,10 +95,7 @@ describe("buildIslands()", () => {
   test("supports explicit inline development source maps", async () => {
     const workspaceRoot = makeTempRoot();
     const outdir = join(workspaceRoot, "_ssr");
-    writeTempFile(
-      join(workspaceRoot, "Counter.island.tsx"),
-      `export default function Counter() { return <button>Count</button>; }`,
-    );
+    writeTempFile(join(workspaceRoot, "Counter.island.tsx"), `export default function Counter() { return <button>Count</button>; }`);
 
     await buildIslands({
       pattern: "**/*.{island,client}.tsx",
@@ -154,9 +151,12 @@ describe("buildIslands()", () => {
     for (const dev of [true, false]) {
       const outdir = join(workspaceRoot, dev ? "dev" : "prod");
       await buildIslands({
-        pattern: "**/*.{island,client}.tsx", cwd: workspaceRoot,
+        pattern: "**/*.{island,client}.tsx",
+        cwd: workspaceRoot,
         componentRoots: ["app", linkedRoot, sharedRoot, "app"],
-        outdir, verbose: false, dev,
+        outdir,
+        verbose: false,
+        dev,
       });
       expect(existsSync(join(outdir, `${islandIdFromFile(appIsland, workspaceRoot)}.js`))).toBe(true);
       expect(existsSync(join(outdir, `${islandIdFromFile(sharedIsland, workspaceRoot)}.js`))).toBe(true);
@@ -167,7 +167,9 @@ describe("buildIslands()", () => {
   test("browser bundles share a working context and store runtime in dev and production", async () => {
     const workspaceRoot = makeTempRoot();
     const source = join(workspaceRoot, "App.island.tsx");
-    writeTempFile(source, `
+    writeTempFile(
+      source,
+      `
       import { createContext, useContext } from "solid-js";
       import { createStore } from "solid-js/store";
       const Context = createContext("missing");
@@ -177,13 +179,23 @@ describe("buildIslands()", () => {
         return <button onClick={() => set("count", state.count + 1)}>{label} {state.count}</button>;
       }
       export default () => <Context.Provider value="Clicks"><Child /></Context.Provider>;
-    `);
+    `,
+    );
     for (const dev of [true, false]) {
       const outdir = join(workspaceRoot, dev ? "dev" : "prod");
-      await buildIslands({ pattern: "**/*.{island,client}.tsx", cwd: workspaceRoot, outdir, componentRoots: [workspaceRoot], verbose: false, dev });
+      await buildIslands({
+        pattern: "**/*.{island,client}.tsx",
+        cwd: workspaceRoot,
+        outdir,
+        componentRoots: [workspaceRoot],
+        verbose: false,
+        dev,
+      });
       const id = islandIdFromFile(source, workspaceRoot);
       const runner = join(workspaceRoot, `run-${dev}.ts`);
-      writeTempFile(runner, `
+      writeTempFile(
+        runner,
+        `
         import ${JSON.stringify(join(import.meta.dir, "../browser/setup.ts"))};
         import { serialize } from "seroval";
         const element = document.createElement("solid-island");
@@ -196,7 +208,8 @@ describe("buildIslands()", () => {
         button.click();
         await new Promise(resolve => setTimeout(resolve, 0));
         if (button.textContent?.trim() !== "Clicks 1") throw new Error("Reactive store update failed");
-      `);
+      `,
+      );
       const child = Bun.spawn([process.execPath, runner], { stdout: "pipe", stderr: "pipe" });
       const [status, error] = await Promise.all([child.exited, new Response(child.stderr).text()]);
       expect({ status, error }).toEqual({ status: 0, error: "" });
@@ -261,9 +274,12 @@ describe("buildIslands()", () => {
     );
 
     writeTempFile(join(workspaceRoot, "unrelated", "Invalid.island.tsx"), "invalid source");
-    writeTempFile(join(workspaceRoot, "IslandError.tsx"), `
+    writeTempFile(
+      join(workspaceRoot, "IslandError.tsx"),
+      `
       export default (props: { error: unknown; reset: () => void }) => <button onClick={props.reset}>Configured fallback</button>;
-    `);
+    `,
+    );
     const { plugin } = createConfig({
       componentRoots: ["src"],
       dev: false,

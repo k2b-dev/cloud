@@ -2,8 +2,7 @@ import { dirname, isAbsolute, resolve } from "path";
 
 const hasScriptExtension = (value: string): boolean => /\.(tsx|jsx|ts|js)$/.test(value);
 
-export const withDefaultIslandExtension = (specifier: string): string =>
-  hasScriptExtension(specifier) ? specifier : `${specifier}.tsx`;
+export const withDefaultIslandExtension = (specifier: string): string => (hasScriptExtension(specifier) ? specifier : `${specifier}.tsx`);
 
 const formatResolveError = (specifier: string, resolveDir: string, importer?: string, reason?: string): Error => {
   const importerHint = importer ? ` from "${importer}"` : "";

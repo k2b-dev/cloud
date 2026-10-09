@@ -2,8 +2,9 @@
  * Shared utilities for SSR adapters - path helpers, asset responses,
  * SSE live reload, and security utilities.
  */
-import { dirname, join, resolve } from "path";
+
 import { statSync } from "fs";
+import { dirname, join, resolve } from "path";
 import type { SsrConfig } from "../index";
 
 /**
@@ -24,16 +25,14 @@ export const normalizeBasePath = (input?: string): string => {
 /**
  * Public HTTP path prefix used for SSR assets/endpoints.
  */
-export const toSsrPath = (basePath: string): string =>
-  basePath ? `${basePath}/_ssr` : "/_ssr";
+export const toSsrPath = (basePath: string): string => (basePath ? `${basePath}/_ssr` : "/_ssr");
 
 /**
  * Get the _ssr directory path based on dev/prod mode.
  * Dev: uses config.rootDir (fallback process.cwd())
  * Prod: uses dirname(Bun.main) (next to compiled binary)
  */
-export const getSsrDir = (config: SsrConfig): string =>
-  join(config.dev ? config.rootDir ?? process.cwd() : dirname(Bun.main), "_ssr");
+export const getSsrDir = (config: SsrConfig): string => join(config.dev ? (config.rootDir ?? process.cwd()) : dirname(Bun.main), "_ssr");
 
 // Keep one version for this server process, including when Bun.main has no mtime.
 const buildVersion = (() => {
@@ -45,7 +44,7 @@ const buildVersion = (() => {
 })();
 
 /** Relative imports inherit a versioned directory, unlike a query string. */
-export const getAssetPrefix = (dev: boolean): string => dev ? "" : `/${buildVersion}`;
+export const getAssetPrefix = (dev: boolean): string => (dev ? "" : `/${buildVersion}`);
 
 const HASHED_CHUNK = /^chunk-[a-z0-9]+\.js$/i;
 const ASSET_FILE = /^[a-z0-9._-]+\.js(?:\.map)?$/i;
@@ -59,9 +58,10 @@ const acceptedEncodings = (header: string | null): Array<"br" | "gzip" | "identi
     const quality = q === undefined ? 1 : Number(q.slice(2));
     qualities.set(name, Number.isFinite(quality) && quality >= 0 && quality <= 1 ? quality : 0);
   }
-  const quality = (encoding: string) => qualities.get(encoding) ??
-    (encoding === "identity" ? (qualities.get("*") === 0 ? 0 : 1) : qualities.get("*") ?? 0);
-  return (["br", "gzip", "identity"] as const).filter((encoding) => quality(encoding) > 0)
+  const quality = (encoding: string) =>
+    qualities.get(encoding) ?? (encoding === "identity" ? (qualities.get("*") === 0 ? 0 : 1) : (qualities.get("*") ?? 0));
+  return (["br", "gzip", "identity"] as const)
+    .filter((encoding) => quality(encoding) > 0)
     .sort((left, right) => quality(right) - quality(left));
 };
 
@@ -95,19 +95,12 @@ const isNotModified = (request: Request, etag: string, lastModified: number): bo
  * Dev validators make stable entries cheap to revalidate while preserving
  * immediate rebuild visibility.
  */
-export const createAssetResponse = async (
-  request: Request,
-  directory: string,
-  filename: string,
-  dev: boolean,
-): Promise<Response> => {
+export const createAssetResponse = async (request: Request, directory: string, filename: string, dev: boolean): Promise<Response> => {
   if (!ASSET_FILE.test(filename)) return notFound();
   const path = safePath(directory, filename);
   if (!path) return notFound();
 
-  const contentType = filename.endsWith(".map")
-    ? "application/json; charset=utf-8"
-    : "application/javascript";
+  const contentType = filename.endsWith(".map") ? "application/json; charset=utf-8" : "application/javascript";
   const file = Bun.file(path, { type: contentType });
   if (!(await file.exists())) return notFound();
 
@@ -160,8 +153,7 @@ const reloadPing = new TextEncoder().encode(": ping\n\n");
 
 export const getReloadId = (): string => reloadId;
 
-export const createPingResponse = (): Response =>
-  new Response("ok", { headers: { "X-SSR-Reload-ID": reloadId } });
+export const createPingResponse = (): Response => new Response("ok", { headers: { "X-SSR-Reload-ID": reloadId } });
 
 /**
  * Creates a Server-Sent Events stream for live reload
@@ -209,14 +201,12 @@ export const createReloadStream = (signal?: AbortSignal): ReadableStream<Uint8Ar
 /**
  * Creates a Response for the SSE reload endpoint
  */
-export const createReloadResponse = (signal?: AbortSignal): Response =>
-  new Response(createReloadStream(signal), { headers: SSE_HEADERS });
+export const createReloadResponse = (signal?: AbortSignal): Response => new Response(createReloadStream(signal), { headers: SSE_HEADERS });
 
 /**
  * 404 Response
  */
-export const notFound = (): Response =>
-  new Response("Not found", { status: 404 });
+export const notFound = (): Response => new Response("Not found", { status: 404 });
 
 /**
  * Safely join paths, preventing path traversal attacks.

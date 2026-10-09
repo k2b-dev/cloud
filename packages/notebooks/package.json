@@ -39,7 +39,7 @@
     "@uiw/codemirror-themes": "4.25.12",
     "@k2b/ui": "workspace:*",
     "@k2b/cloud": "workspace:*",
-    "@k2b/ssr": "catalog:",
+    "@k2b/ssr": "workspace:*",
     "@k2b/stdlib": "catalog:",
     "@k2b/sync": "catalog:",
     "d3-force": "3.0.0",

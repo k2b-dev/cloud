@@ -479,8 +479,8 @@ step from `ci.yml` against these results. Like the runner, it needs `jq` on
 `PATH`.
 
 The gate also builds the production bundle of every application whose package
-changed, and of every application when `packages/cloud`, `packages/ui`, or
-another shared input changed. The production build rejects code that
+changed, and of every application when `packages/cloud`, `packages/ssr`,
+`packages/ui`, or another shared input changed. The production build rejects code that
 development and the tests accept, such as a Bun builtin imported into browser
 code. Build one application the same way with:
 
