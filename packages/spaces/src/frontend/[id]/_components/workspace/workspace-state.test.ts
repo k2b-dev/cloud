@@ -33,6 +33,7 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
   let listedCommentRecurrenceId: string | null | undefined;
   let listedFilter: { tagIds?: string[]; columnIds?: string[] } | undefined;
   let listedFilters: Array<Record<string, unknown>> = [];
+  let listedCalendarRanges: Array<{ from: string; to: string }> = [];
 
   const space = {
     id: SPACE_ID,
@@ -178,7 +179,12 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
         attachments: { list: async () => [] },
         checklist: { list: async () => [] },
         dependencies: { list: async () => [], listBlocks: async () => [] },
-        calendar: { list: async () => [] },
+        calendar: {
+          list: async (params: { from: string; to: string }) => {
+            listedCalendarRanges.push({ from: params.from, to: params.to });
+            return [];
+          },
+        },
       },
       comment: {
         list: async (params: { recurrenceId?: string | null }) => {
@@ -210,6 +216,7 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
     listedCommentRecurrenceId = undefined;
     listedFilter = undefined;
     listedFilters = [];
+    listedCalendarRanges = [];
   });
 
   describe("Spaces workspace SSR state", () => {
@@ -324,6 +331,25 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
       });
 
       expect(snapshot.kind).toBe("calendar");
+      expect(calls).not.toContain("weather.get");
+    });
+
+    test("opens the timeline on the evening before its day and loads a range it already shows", async () => {
+      const request = {
+        user: { id: USER_ID, roles: ["user" as const] },
+        spaceId: SPACE_ID,
+        spaceShortId: SPACE_SHORT_ID,
+        href: `/app/spaces/${SPACE_SHORT_ID}?view=calendar&cv=timeline&cd=2026-10-08`,
+        dateConfig: { timeZone: "Europe/Berlin", locale: "de" },
+      };
+      const first = await loadSpacesViewSnapshot(request);
+      const range = { from: "2026-09-30T18:00:00.000Z", to: "2026-10-15T22:00:00.000Z" };
+      const wider = await loadSpacesViewSnapshot({ ...request, timelineRange: range });
+
+      const window = { from: "2026-10-07T18:00:00.000Z", to: "2026-10-15T22:00:00.000Z" };
+      expect(listedCalendarRanges).toEqual([window, range]);
+      expect(first).toMatchObject({ kind: "calendar", view: "timeline", range: window, weather: {} });
+      expect(wider).toMatchObject({ kind: "calendar", view: "timeline", range });
       expect(calls).not.toContain("weather.get");
     });
 

@@ -62,6 +62,7 @@ test("agenda retains series identity, occurrence deep links and pagination", asy
     recurrenceId: "2026-01-01T09:00:00.000Z",
     columnId: "Col001",
     assignees: [],
+    activeBlockerCount: 0,
   };
   const list = spyOn(spacesService.item.calendar, "listSourcePage").mockResolvedValue({ items: [occurrence, occurrence] });
   spyOn(spacesPublicResources, "projectCalendarItems").mockResolvedValue([occurrence]);

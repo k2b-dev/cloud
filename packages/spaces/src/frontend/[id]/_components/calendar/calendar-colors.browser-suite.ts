@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
+import { dates } from "@k2b/stdlib";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
@@ -72,6 +73,7 @@ const base = (id: string, title: string, patch: Partial<CalendarItem>): Calendar
   tags: [],
   columnId: "Col001",
   assignees: [],
+  activeBlockerCount: 0,
   ...patch,
 });
 const event = (id: string, title: string, day: number, from: string, to: string, patch: Partial<CalendarItem> = {}) =>
@@ -115,6 +117,11 @@ type Scenario = { locale: "en" | "de"; view: "week" | "month"; colorBy?: string;
 const query = (scenario: Scenario) =>
   scenario.search ?? `?view=calendar&cv=${scenario.view}&cd=2026-10-12${scenario.colorBy ? `&ccolor=${scenario.colorBy}` : ""}`;
 /** The route as the workspace page renders it for a URL, with the island's base URL from the page's own builder. */
+/** The days a month or week snapshot loaded, as the server reports them. */
+const rangeOf = (view: "month" | "week", date: string) => {
+  const range = dates.getDateRange(view, new Date(date), { timeZone: "UTC", weekStartsOn: 1 });
+  return { from: range.from.toISOString(), to: range.to.toISOString() };
+};
 const serverBody = (url: URL) => {
   const locale = url.searchParams.get("lang") === "de" ? "de" : "en";
   const dateConfig = { locale, timeZone: "UTC", weekStartsOn: 1 } as const;
@@ -136,7 +143,7 @@ const serverBody = (url: URL) => {
       }),
       columns,
       tags,
-      initialState: { view, date: route.date, filter: route.filter, items, weather: {} },
+      initialState: { view, date: route.date, filter: route.filter, range: rangeOf(view, route.date), items, weather: {} },
       selectedItemId: url.searchParams.get("item") ?? "",
       dateConfig,
       canWrite: true,

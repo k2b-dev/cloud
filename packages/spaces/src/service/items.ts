@@ -1113,7 +1113,7 @@ type DbItemAcross = DbItem & {
   column_name: string;
 };
 
-const mapCalendarRow = (r: DbCalendarItem, tags: SpaceTag[], assignees: SpaceItemAssignee[]): CalendarItem => ({
+const mapCalendarRow = (r: DbCalendarItem, tags: SpaceTag[], assignees: SpaceItemAssignee[], activeBlockerCount: number): CalendarItem => ({
   id: r.id,
   spaceId: r.space_id,
   columnId: r.column_id,
@@ -1133,6 +1133,7 @@ const mapCalendarRow = (r: DbCalendarItem, tags: SpaceTag[], assignees: SpaceIte
   recurrenceId: r.recurrence_id?.toISOString() ?? null,
   tags,
   assignees,
+  activeBlockerCount,
 });
 
 const calendarRowToRecurringEvent = (item: CalendarItem): (RecurringEvent & { calendarItem: CalendarItem }) | null => {
@@ -1191,6 +1192,7 @@ const expandedToCalendarItem = (event: ExpandedRecurringEvent & { calendarItem?:
       isRecurringInstance: !!event.recurringInstance,
       tags: [],
       assignees: [],
+      activeBlockerCount: 0,
     };
   }
 
@@ -2474,8 +2476,14 @@ export const listCalendar = async (
   }
 
   const rowIds = rows.map((row) => row.id);
-  const [tagsByItemId, assigneesByItemId] = await Promise.all([getTagsByItemIds(rowIds), getAssigneesByItemIds(rowIds)]);
-  const items = rows.map((row) => mapCalendarRow(row, tagsByItemId.get(row.id) ?? [], assigneesByItemId.get(row.id) ?? []));
+  const [tagsByItemId, assigneesByItemId, blockerCountsByItemId] = await Promise.all([
+    getTagsByItemIds(rowIds),
+    getAssigneesByItemIds(rowIds),
+    getActiveBlockerCountsByItemIds(rowIds),
+  ]);
+  const items = rows.map((row) =>
+    mapCalendarRow(row, tagsByItemId.get(row.id) ?? [], assigneesByItemId.get(row.id) ?? [], blockerCountsByItemId.get(row.id) ?? 0),
+  );
   const recurringEvents = items
     .map(calendarRowToRecurringEvent)
     .filter((event): event is RecurringEvent & { calendarItem: CalendarItem } => !!event);

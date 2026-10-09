@@ -16,6 +16,7 @@ import { encryptSecret } from "../secrets";
 import { ensureNotificationDefinition } from "./catalog";
 import { getNotificationChannel, type NotificationDestination, type ResolvedNotificationRecipient } from "./channels";
 import { processNotificationDelivery } from "./dispatcher";
+import { normalizeNotificationPreview } from "./preview";
 import { enqueueNotificationDeliveries, enqueueNotificationDelivery } from "./runtime";
 
 export type TypedNotificationDeliveryStatus = "deferred" | "pending" | "sending" | "delivered" | "suppressed" | "failed";
@@ -73,6 +74,10 @@ const preparationFailure = (input: { channel: string; required: boolean; routePr
 const validatePresentation = (presentation: NotificationPresentation, appId: string): NotificationPresentation => {
   const title = presentation.title.trim();
   const body = presentation.body?.trim();
+  if (presentation.preview !== undefined && typeof presentation.preview !== "string") {
+    throw new Error("Notification preview must be a string");
+  }
+  const preview = presentation.preview === undefined ? undefined : normalizeNotificationPreview(presentation.preview);
   if (!title) throw new Error("Notification title is required");
   if (title.length > 200) throw new Error("Notification title must not exceed 200 characters");
   if (body && body.length > 4_000) throw new Error("Notification body must not exceed 4000 characters");
@@ -93,6 +98,7 @@ const validatePresentation = (presentation: NotificationPresentation, appId: str
   return {
     title,
     ...(body ? { body } : {}),
+    ...(preview ? { preview } : {}),
     ...(targetHref ? { targetHref } : {}),
     ...(presentation.group !== undefined ? { group: presentation.group } : {}),
     ...(presentation.badge !== undefined ? { badge: presentation.badge } : {}),
@@ -192,6 +198,8 @@ const prepareChannel = async (input: {
 
   try {
     const emailPresentation = input.channel === "email" ? await input.emailPresentation?.() : undefined;
+    const { preview: _preview, ...otherPresentation } = input.presentation;
+    const presentation = input.channel === "browser" ? input.presentation : otherPresentation;
     return await Promise.all(
       destinations.map(async (destination) => ({
         channel: input.channel,
@@ -199,7 +207,7 @@ const prepareChannel = async (input: {
         destinationKey: destination.key,
         destinationLabel: destination.label,
         payloadEncrypted: await encryptSecret(
-          driver.createPayload({ presentation: input.presentation, email: emailPresentation, destination, event: input.event }),
+          driver.createPayload({ presentation, email: emailPresentation, destination, event: input.event }),
         ),
         required: input.required,
         routePriority: input.routePriority,

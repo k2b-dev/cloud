@@ -1166,6 +1166,13 @@ export class AiTurnExecutor {
     // The turn policy counts the whole turn, including rounds that compaction archived.
     const turnMessages = await aiConversations.listTurnMessages({ conversationId, loopId: turnId, includeCompacted: true });
     const turnBlocks = buildBlocksFromMessages(turnMessages);
+    const providerNamesByCallId = new Map(
+      turnMessages.flatMap(({ message }) =>
+        message.role === "assistant"
+          ? message.content.flatMap((part) => (part.type === "tool_call" ? [[part.id, part.name] as const] : []))
+          : [],
+      ),
+    );
     const priorToolRounds = toolRoundState(turnMessages);
     const quotaSubject = accessSubjectForActor(material.actor);
     const deadline = claim.turn.deadline ? Date.parse(claim.turn.deadline) : null;
@@ -1200,7 +1207,7 @@ export class AiTurnExecutor {
       runBudgetMs: claim.turn.runBudgetMs ?? null,
       finishedToolCalls: turnBlocks
         .slice(turnBlocks.findLastIndex((block) => block.kind === "steer_applied") + 1)
-        .flatMap((block) => (block.kind === "tool" ? [block] : [])),
+        .flatMap((block) => (block.kind === "tool" ? [{ ...block, name: providerNamesByCallId.get(block.callId) ?? block.name }] : [])),
       onDecision: (decision) =>
         decision.kind === "hint"
           ? log.warn("AI turn got a loop hint", { conversationId, turnId, hints: decision.hints })

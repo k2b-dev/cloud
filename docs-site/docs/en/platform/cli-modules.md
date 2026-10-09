@@ -619,6 +619,10 @@ the bundle once and fails if the exported name differs from the declared key.
 During development, the application builds the plugin from source on the
 first request.
 
+Served plugins using Playwright carry its package and browser metadata in the
+bundle. The client still needs a Chromium executable: for Assistant, install
+Playwright Chromium or set `CLOUD_CLI_CHROMIUM` to its local path.
+
 The framework serves every declared module and adds `/cli/plugins/<name>` to
 the application's gateway routes. The registry entry lists the module names,
 and Core lists all live plugins:
