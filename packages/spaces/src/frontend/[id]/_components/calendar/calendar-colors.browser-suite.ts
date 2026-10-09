@@ -120,7 +120,8 @@ const serverBody = (url: URL) => {
   const locale = url.searchParams.get("lang") === "de" ? "de" : "en";
   const dateConfig = { locale, timeZone: "UTC", weekStartsOn: 1 } as const;
   const route = parseCalendarRoute(url, dateConfig);
-  const view = route.view === "week" ? "week" : "month";
+  // The view the route itself resolves, so an old link shows the fallback the page gives it.
+  const { view } = route;
   return renderToString(() =>
     createComponent(CalendarFixture, {
       locale,

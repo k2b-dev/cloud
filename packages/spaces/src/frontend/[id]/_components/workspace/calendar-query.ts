@@ -173,7 +173,10 @@ export const useSpacesCalendarQuery = (params: {
       return;
     }
     const route = parseCalendarRoute(new URL(nextSource, window.location.origin), params.dateConfig);
-    setPreview((snapshot) => ({ ...snapshot, ...route, items: [], weather: {} }));
+    // The tray comes with the snapshot like the items, so the row waits empty for it: tasks of the old filter may not
+    // answer the new one, and their links would name a route the page has not reached, so opening one would load the
+    // whole page instead of its detail.
+    setPreview((snapshot) => ({ ...snapshot, ...route, items: [], weather: {}, tray: null }));
     setPending({
       id: ++nextNavigationId,
       href,

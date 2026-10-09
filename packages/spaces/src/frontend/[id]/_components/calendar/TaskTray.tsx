@@ -214,7 +214,9 @@ export default function TaskTray(props: Props) {
           </Show>
         }
       >
-        <ScrollArea orientation="horizontal" class="no-scrollbar min-w-0 flex-1">
+        {/* It contains the words only a screen reader hears, which sit absolutely, so they scroll with their task
+            instead of reaching past the page. */}
+        <ScrollArea orientation="horizontal" class="no-scrollbar relative min-w-0 flex-1">
           <div class="flex w-max items-center gap-2 px-1 py-2">
             <Section kind="overdue" label={t.overdue} allLabel={(count) => t.taskTrayAllOverdue({ count })} />
             <Section kind="undated" label={t.taskTrayUndated} allLabel={(count) => t.taskTrayAllUndated({ count })} />

@@ -22,7 +22,7 @@ Views let the same work appear in the shape that fits the current job. The view 
 :::reference
 - **What it shows:** In the calendar's **Day** view, a row below the day shows open tasks whose deadline passed before today, most recent first, and open tasks assigned to you that have no deadline, most urgent first. Each part shows up to five tasks; **Show all** opens the list with every one of them.
 - **Work with it:** Select a task to open it, or check it off if you may edit the Space; the confirmation offers **Undo**. A task that open tasks still block shows a lock instead of a checkbox.
-- **Layout:** The row keeps its place and size whatever it holds, also while a day loads, so the day above never moves. More tasks than fit scroll sideways. A screen reader and **Tab** reach it right after the day, as on screen. When you check a task off with the keyboard, focus moves to the next task in the row.
+- **Layout:** The row keeps its place and size whatever it holds, so the day above never moves. While another day or filter loads, the row stays empty until its tasks are in. More tasks than fit scroll sideways. A screen reader and **Tab** reach it right after the day, as on screen. When you check a task off with the keyboard, focus moves to the next task in the row.
 - **Filters:** The scope, priority, status, and tag filters of the calendar apply to the row; when a filter leaves it empty, it says so. While the scope shows only events, the row is hidden.
 - **Old links:** Spaces no longer has a calendar timeline. A saved link to the timeline opens the month that holds its day.
 :::

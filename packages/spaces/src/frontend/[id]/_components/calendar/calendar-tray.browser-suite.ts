@@ -266,6 +266,8 @@ const open = async (
   if (options.javaScript ?? true) await hydrated(page);
   return page;
 };
+/** The data the server answers the page opened last with, which a test may change before a refresh. */
+const latestCase = () => cases.get(`case${caseCounter}`)!;
 /** Solid attaches its delegated click handler to each item once the island has taken over the server markup. */
 const hydrated = (page: Page) =>
   page.waitForFunction(() => Boolean((document.querySelector("[data-calendar-event]") as { $$click?: unknown } | null)?.$$click), {
@@ -342,6 +344,8 @@ describe(`Spaces task tray in ${browserName}`, () => {
       expect(tray.y).toBeGreaterThanOrEqual(day.y + day.height - 1);
       expect(tray.y + tray.height).toBeLessThanOrEqual(view.height);
       await full.getByText("Vertrag Stadtwerke gegenzeichnen").waitFor();
+      // Nothing in the row reaches past the page, not even the words only a screen reader hears.
+      expect(await full.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
       await full.screenshot({ path: join(shots, `${name}.png`) });
       await full.context().close();
 
@@ -367,6 +371,48 @@ describe(`Spaces task tray in ${browserName}`, () => {
       await page.getByText("Vertrag Stadtwerke gegenzeichnen").waitFor();
       expect(await page.locator(TRAY).getAttribute("aria-busy")).toBeNull();
       expect(await rounded(page, DAY)).toEqual(before);
+    } finally {
+      hold = async () => {};
+      loading.open();
+      await page.context().close();
+    }
+  }, 60_000);
+
+  test("empties the row while another filter or day loads, so it offers no task the new route leaves out and opens each in place", async () => {
+    const page = await open(desktop);
+    const tray = await rounded(page, TRAY);
+    const day = await rounded(page, DAY);
+    let loading = gate();
+    hold = () => loading.wait;
+    try {
+      viewRequests.splice(0);
+      // Only urgent tasks: the row's tasks no longer answer the filter, so it waits for the ones that do.
+      await page.getByRole("button", { name: "Priorität" }).click();
+      await page.getByRole("menuitemcheckbox", { name: "Dringend" }).click();
+      await page.keyboard.press("Escape");
+      await requested((href) => href.includes("cpriority=urgent"));
+      await page.locator(`${TRAY}[aria-busy="true"]`).waitFor({ timeout: 5000 });
+      expect(await page.locator(`${TRAY} li`).count()).toBe(0);
+      expect(await rounded(page, TRAY)).toEqual(tray);
+      expect(await rounded(page, DAY)).toEqual(day);
+      loading.open();
+      await page.locator(`${TRAY}:not([aria-busy])`).getByText("Vertrag Stadtwerke gegenzeichnen").waitFor();
+
+      // The next day: until it is in, the row links to no day the page has not reached.
+      loading = gate();
+      viewRequests.splice(0);
+      await page.locator(".k2b-calendar-header__nav-button").nth(1).click();
+      await requested((href) => href.includes("cd=2026-10-09"));
+      await page.locator(`${TRAY}[aria-busy="true"]`).waitFor({ timeout: 5000 });
+      expect(await page.locator(`${TRAY} a`).count()).toBe(0);
+      loading.open();
+      await page.waitForURL(/cd=2026-10-09/);
+      const opened = nextDetail(page);
+      await page.getByRole("link", { name: /Feedback zu Wireframes/ }).click();
+      const href = await opened;
+      expect(href).toContain("cd=2026-10-09");
+      expect(href).toContain("cpriority=urgent");
+      expect(href).toContain("item=Late02");
     } finally {
       hold = async () => {};
       loading.open();
@@ -433,11 +479,10 @@ describe(`Spaces task tray in ${browserName}`, () => {
     await link.focus();
     // A mark on the element shows whether the refresh kept it or drew a new one.
     await link.evaluate((element) => element.setAttribute("data-kept", ""));
-    viewRequests.splice(0);
+    // The refresh brings the same tasks and one more undated task beyond the row, whose count shows once it is in.
+    latestCase().tray.undated.total = 4;
     await invalidate(page);
-    await requested(() => true);
-    await page.waitForLoadState("networkidle");
-    await page.waitForTimeout(100);
+    await page.getByRole("link", { name: "Alle anzeigen: 4 deiner Aufgaben ohne Datum" }).waitFor();
     expect(await page.evaluate(() => document.activeElement?.hasAttribute("data-kept") ?? false)).toBe(true);
     await page.context().close();
   }, 60_000);
