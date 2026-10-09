@@ -51,6 +51,7 @@ import inputNumber from "./input/number.md" with { type: "text" };
 import inputPin from "./input/pin.md" with { type: "text" };
 import inputQrScanner from "./input/qr-scanner.md" with { type: "text" };
 import inputSelect from "./input/select.md" with { type: "text" };
+import inputSignature from "./input/signature.md" with { type: "text" };
 import inputSlider from "./input/slider.md" with { type: "text" };
 import inputTagEditor from "./input/tag-editor.md" with { type: "text" };
 import inputTags from "./input/tags.md" with { type: "text" };
@@ -102,6 +103,7 @@ const catalogContextSources = {
   "input/pin": { file: "input/pin.md", content: inputPin },
   "input/emoji-picker": { file: "input/emoji-picker.md", content: inputEmojiPicker },
   "input/qr-scanner": { file: "input/qr-scanner.md", content: inputQrScanner },
+  "input/signature": { file: "input/signature.md", content: inputSignature },
   "input/image": { file: "input/image.md", content: inputImage },
   "input/image-cropper": { file: "input/image-cropper.md", content: inputImageCropper },
   "input/file-dropzone": { file: "input/file-dropzone.md", content: inputFileDropzone },

@@ -28,7 +28,7 @@ import "@k2b/ui/icons/tabler.css";
 
 ## Theme tokens
 
-Override fonts through `--k2b-font-sans`, `--k2b-font-condensed`, and `--k2b-font-mono`.
+Override fonts through `--k2b-font-sans`, `--k2b-font-condensed`, `--k2b-font-mono`, and `--k2b-font-signature`, the handwriting face of typed signatures.
 
 Accent, neutral, success, warning, and danger stacks are CSS variables. Semantic aliases such as `--k2b-action`, `--k2b-surface`, `--k2b-text`, and `--k2b-border` derive from those stacks.
 

@@ -88,6 +88,7 @@ const portableSections = [
         "Direct-manipulation crop, resize, and rotation with free or fixed aspect ratios.",
       ),
       page("emoji-picker", "EmojiPicker", "ti ti-mood-smile", "Emoji search in English and German, recently used emoji, and skin tones."),
+      page("signature", "SignatureInput", "ti ti-signature", "Draw with finger, pen, or mouse, or type the name, as an SVG value."),
       page("qr-scanner", "QrScanner", "ti ti-qrcode", "Camera QR scanning with host validation and explicit camera errors."),
       page("file-dropzone", "FileDropzone", "ti ti-cloud-upload", "Accessible click and drag file selection with validation state."),
       page(
@@ -351,7 +352,7 @@ const cloudEntries = cloudPages.map((page, pageIndex) => entry("cloud", "Cloud c
 export const uiCatalogEntries: UiCatalogEntry[] = [...portableEntries, ...cloudEntries];
 
 /** Runtime component exports from @k2b/ui. Kept honest by check-ui-catalog.ts. */
-export const portableUiComponentCount = 131;
+export const portableUiComponentCount = 132;
 
 export const uiCatalogSections: UiCatalogSection[] = [
   ...portableSections.map((section) => ({
@@ -393,6 +394,7 @@ export const hiddenUiCatalogExports = {
 export const documentedOnlyUiCatalogExports = {
   reconcileChatMentions: "Documented Chat composer helper for preserving reference ranges during external text edits.",
   findNavigationItem: "Documented lookup for the latest enabled Navigation item.",
+  parseSignature: "Documented server-side reader that rebuilds a submitted SignatureInput value.",
   ChartSnapshotView: "Documented prepared-chart surface composed by ChartExplorer.",
   ChartFilterControls: "Documented filter surface composed by ChartExplorerControls.",
   APP_WORKSPACE_DETAIL_DEFAULT: "Documented AppWorkspace detail sizing constant.",

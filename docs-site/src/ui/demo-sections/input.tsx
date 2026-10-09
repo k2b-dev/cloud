@@ -31,8 +31,11 @@ import {
   rememberEmoji,
   Select,
   SelectChip,
+  SignatureInput,
+  type SignatureValue,
   Slider,
   Switch,
+  signatureToPng,
   Tag,
   TagEditor,
   type TagEditorItem,
@@ -1179,6 +1182,66 @@ const CropDemo = () => {
   );
 };
 
+const SignatureDemo = () => {
+  const [signature, setSignature] = createSignal<SignatureValue | null>(null);
+  const [png, setPng] = createSignal("");
+  const summary = () => {
+    const value = signature();
+    if (!value) return "No signature yet.";
+    const size = `${(new Blob([value.svg]).size / 1024).toFixed(1)} kB SVG`;
+    return value.kind === "typed" ? `Typed “${value.name}”, ${size}.` : `Drawn, ${size}.`;
+  };
+  return (
+    <DemoCard
+      id="signature"
+      chip={{ kind: "component", name: "SignatureInput", from: "@k2b/ui" }}
+      description="Draw with a finger, pen, or mouse, or type the name. The value is an SVG plus how it was given; the application stores it and records who signed and when."
+      code={`const [signature, setSignature] = createSignal<SignatureValue | null>(null);
+
+<SignatureInput
+  label="Signature"
+  description="Confirms that the items were received."
+  required
+  value={signature}
+  onValueChange={setSignature}
+/>
+
+const current = signature();
+const png = current ? await signatureToPng(current, { background: "#ffffff" }) : null;`}
+    >
+      <div class="ui-demo-form-grid">
+        <SignatureInput
+          label="Signature"
+          description="Confirms that the items were received."
+          required
+          value={signature}
+          onValueChange={(value) => {
+            setSignature(value);
+            setPng("");
+          }}
+        />
+        <div class="ui-demo-row">
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={!signature()}
+            onClick={async () => {
+              const current = signature();
+              if (!current) return;
+              const url = await signatureToPng(current, { background: "#ffffff" });
+              setPng(`PNG ready, ${(url.length / 1024).toFixed(1)} kB as a data URL.`);
+            }}
+          >
+            Export PNG
+          </Button>
+          <span>{png() || summary()}</span>
+        </div>
+        <SignatureInput label="Read-only copy" readOnly value={signature} />
+      </div>
+    </DemoCard>
+  );
+};
+
 const BooleanDemo = () => {
   const [enabled, setEnabled] = createSignal(true);
   const [checked, setChecked] = createSignal(false);
@@ -1393,6 +1456,11 @@ const demos: DemoSection = {
   image: () => (
     <DemoGrid columns="one">
       <FileDemo image />
+    </DemoGrid>
+  ),
+  signature: () => (
+    <DemoGrid columns="one">
+      <SignatureDemo />
     </DemoGrid>
   ),
   "image-cropper": () => (
