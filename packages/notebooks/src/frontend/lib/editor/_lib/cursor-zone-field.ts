@@ -17,8 +17,9 @@
  *    on doc change, skip the rebuild when the doc has no relevant
  *    marker syntax AND the change doesn't introduce any, OR when
  *    the existing ranges are unaffected by the change. A newly
- *    delivered syntax tree without a doc change always rebuilds.
- *    Used by extensions whose `build` does a full `doc.toString() +
+ *    delivered syntax tree always rebuilds, also when it arrives
+ *    with a doc change that carries it past its old end. Used by
+ *    extensions whose `build` does a full `doc.toString() +
  *    regex.matchAll()` pass (katex, tag-pill) — those
  *    rebuilds are expensive enough to be worth gating.
  *
@@ -255,6 +256,13 @@ const mapRanges = (tr: Transaction, ranges: CursorZoneRange[]): CursorZoneRange[
     }))
     .filter((r) => r.from < r.to);
 
+/** True when a doc change also carried the syntax tree past the end of the previous,
+ *  partial tree. CodeMirror parses up to the viewport while it applies an edit, so an
+ *  edit after a jump into the unparsed end of a long note can bring new code or math
+ *  nodes that the incremental skip checks can't see. */
+const treeGrewPastOldEnd = (tr: Transaction): boolean =>
+  syntaxTree(tr.state).length > tr.changes.mapPos(syntaxTree(tr.startState).length, 1);
+
 export const cursorZoneStateField = (
   build: (state: EditorState) => CursorZoneState,
   incremental?: IncrementalOptions,
@@ -266,7 +274,7 @@ export const cursorZoneStateField = (
         return build(tr.state);
       }
       if (tr.docChanged) {
-        if (incremental) {
+        if (incremental && !treeGrewPastOldEnd(tr)) {
           const decorations = value.decorations.map(tr.changes);
           const atomicDecorations = value.atomicDecorations?.map(tr.changes);
           const mightAffect = incremental.changesMightAffectSyntax(tr);
