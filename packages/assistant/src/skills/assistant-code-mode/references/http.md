@@ -2,9 +2,14 @@
 
 Use `cloud.http.fetch` to call a public HTTPS API from code. Requests run on the
 Assistant server. The worker's native `fetch` still has no network access.
-Every request asks the user to confirm its destination, method, headers, and
-body preview. Script test runs make real requests too. HTML `code_check` never
-executes HTTP. For a Cloud app, prefer its existing capabilities and their
+A request asks the user to confirm its destination, method, headers, and body
+preview. For a GET or HEAD without body or headers, the user may allow the
+website for the chat, or for a Studio app they manage. Later requests to the
+exact same origin with GET or HEAD, without body or headers, then run without
+asking, and the chat shows each full URL. Anything else asks every time: another
+origin, a body, any header, and a secret. Never put private chat or app data
+into a URL's path or query for a website the user did not choose for it. Script
+test runs make real requests too. HTML `code_check` never executes HTTP. For a Cloud app, prefer its existing capabilities and their
 domain-specific authorization.
 
 ## Store a secret without exposing its value
@@ -29,8 +34,8 @@ copy secrets; forks start without them. Requests recheck resource and Project
 access. HTTP and secret tools are unavailable in chats with an `allowedTools`
 ceiling; they cannot bypass a restricted chat's capability scope.
 
-Users manage app secrets under **Advanced → Secrets** in Studio, and chat
-secrets through the workspace context menu. Replacing a value requires selecting
+Users manage app secrets and allowed websites under **Advanced → Secrets &
+approvals** in Studio, and those of a chat through the workspace context menu. Replacing a value requires selecting
 the existing entry. Only metadata is loaded; the secret field stays empty.
 The dialog supports 64 personal secrets per context. Removing or replacing a
 secret invalidates pending requests that depended on the previous value.

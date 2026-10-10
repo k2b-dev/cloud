@@ -83,6 +83,15 @@ export const artifactClient = {
     await checked(response);
     return HttpReview.parse(await response.json());
   },
+  /** Whether a remembered approval of this Studio app allows the request, and with `remember`, records one first. */
+  httpWebsite: async (id: string, remember: boolean, signal?: AbortSignal) => {
+    const response = await client.runtime.http[":callId"].website.$post(
+      { param: { callId: id }, json: { remember } },
+      { init: { signal } },
+    );
+    await checked(response);
+    return z.object({ offer: z.boolean(), allowed: z.boolean(), approvalId: z.uuid().nullable() }).parse(await response.json());
+  },
   httpExecute: async (id: string, approved: boolean, signal?: AbortSignal) => {
     const response = await client.runtime.http[":callId"].$post({ param: { callId: id }, json: { approved } }, { init: { signal } });
     await checked(response);

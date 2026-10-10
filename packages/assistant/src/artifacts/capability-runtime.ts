@@ -51,18 +51,23 @@ const decoded = (value: unknown): unknown => (typeof value === "string" ? JSON.p
 // A request ID alone grants nothing: it must belong to this user, exact target,
 // and a currently executing call; resource access is still checked by the target.
 async function authorize(request: Request, identity: ArtifactIdentity) {
+  return (await authorizeWithChat(request, identity)).resource;
+}
+async function authorizeWithChat(request: Request, identity: ArtifactIdentity) {
   const actor = user(identity);
   const resource = request.artifactId
     ? await artifacts.get(request.artifactId, { ...identity, conversationId: request.conversationId })
     : undefined;
+  let conversationId: string | null = null;
   if (request.conversationId) {
     const conversation = z.uuid().safeParse(request.conversationId).success
       ? await aiConversations.getConversation({ conversationId: request.conversationId, ownerUserId: actor.id })
       : await aiConversations.getConversationByShortId({ shortId: request.conversationId, ownerUserId: actor.id });
     if (!conversation || conversation.archivedAt) throw new ArtifactError("ACCESS_DENIED");
     if (conversation.allowedTools && !conversation.allowedTools.includes(request.name)) throw new ArtifactError("ACCESS_DENIED");
+    conversationId = conversation.id;
   }
-  return resource;
+  return { resource, conversationId };
 }
 async function operation(name: string, locale?: string | null) {
   const split = name.indexOf("."),
@@ -133,7 +138,7 @@ export const runtimeCapabilities = {
   async prepare(input: unknown, identity: ArtifactIdentity, caller: CapabilityCaller, taskScoped = false) {
     const request = RuntimeCapabilityRequest.parse(input),
       actor = user(identity);
-    const resource = await authorize(request, identity);
+    const { resource, conversationId } = await authorizeWithChat(request, identity);
     const untrusted = resource && resource.permission !== "admin";
     const target = await operation(request.name, caller.locale);
     let review: z.infer<typeof CapabilityActionReviewSchema> | null = null;
@@ -179,7 +184,8 @@ export const runtimeCapabilities = {
     const remembered =
       !untrusted &&
       scope !== null &&
-      (await hasRememberedAiToolApproval({ actorUserId: actor.id }, { toolName: request.name, approvalScope: scope }));
+      // An approval remembered for this chat counts like one remembered everywhere.
+      (await hasRememberedAiToolApproval({ actorUserId: actor.id }, { toolName: request.name, approvalScope: scope, conversationId }));
     if (!untrusted && (!target.action || target.action.approval === "none" || remembered))
       return runtimeCapabilities.resolve(request.id, { approved: true }, identity, caller);
     // The card words this call like the same Action called from a chat: the app's sentences and labelled fields.

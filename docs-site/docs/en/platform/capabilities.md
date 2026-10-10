@@ -678,11 +678,15 @@ and [AI tools and approvals](/en/docs/ai/tools-and-approvals).
 
 `approval` is deliberately optional. Without it, AI Core
 asks for every Action call. `approval: "rememberable"` lets a supporting client
-offer an explicit **Always approve** choice after showing the Action review.
-That review must return an opaque, app-owned `approvalScope`. A remembered
-choice matches the current actor, qualified Action, and exact scope; for
-example, Mail uses one scope per mailbox. Choose the smallest stable domain in
-which repeated calls have the same understandable consequence.
+offer an explicit **Approve for this chat** or **Always approve** choice after
+showing the Action review. That review must return an opaque, app-owned
+`approvalScope`. A remembered choice matches the current actor, qualified
+Action, and exact scope, and a chat choice also the chat; for example, Mail
+uses one scope per mailbox. Choose the smallest stable domain in which repeated
+calls have the same understandable consequence. A review may omit
+`approvalScope` for arguments whose consequence should be confirmed every time,
+for example a Files copy into another storage base or into a publicly shared
+folder, a Spaces task with assignees, or a Mail move to Trash.
 Cloud rejects this policy on `openWorld` Actions, on `destructive` Actions, and
 on Actions without a `review`. It does not weaken app-side authorization, input validation, audit,
 or concurrency checks, all of which still run for every invocation.
@@ -784,8 +788,9 @@ for bounded long-form plain text such as a proposed message body. `links`
 reuses the existing root-relative, same-origin semantic links so the person can
 inspect or edit the resource in its owning app.
 
-`approvalScope` is omitted for one-time approvals and required when the Action
-declares `approval: "rememberable"`. It is an opaque identifier interpreted by
+`approvalScope` is omitted for one-time approvals. When the Action declares
+`approval: "rememberable"`, it is what a person can remember; a review without
+it asks for that call every time. It is an opaque identifier interpreted by
 the owning app, not a permission grant or a replacement for current access
 checks in `review` and `run`.
 

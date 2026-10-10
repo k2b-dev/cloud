@@ -4,6 +4,7 @@ import type { z } from "zod";
 import type { RequestActor } from "../server";
 import { aiToolNeedsApproval } from "./approvals";
 import type {
+  AiApprovalTarget,
   AiDataBoundary,
   AiFrontendToolMode,
   AiProjectFileToolSource,
@@ -13,6 +14,7 @@ import type {
   AiToolApprovalPolicy,
   AiToolDefinition,
   AiToolRuntime,
+  AiWebsiteReceipt,
 } from "./types";
 
 export const defineAiTool = <TInput extends z.ZodType, TOutput extends z.ZodType>(config: {
@@ -60,6 +62,10 @@ export const defineAiTool = <TInput extends z.ZodType, TOutput extends z.ZodType
           timeZone?: string;
           /** Localized short status; never include payloads or secrets. */
           reportProgress?: (message: string) => Promise<void>;
+          /** Asks like `requestApproval`, and lets the person remember the approval of `target`. */
+          requestApprovalFor?: (message: string, target: AiApprovalTarget) => Promise<boolean>;
+          /** Shows requests a website approval let through as they go out, so the chat keeps them whatever the outcome. */
+          reportWebsiteReceipts?: (receipts: AiWebsiteReceipt[]) => Promise<void>;
         },
       ) => Promise<z.infer<TOutput>>,
     ): AiToolRuntime<TInput, TOutput> {
@@ -106,6 +112,9 @@ export type AiToolPreparationContext = {
   locale?: string;
   timeZone?: string;
   reportToolProgress?: (callId: string, message: string) => Promise<void>;
+  /** Hears what a nested approval asks for, keyed by the approval's call ID, before the approval is requested. */
+  describeApproval?: (approvalCallId: string, target: AiApprovalTarget) => void;
+  reportWebsiteReceipts?: (callId: string, receipts: AiWebsiteReceipt[]) => Promise<void>;
 };
 
 export const prepareAiTools = (input: AiToolPreparationContext & { tools?: AiRuntimeTool[] }): PreparedAiTools => {
@@ -134,8 +143,19 @@ export const prepareAiTools = (input: AiToolPreparationContext & { tools?: AiRun
         if (!input.actor) throw new Error(`AI server tool "${tool.def.name}" requires a request actor.`);
         const report = input.reportToolProgress;
         const callId = ctx.callId;
+        // Nessi numbers the approvals of one execution in request order; count them to name each one's call ID.
+        let approvals = 0;
+        const requestApproval = (message: string) => {
+          approvals += 1;
+          return ctx.requestApproval(message);
+        };
         return tool.run(toolInput, {
           ...ctx,
+          requestApproval,
+          requestApprovalFor: (message, target) => {
+            input.describeApproval?.(`${callId}-approval-${approvals}`, target);
+            return requestApproval(message);
+          },
           actor: input.actor,
           conversationId: input.conversationId,
           turnId: input.turnId,
@@ -147,6 +167,8 @@ export const prepareAiTools = (input: AiToolPreparationContext & { tools?: AiRun
           locale: input.locale,
           timeZone: input.timeZone,
           reportProgress: callId && report ? (message) => report(callId, message) : undefined,
+          reportWebsiteReceipts:
+            callId && input.reportWebsiteReceipts ? (receipts) => input.reportWebsiteReceipts!(callId, receipts) : undefined,
         });
       });
     }

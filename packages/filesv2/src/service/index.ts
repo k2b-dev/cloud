@@ -47,6 +47,7 @@ import { type Binding, bindings, type NewBinding } from "../data/bases";
 import { favorites, recent } from "../data/marks";
 import { operations, withRootLock, withUploadLock } from "../data/operations";
 import { entryRef, persistedEntryRefId, resolveEntryRefId } from "../data/references";
+import { shares } from "../data/shares";
 import { sameUploadExecution, sameUploadOptions, type Upload, uploadSessionId, uploads } from "../data/uploads";
 import { isMarkdown, MARKDOWN_LIMIT, markdownRevision, TEMPLATE_LIMIT } from "../document-assets";
 import { type DocumentKind, documentExtension, editableExtension } from "../documents";
@@ -986,6 +987,19 @@ export function createFilesService(
         items.push(fileEntry(current.inspection.summary, relative, node));
       }
       return { base: current.inspection.summary, writable, items, next: page.next };
+    },
+    /**
+     * Whether something placed at `path` would be public: an active download share covers that path, or an entry below
+     * it, because a shared folder serves everything inside it.
+     */
+    async publiclyShared(actor: RequestActor, baseId: string, path: string): Promise<boolean> {
+      const binding = (await authorizedBase(actor, baseId)).inspection.binding;
+      if (!binding) return false;
+      const relative = userPath(path);
+      const within = (inner: string, outer: string) => outer === "" || inner === outer || inner.startsWith(`${outer}/`);
+      return (await shares.activeDownloadItems(binding.id)).some((items) =>
+        items.some((item) => within(relative, item) || within(item, relative)),
+      );
     },
     /** The base and base-relative path of a folder named by its file ID, after the usual access checks. */
     async folderLocation(actor: RequestActor, id: string): Promise<{ baseId: string; path: string }> {

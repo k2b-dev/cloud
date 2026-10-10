@@ -47,7 +47,7 @@ Chats automatically move to **Done** after seven days without use. Sending a mes
 :::
 
 :::info Approvals and client actions
-Some turns can request an approval or a frontend tool result. Answer those prompts in the message list to let the turn continue. Bounded, repeatable Actions may offer **Always approve** in the approval button menu; deletion, external effects, and other consequential Actions continue to ask every time.
+Some turns can request an approval or a frontend tool result. Answer those prompts in the message list to let the turn continue. Bounded, repeatable Actions offer **Approve for this chat** and **Always approve** in the approval button menu; a chat approval ends when you delete the chat. Deletion, sending, sharing, and other consequential Actions continue to ask every time. When code reads a website, the menu offers **Allow this website for this chat**: later reads from exactly that website no longer ask, and each one shows its full address with a **Revoke** button. Approvals of this kind are listed under **Secrets & approvals** in the chat's context.
 :::
 
 ## Conversation-aware Assistant {icon="message-forward"}

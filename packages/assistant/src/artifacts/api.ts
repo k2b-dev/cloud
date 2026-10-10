@@ -280,6 +280,18 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
       },
     )
     .post("/runtime/http", v("json", HttpPrepare), async (c) => respond(c, ok(await httpService.prepare(c.req.valid("json"), identity(c)))))
+    .post("/runtime/http/:callId/website", v("json", z.object({ remember: z.boolean() }).strict()), async (c) => {
+      const actor = c.get("actor");
+      // Only a person in a signed-in browser session uses or records a website approval: never `cld`, an API key,
+      // another delegated credential, or the managed code host.
+      const signedIn = actor?.kind === "user" && !actor.delegation && c.get("credentialKind") === "session";
+      const callId = z.uuid().parse(c.req.param("callId"));
+      if (!signedIn) {
+        if (c.req.valid("json").remember) throw new HttpError("HTTP_DENIED");
+        return respond(c, ok({ offer: false, allowed: false, approvalId: null }));
+      }
+      return respond(c, ok(await httpService.appWebsite(callId, c.req.valid("json").remember, identity(c))));
+    })
     .post("/runtime/http/:callId", v("json", z.object({ approved: z.boolean() }).strict()), async (c) =>
       respond(
         c,

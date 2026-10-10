@@ -303,6 +303,8 @@ export type AiStoredMessage = {
     toolPresentations?: Record<string, AiToolPresentation>;
     /** How the person decided an approval; `expired` when the turn ended while it still waited. */
     toolOutcomes?: Record<string, "rejected" | "approved" | "expired">;
+    /** Requests a website approval let through, by tool call and then by `AiWebsiteReceipt.index`. */
+    websiteReceipts?: Record<string, Record<string, { method: string; url: string }>>;
     /** Why the turn failed, on the last message of its loop. The chat words it in the reader's language. */
     turnError?: AiTurnError;
   } | null;
@@ -420,6 +422,10 @@ export type AiPendingTurnAction =
       message?: string;
       review?: CapabilityActionReview;
       allowAlways: boolean;
+      /** Whether the approval can be remembered for this chat. */
+      allowChat: boolean;
+      /** The website origin a chat approval would allow, for an HTTP request a code run makes. */
+      website?: string;
     }
   | {
       type: "frontend_tool";
@@ -452,6 +458,10 @@ export type AiPendingTurnActionRecord = {
   review?: CapabilityActionReview;
   approvalScope: string;
   allowAlways: boolean;
+  /** Whether the approval can be remembered for this chat; defaults to `allowAlways`. */
+  allowChat?: boolean;
+  /** Remembered-approval name when it differs from `name`: the website or Action a code run asks for. */
+  rememberToolName?: string;
   frontendMode?: AiFrontendToolMode;
   resolvedEvent: InboundEvent | null;
 };
@@ -607,6 +617,11 @@ export type AiChatTurnRunConfig = {
   selectedSkillIds?: string[];
   /** Server-owned marker: model grants apply only to interactive Assistant chat. */
   assistantChat?: true;
+  /**
+   * Server-owned marker: a person started this turn in a signed-in browser session, not through `cld`, an API key,
+   * a delegated account, or a schedule. Only such a turn uses website approvals.
+   */
+  signedInSession?: true;
   kind?: "chat";
   input: Input;
   /** Stable public ID exposed as runtime context, not instructions. */
@@ -1016,6 +1031,23 @@ export type AiAccessResult<TAccess = unknown> = {
 
 export type AiToolApprovalPolicy = "never" | "once" | "always" | { kind: "user-configurable"; default: "once" | "always"; scope?: string };
 
+/**
+ * What a server tool asks a person to approve when the approval can be remembered: a website or an Action, not the
+ * tool itself. A target can always be remembered for its chat.
+ */
+export type AiApprovalTarget = {
+  toolName: string;
+  approvalScope: string;
+  /** Whether the person may also remember it everywhere. */
+  always: boolean;
+};
+
+/**
+ * A request a remembered website approval let through without asking. The chat shows it with its full URL and a revoke
+ * action; `index` orders the receipts of one tool call, and a receipt reported again with the same index replaces it.
+ */
+export type AiWebsiteReceipt = { index: number; method: string; url: string };
+
 export type AiFrontendToolMode = "client" | "client_view" | "client_interaction";
 
 export type AiCapabilityToolPresentation = {
@@ -1071,6 +1103,10 @@ export type AiToolRuntime<TInput extends z.ZodType = z.ZodType, TOutput extends 
           timeZone?: string;
           /** Localized short status; never include payloads or secrets. */
           reportProgress?: (message: string) => Promise<void>;
+          /** Asks like `requestApproval`, and lets the person remember the approval of `target`. */
+          requestApprovalFor?: (message: string, target: AiApprovalTarget) => Promise<boolean>;
+          /** Shows requests a website approval let through as they go out, so the chat keeps them whatever the outcome. */
+          reportWebsiteReceipts?: (receipts: AiWebsiteReceipt[]) => Promise<void>;
         },
       ): Promise<z.infer<TOutput>>;
     }

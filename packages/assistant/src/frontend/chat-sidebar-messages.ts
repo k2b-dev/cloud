@@ -102,7 +102,7 @@ export const chatSidebarMessages = i18n.define({
       skillTurns: ({ count }: { count: number }) => `${count}×`,
       memoriesFromChat: "Remembered from this chat",
       scheduled: "Scheduled tasks",
-      secrets: "Secrets",
+      secrets: "Secrets & approvals",
 
       today: "Today",
       yesterday: "Yesterday",
@@ -198,7 +198,7 @@ export const chatSidebarMessages = i18n.define({
       skillTurns: ({ count }: { count: number }) => `${count}×`,
       memoriesFromChat: "Aus diesem Chat gemerkt",
       scheduled: "Geplante Aufgaben",
-      secrets: "Secrets",
+      secrets: "Secrets & Freigaben",
 
       today: "Heute",
       yesterday: "Gestern",

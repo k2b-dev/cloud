@@ -44,7 +44,15 @@ export type AiTurnBlock =
       result?: unknown;
       isError?: boolean;
       /** Present while status is awaiting_approval. */
-      approval?: { message?: string; review?: CapabilityActionReview; allowAlways: boolean };
+      approval?: {
+        message?: string;
+        review?: CapabilityActionReview;
+        allowAlways: boolean;
+        /** Whether the approval can be remembered for this chat. */
+        allowChat?: boolean;
+        /** The website origin a chat approval would allow, for an HTTP request a code run makes. */
+        website?: string;
+      };
       /**
        * `true` once the user approved this call in the chat; `false` when its turn ended while the approval still
        * waited. Either way the approval stays visible as a receipt.
@@ -54,6 +62,8 @@ export type AiTurnBlock =
       frontendMode?: AiFrontendToolMode;
       /** Saved Cloud-owned display snapshot for capability calls. */
       presentation?: AiToolPresentation;
+      /** Requests a website approval let through without asking, in order; shown whatever the call's outcome. */
+      receipts?: { method: string; url: string }[];
     }
   | { id: string; kind: "compaction"; status: "running" | "completed" | "skipped" | "failed"; result?: CompactResult };
 
@@ -215,6 +225,14 @@ const canonicalToolName = (name: string, presentation?: AiToolPresentation): str
   return candidates.length === 1 ? candidates[0]! : name;
 };
 
+/** The receipts of one tool call, keyed by their index, in the order the requests went out. */
+export const orderedWebsiteReceipts = (
+  receipts: Record<string, { method: string; url: string }> | undefined,
+): { method: string; url: string }[] =>
+  Object.entries(receipts ?? {})
+    .sort(([a], [b]) => Number(a) - Number(b))
+    .map(([, receipt]) => receipt);
+
 /**
  * Convert persisted loop messages into the block model. Shared by the executor
  * (baseline rebuild on claim) and the client (rendering finished turns), so a
@@ -228,6 +246,7 @@ export const buildBlocksFromMessages = (
       steerId?: string;
       toolPresentations?: Record<string, AiToolPresentation>;
       toolOutcomes?: Record<string, "rejected" | "approved" | "expired">;
+      websiteReceipts?: Record<string, Record<string, { method: string; url: string }>>;
     } | null;
   }[],
 ): AiTurnBlock[] => {
@@ -243,6 +262,7 @@ export const buildBlocksFromMessages = (
           blocks.push({ id: messageBlockId(seq, index), kind: "thinking", text: block.thinking });
         } else if (block.type === "tool_call") {
           const outcome = meta?.toolOutcomes?.[block.id];
+          const receipts = orderedWebsiteReceipts(meta?.websiteReceipts?.[block.id]);
           toolIndex.set(block.id, blocks.length);
           blocks.push({
             id: toolBlockId(block.id),
@@ -255,6 +275,7 @@ export const buildBlocksFromMessages = (
             // A turn that ended before an approved call returned records the approval on the call's message, and an
             // approval it left waiting as expired.
             ...(outcome === "approved" || outcome === "expired" ? { approved: outcome === "approved" } : {}),
+            ...(receipts.length ? { receipts } : {}),
           });
         }
       });

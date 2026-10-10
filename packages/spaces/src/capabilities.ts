@@ -327,6 +327,65 @@ const requireItem = async (itemId: string, context: CapabilityExecutionContext, 
 
 const isEvent = (item: SpaceItem): item is SpaceItem & { startsAt: string; endsAt: string } => Boolean(item.startsAt && item.endsAt);
 
+/**
+ * Review of a new task or event. A chat may remember it for the Space only when the card shows everything it does:
+ * without a template, which can add more, and without assignees, whom it would notify.
+ */
+const reviewItemCreate = async (
+  kind: "task" | "event",
+  input: z.output<typeof TaskCreateInputSchema> | z.output<typeof EventCreateInputSchema>,
+  context: CapabilityExecutionContext,
+) => {
+  const t = spacesMessages(context.locale);
+  const access = await requireSpace(input.spaceId, context, "write");
+  if (!access.ok) return access;
+  const title = input.title ?? t.template;
+  const rememberable = input.templateId === undefined && !input.assigneeIds?.length;
+  return ok({
+    message:
+      kind === "task"
+        ? t.reviewCreateTask({ title, space: access.data.space.name })
+        : t.reviewCreateEvent({ title, space: access.data.space.name }),
+    details: [
+      { label: t.space, value: access.data.space.name },
+      ...(input.title !== undefined ? [{ label: t.title, value: input.title }] : []),
+      ...(input.templateId !== undefined ? [{ label: t.fromTemplate, value: input.templateId }] : []),
+      ...("startsAt" in input && input.startsAt ? [{ label: t.starts, value: input.startsAt, format: "date-time" as const }] : []),
+      ...("endsAt" in input && input.endsAt ? [{ label: t.ends, value: input.endsAt, format: "date-time" as const }] : []),
+      ...("deadline" in input && input.deadline ? [{ label: t.deadline, value: input.deadline, format: "date-time" as const }] : []),
+      ...(input.description ? [{ label: t.description, value: input.description, display: "block" as const }] : []),
+      ...(input.assigneeIds?.length ? [{ label: t.assignees, value: String(input.assigneeIds.length) }] : []),
+    ],
+    ...(rememberable ? { approvalScope: spaceApprovalScope(input.spaceId) } : {}),
+  });
+};
+
+/** Review of claiming, releasing, or noting progress on a task; a chat may remember it for the task's Space. */
+const reviewTaskWork = async (
+  operation: "claim" | "release" | "progress",
+  input: { itemId: string; force?: boolean; content?: string },
+  context: CapabilityExecutionContext,
+) => {
+  const t = spacesMessages(context.locale);
+  const resolved = await requireItem(input.itemId, context, input.force ? "admin" : "write");
+  if (!resolved.ok) return resolved;
+  const title = resolved.data.item.title;
+  return ok({
+    message:
+      operation === "claim"
+        ? t.reviewClaimTask({ title })
+        : operation === "release"
+          ? t.reviewReleaseTask({ title })
+          : t.reviewProgressTask({ title }),
+    details: [
+      { label: t.task, value: title },
+      ...(input.content !== undefined ? [{ label: t.progressNote, value: input.content, display: "block" as const }] : []),
+    ],
+    // Releasing someone else's claim by force asks every time.
+    ...(input.force ? {} : { approvalScope: spaceApprovalScope(resolved.data.item.spaceId) }),
+  });
+};
+
 const mapRelations = (item: SpaceItem) => ({
   assignees: (item.assignees ?? [])
     .slice(0, 100)
@@ -2341,6 +2400,8 @@ export const spacesCapabilities = defineCapabilities({
       destructive: false,
       openWorld: false,
       idempotency: "none",
+      approval: "rememberable",
+      review: (input, context) => reviewTaskWork("claim", input, context),
       run: async (input, context) =>
         audited(actionAudit(context, "task.claim", "space_item", input.itemId), async () => {
           const resolved = await requireItem(input.itemId, context, "write");
@@ -2365,6 +2426,8 @@ export const spacesCapabilities = defineCapabilities({
       destructive: false,
       openWorld: false,
       idempotency: "none",
+      approval: "rememberable",
+      review: (input, context) => reviewTaskWork("release", input, context),
       run: async (input, context) =>
         audited(actionAudit(context, "task.release", "space_item", input.itemId), async () => {
           const resolved = await requireItem(input.itemId, context, "write");
@@ -2389,6 +2452,8 @@ export const spacesCapabilities = defineCapabilities({
       destructive: false,
       openWorld: false,
       idempotency: "none",
+      approval: "rememberable",
+      review: (input, context) => reviewTaskWork("progress", input, context),
       run: async (input, context) =>
         audited(actionAudit(context, "task.progress", "space_item", input.itemId), async () => {
           const resolved = await requireItem(input.itemId, context, "write");
@@ -2625,6 +2690,8 @@ export const spacesCapabilities = defineCapabilities({
       destructive: false,
       openWorld: false,
       idempotency: "required",
+      approval: "rememberable",
+      review: (input, context) => reviewItemCreate("task", input, context),
       run: runTaskCreate,
     },
     "task.update": {
@@ -2719,6 +2786,8 @@ export const spacesCapabilities = defineCapabilities({
       destructive: false,
       openWorld: false,
       idempotency: "required",
+      approval: "rememberable",
+      review: (input, context) => reviewItemCreate("event", input, context),
       run: runEventCreate,
     },
     "event.update": {
@@ -2950,6 +3019,7 @@ export const spacesCapabilities = defineCapabilities({
       destructive: false,
       openWorld: false,
       idempotency: "none",
+      approval: "rememberable",
       review: async (input, context) => {
         const t = spacesMessages(context.locale);
         if (!context.user)
@@ -2974,6 +3044,7 @@ export const spacesCapabilities = defineCapabilities({
         const consequence = decision === "create" ? t.importCreate : decision === "unchanged" ? t.importKeep : t.importUpdate;
         return ok({
           message: t.reviewImportInvitation({ action: consequence, title: preview.data.invitation.title, space: access.data.space.name }),
+          approvalScope: spaceApprovalScope(input.spaceId),
           details: [
             { label: t.space, value: access.data.space.name },
             { label: t.event, value: preview.data.invitation.title },

@@ -7,7 +7,7 @@ import { defineCapabilities } from "../contracts/capabilities";
 import type { CapabilityRegistryEntry } from "../contracts/registry";
 import type { AuthContext } from "../server";
 import { createAiApprovalPreferenceRoutes } from "./approval-routes";
-import type { AiToolApprovalPreference } from "./approvals";
+import { AI_WEBSITE_APPROVAL_TOOL, type AiToolApprovalPreference, aiWebsiteApprovalScope } from "./approvals";
 import { aiCapabilityId } from "./capabilities";
 
 const userId = "11111111-1111-4111-8111-111111111111";
@@ -59,6 +59,7 @@ const preference: AiToolApprovalPreference = {
   id: preferenceId,
   toolName: aiCapabilityId("demo", "rename"),
   approvalScope: "demo.rename",
+  conversationId: null,
   createdAt: "2026-08-05T12:00:00.000Z",
   lastUsedAt: "2026-08-05T12:05:00.000Z",
   expiresAt: null,
@@ -84,8 +85,59 @@ describe("AI approval preference routes", () => {
           ...preference,
           title: "Rename item",
           app: { id: "demo", name: "Demo", icon: "ti ti-box", accent: "#336699" },
+          website: null,
         },
       ],
+    });
+  });
+
+  test("lists one chat's approvals only for a chat the user owns, and names a website by its host", async () => {
+    const conversationId = "33333333-3333-4333-8333-333333333333";
+    const asked: Array<{ conversationId?: string }> = [];
+    const routes = createAiApprovalPreferenceRoutes({
+      limit: pass,
+      authenticate,
+      listPreferences: async (_actorUserId, options) => {
+        asked.push(options);
+        return [
+          {
+            ...preference,
+            toolName: AI_WEBSITE_APPROVAL_TOOL,
+            approvalScope: "https://query1.finance.yahoo.com",
+            conversationId,
+          },
+        ];
+      },
+      listCapabilities: async () => [],
+      findConversation: async (ownerUserId, conversation) =>
+        ownerUserId === userId && conversation === "abc234" ? { id: conversationId } : null,
+    });
+
+    const response = await routes.request("/?conversation=abc234");
+    expect(response.status).toBe(200);
+    expect(asked).toEqual([{ conversationId }]);
+    expect(((await response.json()) as { approvals: unknown[] }).approvals[0]).toMatchObject({
+      title: "query1.finance.yahoo.com",
+      conversationId,
+      website: { origin: "https://query1.finance.yahoo.com", resourceId: null },
+    });
+    expect((await routes.request("/?conversation=other1")).status).toBe(404);
+    expect(asked).toHaveLength(1);
+  });
+
+  test("names the Studio app a website approval is limited to", async () => {
+    const routes = createAiApprovalPreferenceRoutes({
+      limit: pass,
+      authenticate,
+      listPreferences: async () => [
+        { ...preference, toolName: AI_WEBSITE_APPROVAL_TOOL, approvalScope: aiWebsiteApprovalScope("https://api.example.com", "Ab3dEf") },
+      ],
+      listCapabilities: async () => [],
+    });
+    const body = (await (await routes.request("/")).json()) as { approvals: unknown[] };
+    expect(body.approvals[0]).toMatchObject({
+      title: "api.example.com",
+      website: { origin: "https://api.example.com", resourceId: "Ab3dEf" },
     });
   });
 

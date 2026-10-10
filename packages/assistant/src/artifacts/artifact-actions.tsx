@@ -245,7 +245,7 @@ export function createArtifactActions(props: {
     {
       sectionLabel: a().advanced,
       items: [
-        { label: "Secrets", icon: "ti ti-key", action: () => openSecretsDialog({ resourceId: item.id }) },
+        { label: a().secretsAndApprovals, icon: "ti ti-key", action: () => openSecretsDialog({ resourceId: item.id }) },
         ...(item.permission === "admin"
           ? [
               { label: a().manualEdit, icon: "ti ti-code", action: () => navigateTo(`/app/assistant/apps/${item.id}/edit`) },

@@ -406,3 +406,50 @@ domTest("without a done sentence the receipt is the app's own summary of the cal
     view.cleanup();
   }
 });
+
+domTest("one click on a website receipt revokes the chat approval for its origin", async () => {
+  const dom = createDomTestHarness();
+  const { AiChatActionsProvider } = await import("./message-actions");
+  const { AiTurnBlockView } = await import("./blocks");
+  const revoked: string[] = [];
+  const block: Extract<AiTurnBlock, { kind: "tool" }> = {
+    id: "tool-run-receipt",
+    callId: "run-receipt",
+    kind: "tool",
+    name: "code_run",
+    status: "completed",
+    args: {},
+    result: { status: "ok" },
+    receipts: [{ method: "GET", url: "https://query1.finance.yahoo.com/v8/finance/chart/NVDA?range=1d" }],
+  };
+  const dispose = render(
+    () => (
+      <AiChatActionsProvider
+        actions={{
+          onRevokeWebsite: async (origin) => {
+            revoked.push(origin);
+          },
+        }}
+      >
+        <AiTurnBlockView turnId="turn" block={block} />
+      </AiChatActionsProvider>
+    ),
+    dom.root,
+  );
+  try {
+    expect(dom.root.textContent).toContain("https://query1.finance.yahoo.com/v8/finance/chart/NVDA?range=1d");
+    const revoke = dom.root.querySelector<HTMLButtonElement>('button[aria-label="Revoke the approval for query1.finance.yahoo.com"]')!;
+    revoke.click();
+    await tick();
+    await tick();
+    expect(revoked).toEqual(["https://query1.finance.yahoo.com"]);
+    expect(dom.root.textContent).toContain("Revoked. The next request asks again.");
+    // The button keeps its place, disabled, so nothing moves.
+    expect(revoke.isConnected).toBe(true);
+    expect(revoke.disabled).toBe(true);
+    expect(revoke.textContent?.trim()).toBe("Revoke");
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});

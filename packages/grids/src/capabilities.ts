@@ -1585,12 +1585,15 @@ export const gridsCapabilities = defineCapabilities({
       openWorld: false,
       destructive: false,
       idempotency: "required",
+      approval: "rememberable",
       review: async (input, context) => {
         const prepared = await prepareViewCreate(input, context);
         if (!prepared.ok) return prepared;
         const t = capabilityMessagesFor(context.locale);
         return ok({
           message: t.saveViewReview({ name: input.name }),
+          // A personal View changes only the person's own list; a shared one shows to everyone in the Base and asks each time.
+          ...(input.shared ? {} : { approvalScope: `personal-views:${prepared.data.compiled.tableId}` }),
           details: [
             { label: t.viewVisibility, value: input.shared ? t.sharedView : t.personalView },
             { label: "GQL", value: input.query.slice(0, 10000), display: "block" as const },
@@ -1625,6 +1628,7 @@ export const gridsCapabilities = defineCapabilities({
       destructive: false,
       openWorld: false,
       idempotency: "required",
+      approval: "rememberable",
       async review(input, context) {
         const table = await requireTable(input.tableId, accessContext(context), "write", context.locale);
         if (!table.ok) return table;
@@ -1633,6 +1637,7 @@ export const gridsCapabilities = defineCapabilities({
         const t = capabilityMessagesFor(context.locale);
         return ok({
           message: t.reviewCreateRecord({ table: table.data.name }),
+          approvalScope: `table:${input.tableId}`,
           details: [{ label: t.table, value: table.data.name }, ...recordValuesReview(input.values, values.data.fields, context.locale)],
         });
       },

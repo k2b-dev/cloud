@@ -1,8 +1,13 @@
 import { isIP } from "node:net";
-import { truncateMiddle } from "@k2b/nessi";
+import { type ToolContext, truncateMiddle } from "@k2b/nessi";
 import { z } from "zod";
+import type { RequestActor } from "../server";
 import { coreSettings } from "../services";
+import { AI_WEBSITE_APPROVAL_TOOL, aiTurnAllowsWebsiteApprovals, aiWebsiteApprovalScope, findRememberedAiToolApproval } from "./approvals";
+import { aiConversations } from "./store";
 import { defineAiTool } from "./tools";
+import type { AiApprovalTarget, AiWebsiteReceipt } from "./types";
+import { hasWebAddressProvenance, recordWebAddresses, webAddressesIn } from "./web-provenance";
 
 export const AI_FIRECRAWL_API_KEY_SETTING_KEY = "ai.firecrawl_api_key";
 
@@ -274,13 +279,70 @@ export const createCloudAiWebSearchTool = (config: FirecrawlToolConfig = {}) =>
         ...result,
         snippet: truncateSnippet(result.snippet),
       })),
-  }).server(async (input, ctx) => runCloudAiWebSearch(input, { ...config, signal: ctx.signal }));
+  }).server(async (input, ctx) => {
+    const results = await runCloudAiWebSearch(input, { ...config, signal: ctx.signal });
+    if (ctx.conversationId)
+      await recordWebAddresses(
+        ctx.conversationId,
+        results.flatMap((result) => [...webAddressesIn(result.url)]),
+      );
+    return results;
+  });
+
+const webReadApprovalMessage = (kind: "page" | "file", url: string, locale: string | undefined) =>
+  locale?.startsWith("de")
+    ? [
+        `${kind === "page" ? "Webseite lesen" : "Datei laden"}: ${url}`,
+        "Diese Adresse steht nicht in deiner Nachricht, in einem Suchergebnis oder als Link einer gelesenen Seite.",
+        "Die vollständige Adresse geht an die Website.",
+      ].join("\n")
+    : [
+        `${kind === "page" ? "Read web page" : "Download file"}: ${url}`,
+        "This address is not in your message, in a search result, or linked from a page read earlier.",
+        "The full address goes to the website.",
+      ].join("\n");
+
+export type WebReadContext = Pick<ToolContext, "requestApproval"> & {
+  actor: RequestActor;
+  conversationId?: string;
+  turnId?: string;
+  locale?: string;
+  requestApprovalFor?: (message: string, target: AiApprovalTarget) => Promise<boolean>;
+  reportWebsiteReceipts?: (receipts: AiWebsiteReceipt[]) => Promise<void>;
+};
+
+/**
+ * Lets a public web read through when the chat supplied its address. A read sends its full address to the website,
+ * and an address the chat did not supply may carry private data the model put into it, so any other address asks
+ * like an HTTP request from code: with the full URL, and with the website approval of a signed-in chat. Returns
+ * whether such an approval let it through without asking; the chat then shows the receipt before the read goes out.
+ * Throws when the person declines.
+ */
+export const authorizeWebRead = async (kind: "page" | "file", url: string, ctx: WebReadContext): Promise<boolean> => {
+  if (ctx.conversationId && (await hasWebAddressProvenance(ctx.conversationId, url))) return false;
+  const target = { toolName: AI_WEBSITE_APPROVAL_TOOL, approvalScope: aiWebsiteApprovalScope(new URL(url).origin), always: false };
+  const runConfig = ctx.conversationId
+    ? await aiConversations.getTurnRunConfig({ conversationId: ctx.conversationId, turnId: ctx.turnId ?? "" }).catch(() => null)
+    : null;
+  const actorUserId = ctx.actor.kind === "user" ? ctx.actor.user.id : (ctx.actor.delegatedUser?.id ?? "");
+  if (
+    aiTurnAllowsWebsiteApprovals(runConfig) &&
+    (await findRememberedAiToolApproval({ actorUserId }, { ...target, conversationId: ctx.conversationId, chatOnly: true })) !== null
+  ) {
+    await ctx.reportWebsiteReceipts?.([{ index: 0, method: "GET", url }]);
+    return true;
+  }
+  const message = webReadApprovalMessage(kind, url, ctx.locale);
+  const approved = ctx.requestApprovalFor ? await ctx.requestApprovalFor(message, target) : await ctx.requestApproval(message);
+  if (!approved) throw new Error("The person did not allow reading this address. Use an address from their message or a search result.");
+  return false;
+};
 
 export const createCloudAiWebExtractTool = (config: FirecrawlToolConfig = {}) =>
   defineAiTool({
     name: "web_extract",
     description:
-      "Read one web page by URL and return clean Markdown. Inspect the relevant pages needed to support the answer; for research or comparison, prefer primary sources and read more than one useful source when warranted.",
+      "Read one web page by URL and return clean Markdown. Inspect the relevant pages needed to support the answer; for research or comparison, prefer primary sources and read more than one useful source when warranted. Use addresses exactly as the user wrote them, as web_search returned them, or as a page you already read links them; any other address asks the user first.",
     inputSchema: CloudAiWebExtractInputSchema,
     outputSchema: CloudAiWebExtractOutputSchema,
     approval: "never",
@@ -297,7 +359,28 @@ export const createCloudAiWebExtractTool = (config: FirecrawlToolConfig = {}) =>
         truncated: output.truncated || content !== output.content,
       };
     },
-  }).server(async (input, ctx) => runCloudAiWebExtract(input, { ...config, signal: ctx.signal }));
+  }).server(async (input, ctx) => {
+    const url = assertPublicHttpUrl(input.url);
+    const allowedForChat = await authorizeWebRead("page", url, ctx);
+    const output = await runCloudAiWebExtract({ url }, { ...config, signal: ctx.signal });
+    const final = URL.canParse(output.url) ? new URL(output.url) : null;
+    if (allowedForChat && final && final.href !== url) {
+      // Firecrawl follows redirects on its side. The chat shows where the read ended, and a website approval covers
+      // only content from its own origin.
+      await ctx.reportWebsiteReceipts?.([{ index: 1, method: "GET", url: final.href }]);
+      if (final.origin !== new URL(url).origin)
+        throw new Error(
+          `The page redirected to ${final.href}, which this chat has not allowed. Read that address directly so the person can decide.`,
+        );
+    }
+    // The page and every address it links to may be read again without asking.
+    if (ctx.conversationId)
+      await recordWebAddresses(
+        ctx.conversationId,
+        new Set([...webAddressesIn(url), ...webAddressesIn(output.url), ...webAddressesIn(output.content)]),
+      );
+    return output;
+  });
 
 export type CloudAiWebSearchInput = z.infer<typeof CloudAiWebSearchInputSchema>;
 export type CloudAiWebSearchOutput = z.infer<typeof CloudAiWebSearchOutputSchema>;

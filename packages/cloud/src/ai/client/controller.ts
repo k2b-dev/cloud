@@ -1284,7 +1284,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     conversationId: string,
     turnId: string,
     callId: string,
-    action: { type: "approval_response"; approved: boolean; remember?: "always" } | { type: "tool_result"; result: unknown },
+    action: { type: "approval_response"; approved: boolean; remember?: "chat" | "always" } | { type: "tool_result"; result: unknown },
   ) => {
     if (isActiveConversation(conversationId) && runStatus() === "stopping") return false;
     try {
@@ -1325,7 +1325,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
   const submitTurnAction = (
     turnId: string,
     callId: string,
-    action: { type: "approval_response"; approved: boolean; remember?: "always" } | { type: "tool_result"; result: unknown },
+    action: { type: "approval_response"; approved: boolean; remember?: "chat" | "always" } | { type: "tool_result"; result: unknown },
   ) => {
     const conversationId = activeConversationId();
     if (!conversationId) return Promise.resolve(false);
@@ -1333,7 +1333,10 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     return submitTurnActionForConversation(conversationId, turnId, callId, action);
   };
 
-  const respondToApproval = async (request: { turnId: string; callId: string }, input: { approved: boolean; remember?: "always" }) => {
+  const respondToApproval = async (
+    request: { turnId: string; callId: string },
+    input: { approved: boolean; remember?: "chat" | "always" },
+  ) => {
     const conversationId = activeConversationId();
     if (!conversationId) return false;
     const submitted = await submitTurnAction(request.turnId, request.callId, {

@@ -31,11 +31,12 @@ const postgresTest = testFor("database");
 if (testInfra.database) setDefaultTimeout(60_000);
 const uuid = () => Bun.randomUUIDv7();
 
-test("only exposes remembered approval for record updates and external upserts", () => {
+test("only exposes remembered approval for record changes and personal views", () => {
   const rememberable = (Object.entries(gridsCapabilities.actions) as Array<[string, CapabilityActionDefinition]>)
     .filter(([, action]) => action.approval === "rememberable")
-    .map(([localId]) => localId);
-  expect(rememberable).toEqual(["record.upsert-external", "record.update"]);
+    .map(([localId]) => localId)
+    .sort();
+  expect(rememberable).toEqual(["record.create", "record.update", "record.upsert-external", "view.create"]);
 });
 
 const testUser = (id: string): User => ({
@@ -94,7 +95,10 @@ const review = (localId: string, input: unknown, context: CapabilityExecutionCon
     if (result.ok) {
       const validated = CapabilityActionReviewSchema.safeParse(result.data);
       if (!validated.success) throw new Error(`Invalid test review for ${localId}: ${validated.error.message}`);
-      expect(validated.data.approvalScope !== undefined).toBe(operation.approval === "rememberable");
+      // Only a rememberable Action returns a scope; it may omit it for arguments that ask every time, such as a shared View.
+      if (operation.approval !== "rememberable") expect(validated.data.approvalScope).toBeUndefined();
+      else if (localId !== "view.create" || !(parsed.data as { shared?: boolean }).shared)
+        expect(validated.data.approvalScope).toBeString();
     }
     return result;
   });
@@ -1243,6 +1247,8 @@ describe("Grids capabilities", () => {
       await sql`UPDATE auth.access SET permission = 'admin'::auth.permission_level WHERE id = ${accessIds[0]!}::uuid`;
       const before = await gridsService.view.listForTable({ tableId, userId: user.id });
       expect((await review("view.create", viewInput, userContext(user))).ok).toBeTrue();
+      const sharedView = await review("view.create", { ...viewInput, shared: true }, userContext(user));
+      expect(sharedView.ok && sharedView.data.approvalScope).toBeUndefined();
       expect(await gridsService.view.listForTable({ tableId, userId: user.id })).toHaveLength(before.length);
       expect(await review("view.create", { ...viewInput, query: "not a query" }, userContext(user))).toMatchObject({
         ok: false,

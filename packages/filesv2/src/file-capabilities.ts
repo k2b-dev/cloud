@@ -363,7 +363,15 @@ const successfulEntry = <T>(c: { locale: string }, value: { results: ({ ok: true
   if (!first?.ok) throw { code: "CONFLICT", message: errorMessage(first?.error ?? "operation_unresolved", c.locale), status: 409 };
   return first.entry;
 };
-type Review = { message: string; details: { label: string; value: string }[] };
+type Review = { message: string; details: { label: string; value: string }[]; approvalScope?: string };
+/**
+ * A chat may remember approving changes inside one storage base, whose audience the card names. Where the result would
+ * land under an active public download share, it would be published, and sharing asks every time.
+ */
+const baseApprovalScope = async (c: CapabilityExecutionContext, baseId: string, path: string) =>
+  (await filesService.publiclyShared(readActor(c), baseId, path)) ? {} : { approvalScope: `base:${baseId}` };
+const parentOf = (path: string) => path.split("/").slice(0, -1).join("/");
+const nameOf = (path: string) => path.split("/").at(-1) ?? path;
 /** A review message holds at most 1,000 characters; names come from model input of up to 4,096. */
 const REVIEW_NAME_CHARS = 200;
 /**
@@ -391,6 +399,7 @@ function action<S extends z.ZodType>(
   input: S,
   review: (input: z.output<S>, copy: Awaited<ReturnType<typeof reviewText>>, c: CapabilityExecutionContext) => Review | Promise<Review>,
   run: (input: z.output<S>, c: CapabilityExecutionContext) => Promise<CapabilityResult<z.infer<typeof Result>>>,
+  approval?: "rememberable",
 ): CapabilityActionDefinition<S, typeof Result> {
   return {
     title,
@@ -400,6 +409,7 @@ function action<S extends z.ZodType>(
     openWorld: false,
     destructive: false,
     idempotency: "required",
+    ...(approval ? { approval } : {}),
     review: async (value, c) => domain(c, async () => ok(await review(value, await reviewText(c), c))),
     run: async (value, c) => domain(c, async () => ok(await run(value, c))),
   };
@@ -414,6 +424,7 @@ export const fileActions = {
     openWorld: false,
     destructive: false,
     idempotency: "required" as const,
+    approval: "rememberable" as const,
     review: async (input: z.infer<typeof Upload>, c: CapabilityExecutionContext) =>
       domain(c, async () => {
         await filesService.list(readActor(c), { baseId: input.baseId, path: input.path.split("/").slice(0, -1).join("/") });
@@ -426,6 +437,8 @@ export const fileActions = {
             { label: r.t.path, value: r.path(input.path) },
             { label: r.t.size, value: r.size(input.size) },
           ],
+          // Replacing content asks every time; creating a new file can be remembered for its base.
+          ...(input.onConflict === "overwrite" ? {} : await baseApprovalScope(c, input.baseId, input.path)),
         });
       }),
     run: async (input: z.infer<typeof Upload>, c: CapabilityExecutionContext) =>
@@ -459,6 +472,7 @@ export const fileActions = {
     openWorld: false,
     destructive: false,
     idempotency: "required" as const,
+    approval: "rememberable" as const,
     review: async (input: z.output<typeof FileProviderSaveInputSchema>, c: CapabilityExecutionContext) =>
       domain(c, async () => {
         const folder = await filesService.folderLocation(readActor(c), input.parent);
@@ -470,6 +484,7 @@ export const fileActions = {
             { label: r.t.path, value: r.path(joinName(folder.path, input.name)) },
             { label: r.t.size, value: r.size(input.size) },
           ],
+          ...(await baseApprovalScope(c, folder.baseId, joinName(folder.path, input.name))),
         });
       }),
     run: async (input: z.output<typeof FileProviderSaveInputSchema>, c: CapabilityExecutionContext) =>
@@ -527,65 +542,73 @@ export const fileActions = {
           { label: r.t.storage, value: r.base(input.baseId) },
           { label: r.t.restoreTo, value: r.path(destination) },
         ],
+        ...(await baseApprovalScope(c, input.baseId, destination)),
       };
     },
     async (input, c) => {
       const saved = await filesService.restoreTrash(readActor(c), input);
       return result(input.baseId, saved.entry);
     },
+    "rememberable",
   ),
   "folder.create": action(
     "Create folder",
     Target,
-    (input, r) => ({
+    async (input, r, c) => ({
       message: r.t.createFolder({ name: r.name(input.path) }),
       details: [
         { label: r.t.storage, value: r.base(input.baseId) },
         { label: r.t.path, value: r.path(input.path) },
       ],
+      ...(await baseApprovalScope(c, input.baseId, input.path)),
     }),
     async (input, c) => {
       const saved = await filesService.mkdir(readActor(c), input);
       return result(input.baseId, saved.entry);
     },
+    "rememberable",
   ),
   "entry.rename": action(
     "Rename entry",
     Target.extend({ name: z.string().min(1).max(255).describe("New name without directory separators.") }).strict(),
-    (input, r) => ({
+    async (input, r, c) => ({
       message: r.t.renameEntry({ name: r.name(input.path), newName: r.name(input.name) }),
       details: [
         { label: r.t.storage, value: r.base(input.baseId) },
         { label: r.t.path, value: r.path(input.path) },
         { label: r.t.newName, value: input.name },
       ],
+      ...(await baseApprovalScope(c, input.baseId, joinName(parentOf(input.path), input.name))),
     }),
     async (input, c) => {
       const saved = await filesService.rename(readActor(c), input);
       return result(input.baseId, saved.entry);
     },
+    "rememberable",
   ),
   "entry.move": action(
     "Move entry",
     Target.extend({ folder: Path }).strict(),
-    (input, r) => ({
+    async (input, r, c) => ({
       message: r.t.moveEntry({ name: r.name(input.path) }),
       details: [
         { label: r.t.storage, value: r.base(input.baseId) },
         { label: r.t.path, value: r.path(input.path) },
         { label: r.t.targetFolder, value: r.path(input.folder) },
       ],
+      ...(await baseApprovalScope(c, input.baseId, joinName(input.folder, nameOf(input.path)))),
     }),
     async (input, c) =>
       result(
         input.baseId,
         successfulEntry(c, await filesService.move(readActor(c), { baseId: input.baseId, paths: [input.path], folder: input.folder })),
       ),
+    "rememberable",
   ),
   "entry.copy": action(
     "Copy entry",
     Target.extend({ targetBaseId: Base, folder: Path }).strict(),
-    (input, r) => ({
+    async (input, r, c) => ({
       message: r.t.copyEntry({ name: r.name(input.path) }),
       details: [
         { label: r.t.storage, value: r.base(input.baseId) },
@@ -593,6 +616,8 @@ export const fileActions = {
         { label: r.t.targetStorage, value: r.base(input.targetBaseId) },
         { label: r.t.targetFolder, value: r.path(input.folder) },
       ],
+      // A copy into another base shows the file to that base's audience, so it asks every time.
+      ...(input.targetBaseId === input.baseId ? await baseApprovalScope(c, input.baseId, joinName(input.folder, nameOf(input.path))) : {}),
     }),
     async (input, c) =>
       result(
@@ -607,5 +632,6 @@ export const fileActions = {
           }),
         ),
       ),
+    "rememberable",
   ),
 };

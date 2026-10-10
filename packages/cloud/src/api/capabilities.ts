@@ -613,11 +613,12 @@ const runCapabilityDispatch = async (
     : schemaValidator(`${operation.schemaHash}:result`, capabilityResultJsonSchema(operation.dataSchema));
   const parsedResult = resultValidator?.safeParse(upstreamBody.data);
   const parsedReview = params.review ? CapabilityActionReviewSchema.safeParse(upstreamBody.data) : null;
+  // A rememberable Action may leave out its scope for arguments that should ask every time; any other Action has none.
   const reviewApprovalScopeIsValid =
     !params.review ||
-    !("approval" in operation) ||
     !parsedReview?.success ||
-    (operation.approval === "rememberable" ? parsedReview.data.approvalScope !== undefined : parsedReview.data.approvalScope === undefined);
+    ("approval" in operation && operation.approval === "rememberable") ||
+    parsedReview.data.approvalScope === undefined;
   if (!resultValidator || !parsedResult?.success || !reviewApprovalScopeIsValid) {
     if (actionWithoutRetrySafety) return settle(outcomeUnknown(), "uncertain");
     const invalid = errorResponse("INVALID_APP_RESPONSE", messages.outsideResultSchema({ appId: params.appId }), 502);

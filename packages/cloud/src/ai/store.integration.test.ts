@@ -1092,6 +1092,7 @@ suite("AI conversation store integration", () => {
           message: review.message,
           review,
           allowAlways: true,
+          allowChat: true,
         },
       ]);
       expect(await aiConversations.listPendingActionRecords({ conversationId: conversation.id, turnId: turn.id })).toMatchObject([
