@@ -21,7 +21,12 @@ import {
   updateWorkflowConversationCollaborationInTransaction,
 } from "../service/collaboration";
 import { hasCurrentMailboxUserPermission } from "../service/collaborators";
-import { createWorkflowCommand, createWorkflowCommandInTransaction, enqueueCreatedWorkflowCommand } from "../service/commands";
+import {
+  createWorkflowCommand,
+  createWorkflowCommandInTransaction,
+  enqueueCreatedWorkflowCommand,
+  type WorkflowCommandFence,
+} from "../service/commands";
 import { ensureConversationReferenceInTransaction } from "../service/conversation-reference";
 import { updateWorkflowConversationSummaryInTransaction } from "../service/conversation-summary";
 import { createWorkflowDraftInTransaction, createWorkflowReviewReplyDraftInTransaction } from "../service/drafts";
@@ -220,7 +225,7 @@ const authorized = authorizeMailWorkflowExecution;
  * Locks the kernel run and verifies that the step trying to create a provider
  * command still belongs to its current execution generation.
  */
-const lockProviderFence = async (db: SqlClient, ctx: WorkflowActionContext): Promise<{ workflowExecutionGeneration: number }> => {
+const lockProviderFence = async (db: SqlClient, ctx: WorkflowActionContext): Promise<WorkflowCommandFence> => {
   const [active] = await db<{ execution_generation: string | number }[]>`
     SELECT run.execution_generation
     FROM workflows.run run
@@ -236,7 +241,7 @@ const lockProviderFence = async (db: SqlClient, ctx: WorkflowActionContext): Pro
     FOR UPDATE OF run
   `;
   if (!active) throw Object.assign(new Error("Workflow execution lease was lost before Mail effect"), { code: "WORKFLOW_LEASE_LOST" });
-  return { workflowExecutionGeneration: Number(active.execution_generation) };
+  return { workflowExecutionGeneration: Number(active.execution_generation), workflowStepKey: ctx.stepKey };
 };
 
 const resolveObject = async (ctx: WorkflowActionContext, value: unknown, key: string): Promise<JsonObject> => {
@@ -1146,11 +1151,9 @@ export const MAIL_WORKFLOW_ACTIONS = {
             schedule,
           });
           if (!reply.ok || reply.data.state === "suppressed") return reply;
-          // A retried step whose effect already carries a send command adopts
-          // it. The command was issued under an earlier execution generation
-          // and its outbox submission is already on its way, so issuing a
-          // second one would only collide with the kernel's fence while the
-          // reply goes out regardless.
+          // A step that runs again, on a recheck or a retry, adopts the send
+          // command its effect already carries. Its outbox submission is
+          // already on its way, so a second command would only collide with it.
           if (reply.data.commandId) {
             const [issued] = await tx<{ id: string; state: MailCommand["state"]; last_error_message: string | null }[]>`
               SELECT id::text, state, last_error_message

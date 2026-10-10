@@ -9,6 +9,9 @@ import {
   createWorkflowRuntimeRepository,
   finishWorkflowRun,
   publishWorkflowVersion,
+  requestWorkflowRunCancel,
+  wakeExpiredWorkflowRuns,
+  workflowEffectKey,
 } from "@k2b/cloud/workflows/store";
 import { redis, sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
@@ -3925,7 +3928,7 @@ suite("mail lifecycle control plane", () => {
     }
   }, 15_000);
 
-  test("cancels a workflow command when its kernel execution generation is stale", async () => {
+  test("runs a workflow command while its step waits for it and cancels it once the step moved on", async () => {
     const [message] = await sql<{ id: string }[]>`
       INSERT INTO mail.message_contents (short_id,
         mailbox_id, message_id, subject, internal_date, size_bytes, content_hash, hydration_status
@@ -3992,73 +3995,151 @@ suite("mail lifecycle control plane", () => {
         idempotencyKey: `stale-command-${suffix}`,
         occurredAt: new Date(),
       });
-      const claim = await claimWorkflowRun({ worker: "mail-stale-command-test", runId });
-      if (!claim) throw new Error("Workflow run was not claimable");
-      const terminalInput = {
+      const repository = createWorkflowRuntimeRepository();
+      const stepFor = (key: string, executionGeneration: number) => ({
+        runId,
+        executionGeneration,
+        mode: "execute" as const,
+        workflowId: workflow.id,
+        sourceHash: plan.sourceHash,
+        idempotencyKey: `workflow-command-step-${key}-${suffix}`,
+        key,
+        sourcePath: ["steps", 0],
+        iterationPath: [],
+        path: ["steps", 0],
+        kind: "action" as const,
+        action: "mail.test.flag",
+      });
+      const inputFor = (key: string) => ({
         kind: "change_message_state" as const,
         messageId: message!.id,
         folderId: inboxFolderShortId,
         change: { addFlags: ["seen" as const], removeFlags: [], addKeywords: [], removeKeywords: [] },
-        idempotencyKey: `terminal-workflow-command-${suffix}`,
+        idempotencyKey: workflowEffectKey(runId, key),
         correlationId: runId,
+      });
+      const create = (key: string, executionGeneration: number) =>
+        createWorkflowCommand({
+          context: null,
+          mailboxId,
+          workflowVersionId: version.id,
+          input: inputFor(key),
+          enqueue: false,
+          beforeCreate: async () => ({ workflowExecutionGeneration: executionGeneration, workflowStepKey: key }),
+        });
+      const claimRun = async () => {
+        const claim = await claimWorkflowRun({ worker: "mail-workflow-command-test", runId });
+        if (!claim) throw new Error("Workflow run was not claimable");
+        return claim;
       };
-      const terminal = await createWorkflowCommand({
-        context: null,
-        mailboxId,
-        workflowVersionId: version.id,
-        input: terminalInput,
-        enqueue: false,
-        beforeCreate: async () => ({ workflowExecutionGeneration: claim.executionGeneration }),
-      });
-      if (!terminal.ok) throw new Error(terminal.error.message);
-      await sql`UPDATE mail.commands SET state = 'confirmed', finished_at = now() WHERE id = ${terminal.data.id}::uuid`;
-      await sql`UPDATE workflows.run SET execution_generation = execution_generation + 1 WHERE id = ${runId}::uuid`;
-      const resumedGeneration = claim.executionGeneration + 1;
-      const replay = await createWorkflowCommand({
-        context: null,
-        mailboxId,
-        workflowVersionId: version.id,
-        input: terminalInput,
-        enqueue: false,
-        beforeCreate: async () => ({ workflowExecutionGeneration: resumedGeneration }),
-      });
-      expect(replay.ok && replay.data.id).toBe(terminal.data.id);
+      // The deadline recheck that re-queues a run parked on a dependency.
+      const recheck = async () => {
+        await sql`UPDATE workflows.run SET wake_at = now() - interval '1 second' WHERE id = ${runId}::uuid`;
+        expect(await wakeExpiredWorkflowRuns(100, { appId: "mail" })).toContain(runId);
+      };
+      const stored = async (commandId: string) => {
+        const [row] = await sql<{ state: string; last_error_code: string | null }[]>`
+          SELECT state, last_error_code FROM mail.commands WHERE id = ${commandId}::uuid
+        `;
+        return row;
+      };
 
-      const command = await createWorkflowCommand({
+      // A workflow command is keyed by the effect of the step that issues it.
+      const foreignKey = await createWorkflowCommand({
         context: null,
         mailboxId,
         workflowVersionId: version.id,
-        input: {
-          kind: "change_message_state",
-          messageId: message!.id,
-          folderId: inboxFolderShortId,
-          change: { addFlags: ["seen"], removeFlags: [], addKeywords: [], removeKeywords: [] },
-          idempotencyKey: `stale-workflow-command-${suffix}`,
-          correlationId: runId,
-        },
+        input: { ...inputFor("flag"), idempotencyKey: `foreign-workflow-command-${suffix}` },
         enqueue: false,
-        beforeCreate: async () => ({ workflowExecutionGeneration: resumedGeneration }),
+        beforeCreate: async () => ({ workflowExecutionGeneration: 1, workflowStepKey: "flag" }),
       });
-      expect(command.ok).toBe(true);
-      if (!command.ok) return;
-      await sql`UPDATE workflows.run SET execution_generation = execution_generation + 1 WHERE id = ${runId}::uuid`;
+      expect(foreignKey).toMatchObject({ ok: false, error: { code: "INTERNAL" } });
+
+      // The step issues its command and parks on it with a recheck deadline.
+      const first = await claimRun();
+      await repository.startStep(stepFor("flag", first.executionGeneration));
+      const command = await create("flag", first.executionGeneration);
+      if (!command.ok) throw new Error(command.error.message);
+      await repository.parkStep(stepFor("flag", first.executionGeneration), {
+        kind: "mail.command",
+        key: command.data.id,
+        deadline: new Date(Date.now() + 60 * 60_000).toISOString(),
+      });
+      expect(await finishWorkflowRun(first, { state: "waiting" })).toEqual({ state: "finished" });
+
+      // The command is still queued at the deadline. The recheck runs the step
+      // again under a new execution generation, and the step adopts its command.
+      await recheck();
+      const second = await claimRun();
+      expect(second.executionGeneration).toBe(first.executionGeneration + 1);
+      await repository.startStep(stepFor("flag", second.executionGeneration));
+      const adopted = await create("flag", second.executionGeneration);
+      expect(adopted.ok && adopted.data.id).toBe(command.data.id);
+      await repository.parkStep(stepFor("flag", second.executionGeneration), {
+        kind: "mail.command",
+        key: command.data.id,
+        deadline: new Date(Date.now() + 60 * 60_000).toISOString(),
+      });
+      expect(await finishWorkflowRun(second, { state: "waiting" })).toEqual({ state: "finished" });
+
+      // The mailbox job claims the command while the next recheck has queued
+      // the run but not yet run it. The step still waits, so the effect runs.
+      await recheck();
+      const providerState = spyOn(imapSmtpConnector, "getMessageState").mockResolvedValue({
+        exists: true,
+        flags: [],
+        keywords: [],
+        messageId: `<stale-workflow-command-${suffix}@example.com>`,
+        modseq: "1",
+      });
+      const changeState = spyOn(imapSmtpConnector, "changeMessageState").mockResolvedValue({
+        exists: true,
+        flags: ["\\Seen"],
+        keywords: [],
+        messageId: `<stale-workflow-command-${suffix}@example.com>`,
+        modseq: "2",
+      });
+      try {
+        expect(await executeMutationCommand(command.data.id)).toBe("confirmed");
+        expect(changeState).toHaveBeenCalledTimes(1);
+      } finally {
+        changeState.mockRestore();
+        providerState.mockRestore();
+      }
 
       const provider = spyOn(imapSmtpConnector, "changeMessageState").mockRejectedValue(
-        new Error("stale workflow command reached provider effect"),
+        new Error("a workflow command nobody waits for reached the provider"),
       );
+      const expectCancelled = async (commandId: string) => {
+        expect(await executeMutationCommand(commandId)).toBeNull();
+        expect(await stored(commandId)).toEqual({ state: "cancelled", last_error_code: "WORKFLOW_CANCELED" });
+      };
       try {
-        expect(await executeMutationCommand(command.data.id)).toBeNull();
+        // A command whose step settled without it never reaches the provider,
+        // although its run is still live.
+        const third = await claimRun();
+        await repository.startStep(stepFor("skipped", third.executionGeneration));
+        const superseded = await create("skipped", third.executionGeneration);
+        if (!superseded.ok) throw new Error(superseded.error.message);
+        await repository.finishStep(stepFor("skipped", third.executionGeneration), {
+          mode: "execute",
+          outcome: { state: "completed", output: { applied: false } },
+        });
+        await expectCancelled(superseded.data.id);
+
+        // Neither does a command whose run was canceled while its step waited for it.
+        await repository.startStep(stepFor("canceled", third.executionGeneration));
+        const canceled = await create("canceled", third.executionGeneration);
+        if (!canceled.ok) throw new Error(canceled.error.message);
+        await repository.parkStep(stepFor("canceled", third.executionGeneration), {
+          kind: "mail.command",
+          key: canceled.data.id,
+          deadline: new Date(Date.now() + 60 * 60_000).toISOString(),
+        });
+        expect(await finishWorkflowRun(third, { state: "waiting" })).toEqual({ state: "finished" });
+        expect(await requestWorkflowRunCancel(runId)).toBe(true);
+        await expectCancelled(canceled.data.id);
         expect(provider).not.toHaveBeenCalled();
-        const [stored] = await sql<
-          { state: string; last_error_code: string | null; workflow_execution_generation: string | number | null }[]
-        >`
-          SELECT state, last_error_code, workflow_execution_generation
-          FROM mail.commands
-          WHERE id = ${command.data.id}::uuid
-        `;
-        expect(stored?.state).toBe("cancelled");
-        expect(stored?.last_error_code).toBe("WORKFLOW_CANCELED");
-        expect(Number(stored?.workflow_execution_generation)).toBe(resumedGeneration);
       } finally {
         provider.mockRestore();
       }

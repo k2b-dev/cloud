@@ -1,6 +1,7 @@
 import { lazySync } from "@k2b/cloud";
 import { createRuntimeLifecycle, createRuntimeTaskTracker, logger, stopRuntimeJobs, stopRuntimeResources } from "@k2b/cloud/services";
 import { toPgIntArray, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services/postgres";
+import { workflowEffectKey } from "@k2b/cloud/workflows/store";
 import type { JobContext, Worker } from "@k2b/sync";
 import { expBackoff } from "@k2b/sync/retry";
 import { sql } from "bun";
@@ -332,12 +333,53 @@ type ClaimedCommand = {
   earlierEffectStarted: boolean;
 };
 
+/**
+ * Whether the workflow run that issued a command still wants its effect.
+ *
+ * A command belongs to the step whose kernel effect key is its idempotency
+ * key. The command is wanted while its run is live and that step still runs or
+ * waits for it. A waiting step runs again on every dependency recheck, under a
+ * newer execution generation, and adopts the command it already issued, so a
+ * generation change alone does not make the command stale. A canceled or ended
+ * run, a changed workflow version, or a step that settled without the command
+ * does.
+ *
+ * Locks the run, so a cancel request or a new claim cannot interleave. Call it
+ * before locking the command: a step that adopts its command takes the run
+ * first, too.
+ */
+const workflowCommandStillWanted = async (tx: typeof sql, command: { id: string; correlation_id: string | null }): Promise<boolean> => {
+  const runId = z.uuid().safeParse(command.correlation_id);
+  if (!runId.success) return false;
+  const [run] = await tx<{ id: string }[]>`
+    SELECT run.id
+    FROM mail.commands command
+    JOIN workflows.run run ON run.id = ${runId.data}::uuid
+    JOIN workflows.step_outcome step
+      ON step.run_id = run.id
+     AND command.idempotency_key = ${workflowEffectKey(runId.data, "")} || step.step_key
+    WHERE command.id = ${command.id}::uuid
+      AND command.correlation_id = run.id::text
+      AND run.workflow_version_id = command.actor_id
+      AND run.execution_generation >= command.workflow_execution_generation
+      AND run.state IN ('queued', 'running', 'waiting')
+      AND run.cancel_requested_at IS NULL
+      AND step.state IN ('running', 'waiting')
+    FOR UPDATE OF run
+  `;
+  return Boolean(run);
+};
+
 const claimCommand = async (
   commandId: string,
   allowedKinds: string[],
   claimableStates: CommandState[] = ["queued", "ambiguous"],
 ): Promise<ClaimedCommand | null> =>
   sql.begin(async (tx) => {
+    const [issuer] = await tx<{ actor_kind: string; correlation_id: string | null }[]>`
+      SELECT actor_kind, correlation_id FROM mail.commands WHERE id = ${commandId}::uuid
+    `;
+    const wanted = issuer?.actor_kind === "workflow" ? await workflowCommandStillWanted(tx, { id: commandId, ...issuer }) : true;
     const [current] = await tx<(DbCommandExecution & { provider_effect_started_at: Date | string | null })[]>`
       SELECT
         id, mailbox_id, kind, state, actor_kind, actor_id, correlation_id, workflow_execution_generation,
@@ -350,33 +392,18 @@ const claimCommand = async (
       FOR UPDATE
     `;
     if (!current || !allowedKinds.includes(current.kind) || !claimableStates.includes(current.state)) return null;
-    if (current.actor_kind === "workflow") {
-      const [run] = await tx<{ id: string }[]>`
-        SELECT run.id
-        FROM workflows.run run
-        WHERE run.id::text = ${current.correlation_id}
-          AND run.workflow_version_id = ${current.actor_id}::uuid
-          AND run.execution_generation = ${current.workflow_execution_generation}
-          AND (
-            (run.state = 'running' AND run.lease_expires_at >= now())
-            OR run.state = 'waiting'
-          )
-          AND run.cancel_requested_at IS NULL
-        FOR UPDATE OF run
+    if (!wanted) {
+      await tx`
+        UPDATE mail.commands
+        SET
+          state = 'cancelled',
+          finished_at = now(),
+          last_error_code = 'WORKFLOW_CANCELED',
+          last_error_message = 'The workflow run was canceled, ended, or moved past this command before it ran',
+          updated_at = now()
+        WHERE id = ${current.id}::uuid AND state IN ('queued', 'ambiguous')
       `;
-      if (!run) {
-        await tx`
-          UPDATE mail.commands
-          SET
-            state = 'cancelled',
-            finished_at = now(),
-            last_error_code = 'WORKFLOW_CANCELED',
-            last_error_message = 'The workflow run was canceled before command execution',
-            updated_at = now()
-          WHERE id = ${current.id}::uuid AND state IN ('queued', 'ambiguous')
-        `;
-        return null;
-      }
+      return null;
     }
     const previousState = current.state;
     const [claimed] = await tx<DbCommandExecution[]>`
@@ -589,6 +616,11 @@ const beginProviderEffect = async (
     if (!mailbox) {
       throw Object.assign(new Error("Mailbox access was revoked before the provider effect"), { code: "ACCESS_REVOKED" });
     }
+    if (command.actor_kind === "workflow" && !(await workflowCommandStillWanted(tx, command))) {
+      throw Object.assign(new Error("The workflow run was canceled, ended, or moved past this command before the provider effect"), {
+        code: "WORKFLOW_CANCELED",
+      });
+    }
     const [current] = await tx<{ id: string }[]>`
       SELECT command.id
       FROM mail.commands command
@@ -614,24 +646,6 @@ const beginProviderEffect = async (
     `;
     if (!current) {
       throw Object.assign(new Error("Mail command lease was lost before the provider effect"), { code: "COMMAND_JOB_LEASE_LOST" });
-    }
-    if (command.actor_kind === "workflow") {
-      const [run] = await tx<{ id: string }[]>`
-        SELECT run.id
-        FROM workflows.run run
-        WHERE run.id::text = ${command.correlation_id}
-          AND run.workflow_version_id = ${command.actor_id}::uuid
-          AND run.execution_generation = ${command.workflow_execution_generation}
-          AND (
-            (run.state = 'running' AND run.lease_expires_at >= now())
-            OR run.state = 'waiting'
-          )
-          AND run.cancel_requested_at IS NULL
-        FOR UPDATE OF run
-      `;
-      if (!run) {
-        throw Object.assign(new Error("Workflow run was canceled before the provider effect"), { code: "WORKFLOW_CANCELED" });
-      }
     }
     if (command.kind === "send") {
       if (!senderIdentityId) {

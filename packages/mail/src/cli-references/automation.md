@@ -502,6 +502,8 @@ Runs use the active version's mailbox-owned authority, so removing the activatin
 
 Provider actions create idempotent Mail commands. A step may wait for a command or message hydration. Durable outcomes survive retries; lease generations fence stale workers; dependency completion wakes waiting runs. Ambiguous provider outcomes become `needs_attention` rather than being blindly repeated.
 
+A step that waits for its command is checked again every 30 seconds. The check runs the step under a new execution generation, and the step keeps waiting for the command it already created. A command is cancelled with `WORKFLOW_CANCELED` only when its run was canceled or has ended, or when its step finished without it.
+
 ## Call the workflow API directly
 
 Prefer the CLI unless another HTTP client must integrate directly. Mail workflow routes are under `/api/mail/mailboxes/{mailboxId}`. Use `cld api-docs operations mail` for the live OpenAPI contract.

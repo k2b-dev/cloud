@@ -1,5 +1,6 @@
 import { capabilityIdempotencyConflict } from "@k2b/cloud/contracts";
 import { audit, logger, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
+import { workflowEffectKey } from "@k2b/cloud/workflows/store";
 import { err, fail, isServiceError, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { z } from "zod";
@@ -746,11 +747,19 @@ type CreateActorCommandParams = {
   enqueue?: boolean;
 };
 
+/**
+ * The workflow step that is creating a command, read under its run lock.
+ *
+ * A workflow command belongs to the step whose kernel effect key is its
+ * idempotency key; the runtime cancels it once that step no longer waits for it.
+ */
+export type WorkflowCommandFence = { workflowExecutionGeneration: number; workflowStepKey: string };
+
 type CreateActorCommandInternalParams = Omit<CreateActorCommandParams, "context" | "input"> & {
   context: MailRequestContext | null;
   input: ProviderMessageCommandInput;
   actorOverride?: ActorRef;
-  beforeCreate?: (tx: typeof sql) => Promise<{ workflowExecutionGeneration: number } | void>;
+  beforeCreate?: (tx: typeof sql) => Promise<WorkflowCommandFence | void>;
   afterCreate?: (tx: typeof sql, command: MailCommand) => Promise<void>;
 };
 
@@ -801,11 +810,17 @@ const createActorCommandInTransaction = async (params: CreateActorCommandInterna
     }
   }
   const creationFence = await params.beforeCreate?.(tx);
-  if (
-    actor.kind === "workflow" &&
-    (!creationFence || !Number.isSafeInteger(creationFence.workflowExecutionGeneration) || creationFence.workflowExecutionGeneration < 1)
-  ) {
-    return fail(err.internal("Workflow command is missing its execution fence"));
+  if (actor.kind === "workflow") {
+    if (
+      !creationFence ||
+      !Number.isSafeInteger(creationFence.workflowExecutionGeneration) ||
+      creationFence.workflowExecutionGeneration < 1
+    ) {
+      return fail(err.internal("Workflow command is missing its execution fence"));
+    }
+    if (!prepared.correlationId || prepared.idempotencyKey !== workflowEffectKey(prepared.correlationId, creationFence.workflowStepKey)) {
+      return fail(err.internal("Workflow command must use its step's effect key"));
+    }
   }
   await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`${params.mailboxId}:${prepared.kind}:${stableTargetKey(prepared.target)}`}, 0))`;
 
@@ -817,12 +832,15 @@ const createActorCommandInTransaction = async (params: CreateActorCommandInterna
   `;
   if (existing) {
     if (!commandActorMatches(existing, actor)) return fail(capabilityIdempotencyConflict("Idempotency key is already in use"));
+    // A step that waits for its command runs again on every recheck, under a
+    // newer execution generation, and adopts the command it already issued.
+    // Only a caller older than the command is stale.
     if (
-      actor.kind === "workflow" &&
-      Number(existing.workflow_execution_generation) !== creationFence?.workflowExecutionGeneration &&
+      creationFence &&
+      Number(existing.workflow_execution_generation) > creationFence.workflowExecutionGeneration &&
       !["confirmed", "failed", "cancelled", "reconciled", "needs_attention"].includes(existing.state)
     ) {
-      return fail(err.conflict("Workflow command belongs to a stale execution generation"));
+      return fail(err.conflict("Workflow command belongs to a newer execution generation"));
     }
     return existing.request_hash === requestHash
       ? ok(mapCommand(existing))
@@ -1055,7 +1073,7 @@ export const createWorkflowCommandInTransaction = (
     mailboxId: string;
     workflowVersionId: string;
     input: ActorCommandInput;
-    beforeCreate: (tx: typeof sql) => Promise<{ workflowExecutionGeneration: number }>;
+    beforeCreate: (tx: typeof sql) => Promise<WorkflowCommandFence>;
     afterCreate?: (tx: typeof sql, command: MailCommand) => Promise<void>;
   },
   tx: typeof sql,
@@ -1084,7 +1102,7 @@ export const createWorkflowCommand = async (params: {
   workflowVersionId: string;
   input: ActorCommandInput;
   enqueue?: boolean;
-  beforeCreate: (tx: typeof sql) => Promise<{ workflowExecutionGeneration: number }>;
+  beforeCreate: (tx: typeof sql) => Promise<WorkflowCommandFence>;
   afterCreate?: (tx: typeof sql, command: MailCommand) => Promise<void>;
 }): Promise<Result<MailCommand>> => {
   const result = await sql.begin((tx) => createWorkflowCommandInTransaction(params, tx));

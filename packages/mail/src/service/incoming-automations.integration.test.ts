@@ -6,6 +6,7 @@ import {
   createWorkflowRun,
   deleteWorkflowScope,
   dispatchPendingWorkflowEvents,
+  wakeExpiredWorkflowRuns,
   wakeWorkflowRunsWaitingOn,
 } from "@k2b/cloud/workflows/store";
 import { sql } from "bun";
@@ -1103,6 +1104,117 @@ suite("incoming automations", () => {
         input: { expectedRevision: Number(current!.revision) },
       });
     }
+  });
+
+  test("keeps a move whose provider command outlasts the dependency recheck", async () => {
+    const [archive] = await sql<{ short_id: string }[]>`
+      SELECT short_id FROM mail.folders WHERE id = ${archiveFolderId}::uuid
+    `;
+    if (!archive) throw new Error("Failed to load the archive folder public id");
+    const sender = `recheck-${suffix}@external.test`;
+    const automation = await createIncomingAutomation({
+      context: ownerContext,
+      mailboxId,
+      input: {
+        name: `Recheck move ${suffix}`,
+        enabled: true,
+        scope: {
+          mode: "matching",
+          conditions: { mode: "all", items: [{ field: "sender_address", operator: "is", value: sender }] },
+        },
+        steps: [{ id: crypto.randomUUID(), kind: "mail_action", action: { kind: "move_to_folder", folderId: archive.short_id } }],
+      },
+    });
+    if (!automation.ok) throw new Error(automation.error.message);
+    const uid = 8100 + Math.floor(Math.random() * 800);
+    await ingestEnvelope({
+      db: sql,
+      mailboxId,
+      remoteResourceId,
+      folderId: inboxFolderId,
+      message: {
+        remoteRef: { folderStableKey: `incoming-automation-inbox-${suffix}`, uidValidity: "1", uid: String(uid), modseq: String(uid) },
+        providerMessageId: `recheck-${suffix}`,
+        providerThreadId: null,
+        messageId: `<recheck-${suffix}@external.test>`,
+        inReplyTo: null,
+        references: [],
+        subject: "Recheck move",
+        sentAt: new Date(),
+        internalDate: new Date(),
+        sizeBytes: 128,
+        flags: [],
+        labels: [],
+        addresses: {
+          from: [{ name: "Bot", address: sender }],
+          replyTo: [],
+          to: [{ name: "Support", address: "automation@example.test" }],
+          cc: [],
+          bcc: [],
+        },
+        mimeStructure: {},
+      } as never,
+      captureWorkflowTriggers: true,
+    });
+    await dispatchPendingWorkflowEvents(100, { appId: "mail", scopeId: mailboxId });
+    const [run] = await sql<{ id: string }[]>`
+      SELECT id FROM workflows.run WHERE workflow_id = ${automation.data.workflowId}::uuid ORDER BY created_at DESC LIMIT 1
+    `;
+    if (!run) throw new Error("Automation run was not dispatched");
+    // Every enabled automation gets a run for the message. Settle the others
+    // first, as the worker would, so this one has the placement turn.
+    const others = await sql<{ id: string }[]>`
+      SELECT id FROM workflows.run WHERE scope_id = ${mailboxId} AND state = 'queued' AND id <> ${run.id}::uuid
+    `;
+    for (const other of others) await runMailWorkflow(other.id);
+    const snapshot = async () => {
+      const [current] = await sql<{ state: string; execution_generation: string | number; error: unknown }[]>`
+        SELECT state, execution_generation, error FROM workflows.run WHERE id = ${run.id}::uuid
+      `;
+      const commands = await sql<{ id: string; state: string }[]>`
+        SELECT id, state FROM mail.commands WHERE correlation_id = ${run.id}
+      `;
+      return { run: current, commands };
+    };
+
+    // The move parks on its provider command with a recheck deadline.
+    expect((await runMailWorkflow(run.id)).state).toBe("finished");
+    const parked = await snapshot();
+    expect(parked.run?.state).toBe("waiting");
+    expect(parked.commands).toEqual([{ id: expect.any(String), state: "queued" }]);
+
+    // The provider stays busy past the deadline. The recheck runs the move
+    // again, and the move waits for the command it already issued.
+    await sql`UPDATE workflows.run SET wake_at = now() - interval '1 second' WHERE id = ${run.id}::uuid`;
+    expect(await wakeExpiredWorkflowRuns(100, { appId: "mail" })).toContain(run.id);
+    expect((await runMailWorkflow(run.id)).state).toBe("finished");
+    const rechecked = await snapshot();
+    expect(rechecked.run).toMatchObject({ state: "waiting", error: null });
+    expect(Number(rechecked.run?.execution_generation)).toBeGreaterThan(Number(parked.run?.execution_generation));
+    expect(rechecked.commands).toEqual(parked.commands);
+
+    // The provider confirms the move, and the run finishes with one move spent.
+    const commandId = parked.commands[0]!.id;
+    await sql`UPDATE mail.commands SET state = 'confirmed', finished_at = now() WHERE id = ${commandId}::uuid`;
+    expect(await wakeWorkflowRunsWaitingOn({ appId: "mail", kind: "mail.command", key: commandId })).toContain(run.id);
+    expect((await runMailWorkflow(run.id)).state).toBe("finished");
+    const [finished] = await sql<{ state: string; effects_used: Record<string, number> | string }[]>`
+      SELECT state, effects_used FROM workflows.run WHERE id = ${run.id}::uuid
+    `;
+    expect(finished?.state).toBe("succeeded");
+    const used = typeof finished?.effects_used === "string" ? JSON.parse(finished.effects_used) : finished?.effects_used;
+    expect(used?.maxMoves).toBe(1);
+    expect((await snapshot()).commands).toEqual([{ id: commandId, state: "confirmed" }]);
+
+    const [current] = await sql<{ revision: string | number }[]>`
+      SELECT revision FROM mail.incoming_automations WHERE id = ${automation.data.id}::uuid
+    `;
+    await deleteIncomingAutomation({
+      context: ownerContext,
+      mailboxId,
+      automationId: automation.data.id,
+      input: { expectedRevision: Number(current!.revision) },
+    });
   });
 
   test("orders automations created within the same millisecond by their microseconds", async () => {
