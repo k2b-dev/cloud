@@ -1,6 +1,7 @@
 // Set HELP_TEST_BM25=1 only with pg_textsearch installed and preloaded.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { SQL } from "bun";
+import type { MiddlewareHandler } from "hono";
 import { createDisposableDatabase, databaseSuite } from "../../../../../scripts/fixtures/test-infra";
 import { createHeartbeat } from "../../_internal/heartbeat";
 import { compileHelp } from "../../_internal/help";
@@ -9,7 +10,9 @@ import { prepareAiTools } from "../../ai/tools";
 import { createHelpRoutes } from "../../api/help";
 import { createMcpRoutes } from "../../api/mcp";
 import type { AppRegistryEntry } from "../../contracts/registry";
+import type { RequestActor } from "../../contracts/shared";
 import { defineHelp } from "../../server/help";
+import type { AuthContext } from "../../server/middleware/auth";
 import { createHelpReader } from "./index";
 import { cleanupHelp, hasHelpBm25, migrateHelp, queryHelp, registerHelp } from "./store";
 
@@ -35,6 +38,26 @@ const actor = {
     ipa: null,
   },
 };
+
+const guest = {
+  kind: "user" as const,
+  user: { ...actor.user, id: "22222222-2222-4222-8222-222222222222", profile: "guest" as const, roles: ["guest" as const] },
+};
+const admin = {
+  kind: "user" as const,
+  user: { ...actor.user, id: "33333333-3333-4333-8333-333333333333", roles: ["user" as const, "admin" as const] },
+};
+const signIn =
+  (viewer: RequestActor): MiddlewareHandler<AuthContext> =>
+  async (c, next) => {
+    c.set("actor", viewer);
+    if (viewer.kind === "user") {
+      c.set("user", viewer.user);
+      c.set("accessSubject", { type: "user", userId: viewer.user.id });
+    }
+    c.set("credentialKind", "session");
+    await next();
+  };
 
 const suite = databaseSuite();
 const source = (id: string, title: string, body: string) => `---\nid: ${id}\ntitle: ${title}\n---\n${body}`;
@@ -74,8 +97,9 @@ suite("Postgres Help publication and retrieval", () => {
       },
     ];
   };
-  const reader = (locale = "en") =>
-    createHelpReader(locale, { db, listApps: async () => active, getApp: async (id) => active.find((a) => a.id === id) ?? null });
+  const readerFor = (locale: string, viewer: RequestActor | undefined) =>
+    createHelpReader(locale, viewer, { db, listApps: async () => active, getApp: async (id) => active.find((a) => a.id === id) ?? null });
+  const reader = (locale = "en") => readerFor(locale, actor);
   beforeAll(async () => {
     disposable = await createDisposableDatabase("help");
     db = new SQL(disposable.url, { max: 5 });
@@ -220,7 +244,7 @@ suite("Postgres Help publication and retrieval", () => {
     expect(await reader().read({ appId: "help-integration", documentId: "permissions" })).not.toBeNull();
   });
   test("HTTP search and read use the same SQL locale selection", async () => {
-    const routes = createHelpRoutes({ help: reader, authenticate: async (_c, next) => next() });
+    const routes = createHelpRoutes({ help: readerFor, authenticate: signIn(actor) });
     const headers = { "x-cloud-locale": "de-CH" };
     const found = await (await routes.request("/help/v1/help-integration/search?q=Formular", { headers })).json();
     expect(found.ids).toEqual(["permissions"]);
@@ -229,7 +253,7 @@ suite("Postgres Help publication and retrieval", () => {
     expect(doc.markdown).toContain("Datensätze");
   });
   test("AI Help tools search and read the real SQL store", async () => {
-    const tools = prepareAiTools({ tools: createAiHelpTools(reader, "de-CH"), actor, conversationId: "help-test" }).tools;
+    const tools = prepareAiTools({ tools: createAiHelpTools(reader("de-CH")), actor, conversationId: "help-test" }).tools;
     const search = tools[0],
       read = tools[1];
     if (!search || search.kind !== "server" || !read || read.kind !== "server") throw new Error("Missing Help tools");
@@ -247,7 +271,7 @@ suite("Postgres Help publication and retrieval", () => {
   });
   test("MCP search, resource listing and full reads share the SQL corpus", async () => {
     const routes = createMcpRoutes({
-      help: reader,
+      help: readerFor,
       listApps: async () => active,
       getOperatorLocale: async () => "en",
       getAppUrl: async () => "cloud.example.test",
@@ -281,6 +305,105 @@ suite("Postgres Help publication and retrieval", () => {
     expect(await rpc("resources/read", { uri: "cloud://help/help-integration/long" })).toMatchObject({
       result: { contents: [{ text: published.corpus.documents.find((d) => d.id === "long")!.markdown }] },
     });
+  });
+  test("Help exists only for viewers who may see the app, on every surface", async () => {
+    const serviceAccount: RequestActor = {
+      kind: "service_account",
+      serviceAccount: {
+        id: "44444444-4444-4444-8444-444444444444",
+        name: "Help reader",
+        kind: "standalone",
+        status: "active",
+        delegatedUserId: null,
+        appId: null,
+        resourceType: null,
+        resourceId: null,
+        createdBy: null,
+        createdAt: "2026-10-09T00:00:00.000Z",
+      },
+      delegatedUser: null,
+      scopes: [],
+    };
+    const delegated: RequestActor = { ...serviceAccount, delegatedUser: actor.user };
+    const hidden = async (viewer: RequestActor | undefined) => {
+      const help = readerFor("en", viewer);
+      expect(await help.search({ query: "inventory" })).toEqual([]);
+      expect(await help.search({ query: "inventory", appId: "help-integration" })).toEqual([]);
+      expect(await help.list()).toEqual([]);
+      expect(await help.read({ appId: "help-integration", documentId: "permissions" })).toBeNull();
+      expect(await help.manifest("help-integration")).toBeNull();
+    };
+    const shown = async (viewer: RequestActor) => {
+      const help = readerFor("en", viewer);
+      expect(await help.read({ appId: "help-integration", documentId: "permissions" })).not.toBeNull();
+      expect((await help.manifest("help-integration"))?.documents.length).toBe(4);
+    };
+    try {
+      await hidden(undefined);
+      await hidden(serviceAccount);
+      await shown(delegated);
+      await shown(guest);
+
+      active[0]!.nav = { href: "/app/inventory", section: "primary", requiresAuth: true, requiresRoles: ["user"] };
+      await hidden(guest);
+      await shown(actor);
+
+      // Reached only through the admin area, like an app that declares just `adminHref`.
+      active[0]!.nav = { href: "", section: "hidden", adminHref: "/admin/inventory" };
+      await hidden(actor);
+      await shown(admin);
+
+      // The HTTP API answers a hidden app exactly like an app that does not exist.
+      const routes = (viewer: RequestActor) => createHelpRoutes({ help: readerFor, authenticate: signIn(viewer) });
+      for (const appId of ["help-integration", "absent"]) {
+        expect(await (await routes(actor).request(`/help/v1/${appId}/search?q=inventory`)).json()).toEqual({ locale: "en", ids: [] });
+        expect((await routes(actor).request(`/help/v1/${appId}/documents/permissions`)).status).toBe(404);
+      }
+      expect((await routes(admin).request("/help/v1/help-integration/documents/permissions")).status).toBe(200);
+
+      const tools = (viewer: RequestActor) =>
+        prepareAiTools({ tools: createAiHelpTools(readerFor("en", viewer)), actor: viewer, conversationId: "help-visibility" }).tools;
+      const context = {
+        signal: AbortSignal.timeout(10000),
+        requestApproval: async () => true,
+        requestClientTool: async <T>() => undefined as T,
+      };
+      const [search, read] = tools(actor);
+      if (!search || search.kind !== "server" || !read || read.kind !== "server") throw new Error("Missing Help tools");
+      expect(await search.execute({ query: "inventory" }, context)).toEqual({ documents: [] });
+      expect(await read.execute({ appId: "help-integration", documentId: "permissions" }, context)).toEqual({ document: null });
+      const [adminSearch] = tools(admin);
+      if (!adminSearch || adminSearch.kind !== "server") throw new Error("Missing Help search");
+      expect(await adminSearch.execute({ query: "inventory" }, context)).not.toEqual({ documents: [] });
+
+      const mcp = async (viewer: RequestActor, method: string, params: unknown) => {
+        const response = await createMcpRoutes({
+          help: readerFor,
+          listApps: async () => active,
+          getOperatorLocale: async () => "en",
+          getAppUrl: async () => "cloud.example.test",
+          limit: async (_c, next) => next(),
+          authenticate: signIn(viewer),
+        }).request("/mcp/v1", {
+          method: "POST",
+          headers: {
+            accept: "application/json, text/event-stream",
+            "content-type": "application/json",
+            "mcp-protocol-version": "2025-06-18",
+          },
+          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+        });
+        return response.json();
+      };
+      expect((await mcp(actor, "resources/list", {})).result.resources).toEqual([]);
+      expect(
+        (await mcp(actor, "tools/call", { name: "cloud__help__search", arguments: { query: "inventory" } })).result.structuredContent,
+      ).toEqual({ documents: [] });
+      expect((await mcp(actor, "resources/read", { uri: "cloud://help/help-integration/permissions" })).error).toBeDefined();
+      expect((await mcp(admin, "resources/list", {})).result.resources.length).toBe(4);
+    } finally {
+      resetApp();
+    }
   });
   test("reports the installed optional backend and falls back when an index is absent", async () => {
     const enabled = await hasHelpBm25(db);

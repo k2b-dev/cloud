@@ -59,6 +59,15 @@ test("the gate fails when it got no job results", async () => {
   }
 });
 
+test("a .github file that a ci.yml step runs is a shared input, so changing it runs the jobs that use it", () => {
+  const runs = Object.values(workflow.jobs).flatMap((job) => job.steps.map((step) => step.run ?? ""));
+  const shared = runs.map((run) => /^\s*shared='([^']+)'$/m.exec(run)?.[1]).find(Boolean);
+  if (!shared) throw new Error("the changes job no longer sets shared='<pattern>'");
+  const files = new Set(runs.flatMap((run) => [...run.matchAll(/\.github\/[\w./-]+/g)].map(([path]) => path)));
+  expect(files.size).toBeGreaterThan(0);
+  expect([...files].filter((file) => !new RegExp(shared).test(file))).toEqual([]);
+});
+
 test("ci.yml passes the rule", async () => {
   expect(await rule.run({ workspaceRoot, fix: false, flags: new Set() })).toEqual([]);
 });

@@ -73,7 +73,7 @@ export default function ItemForm(props: ItemFormProps) {
   const dateTimeInitial = (value?: string | null) => (props.dateConfig?.timeZone ? (value ?? "") : (value?.slice(0, 16) ?? ""));
 
   // Form state
-  const [title, setTitle] = createSignal(props.item?.title ?? "");
+  const [title, setTitle] = createSignal(props.item?.title ?? props.defaults?.title ?? "");
   const [description, setDescription] = createSignal(props.item?.description ?? "");
   const [location, setLocation] = createSignal(props.item?.location ?? "");
   const [url, setUrl] = createSignal(props.item?.url ?? "");
@@ -116,8 +116,11 @@ export default function ItemForm(props: ItemFormProps) {
   });
   /** The date chip in effect: a proposed `YYYY-MM-DD`, OTHER_DATE, NO_DATE, or null after the event picker moved. */
   const [dateChoice, setDateChoice] = createSignal<string | null>(null);
-  /** Title and description as the template filled them; anything else counts as the person's own input. */
-  let applied = { title: title(), description: description() };
+  /**
+   * Title and description as the template filled them; anything else counts as the person's own input, including a
+   * title the quick create passed on.
+   */
+  let applied = { title: props.defaults?.title ? "" : title(), description: description() };
   const ownInput = () => title().trim() !== applied.title.trim() || description().trim() !== applied.description.trim();
 
   const applySchedule = (date: string | null) => {
@@ -793,7 +796,8 @@ export default function ItemForm(props: ItemFormProps) {
                   class="spaces-template-dates"
                 />
               </Show>
-              <Show when={!isEvent() && dateChoice() === OTHER_DATE}>
+              {/* A deadline the dialog was opened with shows, so the task is never created with a date it hides. */}
+              <Show when={!isEvent() && (dateChoice() === OTHER_DATE || (Boolean(props.defaults?.deadline) && !selectedTemplate()))}>
                 <DateTimePicker
                   label={t.deadline}
                   value={() => deadline() || null}

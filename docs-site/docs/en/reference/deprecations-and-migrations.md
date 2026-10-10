@@ -5,7 +5,7 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-10-09
+updated: 2026-10-10
 ---
 
 # Deprecations and migrations
@@ -60,6 +60,33 @@ authorized pauses its Spaces authorization on its next run; give them a
 mailbox grant with Write access and have them authorize it again. On upgrade,
 Mail copies each existing assignment once; see
 [Upgrade Mail to several assignees](/en/docs/operations/deployment-requirements#upgrade-mail-to-several-assignees).
+
+## Help requires sign-in
+
+Cloud's Help surfaces are no longer public. Before, anyone could read every
+application's Help without signing in, including Help of administrator-only
+applications. Now `/api/help/v1/...` answers `401` without sign-in, and
+`/help/apps/...` and `/app/<id>/help` lead to sign-in. OAuth clients of the Help
+API need the `read` or `admin` scope, as for MCP. Signed-in users only see
+Help of applications they may see: an application's `nav.requiresRoles`
+limits its Help like the navigation, and an application reached only through
+the admin area shows Help to administrators. The Assistant's `search_help` and
+`read_help` and the MCP Help tools and resources apply the same rule; a service
+account without a user sees no Help. Weather no longer shows its link or its
+Help to guests; its pages already required a full account.
+
+Nothing needs to be configured or migrated. Links to Help from outside Cloud
+now ask for sign-in first. An application that renders Markdown from its own
+Help declaration on a public page, as API Docs does with its getting-started
+article, still shows that text there.
+
+For application authors, `preloadLayoutHelp(c, appId)` returns `null` without a
+signed-in user. If guests may not use your application, declare
+`nav.requiresRoles: ["user"]` so guests see neither its link nor its Help.
+`defineHelpCollection()` is deprecated: its router now requires sign-in but does
+not apply the Help visibility rule, so only the mounting application's routes
+guard it. Declare Help with `defineHelp()` and pass it to `app.start({ help })`
+instead. See [Who can read Help](/en/docs/platform/help#who-can-read-help).
 
 ## Spaces removes the calendar timeline
 

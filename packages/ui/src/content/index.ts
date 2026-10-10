@@ -8,8 +8,10 @@ export type {
   CalendarEventTimeChange,
   CalendarLabels,
   CalendarProps,
+  CalendarQuickCreateControls,
   CalendarRecurrence,
   CalendarResource,
+  CalendarSelectionControls,
   CalendarView,
 } from "./Calendar";
 export { default as Calendar } from "./Calendar";

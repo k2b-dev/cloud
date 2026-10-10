@@ -33,6 +33,7 @@ export const app = defineApp({
     match: "/app/weather",
     section: "more",
     requiresAuth: true,
+    requiresRoles: ["user"],
   },
   widgets: [{ id: "current", path: "/api/weather/widget/current", presentation: { defaultZone: "context" } }],
   openapi: "/api/weather/openapi.json",

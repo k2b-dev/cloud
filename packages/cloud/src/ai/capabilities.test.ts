@@ -262,7 +262,7 @@ describe("AI capability catalog", () => {
       ],
     };
     const prepared = prepareAiTools({
-      tools: createAiHelpTools(fixtureHelpReader(async () => [help])),
+      tools: createAiHelpTools(fixtureHelpReader(async () => [help])("en", actor)),
       actor,
       conversationId: "conversation-1",
     });
@@ -306,10 +306,7 @@ describe("AI capability catalog", () => {
       },
     };
     const [search] = prepareAiTools({
-      tools: createAiHelpTools(
-        fixtureHelpReader(async () => [help]),
-        "de-CH",
-      ),
+      tools: createAiHelpTools(fixtureHelpReader(async () => [help])("de-CH", actor)),
       actor,
       conversationId: "localized",
     }).tools;
@@ -345,7 +342,9 @@ describe("AI capability catalog", () => {
       ],
     };
     const prepared = prepareAiTools({
-      tools: createAiHelpTools(fixtureHelpReader(async () => [{ ...help, documents: [help.documents[1]!, help.documents[0]!] }])),
+      tools: createAiHelpTools(
+        fixtureHelpReader(async () => [{ ...help, documents: [help.documents[1]!, help.documents[0]!] }])("en", actor),
+      ),
       actor,
       conversationId: "conversation-1",
     });
@@ -434,6 +433,26 @@ describe("AI capability catalog", () => {
 
     expect(result).toMatchObject({ documents: [{ appId: "contacts", documentId: "contacts-start" }] });
     expect(attempts).toBe(2);
+  });
+
+  test("reads Help as the turn's actor in the turn's language", async () => {
+    const readers: [string, unknown][] = [];
+    const resolver = createAiToolResolver({
+      conversationId: "conversation-1",
+      actor,
+      staticTools: [],
+      store: {
+        getLoadedTools: async () => [],
+        loadTools: async ({ names }) => ({ loaded: names, alreadyLoaded: [], evicted: [] }),
+      },
+      locale: "de",
+      help: (locale, viewer) => {
+        readers.push([locale, viewer]);
+        return fixtureHelpReader(async () => [])(locale, viewer);
+      },
+    });
+    await resolver();
+    expect(readers).toEqual([["de", actor]]);
   });
 
   test("uses readable provider-safe names without dot or underscore collisions", () => {
