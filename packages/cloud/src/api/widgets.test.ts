@@ -52,6 +52,12 @@ const widget: DashboardWidget = {
   appIcon: "ti ti-cloud",
   widgetId: "current",
   url: "http://app-weather:3000/api/weather/widget/current",
+  title: "Weather",
+  description: "Current weather",
+  sizes: ["small", "medium"],
+  defaultSize: "small",
+  suggest: true,
+  requiresRoles: [],
 };
 
 let signerKey: CryptoKey | undefined;
@@ -146,7 +152,7 @@ describe("Core widget proxy", () => {
       const response = await routes.request("/widgets/v1/weather/current", { headers: { cookie: "theme=dark; session_token=session" } });
       expect(response.status).toBe(204);
       expect(response.headers.get("content-type")).toBe("application/json");
-      expect(captured.target?.href).toBe("http://app-weather:3000/api/_internal/widgets/v1/current");
+      expect(captured.target?.href).toBe("http://app-weather:3000/api/_internal/widgets/v1/current?size=small");
       expect(captured.headers?.get("cookie")).toBeNull();
       expect(captured.headers?.get("authorization")).toBe("Bearer target-token");
     }
@@ -185,7 +191,7 @@ describe("Core widget proxy", () => {
       expect(response.status).toBe(200);
       expect(guardCalls).toBe(1);
       expect(response.headers.get("content-type")).toStartWith("application/json");
-      expect(capturedTarget.url?.href).toBe("http://app-weather:3000/api/_internal/widgets/v1/current");
+      expect(capturedTarget.url?.href).toBe("http://app-weather:3000/api/_internal/widgets/v1/current?size=small");
       expect(signed).toMatchObject({
         targetAppId: "weather",
         callingAppId: "core",
@@ -337,6 +343,12 @@ const widgetsFor = (count: number): DashboardWidget[] =>
     appIcon: "ti ti-box",
     widgetId: "summary",
     url: `http://app-${index}:3000/api/app-${index}/widget/summary`,
+    title: "Summary",
+    description: `App ${index} summary`,
+    sizes: ["small", "medium", "large"],
+    defaultSize: "medium",
+    suggest: false,
+    requiresRoles: [],
   }));
 
 const appOf = (input: string | URL | Request) => new URL(input instanceof Request ? input.url : input).hostname.split(":")[0]!;
@@ -437,6 +449,31 @@ describe("Core widget stream", () => {
     expect(lines[0]).toEqual({ type: "start", widgets: ["app-1/summary", "app-3/summary"] });
     expect(asked.sort()).toEqual(["app-1", "app-3"]);
     expect(lines.filter((line) => line.type === "widget")).toHaveLength(2);
+  });
+
+  test("asks each widget for the size the board shows it in, and its default size for a size it does not offer", async () => {
+    const asked: Record<string, string | null> = {};
+    const routes = createWidgetRoutes({
+      authenticate,
+      listWidgets: async () => [...widgetsFor(3), widget],
+      fetch: async (input) => {
+        const url = new URL(input instanceof Request ? input.url : input);
+        asked[url.hostname] = url.searchParams.get("size");
+        return Response.json({ title: "ok", blocks: [] });
+      },
+    });
+    const lines = await readLines(
+      await routes.request(
+        "/widgets/v1?widget=app-0/summary@large&widget=app-1/summary&widget=app-2/summary@huge&widget=weather/current@large",
+      ),
+    );
+    // `@huge` is not a size, so it is part of the key and asks no widget.
+    expect(lines[0]).toEqual({ type: "start", widgets: ["app-0/summary", "app-1/summary", "weather/current"] });
+    expect(asked).toEqual({ "app-0": "large", "app-1": "medium", "app-weather": "small" });
+
+    const single = await routes.request("/widgets/v1/weather/current?size=medium");
+    expect(single.status).toBe(200);
+    expect(asked["app-weather"]).toBe("medium");
   });
 
   test("runs at most eight providers at once and signs the whole dashboard under one guard", async () => {

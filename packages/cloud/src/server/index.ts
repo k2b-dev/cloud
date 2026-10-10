@@ -94,3 +94,4 @@ export {
   updateAccess,
 } from "./services";
 export { getDateConfig, getTimeZone, TIMEZONE_COOKIE, time } from "./time";
+export { getWidgetRequest } from "./widget-request";

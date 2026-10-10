@@ -91,6 +91,10 @@ operation, and schema hash. The middleware verifies the invocation and resolves
 current authority into the request context; the handler must still authorize
 access to its domain resources. It does not replace operation idempotency.
 
+A dashboard widget handler reads the size the board asks for with
+`getWidgetRequest(c)` from the same barrel; see
+[Dashboard widgets](/en/docs/platform/dashboard-widgets).
+
 See [Server APIs](/en/docs/server) for the request path.
 
 ## Use platform services

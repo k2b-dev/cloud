@@ -23,6 +23,12 @@ const mergedTranslation = (catalog: AppPresentationCatalog, requestedLocale: str
       legalLinks: { ...current.legalLinks, ...next.legalLinks },
       searchLinks: { ...current.searchLinks, ...next.searchLinks },
       searchLinkDescriptions: { ...current.searchLinkDescriptions, ...next.searchLinkDescriptions },
+      widgets: Object.fromEntries(
+        [...new Set([...Object.keys(current.widgets ?? {}), ...Object.keys(next.widgets ?? {})])].map((id) => [
+          id,
+          { ...current.widgets?.[id], ...next.widgets?.[id] },
+        ]),
+      ),
     };
   }, {});
 };
@@ -55,6 +61,11 @@ export const resolveAppPresentation = <T extends AppMeta>(app: T, requestedLocal
       description: translation.searchLinkDescriptions?.[link.href] ?? link.description,
     })),
     legalLinks: app.legalLinks?.map((link) => ({ ...link, label: translation.legalLinks?.[link.href] ?? link.label })),
+    widgets: app.widgets?.map((widget) => ({
+      ...widget,
+      title: translation.widgets?.[widget.id]?.title ?? widget.title,
+      description: translation.widgets?.[widget.id]?.description ?? widget.description,
+    })),
   };
 };
 

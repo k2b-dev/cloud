@@ -10,6 +10,7 @@ const app: AppMeta = {
   routes: ["/app/inventory"],
   adminNav: [{ id: "settings", label: "Settings", links: [{ label: "General", href: "/admin/inventory", icon: "ti-settings" }] }],
   legalLinks: [{ label: "Terms", href: "/legal/inventory" }],
+  widgets: [{ id: "stock", path: "/api/inventory/widget/stock", title: "Stock", description: "Low stock." }],
 };
 
 describe("compileAppPresentation", () => {
@@ -33,5 +34,20 @@ describe("compileAppPresentation", () => {
     expect(() =>
       compileAppPresentation(app, { baseLocale: "en", translations: { de: { legalLinks: { "/unknown": "Unbekannt" } } } }),
     ).toThrow("unknown key");
+  });
+
+  test("translates widget titles and descriptions only for declared widgets, within their bounds", () => {
+    expect(
+      compileAppPresentation(app, {
+        baseLocale: "en",
+        translations: { de: { widgets: { stock: { title: " Bestand ", description: "Knapper Bestand." } } } },
+      }),
+    ).toEqual({ baseLocale: "en", translations: { de: { widgets: { stock: { title: "Bestand", description: "Knapper Bestand." } } } } });
+    expect(() =>
+      compileAppPresentation(app, { baseLocale: "en", translations: { de: { widgets: { missing: { title: "Fehlt" } } } } }),
+    ).toThrow("unknown key");
+    expect(() =>
+      compileAppPresentation(app, { baseLocale: "en", translations: { de: { widgets: { stock: { title: "x".repeat(81) } } } } }),
+    ).toThrow("1 to 80 characters");
   });
 });

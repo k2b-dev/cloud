@@ -1,4 +1,5 @@
-import type { AppMeta, AppPresentationCatalog, AppPresentationTranslation } from "../contracts/app";
+import type { AppMeta, AppPresentationCatalog, AppPresentationTranslation, AppWidgetTranslation } from "../contracts/app";
+import { WIDGET_DESCRIPTION_MAX_LENGTH, WIDGET_TITLE_MAX_LENGTH } from "../contracts/widgets";
 import { canonicalLocale } from "../shared/locale";
 
 export const APP_PRESENTATION_MAX_BYTES = 64 * 1024;
@@ -21,6 +22,24 @@ const labels = (values: Readonly<Record<string, string>> | undefined, allowed: S
   return normalized;
 };
 
+const widgetTexts = (
+  values: Readonly<Record<string, AppWidgetTranslation>>,
+  allowed: Set<string>,
+  label: string,
+): Record<string, AppWidgetTranslation> => {
+  const normalized: Record<string, AppWidgetTranslation> = {};
+  for (const [id, value] of Object.entries(values)) {
+    if (!allowed.has(id)) throw new Error(`${label} contains unknown key ${JSON.stringify(id)}`);
+    normalized[id] = {
+      ...(value.title !== undefined ? { title: text(value.title, `${label}.${id}.title`, WIDGET_TITLE_MAX_LENGTH) } : {}),
+      ...(value.description !== undefined
+        ? { description: text(value.description, `${label}.${id}.description`, WIDGET_DESCRIPTION_MAX_LENGTH) }
+        : {}),
+    };
+  }
+  return normalized;
+};
+
 /** Validate and canonicalize one static app-presentation catalog before it enters the registry. */
 export const compileAppPresentation = (app: AppMeta, catalog: AppPresentationCatalog | undefined): AppPresentationCatalog | undefined => {
   if (!catalog) return undefined;
@@ -36,6 +55,7 @@ export const compileAppPresentation = (app: AppMeta, catalog: AppPresentationCat
   const adminHrefs = new Set((app.adminNav ?? []).flatMap((group) => group.links.map((link) => link.href)));
   const searchHrefs = new Set((app.searchLinks ?? []).map((link) => link.href));
   const legalHrefs = new Set((app.legalLinks ?? []).map((link) => link.href));
+  const widgetIds = new Set((app.widgets ?? []).map((widget) => widget.id));
   const translations: Record<string, AppPresentationTranslation> = {};
 
   for (const [locale, translation] of Object.entries(catalog.translations)) {
@@ -62,6 +82,7 @@ export const compileAppPresentation = (app: AppMeta, catalog: AppPresentationCat
           }
         : {}),
       ...(translation.legalLinks ? { legalLinks: labels(translation.legalLinks, legalHrefs, `${canonical}.legalLinks`) } : {}),
+      ...(translation.widgets ? { widgets: widgetTexts(translation.widgets, widgetIds, `${canonical}.widgets`) } : {}),
     };
   }
 

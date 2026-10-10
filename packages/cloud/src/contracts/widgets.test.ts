@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { WidgetResponseSchema } from "./widgets";
+import { fitWidgetSize, resolveWidgetSizes, WidgetResponseSchema } from "./widgets";
 
 describe("WidgetResponseSchema", () => {
   test("accepts the bounded widget block contract", () => {
@@ -61,5 +61,24 @@ describe("WidgetResponseSchema", () => {
         blocks: Array.from({ length: 25 }, () => ({ kind: "placeholder", title: "Empty" })),
       }).success,
     ).toBeFalse();
+  });
+});
+
+describe("widget sizes", () => {
+  test("a widget without sizes offers only large, and starts at its largest offered size", () => {
+    expect(resolveWidgetSizes({})).toEqual({ sizes: ["large"], defaultSize: "large" });
+    expect(resolveWidgetSizes({ sizes: ["medium", "small"] })).toEqual({ sizes: ["small", "medium"], defaultSize: "medium" });
+    expect(resolveWidgetSizes({ sizes: ["small", "medium"], defaultSize: "small" })).toEqual({
+      sizes: ["small", "medium"],
+      defaultSize: "small",
+    });
+    expect(resolveWidgetSizes({ sizes: ["huge"], defaultSize: "small" })).toEqual({ sizes: ["large"], defaultSize: "large" });
+  });
+
+  test("a request gets the size it asks for only when the widget offers it", () => {
+    const widget = { sizes: ["small", "medium"] as const, defaultSize: "small" as const };
+    expect(fitWidgetSize("medium", widget)).toBe("medium");
+    expect(fitWidgetSize("large", widget)).toBe("small");
+    expect(fitWidgetSize(undefined, widget)).toBe("small");
   });
 });
