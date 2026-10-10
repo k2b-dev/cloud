@@ -7,116 +7,195 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 .dashboard-page {
-  display: flex;
   width: 100%;
-  max-width: 112rem;
+  max-width: 76rem;
   margin: 0 auto;
-  padding: 1rem;
-  flex-direction: column;
-  gap: 2rem;
+  padding: 1.75rem 2rem 4rem;
 }
 
-.dashboard-intro,
-.dashboard-primary-column,
-.dashboard-widget-zone,
-.dashboard-context-column {
+/* ── Greeting and actions ─────────────────────────────────────────────── */
+/* Above the board, so the phone's edit bar, which sits in it, is never covered by a widget. */
+.dashboard-head {
+  position: relative;
+  z-index: 4;
   display: flex;
-  min-width: 0;
-  flex-direction: column;
-}
-
-.dashboard-intro {
-  gap: 1.25rem;
-}
-
-.dashboard-briefing-grid {
-  display: grid;
-  min-width: 0;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 1rem;
-  align-items: start;
-}
-
-.dashboard-primary-column,
-.dashboard-widget-zone,
-.dashboard-context-column {
+  min-height: 4.25rem;
+  align-items: flex-end;
+  justify-content: space-between;
   gap: 1rem;
 }
 
-.dashboard-widget-row {
-  display: grid;
-  min-width: 0;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
-  gap: 1rem;
-}
-
-/* Each slot holds one widget in a fixed @k2b/ui size (standard or compact) from
-   before its data arrives, so a widget that answers late, fails, or retries
-   never moves another one. The widget frame owns its height and scrolling. */
-.dashboard-widget-slot {
-  display: grid;
-  min-width: 0;
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.dashboard-page .widget-surface {
-  border-color: color-mix(in srgb, var(--ui-border) 68%, transparent);
-}
-
-.dashboard-page .widget-header {
-  gap: 0.625rem;
-}
-
-.dashboard-page .widget-icon {
-  width: 1rem;
-  height: 1rem;
-  border-radius: 0;
-  background: transparent !important;
-  color: var(--color-zinc-500) !important;
-}
-
-.dashboard-page .widget-title {
-  color: var(--color-zinc-600);
+.dashboard-head__date {
+  margin: 0 0 0.25rem;
+  color: var(--k2b-text-muted);
   font-size: 0.75rem;
-  letter-spacing: 0;
-  text-transform: none;
+  font-weight: 500;
 }
 
-.dark .dashboard-page .widget-icon {
-  color: var(--color-zinc-400) !important;
+.dashboard-head h1 {
+  margin: 0;
+  overflow: hidden;
+  color: var(--k2b-text);
+  font-size: 1.75rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.dark .dashboard-page .widget-title {
-  color: var(--color-zinc-300);
+.dashboard-head__actions,
+.dashboard-edit-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* ── Shortcuts ────────────────────────────────────────────────────────── */
+/* The row keeps its height with and without shortcuts, and in both modes. */
+.dashboard-shortcuts {
+  display: flex;
+  min-height: 2rem;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 1rem 0 0.5rem;
+}
+
+.dashboard-shortcut {
+  position: relative;
+  display: inline-flex;
+  max-width: 100%;
+}
+
+/* The round remove button of the edit mode sits on the corner of a widget or shortcut, outside its layout. */
+.dashboard-remove {
+  position: absolute;
+  z-index: 3;
+  display: grid;
+  width: 1.75rem;
+  height: 1.75rem;
+  place-items: center;
+  padding: 0;
+  border: 2px solid var(--k2b-surface-canvas);
+  border-radius: 999px;
+  color: #fff;
+  background: var(--k2b-neutral-700);
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+/* At least 44px to hit, without a larger circle. */
+.dashboard-remove::after {
+  position: absolute;
+  inset: -0.5rem;
+  content: "";
+}
+
+.dashboard-remove:hover {
+  background: var(--k2b-danger-600);
+}
+
+.dashboard-remove:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: 1px;
+}
+
+.dashboard-shortcut__remove {
+  top: -0.625rem;
+  left: -0.625rem;
+  width: 1.375rem;
+  height: 1.375rem;
+  font-size: 0.6875rem;
+}
+
+.dashboard-shortcut__remove::after {
+  inset: -0.6875rem;
+}
+
+/* ── Edit hint ────────────────────────────────────────────────────────── */
+.dashboard-edit-hint {
+  display: flex;
+  min-height: 1.5rem;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.5rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  visibility: hidden;
+}
+
+.dashboard-edit-hint[data-shown] {
+  visibility: visible;
+}
+
+.dashboard-edit-hint > i {
+  color: var(--k2b-action);
+}
+
+.dashboard-edit-hint__touch {
+  display: none;
+}
+
+/* ── Board: one list in three fixed sizes, the order is the reading order ─ */
+.dashboard-board {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-auto-rows: 10.5rem;
+  gap: 1rem;
+}
+
+.dashboard-tile {
+  position: relative;
+  min-width: 0;
+  grid-column: span 1;
+  grid-row: span 1;
+  border-radius: var(--k2b-radius-surface);
+  -webkit-touch-callout: none;
+}
+
+.dashboard-tile[data-size="medium"] {
+  grid-column: span 2;
+}
+
+.dashboard-tile[data-size="large"] {
+  grid-column: span 2;
+  grid-row: span 2;
+}
+
+.dashboard-tile:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: 2px;
+}
+
+.dashboard-tile__frame {
+  height: 100%;
+}
+
+/* A long press must not select text or open the link preview on a touch screen. */
+@media (pointer: coarse) {
+  .dashboard-tile {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+}
+
+.dashboard-board__empty {
+  grid-column: 1 / -1;
+  grid-row: span 2;
+}
+
+.dashboard-widget-state {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .dashboard-widget-status,
 .dashboard-widget-pills {
   display: contents;
-}
-
-.dashboard-page .dashboard-widget-placeholder {
-  gap: 0.25rem;
-  padding: 0.75rem;
-}
-
-.dashboard-page .dashboard-widget-placeholder .state-placeholder-icon {
-  width: 1rem;
-  height: 1rem;
-}
-
-.dashboard-page .dashboard-widget-placeholder .state-placeholder-icon > i {
-  font-size: 0.875rem;
-}
-
-.dashboard-page .dashboard-widget-placeholder > p:first-of-type {
-  font-size: 0.6875rem;
-  line-height: 1rem;
-}
-
-.dashboard-page .dashboard-widget-placeholder > p + p {
-  font-size: 0.625rem;
-  line-height: 0.875rem;
 }
 
 .dashboard-widget-status > div {
@@ -138,63 +217,336 @@
   font-weight: 600;
 }
 
-.dashboard-focus-zone .widget-icon {
-  display: none;
+.dashboard-page .dashboard-widget-placeholder {
+  gap: 0.25rem;
+  padding: 0.5rem 0.75rem 0.75rem;
 }
 
-.dashboard-focus-zone .widget-header {
-  padding: 1.25rem 1.25rem 0.75rem;
+/* The slow notice has its line from the start and only fades in. */
+.dashboard-widget-slow {
+  opacity: 0;
+  transition: opacity 0.3s;
 }
 
-.dashboard-focus-zone .widget-title {
-  color: var(--color-zinc-900);
-  font-size: 1.25rem;
-  letter-spacing: -0.025em;
-  text-transform: none;
+.dashboard-widget-slow[data-shown] {
+  opacity: 1;
 }
 
-.dark .dashboard-focus-zone .widget-title {
-  color: var(--color-zinc-100);
+/* ── Edit mode ────────────────────────────────────────────────────────── */
+.dashboard-page[data-editing] .dashboard-tile {
+  cursor: grab;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
-.dashboard-focus-zone .widget-body {
+/* Content is inert while editing; until the finger of a long press lifts, its widget is only out of reach. */
+.dashboard-page[data-editing] .dashboard-tile__frame {
+  pointer-events: none;
+}
+
+/* Same border width, other style: nothing moves when the mode changes. */
+.dashboard-page[data-editing] .dashboard-tile .k2b-widget {
+  border-style: dashed;
+  border-color: var(--k2b-border-strong);
+}
+
+.dashboard-tile[data-dragging] {
+  opacity: 0.25;
+}
+
+.dashboard-tile[data-fresh] {
+  animation: dashboard-fresh 1.6s ease-out;
+}
+
+@keyframes dashboard-fresh {
+  0%,
+  40% {
+    box-shadow: 0 0 0 3px var(--k2b-focus-ring);
+  }
+  100% {
+    box-shadow: 0 0 0 3px transparent;
+  }
+}
+
+.dashboard-tile-ghost {
+  position: fixed;
+  z-index: 40;
+  margin: 0;
+  pointer-events: none;
+  border-radius: var(--k2b-radius-surface);
+  box-shadow: var(--k2b-shadow-float);
+  opacity: 0.96;
+  transform: rotate(1.5deg) scale(1.02);
+}
+
+.dashboard-tile-ghost .k2b-widget {
+  border-style: solid;
+}
+
+.dashboard-tile__remove {
+  top: -0.5rem;
+  left: -0.5rem;
+}
+
+.dashboard-tile__sizes {
+  position: absolute;
+  z-index: 3;
+  bottom: 0.625rem;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.dashboard-board .dashboard-tile__sizes .k2b-segmented-control {
+  width: auto;
+  background: var(--k2b-surface);
+  box-shadow: var(--k2b-shadow-float);
+}
+
+.dashboard-board .dashboard-tile__sizes .k2b-segmented-control__option {
+  flex: none;
+}
+
+.dashboard-add-tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border: 1px dashed var(--k2b-border-strong);
+  border-radius: var(--k2b-radius-surface);
+  color: var(--k2b-text-muted);
+  background: transparent;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.dashboard-add-tile:hover {
+  border-color: var(--k2b-action);
+  color: var(--k2b-action);
+  background: var(--k2b-hover);
+}
+
+.dashboard-add-tile:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: 2px;
+}
+
+/* ── Gallery ──────────────────────────────────────────────────────────── */
+.dashboard-gallery__search {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  padding: 0 0 0.75rem;
+  background: var(--k2b-surface);
+}
+
+.dashboard-gallery__section {
+  margin: 0.75rem 0 1rem;
+}
+
+.dashboard-gallery__section > h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.625rem;
+  color: var(--k2b-text);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.dashboard-gallery__section > h3 > i {
+  color: var(--k2b-text-muted);
+}
+
+.dashboard-gallery__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr));
+  gap: 0.75rem;
+}
+
+.dashboard-gallery-card {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border-radius: var(--k2b-radius-surface);
+  background: var(--k2b-surface-muted);
+}
+
+.dashboard-gallery-card__preview {
+  position: relative;
+  height: 12.5rem;
   overflow: hidden;
 }
 
-@media (min-width: 40rem) {
-  .dashboard-page {
-    padding: 1.5rem;
-  }
+.dashboard-gallery-card__scale {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform-origin: center;
+  pointer-events: none;
 }
 
-@media (min-width: 64rem) {
-  .dashboard-page {
-    padding: 2rem;
-  }
-
-  .dashboard-briefing-grid.has-context {
-    grid-template-columns: minmax(0, 1.55fr) minmax(17rem, 0.85fr);
-  }
+.dashboard-gallery-card__meta {
+  min-height: 2.75rem;
 }
 
-/* Keep editor spacing and responsive rows in the app-owned stylesheet. The
-   dialog section already tints the list, so rows draw no surface of their own. */
-.dashboard-widget-setting {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-areas: "identity actions" "layout layout";
+.dashboard-gallery-card__meta > b {
+  display: block;
+  color: var(--k2b-text);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.dashboard-gallery-card__meta > span {
+  display: block;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+.dashboard-gallery-card__actions {
+  display: flex;
+  min-height: 2rem;
   align-items: center;
+  justify-content: space-between;
   gap: 0.5rem;
-  padding-block: 0.25rem;
 }
 
-.dashboard-widget-setting__identity { grid-area: identity; }
-.dashboard-widget-setting__layout { grid-area: layout; min-width: 0; }
-.dashboard-widget-setting__actions { grid-area: actions; }
+.dashboard-gallery .dashboard-gallery-card__actions .k2b-segmented-control {
+  width: auto;
+  background: var(--k2b-surface);
+}
 
-@media (min-width: 40rem) {
-  .dashboard-widget-setting {
-    grid-template-columns: minmax(0, 1fr) 16rem auto;
-    grid-template-areas: "identity layout actions";
+.dashboard-gallery .dashboard-gallery-card__actions .k2b-segmented-control__option {
+  flex: none;
+}
+
+.dashboard-gallery-card__size {
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+}
+
+.dashboard-gallery__empty {
+  padding: 2rem 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+  text-align: center;
+}
+
+/* ── Phone: two columns in the same order ─────────────────────────────── */
+@media (max-width: 47.999rem) {
+  .dashboard-page {
+    padding: 1.25rem 1rem 3rem;
+  }
+
+  .dashboard-page[data-editing] {
+    padding-bottom: 6rem;
+  }
+
+  .dashboard-head {
+    min-height: 0;
+    align-items: flex-start;
+  }
+
+  .dashboard-head h1 {
+    font-size: 1.375rem;
+  }
+
+  /* Icon only, still named for screen readers. */
+  .dashboard-head__label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .dashboard-head__actions .k2b-button {
+    min-width: 2.25rem;
+    min-height: 2.25rem;
+  }
+
+  /* Shortcuts scroll sideways; the padding keeps their remove buttons inside the scroll area. */
+  .dashboard-shortcuts {
+    flex-wrap: nowrap;
+    margin: 0.875rem -1rem 0.375rem;
+    padding: 0.625rem 1rem 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .dashboard-shortcuts > * {
+    flex: none;
+  }
+
+  .dashboard-shortcuts .k2b-button {
+    min-height: 2.25rem;
+  }
+
+  /* Cancel, default and add sit at the bottom, Done stays at the top. */
+  .dashboard-edit-bar {
+    position: fixed;
+    z-index: 20;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    justify-content: space-between;
+    padding: 0.625rem 1rem max(0.625rem, env(safe-area-inset-bottom));
+    background: var(--k2b-surface);
+    box-shadow: var(--k2b-shadow-float);
+  }
+
+  .dashboard-edit-bar .k2b-button {
+    min-height: 2.75rem;
+  }
+
+  .dashboard-edit-hint {
+    font-size: 0.6875rem;
+  }
+
+  .dashboard-edit-hint__pointer {
+    display: none;
+  }
+
+  .dashboard-edit-hint__touch {
+    display: inline;
+  }
+
+  .dashboard-board {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-rows: 10rem;
+    gap: 0.75rem;
+  }
+
+  .dashboard-remove {
+    width: 2rem;
+    height: 2rem;
+  }
+
+  .dashboard-remove::after {
+    inset: -0.375rem;
+  }
+
+  .dashboard-board .dashboard-tile__sizes .k2b-segmented-control__option {
+    min-height: 2.75rem;
+    padding-inline: 0.75rem;
+  }
+
+  .dashboard-gallery-card__preview {
+    height: 11.5rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-tile[data-fresh] {
+    animation: none;
+    box-shadow: 0 0 0 3px var(--k2b-focus-ring);
+  }
+
+  .dashboard-widget-slow {
+    transition: none;
   }
 }

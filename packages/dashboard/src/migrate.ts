@@ -19,6 +19,10 @@ export const migrate = async (): Promise<void> => {
     ADD COLUMN IF NOT EXISTS widget_layout JSONB NOT NULL DEFAULT '{"widgets":[],"order":[]}'::jsonb
   `.simple();
 
+  // `NULL` follows the default board. The columns from before widgets had sizes stay until the page has converted
+  // each person's settings into a board, once, on their next visit (see `migrateLegacyDashboardLayout`).
+  await sql`ALTER TABLE dashboard.user_settings ADD COLUMN IF NOT EXISTS board JSONB`.simple();
+
   await sql`
     DO $$
     DECLARE

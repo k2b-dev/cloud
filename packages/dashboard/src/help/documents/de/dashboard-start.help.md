@@ -2,27 +2,31 @@
 id: dashboard-start
 title: Erste Schritte
 icon: ti ti-dashboard
-description: Widgets, Verknüpfungen, Farbe der Begrüßung und gespeicherte Dashboard-Einstellungen.
+description: Dein Board mit Widgets, ihre Größen, die Galerie und Verknüpfungen.
 order: 100
 ---
 
-Dashboard ist deine persönliche Startseite und Übersicht über Cloud. Es verbindet zugängliche App-Widgets mit selbst gewählten Verknüpfungen. So erreichst du Hilfe und Anpassungen, bevor du eine einzelne App oder einen Eintrag öffnest.
+Dashboard ist deine persönliche Startseite und Übersicht über Cloud. Es zeigt Widgets der Apps, die du nutzt, auf einem Board, darüber deine Verknüpfungen.
 
 ## Überblick {icon="layout-grid"}
 
 :::reference
-- **Widgets:** Apps können Dashboard-Widgets veröffentlichen. Das Dashboard lädt die für deinen aktuellen Zugriff sichtbaren Widgets.
-- **Verknüpfungen:** Verknüpfungen können auf eine Cloud-App oder einen eigenen relativen, HTTP(S)- oder mailto-Link zeigen.
-- **Persönliche Einstellungen:** Ausgeblendete Widgets, Verknüpfungen und die Farbe der Begrüßung werden in deinem Konto gespeichert.
+- **Board:** Die Widgets stehen in einer Reihenfolge, auf jedem Gerät derselben. Jedes Widget ist klein, mittel oder groß; auf dem Telefon stehen kleine Widgets nebeneinander, die anderen nutzen die volle Breite.
+- **Standard-Board:** Solange du nichts änderst, siehst du die Widgets, die deine Apps für dich vorschlagen. Neue Vorschläge erscheinen dort von selbst.
+- **Verknüpfungen:** Verknüpfungen zeigen auf eine Cloud-App oder einen relativen, HTTP(S)- oder mailto-Link.
+- **In deinem Konto gespeichert:** Dein Board und deine Verknüpfungen gelten nach der Anmeldung auf jedem Gerät.
 :::
 
-## Anpassen {icon="settings"}
+## Board anordnen {icon="settings"}
 
 :::reference
-- **Widgets:** Blende Widgets über Dashboard bearbeiten ein oder aus. Widgets ohne ausreichenden Zugriff werden im Dialog getrennt aufgeführt.
-- **Verknüpfungen:** Füge im Verknüpfungsbereich des Bearbeitungsdialogs App-Verknüpfungen oder eigene Links hinzu.
-- **Namensfarbe:** Wähle den Farbverlauf für deinen Namen in der Begrüßung.
-- **Quelle öffnen:** Öffne über ein Widget oder eine Verknüpfung die besitzende App, wenn die Karte ein Ziel anbietet.
+- **Bearbeiten:** Wähle **Bearbeiten** oder halte ein Widget gedrückt, um das Board anzuordnen. **Fertig** speichert es, **Abbrechen** lässt es, wie es war.
+- **Verschieben:** Ziehe ein Widget an seinen neuen Platz. Auf einem Touchscreen hältst du es dafür kurz fest. Mit der Tastatur fokussierst du ein Widget und verschiebst es mit den Pfeiltasten.
+- **Größe:** Wähle unten im Widget **Klein**, **Mittel** oder **Groß**. Ein Widget bietet nur die Größen an, die seine App unterstützt.
+- **Entfernen:** Wähle × am Widget, oder fokussiere es und drücke Entf.
+- **Hinzufügen:** **Widget** oder **Widget hinzufügen** öffnet die Galerie. Sie zeigt die Widgets, die du nutzen darfst, nach App geordnet und mit einer Vorschau deiner eigenen Daten in der gewählten Größe. **Vorschläge für dich** nennt Vorschläge, die noch nicht auf deinem Board sind.
+- **Standard:** Kehrt zum Standard-Board zurück. Nach **Fertig** erscheinen neue Vorschläge wieder von selbst auf deinem Board.
+- **Verknüpfungen:** Wähle beim Bearbeiten × an einer Verknüpfung, um sie zu entfernen, oder **Verknüpfung**, um eine hinzuzufügen.
 :::
 
 :::info Geltungsbereich der Einstellungen

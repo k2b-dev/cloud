@@ -11,6 +11,7 @@ describe("dashboardHelp", () => {
     expect(startHtml).toContain('<h2 id="overview" class="help-section-title"');
     expect(startHtml).toContain("<span>Overview</span>");
     expect(dashboardHelp.getMarkdown("dashboard-troubleshooting")).toContain("App shortcuts can disappear");
+    expect(dashboardHelp.getMarkdown("dashboard-start")).toContain("Until you change something, you see the widgets your apps suggest");
   });
 
   test("translates every article to German with regional fallback", () => {
