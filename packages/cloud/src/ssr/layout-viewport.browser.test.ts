@@ -97,9 +97,10 @@ const largeViewport = (page: Page, ratio: number) =>
 
 type Viewport = { width: number; height: number };
 const open = async (path: string, viewport: Viewport, content = contents.short) => {
-  const html = (await (await server.request(path)).text())
-    .replace(/<script\b[\s\S]*?<\/script>/g, "")
-    .replace(/<link\b[^>]*rel="stylesheet"[^>]*>/g, "")
+  const html = new HTMLRewriter()
+    .on("script", { element: (script) => void script.remove() })
+    .on('link[rel="stylesheet"]', { element: (link) => void link.remove() })
+    .transform(await (await server.request(path)).text())
     .replace(CONTENT, content)
     .replace("</head>", `<style>${css}</style></head>`);
   const page = await browser.newPage({ viewport });
