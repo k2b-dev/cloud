@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import type { SettingDef } from "../services/settings/defaults";
 import { SETTINGS, validateSettingValue } from "../services/settings/defaults";
 import {
@@ -36,13 +36,26 @@ const sampleDataFor = (variables: readonly string[], emptyOptional = false): Rec
     variables.map((name) => [name, emptyOptional && ["CONTACT_EMAIL", "EXPIRY"].includes(name) ? "" : sampleValueFor(name)]),
   );
 
+// LiquidJS and the renderer read the time budget from performance.now(). Every test runs on
+// this fake clock, so host load cannot trip a budget: time passes only when a test moves
+// `now` itself or sets `step`, which each reading adds. It starts above 0, where LiquidJS
+// skips its budget checks.
+const clock = { now: 1, step: 0 };
+
 const isTemplateSetting = (setting: SettingDef): setting is SettingDef & { kind: "template"; default: string; templateVars?: string[] } =>
   setting.kind === "template";
 
 describe("Liquid template rendering", () => {
+  beforeEach(() => {
+    Object.assign(clock, { now: 1, step: 0 });
+    spyOn(performance, "now").mockImplementation(() => (clock.now += clock.step));
+  });
+  afterEach(() => mock.restore());
+
   for (const body of ["", "{% assign x = c %}"]) {
     test(`bounds nested loops with ${body ? "an assignment" : "an empty body"}`, () => {
-      const start = performance.now();
+      // Each reading takes 1 ms, so only checks inside the loops can pass the 50 ms budget.
+      clock.step = 1;
       expect(() =>
         renderLiquidTemplate(
           `{% for a in (1..1000) %}{% for b in (1..1000) %}{% for c in (1..1000) %}${body}{% endfor %}{% endfor %}{% endfor %}`,
@@ -50,7 +63,6 @@ describe("Liquid template rendering", () => {
           { renderTimeoutMs: 50 },
         ),
       ).toThrow(expect.objectContaining({ reason: "render_timeout" }));
-      expect(performance.now() - start).toBeLessThan(3_000);
     });
   }
 
@@ -83,22 +95,32 @@ describe("Liquid template rendering", () => {
     expect(renderLiquidTemplate(template, { value: "x".repeat(300_001) }, { renderMaxBytes: 400_000 })).toBe("xxxxxxx...");
   });
 
-  test("renders many small writes at the default byte cap within the default time budget", () => {
-    expect(
-      renderLiquidTemplate("{% for row in rows %}{{ chunk }}{% endfor %}", {
-        rows: Array.from({ length: 30_000 }, (_, i) => i),
-        chunk: "0123456789",
-      }),
-    ).toHaveLength(300_000);
+  test("applies the default 1,000 ms time budget", () => {
+    const filters = {
+      wait: (value: unknown, ms: unknown) => {
+        clock.now += Number(ms);
+        return value;
+      },
+    };
+    expect(renderLiquidTemplate("{{ 'ok' | wait: 1000 }}", {}, { filters })).toBe("ok");
+    expect(() => renderLiquidTemplate("{{ 'ok' | wait: 1001 }}", {}, { filters })).toThrow(
+      expect.objectContaining({ reason: "render_timeout" }),
+    );
+  });
+
+  test("renders many writes up to exactly the default byte cap", () => {
+    const rows = Array.from({ length: 300 }, (_, i) => i);
+    const output = renderLiquidTemplate("{% for row in rows %}{{ chunk }}{% endfor %}", { rows, chunk: "0123456789".repeat(100) });
+    expect(output).toHaveLength(300_000);
   });
 
   for (const expression of ["r contains 0", "r | sum"]) {
     test(`checks time inside expression ${expression}`, () => {
-      const start = performance.now();
+      // Each reading takes 1 ms, so only checks inside where_exp can pass the 50 ms budget.
+      clock.step = 1;
       expect(() =>
-        renderLiquidTemplate(`{% assign r = (1..20000) %}{{ r | where_exp: 'i', '${expression}' | size }}`, {}, { renderTimeoutMs: 50 }),
+        renderLiquidTemplate(`{% assign r = (1..1000) %}{{ r | where_exp: 'i', '${expression}' | size }}`, {}, { renderTimeoutMs: 50 }),
       ).toThrow(expect.objectContaining({ reason: "render_timeout" }));
-      expect(performance.now() - start).toBeLessThan(1_000);
     });
   }
 
@@ -165,10 +187,8 @@ describe("Liquid template rendering", () => {
           renderTimeoutMs: 5,
           filters: {
             slow: (value: unknown) => {
-              const start = performance.now();
-              while (performance.now() - start < 10) {
-                /* Simulate a synchronous filter. */
-              }
+              // Simulate a synchronous filter that takes 10 ms.
+              clock.now += 10;
               return value;
             },
           },
