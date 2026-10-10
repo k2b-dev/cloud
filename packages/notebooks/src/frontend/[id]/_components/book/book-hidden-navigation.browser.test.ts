@@ -139,7 +139,7 @@ const layout = (page: Page) =>
       return { left: Math.round(rect.left), top: Math.round(rect.top), width: Math.round(rect.width), height: Math.round(rect.height) };
     };
     const sidebar = document.getElementById("notebook-navigation");
-    // The app's own control; the workspace's compact bar names the same sidebar.
+    // The app's own control; the workspace head's button names the same sidebar.
     const show = document.querySelector('.k2b-icon-button[aria-controls="notebook-navigation"]:not([data-app-workspace-sidebar-toggle])');
     const compact = document.querySelector("[data-app-workspace-sidebar-toggle]");
     return {
@@ -174,7 +174,7 @@ describe("Book view with the notebook navigation hidden", () => {
     }
   });
 
-  test("at 820 px the compact bar opens a visible navigation, and the app's control brings back a hidden one", async () => {
+  test("at 820 px the head's button opens a visible navigation, and the app's control brings back a hidden one", async () => {
     const visiblePage = await load(820, false);
     const hiddenPage = await load(820, true);
     try {
@@ -182,7 +182,8 @@ describe("Book view with the notebook navigation hidden", () => {
       const hidden = await layout(hiddenPage);
       expect(visible.compact).toBe(true);
       expect(visible.show).toBeNull();
-      expect(hidden.compact).toBeNull();
+      // A hidden sidebar leaves the head without a button.
+      expect(hidden.compact).toBe(false);
       expect(hidden.show?.visible).toBe(true);
     } finally {
       await visiblePage.close();

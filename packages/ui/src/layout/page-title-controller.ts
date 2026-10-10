@@ -66,7 +66,8 @@ const place = (menu: HTMLElement, button: HTMLElement) => {
  */
 export const installPageTitleController = (root: Element | Document = document): (() => void) => {
   if (typeof ResizeObserver === "undefined") return () => {};
-  const owner = root instanceof Document ? root.documentElement : root;
+  // A document by its node type (9): `Document` and `Node` are not globals in every DOM implementation.
+  const owner = root.nodeType === 9 ? (root as Document).documentElement : (root as Element);
   owner.setAttribute(PAGE_TITLE_CONTROLLER_ATTRIBUTE, "");
   const observed = new Set<Element>();
   const resize = new ResizeObserver((entries) => {

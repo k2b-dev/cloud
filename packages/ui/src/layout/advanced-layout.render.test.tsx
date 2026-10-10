@@ -740,7 +740,7 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     };
 
     test("keeps workspace drawers in the content column and resize handles out of layout", () => {
-      expect(rule(".k2b-app-workspace")).toContain('grid-template-areas:"mobile" "content" "drawer"');
+      expect(rule(".k2b-app-workspace")).toContain('grid-template-areas:"head" "mobile" "content" "drawer"');
       expect(rule(".k2b-app-workspace__drawer")).toContain("grid-area:drawer");
 
       const resize = rule(".k2b-app-workspace__resize");

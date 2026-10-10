@@ -2016,7 +2016,9 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
   gap: 0.125rem;
 }
 
-.k2b-ui .k2b-page-title__path > li[hidden] {
+/* The "…" item shows only while levels are collapsed into it. */
+.k2b-ui .k2b-page-title__path > li[hidden],
+.k2b-ui .k2b-page-title__more[hidden] {
   display: none;
 }
 
