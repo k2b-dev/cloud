@@ -2,29 +2,29 @@
 id: contacts-hierarchy
 title: Hierarchy
 icon: ti ti-hierarchy
-description: Belongs-to links, members, tree view, and hierarchy rules.
+description: Link a contact under a parent, add members, open the tree, and follow the hierarchy rules.
 order: 110
 ---
 
 Contact hierarchy links records inside the same book when one contact belongs under another.
 
-## How hierarchy works {icon="route"}
+## Link contacts {icon="route"}
 
 :::reference
-- **Belongs to:** The contact editor has an optional parent field. Setting it makes the contact a member of that parent.
-- **Members:** A parent contact shows its direct members in the detail panel. You can add a member from the parent contact when you can edit the book.
-- **Tree:** The Tree action loads the top-most parent and all descendants for the selected contact, independent of the current page of results.
-- **Same book:** Parent and member contacts must live in the same book. Moving a contact removes links that would cross books.
+- **Belongs to:** An optional parent field in the contact editor. When you set it, the contact becomes a member of that parent.
+- **Members:** A parent contact shows its direct members in the detail panel. With **Edit** or **Manage** access to the book, you can add a member there.
+- **Tree:** Loads the top-most parent and all descendants of the selected contact, independent of the current page of results.
+- **Same book:** A parent and its members must be in the same book. Moving a contact removes the links that would cross books.
 :::
 
-## Rules to remember {icon="book-2"}
+## Follow the rules {icon="book-2"}
 
 :::reference
-- **No cycles:** A contact cannot be its own parent, and the server rejects hierarchy cycles.
-- **Link only:** Removing a member only removes the parent link. The contact itself stays in the book.
-- **Read-only limits:** Contacts can be viewed with read access, but member links can only be changed in writable books.
+- **No cycles:** A contact cannot be its own parent. The server also rejects cycles in the hierarchy.
+- **Link only:** Removing a member removes only its parent link. The contact itself stays in the book.
+- **View access:** With **View** access, you can see contacts. To change member links, you need **Edit** or **Manage** access to the book.
 :::
 
 :::success Use hierarchy sparingly
-Use hierarchy for durable membership. Use tags for loose categories that can overlap.
+Use the hierarchy for lasting membership. Use tags for loose categories that can overlap.
 :::
