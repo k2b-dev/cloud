@@ -54,7 +54,7 @@ Choose **View assigned only** or **Edit assigned only** for a person or group un
 - With **Edit assigned only** they can reply, forward, mark as read or done, move, comment, and tag their conversations. They cannot write new messages, assign anyone, create tags or folders, merge or split conversations, or change mailbox settings.
 - When an assignment ends, the conversation disappears for them at once: from lists and open views, search, downloads, and notifications. Replies and actions they queued for it, including scheduled sends, are no longer carried out.
 
-People with full access to the mailbox keep it; an additional assigned-only grant changes nothing for them.
+People with full access to the mailbox keep it; additional access to assigned conversations only changes nothing for them.
 
 ## Use Contacts context {icon="address-book"}
 
