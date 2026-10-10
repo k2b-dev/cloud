@@ -2070,8 +2070,10 @@ export const move = async (params: {
     const [located] = await tx<{ space_id: string }[]>`SELECT space_id FROM spaces.items WHERE id = ${id}::uuid`;
     if (!located) return { ok: false, error: "Item not found", status: 404 };
     await tx`SELECT pg_advisory_xact_lock(hashtext('spaces.item-dependencies'), hashtext(${located.space_id}))`;
-    const [existing] = await tx<{ id: string; space_id: string; title: string; completed_at: Date | null }[]>`
-      SELECT id, space_id, title, completed_at FROM spaces.items WHERE id = ${id} FOR UPDATE
+    const [existing] = await tx<
+      { id: string; space_id: string; title: string; starts_at: Date | null; ends_at: Date | null; completed_at: Date | null }[]
+    >`
+      SELECT id, space_id, title, starts_at, ends_at, completed_at FROM spaces.items WHERE id = ${id} FOR UPDATE
     `;
     if (!existing) return { ok: false, error: "Item not found", status: 404 };
     const [column] = await tx<
@@ -2132,18 +2134,22 @@ export const move = async (params: {
         { spaceId: existing.space_id, itemId: id, itemTitle: existing.title, actor: params.actor ?? systemActor, claim },
         tx,
       );
+    // A move that completes or reopens the item, such as a drag into a done status or an Undo of a completion, is
+    // recorded as that completion change, as the completion endpoint records it; other moves share an hourly entry.
+    const activityKind = existing.starts_at && existing.ends_at ? "event" : "task";
     await activity.record(
       {
         spaceId: existing.space_id,
         itemId: id,
         actor: params.actor ?? systemActor,
-        action: "item.moved",
         metadata: { itemTitle: existing.title },
-        bucketStartedAt: hourBucket(),
+        ...(completes
+          ? { action: `${activityKind}.${completed ? "completed" : "reopened"}` }
+          : { action: "item.moved", bucketStartedAt: hourBucket() }),
       },
       tx,
     );
-    await publishSpaceChange(tx, { type: "item.moved", spaceId: existing.space_id, itemId: id });
+    await publishSpaceChange(tx, { type: completes ? "item.completed" : "item.moved", spaceId: existing.space_id, itemId: id });
     return { ok: true, data: row };
   });
   if (!result.ok) return result;
