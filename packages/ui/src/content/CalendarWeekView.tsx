@@ -600,6 +600,7 @@ export const CalendarWeekView = (props: TimeViewProps) => {
                       .join(", ")}
                     data-today={today() ? "true" : undefined}
                     data-past={key < view.calendarToday() ? "true" : undefined}
+                    data-cheer={view.cheered() === key ? "true" : undefined}
                     style={{ "grid-column": String(indexOf(key) + 2) }}
                     onPointerDown={(event) => {
                       lastPointer = event.pointerType;
@@ -638,6 +639,11 @@ export const CalendarWeekView = (props: TimeViewProps) => {
                       <For each={load()}>
                         {(piece) => <span style={{ width: `${((piece.end - piece.start) / wake()) * 100}%`, background: piece.color }} />}
                       </For>
+                    </span>
+                    <span class="k2b-calendar-week__cheer" aria-hidden="true">
+                      <i class="ti ti-confetti" aria-hidden="true" />
+                      <span class="k2b-calendar-week__cheer-long">{view.messages().calendarAllDone}</span>
+                      <span class="k2b-calendar-week__cheer-short">{view.messages().calendarAllDoneShort}</span>
                     </span>
                   </button>
                 );

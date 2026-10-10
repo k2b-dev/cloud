@@ -493,9 +493,14 @@ describe(`Spaces day and week views in ${browserName}`, () => {
     });
 
     await page.getByRole("checkbox", { name: "Erledigt: Frachtbriefe prüfen" }).click();
+    // It was the last to-do due today, so today's heading celebrates for a moment in the place of its note.
+    const note = page.locator(".k2b-calendar-days__day[data-today] .k2b-calendar-days__note");
+    expect(await note.getAttribute("data-cheer")).toBe("true");
+    expect(await note.locator(".k2b-calendar-days__cheer").textContent()).toBe("Alles für heute erledigt");
     expect(await eventually(() => writes.find((write) => write.path === "/api/spaces/Space1/items/Fracht/completed")?.body)).toMatchObject({
       completed: true,
     });
+    await page.waitForFunction(() => !document.querySelector(".k2b-calendar-days__note[data-cheer]"), undefined, { timeout: 4000 });
     await page.context().close();
   }, 60_000);
 
@@ -762,6 +767,7 @@ describe(`Spaces day and week views in ${browserName}`, () => {
         expect.objectContaining({ completed: true }),
       );
       expect(await page.getByRole("checkbox", { name: "Erledigt: Frachtbriefe prüfen" }).getAttribute("aria-checked")).toBe("true");
+      expect(await page.locator(`.k2b-calendar-week__head[data-calendar-head="${TODAY}"]`).getAttribute("data-cheer")).toBe("true");
       expect(await page.evaluate(() => (window as unknown as { opened: string[] }).opened)).toEqual([]);
     } finally {
       await page.context().close();
@@ -776,6 +782,8 @@ describe(`Spaces day and week views in ${browserName}`, () => {
       await refusing.waitForFunction(
         () => document.querySelector('[aria-label="Erledigt: Frachtbriefe prüfen"]')?.getAttribute("aria-checked") === "false",
       );
+      // A refused check-off does not leave today celebrated.
+      expect(await refusing.locator(".k2b-calendar-days__note[data-cheer]").count()).toBe(0);
     } finally {
       refused.clear();
       await refusing.context().close();

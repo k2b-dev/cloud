@@ -605,11 +605,18 @@ const DaySection = (props: {
             <span class="k2b-calendar-days__short">{shortDay(view, props.dayKey, true)}</span>
           </button>
         </h2>
-        <span class="k2b-calendar-days__note">
-          <Show when={soon()}>
-            <i class="ti ti-clock" aria-hidden="true" />
-            <span>{soon()}</span>
-          </Show>
+        <span class="k2b-calendar-days__note" data-cheer={view.cheered() === props.dayKey ? "true" : undefined}>
+          <span class="k2b-calendar-days__soon">
+            <Show when={soon()}>
+              <i class="ti ti-clock" aria-hidden="true" />
+              <span>{soon()}</span>
+            </Show>
+          </span>
+          {/* The toast already says what was checked off; this only marks the moment. */}
+          <span class="k2b-calendar-days__cheer" aria-hidden="true">
+            <i class="ti ti-confetti" aria-hidden="true" />
+            {view.messages().calendarAllDone}
+          </span>
         </span>
         <Show when={badge()}>
           {(current) => (

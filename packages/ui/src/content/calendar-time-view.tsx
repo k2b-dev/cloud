@@ -195,6 +195,19 @@ export const createTimeView = (props: TimeViewProps) => {
       rest.delete(id);
       return rest;
     });
+  /** Today's day for a moment after its last open to-do was checked off, which its heading celebrates. */
+  const [cheered, setCheered] = createSignal<string | null>(null);
+  let cheerTimer = 0;
+  // The server renders the view too, and has no window.
+  onCleanup(() => clearTimeout(cheerTimer));
+  /** The entries with a checkbox that are due on a day: its deadlines in the hours and the ones due all day. */
+  const dueOn = (key: string) => {
+    const model = dayOf(key);
+    return [
+      ...model.markers.map((marker) => marker.item),
+      ...model.spans.filter((span) => span.marker && span.firstKey === key).map((span) => span.item),
+    ].filter((item) => item.checked !== undefined);
+  };
   const toggleCheck = (event: CalendarEvent) => {
     const current = checkedOf(event);
     if (current === undefined || !props.owner.onEventCheck) return;
@@ -203,10 +216,18 @@ export const createTimeView = (props: TimeViewProps) => {
     if (next) {
       setJustChecked((value) => new Set([...value, event.id]));
       window.setTimeout(() => forgetJustChecked(event.id), 1100);
+      const today = nowKey();
+      const due = dueOn(today);
+      if (due.includes(event) && due.every((item) => checkedOf(item))) {
+        setCheered(today);
+        window.clearTimeout(cheerTimer);
+        cheerTimer = window.setTimeout(() => setCheered(null), 2200);
+      }
     }
     // A change the host refuses puts the box back as it was.
     void Promise.resolve(props.owner.onEventCheck(event, next)).catch(() => {
       forgetJustChecked(event.id);
+      if (next) setCheered(null);
       setChecks((value) => {
         if (value[event.id] !== next) return value;
         const rest = { ...value };
@@ -689,6 +710,7 @@ export const createTimeView = (props: TimeViewProps) => {
     toggleCheck,
     checkOf,
     justChecked,
+    cheered,
     selection,
     setSelection,
     touchDraft,

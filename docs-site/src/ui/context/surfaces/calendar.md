@@ -247,7 +247,9 @@ and the visible hours.
   drawn by the calendar; `onEventCheck(event, checked)` makes it a control,
   and Space on the entry checks it as well. The check draws itself and the
   title strikes through until the host's events agree; when `onEventCheck`
-  returns a promise that rejects, the box goes back.
+  returns a promise that rejects, the box goes back. When the reader checks
+  off the last open entry due today, today's heading says "All done for
+  today" for about two seconds, in the place of its note, so nothing moves.
 - **Free time** between the timed entries of the waking hours is labelled
   from an hour on, such as "1 hr 15 min free", and stands out from three
   hours on. Shorter free time shows only while something is dragged into it. Activating it opens `renderQuickCreate` with that time, or calls
