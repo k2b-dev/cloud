@@ -71,6 +71,12 @@ export const artifactMessages = i18n.define({
         "This request sends data to an external service and may change data or incur charges. Secret references are resolved only on the server. Returned data is available to this code and may be shared by the app.",
       httpTruncated: "The body preview is incomplete. Review the source and inputs before approving.",
       httpApprove: "Send request",
+      httpMoreOptions: "More options for this request",
+      allowWebsiteForApp: "Allow this website for this app",
+      websiteAllowedForApp: ({ host }: { host: string }) => `${host} · allowed for this app`,
+      websiteRevoke: "Revoke",
+      websiteRevoked: ({ host }: { host: string }) => `${host} asks again before the next request`,
+      websiteRevokeFailed: "The approval could not be revoked. Try again in the app's secrets and approvals.",
 
       DB_SQL_UNSUPPORTED:
         "Only read-only SELECT queries using supported functions are available. Writes and internal tables are not allowed.",
@@ -273,6 +279,12 @@ export const artifactMessages = i18n.define({
         "Dieser Request sendet Daten an einen externen Dienst und kann Daten ändern oder Kosten verursachen. Secret-Referenzen werden nur auf dem Server aufgelöst. Antwortdaten stehen dem Code zur Verfügung und können von der App geteilt werden.",
       httpTruncated: "Die Vorschau des Inhalts ist unvollständig. Prüfe Quellcode und Eingaben vor der Freigabe.",
       httpApprove: "Request senden",
+      httpMoreOptions: "Weitere Optionen für diesen Request",
+      allowWebsiteForApp: "Diese Website für diese App erlauben",
+      websiteAllowedForApp: ({ host }: { host: string }) => `${host} · für diese App erlaubt`,
+      websiteRevoke: "Entziehen",
+      websiteRevoked: ({ host }: { host: string }) => `${host} fragt vor dem nächsten Request wieder`,
+      websiteRevokeFailed: "Die Freigabe konnte nicht entzogen werden. Versuche es unter Secrets & Freigaben der App erneut.",
 
       DB_SQL_UNSUPPORTED:
         "Nur lesende SELECT-Abfragen mit unterstützten Funktionen sind verfügbar. Schreibzugriffe und interne Tabellen sind nicht erlaubt.",

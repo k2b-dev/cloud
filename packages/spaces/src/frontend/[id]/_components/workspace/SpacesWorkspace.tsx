@@ -100,6 +100,7 @@ export default function SpacesWorkspace(props: { state: OkWorkspaceState; dateCo
                 paginationBaseUrl={route.paginationBaseUrl}
                 dateConfig={props.dateConfig}
                 canWrite={state.canWrite}
+                currentUserId={state.currentUserId}
               />
             )}
             {state.currentView === "kanban" && (
@@ -151,7 +152,6 @@ export default function SpacesWorkspace(props: { state: OkWorkspaceState; dateCo
             initialDetail={initialDetail}
             dateConfig={props.dateConfig}
             canWrite={state.canWrite}
-            isAdmin={state.isAdmin}
             mailIntegrationAvailable={props.mailIntegrationAvailable}
           />
         </AppWorkspace.Content>

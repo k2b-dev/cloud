@@ -66,8 +66,10 @@ test("declares remembered approval for bounded Space changes", () => {
     .map(([localId]) => localId)
     .sort();
   expect(rememberable).toEqual([
+    "calendar-invitation.import",
     "calendar-invitation.response.commit",
     "comment.create",
+    "event.create",
     "event.invitation.commit",
     "event.update",
     "item.reference.add",
@@ -77,6 +79,10 @@ test("declares remembered approval for bounded Space changes", () => {
     "task.blocker.remove",
     "task.checklist.create",
     "task.checklist.update",
+    "task.claim",
+    "task.create",
+    "task.progress",
+    "task.release",
     "task.set-completed",
     "task.update",
     "template.create",
@@ -809,6 +815,7 @@ describe("spaces capabilities", () => {
       "comment.create",
       "comment.delete",
       "comment.update",
+      "event.create",
       "event.invitation.commit",
       "event.update",
       "item.delete",
@@ -820,6 +827,10 @@ describe("spaces capabilities", () => {
       "task.checklist.create",
       "task.checklist.delete",
       "task.checklist.update",
+      "task.claim",
+      "task.create",
+      "task.progress",
+      "task.release",
       "task.set-completed",
       "task.update",
       "template.create",
@@ -1179,6 +1190,67 @@ describe("spaces capabilities", () => {
     });
   });
 
+  test("a new task or event can be remembered for its Space only when the card shows everything it does", async () => {
+    spyOn(spacesService.space, "get").mockResolvedValue(space);
+    spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
+    const create = spacesCapabilities.actions["task.create"].review!;
+    const plain = await create({ spaceId, columnId: "Col001", title: "Prepare launch", deadline: "2026-10-20T09:00:00.000Z" }, userContext);
+    expect(plain).toMatchObject({
+      ok: true,
+      data: {
+        message: `Create task Prepare launch in ${space.name}.`,
+        details: [
+          { label: "Space", value: space.name },
+          { label: "Title", value: "Prepare launch" },
+          { label: "Deadline", value: "2026-10-20T09:00:00.000Z", format: "date-time" },
+        ],
+        approvalScope: `space:${spaceId}`,
+      },
+    });
+    // Assignees are notified and a template can add more, so those ask every time.
+    for (const input of [
+      { spaceId, columnId: "Col001", title: "Prepare launch", assigneeIds: [userId] },
+      { spaceId, columnId: "Col001", templateId: "Tpl001" },
+    ]) {
+      const reviewed = await create(input, userContext);
+      expect(reviewed.ok && "approvalScope" in reviewed.data).toBe(false);
+    }
+    const event = await spacesCapabilities.actions["event.create"].review!(
+      { spaceId, columnId: "Col001", title: "Review", startsAt: "2026-10-20T09:00:00.000Z", endsAt: "2026-10-20T10:00:00.000Z" },
+      { ...userContext, locale: "de" },
+    );
+    expect(event).toMatchObject({
+      ok: true,
+      data: { message: `Termin Review in ${space.name} anlegen.`, approvalScope: `space:${spaceId}` },
+    });
+    spyOn(spacesService.space.permission, "get").mockResolvedValue("read");
+    expect((await create({ spaceId, columnId: "Col001", title: "Prepare launch" }, userContext)).ok).toBe(false);
+  });
+
+  test("claiming, releasing, and noting task work can be remembered for the Space, a forced release cannot", async () => {
+    spyOn(spacesService.item, "get").mockResolvedValue(task);
+    spyOn(spacesService.space, "get").mockResolvedValue(space);
+    spyOn(spacesService.space.permission, "get").mockResolvedValue("admin");
+    const claimId = "99999999-9999-4999-8999-999999999999";
+    expect(await spacesCapabilities.actions["task.claim"].review!({ itemId, claimId }, userContext)).toMatchObject({
+      ok: true,
+      data: { message: `Claim task ${task.title} for this work.`, approvalScope: `space:${spaceId}` },
+    });
+    expect(
+      await spacesCapabilities.actions["task.progress"].review!({ itemId, claimId, content: "Halfway there." }, userContext),
+    ).toMatchObject({
+      ok: true,
+      data: {
+        details: [
+          { label: "Task", value: task.title },
+          { label: "Progress note", value: "Halfway there.", display: "block" },
+        ],
+      },
+    });
+    const forced = await spacesCapabilities.actions["task.release"].review!({ itemId, claimId, force: true }, userContext);
+    expect(forced.ok && "approvalScope" in forced.data).toBe(false);
+  });
+
   test("scopes tag and comment approvals to their understandable work context", async () => {
     spyOn(spacesService.item, "get").mockResolvedValue(task);
     spyOn(spacesService.space, "get").mockResolvedValue(space);
@@ -1257,6 +1329,13 @@ describe("spaces capabilities", () => {
       await spacesCapabilities.actions["task.update"].review!({ itemId, title: "Updated task" }, userContext),
       await spacesCapabilities.actions["task.set-completed"].review!({ itemId, completed: true }, userContext),
       await spacesCapabilities.actions["comment.create"].review!({ itemId, content: "Ready." }, userContext),
+      await spacesCapabilities.actions["task.create"].review!({ spaceId, columnId: "Col001", title: "New task" }, userContext),
+      await spacesCapabilities.actions["task.claim"].review!({ itemId, claimId: "99999999-9999-4999-8999-999999999999" }, userContext),
+      await spacesCapabilities.actions["task.release"].review!({ itemId, claimId: "99999999-9999-4999-8999-999999999999" }, userContext),
+      await spacesCapabilities.actions["task.progress"].review!(
+        { itemId, claimId: "99999999-9999-4999-8999-999999999999", content: "Halfway." },
+        userContext,
+      ),
     ];
 
     getItem.mockResolvedValue(event);
@@ -1268,6 +1347,39 @@ describe("spaces capabilities", () => {
       ),
       await spacesCapabilities.actions["calendar-invitation.response.commit"].review!(
         { mailboxId: "mail01", messageId: "msg001", participationStatus: "accepted", draftId: "draft1" },
+        userContext,
+      ),
+      await spacesCapabilities.actions["event.create"].review!(
+        { spaceId, columnId: "Col001", title: "Review", startsAt: event.startsAt!, endsAt: event.endsAt! },
+        userContext,
+      ),
+    );
+    spyOn(spacesService.calendarInvitations, "previewCalendarInvitation").mockResolvedValue({
+      ok: true,
+      data: {
+        invitation: {
+          method: "request",
+          uid: "planning@example.test",
+          sequence: 0,
+          status: "confirmed",
+          title: event.title,
+          description: null,
+          location: null,
+          url: null,
+          startsAt: event.startsAt!,
+          endsAt: event.endsAt!,
+          allDay: false,
+          recurrenceRule: null,
+          organizer: null,
+          attendees: [],
+        },
+        response: null,
+        existing: null,
+      },
+    });
+    results.push(
+      await spacesCapabilities.actions["calendar-invitation.import"].review!(
+        { mailboxId: "mail01", messageId: "msg001", calendar: "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n", spaceId },
         userContext,
       ),
     );
@@ -2002,11 +2114,15 @@ test("work capabilities enforce grants and resource binding before touching work
   permission.mockResolvedValue("read");
   expect((await spacesCapabilities.actions["task.progress"].run(input, userContext)).ok).toBe(false);
   expect(change).not.toHaveBeenCalled();
-  permission.mockResolvedValue("write");
   expect(
     (await spacesCapabilities.actions["task.release"].run({ itemId, claimId: crypto.randomUUID(), force: true }, userContext)).ok,
   ).toBe(false);
   expect(change).not.toHaveBeenCalled();
+  // Claims coordinate work and do not lock it: any writer may take one over.
+  permission.mockResolvedValue("write");
+  const observed = crypto.randomUUID();
+  expect((await spacesCapabilities.actions["task.release"].run({ itemId, claimId: observed, force: true }, userContext)).ok).toBe(true);
+  expect(change).toHaveBeenCalledWith(expect.objectContaining({ operation: "release", claimId: observed, force: true }));
 });
 
 test("agent service accounts claim, progress and comment through their direct grant within their scopes", async () => {

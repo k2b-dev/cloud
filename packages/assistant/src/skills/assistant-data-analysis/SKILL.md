@@ -1,15 +1,20 @@
 ---
 name: assistant-data-analysis
-description: Analyze source data, explain metrics and comparisons, and build evidence-backed reports or HTML dashboards in Assistant Code Mode. Use for multi-step analysis, data exploration, and dashboards; a simple chart only needs the Code Mode charts reference.
+description: Analyze source data, explain metrics and comparisons, and build evidence-backed reports or HTML dashboards in Assistant Code Mode. Use for multi-step analysis, data exploration, and dashboards; a simple chart only needs the chart tool.
 ---
 
 # Analyze data and deliver an inspectable result
 
-Start with the question the reader needs to answer. Choose a direct answer,
-an app shown in this chat, an exported file, or a reusable Studio app accordingly.
-For a one-time visual analysis, prefer a chat app; filters and buttons do not by
-themselves require a Studio App. Load `assistant-code-mode` for execution and read
-its `/skills/assistant-code-mode/references/apps.md` and `/skills/assistant-code-mode/references/charts.md` for interfaces and charts.
+Start with the question the reader needs to answer. Choose a direct answer, a
+chart, an app shown in this chat, an exported file, or a reusable Studio app
+accordingly. Just data → `chart` tool; interaction → chat app (`code_present`);
+persistence or reuse → saved Studio App. A chart of reviewed numbers goes to the
+`chart` tool, which draws it in the chat with a data table and needs no app.
+Filters and buttons for a one-time analysis belong in a chat app; only data
+that must be kept or an app that is used again needs a saved Studio App. Load
+`assistant-code-mode` for execution and read its
+`/skills/assistant-code-mode/references/apps.md` and
+`/skills/assistant-code-mode/references/charts.md` for interfaces and charts.
 Loading this skill does not install a library or grant access.
 
 ## Keep a working plan

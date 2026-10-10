@@ -4,6 +4,7 @@ import { type SQL, sql } from "bun";
 import { type CapabilityActionReview, CapabilityActionReviewSchema } from "../contracts/capabilities";
 import { logger } from "../services/logging";
 import { toPgTextArray } from "../services/postgres";
+import { AI_WEBSITE_APPROVAL_TOOL } from "./approvals";
 import { aiTurnErrorText } from "./chat/turn-error";
 import { AI_MEMORY_LEARNING_DEFAULT_ENABLED } from "./prefs";
 import type { AiTurnBlock } from "./protocol";
@@ -36,6 +37,7 @@ import type {
   AiTurnStatus,
   AiTurnSteer,
   AiTurnSweepResult,
+  AiWebsiteReceipt,
 } from "./types";
 
 /** A queued turn this old without a claim is considered lost and re-enqueued by the sweep. */
@@ -202,6 +204,8 @@ type PendingActionRow = {
   review: unknown | null;
   approval_scope: string;
   allow_always: boolean;
+  allow_chat: boolean | null;
+  remember_tool_name: string | null;
   frontend_mode: AiFrontendToolMode | null;
   resolved_event: unknown | null;
 };
@@ -678,6 +682,8 @@ const pendingActionToPublicEvent = (row: PendingActionRow): AiPendingTurnAction 
         message: row.message ?? undefined,
         review: parseCapabilityActionReview(row.review),
         allowAlways: row.allow_always,
+        allowChat: row.allow_always || row.allow_chat === true,
+        ...(row.remember_tool_name === AI_WEBSITE_APPROVAL_TOOL ? { website: row.approval_scope } : {}),
       };
 
 const rowToPendingActionRecord = (row: PendingActionRow): AiPendingTurnActionRecord => ({
@@ -692,6 +698,8 @@ const rowToPendingActionRecord = (row: PendingActionRow): AiPendingTurnActionRec
   review: parseCapabilityActionReview(row.review),
   approvalScope: row.approval_scope,
   allowAlways: row.allow_always,
+  allowChat: row.allow_always || row.allow_chat === true,
+  ...(row.remember_tool_name ? { rememberToolName: row.remember_tool_name } : {}),
   frontendMode: row.frontend_mode ?? undefined,
   resolvedEvent: row.resolved_event ? parseJsonValue<InboundEvent>(row.resolved_event) : null,
 });
@@ -876,6 +884,35 @@ const recordTurnEnd = async (
       WHERE target.id = outcomes.id
     `;
   }
+};
+
+/**
+ * Records requests a website approval let through on the assistant message that holds the tool call, as each one
+ * goes out, so the chat keeps every receipt whether the call succeeds, fails, or its turn stops. Website approvals
+ * apply only to interactive chats, whose messages live in `ai.messages`. A receipt with a known index replaces itself.
+ */
+export const recordAiWebsiteReceipts = async (input: {
+  conversationId: string;
+  turnId: string;
+  callId: string;
+  receipts: AiWebsiteReceipt[];
+}): Promise<void> => {
+  if (!input.receipts.length) return;
+  const receipts = Object.fromEntries(input.receipts.map(({ index, method, url }) => [String(index), { method, url }]));
+  await sql`
+    UPDATE ai.messages
+    SET meta = COALESCE(meta, '{}'::jsonb) || jsonb_build_object(
+      'websiteReceipts',
+      COALESCE(meta->'websiteReceipts', '{}'::jsonb) || jsonb_build_object(
+        ${input.callId}::text,
+        COALESCE(meta->'websiteReceipts'->${input.callId}::text, '{}'::jsonb) || (${JSON.stringify(receipts)}::text)::jsonb
+      )
+    )
+    WHERE conversation_id = ${input.conversationId}::uuid
+      AND loop_id = ${input.turnId}::text
+      AND role = 'assistant'
+      AND message->'content' @> jsonb_build_array(jsonb_build_object('type', 'tool_call', 'id', ${input.callId}::text))
+  `;
 };
 
 /** Insert a message inside an open conversation-lock transaction and bump the conversation. */
@@ -3271,6 +3308,8 @@ export const aiConversations: AiConversationService = {
         review,
         approval_scope,
         allow_always,
+        allow_chat,
+        remember_tool_name,
         frontend_mode,
         status,
         resolved_event,
@@ -3287,6 +3326,8 @@ export const aiConversations: AiConversationService = {
         ${input.review ? JSON.stringify(input.review) : null}::text::jsonb,
         ${input.approvalScope},
         ${input.allowAlways},
+        ${input.allowChat ?? input.allowAlways},
+        ${input.rememberToolName ?? null},
         ${input.frontendMode ?? null},
         ${input.resolvedEvent ? "resolved" : "pending"},
         ${input.resolvedEvent ? JSON.stringify(input.resolvedEvent) : null}::text::jsonb,
@@ -3301,6 +3342,8 @@ export const aiConversations: AiConversationService = {
         review = EXCLUDED.review,
         approval_scope = EXCLUDED.approval_scope,
         allow_always = EXCLUDED.allow_always,
+        allow_chat = EXCLUDED.allow_chat,
+        remember_tool_name = EXCLUDED.remember_tool_name,
         frontend_mode = EXCLUDED.frontend_mode
     `;
   },

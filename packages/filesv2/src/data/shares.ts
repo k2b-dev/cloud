@@ -65,6 +65,12 @@ export const shares = {
   async revoke(id: string, userId: string): Promise<void> {
     await sql`UPDATE filesv2.shares SET revoked_at=now(), revoked_by=${userId}::uuid WHERE id=${id}::uuid AND revoked_at IS NULL`;
   },
+  /** The items of every active public download share in one storage binding. */
+  async activeDownloadItems(baseId: string): Promise<string[][]> {
+    const rows = await sql<Pick<ShareRow, "items">[]>`SELECT items FROM filesv2.shares
+      WHERE base_id=${baseId}::uuid AND kind='download' AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now())`;
+    return rows.map((row) => (typeof row.items === "string" ? (JSON.parse(row.items) as string[]) : row.items));
+  },
   async touch(id: string): Promise<void> {
     await sql`UPDATE filesv2.shares SET access_count=access_count+1, last_accessed_at=now() WHERE id=${id}::uuid`;
   },

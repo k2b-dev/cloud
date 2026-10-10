@@ -104,6 +104,7 @@ describe("Spaces feedback channels", () => {
           isSelected: false,
           baseUrl: "/app/spaces/Space1",
           canWrite: true,
+          currentUserId: "33333333-3333-4333-8333-333333333333",
           isListed: () => true,
           retryToast: createRetryToasts(),
         }),
@@ -156,6 +157,7 @@ describe("Spaces feedback channels", () => {
           isSelected: false,
           baseUrl: "/app/spaces/Space1",
           canWrite: true,
+          currentUserId: "33333333-3333-4333-8333-333333333333",
           // The list shows only active items, so the completed row is gone after the refresh.
           isListed: () => false,
           retryToast: createRetryToasts(),

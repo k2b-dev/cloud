@@ -868,3 +868,183 @@ for (const width of [390, 320])
       await context.close();
     }
   }, 30_000);
+
+for (const view of [
+  { name: "desktop", width: 1280, height: 800, touch: false },
+  { name: "phone", width: 390, height: 844, touch: true },
+  { name: "small phone", width: 320, height: 640, touch: true },
+] as const)
+  for (const theme of ["light", "dark"] as const)
+    test(`a chart takes its full size when its call is known and keeps it while the turn ends (${view.name}, ${theme})`, async () => {
+      const context = await browser.newContext({
+        viewport: { width: view.width, height: view.height },
+        isMobile: view.touch,
+        hasTouch: view.touch,
+        reducedMotion: "reduce",
+      });
+      try {
+        const page = await context.newPage();
+        await page.clock.setFixedTime(new Date("2026-10-07T10:00:00Z"));
+        const german = theme === "dark";
+        await page.goto(`http://127.0.0.1:${server.port}/?lang=${german ? "de" : "en"}&theme=${theme}`);
+        await emit(page, { ...base, seq: 1, type: "turn_started", modelProfileId: "m", providerModel: "m", blocks: [] });
+        await emit(page, {
+          ...base,
+          seq: 2,
+          type: "block_delta",
+          blockId: "text-1",
+          blockKind: "text",
+          delta: "I am charting the orders.",
+        });
+        const chart = {
+          id: "tool-chart",
+          kind: "tool" as const,
+          callId: "chart",
+          name: "chart",
+          status: "running" as const,
+        };
+        // The model still writes the arguments: no frame yet, so no empty frame can change its size later.
+        await emit(page, { ...base, seq: 3, type: "block_set", block: chart });
+        expect(await page.locator(".k2b-chart-explorer").count()).toBe(0);
+
+        const args = {
+          kind: "bar",
+          title: "Orders per region",
+          subtitle: "Q3 2026",
+          data: [
+            { label: "North", value: 1_250_000 },
+            { label: "South", value: 980_000.5 },
+            { label: "East", value: 410_250 },
+            { label: "West", value: 720_000 },
+          ],
+        };
+        await emit(page, { ...base, seq: 4, type: "block_set", block: { ...chart, args } });
+        const section = page.locator(".k2b-chart-explorer");
+        const viewport = page.locator(".k2b-chart-explorer__viewport");
+        const shown = { section: await section.boundingBox(), viewport: await viewport.boundingBox() };
+        expect(shown.viewport!.height).toBe(288);
+
+        await emit(page, {
+          ...base,
+          seq: 5,
+          type: "block_set",
+          block: { ...chart, args, status: "completed", result: { displayed: true } },
+        });
+        await emit(page, {
+          ...base,
+          seq: 6,
+          type: "block_delta",
+          blockId: "text-2",
+          blockKind: "text",
+          delta: "North leads with 1.25 million orders.",
+        });
+        expect({ section: await section.boundingBox(), viewport: await viewport.boundingBox() }).toEqual(shown);
+        expect((await layout(page)).overflowX).toBeLessThanOrEqual(0);
+
+        // The section is named by its title, and the chart can be explored by keyboard.
+        expect(await page.getByRole("region", { name: "Orders per region" }).count()).toBe(1);
+        expect(await page.locator(".k2b-chart[tabindex='0']").count()).toBe(1);
+        expect(await page.getByRole("button", { name: german ? "Daten kopieren" : "Copy data" }).count()).toBe(1);
+        // Tick labels stay inside the chart, also for long values on a phone.
+        const ticks = await page.evaluate(() => {
+          const frame = document.querySelector(".k2b-chart__svg")!.getBoundingClientRect();
+          return Array.from(document.querySelectorAll(".k2b-chart__svg .stdlib-chart-tick-label")).map((label) => {
+            const box = label.getBoundingClientRect();
+            return { left: box.left - frame.left, right: frame.right - box.right };
+          });
+        });
+        expect(ticks.length).toBeGreaterThan(0);
+        for (const tick of ticks) {
+          expect(tick.left).toBeGreaterThanOrEqual(-1);
+          expect(tick.right).toBeGreaterThanOrEqual(-1);
+        }
+
+        // The data table replaces the chart in the same height.
+        await page.getByRole("button", { name: german ? "Diagrammansicht" : "Chart view" }).click();
+        await page.getByRole("menuitemradio", { name: german ? "Tabelle" : "Table" }).click();
+        await frames(page);
+        expect(await page.locator(".k2b-chart-explorer__viewport table").count()).toBe(1);
+        const table = await page.locator(".k2b-chart-explorer__viewport").innerText();
+        for (const label of ["North", "South", "East", "West", german ? "1.250.000" : "1,250,000"]) expect(table).toContain(label);
+        expect({ section: await section.boundingBox(), viewport: await viewport.boundingBox() }).toEqual(shown);
+      } finally {
+        await context.close();
+      }
+    }, 30_000);
+
+for (const view of [
+  { name: "desktop", width: 1280, height: 800, touch: false },
+  { name: "phone", width: 390, height: 844, touch: true },
+] as const)
+  test(`a code run's website request offers the chat, and its receipts show each full URL with one-click revoke (${view.name})`, async () => {
+    const context = await browser.newContext({
+      viewport: { width: view.width, height: view.height },
+      isMobile: view.touch,
+      hasTouch: view.touch,
+      reducedMotion: "reduce",
+    });
+    try {
+      const page = await context.newPage();
+      await page.clock.setFixedTime(new Date("2026-10-07T10:00:00Z"));
+      await page.goto(`http://127.0.0.1:${server.port}/?lang=en&theme=light`);
+      const url = "https://query1.finance.yahoo.com/v8/finance/chart/NVDA?range=1d&interval=5m&includePrePost=false";
+      const run = { id: "tool-run", kind: "tool" as const, callId: "run-approval-0", name: "code_run", args: { code: "…" } };
+      await emit(page, { ...base, seq: 1, type: "turn_started", modelProfileId: "m", providerModel: "m", blocks: [] });
+      await emit(page, {
+        ...base,
+        seq: 2,
+        type: "block_set",
+        block: {
+          ...run,
+          status: "awaiting_approval",
+          approval: {
+            message: `External HTTP request: GET ${url}`,
+            allowAlways: false,
+            allowChat: true,
+            website: "https://query1.finance.yahoo.com",
+          },
+        },
+      });
+      const card = ".ai-turn__action .ai-approval";
+      await page.locator(`${card} .k2b-split-button button[aria-haspopup]`).last().click();
+      const items = await page.getByRole("menuitem").allInnerTexts();
+      expect(items.map((item) => item.trim())).toEqual(["Details", "Allow this website for this chat"]);
+      await page.getByRole("menuitem", { name: "Allow this website for this chat", exact: true }).click();
+      await frames(page);
+      expect(await page.evaluate(() => (window as unknown as { approvals: unknown[] }).approvals)).toEqual([
+        { callId: "run-approval-0", approved: true, remember: "chat" },
+      ]);
+
+      // The run finishes with a request the approval let through: the work line holds its receipt.
+      await emit(page, {
+        ...base,
+        seq: 3,
+        type: "block_set",
+        block: {
+          ...run,
+          callId: "run",
+          status: "completed",
+          approved: true,
+          result: { status: "ok" },
+          receipts: [{ method: "GET", url }],
+        },
+      });
+      const work = page.locator(".ai-turn-work > summary");
+      if ((await work.count()) > 0 && !(await page.$eval(".ai-turn-work", (node) => (node as HTMLDetailsElement).open)))
+        await work.first().click();
+      await page.getByText(url).waitFor();
+      const revoke = page.getByRole("button", { name: "Revoke the approval for query1.finance.yahoo.com", exact: true });
+      const before = (await revoke.boundingBox())!;
+      await revoke.click();
+      await frames(page);
+      expect(await page.evaluate(() => (window as unknown as { revoked: string[] }).revoked)).toEqual(["https://query1.finance.yahoo.com"]);
+      // Revoking keeps the button in place, disabled, so the row does not move.
+      const after = (await revoke.boundingBox())!;
+      expect([after.x, after.y]).toEqual([before.x, before.y]);
+      expect(await revoke.isDisabled()).toBe(true);
+      expect((await layout(page)).overflowX).toBeLessThanOrEqual(0);
+      await page.screenshot({ path: `/tmp/ai-website-receipt-${view.name}.png` });
+    } finally {
+      await context.close();
+    }
+  }, 60_000);

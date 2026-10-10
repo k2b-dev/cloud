@@ -27,7 +27,6 @@ type Props = {
   initialDetail: SpaceItemDetail | null;
   dateConfig?: DateContext;
   canWrite: boolean;
-  isAdmin: boolean;
   mailIntegrationAvailable: boolean;
 };
 
@@ -341,7 +340,6 @@ export default function ItemDetailRoute(props: Props) {
               blocks={current().blocks}
               dateConfig={props.dateConfig}
               canWrite={props.canWrite}
-              isAdmin={props.isAdmin}
               mailIntegrationAvailable={props.mailIntegrationAvailable}
               scrollPreserveKey={scrollKey()}
             />

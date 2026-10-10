@@ -7,6 +7,7 @@ import { shouldHandleDetailClick, subscribeToDetailSelection } from "../../../li
 import type { RetryToast } from "../../../lib/feedback";
 import { useSpaceMessages } from "../../messages";
 import AssigneeAvatars from "../shared/AssigneeAvatars";
+import { type ClaimFields, resolveCompletionClaim } from "../shared/claim/claim";
 import { confirmCompletion, setItemCompleted } from "../shared/completion";
 import { isInactiveTask } from "../shared/item-activity";
 import { invalidateSpacesData, requestSpacesRouteNavigation } from "../workspace/workspace-events";
@@ -21,6 +22,7 @@ type ItemRowProps = {
   baseUrl: string;
   dateConfig?: DateContext;
   canWrite: boolean;
+  currentUserId: string;
   agenda?: boolean;
   /** Whether the list shows the item now; a filter can hide a row once it is completed or reopened. */
   isListed: (itemId: string) => boolean;
@@ -61,10 +63,11 @@ export default function ItemRow(props: ItemRowProps) {
     onCleanup(unsubscribe);
   });
 
-  const completeMutation = mutations.create<boolean, boolean, { completed: boolean }>({
-    onBefore: (completed) => ({ completed }),
-    mutation: async (completed: boolean) => {
-      await setItemCompleted({ spaceId: props.spaceId, itemId: props.item.id, completed }, t.updateFailed);
+  type Completion = { completed: boolean; claim: ClaimFields };
+  const completeMutation = mutations.create<boolean, Completion, Completion>({
+    onBefore: (vars) => vars,
+    mutation: async ({ completed, claim }) => {
+      await setItemCompleted({ spaceId: props.spaceId, itemId: props.item.id, completed, ...claim }, t.updateFailed);
       return completed;
     },
     onSuccess: (completed) => {
@@ -77,8 +80,14 @@ export default function ItemRow(props: ItemRowProps) {
         () => retryToast(t.listRefreshFailed, t.retry, refreshList),
       );
     },
-    onError: (err, context) => props.retryToast(err.message, t.retry, () => context && completeMutation.mutate(context.completed)),
+    onError: (err, context) => props.retryToast(err.message, t.retry, () => context && completeMutation.mutate(context)),
   });
+  /** A task someone else claimed asks once to take the claim over; declining changes nothing. */
+  const toggleCompleted = async () => {
+    const completed = !isCompleted();
+    const claim = await resolveCompletionClaim(props.item.claim, props.currentUserId, completed, t);
+    if (claim) await completeMutation.mutate({ completed, claim });
+  };
   const refreshList = (): void => void invalidateSpacesData().catch(() => props.retryToast(t.listRefreshFailed, t.retry, refreshList));
   const isCompleted = () => !!props.item.completedAt;
   const completionBlocked = () => !isCompleted() && props.item.activeBlockerCount > 0;
@@ -136,7 +145,7 @@ export default function ItemRow(props: ItemRowProps) {
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
-            completeMutation.mutate(!isCompleted());
+            void toggleCompleted();
           }}
           disabled={completeMutation.loading() || completionBlocked()}
           title={completionBlocked() ? t.completeBlockersFirst : undefined}

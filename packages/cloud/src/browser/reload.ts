@@ -1,3 +1,6 @@
+import { i18n } from "@k2b/stdlib";
+import { type ToastHandle, toast } from "@k2b/ui";
+
 /**
  * Default window in which a second automatic reload for the same key is
  * suppressed. A page load, hydration, and the first live subscription finish
@@ -31,4 +34,47 @@ export const reloadOnce = (key: string, options: { windowMs?: number } = {}): bo
   }
   window.location.reload();
   return true;
+};
+
+const reloadMessages = i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: {
+      codeUnavailable: "Part of this page could not load. Reload the page and try again.",
+      reload: "Reload",
+    },
+    de: {
+      codeUnavailable: "Ein Teil dieser Seite konnte nicht geladen werden. Lade die Seite neu und versuche es erneut.",
+      reload: "Neu laden",
+    },
+  },
+});
+
+/** One notice at a time: every failed load in the tab has the same remedy. */
+let codeUnavailable: ToastHandle | undefined;
+
+/**
+ * Loads code that one action needs when the action runs, for example
+ * `importOnDemand(() => import("./SettingsDialog"))`, so the page does not
+ * download it up front.
+ *
+ * Resolves `undefined` when the code cannot load. A release replaces the
+ * page's code files, so a page that was open before it cannot load code it
+ * has not loaded yet; a dropped connection fails the same way. The helper
+ * then shows a toast that offers a reload, and the caller only ends its
+ * action.
+ */
+export const importOnDemand = async <T>(load: () => Promise<T>): Promise<T | undefined> => {
+  try {
+    return await load();
+  } catch (error) {
+    console.warn("[cloud] Could not load code on demand", error);
+    const t = reloadMessages.resolve([document.documentElement.lang || "en"]).t;
+    codeUnavailable?.dismiss();
+    codeUnavailable = toast.error(t.codeUnavailable, {
+      duration: 0,
+      action: { label: t.reload, onClick: () => window.location.reload() },
+    });
+    return undefined;
+  }
 };

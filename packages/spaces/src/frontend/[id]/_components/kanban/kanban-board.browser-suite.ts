@@ -201,9 +201,12 @@ beforeAll(async () => {
       if (url.pathname.startsWith("/ui/")) return new Response(Bun.file(join(ui, url.pathname.slice(4))));
       const move = /^\/api\/spaces\/Space1\/items\/(\w+)\/move$/.exec(url.pathname);
       if (move && request.method === "POST") {
-        const body = (await request.json()) as { columnId: string };
+        const body = (await request.json()) as { columnId: string; completed?: boolean };
         moves.push(body);
-        return Response.json({ ...allItems.find((entry) => entry.id === move[1])!, columnId: body.columnId });
+        // As the real route: completion changes only when the request asks for it.
+        const moved = allItems.find((entry) => entry.id === move[1])!;
+        const completedAt = body.completed === undefined ? moved.completedAt : body.completed ? new Date().toISOString() : null;
+        return Response.json({ ...moved, columnId: body.columnId, completedAt });
       }
       if (url.pathname === "/api/spaces/Space1/items/filter") {
         // As strict as the real route: the schema answers 400, a tag the Space does not have 404.
@@ -327,7 +330,8 @@ const columnTitles = (page: Page) =>
 /** What the drag-and-drop live regions last told screen readers. */
 const dragAnnouncements = (page: Page) => page.locator('body > [role="status"][aria-live="polite"]').allTextContents();
 /** The toast rail; the live region repeats each toast's text for screen readers. */
-const notifications = (page: Page) => page.getByRole("region", { name: "Notifications" });
+const notifications = (page: Page, locale: "en" | "de" = "en") =>
+  page.getByRole("region", { name: locale === "de" ? "Benachrichtigungen" : "Notifications" });
 const cardsIn = (page: Page, key: string) =>
   page
     .locator(`[data-spaces-kanban-column="${key}"] [data-spaces-kanban-card]`)
@@ -435,7 +439,7 @@ describe("Spaces Kanban board in a browser", () => {
       await page.mouse.up();
       await moved;
       // No neighbor: the server puts the card at the top of the whole column, above cards a filter hides.
-      expect(moves).toEqual([{ columnId: "Col003", completed: false }]);
+      expect(moves).toEqual([{ columnId: "Col003" }]);
     } finally {
       await page.context().close();
     }
@@ -645,6 +649,70 @@ describe("Spaces Kanban board in a browser", () => {
     }
   }, 30_000);
 
+  for (const locale of ["en", "de"] as const) {
+    test(`${locale}: a task someone else claimed moves between open statuses as it is, and into done after one take-over question`, async () => {
+      const de = locale === "de";
+      const page = await open(desktop, { locale });
+      const question = page.getByRole("dialog", { name: de ? "Aufgabe übernehmen" : "Take over task" });
+      const toDone = async () =>
+        drag(
+          page,
+          await cardHandle(page, "Book the stage"),
+          await center(page.locator('[data-spaces-kanban-column="column:Col004"] article').first()),
+        );
+      try {
+        moves.splice(0);
+        const before = await layout(page);
+        await toDone();
+        // Claims coordinate work and do not lock it: the done status takes the drop.
+        expect(await page.locator("[data-spaces-kanban-no-drop]").count()).toBe(0);
+        await page.mouse.up();
+        await question.waitFor();
+        expect(await question.textContent()).toContain(
+          de ? "Von Kim Example übernommen – übernehmen und abschließen?" : "Claimed by Kim Example – take over and complete?",
+        );
+        // Cancel: nothing is saved, the card is back where it was, nothing moved, and nothing reports an error.
+        await question.getByRole("button", { name: de ? "Abbrechen" : "Cancel" }).click();
+        await question.waitFor({ state: "detached" });
+        await page.waitForTimeout(200);
+        expect(moves).toEqual([]);
+        expect(await cardsIn(page, "column:Col002")).toEqual(["Item04", "Item05"]);
+        const after = await layout(page);
+        expect({ cards: after.cards, columns: after.columns }).toEqual({ cards: before.cards, columns: before.columns });
+        expect(await page.locator("[data-k2b-toast]").count()).toBe(0);
+
+        // Between open statuses the claim does not matter, and the move sends no completion state at all.
+        await drag(
+          page,
+          await cardHandle(page, "Book the stage"),
+          await center(page.locator('[data-spaces-kanban-column="column:Col003"] article').first()),
+        );
+        const moved = page.waitForResponse((response) => response.url().endsWith("/items/Item04/move"));
+        await page.mouse.up();
+        await moved;
+        expect(await question.count()).toBe(0);
+        expect(moves).toEqual([{ columnId: "Col003", beforeItemId: "Item06" }]);
+
+        // Confirm: the claim is taken over and the task completed in the same request.
+        await toDone();
+        await page.mouse.up();
+        await question.waitFor();
+        const completed = page.waitForResponse((response) => response.url().endsWith("/items/Item04/move"));
+        await question.getByRole("button", { name: de ? "Übernehmen und abschließen" : "Take over and complete" }).click();
+        await completed;
+        expect(moves[1]).toMatchObject({
+          columnId: "Col004",
+          completed: true,
+          claimId: "44444444-4444-4444-8444-444444444444",
+          force: true,
+        });
+        await page.waitForFunction(() => document.querySelector('[data-spaces-kanban-column="column:Col004"] [data-item-id="Item04"]'));
+      } finally {
+        await page.context().close();
+      }
+    }, 30_000);
+  }
+
   test("a card picked up in an automatic column is not refused there and has no target over the status it has", async () => {
     const page = await open(desktop, { locale: "en", buckets: withAutomaticColumns() });
     try {
@@ -681,7 +749,7 @@ describe("Spaces Kanban board in a browser", () => {
       const moved = page.waitForResponse((response) => response.url().endsWith("/items/Item08/move"));
       await page.mouse.up();
       await moved;
-      expect(moves).toEqual([{ columnId: "Col002", beforeItemId: "Item04", completed: false }]);
+      expect(moves).toEqual([{ columnId: "Col002", beforeItemId: "Item04" }]);
       await notifications(page).getByText("Moved to In progress. It shows under Blocked until its blockers are done.").waitFor();
       expect(await cardsIn(page, "virtual:blocked")).toEqual(["Item08", "Item10"]);
       expect(await page.locator('article:has([data-item-id="Item08"]) [data-spaces-kanban-card-status]').getAttribute("title")).toBe(

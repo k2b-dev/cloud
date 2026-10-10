@@ -2,34 +2,40 @@
 id: accounts-start
 title: Erste Schritte
 icon: ti ti-users-group
-description: Konten, Gruppen, Anfragen, Dienstkonten, Benachrichtigungen und Audit-Verlauf.
+description: Konten, Gruppen, Anfragen, Dienstkonten, Benachrichtigungen und den Audit-Verlauf finden.
 order: 100
 ---
 
-Accounts zeigt deinen eigenen Kontokontext und bündelt die Verwaltung von Personen, Gruppen, Kontoanfragen, API-Schlüsseln, Benachrichtigungsbatches und dem Kontoverlauf. Dashboard und Navigation geben dir vor dem Öffnen einzelner Personen oder Gruppen einen Überblick über deine Zugriffe, deinen Verwaltungsbereich und die wichtigsten administrativen Warteschlangen.
+Konten zeigt deinen eigenen Kontokontext. Die Administration ändert hier außerdem Personen und Gruppen, bearbeitet Kontoanfragen, widerruft API-Schlüssel, versendet Benachrichtigungsbatches und prüft den Kontoverlauf. Bevor du eine einzelne Person oder Gruppe öffnest, sieh dir **Übersicht** und die Navigation an. Sie zeigen deinen Zugriff, deinen Verwaltungsbereich und die wichtigsten Warteschlangen der Administration.
 
-## Überblick {icon="layout-grid"}
+## Die Objekte kennen {icon="layout-grid"}
 
 :::reference
 - **Konto:** Ein Personeneintrag mit Anmeldeanbieter, Profil, Rollen, Ablaufdaten, Gruppenmitgliedschaften und optionalem Avatar.
-- **Gruppe:** Eine lokale oder FreeIPA-Gruppe. Gruppen können Personen oder andere Gruppen enthalten und Verwaltungsrechte für weitere Gruppen vergeben.
-- **Kontoanfrage:** Eine eingereichte Zugriffsanfrage. Personen mit Administratorrechten können daraus ein Konto erstellen oder die Anfrage mit einer optionalen Begründung per E-Mail ablehnen.
-- **Dienstkonto-Schlüssel:** Ein API-Schlüssel einer Person oder Ressource. Aktive Schlüssel lassen sich widerrufen; widerrufene Schlüssel bleiben für den Audit-Verlauf sichtbar.
+- **Gruppe:** Eine lokale oder FreeIPA-Gruppe. Eine Gruppe kann Personen oder andere Gruppen enthalten. Sie kann außerdem andere Gruppen verwalten.
+- **Kontoanfrage:** Eine eingereichte Anfrage nach Zugang. Die Administration kann daraus ein Konto erstellen oder die Anfrage mit einer optionalen Begründung per E-Mail ablehnen.
+- **Dienstkonto-Schlüssel:** Ein API-Schlüssel einer Person oder einer Ressource. Einen aktiven Schlüssel kannst du widerrufen. Widerrufene Schlüssel bleiben für den Audit-Verlauf sichtbar.
 :::
 
-## Häufige Wege {icon="route"}
+## Die richtige Seite finden {icon="route"}
 
 :::reference
-- **Eigenen Zugriff prüfen:** Öffne das Dashboard, um Kontotyp, Verwaltungsbereich, Anmeldemethode, Ablaufdatum und Gruppenverknüpfungen zu sehen.
-- **Eine Gruppe finden:** Suche unter Gruppen nach sichtbaren Gruppen, filtere nach Anbieter oder wechsle zwischen verwalteten, eigenen und sichtbaren Gruppen.
-- **Offene Anfragen prüfen:** Filtere unter Anfragen nach offenen, abgeschlossenen, abgelehnten oder allen Kontoanfragen.
-- **Eine Änderung nachverfolgen:** Suche im Audit-Protokoll nach Kontoereignissen und filtere nach handelnder Person, Ziel, Aktion, Ergebnis, Anbieter, Dienstkonto oder Zeitraum.
+- **Eigenen Zugriff prüfen:** Öffne **Übersicht**. Sie zeigt Kontotyp, Verwaltungsbereich, Anmeldemethode, Ablaufdatum und Verknüpfungen zu deinen Gruppen.
+- **Eine Gruppe finden:** Durchsuche unter **Gruppen** alle sichtbaren Gruppen, filtere nach Anbieter oder wechsle zwischen Gruppen, die du verwaltest, in denen du Mitglied bist oder die du sehen kannst.
+- **Offene Anfragen prüfen:** Die Administration filtert **Anfragen** nach offenen, abgeschlossenen, abgelehnten oder allen Kontoanfragen.
+- **Eine Änderung nachverfolgen:** Die Administration durchsucht das **Audit-Protokoll** nach Kontoereignissen und filtert nach handelnder Person, Ziel, Aktion, Ergebnis, Anbieter, Dienstkonto oder Zeitraum.
 :::
 
-:::info FreeIPA-Grenze
-FreeIPA-gestützte Personen und Gruppen werden bei aktiviertem FreeIPA über den Accounts-Dienst geschrieben. Lokale Konten und Gruppen bleiben in der Cloud-Datenbank.
+:::info Wohin FreeIPA-Änderungen gehen
+Bei aktiviertem FreeIPA schreibt der Konten-Dienst die Änderungen an FreeIPA-gestützten Personen und Gruppen. Lokale Konten und Gruppen bleiben in der Cloud-Datenbank.
 :::
 
 ## Konto oder Gruppe finden {icon="search"}
 
-Der Suchbutton und **Cmd/Ctrl+Shift+K** öffnen die Cloud-Suche mit einem Konten-Chip. Du findest lesbare Gruppen; Administratoren zusätzlich Nutzer und Service Accounts. Ein Treffer öffnet die zugehörige Seite in Accounts. Entferne den Chip, um andere Apps zu durchsuchen.
+:::steps
+1. Wähle die Suchschaltfläche oder drücke **Cmd/Ctrl+Shift+K**. Die Cloud-Suche öffnet sich mit einem Chip **Konten**.
+2. Suche nach einer Gruppe, die du sehen kannst. Die Administration findet außerdem Personen und Dienstkonten.
+3. Wähle einen Treffer, um seine Seite in Konten zu öffnen.
+:::
+
+Entferne den Chip, um andere Apps zu durchsuchen.

@@ -2,21 +2,21 @@
 id: pulse-reference
 title: Reference
 icon: ti ti-book
-description: Query, dashboard, and inventory lookup path.
+description: Look up the query and dashboard syntax, and copy exact names from Inventory.
 order: 135
 ---
-Use this reference to build queries and dashboards. Read the syntax sections for the available statements, then use Inventory to copy the exact names, source ids, resource ids, and dimensions from the current base.
+Use this reference to build queries and dashboards. Read the syntax sections for the available statements. Then use **Inventory** to copy the exact names, source IDs, resource IDs, and dimensions from the current base.
 
-Pulse bases, sources, dashboards, and saved queries use stable six-character IDs. Observed resources keep their domain identity; events, samples, series, and run records are telemetry data rather than independently addressable short-ID resources.
+Pulse bases, sources, dashboards, and saved queries use stable six-character IDs. Observed resources keep their domain identity. Events, samples, series, and run records are telemetry data, not separate resources with a short ID.
 
-## What this reference covers {icon="layout-grid"}
+## Know what this reference covers {icon="layout-grid"}
 
 :::info Query DSL
-Fetch metric trends, individual or summarized events, and current states. The explorer and dashboard widgets use the same language.
+Fetch metric trends, single or summarized events, and current states. The explorer and the dashboard widgets use the same language.
 :::
 
 :::success Dashboard DSL
-Describe dashboard controls, sections, cards, markdown notes, and visual widgets as text.
+Describe dashboard controls, sections, cards, Markdown notes, and visual widgets as text.
 :::
 
 :::info Inventory
@@ -26,10 +26,10 @@ Browse the current base. Filter by source or resource, then copy scoped snippets
 ## Work from known data {icon="shield-lock"}
 
 :::reference
-- **Start from the task:** Decide whether the question needs a metric trend, event rows, current states, or a dashboard view before choosing syntax.
+- **Start from the task:** Before you choose syntax, decide whether the question needs a metric trend, event rows, current states, or a dashboard view.
 - **Copy names from Inventory:** Metrics, events, states, sources, resources, and dimensions are observed data. Do not guess them from examples.
-- **Keep resource and resource aligned:** The UI says resource. Query DSL says resource. They refer to the same identifier, such as container:app-core or customer:acme.
-- **Keep the text readable:** Use explicit names, narrow scopes, and descriptions close to the charts they explain.
+- **Use the same resource identifier:** The interface and Query DSL use the same resource identifier, such as `container:app-core` or `customer:acme`.
+- **Keep the text readable:** Use explicit names, narrow scopes, and descriptions close to the charts that they explain.
 :::
 
 ## Common starting points {icon="square-plus"}

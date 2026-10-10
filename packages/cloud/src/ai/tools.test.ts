@@ -177,6 +177,68 @@ describe("AI tools", () => {
     expect(laterResult?.role === "tool_result" ? laterResult.result : undefined).toEqual({ reportId: "r1", rowCount: 3 });
   });
 
+  test("a nested approval names its target under the call ID Nessi gives it", async () => {
+    const described = new Map<string, unknown>();
+    const target = { toolName: "website:read", approvalScope: "https://api.example.com", always: false };
+    const tool = defineAiTool({
+      name: "fetch_twice",
+      description: "Asks twice",
+      inputSchema: z.object({}),
+      outputSchema: z.object({ approved: z.array(z.boolean()) }),
+      approval: "never",
+    }).server(async (_input, ctx) => ({
+      approved: [await ctx.requestApproval("First"), await ctx.requestApprovalFor!("Second", target)],
+    }));
+    const prepared = prepareAiTools({
+      tools: [tool],
+      actor,
+      describeApproval: (callId, value) => described.set(callId, value),
+    });
+    let calls = 0;
+    const provider: Provider = {
+      name: "approval-test",
+      family: "openai-compatible",
+      model: "approval-test",
+      capabilities: { streaming: true, tools: true, images: false, thinking: false, usage: true },
+      async *stream() {
+        if (calls++ === 0) {
+          yield { type: "block_start", blockId: "call", index: 0, kind: "tool_call", callId: "run", name: "fetch_twice" };
+          yield { type: "block_end", blockId: "call", index: 0, block: { type: "tool_call", id: "run", name: "fetch_twice", args: {} } };
+          yield { type: "usage", usage: { input: 1, output: 1, total: 2 }, finishReason: "tool_use" };
+          return;
+        }
+        yield { type: "block_start", blockId: "text", index: 0, kind: "text" };
+        yield { type: "block_end", blockId: "text", index: 0, block: { type: "text", text: "Done" } };
+        yield { type: "usage", usage: { input: 1, output: 1, total: 2 }, finishReason: "stop" };
+      },
+      async complete() {
+        throw new Error("complete should not be used");
+      },
+    };
+    const entries: StoreEntry[] = [];
+    const loop = nessi({
+      loopId: "approval-loop",
+      provider,
+      systemPrompt: "test",
+      tools: prepared.tools,
+      input: "Run",
+      store: {
+        append: async (message) => {
+          entries.push({ seq: entries.length + 1, kind: "message", message });
+        },
+        load: async () => entries,
+      },
+    });
+    const requested: string[] = [];
+    for await (const event of loop) {
+      if (event.type !== "tool_action_request") continue;
+      requested.push(event.callId);
+      loop.push({ type: "approval_response", callId: event.callId, approved: true });
+    }
+    expect(requested).toEqual(["run-approval-0", "run-approval-1"]);
+    expect([...described]).toEqual([["run-approval-1", target]]);
+  });
+
   test("maps frontend interaction tools to Nessi client tools with mode metadata", () => {
     const tool = defineAiTool({
       name: "survey",
@@ -196,16 +258,20 @@ describe("AI tools", () => {
     expect(prepared.tools[0]?.def.outputSchema).toBe(tool.def.outputSchema);
   });
 
-  test("ships default interaction tools without offering Card to the Assistant", () => {
+  test("ships default interaction tools and the chart without offering Card to the Assistant", () => {
     const prepared = prepareAiTools({ tools: createDefaultCloudAiTools(), actor });
 
-    expect(prepared.tools.map((tool) => tool.def.name)).toEqual(["todo_write", "survey", "text_editor"]);
-    expect(prepared.tools.map((tool) => tool.kind)).toEqual(["server", "client", "client"]);
+    expect(prepared.tools.map((tool) => tool.def.name)).toEqual(["todo_write", "survey", "text_editor", "chart"]);
+    expect(prepared.tools.map((tool) => tool.kind)).toEqual(["server", "client", "client", "client"]);
     expect(prepared.frontendModes.get("survey")).toBe("client_interaction");
     expect(prepared.frontendModes.get("text_editor")).toBe("client_interaction");
+    // Display only: the server answers the call itself, so a chart never waits for a browser.
+    expect(prepared.frontendModes.get("chart")).toBe("client_view");
     expect(prepared.approvalPolicies.get("survey")).toBe("never");
     expect(prepared.approvalPolicies.get("text_editor")).toBe("never");
+    expect(prepared.approvalPolicies.get("chart")).toBe("never");
     expect(CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES.has("card")).toBe(false);
+    expect(CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES.has("chart")).toBe(true);
   });
 
   test("managed execution is deferred and only user-facing code tools need a browser", () => {
@@ -268,6 +334,7 @@ describe("AI tools", () => {
       "todo_write",
       "survey",
       "text_editor",
+      "chart",
       "list_files",
       "read_file",
       "fetch_file",
@@ -354,6 +421,8 @@ describe("AI tools", () => {
 
   test("validates turn continuation actions", () => {
     expect(AiTurnActionSchema.safeParse({ type: "approval_response", approved: true, remember: "always" }).success).toBe(true);
+    expect(AiTurnActionSchema.safeParse({ type: "approval_response", approved: true, remember: "chat" }).success).toBe(true);
+    expect(AiTurnActionSchema.safeParse({ type: "approval_response", approved: true, remember: "forever" }).success).toBe(false);
     expect(AiTurnActionSchema.safeParse({ type: "tool_result", result: { answer: "yes" } }).success).toBe(true);
     expect(AiTurnActionSchema.safeParse({ type: "approval_response", result: "wrong" }).success).toBe(false);
   });

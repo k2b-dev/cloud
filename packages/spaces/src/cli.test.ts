@@ -463,6 +463,12 @@ describe("changes", () => {
     const done = await run(["done", "Item01", "--from", resultPath, "--commit", "a1b2c3d", "--claim-id", CLAIM_ID]);
     expect(done.json).toMatchObject({ id: "Item01", completedAt: "now" });
     expect(writes(done.requests)[0]?.body).toEqual({ completed: true, result: "Verified.", commit: "a1b2c3d", claimId: CLAIM_ID });
+    // Taking over another worker's claim while completing names that exact claim.
+    expect(writes((await run(["done", "Item01", "--claim-id", CLAIM_ID, "--force"])).requests)[0]?.body).toEqual({
+      completed: true,
+      claimId: CLAIM_ID,
+      force: true,
+    });
     expect(writes((await run(["reopen", "Item01"])).requests)[0]?.body).toEqual({ completed: false });
 
     expect(writes((await run(["assign", "Item01", "me"])).requests)[0]?.body).toEqual({ assigneeIds: [USER_ID] });

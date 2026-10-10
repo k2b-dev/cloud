@@ -12,7 +12,13 @@ function Approval(props: { request: CapabilityApproval; respond: (value: Capabil
       <Show when={props.request.resource}>
         {(resource) => <NoticeCard tone="warning" title={resource().title} detail={t().sharedCodeHelp} />}
       </Show>
-      <AiChatActionsProvider actions={{ onApproval: (_request, input) => props.respond(input) }}>
+      <AiChatActionsProvider
+        actions={{
+          // This card names no chat, so it offers no chat reach: its decision is once or always.
+          onApproval: (_request, input) =>
+            props.respond({ approved: input.approved, ...(input.remember === "always" ? { remember: "always" } : {}) }),
+        }}
+      >
         <AiTurnBlockView
           active
           turnId={props.request.id}

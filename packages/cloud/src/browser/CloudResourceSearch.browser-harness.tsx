@@ -1,4 +1,4 @@
-import { createGlobalSearchHost } from "../ssr/GlobalSearchDialog";
+import { createGlobalSearchHost } from "../ssr/global-search-host";
 import { openCloudResourcePicker } from "./resource-picker";
 
 /**

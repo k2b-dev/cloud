@@ -10,6 +10,7 @@ const toolNames = i18n.define({
     en: {
       calculate: "Calculate",
       card: "Card",
+      chart: "Chart",
       survey: "Survey",
       text_editor: "Text editor",
       local_bash: "Local Bash",
@@ -77,6 +78,7 @@ const toolNames = i18n.define({
     de: {
       calculate: "Rechnen",
       card: "Karte",
+      chart: "Diagramm",
       survey: "Umfrage",
       text_editor: "Texteditor",
       local_bash: "Lokale Bash",

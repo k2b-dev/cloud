@@ -401,7 +401,18 @@ suite("mail conversation view counts in a large mailbox", () => {
       }
     }
 
-    for (const table of ["message_contents", "message_placements", "conversations", "conversation_messages"]) {
+    // The plan must not depend on whether autovacuum has seen the tables filled in bulk above yet. With
+    // statistics it took while earlier tests had emptied mail.conversation_assignees, PostgreSQL took
+    // the 6,700 assignments for one row and checked each conversation's assignees by reading all of
+    // (user_id, conversation_id): about 1 s instead of 100 ms.
+    for (const table of [
+      "message_contents",
+      "message_placements",
+      "conversations",
+      "conversation_messages",
+      "conversation_assignees",
+      "outbox_submissions",
+    ]) {
       await sql.unsafe(`ANALYZE mail.${table}`);
     }
   }, 120_000);

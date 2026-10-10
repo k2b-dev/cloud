@@ -2937,6 +2937,7 @@ const actionDefinitions = {
     destructive: false,
     openWorld: false,
     idempotency: "required",
+    approval: "rememberable",
     review: async (input: z.output<typeof c.ConversationMoveInputSchema>, context: CapabilityExecutionContext) => {
       const t = mailCapabilityMessages(context.locale);
       const conversation = await requireConversationForReview(input.mailboxId, input.target.conversationId, context);
@@ -2950,6 +2951,9 @@ const actionDefinitions = {
       // Both the provider's role and the one configured in Mail count, as when Mail creates the move.
       let destinationRoles: string[] = input.destination.kind === "role" ? [input.destination.role] : [];
       let destination = input.destination.kind === "role" ? input.destination.role : input.destination.folderId;
+      // Moving to Trash or Junk works like deleting or reporting mail, so it asks every time, also when the model names
+      // that folder by ID instead of by role.
+      let toBin = input.destination.kind === "role" && (input.destination.role === "trash" || input.destination.role === "junk");
       if (input.destination.kind === "folder") {
         const scope = await resolveMailboxScope(input.mailboxId);
         if (!scope.ok) return scope;
@@ -2960,6 +2964,8 @@ const actionDefinitions = {
         const folder = folders.data.find((candidate) => candidate.id === folderId.data);
         destinationRoles = folder ? [folder.role, folder.providerRole] : [];
         destination = truncateText(mailFolderPaths(folders.data).get(folderId.data) ?? input.destination.folderId, 200).text;
+        // An unknown folder cannot prove it is no bin.
+        toBin = !folder || [folder.role, folder.providerRole, folder.configuredRole].some((role) => role === "trash" || role === "junk");
       }
       if (keep.data && destinationRoles.some((role) => ["trash", "junk", "drafts"].includes(role)))
         return fail(keepError("CONVERSATION_KEPT"));
@@ -2970,6 +2976,7 @@ const actionDefinitions = {
           { label: t.destination, value: destination },
         ],
         links: [openLink(conversation.data.href)],
+        ...(toBin ? {} : { approvalScope: mailboxApprovalScope(input.mailboxId) }),
       });
     },
     run: async (input: z.output<typeof c.ConversationMoveInputSchema>, context: CapabilityExecutionContext) => {
@@ -3863,6 +3870,7 @@ const actionDefinitions = {
     destructive: false,
     openWorld: false,
     idempotency: "none",
+    approval: "rememberable",
     review: async (input: z.output<typeof c.TagUpdateInputSchema>, context: CapabilityExecutionContext) => {
       const t = mailCapabilityMessages(context.locale);
       const scope = await resolveMailboxScope(input.mailboxId);
@@ -3877,6 +3885,7 @@ const actionDefinitions = {
       if (!tag) return fail(err.notFound("Mailbox tag"));
       return ok({
         message: t.updateTagReview({ tag: tag.name }),
+        approvalScope: mailboxApprovalScope(input.mailboxId),
         details: [
           { label: t.currentName, value: tag.name },
           ...(input.name ? [{ label: t.newName, value: input.name }] : []),

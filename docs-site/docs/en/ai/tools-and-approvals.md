@@ -63,7 +63,7 @@ grant domain permission.
 | --- | --- |
 | `.server(run)` | Cloud runs the implementation |
 | `.client()` | Browser handles the call |
-| `.clientView()` | Browser handles a view-only interaction |
+| `.clientView()` | Cloud answers the call itself; the chat only shows it |
 | `.clientInteraction()` | Browser handles an interactive action |
 
 Register browser handlers with `createAiChatController({ frontendTools })`.
@@ -105,7 +105,21 @@ app Capability Actions use the fixed AI Core policy described below.
 The default is `once`.
 
 Remembered approval is scoped to the actor, tool, and declared approval scope.
-Only use a shared scope when every call covered by it has the same consequence.
+The person remembers it either for the current chat, the default, or always. A
+chat approval ends when the chat is deleted. Only use a shared scope when every
+call covered by it has the same consequence.
+
+A server tool that asks for something narrower than itself names it with
+`context.requestApprovalFor(message, { toolName, approvalScope, always })`
+instead of `context.requestApproval(message)`. The approval card then offers to
+remember that target, never the tool. Code Mode uses this for the HTTP
+requests and Capability Actions of a code run. The tool looks up remembered
+approvals for its target itself, so AI Core does not. A tool that lets a
+request through on a remembered website approval reports it with
+`context.reportWebsiteReceipts([{ index, method, url }])` before the request
+goes out. The chat records each receipt on the call, so it stays visible
+whether the call succeeds, fails, or its turn stops; a receipt reported again
+with the same `index` replaces itself.
 
 Use `never` only for safe reads or deterministic presentation. Writes and
 external side effects should require approval.
@@ -128,9 +142,42 @@ still apply, and historical projections stay compact for later loops.
 
 `promptHint` adds one short usage nudge to the system prompt. Use it when the
 model could finish with plain text but Cloud prefers the tool-backed experience,
-as with surveys, the long-form text editor, or presented files. Keep
+as with surveys, the long-form text editor, charts, or presented files. Keep
 operation details and arguments in the tool description and schema; the hint
 does not replace either.
+
+The built-in `chart` tool is a `clientView()` that shows one chart in the chat
+from data the model already has. Its input is the plain-data form of
+`cloud.chart()` in Studio code: `bar`, `line` (with `area` to fill it),
+`scatter`, `pie`, `donut`, `histogram`, `gauge`, or `sparkline`, with `title`
+and an optional `subtitle`, but without `width`, `height`, or `format`
+functions. Model providers accept only an object at the root of a tool schema,
+so `CloudAiChartInputSchema` describes every kind as one object whose fields
+name the kinds they belong to, and checks the rules of the chosen kind after
+that. A chart holds at most 8 series, one per palette color, and at most 480
+values per list, one per unit of the 480-unit drawing. `x` is a number, a date
+`YYYY-MM-DD`, or a local date and time `YYYY-MM-DDTHH:mm` or
+`YYYY-MM-DDTHH:mm:ss` without an offset, written in the user's time zone.
+
+The schema checks these bounds first: input outside them fails before anything
+is computed or drawn. It then rejects input that would not draw as written: a date that does not exist, such as February 30; a line with
+fewer than two points in a series; values at or below zero on a `log` axis,
+which the chart would leave out; values outside an axis `domain`; values that
+differ too little for their size to label an axis, such as 1e17 and 1e17 + 16;
+pie slices that add up to zero; or a pie whose legend leaves too little room
+for it. The model gets the reason, and the chat never shows a broken chart or a
+table that hides a value. `parseCloudAiChartInput()` reads the arguments of a
+call as one typed chart without drawing it.
+
+Cloud answers a chart call itself, without a browser and also in background and
+scheduled runs, whose transcript shows the chart later. The call goes from
+running to completed without an open request in between. The chat draws it
+with the `@k2b/ui` chart renderer that `cloud.chart()` uses. The chart has no
+code, sandbox, state, or actions. The reader can switch it to a data table that
+shows and copies every value as given, and axis labels show fractional values
+exactly. When a chart needs filters or buttons, Assistant shows an app in the
+chat with `code_present` instead; data that must be kept or an app that is used
+again becomes a saved Studio App.
 
 The built-in `text_editor` is a `clientInteraction()` for one complete
 plain-text or Markdown draft of at most 20,000 characters. It is appropriate
@@ -274,14 +321,17 @@ AI Core treats capability operation kinds as the approval boundary:
 | --- | --- |
 | Query | Execute without interactive approval |
 | Action without `approval` | Require fresh approval for that call; it cannot be granted to a scheduled task |
-| Action with `approval: "rememberable"` | Offer one-time approval or **Always approve** for the app-owned review scope |
+| Action with `approval: "rememberable"` | Offer one-time approval, **Approve for this chat**, or **Always approve** for the app-owned review scope |
 
 Capability manifests describe objective Action properties such as `openWorld`,
 `destructive`, idempotency, and the optional availability of a review. AI Core
 uses the canonical app-owned scope returned by a rememberable Action's live
 review for the concrete arguments. A remembered choice matches the current
-actor, qualified Action, and exact scope. AI Core never infers a broader scope
-from an attachment, resource ID, or presentation metadata.
+actor, qualified Action, and exact scope, and a chat choice also the chat. AI
+Core never infers a broader scope from an attachment, resource ID, or
+presentation metadata. A review that returns no `approvalScope` for particular
+arguments makes that call ask every time, for example a copy into another
+storage base.
 
 For example, the single-file and atomic multi-file Assistant Skill reference
 Actions offer **Always approve** in the split-button menu after their
@@ -332,9 +382,12 @@ Show the tool name, requested inputs, and consequence before approval. The
 primary action uses a split button; its **Details** item toggles the complete
 validated arguments for technical verification. Do not require ordinary users
 to read that raw representation: every value needed for an informed decision
-belongs directly in the review card. Approving once stays the primary action;
-when the owning Action supplies a reusable scope, **Always approve** remains an
-explicit secondary choice.
+belongs directly in the review card. Approving once stays the primary action.
+When the owning Action supplies a reusable scope, the menu offers
+**Approve for this chat** first and **Always approve** after it
+(`remember: "chat"` or `remember: "always"`). A pending approval carries
+`allowChat` and `allowAlways`; for a website it also carries `website`, the
+exact origin a chat approval would allow.
 When a Capability review is available, show it instead of making the user
 interpret opaque IDs in the raw arguments. Review details default to the
 compact `inline` presentation; `display: "block"` gives long plain-text values
@@ -346,9 +399,75 @@ links.
 
 The owning app sets this policy in its manifest. Users and administrators
 cannot loosen it; a user can only remember an approval where the Action offers
-it. Users can list and revoke their remembered choices under
-**Assistant settings > Approvals**. Revocation is ownership-scoped and takes
-effect on the next matching call.
+it. Users can list and revoke the choices that apply everywhere under
+**Assistant settings > Approvals**, and those of one chat under
+**Secrets & approvals** in the chat's context panel
+(`GET /api/ai/approval-preferences?conversation=<chat>`). Revocation is
+ownership-scoped and takes effect on the next matching call. A scheduled task
+or mandate never uses a remembered approval; it runs only on its own grants.
+
+### Allow a website for a chat
+
+Code Mode's `cloud.http.fetch` asks for every request by default. When a
+request only reads, the card offers **Allow this website for this chat**. A
+request only reads when it uses GET or HEAD without a body and without any
+header, which also rules out a secret. Cloud derives the website from the
+stored request on the server, never from the model or the browser.
+Afterwards, requests in this chat are allowed without asking only if all of
+these hold:
+
+- the request has the exact same origin, so scheme, host, and port match;
+- it is GET or HEAD without a body, custom headers, or secret references;
+- a person started the turn in a signed-in browser session, not a scheduled
+  task, a mandate, `cld`, an API key, or another delegated credential;
+- the code is the chat's own code or a Studio app the person manages, never an
+  app they only use or HTML presented in the chat.
+
+Website approvals are never offered as **Always**. `cld`, an API key, or
+another delegated credential may approve the single request, but cannot
+remember the website. Each request let through this way appears in the chat as
+a receipt with its full URL, query included, from the moment it goes out, so a
+run or read that fails afterwards keeps it. The receipt and the chat's
+**Secrets & approvals** dialog both revoke it with one click. The
+remembered-approval name is the reserved `website:read`, which no tool or
+Capability can use.
+
+A Studio app the person manages gets the same choice in its request dialog as
+**Allow this website for this app**. That approval lasts until it is revoked
+or the app is deleted. Each request it lets through shows a notice with the
+full URL and a **Revoke** action. The app's **Secrets & approvals** dialog
+lists these approvals.
+
+The operator of an allowed website still sees every full address the code
+requests, including the query, which may carry data from the chat. Approve
+only websites you would let read what the chat contains.
+
+A website approval covers its own origin, never a website it redirects to.
+Code Mode does not follow redirects, and `fetch_file` stops at a redirect to
+another origin, so the model must read that address directly, which asks.
+`web_extract` reads through Firecrawl, which follows redirects on its side.
+Its receipt names where the read ended, and content from another origin is not
+returned, but the request has reached that origin by then. A website with an
+open redirect can therefore pass an address it receives on to another website.
+
+### Read web pages with provenance
+
+`web_search` never asks. `web_extract` and `fetch_file` read an address
+without asking only when the chat supplied it: the person wrote it in a
+message, `web_search` returned it, or a page read earlier links to it. The
+address must match one of these as a whole; a host and path that only appear
+inside a longer address do not count. A message another chat sent counts as
+none of these. Any other address, such as one the model built from other data
+or found in a mail, shows an approval card with the full URL and the same
+website choice as an HTTP request. A refused read fetches nothing. A scheduled
+task cannot ask, so such a read fails there; its own prompt counts as the
+person's message.
+
+Links of a page read earlier count as supplied, so a page can offer the model
+addresses to choose from. A page someone else controls can list links that
+differ in one detail and tell the model to pick one according to data from the
+chat; each such read then tells that website one choice. When a chat holds
+data that must not leave it, read pages only from sources you trust.
 
 See [Resource authorization](/en/docs/identity/authorization) for the domain
 permission check.

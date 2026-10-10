@@ -235,10 +235,13 @@ export default function Layout(props: LayoutProps) {
       </LocaleProvider>
     );
   }
+  // The canvas takes the window's visible height. `vh` follows the large
+  // viewport, which is taller than the window while a browser shows its
+  // toolbar, and would let a viewport-bound page scroll by that difference.
   return (
     <LocaleProvider locale={lang}>
       <div
-        class={`cloud-app-canvas relative flex w-full ${fullPage ? "h-dvh overflow-hidden" : "min-h-screen lg:h-screen lg:overflow-hidden"}`}
+        class={`cloud-app-canvas relative flex w-full ${fullPage ? "h-dvh overflow-hidden" : "min-h-dvh lg:h-dvh lg:overflow-hidden"}`}
         style={canvasStyle}
         data-app-id={currentApp?.id}
         data-layout-full-page={fullPage ? "true" : undefined}

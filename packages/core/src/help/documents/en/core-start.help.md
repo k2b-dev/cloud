@@ -2,30 +2,30 @@
 id: core-start
 title: Start
 icon: ti ti-cloud
-description: Profile self-service, platform admin overview, announcements, settings, auth, and legal pages.
+description: Find your profile, the administration overview, announcements, settings, sign-in, and legal pages.
 order: 100
 ---
 
-Core owns platform-level pages and services: login, profile self-service, notifications, admin overview, global settings, announcements, legal pages, search APIs, and top-level routing fallback. Help is available from the profile, notifications, legal, and admin overview pages before you select a specific setting or record.
+Core provides the platform pages and shared services: sign-in, profile self-service, notifications, the administration overview, global settings, announcements, legal pages, search APIs, and the fallback page for unknown addresses. Help is available on the profile, notifications, legal, and administration overview pages before you select a setting or a record.
 
-## Overview {icon="layout-grid"}
-
-:::reference
-- **Profile:** The /me page shows the signed-in user's profile, provider, roles, groups, expiry data, API keys, passkeys, and recent account activity.
-- **Admin overview:** The /admin page lists apps with admin panels and summarizes registered apps, admin panels, and navigation entries.
-- **Announcements:** Admins can create platform announcements and dismissible banners with publish, expiry, state, and version metadata.
-- **Settings:** Core settings cover branding, user lifecycle, FreeIPA, AI, mail, PDF rendering, email templates, security, and legal pages.
-:::
-
-## Common paths {icon="route"}
+## Know the Core pages {icon="layout-grid"}
 
 :::reference
-- **Check your account:** Open Profile to review account type, provider, roles, groups, expiry dates, profile fields, API keys, passkeys, and recent account events.
-- **Find an admin surface:** Open Admin Overview to jump to app-specific admin panels such as Gateway Ops, Accounts, IPA Hosts, or app settings.
-- **Publish a notice:** Use Announcements for platform messages or banners that should render through the shared layout.
-- **Change platform defaults:** Use Core Settings for global service configuration. Settings resolve from database, environment, and defaults.
+- **Profile:** The `/me` page shows your profile, provider, roles, groups, expiry dates, API keys, passkeys, and recent account activity.
+- **Overview:** In the administration, the `/admin` page lists the apps with administration pages. It also counts the registered apps, the administration pages, and the navigation entries.
+- **Announcements:** Administrators create platform announcements and dismissible banners. Each entry has a publish time, an optional expiry time, a state, and a version.
+- **Settings:** The Core settings cover branding, user lifecycle, FreeIPA, AI, mail, PDF rendering, email templates, security, and legal pages.
 :::
 
-:::info Boundary
-Core owns platform pages and shared services. App-specific admin workflows stay in the owning app, even when they appear in the Core admin overview.
+## Find the right page {icon="route"}
+
+:::reference
+- **Check your account:** Open your profile. It shows your account type, provider, roles, groups, expiry dates, profile fields, API keys, passkeys, and recent account events.
+- **Find an administration page:** Open the administration overview. It links to the administration pages of the apps, such as Gateway Ops, Accounts, IPA Hosts, or app settings.
+- **Publish a notice:** Use **Announcements** for platform messages or banners in the shared layout.
+- **Change platform defaults:** Use the Core settings for the global service configuration. Each setting comes from the database, the environment, or its default.
+:::
+
+:::info Apps keep their own administration
+Core provides the platform pages and shared services. Administration tasks of an app stay in that app, even when the Core administration overview lists them.
 :::

@@ -13,13 +13,23 @@ export { type AiTodoPlan, parseAiTodoPlan } from "./todo-contracts";
 import { AI_TURN_ATTACHMENT_MAX_ITEMS } from "./limits";
 import type { AiConversation, AiDraftContentPart } from "./types";
 
+export {
+  type CloudAiChartColumn,
+  type CloudAiChartRow,
+  type CloudAiChartTable,
+  cloudAiChartTable,
+} from "./chart-block";
 export { parseAiSse } from "./client/transport";
 export {
+  CLOUD_AI_CHART_MAX_SERIES,
+  CLOUD_AI_CHART_MAX_VALUES,
   CLOUD_AI_TEXT_EDITOR_MAX_CHARS,
   CloudAiCardInputSchema,
+  CloudAiChartInputSchema,
   CloudAiLocalBashInputSchema,
   CloudAiSurveyInputSchema,
   CloudAiTextEditorInputSchema,
+  parseCloudAiChartInput,
 } from "./default-tool-contracts";
 export { guessAiMediaType } from "./file-media-type";
 export { AI_IMAGE_INPUT_MAX_BYTES, AI_TURN_ATTACHMENT_MAX_ITEMS, AI_TURN_IMAGE_MAX_TOTAL_BYTES } from "./limits";

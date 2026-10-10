@@ -1,8 +1,10 @@
-import { Chat, ScrollArea } from "@k2b/ui";
+import { Button, Chat, ScrollArea, useLocale } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
 import { formatAiFileSize } from "../attachments";
 import type { AiTurnBlock } from "../protocol";
+import { useAiChatActions } from "./message-actions";
 import { isRecord } from "./message-utils";
+import { aiChatMessages } from "./messages";
 import { AiToolActivity } from "./tool-disclosure";
 
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
@@ -198,5 +200,97 @@ export function FetchFileToolBlock(props: { block: ToolBlock }) {
         </AiToolActivity>
       )}
     </Show>
+  );
+}
+
+type WebsiteReceipt = { method: string; url: string };
+
+/**
+ * Requests a website approval for this chat let through without asking, from a code run or a page read. The call
+ * reports them as they go out, so they are there whether it succeeded, failed, or its turn stopped.
+ */
+export const websiteReceipts = (block: ToolBlock): WebsiteReceipt[] => block.receipts ?? [];
+
+const originOf = (url: string): string => {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return url;
+  }
+};
+
+/**
+ * The receipt of every request a website approval let through: one row per website with each full URL, query
+ * included, and a revoke action that makes the next request ask again.
+ */
+export function WebsiteReceipts(props: { block: ToolBlock }) {
+  const actions = useAiChatActions();
+  const locale = useLocale();
+  const t = () => aiChatMessages(locale());
+  const groups = () => {
+    const byOrigin = new Map<string, WebsiteReceipt[]>();
+    for (const receipt of websiteReceipts(props.block)) {
+      const origin = originOf(receipt.url);
+      byOrigin.set(origin, [...(byOrigin.get(origin) ?? []), receipt]);
+    }
+    return [...byOrigin].map(([origin, receipts]) => ({ origin, receipts }));
+  };
+  return (
+    <For each={groups()}>
+      {(group) => {
+        const [state, setState] = createSignal<"idle" | "busy" | "revoked" | "failed">("idle");
+        const host = () => domainOf(group.origin);
+        const revoke = async () => {
+          if (!actions.onRevokeWebsite || state() === "busy") return;
+          setState("busy");
+          try {
+            await actions.onRevokeWebsite(group.origin);
+            setState("revoked");
+          } catch {
+            setState("failed");
+          }
+        };
+        return (
+          <Chat.Activity
+            icon="ti ti-world-check"
+            label={host()}
+            description={
+              state() === "revoked"
+                ? t().websiteRevoked
+                : state() === "failed"
+                  ? t().revokeFailed
+                  : t().websiteAllowedForChat({ count: group.receipts.length })
+            }
+            defaultOpen
+            bodyInset={false}
+            trailing={
+              // The button keeps its place and label once revoked, so nothing moves; the description says it is revoked.
+              <Show when={actions.onRevokeWebsite}>
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  loading={state() === "busy"}
+                  disabled={state() === "revoked"}
+                  aria-label={t().revokeWebsiteFor({ host: host() })}
+                  onClick={() => void revoke()}
+                >
+                  {t().revoke}
+                </Button>
+              </Show>
+            }
+          >
+            <ul class="flex w-full min-w-0 flex-col gap-0.5 rounded-md bg-zinc-100/70 px-2 py-1.5 text-xs [box-shadow:var(--ui-control-recess)] dark:bg-zinc-950/70">
+              <For each={group.receipts}>
+                {(receipt) => (
+                  <li class="min-w-0 break-all font-mono text-[11px] text-secondary">
+                    <span class="font-semibold text-primary">{receipt.method}</span> {receipt.url}
+                  </li>
+                )}
+              </For>
+            </ul>
+          </Chat.Activity>
+        );
+      }}
+    </For>
   );
 }

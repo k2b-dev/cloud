@@ -2,46 +2,46 @@
 id: accounts-lifecycle
 title: Access lifecycle
 icon: ti ti-user-shield
-description: Understand direct and inherited groups, account expiry, requests, service accounts, and safe access changes.
+description: Read direct and inherited groups, set account expiry, process requests, use service accounts, and change access safely.
 order: 115
 ---
 
-Accounts connects identity records to the access people and integrations receive. Review the current provider and group path before changing a user or group.
+Accounts connects identity records to the access that people and integrations receive. Before you change a user or a group, check its current provider and its group path.
 
-## Read access correctly {icon="shield-lock"}
+## Tell direct and inherited access apart {icon="shield-lock"}
 
-- **Direct membership** is attached to the user or group itself.
-- **Indirect membership** comes through nested parent or child groups. Use the direct-only control when you need to distinguish the stored membership from effective access.
-- **Managers** can maintain the groups within their management scope. This is separate from merely belonging to a group.
-- **Service-account memberships** are hidden from normal membership lists until you choose to show them.
-- **Provider badges** distinguish local records from FreeIPA-backed records and other configured profiles.
+- **Direct membership** belongs to the user or group itself.
+- **Indirect membership** comes through nested parent or child groups. Use **Direct only** to tell the stored membership apart from the effective access.
+- **Managers** can maintain the groups in their management scope. Managing a group is not the same as belonging to it.
+- **Service-account memberships** stay hidden in normal membership lists until you choose **Show service-account memberships**.
+- **Provider badges** tell local records apart from FreeIPA-backed records and other configured profiles.
 
-## Typical lifecycle {icon="user-cog"}
+:::warning Check inherited access before you remove a membership
+Removing one direct membership does not guarantee that the effective access ends. The same user or group can still inherit access through another group path.
+:::
+
+## Give access for a role {icon="user-cog"}
 
 :::steps
 1. Review or approve an account request.
 2. Create the account with the intended provider and profile.
-3. Add only the direct groups required for the role.
-4. Confirm effective group access and manager scope from the account or group detail.
-5. Set or review expiry where temporary access is intended.
-6. Use reminder history and deleted-account history when investigating lifecycle changes.
+3. Add only the direct groups that the role needs.
+4. In the account or group details, check the effective group access and the manager scope.
+5. If the access is temporary, set or check the expiry.
+6. To investigate lifecycle changes, use the reminder history and the deleted-account history.
 :::
 
-## Service-account keys {icon="point"}
+## Use service-account keys {icon="point"}
 
-- A **user-bound** key acts for its owner within that user's effective access.
-- A **resource-bound** key is scoped to the owning app resource.
-- Revocation ends future use of the credential; the record remains available for audit history.
+- A **user-bound** key acts for its owner, within the effective access of that user.
+- A **resource-bound** key is limited to the app resource that owns it.
+- Revoking a key ends all future use of it. The record stays available for the audit history.
 - Never copy a key into tickets, chat messages, screenshots, or documentation.
 
-:::warning Check inherited access before removal
-Removing one direct membership does not guarantee that effective access disappears. The same user or group may still inherit access through another group path.
-:::
+## Fix unexpected results {icon="lifebuoy"}
 
-## When the result is unexpected {icon="lifebuoy"}
-
-- Switch between direct-only and all membership views.
-- Show service-account memberships when the table count and visible human members differ.
-- Check the record provider before retrying a write.
-- Open Audit Log and filter by actor, target, action, or service account.
-- Review deleted-account or reminder history when the account changed through expiry or synchronization.
+- Switch between **Direct only** and the view of all memberships.
+- Choose **Show service-account memberships** when the table count differs from the visible human members.
+- Check the provider of the record before you retry a write.
+- Open **Audit log** and filter by actor, target, action, or service account.
+- Check the deleted-account history or the reminder history when the account changed through expiry or synchronization.

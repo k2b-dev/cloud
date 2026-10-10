@@ -40,6 +40,16 @@ surface without the footer. Full-page and focus-mode surfaces contain viewport
 overscroll: their inner content, including embedded editors, owns scrolling
 without moving the outer Cloud shell or triggering pull-to-refresh.
 
+The shell measures the visible window with the dynamic viewport (`dvh`), not
+`vh`. From `lg`, and for full-page surfaces at every width, it is exactly as
+tall as the window and its content scrolls inside it. Below `lg`, a regular
+page is at least as tall as the window and grows with its content. `vh` follows
+the larger viewport of a browser whose toolbar can collapse, such as Safari on
+iPad, so a page sized with it would scroll by that difference although its
+content fits. Full-page Help follows the same rule. A surface that renders
+without the shell, such as a pop-out window or an unattended display, takes its
+height from `dvh` too, with `h-dvh` or `min-h-dvh`.
+
 The layout reserves a stable scrollbar gutter on every page scroller it owns:
 the content area of regular pages from `lg` and, below `lg`, the document of
 every page except full-page and focus-mode surfaces. Switching between short

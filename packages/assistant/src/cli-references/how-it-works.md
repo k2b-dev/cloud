@@ -162,23 +162,33 @@ an explicit invocation and never asks.
 | --- | --- |
 | Query, such as search or read | Never |
 | Action with `approval: "none"` | Never |
-| Action with `approval: "rememberable"` | Asks; the user may choose **Always approve** for the app's scope |
+| Action with `approval: "rememberable"` | Asks; the user may choose **Approve for this chat** or **Always approve** for the app's scope |
 | Action without an `approval` field | Asks for every call; cannot be remembered or granted to a scheduled task |
-| Built-in tools on chat files, memories, web search, PDFs, and Code Mode | Never; capability calls inside Code Mode still ask |
+| Built-in tools on chat files, memories, web search, PDFs, and Code Mode | Never; capability calls and HTTP requests inside Code Mode still ask |
+| HTTP request from Code Mode | Asks; a GET or HEAD without body or headers offers **Allow this website for this chat** |
+| `web_extract` or `fetch_file` for an address the chat did not supply | Asks, like an HTTP request; an address from the user, a search result, or a read page's links never asks |
 | Studio App sharing, unpublishing, deletion, data clearing, and file copies, including into a Project | Asks for every call with a fresh review |
 | Capability calls from a shared Studio App the user does not manage | Asks for every call, reads included |
 | `local_bash` in `cld assistant --allow-bash` | The terminal asks `Y/n` for every command |
 
 Read `approval` and `destructive` for each Action in
 `cld capabilities catalog --json`; a missing `approval` field means it asks
-every time. For example, `spaces.task.create` and `mail.draft.send` ask every
-time, while `spaces.task.update`, `mail.draft.create`, and
-`notebooks.note.edit` are rememberable.
+every time. For example, `mail.draft.send` and `spaces.item.delete` ask every
+time, while `spaces.task.create`, `spaces.task.update`, `mail.draft.create`,
+and `notebooks.note.edit` are rememberable.
 
-A remembered approval applies to the same user, Action, and app-owned scope.
-Users review and revoke them under **Assistant settings > Approvals**. There is
-no `cld` command to list or revoke them. Approval confirms intent; the app
-still checks permissions afterward.
+A remembered approval applies to the same user, Action, and app-owned scope,
+and a chat approval only in its chat until the chat is deleted. Users review
+and revoke approvals that apply everywhere under **Assistant settings >
+Approvals**, and those of one chat under **Secrets & approvals** in the chat.
+There is no `cld` command to list or revoke them. Approval confirms intent; the
+app still checks permissions afterward.
+
+A website allowed for a chat lets Code Mode read that exact origin with GET or
+HEAD, without body or headers, without asking again. It applies only to turns
+the user starts in a signed-in browser. A turn started through `cld`, an API
+key, or a schedule asks for every request, and `cld` can approve such a
+request once but cannot allow the website.
 
 In print mode, pass `--approve <exact-tool-name>` only for operations the user
 authorized. An unresolved approval exits with status `2`; resolve it with
@@ -221,10 +231,10 @@ task may call. Background runs work like this:
 - Apps can limit background work further. For example, Grids document stream
   references do not work in scheduled runs.
 
-With today's apps, a scheduled task therefore cannot create Spaces tasks or
-send mail, because `spaces.task.create` and `mail.draft.send` always ask. It
-can update existing tasks, add comments, edit notes, or create mail drafts when
-you grant those Actions. For anything else, let the task write its proposal
+With today's apps, a scheduled task therefore cannot send mail or delete,
+because `mail.draft.send` and `spaces.item.delete` always ask. It can create
+and update tasks, add comments, edit notes, or create mail drafts when you
+grant those Actions. For anything else, let the task write its proposal
 into the chat; the user can then ask the Assistant there to carry it out and
 approve each step.
 

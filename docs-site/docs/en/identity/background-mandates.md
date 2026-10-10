@@ -117,7 +117,9 @@ Policy values are:
 wildcard mandate always requires approval. It cannot silently approve an
 operation that the product or capability contract says needs user attention.
 
-Background work does not inherit remembered interactive approvals. Use a
+Background work does not inherit remembered interactive approvals, neither
+those for a chat, including a website allowed for a chat, nor those that apply
+everywhere. Use a
 narrowly scoped `preapproved` mandate only for explicitly authorized unattended
 operations. Missing, paused, expired or revoked authority must not be replaced
 with a user's browser session or silently recreated by a worker.

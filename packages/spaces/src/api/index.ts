@@ -75,6 +75,7 @@ import {
   SpaceWormholeDestinationSchema,
   SpaceWormholeSchema,
   SplitRecurringItemSchema,
+  TransferItemSchema,
   UpdateAccessSchema,
   UpdateColumnSchema,
   UpdateCommentSchema,
@@ -2533,14 +2534,14 @@ const app = new Hono<AuthContext>()
         400: jsonResponse(ErrorResponseSchema, "Invalid column or position"),
         403: jsonResponse(ErrorResponseSchema, "Access denied"),
         404: jsonResponse(ErrorResponseSchema, "Item, column, or neighboring item not found"),
-        409: jsonResponse(ErrorResponseSchema, "Neighboring item left the target column, or the task is claimed or blocked"),
+        409: jsonResponse(ErrorResponseSchema, "Neighboring item left the target column, or a completion change meets a claim or blocker"),
       },
     }),
     v("json", MoveItemSchema),
     async (c) => {
       const spaceShortId = c.req.param("id") ?? "";
       const itemId = c.req.param("itemId") ?? "";
-      const { columnId, afterItemId, beforeItemId, rank, completed, claimId } = c.req.valid("json");
+      const { columnId, afterItemId, beforeItemId, rank, completed, claimId, force } = c.req.valid("json");
 
       const { internalId: spaceId, error } = await checkSpaceAccess(c, spaceShortId, "write");
       if (error) return error;
@@ -2563,6 +2564,7 @@ const app = new Hono<AuthContext>()
             rank,
             completed,
             claimId,
+            force,
             actor: getSpaceActivityActor(c),
           }),
           projectItems,
@@ -2576,16 +2578,18 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Spaces"],
       summary: "Move item through wormhole",
-      description: "Atomically transfer an item to the configured destination after rechecking write access to both spaces.",
+      description:
+        "Atomically transfer an item to the configured destination after rechecking write access to both spaces. A transfer ends the task's claim: the holder sends its claimId, anyone else takes it over with force.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(WormholeTransferResultSchema, "Transferred item"),
         400: jsonResponse(ErrorResponseSchema, "Item cannot be transferred"),
         403: jsonResponse(ErrorResponseSchema, "Access denied"),
         404: jsonResponse(ErrorResponseSchema, "Item or wormhole not found"),
-        409: jsonResponse(ErrorResponseSchema, "Wormhole destination changed"),
+        409: jsonResponse(ErrorResponseSchema, "Wormhole destination changed, or the transfer meets a claim"),
       },
     }),
+    v("json", TransferItemSchema),
     async (c) => {
       const { internalId: sourceSpaceId, error } = await checkSpaceAccess(c, c.req.param("id") ?? "", "write");
       if (error) return error;
@@ -2593,12 +2597,16 @@ const app = new Hono<AuthContext>()
       if (!item.ok) return respond(c, item);
       const wormholeId = await resolvePublicId("wormholes", c.req.param("wormholeId") ?? "");
       if (!wormholeId) return respond(c, fail(err.notFound("Wormhole")));
+      const { claimId, force } = c.req.valid("json");
       return respond(c, async () => {
         const result = await spacesService.wormhole.transfer({
           sourceSpaceId: sourceSpaceId!,
           itemId: item.data.id,
           wormholeId,
           actor: getWormholeActor(c),
+          workActor: getSpaceActivityActor(c),
+          claimId,
+          force,
         });
         if (!result.ok) return result;
         const [projectedItem, projectedDestination] = await Promise.all([
@@ -2707,7 +2715,7 @@ const app = new Hono<AuthContext>()
     }),
     v("json", ReleaseTaskSchema),
     async (c) => {
-      const access = await checkSpaceAccess(c, c.req.param("id") ?? "", c.req.valid("json").force ? "admin" : "write");
+      const access = await checkSpaceAccess(c, c.req.param("id") ?? "", "write");
       if (access.error) return access.error;
       const item = await requireItemInSpace(access.internalId!, c.req.param("itemId") ?? "");
       if (!item.ok) return respond(c, item);
@@ -2807,14 +2815,14 @@ const app = new Hono<AuthContext>()
         200: jsonResponse(SpaceItemSchema, "Updated item"),
         403: jsonResponse(ErrorResponseSchema, "Access denied"),
         404: jsonResponse(ErrorResponseSchema, "Item not found"),
-        409: jsonResponse(ErrorResponseSchema, "Task has active blockers"),
+        409: jsonResponse(ErrorResponseSchema, "Task has active blockers, or the completion change meets another claim"),
       },
     }),
     v("json", SetCompletedSchema),
     async (c) => {
       const spaceShortId = c.req.param("id") ?? "";
       const itemId = c.req.param("itemId") ?? "";
-      const { completed, result, commit, claimId } = c.req.valid("json");
+      const { completed, result, commit, claimId, force } = c.req.valid("json");
 
       const { internalId: spaceId, error } = await checkSpaceAccess(c, spaceShortId, "write");
       if (error) return error;
@@ -2830,6 +2838,7 @@ const app = new Hono<AuthContext>()
             result,
             commit,
             claimId,
+            force,
             actor: getSpaceActivityActor(c),
           }),
           projectItems,

@@ -183,7 +183,7 @@ const open = async (view: View, dark = false) => {
   await tab.route(`${origin}/public/**`, (route) => route.fulfill({ path: join(root, new URL(route.request().url()).pathname) }));
   await tab.setContent(
     head("en", dark) +
-      `<body class="k2b-ui"><div class="cloud-app-canvas relative flex min-h-screen w-full" style="${CORE_CANVAS}" data-app-id="core">` +
+      `<body class="k2b-ui"><div class="cloud-app-canvas relative flex min-h-dvh w-full" style="${CORE_CANVAS}" data-app-id="core">` +
       `<div class="layout-shell-content flex min-h-0 min-w-0 flex-1 flex-col"><main class="layout-content-main min-h-0 min-w-0 flex-1">` +
       `${body}</main></div></div></body></html>`,
   );

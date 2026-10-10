@@ -16,6 +16,7 @@ type ItemListProps = {
   baseUrl: string;
   dateConfig?: DateContext;
   canWrite: boolean;
+  currentUserId: string;
 };
 
 // =============================================================================
@@ -76,6 +77,7 @@ export default function ItemList(props: ItemListProps) {
               baseUrl={props.baseUrl}
               dateConfig={props.dateConfig}
               canWrite={props.canWrite}
+              currentUserId={props.currentUserId}
               isListed={isListed}
               retryToast={retryToast}
             />
@@ -100,6 +102,7 @@ export default function ItemList(props: ItemListProps) {
                       baseUrl={props.baseUrl}
                       dateConfig={props.dateConfig}
                       canWrite={props.canWrite}
+                      currentUserId={props.currentUserId}
                       agenda={props.groupBy === "deadline"}
                       isListed={isListed}
                       retryToast={retryToast}

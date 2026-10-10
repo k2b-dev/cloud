@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { registryMessages } from "../frontend/tools/registry";
 import { toolsHelp } from ".";
 
 describe("toolsHelp", () => {
@@ -24,7 +25,17 @@ describe("toolsHelp", () => {
     expect(toolsHelp.getMarkdown("tools-markdown-pdf")).toContain("no dedicated `cld tools` command");
     expect(toolsHelp.getMarkdown("tools-image-converter")).toContain("does not upload or persist them");
     expect(toolsHelp.getMarkdown("tools-image-converter")).toContain("Multiple files download together");
-    expect(toolsHelp.getMarkdown("tools-safety")).toContain("Generators, encoders, color conversion");
+    expect(toolsHelp.getMarkdown("tools-safety")).toContain("Generators, Base64, Hex, Base32, color conversion");
+  });
+
+  test("names every tool that sends data to the server in the safety article", () => {
+    for (const locale of ["en", "de"] as const) {
+      const { t } = registryMessages.resolve([locale]);
+      const safety = toolsHelp.getMarkdown("tools-safety", locale);
+      for (const name of [t.documentMarkdownName, t.markdownPdfName, t.speedtestName, t.webhooksName]) {
+        expect(safety).toContain(`**${name}**`);
+      }
+    }
   });
 
   test("translates every article to German with matching icon and order", () => {

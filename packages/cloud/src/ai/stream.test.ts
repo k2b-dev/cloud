@@ -194,6 +194,32 @@ describe("persisted tool outcomes", () => {
     ]);
   });
 
+  test("rebuilds website receipts in request order on a failed call", () => {
+    const [block] = buildBlocksFromMessages([
+      {
+        seq: 1,
+        message: { role: "assistant", content: [{ type: "tool_call", id: "call-1", name: "code_run", args: {} }] },
+        meta: {
+          websiteReceipts: {
+            "call-1": {
+              "10": { method: "GET", url: "https://a.example/11" },
+              "2": { method: "GET", url: "https://a.example/3" },
+            },
+          },
+        },
+      },
+      { seq: 2, message: { role: "tool_result", callId: "call-1", name: "code_run", result: "HTTP 401", isError: true } },
+    ]);
+    expect(block).toMatchObject({
+      kind: "tool",
+      status: "failed",
+      receipts: [
+        { method: "GET", url: "https://a.example/3" },
+        { method: "GET", url: "https://a.example/11" },
+      ],
+    });
+  });
+
   test("rebuilds an approved call with its decision, so history keeps the approval receipt", () => {
     const [block] = buildBlocksFromMessages([
       { seq: 1, message: { role: "assistant", content: [{ type: "tool_call", id: "call-1", name: "code_run", args: {} }] } },

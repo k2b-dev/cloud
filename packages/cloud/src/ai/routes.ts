@@ -93,6 +93,8 @@ type AiChatRequestContext = {
   ownerUserId: string;
   modelPolicy: AiModelPolicy;
   toolApprovalContext: AiToolApprovalContext;
+  /** A person in a signed-in browser session, not `cld`, an API key, or another delegated credential. */
+  signedInSession: boolean;
 };
 
 const actorUser = (actor: RequestActor) => (actor.kind === "user" ? actor.user : actor.delegatedUser);
@@ -106,6 +108,7 @@ const resolveContext = async (c: Context<AuthContext>): Promise<AiChatRequestCon
     ownerUserId: user.id,
     modelPolicy: personalAiModelPolicy,
     toolApprovalContext: { actorUserId: user.id },
+    signedInSession: actor.kind === "user" && !actor.delegation && c.get("credentialKind") === "session",
   };
 };
 
@@ -890,6 +893,7 @@ export const aiRoutes = (() => {
         try {
           const submission = {
             assistantChat: true as const,
+            ...(ctx.signedInSession ? { signedInSession: true as const } : {}),
             conversationId: conversation.id,
             chatId: conversation.shortId,
             input,
@@ -999,6 +1003,7 @@ export const aiRoutes = (() => {
           }
           const result = await submitAiChatTurn({
             assistantChat: true,
+            ...(ctx.signedInSession ? { signedInSession: true as const } : {}),
             conversationId: conversation.id,
             chatId: conversation.shortId,
             input,
@@ -1122,6 +1127,7 @@ export const aiRoutes = (() => {
           callId,
           action: c.req.valid("json"),
           toolApprovalContext: ctx.toolApprovalContext,
+          signedInSession: ctx.signedInSession,
         });
         if (!result.ok) return toAiActionFailureResponse(c, result);
         return respond(c, ok({ ok: true }));

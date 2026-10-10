@@ -311,6 +311,8 @@ export const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 export const isCardToolName = (name: string) => name === "card" || name === "cloud_card";
 
+export const isChartToolName = (name: string) => name === "chart";
+
 export const isSurveyToolName = (name: string) => name === "survey" || name === "cloud_survey";
 
 export const isTextEditorToolName = (name: string) => name === "text_editor" || name === "cloud_text_editor";
@@ -326,6 +328,7 @@ export const displayToolName = (name: string, locale: string) => {
 const BUILT_IN_TOOL_ICONS = new Map<string, string>([
   ["card", "ti ti-layout-cards"],
   ["cloud_card", "ti ti-layout-cards"],
+  ["chart", "ti ti-chart-bar"],
   ["survey", "ti ti-forms"],
   ["cloud_survey", "ti ti-forms"],
   ["text_editor", "ti ti-edit"],

@@ -409,6 +409,17 @@ suite("share authority, public privacy and durable inbox budgets", () => {
     await expect(service.publicShareDownload(token(share), "Docs/private.txt")).rejects.toMatchObject({ code: "forbidden" });
     await expect(service.publicShare(token(share), "download", { path: "Other" })).rejects.toMatchObject({ code: "not_found" });
   });
+  test("lists the items of active download shares only, for the review of a remembered change", async () => {
+    const docs = await create({ kind: "download", paths: ["Docs"] });
+    await create({ kind: "inbox", folder: "Inbox" });
+    const revoked = await create({ kind: "download", paths: ["Old"] });
+    await service.revokeShare(actor, { id: revoked.id });
+    const expired = await create({ kind: "download", paths: ["Expired"] });
+    await sql`UPDATE filesv2.shares SET expires_at=now() - interval '1 minute' WHERE id=${expired.id}::uuid`;
+    expect(await shares.activeDownloadItems(binding.id)).toEqual([["Docs"]]);
+    await service.revokeShare(actor, { id: docs.id });
+    expect(await shares.activeDownloadItems(binding.id)).toEqual([]);
+  });
   test("share pagination exposes every row once and an aborted recovery tick does no work", async () => {
     await Promise.all(Array.from({ length: 51 }, (_, i) => create({ title: `Share ${i}` })));
     const first = await service.listShares(actor);

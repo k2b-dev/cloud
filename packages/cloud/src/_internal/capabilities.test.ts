@@ -1062,7 +1062,7 @@ describe("capability v1 compilation", () => {
     });
   });
 
-  test("fails closed when a rememberable review omits its app-owned scope", async () => {
+  test("accepts a rememberable review without a scope, so that call asks every time", async () => {
     const definitions = example();
     const compiled = compileCapabilities("example", {
       ...definitions,
@@ -1074,6 +1074,23 @@ describe("capability v1 compilation", () => {
         },
       },
     });
+    const action = compiled.manifest.actions[0]!;
+
+    expect(
+      await reviewCompiledCapability({
+        compiled,
+        localId: "rename",
+        input: { id: "one", name: "Two" },
+        expectedSchemaHash: action.schemaHash,
+        context,
+      }),
+    ).toEqual({ ok: true, data: { message: "Rename this item." } });
+  });
+
+  test("fails closed when a review returns a scope its Action cannot remember", async () => {
+    const definitions = example();
+    const { approval: _approval, ...rename } = definitions.actions!.rename!;
+    const compiled = compileCapabilities("example", { ...definitions, actions: { ...definitions.actions, rename } });
     const action = compiled.manifest.actions[0]!;
 
     expect(

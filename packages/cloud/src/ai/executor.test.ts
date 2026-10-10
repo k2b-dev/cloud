@@ -1,9 +1,15 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import type { NessiLoop, OutboundEvent } from "@k2b/nessi";
 import type { CapabilityActionReview } from "../contracts/capabilities";
-import { aiTurnAllowsRememberedApprovals } from "./approvals";
+import {
+  AI_WEBSITE_APPROVAL_TOOL,
+  aiTurnAllowsRememberedApprovals,
+  aiTurnAllowsWebsiteApprovals,
+  aiWebsiteApprovalScope,
+  parseAiWebsiteApprovalScope,
+} from "./approvals";
 import { __aiExecutorTest, AiTurnExecutor } from "./executor";
-import { messageBlockId, streamBlockId, toolBlockId } from "./protocol";
+import { type AiTurnBlock, messageBlockId, streamBlockId, toolBlockId } from "./protocol";
 import { aiConversations } from "./store";
 import * as stream from "./stream";
 import { prepareAiTools } from "./tools";
@@ -11,6 +17,26 @@ import { prepareAiTools } from "./tools";
 const { createEventMapper, rebuildAttemptBaseline, rebuildBlocksFromMessages } = __aiExecutorTest;
 
 const turn = { agentId: "cloud", loopId: "turn-1", turnId: "turn-1:turn:0", turnIndex: 0 };
+
+test("website approvals apply only to a turn a person started in a signed-in session", () => {
+  const mandate = { id: crypto.randomUUID(), revision: 1 };
+  const background = { taskId: "task01", occurrenceId: "run001", context: [] };
+  expect(aiTurnAllowsWebsiteApprovals({ kind: "chat", input: "Run", signedInSession: true })).toBe(true);
+  // `cld`, an API key, or an inter-chat message starts a turn without the marker.
+  expect(aiTurnAllowsWebsiteApprovals({ kind: "chat", input: "Run" })).toBe(false);
+  expect(aiTurnAllowsWebsiteApprovals({ kind: "chat", input: "Run", signedInSession: true, mandate, background })).toBe(false);
+  expect(aiTurnAllowsWebsiteApprovals({ kind: "compact" })).toBe(false);
+  expect(aiTurnAllowsWebsiteApprovals(null)).toBe(false);
+});
+
+test("a website approval names one exact origin, in a chat or for one Studio app", () => {
+  expect(aiWebsiteApprovalScope("https://api.example.com")).toBe("https://api.example.com");
+  expect(parseAiWebsiteApprovalScope(aiWebsiteApprovalScope("https://api.example.com", "Ab3dEf"))).toEqual({
+    origin: "https://api.example.com",
+    resourceId: "Ab3dEf",
+  });
+  expect(parseAiWebsiteApprovalScope("https://api.example.com")).toEqual({ origin: "https://api.example.com", resourceId: null });
+});
 
 test("remembered approvals reject mandate-backed chats even when kind is omitted", () => {
   const mandate = { id: crypto.randomUUID(), revision: 1 };
@@ -209,6 +235,99 @@ describe("nessi block event mapping", () => {
       } as OutboundEvent);
       expect(ops[0]).toMatchObject({ type: "block_set", block: { approval: { allowAlways: false } } });
     }
+  });
+
+  test("a code run's approval offers the chat reach of its website or Action, never of the run", () => {
+    const mapper = createEventMapper(1, []);
+    mapper.setApprovalPolicies(new Map([["code_run", "never"]]));
+    mapper.setApprovalTargets(
+      new Map([
+        ["run-approval-0", { toolName: AI_WEBSITE_APPROVAL_TOOL, approvalScope: "https://query1.finance.yahoo.com", always: false }],
+        ["run-approval-1", { toolName: "spaces.task.create", approvalScope: "space:team", always: true }],
+      ]),
+    );
+    const request = (callId: string) =>
+      mapper.translate({
+        ...turn,
+        type: "tool_action_request",
+        kind: "custom_approval",
+        callId,
+        name: "code_run",
+        args: {},
+        message: "?",
+      } as OutboundEvent)[0];
+    expect(request("run-approval-0")).toMatchObject({
+      block: { approval: { allowAlways: false, allowChat: true, website: "https://query1.finance.yahoo.com" } },
+    });
+    expect(request("run-approval-1")).toMatchObject({ block: { approval: { allowAlways: true, allowChat: true } } });
+    expect((request("run-approval-1") as { block: { approval: { website?: string } } }).block.approval.website).toBeUndefined();
+    // An approval without a target is the run itself, which is never remembered.
+    expect(request("run-approval-2")).toMatchObject({ block: { approval: { allowAlways: false, allowChat: false } } });
+    const background = createEventMapper(1, [], false);
+    background.setApprovalTargets(
+      new Map([["run-approval-0", { toolName: AI_WEBSITE_APPROVAL_TOOL, approvalScope: "https://a.example", always: false }]]),
+    );
+    expect(
+      background.translate({
+        ...turn,
+        type: "tool_action_request",
+        kind: "custom_approval",
+        callId: "run-approval-0",
+        name: "code_run",
+        args: {},
+        message: "?",
+      } as OutboundEvent)[0],
+    ).toMatchObject({ block: { approval: { allowAlways: false, allowChat: false } } });
+  });
+
+  test("website receipts stay on a call through its later approval card and its failure", () => {
+    const mapper = createEventMapper(1, []);
+    mapper.setApprovalTargets(
+      new Map([["run-approval-0", { toolName: AI_WEBSITE_APPROVAL_TOOL, approvalScope: "https://a.example", always: false }]]),
+    );
+    mapper.translate({ ...turn, type: "tool_execution_start", callId: "run", name: "code_run", args: {} } as OutboundEvent);
+    expect(mapper.addReceipts("run", [{ index: 1, method: "GET", url: "https://a.example/2" }])).toEqual([
+      { method: "GET", url: "https://a.example/2" },
+    ]);
+    // A replay reports the same index again; it replaces itself, and order follows the index.
+    expect(
+      mapper.addReceipts("run", [
+        { index: 0, method: "GET", url: "https://a.example/1" },
+        { index: 1, method: "GET", url: "https://a.example/2" },
+      ]),
+    ).toEqual([
+      { method: "GET", url: "https://a.example/1" },
+      { method: "GET", url: "https://a.example/2" },
+    ]);
+    const receipts = [
+      { method: "GET", url: "https://a.example/1" },
+      { method: "GET", url: "https://a.example/2" },
+    ];
+    const asking = mapper.translate({
+      ...turn,
+      type: "tool_action_request",
+      kind: "custom_approval",
+      callId: "run-approval-0",
+      name: "code_run",
+      args: {},
+      message: "GET https://b.example",
+    } as OutboundEvent)[0];
+    expect(asking).toMatchObject({ block: { id: "tool-run", status: "awaiting_approval", receipts } });
+    const failed = mapper.translate({
+      ...turn,
+      type: "tool_execution_end",
+      callId: "run",
+      name: "code_run",
+      result: "Request failed with HTTP 401.",
+      isError: true,
+    } as OutboundEvent)[0];
+    expect(failed).toMatchObject({ block: { id: "tool-run", status: "failed", receipts } });
+    // A rebuilt turn keeps them too.
+    const rebuilt = createEventMapper(2, [{ ...(failed as { block: AiTurnBlock }).block }]);
+    expect(rebuilt.addReceipts("run", [{ index: 2, method: "HEAD", url: "https://a.example/3" }])).toEqual([
+      ...receipts,
+      { method: "HEAD", url: "https://a.example/3" },
+    ]);
   });
 
   test("reconnect rebuild replaces the parent call with its pending custom approval", () => {
@@ -755,6 +874,7 @@ for (const stopReason of ["tool_use", "error", "interrupted", "aborted"] as cons
       allowRememberedApprovals: false,
       rememberableCapabilityApprovals: new Map<string, string>(),
       capabilityActionReviews: new Map<string, CapabilityActionReview>(),
+      approvalTargets: new Map(),
       appliedSteers: [],
       noteToolRound: () => {
         rounds++;

@@ -24,6 +24,7 @@ type Props = {
   paginationBaseUrl: string;
   dateConfig?: DateContext;
   canWrite: boolean;
+  currentUserId: string;
 };
 
 export default function SpacesListRoute(props: Props) {
@@ -146,6 +147,7 @@ export default function SpacesListRoute(props: Props) {
             baseUrl={baseUrl()}
             dateConfig={props.dateConfig}
             canWrite={props.canWrite}
+            currentUserId={props.currentUserId}
           />
         )}
 

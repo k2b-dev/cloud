@@ -37,7 +37,7 @@ const readApiError = async (response: Pick<Response, "json">, fallback: string):
 };
 
 const loadApprovalPreferences = async (): Promise<AiApprovalPreferenceView[]> => {
-  const response = await coreClient.ai["approval-preferences"].$get();
+  const response = await coreClient.ai["approval-preferences"].$get({ query: {} });
   if (!response.ok) throw new Error(await readApiError(response, "Failed to load remembered approvals"));
   return (await response.json()).approvals;
 };
@@ -87,8 +87,14 @@ function ApprovalPreferences() {
             {(approval) => (
               <SettingsCollection.Item
                 title={approval.title}
-                description={approval.app?.name ?? text("Cloud AI tool")}
-                icon={<i class={approval.app?.icon ?? "ti ti-tool"} style={{ color: approval.app?.accent }} aria-hidden="true" />}
+                description={approval.website ? text("Website for one Studio app") : (approval.app?.name ?? text("Cloud AI tool"))}
+                icon={
+                  <i
+                    class={approval.website ? "ti ti-world" : (approval.app?.icon ?? "ti ti-tool")}
+                    style={{ color: approval.app?.accent }}
+                    aria-hidden="true"
+                  />
+                }
               >
                 <SettingsCollection.Item.Actions>
                   <IconButton

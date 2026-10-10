@@ -4,6 +4,7 @@ import type { CloudCliContext } from "@k2b/cloud/cli";
 import type { CapabilityDecision, CodeApproval } from "../artifacts/runtime/capabilities";
 import { printCapabilityTable } from "./capability-table";
 import { cliCodeHost, closeCliCodeHost } from "./code-host";
+import { printDeliveredBlock } from "./delivered-blocks";
 import { AI_API, jsonRequest } from "./shared";
 import { terminalSafeText } from "./terminal";
 
@@ -68,7 +69,6 @@ export const streamAssistantTurn = async (input: {
   approveTools?: readonly string[];
   onCapabilityApproval?: (request: CodeApproval) => Promise<CapabilityDecision>;
   signal?: AbortSignal;
-  onToolBlock?: (block: Extract<AiTurnBlock, { kind: "tool" }>) => void;
   output?: AssistantTurnOutput;
 }): Promise<AssistantTurnStreamResult> => {
   const { ctx, conversationId } = input;
@@ -91,6 +91,11 @@ export const streamAssistantTurn = async (input: {
   const emitTable = (callId: string, result: unknown) => {
     if (ctx.options.output !== "text" || renderedTables.has(callId)) return;
     if (printCapabilityTable(ctx, result)) renderedTables.add(callId);
+  };
+  // Cards and charts draw in the web chat; every text client prints what they show instead.
+  const emitDelivered = (block: Extract<AiTurnBlock, { kind: "tool" }>) => {
+    if (ctx.options.output !== "text" || renderedTables.has(block.callId)) return;
+    if (printDeliveredBlock(ctx, block)) renderedTables.add(block.callId);
   };
 
   const emitJsonLine = (value: Record<string, unknown>) => {
@@ -179,10 +184,12 @@ export const streamAssistantTurn = async (input: {
   };
 
   const handleToolBlock = async (block: Extract<AiTurnBlock, { kind: "tool" }>): Promise<AssistantTurnStreamResult | null> => {
-    if (block.status === "completed") emitTable(block.callId, block.result);
+    if (block.status === "completed") {
+      emitTable(block.callId, block.result);
+      emitDelivered(block);
+    }
     if (toolStatuses.get(block.callId) !== block.status) {
       toolStatuses.set(block.callId, block.status);
-      input.onToolBlock?.(block);
       emitJsonLine({ type: "tool", callId: block.callId, name: block.name, status: block.status });
       if (ctx.options.output === "text") {
         const path = block.status === "completed" ? presentedPath(block.name, block.result) : null;

@@ -47,7 +47,7 @@ Nach sieben Tagen ohne Nutzung erscheinen Chats automatisch unter **Fertig**. Al
 :::
 
 :::info Freigaben und Client-Aktionen
-Manche Anfragen benötigen eine Freigabe oder das Ergebnis eines Frontend-Tools. Beantworte diese Aufforderungen in der Nachrichtenliste, damit die Anfrage fortgesetzt werden kann. Begrenzte, wiederholbare Aktionen können im Menü der Freigabeschaltfläche **Immer freigeben** anbieten. Löschvorgänge, externe Auswirkungen und andere folgenreiche Aktionen erfordern weiterhin jedes Mal eine Freigabe.
+Manche Anfragen benötigen eine Freigabe oder das Ergebnis eines Frontend-Tools. Beantworte diese Aufforderungen in der Nachrichtenliste, damit die Anfrage fortgesetzt werden kann. Begrenzte, wiederholbare Aktionen bieten im Menü der Freigabeschaltfläche **Für diesen Chat freigeben** und **Immer freigeben** an; eine Chat-Freigabe endet, wenn du den Chat löschst. Löschen, Senden, Teilen und andere folgenreiche Aktionen erfordern weiterhin jedes Mal eine Freigabe. Wenn Code eine Website liest, bietet das Menü **Diese Website für diesen Chat erlauben** an: Weitere Abrufe genau dieser Website fragen dann nicht mehr, und jeder zeigt seine vollständige Adresse mit **Entziehen**. Solche Freigaben stehen unter **Secrets & Freigaben** im Kontext des Chats.
 :::
 
 ## Assistent mit Chat-Kontext {icon="message-forward"}

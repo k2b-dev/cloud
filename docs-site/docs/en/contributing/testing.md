@@ -218,6 +218,15 @@ branch:
   or moves a finger, or that changes the default font size, needs Chromium's
   DevTools protocol. Such a test is skipped in WebKit with
   `test.skipIf(browserName === "webkit")` and a comment that names the reason.
+- `Input.dispatchTouchEvent` stamps an event without `timestamp` when its
+  call arrives, and Chromium flings a touch scroll at the speed it reads from
+  these stamps. On a loaded machine several moves arrive at once and the list
+  flings far further. A test that scrolls by touch and then touches something
+  in the scrolled list stamps its events one 60 Hz frame apart and stamps the
+  lift 100 ms after the last move. Chromium treats a finger that rests 80 ms
+  or longer before it lifts as stopped, so the list stops without a fling.
+  It moves about as far as the finger did, give or take a few pixels, so
+  assert a bound rather than an exact scroll position.
 - WebKit matches `forced-colors: active` under emulation but has no forced
   colours mode that repaints author colours.
 - WebKit does not support `reading-flow` yet, so focus and VoiceOver keep the
@@ -680,6 +689,30 @@ the time of that step.
   network, or many shorter statements.
 - PostgreSQL logs checkpoints by default. A long checkpoint in the same window
   can point to slow disk writes on the runner.
+
+A plan can also come from statistics that no longer describe a table. When
+autovacuum analyzes a table while earlier tests have left it empty, and a test
+then fills it faster than autovacuum analyzes it again, PostgreSQL plans as if
+the table were still empty. Such a plan changes with whether autovacuum ran in
+between. Skewed data or a condition whose selectivity PostgreSQL misjudges can
+look similar. Two signs in the plan point to stale statistics:
+
+- A scan that runs once over the whole table, such as most `Seq Scan` nodes,
+  estimates far fewer rows than the test inserted. On the inner side of a
+  nested loop and in a subplan, an estimate counts the rows of one loop, so
+  `rows=1` for a lookup by key is normal there.
+- An index is used without a condition on its first column, such as an
+  `Index Cond` on only the second column of a two-column index. Each loop then
+  reads the whole index.
+
+To check a table locally, compare `reltuples` and `relpages` in `pg_class` and
+`last_analyze` and `last_autoanalyze` in `pg_stat_user_tables` with what the
+test inserted. A table with `reltuples` 0 and `relpages` above 0 is planned as
+empty however many rows it holds. If `EXPLAIN (ANALYZE, BUFFERS)` shows a
+different plan after an `ANALYZE` of the table, the statistics were the cause.
+A test that measures a query runs `ANALYZE` on every table it bulk-loads that
+the query reads before it measures, as
+`packages/mail/src/service/view-counts.integration.test.ts` does.
 
 The log is bounded: Docker keeps two log files of 4 MB for each PostgreSQL
 container and drops the oldest entries when both are full. A full local

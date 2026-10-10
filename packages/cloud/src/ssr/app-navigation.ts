@@ -1,6 +1,6 @@
 import { hasAnyAppRole } from "../_internal/app-roles";
 import type { RuntimeAppMeta } from "../contracts/app";
-import { isPwaPartId } from "../contracts/pwa";
+import { isPwaPartId } from "../contracts/pwa-paths";
 import type { User } from "../contracts/shared";
 import { resolveAppPresentation } from "../shared/app-presentation";
 

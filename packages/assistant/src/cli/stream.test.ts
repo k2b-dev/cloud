@@ -87,15 +87,18 @@ const run = async (
   output: CloudCliOutputMode = "text",
   approveTools?: string[],
   turnOutput?: AssistantTurnOutput,
+  locale?: string,
 ) => {
   const chunks: string[] = [],
     errors: string[] = [],
     lines: unknown[] = [],
-    requests: unknown[] = [];
+    requests: unknown[] = [],
+    printed: string[] = [],
+    tables: { rows: unknown; columns: unknown }[] = [];
   const ctx: CloudCliContext = {
     args: [],
     flags: {},
-    options: { profile: "test", server: "http://example.test", token: "test", output },
+    options: { profile: "test", server: "http://example.test", token: "test", output, locale },
     getDefault: async () => undefined,
     setDefault: async () => {},
     createApiClient: () => {
@@ -111,7 +114,9 @@ const run = async (
       return response(events);
     },
     readJson: (response) => response.json(),
-    print: () => {},
+    print: (value) => {
+      printed.push(value ?? "");
+    },
     write: async (value) => {
       chunks.push(value);
     },
@@ -122,7 +127,9 @@ const run = async (
     jsonLine: (value) => {
       lines.push(value);
     },
-    table: () => {},
+    table: (rows, columns) => {
+      tables.push({ rows, columns });
+    },
   };
   const result = await streamAssistantTurn({
     ctx,
@@ -132,7 +139,7 @@ const run = async (
     output: turnOutput,
     signal: AbortSignal.timeout(4000),
   });
-  return { text: chunks.join(""), chunks, errors, lines, requests, result };
+  return { text: chunks.join(""), chunks, errors, lines, requests, printed, tables, result };
 };
 
 describe("Assistant CLI stream", () => {
@@ -377,6 +384,52 @@ describe("Assistant CLI stream", () => {
     ]);
     expect(reply.text).toBe("Checking.\n\nFound it.\n\nDone.\n");
   });
+  test("prints a delivered chart's data table once in every text client", async () => {
+    const chart: AiTurnBlock = {
+      id: "tool-chart",
+      kind: "tool",
+      callId: "chart",
+      name: "chart",
+      status: "running",
+      args: { kind: "bar", title: "Orders", subtitle: "Q3", data: [{ label: "North", value: 1_250_000 }] },
+    };
+    const completed: AiTurnBlock = { ...chart, status: "completed", result: { displayed: true } };
+    const connections = () => [
+      [
+        { ...wire(), type: "block_set", block: chart } as AiStreamSseEvent,
+        { ...wire(), type: "block_set", block: completed } as AiStreamSseEvent,
+      ],
+      // A reconnect replays the finished call; its table stays printed once.
+      [state([completed]), finished(["North leads."])],
+    ];
+    const text = await run(connections());
+    expect(text.printed.filter(Boolean)).toEqual(["Orders", "Q3"]);
+    expect(text.tables).toEqual([
+      {
+        rows: [{ label: "North", value: "1,250,000" }],
+        columns: [
+          { key: "label", label: "Category" },
+          { key: "value", label: "Value" },
+        ],
+      },
+    ]);
+    expect(text.errors).toEqual(["chart: running", "chart: completed"]);
+    // The table speaks the CLI's language.
+    const german = await run(connections(), "text", undefined, undefined, "de");
+    expect(german.tables).toEqual([
+      {
+        rows: [{ label: "North", value: "1.250.000" }],
+        columns: [
+          { key: "label", label: "Kategorie" },
+          { key: "value", label: "Wert" },
+        ],
+      },
+    ]);
+    const jsonl = await run(connections(), "jsonl");
+    expect(jsonl.printed).toEqual([]);
+    expect(jsonl.tables).toEqual([]);
+  });
+
   test("shows canonical tool names and deduplicates replayed statuses by call ID", async () => {
     const tool: Extract<AiTurnBlock, { kind: "tool" }> = {
       id: "live-call",

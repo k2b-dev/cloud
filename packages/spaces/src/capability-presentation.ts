@@ -414,7 +414,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         "task.claim": {
           title: "Aufgabe übernehmen",
           description:
-            "Offene, unblockierte Aufgabe mit einer selbst erzeugten UUID für eine Sitzung übernehmen. Konkurrierende Übernahmen werden abgewiesen.",
+            "Offene, unblockierte Aufgabe mit einer selbst erzeugten UUID für eine Sitzung übernehmen. Konkurrierende Übernahmen werden abgewiesen. Übernahmen koordinieren die Arbeit und sperren sie nicht: Alle mit Schreibzugriff können sie übernehmen; der nächste Aufruf mit der beendeten Kennung wird dann abgewiesen.",
           input: {
             claimId: "ID der aktuellen Aufgabenübernahme.",
             itemId: "Öffentliche ID der Aufgabe.",
@@ -423,10 +423,10 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         "task.release": {
           title: "Aufgabe freigeben",
           description:
-            "Aktuelle Übernahme anhand ihrer genauen Kennung freigeben. Mit Adminrechten kann eine verwaiste Übernahme ausdrücklich freigegeben werden.",
+            "Aktuelle Übernahme anhand ihrer genauen Kennung freigeben. Mit force die Übernahme einer anderen Person anhand ihrer genauen Kennung übernehmen; das dürfen alle mit Schreibzugriff, und die Aktivität hält fest, wer sie übernommen hat.",
           input: {
             claimId: "ID der aktuellen Aufgabenübernahme.",
-            force: "Eine fremde Übernahme mit entsprechender Berechtigung freigeben.",
+            force: "Die genau beobachtete Übernahme einer anderen Person übernehmen und beenden.",
             itemId: "Öffentliche ID der Aufgabe.",
           },
         },
@@ -697,6 +697,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
             result: "Abschlussergebnis der Aufgabe.",
             commit: "Optionale Commit-Referenz zum Abschlussergebnis.",
             claimId: "ID der aktuellen Aufgabenübernahme.",
+            force: "Die Übernahme einer anderen Person mit dieser Kennung übernehmen; der Abschluss beendet sie.",
             itemId: "Aufgabe oder Ereignis ID, zurückgegeben durch Elementsuche/Liste/Lesen oder ein spaces.item ref.",
             completed: "True schließt die Aufgabe ab; false öffnet es erneut.",
           },

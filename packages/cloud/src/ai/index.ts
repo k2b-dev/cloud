@@ -1,14 +1,20 @@
 export { type AiAppSkillIssue, aiAppSkills, appSkillsRegistryState, reconcileAppSkills } from "./app-skill-store";
 export { type AiApprovalPreferenceRoutes, type AiApprovalPreferenceView, createAiApprovalPreferenceRoutes } from "./approval-routes";
 export {
+  AI_WEBSITE_APPROVAL_TOOL,
   type AiToolApprovalContext,
   type AiToolApprovalPreference,
+  type AiToolApprovalRemember,
   aiToolAllowsAlways,
   aiToolApprovalScope,
   aiToolNeedsApproval,
+  aiTurnAllowsWebsiteApprovals,
+  aiWebsiteApprovalScope,
+  findRememberedAiToolApproval,
   forgetAiToolApproval,
   hasRememberedAiToolApproval,
   listAiToolApprovalPreferences,
+  parseAiWebsiteApprovalScope,
   rememberAiToolApproval,
   revokeAiToolApprovalPreference,
 } from "./approvals";
@@ -48,11 +54,17 @@ export { authorizeCodeExecution } from "./code-execution";
 export { CODE_SOURCE_TOOLS, type CodeSourceToolName } from "./code-source-contracts";
 export { listAiCredentialProfileIds } from "./credentials";
 export {
+  CLOUD_AI_CHART_MAX_SERIES,
+  CLOUD_AI_CHART_MAX_VALUES,
   CLOUD_AI_TEXT_EDITOR_MAX_CHARS,
   type CloudAiCardInput,
   CloudAiCardInputSchema,
   type CloudAiCardOutput,
   CloudAiCardOutputSchema,
+  type CloudAiChartInput,
+  CloudAiChartInputSchema,
+  type CloudAiChartOutput,
+  CloudAiChartOutputSchema,
   type CloudAiLocalBashInput,
   CloudAiLocalBashInputSchema,
   type CloudAiLocalBashOutput,
@@ -65,6 +77,7 @@ export {
   CloudAiTextEditorInputSchema,
   type CloudAiTextEditorOutput,
   CloudAiTextEditorOutputSchema,
+  parseCloudAiChartInput,
 } from "./default-tool-contracts";
 export {
   type AiChatEnrichment,
@@ -302,6 +315,7 @@ export {
 } from "./transcription";
 export type {
   AiAccessResult,
+  AiApprovalTarget,
   AiCapabilityToolPresentation,
   AiClientToolId,
   AiConversation,
@@ -353,6 +367,7 @@ export type {
   AiTurnStatus,
   AiTurnToolSource,
   AiUserContentPart,
+  AiWebsiteReceipt,
 } from "./types";
 export { AI_MESSAGE_FEEDBACK_REASONS, isAiImageMediaType } from "./types";
 export { isAiSettingsError } from "./validate";

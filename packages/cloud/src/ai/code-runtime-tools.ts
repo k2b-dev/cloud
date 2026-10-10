@@ -14,6 +14,7 @@ import { resolveAiCapabilityActor } from "./capability-execution";
 import { CODE_CAPABILITY_TOKEN_HEADER, codeCapabilityOperation } from "./code-capability-transport";
 import { authorizeCodeExecution } from "./code-execution";
 import { aiConversations } from "./store";
+import type { AiApprovalTarget, AiWebsiteReceipt } from "./types";
 
 const log = logger("ai:code-runtime");
 const ISSUANCE_TIMEOUT_MS = 5_000;
@@ -24,7 +25,19 @@ const Reply = z.object({
     status: z.enum(["running", "busy", "done", "lost"]),
     phase: z.enum(["starting", "running", "busy", "waiting_for_user"]).optional(),
     result: z.unknown().optional(),
-    approvals: z.array(z.object({ id: z.uuid(), message: z.string(), decision: z.boolean().nullable() })),
+    approvals: z.array(
+      z.object({
+        id: z.uuid(),
+        message: z.string(),
+        decision: z.boolean().nullable(),
+        /** What the person may remember: the website or Action, derived by the host from the stored request. */
+        remember: z.object({ toolName: z.string(), approvalScope: z.string(), always: z.boolean() }).optional(),
+      }),
+    ),
+    /** The next requests a website approval for this chat let through without asking, after `receiptsAfter`. */
+    receipts: z.array(z.object({ method: z.string(), url: z.string() })).default([]),
+    /** More receipts follow; the answer then leaves out the result until the last one is read. */
+    moreReceipts: z.boolean().default(false),
   }),
 });
 type Context = ToolContext & {
@@ -34,6 +47,8 @@ type Context = ToolContext & {
   locale?: string;
   timeZone?: string;
   reportProgress?: (message: string) => Promise<void>;
+  requestApprovalFor?: (message: string, target: AiApprovalTarget) => Promise<boolean>;
+  reportWebsiteReceipts?: (receipts: AiWebsiteReceipt[]) => Promise<void>;
 };
 
 /** The tab only renders progress and approvals; server calls own all execution and resumption. */
@@ -101,7 +116,7 @@ export const runManagedCodeTool =
       token && token.claims.exp * 1000 - Date.now() >= 10_000 ? token : undefined;
     let signed: Awaited<ReturnType<typeof signInvocationToken>> | undefined;
     let callback: Awaited<ReturnType<typeof signInvocationToken>> | undefined;
-    const request = async (decision?: { id: string; approved: boolean }) => {
+    const request = async ({ decision, receiptsAfter }: { decision?: { id: string; approved: boolean }; receiptsAfter: number }) => {
       context.signal.throwIfAborted();
       await authorizeCodeExecution(context.conversationId!, context.turnId!, actor.user.id);
       signed = usable(signed) ?? (await issue({ targetAppId: "assistant", callingAppId: "core", operation: `tool:${name}` }));
@@ -127,7 +142,7 @@ export const runManagedCodeTool =
         signal: context.signal,
         body: JSON.stringify({
           conversationId: context.conversationId,
-          input: { turnId: context.turnId, callId: context.callId, name, args, ...(decision ? { decision } : {}) },
+          input: { turnId: context.turnId, callId: context.callId, name, args, receiptsAfter, ...(decision ? { decision } : {}) },
         }),
       });
       const body = await readBoundedJson(response, 256 * 1024);
@@ -135,29 +150,40 @@ export const runManagedCodeTool =
         throw new Error("Code host request failed; inspect the existing call before starting another execution");
       return Reply.parse(body.data).data;
     };
+    const backgroundApproval = async (): Promise<boolean> => {
+      throw new Error("Background code cannot request interactive approval. Update task grants in the normal chat.");
+    };
     return waitForManagedCodeCall(
       request,
-      runConfig.background
-        ? {
-            ...context,
-            requestApproval: async () => {
-              throw new Error("Background code cannot request interactive approval. Update task grants in the normal chat.");
-            },
-          }
-        : context,
+      runConfig.background ? { ...context, requestApproval: backgroundApproval, requestApprovalFor: backgroundApproval } : context,
     );
   };
 
-/** Ordered reviews are replayed through Nessi before consuming a durable result. */
+/**
+ * Ordered reviews are replayed through Nessi before consuming a durable result. Each request a website approval let
+ * through is reported as a receipt as soon as the host names it, so the chat shows it with its full URL whatever the
+ * run's outcome. Receipts arrive page by page after the ones already reported.
+ */
 export async function waitForManagedCodeCall(
-  request: (decision?: { id: string; approved: boolean }) => Promise<z.infer<typeof Reply>["data"]>,
-  context: Pick<ToolContext, "signal" | "requestApproval"> & { locale?: string; reportProgress?: (message: string) => Promise<void> },
+  request: (input: { decision?: { id: string; approved: boolean }; receiptsAfter: number }) => Promise<z.input<typeof Reply>["data"]>,
+  context: Pick<ToolContext, "signal" | "requestApproval"> & {
+    locale?: string;
+    reportProgress?: (message: string) => Promise<void>;
+    requestApprovalFor?: (message: string, target: AiApprovalTarget) => Promise<boolean>;
+    reportWebsiteReceipts?: (receipts: AiWebsiteReceipt[]) => Promise<void>;
+  },
 ): Promise<z.infer<ReturnType<typeof z.json>>> {
   const seen = new Set<string>();
   let lastPhase: string | undefined;
+  let receiptsAfter = 0;
   while (true) {
     context.signal.throwIfAborted();
-    const state = await request();
+    const state = Reply.shape.data.parse(await request({ receiptsAfter }));
+    if (state.receipts.length) {
+      await context.reportWebsiteReceipts?.(state.receipts.map((receipt, index) => ({ index: receiptsAfter + index, ...receipt })));
+      receiptsAfter += state.receipts.length;
+    }
+    if (state.moreReceipts) continue;
     if (state.phase && state.phase !== lastPhase) {
       lastPhase = state.phase;
       const labels = context.locale?.startsWith("de")
@@ -179,9 +205,12 @@ export async function waitForManagedCodeCall(
     // Skipping already resolved reviews would shift Nessi's child action IDs.
     for (const approval of state.approvals) {
       if (seen.has(approval.id)) continue;
-      const approved = await context.requestApproval(approval.message);
+      const approved =
+        approval.remember && context.requestApprovalFor
+          ? await context.requestApprovalFor(approval.message, approval.remember)
+          : await context.requestApproval(approval.message);
       seen.add(approval.id);
-      if (approval.decision === null) await request({ id: approval.id, approved });
+      if (approval.decision === null) await request({ decision: { id: approval.id, approved }, receiptsAfter });
     }
     if (state.status === "done") {
       // Nessi records a thrown error as a failed tool result the model can act on.

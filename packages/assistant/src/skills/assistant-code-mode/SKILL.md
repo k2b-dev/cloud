@@ -1,6 +1,6 @@
 ---
 name: assistant-code-mode
-description: Inspect and transform unfamiliar data, analyze files, compare results across Cloud apps, or build and improve HTML and agent-only Apps in Assistant Studio. Use for quick code experiments, data analysis, file generation, resource SQL queries, charts and small apps shown in chat, and combining discovered Cloud capabilities. For plain arithmetic or date offsets, use calculate.
+description: Inspect and transform unfamiliar data, analyze files, compare results across Cloud apps, or build and improve HTML and agent-only Apps in Assistant Studio. Use for quick code experiments, data analysis, file generation, resource SQL queries, interactive charts and small apps shown in chat, and combining discovered Cloud capabilities. For plain arithmetic or date offsets, use calculate. To only show data as a chart, use the chart tool.
 ---
 # Assistant code mode
 
@@ -76,7 +76,7 @@ supported surface; links within references add related workflows when needed.
 | Parse a CAMT bank report | [Bank reports](references/camt.md) |
 | Calculate, create or read electronic invoices/XML/PDF attachments | [Electronic invoices](references/einvoice.md) |
 | Interfaces: files, styles without CSS, sandbox rules, dialogs | [HTML apps](references/apps.md) |
-| Show an app or a chart in this chat | [Chat apps](references/chat.md) |
+| Show an interactive app in this chat | [Chat apps](references/chat.md) |
 | Chart types, series and axes | [Charts](references/charts.md) |
 | Long processing, progress, cancellation | [Script context](references/runtime.md) |
 | Persist personal/shared JSON or shared files | [Storage](references/storage.md) |
@@ -100,11 +100,17 @@ dashboards, also load `assistant-data-analysis` for metrics and source validatio
 
 ## Choose the delivery
 
-For a one-off chart, calculator, report or small dashboard in this conversation,
-compute and check the numbers with `code_run`, then show an HTML app with
-`code_present({title, files})`. Read [Chat apps](references/chat.md). A
-successful run is visible to the agent only; present it before saying the user
-can see it. No saved App or chat file is necessary.
+Just data → `chart` tool; interaction → chat app (`code_present`); persistence
+or reuse → saved Studio App. When the person only needs to see numbers as a
+chart, compute them (with `code_run` if needed) and pass them to the `chart`
+tool: Cloud draws it in the chat with a data table, no app files or
+`code_check`. It takes the options of `cloud.chart()` as plain data.
+
+For a calculator, a filterable chart, a report or small dashboard in this
+conversation, compute and check the numbers with `code_run`, then show an HTML
+app with `code_present({title, files})`. Read [Chat apps](references/chat.md).
+A successful run is visible to the agent only; present it before saying the
+user can see it. No saved App or chat file is necessary.
 
 Use a Studio App when the user needs an independently accessible, reusable
 application: `code_create`, `code_write`, then `code_open` beside the chat or

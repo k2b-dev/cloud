@@ -1469,9 +1469,9 @@ export const reviewCompiledCapability = async (params: {
       return normalizeProviderError(reviewed.error, "Capability review returned an invalid error", params.onUnexpectedError);
     }
     const parsed = CapabilityActionReviewSchema.safeParse(reviewed.data);
+    // A rememberable Action may leave out its scope for arguments that should ask every time; any other Action has none.
     const approvalScopeIsValid =
-      parsed.success &&
-      (operation.manifest.approval === "rememberable" ? parsed.data.approvalScope !== undefined : parsed.data.approvalScope === undefined);
+      parsed.success && (operation.manifest.approval === "rememberable" || parsed.data.approvalScope === undefined);
     if (!parsed.success || !approvalScopeIsValid) {
       try {
         params.onUnexpectedError?.(

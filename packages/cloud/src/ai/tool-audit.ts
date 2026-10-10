@@ -8,7 +8,14 @@ import { sql } from "bun";
  */
 export type AiToolCallLocation = "server" | "client" | "client_view" | "client_interaction";
 
-export type AiToolApprovalState = "not_required" | "waiting" | "approved_once" | "approved_always" | "approved_by_preference" | "rejected";
+export type AiToolApprovalState =
+  | "not_required"
+  | "waiting"
+  | "approved_once"
+  | "approved_for_chat"
+  | "approved_always"
+  | "approved_by_preference"
+  | "rejected";
 
 export const aiToolAudit = {
   /** Resolve the current server-recorded invocation, never a model-supplied chat id. */

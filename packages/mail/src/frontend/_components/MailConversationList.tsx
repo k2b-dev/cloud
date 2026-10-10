@@ -1,3 +1,4 @@
+import { importOnDemand } from "@k2b/cloud/browser/reload";
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { timed } from "@k2b/stdlib/solid";
@@ -36,7 +37,6 @@ import type { MailListError, MailListMode } from "../../service/workspace";
 import MailBulkActionBar from "./MailBulkActionBar";
 import MailConversationQuickLook from "./MailConversationQuickLook";
 import MailConversationRow from "./MailConversationRow";
-import { openMailSearchBuilder } from "./MailSearchBuilder";
 import { type MailActionId, spamActionForConversation } from "./mail-actions";
 import { mailConversationListMessages } from "./mail-conversation-list-messages";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
@@ -259,8 +259,15 @@ export default function MailConversationList(props: {
       .map((option) => option.label)
       .join(", ");
 
+  const [searchBuilderLoading, setSearchBuilderLoading] = createSignal(false);
   const openAdvancedSearch = async () => {
-    const result = await openMailSearchBuilder({
+    // The builder loads on first use; until its modal opens, a second activation must not open another one.
+    if (searchBuilderLoading()) return;
+    setSearchBuilderLoading(true);
+    const builder = await importOnDemand(() => import("./MailSearchBuilder"));
+    setSearchBuilderLoading(false);
+    if (!builder) return;
+    const result = await builder.openMailSearchBuilder({
       mailboxId: props.mailboxId,
       initialState: currentSearchState(),
       initialQuery: props.query,
@@ -396,9 +403,10 @@ export default function MailConversationList(props: {
                   class={structuredSummary() ? "text-[var(--app-accent)]" : undefined}
                   label={messages().searchFilters}
                   aria-pressed={Boolean(structuredSummary())}
+                  aria-busy={searchBuilderLoading() ? "true" : undefined}
                   onClick={openAdvancedSearch}
                 >
-                  <i class="ti ti-adjustments-search" aria-hidden="true" />
+                  <i class={searchBuilderLoading() ? "ti ti-loader-2 animate-spin" : "ti ti-adjustments-search"} aria-hidden="true" />
                 </IconButton>
               </Tooltip.Anchor>
               <Show when={props.selectedConversationId || props.selectedMessageId}>
@@ -464,9 +472,10 @@ export default function MailConversationList(props: {
               class="mail-search-summary"
               aria-label={`${messages().editStructuredSearch}: ${summary()}`}
               title={summary()}
+              aria-busy={searchBuilderLoading() ? "true" : undefined}
               onClick={openAdvancedSearch}
             >
-              <i class="ti ti-filter-check" aria-hidden="true" />
+              <i class={searchBuilderLoading() ? "ti ti-loader-2 animate-spin" : "ti ti-filter-check"} aria-hidden="true" />
               <span class="mail-search-summary__text">{summary()}</span>
             </button>
           )}
@@ -631,12 +640,14 @@ export default function MailConversationList(props: {
                       anchor: quickLook.anchor,
                       active: quickLook.active,
                       // Every mouse move restarts the rest, so the card usually opens with its data.
-                      prefetch: (item) => {
+                      prefetch: (item, row, pointer) => {
                         cancelPrefetch();
                         if (props.selectionMode || item.conversationId === props.selectedConversationId) return;
                         prefetchTimer = setTimeout(() => {
                           prefetchTimer = undefined;
-                          if (roomForQuickLook()) quickLookData.load(item);
+                          // The list may have moved another row under the still mouse before its scroll event.
+                          const hit = document.elementFromPoint(pointer.clientX, pointer.clientY);
+                          if (hit && row.contains(hit) && roomForQuickLook()) quickLookData.load(item);
                         }, QUICK_LOOK_PREFETCH_DELAY);
                       },
                       release: (item) => {

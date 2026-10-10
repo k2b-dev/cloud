@@ -14,7 +14,7 @@ import { coreSettings } from "../services";
 import { type CapabilityGrant, mandates } from "../services/mandates";
 import { reconcileAppSkills } from "./app-skill-store";
 import { type AppSkillDefinition, skill as appSkill, appSkillManifestHash, registerAppSkills } from "./app-skills";
-import { aiTurnAllowsRememberedApprovals, rememberAiToolApproval } from "./approvals";
+import { AI_WEBSITE_APPROVAL_TOOL, aiTurnAllowsRememberedApprovals, rememberAiToolApproval } from "./approvals";
 import * as capabilityExecution from "./capability-execution";
 import { aiChatTasks } from "./chat-tasks";
 import { __aiExecutorTest, AiTurnExecutor } from "./executor";
@@ -836,6 +836,7 @@ suite("AI executor integration", () => {
             allowRememberedApprovals,
             rememberableCapabilityApprovals: new Map(),
             capabilityActionReviews: new Map(),
+            approvalTargets: new Map(),
           });
           expect(suspended).toBe(false);
           if (!background) {
@@ -856,6 +857,7 @@ suite("AI executor integration", () => {
               allowRememberedApprovals,
               rememberableCapabilityApprovals: new Map(),
               capabilityActionReviews: new Map(),
+              approvalTargets: new Map(),
               onBackgroundBlocked: (message) => {
                 blocked = message;
               },
@@ -873,6 +875,210 @@ suite("AI executor integration", () => {
         }
       }
     } finally {
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
+  test("answers a display-only chart call itself, in a chat and in a background run, without an open request", async () => {
+    const userId = await insertUser();
+    try {
+      for (const background of [false, true]) {
+        const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+        try {
+          const runConfig: AiChatTurnRunConfig = {
+            kind: "chat",
+            input: "Chart the orders",
+            ...(background ? { mandate: { id: crypto.randomUUID(), revision: 1 } } : {}),
+          };
+          const { turn } = await aiConversations.submitChatTurn({
+            conversationId: conversation.id,
+            modelProfileId: MODEL_ID,
+            runConfig,
+            userMessage: userMessage("Chart the orders"),
+          });
+          const claim = await aiConversations.claimTurn({
+            conversationId: conversation.id,
+            turnId: turn.id,
+            leaseOwner: "chart-test",
+            leaseMs: 30_000,
+            from: "queue",
+            maxAttempts: 5,
+            runBudgetMs: 60_000,
+          });
+          if (!claim) throw new Error("Expected claimed chart turn");
+          const pipeline = new __aiExecutorTest.StreamPipeline({
+            conversationId: conversation.id,
+            turnId: turn.id,
+            attempt: claim.turn.attempt,
+            startSeq: claim.liveSeq,
+            leaseOwner: "chart-test",
+            seedBlocks: [],
+            allowRememberedApprovals: aiTurnAllowsRememberedApprovals(runConfig),
+          });
+          const prepared: PreparedAiTools = {
+            tools: [],
+            canonicalNames: new Map(),
+            approvalPolicies: new Map([["chart", "never"]]),
+            frontendModes: new Map([["chart", "client_view"]]),
+          };
+          pipeline.setFrontendModes(prepared.frontendModes);
+          const statuses: string[] = [];
+          const emitOp = pipeline["emitOp"].bind(pipeline);
+          pipeline["emitOp"] = async (op) => {
+            if (op.type === "block_set" && op.block.kind === "tool") statuses.push(op.block.status);
+            await emitOp(op);
+          };
+          const args = { kind: "bar", title: "Orders", data: [{ label: "North", value: 12 }] };
+          const fields = { agentId: "cloud", loopId: turn.id, turnId: `${turn.id}:turn:0`, turnIndex: 0 };
+          await pipeline.apply({ type: "tool_execution_start", ...fields, callId: "chart-1", name: "chart", args } as OutboundEvent);
+          const pushed: InboundEvent[] = [];
+          let blocked = "";
+          const suspended = await createExecutor("chart-test")["handleActionRequest"]({
+            event: { type: "tool_action_request", ...fields, kind: "client_tool", callId: "chart-1", name: "chart", args } as Extract<
+              OutboundEvent,
+              { type: "tool_action_request" }
+            >,
+            loop: { push: (value: InboundEvent) => pushed.push(value) } as never,
+            pipeline,
+            conversationId: conversation.id,
+            turnId: turn.id,
+            prepared,
+            allowRememberedApprovals: false,
+            rememberableCapabilityApprovals: new Map(),
+            capabilityActionReviews: new Map(),
+            approvalTargets: new Map(),
+            onBackgroundBlocked: (message) => {
+              blocked = message;
+            },
+          });
+          expect(suspended).toBe(false);
+          // A background run keeps going: the transcript shows the chart later.
+          expect(blocked).toBe("");
+          expect(pushed).toEqual([{ type: "tool_result", callId: "chart-1", result: { displayed: true } }]);
+          // From running straight to completed: an awaiting_client in between would read as an open request.
+          expect(statuses).toEqual(["running", "completed"]);
+          expect(pipeline.blocks.find((block) => block.kind === "tool")).toMatchObject({ status: "completed", args });
+          expect(await listPendingAiTurnActions({ conversationId: conversation.id, turnId: turn.id })).toHaveLength(0);
+          await pipeline.flush();
+        } finally {
+          await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+        }
+      }
+    } finally {
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
+  test("an approval remembered for one chat resolves there only, and a code run's target is never looked up here", async () => {
+    const userId = await insertUser();
+    const approvalContext = { actorUserId: userId };
+    const chats = [
+      await aiConversations.createConversation({ ownerUserId: userId }),
+      await aiConversations.createConversation({ ownerUserId: userId }),
+    ];
+    await rememberAiToolApproval(approvalContext, { toolName: "danger", approvalScope: "danger", conversationId: chats[0]!.id });
+    // A website approval for this chat exists, but the executor must leave website lookups to the interactive host.
+    await rememberAiToolApproval(approvalContext, {
+      toolName: AI_WEBSITE_APPROVAL_TOOL,
+      approvalScope: "https://api.example.com",
+      conversationId: chats[0]!.id,
+    });
+    try {
+      const outcomes: Array<{ chat: number; callId: string; asked: boolean }> = [];
+      for (const [index, chat] of chats.entries()) {
+        const runConfig: AiChatTurnRunConfig = { kind: "chat", input: "Run", signedInSession: true };
+        const { turn } = await aiConversations.submitChatTurn({
+          conversationId: chat.id,
+          modelProfileId: MODEL_ID,
+          runConfig,
+          userMessage: userMessage("Run"),
+        });
+        const claim = await aiConversations.claimTurn({
+          conversationId: chat.id,
+          turnId: turn.id,
+          leaseOwner: "chat-approval-test",
+          leaseMs: 30_000,
+          from: "queue",
+          maxAttempts: 5,
+          runBudgetMs: 60_000,
+        });
+        if (!claim) throw new Error("Expected claimed approval turn");
+        const pipeline = new __aiExecutorTest.StreamPipeline({
+          conversationId: chat.id,
+          turnId: turn.id,
+          attempt: claim.turn.attempt,
+          startSeq: claim.liveSeq,
+          leaseOwner: "chat-approval-test",
+          seedBlocks: [],
+          allowRememberedApprovals: true,
+        });
+        const prepared: PreparedAiTools = {
+          tools: [],
+          canonicalNames: new Map(),
+          approvalPolicies: new Map([
+            ["danger", "always"],
+            ["code_run", "never"],
+          ]),
+          frontendModes: new Map(),
+        };
+        const approvalTargets = new Map([
+          ["run-approval-0", { toolName: AI_WEBSITE_APPROVAL_TOOL, approvalScope: "https://api.example.com", always: false }],
+        ]);
+        pipeline.setApprovalPolicies(prepared.approvalPolicies);
+        pipeline.setApprovalTargets(approvalTargets);
+        for (const [callId, kind, name] of [
+          ["danger-1", "approval", "danger"],
+          ["run-approval-0", "custom_approval", "code_run"],
+        ] as const) {
+          const pushed: InboundEvent[] = [];
+          await createExecutor("chat-approval-test")["handleActionRequest"]({
+            event: {
+              type: "tool_action_request",
+              kind,
+              callId,
+              name,
+              args: {},
+              message: "Confirm",
+              agentId: "cloud",
+              loopId: turn.id,
+              turnId: `${turn.id}:turn:0`,
+              turnIndex: 0,
+            } as Extract<OutboundEvent, { type: "tool_action_request" }>,
+            loop: { push: (value: InboundEvent) => pushed.push(value) } as never,
+            pipeline,
+            conversationId: chat.id,
+            turnId: turn.id,
+            prepared,
+            approvalContext,
+            allowRememberedApprovals: true,
+            rememberableCapabilityApprovals: new Map(),
+            capabilityActionReviews: new Map(),
+            approvalTargets,
+          });
+          // Resolved from a remembered approval, or saved as a question for the person.
+          const asked = (await aiConversations.listPendingActionRecords({ conversationId: chat.id, turnId: turn.id })).some(
+            (action) => action.callId === callId,
+          );
+          expect(asked).toBe(pushed.length === 0);
+          outcomes.push({ chat: index, callId, asked });
+        }
+        const pending = await aiConversations.listPendingActionRecords({ conversationId: chat.id, turnId: turn.id });
+        expect(pending.find((action) => action.callId === "run-approval-0")).toMatchObject({
+          name: "code_run",
+          rememberToolName: AI_WEBSITE_APPROVAL_TOOL,
+          approvalScope: "https://api.example.com",
+          allowAlways: false,
+          allowChat: true,
+        });
+      }
+      expect(outcomes).toEqual([
+        { chat: 0, callId: "danger-1", asked: false },
+        { chat: 0, callId: "run-approval-0", asked: true },
+        { chat: 1, callId: "danger-1", asked: true },
+        { chat: 1, callId: "run-approval-0", asked: true },
+      ]);
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id IN (${chats[0]!.id}::uuid, ${chats[1]!.id}::uuid)`;
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
     }
   });

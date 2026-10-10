@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.30.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.29.1...npm-cloud-v0.30.0) (2026-10-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* **mail:** let conversations have several assignees and grant access to assigned conversations only ([#830](https://github.com/k2b-dev/cloud/issues/830))
+
+### Features
+
+* **ai:** show charts directly in the chat without building an app ([#847](https://github.com/k2b-dev/cloud/issues/847)) ([18a129d](https://github.com/k2b-dev/cloud/commit/18a129dcb05d9ed4043a7a416b2c6cca727997c6))
+* **capabilities:** let apps word their own approval and receipt sentences ([#846](https://github.com/k2b-dev/cloud/issues/846)) ([cc5a4d6](https://github.com/k2b-dev/cloud/commit/cc5a4d69d03f42f10ebd67b3b91ab0bd83c7386b)), closes [#811](https://github.com/k2b-dev/cloud/issues/811)
+* **cloud:** let apps ship their own Assistant skills ([#840](https://github.com/k2b-dev/cloud/issues/840)) ([d0b1ac6](https://github.com/k2b-dev/cloud/commit/d0b1ac6db6d3199b072684704f84dc0a74d6a506))
+* **cloud:** show Help only to people who may open the app ([#827](https://github.com/k2b-dev/cloud/issues/827)) ([cce4f28](https://github.com/k2b-dev/cloud/commit/cce4f280fc39e5b90647bccebef4ac2dbbde90dd))
+* **dashboard:** stream widgets in as they load instead of failing the whole board ([#831](https://github.com/k2b-dev/cloud/issues/831)) ([e7ff2ce](https://github.com/k2b-dev/cloud/commit/e7ff2ce2c13a4a6e2e49fc4c2ef7b9a236ca78b9))
+* **mail:** let conversations have several assignees and grant access to assigned conversations only ([#830](https://github.com/k2b-dev/cloud/issues/830)) ([631c73a](https://github.com/k2b-dev/cloud/commit/631c73a05bf8eafe74b0af61920237657678193a))
+
+
+### Bug Fixes
+
+* **ai:** keep code runs from failing while they wait for an approval ([#832](https://github.com/k2b-dev/cloud/issues/832)) ([cbdaa0f](https://github.com/k2b-dev/cloud/commit/cbdaa0fee308e890fd940b242d8d2ce6c78bc2f2))
+
+
+### Performance Improvements
+
+* keep Zod, KaTeX, Liquid and on-demand dialogs out of the shell and Mail first load ([#851](https://github.com/k2b-dev/cloud/issues/851)) ([90d919a](https://github.com/k2b-dev/cloud/commit/90d919ac1ab8ca65c8b99d0e7617824c73ce9e69))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.20.0 to 0.21.0
+
 ## [0.29.1](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.29.0...npm-cloud-v0.29.1) (2026-10-09)
 
 
