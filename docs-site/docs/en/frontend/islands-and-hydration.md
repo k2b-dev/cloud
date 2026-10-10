@@ -79,6 +79,32 @@ An island may import:
 Do not import `@k2b/cloud/server`, `/services`, `/ssr`, or a domain
 service that imports Bun SQL.
 
+## Keep the first load small
+
+Every static import of an island downloads and runs before the island mounts,
+on every page that renders it. Load code that only an action needs, such as a
+settings dialog, an editor, an inspector, or a handoff to another app, inside
+that action:
+
+```ts
+const openSettings = async () => {
+  setOpening(true);
+  try {
+    const { openMailboxSettingsDialog } = await import("./MailboxSettingsDialog");
+    await openMailboxSettingsDialog({ mailboxId });
+  } finally {
+    setOpening(false);
+  }
+};
+```
+
+Show the action's pending state while the code loads. Keep content that the page
+renders on mount in static imports; a dynamic import there only delays it.
+
+Avoid runtime imports from `@k2b/cloud/shared` in an island: the barrel
+bundles Markdown, KaTeX, and Liquid even for one small helper. Type imports
+(`import type`) cost nothing.
+
 ## Preserve the server result
 
 Render the initial answer on the server. The island starts from serialized
