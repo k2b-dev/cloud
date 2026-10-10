@@ -25,9 +25,9 @@ Pulse turns incoming data into browsable facts, query results, and dashboards. T
 3. **Browse what exists:** Use **Resources** when you know the object. Use **Metrics**, **Events**, or **States** when you know the signal name.
 4. **Open a query:** Start with a copied query snippet. Narrow it with `source`, `resource`, `resource_type`, or `where` filters.
 5. **Save the query:** Save stable queries that you expect to reuse.
-6. **Write the dashboard:** Move useful, stable queries into Dashboard DSL. Add descriptions when a chart needs interpretation.
+6. **Write the dashboard:** Copy useful, stable queries into Dashboard DSL. Add descriptions when a chart needs interpretation.
 :::
 
 :::note One naming rule
-Signal names describe the fact, such as `orders.created` or `system.cpu.usage`. Source, resource, and dimensions describe where that fact came from. So the same model works for servers, sales, websites, energy systems, and app workflows.
+Signal names describe the fact, such as `orders.created` or `system.cpu.usage`. Source, resource, and dimensions describe where that fact came from. This is why the same model works for servers, sales, websites, energy systems, and app workflows.
 :::

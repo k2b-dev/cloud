@@ -6,7 +6,7 @@ description: Create items, start from templates, structure tasks, and keep activ
 order: 120
 ---
 
-Spaces works best when each item has a clear next action. Keep item titles short, and put context in the notes. Use status or dates to make queues obvious. Use events when the calendar view should carry the work.
+Spaces works best when each item has a clear next action. Keep item titles short, and put context in the notes. Use status or dates to make queues obvious. Use events when the work is mainly planned in the calendar.
 
 ## Create an item {icon="square-plus"}
 
@@ -76,7 +76,7 @@ Under **Blocked by**, every blocking task shows its title and state: a lock for 
 ## Work through the day {icon="route"}
 
 :::steps
-1. **Open the right view:** Start from the list, table, Kanban, calendar, or the filter state that fits the current work.
+1. **Open the right view:** Start from **Overview**, **Table**, **Kanban**, **Calendar**, or the filter state that fits the current work.
 2. **Update the status first:** The status tells everyone what changed before they open the item.
 3. **Check blockers:** When prerequisite work changes, finish or remove the active blockers. Completed blockers stay visible for context.
 4. **Add context:** Use comments for discussion. Use notes for current instructions or lasting context.

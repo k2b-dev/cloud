@@ -76,7 +76,7 @@ Unter **Blockiert durch** steht jede blockierende Aufgabe mit Titel und Stand: e
 ## Den Tag abarbeiten {icon="route"}
 
 :::steps
-1. **Passende Ansicht öffnen:** Beginne mit der Liste, der Tabelle, Kanban, dem Kalender oder dem Filterzustand, der zur aktuellen Arbeit passt.
+1. **Passende Ansicht öffnen:** Beginne mit **Übersicht**, **Tabelle**, **Kanban**, **Kalender** oder dem Filterzustand, der zur aktuellen Arbeit passt.
 2. **Zuerst den Status aktualisieren:** Der Status zeigt allen, was sich geändert hat, bevor sie den Eintrag öffnen.
 3. **Blockierende Aufgaben prüfen:** Ändert sich die vorausgehende Arbeit, schließe aktive blockierende Aufgaben ab oder entferne die Abhängigkeit. Abgeschlossene blockierende Aufgaben bleiben als Kontext sichtbar.
 4. **Kontext ergänzen:** Nutze Kommentare für Diskussionen. Nutze Notizen für aktuelle Anweisungen oder dauerhaften Kontext.

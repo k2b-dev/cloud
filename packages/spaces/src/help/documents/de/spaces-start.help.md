@@ -17,7 +17,7 @@ Spaces bündelt gemeinsame Arbeit mit Aufgaben, Terminen, Listen, zuständigen P
 - **Eintrag:** Die grundlegende Arbeitseinheit. Ein Eintrag ist entweder eine Aufgabe mit Fälligkeitsdatum oder ein Termin mit festgelegter Zeit.
 - **Aufgabe:** Arbeit mit Status, Priorität, zuständigen Personen, Fälligkeitsdatum, geschätzter Dauer, Abhängigkeiten, einer einfachen Checkliste, Tags, Beschreibung und Kommentaren.
 - **Termin:** Ein zeitlich geplanter Eintrag. Termine erscheinen in Kalenderansichten und in optionalen Kalenderexporten.
-- **Ansicht:** Die aktuelle Darstellung derselben Einträge: als Liste, Tabelle, Kanban-Board oder Kalender.
+- **Ansicht:** Die aktuelle Darstellung derselben Einträge: **Übersicht**, **Tabelle**, **Kanban** oder **Kalender**.
 - **Tags:** Kurze Kennzeichnungen, die Arbeit unabhängig von Zuständigkeiten, Fälligkeitsdaten, Terminen und Ansichten gruppieren.
 :::
 
@@ -26,7 +26,7 @@ Spaces bündelt gemeinsame Arbeit mit Aufgaben, Terminen, Listen, zuständigen P
 :::steps
 1. **Space erstellen:** Benenne ihn nach dem gemeinsamen Arbeitsbereich, nicht nach einer einzelnen Aufgabe. Beispiele: Produktstart, Büroumzug, Wochenplanung.
 2. **Echte Einträge hinzufügen:** Erstelle einige Aufgaben oder Termine, bevor du Ansichten anpasst. Echte Arbeit zeigt, welche Status, Tags und zuständigen Personen wichtig sind.
-3. **Ansichten wählen:** Nutze die Liste oder Tabelle zum Überblick, Kanban für den Statusverlauf und den Kalender für geplante Arbeit.
+3. **Ansichten wählen:** Nutze **Übersicht** oder **Tabelle**, um Einträge zu überfliegen, **Kanban** für den Statusverlauf und **Kalender** für geplante Arbeit.
 4. **Space teilen:** Lade Personen und Gruppen ein, sobald die Struktur klar ist. Dann arbeiten sie ohne zusätzliche Erklärung mit.
 :::
 
@@ -36,7 +36,7 @@ Nutze Spaces, wenn Personen einen übersichtlichen gemeinsamen Ort für ihre Arb
 
 ## Spaces mit Einladungen aus Mail nutzen {icon="calendar-share"}
 
-Spaces verwaltet den importierten Terminstatus, Wiederholungen, organisierende und teilnehmende Personen sowie die Sequenznummern der Einladung. Mail verwaltet die ursprüngliche Nachricht, Postfachidentitäten, bearbeitbare Entwürfe, Anhänge und den Versand. So liegt jeder Termin in genau einem Kalender, und Einladungen gehen weiter über den normalen Versand von Mail.
+Spaces ist zuständig für den importierten Terminstatus, Wiederholungen, organisierende und teilnehmende Personen sowie die Sequenznummern der Einladung. Mail ist zuständig für die ursprüngliche Nachricht, Postfachidentitäten, bearbeitbare Entwürfe, Anhänge und den Versand. So liegt jeder Termin in genau einem Kalender, und Einladungen gehen weiter über den normalen Versand von Mail.
 
 - Importiere eine Einladung ausdrücklich aus Mail. Oder antworte in Mail: Das speichert oder aktualisiert den Termin und bereitet in einem Schritt einen bearbeitbaren Antwortentwurf vor.
 - Eine erneut zugestellte Einladung mit derselben Kalender-UID aktualisiert den verknüpften Termin nur, wenn ihre Sequenznummer höher ist. Veraltete oder doppelte Zustellungen erzeugen keinen weiteren Termin.

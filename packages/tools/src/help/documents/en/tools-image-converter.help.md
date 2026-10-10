@@ -33,7 +33,7 @@ To export only part of the batch, select individual previews first. With no sele
 A single converted file downloads directly. Multiple files download together as `converted-images.zip`. To copy one Base64 HTML tag per image instead, use the split menu beside either export action. Duplicate source names receive a numeric suffix, so no result overwrites another.
 
 :::info Email signatures
-Base64 image tags are useful in controlled HTML. Email editors and recipients do not all handle them consistently. Uploaded or hosted signature images are usually more reliable.
+Base64 image tags are useful in controlled HTML. Email editors and recipients do not all support them consistently. Uploaded or hosted signature images are usually more reliable.
 :::
 
 ## Understand browser processing {icon="shield-check"}

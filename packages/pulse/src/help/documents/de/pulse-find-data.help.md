@@ -23,7 +23,7 @@ Eine nützliche Abfrage entsteht am schnellsten so: Finde zuerst die passende Qu
 1. **Nach Quelle filtern:** Nutze `source`, wenn derselbe Signalname in mehreren Systemen oder Ingest-Pipelines vorkommt.
 2. **Nach Ressource filtern:** Nutze `resource` oder `resource_type`, wenn es um ein beobachtetes Objekt oder eine Ressourcenklasse geht.
 3. **Nach Dimensionen filtern:** Nutze `where` für Bezeichnungen wie Route, Region, Kanal, `compose_service`, Einhängepunkt oder Gerät.
-4. **Die Aggregation zuletzt ändern:** Die Abfrage kann auf die richtigen Daten zeigen, während das Diagramm falsch wirkt. Prüfe dann `avg`, `latest`, `rate` oder `increase`.
+4. **Die Aggregation zuletzt ändern:** Stimmen die Daten, wirkt das Diagramm aber falsch, prüfe `avg`, `latest`, `rate` oder `increase`.
 :::
 
 :::note Warum Varianten wichtig sind

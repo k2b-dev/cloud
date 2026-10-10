@@ -25,7 +25,7 @@ Pulse verwandelt eingehende Daten in durchsuchbare Fakten, Abfrageergebnisse und
 3. **Vorhandene Daten durchsuchen:** Nutze **Ressourcen**, wenn du das Objekt kennst. Nutze **Metriken**, **Ereignisse** oder **Zustände**, wenn du den Signalnamen kennst.
 4. **Abfrage öffnen:** Beginne mit einem kopierten Abfrageausschnitt. Grenze ihn mit `source`, `resource`, `resource_type` oder `where` ein.
 5. **Abfrage speichern:** Speichere stabile Abfragen, die du wiederverwenden willst.
-6. **Dashboard schreiben:** Übernimm nützliche, stabile Abfragen in die Dashboard-DSL. Ergänze Beschreibungen, wenn ein Diagramm erklärt werden muss.
+6. **Dashboard schreiben:** Kopiere nützliche, stabile Abfragen in die Dashboard-DSL. Ergänze Beschreibungen, wenn ein Diagramm erklärt werden muss.
 :::
 
 :::note Eine Regel für Namen

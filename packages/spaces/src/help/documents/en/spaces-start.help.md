@@ -17,7 +17,7 @@ When you open Spaces from the navigation, you return to the Space that you looke
 - **Item:** The basic unit of work. An item is either a task with a deadline or an event with a schedule.
 - **Task:** Work with status, priority, assignees, deadline, estimated duration, blockers, a simple checklist, tags, description, and comments.
 - **Event:** A scheduled item. Events appear in calendar views and in optional calendar exports.
-- **View:** The current way to see the same items: as a list, a table, a Kanban board, or a calendar.
+- **View:** The current way to see the same items: **Overview**, **Table**, **Kanban**, or **Calendar**.
 - **Tags:** Lightweight labels that group work across assignees, deadlines, schedules, and views.
 :::
 
@@ -26,7 +26,7 @@ When you open Spaces from the navigation, you return to the Space that you looke
 :::steps
 1. **Create a Space:** Name it after the shared work area, not after a single task. Examples: Product Launch, Office Move, Weekly Planning.
 2. **Add real items:** Create a few tasks or events before you adjust views. Real work shows which statuses, tags, and assignees matter.
-3. **Choose views:** Use the list or table to scan, Kanban for the status flow, and the calendar for scheduled work.
+3. **Choose views:** Use **Overview** or **Table** to scan, **Kanban** for the status flow, and **Calendar** for scheduled work.
 4. **Share the Space:** Invite people and groups when the structure is clear. They can then start without extra explanation.
 :::
 
@@ -36,7 +36,7 @@ Use Spaces when people need a clear shared place to work. Use Grids when records
 
 ## Use Spaces with Mail invitations {icon="calendar-share"}
 
-Spaces owns the imported meeting state, recurrence, organizers, attendees, and invitation sequence numbers. Mail owns the original message, mailbox identities, editable drafts, attachments, and delivery. So each event stays in one calendar, and invitations still go through the normal Mail delivery.
+Spaces owns the imported meeting state, recurrence, organizers, attendees, and invitation sequence numbers. Mail owns the original message, mailbox identities, editable drafts, attachments, and delivery. This keeps each event in one calendar, and invitations still go through the normal Mail delivery.
 
 - Import an invitation from Mail explicitly. Or respond in Mail: this saves or updates the event and prepares an editable response draft in one step.
 - A repeated delivery with the same calendar UID updates the same linked event only when its sequence is newer. Stale and duplicate deliveries do not duplicate the event.

@@ -2,18 +2,19 @@
 id: tools-safety
 title: Keep data safe
 icon: ti ti-shield-check
-description: Know which tools process data in the browser or on the server, and handle copied secrets and webhook data safely.
+description: Know which tools process data in the browser or on the server, and protect copied secrets and webhook data.
 order: 120
 ---
 
 ## Know where the work happens {icon="route"}
 
-- Generators, encoders, color conversion, hashing, passwords, encryption, and image processing are for direct interactive use in the page.
+- Generators, Base64, Hex, Base32, color conversion, hashing, passwords, encryption, and image processing are for direct interactive use in the page.
 - **Document to Markdown** sends one selected document to this Cloud server for bounded in-memory conversion. The utility does not persist the upload or the result.
+- **Markdown to PDF** sends the Markdown and CSS to this Cloud server, which renders the PDF in memory. The utility does not persist the input or the PDF.
 - **Internet Speed Test** exchanges data with the Cloud server to measure the connection.
 - **Webhook Tester** creates endpoints on the server and stores the request history, so that you can inspect incoming calls later.
 
-## Handle sensitive values {icon="point"}
+## Protect sensitive values {icon="point"}
 
 :::warning Webhook logs
 The tester redacts common sensitive headers such as Authorization and Cookie. Request paths and bodies can still contain private data. Use synthetic payloads whenever possible.

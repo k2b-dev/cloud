@@ -5,7 +5,7 @@ icon: ti ti-layout-dashboard
 description: Write a dashboard as text with controls, sections, rows, cards, widgets, Markdown, and conditions.
 order: 130
 ---
-Dashboard DSL describes the whole dashboard. You write and preview it as text. So the layout, queries, notes, and visual warning states stay together in one editable document.
+Dashboard DSL describes the whole dashboard. You write and preview it as text, so the layout, queries, notes, and visual warning states stay together in one editable document.
 
 ## Build a dashboard in layers {icon="square-plus"}
 
@@ -74,7 +74,7 @@ dashboard "Ops" {
 
 Controls create variables such as `$range` or `$resource_key`. Without `variable`, Pulse derives the variable from the label: for example, `Resource type` becomes `$resource_type`. Without `default`, Pulse uses the first option. A range with neither a default nor options uses `24h`. Other controls then use an empty value.
 
-Public displays use control defaults and do not show interactive controls. So choose defaults that make sense without interaction.
+Public displays use control defaults and do not show interactive controls, so choose defaults that make sense without interaction.
 
 ## See the full shape {icon="point"}
 
@@ -179,7 +179,7 @@ dashboard "Solar overview" {
 | `label\|series dimension\|attribute <path>` | map | Optionally adds point labels or separates points into colored series. | `series dimension campaign` |
 | `size count\|sum` | map | Sizes points by matching event count or by the sum of numeric event values. Count is the default. | `size count` |
 | `visual <type>` | widget | Overrides the visual declared by the outer widget keyword. It accepts the same visual names. Prefer the direct widget keyword for hand-written DSL. | `line "Current value" { visual stat query metric service.online latest since 10m }` |
-| `query <Query DSL>` | widget | Uses metric, events, or states Query DSL. Dashboard controls may be referenced as $variables. Summarized events can drive numeric widgets. | `query events order.created count every 1h since $range group by channel` |
+| `query <Query DSL>` | widget | Uses metric, events, or states Query DSL. You can reference dashboard controls as `$variables`. Summarized events can drive numeric widgets. | `query events order.created count every 1h since $range group by channel` |
 | `warn\|critical when value <op> <value>` | metric widget | Applies visual state to metric values only. Operators are >, >=, <, <=, =, and !=. Optional message text can explain the condition. | `critical when value > 95 message "Capacity almost full"` |
 | `# comment or // comment` | anywhere whitespace is allowed | Adds a line comment that does not change the rendered dashboard. | `# explain why this section exists` |
 
@@ -190,7 +190,7 @@ Widget `query` lines use the same Query DSL. Metrics and summarized events show 
 :::
 
 :::info Maps summarize event locations
-Use a map for events that contain decimal latitude and longitude fields. Pulse groups matching events by location, optional label, and optional series across the selected range. Pulse ignores invalid or out-of-range coordinates. A map shows at most 1,000 aggregated points. So use source, resource, and dimension filters when a broad query would hide useful detail. On a public dashboard, the aggregated coordinates, labels, and series that the map shows are public too.
+Use a map for events that contain decimal latitude and longitude fields. Pulse groups matching events by location, optional label, and optional series across the selected range. Pulse ignores invalid or out-of-range coordinates. A map shows at most 1,000 aggregated points, so use source, resource, and dimension filters when a broad query would hide useful detail. On a public dashboard, the aggregated coordinates, labels, and series that the map shows are public too.
 :::
 
 :::info Controls define variables

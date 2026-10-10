@@ -23,7 +23,7 @@ To build a useful query fast, first find the right source, resource, or signal. 
 1. **Filter by source:** Use `source` when the same signal name appears in several systems or ingest pipelines.
 2. **Filter by resource:** Use `resource` or `resource_type` when the question is about one observed object or a resource class.
 3. **Filter by dimensions:** Use `where` for labels such as route, region, channel, `compose_service`, mount, or device.
-4. **Change the aggregation last:** The query can point at the right data while the chart looks wrong. Then revisit `avg`, `latest`, `rate`, or `increase`.
+4. **Change the aggregation last:** If the data is right but the chart looks wrong, revisit `avg`, `latest`, `rate`, or `increase`.
 :::
 
 :::note Why variants matter

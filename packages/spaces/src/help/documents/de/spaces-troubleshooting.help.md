@@ -25,7 +25,7 @@ order: 140
 
 :::steps
 1. Kehre über die Spaces-Übersicht zum Space zurück.
-2. Wähle die Liste. Sie zeigt die Einträge ohne Aufteilung in Kanban-Spalten oder Kalenderzeiträume.
+2. Wähle in der Seitenleiste des Space **Übersicht**. Sie zeigt die Einträge ohne Aufteilung in Kanban-Spalten oder Kalenderzeiträume.
 3. Entferne die Suche und alle Filter-Chips.
 4. Öffne den fehlenden Eintrag über eine andere bekannte Ansicht oder die globale Suche.
 5. Aktiviere die Filter erneut, einen nach dem anderen.

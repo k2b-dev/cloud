@@ -1,15 +1,16 @@
 ---
 id: tools-safety
-title: Daten sicher behandeln
+title: Daten schützen
 icon: ti ti-shield-check
-description: Erkenne, welche Werkzeuge Daten im Browser oder auf dem Server verarbeiten, und gehe sicher mit kopierten Geheimnissen und Webhook-Daten um.
+description: Erkenne, welche Werkzeuge Daten im Browser oder auf dem Server verarbeiten, und schütze kopierte Geheimnisse und Webhook-Daten.
 order: 120
 ---
 
 ## Wissen, wo die Arbeit passiert {icon="route"}
 
-- Generatoren, Kodierwerkzeuge, Farbumrechnung, Hashing, Passwörter, Verschlüsselung und Bildbearbeitung sind für die direkte interaktive Nutzung auf der Seite gedacht.
+- Generatoren, Base64, Hex, Base32, Farbumrechnung, Hashing, Passwörter, Verschlüsselung und Bildbearbeitung sind für die direkte interaktive Nutzung auf der Seite gedacht.
 - **Dokument zu Markdown** sendet ein ausgewähltes Dokument an diesen Cloud-Server zur begrenzten Konvertierung im Arbeitsspeicher. Das Werkzeug speichert weder Upload noch Ergebnis dauerhaft.
+- **Markdown zu PDF** sendet Markdown und CSS an diesen Cloud-Server, der das PDF im Arbeitsspeicher erzeugt. Das Werkzeug speichert weder Eingabe noch PDF dauerhaft.
 - Der **Internet-Speedtest** tauscht Daten mit dem Cloud-Server aus, um die Verbindung zu messen.
 - Der **Webhook-Tester** erstellt Endpunkte auf dem Server und speichert den Anfrageverlauf, damit du eingehende Aufrufe später untersuchen kannst.
 
