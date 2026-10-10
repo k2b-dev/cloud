@@ -104,7 +104,7 @@ describe("Grids Apps documentation contract", () => {
     expect(overview).not.toContain("**Bulk actions**");
     expect(yaml).toContain("canonical public resource IDs");
     expect(pages).toContain("Fields outside the block's editable subset remain read-only");
-    expect(pages).toContain("without Base or record Write access");
+    expect(pages).toContain("without **Edit** access to the Base or the record");
     expect(yaml).toContain("{ source: ROW, path: relation, fieldId:");
     expect(cli).toContain("Referenced records, Metrics, Chart, Record, Rendered HTML, Form, Comments, Actions, and Scanner blocks");
     expect(cli).toContain("row id or one selected single relation");
