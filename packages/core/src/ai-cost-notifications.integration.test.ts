@@ -16,11 +16,13 @@ import { runCoreSetup } from "./runtime-helpers";
 // only its own rows, and dropping the database cleans up even after a timeout.
 suiteFor("database", "valkey")("background cost alert recovery", () => {
   let fresh: Awaited<ReturnType<typeof useFreshDatabase>> | undefined;
+  // Core setup on an empty database takes several seconds, mostly the AI schema. The hook
+  // gets the integration budget of scripts/run-tests.ts, so a direct `bun test` passes too.
   beforeAll(async () => {
     fresh = await useFreshDatabase("core_cost_alerts");
     await runCoreSetup();
     await registerNotificationDefinitions(app.meta.id, app.notifications);
-  });
+  }, 30_000);
   afterAll(async () => {
     await fresh?.drop();
   });
@@ -62,6 +64,9 @@ suiteFor("database", "valkey")("background cost alert recovery", () => {
         return Promise.reject(new Error("Injected recoverable notification failure"));
       });
       await expect(recover({ runId: crypto.randomUUID() })).rejects.toThrow("Injected recoverable notification failure");
+      const [partial] = await sql<{ count: number }[]>`
+        SELECT count(*)::int AS count FROM notifications.events WHERE definition_id=${app.notifications.backgroundCosts.id}`;
+      expect(partial?.count).toBe(1);
       sendFailure.mockRestore();
       sendFailure = undefined;
       await recover({ runId: crypto.randomUUID() });
