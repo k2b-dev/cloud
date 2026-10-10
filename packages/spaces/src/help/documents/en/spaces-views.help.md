@@ -17,11 +17,20 @@ Views show the same items in the shape that fits the current job. A good view re
 - **Calendar:** Best for events, deadlines, planning windows, and work that is mainly time-based.
 :::
 
+## Check tasks off in the Overview {icon="checkbox"}
+
+:::reference
+- **Tick a task:** Select the box in front of the task. Under the pointer or with keyboard focus, an open box shows a faint check first. When you tick it, the box fills at once and the title is struck through.
+- **When the task leaves the list:** When the filters hide completed tasks, the task stays in its place for a moment. Then its row closes. The confirmation at the bottom offers **Undo**, also after the row is gone. **Undo** reopens the task in its previous status and position. To undo while the row is still there, you can also untick the box.
+- **Several tasks:** Tick one task after another without waiting. Each row leaves on its own time.
+- **Claims:** Completing a task ends its claim. **Undo** does not bring the claim back.
+:::
+
 ## Work with overdue and undated tasks in the day view {icon="calendar-due"}
 
 :::reference
 - **What it shows:** In the **Day** view of the calendar, a row below the day shows two kinds of open tasks. First, tasks whose deadline passed before today, most recent first. Second, tasks assigned to you without a deadline, most urgent first. Each part shows up to five tasks. **Show all** opens the **Overview** view with all of them.
-- **Work with it:** Select a task to open it. If you can edit the Space, you can also check the task off; the confirmation offers **Undo**. A task that open tasks still block shows a lock instead of a checkbox.
+- **Work with it:** Select a task to open it. If you can edit the Space, you can also check the task off. It stays in the row for a moment, then the row closes the gap. The confirmation offers **Undo**. A task that open tasks still block shows a lock instead of a checkbox.
 - **Layout:** The row keeps its place and size whatever it holds, so the day above never moves. While another day or filter loads, the row stays empty until its tasks are in. When more tasks exist than fit, the row scrolls sideways. A screen reader and **Tab** reach the row right after the day, as on screen. When you check a task off with the keyboard, focus moves to the next task in the row.
 - **Filters:** The scope, priority, status, and tag filters of the calendar apply to the row. When a filter leaves the row empty, the row says so. While the scope shows only events, the row is hidden.
 - **Old links:** Spaces no longer has a calendar timeline. A saved link to the timeline opens the month that contains its day.

@@ -165,6 +165,8 @@ let server: ReturnType<typeof Bun.serve>;
 const cases = new Map<string, Case>();
 const viewRequests: string[] = [];
 const completions: unknown[] = [];
+/** Tasks checked off in the tray by case and ID, which Undo brings back. */
+const removed = new Map<string, SpaceItem>();
 /** Holds the answer to a view request until the test lets it go; the answer itself is read when the request comes in. */
 let hold: (href: string) => Promise<void> = async () => {};
 let browser: Browser;
@@ -199,18 +201,30 @@ beforeAll(async () => {
         await hold(href);
         return Response.json(body);
       }
-      const completion = /^\/api\/spaces\/Space1\/items\/(\w+)\/completed$/.exec(url.pathname);
+      const completion = /^\/api\/spaces\/Space1\/items\/(\w+)\/(completed|move)$/.exec(url.pathname);
       if (completion && request.method === "POST" && data) {
-        const body = (await request.json()) as { completed: boolean; claimId?: string };
-        completions.push({ itemId: completion[1], ...body });
+        const [, itemId, kind] = completion;
+        const key = `${request.headers.get("x-case")}:${itemId}`;
+        const body = (await request.json()) as { completed: boolean; claimId?: string; columnId?: string; rank?: string };
+        completions.push({ itemId, ...(kind === "move" ? { move: true } : {}), ...body });
+        const lists = [data.tray.overdue, data.tray.undated];
+        const item = lists.flatMap((list) => list.items).find((candidate) => candidate.id === itemId) ?? removed.get(key)!;
+        const changed = { ...item, completedAt: body.completed ? "2026-10-08T09:00:00.000Z" : null, claim: null };
         if (body.completed) {
-          for (const list of [data.tray.overdue, data.tray.undated]) {
-            const kept = list.items.filter((item) => item.id !== completion[1]);
+          for (const list of lists) {
+            const kept = list.items.filter((candidate) => candidate.id !== itemId);
             list.total -= list.items.length - kept.length;
             list.items = kept;
           }
+          removed.set(key, item);
+        } else if (removed.has(key)) {
+          // Undo puts the task back where it was: the fixture's tasks keep their place by deadline, as the tray sorts.
+          const list = item.deadline ? data.tray.overdue : data.tray.undated;
+          list.items = [...list.items, item].sort((a, b) => (b.deadline ?? "").localeCompare(a.deadline ?? "") || a.id.localeCompare(b.id));
+          list.total += 1;
+          removed.delete(key);
         }
-        return Response.json({ id: completion[1] });
+        return Response.json(changed);
       }
       return data
         ? new Response(data.html, { headers: { "content-type": "text/html; charset=utf-8" } })
@@ -524,6 +538,33 @@ describe(`Spaces task tray in ${browserName}`, () => {
     expect(await page.getByRole("link", { name: "Alle anzeigen: 3 deiner Aufgaben ohne Datum" }).getAttribute("href")).toBe(
       "/app/spaces/Space1?view=list&type=task&assignedTo=me&deadline=none&sort=priority",
     );
+    await page.context().close();
+  }, 60_000);
+
+  test("shows a task checked off in the tray as done before it goes, and Undo puts it back in its place", async () => {
+    const page = await open(desktop);
+    completions.splice(0);
+    const tray = await rounded(page, TRAY);
+    await page.locator('[data-spaces-tray-item="Late01"] .k2b-check').click();
+    // The tick shows at once, with the title struck through.
+    expect(await page.getByRole("checkbox", { name: "Als erledigt markieren: Vertrag Stadtwerke gegenzeichnen" }).isChecked()).toBe(true);
+    await page.locator('[data-spaces-tray-item="Late01"] .line-through').waitFor();
+    await page.getByRole("button", { name: "Rückgängig" }).click();
+    await page.locator('[data-spaces-tray-item="Late01"] .line-through').waitFor({ state: "detached" });
+    for (let tries = 0; tries < 200 && completions.length < 2; tries++) await Bun.sleep(25);
+    // Undo restores the status and position the task had, with the same completion change.
+    expect(completions).toEqual([
+      { itemId: "Late01", completed: true },
+      { itemId: "Late01", move: true, columnId: "Col001", rank: "1024", completed: false },
+    ]);
+    const box = page.getByRole("checkbox", { name: "Als erledigt markieren: Vertrag Stadtwerke gegenzeichnen" });
+    await expect(box.isChecked()).resolves.toBe(false);
+    expect(
+      await page
+        .locator(`${TRAY} li[data-spaces-tray-item]`)
+        .evaluateAll((rows) => rows.map((row) => row.getAttribute("data-spaces-tray-item"))),
+    ).toEqual(["Late01", "Late02", "Open01", "Open02"]);
+    expect(await rounded(page, TRAY)).toEqual(tray);
     await page.context().close();
   }, 60_000);
 

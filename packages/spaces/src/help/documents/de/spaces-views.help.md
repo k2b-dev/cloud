@@ -17,11 +17,20 @@ Ansichten stellen dieselben Einträge passend zur aktuellen Aufgabe dar. Eine gu
 - **Kalender:** Eignet sich für Termine, Fälligkeitsdaten, Planungszeiträume und überwiegend zeitgebundene Arbeit.
 :::
 
+## Aufgaben in der Übersicht abhaken {icon="checkbox"}
+
+:::reference
+- **Aufgabe abhaken:** Wähle das Kästchen vor der Aufgabe. Unter dem Zeiger oder mit dem Tastaturfokus zeigt ein offenes Kästchen zuerst einen blassen Haken. Hakst du es ab, füllt sich das Kästchen sofort, und der Titel wird durchgestrichen.
+- **Wenn die Aufgabe die Liste verlässt:** Blenden die Filter erledigte Aufgaben aus, bleibt die Aufgabe einen Moment an ihrem Platz. Dann schließt sich ihre Zeile. Die Bestätigung unten bietet **Rückgängig**, auch wenn die Zeile schon weg ist. **Rückgängig** öffnet die Aufgabe wieder, mit ihrem vorherigen Status und an ihrer vorherigen Position. Solange die Zeile noch da ist, kannst du das Kästchen auch wieder leeren.
+- **Mehrere Aufgaben:** Hake eine Aufgabe nach der anderen ab, ohne zu warten. Jede Zeile verschwindet zu ihrer eigenen Zeit.
+- **Übernahmen:** Wenn du eine Aufgabe abschließt, endet ihre Übernahme. **Rückgängig** stellt die Übernahme nicht wieder her.
+:::
+
 ## Überfällige Aufgaben und Aufgaben ohne Datum in der Tagesansicht bearbeiten {icon="calendar-due"}
 
 :::reference
 - **Was sie zeigt:** In der Ansicht **Tag** des Kalenders zeigt eine Zeile unter dem Tag zwei Arten offener Aufgaben. Zuerst Aufgaben, deren Fälligkeitsdatum vor heute lag, die jüngsten zuerst. Dann Aufgaben ohne Fälligkeitsdatum, die dir zugewiesen sind, die dringendsten zuerst. Jeder Teil zeigt bis zu fünf Aufgaben. **Alle anzeigen** öffnet die Ansicht **Übersicht** mit allen.
-- **Damit arbeiten:** Wähle eine Aufgabe, um sie zu öffnen. Wenn du den Space bearbeiten kannst, kannst du sie auch abhaken; die Bestätigung bietet **Rückgängig**. Eine Aufgabe, die offene Aufgaben noch blockieren, zeigt ein Schloss statt eines Kästchens.
+- **Damit arbeiten:** Wähle eine Aufgabe, um sie zu öffnen. Wenn du den Space bearbeiten kannst, kannst du sie auch abhaken. Sie bleibt einen Moment in der Zeile, dann schließt sich die Lücke. Die Bestätigung bietet **Rückgängig**. Eine Aufgabe, die offene Aufgaben noch blockieren, zeigt ein Schloss statt eines Kästchens.
 - **Darstellung:** Die Zeile behält Platz und Größe, egal was sie enthält. Der Tag darüber verschiebt sich daher nie. Während ein anderer Tag oder Filter lädt, bleibt die Zeile leer, bis ihre Aufgaben da sind. Passen nicht alle Aufgaben hinein, scrollt die Zeile seitwärts. Ein Screenreader und **Tab** erreichen sie wie auf dem Bildschirm direkt nach dem Tag. Hakst du eine Aufgabe mit der Tastatur ab, springt der Fokus zur nächsten Aufgabe der Zeile.
 - **Filter:** Die Filter für Umfang, Priorität, Status und Tags im Kalender gelten auch für die Zeile. Lässt ein Filter die Zeile leer, sagt sie das. Zeigt der Umfang nur Termine, ist die Zeile ausgeblendet.
 - **Alte Links:** Spaces hat keine Zeitleiste im Kalender mehr. Ein gespeicherter Link auf die Zeitleiste öffnet den Monat, in dem sein Tag liegt.

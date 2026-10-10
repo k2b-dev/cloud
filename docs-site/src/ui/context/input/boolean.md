@@ -41,6 +41,20 @@ All three inherit [ValueFieldProps<boolean>](/en/ui/getting-started#shared-field
 `indeterminate?: boolean` (false). CheckboxCard adds `icon?: string`,
 `color?: string` and `variant?: "input" | "card"` (card).
 
+## Preview and motion
+
+An open `Checkbox` previews its checked state: a faint check appears under a
+fine pointer, with keyboard focus, and while a finger presses it. On touch
+screens the preview ends with the press, so it never sticks as hover. Ticking
+fills the box and the check grows into place. Only colors and the check's scale
+change, so the box and its neighbors never move. A checked, indeterminate, or
+disabled box shows no preview. With `prefers-reduced-motion: reduce`, the state
+changes at once without transitions.
+
+A list that removes a row once it is ticked, such as a to-do list with completed
+items hidden, should keep the row in its checked state long enough to read
+before it collapses, and offer Undo.
+
 ## Accessibility
 
 Each component uses a native checkbox. Labels activate the control, focus remains visible, and checked state is available to assistive technology.

@@ -13,6 +13,7 @@ Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { default: ItemRow } = await import("./ItemRow");
+const { createLeavingItems } = await import("../shared/leaving");
 
 test("disables overview completion while a task has active blockers", () => {
   const item: SpaceItem = {
@@ -52,12 +53,13 @@ test("disables overview completion while a task has active blockers", () => {
       canWrite: true,
       currentUserId: "33333333-3333-4333-8333-333333333333",
       isListed: () => true,
+      leaving: createLeavingItems<SpaceItem>(),
+      list: () => undefined,
       retryToast: () => {},
     }),
   );
 
   expect(html).toContain('title="Complete all blocking tasks first"');
-  expect(html).toContain('type="button" disabled');
-  expect(html).toContain('aria-label="Mark complete"');
+  expect(html).toMatch(/<input[^>]*type="checkbox"[^>]*disabled[^>]*aria-label="Mark complete: Confirm room booking"/);
   expect(html).toContain("Blocked by 1");
 });

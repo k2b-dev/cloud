@@ -821,10 +821,10 @@ export default function KanbanBoard(props: Props) {
     onBefore: (vars) => vars,
     mutation: ({ item, claim }) => setItemCompleted({ spaceId: props.spaceId, itemId: item.id, completed: true, ...claim }, t.updateFailed),
     // The shortcut moves the card away from where the user acted, often out of view, so it is confirmed with Undo.
-    onSuccess: (item) => {
+    onSuccess: (changed, context) => {
       setOptimisticBuckets(null);
       refreshWorkspace(t.listRefreshFailed);
-      confirmCompletion({ spaceId: props.spaceId, itemId: item.id, completed: true }, t);
+      if (context) confirmCompletion({ spaceId: props.spaceId, previous: context.item, changed, currentUserId: props.currentUserId }, t);
     },
     onError: (error, context) =>
       retryToast(error.message, t.retry, () => context && completeCardMutation.mutate({ ...context, item: currentCard(context.item) })),
