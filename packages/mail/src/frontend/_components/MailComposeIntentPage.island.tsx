@@ -146,6 +146,8 @@ export default function MailComposeIntentPage(props: {
   const identities = () => allIdentities().filter((identity) => identity.status === "verified");
   const identityLoading = () => identityResults.loading() || identityResults.refreshing();
   const identityError = () => identityResults.error()?.message ?? null;
+  const senderUnavailable = () =>
+    Boolean(mailboxId()) && identityResults.data()?.mailboxId === mailboxId() && !identityError() && identities().length === 0;
 
   createEffect(() => {
     const selectedMailboxId = mailboxId();
@@ -329,8 +331,9 @@ export default function MailComposeIntentPage(props: {
                   </NoticeCard>
                 )}
               </Show>
-              {/* A refresh after the sender settings keeps the notice in place until the new senders arrive. */}
-              <Show when={mailboxId() && !identityResults.loading() && !identityError() && identities().length === 0}>
+              {/* Shown only for the selected mailbox's own senders: a refresh after the sender settings keeps it in place, a
+                  switch to another mailbox hides it until that mailbox's senders arrive. */}
+              <Show when={senderUnavailable()}>
                 <MailSenderUnavailableNotice
                   identities={allIdentities()}
                   onOpenSettings={selectedMailbox()?.canManage ? () => void openSenderSettings() : undefined}

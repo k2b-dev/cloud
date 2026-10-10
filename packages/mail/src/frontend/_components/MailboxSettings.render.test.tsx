@@ -163,7 +163,8 @@ describe("Mailbox settings composition", () => {
     expect(html).toContain("Sent folder missing");
     expect(html).toContain("Choose Sent folder");
     expect(html).toContain("Rejected by the provider");
-    expect(html).toContain(">Verify<");
+    // Verify stays next to Choose Sent folder for a provider that saves sent mail itself.
+    expect(html.match(/>Verify</g)).toHaveLength(2);
     expect(html).toContain(">Ready<");
   });
 

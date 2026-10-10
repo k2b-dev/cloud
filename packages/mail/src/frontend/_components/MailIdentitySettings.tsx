@@ -22,6 +22,7 @@ import type { ComposeTemplate, MailComposeFormat, MailPriority, SenderIdentity, 
 import { mailFolderPaths } from "../../folder-tree";
 import { readApiError } from "./api-response";
 import MailRecipientInput from "./MailRecipientInput";
+import { mailRoleFolderId } from "./mail-actions";
 import { EditorHeading, type ProviderSettingsProps } from "./mail-provider-settings-shared";
 import { formatMailRecipients, parseMailRecipients } from "./mail-recipient";
 import { mailSenderIdentityStatusMessages, senderIdentityReasonCopy } from "./mail-sender-identity-status";
@@ -149,8 +150,8 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
     setVcardError(null);
     setEnvelopeSender("");
     setDefaultSignatureTemplateId("");
-    setSentFolderId(selectableFolders().find((folder) => folder.role === "sent")?.id ?? "");
-    setDraftsFolderId(selectableFolders().find((folder) => folder.role === "drafts")?.id ?? "");
+    setSentFolderId(mailRoleFolderId("sent", props.admin.folders) ?? "");
+    setDraftsFolderId(mailRoleFolderId("drafts", props.admin.folders) ?? "");
     setIsDefault(identities().length === 0);
     setAllowAutomation(true);
     setCustomSmtpEnabled(false);
@@ -196,7 +197,7 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
   let sentFolderField: HTMLDivElement | undefined;
   /** Opens the Sent folder field, preset with the mailbox's discovered Sent folder when none is chosen. */
   const revealSentFolder = () => {
-    if (!sentFolderId()) setSentFolderId(selectableFolders().find((folder) => folder.role === "sent")?.id ?? "");
+    if (!sentFolderId()) setSentFolderId(mailRoleFolderId("sent", props.admin.folders) ?? "");
     if (advancedDelivery) advancedDelivery.open = true;
     sentFolderField?.scrollIntoView({ block: "center" });
     sentFolderField?.querySelector<HTMLElement>("button, input")?.focus();
@@ -468,22 +469,7 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
                   </Show>
                 </SettingsCollection.Item.Status>
                 <SettingsCollection.Item.Actions>
-                  <Show
-                    when={identity.statusReason === "sent_folder_missing"}
-                    fallback={
-                      <Show when={identity.status === "unverified" || identity.status === "rejected"}>
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          type="button"
-                          disabled={activeBindings().length === 0 || props.reloading}
-                          onClick={() => openVerify(identity)}
-                        >
-                          {messages().verify}
-                        </Button>
-                      </Show>
-                    }
-                  >
+                  <Show when={identity.statusReason === "sent_folder_missing"}>
                     <Button
                       variant="secondary"
                       size="sm"
@@ -492,6 +478,18 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
                       onClick={() => chooseSentFolder(identity)}
                     >
                       {statusMessages().chooseSentFolder}
+                    </Button>
+                  </Show>
+                  {/* A provider that saves sent mail itself needs no Sent folder, so Verify stays next to it. */}
+                  <Show when={identity.status === "unverified" || identity.status === "rejected"}>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      type="button"
+                      disabled={activeBindings().length === 0 || props.reloading}
+                      onClick={() => openVerify(identity)}
+                    >
+                      {messages().verify}
                     </Button>
                   </Show>
                   <IconButton type="button" label={messages().editNamed({ name: identity.label })} onClick={() => openEdit(identity)}>
@@ -571,24 +569,22 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
                       title={senderIdentityReasonCopy(reason(), locale()).label}
                       detail={senderIdentityReasonCopy(reason(), locale()).hint}
                     >
-                      <Show
-                        when={reason() === "sent_folder_missing"}
-                        fallback={
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            type="button"
-                            disabled={activeBindings().length === 0 || props.reloading}
-                            onClick={() => openVerify(identity())}
-                          >
-                            {messages().verifyIdentity}
+                      <div class="flex flex-wrap gap-2">
+                        <Show when={reason() === "sent_folder_missing"}>
+                          <Button variant="secondary" size="sm" type="button" onClick={revealSentFolder}>
+                            {statusMessages().chooseSentFolder}
                           </Button>
-                        }
-                      >
-                        <Button variant="secondary" size="sm" type="button" onClick={revealSentFolder}>
-                          {statusMessages().chooseSentFolder}
+                        </Show>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          type="button"
+                          disabled={activeBindings().length === 0 || props.reloading}
+                          onClick={() => openVerify(identity())}
+                        >
+                          {messages().verifyIdentity}
                         </Button>
-                      </Show>
+                      </div>
                     </NoticeCard>
                   )}
                 </Show>

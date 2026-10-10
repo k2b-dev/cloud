@@ -1,7 +1,7 @@
 import { Button, NoticeCard, useLocale } from "@k2b/ui";
 import { createMemo, Show } from "solid-js";
 import type { SenderIdentity } from "../../contracts";
-import { blockedSenderIdentity, mailSenderIdentityStatusMessages, senderIdentityReasonCopy } from "./mail-sender-identity-status";
+import { mailSenderIdentityStatusMessages, senderUnavailableDetail } from "./mail-sender-identity-status";
 
 /**
  * Explains why a mailbox without a verified sender cannot send, with the reason Mail reports for its sender
@@ -16,12 +16,7 @@ export default function MailSenderUnavailableNotice(props: {
 }) {
   const locale = useLocale();
   const t = createMemo(() => mailSenderIdentityStatusMessages.resolve([locale()]).t);
-  const detail = createMemo(() => {
-    const identity = blockedSenderIdentity(props.identities);
-    if (!identity?.statusReason) return t().noIdentity;
-    const copy = senderIdentityReasonCopy(identity.statusReason, locale());
-    return `${t().identityReason({ label: identity.label, reason: copy.label })} ${copy.hint}`;
-  });
+  const detail = createMemo(() => senderUnavailableDetail(props.identities, locale()));
   return (
     <NoticeCard tone="warning" role="status" class={props.class} title={t().cannotSend} detail={detail()} data-mail-sender-unavailable>
       <Show when={props.onOpenSettings} fallback={<span class="text-dimmed">{t().askAdmin}</span>}>

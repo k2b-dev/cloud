@@ -7,6 +7,7 @@ import {
   mailActionTargetForItem,
   mailMoveSourceFolderIds,
   mailRoleDestinationFolderId,
+  mailRoleFolderId,
   spamActionForConversation,
 } from "./mail-actions";
 
@@ -141,6 +142,15 @@ describe("Mail actions", () => {
     const reassigned = [folder("provider-archive", "junk", "archive", "junk"), folder("all-mail", "all")];
     expect(mailRoleDestinationFolderId("archive", reassigned)).toBe("provider-archive");
     expect(mailRoleDestinationFolderId("junk", reassigned)).toBe("provider-archive");
+  });
+
+  test("finds the Sent folder for a sender identity the way the server presets it", () => {
+    const provider = folder("provider-sent", "sent");
+    expect(mailRoleFolderId("sent", [folder("inbox", "inbox"), provider])).toBe("provider-sent");
+    // The configured folder wins although the provider's Sent folder comes first.
+    expect(mailRoleFolderId("sent", [provider, folder("chosen", "sent", "other", "sent")])).toBe("chosen");
+    // Several provider Sent folders and no configured one: no guess.
+    expect(mailRoleFolderId("sent", [provider, folder("other-sent", "sent")])).toBeNull();
   });
 
   test("acts on the message of a message-list row, not on the rest of its conversation", () => {

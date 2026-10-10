@@ -343,7 +343,7 @@ cld --json mail identity list
 cld --json mail identity disable <identity-id> --yes
 ```
 
-A new identity takes the Sent and Drafts folders that discovery found for the mailbox, unless `--sent-folder` names another one. When verification needs a Sent folder and the identity has none, Mail takes the mailbox's Sent folder too. It never replaces a folder that is already set.
+A new identity takes the Sent and Drafts folders that discovery found for the mailbox, unless `--sent-folder` names another one. When verification needs a Sent folder and the identity has none, Mail takes the mailbox's Sent folder too. Neither replaces a folder that is already set. `identity setup-default` differs: it sets the identity of the provider address to the mailbox's current Sent and Drafts folders.
 
 `identity list` shows in `REASON` why an identity cannot send yet. With `--json`, `statusReason` carries the same reason as a stable code, and is `null` for a verified identity:
 

@@ -845,18 +845,18 @@ export const verifySenderIdentity = async (params: {
         if (!current || current.remote_resource_id !== record.remote_resource_id) {
           return fail(err.badInput("Sender identity or provider binding changed before verification"));
         }
+        // An identity created before Sent folders were preset, or whose folder was cleared, takes the mailbox's.
+        // It is stored only with a successful verification, so a failed one leaves the identity unchanged.
+        let filledSentFolderId: string | null = null;
         if (!params.savesSentAutomatically) {
-          // An identity created before Sent folders were preset, or whose folder was cleared, takes the mailbox's.
           if (!current.sent_folder_id) {
-            const sentFolderId = await roleFolderId(params.mailboxId, "sent", tx);
-            if (!sentFolderId) return fail(err.badInput("A Sent folder is required when the provider does not save sent mail"));
-            await tx`UPDATE mail.sender_identities SET sent_folder_id = ${sentFolderId}::uuid WHERE id = ${current.id}::uuid`;
-            current.sent_folder_id = sentFolderId;
+            filledSentFolderId = await roleFolderId(params.mailboxId, "sent", tx);
+            if (!filledSentFolderId) return fail(err.badInput("A Sent folder is required when the provider does not save sent mail"));
           }
           const [sentRef] = await tx<{ allowed: boolean }[]>`
             SELECT 'insert' = ANY(effective_rights) AS allowed
             FROM mail.binding_folder_refs
-            WHERE binding_id = ${params.bindingId}::uuid AND folder_id = ${current.sent_folder_id}::uuid
+            WHERE binding_id = ${params.bindingId}::uuid AND folder_id = ${current.sent_folder_id ?? filledSentFolderId}::uuid
           `;
           if (!sentRef?.allowed) return fail(err.badInput("The selected binding cannot append to the configured Sent folder"));
         }
@@ -928,7 +928,7 @@ export const verifySenderIdentity = async (params: {
         `;
         const [updated] = await tx<DbIdentity[]>`
         UPDATE mail.sender_identities si
-        SET status = 'verified', last_provider_rejection = NULL
+        SET status = 'verified', last_provider_rejection = NULL, sent_folder_id = COALESCE(si.sent_folder_id, ${filledSentFolderId}::uuid)
         WHERE si.id = ${current.id}::uuid
           AND si.mailbox_id = ${params.mailboxId}::uuid
           AND si.status <> 'disabled'
@@ -943,7 +943,11 @@ export const verifySenderIdentity = async (params: {
             actor: auditActorFromRequest(params.context),
             target: { type: "sender_identity", id: updated.id, label: updated.from_address },
             requestId: params.context.requestId,
-            metadata: { bindingId: params.bindingId, savesSentAutomatically: params.savesSentAutomatically },
+            metadata: {
+              bindingId: params.bindingId,
+              savesSentAutomatically: params.savesSentAutomatically,
+              ...(filledSentFolderId ? { sentFolderId: filledSentFolderId } : {}),
+            },
           },
           tx,
         );

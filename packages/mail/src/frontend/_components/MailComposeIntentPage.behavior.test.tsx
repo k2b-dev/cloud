@@ -169,3 +169,80 @@ if (!isServer)
       dom.cleanup();
     }
   });
+
+if (!isServer)
+  test("switching to another mailbox shows no sender notice while its senders load", async () => {
+    const dom = createDomTestHarness();
+    const originalStorage = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+    Object.defineProperty(globalThis, "localStorage", { configurable: true, value: dom.window.localStorage });
+    const originalFetch = globalThis.fetch;
+    const verified = (mailboxId: string): SenderIdentity => ({
+      ...unverifiedIdentity(null),
+      id: `Send-${mailboxId}`,
+      mailboxId,
+      status: "verified",
+    });
+    let releaseSecond!: () => void;
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes("/mail01/sender-identities")) return Response.json([verified("mail01")]);
+        if (url.includes("/mail02/sender-identities")) {
+          await new Promise<void>((resolve) => {
+            releaseSecond = resolve;
+          });
+          return Response.json([verified("mail02")]);
+        }
+        throw new Error(`Unexpected request: ${url}`);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    const { default: MailComposeIntentPage } = await import("./MailComposeIntentPage.island");
+    delegateEvents(["click"]);
+    const dispose = render(
+      () => (
+        <MailComposeIntentPage
+          mailboxes={[
+            { id: "mail01", name: "First", description: null, canManage: true },
+            { id: "mail02", name: "Second", description: null, canManage: true },
+          ]}
+          initialMailboxId="mail01"
+          autoStart={false}
+          mailto={null}
+          returnHref={null}
+          contactDirectory={DEFAULT_MAIL_CONTACT_DIRECTORY}
+          currentUserEmail={null}
+        />
+      ),
+      dom.root,
+    );
+    const waitFor = async (condition: () => boolean) => {
+      for (let i = 0; i < 200 && !condition(); i++) await Bun.sleep(5);
+      expect(condition()).toBe(true);
+    };
+    const notice = () => dom.root.querySelector("[data-mail-sender-unavailable]");
+    try {
+      await waitFor(() => dom.root.textContent?.includes("Support") ?? false);
+      expect(notice()).toBeNull();
+
+      const mailboxLabel = Array.from(dom.document.querySelectorAll("label")).find((label) => label.textContent === "Mailbox")!;
+      (dom.document.getElementById(mailboxLabel.htmlFor) as HTMLElement).click();
+      await waitFor(() => dom.document.querySelector('[role="option"]') !== null);
+      Array.from(dom.document.querySelectorAll<HTMLElement>('[role="option"]'))
+        .find((option) => option.textContent?.includes("Second"))!
+        .click();
+      await waitFor(() => typeof releaseSecond === "function");
+      await Bun.sleep(20);
+      expect(notice()).toBeNull();
+
+      releaseSecond();
+      await Bun.sleep(20);
+      expect(notice()).toBeNull();
+    } finally {
+      dispose();
+      globalThis.fetch = originalFetch;
+      if (originalStorage) Object.defineProperty(globalThis, "localStorage", originalStorage);
+      else delete (globalThis as { localStorage?: unknown }).localStorage;
+      dom.cleanup();
+    }
+  });

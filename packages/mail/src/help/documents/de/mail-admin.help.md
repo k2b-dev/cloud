@@ -112,7 +112,7 @@ Zwei Absenderidentitäten können bewusst dieselbe Absenderadresse nutzen. Mail 
 
 Prüfe jede Absenderidentität: Wähle das verbundene Konto und einen Empfänger für eine echte Prüfnachricht. Ist die Absenderidentität für den Versand bereit, hat der Anbieter diesen Test mit der genauen Absenderadresse und den erweiterten Zustelleinstellungen angenommen. IMAP-Zugriff auf Ordner allein beweist nicht, dass der Anbieter diese Versandeinstellungen erlaubt.
 
-Eine neue Absenderidentität nutzt die Ordner für Gesendet und Entwürfe, die Mail für das Postfach gefunden hat. Andere Ordner wählst du unter **Erweiterte Zustellung**. Hat eine Absenderidentität beim Bestätigen keinen Ordner für gesendete E-Mails, nutzt Mail den Ordner Gesendet des Postfachs. Einen bereits gesetzten Ordner ersetzt Mail nie.
+Eine neue Absenderidentität nutzt die Ordner für Gesendet und Entwürfe, die Mail für das Postfach gefunden hat. Andere Ordner wählst du unter **Erweiterte Zustellung**. Hat eine Absenderidentität beim Bestätigen keinen Ordner für gesendete E-Mails, nutzt Mail den Ordner Gesendet des Postfachs. Beim Anlegen und Bestätigen ersetzt Mail nie einen bereits gesetzten Ordner. **Versand einrichten** ist anders: Es setzt für die Absenderidentität der Kontoadresse die aktuellen Ordner Gesendet und Entwürfe des Postfachs.
 
 Eine Absenderidentität, die nicht für den Versand bereit ist, zeigt den Grund als Status:
 
@@ -120,7 +120,7 @@ Eine Absenderidentität, die nicht für den Versand bereit ist, zeigt den Grund 
 - **Vom Anbieter abgelehnt:** Prüfe die Absenderadresse und die erweiterten Zustelleinstellungen und bestätige die Absenderidentität erneut.
 - **Nicht bestätigt:** Wähle **Bestätigen** und sende die Testnachricht.
 
-Hat ein Postfach keine Absenderidentität, die für den Versand bereit ist, zeigt **Verfassen** denselben Grund. Personen mit Zugriff **Verwalten** öffnen dort direkt die Absendereinstellungen.
+Hat ein Postfach keine Absenderidentität, die für den Versand bereit ist, zeigen **Verfassen**, **Antworten** und **Weiterleiten** denselben Grund. Personen mit Zugriff **Verwalten** öffnen dort direkt die Absendereinstellungen.
 
 **Für automatische Antworten zulassen** ist von der Prüfung getrennt. Automatische Antworten können nur eine Absenderidentität nutzen, die für den Versand bereit ist und bei der diese Option eingeschaltet ist. Das Einschalten sendet allein nichts. Es braucht zusätzlich eine eingeschaltete automatische Antwort oder einen Workflow.
 

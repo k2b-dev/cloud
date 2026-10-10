@@ -143,14 +143,11 @@ export const mailActionTargetForItem = (params: {
 const ROLE_DESTINATIONS: Partial<Record<MailActionId, string>> = { archive: "archive", junk: "junk", trash: "trash", not_spam: "inbox" };
 
 /**
- * The folder an Archive, Spam, Not spam, or Delete action moves to, chosen as the server's
- * `resolveRoleFolder` chooses it among active, selectable folders: the folder configured for the
- * role, else the one folder whose provider role it is, else Gmail's All Mail for Archive. `null`
- * when that is unclear; the server then decides and reports.
+ * The mailbox's folder for a role, chosen as the server's `resolveRoleFolder` chooses it among
+ * active, selectable folders: the folder configured for the role, else the one folder whose
+ * provider role it is, else Gmail's All Mail for Archive. `null` when that is unclear.
  */
-export const mailRoleDestinationFolderId = (actionId: MailActionId, folders: readonly MailActionFolder[]): string | null => {
-  const role = ROLE_DESTINATIONS[actionId];
-  if (!role) return null;
+export const mailRoleFolderId = (role: string, folders: readonly MailActionFolder[]): string | null => {
   const usable = folders.filter((folder) => folder.selectable && folder.discoveryState === "active");
   const configured = usable.find((folder) => folder.configuredRole === role);
   if (configured) return configured.id;
@@ -160,6 +157,12 @@ export const mailRoleDestinationFolderId = (actionId: MailActionId, folders: rea
     return allMail.length === 1 ? allMail[0]!.id : null;
   }
   return claimed.length === 1 ? claimed[0]!.id : null;
+};
+
+/** The folder an Archive, Spam, Not spam, or Delete action moves to; `null` lets the server decide and report. */
+export const mailRoleDestinationFolderId = (actionId: MailActionId, folders: readonly MailActionFolder[]): string | null => {
+  const role = ROLE_DESTINATIONS[actionId];
+  return role ? mailRoleFolderId(role, folders) : null;
 };
 
 /** The spam action a conversation offers: Not spam when every folder the action takes it out of is Junk. */

@@ -7,7 +7,8 @@ export const mailSenderIdentityStatusMessages = i18n.define({
   messages: {
     en: {
       sentFolderMissing: "Sent folder missing",
-      sentFolderMissingHint: "Choose the folder where Mail saves sent mail, then verify the identity.",
+      sentFolderMissingHint:
+        "Choose the folder where Mail saves sent mail, then verify the identity. If the provider saves sent mail itself, verify the identity with that option turned on.",
       providerRejected: "Rejected by the provider",
       providerRejectedHint: "The provider refused the test message. Check the From address and delivery settings, then verify again.",
       verificationRequired: "Not verified",
@@ -21,7 +22,8 @@ export const mailSenderIdentityStatusMessages = i18n.define({
     },
     de: {
       sentFolderMissing: "Ordner für gesendete E-Mails fehlt",
-      sentFolderMissingHint: "Wähle den Ordner, in dem Mail gesendete E-Mails speichert, und bestätige dann die Absenderidentität.",
+      sentFolderMissingHint:
+        "Wähle den Ordner, in dem Mail gesendete E-Mails speichert, und bestätige dann die Absenderidentität. Speichert der Anbieter gesendete E-Mails selbst, bestätige sie mit eingeschalteter Option dafür.",
       providerRejected: "Vom Anbieter abgelehnt",
       providerRejectedHint:
         "Der Anbieter hat die Testnachricht abgelehnt. Prüfe die Absenderadresse und die Versandeinstellungen und bestätige die Absenderidentität erneut.",
@@ -50,3 +52,12 @@ export const blockedSenderIdentity = (identities: readonly SenderIdentity[]): Se
   identities.find((identity) => identity.isDefault && identity.statusReason) ??
   identities.find((identity) => identity.statusReason) ??
   null;
+
+/** Why a mailbox without a verified sender cannot send, and the next step, for a notice or a dialog. */
+export const senderUnavailableDetail = (identities: readonly SenderIdentity[], locale: string): string => {
+  const t = mailSenderIdentityStatusMessages.resolve([locale]).t;
+  const identity = blockedSenderIdentity(identities);
+  if (!identity?.statusReason) return t.noIdentity;
+  const copy = senderIdentityReasonCopy(identity.statusReason, locale);
+  return `${t.identityReason({ label: identity.label, reason: copy.label })} ${copy.hint}`;
+};

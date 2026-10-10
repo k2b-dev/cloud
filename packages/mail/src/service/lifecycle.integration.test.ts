@@ -850,6 +850,21 @@ suite("mail lifecycle control plane", () => {
           verificationRecipient: `verify-${suffix}@example.com`,
           savesSentAutomatically: false,
         });
+      // A failed verification does not keep the folder it took.
+      await sql`
+        UPDATE mail.binding_folder_refs SET effective_rights = ARRAY['read']::text[]
+        WHERE binding_id = ${bindingId}::uuid AND folder_id = ${sentFolderId}::uuid
+      `;
+      expect(await verifyAppending(missing.data.id)).toMatchObject({ ok: false, error: { status: 400 } });
+      const unchanged = await listSenderIdentities(adminContext, mailboxId);
+      expect(unchanged.ok && unchanged.data.find((item) => item.id === missing.data.id)).toMatchObject({
+        sentFolderId: null,
+        statusReason: "sent_folder_missing",
+      });
+      await sql`
+        UPDATE mail.binding_folder_refs SET effective_rights = ARRAY['read', 'insert']::text[]
+        WHERE binding_id = ${bindingId}::uuid AND folder_id = ${sentFolderId}::uuid
+      `;
       const verifiedMissing = await verifyAppending(missing.data.id);
       expect(verifiedMissing.ok).toBe(true);
       if (verifiedMissing.ok) {
