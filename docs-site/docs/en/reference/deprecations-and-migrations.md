@@ -34,8 +34,10 @@ large, and any other medium, each only when the widget offers that size; a
 widget switched off is not on the board. People who never changed a widget
 follow the new default board. Shortcuts stay; the name color is dropped. The
 `dashboard.user_settings` table gets a `board` column; the old columns stay
-and are emptied as each person's settings are converted. See
-[Dashboard widgets](/en/docs/platform/dashboard-widgets#board-and-gallery).
+and are emptied as each person's settings are converted. Deploy Core and the
+Dashboard together; see
+[Upgrade the dashboard to one board](/en/docs/operations/deployment-requirements#upgrade-the-dashboard-to-one-board)
+and [Dashboard widgets](/en/docs/platform/dashboard-widgets#board-and-gallery).
 
 ## Actions can word their own approvals and receipts
 

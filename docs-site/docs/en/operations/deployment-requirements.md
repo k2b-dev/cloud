@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-10-09
+updated: 2026-10-10
 ---
 
 # Deployment requirements
@@ -529,6 +529,30 @@ after a change. Each tab keeps at most one such request per route in flight
 and gives up on one after a minute; requests asked for meanwhile share one
 read after it. Hidden tabs send nothing. Count these requests when sizing the
 application.
+
+### Upgrade the dashboard to one board
+
+This release turns the dashboard into one board of widgets in three sizes; see
+[Board and gallery](/en/docs/platform/dashboard-widgets#board-and-gallery). It
+needs no configuration change. Deploy Core and the Dashboard together: the
+Dashboard asks Core for each widget in a size (`widget=<key>@<size>`), which an
+older Core does not understand, so its widgets would show as failed until Core
+is updated. Applications can follow in any order; an application image from
+before sizes existed ignores the size and shows its widget in the large size.
+
+The Dashboard's first start adds the nullable column
+`dashboard.user_settings.board`. Each person's saved settings are converted
+once, on their next visit: their order, a size per widget, widgets they had
+switched off left out, and their shortcuts kept. The old columns
+`hidden_widgets` and `widget_layout` are emptied for that person as part of the
+conversion, and the name color in `gradient` is no longer used. People who
+never changed a widget follow the new default board. The per-device cookie
+`dashboard_widgets` is deleted by the browser on the next visit.
+
+Rolling the Dashboard back keeps the `board` column but shows every widget to
+everyone whose settings were already converted, because their old settings are
+empty. After the rollout, open the dashboard, select **Edit**, move a widget,
+select **Done**, and reload: the widget stays where you put it.
 
 ### Hold back browser notifications during quiet time
 
