@@ -747,7 +747,6 @@ packages/spaces/src/help/documents/de/spaces-views.help.md | term | klick*
 packages/spaces/src/help/documents/de/spaces-views.help.md | term | klick*
 packages/spaces/src/help/documents/de/spaces-views.help.md | term | klick*
 packages/spaces/src/help/documents/de/spaces-workflow.help.md | term | Adminzugriff
-packages/spaces/src/help/documents/de/spaces-workflow.help.md | term | Adminzugriff
 packages/spaces/src/help/documents/de/spaces-workflow.help.md | term | Bearbeitungsrecht*
 packages/spaces/src/help/documents/de/spaces-workflow.help.md | term | Schreibrecht*
 packages/spaces/src/help/documents/de/spaces-workflow.help.md | term | Schreibrecht*
@@ -777,7 +776,6 @@ packages/spaces/src/help/documents/en/spaces-views.help.md | term | tap
 packages/spaces/src/help/documents/en/spaces-views.help.md | term | tap
 packages/spaces/src/help/documents/en/spaces-views.help.md | term | write access
 packages/spaces/src/help/documents/en/spaces-views.help.md | term | write access
-packages/spaces/src/help/documents/en/spaces-workflow.help.md | term | admins
 packages/spaces/src/help/documents/en/spaces-workflow.help.md | term | click*
 packages/spaces/src/help/documents/en/spaces-workflow.help.md | term | permissions
 packages/spaces/src/help/documents/en/spaces-workflow.help.md | term | write access
