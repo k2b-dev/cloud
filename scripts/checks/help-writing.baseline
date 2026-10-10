@@ -58,8 +58,6 @@ packages/assistant/src/help/documents/en/assistant-workflow.help.md | term | tap
 packages/assistant/src/help/documents/en/assistant-workflow.help.md | term | write access
 packages/chat/src/help/documents/de/chat-start.help.md | term | Administratoren
 packages/chat/src/help/documents/de/chat-start.help.md | term | Administratoren
-packages/dashboard/src/help/documents/de/dashboard-start.help.md | term | Benutzerkonto*
-packages/dashboard/src/help/documents/en/dashboard-start.help.md | term | login
 packages/faq/src/help/documents/de/faq-admin.help.md | term | Administratoren
 packages/faq/src/help/documents/de/faq-start.help.md | term | Administratorrecht*
 packages/faq/src/help/documents/en/faq-start.help.md | term | admin

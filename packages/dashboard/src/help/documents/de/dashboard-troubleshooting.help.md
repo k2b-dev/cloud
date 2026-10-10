@@ -19,7 +19,7 @@ Dashboard verbindet Inhalte mehrerer Apps. Ein nicht verfügbares Widget darf da
 - **Ein neues Widget erscheint nicht von selbst:** Sobald du dein Board selbst angeordnet hast, warten neue Widgets in der Galerie unter **Vorschläge für dich**. **Standard** bringt dich zum Standard-Board zurück, das Vorschläge von selbst aufnimmt.
 - **Eine Verknüpfung fehlt:** App-Verknüpfungen können verschwinden, wenn sich der Zugriff auf die App ändert. Füge sie beim Bearbeiten wieder hinzu.
 - **Ein eigener Link öffnet sich nicht:** Prüfe, ob es ein unterstützter relativer, HTTP(S)- oder mailto-Link ist und ob der Browser das Ziel zulässt.
-- **Änderungen erscheinen nur auf einem Gerät:** Lade das andere Gerät neu, nachdem du **Fertig** gewählt hast. Einstellungen angemeldeter Personen werden mit dem Konto gespeichert.
+- **Änderungen erscheinen nur auf einem Gerät:** Lade die Seite auf dem anderen Gerät neu, nachdem du **Fertig** gewählt hast. Einstellungen angemeldeter Personen werden mit dem Konto gespeichert.
 :::
 
 ## Die Startseite nützlich halten {icon="square-plus"}
