@@ -168,7 +168,8 @@ export default function QuickCreate(props: {
         <span class="mr-auto text-[0.6875rem] text-[var(--k2b-text-muted)] pointer-coarse:invisible" aria-hidden="true">
           <kbd class={KBD}>↵</kbd> {t.quickCreateEnter} · <kbd class={KBD}>Esc</kbd> {t.quickCreateEscape}
         </span>
-        <Button type="button" variant="ghost" size="sm" onClick={() => props.onMoreOptions(formDefaults())}>
+        {/* While a save runs, the full form would create the same item a second time. */}
+        <Button type="button" variant="ghost" size="sm" disabled={submitting()} onClick={() => props.onMoreOptions(formDefaults())}>
           {t.withDetails}
         </Button>
         <Button type="submit" variant="primary" size="sm" disabled={submitting()}>

@@ -320,7 +320,8 @@ const dayOverflow = (page: Page, key: string) =>
 const gridShape = (page: Page) =>
   page.evaluate(() => ({
     rows: Array.from(document.querySelectorAll(".k2b-calendar-month__week"), (row) => Math.round(row.getBoundingClientRect().height)),
-    columns: Array.from(document.querySelectorAll(".k2b-calendar-month__week:first-of-type [role='gridcell']"), (cell) =>
+    // The weekday row comes first, so the first week row is the first element with its class, not a :first-of-type.
+    columns: Array.from(document.querySelector(".k2b-calendar-month__week")!.querySelectorAll("[role='gridcell']"), (cell) =>
       Math.round(cell.getBoundingClientRect().width),
     ),
   }));
@@ -504,6 +505,45 @@ describe(`Spaces month view in ${browserName}`, () => {
       expect(await dialog.textContent()).toContain("Oct 13");
       await page.keyboard.press("Escape");
       await page.waitForFunction(() => !document.querySelector("dialog[open]"));
+
+      // While the quick create waits after a click, Space still lists the day, and typing starts the title, N included.
+      const popoverKind = (kind: string) =>
+        page.waitForFunction(
+          (expected) => document.querySelector<HTMLElement>(".k2b-calendar-popover:popover-open")?.dataset.kind === expected,
+          kind,
+        );
+      await clickDay(page, "2026-10-16");
+      await popoverKind("create");
+      await page.keyboard.press(" ");
+      await popoverKind("day");
+      expect(await page.locator(`${openPopover} .k2b-calendar-day-list__title`).innerText()).toBe("Friday, October 16, 2026");
+      await page.keyboard.press("Escape");
+      await page.waitForFunction(() => !document.querySelector(".k2b-calendar-popover:popover-open"));
+      await clickDay(page, "2026-10-21");
+      await popoverKind("create");
+      await page.keyboard.type("new booth sign");
+      expect(await page.locator(`${openPopover} input`).inputValue()).toBe("new booth sign");
+      await page.keyboard.press("Escape");
+      await page.waitForFunction(() => !document.querySelector(".k2b-calendar-popover:popover-open"));
+
+      // The selection stays with the month: after the week view and back, New event creates on the shown date.
+      expect(await selectedDays(page)).toEqual(["2026-10-21"]);
+      await page.locator(".k2b-calendar-view-switcher").getByRole("radio", { name: "Week" }).click();
+      await page.waitForURL(/cv=week&cd=2026-10-21/);
+      for (const date of ["2026-10-28", "2026-11-04"]) {
+        await page.locator('.k2b-calendar-header__nav-button[aria-label="Next"]').click();
+        await page.waitForURL(new RegExp(`cd=${date}`));
+      }
+      await page.locator(".k2b-calendar-view-switcher").getByRole("radio", { name: "Month" }).click();
+      await page.waitForURL(/cv=month&cd=2026-11-04/);
+      await page.locator(day("2026-11-04")).waitFor();
+      expect(await selectedDays(page)).toEqual([]);
+      await page.getByRole("button", { name: "New event" }).click();
+      await dialog.waitFor();
+      expect(await dialog.textContent()).toContain("Nov 4");
+      expect(await dialog.textContent()).not.toContain("Oct 21");
+      await page.keyboard.press("Escape");
+      await page.waitForFunction(() => !document.querySelector("dialog[open]"));
     } finally {
       await page.context().close();
     }
@@ -611,6 +651,15 @@ describe(`Spaces month view in ${browserName}`, () => {
         "Clear selection",
       ]);
       expect(await selectedDays(page)).toEqual(["2026-10-19", "2026-10-20", "2026-10-21"]);
+      // New event over several days creates one all-day event, as N and a drag do.
+      await menu.getByRole("menuitem", { name: "New event", exact: true }).click();
+      await page.locator(openPopover).waitFor();
+      expect(await page.locator(`${openPopover} [role='radio'][aria-checked='true']`).innerText()).toBe("All day");
+      expect(await quickCreateWhen(page)).toBe("Mon, Oct 19 – Wed, Oct 21 · all day");
+      await page.keyboard.press("Escape");
+      await page.waitForFunction(() => !document.querySelector(".k2b-calendar-popover:popover-open"));
+      await clickDay(page, "2026-10-20", { button: "right" });
+      await menu.waitFor();
       await page.keyboard.press("Escape");
       await menu.waitFor({ state: "detached" });
 
@@ -630,7 +679,7 @@ describe(`Spaces month view in ${browserName}`, () => {
       expect(created[0]).toMatchObject({ title: "Print the price list", deadline: at(10, 14, "17:00") });
       expect(created[0]!.startsAt).toBeUndefined();
 
-      // The keyboard opens the same menu at the focused day, and Open day goes to the day view.
+      // The keyboard opens the same menu at the focused day; Escape gives the day the focus back, where the arrows go on.
       await page.locator(day("2026-10-27")).focus();
       await page.keyboard.press("Shift+F10");
       await menu.waitFor();
@@ -638,8 +687,16 @@ describe(`Spaces month view in ${browserName}`, () => {
       const opened = await box(page, ".k2b-context-menu[role='menu']");
       const cell = await cellBox(page, "2026-10-27");
       expect(opened.x >= cell.left && opened.x <= cell.right).toBe(true);
+      await page.keyboard.press("Escape");
+      await menu.waitFor({ state: "detached" });
+      expect(await focusedDay(page)).toBe("2026-10-27");
+      await page.keyboard.press("ArrowRight");
+      expect(await selectedDays(page)).toEqual(["2026-10-28"]);
+      // Open day goes to the day view.
+      await page.keyboard.press("Shift+F10");
+      await menu.waitFor();
       await menu.getByRole("menuitem", { name: "Open day" }).click();
-      await page.waitForURL(/cv=day&cd=2026-10-27/);
+      await page.waitForURL(/cv=day&cd=2026-10-28/);
     } finally {
       await page.context().close();
     }
@@ -668,6 +725,14 @@ describe(`Spaces month view in ${browserName}`, () => {
       await page.keyboard.press("ArrowUp");
       await page.keyboard.press("ArrowUp");
       expect(await selectedDays(page)).toEqual(["2026-10-26"]);
+      // From a day the other month lacks, Page Up lands on that month's last day: October 31 shows in November's grid.
+      await clickDay(page, "2026-10-31");
+      await page.keyboard.press("Escape");
+      await page.keyboard.press("PageUp");
+      await page.waitForURL(/cd=2026-09-30/);
+      await page.waitForFunction(
+        () => document.querySelector("[aria-selected='true']")?.getAttribute("data-calendar-day-key") === "2026-09-30",
+      );
     } finally {
       await page.context().close();
     }
@@ -738,6 +803,7 @@ describe(`Spaces month view in ${browserName}`, () => {
       expect(await dayOverflow(page, "2026-10-12")).toEqual({ drawn: 2, more: 0, label: null });
       const shape = await gridShape(page);
       expect(new Set(shape.rows).size).toBe(1);
+      expect(shape.columns).toHaveLength(7);
 
       await page.setViewportSize({ width: 1440, height: 640 });
       await page.waitForFunction(() => {

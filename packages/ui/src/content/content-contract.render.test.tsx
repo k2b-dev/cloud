@@ -16,6 +16,7 @@ Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { default: Calendar } = await import("./Calendar");
+const { checkCalendarMessages } = await import("./calendar-messages");
 const { default: CodeDisplay } = await import("./CodeDisplay");
 const { default: DataTable } = await import("./DataTable");
 const { LocaleProvider } = await import("../intl/locale");
@@ -31,6 +32,10 @@ const contentCss = await Bun.file(resolve(import.meta.dir, "../styles/content-pa
 const uiCss = await Bun.file(resolve(import.meta.dir, "../styles/index.css")).text();
 
 describe("@k2b/ui Cloud content contract", () => {
+  test("keeps every shipped locale of the calendar's own strings complete", () => {
+    expect(checkCalendarMessages()).toEqual([]);
+  });
+
   test("keeps the complete calendar event and view contract on the server", () => {
     const events: CalendarEvent[] = [
       {

@@ -589,7 +589,8 @@ export default function Calendar(props: CalendarProps) {
   const selectionMenu = (_range: CalendarEventTimeChange, controls: CalendarSelectionControls): DropdownItem[] =>
     props.canWrite ? createMenu(controls) : [];
   const createMenu = (controls: CalendarSelectionControls): DropdownItem[] => [
-    { label: t.newEvent, icon: "ti ti-calendar-plus", action: () => controls.quickCreate("event" satisfies QuickCreateKind) },
+    // New event creates as N and the toolbar do: at nine on one day, all day over several.
+    { label: t.newEvent, icon: "ti ti-calendar-plus", action: () => controls.quickCreate() },
     { label: t.newAllDayEvent, icon: "ti ti-sun", action: () => controls.quickCreate("allday" satisfies QuickCreateKind) },
     { label: t.newTaskWithDeadline, icon: "ti ti-square-check", action: () => controls.quickCreate("task" satisfies QuickCreateKind) },
   ];

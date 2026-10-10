@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createComponent } from "solid-js";
+import { createComponent, createSignal } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import type { CalendarEvent, CalendarEventTimeChange } from "../src/content/Calendar";
 import { createDomTestHarness, type DomTestHarness } from "./dom";
@@ -236,5 +236,245 @@ describe("@k2b/ui Calendar month selection and bars", () => {
 
     dispose();
     dom.cleanup();
+  });
+
+  test("Page Up, Page Down, and the header page to the same day of the month, or to its last day when it is shorter", async () => {
+    const dom = createDomTestHarness();
+    const { default: Calendar } = await import("../src/content/Calendar");
+    delegateEvents(["click", "keydown"], dom.document);
+    const [date, setDate] = createSignal<Date | string>("2026-01-15T12:00:00Z");
+    const changes: string[] = [];
+    const dispose = render(
+      () =>
+        createComponent(Calendar, {
+          get date() {
+            return date();
+          },
+          view: "month",
+          timeZone: "UTC",
+          events: [],
+          onDateChange: (next) => {
+            changes.push(key(next));
+            setDate(next);
+          },
+        }),
+      dom.root,
+    );
+    const cell = (day: string) => dom.root.querySelector<HTMLElement>(`[data-calendar-day-key="${day}"]`)!;
+    const selected = () =>
+      Array.from(dom.root.querySelectorAll<HTMLElement>("[aria-selected='true']"), (element) => element.dataset.calendarDayKey);
+    const page = async (day: string, keyName: "PageUp" | "PageDown") => {
+      cell(day).click();
+      cell(day).dispatchEvent(
+        new dom.window.KeyboardEvent("keydown", { key: keyName, bubbles: true, cancelable: true }) as unknown as Event,
+      );
+      await new Promise((done) => setTimeout(done, 0));
+      return { shown: changes.at(-1), selected: selected() };
+    };
+
+    // January 31 has no February twin: February 28 it is, not March 3.
+    expect(await page("2026-01-31", "PageDown")).toEqual({ shown: "2026-02-28", selected: ["2026-02-28"] });
+    setDate("2026-03-15T12:00:00Z");
+    expect(await page("2026-03-31", "PageUp")).toEqual({ shown: "2026-02-28", selected: ["2026-02-28"] });
+    setDate("2026-10-15T12:00:00Z");
+    expect(await page("2026-10-31", "PageUp")).toEqual({ shown: "2026-09-30", selected: ["2026-09-30"] });
+    setDate("2026-10-15T12:00:00Z");
+    expect(await page("2026-10-31", "PageDown")).toEqual({ shown: "2026-11-30", selected: ["2026-11-30"] });
+
+    // The header's previous and next step the same way from the last day of a month.
+    setDate("2026-03-31T12:00:00Z");
+    dom.root.querySelector<HTMLElement>("button[aria-label='Previous']")!.click();
+    expect(changes.at(-1)).toBe("2026-02-28");
+    setDate("2026-01-31T12:00:00Z");
+    dom.root.querySelector<HTMLElement>("button[aria-label='Next']")!.click();
+    expect(changes.at(-1)).toBe("2026-02-28");
+
+    dispose();
+    dom.cleanup();
+  });
+
+  test("another view drops the selection and says so, and a host's own view switch opens at the selected day", async () => {
+    const dom = createDomTestHarness();
+    const { default: Calendar } = await import("../src/content/Calendar");
+    delegateEvents(["click"], dom.document);
+    const [date, setDate] = createSignal<Date | string>("2026-08-12T12:00:00Z");
+    const [view, setView] = createSignal<"day" | "week" | "month">("month");
+    const selections: Array<ReturnType<typeof range>> = [];
+    const opened: string[] = [];
+    const dispose = render(
+      () =>
+        createComponent(Calendar, {
+          get date() {
+            return date();
+          },
+          get view() {
+            return view();
+          },
+          views: ["day", "week", "month"],
+          timeZone: "UTC",
+          events: [],
+          onSelectionChange: (value) => selections.push(range(value)),
+          onViewChange: (next) => {
+            opened.push(`view ${next}`);
+            setView(next as "day" | "week" | "month");
+          },
+          onDateChange: (next, nextView) => {
+            opened.push(`date ${key(next)} ${nextView}`);
+            setDate(next);
+          },
+        }),
+      dom.root,
+    );
+    const cell = (day: string) => dom.root.querySelector<HTMLElement>(`[data-calendar-day-key="${day}"]`)!;
+    const option = (label: string) =>
+      Array.from(dom.root.querySelectorAll<HTMLElement>("[role='radio']")).find((element) => element.textContent === label)!;
+
+    cell("2026-08-20").click();
+    expect(selections.at(-1)).toEqual({ start: "2026-08-20", end: "2026-08-21", allDay: true });
+    option("Day").click();
+    expect(opened).toEqual(["view day", "date 2026-08-20 day"]);
+    expect(view()).toBe("day");
+    expect(key(new Date(date()))).toBe("2026-08-20");
+    // The month view went with its selection, so actions outside the grid no longer create on August 20.
+    expect(selections.at(-1)).toBeNull();
+
+    // Back in the month view nothing is selected, and the switcher keeps the shown day.
+    option("Month").click();
+    expect(dom.root.querySelectorAll("[aria-selected='true']")).toHaveLength(0);
+    expect(selections.at(-1)).toBeNull();
+    opened.length = 0;
+    option("Week").click();
+    expect(opened).toEqual(["view week"]);
+
+    dispose();
+    dom.cleanup();
+  });
+
+  test("Space keeps opening the day list after a click, the open list follows a refresh, and a late close keeps a newer quick create", async () => {
+    const dom = createDomTestHarness();
+    const { default: Calendar } = await import("../src/content/Calendar");
+    delegateEvents(["click", "keydown", "pointerdown", "focusin"], dom.document);
+    installPopoverApi(dom);
+    const [events, setEvents] = createSignal<CalendarEvent[]>([
+      { id: "walk", title: "Old title", start: "2026-08-12T09:00:00Z", end: "2026-08-12T10:00:00Z" },
+    ]);
+    const closes: Array<() => void> = [];
+    const dispose = render(
+      () =>
+        createComponent(Calendar, {
+          date: "2026-08-12T12:00:00Z",
+          view: "month",
+          timeZone: "UTC",
+          get events() {
+            return events();
+          },
+          renderQuickCreate: (_value, controls) => {
+            closes.push(controls.close);
+            return createComponent(() => {
+              const input = dom.document.createElement("input");
+              input.setAttribute("aria-label", "Title");
+              return input;
+            }, {});
+          },
+        }),
+      dom.root,
+    );
+    const cell = (day: string) => dom.root.querySelector<HTMLElement>(`[data-calendar-day-key="${day}"]`)!;
+    const popover = () => dom.document.querySelector<HTMLElement>(".k2b-calendar-popover")!;
+    const press = (target: HTMLElement, keyName: string) =>
+      target.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: keyName, bubbles: true, cancelable: true }) as unknown as Event);
+    const settle = () => new Promise((done) => setTimeout(done, 0));
+    const click = async (day: string) => {
+      cell(day).dispatchEvent(new dom.window.PointerEvent("pointerdown", { bubbles: true, pointerType: "mouse" }) as unknown as Event);
+      cell(day).click();
+      await settle();
+    };
+
+    // After a click the quick create waits quietly, and Space still lists the day.
+    await click("2026-08-12");
+    expect(popover().dataset.quiet).toBe("true");
+    press(cell("2026-08-12"), " ");
+    await settle();
+    expect(popover().dataset.kind).toBe("day");
+    expect(popover().textContent).toContain("Old title");
+    // A refresh renames the entry while the list is open.
+    setEvents([{ id: "walk", title: "New title", start: "2026-08-12T09:00:00Z", end: "2026-08-12T10:00:00Z" }]);
+    expect(popover().textContent).toContain("New title");
+    expect(popover().textContent).not.toContain("Old title");
+    press(cell("2026-08-12"), "Escape");
+
+    // Any other character, N included, starts the title.
+    await click("2026-08-13");
+    press(cell("2026-08-13"), "n");
+    expect(popover().dataset.quiet).toBeUndefined();
+    expect(dom.document.activeElement?.getAttribute("aria-label")).toBe("Title");
+
+    // The first quick create closes late, as after a slow save: the one opened since stays open.
+    const first = closes.at(-1)!;
+    press(cell("2026-08-13"), "Escape");
+    press(cell("2026-08-14"), "Enter");
+    await settle();
+    expect(popover().dataset.kind).toBe("create");
+    first();
+    expect(popover().dataset.kind).toBe("create");
+    closes.at(-1)!();
+    expect(popover().dataset.kind).toBeUndefined();
+
+    dispose();
+    dom.cleanup();
+  });
+
+  test("without application entries the day menu still opens the day; a press on a long bar acts on the day under it, and Escape returns there", async () => {
+    const dom = createDomTestHarness();
+    const { default: Calendar } = await import("../src/content/Calendar");
+    delegateEvents(["click", "keydown", "pointerdown", "contextmenu"], dom.document);
+    // The context menu clamps itself to the viewport through a DOMRect, which the harness does not expose.
+    const previousDomRect = Object.getOwnPropertyDescriptor(globalThis, "DOMRect");
+    Object.defineProperty(globalThis, "DOMRect", { configurable: true, writable: true, value: dom.window.DOMRect });
+    const dispose = render(
+      () =>
+        createComponent(Calendar, {
+          date: "2026-08-12T12:00:00Z",
+          view: "month",
+          timeZone: "UTC",
+          events: [{ id: "fair", title: "Fair setup", start: "2026-08-03", end: "2026-08-08", allDay: true }],
+          getDateHref: (date, view) => `/calendar?view=${view}&date=${key(date)}`,
+        }),
+      dom.root,
+    );
+    // Cells get boxes by their place in the grid: 100 px wide, 80 px tall.
+    Array.from(dom.root.querySelectorAll<HTMLElement>("[data-calendar-day-key]")).forEach((cell, index) => {
+      const left = (index % 7) * 100;
+      const top = Math.floor(index / 7) * 80;
+      cell.getBoundingClientRect = () =>
+        ({ left, top, right: left + 100, bottom: top + 80, width: 100, height: 80, x: left, y: top, toJSON: () => ({}) }) as DOMRect;
+    });
+    const cell = (day: string) => dom.root.querySelector<HTMLElement>(`[data-calendar-day-key="${day}"]`)!;
+    const selected = () =>
+      Array.from(dom.root.querySelectorAll<HTMLElement>("[aria-selected='true']"), (element) => element.dataset.calendarDayKey);
+
+    // The bar of August 3 to 7 sits in Monday's cell; the right-click lands on Thursday, August 6.
+    const bar = dom.root.querySelector<HTMLElement>("[data-calendar-event]")!;
+    expect(bar.closest<HTMLElement>("[data-calendar-day-key]")?.dataset.calendarDayKey).toBe("2026-08-03");
+    bar.dispatchEvent(
+      new dom.window.MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 350, clientY: 120 }) as unknown as Event,
+    );
+    await new Promise((done) => setTimeout(done, 0));
+    expect(selected()).toEqual(["2026-08-06"]);
+    const menu = dom.document.querySelector<HTMLElement>(".k2b-context-menu[role='menu']")!;
+    expect(Array.from(menu.querySelectorAll("[role='menuitem']"), (item) => item.textContent?.trim())).toEqual(["Open day", "Open week"]);
+    expect(menu.textContent).toContain("Thursday, August 6");
+
+    // Escape gives the focus back to the day, where the arrow keys go on.
+    dom.document.dispatchEvent(
+      new dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }) as unknown as Event,
+    );
+    expect(dom.document.querySelector(".k2b-context-menu[role='menu']")).toBeNull();
+    expect(dom.document.activeElement).toBe(cell("2026-08-06"));
+
+    dispose();
+    dom.cleanup();
+    if (previousDomRect) Object.defineProperty(globalThis, "DOMRect", previousDomRect);
+    else Reflect.deleteProperty(globalThis, "DOMRect");
   });
 });

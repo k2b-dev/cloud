@@ -58,7 +58,10 @@ should pass a short plain-text preview instead of the source markup.
 `renderEvent(event, context)` receives the event and normalized `CalendarEventRenderContext`, including
 the effective start, end, duration, time label, compact or fill state, and in
 the month view the `leadingTime` to show before a one-day entry's title.
-Custom output must retain useful visible event text.
+Custom output must retain useful visible event text. Entries of the month
+view and its day list are always `compact` and one line high, the height of
+a lane: render a single line there, title first, or the lane cuts the rest
+off. Put state that the line shows only as an icon into `accessibleDetail`.
 
 ## Views and navigation
 
@@ -111,8 +114,10 @@ a range; the selection shows as one tinted band with stronger ends and an
 inner line. The arrow keys move the selection and page to the next or
 previous month at the edge of the grid; Home and End go to the start and end
 of the week, Page Up and Page Down to the same day of the previous and next
-month. Escape closes an open popover first and then clears the selection. A
-new month starts without a selection.
+month, or to that month's last day when it is shorter; the previous and next
+buttons step the same way. Escape closes an open popover first and then
+clears the selection. A new month starts without a selection. A range takes a
+mouse or the keyboard; on a touch screen a tap selects one day.
 
 The day view is a deliberate step, never a side effect of a click:
 
@@ -122,32 +127,40 @@ The day view is a deliberate step, never a side effect of a click:
 - the day list behind “+N” or Space has an “Open day” button;
 - with `withWeekNumbers`, each week number opens its week.
 
-They use `getDateHref`, or `onDateChange` when the host has no links, and
-appear only for views in `views`.
+They use `getDateHref`, or `onViewChange` and then `onDateChange` with the
+day and the view when the host has no links, and appear only for views in
+`views`.
 
 Creating works on the selection:
 
 - `renderQuickCreate(range, { create, close })` renders the content of the
   quick create, a popover at the selection. After a mouse click on a day it
   opens quietly: the grid keeps the focus, the arrow keys move the selection
-  and the popover with it, and typing a character or Tab moves into it.
-  After a drag across days, a double-click, Enter, or N it opens with the
-  focus in its first field. On a touch screen a tap only selects; a second
-  tap on the selected day opens it. Escape or a click elsewhere closes it and
-  keeps the selection. The application owns the form, calls `close` after
-  saving, and receives in `create` what a menu entry asked for. It never
-  shifts the layout of the grid.
+  and the popover with it, and Space still opens the day list. Tab moves
+  into it, and so does any other character, N included, as the first letter
+  of its first field. After a drag across days, a double-click, Enter, or N
+  it opens with the focus in its first field. On a touch screen a tap only
+  selects; a second tap on the selected day opens it. Escape or a click
+  elsewhere closes it and keeps the selection. The application owns the
+  form, calls `close` after saving, and receives in `create` what a menu
+  entry asked for; a `close` that comes after another quick create took its
+  place, such as at the end of a slow save, does nothing. It never shifts
+  the layout of the grid.
 - `selectionMenu(range, { quickCreate })` returns the application's entries
   of the menu that a right-click, a long press, the Context Menu key, or
   Shift+F10 opens on a day. The calendar heads them with the day, or the
   range and its number of days, and adds “Open day”, “Open week”, and, for a
   range, “Clear selection”. `quickCreate(create)` opens the quick create at
   the menu's days with the focus in it. A press inside the selection acts on
-  all of it; elsewhere it selects the pressed day first. Without the prop the
-  browser keeps its own menu.
+  all of it; elsewhere it selects the day under the pointer first, also on a
+  bar that spans several days. Escape closes the menu and returns the focus
+  to the pressed day. Without the prop the menu holds the calendar's own
+  entries; only a host that can open no other view leaves the browser its own
+  menu. Entries that are links or buttons always keep the browser's menu.
 - `onSelectionChange(range)` reports every change of the selected days, and
-  `null` when nothing is selected, for actions outside the grid such as a
-  toolbar button that creates on the selected days.
+  `null` when nothing is selected, also when another view replaces the month
+  view, for actions outside the grid such as a toolbar button that creates
+  on the selected days.
 - Without `renderQuickCreate`, Enter and a double-click call
   `onSlotActivate` with the selection.
 

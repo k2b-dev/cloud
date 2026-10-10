@@ -9,6 +9,7 @@ import SegmentedControl from "../actions/SegmentedControl";
 import { useDateConfigLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
 import { layoutCalendarIntervals } from "./calendar-event-layout";
+import { useCalendarMessages } from "./calendar-messages";
 import { fitMonthWeek, layoutMonthWeek, monthLaneCapacity } from "./calendar-month-layout";
 import { calendarDayIndexAtPoint, calendarMinuteAtPoint, startCalendarPointerSession } from "./calendar-pointer";
 
@@ -139,18 +140,22 @@ export type CalendarProps<V extends string = never> = {
   onSlotActivate?: (slot: CalendarEventTimeChange) => void;
   /** Pointer gesture used for empty slots. Keyboard activation is always immediate. */
   slotActivation?: "single" | "double";
-  /** Month view: the selected days changed. `null` when no day is selected, for example after paging to another month. */
+  /**
+   * Month view: the selected days changed. `null` when no day is selected, for example after paging to another month
+   * or switching to another view.
+   */
   onSelectionChange?: (range: CalendarEventTimeChange | null) => void;
   /**
    * Month view: the application's entries of the menu that a right-click, Shift+F10, or a long press opens on a day or
-   * on the selected days. The calendar heads them with the days and adds Open day, Open week, and Clear selection.
-   * `quickCreate` opens the quick create at the days, passing `create` on to `renderQuickCreate`.
+   * on the selected days. The calendar heads them with the days and adds Open day, Open week, and Clear selection;
+   * without this prop the menu has only those. `quickCreate` opens the quick create at the days, passing `create` on to
+   * `renderQuickCreate`.
    */
   selectionMenu?: (range: CalendarEventTimeChange, controls: CalendarSelectionControls) => readonly DropdownItem[];
   /**
    * Month view: the content of the quick create at the selected days. It opens quietly after a click, keeping the
-   * focus in the grid until the person types or tabs into it, and with the focus after a drag, a double-click, Enter,
-   * N, or `quickCreate`.
+   * focus in the grid until the person types or tabs into it (Space still lists the day), and with the focus after a
+   * drag, a double-click, Enter, N, or `quickCreate`.
    */
   renderQuickCreate?: (range: CalendarEventTimeChange, controls: CalendarQuickCreateControls) => JSX.Element;
   toolbarActions?: JSX.Element;
@@ -167,7 +172,7 @@ export type CalendarSelectionControls = {
 export type CalendarQuickCreateControls = {
   /** What the person asked to create through `quickCreate`; absent after a click, a drag, or the keyboard. */
   create?: string;
-  /** Closes the quick create and returns the focus to the selected day. */
+  /** Closes the quick create and returns the focus to the selected day; once another quick create replaced it, nothing. */
   close: () => void;
 };
 
@@ -741,11 +746,31 @@ const CalendarViewLinks = <V extends string>(props: {
   );
 };
 
+/**
+ * The same day some months later, or the last day of that month when it is shorter: a step from January 31 lands on
+ * February 28, never in March. stdlib's `addMonths` runs over into the next month.
+ */
+const addMonthsClamped = (date: Date, months: number, dateConfig: DateContext): Date => {
+  const moved = calendar.addMonths(date, months, dateConfig);
+  if (calendar.formatDateKey(moved, dateConfig).slice(8) === calendar.formatDateKey(date, dateConfig).slice(8)) return moved;
+  return calendar.addDays(calendar.startOfMonth(moved, dateConfig), -1, dateConfig);
+};
+
 /** Custom views page by day, like the day view. */
 const adjacentCalendarDate = (date: Date, view: string, direction: -1 | 1, dateConfig: DateContext) => {
-  if (view === "year") return calendar.addMonths(date, direction * 12, dateConfig);
-  if (view === "month" || view === "mobile-month") return calendar.addMonths(date, direction, dateConfig);
+  if (view === "year") return addMonthsClamped(date, direction * 12, dateConfig);
+  if (view === "month" || view === "mobile-month") return addMonthsClamped(date, direction, dateConfig);
   return calendar.addDays(date, direction * (view === "week" ? 7 : 1), dateConfig);
+};
+
+/** Opens a view at a day through the host's callbacks. Hosts may keep the view and the date apart, so both hear it. */
+const openViewAt = <V extends string>(
+  owner: Pick<CalendarProps<V>, "onViewChange" | "onDateChange">,
+  date: Date,
+  view: CalendarView | V,
+) => {
+  owner.onViewChange?.(view);
+  owner.onDateChange?.(date, view);
 };
 
 const CalendarHeader = <V extends string>(props: {
@@ -806,6 +831,12 @@ const CalendarHeader = <V extends string>(props: {
   });
   const goDate = (date: Date) => props.owner.onDateChange?.(date, props.view);
   const goView = (view: CalendarView | V) => {
+    // Like the switcher's links, the other views open at the day selected in the month view.
+    const day = props.focusDay;
+    if (day && props.owner.onDateChange && view !== props.view) {
+      openViewAt(props.owner, day, view);
+      return;
+    }
     if (props.owner.onViewChange) {
       props.owner.onViewChange(view);
       return;
@@ -931,6 +962,7 @@ const MonthPickerView = (props: {
   compact?: boolean;
 }): JSX.Element => {
   const messages = useUiMessages();
+  const calendarMessages = useCalendarMessages();
   const dateConfig = createMemo(() => ownerDateConfig(props.owner));
   const [movePreview, setMovePreview] = createSignal<CalendarPreview | null>(null);
   const [movingEventId, setMovingEventId] = createSignal("");
@@ -1128,7 +1160,7 @@ const MonthPickerView = (props: {
                       </For>
                       <Show when={eventStack().hiddenCount > 0}>
                         <CalendarNavigationLink owner={props.owner} href={href ?? "#"} anchorProps={{ class: "k2b-calendar-month__more" }}>
-                          {messages().calendarMoreEvents({ count: eventStack().hiddenCount })}
+                          {calendarMessages().calendarMoreEvents({ count: eventStack().hiddenCount })}
                         </CalendarNavigationLink>
                       </Show>
                     </div>
@@ -1268,6 +1300,7 @@ const MonthView = (props: {
   onFocusDay?: (date: Date | null) => void;
 }): JSX.Element => {
   const messages = useUiMessages();
+  const calendarMessages = useCalendarMessages();
   const dateConfig = createMemo(() => ownerDateConfig(props.owner));
   // The shown month and its grid change only with the month, so a refresh of the same month keeps every cell and its
   // focus.
@@ -1353,8 +1386,12 @@ const MonthView = (props: {
     setAnchorKey(anchor);
     setFocusKey(focus);
   };
-  // The host learns every change of the selected days, and a new month starts without a selection.
+  // The host learns every change of the selected days, and a new month starts without a selection. The selection
+  // goes with the view, so switching to another view reports that nothing is selected.
   createEffect(on(selection, (range) => props.owner.onSelectionChange?.(range ? rangeOf(range) : null), { defer: true }));
+  onCleanup(() => {
+    if (untrack(selection)) props.owner.onSelectionChange?.(null);
+  });
   createEffect(on(selection, (range) => props.onFocusDay?.(range ? parseKey(range.first) : null)));
   createEffect(
     on(
@@ -1425,7 +1462,7 @@ const MonthView = (props: {
         timeZone: dateConfig().timeZone,
       });
     const days = dayKeyNumber(range.last) - dayKeyNumber(range.first) + 1;
-    return messages().calendarSelectedDays({ start: shortDayLabel(range.first), end: shortDayLabel(range.last), count: days });
+    return calendarMessages().calendarSelectedDays({ start: shortDayLabel(range.first), end: shortDayLabel(range.last), count: days });
   };
   const viewAvailable = (view: CalendarView) => !props.owner.views || props.owner.views.includes(view);
   const viewHref = (key: string, view: CalendarView) => (viewAvailable(view) ? props.owner.getDateHref?.(parseKey(key), view) : undefined);
@@ -1434,8 +1471,10 @@ const MonthView = (props: {
   const openView = (key: string, view: CalendarView) => {
     const href = viewHref(key, view);
     if (href) followCalendarHref(props.owner, href);
-    else props.owner.onDateChange?.(parseKey(key), view);
+    else openViewAt(props.owner, parseKey(key), view);
   };
+  /** The calendar's own entries of the day menu, Open day and Open week, need no application entries. */
+  const hasMenu = () => Boolean(props.owner.selectionMenu) || canOpenView("day") || canOpenView("week");
 
   /** The day cell under a point, from the cells' boxes: a bar lies over days that are not its parent. */
   const dayKeyAtPoint = (clientX: number, clientY: number): string | null => {
@@ -1498,10 +1537,15 @@ const MonthView = (props: {
 
   const pageTo = (target: string) => {
     const date = parseKey(target);
-    pendingKey = target;
     const href = props.owner.getDateHref?.(date, "month");
-    if (props.owner.onDateChange) props.owner.onDateChange(date, "month");
-    else if (href) followCalendarHref(props.owner, href);
+    // Only a month that is on its way may select the day, so a host that cannot page never leaves one behind.
+    if (props.owner.onDateChange) {
+      pendingKey = target;
+      props.owner.onDateChange(date, "month");
+    } else if (href) {
+      pendingKey = target;
+      followCalendarHref(props.owner, href);
+    }
   };
   const moveFocus = (key: string, extend: boolean) => {
     if (!visibleKeys().includes(key)) {
@@ -1517,8 +1561,9 @@ const MonthView = (props: {
     if (event.target !== event.currentTarget || event.ctrlKey || event.metaKey || event.altKey) return;
     const current = popover();
     const quiet = current?.kind === "create" && !createActive();
-    // The quiet quick create takes over once the person types or tabs into it.
-    if (quiet && ((event.key === "Tab" && !event.shiftKey) || PRINTABLE_KEY.test(event.key))) {
+    // The quiet quick create takes over once the person types or tabs into it. Space stays the grid's key for the day
+    // list; N is a title's first letter like any other, as the quick create it would open is already there.
+    if (quiet && ((event.key === "Tab" && !event.shiftKey) || (PRINTABLE_KEY.test(event.key) && event.key !== " "))) {
       const field = popoverFocusable();
       if (field) {
         if (event.key === "Tab") event.preventDefault();
@@ -1551,7 +1596,7 @@ const MonthView = (props: {
     }
     if (event.key === "PageUp" || event.key === "PageDown") {
       event.preventDefault();
-      pageTo(calendar.formatDateKey(calendar.addMonths(day, event.key === "PageUp" ? -1 : 1, dateConfig()), dateConfig()));
+      pageTo(calendar.formatDateKey(addMonthsClamped(day, event.key === "PageUp" ? -1 : 1, dateConfig()), dateConfig()));
       return;
     }
     if (event.key === "Enter" || ((event.key === "n" || event.key === "N") && !event.shiftKey)) {
@@ -1574,7 +1619,7 @@ const MonthView = (props: {
       return;
     }
     // The keyboard opens the day's menu where the day is, as a right-click there would.
-    if (props.owner.selectionMenu && (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10"))) {
+    if (hasMenu() && (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10"))) {
       event.preventDefault();
       event.stopPropagation();
       menuKey = key;
@@ -1610,10 +1655,12 @@ const MonthView = (props: {
     if (popover()?.kind === "create") activateCreate();
     else createOnSelection();
   };
+  /** The day under the pointer: a bar that spans several days sits in the cell of its first day. */
+  const pressedKey = (event: MouseEvent, key: string) => dayKeyAtPoint(event.clientX, event.clientY) ?? key;
   const onCellPointerDown = (event: PointerEvent, key: string) => {
     lastPointer = event.pointerType;
     // The menu acts on the pressed day, or on the selection when the press is inside it.
-    menuKey = key;
+    menuKey = pressedKey(event, key);
     if (event.pointerType !== "mouse" || event.button !== 0 || event.shiftKey || fromControl(event)) return;
     cancelInteraction?.();
     cancelInteraction = startCalendarPointerSession({
@@ -1641,28 +1688,34 @@ const MonthView = (props: {
   };
   // Until a day is selected, the menu acts on the day that takes focus, so it is never empty.
   const menuItems = createMemo((): DropdownItem[] => {
-    if (!props.owner.selectionMenu) return [];
+    if (!hasMenu()) return [];
     const range = selection() ?? { first: rovingKey(), last: rovingKey() };
-    const own = props.owner.selectionMenu(rangeOf(range), {
-      quickCreate: (create) => {
-        select(range.first, range.last);
-        if (!openCreate(range, { active: true, create })) props.owner.onSlotActivate?.(rangeOf(range));
-      },
-    });
+    const own =
+      props.owner.selectionMenu?.(rangeOf(range), {
+        quickCreate: (create) => {
+          select(range.first, range.last);
+          if (!openCreate(range, { active: true, create })) props.owner.onSlotActivate?.(rangeOf(range));
+        },
+      }) ?? [];
     const actions = own.filter((item): item is DropdownAction | DropdownChoice => !("items" in item));
     const sections = own.filter((item): item is DropdownSection => "items" in item);
     const navigation: DropdownAction[] = [
       ...(canOpenView("day")
-        ? [{ label: messages().calendarOpenDay, icon: "ti ti-zoom-in", action: () => openView(range.first, "day") }]
+        ? [{ label: calendarMessages().calendarOpenDay, icon: "ti ti-zoom-in", action: () => openView(range.first, "day") }]
         : []),
       ...(canOpenView("week")
-        ? [{ label: messages().calendarOpenWeek, icon: "ti ti-calendar-week", action: () => openView(range.first, "week") }]
+        ? [{ label: calendarMessages().calendarOpenWeek, icon: "ti ti-calendar-week", action: () => openView(range.first, "week") }]
         : []),
-      ...(range.first !== range.last ? [{ label: messages().calendarClearSelection, icon: "ti ti-x", action: () => select(null) }] : []),
+      ...(range.first !== range.last
+        ? [{ label: calendarMessages().calendarClearSelection, icon: "ti ti-x", action: () => select(null) }]
+        : []),
     ];
-    return [{ sectionLabel: selectionHeading(range), items: actions }, ...sections, { items: navigation }].filter(
+    const groups: DropdownSection[] = [{ items: actions }, ...sections, { items: navigation }].filter(
       (section) => section.items.length > 0,
     );
+    // The first group names the days the menu acts on, also when the calendar's own entries are all it has.
+    const [first, ...rest] = groups;
+    return first && !first.sectionLabel ? [{ ...first, sectionLabel: selectionHeading(range) }, ...rest] : groups;
   });
 
   const clearMove = () => {
@@ -1828,8 +1881,8 @@ const MonthView = (props: {
                           type="button"
                           class="k2b-calendar-month__week-link"
                           tabIndex={-1}
-                          title={messages().calendarOpenWeekNumber({ week: weekNumber() })}
-                          aria-label={messages().calendarOpenWeekNumber({ week: weekNumber() })}
+                          title={calendarMessages().calendarOpenWeekNumber({ week: weekNumber() })}
+                          aria-label={calendarMessages().calendarOpenWeekNumber({ week: weekNumber() })}
                           onClick={() => openView(week[0]!.key, "week")}
                         >
                           {weekNumber()}
@@ -1844,8 +1897,8 @@ const MonthView = (props: {
                         anchorProps={{
                           class: "k2b-calendar-month__week-link",
                           tabIndex: -1,
-                          title: messages().calendarOpenWeekNumber({ week: weekNumber() }),
-                          "aria-label": messages().calendarOpenWeekNumber({ week: weekNumber() }),
+                          title: calendarMessages().calendarOpenWeekNumber({ week: weekNumber() }),
+                          "aria-label": calendarMessages().calendarOpenWeekNumber({ week: weekNumber() }),
                         }}
                       >
                         {weekNumber()}
@@ -1879,8 +1932,10 @@ const MonthView = (props: {
                       onClick={(event) => onCellClick(event, key)}
                       onDblClick={(event) => onCellDoubleClick(event, key)}
                       onPointerDown={(event) => onCellPointerDown(event, key)}
-                      onContextMenu={() => {
-                        menuKey = key;
+                      onContextMenu={(event) => {
+                        // The pressed day takes the focus, so closing the menu with Escape returns there.
+                        menuKey = pressedKey(event, key);
+                        if (hasMenu()) focusCell(menuKey);
                       }}
                       onKeyDown={(event) => onCellKeyDown(event, key)}
                     >
@@ -1912,12 +1967,12 @@ const MonthView = (props: {
                             const span = bar.endColumn - bar.startColumn + 1;
                             const startHint = () => {
                               if (!bar.continuesBefore) return undefined;
-                              const hint = messages().calendarContinuesFrom(hintDate(bar.item.firstKey));
+                              const hint = calendarMessages().calendarContinuesFrom(hintDate(bar.item.firstKey));
                               return hintFits(bar.item.event.title, hint, span) ? hint : undefined;
                             };
                             const endHint = () => {
                               if (!bar.continuesAfter) return undefined;
-                              const hint = messages().calendarContinuesUntil(hintDate(bar.item.lastKey));
+                              const hint = calendarMessages().calendarContinuesUntil(hintDate(bar.item.lastKey));
                               return hintFits(`${bar.item.event.title}${startHint() ?? ""}`, hint, span) ? hint : undefined;
                             };
                             return (
@@ -1980,7 +2035,7 @@ const MonthView = (props: {
                             class="k2b-calendar-month__more"
                             tabIndex={-1}
                             style={{ "--k2b-calendar-row": String(cell().top + cell().shown.length) }}
-                            aria-label={messages().calendarMoreEventsOn({ count: cell().hidden, label })}
+                            aria-label={calendarMessages().calendarMoreEventsOn({ count: cell().hidden, label })}
                             aria-haspopup="dialog"
                             aria-expanded={(() => {
                               const current = popover();
@@ -1992,7 +2047,9 @@ const MonthView = (props: {
                               else openDayList(key);
                             }}
                           >
-                            <span class="k2b-calendar-month__more-long">{messages().calendarMoreEvents({ count: cell().hidden })}</span>
+                            <span class="k2b-calendar-month__more-long">
+                              {calendarMessages().calendarMoreEvents({ count: cell().hidden })}
+                            </span>
                             <span class="k2b-calendar-month__more-short">+{cell().hidden}</span>
                           </button>
                         </Show>
@@ -2011,13 +2068,17 @@ const MonthView = (props: {
   const dayList = (dayKey: string) => {
     const day = parseKey(dayKey);
     const href = viewHref(dayKey, "day");
-    const entries = dayEntries(dayKey);
+    // Read where it renders, so a refresh while the list is open updates it as it does the grid.
+    const entries = () => dayEntries(dayKey);
     return (
       <div class="k2b-calendar-day-list">
         <div class="k2b-calendar-day-list__title">{dayLabel(day)}</div>
-        <Show when={entries.length > 0} fallback={<p class="k2b-calendar-day-list__empty">{messages().calendarNothingPlanned}</p>}>
+        <Show
+          when={entries().length > 0}
+          fallback={<p class="k2b-calendar-day-list__empty">{calendarMessages().calendarNothingPlanned}</p>}
+        >
           <ul class="k2b-calendar-day-list__events">
-            <For each={entries}>
+            <For each={entries()}>
               {(item) => (
                 <li>
                   <EventChip
@@ -2041,7 +2102,7 @@ const MonthView = (props: {
               <Show when={canOpenView("day")}>
                 <Button type="button" variant="ghost" size="sm" onClick={() => openView(dayKey, "day")}>
                   <i class="ti ti-zoom-in" aria-hidden="true" />
-                  {messages().calendarOpenDay}
+                  {calendarMessages().calendarOpenDay}
                 </Button>
               </Show>
             }
@@ -2053,7 +2114,7 @@ const MonthView = (props: {
                 anchorProps={{ class: "k2b-button", "data-variant": "ghost", "data-size": "sm" }}
               >
                 <i class="ti ti-zoom-in" aria-hidden="true" />
-                {messages().calendarOpenDay}
+                {calendarMessages().calendarOpenDay}
               </CalendarNavigationLink>
             )}
           </Show>
@@ -2068,7 +2129,7 @@ const MonthView = (props: {
               }}
             >
               <i class="ti ti-plus" aria-hidden="true" />
-              {messages().calendarNewEvent}
+              {calendarMessages().calendarNewEvent}
             </Button>
           </Show>
         </div>
@@ -2078,10 +2139,10 @@ const MonthView = (props: {
 
   return (
     <>
-      <Show when={props.owner.selectionMenu} fallback={grid()}>
+      <Show when={hasMenu()} fallback={grid()}>
         <GestureMenu
           items={menuItems()}
-          label={messages().calendarSelectionActions}
+          label={calendarMessages().calendarSelectionActions}
           tabIndex={-1}
           onOpen={onMenuOpen}
           class="k2b-calendar-month-menu"
@@ -2097,7 +2158,7 @@ const MonthView = (props: {
         aria-label={(() => {
           const current = popover();
           if (current?.kind === "day") return dayLabel(parseKey(current.dayKey));
-          return messages().calendarQuickCreate;
+          return calendarMessages().calendarQuickCreate;
         })()}
         data-kind={popover()?.kind}
         data-quiet={popover()?.kind === "create" && !createActive() ? "true" : undefined}
@@ -2110,11 +2171,17 @@ const MonthView = (props: {
           closePopover(inside);
         }}
       >
-        {/* Keyed: another day or another selection replaces the content while the popover stays open. */}
+        {/* Keyed: another day or another selection replaces the content while the popover stays open. A late close, such
+            as after a slow save, closes only the quick create that asked for it. */}
         <Show when={popover()} keyed>
           {(value) =>
             value.kind === "create"
-              ? props.owner.renderQuickCreate?.(rangeOf(value.range), { create: value.create, close: () => closePopover() })
+              ? props.owner.renderQuickCreate?.(rangeOf(value.range), {
+                  create: value.create,
+                  close: () => {
+                    if (popover() === value) closePopover();
+                  },
+                })
               : dayList(value.dayKey)
           }
         </Show>
