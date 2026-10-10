@@ -1,6 +1,6 @@
 import type { DashboardWidgetSize } from "@k2b/cloud/contracts";
 import { openAppLaunchpad } from "@k2b/cloud/ssr/islands";
-import { announce, Button, Placeholder, SegmentedControl, Tooltip, toast, useLocale } from "@k2b/ui";
+import { announce, Button, Placeholder, SegmentedControl, suppressTextSelection, Tooltip, toast, useLocale } from "@k2b/ui";
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import {
@@ -61,7 +61,7 @@ type Press = {
   /** The pointer may drag the widget: at once with a mouse or pen, after a hold on a touch screen. */
   armed: boolean;
   timer?: ReturnType<typeof setTimeout>;
-  drag?: { ghost: HTMLElement; offsetX: number; offsetY: number; lastOver?: string; frame?: number };
+  drag?: { ghost: HTMLElement; offsetX: number; offsetY: number; lastOver?: string; frame?: number; releaseTextSelection: () => void };
 };
 
 const reducedMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -352,6 +352,7 @@ export default function DashboardHome(props: DashboardHomeProps) {
     const drag = press.drag;
     if (drag) {
       if (drag.frame !== undefined) cancelAnimationFrame(drag.frame);
+      drag.releaseTextSelection();
       drag.ghost.remove();
       setDragged(undefined);
       const index = keys().indexOf(press.key);
@@ -408,7 +409,13 @@ export default function DashboardHome(props: DashboardHomeProps) {
     if (frame) ghost.append(frame.cloneNode(true));
     Object.assign(ghost.style, { width: `${rect.width}px`, height: `${rect.height}px`, left: `${rect.left}px`, top: `${rect.top}px` });
     root.append(ghost);
-    press.drag = { ghost, offsetX: press.x - rect.left, offsetY: press.y - rect.top };
+    press.drag = {
+      ghost,
+      offsetX: press.x - rect.left,
+      offsetY: press.y - rect.top,
+      // The widget sweeps across the greeting and the shortcuts; none of their text may turn selected.
+      releaseTextSelection: suppressTextSelection(press.pointerId),
+    };
     setDragged(press.key);
   };
   const onPointerDown = (event: PointerEvent) => {
