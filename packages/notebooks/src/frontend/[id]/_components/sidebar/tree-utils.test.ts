@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { homepageFirst, type NoteTreeSort, sortNoteTree } from "./tree-utils";
+import { filterNotes, homepageFirst, type NoteTreeSort, sortNoteTree } from "./tree-utils";
 import type { NoteTreeNode } from "./types";
 
 const note = (
@@ -88,5 +88,33 @@ describe("homepageFirst", () => {
 
   test("keeps the tree as it is without a homepage", () => {
     expect(homepageFirst(source, null)).toBe(source);
+  });
+});
+
+describe("filterNotes", () => {
+  const tagged = (node: NoteTreeNode, contentMd: string): NoteTreeNode => ({ ...node, contentMd });
+  const tree = [
+    tagged(note("Old001", "Old", "2026-01-01T00:00:00.000Z", "2026-01-02T00:00:00.000Z"), "#garden notes"),
+    note("Branch", "Branch", "2026-01-01T00:00:00.000Z", "2026-01-03T00:00:00.000Z", [
+      tagged(note("Child1", "Child", "2026-01-01T00:00:00.000Z", "2026-01-05T00:00:00.000Z"), "Plant #Garden/roses soon"),
+      tagged(note("Code01", "Code", "2026-01-01T00:00:00.000Z", "2026-01-04T00:00:00.000Z"), "`#garden` is only an example"),
+    ]),
+  ];
+
+  test("lists every note newest first for the recent list, sub-notes included", () => {
+    expect(ids(filterNotes(tree, { view: "recents" }, new Set()))).toEqual(["Child1", "Code01", "Branch", "Old001"]);
+  });
+
+  test("lists only favorites, newest first", () => {
+    expect(ids(filterNotes(tree, { view: "favorites" }, new Set(["Old001", "Child1"])))).toEqual(["Child1", "Old001"]);
+  });
+
+  test("matches tags as the tag index does: case-insensitive, nested tags apart, and nothing inside code", () => {
+    expect(ids(filterNotes(tree, { view: "tag", tag: "garden" }, new Set()))).toEqual(["Old001"]);
+    expect(ids(filterNotes(tree, { view: "tag", tag: "garden/roses" }, new Set()))).toEqual(["Child1"]);
+  });
+
+  test("lists nothing without a filter, because the sidebar shows the tree", () => {
+    expect(filterNotes(tree, {}, new Set(["Old001"]))).toEqual([]);
   });
 });

@@ -71,7 +71,7 @@ For these people, **Delete** and **Lock note** in the note menu stay visible but
 
 :::reference
 - **Notebook → General:** Name, icon, description, start page, and the Liquid template for the H1 of empty new notes. Check the footer, then save or discard your changes.
-- **Notebook → View & behavior:** People with **Manage** access choose the shared default view. This browser stores your sidebar layout and your Tab key choice, and they apply immediately.
+- **Notebook → View & behavior:** People with **Manage** access choose the shared default view. This browser stores your Tab key choice, and it applies immediately.
 - **Sharing → Access:** Requires **Manage** access. Change who has access, and choose who can delete and lock notes. Changes save immediately.
 - **Sharing → API keys:** Requires **Manage** access. API keys for integrations that work only with this notebook. Changes save immediately, and Notebooks shows a new key only once.
 - **Data → Export & snapshots:** Requires **Manage** access. Portable ZIP exports, the S3 snapshot setup, manual uploads, and recent snapshot runs. Save the snapshot setup with the footer.

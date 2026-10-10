@@ -185,7 +185,9 @@ export function ContextMenu(props: ContextMenuProps): JSX.Element {
         onKeyDown={(event) => {
           if (props.disabled || (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10"))) return;
           event.preventDefault();
-          const rect = host?.getBoundingClientRect();
+          // Beside the focused element, such as a row of a composite widget, rather than the corner of the whole host.
+          const focused = document.activeElement;
+          const rect = (focused instanceof HTMLElement && host?.contains(focused) ? focused : host)?.getBoundingClientRect();
           if (rect) open(rect.left + 12, rect.top + 12);
         }}
       >

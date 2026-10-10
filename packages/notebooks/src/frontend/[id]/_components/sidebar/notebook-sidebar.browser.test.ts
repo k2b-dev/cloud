@@ -65,7 +65,7 @@ const note = (id: string, title: string, children: NoteTreeNode[] = [], parentId
 });
 
 /** The maintainer's example: the homepage "Overview" sits among top-level notes and one note with sub-notes. */
-const ctx = (sidebarMode: "simple" | "navigator", homepageNoteId: string | null = "Home01"): NotebookContext => ({
+const ctx = (homepageNoteId: string | null = "Home01"): NotebookContext => ({
   notebook: {
     id: "Book01",
     name: "Social media",
@@ -87,7 +87,7 @@ const ctx = (sidebarMode: "simple" | "navigator", homepageNoteId: string | null 
   ],
   selectedNoteId: null,
   userId: "user01",
-  settings: { lastNoteId: null, richMode: "rich", sidebarMode, navigatorSort: "title", treeSort: "title" },
+  settings: { lastNoteId: null, richMode: "rich", treeSort: "title" },
   navigationHidden: false,
   permission: "read",
   attachmentCount: 0,
@@ -95,7 +95,7 @@ const ctx = (sidebarMode: "simple" | "navigator", homepageNoteId: string | null 
   tags: [],
   workspaceCursor: null,
   dateConfig: { locale: "en", timeZone: "UTC" },
-  navigatorQuery: {},
+  sidebarFilter: {},
 });
 
 /**
@@ -104,8 +104,10 @@ const ctx = (sidebarMode: "simple" | "navigator", homepageNoteId: string | null 
  * workspace state returns the result.
  */
 const api = {
-  notebook: ctx("simple").notebook,
+  notebook: ctx().notebook,
   tree: [] as NoteTreeNode[],
+  favoriteNoteIds: [] as string[],
+  tags: [] as NotebookContext["tags"],
   requests: [] as { path: string; body: unknown }[],
 };
 const levelOf = (nodes: NoteTreeNode[], id: string | null): NoteTreeNode[] | null => {
@@ -130,9 +132,16 @@ const parentOf = (nodes: NoteTreeNode[], id: string): string | null => {
 };
 const handleApi = async (request: Request, path: string): Promise<Response> => {
   if (path === "workspace-state")
-    return Response.json({ notebook: api.notebook, tree: api.tree, favoriteNoteIds: [], tags: [], attachmentCount: 0 });
-  const body = (await request.json()) as { before?: string; after?: string; parentId?: string | null };
+    return Response.json({
+      notebook: api.notebook,
+      tree: api.tree,
+      favoriteNoteIds: api.favoriteNoteIds,
+      tags: api.tags,
+      attachmentCount: 0,
+    });
+  const body = (await request.json()) as { before?: string; after?: string; parentId?: string | null; favorite?: boolean };
   api.requests.push({ path, body });
+  if (path.endsWith("/favorite")) return Response.json({ favorite: body.favorite });
   const moved = /^notes\/(\w+)\/move$/u.exec(path)?.[1];
   const anchor = body.before ?? body.after;
   const level = levelOf(api.tree, moved && !("parentId" in body) ? parentOf(api.tree, anchor!) : (body.parentId ?? null));
@@ -160,6 +169,11 @@ const server = Bun.serve({
   fetch(request) {
     const url = new URL(request.url);
     if (url.pathname.startsWith("/api/notebooks/Book01/")) return handleApi(request, url.pathname.slice("/api/notebooks/Book01/".length));
+    if (url.pathname === "/api/notebooks" || url.pathname === "/api/notebooks/")
+      return Response.json({
+        data: [api.notebook, { ...api.notebook, id: "Book02", name: "Recipes", icon: "ti ti-chef-hat" }],
+        pagination: { page: 1, per_page: 100, total: 2, total_pages: 1, has_next: false },
+      });
     if (url.pathname === "/harness.js") return new Response(harness, { headers: { "Content-Type": "text/javascript; charset=utf-8" } });
     if (url.pathname === "/styles.css") return new Response(css, { headers: { "Content-Type": "text/css; charset=utf-8" } });
     return new Response(
@@ -194,10 +208,10 @@ const open = async (context: BrowserContextOptions, value: NotebookContext, loca
   return page;
 };
 
-/** Box and colour of the leading icon of each row under the given tree parent, in tree order. */
-const rowIcons = (page: Page, parent: string) =>
-  page.evaluate((parent) => {
-    const rows = Array.from(document.querySelectorAll<HTMLElement>(`[data-k2b-nav-tree-parent-id="${parent}"]`));
+/** Box and colour of the leading icon of each top-level tree row, in tree order. */
+const rowIcons = (page: Page) =>
+  page.evaluate(() => {
+    const rows = Array.from(document.querySelectorAll<HTMLElement>('[role="tree"] > [role="treeitem"]'));
     return rows.map((row) => {
       const control = row.firstElementChild!.getBoundingClientRect();
       const icon = row.querySelector<HTMLElement>(".k2b-app-workspace__sidebar-item-icon")!;
@@ -214,21 +228,22 @@ const rowIcons = (page: Page, parent: string) =>
         color: getComputedStyle(icon).color,
       };
     });
-  }, parent);
+  });
 
 describe("Notebook sidebar homepage in the tree", () => {
   for (const theme of ["light", "dark"] as const) {
-    test(`the navigator tree lists the homepage first with a home icon that sits like every other icon (${theme})`, async () => {
-      const page = await open(desktop, ctx("navigator"), "en", theme);
+    test(`the tree lists the homepage first with a home icon that sits like every other icon (${theme})`, async () => {
+      const page = await open(desktop, ctx(), "en", theme);
       try {
-        const rows = await rowIcons(page, "notes");
+        const rows = await rowIcons(page);
         expect(rows.map((row) => [row.id, row.glyph])).toEqual([
-          ["note:Home01", "ti ti-home"],
-          ["note:Rules1", "ti ti-folder"],
-          ["note:Exam01", "ti ti-file-text"],
-          ["note:Reels1", "ti ti-file-text"],
+          ["Home01", "ti ti-home"],
+          ["Rules1", "ti ti-files"],
+          ["Exam01", "ti ti-file-text"],
+          ["Reels1", "ti ti-file-text"],
         ]);
-        const [home, ...others] = rows;
+        // Rows with sub-notes carry the disclosure and are compared with each other elsewhere; leaves share one size.
+        const [home, ...others] = rows.filter((row) => row.glyph !== "ti ti-files");
         for (const other of others) {
           expect({
             left: home!.left,
@@ -246,47 +261,32 @@ describe("Notebook sidebar homepage in the tree", () => {
           expect(home!.color).toBe(other.color);
         }
         await expect(page.getByRole("treeitem", { name: "Homepage Overview", exact: true }).count()).resolves.toBe(1);
-        // The note list leads with the same note and the same icon.
-        const firstCard = page.locator('[data-workspace-main-region="notebook-notes"] a').first();
-        await expect(firstCard.textContent()).resolves.toContain("Overview");
-        await expect(firstCard.locator("i.ti-home").getAttribute("aria-label")).resolves.toBe("Homepage");
       } finally {
         await page.context().close();
       }
     }, 30_000);
   }
 
-  test("the keyboard reaches and opens the homepage from the tree, and every homepage control agrees it is open", async () => {
-    const page = await open(desktop, ctx("navigator"));
+  test("the keyboard reaches and opens the homepage from the tree", async () => {
+    const page = await open(desktop, ctx());
     try {
-      const home = page.getByRole("treeitem", { name: "Homepage Overview", exact: true });
-      const homeAction = page.locator('.k2b-app-workspace__sidebar-icon-action[aria-label="Homepage"]');
-      await expect(homeAction.evaluate((element) => element.classList.contains("is-active"))).resolves.toBe(false);
-      await page.getByRole("treeitem", { name: "All notes" }).focus();
-      await page.keyboard.press("ArrowDown");
+      await page.locator('[data-k2b-nav-tree-id="Rules1"]').focus();
+      await page.keyboard.press("ArrowUp");
+      // A focused row also shows its menu button, which joins its accessible name.
+      const home = page.locator('[data-k2b-nav-tree-id="Home01"]');
       await expect(home.evaluate((element) => element === document.activeElement)).resolves.toBe(true);
       await page.keyboard.press("Enter");
       await expect(page.evaluate(() => window.openedNotes)).resolves.toEqual(["/app/notebooks/Book01/notes/Home01"]);
-      await expect(homeAction.evaluate((element) => element.classList.contains("is-active"))).resolves.toBe(true);
-      // Like any top-level note, the open homepage keeps "All notes" as the list's place in the tree.
-      await expect(page.getByRole("treeitem", { name: "All notes" }).getAttribute("aria-selected")).resolves.toBe("true");
-
-      await page.getByRole("treeitem", { name: "Examples", exact: true }).click();
-      await expect(homeAction.evaluate((element) => element.classList.contains("is-active"))).resolves.toBe(false);
+      await expect(home.getAttribute("aria-selected")).resolves.toBe("true");
     } finally {
       await page.context().close();
     }
   }, 30_000);
 
-  test("the simple tree names the home icon in German and keeps the homepage first", async () => {
-    const page = await open(desktop, ctx("simple"), "de");
+  test("the tree names the home icon in German and keeps the homepage first", async () => {
+    const page = await open(desktop, ctx(), "de");
     try {
-      const roots = await page.evaluate(() =>
-        Array.from(document.querySelectorAll<HTMLElement>('[role="tree"] > [role="treeitem"]')).map(
-          (row) => row.querySelector(".k2b-app-workspace__sidebar-item-icon i")!.className,
-        ),
-      );
-      expect(roots).toEqual(["ti ti-home", "ti ti-file-text", "ti ti-file-text", "ti ti-file-text"]);
+      expect((await rowIcons(page)).map((row) => row.glyph)).toEqual(["ti ti-home", "ti ti-files", "ti ti-file-text", "ti ti-file-text"]);
       await expect(page.getByRole("treeitem", { name: "Startseite Overview", exact: true }).count()).resolves.toBe(1);
     } finally {
       await page.context().close();
@@ -294,7 +294,7 @@ describe("Notebook sidebar homepage in the tree", () => {
   }, 30_000);
 
   test("on a phone the menu lists the homepage first with a named home icon in a row like the others", async () => {
-    const page = await open(phone, ctx("simple"));
+    const page = await open(phone, ctx());
     try {
       await page.evaluate(() => window.mountPhoneMenu("en"));
       const link = page.locator("#phone-menu").getByRole("link", { name: "Homepage Overview", exact: true });
@@ -307,12 +307,156 @@ describe("Notebook sidebar homepage in the tree", () => {
           icon: row.querySelector("i")!.getBoundingClientRect().width,
         })),
       );
-      // The menu's own Homepage destination stays on top, as the home button does beside the desktop tree.
-      expect(rows.map((row) => row.text)).toEqual(["Homepage", "Overview", "Content rules", "Language", "Examples", "Reels"]);
+      expect(rows.map((row) => row.text)).toEqual(["Overview", "Content rules", "Language", "Examples", "Reels"]);
       expect(new Set(rows.map((row) => `${row.height}:${row.icon}`)).size).toBe(1);
       // The note rows share one width, so the homepage row ends where the others do.
-      const [overview, , , examples] = rows.slice(1);
-      expect(overview!.width).toBe(examples!.width);
+      expect(rows[0]!.width).toBe(rows[3]!.width);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+});
+
+describe("One notebook sidebar with quick filters", () => {
+  const LONG_TAG = "project/garden-renovation-2026";
+  const filtered = (): NotebookContext => {
+    const base = ctx();
+    const dated = (node: NoteTreeNode, updatedAt: string, contentMd: string): NoteTreeNode => ({ ...node, updatedAt, contentMd });
+    const tree = [
+      dated(base.tree[0]!, "2026-09-01T00:00:00.000Z", "Short videos #video #social #weekly"),
+      { ...base.tree[1]!, children: [dated(base.tree[1]!.children[0]!, "2026-10-01T00:00:00.000Z", `Tone #${LONG_TAG}`)] },
+      base.tree[2]!,
+      dated(base.tree[3]!, "2026-08-01T00:00:00.000Z", `Samples #video #${LONG_TAG}`),
+    ];
+    api.tree = structuredClone(tree);
+    api.favoriteNoteIds = ["Reels1", "Exam01"];
+    api.tags = [
+      { tag: "video", count: 2 },
+      { tag: LONG_TAG, count: 2 },
+    ];
+    api.requests = [];
+    return { ...base, tree, favoriteNoteIds: [...api.favoriteNoteIds], tags: [...api.tags] };
+  };
+  /** Top of the scrolling note area and the height of the chips row: neither may move when a filter changes. */
+  const frame = (page: Page) =>
+    page.evaluate(() => ({
+      body: document.querySelector(".k2b-app-workspace__sidebar-body")!.getBoundingClientRect().top,
+      chips: document.querySelector(".notebook-sidebar-chips")!.getBoundingClientRect().height,
+    }));
+  const listed = (page: Page) =>
+    page.evaluate(() =>
+      Array.from(document.querySelectorAll<HTMLElement>('[role="tree"] > [role="treeitem"]')).map((row) => ({
+        id: row.dataset.k2bNavTreeId,
+        meta: row.querySelector(".k2b-app-workspace__sidebar-item-description")?.textContent ?? null,
+      })),
+    );
+
+  for (const theme of ["light", "dark"] as const) {
+    test(`chips turn the tree into a list newest first and back, and nothing above the list moves (${theme})`, async () => {
+      const page = await open(desktop, filtered(), "en", theme);
+      try {
+        const before = await frame(page);
+        const favorites = page.getByRole("button", { name: "Favorites" });
+        const idle = await favorites.evaluate((element) => getComputedStyle(element).backgroundColor);
+        await favorites.click();
+        await expect(favorites.getAttribute("aria-pressed")).resolves.toBe("true");
+        expect(await favorites.evaluate((element) => getComputedStyle(element).backgroundColor)).not.toBe(idle);
+        expect((await listed(page)).map((row) => row.id)).toEqual(["Reels1", "Exam01"]);
+        // At most two tags follow the date.
+        expect((await listed(page))[0]!.meta).toMatch(/ · #video #social$/);
+        await expect(page.locator(".notebook-sidebar-filter__label").textContent()).resolves.toBe("Favorites 2 notes");
+        expect(await frame(page)).toEqual(before);
+
+        await page.getByRole("button", { name: "Tags" }).click();
+        await page.getByRole("menuitemradio", { name: new RegExp(LONG_TAG) }).click();
+        await expect(page.getByRole("button", { name: `Tags: ${LONG_TAG}` }).getAttribute("aria-current")).resolves.toBe("true");
+        await expect(favorites.getAttribute("aria-pressed")).resolves.toBe("false");
+        expect((await listed(page)).map((row) => row.id)).toEqual(["Lang01", "Exam01"]);
+        // A long tag in the chip neither wraps the row nor moves the list.
+        expect(await frame(page)).toEqual(before);
+
+        await page.getByRole("button", { name: "Clear filter" }).click();
+        expect((await listed(page)).map((row) => row.id)).toEqual(["Home01", "Rules1", "Exam01", "Reels1"]);
+        expect(await frame(page)).toEqual(before);
+        expect(new URL(page.url()).search).toBe("");
+      } finally {
+        await page.context().close();
+      }
+    }, 30_000);
+  }
+
+  test("a listed note opens with the filter kept, and the keyboard moves through the list and opens its menu", async () => {
+    const page = await open(desktop, filtered());
+    try {
+      await page.getByRole("button", { name: "Recent" }).click();
+      expect(new URL(page.url()).search).toBe("?view=recents");
+      expect((await listed(page)).map((row) => row.id)).toEqual(["Lang01", "Reels1", "Exam01", "Rules1", "Home01"]);
+
+      await page.getByRole("treeitem", { name: /Reels/ }).click();
+      await expect(page.evaluate(() => window.openedNotes)).resolves.toEqual(["/app/notebooks/Book01/notes/Reels1?view=recents"]);
+      await expect(page.locator(".notebook-sidebar-filter__label").textContent()).resolves.toBe("Recently changed 5 notes");
+      await expect(page.getByRole("treeitem", { name: /Reels/ }).getAttribute("aria-selected")).resolves.toBe("true");
+
+      await page.getByRole("treeitem", { name: /Reels/ }).focus();
+      await page.keyboard.press("ArrowDown");
+      const examples = page.getByRole("treeitem", { name: /Examples/ });
+      await expect(examples.evaluate((element) => element === document.activeElement)).resolves.toBe(true);
+      await page.keyboard.press("Shift+F10");
+      const remove = page.getByRole("menuitem", { name: "Remove favorite" });
+      await remove.waitFor();
+      // The menu opens beside the focused row, not at the top of the list.
+      const [row, menu] = await Promise.all([examples.boundingBox(), page.locator(".k2b-context-menu").boundingBox()]);
+      expect(Math.abs(menu!.y - row!.y)).toBeLessThan(row!.height);
+      await remove.click();
+      await page.waitForFunction(() => document.querySelectorAll(".k2b-context-menu").length === 0);
+      expect(api.requests).toEqual([{ path: "notes/Exam01/favorite", body: { favorite: false } }]);
+
+      await page.getByRole("button", { name: "Favorites" }).click();
+      expect((await listed(page)).map((row) => row.id)).toEqual(["Reels1"]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("a right-click on a tree row opens the note menu, and the notebook name switches notebooks", async () => {
+    const page = await open(desktop, { ...filtered(), permission: "write" });
+    try {
+      await page.getByRole("treeitem", { name: "Examples" }).click({ button: "right" });
+      const menu = page.locator(".k2b-context-menu");
+      await menu.waitFor();
+      const items = await menu.getByRole("menuitem").allTextContents();
+      expect(items.slice(0, 2)).toEqual(["New subnote", "Remove favorite"]);
+      await page.keyboard.press("Escape");
+
+      await page.getByRole("button", { name: "Social media" }).click();
+      await page.getByRole("menuitem", { name: "Recipes" }).waitFor();
+      await expect(page.getByRole("menuitem", { name: "Recipes" }).getAttribute("href")).resolves.toBe("/app/notebooks/Book02");
+      await expect(page.getByRole("menuitem", { name: "All notebooks" }).getAttribute("href")).resolves.toBe("/app/notebooks");
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("on a phone the menu offers the same filters and lists notes with their dates", async () => {
+    const page = await open(phone, filtered(), "de");
+    try {
+      await page.evaluate(() => window.mountPhoneMenu("de", true));
+      const menu = page.locator("#phone-menu");
+      await menu.getByRole("button", { name: "Favoriten", exact: true }).click();
+      await menu.getByText("Favoriten · 2 Notizen").waitFor();
+      const rows = await page.evaluate(() =>
+        Array.from(document.querySelectorAll<HTMLElement>('#phone-menu a.k2b-navigation__control[href*="/notes/"]')).map((row) => ({
+          href: row.getAttribute("href"),
+          text: row.textContent,
+        })),
+      );
+      expect(rows.map((row) => row.href)).toEqual([
+        "/app/notebooks/Book01/notes/Reels1?view=favorites",
+        "/app/notebooks/Book01/notes/Exam01?view=favorites",
+      ]);
+      expect(rows[0]!.text).toContain("#video #social");
+      await menu.getByRole("button", { name: "Filter aufheben" }).click();
+      await menu.getByRole("link", { name: "Startseite Overview" }).waitFor();
     } finally {
       await page.context().close();
     }
@@ -323,8 +467,10 @@ describe("Notebook sidebar order by hand", () => {
   // Top level: the homepage leads, the rest reads by title until someone arranges it.
   const writable = (tree: NoteTreeNode[]): NotebookContext => {
     api.tree = structuredClone(tree);
+    api.favoriteNoteIds = [];
+    api.tags = [];
     api.requests = [];
-    return { ...ctx("simple"), tree, permission: "write" };
+    return { ...ctx(), tree, permission: "write" };
   };
   const startTree = () => [
     note("Reels1", "Reels"),

@@ -1,8 +1,8 @@
 import { extractNamedBlockSummaries, type NamedBlockSummary } from "../lib/named-blocks";
-import { hasOnlyNavigatorQuery, parseNavigatorQuery, withNavigatorQuery } from "../lib/navigator-url";
 import { extractTaskProgress, extractTocFromMarkdown, type TaskProgress, type TocItem } from "../lib/note-insights";
 import { type PresentationMode, resolvePresentationMode } from "../lib/presentation-mode";
 import { requestedPresentationMode, withPresentationMode } from "../lib/presentation-url";
+import { hasOnlySidebarFilterQuery, parseSidebarFilter, withSidebarFilter } from "../lib/sidebar-filter";
 import type { Attachment } from "./attachments";
 import { notebooksService } from "./index";
 import type { Backlink } from "./links";
@@ -138,20 +138,20 @@ type ResolveEditableRouteParams = Omit<LoadSelectedNoteParams, "noteId"> & {
 
 const parseSameNotebookNoteHref = (
   params: ResolveEditableRouteParams,
-): { noteId: string; hrefQuery: ReturnType<typeof parseNavigatorQuery>; requestedMode?: PresentationMode } | null => {
+): { noteId: string; hrefQuery: ReturnType<typeof parseSidebarFilter>; requestedMode?: PresentationMode } | null => {
   try {
     const url = new URL(params.href, params.origin);
     const requestedMode = requestedPresentationMode(url.searchParams);
-    const navigatorParams = new URLSearchParams(url.searchParams);
-    if (requestedMode) navigatorParams.delete("mode");
-    if (url.origin !== params.origin || url.hash || !hasOnlyNavigatorQuery(navigatorParams)) return null;
+    const filterParams = new URLSearchParams(url.searchParams);
+    if (requestedMode) filterParams.delete("mode");
+    if (url.origin !== params.origin || url.hash || !hasOnlySidebarFilterQuery(filterParams)) return null;
     const match = url.pathname.match(/^\/app\/notebooks\/([^/]+)\/notes\/([^/]+)$/);
     if (!match || decodeURIComponent(match[1]!) !== params.notebookShortId) return null;
     const noteId = decodeURIComponent(match[2]!);
     if (!/^[A-Za-z0-9]{6}$/.test(noteId)) return null;
     return {
       noteId,
-      hrefQuery: parseNavigatorQuery(url.searchParams),
+      hrefQuery: parseSidebarFilter(url.searchParams),
       requestedMode,
     };
   } catch {
@@ -180,7 +180,7 @@ export const loadEditableNoteRouteData = async (params: ResolveEditableRoutePara
   if (!state) return { kind: "fallback", reason: "not-found" };
   if (state.readonlyMode) return { kind: "fallback", reason: "readonly" };
 
-  const noteHref = withNavigatorQuery(
+  const noteHref = withSidebarFilter(
     `/app/notebooks/${encodeURIComponent(params.notebookShortId)}/notes/${encodeURIComponent(state.note.id)}`,
     target.hrefQuery,
   );

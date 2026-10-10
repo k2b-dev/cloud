@@ -1,14 +1,13 @@
 import { AppWorkspace, createNavigation, LocaleProvider, Navigation, type NavigationItem } from "@k2b/ui";
 import { render } from "solid-js/web";
-import { handleSoftNoteNavigationRequests } from "../../../lib/soft-navigation";
+import { handleSoftNoteNavigationRequests, requestSoftNoteNavigation } from "../../../lib/soft-navigation";
 import { NOTE_SOFT_NAVIGATED_EVENT } from "../detail/events";
-import NotebookNavigatorPane from "./NotebookNavigatorPane.island";
 import NotebookSidebar from "./NotebookSidebar.island";
 import type { NotebookContext } from "./types";
 
 /**
- * The real notebook sidebar and note list in the workspace layout of the notebook page. The editor is a stand-in that
- * applies every soft navigation, as the real one does, and records where it went.
+ * The real notebook sidebar in the workspace layout of the notebook page. The editor is a stand-in that takes clicks
+ * on note links and applies every soft navigation, as the real one does, and records where it went.
  */
 declare global {
   interface Window {
@@ -20,6 +19,12 @@ declare global {
 }
 
 window.openedNotes = [];
+document.addEventListener("click", (event) => {
+  const anchor = (event.target as Element | null)?.closest<HTMLAnchorElement>('a[href*="/notes/"]');
+  if (!anchor || event.defaultPrevented || event.button !== 0) return;
+  event.preventDefault();
+  void requestSoftNoteNavigation(anchor.getAttribute("href")!);
+});
 
 window.mountNotebookSidebar = (ctx, locale) => {
   const host = document.getElementById("root");
@@ -35,23 +40,10 @@ window.mountNotebookSidebar = (ctx, locale) => {
   render(
     () => (
       <LocaleProvider locale={locale}>
-        <AppWorkspace mobileSurface="flush" class="flex-1 min-h-0">
+        <AppWorkspace mobileSurface="flush" class="notebooks-workspace flex-1 min-h-0">
           <NotebookSidebar ctx={ctx} />
           <AppWorkspace.Content>
             <AppWorkspace.Main scroll={false}>
-              {ctx.settings.sidebarMode === "navigator" && (
-                <AppWorkspace.MainPane
-                  id="notebook-notes"
-                  label="Notes"
-                  surface="navigation"
-                  defaultSize={336}
-                  minSize={280}
-                  maxSize={520}
-                  scroll={false}
-                >
-                  <NotebookNavigatorPane ctx={ctx} />
-                </AppWorkspace.MainPane>
-              )}
               <div class="notebook-document-surface flex flex-1 min-w-0 min-h-0 flex-col" />
             </AppWorkspace.Main>
           </AppWorkspace.Content>

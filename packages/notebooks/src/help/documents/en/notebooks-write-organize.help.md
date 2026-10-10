@@ -65,13 +65,27 @@ Use short paragraphs. Keep one idea per section.
 - **Keep Tab for focus:** Open **Settings → Notebook → View & behavior** and turn on **Tab moves focus instead of indenting**. This browser stores the choice, and it applies immediately.
 :::
 
+## Find notes in the sidebar {icon="layout-sidebar"}
+
+The sidebar shows the notebook's notes as a tree, with the homepage first. Filters turn it into a list.
+
+:::reference
+- **Notebook name:** Choose the name at the top to switch to another notebook or to open **All notebooks**.
+- **Search and new notes:** Choose **Search notes**, or press **Cmd/Ctrl+Shift+K**. With **Edit** or **Manage** access, choose the pencil next to the name, or press **Cmd/Ctrl+Alt+N**, to create a note.
+- **Favorites, Recent, and Tags:** These filters show a list instead of the tree, with the most recently changed note first. Each note shows when it changed and its first two tags. Choose the filter again, or **×** above the list, to see the tree again.
+- **Your favorites:** In the menu of a note, choose **Add favorite**. Only you see your favorites.
+- **Note menu:** Choose **⋯** next to a note, right-click the note, or select it and press **Shift+F10**.
+- **The filter stays:** It stays when you open a note from the list and when you reload the page. A link in a note shows the tree again.
+- **Phones:** The menu offers the same filters and shows the same list.
+:::
+
 ## Hide the navigation {icon="layout-sidebar-left-collapse"}
 
 Hide the navigation to write with the full width. Hide it also when others can see your screen and must not see your notes and folders.
 
 :::reference
 - **Hide:** Choose **Hide navigation** at the far left of the editor toolbar. You can also press **Cmd/Ctrl+Alt+S**, or type `>` in the Cloud search and run **Hide notebook navigation**. You can also drag the edge of the navigation almost all the way to the left.
-- **What disappears:** The navigation disappears completely in both layouts and in Book view. This includes the note list of the navigator and the page list of Book view.
+- **What disappears:** The sidebar disappears completely, and so does the page list of Book view.
 - **Show:** Choose **Show navigation** in the same place, or press **Cmd/Ctrl+Alt+S** again. You can also type `>` in the Cloud search and run **Show notebook navigation**.
 - **No toolbar:** Some places show no editor toolbar: Book view, an empty notebook, **Read-only**, the graph, and the attachments. There, the button is in the bottom-left corner.
 - **Stays hidden:** This browser stores the choice. It applies to every notebook, even after a reload and in other open tabs. A notebook with hidden navigation opens without it, so its note titles do not appear while the page loads.

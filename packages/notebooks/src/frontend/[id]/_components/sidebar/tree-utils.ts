@@ -1,4 +1,6 @@
 import { compareNoteOrder, sortNoteLevels } from "../../../../lib/note-order";
+import type { SidebarFilter } from "../../../../lib/sidebar-filter";
+import { extractTags } from "../../../lib/tag-extract";
 import type { NoteTreeNode } from "./types";
 
 /** `title` is the notebook order: by hand where a level was arranged, by title elsewhere. */
@@ -45,4 +47,20 @@ export function getNodeDepthLabel(node: NoteTreeNode, allNodes: NoteTreeNode[]):
     current = parent;
   }
   return "\u00A0\u00A0".repeat(depth) + node.title;
+}
+
+/**
+ * The notes a sidebar filter lists, newest first: the favorites, every note for the recent list, or the notes with a
+ * tag. Without a filter the sidebar shows the tree instead.
+ */
+export function filterNotes(nodes: NoteTreeNode[], filter: SidebarFilter, favoriteIds: ReadonlySet<string>): NoteTreeNode[] {
+  if (!filter.view) return [];
+  const notes = flattenTree(nodes).filter((note) =>
+    filter.view === "favorites"
+      ? favoriteIds.has(note.id)
+      : filter.view === "tag"
+        ? extractTags(note.contentMd).includes(filter.tag)
+        : true,
+  );
+  return notes.sort(byDate("updated"));
 }

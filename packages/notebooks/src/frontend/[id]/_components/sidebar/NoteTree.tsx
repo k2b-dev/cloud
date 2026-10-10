@@ -4,30 +4,26 @@ import {
   AppWorkspace,
   type AppWorkspaceNavTreeMove,
   Button,
-  Dropdown,
   type DropdownAction,
   type DropdownItem,
-  IconButton,
   Placeholder,
   prompts,
   ScrollArea,
   toast,
   useLocale,
 } from "@k2b/ui";
-import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { createSignal, For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { isHandOrdered } from "../../../../lib/note-order";
 import type { PresentationMode } from "../../../../lib/presentation-mode";
 import { navigateToNotebookNote } from "../../../lib/soft-navigation";
 import { buildNoteUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
-import { NOTE_SOFT_NAVIGATED_EVENT } from "../detail/events";
-import SearchButton from "../search/SearchButton";
 import { readErrorMessage } from "../settings/utils";
+import { NoteRowLabel, NoteRowMenu, NoteRowsContextMenu } from "./note-rows";
 import { listAccessibleNotebooks } from "./notebooks";
 import { flattenTree, getNodeDepthLabel } from "./tree-utils";
 import type { Notebook, NoteTreeNode } from "./types";
-import { useFavoriteNotes } from "./useFavoriteNotes";
 
 type Props = {
   tree: NoteTreeNode[];
@@ -36,21 +32,14 @@ type Props = {
    *  short-ids to UUIDs at the boundary, so islands never need both
    *  forms. Same convention applies to `noteId` references below. */
   notebookId: string;
-  notebookName: string;
   selectedNoteId: string | null;
-  canWrite?: boolean;
-  /** Whether this person may delete and lock notes under the notebook's rule for both. */
-  canDeleteOrLockNotes?: boolean;
-  showSearch?: boolean;
-  showHeaderActions?: boolean;
-  favoriteNoteIds?: string[];
   presentationMode?: PresentationMode;
   /** The notebook's homepage, shown with a home icon instead of the note icon. */
   homepageId?: string | null;
-  /** The tree shows the notebook order, so writers may rearrange it. */
-  orderable?: boolean;
-  /** Reloads the tree after a change of order. */
-  onOrderChanged?: () => void;
+  /** Lets writers rearrange the notes on screen; the tree reports the requested place. */
+  onMove?: (move: AppWorkspaceNavTreeMove) => void;
+  /** A note's menu, from its ⋯ button, a right-click, the Context Menu key or Shift+F10. */
+  noteMenu?: (node: NoteTreeNode, level: NoteTreeNode[]) => DropdownItem[];
 };
 
 /**
@@ -430,105 +419,56 @@ export const noteActionItems = (
   },
 ];
 
+/** Notes with sub-notes get the stacked icon, so a branch reads as one before it is opened. */
+export const noteIcon = (node: NoteTreeNode, homepageId: string | null | undefined): string =>
+  node.id === homepageId ? "ti ti-home" : node.children.length > 0 ? "ti ti-files" : "ti ti-file-text";
+
 function NoteTreeItems(props: {
   nodes: NoteTreeNode[];
   notebookId: string;
   presentationMode?: PresentationMode;
   homepageId: string | null;
-  canWrite: boolean;
-  canDeleteOrLockNotes: boolean;
-  orderable: boolean;
-  actions: ReturnType<typeof useNoteActions>;
-  favoriteNoteIds?: () => Set<string>;
-  onToggleFavorite?: (node: NoteTreeNode, event: MouseEvent) => void;
+  movable: boolean;
+  noteMenu?: (node: NoteTreeNode, level: NoteTreeNode[]) => DropdownItem[];
 }) {
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   return (
     <For each={props.nodes}>
-      {(node) => {
-        const favorite = () => props.favoriteNoteIds?.().has(node.id) ?? false;
-        const label = () => node.title || t().untitled;
-        return (
-          <AppWorkspace.NavTree.Item
-            id={node.id}
-            label={
-              <span class="flex min-w-0 items-center gap-1.5">
-                <span class="truncate">{label()}</span>
-                <Show when={node.lockedAt}>
-                  <i class="ti ti-lock shrink-0 text-xs text-amber-500" title={t().locked} />
-                </Show>
-              </span>
-            }
-            icon={node.id === props.homepageId ? "ti ti-home" : "ti ti-file-text"}
-            iconLabel={node.id === props.homepageId ? t().homepage : undefined}
-            href={buildNoteUrl(props.notebookId, node.id, props.presentationMode)}
-            navigation="document"
-            movable={props.orderable && node.id !== props.homepageId}
-            actions={
-              props.onToggleFavorite || props.canWrite ? (
-                <>
-                  <Show when={props.onToggleFavorite}>
-                    {(toggleFavorite) => (
-                      <AppWorkspace.SidebarItemActions visibility={favorite() ? "always" : "hover"}>
-                        <IconButton
-                          label={favorite() ? t().removeFavorite : t().addFavorite}
-                          size="xs"
-                          class={favorite() ? "!text-amber-500 hover:!text-amber-500" : undefined}
-                          tooltip={favorite() ? t().removeFavorite : t().addFavorite}
-                          onClick={(event) => toggleFavorite()(node, event)}
-                        >
-                          <i class="ti ti-star text-xs" />
-                        </IconButton>
-                      </AppWorkspace.SidebarItemActions>
-                    )}
-                  </Show>
-                  <Show when={props.canWrite}>
-                    <AppWorkspace.SidebarItemActions visibility="hover">
-                      <Dropdown.Root
-                        position="bottom-right"
-                        width="12rem"
-                        items={noteActionItems(
-                          node,
-                          props.actions,
-                          t(),
-                          props.canDeleteOrLockNotes,
-                          props.orderable ? { level: props.nodes, homepageId: props.homepageId } : undefined,
-                        )}
-                      >
-                        <Dropdown.Trigger
-                          iconOnly
-                          label={t().noteActions({ title: label() })}
-                          tooltip={t().noteActions({ title: label() })}
-                          size="xs"
-                        >
-                          <i class="ti ti-dots text-xs" />
-                        </Dropdown.Trigger>
-                      </Dropdown.Root>
-                    </AppWorkspace.SidebarItemActions>
-                  </Show>
-                </>
-              ) : undefined
-            }
-          >
-            <NoteTreeItems
-              nodes={node.children}
-              notebookId={props.notebookId}
-              presentationMode={props.presentationMode}
-              homepageId={props.homepageId}
-              canWrite={props.canWrite}
-              canDeleteOrLockNotes={props.canDeleteOrLockNotes}
-              orderable={props.orderable}
-              actions={props.actions}
-              favoriteNoteIds={props.favoriteNoteIds}
-              onToggleFavorite={props.onToggleFavorite}
-            />
-          </AppWorkspace.NavTree.Item>
-        );
-      }}
+      {(node) => (
+        <AppWorkspace.NavTree.Item
+          id={node.id}
+          label={<NoteRowLabel note={node} />}
+          icon={noteIcon(node, props.homepageId)}
+          iconLabel={node.id === props.homepageId ? t().homepage : undefined}
+          href={buildNoteUrl(props.notebookId, node.id, props.presentationMode)}
+          navigation="document"
+          movable={props.movable && node.id !== props.homepageId}
+          actions={props.noteMenu ? <NoteRowMenu note={node} items={props.noteMenu(node, props.nodes)} /> : undefined}
+        >
+          <NoteTreeItems
+            nodes={node.children}
+            notebookId={props.notebookId}
+            presentationMode={props.presentationMode}
+            homepageId={props.homepageId}
+            movable={props.movable}
+            noteMenu={props.noteMenu}
+          />
+        </AppWorkspace.NavTree.Item>
+      )}
     </For>
   );
 }
+
+/** Finds a note and the level it sits in, as displayed. */
+export const findNoteInLevel = (level: NoteTreeNode[], id: string): { node: NoteTreeNode; level: NoteTreeNode[] } | null => {
+  for (const node of level) {
+    if (node.id === id) return { node, level };
+    const found = findNoteInLevel(node.children, id);
+    if (found) return found;
+  }
+  return null;
+};
 
 // =============================================================================
 // Main Component
@@ -537,81 +477,36 @@ function NoteTreeItems(props: {
 export default function NoteTree(props: Props) {
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
-  const actions = useNoteActions(props.notebookId, () => props.tree, { onOrderChanged: () => props.onOrderChanged?.() });
-  const orderable = () => Boolean(props.canWrite && props.orderable);
-  const showHeaderActions = () => props.showHeaderActions ?? true;
-  const [selectedNoteId, setSelectedNoteId] = createSignal(props.selectedNoteId);
-  const { favoriteNoteIds, toggleFavorite } = useFavoriteNotes({
-    notebookId: props.notebookId,
-    initialFavoriteNoteIds: () => props.favoriteNoteIds ?? [],
-  });
+  const contextMenu = (id: string) => {
+    const found = findNoteInLevel(props.tree, id);
+    return found && props.noteMenu ? props.noteMenu(found.node, found.level) : [];
+  };
 
-  onMount(() => {
-    const onSoftNavigated = (event: Event) => {
-      const detail = (event as CustomEvent<{ noteId?: string }>).detail;
-      if (!detail?.noteId) return;
-      setSelectedNoteId(detail.noteId);
-    };
-    window.addEventListener(NOTE_SOFT_NAVIGATED_EVENT, onSoftNavigated);
-    onCleanup(() => window.removeEventListener(NOTE_SOFT_NAVIGATED_EVENT, onSoftNavigated));
-  });
-
+  // An empty notebook shows one line where the first note would be, not a stretched empty tree.
   return (
-    <div class="flex min-h-0 flex-1 flex-col">
-      {/* Header with search + add buttons */}
-      <Show when={showHeaderActions()}>
-        <div class="flex items-center justify-between px-2 py-1">
-          <span class="section-label mb-0">{t().notes}</span>
-          <div class="flex items-center gap-1">
-            <Show when={props.showSearch}>
-              <SearchButton notebookId={props.notebookId} notebookName={props.notebookName} variant="compact" />
-            </Show>
-            <Show when={props.canWrite}>
-              <IconButton
-                label={t().newNote}
-                size="xs"
-                onClick={() => actions.handleCreateNote()}
-                disabled={actions.loading()}
-                loading={actions.loading()}
-                loadingLabel={t().creatingNote}
-                tooltip={`${t().newNote} (Mod+Alt+N)`}
-              >
-                <i class="ti ti-plus text-xs" />
-              </IconButton>
-            </Show>
-          </div>
-        </div>
-      </Show>
-
-      {/* An empty notebook shows one line where the first note would be, not a stretched empty tree. */}
-      <Show
-        when={props.tree.length > 0}
-        fallback={<Placeholder variant="inline" align="left" icon="ti ti-file-text" description={t().noNotes} />}
-      >
-        <div class="min-h-0 flex-1">
-          <AppWorkspace.NavTree
-            ariaLabel={t().notes}
-            selectedId={selectedNoteId()}
-            defaultExpandedIds={flattenTree(props.tree)
-              .filter((node) => node.children.length > 0)
-              .map((node) => node.id)}
-            onMove={orderable() ? (move) => actions.handlePlace(move.id, placementForMove(move)) : undefined}
-          >
-            <NoteTreeItems
-              nodes={props.tree}
-              notebookId={props.notebookId}
-              presentationMode={props.presentationMode}
-              homepageId={props.homepageId ?? null}
-              canWrite={props.canWrite ?? false}
-              canDeleteOrLockNotes={props.canDeleteOrLockNotes ?? false}
-              orderable={orderable()}
-              actions={actions}
-              favoriteNoteIds={favoriteNoteIds}
-              onToggleFavorite={toggleFavorite}
-            />
-          </AppWorkspace.NavTree>
-        </div>
-      </Show>
-    </div>
+    <Show
+      when={props.tree.length > 0}
+      fallback={<Placeholder variant="inline" align="left" icon="ti ti-file-text" description={t().noNotes} />}
+    >
+      <NoteRowsContextMenu menu={contextMenu}>
+        <AppWorkspace.NavTree
+          ariaLabel={t().notes}
+          selectedId={props.selectedNoteId}
+          defaultExpandedIds={flattenTree(props.tree)
+            .filter((node) => node.children.length > 0)
+            .map((node) => node.id)}
+          onMove={props.onMove}
+        >
+          <NoteTreeItems
+            nodes={props.tree}
+            notebookId={props.notebookId}
+            presentationMode={props.presentationMode}
+            homepageId={props.homepageId ?? null}
+            movable={Boolean(props.onMove)}
+            noteMenu={props.noteMenu}
+          />
+        </AppWorkspace.NavTree>
+      </NoteRowsContextMenu>
+    </Show>
   );
 }

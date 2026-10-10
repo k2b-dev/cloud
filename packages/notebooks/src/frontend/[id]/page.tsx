@@ -12,7 +12,6 @@ import NoteEditor from "./_components/editor/NoteEditor.client";
 import NotebookGraph from "./_components/graph/NotebookGraph.island";
 import NotebookCommands from "./_components/NotebookCommands.island";
 import RememberNotebook from "./_components/RememberNotebook.island";
-import NotebookNavigatorPane from "./_components/sidebar/NotebookNavigatorPane.island";
 import NotebookSidebar from "./_components/sidebar/NotebookSidebar.island";
 import WorkspaceEventBridge from "./_components/sidebar/WorkspaceEventBridge.island";
 import VersionHistory from "./_components/versions/VersionHistory.island";
@@ -93,7 +92,7 @@ export default ssr<AuthContext>(async (c) => {
     >
       <link rel="stylesheet" href={katexStylesHref} />
       <RememberNotebook notebookId={notebook.id} />
-      <AppWorkspace mobileSurface="flush" class="flex-1 min-h-0">
+      <AppWorkspace mobileSurface="flush" class="notebooks-workspace flex-1 min-h-0">
         <NotebookCommands
           notebookId={notebook.id}
           notebookName={notebook.name}
@@ -109,19 +108,6 @@ export default ssr<AuthContext>(async (c) => {
 
         <AppWorkspace.Content>
           <AppWorkspace.Main scroll={false}>
-            {ctx.settings.sidebarMode === "navigator" && (
-              <AppWorkspace.MainPane
-                id="notebook-notes"
-                label={t.noteList}
-                surface="navigation"
-                defaultSize={336}
-                minSize={280}
-                maxSize={520}
-                scroll={false}
-              >
-                <NotebookNavigatorPane ctx={ctx} />
-              </AppWorkspace.MainPane>
-            )}
             {isVersionsMode && selectedNoteId ? (
               <VersionHistory
                 notebookId={notebook.id}

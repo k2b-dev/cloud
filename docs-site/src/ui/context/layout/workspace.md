@@ -137,7 +137,9 @@ The sidebar compound members cover these jobs:
   `SidebarItemStatus`, `SidebarItemAction`, and `SidebarItemActions` compose a
   navigation row;
 - `NavTree` and `NavTree.Item` compose nested folder, mailbox, category, or tag
-  navigation with automatic indentation and keyboard interaction;
+  navigation with automatic indentation and keyboard interaction. A flat
+  `NavTree` also serves a filtered list with the same rows and keys; an item's
+  `description` adds a passive second line, such as a date and tags;
 - `SidebarIconGrid` and `SidebarIconAction` provide compact icon-only actions.
 
 Desktop sidebars are action-first: begin with primary actions or navigation,
@@ -456,7 +458,8 @@ type AppWorkspaceNavTreeProps = {
 type AppWorkspaceNavTreeMove = { id: string; parentId: string | null; beforeId: string | null; afterId: string | null };
 
 type AppWorkspaceNavTreeItemProps = {
-  id: string; label: JSX.Element; children?: JSX.Element; href?: string; navigation?: "enhanced" | "document";
+  id: string; label: JSX.Element; description?: JSX.Element; children?: JSX.Element; href?: string;
+  navigation?: "enhanced" | "document";
   replace?: boolean; scroll?: NavigationScrollMode;
   onNavigate?: (event: LinkNavigateEvent) => void | Promise<void>; onSelect?: (event: MouseEvent) => void;
   disabled?: boolean; icon?: string; iconLabel?: string; expandedIcon?: string; meta?: JSX.Element;

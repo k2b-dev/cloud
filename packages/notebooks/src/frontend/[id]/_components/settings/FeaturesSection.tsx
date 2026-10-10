@@ -1,4 +1,3 @@
-import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Select, SettingsField, SettingsGroup, Switch, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup } from "solid-js";
@@ -7,63 +6,9 @@ import { isPresentationMode, type PresentationMode } from "@/lib/presentation-mo
 import { TAB_KEY_PREFERENCE_EVENT } from "../detail/events";
 import type { Notebook } from "../sidebar/types";
 import { notebookSettingsMessages } from "./messages";
-import { readSettings, readTabMovesFocus, setTabMovesFocus, writeSettings } from "./NotebookSettingsStore";
-import { SaveStatus, settingsChoiceClass } from "./shared";
+import { readTabMovesFocus, setTabMovesFocus } from "./NotebookSettingsStore";
+import { SaveStatus } from "./shared";
 import { readErrorMessage } from "./utils";
-
-function ViewSection(props: { notebook: Notebook }) {
-  const locale = useLocale();
-  const t = () => notebookSettingsMessages.resolve([locale()]).t;
-  const [mode, setMode] = createSignal(readSettings(props.notebook.id).sidebarMode);
-
-  const selectMode = (next: "simple" | "navigator") => {
-    if (next === mode()) return;
-    setMode(next);
-    writeSettings(props.notebook.id, { sidebarMode: next });
-    refreshCurrentPath();
-  };
-
-  const handleModeKeyDown = (event: KeyboardEvent) => {
-    if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
-    event.preventDefault();
-    selectMode(event.key === "ArrowLeft" || event.key === "ArrowUp" || event.key === "Home" ? "simple" : "navigator");
-  };
-
-  return (
-    <div class="grid grid-cols-1 gap-2 md:grid-cols-2" role="radiogroup" aria-label={t().sidebarMode}>
-      <button
-        type="button"
-        role="radio"
-        aria-checked={mode() === "simple"}
-        tabIndex={mode() === "simple" ? 0 : -1}
-        class={settingsChoiceClass(mode() === "simple")}
-        onClick={() => selectMode("simple")}
-        onKeyDown={handleModeKeyDown}
-      >
-        <span class="flex items-center gap-2 text-sm font-semibold">
-          <i class="ti ti-layout-sidebar" />
-          {t().simpleSidebar}
-        </span>
-        <span class="mt-1 block text-xs text-dimmed">{t().simpleSidebarDescription}</span>
-      </button>
-      <button
-        type="button"
-        role="radio"
-        aria-checked={mode() === "navigator"}
-        tabIndex={mode() === "navigator" ? 0 : -1}
-        class={settingsChoiceClass(mode() === "navigator")}
-        onClick={() => selectMode("navigator")}
-        onKeyDown={handleModeKeyDown}
-      >
-        <span class="flex items-center gap-2 text-sm font-semibold">
-          <i class="ti ti-layout-list" />
-          {t().navigator}
-        </span>
-        <span class="mt-1 block text-xs text-dimmed">{t().navigatorDescription}</span>
-      </button>
-    </div>
-  );
-}
 
 /** Personal Tab key preference; an open note editor applies it without a reload. */
 function EditorKeyboardSection() {
@@ -132,15 +77,9 @@ export function DefaultPresentationSection(props: {
 }
 
 export function FeaturesSection(props: { notebook: Notebook; isAdmin: boolean; onNotebookChange: (notebook: Notebook) => void }) {
-  const locale = useLocale();
-  const t = () => notebookSettingsMessages.resolve([locale()]).t;
   return (
     <>
       <DefaultPresentationSection notebook={props.notebook} isAdmin={props.isAdmin} onNotebookChange={props.onNotebookChange} />
-      <SettingsGroup title={t().yourView} description={t().yourViewDescription}>
-        <ViewSection notebook={props.notebook} />
-        <SaveStatus loading={false} saved error={null} label={t().savedBrowser} />
-      </SettingsGroup>
       <EditorKeyboardSection />
     </>
   );
