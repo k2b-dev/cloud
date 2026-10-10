@@ -42,7 +42,7 @@ Names are unique within the table. Grids ignores case and surrounding whitespace
 | `file` | `maxFiles` 1–100 when set; `accept` with up to 100 MIME types, wildcard MIME types, or extensions. Upload and detach use the file operations, not record JSON writes. |
 | `object_list` | See the column contract below. |
 
-For a principal value, use `[{"type":"user","id":"<user-uuid>"}]` or a `group` reference. An identity in a field is data. It **does not give access**. To fill in the current user securely, use the configured submission action of a published app, not an input that the user can edit.
+For a principal value, use `[{"type":"user","id":"<user-uuid>"}]` or a `group` reference. An identity in a field is data. It does not give access. To fill in the current user securely, use the configured submission action of a published app, not an input that the user can edit.
 
 ## Configure relations and calculated values {icon="link"}
 

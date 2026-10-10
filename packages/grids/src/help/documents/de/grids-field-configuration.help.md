@@ -42,7 +42,7 @@ Namen sind innerhalb der Tabelle eindeutig. Grids ignoriert beim Vergleich Groß
 | `file` | `maxFiles` 1–100, wenn gesetzt; `accept` mit bis zu 100 MIME-Typen, MIME-Wildcards oder Dateiendungen. Hochladen und Entfernen nutzen die Dateivorgänge, keine JSON-Schreibvorgänge am Datensatz. |
 | `object_list` | Siehe den Spaltenvertrag weiter unten. |
 
-Ein Principal-Wert ist etwa `[{"type":"user","id":"<user-uuid>"}]` oder eine `group`-Referenz. Eine Identität in einem Feld ist ein Wert. Sie **gibt keinen Zugriff**. Um die aktuelle Person sicher einzutragen, nutze die konfigurierte Übermittlung einer veröffentlichten App, kein Eingabefeld, das die Person ändern kann.
+Ein Principal-Wert ist etwa `[{"type":"user","id":"<user-uuid>"}]` oder eine `group`-Referenz. Eine Identität in einem Feld ist ein Wert. Sie gibt keinen Zugriff. Um die aktuelle Person sicher einzutragen, nutze die konfigurierte Übermittlung einer veröffentlichten App, kein Eingabefeld, das die Person ändern kann.
 
 ## Relationen und berechnete Werte konfigurieren {icon="link"}
 
