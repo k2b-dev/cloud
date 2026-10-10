@@ -28,6 +28,7 @@ import { type ConnectorEnvelope, type FlagChange, imapSmtpConnector } from "./co
 import { resolveMailExecution } from "./execution";
 import { clearFolderRole, dismissUnavailableFolder, listAdminFolders, resolveRoleFolder, setFolderDisplay, setFolderRole } from "./folders";
 import { getMailboxOperationalHealth } from "./health";
+import { pauseDeletedMailboxExecution } from "./mailbox-lifecycle";
 import { createMailbox, updateMailbox } from "./mailboxes";
 import {
   executeMaintenanceCommand,
@@ -4137,9 +4138,48 @@ suite("mail lifecycle control plane", () => {
           deadline: new Date(Date.now() + 60 * 60_000).toISOString(),
         });
         expect(await finishWorkflowRun(third, { state: "waiting" })).toEqual({ state: "finished" });
+
+        // Mailbox deletion takes the run before the command, like a claim, so
+        // the two wait for each other instead of deadlocking.
+        const rolledBack = new Error("roll back the mailbox deletion");
+        let deletion: Promise<unknown> | undefined;
+        await sql.begin(async (claim) => {
+          await claim`SELECT id FROM workflows.run WHERE id = ${runId}::uuid FOR UPDATE`;
+          deletion = sql
+            .begin(async (tx) => {
+              await pauseDeletedMailboxExecution(mailboxId, tx);
+              throw rolledBack;
+            })
+            .catch((error: unknown) => error);
+          for (let poll = 0; ; poll += 1) {
+            const [waiting] = await sql<{ count: number }[]>`
+              SELECT count(*)::int AS count
+              FROM pg_stat_activity
+              WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%UPDATE workflows.run run%'
+            `;
+            if (waiting?.count) break;
+            if (poll >= 250) throw new Error("Mailbox deletion never waited for the run");
+            await Bun.sleep(20);
+          }
+          await claim`SELECT id FROM mail.commands WHERE id = ${canceled.data.id}::uuid FOR UPDATE`;
+        });
+        expect(await deletion).toBe(rolledBack);
+
         expect(await requestWorkflowRunCancel(runId)).toBe(true);
         await expectCancelled(canceled.data.id);
         expect(provider).not.toHaveBeenCalled();
+
+        // A command whose effect may already have reached the provider is not
+        // cancelled with its run: whether the provider applied it is unknown.
+        const started = await create("started", third.executionGeneration);
+        if (!started.ok) throw new Error(started.error.message);
+        await sql`
+          UPDATE mail.commands
+          SET state = 'ambiguous', attempt = 1, provider_effect_attempt = 1, provider_effect_started_at = now()
+          WHERE id = ${started.data.id}::uuid
+        `;
+        expect(await executeMutationCommand(started.data.id)).toBeNull();
+        expect(await stored(started.data.id)).toEqual({ state: "needs_attention", last_error_code: "WORKFLOW_CANCELED" });
       } finally {
         provider.mockRestore();
       }

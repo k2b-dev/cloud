@@ -502,7 +502,7 @@ Runs use the active version's mailbox-owned authority, so removing the activatin
 
 Provider actions create idempotent Mail commands. A step may wait for a command or message hydration. Durable outcomes survive retries; lease generations fence stale workers; dependency completion wakes waiting runs. Ambiguous provider outcomes become `needs_attention` rather than being blindly repeated.
 
-A step that waits for its command is checked again every 30 seconds. The check runs the step under a new execution generation, and the step keeps waiting for the command it already created. A command is cancelled with `WORKFLOW_CANCELED` only when its run was canceled or has ended, or when its step finished without it.
+A step that waits for its command is checked again every 30 seconds. The check runs the step under a new execution generation, and the step keeps waiting for the command it already created. When the command finishes, the step takes its result, also when its move already took the message out of the folder where the step found it. A command is cancelled with `WORKFLOW_CANCELED` only when its run was canceled or has ended, or when its step finished without it. If the provider change may already have started, the command becomes `needs_attention` instead.
 
 ## Call the workflow API directly
 

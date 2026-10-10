@@ -173,8 +173,9 @@ Keys must identify one occurrence inside the app.
 A deadline does not fail the step. When it passes, the kernel queues the run
 again and runs the waiting step under a new execution generation with the same
 `ctx.effectKey`. The action must find the work it already started under that
-key and return its current state, for example `waiting` again. It must not
-fail or start the work a second time. Work that another process carries out
+key and return its current state, for example `waiting` again. Look up that
+work first, before checks that the work itself can change. It must not fail or
+start the work a second time. Work that another process carries out
 for the step belongs to the step while the step waits for it. Cancel such work
 only when the run is canceled or has ended, or when the step finished without
 it. A new execution generation alone is not a reason to cancel it.

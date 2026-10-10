@@ -79,6 +79,34 @@ export const pauseDeletedMailboxExecution = async (mailboxId: string, db: SqlCli
       COUNT(*) FILTER (WHERE state = 'needs_attention')::int AS needs_attention
     FROM changed
   `;
+  const workflowsDisabled = await db`
+    UPDATE mail.workflow_profile
+    SET enabled = false, updated_at = now()
+    WHERE mailbox_id = ${mailboxId}::uuid AND enabled
+  `;
+  await db`
+    UPDATE workflows.activation activation
+    SET enabled = false, updated_at = now()
+    WHERE activation.workflow_id IN (
+      SELECT id FROM mail.workflow_profile WHERE mailbox_id = ${mailboxId}::uuid
+    )
+      AND activation.enabled
+  `;
+  const workflowRuns = await db`
+    UPDATE workflows.run run
+    SET
+      cancel_requested_at = COALESCE(run.cancel_requested_at, now()),
+      execution_generation = run.execution_generation + 1,
+      lease_owner = NULL,
+      lease_expires_at = NULL,
+      updated_at = now()
+    FROM mail.workflow_profile profile
+    WHERE run.workflow_id = profile.id
+      AND profile.mailbox_id = ${mailboxId}::uuid
+      AND run.state IN ('queued', 'running', 'waiting')
+      AND run.cancel_requested_at IS NULL
+  `;
+  // After the runs: a command claim and a provider effect lock the run before the command, too.
   const [commands] = await db<{ cancelled: number; needs_attention: number }[]>`
     WITH changed AS (
       UPDATE mail.commands command
@@ -107,33 +135,6 @@ export const pauseDeletedMailboxExecution = async (mailboxId: string, db: SqlCli
       COUNT(*) FILTER (WHERE state = 'cancelled')::int AS cancelled,
       COUNT(*) FILTER (WHERE state = 'needs_attention')::int AS needs_attention
     FROM changed
-  `;
-  const workflowsDisabled = await db`
-    UPDATE mail.workflow_profile
-    SET enabled = false, updated_at = now()
-    WHERE mailbox_id = ${mailboxId}::uuid AND enabled
-  `;
-  await db`
-    UPDATE workflows.activation activation
-    SET enabled = false, updated_at = now()
-    WHERE activation.workflow_id IN (
-      SELECT id FROM mail.workflow_profile WHERE mailbox_id = ${mailboxId}::uuid
-    )
-      AND activation.enabled
-  `;
-  const workflowRuns = await db`
-    UPDATE workflows.run run
-    SET
-      cancel_requested_at = COALESCE(run.cancel_requested_at, now()),
-      execution_generation = run.execution_generation + 1,
-      lease_owner = NULL,
-      lease_expires_at = NULL,
-      updated_at = now()
-    FROM mail.workflow_profile profile
-    WHERE run.workflow_id = profile.id
-      AND profile.mailbox_id = ${mailboxId}::uuid
-      AND run.state IN ('queued', 'running', 'waiting')
-      AND run.cancel_requested_at IS NULL
   `;
   await cancelPendingAutomaticRepliesInTransaction({ db, mailboxId, code, message });
 

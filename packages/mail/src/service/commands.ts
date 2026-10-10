@@ -834,14 +834,7 @@ const createActorCommandInTransaction = async (params: CreateActorCommandInterna
     if (!commandActorMatches(existing, actor)) return fail(capabilityIdempotencyConflict("Idempotency key is already in use"));
     // A step that waits for its command runs again on every recheck, under a
     // newer execution generation, and adopts the command it already issued.
-    // Only a caller older than the command is stale.
-    if (
-      creationFence &&
-      Number(existing.workflow_execution_generation) > creationFence.workflowExecutionGeneration &&
-      !["confirmed", "failed", "cancelled", "reconciled", "needs_attention"].includes(existing.state)
-    ) {
-      return fail(err.conflict("Workflow command belongs to a newer execution generation"));
-    }
+    // The creation fence admits only the step's current execution.
     return existing.request_hash === requestHash
       ? ok(mapCommand(existing))
       : fail(capabilityIdempotencyConflict("Idempotency key with a different mail command"));

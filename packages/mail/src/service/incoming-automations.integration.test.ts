@@ -1106,7 +1106,7 @@ suite("incoming automations", () => {
     }
   });
 
-  test("keeps a move whose provider command outlasts the dependency recheck", async () => {
+  test("keeps a move whose provider command outlasts the dependency recheck and reports it applied", async () => {
     const [archive] = await sql<{ short_id: string }[]>`
       SELECT short_id FROM mail.folders WHERE id = ${archiveFolderId}::uuid
     `;
@@ -1126,7 +1126,8 @@ suite("incoming automations", () => {
       },
     });
     if (!automation.ok) throw new Error(automation.error.message);
-    const uid = 8100 + Math.floor(Math.random() * 800);
+    // Apart from the UIDs of the other tests in this folder: a reused UID is the same message.
+    const uid = 9800 + Math.floor(Math.random() * 200);
     await ingestEnvelope({
       db: sql,
       mailboxId,
@@ -1171,8 +1172,10 @@ suite("incoming automations", () => {
       const [current] = await sql<{ state: string; execution_generation: string | number; error: unknown }[]>`
         SELECT state, execution_generation, error FROM workflows.run WHERE id = ${run.id}::uuid
       `;
-      const commands = await sql<{ id: string; state: string }[]>`
-        SELECT id, state FROM mail.commands WHERE correlation_id = ${run.id}
+      const commands = await sql<{ id: string; kind: string; state: string; ref: string }[]>`
+        SELECT id, kind, state, target ->> 'remoteMessageRefId' AS ref
+        FROM mail.commands
+        WHERE correlation_id = ${run.id}
       `;
       return { run: current, commands };
     };
@@ -1181,7 +1184,7 @@ suite("incoming automations", () => {
     expect((await runMailWorkflow(run.id)).state).toBe("finished");
     const parked = await snapshot();
     expect(parked.run?.state).toBe("waiting");
-    expect(parked.commands).toEqual([{ id: expect.any(String), state: "queued" }]);
+    expect(parked.commands).toEqual([{ id: expect.any(String), kind: "move", state: "queued", ref: expect.any(String) }]);
 
     // The provider stays busy past the deadline. The recheck runs the move
     // again, and the move waits for the command it already issued.
@@ -1193,10 +1196,35 @@ suite("incoming automations", () => {
     expect(Number(rechecked.run?.execution_generation)).toBeGreaterThan(Number(parked.run?.execution_generation));
     expect(rechecked.commands).toEqual(parked.commands);
 
-    // The provider confirms the move, and the run finishes with one move spent.
-    const commandId = parked.commands[0]!.id;
-    await sql`UPDATE mail.commands SET state = 'confirmed', finished_at = now() WHERE id = ${commandId}::uuid`;
-    expect(await wakeWorkflowRunsWaitingOn({ appId: "mail", kind: "mail.command", key: commandId })).toContain(run.id);
+    const [move] = parked.commands;
+    if (!move) throw new Error("The move command was not created");
+
+    // The provider moves the message, and Mail records it in the archive the
+    // way the command runtime does: the inbox reference goes stale.
+    const [archived] = await sql<{ id: string }[]>`
+      WITH source AS (
+        UPDATE mail.remote_message_refs
+        SET stale_at = now()
+        WHERE id = ${move.ref}::uuid
+        RETURNING message_id
+      ), placement AS (
+        UPDATE mail.message_placements SET deleted_at = now() WHERE remote_message_ref_id = ${move.ref}::uuid
+      )
+      INSERT INTO mail.remote_message_refs (folder_id, message_id, uid_validity, uid)
+      SELECT ${archiveFolderId}::uuid, message_id, 1, ${uid} FROM source
+      RETURNING id
+    `;
+    if (!archived) throw new Error("Failed to record the moved message");
+    await sql`
+      INSERT INTO mail.message_placements (remote_message_ref_id, folder_id, message_id)
+      SELECT id, folder_id, message_id FROM mail.remote_message_refs WHERE id = ${archived.id}::uuid
+    `;
+    await sql`UPDATE mail.commands SET state = 'confirmed', finished_at = now() WHERE id = ${move.id}::uuid`;
+    expect(await wakeWorkflowRunsWaitingOn({ appId: "mail", kind: "mail.command", key: move.id })).toContain(run.id);
+
+    // The resumed move takes its own confirmed command, although the message
+    // has left the folder the step found it in, and the run finishes with one
+    // move spent.
     expect((await runMailWorkflow(run.id)).state).toBe("finished");
     const [finished] = await sql<{ state: string; effects_used: Record<string, number> | string }[]>`
       SELECT state, effects_used FROM workflows.run WHERE id = ${run.id}::uuid
@@ -1204,7 +1232,13 @@ suite("incoming automations", () => {
     expect(finished?.state).toBe("succeeded");
     const used = typeof finished?.effects_used === "string" ? JSON.parse(finished.effects_used) : finished?.effects_used;
     expect(used?.maxMoves).toBe(1);
-    expect((await snapshot()).commands).toEqual([{ id: commandId, state: "confirmed" }]);
+    expect((await snapshot()).commands).toEqual([{ ...move, state: "confirmed" }]);
+    const [moveStep] = await sql<{ outcome: { outcome?: { output?: Record<string, unknown> } } | string }[]>`
+      SELECT outcome FROM workflows.step_outcome
+      WHERE run_id = ${run.id}::uuid AND state = 'completed' AND outcome #>> '{outcome,output,action}' = 'moveMessage'
+    `;
+    const moveOutcome = typeof moveStep?.outcome === "string" ? JSON.parse(moveStep.outcome) : moveStep?.outcome;
+    expect(moveOutcome?.outcome?.output).toMatchObject({ action: "moveMessage", applied: true });
 
     const [current] = await sql<{ revision: string | number }[]>`
       SELECT revision FROM mail.incoming_automations WHERE id = ${automation.data.id}::uuid

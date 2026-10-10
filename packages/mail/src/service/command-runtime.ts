@@ -342,11 +342,14 @@ type ClaimedCommand = {
  * newer execution generation, and adopts the command it already issued, so a
  * generation change alone does not make the command stale. A canceled or ended
  * run, a changed workflow version, or a step that settled without the command
- * does.
+ * does. Stale workers are fenced where the command is created: only the step
+ * that runs under the run's current generation and lease may create or adopt it.
  *
  * Locks the run, so a cancel request or a new claim cannot interleave. Call it
- * before locking the command: a step that adopts its command takes the run
- * first, too.
+ * before locking the command: a step that adopts its command and mailbox
+ * deletion take the run first, too. The step row is not locked: a step that
+ * settles while the check runs counts as settling just after it. The action
+ * adopts an existing command before it could settle without it.
  */
 const workflowCommandStillWanted = async (tx: typeof sql, command: { id: string; correlation_id: string | null }): Promise<boolean> => {
   const runId = z.uuid().safeParse(command.correlation_id);
@@ -361,7 +364,6 @@ const workflowCommandStillWanted = async (tx: typeof sql, command: { id: string;
     WHERE command.id = ${command.id}::uuid
       AND command.correlation_id = run.id::text
       AND run.workflow_version_id = command.actor_id
-      AND run.execution_generation >= command.workflow_execution_generation
       AND run.state IN ('queued', 'running', 'waiting')
       AND run.cancel_requested_at IS NULL
       AND step.state IN ('running', 'waiting')
@@ -396,10 +398,11 @@ const claimCommand = async (
       await tx`
         UPDATE mail.commands
         SET
-          state = 'cancelled',
+          -- An effect that may have started is not undone by the cancel: whether the provider applied it is unknown.
+          state = CASE WHEN state = 'ambiguous' OR provider_effect_started_at IS NOT NULL THEN 'needs_attention' ELSE 'cancelled' END,
           finished_at = now(),
           last_error_code = 'WORKFLOW_CANCELED',
-          last_error_message = 'The workflow run was canceled, ended, or moved past this command before it ran',
+          last_error_message = 'The workflow run was canceled, ended, or moved past this command',
           updated_at = now()
         WHERE id = ${current.id}::uuid AND state IN ('queued', 'ambiguous')
       `;
