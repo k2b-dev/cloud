@@ -3,6 +3,7 @@ import { Portal, render } from "solid-js/web";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { getK2bPortalRoot } from "../internal/portal";
 import { RenderErrorBoundary } from "../internal/render-error";
+import { suppressTextSelection } from "../internal/text-selection";
 import { useUiMessages } from "../intl/messages";
 import { FLOATING_WINDOW_VIEWPORT_GAP, type FloatingWindowRect, fitFloatingWindowRect } from "./floating-window-geometry";
 
@@ -82,7 +83,9 @@ export default function FloatingWindow(props: FloatingWindowProps): JSX.Element 
     const pointerId = start.pointerId;
     const captureTarget = start.currentTarget as HTMLElement;
     captureTarget.setPointerCapture?.(pointerId);
+    const releaseTextSelection = suppressTextSelection(pointerId);
     const stop = () => {
+      releaseTextSelection();
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onEnd);
       window.removeEventListener("pointercancel", onEnd);

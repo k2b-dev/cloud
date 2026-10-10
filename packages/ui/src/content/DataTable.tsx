@@ -13,6 +13,7 @@ import {
   useContext,
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
+import { suppressTextSelection } from "../internal/text-selection";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
 import { PanelHeader } from "../layout/PanelHeader";
@@ -297,6 +298,8 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
     scrollbarDragOffset =
       event.target === event.currentTarget ? metrics.size / 2 : Math.min(metrics.size, Math.max(0, pointerOffset - metrics.offset));
     event.currentTarget.setPointerCapture(event.pointerId);
+    // The track's own pointerup or pointercancel ends the hold.
+    suppressTextSelection(event.pointerId);
     scrollFromPointer(event, axis);
   };
 

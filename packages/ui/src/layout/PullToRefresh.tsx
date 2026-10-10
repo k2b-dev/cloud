@@ -1,4 +1,5 @@
 import { createSignal, type JSX, onCleanup, onMount } from "solid-js";
+import { suppressTextSelection } from "../internal/text-selection";
 import { useUiMessages } from "../intl/messages";
 
 /** Android's SwipeRefreshLayout triggers at 64dp; the pull is damped to half the input travel. */
@@ -98,7 +99,7 @@ export function PullToRefresh(props: PullToRefreshProps): JSX.Element {
     }
   };
 
-  let pointer: { id: number; startY: number } | null = null;
+  let pointer: { id: number; startY: number; releaseTextSelection?: () => void } | null = null;
   const onPointerDown = (event: PointerEvent) => {
     if (event.pointerType === "touch" || event.button !== 0 || !active() || interactive(event.target) || !atTop(event.target)) return;
     pointer = { id: event.pointerId, startY: event.clientY };
@@ -107,17 +108,22 @@ export function PullToRefresh(props: PullToRefreshProps): JSX.Element {
     if (!pointer || event.pointerId !== pointer.id) return;
     const travel = event.clientY - pointer.startY;
     if (travel <= 0 && state() === "idle") return;
-    if (state() === "idle") capture(pointer.id);
+    if (state() === "idle") {
+      capture(pointer.id);
+      pointer.releaseTextSelection ??= suppressTextSelection(pointer.id);
+    }
     pull(travel);
     if (state() !== "idle") event.preventDefault();
   };
   const onPointerUp = (event: PointerEvent) => {
     if (!pointer || event.pointerId !== pointer.id) return;
+    pointer.releaseTextSelection?.();
     pointer = null;
     release();
   };
   const onPointerCancel = (event: PointerEvent) => {
     if (!pointer || event.pointerId !== pointer.id) return;
+    pointer.releaseTextSelection?.();
     pointer = null;
     abort();
   };

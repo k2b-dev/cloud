@@ -1,4 +1,4 @@
-import { useLocale } from "@k2b/ui";
+import { suppressTextSelection, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { renderMarkupCanvas } from "./markup";
 import {
@@ -67,6 +67,7 @@ export default function MarkupOverlay(props: MarkupOverlayProps) {
   let committedCanvas: HTMLCanvasElement | undefined;
   let interactionCanvas: HTMLCanvasElement | undefined;
   let gesture: Gesture | null = null;
+  let releaseTextSelection: (() => void) | undefined;
   let frame: number | null = null;
   let pendingDraftElements: MarkupElement[] = [];
   let renderedImageId = props.imageId;
@@ -94,6 +95,7 @@ export default function MarkupOverlay(props: MarkupOverlayProps) {
     if (frame !== null) cancelAnimationFrame(frame);
     frame = null;
     gesture = null;
+    releaseTextSelection?.();
     pendingDraftElements = [];
     setDraftElements([]);
     setHiddenIds(new Set<string>());
@@ -215,6 +217,7 @@ export default function MarkupOverlay(props: MarkupOverlayProps) {
       gesture = { type: "draw", pointerId: event.pointerId, element };
       setDraftElements([element]);
     }
+    releaseTextSelection = suppressTextSelection(event.pointerId);
     interactionCanvas?.setPointerCapture(event.pointerId);
   };
 
@@ -236,6 +239,7 @@ export default function MarkupOverlay(props: MarkupOverlayProps) {
     };
     setHiddenIds(new Set([element.id]));
     setDraftElements([element]);
+    releaseTextSelection = suppressTextSelection(event.pointerId);
     if (event.currentTarget instanceof HTMLElement) event.currentTarget.setPointerCapture(event.pointerId);
   };
 
@@ -305,6 +309,7 @@ export default function MarkupOverlay(props: MarkupOverlayProps) {
     frame = null;
     pendingDraftElements = [];
     gesture = null;
+    releaseTextSelection?.();
 
     if (!commit) {
       setDraftElements([]);

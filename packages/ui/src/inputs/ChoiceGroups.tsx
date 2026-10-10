@@ -1,4 +1,5 @@
 import { createEffect, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { suppressTextSelection } from "../internal/text-selection";
 
 type ChoiceGroup = { value: string | null; label: string; icon?: string };
 
@@ -69,6 +70,8 @@ export function ChoiceGroups(props: {
         ? current.width / 2
         : Math.min(current.width, Math.max(0, event.clientX - track.getBoundingClientRect().left - current.left));
     track.setPointerCapture(event.pointerId);
+    // The track's own pointerup or pointercancel ends the hold.
+    suppressTextSelection(event.pointerId);
     scrollFromPointer(event);
   };
 

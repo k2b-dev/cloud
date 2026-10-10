@@ -472,5 +472,6 @@ export const documentedOnlyUiCatalogExports = {
   scanMarkdownInfoBlock: "Documented MarkdownView info-block grammar for renderers that scan Markdown themselves.",
   serializeAppWorkspaceLayoutState: "Documented AppWorkspace persisted-state serializer.",
   shouldCollapseAppWorkspaceSidebar: "Documented AppWorkspace responsive-state helper.",
+  suppressTextSelection: "Documented AppWorkspace helper that keeps a custom pointer drag from selecting page text.",
   syncThemeColor: "Documented MobileShell status-bar helper that changes the live document.",
 } as const satisfies Record<string, string>;

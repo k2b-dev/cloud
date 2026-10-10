@@ -1,3 +1,4 @@
+import { suppressTextSelection } from "../internal/text-selection";
 import {
   APP_WORKSPACE_DETAIL_MAX,
   APP_WORKSPACE_DETAIL_MIN,
@@ -39,7 +40,7 @@ type ActiveResize = {
   /** A hideable sidebar dragged below half its minimum previews the hidden state. */
   hiding: boolean;
   direction: 1 | -1;
-  previousUserSelect: string;
+  releaseTextSelection: () => void;
 };
 
 const HANDLE_SELECTOR = "[data-app-workspace-resize]";
@@ -352,7 +353,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
       if (finished.kind !== "drawer") reconcilePanes(finished.root, layoutState);
     }
     if (finished.handle.hasPointerCapture?.(finished.pointerId)) finished.handle.releasePointerCapture(finished.pointerId);
-    document.body.style.userSelect = finished.previousUserSelect;
+    finished.releaseTextSelection();
     window.removeEventListener("pointermove", onPointerMove);
     window.removeEventListener("pointerup", stopResize);
     window.removeEventListener("pointercancel", stopResize);
@@ -379,11 +380,10 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
       moved: false,
       hiding: false,
       direction: resizeDirection(handle, kind),
-      previousUserSelect: document.body.style.userSelect,
+      releaseTextSelection: suppressTextSelection(event.pointerId),
     };
     root.dataset.workspaceResizeActive = kind;
     handle.dataset.workspaceResizeActive = "true";
-    document.body.style.userSelect = "none";
     handle.setPointerCapture?.(event.pointerId);
     window.addEventListener("pointermove", onPointerMove);
     window.addEventListener("pointerup", stopResize);

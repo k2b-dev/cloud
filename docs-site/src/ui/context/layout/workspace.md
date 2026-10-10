@@ -561,7 +561,20 @@ not know an application id or cookie name.
 
 The controller handles pointer and keyboard resizing, clamps sizes to the
 available workspace, updates separator values, and writes only after a resize
-settles or a keyboard step completes.
+settles or a keyboard step completes. While a pointer drags a handle, the page
+selects no text in any browser, including Safari and every other browser on
+iPadOS; outside a drag, text selects as usual.
+
+A custom pointer drag gets the same behavior from `suppressTextSelection`.
+Call it with the pointer's id when the drag starts and call the function it
+returns when the drag ends. The pointer's `pointerup` or `pointercancel` and a
+window `blur` also end it, overlapping drags share it, and the last release
+restores the page's inline styles exactly. A selection from before the press
+stays; one the press or the drag makes is cleared.
+
+```ts
+declare function suppressTextSelection(pointerId: number): () => void;
+```
 
 Set `controller={false}` only when a custom host installs the exported
 `installAppWorkspaceController` itself. Installing both controllers would

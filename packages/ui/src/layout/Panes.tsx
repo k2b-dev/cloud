@@ -1,6 +1,7 @@
 import { type DndCollisionContext, type DndController, type DndDroppableSnapshot, dnd } from "@k2b/stdlib/solid";
 import { createEffect, createMemo, createSignal, createUniqueId, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { Tooltip } from "../feedback/Tooltip";
+import { suppressTextSelection } from "../internal/text-selection";
 import { useUiMessages } from "../intl/messages";
 import {
   activatePanesItem,
@@ -404,7 +405,9 @@ function PanesSplitRenderer(props: Omit<RendererProps, "node"> & { node: () => P
     const onEnd = (end: PointerEvent) => {
       if (end.pointerId === pointerId) finishActiveResize();
     };
+    const releaseTextSelection = suppressTextSelection(pointerId);
     stopResize = () => {
+      releaseTextSelection();
       if (frame !== undefined) cancelAnimationFrame(frame);
       frame = undefined;
       pendingRatio = undefined;
@@ -568,6 +571,8 @@ function PanesGroupRenderer(props: Omit<RendererProps, "node"> & { node: () => P
         ? current.width / 2
         : Math.min(current.width, Math.max(0, event.clientX - track.getBoundingClientRect().left - current.left));
     track.setPointerCapture(event.pointerId);
+    // The track's own pointerup or pointercancel ends the hold.
+    suppressTextSelection(event.pointerId);
     scrollFromPointer(event);
   };
   onMount(() => {
