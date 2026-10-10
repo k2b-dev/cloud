@@ -2,92 +2,126 @@
 id: grids-forms
 title: Formulare
 icon: ti ti-forms
-description: Gezielte und validierte Abläufe zur Dateneingabe erstellen.
+description: Erstelle gezielte, validierte Abläufe zur Eingabe von Datensätzen.
 order: 130
 ---
-Ungespeicherte oder sendende Formulare warnen beim Verlassen der Seite.
-Formulare validieren und schreiben Datensätze in eine Tabelle. Nutze eine Grids App für mehrseitige Abläufe.
+Ein Formular validiert Datensätze und schreibt sie in eine Tabelle. Nutze für Abläufe mit mehreren Seiten eine Grids App.
 
-Vor dem Absenden prüfen Formulare Pflichtangaben, Werteformate und konfigurierte Feldgrenzen im Browser. Fehler erscheinen direkt an den Eingaben; beim Absenden erhält das erste fehlerhafte Feld den Fokus und es wird keine Anfrage gesendet. Danach aktualisieren sich die Hinweise beim Korrigieren. Der Server prüft weiterhin jede Übermittlung, einschließlich Berechtigungen und Verweisen auf andere Datensätze.
+Vor dem Absenden prüft der Browser Pflichtangaben, Werteformate und konfigurierte Feldgrenzen. Fehler erscheinen direkt an den Eingaben. Sendest du mit einem Fehler ab, erhält das erste fehlerhafte Feld den Fokus, und das Formular sendet keine Anfrage. Danach aktualisieren sich die Fehler, während du die Werte korrigierst. Der Server prüft trotzdem jede Übermittlung, einschließlich Zugriff und Verweisen auf andere Datensätze.
 
-Zahleingaben zeigen keine angehängten Nachkommanullen: `1.0000` erscheint als `1`. Dezimalmengen und exakte Werte bleiben erlaubt; während du tippst, bleibt der eingegebene Text bis zum Verlassen des Feldes erhalten.
+Zahleneingaben zeigen keine bedeutungslosen Nullen am Ende: `1.0000` erscheint als `1`. Dezimalmengen und exakte Dezimalwerte bleiben möglich. Der Text, den du eingibst, bleibt erhalten, bis du das Feld verlässt.
 
-**Berechnete Werte** zeigt bis zu 20 schreibgeschützte Formeln aus sichtbaren Eingaben. Beschriftungen erlauben 200 Zeichen, Hinweise 2.000. Unvollständige Werte zeigen einen Strich; leere Listen verbergen die Zusammenfassung. Fehler bleiben sichtbar.
+Ein Formular warnt vor dem Verlassen der Seite, solange es ungespeicherte Änderungen hat oder noch sendet.
 
-**Feldbreite** setzt `width: "fullWidth"` (Standard) oder `"compact"` an `user_input`, `computedFields`, `inlineCreate.fields` und Objektlisten-Unterspalten. Aufeinanderfolgende kompakte Felder teilen Platz und umbrechen in Reihenfolge; volle Breite beginnt eine ganze Zeile. Objektlisten nutzen die Breiten für ihre Tabellenfelder; der Eintragsdialog verwendet das Formularlayout. `detailsOnly`-Berechnungen stehen im Eintragsdialog.
+**Berechnete Werte** zeigt bis zu 20 schreibgeschützte Formeln aus sichtbaren Eingaben. Beschriftungen erlauben 200 Zeichen, Hinweise 2.000. Unvollständige Werte zeigen einen Strich. Leere Listen blenden die Zusammenfassung aus. Fehler bleiben sichtbar.
 
-Bei Objektlisten schlägt **Regeln und Berechnung → Standardwert** einen Wert nur beim Hinzufügen eines Eintrags vor. Vorhandene Werte bleiben unverändert. In der Konfiguration steht dafür ein fester `defaultValue` an der Unterspalte; Auswahlwerte verwenden Options-IDs. Der Wert muss die Spaltenregeln erfüllen. Berechnete Spalten haben keine Standardwerte. API-Schreibzugriffe ergänzen fehlende Zellen nicht aus diesen Vorschlägen.
+**Feldbreite** setzt `width: "fullWidth"` (Standard) oder `"compact"` an `user_input`, `computedFields`, `inlineCreate.fields` und Spalten von Objektlisten. Aufeinanderfolgende kompakte Felder teilen sich den Platz und umbrechen der Reihe nach. Ein Feld mit voller Breite beginnt eine neue Zeile. Objektlisten-Tabellen verteilen mit den Breiten den Platz zwischen ihren Eingaben. Der Eintragsdialog verwendet das Formularlayout. `detailsOnly`-Berechnungen erscheinen im Eintragsdialog.
+
+Bei Spalten von Objektlisten schlägt **Regeln und Berechnung → Standardwert** einen Wert nur vor, wenn jemand einen Eintrag hinzufügt. Vorhandene Werte bleiben unverändert. Setze dafür in der Konfiguration einen festen `defaultValue` an der Spalte. Auswahlspalten verwenden Options-IDs. Der Wert muss die Regeln der Spalte erfüllen. Berechnete Spalten haben keine Standardwerte. API-Schreibvorgänge ergänzen fehlende Zellen nicht aus diesen Vorschlägen.
 
 ## Objektlisten bearbeiten {icon="table"}
 
-Objektlisten zeigen kompakte Zeilen. Beim Wechsel zur Eingabe bleiben Zeilenhöhen und Spaltenbreiten gleich. Lange Anzeigewerte werden gekürzt; im Eintragseditor kannst du sie vollständig lesen. Fehlermeldungen stehen unter der Tabelle und nennen Eintrag und Feld. Klicke auf einen Wert, um die Zeile zu bearbeiten. Neue Einträge öffnen sich direkt zur Eingabe. Tab wechselt zwischen Feldern und Zeilen. In einzeiligen Text- und Zahleneingaben schließt Enter die Zeile ab, Escape setzt ihre Änderungen zurück und Strg/Cmd+Enter fügt einen weiteren Eintrag hinzu.
+Objektlisten zeigen kompakte Zeilen. Beim Wechsel zur Bearbeitung bleiben Zeilenhöhen und Spaltenbreiten gleich. Lange Anzeigewerte werden gekürzt. Öffne den Eintragseditor, um sie vollständig zu lesen. Fehlermeldungen stehen unter der Tabelle und nennen Eintrag und Feld.
 
-Reicht der Platz nicht aus, öffnest du den Editor über die Zusammenfassung eines Eintrags. Einfache Textlisten bleiben auch auf dem Handy direkt bearbeitbar. **Eintrag bearbeiten** öffnet außerdem lange Texte, Mehrfachauswahl, Zusatzangaben und die Aktionen zum Verschieben oder Entfernen. **Übernehmen** führt zum Formular zurück; **Übernehmen & weitere** setzt die Eingabe fort. Abbrechen verwirft nur die Änderungen dieses Eintrags. Gespeichert werden alle Einträge gemeinsam mit dem Formular.
+- Wähle einen Wert, um seine Zeile zu bearbeiten. Ein neuer Eintrag öffnet sich direkt zur Eingabe.
+- **Tab** wechselt zwischen Feldern und Zeilen.
+- In einzeiligen Text- und Zahleneingaben:
+  - **Enter** schließt die Zeile ab.
+  - **Escape** setzt die Änderungen der Zeile zurück.
+  - **Strg+Enter** oder **Cmd+Enter** fügt einen weiteren Eintrag hinzu.
+
+Reicht der Platz nicht aus, wähle die Zusammenfassung eines Eintrags, um seinen Editor zu öffnen. Einfache Textlisten bleiben auch auf dem Handy direkt bearbeitbar. **Eintrag bearbeiten** öffnet außerdem lange Texte, Mehrfachauswahl, Zusatzangaben und die Aktionen zum Verschieben oder Entfernen des Eintrags.
+
+- **Übernehmen** führt zurück zum Formular.
+- **Übernehmen & weitere** setzt die Eingabe fort.
+- **Abbrechen** verwirft nur die Änderungen an diesem Eintrag.
+
+Grids speichert alle Einträge gemeinsam mit dem Formular.
 
 ## Ein gezieltes Formular erstellen {icon="forms"}
 
-Jede Tabelle hat ein virtuelles Standardformular. Eigene Formulare steuern Eingaben, Beschriftungen, Hinweise, Standardwerte und öffentlichen Zugriff.
+Jede Tabelle hat ein virtuelles Standardformular. Ein eigenes Formular steuert Eingaben, Beschriftungen, Hinweise, Standardwerte und öffentlichen Zugriff.
 
-**Erstellen** speichert ein neues eigenes Formular sofort und öffnet seinen Editor. Passe es an und wähle **Speichern** oder übernimm es mit **Fertig** so, wie es erstellt wurde.
+**Erstellen** speichert ein neues eigenes Formular sofort und öffnet seinen Editor. Passe es an und wähle **Speichern**, oder wähle **Fertig**, um es so zu behalten, wie es erstellt wurde.
 
-Der Datumsstandard `{"kind":"now"}` erscheint beim Öffnen eines Erstellformulars in deiner Datumszeitzone. Prüfe ihn vor dem Speichern. Bearbeiten behält gespeicherte Datumswerte bei.
+Ein Datumsfeld mit dem Standard `{"kind":"now"}` wird beim Öffnen eines Erstellformulars in deiner Datumszeitzone ausgefüllt. Prüfe den Wert vor dem Speichern. Beim Bearbeiten eines Datensatzes bleiben gespeicherte Datumswerte erhalten.
 
 In einem eigenen Formular kannst du:
 
 - Titel, Beschreibung, Titelbild, Beschriftung der Senden-Schaltfläche und Erfolgsmeldung festlegen;
-- Eingaben anordnen und erklären, was die einzelnen Antworten bedeuten;
-- für eine kompatible Zahlen-, Dauer-, Datums- oder Datum-Uhrzeit-Eingabe festlegen, dass sie vor, nach, gleich oder ungleich einer anderen Eingabe sein muss;
+- Eingaben anordnen und erklären, was jede Antwort bedeutet;
+- festlegen, dass eine kompatible Zahlen-, Dauer-, Datums- oder Datum-Uhrzeit-Eingabe vor, nach, gleich oder ungleich einer anderen Eingabe sein muss;
 - verborgene Werte anwenden, die die absendende Person nicht ändern kann, zum Beispiel einen festen Anfragestatus;
-- für konfigurierte Relationsfelder das direkte Erstellen verknüpfter Datensätze erlauben;
+- konfigurierten Relationsfeldern erlauben, verknüpfte Datensätze direkt zu erstellen;
 - nach erfolgreichem Absenden weiterleiten;
-- Eingaben pausieren, ohne das Formular zu löschen.
+- Eingaben mit dem Schalter **Aktiv** pausieren, ohne das Formular zu löschen.
 
-Eine angemeldete Person mit Schreibzugriff auf die Basis kann das Formular absenden. Eine enger begrenzte angemeldete Zielgruppe kann nur über eine Grids App absenden, die das Formular ausdrücklich enthält. Der öffentliche Token bleibt der eigenständige Weg für anonyme Eingaben.
+Eine angemeldete Person mit Zugriff **Bearbeiten** auf die Base kann ein Formular absenden. Eine enger begrenzte angemeldete Zielgruppe kann nur über eine Grids App absenden, die das Formular ausdrücklich enthält. Das öffentliche Token bleibt der eigene Weg für anonyme Eingaben.
 
-Aktiviere **Öffentliches Formular** nur, wenn anonyme Eingaben vorgesehen sind. Die eindeutige öffentliche URL akzeptiert ausschließlich die konfigurierten Felder des Formulars und wendet immer seine verborgenen Werte an. Wenn du den öffentlichen Zugriff deaktivierst, wird der vorhandene Link ungültig. Beim erneuten Aktivieren entsteht ein neuer Link.
+Aktiviere **Öffentlich** nur, wenn du anonyme Eingaben willst. Die eindeutige URL eines öffentlichen Formulars akzeptiert nur die konfigurierten Felder des Formulars und wendet immer seine verborgenen Werte an.
 
-Prüfe vor dem Teilen ungültige Eingaben, Pflichtfelder, verknüpfte Datensätze, Erfolgstext und Weiterleitung.
+:::warning Das Ausschalten des öffentlichen Zugriffs macht den Link ungültig
+Schaltest du den öffentlichen Zugriff aus, funktioniert der vorhandene Link nicht mehr. Schaltest du ihn wieder ein, erstellt Grids einen neuen Link.
+:::
 
-Die feldübergreifende Validierung gehört in das Formular, wenn zwei Antworten übereinstimmen müssen, bevor ein Datensatz erstellt werden darf. Lege zum Beispiel fest, dass **Startdatum** am oder vor dem **Fälligkeitsdatum** liegen muss. Der Browser erklärt eine verletzte Regel am zugehörigen Feld; der Server prüft dieselbe Regel erneut. Nutze stattdessen einen Workflow, wenn die Validierung von anderen Datensätzen, der aktuellen Kapazität, Berechtigungen oder nebenläufig veränderlichen Auswirkungen abhängt.
+Prüfe vor dem Teilen ungültige Eingaben, Pflichtfelder, das Erstellen verknüpfter Datensätze, den Erfolgstext und Weiterleitungen.
+
+Eine feldübergreifende Validierung gehört ins Formular, wenn zwei Antworten übereinstimmen müssen, bevor Grids einen Datensatz erstellt. Lege zum Beispiel fest, dass **Startdatum** am oder vor dem **Fälligkeitsdatum** liegt. Der Browser erklärt eine verletzte Regel an ihrem Feld, und der Server prüft dieselbe Regel erneut. Nutze stattdessen einen Workflow, wenn die Validierung von anderen Datensätzen, der aktuellen Kapazität, dem Zugriff oder gleichzeitig veränderlichen Auswirkungen abhängt.
 
 ## Ein Formular in einer Grids App wiederverwenden {icon="app-window"}
 
-Eine Grids App kann ein vorhandenes aktives Formular als Block darstellen. Das Formular bleibt für seine Eingaben und Validierung verantwortlich. Die App kann feste Relationswerte aus deklarierten Seitenparametern ergänzen, die aktuell angemeldete Person einem Principal-Eingabefeld zuweisen und nach erfolgreichem Absenden zu einer anderen Seite wechseln.
+Eine Grids App kann ein vorhandenes aktives Formular als Block zeigen. Das Formular behält seine Eingaben und seine Validierung. Die App kann:
 
-Darstellung und Absenden prüfen die veröffentlichte Capability und `availableWhen`. Inaktive oder nicht deklarierte Formulare bleiben gesperrt.
+- feste Relationswerte aus deklarierten Seitenparametern ergänzen;
+- die aktuell angemeldete Person einem Principal-Feld zuweisen;
+- nach erfolgreichem Absenden eine andere Seite öffnen.
 
-Wähle **Datensatz dieser Seite bearbeiten** für ein Formular auf einer passenden Datensatzseite, um einen bestehenden Entwurf mit seinen konfigurierten verknüpften Eingaben gemeinsam zu ändern. Anlegen bleibt der Standard; öffentliche Links und globale Seitenleistenformulare legen immer neue Datensätze an. Bestehende verknüpfte Änderungen benötigen exklusive Verbindungen zu diesem Eltern-Datensatz innerhalb derselben Base. Das Entfernen einer Zeile löst die Verknüpfung, löscht aber keinen Kinddatensatz. Finalisierte Datensätze bleiben schreibgeschützt.
+Anzeigen und Absenden prüfen die veröffentlichte Capability und `availableWhen`. Inaktive oder nicht deklarierte Formulare bleiben nicht verfügbar.
 
-Speichern prüft Versionen und übernimmt verknüpfte Änderungen gemeinsam. Verbindungsfehler im offenen Dialog erneut versuchen; bei Versionskonflikten neu laden und vor dem Speichern prüfen. CLI/API-Versionen, Idempotenzschlüssel, Payloads und Grenzen stehen in der [API-Referenz](/app/grids/help/grids-custom-app-api).
+Wähle **Datensatz dieser Seite bearbeiten** für ein Formular auf einer passenden Datensatzseite. Personen können dann einen bestehenden Entwurf zusammen mit seinen konfigurierten verknüpften Eingaben ändern. Erstellen bleibt der Standard. Öffentliche Links und globale Formulare der Seitenleiste erstellen immer. Das Bearbeiten bestehender verknüpfter Datensätze erfordert exklusive Verknüpfungen zu diesem übergeordneten Datensatz in derselben Base. Das Entfernen einer verknüpften Zeile löst die Verknüpfung und löscht nichts. Finalisierte Datensätze bleiben schreibgeschützt.
 
-## Konfiguration für CLI- und API-Autoren {icon="code"}
+Das Speichern prüft Versionen und speichert verknüpfte Änderungen gemeinsam. Versuche es nach einem Verbindungsfehler im offenen Dialog erneut. Lade nach einem Versionskonflikt neu und prüfe die Daten vor dem Speichern. Die [API-Referenz](/app/grids/help/grids-custom-app-api) beschreibt Versionen, Idempotenzschlüssel, Payloads und Grenzen für CLI und API.
 
-Formular-`config` verwendet folgende Schlüssel. Öffentliche APIs nehmen öffentliche Feld-IDs an, keine internen UUIDs.
+## Formulare über CLI oder API konfigurieren {icon="code"}
+
+Die Formular-`config` verwendet diese Schlüssel. Öffentliche APIs akzeptieren öffentliche Feld-IDs, keine internen UUIDs.
 
 | Schlüssel | Bedeutung |
 | --- | --- |
 | `title`, `description` | Optionaler Text über den Eingaben |
-| `fields` | Geordnete Eingaben und feste Werte; jedes Feld nur einmal |
-| `computedFields` | Bis 20 nur lesende Zusammenfassungen: `{fieldId, label?, helpText?, width?}`; Label bis 200, Hinweis bis 2.000 Zeichen |
+| `fields` | Geordnete Einträge für Eingaben und verborgene Werte; jedes Feld nur einmal |
+| `computedFields` | Bis 20 schreibgeschützte Zusammenfassungen: `{fieldId, label?, helpText?, width?}`; Beschriftung bis 200, Hinweis bis 2.000 Zeichen |
 | `validations` | Bis 20 feldübergreifende Regeln, siehe unten |
 | `submitLabel`, `successMessage` | Optionaler Aktions- und Erfolgstext |
 | `redirectUrl` | Optionales Ziel nach erfolgreicher Übermittlung; null bedeutet keine Weiterleitung |
-| `titleImage` | Optionale Bild-Data-URL, bis 1.000.000 Zeichen |
+| `titleImage` | Optionale Bild-Data-URL, höchstens 1.000.000 Zeichen |
 
-Eine sichtbare Eingabe lautet `{kind:"user_input", fieldId, label?, helpText?, required?, defaultValue?, width?, inlineCreate?, relationFilter?}`. Ein verborgenes Feld lautet `{kind:"form_value", fieldId, value}`: Der Server setzt den festen Wert, statt einen mitgesendeten Wert zu übernehmen.
+Ein sichtbarer Eintrag lautet `{kind:"user_input", fieldId, label?, helpText?, required?, defaultValue?, width?, inlineCreate?, relationFilter?}`. Ein verborgener Eintrag lautet `{kind:"form_value", fieldId, value}`. Der Server setzt diesen festen Wert und vertraut dafür keinen mitgesendeten Daten.
 
-Eine Regel lautet `{leftFieldId, operator, rightFieldId, message, errorFieldId?}`. Operatoren: `eq`, `neq`, `lt`, `lte`, `gt`, `gte`. Die Meldung hat 1–240 Zeichen. Vergleiche kompatible Zahlen-, Dauer- oder Datumseingaben. `errorFieldId` bestimmt das Feld für die Fehlermeldung. Für zwei Relationsfelder verlangt `anyPresent` mindestens eine Auswahl in einem der beiden Felder. Der Formulareditor bietet diese Regel an; Browser und Server zeigen dieselbe konfigurierte Meldung.
+Eine Regel lautet `{leftFieldId, operator, rightFieldId, message, errorFieldId?}`. Die Operatoren sind `eq`, `neq`, `lt`, `lte`, `gt` und `gte`. Die Meldung hat 1–240 Zeichen. Vergleiche kompatible Zahlen-, Dauer- oder Datumseingaben. `errorFieldId` bestimmt das Feld, das den Fehler zeigt. Für zwei Relationsfelder verlangt `anyPresent` mindestens eine Auswahl in einem der beiden Felder. Der Formulareditor bietet diese Regel an. Browser und Server zeigen dieselbe konfigurierte Meldung.
 
-Für ein Relationsfeld nimmt `relationFilter` den vorhandenen Datensatz-Filterbaum an, beschränkt auf Felder seiner Zieltabelle. Kombiniere beispielsweise `{fieldId:"PUBLIC",op:"=",value:true}` und `{fieldId:"STATUS",op:"is",value:"available"}` unter `{op:"AND",filters:[...]}`. Ersetze die Beispiel-IDs durch öffentliche IDs der Zielfelder.
+### Die Auswahl eines Relationsfelds filtern
 
-Auswahlfilter werden per API oder Vorlage konfiguriert; der Formulareditor bewahrt sie, bietet dafür aber keinen Filtereditor. Gefilterte Eingaben benötigen eine gespeicherte Zieltabelle derselben Base und erlauben kein `inlineCreate`. Die Auswahl zeigt nur passende Einträge. Beim Speichern prüft der Server jeden ausgewählten Datensatz erneut unter Sperre. Gelöschte, vom Filter ausgeschlossene oder inzwischen nicht mehr verfügbare Einträge verhindern die gesamte Übermittlung. Eine Auswahl reserviert noch kein Gerät. Nutze für Reservierung oder Ausgabe einen Workflow.
+Für ein Relationsfeld akzeptiert `relationFilter` den vorhandenen Filterbaum für Datensätze, beschränkt auf Felder seiner Zieltabelle. Kombiniere zum Beispiel `{fieldId:"PUBLIC",op:"=",value:true}` und `{fieldId:"STATUS",op:"is",value:"available"}` unter `{op:"AND",filters:[...]}`. Ersetze diese Beispiel-IDs durch die öffentlichen IDs der Zielfelder.
 
-Der Filter gilt in veröffentlichten Grids Apps, im angemeldeten Base-Formular und im Formular mit aktivem öffentlichem Token. Ein öffentlicher Link zeigt damit die Anzeigetexte der passenden Datensätze: Aktiviere ihn nur, wenn das gewünscht ist. Es wird keine Berechtigung für die gesamte Zieltabelle vergeben. Nach Änderungen am Filter oder an der Konfiguration seiner Zielfelder muss eine betroffene Grids App erneut veröffentlicht werden. In der Vorschau ohne autorisierten Auswahl-Endpunkt bleibt die gefilterte Auswahl deaktiviert.
+Konfiguriere Auswahlfilter über die API oder eine Vorlage. Der Formulareditor behält sie, hat aber keinen Filtereditor. Ein gefiltertes Feld braucht eine gespeicherte Zieltabelle in derselben Base und kann `inlineCreate` nicht aktivieren. Seine Auswahl liefert nur passende Bezeichnungen. Beim Absenden prüft Grids jeden ausgewählten Datensatz unter einer Sperre erneut. Eine Auswahl, die gelöscht, vom Filter ausgeschlossen oder nicht mehr verfügbar ist, lehnt die ganze Übermittlung ab. Eine Auswahl reserviert nichts. Nutze für eine Reservierung oder Übergabe einen Workflow.
 
-Gefilterte Auswahlen verwenden `GET /api/grids/forms/:formId/relations/:fieldId/lookup` mit Base Write oder `/api/grids/forms/public/:token/relations/:fieldId/lookup` mit aktivem öffentlichem Token. Parameter: `_search` (bis 200 Zeichen), `_limit` (1–50, Standard 10) und `_exclude` (kommagetrennte öffentliche Datensatz-IDs, höchstens 1.000). Antwort: `{items:[{id,label}]}`. Custom Apps verwenden weiterhin ihren veröffentlichten Formular-Endpunkt.
+Der Filter gilt in einer veröffentlichten Grids App, im angemeldeten Base-Formular und im Formular mit aktivem öffentlichem Token. Ein öffentliches Token zeigt deshalb die Anzeigebezeichnungen der passenden Datensätze.
 
-Bei geeigneten Relationsfeldern wählt `inlineCreate: {enabled:true, fields:[...]}` die Zieleingaben. Jede hat `fieldId` und optional `label`, `helpText`, `width`, `required`, `defaultValue`. Inline-Erstellung ist eine Ebene tief: keine weiteren verschachtelten Relationen, Datei-Uploads, Systemwerte oder berechneten Eingaben.
+:::warning Ein öffentliches Token zeigt passende Bezeichnungen
+Aktiviere öffentlichen Zugriff nur, wenn alle mit dem Link diese Bezeichnungen sehen dürfen.
+:::
 
-Formularstandards schlagen Anfangsantworten vor. Objektlistenstandards schlagen Werte neu hinzugefügter Zellen vor. Beides ist keine Berechtigungsregel und ersetzt keine festen Werte. Nutze sichere Erleichterungen wie Menge 1; erfinde keine Preise, Bankkonten, Zahlungsbestätigungen oder Freigaben.
+Der vorhandene Zugriff auf das Formular reicht aus. Grids gibt keinen Zugriff auf die Zieltabelle. Änderst du den Filter oder die Konfiguration eines Felds, auf das er verweist, musst du eine betroffene Grids App erneut veröffentlichen. Eine Vorschau ohne autorisierte Suche deaktiviert die gefilterte Auswahl.
 
-Gespeicherte Feldstandards und skalare Optionen stehen unter [Feldkonfiguration](/app/grids/help/grids-field-configuration). Übermittlungsdaten veröffentlichter Apps, Versionsprüfungen und Zuweisung des aktuellen Nutzers stehen in der [Grids-App-API](/app/grids/help/grids-custom-app-api).
+Gefilterte Auswahlen verwenden `GET /api/grids/forms/:formId/relations/:fieldId/lookup` mit Zugriff **Bearbeiten** auf die Base oder `/api/grids/forms/public/:token/relations/:fieldId/lookup` mit einem aktiven öffentlichen Token. Die Parameter sind `_search` (bis 200 Zeichen), `_limit` (1–50, Standard 10) und `_exclude` (kommagetrennte öffentliche Datensatz-IDs, höchstens 1.000). Die Antwort ist `{items:[{id,label}]}`. Grids Apps verwenden ihren vorhandenen veröffentlichten Formular-Endpunkt.
+
+### Verknüpfte Datensätze direkt erstellen
+
+Bei einem geeigneten Relationsfeld wählt `inlineCreate: {enabled:true, fields:[...]}` die Eingaben der Zieltabelle. Jeder Eintrag hat `fieldId` und optional `label`, `helpText`, `width`, `required` und `defaultValue`. Die direkte Erstellung ist eine Ebene tief. Sie kann keine weiteren Relationen verschachteln, keine Dateifelder hochladen und keine System- oder berechneten Werte annehmen.
+
+### Standardwerte sicher verwenden
+
+Formularstandards schlagen Anfangsantworten vor. Standards für Spalten von Objektlisten schlagen Werte für neu hinzugefügte Zellen vor. Beides ist keine Zugriffsregel und ersetzt keine verborgenen Werte. Setze sichere Erleichterungen wie Menge 1. Erfinde keinen Preis, kein Bankkonto, keine Zahlungsbestätigung und keine Genehmigung.
+
+Gespeicherte Feldstandards und alle skalaren Optionen beschreibt [Feldkonfiguration nachschlagen](/app/grids/help/grids-field-configuration). Payloads veröffentlichter Apps, optimistische Versionen und die Zuweisung der aktuellen Person beschreibt die [Custom-App-API-Referenz](/app/grids/help/grids-custom-app-api).

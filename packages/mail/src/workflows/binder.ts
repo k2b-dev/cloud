@@ -117,7 +117,7 @@ const mailValueDescriptors: Record<string, WorkflowValuePathDescriptor> = {
       subject: textValue,
       summary: textValue,
       summaryRevision: { kind: "scalar", type: "core.number" },
-      assigneeUserId: textValue,
+      assigneeUserIds: { kind: "array", type: "core.array", items: textValue },
       workStatus: textValue,
       latestMessageAt: dateTimeValue,
     },

@@ -10,8 +10,9 @@ import type {
   ScheduledSend,
   ScheduledSendPage,
 } from "../contracts";
+import { draftVisibleTo, type MailboxAccess, messageVisibleTo, requireMailboxAccess } from "./access";
 import { auditActorFromRequest, type MailRequestContext } from "./auth";
-import { requireMailboxCollaborationPermission } from "./collaboration";
+import { commandVisibleTo } from "./command-authorization";
 import { enqueueDraftProjectionSnapshot, queueDraftProjectionInTransaction } from "./draft-provider-projection";
 import { mailLive } from "./live";
 import { OUTBOX_MAILBOX_AUTH_REQUIRED } from "./outbound-delivery";
@@ -108,12 +109,21 @@ const mapRows = (rows: ScheduledRow[]): ScheduledSend[] =>
     };
   });
 
-const scheduledCount = async (mailboxId: string, db: SqlClient = sql): Promise<number> => {
+/**
+ * Whether the scheduled send `outbox` of draft `draft` is visible: its draft, and the outgoing message
+ * it already placed in a conversation. Cancellation and the queued send check the same.
+ */
+const scheduledSendVisibleTo = (access: MailboxAccess) =>
+  sql`(${draftVisibleTo(access, sql`draft`)} AND (outbox.message_id IS NULL OR ${messageVisibleTo(access, sql`outbox.message_id`)}))`;
+
+const scheduledCount = async (mailboxId: string, access: MailboxAccess, db: SqlClient = sql): Promise<number> => {
   const [row] = await db<{ total: number | string }[]>`
     SELECT COUNT(*)::int AS total
     FROM mail.outbox_submissions outbox
     JOIN mail.commands command ON command.id = outbox.command_id
-    WHERE outbox.mailbox_id = ${mailboxId}::uuid
+    JOIN mail.drafts draft ON draft.id = outbox.draft_id
+    WHERE ${scheduledSendVisibleTo(access)}
+      AND outbox.mailbox_id = ${mailboxId}::uuid
       AND outbox.state IN ('scheduled', 'undo_window')
       AND command.kind = 'send'
       AND command.payload ->> 'scheduledAt' IS NOT NULL
@@ -127,14 +137,14 @@ export const listScheduledSends = async (params: {
   cursor?: string;
   limit?: number;
 }): Promise<Result<ScheduledSendPage>> => {
-  const allowed = await requireMailboxCollaborationPermission(params.context, params.mailboxId, "read");
+  const allowed = await requireMailboxAccess(params.context, params.mailboxId, "read");
   if (!allowed.ok) return allowed;
   const cursor = decodeCursor(params.cursor);
   if (!cursor.ok) return cursor;
   const limit = Math.min(Math.max(Math.floor(params.limit ?? 50), 1), 100);
   try {
     return await sql.begin(async (tx) => {
-      const currentPermission = await requireMailboxCollaborationPermission(params.context, params.mailboxId, "read", tx);
+      const currentPermission = await requireMailboxAccess(params.context, params.mailboxId, "read", tx);
       if (!currentPermission.ok) return currentPermission;
       const rows = await tx<ScheduledRow[]>`
         SELECT
@@ -169,7 +179,8 @@ export const listScheduledSends = async (params: {
         LEFT JOIN auth.users actor_user ON command.actor_kind = 'user' AND actor_user.id = command.actor_id
         LEFT JOIN auth.service_accounts actor_service
           ON command.actor_kind = 'service_account' AND actor_service.id = command.actor_id
-        WHERE outbox.mailbox_id = ${params.mailboxId}::uuid
+        WHERE ${scheduledSendVisibleTo(currentPermission.data)}
+          AND outbox.mailbox_id = ${params.mailboxId}::uuid
           AND outbox.state IN ('scheduled', 'undo_window')
           AND command.kind = 'send'
           AND command.payload ->> 'scheduledAt' IS NOT NULL
@@ -180,7 +191,7 @@ export const listScheduledSends = async (params: {
         ORDER BY outbox.requested_at ASC, outbox.id ASC
         LIMIT ${limit + 1}
       `;
-      const total = await scheduledCount(params.mailboxId, tx);
+      const total = await scheduledCount(params.mailboxId, currentPermission.data, tx);
       const hasMore = rows.length > limit;
       const pageRows = hasMore ? rows.slice(0, limit) : rows;
       const items = mapRows(pageRows);
@@ -201,11 +212,11 @@ export const getScheduledSend = async (params: {
   mailboxId: string;
   scheduledSendId: string;
 }): Promise<Result<ScheduledSend>> => {
-  const allowed = await requireMailboxCollaborationPermission(params.context, params.mailboxId, "read");
+  const allowed = await requireMailboxAccess(params.context, params.mailboxId, "read");
   if (!allowed.ok) return allowed;
   try {
     return await sql.begin(async (tx) => {
-      const currentPermission = await requireMailboxCollaborationPermission(params.context, params.mailboxId, "read", tx);
+      const currentPermission = await requireMailboxAccess(params.context, params.mailboxId, "read", tx);
       if (!currentPermission.ok) return currentPermission;
       const [row] = await tx<ScheduledRow[]>`
         SELECT
@@ -240,7 +251,8 @@ export const getScheduledSend = async (params: {
         LEFT JOIN auth.users actor_user ON command.actor_kind = 'user' AND actor_user.id = command.actor_id
         LEFT JOIN auth.service_accounts actor_service
           ON command.actor_kind = 'service_account' AND actor_service.id = command.actor_id
-        WHERE outbox.mailbox_id = ${params.mailboxId}::uuid
+        WHERE ${scheduledSendVisibleTo(currentPermission.data)}
+          AND outbox.mailbox_id = ${params.mailboxId}::uuid
           AND outbox.id = ${params.scheduledSendId}::uuid
           AND outbox.state IN ('scheduled', 'undo_window')
           AND command.kind = 'send'
@@ -254,13 +266,13 @@ export const getScheduledSend = async (params: {
 };
 
 export const countScheduledSends = async (params: { context: MailRequestContext; mailboxId: string }): Promise<Result<number>> => {
-  const allowed = await requireMailboxCollaborationPermission(params.context, params.mailboxId, "read");
+  const allowed = await requireMailboxAccess(params.context, params.mailboxId, "read");
   if (!allowed.ok) return allowed;
   try {
     return await sql.begin(async (tx) => {
-      const currentPermission = await requireMailboxCollaborationPermission(params.context, params.mailboxId, "read", tx);
+      const currentPermission = await requireMailboxAccess(params.context, params.mailboxId, "read", tx);
       if (!currentPermission.ok) return currentPermission;
-      return ok(await scheduledCount(params.mailboxId, tx));
+      return ok(await scheduledCount(params.mailboxId, currentPermission.data, tx));
     });
   } catch {
     return fail(err.internal("Failed to count scheduled messages"));
@@ -281,11 +293,11 @@ const cancelScheduledSendBy = async (params: {
   input: CancelScheduledSendInput;
 }): Promise<Result<CancelScheduledSendResult>> => {
   if (!params.scheduledSendId && !params.commandId) return fail(err.badInput("Scheduled send id is required"));
-  const permission = await requireMailboxCollaborationPermission(params.context, params.mailboxId, "write");
+  const permission = await requireMailboxAccess(params.context, params.mailboxId, "write");
   if (!permission.ok) return permission;
   try {
     const result = await sql.begin(async (tx) => {
-      const allowed = await requireMailboxCollaborationPermission(params.context, params.mailboxId, "write", tx);
+      const allowed = await requireMailboxAccess(params.context, params.mailboxId, "write", tx);
       if (!allowed.ok) return allowed;
       const [outbox] = await tx<
         {
@@ -307,14 +319,16 @@ const cancelScheduledSendBy = async (params: {
           outbox.requested_at,
           outbox.scheduled_at,
           outbox.state,
-          command.state AS command_state
+          c.state AS command_state
         FROM mail.outbox_submissions outbox
-        JOIN mail.commands command ON command.id = outbox.command_id
+        JOIN mail.commands c ON c.id = outbox.command_id
         JOIN mail.drafts draft ON draft.id = outbox.draft_id
         WHERE outbox.mailbox_id = ${params.mailboxId}::uuid
           AND (${params.scheduledSendId ?? null}::uuid IS NULL OR outbox.id = ${params.scheduledSendId ?? null}::uuid)
           AND (${params.commandId ?? null}::uuid IS NULL OR outbox.command_id = ${params.commandId ?? null}::uuid)
-        FOR UPDATE OF outbox, command, draft
+          AND ${scheduledSendVisibleTo(allowed.data)}
+          AND ${commandVisibleTo(allowed.data, params.mailboxId)}
+        FOR UPDATE OF outbox, c, draft
       `;
       if (!outbox) return fail(err.notFound("Scheduled send"));
       if (!["scheduled", "undo_window"].includes(outbox.state) || outbox.command_state !== "queued") {

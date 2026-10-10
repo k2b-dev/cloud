@@ -231,7 +231,7 @@ const layout = (page: Page) =>
     const chips = Array.from(window.document.querySelectorAll<HTMLElement>("[data-calendar-event]"));
     return {
       header: box(window.document.querySelector(".k2b-calendar-header")!),
-      toolbar: box(window.document.querySelector(".k2b-content-calendar > div:nth-child(2)")!),
+      toolbar: box(window.document.querySelector(".k2b-calendar-header__content")!),
       calendar: box(window.document.querySelector(".k2b-content-calendar")!),
       items: chips.map((chip) => ({ title: chip.getAttribute("aria-label"), box: box(chip) })),
     };

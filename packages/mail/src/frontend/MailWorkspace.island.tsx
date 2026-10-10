@@ -176,6 +176,9 @@ function MailWorkspaceView(props: {
   const selectedConversationIds = createMemo(() => conversationSelection().ids);
   const canWrite = createMemo(() => rank(data.permission) >= 2);
   const canAdmin = createMemo(() => rank(data.permission) >= 3);
+  /** The person sees only the conversations assigned to them; assigning, merging and mailbox tools need the whole mailbox. */
+  const assignedOnly = createMemo(() => data.access.scope === "assigned");
+  const canAssign = createMemo(() => canWrite() && !assignedOnly());
   let routeLoading = () => false;
   const workspaceRefreshBlocked = () => settingsOpening() || managementOpening() !== null;
 
@@ -746,7 +749,7 @@ function MailWorkspaceView(props: {
 
   const applyCollaborationState = (next: ConversationCollaboration) => {
     const patch: MailListOptimisticPatch = {
-      assigneeUserId: next.assignee?.id ?? null,
+      assigneeUserIds: next.assignees.map((assignee) => assignee.id),
       workStatus: next.workStatus,
       snoozedUntil: next.snoozedUntil,
       revision: next.revision,
@@ -1482,14 +1485,15 @@ function MailWorkspaceView(props: {
         conversationIds,
         {
           chooseAssignee: () => chooseMailAssignee({ mailboxId, currentUserId: props.currentUserId }),
-          assign: async (ids, assigneeUserId) => {
+          assign: async (ids, assigneeUserIds, mode) => {
             const response = await apiClient.mailboxes[":mailboxId"].conversations.assign.$post({
               param: { mailboxId },
-              json: { conversationIds: ids, assigneeUserId },
+              json: { conversationIds: ids, assigneeUserIds, mode },
             });
             if (!response.ok) throw new Error(await readApiError(response, t().assignFailed));
             return response.json();
           },
+          assigneesOf: (conversationId) => data.listItems.find((item) => item.conversationId === conversationId)?.assigneeUserIds ?? null,
           clearSelection: () => {
             setConversationSelection(emptyMailConversationSelection());
             setSelectionMode(false);
@@ -1582,6 +1586,7 @@ function MailWorkspaceView(props: {
         viewCounts={data.viewCounts}
         canWrite={canWrite()}
         canAdmin={canAdmin()}
+        assignedOnly={assignedOnly()}
         managementOpening={managementOpening()}
         settingsOpening={settingsOpening()}
         detailsOpening={detailsOpening()}
@@ -1649,18 +1654,26 @@ function MailWorkspaceView(props: {
                     onListModeChange={updateListMode}
                     onToggleSelection={toggleConversationSelection}
                     onClearSelection={clearConversationSelection}
-                    onAddTags={addTagsToSelection}
-                    onAssign={assignSelection}
+                    onAddTags={assignedOnly() ? undefined : addTagsToSelection}
+                    onAssign={canAssign() ? assignSelection : undefined}
                     onBulkAction={runAction}
                     onItemAction={(item, actionId) => {
                       const target = actionTargetForItem(item, actionId);
                       if (target) void runAction(actionId, { targets: [target] });
                     }}
                     onManageTags={manageConversationTags}
-                    onMergeItem={(item) => {
-                      if (item.conversationId)
-                        void mergeConversation({ conversationId: item.conversationId, revision: item.revision, subject: item.subject });
-                    }}
+                    onMergeItem={
+                      assignedOnly()
+                        ? undefined
+                        : (item) => {
+                            if (item.conversationId)
+                              void mergeConversation({
+                                conversationId: item.conversationId,
+                                revision: item.revision,
+                                subject: item.subject,
+                              });
+                          }
+                    }
                     onOpenHref={openWorkspaceHref}
                     onLoadMore={loadMoreConversations}
                     onRefresh={reconcileWorkspace}
@@ -1671,6 +1684,7 @@ function MailWorkspaceView(props: {
                   requestUrl={requestPath()}
                   canWrite={canWrite()}
                   canAdmin={canAdmin()}
+                  mailboxWide={!assignedOnly()}
                   identities={data.identities}
                   selectionKey={data.selectedMessageId ?? data.selectedConversationId}
                   selectedConversationId={data.selectedConversationId}
@@ -1777,6 +1791,7 @@ function MailWorkspaceView(props: {
               conversationId={data.selectedConversationId!}
               active={detailsOpen()}
               canWrite={canWrite()}
+              mailboxWide={!assignedOnly()}
               initialState={data.collaborationState!}
               initialLocalTags={data.localTags}
               initialConversationLocalTags={data.conversationLocalTags!}

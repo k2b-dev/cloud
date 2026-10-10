@@ -37,7 +37,7 @@ const item: MailListItem = {
   hasAttachments: true,
   messageCount: 1,
   workStatus: "needs_action",
-  assigneeUserId: null,
+  assigneeUserIds: [],
   snoozedUntil: null,
   sourceFolderId: null,
   unreadFolderIds: [],

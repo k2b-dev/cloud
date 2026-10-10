@@ -1,4 +1,4 @@
-import { CloudResourceViewSchema } from "@k2b/cloud/contracts";
+import { CloudResourceViewSchema, GrantAccessSchema, UpdateAccessSchema } from "@k2b/cloud/contracts";
 import type {
   WorkflowDiagnostic as KernelWorkflowDiagnostic,
   WorkflowBoundPlan,
@@ -12,6 +12,8 @@ import { contactResolveMatchSchema, normalizedContactEmailSchema } from "./app-i
 export const DEFAULT_CONVERSATION_REFERENCE_PATTERN = "REF-{{ short_id }}";
 /** Upper bound for one multi-conversation request; the list selection shares it. */
 export const MAIL_CONVERSATION_BATCH_LIMIT = 50;
+/** Maximum number of assignees on one conversation. */
+export const MAIL_CONVERSATION_ASSIGNEE_LIMIT = 20;
 /**
  * Pinned and, separately, hidden mailboxes one principal keeps. The overview lists at most 200
  * mailboxes, and Focus leaves out at most as many as the browser sends in one request.
@@ -346,6 +348,18 @@ export const relatedConversationQuerySchema = z
 export const searchBackendSchema = z.enum(["auto", "postgres", "pg_textsearch"]);
 export type SearchBackend = z.infer<typeof searchBackendSchema>;
 
+/**
+ * Where a mailbox grant applies. `mailbox` (the default) covers every conversation; `assigned`
+ * covers only the conversations assigned to the person and allows `read` or `write`.
+ */
+export const mailboxAccessScopeSchema = z
+  .enum(["mailbox", "assigned"])
+  .describe("`mailbox` covers every conversation; `assigned` only the conversations assigned to the person, with read or write.");
+export const mailboxGrantAccessSchema = GrantAccessSchema.extend({ scope: mailboxAccessScopeSchema.optional() });
+export const mailboxUpdateAccessSchema = UpdateAccessSchema.extend({
+  scope: mailboxAccessScopeSchema.optional().describe("The scope after the change; omitted keeps the grant's scope."),
+});
+
 export const automaticReplyManagementPermissionSchema = z.enum(["write", "admin"]);
 export type AutomaticReplyManagementPermission = z.infer<typeof automaticReplyManagementPermissionSchema>;
 
@@ -505,6 +519,7 @@ export const providerConnectionSchema = z.object({
 export type ProviderConnection = z.infer<typeof providerConnectionSchema>;
 
 export const mailboxSchema = z.object({
+  accessScope: z.enum(["mailbox", "assigned"]),
   id: ResourceShortIdSchema,
   name: z.string(),
   description: z.string().nullable(),
@@ -1596,7 +1611,7 @@ export const mailFocusItemSchema = z
     participantSummary: z.string().max(32_768),
     latestMessageAt: z.string().datetime(),
     workStatus: conversationWorkStatusSchema,
-    assigneeUserId: z.string().uuid().nullable(),
+    assigneeUserIds: z.array(z.uuid()).max(MAIL_CONVERSATION_ASSIGNEE_LIMIT),
     unread: z.boolean(),
     flagged: z.boolean(),
     hasAttachments: z.boolean(),
@@ -1867,12 +1882,16 @@ export type ReassignConversationMessageInput = z.infer<typeof reassignConversati
 export const updateConversationCollaborationSchema = z
   .object({
     expectedRevision: z.number().int().positive(),
-    assigneeUserId: z.string().uuid().nullable().optional(),
+    assigneeUserIds: z
+      .array(z.uuid())
+      .max(MAIL_CONVERSATION_ASSIGNEE_LIMIT)
+      .optional()
+      .describe("Replace the complete assignee set; an empty array clears it."),
     completion: z.enum(["done", "open"]).optional(),
     snoozedUntil: z.string().datetime().nullable().optional(),
   })
   .refine(
-    (value) => value.assigneeUserId !== undefined || value.completion !== undefined || value.snoozedUntil !== undefined,
+    (value) => value.assigneeUserIds !== undefined || value.completion !== undefined || value.snoozedUntil !== undefined,
     "At least one collaboration field is required",
   )
   .refine(
@@ -1888,9 +1907,14 @@ export const assignConversationsSchema = z
       .min(1)
       .max(MAIL_CONVERSATION_BATCH_LIMIT)
       .refine((ids) => new Set(ids).size === ids.length, "Conversation ids must be unique"),
-    assigneeUserId: z.string().uuid().nullable(),
+    assigneeUserIds: z
+      .array(z.uuid())
+      .max(MAIL_CONVERSATION_ASSIGNEE_LIMIT)
+      .describe("Users to add, remove, or replace; replace with an empty array clears all assignees."),
+    mode: z.enum(["add", "remove", "replace"]).describe("Add to, remove from, or replace each conversation’s assignee set."),
   })
-  .strict();
+  .strict()
+  .refine((value) => value.mode === "replace" || value.assigneeUserIds.length > 0, "Add and remove require at least one user");
 export type AssignConversations = z.infer<typeof assignConversationsSchema>;
 
 export const updateConversationSummarySchema = z

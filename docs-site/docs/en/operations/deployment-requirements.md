@@ -410,6 +410,34 @@ for lifecycle behavior, and [Troubleshooting](/en/docs/operations/troubleshootin
 for failed routes or dependencies. Plan rollback against both schema and key
 compatibility; replacing an image does not restore migrated data.
 
+### Upgrade Mail to several assignees
+
+This Mail release lets a conversation have several assignees and adds mailbox
+grants that cover only assigned conversations. It needs no configuration
+change. Its first start creates `mail.conversation_assignees`, copies every
+existing assignment into it once, and creates `mail.mailbox_assigned_access`.
+Platform administrators now need a mailbox grant like everyone else: an
+incoming automation authorized by an administrator without one pauses its
+Spaces authorization on its next run until that person has a grant with Write
+access and authorizes it again.
+From then on the new table is the only source of assignments; Mail keeps the
+previous column `mail.conversations.assignee_user_id` at the earliest
+assignee so that an older image still shows one of them.
+
+Roll the Mail replicas over in one go. A replica of the previous version still
+reads and changes only that column, so an assignment it changes after the copy
+does not reach the new version, and it treats people with assigned-only access
+as having no access. Open Mail tabs from before the update cannot assign until
+they are reloaded. Third-party applications and saved workflows that use the
+single assignee fields need the changes in
+[Deprecations and migrations](/en/docs/reference/deprecations-and-migrations#mail-conversations-have-several-assignees).
+
+Rolling Mail back keeps the new tables. The previous version then shows only
+the earliest assignee and denies people with assigned-only access; assignments
+it changes are lost when Mail is updated again. After the rollout, assign two
+people to a test conversation and check that
+`cld --json mail show <conversation-id>` lists both.
+
 ### Update browser notifications for grouping and badges
 
 Deploy the updated platform package and Core together to enable

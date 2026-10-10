@@ -43,7 +43,7 @@ const question: MailListItem = {
   hasAttachments: false,
   messageCount: 2,
   workStatus: "needs_action",
-  assigneeUserId: null,
+  assigneeUserIds: [],
   snoozedUntil: null,
   sourceFolderId: "inbox",
   unreadFolderIds: [],
@@ -91,6 +91,7 @@ if (!isServer) {
             viewCounts={{ needs_action: 0, mine: 0, unassigned: 0, waiting: 0, done: 0, snoozed: 0, send_problems: 0, recently_active: 0 }}
             canWrite={true}
             canAdmin={false}
+            assignedOnly={false}
             managementOpening={null}
             settingsOpening={false}
             detailsOpening={false}

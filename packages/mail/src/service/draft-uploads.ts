@@ -9,7 +9,7 @@ import {
   type MailDraft,
 } from "../contracts";
 import { withShortIdDb } from "../lib/short-id";
-import { requireMailboxPermission } from "./access";
+import { requireDraftAccess } from "./access";
 import { actorRefFromRequest, type MailRequestContext } from "./auth";
 import { sha256Text } from "./canonical";
 import { requireDraftLeaseAvailable } from "./draft-leases";
@@ -103,7 +103,7 @@ export const createDraftAttachmentUpload = async (params: {
   if (!lease.ok) return lease;
   try {
     return await sql.begin(async (tx) => {
-      const allowed = await requireMailboxPermission(params.context, params.mailboxId, "write", tx);
+      const allowed = await requireDraftAccess(params.context, params.mailboxId, params.draftId, "write", tx);
       if (!allowed.ok) return allowed;
       const draftId = params.draftId;
       const [draft] = await tx<{ id: string; state: string }[]>`
@@ -148,7 +148,7 @@ export const listDraftAttachmentUploads = async (params: {
   mailboxId: string;
   draftId: string;
 }): Promise<Result<DraftAttachmentUpload[]>> => {
-  const allowed = await requireMailboxPermission(params.context, params.mailboxId, "read");
+  const allowed = await requireDraftAccess(params.context, params.mailboxId, params.draftId, "read");
   if (!allowed.ok) return allowed;
   const draftId = params.draftId;
   const rows = await sql<DbUpload[]>`
@@ -173,7 +173,7 @@ export const listUnfinishedDraftAttachmentUploads = async (params: {
   mailboxId: string;
   draftId: string;
 }): Promise<Result<DraftAttachmentUpload[]>> => {
-  const allowed = await requireMailboxPermission(params.context, params.mailboxId, "read");
+  const allowed = await requireDraftAccess(params.context, params.mailboxId, params.draftId, "read");
   if (!allowed.ok) return allowed;
   const rows = await sql<DbUpload[]>`
     SELECT ${uploadColumns}
@@ -195,7 +195,7 @@ export const getDraftAttachmentUpload = async (params: {
   draftId: string;
   uploadId: string;
 }): Promise<Result<DraftAttachmentUpload>> => {
-  const allowed = await requireMailboxPermission(params.context, params.mailboxId, "read");
+  const allowed = await requireDraftAccess(params.context, params.mailboxId, params.draftId, "read");
   if (!allowed.ok) return allowed;
   const draftId = params.draftId;
   const [upload] = await sql<DbUpload[]>`
@@ -224,7 +224,7 @@ export const appendDraftAttachmentUpload = async (params: {
   }
   try {
     return await sql.begin(async (tx) => {
-      const allowed = await requireMailboxPermission(params.context, params.mailboxId, "write", tx);
+      const allowed = await requireDraftAccess(params.context, params.mailboxId, params.draftId, "write", tx);
       if (!allowed.ok) return allowed;
       const draftId = params.draftId;
       const [upload] = await tx<(DbUpload & { draft_state: string })[]>`
@@ -308,7 +308,7 @@ export const finalizeDraftAttachmentUpload = async (params: {
   if (!Number.isInteger(params.expectedRevision) || params.expectedRevision < 1) return fail(err.badInput("Invalid draft revision"));
   const actor = uploadActor(params.context);
   if (!actor) return fail(err.forbidden("Draft upload actor is invalid"));
-  const permission = await requireMailboxPermission(params.context, params.mailboxId, "write");
+  const permission = await requireDraftAccess(params.context, params.mailboxId, params.draftId, "write");
   if (!permission.ok) return permission;
   const lease = await requireDraftLeaseAvailable({ context: params.context, mailboxId: params.mailboxId, draftId: params.draftId });
   if (!lease.ok) return lease;
@@ -330,7 +330,7 @@ export const finalizeDraftAttachmentUpload = async (params: {
 
   try {
     const result = await sql.begin(async (tx): Promise<Result<void>> => {
-      const allowed = await requireMailboxPermission(params.context, params.mailboxId, "write", tx);
+      const allowed = await requireDraftAccess(params.context, params.mailboxId, params.draftId, "write", tx);
       if (!allowed.ok) return allowed;
       const [upload] = await tx<
         (DbUpload & { draft_revision: string | number; draft_state: string; draft_conversation_id: string | null })[]
@@ -467,7 +467,7 @@ export const cancelDraftAttachmentUpload = async (params: {
 }): Promise<Result<DraftAttachmentUpload>> => {
   try {
     return await sql.begin(async (tx) => {
-      const allowed = await requireMailboxPermission(params.context, params.mailboxId, "write", tx);
+      const allowed = await requireDraftAccess(params.context, params.mailboxId, params.draftId, "write", tx);
       if (!allowed.ok) return allowed;
       const draftId = params.draftId;
       const [upload] = await tx<DbUpload[]>`

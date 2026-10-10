@@ -2,24 +2,24 @@
 id: grids-custom-app-api
 title: Custom App API reference
 icon: ti ti-code
-description: Definition options, defaults, bindings, validation and published Form payloads.
+description: Look up definition options, defaults, bindings, validation, and published form payloads.
 order: 137
 ---
-For visual authoring, read [Build a Custom App](/app/grids/help/grids-build-custom-app).
+For visual authoring, read [Build your first Grids App](/app/grids/help/grids-build-custom-app).
 
-Private App pages send signed-out visitors to login, returning to the same path and query. Public Apps, API/download statuses, and 404 for signed-in visitors without access stay unchanged. See [Form layout](/app/grids/help/grids-forms).
+A private app page sends a signed-out visitor to the sign-in page and then back to the same path and query. Public apps, API and download statuses, and the 404 for a signed-in visitor without access stay unchanged. See [Forms](/app/grids/help/grids-forms) for the form layout.
 
 ## Read the installed contract {icon="code"}
 
-`cld grids apps reference --json` or `GET /api/grids/apps/reference` returns `definitionSchema`: generated input JSON Schema with every property, enum, default, required key and size limit.
+`cld grids apps reference --json` or `GET /api/grids/apps/reference` returns `definitionSchema`. This generated input JSON Schema lists every property, enum, default, required key, and size limit.
 
-Run `cld grids apps validate BASE --source-file app.yaml --json` for cross-field, query, access and publication checks. Fix the returned `diagnostics` paths; JSON Schema alone does not prove publishability.
+Run `cld grids apps validate BASE --source-file app.yaml --json` for cross-field, query, access, and publication checks. Fix the returned `diagnostics` paths. JSON Schema alone does not prove that you can publish.
 
-## Identity, pages and layout {icon="layout-grid"}
+## Define identity, pages, and layout {icon="layout-grid"}
 
-The root requires `schemaVersion: 5`, `kind: grids.custom-app`, `id`, `baseId`, `name`, `startPageId` and `pages`. Optional root keys are `icon` and `sidebar`. Names have 1–200 characters. Icons are Tabler slugs such as `file-invoice`, not CSS class names.
+The root requires `schemaVersion: 5`, `kind: grids.custom-app`, `id`, `baseId`, `name`, `startPageId`, and `pages`. Optional root keys are `icon` and `sidebar`. Names have 1–200 characters. Icons are Tabler slugs such as `file-invoice`, not CSS class names.
 
-Resource IDs are exactly six case-sensitive letters/digits. Local page, row, column, block and action IDs start with a lowercase letter and use lowercase letters, digits and hyphens, up to 80 characters. Parameter names use underscores instead of hyphens. IDs must be unique within their container; block IDs are unique across the whole page.
+Resource IDs are exactly six case-sensitive letters or digits. Local page, row, column, block, and action IDs start with a lowercase letter. They use lowercase letters, digits, and hyphens, up to 80 characters. Parameter names use underscores instead of hyphens. IDs must be unique within their container. Block IDs are unique across the whole page.
 
 | Object | Required | Optional and defaults |
 | --- | --- | --- |
@@ -30,11 +30,20 @@ Resource IDs are exactly six case-sensitive letters/digits. Local page, row, col
 | Row | `id`, `columns` (1–12) | none |
 | Column | `id`, `span` (integer 1–12), `blocks` (1–24) | none |
 
-There are 1–12 pages. Column spans total at most 12 per row. The start page has no required parameters. A Record page declares exactly its bound Record parameter, uses the same table in both declarations, sets `navigation.visible:false`, and contains a `record` or `html` block. Other parameterized pages are also route-only. Navigation must supply all target parameters exactly once with compatible Record types.
+An app has 1–12 pages. The column spans of one row total at most 12. The start page has no required parameters.
 
-## Every block option {icon="blocks"}
+A Record page has these rules:
 
-Every block requires `id` and `type`; all accept optional `title` (1–160 characters) and `availableWhen:{query}` and `disclosure:{label,defaultOpen?}`. Queries have 1–20,000 characters. Omit optional values rather than writing `null`. `emptyText` is supported only by `records`, `referenced_records` and `record` (1–240 characters).
+- It declares exactly its bound Record parameter.
+- It uses the same table in both declarations.
+- It sets `navigation.visible:false`.
+- It contains a `record` or `html` block.
+
+Other pages with parameters are also route-only. Navigation must supply all target parameters exactly once, with compatible Record types.
+
+## Set every block option {icon="blocks"}
+
+Every block requires `id` and `type`. All blocks accept an optional `title` (1–160 characters), `availableWhen:{query}`, and `disclosure:{label,defaultOpen?}`. Queries have 1–20,000 characters. Omit optional values instead of writing `null`. Only `records`, `referenced_records`, and `record` support `emptyText` (1–240 characters).
 
 | `type` | Additional required keys | Optional keys and defaults |
 | --- | --- | --- |
@@ -50,27 +59,43 @@ Every block requires `id` and `type`; all accept optional `title` (1–160 chara
 | `actions` | `actions` (1–12) | `disclosure:{label,defaultOpen?}` |
 | `scanner` | `launcherId` | `disclosure:{label,defaultOpen?}` |
 
-`source` is exactly `{kind:view,viewId}` or `{kind:gql,query}`. For `records`, `display` is `{kind:table,columnIds:[…]}` (up to 30) or `{kind:cards}`. Saved-view tables need at least one column; inline GQL tables normally use the query's selected columns with `columnIds:[]`; a non-empty list narrows displayed fields while retaining selected fields for behavior. Cards inherit a saved View's Cards configuration and cannot use inline GQL. Metrics require ungrouped scalar aggregates (up to 12); charts require grouped aggregates (up to 100 groups). At most four Records blocks, 24 insight blocks and 24 Scanner blocks are allowed per App.
+`source` is exactly `{kind:view,viewId}` or `{kind:gql,query}`. For `records`, `display` is `{kind:table,columnIds:[…]}` (up to 30) or `{kind:cards}`.
 
-`referenced_records`, `record`, `html` and `comments` require a bound page Record. Incoming relations must target its table. Across Record/HTML blocks a page may expose at most 30 distinct fields. Editable fields are an explicit writable subset of displayed fields. `documents.templateIds` allows reading existing generated Documents, not issuing new ones. An `html` block displays an existing HTML field in an isolated frame.
+- A table from a saved view needs at least one column.
+- An inline GQL table normally uses the selected columns of the query with `columnIds:[]`. A non-empty list narrows the displayed fields and keeps the selected fields for behavior.
+- Cards inherit the Cards configuration of a saved view and cannot use inline GQL.
+- Metrics require ungrouped scalar aggregates (up to 12). Charts require grouped aggregates (up to 100 groups).
+- An app allows at most four Records blocks, 24 insight blocks, and 24 Scanner blocks.
 
-`documents.preview:true` grants saved-draft PDF previews, including templates' queried data, without issuance or number reservation. Source interpolation accepts only `{{ record.id }}` or `{{ record.shortId }}`, without Liquid filters/tags. Template or Base schema changes require republishing.
+`referenced_records`, `record`, `html`, and `comments` require a bound page Record. Incoming relations must target its table. Across Record and HTML blocks, a page can expose at most 30 distinct fields. Editable fields are an explicit writable subset of the displayed fields. `documents.templateIds` allows reading existing generated documents. It does not allow issuing new ones. An `html` block displays an existing HTML field in an isolated frame.
 
-`valueFormat` requires `style:number|integer|percent`; optional keys are `decimalPlaces` (0–20), `unit` (1–20 characters) and `unitPosition:prefix|suffix`. Integer style rejects decimal places; only number style accepts a custom unit; unit position requires a unit. Omitted formatting options use the normal renderer formatting.
+`documents.preview:true` allows PDF previews of saved drafts, including the queried data of the templates. It does not issue and does not reserve a number. Source interpolation accepts only `{{ record.id }}` or `{{ record.shortId }}`, without Liquid filters or tags. Changes to a template or to the Base schema require a new publication.
 
-## Actions and bindings {icon="arrows-right-left"}
+`valueFormat` requires `style:number|integer|percent`. Optional keys are `decimalPlaces` (0–20), `unit` (1–20 characters), and `unitPosition:prefix|suffix`. The integer style rejects decimal places. Only the number style accepts a custom unit. A unit position requires a unit. Omitted formatting options use the normal renderer formatting.
 
-Actions in an `actions` block require `id`, `label` (1–120) and `kind`. Both kinds accept `icon` and `availableWhen`.
+## Configure actions and bindings {icon="arrows-right-left"}
 
-- `kind:navigate` also requires `pageId` and `params`; `history` defaults to `push` and also accepts `replace`.
-- `kind:workflow` also requires `launcherId`; `inputs` defaults to `{}` and `confirm` optionally supplies confirmation text (1–240 characters). Bind every required workflow input or expose it through `prompt: { inputs: ["date", "amount"], description?, successMessage? }`. Prompt names select unbound scalar workflow inputs (text, decimal, number, date, dateTime, boolean or select); labels and validation come from the published workflow. These actions open a compact dialog and retain the submitted values and operation key when the outcome is uncertain. A prompt cannot accompany `confirm`, `background`, fixed launchers or row actions. Browser input never overrides server bindings.
-- Row actions use only `kind:workflow`, with the same keys plus `showLabel:true`. Setting it to `false` requires an icon; the label remains required for accessibility.
-- `rowNavigate` has `kind:navigate`, `pageId`, `params` and optional `history:push|replace`. It has no label or action ID.
-- `onSuccessNavigate` has `kind:navigate`, `pageId` and `params`. Successful submission uses replacement navigation; there is no `history` option here.
+Actions in an `actions` block require `id`, `label` (1–120), and `kind`. Both kinds accept `icon` and `availableWhen`.
 
-Prompt submissions awaiting an outcome stay in this browser tab across reloads. A status action on the original page remains available even if the original button disappears. Retries retain the original workflow launcher; republishing an action never redirects an existing attempt to another workflow. Use it before starting another submission. Closing the tab or clearing browser storage removes this local recovery handle; check existing entries before submitting again.
+- `kind:navigate` also requires `pageId` and `params`. `history` defaults to `push` and also accepts `replace`.
+- `kind:workflow` also requires `launcherId`. `inputs` defaults to `{}`. `confirm` optionally supplies confirmation text (1–240 characters).
+- Row actions use only `kind:workflow`, with the same keys plus `showLabel:true`. `false` requires an icon. The label stays required for accessibility.
+- `rowNavigate` has `kind:navigate`, `pageId`, `params`, and an optional `history:push|replace`. It has no label and no action ID.
+- `onSuccessNavigate` has `kind:navigate`, `pageId`, and `params`. A successful submission replaces the history entry. There is no `history` option here.
 
-Bindings are objects, not expressions. The accepted sources depend on their position:
+### Ask for workflow inputs
+
+Bind every required workflow input, or ask for it with `prompt: { inputs: ["date", "amount"], description?, successMessage? }`. Prompt names select unbound scalar workflow inputs: text, decimal, number, date, dateTime, boolean, or select. Labels and validation come from the published workflow. These actions open a compact dialog. When the outcome is uncertain, the dialog keeps the submitted values and the operation key. A prompt cannot be combined with `confirm`, `background`, fixed launchers, or row actions. Browser input never overrides server bindings.
+
+A prompt submission that still waits for its outcome stays in this browser tab across reloads. A status action on the original page stays available, even if the original button disappears. Retries keep the original workflow launcher. A new publication of the action never redirects an existing attempt to another workflow. Check the status before you start another submission.
+
+:::warning Local recovery ends with the tab
+Closing the tab or clearing the browser storage removes this local recovery handle. Check the existing entries before you submit again.
+:::
+
+### Bind values
+
+Bindings are objects, not expressions. The accepted sources depend on the position:
 
 | Position | Accepted binding shapes |
 | --- | --- |
@@ -82,23 +107,23 @@ Bindings are objects, not expressions. The accepted sources depend on their posi
 | Sidebar fixed values | `LITERAL`, `AUTH.currentUser` only |
 | Sidebar success `params` | `RESULT.recordId` only |
 
-Fixed-value keys are Form Field public IDs; workflow input keys are the launcher's input names. Bindings must match their target types. `AUTH.currentUser` requires a signed-in user and a compatible Principal field. Fixed fields are removed from the submitted inputs and evaluated again on the server.
+Fixed-value keys are public form field IDs. Workflow input keys are the input names of the launcher. Bindings must match their target types. `AUTH.currentUser` requires a signed-in user and a compatible principal field. Grids removes fixed fields from the submitted inputs and evaluates them again on the server.
 
-`sidebar.actions` contains up to 12 global Form actions. Each requires `id`, `label`, `kind:form`, `formId`; optional keys are `icon`, `tone:default|success|danger` (default `default`), `availableWhen`, `fixedValues:{}`, and `onSuccessNavigate`. Sidebar Forms always create records. They have no current page/Record context.
+`sidebar.actions` contains up to 12 global form actions. Each requires `id`, `label`, `kind:form`, and `formId`. Optional keys are `icon`, `tone:default|success|danger` (default `default`), `availableWhen`, `fixedValues:{}`, and `onSuccessNavigate`. Sidebar forms always create records. They have no context of the current page or Record.
 
-## Availability and permissions {icon="shield-lock"}
+## Control availability and access {icon="shield-lock"}
 
-`availableWhen:{query}` applies to pages, blocks and actions. A result row means available; empty results or errors mean unavailable. The server rechecks reads and writes. Typed context: `@auth`, declared `@params`, `@page`, `@app`, `@base`, `@time`. Global sidebar queries cannot use page/parameter context. See [GQL](/app/grids/help/grids-gql) for syntax.
+`availableWhen:{query}` applies to pages, blocks, and actions. A result row means available. An empty result or an error means unavailable. The server checks reads and writes again. The typed context is `@auth`, the declared `@params`, `@page`, `@app`, `@base`, and `@time`. Global sidebar queries cannot use page or parameter context. See [GQL](/app/grids/help/grids-gql) for the syntax.
 
-Authoring requires Base Admin; App readers receive only published scopes, not raw Base access. Workflow actions and scanners require sign-in. All writes retain runtime access, Finalization and mutation-policy checks. Hidden navigation is not authorization.
+Authoring requires **Manage** access to the Base. People who use the app receive only the published scopes, not raw access to the Base. Workflow actions and scanners require sign-in. All writes keep the runtime access, finalization, and mutation-policy checks. Hidden navigation is not authorization.
 
-## Submit and edit Forms through the API {icon="forms"}
+## Submit and edit forms through the API {icon="forms"}
 
-Use `cld grids apps runtime read APP --page PAGE --params '{"item_id":"REC001"}' --json` first. Each form block's `form` result contains `form`, `fields`, `inlineTargetFields`, `submitUrl` and, for edit mode, `initialRecord`. Keep the same page parameters when calling `apps runtime submit APP PAGE BLOCK --body-file submission.json --yes`.
+First run `cld grids apps runtime read APP --page PAGE --params '{"item_id":"REC001"}' --json`. The `form` result of each form block contains `form`, `fields`, `inlineTargetFields`, `submitUrl`, and, in edit mode, `initialRecord`. Keep the same page parameters when you call `apps runtime submit APP PAGE BLOCK --body-file submission.json --yes`.
 
-Create accepts a field-value object or `{data,inlineCreates?,idempotencyKey?}`. Edit requires `{data,version,idempotencyKey,inlineCreates?,inlineUpdates?}`. IDs in `data` are Field public IDs; relation values are Record public IDs or temporary IDs declared by `inlineCreates`.
+Create accepts a field-value object or `{data,inlineCreates?,idempotencyKey?}`. Edit requires `{data,version,idempotencyKey,inlineCreates?,inlineUpdates?}`. IDs in `data` are public field IDs. Relation values are public record IDs or temporary IDs that `inlineCreates` declares.
 
-An `object_list` is one field value, not a relation: `{"data":{"ITEMS1":[{"Label1":"Consulting","Amount":"19.95"}]}}`. Discover column IDs and rules in `fields[].config`. Send exact decimals as strings and omit calculated cells. Sending the list replaces all its rows; `[]` clears it if allowed. No `inlineCreates` are needed. See [list rules and formulas](/app/grids/help/grids-tables-fields).
+An `object_list` is one field value, not a relation: `{"data":{"ITEMS1":[{"Label1":"Consulting","Amount":"19.95"}]}}`. Find column IDs and rules in `fields[].config`. Send exact decimals as strings and omit calculated cells. Sending the list replaces all its rows. `[]` clears it, if allowed. You need no `inlineCreates`. See [list rules and formulas](/app/grids/help/grids-tables-fields).
 
 ```json
 {
@@ -110,21 +135,24 @@ An `object_list` is one field value, not a relation: `{"data":{"ITEMS1":[{"Label
 }
 ```
 
-Use discovered IDs and full Form values, retaining required inputs and explicit empty values for clearing. Related inputs allow only `inlineCreate.fields`, at most 20 creates/updates per relation and 50 total. Edited children must remain linked exclusively to this parent in the same Base. Detaching does not delete children. Finalized records are read-only. All writes commit or roll back together.
+Use the discovered IDs and full form values. Keep required inputs, and send explicit empty values to clear a value. Related inputs allow only `inlineCreate.fields`, at most 20 creates or updates per relation, and 50 in total. Edited children must stay linked exclusively to this parent in the same Base. Detaching does not delete children. Finalized records are read-only. All writes commit or roll back together.
 
-`initialRecord` contains root `version`, editable `values` and drafts in `inlineCreates` with `{tempId,data,existing:{id,version}}`. Replace existing temporary references with `existing.id`; send existing edits as `inlineUpdates`, only new drafts as `inlineCreates`. It is not a write payload.
+`initialRecord` contains the root `version`, the editable `values`, and drafts in `inlineCreates` with `{tempId,data,existing:{id,version}}`. Replace existing temporary references with `existing.id`. Send edits of existing records as `inlineUpdates`, and only new drafts as `inlineCreates`. `initialRecord` is not a write payload.
 
-The server chooses the edit target from the bound page Record, never a body `recordId`. For Base writers the equivalent is `cld grids forms submit BASE TABLE FORM --record REC001 --body-file submission.json --yes`, using current versions from `records show`. The HTTP endpoint is `POST /api/grids/forms/FORM/records/REC001`; create uses `POST /api/grids/forms/FORM/submit`.
+The server chooses the edit target from the bound page Record, never from a `recordId` in the body. For people with **Edit** access to the Base, the equivalent is `cld grids forms submit BASE TABLE FORM --record REC001 --body-file submission.json --yes`, with current versions from `records show`. The HTTP endpoint is `POST /api/grids/forms/FORM/records/REC001`. Create uses `POST /api/grids/forms/FORM/submit`.
 
-Keys: nonblank, at most 200 characters, no NUL; scoped to Form/table and actor. Exact retries return the original Record ID without another write. Changed payloads, deleted results or stale versions conflict (`409`). After timeouts, retry the same body/key or inspect the result; unkeyed creates can duplicate. After confirmed stale versions, reload and review before a new attempt. Validation (`400`/`422`) and access failures (`401`/`403`/`404`) are not successful saves. Create returns `201`, edit `200`, with `recordId` and optional App success navigation.
+### Retry safely
 
-### Background document actions
+:::reference
+- **Keys:** Not blank, at most 200 characters, no NUL. A key applies to the combination of form, table, and actor.
+- **Exact retry:** Returns the original record ID and writes nothing again.
+- **Conflict (`409`):** A changed payload, a deleted result, or a stale version.
+- **Timeout:** Retry the same body with the same key, or inspect the result. A create without a key can run twice.
+- **Confirmed stale version:** Reload and review before a new attempt.
+- **Not saved:** Validation errors (`400`/`422`) and access errors (`401`/`403`/`404`).
+- **Success:** Create returns `201`, edit returns `200`, with `recordId` and the optional success navigation of the app.
+:::
 
-Workflow actions may set `background: { acceptedMessage, documentBlockId,
-documentTemplateId }`. This requires a Record page and an unconditional Record
-block exposing that template. Each page has one background result template.
-`GET` on the action endpoint recovers its current document status; `POST` returns
-acceptance immediately. These actions return document presentation instead of a
-run ID. Only currently authorized App readers can read that presentation.
-`needs_attention` prevents another start; a finished document opens directly.
-See [Pages and blocks](/app/grids/help/grids-custom-app-pages-blocks).
+### Run document actions in the background
+
+Workflow actions can set `background: { acceptedMessage, documentBlockId, documentTemplateId }`. This requires a Record page and an unconditional Record block that exposes that template. Each page has one background result template. `GET` on the action endpoint recovers the current document status. `POST` returns the acceptance immediately. These actions return the document presentation instead of a run ID. Only people who can currently use the app can read that presentation. `needs_attention` prevents another start. A finished document opens directly. See [Grids App pages & blocks](/app/grids/help/grids-custom-app-pages-blocks).

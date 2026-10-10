@@ -25,8 +25,10 @@ import {
   type CalendarEventTimeChange,
   type CalendarLabels,
   type CalendarProps,
+  type CalendarQuickCreateControls,
   type CalendarRecurrence,
   type CalendarResource,
+  type CalendarSelectionControls,
   type CalendarView,
 } from "@k2b/ui";
 ```
@@ -54,8 +56,12 @@ smaller cards omit it. Applications that store Markdown or other rich text
 should pass a short plain-text preview instead of the source markup.
 
 `renderEvent(event, context)` receives the event and normalized `CalendarEventRenderContext`, including
-the effective start, end, duration, time label, and compact or fill state.
-Custom output must retain useful visible event text.
+the effective start, end, duration, time label, compact or fill state, and in
+the month view the `leadingTime` to show before a one-day entry's title.
+Custom output must retain useful visible event text. Entries of the month
+view and its day list are always `compact` and one line high, the height of
+a lane: render a single line there, title first, or the lane cuts the rest
+off. Put state that the line shows only as an icon into `accessibleDetail`.
 
 ## Views and navigation
 
@@ -99,10 +105,94 @@ example a `Timeline` of the loaded days.
 </Calendar>;
 ```
 
-In the month view, the empty day surface follows `getDateHref` to the day view
-when `onSlotActivate` is absent. Passing `onSlotActivate` deliberately turns
-that surface into an empty-slot action instead; the day number remains a
-separate navigation link when both contracts are available.
+### Month view
+
+The month view is a grid of selectable days (`role="grid"`, each day a
+`gridcell` with `aria-selected`). A click or tap on a day selects it and never
+navigates. A drag across days, or Shift with a click or an arrow key, selects
+a range; the selection shows as one tinted band with stronger ends and an
+inner line. The arrow keys move the selection and page to the next or
+previous month at the edge of the grid; Home and End go to the start and end
+of the week, Page Up and Page Down to the same day of the previous and next
+month, or to that month's last day when it is shorter; the previous and next
+buttons step the same way. Escape closes an open popover first and then
+clears the selection. A new month starts without a selection. A range takes a
+mouse or the keyboard; on a touch screen a tap selects one day.
+
+The day view is a deliberate step, never a side effect of a click:
+
+- the view switcher opens the day, week, and year views at the first
+  selected day;
+- the menu of a day ends with “Open day” and “Open week”;
+- the day list behind “+N” or Space has an “Open day” button;
+- with `withWeekNumbers`, each week number opens its week.
+
+They use `getDateHref`, or `onViewChange` and then `onDateChange` with the
+day and the view when the host has no links, and appear only for views in
+`views`.
+
+Creating works on the selection:
+
+- `renderQuickCreate(range, { create, close })` renders the content of the
+  quick create, a popover at the selection. After a mouse click on a day it
+  opens quietly: the grid keeps the focus, the arrow keys move the selection
+  and the popover with it, and Space still opens the day list. Tab moves
+  into it, and so does any other character, N included, as the first letter
+  of its first field. After a drag across days, a double-click, Enter, or N
+  it opens with the focus in its first field. On a touch screen a tap only
+  selects; a second tap on the selected day opens it. Escape or a click
+  elsewhere closes it and keeps the selection. The application owns the
+  form, calls `close` after saving, and receives in `create` what a menu
+  entry asked for; a `close` that comes after another quick create took its
+  place, such as at the end of a slow save, does nothing. It never shifts
+  the layout of the grid.
+- `selectionMenu(range, { quickCreate })` returns the application's entries
+  of the menu that a right-click, a long press, the Context Menu key, or
+  Shift+F10 opens on a day. The calendar heads them with the day, or the
+  range and its number of days, and adds “Open day”, “Open week”, and, for a
+  range, “Clear selection”. `quickCreate(create)` opens the quick create at
+  the menu's days with the focus in it. A press inside the selection acts on
+  all of it; elsewhere it selects the day under the pointer first, also on a
+  bar that spans several days. Escape closes the menu and returns the focus
+  to the pressed day. Without the prop the menu holds the calendar's own
+  entries; only a host that can open no other view leaves the browser its own
+  menu. Entries that are links or buttons always keep the browser's menu.
+- `onSelectionChange(range)` reports every change of the selected days, and
+  `null` when nothing is selected, also when another view replaces the month
+  view, for actions outside the grid such as a toolbar button that creates
+  on the selected days.
+- Without `renderQuickCreate`, Enter and a double-click call
+  `onSlotActivate` with the selection.
+
+Every range these props receive is all-day: `start` is the first day's
+midnight and `end` the midnight after the last day.
+
+All-day and multi-day events are bars: one bar per week row, in a lane it
+keeps on all of its days, with its title in each row it reaches. Where the
+row cuts the event off, the bar ends in a torn, zigzag edge. When the bar has
+room for its title and a date, the torn end names where the event continues,
+for example “until 13” and “from 7” (“bis 13.” and “seit 7.” in German), with
+the month when that day lies outside the shown month (“until Nov 3”); a
+narrow bar leaves the date out. A bar's accessible name names the whole
+range, for example “Fair setup, October 7 to October 13”. Pointing at one bar
+of an event highlights its bars in the other rows. One-day events stack below
+the bars of their day in start-time order and show the start time before the
+title, which `renderEvent` receives as `context.leadingTime`.
+
+Each cell draws as many rows as fit its measured height. A day with more
+entries gives its last row to “+N more”, which counts every entry of the day
+that is not drawn, hidden bars included; days that fit keep all their rows.
+A bar is drawn only when it fits on every day it covers, so a count never
+cuts it. “+N more” and Space open the day list: every entry of the day, “Open
+day”, and, with `renderQuickCreate`, “New event”. The cells' size depends
+only on the grid, never on their content, so resizing changes the counts and
+moves nothing. The server renders three rows until the browser has measured.
+On a narrow screen the entries keep their titles at a tighter padding, and
+the count shows only “+N”. Dragging a bar with `onEventDrop` moves the event
+by as many days as the pointer moved and highlights the days it would cover.
+
+`mobile-month` keeps its compact picker: its days link to their agenda
+through `getDateHref`, and colored dots stand for the day's events.
 
 On a device with a coarse pointer, the previous and next buttons accept taps
 in the same invisible 44 px area as other buttons, following the
@@ -134,10 +224,13 @@ The following callbacks enable matching hydrated interactions:
 - `onEventDrop` moves an event;
 - `onEventResize` changes a timed event duration;
 - `onEventActivate` activates an event;
-- `onSlotActivate` activates an empty time range.
+- `onSlotActivate` activates an empty time range, or the selected days of
+  the month view when it has no `renderQuickCreate`.
 
 Set `eventActivation` or `slotActivation` to `"double"` only for dense editing
-surfaces that deliberately reserve single click for selection. Both default to
+surfaces that deliberately reserve single click for selection. The month view
+always reserves a single click for selecting days, whatever
+`slotActivation` says. Both default to
 `"single"`. The component does not delay single-click callbacks to guess
 whether a second click will follow.
 
@@ -147,11 +240,24 @@ event and `{ start: Date; end: Date; allDay?: boolean }`.
 `onSlotActivate(slot)` receives that time-range shape alone. All return `void`.
 The host validates permissions and persists changes.
 
-`toolbarActions` and `toolbarContent` add bounded application controls without
-replacing the calendar navigation. On a narrow screen the header's actions
-wrap onto another row rather than run out of the header; keep
-`toolbarActions` compact there, for example an icon with a visually hidden
-label.
+The toolbar is one row: previous and next, the period title,
+`toolbarContent`, and then Today, the view switcher, and `toolbarActions` at
+the end. Put application controls such as filters in `toolbarContent`; there
+is no separate row below the toolbar, and the content fills the space up to
+Today, so a status such as a count can sit at its end. The title reserves the
+width of the widest title of its view (all months of the year, the weeks of
+the month, or the longest day names), so paging never moves what follows it.
+The toolbar draws no line toward the body. It adapts to its own width, not
+the window's:
+
+- up to 84rem, filter chips in `toolbarContent` show only their icon, with
+  their name kept as accessible name;
+- up to 64rem, `toolbarContent` takes a row of its own below the title, with
+  the chips' names;
+- up to 40rem, the first row holds the navigation, the title, Today, and
+  `toolbarActions`, and the second the view switcher and `toolbarContent`,
+  with icon-only chips. Keep `toolbarActions` compact there, for example an
+  icon with a visually hidden label.
 
 ## API reference
 
@@ -200,7 +306,15 @@ type CalendarCustomView<V extends string = string> = {
 ```ts
 type CalendarEventRenderContext = {
   compact: boolean; fill: boolean; start: Date; end: Date; allDay: boolean; durationHours: number;
-  timeLabel: string;
+  timeLabel: string; leadingTime?: string;
+};
+
+type CalendarSelectionControls = {
+  quickCreate: (create?: string) => void;
+};
+
+type CalendarQuickCreateControls = {
+  create?: string; close: () => void;
 };
 
 type CalendarEventTimeChange = {
@@ -228,6 +342,9 @@ type CalendarProps<V extends string = never> = {
   onEventDrop?: (event: CalendarEvent, next: CalendarEventTimeChange) => void;
   onEventResize?: (event: CalendarEvent, next: CalendarEventTimeChange) => void;
   onSlotActivate?: (slot: CalendarEventTimeChange) => void; slotActivation?: "single" | "double";
+  onSelectionChange?: (range: CalendarEventTimeChange | null) => void;
+  selectionMenu?: (range: CalendarEventTimeChange, controls: CalendarSelectionControls) => readonly DropdownItem[];
+  renderQuickCreate?: (range: CalendarEventTimeChange, controls: CalendarQuickCreateControls) => JSX.Element;
   toolbarActions?: JSX.Element; toolbarContent?: JSX.Element; class?: string;
 };
 ```
@@ -255,7 +372,8 @@ default, and at once when the person prefers reduced motion.
 ## Runtime
 
 All views, labels, dates, and links render on the server. Drag, resize,
-pointer-slot selection, prefetch, and callback navigation require hydration.
+pointer-slot selection, day selection, the month menu and popovers, measured
+month lanes, prefetch, and callback navigation require hydration.
 
 ## Example
 

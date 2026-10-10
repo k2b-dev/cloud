@@ -21,16 +21,21 @@ import type { AccessEntry, PermissionLevel, Principal } from "@k2b/cloud/contrac
 import {
   assertMirrorServer,
   fetchOutline,
+  fileLinesToNoteLines,
   findManifestFolder,
   findManifestNote,
   findMirror,
+  frontMatterLineCount,
+  lastEditLine,
   localFileState,
   MANIFEST_FILE,
   type Manifest,
   type ManifestNote,
   manifestFiles,
+  mirrorLineOffset,
   newManifest,
   type OutlineEntry,
+  PULLED_FRONT_MATTER_LINES,
   readManifest,
   restoreMirrorLinks,
   type SyncReport,
@@ -106,6 +111,11 @@ type NoteTarget = {
 type Mirror = { root: string; relPath: string; manifest: Manifest };
 
 const NOTE_ID = /^[A-Za-z0-9]{6}$/;
+/** Help suffix of every line flag of `edit`. */
+const LINES_OF = {
+  en: " (numbered as `cat --numbered` shows the same address; a mirror file counts its own lines)",
+  de: " (nummeriert wie `cat --numbered` für dieselbe Adresse; eine Spiegeldatei zählt ihre eigenen Zeilen)",
+};
 const JSON_HEADERS = { "Content-Type": "application/json" };
 
 const api = (notebookId: string, suffix = "") => `/api/notebooks/${encodeURIComponent(notebookId)}${suffix}`;
@@ -118,11 +128,15 @@ const expandHome = (path: string): string => (path === "~" || path.startsWith("~
 
 const looksLocal = (raw: string): boolean => parseCliAddress(raw).kind === "local";
 
-const formatNumberedLines = (content: string): string =>
+/** `content` with line numbers from `offset + 1`: the lines of a mirror file start below its front matter. */
+const formatNumberedLines = (content: string, offset: number): string =>
   content
     .split("\n")
-    .map((line, index) => `${String(index + 1).padStart(4, " ")} | ${line}`)
+    .map((line, index) => `${String(offset + index + 1).padStart(4, " ")} | ${line}`)
     .join("\n");
+
+const shiftBlockLines = (blocks: NoteEditBlockSummary[], offset: number): NoteEditBlockSummary[] =>
+  blocks.map((block) => ({ ...block, line: block.line + offset, startLine: block.startLine + offset, endLine: block.endLine + offset }));
 
 const parseLineRange = (value: string): { startLine: number; endLine: number } => {
   const [startRaw, endRaw] = value.split(":");
@@ -767,9 +781,18 @@ function notebooksCommands(locale?: string) {
           en: "Print the live content of a note, including open editors",
           de: "Den aktuellen Inhalt einer Notiz ausgeben, inklusive offener Editoren",
         }),
+        description: t({
+          en: "Line numbers (--numbered, --blocks, and the block lines and firstLine of --json) are the ones `edit` takes for the same address. For a mirror file they count the lines of the file, so the note starts below its front matter; for a note ID or <notebook>:<path> they count the note lines.",
+          de: "Zeilennummern (--numbered, --blocks sowie die Blockzeilen und firstLine von --json) sind die, die `edit` für dieselbe Adresse erwartet. Bei einer Spiegeldatei zählen sie die Zeilen der Datei, die Notiz beginnt also unter ihrem Front Matter; bei einer Notiz-ID oder <notizbuch>:<pfad> zählen sie die Notizzeilen.",
+        }),
         args: noteArg,
         flags: {
-          numbered: flag.boolean({ description: t({ en: "Prefix 1-based line numbers", de: "1-basierte Zeilennummern voranstellen" }) }),
+          numbered: flag.boolean({
+            description: t({
+              en: "Prefix 1-based line numbers as `edit` takes them for the same address",
+              de: "1-basierte Zeilennummern voranstellen, wie `edit` sie für dieselbe Adresse erwartet",
+            }),
+          }),
           blocks: flag.boolean({
             description: t({
               en: "Print the named block summary instead of the content",
@@ -792,6 +815,7 @@ function notebooksCommands(locale?: string) {
           const target = await resolveNote(ctx, args.note);
           const note = await ctx.readJson<Note>(await ctx.fetch(noteApi(target, "/content")));
           const content = note.contentMd ?? "";
+          const offset = target.mirror ? await mirrorLineOffset(target.mirror.root, target.mirror.entry, content) : 0;
           if (flags.block) {
             const name = flags.block.replace(/^@/, "");
             const matches = findNamedBlocks(content, name, flags.type as NamedBlockType | undefined);
@@ -814,8 +838,8 @@ function notebooksCommands(locale?: string) {
                 name: block.name,
                 type: block.type,
                 index: flags.index ?? 0,
-                startLine: block.startLine + 1,
-                endLine: block.endLine + 1,
+                startLine: offset + block.startLine + 1,
+                endLine: offset + block.endLine + 1,
                 hash: noteContentHash(body),
                 content: body,
               },
@@ -823,15 +847,16 @@ function notebooksCommands(locale?: string) {
             if (!printStructured(ctx, result)) ctx.print(body);
             return;
           }
-          const blocks = summarizeNoteEditBlocks(content);
+          const blocks = shiftBlockLines(summarizeNoteEditBlocks(content), offset);
           const { contentMd: _contentMd, ...meta } = note;
-          const result = { note: meta, content, contentHash: noteContentHash(content), lineCount: content.split("\n").length, blocks };
+          const lineCount = content.split("\n").length;
+          const result = { note: meta, content, contentHash: noteContentHash(content), firstLine: offset + 1, lineCount, blocks };
           if (printStructured(ctx, result)) return;
           if (flags.blocks) {
             for (const item of blocks) ctx.print(`@${item.name} ${item.type} ${item.startLine}:${item.endLine} ${item.hash}`);
             return;
           }
-          await ctx.write(flags.numbered ? `${formatNumberedLines(content)}\n` : content);
+          await ctx.write(flags.numbered ? `${formatNumberedLines(content, offset)}\n` : content);
         },
       }),
       command("stat", {
@@ -1083,8 +1108,8 @@ function notebooksCommands(locale?: string) {
           de: "Eine präzise Bearbeitung anwenden: Zeilen, benannte Blöcke, anhängen oder voranstellen",
         }),
         description: t({
-          en: "Line numbers are 1-based and inclusive. Through a mirror file, the pulled content hash is the default precondition and local unsaved changes are refused.",
-          de: "Zeilennummern sind 1-basiert und inklusiv. Über eine Spiegeldatei ist der gepullte Inhalts-Hash die Standard-Vorbedingung; ungesicherte lokale Änderungen werden abgelehnt.",
+          en: "Line numbers are 1-based and inclusive and count as `cat --numbered` shows the same address. For a mirror file they are the lines of the file, as an editor or `grep -n` shows them; its front matter cannot be edited. For a note ID or <notebook>:<path> they are the note lines. Through a mirror file, the pulled content hash is the default precondition and local unsaved changes are refused.",
+          de: "Zeilennummern sind 1-basiert und inklusiv und zählen wie `cat --numbered` für dieselbe Adresse. Bei einer Spiegeldatei sind es die Zeilen der Datei, wie ein Editor oder `grep -n` sie zeigt; ihr Front Matter lässt sich nicht bearbeiten. Bei einer Notiz-ID oder <notizbuch>:<pfad> sind es die Notizzeilen. Über eine Spiegeldatei ist der gepullte Inhalts-Hash die Standard-Vorbedingung; ungesicherte lokale Änderungen werden abgelehnt.",
         }),
         args: noteArg,
         flags: {
@@ -1092,22 +1117,22 @@ function notebooksCommands(locale?: string) {
           replaceLines: flag.string({
             name: "replace-lines",
             valueLabel: "start:end",
-            description: t({ en: "Replace a line range", de: "Einen Zeilenbereich ersetzen" }),
+            description: t({ en: `Replace a line range${LINES_OF.en}`, de: `Einen Zeilenbereich ersetzen${LINES_OF.de}` }),
           }),
           deleteLines: flag.string({
             name: "delete-lines",
             valueLabel: "start:end",
-            description: t({ en: "Delete a line range", de: "Einen Zeilenbereich löschen" }),
+            description: t({ en: `Delete a line range${LINES_OF.en}`, de: `Einen Zeilenbereich löschen${LINES_OF.de}` }),
           }),
           insertBeforeLine: flag.string({
             name: "insert-before-line",
             valueLabel: "line",
-            description: t({ en: "Insert before a line", de: "Vor einer Zeile einfügen" }),
+            description: t({ en: `Insert before a line${LINES_OF.en}`, de: `Vor einer Zeile einfügen${LINES_OF.de}` }),
           }),
           insertAfterLine: flag.string({
             name: "insert-after-line",
             valueLabel: "line",
-            description: t({ en: "Insert after a line", de: "Nach einer Zeile einfügen" }),
+            description: t({ en: `Insert after a line${LINES_OF.en}`, de: `Nach einer Zeile einfügen${LINES_OF.de}` }),
           }),
           replaceBlock: flag.string({
             name: "replace-block",
@@ -1157,20 +1182,64 @@ function notebooksCommands(locale?: string) {
         },
         examples: [
           "cld notebooks edit kolb-docs:betrieb/backup --append --content '- [ ] Restore testen'",
-          "cld notebooks edit ~/docs-mirror/betrieb/backup.md --replace-lines 3:4 --from fix.md",
+          "cld notebooks edit ~/docs-mirror/betrieb/backup.md --replace-lines 8:9 --from fix.md",
+          "cld notebooks edit ns98Kq --delete-lines 3:4",
         ],
         async run({ ctx, args, flags }) {
           const target = await resolveNote(ctx, args.note);
           let operation = await buildEditOperation(flags);
           if (target.mirror) {
             const { entry, root } = target.mirror;
-            if ((await localFileState(root, entry)).state === "modified")
+            const local = await localFileState(root, entry);
+            const lastLine = lastEditLine(operation);
+            // File line numbers name note lines only while the file still holds the note content it was pulled with.
+            const unmappable = t({
+              en: ` Line numbers count the lines of the pulled file, so they cannot be mapped to the note now. Or address the note by ID and take the line numbers from \`cld notebooks cat ${entry.id} --numbered\`.`,
+              de: ` Zeilennummern zählen die Zeilen der gepullten Datei und lassen sich jetzt nicht auf die Notiz abbilden. Oder sprich die Notiz über ihre ID an und nimm die Zeilennummern aus \`cld notebooks cat ${entry.id} --numbered\`.`,
+            });
+            if (local.state === "modified")
               throw new Error(
                 t({
                   en: `${entry.path} has local changes. Write the file back first, or pull --force to discard them.`,
                   de: `${entry.path} hat lokale Änderungen. Schreibe die Datei zuerst zurück oder verwirf sie mit pull --force.`,
-                }),
+                }) + (lastLine !== null ? unmappable : ""),
               );
+            if (lastLine !== null) {
+              if (local.state === "missing")
+                throw new Error(
+                  t({
+                    en: `${entry.path} is missing. Pull first (\`cld notebooks pull ${root}\`).`,
+                    de: `${entry.path} fehlt. Führe zuerst \`cld notebooks pull ${root}\` aus.`,
+                  }) + unmappable,
+                );
+              if (flags.ifContentHash !== undefined && flags.ifContentHash !== entry.contentHash)
+                throw new Error(
+                  t({
+                    en: `--if-content-hash differs from the content ${entry.path} was pulled with. Pull first (\`cld notebooks pull ${root}\`).`,
+                    de: `--if-content-hash weicht vom Inhalt ab, mit dem ${entry.path} gepullt wurde. Führe zuerst \`cld notebooks pull ${root}\` aus.`,
+                  }) + unmappable,
+                );
+              const text = local.text ?? "";
+              const frontMatterLines = frontMatterLineCount(text);
+              const mapped = fileLinesToNoteLines(operation, frontMatterLines);
+              if (!mapped)
+                throw new Error(
+                  t({
+                    en: `Lines 1-${frontMatterLines} of ${entry.path} are its front matter, which edit cannot change. The note starts at line ${frontMatterLines + 1}.`,
+                    de: `Die Zeilen 1-${frontMatterLines} von ${entry.path} sind ihr Front Matter, das edit nicht ändern kann. Die Notiz beginnt in Zeile ${frontMatterLines + 1}.`,
+                  }),
+                );
+              // The clean file holds the pulled note, so its length bounds the range in the numbers the caller used.
+              const fileLines = text.split("\n").length;
+              if (lastLine > fileLines)
+                throw new Error(
+                  t({
+                    en: `Line ${lastLine} is outside ${entry.path}, which has ${fileLines} lines.`,
+                    de: `Zeile ${lastLine} liegt außerhalb von ${entry.path}, die Datei hat ${fileLines} Zeilen.`,
+                  }),
+                );
+              operation = mapped;
+            }
           }
           if ("content" in operation)
             operation = {
@@ -1187,6 +1256,8 @@ function notebooksCommands(locale?: string) {
             ifContentHash: flags.ifContentHash ?? target.mirror?.entry.contentHash,
             ifBlockHash: flags.ifBlockHash,
           };
+          // Result lines count like the input: through a mirror file, as the file that the edit refreshes shows them.
+          const offset = target.mirror ? PULLED_FRONT_MATTER_LINES : 0;
           if (flags.dryRun) {
             const note = await ctx.readJson<Note>(await ctx.fetch(noteApi(target, "/content")));
             if (request.ifUpdatedAt !== undefined && request.ifUpdatedAt !== note.updatedAt)
@@ -1202,7 +1273,8 @@ function notebooksCommands(locale?: string) {
               throw error;
             }
             const { contentMd: _contentMd, ...meta } = note;
-            if (!printStructured(ctx, { note: meta, ...edit })) ctx.print(edit.content);
+            const result = { note: meta, ...edit, firstLine: offset + 1, blocks: shiftBlockLines(edit.blocks, offset) };
+            if (!printStructured(ctx, result)) ctx.print(edit.content);
             return;
           }
           const response = await ctx
@@ -1212,7 +1284,8 @@ function notebooksCommands(locale?: string) {
             .catch(rethrowConflict);
           const synced = target.mirror ? await refreshMirror(ctx, target.mirror, response.note.id) : null;
           const mirrorPath = synced ? mirrorPathOf(synced.manifest, response.note.id) : undefined;
-          if (printStructured(ctx, { ...response, ...(mirrorPath ? { mirrorPath } : {}) })) return;
+          const result = { ...response, firstLine: offset + 1, blocks: shiftBlockLines(response.blocks, offset) };
+          if (printStructured(ctx, { ...result, ...(mirrorPath ? { mirrorPath } : {}) })) return;
           ctx.print(
             `${response.changed ? t({ en: "Edited", de: "Bearbeitet" }) : t({ en: "Unchanged", de: "Unverändert" })} ${mirrorPath ?? response.note.title} (${response.note.id})`,
           );

@@ -11,7 +11,7 @@ import {
   defaultComposeSafetyConfig,
   type MailAddress,
 } from "../contracts";
-import { requireMailboxPermission } from "./access";
+import { requireDraftAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import { sha256Json } from "./canonical";
 import { hasUnrenderedTemplateSyntax } from "./compose-renderer";
@@ -273,7 +273,7 @@ export const reviewDraftComposeSafety = async (params: {
   locale?: string;
 }): Promise<Result<ComposeSafetyReview>> => {
   return sql.begin(async (tx) => {
-    const allowed = await requireMailboxPermission(params.context, params.mailboxId, "write", tx);
+    const allowed = await requireDraftAccess(params.context, params.mailboxId, params.draftId, "write", tx);
     if (!allowed.ok) return allowed;
     const source = await loadSafetySource({ db: tx, mailboxId: params.mailboxId, draftId: params.draftId });
     if (!source.ok) return source;

@@ -79,9 +79,9 @@ cld --json mail ls Support --view mine
 cld --json mail ls "Support:Projekte / 2025" --status needs_action --limit 20
 ```
 
-Without a folder, `ls` lists the mailbox's conversations across folders. `--view` takes `needs_action`, `mine`, `unassigned`, `waiting`, `done`, `snoozed`, or `recently_active`; `--status` takes `needs_action`, `waiting`, or `done`. The follow-up views leave out conversations that are only in Trash or Junk, and `unassigned` includes conversations whose assignee can no longer write in the mailbox. The JSON result is `{ "items": [...], "nextCursor": ... }`; pass `--cursor` for the next page.
+Without a folder, `ls` lists the mailbox's conversations across folders. `--view` takes `needs_action`, `mine`, `unassigned`, `waiting`, `done`, `snoozed`, or `recently_active`; `--status` takes `needs_action`, `waiting`, or `done`. The follow-up views leave out conversations that are only in Trash or Junk, and `unassigned` includes conversations with no eligible assignee, including when every stored assignee has lost access or expired. The JSON result is `{ "items": [...], "nextCursor": ... }`; pass `--cursor` for the next page.
 
-Show one conversation with its summary, status, assignee, tags, and latest messages, then print one message:
+Show one conversation with its summary, status, assignees, tags, and latest messages, then print one message:
 
 ```bash
 cld --json mail show <conversation-id>
@@ -96,6 +96,9 @@ Every triage command takes up to 50 conversation IDs:
 
 ```bash
 cld --json mail assign <conversation-id> <second-conversation-id> --to maria
+cld mail assign <conversation-id> --to maria,me
+cld mail assign <conversation-id> --to maria --replace
+cld mail assign <conversation-id> --remove maria
 cld mail assign <conversation-id> --to none
 cld --json mail archive <conversation-id> <second-conversation-id>
 cld --json mail mv <conversation-id> --to "Support:Projekte / 2025"
@@ -108,7 +111,7 @@ cld --json mail tag add <conversation-id> <second-conversation-id> --tag Priorit
 cld --json mail tag rm <conversation-id> --tag Priority
 ```
 
-- `assign --to` takes a user ID, an exact username from `conversation users`, `me`, or `none`. It needs no revision, and assigning the current assignee again changes nothing. The new assignee receives one notification for the whole batch; assigning yourself or clearing the assignee sends none.
+- `assign --to` adds comma-separated user IDs, exact usernames from `conversation users`, or `me`. Add `--replace` to replace the complete set; `--remove` removes named users, and `--to none` clears all assignees. A conversation holds at most 20 assignees. The request needs no revision. Each newly added user gets one notification listing only the conversations they were added to; self-assignment, removals, and unchanged assignments send none. Eligibility or limit failures leave the entire batch unchanged.
 - `archive`, `mv`, `read`, `unread`, `flag`, `unflag`, and `rm` change the conversation's messages in one folder: the Inbox unless `--in <folder>` names another. `rm` moves them to the Trash and needs `--yes`. Each conversation becomes durable provider commands; pass `--wait` to wait for them.
 - `tag add` and `tag rm` take `--tag` once per tag. They change Cloud-local tags, not provider keywords.
 
@@ -123,7 +126,7 @@ A batch continues when one conversation fails and then exits with status 1. The 
 }
 ```
 
-`assign` returns `{ "assignee": ..., "results": [{ "conversationId", "status": "ok" | "not_found" }] }`. `tag add` returns `updatedConversationIds` and `unchangedConversationIds`; `tag rm` adds `failed`.
+`assign` returns `{ "assignees": [...], "results": [{ "conversationId", "status": "ok" | "not_found" }] }`. The `assignees` array resolves the users named in the request, not the final set of each conversation. Read `conversation collaboration` to inspect that set. `tag add` returns `updatedConversationIds` and `unchangedConversationIds`; `tag rm` adds `failed`.
 
 ## Answer mail
 
@@ -216,6 +219,20 @@ Mailbox access uses the same direct permission model as the Mail settings UI:
 - `write` can also change and send mail.
 - `admin` can configure the mailbox, providers, access, references, and workflows.
 
+A grant's scope is `mailbox` (the default) or `assigned`. Assigned grants are
+available to people and groups with `read` or `write`; `ls` and `access list`
+show the scope. With assigned `write`, a person can act on their currently
+assigned conversations, reply or forward, manage those drafts and attachments,
+and send or schedule them. Assigned `read` permits comments, personal reminders,
+and viewing presence on those conversations. Composing presence requires `write`.
+
+Assigned access cannot change assignees, create new conversations or edit-as-new
+or resend drafts, manage mailbox resources, or browse recipient suggestions.
+Queued commands and scheduled sends recheck current access before acting.
+Removing an assignment or grant stops work that has not executed yet. Command
+reads and cancellation expose only the person's own commands with visible targets.
+Hidden conversations, messages and drafts return `404`.
+
 Search users and groups before creating a grant:
 
 ```bash
@@ -228,11 +245,12 @@ Grant direct access, idempotently create or update it, or revoke one direct gran
 ```bash
 cld --json mail access grant <mailbox-id> --user ada@example.org --permission write
 cld --json mail access set <mailbox-id> --group "Support Team" --permission read
+cld --json mail access set <mailbox-id> --group "Reply Team" --permission write --scope assigned
 cld --json mail access set <mailbox-id> --access-id <access-id> --permission admin
 cld mail access revoke <mailbox-id> --access-id <access-id> --yes
 ```
 
-Use exactly one of `--user`, `--group`, `--authenticated`, or `--access-id` where supported. `access grant` fails when a direct grant already exists; `access set` is the agent-friendly idempotent command. Effective access can also come from group membership or authenticated-user access, so revoking one direct entry does not necessarily remove every effective permission.
+Use exactly one of `--user`, `--group`, `--service-account`, or `--access-id` where supported. `access grant` fails when a direct grant already exists; `access set` is the agent-friendly idempotent command. Effective access can also come from group membership or authenticated-user access, so revoking one direct entry does not necessarily remove every effective permission.
 
 ## Connect a provider and identity
 
@@ -538,6 +556,10 @@ cld --json mail conversation update \
   --done
 cld --json mail conversation activity <conversation-id>
 ```
+
+`conversation users` lists active users with mailbox-wide write/admin access or assigned-only read/write access, including nested group grants. Each user has `scope: "mailbox" | "assigned"`; platform administrator status alone does not make a user eligible. Changing assignees requires mailbox-wide write/admin access, even for removing yourself.
+
+`conversation update --assignee` replaces the whole set. Repeat the flag or separate usernames, IDs, or `me` with commas; `--unassign` clears the set. Collaboration returns `assignees` in assignment-time order, with user ID breaking ties. Lists, search, focus, and workflow conversation data return `assigneeUserIds` arrays. “Mine” means the current user is in that set.
 
 Assign many conversations at once with [`assign`](#triage-conversations). It exits with status 1 when any conversation was not found in the mailbox.
 

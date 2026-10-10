@@ -52,6 +52,14 @@ const props = (permission: Permission): MailboxDetailsDialogProps => ({
         displayName: "Triage agent",
         serviceAccountKind: "agent",
       },
+      {
+        id: "00000000-0000-4000-8000-000000000004",
+        principal: { type: "user", userId: "00000000-0000-4000-8000-0000000000a2" },
+        permission: "write",
+        createdAt: "2026-10-01T00:00:00.000Z",
+        displayName: "Ben Freelancer",
+        scope: "assigned",
+      },
     ],
     hiddenAccessCount: 0,
     account: { email: "support@example.test", server: "imap.example.test" },
@@ -100,6 +108,10 @@ describe("Mailbox details", () => {
     expect(html).toContain('datetime="2026-10-07T09:30:00.000Z"');
     expect(html).toContain(">12<");
     expect(html).not.toContain("not visible to your account");
+    // A grant on assigned conversations only names that scope instead of a mailbox-wide level.
+    expect(html).toContain("Ben Freelancer");
+    expect(html).toContain("Edit assigned only");
+    expect(render("read", "de")).toContain("Nur zugewiesene bearbeiten");
   });
 
   test("tells a guest how many grants their account cannot see", () => {

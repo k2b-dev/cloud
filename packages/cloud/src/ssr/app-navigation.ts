@@ -1,6 +1,7 @@
+import { hasAnyAppRole } from "../_internal/app-roles";
 import type { RuntimeAppMeta } from "../contracts/app";
 import { isPwaPartId } from "../contracts/pwa";
-import { hasRole, type Role, type User } from "../contracts/shared";
+import type { User } from "../contracts/shared";
 import { resolveAppPresentation } from "../shared/app-presentation";
 
 export type VisibleNavigationApp = RuntimeAppMeta & {
@@ -27,14 +28,11 @@ export const hasDedicatedRuntimeRoute = (apps: readonly RuntimeAppMeta[], pathna
   return !!match && match.app.id !== currentAppId;
 };
 
-const hasAnyRole = (user: User | undefined, roles: readonly Role[] | undefined): boolean =>
-  !roles || (!!user && roles.some((role) => (role === "guest" ? user.profile === "guest" : hasRole(user, role))));
-
 /** Apps rendered in the navigation for a given authenticated user. */
 export const visibleNavigationApps = (apps: readonly RuntimeAppMeta[], user: User | undefined): VisibleNavigationApp[] =>
   apps.filter(
     (app): app is VisibleNavigationApp =>
-      !!app.nav && app.nav.section !== "hidden" && (!app.nav.requiresAuth || !!user) && hasAnyRole(user, app.nav.requiresRoles),
+      !!app.nav && app.nav.section !== "hidden" && (!app.nav.requiresAuth || !!user) && hasAnyAppRole(user, app.nav.requiresRoles),
   );
 
 export type VisiblePwaPart = RuntimeAppMeta & { pwa: NonNullable<RuntimeAppMeta["pwa"]> };
@@ -49,7 +47,7 @@ export const visiblePwaParts = (apps: readonly RuntimeAppMeta[], user: User | un
   return apps
     .filter(
       (app): app is VisiblePwaPart =>
-        !!app.pwa && isPwaPartId(app.id) && app.routes.includes(app.pwa.href) && hasAnyRole(user, app.pwa.requiresRoles),
+        !!app.pwa && isPwaPartId(app.id) && app.routes.includes(app.pwa.href) && hasAnyAppRole(user, app.pwa.requiresRoles),
     )
     .map((app) => resolveAppPresentation(app, locale))
     .sort((a, b) => a.name.localeCompare(b.name, locale) || a.id.localeCompare(b.id));

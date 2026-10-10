@@ -67,8 +67,7 @@ jobs:
           # The Files Filegate suites, the Notebooks shared-log suite and the Assistant artifact suite start their own containers from these images.
           "$GITHUB_WORKSPACE/.github/pull-images.sh" nats:2.14.3-alpine ghcr.io/k2b-dev/filegate:7.0.0 debian:13-slim postgres:17-alpine ghcr.io/k2b-dev/rsql:1.0.0
           docker run --detach --name nightly-nats --publish 127.0.0.1:4222:4222 --volume "$GITHUB_WORKSPACE/.github/nats-ci.conf:/etc/nats.conf:ro" nats:2.14.3-alpine --config /etc/nats.conf
-          HOMEBREW_NO_AUTO_UPDATE=1 /home/linuxbrew/.linuxbrew/bin/brew install --quiet poppler
-          sudo ln -s /home/linuxbrew/.linuxbrew/bin/{pdftotext,pdfinfo,pdffonts} /usr/local/bin/
+          "$GITHUB_WORKSPACE/.github/poppler.sh" install
       - run: bun ci
       - run: bun run --cwd packages/ui build
       - name: Install the Playwright browser used by the Assistant code host and Mail tests
@@ -104,8 +103,7 @@ jobs:
       - run: |
           set -euo pipefail
           "$GITHUB_WORKSPACE/.github/pull-images.sh" nats:2.14.3-alpine postgres:15-alpine
-          HOMEBREW_NO_AUTO_UPDATE=1 /home/linuxbrew/.linuxbrew/bin/brew install --quiet poppler
-          sudo ln -s /home/linuxbrew/.linuxbrew/bin/{pdftotext,pdfinfo,pdffonts} /usr/local/bin/
+          "$GITHUB_WORKSPACE/.github/poppler.sh" install
           docker run --detach --name grids-postgres --publish 127.0.0.1:5432:5432 \
             --env POSTGRES_USER=grids_test --env POSTGRES_PASSWORD=grids_test --env POSTGRES_DB=grids_test \
             postgres:15-alpine -c max_connections=300

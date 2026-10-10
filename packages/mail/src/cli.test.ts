@@ -158,7 +158,7 @@ test("focus lists a cross-mailbox queue without resolving one mailbox", async ()
         participantSummary: "Ada",
         latestMessageAt: "2026-08-19T10:00:00.000Z",
         workStatus: "needs_action",
-        assigneeUserId: USER_ID,
+        assigneeUserIds: [USER_ID],
         unread: true,
         flagged: false,
         hasAttachments: false,
@@ -1190,10 +1190,10 @@ test("assign resolves me, usernames, and none and reports missing conversations"
       ]);
     }
     if (request.method === "POST" && url.pathname === `/api/mail/mailboxes/${MAILBOX_ID}/conversations/assign`) {
-      const body = (await request.json()) as { conversationIds: string[]; assigneeUserId: string | null };
+      const body = (await request.json()) as { conversationIds: string[]; assigneeUserIds: string[] };
       bodies.push(body);
       return api({
-        assignee: body.assigneeUserId ? { id: body.assigneeUserId, uid: "grace", displayName: "Grace", avatarHash: null } : null,
+        assignees: body.assigneeUserIds.map((id) => ({ id, uid: "grace", displayName: "Grace", avatarHash: null })),
         results: body.conversationIds.map((conversationId) => ({
           conversationId,
           status: conversationId === SOURCE_CONVERSATION_ID ? "not_found" : "ok",
@@ -1208,23 +1208,89 @@ test("assign resolves me, usernames, and none and reports missing conversations"
 
   const toMe = await assign("me", CONVERSATION_ID, REMINDER_ID);
   expect(toMe.exitCode, toMe.stderr).toBe(0);
-  expect(toMe.stdout).toContain("Assigned 2 conversation(s) to Grace (grace).");
+  expect(toMe.stdout).toContain("Added assignees: Grace (grace); 2 conversation(s).");
   const byUsername = await assign("Grace", CONVERSATION_ID, SOURCE_CONVERSATION_ID);
   expect(byUsername.exitCode).toBe(1);
   expect(byUsername.stderr).toContain(`${SOURCE_CONVERSATION_ID}: not found in this mailbox`);
   const none = await assign("none", CONVERSATION_ID);
   expect(none.exitCode, none.stderr).toBe(0);
-  expect(none.stdout).toContain("Cleared the assignee of 1 conversation(s).");
+  expect(none.stdout).toContain("Cleared all assignees of 1 conversation(s).");
   expect(bodies).toEqual([
-    { conversationIds: [CONVERSATION_ID, REMINDER_ID], assigneeUserId: USER_ID },
-    { conversationIds: [CONVERSATION_ID, SOURCE_CONVERSATION_ID], assigneeUserId: COMMAND_ID },
-    { conversationIds: [CONVERSATION_ID], assigneeUserId: null },
+    { conversationIds: [CONVERSATION_ID, REMINDER_ID], assigneeUserIds: [USER_ID], mode: "add" },
+    { conversationIds: [CONVERSATION_ID, SOURCE_CONVERSATION_ID], assigneeUserIds: [COMMAND_ID], mode: "add" },
+    { conversationIds: [CONVERSATION_ID], assigneeUserIds: [], mode: "replace" },
   ]);
 
   const tooMany = await assign("none", ...Array.from({ length: 51 }, (_, index) => `Cv${String(index).padStart(4, "0")}`));
   expect(tooMany.exitCode).not.toBe(0);
   expect(tooMany.stderr).toContain("Pass at most 50 conversations at once.");
   expect(bodies).toHaveLength(3);
+});
+
+test("assign adds several users, replaces, removes, and rejects conflicting flags", async () => {
+  const bodies: unknown[] = [];
+  const server = withMailbox(async (request) => {
+    const url = new URL(request.url);
+    if (url.pathname === "/api/me") return api({ id: USER_ID });
+    if (url.pathname.endsWith("/assignable-users")) return api([{ id: COMMAND_ID, uid: "grace", displayName: "Grace", scope: "assigned" }]);
+    if (request.method === "POST" && url.pathname.endsWith("/conversations/assign")) {
+      const body = await request.json();
+      bodies.push(body);
+      return api({
+        assignees: body.assigneeUserIds.map((id: string) => ({ id, uid: "user", displayName: "User", avatarHash: null })),
+        results: [{ conversationId: CONVERSATION_ID, status: "ok" }],
+      });
+    }
+    return api({}, { status: 500 });
+  });
+  servers.push(server);
+  const assign = (...flags: string[]) =>
+    runCli(`http://127.0.0.1:${server.port}`, ["mail", "assign", CONVERSATION_ID, "--mailbox", MAILBOX_ID, ...flags]);
+  for (const flags of [
+    ["--to", "me,Grace"],
+    ["--to", USER_ID, "--replace"],
+    ["--remove", "me,Grace"],
+  ]) {
+    const result = await assign(...flags);
+    expect(result.exitCode, result.stderr).toBe(0);
+  }
+  expect(bodies).toEqual([
+    { conversationIds: [CONVERSATION_ID], assigneeUserIds: [USER_ID, COMMAND_ID], mode: "add" },
+    { conversationIds: [CONVERSATION_ID], assigneeUserIds: [USER_ID], mode: "replace" },
+    { conversationIds: [CONVERSATION_ID], assigneeUserIds: [USER_ID, COMMAND_ID], mode: "remove" },
+  ]);
+  expect((await assign("--to", "me", "--remove", "me")).exitCode).not.toBe(0);
+  expect((await assign("--remove", "me", "--replace")).exitCode).not.toBe(0);
+  expect((await assign("--to", "none,me")).exitCode).not.toBe(0);
+  expect(bodies).toHaveLength(3);
+});
+
+test("conversation update replaces repeated and comma-separated assignees and unassign clears them", async () => {
+  const bodies: unknown[] = [];
+  const server = withMailbox(async (request) => {
+    if (request.method !== "PATCH") return api({}, { status: 500 });
+    bodies.push(await request.json());
+    return api({ conversationId: CONVERSATION_ID, assignees: [], revision: 5, workStatus: "needs_action", snoozedUntil: null });
+  });
+  servers.push(server);
+  const update = (...flags: string[]) =>
+    runCli(`http://127.0.0.1:${server.port}`, [
+      "mail",
+      "conversation",
+      "update",
+      CONVERSATION_ID,
+      "--mailbox",
+      MAILBOX_ID,
+      "--revision",
+      "4",
+      ...flags,
+    ]);
+  expect((await update("--assignee", `${USER_ID},${COMMAND_ID}`, "--assignee", USER_ID)).exitCode).toBe(0);
+  expect((await update("--unassign")).exitCode).toBe(0);
+  expect(bodies).toEqual([
+    { expectedRevision: 4, assigneeUserIds: [USER_ID, COMMAND_ID] },
+    { expectedRevision: 4, assigneeUserIds: [] },
+  ]);
 });
 
 test("reference config set preserves unspecified settings", async () => {
@@ -1391,7 +1457,7 @@ test("conversation update sends one optimistic collaboration mutation", async ()
       requestBody = await request.json();
       return api({
         conversationId: CONVERSATION_ID,
-        assignee: { id: USER_ID, uid: "writer", displayName: "Writer", avatarHash: null },
+        assignees: [{ id: USER_ID, uid: "writer", displayName: "Writer", avatarHash: null }],
         workStatus: "waiting",
         snoozedUntil: null,
         revision: 5,
@@ -1419,7 +1485,7 @@ test("conversation update sends one optimistic collaboration mutation", async ()
   expect(result.exitCode, result.stderr).toBe(0);
   expect(requestBody).toEqual({
     expectedRevision: 4,
-    assigneeUserId: USER_ID,
+    assigneeUserIds: [USER_ID],
     completion: "open",
   });
   expect(JSON.parse(result.stdout)).toMatchObject({ revision: 5, workStatus: "waiting" });
@@ -1952,7 +2018,7 @@ test("show includes shared context and the latest message window in English and 
   };
   const collaboration = {
     conversationId: CONVERSATION_ID,
-    assignee: { id: USER_ID, uid: "ada", displayName: "Ada Lovelace", avatarHash: null },
+    assignees: [{ id: USER_ID, uid: "ada", displayName: "Ada Lovelace", avatarHash: null }],
     workStatus: "waiting",
     snoozedUntil: null,
     revision: 7,
@@ -2006,7 +2072,7 @@ test("show includes shared context and the latest message window in English and 
     summary: summary.summary,
     summaryRevision: summary.summaryRevision,
     collaboration: {
-      assignee: collaboration.assignee,
+      assignees: collaboration.assignees,
       workStatus: collaboration.workStatus,
       snoozedUntil: collaboration.snoozedUntil,
       revision: collaboration.revision,
@@ -5298,3 +5364,71 @@ test("incoming automation CRUD accepts complete mixed-flow definitions and prese
     },
   ]);
 }, 20_000);
+
+test("both mailbox access adapters forward scope, preserve omitted scope, and reject invalid scopes", async () => {
+  const writes: Array<{ path: string; body: unknown }> = [];
+  const accessId = "00000000-0000-4000-8000-000000000031";
+  const server = withMailbox(async (request) => {
+    const path = new URL(request.url).pathname;
+    if (path === "/api/mail/admin/operations") return api({ mailboxes: [platformMailboxSummary], nextCursor: null });
+    if (path.endsWith("/access") && request.method === "GET") return api([]);
+    if (request.method === "POST" || request.method === "PATCH") {
+      const body: unknown = await request.json();
+      writes.push({ path, body });
+      return api({
+        id: accessId,
+        principal: { type: "user", userId: USER_ID },
+        permission: "write",
+        scope: "assigned",
+        createdAt: "2026-07-12T00:00:00.000Z",
+      });
+    }
+    return api({ error: "Unexpected request" }, { status: 404 });
+  });
+  servers.push(server);
+  const origin = `http://127.0.0.1:${server.port}`;
+  for (const prefix of [["mail"], ["mail", "admin", "mailbox"]]) {
+    for (const args of [
+      ["access", "grant", MAILBOX_ID, "--user", USER_ID, "--permission", "write", "--scope", "assigned"],
+      ["access", "set", MAILBOX_ID, "--access-id", accessId, "--permission", "write", "--scope", "mailbox"],
+      ["access", "set", MAILBOX_ID, "--access-id", accessId, "--permission", "read"],
+    ]) {
+      const result = await runCli(origin, [...prefix, ...args]);
+      expect(result.stderr).toBe("");
+      expect(result.exitCode).toBe(0);
+    }
+    const invalid = await runCli(origin, [
+      ...prefix,
+      "access",
+      "grant",
+      MAILBOX_ID,
+      "--user",
+      USER_ID,
+      "--permission",
+      "write",
+      "--scope",
+      "all",
+    ]);
+    expect(invalid.exitCode).toBe(1);
+    expect(invalid.stderr).toContain("Scope must be one of: mailbox, assigned");
+  }
+  for (const [index, base] of ["/api/mail/mailboxes", "/api/mail/admin/mailboxes"].entries()) {
+    expect(writes.slice(index * 3, index * 3 + 3)).toEqual([
+      {
+        path: `${base}/${MAILBOX_ID}/access`,
+        body: { principal: { type: "user", userId: USER_ID }, permission: "write", scope: "assigned" },
+      },
+      { path: `${base}/${MAILBOX_ID}/access/${accessId}`, body: { permission: "write", scope: "mailbox" } },
+      { path: `${base}/${MAILBOX_ID}/access/${accessId}`, body: { permission: "read" } },
+    ]);
+  }
+});
+
+test("mail ls displays assigned access scope", async () => {
+  const server = Bun.serve({ port: 0, fetch: () => api([{ ...mailbox, permission: "write", accessScope: "assigned" }]) });
+  servers.push(server);
+  const result = await runCli(`http://127.0.0.1:${server.port}`, ["mail", "ls"]);
+  expect(result.exitCode).toBe(0);
+  expect(result.stdout).toContain("SCOPE");
+  expect(result.stdout).toContain("assigned");
+});

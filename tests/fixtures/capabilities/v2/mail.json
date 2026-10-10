@@ -1,7 +1,7 @@
 {
   "protocolVersion": 2,
   "appId": "mail",
-  "manifestHash": "b9b96107a9e88e34ad1de73264ed9002726d36a33d1061ec63d5b503b13e0268",
+  "manifestHash": "0da9a8322b69e7bf1359215013fb6c2d350741a2b15e2e752a4de8fbc344db62",
   "types": [
     {
       "localId": "attachment",
@@ -907,7 +907,7 @@
     {
       "localId": "conversation.focus",
       "title": "List focused mail",
-      "description": "Direct cross-mailbox work-queue entry with compact previews; no mailbox discovery is required. Read only the conversations that need deeper collaboration or message context; use search instead for text lookup.",
+      "description": "Direct cross-mailbox work-queue entry with compact previews; no mailbox discovery is required. The unassigned and all queues leave out conversations kept inside folder_only or hidden folders. Read only the conversations that need deeper collaboration or message context; use search instead for text lookup.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1072,7 +1072,7 @@
     {
       "localId": "conversation.list",
       "title": "List conversations",
-      "description": "Browse compact conversation previews in one known mailbox, optionally by folder, work view, or unread state. The result has enough state to choose a conversation or perform provider mark/move Actions; use conversation.read for collaboration details.",
+      "description": "Browse compact conversation previews in one known mailbox, optionally by folder, work view, or unread state. Without folderId, every view except mine and send_problems leaves out conversations kept inside folder_only or hidden folders; pass folderId to list them. The result has enough state to choose a conversation or perform provider mark/move Actions; use conversation.read for collaboration details.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1331,33 +1331,30 @@
           "collaboration": {
             "type": "object",
             "properties": {
-              "assignee": {
-                "anyOf": [
-                  {
-                    "type": "object",
-                    "properties": {
-                      "id": {
-                        "type": "string",
-                        "format": "uuid",
-                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                      },
-                      "uid": {
-                        "type": "string"
-                      },
-                      "displayName": {
-                        "type": "string"
-                      },
-                      "avatarHash": {
-                        "type": ["string", "null"]
-                      }
+              "assignees": {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                     },
-                    "required": ["id", "uid", "displayName", "avatarHash"],
-                    "additionalProperties": false
+                    "uid": {
+                      "type": "string"
+                    },
+                    "displayName": {
+                      "type": "string"
+                    },
+                    "avatarHash": {
+                      "type": ["string", "null"]
+                    }
                   },
-                  {
-                    "type": "null"
-                  }
-                ]
+                  "required": ["id", "uid", "displayName", "avatarHash"],
+                  "additionalProperties": false
+                }
               },
               "workStatus": {
                 "type": "string",
@@ -1381,7 +1378,7 @@
                 "maximum": 9007199254740991
               }
             },
-            "required": ["assignee", "workStatus", "snoozedUntil", "revision"],
+            "required": ["assignees", "workStatus", "snoozedUntil", "revision"],
             "additionalProperties": false
           },
           "tags": {
@@ -1592,7 +1589,7 @@
         "required": ["mailboxId", "conversationId", "summary", "summaryRevision", "collaboration", "tags", "messages", "messagesTruncated"],
         "additionalProperties": false
       },
-      "schemaHash": "6dc023812ca0da61457347e1ecd81980c57abd72cf44b41682d4933ca5c1420e",
+      "schemaHash": "720c677ae5f9f02d1b4a42910c7f586045fd5ac721a44f96b3e6e7b0bc563c08",
       "openWorld": true
     },
     {
@@ -1845,7 +1842,7 @@
                       "tag",
                       "keyword"
                     ],
-                    "description": "Mail field to search."
+                    "description": "Mail field to search. `folder` matches folder names; use folder_id to filter by folder ID."
                   },
                   "query": {
                     "type": "string",
@@ -2000,7 +1997,7 @@
                   "folderId": {
                     "type": "string",
                     "pattern": "^[0-9A-Za-z]{6}$",
-                    "description": "Stable folder ID."
+                    "description": "Stable folder ID from the folder list; an unknown ID fails instead of matching nothing."
                   }
                 },
                 "required": ["type", "folderId"],
@@ -2060,7 +2057,7 @@
                                 "tag",
                                 "keyword"
                               ],
-                              "description": "Mail field to search."
+                              "description": "Mail field to search. `folder` matches folder names; use folder_id to filter by folder ID."
                             },
                             "query": {
                               "type": "string",
@@ -2215,7 +2212,7 @@
                             "folderId": {
                               "type": "string",
                               "pattern": "^[0-9A-Za-z]{6}$",
-                              "description": "Stable folder ID."
+                              "description": "Stable folder ID from the folder list; an unknown ID fails instead of matching nothing."
                             }
                           },
                           "required": ["type", "folderId"],
@@ -2283,7 +2280,7 @@
                                 "tag",
                                 "keyword"
                               ],
-                              "description": "Mail field to search."
+                              "description": "Mail field to search. `folder` matches folder names; use folder_id to filter by folder ID."
                             },
                             "query": {
                               "type": "string",
@@ -2438,7 +2435,7 @@
                             "folderId": {
                               "type": "string",
                               "pattern": "^[0-9A-Za-z]{6}$",
-                              "description": "Stable folder ID."
+                              "description": "Stable folder ID from the folder list; an unknown ID fails instead of matching nothing."
                             }
                           },
                           "required": ["type", "folderId"],
@@ -2502,7 +2499,7 @@
                               "tag",
                               "keyword"
                             ],
-                            "description": "Mail field to search."
+                            "description": "Mail field to search. `folder` matches folder names; use folder_id to filter by folder ID."
                           },
                           "query": {
                             "type": "string",
@@ -2657,7 +2654,7 @@
                           "folderId": {
                             "type": "string",
                             "pattern": "^[0-9A-Za-z]{6}$",
-                            "description": "Stable folder ID."
+                            "description": "Stable folder ID from the folder list; an unknown ID fails instead of matching nothing."
                           }
                         },
                         "required": ["type", "folderId"],
@@ -2826,6 +2823,17 @@
               "minimum": 0,
               "maximum": 9007199254740991
             },
+            "folderPath": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 500
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "attachmentMatch": {
               "anyOf": [
                 {
@@ -2925,12 +2933,13 @@
             "flagged",
             "hasAttachments",
             "messageCount",
+            "folderPath",
             "attachmentMatch"
           ],
           "additionalProperties": false
         }
       },
-      "schemaHash": "8c94f76d4b3f23220c8ebf7f29e7f2d6c267751e08bb439bd19c843cd6e989ef",
+      "schemaHash": "8f99e061ee5712c366721b5939462d66c2a4483d38ef015fc6e008c6f43ec964",
       "openWorld": true
     },
     {
@@ -3728,7 +3737,7 @@
     {
       "localId": "folder.list",
       "title": "List folders",
-      "description": "List folders in one known mailbox. Get mailboxId from mailbox.list; use returned folder IDs to filter conversation.list or as move targets where supported.",
+      "description": "List folders in one known mailbox. Get mailboxId from mailbox.list; use returned folder IDs to filter conversation.list or as move targets where supported. effectiveDisplay tells where a folder's mail appears: folder_only and hidden folders keep their conversations out of All mail and the work views unless a message also lies in an everywhere folder.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -3802,6 +3811,29 @@
             "selectable": {
               "type": "boolean"
             },
+            "display": {
+              "type": "string",
+              "enum": ["everywhere", "folder_only", "hidden"]
+            },
+            "effectiveDisplay": {
+              "type": "string",
+              "enum": ["everywhere", "folder_only", "hidden"]
+            },
+            "displayInheritedFromFolderId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9A-Za-z]{6}$",
+                  "description": "Stable 6-character resource ID"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "displayNeutral": {
+              "type": "boolean"
+            },
             "total": {
               "type": "integer",
               "minimum": 0,
@@ -3843,11 +3875,23 @@
               }
             }
           },
-          "required": ["ref", "parentId", "title", "role", "selectable", "total", "unread"],
+          "required": [
+            "ref",
+            "parentId",
+            "title",
+            "role",
+            "selectable",
+            "display",
+            "effectiveDisplay",
+            "displayInheritedFromFolderId",
+            "displayNeutral",
+            "total",
+            "unread"
+          ],
           "additionalProperties": false
         }
       },
-      "schemaHash": "c4cf40ffb94272a3387fdb6a0f914c33146cdd8b937b1c487b4c40331cdb0cf9",
+      "schemaHash": "56857fab5e25cd53f3301928ff4a9fd66bd42567a493ae0d193ae98fa7cbea8a",
       "openWorld": false
     },
     {
@@ -3953,6 +3997,11 @@
               "type": "string",
               "enum": ["read", "write", "admin"]
             },
+            "accessScope": {
+              "type": "string",
+              "enum": ["mailbox", "assigned"],
+              "description": "assigned: the permission covers only conversations assigned to the caller, who cannot start new mail there."
+            },
             "unreadCount": {
               "type": "integer",
               "minimum": 0,
@@ -3969,11 +4018,11 @@
               "maxLength": 240
             }
           },
-          "required": ["ref", "title", "links", "permission", "unreadCount", "needsActionCount"],
+          "required": ["ref", "title", "links", "permission", "accessScope", "unreadCount", "needsActionCount"],
           "additionalProperties": false
         }
       },
-      "schemaHash": "4cd1e3ed9e0353174d2ecd6bd05ec2fed98303d80650e7b62edc4fbb47491fa1",
+      "schemaHash": "ffd1b3551d6816987b744645550d0d3530bf53f00ba7d3b7b05b4a7a3526e646",
       "openWorld": false
     },
     {
@@ -4265,6 +4314,11 @@
               "type": "string",
               "enum": ["read", "write", "admin"]
             },
+            "accessScope": {
+              "type": "string",
+              "enum": ["mailbox", "assigned"],
+              "description": "assigned: the permission covers only conversations assigned to the caller, who cannot start new mail there."
+            },
             "health": {
               "type": "string",
               "enum": [
@@ -4299,11 +4353,11 @@
               "maximum": 9007199254740991
             }
           },
-          "required": ["ref", "title", "links", "permission", "health", "syncEnabled"],
+          "required": ["ref", "title", "links", "permission", "accessScope", "health", "syncEnabled"],
           "additionalProperties": false
         }
       },
-      "schemaHash": "652660f93b350f9c27ebd8887d98a34d19343c1003b6d2dab72bcd783c011f2a",
+      "schemaHash": "f5c0f575be3f06fd403573eefc057ddd05471fedbb63f7a7f5a0bbb0cf2f1493",
       "openWorld": false
     },
     {
@@ -5808,7 +5862,7 @@
     {
       "localId": "conversation.assign",
       "title": "Assign conversation",
-      "description": "Assign one conversation to an eligible mailbox member, or clear its assignee.",
+      "description": "Add, remove, or replace the assignees of one conversation.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -5823,27 +5877,23 @@
             "pattern": "^[0-9A-Za-z]{6}$",
             "description": "Exact mail.conversation ID returned by a conversation list, search, focus result, or typed conversation ref."
           },
-          "expectedRevision": {
-            "type": "integer",
-            "exclusiveMinimum": 0,
-            "maximum": 9007199254740991,
-            "description": "Current resource revision used for optimistic concurrency."
+          "assigneeUserIds": {
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "description": "User UUIDs to add, remove, or replace; empty with replace clears all assignees."
           },
-          "assigneeUserId": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid",
-                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "User UUID to assign, or null to unassign."
+          "mode": {
+            "type": "string",
+            "enum": ["add", "remove", "replace"],
+            "description": "Add users, remove users, or replace the entire assignee set."
           }
         },
-        "required": ["mailboxId", "conversationId", "expectedRevision", "assigneeUserId"],
+        "required": ["mailboxId", "conversationId", "assigneeUserIds", "mode"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -5855,33 +5905,30 @@
             "pattern": "^[0-9A-Za-z]{6}$",
             "description": "Stable 6-character resource ID"
           },
-          "assignee": {
-            "anyOf": [
-              {
-                "type": "object",
-                "properties": {
-                  "id": {
-                    "type": "string",
-                    "format": "uuid",
-                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                  },
-                  "uid": {
-                    "type": "string"
-                  },
-                  "displayName": {
-                    "type": "string"
-                  },
-                  "avatarHash": {
-                    "type": ["string", "null"]
-                  }
+          "assignees": {
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                 },
-                "required": ["id", "uid", "displayName", "avatarHash"],
-                "additionalProperties": false
+                "uid": {
+                  "type": "string"
+                },
+                "displayName": {
+                  "type": "string"
+                },
+                "avatarHash": {
+                  "type": ["string", "null"]
+                }
               },
-              {
-                "type": "null"
-              }
-            ]
+              "required": ["id", "uid", "displayName", "avatarHash"],
+              "additionalProperties": false
+            }
           },
           "workStatus": {
             "type": "string",
@@ -5905,10 +5952,113 @@
             "maximum": 9007199254740991
           }
         },
-        "required": ["conversationId", "assignee", "workStatus", "snoozedUntil", "revision"],
+        "required": ["conversationId", "assignees", "workStatus", "snoozedUntil", "revision"],
         "additionalProperties": false
       },
-      "schemaHash": "f89e8f76020021d7be7897786a1894be8164377d8f620053b5932ec97284c08b",
+      "schemaHash": "17512e2e89be3d60aa6bd552d13174c9f4d12ffcf959c96716478f40f52f5f4b",
+      "destructive": false,
+      "openWorld": false,
+      "idempotency": "none",
+      "approval": "rememberable",
+      "review": true
+    },
+    {
+      "localId": "conversation.assign.batch",
+      "title": "Assign conversations",
+      "description": "Add, remove, or replace assignees on up to 50 conversations of one mailbox. Reports ok or not_found for each conversation; each newly added user gets one notification.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "mailboxId": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Exact mail.mailbox ID returned by List mailboxes or a typed mailbox ref."
+          },
+          "conversationIds": {
+            "minItems": 1,
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9A-Za-z]{6}$",
+              "description": "Exact mail.conversation ID returned by a conversation list, search, focus result, or typed conversation ref."
+            },
+            "description": "Up to 50 conversations of this mailbox."
+          },
+          "assigneeUserIds": {
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "description": "User UUIDs to add, remove, or replace; empty with replace clears all assignees."
+          },
+          "mode": {
+            "type": "string",
+            "enum": ["add", "remove", "replace"],
+            "description": "Add users, remove users, or replace the entire assignee set."
+          }
+        },
+        "required": ["mailboxId", "conversationIds", "assigneeUserIds", "mode"],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "assignees": {
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                "uid": {
+                  "type": "string"
+                },
+                "displayName": {
+                  "type": "string"
+                },
+                "avatarHash": {
+                  "type": ["string", "null"]
+                }
+              },
+              "required": ["id", "uid", "displayName", "avatarHash"],
+              "additionalProperties": false
+            }
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "conversationId": {
+                  "type": "string",
+                  "pattern": "^[0-9A-Za-z]{6}$",
+                  "description": "Stable 6-character resource ID"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": ["ok", "not_found"],
+                  "description": "not_found: the ID is not a conversation of this mailbox."
+                }
+              },
+              "required": ["conversationId", "status"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["assignees", "results"],
+        "additionalProperties": false
+      },
+      "schemaHash": "3db1936fbda1ed1b634c48ebf3baa3d8a8583a2589f4f15acdccde0fc756d15a",
       "destructive": false,
       "openWorld": false,
       "idempotency": "none",
@@ -6593,33 +6743,30 @@
             "pattern": "^[0-9A-Za-z]{6}$",
             "description": "Stable 6-character resource ID"
           },
-          "assignee": {
-            "anyOf": [
-              {
-                "type": "object",
-                "properties": {
-                  "id": {
-                    "type": "string",
-                    "format": "uuid",
-                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                  },
-                  "uid": {
-                    "type": "string"
-                  },
-                  "displayName": {
-                    "type": "string"
-                  },
-                  "avatarHash": {
-                    "type": ["string", "null"]
-                  }
+          "assignees": {
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                 },
-                "required": ["id", "uid", "displayName", "avatarHash"],
-                "additionalProperties": false
+                "uid": {
+                  "type": "string"
+                },
+                "displayName": {
+                  "type": "string"
+                },
+                "avatarHash": {
+                  "type": ["string", "null"]
+                }
               },
-              {
-                "type": "null"
-              }
-            ]
+              "required": ["id", "uid", "displayName", "avatarHash"],
+              "additionalProperties": false
+            }
           },
           "workStatus": {
             "type": "string",
@@ -6643,10 +6790,10 @@
             "maximum": 9007199254740991
           }
         },
-        "required": ["conversationId", "assignee", "workStatus", "snoozedUntil", "revision"],
+        "required": ["conversationId", "assignees", "workStatus", "snoozedUntil", "revision"],
         "additionalProperties": false
       },
-      "schemaHash": "9bf2980d31d60b2cf40d11c5e1da0549070e560b7900dacfd30deb0e69a6345d",
+      "schemaHash": "e2fb3778e023ef44323c8556d5f0835c2b60c4e7937d0e60e9c833d6b936c638",
       "destructive": false,
       "openWorld": false,
       "idempotency": "none",
@@ -6695,33 +6842,30 @@
             "pattern": "^[0-9A-Za-z]{6}$",
             "description": "Stable 6-character resource ID"
           },
-          "assignee": {
-            "anyOf": [
-              {
-                "type": "object",
-                "properties": {
-                  "id": {
-                    "type": "string",
-                    "format": "uuid",
-                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                  },
-                  "uid": {
-                    "type": "string"
-                  },
-                  "displayName": {
-                    "type": "string"
-                  },
-                  "avatarHash": {
-                    "type": ["string", "null"]
-                  }
+          "assignees": {
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                 },
-                "required": ["id", "uid", "displayName", "avatarHash"],
-                "additionalProperties": false
+                "uid": {
+                  "type": "string"
+                },
+                "displayName": {
+                  "type": "string"
+                },
+                "avatarHash": {
+                  "type": ["string", "null"]
+                }
               },
-              {
-                "type": "null"
-              }
-            ]
+              "required": ["id", "uid", "displayName", "avatarHash"],
+              "additionalProperties": false
+            }
           },
           "workStatus": {
             "type": "string",
@@ -6745,10 +6889,10 @@
             "maximum": 9007199254740991
           }
         },
-        "required": ["conversationId", "assignee", "workStatus", "snoozedUntil", "revision"],
+        "required": ["conversationId", "assignees", "workStatus", "snoozedUntil", "revision"],
         "additionalProperties": false
       },
-      "schemaHash": "88e6fd1d92ab07657a778e90369e22a7a67ee30aedf99c424888a6fae0a7e51a",
+      "schemaHash": "49889f775e8adc94149f8cf86503c89e741b9cabc682f342ea3a04ddbe82ccd7",
       "destructive": false,
       "openWorld": false,
       "idempotency": "none",
@@ -8083,6 +8227,72 @@
       "openWorld": false,
       "idempotency": "none",
       "approval": "rememberable",
+      "review": true
+    },
+    {
+      "localId": "folder.display.set",
+      "title": "Set where a folder's mail appears",
+      "description": "Set a folder's display for everyone in one mailbox; requires mailbox administration. folder_only keeps the folder's conversations out of All mail, the work views except Assigned to me, their counts, and conversation.focus unless a message also lies in an everywhere folder; hidden also hides the folder. Subfolders inherit the stricter setting. Sent, Drafts, Trash, Junk and provider collections (displayNeutral in folder.list) cannot be folder_only. Search still finds everything.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "mailboxId": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Exact mail.mailbox ID returned by List mailboxes or a typed mailbox ref."
+          },
+          "folderId": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Folder ID returned by folder.list."
+          },
+          "display": {
+            "type": "string",
+            "enum": ["everywhere", "folder_only", "hidden"],
+            "description": "everywhere shows the folder's mail in All mail and the work views; folder_only keeps it inside the folder; hidden also hides the folder."
+          }
+        },
+        "required": ["mailboxId", "folderId", "display"],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "folderId": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Stable 6-character resource ID"
+          },
+          "display": {
+            "type": "string",
+            "enum": ["everywhere", "folder_only", "hidden"]
+          },
+          "effectiveDisplay": {
+            "type": "string",
+            "enum": ["everywhere", "folder_only", "hidden"]
+          },
+          "displayInheritedFromFolderId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9A-Za-z]{6}$",
+                "description": "Stable 6-character resource ID"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": ["folderId", "display", "effectiveDisplay", "displayInheritedFromFolderId"],
+        "additionalProperties": false
+      },
+      "schemaHash": "8909529ab0eae82217118e9ac9b7ecfc6fe5535e488fc27b77198406c29f4c21",
+      "destructive": false,
+      "openWorld": false,
+      "idempotency": "none",
       "review": true
     },
     {

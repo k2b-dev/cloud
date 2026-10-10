@@ -37,8 +37,14 @@ describe("Spaces calendar toolbar", () => {
     );
 
     expect(html).toMatch(/data-variant="input"[^>]*>.*<span class="max-sm:sr-only">New event<\/span><\/span><\/button>/);
-    expect(html).toMatch(/class="k2b-calendar-month__day-target\s*"/);
-    expect(html).toContain("view=calendar&amp;cv=day");
+    // The filters and the count sit in the toolbar after the title; there is no second row.
+    expect(html).toMatch(
+      /<div class="k2b-calendar-header__content">.*aria-label="Scope".*aria-label="Priority".*aria-label="Status".*0 shown/,
+    );
+    // A day is selected, not opened, by a click: it links nowhere, and its week number opens the week.
+    expect(html).toContain('role="gridcell"');
+    expect(html).not.toMatch(/<a[^>]*class="k2b-calendar-month__day-number/);
+    expect(html).toMatch(/<a class="k2b-calendar-month__week-link[^"]*"[^>]*href="[^"]*view=calendar&amp;cv=week/);
     expect(html).not.toContain("Create event on");
   });
 

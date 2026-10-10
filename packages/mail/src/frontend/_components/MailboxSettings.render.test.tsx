@@ -26,6 +26,7 @@ const context = (permission: MailboxSettingsContext["permission"], options: { sp
     syncEnabled: true,
     searchBackend: "auto",
     automaticReplyManagementPermission: "admin",
+    accessScope: "mailbox",
     composeSafety: { internalDomains: ["example.test"], largeRecipientThreshold: 20 },
     createdAt: now,
     updatedAt: now,

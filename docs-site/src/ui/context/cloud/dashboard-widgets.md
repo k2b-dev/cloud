@@ -31,7 +31,7 @@ Every stat needs a label and context. Widget and row links need destination-spec
 
 ## Runtime
 
-Cloud discovers registered widget endpoints during server rendering and applies a bounded timeout. Endpoint responses are JSON; applications never return Solid elements through this contract.
+The dashboard page renders a fixed `@k2b/ui` widget frame with a loading state for every widget. The browser then reads all widgets from Core in one stream (`GET /api/widgets/v1`); each fills its frame as soon as its app answers, within its own 8-second budget. A widget that fails or times out shows a calm inline state with **Try again**, which asks only that widget again. Endpoint responses are JSON; applications never return Solid elements through this contract.
 
 ## Example
 

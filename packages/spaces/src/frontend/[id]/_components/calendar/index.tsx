@@ -6,8 +6,10 @@ import {
   type CalendarEvent,
   type CalendarEventRenderContext,
   type CalendarEventTimeChange,
+  type CalendarSelectionControls,
   Calendar as CoreCalendar,
   type CalendarView as CoreCalendarView,
+  type DropdownItem,
   dialogCore,
   FilterChip,
   type FilterChipSection,
@@ -36,6 +38,13 @@ import { invalidateSpacesData, requestSpacesRouteNavigation } from "../workspace
 import { calendarItemColors, isCalendarFlagged, isCalendarTask } from "./colors";
 import { type CalendarColorBy, CalendarColorBySchema, type CalendarFilter, defaultCalendarFilter, writeCalendarFilter } from "./filter";
 import { CalendarItemContent } from "./ItemContent";
+import QuickCreate, {
+  type CalendarDays,
+  type QuickCreateDefaults,
+  type QuickCreateKind,
+  quickCreateDefaults,
+  quickCreateKind,
+} from "./QuickCreate";
 import TaskTray from "./TaskTray";
 import { taskTrayFiltered, taskTrayFilters, taskTrayListHref } from "./tray";
 import type { CalendarProps, CalendarView } from "./types";
@@ -199,6 +208,8 @@ export default function Calendar(props: CalendarProps) {
   const retryToast = createRetryToasts();
   const [optimisticTimes, setOptimisticTimes] = createSignal<Record<string, CalendarEventTimeChange>>({});
   const [createDialogPending, setCreateDialogPending] = createSignal(false);
+  /** The days selected in the month view; New event and the menus create on them. */
+  const [selectedDays, setSelectedDays] = createSignal<CalendarDays | null>(null);
   const [seriesItemSource, setSeriesItemSource] = createSignal<string | null>(null);
   const reconcileAfterWrite = (): void =>
     void invalidateSpacesData().catch(() => retryToast(t.calendarRefreshFailed, t.retry, reconcileAfterWrite));
@@ -521,7 +532,16 @@ export default function Calendar(props: CalendarProps) {
       updateSubmitting = false;
     }
   };
-  const createEventFromSlot = async (slot: CalendarEventTimeChange) => {
+  /** Status and tags a new item takes from the filter, so it shows in the calendar it was created in. */
+  const filterDefaults = () => ({
+    tagIds: props.filter.tagIds,
+    columnId: props.filter.columnIds.length === 1 ? props.filter.columnIds[0] : undefined,
+  });
+  const announceCreated = (item: SpaceItem) => {
+    toast.success(item.startsAt && item.endsAt ? t.eventCreated : t.taskCreated);
+    reconcileAfterWrite();
+  };
+  const openCreateDialog = async (defaults: QuickCreateDefaults) => {
     if (createDialogPending()) return;
     setCreateDialogPending(true);
     const spaceId = props.spaceId;
@@ -535,14 +555,7 @@ export default function Calendar(props: CalendarProps) {
             tags={props.tags}
             templates={props.templates}
             quickCreate
-            defaults={{
-              type: "event",
-              startsAt: slot.start.toISOString(),
-              endsAt: slot.end.toISOString(),
-              allDay: slot.allDay ?? false,
-              tagIds: props.filter.tagIds,
-              columnId: props.filter.columnIds.length === 1 ? props.filter.columnIds[0] : undefined,
-            }}
+            defaults={{ ...filterDefaults(), ...defaults }}
             onSubmit={async (data) => close(await createSpaceItem(spaceId, data, t.createItemFailed))}
             onCancel={() => close(null)}
             dateConfig={props.dateConfig}
@@ -550,22 +563,43 @@ export default function Calendar(props: CalendarProps) {
         ),
         itemCreateDialogOptions,
       );
-      if (item) {
-        toast.success(item.startsAt && item.endsAt ? t.eventCreated : t.taskCreated);
-        reconcileAfterWrite();
-      }
+      if (item) announceCreated(item);
     } finally {
       setCreateDialogPending(false);
     }
   };
+  const createEventFromSlot = (slot: CalendarEventTimeChange) =>
+    openCreateDialog({
+      type: "event",
+      startsAt: slot.start.toISOString(),
+      endsAt: slot.end.toISOString(),
+      allDay: slot.allDay ?? false,
+    });
+  const daysOf = (range: CalendarEventTimeChange): CalendarDays => ({
+    first: calendar.formatDateKey(range.start, props.dateConfig),
+    last: calendar.formatDateKey(calendar.addDays(range.end, -1, props.dateConfig), props.dateConfig),
+  });
+  /** One selected day gets an event at nine; several get one all-day event over all of them. */
+  const createOnDays = (days: CalendarDays) =>
+    openCreateDialog(quickCreateDefaults(quickCreateKind(undefined, days), days, props.dateConfig));
+  /**
+   * The day menu creates through the quick create at the days. Without write access it keeps the calendar's own
+   * entries, Open day and Open week.
+   */
+  const selectionMenu = (_range: CalendarEventTimeChange, controls: CalendarSelectionControls): DropdownItem[] =>
+    props.canWrite ? createMenu(controls) : [];
+  const createMenu = (controls: CalendarSelectionControls): DropdownItem[] => [
+    // New event creates as N and the toolbar do: at nine on one day, all day over several.
+    { label: t.newEvent, icon: "ti ti-calendar-plus", action: () => controls.quickCreate() },
+    { label: t.newAllDayEvent, icon: "ti ti-sun", action: () => controls.quickCreate("allday" satisfies QuickCreateKind) },
+    { label: t.newTaskWithDeadline, icon: "ti ti-square-check", action: () => controls.quickCreate("task" satisfies QuickCreateKind) },
+  ];
   const creatingEvent = createDialogPending;
-  const defaultNewEventSlot = (): CalendarEventTimeChange => {
-    const dateKey = calendar.formatDateKey(props.date, props.dateConfig);
-    const start = props.dateConfig?.timeZone
-      ? new Date(calendar.zonedDateTimeToInstant(`${dateKey}T09:00`, props.dateConfig.timeZone, { disambiguation: "compatible" }))
-      : new Date(`${dateKey}T09:00:00`);
-    const end = new Date(start.getTime() + 60 * 60 * 1000);
-    return { start, end, allDay: false };
+  /** New event creates on the selected days of the month view, and otherwise at nine on the shown date. */
+  const createNewEvent = () => {
+    const days = props.view === "month" ? selectedDays() : null;
+    const date = calendar.formatDateKey(props.date, props.dateConfig);
+    return createOnDays(days ?? { first: date, last: date });
   };
 
   return (
@@ -588,7 +622,7 @@ export default function Calendar(props: CalendarProps) {
               size="sm"
               class="shrink-0 whitespace-nowrap"
               disabled={creatingEvent()}
-              onClick={() => void createEventFromSlot(defaultNewEventSlot())}
+              onClick={() => void createNewEvent()}
             >
               <i class={`ti ${creatingEvent() ? "ti-loader-2 animate-spin" : "ti-calendar-plus"}`} />
               {/* A phone keeps the icon, so the header holds Today, the views, and this button in one row. */}
@@ -597,7 +631,7 @@ export default function Calendar(props: CalendarProps) {
           </Show>
         }
         toolbarContent={
-          <div class="no-scrollbar flex shrink-0 items-center gap-2 overflow-x-auto border-b border-zinc-100 bg-zinc-50/65 px-2 py-2 dark:border-zinc-800/70 dark:bg-zinc-950/35">
+          <>
             <FilterChip
               label={t.scope}
               icon="ti ti-filter"
@@ -647,13 +681,10 @@ export default function Calendar(props: CalendarProps) {
                 onValueChange={(tagIds) => setFilter({ tagIds })}
               />
             </Show>
-            <span class="ml-auto inline-flex min-w-16 shrink-0 items-center justify-end gap-1 text-xs text-dimmed">
-              <Show when={props.navigationPending} fallback={t.shownCount({ count: props.items.length })}>
-                <i class="ti ti-loader-2 animate-spin" aria-hidden="true" />
-                {t.updating}
-              </Show>
+            <span class="ml-auto min-w-[7.5rem] text-right text-xs text-[var(--k2b-text-muted)] tabular-nums whitespace-nowrap max-sm:hidden">
+              {t.shownCount({ count: props.items.length })}
             </span>
-          </div>
+          </>
         }
         getViewHref={(view) =>
           buildCalendarHref(props.baseUrl, asView(view), props.date, props.filter, undefined, undefined, props.dateConfig)
@@ -673,6 +704,30 @@ export default function Calendar(props: CalendarProps) {
         onSlotActivate={
           props.canWrite && !creatingEvent() && (props.view === "day" || props.view === "week")
             ? (slot) => void createEventFromSlot(slot)
+            : undefined
+        }
+        onSelectionChange={(range) => setSelectedDays(range ? daysOf(range) : null)}
+        selectionMenu={selectionMenu}
+        renderQuickCreate={
+          props.canWrite
+            ? (range, { create, close }) => (
+                <QuickCreate
+                  spaceId={props.spaceId}
+                  days={daysOf(range)}
+                  kind={quickCreateKind(create, daysOf(range))}
+                  dateConfig={props.dateConfig}
+                  defaults={filterDefaults()}
+                  columnId={filterDefaults().columnId ?? props.columns[0]?.id ?? ""}
+                  onCreated={(item) => {
+                    close();
+                    announceCreated(item);
+                  }}
+                  onMoreOptions={(defaults) => {
+                    close();
+                    void openCreateDialog(defaults);
+                  }}
+                />
+              )
             : undefined
         }
       />

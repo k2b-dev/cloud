@@ -38,6 +38,43 @@ domTest("adding a shortcut asks before discarding pending dashboard edits", asyn
   }
 });
 
+domTest("moving a widget acts on the list as shown while widgets still arrive or leave", async () => {
+  const dom = createDomTestHarness();
+  const { render } = await import("solid-js/web");
+  const { createSignal } = await import("solid-js");
+  const { DashboardEditButton } = await import("./dashboard-controls");
+  const { DEFAULT_DASHBOARD_SETTINGS } = await import("../shared");
+  const { dialogCore } = await import("@k2b/ui");
+  const widget = (key: string) => ({ key, title: key.toUpperCase(), icon: "ti ti-box" });
+  const [available, setAvailable] = createSignal(["a", "b", "c"].map(widget));
+  const shown = () =>
+    Array.from(dom.document.querySelectorAll(".dashboard-widget-setting .text-primary")).map((entry) => entry.textContent?.trim());
+  const press = (label: string) => dom.document.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!.click();
+  const dispose = render(
+    () => <DashboardEditButton apps={[]} legalLinks={[]} settings={DEFAULT_DASHBOARD_SETTINGS} available={available()} inaccessible={[]} />,
+    dom.root,
+  );
+  try {
+    Array.from(dom.document.querySelectorAll("button"))
+      .find((entry) => entry.textContent?.trim() === "Edit dashboard")!
+      .click();
+    expect(shown()).toEqual(["A", "B", "C"]);
+    // B answers 403 after the dialog opened: moving C up passes A, the widget shown above it.
+    setAvailable(["a", "c"].map(widget));
+    press("Move C up");
+    expect(shown()).toEqual(["C", "A"]);
+    // D answers with content after the dialog opened: it can be moved like the others.
+    setAvailable(["a", "c", "d"].map(widget));
+    expect(shown()).toEqual(["C", "A", "D"]);
+    press("Move D up");
+    expect(shown()).toEqual(["C", "D", "A"]);
+  } finally {
+    dialogCore.close();
+    dispose();
+    dom.cleanup();
+  }
+});
+
 domTest("the Apps shortcut opens the app grid with each app's badge route, like the shell's", async () => {
   const dom = createDomTestHarness();
   const { render } = await import("solid-js/web");
@@ -49,10 +86,7 @@ domTest("the Apps shortcut opens the app grid with each app's badge route, like 
     { id: "chat", name: "Chat", icon: "ti ti-message", href: "/app/chat", description: "Talk", badge: "/api/chat/badge" },
     { id: "mail", name: "Mail", icon: "ti ti-mail", href: "/app/mail", description: "Write" },
   ];
-  const dispose = render(
-    () => <DashboardControls apps={apps} legalLinks={[]} settings={DEFAULT_DASHBOARD_SETTINGS} available={[]} inaccessible={[]} />,
-    dom.root,
-  );
+  const dispose = render(() => <DashboardControls apps={apps} legalLinks={[]} settings={DEFAULT_DASHBOARD_SETTINGS} />, dom.root);
   try {
     Array.from(dom.document.querySelectorAll("button"))
       .find((entry) => entry.textContent?.trim() === "Apps")!

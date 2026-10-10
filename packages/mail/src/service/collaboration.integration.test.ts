@@ -206,7 +206,7 @@ suite("mail collaboration backend", () => {
       context: writerContext,
       mailboxId,
       conversationId,
-      input: { expectedRevision: 1, assigneeUserId: reader.id },
+      input: { expectedRevision: 1, assigneeUserIds: [reader.id] },
     });
     expect(invalidAssignee.ok).toBe(false);
     const [before] = await sql<{ seq: string }[]>`SELECT COALESCE(MAX(seq), 0)::text AS seq FROM events.outbox`;
@@ -218,14 +218,14 @@ suite("mail collaboration backend", () => {
       conversationId,
       input: {
         expectedRevision: 1,
-        assigneeUserId: writer.id,
+        assigneeUserIds: [writer.id],
         snoozedUntil: future,
       },
     });
     expect(waiting.ok).toBe(true);
     if (!waiting.ok) return;
     expect(waiting.data).toMatchObject({ workStatus: "needs_action", revision: 2 });
-    expect(waiting.data.assignee?.id).toBe(writer.id);
+    expect(waiting.data.assignees[0]?.id).toBe(writer.id);
     // The change wrote its live update under the mailbox, naming the conversation by its public ID.
     const updates = await sql<{ payload: { d: { conversationId: string | null } } }[]>`
       SELECT payload FROM events.outbox WHERE app_id = 'mail' AND ordering_key = ${mailboxId} AND seq > ${before!.seq}::bigint

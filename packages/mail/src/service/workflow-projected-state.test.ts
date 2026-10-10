@@ -53,6 +53,16 @@ describe("Mail workflow projected state", () => {
     expect(conversation).toMatchObject({ workStatus: "done", revision: 3 });
   });
 
+  test("keeps stored single-user workflow actions as set replacement", () => {
+    const conversation = { assigneeUserIds: ["first", "second"], revision: 1 };
+    expect(applyMailConversationTransition(conversation, "assignConversation", "second")).toBeTrue();
+    expect(conversation).toEqual({ assigneeUserIds: ["second"], revision: 2 });
+    expect(applyMailConversationTransition(conversation, "assignConversation", "second")).toBeFalse();
+    expect(applyMailConversationTransition(conversation, "assignConversation", null)).toBeTrue();
+    expect(conversation).toEqual({ assigneeUserIds: [], revision: 3 });
+    expect(applyMailConversationTransition(conversation, "assignConversation", null)).toBeFalse();
+  });
+
   test("projects summary and summary revision independently", () => {
     if (!source.conversation) throw new Error("Expected workflow conversation fixture");
     const conversation = structuredClone(source.conversation);

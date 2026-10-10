@@ -10,7 +10,7 @@ const statusIcon = (item: MailListItem): string | null => {
   if (item.workStatus === "needs_action") return "ti ti-message-reply";
   if (item.workStatus === "waiting") return "ti ti-hourglass";
   if (item.workStatus === "done") return "ti ti-checkbox";
-  if (item.assigneeUserId) return "ti ti-user-check";
+  if (item.assigneeUserIds.length > 0) return "ti ti-user-check";
   return null;
 };
 
@@ -29,7 +29,8 @@ type MailConversationRowActions = {
   toggleSelection: (item: MailListItem, range: boolean) => void;
   itemAction: (item: MailListItem, actionId: MailActionId) => void | Promise<void>;
   manageTags: (item: MailListItem) => void | Promise<void>;
-  merge: (item: MailListItem) => void | Promise<void>;
+  /** Absent for a person who sees only assigned conversations. */
+  merge?: (item: MailListItem) => void | Promise<void>;
 };
 
 /** The list's quick look card; rows anchor it and report mouse rests and leaves for its request. */
@@ -62,7 +63,7 @@ export default function MailConversationRow(props: {
     if (item.workStatus === "needs_action") return t().needsAction;
     if (item.workStatus === "waiting") return t().waitingForReply;
     if (item.workStatus === "done") return t().done;
-    if (item.assigneeUserId) return t().assigned;
+    if (item.assigneeUserIds.length > 0) return t().assigned;
     return null;
   };
   const correspondentLabels = (item: MailListItem): string[] =>
@@ -306,11 +307,15 @@ export default function MailConversationRow(props: {
                 icon: getMailAction(actionId).icon,
                 action: () => props.actions.itemAction(props.item, actionId),
               })),
-              {
-                label: t().mergeWithConversation,
-                icon: "ti ti-git-merge",
-                action: () => props.actions.merge(props.item),
-              },
+              ...(props.actions.merge
+                ? [
+                    {
+                      label: t().mergeWithConversation,
+                      icon: "ti ti-git-merge",
+                      action: () => props.actions.merge?.(props.item),
+                    },
+                  ]
+                : []),
             ]}
           >
             <Dropdown.Trigger

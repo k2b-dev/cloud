@@ -836,6 +836,16 @@ describe("Venue shift detail and schedule", () => {
     );
   });
 
+  test("the month view draws each shift as one line, with its state as an icon that the accessible name says", () => {
+    const html = render("write", [], { calendarDate: day, calendarView: "month", dashboard: board });
+    const entry = html.match(/<a[^>]*data-calendar-event[^>]*aria-label="Theke[^"]*"[\s\S]*?<\/a>/)?.[0] ?? "";
+    expect(entry).toContain('aria-label="Theke, 11:00 to 14:00, 1 missing"');
+    // A month lane holds one line: the state's icon, the start time, and the title, and none of the detail lines.
+    expect(text(entry).trim()).toBe("11:00 Theke");
+    expect(entry).toContain("ti ti-progress");
+    expect(entry).not.toContain("Sam Sample");
+  });
+
   test("the phone month view lists the chosen day's shifts with their state in words", () => {
     const html = render("write", [], { calendarDate: day, calendarView: "mobile-month", dashboard: board });
     const agenda = html.match(/k2b-calendar-mobile-month__agenda[\s\S]*$/)?.[0] ?? "";

@@ -42,6 +42,8 @@ export function ContextMenu(props: ContextMenuProps): JSX.Element {
   let menu: HTMLDivElement | undefined;
   let listenersAttached = false;
   let hostRing = true;
+  /** The element inside the host that had focus as the menu opened, such as a row or a day of a composite widget. */
+  let opener: HTMLElement | undefined;
   let anchor = { x: 0, y: 0 };
   let viewport = { width: 0, height: 0 };
   let resizeObserver: ResizeObserver | undefined;
@@ -109,8 +111,10 @@ export function ContextMenu(props: ContextMenuProps): JSX.Element {
   const open = (x: number, y: number) => {
     if (props.disabled) return;
     closeActiveContextMenu?.();
-    // Focus may sit on a descendant of the host, as in composite widgets.
-    hostRing = ringOnReturn(document.activeElement);
+    // Focus may sit on a descendant of the host, as in composite widgets; Escape returns it there.
+    const focused = document.activeElement;
+    opener = focused instanceof HTMLElement && focused !== host && host?.contains(focused) ? focused : undefined;
+    hostRing = ringOnReturn(focused);
     anchor = { x, y };
     viewport = { width: window.innerWidth, height: window.innerHeight };
     setPosition({ x, y });
@@ -145,7 +149,7 @@ export function ContextMenu(props: ContextMenuProps): JSX.Element {
     } else if (event.key === "Escape") {
       event.preventDefault();
       close();
-      returnFocus(host, hostRing);
+      returnFocus(opener?.isConnected ? opener : host, hostRing);
     } else if (event.key === "Tab") {
       close();
     }

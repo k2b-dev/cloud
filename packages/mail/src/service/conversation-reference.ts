@@ -2,7 +2,7 @@ import { audit, logger } from "@k2b/cloud/services";
 import { crypto as cryptoUtils, err, fail, isServiceError, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import type { ConversationReferencePreview, EnsureConversationReference, PutConversationReferenceConfiguration } from "../contracts";
-import { requireMailboxPermission } from "./access";
+import { conversationVisibleTo, requireMailboxAccess, requireMailboxPermission, requireVisibleConversation } from "./access";
 import { actorRefFromRequest, auditActorFromRequest, type MailRequestContext } from "./auth";
 import { requireMailboxCollaborationPermission } from "./collaboration";
 import { mailLive } from "./live";
@@ -463,8 +463,10 @@ export const listConversationReferences = async (params: {
   mailboxId: string;
   conversationId: string;
 }): Promise<Result<ConversationReference[]>> => {
-  const allowed = await requireMailboxCollaborationPermission(params.context, params.mailboxId, "read");
+  const allowed = await requireMailboxAccess(params.context, params.mailboxId, "read");
   if (!allowed.ok) return allowed;
+  const visible = await requireVisibleConversation(allowed.data, params.conversationId);
+  if (!visible.ok) return visible;
   const rows = await sql<ConversationReferenceRow[]>`
     SELECT ${referenceColumns}
     FROM mail.conversation_references reference
@@ -487,12 +489,13 @@ export const findConversationByReference = async (params: {
   mailboxId: string;
   value: string;
 }): Promise<Result<{ conversationId: string; reference: ConversationReference }>> => {
-  const allowed = await requireMailboxCollaborationPermission(params.context, params.mailboxId, "read");
+  const allowed = await requireMailboxAccess(params.context, params.mailboxId, "read");
   if (!allowed.ok) return allowed;
   const [row] = await sql<ConversationReferenceRow[]>`
     SELECT ${referenceColumns}
     FROM mail.conversation_references reference
-    WHERE reference.mailbox_id = ${params.mailboxId}::uuid
+    WHERE ${conversationVisibleTo(allowed.data, sql`reference.conversation_id`)}
+      AND reference.mailbox_id = ${params.mailboxId}::uuid
       AND reference.normalized_value = lower(btrim(${params.value}))
   `;
   return row ? ok({ conversationId: row.conversation_id, reference: mapReference(row) }) : fail(err.notFound("Conversation reference"));

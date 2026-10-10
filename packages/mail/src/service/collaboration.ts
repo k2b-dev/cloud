@@ -8,12 +8,19 @@ import type {
   UpdateConversationCollaboration,
   UpdateConversationComment,
 } from "../contracts";
-import { createConversationCommentSchema, MAIL_CONVERSATION_BATCH_LIMIT } from "../contracts";
+import { createConversationCommentSchema, MAIL_CONVERSATION_ASSIGNEE_LIMIT, MAIL_CONVERSATION_BATCH_LIMIT } from "../contracts";
 import { withShortIdDb } from "../lib/short-id";
-import { requireMailboxPermission } from "./access";
+import {
+  type MailboxAccess,
+  messageVisibleTo,
+  requireMailboxAccess,
+  requireMailboxPermission,
+  requireVisibleConversation,
+  requireVisibleMessages,
+} from "./access";
 import { projectActivityItems } from "./activity-public";
 import { actorRefFromRequest, type MailRequestContext } from "./auth";
-import { listCurrentMailboxUsers } from "./collaborators";
+import { listCurrentMailboxUsers, listEligibleAssignees } from "./collaborators";
 import { deriveReopenedConversationWorkStatus, isAutomaticSubmission } from "./conversation-work-state";
 import { resolveMailExecution } from "./execution";
 import { type MailActivityChange, mailLive } from "./live";
@@ -30,13 +37,14 @@ export type MailCollaborator = {
 };
 
 export type MailAssignableUser = MailCollaborator & {
+  scope: "mailbox" | "assigned";
   permission: Exclude<PermissionLevel, "none">;
   description: string;
 };
 
 export type ConversationCollaboration = {
   conversationId: string;
-  assignee: MailCollaborator | null;
+  assignees: MailCollaborator[];
   workStatus: "needs_action" | "waiting" | "done";
   snoozedUntil: string | null;
   revision: number;
@@ -81,10 +89,7 @@ export type MailActivityEvent = {
 
 type CollaborationRow = {
   id: string;
-  assignee_user_id: string | null;
-  assignee_uid: string | null;
-  assignee_display_name: string | null;
-  assignee_avatar_hash: string | null;
+  assignees: MailCollaborator[];
   work_status: ConversationCollaboration["workStatus"];
   snoozed_until: Date | string | null;
   revision: string | number;
@@ -130,6 +135,7 @@ type ActivityRow = {
 };
 
 type MutableCommentRow = {
+  referenced_message_id: string | null;
   revision: string | number;
   body_markdown: string;
   author_kind: CommentActorKind;
@@ -223,6 +229,7 @@ const accessUserDescription = (user: AccessUser): string =>
   user.source.type === "direct" ? `${user.uid} · direct access` : `${user.uid} · via ${user.source.groupName}`;
 
 export const listCurrentUsers = listCurrentMailboxUsers;
+export { listEligibleAssignees };
 
 export const requireMailboxCollaborationPermission = async (
   context: MailRequestContext,
@@ -236,26 +243,95 @@ export const requireMailboxCollaborationPermission = async (
   return execution.ok ? allowed : execution;
 };
 
-const validateCurrentUsers = async (params: {
-  mailboxId: string;
-  db: SqlClient;
-  userIds: string[];
-  minimumPermission: "read" | "write";
-  label: "Assignee";
-}): Promise<Result<void>> => {
-  const userIds = [...new Set(params.userIds)];
-  if (userIds.length === 0) return ok();
-  const users = await listCurrentUsers({
-    mailboxId: params.mailboxId,
-    db: params.db,
-    userIds,
-    minimumPermission: params.minimumPermission,
-    limit: userIds.length,
-  });
+export const requireConversationCollaborationPermission = async (
+  context: MailRequestContext,
+  mailboxId: string,
+  conversationId: string,
+  permission: "read" | "write",
+  db: SqlClient = sql,
+): Promise<Result<PermissionLevel>> => {
+  const allowed = await requireMailboxAccess(context, mailboxId, permission, db);
+  if (!allowed.ok) return allowed;
+  const visible = await requireVisibleConversation(allowed.data, conversationId, db);
+  if (!visible.ok) return visible;
+  const execution = await resolveMailExecution({ mailboxId, operation: "actorRead", context, conversationScoped: true, db });
+  return execution.ok ? ok(allowed.data.permission) : execution;
+};
+
+const validateAssignees = async (mailboxId: string, userIds: readonly string[], db: SqlClient): Promise<Result<void>> => {
+  if (userIds.length > MAIL_CONVERSATION_ASSIGNEE_LIMIT)
+    return fail(err.badInput(`A conversation can have at most ${MAIL_CONVERSATION_ASSIGNEE_LIMIT} assignees`));
+  const ids = [...new Set(userIds)];
+  if (ids.length === 0) return ok();
+  const users = await listEligibleAssignees({ mailboxId, userIds: ids, db, limit: ids.length });
   const found = new Set(users.map((user) => user.id));
-  return userIds.every((id) => found.has(id))
+  return ids.every((id) => found.has(id))
     ? ok()
-    : fail(err.badInput(`${params.label} must have current ${params.minimumPermission} access to this mailbox`));
+    : fail(err.badInput("Assignees must be active users with mailbox write access or assigned access"));
+};
+
+export const listAssigneeCollaborators = async (userIds: readonly string[], db: SqlClient = sql): Promise<MailCollaborator[]> => {
+  const ids = [...new Set(userIds)];
+  if (ids.length === 0) return [];
+  const users = await db<MailCollaborator[]>`
+    SELECT id, uid, COALESCE(NULLIF(display_name, ''), uid) AS "displayName", avatar_hash AS "avatarHash"
+    FROM auth.users WHERE id IN (SELECT value::uuid FROM jsonb_array_elements_text(${ids}::jsonb))
+  `;
+  return ids.flatMap((id) => users.filter((user) => user.id === id));
+};
+
+export const loadConversationAssigneeIds = async (db: SqlClient, conversationId: string): Promise<string[]> => {
+  const rows = await db<{ user_id: string }[]>`
+    SELECT user_id FROM mail.conversation_assignees
+    WHERE conversation_id = ${conversationId}::uuid ORDER BY assigned_at, user_id
+  `;
+  return rows.map((row) => row.user_id);
+};
+
+export const writeConversationAssignees = async (
+  tx: SqlClient,
+  params: {
+    mailboxId: string;
+    conversationId: string;
+    userIds: readonly string[];
+    assignedAt?: ReadonlyMap<string, string>;
+  },
+): Promise<void> => {
+  const ids = [...new Set(params.userIds)];
+  if (ids.length > MAIL_CONVERSATION_ASSIGNEE_LIMIT)
+    throw new Error(`A conversation can have at most ${MAIL_CONVERSATION_ASSIGNEE_LIMIT} assignees`);
+  const removed = await tx<{ user_id: string }[]>`
+    DELETE FROM mail.conversation_assignees
+    WHERE conversation_id = ${params.conversationId}::uuid
+      AND user_id NOT IN (SELECT value::uuid FROM jsonb_array_elements_text(${ids}::jsonb))
+    RETURNING user_id
+  `;
+  // Ordinality preserves request order even when several additions share one transaction timestamp.
+  const additions = ids.map((userId, index) => ({ user_id: userId, assigned_at: params.assignedAt?.get(userId) ?? null, ordinal: index }));
+  await tx`
+    INSERT INTO mail.conversation_assignees (conversation_id, user_id, assigned_at)
+    SELECT ${params.conversationId}::uuid, user_id, COALESCE(assigned_at, now() + ordinal * interval '1 microsecond')
+    FROM jsonb_to_recordset(${additions}::jsonb) AS a(user_id uuid, assigned_at timestamptz, ordinal int)
+    ORDER BY ordinal
+    ON CONFLICT (conversation_id, user_id) DO UPDATE
+      SET assigned_at = CASE WHEN ${params.assignedAt !== undefined}
+        THEN LEAST(mail.conversation_assignees.assigned_at, EXCLUDED.assigned_at) ELSE mail.conversation_assignees.assigned_at END
+  `;
+  // Only this writer mirrors the earliest assignee for older Mail images; all reads use the join table.
+  await tx`
+    UPDATE mail.conversations SET assignee_user_id = (
+      SELECT user_id FROM mail.conversation_assignees WHERE conversation_id = ${params.conversationId}::uuid
+      ORDER BY assigned_at, user_id LIMIT 1
+    ) WHERE id = ${params.conversationId}::uuid AND mailbox_id = ${params.mailboxId}::uuid
+  `;
+  if (removed.length > 0) {
+    const [conversation] = await tx<
+      { short_id: string }[]
+    >`SELECT short_id FROM mail.conversations WHERE id = ${params.conversationId}::uuid`;
+    if (!conversation) throw new Error("Conversation missing while publishing assignment removal");
+    for (const user of removed)
+      await mailLive.publish(tx, { key: `${params.mailboxId}:${user.user_id}`, data: { conversationId: conversation.short_id } });
+  }
 };
 
 export const lockMailboxForCollaboration = async (
@@ -263,6 +339,7 @@ export const lockMailboxForCollaboration = async (
   mailboxId: string,
   permission: "read" | "write",
   db: SqlClient,
+  conversationId?: string,
 ): Promise<Result<PermissionLevel>> => {
   const [mailbox] = await db<{ id: string }[]>`
     SELECT id FROM mail.mailboxes
@@ -270,7 +347,9 @@ export const lockMailboxForCollaboration = async (
     FOR SHARE
   `;
   if (!mailbox) return fail(err.notFound("Mailbox"));
-  return requireMailboxCollaborationPermission(context, mailboxId, permission, db);
+  return conversationId
+    ? requireConversationCollaborationPermission(context, mailboxId, conversationId, permission, db)
+    : requireMailboxCollaborationPermission(context, mailboxId, permission, db);
 };
 
 const loadCollaboration = async (
@@ -281,29 +360,21 @@ const loadCollaboration = async (
   const [row] = await db<CollaborationRow[]>`
     SELECT
       c.id,
-      c.assignee_user_id,
-      assignee.uid AS assignee_uid,
-      COALESCE(NULLIF(assignee.display_name, ''), assignee.uid) AS assignee_display_name,
-      assignee.avatar_hash AS assignee_avatar_hash,
+      COALESCE((SELECT jsonb_agg(jsonb_build_object(
+        'id', u.id, 'uid', u.uid, 'displayName', COALESCE(NULLIF(u.display_name, ''), u.uid), 'avatarHash', u.avatar_hash
+      ) ORDER BY a.assigned_at, a.user_id)
+      FROM mail.conversation_assignees a JOIN auth.users u ON u.id = a.user_id
+      WHERE a.conversation_id = c.id), '[]'::jsonb) AS assignees,
       c.work_status,
       c.snoozed_until,
       c.revision
     FROM mail.conversations c
-    LEFT JOIN auth.users assignee ON assignee.id = c.assignee_user_id
     WHERE c.id = ${conversationId}::uuid AND c.mailbox_id = ${mailboxId}::uuid
   `;
   if (!row) return null;
   return {
     conversationId: row.id,
-    assignee:
-      row.assignee_user_id && row.assignee_uid && row.assignee_display_name
-        ? {
-            id: row.assignee_user_id,
-            uid: row.assignee_uid,
-            displayName: row.assignee_display_name,
-            avatarHash: row.assignee_avatar_hash,
-          }
-        : null,
+    assignees: row.assignees,
     workStatus: row.work_status,
     snoozedUntil: toNullableIso(row.snoozed_until),
     revision: Number(row.revision),
@@ -348,49 +419,43 @@ const finishMutation = async <T>(result: Result<CollaborationMutation<T>>): Prom
   return ok(result.data.value);
 };
 
-const listEligibleUsers = async (params: {
+export const listAssignableUsers = async (params: {
   context: MailRequestContext;
   mailboxId: string;
   search?: string;
   limit?: number;
-  minimumPermission: "read" | "write";
 }): Promise<Result<MailAssignableUser[]>> => {
   const allowed = await requireMailboxCollaborationPermission(params.context, params.mailboxId, "read");
   if (!allowed.ok) return allowed;
-  const users = await listCurrentUsers({
+  const users = await listEligibleAssignees({
     mailboxId: params.mailboxId,
-    minimumPermission: params.minimumPermission,
     search: params.search,
     limit: Math.min(Math.max(params.limit ?? 50, 1), 200),
   });
   return ok(
     users.map((user) => ({
       ...collaboratorFromAccessUser(user),
+      scope: user.scope,
       permission: user.permission,
       description: accessUserDescription(user),
     })),
   );
 };
 
-export const listAssignableUsers = (params: {
-  context: MailRequestContext;
-  mailboxId: string;
-  search?: string;
-  limit?: number;
-}): Promise<Result<MailAssignableUser[]>> => listEligibleUsers({ ...params, minimumPermission: "write" });
-
 export const getConversationCollaboration = async (params: {
   context: MailRequestContext;
   mailboxId: string;
   conversationId: string;
 }): Promise<Result<ConversationCollaboration>> => {
-  const allowed = await requireMailboxCollaborationPermission(params.context, params.mailboxId, "read");
+  const allowed = await requireMailboxAccess(params.context, params.mailboxId, "read");
   if (!allowed.ok) return allowed;
+  const visible = await requireVisibleConversation(allowed.data, params.conversationId);
+  if (!visible.ok) return visible;
   const state = await loadCollaboration(params.mailboxId, params.conversationId);
   return state ? ok(state) : fail(err.notFound("Conversation"));
 };
 
-type ConversationCollaborationMutation = CollaborationMutation<ConversationCollaboration> & { assigneeChanged: boolean };
+type ConversationCollaborationMutation = CollaborationMutation<ConversationCollaboration> & { addedUserIds: string[] };
 
 const applyConversationCollaborationInTransaction = async (params: {
   context: MailRequestContext | null;
@@ -400,14 +465,12 @@ const applyConversationCollaborationInTransaction = async (params: {
   db: SqlClient;
   actorOverride?: ActorRef;
   activityMetadata?: Record<string, unknown>;
+  assigneesToValidate?: readonly string[];
 }): Promise<Result<ConversationCollaborationMutation>> => {
   const [current] = await params.db<CollaborationRow[]>`
     SELECT
       c.id,
-      c.assignee_user_id,
-      NULL::text AS assignee_uid,
-      NULL::text AS assignee_display_name,
-      NULL::text AS assignee_avatar_hash,
+      '[]'::jsonb AS assignees,
       c.work_status,
       c.snoozed_until,
       c.revision
@@ -419,15 +482,15 @@ const applyConversationCollaborationInTransaction = async (params: {
   if (Number(current.revision) !== params.input.expectedRevision) {
     return fail(err.conflict("Conversation was changed by another collaborator"));
   }
-  if (params.input.assigneeUserId) {
-    const validAssignee = await validateCurrentUsers({
-      mailboxId: params.mailboxId,
-      db: params.db,
-      userIds: [params.input.assigneeUserId],
-      minimumPermission: "write",
-      label: "Assignee",
-    });
-    if (!validAssignee.ok) return validAssignee;
+  const currentAssigneeIds = await loadConversationAssigneeIds(params.db, params.conversationId);
+  const nextAssigneeIds = params.input.assigneeUserIds === undefined ? currentAssigneeIds : [...new Set(params.input.assigneeUserIds)];
+  if (params.input.assigneeUserIds !== undefined) {
+    if (params.input.assigneeUserIds.length > MAIL_CONVERSATION_ASSIGNEE_LIMIT)
+      return fail(err.badInput(`A conversation can have at most ${MAIL_CONVERSATION_ASSIGNEE_LIMIT} assignees`));
+    // Only people being added must be eligible; one whose access lapsed stays until someone removes them.
+    const added = nextAssigneeIds.filter((id) => !currentAssigneeIds.includes(id));
+    const validAssignees = await validateAssignees(params.mailboxId, params.assigneesToValidate ?? added, params.db);
+    if (!validAssignees.ok) return validAssignees;
   }
 
   let nextStatus = "workStatus" in params.input && params.input.workStatus ? params.input.workStatus : current.work_status;
@@ -494,7 +557,8 @@ const applyConversationCollaborationInTransaction = async (params: {
     if (nextStatus === "done") return fail(err.badInput("A completed conversation cannot be snoozed"));
   }
 
-  const nextAssignee = params.input.assigneeUserId === undefined ? current.assignee_user_id : params.input.assigneeUserId;
+  const assigneesChanged =
+    nextAssigneeIds.length !== currentAssigneeIds.length || nextAssigneeIds.some((id) => !currentAssigneeIds.includes(id));
   const completionChanged = "completion" in params.input && params.input.completion !== undefined;
   const nextSnoozedUntil =
     nextStatus === "done" || completionChanged
@@ -502,24 +566,26 @@ const applyConversationCollaborationInTransaction = async (params: {
       : requestedSnooze === undefined
         ? toNullableIso(current.snoozed_until)
         : requestedSnooze;
-  const unchanged =
-    nextAssignee === current.assignee_user_id &&
-    nextStatus === current.work_status &&
-    nextSnoozedUntil === toNullableIso(current.snoozed_until);
+  const unchanged = !assigneesChanged && nextStatus === current.work_status && nextSnoozedUntil === toNullableIso(current.snoozed_until);
   if (unchanged) {
     const state = await loadCollaboration(params.mailboxId, params.conversationId, params.db);
-    return state ? ok({ value: state, event: null, assigneeChanged: false }) : fail(err.notFound("Conversation"));
+    return state ? ok({ value: state, event: null, addedUserIds: [] }) : fail(err.notFound("Conversation"));
   }
 
   await params.db`
     UPDATE mail.conversations
     SET
-      assignee_user_id = ${nextAssignee}::uuid,
       work_status = ${nextStatus},
       snoozed_until = ${nextSnoozedUntil}::timestamptz,
       revision = revision + 1
     WHERE id = ${params.conversationId}::uuid
   `;
+  if (assigneesChanged)
+    await writeConversationAssignees(params.db, {
+      mailboxId: params.mailboxId,
+      conversationId: params.conversationId,
+      userIds: nextAssigneeIds,
+    });
   const state = await loadCollaboration(params.mailboxId, params.conversationId, params.db);
   if (!state) return fail(err.internal("Updated conversation could not be loaded"));
   const activityId = await insertActivity({
@@ -534,13 +600,13 @@ const applyConversationCollaborationInTransaction = async (params: {
     metadata: {
       ...params.activityMetadata,
       before: {
-        assigneeUserId: current.assignee_user_id,
+        assigneeUserIds: currentAssigneeIds,
         workStatus: current.work_status,
         snoozedUntil: toNullableIso(current.snoozed_until),
         revision: Number(current.revision),
       },
       after: {
-        assigneeUserId: state.assignee?.id ?? null,
+        assigneeUserIds: state.assignees.map((user) => user.id),
         workStatus: state.workStatus,
         snoozedUntil: state.snoozedUntil,
         revision: state.revision,
@@ -556,7 +622,7 @@ const applyConversationCollaborationInTransaction = async (params: {
       targetId: params.conversationId,
       activityId,
     },
-    assigneeChanged: nextAssignee !== current.assignee_user_id,
+    addedUserIds: nextAssigneeIds.filter((id) => !currentAssigneeIds.includes(id)),
   });
 };
 
@@ -569,7 +635,11 @@ export const updateConversationCollaborationInTransaction = async (params: {
   actorOverride?: ActorRef;
   activityMetadata?: Record<string, unknown>;
 }): Promise<Result<ConversationCollaborationMutation>> => {
-  const allowed = await lockMailboxForCollaboration(params.context, params.mailboxId, "write", params.db);
+  const access = await requireMailboxAccess(params.context, params.mailboxId, "write", params.db);
+  if (!access.ok) return access;
+  if (access.data.scope === "assigned" && params.input.assigneeUserIds !== undefined)
+    return fail(err.forbidden("Assignments require mailbox-wide write access"));
+  const allowed = await lockMailboxForCollaboration(params.context, params.mailboxId, "write", params.db, params.conversationId);
   return allowed.ok ? applyConversationCollaborationInTransaction(params) : allowed;
 };
 
@@ -610,7 +680,7 @@ export const applyConversationCollaboration = async (params: {
     result = await sql.begin(async (tx) => {
       const applied = await updateConversationCollaborationInTransaction({ ...params, db: tx });
       if (!applied.ok) return applied;
-      if (!applied.data.assigneeChanged || !applied.data.event) return ok({ mutation: applied.data, assignment: null });
+      if (applied.data.addedUserIds.length === 0 || !applied.data.event) return ok({ mutation: applied.data, assignment: null });
       const [names] = await tx<{ mailbox_short_id: string; mailbox_name: string; conversation_short_id: string }[]>`
         SELECT m.short_id AS mailbox_short_id, m.name AS mailbox_name, c.short_id AS conversation_short_id
         FROM mail.conversations c
@@ -624,6 +694,7 @@ export const applyConversationCollaboration = async (params: {
           mailbox: { shortId: names.mailbox_short_id, name: names.mailbox_name },
           conversationIds: [names.conversation_short_id],
           activityIds: [applied.data.event.activityId],
+          added: applied.data.addedUserIds.map((userId) => ({ userId, conversationIds: [names.conversation_short_id] })),
         },
       });
     });
@@ -638,17 +709,18 @@ export const applyConversationCollaboration = async (params: {
 export type ConversationAssignmentStatus = "ok" | "not_found";
 
 export type ConversationAssignmentResult = {
-  assignee: MailCollaborator | null;
+  assignees: MailCollaborator[];
   /** One entry per requested conversation, in request order, keyed by its public id. */
   results: Array<{ conversationId: string; status: ConversationAssignmentStatus }>;
 };
 
-/** The changes a committed assignment made, for its single notification. */
+/** Committed assignment changes, grouped by newly added user for notifications. */
 export type ConversationAssignmentChange = {
   mailbox: { shortId: string; name: string };
-  /** Public ids of the conversations whose assignee actually changed. */
+  /** Public ids of the conversations whose assignee set changed. */
   conversationIds: string[];
   activityIds: string[];
+  added: Array<{ userId: string; conversationIds: string[] }>;
 };
 
 /**
@@ -663,71 +735,96 @@ export type ConversationAssignmentChange = {
 export const applyConversationAssignments = async (params: {
   context: MailRequestContext;
   mailboxId: string;
-  /** Public conversation ids, as the transport received them. */
   conversationIds: readonly string[];
-  assigneeUserId: string | null;
-}): Promise<Result<{ result: ConversationAssignmentResult; change: ConversationAssignmentChange }>> => {
-  if (params.conversationIds.length === 0 || params.conversationIds.length > MAIL_CONVERSATION_BATCH_LIMIT) {
+  assigneeUserIds: readonly string[];
+  mode: "add" | "remove" | "replace";
+}): Promise<
+  Result<{
+    result: ConversationAssignmentResult;
+    change: ConversationAssignmentChange;
+    collaborations: Map<string, ConversationCollaboration>;
+  }>
+> => {
+  if (params.conversationIds.length === 0 || params.conversationIds.length > MAIL_CONVERSATION_BATCH_LIMIT)
     return fail(err.badInput(`Pass 1 to ${MAIL_CONVERSATION_BATCH_LIMIT} conversations`));
-  }
+  if (params.assigneeUserIds.length > MAIL_CONVERSATION_ASSIGNEE_LIMIT)
+    return fail(err.badInput(`A conversation can have at most ${MAIL_CONVERSATION_ASSIGNEE_LIMIT} assignees`));
+  const userIds = [...new Set(params.assigneeUserIds)];
+  if (params.mode !== "replace" && userIds.length === 0) return fail(err.badInput("Add and remove require at least one user"));
   const requestedIds = [...new Set(params.conversationIds)];
   type ChangeEvent = NonNullable<CollaborationMutation<ConversationCollaboration>["event"]>;
   type Committed = {
-    assignee: MailCollaborator | null;
+    assignees: MailCollaborator[];
     found: Set<string>;
     events: ChangeEvent[];
     changedIds: string[];
+    added: Map<string, string[]>;
+    collaborations: Map<string, ConversationCollaboration>;
     mailbox: { shortId: string; name: string };
   };
   let result: Result<Committed>;
   try {
     result = await sql.begin(async (tx): Promise<Result<Committed>> => {
+      // Assignment always requires mailbox-wide write access, including removals.
       const allowed = await lockMailboxForCollaboration(params.context, params.mailboxId, "write", tx);
       if (!allowed.ok) return allowed;
-      const [mailbox] = await tx<{ short_id: string; name: string }[]>`
-        SELECT short_id, name FROM mail.mailboxes WHERE id = ${params.mailboxId}::uuid
-      `;
+      const [mailbox] = await tx<
+        { short_id: string; name: string }[]
+      >`SELECT short_id, name FROM mail.mailboxes WHERE id = ${params.mailboxId}::uuid`;
       if (!mailbox) return fail(err.notFound("Mailbox"));
-      const [assigneeUser] = params.assigneeUserId
-        ? await listCurrentUsers({
-            mailboxId: params.mailboxId,
-            db: tx,
-            userIds: [params.assigneeUserId],
-            minimumPermission: "write",
-            limit: 1,
-          })
-        : [];
-      if (params.assigneeUserId && !assigneeUser) return fail(err.badInput("Assignee must have current write access to this mailbox"));
+      const users = await listAssigneeCollaborators(userIds, tx);
       // Stable lock order prevents concurrent bulk assignments from deadlocking.
       const rows = await tx<{ id: string; short_id: string; revision: string | number }[]>`
-        SELECT id, short_id, revision
-        FROM mail.conversations
-        WHERE mailbox_id = ${params.mailboxId}::uuid
-          AND short_id IN (SELECT value FROM jsonb_array_elements_text(${requestedIds}::jsonb))
-        ORDER BY id
-        FOR UPDATE
+        SELECT id, short_id, revision FROM mail.conversations
+        WHERE mailbox_id = ${params.mailboxId}::uuid AND short_id IN (SELECT value FROM jsonb_array_elements_text(${requestedIds}::jsonb))
+        ORDER BY id FOR UPDATE
       `;
+      const next = new Map<string, string[]>();
+      const addedIds = new Set<string>();
+      for (const row of rows) {
+        const current = await loadConversationAssigneeIds(tx, row.id);
+        const ids =
+          params.mode === "replace"
+            ? userIds
+            : params.mode === "add"
+              ? [...new Set([...current, ...userIds])]
+              : current.filter((id) => !userIds.includes(id));
+        if (ids.length > MAIL_CONVERSATION_ASSIGNEE_LIMIT)
+          return fail(err.badInput(`A conversation can have at most ${MAIL_CONVERSATION_ASSIGNEE_LIMIT} assignees`));
+        next.set(row.id, ids);
+        for (const id of ids) if (!current.includes(id)) addedIds.add(id);
+      }
+      // Like a single update, only people being added must be eligible.
+      const valid = await validateAssignees(params.mailboxId, [...addedIds], tx);
+      if (!valid.ok) return valid;
       const events: ChangeEvent[] = [];
       const changedIds: string[] = [];
+      const added = new Map<string, string[]>();
+      const collaborations = new Map<string, ConversationCollaboration>();
       for (const row of rows) {
         const applied = await applyConversationCollaborationInTransaction({
           context: params.context,
           mailboxId: params.mailboxId,
           conversationId: row.id,
-          input: { expectedRevision: Number(row.revision), assigneeUserId: params.assigneeUserId },
+          input: { expectedRevision: Number(row.revision), assigneeUserIds: next.get(row.id) },
+          assigneesToValidate: [],
           db: tx,
         });
-        if (!applied.ok) return applied;
+        if (!applied.ok) throw applied.error;
+        collaborations.set(row.short_id, applied.data.value);
         if (applied.data.event) {
           events.push(applied.data.event);
           changedIds.push(row.short_id);
+          for (const userId of applied.data.addedUserIds) added.set(userId, [...(added.get(userId) ?? []), row.short_id]);
         }
       }
       return ok({
-        assignee: assigneeUser ? collaboratorFromAccessUser(assigneeUser) : null,
+        assignees: users,
         found: new Set(rows.map((row) => row.short_id)),
         events,
         changedIds,
+        added,
+        collaborations,
         mailbox: { shortId: mailbox.short_id, name: mailbox.name },
       });
     });
@@ -738,8 +835,9 @@ export const applyConversationAssignments = async (params: {
   const committed = result.data;
   if (committed.events.length > 0) mailLive.wake();
   return ok({
+    collaborations: committed.collaborations,
     result: {
-      assignee: committed.assignee,
+      assignees: committed.assignees,
       results: params.conversationIds.map((conversationId) => ({
         conversationId,
         status: committed.found.has(conversationId) ? "ok" : "not_found",
@@ -749,6 +847,7 @@ export const applyConversationAssignments = async (params: {
       mailbox: committed.mailbox,
       conversationIds: committed.changedIds,
       activityIds: committed.events.map((event) => event.activityId),
+      added: [...committed.added].map(([userId, conversationIds]) => ({ userId, conversationIds })),
     },
   });
 };
@@ -802,7 +901,7 @@ export const releaseDueSnoozes = async (batchSize = 500): Promise<number> => {
   }
 };
 
-const commentColumns = sql`
+const commentColumns = (access?: MailboxAccess) => sql`
   comment.id,
   comment.conversation_id,
   comment.body_markdown,
@@ -819,7 +918,7 @@ const commentColumns = sql`
     END
   ) AS author_display_name,
   author_user.avatar_hash AS author_avatar_hash,
-  comment.referenced_message_id,
+  CASE WHEN ${access ? messageVisibleTo(access, sql`comment.referenced_message_id`) : sql`true`} THEN comment.referenced_message_id ELSE NULL END AS referenced_message_id,
   comment.revision,
   comment.edited_at,
   comment.deleted_at,
@@ -868,9 +967,10 @@ const loadComment = async (params: {
   conversationId: string;
   commentId: string;
   actor?: { kind: CommentActorKind; id: string };
+  access?: MailboxAccess;
 }): Promise<ConversationComment | null> => {
   const [row] = await params.db<CommentRow[]>`
-    SELECT ${commentColumns}
+    SELECT ${commentColumns(params.access)}
     FROM mail.conversation_comments comment
     JOIN mail.conversations conversation ON conversation.id = comment.conversation_id
     LEFT JOIN auth.users author_user ON comment.author_kind = 'user' AND author_user.id = comment.author_id
@@ -889,9 +989,11 @@ export const getConversationComment = async (params: {
   conversationId: string;
   commentId: string;
 }): Promise<Result<ConversationComment>> => {
-  const allowed = await requireMailboxCollaborationPermission(params.context, params.mailboxId, "read");
+  const allowed = await requireMailboxAccess(params.context, params.mailboxId, "read");
   if (!allowed.ok) return allowed;
-  const comment = await loadComment({ db: sql, ...params, actor: actorIdentity(params.context) });
+  const visible = await requireVisibleConversation(allowed.data, params.conversationId);
+  if (!visible.ok) return visible;
+  const comment = await loadComment({ db: sql, ...params, actor: actorIdentity(params.context), access: allowed.data });
   return comment ? ok(comment) : fail(err.notFound("Comment"));
 };
 
@@ -913,6 +1015,7 @@ const validateCommentReferences = async (params: {
 
 const lockCommentForMutation = async (params: {
   db: SqlClient;
+  context: MailRequestContext;
   mailboxId: string;
   conversationId: string;
   commentId: string;
@@ -921,7 +1024,7 @@ const lockCommentForMutation = async (params: {
   action: "edit" | "delete";
 }): Promise<Result<MutableCommentRow>> => {
   const [comment] = await params.db<MutableCommentRow[]>`
-    SELECT comment.revision, comment.body_markdown, comment.author_kind, comment.author_id, comment.deleted_at, comment.created_at
+    SELECT comment.referenced_message_id, comment.revision, comment.body_markdown, comment.author_kind, comment.author_id, comment.deleted_at, comment.created_at
     FROM mail.conversation_comments comment
     JOIN mail.conversations conversation ON conversation.id = comment.conversation_id
     WHERE comment.id = ${params.commentId}::uuid
@@ -930,6 +1033,14 @@ const lockCommentForMutation = async (params: {
     FOR UPDATE OF comment
   `;
   if (!comment) return fail(err.notFound("Comment"));
+  const access = await requireMailboxAccess(params.context, params.mailboxId, "read", params.db);
+  if (!access.ok) return access;
+  const reference = await requireVisibleMessages(
+    access.data,
+    comment.referenced_message_id ? [comment.referenced_message_id] : [],
+    params.db,
+  );
+  if (!reference.ok) return reference;
   if (comment.deleted_at)
     return fail(err.badInput(params.action === "edit" ? "Deleted comments cannot be edited" : "Comment is already deleted"));
   if (Number(comment.revision) !== params.expectedRevision) return fail(err.conflict("Comment was changed by another collaborator"));
@@ -949,8 +1060,10 @@ export const listConversationComments = async (params: {
   limit?: number;
   order?: "oldest" | "newest";
 }): Promise<Result<{ items: ConversationComment[]; nextCursor: string | null }>> => {
-  const allowed = await requireMailboxCollaborationPermission(params.context, params.mailboxId, "read");
+  const allowed = await requireMailboxAccess(params.context, params.mailboxId, "read");
   if (!allowed.ok) return allowed;
+  const visible = await requireVisibleConversation(allowed.data, params.conversationId);
+  if (!visible.ok) return visible;
   const cursor = decodeDateCursor(params.cursor);
   if (!cursor.ok) return cursor;
   const limit = Math.min(Math.max(params.limit ?? 50, 1), 100);
@@ -960,7 +1073,7 @@ export const listConversationComments = async (params: {
     : sql`(comment.created_at, comment.id) > (${cursor.data?.date ?? null}::timestamptz, ${cursor.data?.id ?? null}::uuid)`;
   const ordering = newestFirst ? sql`comment.created_at DESC, comment.id DESC` : sql`comment.created_at, comment.id`;
   const rows = await sql<(CommentRow & { cursor_at: string })[]>`
-    SELECT ${commentColumns},
+    SELECT ${commentColumns(allowed.data)},
            to_char(comment.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at
     FROM mail.conversation_comments comment
     JOIN mail.conversations conversation ON conversation.id = comment.conversation_id
@@ -996,8 +1109,16 @@ export const createConversationComment = async (params: {
 }): Promise<Result<ConversationComment>> => {
   try {
     const result = await sql.begin(async (tx): Promise<Result<CollaborationMutation<ConversationComment>>> => {
-      const allowed = await lockMailboxForCollaboration(params.context, params.mailboxId, "read", tx);
+      const allowed = await lockMailboxForCollaboration(params.context, params.mailboxId, "read", tx, params.conversationId);
       if (!allowed.ok) return allowed;
+      const access = await requireMailboxAccess(params.context, params.mailboxId, "read", tx);
+      if (!access.ok) return access;
+      const visibleReference = await requireVisibleMessages(
+        access.data,
+        params.input.referencedMessageId ? [params.input.referencedMessageId] : [],
+        tx,
+      );
+      if (!visibleReference.ok) return visibleReference;
       const [conversation] = await tx<{ id: string }[]>`
         SELECT id FROM mail.conversations
         WHERE id = ${params.conversationId}::uuid AND mailbox_id = ${params.mailboxId}::uuid
@@ -1135,11 +1256,12 @@ export const updateConversationComment = async (params: {
 }): Promise<Result<ConversationComment>> => {
   try {
     const result = await sql.begin(async (tx): Promise<Result<CollaborationMutation<ConversationComment>>> => {
-      const allowed = await lockMailboxForCollaboration(params.context, params.mailboxId, "read", tx);
+      const allowed = await lockMailboxForCollaboration(params.context, params.mailboxId, "read", tx, params.conversationId);
       if (!allowed.ok) return allowed;
       const actor = actorIdentity(params.context);
       const current = await lockCommentForMutation({
         db: tx,
+        context: params.context,
         mailboxId: params.mailboxId,
         conversationId: params.conversationId,
         commentId: params.commentId,
@@ -1220,11 +1342,12 @@ export const deleteConversationComment = async (params: {
 }): Promise<Result<ConversationComment>> => {
   try {
     const result = await sql.begin(async (tx): Promise<Result<CollaborationMutation<ConversationComment>>> => {
-      const allowed = await lockMailboxForCollaboration(params.context, params.mailboxId, "read", tx);
+      const allowed = await lockMailboxForCollaboration(params.context, params.mailboxId, "read", tx, params.conversationId);
       if (!allowed.ok) return allowed;
       const actor = actorIdentity(params.context);
       const current = await lockCommentForMutation({
         db: tx,
+        context: params.context,
         mailboxId: params.mailboxId,
         conversationId: params.conversationId,
         commentId: params.commentId,
@@ -1292,10 +1415,17 @@ export const listActivity = async (params: {
   cursor?: string;
   limit?: number;
 }): Promise<Result<{ items: MailActivityEvent[]; nextCursor: string | null }>> => {
-  const allowed = await requireMailboxCollaborationPermission(params.context, params.mailboxId, "read");
+  const allowed = params.conversationId
+    ? await requireMailboxAccess(params.context, params.mailboxId, "read")
+    : await requireMailboxCollaborationPermission(params.context, params.mailboxId, "read");
   if (!allowed.ok) return allowed;
+  if (params.conversationId && typeof allowed.data === "object") {
+    const visible = await requireVisibleConversation(allowed.data, params.conversationId);
+    if (!visible.ok) return visible;
+  }
   const cursor = decodeActivityCursor(params.cursor);
   if (!cursor.ok) return cursor;
+  const visibility = typeof allowed.data === "object" ? allowed.data : ({ scope: "mailbox", permission: "read" } as const);
   const limit = Math.min(Math.max(params.limit ?? 50, 1), 100);
   const rows = await sql<ActivityRow[]>`
     SELECT
@@ -1339,6 +1469,34 @@ export const listActivity = async (params: {
       ON actor_workflow.id = actor_workflow_version.workflow_id
     WHERE activity.mailbox_id = ${params.mailboxId}::uuid
       AND (${params.conversationId ?? null}::uuid IS NULL OR activity.conversation_id = ${params.conversationId ?? null}::uuid)
+      AND (${visibility.scope === "mailbox"} OR (
+        activity.action NOT IN ('conversation.merged', 'conversation.message_reassigned', 'conversation.split', 'conversation.created_by_split')
+        AND (activity.target_type IS DISTINCT FROM 'message' OR ${messageVisibleTo(visibility, sql`activity.target_id`)})
+        AND (activity.target_type IS DISTINCT FROM 'comment' OR EXISTS (
+          SELECT 1 FROM mail.conversation_comments comment
+          WHERE comment.id = activity.target_id AND comment.conversation_id = activity.conversation_id
+        ))
+        AND NOT EXISTS (
+          SELECT 1 FROM jsonb_each_text(activity.metadata) metadata
+          WHERE metadata.key IN ('messageId', 'sourceMessageId', 'derivedFromMessageId', 'referencedMessageId', 'outboundMessageId')
+            AND metadata.value IS NOT NULL
+            AND NOT EXISTS (
+              SELECT 1 FROM mail.message_contents referenced_message
+              WHERE referenced_message.id::text = metadata.value
+                AND ${messageVisibleTo(visibility, sql`referenced_message.id`)}
+            )
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM jsonb_array_elements_text(CASE
+            WHEN jsonb_typeof(activity.metadata -> 'messageIds') = 'array' THEN activity.metadata -> 'messageIds'
+            ELSE '[]'::jsonb END) referenced_id(value)
+          WHERE NOT EXISTS (
+            SELECT 1 FROM mail.message_contents referenced_message
+            WHERE referenced_message.id::text = referenced_id.value
+              AND ${messageVisibleTo(visibility, sql`referenced_message.id`)}
+          )
+        )
+      ))
       AND (${cursor.data ?? null}::bigint IS NULL OR activity.id < ${cursor.data ?? null}::bigint)
     ORDER BY activity.id DESC
     LIMIT ${limit + 1}

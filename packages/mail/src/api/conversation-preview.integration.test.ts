@@ -8,6 +8,7 @@ import type { MailConversationPreview } from "../contracts";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
 import type { MailRequestContext } from "../service/auth";
+import { writeConversationAssignees } from "../service/collaboration";
 import { MAIL_CONVERSATION_PREVIEW_EXCERPT_MAX_LENGTH, MAIL_CONVERSATION_PREVIEW_NAME_MAX_LENGTH } from "../service/conversation-preview";
 import { createMailbox } from "../service/mailboxes";
 import app from ".";
@@ -121,12 +122,15 @@ suite("Mail conversation quick look", () => {
     `;
   };
 
-  const insertConversation = async (params: { summary?: string | null; assigneeUserId?: string | null } = {}) => {
+  const insertConversation = async (params: { summary?: string | null; assigneeUserIds?: string[] } = {}) => {
     const [conversation] = await sql<{ id: string; short_id: string }[]>`
-      INSERT INTO mail.conversations (short_id, mailbox_id, subject, participant_summary, latest_message_at, summary, assignee_user_id)
-      VALUES (${newShortId()}, ${mailboxId}::uuid, 'Offer', 'Mara Beispiel', now(), ${params.summary ?? null}, ${params.assigneeUserId ?? null})
+      INSERT INTO mail.conversations (short_id, mailbox_id, subject, participant_summary, latest_message_at, summary)
+      VALUES (${newShortId()}, ${mailboxId}::uuid, 'Offer', 'Mara Beispiel', now(), ${params.summary ?? null})
       RETURNING id, short_id
     `;
+    await sql.begin((tx) =>
+      writeConversationAssignees(tx, { mailboxId, conversationId: conversation!.id, userIds: params.assigneeUserIds ?? [] }),
+    );
     return { id: conversation!.id, shortId: conversation!.short_id };
   };
 
@@ -191,7 +195,7 @@ suite("Mail conversation quick look", () => {
     `;
     folderId = folder!.id;
 
-    main = await insertConversation({ assigneeUserId: assignee.id });
+    main = await insertConversation({ assigneeUserIds: [assignee.id] });
     await insertMessage({
       conversationId: main.id,
       minutesAgo: 30,

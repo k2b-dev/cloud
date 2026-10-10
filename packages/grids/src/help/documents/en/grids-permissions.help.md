@@ -1,61 +1,72 @@
 ---
 id: grids-permissions
-title: Permissions
+title: Control access
 icon: ti ti-lock
-description: Choose between complete Base access and a bounded Grids App.
+description: Choose between complete access to a Base and a bounded Grids App.
 order: 145
 ---
-Grids has two Cloud permission boundaries: a **Base** for the complete raw workspace and a **Grids App** for one published, task-focused surface. Tables, Views, Forms, document templates, and Workflows do not have separate Cloud grants.
+Grids controls access in two places. Access to a **Base** covers its complete raw workspace. Access to a **Grids App** covers only that published, task-focused app. Tables, views, forms, document templates, and workflows have no separate Cloud access.
 
-Cloud administrators are not automatic Grids superusers. They can manage Grids from the administration area, but normal Grids pages still require Base access.
+Cloud administrators are not automatic Grids superusers. They can configure Grids in the administration area, but normal Grids pages still require access to the Base.
 
-## Grant access to a Base {icon="database"}
+## Give access to a Base {icon="database"}
 
-A Base grant applies to every table, field, record, View, Form, document template, and Workflow in that Base.
+Access to a Base applies to every table, field, record, view, form, document template, and workflow in that Base.
 
-Base grants support users, groups, service accounts, and all authenticated accounts. They do not support public principals.
+You can give access to users, groups, service accounts, and all signed-in accounts. You cannot give public access to a Base.
 
-| Level | What it allows |
-| --- | --- |
-| **Read** | Read the complete schema and every record in the Base, including Views, GQL results, exports, and generated output. |
-| **Write** | Read plus create, update, and delete records, submit Forms, generate documents, and run allowed Base operations. |
-| **Admin** | Write plus change schema and configuration, manage access, and create, edit, or publish Grids Apps. |
-| **None** | Explicitly deny Base access. |
+| Level | CLI value | What it allows |
+| --- | --- | --- |
+| **View** | `read` | Read the complete schema and every record in the Base, including views, GQL results, exports, and generated output. |
+| **Edit** | `write` | Everything in **View**. Create, update, and delete records, submit forms, generate documents, and run allowed Base operations. |
+| **Manage** | `admin` | Everything in **Edit**. Change the schema and the configuration, change access, and create, edit, or publish Grids Apps. |
+| **No access** | `none` | Deny access to the Base explicitly. |
 
-A Base always keeps at least one manager: an **Admin** grant for a person, a group, all authenticated accounts, or a standalone or agent service account. API keys bound to the Base do not count. Grids refuses to lower or remove the last manager, and refuses a **None** grant for the same person, group, or account as that manager. An **Admin** grant does not count while the same person, group, or account also has **None**. When only one manager counts, the access settings lock that grant. To hand a Base over, grant the new manager **Admin** first. If a Base has lost its manager anyway, for example because the account was deleted, a Cloud administrator grants a new one in the administration area.
+### Keep a manager on the Base
 
-Grids counts a group's **Admin** grant without checking its members. For a member, their own grant, or **None** for another of their groups, still decides first. So when you hand a Base over, grant **Admin** to the person directly.
+A Base always keeps at least one manager. A manager is a **Manage** entry for a person, a group, all signed-in accounts, or a standalone or agent service account. API keys bound to the Base do not count.
 
-Base access cannot be narrowed to one table, View, Form, Workflow, or creator. If an audience must see only selected data or actions, publish a Grids App or separate the data into another Base.
+- Grids refuses to lower or remove the last manager.
+- Grids refuses **No access** for the same person, group, or account as that manager.
+- A **Manage** entry does not count while the same person, group, or account also has **No access**.
+- When only one manager counts, the access settings lock that entry.
 
-Record creator metadata remains available as normal data. For example, GQL can compare `record.createdBy` with `@auth.id` inside a Grids App. That query controls the published result; it is not a hidden row-permission system.
+To hand a Base over, give the new manager **Manage** access first. A Base can still lose its manager, for example when the account is deleted. Then a Cloud administrator adds a new manager in the administration area.
+
+Grids counts a group's **Manage** entry without checking its members. For a member, the member's own entry, or **No access** for another of their groups, still decides first. So when you hand a Base over, give **Manage** access to the person directly.
+
+### Narrow access with an app or a separate Base
+
+You cannot limit access to a Base to one table, view, form, workflow, or creator. If an audience can see only selected data or actions, publish a Grids App or move the data to another Base.
+
+The creator of a record stays available as normal data. For example, GQL in a Grids App can compare `record.createdBy` with `@auth.id`. That query controls the published result. It is not a hidden system for row access.
 
 ## Share a Grids App {icon="app-window"}
 
-A Grids App has its own **Read** or **None** grants. Grant it to a user, group, all authenticated accounts, or the public. A public grant includes anonymous visitors. Grids App grants do not support service accounts; delegated credentials use their user identity.
+A Grids App has its own access. Its only level is **Open** (`read`), and `none` denies access. You can give access to a user, a group, all signed-in accounts, or the public. Public access includes anonymous visitors. You cannot give a service account direct access to a Grids App. Delegated credentials use their user identity.
 
-App readers do not need Base access. They receive only the data, Forms, fields, documents, and actions compiled into the immutable published snapshot. App access never grants the raw Grids workspace, direct table or record APIs, arbitrary GQL, or an editable source View.
+People who use the app do not need access to the Base. They receive only the data, forms, fields, documents, and actions that are compiled into the immutable published snapshot. Access to an app never gives the raw Grids workspace, direct table or record APIs, arbitrary GQL, or an editable source view.
 
-Only a Base administrator can edit, preview, publish, reset, delete, or manage access for a Grids App. Drafts and previews are never public.
+Editing, previewing, publishing, resetting, or deleting a Grids App, and changing its access, require **Manage** access to the Base. Drafts and previews are never public.
 
-Before publishing publicly, review the capability summary in the builder. It identifies the data sources, writable Form fields, and other operations exposed by the publication. Use separate public and authenticated apps when the two audiences need different capabilities.
+Before you publish to the public, review the capability summary in the builder. It lists the data sources, writable form fields, and other operations that the publication exposes. Use separate public and signed-in apps when the two audiences need different capabilities.
 
 ## Understand server enforcement {icon="shield-lock"}
 
-The published definition and capability snapshot are enforced on the server. Page, block, Form, and action availability is checked again when the resource is requested; hiding a control in the browser is not authorization.
+The server enforces the published definition and the capability snapshot. It checks again whether a page, block, form, or action is available each time someone requests it. Hiding a control in the browser is not authorization.
 
-An unavailable page, block, Form, or action returns **Not Found** and does not execute its query or mutation. Public app reads and submissions use the same boundary with anonymous context. Workflow actions require an authenticated account.
+An unavailable page, block, form, or action returns a not-found error. Its query or mutation does not run. Public app reads and submissions use the same boundary with an anonymous context. Workflow actions require a signed-in account.
 
 ## Keep narrow public links narrow {icon="world"}
 
-Public Forms and expiring document links remain token-based surfaces:
+Public forms and expiring document links stay token-based:
 
-- a public Form token allows submission to that Form, not browsing the Base;
-- an expiring document link allows downloading one generated document until it expires or is revoked.
+- A public form token allows submissions to that form. It does not allow browsing the Base.
+- An expiring document link allows downloading one generated document until the link expires or someone revokes it.
 
-These links do not create table-, Form-, or template-level Cloud permissions.
+These links do not create Cloud access to a table, form, or template.
 
-## Manage access from the CLI {icon="terminal-2"}
+## Change access from the CLI {icon="terminal-2"}
 
 ```text
 cld grids access set base MyBase --group "Operations" --permission write
@@ -64,4 +75,4 @@ cld grids access list app MyBase "Public catalog"
 cld grids access revoke app MyBase "Public catalog" --public --yes
 ```
 
-Use `cld grids access reference` for the installed resource, permission, and principal contract.
+Run `cld grids access reference` for the installed contract of resources, access levels, and principals.

@@ -449,7 +449,7 @@ export const listSavedViewConversations = async (params: {
       participantLabels: item.participantLabels,
       latestMessageAt: item.latestMessageAt,
       workStatus: item.workStatus ?? "needs_action",
-      assigneeUserId: item.assigneeUserId,
+      assigneeUserIds: item.assigneeUserIds,
       snoozedUntil: item.snoozedUntil,
       revision: item.revision,
       updatedAt: item.updatedAt,

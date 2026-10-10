@@ -4,31 +4,36 @@ import type { MailAssignableUser } from "../../service/collaboration";
 import { mailWorkspaceMessages } from "../mail-workspace-messages";
 import { readApiError } from "./api-response";
 
-export type MailAssigneeChoice = { assigneeUserId: string | null };
+/** One change to the assignees of the selected conversations; `name` labels another person in feedback, null is you. */
+export type MailAssigneeChoice =
+  | { mode: "add" | "remove"; userId: string; name: string | null }
+  | { mode: "replace"; userId: null; name: null };
 
 const avatarUrl = (user: Pick<MailAssignableUser, "id" | "avatarHash">): string | undefined =>
   user.avatarHash ? `/api/accounts/users/${encodeURIComponent(user.id)}/avatar?rev=${encodeURIComponent(user.avatarHash)}` : undefined;
 
 /**
- * Picks one assignee for the selected conversations of one mailbox. The two
- * quick choices come first; below them the mailbox's assignable users, searched
- * through the same endpoint the details panel uses.
+ * Picks one change to the assignees of the selected conversations of one mailbox: add yourself,
+ * remove yourself, or remove everyone first, then add any assignable person, searched through the
+ * same endpoint the details panel uses. A conversation keeps its other assignees.
  */
 export const chooseMailAssignee = (params: { mailboxId: string; currentUserId: string }): Promise<MailAssigneeChoice | null> => {
   const t = mailWorkspaceMessages.resolve([useLocale()()]).t;
   const quickChoices = (query: string): PromptSearchItem<MailAssigneeChoice>[] => {
     const needle = query.trim().toLocaleLowerCase();
-    return [
-      { label: t.assignToMe, icon: "ti ti-user-check", value: { assigneeUserId: params.currentUserId } },
-      { label: t.unassign, icon: "ti ti-user-off", value: { assigneeUserId: null } },
-    ].filter((item) => !needle || item.label.toLocaleLowerCase().includes(needle));
+    const items: PromptSearchItem<MailAssigneeChoice>[] = [
+      { label: t.assignToMe, icon: "ti ti-user-check", value: { mode: "add", userId: params.currentUserId, name: null } },
+      { label: t.removeMe, icon: "ti ti-user-minus", value: { mode: "remove", userId: params.currentUserId, name: null } },
+      { label: t.unassign, icon: "ti ti-user-off", value: { mode: "replace", userId: null, name: null } },
+    ];
+    return items.filter((item) => !needle || item.label.toLocaleLowerCase().includes(needle));
   };
   const userItem = (user: MailAssignableUser): PromptSearchItem<MailAssigneeChoice> => ({
     label: user.displayName,
     desc: user.uid,
     icon: "ti ti-user",
     previewUrl: avatarUrl(user),
-    value: { assigneeUserId: user.id },
+    value: { mode: "add", userId: user.id, name: user.displayName },
   });
   const others = (users: readonly MailAssignableUser[]) => users.filter((user) => user.id !== params.currentUserId);
 

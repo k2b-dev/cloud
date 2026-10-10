@@ -5,7 +5,7 @@ import { sql } from "bun";
 import type { CalendarAddress, CalendarParticipationStatus, SpacesMailDestinationContext } from "../app-integration-contracts";
 import type { MailDraft } from "../contracts";
 import { withShortIdDb } from "../lib/short-id";
-import { requireMailboxPermission } from "./access";
+import { messageVisibleTo, requireDraftAccess, requireMailboxAccess, requireMailboxPermission } from "./access";
 import {
   type AppIntegrationRequest,
   buildCalendarInvitationResponse,
@@ -158,6 +158,8 @@ const loadCalendarAttachment = async (params: {
     conversation: { ref: { type: "mail.conversation"; id: string }; label: string };
   }>
 > => {
+  const access = await requireMailboxAccess(params.context, params.mailboxId, "read");
+  if (!access.ok) return access;
   const message = await messages.getMessage({ context: params.context, mailboxId: params.mailboxId, messageId: params.messageId });
   if (!message.ok) return message;
   const attachment = message.data.attachments.find(
@@ -185,6 +187,7 @@ const loadCalendarAttachment = async (params: {
     FROM mail.conversation_messages link
     JOIN mail.conversations conversation ON conversation.id = link.conversation_id
     WHERE link.message_id = ${params.messageId}::uuid AND conversation.mailbox_id = ${params.mailboxId}::uuid
+      AND ${messageVisibleTo(access.data, sql`link.message_id`)}
     LIMIT 1
   `;
   if (!conversation) return fail(err.notFound("Conversation"));
@@ -321,7 +324,7 @@ export const attachEventInvitation = async (params: {
   idempotencyKey: string;
   request: AppIntegrationRequest;
 }): Promise<Result<MailDraft>> => {
-  const allowed = await requireMailboxPermission(params.context, params.mailboxId, "write");
+  const allowed = await requireDraftAccess(params.context, params.mailboxId, params.draftId, "write");
   if (!allowed.ok) return allowed;
   const [current, identities] = await Promise.all([
     drafts.getDraft(params.context, params.mailboxId, params.draftId),

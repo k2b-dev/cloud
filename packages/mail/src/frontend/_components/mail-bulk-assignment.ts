@@ -3,10 +3,13 @@ import type { mailWorkspaceMessages } from "../mail-workspace-messages";
 import type { MailAssigneeChoice } from "./mail-assign-picker";
 
 type MailWorkspaceText = ReturnType<typeof mailWorkspaceMessages.resolve>["t"];
+type AssignmentMode = "add" | "remove" | "replace";
 
 export type MailBulkAssignmentHost = {
   chooseAssignee: () => Promise<MailAssigneeChoice | null>;
-  assign: (conversationIds: string[], assigneeUserId: string | null) => Promise<ConversationAssignmentResult>;
+  assign: (conversationIds: string[], assigneeUserIds: string[], mode: AssignmentMode) => Promise<ConversationAssignmentResult>;
+  /** The assignees a listed conversation has now, or null when the list does not show it. */
+  assigneesOf: (conversationId: string) => readonly string[] | null;
   clearSelection: () => void;
   /** Reloads the canonical list; resolves with the refresh error instead of throwing. */
   refresh: () => Promise<Error | null>;
@@ -18,10 +21,15 @@ export type MailBulkAssignmentHost = {
   active: () => boolean;
 };
 
-/** Undo clears the assignee of the conversations that changed; it does not restore earlier assignees. */
-const undoAssignment = async (conversationIds: string[], host: MailBulkAssignmentHost, t: MailWorkspaceText): Promise<void> => {
+/** Undo reverses the change on the conversations it changed; removing everyone has no undo. */
+const undoAssignment = async (
+  conversationIds: string[],
+  change: { userId: string; mode: "add" | "remove" },
+  host: MailBulkAssignmentHost,
+  t: MailWorkspaceText,
+): Promise<void> => {
   try {
-    await host.assign(conversationIds, null);
+    await host.assign(conversationIds, [change.userId], change.mode);
     if (!host.active()) return;
     const refreshError = await host.refresh();
     if (!host.active()) return;
@@ -39,21 +47,41 @@ export const runMailBulkAssignment = async (
 ): Promise<void> => {
   const choice = await host.chooseAssignee();
   if (!choice || !host.active()) return;
-  const result = await host.assign(conversationIds, choice.assigneeUserId);
+  // Only conversations the change actually touches get undone, so earlier assignments survive an undo.
+  const changes = (conversationId: string): boolean => {
+    if (choice.userId === null) return true;
+    const before = host.assigneesOf(conversationId);
+    if (!before) return true;
+    return choice.mode === "add" ? !before.includes(choice.userId) : before.includes(choice.userId);
+  };
+  const touched = conversationIds.filter(changes);
+  const result = await host.assign(conversationIds, choice.userId ? [choice.userId] : [], choice.mode);
   if (!host.active()) return;
-  const changedIds = result.results.filter((item) => item.status === "ok").map((item) => item.conversationId);
+  const found = new Set(result.results.filter((item) => item.status === "ok").map((item) => item.conversationId));
+  const changedIds = touched.filter((id) => found.has(id));
   host.clearSelection();
   const refreshError = await host.refresh();
   if (!host.active()) return;
-  if (changedIds.length > 0 && result.assignee) {
-    host.success(t.assignedTo({ count: changedIds.length, name: result.assignee.displayName }), {
-      label: t.undo,
-      run: () => void undoAssignment(changedIds, host, t),
-    });
-  } else if (changedIds.length > 0) {
-    host.success(t.unassignedCount({ count: changedIds.length }));
+  if (found.size > 0 && choice.userId !== null) {
+    const count = found.size;
+    const message =
+      choice.mode === "add"
+        ? choice.name === null
+          ? t.assignedToYou({ count })
+          : t.assignedTo({ count, name: choice.name })
+        : choice.name === null
+          ? t.removedYou({ count })
+          : t.removedFrom({ count, name: choice.name });
+    const reverse = choice.mode === "add" ? "remove" : "add";
+    const userId = choice.userId;
+    host.success(
+      message,
+      changedIds.length > 0 ? { label: t.undo, run: () => void undoAssignment(changedIds, { userId, mode: reverse }, host, t) } : undefined,
+    );
+  } else if (found.size > 0) {
+    host.success(t.unassignedCount({ count: found.size }));
   }
-  const missing = result.results.length - changedIds.length;
+  const missing = result.results.length - found.size;
   if (missing > 0) host.error(t.notAssignedBody, t.notAssignedTitle({ failed: missing, total: result.results.length }));
   if (refreshError) host.refreshFailed(refreshError, t.assignRefreshFailed);
 };

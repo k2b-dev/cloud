@@ -6,7 +6,7 @@ description: Automatische Antworten, Verarbeitung eingehender E-Mails und sicher
 order: 60
 ---
 
-Öffne **Postfachwerkzeuge > Automatisierungen**. Die seitenbreite Übersicht zeigt aktive Automatisierungen und öffnet direkt die gewählte Einrichtung. **Automatische Antworten** und **Eingehende E-Mails** decken häufige Aufgaben ab. Postfachadministratoren sehen unter Erweitert außerdem **Aktivität** und **Workflows**.
+Öffne **Postfachwerkzeuge → Automatisierungen**. Die seitenbreite Übersicht zeigt, was aktiv ist, und öffnet genau die Einrichtung, die du wählst. **Automatische Antworten** und **Eingehende E-Mails** decken häufige Aufgaben ab. Mit Zugriff **Verwalten** siehst du unter Erweitert außerdem **Aktivität** und **Workflows**.
 
 ## Das passende Automatisierungswerkzeug wählen {icon="route"}
 
@@ -14,152 +14,187 @@ order: 60
 | --- | --- |
 | Abwesenheitsnotiz oder Empfangsbestätigung senden | **Automatische Antworten** |
 | Eingehende E-Mails verschieben, markieren, kennzeichnen, zuweisen, klassifizieren oder daraus Entwürfe erstellen | Ein geführter Ablauf unter **Eingehende E-Mails** |
-| Unterhaltungen dauerhafte, für Menschen lesbare IDs geben | Referenzbestätigung oder eigener **Workflow** |
-| Aufgaben außerhalb der geführten Editoren verbinden oder die Zustellung bewusst automatisieren | Erweiterter **Workflow** |
+| Unterhaltungen dauerhafte IDs für Menschen geben | Empfangsbestätigung mit Referenznummer oder eigener **Workflow** |
+| Aufgaben über die geführten Editoren hinaus verbinden oder die Zustellung bewusst automatisieren | Erweiterter **Workflow** |
 
-Die Werkzeuge können zusammenarbeiten, aber keines aktiviert automatisch ein anderes. Referenzeinstellungen bestimmen das Format; ein Workflow entscheidet weiterhin, wann eine Nummer vergeben wird. Das Speichern eines Workflows aktiviert ihn nicht.
+Die Werkzeuge können zusammenarbeiten, aber keines aktiviert ein anderes. Einstellungen für Referenznummern legen das Format fest. Ein Workflow entscheidet weiterhin, wann eine Nummer vergeben wird. Das Speichern eines Workflows aktiviert ihn nicht.
 
 ## Eine Automatisierung für eingehende E-Mails erstellen {icon="mailbox"}
 
-Postfachadministratoren erstellen unter **Automatisierungen > Eingehende E-Mails** einen geführten Ablauf oder beginnen direkt im Organisationsmenü einer Nachricht. Wähle **Alle eingehenden E-Mails**, wenn keine Bedingung erforderlich ist. Andernfalls kannst du bis zu acht Bedingungen für Absender, Domain, Betreff, Nachrichtentext oder vorhandene Anhänge verbinden und festlegen, ob alle oder eine Bedingung zutreffen müssen.
+Mit Zugriff **Verwalten** erstellst du unter **Automatisierungen → Eingehende E-Mails** einen geführten Ablauf. Du kannst ihn auch direkt im Organisationsmenü einer Nachricht beginnen.
 
-Eine Automatisierung für eingehende E-Mails läuft einmal pro empfangener Nachricht. E-Mails, die der Anbieter direkt in den Papierkorb oder nach Junk zustellt, etwa Spam, den sein Filter erkannt hat, starten weder Automatisierungen für eingehende E-Mails noch automatische Antworten. Verschiebt jemand die Nachricht in einem anderen E-Mail-Programm in einen anderen Ordner, etwa zurück in den Posteingang, nachdem die Automatisierung sie verschoben hatte, läuft die Automatisierung nicht erneut.
+- Wähle **Alle eingehenden E-Mails**, wenn du keine Bedingung brauchst.
+- Oder verbinde bis zu acht Bedingungen für Absender, Domain, Betreff, Nachrichtentext oder vorhandene Anhänge. Lege fest, ob alle oder eine Bedingung zutreffen müssen.
 
-Füge Schritte in der Reihenfolge ihrer Ausführung hinzu. Ein Ablauf kann beliebig kombinieren:
+Eine Automatisierung für eingehende E-Mails läuft einmal pro empfangener Nachricht. E-Mails, die der Anbieter direkt in den Papierkorb oder in Spam zustellt, etwa Spam, den sein Filter erkannt hat, starten weder Automatisierungen für eingehende E-Mails noch automatische Antworten. Jemand kann die Nachricht in einem anderen E-Mail-Programm in einen anderen Ordner verschieben, etwa zurück in den Posteingang, nachdem die Automatisierung sie verschoben hat. Die Automatisierung läuft dann nicht erneut.
 
-- **Mail-Aktion**, um zu verschieben, zu markieren, ein lokales Schlagwort hinzuzufügen, zuzuweisen oder den Unterhaltungsstatus zu ändern.
-- **AI-Text erzeugen**, um begrenzten Text für spätere Schritte zu erstellen.
-- **AI-Klassifizierung**, um genau eine eingerichtete Kategorie zu erzeugen.
-- **AI-Mehrfachklassifizierung**, um höchstens die festgelegte Anzahl passender Kategorien zu erzeugen.
-- **Spaces-Element verknüpfen**, um die Unterhaltung mit einer vorhandenen beschreibbaren Aufgabe oder einem Ereignis zu verbinden.
-- **Ereignis mit AI extrahieren + Spaces-Ereignis erstellen**, um ein Ziel zu wählen, validierte Ereignisfelder zu extrahieren und ein verknüpftes Ereignis anzulegen.
-- **Antwortentwurf erstellen**, **Internen Kommentar hinzufügen** oder **Unterhaltungszusammenfassung festlegen** mit eigenem Text oder einer früheren Textausgabe.
-- **Wenn Ausgabe übereinstimmt**, um normale Mail- oder AI-Schritte in einem Dann- oder Sonst-Zweig auszuführen.
+Füge Schritte in der Reihenfolge hinzu, in der sie laufen. Ein Ablauf kann frei mischen:
 
-Antwortentwürfe und interne Kommentare sind normale Mail-Schritte und benötigen keine AI. Füge den jeweiligen Schritt direkt hinzu und wähle **Eigener Text** oder eine kompatible frühere Workflow-Ausgabe als Textquelle. AI-Ergebnisse bleiben normale Workflow-Ausgaben. **Ausgabe verwenden** und **Bedingung hinzufügen** sind Abkürzungen, die gewöhnliche nachfolgende Schritte hinzufügen; sie verbergen kein weiteres Verhalten im AI-Block. Dann- und Sonst-Zweige können wiederum Mail-Aktionen, AI-Schritte, Ausgabeverwendungen oder Bedingungen enthalten.
+- **E-Mail-Aktion**, um zu verschieben, zu markieren, einen lokalen Tag hinzuzufügen, zuzuweisen oder den Status der Unterhaltung zu ändern.
+- **Text mit KI erzeugen**, um begrenzten Text für spätere Schritte zu erzeugen.
+- **Mit KI klassifizieren**, um genau eine eingerichtete Kategorie zu erzeugen.
+- **Mit KI mehrfach klassifizieren**, um passende Kategorien bis zur eingerichteten Höchstzahl zu erzeugen.
+- **Space-Element verknüpfen**, um die Unterhaltung mit einer vorhandenen Aufgabe oder einem Termin zu verbinden, für die die Automatisierung Zugriff **Bearbeiten** hat.
+- **Termindaten mit KI extrahieren und Termin in Spaces erstellen**, um ein Ziel zu wählen, geprüfte Terminfelder zu extrahieren und einen verknüpften Termin anzulegen.
+- **Antwortentwurf erstellen**, **Internen Kommentar hinzufügen** oder **Zusammenfassung der Unterhaltung festlegen** mit eigenem Text oder einer früheren Textausgabe.
+- **Wenn die Ausgabe übereinstimmt**, um normale Mail- oder KI-Schritte in einem Dann- oder Sonst-Zweig auszuführen.
 
-Der Editor deaktiviert oder verbirgt Ergänzungen, die Grenzwerte für Ablauf, Zweig, Verschachtelung oder AI-Aufrufe überschreiten würden. Ein ausgabeerzeugender Schritt kann nicht entfernt werden, solange ein späterer Schritt seine Ausgabe verwendet. Wenn du eine Auswahl einer AI-Klassifizierung umbenennst, werden darauf verweisende Bedingungen angepasst. Entferne oder ändere solche Bedingungen, bevor du eine verwendete Auswahl löschst.
+Antwortentwürfe und interne Kommentare sind normale Mail-Schritte und brauchen keine KI. Füge den Schritt direkt hinzu. Wähle dann **Eigener Text** oder eine passende frühere Workflow-Ausgabe als Textquelle.
 
-### Vertrag der geführten Definition
+KI-Ergebnisse bleiben normale Workflow-Ausgaben. **Ausgabe verwenden** und **Bedingung hinzufügen** sind Abkürzungen, die gewöhnliche nachfolgende Schritte hinzufügen. Sie verbergen kein weiteres Verhalten im KI-Block. Dann- und Sonst-Zweige können wieder Mail-Aktionen, KI-Schritte, Schritte, die Ausgaben nutzen, oder Bedingungen enthalten.
 
-Der geführte Editor und die CLI verwenden dieselbe strikte Definition. Unbekannte Felder werden abgelehnt. Eine Definition enthält `name`, `enabled`, `scope` und `steps`; der Name umfasst 1–120 Zeichen, und neue Definitionen verwenden für `enabled` standardmäßig `false`.
+Der Editor schaltet Ergänzungen ab oder lässt sie weg, wenn sie die Grenzen für Ablauf, Zweige, Verschachtelung oder KI-Aufrufe überschreiten würden. Einen Schritt, der eine Ausgabe erzeugt, kannst du nicht entfernen, solange ein späterer Schritt diese Ausgabe nutzt. Benennst du eine Auswahl einer KI-Klassifizierung um, passt Mail die Bedingungen an, die sie nutzen. Bevor du eine genutzte Auswahl löschst, entferne oder ändere diese Bedingungen.
 
-- `scope.mode: all` benötigt keine Bedingungen. `scope.mode: matching` erfordert ein `conditions`-Objekt mit `mode: all|any` und einer `items`-Liste mit 1–8 eindeutigen Bedingungen, zum Beispiel `conditions: { mode: all, items: [{ field: sender_address, operator: is, value: user@example.com }] }`. Felder sind `sender_address`, `sender_domain`, `subject`, `body_text` und `attachment_presence`. Absenderadresse und Domain verwenden `operator: is`; Betreff und Nachrichtentext unterstützen `is`, `contains`, `starts_with` oder `ends_with`; vorhandene Anhänge verwenden `is` mit einem booleschen `value`. Adresswerte umfassen 1–320 Zeichen, Domains 1–253 und Werte für Betreff oder Nachrichtentext 1–1.000.
-- Jeder Schritt besitzt in `id` eine eindeutige UUID. Schrittarten sind `mail_action`, `ai_generate_text`, `ai_classify`, `ai_classify_many`, `ai_extract_event`, `link_space_item`, `create_space_event`, `create_reply_draft`, `add_comment`, `set_summary` und `if`.
-- Eine `mail_action` ist `junk`, `trash`, `mark_read`, `add_keyword`, `move_to_folder`, `add_local_tag`, `assign_user` oder `set_status`. Kataloggestützte Aktionen verwenden `folderId`, `tagId` oder `userId`; `move_to_folder.folderId` und `add_local_tag.tagId` akzeptieren auch einen exakten Ordner- oder Schlagwortnamen und speichern die ID, bei mehreren gleichnamigen Einträgen ist die ID nötig; der Status ist `needs_action`, `waiting` oder `done`. Der geführte Editor empfiehlt lokale Schlagwörter und bietet `add_keyword` für neue Schritte nicht mehr an. Vorhandene Definitionen mit diesem Wert bleiben bearbeitbar. CLI und erweiterte Workflow-Aufrufer können ihn für die Zusammenarbeit mit Anbietern weiterverwenden; ein Schlüsselwort umfasst 1–100 Zeichen und muss gültige Anbieter-Schlüsselwortsyntax verwenden.
-- `ai_generate_text.instructions` umfasst 1–4.000 Zeichen und `maxOutputChars` liegt zwischen 200 und 10.000. `ai_classify` und `ai_classify_many` unterstützen 2–10 Auswahlen mit Namen, die sich ohne Beachtung der Großschreibung unterscheiden. Ein Name umfasst 1–80 Zeichen, seine Beschreibung 1–500. `ai_classify_many.maxChoices` liegt zwischen 1 und der Anzahl der Auswahlen.
-- `ai_extract_event` unterstützt 1–4.000 Zeichen Anweisungen und eine ausdrückliche IANA-`timeZone`. Die strukturierte Ausgabe enthält `ready`, Titel, optionale Beschreibung und Ort, Beginn, Ende und den Ganztagsstatus. Fehlen Titel oder Zeiten oder sind sie mehrdeutig, wird `ready: false` gesetzt. Der nachfolgende Ereignisschritt stoppt dann, statt Angaben zu erfinden.
-- `link_space_item.itemId` bezeichnet eine vorhandene beschreibbare Aufgabe oder ein Ereignis. `create_space_event` benötigt eine beschreibbare `spaceId`, eine offene `columnId` und entweder ausdrückliche Ereignisdaten oder über `sourceStepId` die Ausgabe eines früheren `ai_extract_event`. Der geführte Editor zeigt diese IDs schreibgeschützt. Wähle **Element ändern** oder **Ziel ändern**, um ein anderes aktuell beschreibbares Ziel auszuwählen. Ausdrückliche Ereignisdaten verwenden `title`, optionale `description` und `location`, ISO-`startsAt` und `endsAt` sowie `allDay`. Das erstellte Ereignis enthält eine stabile Referenz zurück zur Mail-Unterhaltung.
-- `create_reply_draft`, `add_comment` und `set_summary` verwenden `body: { kind: custom, value: ... }` mit 1–50.000 Zeichen oder `body: { kind: step_output, sourceStepId: ... }` für einen früheren texterzeugenden AI-Schritt. Ein Ergebnis mit mehreren Auswahlen ist keine Textquelle. Antwortentwürfe benötigen zusätzlich eine Katalog-`senderIdentityId`.
-- Eine `if`-Bedingung verweist mit `sourceStepId` auf einen früheren AI-Schritt. Verwende `equals` für erzeugten Text oder eine einzelne Klassifizierung und `includes` für Mehrfachklassifizierungen. `value` umfasst 1–500 Zeichen und muss bei Klassifizierungen eine erklärte Auswahl nennen. `then` und `else` enthalten jeweils höchstens 12 Schritte.
-- Eine Definition enthält 1–20 Schritte auf oberster Ebene, höchstens 40 Schritte über alle Zweige, höchstens 4 Zweigebenen und höchstens 10 AI-Aufrufe. Ein erreichbarer Pfad kann jeweils nur eine Anbieter-Nachrichtenaktion, Zuweisung, Statusänderung und Ersetzung der Zusammenfassung enthalten und dasselbe lokale Schlagwort nicht zweimal hinzufügen. Aufeinanderfolgende `if`-Schritte liegen auf demselben Pfad, weil beide zutreffen können; verteile sich ausschließende Aktionen auf `then` und `else` einer Bedingung. `set_status` ist eine lokale Statusänderung und keine Anbieter-Nachrichtenaktion, daher darf es zusammen mit `mark_read` auf einem Pfad stehen.
+### Den Vertrag der geführten Definition kennen
 
-Mail erzeugt aus dem Ablauf kanonisches Workflow-YAML und zeigt es im Editor schreibgeschützt an. Die Schritte laufen von oben nach unten in der gemeinsamen Workflow-Laufzeit. Treffen mehrere Automatisierungen auf dieselbe Nachricht zu, entscheidet die älteste über deren Ablage: Eine spätere Automatisierung überspringt ihren Schritt zum Verschieben, Löschen oder Als-Spam-Markieren, statt zu scheitern, während ihre übrigen Schritte weiterhin laufen. Schlägt ein späterer Schritt fehl, bleiben Wirkungen früherer abgeschlossener Schritte bestehen. Eine Bearbeitung des Ablaufs veröffentlicht eine neue unveränderliche Workflow-Version. Änderungen nur am Namen oder Aktivstatus duplizieren eine identische Quelle nicht. Destruktive Aktionen dürfen keine Postfachidentität, eingerichtete interne Domain, deren Subdomains oder eine unsichere übergeordnete Domain betreffen.
+Der geführte Editor und die CLI nutzen dieselbe strikte Definition. Mail lehnt unbekannte Felder ab. Eine Definition hat `name`, `enabled`, `scope` und `steps`. Der Name umfasst 1–120 Zeichen. Eine neue Definition setzt `enabled` standardmäßig auf `false`.
 
-Textbedingungen unterstützen exakte Übereinstimmung, Enthalten, Beginnt mit und Endet mit. Reguläre Ausdrücke sind bewusst nicht verfügbar, bis Mail einen begrenzten RE2-kompatiblen Abgleich erzwingen kann.
+:::reference
+- **Umfang:** `scope.mode: all` braucht keine Bedingungen. `scope.mode: matching` braucht ein `conditions`-Objekt mit `mode: all|any` und einer `items`-Liste mit 1–8 eindeutigen Bedingungen, zum Beispiel `conditions: { mode: all, items: [{ field: sender_address, operator: is, value: user@example.com }] }`.
+- **Felder der Bedingungen:** `sender_address`, `sender_domain`, `subject`, `body_text` und `attachment_presence`. Absenderadresse und Domain nutzen `operator: is`. Betreff und Nachrichtentext erlauben `is`, `contains`, `starts_with` oder `ends_with`. Vorhandene Anhänge nutzen `is` mit einem booleschen `value`.
+- **Werte der Bedingungen:** Adressen umfassen 1–320 Zeichen, Domains 1–253 und Werte für Betreff oder Nachrichtentext 1–1.000.
+- **Schritte:** Jeder Schritt hat in `id` eine eindeutige UUID. Schrittarten sind `mail_action`, `ai_generate_text`, `ai_classify`, `ai_classify_many`, `ai_extract_event`, `link_space_item`, `create_space_event`, `create_reply_draft`, `add_comment`, `set_summary` und `if`.
+- **Mail-Aktionen:** Eine `mail_action` ist `junk`, `trash`, `mark_read`, `add_keyword`, `move_to_folder`, `add_local_tag`, `assign_user` oder `set_status`. Aktionen aus dem Katalog nutzen `folderId`, `tagId` oder `userId`. `move_to_folder.folderId` und `add_local_tag.tagId` akzeptieren auch einen exakten Ordner- oder Tag-Namen, und Mail speichert ihn als ID. Teilen sich mehrere Ordner oder Tags einen Namen, ist die ID nötig. Der Status ist `needs_action`, `waiting` oder `done`.
+- **Schlüsselwörter:** Der geführte Editor empfiehlt lokale Tags und bietet `add_keyword` für neue Schritte nicht mehr an. Vorhandene Definitionen mit diesem Wert kannst du weiter bearbeiten. CLI und erweiterte Workflow-Aufrufer können ihn für die Kompatibilität mit dem Anbieter weiter nutzen. Ein Schlüsselwort umfasst 1–100 Zeichen und muss gültige Schlüsselwortsyntax des Anbieters nutzen.
+- **KI-Text und Klassifizierung:** `ai_generate_text.instructions` umfasst 1–4.000 Zeichen, und `maxOutputChars` liegt bei 200–10.000. `ai_classify` und `ai_classify_many` erlauben 2–10 Auswahlen mit Namen, die ohne Beachtung der Groß- und Kleinschreibung eindeutig sind. Ein Name umfasst 1–80 Zeichen, seine Beschreibung 1–500. `ai_classify_many.maxChoices` liegt zwischen 1 und der Anzahl der Auswahlen.
+- **Termine extrahieren:** `ai_extract_event` erlaubt 1–4.000 Zeichen Anweisungen und eine ausdrückliche IANA-`timeZone`. Die strukturierte Ausgabe enthält `ready`, den Titel, optional Beschreibung und Ort, Beginn, Ende und den Ganztagsstatus. Fehlen Titel oder Zeiten oder sind sie unklar, setzt Mail `ready: false`. Der folgende Terminschritt stoppt dann und erfindet keinen Termin.
+- **Spaces-Schritte:** `link_space_item.itemId` bezeichnet eine vorhandene Aufgabe oder einen Termin mit Zugriff **Bearbeiten**. `create_space_event` braucht eine `spaceId` mit Zugriff **Bearbeiten**, eine offene `columnId` und entweder ausdrückliche Termindaten oder über `sourceStepId` die Ausgabe eines früheren `ai_extract_event`. Der geführte Editor zeigt diese IDs schreibgeschützt. Wähle **Element ändern** oder **Ziel ändern**, um ein anderes Ziel mit aktuellem Zugriff **Bearbeiten** zu wählen.
+- **Termindaten:** Ausdrückliche Termindaten nutzen `title`, optional `description` und `location`, ISO-`startsAt` und -`endsAt` sowie `allDay`. Der erstellte Termin enthält eine stabile Referenz zurück zur Mail-Unterhaltung.
+- **Textschritte:** `create_reply_draft`, `add_comment` und `set_summary` nutzen `body: { kind: custom, value: ... }` mit 1–50.000 Zeichen oder `body: { kind: step_output, sourceStepId: ... }` für einen früheren KI-Schritt, der Text erzeugt. Ein Ergebnis mit mehreren Auswahlen ist keine Textquelle. Antwortentwürfe brauchen zusätzlich eine `senderIdentityId` aus dem Katalog.
+- **Bedingungen:** Eine `if`-Bedingung verweist auf eine frühere KI-`sourceStepId`. Nutze `equals` für erzeugten Text oder eine einzelne Klassifizierung. Nutze `includes` für eine Mehrfachklassifizierung. `value` umfasst 1–500 Zeichen und muss bei einer Klassifizierung eine erklärte Auswahl nennen. `then` und `else` enthalten jeweils höchstens 12 Schritte.
+- **Größe:** Eine Definition enthält 1–20 Schritte auf oberster Ebene, höchstens 40 Schritte über alle Zweige, höchstens 4 Zweigebenen und höchstens 10 KI-Aufrufe.
+- **Ein Pfad:** Ein erreichbarer Pfad kann nur eine Nachrichtenaktion beim Anbieter, eine Zuweisung, eine Statusänderung und einen Ersatz der Zusammenfassung enthalten. Er kann denselben lokalen Tag nicht zweimal hinzufügen. Aufeinanderfolgende `if`-Schritte liegen auf demselben Pfad, weil beide zutreffen können. Setze Aktionen, die sich ausschließen, in `then` und `else` eines einzigen `if`. `set_status` ist eine lokale Statusänderung, keine Nachrichtenaktion beim Anbieter, und darf deshalb mit `mark_read` auf einem Pfad stehen.
+:::
 
-Neue Automatisierungen für eingehende E-Mails starten inaktiv. Ein deterministischer Ablauf kann vorhandene passende Nachrichten mit einem fortsetzbaren Backfill in der Vorschau prüfen und verarbeiten. Ein Backfill übergibt höchstens 100 Nachrichten an die Automatisierung. Passen mehr Nachrichten, endet er mit **Limit erreicht** und zeigt, wie viele offen sind; starte ihn erneut, um mit den nächsten Nachrichten fortzufahren. Ein Backfill übersteht Neustarts, eine fehlgeschlagene Nachricht wird wiederholt, ohne andere Workflow-Ausführungen zu stoppen, und ein wiederholter Backfill überspringt Nachrichten, die für dieselbe unveränderliche Version bereits angenommen wurden. **Abgeschlossen** bedeutet, dass jede passende Nachricht an die Automatisierung übergeben wurde. Die Aktionen selbst laufen danach in der Workflow-Laufzeit und erscheinen unter **Aktivität**. Die Fortschrittszahlen wachsen während eines Backfills nur. Das Automatisierungsmenü zeigt den Fortschritt und ermöglicht Abbruch oder erneute Ausführung.
+Mail erzeugt aus dem Ablauf kanonisches Workflow-YAML und zeigt es im Editor schreibgeschützt. Die Schritte laufen von oben nach unten in der gemeinsamen Workflow-Laufzeit.
 
-Abläufe mit einem AI-Schritt verarbeiten nur künftige Nachrichten. Mail-Bedingungen werden vor der AI ausgewertet. Der Bereich Sicherheit zeigt die maximale Anzahl von AI-Aufrufen pro passender Nachricht. AI kann falsch klassifizieren oder schreiben. Formuliere Kategoriebeschreibungen deshalb genau und prüfe die ersten Ausführungen unter **Aktivität**. Eine erzeugte Textausgabe hat keine Wirkung, bis ein späterer Schritt sie verwendet. Die Antwortautomatisierung erstellt ausschließlich Entwürfe zur menschlichen Prüfung und sendet sie niemals.
+- **Mehrere passende Automatisierungen:** Die älteste Automatisierung entscheidet, wohin die Nachricht kommt. Eine spätere Automatisierung überspringt ihren Schritt zum Verschieben, Löschen oder Verschieben in Spam, statt zu scheitern. Ihre übrigen Schritte laufen weiter.
+- **Fehlgeschlagener Schritt:** Schlägt ein späterer Schritt fehl, bleiben die Effekte früherer abgeschlossener Schritte.
+- **Versionen:** Eine Änderung am Ablauf veröffentlicht eine neue unveränderliche Workflow-Version. Änderst du nur den Namen oder den Aktivstatus, entsteht keine doppelte identische Quelle.
+- **Geschützte Ziele:** Zerstörende Aktionen dürfen keine Absenderidentität des Postfachs, keine eingerichtete interne Domain, keine ihrer Subdomains und keine unsichere übergeordnete Domain treffen.
 
-Spaces-Schritte laufen mit einer widerrufbaren Delegation der Person, die die Automatisierung eingerichtet hat. Mail speichert das Token verschlüsselt und widerruft es, sobald der letzte Spaces-Schritt entfernt oder die Automatisierung gelöscht wird. Jede Ausführung prüft weiterhin die aktuelle Mail-Berechtigung und den aktuellen Spaces-Zugriff. Das Verknüpfen ist ein Upsert, die Ereigniserstellung verwendet einen dauerhaften Idempotenzschlüssel. Wiederholungen erzeugen daher keine doppelten Ereignisse. Wird der delegierte API-Schlüssel widerrufen oder der Spaces-Zugriff entfernt, schlagen künftige Ausführungen sicher fehl.
+Textbedingungen unterstützen exakte Übereinstimmung, Enthält, Beginnt mit und Endet mit. Reguläre Ausdrücke sind bewusst nicht verfügbar, bis Mail einen begrenzten RE2-kompatiblen Abgleich erzwingen kann.
 
-Verwende `set_status: done`, um eine Unterhaltung abzuschließen. Mit `needs_action` oder `waiting` öffnest du sie ausdrücklich erneut. Eine verifizierte neue eingehende Nachricht setzt eine abgeschlossene Unterhaltung bereits auf Aktion erforderlich. Ein eigener Schritt zum „Erledigt-Status bei eingehender E-Mail entfernen“ ist daher normalerweise überflüssig.
+Neue Automatisierungen für eingehende E-Mails starten inaktiv. Ein Ablauf ohne KI-Schritte kann vorhandene passende Nachrichten mit einer fortsetzbaren nachträglichen Verarbeitung in der Vorschau prüfen und verarbeiten:
 
-Für die Automatisierung mit `cld` zeigt `mail automation catalog` gültige IDs. `mail automation create` und `mail automation update` übernehmen die vollständige geführte Definition als JSON oder YAML über `--definition-file` oder `--definition-stdin`, einschließlich `scope` und geordnetem `steps`-Baum. CLI und Oberfläche verhalten sich dadurch gleich, auch bei Ausgabereferenzen und verschachtelten Bedingungen. Bei einer ungültigen Definition nennt Mail jedes betroffene Feld mit seinem Pfad, etwa `scope.conditions.items`, und den Grund.
+- Eine nachträgliche Verarbeitung übergibt höchstens 100 Nachrichten an die Automatisierung. Passen mehr Nachrichten, endet sie mit **Limit erreicht** und zeigt, wie viele offen sind. Starte sie erneut, um mit den nächsten Nachrichten weiterzumachen.
+- Eine nachträgliche Verarbeitung übersteht Neustarts. Mail wiederholt eine fehlgeschlagene Nachricht, ohne andere Workflow-Läufe zu stoppen.
+- Eine wiederholte nachträgliche Verarbeitung überspringt Nachrichten, die für dieselbe unveränderliche Version schon angenommen wurden.
+- **Abgeschlossen** bedeutet, dass Mail jede passende Nachricht an die Automatisierung übergeben hat. Die Aktionen selbst laufen danach in der Workflow-Laufzeit und erscheinen unter **Aktivität**.
+- Die Fortschrittszahlen wachsen während einer nachträglichen Verarbeitung nur. Das Menü der Automatisierung zeigt den Fortschritt und lässt dich die Verarbeitung abbrechen oder erneut starten.
 
-Das Workflow-Modell der Plattform wird automatisch verwendet; Mail bietet keine eigene Modellauswahl. Verwende erweiterte **Workflows** nur, wenn die geführten Bausteine die Aufgabe nicht abdecken.
+Ein Ablauf mit einem KI-Schritt verarbeitet nur künftige Nachrichten. Mail prüft die Bedingungen, bevor die KI läuft. Der Bereich Sicherheit zeigt die höchste Zahl an KI-Aufrufen pro passender Nachricht.
+
+:::warning KI kann falsch klassifizieren oder schreiben
+Formuliere Kategoriebeschreibungen genau und prüfe die ersten Läufe unter **Aktivität**.
+:::
+
+Eine erzeugte Textausgabe wirkt erst, wenn ein späterer Schritt sie nutzt. Die Antwortautomatisierung erstellt nur Entwürfe zur Prüfung durch Menschen und sendet sie nie.
+
+Spaces-Schritte laufen mit einer Delegation der Person, die die Automatisierung eingerichtet hat, und diese Person kann sie widerrufen. Mail speichert das Token verschlüsselt. Es widerruft das Token, wenn jemand den letzten Spaces-Schritt entfernt oder die Automatisierung löscht. Jeder Lauf prüft trotzdem den aktuellen Zugriff in Mail und in Spaces. Verknüpfen aktualisiert eine vorhandene Verknüpfung oder legt eine an, und das Erstellen von Terminen nutzt einen dauerhaften Idempotenzschlüssel, damit Wiederholungen keine doppelten Termine anlegen. Widerruft jemand den delegierten API-Schlüssel oder entfernt den Zugriff auf den Space, schlagen künftige Läufe fehl, statt ohne diesen Zugriff zu handeln.
+
+Nutze `set_status: done`, um eine Unterhaltung abzuschließen. Nutze `needs_action` oder `waiting`, um sie ausdrücklich wieder zu öffnen. Eine bestätigte neue eingehende Nachricht setzt eine abgeschlossene Unterhaltung schon zurück auf Handlungsbedarf. Ein eigener Schritt, der Erledigt bei eingehender E-Mail aufhebt, ist deshalb normalerweise nicht nötig.
+
+Für Automatisierung über `cld` nutzt du `mail automation catalog`, um gültige IDs zu finden. `mail automation create` und `mail automation update` akzeptieren die vollständige geführte Definition als JSON oder YAML über `--definition-file` oder `--definition-stdin`, einschließlich `scope` und des geordneten `steps`-Baums. CLI und Oberfläche verhalten sich dadurch gleich, auch bei Ausgabeverweisen und verschachtelten Bedingungen. Bei einer ungültigen Definition nennt Mail jedes betroffene Feld mit seinem Pfad, etwa `scope.conditions.items`, und den Grund.
+
+Mail nutzt das Workflow-Modell der Plattform automatisch und bietet keine eigene Modellauswahl. Nutze erweiterte **Workflows** nur, wenn die geführten Bausteine die Aufgabe nicht abdecken.
 
 ## Eine automatische Antwort einrichten {icon="send"}
 
 :::steps
-1. Bitte einen Postfachadministrator, eine Identität unter **Einstellungen > Konten & Identitäten > Absenderidentitäten** zu verifizieren und dafür **Automatische Antworten** zu erlauben.
-2. Öffne **Automatisierungen > Automatische Antworten**.
+1. Bitte jemanden mit Zugriff **Verwalten**, eine Absenderidentität zu prüfen und dafür **Automatische Antworten** einzuschalten. Das geht unter **Einstellungen → Konten und Identitäten → Absenderidentitäten**.
+2. Öffne **Automatisierungen → Automatische Antworten**.
 3. Wähle **Automatische Antwort hinzufügen**.
-4. Wähle **Abwesenheit**, **Bestätigung außerhalb der Geschäftszeiten**, **Referenzbestätigung** oder **Eigene automatische Antwort**.
-5. Prüfe Absender, Betreff, Nachricht, Zeitplan, Wiederholungsschutz und das Verhalten außerhalb aktiver Zeiten.
-6. Verwende **Vorschau** für Markdown-Inhalte.
+4. Wähle **Abwesenheitsnotiz**, **Empfangsbestätigung zu Bürozeiten**, **Empfangsbestätigung mit Referenznummer** oder **Eigene automatische Antwort**.
+5. Prüfe Absenderidentität, Betreff, Text, Zeitplan, Schutz vor Wiederholungen und das Verhalten außerhalb aktiver Zeiten.
+6. Nutze **Vorschau** für Markdown-Inhalte.
 7. Wähle **Automatische Antwort speichern**.
 :::
 
-Betreffzeilen und Nachrichten sind Liquid-Vorlagen. Verwende die kopierbaren Variablen im Editor, zum Beispiel `{{ inputs.message.subject }}` oder nach Vergabe einer Referenz `{{ reference.value }}`. Ungültige Syntax und nicht verfügbare Variablen werden vor dem Speichern abgelehnt.
+Betreff und Nachrichten sind Liquid-Vorlagen. Nutze die Variablen, die du im Editor kopieren kannst, zum Beispiel `{{ inputs.message.subject }}`. Nachdem eine Referenz vergeben wurde, steht auch `{{ reference.value }}` zur Verfügung. Mail lehnt ungültige Syntax und nicht verfügbare Variablen ab, bevor es die Antwort speichert.
 
-In einem Postfach kann nur eine automatische Antwort aktiviert sein. Deaktiviere die aktive Konfiguration, bevor du eine andere einschaltest. Standardmäßig dürfen nur Postfachadministratoren automatische Antworten ändern. Ein Administrator kann dies unter **Einstellungen > Zugriff > Wer darf automatische Antworten verwalten?** auch schreibberechtigten Personen erlauben.
+In einem Postfach kann nur eine automatische Antwort gleichzeitig eingeschaltet sein. Schalte die aktive Einrichtung aus, bevor du eine andere einschaltest. Standardmäßig können nur Personen mit Zugriff **Verwalten** automatische Antworten ändern. Sie können das unter **Einstellungen → Zugriff → Verwaltungszugriff für automatische Antworten** auch Personen mit Zugriff **Bearbeiten** erlauben.
 
-Mail beantwortet keine Nachrichten, bei denen automatische Antworten unsicher wären. Dazu gehören E-Mails aus Mailinglisten, Massensendungen, Zustellstatusbenachrichtigungen, Nachrichten vom Postfach selbst und Nachrichten, die automatische Antworten ausdrücklich unterdrücken. Eine unterdrückte Antwort bleibt in Aktivität und Ausführungsverlauf sichtbar; sie wird nicht unbemerkt in einen normalen Entwurf umgewandelt.
+Mail antwortet nicht auf Nachrichten, die für automatische Antworten unsicher sind. Dazu gehören E-Mails von Mailinglisten, Massen-E-Mails, Zustellberichte, Nachrichten aus dem Postfach selbst und Nachrichten, die automatische Antworten ausdrücklich unterdrücken. Eine unterdrückte Antwort bleibt Teil der Aktivität und des Laufverlaufs. Mail macht daraus nicht still einen normalen Entwurf.
 
-## Daten und Wochenzeiten festlegen {icon="point"}
+## Tage und Wochenzeiten festlegen {icon="point"}
 
-Automatische Antworten und Antwortzeitfenster in Workflows verwenden dieselben Zeitregeln:
+Automatische Antworten und Antwortfenster in Workflows nutzen dieselben Zeitregeln:
 
-- **Zeitzone** bestimmt, wie alle Daten und Uhrzeiten ausgewertet werden.
-- **Aktive Datumsbereiche** begrenzen den Zeitplan auf eine Abwesenheit oder Kampagne. Ohne Bereich wiederholen sich die Wochenzeiten unbegrenzt.
-- **Wochenzeiten** führen jeden Wochentag einzeln auf. Eine aktivierte Wochentagskarte ist eingeschaltet. Aktiviere **Ganztägig** für `00:00–24:00` oder füge mehrere nicht überlappende Zeitfenster hinzu. Eine als **Deaktiviert** markierte Karte sendet nie eine Antwort.
-- **Datumsausnahmen** schließen ein Datum oder ersetzen dessen normale Zeiten.
+- **Zeitzone** legt fest, wie Mail alle Daten und Uhrzeiten auswertet.
+- **Aktive Zeiträume** begrenzen den Zeitplan auf eine Abwesenheit oder Kampagne. Ohne Zeitraum wiederholen sich die Wochenzeiten ohne Ende.
+- **Wochenzeiten** führen jeden Wochentag einzeln auf. Eine angehakte Karte für einen Wochentag ist eingeschaltet. Schalte **Ganztägig** für `00:00–24:00` ein oder füge für diesen Tag ein oder mehrere Zeitfenster hinzu, die sich nicht überschneiden. Eine Karte mit **Deaktiviert** sendet nie eine Antwort.
+- **Ausnahmen für einzelne Tage** schließen ein Datum oder ersetzen die normalen Zeiten dieses Datums.
 - **Nicht antworten** unterdrückt Nachrichten, die außerhalb eines aktiven Zeitfensters eingehen.
-- **Zum nächsten aktiven Zeitpunkt antworten** hält die Antwort bis zum nächsten aktiven Zeitfenster zurück.
+- **Im nächsten aktiven Zeitfenster antworten** hält die Antwort bis zum nächsten aktiven Zeitfenster zurück.
 
-Eine Ausnahme hat Vorrang vor normalen Wochenzeiten. Zeitfenster dürfen Mitternacht nicht überschreiten. Lege eines vor Mitternacht und ein weiteres am Folgetag an.
+Eine Ausnahme hat Vorrang vor den normalen Wochenzeiten. Zeiten können nicht über Mitternacht gehen. Lege ein Zeitfenster bis Mitternacht und ein weiteres am nächsten Tag an.
 
-## Wiederholungsschutz verstehen {icon="shield-lock"}
+## Den Schutz vor Wiederholungen verstehen {icon="shield-lock"}
 
-Der **Wiederholungsschutz** ist die Mindestzeit, bevor derselbe Absender eine weitere automatische Antwort aus diesem Postfach erhalten kann.
+**Schutz vor Wiederholungen** ist die Mindestzeit, bevor derselbe Absender eine weitere automatische Antwort aus diesem Postfach bekommen kann.
 
-- Die Vorlage **Abwesenheit** verwendet 96 Stunden oder 4 Tage. Wer während einer Abwesenheit mehrmals schreibt, erhält dadurch nicht täglich dieselbe Nachricht.
-- **Bestätigung außerhalb der Geschäftszeiten** und **Eigene automatische Antwort** verwenden 24 Stunden.
-- Das kürzeste Intervall beträgt 1 Stunde. Zusätzlich beantwortet Mail jede eingehende Nachricht höchstens einmal und versendet höchstens 100 automatische Antworten pro Stunde für das gesamte Postfach. Alles darüber hinaus wird unterdrückt und bleibt im Aktivitätsverlauf sichtbar.
+- Die Vorlage **Abwesenheitsnotiz** nutzt 96 Stunden, also 4 Tage. Wer während einer Abwesenheit mehrmals schreibt, bekommt deshalb nicht jeden Tag dieselbe Nachricht.
+- **Empfangsbestätigung zu Bürozeiten** und **Eigene automatische Antwort** nutzen 24 Stunden.
+- Der kürzeste Abstand ist 1 Stunde.
+- Mail antwortet außerdem auf jede eingehende Nachricht höchstens einmal. Es sendet höchstens 100 automatische Antworten pro Stunde für das ganze Postfach. Alles darüber unterdrückt Mail und zeigt es im Aktivitätsverlauf.
 
-Wähle nur dann ein kürzeres Intervall, wenn wiederholte Bestätigungen für den Empfänger nützlich sind. Der Wert gilt postfachweit für diese automatische Antwort und ist keine Verzögerung vor der ersten Antwort.
+Wähle einen kürzeren Abstand nur, wenn wiederholte Bestätigungen dem Empfänger helfen. Der Wert gilt für das ganze Postfach bei dieser automatischen Antwort. Er ist keine Verzögerung vor der ersten Antwort.
 
-In einem YAML-Workflow stehen diese Regeln direkt unter `automaticReply.schedule`. Der Zeitplan gehört zur unveränderlichen Workflow-Version. Mit der Prüfung und Aktivierung der Version werden daher auch ihre Zeiten geprüft und aktiviert. Die vollständige YAML-Struktur findest du unter [Mail-Workflows erstellen](/app/mail/help/mail-workflows#send-a-guarded-automatic-reply).
+Für einen YAML-Workflow legst du diese Regeln direkt unter `automaticReply.schedule` fest. Der Zeitplan ist Teil der unveränderlichen Workflow-Version. Prüfst und aktivierst du diese Version, prüfst und aktivierst du auch ihren Zeitplan. Die vollständige YAML-Form steht unter [Mail-Workflows erstellen](/app/mail/help/mail-workflows#send-a-guarded-automatic-reply).
 
 ## Referenzen für Unterhaltungen erstellen {icon="square-plus"}
 
-Eine Unterhaltungsreferenz ist eine dauerhafte, postfachbezogene Kennung wie `REF-K7M3-P9QX-2F4N`. Sie erleichtert das Zitieren, Suchen und Prüfen einer Unterhaltung, auch wenn sich Betreffzeilen ändern.
+Eine Referenz ist eine dauerhafte Kennung für eine Unterhaltung im Postfach, etwa `REF-K7M3-P9QX-2F4N`. Damit können Menschen eine Unterhaltung zitieren, suchen und prüfen, auch wenn sich der Betreff ändert.
 
 :::steps
-1. Öffne **Automatisierungen > Automatische Antworten** und wähle **Referenzbestätigung** oder öffne **Workflows** für eigenes YAML.
-2. Gibt es noch kein Referenzformat, richte es direkt im selben Antworteditor oder im Referenzbereich der Workflow-Seite ein.
-3. Gib ein Liquid-Muster mit genau einer Kennungsausgabe ein. Der datenschutzfreundliche Standard ist `REF-{{ short_id }}`. Der Editor erläutert jeden Platzhalter und zeigt eine Vorschau.
-4. Speichere das Format, ohne die bereits eingegebene Antwort zu verlassen oder zu verlieren.
-5. Schließe die automatische Antwort ab oder füge deinem Workflow `ensureConversationReference` hinzu.
+1. Öffne **Automatisierungen → Automatische Antworten** und wähle **Empfangsbestätigung mit Referenznummer**. Für eigenes YAML öffne stattdessen **Workflows**.
+2. Gibt es noch kein Referenzformat, richte es im selben Antworteditor oder im Referenzbereich der Workflows-Seite ein.
+3. Gib ein Liquid-Muster mit genau einer Kennungsausgabe ein. Der Standard, der die Privatsphäre schützt, ist `REF-{{ short_id }}`.
+4. Prüfe im Editor die Erklärung jedes Platzhalters und die Vorschau.
+5. Speichere das Format. Du bleibst in der Antwort und behältst deine Eingaben.
+6. Schließe die automatische Antwort ab oder ergänze `ensureConversationReference` in deinem eigenen Workflow.
 :::
 
-Unterstützte Musterbestandteile:
+Unterstützte Teile des Musters:
 
-- `{{ short_id }}` fügt eine kurze, lesbare Zufalls-ID ein, ohne Volumen oder Vergabezeit offenzulegen.
-- `{{ uuid }}` fügt eine nicht deutbare zufällige UUID ein.
-- `{{ uuid_v7 }}` fügt eine sortierbare UUID ein, die ihren Vergabezeitpunkt offenlegt.
-- `{{ ulid }}` fügt eine kompakte sortierbare ID ein, die ihren Vergabezeitpunkt offenlegt.
-- `{{ sequence }}` fügt die nächste postfachbezogene Nummer ein und legt damit Reihenfolge und ungefähres Volumen offen.
-- `{{ sequence | pad_start: 6 }}` füllt den Zähler auf sechs Stellen auf. Die Breite kann zwischen 1 und 120 liegen.
-- `{{ year }}`, `{{ month }}`, `{{ month_name }}` und `{{ day }}` fügen Teile des UTC-Vergabedatums ein.
-- Buchstaben, Zahlen, Leerzeichen, `.`, `_`, `-` und `/` können als feste Trennzeichen verwendet werden.
+- `{{ short_id }}` fügt eine kurze, lesbare Zufalls-ID ein. Sie verrät weder Menge noch Vergabezeitpunkt.
+- `{{ uuid }}` fügt eine undurchsichtige zufällige UUID ein.
+- `{{ uuid_v7 }}` fügt eine sortierbare UUID ein, die ihren Vergabezeitpunkt verrät.
+- `{{ ulid }}` fügt eine kompakte sortierbare ID ein, die ihren Vergabezeitpunkt verrät.
+- `{{ sequence }}` fügt die nächste Nummer des Postfachs ein und verrät deshalb Reihenfolge und ungefähre Menge.
+- `{{ sequence | pad_start: 6 }}` füllt den Zähler auf sechs Stellen auf. Die Breite kann 1 bis 120 sein.
+- `{{ year }}`, `{{ month }}`, `{{ month_name }}` und `{{ day }}` fügen Teile des Vergabedatums in UTC ein.
+- Buchstaben, Zahlen, Leerzeichen, `.`, `_`, `-` und `/` funktionieren als feste Trennzeichen.
 
-Verwende genau eine der fünf Kennungsausgaben. Datumsbestandteile sind optional und machen eine Referenz nicht eindeutig. Die Vergabe ist idempotent: Eine erneute Ausführung derselben Aktion gibt die bestehende Referenz der Unterhaltung zurück, statt eine neue anzulegen. Referenzen bleiben nach dem Zusammenführen von Unterhaltungen als Aliase erhalten. Wird die Vergabe deaktiviert, entstehen keine neuen Referenzen; vorhandene Werte werden nicht geändert.
+Nutze genau eine der fünf Kennungsausgaben. Datumsteile sind optional und machen eine Referenz nicht eindeutig.
 
-Die Vorlage **Referenzbestätigung** vergibt die Referenz vor dem Senden und fügt `{{ reference.value }}` in die Nachricht ein. Dieselbe Ergebnisbindung ist in eigenem YAML verfügbar. Sobald eine Unterhaltung eine Referenz hat, verwenden neue Antwortbetreffzeilen standardmäßig `Re: [REF-K7M3-P9QX-2F4N] Original subject`. Mail verknüpft Antworten weiterhin über die Standardkopfzeilen `Message-ID`, `In-Reply-To` und `References`.
+- **Gleiches Ergebnis bei Wiederholung:** Läuft dieselbe Aktion erneut, liefert sie die vorhandene Referenz der Unterhaltung und vergibt keine neue.
+- **Zusammenführen:** Referenzen bleiben nach dem Zusammenführen von Unterhaltungen als Aliasse erhalten.
+- **Vergabe ausschalten:** Mail vergibt keine neuen Referenzen, ändert aber vorhandene Werte nicht.
+
+Die Vorlage **Empfangsbestätigung mit Referenznummer** vergibt die Referenz vor dem Senden und fügt `{{ reference.value }}` in die Nachricht ein. Eigenes YAML bietet dieselbe Ergebnisbindung. Hat eine Unterhaltung eine Referenz, nutzen neue Antwortbetreffzeilen standardmäßig `Re: [REF-K7M3-P9QX-2F4N] Original subject`. Mail ordnet Antworten weiterhin über die Standard-Header `Message-ID`, `In-Reply-To` und `References` zu.
 
 ## Einen Workflow sicher speichern und aktivieren {icon="route"}
 
 :::steps
-1. Öffne **Automatisierungen > Workflows** und wähle **Neuer Workflow**.
-2. Gib Name, Beschreibung, Priorität, YAML und Effektbudgets ein.
-3. Wähle **Validieren** und behebe jede zeilenbezogene Diagnose.
+1. Öffne **Automatisierungen → Workflows** und wähle **Neuer Workflow**.
+2. Gib Name, Beschreibung, Priorität und YAML ein und lege die Limits unter **Ausführungslimits** fest.
+3. Wähle **Prüfen** und behebe jede Diagnose in ihrer Zeile.
 4. Wähle **Workflow erstellen** oder **Version speichern**.
 5. Prüfe die neue Version unter **Versionen**.
 6. Wähle **Aktivieren** oder **Aktuelle Version aktivieren**.
-7. Prüfe die erste passende Ausführung unter **Automatisierungen > Aktivität**. Plattformbetreiber können außerdem **Administration > Systembeobachtung > Workflows** verwenden.
+7. Prüfe den ersten passenden Lauf unter **Automatisierungen → Aktivität**. Betreiber der Plattform nutzen auch **Administration → Systembeobachtung → Workflows**.
 :::
 
-Das Speichern aktiviert niemals eine Version. Eine bereits aktive Version läuft weiter, bis ein Administrator die neuere ausdrücklich aktiviert. **Aktualisierung verfügbar** bedeutet, dass sich die gespeicherte aktuelle und die aktive Version unterscheiden.
+Speichern aktiviert nie eine Version. Eine aktive Version läuft weiter, bis jemand mit Zugriff **Verwalten** die neuere ausdrücklich aktiviert. **Aktualisierung verfügbar** bedeutet, dass sich die gespeicherte aktuelle Version und die aktive Version unterscheiden.
 
-Effektbudgets sind feste Obergrenzen für Verschiebungen, Sendungen, Schlüsselwortänderungen, Änderungen an der Zusammenarbeit und AI-Aufrufe innerhalb einer Ausführung. Eine Ausführung stoppt, bevor sie einen Effekt oberhalb des Budgets anwendet. AI-Ausgaben bleiben Daten, bis eine spätere Mail-Aktion sie verwendet. Klassifizierung, Kennzeichnung, Zuweisung, Entwurf und Versand bleiben dadurch unabhängig prüfbare Schritte.
+Die **Ausführungslimits** sind harte Obergrenzen für Verschiebungen, Sendungen, Änderungen an Schlüsselwörtern, Änderungen an der Zusammenarbeit und KI-Aufrufe während eines Laufs. Ein Lauf stoppt, bevor er einen Effekt anwendet, der ein Limit überschreiten würde. KI-Ausgaben bleiben Daten, bis eine spätere Mail-Aktion sie nutzt. Klassifizieren, Taggen, Zuweisen, Entwerfen und Senden bleiben deshalb Schritte, die du einzeln prüfen kannst.
 
-## Workflow-Ausführungen beobachten und stoppen {icon="activity"}
+## Workflow-Läufe beobachten und stoppen {icon="activity"}
 
-Postfachadministratoren verwenden **Automatisierungen > Aktivität** für postfachbezogene automatische Antworten, eingehende Automatisierungen, eigene Workflows und fortsetzbare Backfills. Die Tabelle zeigt Automatisierungstyp, Status, Dauer, Zeitpunkt und eine begrenzte Fehler- oder Ergebnismeldung. Plattformadministratoren behalten die anwendungsübergreifende Detailansicht unter **Administration > Systembeobachtung > Workflows**.
+Mit Zugriff **Verwalten** nutzt du **Automatisierungen → Aktivität** für die automatischen Antworten, Automatisierungen für eingehende E-Mails, eigenen Workflows und die fortsetzbare nachträgliche Verarbeitung des Postfachs. Die Tabelle zeigt Typ der Automatisierung, Status, Dauer, Zeitpunkt und eine kurze Fehler- oder Ergebnismeldung. Die Cloud-Administration behält die Detailansicht über alle Apps unter **Administration → Systembeobachtung → Workflows**.
 
-Wähle **Abbrechen**, wenn keine weiteren Effekte beginnen sollen. Der Abbruch macht bereits abgeschlossene Verschiebungen, Sendungen oder Änderungen an der Zusammenarbeit nicht rückgängig. Eine Ausführung mit Klärungsbedarf wartet darauf, dass ein Administrator festhält, ob ein unklarer externer Effekt eingetreten ist. Das Deaktivieren eines Mail-Workflows verhindert neue passende Auslöser; der abgeschlossene Verlauf bleibt unverändert.
+Wähle **Abbrechen**, wenn keine weiteren Effekte beginnen sollen. Das Abbrechen macht bereits abgeschlossene Verschiebungen, Sendungen oder Änderungen an der Zusammenarbeit nicht rückgängig. Ein Lauf mit Klärungsbedarf wartet, bis die Cloud-Administration festhält, ob ein unklarer externer Effekt eingetreten ist. Das Ausschalten eines Mail-Workflows verhindert neue passende Auslöser. Es ändert den abgeschlossenen Verlauf nicht.
 
-Das vollständige YAML-Vokabular und validierte Beispiele findest du unter [Mail-Workflow-YAML-Referenz](/app/mail/help/mail-workflows).
+Das vollständige YAML-Vokabular und geprüfte Beispiele stehen in der [Mail-Workflow-YAML-Referenz](/app/mail/help/mail-workflows).

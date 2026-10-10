@@ -247,12 +247,26 @@ branch:
   loaded document, it dispatches the frame's `load` event itself.
 - Fonts differ between machines and engines. A test that expects text to wrap
   or fit uses text that is clearly too long or clearly short enough.
-- Playwright's WebKit on Linux can stop a video for good after a seek when the
-  machine is heavily loaded, also after the seek that a media fragment such as
-  `#t=1` starts with: `waiting` follows, and the time no longer advances. A
-  test that checks that a video plays waits for its `playing` event or for the
-  promise of `play()`. It waits for `ended` only when playing to the end is
-  what it checks.
+- Playwright's WebKit on Linux can stop a video for good when `play()` arrives
+  during a seek or right as it ends. The video reports `playing`, often then
+  `waiting` and `stalled`, and its time no longer advances, although the whole
+  video is buffered. A loaded machine makes it more likely. A media fragment
+  such as `#t=0.001` starts a seek too: WebKit starts it once the first frame
+  has loaded, Chromium already with the metadata. `VideoPlayer` starts a
+  posterless address without a fragment of its own at `#t=0.001`, and a renewed
+  address at the point where it continues. A test that plays or seeks a video
+  waits until it shows a frame and no seek is under way,
+  `!video.seeking && video.readyState >= 2`, and then calls `play()` itself.
+  Played that way, the video did not stall in several hundred runs on a loaded
+  machine; `play()` from the page's own handlers as the seek ended, or one
+  frame later, stalled in 7 of 520. Because `playing` also comes before a
+  stall, a test that checks playback waits for `ended`. A test also lets each
+  seek end before it starts the next one: seeks that overlap can end at the
+  first one's point instead of the last one's. After a renewal, `VideoPlayer`
+  plays on by itself once the metadata has loaded, in WebKit during its seek;
+  moving that `play()` to the end of the seek did not measurably make it stall
+  less often. Renewed playback can therefore stall in Linux WebKit, so its test
+  waits for `ended` in Chromium and only for `playing` in WebKit.
 
 ## Replace modules in tests
 
@@ -538,6 +552,20 @@ docker run --detach --rm --name mirror-registry --publish 127.0.0.1:5000:5000 re
 MIRROR=localhost:5000/mirror .github/mirror-images.sh
 docker rm --force mirror-registry
 ```
+
+Tests that read a rendered PDF call Poppler's `pdftotext`, `pdfinfo`, and
+`pdffonts` from `PATH`; locally, install Poppler (`poppler-utils` on Debian
+and Ubuntu). CI does not install Poppler on the runner: `.github/poppler.sh
+install` pulls a Poppler image pinned by digest with the job's other images,
+starts it without network access, and links the three tools into
+`/usr/local/bin` as wrappers that run each call in that container. Installing
+from the runner's apt mirror hung, and Homebrew failed when its API host
+`formulae.brew.sh` timed out. In CI, the tools can open only files under the
+checkout, the temporary directory, and `$RUNNER_TEMP`. A test that writes its
+PDF anywhere else fails there with `Couldn't open file`, although it passes
+locally. To move to another Poppler version, change the image and digest in
+that script. The image's publisher deletes its date tags after about eight
+months, so move the pin to a newer tag before that.
 
 `gate` is the only required status check. It needs every other job in
 `ci.yml` and passes only when each one reports `success`, or `skipped` for a

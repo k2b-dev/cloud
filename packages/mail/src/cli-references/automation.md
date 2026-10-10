@@ -282,7 +282,7 @@ Mail exposes two input types:
 
 - `mailMessage`: `id`, `conversationId`, `subject`, `sender`, `recipients`, `body`, `bodyText`, `bodyHtml`, `attachments`, `hasAttachments`, `folderId`, `flags`, `keywords`, `direction`, `internalDate`, and `receivedAt`.
 - Mail resource fields in workflow inputs and outputs use stable six-character Mail IDs; provider references and database UUIDs are not part of that workflow vocabulary.
-- `mailConversation`: `id`, `subject`, `summary`, `summaryRevision`, `assigneeUserId`, `workStatus`, and `latestMessageAt`.
+- `mailConversation`: `id`, `subject`, `summary`, `summaryRevision`, `assigneeUserIds`, `workStatus`, and `latestMessageAt`.
 
 Use `${{ inputs.<name> }}` for a whole input and `${{ inputs.<name>.<field> }}` for a field. `${{ now() }}` resolves from the run clock. `context.mailboxId` is also available.
 
@@ -291,7 +291,7 @@ Conditions are recursive and contain exactly one operator:
 - `equals` and `notEquals` compare two values.
 - `textEquals`, `contains`, `startsWith`, and `endsWith` compare two normalized, case-insensitive text values.
 - `includes` tests exact membership in an array such as an `aiClassifyMany` result.
-- `exists` accepts one reference such as `inputs.conversation.assigneeUserId`.
+- `exists` accepts one reference such as `inputs.conversation.summary`.
 - `all` and `any` contain one or more conditions; `not` contains one condition.
 
 Steps may use `if`/`then`/`else` and `switch`/`cases`/`default`. The shared parser understands `forEach`, but the Mail binder rejects it because each Mail event starts one durable workflow run.
@@ -309,7 +309,7 @@ Steps may use `if`/`then`/`else` and `switch`/`cases`/`default`. The shared pars
 | `junkMessage` | `message` | Move to the configured Junk role |
 | `addFlag` | `message`, `seen`, `answered`, `flagged`, or `draft` in `flag` | Add one standard provider flag |
 | `removeFlag` | `message`, `seen`, `answered`, `flagged`, or `draft` in `flag` | Remove one standard provider flag |
-| `assignConversation` | `conversation`, assignable user name, id, expression, or `null` in `user` | Change assignment transactionally |
+| `assignConversation` | `conversation`, assignable user name, id, expression, or `null` in `user` | Replace assignees with this user, or clear the set with `null` |
 | `setConversationStatus` | `conversation`, `needs_action`, `waiting`, or `done` in `status` | Change work state transactionally |
 | `setConversationSummary` | `conversation`, `summary` | Replace the editable conversation summary transactionally |
 | `ensureConversationReference` | `conversation`; optional identifier in `saveAs` | Allocate or return the immutable reference |

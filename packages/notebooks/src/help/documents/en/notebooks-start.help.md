@@ -1,44 +1,46 @@
 ---
 id: notebooks-start
-title: "Start"
+title: "Start with Notebooks"
 icon: "ti ti-notebook"
-description: "Create a Markdown workspace, connect pages, and add automatic indexes."
+description: "Create a Markdown notebook, connect its pages, and add automatic indexes."
 order: 100
 ---
 
-Notebooks are Markdown workspaces for knowledge that should stay readable first and become structured or automated only where that makes the note easier to use.
+Notebooks are Markdown workspaces for knowledge. Your text stays readable first. Add structure or automation only where it makes a note easier to use.
 
 **From the overview**
 
 ## Find or create a notebook {icon="layout-grid"}
 
 :::reference
-- **All notebooks:** The overview lists every notebook you can access. Open one to continue working, or create a notebook when the knowledge needs its own access and settings.
-- **Favorites:** Favorite a notebook when it should stay easy to reach from the overview and sidebar.
-- **Search and recents:** Use search for a known name and recents when you want to resume the last workspace.
-- **Back where you left off:** Opening Notebooks from the navigation takes you to the notebook you looked at last in this browser, even if that was in another tab. If it was deleted or is no longer shared with you, the overview opens instead.
-- **Templates:** Choose a template only when its starting structure fits the work. A blank notebook is the safest default for a new use case.
+- **All notebooks:** The overview lists every notebook that you can access. Open a notebook to continue. Create a new notebook when the knowledge needs its own access and settings.
+- **Favorites:** Make a notebook a favorite to keep it easy to reach from the overview and the sidebar.
+- **Search and recent notes:** Search for a name that you know. Under **Recently edited**, open one of your latest notes from any notebook to continue.
+- **Back where you left off:** When you open Notebooks from the navigation, you see the notebook that you viewed last in this browser. This also works if you viewed it in another tab. If that notebook was deleted or is no longer shared with you, the overview opens.
+- **Templates:** Choose a template only when its structure fits the work. For a new use case, a blank notebook is the safest start.
 :::
 
 **Overview**
 
-## Work in layers {icon="layers-subtract"}
+## Build a notebook in layers {icon="layers-subtract"}
 
 :::steps
-1. **Write:** Start with headings, paragraphs, tasks, links, and attachments. Plain Markdown stays understandable without tooling.
-2. **Structure:** Add named :::data blocks for your own fields. Keep tables and tasks beside the text they explain.
-3. **List pages:** Add :::query for filtered page lists and :::toc for headings in the current note.
-4. **Read:** Use Book for a minimal handbook view. Read permission always opens Book; writers and admins can also choose Write or Read-only.
+1. **Write:** Start with headings, paragraphs, tasks, links, and attachments. Plain Markdown stays clear without any tools.
+2. **Structure:** Add named `:::data` blocks for your own fields. Keep tables and tasks next to the text that explains them.
+3. **List pages:** Add `:::query` for filtered page lists. Add `:::toc` for the headings of the current note.
+4. **Read:** Use **Book** for a minimal handbook view. **View** access always opens Book. With **Edit** or **Manage** access, you can also choose **Write** or **Read-only**.
 :::
 
 **Start here**
 
-## Common paths {icon="route"}
+## Choose a common task {icon="route"}
 
 :::reference
-- **Capture notes:** Open a notebook, create or select a note, and use Markdown for decisions, meeting notes, research, recipes, planning, and lightweight task lists.
-- **Download a note:** Open note details, then download the current content as Markdown or PDF. The PDF shows the note like the book view, with callouts, named data, contents, and query results; images appear as their description and diagrams as their source. PDF export offers three A4 presets and a Custom option; the current Markdown, CSS, and generated PDF are processed in memory and the PDF is not stored.
-- **Connect knowledge:** Use note links, tags, and attachments to make related information discoverable without moving everything into one file.
-- **Track small structured data:** Use Markdown tables and named blocks for small datasets that benefit from being close to the prose around them.
-- **Build an index:** Query notes by tags and your own named data. Results refresh after saved changes without running code.
+- **Capture notes:** Open a notebook, then create or select a note. Write decisions, meeting notes, research, recipes, plans, and small task lists in Markdown.
+- **Download a note:** Open the note details. Download the current content as Markdown or PDF.
+- **PDF content:** The PDF shows the note as Book shows it, with callouts, named data, contents, and query results. Images appear as their description, and diagrams as their source.
+- **PDF format:** The PDF export offers three A4 presets and **Custom**. Notebooks processes the current Markdown, the CSS, and the PDF in memory and does not store the PDF.
+- **Connect knowledge:** Use note links, tags, and attachments. People then find related information without moving everything into one file.
+- **Track small structured data:** Use Markdown tables and named blocks for small data sets that belong next to their text.
+- **Build an index:** Query notes by tags and by your own named data. Results refresh after saved changes and run no code.
 :::

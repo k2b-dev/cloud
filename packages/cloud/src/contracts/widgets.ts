@@ -181,3 +181,23 @@ export const WidgetResponseSchema = z
   })
   .strip();
 export type WidgetResponse = z.infer<typeof WidgetResponseSchema>;
+
+/** A widget's stable key on the dashboard and in the widget stream: `<appId>/<widgetId>`. */
+export const widgetKey = (appId: string, widgetId: string): string => `${appId}/${widgetId}`;
+
+/**
+ * How one widget answered in the widget stream: `ok` carries its response, `empty` is a `204`, `forbidden` a `403`,
+ * `timeout` means it did not answer within its own budget, and `error` covers every other failure.
+ */
+export type WidgetStreamStatus = "ok" | "empty" | "forbidden" | "timeout" | "error";
+
+/**
+ * One line of `GET /api/widgets/v1` (`application/x-ndjson`): `start` names the widgets Core asks, in registry
+ * order; one `widget` line follows per widget in the order they finish; `done` closes the stream. Every widget named
+ * in `start` gets exactly one line.
+ */
+export type WidgetStreamLine =
+  | { type: "start"; widgets: string[] }
+  | { type: "widget"; key: string; status: "ok"; widget: WidgetResponse; ms: number }
+  | { type: "widget"; key: string; status: Exclude<WidgetStreamStatus, "ok">; ms: number }
+  | { type: "done"; status: "complete" | "partial" };
