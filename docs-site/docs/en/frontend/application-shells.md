@@ -82,11 +82,32 @@ Selection belongs in the URL. The server must be able to render the same
 detail after reload. See
 [URL state and navigation](/en/docs/frontend/url-state-and-navigation).
 
-`AppWorkspace.Content` is the required flex row for `Main` and `Detail`.
+`AppWorkspace.Content` hosts Main and floating Detail. Detail must be a direct
+child, possibly through a Solid island wrapper.
 Keep geometry IDs stable. Do not add another grid or resize handle.
 
 From 768 px, signed-in layouts expose Help and Search through the app bar.
 Their header controls exist only on phones.
+
+## Add contextual detail
+
+Below 768 px, Detail is a bottom sheet. Its half height leaves Main reachable
+above it; the grabber switches to full height. From 768 px, it floats 8 px
+inside Content and Main makes room while keeping at least 320 px. On coarse
+pointers from 768 to 1023 px, a closable detail overlays Main as a drawer.
+The host’s app card from 1536 px surrounds this same workspace geometry.
+
+In a hydrated component, pass `onClose` the panel’s existing close or deselect
+action. Escape and dismissal gestures then use that action too. Omit it for
+permanent context. The application still owns `open` and URL selection.
+
+Add `k2b-detail-trail` to the horizontal scroll container of a board, wide
+table, or week calendar that should continue under the panel. For DataTable,
+pass `scrollClass="k2b-detail-trail"`. Main keeps its width and the scroller
+adds space at its end. Add `var(--k2b-detail-space, 0px)` to the trailing
+padding of fixed toolbar or filter rows above it. The variable is zero when
+Main reflows. See [AppWorkspace](/en/ui/layout/workspace#floating-detail) for
+focus, keyboard shortcuts, gestures, motion, and sizing.
 
 ## Choose a dialog
 
@@ -117,7 +138,7 @@ names and descriptions. Signed-in users also find their profile, theme, language
 sign-out actions there; the mobile header has no separate profile menu.
 From 768 px the app bar replaces the header, and `AppWorkspace` shows its own
 navigation. Between 768 and 1023 px, a tablet range, the workspace keeps its
-list and detail side by side, and its sidebar is an overlay: the head at the
+list panes side by side, and its sidebar is an overlay: the head at the
 top of the workspace holds the button that opens it and the page title.
 The overlay closes with Escape, a tap beside it, or a choice in the
 navigation, and focus returns to the button. A `mobile="stacked"` overview

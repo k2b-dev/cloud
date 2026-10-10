@@ -507,25 +507,11 @@
   flex-basis: auto;
 }
 
-@media (min-width: 48rem) and (max-width: 63.999rem) {
-  .k2b-ui .notebooks-overview-workspace .k2b-app-workspace__content {
-    flex-direction: row;
-  }
-
-  .k2b-ui .notebooks-overview-workspace .notebooks-overview-main {
-    display: flex !important;
-  }
-
-  .k2b-ui .notebooks-overview-workspace .notebooks-overview-activity {
-    display: flex !important;
-    width: 20rem;
-    flex: 0 0 20rem;
-  }
-}
-
 @media (max-width: 47.999rem) {
+  /* The activity column stays open but hidden here, so Main keeps the full height a phone sheet would share. */
   .k2b-ui .notebooks-overview-workspace .notebooks-overview-main {
     display: flex !important;
+    max-height: none !important;
   }
 
   .k2b-ui .notebooks-overview-workspace .notebooks-overview-activity {

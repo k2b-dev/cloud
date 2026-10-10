@@ -943,7 +943,13 @@ export default function RecordsView(props: Props) {
         </div>
       </AppWorkspace.Main>
 
-      <AppWorkspace.Detail id="record" open={hasOpenDetail()} width="lg" viewTransitionName="grids-record-detail">
+      <AppWorkspace.Detail
+        id="record"
+        open={hasOpenDetail()}
+        onClose={() => (selectedGroup() ? onCloseGroupDetail() : onCloseDetail())}
+        width="lg"
+        viewTransitionName="grids-record-detail"
+      >
         <Show when={selectedRecordId() || selectedGroup()}>
           <RecordsDetailSurface
             cloudUrl={props.cloudUrl}

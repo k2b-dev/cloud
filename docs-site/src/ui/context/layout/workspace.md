@@ -5,7 +5,8 @@
 The application owns the content and which regions are open.
 
 The frame owns its surface hierarchy: `Main` uses the base surface, while the
-navigation, contextual details, and bottom drawer use the subtle surface.
+navigation and bottom drawer use the subtle surface. Detail is a raised floating
+surface.
 Applications should keep region wrappers transparent and add cards or panels
 only where the content needs another visual level.
 
@@ -28,9 +29,10 @@ import {
 ## Compose the regions
 
 `AppWorkspace.Content` is required. Put `Main` first and each `Detail` after it
-inside `Content`. Put `BottomDrawer` at the workspace root.
+as direct children of `Content`, possibly through a Solid island wrapper. The
+floating geometry depends on that placement. Put `BottomDrawer` at the workspace root.
 
-`Main` adds no padding. Pass an application class through `class` when the workspace needs an inset. Omit it for edge-to-edge tables, editors, canvases, or `Panes`. Set `width="content"` on an overview or reading page: each direct child then becomes one centered column with the shared 72 rem page width on large screens and full width below, while the detail panel keeps its own track. `Main` is the default scroll owner and reserves a stable scrollbar gutter. Pass `scrollPreserveKey` when enhanced navigation should restore its position.
+`Main` adds no padding. Pass an application class through `class` when the workspace needs an inset. Omit it for edge-to-edge tables, editors, canvases, or `Panes`. Set `width="content"` on an overview or reading page: each direct child then becomes one centered column with the shared 72 rem page width on large screens and full width below, while the detail panel floats inside the content area. `Main` is the default scroll owner and reserves a stable scrollbar gutter. Pass `scrollPreserveKey` when enhanced navigation should restore its position.
 
 `Main` and `MainPane` show subtle 16 px overflow hints by default when they
 own scrolling. Set `scrollFade={false}` to opt out. A split `Main` wrapper
@@ -52,6 +54,47 @@ An open `MainPane` keeps its content mounted when layout state, mobile selection
 `Detail` and `BottomDrawer` remain mounted while closed. Their `open` property
 controls visibility, so local state and SSR DOM identity remain stable.
 
+## Floating detail
+
+Pass `onClose` when the application can close or deselect the detail. Escape,
+a downward phone drag, and a rightward touch-tablet swipe call the same action
+as the panel’s close button. Without it, the panel stays open and reflows Main
+on touch tablets too. `onStep` receives `1` for J and `-1` for K; the application
+chooses the next selection. Neither callback owns the `open` state.
+
+Below 48 rem, a displayed half sheet leaves Main reachable above it. Tap the
+grabber to switch between half and full height. Drag the grabber or header up
+to expand, or down to return to half height; pulling down from half closes a
+closable sheet. Pull downward from content at the top of its scrollport to
+lower the sheet. An open panel shares the height with Main even when the
+application hides it with its own CSS, so keep `open` false while the panel
+should not show.
+
+For a board, wide table, or week calendar, add `k2b-detail-trail` to its
+horizontal scroll container inside Main. Main then keeps its full width, and
+the scroller gains trailing space beside the panel. Use
+`scrollClass="k2b-detail-trail"` on DataTable. Pad fixed rows above the surface
+with `padding-inline-end: var(--k2b-detail-space, 0px)`, adding any existing
+inset. The variable is zero when Main reflows. Closing retains only trailing
+space still in view and releases it as the person scrolls back.
+
+Escape closes a closable panel. J and K step a steppable panel. F6 switches
+focus between Main’s remembered item and the panel title, with or without
+Shift. These shortcuts leave text entry, menus, dialogs, popovers, and
+expanded controls to their own keyboard behavior. An overlay sidebar handles
+Escape first.
+
+Opening from Enter or Space moves focus to the title. A phone sheet also
+focuses its title after a pointer selection; wider pointer opens keep focus
+on the item. The controller keeps the selected row at its vertical position
+through reflow and reveals a freshly selected item beside a trail panel.
+Closing returns focus to the remembered item when focus was in the panel.
+
+The first server-rendered or newly inserted panel appears without motion.
+After two animation frames, later opens and closes use the shared transitions.
+Reduced motion disables them and makes item reveal immediate. Dragging tracks
+the pointer without easing.
+
 ## Navigation
 
 `Sidebar` with `SidebarDesktop` supplies the workspace navigation. Its form
@@ -59,9 +102,10 @@ follows the viewport width:
 
 | Width | Navigation | Work area |
 | --- | --- | --- |
-| Below 48 rem (768 px) | Hidden; the host renders its mobile navigation | One pane at a time; an open `Detail` replaces `Main` |
-| 48 to 64 rem (768 to 1023 px) | An overlay that a button in the head opens; a `mobile="stacked"` sidebar stays above the content | Panes side by side, `Detail` beside `Main` |
-| From 64 rem (1024 px) | A column beside the work area | Panes side by side, `Detail` beside `Main` |
+| Below 48 rem (768 px) | Hidden; the host renders its mobile navigation | One pane at a time; Detail is a bottom sheet at 55% height, leaving Main at 45%; full height covers Main |
+| 48 to 64 rem (768 to 1023 px) | An overlay that a button in the head opens; a `mobile="stacked"` sidebar stays above the content | Panes side by side; Detail floats with reflow, or overlays Main as a closable drawer on coarse pointers |
+| From 64 rem (1024 px) | A column beside the work area | Panes side by side; Detail floats 8 px inside Content and Main makes room |
+| From 96 rem (1536 px) | Same navigation | Same workspace geometry inside the host’s app card |
 
 Below 48 rem the host renders its mobile navigation using
 [createNavigation and Navigation](/en/ui/layout/navigation), usually inside a
@@ -418,6 +462,7 @@ type AppWorkspaceMainPaneProps = {
 type AppWorkspaceDetailProps = {
   children: JSX.Element; open: boolean; id: string; class?: string; width?: AppWorkspaceDetailWidth;
   viewTransitionName?: string; resizable?: boolean; minWidth?: number; maxWidth?: number;
+  onClose?: () => void; onStep?: (direction: 1 | -1) => void;
 };
 
 type AppWorkspaceBottomDrawerProps = {
@@ -553,10 +598,10 @@ The prop names map to compound members (`AppWorkspaceMainPaneProps` → `AppWork
 | --- | --- | --- | --- |
 | Sidebar | 208 | 176 | 360 |
 | MainPane | 320 | 240 | 640 |
-| Detail | 384 | 288 | 640 |
+| Detail | 416 | 320 | 640 |
 | BottomDrawer | 240 | 160 | 560 |
 
-The main area reserves 320px width / 240px height; the available container may reduce maxima. Collapsed sidebar width is 64px; the collapse threshold is 128px. A sidebar with `onHiddenChange` hides below half its minimum width. Detail widths `sm/md/lg/xl` are 288/384/480/544px (default md); Drawer heights `sm/md/lg` are 192/240/320px (default md). Restored geometry takes precedence. `resizable` defaults on; `collapsible` is opt-in. `Main.scroll` and `MainPane.scroll` default on.
+The main area reserves 320px width / 240px height; the available container may reduce maxima. Collapsed sidebar width is 64px; the collapse threshold is 128px. A sidebar with `onHiddenChange` hides below half its minimum width. Detail widths `sm/md/lg/xl` are 320/416/480/544px (default md); Drawer heights `sm/md/lg` are 192/240/320px (default md). Restored geometry takes precedence. `resizable` defaults on; `collapsible` is opt-in. `Main.scroll` and `MainPane.scroll` default on.
 
 `LinkNavigateEvent` and `NavigationScrollMode` use [navigation conventions](/en/ui/getting-started#icons-tones-and-navigation). `navigation` defaults to `"document"`. Event callbacks do not load data automatically.
 
@@ -715,6 +760,7 @@ The package exports parse, normalize, serialize, and style helpers for layout st
     <AppWorkspace.Detail
       id="item"
       open={selectedId() !== null}
+      onClose={closeDetails}
       width="lg"
     >
       <ItemDetail id={selectedId()} />
@@ -734,9 +780,11 @@ Main-pane borders separate adjacent regions from 48 rem. The last visible pane
 has no outer border, and single-pane phone layouts do not retain split borders.
 A side pane keeps its size while the main region keeps 320 px and gives way
 down to its minimum; the stylesheet applies the same fit as the controller, so
-a server-rendered split arrives at its final widths. A resizable `Detail` fits
-the same way into the content area beside `Main`, so a width saved on a wider
-screen arrives at the width it keeps on a narrower one.
+a server-rendered split arrives at its final widths. Detail floats within
+Content. Its width fits while Main keeps 320 px and the two 8 px gaps. If both
+minimum widths cannot fit, the panel overlaps Main.
+Double-click the detail resize handle to clear its saved width and return to
+its preset.
 
 ### Live rows and detail previews
 

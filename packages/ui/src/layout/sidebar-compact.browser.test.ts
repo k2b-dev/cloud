@@ -212,7 +212,7 @@ describe("compact workspace sidebar", () => {
       expect(closed.sidebar.visibility).toBe("hidden");
       expect(closed.pane.left).toBe(1);
       expect(closed.pane.top).toBe(47);
-      expect(closed.detail.top).toBe(47);
+      expect(closed.detail.top).toBe(55);
       expect(closed).toMatchObject({ label: "Show navigation", expanded: "false" });
 
       await page.locator("[data-app-workspace-sidebar-toggle]").click();
@@ -319,7 +319,7 @@ describe("compact workspace sidebar", () => {
         atRender: (window as unknown as { detailAtRender: number }).detailAtRender,
         attached: Math.round(width(".k2b-app-workspace__detail")),
         max: Number(document.querySelector("[data-app-workspace-resize='detail']")!.getAttribute("aria-valuemax")),
-        room: Math.round(width(".k2b-app-workspace__content") - 320),
+        room: Math.round(width(".k2b-app-workspace__content") - 320 - 16),
         main: Math.round(width(".k2b-app-workspace__main")),
       };
     });

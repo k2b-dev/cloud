@@ -462,6 +462,7 @@ describe("@k2b/ui Cloud content contract", () => {
       DataTable({
         surface: "paper",
         class: "overflow-x-auto",
+        scrollClass: "k2b-detail-trail",
         rows: [{ id: "one" }],
         columns: [{ id: "id", header: "ID", value: "id" }],
       }),
@@ -476,7 +477,8 @@ describe("@k2b/ui Cloud content contract", () => {
 
     expect(paper).toContain('data-surface="paper"');
     expect(paper).toContain('class="k2b-paper k2b-table-shell overflow-x-auto');
-    expect(paper).toContain('class="k2b-table-wrap"');
+    expect(paper).toContain('class="k2b-table-wrap k2b-detail-trail"');
+    expect(plain).toContain('class="k2b-table-wrap"');
     expect(paper).toContain("overflow-x-auto");
     expect(plain).toContain('data-surface="plain"');
     expect(plain).not.toContain("k2b-paper");

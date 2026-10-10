@@ -51,13 +51,9 @@
 .k2b-ui .spaces-overview-mobile-activity { display: none !important; }
 .dark .spaces-overview-work-copy strong, .dark .spaces-overview-activity-meta strong { color: var(--color-zinc-50); }
 .dark .spaces-overview-activity-description { color: var(--color-zinc-300); }
-@media (min-width: 48rem) and (max-width: 63.999rem) {
-  .k2b-ui .spaces-overview-workspace .k2b-app-workspace__content { flex-direction: row; }
-  .k2b-ui .spaces-overview-workspace .spaces-overview-main { display: flex !important; }
-  .k2b-ui .spaces-overview-workspace .spaces-overview-activity { display: flex !important; width: 20rem; flex: 0 0 20rem; }
-}
 @media (max-width: 47.999rem) {
-  .k2b-ui .spaces-overview-workspace .spaces-overview-main { display: flex !important; }
+  /* The activity column stays open but hidden here, so Main keeps the full height a phone sheet would share. */
+  .k2b-ui .spaces-overview-workspace .spaces-overview-main { display: flex !important; max-height: none !important; }
   .k2b-ui .spaces-overview-workspace .spaces-overview-activity { display: none !important; }
   .k2b-ui .spaces-overview-mobile-activity { display: inline-flex !important; }
   .spaces-overview-work-row { grid-template-columns: auto minmax(0, 1fr) auto; }

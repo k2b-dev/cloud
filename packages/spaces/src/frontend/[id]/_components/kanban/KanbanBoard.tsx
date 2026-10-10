@@ -1025,7 +1025,7 @@ export default function KanbanBoard(props: Props) {
             }
           });
         }}
-        class="relative min-h-0 flex-1 overflow-x-auto overflow-y-hidden"
+        class="k2b-detail-trail relative min-h-0 flex-1 overflow-x-auto overflow-y-hidden"
         data-scroll-preserve={`spaces-kanban-board-${props.spaceId}`}
       >
         <div class="flex h-full min-w-max items-stretch gap-[var(--ui-space-shell)]">

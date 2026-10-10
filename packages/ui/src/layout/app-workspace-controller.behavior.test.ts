@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { Window as HappyWindow } from "happy-dom";
-import { APP_WORKSPACE_SIDEBAR_HIDE_EVENT, installAppWorkspaceController } from "./app-workspace-controller";
+import {
+  APP_WORKSPACE_DETAIL_CLOSE_EVENT,
+  APP_WORKSPACE_DETAIL_STEP_EVENT,
+  APP_WORKSPACE_SIDEBAR_HIDE_EVENT,
+  installAppWorkspaceController,
+} from "./app-workspace-controller";
 import { APP_WORKSPACE_SIDEBAR_COLLAPSED } from "./app-workspace-state";
 
 type Frame = (time: number) => void;
@@ -18,6 +23,9 @@ const globalKeys = [
   "Element",
   "HTMLElement",
   "PointerEvent",
+  "MouseEvent",
+  "TouchEvent",
+  "Event",
   "CustomEvent",
   "KeyboardEvent",
   "FocusEvent",
@@ -115,6 +123,9 @@ beforeEach(() => {
     Element: window.Element,
     HTMLElement: window.HTMLElement,
     PointerEvent: window.PointerEvent,
+    MouseEvent: window.MouseEvent,
+    TouchEvent: window.TouchEvent,
+    Event: window.Event,
     CustomEvent: window.CustomEvent,
     KeyboardEvent: window.KeyboardEvent,
     FocusEvent: window.FocusEvent,
@@ -193,7 +204,7 @@ describe("AppWorkspace resize controller behaviour", () => {
     panel.id = "record";
     panel.className = "k2b-app-workspace__detail";
     panel.dataset.workspaceResizable = "true";
-    setRect(panel, { height: 700, width: 384 });
+    setRect(panel, { height: 700, width: 416 });
     root.append(panel);
     const handle = document.createElement("button");
     handle.dataset.appWorkspaceResize = "detail";
@@ -205,8 +216,8 @@ describe("AppWorkspace resize controller behaviour", () => {
     const dispose = installAppWorkspaceController({ root, writeState: (state) => written.push(state) });
 
     dispatchKey(handle, "ArrowLeft");
-    expect(root.style.getPropertyValue("--k2b-workspace-detail-record-width")).toBe("392px");
-    expect(written.at(-1)).toMatchObject({ detailWidths: { record: 392 } });
+    expect(root.style.getPropertyValue("--k2b-workspace-detail-record-width")).toBe("424px");
+    expect(written.at(-1)).toMatchObject({ detailWidths: { record: 424 } });
     dispose();
   });
 
@@ -518,18 +529,18 @@ describe("AppWorkspace resize controller behaviour", () => {
     detail.className = "k2b-app-workspace__detail";
     detail.dataset.workspaceResizable = "true";
     detail.hidden = true;
-    setRect(detail, { height: 700, width: 288 });
+    setRect(detail, { height: 700, width: 320 });
     const detailHandle = document.createElement("button");
     detailHandle.dataset.appWorkspaceResize = "detail";
     detailHandle.dataset.workspacePanelId = "record";
-    detailHandle.dataset.workspaceDefaultSize = "288";
-    detailHandle.dataset.workspaceMinSize = "288";
+    detailHandle.dataset.workspaceDefaultSize = "320";
+    detailHandle.dataset.workspaceMinSize = "320";
     detailHandle.dataset.workspaceMaxSize = "640";
     detailHandle.setAttribute("aria-controls", detail.id);
     root.append(detailHandle, detail);
     setDynamicRect(main, () => ({
       height: 700,
-      width: rootWidth - 208 - (detail.hidden ? 0 : 288),
+      width: rootWidth - 208 - (detail.hidden ? 0 : 320 + 16),
     }));
 
     const written: unknown[] = [];
@@ -544,7 +555,7 @@ describe("AppWorkspace resize controller behaviour", () => {
     detail.hidden = false;
     await Promise.resolve();
     flushFrames();
-    expect(root.style.getPropertyValue(paneVariable)).toBe("484px");
+    expect(root.style.getPropertyValue(paneVariable)).toBe("436px");
     expect(written).toEqual([]);
 
     detail.hidden = true;
@@ -651,4 +662,341 @@ describe("AppWorkspace resize controller behaviour", () => {
     dispatchKey(handle, "ArrowRight");
     expect(root.style.getPropertyValue("--k2b-workspace-sidebar-width")).toBe("");
   });
+});
+
+const detailWorkspace = (options: { open?: boolean; closable?: boolean; steppable?: boolean; documentRoot?: boolean } = {}) => {
+  const { root, sidebar } = workspace({ width: 1400 });
+  const content = document.createElement("div");
+  content.className = "k2b-app-workspace__content";
+  setRect(content, { width: 1200, height: 700 });
+  const main = document.createElement("main");
+  main.className = "k2b-app-workspace__main";
+  const item = document.createElement("button");
+  item.textContent = "Selected row";
+  item.scrollIntoView = () => {};
+  main.append(item);
+  const aside = document.createElement("aside");
+  aside.id = "detail-record";
+  aside.className = "k2b-app-workspace__detail";
+  aside.hidden = options.open === false;
+  aside.dataset.workspaceResizable = "true";
+  if (options.closable !== false) aside.dataset.workspaceDetailClosable = "true";
+  if (options.steppable) aside.dataset.workspaceDetailSteppable = "true";
+  const title = document.createElement("h2");
+  title.textContent = "Record";
+  const close = document.createElement("button");
+  close.textContent = "Close";
+  aside.append(title, close);
+  setRect(aside, { width: 416, height: 684 });
+  const handle = document.createElement("button");
+  handle.dataset.appWorkspaceResize = "detail";
+  handle.dataset.workspacePanelId = "record";
+  handle.dataset.workspaceDefaultSize = "416";
+  handle.setAttribute("aria-controls", aside.id);
+  content.append(main, handle, aside);
+  root.append(content);
+  const closed: Event[] = [];
+  const steps: number[] = [];
+  aside.addEventListener(APP_WORKSPACE_DETAIL_CLOSE_EVENT, (event) => closed.push(event));
+  aside.addEventListener(APP_WORKSPACE_DETAIL_STEP_EVENT, (event) => {
+    if (event instanceof CustomEvent) steps.push(event.detail.direction);
+  });
+  return { root, content, main, item, aside, title, close, handle, sidebar, closed, steps };
+};
+const detailKey = (target: Element, key: string, prevented = false) => {
+  const event = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
+  if (prevented) event.preventDefault();
+  target.dispatchEvent(event);
+  return event;
+};
+const rememberPointer = (item: HTMLElement) => item.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));
+
+describe("floating detail controller", () => {
+  test("enables motion after two frames, including inserted roots, and cancels it on disposal", async () => {
+    const { root } = detailWorkspace();
+    const dispose = installAppWorkspaceController({ root: document });
+    expect(root.hasAttribute("data-workspace-motion")).toBe(false);
+    flushFrames();
+    expect(root.hasAttribute("data-workspace-motion")).toBe(false);
+    flushFrames();
+    expect(root.hasAttribute("data-workspace-motion")).toBe(true);
+    const inserted = detailWorkspace().root;
+    await window.happyDOM.whenAsyncComplete();
+    flushFrames();
+    expect(inserted.hasAttribute("data-workspace-motion")).toBe(false);
+    flushFrames();
+    expect(inserted.hasAttribute("data-workspace-motion")).toBe(true);
+    dispose();
+    expect(root.hasAttribute("data-workspace-motion")).toBe(false);
+    expect(inserted.hasAttribute("data-workspace-motion")).toBe(false);
+    expect(frames.size).toBe(0);
+  });
+
+  test("Escape requests close only when the owning detail is closable", () => {
+    const first = detailWorkspace();
+    const second = detailWorkspace({ closable: false });
+    const dispose = installAppWorkspaceController({ root: document });
+    expect(detailKey(first.item, "Escape").defaultPrevented).toBe(true);
+    expect(detailKey(second.close, "Escape").defaultPrevented).toBe(false);
+    expect(first.closed).toHaveLength(1);
+    expect(second.closed).toHaveLength(0);
+    detailKey(document.body, "Escape");
+    expect(first.closed).toHaveLength(1);
+    dispose();
+  });
+
+  test("ignores typing, menus, dialogs, expanded controls, modifiers, and prevented keys", () => {
+    const { root, aside, item, closed } = detailWorkspace();
+    const dispose = installAppWorkspaceController({ root });
+    const input = document.createElement("input");
+    aside.append(input);
+    detailKey(input, "Escape");
+    detailKey(item, "Escape", true);
+    for (const role of ["menu", "listbox", "dialog", "textbox", "combobox", "searchbox", "spinbutton"]) {
+      const region = document.createElement("div");
+      region.setAttribute("role", role);
+      region.append(document.createElement("button"));
+      aside.append(region);
+      detailKey(region.firstElementChild!, "Escape");
+      region.remove();
+    }
+    const dialog = document.createElement("dialog");
+    dialog.open = true;
+    document.body.append(dialog);
+    detailKey(item, "Escape");
+    dialog.remove();
+    const modal = document.createElement("div");
+    modal.setAttribute("aria-modal", "true");
+    document.body.append(modal);
+    detailKey(item, "Escape");
+    modal.remove();
+    item.setAttribute("aria-expanded", "true");
+    detailKey(item, "Escape");
+    item.removeAttribute("aria-expanded");
+    item.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", ctrlKey: true, bubbles: true }));
+    expect(closed).toHaveLength(0);
+    dispose();
+  });
+
+  test("the overlay sidebar handles Escape before the detail", () => {
+    Object.defineProperty(window, "matchMedia", { value: () => ({ matches: true, addEventListener() {}, removeEventListener() {} }) });
+    const { root, sidebar, closed } = detailWorkspace();
+    const toggle = document.createElement("button");
+    toggle.dataset.appWorkspaceSidebarToggle = "";
+    root.prepend(toggle);
+    const nav = document.createElement("button");
+    sidebar.append(nav);
+    const dispose = installAppWorkspaceController({ root });
+    toggle.click();
+    expect(root.dataset.sidebarOverlay).toBe("open");
+    expect(detailKey(sidebar, "Escape").defaultPrevented).toBe(true);
+    expect(root.dataset.sidebarOverlay).toBeUndefined();
+    expect(closed).toHaveLength(0);
+    dispose();
+  });
+
+  test("J and K step only a steppable detail and never while typing", () => {
+    const { root, item, aside, steps } = detailWorkspace({ steppable: true });
+    const dispose = installAppWorkspaceController({ root });
+    detailKey(item, "j");
+    detailKey(item, "K");
+    const input = document.createElement("textarea");
+    aside.append(input);
+    detailKey(input, "j");
+    aside.removeAttribute("data-workspace-detail-steppable");
+    detailKey(item, "j");
+    expect(steps).toEqual([1, -1]);
+    dispose();
+  });
+
+  test("F6 switches focus between the remembered row and title", () => {
+    const { root, item, title } = detailWorkspace();
+    const dispose = installAppWorkspaceController({ root });
+    rememberPointer(item);
+    item.focus();
+    expect(detailKey(item, "F6").defaultPrevented).toBe(true);
+    expect(document.activeElement === title).toBe(true);
+    detailKey(title, "F6");
+    expect(document.activeElement === item).toBe(true);
+    dispose();
+    expect(title.hasAttribute("tabindex")).toBe(false);
+  });
+
+  test("a keyboard open focuses the title and closing returns to its row", async () => {
+    const { root, item, title, aside } = detailWorkspace({ open: false });
+    const dispose = installAppWorkspaceController({ root });
+    item.focus();
+    detailKey(item, "Enter");
+    aside.hidden = false;
+    await window.happyDOM.whenAsyncComplete();
+    expect(document.activeElement === title).toBe(true);
+    aside.hidden = true;
+    await window.happyDOM.whenAsyncComplete();
+    expect(document.activeElement === item).toBe(true);
+    dispose();
+  });
+
+  test("double-click resets only the selected detail width and writes the remaining state", () => {
+    const { root, handle } = detailWorkspace();
+    const written: unknown[] = [];
+    const dispose = installAppWorkspaceController({
+      root,
+      readState: () => ({ version: 2, detailWidths: { record: 500, other: 420 } }),
+      writeState: (state) => written.push(state),
+    });
+    flushFrames();
+    expect(root.style.getPropertyValue("--k2b-workspace-detail-record-width")).toBe("500px");
+    handle.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    expect(root.style.getPropertyValue("--k2b-workspace-detail-record-width")).toBe("");
+    expect(handle.getAttribute("aria-valuenow")).toBe("416");
+    expect(written.at(-1)).toMatchObject({ detailWidths: { other: 420 } });
+    dispose();
+  });
+
+  test("holds trailing space before measuring a closed board, then shrinks it as it scrolls out", async () => {
+    const { root, main, aside } = detailWorkspace();
+    const trail = document.createElement("div");
+    trail.className = "k2b-detail-trail";
+    trail.style.paddingInlineEnd = "432px";
+    let left = 1032;
+    Object.defineProperties(trail, {
+      clientWidth: { get: () => 1000 },
+      scrollWidth: {
+        get: () => 1600 + (aside.hidden ? Number.parseFloat(trail.style.getPropertyValue("--k2b-detail-trail-hold")) || 0 : 432),
+      },
+      scrollLeft: {
+        get: () => left,
+        set: (value: number) => {
+          left = value;
+        },
+      },
+    });
+    main.append(trail);
+    const dispose = installAppWorkspaceController({ root });
+    aside.hidden = true;
+    await window.happyDOM.whenAsyncComplete();
+    expect(trail.style.getPropertyValue("--k2b-detail-trail-hold")).toBe("432px");
+    expect(trail.scrollLeft).toBe(1032);
+    trail.scrollLeft = 800;
+    trail.dispatchEvent(new Event("scroll"));
+    expect(trail.style.getPropertyValue("--k2b-detail-trail-hold")).toBe("200px");
+    trail.scrollLeft = 600;
+    trail.dispatchEvent(new Event("scroll"));
+    expect(trail.style.getPropertyValue("--k2b-detail-trail-hold")).toBe("");
+    dispose();
+  });
+});
+
+describe("floating detail layout changes", () => {
+  test("anchors a selected row through reflow only when its scroll position was untouched", async () => {
+    Object.defineProperty(window, "matchMedia", {
+      value: (query: string) => ({ matches: query === "(min-width: 48rem)", addEventListener() {}, removeEventListener() {} }),
+    });
+    const { root, main, item, aside } = detailWorkspace({ open: false });
+    main.style.overflowY = "auto";
+    Object.defineProperties(main, { scrollHeight: { value: 1000 }, clientHeight: { value: 500 } });
+    main.scrollTop = 100;
+    Object.defineProperty(item, "getBoundingClientRect", { value: () => ({ top: (aside.hidden ? 100 : 180) - main.scrollTop }) });
+    let reveals = 0;
+    item.scrollIntoView = () => {
+      reveals++;
+    };
+    const dispose = installAppWorkspaceController({ root });
+    rememberPointer(item);
+    aside.hidden = false;
+    await window.happyDOM.whenAsyncComplete();
+    expect(main.scrollTop).toBe(180);
+    expect(reveals).toBe(0);
+    flushFrames();
+    expect(reveals).toBe(1);
+    rememberPointer(aside);
+    aside.hidden = true;
+    await window.happyDOM.whenAsyncComplete();
+    expect(main.scrollTop).toBe(100);
+    rememberPointer(item);
+    main.scrollTop = 120;
+    aside.hidden = false;
+    await window.happyDOM.whenAsyncComplete();
+    expect(main.scrollTop).toBe(120);
+    dispose();
+  });
+
+  test("phone grabber drags settle at detents, suppress their click, and clean up on cancellation", () => {
+    Object.defineProperty(window, "matchMedia", {
+      value: (query: string) => ({ matches: query === "(max-width: 47.999rem)", addEventListener() {}, removeEventListener() {} }),
+    });
+    const { root, aside, closed } = detailWorkspace();
+    const grabber = document.createElement("button");
+    grabber.className = "k2b-app-workspace__detail-grabber";
+    grabber.setAttribute("aria-pressed", "false");
+    aside.prepend(grabber);
+    setRect(aside, { height: 385, width: 390 });
+    const dispose = installAppWorkspaceController({ root });
+    grabber.click();
+    expect(aside.dataset.workspaceDetailSheet).toBe("full");
+    const drag = (dy: number, cancelled = false) => {
+      grabber.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, isPrimary: true, pointerId: 9, clientY: 100 }));
+      window.dispatchEvent(new window.PointerEvent("pointermove", { pointerId: 9, clientY: 100 + dy }));
+      flushFrames();
+      expect(aside.dataset.workspaceDetailDragging).toBe("true");
+      expect(aside.style.getPropertyValue("--k2b-workspace-detail-sheet-height")).not.toBe("");
+      window.dispatchEvent(new window.PointerEvent(cancelled ? "pointercancel" : "pointerup", { pointerId: 9, clientY: 100 + dy }));
+      grabber.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+    };
+    drag(100);
+    expect(aside.dataset.workspaceDetailSheet).toBeUndefined();
+    expect(closed).toHaveLength(0);
+    drag(-100);
+    expect(aside.dataset.workspaceDetailSheet).toBe("full");
+    drag(100, true);
+    expect(aside.dataset.workspaceDetailSheet).toBe("full");
+    grabber.click();
+    drag(100);
+    expect(closed).toHaveLength(1);
+    expect(aside.style.getPropertyValue("--k2b-workspace-detail-sheet-height")).toBe("");
+    expect(aside.hasAttribute("data-workspace-detail-dragging")).toBe(false);
+    dispose();
+    expect(grabber.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  test("detail resize limits reserve both gaps instead of another floating panel", () => {
+    const { root, content, handle } = detailWorkspace();
+    setRect(content, { width: 900, height: 700 });
+    const second = document.createElement("aside");
+    second.className = "k2b-app-workspace__detail";
+    setRect(second, { width: 416, height: 684 });
+    content.append(second);
+    const dispose = installAppWorkspaceController({ root });
+    flushFrames();
+    expect(handle.getAttribute("aria-valuemax")).toBe("564");
+    dispose();
+  });
+});
+
+test("opening a floating detail keeps a wide persisted sidebar within its own budget", async () => {
+  const { root, aside, sidebar } = detailWorkspace({ open: false });
+  setRect(root, { height: 700, width: 1024 });
+  setRect(sidebar, { height: 700, width: 500 });
+  const sidebarHandle = root.querySelector<HTMLElement>("[data-app-workspace-resize='sidebar']")!;
+  sidebarHandle.dataset.workspaceMaxSize = "960";
+  const dispose = installAppWorkspaceController({ root, readState: () => ({ version: 2, sidebarWidth: 500 }) });
+  flushFrames();
+  expect(root.style.getPropertyValue("--k2b-workspace-sidebar-width")).toBe("500px");
+  aside.hidden = false;
+  await window.happyDOM.whenAsyncComplete();
+  flushFrames();
+  expect(root.style.getPropertyValue("--k2b-workspace-sidebar-width")).toBe("500px");
+  expect(sidebarHandle.getAttribute("aria-valuemax")).toBe("704");
+  dispose();
+});
+
+test("a nested workspace's Main chooses its own open detail instead of the surrounding aside", () => {
+  const outer = detailWorkspace();
+  const inner = detailWorkspace();
+  outer.aside.append(inner.root);
+  const dispose = installAppWorkspaceController({ root: document });
+  detailKey(inner.item, "Escape");
+  expect(inner.closed).toHaveLength(1);
+  expect(outer.closed).toHaveLength(0);
+  dispose();
 });

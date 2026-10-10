@@ -371,15 +371,15 @@ describe("signed-in shell", () => {
             expect(shape.workspace?.radius).not.toBe("0px");
             expect(shape.workspace?.shadow).not.toBe("none");
           }
-          // The sidebar and the main area draw no lines; the list/reader and
-          // main/detail separators are the ones origin/main already draws.
+          // Sidebar and Main draw no lines. List/reader panes keep their
+          // separator; the raised detail floats without one.
           expect(shape.sidebar?.borders).toEqual(none);
           expect(shape.main?.borders).toEqual(none);
           expect(shape.pane?.borders).toEqual([0, 1, 0, 0]);
-          expect(shape.detail?.borders).toEqual([0, 0, 0, 1]);
-          // List and reader stay side by side, the detail beside them.
+          expect(shape.detail?.borders).toEqual([0, 0, 0, 0]);
+          // List and reader stay side by side; the detail floats inside the content.
           expect(shape.pane!.box.right).toBeLessThanOrEqual(shape.detail!.box.left);
-          expect(shape.pane!.box.top).toBe(shape.detail!.box.top);
+          expect(shape.detail!.box.top).toBe(shape.pane!.box.top + 8);
           if (compact(device)) {
             expect(shape.bar?.display).toBe("flex");
             expect(shape.bar?.borders).toEqual(none);
