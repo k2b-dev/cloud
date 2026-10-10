@@ -683,13 +683,15 @@ describe("the dashboard board in a browser", () => {
       },
     });
     try {
+      // The live region repeats a toast's text for a moment, so the toast is looked up in its own region.
+      const toasts = page.getByRole("region", { name: "Notifications" });
       await page.getByRole("button", { name: "Edit dashboard" }).click();
       await page.getByRole("button", { name: "Add widget" }).first().click();
-      await page.getByText("The board holds up to 100 widgets. Remove one to add another.").waitFor();
+      await toasts.getByText("The board holds up to 100 widgets. Remove one to add another.").waitFor();
       expect(await page.getByRole("dialog").count()).toBe(0);
 
       await page.getByRole("button", { name: "Shortcut", exact: true }).click();
-      await page.getByText("You can keep up to 50 shortcuts. Remove one to add another.").waitFor();
+      await toasts.getByText("You can keep up to 50 shortcuts. Remove one to add another.").waitFor();
       expect(await page.getByRole("dialog").count()).toBe(0);
     } finally {
       await close();
