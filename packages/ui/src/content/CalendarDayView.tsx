@@ -182,6 +182,8 @@ export const CalendarDayView = (props: TimeViewProps) => {
       return;
     }
     if (event.timeStamp - lastWheel > GESTURE_GAP_MS) carry = 0;
+    // A gesture that goes on takes over from a glide onto a day start; the view settles again once it rests.
+    settling = false;
     lastWheel = event.timeStamp;
     const next = brakedScroll(tops, top + carry, delta);
     lastInput = "wheel";
@@ -598,7 +600,12 @@ const DaySection = (props: {
           if (event.button !== 0 || !isEmptyTarget(event.target)) return;
           view.startDraw(event, props.dayKey, props.scroller());
         }}
-        onClick={(event) => {
+        // Some engines send a tap as touch events only; a tap is a tap either way.
+        onTouchStart={() => {
+          lastPointer = "touch";
+        }}
+        // Listening on the timeline itself, not through delegation, makes it a tap target on iOS.
+        on:click={(event) => {
           if (!isEmptyTarget(event.target) || !view.canCreate()) return;
           const minute = Math.floor(minuteAt(event.currentTarget, event.clientY) / 30) * 30;
           const end = Math.min(minute + 60, expanded() ? DAY_MINUTES : wake());

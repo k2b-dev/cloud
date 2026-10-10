@@ -170,6 +170,8 @@ export const CalendarWeekView = (props: TimeViewProps) => {
   };
   const onWheel = (event: WheelEvent) => {
     if (!scroller || event.ctrlKey || view.dragging()) return;
+    // A gesture that goes on takes over from a glide onto a day start; the strip settles again once it rests.
+    settling = false;
     if (event.timeStamp - lastWheel > GESTURE_GAP_MS || axis === null) axis = wheelAxis(event.deltaX, event.deltaY, event.shiftKey);
     lastWheel = event.timeStamp;
     const delta = wheelPixels(
@@ -902,7 +904,10 @@ const WeekColumn = (props: {
         if (event.button !== 0 || !isEmptyTarget(event.target)) return;
         view.startDraw(event, props.dayKey, props.scroller());
       }}
-      onClick={(event) => {
+      // Some engines send a tap as touch events only; a tap is a tap either way.
+      onTouchStart={() => props.setLastPointer("touch")}
+      // Listening on the column itself, not through delegation, makes it a tap target on iOS.
+      on:click={(event) => {
         if (!isEmptyTarget(event.target)) return;
         const minute = Math.floor(minuteAt(event.currentTarget, event.clientY) / 30) * 30;
         const end = Math.min(minute + 60, props.expanded ? DAY_MINUTES : wake());

@@ -2695,7 +2695,8 @@
 }
 
 .k2b-ui .k2b-calendar-week__grid {
-  --k2b-calendar-column: calc((100cqw - var(--k2b-calendar-gutter)) / 7);
+  /* Whole pixels, so a day start sits on a pixel and the strip keeps its place to the pixel as days come in. */
+  --k2b-calendar-column: round(down, calc((100cqw - var(--k2b-calendar-gutter)) / 7), 1px);
   --k2b-calendar-columns: var(--k2b-calendar-gutter) repeat(var(--k2b-calendar-days), var(--k2b-calendar-column));
   width: max-content;
   min-width: 100%;
@@ -3284,7 +3285,7 @@
   }
 
   .k2b-ui .k2b-calendar-week__grid {
-    --k2b-calendar-column: calc((100cqw - var(--k2b-calendar-gutter)) / 3);
+    --k2b-calendar-column: round(down, calc((100cqw - var(--k2b-calendar-gutter)) / 3), 1px);
   }
 
   .k2b-ui .k2b-calendar-week__head {

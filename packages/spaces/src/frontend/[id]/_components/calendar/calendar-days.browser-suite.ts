@@ -340,6 +340,27 @@ const box = async (page: Page, selector: string) => {
 const DAYS = ".k2b-calendar-days__scroll";
 const WEEK = ".k2b-calendar-week__scroll";
 const band = (id: string) => `.k2b-calendar-band[data-calendar-entry="${id}"]`;
+/**
+ * A wheel or trackpad gesture: steps one frame apart, dispatched in the page, as a trackpad sends them. Driving the
+ * mouse from the test spaces the steps by the round trip to the browser instead, which a remote engine stretches.
+ */
+const gesture = (page: Page, selector: string, deltaX: number, deltaY: number, steps: number, shiftKey = false) =>
+  page.locator(selector).evaluate(
+    (element, step) =>
+      new Promise<void>((done) => {
+        const target = element.querySelector("[data-calendar-column], [data-calendar-body]") ?? element;
+        let left = step.steps;
+        const next = () => {
+          target.dispatchEvent(
+            new WheelEvent("wheel", { deltaX: step.deltaX, deltaY: step.deltaY, shiftKey: step.shiftKey, bubbles: true, cancelable: true }),
+          );
+          if (--left > 0) requestAnimationFrame(next);
+          else done();
+        };
+        next();
+      }),
+    { deltaX, deltaY, steps, shiftKey },
+  );
 const rested = (page: Page) => page.waitForTimeout(700);
 /** Waits until `read` returns a value, as the page answers asynchronously. */
 const eventually = async <T>(read: () => T | undefined | null): Promise<T> => {
@@ -509,21 +530,15 @@ describe(`Spaces day and week views in ${browserName}`, () => {
     const columnWidth = (await box(page, "[data-calendar-column]")).width;
     const left = () => page.locator(WEEK).evaluate((element) => element.scrollLeft);
     const start = await left();
-    await page.mouse.move(700, 600);
     // A sideways trackpad gesture with a little drift up and down moves only the days, and settles on a day start.
-    for (let step = 0; step < 10; step++) {
-      await page.mouse.wheel(32, 5);
-      await page.waitForTimeout(16);
-    }
+    await gesture(page, WEEK, 32, 5, 10);
     await rested(page);
     const moved = await left();
     expect(moved).toBeGreaterThan(start);
     expect(Math.abs(moved / columnWidth - Math.round(moved / columnWidth))).toBeLessThan(0.02);
     expect(await page.locator(WEEK).evaluate((element) => element.scrollTop)).toBe(0);
     // Shift with the wheel goes sideways too.
-    await page.keyboard.down("Shift");
-    await page.mouse.wheel(0, 240);
-    await page.keyboard.up("Shift");
+    await gesture(page, WEEK, 0, 120, 2, true);
     await rested(page);
     expect(await left()).toBeGreaterThan(moved);
     // The arrows go to the start of the next week; Today comes back and points the way while away.
