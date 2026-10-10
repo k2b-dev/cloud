@@ -124,6 +124,9 @@ Static metrics use the served HTML and the production build files:
 - CSS includes linked stylesheets and their imports. Asset sizes use built
   `.gz` and `.br` siblings when present, otherwise matching compression settings.
 
+A load that Chromium aborts with `ERR_NETWORK_CHANGED`, because Docker on a
+shared host changed a network interface, measured nothing and is repeated once.
+
 Each load uses a fresh browser context, the isolated session, English locale,
 light theme, blocked service workers, and the `Europe/Berlin` time zone with
 Cloud's time zone cookie already set, like a returning user. Without that
@@ -155,8 +158,7 @@ This definition must be reviewed if the mount runtime changes.
 FCP, LCP, and CLS come from performance entries up to that observation point.
 CLS sums layout shifts without recent input over the run. Unsupported entries
 are `null`. Chromium also reports the last long-task end (0 when no long task
-occurred) and total blocking
-time: for each long task overlapping FCP through TTI, subtract 50 ms from its
+occurred) and total blocking time: for each long task overlapping FCP through TTI, subtract 50 ms from its
 overlap and sum positive remainders. WebKit long-task metrics are `null`.
 These are bounded load observations, not final LCP/CLS over a user's visit.
 

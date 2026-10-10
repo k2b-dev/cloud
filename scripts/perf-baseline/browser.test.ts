@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { createDomTestHarness } from "../../packages/ui/test/dom";
-import { installProbe, transferType } from "./browser";
+import { installProbe, isNetworkChange, transferType } from "./browser";
 
 test("transfer types group script/stylesheet/document separately from fonts and XHR", () => {
   expect(["Script", "script", "Stylesheet", "Document", "Font", "Fetch", "Image"].map(transferType)).toEqual([
@@ -12,6 +12,12 @@ test("transfer types group script/stylesheet/document separately from fonts and 
     "other",
     "other",
   ]);
+});
+
+test("only Chromium's network-change abort counts as a load that measured nothing", () => {
+  expect(isNetworkChange(new Error("goto: net::ERR_NETWORK_CHANGED at https://localhost:1/faq"))).toBe(true);
+  expect(isNetworkChange(new Error("goto: net::ERR_CONNECTION_REFUSED at https://localhost:1/faq"))).toBe(false);
+  expect(isNetworkChange(new Error("TTI timed out after 45000 ms"))).toBe(false);
 });
 
 test("the mount probe counts initial empty clients as well as SSR islands, after synchronous render", async () => {

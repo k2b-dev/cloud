@@ -14,6 +14,9 @@ export const measurementTimeoutMs = 45_000;
 /** Fixed browser time zone, stored in Cloud's timezone cookie like on a returning user's device. */
 export const measuredTimeZone = "Europe/Berlin";
 type TransferType = "document" | "js" | "css" | "other";
+/** Chromium's abort when a host network interface changes mid-load; the load measured nothing. */
+export const isNetworkChange = (error: unknown) => error instanceof Error && error.message.includes("net::ERR_NETWORK_CHANGED");
+
 export function transferType(type: string): TransferType {
   return type.toLowerCase() === "script"
     ? "js"
@@ -164,7 +167,13 @@ export class Browsers {
           this.signal.throwIfAborted();
           console.log(`  ${engine} ${profile} ${run + 1}/${runs}`);
           try {
-            const sample = await this.sample(browser, engine, profile, url, cookie);
+            // Docker on a shared host adds and removes interfaces at any time; Chromium then aborts
+            // the navigation with ERR_NETWORK_CHANGED. Such a load measured nothing, so it is repeated once.
+            const sample = await this.sample(browser, engine, profile, url, cookie).catch((error: unknown) => {
+              if (!isNetworkChange(error)) throw error;
+              console.log(`  ${engine} ${profile} ${run + 1}/${runs}: network changed during load, repeating it`);
+              return this.sample(browser, engine, profile, url, cookie);
+            });
             result.samples.push(sample.metrics);
             for (const type of ["js", "css"] as const)
               result.contentEncoding[type] = [...new Set([...result.contentEncoding[type], ...sample.encodings[type]])].sort();
