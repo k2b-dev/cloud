@@ -13,7 +13,7 @@ import {
 } from "../contracts/capabilities";
 import type { CapabilityRegistryEntry } from "../contracts/registry";
 import type { RequestActor } from "../server";
-import { createHelpReader, type HelpReaderFactory } from "../services/help";
+import type { HelpReader, HelpReaderFactory } from "../services/help";
 import { type MandatePolicyV1, mandatePolicyCanPermitCapability } from "../services/mandates/policy";
 import { resolveAppIdentityPresentation } from "../shared/app-presentation";
 import { recordRejectedAiCapability } from "./capability-execution";
@@ -337,9 +337,7 @@ const AiHelpDocumentSchema = AiHelpCatalogItemSchema.extend({
 }).strict();
 
 /** Search and read published Help without loading one tool per article. */
-export const createAiHelpTools = (help: HelpReaderFactory = createHelpReader, locale = "en"): AiRuntimeTool[] => {
-  const reader = help(locale);
-
+export const createAiHelpTools = (reader: HelpReader): AiRuntimeTool[] => {
   const search = defineAiTool({
     name: "search_help",
     description:
@@ -743,7 +741,8 @@ export const createAiToolResolver =
       fullCapabilityCatalog.filter((entry) => !mandateAllows(entry)).flatMap((entry) => [entry.name, entry.providerName]),
     );
     const capabilityCatalog = fullCapabilityCatalog.filter((entry) => (!allowed || allowed.has(entry.name)) && mandateAllows(entry));
-    const helpTools = input.help ? createAiHelpTools(input.help, input.locale) : [];
+    // The turn's actor decides which apps' Help exists for the model, like every other Help surface.
+    const helpTools = input.help ? createAiHelpTools(input.help(input.locale ?? "en", input.actor)) : [];
     const resourceTool =
       input.execute && (capabilityCatalog.length > 0 || input.staticTools.some((tool) => tool.def.name === "code_read"))
         ? createAiResourceReaderTool({ apps: registry, catalog: capabilityCatalog, execute: input.execute })

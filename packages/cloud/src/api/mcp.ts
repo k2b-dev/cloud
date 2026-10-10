@@ -481,7 +481,10 @@ const createMcpServer = (
       resolveLocale(request.headers, operatorDefault),
     ));
   const helpReader = async () =>
-    (dependencies.help ?? ((locale) => createHelpReader(locale, { listApps: registry })))(await resolveHelpLocale());
+    (dependencies.help ?? ((locale, viewer) => createHelpReader(locale, viewer, { listApps: registry })))(
+      await resolveHelpLocale(),
+      authority?.actor,
+    );
   const hasScope = (scope: "read" | "write"): boolean =>
     oauthScopes === null || oauthScopes.includes(scope) || oauthScopes.includes("admin");
   const requireScope = (scope: "read" | "write"): void => {

@@ -47,6 +47,18 @@ Views let the same work appear in the shape that fits the current job. The view 
 - **Reorder columns:** People with write access drag a column header to a new position with a mouse or pen, or use the **⋯** menu in the header to move it left or right. On a touch screen, swiping over a header scrolls the board; use the **⋯** menu there. The order changes for everyone in the Space and includes the automatic columns; the settings list under **Statuses** shows the same order.
 :::
 
+## Plan in the month view {icon="calendar-month"}
+
+:::reference
+- **Toolbar:** The filters **Scope**, **Priority**, **Status**, and **Tags** and the number of shown entries sit right after the month name, in every calendar view. When the calendar is narrower, the filters show their icons only or move to a row of their own.
+- **Select days:** A click or tap selects a day; it never leaves the month. Drag across days with a mouse, or hold **Shift** while you click or use the arrow keys, to select several; on a phone, a tap selects one day. The arrow keys move the selection, **Page Up** and **Page Down** change the month, and **Esc** clears the selection.
+- **Create on the selection:** After a click, a small **New entry** form waits beside the day without taking the keyboard: start typing or press **Tab** to fill it in. After a drag across days, a double-click, **Enter**, or **N** it opens ready for the title, and on a phone a second tap on the selected day opens it. Choose **Event**, **All day**, or **Task**; the line beside it says when. **Enter** creates, **With details** opens the full form, and **Esc** or a click elsewhere cancels. A drag over several days, or **New event** in the menu of several days, creates one all-day event over all of them. **New event** in the toolbar opens the full form for the selected days.
+- **Menu:** A right-click, a long press on a phone, or **Shift+F10** on a day or on the selected days offers **New event**, **New all-day event**, and **New task with deadline** for those days, then **Open day** and **Open week**.
+- **Open a day or a week:** Select a day and choose **Day** or **Week** in the view switcher, use **Open day** in the menu or in the day list, or click a week number.
+- **Long events:** An event over several days is one bar per week row with its title. Where a week row cuts it off, its end is torn, and when there is room it says where it continues, for example **until 13** or **from 7**. The next row continues it, and pointing at one part highlights the others.
+- **Full days:** Each day shows as many entries as fit its height; **+N more** counts the rest and opens the whole day, as does **Space** on a selected day.
+:::
+
 ## Calendar colors {icon="palette"}
 
 :::reference

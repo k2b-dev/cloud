@@ -16,6 +16,7 @@ Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { default: Calendar } = await import("./Calendar");
+const { checkCalendarMessages } = await import("./calendar-messages");
 const { default: CodeDisplay } = await import("./CodeDisplay");
 const { default: DataTable } = await import("./DataTable");
 const { LocaleProvider } = await import("../intl/locale");
@@ -31,6 +32,10 @@ const contentCss = await Bun.file(resolve(import.meta.dir, "../styles/content-pa
 const uiCss = await Bun.file(resolve(import.meta.dir, "../styles/index.css")).text();
 
 describe("@k2b/ui Cloud content contract", () => {
+  test("keeps every shipped locale of the calendar's own strings complete", () => {
+    expect(checkCalendarMessages()).toEqual([]);
+  });
+
   test("keeps the complete calendar event and view contract on the server", () => {
     const events: CalendarEvent[] = [
       {
@@ -70,9 +75,16 @@ describe("@k2b/ui Cloud content contract", () => {
     expect(html).toContain("Review");
     expect(html).toContain("Review, 09:00 to 10:00");
     expect(html).toContain("view=day");
-    expect(html).toMatch(/class="k2b-calendar-month__day-target\s*"/);
-    expect(html).toContain('aria-label="Open Wednesday, July 1, 2026"');
-    expect(html).not.toContain('class="k2b-calendar-month__day" role="button"');
+    // A month day is a selectable grid cell and links nowhere; its week number opens the week, and a one-day event
+    // shows its start time before the title.
+    expect(html).toContain('role="grid" aria-label="July 2026" aria-multiselectable="true"');
+    expect(html).toMatch(/role="gridcell" tabindex="0" aria-label="Wednesday, July 1, 2026" aria-selected="false"/);
+    expect(html).not.toContain('aria-label="Open Wednesday, July 1, 2026"');
+    expect(html).toMatch(
+      /<a class="k2b-calendar-month__week-link[^"]*"[^>]*aria-label="Week 27, open week" href="\/calendar\?view=week&amp;date=2026-06-29/,
+    );
+    expect(html).toContain('<span class="k2b-calendar-event__time">09:00</span><span class="k2b-calendar-event__title">Review</span>');
+    expect(html).not.toContain("k2b-calendar-month__day-target");
     expect(html).toContain("--k2b-calendar-accent:#0ea5e9");
     expect(html).not.toContain("background-color:color-mix");
     expect(contentCss).toContain("--k2b-calendar-accent: #10b981");
@@ -82,7 +94,6 @@ describe("@k2b/ui Cloud content contract", () => {
       "background: color-mix(in srgb, var(--k2b-calendar-accent, var(--k2b-text-muted)) 12%, var(--k2b-surface-elevated))",
     );
     expect(contentCss).toMatch(/\.k2b-calendar-event__title \{[^}]*font-weight: 500;/s);
-    expect(contentCss).toMatch(/\.k2b-calendar-month__day-target \{[^}]*position: absolute;[^}]*inset: 0;/s);
     expect(contentCss).toMatch(/\.k2b-calendar-event__title \+ \.k2b-calendar-event__meta \{[^}]*margin-top: 0\.25rem;/s);
     const createInMonthHtml = renderToString(() =>
       createComponent(Calendar, {
@@ -94,9 +105,9 @@ describe("@k2b/ui Cloud content contract", () => {
         onSlotActivate: () => undefined,
       }),
     );
-    expect(createInMonthHtml).toMatch(/<button[^>]*class="k2b-calendar-month__day-target\s*"/);
-    expect(createInMonthHtml).toContain('aria-label="Create event on Wednesday, July 1, 2026"');
-    expect(createInMonthHtml).toMatch(/class="k2b-calendar-month__day-number\s*"/);
+    // Creating is Enter, N, a double-click, or a drag on the selection: no day becomes a create button or a link.
+    expect(createInMonthHtml).not.toContain("Create event on");
+    expect(createInMonthHtml).toMatch(/<span class="k2b-calendar-month__day-number"/);
     const shortEventHtml = renderToString(() =>
       createComponent(Calendar, {
         date: "2026-07-15T12:00:00Z",

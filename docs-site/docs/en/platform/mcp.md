@@ -5,7 +5,7 @@ section: Platform services
 order: 565
 description: Connect MCP clients to live Cloud capabilities and registered app Help.
 tags: [mcp, capabilities, help, oauth, agents]
-updated: 2026-08-23
+updated: 2026-10-09
 ---
 
 # Cloud MCP server
@@ -22,9 +22,14 @@ tool catalog:
 - every live Capability Query and Action is an MCP tool;
 - `cloud__resource__read` resolves any readable typed resource ref through its
   current canonical Query;
-- every current registered Help document is an MCP resource;
+- every current registered Help document the caller's user may see is an MCP
+  resource;
 - `cloud__help__search` and `cloud__help__read` help a model find the right
   product guidance without loading one tool per article.
+
+Help follows the same [visibility rule](/en/docs/platform/help#who-can-read-help)
+as the Layout: a service account without a user sees no Help, and Help of an
+application the user may not see neither lists nor reads.
 
 Capability Types remain resource identities in result `refs`; Cloud does not
 invent one MCP tool per Type. Pass a returned `{ type, id }` ref unchanged to
