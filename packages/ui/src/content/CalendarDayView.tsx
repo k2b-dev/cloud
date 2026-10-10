@@ -612,7 +612,7 @@ const DaySection = (props: {
               <span>{soon()}</span>
             </Show>
           </span>
-          {/* The toast already says what was checked off; this only marks the moment. */}
+          {/* Screen readers hear it as an announcement; this only marks the moment. */}
           <span class="k2b-calendar-days__cheer" aria-hidden="true">
             <i class="ti ti-confetti" aria-hidden="true" />
             {view.messages().calendarAllDone}

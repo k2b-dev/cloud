@@ -497,9 +497,17 @@ describe(`Spaces day and week views in ${browserName}`, () => {
     const note = page.locator(".k2b-calendar-days__day[data-today] .k2b-calendar-days__note");
     expect(await note.getAttribute("data-cheer")).toBe("true");
     expect(await note.locator(".k2b-calendar-days__cheer").textContent()).toBe("Alles für heute erledigt");
+    await page.waitForFunction(() =>
+      document.querySelector('[data-politeness="polite"]')?.textContent?.includes("Alles für heute erledigt"),
+    );
     expect(await eventually(() => writes.find((write) => write.path === "/api/spaces/Space1/items/Fracht/completed")?.body)).toMatchObject({
       completed: true,
     });
+    // Reopening the task at once ends the moment; otherwise it ends by itself after about two seconds.
+    await page.getByRole("checkbox", { name: "Erledigt: Frachtbriefe prüfen" }).click();
+    expect(await note.getAttribute("data-cheer")).toBeNull();
+    await page.getByRole("checkbox", { name: "Erledigt: Frachtbriefe prüfen" }).click();
+    expect(await note.getAttribute("data-cheer")).toBe("true");
     await page.waitForFunction(() => !document.querySelector(".k2b-calendar-days__note[data-cheer]"), undefined, { timeout: 4000 });
     await page.context().close();
   }, 60_000);
@@ -751,6 +759,10 @@ describe(`Spaces day and week views in ${browserName}`, () => {
       expect(moved).toMatchObject({ allDay: false });
       await rested(page);
       expect(await page.locator(band("Late01")).getAttribute("data-checkbox")).toBe("true");
+      // The planned task is still open today, so checking off the last deadline does not finish the day.
+      await page.getByRole("checkbox", { name: "Erledigt: Frachtbriefe prüfen" }).click();
+      await eventually(() => writes.find((write) => write.path === "/api/spaces/Space1/items/Fracht/completed"));
+      expect(await page.locator(".k2b-calendar-days__note[data-cheer]").count()).toBe(0);
     } finally {
       await page.context().close();
     }

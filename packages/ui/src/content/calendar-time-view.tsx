@@ -1,5 +1,6 @@
 import { dates as calendar, type DateContext } from "@k2b/stdlib";
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, untrack } from "solid-js";
+import { announce } from "../feedback/announce";
 import type { CalendarController, CalendarEvent, CalendarEventTimeChange, CalendarExternalDrag, CalendarLabels } from "./Calendar";
 import {
   addDayKeys,
@@ -200,11 +201,12 @@ export const createTimeView = (props: TimeViewProps) => {
   let cheerTimer = 0;
   // The server renders the view too, and has no window.
   onCleanup(() => clearTimeout(cheerTimer));
-  /** The entries with a checkbox that are due on a day: its deadlines in the hours and the ones due all day. */
+  /** The entries with a checkbox on a day: its deadlines, the to-dos planned into its hours, and the ones due all day. */
   const dueOn = (key: string) => {
     const model = dayOf(key);
     return [
       ...model.markers.map((marker) => marker.item),
+      ...model.bands.map((band) => band.item),
       ...model.spans.filter((span) => span.marker && span.firstKey === key).map((span) => span.item),
     ].filter((item) => item.checked !== undefined);
   };
@@ -219,11 +221,13 @@ export const createTimeView = (props: TimeViewProps) => {
       const today = nowKey();
       const due = dueOn(today);
       if (due.includes(event) && due.every((item) => checkedOf(item))) {
+        // The heading shows it only for a moment, so a screen reader hears it once instead.
+        announce(messages().calendarAllDone);
         setCheered(today);
         window.clearTimeout(cheerTimer);
         cheerTimer = window.setTimeout(() => setCheered(null), 2200);
       }
-    }
+    } else setCheered(null);
     // A change the host refuses puts the box back as it was.
     void Promise.resolve(props.owner.onEventCheck(event, next)).catch(() => {
       forgetJustChecked(event.id);
