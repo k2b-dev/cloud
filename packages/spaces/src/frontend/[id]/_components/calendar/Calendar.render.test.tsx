@@ -64,11 +64,12 @@ describe("Spaces calendar toolbar", () => {
       }),
     );
 
-    expect(html).toMatch(/class="k2b-calendar-time-grid__slot\s*"/);
-    expect(html).toContain('data-interactive="true"');
+    // The day the reader opened shows its hours even when nothing is planned, with free time to create in.
+    expect(html).toContain('data-calendar-body="2026-08-16"');
+    expect(html).toMatch(/class="k2b-calendar-gap__button"[^>]*aria-label="16 hrs free, 06:00 to 22:00\. Create event 09:00–10:00"/);
   });
 
-  test("passes the bounded description preview to large timed event cards", () => {
+  test("shows a band's title and time in the day view, and leaves the description to the detail", () => {
     const item: CalendarItem = {
       id: "Event1",
       spaceId: "Space1",
@@ -106,7 +107,10 @@ describe("Spaces calendar toolbar", () => {
       }),
     );
 
-    expect(html).toMatch(/<span class="mt-1 line-clamp-2[^"]*">Walk through the new workspace flow\.<\/span>/);
+    // The day view's band shows its title and time; the description waits in the detail.
+    expect(html).toContain("Customer demo");
+    expect(html).toContain("09:00–10:30");
+    expect(html).not.toContain("Walk through the new workspace flow.");
   });
 });
 
@@ -149,8 +153,8 @@ const items: CalendarItem[] = [
     tags: [fair, press],
     assignees: [robin],
   }),
-  base({ id: "Task01", title: "Send the press kit", deadline: "2026-08-12T00:00:00.000Z", priority: "urgent", tags: [press] }),
-  base({ id: "Task02", title: "Count the chairs", deadline: "2026-08-12T00:00:00.000Z", priority: "low", columnId: "Col002" }),
+  base({ id: "Task01", title: "Send the press kit", deadline: "2026-08-12T16:00:00.000Z", priority: "urgent", tags: [press] }),
+  base({ id: "Task02", title: "Count the chairs", deadline: "2026-08-12T17:00:00.000Z", priority: "low", columnId: "Col002" }),
 ];
 const renderView = (view: CalendarView, locale: "en" | "de", colorBy: CalendarColorBy = "tag") =>
   renderToString(() =>
@@ -233,18 +237,22 @@ describe("Spaces calendar colors", () => {
           /data-spaces-calendar-dots[^>]*>(?:<!--[^>]*-->)*<span class="size-1\.5 rounded-full" style="background-color:#ec4899"/,
         );
         expect(event).not.toContain("ti-checkbox");
-        // A task takes its tag's color too, as a checkbox marker instead of a band.
+        // A task takes its tag's color too, as a marker instead of a band: in the month with a checkbox in its content,
+        // in the day and week views as a dashed line whose real checkbox the calendar draws.
         expect(urgent).toContain('data-display="marker"');
         expect(urgent).toContain("--k2b-calendar-accent:#ec4899");
-        expect(urgent).toContain("ti ti-checkbox");
+        if (view === "month") expect(urgent).toContain("ti ti-checkbox");
+        else expect(html).toContain(`aria-label="${locale === "de" ? "Erledigt" : "Done"}: Send the press kit"`);
         expect(urgent).toContain(`title="${locale === "de" ? "Dringend" : "Urgent"}"`);
         // Marker and flag are visual only; the accessible name says what they show.
+        // In the day and week views a deadline is a moment and names its one time.
+        const at = (time: string) => (view === "month" ? "" : `, ${time}`);
         expect(urgent).toContain(
           locale === "de"
-            ? 'aria-label="Send the press kit, Fälligkeitsdatum, Priorität: Dringend"'
-            : 'aria-label="Send the press kit, Deadline, Priority: Urgent"',
+            ? `aria-label="Send the press kit${at("16:00")}, Fälligkeitsdatum, Priorität: Dringend"`
+            : `aria-label="Send the press kit${at("16:00")}, Deadline, Priority: Urgent"`,
         );
-        expect(calm).toContain(`aria-label="Count the chairs, ${locale === "de" ? "Fälligkeitsdatum" : "Deadline"}"`);
+        expect(calm).toContain(`aria-label="Count the chairs${at("17:00")}, ${locale === "de" ? "Fälligkeitsdatum" : "Deadline"}"`);
         expect(event).toContain(
           locale === "de" ? 'aria-label="Stand meeting, 09:00 bis 10:00"' : 'aria-label="Stand meeting, 09:00 to 10:00"',
         );

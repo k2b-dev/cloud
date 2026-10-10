@@ -18,7 +18,7 @@ export function CalendarItemContent(props: {
   flag: { label: string } | null;
   extra: string[];
 }) {
-  // The day and week views size a band's title and time themselves; the item adds its flag.
+  // The day and week views size a band's title and time themselves; the item adds its flag and further colors.
   if (props.context.timeline) return <TimelineContent {...props} />;
   const showTime = () => !props.context.allDay && !props.context.compact && props.context.durationHours >= 0.75;
   const showLocation = () => Boolean(props.event.location && !props.context.compact && props.context.durationHours >= 1.25);
@@ -85,7 +85,12 @@ export function CalendarItemContent(props: {
 }
 
 /** A band, a deadline, or an all-day entry of the day and week views, in the calendar's own parts. */
-function TimelineContent(props: { event: CalendarEvent; context: CalendarEventRenderContext; flag: { label: string } | null }) {
+function TimelineContent(props: {
+  event: CalendarEvent;
+  context: CalendarEventRenderContext;
+  flag: { label: string } | null;
+  extra: string[];
+}) {
   const band = () => props.context.fill && !props.context.allDay;
   return (
     <>
@@ -100,6 +105,13 @@ function TimelineContent(props: { event: CalendarEvent; context: CalendarEventRe
           {props.context.timeLabel}
           <Show when={props.context.remaining}>
             <span class="k2b-calendar-event__remaining"> · {props.context.remaining}</span>
+          </Show>
+          <Show when={props.extra.length > 0}>
+            <span class="ml-1 inline-flex items-center gap-0.5 align-middle" aria-hidden="true" data-spaces-calendar-dots="">
+              <For each={props.extra.slice(0, MAX_EXTRA_DOTS)}>
+                {(color) => <span class="size-1.5 rounded-full" style={{ "background-color": color }} />}
+              </For>
+            </span>
           </Show>
         </span>
       </Show>

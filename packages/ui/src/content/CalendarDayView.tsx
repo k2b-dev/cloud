@@ -1,4 +1,16 @@
-import { createEffect, createMemo, createSignal, createUniqueId, For, on, onCleanup, onMount, Show, untrack } from "solid-js";
+import {
+  createComputed,
+  createEffect,
+  createMemo,
+  createSignal,
+  createUniqueId,
+  For,
+  on,
+  onCleanup,
+  onMount,
+  Show,
+  untrack,
+} from "solid-js";
 import { brakedScroll, GESTURE_GAP_MS, SETTLE_RADIUS, settleTarget, stopCrossing, stopIndexAt, wheelPixels } from "./calendar-day-scroll";
 import {
   addDayKeys,
@@ -67,7 +79,8 @@ export const CalendarDayView = (props: TimeViewProps) => {
     const from = mounted() || anchor < first || anchor > last ? first : anchor;
     return dayKeyRange(from, last);
   });
-  const groups = createMemo(() => dayGroups(keys(), (key) => view.dayOf(key).empty, view.nowKey(), unfolded()));
+  // Today and the day the reader opened never fold, so a day opened from the month shows its hours to create in.
+  const groups = createMemo(() => dayGroups(keys(), (key) => view.dayOf(key).empty, [view.nowKey(), view.anchorKey()], unfolded()));
   const groupIds = createMemo(() => groups().map(groupId));
   const groupsById = createMemo(() => new Map(groups().map((group) => [groupId(group), group])));
 
@@ -279,6 +292,20 @@ export const CalendarDayView = (props: TimeViewProps) => {
       if (frame) cancelAnimationFrame(frame);
     });
   });
+  // Before new days or an unfolded run change the page, note where the reader is from the page as it stands: the
+  // place remembered in the last frame can be a scroll behind on a busy page. A computation runs before any render
+  // effect touches the page.
+  createComputed(
+    on(
+      () => [groupIds(), view.days()] as const,
+      () => {
+        if (!untrack(mounted)) return;
+        measure();
+        rememberAnchor();
+      },
+      { defer: true },
+    ),
+  );
   // New days above or below, a folded night, or an unfolded run: keep what the reader looks at in place.
   createEffect(
     on(
@@ -588,7 +615,6 @@ const DaySection = (props: {
         </div>
       </Show>
       {/* biome-ignore lint/a11y/noStaticElementInteractions: free time is reached through its gap buttons; the pointer adds drawing and slots. */}
-      {/* biome-ignore lint/a11y/useKeyWithClickEvents: the gap buttons are the keyboard way to create. */}
       <div
         ref={(element) => view.registerBody(props.dayKey, element, expanded)}
         class="k2b-calendar-days__body"

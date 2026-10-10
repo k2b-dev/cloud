@@ -799,10 +799,9 @@ const app = new Hono<AuthContext>()
       const { href, from, to, includeTray } = c.req.valid("query");
       const target = parseSpacesWorkspaceHref(href);
       if (!target) return respond(c, fail(err.badInput("Unsupported workspace view route")));
+      // Only the day and week views load a chosen range; other views ignore it, so an old timeline link opens its month.
       const calendarView = new URL(href, "http://spaces.local").searchParams.get("cv");
-      if (from && calendarView !== "day" && calendarView !== "week") {
-        return respond(c, fail(err.badInput("Only the day and week views load a chosen range")));
-      }
+      const scrolling = calendarView === "day" || calendarView === "week";
       const spaceId = await resolvePublicId("spaces", target.spaceId);
       if (!spaceId) return respond(c, fail(err.notFound("Space")));
       const snapshot = await loadSpacesViewSnapshot({
@@ -813,7 +812,7 @@ const app = new Hono<AuthContext>()
         cookieHeader: c.req.header("Cookie"),
         authorizationHeader: c.req.header("Authorization"),
         dateConfig: getDateConfig(c),
-        calendarRange: from && to ? { from, to } : undefined,
+        calendarRange: scrolling && from && to ? { from, to } : undefined,
         includeTray: includeTray === "true",
       });
       if (snapshot.kind === "accessDenied") return respond(c, fail(err.forbidden(snapshot.message)));

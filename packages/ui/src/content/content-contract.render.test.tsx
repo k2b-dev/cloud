@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, setSystemTime, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
@@ -362,6 +362,82 @@ describe("@k2b/ui Cloud content contract", () => {
     );
     expect(detailed).toContain('aria-label="Frühschicht, 09:30 to 13:30, Urgent"');
     expect(detailed).toContain('aria-label="Sommerfest, Deadline, High"');
+  });
+
+  test("renders the day and week views with dayHours on the server, in English and German", () => {
+    // Friday, 9 October 2026, 10:48 in Berlin.
+    setSystemTime(new Date("2026-10-09T08:48:00Z"));
+    try {
+      const events: CalendarEvent[] = [
+        { id: "call", title: "Supplier call", start: "2026-10-09T10:30:00+02:00", end: "2026-10-09T11:15:00+02:00" },
+        { id: "planning", title: "Route planning", start: "2026-10-09T12:30:00+02:00", end: "2026-10-09T14:00:00+02:00" },
+        { id: "invoices", title: "Check invoices", start: "2026-10-09T16:00:00+02:00", display: "marker", checked: false },
+        { id: "shift", title: "Night shift", start: "2026-10-12T23:00:00+02:00", end: "2026-10-13T01:30:00+02:00" },
+        { id: "fair", title: "Trade fair", start: "2026-10-08", end: "2026-10-14", allDay: true },
+      ];
+      const render = (locale: "en" | "de", view: "day" | "week") =>
+        renderToString(() =>
+          createComponent(LocaleProvider, {
+            locale,
+            get children() {
+              return createComponent(Calendar, {
+                date: "2026-10-09",
+                view,
+                events,
+                timeZone: "Europe/Berlin",
+                dayHours: [6, 22],
+                range: { from: "2026-10-05", to: "2026-10-19" },
+                onEventCheck: () => undefined,
+                onSlotActivate: () => undefined,
+                onCommandsChange: () => undefined,
+              });
+            },
+          }),
+        );
+
+      const dayDe = render("de", "day");
+      // The header names the shown day, as the browser does once it measured.
+      expect(dayDe).toContain("Fr 9. Okt 2026");
+      expect(dayDe).toContain("Heute");
+      expect(dayDe).toContain("Freitag, 9. Oktober");
+      // The day starts at six; its night folds.
+      expect(dayDe.indexOf(">06:00<")).toBeLessThan(dayDe.indexOf(">07:00<"));
+      expect(dayDe).toContain("Nacht · 22–06");
+      // The running event says what is left; free time is labelled; the deadline has its box.
+      expect(dayDe).toContain("noch 27 Min");
+      expect(dayDe).toContain("1 Std. 15 frei");
+      expect(dayDe).toContain('aria-label="Erledigt: Check invoices"');
+      expect(dayDe).toContain("3 Termine · 1 To-do");
+      // The weekend holds nothing and folds into one row; Monday's night with the shift opens.
+      expect(dayDe).toContain("Nichts geplant");
+      expect(dayDe).toContain("Nacht · Mo 12. → Di 13.");
+      // The server starts at the shown day, so the page never flashes the days before it.
+      expect(dayDe).not.toContain("Donnerstag, 8. Oktober");
+
+      const dayEn = render("en", "day");
+      expect(dayEn).toContain("Fri, Oct 9, 2026");
+      expect(dayEn).toContain("27 min left");
+      expect(dayEn).toContain("1 hr 15 min free");
+      expect(dayEn).toContain("Nothing planned");
+      expect(dayEn).toContain("Night · 22–06");
+      expect(dayEn).toContain('aria-label="Done: Check invoices"');
+      expect(dayEn).toContain('aria-label="Keyboard shortcuts"');
+
+      const weekDe = render("de", "week");
+      expect(weekDe).toContain("5.–11. Okt 2026");
+      expect(weekDe).toContain("KW 41");
+      expect(weekDe).toContain("ganztägig");
+      // The fair began before the week and goes on after it: one bar with torn ends.
+      expect(weekDe).toContain('data-continues-after="true"');
+      expect(weekDe).toContain('aria-label="Nächte ausklappen, 22–06 Uhr"');
+      expect(weekDe).toContain('aria-label="Tastenkürzel"');
+      const weekEn = render("en", "week");
+      expect(weekEn).toContain("Oct 5 – 11, 2026");
+      expect(weekEn).toContain("W 41");
+      expect(weekEn).toContain("all day");
+    } finally {
+      setSystemTime();
+    }
   });
 
   test("renders default boolean and date cells with the inherited locale", () => {
@@ -733,7 +809,19 @@ describe("@k2b/ui Cloud content contract", () => {
   });
 
   test("styles every class the content group renders", async () => {
-    const owned = ["Calendar.tsx", "Chart.tsx", "DataTable.tsx", "LogEntriesTable.tsx", "Pagination.tsx", "RangePicker.tsx"];
+    const owned = [
+      "Calendar.tsx",
+      "CalendarDayView.tsx",
+      "CalendarWeekView.tsx",
+      "calendar-dialogs.tsx",
+      "calendar-shared.tsx",
+      "calendar-time-view.tsx",
+      "Chart.tsx",
+      "DataTable.tsx",
+      "LogEntriesTable.tsx",
+      "Pagination.tsx",
+      "RangePicker.tsx",
+    ];
     const packageRoot = resolve(import.meta.dir, "../..");
     const css = await Bun.file(resolve(packageRoot, "dist/styles.css")).text();
     const defined = new Set<string>();

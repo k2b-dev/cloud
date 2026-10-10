@@ -218,11 +218,14 @@ export const dayLanes = <T>(bands: readonly DayBand<T>[], minimum: number): DayL
 
 export type DayGroup = { kind: "day"; key: string } | { kind: "empty"; keys: string[] };
 
-/** The days of the stream: each day with something in it alone, runs of empty days as one. Today never folds. */
+/**
+ * The days of the stream: each day with something in it alone, runs of empty days as one. The days in `keep`, such
+ * as today and the day the reader opened, never fold.
+ */
 export const dayGroups = (
   keys: readonly string[],
   empty: (key: string) => boolean,
-  today: string,
+  keep: readonly string[],
   unfolded: ReadonlySet<string>,
 ): DayGroup[] => {
   const groups: DayGroup[] = [];
@@ -234,7 +237,7 @@ export const dayGroups = (
     run = [];
   };
   for (const key of keys) {
-    if (empty(key) && key !== today) run.push(key);
+    if (empty(key) && !keep.includes(key)) run.push(key);
     else {
       flush();
       groups.push({ kind: "day", key });

@@ -17,15 +17,19 @@ calendar is a primary application surface.
 import {
   Calendar,
   type CalendarAttendee,
+  type CalendarCommand,
+  type CalendarController,
   type CalendarCustomView,
   type CalendarDayBadge,
   type CalendarEvent,
   type CalendarEventColor,
   type CalendarEventRenderContext,
   type CalendarEventTimeChange,
+  type CalendarExternalDrag,
   type CalendarLabels,
   type CalendarProps,
   type CalendarQuickCreateControls,
+  type CalendarRange,
   type CalendarRecurrence,
   type CalendarResource,
   type CalendarSelectionControls,
@@ -57,7 +61,13 @@ should pass a short plain-text preview instead of the source markup.
 
 `renderEvent(event, context)` receives the event and normalized `CalendarEventRenderContext`, including
 the effective start, end, duration, time label, compact or fill state, and in
-the month view the `leadingTime` to show before a one-day entry's title.
+the month view the `leadingTime` to show before a one-day entry's title. In
+the day and week views with `dayHours`, `context.timeline` is set; render the
+title in `k2b-calendar-event__title` and the time in `k2b-calendar-event__meta`
+there, so the views size them, and show `context.remaining` after the time of
+the running event. `context.checkbox` says the calendar draws the event's
+checkbox, so the content leaves its own out. A small icon such as a priority
+flag takes `k2b-calendar-event__flag` and sits at the top right of a band.
 Custom output must retain useful visible event text. Entries of the month
 view and its day list are always `compact` and one line high, the height of
 a lane: render a single line there, title first, or the lane cuts the rest
@@ -195,6 +205,95 @@ No drag in the calendar selects page text.
 `mobile-month` keeps its compact picker: its days link to their agenda
 through `getDateHref`, and colored dots stand for the day's events.
 
+### Day and week views with `dayHours`
+
+`dayHours={[6, 22]}` gives the day and week views waking hours. A day then
+runs from 06:00 to 06:00 of the next day: the night after 22:00 belongs to
+the day before, so an event from 23:00 to 01:30 stays one band of its
+evening, and a deadline at 00:30 belongs to the evening too. Without
+`dayHours` the views keep their midnight grid with `startHour`, `endHour`,
+and the visible hours.
+
+- **Nights** fold into one slim row unless an entry lies in them. A night
+  with an entry opens at half the height of a waking hour below a bar that
+  names it, such as "Night · Fri 9 → Sat 10", and folds again with that bar
+  or, in the week view, with the moon in the hour column. A folded night
+  lists its entries as chips with their time.
+- **The day view** is one scroll through the loaded days with each day's
+  heading on top while the day is in view. Runs of empty days merge into one
+  row, "Nothing planned", that opens them; today never folds. The wheel slows
+  down within 72 px of a day start, and a scroll that rests within 40 px (88 px
+  after a finger) glides onto it; a line at the top of the heading fills while
+  the start passes. The previous and next buttons glide to the day before or
+  after, Today to now in the upper third of the view.
+- **The week view** is a strip of the loaded days, seven to a screen or three
+  on a phone, with the hours in a column that stays on the left. A trackpad,
+  Shift with the wheel, or a finger scroll it sideways; each gesture keeps the
+  axis it started on, and the strip settles on a day start once it rests. The
+  previous and next buttons move to the start of the week before or after,
+  and Today returns to this week, on a phone to today within it. Nights open
+  for the whole strip when an entry of the shown week lies in one.
+- **Entries.** Timed events are bands as long as they last, side by side when
+  they overlap, with their time; the running one fills up with the time that
+  passed and says what is left, such as "27 min left". `display: "marker"`
+  draws a deadline with a time as a dashed line with a pill. An all-day
+  event, a timed event over several days, and a date-only marker sit in the
+  all-day row; in the week view a long event is one bar per week with a torn
+  edge and, where it has room, "from 20" and "until 27".
+- **Checkboxes.** An event with `checked` shows a checkbox before its title,
+  drawn by the calendar; `onEventCheck(event, checked)` makes it a control.
+  The check draws itself and the title strikes through until the host's
+  events agree.
+- **Free time** between the timed entries of the waking hours is labelled
+  from an hour on, such as "1 hr 15 min free", and stands out from three
+  hours on. Activating it opens `renderQuickCreate` with that time, or calls
+  `onSlotActivate` without it: a gap up to two hours whole, a longer one for
+  an hour from its start, and a free morning from 09:00. In the week view
+  free time shows in the column under the pointer or the focus, or after a
+  tap on a touch screen. A click on empty time selects an hour, a
+  double-click or a drag creates; a second tap on a touch screen proposes an
+  hour with handles for its start and end. Drawing shows the live length,
+  such as "14:00–15:30 · 1 hr 30 min", on 15 minutes, with Shift on 5.
+- **Dragging in.** `controller.dragIn(event, item, onDrop)` follows a pointer
+  that pressed an entry outside the calendar, such as a task in a list below
+  the day view: the entry follows the pointer, the free time under it says
+  "fits" or how much is missing, and `onDrop` receives the time where it is
+  released. A mouse drags at once, a finger after a long press.
+- **Now** is a line across the day with the time beside it; the header of the
+  day says what starts within the hour, such as "Planning in 12 min".
+
+`range` names the days of `events`, from `from` up to `to`, which is
+exclusive: the start of the day after the last one. Without it the views
+cover the day or the week of `date`. Near the first or the last loaded day,
+scrolling toward it calls `onLoadEarlier` or `onLoadLater` once for each
+range; extend `range` and `events` there. Days that arrive above the view do
+not move what the reader sees. `onVisibleDateChange(date)` reports the first
+day on screen after scrolling, for example to keep it in the URL; the header
+title, the view switcher, and the previous and next links follow it too.
+`onSelectionChange` reports a selected hour or day of these views as it does
+the month's days.
+
+The server renders the shown day or week; the views take their first
+position once they mount.
+
+### Shortcuts and the Today button
+
+The Today button shows an arrow toward today, left or right, and up or down
+in the day view, or a calm dot while today is on screen. Its icon always
+keeps its place.
+
+`onCommandsChange(commands)` receives the calendar's commands for the host's
+shortcut dispatcher, command palette, and help: Today (H), Next (J),
+Previous (K), the views (1 to 4), and Go to (G), which reads a date such as
+"3/15", "15.3.", or "2027-03-15", or a week number such as "W 12". Pass the
+application's own in `commands`, such as New event (N); the calendar includes
+them. With `onCommandsChange` the header shows a keyboard button where a
+pointer can hover, which opens a dialog with the same list. `controller`
+receives `quickCreate(create)`, which opens the quick create where a new
+entry fits (the selection, today at the next full hour while today shows, or
+09:00 of the first shown day), and `createTarget()`, which returns that
+time.
+
 On a device with a coarse pointer, the previous and next buttons accept taps
 in the same invisible 44 px area as other buttons, following the
 [touch target contract](/en/ui/actions/buttons#touch-targets); their visible
@@ -248,6 +347,8 @@ is no separate row below the toolbar, and the content fills the space up to
 Today, so a status such as a count can sit at its end. The title reserves the
 width of the widest title of its view (all months of the year, the weeks of
 the month, or the longest day names), so paging never moves what follows it.
+On a phone the title keeps only its own width: Today and the actions sit at
+the end of its row, so a shorter title moves nothing either.
 The toolbar draws no line toward the body. It adapts to its own width, not
 the window's:
 
@@ -283,7 +384,7 @@ type CalendarEvent = {
   id: string; title: string; start: Date | string; end?: Date | string; allDay?: boolean;
   color?: CalendarEventColor; colorHex?: string; href?: string; dataSpaceItemId?: string; meta?: string;
   description?: string; display?: "event" | "background" | "marker"; accessibleDetail?: string;
-  location?: string; calendarName?: string;
+  checked?: boolean; location?: string; calendarName?: string;
   attendees?: CalendarAttendee[]; resources?: CalendarResource[]; recurrence?: CalendarRecurrence;
 };
 
@@ -307,7 +408,23 @@ type CalendarCustomView<V extends string = string> = {
 ```ts
 type CalendarEventRenderContext = {
   compact: boolean; fill: boolean; start: Date; end: Date; allDay: boolean; durationHours: number;
-  timeLabel: string; leadingTime?: string;
+  timeLabel: string; leadingTime?: string; remaining?: string; checkbox?: boolean; timeline?: boolean;
+};
+
+type CalendarRange = { from: Date | string; to: Date | string };
+
+type CalendarCommand = {
+  id: string; label: string; shortcut?: string; description?: string; icon?: string; run: () => void;
+};
+
+type CalendarExternalDrag = {
+  title: string; color?: CalendarEventColor; colorHex?: string; minutes: number;
+};
+
+type CalendarController = {
+  quickCreate: (create?: string) => void;
+  createTarget: () => CalendarEventTimeChange;
+  dragIn: (event: PointerEvent, item: CalendarExternalDrag, onDrop: (slot: CalendarEventTimeChange) => void) => void;
 };
 
 type CalendarSelectionControls = {
@@ -330,7 +447,10 @@ type CalendarEventTimeChange = {
 type CalendarProps<V extends string = never> = {
   date: Date | string; events: CalendarEvent[]; view?: CalendarView | V; views?: CalendarView[];
   customViews?: CalendarCustomView<V>[]; children?: JSX.Element; labels?: CalendarLabels; dateConfig?: DateContext; timeZone?: string; firstDayOfWeek?: 0 | 1;
-  withWeekNumbers?: boolean; startHour?: number; endHour?: number; visibleStartHour?: number;
+  withWeekNumbers?: boolean; startHour?: number; endHour?: number;
+  dayHours?: readonly [start: number, end: number]; range?: CalendarRange;
+  onLoadEarlier?: () => unknown; onLoadLater?: () => unknown; onVisibleDateChange?: (date: Date) => void;
+  visibleStartHour?: number;
   visibleEndHour?: number; allDayMaxHeightRem?: number; hideAllDay?: boolean; selectedDate?: Date | string;
   selectedEventId?: string; dayBadges?: Record<string, CalendarDayBadge>;
   getViewHref?(view: CalendarView | V): string; getDateHref?(date: Date, view: CalendarView | V): string;
@@ -343,10 +463,13 @@ type CalendarProps<V extends string = never> = {
   onEventDrop?: (event: CalendarEvent, next: CalendarEventTimeChange) => void;
   onEventResize?: (event: CalendarEvent, next: CalendarEventTimeChange) => void;
   onSlotActivate?: (slot: CalendarEventTimeChange) => void; slotActivation?: "single" | "double";
+  onEventCheck?: (event: CalendarEvent, checked: boolean) => void;
   onSelectionChange?: (range: CalendarEventTimeChange | null) => void;
   selectionMenu?: (range: CalendarEventTimeChange, controls: CalendarSelectionControls) => readonly DropdownItem[];
   renderQuickCreate?: (range: CalendarEventTimeChange, controls: CalendarQuickCreateControls) => JSX.Element;
-  toolbarActions?: JSX.Element; toolbarContent?: JSX.Element; class?: string;
+  toolbarActions?: JSX.Element; toolbarContent?: JSX.Element;
+  commands?: readonly CalendarCommand[]; onCommandsChange?: (commands: readonly CalendarCommand[]) => void;
+  controller?: (controller: CalendarController) => void; class?: string;
 };
 ```
 
@@ -368,13 +491,26 @@ replaces the event's visible content for screen readers, so custom
 state here.
 
 The day and week views scroll to `startHour` once they mount: smoothly by
-default, and at once when the person prefers reduced motion.
+default, and at once when the person prefers reduced motion. With `dayHours`
+they open at now in the upper third today, else an hour before the first
+entry of the day; gliding and settling are instant under reduced motion, and
+the checkbox and fill animations stop.
+
+In the week view with `dayHours` the grid is one tab stop: the arrow keys move
+between the day headings, entries, and free time of a column and to the
+nearest stop of the next column, Home and End go to the first and last stop
+of the column, Enter opens or creates, and Space checks off. The day view
+keeps every entry and every gap of an hour or more in the tab order, in time
+order; Tab into it starts at the first stop on screen.
 
 ## Runtime
 
 All views, labels, dates, and links render on the server. Drag, resize,
 pointer-slot selection, day selection, the month menu and popovers, measured
-month lanes, prefetch, and callback navigation require hydration.
+month lanes, prefetch, and callback navigation require hydration. With
+`dayHours` the server renders the shown day or week; the earlier loaded days,
+the first scroll position, the stops, the sideways strip, free-time actions,
+and dragging in require hydration.
 
 ## Example
 

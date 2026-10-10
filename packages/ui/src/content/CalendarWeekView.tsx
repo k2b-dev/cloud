@@ -1,5 +1,17 @@
 import { dates as calendar } from "@k2b/stdlib";
-import { createEffect, createMemo, createSignal, createUniqueId, For, on, onCleanup, onMount, Show, untrack } from "solid-js";
+import {
+  createComputed,
+  createEffect,
+  createMemo,
+  createSignal,
+  createUniqueId,
+  For,
+  on,
+  onCleanup,
+  onMount,
+  Show,
+  untrack,
+} from "solid-js";
 import type { CalendarEvent } from "./Calendar";
 import { GESTURE_GAP_MS, snapToColumn, type WheelAxis, wheelAxis, wheelDelta, wheelPixels } from "./calendar-day-scroll";
 import {
@@ -235,14 +247,26 @@ export const CalendarWeekView = (props: TimeViewProps) => {
 
   // Days loaded before the strip's first day shift it; the view keeps its days in place.
   let anchor: { key: string; offset: number } | null = null;
-  const rememberAnchor = () => {
+  /** Notes the day at the start of the strip, read against the days the strip draws, which may still be the old ones. */
+  const rememberAnchor = (drawn = untrack(keys)) => {
     if (!scroller) return;
     const width = columnWidth();
     if (width <= 0) return;
     const index = Math.floor(scroller.scrollLeft / width);
-    const key = keys()[index];
+    const key = drawn[index];
     if (key) anchor = { key, offset: scroller.scrollLeft - index * width };
   };
+  // Before the days change the strip, note its place from the page as it stands. A computation runs before any render
+  // effect touches the page, so no row has shrunk the strip yet.
+  createComputed(
+    on(
+      keys,
+      (_next, drawn) => {
+        if (untrack(mounted) && drawn) rememberAnchor(drawn);
+      },
+      { defer: true },
+    ),
+  );
   createEffect(
     on(
       keys,
@@ -886,7 +910,6 @@ const WeekColumn = (props: {
     ].sort((left, right) => left.at - right.at),
   );
   return (
-    // biome-ignore lint/a11y/useKeyWithClickEvents: free time is reached through its gap buttons; the pointer adds drawing and slots.
     <div
       ref={(element) => view.registerBody(props.dayKey, element, () => props.expanded)}
       class="k2b-calendar-week__column"

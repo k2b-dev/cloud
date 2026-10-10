@@ -123,11 +123,14 @@ export const EventChip = (props: {
       ? props.label
       : props.event.allDay
         ? props.event.title
-        : messages().calendarEventTime({
-            title: props.event.title,
-            start: formatTime(props.event.startDate, dateConfig()),
-            end: formatTime(props.event.endDate, dateConfig()),
-          });
+        : props.event.endDate.getTime() <= props.event.startDate.getTime()
+          ? // A deadline is a moment, not a span: it names one time.
+            `${props.event.title}, ${formatTime(props.event.startDate, dateConfig())}`
+          : messages().calendarEventTime({
+              title: props.event.title,
+              start: formatTime(props.event.startDate, dateConfig()),
+              end: formatTime(props.event.endDate, dateConfig()),
+            });
     return [label, props.remaining, props.event.accessibleDetail].filter(Boolean).join(", ");
   };
   const renderedEvent = () =>

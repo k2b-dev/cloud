@@ -125,17 +125,22 @@ describe("days", () => {
     expect([...days.values()].map((day) => day.spans.length)).toEqual([1, 1, 0]);
   });
 
-  test("runs of empty days merge, today never folds, and an unfolded run shows its days", () => {
+  test("runs of empty days merge, today and the opened day never fold, and an unfolded run shows its days", () => {
     const empty = new Set(["2026-10-10", "2026-10-11", "2026-10-13", "2026-10-14"]);
     const keys = ["2026-10-09", "2026-10-10", "2026-10-11", "2026-10-12", "2026-10-13", "2026-10-14"];
-    expect(dayGroups(keys, (key) => empty.has(key), "2026-10-13", new Set())).toEqual([
+    expect(dayGroups(keys, (key) => empty.has(key), ["2026-10-13"], new Set())).toEqual([
       { kind: "day", key: "2026-10-09" },
       { kind: "empty", keys: ["2026-10-10", "2026-10-11"] },
       { kind: "day", key: "2026-10-12" },
       { kind: "day", key: "2026-10-13" },
       { kind: "empty", keys: ["2026-10-14"] },
     ]);
-    expect(dayGroups(keys, (key) => empty.has(key), "2026-10-01", new Set(["2026-10-10"])).slice(1, 3)).toEqual([
+    // The day the reader opened stays a day of its own.
+    expect(dayGroups(keys, (key) => empty.has(key), ["2026-10-01", "2026-10-11"], new Set()).slice(1, 3)).toEqual([
+      { kind: "empty", keys: ["2026-10-10"] },
+      { kind: "day", key: "2026-10-11" },
+    ]);
+    expect(dayGroups(keys, (key) => empty.has(key), ["2026-10-01"], new Set(["2026-10-10"])).slice(1, 3)).toEqual([
       { kind: "day", key: "2026-10-10" },
       { kind: "day", key: "2026-10-11" },
     ]);
