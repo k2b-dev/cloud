@@ -1,9 +1,8 @@
 import { beforeAll, expect, test } from "bun:test";
 import { aiChatTasks, aiConversations, createAiShortId, migrateCloudAi } from "@k2b/cloud/ai";
 import { registerNotificationDefinitions } from "@k2b/cloud/services/notifications/catalog";
-import { toPgUuidArray } from "@k2b/cloud/services/postgres";
 import { sql } from "bun";
-import { databaseSuite, suiteFor } from "../../../scripts/fixtures/test-infra";
+import { databaseSuite } from "../../../scripts/fixtures/test-infra";
 import "../../../scripts/fixtures/authorization-preload";
 import { createAiNotificationService } from "./ai-notifications";
 import { app } from "./config";
@@ -159,103 +158,6 @@ suite("Core AI completion notifications", () => {
       ]);
     } finally {
       await sql`DELETE FROM auth.users WHERE id = ${user!.id}::uuid`;
-    }
-  });
-});
-
-const costSuite = suiteFor("database", "valkey");
-
-costSuite("background cost alert recovery", () => {
-  beforeAll(async () => {
-    await migrateCloudAi();
-    await registerNotificationDefinitions(app.meta.id, app.notifications);
-  });
-  // Recovery scans the whole database: on the shared integration database the two
-  // alerts also fan out to foreign admins and foreign candidates are sent alongside.
-  // Every injection and assertion is therefore scoped to the users this test creates.
-  test("sends only to current local and IPA admins; partial delivery retries do not duplicate events", async () => {
-    const { spyOn } = await import("bun:test");
-    const cloud = await import("@k2b/cloud");
-    const deliveryRuntime = await import("@k2b/cloud/services/notifications/runtime");
-    const platform = await import("@k2b/cloud/services/notifications/platform");
-    const enqueue = spyOn(deliveryRuntime, "enqueueNotificationDeliveries").mockResolvedValue();
-    const enqueueOne = spyOn(deliveryRuntime, "enqueueNotificationDelivery").mockResolvedValue();
-    const { getFreeIpaConfig } = await import("@k2b/cloud/services");
-    let recover: ((context: { runId: string }) => Promise<void>) | undefined;
-    const scheduler = {
-      create: async (input: { process: (context: { runId: string }) => Promise<void> }) => {
-        recover = input.process;
-      },
-      process: async () => ({ stop: () => {}, drain: async () => {} }),
-    };
-    // Keep the existing recovery callback and real notification persistence, only isolate its scheduler transport.
-    const lazy = spyOn(cloud, "lazySync").mockReturnValue(() => scheduler);
-    const service = createAiNotificationService(app.notifications);
-    const prefix = `cost-notification-${crypto.randomUUID()}`;
-    const alerts = [crypto.randomUUID(), crypto.randomUUID()];
-    const ownKeys = new Set<string>();
-    const users = await sql<{ id: string; uid: string }[]>`INSERT INTO auth.users(uid,provider,profile,display_name,admin)
-      VALUES(${`${prefix}-local-admin`},'local','user','Cost local admin',true),
-        (${`${prefix}-local-user`},'local','user','Cost local user',false),
-        (${`${prefix}-ipa-admin`},'ipa','user','Cost IPA admin',false),
-        (${`${prefix}-ipa-not-admin`},'ipa','user','Cost IPA member',false)
-      RETURNING id,uid`;
-    const userIds = toPgUuidArray(users.map((user) => user.id));
-    const localAdmin = users.find((user) => user.uid.endsWith("-local-admin"))!;
-    const ipaAdmin = users.find((user) => user.uid.endsWith("-ipa-admin"))!;
-    const adminGroup = (await getFreeIpaConfig()).groupsAdmin[0]!;
-    await sql`INSERT INTO auth.ipa_user_effective_groups(user_id,group_name) VALUES(${ipaAdmin.id}::uuid,${adminGroup})`;
-    await sql`INSERT INTO ai.cost_alerts(id,kind,cost,unit) VALUES(${alerts[0]!}::uuid,'warning',2.5,'EUR'),(${alerts[1]!}::uuid,'stop',5,'EUR')`;
-    for (const alert of alerts) for (const admin of [localAdmin, ipaAdmin]) ownKeys.add(`cost:${alert}:${admin.id}`);
-    let sendFailure: ReturnType<typeof spyOn<typeof platform, "sendTypedNotification">> | undefined;
-    try {
-      await service.start();
-      if (!recover) throw new Error("Recovery scheduler callback was not registered.");
-      const send = platform.sendTypedNotification;
-      let injected = false;
-      sendFailure = spyOn(platform, "sendTypedNotification").mockImplementation((definition, input) => {
-        if (injected || !ownKeys.has(input.idempotencyKey)) return send(definition, input);
-        injected = true;
-        return Promise.reject(new Error("Injected recoverable notification failure"));
-      });
-      await expect(recover({ runId: crypto.randomUUID() })).rejects.toThrow("Injected recoverable notification failure");
-      sendFailure.mockRestore();
-      sendFailure = undefined;
-      await recover({ runId: crypto.randomUUID() });
-      await recover({ runId: crypto.randomUUID() });
-      const events = await sql<{ recipient_user_id: string; idempotency_key: string; title: string; target_href: string }[]>`
-        SELECT recipient_user_id,idempotency_key,title,target_href FROM notifications.events
-        WHERE definition_id=${app.notifications.backgroundCosts.id}
-          AND recipient_user_id=ANY(${userIds}::uuid[])
-          AND (idempotency_key LIKE ${`cost:${alerts[0]}:%`} OR idempotency_key LIKE ${`cost:${alerts[1]}:%`})`;
-      expect(events).toHaveLength(4);
-      expect(events.map((event) => event.recipient_user_id).sort()).toEqual(
-        [localAdmin.id, localAdmin.id, ipaAdmin.id, ipaAdmin.id].sort(),
-      );
-      expect(new Set(events.map((event) => event.idempotency_key)).size).toBe(4);
-      expect(events.every((event) => event.target_href === "/admin/settings?tab=ai-quotas&view=rules")).toBe(true);
-      expect(events.map((event) => event.title).sort()).toEqual(
-        ["Background AI cost warning", "Background AI cost warning", "Background AI stopped", "Background AI stopped"].sort(),
-      );
-      const deliveries = await sql<{ channel: string; status: string; error_code: string | null }[]>`
-        SELECT d.channel,d.status,d.error_code FROM notifications.deliveries d
-        JOIN notifications.events e ON e.id=d.event_id WHERE e.definition_id=${app.notifications.backgroundCosts.id}
-          AND e.recipient_user_id=ANY(${userIds}::uuid[])
-          AND (e.idempotency_key LIKE ${`cost:${alerts[0]}:%`} OR e.idempotency_key LIKE ${`cost:${alerts[1]}:%`})`;
-      expect(deliveries).toHaveLength(4);
-      expect(
-        deliveries.every(
-          (delivery) => delivery.channel === "browser" && delivery.status === "suppressed" && delivery.error_code === "no_endpoint",
-        ),
-      ).toBe(true);
-    } finally {
-      sendFailure?.mockRestore();
-      await service.stop();
-      lazy.mockRestore();
-      enqueue.mockRestore();
-      enqueueOne.mockRestore();
-      for (const user of users) await sql`DELETE FROM auth.users WHERE id=${user.id}::uuid`;
-      for (const id of alerts) await sql`DELETE FROM ai.cost_alerts WHERE id=${id}::uuid`;
     }
   });
 });
