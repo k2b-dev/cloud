@@ -400,9 +400,9 @@ suite("mail conversation view counts in a large mailbox", () => {
       }
     }
 
-    // The plan must not depend on whether autovacuum has seen this mailbox yet. With statistics it
-    // took while earlier tests had emptied mail.conversation_assignees, PostgreSQL took the 6,700
-    // assignments for one row and checked each conversation's assignees by reading all of
+    // The plan must not depend on whether autovacuum has seen the tables filled in bulk above yet. With
+    // statistics it took while earlier tests had emptied mail.conversation_assignees, PostgreSQL took
+    // the 6,700 assignments for one row and checked each conversation's assignees by reading all of
     // (user_id, conversation_id): about 1 s instead of 100 ms.
     for (const table of [
       "message_contents",

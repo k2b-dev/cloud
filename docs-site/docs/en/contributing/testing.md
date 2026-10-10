@@ -609,11 +609,29 @@ the time of that step.
 - PostgreSQL logs checkpoints by default. A long checkpoint in the same window
   can point to slow disk writes on the runner.
 
-Estimated row counts far below the rows a test inserted mean the plan came
-from statistics that autovacuum took before the test filled the table. Such a
-plan changes with whether autovacuum ran in between. A test that measures a
-query runs `ANALYZE` on every table it filled that the query reads before it
-measures, as `packages/mail/src/service/view-counts.integration.test.ts` does.
+A plan can also come from statistics that no longer describe a table. When
+autovacuum analyzes a table while earlier tests have left it empty, and a test
+then fills it faster than autovacuum analyzes it again, PostgreSQL plans as if
+the table were still empty. Such a plan changes with whether autovacuum ran in
+between. Skewed data or a condition whose selectivity PostgreSQL misjudges can
+look similar. Two signs in the plan point to stale statistics:
+
+- A scan that runs once over the whole table, such as most `Seq Scan` nodes,
+  estimates far fewer rows than the test inserted. On the inner side of a
+  nested loop and in a subplan, an estimate counts the rows of one loop, so
+  `rows=1` for a lookup by key is normal there.
+- An index is used without a condition on its first column, such as an
+  `Index Cond` on only the second column of a two-column index. Each loop then
+  reads the whole index.
+
+To check a table locally, compare `reltuples` and `relpages` in `pg_class` and
+`last_analyze` and `last_autoanalyze` in `pg_stat_user_tables` with what the
+test inserted. A table with `reltuples` 0 and `relpages` above 0 is planned as
+empty however many rows it holds. If `EXPLAIN (ANALYZE, BUFFERS)` shows a
+different plan after an `ANALYZE` of the table, the statistics were the cause.
+A test that measures a query runs `ANALYZE` on every table it bulk-loads that
+the query reads before it measures, as
+`packages/mail/src/service/view-counts.integration.test.ts` does.
 
 The log is bounded: Docker keeps two log files of 4 MB for each PostgreSQL
 container and drops the oldest entries when both are full. A full local
