@@ -6311,6 +6311,31 @@
   background: var(--k2b-info-surface);
 }
 
+/* Today: the number in the accent color with a dot below it. The dot is drawn
+   inside the cell, so marking a day never changes the grid's size. */
+.k2b-ui .k2b-date-grid button[data-today="true"] {
+  position: relative;
+  color: var(--k2b-action);
+  font-weight: 650;
+}
+
+.k2b-ui .k2b-date-grid button[data-today="true"]::after {
+  position: absolute;
+  bottom: 0.1875rem;
+  left: 50%;
+  width: 0.25rem;
+  height: 0.25rem;
+  border-radius: 999px;
+  background: currentColor;
+  content: "";
+  transform: translateX(-50%);
+}
+
+.k2b-ui .k2b-date-grid button[data-today="true"][data-outside="true"]:not([aria-selected="true"]) {
+  color: color-mix(in srgb, var(--k2b-action) 60%, transparent);
+}
+
+/* A selected day is filled; on a selected today the number and the dot take the fill's contrasting color. */
 .k2b-ui .k2b-date-grid button[aria-selected="true"],
 .k2b-ui .k2b-date-months button[data-selected="true"] {
   color: white;
@@ -10024,6 +10049,12 @@
 
   .k2b-ui .k2b-data-table__scrollbar {
     display: none !important;
+  }
+
+  /* System colors replace the accent, so the dot alone marks today. */
+  .k2b-ui .k2b-date-grid button[data-today="true"]::after {
+    forced-color-adjust: none;
+    background: CanvasText;
   }
 
   .k2b-ui .k2b-button[data-variant="input"]:focus-visible,

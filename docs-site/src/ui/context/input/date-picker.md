@@ -78,6 +78,20 @@ Use `dateConfig` to define the application time zone and first day of the week. 
 
 An explicit `dateConfig.locale` wins; without one the pickers inherit the render locale from `LocaleProvider` or the browser's `<html lang>` (see the Locale and formatting page). The timezone never comes from the locale context.
 
+## Today
+
+Every calendar marks today: the day number in the accent color with a small
+dot below it. A selected today keeps the filled selection, and its number and
+dot take the fill's contrasting color. Today on a day outside the visible
+month keeps a lighter mark. The mark is drawn inside the day cell, so it never
+changes the grid's size.
+
+Today is the current date in `dateConfig.timeZone`, the zone the values use,
+not in the server's or the device's zone. Without a time zone it is the runtime's
+local date. An open page moves the mark at the next midnight in that zone and
+when a hidden tab becomes visible again. The pickers have no built-in **Today**
+preset; add one through `presets` when a form needs it.
+
 ## API reference
 
 See [shared field props](/en/ui/getting-started#shared-field-props) for `FieldProps`, `ValueFieldProps<T>` and `MaybeAccessor<T>`.
@@ -127,6 +141,10 @@ value, or the placeholder, as its description: a plain picker with
 `aria-label="Due"` reads as **Due** followed by the date.
 
 Calendar navigation has named previous and next controls. Selected days and active duration presets expose pressed state. Time fields receive start and end labels in a range.
+
+Today's day carries `aria-current="date"`, and its name starts with **Today**
+(**Heute** in German) in the date's locale, for example "Today, Friday,
+October 9, 2026". Without a value the calendar's tab stop starts on today.
 
 ## Runtime
 

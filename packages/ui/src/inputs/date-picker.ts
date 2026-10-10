@@ -46,6 +46,15 @@ export const monthDate = (year: number, month: number, context?: DateContext): D
   return new Date(year, month, 1, 12);
 };
 
+/**
+ * Milliseconds from `now` until the next calendar day starts in the picker's
+ * time zone, so a panel left open past midnight moves its today mark on time.
+ */
+export const msUntilNextDay = (now: Date, context?: DateContext): number => {
+  const merged = pickerContext(context);
+  return dates.startOfDay(dates.addDays(now, 1, merged), merged).getTime() - now.getTime();
+};
+
 export const parseDateValue = (value: string | null | undefined, context?: DateContext): Date => {
   if (!value) return dates.today(pickerContext(context));
   return dates.parseCalendarDate(value.slice(0, 10), pickerContext(context));

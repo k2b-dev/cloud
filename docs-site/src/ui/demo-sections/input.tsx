@@ -466,6 +466,7 @@ const NumberDemo = () => {
 
 const DateDemo = () => {
   const [date, setDate] = createSignal<string | null>("2026-07-28");
+  const [due, setDue] = createSignal<string | null>(null);
   const [dateTime, setDateTime] = createSignal<string | null>("2026-07-28T09:30");
   const [range, setRange] = createSignal<DateRangeValue>({
     start: "2026-07-28",
@@ -483,8 +484,9 @@ const DateDemo = () => {
         { kind: "component", name: "DateTimePicker", from: "@k2b/ui" },
         { kind: "component", name: "DateRangePicker", from: "@k2b/ui" },
       ]}
-      description="Date, date-time, and range pickers share one controlled, timezone-aware calendar interaction with clear and preset support."
+      description="Date, date-time, and range pickers share one controlled, timezone-aware calendar interaction with clear and preset support. Every calendar marks today in its time zone; the empty Due picker opens on it."
       code={`<DatePicker label="Release date" value={date()} onValueChange={setDate} clearable />
+<DatePicker label="Due" placeholder="Pick a due date" value={due()} onValueChange={setDue} dateConfig={dateConfig} clearable />
 <DateTimePicker label="Starts at" value={dateTime()} onValueChange={setDateTime} dateConfig={dateConfig} />
 <DateRangePicker label="Window" value={range()} onValueChange={setRange} presets={datePresets} />
 <DateRangePicker
@@ -499,6 +501,14 @@ const DateDemo = () => {
     >
       <div class="ui-demo-form-grid">
         <DatePicker label="Release date" value={date()} onValueChange={setDate} clearable />
+        <DatePicker
+          label="Due"
+          placeholder="Pick a due date"
+          value={due()}
+          onValueChange={setDue}
+          dateConfig={{ timeZone: "Europe/Berlin", weekStartsOn: 1 }}
+          clearable
+        />
         <DateTimePicker
           label="Starts at"
           value={dateTime()}
