@@ -25,21 +25,20 @@ test("the page renders every reserved widget as loading, in its own space, befor
           overviewRows: [[tile("venue/today", "Venue"), tile("quotes/quote", "Quotes")]],
           context: [tile("weather/current", "Weather")],
           requestKeys: ["spaces/today", "venue/today", "quotes/quote", "weather/current", "accounts/admin-queue"],
-          registeredKeys: ["spaces/today", "venue/today", "quotes/quote", "weather/current", "accounts/admin-queue"],
-          hint: { forbidden: ["accounts/admin-queue"], empty: [] },
+          hint: { owner: "account", forbidden: ["accounts/admin-queue"], empty: [] },
         });
       },
     }),
   );
-  const slots = [...html.matchAll(/class="dashboard-widget-slot" data-widget="([^"]+)" data-state="([^"]+)"/g)].map((match) => [
-    match[1],
-    match[2],
-  ]);
+  const slots = [
+    ...html.matchAll(/class="dashboard-widget-slot" data-widget="([^"]+)" data-state="([^"]+)"><div [^>]*data-size="([^"]+)"/g),
+  ].map((match) => [match[1], match[2], match[3]]);
+  // Each space has the fixed @k2b/ui frame its widget keeps once it answers: standard in the main columns, compact beside.
   expect(slots).toEqual([
-    ["spaces/today", "loading"],
-    ["venue/today", "loading"],
-    ["quotes/quote", "loading"],
-    ["weather/current", "loading"],
+    ["spaces/today", "loading", "standard"],
+    ["venue/today", "loading", "standard"],
+    ["quotes/quote", "loading", "standard"],
+    ["weather/current", "loading", "compact"],
   ]);
   expect(html).toContain("Wird geladen …");
   expect(html).toContain('aria-busy="true"');
@@ -53,8 +52,7 @@ test("an empty board still asks the hidden-by-hint widgets but shows the empty s
       overviewRows: [],
       context: [],
       requestKeys: ["accounts/admin-queue"],
-      registeredKeys: ["accounts/admin-queue"],
-      hint: { forbidden: ["accounts/admin-queue"], empty: [] },
+      hint: { owner: "account", forbidden: ["accounts/admin-queue"], empty: [] },
     }),
   );
   expect(html).not.toContain("dashboard-widget-slot");

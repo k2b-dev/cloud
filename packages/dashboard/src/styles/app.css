@@ -50,27 +50,13 @@
   gap: 1rem;
 }
 
-/* Every widget gets a fixed size class before its data arrives, so a widget that
-   answers late, fails, or retries never moves another one. Content longer than
-   the class scrolls inside the widget. */
+/* Each slot holds one widget in a fixed @k2b/ui size (standard or compact) from
+   before its data arrives, so a widget that answers late, fails, or retries
+   never moves another one. The widget frame owns its height and scrolling. */
 .dashboard-widget-slot {
-  display: flex;
+  display: grid;
   min-width: 0;
-  height: 20rem;
-}
-
-.dashboard-context-column .dashboard-widget-slot {
-  height: 14rem;
-}
-
-.dashboard-widget-slot > .k2b-widget {
-  flex: 1;
-  min-height: 0;
-}
-
-.dashboard-widget-slot .k2b-widget__body {
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .dashboard-page .widget-surface {

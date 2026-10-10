@@ -5,7 +5,7 @@ section: Platform services
 order: 570
 description: Add application-owned information to the shared Cloud dashboard.
 tags: [dashboard, widgets, authorization]
-updated: 2026-10-09
+updated: 2026-10-10
 ---
 
 # Dashboard widgets
@@ -171,9 +171,12 @@ Return:
 - `403` when the user lacks the required access;
 - `204` when the widget has no content.
 
-Cloud lists a `403` widget as unavailable at the user's access level. It skips
-`204` without a message. A timeout or another non-success response is logged
-with a bounded failure reason and shown inside that widget only.
+Cloud lists a `403` widget as unavailable at the user's access level. While the
+dashboard does not yet know a widget's answer on a device, a `204` or `403`
+widget keeps its space and shows a calm "Nothing to show right now" or locked
+state there; on later loads it gets no space. A timeout or another non-success
+response is logged with a bounded failure reason and shown inside that widget
+only.
 
 ## Loading, timeouts, and failures
 
@@ -188,17 +191,23 @@ answers; widgets that already arrived never wait for slower ones.
 - **Timeout:** each widget has its own 8-second budget, counted from the moment
   Core starts it. Core signs every invocation of one dashboard together, so
   widgets do not wait on one another for authorization.
+- **Stream deadline:** one stream ends after 30 seconds, when the invocations
+  Core signed for it expire. Every widget that has not answered by then
+  reports `timeout`, including one still waiting for a free place that was
+  never asked; **Try again** asks it in a new stream. Only a dashboard with
+  many slow widgets reaches this deadline.
 - **Failure:** a widget that times out, answers with an unexpected status, or
   returns invalid JSON shows a short message and **Try again** in its own
   space. Retrying asks only that widget again. The rest of the board is never
   affected.
-- **Layout:** a widget's space has a fixed height: 20rem in the main column and
-  14rem in the side column. Longer content scrolls inside the widget, so plan
-  for the most important information at the top.
-- **Absent widgets:** the dashboard remembers on each device which widgets
-  answered `403` or `204` last time and reserves no space for them. Such a
-  widget is still asked on every load, so a change appears on the next load
-  instead of moving the open page.
+- **Layout:** a widget's space has the fixed height of a `@k2b/ui` widget
+  frame: `standard` (25rem) in the main columns and `compact` (14rem) in the
+  side column. Longer content scrolls inside the widget, so plan for the most
+  important information at the top.
+- **Absent widgets:** the dashboard remembers, for each account on each
+  device, which widgets answered `403` or `204` last time and reserves no
+  space for them. Such a widget is still asked on every load, so a change
+  appears on the next load instead of moving the open page.
 
 Keep widget queries bounded and fast: a widget is a glanceable summary, and a
 slow one keeps showing its loading state until it answers or its budget ends.

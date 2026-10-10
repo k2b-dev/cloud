@@ -495,32 +495,46 @@ describe("Core widget stream", () => {
     }
   });
 
-  test("stops every provider it still waits for when the browser stops reading", async () => {
-    const aborted: string[] = [];
-    const started = gate();
-    const routes = createWidgetRoutes({
-      authenticate,
-      listWidgets: async () => widgetsFor(2),
-      fetch: async (input, init) =>
-        new Promise<Response>((_resolve, reject) => {
-          started.open();
-          init?.signal?.addEventListener(
-            "abort",
-            () => {
-              aborted.push(appOf(input));
-              reject(init.signal!.reason);
-            },
-            { once: true },
-          );
-        }),
+  test("stops every provider it still waits for when the browser stops reading, without logging a failure", async () => {
+    const warnings: unknown[][] = [];
+    const warn = spyOn(console, "warn").mockImplementation((...args: unknown[]) => {
+      warnings.push(args);
     });
-    const response = await routes.request("/widgets/v1");
-    const reader = response.body!.getReader();
-    await reader.read();
-    await started.opened;
-    await reader.cancel();
-    await Bun.sleep(5);
-    expect(aborted.sort()).toEqual(["app-0", "app-1"]);
+    try {
+      const aborted: string[] = [];
+      let started = 0;
+      const running = gate();
+      const routes = createWidgetRoutes({
+        authenticate,
+        // Eight run, two wait for a free place.
+        listWidgets: async () => widgetsFor(WIDGET_CONCURRENCY + 2),
+        fetch: async (input, init) =>
+          new Promise<Response>((_resolve, reject) => {
+            started += 1;
+            if (started === WIDGET_CONCURRENCY) running.open();
+            init?.signal?.addEventListener(
+              "abort",
+              () => {
+                aborted.push(appOf(input));
+                reject(init.signal!.reason);
+              },
+              { once: true },
+            );
+          }),
+      });
+      const response = await routes.request("/widgets/v1");
+      const reader = response.body!.getReader();
+      await reader.read();
+      await running.opened;
+      await reader.cancel();
+      await Bun.sleep(5);
+      expect(aborted).toHaveLength(WIDGET_CONCURRENCY);
+      expect(started).toBe(WIDGET_CONCURRENCY);
+      // Leaving the dashboard is not a widget failure, so it leaves no warning that could hide a real one.
+      expect(warnings).toEqual([]);
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   test("answers 503 without a stream when the invocation authority is unavailable", async () => {

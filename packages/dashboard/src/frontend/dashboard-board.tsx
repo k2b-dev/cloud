@@ -8,6 +8,7 @@ import {
   WidgetHero,
   WidgetList,
   WidgetPills,
+  type WidgetSize,
   WidgetStat,
   WidgetStatus,
   type WidgetStatusTone,
@@ -37,8 +38,6 @@ export type DashboardBoardProps = {
   context: DashboardTile[];
   /** Every widget to ask, including those the hint reserves no space for, so the hint stays current. */
   requestKeys: string[];
-  /** Every declared widget, to drop hint entries of widgets that no longer exist. */
-  registeredKeys: string[];
   hint: DashboardWidgetHint;
 };
 
@@ -108,29 +107,29 @@ const renderBlock = (block: WidgetBlock): JSX.Element => {
   }
 };
 
-const LoadedWidget = (props: { tile: DashboardTile; widget: WidgetResponse }) => (
+const LoadedWidget = (props: { tile: DashboardTile; widget: WidgetResponse; size: WidgetSize }) => (
   <Widget
     title={props.widget.title}
     icon={props.widget.icon ?? props.tile.icon}
     href={props.widget.href}
     meta={props.widget.meta}
-    size="content"
+    size={props.size}
   >
     {props.widget.blocks.map((block) => renderBlock(block))}
   </Widget>
 );
 
 /**
- * One widget in the space the page reserved for it. Loading, failure, and the rare widget that turns out empty or
- * locked all keep that space, so nothing around it moves.
+ * One widget in the space the page reserved for it. Every state uses the same fixed `size`, so loading, failure, and
+ * the rare widget that turns out empty or locked all keep that space and nothing around it moves.
  */
-const DashboardWidgetSlot = (props: { tile: DashboardTile; state: DashboardTileState; onRetry: () => void }) => {
+const DashboardWidgetSlot = (props: { tile: DashboardTile; size: WidgetSize; state: DashboardTileState; onRetry: () => void }) => {
   const locale = useLocale();
   const t = () => dashboardMessages.resolve([locale()]).t;
   const loaded = () => (props.state.status === "ok" ? props.state.widget : undefined);
   let slot: HTMLDivElement | undefined;
   const frame = (children: JSX.Element) => (
-    <Widget title={props.tile.title} icon={props.tile.icon} href={props.tile.href} size="content">
+    <Widget title={props.tile.title} icon={props.tile.icon} href={props.tile.href} size={props.size}>
       {children}
     </Widget>
   );
@@ -138,7 +137,7 @@ const DashboardWidgetSlot = (props: { tile: DashboardTile; state: DashboardTileS
     // The slot takes focus when its retry button gives way to the loading state, so keyboard focus stays in place.
     <div ref={slot} tabIndex={-1} class="dashboard-widget-slot" data-widget={props.tile.key} data-state={props.state.status}>
       <Switch>
-        <Match when={loaded()}>{(widget) => <LoadedWidget tile={props.tile} widget={widget()} />}</Match>
+        <Match when={loaded()}>{(widget) => <LoadedWidget tile={props.tile} widget={widget()} size={props.size} />}</Match>
         <Match when={props.state.status === "loading"}>
           {frame(
             <Placeholder
@@ -225,23 +224,31 @@ export default function DashboardBoard(props: DashboardBoardProps) {
     }
     if (controller.signal.aborted) return;
     setTiles((current) => breakDashboardTiles(current, [...owed]));
-    const next = nextDashboardWidgetHint(hint, tiles(), props.registeredKeys);
-    if (!sameDashboardWidgetHint(hint, next)) {
-      hint = next;
-      document.cookie = dashboardWidgetHintCookie(next, location.protocol === "https:");
-    }
   };
 
   onMount(() => void load(props.requestKeys));
   onCleanup(() => {
     for (const controller of requests) controller.abort();
   });
-  if (!isServer) createEffect(on(tiles, (current) => publishDashboardTiles(current)));
+  if (!isServer)
+    createEffect(
+      on(tiles, (current) => {
+        publishDashboardTiles(current);
+        // Every answer updates the hint at once, so it holds even when the user leaves before slow widgets answer.
+        const next = nextDashboardWidgetHint(hint, current, props.requestKeys);
+        if (sameDashboardWidgetHint(hint, next)) return;
+        hint = next;
+        document.cookie = dashboardWidgetHintCookie(next, location.protocol === "https:");
+      }),
+    );
 
-  const slot = (tile: DashboardTile) => (
-    <DashboardWidgetSlot tile={tile} state={tiles()[tile.key] ?? { status: "loading" }} onRetry={() => void load([tile.key])} />
+  const slot = (size: WidgetSize) => (tile: DashboardTile) => (
+    <DashboardWidgetSlot tile={tile} size={size} state={tiles()[tile.key] ?? { status: "loading" }} onRetry={() => void load([tile.key])} />
   );
-  const rows = (rowsOf: DashboardTile[][]) => <For each={rowsOf}>{(row) => <div class="dashboard-widget-row">{row.map(slot)}</div>}</For>;
+  // The main columns use the standard frame and the side column the compact one, the sizes `@k2b/ui` defines.
+  const rows = (rowsOf: DashboardTile[][]) => (
+    <For each={rowsOf}>{(row) => <div class="dashboard-widget-row">{row.map(slot("standard"))}</div>}</For>
+  );
 
   // Widgets the hint reserves no space for are still asked, so a widget that has content again appears on the next load.
   if (props.focusRows.length + props.overviewRows.length + props.context.length === 0)
@@ -263,7 +270,7 @@ export default function DashboardBoard(props: DashboardBoardProps) {
       </div>
       <Show when={props.context.length > 0}>
         <aside aria-label={t().contextWidgets} class="dashboard-context-column">
-          <For each={props.context}>{slot}</For>
+          <For each={props.context}>{slot("compact")}</For>
         </aside>
       </Show>
     </div>

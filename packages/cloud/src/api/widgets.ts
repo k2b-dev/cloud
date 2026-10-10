@@ -224,7 +224,8 @@ export const createWidgetRoutes = (dependencies: WidgetRouteDependencies = {}) =
               fetch: fetchWidget,
             });
             if (outcome.status === "ok") return { type: "widget", key, status: "ok", widget: outcome.widget, ms: elapsed() };
-            if ("reason" in outcome) logRejection(widget, outcome.phase, outcome.reason, outcome.upstreamStatus);
+            // A widget the stream itself stopped has already been settled, and is logged once, below.
+            if ("reason" in outcome && !fanoutSignal.aborted) logRejection(widget, outcome.phase, outcome.reason, outcome.upstreamStatus);
             return { type: "widget", key, status: outcome.status, ms: elapsed() };
           },
           fanoutSignal,
@@ -235,10 +236,11 @@ export const createWidgetRoutes = (dependencies: WidgetRouteDependencies = {}) =
           pending: settled.map((pending, index) =>
             pending.then((result): WidgetStreamLine => {
               if (result.status === "fulfilled") return result.value;
-              // Only the stream's own deadline or cancellation settles a widget this way.
+              // Only the stream's own deadline or the browser leaving settles a widget this way. Leaving is not a
+              // failure of the widget, so only the deadline is logged.
               const widget = widgets[index]!;
               const status = streamDeadline.aborted ? "timeout" : "error";
-              logRejection(widget, "provider", streamDeadline.aborted ? "deadline_exceeded" : "request_cancelled");
+              if (streamDeadline.aborted) logRejection(widget, "provider", "deadline_exceeded");
               return {
                 type: "widget",
                 key: widgetKey(widget.appId, widget.widgetId),

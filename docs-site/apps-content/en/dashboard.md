@@ -5,7 +5,7 @@ section: Platform
 order: 360
 description: A personal Cloud start page with app widgets, shortcuts, and saved layout preferences.
 tags: [dashboard, widgets, shortcuts, personalization]
-updated: 2026-10-09
+updated: 2026-10-10
 ---
 
 # Dashboard
@@ -26,8 +26,8 @@ The page appears at once with a fixed space for every widget, and each widget
 fills its space as soon as its application answers. One slow or unavailable
 widget shows its own loading or failure state with **Try again** and never
 holds back or moves the others. A missing widget may be hidden, unavailable at
-the current access level, or had nothing to show the last time the dashboard
-loaded on this device.
+the current access level, or had nothing to show the last time you opened the
+dashboard on this device.
 
 ## Understand the Dashboard model
 

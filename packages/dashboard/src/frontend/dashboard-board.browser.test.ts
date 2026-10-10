@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import type { WidgetStreamLine } from "@k2b/cloud/contracts";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../../ui/test/browser";
+import { browserName, launchBrowser } from "../../../ui/test/browser";
 
 // Whether a widget that answers late, fails, or is retried moves another one is a layout result of the shipped
 // cascade, so this runs the real board in a browser against a server that streams invented widgets line by line.
@@ -15,8 +15,7 @@ const board = {
   overviewRows: [[tile("venue/today", "Venue"), tile("quotes/quote", "Quotes")], [tile("notebooks/recent", "Notebooks")]],
   context: [tile("weather/current", "Weather"), tile("gateway-ops/health", "Gateway")],
   requestKeys: ["spaces/today", "venue/today", "quotes/quote", "notebooks/recent", "weather/current", "gateway-ops/health"],
-  registeredKeys: ["spaces/today", "venue/today", "quotes/quote", "notebooks/recent", "weather/current", "gateway-ops/health"],
-  hint: { forbidden: [], empty: [] },
+  hint: { owner: "account", forbidden: [], empty: [] },
 };
 const entrySource = `
 import { render } from "solid-js/web";
@@ -277,6 +276,76 @@ describe("dashboard widgets in a browser", () => {
       }
     }
   }, 60_000);
+
+  test("wheel and touch over a widget whose content fits scroll the page", async () => {
+    answer = async (keys, write) => {
+      for (const key of keys) write(answers[key] ?? { type: "widget", key, status: "error", ms: 5 });
+    };
+    for (const view of views) {
+      // A short window, so the board is taller than the page and the page itself scrolls.
+      const { page, close } = await open({ ...view, height: 500 });
+      try {
+        await waitForState(page, "quotes/quote", "ok");
+        // Mobile WebKit takes neither a mouse wheel nor synthetic touch scrolling, so phones are checked in Chromium.
+        const inputs = !view.touch ? (["wheel"] as const) : browserName === "chromium" ? (["wheel", "touch"] as const) : [];
+        for (const key of ["spaces/today", "venue/today"]) {
+          for (const input of inputs) {
+            await page.evaluate(() => window.scrollTo(0, 0));
+            const box = (await page.locator(`[data-widget="${key}"]`).boundingBox())!;
+            const x = box.x + box.width / 2;
+            const y = Math.min(box.y + box.height / 2, box.y + (500 - box.y) / 2);
+            if (input === "wheel") {
+              await page.mouse.move(x, y);
+              await page.mouse.wheel(0, 200);
+            } else {
+              // A finger drag upwards, as raw touch points: headless Chromium has no synthetic touch scroll gesture.
+              const cdp = await page.context().newCDPSession(page);
+              await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] });
+              for (let step = 1; step <= 8; step += 1)
+                await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y: y - step * 20 }] });
+              await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+              await cdp.detach();
+            }
+            await page.waitForFunction(() => window.scrollY > 0, undefined, { timeout: 2_000 }).catch(() => undefined);
+            expect({ width: view.width, key, input, scrolled: await page.evaluate(() => window.scrollY > 0) }).toEqual({
+              width: view.width,
+              key,
+              input,
+              scrolled: true,
+            });
+          }
+        }
+      } finally {
+        await close();
+      }
+    }
+  }, 60_000);
+
+  test("remembers a widget that answered 403 or 204 at once, before slower widgets finish", async () => {
+    const rest = gate();
+    answer = async (keys, write) => {
+      write({ type: "widget", key: "quotes/quote", status: "empty", ms: 3 });
+      write({ type: "widget", key: "gateway-ops/health", status: "forbidden", ms: 4 });
+      await rest.opened;
+      for (const key of keys) if (key !== "quotes/quote" && answers[key]) write(answers[key]!);
+    };
+    const { page, close } = await open(views[0]!);
+    try {
+      await waitForState(page, "gateway-ops/health", "forbidden");
+      // A user who leaves now still gets no space for these two on the next load.
+      const cookie = (await page.context().cookies()).find((entry) => entry.name === "dashboard_widgets");
+      expect(cookie?.path).toBe("/app/dashboard");
+      expect(JSON.parse(decodeURIComponent(cookie!.value))).toEqual({
+        owner: "account",
+        forbidden: ["gateway-ops/health"],
+        empty: ["quotes/quote"],
+      });
+      expect((await layout(page)).states["spaces/today"]).toBe("loading");
+    } finally {
+      rest.open();
+      await close();
+    }
+  }, 30_000);
 
   test("names a widget that failed and offers a retry, in English and German", async () => {
     answer = async (keys, write) => {

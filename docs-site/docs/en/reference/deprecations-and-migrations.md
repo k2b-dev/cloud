@@ -15,12 +15,16 @@ updated: 2026-10-10
 The dashboard no longer waits for widgets before it sends the page. It renders
 a fixed space for each widget and loads all of them in the browser from the
 new streamed `GET /api/widgets/v1`, where each widget has its own 8-second
-budget instead of 500 ms and Core runs at most eight at a time. A widget that
-fails or times out shows **Try again** in its own space. The single-widget
+budget instead of 500 ms and Core runs at most eight at a time. One stream ends
+after 30 seconds, when its signed invocations expire, so on a dashboard with
+many slow widgets the last ones can report a timeout. A widget that fails or
+times out shows **Try again** in its own space. The single-widget
 `GET /api/widgets/v1/<appId>/<widgetId>` keeps its responses and uses the same
-8-second budget. Widget handlers and their responses are unchanged; widgets
-taller than their space now scroll inside it. No setting or migration is
-involved. See [Dashboard widgets](/en/docs/platform/dashboard-widgets#loading-timeouts-and-failures).
+8-second budget. Widget handlers and their responses are unchanged; each widget
+now has the fixed height of a `@k2b/ui` frame, and content taller than that
+scrolls inside it. The `@k2b/ui` `compact` widget frame grows from 12rem to
+14rem, and fixed frames scroll instead of cutting off taller content. No
+setting or migration is involved. See [Dashboard widgets](/en/docs/platform/dashboard-widgets#loading-timeouts-and-failures).
 
 ## Help requires sign-in
 

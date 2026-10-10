@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { type DashboardWidget, listLegalLinks, listWidgets } from "@k2b/cloud";
 import { hasRole, type Role, type RuntimeAppMeta, type User, widgetKey } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
@@ -85,9 +86,10 @@ export default ssr<AuthContext>(async (c) => {
         ]
       : []),
   ];
-  // The page reserves space only for widgets that showed content last time on this device; the browser then asks
-  // Core for every widget the user has not hidden, and each fills its own space as soon as its app answers.
-  const hint = readDashboardWidgetHint(cookie);
+  // The page reserves space only for widgets that showed content the last time this account loaded it on this device;
+  // the browser then asks Core for every widget the user has not hidden, and each fills its own space as soon as its
+  // app answers. The hint names its account by a digest, so the cookie never stores the account id itself.
+  const hint = readDashboardWidgetHint(cookie, createHash("sha256").update(user.id).digest("base64url").slice(0, 16));
   const hiddenSet = new Set(settings.hiddenWidgets);
   const absent = new Set([...hint.forbidden, ...hint.empty]);
   const requested = widgets.filter((widget) => !hiddenSet.has(keyOf(widget)));
@@ -144,7 +146,6 @@ export default ssr<AuthContext>(async (c) => {
             overviewRows={rowsIn("overview", 3)}
             context={tilesIn("context").map((item) => item.widget.tile)}
             requestKeys={requested.map(keyOf)}
-            registeredKeys={widgets.map(keyOf)}
             hint={hint}
           />
         </div>
