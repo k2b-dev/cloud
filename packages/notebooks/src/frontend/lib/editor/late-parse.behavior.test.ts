@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { forceParsing, syntaxTree } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
-import { EditorView } from "@codemirror/view";
+import { Decoration, EditorView } from "@codemirror/view";
+import type { Tree } from "@lezer/common";
 import { isServer } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../ui/test/dom";
+import { cursorZoneStateField, initialMarkdownDecorationRefreshExtension } from "./_lib/cursor-zone-field";
 import { codeFontExtension } from "./code-font";
 import { listsExtension } from "./lists";
 import { markdownExtension } from "./markdown";
@@ -89,6 +91,41 @@ describe("editor decorations in a long note", () => {
       expect(Array.from(dom.root.querySelectorAll(".cm-tag-pill")).map((pill) => pill.textContent)).toEqual(["#latetag"]);
       expect(text).toContain("#notatag");
       expect(dom.root.querySelector(".cm-table-widget")).not.toBeNull();
+    } finally {
+      view.destroy();
+      dom.cleanup();
+    }
+  });
+
+  test("renders markers after mount and builds once per delivered tree", async () => {
+    const dom = createDomTestHarness();
+    // Every build records the tree it saw; a second build on the same tree is wasted work on open.
+    const trees: Tree[] = [];
+    const probe = cursorZoneStateField((state) => {
+      trees.push(syntaxTree(state));
+      return { decorations: Decoration.none, ranges: [] };
+    });
+    const view = new EditorView({
+      parent: dom.root,
+      state: EditorState.create({
+        doc,
+        selection: { anchor: 0 },
+        extensions: [markdownExtension(), listsExtension(), probe, initialMarkdownDecorationRefreshExtension()],
+      }),
+    });
+    try {
+      expect(syntaxTree(view.state).length).toBeLessThan(doc.length);
+      // The mount extension parses to the end over the next frames; poll so a slow runner does not flake.
+      for (let waited = 0; waited < 3_000 && syntaxTree(view.state).length < doc.length; waited += 20) await Bun.sleep(20);
+      expect(syntaxTree(view.state).length).toBe(doc.length);
+
+      expect(trees.at(-1)).toBe(syntaxTree(view.state));
+      expect(new Set(trees).size).toBe(trees.length);
+
+      view.dispatch({ effects: EditorView.scrollIntoView(doc.length) });
+      await Bun.sleep(0);
+      const checkboxes = Array.from(dom.root.querySelectorAll<HTMLInputElement>("input.custom-list-task-marker"));
+      expect(checkboxes.map((box) => box.checked)).toEqual([true, false]);
     } finally {
       view.destroy();
       dom.cleanup();

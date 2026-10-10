@@ -105,11 +105,11 @@ export const initialMarkdownDecorationRefreshExtension = (): Extension =>
         this.raf = window.requestAnimationFrame(() => {
           this.raf = null;
           this.attempts += 1;
-          // Markdown parsing is viewport/background-driven. Force one parse
-          // pass after mount so syntax-tree based widgets don't stay raw until
-          // the first cursor transaction.
+          // Markdown parsing is viewport/background-driven. Force the parse
+          // to the end after mount so syntax-tree based widgets don't stay raw
+          // until the parser reaches them. forceParsing hands a newer tree over
+          // in a transaction, and every tree-based field rebuilds on it.
           const parsed = forceParsing(this.view, this.view.state.doc.length, 50);
-          this.view.dispatch({ effects: refreshMarkdownDecorationsEffect.of() });
           if (!parsed && this.attempts < 4) this.schedule();
         });
       }
