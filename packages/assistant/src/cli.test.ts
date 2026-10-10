@@ -9,7 +9,7 @@ import { CheckReport } from "./artifacts/html/check-contracts";
 import assistantCli from "./cli";
 import { printCapabilityTable } from "./cli/capability-table";
 import * as codeHost from "./cli/code-host";
-import { collectSurveyResult, collectTextEditorResult, runInteractiveAssistant } from "./cli/interactive";
+import { collectCapabilityApproval, collectSurveyResult, collectTextEditorResult, runInteractiveAssistant } from "./cli/interactive";
 import { streamAssistantTurn } from "./cli/stream";
 
 const json = (value: unknown, status = 200) => Response.json(value, { status });
@@ -961,8 +961,8 @@ describe("assistant CLI", () => {
             turnId: "turn-1",
             callId: "call-1",
             name: "mail.createDraft",
-            args: { subject: "Hello" },
-            message: "Create draft",
+            args: { subject: "Hello\u009b2J\u202e" },
+            message: "Create draft\u001b]8;;https://evil.example\u0007",
             allowAlways: true,
           },
         ]);
@@ -973,16 +973,56 @@ describe("assistant CLI", () => {
       }
       return json({ message: "Not found" }, 404);
     });
-    const lines = ["hello", "a", "/exit"];
+    const lines = ["hello", "maybe", "a", "/exit"];
+    const prompts: string[] = [];
     const reader = {
-      read: async () => lines.shift() ?? null,
+      read: async (prompt: string) => {
+        prompts.push(prompt);
+        return lines.shift() ?? null;
+      },
       close: () => undefined,
       onInterrupt: () => () => undefined,
     };
 
     expect(await runInteractiveAssistant(ctx, {}, reader)).toBe(0);
     expect(approvalBody).toEqual({ type: "approval_response", approved: true, remember: "always" });
-    expect(stdout.join("")).toContain("Done\n");
+    expect(prompts.filter((prompt) => prompt.startsWith("Approve"))).toEqual(["Approve? [y/N/a=always]: ", "Approve? [y/N/a=always]: "]);
+    const printed = stdout.join("");
+    expect(printed).toContain("Approval required: Create draft\\u001b]8;;https://evil.example\\u0007");
+    expect(printed).toContain('"subject": "Hello\\u009b2J\\u202e"');
+    expect(printed.slice(printed.indexOf("Approval required"), printed.indexOf("Done"))).not.toMatch(/[\u0007\u001b\u009b\u202e]/u);
+    expect(printed).toContain("Done\n");
+  });
+
+  test("asks code host approvals in the same shape and never approves a stray answer", async () => {
+    const { ctx } = createContext([], async () => json({ message: "Not found" }, 404));
+    const answers = ["always", "x", ""];
+    const prompts: string[] = [];
+    const reader = {
+      read: async (prompt: string) => {
+        prompts.push(prompt);
+        return answers.shift() ?? null;
+      },
+      close: () => undefined,
+      onInterrupt: () => () => undefined,
+    };
+    const request = {
+      type: "http" as const,
+      name: "http.fetch:https://api.example",
+      id: crypto.randomUUID(),
+      url: "https://api.example/orders",
+      method: "POST",
+      bodyBytes: 2,
+      headers: {},
+      bodyPreview: "{}",
+      bodyTruncated: false,
+    };
+
+    expect(await collectCapabilityApproval(ctx, reader, request)).toEqual({ approved: false });
+    expect(prompts).toEqual(["Send request? [y/N]: ", "Send request? [y/N]: ", "Send request? [y/N]: "]);
+
+    answers.push("y");
+    expect(await collectCapabilityApproval(ctx, reader, request)).toEqual({ approved: true });
   });
 
   test("offers local Bash only for opted-in turns and persists a denial", async () => {

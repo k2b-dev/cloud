@@ -28,10 +28,10 @@ cld assistant --allow-bash
 
 This adds the predefined `local_bash` client tool only to turns from that
 interactive session. The CLI prints the exact command and startup directory and
-requires `Y/n` before every execution. It runs `/bin/bash` as the current OS
-user with closed stdin, a fixed timeout, and bounded stdout/stderr. Tool calls
-and results are stored in Cloud and remain visible in web chat history. The web
-app cannot execute them. Do not use this mode for untrusted prompts without
+asks `Run? [y/N]` before every execution; only `y` runs it, and Enter denies.
+It runs `/bin/bash` as the current OS user with closed stdin, a fixed timeout,
+and bounded stdout/stderr. Tool calls and results are stored in Cloud and remain
+visible in web chat history. The web app cannot execute them. Do not use this mode for untrusted prompts without
 reviewing each command carefully.
 
 Use `--print` or `-p` to stream one response and exit:
@@ -93,8 +93,10 @@ Use `assistant code storage-clear ID --area files|kv|all --scope shared|user --y
 These commands share the Studio Advanced menu's permission-aware services.
 Personal JSON uses scope:"user" and always belongs to the signed-in viewer across devices.
 
-Code Mode runs in an isolated browser worker hosted by the CLI. It does not need
-an open Assistant browser tab. The served plugin includes Playwright and its browser metadata. Install Playwright Chromium, or set
+In an Assistant chat, Cloud runs Code Mode on the server; of its tools, only
+`code_open` and `code_secret` still wait for the CLI. `code run` and
+`code action` run in an isolated browser worker hosted by the CLI. It does not
+need an open Assistant browser tab. The served plugin includes Playwright and its browser metadata. Install Playwright Chromium, or set
 `CLOUD_CLI_CHROMIUM` to an existing Chromium executable. A host that does not
 start within 45 seconds fails without running code, and the error names the
 startup step that stalled.
@@ -177,8 +179,9 @@ read/run/storage/database commands and copying published source. A Project chat
 is not required; editing and management rights remain separate.
 
 Normal capability approvals also apply inside scripts. Interactive Assistant
-sessions show the review and eligible Remember option. For a direct run or
-print-mode turn, repeat `--approve <exact-capability-name>` only for operations
+sessions show the review and ask `Approve? [y/N]`, or `[y/N/a=always]` when the
+approval can be remembered; an HTTP request asks `Send request? [y/N]`. For a
+direct run or print-mode turn, repeat `--approve <exact-capability-name>` only for operations
 the user authorized. There is no approve-all option.
 
 Sharing and publication are separate. First publication uses `Initial release`;

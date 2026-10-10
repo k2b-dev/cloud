@@ -116,6 +116,24 @@ const readChoice = async (
   }
 };
 
+type ApprovalAnswer = "once" | "always" | "deny";
+
+/**
+ * Asks one approval question in the shape every terminal approval uses: `y` approves, `a` or `always` remembers
+ * where the server allows it, and Enter or `n` denies. Any other answer asks again, so a stray key never approves.
+ */
+const readApproval = async (reader: LineReader, question: string, allowAlways: boolean): Promise<ApprovalAnswer | null> => {
+  const answer = await readChoice(
+    reader,
+    `${question}? ${allowAlways ? "[y/N/a=always]" : "[y/N]"}: `,
+    allowAlways ? ["y", "yes", "a", "always", "n", "no"] : ["y", "yes", "n", "no"],
+    "n",
+  );
+  if (answer === null) return null;
+  if (answer === "y" || answer === "yes") return "once";
+  return answer === "a" || answer === "always" ? "always" : "deny";
+};
+
 export const collectSurveyResult = async (ctx: CloudCliContext, reader: LineReader, args: unknown): Promise<unknown | null> => {
   const parsed = CloudAiSurveyInputSchema.safeParse(args);
   if (!parsed.success) return null;
@@ -235,20 +253,14 @@ const resolveAttention = async (input: {
     if (!action) return null;
 
     if (action.type === "approval_request") {
-      input.ctx.print(`Approval required: ${action.message ?? action.name}`);
-      input.ctx.print(JSON.stringify(action.args, null, 2));
-      const answer = await readChoice(
-        input.reader,
-        action.allowAlways ? "Approve? [y/N/a=always]: " : "Approve? [y/N]: ",
-        action.allowAlways ? ["y", "yes", "a", "always", "n", "no"] : ["y", "yes", "n", "no"],
-        "n",
-      );
+      input.ctx.print(terminalSafeText(`Approval required: ${action.message ?? action.name}`));
+      input.ctx.print(terminalSafeText(JSON.stringify(action.args, null, 2)));
+      const answer = await readApproval(input.reader, "Approve", action.allowAlways);
       if (answer === null) return null;
-      const remember = answer === "a" || answer === "always";
       await submitAction(input.ctx, action, {
         type: "approval_response",
-        approved: answer === "y" || answer === "yes" || remember,
-        ...(remember ? { remember: "always" as const } : {}),
+        approved: answer !== "deny",
+        ...(answer === "always" ? { remember: "always" as const } : {}),
       });
     } else if (action.name === "local_bash" && input.allowBash) {
       const bash = parseLocalBashInput(action.args);
@@ -260,12 +272,10 @@ const resolveAttention = async (input: {
       input.ctx.error("");
       input.ctx.error(`  ${terminalSafeText(bash.command)}`);
       input.ctx.error("");
-      const answer = await readChoice(input.reader, "Run? [y/N]: ", ["y", "yes", "n", "no"], "n");
+      const answer = await readApproval(input.reader, "Run", false);
       if (answer === null) return null;
       const bashResult =
-        answer === "y" || answer === "yes"
-          ? await runLocalBash(bash.command, { cwd: input.bashCwd, signal: input.signal })
-          : deniedLocalBashResult();
+        answer === "once" ? await runLocalBash(bash.command, { cwd: input.bashCwd, signal: input.signal }) : deniedLocalBashResult();
       if (bashResult.stdout) input.ctx.error(terminalSafeText(bashResult.stdout.trimEnd()));
       if (bashResult.stderr) input.ctx.error(terminalSafeText(bashResult.stderr.trimEnd()));
       if (bashResult.truncated) input.ctx.error("[Local Bash output truncated]");
@@ -318,8 +328,7 @@ export async function collectCapabilityApproval(
     ctx.print(terminalSafeText(JSON.stringify(request.headers, null, 2)));
     if (request.bodyBytes) ctx.print(terminalSafeText(`${request.bodyBytes} bytes: ${request.bodyPreview}`));
     if (request.bodyTruncated) ctx.print("Body preview is incomplete; review source and inputs before approving.");
-    const answer = (await reader.read("Send request? [y/N]: "))?.trim().toLowerCase();
-    return { approved: answer === "y" || answer === "yes" };
+    return { approved: (await readApproval(reader, "Send request", false)) === "once" };
   }
 
   if (request.resource) {
@@ -328,9 +337,9 @@ export async function collectCapabilityApproval(
   }
   ctx.print(terminalSafeText(request.review?.message ?? request.title));
   ctx.print(terminalSafeText(JSON.stringify(request.input, null, 2).slice(0, 16000)));
-  const answer = (await reader.read(request.allowAlways ? "Approve? [y/N/always]: " : "Approve? [y/N]: "))?.trim().toLowerCase();
-  if (request.allowAlways && answer === "always") return { approved: true, remember: "always" };
-  return { approved: answer === "y" || answer === "yes" };
+  const answer = await readApproval(reader, "Approve", request.allowAlways);
+  if (answer === "always") return { approved: true, remember: "always" };
+  return { approved: answer === "once" };
 }
 
 export const runInteractiveAssistant = async (
