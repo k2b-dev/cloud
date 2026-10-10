@@ -18,6 +18,14 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { defineApp } = await import("../_internal/define-app");
 const { default: Layout } = await import("./Layout");
+const { LayoutHelpPage } = await import("./LayoutHelp");
+
+const CONTENT = "layout-viewport-probe-content";
+const contents = {
+  short: "Content",
+  // Much taller than any window. `flex: none` keeps its height in the flex columns of full-width and full-page pages.
+  long: `<div style="flex:none;height:3000px">Long content</div>`,
+};
 
 type LayoutContextArg = Parameters<typeof Layout>[0]["c"];
 const app = defineApp({
@@ -26,7 +34,7 @@ const app = defineApp({
   icon: "ti ti-layout",
   description: "Renders the shell in each layout mode",
   baseUrl: "http://layout-viewport-probe:3000",
-  routes: ["/layout"],
+  routes: ["/layout", "/help"],
 });
 const server = new Hono()
   .use("*", async (c, next) => {
@@ -43,10 +51,12 @@ const server = new Hono()
           fullPage: mode === "fullPage",
           fullWidth: mode === "fullWidth",
           title: "Viewport probe",
-          children: "Content",
+          children: CONTENT,
         });
     }),
-  );
+  )
+  // Core's registered Help route renders the Help page on its own, without the shell.
+  .get("/help", ...app.ssr(() => () => createComponent(LayoutHelpPage, { documents: [], pageBase: "/help/apps/layout-viewport-probe" })));
 
 let browser: Browser;
 let css: string;
@@ -61,7 +71,7 @@ afterAll(async () => {
 });
 
 /**
- * Resolves the classic viewport units the way iPadOS does once its toolbar collapses: `vh` follows the large viewport,
+ * Resolves the classic viewport units the way iPadOS does while its toolbar is shown: `vh` follows the large viewport,
  * here 1370 px in a window 1307 px tall, while the dynamic units keep the window's height. Playwright's engines have no
  * collapsing toolbar, so `vh` always equals `dvh` there; the stylesheet is rewritten to the device's values instead.
  */
@@ -85,10 +95,12 @@ const largeViewport = (page: Page, ratio: number) =>
     for (const sheet of Array.from(document.styleSheets)) walk(sheet.cssRules);
   }, ratio);
 
-const shell = async (mode: string, viewport: { width: number; height: number }) => {
-  const html = (await (await server.request(`/layout?mode=${mode}`)).text())
+type Viewport = { width: number; height: number };
+const open = async (path: string, viewport: Viewport, content = contents.short) => {
+  const html = (await (await server.request(path)).text())
     .replace(/<script\b[\s\S]*?<\/script>/g, "")
     .replace(/<link\b[^>]*rel="stylesheet"[^>]*>/g, "")
+    .replace(CONTENT, content)
     .replace("</head>", `<style>${css}</style></head>`);
   const page = await browser.newPage({ viewport });
   await page.setContent(html);
@@ -101,23 +113,74 @@ const viewports = {
   "an iPad in landscape": { width: 1180, height: 820 },
   "a phone": { width: 390, height: 664 },
 };
+const modes = ["page", "fullWidth", "fullPage"] as const;
+
+/**
+ * What scrolls a long page. From `lg`, a regular page scrolls its content area and a full-width app its own panes, so
+ * the window stays put. Below `lg`, regular and full-width pages grow with their content and the document scrolls. A
+ * full-page surface never lets the document scroll.
+ */
+const longPageScroller = (mode: (typeof modes)[number], viewport: Viewport) => {
+  if (mode === "fullPage") return "none";
+  // Tailwind's `lg` breakpoint.
+  if (viewport.width < 1024) return "document";
+  return mode === "page" ? "main" : "none";
+};
+
+const scrollerNames = { main: "its content area", document: "the document", none: "neither the document nor the content area" };
+
+const measure = (page: Page) =>
+  page.evaluate(() => {
+    const main = document.querySelector<HTMLElement>(".layout-content-main");
+    const scroller = document.scrollingElement!;
+    if (main) main.scrollTop = 400;
+    scroller.scrollTop = 400;
+    return {
+      documentHeight: scroller.scrollHeight,
+      canvasHeight: Math.round(document.querySelector(".cloud-app-canvas")?.getBoundingClientRect().height ?? 0),
+      mainScrolled: (main?.scrollTop ?? 0) > 0,
+      documentScrolled: scroller.scrollTop > 0,
+    };
+  });
 
 describe("the Cloud shell fits the window when the large viewport is taller than the visible one", () => {
   for (const [name, viewport] of Object.entries(viewports)) {
-    for (const mode of ["page", "fullWidth", "fullPage"]) {
-      // A shell sized with the large viewport outgrows the window by the collapsed toolbar and lets the page scroll.
-      test(`a ${mode} shell on ${name}`, async () => {
-        const page = await shell(mode, viewport);
+    for (const mode of modes) {
+      // A shell sized with the large viewport outgrows the window by the toolbar and lets the page scroll.
+      test(`a short ${mode} shell on ${name}`, async () => {
+        const page = await open(`/layout?mode=${mode}`, viewport);
         try {
-          const fit = await page.evaluate(() => ({
-            documentHeight: document.documentElement.scrollHeight,
-            canvasHeight: Math.round(document.querySelector(".cloud-app-canvas")!.getBoundingClientRect().height),
-          }));
-          expect(fit).toEqual({ documentHeight: viewport.height, canvasHeight: viewport.height });
+          const { documentHeight, canvasHeight } = await measure(page);
+          expect({ documentHeight, canvasHeight }).toEqual({ documentHeight: viewport.height, canvasHeight: viewport.height });
+        } finally {
+          await page.close();
+        }
+      }, 30_000);
+
+      const scroller = longPageScroller(mode, viewport);
+      test(`a long ${mode} shell on ${name} scrolls ${scrollerNames[scroller]}`, async () => {
+        const page = await open(`/layout?mode=${mode}`, viewport, contents.long);
+        try {
+          const { documentHeight, mainScrolled, documentScrolled } = await measure(page);
+          expect({ mainScrolled, documentScrolled }).toEqual({
+            mainScrolled: scroller === "main",
+            documentScrolled: scroller === "document",
+          });
+          if (scroller === "document") expect(documentHeight).toBeGreaterThan(3000);
+          else expect(documentHeight).toBe(viewport.height);
         } finally {
           await page.close();
         }
       }, 30_000);
     }
+
+    test(`the standalone Help page on ${name}`, async () => {
+      const page = await open("/help", viewport);
+      try {
+        expect((await measure(page)).documentHeight).toBe(viewport.height);
+      } finally {
+        await page.close();
+      }
+    }, 30_000);
   }
 });

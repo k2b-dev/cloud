@@ -46,7 +46,9 @@ tall as the window and its content scrolls inside it. Below `lg`, a regular
 page is at least as tall as the window and grows with its content. `vh` follows
 the larger viewport of a browser whose toolbar can collapse, such as Safari on
 iPad, so a page sized with it would scroll by that difference although its
-content fits.
+content fits. Full-page Help follows the same rule. A surface that renders
+without the shell, such as a pop-out window or an unattended display, takes its
+height from `dvh` too, with `h-dvh` or `min-h-dvh`.
 
 The layout reserves a stable scrollbar gutter on every page scroller it owns:
 the content area of regular pages from `lg` and, below `lg`, the document of

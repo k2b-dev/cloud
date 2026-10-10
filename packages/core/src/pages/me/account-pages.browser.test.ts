@@ -262,7 +262,7 @@ const open = async (view: View, path: Path, locale: "en" | "de", dark = false) =
   await tab.setContent(
     `<!doctype html><html lang="${locale}" class="${dark ? "dark" : "light"}"><head><meta name="viewport" content="width=device-width, initial-scale=1">` +
       `<link rel="stylesheet" href="${origin}/public/fonts.css"><link rel="stylesheet" href="${origin}/public/tabler-icons.css"><style>${css}</style></head>` +
-      `<body class="k2b-ui"><div class="cloud-app-canvas relative flex min-h-screen w-full" style="${CORE_CANVAS}" data-app-id="core">` +
+      `<body class="k2b-ui"><div class="cloud-app-canvas relative flex min-h-dvh w-full" style="${CORE_CANVAS}" data-app-id="core">` +
       `<div class="layout-shell-content flex min-h-0 min-w-0 flex-1 flex-col"><main class="layout-content-main min-h-0 min-w-0 flex-1">` +
       `${await content(path, locale)}</main></div></div></body></html>`,
   );

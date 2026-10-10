@@ -534,7 +534,7 @@ const HelpShell = (props: {
         props.surface === "modal"
           ? "h-[min(48rem,var(--ui-dialog-available-height))] overflow-hidden panel-dialog-shell [box-shadow:var(--ui-shadow-float)]"
           : props.surface === "page"
-            ? "min-h-screen"
+            ? "min-h-dvh"
             : "h-full"
       }`}
       style={appAccentStyle(props.accent)}
