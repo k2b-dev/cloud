@@ -31,7 +31,7 @@ import { useSpaceMessages } from "../../messages";
 import { defaultFilter, type FilterState, hasActiveFilters } from "../filter/types";
 import AssigneeAvatars from "../shared/AssigneeAvatars";
 import ClaimButton from "../shared/claim/ClaimButton";
-import { type CompletionClaim, claimTask, releaseTask, resolveCompletionClaim } from "../shared/claim/claim";
+import { type ClaimFields, claimTask, releaseTask, resolveCompletionClaim, resolveTransferClaim } from "../shared/claim/claim";
 import { confirmCompletion, setItemCompleted } from "../shared/completion";
 import { isInactiveTask } from "../shared/item-activity";
 import CreateItemButton from "../sidebar/CreateItemButton";
@@ -93,7 +93,7 @@ type MoveContext = {
   position: MovePosition;
   targetIndex: number;
   /** Sent only when the drop completes or reopens the item; a move that keeps the state needs no claim. */
-  completion: ({ completed: boolean } & CompletionClaim) | null;
+  completion: ({ completed: boolean } & ClaimFields) | null;
 };
 
 /** Where a dragged column header lands: before the board column at this index, or at the end. */
@@ -444,7 +444,7 @@ export default function KanbanBoard(props: Props) {
       setRefusingBucketKey(null);
       if (!intent || movingItemId() || moveMutation.loading() || transferMutation.loading()) return;
       if (intent.kind === "wormhole") {
-        transferMutation.mutate({ itemId: active.meta.itemId, wormholeId: intent.wormholeId });
+        void dropOnWormhole(active.meta.itemId, intent.wormholeId);
         return;
       }
       if (isNoOpMove(active.meta.itemId, intent)) return;
@@ -566,7 +566,7 @@ export default function KanbanBoard(props: Props) {
     return next < 0 ? bucket.items.length : next;
   };
 
-  const moveMutation = mutations.create<SpaceItem, { itemId: string; intent: DropIntent; claim: CompletionClaim }, MoveContext>({
+  const moveMutation = mutations.create<SpaceItem, { itemId: string; intent: DropIntent; claim: ClaimFields }, MoveContext>({
     onBefore: ({ itemId, intent, claim }) => {
       if (intent.kind !== "column") throw new Error(t.invalidColumnTarget);
       const previousBuckets = buckets();
@@ -722,7 +722,15 @@ export default function KanbanBoard(props: Props) {
     await moveMutation.mutate({ itemId, intent, claim });
   };
 
-  const transferMutation = mutations.create<WormholeTransferResult, { itemId: string; wormholeId: string }, TransferContext>({
+  /** A transfer ends the claim: the holder's own ends without a question, someone else's is taken over after one. */
+  const dropOnWormhole = async (itemId: string, wormholeId: string) => {
+    const claim = await resolveTransferClaim(findItemLocation(itemId)?.item.claim, props.currentUserId, t);
+    if (!claim || movingItemId() || moveMutation.loading() || transferMutation.loading()) return;
+    await transferMutation.mutate({ itemId, wormholeId, claim });
+  };
+
+  type Transfer = { itemId: string; wormholeId: string; claim: ClaimFields };
+  const transferMutation = mutations.create<WormholeTransferResult, Transfer, TransferContext>({
     onBefore: ({ itemId }) => {
       const source = findItemLocation(itemId);
       if (!source) throw new Error(t.itemUnavailable);
@@ -747,6 +755,7 @@ export default function KanbanBoard(props: Props) {
         sourceSpaceId: props.spaceId,
         itemId: vars.itemId,
         wormholeId: vars.wormholeId,
+        claim: vars.claim,
         signal: context.abortSignal,
         locale: locale(),
       }),
@@ -807,7 +816,7 @@ export default function KanbanBoard(props: Props) {
     onError: (error, context) => retryToast(error.message, t.retry, () => context && assignCardMutation.mutate(currentCard(context.item))),
   });
 
-  type CardCompletion = { item: SpaceItem; claim: CompletionClaim };
+  type CardCompletion = { item: SpaceItem; claim: ClaimFields };
   const completeCardMutation = mutations.create<SpaceItem, CardCompletion, CardCompletion>({
     onBefore: (vars) => vars,
     mutation: ({ item, claim }) => setItemCompleted({ spaceId: props.spaceId, itemId: item.id, completed: true, ...claim }, t.updateFailed),

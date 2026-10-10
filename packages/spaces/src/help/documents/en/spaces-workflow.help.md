@@ -93,8 +93,10 @@ edit the Space sees **Take over** for another account's claim and confirms it in
 a dialog that names the current holder. Completing a task someone else claimed,
 for example by dragging it into a done column, asks once, such as "Claimed by
 Jana Berger – take over and complete?", then takes the claim over and completes
-the task in one step. **Cancel** leaves the card where it was. The activity
-shows who took a claim over from whom.
+the task in one step. **Cancel** leaves the card where it was. Sending a task
+through a wormhole to another Space ends its claim the same way: your own claim
+ends without a question, and someone else's is taken over after you confirm.
+The activity shows who took a claim over from whom.
 
 ## Prepare invitations from Cloud search {icon="calendar-event"}
 

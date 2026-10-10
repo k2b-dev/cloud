@@ -2046,6 +2046,7 @@ export const move = async (params: {
   afterItemId?: string;
   beforeItemId?: string;
   rank?: string;
+  /** Completion after the move; defaults to whether the target column is a done status. */
   completed?: boolean;
   claimId?: string;
   /** Takes over the claim given as `claimId` from another account; any writer may. */
@@ -2073,26 +2074,29 @@ export const move = async (params: {
       SELECT id, space_id, title, completed_at FROM spaces.items WHERE id = ${id} FOR UPDATE
     `;
     if (!existing) return { ok: false, error: "Item not found", status: 404 };
-    // Blockers guard a completion change, and a claim guards it and every move that names a claim. A move that keeps
-    // the state keeps its completion time and needs no claim, so anyone can move a claimed task between open statuses.
-    const completes = params.completed !== undefined && params.completed !== (existing.completed_at !== null);
-    const completedAt = completes ? (params.completed ? new Date() : null) : undefined;
+    const [column] = await tx<
+      { space_id: string; is_done: boolean }[]
+    >`SELECT space_id, is_done FROM spaces.columns WHERE id = ${columnId}`;
+    if (!column || column.space_id !== existing.space_id) {
+      return { ok: false, error: "Column not found in space", status: 400 };
+    }
+    // Completion follows the target status unless the request sets it, so a client that saw an outdated state cannot
+    // leave a completed task in an open status. Blockers guard a completion change, and a claim guards it and every
+    // move that names a claim. A move that keeps the state keeps its completion time and needs no claim, so anyone can
+    // move a claimed task between open statuses.
+    const completed = params.completed ?? column.is_done;
+    const completes = completed !== (existing.completed_at !== null);
+    const completedAt = completes ? (completed ? new Date() : null) : undefined;
     let takenOver: Awaited<ReturnType<typeof taskWork.checkClaim>> | null = null;
     if (completes || params.claimId) {
       takenOver = await taskWork.checkClaim(id, params.actor ?? systemActor, params.claimId, tx, params.force);
       if (!takenOver.ok) return takenOver;
     }
-    if (completes) {
-      if (params.completed) {
-        const [blocked] = await tx<{ blocked: boolean }[]>`SELECT EXISTS (
-          SELECT 1 FROM spaces.item_dependencies d JOIN spaces.items b ON b.id = d.blocker_item_id
-          WHERE d.item_id = ${id}::uuid AND b.completed_at IS NULL) AS blocked`;
-        if (blocked?.blocked) return { ok: false, error: "Complete all blocking tasks first", status: 409 };
-      }
-    }
-    const [column] = await tx<{ space_id: string }[]>`SELECT space_id FROM spaces.columns WHERE id = ${columnId}`;
-    if (!column || column.space_id !== existing.space_id) {
-      return { ok: false, error: "Column not found in space", status: 400 };
+    if (completes && completed) {
+      const [blocked] = await tx<{ blocked: boolean }[]>`SELECT EXISTS (
+        SELECT 1 FROM spaces.item_dependencies d JOIN spaces.items b ON b.id = d.blocker_item_id
+        WHERE d.item_id = ${id}::uuid AND b.completed_at IS NULL) AS blocked`;
+      if (blocked?.blocked) return { ok: false, error: "Complete all blocking tasks first", status: 409 };
     }
     let targetRank = explicitRank;
     if (targetRank === null) {
@@ -2122,7 +2126,7 @@ export const move = async (params: {
     if (!row) return { ok: false, error: "Failed to move item", status: 500 };
     const claim = takenOver?.ok ? takenOver.data : null;
     // Completion ends any claim, and so does a take-over.
-    if ((completes && params.completed) || claim) await taskWork.finish(id, undefined, undefined, params.actor ?? systemActor, tx);
+    if ((completes && completed) || claim) await taskWork.finish(id, undefined, undefined, params.actor ?? systemActor, tx);
     if (claim)
       await taskWork.recordTakeOver(
         { spaceId: existing.space_id, itemId: id, itemTitle: existing.title, actor: params.actor ?? systemActor, claim },

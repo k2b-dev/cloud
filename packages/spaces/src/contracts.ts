@@ -749,7 +749,9 @@ export const MoveItemSchema = z
     completed: z
       .boolean()
       .optional()
-      .describe("Completion state after the move; claims and blockers are checked only when this changes the current state"),
+      .describe(
+        "Completion state after the move; defaults to whether the target column is a done status. Claims and blockers are checked only when the move changes the current state",
+      ),
     claimId: UuidSchema.optional().describe("Current worker claim ID; required when the move completes or reopens a claimed task"),
     force: z.boolean().optional().describe("Take over another actor's claim given as its exact claimId; any writer may"),
   })
@@ -758,6 +760,12 @@ export const MoveItemSchema = z
     path: ["beforeItemId"],
   });
 export type MoveItem = z.infer<typeof MoveItemSchema>;
+
+/** A transfer ends the item's claim, so it names that claim as completion does. */
+export const TransferItemSchema = z.object({
+  claimId: UuidSchema.optional().describe("Current worker claim ID; required to transfer a claimed task, which ends the claim"),
+  force: z.boolean().optional().describe("Take over another actor's claim given as its exact claimId; any writer may"),
+});
 
 export const CreateWormholeSchema = z.object({
   targetColumnId: ResourceShortIdSchema.describe("Destination column ID"),

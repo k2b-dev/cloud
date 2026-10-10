@@ -443,7 +443,6 @@ export const spacesApiErrorMessage = (status: number, locale?: string | null, ba
       "Die Übernahme hat sich geändert. Lies den aktuellen Arbeitsstand vor dem Freigeben.",
     "Task claim changed; read its current state before taking it over":
       "Die Übernahme hat sich geändert. Lies den aktuellen Arbeitsstand vor dem Übernehmen.",
-    "Release the task claim before transferring it": "Gib die Aufgabenübernahme vor dem Transfer frei.",
     "Reopen the task before claiming it": "Öffne die Aufgabe vor dem Übernehmen wieder.",
     "Work tracking is only available for tasks": "Arbeitsstände sind nur für Aufgaben verfügbar.",
     "Complete all blocking tasks first": "Schließe zuerst alle blockierenden Aufgaben ab.",

@@ -18,10 +18,19 @@ export const read = async (itemId: string, db: Db = sql): Promise<TaskWork> => {
 
 type WorkClaim = NonNullable<TaskWork["claim"]>;
 
+const heldBy = (claim: WorkClaim, actor: activity.SpaceActivityIdentity) => claim.actor.kind === actor.kind && claim.actor.id === actor.id;
+const claimed = {
+  ok: false,
+  error: "Task is claimed; release its current claim before changing ownership or completing it",
+  status: 409,
+} as const;
+
 /**
  * Caller holds the item row lock. The claim ID coordinates sessions sharing an actor. Claims coordinate work and do
  * not lock it: with `force`, any writer takes over the exact claim it observed, and the result names the claim taken
- * over from another account so the caller can record it. A forced change of a task nobody holds goes ahead.
+ * over from another account so the caller can record it. A forced change of a task nobody holds goes ahead. A caller
+ * naming a claim that is no longer the current one learns that it ended, also after someone took it over and claimed
+ * the task anew.
  */
 export const checkClaim = async (
   itemId: string,
@@ -31,14 +40,12 @@ export const checkClaim = async (
   force = false,
 ): Promise<MutationResult<WorkClaim | null>> => {
   const { claim } = await read(itemId, db);
-  const own = claim !== null && claim.actor.kind === actor.kind && claim.actor.id === actor.id;
   if (claim && force) {
     if (claim.id !== claimId) return { ok: false, error: "Task claim changed; read its current state before taking it over", status: 409 };
-    return { ok: true, data: own ? null : claim };
+    return { ok: true, data: heldBy(claim, actor) ? null : claim };
   }
-  if (claim && (claim.id !== claimId || !own))
-    return { ok: false, error: "Task is claimed; release its current claim before changing ownership or completing it", status: 409 };
-  if (!claim && claimId && !force) return { ok: false, error: "Task claim is no longer active", status: 409 };
+  if (claimId && !force && claim?.id !== claimId) return { ok: false, error: "Task claim is no longer active", status: 409 };
+  if (claim && (claim.id !== claimId || !heldBy(claim, actor))) return claimed;
   return { ok: true, data: null };
 };
 
@@ -128,17 +135,14 @@ export const change = async (params: {
           WHERE d.item_id = ${params.itemId}::uuid AND b.completed_at IS NULL) AS blocked
       `;
       if (blocked?.blocked) return { ok: false, error: "Complete all blocking tasks first", status: 409 };
-      if (work.claim) {
-        const check = await checkClaim(params.itemId, params.actor, params.claimId, tx);
-        return check.ok ? { ok: true, data: work } : check;
-      }
+      // A retry of the current claim returns it; any other claim competes with it.
+      if (work.claim) return work.claim.id === params.claimId && heldBy(work.claim, params.actor) ? { ok: true, data: work } : claimed;
       work.claim = { id: params.claimId, actor: params.actor, claimedAt: new Date().toISOString() };
     } else {
       if (params.force && params.operation === "release") {
         if (!work.claim || work.claim.id !== params.claimId)
           return { ok: false, error: "Task claim changed; read its current state before releasing", status: 409 };
-        const holder = work.claim.actor;
-        if (holder.kind !== params.actor.kind || holder.id !== params.actor.id) takenOver = work.claim;
+        if (!heldBy(work.claim, params.actor)) takenOver = work.claim;
       } else {
         const check = await checkClaim(params.itemId, params.actor, params.claimId, tx);
         if (!check.ok) return check;

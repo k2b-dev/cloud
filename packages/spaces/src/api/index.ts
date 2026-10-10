@@ -75,6 +75,7 @@ import {
   SpaceWormholeDestinationSchema,
   SpaceWormholeSchema,
   SplitRecurringItemSchema,
+  TransferItemSchema,
   UpdateAccessSchema,
   UpdateColumnSchema,
   UpdateCommentSchema,
@@ -2577,16 +2578,18 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Spaces"],
       summary: "Move item through wormhole",
-      description: "Atomically transfer an item to the configured destination after rechecking write access to both spaces.",
+      description:
+        "Atomically transfer an item to the configured destination after rechecking write access to both spaces. A transfer ends the task's claim: the holder sends its claimId, anyone else takes it over with force.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(WormholeTransferResultSchema, "Transferred item"),
         400: jsonResponse(ErrorResponseSchema, "Item cannot be transferred"),
         403: jsonResponse(ErrorResponseSchema, "Access denied"),
         404: jsonResponse(ErrorResponseSchema, "Item or wormhole not found"),
-        409: jsonResponse(ErrorResponseSchema, "Wormhole destination changed"),
+        409: jsonResponse(ErrorResponseSchema, "Wormhole destination changed, or the transfer meets a claim"),
       },
     }),
+    v("json", TransferItemSchema),
     async (c) => {
       const { internalId: sourceSpaceId, error } = await checkSpaceAccess(c, c.req.param("id") ?? "", "write");
       if (error) return error;
@@ -2594,12 +2597,16 @@ const app = new Hono<AuthContext>()
       if (!item.ok) return respond(c, item);
       const wormholeId = await resolvePublicId("wormholes", c.req.param("wormholeId") ?? "");
       if (!wormholeId) return respond(c, fail(err.notFound("Wormhole")));
+      const { claimId, force } = c.req.valid("json");
       return respond(c, async () => {
         const result = await spacesService.wormhole.transfer({
           sourceSpaceId: sourceSpaceId!,
           itemId: item.data.id,
           wormholeId,
           actor: getWormholeActor(c),
+          workActor: getSpaceActivityActor(c),
+          claimId,
+          force,
         });
         if (!result.ok) return result;
         const [projectedItem, projectedDestination] = await Promise.all([

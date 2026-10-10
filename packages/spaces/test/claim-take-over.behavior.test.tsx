@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
-import { createComponent, createMemo, createRoot, getOwner } from "solid-js";
+import { createComponent, createMemo, createRoot, createSignal, getOwner } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import type { SpaceItem, SpaceItemClaim } from "@/contracts";
 import { createDomTestHarness } from "../../ui/test/dom";
@@ -186,6 +186,53 @@ describe("Spaces claim take-over", () => {
     await waitFor(() => reloaded);
     expect(calls).toEqual(["complete"]);
     expect(complete.mock.calls[0]![0].json).toEqual({ completed: true, claimId: claim.id, force: true });
+
+    dispose();
+    dom.cleanup();
+  });
+
+  test("a take-over answered after the panel switched to another item sends nothing", async () => {
+    calls.splice(0);
+    const dom = createDomTestHarness();
+    dom.root.className = "k2b-ui";
+    const { default: ItemDetailPanel } = await import("../src/frontend/[id]/_components/detail/ItemDetailPanel");
+    const other: SpaceItem = { ...item, id: "Item02", title: "Venue", claim: null };
+    const [shown, show] = createSignal(item);
+    const dispose = render(
+      () =>
+        createComponent(ItemDetailPanel, {
+          get item() {
+            return shown();
+          },
+          columns: [],
+          tags: [],
+          wormholes: [],
+          spaceId: item.spaceId,
+          baseUrl: "/app/spaces/Space1",
+          currentUserId: writerId,
+          initialCommentsPage: { items: [], page: 1, perPage: 50, total: 0, hasNext: false },
+          commentTarget: { itemId: item.id, recurrenceId: null },
+          recurringContext: null,
+          canWrite: true,
+          mailIntegrationAvailable: false,
+          scrollPreserveKey: "test-detail",
+        }),
+      dom.root,
+    );
+    const completeButton = () =>
+      [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Mark complete")!;
+    const dialog = () => dom.document.querySelector<HTMLDialogElement>('dialog[aria-label="Take over task"]');
+    const dialogButton = (label: string) =>
+      [...(dialog()?.querySelectorAll<HTMLButtonElement>("footer button") ?? [])].find((button) => button.textContent === label);
+
+    completeButton().click();
+    await waitFor(() => dialogButton("Take over and complete") !== undefined);
+    // The question named Planning; by the answer the panel shows Venue, which nobody claimed.
+    show(other);
+    dialogButton("Take over and complete")!.click();
+    await waitFor(() => dialog() === null);
+    for (let turn = 0; turn < 50; turn++) await Promise.resolve();
+    expect(calls).toEqual([]);
 
     dispose();
     dom.cleanup();

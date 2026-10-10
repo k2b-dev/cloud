@@ -99,8 +99,10 @@ einem Dialog, der die bisherige Person nennt. Erledigst du eine Aufgabe, die
 jemand anderes übernommen hat, etwa per Ziehen in eine Erledigt-Spalte, fragt
 Spaces einmal nach, zum Beispiel „Von Jana Berger übernommen – übernehmen und
 abschließen?“, und übernimmt und erledigt die Aufgabe dann in einem Schritt.
-**Abbrechen** lässt die Karte an ihrem Platz. Die Aktivität zeigt, wer eine
-Aufgabe von wem übernommen hat.
+**Abbrechen** lässt die Karte an ihrem Platz. Schickst du eine Aufgabe durch ein
+Wormhole in einen anderen Space, endet ihre Übernahme auf dieselbe Weise: Deine
+eigene Übernahme endet ohne Nachfrage, eine fremde übernimmst du nach einer
+Bestätigung. Die Aktivität zeigt, wer eine Aufgabe von wem übernommen hat.
 
 ## Einladungen über die Cloud-Suche vorbereiten {icon="calendar-event"}
 

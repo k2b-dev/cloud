@@ -171,8 +171,10 @@ places the item in the full column. API clients use the same contract:
 `POST /api/spaces/:id/items/:itemId/move` takes `columnId` and either
 `afterItemId` or `beforeItemId`, an item of the target column. Without either,
 the item goes to the top of the column. An explicit `rank` is still stored as
-given, but a neighbor wins when both are sent. Moves in one Space apply one at
-a time, so concurrent drops never share a position. A neighbor that is not an
+given, but a neighbor wins when both are sent. Without `completed`, the move
+completes or reopens the item when the target column's done state differs from
+the item's. Moves in one Space apply one at a time, so concurrent drops never
+share a position. A neighbor that is not an
 item of the Space, for example because it was deleted or sent through a
 wormhole, fails with `404`. A neighbor in another column of the Space fails with
 `409`, as does one that leaves the target column while the move runs. Neither
@@ -385,24 +387,28 @@ Claims coordinate work; they do not lock it. A claim guards completion, not the
 column: anyone who can edit the Space can move a claimed task between open
 columns, or between done columns, without a claim ID. Completing or reopening a
 claimed task, including a drag into a done column, needs the holder's claim ID,
-and completing ends the claim; the web UI sends it for your own claim. Anyone
-with write access may take over someone else's claim. In the task details,
-**Take over** ends the exact observed claim and claims the task for you.
-Completing or reopening a task someone else claimed, from the board, the list,
-the calendar tray, or the details, asks once, for example "Claimed by Jana
-Berger – take over and complete?", and then takes the claim over and completes
-the task in one step. Cancel leaves the task, and the card, where they were.
+and completing ends the claim; the web UI sends it for your own claim. A
+wormhole transfer ends the claim too, because the task leaves the Space, so it
+needs the holder's claim ID in the same way. Anyone with write access may take
+over someone else's claim. In the task details, **Take over** ends the exact
+observed claim and claims the task for you. If someone else claimed a task,
+completing or reopening it from the board, the list, the calendar tray, or the
+details, or sending it through a wormhole, asks once, for example "Claimed by
+Jana Berger – take over and complete?", and then takes the claim over and makes
+the change in one step. Cancel leaves the task, and the card, where they were.
 Task activity records who took a claim over from whom. The previous holder's
-next call with the ended claim ID gets `409` "Task claim is no longer active".
+next progress, release, or completion call with the ended claim ID gets `409`
+"Task claim is no longer active", also when someone has claimed the task again
+since.
 
 Use `cld spaces ls <space-id> --ready --json` to find open tasks without
 active blockers. Read `show <item> --context` before starting, then claim the task
 with a caller-generated UUID. Competing claims fail, including separate workers
 using the same account. Claims do not expire or lock ordinary edits. Release
-the claim when stopping, before a transfer, or before completing from another
-session. Anyone with write access can take over an abandoned claim with
-`release --force` and its exact ID, or complete with `done --claim-id <id>
---force`.
+the claim when stopping or before completing from another session. Anyone with
+write access can take over an abandoned claim with `release --force` and its
+exact ID, or complete with `done --claim-id <id> --force`. A wormhole transfer
+through the API takes the same `claimId` and `force` and ends the claim.
 
 `progress` accepts a full handoff as text or through `--from <file|->`. `done` can save
 an outcome with verification evidence and an optional commit SHA in the same

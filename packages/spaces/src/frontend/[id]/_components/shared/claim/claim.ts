@@ -19,30 +19,44 @@ export const ownClaimId = (claim: SpaceItemClaim | null | undefined, currentUser
 export const othersClaim = (claim: SpaceItemClaim | null | undefined, currentUserId: string) =>
   claim && !isOwnClaim(claim, currentUserId) ? claim : null;
 
-/** Claim fields of a completion change: the holder's own claim ID, or a confirmed take-over of the exact claim seen. */
-export type CompletionClaim = { claimId?: string; force?: true };
+/**
+ * Claim fields of a change a claim guards (completion, reopening, a wormhole transfer): the holder's own claim ID, or a
+ * confirmed take-over of the exact claim seen.
+ */
+export type ClaimFields = { claimId?: string; force?: true };
+
+type GuardedChange = "complete" | "reopen" | "transfer";
 
 /**
- * Claims coordinate work and do not lock it: completing or reopening a task someone else claimed asks once and then
- * takes their claim over in the same request. Resolves to null when the person declines, so nothing changes.
+ * Claims coordinate work and do not lock it: a guarded change of a task someone else claimed asks once and then takes
+ * their claim over in the same request. Resolves to null when the person declines, so nothing changes.
  */
-export const resolveCompletionClaim = async (
+const resolveClaim = async (
   claim: SpaceItemClaim | null | undefined,
   currentUserId: string,
-  completed: boolean,
+  change: GuardedChange,
   t: Messages,
-): Promise<CompletionClaim | null> => {
+): Promise<ClaimFields | null> => {
   const other = othersClaim(claim, currentUserId);
   if (!other) return { claimId: ownClaimId(claim, currentUserId) };
   const name = other.displayName;
-  const confirmed = await prompts.confirm(completed ? t.takeOverAndComplete({ name }) : t.takeOverAndReopen({ name }), {
-    title: t.takeOverTitle,
-    icon: "ti ti-replace",
-    confirmText: completed ? t.takeOverAndCompleteAction : t.takeOverAndReopenAction,
-    cancelText: t.cancel,
-  });
+  const [question, confirmText] =
+    change === "complete"
+      ? [t.takeOverAndComplete({ name }), t.takeOverAndCompleteAction]
+      : change === "reopen"
+        ? [t.takeOverAndReopen({ name }), t.takeOverAndReopenAction]
+        : [t.takeOverAndMove({ name }), t.takeOverAndMoveAction];
+  const confirmed = await prompts.confirm(question, { title: t.takeOverTitle, icon: "ti ti-replace", confirmText, cancelText: t.cancel });
   return confirmed ? { claimId: other.id, force: true } : null;
 };
+
+/** Claim fields to complete or reopen a task; see `resolveClaim`. */
+export const resolveCompletionClaim = (claim: SpaceItemClaim | null | undefined, currentUserId: string, completed: boolean, t: Messages) =>
+  resolveClaim(claim, currentUserId, completed ? "complete" : "reopen", t);
+
+/** Claim fields to send a task through a wormhole, which ends its claim; see `resolveClaim`. */
+export const resolveTransferClaim = (claim: SpaceItemClaim | null | undefined, currentUserId: string, t: Messages) =>
+  resolveClaim(claim, currentUserId, "transfer", t);
 
 /** Claims the task with a fresh browser-generated claim ID, exactly like a CLI worker. */
 export const claimTask = async (target: Target, t: Messages) => {

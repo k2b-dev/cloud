@@ -7,7 +7,7 @@ import { shouldHandleDetailClick, subscribeToDetailSelection } from "../../../li
 import type { RetryToast } from "../../../lib/feedback";
 import { useSpaceMessages } from "../../messages";
 import AssigneeAvatars from "../shared/AssigneeAvatars";
-import { type CompletionClaim, resolveCompletionClaim } from "../shared/claim/claim";
+import { type ClaimFields, resolveCompletionClaim } from "../shared/claim/claim";
 import { confirmCompletion, setItemCompleted } from "../shared/completion";
 import { isInactiveTask } from "../shared/item-activity";
 import { invalidateSpacesData, requestSpacesRouteNavigation } from "../workspace/workspace-events";
@@ -63,7 +63,7 @@ export default function ItemRow(props: ItemRowProps) {
     onCleanup(unsubscribe);
   });
 
-  type Completion = { completed: boolean; claim: CompletionClaim };
+  type Completion = { completed: boolean; claim: ClaimFields };
   const completeMutation = mutations.create<boolean, Completion, Completion>({
     onBefore: (vars) => vars,
     mutation: async ({ completed, claim }) => {

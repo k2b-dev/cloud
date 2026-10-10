@@ -2335,7 +2335,7 @@ export const spacesCapabilities = defineCapabilities({
     "task.claim": {
       title: "Claim task work",
       description:
-        "Claim an open unblocked task for one worker. Generate a UUID claimId and reuse it only for retries; competing claims return a conflict. Claims coordinate work and do not lock it: any writer can take one over, and the next call with the ended claimId returns 409 'Task claim is no longer active'.",
+        "Claim an open unblocked task for one worker. Generate a UUID claimId and reuse it only for retries; competing claims return a conflict. Claims coordinate work and do not lock it: any writer can take one over, and progress, release or completion with the ended claimId then returns 409 'Task claim is no longer active'.",
       input: ClaimTaskSchema.extend({ itemId: ItemReadInputSchema.shape.id }),
       data: TaskWorkSchema,
       destructive: false,

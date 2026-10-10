@@ -45,12 +45,13 @@ import { readResponseError } from "../../../lib/response";
 import { useSpaceMessages } from "../../messages";
 import ClaimButton from "../shared/claim/ClaimButton";
 import {
-  type CompletionClaim,
+  type ClaimFields,
   claimTask,
   ownClaimId,
   promptReleaseNote,
   releaseTask,
   resolveCompletionClaim,
+  resolveTransferClaim,
   takeOverTask,
 } from "../shared/claim/claim";
 import { setItemCompleted } from "../shared/completion";
@@ -418,12 +419,16 @@ export default function ItemDetailPanel(props: Props) {
     (tagIds) => ({ tagIds }),
   );
 
-  type CompleteIntent = { itemId: string; completed: boolean } & CompletionClaim;
-  /** Someone else's claim is taken over after one confirmation; declining changes nothing. */
+  type CompleteIntent = { itemId: string; completed: boolean } & ClaimFields;
+  /**
+   * Someone else's claim is taken over after one confirmation; declining changes nothing. The answer belongs to the
+   * item the question named, so a panel that shows another item by then sends nothing.
+   */
   const toggleCompleted = async () => {
+    const itemId = props.item.id;
     const completed = !isCompleted();
     const claim = await resolveCompletionClaim(props.item.claim, props.currentUserId, completed, t);
-    if (claim) await completeMutation.mutate({ itemId: props.item.id, completed, ...claim });
+    if (claim && props.item.id === itemId) await completeMutation.mutate({ itemId, completed, ...claim });
   };
   const completeMutation = mutations.create<boolean, CompleteIntent, { intent: CompleteIntent }>({
     onBefore: (intent) => ({ intent }),
@@ -532,12 +537,14 @@ export default function ItemDetailPanel(props: Props) {
     onError: (err, context) => retryToast(err.message, t.retry, () => context && deleteMutation.mutate(context.intent)),
   });
 
-  const transferMutation = mutations.create<WormholeTransferResult, string>({
-    mutation: (wormholeId, context) =>
+  type Transfer = { itemId: string; wormholeId: string; claim: ClaimFields };
+  const transferMutation = mutations.create<WormholeTransferResult, Transfer>({
+    mutation: ({ itemId, wormholeId, claim }, context) =>
       transferThroughWormhole({
         sourceSpaceId: props.spaceId,
-        itemId: props.item.id,
+        itemId,
         wormholeId,
+        claim,
         signal: context.abortSignal,
         locale: locale(),
       }),
@@ -549,6 +556,13 @@ export default function ItemDetailPanel(props: Props) {
       if (error.name !== "AbortError") toast.error(error.message);
     },
   });
+
+  /** A transfer ends the claim; someone else's is taken over after one confirmation, as for completion. */
+  const transferTo = async (wormholeId: string) => {
+    const itemId = props.item.id;
+    const claim = await resolveTransferClaim(props.item.claim, props.currentUserId, t);
+    if (claim && props.item.id === itemId) await transferMutation.mutate({ itemId, wormholeId, claim });
+  };
 
   const handleDuplicate = () => {
     if (!duplicateMutation.loading()) void duplicateMutation.mutate(duplicateIntent());
@@ -699,7 +713,7 @@ export default function ItemDetailPanel(props: Props) {
                 {
                   label: t.moveTo({ space: wormhole.target.spaceName, column: wormhole.target.columnName }),
                   icon: "ti ti-arrow-bounce",
-                  action: () => transferMutation.mutate(wormhole.id),
+                  action: () => void transferTo(wormhole.id),
                 },
               ]
             : [],

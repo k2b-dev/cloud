@@ -188,13 +188,17 @@ suite("Spaces agent work", () => {
       // Between done statuses the completion time stays.
       const archivedMove = await move({ id: itemId, columnId: archived!.id, completed: true, actor: colleague });
       expect(archivedMove.ok && archivedMove.data.completedAt).toBe(completedAt);
-      const reopened = await move({ id: itemId, columnId: doing!.id, completed: false, actor: holder });
+      // Without a completion state the target status decides, so a board that missed the completion cannot leave a
+      // completed task in an open status, nor an open one in a done status.
+      const reopened = await move({ id: itemId, columnId: doing!.id, actor: holder });
       expect(reopened.ok && reopened.data.completedAt).toBeNull();
       expect(await takeOvers()).toEqual([]);
 
       // Any writer takes a claim over and completes in one step; the activity names who took it from whom.
       const second = crypto.randomUUID();
       expect((await change({ itemId, spaceId, ...as(holder), operation: "claim", claimId: second })).ok).toBe(true);
+      expect(await move({ id: itemId, columnId: done!.id, actor: colleague })).toMatchObject({ ok: false, status: 409 });
+      expect((await get({ id: itemId }))?.completedAt).toBeNull();
       const takenOver = await move({ id: itemId, columnId: done!.id, completed: true, claimId: second, force: true, actor: colleague });
       expect(takenOver.ok && takenOver.data.completedAt !== null && takenOver.data.claim === null).toBe(true);
       expect(await takeOvers()).toEqual([
@@ -218,6 +222,18 @@ suite("Spaces agent work", () => {
       expect((await change({ itemId, spaceId, ...as(colleague), operation: "claim", claimId: crypto.randomUUID() })).ok).toBe(true);
       expect((await read(itemId)).claim?.actor).toEqual(colleague);
       expect((await takeOvers()).map((row) => row.actor_id)).toEqual([colleague!.id, colleague!.id]);
+      // The previous holder's calls with the ended claim learn that it ended, although the task is claimed again.
+      const ended = { status: 409, error: "Task claim is no longer active" };
+      expect(await change({ itemId, spaceId, ...as(holder), operation: "progress", claimId: third, content: "Late" })).toMatchObject(ended);
+      expect(await change({ itemId, spaceId, ...as(holder), operation: "release", claimId: third })).toMatchObject(ended);
+      expect(await setCompleted({ id: itemId, completed: true, claimId: third, actor: holder })).toMatchObject(ended);
+      expect(await move({ id: itemId, columnId: done!.id, claimId: third, actor: holder })).toMatchObject(ended);
+      // A claim with the ended ID competes with the new claim instead of restoring the old one.
+      expect(await change({ itemId, spaceId, ...as(holder), operation: "claim", claimId: third })).toMatchObject({
+        status: 409,
+        error: "Task is claimed; release its current claim before changing ownership or completing it",
+      });
+      expect((await read(itemId)).claim?.actor).toEqual(colleague);
       // The holder completes its own claim with its claim ID, by setCompleted as well.
       const own = await setCompleted({ id: itemId, completed: true, claimId: (await read(itemId)).claim!.id, actor: colleague });
       expect(own.ok && own.data.claim === null).toBe(true);

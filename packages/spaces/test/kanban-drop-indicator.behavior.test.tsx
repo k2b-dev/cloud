@@ -53,6 +53,9 @@ const pending = () => new Promise<Response>(() => {});
 let answerMove: (request: MoveRequest) => Promise<Response> = pending;
 // Canonical refreshes stay pending unless a test answers them with the columns the server holds.
 let answerFilter: (columnId: string) => Promise<Response> = pending;
+type TransferRequest = { itemId: string; wormholeId: string; json: Record<string, unknown> };
+const transfers: TransferRequest[] = [];
+let answerTransfer: (request: TransferRequest) => Promise<Response> = pending;
 if (!isServer) {
   mock.module("@/api/client", () => ({
     apiClient: {
@@ -65,6 +68,15 @@ if (!isServer) {
                 const move = { itemId: request.param.itemId, json: request.json };
                 moves.push(move);
                 return answerMove(move);
+              },
+            },
+            wormholes: {
+              [":wormholeId"]: {
+                $post: (request: { param: { itemId: string; wormholeId: string }; json: TransferRequest["json"] }) => {
+                  const transfer = { itemId: request.param.itemId, wormholeId: request.param.wormholeId, json: request.json };
+                  transfers.push(transfer);
+                  return answerTransfer(transfer);
+                },
               },
             },
           },
@@ -119,6 +131,17 @@ const flush = async () => {
   for (let step = 0; step < 5; step++) await Promise.resolve();
 };
 
+const CURRENT_USER = "77777777-7777-4777-8777-777777777777";
+const archiveWormhole: SpaceWormhole = {
+  id: "Worm01",
+  sourceSpaceId: SPACE_ID,
+  color: "#8b5cf6",
+  rank: "1024",
+  target: { spaceId: "Space2", spaceName: "Archive", spaceColor: "#8b5cf6", columnId: "Col009", columnName: "Inbox", columnIsDone: false },
+  createdAt: NOW,
+  updatedAt: NOW,
+};
+
 /** Renders the board over the three columns Open, Review, and Later with a fixed layout and pointer helpers. */
 const renderBoard = async (initialBuckets: ReturnType<typeof bucket>[], wormholes: SpaceWormhole[] = []) => {
   const dom = createDomTestHarness();
@@ -142,7 +165,7 @@ const renderBoard = async (initialBuckets: ReturnType<typeof bucket>[], wormhole
         initialBuckets,
         pageSize: 30,
         canWrite: true,
-        currentUserId: "77777777-7777-4777-8777-777777777777",
+        currentUserId: CURRENT_USER,
         wormholes,
       }),
     dom.root,
@@ -183,7 +206,16 @@ const renderBoard = async (initialBuckets: ReturnType<typeof bucket>[], wormhole
     expect(moves.length).toBe(sent + 1);
     expect(handleOf(itemId)).not.toBeNull();
   };
-  return { dom, dispose, pointer, moveTo, slots, drop };
+  /** Drags a card onto the wormhole target, right of the three columns, and releases it there. */
+  const dropOnWormhole = async (itemId: string) => {
+    const card = dom.document.querySelector(`[data-item-id="${itemId}"]`)!.closest<HTMLElement>("article")!;
+    const sourceColumn = Array.from(dom.document.querySelectorAll(COLUMN_BODY)).indexOf(card.closest(COLUMN_BODY)!);
+    pointer("pointerdown", handleOf(itemId)!, columnX(sourceColumn), cardCenter(Number(card.dataset.cardIndex)));
+    await moveTo(3, 70);
+    pointer("pointerup", dom.window as unknown as EventTarget, columnX(3), 70);
+    await flush();
+  };
+  return { dom, dispose, pointer, moveTo, slots, drop, dropOnWormhole };
 };
 
 describe("Spaces Kanban drop indicator", () => {
@@ -205,24 +237,7 @@ describe("Spaces Kanban drop indicator", () => {
         bucket("Col002", "Review", [item("X", "Col002", "1024"), item("Y", "Col002", "2048")]),
         bucket("Col003", "Later", []),
       ],
-      [
-        {
-          id: "Worm01",
-          sourceSpaceId: SPACE_ID,
-          color: "#8b5cf6",
-          rank: "1024",
-          target: {
-            spaceId: "Space2",
-            spaceName: "Archive",
-            spaceColor: "#8b5cf6",
-            columnId: "Col009",
-            columnName: "Inbox",
-            columnIsDone: false,
-          },
-          createdAt: NOW,
-          updatedAt: NOW,
-        },
-      ],
+      [archiveWormhole],
     );
 
     const handle = dom.document.querySelector('[data-item-id="A"]')!.closest("article")!.querySelector("[data-dnd-card-handle]")!;
@@ -274,6 +289,78 @@ describe("Spaces Kanban drop indicator", () => {
     expect(slots()).toEqual(["Open: B C A D", "Review: X Y", "Later: empty"]);
 
     dispose();
+    dom.cleanup();
+  });
+
+  test("a transfer ends the claim: one question takes someone else's over, the holder's own ends without one", async () => {
+    transfers.length = 0;
+    answerTransfer = async ({ itemId }) =>
+      Response.json({
+        item: { ...item(itemId, "Col009", "1024"), spaceId: "Space2" },
+        destination: archiveWormhole.target,
+        removedTagCount: 0,
+        removedAssigneeCount: 0,
+        removedDependencyCount: 0,
+      });
+    const claim = (id: string, actorId: string, displayName: string) => ({
+      id,
+      actor: { kind: "user" as const, id: actorId },
+      displayName,
+      avatarHash: null,
+      claimedAt: NOW,
+    });
+    const foreign = claim("55555555-5555-4555-8555-555555555555", "44444444-4444-4444-8444-444444444444", "Mira Beck");
+    const own = claim("66666666-6666-4666-8666-666666666666", CURRENT_USER, "Me");
+    const { dom, dispose, slots, dropOnWormhole } = await renderBoard(
+      [
+        bucket("Col001", "Open", [
+          { ...item("A", "Col001", "1024"), claim: foreign },
+          { ...item("B", "Col001", "2048"), claim: own },
+        ]),
+        bucket("Col002", "Review", []),
+        bucket("Col003", "Later", []),
+      ],
+      [archiveWormhole],
+    );
+    const { toast } = await import("@k2b/ui");
+    const errors = spyOn(toast, "error").mockImplementation(() => ({ dismiss: () => {}, update: () => {} }));
+    const dialog = () => dom.document.querySelector<HTMLDialogElement>('dialog[aria-label="Take over task"]');
+    const dialogButton = (label: string) =>
+      [...(dialog()?.querySelectorAll<HTMLButtonElement>("footer button") ?? [])].find((button) => button.textContent === label);
+    const settle = async (condition: () => boolean) => {
+      for (let attempt = 0; attempt < 50 && !condition(); attempt++) await flush();
+      expect(condition()).toBe(true);
+    };
+
+    // Cancel: nothing is sent, and the card stays where it was.
+    await dropOnWormhole("A");
+    await settle(() => dialogButton("Cancel") !== undefined);
+    expect(dialog()!.textContent).toContain("Claimed by Mira Beck – take over and move?");
+    dialogButton("Cancel")!.click();
+    await settle(() => dialog() === null);
+    await flush();
+    expect(transfers).toEqual([]);
+    expect(slots()).toEqual(["Open: A B", "Review: empty", "Later: empty"]);
+
+    // Confirm: the transfer takes over the exact claim the board showed.
+    await dropOnWormhole("A");
+    await settle(() => dialogButton("Take over and move") !== undefined);
+    dialogButton("Take over and move")!.click();
+    await settle(() => transfers.length === 1);
+    expect(transfers[0]).toEqual({ itemId: "A", wormholeId: "Worm01", json: { claimId: foreign.id, force: true } });
+    await settle(() => slots()[0] === "Open: B");
+
+    // The holder's own claim ends without a question.
+    await dropOnWormhole("B");
+    await settle(() => transfers.length === 2);
+    expect(dialog()).toBeNull();
+    expect(transfers[1]).toEqual({ itemId: "B", wormholeId: "Worm01", json: { claimId: own.id } });
+    expect(errors).not.toHaveBeenCalled();
+
+    answerTransfer = pending;
+    dispose();
+    await flush();
+    errors.mockRestore();
     dom.cleanup();
   });
 

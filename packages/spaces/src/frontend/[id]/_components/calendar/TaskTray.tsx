@@ -6,7 +6,7 @@ import type { SpaceItem } from "@/contracts";
 import { shouldHandleDetailClick } from "../../../lib/detail";
 import { createRetryToasts } from "../../../lib/feedback";
 import { useSpaceMessages } from "../../messages";
-import { type CompletionClaim, resolveCompletionClaim } from "../shared/claim/claim";
+import { type ClaimFields, resolveCompletionClaim } from "../shared/claim/claim";
 import { confirmCompletion, setItemCompleted } from "../shared/completion";
 import { invalidateSpacesData, requestSpacesRouteNavigation } from "../workspace/workspace-events";
 import type { CalendarTray as Tray } from "../workspace/workspace-types";
@@ -52,7 +52,7 @@ export default function TaskTray(props: Props) {
   /** A task the reader claimed completes with that claim; one claimed by someone else asks once to take it over. */
   const toggle = async (item: SpaceItem, completed: boolean) => {
     if (item.id in checking()) return;
-    const claim: CompletionClaim | null = props.currentUserId
+    const claim: ClaimFields | null = props.currentUserId
       ? await resolveCompletionClaim(item.claim, props.currentUserId, completed, t)
       : {};
     if (!claim || item.id in checking()) return;
