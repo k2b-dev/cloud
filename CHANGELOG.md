@@ -3,6 +3,38 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.37.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.36.0...cloud-v0.37.0) (2026-10-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* **mail:** let conversations have several assignees and grant access to assigned conversations only ([#830](https://github.com/k2b-dev/cloud/issues/830))
+
+### Features
+
+* **ai:** show charts directly in the chat without building an app ([#847](https://github.com/k2b-dev/cloud/issues/847)) ([18a129d](https://github.com/k2b-dev/cloud/commit/18a129dcb05d9ed4043a7a416b2c6cca727997c6))
+* **capabilities:** let apps word their own approval and receipt sentences ([#846](https://github.com/k2b-dev/cloud/issues/846)) ([cc5a4d6](https://github.com/k2b-dev/cloud/commit/cc5a4d69d03f42f10ebd67b3b91ab0bd83c7386b)), closes [#811](https://github.com/k2b-dev/cloud/issues/811)
+* **cloud:** let apps ship their own Assistant skills ([#840](https://github.com/k2b-dev/cloud/issues/840)) ([d0b1ac6](https://github.com/k2b-dev/cloud/commit/d0b1ac6db6d3199b072684704f84dc0a74d6a506))
+* **cloud:** show Help only to people who may open the app ([#827](https://github.com/k2b-dev/cloud/issues/827)) ([cce4f28](https://github.com/k2b-dev/cloud/commit/cce4f280fc39e5b90647bccebef4ac2dbbde90dd))
+* **dashboard:** stream widgets in as they load instead of failing the whole board ([#831](https://github.com/k2b-dev/cloud/issues/831)) ([e7ff2ce](https://github.com/k2b-dev/cloud/commit/e7ff2ce2c13a4a6e2e49fc4c2ef7b9a236ca78b9))
+* **mail:** let conversations have several assignees and grant access to assigned conversations only ([#830](https://github.com/k2b-dev/cloud/issues/830)) ([631c73a](https://github.com/k2b-dev/cloud/commit/631c73a05bf8eafe74b0af61920237657678193a))
+* **spaces:** remove the timeline view ([#798](https://github.com/k2b-dev/cloud/issues/798)) ([ca4f890](https://github.com/k2b-dev/cloud/commit/ca4f89045130cca74bc75107b153b534fb0b3c20))
+* **spaces:** select days, create over a range, and show long events as one bar in the month view ([#826](https://github.com/k2b-dev/cloud/issues/826)) ([ed10713](https://github.com/k2b-dev/cloud/commit/ed1071320af6a09e177d4115f15328bcfb7bc8a7))
+* **ui:** mark today in every date picker ([#839](https://github.com/k2b-dev/cloud/issues/839)) ([de47b30](https://github.com/k2b-dev/cloud/commit/de47b3010ac5a6f0ef32aff638edaa30dadf50d2))
+
+
+### Bug Fixes
+
+* **ai:** keep code runs from failing while they wait for an approval ([#832](https://github.com/k2b-dev/cloud/issues/832)) ([cbdaa0f](https://github.com/k2b-dev/cloud/commit/cbdaa0fee308e890fd940b242d8d2ce6c78bc2f2))
+* **notebooks:** count lines through a mirror file as the file shows them, in cat and edit ([#802](https://github.com/k2b-dev/cloud/issues/802)) ([de3f6d2](https://github.com/k2b-dev/cloud/commit/de3f6d23d2d547ae07eae6f35d8d43c1da7469cc))
+* **ui:** keep busy buttons at their width and name them by their loading label ([#845](https://github.com/k2b-dev/cloud/issues/845)) ([1bd875a](https://github.com/k2b-dev/cloud/commit/1bd875ae479b276cdcea6e3d11a1f95cc1257325))
+* **ui:** show bare dialogs on iPad instead of only blurring the page ([#799](https://github.com/k2b-dev/cloud/issues/799)) ([285b00f](https://github.com/k2b-dev/cloud/commit/285b00ff6b655443e468bf6e167a82ad5ffd2fec))
+
+
+### Performance Improvements
+
+* keep Zod, KaTeX, Liquid and on-demand dialogs out of the shell and Mail first load ([#851](https://github.com/k2b-dev/cloud/issues/851)) ([90d919a](https://github.com/k2b-dev/cloud/commit/90d919ac1ab8ca65c8b99d0e7617824c73ce9e69))
+
 ## [0.36.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.35.0...cloud-v0.36.0) (2026-10-09)
 
 
