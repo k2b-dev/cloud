@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { chromium } from "playwright";
+import { launchBrowser } from "../../../ui/test/browser";
 import { appRuntimeRoute } from "./html/test-assets";
 import { renameSource } from "./rename-source";
 
@@ -24,7 +24,7 @@ test("Studio editor keeps pending edits and file sessions; SQL and local data ar
       );
     },
   });
-  const browser = await chromium.launch({ channel: "chrome", headless: true });
+  const browser = await launchBrowser({ headless: true });
   try {
     const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
     page.setDefaultTimeout(6000);
