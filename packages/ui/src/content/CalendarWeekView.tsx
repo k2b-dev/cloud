@@ -940,6 +940,8 @@ const WeekColumn = (props: {
   };
   const nowMinute = () => (props.dayKey === view.nowKey() ? view.nowMinute() : null);
   const selected = () => view.selection()?.key === props.dayKey;
+  /** The quarter hour under the mouse on empty time, as a line with its time, to aim a drag at. */
+  const [hover, setHover] = createSignal<number | null>(null);
   const timeline = createMemo(() =>
     [
       ...gaps().map((gap) => ({ at: gap.start, kind: "gap" as const, gap })),
@@ -994,6 +996,11 @@ const WeekColumn = (props: {
         const minute = Math.floor(minuteAt(event.currentTarget, event.clientY) / 30) * 30;
         view.openQuickCreate(props.dayKey, minute, Math.min(minute + 60, props.expanded ? DAY_MINUTES : wake()), event.currentTarget);
       }}
+      onPointerMove={(event) => {
+        if (event.pointerType !== "mouse" || view.dragging() || !isEmptyTarget(event.target)) return setHover(null);
+        setHover(Math.floor(minuteAt(event.currentTarget, event.clientY) / 15) * 15);
+      }}
+      onPointerLeave={() => setHover(null)}
     >
       <For each={timeline()}>
         {(entry) =>
@@ -1056,6 +1063,11 @@ const WeekColumn = (props: {
         </div>
       </Show>
       <TimeOverlays view={view} dayKey={props.dayKey} expanded={props.expanded} />
+      <Show when={hover() !== null}>
+        <span class="k2b-calendar-hover" style={{ top: termsCss(dayYTerms(wake(), props.expanded, hover()!)) }} aria-hidden="true">
+          {view.clock(hover()!)}
+        </span>
+      </Show>
       <Show when={nowMinute() !== null && nowMinute()! >= 0 && nowMinute()! < (props.expanded ? DAY_MINUTES : wake())}>
         <div class="k2b-calendar-now" style={{ top: termsCss(dayYTerms(wake(), props.expanded, nowMinute()!)) }} aria-hidden="true" />
       </Show>

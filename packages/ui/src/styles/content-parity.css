@@ -2272,8 +2272,11 @@
   visibility: hidden;
 }
 
-.k2b-ui .k2b-calendar-days .k2b-calendar-gap[data-aside="true"] .k2b-calendar-gap__button {
+.k2b-ui :is(.k2b-calendar-days, .k2b-calendar-week) .k2b-calendar-gap[data-aside="true"] .k2b-calendar-gap__button {
   top: calc(50% + 0.9375rem);
+}
+
+.k2b-ui .k2b-calendar-days .k2b-calendar-gap[data-aside="true"] .k2b-calendar-gap__button {
   left: 28%;
 }
 
