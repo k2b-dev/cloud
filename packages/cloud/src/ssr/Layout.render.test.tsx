@@ -206,7 +206,7 @@ describe("Cloud layouts SSR", () => {
     expect(html).toContain('<div class="flex items-center gap-1 lg:hidden">');
   });
 
-  test("signed-in pages trade the header for the rail from md and name the page for the compact bar", async () => {
+  test("signed-in pages trade the header for the rail from md and publish the page trail", async () => {
     const spies = [
       spyOn(railSnapshot, "readRailSnapshot").mockResolvedValue(defaultRailPreferences()),
       spyOn(settingsMiddleware, "preloadLayoutAnnouncements").mockResolvedValue(undefined),
@@ -223,9 +223,10 @@ describe("Cloud layouts SSR", () => {
     expect(html).not.toContain("hidden min-w-0 items-center lg:flex");
     expect(html.split('class="layout-profile-preferences"').length - 1).toBe(1);
     expect(html).toContain('class="layout-rail hidden w-10 shrink-0 flex-col md:flex"');
-    // The last title entry, as a CSS string that cannot end early and carries no markup.
-    const canvas = html.match(/<div[^>]*class="cloud-app-canvas[^>]*>/)?.[0] ?? "";
-    expect(canvas).toContain("--k2b-app-workspace-title:&quot;Q4 \\22 Plan\\22  \\5c  \\3c notes\\3e &quot;");
+    // The page trail travels as JSON that cannot end its script element or carry markup.
+    const source = html.match(/<script type="application\/json" data-k2b-page-trail>([^<]*)<\/script>/)?.[1] ?? "";
+    expect(source).toContain("\\u003cnotes>");
+    expect(JSON.parse(source).title).toBe('Q4 "Plan" \\ <notes>');
   });
 
   test("hands the rail and the app grid each app's badge route but renders no count on the server", async () => {

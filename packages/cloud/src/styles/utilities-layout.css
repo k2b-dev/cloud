@@ -601,3 +601,26 @@
 .dark .panel-dialog-tabs > button[aria-pressed="true"] {
   color: var(--color-zinc-50);
 }
+
+/* The shell's row for the way up on pages without a workspace: the page title
+   with "‹ Parent" or the path above it, 46 px high like a workspace head and
+   without a line under it. It shows only on a page with a page above it; a
+   workspace's head or the page's own `PageTrail` takes its place. */
+.layout-page-head {
+  display: none;
+  min-height: 2.875rem;
+  flex: none;
+  align-items: center;
+  padding: 0.25rem 0.5rem;
+}
+
+.layout-shell-content:not(:has(.layout-content-main .k2b-app-workspace, .k2b-page-title:not([data-fallback]))) .layout-page-head[data-trail="up"] {
+  display: flex;
+}
+
+/* After going up, the row that led down to where the person came from stays
+   marked, with the hover tint and nothing that moves. */
+[data-page-trail-recent],
+[data-page-trail-recent] > :is(td, th) {
+  background-color: var(--ui-hover);
+}

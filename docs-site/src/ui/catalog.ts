@@ -158,6 +158,12 @@ const portableSections = [
         "ti ti-arrow-bar-to-down",
         "Touch pull, mouse drag, or wheel overscroll at the top of a list that runs one refresh.",
       ),
+      page(
+        "page-title",
+        "PageTitle",
+        "ti ti-chevron-left",
+        "A page title with its way up: a back link, or a path whose middle collapses only when it does not fit.",
+      ),
       page("panes", "Panes", "ti ti-columns", "Controlled serializable tabs and nested split layouts."),
       page("overview", "AppOverview", "ti ti-home", "Application landing page with primary and supporting panels."),
       page("settings-modal", "Settings", "ti ti-settings", "Accessible settings tabs, fields, and save state."),

@@ -117,8 +117,8 @@ names and descriptions. Signed-in users also find their profile, theme, language
 sign-out actions there; the mobile header has no separate profile menu.
 From 768 px the app bar replaces the header, and `AppWorkspace` shows its own
 navigation. Between 768 and 1023 px, a tablet range, the workspace keeps its
-list and detail side by side, and its sidebar is an overlay: a compact bar at
-the top of the workspace holds the button that opens it and the page title.
+list and detail side by side, and its sidebar is an overlay: the head at the
+top of the workspace holds the button that opens it and the page title.
 The overlay closes with Escape, a tap beside it, or a choice in the
 navigation, and focus returns to the button. A `mobile="stacked"` overview
 list stays above the content instead. From 1024 px the sidebar sits beside the

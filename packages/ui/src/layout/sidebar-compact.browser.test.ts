@@ -4,8 +4,8 @@ import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { launchBrowser } from "../../test/browser";
 
-// Between 48 and 64 rem the sidebar is an overlay that the workspace's compact
-// bar opens. Which regions show, what covers what, and where focus goes depend
+// Between 48 and 64 rem the sidebar is an overlay that a button in the
+// workspace's head opens. Which regions show, what covers what, and where focus goes depend
 // on real layout and a real focus model, so a real engine runs the shipped
 // browser build of a hydrated workspace, which installs its own controller.
 const ui = resolve(import.meta.dir, "../..");
@@ -14,7 +14,7 @@ const entry = resolve(import.meta.dir, "sidebar-compact.fixture.ts");
 const fixture = `
 import { createSignal } from "solid-js";
 import { createComponent, render } from "solid-js/web";
-import { AppWorkspace, LocaleProvider } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { AppWorkspace, LocaleProvider, PageTrailProvider } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 
 const params = new URLSearchParams(window.fixtureParams ?? "");
 const [hidden, setHidden] = createSignal(false);
@@ -105,8 +105,13 @@ render(
     createComponent(LocaleProvider, {
       locale: params.get("locale") ?? "en",
       get children() {
-        // A nested workspace hydrates with its own controller, as it does outside Cloud.
-        return workspace("", params.has("nested") ? workspace("inner-", "Inner") : "Detail");
+        // The host names the page; a nested workspace hydrates with its own controller, as it does outside Cloud.
+        return createComponent(PageTrailProvider, {
+          trail: { title: "Reports", ancestors: [] },
+          get children() {
+            return workspace("", params.has("nested") ? workspace("inner-", "Inner") : "Detail");
+          },
+        });
       },
     }),
   document.getElementById("app"),
@@ -130,7 +135,7 @@ const load = async (width: number, hash = "") => {
   const page = await browser.newPage({ viewport: { width, height: 800 } });
   await page.setContent(
     `<!doctype html><html lang="en"><head><style>${css}</style><style>*,*::before,*::after{transition:none!important;animation:none!important}</style></head>` +
-      `<body class="k2b-ui" style="margin:0"><div id="app" style="height:40rem;--k2b-app-workspace-title:'Reports'"></div></body></html>`,
+      `<body class="k2b-ui" style="margin:0"><div id="app" style="height:40rem"></div></body></html>`,
   );
   await page.evaluate((value) => {
     (window as unknown as { fixtureParams: string }).fixtureParams = value;
@@ -156,10 +161,10 @@ const read = (page: Page) =>
       };
     };
     const toggle = document.querySelector<HTMLElement>("[data-app-workspace-sidebar-toggle]");
-    const title = document.querySelector(".k2b-app-workspace__compact-title");
+    const title = document.querySelector(".k2b-app-workspace__head .k2b-page-title__text");
     return {
-      bar: title ? box(".k2b-app-workspace__compact-bar") : null,
-      title: title ? getComputedStyle(title, "::before").content : null,
+      bar: box(".k2b-app-workspace__head"),
+      title: title?.textContent ?? null,
       sidebar: box(".k2b-app-workspace__sidebar"),
       pane: box(".k2b-app-workspace__main-pane"),
       detail: box(".k2b-app-workspace__detail"),
@@ -197,13 +202,13 @@ const focused = (page: Page) =>
   });
 
 describe("compact workspace sidebar", () => {
-  test("at 820 px the bar names the page, the panes stay side by side, and the sidebar opens over them", async () => {
+  test("at 820 px the head names the page, the panes stay side by side, and the sidebar opens over them", async () => {
     const page = await load(820);
     try {
       const closed = await read(page);
-      // The workspace's own 1 px frame surrounds the bar; the bar adds no line.
+      // The workspace's own 1 px frame surrounds the head; the head adds no line.
       expect(closed.bar).toMatchObject({ display: "flex", left: 1, top: 1, width: 818, borders: "0px 0px 0px 0px" });
-      expect(closed.title).toBe('"Reports"');
+      expect(closed.title).toBe("Reports");
       expect(closed.sidebar.visibility).toBe("hidden");
       expect(closed.pane.left).toBe(1);
       expect(closed.pane.top).toBe(47);
@@ -246,7 +251,7 @@ describe("compact workspace sidebar", () => {
     }
   });
 
-  test("at 390 px and at 1180 px there is no bar", async () => {
+  test("at 390 px and at 1180 px a page with nothing above it has no head", async () => {
     for (const width of [390, 1180]) {
       const page = await load(width);
       try {
@@ -337,7 +342,7 @@ describe("compact workspace sidebar", () => {
     try {
       await settle(page);
       const shape = await read(page);
-      expect(shape.bar).toBeNull();
+      expect(shape.bar.display).toBe("none");
       expect(shape.sidebar).toMatchObject({ display: "flex", visibility: "visible", left: 1, top: 1, width: 818 });
       expect(shape.pane.top).toBeGreaterThan(shape.sidebar.top);
       expect(await page.getByText("Projects").isVisible()).toBe(true);
@@ -354,7 +359,9 @@ describe("compact workspace sidebar", () => {
       await page.locator("[data-app-workspace-sidebar-toggle]").click();
       await page.evaluate(() => (window as unknown as { hideNavigation: () => void }).hideNavigation());
       await settle(page);
-      expect(await overlay(page)).toEqual({ expanded: null, open: false, inert: 0 });
+      expect(await overlay(page)).toEqual({ expanded: "false", open: false, inert: 0 });
+      // Without navigation the head has no button to show.
+      expect(await page.locator("[data-app-workspace-sidebar-toggle]").isVisible()).toBe(false);
     } finally {
       await page.close();
     }

@@ -123,20 +123,20 @@ SolidJS library remains independent of Cloud and application domains.
 - Hand islands the route as a path (`requestPath(c)` from `@k2b/cloud/ssr`),
   never the absolute request URL: behind the gateway its origin is the
   internal upstream, not the browser's.
-- Resolve the request locale once. Use `getLocale(c)` on the server and the
-  inherited `@k2b/ui` locale in Solid; never keep a process-global locale or
-  thread it through ordinary component props. Format dates and numbers with `Format.*`; a formatter
-  without a locale renders English. Applications own localized human messages, while stable codes remain
-  locale-independent. Transport final display strings across capabilities and widgets, not message keys.
-  Setting presentation inherits the application's base locale; notification
-  senders pass locale metadata so `render` and `email` produce final text from
-  the same canonical locale without adding locale to the domain payload.
-  Keep product text calm and precise; localizations preserve meaning, while code, identifiers,
-  paths, and external labels stay verbatim. Show group names via `groupDisplayName()` (`@k2b/cloud/shared`).
-  `Layout`, `AdminLayout`, and `MinimalLayout` install the SSR locale provider.
-  Use `MinimalLayout` for an app-styled standalone page with persisted locale and
-  theme, no Cloud header or navigation, and a shared legal and preferences footer.
-  A custom root using none of these layouts must install one provider around its returned tree.
+- Resolve the request locale once. Use `getLocale(c)` on the server and the inherited `@k2b/ui` locale in
+  Solid; never keep a process-global locale or thread it through ordinary component props. Format dates and
+  numbers with `Format.*`; a formatter without a locale renders English. Applications own localized human
+  messages, while stable codes remain locale-independent. Transport final display strings across capabilities
+  and widgets, not message keys. Setting presentation inherits the application's base locale; notification
+  senders pass locale metadata so `render` and `email` produce final text from the same canonical locale
+  without adding locale to the domain payload. Keep product text calm and precise; localizations preserve
+  meaning, while code, identifiers, paths, and external labels stay verbatim. Show group names via
+  `groupDisplayName()` (`@k2b/cloud/shared`). `Layout`, `AdminLayout`, and `MinimalLayout` install the SSR
+  locale provider. Use `MinimalLayout` for an app-styled standalone page with persisted locale and theme, no
+  Cloud header or navigation, and a shared legal and preferences footer. A custom root using none of these
+  layouts must install one provider around its returned tree.
+- Pass each page's `Layout` title array; the shell derives the way up from it (**Layout and navigation**).
+  Build no back buttons for it; an app with its own header places `PageTrail` there.
 
 ## Ship CLI commands and Assistant Skills with the app
 

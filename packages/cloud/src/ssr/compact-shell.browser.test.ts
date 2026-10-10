@@ -266,8 +266,8 @@ const geometry = (page: Page): Promise<Geometry> =>
     const rail = find(".layout-rail");
     const shell = find(".layout-shell-content");
     const workspace = find(".k2b-app-workspace");
-    const bar = find(".k2b-app-workspace__compact-bar");
-    const title = find(".k2b-app-workspace__compact-title");
+    const bar = find(".k2b-app-workspace__head");
+    const title = find(".k2b-app-workspace__head .k2b-page-title__text");
     const sidebar = find(".k2b-app-workspace__sidebar");
     const pane = find(".k2b-app-workspace__main-pane");
     const main = find(".k2b-app-workspace__main");
@@ -302,7 +302,7 @@ const geometry = (page: Page): Promise<Geometry> =>
             display: getComputedStyle(bar).display,
             box: box(bar),
             borders: borders(bar),
-            title: title ? getComputedStyle(title, "::before").content : "",
+            title: title?.textContent ?? "",
           }
         : null,
       sidebar: sidebar
@@ -384,7 +384,7 @@ describe("signed-in shell", () => {
             expect(shape.bar?.display).toBe("flex");
             expect(shape.bar?.borders).toEqual(none);
             expect(shape.bar?.box).toMatchObject({ left: 48, top: 0, right: device.width, height: 46 });
-            expect(shape.bar?.title).toBe('"Inbox"');
+            expect(shape.bar?.title).toBe("Inbox");
             expect(shape.sidebar?.visibility).toBe("hidden");
             expect(shape.pane!.box.top).toBe(46);
           } else {
@@ -522,7 +522,7 @@ describe("compact workspace navigation", () => {
       );
       expect(await state(page)).toMatchObject({ expanded: "false", contentInert: false });
       await page.setViewportSize({ width: ipadPortrait.width, height: ipadPortrait.height });
-      await page.waitForFunction(() => getComputedStyle(document.querySelector(".k2b-app-workspace__compact-bar")!).display === "flex");
+      await page.waitForFunction(() => getComputedStyle(document.querySelector(".k2b-app-workspace__head")!).display === "flex");
       expect((await state(page)).open).toBe(false);
     } finally {
       await context.close();

@@ -31,7 +31,9 @@ export const shortcutLabel = (shortcut: string): string => {
   if (!combination) return "";
   const mac = isMac();
   const names = { ctrl: mac ? "⌃" : "Ctrl", alt: mac ? "⌥" : "Alt", shift: mac ? "⇧" : "Shift", meta: mac ? "⌘" : "Meta" };
-  return [...modifiers.filter((key) => combination[key]).map((key) => names[key]), combination.key.toUpperCase()].join(mac ? "" : "+");
+  const arrows: Record<string, string> = { arrowup: "↑", arrowdown: "↓", arrowleft: "←", arrowright: "→" };
+  const key = arrows[combination.key] ?? combination.key.toUpperCase();
+  return [...modifiers.filter((name) => combination[name]).map((name) => names[name]), key].join(mac ? "" : "+");
 };
 
 /** One owner in the Cloud layout; app islands only publish commands. */

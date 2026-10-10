@@ -35,12 +35,15 @@ import {
   appWorkspaceLayoutStyle,
   appWorkspacePanelVariable,
 } from "./app-workspace-state";
+import { PageTitle, usePageTrail } from "./PageTitle";
 import type { ScrollAreaProps } from "./ScrollArea";
 import { SidebarItemPreview } from "./SidebarItemPreview";
 import { createScrollFade } from "./scroll-fade";
 import { assertStableUiId, assertUniqueStableUiIds } from "./stable-id";
 
 const ResizeContext = createContext(true);
+/** The enclosing workspace: its head names the sidebar, and a nested workspace leaves the page title to it. */
+const WorkspaceContext = createContext<{ sidebarId: string; setSidebarId: (id: string) => void }>();
 const LayoutStateContext = createContext<AppWorkspaceLayoutState | null>(null);
 const MAIN_PANE = Symbol("AppWorkspace.MainPane");
 const SIDEBAR_DESKTOP = Symbol("AppWorkspace.SidebarDesktop");
@@ -218,8 +221,8 @@ export type AppWorkspaceSidebarProps = {
   class?: string;
   /**
    * Below 48rem (768 px) the sidebar is hidden and the host's mobile
-   * navigation takes over; from 48 to 64rem it is an overlay that the
-   * workspace's compact bar opens. `"stacked"` keeps it as a block above the
+   * navigation takes over; from 48 to 64rem it is an overlay that a button in
+   * the workspace's head opens. `"stacked"` keeps it as a block above the
    * content below 64rem instead, for overviews whose sidebar is the primary
    * object list.
    */
@@ -660,8 +663,11 @@ function AppWorkspaceSidebar(props: AppWorkspaceSidebarProps): JSX.Element {
   const defaultSize = () => props.defaultSize ?? APP_WORKSPACE_SIDEBAR_DEFAULT;
   const minSize = () => props.minSize ?? (props.collapsible ? APP_WORKSPACE_SIDEBAR_COLLAPSED : APP_WORKSPACE_SIDEBAR_MIN);
   const maxSize = () => props.maxSize ?? APP_WORKSPACE_SIDEBAR_MAX;
+  const workspace = useContext(WorkspaceContext);
   const generatedId = createUniqueId();
-  const domId = () => props.id ?? `k2b-workspace-sidebar-${generatedId}`;
+  const domId = () => props.id ?? workspace?.sidebarId ?? `k2b-workspace-sidebar-${generatedId}`;
+  // The head's navigation button names this sidebar.
+  createEffect(() => workspace?.setSidebarId(domId()));
   // Hidden navigation is not rendered at all, so its labels are neither shown
   // nor reachable; reading the children lazily keeps them from being created.
   const resolved = children(() => (props.hidden ? undefined : props.children));
@@ -673,20 +679,8 @@ function AppWorkspaceSidebar(props: AppWorkspaceSidebarProps): JSX.Element {
     aside?.addEventListener(APP_WORKSPACE_SIDEBAR_HIDE_EVENT, requestHide);
     onCleanup(() => aside?.removeEventListener(APP_WORKSPACE_SIDEBAR_HIDE_EVENT, requestHide));
   });
-  const messages = useUiMessages();
   return (
     <>
-      {/* Between 48 and 64 rem the navigation is an overlay that this bar opens; a stacked sidebar stays in view
-          instead. The shared controller binds the button, so a server-rendered workspace gets it without hydrating.
-          The host may name the page through `--k2b-app-workspace-title`. */}
-      <Show when={!props.hidden && props.mobile !== "stacked"}>
-        <div class="k2b-app-workspace__compact-bar">
-          <IconButton label={messages().showNavigation} aria-controls={domId()} aria-expanded="false" data-app-workspace-sidebar-toggle="">
-            <i class="ti ti-layout-sidebar" aria-hidden="true" />
-          </IconButton>
-          <span class="k2b-app-workspace__compact-title" />
-        </div>
-      </Show>
       <aside
         ref={aside}
         id={domId()}
@@ -1614,9 +1608,40 @@ type AppWorkspaceComponent = ((props: AppWorkspaceProps) => JSX.Element) & {
   SidebarIconAction: (props: AppWorkspaceSidebarIconActionProps) => JSX.Element;
 };
 
+/**
+ * The row above the work area. From 48 to 64 rem it holds the button that
+ * opens the overlay sidebar. On a page with a page above it, at every width,
+ * it shows the host's page title with the way up (see `PageTitle`); the
+ * page's own `PageTitle` takes its place. It is one fixed height and draws no
+ * line; CSS decides when it shows, so the server-rendered page already has
+ * its final geometry.
+ */
+function AppWorkspaceHead(props: { sidebarId: () => string; nested: boolean }): JSX.Element {
+  const messages = useUiMessages();
+  // A nested workspace is part of a page that already shows its title.
+  const trail = props.nested ? () => undefined : usePageTrail();
+  return (
+    <div class="k2b-app-workspace__head" data-trail={trail()?.ancestors.length ? "up" : trail() ? "title" : undefined}>
+      <IconButton
+        class="k2b-app-workspace__head-toggle"
+        label={messages().showNavigation}
+        aria-controls={props.sidebarId()}
+        aria-expanded="false"
+        data-app-workspace-sidebar-toggle=""
+      >
+        <i class="ti ti-layout-sidebar" aria-hidden="true" />
+      </IconButton>
+      <Show when={trail()}>{(current) => <PageTitle trail={current()} as="p" fallback />}</Show>
+    </div>
+  );
+}
+
 const AppWorkspace = ((props: AppWorkspaceProps) => {
   let root: HTMLDivElement | undefined;
   const serverLayoutState = useContext(LayoutStateContext);
+  const nested = Boolean(useContext(WorkspaceContext));
+  const [sidebarId, setSidebarId] = createSignal(`k2b-workspace-sidebar-${createUniqueId()}`);
+  const workspace = { sidebarId: sidebarId(), setSidebarId };
   const initialLayoutState = () => props.layoutState?.() ?? serverLayoutState;
 
   // The resize handles are inert markup until the controller is attached, so
@@ -1637,19 +1662,22 @@ const AppWorkspace = ((props: AppWorkspaceProps) => {
 
   return (
     <ResizeContext.Provider value={props.resizable !== false}>
-      <div
-        ref={root}
-        class={`k2b-app-workspace ${props.class ?? ""}`}
-        data-k2b-app-workspace
-        data-mobile-surface={props.mobileSurface}
-        data-sidebar-collapsed={
-          initialLayoutState()?.sidebarCollapsed === undefined ? undefined : String(initialLayoutState()?.sidebarCollapsed)
-        }
-        data-workspace-resizable={props.resizable === false ? "false" : "true"}
-        style={appWorkspaceLayoutStyle(initialLayoutState())}
-      >
-        {props.children}
-      </div>
+      <WorkspaceContext.Provider value={workspace}>
+        <div
+          ref={root}
+          class={`k2b-app-workspace ${props.class ?? ""}`}
+          data-k2b-app-workspace
+          data-mobile-surface={props.mobileSurface}
+          data-sidebar-collapsed={
+            initialLayoutState()?.sidebarCollapsed === undefined ? undefined : String(initialLayoutState()?.sidebarCollapsed)
+          }
+          data-workspace-resizable={props.resizable === false ? "false" : "true"}
+          style={appWorkspaceLayoutStyle(initialLayoutState())}
+        >
+          <AppWorkspaceHead sidebarId={sidebarId} nested={nested} />
+          {props.children}
+        </div>
+      </WorkspaceContext.Provider>
     </ResizeContext.Provider>
   );
 }) as AppWorkspaceComponent;

@@ -1,3 +1,6 @@
+import { readPageTrail, setPageTrail } from "@k2b/ui";
+import { derivePageTrail } from "./page-trail";
+
 export type LayoutBreadcrumb = {
   title: string;
   href?: string;
@@ -10,26 +13,31 @@ export type LayoutUpdate = {
 
 export const LAYOUT_UPDATE_EVENT = "cloud:layout:update";
 
-/** The `@k2b/ui` custom property that names the page in a workspace's compact bar. */
-export const APP_WORKSPACE_TITLE_PROPERTY = "--k2b-app-workspace-title";
-
-/**
- * A CSS string literal that shows `value` as text. Control characters become
- * spaces; quotes, backslashes, and angle brackets become CSS escapes, so the
- * literal cannot end early and carries no markup into an HTML attribute.
- */
-export const cssString = (value: string): string =>
-  `"${value.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/["\\<>]/g, (character) => `\\${character.charCodeAt(0).toString(16)} `)}"`;
+/** The canvas attribute that carries the current app's base path, for the trail rule in the browser. */
+export const APP_BASE_ATTRIBUTE = "data-app-base";
 
 export const layout = {
+  /**
+   * Updates the page after an in-page navigation: the document title, and the
+   * page title with its way up wherever the shell or `PageTrail` shows it.
+   * `breadcrumbs` is the same title array `Layout` takes; `title` alone renames
+   * the current page and keeps the levels above it.
+   */
   update(update: LayoutUpdate) {
     if (typeof window === "undefined") return;
 
     const title = update.title ?? update.breadcrumbs?.at(-1)?.title;
-    if (title) {
-      document.title = title;
-      document.querySelector<HTMLElement>(".cloud-app-canvas")?.style.setProperty(APP_WORKSPACE_TITLE_PROPERTY, cssString(title));
-    }
+    if (title) document.title = title;
+    const base = document.querySelector(".cloud-app-canvas")?.getAttribute(APP_BASE_ATTRIBUTE) ?? undefined;
+    const current = readPageTrail();
+    // No self-link check here: an island may update before or after it changes the URL, so the address is no
+    // reliable name for the page yet. The array an island passes describes the page it now shows.
+    const trail = update.breadcrumbs?.length
+      ? derivePageTrail(update.breadcrumbs, base, title ?? current?.title ?? document.title)
+      : title && current
+        ? { ...current, title }
+        : undefined;
+    if (trail) setPageTrail(update.title ? { ...trail, title: update.title } : trail);
 
     window.dispatchEvent(new CustomEvent<LayoutUpdate>(LAYOUT_UPDATE_EVENT, { detail: update }));
   },

@@ -4,7 +4,7 @@ navTitle: Layout and navigation
 section: Frontend
 order: 820
 description: Place application pages in the shared Cloud layout and navigation.
-tags: [layout, navigation, breadcrumbs]
+tags: [layout, navigation, breadcrumbs, page trail, back link]
 updated: 2026-10-10
 ---
 
@@ -41,6 +41,8 @@ the app area; from 768 to 1535 px it has no radius or border.
 Applications need no changes for any of this. `AppWorkspace` adds its compact
 navigation between 768 and 1023 px on its own; see
 [Application shells](/en/docs/frontend/application-shells#supply-mobile-navigation).
+Signed-in pages show the way up to the pages above them instead of a
+breadcrumb header; see [Show the way up](#show-the-way-up).
 A regular page, without `fullWidth` or `fullPage`, owns its inset: from 768 px
 no header sits above a signed-in page, so give the content its own padding, as
 `AppOverview` does.
@@ -59,12 +61,11 @@ no header sits above a signed-in page, so give the content its own padding, as
 </Layout>
 ```
 
-The last entry is the page title: it names the browser tab and, between 768
-and 1023 px, the compact bar of an `AppWorkspace` with navigation. Anonymous
-pages also show the entries as breadcrumbs in their header from 1024 px; the
-final breadcrumb has no link. Signed-in pages show no breadcrumbs. A plain
-string is valid for a one-level title. `layout.update()` from an island changes
-the tab title and the compact bar together.
+The last entry is the page title: it names the browser tab and the page in
+the shell. The entries above it are the pages above this one; on signed-in
+pages the shell turns them into the way up (see below). Anonymous pages show
+the entries as breadcrumbs in their header from 1024 px; the final breadcrumb
+has no link. A plain string is valid for a one-level title.
 
 Use `fullWidth` for a multi-column workspace. Use `fullPage` for a fill-height
 surface without the footer. Full-page and focus-mode surfaces contain viewport
@@ -107,6 +108,81 @@ return 404, and the page shows the fallback font until Plex loads. Update
 `@k2b/cloud` to Core's release to preload the right files again.
 
 Do not reproduce Cloud chrome inside application content.
+
+## Show the way up
+
+Give every page its title array and nothing else: on signed-in pages the shell
+derives the way up from it by one rule, the same for built-in and third-party
+apps.
+
+1. The last entry is the page. Above it, Start (`href: "/"`), the app's own
+   root (an `href` equal to the app's route prefix, such as `/app/accounts`),
+   entries without an `href`, and an entry that links to the page itself are
+   dropped. The app bar already leads to Start and the app.
+2. What remains are the levels below the app root. Their number alone decides
+   the form:
+
+| Levels | Form |
+| --- | --- |
+| 1 | The title only. |
+| 2 | `‹ Parent` above the title. |
+| 3 or more | A path row with every level above, each a link, above the title. When the row does not fit, its middle collapses into `…`, a menu of the hidden levels; the first level and the parent stay. |
+
+The row above the title is 12 px text and the title 14 px, stacked in one
+46 px row, so the height never changes between depths and a list beside a
+detail keeps the same height. Below 768 px a back arrow left of the title
+replaces the row; its accessible name names the parent, for example "Back to
+Users". Depth decides rather than the app, so the same depth looks the same
+in every app, and an app cannot pick a form that breaks on a narrow screen. Anonymous pages, which keep their breadcrumb header, and
+focus-mode surfaces such as pop-out editors show the title alone.
+
+The way up appears where the page's title belongs:
+
+- In an `AppWorkspace`, its head above the work area shows it. On a one-level
+  page the head stays away from 1024 px, because the app's own heading names
+  the page; from 768 to 1023 px the head also holds the navigation button and
+  then shows the title alone.
+- A page without a workspace gets a row from the shell above its content, only
+  when there is a level above.
+- An app that draws its own header places `PageTrail` there, from
+  `@k2b/cloud/ssr/islands`. It shows the same title and way up from the same
+  title array, as a heading, and the head and the shell's row step back while
+  it is on the page:
+
+```tsx
+import { PageTrail } from "@k2b/cloud/ssr/islands";
+
+<header class="flex min-h-[2.875rem] items-center gap-2 px-2">
+  <PageTrail subtitle={formatDuration(entry.minutes)} />
+  <TimerButton />
+</header>
+```
+
+The links keep the parent's `href` from the title array, so a new tab, a
+copied link, and a reload lead to the page itself. A plain click returns to
+the page as this tab left it: Cloud remembers each page's last URL and scroll
+position per tab, so filters, search, and position survive the way down and
+back up, and the row that led down is marked. Put a list's filters into the
+parent's `href` when a page knows them, as Accounts does for its user list.
+
+**One level up** (`Alt+↑`, `⌥↑` on a Mac) goes to the parent the same way.
+It is a context command: help, the command palette, and the shortcut list show
+it, with the parent's name, only on a page with a level above, and it does
+nothing while the focus is in a text field.
+
+After an in-page navigation, call `layout.update()` from the island with the
+new title array; the way up, the head, and `PageTrail` follow. `title` alone
+renames the page and keeps the levels above it:
+
+```ts
+import { layout } from "@k2b/cloud/ssr/layout-runtime";
+
+layout.update({ breadcrumbs: [{ title: "Files", href: "/app/files" }, ...folders, { title: folder.name }] });
+layout.update({ title: note.title });
+```
+
+Do not add a back button of your own for a page the title array already
+leads up to. Keep buttons that do something else, such as leaving an editor.
 
 ## Render anonymous application pages
 

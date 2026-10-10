@@ -60,7 +60,7 @@ follows the viewport width:
 | Width | Navigation | Work area |
 | --- | --- | --- |
 | Below 48 rem (768 px) | Hidden; the host renders its mobile navigation | One pane at a time; an open `Detail` replaces `Main` |
-| 48 to 64 rem (768 to 1023 px) | An overlay that a compact bar opens; a `mobile="stacked"` sidebar stays above the content | Panes side by side, `Detail` beside `Main` |
+| 48 to 64 rem (768 to 1023 px) | An overlay that a button in the head opens; a `mobile="stacked"` sidebar stays above the content | Panes side by side, `Detail` beside `Main` |
 | From 64 rem (1024 px) | A column beside the work area | Panes side by side, `Detail` beside `Main` |
 
 Below 48 rem the host renders its mobile navigation using
@@ -69,9 +69,9 @@ Below 48 rem the host renders its mobile navigation using
 launcher or second application title there. Sidebar items with an `href`
 remain real links.
 
-Between 48 and 64 rem the workspace shows a compact bar above its content: a
-button labeled **Show navigation** and, if the host provides one, the page
-title. The button opens the sidebar over the work area, and over the bar, as a
+Between 48 and 64 rem the workspace shows its head above the content: a
+button labeled **Show navigation** and, if the host provides a page trail, the
+page title. The button opens the sidebar over the work area, and over the head, as a
 raised surface with a scrim beside it; the work area keeps its geometry and the
 sidebar takes no width from a `Detail`. While it is open, the rest of the
 workspace is inert, regions the application made inert stay inert after it
@@ -80,16 +80,34 @@ current item, or on the tree item around it in a `NavTree`. Escape, a click on
 the scrim, choosing a link or an item, hiding the sidebar, or widening the
 window past 64 rem closes it; Escape and the scrim return focus to the button.
 A tree folder that only expands, a row that opens its preview, a section
-toggle, and an item's own actions keep it open. The bar, the overlay, and the
+toggle, and an item's own actions keep it open. The head, the overlay, and the
 scrim draw no border lines. A sidebar collapsed to its rail on a wide screen
 opens expanded. The shared controller binds the button, so a server-rendered
 workspace gets the overlay without hydrating; the button does nothing before a
 controller runs. In a nested workspace, its own button opens its own overlay.
 
-The host names the page by setting `--k2b-app-workspace-title` to a CSS string
-on any ancestor, for example `style="--k2b-app-workspace-title: 'Reports'"`.
-Escape quotes and backslashes in the string. Cloud's `Layout` sets it to the
-page title.
+### Head
+
+The head is one 46 px row above the work area, beside the sidebar column. It
+draws no line; only its place separates it from the content. It shows:
+
+- from 48 to 64 rem, whenever the workspace has an overlay sidebar, with the
+  navigation button;
+- at every width, when the host's page trail has a page above the current one.
+  It then holds a [PageTitle](/en/ui/layout/page-title) with the way up: from
+  48 rem `‹ Parent` or a path above the title, below 48 rem a back arrow left
+  of it.
+
+The title comes from the host's page trail: a host renders
+`PageTrailProvider` around the page during server rendering and calls
+`setPageTrail()` after an in-page navigation (see
+[PageTitle](/en/ui/layout/page-title)). Without a trail, the head holds only the
+button. When the page renders its own `PageTitle`, for example in an
+application header, the head's title steps back and the head stays only for
+the button. A nested workspace's head never shows the title. CSS decides all
+of this on the server-rendered markup, so the head arrives in its final place
+and nothing moves when a controller attaches. A server-rendered head follows a
+new trail once the host runs `followPageTrail()`; Cloud's `Layout` does.
 
 Set `mobileSurface="flush"` on an outer workspace when the host supplies the
 phone chrome. This removes its exterior border, radius, shadow, and background
@@ -111,7 +129,7 @@ of its children and no resize handle, so its labels are neither visible nor
 reachable, and main panes with `surface="navigation"` hide with it. The work
 area takes the full width. Below 48 rem the host's mobile navigation menu
 stays available; a `mobile="stacked"` sidebar hides there as well. Between 48
-and 64 rem a hidden sidebar has no compact bar, so the application's control
+and 64 rem the head of a hidden sidebar has no button, so the application's control
 that shows it again is the only way back. Pass
 `onHiddenChange` as well to make a drag of the resize handle below half the
 minimum width hide the sidebar; the shared controller dims the sidebar at its
@@ -858,5 +876,5 @@ Set `mobile="stacked"` on `Sidebar` when the sidebar is the primary object
 list of an overview and the host's mobile navigation does not carry it. Below
 64 rem the sidebar then stays visible as a block above the content, capped at
 half the viewport height with its own scrolling body, and the footer wraps
-its items into a row; it gets no compact bar. Leave the default `"hidden"` for workspaces whose
+its items into a row; the head shows no button for it. Leave the default `"hidden"` for workspaces whose
 sidebar is view navigation inside one resource.

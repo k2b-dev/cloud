@@ -310,7 +310,7 @@ const claimedToggleClicks = new WeakSet<Event>();
 
 /**
  * The compact overlay: from 48 to 64 rem the sidebar opens over the work area
- * from the button in the workspace's compact bar. While it is open the rest of
+ * from the button in the workspace's head. While it is open the rest of
  * the workspace is inert, Tab stays in the sidebar, and Escape, the scrim,
  * choosing an item, hiding the sidebar, or leaving the width range close it
  * again. The state is one attribute on the workspace root, so server-rendered
@@ -318,9 +318,13 @@ const claimedToggleClicks = new WeakSet<Event>();
  */
 const overlayTarget = (toggle: HTMLElement): OverlaySidebar | null => {
   const root = workspaceRoot(toggle);
-  const id = toggle.getAttribute("aria-controls");
-  const sidebar = id ? document.getElementById(id) : null;
-  return root && sidebar && workspaceRoot(sidebar) === root ? { root, sidebar, toggle } : null;
+  // The button belongs to its workspace's own sidebar. A sidebar rendered apart
+  // from the head, for example in an island, can carry another id than the one
+  // the head named, so the button learns the real one here.
+  const sidebar = root ? sidebarElement(root) : null;
+  if (!root || !sidebar || sidebar.hidden || sidebar.dataset.mobile === "stacked") return null;
+  if (sidebar.id) toggle.setAttribute("aria-controls", sidebar.id);
+  return { root, sidebar, toggle };
 };
 const overlayRegions = (root: HTMLElement, sidebar: HTMLElement) =>
   Array.from(root.children)
@@ -337,6 +341,8 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   const ownerDocument = eventRoot.ownerDocument ?? document;
   let overlay: OpenOverlay | null = null;
   const compact = typeof window.matchMedia === "function" ? window.matchMedia(COMPACT_QUERY) : null;
+  // A server-rendered head names the sidebar before the sidebar renders; the button learns its real id now.
+  for (const toggle of eventRoot.querySelectorAll<HTMLElement>(TOGGLE_SELECTOR)) overlayTarget(toggle);
   const openOverlay = (target: OverlaySidebar) => {
     if (overlay) closeOverlay("none");
     const inerted = overlayRegions(target.root, target.sidebar).filter((region) => !region.hasAttribute("inert"));
