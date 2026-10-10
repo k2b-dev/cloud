@@ -9,9 +9,12 @@ import type { Finding, Rule } from "./rule";
  * uses no synonym that the Cloud glossary lists for a product term.
  *
  * Findings that existed when the rule was introduced live in `help-writing.baseline`.
- * They are reported as known, not as failures, and the baseline only shrinks:
- * a new finding fails, and so does a baseline line whose finding is gone.
- * `--fix` removes those lines; `--warnings` lists every known finding.
+ * They are reported as known, not as failures. The baseline counts findings per article:
+ * per glossary term, and per long step by its first eight words. An article that has
+ * more findings of a key than the baseline lists fails, and so does a baseline line
+ * whose finding is gone. A finding that moves within its article, or a long step that
+ * grows, keeps its key; review keeps people from adding baseline lines by hand.
+ * `--fix` removes stale lines; `--warnings` lists every known finding.
  */
 export const MAX_STEP_WORDS = 20;
 
@@ -71,15 +74,18 @@ export const parseGlossary = (source: string): Term[] => {
   return terms;
 };
 
+/** Spaces instead of text, line breaks kept, so offsets in a paragraph still map to its source lines. */
+const blank = (text: string): string => text.replace(/[^\n]/g, " ");
+
 /** Text a reader sees as prose: no code, bold interface labels, link targets, heading metadata, or HTML. */
-const prose = (line: string): string =>
-  line
-    .replace(/`[^`]*`/g, " ")
-    .replace(/\*\*[^*]+\*\*/g, " ")
-    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/https?:\/\/\S+/g, " ")
-    .replace(/\{icon="[^"]*"\}/g, " ");
+const prose = (text: string): string =>
+  text
+    .replace(/`[^`]*`/g, blank)
+    .replace(/\*\*(?=\S)(?:[^*]|\*(?!\*))+(?<=\S)\*\*/g, blank)
+    .replace(/(!?\[)([^\]]*)(\]\([^)]*\))/g, (_, open: string, label: string, target: string) => `${blank(open)}${label}${blank(target)}`)
+    .replace(/<[^>]+>/g, blank)
+    .replace(/https?:\/\/\S+/g, blank)
+    .replace(/\{icon="[^"]*"\}/g, blank);
 
 /** Text whose words count in a step: labels and code stay as words, markup does not. */
 const stepText = (text: string): string =>
@@ -92,17 +98,25 @@ const stepText = (text: string): string =>
 
 const ABBREVIATIONS = /\b(?:e\.g\.|i\.e\.|etc\.|vs\.|z\. ?B\.|d\. ?h\.|u\. ?a\.|bzw\.|ggf\.|ca\.|usw\.|Nr\.)/g;
 
-/** Splits at sentence ends; dots of known abbreviations become U+2024 meanwhile so they do not end a sentence. */
+/**
+ * Splits at sentence ends, also after a closing quote or bracket. Dots of known abbreviations become
+ * U+2024 meanwhile so they do not end a sentence; an abbreviation that ends a sentence therefore joins the next one.
+ */
 export const sentences = (text: string): string[] =>
   text
     .replace(ABBREVIATIONS, (match) => match.replace(/\./g, "․"))
-    .split(/(?<=[.!?])\s+/)
+    .split(/(?<=[.!?]["'”“’»«)\]]?)\s+/)
     .map((sentence) => sentence.replace(/․/g, ".").trim())
     .filter(Boolean);
 
 export const wordCount = (sentence: string): number => sentence.split(/\s+/).filter((word) => /[\p{L}\p{N}]/u.test(word)).length;
 
 const localeOf = (file: string): Locale => (basename(dirname(file)) === "de" ? "de" : "en");
+
+/** Lines that are a block of their own: headings, callout markers, and table rows. */
+const SINGLE_LINE_BLOCK = /^\s*(?:#|:::|\|)/;
+/** Lines that start a new block that later lines can continue: list items and quotes. */
+const BLOCK_START = /^\s*(?:[-*+]\s|\d+[.)]\s|>)/;
 
 /** Checks one Help article. `file` is the repository-relative path used in findings and keys. */
 export const checkHelpSource = (file: string, source: string, terms: readonly Term[]): HelpFinding[] => {
@@ -111,27 +125,14 @@ export const checkHelpSource = (file: string, source: string, terms: readonly Te
   const localTerms = terms.filter((term) => term.locale === locale);
   const lines = source.split("\n");
 
-  // A bold label can wrap onto the next source line; carry it so its second half stays exempt.
-  let openBold = false;
-  const checkTerms = (text: string, line: number) => {
-    if (!text.trim()) openBold = false;
-    let visible = text;
-    if (openBold) {
-      const end = visible.indexOf("**");
-      visible = end === -1 ? "" : visible.slice(end + 2);
-      openBold = end === -1;
-    }
-    visible = prose(visible);
-    const start = visible.indexOf("**");
-    if (start !== -1) {
-      visible = visible.slice(0, start);
-      openBold = true;
-    }
+  // Terms are matched in a whole paragraph, so code, bold labels, and multi-word terms can wrap across source lines.
+  const checkTerms = (line: number, text: string) => {
+    const visible = prose(text);
     for (const term of localTerms) {
       for (const match of visible.matchAll(term.pattern)) {
         findings.push({
           file,
-          line,
+          line: line + (visible.slice(0, match.index).match(/\n/g)?.length ?? 0),
           key: `${file} | term | ${term.text}`,
           message: `Glossary: write “${term.preferred}”, not “${match[0].replace(/\s+/g, " ")}” (${GLOSSARY}).`,
         });
@@ -143,16 +144,31 @@ export const checkHelpSource = (file: string, source: string, terms: readonly Te
   if (lines[0] === "---") {
     for (index = 1; index < lines.length && lines[index] !== "---"; index += 1) {
       const field = lines[index]!.match(/^(title|description):\s*(.*)$/);
-      if (field) checkTerms(field[2]!, index + 1);
+      if (!field) continue;
+      const line = index + 1;
+      // A folded or plain multi-line value continues on indented lines; a block indicator is not text.
+      const value = [/^[>|][+-]?$/.test(field[2]!) ? "" : field[2]!];
+      while (/^\s+\S/.test(lines[index + 1] ?? "")) {
+        index += 1;
+        value.push(lines[index]!.trim());
+      }
+      checkTerms(line, value.join("\n"));
     }
     index += 1;
   }
 
   let fenced = false;
-  let step: { line: number; text: string[] } | null = null;
+  let paragraph: { line: number; lines: string[] } | null = null;
+  const closeParagraph = () => {
+    if (paragraph) checkTerms(paragraph.line, paragraph.lines.join("\n"));
+    paragraph = null;
+  };
+
+  // A step continues on later lines and, after a blank line, in paragraphs indented to the step's text.
+  let step: { line: number; indent: number; paragraphs: string[][]; blankBefore: boolean } | null = null;
   const closeStep = () => {
     if (!step) return;
-    for (const sentence of sentences(stepText(step.text.join(" ")))) {
+    for (const sentence of step.paragraphs.flatMap((text) => sentences(stepText(text.join(" "))))) {
       const words = wordCount(sentence);
       if (words <= MAX_STEP_WORDS) continue;
       const excerpt = sentence.split(/\s+/).slice(0, 8).join(" ");
@@ -169,27 +185,44 @@ export const checkHelpSource = (file: string, source: string, terms: readonly Te
   for (; index < lines.length; index += 1) {
     const line = lines[index]!;
     if (/^\s*(```|~~~)/.test(line)) {
+      closeParagraph();
       closeStep();
       fenced = !fenced;
       continue;
     }
     if (fenced) continue;
+    if (!line.trim()) {
+      closeParagraph();
+      if (step) step.blankBefore = true;
+      continue;
+    }
 
-    const numbered = line.match(/^\s*\d+[.)]\s+(.*)$/);
+    const singleLine = SINGLE_LINE_BLOCK.test(line);
+    const blockStart = BLOCK_START.test(line);
+    const numbered = line.match(/^(\s*\d+[.)]\s+)(.*)$/);
     if (numbered) {
       closeStep();
-      step = { line: index + 1, text: [numbered[1]!] };
-    } else if (step && line.trim() && !/^\s*(?:[-*+]\s|#|:::|>|\|)/.test(line)) {
-      step.text.push(line.trim());
+      step = { line: index + 1, indent: numbered[1]!.length, paragraphs: [[numbered[2]!]], blankBefore: false };
+    } else if (step && !singleLine && !blockStart && (!step.blankBefore || line.length - line.trimStart().length >= step.indent)) {
+      if (step.blankBefore) step.paragraphs.push([]);
+      step.blankBefore = false;
+      step.paragraphs.at(-1)!.push(line.trim());
     } else {
       closeStep();
     }
 
-    const callout = line.match(/^:::\w+\s*(.*)$/);
-    checkTerms(callout ? callout[1]! : line, index + 1);
+    if (singleLine) {
+      closeParagraph();
+      checkTerms(index + 1, line.match(/^:::\w+\s*(.*)$/)?.[1] ?? line);
+      continue;
+    }
+    if (blockStart) closeParagraph();
+    if (paragraph) paragraph.lines.push(line);
+    else paragraph = { line: index + 1, lines: [line] };
   }
+  closeParagraph();
   closeStep();
-  return findings;
+  return findings.sort((a, b) => a.line - b.line);
 };
 
 /** Every Help Markdown file below `packages/*\/src/help`, sorted. */

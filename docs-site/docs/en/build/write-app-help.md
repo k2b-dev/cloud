@@ -5,7 +5,7 @@ section: Build an app
 order: 175
 description: Write English and German Help articles with short steps, one term per concept, and warnings before the risky step.
 tags: [help, writing, english, german, glossary, steps]
-updated: 2026-10-09
+updated: 2026-10-10
 ---
 
 # Write app help
@@ -40,7 +40,7 @@ stiff. Help keeps natural words and controls only the product terms through the
 | Warnings first | Put a warning or caution before the step it concerns, never after it. |
 | Three nouns at most | Do not stack more than three nouns. Split a stack with a verb or a preposition. A German compound counts each of its parts. |
 | No filler | Remove “please”, “just”, “basically”, “note that”, „bitte“, „einfach“, „Es ist zu beachten, dass“. |
-| Clear verbs | Write “must” or “can”, not “should” or “may”. Write the exact action, not “handle”, „verwalten“ or „behandeln“. |
+| Clear verbs | Write “must” or “can”, not “should” or “may”. Write the exact action, not a vague verb such as “handle”, “manage”, „behandeln“ or „verwalten“. The access level **Manage**, **Verwalten** is a label and stays. |
 | Exact labels | Quote an interface label in bold, exactly as the interface shows it in that language: **Save changes**, **Änderungen speichern**. Write menu paths with →: **Settings → Sharing**. |
 | Most important first | Start with what the reader can do. Do not repeat a fact that the page already states. |
 
@@ -94,17 +94,23 @@ Schutz** den **Nachweisbaren Verlauf** dauerhaft aktivieren. […] Der
 nachweisbare Verlauf erhöht den Speicherbedarf, kann nicht deaktiviert werden […]
 ```
 
-After:
+After: the prerequisite and the warning come first, and each step names the
+button that the dialog shows.
 
 ```md
+You need **Manage** access to the Base.
+
 :::warning You cannot turn Durable history off
 Durable history keeps every record version and uses more storage over time.
 :::
 
 :::steps
 1. Open **Table settings → History and protection**.
-2. Turn on **Durable history**.
+2. Choose **Enable durable history**.
+3. In the confirmation, choose **Enable durable history** again.
 :::
+
+Du brauchst Zugriff **Verwalten** auf die Base.
 
 :::warning Du kannst den dauerhaften Verlauf nicht ausschalten
 Der Verlauf behält jede Version eines Datensatzes und braucht mit der Zeit mehr Speicher.
@@ -112,7 +118,8 @@ Der Verlauf behält jede Version eines Datensatzes und braucht mit der Zeit mehr
 
 :::steps
 1. Öffne **Tabelleneinstellungen → Verlauf und Schutz**.
-2. Schalte **Dauerhafter Verlauf** ein.
+2. Wähle **Dauerhaften Verlauf aktivieren**.
+3. Wähle in der Bestätigung noch einmal **Dauerhaften Verlauf aktivieren**.
 :::
 ```
 
@@ -172,14 +179,15 @@ nicht versehentlich verschwinden oder eingefroren werden, öffnet ein Admin
 **Nur Admins**. Die Änderung wird sofort gespeichert.
 ```
 
-After: the label **Admins only** stays, because the interface shows it.
+After: the label **Admins only** stays, because the interface shows it. The
+menu path uses →.
 
 ```md
 By default, everyone with **Edit** access can delete and lock notes. You cannot
 undo either action. With **Manage** access, you can limit both actions:
 
 :::steps
-1. Open **Sharing — Access**.
+1. Open **Sharing → Access**.
 2. Set **Who can delete and lock notes** to **Admins only**.
 :::
 
@@ -189,7 +197,7 @@ Anfangs können alle mit Zugriff **Bearbeiten** Notizen löschen und sperren. Be
 lässt sich nicht rückgängig machen. Mit Zugriff **Verwalten** schränkst du beides ein:
 
 :::steps
-1. Öffne **Freigabe – Zugriff**.
+1. Öffne **Freigabe → Zugriff**.
 2. Stelle **Wer darf Notizen löschen und sperren** auf **Nur Admins**.
 :::
 
@@ -198,10 +206,13 @@ Notebooks speichert die Änderung sofort.
 
 ### Break up noun stacks
 
+The German text before also says **Basis**, but the German Grids interface
+says **Base**.
+
 | | Before | After |
 | --- | --- | --- |
 | English | Grids has two Cloud permission boundaries: a **Base** for the complete raw workspace and a **Grids App** for one published, task-focused surface. | Grids controls access in two places. Access to a **Base** covers everything in it. Access to a **Grids App** covers only that published app. |
-| German | Grids besitzt zwei Cloud-Berechtigungsgrenzen: eine **Basis** für den vollständigen unmittelbaren Arbeitsbereich und eine **Grids App** für eine veröffentlichte, auf eine Aufgabe ausgerichtete Oberfläche. | Grids regelt den Zugriff an zwei Stellen. Zugriff auf eine **Basis** gilt für alles darin. Zugriff auf eine **Grids App** gilt nur für diese veröffentlichte App. |
+| German | Grids besitzt zwei Cloud-Berechtigungsgrenzen: eine **Basis** für den vollständigen unmittelbaren Arbeitsbereich und eine **Grids App** für eine veröffentlichte, auf eine Aufgabe ausgerichtete Oberfläche. | Grids regelt den Zugriff an zwei Stellen. Zugriff auf eine **Base** gilt für alles darin. Zugriff auf eine **Grids App** gilt nur für diese veröffentlichte App. |
 
 ## Check Help in this repository
 
@@ -223,11 +234,14 @@ bun scripts/check.ts help-writing --fix        # remove fixed findings from the 
 
 Findings that existed when the rule started are listed in
 `scripts/checks/help-writing.baseline`. The rule reports them as known
-findings and does not fail on them. A new finding fails `bun run check`. A
-baseline line whose finding is gone fails too, so the baseline only shrinks.
-The Help rewrite fixes articles in batches and removes their lines with
-`--fix`. When the baseline is empty, delete the file; from then on the rule
-enforces every finding.
+findings and does not fail on them. The baseline counts findings per article:
+per glossary term, and per long step by its first eight words. An article
+that gains a finding fails `bun run check`. A baseline line whose finding is
+gone fails too. The count does not see a finding that moves within its
+article or a long step that grows, and review keeps people from adding
+baseline lines by hand. The Help rewrite fixes articles in batches and removes
+their lines with `--fix`. When the baseline is empty, delete the file; from
+then on the rule enforces every finding.
 
 Third-party applications can apply the same rules and glossary. The check
 itself reads the Cloud repository layout and is not part of the public

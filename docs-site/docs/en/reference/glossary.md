@@ -5,7 +5,7 @@ section: Reference
 order: 1245
 description: Use one English and one German term for each Cloud product concept in Help and interface text.
 tags: [glossary, terminology, writing, help, english, german]
-updated: 2026-10-09
+updated: 2026-10-10
 ---
 
 # Cloud glossary
@@ -27,9 +27,12 @@ each listed synonym in the built-in Help articles.
   not match `click`.
 - `*` at the end of a term also matches longer words: `Berechtigung*` matches
   `Berechtigungen`.
-- A term that starts with a lowercase letter also matches it capitalized at the
-  start of a sentence. A term that starts with an uppercase letter matches only
-  that spelling, so `Rechte` does not match `rechte Spalte`.
+- A term that starts with a lowercase letter also matches it with a capital
+  first letter anywhere, so `admin` matches `Admin area`. A term that starts
+  with an uppercase letter matches only that spelling, so `Rechte` does not
+  match `rechte Spalte`.
+- The check reads a paragraph as a whole, so a term or a code span can wrap
+  across source lines.
 - Code, bold interface labels, and link targets are not checked. Quote an
   interface label exactly as the interface shows it, even if it uses a listed
   synonym.
@@ -46,7 +49,7 @@ the term.
 | **View**, **Edit**, **Manage** | **Ansehen**, **Bearbeiten**, **Verwalten** | The shared access levels. Write “**Edit** access”, „Zugriff **Bearbeiten**“. An app with its own level labels quotes those labels. | `read access`, `write access`, `admin access`, `admin rights` | `Lesezugriff`, `Schreibzugriff`, `Adminzugriff`, `Leserecht*`, `Schreibrecht*`, `Adminrecht*`, `Administratorrecht*`, `Verwaltungsrecht*`, `Bearbeitungsrecht*` |
 | administrator | Administration | The role that manages the Cloud installation in the admin area. A person with **Manage** access to one resource is not an administrator. | `admin`, `admins`, `sysadmin` | `Admin`, `Admins`, `Administrator`, `Administratoren`, `Administratorin*` |
 | account | Konto | The sign-in identity of one person. | — | `Account`, `Benutzerkonto*` |
-| service account | Dienstkonto | An account that is not a person and acts with its own access. | `service user`, `technical user`, `bot`, `bots` | `Servicekonto*`, `Service-Account*`, `Dienstaccount*`, `Bot`, `Bots` |
+| service account | Dienstkonto | An account that is not a person. It acts with its own access; a user-bound service account acts with the current access of its person. | `service user`, `technical user`, `bot`, `bots` | `Servicekonto*`, `Service-Account*`, `Dienstaccount*`, `Bot`, `Bots` |
 | agent | Agent | A service account that appears as an agent in pickers, activity, and audit. | — | — |
 | sign in, sign out | anmelden, abmelden | Start or end a session. | `log in`, `log out`, `logged in`, `login`, `logon` | `einloggen`, `ausloggen`, `eingeloggt`, `ausgeloggt`, `Login` |
 | API key | API-Schlüssel | A secret that an integration uses instead of a password. | `API token`, `API tokens` | `API-Token*`, `API-Key*` |
@@ -55,7 +58,7 @@ the term.
 
 | English | German | Meaning | Not in English | Not in German |
 | --- | --- | --- | --- | --- |
-| share, sharing | teilen, Freigabe | Give other people access to a resource. „Freigabe“ is the sharing area or one share; it never means an approval. | — | `Zugriffsfreigabe*`, `Lesefreigabe*` |
+| share, sharing | teilen, Freigabe | Give other people access to a resource. „Freigabe“ is the sharing area or one share. In new text it never means an approval. | — | `Zugriffsfreigabe*`, `Lesefreigabe*` |
 | approve, approval | genehmigen, Genehmigung | A person confirms a change before it takes effect. | `sign off`, `sign-off` | — |
 | claim | übernehmen | Take a task or a shift so that others see who works on it. Use „übernehmen“ only in this sense; for settings write „anwenden“ or „speichern“. | `pick up`, `grab` | `beanspruchen` |
 | assign, assignee | zuweisen, zugewiesene Person | Make a person responsible for an item. An assignment is not a claim. | — | — |
@@ -83,11 +86,24 @@ the term.
 
 ## Known interface conflicts
 
-The interface still uses some terms against this glossary. Help quotes these
-labels exactly until the interface changes:
+The interface still uses some terms against this glossary. These are the main
+conflicts. Help quotes these labels exactly until the interface changes, and
+new interface text follows the glossary.
 
-- Spaces labels “take over a claim” **Übernehmen**, the same word as the claim.
+- Access tabs and columns in several apps say **Permissions**,
+  **Berechtigungen**, or **Zugriffsrechte**.
+- Role labels say **Admin**, and so does the English access level of an API
+  key.
+- Notebooks labels who can delete and lock notes **Everyone who can write**,
+  **Alle mit Schreibrechten**, and **Admins only**, **Nur Admins**.
+- The Assistant and the Grids equipment loan template use „Freigabe“ and
+  „freigeben“ for approvals, for example **Freigabe erforderlich**, **Immer
+  freigeben**, **Gespeicherte Freigaben**, and **Ausleihe freigeben**. Grids
+  labels the approver group **Freigabegruppe**.
+- Spaces labels “take over a claim” **Übernehmen**, the same word as the claim,
+  and “release a claim” **Übernahme freigeben**.
 - The Mail editor labels “apply” **Übernehmen**.
-- Grids labels the approver group **Freigabegruppe**.
-- Grids names Durable history **Dauerhafter Verlauf** in the table settings and
-  **Nachweisbarer Verlauf** in the record panel.
+- Grids names Durable history **Dauerhafter Verlauf** in the table settings,
+  **Beständige Historie** in the Base settings, and **Nachweisbarer Verlauf**
+  in the record panel.
+- German sign-in messages ask people to contact „einen Administrator“.

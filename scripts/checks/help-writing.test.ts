@@ -36,6 +36,12 @@ test("counts words in step sentences without splitting abbreviations", () => {
     "Done!",
   ]);
   expect(sentences("Wähle z. B. eine Liste. Fertig.")).toEqual(["Wähle z. B. eine Liste.", "Fertig."]);
+  expect(sentences('It says "Saved." Choose **Close** (or press Esc.) Done.')).toEqual([
+    'It says "Saved."',
+    "Choose **Close** (or press Esc.)",
+    "Done.",
+  ]);
+  expect(sentences("Er meldet „Gespeichert.“ Wähle **Schließen**.")).toEqual(["Er meldet „Gespeichert.“", "Wähle **Schließen**."]);
   expect(wordCount("Choose **Save changes** — then wait.")).toBe(5);
 });
 
@@ -60,6 +66,20 @@ test("flags only step sentences above the limit, including wrapped step lines", 
       ":::",
     ]),
   ).toEqual(["12 step Open the settings dialog from the sidebar and", "14 step Open the settings dialog from the sidebar and"]);
+});
+
+test("counts an indented paragraph after a blank line as part of the step", () => {
+  const long = "Then open the settings dialog from the sidebar and choose the tab that contains the people and groups who share it.";
+  expect(
+    check("packages/demo/src/help/documents/en/demo.help.md", [
+      "1. Open **Space settings**.",
+      "",
+      `   ${long}`,
+      "2. Choose **Save**.",
+      "",
+      long,
+    ]),
+  ).toEqual(["1 step Then open the settings dialog from the sidebar"]);
 });
 
 test("flags glossary synonyms in prose, link text, titles, and callout titles but not in labels, code, or link targets", () => {
@@ -91,6 +111,27 @@ test("flags glossary synonyms in prose, link text, titles, and callout titles bu
     "8 term click*",
     "16 term permissions",
   ]);
+});
+
+test("matches terms across wrapped lines of a paragraph but not across blocks", () => {
+  expect(
+    check("packages/demo/src/help/documents/en/demo.help.md", [
+      "---",
+      "description: >",
+      "  Check the",
+      "  permissions.",
+      "---",
+      "Run `cld demo click",
+      "permissions` here. People with read",
+      "access see it.",
+      "- **Bold permissions",
+      "",
+      "  text** and permissions.",
+      "Choose **a *permissions* label**. Check permissions.",
+      "# Read",
+      "access",
+    ]),
+  ).toEqual(["4 term permissions", "7 term read access", "9 term permissions", "11 term permissions", "12 term permissions"]);
 });
 
 test("uses the German terms in German articles and respects capitalized terms", () => {
