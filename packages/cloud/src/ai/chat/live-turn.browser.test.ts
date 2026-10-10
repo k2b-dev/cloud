@@ -814,6 +814,89 @@ for (const view of [
       }
     }, 60_000);
 
+for (const view of [
+  { name: "desktop", width: 1280, height: 800, touch: false },
+  { name: "phone", width: 390, height: 844, touch: true },
+] as const)
+  test(`a live text turns quiet in place when a step starts after it, and nothing moves (${view.name})`, async () => {
+    const context = await browser.newContext({
+      viewport: { width: view.width, height: view.height },
+      isMobile: view.touch,
+      hasTouch: view.touch,
+      reducedMotion: "reduce",
+    });
+    try {
+      const page = await context.newPage();
+      await page.clock.setFixedTime(new Date("2026-10-07T10:00:00Z"));
+      await page.goto(`http://127.0.0.1:${server.port}/?lang=en&theme=light`);
+      const presentation = {
+        kind: "capability" as const,
+        appId: "mail",
+        appName: "Mail",
+        appIcon: "ti ti-mail",
+        title: "Send email",
+        capabilityKind: "action" as const,
+      };
+      const send = { id: "tool-send", kind: "tool" as const, callId: "send", name: "mail__action__send", args: {}, presentation };
+      const write = { id: "tool-write", kind: "tool" as const, callId: "write", name: "write_file", args: { path: "/app.js" } };
+      const status = "Good news: the chart API also returns the totals per month. Now I write the app files for the dashboard.";
+      const place = ".ai-turn__text";
+      const receipt = ".ai-turn__action .ai-turn-receipt";
+      const style = (selector: string) =>
+        page.$eval(`${selector} .assistant-markdown-block`, (node) => {
+          const computed = getComputedStyle(node);
+          return { color: computed.color, fontSize: computed.fontSize };
+        });
+      await emit(page, { ...base, seq: 1, type: "turn_started", modelProfileId: "m", providerModel: "m", blocks: [] });
+      await emit(page, {
+        ...base,
+        seq: 2,
+        type: "block_delta",
+        blockId: "text-1",
+        blockKind: "text",
+        delta: "I check the chart API first.",
+      });
+      await emit(page, {
+        ...base,
+        seq: 3,
+        type: "block_set",
+        block: { ...send, status: "completed", approved: true, result: { summary: "Email to Jana Berger sent" } },
+      });
+      await emit(page, { ...base, seq: 4, type: "block_delta", blockId: "text-2", blockKind: "text", delta: status });
+
+      // Trailing, the text may be the answer: answer typography, above the receipt in place 4.
+      const answerStyle = await style(place);
+      expect(await page.locator(place).innerText()).toBe(status);
+      expect(answerStyle.fontSize).toBe("14px");
+      const before = {
+        work: await viewportBox(page, ".ai-turn-work"),
+        text: await viewportBox(page, place),
+        receipt: await viewportBox(page, receipt),
+      };
+
+      // A step starts after it: the same element reads as a status, together with the work line's new step, and keeps its
+      // place, so the receipt below does not move.
+      await emit(page, { ...base, seq: 5, type: "block_set", block: { ...write, status: "running" } });
+      expect(await page.locator(".ai-turn-work > summary").innerText()).toContain("app.js");
+      expect(await page.locator(place).innerText()).toBe(status);
+      expect(await page.locator(`${place}.ai-turn__text--status`).count()).toBe(1);
+      const statusStyle = await style(place);
+      expect(statusStyle.fontSize).toBe("12px");
+      expect(statusStyle.color).not.toBe(answerStyle.color);
+      expect(await viewportBox(page, ".ai-turn-work")).toEqual(before.work);
+      expect(await viewportBox(page, place)).toEqual(before.text);
+      expect(await viewportBox(page, receipt)).toEqual(before.receipt);
+      expect((await layout(page)).overflowX).toBeLessThanOrEqual(0);
+
+      // It looks like the intermediate texts in the expanded work.
+      await page.locator(".ai-turn-work > summary").click();
+      await page.locator(".ai-turn-steps__text").first().waitFor();
+      expect(await style(".ai-turn-steps__text")).toEqual(statusStyle);
+    } finally {
+      await context.close();
+    }
+  }, 30_000);
+
 for (const width of [390, 320])
   test(`a long action title shortens the approve button on a phone instead of pushing it out of the card (${width} px)`, async () => {
     const context = await browser.newContext({ viewport: { width, height: 844 }, isMobile: true, hasTouch: true, reducedMotion: "reduce" });

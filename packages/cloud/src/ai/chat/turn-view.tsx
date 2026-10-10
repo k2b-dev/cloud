@@ -691,14 +691,18 @@ function AiTurnErrorNotice(props: { error: AiTurnError; continuable: boolean }) 
 }
 
 /**
- * Place 3. Live it is a status that switches in this same element; it keeps its height until the turn ends. A status
- * is not read token by token: screen readers hear each status once it is complete, and that the answer is ready.
+ * Place 3. Live it is a status that switches in this same element; it keeps its height until the turn ends. Once a step
+ * started after it, it reads quietly like the texts in the expanded work; a trailing text may still be the answer and
+ * keeps answer typography. A status is not read token by token: screen readers hear each status once it is complete,
+ * and that the answer is ready.
  */
 function AiTurnText(props: {
   blocks: Accessor<Extract<AiTurnBlock, { kind: "text" }>[]>;
   live: Accessor<boolean>;
   /** The turn has work steps, so its live text is a status rather than the answer itself. */
   folding: Accessor<boolean>;
+  /** A step started after the text, so it can no longer be the answer: it reads quietly. */
+  quiet: Accessor<boolean>;
   /** An earlier segment of a split turn: it stops being live while the turn goes on. */
   earlier: Accessor<boolean>;
 }) {
@@ -723,9 +727,10 @@ function AiTurnText(props: {
     observer.observe(element);
     onCleanup(() => observer.disconnect());
   });
+  // A new status and the switch to the quiet style both keep the place's height, so nothing below moves up.
   createEffect(
     on(
-      shownId,
+      [shownId, props.quiet],
       () => {
         if (props.live() && lastHeight > 0) setMinHeight((current) => Math.max(current ?? 0, lastHeight));
       },
@@ -751,6 +756,7 @@ function AiTurnText(props: {
     <div
       ref={element}
       class="ai-turn__text"
+      classList={{ "ai-turn__text--status": props.quiet() }}
       aria-live={status() ? "off" : undefined}
       style={minHeight() ? { "min-height": `${minHeight()}px` } : undefined}
     >
@@ -807,7 +813,13 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
         </Show>
         <For each={resultIds()}>{(id) => <AiTurnResultView result={() => results().get(id)} receipt={() => actions().has(id)} />}</For>
         <Show when={layout().text.length > 0}>
-          <AiTurnText blocks={() => layout().text} live={live} folding={() => layout().steps > 0} earlier={() => props.segment().earlier} />
+          <AiTurnText
+            blocks={() => layout().text}
+            live={live}
+            folding={() => layout().steps > 0}
+            quiet={() => layout().textIsStatus}
+            earlier={() => props.segment().earlier}
+          />
         </Show>
         <For each={actionIds()}>
           {(id) => <AiTurnActionView action={() => actions().get(id)} turnId={props.segment().turnId} phase={props.segment().phase} />}
