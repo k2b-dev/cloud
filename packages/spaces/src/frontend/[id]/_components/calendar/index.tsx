@@ -35,7 +35,7 @@ import {
 import { createRetryToasts } from "../../../lib/feedback";
 import { readResponseError } from "../../../lib/response";
 import { spaceMessages, useSpaceMessages } from "../../messages";
-import { ownClaimId } from "../shared/claim/claim";
+import { resolveCompletionClaim } from "../shared/claim/claim";
 import { confirmCompletion, setItemCompleted } from "../shared/completion";
 import { createSpaceItem } from "../shared/editItem";
 import ItemForm, { type ItemFormData } from "../shared/ItemForm";
@@ -681,24 +681,34 @@ export default function Calendar(props: CalendarProps) {
   };
 
   /**
-   * Checks off a task from the calendar; the reader's own claim goes with it, as in the task row. A refused change
-   * rejects, so the calendar puts the box back.
+   * Checks off a task from the calendar; the reader's own claim goes with it, and someone else's is taken over only
+   * after a confirmation, as in the task row. A refused or declined change rejects, so the calendar puts the box back.
    */
   const checkItem = async (event: CalendarEvent, completed: boolean) => {
     const itemId = event.dataSpaceItemId ?? event.id;
+    const failed = (error: unknown) => {
+      toast.error(error instanceof Error ? error.message : t.updateFailed);
+      reconcileAfterWrite();
+      return error;
+    };
+    let previous: SpaceItem;
     try {
       const response = await apiClient[":id"].items[":itemId"].$get({ param: { id: props.spaceId, itemId } });
       if (!response.ok) throw new Error(await readResponseError(response, t.updateFailed));
-      const item = await response.json();
-      const claimId = props.currentUserId ? ownClaimId(item.claim, props.currentUserId) : undefined;
-      await setItemCompleted({ spaceId: props.spaceId, itemId, completed, claimId }, t.updateFailed);
+      previous = await response.json();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t.updateFailed);
-      reconcileAfterWrite();
-      throw error;
+      throw failed(error);
+    }
+    const claim = props.currentUserId ? await resolveCompletionClaim(previous.claim, props.currentUserId, completed, t) : {};
+    if (!claim) throw new Error("declined");
+    let changed: SpaceItem;
+    try {
+      changed = await setItemCompleted({ spaceId: props.spaceId, itemId, completed, ...claim }, t.updateFailed);
+    } catch (error) {
+      throw failed(error);
     }
     // A completed task leaves the calendar with the refresh, so the toast confirms it and offers Undo.
-    confirmCompletion({ spaceId: props.spaceId, itemId, completed }, t);
+    confirmCompletion({ spaceId: props.spaceId, previous, changed, currentUserId: props.currentUserId }, t);
     reconcileAfterWrite();
   };
 
