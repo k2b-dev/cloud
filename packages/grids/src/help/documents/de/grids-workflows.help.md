@@ -5,19 +5,19 @@ icon: ti ti-route
 description: Wiederholbare Arbeit mit typisierten Eingaben, sicheren Aktionen und beobachtbaren Ausführungen automatisieren.
 order: 140
 ---
-Workflows führen Datensatzänderungen, Dokumente, E-Mails und HTTP-Schritte aus. Läufe behalten ihre veröffentlichte Revision und Ergebnisse; Änderungen beeinflussen keine aktiven Läufe.
+Ein Workflow führt Schritte aus, die Datensätze ändern, Dokumente erzeugen, E-Mails senden und HTTP-Endpunkte aufrufen. Jeder Lauf behält seine veröffentlichte Revision und seine Ergebnisse. Änderungen am Workflow betreffen laufende Läufe nicht.
 
-Verwende Formeln für Werte, Formulare zur Erstellung und Workflows für Mehrschritt-Abläufe. Gib jedem Workflow ein klares Ergebnis.
+Verwende Formeln für Werte, Formulare zum Erstellen von Datensätzen und Workflows für Vorgänge mit mehreren Schritten. Gib jedem Workflow ein klares Ergebnis.
 
-Agents nutzen `workflow.record-actions` und `workflow.record-action` für bestätigte Korrekturentwürfe; `workflow.run.read` verfolgt den Abschluss. Weitere Workflow-Erstellung und Bedienung laufen über die CLI.
+Agents nutzen `workflow.record-actions` und `workflow.record-action` für genehmigte Korrekturentwürfe. `workflow.run.read` verfolgt den Abschluss. Nutze für die übrige Erstellung und Bedienung von Workflows die CLI.
 
 ## Ersten Workflow erstellen und testen {icon="route"}
 
-**Neuer Workflow → Datei aus einer Abfrage erstellen:** GQL prüfen, CSV/JSON/PDF/XML wählen, deaktivierten Entwurf prüfen. **Eingaben beim Start** bindet `@params.name`; Vorschauwerte werden nicht gespeichert. Die Erfassung erfolgt beim Ausführen.
+Um Abfrageergebnisse zu exportieren, wähle **Neuer Workflow → Datei aus einer Abfrage erstellen**. Prüfe das GQL in der Vorschau, wähle CSV, JSON, PDF oder XML und prüfe den deaktivierten Entwurf. **Eingaben beim Start** bindet `@params.name`. Grids speichert die Vorschauwerte nicht. Die Erfassung geschieht, wenn der Workflow läuft.
 
-Workflow-GQL beginnt mit `from table`. Unabhängig gruppierte Summen-Ansichten können verknüpft werden, auch in atomaren Prüfungen. Beim Veröffentlichen werden ihre vollständigen Definitionen und Feldabhängigkeiten gebunden. Nach Änderungen an einer verwendeten Summe muss der Workflow erneut veröffentlicht werden. Ansichten als Ausgangsquelle und normale Ansichts-Joins werden nicht unterstützt.
+Workflow-GQL beginnt mit `from table`. Unabhängig gruppierte Summen-Ansichten können verknüpft werden, auch in atomaren Prüfungen. Beim Veröffentlichen werden ihre vollständigen Definitionen und Feldabhängigkeiten gebunden. Veröffentliche den Workflow erneut, nachdem du eine verwendete Summe geändert hast. Normale Ansichten als Ausgangsquelle und Joins mit Ansichten, die keine Summen sind, werden nicht unterstützt.
 
-DATEV-Starter benötigen ausgestellte Summen und Kontierung; SEPA-Starter finalisierte Erstattungen mit verpflichtenden eindeutigen Nummern. Ziel einrichten und Datumswerte prüfen. Dateien sind keine importierten Buchungen oder ausgeführten Zahlungen.
+DATEV-Starter brauchen ausgestellte Summen und Kontierung. SEPA-Starter brauchen finalisierte Erstattungen mit verpflichtenden eindeutigen Nummern. Richte das Ziel ein und prüfe die Datumswerte. Die Dateien sind keine importierten Buchungen und keine ausgeführten Zahlungen.
 
 Name und Beschreibung erklären den Workflow. YAML definiert Eingaben, optionale Trigger und Schritte.
 
@@ -38,13 +38,15 @@ steps:
 ```
 
 :::steps
-1. Öffne **Workflows** im Bearbeitungsmodus und erstelle einen Workflow.
-2. Gib Name und Beschreibung außerhalb von YAML ein.
+1. Öffne im **Bearbeitungsmodus** den Bereich **Workflows** und erstelle einen Workflow.
+2. Gib Name und Beschreibung außerhalb des YAML ein.
 3. Ergänze die kleinste Eingabe- und Schrittdefinition, die das gewünschte Ergebnis erzeugt.
-4. Speichere, bis YAML und Grids-Referenzen erfolgreich validiert werden.
-5. Führe einen **dryRun** mit einer repräsentativen Eingabe aus und prüfe jede vorhergesagte Auswirkung. Ein gelb dargestellter Schritt konnte nicht geplant werden. Behebe das vor der Ausführung.
-6. Führe **execute** aus und prüfe anschließend die erfolgreiche Ausführung und den geänderten Datensatz.
-7. Ergänze einen automatischen Trigger oder eine Ausführungsoption erst, nachdem die direkte Ausführung korrekt funktioniert.
+4. Speichere, bis YAML und Grids-Referenzen erfolgreich validiert sind.
+5. Führe einen `dryRun` mit einer repräsentativen Eingabe aus.
+6. Prüfe jede vorhergesagte Auswirkung. Ein gelb dargestellter Schritt konnte nicht geplant werden. Behebe das vor der Ausführung.
+7. Führe `execute` aus.
+8. Prüfe den erfolgreichen Lauf und den geänderten Datensatz.
+9. Ergänze einen automatischen Trigger oder eine Ausführungsoption erst, wenn die direkte Ausführung korrekt funktioniert.
 :::
 
 ## YAML-Vertrag verstehen {icon="code"}
@@ -57,9 +59,16 @@ Jeder Aktionsschritt enthält genau eine Aktion. Kontrollflussschritte verwenden
 
 YAML-Maps dürfen keinen Schlüssel wiederholen. Einrückung definiert die Verschachtelung. Nutze deshalb konsistent Leerzeichen und richte benachbarte Eigenschaften gleich aus. Setze einen Wert in Anführungszeichen, wenn er Text bleiben muss, aber wie `true`, `false`, `null` oder eine Zahl aussieht. Setze Cron-Ausdrücke in Anführungszeichen, damit Leerzeichen und `*`-Zeichen zusammen einen eindeutigen Wert bilden.
 
-## Wie Ausführungen starten {icon="square-plus"}
+## Einen Lauf starten {icon="square-plus"}
 
-Execute-Läufe starten durch direkte UI-/API-/CLI-Aufrufe, gespeicherte Ausführungsoptionen (Scanner, Bulk, Datensatz oder Grids App), `schedule` oder `recordEvent`. Direkte Aufrufe und Ausführungsoptionen benötigen keinen YAML-Trigger. Automatische Trigger müssen deklariert und veröffentlicht sein. Deaktivierte Workflows lehnen Ausführungen ab; unbehandelte Ereignisse erzeugen keinen Lauf.
+Ein Execute-Lauf startet auf einem dieser Wege:
+
+- ein direkter Aufruf aus der Oberfläche, der API oder der CLI;
+- eine gespeicherte Ausführungsoption: Scanner, Bulk, Datensatz oder Grids App;
+- ein Trigger `schedule`;
+- ein Trigger `recordEvent`.
+
+Direkte Aufrufe und Ausführungsoptionen brauchen keinen YAML-Trigger. Automatische Trigger musst du deklarieren und veröffentlichen. Deaktivierte Workflows lehnen Ausführungen ab. Ein Ereignis, das kein Trigger verarbeitet, erzeugt keinen Lauf.
 
 Ein **Testlauf ist kein Ereignis**: Er plant die neueste veröffentlichte Revision ohne Triggerprüfung, auch bei deaktiviertem Workflow.
 
@@ -86,7 +95,7 @@ Du kannst eine eingereihte, laufende oder wartende Ausführung abbrechen. Der Ab
 
 **Erneut ausführen** öffnet den Eingabedialog mit den Eingaben der ausgewählten Ausführung und startet anschließend die aktuelle Revision des Workflows im Modus der ursprünglichen Ausführung. Prüfe die Eingaben vor dem Start, weil sich der Workflow inzwischen geändert haben kann. Öffne in den Ausführungsdetails die verknüpfte Revision, um genau zu prüfen, was eine ältere Ausführung ausgeführt hat.
 
-Die Veröffentlichung von neuem YAML erstellt eine unveränderliche Revision. Die Revisionsnummer zählt deshalb veröffentlichte Pläne und keine Bearbeitungen. Das Umbenennen eines Workflows oder Ändern seiner Beschreibung erzeugt keine Revision. Die Wiederherstellung einer älteren Revision löscht keinen Verlauf, sondern veröffentlicht diese Definition als neue aktuelle Revision. Das Aktivieren eines Workflows mit Zeitplan- oder Datensatzereignis-Trigger erfordert eine Bestätigung, weil dadurch Arbeit ohne weiteren Klick starten kann.
+Die Veröffentlichung von neuem YAML erstellt eine unveränderliche Revision. Die Revisionsnummer zählt deshalb veröffentlichte Pläne und keine Bearbeitungen. Das Umbenennen eines Workflows oder Ändern seiner Beschreibung erzeugt keine Revision. Die Wiederherstellung einer älteren Revision löscht keinen Verlauf, sondern veröffentlicht diese Definition als neue aktuelle Revision. Das Aktivieren eines Workflows mit Zeitplan- oder Datensatzereignis-Trigger erfordert eine Bestätigung, weil der Workflow dann ohne weitere Aktion Arbeit starten kann.
 
 ## Eingabereferenz {icon="book-2"}
 
@@ -106,7 +115,7 @@ Jede Eingabe besitzt `type`. Optionale Texte `label` und `description` erscheine
 
 Dezimalfelder akzeptieren das Dezimaltrennzeichen der Sprache, ohne Tausendertrennzeichen. Der Lauf erhält normalisierte Dezimalstrings ohne Gleitkommakonvertierung im unterstützten Wertebereich gewöhnlicher Zahlenfelder. Verwende `decimal` für exakte Beträge.
 
-Datensatzeingaben werden vor der Schrittausführung gegen die gebundene Tabelle und aktuelle Leseberechtigung geprüft. Unbekannte Eingaben, fehlende Datensätze, unzugängliche Tabellen, falsche Werttypen und Werte außerhalb der Optionen einer Auswahl lehnen den Aufruf ab.
+Bevor die Schritte starten, prüft Grids, ob jede Datensatzeingabe zur gebundenen Tabelle gehört und die aufrufende Person sie aktuell lesen kann. Unbekannte Eingaben, fehlende Datensätze, unzugängliche Tabellen, falsche Werttypen und Werte außerhalb der Optionen einer Auswahl lehnen den Aufruf ab.
 
 **Eingabedeklarationen (Ausschnitt)**
 
@@ -151,7 +160,7 @@ Nur `schedule` und `recordEvent` gehören unter `triggers` in YAML. Ein Workflow
 - **Triggerwerte:** Zeitpläne stellen `occurredAt` und `slot` bereit. Datensatzereignisse stellen `record`, `event` und `occurredAt` über die Wurzel `trigger` bereit.
 :::
 
-Ein Workflow darf beide Triggerarten deklarieren. Triggerbindungen dürfen nur Werte unter `trigger.*` lesen. Sie können keine Ausführungseingaben oder von Schritten erzeugten Werte lesen. Wenn ein automatischer Trigger nicht jede erforderliche Eingabe binden kann, scheitert die Validierung. Halte rein interaktive Workflows triggerfrei und starte sie direkt oder über eine Ausführungsoption.
+Ein Workflow kann beide Triggerarten deklarieren. Triggerbindungen können nur Werte unter `trigger.*` lesen. Sie können keine Ausführungseingaben oder von Schritten erzeugten Werte lesen. Wenn ein automatischer Trigger nicht jede erforderliche Eingabe binden kann, scheitert die Validierung. Halte rein interaktive Workflows triggerfrei und starte sie direkt oder über eine Ausführungsoption.
 
 Ein Cron-Ausdruck besitzt genau fünf Felder in dieser Reihenfolge: `minute hour day-of-month month day-of-week`. Werte verwenden Zahlen, `*`, kommagetrennte Listen, Bereiche und `/step`. Namen von Monaten und Wochentagen werden nicht akzeptiert. Minute liegt zwischen 0 und 59, Stunde zwischen 0 und 23, Monatstag zwischen 1 und 31, Monat zwischen 1 und 12 und Wochentag zwischen 0 und 7, wobei 0 und 7 beide Sonntag bedeuten. `'0 9 * * 1-5'` bedeutet zum Beispiel 09:00 Uhr von Montag bis Freitag in der gewählten Zeitzone.
 
@@ -219,7 +228,7 @@ Direkt aufrufende Stellen können jede deklarierte Eingabe bereitstellen. Ausfü
 
 :::reference
 - **Scanner:** Ordnet genau eine Text- oder Datensatzeingabe dem Scan zu. Datensatzscans werden über einen generierten Scan-Code oder ein konfiguriertes eindeutiges Feld aufgelöst. Jede weitere Workflow-Eingabe kann einmal vor dem Scannen, nach jedem Scan oder als fester Wert der Ausführungsoption abgefragt werden.
-- **Bulk:** Bindet eine `recordList`-Eingabe aus ausdrücklichen Datensatz-IDs oder einer zeilenförmigen Tabellenabfrage mit höchstens 10.000 Datensätzen pro Ausführung. Der Starter **Ausgewählte Datensätze schließen** installiert ein geschütztes Profil für die exakte Auswahl. Gewöhnliche Bulk-Optionen behalten ihr normales Abfrageverhalten.
+- **Bulk:** Bindet eine `recordList`-Eingabe aus ausdrücklichen Datensatz-IDs oder einer zeilenförmigen Tabellenabfrage mit höchstens 10.000 Datensätzen pro Ausführung. Der Starter **Ausgewählte Records schließen** installiert ein geschütztes Profil für die exakte Auswahl. Gewöhnliche Bulk-Optionen behalten ihr normales Abfrageverhalten.
 - **Datensatz:** Bindet den derzeit geöffneten Datensatz. Der Starter für einen verknüpften Folgeentwurf stellt nur auf finalisierten Datensätzen eine klar benannte Korrektur- oder Stornoaktion bereit und akzeptiert nur seinen einen Plan für verknüpfte Entwürfe.
 - **Grids App:** Stellt den Workflow als Aktion in einer Grids App bereit und kann Eingabebindungen wie einen festen Berichtszeitraum speichern.
 - **Lebenszyklus:** Jede Option besitzt eigenen Namen, Aktivierungsstatus, validierte Workflow-Revision und Diagnosen. Änderungen an Quellen können eine Option nicht verfügbar machen, bis sie erneut geprüft und gespeichert wird.
@@ -237,8 +246,8 @@ Ausführungsoptionen werden getrennt von der Workflow-Quelle konfiguriert. Ein W
 | `query` | GQL unter `source` | Typisierte `parameters`, `saveAs` | Prüft Schema und Zugriff, erfasst keine Zeilen |
 | `closeRecord` | `record` | `expectedMode`, `expectedPolicyRevision` | Sagt direkte Finalisierung oder Vier-Augen-Anfrage aus der aktuellen Tabellenrichtlinie vorher |
 | `createCorrectionDraft` | `original`, `typeField`, `typeValue`, `originalField` | `intent` (Standard `correction`), `copyFields`, `values`, `saveAs` | Validiert das finalisierte Original und sagt einen verknüpften Entwurf vorher |
-| `finalizeRecord` | `record` | Keine | Validiert Schreibzugriff und sagt eine dauerhafte Finalisierung vorher |
-| `deleteRecord` | `record` | `audit`, `saveAs` | Prüft Berechtigungen und sagt das Verschieben eines nicht festgeschriebenen Datensatzes in den Papierkorb vorher, keine Vernichtung |
+| `finalizeRecord` | `record` | Keine | Validiert Zugriff **Bearbeiten** und sagt eine dauerhafte Finalisierung vorher |
+| `deleteRecord` | `record` | `audit`, `saveAs` | Prüft den Zugriff und sagt das Verschieben eines nicht festgeschriebenen Datensatzes in den Papierkorb vorher, keine Vernichtung |
 | `updateRecord` | `record`, nicht leeres `set` | Nach UUID der Audit-Frage indizierte `audit`-Antworten | Validiert die Datensatzaktualisierung und sagt sie vorher |
 | `createRecord` | `table`, nicht leere `values` | `copyFrom`, `copyFields`, `saveAs` | Validiert den neuen Datensatz und sagt ihn vorher |
 | `atomicRecords` | 1–100 `locks`, 1–50 `checks`, 1–50 `changes` | Prüfungs-`message`; Update-`ifVersion`; Update/Delete-`audit`; 1–50 `validateDocuments` | Prüft und sagt Änderungen ohne Sperren oder Schreiben vorher |
@@ -252,12 +261,7 @@ Ausführungsoptionen werden getrennt von der Workflow-Quelle konfiguriert. Ein W
 
 `query` erfasst höchstens 10.000 Zeilen/5 MiB oder scheitert ohne Teilergebnis; GQL-`limit` wählt eine Teilmenge. Parameter: `{type, value}` über `@params.name`; Typen: text, number, decimal (exakte Zeichenkette), boolean, date, dateTime, record, recordList. Datensätze nutzen Workflow-Referenzen. Leeres `oneof(record.id, @params.selected)` ergibt keine Treffer. Testläufe akzeptieren geplante Datensätze, erfassen aber nichts. `saveAs` liefert Metadaten für `generateDocument.data`, keine Zeilen.
 
-Grids-Ressourcen verwenden in Laufergebnissen und Live-Updates öffentliche IDs.
-Dokument- und Link-IDs liefern auch in Ausdrücken öffentliche IDs. Erfasste Daten
-sind eine undurchsichtige Referenz: Übergib die gesamte gespeicherte Referenz an
-spätere Aktionen; `.id` ist kein Ausdrucksfeld. Zum Öffnen dienen die öffentliche
-Lauf-ID und der Schrittschlüssel. Cloud-Konto-IDs sowie technische Audit- und
-Zustellungs-IDs behalten ihr eigenes Format.
+Grids-Ressourcen verwenden in Laufergebnissen und Live-Updates öffentliche IDs. Dokument- und Link-IDs liefern auch in Ausdrücken öffentliche IDs. Erfasste Daten sind eine undurchsichtige Referenz: Übergib die gesamte gespeicherte Referenz an spätere Aktionen; `.id` ist kein Ausdrucksfeld. Zum Öffnen dienen die öffentliche Lauf-ID und der Schrittschlüssel. Cloud-Konto-IDs sowie technische Audit- und Zustellungs-IDs behalten ihr eigenes Format.
 
 Alle Quellerfassungen teilen sich 5 MiB pro Lauf, auch in Schleifen. Wiederverwendung zählt nicht doppelt. Reduziere Zeilen/Felder oder verteile größere Exporte auf mehrere Läufe.
 
@@ -265,19 +269,13 @@ Spaltenumsortierung macht eine veröffentlichte Abfrage nicht ungültig. Geände
 
 ### Dateien aus einer Abfrage erstellen
 
-Für eine Datei aus Joins oder Gruppen verweist `associatedData: auswahl` auf
-eine vorherige einfache Tabellenabfrage mit `saveAs: auswahl`. Deren eingefrorene
-Datensatz-Identitäten bestimmen, bei welchen Datensätzen die Datei erscheint.
-Ohne diese Angabe wird die Zuordnung nur aus eindeutigen Zeilenquellen abgeleitet.
-Sie verfolgt keine Relations und ersetzt nicht die finanzielle Aktualitätsprüfung
-mit `sourceVersions`. Dokumentdetails unterscheiden Datensätze und Ergebniszeilen.
+Für eine Datei aus Joins oder Gruppen verweist `associatedData: auswahl` auf eine vorherige einfache Tabellenabfrage mit `saveAs: auswahl`. Deren eingefrorene Datensatz-Identitäten bestimmen, bei welchen Datensätzen die Datei erscheint. Ohne diese Angabe wird die Zuordnung nur aus eindeutigen Zeilenquellen abgeleitet. Sie verfolgt keine Relations und ersetzt nicht die finanzielle Aktualitätsprüfung mit `sourceVersions`. Dokumentdetails unterscheiden Datensätze und Ergebniszeilen.
 
 Bei `generateDocument.data` schlägt der Editor vorherige Abfrageergebnisse im aktuellen Bereich vor. Nutze denselben Namen für mehrere Dateien.
 
-Gespeicherte Werte: `data: { documents: [DOC001], columns: [{ key: number, type: text, path: [number] }] }` liest `id`, `number`, `createdAt`, `data`, `profile`, `output`. Rechnungen speichern `[output, grossAmount]` als exakte Dezimalsumme. Fehlende Pfade scheitern, auch bei alten Dokumenten ohne Output. Manuelle Snapshots: `snapshots: [SNP001]`, Pfad `[root, data, FLD001]`. Eine Zeile je ID, keine Live-Werte/Array-Auflösung. Relationsziele nach Leserecht redigiert. Grenze: 5 MiB.
+Gespeicherte Werte: `data: { documents: [DOC001], columns: [{ key: number, type: text, path: [number] }] }` liest `id`, `number`, `createdAt`, `data`, `profile`, `output`. Rechnungen speichern `[output, grossAmount]` als exakte Dezimalsumme. Fehlende Pfade scheitern, auch bei alten Dokumenten ohne Output. Manuelle Snapshots: `snapshots: [SNP001]`, Pfad `[root, data, FLD001]`. Eine Zeile je ID, keine Live-Werte/Array-Auflösung. Relationsziele, die die lesende Person nicht sehen darf, sind geschwärzt. Grenze: 5 MiB.
 
-Für Workflow-Werte statt GQL: `data: { columns: [{ key: amount, type: decimal }], rows: [{ amount: "12.30" }] }`.
-Spalten haben feste `key`, optionale `label` und `type`; Zeilen erlauben Workflow-Ausdrücke. Typen: text, decimal (Dezimalstring), boolean, date, dateTime, json. Schlüssel und Beschriftungen müssen eindeutig sein; jede Zeile muss genau diese Schlüssel enthalten. Null ist erlaubt, fehlende Zellen nicht. Die Erfassung erhält Typen, umfasst höchstens 10.000 Zeilen/5 MiB und bleibt bei Wiederholung unverändert. Sie impliziert keinen Datensatzbezug.
+Für Workflow-Werte statt GQL: `data: { columns: [{ key: amount, type: decimal }], rows: [{ amount: "12.30" }] }`. Spalten haben feste `key`, optionale `label` und `type`; Zeilen erlauben Workflow-Ausdrücke. Typen: text, decimal (Dezimalstring), boolean, date, dateTime, json. Schlüssel und Beschriftungen müssen eindeutig sein; jede Zeile muss genau diese Schlüssel enthalten. Null ist erlaubt, fehlende Zellen nicht. Die Erfassung erhält Typen, umfasst höchstens 10.000 Zeilen/5 MiB und bleibt bei Wiederholung unverändert. Sie impliziert keinen Datensatzbezug.
 
 Nach einer Abfrage mit `saveAs: report`:
 
@@ -293,7 +291,7 @@ steps:
       saveAs: reportDocument
 ```
 
-`data`/`output` nicht mit `template`/`record` kombinieren. Dateischritte können erfasste Daten teilen; Wiederholungen liefern das bestehende Dokument. Erzeugung prüft direkte Basisrechte oder die veröffentlichte App-Workflow-Berechtigung, nicht sichtbare UI-Tabellen. Dateien stehen unter **Alle Dokumente** und im Lauf. Testläufe rendern nicht.
+`data`/`output` nicht mit `template`/`record` kombinieren. Dateischritte können erfasste Daten teilen; Wiederholungen liefern das bestehende Dokument. Die Erzeugung prüft erneut den direkten Zugriff auf die Base oder die veröffentlichte Workflow-Erlaubnis der App, nicht die Sichtbarkeit von Tabellen in der Oberfläche. Dateien stehen unter **Alle Dokumente** und im Lauf. Testläufe rendern nicht.
 
 - **CSV:** UTF-8, CRLF, geordnete Aliase als Überschriften. `delimiter` erlaubt Komma (Standard), Semikolon, Tabulator (`"\t"`) oder Pipe. Null wird leer; verschachtelte Werte benötigen `nestedValues: json`. Standard `textProtection: spreadsheet` setzt vor riskante Texte, auch Telefonnummern mit `+`/`-`, ein Apostroph; der Bericht zählt Änderungen. `raw` nur verwenden, wenn der Empfänger unveränderte Texte sicher verarbeitet.
 - **CSV-Spaltenauswahl:** Optional wählt und sortiert `columns: [{ source: Betrag, label: Gesamt }, { source: Name }]` exakte GQL-Aliase. Ohne `label` bleibt der Alias als Überschrift erhalten. Unbekannte oder wiederholte Quellen, eine leere Auswahl und doppelte Überschriften werden abgelehnt. Verwende Aliase, keine internen Spaltenschlüssel.
@@ -332,42 +330,32 @@ steps:
 
 IBANs sind maskiert; **Bankdaten anzeigen** blendet sie zur Prüfung ein.
 
-`generateDocument` akzeptiert auch `output: { kind: datev-csv, version: 1, header: ..., mapping: ... }`
-oder `kind: sepa-xml`. Diese erzeugen EUR-Buchungs- oder Zahlungsdateien, keine importierten Buchungen oder ausgeführten Zahlungen.
-Das DATEV-Profil verwendet 700/13, SEPA SCT pain.001.001.09 (DK GBIC 5). Die Annahme durch das Zielsystem wird nicht garantiert.
-Die SEPA-Vorschau warnt vor vergangenen Ausführungsdaten. Nicht unterstützte Zeichen werden vor der Ausstellung abgelehnt; Grids ersetzt weder Namen noch andere Werte stillschweigend. Zum Korrigieren abbrechen und neu starten.
+`generateDocument` akzeptiert auch `output: { kind: datev-csv, version: 1, header: ..., mapping: ... }` oder `kind: sepa-xml`. Diese erzeugen EUR-Buchungs- oder Zahlungsdateien, keine importierten Buchungen oder ausgeführten Zahlungen. Das DATEV-Profil verwendet 700/13, SEPA SCT pain.001.001.09 (DK GBIC 5). Die Annahme durch das Zielsystem wird nicht garantiert. Die SEPA-Vorschau warnt vor vergangenen Ausführungsdaten. Nicht unterstützte Zeichen werden vor der Ausstellung abgelehnt; Grids ersetzt weder Namen noch andere Werte stillschweigend. Zum Korrigieren abbrechen und neu starten.
 
-Starte manuell; automatische Trigger dürfen keine Finanzexporte erstellen. Wähle **Export prüfen** im Lauf, der Custom-App-Aktion oder
-Scanner-Protokollzeile. Prüfe Ziel, Datum, Zeilen, Summen und Abfragelimit. Bestätigungen verfallen nicht automatisch; brich unerwünschte Läufe ab.
-Optional neben `data`: `sourceVersions: [{tableId: TBL001, recordId: REC001, version: 3}]` bindet gewählte Datensatzversionen.
-`sourceVersions: data` übernimmt Versionen eindeutiger Zeilen einer neuen Ein-Quellen-Abfrage. Joins/fehlende Metadaten scheitern.
-Änderungen verhindern Bestätigung und Ausstellung. Unterdatensätze/Lookups sind nicht rekursiv geschützt; sonst gelten erfasste Werte.
+Starte manuell; automatische Trigger dürfen keine Finanzexporte erstellen. Wähle **Export prüfen** im Lauf, der Custom-App-Aktion oder Scanner-Protokollzeile. Prüfe Ziel, Datum, Zeilen, Summen und Abfragelimit. Bestätigungen verfallen nicht automatisch; brich unerwünschte Läufe ab. Optional neben `data`: `sourceVersions: [{tableId: TBL001, recordId: REC001, version: 3}]` bindet gewählte Datensatzversionen. `sourceVersions: data` übernimmt Versionen eindeutiger Zeilen einer neuen Ein-Quellen-Abfrage. Joins/fehlende Metadaten scheitern. Änderungen verhindern Bestätigung und Ausstellung. Unterdatensätze/Lookups sind nicht rekursiv geschützt; sonst gelten erfasste Werte.
 
-Ordne exakte GQL-Aliase den folgenden Feldern zu; Grenzen stehen in der Workflow-Referenz. Datum: `YYYY-MM-DD`; Cent-Bruchteile scheitern.
-Halte `header.destinationKey` je Buchungsziel/Konto und `businessId` je Vorgang stabil: Zusammen verhindern sie Doppelexporte.
-Lade das bestehende Dokument erneut herunter; umgehe die Prüfung nicht durch andere IDs. Autoren verantworten Abfragen, Joins,
-Kontierung und Freigaben. Grids prüft aktuelle Rechte vor der Erzeugung erneut.
+Ordne exakte GQL-Aliase den folgenden Feldern zu; Grenzen stehen in der Workflow-Referenz. Datum: `YYYY-MM-DD`; Cent-Bruchteile scheitern. Halte `header.destinationKey` je Buchungsziel/Konto und `businessId` je Vorgang stabil: Zusammen verhindern sie Doppelexporte. Lade das bestehende Dokument erneut herunter; umgehe die Prüfung nicht durch andere IDs. Autoren verantworten Abfragen, Joins, Kontierung und Genehmigungslogik. Grids prüft den aktuellen Zugriff vor der Erzeugung erneut.
 
 | Profil | Erforderlicher Header | Erforderliches Mapping | Optionales Mapping |
 | --- | --- | --- | --- |
 | `datev-csv`, `version: 1` | `destinationKey`, `consultantNumber`, `clientNumber`, `fiscalYearStart`, `accountLength`, `periodStart`, `periodEnd`, `label`, `finalize` | `businessId`, `entryId`, `amount`, `direction`, `account`, `counterAccount`, `documentDate`, `documentNumber` | `text`, `taxKey`, `costCenter1`, `costCenter2` |
 | `sepa-xml`, `version: 1` | `destinationKey`, `debtorName`, `debtorIban`, `executionDate`; optional `debtorBic` | `businessId`, `endToEndId`, `amount`, `creditorName`, `creditorIban`, `remittance` | `creditorBic` |
 
-`closeRecord` folgt dem Tabellenmodus: Direkt finalisiert; Vier-Augen fordert eine andere berechtigte Person zur Freigabe auf. Erwarteter Modus und Richtlinienrevision können eine Prüfung festschreiben. **Ausgewählte Datensätze schließen** prüft bis zu 100 exakte Datensätze. Das geschützte Profil behält bestätigte IDs statt eine Ansicht oder Abfrage neu auszuwerten. Geänderte Richtlinien oder geänderte/unvollständige Datensätze stoppen spätere Schritte; betroffene Datensätze bleiben bearbeitbar. Der Lauf zeigt abgeschlossene Schritte und Fehler.
+`closeRecord` folgt dem Tabellenmodus: Direkt finalisiert; Vier Augen fordert eine andere berechtigte Person zur Genehmigung auf. Erwarteter Modus und Richtlinienrevision können eine Prüfung festschreiben. **Ausgewählte Records schließen** prüft bis zu 100 exakte Datensätze. Das geschützte Profil behält bestätigte IDs statt eine Ansicht oder Abfrage neu auszuwerten. Geänderte Richtlinien oder geänderte/unvollständige Datensätze stoppen spätere Schritte; betroffene Datensätze bleiben bearbeitbar. Der Lauf zeigt abgeschlossene Schritte und Fehler.
 
-`createCorrectionDraft` verknüpft einen neuen Entwurf mit dem finalisierten Original und setzt seinen Typ. `copyFields` kopiert bis zu 100 Wertefelder samt Leerwerten und Objektlisten-Eingaben, aber keine eindeutigen Felder, IDs, Dateien, Relationen oder Berechnungen. Optionales `values` ergänzt bis zu 100 Eingaben, auch Pflichtrelationen; es überschreibt Kopien, nie Typ/Original. Relationen benötigen öffentliche IDs (`inputs.original.Kunde.recordId`). `saveAs` benennt das Ergebnis. Validierung, Rechte und aktuelle Formeln gelten weiter. Wiederholung liefert denselben Entwurf.
+`createCorrectionDraft` verknüpft einen neuen Entwurf mit dem finalisierten Original und setzt seinen Typ. `copyFields` kopiert bis zu 100 Wertefelder samt Leerwerten und Objektlisten-Eingaben, aber keine eindeutigen Felder, IDs, Dateien, Relationen oder Berechnungen. Optionales `values` ergänzt bis zu 100 Eingaben, auch Pflichtrelationen; es überschreibt Kopien, nie Typ/Original. Relationen benötigen öffentliche IDs (`inputs.original.Kunde.recordId`). `saveAs` benennt das Ergebnis. Validierung, Zugriffsregeln und aktuelle Formeln gelten weiter. Wiederholung liefert denselben Entwurf.
 
 `createRecord` kann ausgewählte Eingaben eines vorhandenen Datensatzes derselben Tabelle übernehmen: `copyFrom: inputs.original` zusammen mit `copyFields: [Positionen]`. Wähle bis zu 100 gespeicherte Wertfelder. IDs, eindeutige Felder, Dateien, Relationen und berechnete Felder werden nicht kopiert. Objektlisten übernehmen ihre Eingaben und berechnen Formeln neu. Explizite `values` überschreiben Kopien und durchlaufen die normale Schreibvalidierung. Das Original bleibt unverändert; eine Wiederholung desselben Workflow-Schritts liefert denselben neuen Datensatz. Diese Option gilt für die eigenständige Aktion, nicht für Einträge in `atomicRecords`.
 
-Der Starter beschriftet die Aktion als **Korrektur** oder **Storno**; die Ausführungsoption muss dazu passen. Der gewählte Auswahlwert speichert diese Bedeutung. Beides erstellt verknüpfte Entwürfe zum Vervollständigen, ohne Beträge, Steuern oder Buchungen umzukehren oder Dokumente zu erzeugen.
+Der Starter beschriftet die Aktion als **Korrektur** oder **Stornierung**; die Ausführungsoption muss dazu passen. Der gewählte Auswahlwert speichert diese Bedeutung. Beides erstellt verknüpfte Entwürfe zum Vervollständigen, ohne Beträge, Steuern oder Buchungen umzukehren oder Dokumente zu erzeugen.
 
-`finalizeRecord` verwendet den allgemeinen Finalisierungsvertrag der Tabelle: Der Schritt validiert den vollständigen Datensatz, weist endgültige IDs zu, speichert die finale Durable-History-Version und sperrt den Datensatz atomar und dauerhaft. Eine Wiederholung desselben Workflow-Schritts ist sicher. Feldschlüssel unter `updateRecord` und `createRecord` akzeptieren exakte Feldnamen oder öffentliche IDs. Wenn eine Tabelle Änderungskontext verlangt, muss `updateRecord.audit` die zutreffenden Fragen anhand ihrer Frage-UUID beantworten. `generateDocument.template` und `sendEmail.template` akzeptieren den exakten Namen oder die öffentliche ID einer aktivierten Vorlage. Mehrdeutige und unzugängliche Referenzen werden bei der Validierung abgelehnt.
+`finalizeRecord` verwendet den allgemeinen Finalisierungsvertrag der Tabelle. Der Schritt validiert den vollständigen Datensatz, weist endgültige IDs zu und speichert die finale Version des dauerhaften Verlaufs. Danach sperrt er den Datensatz atomar und dauerhaft. Eine Wiederholung desselben Workflow-Schritts ist sicher. Feldschlüssel unter `updateRecord` und `createRecord` akzeptieren exakte Feldnamen oder öffentliche IDs. Wenn eine Tabelle Änderungskontext verlangt, muss `updateRecord.audit` die zutreffenden Fragen anhand ihrer Frage-UUID beantworten. `generateDocument.template` und `sendEmail.template` akzeptieren den exakten Namen oder die öffentliche ID einer aktivierten Vorlage. Mehrdeutige und unzugängliche Referenzen werden bei der Validierung abgelehnt.
 
 Das Ergebnis von `generateDocument` enthält `business`, den gespeicherten Unternehmenskontext eines Datensatz-Dokuments. Beispielsweise liest `${{ issued.business.legalName }}` den ursprünglichen Firmennamen; `${{ issued.business }}` lässt sich für eine Korrektur in ein JSON-Snapshot-Feld kopieren. Aktuelle Base-Einstellungen werden dabei nicht gelesen. Abfrage-Dokumente liefern `business: null`.
 
-`finalizeRecord` umgeht keine **Vier-Augen-Finalisierung**: Fordere sie am Datensatz an; ein anderes aktuelles Mitglied der Freigabegruppe genehmigt. Der Modus Direkt erlaubt dagegen Schreibberechtigten die Finalisierung über Workflows, API, CLI und Datensatzaktionen.
+`finalizeRecord` umgeht keine **Vier-Augen-Finalisierung**: Fordere sie am Datensatz an; ein anderes aktuelles Mitglied der Freigabegruppe genehmigt. Der Modus Direkt erlaubt dagegen Personen mit Zugriff **Bearbeiten** die Finalisierung über Workflows, API, CLI und Datensatzaktionen.
 
-`deleteRecord` verschiebt einen nicht festgeschriebenen Datensatz in den Papierkorb, ohne Vernichtung. Berechtigungen, Schreibregeln und nötige `audit`-Antworten werden geprüft; `saveAs` liefert seine Referenz. Innerhalb von `atomicRecords.changes` führt `deleteRecord: {record, audit?}` dieselbe Papierkorb-Aktion nach den gesperrten Prüfungen aus; `saveAs` gehört zur eigenständigen Aktion.
+`deleteRecord` verschiebt einen nicht festgeschriebenen Datensatz in den Papierkorb, ohne Vernichtung. Zugriff, Schreibregeln und nötige `audit`-Antworten werden geprüft; `saveAs` liefert seine Referenz. Innerhalb von `atomicRecords.changes` führt `deleteRecord: {record, audit?}` dieselbe Papierkorb-Aktion nach den gesperrten Prüfungen aus; `saveAs` gehört zur eigenständigen Aktion.
 
 ### Zusammengehörige Datensatzänderungen gemeinsam festschreiben
 
@@ -378,9 +366,9 @@ Das Ergebnis von `generateDocument` enthält `business`, den gespeicherten Unter
 :::reference
 - **locks:** Datensatz- oder Listenreferenzen wie `inputs.item` oder `inputs.items`, vor Prüfungen in stabiler Reihenfolge gesperrt. Duplikate zählen einmal; explizite Sperren, Änderungsziele und `validateDocuments`-Ziele dürfen zusammen höchstens 100 verschiedene Datensätze umfassen. Leere Listen sperren nichts. Jeder konkurrierende Workflow muss denselben Koordinationsdatensatz für dieselbe fachliche Entscheidung sperren.
 - **checks:** Wähle `query: {source, parameters}` oder `table` mit 1–20 AND-verknüpften `where`-Prädikaten (`field`, `op`, optional `value`/`caseInsensitive`). `assert: empty|notEmpty` prüft Zeilenexistenz; optional erklärt `message` den Fehler.
-- **changes:** Geordnete Liste aus Einträgen `createRecord`, `updateRecord`, `deleteRecord` oder `finalizeRecord`. Erstellen verwendet `table` und nicht leere `values`; optionales `finalize: true` erstellt und finalisiert den neuen Datensatz in dieser Transaktion. Dafür muss direkte Finalisierung aktiviert sein. Bei fehlgeschlagener Finalisierung bleibt kein Entwurf zurück. Aktualisieren verwendet `record`, nicht leeres `set`, optional `ifVersion` und optionale `audit`-Antworten. Finalisieren verwendet `record` und benötigt aktivierte direkte Finalisierung; die Vier-Augen-Freigabe wird nicht umgangen. Finalisiere nach den nötigen Aktualisierungen. Eine später abgelehnte Änderung nimmt auch die Finalisierung zurück.
+- **changes:** Geordnete Liste aus Einträgen `createRecord`, `updateRecord`, `deleteRecord` oder `finalizeRecord`. Erstellen verwendet `table` und nicht leere `values`; optionales `finalize: true` erstellt und finalisiert den neuen Datensatz in dieser Transaktion. Dafür muss direkte Finalisierung aktiviert sein. Bei fehlgeschlagener Finalisierung bleibt kein Entwurf zurück. Aktualisieren verwendet `record`, nicht leeres `set`, optional `ifVersion` und optionale `audit`-Antworten. Finalisieren verwendet `record` und benötigt aktivierte direkte Finalisierung; die Vier-Augen-Genehmigung wird nicht umgangen. Finalisiere nach den nötigen Aktualisierungen. Eine später abgelehnte Änderung nimmt auch die Finalisierung zurück.
 - **deleteRecord:** Nutzt `record` und optionale `audit`-Antworten. Das Ziel wird automatisch gesperrt. Nur veränderbare Datensätze werden in den Papierkorb verschoben; aufbewahrte Daten werden nicht vernichtet. Eine spätere fehlgeschlagene Änderung rollt auch das Löschen zurück.
-- **transaction:** Berechtigungen und Zeilenbereich werden erneut geprüft. Datensätze, Relationen, Audit, Outbox und Ergebnis werden gemeinsam festgeschrieben oder zurückgerollt.
+- **transaction:** Grids prüft Zugriff und Zeilenbereich erneut. Datensätze, Relationen, Audit, Outbox und Ergebnis werden gemeinsam festgeschrieben oder zurückgerollt.
 :::
 
 `finalizeRecord.record` akzeptiert eine Datensatzreferenz, nie eine Liste oder einen Baum, auch in `changes`. Eigene Objektlistenpositionen gehören zu diesem Datensatz.
@@ -389,7 +377,7 @@ Eine leere Abfrage sperrt keine Zeile. Konkurrierende Reservierungen müssen vor
 
 Formel-/Aggregatprüfungen nutzen `query: {source, parameters}`: typisiertes GQL nach Sperren, vor Änderungen (10.000 Zeilen/5 MiB; kein Capture). Wähle Verstöße mit `where`/`having`, prüfe `empty`; eine Zeile mit `false`/`0` ist nicht leer. Lies veränderliche Beträge in GQL statt vorab ausgewerteter Parameter; berücksichtige geplante Änderungen. Testläufe reservieren nichts.
 
-Die Variante `table`/`where` unterstützt nur gespeicherte Felder. Relationswerte in `createRecord` und `updateRecord` sowie Werte für Relationsfilter verwenden öffentliche Datensatz-IDs wie `${{ inputs.item.recordId }}`. Übergib keine internen UUIDs, Labels oder vollständigen Referenzobjekte als Relationswert. Datensatzziele und Sperren verwenden dagegen die Referenz selbst, etwa `inputs.item`. Verknüpfte Datensätze müssen in der konfigurierten Zieltabelle und Basis lesbar bleiben; auch der Testlauf prüft diese Grenze.
+Die Variante `table`/`where` unterstützt nur gespeicherte Felder. Relationswerte in `createRecord` und `updateRecord` sowie Werte für Relationsfilter verwenden öffentliche Datensatz-IDs wie `${{ inputs.item.recordId }}`. Übergib keine internen UUIDs, Labels oder vollständigen Referenzobjekte als Relationswert. Datensatzziele und Sperren verwenden dagegen die Referenz selbst, etwa `inputs.item`. Verknüpfte Datensätze müssen in der konfigurierten Zieltabelle und Base lesbar bleiben; auch der Testlauf prüft diese Grenze.
 
 **Ein verfügbares Element atomar reservieren**
 
@@ -606,8 +594,8 @@ steps:
 - **Eigene Referenzen:** Plätze, die nur Referenzen akzeptieren, bleiben roh: `record: inputs.item`, `forEach: inputs.items`, `document: savedDocument` und `exists: inputs.item.Field`. Umschließe diese Plätze nicht mit Ausdruckssyntax.
 - **Relationsreferenzen:** Ein einzelnes Relationsfeld kann jeden rohen `record`-Platz füllen, zum Beispiel `record: inputs.asset.Current loan item`. Ein mehrfaches Relationsfeld kann `forEach` füllen, zum Beispiel `forEach: inputs.loan.Items`. Grids löst die gespeicherten IDs zu autorisierten Datensätzen in der Zieltabelle der Relation auf und lässt die Ausführung scheitern, wenn ein Ziel fehlt oder unzugänglich ist.
 - **Bereich:** Eingaben stehen für die gesamte Ausführung zur Verfügung. Namen aus `saveAs` und `setVariable` stehen erst nach ihrem Schritt zur Verfügung. Ein `forEach`-Alias existiert nur in seinen `do`-Schritten. In Zweigen und Schleifen erzeugte Werte verlassen diesen Bereich nicht.
-- **Ergebnismeldungen:** Meldungen von `succeed` und `fail` sind literaler Text und dürfen einen oder mehrere Ausdrücke einbetten, zum Beispiel `Processed ${{ inputs.item.Name }}`.
-- **Strukturierte Werte:** Listen und Objekte dürfen Literale und dynamische Werte rekursiv enthalten. Das ist für `set`, `values`, `data` und `json` nützlich.
+- **Ergebnismeldungen:** Meldungen von `succeed` und `fail` sind literaler Text und können einen oder mehrere Ausdrücke einbetten, zum Beispiel `Processed ${{ inputs.item.Name }}`.
+- **Strukturierte Werte:** Listen und Objekte können Literale und dynamische Werte rekursiv enthalten. Das ist für `set`, `values`, `data` und `json` nützlich.
 :::
 
 :::note Gespeicherte Ausgabepfade
@@ -616,7 +604,7 @@ Gespeicherte Ausgaben stellen strukturierte Pfade bereit. Dokumente besitzen `id
 
 ## E-Mail-Vorlagen {icon="file-description"}
 
-E-Mail-Vorlagen werden auf der Workflow-Seite im Bearbeitungsmodus verwaltet. Sie sind Liquid-Vorlagen auf Basisebene mit Betreff, HTML, gespeicherten Beispieldaten und Vorschau. Ein Workflow-Schritt wählt eine Vorlage und übergibt nur die für die E-Mail benötigten `data`. Beispieldaten werden ausschließlich für die Editorvorschau verwendet. Änderungen daran betreffen versendete Nachrichten nicht.
+Bearbeite E-Mail-Vorlagen auf der Workflow-Seite im **Bearbeitungsmodus**. Sie sind Liquid-Vorlagen auf Ebene der Base mit Betreff, HTML, gespeicherten Beispieldaten und Vorschau. Ein Workflow-Schritt wählt eine Vorlage und übergibt nur die für die E-Mail benötigten `data`. Beispieldaten werden ausschließlich für die Editorvorschau verwendet. Änderungen daran betreffen versendete Nachrichten nicht.
 
 :::reference
 - **Vorlagensuche:** `sendEmail.template` akzeptiert den exakten Namen oder die öffentliche ID einer aktivierten E-Mail-Vorlage. Mehrdeutige Namen werden abgelehnt.
@@ -670,14 +658,11 @@ steps:
 - Laufdetails zeigen Revision, Eingaben, Zeiten, Ergebnis/Fehler, Schritte und Dokumente. Statistiken zählen execute-Läufe; Testlauffehler bleiben im Verlauf.
 - **Alle als PDF** oder **Alle als ZIP** bei den erzeugten Dokumenten eines Laufs lädt jedes Dokument, das du lesen darfst. Sind alle PDFs, erhältst du ein zusammengeführtes PDF, sonst ein ZIP mit jeder Datei unter ihrem ursprünglichen Dateinamen; bei gleichen Namen wird die Dokument-ID ergänzt. Höchstens 1.000 Dokumente und ein Archiv von 512 MiB.
 - Die Workflow-Seite zeigt Zeitplanabgleich, nächsten Lauf oder dauerhafte Zeitplanprobleme sowie aktive Datensatzereignis-/Tabellenbindungen.
-- Auslösende Ereignisse und einzelne externe Auswirkungen findet die Cloud-Administration unter **Observability → Workflows** oder `cld admin workflows`.
+- Auslösende Ereignisse und einzelne externe Auswirkungen findet die Cloud-Administration unter **Systembeobachtung → Workflows** oder `cld admin workflows`.
 
-Laufstatus: `queued`, `running`, `waiting`, `succeeded`, `failed`, `canceled`, `needs_attention`.
-Schrittstatus: `running`, `completed`, `waiting`, `failed`, `needs_attention`, `terminal`, `planned`, `unsupported`, `indeterminate`, `canceled`.
+Laufstatus: `queued`, `running`, `waiting`, `succeeded`, `failed`, `canceled`, `needs_attention`. Schrittstatus: `running`, `completed`, `waiting`, `failed`, `needs_attention`, `terminal`, `planned`, `unsupported`, `indeterminate`, `canceled`.
 
-`terminal` bezeichnet ein beendendes `succeed` oder `fail` im Testlauf; tatsächlich ausgeführtes `fail` heißt `failed`.
-`planned`, `unsupported` und `indeterminate` sind Testergebnisse, keine Laufzeitfehler.
-Prüfe geplante Datensätze, Vorlagen, Empfängeranzahlen und HTTP-Hosts. Anfrageinhalte bleiben verborgen; ein Testlauf garantiert keine später unveränderten Daten, Rechte oder externen Systeme.
+`terminal` bezeichnet ein beendendes `succeed` oder `fail` im Testlauf; tatsächlich ausgeführtes `fail` heißt `failed`. `planned`, `unsupported` und `indeterminate` sind Testergebnisse, keine Laufzeitfehler. Prüfe geplante Datensätze, Vorlagen, Empfängeranzahlen und HTTP-Hosts. Anfrageinhalte bleiben verborgen; ein Testlauf garantiert nicht, dass Daten, Zugriff oder externe Systeme später unverändert bleiben.
 
 ## Eine unterbrochene Ausführung verstehen {icon="alert-triangle"}
 
@@ -688,20 +673,20 @@ Unterbrochene Läufe setzen anhand gespeicherter Ergebnisse fort, nicht von vorn
 - `setVariable`, `succeed`, `fail` und Kontrollfluss haben keine externen Auswirkungen und können erneut ausgewertet werden.
 - Eine `httpRequest` ohne vollständige Antwort kann bereits angekommen sein. Grids stoppt mit `needs_attention`, statt zu wiederholen oder einen Fehler zu behaupten. Prüfe vor einem neuen Lauf das Zielsystem. Bevorzuge Empfänger, die `Idempotency-Key` beachten.
 
-## Berechtigungen und Grenzen {icon="shield-lock"}
+## Zugriff und Grenzen verstehen {icon="shield-lock"}
 
 :::reference
-- **Ausführungsberechtigung:** Direkte Aufrufe und eigenständige Ausführungsoptionen erfordern Schreibzugriff auf die Basis. Eine veröffentlichte Grids App darf nur ihren exakt enthaltenen Launcher aufrufen. Öffentliche Besucher dürfen keine Workflow-Aktionen ausführen.
-- **Identität:** Direkte Aufrufe (Kanal `api`), Scanner und Bulk nutzen den Aufrufer; App-Freigaben verlangen angemeldete Personen, keine Dienstkonten. Zeitpläne/Ereignisse nutzen die aktuellen Gruppen des Verantwortlichen. Ereignisse vermerken den Auslöser, übernehmen aber nicht dessen Rechte.
-- **Aktionsberechtigung:** Direkte Läufe nutzen Basisrechte. App-Rechte, Veröffentlichung, Eingaben, Launcher und `availableWhen` werden vor Effekten geprüft. `atomicRecords` prüft einmal nach den Sperren; eigene Änderungen entziehen diesem Schritt nicht die Freigabe. Spätere Effekte prüfen erneut. Sichere den Startzustand atomar. App-Workflows dürfen alle Tabellen ihrer Basis nutzen, nicht nur sichtbare. Basis-Admins verantworten Geschäftsregeln und Exportfreigaben.
+- **Zugriff zum Ausführen:** Direkte Aufrufe und eigenständige Ausführungsoptionen erfordern Zugriff **Bearbeiten** auf die Base. Eine veröffentlichte Grids App kann nur ihren exakt enthaltenen Launcher aufrufen. Öffentliche Besucher können keine Workflow-Aktionen ausführen.
+- **Identität:** Direkte Aufrufe (Kanal `api`), Scanner und Bulk nutzen den Aufrufer; Zugriff über eine App verlangt angemeldete Personen, keine Dienstkonten. Zeitpläne und Ereignisse nutzen die aktuellen Gruppen der verantwortlichen Person. Ereignisse vermerken die auslösende Person, übernehmen aber nicht deren Zugriff.
+- **Zugriff für Aktionen:** Läufe in der Base nutzen den Zugriff auf die Base. Vor Auswirkungen prüft Grids erneut Zugriff auf die App, Veröffentlichung, Eingaben, Launcher und `availableWhen`. `atomicRecords` prüft einmal nach den Sperren; eigene Änderungen machen diesen Schritt nicht ungültig. Spätere Effekte prüfen erneut. Sichere den Startzustand atomar. App-Workflows können alle Tabellen ihrer Base nutzen, nicht nur sichtbare. Personen mit Zugriff **Verwalten** auf die Base verantworten Geschäftsregeln und das, was Exporte offenlegen.
 - **App-Ergebnis:** Aktionen fragen ihren Lauf ab: `running`, `succeeded` oder `failed`. `fail.message` und atomare `checks[].message` erreichen Leser wörtlich: Nenne sichere Abhilfen. Andere Fehler erhalten sichere Hinweise, nie interne Details oder rohen Verlauf.
-- **E-Mail-Zustellung:** Die Verwaltung von E-Mail-Vorlagen erfordert Verwaltungszugriff auf die Basis. Workflow-Ausführungen können aktivierte Vorlagen verwenden, ohne deren HTML in der Autovervollständigung offenzulegen.
+- **E-Mail-Zustellung:** Das Bearbeiten von E-Mail-Vorlagen erfordert Zugriff **Verwalten** auf die Base. Workflow-Ausführungen können aktivierte Vorlagen verwenden, ohne deren HTML in der Autovervollständigung offenzulegen.
 - **Abhängigkeiten von E-Mail-Vorlagen:** Grids zeigt, welche Workflows eine E-Mail-Vorlage verwenden, und verweigert das Löschen einer referenzierten Vorlage. Ändere zuerst diese Workflows.
 - **HTTP-Schutzregeln:** Nur öffentliche Internetadressen sind erlaubt. Private, lokale oder reservierte Ziele werden abgelehnt, auch Hostnamen mit gleichzeitig öffentlichen und privaten Adressen. Keine Einstellung oder Erlaubnisliste ermöglicht interne Netzwerkaufrufe.
-- **HTTP-Grenzen:** `httpRequest` begrenzt Anfrage- und Antwortinhalt auf 64 KiB, wendet die konfigurierte Zeitüberschreitung auf die vollständige Anfrage einschließlich Zielauflösung an und lehnt in der URL eingebettete Anmeldedaten ab. Verbindungs- und Übertragungsheader können nicht überschrieben werden.
+- **HTTP-Grenzen:** `httpRequest` begrenzt Anfrage- und Antwortinhalt auf 64 KiB. Die konfigurierte Zeitüberschreitung gilt für die vollständige Anfrage einschließlich Zielauflösung. In der URL eingebettete Anmeldedaten lehnt der Schritt ab. Verbindungs- und Übertragungsheader können nicht überschrieben werden.
 :::
 
-Ein Workflow darf über alle Zweige und Schleifen höchstens 100 Eingaben und 1.000 Schritte deklarieren. Kontrollfluss und rekursive Bedingungen dürfen jeweils 20 Ebenen tief verschachtelt sein und höchstens 1.000 Bedingungen enthalten. Eine `recordList`, Bulk-Auswahl oder `forEach`-Schleife darf höchstens 10.000 Datensätze enthalten. Workflow-YAML ist auf 200.000 Zeichen begrenzt.
+Ein Workflow kann über alle Zweige und Schleifen höchstens 100 Eingaben und 1.000 Schritte deklarieren. Kontrollfluss und rekursive Bedingungen können jeweils 20 Ebenen tief verschachtelt sein und höchstens 1.000 Bedingungen enthalten. Eine `recordList`, Bulk-Auswahl oder `forEach`-Schleife darf höchstens 10.000 Datensätze enthalten. Workflow-YAML ist auf 200.000 Zeichen begrenzt.
 
 ## Scanner-Beispiel {icon="point"}
 

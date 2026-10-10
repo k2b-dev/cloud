@@ -46,7 +46,7 @@ Nicht unterstützt sind Korrekturen, Ersatzbelege, Eingangsrechnungen, Steuerbef
 
 Version 2 (`de.zugferd.en16931@2`) rendert zusätzlich:
 
-- Rechnungskorrekturen mit Nummer, Datum und Grund der ursprünglichen Rechnung;
+- Rechnungskorrekturen mit Nummer und Datum der ursprünglichen Rechnung und einem Grund für die Korrektur;
 - Selbstabrechnungen mit einer Vereinbarungsreferenz.
 
 Version 2 verlangt eine ausdrückliche Belegart und ein Leistungsdatum. Mengen und Beträge bleiben positiv. Die Belegart entscheidet, ob es eine Rechnung oder eine Korrektur ist. Bei Selbstabrechnung bleibt der Verkäufer Leistungserbringer und der Käufer der Leistungsempfänger, der den Beleg ausstellt. Die Zahlungsdaten nennen das gewünschte Empfängerkonto. Grids leitet es nicht aus der Belegart ab.

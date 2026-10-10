@@ -152,7 +152,7 @@ When the page record is missing, the Record block can show a configured empty te
 
 ## Keep processing outside the layout {icon="route"}
 
-The responsible group can process requests in the Grids workspace or in a second ordinary Grids App. No special admin-app type is needed.
+The responsible group can process requests in the Grids workspace or in a second ordinary Grids App. No special app type for administration is needed.
 
 The workflow must read and validate the request again before it changes it. Related record changes use the atomic record-change boundary of the workflow. External effects start only after those changes commit. This keeps concurrent reviewers from applying a stale transition silently.
 

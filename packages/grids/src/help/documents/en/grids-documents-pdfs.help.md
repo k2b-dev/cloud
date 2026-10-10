@@ -46,7 +46,7 @@ It does not support corrections, incoming invoices, exemptions, allowances, char
 
 Version 2 (`de.zugferd.en16931@2`) also renders:
 
-- credit notes with the number, date, and reason of the original invoice;
+- credit notes with the number and date of the original invoice and a reason for the credit;
 - self-billing with an agreement reference.
 
 Version 2 requires an explicit document kind and service date. Quantities and amounts stay positive. The document kind decides whether the document is an invoice or a credit. In self-billing, the seller stays the supplier, and the buyer stays the customer who issues the document. Payment details name the intended receiving account. Grids does not infer it from the document kind.

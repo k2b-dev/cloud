@@ -241,7 +241,7 @@ Abfragen in Grids Apps erhalten automatisch einen typisierten Anfragekontext. Gr
 | `@params.<name>` | Ein deklarierter und validierter Seitenparameter |
 | `@page.id`, `@page.title`, `@page.url` | Identität und kanonische relative URL der aktuellen Seite |
 | `@app.id`, `@app.name` | Identität der veröffentlichten Grids App |
-| `@base.id`, `@base.name` | Identität der zugehörigen Basis |
+| `@base.id`, `@base.name` | Identität der zugehörigen Base |
 | `@time.now`, `@time.today`, `@time.timeZone` | Ein Anfragezeitpunkt, das lokale Datum und die IANA-Zeitzone |
 
 Nutze `@auth.id != null`, wenn eine Abfrage ein angemeldetes Konto erfordert. Erkenne eine anonyme App-Anfrage ausdrücklich mit `@auth.id = null`. Unbekannte Namensräume und nicht deklarierte Parameter sind Veröffentlichungsfehler.
