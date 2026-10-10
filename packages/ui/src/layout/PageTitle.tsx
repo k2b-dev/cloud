@@ -145,7 +145,7 @@ export function PageTitle(props: PageTitleProps): JSX.Element {
       <div class="k2b-page-title__copy">
         <Show when={ancestors().length === 1 && parent()}>
           {(up) => (
-            <nav class="k2b-page-title__trail" aria-label={messages().pageTrail}>
+            <nav class="k2b-page-title__trail" aria-label={messages().path}>
               <a
                 class="k2b-page-title__up"
                 href={up().href}
@@ -160,7 +160,7 @@ export function PageTitle(props: PageTitleProps): JSX.Element {
           )}
         </Show>
         <Show when={ancestors().length > 1}>
-          <nav class="k2b-page-title__trail" aria-label={messages().pageTrail}>
+          <nav class="k2b-page-title__trail" aria-label={messages().path}>
             <ol class="k2b-page-title__path">
               <For each={ancestors()}>
                 {(link, index) => (
@@ -168,12 +168,7 @@ export function PageTitle(props: PageTitleProps): JSX.Element {
                     <Show when={index() === 1}>
                       <li class="k2b-page-title__more" hidden>
                         <i class="ti ti-chevron-right" aria-hidden="true" />
-                        <button
-                          type="button"
-                          class="k2b-page-title__more-button"
-                          popovertarget={menuId}
-                          aria-label={messages().morePageLevels}
-                        >
+                        <button type="button" class="k2b-page-title__more-button" popovertarget={menuId} aria-label={messages().moreLevels}>
                           …
                         </button>
                       </li>
