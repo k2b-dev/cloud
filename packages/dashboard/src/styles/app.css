@@ -53,7 +53,8 @@
 }
 
 /* ── Shortcuts ────────────────────────────────────────────────────────── */
-/* The row keeps its height with and without shortcuts, and in both modes. */
+/* The row keeps its height with and without shortcuts. Its add button is always in it and only visible while
+   editing, so the row wraps the same in both modes. */
 .dashboard-shortcuts {
   display: flex;
   min-height: 2rem;
@@ -118,6 +119,10 @@
 
 .dashboard-shortcut__remove::after {
   inset: -0.6875rem;
+}
+
+.dashboard-shortcut-add:not([data-shown]) {
+  visibility: hidden;
 }
 
 /* ── Edit hint ────────────────────────────────────────────────────────── */
@@ -228,6 +233,11 @@
   padding: 0.5rem 0.75rem 0.75rem;
 }
 
+/* A small widget on a narrow phone keeps its message and Try again inside its frame. */
+.dashboard-page .dashboard-tile[data-size="small"] .dashboard-widget-placeholder {
+  padding-inline: 0.25rem;
+}
+
 /* The slow notice has its line from the start and only fades in. */
 .dashboard-widget-slow {
   opacity: 0;
@@ -294,22 +304,36 @@
   left: -0.5rem;
 }
 
+/* The size choice stays inside its widget: on a narrow one its labels shorten before it would reach the next widget.
+   Only the control itself takes the pointer, so the widget beside it can still be picked up. */
 .dashboard-tile__sizes {
   position: absolute;
   z-index: 3;
+  right: 0.5rem;
   bottom: 0.625rem;
-  left: 50%;
-  transform: translateX(-50%);
+  left: 0.5rem;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
 }
 
 .dashboard-board .dashboard-tile__sizes .k2b-segmented-control {
   width: auto;
+  max-width: 100%;
   background: var(--k2b-surface);
   box-shadow: var(--k2b-shadow-float);
+  pointer-events: auto;
 }
 
 .dashboard-board .dashboard-tile__sizes .k2b-segmented-control__option {
-  flex: none;
+  flex: 0 1 auto;
+}
+
+.dashboard-board .dashboard-tile__sizes .k2b-segmented-control__option > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .dashboard-add-tile {
@@ -470,7 +494,8 @@
     white-space: nowrap;
   }
 
-  .dashboard-head__actions .k2b-button {
+  /* `[data-size]` outranks the shared rules of the small control size these buttons use. */
+  .dashboard-page .dashboard-head__actions .k2b-button[data-size] {
     min-width: 2.25rem;
     min-height: 2.25rem;
   }
@@ -488,7 +513,7 @@
     flex: none;
   }
 
-  .dashboard-shortcuts .k2b-button {
+  .dashboard-page .dashboard-shortcuts .k2b-button[data-size] {
     min-height: 2.25rem;
   }
 
@@ -505,7 +530,7 @@
     box-shadow: var(--k2b-shadow-float);
   }
 
-  .dashboard-edit-bar .k2b-button {
+  .dashboard-page .dashboard-edit-bar .k2b-button[data-size] {
     min-height: 2.75rem;
   }
 
@@ -536,9 +561,25 @@
     inset: -0.375rem;
   }
 
-  .dashboard-board .dashboard-tile__sizes .k2b-segmented-control__option {
+  .dashboard-board .dashboard-tile__sizes .k2b-segmented-control[data-size] .k2b-segmented-control__option {
     min-height: 2.75rem;
-    padding-inline: 0.75rem;
+    padding-inline: 0.5rem;
+  }
+
+  /* A small widget is half the phone's width: its size choice spans the widget, and each option grows from its label,
+     so all three labels fit down to a 320px screen. */
+  .dashboard-tile[data-size="small"] .dashboard-tile__sizes {
+    right: 0.25rem;
+    left: 0.25rem;
+  }
+
+  .dashboard-board .dashboard-tile[data-size="small"] .dashboard-tile__sizes .k2b-segmented-control {
+    width: 100%;
+  }
+
+  .dashboard-board .dashboard-tile[data-size="small"] .dashboard-tile__sizes .k2b-segmented-control[data-size] .k2b-segmented-control__option {
+    flex: 1 1 auto;
+    padding-inline: 0.125rem;
   }
 
   .dashboard-gallery-card__preview {

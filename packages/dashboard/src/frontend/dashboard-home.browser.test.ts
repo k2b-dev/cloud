@@ -54,7 +54,8 @@ const baseProps: DashboardHomeProps = {
   shortcuts: [{ id: "handbook", kind: "link", title: "Handbook", href: "/handbook", icon: "ti ti-book" }],
   catalog,
   board: [...board],
-  kept: [{ key: "stopped/app", size: "small" }],
+  // Third on the saved board, between the recent notes and the weather.
+  kept: [{ key: "stopped/app", size: "small", index: 2 }],
   followsDefault: false,
 };
 
@@ -368,12 +369,14 @@ describe("the dashboard board in a browser", () => {
           board: [
             { key: "spaces/today", size: "large" },
             { key: "notebooks/recent", size: "medium" },
-            { key: "weather/current", size: "medium" },
-            { key: "gateway/health", size: "small" },
             // A widget the page could not show keeps its place on the saved board.
             { key: "stopped/app", size: "small" },
+            { key: "weather/current", size: "medium" },
+            { key: "gateway/health", size: "small" },
           ],
         });
+        // Done went away with the edit mode and handed the focus back to Edit.
+        expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe("Edit dashboard");
         expect(await page.evaluate(() => "sameDocument" in window)).toBeTrue();
         await announced(page, "Dashboard saved");
       } finally {
@@ -386,12 +389,19 @@ describe("the dashboard board in a browser", () => {
     const { page, close } = await open(desktop);
     try {
       await allLoaded(page);
-      await page.getByRole("button", { name: "Edit dashboard" }).click();
+      const focused = () => page.evaluate(() => document.activeElement?.textContent?.trim());
+      // By keyboard, Edit hands the focus to Done, which takes its place.
+      await page.getByRole("button", { name: "Edit dashboard" }).focus();
+      await page.keyboard.press("Enter");
+      await page.getByRole("button", { name: "Done" }).waitFor();
+      expect(await focused()).toBe("Done");
       await tile(page, "quotes/quote").getByRole("button", { name: "Remove Quote of the hour" }).click();
       await page.getByRole("button", { name: "Remove Handbook" }).click();
-      await page.getByRole("button", { name: "Cancel" }).click();
+      await page.getByRole("button", { name: "Cancel" }).focus();
+      await page.keyboard.press("Enter");
       expect((await layout(page)).order).toEqual(board.map(({ key, size }) => `${key}:${size}`));
       await page.getByRole("link", { name: "Handbook" }).waitFor();
+      expect(await focused()).toBe("Edit");
 
       const saves = saved.length;
       await page.getByRole("button", { name: "Edit dashboard" }).click();
@@ -479,6 +489,14 @@ describe("the dashboard board in a browser", () => {
         await touch("touchEnd");
         await page.waitForFunction(() => window.scrollY > 0);
         expect(await page.locator(".dashboard-tile__remove").count()).toBe(0);
+        // The swipe flings the page on; only once it rests does a point measured now stay on the widget it names.
+        await page.waitForFunction(
+          () =>
+            new Promise<boolean>((resolve) => {
+              const y = window.scrollY;
+              setTimeout(() => resolve(window.scrollY === y), 150);
+            }),
+        );
         await page.evaluate(() => window.scrollTo(0, 0));
 
         // A long press opens the edit mode.
@@ -489,7 +507,10 @@ describe("the dashboard board in a browser", () => {
         await touch("touchEnd");
         expect(await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.key)).toBe("weather/current");
 
-        // Hold briefly, then drag the weather widget in front of the recent notes.
+        // Hold briefly, then drag the weather widget in front of the recent notes. The widget is held above its size
+        // choice, which takes a press of its own.
+        const box = (await tile(page, "weather/current").boundingBox())!;
+        point = { x: box.x + box.width / 2, y: box.y + box.height / 3 };
         const target = await center(page, "notebooks/recent");
         await touch("touchStart", point.x, point.y);
         await page.waitForTimeout(350);
@@ -557,6 +578,117 @@ describe("the dashboard board in a browser", () => {
       }
     }
   }, 60_000);
+
+  test("entering and leaving the edit mode moves nothing when the shortcuts fill their row or there are none", async () => {
+    const shortcuts = (count: number): DashboardHomeProps["shortcuts"] =>
+      Array.from({ length: count }, (_, index) => ({
+        id: `shortcut-${index}`,
+        kind: "link",
+        title: `Shortcut ${index + 1}`,
+        href: "/handbook",
+        icon: "ti ti-link",
+      }));
+    // Ten shortcuts fill a row at 1024px, so an add button that only appeared while editing would start a second one.
+    const cases = [
+      { view: { width: 1024, height: 900, touch: false }, count: 10 },
+      { view: phone, count: 0 },
+    ];
+    for (const { view, count } of cases) {
+      const { page, close } = await open(view, { props: { ...baseProps, shortcuts: shortcuts(count) } });
+      try {
+        await allLoaded(page);
+        const before = (await layout(page)).boxes;
+        await page.getByRole("button", { name: "Edit dashboard" }).click();
+        await page.locator(".dashboard-shortcut-add[data-shown]").waitFor();
+        expect({ width: view.width, boxes: (await layout(page)).boxes }).toEqual({ width: view.width, boxes: before });
+        await page.getByRole("button", { name: "Cancel" }).click();
+        await page.locator(".dashboard-tile__remove").first().waitFor({ state: "detached" });
+        expect({ width: view.width, boxes: (await layout(page)).boxes }).toEqual({ width: view.width, boxes: before });
+        // Outside the edit mode the reserved button can be neither seen nor reached.
+        expect(await page.getByRole("button", { name: "Shortcut", exact: true }).count()).toBe(0);
+      } finally {
+        await close();
+      }
+    }
+  }, 30_000);
+
+  test("on a 320px phone every size choice stays inside its widget, with full labels and 44px targets", async () => {
+    const { page, close } = await open(
+      { width: 320, height: 640, touch: true },
+      {
+        props: {
+          ...baseProps,
+          board: [
+            { key: "weather/current", size: "small" },
+            { key: "venue/today", size: "small" },
+            { key: "spaces/today", size: "large" },
+          ],
+          kept: [],
+        },
+      },
+    );
+    try {
+      await waitForState(page, "weather/current", "ok");
+      await page.getByRole("button", { name: "Edit dashboard" }).click();
+      await page.locator(".dashboard-tile__sizes").first().waitFor();
+      const controls = await page.evaluate(() =>
+        Array.from(document.querySelectorAll<HTMLElement>(".dashboard-tile")).map((tile) => {
+          const box = tile.getBoundingClientRect();
+          const control = tile.querySelector(".dashboard-tile__sizes .k2b-segmented-control")!.getBoundingClientRect();
+          const options = Array.from(tile.querySelectorAll<HTMLElement>(".dashboard-tile__sizes .k2b-segmented-control__option"));
+          return {
+            key: tile.dataset.key,
+            inside: control.left >= box.left && control.right <= box.right,
+            heights: options.map((option) => Math.round(option.getBoundingClientRect().height)),
+            cut: options.filter((option) => option.querySelector("span")!.scrollWidth > option.querySelector("span")!.clientWidth).length,
+          };
+        }),
+      );
+      expect(controls).toEqual([
+        { key: "weather/current", inside: true, heights: [44, 44, 44], cut: 0 },
+        { key: "venue/today", inside: true, heights: [44, 44, 44], cut: 0 },
+        { key: "spaces/today", inside: true, heights: [44, 44], cut: 0 },
+      ]);
+      const bar = await page
+        .locator(".dashboard-edit-bar .k2b-button")
+        .evaluateAll((buttons) => buttons.map((button) => Math.round(button.getBoundingClientRect().height)));
+      expect(bar).toEqual([44, 44, 44]);
+    } finally {
+      await close();
+    }
+  }, 30_000);
+
+  test("adding stops at the board's and the shortcuts' limits with a message, counting widgets it cannot show", async () => {
+    const many = Array.from({ length: 99 }, (_, index) => widget(`bulk/w${index}`, `Widget ${index + 1}`, ["small"], "small", false));
+    const { page, close } = await open(desktop, {
+      props: {
+        ...baseProps,
+        shortcuts: Array.from({ length: 50 }, (_, index) => ({
+          id: `shortcut-${index}`,
+          kind: "link" as const,
+          title: `S${index + 1}`,
+          href: "/handbook",
+          icon: "ti ti-link",
+        })),
+        catalog: [...catalog, ...many],
+        board: many.map(({ key }) => ({ key, size: "small" as const })),
+        // 99 shown and one the page cannot show make a full board.
+        kept: [{ key: "stopped/app", size: "small", index: 0 }],
+      },
+    });
+    try {
+      await page.getByRole("button", { name: "Edit dashboard" }).click();
+      await page.getByRole("button", { name: "Add widget" }).first().click();
+      await page.getByText("The board holds up to 100 widgets. Remove one to add another.").waitFor();
+      expect(await page.getByRole("dialog").count()).toBe(0);
+
+      await page.getByRole("button", { name: "Shortcut", exact: true }).click();
+      await page.getByText("You can keep up to 50 shortcuts. Remove one to add another.").waitFor();
+      expect(await page.getByRole("dialog").count()).toBe(0);
+    } finally {
+      await close();
+    }
+  }, 30_000);
 
   test("speaks German", async () => {
     const { page, close } = await open(phone, { lang: "de" });

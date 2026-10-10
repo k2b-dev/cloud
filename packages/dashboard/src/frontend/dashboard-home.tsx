@@ -5,12 +5,15 @@ import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import {
   DASHBOARD_MAX_ITEMS,
+  DASHBOARD_MAX_SHORTCUTS,
   type DashboardAppSummary,
   type DashboardBoardEntry,
   type DashboardCatalogWidget,
+  type DashboardKeptEntry,
   type DashboardLegalLink,
   type DashboardShortcut,
   defaultDashboardBoard,
+  restoreKeptDashboardEntries,
 } from "../shared";
 import { openDashboardGallery } from "./dashboard-gallery";
 import { askForShortcut, DashboardShortcuts } from "./dashboard-shortcuts";
@@ -29,8 +32,8 @@ export type DashboardHomeProps = {
   catalog: DashboardCatalogWidget[];
   /** The widgets the page shows, in reading order and in sizes they offer. */
   board: DashboardBoardEntry[];
-  /** Saved widgets the page cannot show now; saving the board keeps them at its end. */
-  kept: DashboardBoardEntry[];
+  /** Saved widgets the page cannot show now; saving the board keeps them at their places. */
+  kept: DashboardKeptEntry[];
   /** The person has not arranged their own board and sees the default one. */
   followsDefault: boolean;
 };
@@ -83,7 +86,7 @@ export default function DashboardHome(props: DashboardHomeProps) {
   const [board, setBoard] = createSignal<DashboardBoardEntry[]>(props.board);
   const [shortcuts, setShortcuts] = createSignal<DashboardShortcut[]>(props.shortcuts);
   const [followsDefault, setFollowsDefault] = createSignal(props.followsDefault);
-  const [kept, setKept] = createSignal<DashboardBoardEntry[]>(props.kept);
+  const [kept, setKept] = createSignal<DashboardKeptEntry[]>(props.kept);
   const [editing, setEditing] = createSignal(false);
   const [saving, setSaving] = createSignal(false);
   /** The board can change only in the edit mode and not while Done saves it, so what is saved is what is shown. */
@@ -96,8 +99,13 @@ export default function DashboardHome(props: DashboardHomeProps) {
   let snapshot: Snapshot | undefined;
   let grid: HTMLElement | undefined;
   let root: HTMLDivElement | undefined;
+  // Edit and Done replace each other in the header, so each hands the keyboard focus to the other.
+  let editButton: HTMLButtonElement | undefined;
+  let doneButton: HTMLButtonElement | undefined;
 
   const keys = () => board().map((entry) => entry.key);
+  /** Widgets the page cannot show count too: saving keeps them. */
+  const boardIsFull = () => board().length + kept().length >= DASHBOARD_MAX_ITEMS;
   const sizeOf = (key: string): DashboardWidgetSize => board().find((entry) => entry.key === key)?.size ?? "medium";
   const titleOf = (key: string) => catalogByKey.get(key)?.title ?? key;
   const tileElement = (key: string) => grid?.querySelector<HTMLElement>(`.dashboard-tile[data-key="${CSS.escape(key)}"]`) ?? undefined;
@@ -189,6 +197,7 @@ export default function DashboardHome(props: DashboardHomeProps) {
     snapshot = undefined;
     setEditing(false);
     setFresh(undefined);
+    editButton?.focus({ preventScroll: true });
   };
   const cancel = () => {
     if (snapshot) {
@@ -210,20 +219,24 @@ export default function DashboardHome(props: DashboardHomeProps) {
       JSON.stringify([previous.board, previous.shortcuts]) === JSON.stringify([board(), shortcuts()]);
     if (!unchanged) {
       setSaving(true);
+      let saved = false;
       try {
-        // Widgets the page cannot show keep their place behind the shown ones, as far as the board's limit allows.
         const response = await apiClient.settings.$put({
-          json: { shortcuts: shortcuts(), board: followsDefault() ? null : [...board(), ...kept()].slice(0, DASHBOARD_MAX_ITEMS) },
+          json: { shortcuts: shortcuts(), board: followsDefault() ? null : restoreKeptDashboardEntries(board(), kept()) },
         });
-        if (!response.ok) throw new Error(t().saveFailed);
-        // The default board keeps no widgets of its own, so a later board starts without them too.
-        if (followsDefault()) setKept([]);
+        saved = response.ok;
       } catch {
+        // A failed request is reported like a refused one.
+      }
+      setSaving(false);
+      if (!saved) {
+        // Done was disabled while it saved, which took the focus from it.
+        doneButton?.focus({ preventScroll: true });
         toast.error(t().saveFailed);
         return;
-      } finally {
-        setSaving(false);
       }
+      // The default board keeps no widgets of its own, so a later board starts without them too.
+      if (followsDefault()) setKept([]);
     }
     leaveEdit();
     announce(t().saved);
@@ -263,8 +276,13 @@ export default function DashboardHome(props: DashboardHomeProps) {
     announce(t().resized({ name: titleOf(key), size: t()[size] }));
   };
 
+  const refuseWhenFull = () => {
+    if (!boardIsFull()) return false;
+    toast(t().boardFull({ max: DASHBOARD_MAX_ITEMS }));
+    return true;
+  };
   const openGallery = async () => {
-    if (saving()) return;
+    if (saving() || refuseWhenFull()) return;
     const choice = await openDashboardGallery(
       {
         catalog: props.catalog,
@@ -273,7 +291,7 @@ export default function DashboardHome(props: DashboardHomeProps) {
       },
       locale(),
     );
-    if (!choice || saving() || keys().includes(choice.key) || board().length >= DASHBOARD_MAX_ITEMS) return;
+    if (!choice || saving() || keys().includes(choice.key) || refuseWhenFull()) return;
     startEdit();
     change([...board(), choice]);
     setFresh(choice.key);
@@ -285,8 +303,13 @@ export default function DashboardHome(props: DashboardHomeProps) {
   };
   const addShortcut = async () => {
     if (!editable()) return;
+    // The settings accept no more, so one more would make the whole board unsavable.
+    if (shortcuts().length >= DASHBOARD_MAX_SHORTCUTS) {
+      toast(t().shortcutsFull({ max: DASHBOARD_MAX_SHORTCUTS }));
+      return;
+    }
     const shortcut = await askForShortcut(props.apps, t().addShortcut);
-    if (shortcut && editable()) setShortcuts([...shortcuts(), shortcut]);
+    if (shortcut && editable() && shortcuts().length < DASHBOARD_MAX_SHORTCUTS) setShortcuts([...shortcuts(), shortcut]);
   };
   const openApps = () =>
     openAppLaunchpad(
@@ -533,7 +556,16 @@ export default function DashboardHome(props: DashboardHomeProps) {
                   <i class="ti ti-grid-dots" aria-hidden="true" />
                   <span class="dashboard-head__label">{t().apps}</span>
                 </Button>
-                <Button variant="secondary" size="sm" onClick={startEdit} aria-label={t().editDashboard}>
+                <Button
+                  ref={editButton}
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    startEdit();
+                    doneButton?.focus({ preventScroll: true });
+                  }}
+                  aria-label={t().editDashboard}
+                >
                   <i class="ti ti-pencil" aria-hidden="true" />
                   {t().edit}
                 </Button>
@@ -555,7 +587,7 @@ export default function DashboardHome(props: DashboardHomeProps) {
                 {t().addWidgetShort}
               </Button>
             </div>
-            <Button size="sm" onClick={() => void done()} loading={saving()} loadingLabel={t().saving}>
+            <Button ref={doneButton} size="sm" onClick={() => void done()} loading={saving()} loadingLabel={t().saving}>
               <i class="ti ti-check" aria-hidden="true" />
               {t().done}
             </Button>

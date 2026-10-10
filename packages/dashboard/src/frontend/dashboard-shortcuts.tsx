@@ -30,7 +30,8 @@ const resolveShortcuts = (shortcuts: readonly DashboardShortcut[], apps: readonl
 
 /**
  * The shortcuts under the greeting. While the board is edited each one gets a remove button and a last button adds
- * one; the row keeps its height in both modes, and on a phone it scrolls sideways instead of wrapping.
+ * one. That button is always in the row and only shown while editing, so the row wraps and stands the same in both
+ * modes; on a phone it scrolls sideways instead of wrapping.
  */
 export function DashboardShortcuts(props: {
   shortcuts: readonly DashboardShortcut[];
@@ -73,12 +74,18 @@ export function DashboardShortcuts(props: {
           </span>
         )}
       </For>
-      <Show when={props.editing}>
-        <Button variant="ghost" size="sm" class="dashboard-shortcut-add" disabled={props.disabled} onClick={() => props.onAdd()}>
-          <i class="ti ti-plus" aria-hidden="true" />
-          {t().addShortcutShort}
-        </Button>
-      </Show>
+      <Button
+        variant="ghost"
+        size="sm"
+        class="dashboard-shortcut-add"
+        data-shown={props.editing ? "true" : undefined}
+        inert={!props.editing}
+        disabled={props.disabled}
+        onClick={() => props.onAdd()}
+      >
+        <i class="ti ti-plus" aria-hidden="true" />
+        {t().addShortcutShort}
+      </Button>
     </nav>
   );
 }
