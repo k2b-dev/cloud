@@ -31,6 +31,13 @@
   flex-shrink: 0;
 }
 
+/* Each view keeps its own width: equal flexible segments squeeze "Woche" and "Monat" onto their neighbours. */
+.k2b-ui .k2b-calendar-view-switcher .k2b-segmented-control__option {
+  flex: none;
+  padding-inline: 0.75rem;
+  white-space: nowrap;
+}
+
 /* One row: navigation, the period title, the application's controls right
    after it, and Today, the views, and the actions at the end. A narrower
    calendar first draws filter chips as icons, then gives the controls a row
@@ -148,6 +155,10 @@
 
   .k2b-ui .k2b-calendar-header__actions > :is(.k2b-calendar-view-switcher, .k2b-segmented-control) {
     order: 3;
+  }
+
+  .k2b-ui .k2b-calendar-view-switcher .k2b-segmented-control__option {
+    padding-inline: 0.5rem;
   }
 
   .k2b-ui .k2b-calendar-header__content {
