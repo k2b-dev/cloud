@@ -50,6 +50,15 @@
   gap: 1rem;
 }
 
+/* Each slot holds one widget in a fixed @k2b/ui size (standard or compact) from
+   before its data arrives, so a widget that answers late, fails, or retries
+   never moves another one. The widget frame owns its height and scrolling. */
+.dashboard-widget-slot {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .dashboard-page .widget-surface {
   border-color: color-mix(in srgb, var(--ui-border) 68%, transparent);
 }

@@ -3,6 +3,7 @@ import * as bun from "bun";
 import { createLocalJWKSet } from "jose";
 import { z } from "zod";
 import { bindProcessApplicationId, clearProcessApplicationId } from "../../../packages/cloud/src/_internal/process-identity";
+import type { AuthContext } from "../../../packages/cloud/src/server";
 import { testInfra, useFreshDatabase } from "../../../scripts/fixtures/test-infra";
 
 // Run this file alone: `useFreshDatabase` binds Bun's default SQL handle to a
@@ -419,5 +420,55 @@ if (!testInfra.database) {
       expect(callbacks).toBe(0);
       expect((await issue("after-abort")).ok).toBeTrue();
     }, 10_000);
+
+    test("a dashboard widget stream signs every widget under one guard on pool max1", async () => {
+      const { createWidgetRoutes } = await import("../../../packages/cloud/src/api/widgets");
+      const { widgetInvocationOperation } = await import("../../../packages/cloud/src/services/identity/invocation-operations");
+      const user = { id: userId, roles: ["user"] } as AuthContext["Variables"]["user"];
+      let guards = 0;
+      const verified: string[] = [];
+      const routes = createWidgetRoutes({
+        authenticate: async (c, next) => {
+          c.set("actor", { kind: "user", user });
+          c.set("accessSubject", { type: "user", userId });
+          c.set("user", user);
+          c.set("credentialKind", "session");
+          c.set("credentialScopes", []);
+          await next();
+        },
+        listWidgets: async () =>
+          Array.from({ length: 10 }, (_, index) => ({
+            appId: `widget-app-${index}`,
+            appName: `Widget app ${index}`,
+            appIcon: "ti ti-box",
+            widgetId: "summary",
+            url: `http://widget-app-${index}:3000/api/widget-app-${index}/widget/summary`,
+          })),
+        withActiveSigner: (purpose, callback, options) => {
+          guards += 1;
+          return identity.withActiveIdentitySigner(purpose, callback, { ...options, pool });
+        },
+        fetch: async (input, init) => {
+          const appId = new URL(input instanceof Request ? input.url : input).hostname;
+          const bearer = new Headers(init?.headers).get("authorization")!.slice(7);
+          const claims = await identity.verifyInvocationToken(
+            bearer,
+            { targetAppId: appId, operation: widgetInvocationOperation("summary"), schemaHash: null },
+            { issuer, key: createLocalJWKSet(await identity.listIdentityJwks("invocation")) },
+          );
+          if (claims?.sub === userId) verified.push(appId);
+          return Response.json({ title: appId, blocks: [] });
+        },
+      });
+      const response = await routes.request("/widgets/v1");
+      const lines = (await response.text())
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as { type: string; status?: string });
+      expect(lines.filter((line) => line.type === "widget" && line.status === "ok")).toHaveLength(10);
+      expect(lines.at(-1)).toEqual({ type: "done", status: "complete" });
+      expect(guards).toBe(1);
+      expect(verified).toHaveLength(10);
+    }, 15_000);
   });
 }
