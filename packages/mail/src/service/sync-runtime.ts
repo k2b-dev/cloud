@@ -2147,6 +2147,7 @@ export const syncFolderBatch = async (
   let selectedSecretRevision: number | null = null;
   let activeFence: FenceClaim | null = null;
   let batch: SyncBatchResult;
+  let next: { waiter: string; priority: ProviderLeasePriority } | undefined;
   try {
     batch = await withLeaseHeartbeat<SyncBatchResult>({
       intervalMs: 30_000,
@@ -2288,6 +2289,7 @@ export const syncFolderBatch = async (
         };
       },
     });
+    if (batch.hasMore) next = { waiter: `sync-folder:${folderId}`, priority: batch.syncPending ? "sync" : "background" };
   } catch (error) {
     await recordProviderFailure(folder.remote_resource_id, error);
     const code = normalizeSyncErrorCode(error);
@@ -2310,7 +2312,7 @@ export const syncFolderBatch = async (
     }
     throw error;
   } finally {
-    await releaseProviderLease(lock);
+    await releaseProviderLease(lock, next);
   }
   await recordProviderReachable(folder.remote_resource_id);
   // Queued only after the provider lease is released: a hydration job that starts while this

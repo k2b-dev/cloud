@@ -1403,6 +1403,43 @@ suite("mail provider lease fairness", () => {
     }
   }, 60_000);
 
+  test("a folder sync keeps its turn between its batches, so a command that asks in between waits for it", async () => {
+    // On a CONDSTORE server with this UID history, new mail also brings five flag windows to check,
+    // one batch each.
+    const mailbox = await connect("sync-turn", { condstore: true, firstInboxUid: 20_001 });
+    const folderId = mailbox.folderId(INBOX);
+    const [newMail] = deliver(mailbox, 1, "sync-turn");
+    let batch = await syncFolderBatch(folderId, async () => undefined);
+    expect(batch.hasMore).toBe(true);
+
+    // The mailbox's command job asks between two batches of the sync, while nobody holds the lease.
+    const takeCommandTurn = () =>
+      acquireProviderLease({
+        resource: mailbox.remoteResourceId,
+        waiter: `commands:${mailbox.mailboxId}`,
+        priority: "command",
+        ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS,
+      });
+    let command = await takeCommandTurn();
+    if (command.lock) await releaseProviderLease(command.lock);
+    expect(command.lock).toBeNull();
+
+    // Each next batch gets the lease at once; a batch that found it busy would throw SYNC_BUSY.
+    for (let turn = 0; batch.hasMore && turn < 20; turn += 1) {
+      batch = await syncFolderBatch(folderId, async () => undefined, batch.syncPending ? "sync" : "background");
+    }
+    expect(batch.hasMore).toBe(false);
+    expect(await imported(mailbox, newMail!)).toBe(true);
+
+    // Then the command takes its turn.
+    for (let turn = 0; !command.lock && turn < 10; turn += 1) {
+      await Bun.sleep(command.retryAfterMs);
+      command = await takeCommandTurn();
+    }
+    expect(command.lock).not.toBeNull();
+    if (command.lock) await releaseProviderLease(command.lock);
+  });
+
   test("a waiter that comes back late does not keep a free provider lease from the others and keeps its place", async () => {
     const resource = crypto.randomUUID();
     const take = (waiter: string, priority: "sync" | "command") =>
