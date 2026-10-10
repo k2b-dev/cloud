@@ -132,8 +132,12 @@ const callProvider = async (options: {
   }
 };
 
-/** `<appId>/<widgetId>` with an optional `@small`, `@medium`, or `@large`, as the key and the size it asks for. */
-const parseRequestedWidget = (value: string): [string, DashboardWidgetSize | undefined] => {
+/**
+ * `<appId>/<widgetId>` with an optional `@small`, `@medium`, or `@large`, as the key and the size it asks for. A value
+ * that names a declared widget as it stands is that widget, so an ID that itself ends in such a suffix keeps working.
+ */
+const parseRequestedWidget = (value: string, declared: ReadonlySet<string>): [string, DashboardWidgetSize | undefined] => {
+  if (declared.has(value)) return [value, undefined];
   const at = value.lastIndexOf("@");
   const size = at < 0 ? undefined : value.slice(at + 1);
   return isDashboardWidgetSize(size) ? [value.slice(0, at), size] : [value, undefined];
@@ -174,12 +178,15 @@ export const createWidgetRoutes = (dependencies: WidgetRouteDependencies = {}) =
        */
       .get("/widgets/v1", async (c) => {
         const requestId = normalizeInvocationRequestId(c.req.header("x-request-id"));
-        const requested = new Map((c.req.queries("widget") ?? []).map(parseRequestedWidget));
         const setup = AbortSignal.any([c.req.raw.signal, AbortSignal.timeout(timeoutMs)]);
         let widgets: DashboardWidget[];
+        let requested = new Map<string, DashboardWidgetSize | undefined>();
         try {
           const keys = new Set<string>();
-          widgets = (await waitWithin(registry(), setup)).filter((widget) => {
+          const declared = await waitWithin(registry(), setup);
+          const declaredKeys = new Set(declared.map((widget) => widgetKey(widget.appId, widget.widgetId)));
+          requested = new Map((c.req.queries("widget") ?? []).map((value) => parseRequestedWidget(value, declaredKeys)));
+          widgets = declared.filter((widget) => {
             const key = widgetKey(widget.appId, widget.widgetId);
             if (keys.has(key) || (requested.size > 0 && !requested.has(key))) return false;
             keys.add(key);

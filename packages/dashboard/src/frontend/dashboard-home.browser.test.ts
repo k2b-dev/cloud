@@ -88,6 +88,8 @@ let answer: Answer = answerAll;
 let props = baseProps;
 const requests: Asked[][] = [];
 const saved: unknown[] = [];
+/** Holds the answer to a save until the test opens it. */
+let saveGate: Promise<void> | undefined;
 
 let browser: Browser;
 let server: ReturnType<typeof Bun.serve>;
@@ -146,6 +148,7 @@ beforeAll(async () => {
       }
       if (url.pathname === "/api/dashboard/settings" && request.method === "PUT") {
         saved.push(await request.json());
+        await saveGate;
         return Response.json({ ok: true });
       }
       if (url.pathname !== "/api/widgets/v1") return new Response(null, { status: 404 });
@@ -359,7 +362,7 @@ describe("the dashboard board in a browser", () => {
         expect((await layout(page)).states["weather/current"]).toBe("ok");
 
         await page.getByRole("button", { name: "Done" }).click();
-        await page.locator(".dashboard-tile__remove").waitFor({ state: "detached" });
+        await page.locator(".dashboard-tile__remove").first().waitFor({ state: "detached" });
         expect(saved.at(-1)).toEqual({
           shortcuts: baseProps.shortcuts,
           board: [
@@ -402,9 +405,35 @@ describe("the dashboard board in a browser", () => {
         "gateway/health:small",
       ]);
       await waitForState(page, "venue/today", "ok");
+      // While Done saves, the board cannot change, so what is saved is what stays on screen.
+      const held = gate();
+      saveGate = held.opened;
       await page.getByRole("button", { name: "Done" }).click();
-      await page.locator(".dashboard-tile__remove").waitFor({ state: "detached" });
+      await page.waitForFunction(() => document.querySelector<HTMLButtonElement>(".dashboard-tile__remove")?.disabled === true);
+      await tile(page, "spaces/today").focus();
+      await page.keyboard.press("Delete");
+      expect((await layout(page)).order[0]).toBe("spaces/today:large");
+      held.open();
+      saveGate = undefined;
+      await page.locator(".dashboard-tile__remove").first().waitFor({ state: "detached" });
       expect(saved.slice(saves)).toEqual([{ shortcuts: baseProps.shortcuts, board: null }]);
+
+      // The default board keeps no unavailable widgets, so the next board saved starts without them.
+      await page.getByRole("button", { name: "Edit dashboard" }).click();
+      await tile(page, "spaces/today").focus();
+      await page.keyboard.press("ArrowRight");
+      await page.getByRole("button", { name: "Done" }).click();
+      await page.locator(".dashboard-tile__remove").first().waitFor({ state: "detached" });
+      expect(saved.at(-1)).toEqual({
+        shortcuts: baseProps.shortcuts,
+        board: [
+          { key: "notebooks/recent", size: "medium" },
+          { key: "spaces/today", size: "large" },
+          { key: "venue/today", size: "medium" },
+          { key: "weather/current", size: "small" },
+          { key: "gateway/health", size: "small" },
+        ],
+      });
     } finally {
       await close();
     }

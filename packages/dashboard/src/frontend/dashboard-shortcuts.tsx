@@ -36,6 +36,8 @@ export function DashboardShortcuts(props: {
   shortcuts: readonly DashboardShortcut[];
   apps: readonly DashboardAppSummary[];
   editing: boolean;
+  /** While the board is being saved. */
+  disabled?: boolean;
   onRemove: (id: string) => void;
   onAdd: () => void;
 }) {
@@ -62,6 +64,7 @@ export function DashboardShortcuts(props: {
                 type="button"
                 class="dashboard-remove dashboard-shortcut__remove"
                 aria-label={t().removeNamed({ name: shortcut.title })}
+                disabled={props.disabled}
                 onClick={() => props.onRemove(shortcut.id)}
               >
                 <i class="ti ti-x" aria-hidden="true" />
@@ -71,7 +74,7 @@ export function DashboardShortcuts(props: {
         )}
       </For>
       <Show when={props.editing}>
-        <Button variant="ghost" size="sm" class="dashboard-shortcut-add" onClick={() => props.onAdd()}>
+        <Button variant="ghost" size="sm" class="dashboard-shortcut-add" disabled={props.disabled} onClick={() => props.onAdd()}>
           <i class="ti ti-plus" aria-hidden="true" />
           {t().addShortcutShort}
         </Button>

@@ -4,6 +4,7 @@ import { announce, Button, Placeholder, SegmentedControl, Tooltip, toast, useLoc
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import {
+  DASHBOARD_MAX_ITEMS,
   type DashboardAppSummary,
   type DashboardBoardEntry,
   type DashboardCatalogWidget,
@@ -82,8 +83,11 @@ export default function DashboardHome(props: DashboardHomeProps) {
   const [board, setBoard] = createSignal<DashboardBoardEntry[]>(props.board);
   const [shortcuts, setShortcuts] = createSignal<DashboardShortcut[]>(props.shortcuts);
   const [followsDefault, setFollowsDefault] = createSignal(props.followsDefault);
+  const [kept, setKept] = createSignal<DashboardBoardEntry[]>(props.kept);
   const [editing, setEditing] = createSignal(false);
   const [saving, setSaving] = createSignal(false);
+  /** The board can change only in the edit mode and not while Done saves it, so what is saved is what is shown. */
+  const editable = () => editing() && !saving();
   const [tiles, setTiles] = createSignal<DashboardTiles>(
     Object.fromEntries(props.board.map((entry) => [entry.key, { status: "loading" }])),
   );
@@ -207,10 +211,13 @@ export default function DashboardHome(props: DashboardHomeProps) {
     if (!unchanged) {
       setSaving(true);
       try {
+        // Widgets the page cannot show keep their place behind the shown ones, as far as the board's limit allows.
         const response = await apiClient.settings.$put({
-          json: { shortcuts: shortcuts(), board: followsDefault() ? null : [...board(), ...props.kept] },
+          json: { shortcuts: shortcuts(), board: followsDefault() ? null : [...board(), ...kept()].slice(0, DASHBOARD_MAX_ITEMS) },
         });
         if (!response.ok) throw new Error(t().saveFailed);
+        // The default board keeps no widgets of its own, so a later board starts without them too.
+        if (followsDefault()) setKept([]);
       } catch {
         toast.error(t().saveFailed);
         return;
@@ -222,6 +229,7 @@ export default function DashboardHome(props: DashboardHomeProps) {
     announce(t().saved);
   };
   const resetToDefault = () => {
+    if (!editable()) return;
     flip(() => setBoard(defaultDashboardBoard(props.catalog)));
     setFollowsDefault(true);
     loadMissing();
@@ -229,6 +237,7 @@ export default function DashboardHome(props: DashboardHomeProps) {
   };
 
   const move = (key: string, to: number) => {
+    if (!editable()) return false;
     const current = board();
     const from = current.findIndex((entry) => entry.key === key);
     if (from < 0 || to < 0 || to >= current.length || to === from) return false;
@@ -239,6 +248,7 @@ export default function DashboardHome(props: DashboardHomeProps) {
     return true;
   };
   const remove = (key: string) => {
+    if (!editable()) return;
     const index = keys().indexOf(key);
     if (index < 0) return;
     change(board().filter((entry) => entry.key !== key));
@@ -247,12 +257,14 @@ export default function DashboardHome(props: DashboardHomeProps) {
     announce(t().removed({ name: titleOf(key) }));
   };
   const resize = (key: string, size: DashboardWidgetSize) => {
+    if (!editable()) return;
     change(board().map((entry) => (entry.key === key ? { key, size } : entry)));
     loadMissing();
     announce(t().resized({ name: titleOf(key), size: t()[size] }));
   };
 
   const openGallery = async () => {
+    if (saving()) return;
     const choice = await openDashboardGallery(
       {
         catalog: props.catalog,
@@ -261,7 +273,7 @@ export default function DashboardHome(props: DashboardHomeProps) {
       },
       locale(),
     );
-    if (!choice || keys().includes(choice.key)) return;
+    if (!choice || saving() || keys().includes(choice.key) || board().length >= DASHBOARD_MAX_ITEMS) return;
     startEdit();
     change([...board(), choice]);
     setFresh(choice.key);
@@ -272,8 +284,9 @@ export default function DashboardHome(props: DashboardHomeProps) {
     announce(t().added({ name: titleOf(choice.key), position: board().length, total: board().length }));
   };
   const addShortcut = async () => {
+    if (!editable()) return;
     const shortcut = await askForShortcut(props.apps, t().addShortcut);
-    if (shortcut) setShortcuts([...shortcuts(), shortcut]);
+    if (shortcut && editable()) setShortcuts([...shortcuts(), shortcut]);
   };
   const openApps = () =>
     openAppLaunchpad(
@@ -290,7 +303,7 @@ export default function DashboardHome(props: DashboardHomeProps) {
 
   // ── Keyboard ──────────────────────────────────────────────────────────
   const onTileKeyDown = (event: KeyboardEvent, key: string) => {
-    if (!editing() || event.target !== event.currentTarget) return;
+    if (!editable() || event.target !== event.currentTarget) return;
     const index = keys().indexOf(key);
     if (event.key === "Delete" || event.key === "Backspace") {
       event.preventDefault();
@@ -398,7 +411,7 @@ export default function DashboardHome(props: DashboardHomeProps) {
       }, LONG_PRESS_MS);
       return;
     }
-    if (target.closest(".dashboard-tile__control")) return;
+    if (target.closest(".dashboard-tile__control") || saving()) return;
     press = { pointerId: event.pointerId, key, tile, x: event.clientX, y: event.clientY, armed: !touch };
     if (touch)
       press.timer = setTimeout(() => {
@@ -482,6 +495,7 @@ export default function DashboardHome(props: DashboardHomeProps) {
             type="button"
             class="dashboard-remove dashboard-tile__remove dashboard-tile__control"
             aria-label={t().removeNamed({ name: widget.title })}
+            disabled={saving()}
             onClick={() => remove(tileProps.key)}
           >
             <i class="ti ti-x" aria-hidden="true" />
@@ -490,6 +504,7 @@ export default function DashboardHome(props: DashboardHomeProps) {
             <div class="dashboard-tile__sizes dashboard-tile__control">
               <SegmentedControl<DashboardWidgetSize>
                 size="sm"
+                disabled={saving()}
                 ariaLabel={t().sizeOf({ name: widget.title })}
                 value={() => sizeOf(tileProps.key)}
                 onValueChange={(size) => resize(tileProps.key, size)}
@@ -552,6 +567,7 @@ export default function DashboardHome(props: DashboardHomeProps) {
         shortcuts={shortcuts()}
         apps={props.apps}
         editing={editing()}
+        disabled={saving()}
         onRemove={(id) => setShortcuts(shortcuts().filter((shortcut) => shortcut.id !== id))}
         onAdd={() => void addShortcut()}
       />
@@ -566,7 +582,7 @@ export default function DashboardHome(props: DashboardHomeProps) {
       <section ref={grid} class="dashboard-board" aria-label={t().widgetsLabel} onPointerDown={onPointerDown} onContextMenu={onContextMenu}>
         <For each={keys()}>{(key) => <Tile key={key} />}</For>
         <Show when={editing()}>
-          <button type="button" class="dashboard-add-tile" onClick={() => void openGallery()}>
+          <button type="button" class="dashboard-add-tile" disabled={saving()} onClick={() => void openGallery()}>
             <i class="ti ti-plus" aria-hidden="true" />
             {t().addWidget}
           </button>

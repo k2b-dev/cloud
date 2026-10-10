@@ -68,6 +68,11 @@ dbTest("settings from before widgets had sizes become a board once, and never ov
     // A second conversion, such as from a page that loaded at the same time, keeps the board that is stored.
     expect(await adoptMigratedBoard(userId, [{ key: "notebooks/recent", size: "medium" }])).toEqual(migrated);
 
+    // A conversion that started before a return to the default board was saved does not bring the old board back.
+    await saveUserSettings(userId, { shortcuts: [shortcut], board: null });
+    expect(await adoptMigratedBoard(userId, migrated)).toBeNull();
+    expect((await getUserSettings(userId)).settings.board).toBeNull();
+
     // Saving the default board again clears the old settings too, so they are not converted a second time.
     await sql`UPDATE dashboard.user_settings SET hidden_widgets = ARRAY['quotes/quote']::text[] WHERE user_id = ${userId}`;
     await saveUserSettings(userId, { shortcuts: [shortcut], board: null });

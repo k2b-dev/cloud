@@ -93,8 +93,14 @@
   content: "";
 }
 
-.dashboard-remove:hover {
+.dashboard-remove:not(:disabled):hover {
   background: var(--k2b-danger-600);
+}
+
+.dashboard-remove:disabled,
+.dashboard-add-tile:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .dashboard-remove:focus-visible {
@@ -320,7 +326,7 @@
   cursor: pointer;
 }
 
-.dashboard-add-tile:hover {
+.dashboard-add-tile:not(:disabled):hover {
   border-color: var(--k2b-action);
   color: var(--k2b-action);
   background: var(--k2b-hover);

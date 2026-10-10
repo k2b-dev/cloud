@@ -471,6 +471,18 @@ describe("Core widget stream", () => {
     expect(lines[0]).toEqual({ type: "start", widgets: ["app-0/summary", "app-1/summary", "weather/current"] });
     expect(asked).toEqual({ "app-0": "large", "app-1": "medium", "app-weather": "small" });
 
+    // A widget whose own ID ends in a size suffix is still asked by its ID.
+    const suffixed: DashboardWidget = { ...widget, appId: "legacy", widgetId: "stats@small", url: "http://app-legacy:3000/widget" };
+    const legacy = createWidgetRoutes({
+      authenticate,
+      listWidgets: async () => [suffixed],
+      fetch: async () => Response.json({ title: "ok", blocks: [] }),
+    });
+    expect((await readLines(await legacy.request("/widgets/v1?widget=legacy/stats@small")))[0]).toEqual({
+      type: "start",
+      widgets: ["legacy/stats@small"],
+    });
+
     const single = await routes.request("/widgets/v1/weather/current?size=medium");
     expect(single.status).toBe(200);
     expect(asked["app-weather"]).toBe("medium");
