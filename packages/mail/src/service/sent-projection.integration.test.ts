@@ -2630,6 +2630,35 @@ suite("mail sent message projection", () => {
     }
   });
 
+  test("a draft another client saves keeps only complete signature segments", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const messageId = `<leftover-signature-marks-${suffix}@example.test>`;
+      const drafts = provider.folder(provider.draftsPath).entries;
+      const signature = markComposeTemplateSegment("Regards {{ actor.display_name }}");
+      // The other client kept a start mark whose end was deleted, and an end mark whose start was deleted.
+      const original = await provider.saveDraftElsewhere(
+        draftElsewhere(messageId, "Started elsewhere", `Original\u2063 text. ${signature}\u2064`),
+      );
+      await mailbox.syncAll();
+      await settleDraftImports(mailbox.mailboxId);
+      expect(await mailboxDrafts(mailbox.mailboxId)).toEqual([
+        expect.objectContaining({ body: `Original text. ${signature}`, revision: "1", recoveries: 0 }),
+      ]);
+
+      drafts.delete(original.uid);
+      await provider.saveDraftElsewhere(draftElsewhere(messageId, "Started elsewhere", `\u2064Edited text. ${signature}\u2063`));
+      await mailbox.syncAll();
+      await settleDraftImports(mailbox.mailboxId);
+      expect(await mailboxDrafts(mailbox.mailboxId)).toEqual([
+        expect.objectContaining({ body: `Edited text. ${signature}`, revision: "2", recoveries: 0 }),
+      ]);
+    } finally {
+      provider.restore();
+    }
+  });
+
   test("a draft another client re-saved unchanged leaves the provider when discarded, and a later save from it starts a new draft", async () => {
     const provider = createProvider("imap");
     try {

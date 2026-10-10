@@ -8,7 +8,7 @@ import { sql } from "bun";
 import { type AddressObject, type AttachmentStream, type Headers, MailParser, type MessageText } from "mailparser";
 import { withShortIdDb } from "../lib/short-id";
 import { truncateUtf8 } from "../lib/utf8";
-import { hasUnrenderedTemplateSyntax } from "./compose-renderer";
+import { hasUnrenderedTemplateSyntax, removeOrphanComposeSegmentMarks } from "./compose-renderer";
 import type { ConnectorEnvelope } from "./connectors";
 import { imapSmtpConnector } from "./connectors";
 import {
@@ -1107,6 +1107,8 @@ const applyImportedDraft = async (params: {
         code: "DRAFT_IMPORT_IDENTITY_CHANGED",
       });
     }
+    // Like every draft saved in Cloud, an imported body keeps only complete signature segments.
+    const body = removeOrphanComposeSegmentMarks(params.parsed.body);
     let draftId = params.draftId;
     const [found] = draftId
       ? await tx<{ id: string; revision: string | number; state: string; conversation_id: string | null }[]>`
@@ -1130,7 +1132,7 @@ const applyImportedDraft = async (params: {
       // A provider draft carries no segment markers, so template text returning from another client can no
       // longer be rendered. Keep the Cloud draft and surface the external edit as a recovery copy instead.
       const concurrentEdit = existing.state !== "draft" || currentRevision !== baseRevision || params.cloudCopyKept;
-      const externalTemplateEdit = !concurrentEdit && hasUnrenderedTemplateSyntax(params.parsed.body);
+      const externalTemplateEdit = !concurrentEdit && hasUnrenderedTemplateSyntax(body);
       if (concurrentEdit || externalTemplateEdit) {
         await storeProviderRecovery({
           db: tx,
@@ -1173,7 +1175,7 @@ const applyImportedDraft = async (params: {
           cc_addresses = ${params.parsed.cc}::jsonb,
           bcc_addresses = ${params.parsed.bcc}::jsonb,
           subject = ${params.parsed.subject},
-          body_markdown = ${params.parsed.body},
+          body_markdown = ${body},
           body_format = ${params.parsed.format},
           last_editor_kind = 'system',
           last_editor_id = NULL,
@@ -1221,7 +1223,7 @@ const applyImportedDraft = async (params: {
           ${params.parsed.cc}::jsonb,
           ${params.parsed.bcc}::jsonb,
           ${params.parsed.subject},
-          ${params.parsed.body},
+          ${body},
           ${params.parsed.format}
         )
       `,
