@@ -11,6 +11,7 @@ import type { User } from "../contracts";
 import { defineCapabilities } from "../contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
 import { coreSettings } from "../services";
+import { approvals } from "../services/approvals";
 import { type CapabilityGrant, mandates } from "../services/mandates";
 import { reconcileAppSkills } from "./app-skill-store";
 import { type AppSkillDefinition, skill as appSkill, appSkillManifestHash, registerAppSkills } from "./app-skills";
@@ -340,6 +341,113 @@ const createExecutor = (
   });
 
 suite("AI executor integration", () => {
+  test.each([false, true])("resumed capability approval binds the live review (changed=%s)", async (changed) => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId, preloadTools: ["demo.write"] });
+    const compiled = compileCapabilities(
+      "demo",
+      defineCapabilities({
+        protocolVersion: 2,
+        actions: {
+          write: {
+            title: "Write item",
+            description: "Write one item",
+            input: z.object({ value: z.string().describe("Value") }).strict(),
+            data: z.unknown(),
+            approval: "rememberable",
+            idempotency: "required",
+            destructive: false,
+            openWorld: false,
+            review: async () => ok({ message: "Original effect", approvalScope: "one" }),
+            run: async () => ok({ data: {} }),
+          },
+        },
+      }),
+    );
+    const entry: CapabilityRegistryEntry = {
+      appId: "demo",
+      appName: "Demo",
+      appDescription: "Test",
+      appIcon: "ti ti-box",
+      appAccent: "#0f766e",
+      endpoint: "http://demo.invalid/api/_internal/capabilities/v1",
+      manifest: compiled.manifest,
+    };
+    const registrySpy = spyOn(registry, "listCapabilities").mockResolvedValue([entry]);
+    const review = spyOn(capabilityExecution, "reviewAiCapability").mockResolvedValue({ message: "Original effect", approvalScope: "one" });
+    const execute = spyOn(capabilityExecution, "executeAiCapability").mockResolvedValue({ data: { written: true } });
+    try {
+      completionQueue = [toolCallCompletion("write-1", "demo__action__write", { value: "one" }), textCompletion("Done")];
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelProfileId: MODEL_ID,
+        runConfig: {
+          kind: "chat",
+          input: "Write item",
+          actor: { kind: "user", user: actorUser(userId) },
+          toolSource: { kind: "default", appTools: true },
+        },
+        userMessage: userMessage("Write item"),
+      });
+      const run = async (from: "queue" | "waiting") => {
+        const claim = await aiConversations.claimTurn({
+          conversationId: conversation.id,
+          turnId: turn.id,
+          leaseOwner: "approval-binding-exec",
+          leaseMs: 30_000,
+          from,
+          maxAttempts: 5,
+          runBudgetMs: 60_000,
+        });
+        if (!claim) throw new Error("Expected claimed turn");
+        await createExecutor("approval-binding-exec", undefined, fakeValidateToolTurn).run({
+          conversationId: conversation.id,
+          turnId: turn.id,
+          claim,
+          signal: new AbortController().signal,
+        });
+      };
+      await run("queue");
+      const first = (await aiConversations.listPendingActionRecords({ conversationId: conversation.id, turnId: turn.id }))[0];
+      expect(first).toMatchObject({ callId: "write-1-approval-0", review: { message: "Original effect" } });
+      if (!first?.approvalId) throw new Error("Expected platform approval");
+      await approvals.decide(first.approvalId, { approved: true }, { userId, via: "web_session" });
+      await aiConversations.resolvePendingTurnAction({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        callId: first.callId,
+        event: { type: "approval_response", callId: first.callId, approved: true },
+      });
+      if (changed) {
+        // Remembering the original scope cannot bypass the new question after stale consumption fails.
+        await rememberAiToolApproval({ actorUserId: userId }, { toolName: "demo.write", approvalScope: "one" });
+        review.mockResolvedValue({ message: "Changed effect", approvalScope: "one" });
+      }
+      await run("waiting");
+      if (changed) {
+        expect(execute).not.toHaveBeenCalled();
+        expect(await approvals.get(first.approvalId)).toMatchObject({ status: "cancelled" });
+        const next = (await aiConversations.listPendingActionRecords({ conversationId: conversation.id, turnId: turn.id })).find(
+          (row) => row.status === "pending",
+        );
+        expect(next).toMatchObject({ callId: "write-1-approval-1", review: { message: "Changed effect" } });
+        expect(next?.approvalId).not.toBe(first.approvalId);
+        expect((await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id }))?.status).toBe("waiting_for_action");
+      } else {
+        expect(execute).toHaveBeenCalledTimes(1);
+        expect(await approvals.get(first.approvalId)).toMatchObject({ status: "consumed" });
+        expect((await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id }))?.status).toBe("completed");
+      }
+    } finally {
+      registrySpy.mockRestore();
+      review.mockRestore();
+      execute.mockRestore();
+      completionQueue = [];
+      await sql`DELETE FROM audit.events WHERE actor_user_id=${userId}::uuid AND target_type='approval_request'`;
+      await sql`DELETE FROM ai.conversations WHERE id=${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  });
   test.each([
     { mode: "direct", revoke: false },
     { mode: "resource", revoke: false },
@@ -837,6 +945,7 @@ suite("AI executor integration", () => {
             rememberableCapabilityApprovals: new Map(),
             capabilityActionReviews: new Map(),
             approvalTargets: new Map(),
+            linkedApprovals: new Map(),
           });
           expect(suspended).toBe(false);
           if (!background) {
@@ -858,6 +967,7 @@ suite("AI executor integration", () => {
               rememberableCapabilityApprovals: new Map(),
               capabilityActionReviews: new Map(),
               approvalTargets: new Map(),
+              linkedApprovals: new Map(),
               onBackgroundBlocked: (message) => {
                 blocked = message;
               },
@@ -947,6 +1057,7 @@ suite("AI executor integration", () => {
             rememberableCapabilityApprovals: new Map(),
             capabilityActionReviews: new Map(),
             approvalTargets: new Map(),
+            linkedApprovals: new Map(),
             onBackgroundBlocked: (message) => {
               blocked = message;
             },
@@ -1054,6 +1165,7 @@ suite("AI executor integration", () => {
             rememberableCapabilityApprovals: new Map(),
             capabilityActionReviews: new Map(),
             approvalTargets,
+            linkedApprovals: new Map(),
           });
           // Resolved from a remembered approval, or saved as a question for the person.
           const asked = (await aiConversations.listPendingActionRecords({ conversationId: chat.id, turnId: turn.id })).some(

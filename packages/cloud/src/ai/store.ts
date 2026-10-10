@@ -193,6 +193,7 @@ type TurnRow = {
 };
 
 type PendingActionRow = {
+  approval_id: string | null;
   turn_id: string;
   conversation_id: string;
   call_id: string;
@@ -687,6 +688,7 @@ const pendingActionToPublicEvent = (row: PendingActionRow): AiPendingTurnAction 
       };
 
 const rowToPendingActionRecord = (row: PendingActionRow): AiPendingTurnActionRecord => ({
+  approvalId: row.approval_id ?? undefined,
   turnId: row.turn_id,
   conversationId: row.conversation_id,
   callId: row.call_id,
@@ -3049,10 +3051,13 @@ export const aiConversations: AiConversationService = {
         `;
       }
       await tx`
-        UPDATE ai.pending_actions
+        WITH aborted AS (UPDATE ai.pending_actions
         SET status = 'aborted', resolved_at = COALESCE(resolved_at, now())
         WHERE turn_id = ${input.turnId}
           AND status = 'pending'
+        RETURNING approval_id)
+      UPDATE approvals.requests SET status='cancelled'
+      WHERE id IN (SELECT approval_id FROM aborted WHERE approval_id IS NOT NULL) AND status='pending'
       `;
       if (input.status !== "completed") {
         await recordTurnEnd(tx, {
@@ -3205,10 +3210,13 @@ export const aiConversations: AiConversationService = {
         turnError: stop ? null : (turnErrors.get(finalized.turnId) ?? { code: "wait_expired" }),
       });
       await sql`
-        UPDATE ai.pending_actions
+        WITH aborted AS (UPDATE ai.pending_actions
         SET status = 'aborted', resolved_at = COALESCE(resolved_at, now())
         WHERE turn_id = ${finalized.turnId}
           AND status = 'pending'
+        RETURNING approval_id)
+      UPDATE approvals.requests SET status='cancelled'
+      WHERE id IN (SELECT approval_id FROM aborted WHERE approval_id IS NOT NULL) AND status='pending'
       `;
       await sql`
         UPDATE ai.turn_steers
@@ -3298,6 +3306,7 @@ export const aiConversations: AiConversationService = {
   savePendingTurnAction: async (input) => {
     await sql`
       INSERT INTO ai.pending_actions (
+        approval_id,
         turn_id,
         conversation_id,
         call_id,
@@ -3316,6 +3325,7 @@ export const aiConversations: AiConversationService = {
         resolved_at
       )
       VALUES (
+        ${input.approvalId ?? null}::uuid,
         ${input.turnId},
         ${input.conversationId},
         ${input.callId},
@@ -3335,6 +3345,7 @@ export const aiConversations: AiConversationService = {
       )
       ON CONFLICT (turn_id, call_id)
       DO UPDATE SET
+        approval_id = EXCLUDED.approval_id,
         kind = EXCLUDED.kind,
         tool_name = EXCLUDED.tool_name,
         args = EXCLUDED.args,
@@ -3413,12 +3424,15 @@ export const aiConversations: AiConversationService = {
 
   clearPendingTurnActions: async (input) => {
     await sql`
-      UPDATE ai.pending_actions
+      WITH aborted AS (UPDATE ai.pending_actions
       SET status = 'aborted',
           resolved_at = COALESCE(resolved_at, now())
       WHERE conversation_id = ${input.conversationId}
         AND turn_id = ${input.turnId}
         AND status = 'pending'
+        RETURNING approval_id)
+      UPDATE approvals.requests SET status='cancelled'
+      WHERE id IN (SELECT approval_id FROM aborted WHERE approval_id IS NOT NULL) AND status='pending'
     `;
   },
 

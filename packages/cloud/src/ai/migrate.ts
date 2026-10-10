@@ -1,4 +1,6 @@
 import { sql } from "bun";
+import { CapabilityActionReviewSchema } from "../contracts/capabilities";
+import { APPROVAL_MAX_WAIT_MS, approvalScopeFromToolName, approvals, migrateApprovals } from "../services/approvals";
 import { migrateAiMessageQueue } from "./message-queue";
 import { migrateAiModelAccess } from "./model-access-migrate";
 import { migrateAiQuotas } from "./quotas-migrate";
@@ -13,6 +15,7 @@ const backfillAiShortIds = async (
 };
 
 export const migrateCloudAi = async (): Promise<void> => {
+  await migrateApprovals();
   // AI writes its live updates to Core's platform outbox, in the transaction of every
   // AI write: without events.enqueue(), every one of them would fail.
   const [outbox] = await sql<{ ready: boolean }[]>`
@@ -640,6 +643,7 @@ export const migrateCloudAi = async (): Promise<void> => {
     PRIMARY KEY (turn_id, request_id)
   )`.simple();
 
+  await sql`ALTER TABLE ai.pending_actions ADD COLUMN IF NOT EXISTS approval_id UUID`.simple();
   await sql`ALTER TABLE ai.pending_actions ADD COLUMN IF NOT EXISTS review JSONB`.simple();
   // A code run asks for its nested HTTP requests and Actions; their remembered approval names a website or Action, not the run.
   await sql`ALTER TABLE ai.pending_actions ADD COLUMN IF NOT EXISTS remember_tool_name TEXT`.simple();
@@ -781,6 +785,7 @@ export const migrateCloudAi = async (): Promise<void> => {
     ON ai.tool_calls(conversation_id, created_at DESC)
   `.simple();
 
+  await sql`ALTER TABLE ai.tool_calls ADD COLUMN IF NOT EXISTS approval_decided_via TEXT`.simple();
   await sql`ALTER TABLE ai.tool_calls ADD COLUMN IF NOT EXISTS idempotency_key TEXT`.simple();
 
   // Capability shape, outcome, and latency belong to capabilities.executions,
@@ -2568,5 +2573,62 @@ export const migrateCloudAi = async (): Promise<void> => {
       `  ! ${legacyPaths.files} conversation and ${legacyPaths.project_files} project file paths keep a non-NFC Unicode form because a normalized twin exists`,
     );
   }
+  await backfillApprovalRequests();
   console.log("  ✓ ai conversation tables");
+};
+
+const backfillApprovalRequests = async (): Promise<void> => {
+  const decoded = (value: unknown): unknown => (typeof value === "string" ? JSON.parse(value) : value);
+  while (true) {
+    const count = await sql.begin(async (db) => {
+      // Completed turns and ownerless chats cannot still ask a person; leave their legacy rows alone.
+      const rows = await db<
+        {
+          id: string;
+          turn_id: string;
+          call_id: string;
+          tool_name: string;
+          approval_scope: string;
+          message: string | null;
+          review: unknown;
+          args: unknown;
+          allow_always: boolean;
+          allow_chat: boolean;
+          owner: string;
+          title: string;
+          expiry: Date;
+        }[]
+      >`SELECT a.*, c.created_by_user_id AS owner, c.title,
+        COALESCE(t.deadline, a.created_at + interval '24 hours') AS expiry
+        FROM ai.pending_actions a JOIN ai.turns t ON t.id=a.turn_id JOIN ai.conversations c ON c.id=a.conversation_id
+        WHERE a.status='pending' AND a.kind IN ('approval','custom_approval') AND a.approval_id IS NULL
+          AND c.created_by_user_id IS NOT NULL AND t.status='waiting_for_action'
+        ORDER BY a.created_at, a.id LIMIT 200 FOR UPDATE OF a SKIP LOCKED`;
+      for (const row of rows) {
+        const review = CapabilityActionReviewSchema.safeParse(row.review == null ? null : decoded(row.review));
+        // request computes both canonical digests; preserve the original wait deadline, including expiry.
+        const record = await approvals.request(
+          {
+            ...approvalScopeFromToolName(row.tool_name),
+            approvalScope: row.approval_scope,
+            requester: { kind: "assistant_turn", ref: `${row.turn_id}/${row.call_id}`, appId: "assistant", title: row.title },
+            subjectId: row.owner,
+            approverUserId: row.owner,
+            assurance: row.allow_always || row.allow_chat ? "standard" : "confirm",
+            sentence: row.message ?? row.tool_name,
+            review: review.success ? review.data : null,
+            input: decoded(row.args),
+            expiresInMs: Math.min(APPROVAL_MAX_WAIT_MS, row.expiry.getTime() - Date.now()),
+          },
+          db,
+        );
+        await db`UPDATE approvals.requests SET expires_at=${row.expiry},
+          status=CASE WHEN ${row.expiry} <= now() THEN 'expired' ELSE status END
+          WHERE id=${record.id}::uuid AND status='pending'`;
+        await db`UPDATE ai.pending_actions SET approval_id=${record.id}::uuid WHERE id=${row.id}::uuid`;
+      }
+      return rows.length;
+    });
+    if (!count) return;
+  }
 };

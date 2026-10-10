@@ -18,6 +18,7 @@ import {
   v,
 } from "../server";
 import { isRequestCredentialCurrent } from "../server/middleware/auth";
+import { approvalDecisionChannel } from "../services/approvals";
 import { ImageMetadataError } from "../services/image-metadata";
 import { logger } from "../services/logging";
 import { coreSettings } from "../services/settings/api";
@@ -1126,6 +1127,10 @@ export const aiRoutes = (() => {
           turnId: turn.id,
           callId,
           action: c.req.valid("json"),
+          decidedBy: {
+            userId: ctx.ownerUserId,
+            via: approvalDecisionChannel({ credentialKind: c.get("credentialKind"), actor: ctx.actor }),
+          },
           toolApprovalContext: ctx.toolApprovalContext,
           signedInSession: ctx.signedInSession,
         });

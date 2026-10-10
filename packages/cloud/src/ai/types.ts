@@ -447,6 +447,7 @@ export type AiTurnAbortRequest =
     };
 
 export type AiPendingTurnActionRecord = {
+  approvalId?: string;
   turnId: string;
   conversationId: string;
   callId: string;
@@ -1105,6 +1106,8 @@ export type AiToolRuntime<TInput extends z.ZodType = z.ZodType, TOutput extends 
           reportProgress?: (message: string) => Promise<void>;
           /** Asks like `requestApproval`, and lets the person remember the approval of `target`. */
           requestApprovalFor?: (message: string, target: AiApprovalTarget) => Promise<boolean>;
+          /** Relays a decision for an effect another platform component consumes and executes. */
+          requestRelayedApproval?: (message: string, options: { approvalId?: string; target?: AiApprovalTarget }) => Promise<boolean>;
           /** Shows requests a website approval let through as they go out, so the chat keeps them whatever the outcome. */
           reportWebsiteReceipts?: (receipts: AiWebsiteReceipt[]) => Promise<void>;
         },

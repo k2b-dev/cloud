@@ -5,7 +5,7 @@ section: AI
 order: 1040
 description: Let models request application actions while keeping authorization and approval explicit.
 tags: [ai, tools, approvals]
-updated: 2026-10-09
+updated: 2026-10-10
 ---
 
 # Tools and approvals
@@ -355,6 +355,12 @@ not application authorization. After approval, the owning app validates the
 same arguments and checks current resource access and domain invariants before
 performing the Action.
 
+Each question is one platform [approval request](/en/docs/identity/approvals)
+with the arguments and the review the person saw. Directly before the Action
+runs, AI Core reviews the call again and uses the approval once. When the
+review changed in the meantime, the turn asks again with the current review
+instead of running the Action. An approval never runs a call twice.
+
 ### Show an optional Action review
 
 An Action may publish the fixed optional
@@ -369,6 +375,8 @@ The app name, icon, Action title, and risk treatment continue to come from the
 live registry and manifest. Once presented, the resolved review is stored with
 the pending action and active-turn snapshot; reconnecting or reopening the chat
 must render that same snapshot rather than recomputing or degrading it.
+Execution is different: after approval, AI Core resolves the review once more
+and runs the Action only when it equals the snapshot; otherwise it asks again.
 
 If no review is advertised, the approval shows the validated Action arguments.
 If an advertised review fails, Cloud does not silently fall back to the weaker

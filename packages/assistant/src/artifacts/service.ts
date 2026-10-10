@@ -19,6 +19,7 @@ import {
   hasPermission,
   type PermissionLevel,
   type Principal,
+  type RequestCredentialKind,
   resolveDisplayNames,
   updateAccess,
   userFromActor,
@@ -45,6 +46,7 @@ import { checkStorageBudget } from "./storage-budget";
 import { STORAGE_FILE_MAX_BYTES, StorageRequest } from "./storage-contracts";
 
 export type ArtifactIdentity = {
+  credentialKind?: RequestCredentialKind;
   actor: AuthContext["Variables"]["actor"];
   accessSubject: AccessSubject;
   conversationId?: string;

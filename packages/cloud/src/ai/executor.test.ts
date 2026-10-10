@@ -875,6 +875,7 @@ for (const stopReason of ["tool_use", "error", "interrupted", "aborted"] as cons
       rememberableCapabilityApprovals: new Map<string, string>(),
       capabilityActionReviews: new Map<string, CapabilityActionReview>(),
       approvalTargets: new Map(),
+      linkedApprovals: new Map(),
       appliedSteers: [],
       noteToolRound: () => {
         rounds++;

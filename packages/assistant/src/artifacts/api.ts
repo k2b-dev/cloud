@@ -49,6 +49,7 @@ const capabilityCaller = (c: Context<AuthContext>) => ({
   signal: c.req.raw.signal,
 });
 const identity = (c: Context<AuthContext>) => ({
+  credentialKind: c.get("credentialKind"),
   actor: c.get("actor"),
   accessSubject: c.get("accessSubject"),
   conversationId: c.req.query("conversationId"),

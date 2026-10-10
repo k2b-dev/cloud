@@ -159,6 +159,7 @@ export async function migrateArtifacts() {
     PRIMARY KEY(turn_id,call_id)
   )`;
   await sql`CREATE INDEX IF NOT EXISTS artifact_agent_calls_conversation ON assistant.artifact_agent_calls(conversation_id,created_at DESC)`;
+  await sql`ALTER TABLE assistant.capability_calls ADD COLUMN IF NOT EXISTS approval_id UUID`.simple();
   await sql`CREATE TABLE IF NOT EXISTS assistant.artifact_agent_approvals (
     turn_id UUID NOT NULL, call_id TEXT NOT NULL, id UUID NOT NULL,
     ordinal INTEGER GENERATED ALWAYS AS IDENTITY, message TEXT NOT NULL, decision BOOLEAN,

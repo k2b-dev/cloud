@@ -1,0 +1,215 @@
+import { type SQL, sql } from "bun";
+import { capabilityRequestHash } from "../../capabilities/claims";
+import type { CapabilityActionReview } from "../../contracts/capabilities";
+import { isAppSessionActor } from "../../server/actor";
+import type { RequestActor, RequestCredentialKind } from "../../server/middleware/auth";
+import { audit } from "../audit";
+import { toPgTextArray } from "../postgres";
+
+export { migrateApprovals } from "./migrate";
+
+// Derived from chat's AI_ACTION_BUDGET_MS and Studio's one-day abandonment of pending calls.
+export const APPROVAL_MAX_WAIT_MS = 24 * 60 * 60_000;
+export type ApprovalDecisionChannel = "web_session" | "app_session" | "oauth" | "api_key" | "invocation";
+export type ApprovalRequesterKind = "assistant_turn" | "studio_app";
+export type ApprovalStatus = "pending" | "approved" | "rejected" | "expired" | "cancelled" | "consumed";
+export type ApprovalAssurance = "standard" | "confirm";
+
+export const approvalArgsDigest = (input: unknown): string => capabilityRequestHash(input);
+export const approvalReviewDigest = (review: CapabilityActionReview | null | undefined): string => capabilityRequestHash(review ?? null);
+export const approvalDecisionChannel = (input: {
+  credentialKind?: RequestCredentialKind;
+  actor?: RequestActor;
+}): ApprovalDecisionChannel =>
+  input.credentialKind === "session"
+    ? isAppSessionActor(input.actor)
+      ? "app_session"
+      : "web_session"
+    : (input.credentialKind ?? "invocation");
+export const approvalScopeFromToolName = (name: string): { appId: string; action: string } => {
+  const dot = name.indexOf(".");
+  return dot < 0 ? { appId: "assistant", action: name } : { appId: name.slice(0, dot), action: name.slice(dot + 1) };
+};
+
+export type ApprovalRequestInput = {
+  appId: string;
+  action: string;
+  approvalScope?: string | null;
+  requester: { kind: ApprovalRequesterKind; ref: string; appId: string; title?: string | null };
+  subjectId: string;
+  approverUserId: string;
+  assurance: ApprovalAssurance;
+  sentence: string;
+  review?: CapabilityActionReview | null;
+  input: unknown;
+  expiresInMs: number;
+};
+export type ApprovalRequest = {
+  id: string;
+  appId: string;
+  action: string;
+  approvalScope: string | null;
+  requesterKind: ApprovalRequesterKind;
+  requesterRef: string;
+  requesterAppId: string;
+  requesterTitle: string | null;
+  subjectId: string;
+  approverUserId: string;
+  assurance: ApprovalAssurance;
+  sentence: string;
+  details: CapabilityActionReview | null;
+  argsDigest: string;
+  reviewDigest: string;
+  status: ApprovalStatus;
+  decidedVia: ApprovalDecisionChannel | null;
+  decidedAt: Date | null;
+  consumedAt: Date | null;
+  createdAt: Date;
+  expiresAt: Date;
+};
+// SQL aliases keep the public row shape identical for reads and locked transaction reads. A function, because a
+// fragment built at import time would bind the default sql handle before a test can choose its database.
+const columns = () => sql`id, app_id AS "appId", action, approval_scope AS "approvalScope",
+  requester_kind AS "requesterKind", requester_ref AS "requesterRef", requester_app_id AS "requesterAppId",
+  requester_title AS "requesterTitle", subject_id AS "subjectId", approver_user_id AS "approverUserId",
+  assurance, sentence, details, args_digest AS "argsDigest", review_digest AS "reviewDigest", status,
+  decided_via AS "decidedVia", decided_at AS "decidedAt", consumed_at AS "consumedAt",
+  created_at AS "createdAt", expires_at AS "expiresAt"`;
+
+const transaction = <T>(db: SQL | undefined, run: (tx: SQL) => Promise<T>): Promise<T> => (db && db !== sql ? run(db) : sql.begin(run));
+
+export const request = async (input: ApprovalRequestInput, db?: SQL): Promise<{ id: string }> => {
+  const expiresInMs = Number.isNaN(input.expiresInMs)
+    ? APPROVAL_MAX_WAIT_MS
+    : Math.max(1, Math.min(input.expiresInMs, APPROVAL_MAX_WAIT_MS));
+  return transaction(db, async (tx) => {
+    const [row] = await tx<{ id: string }[]>`
+      INSERT INTO approvals.requests (app_id, action, approval_scope, requester_kind, requester_ref, requester_app_id,
+        requester_title, subject_id, approver_user_id, assurance, sentence, details, args_digest, review_digest, expires_at)
+      VALUES (${input.appId}, ${input.action}, ${input.approvalScope ?? null}, ${input.requester.kind}, ${input.requester.ref},
+        ${input.requester.appId}, ${input.requester.title ?? null}, ${input.subjectId}::uuid, ${input.approverUserId}::uuid,
+        ${input.assurance}, ${input.sentence}, ${JSON.stringify(input.review ?? null)}::text::jsonb,
+        ${approvalArgsDigest(input.input)}, ${approvalReviewDigest(input.review)}, now() + (${expiresInMs} * interval '1 millisecond'))
+      ON CONFLICT (requester_kind, requester_ref) DO UPDATE SET
+        approval_scope = EXCLUDED.approval_scope, sentence = EXCLUDED.sentence, details = EXCLUDED.details,
+        args_digest = EXCLUDED.args_digest, review_digest = EXCLUDED.review_digest,
+        requester_title = EXCLUDED.requester_title, expires_at = EXCLUDED.expires_at
+      WHERE requests.status='pending'
+      RETURNING id
+    `;
+    if (row) return row;
+    const [existing] = await tx<{ id: string }[]>`SELECT id FROM approvals.requests
+      WHERE requester_kind=${input.requester.kind} AND requester_ref=${input.requester.ref}`;
+    if (!existing) throw new Error("Approval request was not stored");
+    return existing;
+  });
+};
+
+export const get = async (id: string, db?: SQL): Promise<ApprovalRequest | null> =>
+  transaction(db, async (tx) => {
+    const [row] = await tx<ApprovalRequest[]>`SELECT ${columns()} FROM approvals.requests WHERE id=${id}::uuid`;
+    return row ?? null;
+  });
+
+export type ApprovalDecisionResult =
+  | { ok: true; status: ApprovalStatus; replay: boolean }
+  | { ok: false; code: "EXPIRED" | "NOT_FOUND" }
+  | { ok: false; code: "ALREADY_DECIDED"; status: ApprovalStatus };
+export const decide = async (
+  id: string,
+  decision: { approved: boolean },
+  actor: { userId: string; via: ApprovalDecisionChannel },
+  db?: SQL,
+): Promise<ApprovalDecisionResult> => {
+  const result = await transaction(db, async (tx): Promise<ApprovalDecisionResult> => {
+    const [row] = await tx<ApprovalRequest[]>`SELECT ${columns()} FROM approvals.requests
+      WHERE id=${id}::uuid AND approver_user_id=${actor.userId}::uuid FOR UPDATE`;
+    if (!row) return { ok: false, code: "NOT_FOUND" };
+    const status = decision.approved ? "approved" : "rejected";
+    const [won] = await tx<ApprovalRequest[]>`
+      UPDATE approvals.requests SET status=${status}, decided_via=${actor.via}, decided_at=now()
+      WHERE id=${id}::uuid AND approver_user_id=${actor.userId}::uuid AND status='pending' AND expires_at > now()
+      RETURNING ${columns()}
+    `;
+    if (won) {
+      await audit.record(
+        {
+          action: decision.approved ? "auth.action.approve" : "auth.action.deny",
+          outcome: "allowed",
+          actor: { userId: actor.userId },
+          target: { type: "approval_request", id, label: `${won.appId}.${won.action}` },
+          metadata: {
+            appId: won.appId,
+            action: won.action,
+            assurance: won.assurance,
+            decidedVia: actor.via,
+            requesterKind: won.requesterKind,
+            requesterAppId: won.requesterAppId,
+          },
+        },
+        tx,
+      );
+      return { ok: true, status, replay: false };
+    }
+    if (row.status === "pending") {
+      await tx`UPDATE approvals.requests SET status='expired' WHERE id=${id}::uuid AND status='pending' AND expires_at <= now()`;
+      return { ok: false, code: "EXPIRED" };
+    }
+    if (
+      (decision.approved && (row.status === "approved" || row.status === "consumed")) ||
+      (!decision.approved && row.status === "rejected")
+    )
+      return { ok: true, status: row.status, replay: true };
+    return { ok: false, code: "ALREADY_DECIDED", status: row.status };
+  });
+  // Publish a later NATS decision hint only after the owning transaction commits.
+  return result;
+};
+
+export type ApprovalConsumeResult =
+  | { ok: true }
+  | { ok: false; code: "NOT_FOUND" | "NOT_APPROVED" | "ALREADY_CONSUMED" | "INPUT_CHANGED" | "REVIEW_CHANGED" };
+export const consume = async (
+  id: string,
+  input: { input: unknown; review: CapabilityActionReview | null; requester: { kind: ApprovalRequesterKind; ref: string } },
+  db?: SQL,
+): Promise<ApprovalConsumeResult> => {
+  const argsDigest = approvalArgsDigest(input.input),
+    reviewDigest = approvalReviewDigest(input.review);
+  return transaction(db, async (tx): Promise<ApprovalConsumeResult> => {
+    const [row] = await tx<ApprovalRequest[]>`SELECT ${columns()} FROM approvals.requests
+      WHERE id=${id}::uuid AND requester_kind=${input.requester.kind} AND requester_ref=${input.requester.ref} FOR UPDATE`;
+    if (!row) return { ok: false, code: "NOT_FOUND" };
+    if (row.status === "consumed") return { ok: false, code: "ALREADY_CONSUMED" };
+    if (row.status !== "approved") return { ok: false, code: "NOT_APPROVED" };
+    if (row.argsDigest !== argsDigest || row.reviewDigest !== reviewDigest) {
+      await tx`UPDATE approvals.requests SET status='cancelled' WHERE id=${id}::uuid AND status='approved'`;
+      return { ok: false, code: row.argsDigest !== argsDigest ? "INPUT_CHANGED" : "REVIEW_CHANGED" };
+    }
+    await tx`UPDATE approvals.requests SET status='consumed', consumed_at=now() WHERE id=${id}::uuid AND status='approved'
+      AND requester_kind=${input.requester.kind} AND requester_ref=${input.requester.ref}
+      AND args_digest=${argsDigest} AND review_digest=${reviewDigest}`;
+    return { ok: true };
+  });
+};
+
+export const cancel = async (ids: string[], db?: SQL): Promise<void> => {
+  if (!ids.length) return;
+  await transaction(db, async (tx) => {
+    await tx`UPDATE approvals.requests SET status='cancelled' WHERE id=ANY(${toPgTextArray(ids)}::uuid[]) AND status IN ('pending','approved')`;
+  });
+};
+
+export const pruneApprovalRequests = async (before: Date): Promise<number> => {
+  let total = 0;
+  let deleted: number;
+  do {
+    const result = await sql`WITH expired AS (SELECT id FROM approvals.requests WHERE expires_at < ${before} LIMIT 5000)
+      DELETE FROM approvals.requests request USING expired WHERE request.id=expired.id`;
+    deleted = result.count;
+    total += deleted;
+  } while (deleted === 5000);
+  return total;
+};
+
+export const approvals = { request, get, decide, consume, cancel };

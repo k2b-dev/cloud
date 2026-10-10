@@ -4,6 +4,7 @@ import { sql } from "bun";
 import { collectPages, descending } from "../../../../scripts/fixtures/stable-paging";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
+import { approvalArgsDigest, approvalReviewDigest, approvals } from "../services/approvals";
 import { toPgTextArray } from "../services/postgres";
 import { session as authSession } from "../services/session";
 import { createTestSession } from "../services/session/session.test-fixture";
@@ -55,6 +56,63 @@ const runConfig = { kind: "chat" as const, input: "hi", toolSource: { kind: "non
 suite("AI conversation store integration", () => {
   beforeAll(async () => {
     await migrateCloudAi();
+  });
+  test("backfills legacy pending approvals with canonical digests and the original deadline", async () => {
+    const userId = await insertUser();
+    const chat = await aiConversations.createConversation({ ownerUserId: userId, title: "Legacy chat" });
+    try {
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: chat.id,
+        modelProfileId: "mock",
+        runConfig,
+        userMessage: userMessage("Run"),
+      });
+      const args = { z: "last", a: { second: 2, first: 1 } },
+        review = { message: "Write this item?" };
+      await aiConversations.savePendingTurnAction({
+        conversationId: chat.id,
+        turnId: turn.id,
+        callId: "legacy",
+        kind: "custom_approval",
+        status: "pending",
+        name: "demo.item.write",
+        args,
+        review,
+        message: "Write item?",
+        approvalScope: "one",
+        allowAlways: false,
+        allowChat: true,
+        resolvedEvent: null,
+      });
+      await sql`UPDATE ai.turns SET status='waiting_for_action',deadline=now()+interval '1 hour' WHERE id=${turn.id}::uuid`;
+      await migrateCloudAi();
+      const pending = await aiConversations.getPendingTurnAction({ conversationId: chat.id, turnId: turn.id, callId: "legacy" });
+      expect(pending?.approvalId).toBeDefined();
+      const record = await approvals.get(pending!.approvalId!);
+      // The first message titles the chat; the request keeps the title the chat has when the migration runs.
+      const current = await aiConversations.getConversation({ conversationId: chat.id });
+      expect(record).toMatchObject({
+        appId: "demo",
+        action: "item.write",
+        assurance: "standard",
+        requesterRef: `${turn.id}/legacy`,
+        requesterTitle: current?.title,
+        subjectId: userId,
+        approverUserId: userId,
+        argsDigest: approvalArgsDigest(args),
+        reviewDigest: approvalReviewDigest(review),
+      });
+      const [deadline] = await sql<{ deadline: Date }[]>`SELECT deadline FROM ai.turns WHERE id=${turn.id}::uuid`;
+      expect(record!.expiresAt).toEqual(deadline!.deadline);
+      await migrateCloudAi();
+      expect((await aiConversations.getPendingTurnAction({ conversationId: chat.id, turnId: turn.id, callId: "legacy" }))?.approvalId).toBe(
+        record!.id,
+      );
+      await aiConversations.clearPendingTurnActions({ conversationId: chat.id, turnId: turn.id });
+      expect(await approvals.get(record!.id)).toMatchObject({ status: "cancelled" });
+    } finally {
+      await cleanupFixture({ userId, conversationIds: [chat.id] });
+    }
   });
   test("a metadata-renamed title survives the first message while create-time placeholders get the snapshot", async () => {
     const userId = await insertUser();
