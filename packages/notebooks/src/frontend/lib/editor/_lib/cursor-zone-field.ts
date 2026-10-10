@@ -8,15 +8,17 @@
  * The field supports two operating modes:
  *
  *  - **Default mode** (no `incremental` option): rebuild on every
- *    doc change, rebuild on selection changes that cross a range
- *    boundary. Used by image/link extensions whose `build` already
- *    walks the syntax tree incrementally — a full call is cheap.
+ *    doc change and every newly delivered syntax tree, rebuild on
+ *    selection changes that cross a range boundary. Used by
+ *    image/link extensions whose `build` already walks the syntax
+ *    tree incrementally — a full call is cheap.
  *
  *  - **Incremental mode** (with `incremental.changesMightAffectSyntax`):
  *    on doc change, skip the rebuild when the doc has no relevant
  *    marker syntax AND the change doesn't introduce any, OR when
- *    the existing ranges are unaffected by the change. Used by
- *    extensions whose `build` does a full `doc.toString() +
+ *    the existing ranges are unaffected by the change. A newly
+ *    delivered syntax tree without a doc change always rebuilds.
+ *    Used by extensions whose `build` does a full `doc.toString() +
  *    regex.matchAll()` pass (katex, tag-pill) — those
  *    rebuilds are expensive enough to be worth gating.
  *
@@ -36,7 +38,7 @@
  * an extra cached `blockWidgetDecorations` field that doesn't fit
  * the standard shape.
  */
-import { forceParsing } from "@codemirror/language";
+import { forceParsing, syntaxTree } from "@codemirror/language";
 import type { EditorState, Extension, SelectionRange, Transaction } from "@codemirror/state";
 import { Prec, StateEffect, StateField } from "@codemirror/state";
 import type { DecorationSet, ViewUpdate } from "@codemirror/view";
@@ -78,6 +80,13 @@ export const selectionIntersectsRange = (selection: SelectionRange, from: number
 
 export const isPointerSelectionTransaction = (tr: Transaction): boolean =>
   !tr.docChanged && !!tr.selection && tr.isUserEvent("select.pointer");
+
+/** True when a transaction changed the document or delivered a new syntax tree.
+ *  CodeMirror parses a long note in steps and hands each further part of the tree
+ *  over in a transaction without a document change, so a decoration field that
+ *  reads the tree must rebuild on both. Selection and focus transactions keep the
+ *  same tree and stay cheap. */
+export const treeOrDocChanged = (tr: Transaction): boolean => tr.docChanged || syntaxTree(tr.startState) !== syntaxTree(tr.state);
 
 export const refreshMarkdownDecorationsEffect = StateEffect.define<void>();
 
@@ -280,6 +289,7 @@ export const cursorZoneStateField = (
         }
         return build(tr.state);
       }
+      if (treeOrDocChanged(tr)) return build(tr.state);
       if (!tr.selection) return value;
       const oldKey = cursorKey(tr.startState, value.ranges);
       const newKey = cursorKey(tr.state, value.ranges);

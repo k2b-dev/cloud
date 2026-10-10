@@ -17,7 +17,7 @@ import type { EditorState, Extension, Range } from "@codemirror/state";
 import { RangeSet, StateField } from "@codemirror/state";
 import type { DecorationSet } from "@codemirror/view";
 import { Decoration, EditorView } from "@codemirror/view";
-import { refreshMarkdownDecorationsEffect } from "./_lib/cursor-zone-field";
+import { refreshMarkdownDecorationsEffect, treeOrDocChanged } from "./_lib/cursor-zone-field";
 
 const codeMark = Decoration.mark({ class: "cm-md-code" });
 
@@ -40,7 +40,7 @@ export const codeFontExtension = (): Extension => {
       return RangeSet.of(buildCodeFontDecorations(state), true);
     },
     update(decorations, tr) {
-      if (tr.docChanged || tr.effects.some((effect) => effect.is(refreshMarkdownDecorationsEffect))) {
+      if (treeOrDocChanged(tr) || tr.effects.some((effect) => effect.is(refreshMarkdownDecorationsEffect))) {
         return RangeSet.of(buildCodeFontDecorations(tr.state), true);
       }
       return decorations;
