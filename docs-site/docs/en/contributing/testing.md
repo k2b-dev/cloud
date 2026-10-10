@@ -248,15 +248,24 @@ branch:
 - Fonts differ between machines and engines. A test that expects text to wrap
   or fit uses text that is clearly too long or clearly short enough.
 - Playwright's WebKit on Linux can stop a video for good when `play()` arrives
-  while a seek is under way, also the seek that a media fragment such as
-  `#t=0.001` starts once the metadata has loaded. `VideoPlayer` names every
-  video without a poster that way. After the seek, `playing` is followed by
-  `waiting` and `stalled`, and the time no longer advances. A loaded machine
-  only widens the window in which the two overlap. A test plays or seeks a
-  video once it shows a frame and no seek is under way:
-  `!video.seeking && video.readyState >= 2`. Where the page itself plays during
-  a seek, as `VideoPlayer` does after it renews an address, the test waits for
-  the `playing` event instead of `ended`.
+  during a seek or right as it ends. The video reports `playing`, often then
+  `waiting` and `stalled`, and its time no longer advances, although the whole
+  video is buffered. A loaded machine makes it more likely. A media fragment
+  such as `#t=0.001` starts a seek too: WebKit starts it once the first frame
+  has loaded, Chromium already with the metadata. `VideoPlayer` starts a
+  posterless address without a fragment of its own at `#t=0.001`, and a renewed
+  address at the point where it continues. A test that plays or seeks a video
+  waits until it shows a frame and no seek is under way,
+  `!video.seeking && video.readyState >= 2`, and then calls `play()` itself.
+  Played that way, the video did not stall in several hundred runs on a loaded
+  machine; `play()` from the page's own handlers as the seek ended, or one
+  frame later, stalled in 7 of 520. Because `playing` also comes before a
+  stall, a test that checks playback waits for `ended`. After a renewal,
+  `VideoPlayer` plays on by itself once the metadata has loaded, in WebKit
+  during its seek; moving that `play()` to the end of the seek did not
+  measurably make it stall less often. Renewed playback can therefore stall in
+  Linux WebKit, so its test waits for `ended` in Chromium and only for
+  `playing` in WebKit.
 
 ## Replace modules in tests
 

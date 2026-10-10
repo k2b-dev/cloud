@@ -46,7 +46,7 @@ window.skipTime = (ms) => {
 };
 // Media events do not bubble, but the document sees them on their way to the video, before the player does.
 window.mediaEvents = [];
-for (const type of ["loadedmetadata", "loadeddata", "seeked", "canplay", "playing", "timeupdate"])
+for (const type of ["loadedmetadata", "loadeddata", "play", "seeking", "seeked", "canplay", "playing", "waiting", "stalled", "timeupdate"])
   document.addEventListener(
     type,
     (event) => {
@@ -192,6 +192,8 @@ afterAll(async () => {
 
 type MountOptions = { src: string | null; srcOnMount?: string; host: string; ratio?: number; renew?: string; locale?: "en" | "de" };
 const open = async (options: MountOptions, viewport = { width: 1024, height: 768 }, touch = false): Promise<Page> => {
+  // Every page starts with its own request log.
+  requests.length = 0;
   const page = await browser.newPage({ viewport, ...(touch ? { isMobile: true, hasTouch: true } : {}) });
   await page.goto(server.url.href);
   await page.evaluate((next) => (window as unknown as { mount: (options: MountOptions) => void }).mount(next), {
@@ -213,15 +215,41 @@ const metadata = (page: Page) =>
   page.waitForFunction(() => (document.querySelector(".k2b-video-player__video") as HTMLVideoElement | null)?.readyState! >= 1);
 /**
  * Waits until the video shows its first frame and no seek is under way. Without a poster, the player starts the video
- * just after its beginning with a media fragment, so the engine seeks there once it has the metadata. WebKit on Linux
- * can wait for good when play() arrives during that seek: after the seek it reports `playing`, then `waiting` and
- * `stalled` at readyState 2, and the video never moves. A test that plays or seeks waits for this first.
+ * just after its beginning with a media fragment, so the engine seeks there: WebKit once it has the first frame,
+ * Chromium already with the metadata. WebKit on Linux can wait for good when play() arrives during that seek or right as
+ * it ends: it reports `playing`, often then `waiting` and `stalled`, and the video never moves. A test that plays or
+ * seeks waits for this first and then calls play() itself.
  */
 const firstFrame = (page: Page) =>
   page.waitForFunction(() => {
     const video = document.querySelector(".k2b-video-player__video") as HTMLVideoElement | null;
     return video !== null && !video.seeking && video.readyState >= 2;
   });
+/**
+ * Waits until the video has played to its end. When it does not, the error carries the video's state, the page's
+ * media events, and its requests, so it shows where playback stopped and what came before.
+ */
+const playsToEnd = async (page: Page) => {
+  try {
+    await page.waitForFunction(() => (document.querySelector(".k2b-video-player__video") as HTMLVideoElement).ended, undefined, {
+      timeout: 15_000,
+    });
+  } catch (error) {
+    const video = await page.$eval(".k2b-video-player__video", (element) => {
+      const video = element as HTMLVideoElement;
+      const buffered = Array.from({ length: video.buffered.length }, (_, index) => [
+        video.buffered.start(index),
+        video.buffered.end(index),
+      ]);
+      return { time: video.currentTime, readyState: video.readyState, paused: video.paused, seeking: video.seeking, buffered };
+    });
+    const events = await page.evaluate(() => (window as unknown as { mediaEvents: unknown[] }).mediaEvents);
+    throw new Error(
+      `The video did not play to its end.\nVideo: ${JSON.stringify(video)}\nMedia events: ${JSON.stringify(events)}\nRequests: ${JSON.stringify(requests)}`,
+      { cause: error },
+    );
+  }
+};
 const state = (page: Page) =>
   page.$eval(".k2b-video-player__video", (element) => {
     const video = element as HTMLVideoElement;
@@ -310,7 +338,6 @@ describe(`VideoPlayer (${browserName})`, () => {
   });
 
   test("plays to the end through range requests answered with 206", async () => {
-    requests.length = 0;
     const page = await open({ src: "/video/landscape.webm", host: "width:640px;height:360px" });
     try {
       await firstFrame(page);
@@ -320,9 +347,7 @@ describe(`VideoPlayer (${browserName})`, () => {
         video.muted = true;
         return video.play();
       });
-      await page.waitForFunction(() => (document.querySelector(".k2b-video-player__video") as HTMLVideoElement).ended, undefined, {
-        timeout: 15_000,
-      });
+      await playsToEnd(page);
       const media = requests.filter((request) => request.path === "/video/landscape.webm");
       // A 206 answer brought the frames, not only the index at the end: Chromium asks for the whole video by range,
       // WebKit for everything from the first frames once it has read the index.
@@ -460,9 +485,7 @@ describe(`VideoPlayer (${browserName})`, () => {
         video.muted = true;
         return video.play();
       });
-      await page.waitForFunction(() => (document.querySelector(".k2b-video-player__video") as HTMLVideoElement).ended, undefined, {
-        timeout: 15_000,
-      });
+      await playsToEnd(page);
       expect(await counters(page)).toEqual({ renewals: 1, fallbacks: 0 });
       expect(leaseUses.get("expiring")).toBeGreaterThan(2);
     } finally {
@@ -495,14 +518,17 @@ describe(`VideoPlayer (${browserName})`, () => {
           video.play().catch(reject);
         });
       });
-      // Nobody presses play again: the renewed address plays by itself. The test waits until it plays, not until it
-      // ends: on a heavily loaded machine, Linux WebKit's media engine can stop for good after it starts in the middle
-      // of a video, also in a bare video element without the player.
-      await page.waitForFunction(() =>
-        (window as unknown as { mediaEvents: { type: string; src: string }[] }).mediaEvents.some(
-          (event) => event.type === "playing" && event.src.includes("renewal=1"),
-        ),
-      );
+      // Nobody presses play again: the renewed address plays by itself. Chromium shows that it plays on to the end. The
+      // player plays it once its metadata has loaded, in WebKit during the seek to the point where it continues, and
+      // WebKit on Linux can stop a video for good when play() comes during or right after a seek. There the test waits
+      // only for the renewed address's `playing` event, as contributing/testing.md describes.
+      if (browserName === "chromium") await playsToEnd(page);
+      else
+        await page.waitForFunction(() =>
+          (window as unknown as { mediaEvents: { type: string; src: string }[] }).mediaEvents.some(
+            (event) => event.type === "playing" && event.src.includes("renewal=1"),
+          ),
+        );
       expect(await counters(page)).toEqual({ renewals: 1, fallbacks: 0 });
       expect((await state(page)).src).toContain("renewal=1");
       const events = await page.evaluate(
