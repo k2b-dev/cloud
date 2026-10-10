@@ -886,16 +886,23 @@ function spacesCommands(locale?: string) {
                   from: fromFlag,
                   commit: flag.string({ description: t({ en: "Commit SHA; needs a result", de: "Commit-SHA; braucht ein Ergebnis" }) }),
                   claimId: flag.string({ name: "claim-id", description: t({ en: "Current claim ID", de: "Aktuelle Übernahme-ID" }) }),
+                  force: flag.boolean({
+                    description: t({
+                      en: "Take over the claim given with --claim-id from another worker",
+                      de: "Die mit --claim-id angegebene Übernahme einer anderen Person übernehmen",
+                    }),
+                  }),
                 }
               : {},
           async run({ ctx, args, flags }) {
-            const done = flags as { result?: string; from?: string; commit?: string; claimId?: string };
+            const done = flags as { result?: string; from?: string; commit?: string; claimId?: string; force?: boolean };
             const item = await resolveItem(ctx, args.item);
             const updated = await send<SpaceItem>(ctx, "POST", itemApi(item, "/completed"), {
               completed: action === "done",
               result: await readText(done.result, done.from, "result"),
               commit: done.commit,
               claimId: done.claimId,
+              ...(done.force ? { force: true } : {}),
             });
             printItem(ctx, action === "done" ? { en: "Completed", de: "Erledigt" } : { en: "Reopened", de: "Wieder geöffnet" }, updated);
           },
@@ -1163,8 +1170,8 @@ function spacesCommands(locale?: string) {
           claimId: flag.string({ name: "claim-id", required: true, description: t({ en: "Claim ID", de: "Übernahme-ID" }) }),
           force: flag.boolean({
             description: t({
-              en: "Admin recovery of the exact observed claim",
-              de: "Admin-Wiederherstellung der genau beobachteten Übernahme",
+              en: "Take over the exact observed claim of another worker",
+              de: "Die genau beobachtete Übernahme einer anderen Person übernehmen",
             }),
           }),
         },

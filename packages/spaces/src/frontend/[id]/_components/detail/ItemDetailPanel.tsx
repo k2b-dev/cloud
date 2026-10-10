@@ -44,7 +44,16 @@ import { createRetryToasts } from "../../../lib/feedback";
 import { readResponseError } from "../../../lib/response";
 import { useSpaceMessages } from "../../messages";
 import ClaimButton from "../shared/claim/ClaimButton";
-import { claimTask, ownClaimId, promptReleaseNote, releaseTask, takeOverTask } from "../shared/claim/claim";
+import {
+  type ClaimFields,
+  claimTask,
+  ownClaimId,
+  promptReleaseNote,
+  releaseTask,
+  resolveCompletionClaim,
+  resolveTransferClaim,
+  takeOverTask,
+} from "../shared/claim/claim";
 import { setItemCompleted } from "../shared/completion";
 import { openEditItemDialog } from "../shared/editItem";
 import { deadlinePresets } from "../shared/item-form/date";
@@ -87,8 +96,6 @@ type Props = {
   blocks?: SpaceTaskDependent[];
   dateConfig?: DateContext;
   canWrite: boolean;
-  /** Space admins may take over another account's claim. */
-  isAdmin?: boolean;
   mailIntegrationAvailable: boolean;
   scrollPreserveKey: string;
 };
@@ -412,12 +419,17 @@ export default function ItemDetailPanel(props: Props) {
     (tagIds) => ({ tagIds }),
   );
 
-  type CompleteIntent = { itemId: string; completed: boolean; claimId: string | undefined };
-  const completeIntent = (completed: boolean): CompleteIntent => ({
-    itemId: props.item.id,
-    completed,
-    claimId: ownClaimId(props.item.claim, props.currentUserId),
-  });
+  type CompleteIntent = { itemId: string; completed: boolean } & ClaimFields;
+  /**
+   * Someone else's claim is taken over after one confirmation; declining changes nothing. The answer belongs to the
+   * item the question named, so a panel that shows another item by then sends nothing.
+   */
+  const toggleCompleted = async () => {
+    const itemId = props.item.id;
+    const completed = !isCompleted();
+    const claim = await resolveCompletionClaim(props.item.claim, props.currentUserId, completed, t);
+    if (claim && props.item.id === itemId) await completeMutation.mutate({ itemId, completed, ...claim });
+  };
   const completeMutation = mutations.create<boolean, CompleteIntent, { intent: CompleteIntent }>({
     onBefore: (intent) => ({ intent }),
     mutation: async (intent) => {
@@ -465,12 +477,12 @@ export default function ItemDetailPanel(props: Props) {
     },
     onError: (err) => toast.error(err.message),
   });
-  /** Header: claim or release your own claim. Work section: admin take-over of somebody else's claim. */
+  /** Header: claim or release your own claim. Work section: any writer takes over somebody else's claim. */
   const claimButton = (options: { takeOver?: boolean } = {}) => (
     <ClaimButton
       claim={props.item.claim}
       currentUserId={props.currentUserId}
-      isAdmin={options.takeOver === true && props.isAdmin === true}
+      canTakeOver={options.takeOver === true}
       loading={claimMutation.loading()}
       disabled={isLoading() || isCompleted() || (!props.item.claim && completionBlocked())}
       onClaim={() => void claimMutation.mutate("claim")}
@@ -525,12 +537,14 @@ export default function ItemDetailPanel(props: Props) {
     onError: (err, context) => retryToast(err.message, t.retry, () => context && deleteMutation.mutate(context.intent)),
   });
 
-  const transferMutation = mutations.create<WormholeTransferResult, string>({
-    mutation: (wormholeId, context) =>
+  type Transfer = { itemId: string; wormholeId: string; claim: ClaimFields };
+  const transferMutation = mutations.create<WormholeTransferResult, Transfer>({
+    mutation: ({ itemId, wormholeId, claim }, context) =>
       transferThroughWormhole({
         sourceSpaceId: props.spaceId,
-        itemId: props.item.id,
+        itemId,
         wormholeId,
+        claim,
         signal: context.abortSignal,
         locale: locale(),
       }),
@@ -542,6 +556,13 @@ export default function ItemDetailPanel(props: Props) {
       if (error.name !== "AbortError") toast.error(error.message);
     },
   });
+
+  /** A transfer ends the claim; someone else's is taken over after one confirmation, as for completion. */
+  const transferTo = async (wormholeId: string) => {
+    const itemId = props.item.id;
+    const claim = await resolveTransferClaim(props.item.claim, props.currentUserId, t);
+    if (claim && props.item.id === itemId) await transferMutation.mutate({ itemId, wormholeId, claim });
+  };
 
   const handleDuplicate = () => {
     if (!duplicateMutation.loading()) void duplicateMutation.mutate(duplicateIntent());
@@ -613,8 +634,7 @@ export default function ItemDetailPanel(props: Props) {
           icon: "ti ti-checkbox",
           shortcut: "d",
           action: () => {
-            if (props.item.id === itemId && canEditItem() && !isLoading() && !completionBlocked())
-              return completeMutation.mutate(completeIntent(!isCompleted()));
+            if (props.item.id === itemId && canEditItem() && !isLoading() && !completionBlocked()) return toggleCompleted();
           },
         }),
       );
@@ -693,7 +713,7 @@ export default function ItemDetailPanel(props: Props) {
                 {
                   label: t.moveTo({ space: wormhole.target.spaceName, column: wormhole.target.columnName }),
                   icon: "ti ti-arrow-bounce",
-                  action: () => transferMutation.mutate(wormhole.id),
+                  action: () => void transferTo(wormhole.id),
                 },
               ]
             : [],
@@ -1036,7 +1056,7 @@ export default function ItemDetailPanel(props: Props) {
                 <Show when={canEditItem()}>
                   <Button
                     type="button"
-                    onClick={() => completeMutation.mutate(completeIntent(!isCompleted()))}
+                    onClick={() => void toggleCompleted()}
                     disabled={isLoading() || completionBlocked()}
                     title={completionBlocked() ? t.completeBlockersFirst : undefined}
                     variant="secondary"

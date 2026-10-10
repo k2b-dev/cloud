@@ -129,7 +129,6 @@ const serverBody = (scenario: Scenario) =>
       initialDetail: detail(scenario.item ?? task, scenario.attachments),
       dateConfig: { locale: scenario.locale, timeZone: "Europe/Berlin" },
       canWrite: scenario.canWrite ?? true,
-      isAdmin: false,
       mailIntegrationAvailable: false,
     }),
   );

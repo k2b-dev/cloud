@@ -108,7 +108,7 @@ While a task is claimed, other people see who works on it:
 
 A claim only marks who works on the task right now. The assignment and the column do not change. CLI workers and service accounts claim the same way and appear the same way.
 
-Claims do not expire, and nobody can overwrite them. Only the holder can complete a claimed task, also by dragging it into a done column. Completing it releases the claim. With **Manage** access, you see **Take over** for the claim of another account. You confirm it in a dialog that names the current holder. Ordinary shared edits stay available while a task is claimed.
+Claims do not expire. They coordinate work and do not lock it: with **Edit** access, you can move a claimed task between open columns, and ordinary shared edits stay available. Completing your own claimed task, also by dragging it into a done column, releases the claim. With **Edit** access, you see **Take over** for the claim of another account. You confirm it in a dialog that names the current holder. If you complete a task that someone else claimed, for example by dragging it into a done column, Spaces asks once, such as "Claimed by Jana Berger – take over and complete?". It then takes the claim over and completes the task in one step. **Cancel** leaves the card where it was. Sending a task through a wormhole to another Space ends its claim the same way: your own claim ends without a question, and you take over someone else's claim after you confirm. The activity shows who took a claim over from whom.
 
 ## Prepare invitations from Cloud search {icon="calendar-event"}
 

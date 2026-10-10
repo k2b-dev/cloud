@@ -13,11 +13,13 @@ import type {
 } from "@/contracts";
 import { withShortId } from "../lib/short-id";
 import { buildSpacePrincipalCondition, getSpacePermission } from "./access";
+import type { SpaceActivityIdentity } from "./activity";
 import * as columns from "./columns";
 import { get as getItem } from "./items";
 import { publishSpaceChange, spacesLive } from "./live";
 import { rank } from "./rank";
 import * as spaces from "./spaces";
+import * as taskWork from "./task-work";
 
 export type WormholeActor = {
   subject: AccessSubject;
@@ -306,22 +308,34 @@ export const remove = async (params: { sourceSpaceId: string; id: string; actor:
   return { ok: true, data: undefined };
 };
 
+/**
+ * Moves an item into the wormhole's destination. The item leaves the Space whose grants backed its claim, so a
+ * transfer ends the claim and is guarded like completion: the holder names it with `claimId`, and anyone else takes
+ * it over with `force` and the exact claim they saw.
+ */
 export const transfer = async (params: {
   sourceSpaceId: string;
   itemId: string;
   wormholeId: string;
   actor: WormholeActor;
+  /** Who acts, as task work and activity record it. */
+  workActor?: SpaceActivityIdentity;
+  claimId?: string;
+  force?: boolean;
 }): Promise<MutationResult<WormholeTransferResult>> => {
   if (!(await canAccess(params.sourceSpaceId, params.actor, "write"))) return denied();
   const wormhole = await getRow({ sourceSpaceId: params.sourceSpaceId, id: params.wormholeId });
   if (!wormhole) return { ok: false, error: "Wormhole not found", status: 404 };
   if (!(await canAccess(wormhole.target_space_id, params.actor, "write"))) return denied();
+  const workActor = params.workActor ?? { kind: "system", id: null };
 
   type TransferRow = { id: string; removed_tag_count: number; removed_assignee_count: number; removed_dependency_count: number };
-  const transferred = await sql.begin(async (tx): Promise<TransferRow | "recurring" | "changed" | "denied" | "claimed" | null> => {
+  type ClaimRefusal = Extract<Awaited<ReturnType<typeof taskWork.checkClaim>>, { ok: false }>;
+  const transferred = await sql.begin(async (tx): Promise<TransferRow | ClaimRefusal | "recurring" | "changed" | "denied" | null> => {
     const [locked] = await tx<
       {
         id: string;
+        title: string;
         target_column_id: string;
         target_space_id: string;
         target_is_done: boolean;
@@ -331,6 +345,7 @@ export const transfer = async (params: {
     >`
       SELECT
         i.id,
+        i.title,
         w.target_column_id,
         c.space_id AS target_space_id,
         c.is_done AS target_is_done,
@@ -346,9 +361,6 @@ export const transfer = async (params: {
       FOR UPDATE OF i, w, c
     `;
     if (!locked) return null;
-    const [work] = await tx<{ claim: unknown }[]>`SELECT claim FROM spaces.task_work WHERE item_id = ${params.itemId}::uuid`;
-    if (work?.claim) return "claimed";
-
     if (locked.target_column_id !== wormhole.target_column_id || locked.target_space_id !== wormhole.target_space_id) return "changed";
 
     // Repeat authorization inside the transfer transaction so a stale page or
@@ -376,6 +388,8 @@ export const transfer = async (params: {
       return "denied";
     }
     if (locked.recurrence_rrule || locked.recurring_event_id) return "recurring";
+    const claim = await taskWork.checkClaim(params.itemId, workActor, params.claimId, tx, params.force);
+    if (!claim.ok) return claim;
 
     const [tagCount] = await tx<{ count: number }[]>`
       SELECT COUNT(*)::int AS count FROM spaces.item_tags WHERE item_id = ${params.itemId}::uuid
@@ -451,6 +465,13 @@ export const transfer = async (params: {
       RETURNING id
     `;
     if (!updated) return null;
+    await taskWork.finish(params.itemId, undefined, undefined, workActor, tx);
+    // The previous holder had access to the source Space, so the take-over is recorded there.
+    if (claim.data)
+      await taskWork.recordTakeOver(
+        { spaceId: params.sourceSpaceId, itemId: params.itemId, itemTitle: locked.title, actor: workActor, claim: claim.data },
+        tx,
+      );
     // Each Space's readers learn only that the item left or arrived.
     await publishSpaceChange(tx, { type: "item.transferred", spaceId: params.sourceSpaceId, itemId: updated.id });
     await publishSpaceChange(tx, { type: "item.transferred", spaceId: locked.target_space_id, itemId: updated.id });
@@ -462,7 +483,7 @@ export const transfer = async (params: {
     };
   });
 
-  if (transferred === "claimed") return { ok: false, error: "Release the task claim before transferring it", status: 409 };
+  if (transferred && typeof transferred === "object" && "ok" in transferred) return transferred;
   if (transferred === "changed") return { ok: false, error: "Wormhole destination changed; try again", status: 409 };
   if (transferred === "denied") return denied();
   if (transferred === "recurring") {

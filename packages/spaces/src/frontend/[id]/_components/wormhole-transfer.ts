@@ -4,13 +4,16 @@ import { apiClient } from "@/api/client";
 import type { SpaceItem, WormholeTransferResult } from "@/contracts";
 import { readResponseError } from "../../lib/response";
 import { spaceMessages } from "../messages";
+import type { ClaimFields } from "./shared/claim/claim";
 
 export const canTransferThroughWormhole = (item: SpaceItem) => !item.recurrence && !item.recurringEventId;
 
+/** The transfer ends the item's claim, so it carries the claim fields `resolveTransferClaim` settled. */
 export const transferThroughWormhole = async (params: {
   sourceSpaceId: string;
   itemId: string;
   wormholeId: string;
+  claim: ClaimFields;
   signal?: AbortSignal;
   locale?: string;
 }): Promise<WormholeTransferResult> => {
@@ -22,6 +25,7 @@ export const transferThroughWormhole = async (params: {
         itemId: params.itemId,
         wormholeId: params.wormholeId,
       },
+      json: params.claim,
     },
     { init: { signal: params.signal } },
   );

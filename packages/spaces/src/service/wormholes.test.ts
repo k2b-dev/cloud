@@ -248,6 +248,72 @@ suite("Spaces wormholes", () => {
     }
   });
 
+  test("ends a claim with the transfer: the holder names it, anyone else takes it over", async () => {
+    const fixture = await createFixture();
+    try {
+      const created = await create({
+        sourceSpaceId: fixture.sourceSpaceId,
+        data: { targetColumnId: fixture.targetColumnId, color: "#6366f1" },
+        actor: actorFor(fixture),
+      });
+      if (!created.ok) throw new Error(created.error);
+      const transferring = { sourceSpaceId: fixture.sourceSpaceId, wormholeId: created.data.id, actor: actorFor(fixture) };
+      const me = { kind: "user" as const, id: fixture.actorUserId };
+      const colleague = { kind: "user" as const, id: fixture.keptUserId };
+      const claimedTask = async (title: string, holder: typeof me) => {
+        const [item] = await sql<{ id: string }[]>`
+          INSERT INTO spaces.items (short_id, space_id, column_id, title, rank)
+          VALUES (${newShortId()}, ${fixture.sourceSpaceId}::uuid, ${fixture.sourceColumnId}::uuid, ${title}, 1024)
+          RETURNING id
+        `;
+        const claim = { id: crypto.randomUUID(), actor: holder, claimedAt: new Date().toISOString() };
+        await sql`INSERT INTO spaces.task_work (item_id, claim) VALUES (${item!.id}::uuid, ${claim}::jsonb)`;
+        return { itemId: item!.id, claimId: claim.id };
+      };
+      const placeOf = async (itemId: string) => {
+        const [row] = await sql<{ space_id: string; claim: unknown }[]>`
+          SELECT i.space_id, w.claim FROM spaces.items i LEFT JOIN spaces.task_work w ON w.item_id = i.id WHERE i.id = ${itemId}::uuid
+        `;
+        return row;
+      };
+      const takeOvers = (itemId: string) => sql<{ space_id: string; actor_id: string; metadata: { from: unknown } }[]>`
+        SELECT space_id, actor_id, metadata FROM spaces.activity_events WHERE item_id = ${itemId}::uuid AND action = 'task.taken_over'
+      `;
+
+      // The holder transfers its own claimed task with its claim ID; the claim ends with the move.
+      const own = await claimedTask("Own claim", me);
+      expect(await transfer({ ...transferring, itemId: own.itemId, workActor: me })).toMatchObject({
+        ok: false,
+        status: 409,
+        error: "Task is claimed; release its current claim before changing ownership or completing it",
+      });
+      expect(await placeOf(own.itemId)).toMatchObject({ space_id: fixture.sourceSpaceId, claim: { id: own.claimId } });
+      expect((await transfer({ ...transferring, itemId: own.itemId, workActor: me, claimId: own.claimId })).ok).toBe(true);
+      expect(await placeOf(own.itemId)).toEqual({ space_id: fixture.targetSpaceId, claim: null });
+      expect(await takeOvers(own.itemId)).toEqual([]);
+
+      // Someone else's claim is taken over by its exact ID, and the source Space's activity says from whom.
+      const foreign = await claimedTask("Foreign claim", colleague);
+      expect(await transfer({ ...transferring, itemId: foreign.itemId, workActor: me })).toMatchObject({ ok: false, status: 409 });
+      expect(
+        await transfer({ ...transferring, itemId: foreign.itemId, workActor: me, claimId: crypto.randomUUID(), force: true }),
+      ).toMatchObject({
+        ok: false,
+        status: 409,
+        error: "Task claim changed; read its current state before taking it over",
+      });
+      expect(await placeOf(foreign.itemId)).toMatchObject({ space_id: fixture.sourceSpaceId, claim: { id: foreign.claimId } });
+      const takenOver = await transfer({ ...transferring, itemId: foreign.itemId, workActor: me, claimId: foreign.claimId, force: true });
+      expect(takenOver.ok && takenOver.data.item.claim).toBeNull();
+      expect(await placeOf(foreign.itemId)).toEqual({ space_id: fixture.targetSpaceId, claim: null });
+      expect(await takeOvers(foreign.itemId)).toEqual([
+        { space_id: fixture.sourceSpaceId, actor_id: fixture.actorUserId, metadata: expect.objectContaining({ from: colleague }) },
+      ]);
+    } finally {
+      await cleanup(fixture);
+    }
+  });
+
   test("rejects recurring items without modifying them", async () => {
     const fixture = await createFixture();
     try {

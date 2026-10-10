@@ -2002,11 +2002,15 @@ test("work capabilities enforce grants and resource binding before touching work
   permission.mockResolvedValue("read");
   expect((await spacesCapabilities.actions["task.progress"].run(input, userContext)).ok).toBe(false);
   expect(change).not.toHaveBeenCalled();
-  permission.mockResolvedValue("write");
   expect(
     (await spacesCapabilities.actions["task.release"].run({ itemId, claimId: crypto.randomUUID(), force: true }, userContext)).ok,
   ).toBe(false);
   expect(change).not.toHaveBeenCalled();
+  // Claims coordinate work and do not lock it: any writer may take one over.
+  permission.mockResolvedValue("write");
+  const observed = crypto.randomUUID();
+  expect((await spacesCapabilities.actions["task.release"].run({ itemId, claimId: observed, force: true }, userContext)).ok).toBe(true);
+  expect(change).toHaveBeenCalledWith(expect.objectContaining({ operation: "release", claimId: observed, force: true }));
 });
 
 test("agent service accounts claim, progress and comment through their direct grant within their scopes", async () => {

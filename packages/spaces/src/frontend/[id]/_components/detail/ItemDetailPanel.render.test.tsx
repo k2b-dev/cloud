@@ -221,20 +221,20 @@ describe("Spaces item detail panel", () => {
         '">',
     );
     expect(foreign).toMatch(/ (<!--!\$-->)?<span class="whitespace-nowrap">· not assigned<\/span>/);
-    expect(foreign).not.toContain("data-spaces-claim-action");
     expect(foreign).not.toContain("Task claimed");
+    // Claims coordinate work and do not lock it: anyone who may change the task may take one over, nobody else.
+    expect(renderPanel({ item: { ...task, claim }, canWrite: false })).not.toContain("data-spaces-claim-action");
 
     // No help sentence in the section; the take-over explanation lives in its confirmation dialog.
-    const admin = renderPanel({ item: { ...task, claim }, isAdmin: true });
-    expect(admin).toContain('data-spaces-claim-action="take-over"');
-    expect(admin).not.toContain("Take over releases the claim");
-    expect(admin.match(/data-spaces-claim-action/g)).toHaveLength(1);
-    for (const html of [own, foreign, admin]) {
+    expect(foreign).toContain('data-spaces-claim-action="take-over"');
+    expect(foreign).not.toContain("Take over releases the claim");
+    expect(foreign.match(/data-spaces-claim-action/g)).toHaveLength(1);
+    for (const html of [own, foreign]) {
       expect(html).not.toContain("Release the claim when you stop");
       expect(html).not.toContain("once the claim is released");
     }
 
-    const german = renderPanel({ item: { ...task, claim }, isAdmin: true }, "de");
+    const german = renderPanel({ item: { ...task, claim } }, "de");
     expect(german).toContain("Mira Beck arbeitet daran");
     expect(german).toContain('<span class="k2b-status-badge__label">arbeitet daran</span>');
     expect(german).toContain(">Übernehmen<");

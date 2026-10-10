@@ -23,7 +23,10 @@ export const ClaimTaskSchema = z
   .object({ claimId: z.uuid().describe("Caller-generated ID; reuse only when retrying this claim.") })
   .strict();
 export const ReleaseTaskSchema = ClaimTaskSchema.extend({
-  force: z.boolean().optional().describe("Admin recovery: release the exact observed claim, including another actor's claim."),
+  force: z
+    .boolean()
+    .optional()
+    .describe("Take over: release the exact observed claim, including another actor's claim. Any writer may; the activity records it."),
 });
 export const ProgressTaskSchema = z
   .object({ content: WorkTextSchema, claimId: z.uuid().optional().describe("Current worker claim ID; required when the task is claimed.") })
@@ -32,6 +35,10 @@ export const CompletionFields = {
   result: WorkTextSchema.optional().describe("Full completion result including verification; saved atomically with completion."),
   commit: WorkResultSchema.shape.commit.unwrap().optional().describe("Commit SHA implementing this result; requires result."),
   claimId: z.uuid().optional().describe("Current worker claim ID; required when the task is claimed."),
+  force: z
+    .boolean()
+    .optional()
+    .describe("Take over another actor's claim given as its exact claimId; completion then ends it. Any writer may."),
 };
 export const CompletionInputSchema = z
   .object({

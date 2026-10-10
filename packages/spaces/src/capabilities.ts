@@ -1528,6 +1528,7 @@ const runTaskSetCompleted = async (input: z.infer<typeof TaskSetCompletedInputSc
         result: input.result,
         commit: input.commit,
         claimId: input.claimId,
+        force: input.force,
         actor: spaceActivityActor(context),
       }),
       (item) =>
@@ -2334,7 +2335,7 @@ export const spacesCapabilities = defineCapabilities({
     "task.claim": {
       title: "Claim task work",
       description:
-        "Claim an open unblocked task for one worker. Generate a UUID claimId and reuse it only for retries; competing claims return a conflict.",
+        "Claim an open unblocked task for one worker. Generate a UUID claimId and reuse it only for retries; competing claims return a conflict. Claims coordinate work and do not lock it: any writer can take one over, and progress, release or completion with the ended claimId then returns 409 'Task claim is no longer active'.",
       input: ClaimTaskSchema.extend({ itemId: ItemReadInputSchema.shape.id }),
       data: TaskWorkSchema,
       destructive: false,
@@ -2357,7 +2358,8 @@ export const spacesCapabilities = defineCapabilities({
     },
     "task.release": {
       title: "Release task work",
-      description: "Release your current claim using its exact claimId. Progress and completion results remain available.",
+      description:
+        "Release your current claim using its exact claimId. With force, take over another worker's claim by its exact claimId; any writer may, and the task activity records who took it over. Progress and completion results remain available.",
       input: ReleaseTaskSchema.extend({ itemId: ItemReadInputSchema.shape.id }),
       data: TaskWorkSchema,
       destructive: false,
@@ -2365,7 +2367,7 @@ export const spacesCapabilities = defineCapabilities({
       idempotency: "none",
       run: async (input, context) =>
         audited(actionAudit(context, "task.release", "space_item", input.itemId), async () => {
-          const resolved = await requireItem(input.itemId, context, input.force ? "admin" : "write");
+          const resolved = await requireItem(input.itemId, context, "write");
           if (!resolved.ok) return resolved;
           const result = await taskWork.change({
             itemId: resolved.data.internalId,

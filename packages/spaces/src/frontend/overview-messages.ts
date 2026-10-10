@@ -80,6 +80,9 @@ export const overviewMessages = i18n.define({
       activityDeletedEvent: ({ title, space }: { title: string; space: string }) => `Deleted event “${title}” from ${space}`,
       activityClaimed: ({ title, space }: { title: string; space: string }) => `Claimed “${title}” in ${space}`,
       activityReleased: ({ title, space }: { title: string; space: string }) => `Released “${title}” in ${space}`,
+      activityTakenOver: ({ title, space, from }: { title: string; space: string; from: string }) =>
+        `Took over “${title}” from ${from} in ${space}`,
+      activityFormerHolder: "a former account",
       activityProgress: ({ title, space }: { title: string; space: string }) => `Updated progress on “${title}” in ${space}`,
       activityMoved: ({ title, space }: { title: string; space: string }) => `Moved “${title}” in ${space}`,
       activityCommented: ({ title, space }: { title: string; space: string }) => `Commented on “${title}” in ${space}`,
@@ -170,6 +173,8 @@ export const overviewMessages = i18n.define({
       activityDeletedEvent: ({ title, space }) => `Termin „${title}“ aus ${space} gelöscht`,
       activityClaimed: ({ title, space }) => `„${title}“ in ${space} übernommen`,
       activityReleased: ({ title, space }) => `„${title}“ in ${space} freigegeben`,
+      activityTakenOver: ({ title, space, from }) => `„${title}“ in ${space} von ${from} übernommen`,
+      activityFormerHolder: "einem früheren Konto",
       activityProgress: ({ title, space }) => `Fortschritt zu „${title}“ in ${space} festgehalten`,
       activityMoved: ({ title, space }) => `„${title}“ in ${space} verschoben`,
       activityCommented: ({ title, space }) => `„${title}“ in ${space} kommentiert`,

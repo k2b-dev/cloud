@@ -6,7 +6,7 @@ import type { SpaceItem } from "@/contracts";
 import { shouldHandleDetailClick } from "../../../lib/detail";
 import { createRetryToasts } from "../../../lib/feedback";
 import { useSpaceMessages } from "../../messages";
-import { ownClaimId } from "../shared/claim/claim";
+import { type ClaimFields, resolveCompletionClaim } from "../shared/claim/claim";
 import { confirmCompletion, setItemCompleted } from "../shared/completion";
 import { invalidateSpacesData, requestSpacesRouteNavigation } from "../workspace/workspace-events";
 import type { CalendarTray as Tray } from "../workspace/workspace-types";
@@ -49,13 +49,16 @@ export default function TaskTray(props: Props) {
       return next;
     });
   const refresh = (): Promise<void> => invalidateSpacesData().catch(() => retryToast(t.calendarRefreshFailed, t.retry, () => refresh()));
-  /** A task the reader claimed completes with that claim; one claimed by someone else is refused with the reason. */
+  /** A task the reader claimed completes with that claim; one claimed by someone else asks once to take it over. */
   const toggle = async (item: SpaceItem, completed: boolean) => {
     if (item.id in checking()) return;
+    const claim: ClaimFields | null = props.currentUserId
+      ? await resolveCompletionClaim(item.claim, props.currentUserId, completed, t)
+      : {};
+    if (!claim || item.id in checking()) return;
     setChecking((current) => ({ ...current, [item.id]: completed }));
-    const claimId = props.currentUserId ? ownClaimId(item.claim, props.currentUserId) : undefined;
     try {
-      await setItemCompleted({ spaceId: props.spaceId, itemId: item.id, completed, claimId }, t.updateFailed);
+      await setItemCompleted({ spaceId: props.spaceId, itemId: item.id, completed, ...claim }, t.updateFailed);
     } catch (error) {
       settle(item.id);
       toast.error(error instanceof Error ? error.message : t.updateFailed);
