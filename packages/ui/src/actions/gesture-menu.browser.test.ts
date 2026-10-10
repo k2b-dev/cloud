@@ -184,12 +184,22 @@ const center = async (page: Page, selector: string) => {
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 };
 
-/** A finger that moves through every point, then lifts, through Chromium's input protocol. */
+/**
+ * A finger that moves through every point, then lifts, through Chromium's input protocol. Chromium flings a scroll at
+ * the speed it reads from the events' timestamps; without them, it stamps each event when its call arrives, so a busy
+ * machine that delivers several moves at once flings the list far further. The calls go out back to back, but their
+ * timestamps are one 60 Hz frame apart and the lift is stamped 100 ms after the last move. Chromium treats a finger
+ * that rests 80 ms or longer before it lifts as stopped, so the list stops without a fling, about as far as the finger
+ * moved.
+ */
 const touch = async (cdp: CDPSession, points: { x: number; y: number }[]) => {
   const [first, ...rest] = points;
-  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [first!] });
-  for (const point of rest) await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [point] });
-  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  const start = Date.now() / 1000;
+  const at = (frame: number) => start + frame / 60;
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [first!], timestamp: at(0) });
+  for (const [index, point] of rest.entries())
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [point], timestamp: at(index + 1) });
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [], timestamp: at(points.length + 5) });
 };
 
 /**
@@ -198,7 +208,7 @@ const touch = async (cdp: CDPSession, points: { x: number; y: number }[]) => {
  */
 const until = (page: Page, ready: string) => page.waitForFunction(ready, undefined, { timeout: 10_000 });
 
-/** Waits until the list's fling has ended: its position stays the same for ten frames. */
+/** Waits until the list has stopped scrolling: its position stays the same for ten frames. */
 const still = (page: Page) =>
   page.evaluate(
     () =>
@@ -240,6 +250,14 @@ describe(`GestureMenu in ${browserName}`, () => {
         const before = await target.boundingBox();
         const from = await center(page, ".k2b-gesture-menu >> nth=8 >> .text");
         const cdpPoints = Array.from({ length: 10 }, (_, step) => ({ x: 60 + step * 14, y: from.y + step }));
+        // The finger lands on row 8, which the scroll left in view.
+        expect(
+          await page.evaluate(
+            ({ x, y }) =>
+              document.elementFromPoint(x, y)?.closest(".k2b-gesture-menu") === document.querySelectorAll(".k2b-gesture-menu")[8],
+            cdpPoints[0]!,
+          ),
+        ).toBe(true);
         await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [cdpPoints[0]!] });
         for (const point of cdpPoints.slice(1)) await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [point] });
         await until(
