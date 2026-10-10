@@ -85,7 +85,7 @@ nav: {
 | `section` | Yes | — | `"primary"`, `"more"`, or `"hidden"` |
 | `match` | No | `href` without its query | Path used for active navigation |
 | `requiresAuth` | No | — | Hide the link from anonymous visitors |
-| `requiresRoles` | No | — | Show the link and the application's [Help](/en/docs/platform/help#who-can-read-help) only for matching platform roles; `guest` matches guests |
+| `requiresRoles` | No | — | Show the link, the application's [Help](/en/docs/platform/help#who-can-read-help), and its [Assistant Skills](/en/docs/platform/assistant-skills#who-can-use-an-app-skill) only for matching platform roles; `guest` matches guests |
 | `badge` | No | — | Route whose count the app bar and app grid show on the icon; see [Show a count on the app icon](/en/docs/frontend/layout-and-navigation#show-a-count-on-the-app-icon) |
 
 Navigation visibility is not authorization. Protect the destination with

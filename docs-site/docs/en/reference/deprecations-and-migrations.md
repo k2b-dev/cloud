@@ -25,7 +25,8 @@ fields, `GET /api/ai/skills/templates/:name`,
 `POST /api/admin/core/ai-skills/:skillId/template`, and
 `cld admin ai skills templates` and `associate`. Use the new `source` field and
 the reset, restore, and adopt actions instead. The `cld admin ai skills reset`
-command no longer takes a template; it resets to the app's version.
+command no longer takes a template; it resets to the app version you name with
+`--app-version`, shown by `cld admin ai skills list`.
 
 On upgrade, Core links every installed built-in Skill to its app. Skill IDs,
 access, personal **Enabled** settings, and administrator changes stay; a deleted
@@ -33,9 +34,12 @@ built-in Skill stays deleted. `skill-creator` now belongs to Assistant. An
 unchanged Skill updates when its app starts; a changed one shows
 **App update available**. A copy that was never linked to a template shows as
 **Name in use** until an administrator selects **Use existing Skill**. App
-Skills are now offered only to people who may open the app, so guests no longer
-see the Skills of apps that are closed to them. Until an app runs the new
-release, its Skills are not offered. See
+Skills are now offered only to people who may open the app, by the same rule as
+Help: guests no longer see the Skills of apps closed to them, such as Weather,
+and only administrators see those of an app reached only through the admin
+area. Until an app runs the new release, its Skills are not offered. The
+upgrade is one-way for Core: after the new Core has started, never start an
+older one against the database; restore the database backup to go back. See
 [Assistant Skills after the upgrade](/en/docs/operations/build-and-deploy#assistant-skills-after-the-upgrade).
 
 ## Mail conversations have several assignees

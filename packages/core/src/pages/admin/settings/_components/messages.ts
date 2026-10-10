@@ -67,6 +67,7 @@ export const settingsMessages = i18n.define({
       diffLegend: "Lines marked − are only in this Skill. Lines marked + come from the app.",
       unchangedLines: ({ count }: { count: number }) =>
         i18n.plural(count, "en", { one: `${count} unchanged line`, other: `${count} unchanged lines` }),
+      diffReplaced: "Too many changes to compare line by line, so this file counts as fully replaced.",
       appSkillsNotInstalled: "App Skills not installed",
       appSkillsNotInstalledDescription: "Cloud does not install these app Skills again on its own.",
       appSkillDeleted: "Deleted",
@@ -303,6 +304,7 @@ export const settingsMessages = i18n.define({
       diffLegend: "Mit − markierte Zeilen gibt es nur in diesem Skill. Mit + markierte Zeilen kommen aus der App.",
       unchangedLines: ({ count }) =>
         i18n.plural(count, "de", { one: `${count} unveränderte Zeile`, other: `${count} unveränderte Zeilen` }),
+      diffReplaced: "Zu viele Änderungen für einen zeilenweisen Vergleich, daher gilt diese Datei als vollständig ersetzt.",
       appSkillsNotInstalled: "Nicht installierte App-Skills",
       appSkillsNotInstalledDescription: "Cloud installiert diese App-Skills nicht von selbst erneut.",
       appSkillDeleted: "Gelöscht",

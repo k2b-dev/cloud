@@ -353,6 +353,35 @@ databaseSuite()("aiSkills (integration)", () => {
     }
   });
 
+  test("more concurrent Skill changes and loads than pool connections all finish", async () => {
+    const userId = await insertUser("pool");
+    const owner = { type: "user" as const, userId };
+    // Each call holds one connection for its transaction; one more lookup per call would wait for the pool forever.
+    const count = (sql.options.max ?? 10) + 2;
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+    const [turn] = await sql<{ id: string }[]>`INSERT INTO ai.turns(short_id, conversation_id, status)
+      VALUES (${`pool-${crypto.randomUUID()}`}, ${conversation.id}::uuid, 'queued') RETURNING id`;
+    const suffix = crypto.randomUUID();
+    const skills = await Promise.all(
+      Array.from({ length: count }, (_, index) =>
+        aiSkills.create({ subject: owner, name: `pool-${index}-${suffix}`, description: "Pool.", instructions: "Pool." }),
+      ),
+    );
+    try {
+      const updated = await Promise.all(
+        skills.map((skill) => aiSkills.update(skill.id, owner, { ...skill, instructions: "Updated.", expectedRevision: skill.revision })),
+      );
+      expect(updated.map((skill) => skill?.revision)).toEqual(skills.map(() => 2));
+      expect(await Promise.all(skills.map((skill) => aiSkills.setEnabled(skill.id, owner, true)))).toEqual(skills.map(() => true));
+      const loaded = await Promise.all(skills.map((skill) => aiSkills.loadForTurn(turn!.id, skill.name, owner)));
+      expect(loaded.map((skill) => skill?.instructions)).toEqual(skills.map(() => "Updated."));
+    } finally {
+      for (const skill of skills) await aiSkills.admin.delete(skill.id);
+      await sql`DELETE FROM ai.conversations WHERE id=${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  }, 30_000);
+
   test("sets a reference batch atomically in one Skill revision", async () => {
     const ownerId = await insertUser("reference-batch");
     const owner = { type: "user" as const, userId: ownerId };

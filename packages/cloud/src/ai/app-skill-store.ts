@@ -1,5 +1,6 @@
 import { type SQL, sql, type TransactionSQL } from "bun";
 import { z } from "zod";
+import { appAudienceRoles } from "../_internal/app-roles";
 import { APP_REGISTRY_TTL_MS } from "../_internal/registry";
 import type { AppRegistryEntry } from "../contracts/registry";
 import { logger } from "../services/logging";
@@ -78,8 +79,8 @@ const reconcileApp = async (app: AppRegistryEntry, tx: TransactionSQL): Promise<
     { skills: unknown }[]
   >`SELECT skills FROM ai.app_skill_catalogs WHERE app_id=${app.id} AND manifest_hash=${manifest}`;
   if (!catalog) return false; // Publication may still be in flight: keep the last known state.
-  const roles = app.nav?.requiresRoles ?? null;
-  const roleArray = roles === null ? null : toPgTextArray(roles);
+  const roles = appAudienceRoles(app.nav);
+  const roleArray = roles === undefined ? null : toPgTextArray([...roles]);
   const [state] = await tx<{ current: boolean }[]>`SELECT
     EXISTS(SELECT 1 FROM ai.app_skills WHERE app_id=${app.id}) AND
     NOT EXISTS(SELECT 1 FROM ai.app_skills WHERE app_id=${app.id} AND (
@@ -154,6 +155,10 @@ const reconcileApp = async (app: AppRegistryEntry, tx: TransactionSQL): Promise<
     WHERE app_id=${app.id} AND available AND NOT(name=ANY(${toPgTextArray([...names])}::text[]))`;
   return true;
 };
+
+/** Everything app Skills derive from the registry. While it is unchanged, reconciling again changes nothing. */
+export const appSkillsRegistryState = (apps: readonly AppRegistryEntry[]): string =>
+  JSON.stringify(apps.map((app) => [app.id, app.name, app.skills?.manifestHash ?? null, appAudienceRoles(app.nav) ?? null]).sort());
 
 /**
  * Core's sync from the live registry into `ai.skills`. One app's broken catalog never blocks another app. Returns

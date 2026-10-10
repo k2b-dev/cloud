@@ -226,30 +226,32 @@ const AppVersionDialog = (props: Props & { appName: string; close: () => void })
                             <span class="shrink-0 tabular-nums text-green-700 dark:text-green-300">+{file.added}</span>
                             <span class="shrink-0 tabular-nums text-red-700 dark:text-red-300">−{file.removed}</span>
                           </h3>
-                          <div class="overflow-x-auto rounded-md font-mono text-xs leading-5">
-                            <For each={file.rows}>
-                              {(row) =>
-                                row.kind === "gap" ? (
-                                  <div class="px-2 py-0.5 text-dimmed">{t().unchangedLines({ count: row.count })}</div>
-                                ) : (
-                                  <div
-                                    class={`grid grid-cols-[1.5rem_minmax(0,1fr)] ${
-                                      row.kind === "added"
-                                        ? "bg-green-50 text-green-800 dark:bg-green-950/40 dark:text-green-300"
-                                        : row.kind === "removed"
-                                          ? "bg-red-50 text-red-800 dark:bg-red-950/40 dark:text-red-300"
-                                          : "text-secondary"
-                                    }`}
-                                  >
-                                    <span class="select-none text-center text-dimmed" aria-hidden="true">
-                                      {row.kind === "added" ? "+" : row.kind === "removed" ? "−" : " "}
-                                    </span>
-                                    <span class="whitespace-pre-wrap break-words pr-2">{row.value || " "}</span>
-                                  </div>
-                                )
-                              }
-                            </For>
-                          </div>
+                          <Show when={!file.replaced} fallback={<p class="text-xs text-dimmed">{t().diffReplaced}</p>}>
+                            <div class="overflow-x-auto rounded-md font-mono text-xs leading-5">
+                              <For each={file.rows}>
+                                {(row) =>
+                                  row.kind === "gap" ? (
+                                    <div class="px-2 py-0.5 text-dimmed">{t().unchangedLines({ count: row.count })}</div>
+                                  ) : (
+                                    <div
+                                      class={`grid grid-cols-[1.5rem_minmax(0,1fr)] ${
+                                        row.kind === "added"
+                                          ? "bg-green-50 text-green-800 dark:bg-green-950/40 dark:text-green-300"
+                                          : row.kind === "removed"
+                                            ? "bg-red-50 text-red-800 dark:bg-red-950/40 dark:text-red-300"
+                                            : "text-secondary"
+                                      }`}
+                                    >
+                                      <span class="select-none text-center text-dimmed" aria-hidden="true">
+                                        {row.kind === "added" ? "+" : row.kind === "removed" ? "−" : " "}
+                                      </span>
+                                      <span class="whitespace-pre-wrap break-words pr-2">{row.value || " "}</span>
+                                    </div>
+                                  )
+                                }
+                              </For>
+                            </div>
+                          </Show>
                         </section>
                       )}
                     </For>

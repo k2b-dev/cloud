@@ -5,7 +5,7 @@ section: Operations
 order: 1130
 description: Build a standalone application image and connect it to a Cloud deployment.
 tags: [build, docker, deployment]
-updated: 2026-10-09
+updated: 2026-10-10
 ---
 
 # Build and deploy
@@ -258,6 +258,12 @@ Assistant. It keeps Skill IDs, access, personal **Enabled** settings, and
 administrator changes, and does not recreate deleted ones. It creates no
 duplicates and can run again safely.
 
+The migration removes the old seed table, so this is a one-way step for Core.
+Once a Core of this release has started, do not start a Core of an older
+release against that database, also not by restarting an old replica during the
+rollout: it would install the deleted built-in Skills again, open to everyone
+signed in. To go back, restore the database backup taken before the upgrade.
+
 Each app installs or updates its Skills when it starts with the new release. Until
 then, its Skills are not offered to Assistant. An app that does not run offers
 no Skills. Afterwards, open **Administration > AI Skills**:
@@ -270,10 +276,10 @@ no Skills. Afterwards, open **Administration > AI Skills**:
 - **App Skills not installed** lists app Skills that were deleted.
   **Restore** installs them again.
 
-App Skills are offered only to people who may open the app. Guests no longer
-see the Skills of apps that require a full account, such as Grids, Mail,
-Contacts, and Spaces. See
-[Ship Assistant Skills](/en/docs/platform/assistant-skills).
+App Skills are offered only to people who may open the app, by the same rule
+as Help. Guests no longer see the Skills of apps that require a full account,
+such as Grids, Mail, Contacts, Spaces, and Weather. See
+[Ship Assistant Skills](/en/docs/platform/assistant-skills#who-can-use-an-app-skill).
 
 ## Roll out a release
 

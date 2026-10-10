@@ -146,7 +146,7 @@ Declare modules as `defineApp({ cli: { <name>: { module, references } } })`: `mo
 callers `cli.plugins.access` allows; `cld` installs them per profile and writes the references into the agent skill per version. The server authorizes.
 
 Read **Ship Assistant Skills** (`/en/docs/platform/assistant-skills`) first: keep each Skill in `src/skills/<name>/SKILL.md` (+ `references/*.md`), import the files `with { type: "text" }` in `src/skills.ts`, export `SKILLS = [skill({ markdown, references })]` from `@k2b/cloud`, and pass `skills: SKILLS` to `defineApp()`.
-Cloud validates them at start and updates them by content hash; it offers them only while the app runs and to people its `nav.requiresRoles` admits. A Skill grants nothing; never seed or rewrite Skill rows from code.
+Cloud validates them at start and updates them by content hash; it offers them only while the app runs and to the people who may see its Help (`nav.requiresRoles`, or administrators for an app reached only through `adminHref`). A Skill grants nothing; never seed or rewrite Skill rows from code.
 
 ## Build and verify one complete slice
 

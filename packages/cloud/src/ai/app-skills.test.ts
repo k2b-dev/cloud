@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { defineApp } from "../_internal/define-app";
 import { inventory, publishedEntry } from "../_internal/define-app.test-fixture";
 import { validateAppRegistryEntry } from "../_internal/registry-validation";
+import type { AppRegistryEntry } from "../contracts/registry";
+import { appSkillsRegistryState } from "./app-skill-store";
 import { appSkillManifestHash, parseStoredAppSkill, registerAppSkills, skill } from "./app-skills";
 import { AI_SKILL_CATALOG_MAX_CHARS } from "./skill-catalog";
 import { appSkillStatus, canonicalHash, contentHash } from "./skill-content";
@@ -158,4 +160,24 @@ test("an app keeps starting while Core has not created the catalog schema yet", 
   await expect(registerAppSkills("inventory", skills, appSkillManifestHash(skills), failing(missing))).resolves.toBeUndefined();
   const refused = Object.assign(new Error("permission denied"), { code: "ERR_POSTGRES_SERVER_ERROR", errno: "42501" });
   await expect(registerAppSkills("inventory", skills, appSkillManifestHash(skills), failing(refused))).rejects.toThrow("permission denied");
+});
+
+test("the registry state for app Skills changes exactly when an app's Skills or their audience change", () => {
+  const entry: AppRegistryEntry = {
+    id: "inventory",
+    name: "Inventory",
+    description: "Count inventory",
+    icon: "ti ti-box",
+    baseUrl: "http://inventory:3000",
+    routes: ["/api/inventory"],
+    nav: { href: "", section: "hidden", adminHref: "/admin/inventory" },
+    skills: { manifestHash: "a".repeat(64) },
+  };
+  const state = appSkillsRegistryState([entry]);
+  expect(appSkillsRegistryState([{ ...entry, nav: { ...entry.nav!, badge: "New" } }])).toBe(state);
+  expect(appSkillsRegistryState([{ ...entry, nav: { ...entry.nav!, requiresRoles: ["admin"] } }])).toBe(state);
+  expect(appSkillsRegistryState([{ ...entry, nav: { ...entry.nav!, href: "/app/inventory" } }])).not.toBe(state);
+  expect(appSkillsRegistryState([{ ...entry, nav: { ...entry.nav!, requiresRoles: ["user"] } }])).not.toBe(state);
+  expect(appSkillsRegistryState([{ ...entry, name: "Stock" }])).not.toBe(state);
+  expect(appSkillsRegistryState([{ ...entry, skills: { manifestHash: "b".repeat(64) } }])).not.toBe(state);
 });

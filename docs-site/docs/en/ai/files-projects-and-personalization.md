@@ -5,7 +5,7 @@ section: AI
 order: 1050
 description: Give AI controlled access to chat files, shared Project context and Skills, and durable personal preferences.
 tags: [ai, files, projects, skills, memory]
-updated: 2026-10-09
+updated: 2026-10-10
 ---
 
 # Files, Projects, Skills, and personalization
@@ -421,8 +421,10 @@ for every state and the CLI.
 The platform-admin HTTP API under `/api/admin/core/ai-skills` returns each
 Skill's `source` with app, status, and availability, and the app Skills that
 are not installed as `appSkillIssues`. `GET /:skillId/app-version` returns both
-versions as `SKILL.md` plus references. `POST /:skillId/reset` takes
-`expectedRevision` and `confirmed: true`.
+versions as `SKILL.md` plus references, and the app's `appVersion`.
+`POST /:skillId/reset` takes `expectedRevision`, `expectedAppVersion` (that
+`appVersion`, also in each Skill's `source`), and `confirmed: true`; it fails
+with `409` when the app has published another version since.
 `POST /apps/:appId/skills/:name/restore` installs a deleted app Skill again, and
 `POST /apps/:appId/skills/:name/adopt` links the Skill that already uses the name;
 both take `confirmed: true`. A stale revision or a name that is already in use

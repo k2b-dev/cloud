@@ -5,7 +5,7 @@ section: Platform services
 order: 585
 description: Ship app-owned Assistant Skills as Markdown files that Cloud installs, updates, and shows only to people who may open the app.
 tags: [ai, assistant, skills, markdown, agents]
-updated: 2026-10-09
+updated: 2026-10-10
 ---
 
 # Ship Assistant Skills
@@ -22,7 +22,7 @@ repository change is needed to add, change, or remove an app's Skills.
 | --- | --- |
 | Skill content, names, and descriptions | Validation, bundling, and delivery |
 | Which Skills it ships in a release | Installing, updating, and tombstones |
-| Who may open the app (`nav.requiresRoles`) | Access, availability, and the Assistant catalog |
+| Who may open the app (`nav.requiresRoles`, `adminHref`) | Access, availability, and the Assistant catalog |
 | Capabilities the Skill names | Administrator overrides, diff, and reset |
 
 A Skill grants no permission. It tells Assistant which capabilities to use and
@@ -156,15 +156,24 @@ and an administrator can delete it.
 
 ## Who can use an app Skill
 
-An app Skill is offered to a person who may open the app. Cloud uses the same
-roles as the navigation: `nav.requiresRoles` of the app. An app without roles
-offers its Skills to everyone who is signed in. A Skill of an app with
-`requiresRoles: ["user"]` is not offered to guests.
+An app Skill is offered to a person who may open the app, by the same rule as
+the app's [Help](/en/docs/platform/help#who-can-read-help):
+
+- `nav.requiresRoles` limits the Skills like the navigation; `guest` admits
+  guests. A Skill of an app with `requiresRoles: ["user"]` is not offered to
+  guests.
+- An app reached only through the admin area, with `adminHref` and no own
+  `nav`, offers its Skills to administrators.
+- Without either declaration, everyone who is signed in can use them.
 
 Cloud installs each new app Skill with `read` access for all signed-in
-accounts, within these roles. An administrator can still give a specific person,
-group, or service account access; such a grant does not depend on the app's
-roles. Like every Skill, an app Skill can be turned off personally.
+accounts, within this audience. An administrator can still give a specific
+person, group, or service account access; such a grant does not depend on the
+app's audience. Like every Skill, an app Skill can be turned off personally.
+
+Unlike Help, a Skill does not need a user. A service account without a user
+counts as signed in but has no roles: it can use the Skills of apps without
+either declaration, and other app Skills only through a direct grant.
 
 When the app is stopped or removed, Cloud keeps its Skills but no longer offers
 them. They do not appear in Assistant, cannot be loaded, and their reference
@@ -204,10 +213,14 @@ The same actions are available through the CLI:
 
 ```bash
 cld admin ai skills list
-cld admin ai skills reset <skill-id> --revision <revision> --yes
+cld admin ai skills reset <skill-id> --revision <revision> --app-version <app-version> --yes
 cld admin ai skills restore <app-id> <name> --yes
 cld admin ai skills adopt <app-id> <name> --yes
 ```
+
+`list` shows each Skill's `revision` and `appVersion`. A reset applies only the
+app version you name, so content the app publishes after your review is never
+applied unseen; the command then fails and you compare again.
 
 ## Test a Skill
 

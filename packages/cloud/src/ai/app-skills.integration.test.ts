@@ -346,6 +346,29 @@ databaseSuite()("app skills (integration)", () => {
     }
   });
 
+  test("an app reached only through the admin area offers its Skills to administrators, like its Help", async () => {
+    const member = await user(),
+      name = `admin-area-${crypto.randomUUID()}`,
+      source = definition(name);
+    const [adminRow] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid, provider, profile, display_name, admin)
+      VALUES (${`app-skills-${crypto.randomUUID()}`}, 'local', 'user', 'App skills admin', true) RETURNING id`;
+    const admin = { type: "user" as const, userId: adminRow!.id };
+    let entry = app([source], { href: "", section: "hidden", adminHref: "/admin/inventory" });
+    try {
+      entry = await publish(entry, [source]);
+      const installed = (await aiSkills.getByName(name, admin))!;
+      expect(installed.source).toEqual({ appId: entry.id, appName: "Inventory" });
+      expect(await aiSkills.get(installed.id, member)).toBeNull();
+      expect((await aiSkills.list(member)).some((row) => row.id === installed.id)).toBe(false);
+      // Once the app has its own page, everyone signed in may open it and use its Skills.
+      entry = await publish({ ...entry, nav: { ...entry.nav!, href: "/app/inventory" } }, [source]);
+      expect(await aiSkills.get(installed.id, member)).not.toBeNull();
+    } finally {
+      await cleanup([entry.id]);
+      await sql`DELETE FROM auth.users WHERE id IN (${member.userId}::uuid, ${admin.userId}::uuid)`;
+    }
+  });
+
   test("read-only app skills return a clear override error for every mutation", async () => {
     const subject = await user(),
       name = `read-only-${crypto.randomUUID()}`,
@@ -444,9 +467,9 @@ databaseSuite()("app skills (integration)", () => {
 
   test("one-time seed migration preserves IDs, grants, disabled state, edits and deletion tombstones, and is idempotent", async () => {
     // The migration maps fixed built-in names; clear what an interrupted earlier run may have left in the shared test database.
-    await cleanup(["assistant", "weather"]);
+    await cleanup(["assistant", "weather", "contacts"]);
     for (const [row] of await Promise.all(
-      ["cloud-assistant", "scheduled-tasks", "assistant-code-mode", "cloud-weather"].map(
+      ["cloud-assistant", "scheduled-tasks", "assistant-code-mode", "cloud-weather", "cloud-contacts"].map(
         (name) => sql<{ id: string }[]>`SELECT id FROM ai.skills WHERE name=${name}`,
       ),
     ))
@@ -471,9 +494,11 @@ databaseSuite()("app skills (integration)", () => {
       await sql`UPDATE ai.skills SET template_id='assistant:cloud-assistant', template_version=1, template_hash=${first.hash} WHERE id=${firstRow.id}::uuid`;
       await sql`UPDATE ai.skills SET template_id='assistant:scheduled-tasks', template_version=1, template_hash=${customizedSource.hash} WHERE id=${edited.id}::uuid`;
       await sql`UPDATE ai.skills SET managed_key='weather:cloud-weather' WHERE id=${legacy.id}::uuid`;
+      // Seeds from before seeds were linked have no Skill ID: a free name means the Skill was deleted or renamed.
       await sql`INSERT INTO ai.skill_seeds(key, skill_id, catalog_version) VALUES
         ('assistant:cloud-assistant', ${firstRow.id}::uuid, 1), ('assistant:scheduled-tasks', ${edited.id}::uuid, 1),
-        ('assistant:code-mode', ${tombstoneId}::uuid, 1), ('unknown:seed', ${unknown.id}::uuid, 1)`;
+        ('assistant:code-mode', ${tombstoneId}::uuid, 1), ('unknown:seed', ${unknown.id}::uuid, 1),
+        ('contacts:cloud-contacts', NULL, 1), ('weather:cloud-weather', NULL, 1)`;
       await migrateCloudAi();
       await migrateCloudAi();
       expect((await sql`SELECT 1 FROM ai.app_skills WHERE app_id='assistant'`).length).toBe(3);
@@ -490,9 +515,11 @@ databaseSuite()("app skills (integration)", () => {
       const latest = definition(first.name, "Updated instructions");
       const assistantSkills = [latest, definition(customizedSource.name, "Updated scheduled instructions"), deletedSource];
       const weather = { ...app([definition("cloud-weather")]), id: "weather", name: "Weather" };
+      const contacts = { ...app([definition("cloud-contacts")]), id: "contacts", name: "Contacts" };
       await registerAppSkills(assistant.id, assistantSkills, appSkillManifestHash(assistantSkills));
       await registerAppSkills(weather.id, [definition("cloud-weather")], appSkillManifestHash([definition("cloud-weather")]));
-      const live = [{ ...assistant, skills: { manifestHash: appSkillManifestHash(assistantSkills) } }, weather];
+      await registerAppSkills(contacts.id, [definition("cloud-contacts")], appSkillManifestHash([definition("cloud-contacts")]));
+      const live = [{ ...assistant, skills: { manifestHash: appSkillManifestHash(assistantSkills) } }, weather, contacts];
       await reconcileAppSkills(live);
       await reconcileAppSkills(live);
       expect(await aiSkills.get(firstRow.id, subject)).toMatchObject({
@@ -511,15 +538,19 @@ databaseSuite()("app skills (integration)", () => {
       });
       expect((await aiSkills.admin.getByShortId(edited.shortId))?.source?.status).toBe("update_available");
       expect(await aiSkills.getByName(deletedSource.name, subject)).toBeNull();
+      expect((await sql`SELECT 1 FROM ai.skills WHERE name='cloud-contacts'`).length).toBe(0);
       expect(await aiSkills.get(legacy.id, subject)).toEqual(legacy);
       expect(await aiSkills.get(unknown.id, subject)).toEqual(unknown);
       expect((await sql`SELECT 1 FROM ai.app_skills WHERE app_id='assistant'`).length).toBe(3);
       expect(await aiAppSkills.appSkillIssues()).toEqual(
         expect.arrayContaining([
           { appId: "assistant", appName: "Assistant", name: deletedSource.name, state: "deleted", available: true },
+          { appId: "contacts", appName: "Contacts", name: "cloud-contacts", state: "deleted", available: true },
           { appId: "weather", appName: "Weather", name: "cloud-weather", state: "name_taken", available: true },
         ]),
       );
+      expect(await aiAppSkills.restore("contacts", "cloud-contacts")).toBe(true);
+      expect((await aiSkills.getByName("cloud-contacts", subject))?.source).toEqual({ appId: "contacts", appName: "Contacts" });
       // An administrator links the pre-template copy to its app instead of deleting it: same ID, content kept as a customization.
       expect(await aiAppSkills.adopt("weather", "cloud-weather")).toBe(true);
       await expect(aiAppSkills.adopt("weather", "cloud-weather")).rejects.toBeInstanceOf(AiSkillRevisionConflictError);
@@ -536,7 +567,7 @@ databaseSuite()("app skills (integration)", () => {
       await expect(aiAppSkills.adopt("assistant", unknown.name)).resolves.toBe(false);
       await expect(aiAppSkills.reset(unknown.id, 1, first.hash)).rejects.toBeInstanceOf(AiSkillInputError);
     } finally {
-      await cleanup(["assistant", "weather"]);
+      await cleanup(["assistant", "weather", "contacts"]);
       for (const row of [firstRow, edited, legacy, unknown]) await aiSkills.admin.delete(row.id);
       await sql`DELETE FROM auth.users WHERE id=${subject.userId}::uuid`;
     }

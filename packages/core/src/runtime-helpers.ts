@@ -1,4 +1,4 @@
-import { listApps, watchAppRegistry } from "@k2b/cloud";
+import { APP_REGISTRY_TTL_MS, listApps, watchAppRegistry } from "@k2b/cloud";
 import { logger, superviseRuntimeTask } from "@k2b/cloud/services";
 import { migrateHelp, startHelpMaintenance } from "@k2b/cloud/services/help";
 /**
@@ -6,7 +6,7 @@ import { migrateHelp, startHelpMaintenance } from "@k2b/cloud/services/help";
  * Migrations, background jobs — nothing generic here.
  */
 
-import { aiChatTasks, aiMaintenanceJobs, migrateCloudAi, reconcileAppSkills } from "@k2b/cloud/ai";
+import { aiChatTasks, aiMaintenanceJobs, appSkillsRegistryState, migrateCloudAi, reconcileAppSkills } from "@k2b/cloud/ai";
 import { startAiRuntime } from "@k2b/cloud/ai/runtime";
 import { migrateCloudCapabilities, startCapabilityExecutionMaintenance } from "@k2b/cloud/capabilities/store";
 import {
@@ -50,16 +50,19 @@ let stopCapabilityExecutionMaintenance: (() => void) | null = null;
 let appSkillsAbort: AbortController | null = null;
 let appSkillsTask: Promise<void> | null = null;
 // Every heartbeat renews a registry entry and fires a change. Reconcile only when what app Skills depend on changed,
-// or while an advertised catalog is still being published.
+// or while an advertised catalog is still being published. Another Core replica can apply an older registry snapshot
+// after this one did, so a full pass also runs once per registry TTL, the time Cloud already takes to notice a
+// stopped app.
 let appliedAppSkillsState: string | null = null;
+let appliedAppSkillsAt = 0;
 const refreshAppSkills = async (): Promise<void> => {
   try {
     const apps = await listApps();
-    const state = JSON.stringify(
-      apps.map((app) => [app.id, app.name, app.skills?.manifestHash ?? null, app.nav?.requiresRoles ?? null]).sort(),
-    );
-    if (state === appliedAppSkillsState) return;
+    const state = appSkillsRegistryState(apps);
+    if (state === appliedAppSkillsState && Date.now() - appliedAppSkillsAt < APP_REGISTRY_TTL_MS) return;
+    const startedAt = Date.now();
     appliedAppSkillsState = (await reconcileAppSkills(apps)) ? state : null;
+    appliedAppSkillsAt = startedAt;
   } catch (error) {
     appliedAppSkillsState = null;
     logger("core:app-skills").error("App skill reconciliation failed", { error: error instanceof Error ? error.message : String(error) });

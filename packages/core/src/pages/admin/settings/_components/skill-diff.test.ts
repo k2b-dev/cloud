@@ -52,3 +52,14 @@ test("collapses long unchanged runs to three lines of context around each change
     { kind: "gap", count: 6 },
   ]);
 });
+
+test("shows a large rewrite as a replaced file instead of blocking the page", () => {
+  const started = performance.now();
+  const [skill, reference] = diffSkillVersions(
+    { markdown: "---\nname: a\n---\n\nOld\n", references: [{ path: "references/big.md", content: "a\n".repeat(49_000) }] },
+    { markdown: "---\nname: a\n---\n\nNew\n", references: [{ path: "references/big.md", content: "b\n".repeat(49_000) }] },
+  );
+  expect(performance.now() - started).toBeLessThan(1_000);
+  expect(skill).toMatchObject({ path: "SKILL.md", added: 1, removed: 1, replaced: false });
+  expect(reference).toEqual({ path: "references/big.md", rows: [], added: 49_000, removed: 49_000, replaced: true });
+});

@@ -4,10 +4,17 @@ export type SkillVersionFiles = { markdown: string; references: readonly { path:
 
 export type SkillDiffRow = { kind: "added" | "removed" | "unchanged"; value: string } | { kind: "gap"; count: number };
 
-export type SkillFileDiff = { path: string; rows: SkillDiffRow[]; added: number; removed: number };
+/** `replaced` files changed too much to compare line by line within the budget; they have no rows. */
+export type SkillFileDiff = { path: string; rows: SkillDiffRow[]; added: number; removed: number; replaced: boolean };
 
 /** Unchanged lines shown around each change; longer unchanged runs collapse into one gap row. */
 const CONTEXT_LINES = 3;
+
+/**
+ * Main-thread time for all line diffs of one comparison. Myers diff grows with file size times the number of
+ * changes, so a large rewritten reference could otherwise freeze the page.
+ */
+const DIFF_BUDGET_MS = 100;
 
 const lines = (value: string): string[] => {
   const result = value.split("\n");
@@ -54,16 +61,20 @@ const collapse = (rows: SkillDiffRow[]): SkillDiffRow[] => {
  * `removed` lines exist only in the installed Skill, `added` lines only in the app version.
  */
 export const diffSkillVersions = (current: SkillVersionFiles, app: SkillVersionFiles): SkillFileDiff[] => {
+  const deadline = performance.now() + DIFF_BUDGET_MS;
   const before = files(current);
   const after = files(app);
   const paths = [...new Set([...before.keys(), ...after.keys()])].sort((a, b) =>
     a === "SKILL.md" ? -1 : b === "SKILL.md" ? 1 : a.localeCompare(b),
   );
-  return paths.flatMap((path) => {
+  return paths.flatMap((path): SkillFileDiff[] => {
     const from = before.get(path) ?? "";
     const to = after.get(path) ?? "";
     if (from === to) return [];
-    const rows = diffLines(from, to).flatMap((part) =>
+    const timeout = deadline - performance.now();
+    const parts = timeout > 0 ? diffLines(from, to, { timeout }) : undefined;
+    if (!parts) return [{ path, rows: [], added: lines(to).length, removed: lines(from).length, replaced: true }];
+    const rows = parts.flatMap((part) =>
       lines(part.value).map((value): SkillDiffRow => ({ kind: part.added ? "added" : part.removed ? "removed" : "unchanged", value })),
     );
     return [
@@ -72,6 +83,7 @@ export const diffSkillVersions = (current: SkillVersionFiles, app: SkillVersionF
         rows: collapse(rows),
         added: rows.filter((row) => row.kind === "added").length,
         removed: rows.filter((row) => row.kind === "removed").length,
+        replaced: false,
       },
     ];
   });

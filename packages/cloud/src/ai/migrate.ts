@@ -1643,9 +1643,12 @@ export const migrateCloudAi = async (): Promise<void> => {
         -- Installations from before seed links lack these columns; their seeds adopt nothing.
         ALTER TABLE ai.skill_seeds ADD COLUMN IF NOT EXISTS skill_id uuid;
         ALTER TABLE ai.skills ADD COLUMN IF NOT EXISTS template_id text, ADD COLUMN IF NOT EXISTS template_hash text;
+        -- A seed never installed its Skill again. An unlinked seed whose name is free stays deleted through a link
+        -- to no Skill; when a Skill holds the name, it stays unlinked and an administrator decides who owns it.
         INSERT INTO ai.app_skills(key, app_id, app_name, name, skill_id, applied_hash)
-        SELECT 'app:' || mapping.app_id || '/' || mapping.name, mapping.app_id, mapping.app_name,
-          mapping.name, seed.skill_id,
+        SELECT 'app:' || mapping.app_id || '/' || mapping.name, mapping.app_id, mapping.app_name, mapping.name,
+          CASE WHEN seed.skill_id IS NOT NULL THEN seed.skill_id
+            WHEN NOT EXISTS (SELECT 1 FROM ai.skills named WHERE named.name = mapping.name) THEN gen_random_uuid() END,
           CASE WHEN skill.template_id = seed.key THEN skill.template_hash ELSE NULL END
         FROM ai.skill_seeds seed
         JOIN (VALUES
