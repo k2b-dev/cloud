@@ -370,8 +370,9 @@ the upgrade preflight leave it out. Compose starts it only with
 for test installations. Until its release it has no row in the
 deployment requirements and no catalog page. Chat (`app-chat`) is unreleased
 this way; in development it is an optional application, so start it with
-`bun run dev:start chat` or `bun run dev:full`. The release pull request
-removes the profile line.
+`bun run dev:start chat` or `bun run dev:full`. The mobile app (`app-pwa`) is
+unreleased the same way but starts with the default development stack. The
+release pull request removes the profile line.
 
 A worker without HTTP routes should be a separate service. It should not
 register application routes.

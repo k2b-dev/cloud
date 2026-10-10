@@ -14,11 +14,13 @@ Use this reference before deploying a fresh Cloud installation or adding an
 application. Choose the apps **and the features** you intend to use: a ready
 container does not prove that its mail, AI, storage, or PDF integration works.
 
-This page covers the gateway and all 23 built-in applications in the current
-development Compose configuration. Production Compose includes the gateway and
-23 applications, including **Pulse**. A standalone application can have
-additional requirements declared by its author. Check the documentation and
-configuration shipped with the exact release you deploy.
+This page covers the gateway and every built-in application that a plain
+`docker compose up` of production Compose starts, including **Pulse**. An
+application behind the `unreleased` Compose profile has no row until its
+release; see [Add a built-in application](/en/docs/operations/monorepo-development#add-a-built-in-application).
+A standalone application can have additional requirements declared by its
+author. Check the documentation and configuration shipped with the exact
+release you deploy.
 
 In the supplied Compose files, an app ID such as `mail` maps to service
 `app-mail`; the routing service is named `gateway`. The shared library, UI

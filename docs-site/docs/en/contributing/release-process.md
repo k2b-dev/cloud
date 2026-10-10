@@ -50,11 +50,11 @@ release-please runs on every push to `main`:
 2. Merging the release PR creates the tag. The Cloud component tags
    `cloud-vX.Y.Z`; the npm packages tag `npm-cloud-vX.Y.Z`, `npm-ui-vX.Y.Z`,
    and `npm-ssr-vX.Y.Z` as separate components with their own version lines.
-3. The `cloud-vX.Y.Z` tag triggers the release workflow. It builds the 26
-   images of the release set (every application from `scripts/workspace.ts`
-   plus `cloud-website` and `cloud-pwa-auth`) for `linux/amd64` and
-   `linux/arm64`, the CLI binaries, and publishes a GitHub release with
-   `release.json` and build attestations.
+3. The `cloud-vX.Y.Z` tag triggers the release workflow. It builds every
+   image of the release set (one per application from `scripts/workspace.ts`
+   plus `cloud-website` and `cloud-pwa-auth`; `bun scripts/workspace.ts images`
+   lists them) for `linux/amd64` and `linux/arm64`, the CLI binaries, and
+   publishes a GitHub release with `release.json` and build attestations.
 4. The `npm-cloud-v*`, `npm-ui-v*`, and `npm-ssr-v*` tags publish
    `@k2b/cloud`, `@k2b/ui`, and `@k2b/ssr` with npm provenance. A prerelease
    version such as `0.8.0-rc.1` publishes under the `next` dist-tag; a stable
