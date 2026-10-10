@@ -125,10 +125,10 @@ const sizeLimits = (root: HTMLElement, handle: HTMLElement, kind: AppWorkspaceRe
       )
     : [];
   const details = rootElements(root, ".k2b-app-workspace__detail").filter(isVisible);
-  // The sidebar takes width from the work area only in its own column. As the
-  // compact overlay or stacked above the content, it takes none.
-  const sidebar = sidebarElement(root);
-  const sidebarWidth = sidebar && getComputedStyle(sidebar).gridColumnStart === "sidebar" ? elementSize(sidebar, "sidebar") : 0;
+  // A detail shares the content area with the main region, as the stylesheet
+  // fits it. The area already leaves out a sidebar in its own column; as the
+  // compact overlay or stacked above the content, the sidebar takes none of it.
+  const content = kind === "detail" ? controlled?.closest<HTMLElement>(".k2b-app-workspace__content") : null;
   const otherDetailWidth = details.reduce((total, detail) => total + (detail === controlled ? 0 : elementSize(detail, "detail")), 0);
   const defaultMin =
     kind === "sidebar"
@@ -153,15 +153,13 @@ const sizeLimits = (root: HTMLElement, handle: HTMLElement, kind: AppWorkspaceRe
         ? root.getBoundingClientRect().height
         : kind === "pane" && main
           ? main.getBoundingClientRect().width
-          : root.getBoundingClientRect().width,
+          : (content ?? root).getBoundingClientRect().width,
     reservedSize:
-      kind === "sidebar"
+      kind === "sidebar" || kind === "detail"
         ? otherDetailWidth
         : kind === "pane"
           ? panes.reduce((total, pane) => total + (pane === controlled ? 0 : elementSize(pane, "pane")), 0)
-          : kind === "detail"
-            ? sidebarWidth + otherDetailWidth
-            : 0,
+          : 0,
     min: numberData(handle, "workspaceMinSize", defaultMin),
     max: numberData(handle, "workspaceMaxSize", defaultMax),
     sidebarCollapsible: kind === "sidebar" && sidebarCollapsible(root),

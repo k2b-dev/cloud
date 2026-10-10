@@ -604,6 +604,7 @@ function AppWorkspaceDetail(props: AppWorkspaceDetailProps): JSX.Element {
         hidden={!props.open}
         style={{
           "--k2b-workspace-panel-size": `var(${variable()}, ${defaultWidth()}px)`,
+          "--k2b-workspace-panel-min": `${minWidth()}px`,
           "view-transition-name": props.viewTransitionName,
         }}
       >

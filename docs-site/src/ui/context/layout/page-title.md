@@ -14,7 +14,10 @@ The row above the title is 1 rem high with 12 px text, the title 1.25 rem
 with 14 px text, so a 46 px header keeps its height at every depth and two
 headers side by side stay aligned. Below 48 rem (768 px) a back arrow left of
 the title replaces the row; its accessible name names the parent, for example
-"Back to Users". Nothing moves on hover.
+"Back to Users". Every depth takes the height of the deepest form, 2.25 rem
+from 48 rem and the arrow's 2 rem below, so a header around the title keeps
+its height when the depth changes, also one without a height of its own.
+Nothing moves on hover.
 
 When the path does not fit its row, its middle collapses into `…`, from the
 second level towards the parent, and then the first level too; the parent
@@ -74,20 +77,25 @@ heads and page titles read it:
 During server rendering the provider's context carries the trail. It also
 publishes the trail into the document, where parts rendered in the browser,
 such as islands, read it with `usePageTrail()`. After an in-page navigation,
-call `setPageTrail(next)`; every reader follows. `readPageTrail()` returns the
-published trail.
+call `setPageTrail(next)`; every reader outside a provider follows.
+`readPageTrail()` returns the published trail. In an app that renders the
+provider itself in the browser, its `trail` prop is the source: pass a signal's
+value, and the readers below follow the prop.
 
 `AppWorkspace` shows the host's trail in its [head](/en/ui/layout/workspace)
-when the page has a page above it. A server-rendered workspace that never
-hydrates follows `setPageTrail()` once the host runs `followPageTrail()`.
+when the page has a page above it. Once the host runs `followPageTrail()`, a
+server-rendered title of the host's trail that never hydrates follows
+`setPageTrail()`: a workspace head and a page's own header title alike. The
+live title takes the same place, element, class, and subtitle.
 
 ## Collapse paths outside components
 
 A `PageTitle` measures its own path. A host whose page titles are rendered on
-the server and never hydrate runs `installPageTitleController(document)` once
-and marks the document with `data-k2b-page-title-controller` on an ancestor,
-so titles inside it do not install a second controller. Both return a
-disposer.
+the server and never hydrate runs `installPageTitleController(document)` once.
+A controller owns the titles whose nearest controller is its own: a title that
+mounts later uses the document's, and one that mounted first keeps its own.
+It fits a path again only when the path or its size changes, so a busy page
+costs no extra layout. Both return a disposer.
 
 ## Accessibility
 

@@ -1,5 +1,5 @@
-import { createContext, createSignal, createUniqueId, For, type JSX, onCleanup, onMount, Show, useContext } from "solid-js";
-import { Dynamic, isServer, render } from "solid-js/web";
+import { createContext, createRoot, createSignal, createUniqueId, For, type JSX, onCleanup, onMount, Show, useContext } from "solid-js";
+import { Dynamic, insert, isServer } from "solid-js/web";
 import { IconButtonLink } from "../actions/Button";
 import { useUiMessages } from "../intl/messages";
 import { installPageTitleController, PAGE_TITLE_CONTROLLER_ATTRIBUTE } from "./page-title-controller";
@@ -77,7 +77,8 @@ const PageTrailContext = createContext<() => PageTrailState | undefined>();
 /**
  * Gives a host's page trail to everything below it. During server rendering
  * the context carries it; the provider also publishes it into the document,
- * where browser-rendered parts such as islands read it.
+ * where browser-rendered parts such as islands read it. Below a provider that
+ * renders in the browser, its `trail` prop is the source: update the prop.
  */
 export function PageTrailProvider(props: { trail: PageTrailState | undefined; children: JSX.Element }): JSX.Element {
   return (
@@ -111,6 +112,8 @@ export const usePageTrail = (): (() => PageTrailState | undefined) => {
  */
 export function PageTitle(props: PageTitleProps): JSX.Element {
   const messages = useUiMessages();
+  // A title rendered on the server from the host's trail follows the host's later trails (see `followPageTrail`).
+  const host = isServer ? useContext(PageTrailContext) : undefined;
   const menuId = `k2b-page-title-menu-${createUniqueId()}`;
   const ancestors = () => props.trail.ancestors;
   const parent = () => ancestors().at(-1);
@@ -127,7 +130,7 @@ export function PageTitle(props: PageTitleProps): JSX.Element {
       class={`k2b-page-title ${props.class ?? ""}`}
       data-depth={ancestors().length}
       data-fallback={props.fallback ? "" : undefined}
-      data-k2b-server={isServer && props.fallback ? "" : undefined}
+      data-k2b-server={isServer && props.trail === host?.() ? "" : undefined}
     >
       <Show when={parent()}>
         {(up) => (
@@ -213,10 +216,11 @@ export function PageTitle(props: PageTitleProps): JSX.Element {
 }
 
 /**
- * Keeps server-rendered chrome titles current. A workspace that never
- * hydrates still shows the host's title in its head; when the host publishes
- * a new trail, for example after `setPageTrail()`, each such title is replaced
- * by a live one, and its row learns whether it now has a page above it.
+ * Keeps server-rendered titles of the host's trail current: a workspace head
+ * that never hydrates, and an app's own header title from the host's trail.
+ * When the host publishes a new trail, for example after `setPageTrail()`,
+ * each such title is replaced in place by a live one with the same element,
+ * class, and subtitle, and a head learns whether it now has a page above it.
  * Titles inside islands render in the browser anyway. Returns the disposer.
  */
 export const followPageTrail = (root: ParentNode = document): (() => void) => {
@@ -226,13 +230,30 @@ export const followPageTrail = (root: ParentNode = document): (() => void) => {
     for (const element of root.querySelectorAll<HTMLElement>(".k2b-page-title[data-k2b-server]")) {
       const row = element.parentElement;
       if (!row || element.closest("solid-island, solid-client")) continue;
-      const as = element.querySelector(".k2b-page-title__title")?.localName === "p" ? "p" : "h1";
+      const tag = element.querySelector(".k2b-page-title__title")?.localName;
+      const as = tag === "p" || tag === "h2" ? tag : "h1";
+      const fallback = element.hasAttribute("data-fallback");
+      const extra = [...element.classList].filter((name) => name !== "k2b-page-title").join(" ") || undefined;
+      const subtitle = element.querySelector(".k2b-page-title__subtitle");
+      const subtitleNodes = subtitle ? [...subtitle.childNodes] : undefined;
+      // The live title takes the server title's place, before whatever follows it in the row.
+      const place = document.createTextNode("");
+      row.insertBefore(place, element);
       element.remove();
       disposers.push(
-        render(() => {
+        createRoot((dispose) => {
           const live = usePageTrail();
-          return <Show when={live()}>{(current) => <PageTitle trail={current()} as={as} fallback />}</Show>;
-        }, row),
+          insert(
+            row,
+            () => (
+              <Show when={live()}>
+                {(current) => <PageTitle trail={current()} as={as} fallback={fallback} class={extra} subtitle={subtitleNodes} />}
+              </Show>
+            ),
+            place,
+          );
+          return dispose;
+        }),
       );
     }
     // The row's `data-trail` decides whether it shows; it follows the depth.

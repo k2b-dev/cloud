@@ -734,7 +734,9 @@ Main-pane borders separate adjacent regions from 48 rem. The last visible pane
 has no outer border, and single-pane phone layouts do not retain split borders.
 A side pane keeps its size while the main region keeps 320 px and gives way
 down to its minimum; the stylesheet applies the same fit as the controller, so
-a server-rendered split arrives at its final widths.
+a server-rendered split arrives at its final widths. A resizable `Detail` fits
+the same way into the content area beside `Main`, so a width saved on a wider
+screen arrives at the width it keeps on a narrower one.
 
 ### Live rows and detail previews
 

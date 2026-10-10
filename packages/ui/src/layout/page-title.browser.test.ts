@@ -12,15 +12,20 @@ const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
 const entry = resolve(import.meta.dir, "page-title.fixture.ts");
 const fixture = `
 import { createComponent, render } from "solid-js/web";
-import { AppWorkspace, LocaleProvider, PageTitle, setPageTrail } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { AppWorkspace, installPageTitleController, LocaleProvider, PageTitle, setPageTrail } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 
 const params = new URLSearchParams(window.fixtureParams ?? "");
 const levels = ["Projects for the new community centre", "2026 budget year with the second construction phase", "Quotes from all invited suppliers", "Supplier A, Hartmann and Sons, Bremen branch"];
 window.publish = (depth) =>
   setPageTrail({ title: depth ? levels[depth - 1] : "Overview", ancestors: levels.slice(0, Math.max(0, depth - 1)).map((title, index) => ({ title, href: "#level-" + index })) });
 window.publish(Number(params.get("depth") ?? 0));
+const ownDepth = Number(params.get("depth") ?? levels.length);
 const own = () =>
-  createComponent(PageTitle, { trail: { title: "Entry", ancestors: levels.map((title, index) => ({ title, href: "#level-" + index })) }, subtitle: "2:15 h" });
+  createComponent(PageTitle, { trail: { title: "Entry", ancestors: levels.slice(0, ownDepth).map((title, index) => ({ title, href: "#level-" + index })) }, subtitle: "2:15 h" });
+// A host that installs the document's controller after a title installed its own, as an island may mount first.
+window.installDocumentController = () => installPageTitleController(document);
+// A host that installs it before, as Cloud's shell does for its titles.
+if (params.has("document")) installPageTitleController(document);
 const header = document.querySelector("header");
 header.style.width = (params.get("own") ?? "0") + "px";
 render(
@@ -148,6 +153,60 @@ describe("PageTitle without a host", () => {
       } finally {
         await page.close();
       }
+    }
+  });
+
+  test("a title keeps its own controller when the document gets one later, and the menu opens once", async () => {
+    const page = await load(1180, "own=640");
+    try {
+      await page.evaluate(() => (window as unknown as { installDocumentController: () => void }).installDocumentController());
+      await settle(page);
+      await page.locator(".k2b-page-title__more-button").click();
+      expect(await page.locator(".k2b-page-title__menu").evaluate((menu) => menu.matches(":popover-open"))).toBe(true);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("changes elsewhere on the page leave a collapsed path alone", async () => {
+    const page = await load(1180, "own=640&document");
+    try {
+      expect((await read(page)).crumbs).toContain("…");
+      const touched = await page.evaluate(async () => {
+        const records: MutationRecord[] = [];
+        const watch = new MutationObserver((list) => records.push(...list));
+        watch.observe(document.querySelector(".k2b-page-title__path")!, { attributes: true, subtree: true });
+        // A busy page: a list that keeps changing, frame after frame.
+        const live = document.body.appendChild(document.createElement("ol"));
+        for (let frame = 0; frame < 5; frame++) {
+          live.append(document.createElement("li"));
+          await new Promise((done) => requestAnimationFrame(done));
+        }
+        await new Promise((done) => requestAnimationFrame(done));
+        watch.disconnect();
+        return records.length;
+      });
+      expect(touched).toBe(0);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("an app's own title takes the same height at every depth, so its header does not move", async () => {
+    for (const [width, height] of [
+      [390, 32],
+      [1180, 36],
+    ] as const) {
+      const heights: number[] = [];
+      for (const depth of [0, 1, 3]) {
+        const page = await load(width, `own=${width - 40}&depth=${depth}`);
+        try {
+          heights.push(await page.evaluate(() => Math.round(document.querySelector("header")!.getBoundingClientRect().height)));
+        } finally {
+          await page.close();
+        }
+      }
+      expect({ width, heights }).toEqual({ width, heights: [height, height, height] });
     }
   });
 });

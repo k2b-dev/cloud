@@ -1,6 +1,11 @@
 import { dropdownPosition } from "../actions/Dropdown";
 
-/** Set on an element whose page titles one controller owns, so a title inside it does not install its own. */
+/**
+ * Marks the root of a controller. A controller owns the titles whose nearest
+ * marked ancestor is its root, so a title that installed its own controller
+ * before the document's keeps it, and a title inside a marked root installs
+ * none.
+ */
 export const PAGE_TITLE_CONTROLLER_ATTRIBUTE = "data-k2b-page-title-controller";
 
 const TRAIL = ".k2b-page-title__trail";
@@ -69,6 +74,7 @@ export const installPageTitleController = (root: Element | Document = document):
   // A document by its node type (9): `Document` and `Node` are not globals in every DOM implementation.
   const owner = root.nodeType === 9 ? (root as Document).documentElement : (root as Element);
   owner.setAttribute(PAGE_TITLE_CONTROLLER_ATTRIBUTE, "");
+  const owns = (element: Element) => element.closest(`[${PAGE_TITLE_CONTROLLER_ATTRIBUTE}]`) === owner;
   const observed = new Set<Element>();
   const resize = new ResizeObserver((entries) => {
     for (const entry of entries) {
@@ -76,30 +82,46 @@ export const installPageTitleController = (root: Element | Document = document):
       if (path) fit(path);
     }
   });
-  const scan = () => {
+  /** Follows the paths that appeared, drops those that left, and fits the new ones and the `changed` ones. */
+  const scan = (changed: Iterable<Element> = []) => {
     for (const trail of observed) {
       if (trail.isConnected) continue;
       resize.unobserve(trail);
       observed.delete(trail);
     }
+    const due = new Set([...changed].filter((trail) => observed.has(trail)));
     for (const trail of root.querySelectorAll<HTMLElement>(TRAIL)) {
+      if (observed.has(trail) || !owns(trail) || !trail.querySelector(PATH)) continue;
+      observed.add(trail);
+      resize.observe(trail);
+      due.add(trail);
+    }
+    for (const trail of due) {
       const path = trail.querySelector<HTMLElement>(PATH);
-      if (!path) continue;
-      if (!observed.has(trail)) {
-        observed.add(trail);
-        resize.observe(trail);
-      }
-      fit(path);
+      if (path) fit(path);
     }
   };
-  // Islands render after the document; a trail can also change its levels.
+  // Islands render after the document, and a trail can change its levels; only those changes need a fit. A
+  // trail's size changes reach the resize observer, so the rest of a busy page costs no layout.
+  const holdsTrail = (node: Node) => node.nodeType === 1 && ((node as Element).matches(TRAIL) || !!(node as Element).querySelector(TRAIL));
+  const changed = new Set<Element>();
+  let arrivals = false;
   let queued = false;
-  const mutations = new MutationObserver(() => {
-    if (queued) return;
+  const mutations = new MutationObserver((records) => {
+    for (const record of records) {
+      const target = record.target.nodeType === 1 ? (record.target as Element) : record.target.parentElement;
+      const trail = target?.closest(TRAIL);
+      if (trail) changed.add(trail);
+      else if (record.type === "childList") arrivals ||= [...record.addedNodes, ...record.removedNodes].some(holdsTrail);
+    }
+    if (queued || (!arrivals && !changed.size)) return;
     queued = true;
     requestAnimationFrame(() => {
       queued = false;
-      scan();
+      arrivals = false;
+      const due = [...changed];
+      changed.clear();
+      scan(due);
     });
   });
   mutations.observe(root, { childList: true, subtree: true, characterData: true });
@@ -108,7 +130,7 @@ export const installPageTitleController = (root: Element | Document = document):
   const onClick = (event: Event) => {
     const button = (event.target as Element | null)?.closest?.<HTMLElement>(".k2b-page-title__more-button");
     const menu = button?.closest(TRAIL)?.querySelector<HTMLElement>(".k2b-page-title__menu");
-    if (!button || !menu) return;
+    if (!button || !menu || !owns(button)) return;
     // The button names its menu through `popovertarget`; opening here places it before the first paint.
     event.preventDefault();
     if (menu.matches(":popover-open")) {
@@ -122,7 +144,7 @@ export const installPageTitleController = (root: Element | Document = document):
   const onKeyDown = (event: Event) => {
     const key = (event as KeyboardEvent).key;
     const menu = (event.target as Element | null)?.closest?.<HTMLElement>(".k2b-page-title__menu");
-    if (!menu || !["ArrowDown", "ArrowUp", "Home", "End"].includes(key)) return;
+    if (!menu || !owns(menu) || !["ArrowDown", "ArrowUp", "Home", "End"].includes(key)) return;
     const items = menuItems(menu);
     const current = items.indexOf(document.activeElement as HTMLElement);
     const next =
@@ -132,7 +154,7 @@ export const installPageTitleController = (root: Element | Document = document):
   };
   const onToggle = (event: Event) => {
     const menu = event.target as HTMLElement;
-    if (!menu.matches?.(".k2b-page-title__menu") || (event as ToggleEvent).newState !== "closed") return;
+    if (!menu.matches?.(".k2b-page-title__menu") || !owns(menu) || (event as ToggleEvent).newState !== "closed") return;
     // Escape and light dismiss return focus to the button that opened the menu.
     const button = menu.closest(TRAIL)?.querySelector<HTMLElement>(".k2b-page-title__more-button");
     if (button && (!document.activeElement || document.activeElement === document.body || menu.contains(document.activeElement)))

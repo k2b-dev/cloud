@@ -310,7 +310,8 @@ describe("compact workspace sidebar", () => {
     }
   });
 
-  // The detail may take what the main region's 320 px leave; a sidebar takes its share only in its own column.
+  // The detail may take what the main region's 320 px leave of the content area. A sidebar in its own column is
+  // outside that area; as the overlay it takes nothing from it.
   const detailSizes = (page: Page) =>
     page.evaluate(() => {
       const width = (selector: string) => document.querySelector(selector)!.getBoundingClientRect().width;
@@ -318,8 +319,8 @@ describe("compact workspace sidebar", () => {
         atRender: (window as unknown as { detailAtRender: number }).detailAtRender,
         attached: Math.round(width(".k2b-app-workspace__detail")),
         max: Number(document.querySelector("[data-app-workspace-resize='detail']")!.getAttribute("aria-valuemax")),
-        room: Math.round(width(".k2b-app-workspace") - 320),
-        sidebar: Math.round(width(".k2b-app-workspace__sidebar")),
+        room: Math.round(width(".k2b-app-workspace__content") - 320),
+        main: Math.round(width(".k2b-app-workspace__main")),
       };
     });
 
@@ -330,7 +331,26 @@ describe("compact workspace sidebar", () => {
         await settle(page);
         const detail = await detailSizes(page);
         expect({ width, atRender: detail.atRender, attached: detail.attached }).toEqual({ width, atRender: 400, attached: 400 });
-        expect(detail.max).toBe(Math.min(640, width < 1024 ? detail.room : detail.room - detail.sidebar));
+        expect(detail.max).toBe(Math.min(640, detail.room));
+      } finally {
+        await page.close();
+      }
+    }
+  });
+
+  test("a detail saved wider than the window allows arrives at the width it keeps, so nothing moves when the controller attaches", async () => {
+    for (const width of [820, 1100]) {
+      const page = await load(width, "detail=600");
+      try {
+        await settle(page);
+        const detail = await detailSizes(page);
+        expect(detail.room).toBeLessThan(600);
+        expect({ width, atRender: detail.atRender, attached: detail.attached }).toEqual({
+          width,
+          atRender: detail.room,
+          attached: detail.room,
+        });
+        expect(detail.main).toBe(320);
       } finally {
         await page.close();
       }

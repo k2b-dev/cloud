@@ -1328,8 +1328,11 @@
     width: 34rem;
   }
 
+  /* A persisted width fits like a pane's: the main region keeps 320 px, and
+     the detail gives way down to its minimum. The controller applies the same
+     fit, so a width saved on a wider screen arrives where it stays. */
   .k2b-ui .k2b-app-workspace__detail[data-workspace-resizable="true"] {
-    width: var(--k2b-workspace-panel-size);
+    width: clamp(var(--k2b-workspace-panel-min, 0px), 100% - 320px, var(--k2b-workspace-panel-size));
   }
 
   .k2b-ui .k2b-app-workspace__drawer[data-workspace-resizable="true"] {
@@ -1478,7 +1481,7 @@
   }
 
   .k2b-ui .k2b-app-workspace__detail[data-workspace-resizable="true"] {
-    width: var(--k2b-workspace-panel-size);
+    width: clamp(var(--k2b-workspace-panel-min, 0px), 100% - 320px, var(--k2b-workspace-panel-size));
   }
 }
 
@@ -1942,16 +1945,25 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
 }
 
 /* PageTitle: a title with its way up, sized for a 46 px header. The row above
-   the title (back link or path) is 1 rem high and the title 1.25 rem, so the
-   header keeps its height at every depth. Below 48 rem the row gives way to a
-   back arrow left of the title. Nothing here moves on hover. */
+   the title (back link or path) is 1 rem high and the title 1.25 rem. Below
+   48 rem the row gives way to a back arrow left of the title. Every depth
+   takes the height of the deepest form, 2.25 rem or the arrow's 2 rem, so a
+   header around the title keeps its height when the depth changes, also one
+   without a height of its own. Nothing here moves on hover. */
 /* A title takes the room its row gives it, so its path can grow back when the row widens. */
 .k2b-ui .k2b-page-title {
   display: flex;
   min-width: 0;
+  min-height: 2rem;
   flex: 1 1 auto;
   align-items: center;
   gap: 0.25rem;
+}
+
+@media (min-width: 48rem) {
+  .k2b-ui .k2b-page-title {
+    min-height: 2.25rem;
+  }
 }
 
 .k2b-ui .k2b-page-title__copy {
@@ -2067,9 +2079,11 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
   display: none;
 }
 
+/* One line high, also with a smaller subtitle on the shared baseline. */
 .k2b-ui .k2b-page-title__title {
   display: flex;
   min-width: 0;
+  height: 1.25rem;
   align-items: baseline;
   gap: 0.5rem;
   margin: 0;

@@ -139,7 +139,7 @@ export type { PanesItem, PanesProps } from "./Panes";
 export { default as Panes } from "./Panes";
 export type { PullToRefreshProps, PullToRefreshState } from "./PullToRefresh";
 export { default as PullToRefresh } from "./PullToRefresh";
-export { installPageTitleController, PAGE_TITLE_CONTROLLER_ATTRIBUTE } from "./page-title-controller";
+export { installPageTitleController } from "./page-title-controller";
 export type {
   AddPanesItemOptions,
   PanesDirection,
