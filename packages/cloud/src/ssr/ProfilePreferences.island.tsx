@@ -8,16 +8,20 @@ type ProfilePreferencesProps = {
   avatarSrc?: string;
   initialTheme: CloudTheme;
   name: string;
-  placement: "header" | "rail";
 };
 
+/**
+ * The avatar at the bottom of the rail. Its menu opens beside the rail and,
+ * because the avatar is the rail's last control, grows upward from the window's
+ * bottom edge.
+ */
 export default function ProfilePreferences(props: ProfilePreferencesProps) {
   const { preferences, items, signOut, signingOut } = createProfileActions(props.initialTheme, props.appHref);
 
   const avatar = () => <Avatar name={props.name} src={props.avatarSrc} size="xs" />;
 
   return (
-    <div class="layout-profile-preferences" data-placement={props.placement}>
+    <div class="layout-profile-preferences">
       <button type="button" class="layout-profile-preferences__link" aria-label={preferences.messages().menuLabel}>
         {avatar()}
       </button>
@@ -49,7 +53,7 @@ export default function ProfilePreferences(props: ProfilePreferencesProps) {
         class="layout-profile-preferences__dropdown"
         items={items()}
         label={preferences.messages().menuLabel}
-        position={props.placement === "rail" ? "right-start" : "bottom-left"}
+        position="right-start"
         width="14rem"
       >
         <Dropdown.Trigger

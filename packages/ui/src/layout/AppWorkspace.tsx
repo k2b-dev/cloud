@@ -14,6 +14,7 @@ import {
   Show,
   useContext,
 } from "solid-js";
+import { IconButton } from "../actions/Button";
 import { useUiMessages } from "../intl/messages";
 import { APP_WORKSPACE_SIDEBAR_HIDE_EVENT, installAppWorkspaceController } from "./app-workspace-controller";
 import {
@@ -136,7 +137,7 @@ function ResizeHandle(props: ResizeHandleProps): JSX.Element {
 export type AppWorkspaceProps = {
   children: JSX.Element;
   class?: string;
-  /** A host with its own mobile chrome can use the full canvas below 1024px. */
+  /** A host with its own phone chrome can use the full canvas below 48rem (768 px). */
   mobileSurface?: "contained" | "flush";
   resizable?: boolean;
   /**
@@ -216,9 +217,10 @@ export type AppWorkspaceSidebarProps = {
   children: JSX.Element;
   class?: string;
   /**
-   * Below the desktop breakpoint the sidebar is hidden and the host's mobile
+   * Below 48rem (768 px) the sidebar is hidden and the host's mobile
    * navigation takes over. `"stacked"` keeps it as a block above the content
-   * instead, for overviews whose sidebar is the primary object list.
+   * instead, for overviews whose sidebar is the primary object list. From 48
+   * to 64rem every sidebar is an overlay that the workspace's compact bar opens.
    */
   mobile?: "hidden" | "stacked";
   resizable?: boolean;
@@ -541,7 +543,14 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
                   data-surface={pane.props.surface === "navigation" ? "navigation" : undefined}
                   data-scroll={pane.props.scroll === false ? "false" : undefined}
                   data-scroll-fade-mode={pane.props.scroll !== false && pane.props.scrollFade !== false ? "both" : undefined}
-                  style={isAnchor() ? undefined : { "--k2b-workspace-panel-size": `var(${variable}, ${defaultSize()}px)` }}
+                  style={
+                    isAnchor()
+                      ? undefined
+                      : {
+                          "--k2b-workspace-panel-size": `var(${variable}, ${defaultSize()}px)`,
+                          "--k2b-workspace-panel-min": `${minSize()}px`,
+                        }
+                  }
                 >
                   {pane.props.children}
                 </section>
@@ -663,8 +672,20 @@ function AppWorkspaceSidebar(props: AppWorkspaceSidebarProps): JSX.Element {
     aside?.addEventListener(APP_WORKSPACE_SIDEBAR_HIDE_EVENT, requestHide);
     onCleanup(() => aside?.removeEventListener(APP_WORKSPACE_SIDEBAR_HIDE_EVENT, requestHide));
   });
+  const messages = useUiMessages();
   return (
     <>
+      {/* Between 48 and 64 rem the navigation is an overlay that this bar opens. The shared controller binds the
+          button, so a server-rendered workspace gets it without hydrating. The host may name the page through
+          `--k2b-app-workspace-title`. */}
+      <Show when={!props.hidden}>
+        <div class="k2b-app-workspace__compact-bar">
+          <IconButton label={messages().showNavigation} aria-controls={domId()} aria-expanded="false" data-app-workspace-sidebar-toggle="">
+            <i class="ti ti-layout-sidebar" aria-hidden="true" />
+          </IconButton>
+          <span class="k2b-app-workspace__compact-title" />
+        </div>
+      </Show>
       <aside
         ref={aside}
         id={domId()}

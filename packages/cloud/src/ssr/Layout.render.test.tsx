@@ -98,7 +98,12 @@ const server = new Hono()
       await next();
     },
     ...app.ssr(
-      (c) => () => createComponent(Layout, { c: c as unknown as LayoutContextArg, title: "Badges", children: "Signed-in content" }),
+      (c) => () =>
+        createComponent(Layout, {
+          c: c as unknown as LayoutContextArg,
+          title: [{ title: "Badges", href: "/app/badges" }, { title: c.req.query("title") ?? "Badges" }],
+          children: "Signed-in content",
+        }),
     ),
   )
   .get(
@@ -137,18 +142,18 @@ describe("Cloud layouts SSR", () => {
       };
     };
     const [page, fullWidth, fullPage] = await Promise.all([render("page"), render("fullWidth"), render("fullPage")]);
-    // From lg, `main` scrolls regular pages; fullWidth and fullPage work surfaces own their scrolling.
-    expect(page.main).toContain("lg:overflow-auto lg:[scrollbar-gutter:stable]");
+    // From md, `main` scrolls regular pages; fullWidth and fullPage work surfaces own their scrolling.
+    expect(page.main).toContain("md:overflow-auto md:[scrollbar-gutter:stable]");
     for (const { main } of [fullWidth, fullPage]) {
       expect(main).toContain("flex flex-col");
       expect(main).not.toContain("scrollbar-gutter");
     }
-    // Below lg the document scrolls every page except fullPage surfaces, which the canvas marks.
+    // Below md the document scrolls every page except fullPage surfaces, which the canvas marks.
     expect(page.canvas).not.toContain("data-layout-full-page");
     expect(fullWidth.canvas).not.toContain("data-layout-full-page");
     expect(fullPage.canvas).toContain('data-layout-full-page="true"');
     const css = await Bun.file(new URL("../styles/global.css", import.meta.url)).text();
-    const mobileStart = css.indexOf("@media (max-width: 1023px) {");
+    const mobileStart = css.indexOf("@media (max-width: 767px) {");
     const mobileShell = css.slice(mobileStart, css.indexOf("\n}", mobileStart));
     expect(mobileShell).toMatch(/html:has\(\.cloud-app-canvas:not\(\[data-layout-full-page\]\)\) \{ scrollbar-gutter: stable; \}/);
   });
@@ -190,6 +195,36 @@ describe("Cloud layouts SSR", () => {
     expect(html).not.toContain("layout-rail-navigation");
     expect(html).not.toContain('data-layout-authenticated="true"');
     expect(html).not.toContain('href="/me"');
+  });
+
+  test("anonymous pages keep their header with breadcrumbs from md", async () => {
+    const html = await (await server.request("/layout")).text();
+    const header = html.match(/<header[^>]*class="(layout-header[^"]*)"/)?.[1];
+    expect(header).toBeDefined();
+    expect(header).not.toContain("md:hidden");
+    expect(html).toContain('<div class="hidden min-w-0 items-center md:flex">');
+  });
+
+  test("signed-in pages trade the header for the rail from md and name the page for the compact bar", async () => {
+    const spies = [
+      spyOn(railSnapshot, "readRailSnapshot").mockResolvedValue(defaultRailPreferences()),
+      spyOn(settingsMiddleware, "preloadLayoutAnnouncements").mockResolvedValue(undefined),
+    ];
+    let html: string;
+    try {
+      const title = encodeURIComponent('Q4 "Plan" \\ <notes>');
+      html = await (await server.request(`/signed-in?title=${title}`, { headers: { "Accept-Language": "en" } })).text();
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
+    // The header remains for phones only, and it never carries breadcrumbs or an avatar.
+    expect(html.match(/<header[^>]*class="(layout-header[^"]*)"/)?.[1]).toContain("md:hidden");
+    expect(html).not.toContain("hidden min-w-0 items-center md:flex");
+    expect(html.split('class="layout-profile-preferences"').length - 1).toBe(1);
+    expect(html).toContain('class="layout-rail hidden w-10 shrink-0 flex-col md:flex"');
+    // The last title entry, as a CSS string that cannot end early and carries no markup.
+    const canvas = html.match(/<div[^>]*class="cloud-app-canvas[^>]*>/)?.[0] ?? "";
+    expect(canvas).toContain("--k2b-app-workspace-title:&quot;Q4 \\22 Plan\\22  \\5c  \\3c notes\\3e &quot;");
   });
 
   test("hands the rail and the app grid each app's badge route but renders no count on the server", async () => {

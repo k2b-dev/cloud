@@ -238,7 +238,7 @@
 }
 
 /* Shared shell frame and overview composition. */
-@media (min-width: 1024px) {
+@media (min-width: 768px) {
   .cloud-app-canvas .layout-header {
     padding: 0.375rem 0.75rem 0.375rem 1.125rem;
     border-color: transparent;

@@ -829,16 +829,13 @@
 }
 
 /* Profile preferences stay Cloud-owned because their placement follows the
-   global shell. Width, height, and pointer media queries select an already
-   server-rendered variant; no client layout state or placeholder is needed. */
+   global shell: the avatar is the last control of the rail. Pointer media
+   queries select an already server-rendered variant; no client layout state
+   or placeholder is needed. */
 .layout-profile-preferences {
   position: relative;
   display: inline-flex;
   flex: none;
-}
-
-.layout-profile-preferences[data-placement="rail"] {
-  display: none;
 }
 
 .layout-profile-preferences__link,
@@ -868,9 +865,12 @@
   box-shadow: var(--ui-focus);
 }
 
+/* Beside the rail, growing upward from the avatar. */
 .layout-profile-preferences__panel {
   position: absolute;
   z-index: 100;
+  bottom: 0;
+  left: 100%;
   display: none;
   width: min(14rem, calc(100vw - 1rem));
   flex-direction: column;
@@ -885,16 +885,6 @@
 
 .dark .layout-profile-preferences__panel {
   color: var(--color-zinc-300);
-}
-
-.layout-profile-preferences[data-placement="header"] .layout-profile-preferences__panel {
-  top: 100%;
-  right: 0;
-}
-
-.layout-profile-preferences[data-placement="rail"] .layout-profile-preferences__panel {
-  bottom: 0;
-  left: 100%;
 }
 
 .layout-profile-preferences:focus-within .layout-profile-preferences__panel {
@@ -923,9 +913,7 @@
     visibility: visible;
     pointer-events: auto;
   }
-}
 
-@media (min-width: 1024px) and (hover: hover) and (pointer: fine) {
   .layout-profile-preferences__link,
   .layout-profile-preferences__panel {
     display: flex;

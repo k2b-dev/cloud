@@ -33,10 +33,11 @@ export default function NavigationVisibilityControls(props: Props) {
     );
   });
 
-  // Phones keep the navigation in the header menu, so the control exists from lg up.
+  // Phones keep the navigation in the header menu, so the control exists from md up. A hidden
+  // sidebar has no compact bar between md and lg, so this control is the way back there too.
   return (
     <Show when={props.hidden && props.showControl}>
-      <div class="absolute bottom-3 left-3 z-10 hidden lg:flex">
+      <div class="absolute bottom-3 left-3 z-10 hidden md:flex">
         <Tooltip.Anchor content={t().showNavigation}>
           <IconButton
             label={t().showNavigation}

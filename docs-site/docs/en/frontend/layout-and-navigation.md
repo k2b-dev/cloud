@@ -5,18 +5,41 @@ section: Frontend
 order: 820
 description: Place application pages in the shared Cloud layout and navigation.
 tags: [layout, navigation, breadcrumbs]
-updated: 2026-10-09
+updated: 2026-10-10
 ---
 
 # Layout and navigation
 
 Wrap a Cloud application page in `Layout`, `AdminLayout`, or `MinimalLayout`.
 
-The shared layout provides the header, breadcrumbs, app navigation, mobile
-navigation, global search, profile preferences, and footer.
+The shared layout provides the app bar, the phone header, app navigation,
+mobile navigation, global search, help, profile preferences, and, on anonymous
+pages, breadcrumbs and a footer.
 
 Layout owns Cloud chrome; an [application shell](/en/docs/frontend/application-shells)
 owns the geometry inside it.
+
+## Know the shell at each width
+
+The shell has three forms. They are CSS on the same server-rendered markup, so
+a page arrives in its final form and nothing moves when it hydrates or when
+people navigate.
+
+| Width | Signed-in pages | Anonymous pages |
+| --- | --- | --- |
+| Below 768 px (phones) | Header with Home, the app name, help, search, and the app menu; no app bar | Header with sign-in, language, and theme |
+| 768 to 1535 px (tablets, laptops) | No header. The app bar runs down the left edge, and the app area meets the window's top, right, and bottom edges without spacing, radius, shadow, or border | Header and content as cards on the app background |
+| From 1536 px | No header. The app area is a card with 8 px spacing on the app background | Same as above |
+
+From 768 px the app bar holds Home, the apps, the app grid, search, help, and
+the profile avatar. Between the app bar and the app area there is no line:
+the app bar shows the app background, and the app area is one opaque surface.
+Global announcements and account notices stay above the app as a strip across
+the app area; from 768 to 1535 px it has no radius or border.
+
+Applications need no changes for any of this. `AppWorkspace` adds its compact
+navigation between 768 and 1023 px on its own; see
+[Application shells](/en/docs/frontend/application-shells#supply-mobile-navigation).
 
 ## Render the application layout
 
@@ -32,8 +55,12 @@ owns the geometry inside it.
 </Layout>
 ```
 
-The final breadcrumb has no link. A plain string is valid for a one-level
-title.
+The last entry is the page title: it names the browser tab and, between 768
+and 1023 px, the compact bar of an `AppWorkspace` with navigation. Anonymous
+pages also show the entries as breadcrumbs in their header from 768 px; the
+final breadcrumb has no link. Signed-in pages show no breadcrumbs. A plain
+string is valid for a one-level title. `layout.update()` from an island changes
+the tab title and the compact bar together.
 
 Use `fullWidth` for a multi-column workspace. Use `fullPage` for a fill-height
 surface without the footer. Full-page and focus-mode surfaces contain viewport
@@ -41,8 +68,8 @@ overscroll: their inner content, including embedded editors, owns scrolling
 without moving the outer Cloud shell or triggering pull-to-refresh.
 
 The shell measures the visible window with the dynamic viewport (`dvh`), not
-`vh`. From `lg`, and for full-page surfaces at every width, it is exactly as
-tall as the window and its content scrolls inside it. Below `lg`, a regular
+`vh`. From 768 px, and for full-page surfaces at every width, it is exactly as
+tall as the window and its content scrolls inside it. Below 768 px, a regular
 page is at least as tall as the window and grows with its content. `vh` follows
 the larger viewport of a browser whose toolbar can collapse, such as Safari on
 iPad, so a page sized with it would scroll by that difference although its
@@ -51,8 +78,8 @@ without the shell, such as a pop-out window or an unattended display, takes its
 height from `dvh` too, with `h-dvh` or `min-h-dvh`.
 
 The layout reserves a stable scrollbar gutter on every page scroller it owns:
-the content area of regular pages from `lg` and, below `lg`, the document of
-every page except full-page and focus-mode surfaces. Switching between short
+the content area of regular pages from 768 px and, below 768 px, the document
+of every page except full-page and focus-mode surfaces. Switching between short
 and long pages or tabs therefore does not shift the content sideways where
 scrollbars take layout space.
 
@@ -177,26 +204,26 @@ The Core sign-in, password, and consent pages use the same class.
 
 ## Use the responsive profile menu
 
-Authenticated users change the theme or language from the profile control and
+Authenticated users change the theme or language from the profile menu and
 can open `/me` for the remaining profile settings. While the installation runs
 the mobile app (the `pwa` application), the menu also shows **App**, which
-leads to `/me/app`, where people pair and remove phones. The item appears in
-the header, rail, and mobile menus; applications do not add their own link to
-it. Anonymous `Layout` pages
-expose the same preferences in the header without profile actions, and
-`MinimalLayout` pages show them in their footer. Applications must not add a
-second theme or language control to their own content.
+leads to `/me/app`, where people pair and remove phones. The menu ends with
+**Sign out**. Applications do not add their own link to any of these.
+Anonymous `Layout` pages expose the same preferences in the header without
+profile actions, and `MinimalLayout` pages show them in their footer.
+Applications must not add a second theme or language control to their own
+content.
 
-The shared layout chooses the placement with CSS:
+The layout places the profile menu with CSS:
 
-- On mobile, clicking the profile avatar opens the menu in the header;
-- On desktop viewports up to `1536px` wide, the header and breadcrumbs are
-  removed and the profile avatar moves to the bottom of the app rail;
-- On wider desktop viewports, the profile avatar stays in the header.
+- Below 768 px, the app menu in the header holds the profile actions; the
+  header has no avatar.
+- From 768 px, the avatar is the last control of the app bar, below search and
+  help. Its menu opens beside the app bar and grows upward from the avatar.
 
-On pointer devices, clicking the avatar opens `/me`; hovering or focusing it
-opens the adjacent preference menu. Touch and coarse-pointer devices use the
-clickable dropdown.
+With a mouse or trackpad, pointing at or focusing the avatar opens the menu.
+On touch screens and other coarse pointers, tapping the avatar opens the same
+menu as a dropdown.
 
 ## Register navigation
 
@@ -420,9 +447,9 @@ See [URL state and navigation](/en/docs/frontend/url-state-and-navigation).
 
 ## Mobile workspace menu
 
-Below 1024 px, the header launcher hosts the current application's navigation
-and an **All apps** switch. Desktop navigation starts at 1024 px. The mobile
-workspace uses the full canvas without a second application title or exterior
-frame. See [Application shells](/en/docs/frontend/application-shells#supply-mobile-navigation)
+Below 768 px, the header launcher hosts the current application's navigation
+and an **All apps** switch. From 768 px the app bar and the workspace's own
+navigation take over. The mobile workspace uses the full canvas without a
+second application title or exterior frame. See [Application shells](/en/docs/frontend/application-shells#supply-mobile-navigation)
 for the SSR snapshot and island-owned action APIs. `@k2b/ui` remains independent
 of Cloud; Cloud owns registration, the launcher, and menu history.

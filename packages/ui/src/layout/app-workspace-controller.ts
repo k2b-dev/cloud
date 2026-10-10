@@ -53,6 +53,17 @@ const LAYOUT_REGION_SELECTOR = [
   ".k2b-app-workspace__drawer",
   HANDLE_SELECTOR,
 ].join(",");
+const TOGGLE_SELECTOR = "[data-app-workspace-sidebar-toggle]";
+/** The width range in which the sidebar is an overlay; it matches the compact media query in the stylesheet. */
+const COMPACT_QUERY = "(min-width: 48rem) and (max-width: 63.999rem)";
+const FOCUSABLE_SELECTOR = [
+  "a[href]",
+  "button:not([disabled])",
+  "input:not([disabled]):not([type='hidden'])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  "[tabindex]:not([tabindex='-1'])",
+].join(",");
 const LABEL_SELECTOR = ".k2b-app-workspace__sidebar-item-label[data-marquee='true']";
 const LABEL_TEXT_SELECTOR = ".k2b-app-workspace__sidebar-item-label-text";
 const ITEM_SELECTOR = ".k2b-app-workspace__sidebar-item";
@@ -275,8 +286,121 @@ const measureLabel = (label: HTMLElement) => {
   else delete label.dataset.overflow;
 };
 
+type OverlaySidebar = { root: HTMLElement; sidebar: HTMLElement; toggle: HTMLElement };
+
+const focusableIn = (container: HTMLElement) =>
+  Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter((element) => element.getClientRects().length > 0);
+
+/**
+ * The compact overlay: from 48 to 64 rem the sidebar opens over the work area
+ * from the button in the workspace's compact bar. While it is open the rest of
+ * the workspace is inert, Tab stays in the sidebar, and Escape, the scrim, the
+ * button, choosing an item, or leaving the width range close it again. The
+ * state is one attribute on the workspace root, so server-rendered and
+ * hydrated workspaces behave the same.
+ */
+const overlayTarget = (toggle: HTMLElement): OverlaySidebar | null => {
+  const root = workspaceRoot(toggle);
+  const id = toggle.getAttribute("aria-controls");
+  const sidebar = id ? document.getElementById(id) : null;
+  return root && sidebar && workspaceRoot(sidebar) === root ? { root, sidebar, toggle } : null;
+};
+const overlayRegions = (root: HTMLElement, sidebar: HTMLElement) =>
+  Array.from(root.children)
+    .flatMap((child) =>
+      child instanceof HTMLElement && (child.localName === "solid-island" || child.localName === "solid-client")
+        ? Array.from(child.children)
+        : [child],
+    )
+    .filter((child): child is HTMLElement => child instanceof HTMLElement && child !== sidebar && !child.contains(sidebar));
+
 export const installAppWorkspaceController = (options: AppWorkspaceControllerOptions = {}): (() => void) => {
   const eventRoot = options.root ?? document;
+  let overlay: OverlaySidebar | null = null;
+  const compact = typeof window.matchMedia === "function" ? window.matchMedia(COMPACT_QUERY) : null;
+  const openOverlay = (target: OverlaySidebar) => {
+    if (overlay) closeOverlay("none");
+    overlay = target;
+    target.root.dataset.sidebarOverlay = "open";
+    target.toggle.setAttribute("aria-expanded", "true");
+    overlayRegions(target.root, target.sidebar).forEach((region) => region.setAttribute("inert", ""));
+    // Focus starts on the current destination, so the reader knows where they are.
+    const current = target.sidebar.querySelector<HTMLElement>("[aria-current='page'], .is-active");
+    const focusable = focusableIn(target.sidebar);
+    const first = focusable.find((element) => current?.contains(element)) ?? focusable[0];
+    if (first) first.focus();
+    else {
+      target.sidebar.tabIndex = -1;
+      target.sidebar.focus();
+    }
+  };
+  /**
+   * `"button"` returns focus to the button. `"kept"` leaves it where it moved,
+   * for example into a dialog an item opened, and only rescues focus that the
+   * closing sidebar would hide. `"none"` moves nothing, for cleanup.
+   */
+  const closeOverlay = (focus: "button" | "kept" | "none") => {
+    const closing = overlay;
+    if (!closing) return;
+    overlay = null;
+    delete closing.root.dataset.sidebarOverlay;
+    closing.toggle.setAttribute("aria-expanded", "false");
+    overlayRegions(closing.root, closing.sidebar).forEach((region) => region.removeAttribute("inert"));
+    if (focus === "none") return;
+    const active = document.activeElement;
+    if (focus === "button" || !active || active === document.body || closing.sidebar.contains(active)) closing.toggle.focus();
+  };
+  const onClick = (event: MouseEvent) => {
+    const target = eventElement(event);
+    const toggle = target?.closest<HTMLElement>(TOGGLE_SELECTOR);
+    if (toggle) {
+      const next = overlayTarget(toggle);
+      if (!next) return;
+      if (overlay?.sidebar === next.sidebar) closeOverlay("button");
+      else if (compact?.matches) openOverlay(next);
+      return;
+    }
+    if (!overlay || !target) return;
+    // The scrim is the workspace root's own pseudo-element.
+    if (target === overlay.root) {
+      closeOverlay("button");
+      return;
+    }
+    if (!overlay.sidebar.contains(target)) return;
+    // Choosing a destination closes the overlay. An item's own actions and a
+    // folder row that only expands keep it open.
+    if (target.closest(".k2b-app-workspace__sidebar-item-action, .k2b-app-workspace__sidebar-item-actions")) return;
+    if (target.closest("a[href]")) closeOverlay("kept");
+    else if (target.closest(ITEM_SELECTOR) && !target.closest("[role='treeitem'][aria-expanded]")) closeOverlay("kept");
+  };
+  const onOverlayKeyDown = (event: KeyboardEvent) => {
+    if (!overlay || event.defaultPrevented) return;
+    const target = eventElement(event);
+    if (!target || !overlay.sidebar.contains(target)) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeOverlay("button");
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const focusable = focusableIn(overlay.sidebar);
+    const first = focusable[0];
+    const last = focusable.at(-1);
+    if (!first || !last) {
+      event.preventDefault();
+      return;
+    }
+    if (event.shiftKey && (document.activeElement === first || document.activeElement === overlay.sidebar)) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+  const onCompactChange = () => {
+    if (!compact?.matches) closeOverlay("none");
+  };
   const stopScrollFades = installScrollFades(eventRoot);
   let layoutState = normalizeAppWorkspaceLayoutState(options.readState?.()) ?? { version: 2 as const };
   let active: ActiveResize | null = null;
@@ -554,6 +678,9 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
         });
 
   eventRoot.addEventListener("pointerdown", onPointerDown as EventListener);
+  eventRoot.addEventListener("click", onClick as EventListener);
+  eventRoot.addEventListener("keydown", onOverlayKeyDown as EventListener);
+  compact?.addEventListener("change", onCompactChange);
   eventRoot.addEventListener("keydown", onKeyDown as EventListener);
   eventRoot.addEventListener("focusin", onFocusIn as EventListener);
   eventRoot.addEventListener("pointerover", onPointerOver as EventListener);
@@ -575,7 +702,11 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     mutationObserver?.disconnect();
     resizeObserver?.disconnect();
     observedRoots.clear();
+    closeOverlay("none");
     eventRoot.removeEventListener("pointerdown", onPointerDown as EventListener);
+    eventRoot.removeEventListener("click", onClick as EventListener);
+    eventRoot.removeEventListener("keydown", onOverlayKeyDown as EventListener);
+    compact?.removeEventListener("change", onCompactChange);
     eventRoot.removeEventListener("keydown", onKeyDown as EventListener);
     eventRoot.removeEventListener("focusin", onFocusIn as EventListener);
     eventRoot.removeEventListener("pointerover", onPointerOver as EventListener);

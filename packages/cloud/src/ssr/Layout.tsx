@@ -23,7 +23,7 @@ import LayoutFooter from "./LayoutFooter";
 import LayoutHeader from "./LayoutHeader";
 import LayoutRail, { type LayoutAppLink } from "./LayoutRail";
 import type { LayoutContext } from "./layout-context";
-import type { LayoutBreadcrumb } from "./layout-runtime";
+import { APP_WORKSPACE_TITLE_PROPERTY, cssString, type LayoutBreadcrumb } from "./layout-runtime";
 import { platformMessages } from "./platform-messages";
 import RegisteredHelpDocuments from "./RegisteredHelpDocuments.island";
 import { sortRailApps } from "./rail-navigation";
@@ -209,11 +209,17 @@ export default function Layout(props: LayoutProps) {
     user?.avatarHash && user.id
       ? `/api/accounts/users/${encodeURIComponent(user.id)}/avatar?rev=${encodeURIComponent(user.avatarHash)}`
       : undefined;
-  // From lg, `main` is the page scroller of regular pages. Its stable gutter
+  // From md, `main` is the page scroller of regular pages. Its stable gutter
   // keeps short and long pages at the same width where scrollbars take space.
-  const mainLayoutClass = fullPage || fullWidth ? "flex flex-col" : "lg:overflow-auto lg:[scrollbar-gutter:stable]";
+  const mainLayoutClass = fullPage || fullWidth ? "flex flex-col" : "md:overflow-auto md:[scrollbar-gutter:stable]";
   const canvasStyle =
-    [appAppearanceStyle(currentApp?.appearance), appWorkspaceLayoutStyle(workspaceLayout), focusMode && flushCanvas ? "padding:0" : ""]
+    [
+      appAppearanceStyle(currentApp?.appearance),
+      appWorkspaceLayoutStyle(workspaceLayout),
+      focusMode && flushCanvas ? "padding:0" : "",
+      // The workspace's compact bar names the page; `layout.update` keeps it current.
+      `${APP_WORKSPACE_TITLE_PROPERTY}:${cssString(pageTitle)}`,
+    ]
       .filter(Boolean)
       .join(";") || undefined;
   if (focusMode) {
@@ -241,7 +247,7 @@ export default function Layout(props: LayoutProps) {
   return (
     <LocaleProvider locale={lang}>
       <div
-        class={`cloud-app-canvas relative flex w-full ${fullPage ? "h-dvh overflow-hidden" : "min-h-dvh lg:h-dvh lg:overflow-hidden"}`}
+        class={`cloud-app-canvas relative flex w-full ${fullPage ? "h-dvh overflow-hidden" : "min-h-dvh md:h-dvh md:overflow-hidden"}`}
         style={canvasStyle}
         data-app-id={currentApp?.id}
         data-layout-full-page={fullPage ? "true" : undefined}
@@ -282,7 +288,6 @@ export default function Layout(props: LayoutProps) {
             launchpadApps={launchpadApps}
             legalLinks={legalLinks}
             openAppsLabel={t.openApps}
-            profileAvatarSrc={profileAvatarSrc}
             profileName={profileName}
             searchHelpApps={searchHelpApps}
             searchLinks={searchLinks}

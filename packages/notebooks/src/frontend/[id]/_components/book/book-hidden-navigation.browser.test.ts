@@ -124,7 +124,8 @@ afterAll(async () => {
 const load = async (width: number, navigationHidden: boolean, html?: string): Promise<Page> => {
   const page = await browser.newPage({ viewport: { width, height: 800 }, isMobile: width < 1024, hasTouch: width < 1024 });
   await page.setContent(
-    `<!doctype html><html><head><style>${css}</style></head>` +
+    // Phone and tablet contexts honour the viewport tag; without it they lay the page out 980 px wide.
+    `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
       `<body class="k2b-ui" style="margin:0"><div style="display:flex;flex-direction:column;height:100vh">${render(navigationHidden, html)}</div></body></html>`,
   );
   return page;
@@ -138,10 +139,13 @@ const layout = (page: Page) =>
       return { left: Math.round(rect.left), top: Math.round(rect.top), width: Math.round(rect.width), height: Math.round(rect.height) };
     };
     const sidebar = document.getElementById("notebook-navigation");
-    const show = document.querySelector('.k2b-icon-button[aria-controls="notebook-navigation"]');
+    // The app's own control; the workspace's compact bar names the same sidebar.
+    const show = document.querySelector('.k2b-icon-button[aria-controls="notebook-navigation"]:not([data-app-workspace-sidebar-toggle])');
+    const compact = document.querySelector("[data-app-workspace-sidebar-toggle]");
     return {
       sidebar: sidebar ? { display: getComputedStyle(sidebar).display, text: sidebar.textContent ?? "" } : null,
       show: show ? { visible: show.checkVisibility(), box: box(show) } : null,
+      compact: compact ? compact.checkVisibility() : null,
       main: box(document.querySelector(".notebook-book-main")),
       article: box(document.getElementById("notebook-book-content")),
     };
@@ -164,6 +168,22 @@ describe("Book view with the notebook navigation hidden", () => {
       expect(hidden.show?.visible).toBe(true);
       expect(hidden.show!.box!.left).toBeLessThan(40);
       expect(hidden.show!.box!.top + hidden.show!.box!.height).toBeGreaterThan(800 - 40);
+    } finally {
+      await visiblePage.close();
+      await hiddenPage.close();
+    }
+  });
+
+  test("at 820 px the compact bar opens a visible navigation, and the app's control brings back a hidden one", async () => {
+    const visiblePage = await load(820, false);
+    const hiddenPage = await load(820, true);
+    try {
+      const visible = await layout(visiblePage);
+      const hidden = await layout(hiddenPage);
+      expect(visible.compact).toBe(true);
+      expect(visible.show).toBeNull();
+      expect(hidden.compact).toBeNull();
+      expect(hidden.show?.visible).toBe(true);
     } finally {
       await visiblePage.close();
       await hiddenPage.close();

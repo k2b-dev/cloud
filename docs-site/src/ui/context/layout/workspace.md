@@ -54,15 +54,42 @@ controls visibility, so local state and SSR DOM identity remain stable.
 
 ## Navigation
 
-`Sidebar` with `SidebarDesktop` supplies the persistent desktop navigation at
-1024 px and above. Below 1024 px, the host renders its mobile navigation using
+`Sidebar` with `SidebarDesktop` supplies the workspace navigation. Its form
+follows the viewport width:
+
+| Width | Navigation | Work area |
+| --- | --- | --- |
+| Below 48 rem (768 px) | Hidden; the host renders its mobile navigation | One pane at a time; an open `Detail` replaces `Main` |
+| 48 to 64 rem (768 to 1023 px) | An overlay that a compact bar opens | Panes side by side, `Detail` beside `Main` |
+| From 64 rem (1024 px) | A column beside the work area | Panes side by side, `Detail` beside `Main` |
+
+Below 48 rem the host renders its mobile navigation using
 [createNavigation and Navigation](/en/ui/layout/navigation), usually inside a
-[BottomSheet](/en/ui/layout/bottom-sheet). AppWorkspace adds no mobile launcher,
-second application title, or tablet menu. Sidebar items with an `href` remain real links.
+[BottomSheet](/en/ui/layout/bottom-sheet). AppWorkspace adds no mobile
+launcher or second application title there. Sidebar items with an `href`
+remain real links.
+
+Between 48 and 64 rem the workspace shows a compact bar above its content: a
+button labeled **Show navigation** and, if the host provides one, the page
+title. The button opens the sidebar over the work area as a raised surface with
+a scrim beside it; the work area keeps its geometry. While it is open, the rest
+of the workspace is inert and Tab stays in the sidebar. Focus starts on the
+current item. Escape, the button, a click on the scrim, choosing a link or an
+item, or widening the window past 64 rem closes it; Escape, the button, and the
+scrim return focus to the button. A folder row that only expands and an item's
+own actions keep it open. The bar, the overlay, and the scrim draw no border
+lines. A sidebar collapsed to its rail on a wide screen opens expanded. The
+shared controller binds the button, so a server-rendered workspace gets the
+overlay without hydrating; the button does nothing before a controller runs.
+
+The host names the page by setting `--k2b-app-workspace-title` to a CSS string
+on any ancestor, for example `style="--k2b-app-workspace-title: 'Reports'"`.
+Escape quotes and backslashes in the string. Cloud's `Layout` sets it to the
+page title.
 
 Set `mobileSurface="flush"` on an outer workspace when the host supplies the
-mobile chrome. This removes its exterior border, radius, shadow, and background
-on mobile. Embedded workspaces keep the default contained surface.
+phone chrome. This removes its exterior border, radius, shadow, and background
+below 48 rem. Embedded workspaces keep the default contained surface.
 
 Sidebar links use document navigation by default. Set `navigation="enhanced"`
 only inside an island that loads and applies the target state before committing
@@ -78,8 +105,10 @@ Set `hidden` on `Sidebar` to hide the desktop navigation completely, for
 focused work or when others can see the screen. A hidden sidebar renders none
 of its children and no resize handle, so its labels are neither visible nor
 reachable, and main panes with `surface="navigation"` hide with it. The work
-area takes the full width. Below 1024 px the host's mobile navigation menu
-stays available; a `mobile="stacked"` sidebar hides there as well. Pass
+area takes the full width. Below 48 rem the host's mobile navigation menu
+stays available; a `mobile="stacked"` sidebar hides there as well. Between 48
+and 64 rem a hidden sidebar has no compact bar, so the application's control
+that shows it again is the only way back. Pass
 `onHiddenChange` as well to make a drag of the resize handle below half the
 minimum width hide the sidebar; the shared controller dims the sidebar at its
 minimum width as a preview during the drag, requests `true` on release, and
@@ -679,8 +708,11 @@ The package exports parse, normalize, serialize, and style helpers for layout st
 </AppWorkspace>
 ```
 
-Main-pane borders separate adjacent desktop regions. The last visible pane has
-no outer border, and single-pane mobile layouts do not retain split borders.
+Main-pane borders separate adjacent regions from 48 rem. The last visible pane
+has no outer border, and single-pane phone layouts do not retain split borders.
+A side pane keeps its size while the main region keeps 320 px and gives way
+down to its minimum; the stylesheet applies the same fit as the controller, so
+a server-rendered split arrives at its final widths.
 
 ### Live rows and detail previews
 
@@ -820,7 +852,7 @@ one. Object rows truncate their title instead of scrolling it.
 
 Set `mobile="stacked"` on `Sidebar` when the sidebar is the primary object
 list of an overview and the host's mobile navigation does not carry it. Below
-1024 px the sidebar then stays visible as a block above the content, capped at
+48 rem the sidebar then stays visible as a block above the content, capped at
 half the viewport height with its own scrolling body, and the footer wraps
 its items into a row. Leave the default `"hidden"` for workspaces whose
 sidebar is view navigation inside one resource.

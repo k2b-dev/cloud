@@ -60,7 +60,7 @@ export function openAppLaunchpad(apps?: AppLaunchpadApp[], legalLinks?: AppLaunc
   const context = apps ? { apps, legalLinks: legalLinks ?? [], profile } : (window.__cloudAppLaunchpad ?? readEmbeddedContext());
   if (!context) return;
   window.__cloudAppLaunchpad = context;
-  if (window.matchMedia("(max-width: 1023px)").matches) {
+  if (window.matchMedia("(max-width: 767px)").matches) {
     void openCloudMobileMenu(context);
     return;
   }

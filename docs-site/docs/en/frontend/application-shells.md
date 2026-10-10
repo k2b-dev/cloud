@@ -5,7 +5,7 @@ section: Frontend
 order: 830
 description: Choose the shared shell that matches an application's information structure.
 tags: [shells, workspace, ui]
-updated: 2026-10-07
+updated: 2026-10-10
 ---
 
 # Application shells
@@ -85,8 +85,8 @@ detail after reload. See
 `AppWorkspace.Content` is the required flex row for `Main` and `Detail`.
 Keep geometry IDs stable. Do not add another grid or resize handle.
 
-Authenticated desktop layouts expose Help and Search through the application
-rail. Their header controls are compact-layout fallbacks and stay mobile-only.
+From 768 px, signed-in layouts expose Help and Search through the app bar.
+Their header controls exist only on phones.
 
 ## Choose a dialog
 
@@ -107,7 +107,7 @@ Inspect current examples in the [UI catalog](/ui).
 
 ## Supply mobile navigation
 
-Cloud owns one mobile menu below 1024 px. The header launcher opens the current
+Cloud owns one mobile menu below 768 px. The header launcher opens the current
 workspace menu by default; **All apps** switches to the application grid.
 The sheet header combines the workspace name and **All apps** in one segmented
 control. An application without its own navigation gets no header row: the
@@ -115,8 +115,13 @@ sheet shows only the application grid, and the handle, backdrop, Escape, and
 Back dismiss it. All apps uses a three-column grid and a local search over app
 names and descriptions. Signed-in users also find their profile, theme, language, and
 sign-out actions there; the mobile header has no separate profile menu.
-At 1024 px and above, the existing desktop rail and workspace sidebar apply.
-There is no intermediate tablet menu.
+From 768 px the app bar replaces the header, and `AppWorkspace` shows its own
+navigation. Between 768 and 1023 px, a tablet range, the workspace keeps its
+list and detail side by side, and its sidebar is an overlay: a compact bar at
+the top of the workspace holds the button that opens it and the page title.
+The overlay closes with Escape, the button, a tap beside it, or a choice in the
+navigation, and focus returns to the button. From 1024 px the sidebar sits
+beside the work area. Applications need no code for the tablet range.
 
 For SSR link navigation, render the public island once alongside the outer
 sidebar:

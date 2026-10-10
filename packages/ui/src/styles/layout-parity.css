@@ -1242,6 +1242,27 @@
     padding: 0.5rem;
   }
 
+  .k2b-ui
+    .k2b-app-workspace:has(
+      > .k2b-app-workspace__sidebar:not([hidden]),
+      > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden])
+    )
+    > .k2b-app-workspace__resize[data-app-workspace-resize="drawer"],
+  .k2b-ui
+    .k2b-app-workspace:has(
+      > .k2b-app-workspace__sidebar:not([hidden]),
+      > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden])
+    )
+    > :is(solid-island, solid-client)
+    > .k2b-app-workspace__resize[data-app-workspace-resize="drawer"] {
+    left: var(--k2b-workspace-sidebar-width, 13rem);
+  }
+}
+
+/* From 48 rem the work area keeps its columns: panes side by side, the detail
+   beside the main area, and resize handles. Only the sidebar track waits for
+   64 rem; in between the sidebar is an overlay (see the compact block below). */
+@media (min-width: 48rem) {
   .k2b-ui .k2b-app-workspace__resize {
     display: block;
   }
@@ -1258,9 +1279,14 @@
     display: flex;
   }
 
+  /* The same fit the controller applies: the pane keeps its size while the
+     main region keeps 320 px, and gives way down to its minimum. Doing it in
+     CSS lets the server-rendered page arrive in the geometry the controller
+     would set, so nothing moves when it attaches. */
   .k2b-ui .k2b-app-workspace__main-pane {
-    width: var(--k2b-workspace-panel-size);
-    flex: 0 0 var(--k2b-workspace-panel-size);
+    --k2b-workspace-pane-fit: clamp(var(--k2b-workspace-panel-min, 0px), 100% - 320px, var(--k2b-workspace-panel-size));
+    width: var(--k2b-workspace-pane-fit);
+    flex: 0 0 var(--k2b-workspace-pane-fit);
   }
 
   /* Separators belong between visible regions, never at the outer edge. */
@@ -1282,22 +1308,6 @@
     flex: 0 0 var(--k2b-workspace-resize-hit-size);
     margin-inline: -0.625rem;
     transform: none;
-  }
-
-  .k2b-ui
-    .k2b-app-workspace:has(
-      > .k2b-app-workspace__sidebar:not([hidden]),
-      > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden])
-    )
-    > .k2b-app-workspace__resize[data-app-workspace-resize="drawer"],
-  .k2b-ui
-    .k2b-app-workspace:has(
-      > .k2b-app-workspace__sidebar:not([hidden]),
-      > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden])
-    )
-    > :is(solid-island, solid-client)
-    > .k2b-app-workspace__resize[data-app-workspace-resize="drawer"] {
-    left: var(--k2b-workspace-sidebar-width, 13rem);
   }
 
   /* Cloud's `detailWidthClass` presets, then the resizable override — the
@@ -1325,6 +1335,102 @@
   }
 }
 
+/* Compact: from 48 to 64 rem the sidebar is an overlay over the work area. The
+   compact bar above the content holds the button that opens it and, when the
+   host sets `--k2b-app-workspace-title` to a CSS string, the page title. The
+   bar, the overlay, and the scrim draw no border lines; the overlay is a raised
+   surface with the shared float shadow. The shared controller sets
+   `data-sidebar-overlay="open"` on the workspace root while it is open. */
+.k2b-ui .k2b-app-workspace__compact-bar {
+  display: none;
+}
+
+@media (min-width: 48rem) and (max-width: 63.999rem) {
+  .k2b-ui .k2b-app-workspace__compact-bar {
+    display: flex;
+    min-width: 0;
+    min-height: 2.875rem;
+    grid-area: mobile;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.375rem 0.5rem;
+    background: var(--k2b-surface);
+  }
+
+  .k2b-ui .k2b-app-workspace__compact-title {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--k2b-text);
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .k2b-ui .k2b-app-workspace__compact-title::before {
+    content: var(--k2b-app-workspace-title, "");
+  }
+
+  .k2b-ui .k2b-app-workspace__sidebar:not([hidden]) {
+    position: absolute;
+    z-index: 30;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    display: flex;
+    width: min(17.5rem, calc(100% - 3rem));
+    visibility: hidden;
+    background: var(--k2b-surface-elevated);
+    box-shadow: var(--k2b-shadow-float);
+    transform: translateX(-100%);
+    transition:
+      transform 200ms ease-out,
+      visibility 0s linear 200ms;
+  }
+
+  .k2b-ui .k2b-app-workspace[data-sidebar-overlay="open"] > .k2b-app-workspace__sidebar:not([hidden]),
+  .k2b-ui .k2b-app-workspace[data-sidebar-overlay="open"] > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) {
+    visibility: visible;
+    transform: none;
+    transition: transform 200ms ease-out;
+  }
+
+  .k2b-ui .k2b-app-workspace__sidebar-desktop {
+    display: flex;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.5rem;
+  }
+
+  .k2b-ui .k2b-app-workspace__resize[data-app-workspace-resize="sidebar"] {
+    display: none;
+  }
+
+  .k2b-ui .k2b-app-workspace[data-sidebar-overlay="open"]::after {
+    position: absolute;
+    z-index: 25;
+    inset: 0;
+    content: "";
+    background: rgb(9 9 11 / 0.18);
+  }
+
+  .k2b-ui[data-theme="dark"] .k2b-app-workspace[data-sidebar-overlay="open"]::after,
+  .k2b-ui.k2b-dark .k2b-app-workspace[data-sidebar-overlay="open"]::after,
+  .dark .k2b-ui .k2b-app-workspace[data-sidebar-overlay="open"]::after {
+    background: rgb(0 0 0 / 0.4);
+  }
+}
+
+@media (min-width: 48rem) and (max-width: 63.999rem) and (prefers-reduced-motion: reduce) {
+  .k2b-ui .k2b-app-workspace__sidebar:not([hidden]),
+  .k2b-ui .k2b-app-workspace[data-sidebar-overlay="open"] > .k2b-app-workspace__sidebar:not([hidden]),
+  .k2b-ui .k2b-app-workspace[data-sidebar-overlay="open"] > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) {
+    transition: none;
+  }
+}
+
 @media (min-width: 80rem) {
   .k2b-ui .k2b-app-workspace__detail[data-width="sm"] {
     width: 18rem;
@@ -1347,7 +1453,7 @@
   }
 }
 
-@media (max-width: 63.999rem) {
+@media (max-width: 47.999rem) {
   /* An opt-in stacked sidebar keeps an overview's object list above the
      content instead of handing navigation to the host's mobile chrome. */
   /* A viewport cap, not a percentage: the grid row is content-sized, so a

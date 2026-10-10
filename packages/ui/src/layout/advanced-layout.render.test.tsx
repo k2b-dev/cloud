@@ -772,8 +772,8 @@ describe("@k2b/ui complete advanced layout migrations", () => {
       );
     });
 
-    test("limits mobile pane selection to the mobile breakpoint", () => {
-      const mobileBreakpoint = layoutSource.indexOf("@media (max-width: 63.999rem)");
+    test("limits mobile pane selection to the phone breakpoint", () => {
+      const mobileBreakpoint = layoutSource.indexOf("@media (max-width: 47.999rem)");
       const mobilePaneSelector = '.k2b-app-workspace__main.has-panes > [data-workspace-main-region][data-workspace-mobile-active="true"]';
 
       expect(mobileBreakpoint).toBeGreaterThan(-1);
