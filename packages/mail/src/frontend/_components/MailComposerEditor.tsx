@@ -24,6 +24,7 @@ export default function MailComposerEditor(props: {
   onPanesChange: (value: PanesLayout) => void;
   preview: Accessor<ComposePreview | null>;
   previewError: Accessor<string | undefined>;
+  previewPending: Accessor<boolean>;
   onRetryPreview: () => void;
   onEditorReady: (element: HTMLTextAreaElement) => void;
   history?: () => JSX.Element;
@@ -65,42 +66,41 @@ export default function MailComposerEditor(props: {
     </Show>
   );
 
+  // A failed preview takes the whole pane until a later one succeeds, so its message never covers an outdated preview.
   const previewSurface = () => (
-    <div class="relative h-full min-h-72 overflow-hidden bg-white">
+    <div class="h-full min-h-72 overflow-hidden">
       <Show
-        when={props.preview()}
+        when={props.previewError()}
         fallback={
           <Show
-            when={props.previewError()}
+            when={props.preview()}
             fallback={<Placeholder state="loading" variant="panel" class="h-full min-h-72" title={t().preparingPreview} />}
           >
-            {(message) => (
-              <div class="flex h-full min-h-72 flex-col items-center justify-center gap-2 p-4 text-sm text-red-600">
-                <span>{message()}</span>
-                <Button variant="secondary" size="sm" type="button" onClick={props.onRetryPreview}>
-                  {t().retry}
-                </Button>
-              </div>
+            {(value) => (
+              <iframe
+                class="h-full min-h-72 w-full border-0 bg-white"
+                sandbox=""
+                srcdoc={`<style>body{margin:0}</style>${value().html}`}
+                title={t().emailPreview}
+              />
             )}
           </Show>
         }
       >
-        {(value) => (
-          <iframe
-            class="h-full min-h-72 w-full border-0 bg-white"
-            sandbox=""
-            srcdoc={`<style>body{margin:0}</style>${value().html}`}
-            title={t().emailPreview}
+        {(message) => (
+          <Placeholder
+            state="error"
+            variant="panel"
+            class="h-full min-h-72 overflow-y-auto"
+            title={t().previewFailed}
+            description={message() === t().previewFailed ? undefined : message()}
+            action={
+              <Button variant="secondary" size="sm" type="button" loading={props.previewPending()} onClick={props.onRetryPreview}>
+                {t().retry}
+              </Button>
+            }
           />
         )}
-      </Show>
-      <Show when={props.preview() && props.previewError()}>
-        <div class="absolute inset-x-2 top-2 flex items-center gap-2 border border-red-200 bg-white px-2 py-1 text-xs text-red-600 shadow-sm">
-          <span class="min-w-0 flex-1 truncate">{props.previewError()}</span>
-          <Button variant="ghost" size="sm" type="button" onClick={props.onRetryPreview}>
-            {t().retry}
-          </Button>
-        </div>
       </Show>
     </div>
   );

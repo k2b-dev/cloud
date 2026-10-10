@@ -24,7 +24,7 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import { MailDraftCalendarInputSchema, mailCommandMessages } from "../../commands";
 import {
@@ -288,13 +288,19 @@ export default function MailComposer(props: {
     enabled: () => format() === "markdown" && isPanesItemVisible(currentComposerPanes(), "preview") && Boolean(identityId()),
     load: async (serialized, { abortSignal }) => {
       const input = JSON.parse(serialized) as PreviewInput;
-      const response = await apiClient.mailboxes[":mailboxId"]["compose-preview"].$post(
-        {
-          param: { mailboxId: props.mailboxId },
-          json: input,
-        },
-        { init: { signal: abortSignal } },
-      );
+      const response = await apiClient.mailboxes[":mailboxId"]["compose-preview"]
+        .$post(
+          {
+            param: { mailboxId: props.mailboxId },
+            json: input,
+          },
+          { init: { signal: abortSignal } },
+        )
+        .catch((error: unknown) => {
+          // The browser's own network message is not in the reader's language.
+          if (abortSignal.aborted) throw error;
+          throw new Error(t().previewFailed);
+        });
       if (!response.ok) throw new Error(await readApiError(response, t().previewFailed));
       return await response.json();
     },
@@ -302,6 +308,14 @@ export default function MailComposer(props: {
   const previewDebounce = timed.debounce((serialized: string) => setPreviewSource(serialized), 150);
   const stopPreview = () => previewDebounce.cancel();
   const preview = () => previewQuery.data() ?? null;
+  // Each new request clears the query's error; keeping it until a preview succeeds stops typing from flickering
+  // between the error and the last good preview.
+  const [previewError, setPreviewError] = createSignal<string>();
+  createEffect(() => {
+    const error = previewQuery.error();
+    if (error) setPreviewError(error.message);
+  });
+  createEffect(on(previewQuery.data, () => setPreviewError(undefined), { defer: true }));
   const canEditDraft = createMemo(
     () => verifiedIdentities().length > 0 && status() !== "preparing" && status() !== "readonly" && (Boolean(lease()) || !draft()),
   );
@@ -1274,7 +1288,8 @@ export default function MailComposer(props: {
           panes={currentComposerPanes}
           onPanesChange={updateComposerPanes}
           preview={preview}
-          previewError={() => previewQuery.error()?.message}
+          previewError={previewError}
+          previewPending={() => previewQuery.loading() || previewQuery.refreshing()}
           onRetryPreview={retryPreview}
           onEditorReady={focusFreshEditorAtStart}
           history={

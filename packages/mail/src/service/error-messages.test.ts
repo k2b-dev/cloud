@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { err } from "@k2b/stdlib";
+import { composeRenderFailure } from "./compose-render-errors";
 import { localizeMailError, MAX_ERROR_DETAIL_LENGTH, safeErrorDetail } from "./error-messages";
 import { providerBusy } from "./provider-operation-lock";
 
@@ -10,6 +11,19 @@ describe("Mail service messages", () => {
       message: "Das Postfach wurde nicht gefunden",
       status: 404,
     });
+  });
+
+  test("shows a draft render failure as a complete sentence in the request language", () => {
+    const failure = composeRenderFailure("tooManySignatures", 100);
+    expect(localizeMailError(failure, "en").message).toBe("A message may contain at most 100 signatures. Remove some and try again.");
+    expect(localizeMailError(failure, "de-AT")).toMatchObject({
+      code: "BAD_INPUT",
+      status: 400,
+      message: "Eine Nachricht darf höchstens 100 Signaturen enthalten. Entferne einige und versuche es erneut.",
+    });
+    expect(localizeMailError(composeRenderFailure("tooComplex"), "fr").message).toBe(
+      "This message is too complex to render safely. Shorten it or simplify its formatting.",
+    );
   });
 
   test("uses a useful German fallback and leaves other locales unchanged", () => {

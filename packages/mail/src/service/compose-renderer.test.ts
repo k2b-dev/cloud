@@ -4,6 +4,7 @@ import {
   DEFAULT_MAIL_CSS,
   hasUnrenderedTemplateSyntax,
   markComposeTemplateSegment,
+  removeOrphanComposeSegmentMarks,
   renderComposeContent,
   renderComposeTemplateSource,
   validateComposeCss,
@@ -71,7 +72,7 @@ describe("compose renderer", () => {
       context: loopingContext,
       renderLiquid: true,
     });
-    expect(result).toMatchObject({ ok: false, error: { message: "Template rendering exceeded its time budget" } });
+    expect(result).toMatchObject({ ok: false, error: { composeRender: { reason: "signatureFailed" } } });
     // More reads than one segment has: the time budget carried over into later segments.
     expect(reads).toBeGreaterThan(100);
     expect(performance.now() - start).toBeLessThan(3_000);
@@ -199,6 +200,8 @@ describe("compose renderer", () => {
     expect(hasUnrenderedTemplateSyntax(`${markComposeTemplateSegment("{{ sender.email }}")}\n{% if x %}`)).toBe(true);
     expect(hasUnrenderedTemplateSyntax("Plain regards")).toBe(false);
     expect(hasUnrenderedTemplateSyntax("\u2063{{ sender.email }}")).toBe(true);
+    expect(hasUnrenderedTemplateSyntax(`\u2063{{ sender.email }}${markComposeTemplateSegment("Regards")}`)).toBe(true);
+    expect(hasUnrenderedTemplateSyntax("{{ sender.email }}\u2064")).toBe(true);
   });
 
   test("keeps unknown user braces literal and prevents Markdown injection from variables", () => {
@@ -279,10 +282,10 @@ describe("compose renderer", () => {
       renderLiquid: true,
     });
 
-    expect(rendered).toMatchObject({ ok: false, error: { status: 400, message: "Rendered email content exceeds the safe size limit" } });
+    expect(rendered).toMatchObject({ ok: false, error: { status: 400, composeRender: { reason: "tooLarge" } } });
   });
 
-  test("rejects malformed or excessive signature segments in linear time", () => {
+  test("caps real signature segments in linear time", () => {
     const excessive = renderComposeContent({
       body: markComposeTemplateSegment("x").repeat(101),
       format: "plain",
@@ -292,17 +295,71 @@ describe("compose renderer", () => {
     });
     expect(excessive).toMatchObject({
       ok: false,
-      error: { status: 400, message: "Email may contain at most 100 signature segments" },
+      error: { status: 400, composeRender: { reason: "tooManySignatures", limit: 100 } },
     });
 
-    const malformed = renderComposeContent({
-      body: `${markComposeTemplateSegment("x")}\u2064`,
+    const allowed = renderComposeContent({
+      body: markComposeTemplateSegment("{{ actor.display_name }}").repeat(100),
       format: "plain",
       customCss: "",
       context,
       renderLiquid: true,
     });
-    expect(malformed).toMatchObject({ ok: false, error: { status: 400, message: "Email contains an invalid signature segment" } });
+    expect(allowed).toEqual({ ok: true, data: { html: null, text: "Ada Lovelace".repeat(100) } });
+
+    // Leftover marks do not count as signatures, however many a hand edit leaves.
+    for (const body of [`${"\u2063".repeat(10_000)}text`, `text${"\u2064".repeat(10_000)}`]) {
+      const leftovers = renderComposeContent({ body, format: "plain", customCss: "", context, renderLiquid: true });
+      expect(leftovers).toEqual({ ok: true, data: { html: null, text: "text" } });
+    }
+  });
+
+  describe("keeps text of a partly deleted signature as plain text", () => {
+    const render = (body: string) => renderComposeContent({ body, format: "markdown", customCss: "", context, renderLiquid: true });
+    const textOf = (body: string) => {
+      const rendered = render(body);
+      expect(rendered.ok).toBe(true);
+      return rendered.ok ? rendered.data.text : null;
+    };
+
+    test("a start mark without an end", () => {
+      expect(textOf("Hello\n\n\u2063Regards, {{ actor.display_name }}")).toBe("Hello\n\nRegards, {{ actor.display_name }}");
+      expect(textOf("Hello\u2063")).toBe("Hello");
+    });
+
+    test("an end mark without a start", () => {
+      expect(textOf("Regards, {{ actor.display_name }}\u2064\n\nThanks")).toBe("Regards, {{ actor.display_name }}\n\nThanks");
+      expect(textOf(`${markComposeTemplateSegment("By {{ actor.display_name }}")}\u2064`)).toBe("By Ada Lovelace");
+    });
+
+    test("a start mark inside a signature", () => {
+      expect(textOf(`\u2063Kept {{ actor.email }} ${markComposeTemplateSegment("By {{ actor.display_name }}")}`)).toBe(
+        "Kept {{ actor.email }} By Ada Lovelace",
+      );
+    });
+
+    test("complete signatures next to leftovers", () => {
+      const body = `\u2064A ${markComposeTemplateSegment("{{ actor.display_name }}")} B \u2063C ${markComposeTemplateSegment("{{ actor.email }}")}\u2064`;
+      expect(textOf(body)).toBe("A Ada Lovelace B C ada@example.test");
+    });
+
+    test("leftover marks in filled-in values never reach the message", () => {
+      const rendered = renderComposeContent({
+        body: markComposeTemplateSegment("{{ actor.display_name }}"),
+        format: "plain",
+        customCss: "",
+        context: { ...context, actor: { ...context.actor, display_name: "Ada\u2064\u2063 Lovelace" } },
+        renderLiquid: true,
+      });
+      expect(rendered).toEqual({ ok: true, data: { html: null, text: "Ada Lovelace" } });
+    });
+  });
+
+  test("keeps only complete signature segments when a draft is saved", () => {
+    const signature = markComposeTemplateSegment("{{ actor.display_name }}");
+    expect(removeOrphanComposeSegmentMarks(`\u2064Hi\u2063 ${signature}\u2064\u2063`)).toBe(`Hi ${signature}`);
+    expect(removeOrphanComposeSegmentMarks(`A ${signature} B`)).toBe(`A ${signature} B`);
+    expect(removeOrphanComposeSegmentMarks("")).toBe("");
   });
 
   test("rejects pathological Markdown before CSS inlining", () => {
@@ -323,7 +380,7 @@ describe("compose renderer", () => {
       context,
       renderLiquid: true,
     });
-    expect(syntaxBomb).toMatchObject({ ok: false, error: { status: 400, message: "Markdown email is too complex to render safely" } });
+    expect(syntaxBomb).toMatchObject({ ok: false, error: { status: 400, composeRender: { reason: "tooComplex" } } });
   });
 
   test("rejects active and unscoped CSS features", () => {
@@ -355,7 +412,7 @@ describe("compose renderer", () => {
 
     expect(rendered).toMatchObject({
       ok: false,
-      error: { status: 400, message: "Email content and CSS are too complex to inline safely" },
+      error: { status: 400, composeRender: { reason: "tooComplex" } },
     });
   });
 

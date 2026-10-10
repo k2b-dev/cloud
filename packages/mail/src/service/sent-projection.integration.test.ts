@@ -13,6 +13,7 @@ import { rediscoverProviderBinding } from "./bindings";
 import { sha256Json } from "./canonical";
 import { executeOutboxSubmission, executeOutboxSubmissionWithHeartbeat, recoverStaleExecutions } from "./command-runtime";
 import { createActorCommand, createMailCommand } from "./commands";
+import { markComposeTemplateSegment } from "./compose-renderer";
 import { imapSmtpConnector } from "./connectors";
 import { mapFetchedEnvelope } from "./connectors/imap-smtp";
 import { mergeConversations } from "./conversations";
@@ -1817,6 +1818,45 @@ suite("mail sent message projection", () => {
       expect(copy.internalDate.getTime()).toBeGreaterThanOrEqual(dispatchedFrom);
       const projection = await sentProjection(mailbox, outbox.stable_message_id);
       expect(projection.messages[0]!.sent_at!.getTime()).toBeGreaterThanOrEqual(dispatchedFrom);
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("a draft with marks of a signature deleted by hand saves and sends its text as written", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      // The start mark of a signature whose end was deleted, a complete signature, and a stray end mark.
+      const body = `Thanks for waiting.\n\n\u2063Best regards\n\n${markComposeTemplateSegment("Sent by {{ actor.display_name }}")}\u2064`;
+      const draft = await createDraft({
+        context,
+        mailboxId: mailbox.mailboxId,
+        input: {
+          senderIdentityId: mailbox.identityId,
+          to: [{ name: "Customer", address: CUSTOMER }],
+          cc: [],
+          bcc: [],
+          subject: "Leftover signature marks",
+          body,
+          format: "markdown",
+        },
+      });
+      if (!draft.ok) throw new Error(JSON.stringify(draft.error));
+      expect(draft.data.body).toBe(
+        `Thanks for waiting.\n\nBest regards\n\n${markComposeTemplateSegment("Sent by {{ actor.display_name }}")}`,
+      );
+      await waitForDraftExport(draft.data.id, ["active"]);
+      // Drafts saved before marks were cleaned up still hold them when they are sent.
+      await sql`UPDATE mail.drafts SET body_markdown = ${body} WHERE id = ${draft.data.id}::uuid`;
+
+      const outbox = await send(mailbox, draft.data.id, draft.data.revision, "leftover-signature-marks");
+      const [copy] = provider.messagesWithId("Sent", outbox.stable_message_id);
+      if (!copy) throw new Error("The Sent copy is missing");
+      const parsed = await simpleParser(copy.source);
+      expect(parsed.text?.trim()).toBe(`Thanks for waiting.\n\nBest regards\n\nSent by mail-sent-projection-${suffix}`);
+      expect(`${parsed.text}${parsed.html}`).not.toMatch(/[\u2063\u2064]/);
+      expect(parsed.html).toContain(`Sent by mail-sent-projection-${suffix}`);
     } finally {
       provider.restore();
     }
