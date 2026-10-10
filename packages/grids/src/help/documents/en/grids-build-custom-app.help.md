@@ -5,13 +5,13 @@ icon: ti ti-certificate
 description: Build a request app with progress, comments, and a generated certificate.
 order: 133
 ---
-This guide builds a certificate-request app. A requester can submit a request, see their requests, open one request, discuss it, follow its status, and download the generated certificate. A responsible group can process every request through the same base.
+This guide builds a certificate-request app. A requester can submit a request, see their requests, open one request, discuss it, follow its status, and download the generated certificate. A responsible group processes every request in the same Base.
 
-The app uses one table and three pages. Existing Forms, Views, Workflows, and document templates continue to own their respective behavior.
+The app uses one table and three pages. Existing forms, views, workflows, and document templates keep their own behavior.
 
-## Before you start {icon="list-check"}
+## Prepare the resources {icon="list-check"}
 
-You must be a base administrator. Prepare these resources in the same base:
+You need **Manage** access to the Base. Prepare these resources in the same Base:
 
 | Resource | Required configuration |
 | --- | --- |
@@ -21,36 +21,61 @@ You must be a base administrator. Prepare these resources in the same base:
 | **Certificate** document template | Uses one Certificate requests record |
 | **Approve and generate certificate** workflow launcher | Validates the request, updates it, generates the document, then notifies the requester |
 
-Do not add a requester field only to duplicate identity. Every record already stores its creator, and the app's GQL can compare `record.createdBy` with `@auth.id`. Generated PDFs stay attached as Documents instead of being copied into another file field.
+Do not add a requester field that only repeats the identity. Every record already stores its creator, and the GQL of the app can compare `record.createdBy` with `@auth.id`. Generated PDFs stay attached as documents. Do not copy them into another file field.
 
 ## Configure access first {icon="lock"}
 
-Choose the audience boundaries before composing pages:
+Choose the boundaries of each audience before you build pages:
 
 | Audience | Boundary | Result |
 | --- | --- | --- |
-| Requesters | Grids App Read | Use only the published pages, personal GQL result, included Form, comments, and documents. |
-| Responsible group | Base Write, or a separate staff Grids App | Process all requests without widening the requester app. |
+| Requesters | **Open** access to the Grids App | Use only the published pages, the personal GQL result, the included form, comments, and documents. |
+| Responsible group | **Edit** access to the Base, or a separate staff Grids App | Process all requests without widening the requester app. |
 
-Grids App access does not grant raw Base access. The immutable publication lists the exact data and operations available to requesters. Exercise the requester app and the staff surface with separate real test accounts before publishing.
+Access to a Grids App gives no raw access to the Base. The immutable publication lists the exact data and operations that requesters can use. Before you publish, try the requester app and the staff surface with separate real test accounts.
 
-**Checkpoint:** a requester can submit the Form and the app's Records query returns only `record.createdBy = @auth.id`; the responsible group can process all requests through its separate boundary. If this fails, correct the query or split the audience before building more pages.
+**Checkpoint:** A requester can submit the form, and the Records query of the app returns only `record.createdBy = @auth.id`. The responsible group can process all requests through its separate boundary. If this fails, correct the query or split the audience before you build more pages.
 
 ## Open the builder {icon="apps"}
 
-Turn on **Edit mode**, open the base, and choose **New app** under **Apps**. The builder creates one Home page that you can rename or extend. You can also create or replace the same canonical definition with [YAML & CLI](/app/grids/help/grids-custom-app-yaml-cli). Only base administrators see these controls.
+You need **Manage** access to the Base to see these controls.
 
-The builder edits the same canonical draft used by YAML and CLI. Every structurally complete change is saved automatically; semantic diagnostics remain attached to the draft and block publishing instead of discarding your work. The status beside the app name distinguishes **Live**, **Unpublished changes**, **Draft only**, and a draft that needs attention. The Pages notice shows saving failures, publishes the latest saved draft, and can restore the draft to the current live version after confirming that all draft changes will be discarded. Its external-link icon opens that live version.
+:::steps
+1. Turn on **Edit mode**.
+2. Open the Base.
+3. Under **Apps**, choose **New app**.
+:::
 
-If saving fails, choose **Retry save** in the draft notice. Following a link to another Cloud page in the same tab, including leaving Edit mode, waits for pending changes to save. If saving fails, the builder stays open. Reloading or closing the tab uses the browser's unsaved-changes warning; cancel it and retry saving to keep your edits.
+The builder creates one Home page that you can rename or extend. You can also create or replace the same canonical definition with [Grids App YAML & CLI](/app/grids/help/grids-custom-app-yaml-cli).
 
-If a data preview fails to load, choose **Reload preview** in that block to try again without reloading the builder.
+### Work with the draft
 
-Charts display date-typed categories as localized calendar dates. Text categories keep their original labels, even when they resemble dates.
+The builder edits the same canonical draft as YAML and the CLI. It saves every structurally complete change automatically. Semantic diagnostics stay on the draft and block publishing, so your work is never discarded.
 
-The canvas is the current draft page: saved View and parameter-free GQL results for its draft pages are resolved on the server, Records use the shared Data Table, Metrics and Charts render aggregate results, and Forms use the complete shared Form UI with submission disabled while authoring. Referenced records shows a contextual placeholder because its result depends on the current record in the published route. Rendered HTML follows the same contextual-preview rule. Hover or focus a block to reveal its compact move handle. Drag to a horizontal edge to stack it before or after another block, or to a vertical edge to place it beside one block, a neighboring pair, or the complete stack. Pointer, touch, and keyboard use the same named targets and announcements. Rows, columns, empty layout containers, and balanced widths are created or removed automatically; only blocks are selected and edited. **Add block** groups ordinary content, page-record blocks, and advanced insights/actions. Data blocks prefer an accessible saved View when one exists and otherwise start with a bounded GQL source from an available table. Unavailable prerequisites stay visible in the menu instead of creating an unusable block.
+The notice under **Pages** shows the state of the draft: **This app is a draft**, **Changes are in a draft**, or **Used resources changed**. It shows saving failures and publishes the latest saved draft. It can also restore the draft to the current live version. Before that, it asks you to confirm that all draft changes will be discarded. **Open live app** opens the live version.
 
-**App settings** contains **General**, **Access**, and **Lifecycle**. Name and icon edits use the same autosaved draft. Choose an existing entry under **Actions** to edit a sidebar Form action, or use **New action** to add one; its label, Form, fixed values, availability, and success navigation belong to the inspector. Inline GQL and Markdown can be opened in a larger editor without creating a second draft or a separate Save step.
+If saving fails, choose **Retry save** in the notice. When you follow a link to another Cloud page in the same tab, Grids first waits until pending changes are saved. This also applies when you leave **Edit mode**. If saving fails, the builder stays open. When you reload or close the tab, the browser warns about unsaved changes. Cancel the warning and retry saving to keep your edits.
+
+If a data preview fails to load, choose **Reload preview** in that block. This tries again without reloading the builder.
+
+Charts show date-typed categories as localized calendar dates. Text categories keep their original labels, even when they look like dates.
+
+### Arrange blocks on the canvas
+
+The canvas shows the current draft page:
+
+- The server resolves the results of a saved view and of GQL without parameters for the draft pages.
+- Records use the shared data table. Metrics and Charts show aggregate results.
+- Forms use the complete shared form interface. Submitting is disabled while you author.
+- Referenced records shows a contextual placeholder, because its result depends on the current record in the published route. Rendered HTML follows the same rule.
+
+Hover over or focus a block to show its compact move handle. Drag the block to a horizontal edge to stack it before or after another block. Drag it to a vertical edge to place it beside one block, a neighboring pair, or the complete stack. Pointer, touch, and keyboard use the same named targets and announcements. Grids creates and removes rows, columns, empty layout containers, and balanced widths automatically. You select and edit only blocks.
+
+**Add block** groups ordinary content, blocks for the page record, and advanced insights and actions. A data block uses an accessible saved view when one exists. Otherwise, it starts with a bounded GQL source from an available table. A block whose prerequisites are missing stays visible in the menu and does not create an unusable block.
+
+### Configure the app
+
+**App settings** contains **General**, **Access**, and **Lifecycle**. Name and icon edits use the same autosaved draft. Choose an existing entry under **Actions** to edit a sidebar form action, or choose **New action** to add one. The inspector holds its label, form, fixed values, availability, and success navigation. Inline GQL and Markdown can be opened in a larger editor without creating a second draft or a separate save step.
 
 Set:
 
@@ -66,44 +91,47 @@ Create these pages, then inspect and refine them in the builder:
 | `requests` | My requests | Visible | None |
 | `request` | Request detail | Hidden | Required `request_id`, type Record, Certificate requests table |
 
-Page IDs are stable definition identifiers. You may edit them in Page settings; the builder updates navigation references atomically. Labels may change without breaking navigation. The hidden detail page is reached from a row or successful form submission.
+Page IDs are stable identifiers of the definition. You can edit them in **Page settings**. The builder then updates navigation references atomically. Labels can change without breaking navigation. People reach the hidden detail page from a row or after a successful form submission.
 
-**Checkpoint:** the draft opens on Apply, shows Apply and My requests in navigation, and keeps Request detail out of navigation. If not, correct the start page, each page's visibility, and the page array order.
+**Checkpoint:** The draft opens on Apply, shows Apply and My requests in the navigation, and keeps Request detail out of it. If not, correct the start page, the visibility of each page, and the order of the page array.
 
-## Build Apply {icon="forms"}
+## Build the Apply page {icon="forms"}
 
-Add one full-width row with:
+:::steps
+1. Add one full-width row.
+2. Add a Markdown block that explains the needed information and the expected processing time.
+3. Add a Form block with **Request a certificate**.
+4. In **After submission** of the Form block, set **Target page** to `request`.
+5. Bind `request_id` to **Created Form record**.
+:::
 
-1. a Markdown block explaining what information is needed and the expected processing time;
-2. a Form block using **Request a certificate**.
-
-In the Form block's **After success** settings, choose **Navigate**, target the `request` page, and bind:
+The binding is:
 
 ```text
 request_id = RESULT.recordId
 ```
 
-Enable **Replace history** so Back does not return to a completed submission state. The Form continues to own required fields, validation, fixed Status, and record creation.
+A successful submission replaces the history entry, so Back does not return to the completed submission. The form keeps its required fields, validation, fixed Status, and record creation.
 
-**Checkpoint:** a successful submission opens the new request's detail URL. If creation succeeds but navigation does not, fix the success binding rather than the Form.
+**Checkpoint:** A successful submission opens the detail URL of the new request. If creation succeeds but navigation fails, fix the success binding, not the form.
 
-## Build My requests {icon="list-details"}
+## Build the My requests page {icon="list-details"}
 
-Add a Records block using **My certificate requests**. Show only the fields needed to identify a request. Use a compact table or cards according to the expected screen width.
+Add a Records block with the saved view **My certificate requests**. Show only the fields that identify a request. Use a compact table or cards, depending on the expected screen width.
 
-Set the row target to page `request` and bind:
+Set **Open row on page** to `request` and bind:
 
 ```text
 request_id = ROW.id
 ```
 
-The published GQL must keep `record.createdBy = @auth.id` in the server-executed source. The rows shown by the table are presentation, never an access control.
+The published GQL must keep `record.createdBy = @auth.id` in the source that the server runs. The rows that the table shows are presentation, never access control.
 
-**Checkpoint:** selecting any visible row opens its detail page, while changing the URL to another request does not reveal that record. Fix row navigation separately from row authorization.
+**Checkpoint:** Selecting a visible row opens its detail page. Changing the URL to another request does not reveal that record. Fix row navigation separately from row authorization.
 
-## Build Request detail {icon="file-description"}
+## Build the Request detail page {icon="file-description"}
 
-Under **Route parameters**, add one Record parameter with ID `request_id` and table **Certificate requests**. Then add the Record block. The builder binds that same route parameter as the page record automatically; there is no separate Page Record setting:
+Under **Route parameters**, add one Record parameter with the ID `request_id` and the table **Certificate requests**. Then add the Record block. The builder binds the same route parameter as the page record automatically, so there is no separate Page Record setting:
 
 ```text
 PARAMS.request_id
@@ -111,47 +139,60 @@ PARAMS.request_id
 
 Arrange the page in task order:
 
-1. A Record block showing Title, Status, Processing note, and submitted details.
+1. A Record block with Title, Status, Processing note, and the submitted details.
 2. A Comments block for the page record.
 3. Generated documents inside the Record block, limited to the Certificate template.
-4. An Actions block only when the current audience has an appropriate enabled workflow launcher.
+4. An Actions block, only when the current audience has a suitable enabled workflow launcher.
 
-Requester fields should normally be read-only after submission. If corrections are allowed, add only those fields to **Editable fields**. Status, approval data, and generated output remain workflow-owned.
+Fields of the requester are normally read-only after submission. If corrections are allowed, add only those fields to **Editable fields**. Status, approval data, and generated output stay with the workflow.
 
-When the page record is missing, the Record block can show configured empty text. An existing request with no generated certificate simply has no download entry; the current schema has no document-specific empty copy.
+When the page record is missing, the Record block can show a configured empty text. An existing request without a generated certificate has no download entry. The current schema has no separate empty text for documents.
 
-**Checkpoint:** status, comments, and generated Documents remain attached to the same request after reload. A failure belongs to the Record binding, Comments access, or Document named by the failing block.
+**Checkpoint:** Status, comments, and generated documents stay attached to the same request after a reload. A failure belongs to the Record binding, the Comments access, or the document that the failing block names.
 
 ## Keep processing outside the layout {icon="route"}
 
-The responsible group can process requests in the Grids workspace or a second ordinary Grids App. No special admin-app type is needed.
+The responsible group can process requests in the Grids workspace or in a second ordinary Grids App. No special admin-app type is needed.
 
-The workflow must re-read and validate the request before changing it. Related record changes use the workflow's atomic record-change boundary; external effects begin only after those changes commit. This keeps concurrent reviewers from silently applying a stale transition.
+The workflow must read and validate the request again before it changes it. Related record changes use the atomic record-change boundary of the workflow. External effects start only after those changes commit. This keeps concurrent reviewers from applying a stale transition silently.
 
 ## Test the complete journey {icon="shield-check"}
 
-Save the draft, grant it only to dedicated test accounts representing each audience, and verify:
+Save the draft. Give access only to dedicated test accounts, one for each audience. Then verify:
 
 :::steps
-1. As a requester, submit a valid request and confirm that its detail page opens immediately.
-2. Reload the detail URL and confirm that the same request opens.
-3. Use another request ID and confirm that no record existence or data is disclosed.
-4. Confirm the empty list, no-comments, awaiting-document, completed, missing-parameter, and denied states.
-5. As the responsible group, confirm that the intended processing records and actions are available.
-6. Repeat the journey at desktop and narrow widths using keyboard navigation.
+1. As a requester, submit a valid request. Confirm that its detail page opens immediately.
+2. Reload the detail URL. Confirm that the same request opens.
+3. Use another request ID. Confirm that neither the record nor its existence is disclosed.
+4. Check the states: empty list, no comments, awaiting document, completed, missing parameter, and denied.
+5. As the responsible group, confirm that the intended records and actions for processing are available.
+6. Repeat the journey at desktop and narrow widths with keyboard navigation.
 :::
 
-The app is ready when the requester journey is understandable without the Grids workspace or knowledge of the underlying table. There is no impersonation or anonymous-preview mode in the builder; test public access only on a deliberately published test app.
+The app is ready when a requester understands the journey without the Grids workspace and without knowing the table behind it. The builder has no mode to act as someone else and no anonymous preview. Test public access only on a test app that you publish on purpose.
 
 ## Take an app offline or delete it {icon="alert-triangle"}
 
-Open **App settings → Lifecycle**. **Unpublish app** removes the live snapshot immediately while preserving the draft and access grants, so you can edit and publish it again later. **Delete app** removes the app and its live URL but does not delete Base tables or records. Both actions show a destructive confirmation before anything changes; deletion cannot be undone in the builder.
+:::warning You cannot undo deletion in the builder
+Both actions show a confirmation before anything changes. Deleting cannot be undone in the builder.
+:::
+
+Open **App settings → Lifecycle**:
+
+- **Unpublish app** removes the live snapshot immediately. It keeps the draft and the access entries, so you can edit and publish the app again later.
+- **Delete app** removes the app and its live URL. It does not delete Base tables or records.
 
 ## Publish and verify {icon="rocket"}
 
-Run the publish preflight, review every requested capability, and publish. Open the standalone URL and repeat the requester journey against the published snapshot.
+:::steps
+1. Run the publish preflight.
+2. Review every requested capability.
+3. Publish the app.
+4. Open the standalone URL.
+5. Repeat the requester journey on the published snapshot.
+:::
 
-When something fails, fix the owning layer:
+When something fails, fix the layer that owns it:
 
 | Symptom | Owner |
 | --- | --- |
@@ -160,6 +201,6 @@ When something fails, fix the owning layer:
 | Rejected input | Form |
 | Stale transition or partial record change | Workflow |
 | Missing PDF | Document template or Document |
-| Unavailable action | Published capability, launcher state, or permission |
+| Unavailable action | Published capability, launcher state, or access |
 
-Read [Pages & blocks](/app/grids/help/grids-custom-app-pages-blocks) for every setting, [Publish & permissions](/app/grids/help/grids-publish-custom-app) for preflight behavior, and [YAML & CLI](/app/grids/help/grids-custom-app-yaml-cli) for the equivalent agent workflow.
+Read [Grids App pages & blocks](/app/grids/help/grids-custom-app-pages-blocks) for every setting, [Publish a Grids App](/app/grids/help/grids-publish-custom-app) for the preflight, and [Grids App YAML & CLI](/app/grids/help/grids-custom-app-yaml-cli) for the same workflow for agents.

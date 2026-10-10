@@ -81,7 +81,7 @@ describe("Grids Apps documentation contract", () => {
     expect(overview).toContain("/app/grids/help/grids-build-custom-app");
     expect(builder).toContain("opened in a larger editor without creating a second draft");
     expect(builder).toContain("there is no separate Page Record setting");
-    expect(builder).toContain("You may edit them in Page settings");
+    expect(builder).toContain("You can edit them in **Page settings**");
     expect(pages).toContain("@auth.name");
     expect(pages).toContain("Inline GQL displays its selected ordinary-record columns");
     expect(pages).toContain("existing enabled Grids App workflow launcher");

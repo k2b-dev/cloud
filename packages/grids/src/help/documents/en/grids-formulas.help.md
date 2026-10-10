@@ -7,29 +7,29 @@ order: 126
 ---
 Formulas calculate totals, labels, dates, and conditions from record fields.
 
-Create a **Formula field** when the result belongs on every record. Add a **Computed column** when the calculation is only needed in one query. In GQL, the same expression language can filter records or create an output column.
+Create a **Formula** field when the result belongs on every record. Add a **Computed column** when only one query needs the calculation. In GQL, the same expression language can filter records or create an output column.
 
-## Where formulas run {icon="math-function"}
+## Choose where a formula runs {icon="math-function"}
 
-- **Formula fields** update automatically for Draft records. Calculations that depend only on stored values in that record are saved with each edit and reused when reading. Changing a formula updates existing drafts too. Finalization freezes values and types; later formula edits do not change them.
-- **Computed columns** are temporary query output and do not add a field to the table.
+- **Formula fields** update automatically for draft records. A calculation that depends only on stored values of the same record is saved with each edit and reused when reading. Changing a formula also updates existing drafts. Finalization freezes values and types. Later formula edits do not change them.
+- **Computed columns** are temporary query output. They do not add a field to the table.
 - **GQL conditions** use an expression inside `where` or `having`.
 - **GQL output** uses `formula(expression) as alias`.
 
-**Object-list columns** calculate within one row: enable **Rules and calculation** and reference sibling columns. Finalization freezes results. Record formulas reduce lists with `LIST_SUM(list, column)`, `LIST_AVG(list, column)`, `LIST_MIN(list, column)`, `LIST_MAX(list, column)` or `LIST_COUNT(list)`. Quote column names, e.g. `LIST_SUM(Items, 'Amount')`.
+**Object-list columns** calculate within one row: turn on **Rules and calculation** and reference sibling columns. Finalization freezes the results. Record formulas reduce lists with `LIST_SUM(list, column)`, `LIST_AVG(list, column)`, `LIST_MIN(list, column)`, `LIST_MAX(list, column)`, or `LIST_COUNT(list)`. Quote column names, for example `LIST_SUM(Items, 'Amount')`.
 
-Formulas that depend on related records, the current time or the reader’s time zone are calculated when read. You do not need to select a calculation mode. A calculation error remains visible; failed object-list calculations keep the entered cells so you can correct them.
+Grids calculates a formula when it is read if the formula depends on related records, the current time, or the time zone of the reader. You do not need to select a calculation mode. A calculation error stays visible. When an object-list calculation fails, the entered cells stay, so you can correct them.
 
-## Expression rules {icon="book-2"}
+## Write expressions {icon="book-2"}
 
 :::reference
-- **Fields:** Reference a simple field as `Price`. Quote names containing spaces or punctuation as `"Unit price"`. Use `{field-id}` when generated configuration must survive a rename.
-- **Literals:** Write text in single quotes, numbers without quotes, and the values `true`, `false`, and `null` directly. Double quotes always mean a field name. In text, use `\\'`, `\\\\`, `\\n`, `\\r`, or `\\t` for a quote, backslash, or control character.
-- **Grouping:** Use parentheses to make a calculation or condition explicit. An optional leading `=` is accepted, but formulas are normally written without it.
-- **Functions:** Function names are case-insensitive. Arguments are comma-separated and must match the function's documented count.
+- **Fields:** Reference a simple field as `Price`. Quote names that contain spaces or punctuation, such as `"Unit price"`. Use `{field-id}` when generated configuration must survive a rename.
+- **Literals:** Write text in single quotes and numbers without quotes. Write the values `true`, `false`, and `null` directly. Double quotes always mean a field name. In text, use `\\'`, `\\\\`, `\\n`, `\\r`, or `\\t` for a quote, a backslash, or a control character.
+- **Grouping:** Use parentheses to make a calculation or condition explicit. Grids accepts an optional leading `=`, but formulas normally do not use it.
+- **Functions:** Function names ignore case. Separate arguments with commas. The number of arguments must match the documented signature.
 :::
 
-Check empty, zero, and boundary values. Each expression allows up to 20,000 characters, 64 nesting levels and 1,024 expression nodes (operators, values, references and calls). A query or computed-column input may impose a smaller text limit. Simplify an expression that exceeds these limits; adding parentheses does not shorten an operator chain.
+Check empty, zero, and boundary values. Each expression allows up to 20,000 characters, 64 nesting levels, and 1,024 expression nodes (operators, values, references, and calls). A query or computed-column input can have a smaller text limit. Simplify an expression that exceeds these limits. Adding parentheses does not shorten an operator chain.
 
 ### Operators and precedence
 
@@ -43,47 +43,32 @@ Check empty, zero, and boundary values. Each expression allows up to 20,000 char
 | 6 | `and`, `&&` | Both conditions are true |
 | 7 | `or`, `||` | At least one condition is true |
 
-Higher rows bind more tightly. Parentheses override this order. Prefer the word forms `and`, `or`, and `not` in formulas that people maintain directly.
+Higher rows bind more tightly. Parentheses override this order. In formulas that people maintain directly, prefer the word forms `and`, `or`, and `not`.
 
 ### Select conditions
 
-For a single-select field, use `Tax = '19 %'` or `Tax = 'ust-19'`.
-Option IDs match exactly; labels match without case sensitivity and must be
-unambiguous. Unknown options are rejected, including on fields without options.
-Saving a formula field, object-list calculation or computed view column stores
-the option ID, so renaming the option label does not change its meaning.
-Removing an option still used by these formulas is rejected.
+For a single-select field, use `Tax = '19 %'` or `Tax = 'ust-19'`. Option IDs match exactly. Labels match without case sensitivity and must be unambiguous. Grids rejects unknown options, also on fields without options.
 
-Use `HAS_OPTION(Tags, 'approved')` for exact membership in a single- or
-multiple-select field. It does not match partial IDs: `ust-1` does not match
-`ust-19`. Use `ISBLANK(Tax)` or `Tax = null` for an empty selection.
-Multiple-select equality with a text value is rejected; use `HAS_OPTION`.
-`CONTAINS` and other text functions are not Select membership tests.
+When you save a formula field, an object-list calculation, or a computed view column, Grids stores the option ID. Renaming the option label therefore does not change the meaning. Grids rejects removing an option that these formulas still use.
 
-For example: `IF(Tax = 'ust-19', ROUND(Net / 100 * 19, 2), 0)`.
-These rules also apply to Select inputs in object-list calculations.
+Use `HAS_OPTION(Tags, 'approved')` for exact membership in a single-select or multiple-select field. It does not match partial IDs: `ust-1` does not match `ust-19`. Use `ISBLANK(Tax)` or `Tax = null` for an empty selection. Grids rejects equality between a multiple-select field and a text value. Use `HAS_OPTION` instead. `CONTAINS` and other text functions are not membership tests for select fields.
 
-A lookup returning a collection is not a scalar formula input. In GQL, join
-the related table and test its Select field directly, for example
-`HAS_OPTION(customer.Status, 'approved')`. Do not use text search on JSON.
-Formula errors use stable codes such as `#SELECT_INVALID` and `#NON_SCALAR`;
-the authoring check explains the invalid expression.
+For example: `IF(Tax = 'ust-19', ROUND(Net / 100 * 19, 2), 0)`. These rules also apply to select inputs in object-list calculations.
 
-Formula checks validate supported operations before loading sample records,
-including on an empty table. A successful check does not verify every record
-or the business meaning of the calculation. Review the sample results and
-test empty values and each relevant option.
+A lookup that returns a collection is not a scalar formula input. In GQL, join the related table and test its select field directly, for example `HAS_OPTION(customer.Status, 'approved')`. Do not use text search on JSON. Formula errors use stable codes such as `#SELECT_INVALID` and `#NON_SCALAR`. The authoring check explains the invalid expression.
+
+The formula check validates the supported operations before it loads sample records, also on an empty table. A successful check does not verify every record or the business meaning of the calculation. Review the sample results. Test empty values and each relevant option.
 
 ### Empty values, truth, and errors
 
 - Arithmetic and ordered comparisons return empty when either side is empty. Two empty values are equal.
-- `null`, `false`, `0`, and empty text are false in a condition; other non-empty values are true.
+- In a condition, `null`, `false`, `0`, and empty text are false. Other non-empty values are true.
 - `and`, `or`, `AND`, and `OR` stop as soon as the result is known. `IF` evaluates only the selected branch.
-- Zero divisors, negative square roots, overflowing powers and wrong argument counts cause formula errors. Unhandled errors abort GQL and workflow captures with `BAD_INPUT`; aggregates never silently skip them.
-- `IFEMPTY(value, fallback)` handles `null` and empty text. `IFERROR(value, fallback)` handles formula errors. Their fallback is evaluated only when needed.
-- `CONCAT(value, ...)` is the clearest way to combine text. Numeric-looking text participates in numeric arithmetic, so do not rely on `+` for labels.
+- Zero divisors, negative square roots, overflowing powers, and wrong argument counts cause formula errors. An unhandled error aborts GQL and workflow captures with `BAD_INPUT`. Aggregates never skip errors silently.
+- `IFEMPTY(value, fallback)` catches `null` and empty text. `IFERROR(value, fallback)` catches formula errors. Grids evaluates the fallback only when it is needed.
+- `CONCAT(value, ...)` is the clearest way to combine text. Text that looks numeric takes part in numeric arithmetic, so do not rely on `+` for labels.
 
-Aggregate functions combine arguments in one record, such as `SUM(Subtotal, Tax)`. GQL `aggregate` summarizes records. Division and averages use decimal precision, ignoring trailing zeroes. Explicitly `ROUND` monetary results; column constraints only validate them.
+Aggregate functions combine the arguments of one record, such as `SUM(Subtotal, Tax)`. GQL `aggregate` summarizes records. Division and averages use decimal precision and ignore trailing zeros. Round monetary results explicitly with `ROUND`. Column constraints only validate them.
 
 ## Common formulas {icon="math-function"}
 
@@ -173,12 +158,15 @@ IFERROR(total / quantity, 0)
 | Date | DATEADD(date, count, unit?) | Add time to a date; the unit defaults to days. | date |
 | Date | DATEDIFF(from, to, unit?) | Difference between dates; the unit defaults to days. | number |
 
-`ROUND` defaults to zero places. Negative places round to tens, hundreds, etc. Fractional places truncate toward zero; values outside −131,072…16,383 produce a formula error. `LEFT`, `RIGHT`, and `SUBSTRING` treat negative lengths as zero; `SUBSTRING` starts at position 0. `REPLACE` replaces every match.
+`ROUND` defaults to zero places. Negative places round to tens, hundreds, and so on. Fractional places truncate toward zero. Values outside −131,072…16,383 produce a formula error. `LEFT`, `RIGHT`, and `SUBSTRING` treat negative lengths as zero. `SUBSTRING` starts at position 0. `REPLACE` replaces every match.
 
-`TODAY()` returns the current date and `NOW()` returns the current date and time. Date-time calendar operations use the request's display timezone; when none is supplied, Grids uses the Cloud application timezone. Date-only values remain calendar dates. `DATEADD` accepts day(s), hour(s), minute(s), month(s), and year(s); it defaults to days and keeps month-end dates valid when adding months or years. `DATEDIFF` accepts day(s), hour(s), minute(s), and second(s), defaults to days, and returns `to - from`, rounded down to whole units.
+`TODAY()` returns the current date. `NOW()` returns the current date and time. Calendar operations on date-time values use the display timezone of the request. If the request supplies none, Grids uses the Cloud timezone. Date-only values stay calendar dates.
 
-`DATEADD` accepts inputs and results in years 1000–9999. For datetimes, both the local calendar value and the resulting UTC instant must remain in that range. Larger shifts return `#DATEADD_OUT_OF_RANGE`, which `IFERROR` can handle; they do not abort the database query. Fractional counts still truncate toward zero.
+- `DATEADD` accepts day(s), hour(s), minute(s), month(s), and year(s). It defaults to days. When it adds months or years, it keeps month-end dates valid.
+- `DATEDIFF` accepts day(s), hour(s), minute(s), and second(s) and defaults to days. It returns `to - from`, rounded down to whole units.
 
-:::note Formula values
-Draft formula values update automatically; finalized records keep captured values. Correct the source fields, not the displayed result.
+`DATEADD` accepts inputs and results in the years 1000–9999. For date-time values, both the local calendar value and the resulting UTC instant must stay in that range. A larger shift returns `#DATEADD_OUT_OF_RANGE`, which `IFERROR` can catch. It does not abort the database query. Fractional counts still truncate toward zero.
+
+:::note Correct the source, not the result
+Formula values of drafts update automatically. Finalized records keep their captured values. Correct the source fields, not the displayed result.
 :::

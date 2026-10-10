@@ -35,7 +35,7 @@ Lege für eine Warenwirtschaft den Umfang von Einkäufen, Wareneingängen, Beste
 ## In der Reihenfolge der Abhängigkeiten aufbauen {icon="route"}
 
 :::steps
-1. **Lege Entscheidungen fest.** Benenne Beteiligte, Voraussetzungen, Änderungen, die gemeinsam geschehen müssen, und Abschlusskriterien.
+1. **Lege Entscheidungen fest.** Lege fest, wer handeln darf, welche Voraussetzungen gelten, welche Änderungen gemeinsam geschehen müssen und wann der Vorgang abgeschlossen ist.
 2. **Lege Tabellen und Felder an.** Ergänze Relationen, sobald ihre Zieltabellen existieren. Ergänze danach Berechnungen.
 3. **Speichere Preise und Steuern.** Speichere Preis- und Steuerdaten dort, wo spätere Änderungen an der Quelle den Geschäftsvorgang nicht ändern dürfen.
 4. **Probiere Datensätze aus.** Teste fehlende Angaben, mehrere Positionen und einen abgelehnten Fall.

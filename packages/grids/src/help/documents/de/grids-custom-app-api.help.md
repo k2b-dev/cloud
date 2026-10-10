@@ -144,7 +144,7 @@ Der Server bestimmt das Bearbeitungsziel aus dem gebundenen Seitendatensatz, nie
 ### Sicher wiederholen
 
 :::reference
-- **Schlüssel:** Nicht leer, höchstens 200 Zeichen, ohne NUL. Ein Schlüssel gilt für ein Formular oder eine Tabelle und einen Akteur.
+- **Schlüssel:** Nicht leer, höchstens 200 Zeichen, ohne NUL. Ein Schlüssel gilt für die Kombination aus Formular, Tabelle und Akteur.
 - **Exakte Wiederholung:** Liefert die ursprüngliche Datensatz-ID und schreibt nichts erneut.
 - **Konflikt (`409`):** Ein geänderter Payload, ein gelöschtes Ergebnis oder eine veraltete Version.
 - **Zeitüberschreitung:** Wiederhole denselben Body mit demselben Schlüssel oder prüfe das Ergebnis. Ein Erstellen ohne Schlüssel kann doppelt laufen.

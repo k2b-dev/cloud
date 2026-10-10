@@ -144,7 +144,7 @@ The server chooses the edit target from the bound page Record, never from a `rec
 ### Retry safely
 
 :::reference
-- **Keys:** Not blank, at most 200 characters, no NUL. A key applies to one form or table and one actor.
+- **Keys:** Not blank, at most 200 characters, no NUL. A key applies to the combination of form, table, and actor.
 - **Exact retry:** Returns the original record ID and writes nothing again.
 - **Conflict (`409`):** A changed payload, a deleted result, or a stale version.
 - **Timeout:** Retry the same body with the same key, or inspect the result. A create without a key can run twice.

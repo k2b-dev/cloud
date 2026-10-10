@@ -25,9 +25,10 @@ Object lists show compact rows. When you switch to editing, row heights and colu
 
 - Choose a value to edit its row. A new entry opens directly for input.
 - **Tab** moves between fields and rows.
-- In single-line text and number inputs, **Enter** finishes the row.
-- **Escape** undoes the edits of the row.
-- **Ctrl+Enter** or **Cmd+Enter** adds another entry.
+- In single-line text and number inputs:
+  - **Enter** finishes the row.
+  - **Escape** undoes the edits of the row.
+  - **Ctrl+Enter** or **Cmd+Enter** adds another entry.
 
 If the space is too narrow, choose the summary of an entry to open its editor. Simple text lists can stay inline on a phone. **Edit entry** also opens long text, multiple selections, additional details, and the actions to move or remove the entry.
 
@@ -43,7 +44,7 @@ Each table has a virtual default form. A custom form controls its inputs, labels
 
 **Create** saves a new custom form right away and opens its editor. Adjust it and choose **Save**, or choose **Done** to keep it as it was created.
 
-A date input with the default `{"kind":"now"}` shows the current time when a creation form opens, in your date timezone. Review it before you save. Editing a record keeps its stored dates.
+A date input with the default `{"kind":"now"}` is filled in when a creation form opens, in your date timezone. Review the value before you save. Editing a record keeps its stored dates.
 
 In a custom form, you can:
 

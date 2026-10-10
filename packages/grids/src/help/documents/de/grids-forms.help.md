@@ -25,9 +25,10 @@ Objektlisten zeigen kompakte Zeilen. Beim Wechsel zur Bearbeitung bleiben Zeilen
 
 - Wähle einen Wert, um seine Zeile zu bearbeiten. Ein neuer Eintrag öffnet sich direkt zur Eingabe.
 - **Tab** wechselt zwischen Feldern und Zeilen.
-- In einzeiligen Text- und Zahleneingaben schließt **Enter** die Zeile ab.
-- **Escape** setzt die Änderungen der Zeile zurück.
-- **Strg+Enter** oder **Cmd+Enter** fügt einen weiteren Eintrag hinzu.
+- In einzeiligen Text- und Zahleneingaben:
+  - **Enter** schließt die Zeile ab.
+  - **Escape** setzt die Änderungen der Zeile zurück.
+  - **Strg+Enter** oder **Cmd+Enter** fügt einen weiteren Eintrag hinzu.
 
 Reicht der Platz nicht aus, wähle die Zusammenfassung eines Eintrags, um seinen Editor zu öffnen. Einfache Textlisten bleiben auch auf dem Handy direkt bearbeitbar. **Eintrag bearbeiten** öffnet außerdem lange Texte, Mehrfachauswahl, Zusatzangaben und die Aktionen zum Verschieben oder Entfernen des Eintrags.
 
@@ -43,7 +44,7 @@ Jede Tabelle hat ein virtuelles Standardformular. Ein eigenes Formular steuert E
 
 **Erstellen** speichert ein neues eigenes Formular sofort und öffnet seinen Editor. Passe es an und wähle **Speichern**, oder wähle **Fertig**, um es so zu behalten, wie es erstellt wurde.
 
-Ein Datumsfeld mit dem Standard `{"kind":"now"}` zeigt beim Öffnen eines Erstellformulars die aktuelle Zeit in deiner Datumszeitzone. Prüfe sie vor dem Speichern. Beim Bearbeiten eines Datensatzes bleiben gespeicherte Datumswerte erhalten.
+Ein Datumsfeld mit dem Standard `{"kind":"now"}` wird beim Öffnen eines Erstellformulars in deiner Datumszeitzone ausgefüllt. Prüfe den Wert vor dem Speichern. Beim Bearbeiten eines Datensatzes bleiben gespeicherte Datumswerte erhalten.
 
 In einem eigenen Formular kannst du:
 
