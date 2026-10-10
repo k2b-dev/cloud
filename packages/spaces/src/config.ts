@@ -10,7 +10,10 @@ export const app = defineApp({
   presentation: {
     baseLocale: "en",
     translations: {
-      de: { description: "Aufgaben und Termine gemeinsam in übersichtlichen Spaces planen und bearbeiten." },
+      de: {
+        description: "Aufgaben und Termine gemeinsam in übersichtlichen Spaces planen und bearbeiten.",
+        widgets: { today: { title: "Heute", description: "Termine und fällige To-dos von heute aus allen deinen Spaces." } },
+      },
     },
   },
   appearance: { accent: "#4d7c0f", background: { from: "#65a30d", to: "#84cc16", angle: 135 } },
@@ -31,7 +34,11 @@ export const app = defineApp({
     {
       id: "today",
       path: "/api/spaces/widget/today",
-      presentation: { defaultZone: "focus", defaultSpan: "wide" },
+      title: "Today",
+      description: "Today's events and due to-dos from all your spaces.",
+      sizes: ["medium", "large"],
+      defaultSize: "large",
+      suggest: true,
     },
   ],
   openapi: "/api/spaces/openapi.json",

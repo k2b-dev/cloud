@@ -13,6 +13,7 @@ export const app = defineApp({
       de: {
         name: "Konten",
         description: "Konten, Gruppen, Zugriffe und Kontoanfragen verwalten.",
+        widgets: { "admin-queue": { title: "Administrationsaufgaben", description: "Offene Kontoanfragen und bald ablaufende Konten." } },
       },
     },
   },
@@ -27,7 +28,18 @@ export const app = defineApp({
     requiresAuth: true,
     requiresRoles: ["user"],
   },
-  widgets: [{ id: "admin-queue", path: "/api/accounts/widget/admin-queue" }],
+  widgets: [
+    {
+      id: "admin-queue",
+      path: "/api/accounts/widget/admin-queue",
+      title: "Admin queue",
+      description: "Pending account requests and accounts that expire soon.",
+      sizes: ["small", "medium", "large"],
+      defaultSize: "medium",
+      suggest: true,
+      requiresRoles: ["admin"],
+    },
+  ],
   openapi: "/api/accounts/openapi.json",
   routes: ["/api/accounts", "/app/accounts", "/public/accounts"],
 });

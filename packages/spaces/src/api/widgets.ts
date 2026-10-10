@@ -1,5 +1,5 @@
 import type { WidgetBlock, WidgetListItem, WidgetResponse, WidgetTone } from "@k2b/cloud/contracts";
-import { type AuthContext, auth, getDateConfig, getLocale, getUserBackedActor } from "@k2b/cloud/server";
+import { type AuthContext, auth, getDateConfig, getLocale, getUserBackedActor, getWidgetRequest } from "@k2b/cloud/server";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { type Context, Hono } from "hono";
 import { buildSpaceItemHref } from "../routes";
@@ -16,7 +16,8 @@ import { projectItemReferences } from "../service/public-resources";
  *   - has events            → list block "Today" first
  *   - has open todos        → compact list of the next deadlines
  *
- * Priority maps to coloured icon for at-a-glance triage.
+ * Priority maps to coloured icon for at-a-glance triage. Medium shows the first
+ * two rows, large up to six.
  */
 type Priority = "low" | "medium" | "high" | "urgent" | null;
 
@@ -59,9 +60,10 @@ export const spacesTodayWidgetHandler = async (c: Context<AuthContext>) => {
   const locale = getLocale(c);
   const t = spacesMessages(locale);
   const dateConfig = getDateConfig(c);
+  const rows = getWidgetRequest(c).size === "large" ? 6 : 2;
   const internalSnapshot = await spacesService.item.dashboardSnapshot({
     userId: user.id,
-    todoLimit: 3,
+    todoLimit: rows,
     dateConfig,
   });
   const [events, todos] = await Promise.all([
@@ -113,7 +115,7 @@ export const spacesTodayWidgetHandler = async (c: Context<AuthContext>) => {
       };
     }),
   ];
-  const blocks: WidgetBlock[] = [{ kind: "list", items: items.slice(0, 3) }];
+  const blocks: WidgetBlock[] = [{ kind: "list", items: items.slice(0, rows) }];
 
   const body: WidgetResponse = {
     title: t.widgetTitle,

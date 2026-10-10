@@ -1,6 +1,6 @@
 import type { WidgetBlock, WidgetResponse } from "@k2b/cloud/contracts";
 import { hasRole } from "@k2b/cloud/contracts";
-import { type AuthContext, auth, getLocale } from "@k2b/cloud/server";
+import { type AuthContext, auth, getLocale, getWidgetRequest } from "@k2b/cloud/server";
 import { formatNumber } from "@k2b/cloud/shared";
 import { type Context, Hono } from "hono";
 import { gatewayOpsMessages } from "../../messages";
@@ -30,7 +30,7 @@ export const loggingErrorsWidgetHandler = async (c: Context<AuthContext>) => {
   const blocks: WidgetBlock[] = [
     {
       kind: "stat",
-      // Stat grows to fill remaining vertical space; pills sit at the bottom.
+      // Stat grows to fill remaining vertical space; pills, when shown, sit at the bottom.
       grow: true,
       value: formatNumber(summary.errors24h, { locale }),
       label: t.errorsLast24h,
@@ -38,15 +38,18 @@ export const loggingErrorsWidgetHandler = async (c: Context<AuthContext>) => {
       valueClass: summary.errors24h > 0 ? "text-red-500" : undefined,
       accent: summary.errors24h > 0 ? { tone: "red", icon: "ti ti-alert-circle" } : { tone: "emerald", icon: "ti ti-check" },
     },
-    {
+  ];
+  // The small frame holds the number; medium adds the other counts.
+  if (getWidgetRequest(c).size !== "small") {
+    blocks.push({
       kind: "pills",
       pills: [
         { label: t.warnings, value: formatNumber(summary.warnings24h, { locale }), tone: summary.warnings24h > 0 ? "amber" : "zinc" },
         { label: t.entries, value: formatNumber(summary.total24h, { locale }) },
         { label: t.sources, value: formatNumber(summary.sources, { locale }), tone: "blue" },
       ],
-    },
-  ];
+    });
+  }
 
   const body: WidgetResponse = {
     title: t.logs,

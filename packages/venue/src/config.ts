@@ -13,6 +13,7 @@ export const app = defineApp({
       de: {
         name: "Standorte",
         description: "Standorte, Öffnungszeiten, Schichten, öffentliche Statusseiten und anonymes Feedback.",
+        widgets: { today: { title: "Standort heute", description: "Ob dein Standort geöffnet hat, offene Schichten und deine nächste." } },
       },
     },
   },
@@ -26,7 +27,16 @@ export const app = defineApp({
     requiresAuth: true,
     requiresRoles: ["user"],
   },
-  widgets: [{ id: "today", path: "/api/venue/widget/today" }],
+  widgets: [
+    {
+      id: "today",
+      path: "/api/venue/widget/today",
+      title: "Venue today",
+      description: "Whether your venue is open, open shifts, and your next one.",
+      sizes: ["small", "medium", "large"],
+      defaultSize: "medium",
+    },
+  ],
   notifications: NOTIFICATIONS,
   openapi: "/api/venue/openapi.json",
   routes: ["/api/venue", "/app/venue", "/public/venue"],

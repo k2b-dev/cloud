@@ -12,6 +12,10 @@ export const app = defineApp({
     translations: {
       de: {
         description: "Administration für Gateway-Betrieb, Systembeobachtung und Benachrichtigungen.",
+        widgets: {
+          health: { title: "Plattformzustand", description: "Ob alle Apps laufen, dazu der Verkehr am Gateway." },
+          errors: { title: "Protokolle", description: "Fehler und Warnungen der letzten 24 Stunden." },
+        },
         adminGroups: { gateway: "Gateway", observability: "Systembeobachtung" },
         adminLinks: {
           "/admin/gateway/apps": "Apps",
@@ -117,8 +121,25 @@ export const app = defineApp({
     },
   },
   widgets: [
-    { id: "health", path: "/api/gateway/widget/health", presentation: { defaultZone: "context" } },
-    { id: "errors", path: "/api/logging/widget/errors", presentation: { defaultZone: "context" } },
+    {
+      id: "health",
+      path: "/api/gateway/widget/health",
+      title: "Platform health",
+      description: "Whether every app is running, and the traffic at the gateway.",
+      sizes: ["small", "medium"],
+      defaultSize: "small",
+      suggest: true,
+      requiresRoles: ["admin"],
+    },
+    {
+      id: "errors",
+      path: "/api/logging/widget/errors",
+      title: "Logs",
+      description: "Errors and warnings of the last 24 hours.",
+      sizes: ["small", "medium"],
+      defaultSize: "small",
+      requiresRoles: ["admin"],
+    },
   ],
   routes: [
     "/metrics",

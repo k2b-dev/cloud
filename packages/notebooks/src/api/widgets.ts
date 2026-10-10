@@ -1,11 +1,12 @@
 import type { WidgetListItem, WidgetResponse } from "@k2b/cloud/contracts";
-import { type AuthContext, auth, getDateConfig, getLocale, getUserBackedActor } from "@k2b/cloud/server";
+import { type AuthContext, auth, getDateConfig, getLocale, getUserBackedActor, getWidgetRequest } from "@k2b/cloud/server";
 import { dates } from "@k2b/stdlib";
 import { type Context, Hono } from "hono";
 import { notebooksService } from "../service";
 import { notebookApiMessages } from "./messages";
 
-const RECENT_LIMIT = 5;
+/** Notes a widget lists: two fit the medium frame, five the large one. */
+const RECENT_LIMIT = { small: 2, medium: 2, large: 5 } as const;
 
 /**
  * Widget endpoints for the dashboard. Authenticated only — anonymous
@@ -23,7 +24,7 @@ export const recentNotesWidgetHandler = async (c: Context<AuthContext>) => {
 
   const notes = await notebooksService.note.recentForUser({
     userId: user.id,
-    limit: RECENT_LIMIT,
+    limit: RECENT_LIMIT[getWidgetRequest(c).size],
   });
 
   if (notes.length === 0) {

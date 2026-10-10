@@ -13,6 +13,7 @@ export const app = defineApp({
       de: {
         name: "Wetter",
         description: "Vorhersagen, gespeicherte Orte und Wetter-Widgets.",
+        widgets: { current: { title: "Wetter", description: "Das aktuelle Wetter an deinen gespeicherten Orten." } },
       },
     },
   },
@@ -37,7 +38,17 @@ export const app = defineApp({
     requiresAuth: true,
     requiresRoles: ["user"],
   },
-  widgets: [{ id: "current", path: "/api/weather/widget/current", presentation: { defaultZone: "context" } }],
+  widgets: [
+    {
+      id: "current",
+      path: "/api/weather/widget/current",
+      title: "Weather",
+      description: "Current weather at your saved places.",
+      sizes: ["small", "medium", "large"],
+      defaultSize: "small",
+      suggest: true,
+    },
+  ],
   openapi: "/api/weather/openapi.json",
   routes: ["/api/weather", "/app/weather", "/admin/weather", "/public/weather"],
   settings: WEATHER_SETTINGS,

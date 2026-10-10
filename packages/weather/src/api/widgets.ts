@@ -1,5 +1,5 @@
 import type { WidgetBlock, WidgetListItem, WidgetResponse } from "@k2b/cloud/contracts";
-import { type AuthContext, auth, getLocale, getUserBackedActor } from "@k2b/cloud/server";
+import { type AuthContext, auth, getLocale, getUserBackedActor, getWidgetRequest } from "@k2b/cloud/server";
 import { logger, weatherService } from "@k2b/cloud/services";
 import { type Context, Hono } from "hono";
 import { type WeatherMessages, weatherConditionLabel, weatherMessages } from "../messages";
@@ -7,17 +7,18 @@ import { type WeatherMessages, weatherConditionLabel, weatherMessages } from "..
 const log = logger("weather");
 
 /**
- * Weather widget — every saved location of the current user, fresh forecast
- * each. Capped at 7 to keep the widget body within fixed height.
+ * Weather widget — the saved locations of the current user, fresh forecast
+ * each, as many as the widget's size holds: one in small, two in medium,
+ * seven in large.
  *
  * Composition:
  *   - 0 locations → hero with "Add a location" hint
- *   - 1 location  → hero (big icon + temp + city) + pills (wind/humid/hPa)
- *   - 2-7         → list (one row per location with weather icon, temp, condition)
+ *   - 1 shown     → hero (big icon + temp + city), in large with pills (wind/humid/hPa)
+ *   - 2-7 shown   → list (one row per location with weather icon, temp, condition)
  *
  * Status: 200 always (with appropriate empty-state body), 403 when not signed in.
  */
-const LOCATION_LIMIT = 7;
+const LOCATION_LIMIT = { small: 1, medium: 2, large: 7 } as const;
 
 const ICON_MAP: Record<string, string> = {
   "clear-day": "ti ti-sun",
@@ -98,7 +99,10 @@ export const currentWeatherWidgetHandler = async (c: Context<AuthContext>) => {
     return c.json(weatherWidgetEmptyBody(locale));
   }
 
-  const capped = locations.slice(0, LOCATION_LIMIT);
+  const { size } = getWidgetRequest(c);
+  const limit = LOCATION_LIMIT[size];
+  const capped = locations.slice(0, limit);
+  const more = locations.length > limit ? t.widgetCount({ shown: limit, total: locations.length }) : undefined;
   const forecasts = await Promise.all(
     capped.map(async (loc) => {
       try {
@@ -119,7 +123,7 @@ export const currentWeatherWidgetHandler = async (c: Context<AuthContext>) => {
     }),
   );
 
-  // Single-location → hero + pills (rich single-cell view).
+  // Single location shown → hero, with pills only where the large frame has room.
   if (forecasts.length === 1) {
     const entry = forecasts[0]!;
     if (!entry.data) {
@@ -127,6 +131,7 @@ export const currentWeatherWidgetHandler = async (c: Context<AuthContext>) => {
         title: t.appName,
         icon: "ti ti-cloud",
         href: "/app/weather",
+        meta: more,
         blocks: [
           {
             kind: "hero",
@@ -147,19 +152,22 @@ export const currentWeatherWidgetHandler = async (c: Context<AuthContext>) => {
         title: `${number.format(entry.data.temperature)}°C · ${ic.verbal}`,
         subtitle: entry.loc.name,
       },
-      {
+    ];
+    if (size === "large") {
+      blocks.push({
         kind: "pills",
         pills: [
           { label: t.widgetWind, value: `${number.format(entry.data.windSpeed)} km/h` },
           ...(entry.data.humidity !== null ? [{ label: t.widgetHumidity, value: percent.format(entry.data.humidity / 100) } as const] : []),
           ...(entry.data.pressure !== null ? [{ label: "hPa", value: number.format(entry.data.pressure) } as const] : []),
         ],
-      },
-    ];
+      });
+    }
     const body: WidgetResponse = {
       title: t.appName,
       icon: ic.ti,
       href: "/app/weather",
+      meta: more,
       blocks,
     };
     return c.json(body);
@@ -189,7 +197,7 @@ export const currentWeatherWidgetHandler = async (c: Context<AuthContext>) => {
     title: t.appName,
     icon: "ti ti-cloud",
     href: "/app/weather",
-    meta: locations.length > LOCATION_LIMIT ? t.widgetCount({ shown: LOCATION_LIMIT, total: locations.length }) : undefined,
+    meta: more,
     blocks: [{ kind: "list", items, grow: true }],
   };
   return c.json(body);
