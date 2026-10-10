@@ -1,6 +1,6 @@
 import { liveConnection } from "@k2b/cloud/browser/live";
 import { reloadOnce } from "@k2b/cloud/browser/reload";
-import { type CloudTheme, getCurrentThemePreference } from "@k2b/cloud/shared";
+import type { CloudTheme } from "@k2b/cloud/shared";
 import { documentNavigate, type LinkNavigateEvent, listenPopState, navigate } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { mutation, query } from "@k2b/stdlib/solid";
@@ -18,20 +18,14 @@ import type { ConversationLocalTags } from "../service/local-tags";
 import type { ConversationPresenceSnapshot } from "../service/presence";
 import type { MailboxPageData, MailListItem } from "../service/workspace";
 import { readApiError } from "./_components/api-response";
-import { openMailAttachmentLinksDialog } from "./_components/MailAttachmentLinksDialog";
 import { chooseBulkTags, chooseConversationTags } from "./_components/MailBulkTagDialog";
-import { openMailboxDetailsDialog } from "./_components/MailboxDetailsDialog";
-import { openMailboxHealthDialog } from "./_components/MailboxHealthDialog";
-import { openMailboxSettingsDialog } from "./_components/MailboxSettingsDialog";
 import MailConversationList from "./_components/MailConversationList";
 import MailConversationReader from "./_components/MailConversationReader";
 import MailDetailsPanel from "./_components/MailDetailsPanel";
 import MailDraftsView from "./_components/MailDraftsView";
-import { openMailRemoteContentRulesDialog } from "./_components/MailRemoteContentRulesDialog";
 import MailScheduledView from "./_components/MailScheduledView";
 import { observeMailUserPreferences, writeMailUserPreferences } from "./_components/MailSettingsStore";
 import MailSidebar from "./_components/MailSidebar";
-import { openMailSubscriptionDialog } from "./_components/MailSubscriptionDialog";
 import { createMailActionOutcomes, type MailActionCommand, type MailActionFailureReport } from "./_components/mail-action-outcomes";
 import {
   buildMailActionInput,
@@ -186,7 +180,8 @@ function MailWorkspaceView(props: {
     // This document may come from history; record only the opened mailbox.
     updateMailWorkspacePreferences({ lastMailboxId: mailboxId });
     const root = document.documentElement;
-    const syncTheme = () => setTheme(getCurrentThemePreference());
+    // Read the class directly: a runtime import from the shared barrel also bundles Markdown, KaTeX and Liquid.
+    const syncTheme = () => setTheme(root.classList.contains("dark") ? "dark" : "light");
     syncTheme();
     const observer = new MutationObserver(syncTheme);
     observer.observe(root, { attributes: true, attributeFilter: ["class"] });
@@ -537,6 +532,8 @@ function MailWorkspaceView(props: {
     if (disposed || settingsOpening()) return;
     setSettingsOpening(true);
     try {
+      // Settings, management and details dialogs load their code on first open, behind the pending state.
+      const { openMailboxSettingsDialog } = await import("./_components/MailboxSettingsDialog");
       const result = await openMailboxSettingsDialog({
         mailboxId: data.mailbox.id,
         currentUserEmail: props.currentUserEmail,
@@ -553,13 +550,14 @@ function MailWorkspaceView(props: {
     }
   };
 
-  /** Loads the details first, so the dialog opens complete instead of growing as they arrive. */
+  /** Loads the details and the dialog code first, so the dialog opens complete instead of growing as they arrive. */
   const openDetails = async () => {
     if (disposed || detailsOpening()) return;
     setDetailsOpening(true);
     let details: Awaited<ReturnType<typeof loadDetails>>;
+    let openMailboxDetailsDialog: typeof import("./_components/MailboxDetailsDialog").openMailboxDetailsDialog;
     try {
-      details = await loadDetails();
+      [details, { openMailboxDetailsDialog }] = await Promise.all([loadDetails(), import("./_components/MailboxDetailsDialog")]);
     } catch (error) {
       retryToast(error instanceof Error ? error.message : String(error), {
         title: t().mailboxDetailsFailed,
@@ -590,6 +588,7 @@ function MailWorkspaceView(props: {
     if (disposed || managementOpening()) return;
     setManagementOpening("health");
     try {
+      const { openMailboxHealthDialog } = await import("./_components/MailboxHealthDialog");
       const result = await openMailboxHealthDialog({ mailboxId: data.mailbox.id, dateConfig: props.dateConfig });
       if (disposed) return;
       if (!result.workspaceChanged) return;
@@ -604,6 +603,7 @@ function MailWorkspaceView(props: {
     if (disposed || managementOpening()) return;
     setManagementOpening("links");
     try {
+      const { openMailAttachmentLinksDialog } = await import("./_components/MailAttachmentLinksDialog");
       await openMailAttachmentLinksDialog({ mailboxId: data.mailbox.id, dateConfig: props.dateConfig });
     } finally {
       if (!disposed) setManagementOpening(null);
@@ -614,6 +614,7 @@ function MailWorkspaceView(props: {
     if (disposed || managementOpening()) return;
     setManagementOpening("remote-content");
     try {
+      const { openMailRemoteContentRulesDialog } = await import("./_components/MailRemoteContentRulesDialog");
       await openMailRemoteContentRulesDialog(data.mailbox.id);
     } finally {
       if (!disposed) setManagementOpening(null);
@@ -624,6 +625,7 @@ function MailWorkspaceView(props: {
     if (disposed || managementOpening()) return;
     setManagementOpening("subscriptions");
     try {
+      const { openMailSubscriptionDialog } = await import("./_components/MailSubscriptionDialog");
       await openMailSubscriptionDialog({
         mailboxId: data.mailbox.id,
         canWrite: canWrite(),

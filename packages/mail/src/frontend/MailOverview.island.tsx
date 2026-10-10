@@ -28,8 +28,6 @@ import {
 } from "../contracts";
 import type { MailConversationDetailData } from "../service/workspace";
 import { readApiError } from "./_components/api-response";
-import { openMailboxHealthDialog } from "./_components/MailboxHealthDialog";
-import { openMailboxSettingsDialog } from "./_components/MailboxSettingsDialog";
 import MailDetailsPanel from "./_components/MailDetailsPanel";
 import { MailContactDirectoryProvider } from "./_components/mail-contact-directory-context";
 import { mailboxOverviewSubtitle } from "./_components/mail-health-presentation";
@@ -355,12 +353,17 @@ function MailOverviewView(props: {
     onSuccess: (mailbox) => {
       if (!mailbox) return;
       toast.success(messages().mailboxCreated);
-      void openMailboxSettingsDialog({
-        mailboxId: mailbox.id,
-        currentUserEmail: props.currentUserEmail,
-        contactDirectory: props.contactDirectory,
-        initialTab: "delivery",
-      }).then((result) => navigateTo(result.deleted ? "/app/mail" : `/app/mail/${mailbox.id}`));
+      // Settings and health dialogs load their code only when a mailbox needs them.
+      void import("./_components/MailboxSettingsDialog")
+        .then(({ openMailboxSettingsDialog }) =>
+          openMailboxSettingsDialog({
+            mailboxId: mailbox.id,
+            currentUserEmail: props.currentUserEmail,
+            contactDirectory: props.contactDirectory,
+            initialTab: "delivery",
+          }),
+        )
+        .then((result) => navigateTo(result.deleted ? "/app/mail" : `/app/mail/${mailbox.id}`));
     },
     onError: (error) => prompts.error(error.message),
   });
@@ -380,7 +383,9 @@ function MailOverviewView(props: {
       if (!mailbox) return;
       void deletedResults.refresh();
       toast.success(messages().mailboxRestored);
-      void openMailboxHealthDialog({ mailboxId: mailbox.id }).then(() => navigateTo(`/app/mail/${mailbox.id}`));
+      void import("./_components/MailboxHealthDialog")
+        .then(({ openMailboxHealthDialog }) => openMailboxHealthDialog({ mailboxId: mailbox.id }))
+        .then(() => navigateTo(`/app/mail/${mailbox.id}`));
     },
     onError: (error) => prompts.error(error.message),
   });

@@ -51,7 +51,6 @@ import { mailDraftCollaborationCopy, openMailDraftCollaborationDialog } from "./
 import MailRecipientInput from "./MailRecipientInput";
 import { chooseScheduledSendTime } from "./MailScheduleDialog";
 import { readMailUserPreferences, writeMailComposerPanes } from "./MailSettingsStore";
-import { launchMailDraftAssistant } from "./mail-assistant-launch";
 import { mailConversationHref, mailDraftHref, mailDraftSeedHref } from "./mail-compose-route";
 import { createMailComposerAttachmentManager, type UnfinishedDraftUpload } from "./mail-composer-attachment-manager";
 import { focusMailComposerEditorAtStart } from "./mail-composer-editor-focus";
@@ -234,6 +233,8 @@ export default function MailComposer(props: {
     mutation: async () => {
       const currentDraft = await persist();
       if (!currentDraft) throw new Error(statusMessage() || t().draftCouldNotBeSaved);
+      // The Assistant handoff and its skill parser load only when someone uses it.
+      const { launchMailDraftAssistant } = await import("./mail-assistant-launch");
       const launch = await launchMailDraftAssistant({
         contactResolve: contactDirectory.resolve,
         mailboxId: props.mailboxId,

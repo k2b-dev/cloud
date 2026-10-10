@@ -1,4 +1,4 @@
-import { normalizeTimeZone } from "@k2b/cloud/shared";
+import { isValidTimeZone } from "@k2b/stdlib";
 import type { ResponseScheduleDefinitionInput } from "./contracts";
 
 type ScheduleWindow = { start: string; end: string };
@@ -27,7 +27,7 @@ const windowsOverlap = (windows: readonly ScheduleWindow[]): boolean => {
 export const validateResponseScheduleDefinition = (schedule: ResponseScheduleDefinitionInput): string[] => {
   if (schedule.mode === "always") return [];
   const errors: string[] = [];
-  if (!normalizeTimeZone(schedule.timeZone, "")) errors.push("Select a valid IANA time zone");
+  if (!isValidTimeZone(schedule.timeZone)) errors.push("Select a valid IANA time zone");
   for (const range of schedule.activeRanges) {
     if (!validDate(range.from) || (range.to !== null && (!validDate(range.to) || range.to < range.from))) {
       errors.push("Active date ranges must use ordered YYYY-MM-DD dates");

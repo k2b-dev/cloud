@@ -5,7 +5,6 @@ import { apiClient } from "../../api/client";
 import type { DraftDerivationKind, MailAutomationConditions, SenderIdentity, SenderMatchKind } from "../../contracts";
 import type { MessageDetail } from "../../service/messages";
 import { readApiError } from "./api-response";
-import { openIncomingAutomationEditor } from "./MailIncomingAutomationSettings";
 import type { AutomationActionKind } from "./mail-automation-actions";
 import { isOutgoingMessage } from "./mail-conversation-history";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
@@ -49,13 +48,15 @@ export default function MailSenderMessageActions(props: {
           : { field: "sender_domain", operator: "is", value: matchValue },
       ],
     };
-    void openIncomingAutomationEditor({
-      mailboxId: props.mailboxId,
-      initialName: options.name ?? t().messagesFrom({ value: matchValue }),
-      initialScope: { mode: "matching", conditions: initialConditions },
-      initialAction: options.action ?? "mark_read",
-      onSaved: () => undefined,
-    });
+    void import("./MailIncomingAutomationSettings").then(({ openIncomingAutomationEditor }) =>
+      openIncomingAutomationEditor({
+        mailboxId: props.mailboxId,
+        initialName: options.name ?? t().messagesFrom({ value: matchValue }),
+        initialScope: { mode: "matching", conditions: initialConditions },
+        initialAction: options.action ?? "mark_read",
+        onSaved: () => undefined,
+      }),
+    );
   };
 
   const reportPhishing = mutation.create<boolean, SelectionContext>({

@@ -36,7 +36,6 @@ import type { MailListError, MailListMode } from "../../service/workspace";
 import MailBulkActionBar from "./MailBulkActionBar";
 import MailConversationQuickLook from "./MailConversationQuickLook";
 import MailConversationRow from "./MailConversationRow";
-import { openMailSearchBuilder } from "./MailSearchBuilder";
 import { type MailActionId, spamActionForConversation } from "./mail-actions";
 import { mailConversationListMessages } from "./mail-conversation-list-messages";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
@@ -260,6 +259,7 @@ export default function MailConversationList(props: {
       .join(", ");
 
   const openAdvancedSearch = async () => {
+    const { openMailSearchBuilder } = await import("./MailSearchBuilder");
     const result = await openMailSearchBuilder({
       mailboxId: props.mailboxId,
       initialState: currentSearchState(),

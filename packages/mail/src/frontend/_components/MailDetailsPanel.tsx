@@ -39,7 +39,6 @@ import type { ConversationReminder } from "../../service/reminders";
 import type { MailDetailErrors } from "../../service/workspace";
 import { readApiError } from "./api-response";
 import MailConversationContext from "./MailConversationContext";
-import { openMailMessageInspector } from "./MailMessageInspectorDialog";
 import MailRelatedConversations from "./MailRelatedConversations";
 import { presentMailActivity } from "./mail-activity-presentation";
 import { mailDraftHref } from "./mail-compose-route";
@@ -65,6 +64,10 @@ import { createRetryToasts } from "./mail-feedback";
 
 const avatarSource = (userId: string | undefined, avatarHash: string | null): string | undefined =>
   userId && avatarHash ? `/api/accounts/users/${encodeURIComponent(userId)}/avatar?rev=${encodeURIComponent(avatarHash)}` : undefined;
+
+/** The inspector loads its code on first use. */
+const openMessageInspector = async (params: Parameters<typeof import("./MailMessageInspectorDialog").openMailMessageInspector>[0]) =>
+  (await import("./MailMessageInspectorDialog")).openMailMessageInspector(params);
 
 export default function MailDetailsPanel(props: {
   mailboxId: string;
@@ -1012,7 +1015,7 @@ export default function MailDetailsPanel(props: {
                       size="sm"
                       type="button"
                       onClick={() =>
-                        void openMailMessageInspector({
+                        void openMessageInspector({
                           mailboxId: props.mailboxId,
                           messages: props.messages,
                           initialMessageId: message().id,
@@ -1027,7 +1030,7 @@ export default function MailDetailsPanel(props: {
                       size="sm"
                       type="button"
                       onClick={() =>
-                        void openMailMessageInspector({
+                        void openMessageInspector({
                           mailboxId: props.mailboxId,
                           messages: props.messages,
                           initialMessageId: message().id,
