@@ -1,7 +1,7 @@
 import { env } from "../../config/env";
 import { publicCloudOrigin } from "../../shared/app-url";
 import { get as getSetting } from "../settings";
-import { CLOUD_INVOCATION_JWKS_PATH, CLOUD_OAUTH_JWKS_PATH, CLOUD_SESSION_JWKS_PATH } from "./constants";
+import { CLOUD_INVOCATION_JWKS_PATH, CLOUD_OAUTH_JWKS_PATH, CLOUD_SESSION_JWKS_PATH, IDENTITY_REFRESH_TIMEOUT_MS } from "./constants";
 
 const RUNTIME_CONFIG_TTL_MS = 60_000;
 
@@ -73,7 +73,18 @@ export const getIdentityRuntimeConfig = async (): Promise<IdentityRuntimeConfig>
   const now = Date.now();
   if (cached && cached.expiresAt > now) return cached.value;
   if (loading) return loading;
-  loading = load()
+  // Every caller joins this load. Bound it like the signer refresh, so one hung
+  // settings read cannot hold back every later caller; the next one starts over.
+  loading = new Promise<IdentityRuntimeConfig>((resolve, reject) => {
+    const timer = setTimeout(
+      () =>
+        reject(new DOMException(`Cloud identity settings did not load within ${IDENTITY_REFRESH_TIMEOUT_MS / 1_000} s`, "TimeoutError")),
+      IDENTITY_REFRESH_TIMEOUT_MS,
+    );
+    load()
+      .then(resolve, reject)
+      .finally(() => clearTimeout(timer));
+  })
     .then((value) => {
       cached = { value, expiresAt: Date.now() + RUNTIME_CONFIG_TTL_MS };
       return value;

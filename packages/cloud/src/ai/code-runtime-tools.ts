@@ -3,8 +3,10 @@ import { z } from "zod";
 import { readBoundedJson } from "../_internal/bounded-json";
 import { getApp } from "../_internal/registry";
 import type { RequestActor } from "../server";
+import { IDENTITY_REFRESH_TIMEOUT_MS } from "../services/identity/constants";
 import { signInvocationToken } from "../services/identity/invocation-token";
 import { withActiveIdentitySigner } from "../services/identity/key-ring";
+import { logger } from "../services/logging";
 import { LOCALE_HEADER } from "../shared/locale";
 import { TIMEZONE_COOKIE } from "../shared/time";
 import { CodeToolFailure } from "./browser-code-contracts";
@@ -12,6 +14,9 @@ import { resolveAiCapabilityActor } from "./capability-execution";
 import { CODE_CAPABILITY_TOKEN_HEADER, codeCapabilityOperation } from "./code-capability-transport";
 import { authorizeCodeExecution } from "./code-execution";
 import { aiConversations } from "./store";
+
+const log = logger("ai:code-runtime");
+const ISSUANCE_TIMEOUT_MS = 5_000;
 
 const Reply = z.object({
   ok: z.literal(true),
@@ -49,6 +54,46 @@ export const runManagedCodeTool =
     await context.reportProgress?.(context.locale?.startsWith("de") ? "Ausführungshost verbinden" : "Connecting execution host");
     const app = await getApp("assistant");
     if (!app) throw new Error("Assistant code host is unavailable");
+    const issue = async (audience: { targetAppId: string; callingAppId: string; operation: string }) => {
+      // A token is signed before its request goes out, so a timed-out issuance
+      // never reached the host and is safe to repeat. Retry long enough for a
+      // stalled shared refresh to finish or fall back to the cached key. Every
+      // timeout used up a full attempt or ended a shared load, so this cannot spin.
+      const giveUpAt = Date.now() + IDENTITY_REFRESH_TIMEOUT_MS + ISSUANCE_TIMEOUT_MS;
+      while (true) {
+        try {
+          return await withActiveIdentitySigner(
+            "invocation",
+            (signer) =>
+              signInvocationToken({
+                ...audience,
+                schemaHash: null,
+                authority: {
+                  sub: actor.user.id,
+                  principal_type: "user",
+                  access_subject_type: "user",
+                  access_subject_id: actor.user.id,
+                  credential_kind: "session",
+                  scopes: [],
+                },
+                signer,
+                issuer: signer.issuer,
+              }),
+            { signal: context.signal, timeoutMs: ISSUANCE_TIMEOUT_MS },
+          );
+        } catch (error) {
+          if (context.signal.aborted || !(error instanceof DOMException && error.name === "TimeoutError")) throw error;
+          if (Date.now() < giveUpAt) continue;
+          log.warn("Code call gave up on identity issuance", { tool: name, error: error.message });
+          throw new Error(
+            context.locale?.startsWith("de")
+              ? "Der Identitätsdienst hat nicht rechtzeitig geantwortet. Prüfe, ob dieser Aufruf schon gestartet ist, bevor du ihn erneut ausführst."
+              : "The identity service did not respond in time. Check whether this call already started before running it again.",
+            { cause: error },
+          );
+        }
+      }
+    };
     // Polls run every 250 ms for as long as the code runs. Reuse both tokens
     // while they stay valid for at least 10 s, so a long run or an approval
     // round trip does not depend on a fresh issuance for every poll.
@@ -59,52 +104,14 @@ export const runManagedCodeTool =
     const request = async (decision?: { id: string; approved: boolean }) => {
       context.signal.throwIfAborted();
       await authorizeCodeExecution(context.conversationId!, context.turnId!, actor.user.id);
-      signed =
-        usable(signed) ??
-        (await withActiveIdentitySigner(
-          "invocation",
-          (signer) =>
-            signInvocationToken({
-              targetAppId: "assistant",
-              callingAppId: "core",
-              operation: `tool:${name}`,
-              schemaHash: null,
-              authority: {
-                sub: actor.user.id,
-                principal_type: "user",
-                access_subject_type: "user",
-                access_subject_id: actor.user.id,
-                credential_kind: "session",
-                scopes: [],
-              },
-              signer,
-              issuer: signer.issuer,
-            }),
-          { signal: context.signal, timeoutMs: 5000 },
-        ));
+      signed = usable(signed) ?? (await issue({ targetAppId: "assistant", callingAppId: "core", operation: `tool:${name}` }));
       callback =
         usable(callback) ??
-        (await withActiveIdentitySigner(
-          "invocation",
-          (signer) =>
-            signInvocationToken({
-              targetAppId: "core",
-              callingAppId: "assistant",
-              operation: codeCapabilityOperation(context.conversationId!, context.turnId!),
-              schemaHash: null,
-              authority: {
-                sub: actor.user.id,
-                principal_type: "user",
-                access_subject_type: "user",
-                access_subject_id: actor.user.id,
-                credential_kind: "session",
-                scopes: [],
-              },
-              signer,
-              issuer: signer.issuer,
-            }),
-          { signal: context.signal, timeoutMs: 5000 },
-        ));
+        (await issue({
+          targetAppId: "core",
+          callingAppId: "assistant",
+          operation: codeCapabilityOperation(context.conversationId!, context.turnId!),
+        }));
       const headers = new Headers({ authorization: `Bearer ${signed.token}`, "content-type": "application/json" });
       headers.set(CODE_CAPABILITY_TOKEN_HEADER, callback.token);
       if (context.locale) headers.set(LOCALE_HEADER, context.locale);

@@ -13,8 +13,8 @@ export const INVOCATION_CLOCK_TOLERANCE_SECONDS = 2;
 export const IDENTITY_JWKS_MAX_AGE_SECONDS = 5 * 60;
 export const IDENTITY_ACTIVATION_LEAD_MS = 10 * 60_000;
 export const IDENTITY_SIGNING_CACHE_MS = 60_000;
-/** Matches the default issuance deadline; a refresh only serves issuance. */
-export const IDENTITY_SIGNER_REFRESH_TIMEOUT_MS = 30_000;
+/** Bounds a shared signer refresh or identity settings load; matches the default issuance deadline. */
+export const IDENTITY_REFRESH_TIMEOUT_MS = 30_000;
 export const IDENTITY_ROTATION_AGE_MS = 30 * 24 * 60 * 60_000;
 export const IDENTITY_ROLLOUT_MARGIN_MS = 10 * 60_000;
 export const IDENTITY_MAX_COMPACT_TOKEN_BYTES = 4 * 1024;

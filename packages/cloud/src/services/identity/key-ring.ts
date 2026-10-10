@@ -6,9 +6,9 @@ import {
   CLOUD_IDENTITY_ALGORITHM,
   IDENTITY_ACTIVATION_LEAD_MS,
   IDENTITY_CLOCK_TOLERANCE_SECONDS,
+  IDENTITY_REFRESH_TIMEOUT_MS,
   IDENTITY_ROLLOUT_MARGIN_MS,
   IDENTITY_ROTATION_AGE_MS,
-  IDENTITY_SIGNER_REFRESH_TIMEOUT_MS,
   IDENTITY_SIGNING_CACHE_MS,
 } from "./constants";
 import { type IdentityKeyEncryptionConfig, readIdentityKeyEncryptionConfig } from "./key-config";
@@ -102,6 +102,13 @@ const timeoutSignal = (ms: number, reason: () => DOMException): { signal: AbortS
   return { signal: controller.signal, clear: () => clearTimeout(timer) };
 };
 
+/**
+ * A JS deadline alone cannot cancel a blocked PostgreSQL query. Bound each
+ * statement (including lock waits) on this connection, transaction-local.
+ */
+const boundStatements = (db: typeof sql, deadline: number) =>
+  db`SELECT set_config('statement_timeout', ${`${Math.max(1, Math.floor(deadline - Date.now()))}ms`}, true)`;
+
 const assertRsaJwk = (value: JWK, privateRequired: boolean): void => {
   if (value.kty !== "RSA" || typeof value.n !== "string" || typeof value.e !== "string") {
     throw new Error("Cloud identity key is not an RSA JWK");
@@ -182,8 +189,8 @@ const importRow = async (row: SigningKeyRow, keys: IdentityKeyEncryptionConfig):
   return { kid: row.kid, key, signUntil: date(row.sign_until) };
 };
 
-const selectRows = async (purpose: SigningKeyPurpose): Promise<SigningKeyRow[]> =>
-  sql<SigningKeyRow[]>`
+const selectRows = async (db: typeof sql, purpose: SigningKeyPurpose): Promise<SigningKeyRow[]> =>
+  db<SigningKeyRow[]>`
     SELECT id, purpose, state, kid, alg, public_jwk, encrypted_private_jwk, encryption_key_id,
       created_at, activate_at, activated_at, sign_until, retired_at, verify_until, revoked_at
     FROM auth.signing_keys
@@ -214,9 +221,16 @@ const insertKey = async (
   `;
 };
 
-const maintainPurpose = async (purpose: SigningKeyPurpose): Promise<SigningKeyRow> => {
+/**
+ * Every statement ends by `deadline`, so a refresh that its callers already
+ * gave up on does not keep holding a pooled connection.
+ */
+const maintainPurpose = async (purpose: SigningKeyPurpose, deadline: number): Promise<SigningKeyRow> => {
   const keys = await readIdentityKeyEncryptionConfig();
-  const before = await selectRows(purpose);
+  const before = await sql.begin(async (tx) => {
+    await boundStatements(tx, deadline);
+    return selectRows(tx, purpose);
+  });
   const beforeActive = before.find((row) => row.state === "active");
   const beforePending = before.find((row) => row.state === "pending");
   const nowMs = Date.now();
@@ -232,7 +246,7 @@ const maintainPurpose = async (purpose: SigningKeyPurpose): Promise<SigningKeyRo
       : null;
   const active = await sql.begin(async (tx) => {
     // Another replica's stuck rotation must not hold this refresh forever.
-    await tx`SELECT set_config('statement_timeout', ${`${IDENTITY_SIGNER_REFRESH_TIMEOUT_MS}ms`}, true)`;
+    await boundStatements(tx, deadline);
     await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`cloud:identity-keyring:${purpose}`}, 0))`;
     const rows = await tx<SigningKeyRow[]>`
       SELECT id, purpose, state, kid, alg, public_jwk, encrypted_private_jwk, encryption_key_id,
@@ -319,18 +333,19 @@ export const prepareIdentitySigner = async (purpose: SigningKeyPurpose): Promise
     async () => {
       // Every caller joins this refresh. Bound it, so one hung connection
       // cannot hold back every later issuance until TCP gives up.
+      const deadline = Date.now() + IDENTITY_REFRESH_TIMEOUT_MS;
       const bound = timeoutSignal(
-        IDENTITY_SIGNER_REFRESH_TIMEOUT_MS,
+        IDENTITY_REFRESH_TIMEOUT_MS,
         () =>
           new DOMException(
-            `Cloud identity signer refresh did not finish within ${formatDuration(IDENTITY_SIGNER_REFRESH_TIMEOUT_MS)}`,
+            `Cloud identity signer refresh did not finish within ${formatDuration(IDENTITY_REFRESH_TIMEOUT_MS)}`,
             "TimeoutError",
           ),
       );
       try {
         const refresh = async () => {
           const keys = await readIdentityKeyEncryptionConfig();
-          const row = await maintainPurpose(purpose);
+          const row = await maintainPurpose(purpose, deadline);
           return importRow(row, keys);
         };
         const signer = await untilAborted(refresh(), bound.signal);
@@ -370,13 +385,17 @@ export const withActiveIdentitySigner = async <T>(
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new Error("Identity issuance timeout must be positive");
   const deadline = Date.now() + timeoutMs;
   let step = "signer refresh";
-  const bound = timeoutSignal(
-    timeoutMs,
-    () => new DOMException(`Identity service did not respond within ${formatDuration(timeoutMs)} (${step})`, "TimeoutError"),
-  );
+  const expired = () => new DOMException(`Identity service did not respond within ${formatDuration(timeoutMs)} (${step})`, "TimeoutError");
+  const bound = timeoutSignal(timeoutMs, expired);
   const signal = options.signal ? AbortSignal.any([options.signal, bound.signal]) : bound.signal;
-  const wait = <V>(name: string, work: () => Promise<V>): Promise<V> => {
+  // The timer releases a waiting caller. The clock also catches a timer that a
+  // busy event loop delivers late, and a statement Postgres cancels first.
+  const check = () => {
     signal.throwIfAborted();
+    if (Date.now() >= deadline) throw expired();
+  };
+  const wait = <V>(name: string, work: () => Promise<V>): Promise<V> => {
+    check();
     step = name;
     return untilAborted(work(), signal);
   };
@@ -388,11 +407,9 @@ export const withActiveIdentitySigner = async <T>(
       const { issuer } = await wait("identity settings", getIdentityRuntimeConfig);
       const run = async (db: typeof sql): Promise<{ active: false } | { active: true; result: T }> => {
         // A caller released at its deadline must not sign once a connection frees up.
-        signal.throwIfAborted();
+        check();
         step = "signing key check";
-        // A JS deadline alone cannot cancel a blocked PostgreSQL query. Bound
-        // each statement (including lock waits) on this connection, transaction-local.
-        await db`SELECT set_config('statement_timeout', ${`${Math.max(1, Math.floor(deadline - Date.now()))}ms`}, true)`;
+        await boundStatements(db, deadline);
         const [active] = await db<Array<{ kid: string }>>`
           SELECT kid
           FROM auth.signing_keys
@@ -402,18 +419,23 @@ export const withActiveIdentitySigner = async <T>(
             AND sign_until > now()
           FOR SHARE
         `;
-        signal.throwIfAborted();
+        check();
         if (!active) return { active: false };
         step = "signing";
         const result = await callback({ ...signer, issuer }, db);
+        // Roll back what the callback wrote instead of committing a result the caller never gets.
+        check();
         return { active: true, result };
       };
       const checked = await wait("database connection", () => (options.pool ?? sql).begin(run));
-      signal.throwIfAborted();
+      check();
       if (checked.active) return checked.result;
       invalidateIdentitySignerCache(purpose, signer.kid);
     }
     throw new Error(`No active ${purpose} identity signer is available`);
+  } catch (error) {
+    check();
+    throw error;
   } finally {
     bound.clear();
   }
@@ -533,7 +555,7 @@ const maintainVerificationWindows = async (): Promise<void> => {
 };
 
 export const runIdentityKeyMaintenance = async (): Promise<void> => {
-  for (const purpose of SIGNING_KEY_PURPOSES) await maintainPurpose(purpose);
+  for (const purpose of SIGNING_KEY_PURPOSES) await maintainPurpose(purpose, Date.now() + IDENTITY_REFRESH_TIMEOUT_MS);
   await maintainVerificationWindows();
   await sql`
     DELETE FROM auth.session_families

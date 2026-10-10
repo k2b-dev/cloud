@@ -5,7 +5,7 @@ section: Operations
 order: 1145
 description: Operate Core-owned signing keys, rotation, rewrap, and emergency revocation.
 tags: [identity, jwt, keys, rotation, recovery]
-updated: 2026-10-09
+updated: 2026-10-10
 ---
 
 # Identity key operations
@@ -154,15 +154,21 @@ does not invalidate tokens that were already released, so their normal token
 and verifier-cache windows still apply.
 
 Each issuance has one deadline that covers the whole call: the signer refresh,
-the identity settings, the wait for a database connection, and the key check,
-including lock waits. Core does not return a token after that deadline. The
-caller fails at the deadline with a `TimeoutError` that names the step that
-stalled, for example
-`Identity service did not respond within 5 s (signer refresh)`. A signer
-refresh that all callers share gives up after 30 seconds. Core then keeps
-signing with the cached key while it is still valid, logs
-`Cloud identity signer refresh failed`, and the next issuance starts a new
-refresh. A database failure may also prevent an audit entry from being saved;
+the identity settings, the wait for a database connection, the key check
+including lock waits, and signing. Core does not return a token after that
+deadline. If signing finishes later, Core rolls back its transaction instead of
+committing a result the caller never receives. The caller fails at the deadline
+with a `TimeoutError` that names the step that stalled, for example
+`Identity service did not respond within 5 s (signer refresh)`.
+
+All callers share one signer refresh and one identity settings load. Each gives
+up after 30 seconds, and the refresh also ends its own database statements
+then. Core logs `Cloud identity signer refresh failed`. While the cached key is
+still valid, Core keeps signing with it for one more signing-cache window of 60
+seconds before it tries again. Without a valid cached key, the next issuance
+starts a new refresh. Code Mode tools keep retrying a timed-out issuance for
+about 35 seconds, so one stalled refresh does not end a running or approved
+call. A database failure may also prevent an audit entry from being saved;
 inspect service logs when no audit record is available.
 
 Do not rotate `APP_SECRET` as a substitute. It encrypts settings and

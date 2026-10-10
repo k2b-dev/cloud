@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, jest, spyOn, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, jest, setSystemTime, spyOn, test } from "bun:test";
 import * as bun from "bun";
 import { createLocalJWKSet } from "jose";
 import { z } from "zod";
@@ -22,7 +22,7 @@ if (!testInfra.database) {
   });
   const identity = await import("../../../packages/cloud/src/services/identity");
   const runtimeConfig = await import("../../../packages/cloud/src/services/identity/runtime-config");
-  const { IDENTITY_SIGNER_REFRESH_TIMEOUT_MS } = await import("../../../packages/cloud/src/services/identity/constants");
+  const { IDENTITY_REFRESH_TIMEOUT_MS } = await import("../../../packages/cloud/src/services/identity/constants");
   const settings = await import("../../../packages/cloud/src/services/settings");
   const { withMandateIssueAuthority } = await import("../../../packages/cloud/src/services/mandates");
   const { dispatchCapability } = await import("../../../packages/cloud/src/api");
@@ -459,7 +459,7 @@ if (!testInfra.database) {
         const refresh = identity.prepareIdentitySigner("invocation").catch((caught: unknown) => caught);
         // The joined refresh starts on the next microtask and arms its bound first.
         await Promise.resolve();
-        jest.advanceTimersByTime(IDENTITY_SIGNER_REFRESH_TIMEOUT_MS);
+        jest.advanceTimersByTime(IDENTITY_REFRESH_TIMEOUT_MS);
         expect(await refresh).toMatchObject({
           name: "TimeoutError",
           message: "Cloud identity signer refresh did not finish within 30 s",
@@ -469,6 +469,56 @@ if (!testInfra.database) {
         await unlock();
       }
       expect((await issue("after-hung-refresh")).ok).toBeTrue();
+    });
+
+    test("a stalled signer refresh ends its own database wait at its deadline", async () => {
+      const unlock = await lockSigningKeys();
+      const start = Date.now();
+      try {
+        identity.clearIdentityKeyCachesForTest();
+        const refresh = identity.prepareIdentitySigner("invocation").catch((caught: unknown) => caught);
+        // The refresh fixes its deadline on the next microtask. Move the clock to
+        // just before it while the refresh's own bound timer stays pending, so
+        // only Postgres can end the wait for the lock.
+        await Promise.resolve();
+        setSystemTime(new Date(start + IDENTITY_REFRESH_TIMEOUT_MS - 1));
+        expect(await Promise.race([refresh, Bun.sleep(5_000).then(() => "still waiting for the lock")])).toMatchObject({
+          message: expect.stringContaining("statement timeout"),
+        });
+        // A refresh the callers gave up on does not keep holding a connection.
+        const [waiting] = await bun.sql<{ count: number }[]>`
+          SELECT count(*)::int AS count FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'
+        `;
+        expect(waiting?.count).toBe(0);
+      } finally {
+        setSystemTime();
+        await unlock();
+      }
+      expect((await issue("after-refresh-deadline")).ok).toBeTrue();
+    }, 15_000);
+
+    test("a callback that outlives the deadline returns no token and commits nothing", async () => {
+      await identity.prepareIdentitySigner("invocation");
+      await runtimeConfig.getIdentityRuntimeConfig();
+      await expect(
+        identity.withActiveIdentitySigner(
+          "invocation",
+          (signer, db) =>
+            withMandateIssueAuthority(
+              issueInput("late-sign"),
+              () => {
+                // Block the event loop past the deadline, so its timer cannot fire first.
+                const until = Date.now() + 300;
+                while (Date.now() < until);
+                return sign(signer);
+              },
+              { db },
+            ),
+          { pool, timeoutMs: 200 },
+        ),
+      ).rejects.toMatchObject({ name: "TimeoutError", message: "Identity service did not respond within 200 ms (signing)" });
+      const [audit] = await pool<{ count: number }[]>`SELECT count(*)::int AS count FROM audit.events WHERE request_id = 'late-sign'`;
+      expect(audit?.count).toBe(0);
     });
 
     test("abort while waiting never invokes the callback and leaves the pool usable", async () => {

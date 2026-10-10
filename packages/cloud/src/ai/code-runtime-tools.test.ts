@@ -3,6 +3,7 @@ import { defineTool, type InboundEvent, nessi, type Provider, type StoreEntry } 
 import { sql } from "bun";
 import { z } from "zod";
 import * as registry from "../_internal/registry";
+import { IDENTITY_REFRESH_TIMEOUT_MS } from "../services/identity/constants";
 import * as identity from "../services/identity/key-ring";
 import * as execution from "./capability-execution";
 import { CODE_CAPABILITY_TOKEN_HEADER } from "./code-capability-transport";
@@ -286,10 +287,23 @@ const stubManagedCodeTurn = async () => {
     true,
     ["sign", "verify"],
   );
-  const signer = spyOn(identity, "withActiveIdentitySigner").mockImplementation(async (_purpose, callback) =>
-    callback({ kid: "test-key", key: keys.privateKey, signUntil: new Date(Date.now() + 60000), issuer: "https://cloud.test" }, sql),
-  );
-  return { actor, signer };
+  // A stalled issuance takes its full 5 s deadline before it times out.
+  let stalls = 0;
+  const signer = spyOn(identity, "withActiveIdentitySigner").mockImplementation(async (_purpose, callback) => {
+    if (stalls > 0) {
+      stalls -= 1;
+      setSystemTime(new Date(Date.now() + 5_000));
+      throw new DOMException("Identity service did not respond within 5 s (signer refresh)", "TimeoutError");
+    }
+    return callback({ kid: "test-key", key: keys.privateKey, signUntil: new Date(Date.now() + 60000), issuer: "https://cloud.test" }, sql);
+  });
+  return {
+    actor,
+    signer,
+    stall: (count: number) => {
+      stalls = count;
+    },
+  };
 };
 
 test("managed code forwards trusted locale and persisted browser preferences to the Assistant host", async () => {
@@ -376,6 +390,93 @@ test("managed code reuses its tokens across polls until they come close to expir
     expect(callbacks.map((token) => callbacks.indexOf(token))).toEqual([0, 0, 2, 2]);
     // Two issuances per token kind instead of one per poll.
     expect(signer).toHaveBeenCalledTimes(4);
+  } finally {
+    setSystemTime();
+    mock.restore();
+  }
+});
+
+test("an approved call still reaches the host when the next issuance times out once", async () => {
+  const start = new Date("2026-10-09T13:45:00.000Z");
+  try {
+    setSystemTime(start);
+    const { actor, signer, stall } = await stubManagedCodeTurn();
+    const approval = { id: "33333333-3333-4333-8333-333333333333", message: "HTTP request" };
+    const decisions: unknown[] = [];
+    spyOn(globalThis, "fetch").mockImplementation(
+      Object.assign(
+        async (_url: RequestInfo | URL, init?: RequestInit) => {
+          const { input } = z.object({ input: z.object({ decision: z.unknown().optional() }) }).parse(JSON.parse(String(init?.body)));
+          if (input.decision) decisions.push(input.decision);
+          return decisions.length === 0
+            ? Response.json({
+                ok: true,
+                data: { status: "running", phase: "waiting_for_user", approvals: [{ ...approval, decision: null }] },
+              })
+            : Response.json({ ok: true, data: { status: "done", result: { sent: true }, approvals: [{ ...approval, decision: true }] } });
+        },
+        { preconnect: fetch.preconnect },
+      ),
+    );
+    expect(
+      await runManagedCodeTool("code_run")(
+        {},
+        {
+          actor,
+          conversationId: "chat-test",
+          turnId: "turn-test",
+          callId: "run-test",
+          signal: new AbortController().signal,
+          requestApproval: async () => {
+            // The user answers once both tokens need a new issuance, and that issuance stalls once.
+            setSystemTime(new Date(start.getTime() + 25_000));
+            stall(1);
+            return true;
+          },
+          requestClientTool: async () => {
+            throw new Error("Unexpected client tool");
+          },
+        },
+      ),
+    ).toEqual({ sent: true });
+    expect(decisions).toEqual([{ id: approval.id, approved: true }]);
+    // Two first tokens, one timed-out issuance, then both tokens again.
+    expect(signer).toHaveBeenCalledTimes(5);
+  } finally {
+    setSystemTime();
+    mock.restore();
+  }
+});
+
+test("a code call stops retrying a stalled issuance after one refresh window and says so in the user's language", async () => {
+  try {
+    setSystemTime(new Date("2026-10-09T13:45:00.000Z"));
+    const { actor, signer, stall } = await stubManagedCodeTurn();
+    stall(Number.POSITIVE_INFINITY);
+    const request = spyOn(globalThis, "fetch");
+    await expect(
+      runManagedCodeTool("code_run")(
+        {},
+        {
+          actor,
+          conversationId: "chat-test",
+          turnId: "turn-test",
+          callId: "run-test",
+          locale: "de-DE",
+          signal: new AbortController().signal,
+          requestApproval: async () => false,
+          requestClientTool: async () => {
+            throw new Error("Unexpected client tool");
+          },
+        },
+      ),
+    ).rejects.toMatchObject({
+      message:
+        "Der Identitätsdienst hat nicht rechtzeitig geantwortet. Prüfe, ob dieser Aufruf schon gestartet ist, bevor du ihn erneut ausführst.",
+      cause: expect.objectContaining({ name: "TimeoutError" }),
+    });
+    expect(signer).toHaveBeenCalledTimes((IDENTITY_REFRESH_TIMEOUT_MS + 5_000) / 5_000);
+    expect(request).not.toHaveBeenCalled();
   } finally {
     setSystemTime();
     mock.restore();
