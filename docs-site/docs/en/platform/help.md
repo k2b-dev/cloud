@@ -86,9 +86,10 @@ article.
 
 Each article is a Markdown asset with YAML frontmatter:
 
-Follow [Product language and tone](/en/docs/build/product-language-and-tone)
-for task structure, terminology, English and German prose, and translation
-equivalence.
+Follow [Write app help](/en/docs/build/write-app-help) for article structure,
+step and sentence rules, and the [Cloud glossary](/en/docs/reference/glossary)
+for product terms. [Product language and tone](/en/docs/build/product-language-and-tone)
+covers the voice of all product text and translation equivalence.
 
 ```md
 ---
