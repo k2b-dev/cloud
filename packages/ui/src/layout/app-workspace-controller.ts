@@ -89,6 +89,10 @@ const sidebarHideable = (root: HTMLElement) => sidebarElement(root)?.dataset.wor
  * stays application state, so the controller only requests the change.
  */
 export const APP_WORKSPACE_SIDEBAR_HIDE_EVENT = "k2b-app-workspace-sidebar-hide";
+/** Asks the owning `AppWorkspace.Detail` to close; its `onClose` decides. */
+export const APP_WORKSPACE_DETAIL_CLOSE_EVENT = "k2b-app-workspace-detail-close";
+/** Asks the owning `AppWorkspace.Detail` for the previous or next item, as `detail.direction` of `-1` or `1`. */
+export const APP_WORKSPACE_DETAIL_STEP_EVENT = "k2b-app-workspace-detail-step";
 const previewSidebarHidden = (root: HTMLElement, hidden: boolean) => {
   const sidebar = sidebarElement(root);
   if (!sidebar) return;
