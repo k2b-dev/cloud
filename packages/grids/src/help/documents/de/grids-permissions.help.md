@@ -1,61 +1,72 @@
 ---
 id: grids-permissions
-title: Berechtigungen
+title: Zugriff steuern
 icon: ti ti-lock
-description: Zwischen vollständigem Basiszugriff und einer begrenzten Grids App wählen.
+description: Wähle zwischen vollständigem Zugriff auf eine Base und einer begrenzten Grids App.
 order: 145
 ---
-Grids besitzt zwei Cloud-Berechtigungsgrenzen: eine **Basis** für den vollständigen unmittelbaren Arbeitsbereich und eine **Grids App** für eine veröffentlichte, auf eine Aufgabe ausgerichtete Oberfläche. Tabellen, Ansichten, Formulare, Dokumentvorlagen und Workflows besitzen keine eigenen Cloud-Freigaben.
+Grids regelt den Zugriff an zwei Stellen. Zugriff auf eine **Base** gilt für ihren vollständigen Arbeitsbereich mit Rohdaten. Zugriff auf eine **Grids App** gilt nur für diese veröffentlichte, auf eine Aufgabe ausgerichtete App. Tabellen, Ansichten, Formulare, Dokumentvorlagen und Workflows haben keinen eigenen Cloud-Zugriff.
 
-Cloud-Administratoren sind nicht automatisch Grids-Superuser. Sie können Grids im Administrationsbereich verwalten, benötigen auf normalen Grids-Seiten aber weiterhin Zugriff auf die Basis.
+Die Cloud-Administration ist in Grids nicht automatisch allmächtig. Sie kann Grids im Administrationsbereich konfigurieren, braucht auf normalen Grids-Seiten aber trotzdem Zugriff auf die Base.
 
-## Zugriff auf eine Basis gewähren {icon="database"}
+## Zugriff auf eine Base geben {icon="database"}
 
-Eine Freigabe für eine Basis gilt für alle Tabellen, Felder, Datensätze, Ansichten, Formulare, Dokumentvorlagen und Workflows in dieser Basis.
+Zugriff auf eine Base gilt für alle Tabellen, Felder, Datensätze, Ansichten, Formulare, Dokumentvorlagen und Workflows dieser Base.
 
-Basisfreigaben unterstützen Personen, Gruppen, Dienstkonten und alle angemeldeten Konten. Öffentliche Principals werden nicht unterstützt.
+Du kannst Personen, Gruppen, Dienstkonten und allen angemeldeten Konten Zugriff geben. Öffentlichen Zugriff auf eine Base gibt es nicht.
 
-| Stufe | Erlaubte Aktionen |
-| --- | --- |
-| **Lesen** | Das vollständige Schema und jeden Datensatz der Basis lesen, einschließlich Ansichten, GQL-Ergebnissen, Exporten und generierten Ausgaben. |
-| **Schreiben** | Zusätzlich Datensätze erstellen, aktualisieren und löschen, Formulare absenden, Dokumente erzeugen und erlaubte Basisoperationen ausführen. |
-| **Verwalten** | Zusätzlich Schema und Konfiguration ändern, Zugriffe verwalten sowie Grids Apps erstellen, bearbeiten oder veröffentlichen. |
-| **Keine** | Den Zugriff auf die Basis ausdrücklich verweigern. |
+| Stufe | CLI-Wert | Was sie erlaubt |
+| --- | --- | --- |
+| **Ansehen** | `read` | Das vollständige Schema und jeden Datensatz der Base lesen, einschließlich Ansichten, GQL-Ergebnissen, Exporten und erzeugten Ausgaben. |
+| **Bearbeiten** | `write` | Alles aus **Ansehen**. Dazu Datensätze erstellen, aktualisieren und löschen, Formulare absenden, Dokumente erzeugen und erlaubte Vorgänge der Base ausführen. |
+| **Verwalten** | `admin` | Alles aus **Bearbeiten**. Dazu Schema und Konfiguration ändern, Zugriff ändern sowie Grids Apps erstellen, bearbeiten oder veröffentlichen. |
+| **Kein Zugriff** | `none` | Den Zugriff auf die Base ausdrücklich verweigern. |
 
-Eine Basis behält immer mindestens einen Eintrag mit **Verwalten**: für eine Person, eine Gruppe, alle angemeldeten Konten oder ein eigenständiges Dienstkonto oder einen Agenten. An die Basis gebundene API-Schlüssel zählen nicht. Grids lehnt es ab, den letzten Eintrag mit **Verwalten** herabzustufen oder zu entfernen, und lehnt eine Freigabe **Keine** für die Person, die Gruppe oder das Konto dieses Eintrags ab. Ein Eintrag mit **Verwalten** zählt nicht, solange dieselbe Person, Gruppe oder dasselbe Konto auch **Keine** hat. Zählt nur noch ein Eintrag mit **Verwalten**, sperren die Zugriffseinstellungen diesen Eintrag. Um eine Basis zu übergeben, gib der neuen Person zuerst **Verwalten**. Hat eine Basis trotzdem niemanden mehr, der sie verwaltet, etwa weil das Konto gelöscht wurde, gewährt ein Cloud-Administrator im Administrationsbereich neuen Zugriff.
+### Einen Eintrag mit Verwalten behalten
 
-Grids zählt eine Gruppe mit **Verwalten**, ohne ihre Mitglieder zu prüfen. Für ein Mitglied entscheiden trotzdem zuerst seine eigene Freigabe oder **Keine** für eine andere seiner Gruppen. Gib bei einer Übergabe deshalb der Person selbst **Verwalten**.
+Eine Base behält immer mindestens einen Eintrag mit **Verwalten**. Er kann für eine Person, eine Gruppe, alle angemeldeten Konten oder ein eigenständiges Dienstkonto oder einen Agenten gelten. An die Base gebundene API-Schlüssel zählen nicht.
 
-Der Basiszugriff kann nicht auf eine Tabelle, Ansicht, ein Formular, einen Workflow oder erstellende Personen begrenzt werden. Wenn eine Zielgruppe nur ausgewählte Daten oder Aktionen sehen darf, veröffentliche eine Grids App oder trenne die Daten in eine andere Basis.
+- Grids lehnt es ab, den letzten Eintrag mit **Verwalten** herabzustufen oder zu entfernen.
+- Grids lehnt **Kein Zugriff** für dieselbe Person, Gruppe oder dasselbe Konto wie diesen Eintrag ab.
+- Ein Eintrag mit **Verwalten** zählt nicht, solange dieselbe Person, Gruppe oder dasselbe Konto auch **Kein Zugriff** hat.
+- Zählt nur noch ein Eintrag mit **Verwalten**, sperren die Zugriffseinstellungen diesen Eintrag.
 
-Metadaten zu erstellenden Personen bleiben als normale Daten verfügbar. GQL kann zum Beispiel innerhalb einer Grids App `record.createdBy` mit `@auth.id` vergleichen. Diese Abfrage steuert das veröffentlichte Ergebnis. Sie ist kein verborgenes System für Berechtigungen auf Zeilenebene.
+Um eine Base zu übergeben, gib der neuen Person zuerst Zugriff **Verwalten**. Hat eine Base trotzdem keinen Eintrag mit **Verwalten** mehr, etwa weil das Konto gelöscht wurde, ergänzt die Cloud-Administration im Administrationsbereich einen neuen.
+
+Grids zählt einen Eintrag mit **Verwalten** für eine Gruppe, ohne ihre Mitglieder zu prüfen. Für ein Mitglied entscheiden trotzdem zuerst sein eigener Eintrag oder **Kein Zugriff** für eine andere seiner Gruppen. Gib bei einer Übergabe deshalb der Person selbst Zugriff **Verwalten**.
+
+### Zugriff mit einer App oder einer eigenen Base eingrenzen
+
+Du kannst den Zugriff auf eine Base nicht auf eine Tabelle, Ansicht, ein Formular, einen Workflow oder die erstellende Person begrenzen. Darf eine Zielgruppe nur ausgewählte Daten oder Aktionen sehen, veröffentliche eine Grids App oder verschiebe die Daten in eine andere Base.
+
+Wer einen Datensatz erstellt hat, bleibt als normale Information verfügbar. GQL in einer Grids App kann zum Beispiel `record.createdBy` mit `@auth.id` vergleichen. Diese Abfrage steuert das veröffentlichte Ergebnis. Sie ist kein verborgenes System für Zugriff auf Zeilenebene.
 
 ## Eine Grids App teilen {icon="app-window"}
 
-Eine Grids App besitzt eigene Freigaben für **Lesen** oder **Keine**. Gewähre sie einer Person, Gruppe, allen angemeldeten Konten oder öffentlich. Eine öffentliche Freigabe schließt anonyme Besucher ein. Freigaben für Grids Apps unterstützen keine Dienstkonten; delegierte Anmeldedaten verwenden die zugehörige Personenidentität.
+Eine Grids App hat eigenen Zugriff. Ihre einzige Stufe ist **Offen** (`read`). `none` verweigert den Zugriff. Du kannst einer Person, einer Gruppe, allen angemeldeten Konten oder der Öffentlichkeit Zugriff geben. Öffentlicher Zugriff schließt anonyme Besucher ein. Einem Dienstkonto kannst du keinen direkten Zugriff auf eine Grids App geben. Delegierte Anmeldedaten verwenden die Identität ihrer Person.
 
-Lesende Personen der App benötigen keinen Zugriff auf die Basis. Sie erhalten nur die Daten, Formulare, Felder, Dokumente und Aktionen, die in den unveränderlichen veröffentlichten Snapshot kompiliert wurden. Der App-Zugriff gewährt niemals den unmittelbaren Grids-Arbeitsbereich, direkte Tabellen- oder Datensatz-APIs, beliebiges GQL oder eine bearbeitbare Quellansicht.
+Personen, die die App verwenden, brauchen keinen Zugriff auf die Base. Sie erhalten nur die Daten, Formulare, Felder, Dokumente und Aktionen, die in den unveränderlichen veröffentlichten Snapshot kompiliert sind. Zugriff auf eine App gibt nie den Grids-Arbeitsbereich mit Rohdaten, direkte APIs für Tabellen oder Datensätze, beliebiges GQL oder eine bearbeitbare Quellansicht.
 
-Nur eine Person mit Verwaltungsrechten für die Basis kann eine Grids App bearbeiten, als Vorschau öffnen, veröffentlichen, zurücksetzen, löschen oder ihre Zugriffe verwalten. Entwürfe und Vorschauen sind niemals öffentlich.
+Nur wer Zugriff **Verwalten** auf die Base hat, kann eine Grids App bearbeiten, als Vorschau öffnen, veröffentlichen, zurücksetzen, löschen oder ihren Zugriff ändern. Entwürfe und Vorschauen sind nie öffentlich.
 
-Prüfe vor einer öffentlichen Veröffentlichung die Capability-Zusammenfassung im Builder. Sie nennt die Datenquellen, beschreibbaren Formularfelder und weiteren Operationen, die durch die Veröffentlichung verfügbar werden. Nutze getrennte öffentliche und angemeldete Apps, wenn beide Zielgruppen unterschiedliche Capabilities benötigen.
+Prüfe vor einer öffentlichen Veröffentlichung die Capability-Zusammenfassung im Builder. Sie nennt die Datenquellen, die beschreibbaren Formularfelder und weitere Vorgänge, die die Veröffentlichung bereitstellt. Nutze getrennte öffentliche und angemeldete Apps, wenn beide Zielgruppen unterschiedliche Capabilities brauchen.
 
-## Serverseitige Durchsetzung verstehen {icon="shield-lock"}
+## Die Durchsetzung auf dem Server verstehen {icon="shield-lock"}
 
-Die veröffentlichte Definition und der Capability-Snapshot werden serverseitig durchgesetzt. Die Verfügbarkeit von Seiten, Blöcken, Formularen und Aktionen wird bei jeder Anfrage erneut geprüft. Das Ausblenden eines Steuerelements im Browser ist keine Autorisierung.
+Der Server setzt die veröffentlichte Definition und den Capability-Snapshot durch. Er prüft bei jeder Anfrage erneut, ob eine Seite, ein Block, ein Formular oder eine Aktion verfügbar ist. Ein Steuerelement im Browser auszublenden ist keine Autorisierung.
 
-Eine nicht verfügbare Seite, ein Block, Formular oder eine Aktion gibt **Nicht gefunden** zurück und führt weder die zugehörige Abfrage noch Mutation aus. Öffentliche App-Lesevorgänge und Eingaben nutzen dieselbe Grenze mit anonymem Kontext. Workflow-Aktionen erfordern ein angemeldetes Konto.
+Eine nicht verfügbare Seite, ein Block, ein Formular oder eine Aktion liefert einen Nicht-gefunden-Fehler. Die zugehörige Abfrage oder Mutation läuft nicht. Öffentliche Lesevorgänge und Eingaben einer App nutzen dieselbe Grenze mit anonymem Kontext. Workflow-Aktionen erfordern ein angemeldetes Konto.
 
 ## Begrenzte öffentliche Links begrenzt halten {icon="world"}
 
-Öffentliche Formulare und ablaufende Dokumentlinks bleiben tokenbasierte Oberflächen:
+Öffentliche Formulare und ablaufende Dokumentlinks bleiben tokenbasiert:
 
-- Ein öffentlicher Formular-Token erlaubt das Absenden dieses Formulars, nicht das Durchsuchen der Basis.
-- Ein ablaufender Dokumentlink erlaubt das Herunterladen eines generierten Dokuments, bis er abläuft oder widerrufen wird.
+- Ein öffentliches Formular-Token erlaubt das Absenden dieses Formulars. Das Durchsuchen der Base erlaubt es nicht.
+- Ein ablaufender Dokumentlink erlaubt das Herunterladen eines erzeugten Dokuments, bis der Link abläuft oder jemand ihn widerruft.
 
-Diese Links erstellen keine Cloud-Berechtigungen auf Tabellen-, Formular- oder Vorlagenebene.
+Diese Links erzeugen keinen Cloud-Zugriff auf Tabellen, Formulare oder Vorlagen.
 
-## Zugriff über die CLI verwalten {icon="terminal-2"}
+## Zugriff über die CLI ändern {icon="terminal-2"}
 
 ```text
 cld grids access set base MyBase --group "Operations" --permission write
@@ -64,4 +75,4 @@ cld grids access list app MyBase "Public catalog"
 cld grids access revoke app MyBase "Public catalog" --public --yes
 ```
 
-Nutze `cld grids access reference` für den installierten Vertrag zu Ressourcen, Berechtigungen und Principals.
+Führe `cld grids access reference` aus, um den installierten Vertrag zu Ressourcen, Zugriffsstufen und Principals zu sehen.

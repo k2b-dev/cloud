@@ -5,36 +5,23 @@ icon: ti ti-code
 description: Find, combine, and summarize Grids data with the Grids Query Language.
 order: 125
 ---
-GQL is the Grids Query Language. It describes which saved data you want and how Grids should shape the result. The query explorer, saved views, Grids App blocks, document sources, exports, and CLI use the same language.
+GQL is the Grids Query Language. It describes which saved data you want and how Grids shapes the result. The query explorer, saved views, Grids App blocks, document sources, exports, and the CLI use the same language.
 
-You do not need GQL for ordinary table work. Start with Search, Filter, Sort, and Computed controls. Use GQL when text makes a precise query easier to understand, reuse, or review.
+You do not need GQL for ordinary table work. Start with the **Search**, **Filter**, **Sort**, and **Computed** controls. Use GQL when a precise query is easier to understand, reuse, or review as text.
 
 ## Query with AI {icon="sparkles"}
 
-Choose **Query with AI** in the editor to open an Assistant draft with this Base,
-source and query. Add what you want to find, then send it. Assistant discovers
-relevant fields, checks queries and displays actual results with the same
-permissions as the editor. This chat cannot change records or the schema.
+Choose **Query with AI** in the editor to open an Assistant draft with this Base, source, and query. Add what you want to find, then send it. Assistant discovers relevant fields, checks queries, and shows actual results with the same access as the editor. This chat cannot change records or the schema.
 
-It can save a query as a View after you confirm its name and personal/shared
-visibility; both require Base admin rights. Use the returned link to open the
-query in a new browser tab, keeping the conversation open. Very long queries may need copying instead. Previews and
-paginated results are not complete exports.
+Assistant can save a query as a view after you confirm its name and its personal or shared visibility. Both require **Manage** access to the Base. Use the returned link to open the query in a new browser tab. The conversation stays open. If a query is too long for a link, copy it instead. Previews and paginated results are not complete exports.
 
-The built-in **cloud-grids** Skill directs Assistant to current Help for product
-questions and administration. It explains GUI steps when no tool supports an
-operation; it does not grant more permissions.
+The built-in **cloud-grids** Skill sends Assistant to the current Help for product and administration questions. When no tool supports an operation, Assistant explains the steps in the interface. The Skill gives no additional access.
 
-For a generic request, describe the result you want before Assistant reads the
-schema. When a query fails, its diagnostic includes the technical cause and
-location. A corrected query should keep the same business conditions, not replace
-a parent status with a line-item status. Joined select/membership filters are not
-currently supported. Standalone Assistant queries use `TODAY()` and `NOW()`;
-Custom App `@auth` and `@time` context is not supplied to these queries.
+For a generic request, describe the result you want before Assistant reads the schema. When a query fails, its diagnostic includes the technical cause and the location. A corrected query must keep the same business conditions. For example, it must not replace a parent status with a line-item status. Filters on joined select fields and joined membership filters are not supported yet. Standalone Assistant queries use `TODAY()` and `NOW()`. They do not receive the Custom App context `@auth` and `@time`.
 
 ## Read a first query {icon="search"}
 
-This query reads the Books table, keeps available books, chooses three fields, orders the newest first, and returns at most 25 rows:
+This query reads the Books table, keeps available books, and chooses three fields. It sorts the newest first and returns at most 25 rows:
 
 ```gql
 from table Books
@@ -52,7 +39,7 @@ Each line is one clause:
 - `sort` defines the order.
 - `limit` deliberately caps the complete result.
 
-Write field and table names as shown in Grids. Put names containing spaces in double quotes, such as `"Birth year"`. Put text values in single quotes, such as `'Available'`.
+Write field and table names as Grids shows them. Put names with spaces in double quotes, such as `"Birth year"`. Put text values in single quotes, such as `'Available'`.
 
 ## Build a query safely {icon="search"}
 
@@ -62,13 +49,13 @@ Start with only the source and preview it:
 from table Books
 ```
 
-Then add one concern at a time: a filter, selected fields, and finally a meaningful sort. The editor resolves accessible tables, views, fields, relations, and aliases as you type. Diagnostics identify syntax, unknown names, ambiguity, incompatible operations, and permission failures instead of guessing.
+Then add one concern at a time: a filter, the selected fields, and finally a meaningful sort. The editor resolves accessible tables, views, fields, relations, and aliases while you type. Diagnostics name syntax errors, unknown names, ambiguity, incompatible operations, and access failures. They never guess.
 
-Omitting `select` returns all ordinary source fields. Expensive post-query fields such as HTML templates require an explicit `select`. List important fields explicitly when a saved result, document, or integration needs a stable output.
+Without `select`, the query returns all ordinary source fields. Expensive fields that Grids computes after the query, such as HTML templates, require an explicit `select`. List important fields explicitly when a saved result, document, or integration needs a stable output.
 
-An explicitly selected HTML template field is rendered after the bounded primary records have been read. It cannot be used in `where`, `sort`, `group by`, `aggregate`, `having`, or formula expressions because Liquid and CSS are rendered only after the query result is known. Selecting an HTML template from a joined table is also unsupported; create the output field on the primary stored table instead.
+Grids renders an explicitly selected HTML template field after it has read the bounded primary records. You cannot use it in `where`, `sort`, `group by`, `aggregate`, `having`, or formula expressions, because Liquid and CSS render only after the query result is known. Selecting an HTML template from a joined table is also not supported. Create the output field on the primary stored table instead.
 
-## Common query tasks {icon="search"}
+## Solve common query tasks {icon="search"}
 
 **Find exact records**
 
@@ -78,7 +65,7 @@ where Status = 'Open' and Priority != 'Low'
 sort Due asc
 ```
 
-Use `where` for rules that must remain exact. Use `search` for broad discovery across searchable display values:
+Use `where` for rules that must stay exact. Use `search` for broad discovery across searchable display values:
 
 ```gql
 from table Books
@@ -86,7 +73,7 @@ search 'tolkien'
 limit 20
 ```
 
-Search can be restricted to named fields:
+You can restrict search to named fields:
 
 ```gql
 from table Books
@@ -103,7 +90,7 @@ where Price > 0
 sort gross desc
 ```
 
-The calculation is part of this result and does not create a table field.
+The calculation belongs to this result. It does not create a table field.
 
 **Summarize records**
 
@@ -115,7 +102,7 @@ having revenue > 0
 sort "Ordered at" asc
 ```
 
-Grouping returns summary rows rather than editable records. Use it for reports, charts, Grids Apps, documents, and exports. `where` filters source records before grouping; `having` filters the calculated groups.
+Grouping returns summary rows, not editable records. Use it for reports, charts, Grids Apps, documents, and exports. `where` filters source records before grouping. `having` filters the calculated groups.
 
 **Follow a relation**
 
@@ -129,11 +116,11 @@ sort "Order number" asc
 limit 50
 ```
 
-The relation field on the left must target the joined alias's `id`. Use `left join` when records without a related target should remain in the result.
+The relation field on the left must target the `id` of the joined alias. Use `left join` when records without a related target must stay in the result.
 
 ### Combine independent totals
 
-Save `PaymentTotals` as `from table Payments; group by Invoice; aggregate sum(Amount) as paid`, with `Invoice` relating to `Invoices`:
+Save `PaymentTotals` as `from table Payments; group by Invoice; aggregate sum(Amount) as paid`, where `Invoice` relates to `Invoices`:
 
 ```gql
 from table Invoices as bill
@@ -141,11 +128,17 @@ left join view PaymentTotals as payments on payments.Invoice = bill.id
 select Number, formula(Gross - IF(ISBLANK(payments.paid), 0, payments.paid)) as outstanding
 ```
 
-Join corrections through a second grouped view to avoid duplicated sums. Each contributes at most one row per invoice; absent groups yield `null`. Aggregate aliases support selection, formulas, filters and sorting. Group each view by one relation to the root and declare aggregates. Only `left join view` works; no outer grouping or source limit, search, group-sort, HAVING or other non-reusable clauses. Root and child must be stored tables, not Combined tables. Access failures are errors; results are read-only.
+Join corrections through a second grouped view to avoid duplicated sums. Each view contributes at most one row per invoice. A missing group yields `null`. You can select, calculate with, filter, and sort aggregate aliases. Group each view by one relation to the root and declare its aggregates.
 
-## Clause order {icon="search"}
+- Only `left join view` works.
+- The outer query cannot group the joined result.
+- The joined view cannot use a source limit, search, a group sort, HAVING, or other clauses that cannot be reused.
+- The root and the child must be stored tables, not Combined tables.
+- Access failures are errors. Results are read-only.
 
-Not every query needs every clause. When clauses are combined, keep them in this order so the source remains easy to scan:
+## Keep the clause order {icon="search"}
+
+Not every query needs every clause. When you combine clauses, keep them in this order, so the source stays easy to scan:
 
 ```text
 from table ...
@@ -168,9 +161,9 @@ Line breaks are optional. Use semicolons when several clauses share one line, an
 from table Orders; where Status = 'Paid'; sort "Ordered at" desc; limit 10
 ```
 
-Use each of `from`, `where`, `search`, `having`, `limit`, `offset`, and the deleted-record mode at most once. Put several fields, groups, aggregates, or sorts in one comma-separated clause. A query may contain several joins because each join introduces another source.
+Use each of `from`, `where`, `search`, `having`, `limit`, `offset`, and the deleted-record mode at most once. Put several fields, groups, aggregates, or sorts in one comma-separated clause. A query can contain several joins, because each join adds another source.
 
-## Clause reference {icon="search"}
+## Look up clauses {icon="search"}
 
 | Clause | Purpose |
 | --- | --- |
@@ -188,24 +181,26 @@ Use each of `from`, `where`, `search`, `having`, `limit`, `offset`, and the dele
 | `include deleted` | Include live and deleted records. |
 | `deleted only` | Return only records in trash. |
 
-The two deleted-record clauses are mutually exclusive. Normal queries return live records only.
+The two deleted-record clauses exclude each other. Normal queries return live records only.
 
-`from view` starts with the saved view's query and then applies the new clauses. It is useful when a reviewed data set is already the correct starting point. Not every GQL query can be reused as a nested source: for example, a saved query with relation joins, cross-field comparisons, or an offset is unavailable as a `from view` source. Grids rejects these references rather than dropping their filters. Run the saved query directly, or start from its table and explicitly carry over the required clauses. A view that filters by record metadata also cannot be used as another view's source.
+`from view` starts with the query of the saved view and then applies the new clauses. Use it when a reviewed data set is already the right starting point.
 
-## Names, aliases, and values {icon="point"}
+Not every GQL query works as a nested source. For example, a saved query with relation joins, cross-field comparisons, or an offset is not available as a `from view` source. Grids rejects these references and never drops their filters. Run the saved query directly, or start from its table and carry over the required clauses explicitly. A view that filters by record metadata also cannot be the source of another view.
+
+## Write names, aliases, and values {icon="point"}
 
 - Use readable table, view, and field names when they are unambiguous.
-- Quote names containing spaces or punctuation with double quotes.
+- Quote names with spaces or punctuation in double quotes.
 - Use single quotes for literal text.
 - Use source aliases after joins, for example `customer.Name`.
-- Use brace-wrapped public IDs when generated configuration or a migration needs an immutable reference.
+- Use public IDs in braces when generated configuration or a migration needs an immutable reference.
 - Do not use removed `#field` aliases.
 
-Aliases used after `as` must start with a letter or underscore, may then contain letters, numbers, and underscores, and may be at most 64 characters. An alias cannot be a GQL keyword, logical operator, or reserved literal. Aliases are case-insensitive when referenced later.
+An alias after `as` must start with a letter or an underscore. It can then contain letters, numbers, and underscores, up to 64 characters. An alias cannot be a GQL keyword, a logical operator, or a reserved literal. Later references to an alias ignore case.
 
-When `from` is omitted in a table or view query editor, the current page can provide the source. Write it explicitly when the query should remain understandable outside that page.
+When a table or view query editor has no `from`, the current page can provide the source. Write `from` explicitly when the query must stay understandable outside that page.
 
-## Conditions and helpers {icon="search"}
+## Write conditions {icon="search"}
 
 Use `=`, `!=`, `>`, `>=`, `<`, and `<=` for comparisons. Combine conditions with `and`, `or`, `not`, and parentheses:
 
@@ -215,15 +210,15 @@ where (Status = 'Available' or Status = 'Reserved') and Quantity > 0
 sort Name asc
 ```
 
-Use the operators between expressions. Do not write function-style `AND(...)`, `OR(...)`, or `NOT(...)`.
+Use the operators between expressions. Do not write the function forms `AND(...)`, `OR(...)`, or `NOT(...)`.
 
-Text helpers are `contains`, `startswith`, `endswith`, and the case-insensitive `icontains`, `istartswith`, and `iendswith`. Membership helpers support controlled and multi-value fields:
+Text helpers are `contains`, `startswith`, `endswith`, and the case-insensitive `icontains`, `istartswith`, and `iendswith`. Membership helpers support controlled fields and fields with several values:
 
 - `oneof(Field, 'a', 'b')`
 - `noneof(Field, 'a', 'b')`
 - `containsall(Field, 'a', 'b')`
 
-Use `null` for a missing value. Sort defaults to ascending order with missing values last. Add `desc`, `nulls first`, or `nulls last` when another order is required.
+Use `null` for a missing value. Sorting is ascending by default and puts missing values last. Add `desc`, `nulls first`, or `nulls last` for another order.
 
 A condition can also be a formula:
 
@@ -233,11 +228,11 @@ where Price <= "Purchase price" * 1.10
 select Name, Price, "Purchase price"
 ```
 
-Open **Formulas** for expression syntax and the complete function catalog.
+[Formulas](/app/grids/help/grids-formulas) describes the expression syntax and the complete function catalog.
 
 ## Use Grids App context {icon="app-window"}
 
-Grids App queries receive typed request context automatically. Values are bound separately from the query text.
+Grids App queries receive a typed request context automatically. Grids binds the values separately from the query text.
 
 | Reference | Value |
 | --- | --- |
@@ -249,9 +244,9 @@ Grids App queries receive typed request context automatically. Values are bound 
 | `@base.id`, `@base.name` | Owning Base identity |
 | `@time.now`, `@time.today`, `@time.timeZone` | One request timestamp, local date, and IANA timezone |
 
-Use `@auth.id != null` when a query requires a signed-in account. An anonymous app request can be matched explicitly with `@auth.id = null`. Unknown namespaces and undeclared parameters are publish errors.
+Use `@auth.id != null` when a query requires a signed-in account. Match an anonymous app request explicitly with `@auth.id = null`. Unknown namespaces and undeclared parameters are publish errors.
 
-Use `oneof(Participants, @auth.subjects)` when a Principal field grants the current user or any of their effective groups access to a record. Effective group memberships are resolved server-side; the query never receives group members or names. `@auth.subjects` is a list and is therefore valid only in `oneof`, `noneof`, or `containsall` membership predicates.
+Use `oneof(Participants, @auth.subjects)` when a principal field gives the current user, or any of their effective groups, access to a record. The server resolves effective group memberships. The query never receives group members or names. `@auth.subjects` is a list. It is therefore valid only in the membership predicates `oneof`, `noneof`, or `containsall`.
 
 ```gql
 from table Loans
@@ -264,7 +259,7 @@ where record.createdBy = @auth.id and Status = 'Active'
 limit 100
 ```
 
-Page, block, Form, and action `availableWhen` rules use the same context. They are available only when their bounded query returns at least one row. Errors, missing values, timeouts, cancellation, and an empty result all mean unavailable.
+Page, block, form, and action `availableWhen` rules use the same context. An item is available only when its bounded query returns at least one row. Errors, missing values, timeouts, cancellation, and an empty result all mean unavailable.
 
 ```gql
 from table Loans
@@ -272,7 +267,7 @@ where record.id = @params.loan_id and Status = 'Active'
 limit 1
 ```
 
-### Predicate compatibility
+### Check predicate compatibility
 
 | Field value | Supported direct predicates |
 | --- | --- |
@@ -283,11 +278,11 @@ limit 1
 | Select | `=`, `!=`, `oneof`, `noneof`, `containsall`; values may be option labels or option ids |
 | Relation | `=`, `!=`, `oneof`, `noneof`, `containsall`; values are related record public IDs |
 
-`field = null` means empty; `!= null` means not empty. Stored-table Files support only these presence checks, not Combined-table Files. JSON is not filterable; computed scalars can use boolean formulas.
+`field = null` means empty. `!= null` means not empty. File fields of stored tables support only these presence checks. File fields of Combined tables do not. JSON is not filterable. Computed scalars can use boolean formulas.
 
-Joined `oneof`, `noneof` and `containsall` retain typed values and access checks: `oneof(cost.Responsible, @auth.subjects)` checks Principal membership.
+Joined `oneof`, `noneof`, and `containsall` keep typed values and access checks. For example, `oneof(cost.Responsible, @auth.subjects)` checks principal membership.
 
-### Record metadata
+### Filter by record metadata
 
 Record metadata uses the reserved `record` scope:
 
@@ -304,13 +299,13 @@ Record metadata uses the reserved `record` scope:
 | `record.updatedAt` | Sort by last update time |
 | `record.deletedAt` | Sort deleted records by deletion time |
 
-Metadata filters may be combined with `and`, but not placed inside an `or` branch. User values are UUIDs; record values are public IDs, not display names.
-`awaitingReview` means a current Four-eyes request still matches the Record version and Table policy. Rejected and superseded requests are history,
-not current Record states. A Table without Finalization enabled has no `draft` Records.
+You can combine metadata filters with `and`, but you cannot put them inside an `or` branch. User values are UUIDs. Record values are public IDs, not display names.
 
-## Grouping and aggregate reference {icon="chart-bar"}
+`awaitingReview` means that a current Four-eyes request still matches the record version and the table policy. Rejected and superseded requests are history, not current record states. A table without finalization enabled has no `draft` records.
 
-`group by` returns one row per distinct value. Date fields can additionally use `by day`, `week`, `month`, `quarter`, or `year`. Every non-aggregate field used by a grouped `sort` must also appear in `group by`; aggregate aliases can be sorted directly.
+## Group and aggregate {icon="chart-bar"}
+
+`group by` returns one row per distinct value. Date fields can also use `by day`, `week`, `month`, `quarter`, or `year`. Every non-aggregate field that a grouped `sort` uses must also appear in `group by`. You can sort aggregate aliases directly.
 
 Every aggregate needs an output alias:
 
@@ -331,9 +326,9 @@ sort revenue desc nulls last
 | `min(field)`, `max(field)` | Number, date, date-time, or text fields and formulas |
 | `earliest(field)`, `latest(field)` | Date or date-time fields and formulas |
 
-Aggregate a calculated value with `aggregate sum(formula(Quantity * Price)) as revenue`. The formula is evaluated for each source record before the aggregate combines the results.
+To aggregate a calculated value, write `aggregate sum(formula(Quantity * Price)) as revenue`. Grids evaluates the formula for each source record before the aggregate combines the results.
 
-Omit `group by` to calculate one summary row for the complete matching set:
+Leave out `group by` to calculate one summary row for the complete matching set:
 
 ```gql
 from table Orders
@@ -342,37 +337,33 @@ aggregate count(*) as orders, sum(Total) as revenue
 having orders >= 1
 ```
 
-An aggregate-only query may use `having` to keep or remove its summary row. It cannot also select record fields or sort its single result row. Add `group by` when you need several sortable summary rows.
+An aggregate-only query can use `having` to keep or remove its summary row. It cannot also select record fields or sort its single result row. Add `group by` when you need several sortable summary rows.
 
-## Paging and result bounds {icon="point"}
+## Page through results {icon="point"}
 
-Without `limit`, a result view can continue through all matching rows one page at a time. With `limit 100`, the complete result stops after 100 rows even if the UI displays it in smaller pages.
+Without `limit`, a result view can continue through all matching rows, one page at a time. With `limit 100`, the complete result stops after 100 rows, even if the interface shows it in smaller pages.
 
-Changing the query starts again at the first page. Pages show live data rather than one frozen result, so records changed between page requests can move between pages.
+Changing the query starts again on the first page. Pages show live data, not one frozen result. Records that change between page requests can therefore move between pages.
 
 For automated reads, the CLI can request one bounded page with `--page-size` or continue with `--all --max-rows N`.
 
-## Permissions and supported queries {icon="shield-lock"}
+## Understand access and supported queries {icon="shield-lock"}
 
-Raw Grids queries require Base Read and can read the complete Base. Published Grids App queries instead run through the app's immutable capability snapshot and cannot escape to undeclared sources or fields.
+Raw Grids queries require **View** access to the Base and can read the complete Base. Published Grids App queries run through the immutable capability snapshot of the app instead. They cannot escape to undeclared sources or fields.
 
-Autocomplete follows the same boundary: the raw editor uses the current Base schema, while a Grids App editor uses a schema-only catalog for that app definition. It does not execute queries or reveal another Base.
+Autocomplete follows the same boundary. The raw editor uses the current Base schema. A Grids App editor uses a schema-only catalog for that app definition. It does not run queries and does not reveal another Base.
 
-GQL deliberately does not support arbitrary join conditions, subqueries, common table expressions, window functions, or unrestricted expressions. An unsupported query fails with a diagnostic instead of being guessed or partially applied.
+GQL does not support arbitrary join conditions, subqueries, common table expressions, window functions, or unrestricted expressions, on purpose. An unsupported query fails with a diagnostic. Grids never guesses it or applies it partly.
 
-## Views and query results {icon="search"}
+## Save query results as views {icon="search"}
 
-Row-shaped table and view results can be displayed and paged like records. Grouped and aggregate-only results use a summary table and are not editable. Compatible query results can be saved as views and reused by Grids Apps, documents, and exports.
+Table and view results with rows can be displayed and paged like records. Grouped and aggregate-only results use a summary table and are not editable. You can save compatible query results as views. Grids Apps, documents, and exports can reuse them.
 
-Use a saved View when people revisit the result in the raw Base workspace. Keep GQL local to a Grids App block or document when the query exists only for that resource.
+Use a saved view when people return to the result in the raw Base workspace. Keep the GQL local to a Grids App block or document when the query exists only for that resource.
 
-## Troubleshoot a query {icon="lifebuoy"}
+## Find records with issued documents {icon="search"}
 
-### Find records with issued documents
-
-In Base queries, `documentCount()` returns the number of distinct associated
-Documents. `latestDocumentAt()` returns their latest creation time, or null.
-An optional format selects `pdf`, `csv`, `json`, `xml`, `sepa-xml`, or `datev-csv`.
+In Base queries on stored tables, `documentCount()` returns the number of distinct associated documents. `latestDocumentAt()` returns their latest creation time, or null. An optional format selects `pdf`, `csv`, `json`, `xml`, `sepa-xml`, or `datev-csv`.
 
 ```gql
 from table Expenses
@@ -380,25 +371,25 @@ select Description, documentCount('sepa-xml') as exports
 where documentCount('sepa-xml') = 0
 ```
 
-These values remain live after a record is finalized. They do not follow
-relations and do not prove payment. A multi-record Document counts once for
-each explicitly associated record. These functions are not available in stored
-Formula fields or Custom App queries.
+- These values stay live after a record is finalized. They do not follow relations and do not prove payment.
+- A document for several records counts once for each explicitly associated record.
+- These functions are not available for Combined tables, in stored formula fields, or in Custom App queries.
+- Use them in row projections and `where`, not in aggregates or `having`.
+- Generic `xml` and `csv` exclude SEPA and DATEV exports. `pdf` includes E-Invoice PDFs.
 
-Use these functions in row projections and `where`, not aggregates or `having`.
-Generic `xml` and `csv` exclude SEPA and DATEV exports; `pdf` includes e-invoice
-PDFs. Metadata filters inspect associated documents for each candidate record.
-Narrow large selections with ordinary field filters when possible.
+Metadata filters inspect the associated documents for each candidate record. Narrow large selections with ordinary field filters where possible.
+
+## Fix a query {icon="lifebuoy"}
 
 :::reference
-- **Unknown source or field:** Check spelling, quoting, current base, and access.
+- **Unknown source or field:** Check the spelling, the quoting, the current Base, and your access.
 - **Ambiguous name:** Add a source alias or use a scoped field such as `customer.Name`.
-- **Join must target an id:** Join the relation field to the joined alias's `.id`.
+- **Join must target an id:** Join the relation field to `.id` of the joined alias.
 - **Grouped sort is rejected:** Sort by a group or aggregate output that exists in the summary.
-- **Missing rows:** Check `where`, `search`, source view, deleted mode, and `limit`.
-- **Unstable page order:** Add a business sort before paging or using `offset`.
+- **Missing rows:** Check `where`, `search`, the source view, the deleted mode, and `limit`.
+- **Unstable page order:** Add a business sort before you page or use `offset`.
 :::
 
 :::note GQL is not a second data model
-GQL shapes saved data. It does not copy records or bypass the access, field, and relation rules of the base.
+GQL shapes saved data. It does not copy records and does not bypass the access, field, or relation rules of the Base.
 :::

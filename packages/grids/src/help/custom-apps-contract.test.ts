@@ -81,7 +81,7 @@ describe("Grids Apps documentation contract", () => {
     expect(overview).toContain("/app/grids/help/grids-build-custom-app");
     expect(builder).toContain("opened in a larger editor without creating a second draft");
     expect(builder).toContain("there is no separate Page Record setting");
-    expect(builder).toContain("You may edit them in Page settings");
+    expect(builder).toContain("You can edit them in **Page settings**");
     expect(pages).toContain("@auth.name");
     expect(pages).toContain("Inline GQL displays its selected ordinary-record columns");
     expect(pages).toContain("existing enabled Grids App workflow launcher");
@@ -104,7 +104,7 @@ describe("Grids Apps documentation contract", () => {
     expect(overview).not.toContain("**Bulk actions**");
     expect(yaml).toContain("canonical public resource IDs");
     expect(pages).toContain("Fields outside the block's editable subset remain read-only");
-    expect(pages).toContain("without Base or record Write access");
+    expect(pages).toContain("without **Edit** access to the Base or the record");
     expect(yaml).toContain("{ source: ROW, path: relation, fieldId:");
     expect(cli).toContain("Referenced records, Metrics, Chart, Record, Rendered HTML, Form, Comments, Actions, and Scanner blocks");
     expect(cli).toContain("row id or one selected single relation");
