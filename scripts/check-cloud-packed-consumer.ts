@@ -174,8 +174,38 @@ export default await app.start({ fetch: router.fetch, port: Number(process.env.P
     [process.execPath, "--preload", "./node_modules/@k2b/cloud/scripts/preload.ts", "./src/config.ts"],
     consumer,
   );
+  await Bun.write(
+    join(consumer, "src/styles/app.css"),
+    `@import "tailwindcss";
+.packed-mixes {
+  background: color-mix(in oklab, var(--x) 12%, var(--y));
+  --mixed: color-mix(in oklab, var(--x) 20%, var(--y));
+  border: 1px solid color-mix(in oklab, var(--x) 40%, var(--y));
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--x) 30%, var(--y));
+  background-image: linear-gradient(color-mix(in oklab, var(--x) 20%, var(--y)), color-mix(in oklab, var(--y) 60%, var(--x)));
+  outline: 2px solid color-mix(in oklab, var(--x) 50%, var(--y)) !important;
+}
+.packed-utilities { @apply bg-(--x)/12 border-(--y)/40; }
+`,
+  );
   await run("Build with the installed Cloud production script", [process.execPath, "node_modules/@k2b/cloud/scripts/build.ts"], consumer);
   if ((await Bun.file(join(consumer, "dist/server.js")).size) === 0) throw new Error("Production server bundle is empty");
+  const appCss = (await Bun.file(join(consumer, "dist/public/inventory/app.css")).text()).replace(/\s+/g, " ").trim();
+  for (const declaration of [
+    "background: color-mix(in oklab, var(--x) 12%, var(--y));",
+    "--mixed: color-mix(in oklab, var(--x) 20%, var(--y));",
+    "border: 1px solid color-mix(in oklab, var(--x) 40%, var(--y));",
+    "box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--x) 30%, var(--y));",
+    "background-image: linear-gradient(color-mix(in oklab, var(--x) 20%, var(--y)), color-mix(in oklab, var(--y) 60%, var(--x)));",
+    "outline: 2px solid color-mix(in oklab, var(--x) 50%, var(--y)) !important;",
+    "background-color: color-mix(in oklab, var(--x) 12%, transparent);",
+    "border-color: color-mix(in oklab, var(--y) 40%, transparent);",
+  ]) {
+    if (!appCss.includes(declaration)) throw new Error(`Packed app CSS lost a mixed declaration: ${declaration}`);
+  }
+  if (appCss.includes("@supports (color: color-mix(in lab, red, red))")) {
+    throw new Error("Packed app CSS retained Tailwind's color-mix polyfill before Bun bundling");
+  }
   await checkPackedRuntime(root, consumer, cleanEnv);
   // Gateway shares these scripts but provides its plugin without defineApp().
   // Copy config.ts with every local module it imports.

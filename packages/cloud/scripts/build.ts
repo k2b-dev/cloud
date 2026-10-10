@@ -31,11 +31,11 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { brotliCompress, gzip, constants as zlibConstants } from "node:zlib";
 import { Glob } from "bun";
-import tailwind from "bun-plugin-tailwind";
 import type { AppCliModules } from "../src/contracts/app";
 import { writeAppFavicon } from "./app-favicon";
 import { buildBrowserPerformance } from "./browser-performance";
 import { buildCanvasWorkers } from "./build-canvas-workers";
+import tailwind from "./tailwind";
 
 const appId = process.env.APP_ID;
 if (!appId) throw new Error("APP_ID env var required");
