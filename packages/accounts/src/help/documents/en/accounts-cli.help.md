@@ -2,37 +2,33 @@
 id: accounts-cli
 title: CLI
 icon: ti ti-terminal-2
-description: Agent-friendly account, group, request, audit, and service-account commands.
+description: Use agent-friendly commands for accounts, groups, requests, audit events, and service accounts.
 order: 120
 ---
 
-The Accounts CLI uses the same APIs as the app, so agents can list, inspect, and update account data without a browser. Linux identities use the dedicated administrator-only API.
+The Accounts CLI uses the same APIs as the app, so agents can list, inspect, and update account data without a browser. Linux identities use a separate API that only administrators can call.
 
-## Command groups {icon="code"}
+## Find the right command group {icon="code"}
 
 :::reference
-- **users:** List, inspect, create, update, delete, change provider/profile/admin state, manage avatars, reset IPA passwords, create login tokens, and send login links. When the installation allows local accounts without email, `users create` accepts a local full account without `--email` and `users update --remove-email` removes an address.
-- **groups:** List, inspect, create, update, make POSIX, delete, and manage members or managers.
+- **users:** List, inspect, create, update, and delete users. Change their provider, profile, or administrator state. Read, set, and remove avatars, reset IPA passwords, create sign-in tokens, and send sign-in links. When the installation allows local accounts without email, `users create` accepts a local full account without `--email`, and `users update --remove-email` removes an address.
+- **groups:** List, inspect, create, update, make POSIX, and delete groups. List, add, and remove members and managers.
 - **requests:** List, inspect, and deny account requests.
-- **audit:** List audit events with actor, target, action, action group, service-account, outcome, provider, and time filters.
-- **service-accounts:** List service-account API keys and revoke active credentials.
+- **audit:** List audit events, filtered by actor, target, action, action group, service account, outcome, provider, and time.
+- **service-accounts:** List the API keys of service accounts and revoke active credentials.
 :::
 
-:::info Reference output
-Use JSON output for automation. Table output is intended for quick terminal inspection.
+:::info Choose the output format
+Use JSON output for automation. Table output is for a quick look in the terminal.
 :::
 
-## Linux identities {icon="terminal"}
+## Prepare Linux identities {icon="terminal"}
 
-Inspect with `cld accounts users linux get <user> --json`. After global setup,
-backfill missing attributes for an existing local full account with `users linux prepare <user> --yes`.
-While enabled, new local full accounts and promoted guests receive these attributes automatically.
-Set both paths with `users linux update <user> --home /home/alice --shell /bin/bash --yes`.
-`cld accounts groups make-posix <group> --yes` supports local and FreeIPA groups.
+- Inspect an identity with `cld accounts users linux get <user> --json`.
+- After the global setup, `users linux prepare <user> --yes` adds missing attributes to an existing local full account. While assignment is on, new local full accounts and promoted guests get these attributes automatically.
+- `users linux update <user> --home /home/alice --shell /bin/bash --yes` sets both paths.
+- `cld accounts groups make-posix <group> --yes` works for local and FreeIPA groups.
 
-Global configuration and paginated preview live under `cld admin linux`.
-Use `config get --json` to export it and
-`config set --config-file ./linux.json --range-reserved --yes` to apply an enabled
-configuration. Preparation does not enable computer login, sudo or shared storage.
+`cld admin linux` holds the global configuration and a paginated preview. Export the configuration with `config get --json`. Apply an enabled configuration with `config set --config-file ./linux.json --range-reserved --yes`. Preparing an identity does not enable computer sign-in, sudo, or shared storage.
 
-Create a local group with a GID in one operation using `cld accounts groups create team --provider local --posix`. Without `--posix`, it remains a logical group. Local POSIX creation and conversion require enabled local Linux identities; failures do not leave a partially created group.
+To create a local group with a GID in one step, run `cld accounts groups create team --provider local --posix`. Without `--posix`, the group stays a logical group. Creating or converting a local POSIX group needs enabled local Linux identities. If either fails, no partly created group stays behind.
