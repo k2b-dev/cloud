@@ -106,9 +106,60 @@ else {
       goUp("javascript:alert(1)");
       goUp("https://elsewhere.example/app/things");
       expect({ taken, loads: tab.loads }).toEqual({ taken: [], loads: [] });
-      // A same-origin path that starts with `//` stays a path of this origin.
+      // A same-origin path that starts with `//` would read as another host, so it names no page above.
       goUp("http://localhost//elsewhere.example/app");
-      expect(tab.loads).toEqual(["http://localhost//elsewhere.example/app"]);
+      expect({ taken, loads: tab.loads }).toEqual({ taken: [], loads: [] });
+    } finally {
+      stop();
+      tab.close();
+    }
+  });
+
+  test("going up keeps a remembered page's query and hash and loads it on this origin", () => {
+    const tab = open();
+    const taken: string[] = [];
+    const stop = modules!.layout.handleUp((href) => {
+      taken.push(href);
+      return false;
+    });
+    try {
+      tab.visit("/app/things?q=red#row-4");
+      rememberPage();
+      tab.visit("/app/things?item=41", ["/app/things"]);
+      goUp("/app/things");
+      expect(taken).toEqual(["/app/things?q=red#row-4"]);
+      expect(tab.loads).toEqual(["http://localhost/app/things?q=red#row-4"]);
+      // A parent never visited loads at its own path.
+      tab.visit("/app/mail/m1", ["/app/mail"]);
+      goUp("/app/mail");
+      expect(taken).toEqual(["/app/things?q=red#row-4", "/app/mail"]);
+      expect(tab.loads).toEqual(["http://localhost/app/things?q=red#row-4", "http://localhost/app/mail"]);
+    } finally {
+      stop();
+      tab.close();
+    }
+  });
+
+  // Both relative addresses resolve to the parent, but after the origin as text either one names another host.
+  test.each(["@evil.example/../things", ".evil.example/../../app/things"])("a tampered memory entry is ignored (%s)", (tampered) => {
+    const tab = open();
+    const taken: string[] = [];
+    const stop = modules!.layout.handleUp((href) => {
+      taken.push(href);
+      return false;
+    });
+    try {
+      tab.visit("/app/x", ["/app/things"]);
+      const urls = [tampered, "//evil.example/app/things", "/\\evil.example/app/things", "javascript:alert(1)"];
+      sessionStorage.setItem("cloud:page-trail", JSON.stringify({ visits: [...urls.map((url) => ({ url, regions: [] })), null] }));
+      expect(upDestination("/app/things")).toBe("/app/things");
+      goUp("/app/things");
+      expect(taken).toEqual(["/app/things"]);
+      expect(tab.loads).toEqual(["http://localhost/app/things"]);
+      rememberPage();
+      expect(JSON.parse(sessionStorage.getItem("cloud:page-trail") ?? "null").visits).toEqual([
+        { url: "/app/x", regions: [], up: ["/app/things"] },
+      ]);
     } finally {
       stop();
       tab.close();

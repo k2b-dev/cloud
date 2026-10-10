@@ -28,10 +28,28 @@ type Region = { key: string; top: number; left: number };
 type Visit = { url: string; regions: Region[]; up?: string[] };
 type Memory = { visits: Visit[]; returning?: { url: string; from: string } };
 
+/** `path` as a page of this origin, or nothing: read against the origin, `//host`, `@host`, or `javascript:` would lead elsewhere. */
+const localPage = (path: string): URL | undefined => {
+  if (!path.startsWith("/")) return undefined;
+  try {
+    const url = new URL(path, location.origin);
+    return url.origin === location.origin ? url : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+/** The tab's storage is not trusted: a visit counts only when its address is a page of this origin. */
+const isVisit = (value: unknown): value is Visit =>
+  typeof value === "object" && value !== null && "url" in value && typeof value.url === "string" && localPage(value.url) !== undefined;
+
 const read = (): Memory => {
   try {
     const value: unknown = JSON.parse(sessionStorage.getItem(STORAGE_KEY) ?? "null");
-    if (value && typeof value === "object" && Array.isArray((value as Memory).visits)) return value as Memory;
+    if (value && typeof value === "object" && Array.isArray((value as Memory).visits)) {
+      const memory = value as Memory;
+      return { ...memory, visits: memory.visits.filter(isVisit) };
+    }
   } catch {
     // A full or blocked storage only costs the memory, never the navigation.
   }
@@ -104,13 +122,15 @@ export const goUp = (href: string) => {
   if (resolve(href).origin !== location.origin) return;
   rememberPage();
   const destination = upDestination(href);
+  // The destination is read as a path of this origin and must stay there; one that starts with `//` names another host.
+  const url = localPage(destination);
+  if (!url) return;
   const detail: PageUpDetail = { href: destination };
   if (!window.dispatchEvent(new CustomEvent(PAGE_UP_EVENT, { cancelable: true, detail }))) return;
   const memory = read();
   memory.returning = { url: destination, from: here() };
   write(memory);
-  // The destination is a path; after the origin, even one that starts with `//` stays on this origin.
-  location.assign(`${location.origin}${destination}`);
+  location.assign(url.href);
 };
 
 const regionElement = (key: string): HTMLElement | null =>
