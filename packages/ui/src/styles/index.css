@@ -2212,6 +2212,72 @@
   background: var(--k2b-action-solid);
 }
 
+/* An open box previews ticking: a faint check shows under the pointer, with
+   keyboard focus, and while a finger presses it. Touch screens have no hover,
+   so there the preview lasts only as long as the press and never sticks.
+   Ticking fills the box and the check pops into place. Only colours and the
+   check's scale change, so nothing around the box moves. */
+.k2b-ui .k2b-check__control {
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.k2b-ui .k2b-check__control > i {
+  transform: scale(0.8);
+  transition: transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.k2b-ui .k2b-check > input:checked + .k2b-check__control > i,
+.k2b-ui .k2b-check[data-indeterminate="true"] .k2b-check__control > i {
+  transform: none;
+}
+
+.k2b-ui .k2b-check:not([data-indeterminate="true"]):active > input:not(:checked, :disabled) + .k2b-check__control,
+.k2b-ui .k2b-check:not([data-indeterminate="true"]) > input:not(:checked, :disabled):focus-visible + .k2b-check__control {
+  border-color: var(--k2b-action);
+  color: color-mix(in srgb, var(--k2b-action) 45%, transparent);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .k2b-ui .k2b-check:not([data-indeterminate="true"]):hover > input:not(:checked, :disabled) + .k2b-check__control {
+    border-color: var(--k2b-action);
+    color: color-mix(in srgb, var(--k2b-action) 45%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .k2b-ui .k2b-check__control,
+  .k2b-ui .k2b-check__control > i {
+    transition: none;
+  }
+}
+
+/* Touch targets: a Checkbox without visible label text is only its 1rem box,
+   so on a coarse pointer the box gets the same invisible hit area of at least
+   2.75rem (44 px) as a button, centred on it, while the box stays the same. A
+   labelled Checkbox needs none: its whole label takes the tap. As with
+   buttons, a box that follows anything in its row does not reach back over
+   it, and a later element that is positioned paints over the hit area and
+   keeps its own taps. A disabled box takes no taps. */
+@media (any-pointer: coarse) {
+  .k2b-ui .k2b-check > input:not(:disabled) + .k2b-check__control:last-child {
+    position: relative;
+  }
+
+  .k2b-ui .k2b-check > input:not(:disabled) + .k2b-check__control:last-child::after {
+    content: "";
+    position: absolute;
+    inset-block: min(0px, calc((100% - 2.75rem) / 2));
+    inset-inline: min(0px, calc((100% - 2.75rem) / 2));
+  }
+
+  .k2b-ui .k2b-check-field:not(:first-child) > .k2b-check > input:not(:disabled) + .k2b-check__control:last-child::after {
+    inset-inline-start: 0;
+  }
+}
+
 .k2b-ui .k2b-check > input:focus-visible + .k2b-check__control,
 .k2b-ui .k2b-switch > input:focus-visible + .k2b-switch__track {
   outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);

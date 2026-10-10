@@ -1255,6 +1255,7 @@ const png = current ? await signatureToPng(current, { background: "#ffffff" }) :
 const BooleanDemo = () => {
   const [enabled, setEnabled] = createSignal(true);
   const [checked, setChecked] = createSignal(false);
+  const [done, setDone] = createSignal(false);
   return (
     <DemoCard
       id="boolean"
@@ -1263,14 +1264,19 @@ const BooleanDemo = () => {
         { kind: "component", name: "Checkbox", from: "@k2b/ui" },
         { kind: "component", name: "CheckboxCard", from: "@k2b/ui" },
       ]}
-      description="Native checkbox semantics wrapped in three accessor-controlled presentations for immediate settings, form choices, and descriptive cards."
+      description="Native checkbox semantics wrapped in three accessor-controlled presentations for immediate settings, form choices, and descriptive cards. Point at or focus an open checkbox to preview the tick; ticking pops the check in."
       code={`<Switch label="Automation" value={enabled} onValueChange={setEnabled} />
 <Checkbox label="Send a summary" description="Notify everyone when the run finishes." value={checked} onValueChange={setChecked} />
+<Checkbox aria-label="Mark complete: Book the room" value={done} onValueChange={setDone} />
 <CheckboxCard label="Early access" description="Preview new components." icon="ti ti-flask" value={checked} onValueChange={setChecked} />`}
     >
       <div class="ui-demo-form-grid">
         <Switch label="Automation" value={enabled} onValueChange={setEnabled} />
         <Checkbox label="Send a summary" description="Notify everyone when the run finishes." value={checked} onValueChange={setChecked} />
+        <div class="flex items-center gap-3 text-sm">
+          <Checkbox aria-label="Mark complete: Book the room" value={done} onValueChange={setDone} />
+          <span class={done() ? "text-dimmed line-through" : undefined}>Book the room</span>
+        </div>
         <CheckboxCard
           label="Early access"
           description="Preview new components."
