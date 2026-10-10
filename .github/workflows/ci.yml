@@ -64,7 +64,7 @@ jobs:
           changed=$(git diff --name-only "$BASE" HEAD)
           printf '%s\n' "$changed"
           match() { grep -qE "$1" <<<"$changed" && echo true || echo false; }
-          shared='^(packages/cloud/|packages/core/|packages/gateway/|packages/ssr/|scripts/|patches/|package\.json|bun\.lock|bunfig\.toml|tsconfig|styles\.css|Dockerfile|\.dockerignore|\.github/(workflows/|nats-ci\.conf|pull-images\.sh))'
+          shared='^(packages/cloud/|packages/core/|packages/gateway/|packages/ssr/|scripts/|patches/|package\.json|bun\.lock|bunfig\.toml|tsconfig|styles\.css|Dockerfile|\.dockerignore|\.github/(workflows/|nats-ci\.conf|pull-images\.sh|poppler\.sh))'
           # Workspaces with tests that `bun run test --browser` runs: they start a browser through
           # packages/ui/test/browser.ts and need no integration targets. Some import tests/fixtures/.
           browser=$(git grep -lF '/test/browser"' -- 'packages/*' 'pwas/*' ':!*.integration.test.ts' | cut -d/ -f1-2 | sort -u | paste -sd '|')
