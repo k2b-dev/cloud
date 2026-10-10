@@ -640,12 +640,14 @@ export default function MailConversationList(props: {
                       anchor: quickLook.anchor,
                       active: quickLook.active,
                       // Every mouse move restarts the rest, so the card usually opens with its data.
-                      prefetch: (item) => {
+                      prefetch: (item, row, pointer) => {
                         cancelPrefetch();
                         if (props.selectionMode || item.conversationId === props.selectedConversationId) return;
                         prefetchTimer = setTimeout(() => {
                           prefetchTimer = undefined;
-                          if (roomForQuickLook()) quickLookData.load(item);
+                          // The list may have moved another row under the still mouse before its scroll event.
+                          const hit = document.elementFromPoint(pointer.clientX, pointer.clientY);
+                          if (hit && row.contains(hit) && roomForQuickLook()) quickLookData.load(item);
                         }, QUICK_LOOK_PREFETCH_DELAY);
                       },
                       release: (item) => {

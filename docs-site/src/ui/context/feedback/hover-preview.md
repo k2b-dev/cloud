@@ -77,6 +77,9 @@ of the region, it does not open at all, so it never covers the list.
 
 - A resting mouse opens the card after `openDelay`. The delay starts again
   while the mouse moves over the anchor, and a press on the anchor cancels it.
+  The card opens only if the anchor is still under the mouse when the delay
+  ends: a list that scrolls under a still mouse moves its rows before the
+  browser reports the pointer again, in WebKit only once the scrolling stops.
 - The card does not open while a menu, date picker, or other light-dismiss
   popover is open, so it never closes one that someone opened.
 - With the card open, moving to another anchor swaps the content after 90 ms.
@@ -94,12 +97,14 @@ of the region, it does not open at all, so it never covers the list.
 
 When the card needs a request, start it once the mouse has rested on an anchor
 for part of `openDelay`: restart that rest on every mouse move and cancel it when
-the pointer leaves or the list scrolls. Every row of a fast sweep fires
-`pointerenter`, and so does every row that passes under a still pointer while
-the list scrolls, so a request per `pointerenter` costs one request per passing
-row. Abort a request when the pointer leaves its anchor before the card opens.
-While a newer version of the same item loads, keep showing the previous answer
-instead of placeholders.
+the pointer leaves or the list scrolls. When the rest ends, start the request
+only if `document.elementFromPoint` at the position of the last pointer event
+still lies in the anchor; a scrolling list can move the row away before its
+scroll event arrives. Every row of a fast sweep fires `pointerenter`, and so does
+every row that passes under a still pointer while the list scrolls, so a request
+per `pointerenter` costs one request per passing row. Abort a request when the
+pointer leaves its anchor before the card opens. While a newer version of the
+same item loads, keep showing the previous answer instead of placeholders.
 
 ## Accessibility
 

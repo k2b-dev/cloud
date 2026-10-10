@@ -211,6 +211,42 @@ describe("HoverPreview", () => {
     }
   });
 
+  test("opens only for the row still under the mouse, also before the browser reports a scrolled list", async () => {
+    const page = await load();
+    try {
+      await page.evaluate(() => {
+        const body = document.body.dataset;
+        document.querySelector('.row[data-id="r3"]')!.addEventListener("pointerenter", () => (body.entered = "true"));
+        document.querySelector<HTMLElement>(".k2b-hover-preview")!.addEventListener("beforetoggle", (event) => {
+          if (event.newState === "open") body.opened = "true";
+        });
+        // WebKit reports pointer events for rows that a list scrolls under a still mouse only once it stops.
+        for (const type of ["pointerover", "pointerenter", "pointermove", "pointerout", "pointerleave"]) {
+          window.addEventListener(type, (event) => body.held && event.stopImmediatePropagation(), true);
+        }
+      });
+      await pointAt(page, row("r3"));
+      // The browser may deliver the move after Playwright's call returned, in WebKit even after `:hover` matches.
+      await page.waitForFunction(() => document.body.dataset.entered);
+      await page.clock.runFor(100);
+      // The list scrolls r5 under the mouse; its scroll event may arrive only after the delay ended.
+      await page.evaluate(() => {
+        document.body.dataset.held = "true";
+        document.getElementById("list")!.scrollTop = 144;
+      });
+      await page.clock.runFor(1_000);
+      expect(await page.evaluate(() => document.body.dataset.opened)).toBeUndefined();
+
+      // Once the browser reports the mouse, the row now under it opens.
+      await page.evaluate(() => delete document.body.dataset.held);
+      await pointAt(page, row("r5"), 0.6);
+      await page.clock.runFor(200);
+      expect(await shown(page)).toBe("r5");
+    } finally {
+      await close(page);
+    }
+  });
+
   test("a row the pointer rests on right after a close still opens after its delay", async () => {
     const page = await load();
     try {

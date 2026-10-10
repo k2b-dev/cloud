@@ -244,15 +244,29 @@ export function createHoverPreview<T>(options: HoverPreviewOptions<T> = {}): Hov
     if (pin) pinned = anchor;
     return true;
   };
-  /** Shows `anchor` after `delay`; a keyboard swap (`follow`) carries an existing pin along. */
-  const schedule = (anchor: Anchor<T>, delay: number, follow = false) => {
+  /**
+   * Whether the mouse at the point of `pointer` still rests on `anchor`. A list
+   * that scrolls under a still mouse moves its rows before the browser reports
+   * another pointer event, in WebKit only once the scrolling stops.
+   */
+  const restsOn = (anchor: Anchor<T>, pointer: PointerEvent) => {
+    const hit = document.elementFromPoint(pointer.clientX, pointer.clientY);
+    return hit !== null && anchor.element.contains(hit);
+  };
+  /**
+   * Shows `anchor` after `delay`; a keyboard swap (`follow`) carries an existing
+   * pin along. A mouse rest passes its `pointer` event and shows the anchor only
+   * if it is still under the mouse.
+   */
+  const schedule = (anchor: Anchor<T>, delay: number, follow = false, pointer?: PointerEvent) => {
     clear();
     if (!open()) {
       pending = anchor;
       document.addEventListener("keydown", escape);
     }
     timer = setTimeout(() => {
-      if (open()) show(anchor, follow && pinned !== undefined);
+      if (pointer && !restsOn(anchor, pointer)) clear();
+      else if (open()) show(anchor, follow && pinned !== undefined);
       else if (blocked()) clear();
       else show(anchor, false);
     }, delay);
@@ -296,12 +310,12 @@ export function createHoverPreview<T>(options: HoverPreviewOptions<T> = {}): Hov
         if (event.pointerType !== "mouse") return;
         clear();
         if ((open() && current() === entry) || dismissed === entry) return;
-        schedule(entry, open() ? SWAP_DELAY : (options.openDelay ?? 250));
+        schedule(entry, open() ? SWAP_DELAY : (options.openDelay ?? 250), false, event);
       };
       // The open delay counts from the moment the mouse rests. An open card
       // swaps on entering another anchor and ignores movement inside it.
       const pointerMove = (event: PointerEvent) => {
-        if (event.pointerType === "mouse" && !open() && dismissed !== entry) schedule(entry, options.openDelay ?? 250);
+        if (event.pointerType === "mouse" && !open() && dismissed !== entry) schedule(entry, options.openDelay ?? 250, false, event);
       };
       // A press acts on the row, such as opening it or its menu; a card about to open stays closed.
       const pointerDown = () => clear();
