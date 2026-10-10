@@ -6,7 +6,7 @@ import {
   projectComposeData,
   projectMailboxPageData,
   projectMailConversationDetail,
-  projectSsrFocusPage,
+  projectSsrFocusOverview,
   projectSsrMailboxList,
   projectSsrPaths,
   resolveSsrMailboxId,
@@ -57,38 +57,42 @@ describe("Mail SSR public boundary", () => {
     expect(composeMailboxes).toEqual([{ id: "Box001", name: "Inbox" }]);
   });
 
-  test("projects focus rows and mailbox counters through the same public boundary", async () => {
-    const page = await projectSsrFocusPage(
+  test("projects the focus rows of every view and the mailbox counters through the same public boundary", async () => {
+    const row = {
+      id: ids.conversation,
+      mailboxId: ids.mailbox,
+      mailboxName: "Support",
+      subject: "Release update",
+      participantSummary: "Ada",
+      latestMessageAt: "2026-08-19T10:00:00.000Z",
+      workStatus: "needs_action" as const,
+      assigneeUserIds: [],
+      revision: 1,
+      sourceFolderId: ids.folder,
+      unread: true,
+      flagged: false,
+      hasAttachments: false,
+      preview: "Ready to ship",
+    };
+    const overview = await projectSsrFocusOverview(
       {
-        items: [
-          {
-            id: ids.conversation,
-            mailboxId: ids.mailbox,
-            mailboxName: "Support",
-            subject: "Release update",
-            participantSummary: "Ada",
-            latestMessageAt: "2026-08-19T10:00:00.000Z",
-            workStatus: "needs_action" as const,
-            assigneeUserIds: [],
-            revision: 1,
-            sourceFolderId: ids.folder,
-            unread: true,
-            flagged: false,
-            hasAttachments: false,
-            preview: "Ready to ship",
-          },
-        ],
+        pages: {
+          mine: { items: [], nextCursor: null },
+          unassigned: { items: [row], nextCursor: null },
+          waiting: { items: [], nextCursor: null },
+          all: { items: [row], nextCursor: null },
+        },
         counts: { mine: 0, unassigned: 1, waiting: 0, all: 1 },
         mailboxCounts: [{ mailboxId: ids.mailbox, unread: 1, needsAction: 1 }],
-        nextCursor: null,
       },
       loadIds,
     );
 
-    expect(page.items[0]).toMatchObject({ id: "Conv01", mailboxId: "Box001" });
-    expect(page.mailboxCounts).toEqual([{ mailboxId: "Box001", unread: 1, needsAction: 1 }]);
-    expect(JSON.stringify(page)).not.toContain(ids.mailbox);
-    expect(JSON.stringify(page)).not.toContain(ids.folder);
+    expect(overview.pages.unassigned.items[0]).toMatchObject({ id: "Conv01", mailboxId: "Box001" });
+    expect(overview.pages.all.items[0]).toMatchObject({ id: "Conv01", mailboxId: "Box001" });
+    expect(overview.mailboxCounts).toEqual([{ mailboxId: "Box001", unread: 1, needsAction: 1 }]);
+    expect(JSON.stringify(overview)).not.toContain(ids.mailbox);
+    expect(JSON.stringify(overview)).not.toContain(ids.folder);
   });
 
   test("loads distinct public-ID tables concurrently", async () => {

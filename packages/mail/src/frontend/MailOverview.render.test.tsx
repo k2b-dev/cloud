@@ -53,27 +53,36 @@ const renderOverview = (
           currentUserEmail: "user@example.com",
           contactDirectory: DEFAULT_MAIL_CONTACT_DIRECTORY,
           dateConfig: { locale: "en", timeZone: "Europe/Berlin" },
-          initialFocus: {
-            items: [
-              {
-                id: "Convo1",
-                mailboxId: "Mail01",
-                mailboxName: "Support",
-                subject: "Release update",
-                participantSummary: "Ada",
-                latestMessageAt: "2026-08-19T10:00:00.000Z",
-                workStatus: "needs_action",
-                assigneeUserIds: ["00000000-0000-4000-8000-000000000001"],
-                unread: true,
-                flagged: true,
-                hasAttachments: true,
-                preview: "Ready to ship",
+          initialFocus: initialFocusError
+            ? null
+            : {
+                pages: {
+                  mine: {
+                    items: [
+                      {
+                        id: "Convo1",
+                        mailboxId: "Mail01",
+                        mailboxName: "Support",
+                        subject: "Release update",
+                        participantSummary: "Ada",
+                        latestMessageAt: "2026-08-19T10:00:00.000Z",
+                        workStatus: "needs_action",
+                        assigneeUserIds: ["00000000-0000-4000-8000-000000000001"],
+                        unread: true,
+                        flagged: true,
+                        hasAttachments: true,
+                        preview: "Ready to ship",
+                      },
+                    ],
+                    nextCursor: null,
+                  },
+                  unassigned: { items: [], nextCursor: null },
+                  waiting: { items: [], nextCursor: null },
+                  all: { items: [], nextCursor: null },
+                },
+                counts: { mine: 1, unassigned: 2, waiting: 3, all: 6 },
+                mailboxCounts: [{ mailboxId: "Mail01", ...mailboxCount }],
               },
-            ],
-            counts: { mine: 1, unassigned: 2, waiting: 3, all: 6 },
-            mailboxCounts: [{ mailboxId: "Mail01", ...mailboxCount }],
-            nextCursor: null,
-          },
         });
       },
     }),
@@ -100,12 +109,14 @@ describe("Mail overview", () => {
     expect(html).toContain('aria-label="Pin Support"');
     expect(html.indexOf("New mailbox")).toBeGreaterThan(html.indexOf("Support"));
     expect(html).toContain("Recently deleted mailboxes");
-    // The main area is a page: title, scope, primary action, one segmented view control.
+    // The main area is a page: title, primary action, one segmented view control. It names no
+    // mailbox scope: Focus always covers the mailboxes in the list beside it.
     expect(html).toMatch(/<h2 class="k2b-panel-header__title is-large">Focus<\/h2>/);
-    expect(html).toContain("1 conversation assigned to you · All mailboxes");
+    expect(html).toContain("1 conversation assigned to you");
+    expect(html).not.toContain("All mailboxes");
+    expect(html).not.toContain("mail-overview-scope");
     expect(html).toContain('href="/app/mail/compose"');
     expect(html).toContain("Compose");
-    expect(html).toMatch(/class="k2b-tag mail-overview-scope"[^>]*>.*All mailboxes/);
     expect(html).toContain('role="radiogroup" aria-label="Mail focus view"');
     expect(html).toContain('role="radio" class="k2b-segmented-control__option" aria-checked="true"');
     expect(html).not.toContain('role="tablist"');
@@ -127,7 +138,8 @@ describe("Mail overview", () => {
     expect(html).toContain("Could not load focused mail");
     expect(html).toContain("Focus service unavailable");
     expect(html).toContain("Retry");
-    expect(html).not.toContain("Nothing for me");
+    expect(html).not.toContain("Nothing assigned to you");
+    expect(html).not.toContain("mail-focus-skeleton");
   });
 
   test("renders a persisted mailbox pin with an accessible unpin action", () => {
@@ -154,10 +166,10 @@ describe("Mail overview", () => {
     expect(row).not.toContain("Pin Support");
     // A row the server sent before the mailbox was hidden stays out of Focus.
     expect(html).not.toContain("Release update");
-    // The Focus scope no longer claims every mailbox.
-    expect(html).toContain("assigned to you · All mailboxes except 1 hidden");
-    expect(html).toMatch(/class="k2b-tag mail-overview-scope"[^>]*>.*All mailboxes except 1 hidden/);
-    expect(renderOverview(null, [], undefined, "de", ["Mail01"])).toContain("Alle Postfächer außer 1 ausgeblendeten");
+    // Hiding a mailbox adds no scope hint to Focus.
+    expect(html).toContain("1 conversation assigned to you</");
+    expect(html).not.toContain("except");
+    expect(renderOverview(null, [], undefined, "de", ["Mail01"])).not.toContain("ausgeblendeten");
   });
 
   test("offers hiding next to pinning", () => {
