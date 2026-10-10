@@ -10,6 +10,24 @@ updated: 2026-10-10
 
 # Deprecations and migrations
 
+## Actions can word their own approvals and receipts
+
+This change is additive; existing declarations behave as before. A capability
+presentation catalog may now declare `sentences` per Action, `approval`,
+`done`, `rejected`, and `notRun`, with placeholders for input and result fields,
+and translate them under `translations.<locale>.actions.<id>.sentences`.
+`app.start()` validates them against the Action's schemas. The Assistant's
+approval card now shows what will happen as its title, with the app name in
+the line below; receipts, step rows, and the approval text of
+`cld assistant actions` use the app's sentences, and an Action without them
+reads as its title with up to two labelled input fields. "Done" receipts now
+read "Done: …" like the other states. The model may add an optional
+`approvalReason` to an Action call that waits for approval; Cloud shows it as
+a labelled reason and removes it before the app sees the call. A Cloud
+release that does not know sentences ignores them and keeps the generic
+wording. Mail, Spaces, and Files word their main Actions. No setting, data, or migration is involved. See
+[Word Actions for people](/en/docs/platform/capabilities#word-actions-for-people).
+
 ## Apps ship their own Assistant Skills
 
 Built-in Skills such as `cloud-grids`, `cloud-mail`, and `skill-creator` no

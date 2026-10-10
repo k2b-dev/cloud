@@ -442,7 +442,15 @@ export const assistantManagementCommands = [
           call: action.callId,
           type: action.type,
           name: action.name,
-          detail: action.type === "approval_request" ? (action.message ?? "") : action.mode,
+          // The approval text says what the call does in the owning app's words; a table row keeps it on one line.
+          detail:
+            action.type === "approval_request"
+              ? (action.message ?? "")
+                  .split("\n")
+                  .map((line) => line.trim())
+                  .filter(Boolean)
+                  .join(" · ")
+              : action.mode,
         })),
         [{ key: "call" }, { key: "type" }, { key: "name" }, { key: "detail" }],
       );

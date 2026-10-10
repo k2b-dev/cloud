@@ -1,7 +1,15 @@
 import { createHash } from "node:crypto";
 import type { Tool, ToolContext, ToolResolver } from "@k2b/nessi";
 import { z } from "zod";
-import { resolveCapabilityOperationTitle } from "../_internal/capabilities";
+import { resolveCapabilityActionWording, resolveCapabilityOperationTitle } from "../_internal/capabilities";
+import {
+  CAPABILITY_APPROVAL_REASON_FIELD,
+  CAPABILITY_APPROVAL_REASON_MAX_CHARS,
+  type CapabilityActionWording,
+  capabilityActionSubject,
+  capabilityApprovalReason,
+  capabilityApprovalReasonLabel,
+} from "../_internal/capability-sentences";
 import { HELP_READ_MAX_CHARS, HELP_SEARCH_MAX_LIMIT, readHelpArticle } from "../_internal/help-catalog";
 import {
   type CapabilityActionManifest,
@@ -16,6 +24,7 @@ import type { RequestActor } from "../server";
 import type { HelpReader, HelpReaderFactory } from "../services/help";
 import { type MandatePolicyV1, mandatePolicyCanPermitCapability } from "../services/mandates/policy";
 import { resolveAppIdentityPresentation } from "../shared/app-presentation";
+import { DEFAULT_LOCALE } from "../shared/locale";
 import { recordRejectedAiCapability } from "./capability-execution";
 import { CODE_SOURCE_TOOLS } from "./code-source-contracts";
 import { createCodeSourceTool } from "./code-source-tools";
@@ -451,6 +460,39 @@ export const reduceAiCapabilityInputSchema = (schema: Record<string, unknown>): 
 export const aiCapabilityInputSchema = (schema: Record<string, unknown>): z.ZodType =>
   z.fromJSONSchema(reduceAiCapabilityInputSchema(schema));
 
+/** How people read calls of one loaded Action in the turn's locale; derived from the live catalog only. */
+export const aiCapabilityActionWording = (entry: AiCapabilityCatalogEntry, locale: string | undefined): CapabilityActionWording =>
+  resolveCapabilityActionWording(entry.operation as CapabilityActionManifest, entry.app.presentation, locale ?? DEFAULT_LOCALE);
+
+/**
+ * An Action that waits for approval lets the model say why it wants it. The field exists only for the model:
+ * Cloud removes it before review, authorization, and execution. An app field of the same name wins.
+ */
+const offersApprovalReason = (entry: AiCapabilityCatalogEntry): boolean => {
+  if (entry.kind !== "action" || (entry.operation as CapabilityActionManifest).approval === "none") return false;
+  const properties = entry.operation.inputSchema.properties;
+  return Boolean(properties && typeof properties === "object" && !Object.hasOwn(properties, CAPABILITY_APPROVAL_REASON_FIELD));
+};
+
+const withApprovalReason = (schema: Record<string, unknown>): Record<string, unknown> => ({
+  ...schema,
+  properties: {
+    ...(schema.properties as Record<string, unknown>),
+    [CAPABILITY_APPROVAL_REASON_FIELD]: {
+      type: "string",
+      maxLength: CAPABILITY_APPROVAL_REASON_MAX_CHARS,
+      description:
+        "Optional: one short sentence in the user's language on why this call is needed now. Shown as your reason beside the approval; never put Action input here.",
+    },
+  },
+});
+
+const withoutApprovalReason = (entry: AiCapabilityCatalogEntry, args: unknown): unknown => {
+  if (!offersApprovalReason(entry) || !args || typeof args !== "object" || Array.isArray(args)) return args;
+  const { [CAPABILITY_APPROVAL_REASON_FIELD]: _reason, ...appArgs } = args as Record<string, unknown>;
+  return appArgs;
+};
+
 const ToolCatalogItemSchema = z
   .object({
     name: z.string(),
@@ -598,6 +640,8 @@ export const createLoadedAiCapabilityTools = (input: {
   catalog: readonly AiCapabilityCatalogEntry[];
   loadedNames: readonly string[];
   actor: RequestActor;
+  /** Locale of the turn; the approval text a person reads is worded in it. */
+  locale?: string;
   review?: (entry: AiCapabilityCatalogEntry, args: unknown, context: ToolContext) => Promise<CapabilityActionReview | null>;
   authorizeBackground?: (entry: AiCapabilityCatalogEntry, args: unknown) => Promise<void>;
   onReview?: (callId: string, review: CapabilityActionReview) => void;
@@ -612,17 +656,27 @@ export const createLoadedAiCapabilityTools = (input: {
         name: entry.providerName,
         canonicalName: entry.name,
         description: `${entry.title}. ${entry.description} Never retry ACTION_OUTCOME_UNKNOWN. Do not retry unchanged after INTERNAL or INVALID_APP_RESPONSE; report the provider error.`,
-        inputSchema: aiCapabilityInputSchema(entry.operation.inputSchema),
+        inputSchema: aiCapabilityInputSchema(
+          offersApprovalReason(entry) ? withApprovalReason(entry.operation.inputSchema) : entry.operation.inputSchema,
+        ),
         outputSchema: z.unknown(),
         // Capability Actions request a custom approval after their optional
         // live review has resolved. The review may supply an app-owned scope.
         approval: "never",
-      }).server(async (args, context) => {
+      }).server(async (modelArgs, context) => {
+        const args = withoutApprovalReason(entry, modelArgs);
         await input.authorizeBackground?.(entry, args);
         if (!input.authorizeBackground && entry.kind === "action" && (entry.operation as CapabilityActionManifest).approval !== "none") {
           const review = (await input.review?.(entry, args, context)) ?? null;
           if (review && context.callId) input.onReview?.(context.callId, review);
-          const message = review?.message ?? `${entry.display.appName}: ${entry.display.title}`;
+          // Text-only readers such as the CLI read what the chat shows: the app and its sentence, then the model's labelled reason.
+          const locale = input.locale ?? DEFAULT_LOCALE;
+          const reason = offersApprovalReason(entry) ? capabilityApprovalReason(modelArgs) : null;
+          const subject = capabilityActionSubject(aiCapabilityActionWording(entry, locale), args, { locale, timeZone: context.timeZone });
+          const message = [
+            `${entry.display.appName}: ${subject}`,
+            ...(reason ? [`${capabilityApprovalReasonLabel(locale)}: ${reason}`] : []),
+          ].join("\n");
           if (!(await context.requestApproval(message))) {
             if (input.actor.kind === "user") {
               await recordRejectedAiCapability({ entry, actor: input.actor, args }).catch(() => undefined);
@@ -804,6 +858,7 @@ export const createAiToolResolver =
             catalog: capabilityCatalog,
             loadedNames,
             actor: input.actor,
+            locale: input.locale,
             review: input.review,
             onReview: input.onReview,
             authorizeBackground: input.authorizeBackground,
@@ -823,6 +878,7 @@ export const createAiToolResolver =
     for (const name of loadedNames) {
       const entry = catalogByName.get(name);
       if (!entry) continue;
+      const wording = entry.kind === "action" ? aiCapabilityActionWording(entry, input.locale) : null;
       presentations.set(entry.providerName, {
         kind: "capability",
         appId: entry.appId,
@@ -831,6 +887,9 @@ export const createAiToolResolver =
         appAccent: entry.app.appAccent,
         title: entry.display.title,
         capabilityKind: entry.kind,
+        ...(wording?.sentences ? { sentences: wording.sentences } : {}),
+        ...(wording?.fields?.length ? { fields: [...wording.fields] } : {}),
+        ...(offersApprovalReason(entry) ? { approvalReason: true as const } : {}),
       });
       // Rememberable scopes are resolved by the owning app for each concrete
       // call and attached when its live review completes.

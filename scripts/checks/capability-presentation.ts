@@ -29,8 +29,9 @@ const declarationOf = (srcDir: string): { file: string; exportName: string } | n
 
 /**
  * Built-in applications present every capability to people in every shipped locale: each Type,
- * Query, Action, Command, and Universal Search tag has a translated title and description. The
- * Assistant, approvals, search, and the capability catalog show exactly these texts.
+ * Query, Action, Command, and Universal Search tag has a translated title and description, and an
+ * Action with sentences has them in every locale. The Assistant, approvals, search, and the
+ * capability catalog show exactly these texts.
  */
 export const rule: Rule = {
   name: "capability-presentation",
@@ -72,6 +73,19 @@ export const rule: Rule = {
           findings.push({
             file: declaration.file,
             message: `presentation.translations.${locale} needs a title and description for: ${missing.join(", ")}`,
+          });
+        }
+        // An Action that words itself does so in every shipped locale, with the same sentences, so a receipt never mixes languages.
+        const unworded = Object.entries(presentation?.sentences ?? {})
+          .filter(([localId, base]) => {
+            const translated = translation?.actions?.[localId]?.sentences;
+            return !translated || Object.keys(base).some((key) => !(key in translated));
+          })
+          .map(([localId]) => localId);
+        if (unworded.length > 0) {
+          findings.push({
+            file: declaration.file,
+            message: `presentation.translations.${locale} needs the same sentences as the base locale for: ${unworded.join(", ")}`,
           });
         }
       }

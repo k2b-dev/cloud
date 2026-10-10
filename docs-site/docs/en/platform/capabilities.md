@@ -5,7 +5,7 @@ section: Platform services
 order: 555
 description: Publish a small, versioned RPC surface for cross-app calls, agents, CLI, and MCP.
 tags: [capabilities, rpc, agents, mcp]
-updated: 2026-10-09
+updated: 2026-10-10
 ---
 
 # App capabilities
@@ -296,6 +296,114 @@ Action reviews and provider-authored summaries or errors are runtime output,
 not registry metadata. Resolve those inside the handler from
 `context.locale`, including every review `message` and detail `label`;
 preserve their stable codes and structured values.
+
+### Word Actions for people
+
+An Action can say in its own words what it is about to do and what it did.
+The Assistant's approval card, its receipts and step rows, and the approval
+text of `cld assistant actions` show these sentences, in the reader's
+language. They are optional: an Action without them reads as its title with
+up to two labelled fields, such as "Send email · Recipients: Jana Berger".
+
+Declare the base-locale sentences under `presentation.sentences`, keyed by
+Action local ID, and each translation under the Action's entry in
+`translations`. A third-party app uses exactly the fields Mail uses:
+
+```ts
+export const inventoryCapabilities = defineCapabilities({
+  protocolVersion: 2,
+  presentation: {
+    baseLocale: "en",
+    sentences: {
+      "item.transfer": {
+        approval: "Transfer {input.quantity} × {input.itemName} to {input.recipient}",
+        done: "Transferred {input.quantity} × {input.itemName} to {input.recipient} on {data.transferredAt}",
+        rejected: "Did not transfer {input.itemName}",
+        notRun: "{input.itemName} not transferred",
+      },
+    },
+    translations: {
+      de: {
+        actions: {
+          "item.transfer": {
+            title: "Artikel übergeben",
+            description: "Übergibt einen Bestand an eine Person.",
+            sentences: {
+              approval: "{input.quantity} × {input.itemName} an {input.recipient} übergeben",
+              done: "{input.quantity} × {input.itemName} am {data.transferredAt} an {input.recipient} übergeben",
+              rejected: "{input.itemName} nicht übergeben",
+              notRun: "{input.itemName} nicht übergeben",
+            },
+          },
+        },
+      },
+    },
+  },
+  actions: {
+    "item.transfer": {
+      title: "Transfer item",
+      description: "Transfers stock to a person.",
+      input: z
+        .object({
+          itemName: z.string().max(200).describe("Item name."),
+          quantity: z.number().int().positive().describe("Quantity."),
+          recipient: z
+            .object({ name: z.string().max(200).describe("Display name."), email: z.string().max(320).describe("Email address.") })
+            .strict()
+            .describe("Recipient."),
+        })
+        .strict(),
+      data: z.object({ transferredAt: z.iso.datetime({ offset: true }) }).strict(),
+      // destructive, openWorld, idempotency, review, run...
+    },
+  },
+});
+```
+
+| Sentence | Shown | May read |
+| --- | --- | --- |
+| `approval` | Card title, running receipt, step row while the call runs or waits, approval text | `{input.*}` |
+| `done` | Receipt and step row after the Action succeeded | `{input.*}`, `{data.*}` |
+| `rejected` | Receipt and step row after the person rejected the call | `{input.*}` |
+| `notRun` | Receipt when the turn ended before the call ran | `{input.*}` |
+
+Each `{…}` reference names a field by its dotted schema path, like the schema
+presentation maps: `{input.to}` or `{input.to[].name}` for the call input,
+`{data.id}` for the Action's result data. Cloud inserts each value as plain
+one-line text without control or direction characters and never reads it as
+a template. Values are cut at 60 characters, and lists show three entries,
+such as "Jana Berger, Max Weber, and 2 more". Instants in fields with
+`format: "date-time"` and RFC 3339 strings show in the reader's time zone, and
+calendar dates as the same day everywhere. Numbers use the reader's
+locale, and booleans read "yes" or "no". An object reads as its `displayName`,
+`name`, `title`, `label`, `email`, `address`, or `path`, so people and resources
+appear by their display names when the value carries one.
+
+When a referenced field has no value to show, such as an empty list or an optional
+field, the sentence falls back to the generic wording instead of showing a
+gap. A missing outcome sentence uses the generic state words around the
+approval sentence, such as "Rejected: Send email to Jana Berger", and a
+missing `done` sentence leaves the receipt to the Action's runtime summary.
+The generic sentence takes labels from the first clause of the localized field
+descriptions, up to 40 characters, and skips identifiers, revisions, flags,
+and long text; start descriptions with a short noun phrase, such as
+`"Task title; required unless the template has one."`.
+
+`app.start()` rejects a sentence that names a field the schemas do not
+declare, reads `{data.*}` outside `done`, uses other braces, has more than six
+placeholders or 200 characters, or belongs to a Query or an unknown Action.
+The most specific locale that words an Action supplies its whole set of
+sentences, so one receipt never mixes languages; translate every sentence you
+declare. Cloud derives the wording from the live registry for every app alike
+and saves it with the turn like the title, so history keeps its words after
+an app update. Older Cloud readers ignore sentences and keep the generic
+wording.
+
+When an Action waits for approval, the model may pass an optional
+`approvalReason` beside the app's input. Cloud shows it under its own label,
+such as "Why: Jana asked for the offer.", removes it before review,
+authorization, and execution, and never lets it replace the app's sentence.
+An Action whose input declares its own `approvalReason` field keeps it.
 
 ## Understand Types, Queries, and Actions
 

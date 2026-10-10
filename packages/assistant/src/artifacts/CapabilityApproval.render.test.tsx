@@ -84,9 +84,9 @@ test("code approvals present the capability in the reader's language", async () 
       },
     }),
   );
-  expect(html).toContain("Mail · Entwurf erstellen");
+  expect(html).toContain('ai-approval__title">Entwurf erstellen</h3>');
   expect(html).toContain("ti-mail");
-  expect(html).toContain("Wird erst nach deiner Freigabe ausgeführt");
+  expect(html).toContain("Mail · Wird erst nach deiner Freigabe ausgeführt");
   expect(html).toContain("Ablehnen");
   expect(html).toContain("Immer freigeben");
   expect(html).toContain('aria-label="Freigabe erforderlich: Entwurf erstellen"');

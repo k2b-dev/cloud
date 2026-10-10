@@ -2,6 +2,26 @@ import type { CapabilityPresentationCatalog } from "@k2b/cloud/contracts";
 
 export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
   baseLocale: "en",
+  sentences: {
+    "task.create": {
+      approval: "Create the task {input.title}",
+      done: "Created the task {data.title}",
+      rejected: "Did not create the task {input.title}",
+      notRun: "Task {input.title} not created",
+    },
+    "event.create": {
+      approval: "Create the event {input.title} on {input.startsAt}",
+      done: "Created the event {data.title} on {data.startsAt}",
+      rejected: "Did not create the event {input.title}",
+      notRun: "Event {input.title} not created",
+    },
+    "comment.create": {
+      approval: "Add a comment",
+      done: "Added a comment",
+      rejected: "Did not add the comment",
+      notRun: "Comment not added",
+    },
+  },
   translations: {
     de: {
       commands: {
@@ -477,6 +497,12 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "comment.create": {
           title: "Kommentar erstellen",
+          sentences: {
+            approval: "Kommentar hinzufügen",
+            done: "Kommentar hinzugefügt",
+            rejected: "Kommentar nicht hinzugefügt",
+            notRun: "Kommentar nicht hinzugefügt",
+          },
           description:
             "Fügen Sie einen vom Benutzer verfassten Kommentar zu einem Element oder einem wiederkehrenden Vorkommen in einem beschreibbaren Space hinzu.",
           input: {
@@ -503,6 +529,12 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "event.create": {
           title: "Kalenderereignis erstellen",
+          sentences: {
+            approval: "Termin {input.title} am {input.startsAt} erstellen",
+            done: "Termin {data.title} am {data.startsAt} erstellt",
+            rejected: "Termin {input.title} nicht erstellt",
+            notRun: "Termin {input.title} nicht erstellt",
+          },
           description:
             "Einen Termin in einem beschreibbaren Space anlegen, mit gültigem Zeitraum oder mit templateId und einem Datum aus den Vorschlägen von template.list.",
           input: {
@@ -630,6 +662,12 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "task.create": {
           title: "Aufgabe erstellen",
+          sentences: {
+            approval: "Aufgabe {input.title} erstellen",
+            done: "Aufgabe {data.title} erstellt",
+            rejected: "Aufgabe {input.title} nicht erstellt",
+            notRun: "Aufgabe {input.title} nicht erstellt",
+          },
           description:
             "Eine Aufgabe in einem ausgewählten beschreibbaren Space und einer Spalte anlegen. Mit templateId füllt die Vorlage jedes weggelassene Feld samt Checkliste; date wählt den Fälligkeitstag aus den Vorschlägen.",
           input: {

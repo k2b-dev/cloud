@@ -130,7 +130,7 @@ domTest("a decided approval becomes a one-line receipt in its place at once, and
     expect(view.place()).toBe(place);
     expect(place.querySelector(".ai-approval")).toBeNull();
     const receipt = place.querySelector<HTMLElement>(".ai-turn-receipt")!;
-    expect(receipt.textContent).toBe("Running: Run code · report.ts");
+    expect(receipt.textContent).toBe("Running: Run code");
     expect(document.activeElement).toBe(place);
 
     // The turn reports the decision and then the outcome: the same row changes only its words.
@@ -139,7 +139,7 @@ domTest("a decided approval becomes a one-line receipt in its place at once, and
     expect(place.querySelector(".ai-turn-receipt")).toBe(receipt);
     view.setBlocks([{ ...runCode, status: "completed", approved: true, approval: undefined, result: { status: "ok" } }]);
     expect(place.querySelector(".ai-turn-receipt")).toBe(receipt);
-    expect(receipt.textContent).toBe("Approved: Run code · report.ts");
+    expect(receipt.textContent).toBe("Approved: Run code");
     expect(receipt.textContent).not.toContain("code_run");
   } finally {
     view.cleanup();
@@ -154,10 +154,10 @@ domTest("a rejected approval and one a stop left open read as receipts in the re
     await tick();
     expect(view.decisions).toEqual([{ approved: false }]);
     const receipt = view.place().querySelector<HTMLElement>(".ai-turn-receipt")!;
-    expect(receipt.textContent).toBe("Abgelehnt: Code ausführen · report.ts");
+    expect(receipt.textContent).toBe("Abgelehnt: Code ausführen");
     view.setBlocks([{ ...runCode, status: "rejected", approval: undefined }]);
     expect(view.place().querySelector(".ai-turn-receipt")).toBe(receipt);
-    expect(receipt.textContent).toBe("Abgelehnt: Code ausführen · report.ts");
+    expect(receipt.textContent).toBe("Abgelehnt: Code ausführen");
   } finally {
     view.cleanup();
   }
@@ -167,7 +167,7 @@ domTest("a rejected approval and one a stop left open read as receipts in the re
     phase: "stopped",
   });
   try {
-    expect(stopped.place().textContent).toBe("Nicht ausgeführt: Code ausführen · report.ts · gestoppt");
+    expect(stopped.place().textContent).toBe("Nicht ausgeführt: Code ausführen · gestoppt");
   } finally {
     stopped.cleanup();
   }
@@ -182,7 +182,7 @@ domTest("a built-in tool's approval a stop left undecided becomes a quiet receip
     view.setBlocks([{ ...runCode, status: "running", approved: false, approval: undefined }]);
     view.setPhase("stopped");
     expect(view.place()).toBe(place);
-    expect(place.textContent).toBe("Nicht ausgeführt: Code ausführen · report.ts · gestoppt");
+    expect(place.textContent).toBe("Nicht ausgeführt: Code ausführen · gestoppt");
     expect(place.querySelector(".ti-circle-off")).not.toBeNull();
   } finally {
     view.cleanup();
@@ -224,7 +224,7 @@ domTest("code that asks again gets a new card in the same place after each decis
     view.button("Run code").click();
     await tick();
     await tick();
-    expect(place.querySelector(".ai-turn-receipt")?.textContent).toBe("Running: Run code · report.ts");
+    expect(place.querySelector(".ai-turn-receipt")?.textContent).toBe("Running: Run code");
 
     // The turn reports the decision; the code runs on and asks again.
     view.setBlocks([{ ...ask(0), status: "running", approved: true, approval: undefined }]);
@@ -236,7 +236,7 @@ domTest("code that asks again gets a new card in the same place after each decis
     await tick();
     await tick();
     expect(view.decisions).toEqual([{ approved: true }, { approved: false }]);
-    expect(place.querySelector(".ai-turn-receipt")?.textContent).toBe("Rejected: Run code · report.ts");
+    expect(place.querySelector(".ai-turn-receipt")?.textContent).toBe("Rejected: Run code");
 
     // A rejected request does not decide the next one either.
     view.setBlocks([{ ...ask(2), approved: true }]);
@@ -244,5 +244,130 @@ domTest("code that asks again gets a new card in the same place after each decis
     expect(view.place()).toBe(place);
   } finally {
     view.cleanup();
+  }
+});
+
+/** An app Action that words itself, the way its saved presentation reaches the chat in each locale. */
+const sendMail = (locale: "en" | "de"): Extract<AiTurnBlock, { kind: "tool" }> => ({
+  id: "tool-send",
+  callId: "send",
+  kind: "tool",
+  name: "acme-mail__action__message_dot_send",
+  status: "awaiting_approval",
+  args: {
+    to: [{ name: "Jana Berger", address: "jana@example.com" }],
+    subject: "Offer",
+    approvalReason: locale === "de" ? "Jana hat um das Angebot gebeten." : "Jana asked for the offer.",
+  },
+  presentation: {
+    kind: "capability",
+    appId: "acme-mail",
+    appName: "Acme Mail",
+    appIcon: "ti ti-mail",
+    title: locale === "de" ? "E-Mail senden" : "Send email",
+    capabilityKind: "action",
+    sentences:
+      locale === "de"
+        ? {
+            approval: "E-Mail an {input.to} senden",
+            done: "E-Mail an {input.to} gesendet ({data.messageId})",
+            rejected: "E-Mail an {input.to} nicht gesendet",
+            notRun: "E-Mail an {input.to} nicht gesendet",
+          }
+        : {
+            approval: "Send email to {input.to}",
+            done: "Sent email to {input.to} ({data.messageId})",
+            rejected: "Did not send email to {input.to}",
+            notRun: "Email to {input.to} not sent",
+          },
+    fields: [{ path: "input.to", label: locale === "de" ? "Empfänger" : "Recipients" }, { path: "data.messageId" }],
+    approvalReason: true,
+  },
+  approval: { message: "Acme Mail: Send email to Jana Berger", allowAlways: false },
+});
+
+domTest("an app Action's own sentences name the card, the model's labelled reason, and every receipt", async () => {
+  const english = await mountTurn([sendMail("en")]);
+  try {
+    const card = english.place().querySelector<HTMLElement>(".ai-approval")!;
+    expect(card.querySelector(".ai-approval__title")?.textContent).toBe("Send email to Jana Berger");
+    expect(card.querySelector(".ai-approval__sub")?.textContent).toBe("Acme Mail · Runs only after you approve it");
+    // The model's reason adds to the app's sentence under its own label; the approval text for text-only readers is not repeated.
+    expect(card.textContent).toContain("Why: Jana asked for the offer.");
+    expect(card.textContent).not.toContain("Acme Mail: Send email to Jana Berger");
+    english.button("Send email to Jana Berger").click();
+    await tick();
+    await tick();
+    const receipt = english.place().querySelector<HTMLElement>(".ai-turn-receipt")!;
+    expect(receipt.textContent).toBe("Running: Send email to Jana Berger");
+    english.setPhase("running");
+    english.setBlocks([
+      {
+        ...sendMail("en"),
+        status: "completed",
+        approved: true,
+        approval: undefined,
+        result: { data: { messageId: "M-42" }, summary: "Queued" },
+      },
+    ]);
+    expect(english.place().querySelector(".ai-turn-receipt")).toBe(receipt);
+    expect(receipt.textContent).toBe("Sent email to Jana Berger (M-42)");
+  } finally {
+    english.cleanup();
+  }
+
+  const german = await mountTurn([sendMail("de")], { locale: "de" });
+  try {
+    const card = german.place().querySelector<HTMLElement>(".ai-approval")!;
+    expect(card.querySelector(".ai-approval__title")?.textContent).toBe("E-Mail an Jana Berger senden");
+    expect(card.querySelector(".ai-approval__sub")?.textContent).toBe("Acme Mail · Wird erst nach deiner Freigabe ausgeführt");
+    expect(card.textContent).toContain("Warum: Jana hat um das Angebot gebeten.");
+    german.button("Ablehnen").click();
+    await tick();
+    await tick();
+    expect(german.place().querySelector(".ai-turn-receipt")?.textContent).toBe("E-Mail an Jana Berger nicht gesendet");
+  } finally {
+    german.cleanup();
+  }
+
+  // A stop before the decision leaves the app's not-run sentence; a result without the data a sentence needs keeps the generic words.
+  const stopped = await mountTurn([{ ...sendMail("de"), status: "running", approval: undefined }], { locale: "de", phase: "stopped" });
+  try {
+    expect(stopped.place().textContent).toBe("E-Mail an Jana Berger nicht gesendet · gestoppt");
+  } finally {
+    stopped.cleanup();
+  }
+  const withoutData = await mountTurn(
+    [{ ...sendMail("de"), status: "completed", approved: true, approval: undefined, result: { data: {}, summary: "Zugestellt" } }],
+    { locale: "de", phase: "stopped" },
+  );
+  try {
+    expect(withoutData.place().textContent).toBe("Zugestellt");
+  } finally {
+    withoutData.cleanup();
+  }
+});
+
+domTest("an Action without sentences reads as its title with its labelled fields", async () => {
+  const plain = sendMail("de");
+  plain.presentation = { ...plain.presentation!, sentences: undefined };
+  plain.args = { to: [{ name: "Jana Berger", address: "jana@example.com" }, { address: "max@example.com" }] };
+  const view = await mountTurn([plain], { locale: "de" });
+  try {
+    const card = view.place().querySelector<HTMLElement>(".ai-approval")!;
+    expect(card.querySelector(".ai-approval__title")?.textContent).toBe("E-Mail senden · Empfänger: Jana Berger und max@example.com");
+    // No reason, no label: the card adds nothing the model did not say.
+    expect(card.textContent).not.toContain("Warum");
+  } finally {
+    view.cleanup();
+  }
+  // Input that did not come from the model, such as a call from Studio code, never reads as the model's reason.
+  const fromCode = sendMail("de");
+  fromCode.presentation = { ...fromCode.presentation!, approvalReason: undefined };
+  const code = await mountTurn([fromCode], { locale: "de" });
+  try {
+    expect(code.place().textContent).not.toContain("Warum");
+  } finally {
+    code.cleanup();
   }
 });

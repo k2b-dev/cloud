@@ -787,7 +787,8 @@ describe("AI capability catalog", () => {
         requestClientTool: async <T>() => undefined as T,
       },
     );
-    expect(approvalMessages).toEqual(["Create a contact."]);
+    // Text-only readers get the app and what the call does; the review stays separate for the card.
+    expect(approvalMessages).toEqual(["Contacts: Create item · Item title: Ada"]);
     expect(actionReviews).toEqual([
       {
         callId: "call-create",
@@ -1044,6 +1045,7 @@ describe("AI capability catalog", () => {
         protocolVersion: 2,
         presentation: {
           baseLocale: "en",
+          sentences: { "draft.create": { approval: "Create the draft “{input.subject}”" } },
           translations: {
             de: {
               actions: {
@@ -1051,6 +1053,7 @@ describe("AI capability catalog", () => {
                   title: "Mail-Entwurf erstellen",
                   description: "Erstellt einen bearbeitbaren Entwurf.",
                   input: { subject: "Betreff des Entwurfs." },
+                  sentences: { approval: "Entwurf „{input.subject}“ erstellen", done: "Entwurf „{input.subject}“ erstellt" },
                 },
               },
             },
@@ -1082,6 +1085,7 @@ describe("AI capability catalog", () => {
     const resolve = async (locale?: string) => {
       const presentations = new Map<string, unknown>();
       const approvals: string[] = [];
+      const executed: unknown[] = [];
       const tools = await createAiToolResolver({
         conversationId: "conversation-1",
         actor,
@@ -1092,7 +1096,10 @@ describe("AI capability catalog", () => {
           loadTools: async ({ names }) => ({ loaded: names, alreadyLoaded: [], evicted: [] }),
         },
         listRegistry: async () => [mail, thirdParty],
-        execute: async () => ({ data: { id: "draft" } }),
+        execute: async (_entry, args) => {
+          executed.push(args);
+          return { data: { id: "draft" } };
+        },
         onPrepared: (snapshot) => {
           for (const [name, presentation] of snapshot.presentations) presentations.set(name, presentation);
         },
@@ -1100,7 +1107,7 @@ describe("AI capability catalog", () => {
       const draft = tools.find((tool) => tool.def.name === "mail__action__draft_dot_create");
       if (!draft || draft.kind !== "server") throw new Error("draft tool missing");
       await draft.execute(
-        { subject: "Offer" },
+        { subject: "Offer", approvalReason: "Der Kunde hat gefragt." },
         {
           callId: "call-draft",
           signal: AbortSignal.timeout(1_000),
@@ -1111,7 +1118,7 @@ describe("AI capability catalog", () => {
           requestClientTool: async <T>() => undefined as T,
         },
       );
-      return { tools, presentations, approvals };
+      return { tools, presentations, approvals, executed };
     };
 
     const german = await resolve("de-DE");
@@ -1120,11 +1127,22 @@ describe("AI capability catalog", () => {
       title: "Mail-Entwurf erstellen",
     });
     expect(german.presentations.get("inventory__action__create")).toMatchObject({ appName: "Inventory", title: "Create item" });
-    expect(german.approvals).toEqual(["E-Mail: Mail-Entwurf erstellen"]);
+    expect(german.presentations.get("mail__action__draft_dot_create")).toMatchObject({
+      sentences: { approval: "Entwurf „{input.subject}“ erstellen", done: "Entwurf „{input.subject}“ erstellt" },
+      fields: [{ path: "input.subject", label: "Betreff des Entwurfs" }],
+      approvalReason: true,
+    });
+    expect(german.approvals).toEqual(["E-Mail: Entwurf „Offer“ erstellen\nWarum: Der Kunde hat gefragt."]);
 
     const english = await resolve("en");
     expect(english.presentations.get("mail__action__draft_dot_create")).toMatchObject({ appName: "Mail", title: "Create draft" });
-    expect(english.approvals).toEqual(["Mail: Create draft"]);
+    expect(english.presentations.get("mail__action__draft_dot_create")).toMatchObject({
+      sentences: { approval: "Create the draft “{input.subject}”" },
+      fields: [{ path: "input.subject", label: "Draft subject" }],
+    });
+    expect(english.approvals).toEqual(["Mail: Create the draft “Offer”\nWhy: Der Kunde hat gefragt."]);
+    // The model may say why; Cloud takes the reason out before the app sees the call.
+    expect(english.executed).toEqual([{ subject: "Offer" }]);
     // Tool definitions are prompt text: identical for every reader, never translated.
     const definitions = (tools: typeof german.tools) =>
       tools.map((tool) => ({
@@ -1137,6 +1155,11 @@ describe("AI capability catalog", () => {
     expect(draftDefinition?.description).toStartWith("Create draft. Create an editable mail draft.");
     expect(draftDefinition?.input).toContain("Draft subject.");
     expect(draftDefinition?.input).not.toContain("Betreff");
+    // An Action that waits for approval offers the model an optional reason; a Query does not.
+    expect(JSON.parse(draftDefinition!.input).properties.approvalReason).toMatchObject({ type: "string", maxLength: 300 });
+    expect(JSON.parse(draftDefinition!.input).required ?? []).not.toContain("approvalReason");
+    const query = definitions(german.tools).find((tool) => tool.name === "inventory__action__create");
+    expect(JSON.parse(query!.input).properties.approvalReason).toBeDefined();
   });
 
   test("keeps tool discovery available when the Help registry fails", async () => {

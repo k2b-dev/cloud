@@ -771,8 +771,8 @@ describe("capability tool presentation", () => {
         }),
       );
     const html = renderApproval(block("awaiting_approval"));
-    expect(html).toContain(">Contacts · List contacts</h3>");
-    expect(html).toContain("List contacts");
+    expect(html).toContain('ai-approval__title">List contacts</h3>');
+    expect(html).toContain(">Contacts · Runs only after you approve it</p>");
     expect(html).toContain('data-variant="ai"');
     expect(html).toContain('<span class="k2b-button__label">List contacts</span>');
     expect(html).not.toContain("Contacts: List contacts");
@@ -783,7 +783,6 @@ describe("capability tool presentation", () => {
     // A calm tinted card: the warning tone alone sets it apart, without a border or an accent badge.
     expect(html).toContain('<section class="ai-approval"');
     expect(html).not.toContain("border-[var(--k2b-border)]");
-    expect(html).toContain(">Runs only after you approve it</p>");
     expect(html).toContain("data-ai-approval-footer");
     expect(html).toContain('aria-expanded="false"');
     expect(html).toContain("k2b-split-button");
@@ -880,9 +879,9 @@ describe("capability tool presentation", () => {
       );
 
     const approval = render(german("awaiting_approval"), "de");
-    expect(approval).toContain(">E-Mail · Mail-Entwurf erstellen</h3>");
+    expect(approval).toContain('ai-approval__title">Mail-Entwurf erstellen</h3>');
     expect(approval).toContain('aria-label="Freigabe erforderlich: Mail-Entwurf erstellen"');
-    expect(approval).toContain(">Wird erst nach deiner Freigabe ausgeführt</p>");
+    expect(approval).toContain(">E-Mail · Wird erst nach deiner Freigabe ausgeführt</p>");
     expect(approval).toContain(">Ablehnen</span>");
     expect(approval).toContain('<span class="k2b-button__label">Mail-Entwurf erstellen</span>');
     expect(approval).toContain("Weitere Optionen für Mail-Entwurf erstellen");
@@ -929,8 +928,8 @@ describe("capability tool presentation", () => {
 
     // English readers keep the English chrome around whatever title the server presented.
     const english = render(block("awaiting_approval"), "en");
-    expect(english).toContain(">Contacts · List contacts</h3>");
-    expect(english).toContain(">Runs only after you approve it</p>");
+    expect(english).toContain('ai-approval__title">List contacts</h3>');
+    expect(english).toContain(">Contacts · Runs only after you approve it</p>");
     expect(english).toContain(">Reject</span>");
     expect(english).not.toContain("Ablehnen");
   });

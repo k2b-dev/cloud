@@ -447,6 +447,35 @@ describe("assistant CLI", () => {
     expect(requests.every((request) => Boolean(request.idempotencyKey))).toBe(true);
   });
 
+  test("lists a pending approval by what it does in the app's words, with the model's reason on the same line", async () => {
+    const request = createContext(["actions", "list", "chat-1", "turn-1"], async (path) => {
+      expect(String(path)).toBe("/api/ai/conversations/chat-1/pending-actions/turn-1");
+      return json([
+        {
+          type: "approval_request",
+          conversationId: "chat-1",
+          turnId: "turn-1",
+          callId: "call-1",
+          name: "mail__action__draft_dot_create",
+          args: { to: [{ name: "Jana Berger", address: "jana@example.com" }] },
+          message: "E-Mail: Entwurf an Jana Berger erstellen\nWarum: Jana hat um das Angebot gebeten.",
+          allowAlways: false,
+        },
+      ]);
+    });
+    const rows: unknown[] = [];
+    request.ctx.table = (values) => void rows.push(...values);
+    await assistantCli.run(request.ctx);
+    expect(rows).toEqual([
+      {
+        call: "call-1",
+        type: "approval_request",
+        name: "mail__action__draft_dot_create",
+        detail: "E-Mail: Entwurf an Jana Berger erstellen · Warum: Jana hat um das Angebot gebeten.",
+      },
+    ]);
+  });
+
   test("shows the task scheduling timezone", async () => {
     const request = createContext(["tasks", "status"], async (path) => {
       expect(String(path)).toBe("/api/ai/tasks/status");
