@@ -75,20 +75,29 @@ the action requires browser state or direct user interaction.
 
 ### Run an optional tool in a local CLI
 
-The interactive Assistant CLI may opt one turn into the predefined
-`local_bash` client tool with `cld assistant --allow-bash`. AI Core persists
-the tool call and its result, but it never executes the command. The CLI shows
-the exact command and asks for confirmation before starting `/bin/bash` as the
-current OS user in the CLI's startup directory.
+Interactive `cld assistant` offers the predefined `local_bash` client tool
+by default in `ask` mode. `--no-bash` selects `off`; `--allow-bash` selects
+`ask` even when the profile default is `off`. `/permissions` changes the mode
+for the next turn and can save the profile default. Only `off` is stored;
+saving `ask` removes it, so a saved default can only restrict access.
 
-The Assistant web app does not advertise or execute this tool. It still shows
-persisted local Bash calls and results in conversation history. A pending call
-is read-only there and can be continued only by an opted-in local CLI.
+AI Core persists calls and results but never executes a command. The CLI shows
+the exact command and asks `Run? [y/N]` before starting Bash as your OS user
+in the startup directory. Enter denies. Bash receives no `CLD_*` environment
+variables; other variables stay available. Commands and output are stored in
+the chat and sent to the model. There is no remembered or non-interactive Bash
+approval. A pending Bash call continued in `off` mode is denied.
 
-Local command output is stored with the conversation and sent to the selected
-model. Treat retrieved mail, webpages, files, and tool output as untrusted:
-`--allow-bash` exposes the tool for the session, but never approves an
-individual command. There is no remembered or non-interactive Bash approval.
+The web app shows persisted local Bash history but neither advertises nor
+executes it. Retrieved mail, webpages, files, and tool output remain untrusted;
+review every command before approving it.
+
+Cloud approvals in cld use numbered **Approve once**, **Approve for this
+chat**, and **Always approve** choices where allowed; Enter rejects. When only
+one-time approval is available, the prompt uses `y/N`. Typed-ahead or pasted input never answers these questions.
+Websites cannot be remembered from cld. `/approvals` and `cld assistant
+approvals list|revoke` list and revoke remembered approvals, including websites
+saved in the web; `list --chat <chat-id>` selects approvals limited to that chat.
 
 ## Set the approval policy
 

@@ -3,6 +3,7 @@ import { CODE_RUNTIME_TOOL_NAMES, type CodeToolFailure, parseAiSse } from "@k2b/
 import type { CloudCliContext } from "@k2b/cloud/cli";
 import type { CapabilityDecision, CodeApproval } from "../artifacts/runtime/capabilities";
 import { printCapabilityTable } from "./capability-table";
+import { createCloudLinkRewriter } from "./cloud-links";
 import { cliCodeHost, closeCliCodeHost } from "./code-host";
 import { printDeliveredBlock } from "./delivered-blocks";
 import { AI_API, jsonRequest } from "./shared";
@@ -24,6 +25,7 @@ export type AssistantTurnOutput = {
   blocks: PrintedBlock[];
   ids: Map<string, PrintedBlock>;
   closed: boolean;
+  links?: ReturnType<typeof createCloudLinkRewriter>;
   toolStatuses: Map<string, Extract<AiTurnBlock, { kind: "tool" }>["status"]>;
   renderedTables: Set<string>;
   namedFiles: Set<string>;
@@ -88,6 +90,11 @@ export const streamAssistantTurn = async (input: {
   const output = input.output ?? createAssistantTurnOutput();
   const { blocks: printedBlocks, ids, toolStatuses, renderedTables, namedFiles } = output;
   const blocks = new Map<string, AiTurnBlock>();
+  const writeText = (text: string) => {
+    output.links ??= createCloudLinkRewriter(ctx.options.server);
+    const rewritten = output.links.push(text);
+    if (rewritten) ctx.write(terminalSafeModelText(rewritten));
+  };
   const emitTable = (callId: string, result: unknown) => {
     if (ctx.options.output !== "text" || renderedTables.has(callId)) return;
     if (printCapabilityTable(ctx, result)) renderedTables.add(callId);
@@ -109,7 +116,7 @@ export const streamAssistantTurn = async (input: {
     printedBlocks.push(block);
     if (id !== undefined) ids.set(id, block);
     emittedText += separator + text;
-    if (ctx.options.output === "text") ctx.write(separator + terminalSafeModelText(text));
+    if (ctx.options.output === "text") writeText(separator + text);
     if (id !== undefined && jsonlDeltas) emitJsonLine({ type: "text_delta", blockId: id, delta: text });
   };
   const extend = (block: PrintedBlock, text: string, jsonlDeltas = true) => {
@@ -119,7 +126,7 @@ export const streamAssistantTurn = async (input: {
     const suffix = current.slice(previous.length);
     block.text = text;
     emittedText += suffix;
-    if (ctx.options.output === "text") ctx.write(terminalSafeModelText(suffix));
+    if (ctx.options.output === "text") writeText(suffix);
     if (block.id !== undefined && jsonlDeltas) emitJsonLine({ type: "text_delta", blockId: block.id, delta: suffix });
   };
   const emitLiveText = (id: string, text: string) => {
@@ -176,9 +183,13 @@ export const streamAssistantTurn = async (input: {
       assistantTextParts(result.messages).map((text) => ({ text })),
       false,
     );
-    if (ctx.options.output === "text" && (result.text || emittedText)) {
-      ctx.write("\n");
-      output.closed = true;
+    if (ctx.options.output === "text") {
+      const tail = result.status === "needs_attention" ? "" : (output.links?.flush() ?? "");
+      if (tail) ctx.write(terminalSafeModelText(tail));
+      if (result.text || emittedText || tail) {
+        ctx.write("\n");
+        output.closed = true;
+      }
     }
     return result;
   };

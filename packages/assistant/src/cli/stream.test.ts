@@ -471,3 +471,49 @@ describe("Assistant CLI stream", () => {
     ]);
   });
 });
+
+test("streamed Cloud links are rewritten across deltas and reconnects only in text output", async () => {
+  const text = "[Mail](/app/mail/x) [Other](//external.test/x)";
+  const events = () => [
+    [delta("link", "[Mail]"), delta("link", "(")],
+    [
+      state([{ id: "saved", kind: "text", text: "[Mail](" }]),
+      delta("saved", "/"),
+      delta("saved", "app/mail/x) [Other](//external.test/x)"),
+      finished([text]),
+    ],
+  ];
+  const reply = await run(events());
+  expect(reply.text).toBe("[Mail](http://example.test/app/mail/x) [Other](//external.test/x)\n");
+  expect(reply.result.text).toBe(text);
+  expect((await run(events(), "json")).text).toBe("");
+  const jsonl = await run(events(), "jsonl");
+  expect(textDeltas(jsonl.lines).join("")).not.toContain("http://example.test");
+  expect(jsonl.result.text).toBe(text);
+});
+
+test("stream finish flushes incomplete link delimiters", async () => {
+  expect((await run([[delta("link", "[Mail]("), finished(["[Mail]("])]])).text).toBe("[Mail](\n");
+});
+
+test("link delimiter state persists through approval resumes of the same turn", async () => {
+  const output = createAssistantTurnOutput();
+  const approval: AiTurnBlock = { id: "tool", kind: "tool", callId: "call", name: "mail.draft.send", status: "awaiting_approval" };
+  const first = await run([[delta("link", "[Mail]("), { ...wire(), type: "block_set", block: approval }]], "text", undefined, output);
+  const second = await run(
+    [[state([{ id: "saved", kind: "text", text: "[Mail](" }]), delta("saved", "/app/mail/x)"), finished(["[Mail](/app/mail/x)"])]],
+    "text",
+    undefined,
+    output,
+  );
+  expect(first.text).toBe("[Mail\n");
+  expect(second.text).toBe("](http://example.test/app/mail/x)\n");
+});
+
+test("finishing without new text flushes a delimiter held before approval", async () => {
+  const output = createAssistantTurnOutput();
+  const approval: AiTurnBlock = { id: "tool", kind: "tool", callId: "call", name: "mail.draft.send", status: "awaiting_approval" };
+  await run([[delta("link", "[Mail]"), { ...wire(), type: "block_set", block: approval }]], "text", undefined, output);
+  const second = await run([[finished([])]], "text", undefined, output);
+  expect(second.text).toBe("]\n");
+});

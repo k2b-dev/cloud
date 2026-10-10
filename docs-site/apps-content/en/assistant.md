@@ -379,19 +379,24 @@ messages confirm non-error state changes such as attachments, model selection,
 and stopped turns. Run `/model` without an argument to select an available
 model by number. The model remains active for the session.
 
-Use `cld assistant --allow-bash` when the Assistant must work on the computer
-running the CLI. This exposes a local Bash tool only for that interactive
-session. Every requested command is shown and requires a fresh `y`; Enter
-denies it. Commands run with the current OS user's permissions in the CLI's
-startup directory, and their bounded output is stored in the chat and sent to
-the model. The web app can display these calls later but cannot run them.
+Interactive `cld assistant` offers local tools by default in `ask` mode.
+Use `--no-bash` or `/permissions off` to stop offering them; `--allow-bash`
+selects `ask` for this session even when the profile default is `off`.
+`/permissions` can save the profile default: only `off` is stored, and saving
+`ask` removes it. Every local Bash command is shown and needs a fresh `y`;
+Enter denies. Bash runs as your OS user in the start folder without `CLD_*`
+environment variables. Other variables stay available. Commands and output go
+to this chat and the model. The web app shows the history but cannot run Bash.
+Local Bash is never approved non-interactively and is never remembered.
 
-Every approval in the interactive CLI asks in one shape, such as
-`Approve? [y/N]`: `y` or `yes` approves once, and Enter, `n`, or `no` denies.
-Answers ignore case, and any other answer asks again. The CLI offers `a` or
-`always` for **Always approve** only when the pending Capability Action
-supports remembered approval. Print mode never creates a
-remembered approval, and local Bash always requires a fresh confirmation.
+Cloud approvals use numbered **Approve once**, **Approve for this chat**, and
+**Always approve** choices where allowed; Enter rejects. When only one-time
+approval is possible, `Approve? [y/N]` accepts `y` or `yes` and rejects Enter,
+`n`, or `no`. Typed-ahead or pasted input never answers a question. Websites
+cannot be remembered from cld. Use `/approvals` or `cld assistant approvals
+list|revoke` to review and revoke remembered Cloud approvals, including
+websites saved in the web. `list --chat <chat-id>` lists only that chat's
+approvals. Print mode never creates a remembered approval.
 
 Start with these read-only checks before choosing a model or continuing a chat:
 

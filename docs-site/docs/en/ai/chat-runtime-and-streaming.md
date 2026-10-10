@@ -188,8 +188,9 @@ durable turn action. Feedback asks the model for a replacement draft instead of
 accepting the current source. Neither result saves a domain resource or
 approves a later Capability Action such as updating or sending mail.
 
-An interactive Assistant CLI turn may additionally request the fixed
-`local_bash` client tool. It is not part of the default set: Cloud persists and
+Interactive `cld assistant` offers the fixed `local_bash` client tool by
+default in local tools mode `ask`; `--no-bash` or `/permissions off` disables it.
+It is not part of the platform's default tool set: Cloud persists and
 streams its calls but has no shell executor, and browser clients neither opt in
 nor register a handler. See the local CLI boundary in
 [Tools and approvals](/en/docs/ai/tools-and-approvals#run-an-optional-tool-in-a-local-cli).

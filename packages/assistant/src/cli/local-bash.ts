@@ -35,11 +35,11 @@ export const parseLocalBashInput = (value: unknown): CloudAiLocalBashInput | nul
   return parsed.success ? parsed.data : null;
 };
 
-export const deniedLocalBashResult = (): CloudAiLocalBashOutput => ({
+export const deniedLocalBashResult = (reason = "User denied this command."): CloudAiLocalBashOutput => ({
   status: "denied",
   exitCode: null,
   stdout: "",
-  stderr: "User denied this command.",
+  stderr: reason,
   truncated: false,
 });
 
@@ -54,7 +54,7 @@ export const runLocalBash = async (
     const child = Bun.spawn({
       cmd: ["/bin/bash", "-lc", command],
       cwd: options.cwd ?? process.cwd(),
-      env: process.env,
+      env: Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("CLD_"))),
       stdin: "ignore",
       stdout: "pipe",
       stderr: "pipe",

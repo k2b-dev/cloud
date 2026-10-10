@@ -786,6 +786,10 @@ describe("assistant CLI", () => {
     const lines = ["hello", "again", "/exit"];
     const prompts: string[] = [];
     const reader = {
+      readMessage: async (prompt: string) => {
+        prompts.push(prompt);
+        return lines.shift() ?? null;
+      },
       read: async (prompt: string) => {
         prompts.push(prompt);
         return lines.shift() ?? null;
@@ -853,6 +857,7 @@ describe("assistant CLI", () => {
     });
     const lines = ["/model", "2", "Summarize this", "Continue", "/exit"];
     const reader = {
+      readMessage: async () => lines.shift() ?? null,
       read: async () => lines.shift() ?? null,
       close: () => undefined,
       onInterrupt: () => () => undefined,
@@ -860,8 +865,8 @@ describe("assistant CLI", () => {
 
     expect(await runInteractiveAssistant(ctx, {}, reader)).toBe(0);
     expect(turnBodies).toEqual([
-      { draftRevision: 1, modelProfileId: "model-2", clientToolIds: [...CODE_RUNTIME_TOOL_NAMES] },
-      { draftRevision: 2, modelProfileId: "model-2", clientToolIds: [...CODE_RUNTIME_TOOL_NAMES] },
+      { draftRevision: 1, modelProfileId: "model-2", clientToolIds: ["local_bash", ...CODE_RUNTIME_TOOL_NAMES] },
+      { draftRevision: 2, modelProfileId: "model-2", clientToolIds: ["local_bash", ...CODE_RUNTIME_TOOL_NAMES] },
     ]);
     const output = stdout.join("");
     expect(output).toContain("Assistant · Model One · /help for commands");
@@ -973,9 +978,13 @@ describe("assistant CLI", () => {
       }
       return json({ message: "Not found" }, 404);
     });
-    const lines = ["hello", "maybe", "a", "/exit"];
+    const lines = ["hello", "maybe", "2", "/exit"];
     const prompts: string[] = [];
     const reader = {
+      readMessage: async (prompt: string) => {
+        prompts.push(prompt);
+        return lines.shift() ?? null;
+      },
       read: async (prompt: string) => {
         prompts.push(prompt);
         return lines.shift() ?? null;
@@ -986,7 +995,7 @@ describe("assistant CLI", () => {
 
     expect(await runInteractiveAssistant(ctx, {}, reader)).toBe(0);
     expect(approvalBody).toEqual({ type: "approval_response", approved: true, remember: "always" });
-    expect(prompts.filter((prompt) => prompt.startsWith("Approve"))).toEqual(["Approve? [y/N/a=always]: ", "Approve? [y/N/a=always]: "]);
+    expect(prompts.filter((prompt) => prompt.startsWith("Choice"))).toEqual(["Choice [Enter to reject]: ", "Choice [Enter to reject]: "]);
     const printed = stdout.join("");
     expect(printed).toContain("Approval required: Create draft\\u001b]8;;https://evil.example\\u0007");
     expect(printed).toContain('"subject": "Hello\\u009b2J\\u202e"');
@@ -1027,7 +1036,7 @@ describe("assistant CLI", () => {
     expect(await collectCapabilityApproval(ctx, reader, request)).toEqual({ approved: true });
   });
 
-  test("offers local Bash only for opted-in turns and persists a denial", async () => {
+  test("offers local Bash in ask mode and persists a denial", async () => {
     let streamIndex = 0;
     let turnBody: Record<string, unknown> | undefined;
     let actionBody: unknown;
@@ -1104,6 +1113,7 @@ describe("assistant CLI", () => {
     });
     const lines = ["inspect this checkout", "", "/exit"];
     const reader = {
+      readMessage: async () => lines.shift() ?? null,
       read: async () => lines.shift() ?? null,
       close: () => undefined,
       onInterrupt: () => () => undefined,
@@ -1205,6 +1215,7 @@ describe("assistant CLI", () => {
     });
     const lines = ["n", "/exit"];
     const reader = {
+      readMessage: async () => lines.shift() ?? null,
       read: async () => lines.shift() ?? null,
       close: () => undefined,
       onInterrupt: () => () => undefined,
