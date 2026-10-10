@@ -585,6 +585,10 @@
   .dashboard-gallery-card__preview {
     height: 11.5rem;
   }
+
+  .dashboard-gallery .dashboard-gallery-card__actions .k2b-segmented-control[data-size] .k2b-segmented-control__option {
+    min-height: 2.75rem;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

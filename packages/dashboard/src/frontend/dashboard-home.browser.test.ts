@@ -555,6 +555,12 @@ describe("the dashboard board in a browser", () => {
 
         const card = dialog.locator('.dashboard-gallery-card[data-key="weather/current"]');
         await card.locator('.k2b-widget[data-size="fill"]').getByText("14°C").waitFor();
+        if (view === phone) {
+          const heights = await card
+            .locator(".k2b-segmented-control__option")
+            .evaluateAll((options) => options.map((option) => Math.round(option.getBoundingClientRect().height)));
+          expect(heights).toEqual([44, 44, 44]);
+        }
         expect(requests.flat()).toContainEqual({ key: "weather/current", size: "small" });
         await card.getByRole("radio", { name: "Medium" }).click();
         for (
