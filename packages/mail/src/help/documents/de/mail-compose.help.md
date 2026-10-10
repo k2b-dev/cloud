@@ -53,7 +53,7 @@ Ein E-Mail-Link kann An, Cc, Bcc, Betreff und einen Text ohne Formatierung ausf�
 - **Nur Text** hat keine Vorschau. Eine eigenständige Nachricht bleibt in einem Editor. Ein Entwurf in einer Unterhaltung zeigt **Verfassen** und **Verlauf**.
 :::
 
-Mail sendet Markdown als lesbares HTML mit dem E-Mail-Design des Postfachs und einer Textalternative. Nur Text sendet keine HTML-Alternative. Du kannst die verfügbaren Bereiche anordnen. Mail hält das Layout passend, wenn ein anderer Entwurf andere Bereiche anbietet.
+Mail sendet Markdown als lesbares HTML mit dem E-Mail-Design des Postfachs und einer Textalternative. Nur Text sendet keine HTML-Alternative. Kann die **Vorschau** die Nachricht nicht zeigen, etwa weil sie zu lang ist, nennt sie den Grund und bietet **Erneut versuchen** an. Du kannst die verfügbaren Bereiche anordnen. Mail hält das Layout passend, wenn ein anderer Entwurf andere Bereiche anbietet.
 
 Der Verlauf lädt erst, wenn du ihn öffnest. Mail klappt zuerst die neueste Nachricht auf. Du kannst mehrere Nachrichten unabhängig auf- und zuklappen, und Mail lädt frühere Zusammenfassungen seitenweise. Eine vollständige Nachricht lädt Mail erst, wenn du sie aufklappst. Links und Anhänge haben denselben Sicherheitsschutz wie in der Leseansicht.
 
@@ -107,7 +107,7 @@ Tippe im Text `/`, um verfügbare Signaturen und Textbausteine zu suchen. Mail f
 - **Privat:** Nur die Person, der die Vorlage gehört, sieht sie.
 - **Postfach:** Die Vorlage ist mit anderen im Team geteilt.
 
-Hat eine bestätigte Absenderidentität eine Standardsignatur, fügt Mail sie automatisch in neue Nachrichten, Antworten und Weiterleitungen ein. In einer Antwort oder Weiterleitung setzt Mail die Signatur vor den zitierten Verlauf. Ein persönlicher Standard ersetzt für diese Absenderidentität den Standard des Postfachs. Den eingefügten Quelltext kannst du weiter bearbeiten. Signaturen sind weder Pflicht noch gesperrt.
+Hat eine bestätigte Absenderidentität eine Standardsignatur, fügt Mail sie automatisch in neue Nachrichten, Antworten und Weiterleitungen ein. In einer Antwort oder Weiterleitung setzt Mail die Signatur vor den zitierten Verlauf. Ein persönlicher Standard ersetzt für diese Absenderidentität den Standard des Postfachs. Den eingefügten Quelltext kannst du weiter bearbeiten. Signaturen sind weder Pflicht noch gesperrt. Löschst du nur einen Teil einer Signatur, erkennt Mail den Rest vielleicht nicht mehr als Signatur. Mail versendet den Rest dann so, wie er dasteht, und warnt dich vor dem Senden vor den Platzhaltern darin.
 
 Mit Zugriff **Verwalten** änderst du Vorlagen und Standards unter **Einstellungen → Schreiben**. Wähle dort **Design bearbeiten**, um den CSS-Editor des Postfachs zu öffnen. Seine Vorschau aktualisiert sich aus dem aktuellen, nicht gespeicherten CSS. Die **Vorschau** im Editor nutzt dieselbe Darstellung wie die Zustellung.
 

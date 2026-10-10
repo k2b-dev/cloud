@@ -5,6 +5,7 @@ import juice from "juice";
 import postcss from "postcss";
 import selectorParser from "postcss-selector-parser";
 import sanitizeHtml from "sanitize-html";
+import { composeRenderFailure } from "./compose-render-errors";
 import { allowedEmailInlineStyles, allowedEmailInlineStyleValue, EMAIL_INLINE_STYLE_PROPERTY_SET } from "./email-inline-style-policy";
 import { renderMailLiquidTemplate, validateMailLiquidTemplate } from "./template-rendering";
 
@@ -23,8 +24,13 @@ const MAX_MARKDOWN_LINES = 5_000;
 const MAX_MARKDOWN_SYNTAX_MARKERS = 12_000;
 const MAX_RENDERED_SOURCE_BYTES = 3 * 1024 * 1024;
 const MAIL_CONTENT_CLASS = "mail-content";
+// Invisible marks around an inserted signature: the text between a matching pair stays a template until preview and send.
 const COMPOSE_SEGMENT_START = "\u2063";
 const COMPOSE_SEGMENT_END = "\u2064";
+const COMPOSE_SEGMENT_MARKS = /[\u2063\u2064]/g;
+// A segment is a start mark followed by an end mark with no other mark between them; every other mark is a leftover.
+const COMPOSE_SEGMENT = /\u2063([^\u2063\u2064]*)\u2064/g;
+const COMPOSE_SEGMENT_OR_LEFTOVER_MARK = /(\u2063[^\u2063\u2064]*\u2064)|[\u2063\u2064]/g;
 
 const ALLOWED_TAGS = new Set<string>(EMAIL_HTML_TAGS);
 const INLINED_EMAIL_ATTRIBUTES = Object.fromEntries(
@@ -190,19 +196,19 @@ const validateMarkdownSourceComplexity = (source: string): Result<void> => {
   for (const line of source.split("\n")) {
     lines += 1;
     if (lines > MAX_MARKDOWN_LINES) {
-      return fail(err.badInput(`Markdown email may contain at most ${MAX_MARKDOWN_LINES} lines`));
+      return fail(composeRenderFailure("tooManyLines", MAX_MARKDOWN_LINES));
     }
     const blank = line.trim().length === 0;
     if (!blank && previousLineBlank) blocks += 1;
     if (!blank && /^\s*(?:#{1,6}\s|[-*+]\s|\d+\.\s|>\s|```|~~~|\|)/.test(line)) blocks += 1;
     if (blocks > MAX_MARKDOWN_BLOCKS) {
-      return fail(err.badInput(`Markdown email may contain at most ${MAX_MARKDOWN_BLOCKS} blocks`));
+      return fail(composeRenderFailure("tooComplex"));
     }
     previousLineBlank = blank;
     for (const character of line) {
       if ("\\`*_{}[]()<>#+-.!|>~".includes(character)) syntaxMarkers += 1;
       if (syntaxMarkers > MAX_MARKDOWN_SYNTAX_MARKERS) {
-        return fail(err.badInput("Markdown email is too complex to render safely"));
+        return fail(composeRenderFailure("tooComplex"));
       }
     }
   }
@@ -234,21 +240,49 @@ export const markComposeTemplateSegment = (source: string): string => `${COMPOSE
 
 const TEMPLATE_SYNTAX = /\{\{|\{%/;
 
+type ComposeBodyPart = { template: boolean; text: string };
+
 /**
- * Reports Liquid syntax that sits outside a marked template segment and would therefore be sent verbatim.
+ * Splits a draft body into plain text and marked segments, one part at a time, so a caller that stops at the
+ * segment cap never reads the rest of the body.
+ *
+ * A mark outside a segment is left over from a signature that was partly deleted or pasted: it is dropped and
+ * its text stays plain.
+ */
+function* composeBodyParts(body: string): Generator<ComposeBodyPart> {
+  let cursor = 0;
+  for (const match of body.matchAll(COMPOSE_SEGMENT)) {
+    const plain = body.slice(cursor, match.index).replace(COMPOSE_SEGMENT_MARKS, "");
+    if (plain) yield { template: false, text: plain };
+    yield { template: true, text: match[1] ?? "" };
+    cursor = match.index + match[0].length;
+  }
+  const plain = body.slice(cursor).replace(COMPOSE_SEGMENT_MARKS, "");
+  if (plain) yield { template: false, text: plain };
+}
+
+/**
+ * Whether a marked segment is filled in as a signature. A segment that is no valid signature template, such
+ * as the rest of a partly deleted one, is sent as written, so a hand edit never stops a draft from sending.
+ */
+const isSignatureTemplate = (source: string): boolean => validateComposeTemplateSource(source).ok;
+
+/** Removes leftover marks of partly deleted signatures, so saved drafts keep only complete signature segments. */
+export const removeOrphanComposeSegmentMarks = (body: string): string => body.replace(COMPOSE_SEGMENT_OR_LEFTOVER_MARK, "$1");
+
+/**
+ * Reports Liquid syntax that would be sent verbatim: outside a marked segment, or in a segment that is no
+ * valid signature template.
  *
  * Bodies that left Cloud as a provider draft and came back from another client lose their segment markers,
  * so their template text can no longer be rendered and must be reviewed instead.
  */
 export const hasUnrenderedTemplateSyntax = (body: string): boolean => {
-  let cursor = 0;
-  while (cursor < body.length) {
-    const start = body.indexOf(COMPOSE_SEGMENT_START, cursor);
-    if (start < 0) return TEMPLATE_SYNTAX.test(body.slice(cursor));
-    if (TEMPLATE_SYNTAX.test(body.slice(cursor, start))) return true;
-    const end = body.indexOf(COMPOSE_SEGMENT_END, start + COMPOSE_SEGMENT_START.length);
-    if (end < 0) return TEMPLATE_SYNTAX.test(body.slice(start + COMPOSE_SEGMENT_START.length));
-    cursor = end + COMPOSE_SEGMENT_END.length;
+  let segmentCount = 0;
+  for (const part of composeBodyParts(body)) {
+    // Like the renderer, stop at the segment cap: a body with more segments is not sent at all.
+    if (part.template && ++segmentCount > MAX_COMPOSE_TEMPLATE_SEGMENTS) return false;
+    if (TEMPLATE_SYNTAX.test(part.text) && !(part.template && isSignatureTemplate(part.text))) return true;
   }
   return false;
 };
@@ -268,75 +302,60 @@ const markdownToPlainText = (source: string): Result<string> => {
   }
 };
 
-const renderComposeTemplate = (
+/** Fills in a template that already passed `validateComposeTemplateSource`. */
+const fillComposeTemplate = (
   source: string,
   context: ComposeRenderContext,
   output: "plain" | "markdown" | "editable_markdown",
   renderTimeoutMs?: number,
 ): Result<string> => {
-  const valid = validateComposeTemplateSource(source);
-  if (!valid.ok) return valid;
   const rendered = renderMailLiquidTemplate(source, context, output === "editable_markdown" ? "editable_markdown" : "markdown", {
     renderTimeoutMs,
   });
   if (!rendered.ok && "reason" in rendered.error && rendered.error.reason === "render_too_large") {
-    return fail(err.badInput("Rendered email content exceeds the safe size limit"));
+    return fail(composeRenderFailure("tooLarge"));
   }
   if (!rendered.ok || output !== "plain") return rendered;
   return markdownToPlainText(rendered.data);
 };
 
 /** Resolves a snippet into draft source that the author reads and edits, so values appear as typed. */
-export const renderComposeTemplateSource = (source: string, context: ComposeRenderContext, format: "plain" | "markdown"): Result<string> =>
-  renderComposeTemplate(source, context, format === "markdown" ? "editable_markdown" : "plain");
+export const renderComposeTemplateSource = (
+  source: string,
+  context: ComposeRenderContext,
+  format: "plain" | "markdown",
+): Result<string> => {
+  const valid = validateComposeTemplateSource(source);
+  if (!valid.ok) return valid;
+  return fillComposeTemplate(source, context, format === "markdown" ? "editable_markdown" : "plain");
+};
 
 const renderComposeTemplateSegments = (source: string, context: ComposeRenderContext, format: "plain" | "markdown"): Result<string> => {
-  let cursor = 0;
   let outputBytes = 0;
   let segmentCount = 0;
   let remainingRenderMs = MAX_COMPOSE_RENDER_MS;
   const output: string[] = [];
-  const append = (value: string): Result<void> => {
+  for (const part of composeBodyParts(source)) {
+    let value = part.text;
+    if (part.template) {
+      segmentCount += 1;
+      if (segmentCount > MAX_COMPOSE_TEMPLATE_SEGMENTS) {
+        return fail(composeRenderFailure("tooManySignatures", MAX_COMPOSE_TEMPLATE_SEGMENTS));
+      }
+      if (isSignatureTemplate(part.text)) {
+        const renderStart = performance.now();
+        const rendered = fillComposeTemplate(part.text, context, format, Math.max(0, remainingRenderMs));
+        remainingRenderMs -= performance.now() - renderStart;
+        if (!rendered.ok) return "composeRender" in rendered.error ? rendered : fail(composeRenderFailure("signatureFailed"));
+        // A filled-in value may itself contain a mark; it must not reach the message.
+        value = rendered.data.replace(COMPOSE_SEGMENT_MARKS, "");
+      }
+    }
     outputBytes += sourceBytes(value);
-    if (outputBytes > MAX_RENDERED_SOURCE_BYTES) {
-      return fail(err.badInput("Rendered email content exceeds the safe size limit"));
-    }
+    if (outputBytes > MAX_RENDERED_SOURCE_BYTES) return fail(composeRenderFailure("tooLarge"));
     output.push(value);
-    return ok();
-  };
-  while (cursor < source.length) {
-    const start = source.indexOf(COMPOSE_SEGMENT_START, cursor);
-    if (start < 0) {
-      const tail = append(source.slice(cursor));
-      if (!tail.ok) return tail;
-      break;
-    }
-    const plain = append(source.slice(cursor, start));
-    if (!plain.ok) return plain;
-    const end = source.indexOf(COMPOSE_SEGMENT_END, start + COMPOSE_SEGMENT_START.length);
-    const nestedStart = source.indexOf(COMPOSE_SEGMENT_START, start + COMPOSE_SEGMENT_START.length);
-    if (end < 0 || (nestedStart >= 0 && nestedStart < end)) {
-      return fail(err.badInput("Email contains an invalid signature segment"));
-    }
-    segmentCount += 1;
-    if (segmentCount > MAX_COMPOSE_TEMPLATE_SEGMENTS) {
-      return fail(err.badInput(`Email may contain at most ${MAX_COMPOSE_TEMPLATE_SEGMENTS} signature segments`));
-    }
-    const renderStart = performance.now();
-    const rendered = renderComposeTemplate(
-      source.slice(start + COMPOSE_SEGMENT_START.length, end),
-      context,
-      format,
-      Math.max(0, remainingRenderMs),
-    );
-    remainingRenderMs -= performance.now() - renderStart;
-    if (!rendered.ok) return rendered;
-    const segment = append(rendered.data);
-    if (!segment.ok) return segment;
-    cursor = end + COMPOSE_SEGMENT_END.length;
   }
-  const cleaned = output.join("");
-  return cleaned.includes(COMPOSE_SEGMENT_END) ? fail(err.badInput("Email contains an invalid signature segment")) : ok(cleaned);
+  return ok(output.join(""));
 };
 
 export const renderComposeContent = (params: {
@@ -347,16 +366,14 @@ export const renderComposeContent = (params: {
   renderLiquid: boolean;
 }): Result<RenderedComposeContent> => {
   const css = validateComposeCss(params.customCss);
-  if (!css.ok) return css;
+  if (!css.ok) return fail(composeRenderFailure("mailboxStyle"));
 
   const renderedSource = params.renderLiquid
     ? renderComposeTemplateSegments(params.body, params.context, params.format)
-    : ok(params.body.replaceAll(COMPOSE_SEGMENT_START, "").replaceAll(COMPOSE_SEGMENT_END, ""));
+    : ok(params.body.replace(COMPOSE_SEGMENT_MARKS, ""));
   if (!renderedSource.ok) return renderedSource;
   const source = renderedSource.data;
-  if (sourceBytes(source) > MAX_RENDERED_SOURCE_BYTES) {
-    return fail(err.badInput("Rendered email content exceeds the safe size limit"));
-  }
+  if (sourceBytes(source) > MAX_RENDERED_SOURCE_BYTES) return fail(composeRenderFailure("tooLarge"));
   if (params.format === "plain") return ok({ html: null, text: source });
   const complexity = validateMarkdownSourceComplexity(source);
   if (!complexity.ok) return complexity;
@@ -369,11 +386,11 @@ export const renderComposeContent = (params: {
     });
     const elementCount = fragment.match(/<[a-z][^>]*>/gi)?.length ?? 0;
     if (elementCount > MAX_EMAIL_HTML_ELEMENTS) {
-      return fail(err.badInput(`Markdown email may contain at most ${MAX_EMAIL_HTML_ELEMENTS} rendered elements`));
+      return fail(composeRenderFailure("tooComplex"));
     }
     const effectiveCss = `${DEFAULT_MAIL_CSS}\n${css.data}`;
     if (sourceBytes(fragment) + Math.max(elementCount, 1) * sourceBytes(effectiveCss) > MAX_INLINE_WORK_BYTES) {
-      return fail(err.badInput("Email content and CSS are too complex to inline safely"));
+      return fail(composeRenderFailure("tooComplex"));
     }
     const inlined = juice.inlineContent(`<div class="${MAIL_CONTENT_CLASS}">${fragment}</div>`, effectiveCss, {
       applyStyleTags: false,
@@ -382,18 +399,15 @@ export const renderComposeContent = (params: {
       preserveFontFaces: false,
       preserveKeyFrames: false,
     });
-    if (sourceBytes(inlined) > MAX_RENDERED_SOURCE_BYTES) {
-      return fail(err.badInput("Rendered email content exceeds the safe size limit"));
-    }
+    if (sourceBytes(inlined) > MAX_RENDERED_SOURCE_BYTES) return fail(composeRenderFailure("tooLarge"));
+    // Markdown turns character references such as `&#8291;` into marks; they must not reach the message either.
     const html = sanitizeHtml(inlined, {
       allowedTags: [...EMAIL_HTML_TAGS],
       allowedAttributes: INLINED_EMAIL_ATTRIBUTES,
       allowedSchemes: [...EMAIL_HTML_ALLOWED_SCHEMES],
       allowedStyles: allowedEmailInlineStyles(EMAIL_HTML_TAGS),
-    });
-    if (sourceBytes(html) > MAX_RENDERED_SOURCE_BYTES) {
-      return fail(err.badInput("Rendered email content exceeds the safe size limit"));
-    }
+    }).replace(COMPOSE_SEGMENT_MARKS, "");
+    if (sourceBytes(html) > MAX_RENDERED_SOURCE_BYTES) return fail(composeRenderFailure("tooLarge"));
     return ok({
       html,
       text: convert(html, {
@@ -402,6 +416,6 @@ export const renderComposeContent = (params: {
       }).trimEnd(),
     });
   } catch {
-    return fail(err.badInput("Message could not be converted to safe email HTML"));
+    return fail(composeRenderFailure("conversionFailed"));
   }
 };

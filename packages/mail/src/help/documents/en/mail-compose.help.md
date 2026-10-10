@@ -53,7 +53,7 @@ Open **Message options** and choose the format for the current draft:
 - **Plain text** has no Preview pane. A standalone message stays in one editor. A conversation draft shows **Write** and **History**.
 :::
 
-Mail sends Markdown as readable HTML with the mailbox email design and a text alternative. Plain text sends no HTML alternative. You can arrange the available panes. Mail keeps the layout compatible when another draft offers a different set of panes.
+Mail sends Markdown as readable HTML with the mailbox email design and a text alternative. Plain text sends no HTML alternative. If the Preview cannot show the message, for example because it is too long, it says why and offers **Retry**. You can arrange the available panes. Mail keeps the layout compatible when another draft offers a different set of panes.
 
 History loads only when you open it. Mail first expands the newest message. You can expand or collapse several messages independently, and Mail loads earlier summaries page by page. Mail loads a complete message only when you expand it. Links and attachments have the same security protection as in the conversation reader.
 
@@ -107,7 +107,7 @@ Type `/` in the body to search available signatures and snippets. Mail inserts t
 - **Private:** Only the owner sees the template.
 - **Mailbox:** The template is shared with collaborators.
 
-When a verified sender has a default signature, Mail inserts it automatically into new messages, replies, and forwards. In a reply or forward, Mail places the signature before the quoted message history. A personal default replaces the mailbox default for that sender. You can still edit the inserted source. Signatures are not mandatory or locked.
+When a verified sender has a default signature, Mail inserts it automatically into new messages, replies, and forwards. In a reply or forward, Mail places the signature before the quoted message history. A personal default replaces the mailbox default for that sender. You can still edit the inserted source. Signatures are not mandatory or locked. If you delete only part of a signature, Mail may no longer recognize the rest as a signature. Mail then sends the rest as written and warns you about any placeholders in it before sending.
 
 With **Manage** access, you change templates and defaults in **Settings → Writing**. Choose **Edit design** there to open the mailbox CSS editor. Its preview updates from the current unsaved CSS. The Preview in the composer uses the same rendering as delivery.
 

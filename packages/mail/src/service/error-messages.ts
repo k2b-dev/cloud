@@ -1,3 +1,5 @@
+import { localizedComposeRenderMessage } from "./compose-render-errors";
+
 type HumanFacingError = { code: string; message: string; status: number };
 
 /** Longest error detail shown to people after a generic message. */
@@ -44,6 +46,8 @@ const genericGermanMessage = (error: HumanFacingError): string => {
 
 /** Localizes a final API or capability error while preserving its stable code and status. */
 export const localizeMailError = <T extends HumanFacingError>(error: T, locale?: string | null): T => {
+  const renderMessage = localizedComposeRenderMessage(error, locale ?? "en");
+  if (renderMessage) return { ...error, message: renderMessage };
   const normalizedLocale = locale?.toLowerCase();
   if (normalizedLocale !== "de" && !normalizedLocale?.startsWith("de-")) return error;
   if (error.code === "NOT_FOUND" && error.message === "Mailbox not found")

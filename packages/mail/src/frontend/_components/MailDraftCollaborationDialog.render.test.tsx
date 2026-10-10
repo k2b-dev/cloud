@@ -77,7 +77,7 @@ describe("MailDraftCollaborationDialog", () => {
     expect(html).toContain('datetime="2026-08-18T12:00:00.000Z"');
     expect(html).toContain("View read-only");
     expect(html).toContain("Take over");
-    expect(html).toContain("flex-col-reverse");
+    expect(html).toContain("flex-wrap-reverse");
     expect(html.match(/<button/g)).toHaveLength(2);
     expect(choices).toEqual([]);
   });

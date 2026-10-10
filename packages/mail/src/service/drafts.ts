@@ -44,6 +44,7 @@ import {
 import { attachmentMimeOrder } from "./attachment-order";
 import { actorRefFromRequest, type MailRequestContext } from "./auth";
 import { sha256Json } from "./canonical";
+import { removeOrphanComposeSegmentMarks } from "./compose-renderer";
 import { resolveDefaultSignatureSource } from "./compose-templates";
 import { applyConversationReferenceToReplySubjectInTransaction } from "./conversation-reference";
 import { requireDraftLeaseAvailable, withOwnedDraftLease } from "./draft-leases";
@@ -53,9 +54,15 @@ import { mailLive } from "./live";
 import type { AttachmentDownload } from "./messages";
 
 const InternalIdSchema = z.string().uuid();
-const internalDraftEditableContentSchema = draftEditableContentInputSchema.extend({ senderIdentityId: InternalIdSchema });
+// Every saved body keeps only complete signature segments, so marks left by a hand edit do not pile up.
+const savedDraftBodySchema = draftEditableContentInputSchema.shape.body.transform(removeOrphanComposeSegmentMarks);
+const internalDraftEditableContentSchema = draftEditableContentInputSchema.extend({
+  senderIdentityId: InternalIdSchema,
+  body: savedDraftBodySchema,
+});
 const internalDraftContentSchema = draftContentInputSchema.extend({
   senderIdentityId: InternalIdSchema,
+  body: savedDraftBodySchema,
   conversationId: InternalIdSchema.nullable().optional(),
   sourceMessageId: InternalIdSchema.nullable().optional(),
 });
