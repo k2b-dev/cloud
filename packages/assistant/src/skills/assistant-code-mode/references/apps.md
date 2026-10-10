@@ -65,7 +65,8 @@ every call; `cloud.money.*`, `cloud.chart()` and `cloud.html` are synchronous.
 
 - No network, no `fetch`, no `localStorage`; use `cloud.*`. `cloud.http.fetch`
   asks the person before a request, unless they allowed that website for the
-  app; that covers only GET or HEAD without body or headers.
+  app; that covers only reads: GET or HEAD without a body, with at most the
+  harmless headers listed in `http.md` and no secret.
 - `alert`, `confirm`, `prompt` and `document.write` throw; ask with a `<dialog>` (below).
 - Cloud removes every `<link>` element, also ones added from JavaScript. Put CSS
   into `style.css`.

@@ -2,7 +2,8 @@ import { Button, Dropdown, NoticeCard, Placeholder, prompts, Select, SplitButton
 import { createResource, createSignal, For, onCleanup, Show } from "solid-js";
 import { listApprovalPreferences, revokeApprovalPreference } from "./approval-preferences";
 import { artifactClient } from "./client";
-import { type HttpScope, type SecretMetadata, SecretSave } from "./http-contracts";
+import { httpApprovalNotice } from "./code-approval-message";
+import { type HttpScope, isWebsiteRead, type SecretMetadata, SecretSave } from "./http-contracts";
 import type { HttpApproval, HttpHost } from "./http-host";
 import { artifactMessages } from "./messages";
 import { secretDialogMessages } from "./secret-dialog-messages";
@@ -424,7 +425,11 @@ export const browserHttpHost: HttpHost = {
         };
         return (
           <div class="flex flex-col gap-3">
-            <NoticeCard tone="warning" title={request.resourceTitle ?? t().httpRequest} detail={t().httpConsent} />
+            <NoticeCard
+              tone={isWebsiteRead(request) ? "info" : "warning"}
+              title={request.resourceTitle ?? t().httpRequest}
+              detail={httpApprovalNotice(request, locale())}
+            />
             <p class="break-all">
               <strong>{request.method}</strong> {request.url}
             </p>

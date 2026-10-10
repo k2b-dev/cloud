@@ -3,14 +3,18 @@
 Use `cloud.http.fetch` to call a public HTTPS API from code. Requests run on the
 Assistant server. The worker's native `fetch` still has no network access.
 A request asks the user to confirm its destination, method, headers, and body
-preview. For a GET or HEAD without body or headers, the user may allow the
-website for the chat, or for a Studio app they manage. Later requests to the
-exact same origin with GET or HEAD, without body or headers, then run without
-asking, and the chat shows each full URL. Anything else asks every time: another
-origin, a body, any header, and a secret. Never put private chat or app data
-into a URL's path or query for a website the user did not choose for it. Script
-test runs make real requests too. HTML `code_check` never executes HTTP. For a Cloud app, prefer its existing capabilities and their
-domain-specific authorization.
+preview. For a read, the user may allow the website for the chat, or for a
+Studio app they manage. A read is GET or HEAD without a body whose headers are
+only `Accept`, `Accept-Language`, `Range`, `User-Agent`, `If-None-Match`, or
+`If-Modified-Since`, each a plain string of at most 128 characters. Later reads
+from the exact same origin then run without asking, and the chat shows each
+full URL. Anything else asks every time: another origin, a body, another
+method, a secret, a longer value, and any other header such as `Authorization`,
+an API key, or `Content-Type`. So send only the headers a read needs. Never put
+private chat or app data into a URL's path, query, or headers for a website the
+user did not choose for it. Script test runs make real requests too. HTML
+`code_check` never executes HTTP. For a Cloud app, prefer its existing
+capabilities and their domain-specific authorization.
 
 ## Store a secret without exposing its value
 

@@ -12,6 +12,7 @@ import {
   CODE_SOURCE_TOOLS,
   forgetAiToolApproval,
   rememberAiToolApproval,
+  revokeAiToolApprovalPreference,
 } from "@k2b/cloud/ai";
 import * as capabilityClient from "@k2b/cloud/capabilities/server";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
@@ -1183,15 +1184,19 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     const resource = await artifacts.create({ kind: "app", title: "Quotes", source }, owner);
     await artifacts.publish(resource.id, resource.revision, owner, "Quotes");
     await artifacts.grant(resource.id, { type: "user", userId: reader.user.id }, "read", owner);
+    type Request = { url: string; method?: string; headers?: Record<string, string | { secret: string; prefix?: string }>; body?: string };
     const prepare = async (
       identity: typeof owner,
-      request: { url: string; method?: string; headers?: Record<string, string>; body?: string },
+      request: Request,
       scope: { resourceId?: string; conversationId?: string } = { resourceId: resource.id },
     ) => {
       const call = HttpPrepare.parse({ id: crypto.randomUUID(), createdAt: Date.now(), scope, request });
       await httpService.prepare(call, identity);
       return call.id;
     };
+    // Every prepared request is settled, so the test stays within the per-person pending budget.
+    const decline = (identity: typeof owner, id: string) =>
+      expect(httpService.execute(id, false, identity, new AbortController().signal)).rejects.toMatchObject({ code: "HTTP_DENIED" });
     const routes = (identity: typeof owner, credentialKind: "session" | "api_key") =>
       new Hono<AuthContext>()
         .use("*", async (c, next) => {
@@ -1207,10 +1212,18 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ remember }),
       });
-      return { status: response.status, body: (await response.json()) as { offer?: boolean; allowed?: boolean } };
+      return {
+        status: response.status,
+        body: (await response.json()) as { offer?: boolean; allowed?: boolean; approvalId?: string | null },
+      };
     };
+    // What a stock monitor sends from the browser: a read that names the response it wants and the client it is.
+    const quote = (symbol: string) => ({
+      url: `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=1d`,
+      headers: { "User-Agent": "Mozilla/5.0 (X11; Linux x86_64)", Accept: "application/json" },
+    });
     try {
-      // Derived from the stored request: GET or HEAD, no body, no header (and so no secret), exact origin.
+      // Derived from the stored request: GET or HEAD, no body, only harmless plain headers, exact origin.
       const read = await prepare(owner, { url: "https://query1.finance.yahoo.com/v7/finance/quote?symbols=NVDA" });
       expect(await httpService.website(read, owner)).toEqual({
         origin: "https://query1.finance.yahoo.com",
@@ -1219,31 +1232,110 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         conversationId: null,
         resourceId: resource.id,
       });
-      expect(
-        await httpService.website(await prepare(owner, { url: "https://query1.finance.yahoo.com/", method: "HEAD" }), owner),
-      ).toMatchObject({
-        method: "HEAD",
-      });
-      for (const request of [
-        { url: "https://query1.finance.yahoo.com/q", headers: { accept: "application/json" } },
+      const head = await prepare(owner, { url: "https://query1.finance.yahoo.com/", method: "HEAD" });
+      expect(await httpService.website(head, owner)).toMatchObject({ method: "HEAD" });
+      await decline(owner, head);
+      for (const headers of [
+        quote("NVDA").headers,
+        {
+          "accept-language": "de-DE",
+          range: "bytes=0-99",
+          "if-none-match": '"abc"',
+          "if-modified-since": "Sat, 10 Oct 2026 10:00:00 GMT",
+          "user-agent": "x".repeat(128),
+        },
+      ]) {
+        const id = await prepare(owner, { url: "https://query1.finance.yahoo.com/q", headers });
+        expect(await httpService.website(id, owner)).toMatchObject({ origin: "https://query1.finance.yahoo.com" });
+        await decline(owner, id);
+      }
+      // A credential, a method override, any other header, a long value, a secret reference, a body, or a write always asks.
+      await httpService.save(
+        { resourceId: resource.id },
+        {
+          name: "quotes",
+          origin: "https://query1.finance.yahoo.com",
+          header: "x-api-key",
+          prefix: "",
+          value: "fixture-key",
+          expectedRevision: null,
+        },
+        owner,
+      );
+      await httpService.save(
+        { resourceId: resource.id },
+        {
+          name: "language",
+          origin: "https://query1.finance.yahoo.com",
+          header: "accept-language",
+          prefix: "",
+          value: "fixture-key",
+          expectedRevision: null,
+        },
+        owner,
+      );
+      const asks: Request[] = [
+        { url: "https://query1.finance.yahoo.com/q", headers: { accept: "application/json", authorization: "Bearer fixture" } },
+        { url: "https://query1.finance.yahoo.com/q", headers: { "x-api-key": "fixture" } },
+        { url: "https://query1.finance.yahoo.com/q", headers: { "x-http-method-override": "DELETE" } },
+        { url: "https://query1.finance.yahoo.com/q", headers: { "x-mode": "full" } },
+        // A read has no body for these to describe.
+        { url: "https://query1.finance.yahoo.com/q", headers: { "content-type": "application/json" } },
+        { url: "https://query1.finance.yahoo.com/q", headers: { "content-language": "de" } },
+        // Beside the URL its receipt shows, a value carries at most 128 characters.
+        { url: "https://query1.finance.yahoo.com/q", headers: { "user-agent": "x".repeat(129) } },
+        { url: "https://query1.finance.yahoo.com/q", headers: { accept: "application/json", "x-api-key": { secret: "quotes" } } },
+        // A header one of the person's secrets is bound to counts as a credential, even with a plain value.
+        { url: "https://query1.finance.yahoo.com/q", headers: { "accept-language": "de-DE" } },
         { url: "https://query1.finance.yahoo.com/q", method: "POST", body: btoa("x") },
         { url: "https://query1.finance.yahoo.com/q", method: "DELETE" },
-      ])
-        expect(await httpService.website(await prepare(owner, request), owner)).toBeNull();
+      ];
+      for (const request of asks) {
+        const id = await prepare(owner, request);
+        expect(await httpService.website(id, owner)).toBeNull();
+        await decline(owner, id);
+      }
       // Someone who only uses the app gets no website approval for its code.
-      expect(await httpService.website(await prepare(reader, { url: "https://query1.finance.yahoo.com/q" }), reader)).toBeNull();
-      expect(
-        (await website(reader, "session", await prepare(reader, { url: "https://query1.finance.yahoo.com/q" }), false)).body,
-      ).toMatchObject({
-        offer: false,
-        allowed: false,
-      });
+      const used = await prepare(reader, quote("NVDA"));
+      expect(await httpService.website(used, reader)).toBeNull();
+      expect((await website(reader, "session", used, false)).body).toMatchObject({ offer: false, allowed: false });
+      await decline(reader, used);
 
       // An API key or `cld` neither uses nor records one; a signed-in session can.
       expect((await website(owner, "api_key", read, false)).body).toMatchObject({ offer: false, allowed: false });
       expect((await website(owner, "api_key", read, true)).status).toBe(403);
       expect((await website(owner, "session", read, false)).body).toMatchObject({ offer: true, allowed: false });
-      expect((await website(owner, "session", read, true)).body).toMatchObject({ offer: true, allowed: true });
+      await decline(owner, read);
+
+      // The app opens and switches tabs again and again; each view fetches quotes the way runHttp does: a remembered
+      // website approval first, otherwise the request dialog. One "Allow this website for this app" ends the asking.
+      let prompts = 0;
+      const sent: string[] = [];
+      const send: Parameters<typeof httpService.execute>[4] = async (request) => {
+        sent.push(request.url);
+        expect(request.headers).toEqual({ "user-agent": "Mozilla/5.0 (X11; Linux x86_64)", accept: "application/json" });
+        return { status: 200, headers: { "content-type": "application/json" }, body: new TextEncoder().encode("{}") };
+      };
+      const open = async (symbol: string) => {
+        const id = await prepare(owner, quote(symbol));
+        let check = await website(owner, "session", id, false);
+        if (!check.body.allowed) {
+          prompts++;
+          expect(check.body).toMatchObject({ offer: true });
+          check = await website(owner, "session", id, true);
+        }
+        // The receipt revokes this approval.
+        const approvalId = z.uuid().parse(check.body.approvalId);
+        expect(check.body).toMatchObject({ offer: true, allowed: true });
+        await httpService.execute(id, true, owner, new AbortController().signal, send);
+        return approvalId;
+      };
+      const views = ["NVDA", "AAPL", "MSFT", "NVDA", "AAPL", "MSFT", "NVDA", "AAPL"];
+      const receipts: string[] = [];
+      for (const symbol of views) receipts.push(await open(symbol));
+      expect(prompts).toBe(1);
+      expect(sent).toHaveLength(views.length);
+      expect(new Set(receipts).size).toBe(1);
       const [row] = await sql<{ approval_scope: string; conversation_id: string | null }[]>`
         SELECT approval_scope,conversation_id FROM ai.tool_approval_preferences
         WHERE actor_user_id=${owner.user.id}::uuid AND tool_name=${AI_WEBSITE_APPROVAL_TOOL}`;
@@ -1251,14 +1343,30 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         approval_scope: aiWebsiteApprovalScope("https://query1.finance.yahoo.com", resource.id),
         conversation_id: null,
       });
-      const next = await prepare(owner, { url: "https://query1.finance.yahoo.com/v8/finance/chart/AAPL?range=1d" });
-      expect((await website(owner, "session", next, false)).body).toMatchObject({ allowed: true });
-      expect(
-        (await website(owner, "session", await prepare(owner, { url: "https://query2.finance.yahoo.com/q" }), false)).body,
-      ).toMatchObject({
-        allowed: false,
-      });
+      // The approval still covers nothing else: another origin, a secret, another header, or a person who only uses it.
+      const others: Request[] = [
+        { url: "https://query2.finance.yahoo.com/q" },
+        { url: "https://query1.finance.yahoo.com/q", headers: { "x-api-key": { secret: "quotes" } } },
+        { url: "https://query1.finance.yahoo.com/q", headers: { authorization: "Bearer fixture" } },
+      ];
+      for (const request of others) {
+        const id = await prepare(owner, request);
+        expect((await website(owner, "session", id, false)).body).toMatchObject({ allowed: false });
+        await decline(owner, id);
+      }
+      for (const symbol of ["NVDA", "AAPL"]) {
+        const id = await prepare(reader, quote(symbol));
+        expect((await website(reader, "session", id, false)).body).toMatchObject({ offer: false, allowed: false });
+        await decline(reader, id);
+      }
+      // Revoked from a receipt, the next view asks again.
+      expect(await revokeAiToolApprovalPreference(owner.user.id, receipts[0]!)).toBe(true);
+      const again = await prepare(owner, quote("NVDA"));
+      expect((await website(owner, "session", again, false)).body).toMatchObject({ offer: true, allowed: false });
+      await decline(owner, again);
       // Deleting the app ends its website approvals.
+      await open("NVDA");
+      expect(prompts).toBe(2);
       await artifacts.remove(resource.id, owner);
       expect((await sql`SELECT id FROM ai.tool_approval_preferences WHERE tool_name=${AI_WEBSITE_APPROVAL_TOOL}`).length).toBe(0);
     } finally {
@@ -3115,6 +3223,9 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         runConfig.mockResolvedValue({ kind: "chat", input: "Run", toolSource: { kind: "none" }, signedInSession: true });
         const first = await runCode("website-first", fetchCode("https://example.com/data"));
         expect(first.pending).toMatchObject({ remember: website });
+        // A read says that it reads, not that it may change data or incur charges.
+        expect(first.pending?.message).toContain("This request reads data from example.com.");
+        expect(first.pending?.message).not.toContain("may change data");
         await rememberAiToolApproval({ actorUserId: owner.user.id }, { ...website, conversationId });
         await agentHost.call({ ...first.input, decision: { id: first.pending!.id, approved: true } }, context);
         expect(await wait(first.input)).toMatchObject({ status: "done", receipts: [] });
@@ -3144,14 +3255,30 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
           ],
         });
         expect(rest).toMatchObject({ result: { output: expect.stringContaining("ok") } });
+        // Harmless request headers keep a read a read: the approval covers them too.
+        const described = await runCode(
+          "website-described",
+          fetchCode("https://example.com/data?symbols=NVDA", '{headers:{accept:"application/json","user-agent":"Mozilla/5.0"}}'),
+        );
+        expect(described.pending).toBeUndefined();
+        expect(described.state).toMatchObject({
+          status: "done",
+          receipts: [{ method: "GET", url: "https://example.com/data?symbols=NVDA" }],
+        });
         const sentBefore = sent;
-        // A custom header, a body, or another origin always asks; nothing is offered to remember for a header.
-        const header = await runCode("website-header", fetchCode("https://example.com/data", '{headers:{"x-mode":"full"}}'));
-        expect(header.pending).toBeDefined();
-        expect(header.pending?.remember).toBeUndefined();
-        await decline(header);
+        // Any other header, a body, or another origin always asks; nothing is offered to remember for them.
+        for (const [callId, headers] of [
+          ["website-header", '{"x-mode":"full"}'],
+          ["website-authorization", '{accept:"application/json",authorization:"Bearer x"}'],
+        ] as const) {
+          const header = await runCode(callId, fetchCode("https://example.com/data", `{headers:${headers}}`));
+          expect(header.pending).toBeDefined();
+          expect(header.pending?.remember).toBeUndefined();
+          await decline(header);
+        }
         const post = await runCode("website-post", fetchCode("https://example.com/data", '{method:"POST",body:"x"}'));
         expect(post.pending?.remember).toBeUndefined();
+        expect(post.pending?.message).toContain("may change data or incur charges");
         await decline(post);
         const other = await runCode("website-other", fetchCode("https://api.example.com/data"));
         expect(other.pending).toMatchObject({ remember: { ...website, approvalScope: "https://api.example.com" } });
