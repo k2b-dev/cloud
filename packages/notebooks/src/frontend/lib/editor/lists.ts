@@ -20,6 +20,10 @@ class SpacerWidget extends WidgetType {
     spacer.appendChild(line);
     return spacer;
   }
+
+  override eq(other: WidgetType) {
+    return other instanceof SpacerWidget;
+  }
 }
 
 class DotWidget extends WidgetType {
@@ -31,6 +35,10 @@ class DotWidget extends WidgetType {
     wrapper.setAttribute("inert", "true");
     wrapper.innerHTML = "&bull;";
     return wrapper;
+  }
+
+  override eq(other: WidgetType) {
+    return other instanceof DotWidget;
   }
 }
 
@@ -144,8 +152,10 @@ const bulletLists = (): Extension => {
       // when nothing structural about the doc changed. This was a
       // major lag source: the original code ran `decorate(state)`
       // on EVERY transaction including bare selection moves and
-      // focus events, walking the syntax tree each time.
-      if (!tr.docChanged) {
+      // focus events, walking the syntax tree each time. The parser
+      // reaches the rest of a long note after it opened, so a newer
+      // syntax tree rescans too; otherwise those lists stay raw.
+      if (!tr.docChanged && syntaxTree(tr.state) === syntaxTree(tr.startState)) {
         return [value[0].map(tr.changes), value[1].map(tr.changes)];
       }
       return decorate(tr.state);
@@ -238,8 +248,8 @@ const taskLists = (): Extension => {
     update(value, tr) {
       // Same as bullet-list field above: task-list decorations are
       // pure layout (checkbox widget + line class), not cursor-
-      // dependent. Only rebuild on actual doc changes.
-      if (!tr.docChanged) {
+      // dependent. Only rebuild on doc changes and parser progress.
+      if (!tr.docChanged && syntaxTree(tr.state) === syntaxTree(tr.startState)) {
         return [value[0].map(tr.changes), value[1].map(tr.changes)];
       }
       return decorate(tr.state);

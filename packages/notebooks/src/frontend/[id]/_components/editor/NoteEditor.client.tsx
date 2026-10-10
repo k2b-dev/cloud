@@ -22,6 +22,7 @@ import { extractAttachmentIds } from "../../../lib/editor/attachment-url";
 import { fadeScrollMarginsExtension, fadeScrollPadding } from "../../../lib/editor/fade-scroll-margins";
 import { queryBlockMessages } from "../../../lib/editor/query-block-messages";
 import { createQueryBlockPreviews } from "../../../lib/editor/query-blocks";
+import { pressMissedEditor } from "../../../lib/editor/surface-press";
 import { consumeInitialTitleSelection, handleSoftNoteNavigationRequests, type SoftNavigationResult } from "../../../lib/soft-navigation";
 import { getNotebookPresenceColor, yjs } from "../../../lib/yjs";
 import { notebookWorkspaceMessages } from "../../messages";
@@ -864,9 +865,7 @@ function EditorInstance(props: EditorInstanceProps & { linkedHeading: Accessor<L
         style={{ "scroll-padding-block": fadeScrollPadding }}
         class="relative min-h-0 flex-1 cursor-text"
         onMouseDown={(event) => {
-          if (props.readOnly) return;
-          const target = event.target as HTMLElement | null;
-          if (target?.closest(".cm-editor")) return;
+          if (props.readOnly || !pressMissedEditor(event)) return;
           event.preventDefault();
           if (focusEditor(0, "end")) {
             const view = editorView();
