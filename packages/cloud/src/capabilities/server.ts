@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { resolveCapabilityManifestPresentation } from "../_internal/capabilities";
+import { resolveCapabilityActionWording, resolveCapabilityManifestPresentation } from "../_internal/capabilities";
+import type { CapabilityActionWording } from "../_internal/capability-sentences";
 import { getApp, getCapability } from "../_internal/registry";
 import { dispatchCapability, loadCapabilityCatalogPage } from "../api/capabilities";
 import { env } from "../config/env";
@@ -14,7 +15,7 @@ import { get } from "../services/settings";
 import { resolveAppPresentation } from "../shared/app-presentation";
 import { publicCloudOrigin } from "../shared/app-url";
 import { capabilityMessages } from "../shared/capability-messages";
-import { LOCALE_HEADER } from "../shared/locale";
+import { DEFAULT_LOCALE, LOCALE_HEADER } from "../shared/locale";
 import { readCapabilityResponse } from "./response";
 import { combineCapabilitySignals } from "./signals";
 import type {
@@ -26,6 +27,7 @@ import type {
   CapabilityReviewClientResult,
 } from "./types";
 
+export type { CapabilityActionWording } from "../_internal/capability-sentences";
 export type {
   CapabilityCatalogApp,
   CapabilityCatalogAppClientResult,
@@ -223,6 +225,22 @@ export const getCapabilityCatalogApp = async (appId: string, locale?: string): P
   } catch {
     return { ok: false, error: { code: "APP_UNAVAILABLE", message: capabilityMessages(locale).cloudUnavailable, status: 503 } };
   }
+};
+
+/**
+ * How people read calls of one Action in a locale, from the live registry like the Assistant's own calls: its title,
+ * the app's sentences, and the labelled fields of the generic sentence. Pass `sentences` and `fields` to the chat's
+ * approval card, so an approval a script or app asks for reads like the same call in a chat. `null` for an unknown
+ * app or Action.
+ */
+export const getCapabilityActionWording = async (
+  appId: string,
+  localId: string,
+  locale?: string,
+): Promise<CapabilityActionWording | null> => {
+  const capability = await getCapability(appId);
+  const action = capability?.manifest.actions.find((candidate) => candidate.localId === localId);
+  return capability && action ? resolveCapabilityActionWording(action, capability.presentation, locale ?? DEFAULT_LOCALE) : null;
 };
 
 export const reviewCapabilityAction = async <TInput = unknown>(

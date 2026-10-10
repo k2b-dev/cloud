@@ -2,6 +2,36 @@ import type { CapabilityPresentationCatalog } from "@k2b/cloud/contracts";
 
 export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
   baseLocale: "en",
+  sentences: {
+    "draft.create": {
+      approval: "Create a draft to {input.to}",
+      done: "Created a draft to {input.to}",
+      rejected: "Did not create the draft to {input.to}",
+      notRun: "Draft to {input.to} not created",
+    },
+    "draft.send": {
+      approval: "Send the reviewed email",
+      rejected: "Did not send the email",
+      notRun: "Email not sent",
+    },
+    "delivery.cancel": {
+      approval: "Cancel the email delivery",
+      rejected: "Did not cancel the email delivery",
+      notRun: "Email delivery not cancelled",
+    },
+    "conversation.snooze": {
+      approval: "Show the conversation again on {input.snoozedUntil}",
+      done: "The conversation shows again on {input.snoozedUntil}",
+      rejected: "Did not snooze the conversation",
+      notRun: "Conversation not snoozed",
+    },
+    "mailbox.tag.create": {
+      approval: "Create the tag {input.name}",
+      done: "Created the tag {input.name}",
+      rejected: "Did not create the tag {input.name}",
+      notRun: "Tag {input.name} not created",
+    },
+  },
   translations: {
     de: {
       commands: {
@@ -506,6 +536,12 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "conversation.snooze": {
           title: "Unterhaltung später anzeigen",
+          sentences: {
+            approval: "Unterhaltung am {input.snoozedUntil} wieder anzeigen",
+            done: "Unterhaltung erscheint am {input.snoozedUntil} wieder",
+            rejected: "Unterhaltung nicht zurückgestellt",
+            notRun: "Unterhaltung nicht zurückgestellt",
+          },
           description: "Wähle, wann die Unterhaltung wieder erscheint, oder zeige sie jetzt wieder an.",
           input: {
             mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
@@ -540,6 +576,11 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "delivery.cancel": {
           title: "Zustellung abbrechen",
+          sentences: {
+            approval: "E-Mail-Versand abbrechen",
+            rejected: "E-Mail-Versand nicht abgebrochen",
+            notRun: "E-Mail-Versand nicht abgebrochen",
+          },
           description:
             "Brechen Sie eine geplante Zustellung oder eine Zustellung mit Widerrufsfrist ab und stellen Sie den Entwurf wieder her oder verwerfen Sie ihn.",
           input: {
@@ -573,6 +614,12 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "draft.create": {
           title: "Entwurf erstellen",
+          sentences: {
+            approval: "Entwurf an {input.to} erstellen",
+            done: "Entwurf an {input.to} erstellt",
+            rejected: "Entwurf an {input.to} nicht erstellt",
+            notRun: "Entwurf an {input.to} nicht erstellt",
+          },
           description: "Erstellen Sie einen idempotenten, bearbeitbaren E-Mail-Entwurf mit einem optionalen kleinen Inline-Anhang.",
           input: {
             mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
@@ -613,6 +660,11 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "draft.send": {
           title: "Mail senden",
+          sentences: {
+            approval: "Geprüfte E-Mail senden",
+            rejected: "E-Mail nicht gesendet",
+            notRun: "E-Mail nicht gesendet",
+          },
           description: "Senden oder planen Sie einen überprüften E-Mail-Entwurf zur externen Zustellung.",
           input: {
             mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
@@ -667,6 +719,12 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "mailbox.tag.create": {
           title: "Postfach-Tag erstellen",
+          sentences: {
+            approval: "Tag {input.name} erstellen",
+            done: "Tag {input.name} erstellt",
+            rejected: "Tag {input.name} nicht erstellt",
+            notRun: "Tag {input.name} nicht erstellt",
+          },
           description: "Erstellen Sie ein wiederverwendbares Cloud-local-Postfach-Tag.",
           input: {
             mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",

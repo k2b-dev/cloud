@@ -1034,11 +1034,23 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       data: { message: "Write item?", approvalScope: "items:one" },
     });
     const execute = spyOn(capabilityClient, "invokeCapability").mockResolvedValue({ ok: true, data: { data: { written: true } } });
+    const wording = spyOn(capabilityClient, "getCapabilityActionWording").mockResolvedValue({
+      title: "Write",
+      sentences: { approval: "Write {input.value}" },
+      fields: [{ path: "input.value", label: "Value" }],
+    });
     const caller = { cookie: "test-cookie", locale: "en" };
     const request = () => ({ id: crypto.randomUUID(), name: "demo.write", input: { value: "one" }, artifactId: applet.id });
     try {
       const denied = request();
-      expect(await runtimeCapabilities.prepare(denied, owner, caller)).toMatchObject({ status: "approval", allowAlways: true });
+      // The card gets the Action's wording in the caller's locale, as a chat call of the same Action would.
+      expect(await runtimeCapabilities.prepare(denied, owner, caller)).toMatchObject({
+        status: "approval",
+        allowAlways: true,
+        sentences: { approval: "Write {input.value}" },
+        fields: [{ path: "input.value", label: "Value" }],
+      });
+      expect(wording).toHaveBeenCalledWith("demo", "write", "en");
       expect(execute).not.toHaveBeenCalled();
       await expect(runtimeCapabilities.resolve(denied.id, { approved: true }, stranger, caller)).rejects.toMatchObject({
         code: "NOT_FOUND",
@@ -1089,6 +1101,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       catalog.mockRestore();
       review.mockRestore();
       execute.mockRestore();
+      wording.mockRestore();
     }
   });
 
@@ -1187,6 +1200,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       data: { message: "Write?", approvalScope: "private" },
     });
     const execute = spyOn(capabilityClient, "invokeCapability").mockResolvedValue({ ok: true, data: { data: { private: true } } });
+    const wording = spyOn(capabilityClient, "getCapabilityActionWording").mockResolvedValue(null);
     await sql`INSERT INTO ai.tool_approval_preferences(actor_user_id,tool_name,approval_scope) VALUES(${reader.user.id}::uuid,'consent.write','private')`;
     const request = (name: string) => ({ id: crypto.randomUUID(), name, input: {}, artifactId: resource.id });
     const conversationId = crypto.randomUUID();
@@ -1229,6 +1243,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       catalog.mockRestore();
       review.mockRestore();
       execute.mockRestore();
+      wording.mockRestore();
     }
   });
 

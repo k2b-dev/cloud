@@ -10,6 +10,7 @@ import {
   type CapabilityActionManifest,
   type CapabilityActionReviewResult,
   CapabilityActionReviewSchema,
+  type CapabilityActionSentences,
   type CapabilityCommandDefinition,
   type CapabilityCommandManifest,
   CapabilityCommandManifestSchema,
@@ -38,6 +39,14 @@ import {
 } from "../contracts/capabilities";
 import { fileProviderIssues } from "../contracts/file-provider";
 import { canonicalLocale, localeFallbackChain, normalizeLocale } from "../shared/locale";
+import {
+  CAPABILITY_SENTENCE_KEYS,
+  CAPABILITY_SENTENCE_MAX_CHARS,
+  type CapabilityActionWording,
+  capabilitySentenceFields,
+  parseCapabilitySentence,
+  resolveCapabilityActionSentences,
+} from "./capability-sentences";
 
 type JsonSchema = Record<string, unknown>;
 const MAX_CAPABILITY_MANIFEST_BYTES = 256 * 1024;
@@ -274,6 +283,56 @@ const compileSchemaPresentation = (
   return Object.fromEntries(entries);
 };
 
+const isAction = (
+  operation: CapabilityQueryManifest | CapabilityActionManifest | CapabilityCommandManifest,
+): operation is CapabilityActionManifest => "idempotency" in operation;
+
+/**
+ * Checks one Action's sentences against its schemas: every placeholder names a field the Action declares,
+ * and only `done` reads result data, because the other sentences are shown before or instead of a result.
+ */
+export const compileActionSentences = (
+  value: unknown,
+  operation: Pick<CapabilityActionManifest, "inputSchema" | "dataSchema">,
+  label: string,
+  strict = true,
+): CapabilityActionSentences => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`);
+  const copy = value as Record<string, unknown>;
+  const extra = Object.keys(copy).find((key) => !(CAPABILITY_SENTENCE_KEYS as readonly string[]).includes(key));
+  if (strict && extra) throw new Error(`${label} contains unsupported field "${extra}"`);
+  const paths = { input: schemaFieldPaths(operation.inputSchema), data: schemaFieldPaths(operation.dataSchema) };
+  const sentences: Record<string, string> = {};
+  for (const key of CAPABILITY_SENTENCE_KEYS) {
+    const template = copy[key];
+    if (template === undefined) continue;
+    if (typeof template !== "string") throw new Error(`${label}.${key} must be text`);
+    assertText(template, `${label}.${key}`, CAPABILITY_SENTENCE_MAX_CHARS);
+    const parsed = parseCapabilitySentence(template.trim());
+    if ("error" in parsed) throw new Error(`${label}.${key} ${parsed.error}`);
+    for (const part of parsed.parts) {
+      if (typeof part === "string") continue;
+      if (part.source === "data" && key !== "done") throw new Error(`${label}.${key} may read {data.${part.path}} only in done`);
+      if (!paths[part.source].has(part.path)) {
+        throw new Error(`${label}.${key} placeholder {${part.source}.${part.path}} does not exist in the projected ${part.source} schema`);
+      }
+    }
+    sentences[key] = template.trim();
+  }
+  if (Object.keys(sentences).length === 0) throw new Error(`${label} needs at least one sentence`);
+  return sentences;
+};
+
+/** A reader keeps an entry's other copy when only its sentences come from a newer or broken producer. */
+const readActionSentences = (value: unknown, operation: CapabilityActionManifest, label: string, strict: boolean) => {
+  if (strict) return compileActionSentences(value, operation, label, strict);
+  try {
+    return compileActionSentences(value, operation, label, strict);
+  } catch {
+    return undefined;
+  }
+};
+
 const compileOperationPresentation = (
   value: unknown,
   operation: CapabilityQueryManifest | CapabilityActionManifest | CapabilityCommandManifest,
@@ -283,7 +342,9 @@ const compileOperationPresentation = (
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`);
   const translation = value as Record<string, unknown>;
   const allowed = new Set(
-    "path" in operation ? ["title", "description", "input"] : ["title", "description", "input", "data", "searchTags"],
+    "path" in operation
+      ? ["title", "description", "input"]
+      : ["title", "description", "input", "data", "searchTags", ...(isAction(operation) ? ["sentences"] : [])],
   );
   const extra = Object.keys(translation).find((key) => !allowed.has(key));
   if (strict && extra) throw new Error(`${label} contains unsupported field "${extra}"`);
@@ -330,12 +391,17 @@ const compileOperationPresentation = (
   }
   const input = compileSchemaPresentation(translation.input, operation.inputSchema, `${label}.input`);
   const data = "dataSchema" in operation ? compileSchemaPresentation(translation.data, operation.dataSchema, `${label}.data`) : undefined;
+  const sentences =
+    translation.sentences !== undefined && isAction(operation)
+      ? readActionSentences(translation.sentences, operation, `${label}.sentences`, strict)
+      : undefined;
   return {
     ...(typeof translation.title === "string" ? { title: translation.title.trim() } : {}),
     ...(typeof translation.description === "string" ? { description: translation.description.trim() } : {}),
     ...(input ? { input } : {}),
     ...(data ? { data } : {}),
     ...(searchTags ? { searchTags } : {}),
+    ...(sentences ? { sentences } : {}),
   };
 };
 
@@ -353,7 +419,7 @@ export const compileCapabilityPresentation = (
   if (value === undefined) return undefined;
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Capability presentation must be an object");
   const catalog = value as Record<string, unknown>;
-  if (strict && Object.keys(catalog).some((key) => key !== "baseLocale" && key !== "translations")) {
+  if (strict && Object.keys(catalog).some((key) => key !== "baseLocale" && key !== "sentences" && key !== "translations")) {
     throw new Error("Capability presentation contains unsupported fields");
   }
   const baseLocale = typeof catalog.baseLocale === "string" ? canonicalLocale(catalog.baseLocale) : undefined;
@@ -365,6 +431,23 @@ export const compileCapabilityPresentation = (
   const queries = new Map(manifest.queries.map((operation) => [operation.localId, operation]));
   const actions = new Map(manifest.actions.map((operation) => [operation.localId, operation]));
   const commands = new Map(manifest.commands.map((operation) => [operation.localId, operation]));
+  let sentences: Record<string, CapabilityActionSentences> | undefined;
+  if (catalog.sentences !== undefined) {
+    if (!catalog.sentences || typeof catalog.sentences !== "object" || Array.isArray(catalog.sentences)) {
+      throw new Error("Capability presentation sentences must be an object");
+    }
+    sentences = Object.fromEntries(
+      Object.entries(catalog.sentences as Record<string, unknown>).flatMap(([localId, entry]) => {
+        const action = actions.get(localId);
+        if (!action) {
+          if (strict) throw new Error(`Action sentences reference unknown localId "${localId}"`);
+          return [];
+        }
+        const compiled = readActionSentences(entry, action, `Action ${localId}.sentences`, strict);
+        return compiled ? [[localId, compiled]] : [];
+      }),
+    );
+  }
   const translations: Record<string, CapabilityPresentationTranslation> = {};
   for (const [locale, rawTranslation] of Object.entries(catalog.translations as Record<string, unknown>)) {
     const canonical = canonicalLocale(locale);
@@ -431,7 +514,7 @@ export const compileCapabilityPresentation = (
       ...(translatedCommands ? { commands: translatedCommands } : {}),
     };
   }
-  return { baseLocale, translations };
+  return { baseLocale, ...(sentences && Object.keys(sentences).length > 0 ? { sentences } : {}), translations };
 };
 
 const projectSchema = (schema: z.ZodType, label: string, io: "input" | "output"): JsonSchema => {
@@ -797,6 +880,31 @@ export const resolveCapabilityOperationTitle = (
     (title, translation) => translation[group]?.[operation.localId]?.title ?? title,
     operation.title,
   );
+
+/**
+ * Everything a reader needs to word calls of one Action in the requested locale: its title, the app's
+ * sentences, and the labelled fields of the generic sentence. Derived only from the live manifest and
+ * presentation catalog, the same way for every app.
+ */
+export const resolveCapabilityActionWording = (
+  operation: CapabilityActionManifest,
+  catalog: CapabilityPresentationCatalog | undefined,
+  requestedLocale: string,
+): CapabilityActionWording => {
+  const overlays = catalog ? presentationOverlays(catalog, requestedLocale) : [];
+  const inputDescriptions = Object.assign({}, ...overlays.map((translation) => translation.actions?.[operation.localId]?.input ?? {}));
+  const sentences = resolveCapabilityActionSentences(operation.localId, catalog, requestedLocale);
+  return {
+    title: resolveCapabilityOperationTitle(operation, "actions", catalog, requestedLocale),
+    ...(sentences ? { sentences } : {}),
+    fields: capabilitySentenceFields({
+      inputSchema: operation.inputSchema,
+      dataSchema: operation.dataSchema,
+      sentences,
+      inputDescriptions,
+    }),
+  };
+};
 
 /** Resolve only human presentation; stable IDs, flags, tags, aliases, and data shapes stay untouched. */
 export const resolveCapabilityManifestPresentation = (

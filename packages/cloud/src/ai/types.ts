@@ -12,7 +12,8 @@ import type {
 } from "@k2b/nessi";
 import type { Usage } from "@k2b/nessi/ai";
 import type { z } from "zod";
-import type { CapabilityActionReview, CloudResourceRef } from "../contracts/capabilities";
+import type { CapabilitySentenceField } from "../_internal/capability-sentences";
+import type { CapabilityActionReview, CapabilityActionSentences, CloudResourceRef } from "../contracts/capabilities";
 import type { RequestActor } from "../server";
 import type { AiTurnBlock } from "./protocol";
 
@@ -1025,6 +1026,12 @@ export type AiCapabilityToolPresentation = {
   appAccent?: string;
   title: string;
   capabilityKind: "query" | "action";
+  /** Actions: the app's sentences in the locale of the turn, worded for each call by the chat. */
+  sentences?: CapabilityActionSentences;
+  /** Actions: field formats for the sentences and labelled fields for the generic sentence, in schema order. */
+  fields?: CapabilitySentenceField[];
+  /** Actions: Cloud offered the model `approvalReason` for this call, so the chat may show it as the model's reason. */
+  approvalReason?: true;
 };
 
 export type AiToolPresentation = AiCapabilityToolPresentation;
