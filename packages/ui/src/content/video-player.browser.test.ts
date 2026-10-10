@@ -211,6 +211,17 @@ const box = (page: Page, selector: string): Promise<Box> =>
   });
 const metadata = (page: Page) =>
   page.waitForFunction(() => (document.querySelector(".k2b-video-player__video") as HTMLVideoElement | null)?.readyState! >= 1);
+/**
+ * Waits until the video shows its first frame and no seek is under way. Without a poster, the player starts the video
+ * just after its beginning with a media fragment, so the engine seeks there once it has the metadata. WebKit on Linux
+ * can wait for good when play() arrives during that seek: after the seek it reports `playing`, then `waiting` and
+ * `stalled` at readyState 2, and the video never moves. A test that plays or seeks waits for this first.
+ */
+const firstFrame = (page: Page) =>
+  page.waitForFunction(() => {
+    const video = document.querySelector(".k2b-video-player__video") as HTMLVideoElement | null;
+    return video !== null && !video.seeking && video.readyState >= 2;
+  });
 const state = (page: Page) =>
   page.$eval(".k2b-video-player__video", (element) => {
     const video = element as HTMLVideoElement;
@@ -302,7 +313,7 @@ describe(`VideoPlayer (${browserName})`, () => {
     requests.length = 0;
     const page = await open({ src: "/video/landscape.webm", host: "width:640px;height:360px" });
     try {
-      await metadata(page);
+      await firstFrame(page);
       // The video plays at its own speed: WebKit on Linux changes the speed with a seek, which can leave it waiting for good.
       await page.$eval(".k2b-video-player__video", (element) => {
         const video = element as HTMLVideoElement;
@@ -326,7 +337,7 @@ describe(`VideoPlayer (${browserName})`, () => {
   test("the keyboard plays, pauses, seeks, and mutes the focused video in every engine", async () => {
     const page = await open({ src: "/video/landscape.webm", host: "width:640px;height:360px" });
     try {
-      await metadata(page);
+      await firstFrame(page);
       await page.$eval(".k2b-video-player__video", (element) => {
         (element as HTMLVideoElement).muted = true;
         (element as HTMLElement).focus();
@@ -466,7 +477,7 @@ describe(`VideoPlayer (${browserName})`, () => {
       host: "width:640px;height:360px",
     });
     try {
-      await metadata(page);
+      await firstFrame(page);
       // The engines fetch this short video whole while it loads, so a real expiry could not happen this late. The video
       // element's own error event is what an expired address causes, here at the first second of playback. The page
       // fails it in the same task that reads the time, so no round trip from the test adds to the delay. A page that
@@ -519,10 +530,7 @@ describe(`VideoPlayer (${browserName})`, () => {
     });
     // The viewer seeks once the first frame shows: WebKit drops a seek that arrives while the player's own one to that
     // frame is under way.
-    await page.waitForFunction(() => {
-      const video = document.querySelector(".k2b-video-player__video") as HTMLVideoElement | null;
-      return video !== null && !video.seeking && video.readyState >= 2;
-    });
+    await firstFrame(page);
     await page.$eval(".k2b-video-player__video", (element) => {
       const video = element as HTMLVideoElement;
       video.muted = true;

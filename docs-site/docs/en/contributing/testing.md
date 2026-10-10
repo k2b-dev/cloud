@@ -247,12 +247,16 @@ branch:
   loaded document, it dispatches the frame's `load` event itself.
 - Fonts differ between machines and engines. A test that expects text to wrap
   or fit uses text that is clearly too long or clearly short enough.
-- Playwright's WebKit on Linux can stop a video for good after a seek when the
-  machine is heavily loaded, also after the seek that a media fragment such as
-  `#t=1` starts with: `waiting` follows, and the time no longer advances. A
-  test that checks that a video plays waits for its `playing` event or for the
-  promise of `play()`. It waits for `ended` only when playing to the end is
-  what it checks.
+- Playwright's WebKit on Linux can stop a video for good when `play()` arrives
+  while a seek is under way, also the seek that a media fragment such as
+  `#t=0.001` starts once the metadata has loaded. `VideoPlayer` names every
+  video without a poster that way. After the seek, `playing` is followed by
+  `waiting` and `stalled`, and the time no longer advances. A loaded machine
+  only widens the window in which the two overlap. A test plays or seeks a
+  video once it shows a frame and no seek is under way:
+  `!video.seeking && video.readyState >= 2`. Where the page itself plays during
+  a seek, as `VideoPlayer` does after it renews an address, the test waits for
+  the `playing` event instead of `ended`.
 
 ## Replace modules in tests
 
