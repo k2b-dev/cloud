@@ -51,6 +51,12 @@ export type CloudCliContext = {
   profiles?: {
     saveClientCredentials: (input: CloudCliClientCredentialsProfile) => Promise<void>;
   };
+  /**
+   * Open an `http:` or `https:` URL in the user's browser, when the host can.
+   * Resolves `false` when nothing was opened, so the command still prints the
+   * link. Absent in hosts without a local browser.
+   */
+  openUrl?: (url: string) => Promise<boolean>;
 };
 
 /** A profile that signs in with the OAuth client-credentials grant. */
