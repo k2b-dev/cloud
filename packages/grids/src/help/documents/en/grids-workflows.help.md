@@ -97,7 +97,7 @@ You can cancel a queued, running, or waiting run. Cancellation is a request: the
 
 Publishing new YAML creates an immutable revision. The revision number therefore counts published plans, not edits. Renaming a workflow or changing its description does not create a revision. Restoring an older revision never deletes history; it publishes that definition as a new current revision. Enabling a workflow with a schedule or record-event trigger requires a confirmation, because the workflow can then start work without any further action.
 
-## Inputs reference {icon="book-2"}
+## Declare inputs {icon="book-2"}
 
 Every input has `type`. Optional `label` and `description` text appears in generated controls. `required: true` rejects a missing value; omitting `required` makes the input optional. Omitted or `null` optional scalar inputs resolve to `null` in workflow expressions; `false`, `0`, and empty text remain unchanged.
 
@@ -150,7 +150,7 @@ inputs:
 
 Only `schedule` and `recordEvent` belong under `triggers` in YAML. A workflow does not need a YAML trigger: one that is only ever invoked directly or through a run option leaves the block out entirely.
 
-## Automatic trigger reference {icon="route"}
+## Start runs automatically {icon="route"}
 
 :::reference
 - **schedule:** Starts future runs from a five-field cron expression. timezone is an optional IANA timezone and defaults to UTC. The same scheduled time creates at most one run. If a scheduled time passes while Grids is unavailable, that missed run is not created later.
@@ -224,7 +224,7 @@ steps:
 Direct callers can provide every declared input. Run options accept only the inputs their saved configuration assigns to the user. Each automatic trigger must use `with` to provide all required inputs from compatible trigger values.
 :::
 
-## Run option reference {icon="book-2"}
+## Configure run options {icon="book-2"}
 
 :::reference
 - **Scanner:** Maps exactly one text or record input to the scan. Record scans resolve by generated scan code or a configured unique field. Any other workflow input can be asked once before scanning, asked after every scan, or fixed by the run option.
@@ -238,7 +238,7 @@ Direct callers can provide every declared input. Run options accept only the inp
 Run options are configured separately from the workflow source. One workflow can therefore support multiple named scanner, bulk, Record, or Grids App actions without changing its YAML. Protected profiles can bind the presentation to the workflow contract: a linked follow-up Draft run option must use the same correction or cancellation intent as its action.
 :::
 
-## Step reference {icon="book-2"}
+## Choose steps {icon="book-2"}
 
 | Step | Required fields | Optional fields and defaults | Dry run |
 | --- | --- | --- | --- |
@@ -601,7 +601,7 @@ steps:
 Saved outputs expose structured paths. Documents provide `id`, `shortId`, `templateId`, `baseId`, `tableId`, `recordId`, `number`, `filename`, `createdAt`, `createdBy`, `tags`, and `primaryArtifactKey`. Document links provide `kind`, `id`, `url`, `expiresAt`, and `documentId`. Email results provide `subject`, `templateId`, and `recipients`; each recipient provides `id`, `deliveryId`, `kind`, `recipient`, and `status`. HTTP results provide `status`, `ok`, and `body`. Read them with expressions such as `${{ link.url }}`, `${{ emailResult.recipients }}`, or `${{ hook.status }}`.
 :::
 
-## Email templates {icon="file-description"}
+## Send email with templates {icon="file-description"}
 
 Edit email templates on the workflow page in **Edit mode**. They are base-level Liquid templates with a subject, HTML, stored sample data, and preview. A workflow step chooses one template and passes only the `data` that email needs. Sample data is used only by the editor preview; changing it does not affect sent messages.
 
@@ -650,7 +650,7 @@ steps:
 <p>{{ business.legalName | default: app.name }}</p>
 ```
 
-## Run modes and observability {icon="route"}
+## Observe runs {icon="route"}
 
 - `execute` performs effects on the pinned revision; `dryRun` records predicted effects without changes or external requests.
 - Channels: `api` for direct UI/API/CLI; `customApp`, `scanner`, `bulk` for run options; `schedule`, `recordEvent` for automatic triggers.
@@ -687,7 +687,7 @@ Interrupted runs resume from recorded outcomes, not from the beginning:
 
 One workflow can declare at most 100 inputs and 1,000 steps across all branches and loops. Control flow and recursive conditions can each be nested 20 levels deep, with at most 1,000 conditions. A `recordList`, bulk selection, or `forEach` loop can contain at most 10,000 records. Workflow YAML itself is limited to 200,000 characters.
 
-## Scanner example {icon="point"}
+## Example: return items with a scanner {icon="point"}
 
 Use the record input and update action above. For returns, check that `inputs.item.Status` is `Loaned` before changing it to `Available`; otherwise stop with `fail`. Use `atomicRecords` when competing writes must be checked and committed together.
 
@@ -695,7 +695,7 @@ Use the record input and update action above. For returns, check that `inputs.it
 Add a scanner run option that maps `item` to a scanned record. Choose generated scan-code resolution or configure a unique field such as `Label code`. The option remains outside this YAML.
 :::
 
-## Bulk document example {icon="file-description"}
+## Example: generate documents in bulk {icon="file-description"}
 
 **Bulk document workflow YAML**
 
