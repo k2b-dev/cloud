@@ -1,9 +1,25 @@
 import { text } from "@k2b/stdlib";
+import { type HttpReview, isWebsiteRead } from "./http-contracts";
 import { artifactMessages } from "./messages";
 import { reviewMessages } from "./review-messages";
 import type { CodeApproval } from "./runtime/capabilities";
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
+
+/**
+ * What an external HTTP request does, in the words of its approval card, dialog, and `cld` prompt. Only a request that
+ * `isWebsiteRead` reads from its website; every other request, including a GET with a secret, a credential, a method
+ * override, or any other header, keeps the warning that it sends data and may change data or incur charges. The secret
+ * sentence appears only when a header references a secret.
+ */
+export function httpApprovalNotice(request: Pick<HttpReview, "method" | "url" | "headers">, locale: string): string {
+  const t = artifactMessages.resolve([locale]).t;
+  return [
+    isWebsiteRead(request) ? t.httpReads({ host: new URL(request.url).host }) : t.httpConsent,
+    ...(Object.values(request.headers).some((value) => typeof value !== "string") ? [t.httpSecretsOnServer] : []),
+    t.httpResponseShared,
+  ].join(" ");
+}
 
 /**
  * The text a person approves in chat when managed code asks for a capability Action or an external HTTP request.
@@ -17,7 +33,7 @@ export function codeApprovalMessage(approval: CodeApproval, locale: string): str
     return [
       `${artifact.httpRequest}: ${approval.method} ${approval.url}`,
       ...(approval.resourceTitle ? [`${t.appResource}: ${approval.resourceTitle}`] : []),
-      artifact.httpConsent,
+      httpApprovalNotice(approval, locale),
       ...Object.entries(approval.headers).map(
         ([name, value]) => `${name}: ${typeof value === "string" ? value : `${value.prefix}[${t.secret({ name: value.secret })}]`}`,
       ),

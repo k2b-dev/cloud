@@ -409,15 +409,40 @@ or mandate never uses a remembered approval; it runs only on its own grants.
 ### Allow a website for a chat
 
 Code Mode's `cloud.http.fetch` asks for every request by default. When a
-request only reads, the card offers **Allow this website for this chat**. A
-request only reads when it uses GET or HEAD without a body and without any
-header, which also rules out a secret. Cloud derives the website from the
-stored request on the server, never from the model or the browser.
-Afterwards, requests in this chat are allowed without asking only if all of
-these hold:
+request only reads, the card says that it reads data from the website and
+offers **Allow this website for this chat**. A request only reads when it uses
+GET or HEAD without a body, and every header it sends is one of the following,
+with a plain value of at most 128 characters:
+
+- `Accept`, `Accept-Language`, and `Range`, which name the response the code
+  wants;
+- `User-Agent`, which names the client;
+- the cache validators `If-None-Match` and `If-Modified-Since`.
+
+None of these headers carries a credential, overrides the method, or changes
+where the request goes, and Cloud forwards no cookie or Cloud sign-in, so the
+request stays an anonymous read of the same origin. The code chooses their
+values just as it chooses the URL path and query, which the approval already
+sends to that website. They reach no other website and add no credential. A
+receipt shows only the method and URL, so the 128-character limit, the one the
+Fetch standard sets for headers a browser sends without a CORS preflight, keeps
+what the code can send beside the URL small.
+
+Every other request asks every time, and its card keeps the warning that it may
+change data or incur charges. That includes a secret reference, a header that
+one of the person's secrets in this chat or app is bound to, `Authorization`,
+an API key header, a method override, `Content-Type` or `Content-Language` (a
+read has no body to describe), a longer value, and every other header. The HTTP
+service never accepts `Cookie`, `Proxy-*`, or the other headers it controls, so
+a request with one of them fails before it asks.
+
+Cloud derives the website from the stored request on the server, never from
+the model or the browser. Afterwards, requests in this chat are allowed without
+asking only if all of these hold:
 
 - the request has the exact same origin, so scheme, host, and port match;
-- it is GET or HEAD without a body, custom headers, or secret references;
+- it is GET or HEAD without a body, with only the headers above and no secret
+  reference;
 - a person started the turn in a signed-in browser session, not a scheduled
   task, a mandate, `cld`, an API key, or another delegated credential;
 - the code is the chat's own code or a Studio app the person manages, never an
@@ -433,14 +458,15 @@ remembered-approval name is the reserved `website:read`, which no tool or
 Capability can use.
 
 A Studio app the person manages gets the same choice in its request dialog as
-**Allow this website for this app**. That approval lasts until it is revoked
-or the app is deleted. Each request it lets through shows a notice with the
-full URL and a **Revoke** action. The app's **Secrets & approvals** dialog
-lists these approvals.
+**Allow this website for this app**, under the same rules. An app that sends
+`Accept` and `User-Agent` with every read therefore asks once, not on every
+open or view. That approval lasts until it is revoked or the app is deleted.
+Each request it lets through shows a notice with the full URL and a **Revoke**
+action. The app's **Secrets & approvals** dialog lists these approvals.
 
 The operator of an allowed website still sees every full address the code
-requests, including the query, which may carry data from the chat. Approve
-only websites you would let read what the chat contains.
+requests, including the query, and the headers above, which may carry data from
+the chat. Approve only websites you would let read what the chat contains.
 
 A website approval covers its own origin, never a website it redirects to.
 Code Mode does not follow redirects, and `fetch_file` stops at a redirect to

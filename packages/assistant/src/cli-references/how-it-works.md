@@ -165,7 +165,7 @@ an explicit invocation and never asks.
 | Action with `approval: "rememberable"` | Asks; the user may choose **Approve for this chat** or **Always approve** for the app's scope |
 | Action without an `approval` field | Asks for every call; cannot be remembered or granted to a scheduled task |
 | Built-in tools on chat files, memories, web search, PDFs, and Code Mode | Never; capability calls and HTTP requests inside Code Mode still ask |
-| HTTP request from Code Mode | Asks; a GET or HEAD without body or headers offers **Allow this website for this chat** |
+| HTTP request from Code Mode | Asks; a GET or HEAD without a body, with at most `Accept`, `Accept-Language`, `Range`, `User-Agent`, `If-None-Match`, or `If-Modified-Since` (each value up to 128 characters) and no secret, offers **Allow this website for this chat** |
 | `web_extract` or `fetch_file` for an address the chat did not supply | Asks, like an HTTP request; an address from the user, a search result, or a read page's links never asks |
 | Studio App sharing, unpublishing, deletion, data clearing, and file copies, including into a Project | Asks for every call with a fresh review |
 | Capability calls from a shared Studio App the user does not manage | Asks for every call, reads included |
@@ -185,10 +185,11 @@ There is no `cld` command to list or revoke them. Approval confirms intent; the
 app still checks permissions afterward.
 
 A website allowed for a chat lets Code Mode read that exact origin with GET or
-HEAD, without body or headers, without asking again. It applies only to turns
-the user starts in a signed-in browser. A turn started through `cld`, an API
-key, or a schedule asks for every request, and `cld` can approve such a
-request once but cannot allow the website.
+HEAD, without a body and with at most the harmless headers listed above,
+without asking again. It applies only to turns the user starts in a signed-in
+browser. A turn started through `cld`, an API key, or a schedule asks for every
+request, and `cld` can approve such a request once but cannot allow the
+website.
 
 In print mode, pass `--approve <exact-tool-name>` only for operations the user
 authorized. An unresolved approval exits with status `2`; resolve it with

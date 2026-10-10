@@ -20,6 +20,7 @@ import {
   HttpRequest,
   HttpReview,
   HttpScope,
+  isWebsiteRead,
   SecretName,
   SecretSave,
   SecretView,
@@ -104,15 +105,17 @@ export type HttpWebsiteRead = {
 export const httpService = {
   /**
    * Derives the website a stored, still pending request reads, from the request itself and never from its caller:
-   * only GET or HEAD without a body and without any header (so without a secret) qualifies, and only from a chat or
-   * from a Studio app the person manages. Returns null for every other request; such a request always asks.
+   * only a request that `isWebsiteRead` (GET or HEAD without a body, with only short plain `WEBSITE_READ_HEADERS`)
+   * qualifies, never with a header one of the person's secrets in this chat or app is bound to; and only from a chat
+   * or from a Studio app the person manages. Returns null for every other request; such a request always asks.
    */
   async website(id: string, identity: ArtifactIdentity): Promise<HttpWebsiteRead | null> {
     const stored = await pendingCall(id, user(identity).id);
     const { method, body, headers, url } = stored.request;
-    if ((method !== "GET" && method !== "HEAD") || body !== undefined || Object.keys(headers).length > 0) return null;
+    if ((method !== "GET" && method !== "HEAD") || body !== undefined || !isWebsiteRead(stored.request)) return null;
     const ctx = await context(stored.scope, identity);
     if (ctx.resource && ctx.resource.permission !== "admin") return null;
+    if ((await rows(ctx.userId, ctx.key)).some((secret) => Object.hasOwn(headers, secret.header))) return null;
     return { origin: new URL(url).origin, method, url, conversationId: ctx.conversationId, resourceId: ctx.resource?.id ?? null };
   },
   /**

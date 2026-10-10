@@ -102,6 +102,12 @@ test("trusted secret dialogs store directly, clear values, support replacement a
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.keyboard.press("Escape");
     await page.getByRole("button", { name: "Request HTTP", exact: true }).click();
+    // A write keeps the warning that it sends data.
+    await page
+      .getByText(
+        "This request sends data to an external service and may change data or incur charges. Secret references are resolved only on the server.",
+      )
+      .waitFor();
     await page.getByRole("button", { name: "Send request", exact: true }).click();
     await page.waitForFunction(() => document.querySelector("output")?.textContent === "true");
 
@@ -109,6 +115,15 @@ test("trusted secret dialogs store directly, clear values, support replacement a
     await page.setViewportSize({ width: 1100, height: 850 });
     await page.getByRole("button", { name: "Fetch quotes", exact: true }).click();
     await page.getByText("https://query1.finance.yahoo.com/v7/finance/quote?symbols=NVDA,AAPL").waitFor();
+    // A read with harmless headers says that it reads, not that it may change data.
+    await page
+      .getByText(
+        "This request reads data from query1.finance.yahoo.com. Returned data is available to this code and may be shared by the app.",
+        { exact: true },
+      )
+      .waitFor();
+    expect(await page.getByText(/may change data/).count()).toBe(0);
+    await page.screenshot({ path: "/tmp/assistant-website-read.png" });
     await page.getByRole("button", { name: "More options for this request", exact: true }).click();
     await page.getByRole("menuitem", { name: "Allow this website for this app", exact: true }).click();
     await page.waitForFunction(() => document.querySelector("output")?.textContent === "website:true");
@@ -122,6 +137,11 @@ test("trusted secret dialogs store directly, clear values, support replacement a
     // The app's secrets and approvals list the website and revoke it.
     await page.getByRole("button", { name: "Manage app approvals", exact: true }).click();
     await page.getByRole("button", { name: "Revoke the approval for query1.finance.yahoo.com", exact: true }).waitFor();
+    await page
+      .getByText("Website · reads with GET/HEAD, without body or secrets, only harmless headers; the full address goes to the website", {
+        exact: true,
+      })
+      .waitFor();
     await page.screenshot({ path: "/tmp/assistant-app-approvals.png" });
     await page.getByRole("button", { name: "Revoke the approval for query1.finance.yahoo.com", exact: true }).click();
     await page.getByText("Nothing is allowed without asking.").waitFor();
