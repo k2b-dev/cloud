@@ -21,7 +21,12 @@ import {
   updateWorkflowConversationCollaborationInTransaction,
 } from "../service/collaboration";
 import { hasCurrentMailboxUserPermission } from "../service/collaborators";
-import { createWorkflowCommand, createWorkflowCommandInTransaction, enqueueCreatedWorkflowCommand } from "../service/commands";
+import {
+  createWorkflowCommand,
+  createWorkflowCommandInTransaction,
+  enqueueCreatedWorkflowCommand,
+  type WorkflowCommandFence,
+} from "../service/commands";
 import { ensureConversationReferenceInTransaction } from "../service/conversation-reference";
 import { updateWorkflowConversationSummaryInTransaction } from "../service/conversation-summary";
 import { createWorkflowDraftInTransaction, createWorkflowReviewReplyDraftInTransaction } from "../service/drafts";
@@ -220,7 +225,7 @@ const authorized = authorizeMailWorkflowExecution;
  * Locks the kernel run and verifies that the step trying to create a provider
  * command still belongs to its current execution generation.
  */
-const lockProviderFence = async (db: SqlClient, ctx: WorkflowActionContext): Promise<{ workflowExecutionGeneration: number }> => {
+const lockProviderFence = async (db: SqlClient, ctx: WorkflowActionContext): Promise<WorkflowCommandFence> => {
   const [active] = await db<{ execution_generation: string | number }[]>`
     SELECT run.execution_generation
     FROM workflows.run run
@@ -236,7 +241,7 @@ const lockProviderFence = async (db: SqlClient, ctx: WorkflowActionContext): Pro
     FOR UPDATE OF run
   `;
   if (!active) throw Object.assign(new Error("Workflow execution lease was lost before Mail effect"), { code: "WORKFLOW_LEASE_LOST" });
-  return { workflowExecutionGeneration: Number(active.execution_generation) };
+  return { workflowExecutionGeneration: Number(active.execution_generation), workflowStepKey: ctx.stepKey };
 };
 
 const resolveObject = async (ctx: WorkflowActionContext, value: unknown, key: string): Promise<JsonObject> => {
@@ -326,6 +331,27 @@ const messageAction = (
         const messageId = await internalResourceId(tx, "messages", scope.mailboxId, publicMessageId, "Message");
         const publicFolderId = asText(message.folderId, "message.folderId");
         const folderId = await internalResourceId(tx, "folders", scope.mailboxId, publicFolderId, "Folder");
+        const value =
+          kind === "addKeyword" || kind === "removeKeyword"
+            ? asText(values.keyword, "keyword")
+            : kind === "addFlag" || kind === "removeFlag"
+              ? asText(values.flag, "flag")
+              : asText(ctx.binding("folder") ?? values.folder ?? publicFolderId, "folder");
+        const applied = (outcome: ActionResult): ActionResult => {
+          if (outcome.state !== "succeeded") return outcome;
+          applyMailMessageTransition(message, kind, value);
+          return { ...outcome, output: { ...(isObject(outcome.output) ? outcome.output : {}), action: kind, applied: true, value } };
+        };
+        // A step that runs again, on a recheck or once its command finished,
+        // takes the outcome of the command it already issued. That command may
+        // have moved the message already, so the checks below would no longer
+        // find it where the step did.
+        const [issued] = await tx<{ id: string; state: MailCommand["state"]; last_error_message: string | null }[]>`
+          SELECT id::text, state, last_error_message
+          FROM mail.commands
+          WHERE mailbox_id = ${scope.mailboxId}::uuid AND idempotency_key = ${ctx.effectKey} AND correlation_id = ${ctx.runId}
+        `;
+        if (issued) return applied(commandOutcome({ id: issued.id, state: issued.state, lastError: issued.last_error_message }));
         if (PLACEMENT_ACTIONS.has(kind)) {
           const turn = await resolveIncomingAutomationPlacementTurn({
             db: tx,
@@ -355,12 +381,6 @@ const messageAction = (
         if (!target) throw Object.assign(new Error("Message provider target is no longer available"), { code: "NOT_FOUND" });
         const remoteMessageRefId = target.remote_message_ref_id;
         const expectedRemoteState = mailWorkflowMessagePrecondition(ctx.invocation.context, { messageId, remoteMessageRefId, folderId });
-        const value =
-          kind === "addKeyword" || kind === "removeKeyword"
-            ? asText(values.keyword, "keyword")
-            : kind === "addFlag" || kind === "removeFlag"
-              ? asText(values.flag, "flag")
-              : asText(ctx.binding("folder") ?? values.folder ?? publicFolderId, "folder");
         if (!mailMessageTransitionChanges(message, kind, value)) {
           return { state: "succeeded", output: { action: kind, applied: false } };
         }
@@ -389,12 +409,7 @@ const messageAction = (
                 idempotencyKey: ctx.effectKey,
                 correlationId: ctx.runId,
               };
-        const outcome = await createCommand(ctx, scope, input);
-        if (outcome.state === "succeeded") {
-          applyMailMessageTransition(message, kind, value);
-          return { ...outcome, output: { ...(isObject(outcome.output) ? outcome.output : {}), action: kind, applied: true, value } };
-        }
-        return outcome;
+        return applied(await createCommand(ctx, scope, input));
       }),
   }) as ErasedWorkflowAction;
 
@@ -1146,11 +1161,9 @@ export const MAIL_WORKFLOW_ACTIONS = {
             schedule,
           });
           if (!reply.ok || reply.data.state === "suppressed") return reply;
-          // A retried step whose effect already carries a send command adopts
-          // it. The command was issued under an earlier execution generation
-          // and its outbox submission is already on its way, so issuing a
-          // second one would only collide with the kernel's fence while the
-          // reply goes out regardless.
+          // A step that runs again, on a recheck or a retry, adopts the send
+          // command its effect already carries. Its outbox submission is
+          // already on its way, so a second command would only collide with it.
           if (reply.data.commandId) {
             const [issued] = await tx<{ id: string; state: MailCommand["state"]; last_error_message: string | null }[]>`
               SELECT id::text, state, last_error_message
