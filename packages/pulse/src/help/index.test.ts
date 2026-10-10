@@ -31,7 +31,7 @@ describe("pulse help", () => {
     expect(queryHelp).toContain("more than 2,000 time windows");
     expect(queryHelp).toContain("Metric queries use two reduction stages");
     expect(queryHelp).toContain("group by resource");
-    expect(queryHelp).toContain("Shared clauses may follow");
+    expect(queryHelp).toContain("Shared clauses can follow");
     expect(queryHelp).toContain("backslash escapes the next character");
     expect(queryHelp).toContain("Query text is limited to 2,000 characters");
     expect(dashboardHelp).toContain("Public displays use control defaults");
@@ -61,7 +61,7 @@ describe("pulse help", () => {
     expect(pulseHelp.getMarkdown("pulse-data-model", "de-CH")).toContain("Der Weg von der Quelle zum Diagramm");
     expect(pulseHelp.getMarkdown("pulse-find-data", "de-CH")).toContain("In dieser Reihenfolge eingrenzen");
     expect(pulseHelp.getMarkdown("pulse-query-language", "de-CH")).toContain("Metrikabfragen verwenden zwei Reduktionsstufen");
-    expect(pulseHelp.getMarkdown("pulse-dashboard-dsl", "de-CH")).toContain("Öffentliche Anzeigen verwenden Standardwerte");
+    expect(pulseHelp.getMarkdown("pulse-dashboard-dsl", "de-CH")).toContain("Öffentliche Ansichten verwenden Standardwerte");
     expect(pulseHelp.getMarkdown("pulse-reference", "de-CH")).toContain("IDs aus sechs Zeichen");
     expect(pulseHelp.getMarkdown("pulse-operate", "de-CH")).toContain("Anfragen werden vollständig oder gar nicht angenommen");
   });

@@ -1,36 +1,40 @@
 ---
 id: spaces-troubleshooting
-title: Troubleshooting
+title: Fix problems in Spaces
 icon: ti ti-lifebuoy
-description: Fix missing spaces or items, unexpected views, assignment problems, and calendar export issues.
+description: Find missing Spaces or items, fix unexpected views and assignment problems, and repair calendar exports and Mail invitations.
 order: 140
 ---
 
-## Common symptoms {icon="lifebuoy"}
+## Fix common problems {icon="lifebuoy"}
 
 :::reference
-- **A space is missing from the overview:** Confirm that you still have read access. Spaces shared through a group can disappear when group membership changes.
-- **An item is missing:** Clear search and filter chips, then check the current view. A task without a date may not appear where a calendar-only view is expected.
-- **Kanban shows the wrong column:** Kanban grouping follows the selected grouping field, commonly status. Open the item and correct that field instead of moving unrelated filters.
-- **An assignee cannot update work:** Read access is not enough to edit items. The person or one of their groups needs write or admin access.
-- **A completed item still appears:** Check the active filters and grouping. Some views intentionally include completed work.
-- **A task cannot be completed:** Check **Blocked by** in the task's **Planning** block and complete or remove every open blocker first; open blockers show a lock. Completed blockers remain listed for context until you remove them.
-- **A calendar subscription is stale:** Calendar clients refresh subscriptions on their own schedule. Confirm that the client uses the current export URL. If needed, regenerate the URL in Spaces and replace the old subscription.
-- **A Mail invitation cannot be imported:** Confirm that Spaces is running, the attachment contains one supported REQUEST, PUBLISH, or CANCEL event, and you have write access to the chosen Space. A default Space is only a suggestion.
-- **A response action is missing in Mail:** Confirm that the message contains a supported REQUEST, you can write to at least one Space, and Mail has a verified sender identity. The response action saves/updates the event and prepares an editable Mail draft; it does not bypass Mail delivery review.
-- **An invitation draft failed:** Open the event in Spaces and review the message under **Invitations**. Correct Mail access or the verified sender identity, then retry explicitly. The idempotency key prevents one retry from creating a second draft.
+- **A Space is missing from the overview:** Check that you still have access to the Space. A Space that is shared through a group can disappear when your group membership changes.
+- **An item is missing:** Clear the search and the filter chips. Then check the current view. A calendar-only view can hide a task without a date.
+- **Kanban shows the wrong column:** Kanban groups by the selected grouping field, usually the status. Open the item and correct that field. Do not change unrelated filters.
+- **An assignee cannot update work:** **View** access is not enough to edit items. The person or one of their groups needs **Edit** or **Manage** access.
+- **A completed item still appears:** Check the active filters and the grouping. Some views include completed work on purpose.
+- **A task cannot be completed:** Check **Blocked by** in the **Planning** block of the task. Open blockers show a lock. Complete or remove every open blocker first. Completed blockers stay listed for context until you remove them.
+- **A calendar subscription is stale:** Calendar clients refresh subscriptions on their own schedule. Check that the client uses the current export URL. If needed, regenerate the URL in Spaces and replace the old subscription.
+- **A Mail invitation cannot be imported:** Check that Spaces is running. Check that the attachment contains one supported REQUEST, PUBLISH, or CANCEL event. Check that you have **Edit** access to the chosen Space. A default Space is only a suggestion.
+- **A response action is missing in Mail:** Check that the message contains a supported REQUEST. Check that you can edit at least one Space and that Mail has a verified sender identity. The response action saves or updates the event and prepares an editable Mail draft. It does not skip the review before Mail sends it.
+- **An invitation draft failed:** Open the event in Spaces and read the message under **Invitations**. Correct the Mail access or the verified sender identity. Then try again explicitly. The idempotency key prevents a retry from creating a second draft.
 :::
 
 ## Reset a confusing view {icon="layout-list"}
 
 :::steps
-1. Return to the space from the Spaces overview.
-2. Choose List for the least transformed view of the items.
-3. Clear search and filter chips.
-4. Open the missing item from another known view or global search.
-5. Reapply one filter at a time.
+1. Return to the Space from the Spaces overview.
+2. Choose the list. It shows the items with the least transformation.
+3. Clear the search and the filter chips.
+4. Open the missing item from another known view or from global search.
+5. Apply the filters again, one at a time.
 :::
 
+## Replace a calendar link {icon="calendar-share"}
+
 :::warning Calendar links are access links
-Anyone with a working calendar export URL may be able to read the exported event details. Regenerate the export URL and replace the subscription when a link has been shared too widely.
+Anyone with a working calendar export URL can read the exported event details.
 :::
+
+When a link was shared too widely, regenerate the export URL and replace the subscription.

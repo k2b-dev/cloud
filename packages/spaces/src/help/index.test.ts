@@ -12,7 +12,7 @@ describe("spacesHelp", () => {
     ]);
 
     expect(spacesHelp.getMarkdown("spaces-start")).toContain("Spaces is for shared work");
-    expect(spacesHelp.getMarkdown("spaces-troubleshooting")).toContain("A space is missing from the overview");
+    expect(spacesHelp.getMarkdown("spaces-troubleshooting")).toContain("A Space is missing from the overview");
     expect(spacesHelp.getMarkdown("spaces-workflow")).toContain("**Estimated duration:**");
     expect(spacesHelp.getMarkdown("spaces-workflow")).toContain("**Blocked by:**");
     expect(spacesHelp.getMarkdown("spaces-workflow")).toContain("**Blocks:**");
@@ -38,7 +38,7 @@ describe("spacesHelp", () => {
     expect(spacesHelp.getMarkdown("spaces-start", "de")).toContain("Spaces bündelt gemeinsame Arbeit");
     expect(spacesHelp.getMarkdown("spaces-views", "de")).toContain("Ansichten stellen dieselben Einträge");
     expect(spacesHelp.getMarkdown("spaces-workflow", "de")).toContain("**Geschätzte Dauer:**");
-    expect(spacesHelp.getMarkdown("spaces-sharing", "de")).toContain("Berechtigungen sollten zu den Personen passen");
+    expect(spacesHelp.getMarkdown("spaces-sharing", "de")).toContain("Gib jeder Person und Gruppe nur den Zugriff");
     expect(spacesHelp.getMarkdown("spaces-troubleshooting", "de")).toContain("Eine Aufgabe kann nicht abgeschlossen werden");
   });
 

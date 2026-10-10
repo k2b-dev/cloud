@@ -1,19 +1,19 @@
 ---
 id: pulse-dashboard-dsl
-title: Dashboard DSL
+title: Dashboard-DSL
 icon: ti ti-layout-dashboard
-description: Steuerelemente, Abschnitte, Zeilen, Karten, Widgets, Markdown und Bedingungen.
+description: Schreibe ein Dashboard als Text mit Steuerelementen, Abschnitten, Zeilen, Karten, Widgets, Markdown und Bedingungen.
 order: 130
 ---
-Dashboard DSL beschreibt das gesamte Dashboard. Schreibe den Inhalt als Text und zeige eine Vorschau an. So bleiben Layout, Abfragen, Notizen und visuelle Warnzustände gemeinsam in einem bearbeitbaren Dokument.
+Die Dashboard-DSL beschreibt das gesamte Dashboard. Du schreibst den Inhalt als Text und siehst eine Vorschau. So bleiben Layout, Abfragen, Notizen und visuelle Warnzustände gemeinsam in einem bearbeitbaren Dokument.
 
-## Schrittweise aufbauen {icon="square-plus"}
+## Dashboard schrittweise aufbauen {icon="square-plus"}
 
 :::steps
-1. **Mit einem Abschnitt beginnen:** Gib dem Dashboard einen Namen und füge den kleinsten Abschnitt hinzu, der eine konkrete Frage beantwortet.
+1. **Mit einem Abschnitt beginnen:** Gib dem Dashboard einen Namen. Füge den kleinsten Abschnitt hinzu, der eine konkrete Frage beantwortet.
 2. **Ein Widget hinzufügen:** Nutze je nach Abfrageausgabe `stat`, `gauge`, `line`, `bar`, `histogram`, `heatmap`, `map` oder `table`.
-3. **Steuerelemente bei Wiederholungen ergänzen:** Nutze gemeinsame Steuerelemente für Werte wie `range`, `source`, `resource`, `resource_type`, `label` oder `text`, die mehrere Widgets verwenden.
-4. **Zusammengehörige Widgets gruppieren:** Nutze Zeilen für nebeneinanderliegende Diagramme, Karten für zusammengehörige Gruppen und Abschnitte für größere Themen.
+3. **Steuerelemente bei Wiederholungen ergänzen:** Nutze Steuerelemente für Werte, die mehrere Widgets teilen. Die Typen sind `range`, `source`, `resource`, `resource_type`, `label` und `text`.
+4. **Zusammengehörige Widgets gruppieren:** Nutze Zeilen für Diagramme nebeneinander, Karten für zusammengehörige Gruppen und Abschnitte für größere Themen.
 5. **Entscheidungen an Ort und Stelle erklären:** Nutze Beschreibungen und Markdown für Betriebshinweise, Annahmen und Links.
 :::
 
@@ -31,13 +31,13 @@ dashboard "Ops" {
 }
 ```
 
-Das genügt für eine nützliche Darstellung: ein Wurzeldokument, ein Abschnitt, ein Widget und eine Abfrage. Ein leeres Dokument `dashboard "Name" {}` ist beim Erstellen eines Dashboards gültig, enthält aber noch nichts, das angezeigt werden kann.
+Das genügt für eine nützliche Darstellung: ein Wurzeldokument, ein Abschnitt, ein Widget und eine Abfrage. Ein leeres Dokument `dashboard "Name" {}` ist gültig, während du ein Dashboard erstellst. Es enthält aber noch nichts, das Pulse anzeigen kann.
 
-## Dashboard DSL exakt schreiben {icon="braces"}
+## Dashboard-DSL exakt schreiben {icon="braces"}
 
 Bei Dashboard-Anweisungen und Namen visueller Darstellungen wird zwischen Groß- und Kleinschreibung unterschieden. Verwende die Schreibweise aus dieser Referenz, einschließlich `barGauge`.
 
-Namen, Beschreibungen, Meldungen und andere Texte in Anführungszeichen verwenden doppelte Anführungszeichen. Innerhalb solcher Texte erzeugt `\n` einen Zeilenumbruch, `\t` einen Tabulator und ein umgekehrter Schrägstrich maskiert das folgende Zeichen. Markdown-Inhalte verwenden dreifache doppelte Anführungszeichen:
+Namen, Beschreibungen, Meldungen und andere Texte in Anführungszeichen verwenden doppelte Anführungszeichen. Innerhalb solcher Texte erzeugt `\n` einen Zeilenumbruch und `\t` einen Tabulator. Ein umgekehrter Schrägstrich maskiert das folgende Zeichen. Markdown-Inhalte verwenden dreifache doppelte Anführungszeichen:
 
 ```text
 description "Line one\nLine two"
@@ -72,11 +72,11 @@ dashboard "Ops" {
 }
 ```
 
-Steuerelemente erzeugen Variablen wie `$range` oder `$resource_key`. Fehlt `variable`, leitet Pulse die Variable aus der Bezeichnung ab. Aus `Resource type` wird zum Beispiel `$resource_type`. Fehlt `default`, verwendet Pulse die erste Option. Ein Zeitraum ohne Standardwert und Optionen verwendet `24h`; andere Steuerelemente verwenden einen leeren Wert.
+Steuerelemente erzeugen Variablen wie `$range` oder `$resource_key`. Fehlt `variable`, leitet Pulse die Variable aus der Bezeichnung ab. Aus `Resource type` wird zum Beispiel `$resource_type`. Fehlt `default`, verwendet Pulse die erste Option. Ein Zeitraum ohne Standardwert und Optionen verwendet `24h`. Andere Steuerelemente verwenden dann einen leeren Wert.
 
-Öffentliche Anzeigen verwenden die Standardwerte der Steuerelemente und zeigen keine interaktiven Steuerelemente. Wähle deshalb Standardwerte, die ohne Interaktion sinnvoll sind.
+Öffentliche Ansichten verwenden die Standardwerte der Steuerelemente und zeigen keine interaktiven Steuerelemente. Wähle deshalb Standardwerte, die ohne Interaktion sinnvoll sind.
 
-## Vollständige Struktur {icon="point"}
+## Die vollständige Struktur sehen {icon="point"}
 
 **Struktur**
 
@@ -161,7 +161,7 @@ dashboard "Solar overview" {
 }
 ```
 
-## Anweisungsreferenz {icon="book-2"}
+## Eine Anweisung nachschlagen {icon="book-2"}
 
 | Anweisung | Bereich | Bedeutung | Beispiel |
 | --- | --- | --- | --- |
@@ -179,39 +179,39 @@ dashboard "Solar overview" {
 | `label\|series dimension\|attribute <path>` | map | Ergänzt optional Punktbeschriftungen oder trennt Punkte in farbige Reihen. | `series dimension campaign` |
 | `size count\|sum` | map | Bestimmt die Punktgröße anhand der Anzahl passender Ereignisse oder der Summe numerischer Ereigniswerte. Standard ist `count`. | `size count` |
 | `visual <type>` | widget | Überschreibt die visuelle Darstellung, die das äußere Widget-Schlüsselwort festlegt. Akzeptiert dieselben Namen für visuelle Darstellungen. Nutze in manuell geschriebener DSL bevorzugt das direkte Widget-Schlüsselwort. | `line "Current value" { visual stat query metric service.online latest since 10m }` |
-| `query <Query DSL>` | widget | Verwendet Query DSL für Metriken, Ereignisse oder Zustände. Dashboard-Steuerelemente können als `$variables` referenziert werden. Zusammengefasste Ereignisse können numerische Widgets versorgen. | `query events order.created count every 1h since $range group by channel` |
+| `query <Query DSL>` | widget | Verwendet die Abfrage-DSL für Metriken, Ereignisse oder Zustände. Dashboard-Steuerelemente können als `$variables` referenziert werden. Zusammengefasste Ereignisse können numerische Widgets versorgen. | `query events order.created count every 1h since $range group by channel` |
 | `warn\|critical when value <op> <value>` | metric widget | Wendet einen visuellen Zustand nur auf Metrikwerte an. Operatoren sind `>`, `>=`, `<`, `<=`, `=` und `!=`. Ein optionaler Meldungstext kann die Bedingung erklären. | `critical when value > 95 message "Capacity almost full"` |
 | `# comment or // comment` | überall, wo Leerraum erlaubt ist | Ergänzt einen Zeilenkommentar, der das dargestellte Dashboard nicht verändert. | `# explain why this section exists` |
 
-## Gestaltungsregeln {icon="book-2"}
+## Die Gestaltungsregeln befolgen {icon="book-2"}
 
 :::info Dashboards setzen Abfrageausgaben zusammen
-`query`-Zeilen in Widgets verwenden dieselbe Query DSL. Metriken und zusammengefasste Ereignisse zeigen Werte und Diagramme. Tabellen-Widgets zeigen einzelne Ereignisse und aktuelle Zustände. `group by resource` und `group by <dimension>` erzeugen für Metriken getrennte Diagrammreihen.
+`query`-Zeilen in Widgets verwenden dieselbe Abfrage-DSL. Metriken und zusammengefasste Ereignisse zeigen Werte und Diagramme. Tabellen-Widgets zeigen einzelne Ereignisse und aktuelle Zustände. `group by resource` und `group by <dimension>` erzeugen für Metriken getrennte Diagrammreihen.
 :::
 
 :::info Karten fassen Ereignisorte zusammen
-Nutze eine Karte für Ereignisse mit Feldern für Breiten- und Längengrad in Dezimalgrad. Pulse gruppiert passende Ereignisse im ausgewählten Zeitraum nach Ort, optionaler Beschriftung und optionaler Reihe. Ungültige Koordinaten und Koordinaten außerhalb des gültigen Bereichs werden ignoriert. Eine Karte zeigt höchstens 1.000 zusammengefasste Punkte. Nutze Filter für Quelle, Resource und Dimensionen, wenn eine breite Abfrage nützliche Details verdecken würde. Auf einem öffentlichen Dashboard sind auch die von der Karte gezeigten zusammengefassten Koordinaten, Beschriftungen und Reihen öffentlich.
+Nutze eine Karte für Ereignisse mit Feldern für Breiten- und Längengrad in Dezimalgrad. Pulse gruppiert passende Ereignisse im ausgewählten Zeitraum nach Ort, optionaler Beschriftung und optionaler Reihe. Pulse ignoriert ungültige Koordinaten und Koordinaten außerhalb des gültigen Bereichs. Eine Karte zeigt höchstens 1.000 zusammengefasste Punkte. Nutze Filter für Quelle, Ressource und Dimensionen, wenn eine breite Abfrage nützliche Details verdecken würde. Auf einem öffentlichen Dashboard sind auch die von der Karte gezeigten zusammengefassten Koordinaten, Beschriftungen und Reihen öffentlich.
 :::
 
 :::info Steuerelemente definieren Variablen
 Deklariere Steuerelemente einmal und verwende ihre Variablen anschließend in Widget-Abfragen. So bleiben Dashboards bearbeitbar, ohne Filter zu duplizieren.
 :::
 
-:::info Öffentliche Anzeigen verwenden Standardwerte
+:::info Öffentliche Ansichten verwenden Standardwerte
 Öffentliche Links stellen jedes Steuerelement mit seinem Standardwert dar. Wähle nützliche Standardwerte, damit öffentliche Dashboards deterministisch bleiben.
 :::
 
 :::info Aktualisierung ist eine Dashboard-Einstellung
-Die automatische Aktualisierung wird außerhalb von Dashboard DSL konfiguriert. Wähle 1, 5, 10 oder 60 Sekunden oder deaktiviere die automatische Aktualisierung. Neue Dashboards verwenden standardmäßig fünf Sekunden. Beim Bearbeiten der DSL bleibt die vorhandene Aktualisierungseinstellung erhalten.
+Die automatische Aktualisierung legst du außerhalb der Dashboard-DSL fest. Wähle 1, 5, 10 oder 60 Sekunden oder schalte die automatische Aktualisierung aus. Neue Dashboards aktualisieren standardmäßig alle fünf Sekunden. Beim Bearbeiten der DSL bleibt die vorhandene Einstellung erhalten.
 :::
 
 :::warning Bedingungen sind visuell
 Nutze `warn when value > 80` oder `critical when value = false`, um Metrik-Widgets visuell zu kennzeichnen. Die Zustellung von Warnungen und Webhooks ist eine getrennte, zukünftige Ebene.
 :::
 
-## Grenzen {icon="ruler"}
+## Die Grenzen einhalten {icon="ruler"}
 
-- Dashboard DSL ist auf 40.000 Zeichen begrenzt.
+- Die Dashboard-DSL ist auf 40.000 Zeichen begrenzt.
 - Titel sind auf 160 Zeichen begrenzt. Dashboard-Beschreibungen sind auf 1.000 Zeichen begrenzt, Beschreibungen von Abschnitten, Karten, Widgets und Markdown auf 500 Zeichen.
 - Ein Markdown-Block ist auf 8.000 Zeichen begrenzt.
 - Ein Dashboard unterstützt bis zu 24 Steuerelemente und 24 Abschnitte auf oberster Ebene.
@@ -219,12 +219,12 @@ Nutze `warn when value > 80` oder `critical when value = false`, um Metrik-Widge
 - Eine Zeile unterstützt bis zu 12 Zellen. `span` muss eine ganze Zahl von 1 bis 12 sein.
 - Ein Widget unterstützt bis zu acht visuelle Bedingungen.
 
-## Validierung und fehlende Daten {icon="alert-circle"}
+## Validierung und fehlende Daten verstehen {icon="alert-circle"}
 
-Pulse speichert den DSL-Quelltext und das Aktualisierungsintervall und kompiliert daraus ein Darstellungsmodell. Alte Layouts, als String gespeicherte Konfigurationen, ungültige Werte und zu große Dokumente werden abgelehnt. Vorschau, Server-Rendering und Browser-Aktualisierung lösen Controls identisch auf.
+Pulse speichert den DSL-Quelltext und das Aktualisierungsintervall und kompiliert daraus ein Darstellungsmodell. Pulse lehnt alte Layouts, als String gespeicherte Konfigurationen, ungültige Werte und zu große Dokumente ab, statt sie zu reparieren. Vorschau, Server-Rendering und Browser-Aktualisierung lösen Steuerelemente identisch auf.
 
-Ein Dashboard unterstützt höchstens 36 Daten-Widgets, 24 Controls, 24 Zeilen je Container und zwölf Widgets je Zeile. Diese Grenzen gelten vor dem Speichern, auch für öffentliche Dashboards. Überzählige Widgets werden nicht still ausgelassen.
+Ein Dashboard unterstützt höchstens 36 Daten-Widgets, 24 Steuerelemente, 24 Zeilen je Container und zwölf Widgets je Zeile. Diese Grenzen gelten vor dem Speichern, auch für öffentliche Dashboards. Pulse lässt überzählige Widgets nie stillschweigend weg.
 
-Eine fehlgeschlagene Abfrage oder gelöschte Source führt zu einem sichtbaren Aktualisierungsfehler. Das private Dashboard behält den vorherigen vollständigen Datenstand und zeigt den Fehler an; alte und neu geladene Widget-Daten werden nicht vermischt. Öffentliche Snapshots melden ebenfalls einen Fehler statt eines leeren Erfolgs.
+Eine fehlgeschlagene Abfrage oder eine gelöschte Quelle führt zu einem sichtbaren Aktualisierungsfehler. Das private Dashboard behält den vorherigen vollständigen Datenstand und zeigt den Fehler an. Es mischt keine alten und neu geladenen Widget-Daten. Öffentliche Snapshots melden ebenfalls einen Fehler statt eines leeren Erfolgs.
 
-Fehlende Messwerte bleiben fehlend: Charts ersetzen sie nicht durch null als Zahl, Linien werden an fehlenden Zeitfenstern unterbrochen und Gauges zeigen ohne letzten Messwert keine Daten. Eine gemessene Null bleibt ein gültiger Wert.
+Fehlende Messwerte bleiben fehlend. Diagramme ersetzen sie nicht durch die Zahl null, Linien brechen an fehlenden Zeitfenstern ab, und Gauges zeigen ohne letzten Messwert keine Daten. Eine gemessene Null bleibt ein gültiger Wert.

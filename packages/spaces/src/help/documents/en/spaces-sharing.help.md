@@ -1,37 +1,41 @@
 ---
 id: spaces-sharing
-title: Sharing & Settings
+title: Share a Space and change settings
 icon: ti ti-lock
-description: Access levels, settings, and calendar exports.
+description: Give people the right access level, change Space settings, and share calendar exports safely.
 order: 130
 ---
 
-Spaces are collaborative surfaces. Permissions should match the people who are allowed to read, update, or administer the shared work.
+Give each person and group only the access they need in this Space.
 
 ## Open Space settings {icon="settings"}
 
-Use **Space settings** from the Space sidebar. Settings stay in a modal so you can return to the current view without leaving the Space.
+Choose **Space settings** in the Space sidebar. The settings open in a dialog, so you return to the current view without leaving the Space.
 
-The category rail separates each setting by ownership and effect:
+The categories sort the settings by owner and effect:
 
-- **Space** contains shared identity, tags, and workflow statuses.
-- **Personal** contains browser defaults that apply immediately for you.
-- **Connections** contains the calendar feed, admin-managed wormholes, and the GitHub token for link previews.
-- **Sharing** contains permissions and API keys for administrators.
+- **Space** contains the shared name and details, tags, and workflow statuses.
+- **Personal** contains your browser defaults. They apply immediately and only for you.
+- **Connections** contains the calendar feed, the wormholes, and the GitHub token for link previews. Only people with **Manage** access change wormholes and the token.
+- **Sharing** contains access and API keys. It is for people with **Manage** access.
 - **Lifecycle** contains permanent deletion.
 
-When a form has a footer, review its change count and choose **Save changes**. Collection actions such as adding a status, changing access, or revoking a key save immediately after confirmation.
+When a form has a footer, review its count of changes and choose **Save changes**. Actions on a list, such as adding a status, changing access, or revoking a key, save immediately after you confirm them.
 
-## Access levels {icon="shield-lock"}
+## Choose the access level {icon="shield-lock"}
 
 :::reference
-- **Read:** Lets a user see the space and its items.
-- **Write:** Lets a user create and update items, comments, status, dates, and assignments.
-- **Admin:** Lets a user change space metadata, access, tags, statuses, calendar export, the GitHub token, and deletion settings.
-- **GitHub token:** Optional and per Space. It is stored encrypted, used only to preview GitHub links on items of this Space, and never shown again. Prefer a fine-grained token with read access to issues and pull requests of the repositories the Space works on. Remove it when it is no longer needed.
-- **Calendar export:** Use calendar export when people need scheduled work in an external calendar. Treat export URLs like read access to event details.
+- **View:** See the Space and its items. Change your personal defaults and copy the calendar feed.
+- **Edit:** Also create and update items, comments, status, dates, and assignments. Change the Space details, tags, statuses, the automatic Kanban columns, and the column order.
+- **Manage:** Also change wormholes, the GitHub token, access, API keys, the calendar export, and deletion.
 :::
 
-:::note Admin-only settings
-Only Space administrators can manage wormholes, the GitHub token, access, API keys, and deletion. Writers can manage shared Space details, tags, statuses, the automatic Kanban columns, and the column order. Readers can change their personal defaults and copy the calendar feed.
-:::
+## Add a GitHub token {icon="brand-github"}
+
+The GitHub token is optional and belongs to one Space. Spaces stores it encrypted and uses it only to preview GitHub links on items of this Space. Spaces never shows the token again.
+
+Prefer a fine-grained token that can only read issues and pull requests of the repositories that the Space works on. Remove the token when you no longer need it.
+
+## Share a calendar export {icon="calendar-share"}
+
+Use the calendar export when people need scheduled work in an external calendar. Treat an export URL like access that lets someone read the event details.

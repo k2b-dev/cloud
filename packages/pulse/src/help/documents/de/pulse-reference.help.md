@@ -2,34 +2,34 @@
 id: pulse-reference
 title: Referenz
 icon: ti ti-book
-description: Nachschlagewerk für Abfragen, Dashboards und das Inventar.
+description: Schlage die Syntax für Abfragen und Dashboards nach und kopiere genaue Namen aus dem Inventar.
 order: 135
 ---
-Nutze diese Referenz, um Abfragen und Dashboards zu erstellen. Die Syntaxabschnitte zeigen die verfügbaren Anweisungen. Kopiere anschließend im Inventar die genauen Namen, Quellen-IDs, Ressourcen-IDs und Dimensionen aus der aktuellen Basis.
+Nutze diese Referenz, um Abfragen und Dashboards zu erstellen. Die Syntaxabschnitte zeigen die verfügbaren Anweisungen. Kopiere dann im **Inventar** die genauen Namen, Quellen-IDs, Ressourcen-IDs und Dimensionen aus der aktuellen Basis.
 
-Pulse-Basen, Quellen, Dashboards und gespeicherte Abfragen verwenden stabile IDs aus sechs Zeichen. Beobachtete Ressourcen behalten ihre fachliche Identität. Ereignisse, Messwerte, Reihen und Ausführungsdatensätze sind Telemetriedaten und keine eigenständig adressierbaren Ressourcen mit Kurz-ID.
+Pulse-Basen, Quellen, Dashboards und gespeicherte Abfragen verwenden stabile IDs aus sechs Zeichen. Beobachtete Ressourcen behalten ihre fachliche Identität. Ereignisse, Messwerte, Reihen und Ausführungsdatensätze sind Telemetriedaten, keine eigenen Ressourcen mit Kurz-ID.
 
-## Inhalt dieser Referenz {icon="layout-grid"}
+## Wissen, was diese Referenz abdeckt {icon="layout-grid"}
 
-:::info Query DSL
-Rufe Metrikverläufe, einzelne oder zusammengefasste Ereignisse und aktuelle Zustände ab. Der Explorer und Dashboard-Widgets verwenden dieselbe Sprache.
+:::info Abfrage-DSL
+Rufe Metrikverläufe, einzelne oder zusammengefasste Ereignisse und aktuelle Zustände ab. Der Explorer und die Dashboard-Widgets verwenden dieselbe Sprache.
 :::
 
-:::success Dashboard DSL
+:::success Dashboard-DSL
 Beschreibe Dashboard-Steuerelemente, Abschnitte, Karten, Markdown-Notizen und visuelle Widgets als Text.
 :::
 
 :::info Inventar
-Durchsuche die aktuelle Basis. Filtere nach Quelle oder Resource und kopiere eingegrenzte Ausschnitte, statt Namen auswendig zu lernen.
+Durchsuche die aktuelle Basis. Filtere nach Quelle oder Ressource und kopiere eingegrenzte Ausschnitte, statt Namen auswendig zu lernen.
 :::
 
 ## Mit bekannten Daten arbeiten {icon="shield-lock"}
 
 :::reference
-- **Von der Aufgabe ausgehen:** Entscheide vor der Syntaxwahl, ob die Frage einen Metrikverlauf, Ereigniszeilen, aktuelle Zustände oder eine Dashboard-Ansicht erfordert.
+- **Von der Aufgabe ausgehen:** Entscheide vor der Wahl der Syntax, ob die Frage einen Metrikverlauf, Ereigniszeilen, aktuelle Zustände oder eine Dashboard-Ansicht braucht.
 - **Namen aus dem Inventar kopieren:** Metriken, Ereignisse, Zustände, Quellen, Ressourcen und Dimensionen sind beobachtete Daten. Leite sie nicht aus Beispielen ab.
-- **Ressource und Resource gleich behandeln:** Die Oberfläche verwendet Ressource, Query DSL verwendet Resource. Beide bezeichnen dieselbe Kennung, zum Beispiel `container:app-core` oder `customer:acme`.
-- **Den Text lesbar halten:** Nutze eindeutige Namen, enge Bereiche und Beschreibungen in der Nähe der erklärten Diagramme.
+- **Dieselbe Ressourcenkennung nutzen:** Die Oberfläche sagt Ressource, die Abfrage-DSL `resource`. Beide meinen dieselbe Kennung, zum Beispiel `container:app-core` oder `customer:acme`.
+- **Den Text lesbar halten:** Nutze eindeutige Namen, enge Bereiche und Beschreibungen nahe bei den Diagrammen, die sie erklären.
 :::
 
 ## Häufige Ausgangspunkte {icon="square-plus"}
