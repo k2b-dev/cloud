@@ -387,9 +387,10 @@ startup directory, and their bounded output is stored in the chat and sent to
 the model. The web app can display these calls later but cannot run them.
 
 Every approval in the interactive CLI asks in one shape, such as
-`Approve? [y/N]`: `y` approves once, and Enter or `n` denies. Any other answer
-asks again. The CLI offers `a` for **Always approve** only when the pending
-Capability Action supports remembered approval. Print mode never creates a
+`Approve? [y/N]`: `y` or `yes` approves once, and Enter, `n`, or `no` denies.
+Answers ignore case, and any other answer asks again. The CLI offers `a` or
+`always` for **Always approve** only when the pending Capability Action
+supports remembered approval. Print mode never creates a
 remembered approval, and local Bash always requires a fresh confirmation.
 
 Start with these read-only checks before choosing a model or continuing a chat:

@@ -14,11 +14,17 @@ type TerminalOutput = {
   error(value: string): void;
 };
 
+const escapeCharacter = (character: string): string => `\\u${character.codePointAt(0)!.toString(16).padStart(4, "0")}`;
+
 export const terminalSafeText = (value: string): string =>
-  value.replace(
-    /[\u0000-\u0009\u000B-\u001F\u007F-\u009F\u202A-\u202E\u2066-\u2069]/g,
-    (character) => `\\u${character.codePointAt(0)!.toString(16).padStart(4, "0")}`,
-  );
+  value.replace(/[\u0000-\u0009\u000B-\u001F\u007F-\u009F\u202A-\u202E\u2066-\u2069]/g, escapeCharacter);
+
+/**
+ * Streamed model text keeps its line breaks and tabs. Every other control or bidirectional character is shown escaped,
+ * so text the model writes cannot restyle, hide, or overwrite the review and prompt that follow it.
+ */
+export const terminalSafeModelText = (value: string): string =>
+  value.replace(/[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u202A-\u202E\u2066-\u2069]/g, escapeCharacter);
 
 export const terminalInfo = (message: string): string => `\u001b[34mInfo:\u001b[0m ${terminalSafeText(message)}`;
 

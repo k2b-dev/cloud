@@ -28,8 +28,8 @@ cld assistant --allow-bash
 
 This adds the predefined `local_bash` client tool only to turns from that
 interactive session. The CLI prints the exact command and startup directory and
-asks `Run? [y/N]` before every execution; only `y` runs it, and Enter denies.
-It runs `/bin/bash` as the current OS user with closed stdin, a fixed timeout,
+asks `Run? [y/N]` before every execution: `y` or `yes` runs it, Enter, `n`, or
+`no` denies it, and any other answer asks again. It runs `/bin/bash` as the current OS user with closed stdin, a fixed timeout,
 and bounded stdout/stderr. Tool calls and results are stored in Cloud and remain
 visible in web chat history. The web app cannot execute them. Do not use this mode for untrusted prompts without
 reviewing each command carefully.
@@ -62,7 +62,7 @@ Useful options:
 - `--detach` submits the turn and returns its ID without waiting in print mode.
 - Repeat `--approve <exact-tool-name>` in print mode to approve only those tools for that turn. There is deliberately no approve-all flag.
 
-Print mode writes assistant text and capability result tables to stdout and tool progress to stderr. Separate non-blank text blocks have a blank line between them, including in the final JSON result. Reconnects and interactive approvals continue with only new text and do not repeat unchanged tool progress; `turns watch` behaves the same way. Tool progress and `--approve` use canonical capability IDs such as `spaces.task.create`. JSONL `text_delta` events carry each block's new text once under the block ID that first carried it, without separators. `turn_finished` carries the complete text, also when the turn ended during a reconnect. Tables show up to 100 returned rows, shorten long cells for display, and include supplied result links. A notice identifies additional rows or pages. Use `--json` for complete returned cell values: it waits and prints one final aggregate without terminal tables. `--jsonl` emits versioned stream events such as text deltas, tool state changes, attention requests, provider retries, and turn completion. While a model call waits for its retry, print mode writes `model: reconnecting` to stderr. Each file the assistant delivers is named there with its chat path, such as `present: completed /sales-report.pdf`; download it with `cld assistant files download`. Structured output, detached submission, and piped input require `--print`.
+Print mode writes assistant text and capability result tables to stdout and tool progress to stderr. Text output shows control and bidirectional formatting characters escaped, such as `\u001b`, so model text cannot restyle or hide later output; `--json` and `--jsonl` keep the text unchanged. Separate non-blank text blocks have a blank line between them, including in the final JSON result. Reconnects and interactive approvals continue with only new text and do not repeat unchanged tool progress; `turns watch` behaves the same way. Tool progress and `--approve` use canonical capability IDs such as `spaces.task.create`. JSONL `text_delta` events carry each block's new text once under the block ID that first carried it, without separators. `turn_finished` carries the complete text, also when the turn ended during a reconnect. Tables show up to 100 returned rows, shorten long cells for display, and include supplied result links. A notice identifies additional rows or pages. Use `--json` for complete returned cell values: it waits and prints one final aggregate without terminal tables. `--jsonl` emits versioned stream events such as text deltas, tool state changes, attention requests, provider retries, and turn completion. While a model call waits for its retry, print mode writes `model: reconnecting` to stderr. Each file the assistant delivers is named there with its chat path, such as `present: completed /sales-report.pdf`; download it with `cld assistant files download`. Structured output, detached submission, and piped input require `--print`.
 `--allow-bash` is deliberately rejected with `--print`, structured output, and
 detached execution.
 
@@ -180,7 +180,8 @@ is not required; editing and management rights remain separate.
 
 Normal capability approvals also apply inside scripts. Interactive Assistant
 sessions show the review and ask `Approve? [y/N]`, or `[y/N/a=always]` when the
-approval can be remembered; an HTTP request asks `Send request? [y/N]`. For a
+approval can be remembered. An HTTP request from Code Mode shows its method,
+URL, headers, and body preview in that review. For a
 direct run or print-mode turn, repeat `--approve <exact-capability-name>` only for operations
 the user authorized. There is no approve-all option.
 

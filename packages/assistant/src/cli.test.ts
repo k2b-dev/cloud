@@ -961,7 +961,7 @@ describe("assistant CLI", () => {
             turnId: "turn-1",
             callId: "call-1",
             name: "mail.createDraft",
-            args: { subject: "Hello\u009b2J\u202e" },
+            args: { subject: "Hello\u009b2J\u202e", body: "x".repeat(20_000) },
             message: "Create draft\u001b]8;;https://evil.example\u0007",
             allowAlways: true,
           },
@@ -990,6 +990,8 @@ describe("assistant CLI", () => {
     const printed = stdout.join("");
     expect(printed).toContain("Approval required: Create draft\\u001b]8;;https://evil.example\\u0007");
     expect(printed).toContain('"subject": "Hello\\u009b2J\\u202e"');
+    expect(printed).toContain("[Input preview is incomplete; deny if you need to see the rest.]");
+    expect(printed).not.toContain("x".repeat(16_000));
     expect(printed.slice(printed.indexOf("Approval required"), printed.indexOf("Done"))).not.toMatch(/[\u0007\u001b\u009b\u202e]/u);
     expect(printed).toContain("Done\n");
   });
@@ -1310,6 +1312,53 @@ describe("assistant CLI", () => {
     );
 
     expect(result).toBeNull();
+  });
+
+  test("shows survey and text editor wording escaped before asking", async () => {
+    const { ctx, stdout } = createContext([], async () => json({}));
+    const answers = ["1", "", "y"];
+    const prompts: string[] = [];
+    const reader = {
+      read: async (prompt: string) => {
+        prompts.push(prompt);
+        return answers.shift() ?? null;
+      },
+      close: () => undefined,
+      onInterrupt: () => () => undefined,
+    };
+
+    await collectSurveyResult(ctx, reader, {
+      title: "Review\u001b[8m",
+      description: "Pick one\u202e",
+      questions: [
+        {
+          type: "single",
+          id: "choice",
+          label: "Choice\u009b2J",
+          required: true,
+          options: [
+            { value: "a", label: "A\u0007" },
+            { value: "b", label: "B" },
+          ],
+        },
+        { type: "text", id: "note", label: "Note\u001b[8m" },
+      ],
+    });
+    await collectTextEditorResult(ctx, reader, { title: "Mail\u001b[8m", description: "Check\u202e", content: "Hello" });
+
+    const shown = stdout.join("") + prompts.join("");
+    expect(shown).not.toMatch(/[\u0007\u001b\u009b\u202e]/u);
+    for (const escaped of [
+      "Review\\u001b[8m",
+      "Pick one\\u202e",
+      "Choice\\u009b2J",
+      "1. A\\u0007",
+      "Note\\u001b[8m: ",
+      "Mail\\u001b[8m",
+      "Check\\u202e",
+    ]) {
+      expect(shown).toContain(escaped);
+    }
   });
 
   test("creates a Project", async () => {
