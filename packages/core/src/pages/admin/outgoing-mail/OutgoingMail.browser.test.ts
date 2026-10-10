@@ -170,7 +170,7 @@ const open = async (
   await tab.setContent(
     `<!doctype html><html lang="${locale}" class="${dark ? "dark" : "light"}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
       `<link rel="stylesheet" href="${origin}/public/fonts.css"><link rel="stylesheet" href="${origin}/public/tabler-icons.css"><style>${css}</style></head>` +
-      `<body class="k2b-ui"><div class="cloud-app-canvas relative flex min-h-screen w-full" data-app-id="core">` +
+      `<body class="k2b-ui"><div class="cloud-app-canvas relative flex min-h-dvh w-full" data-app-id="core">` +
       `<main class="layout-content-main min-h-0 min-w-0 flex-1 p-4"><div class="app-rows"><div style="${frame}">${body}</div></div></main></div></body></html>`,
   );
   await tab.evaluate(() => document.fonts.ready);
