@@ -159,7 +159,7 @@ Open **Message actions** on an individual message. Its **Sender** section has to
 
 ## Keep conversations that must not be deleted {icon="lock"}
 
-Some mail is evidence, for example that a customer was informed. Choose **More conversation actions > Keep** to protect the whole conversation. Everyone who can write in the mailbox can keep a conversation. A lock in the conversation list and next to the subject shows that it is kept; point at the lock next to the subject to see who kept it and since when. To keep conversations with one click, add **Keep** under **More conversation actions > Customize toolbar**.
+Some mail is evidence, for example that a customer was informed. Choose **More conversation actions > Keep** to protect the whole conversation. Everyone who can write in the mailbox can keep a conversation. A lock in the conversation list and next to the subject shows that it is kept; point at the lock next to the subject to see who kept it and since when. To keep conversations in one step, add **Keep** under **More conversation actions > Customize toolbar**.
 
 The protection covers the conversation as it grows. Replies that join it later are kept too, and so are messages that someone splits off or merges into another conversation. The conversation that receives them is kept as well, and its activity names who moved them there.
 
