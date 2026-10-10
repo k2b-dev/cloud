@@ -48,5 +48,5 @@ Stelle dir diese Fragen:
 - Ist es ein wiederholbarer Vorgang? Füge einen Workflow hinzu.
 
 :::note Eine maßgebliche Datenquelle behalten
-Speichere Geschäftsdaten in Tabellen. Ansichten, Formulare, Grids Apps, Dokumente und Workflows verwenden diese Daten und dürfen keine konkurrierenden Kopien führen.
+Speichere Geschäftsdaten in Tabellen. Lass Ansichten, Formulare, Grids Apps, Dokumente und Workflows diese Daten verwenden, statt konkurrierende Kopien zu führen.
 :::

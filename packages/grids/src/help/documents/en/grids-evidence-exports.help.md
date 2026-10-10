@@ -22,7 +22,7 @@ The summary counts current and deleted records, saved revisions and audit events
 :::reference
 - **Active since** a date: Durable History has completed its baseline. The date is the earliest coverage that Grids can claim.
 - **Building baseline:** The activation is still copying the current baseline. Coverage is not complete yet.
-- **Earlier states unavailable:** The table already had records when Durable History was enabled. Grids cannot reconstruct earlier states.
+- **Earlier states unavailable:** The table already has records, but Durable History is not enabled. Grids cannot reconstruct earlier states.
 - **Not enabled:** An empty table has no durable revision history yet.
 - **Incomplete:** The saved activation state and the baseline completion do not agree. Treat the coverage as incomplete and ask the operator to investigate.
 :::

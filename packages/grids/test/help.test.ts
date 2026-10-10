@@ -81,7 +81,7 @@ describe("grids help", () => {
     expect(english).toContain("A Paid checkbox transfers nothing");
     expect(german).toContain("finalisiert verknüpfte Positionen nicht rekursiv");
     expect(german).toContain("Sie vergleicht kein separates Anspruchstellerfeld");
-    expect(german).toContain("Eine Kopffreigabe genehmigt keine späteren Positionsänderungen");
+    expect(german).toContain("Eine Genehmigung des Kopfs genehmigt keine späteren Positionsänderungen");
     expect(german).toContain("Ein Bezahlt-Kontrollkästchen überweist nichts");
   });
 
@@ -187,7 +187,7 @@ describe("grids help", () => {
     }
 
     const forms = gridsHelp.getMarkdown("grids-forms")!;
-    for (const capability of ["Public form", "required fields", "hidden values", "redirect", "Grids App"]) {
+    for (const capability of ["public form", "required fields", "hidden values", "redirect", "Grids App"]) {
       expect(forms, `missing form capability ${capability}`).toContain(capability);
     }
 
@@ -239,7 +239,7 @@ describe("grids help", () => {
     expect(permissions).toContain("Read the complete schema and every record");
     expect(permissions).toContain("Hiding a control in the browser is not authorization");
     expect(permissions).toContain("You can give access to users, groups, service accounts");
-    expect(permissions).toContain("Grids Apps do not accept service accounts");
+    expect(permissions).toContain("You cannot give a service account direct access to a Grids App");
     for (const resource of ["Base", "Grids App"]) {
       expect(permissions, `missing permission resource ${resource}`).toContain(resource);
     }

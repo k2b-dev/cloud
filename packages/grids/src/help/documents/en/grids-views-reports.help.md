@@ -48,7 +48,7 @@ A grouped query or an aggregate-only query returns summary rows, not editable re
 3. Check the result with representative data and with empty data.
 4. Choose the display mode and only the columns that people need.
 5. Choose **Save as view** and give the view a task name, such as **Open invoices**.
-6. Share it only with the people who can see its result.
+6. Share it only with the people who are allowed to see its result.
 :::
 
 People with **View** access to the Base can see a shared view. A personal view belongs to its owner. To publish a saved result without opening the Base, add it to the capability snapshot of a Grids App.

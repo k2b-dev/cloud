@@ -22,7 +22,7 @@ Eine aufrufende Person kann eine Ressource nur verwenden, wenn jede zutreffende 
 
 Weiterer Zugriff an einer Grenze überschreibt nie eine Ablehnung oder eine engere Grenze an anderer Stelle. Personen, die die App verwenden, brauchen keinen Zugriff auf die Base. Zugriff auf die Base ersetzt nicht den Zugriff auf die App.
 
-Grids Apps nehmen keine Dienstkonten an. Delegierte Anmeldedaten öffnen die App über die Identität ihrer Person.
+Einem Dienstkonto kannst du keinen direkten Zugriff auf eine Grids App geben. Delegierte Anmeldedaten öffnen die App über die Identität ihrer Person.
 
 Die App stellt nur die Ressourcen bereit, die ihre veröffentlichten Blöcke und Aktionen nennen. Sie gibt weder Arbeitsbereich noch Schema der Base frei, keine anderen Apps und keine fremden Ressourcen. Abgelehnte Blöcke und Aktionen scheitern, ohne ihre Bezeichnungen, ihre Konfiguration oder die Existenz eines referenzierten Datensatzes preiszugeben.
 

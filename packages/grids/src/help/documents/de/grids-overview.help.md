@@ -73,7 +73,7 @@ Mit **Neu** im **Bearbeitungsmodus** erstellst du eine Tabelle, Ansicht, ein For
 
 **Dokumente** kannst du immer aufklappen. Öffne **Alle Dokumente** oder wähle eine Vorlage aus, um ihre erzeugten Dokumente zu sehen. Personen mit Zugriff **Verwalten** auf die Base bearbeiten E-Mail-Vorlagen für Workflows unter **Einstellungen → E-Mail-Vorlagen**.
 
-Wechsle unter **Übersicht** zwischen **Gruppen** für gemeinsame Schnellzugriffe und **Alle Ressourcen** für die Suche nach Name oder Typ. Der ausgewählte Tab steht in der URL. Links, Neuladen und der Browserverlauf behalten ihn deshalb. Eine Base mit Gruppen öffnet **Gruppen**. Eine Base ohne Gruppen öffnet **Alle Ressourcen**. Ein Formular öffnet weiterhin seinen Dialog.
+Wechsle unter **Übersicht** zwischen **Gruppen** für gemeinsame Schnellzugriffe und **Alle Ressourcen** für die Suche nach Name oder Typ. Der ausgewählte Tab steht in der URL. Links, Neuladen und der Browserverlauf behalten ihn deshalb. Standardmäßig öffnet eine Base mit Gruppen **Gruppen** und eine Base ohne Gruppen **Alle Ressourcen**. Ein Formular öffnet weiterhin seinen Dialog.
 
 ## Die Navigation in Gruppen ordnen {icon="layout-dashboard"}
 

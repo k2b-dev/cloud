@@ -43,11 +43,11 @@ The creator of a record stays available as normal data. For example, GQL in a Gr
 
 ## Share a Grids App {icon="app-window"}
 
-A Grids App has its own access. Its only level is **Open** (`read`), and `none` denies access. You can give access to a user, a group, all signed-in accounts, or the public. Public access includes anonymous visitors. Grids Apps do not accept service accounts. Delegated credentials use their user identity.
+A Grids App has its own access. Its only level is **Open** (`read`), and `none` denies access. You can give access to a user, a group, all signed-in accounts, or the public. Public access includes anonymous visitors. You cannot give a service account direct access to a Grids App. Delegated credentials use their user identity.
 
 People who use the app do not need access to the Base. They receive only the data, forms, fields, documents, and actions that are compiled into the immutable published snapshot. Access to an app never gives the raw Grids workspace, direct table or record APIs, arbitrary GQL, or an editable source view.
 
-Only a person with **Manage** access to the Base can edit, preview, publish, reset, or delete a Grids App, or change its access. Drafts and previews are never public.
+Editing, previewing, publishing, resetting, or deleting a Grids App, and changing its access, require **Manage** access to the Base. Drafts and previews are never public.
 
 Before you publish to the public, review the capability summary in the builder. It lists the data sources, writable form fields, and other operations that the publication exposes. Use separate public and signed-in apps when the two audiences need different capabilities.
 

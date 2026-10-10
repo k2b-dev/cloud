@@ -27,14 +27,15 @@ Mit den Befehlen unter `apps runtime` kannst du:
 - Datensätze seitenweise lesen;
 - Formulare einer Seite oder der Seitenleiste senden;
 - veröffentlichte bearbeitbare Felder ändern;
-- Kommentare und Anhänge hinzufügen und entfernen;
+- Kommentare auflisten, erstellen, ändern und löschen;
+- Anhänge auflisten, hochladen, ersetzen, herunterladen und löschen;
 - gespeicherte PDFs herunterladen;
 - Aktionen oder Scanner starten und ihren Laufstatus lesen.
 
 Führe einen Befehl mit `--help` aus, um seine Eingaben zu sehen. Befehle für eine Seite brauchen dieselben Parameter wie der Discovery-Befehl.
 
 :::warning Ohne Duplikate wiederholen
-Senden, Ändern, Scannen und Aktionen erfordern `--yes`. Wiederhole ein Formular nur mit exakt demselben Body und seinem expliziten `idempotencyKey`. Ein Erstellen ohne Schlüssel kann doppelt laufen. Verwende eine Operations-ID nur für dieselbe Aktion erneut. **Queued** bedeutet angenommen, nicht abgeschlossen: Prüfe den Lauf, bevor du ihn wiederholst.
+Senden, Ändern, Scannen und Aktionen erfordern `--yes`. Wiederhole ein Formular nur mit exakt demselben Body und seinem expliziten `idempotencyKey`. Ein Erstellen ohne Schlüssel kann doppelt laufen. Verwende die Operations-ID einer Aktion nur erneut, um genau diesen Vorgang zu wiederholen. **Queued** bedeutet angenommen, nicht abgeschlossen: Prüfe den Lauf, bevor du ihn wiederholst.
 :::
 
 Diese Befehle verwenden denselben veröffentlichten App-Zugriff wie der Browser. Sie umgehen keine nicht verfügbaren Blöcke. Ein Detaildatensatz, der fehlt, gelöscht, ungültig, nicht verfügbar oder nicht erlaubt ist, liefert einen Nicht-gefunden-Fehler.

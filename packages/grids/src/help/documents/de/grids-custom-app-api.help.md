@@ -2,24 +2,24 @@
 id: grids-custom-app-api
 title: Custom-App-API-Referenz
 icon: ti ti-code
-description: Definitionsoptionen, Standardwerte, Bindungen, Validierung und Formular-Payloads.
+description: Schlage Definitionsoptionen, Standardwerte, Bindungen, Validierung und veröffentlichte Formular-Payloads nach.
 order: 137
 ---
-Den visuellen Ablauf beschreibt [Custom App bauen](/app/grids/help/grids-build-custom-app). Hier stehen App-Definitionen und veröffentlichte Formular-Payloads.
+Den visuellen Ablauf beschreibt [Erste Grids App erstellen](/app/grids/help/grids-build-custom-app). Diese Seite beschreibt App-Definitionen und veröffentlichte Formular-Payloads.
 
-Private App-Seiten führen ausgeloggte Besucher zum Login, danach zum selben Pfad samt Query. Öffentliche Apps, API-/Download-Status und 404 für Angemeldete ohne Zugriff bleiben unverändert. Siehe [Formularlayout](/app/grids/help/grids-forms).
+Eine private App-Seite schickt abgemeldete Besucher zur Anmeldung und danach zurück zum selben Pfad samt Query. Öffentliche Apps, API- und Download-Status und der 404 für Angemeldete ohne Zugriff bleiben unverändert. Das Formularlayout beschreibt [Formulare](/app/grids/help/grids-forms).
 
-## Installierten Vertrag lesen {icon="code"}
+## Den installierten Vertrag lesen {icon="code"}
 
-`cld grids apps reference --json` oder `GET /api/grids/apps/reference` liefert `definitionSchema`: das erzeugte Eingabe-JSON-Schema mit allen Eigenschaften, Pflichtfeldern, Aufzählungen, Standardwerten und Größenlimits.
+`cld grids apps reference --json` oder `GET /api/grids/apps/reference` liefert `definitionSchema`. Dieses erzeugte Eingabe-JSON-Schema nennt alle Eigenschaften, Aufzählungen, Standardwerte, Pflichtschlüssel und Größengrenzen.
 
-`cld grids apps validate BASE --source-file app.yaml --json` prüft übergreifende Regeln, Abfragen, Zugriffe und Veröffentlichung. Die Pfade in `diagnostics` korrigieren; JSON Schema allein beweist keine Veröffentlichbarkeit.
+Führe `cld grids apps validate BASE --source-file app.yaml --json` aus, um feldübergreifende Regeln, Abfragen, Zugriff und Veröffentlichung zu prüfen. Korrigiere die Pfade in `diagnostics`. JSON Schema allein beweist nicht, dass du veröffentlichen kannst.
 
-## Identität, Seiten und Layout {icon="layout-grid"}
+## Identität, Seiten und Layout festlegen {icon="layout-grid"}
 
-Die Wurzel benötigt `schemaVersion:5`, `kind:grids.custom-app`, `id`, `baseId`, `name`, `startPageId` und `pages`. Optional sind `icon` und `sidebar`. Namen haben 1–200 Zeichen. Icons sind Tabler-Slugs wie `file-invoice`, keine CSS-Klassen.
+Die Wurzel braucht `schemaVersion:5`, `kind:grids.custom-app`, `id`, `baseId`, `name`, `startPageId` und `pages`. Optional sind `icon` und `sidebar`. Namen haben 1–200 Zeichen. Icons sind Tabler-Slugs wie `file-invoice`, keine CSS-Klassen.
 
-Ressourcen-IDs bestehen aus genau sechs Buchstaben/Ziffern; Groß-/Kleinschreibung zählt. Lokale Seiten-, Zeilen-, Spalten-, Block- und Aktions-IDs beginnen mit einem Kleinbuchstaben und erlauben Kleinbuchstaben, Ziffern und Bindestriche, maximal 80 Zeichen. Parameternamen verwenden stattdessen Unterstriche. IDs sind im jeweiligen Container eindeutig; Block-IDs gelten für die gesamte Seite.
+Ressourcen-IDs bestehen aus genau sechs Buchstaben oder Ziffern. Groß- und Kleinschreibung zählt. Lokale IDs für Seiten, Zeilen, Spalten, Blöcke und Aktionen beginnen mit einem Kleinbuchstaben. Sie bestehen aus Kleinbuchstaben, Ziffern und Bindestrichen, höchstens 80 Zeichen. Parameternamen verwenden Unterstriche statt Bindestrichen. IDs sind in ihrem Container eindeutig. Block-IDs sind auf der ganzen Seite eindeutig.
 
 | Objekt | Pflicht | Optional und Standardwerte |
 | --- | --- | --- |
@@ -30,11 +30,20 @@ Ressourcen-IDs bestehen aus genau sechs Buchstaben/Ziffern; Groß-/Kleinschreibu
 | Zeile | `id`, `columns` (1–12) | keine |
 | Spalte | `id`, `span` (ganze Zahl 1–12), `blocks` (1–24) | keine |
 
-Eine App hat 1–12 Seiten. Spaltenbreiten ergeben je Zeile höchstens 12. Die Startseite benötigt keine Parameter. Eine Datensatzseite deklariert genau ihren gebundenen Datensatzparameter, verwendet in beiden Angaben dieselbe Tabelle, setzt `navigation.visible:false` und enthält einen `record`- oder `html`-Block. Auch andere parametrisierte Seiten sind reine Navigationsziele. Navigation muss alle Zielparameter genau einmal mit passenden Datensatztypen liefern.
+Eine App hat 1–12 Seiten. Die Spaltenbreiten einer Zeile ergeben zusammen höchstens 12. Die Startseite hat keine Pflichtparameter.
 
-## Sämtliche Blockoptionen {icon="blocks"}
+Für eine Datensatzseite gelten diese Regeln:
 
-Jeder Block benötigt `id` und `type`. Alle unterstützen optional `title` (1–160 Zeichen) und `availableWhen:{query}` und `disclosure:{label,defaultOpen?}`. Abfragen haben 1–20.000 Zeichen. Optionale Werte weglassen statt `null` einzutragen. `emptyText` (1–240 Zeichen) unterstützen nur `records`, `referenced_records` und `record`.
+- Sie deklariert genau ihren gebundenen Datensatzparameter.
+- Sie verwendet in beiden Angaben dieselbe Tabelle.
+- Sie setzt `navigation.visible:false`.
+- Sie enthält einen `record`- oder `html`-Block.
+
+Andere Seiten mit Parametern sind ebenfalls reine Navigationsziele. Die Navigation muss alle Zielparameter genau einmal mit passenden Datensatztypen liefern.
+
+## Alle Blockoptionen festlegen {icon="blocks"}
+
+Jeder Block braucht `id` und `type`. Alle Blöcke akzeptieren optional `title` (1–160 Zeichen), `availableWhen:{query}` und `disclosure:{label,defaultOpen?}`. Abfragen haben 1–20.000 Zeichen. Lass optionale Werte weg, statt `null` einzutragen. Nur `records`, `referenced_records` und `record` unterstützen `emptyText` (1–240 Zeichen).
 
 | `type` | Weitere Pflichtfelder | Optional und Standardwerte |
 | --- | --- | --- |
@@ -50,27 +59,43 @@ Jeder Block benötigt `id` und `type`. Alle unterstützen optional `title` (1–
 | `actions` | `actions` (1–12) | `disclosure:{label,defaultOpen?}` |
 | `scanner` | `launcherId` | `disclosure:{label,defaultOpen?}` |
 
-`source` ist genau `{kind:view,viewId}` oder `{kind:gql,query}`. Für `records` ist `display` entweder `{kind:table,columnIds:[…]}` (bis 30) oder `{kind:cards}`. Tabellen aus gespeicherten Ansichten benötigen mindestens eine Spalte; Inline-GQL zeigt mit `columnIds:[]` seine ausgewählten Spalten; eine nichtleere Liste begrenzt die sichtbaren Felder, während ausgewählte Felder für Verhalten verfügbar bleiben. Karten übernehmen die Kartenkonfiguration einer gespeicherten Ansicht; Inline-GQL ist dafür nicht möglich. Kennzahlen benötigen ungruppierte skalare Aggregate (bis 12); Diagramme gruppierte Aggregate (bis 100 Gruppen). Pro App sind höchstens vier Records-Blöcke, 24 Kennzahlen-/Diagrammblöcke und 24 Scanner-Blöcke erlaubt.
+`source` ist genau `{kind:view,viewId}` oder `{kind:gql,query}`. Für `records` ist `display` entweder `{kind:table,columnIds:[…]}` (bis 30) oder `{kind:cards}`.
 
-`referenced_records`, `record`, `html` und `comments` benötigen einen gebundenen Seitendatensatz. Eingehende Relationen müssen auf dessen Tabelle zeigen. Record-/HTML-Blöcke einer Seite dürfen zusammen höchstens 30 unterschiedliche Felder zeigen. `editableFieldIds` ist eine explizite beschreibbare Teilmenge der angezeigten Felder. `documents.templateIds` erlaubt vorhandene Dokumente zu lesen, nicht neue zu erzeugen. `html` zeigt ein vorhandenes HTML-Feld in einem isolierten Frame.
+- Eine Tabelle aus einer gespeicherten Ansicht braucht mindestens eine Spalte.
+- Eine Inline-GQL-Tabelle zeigt mit `columnIds:[]` normalerweise die ausgewählten Spalten der Abfrage. Eine nichtleere Liste begrenzt die angezeigten Felder. Die ausgewählten Felder bleiben für das Verhalten verfügbar.
+- Karten übernehmen die Kartenkonfiguration einer gespeicherten Ansicht und können kein Inline-GQL verwenden.
+- Kennzahlen brauchen ungruppierte skalare Aggregate (bis 12). Diagramme brauchen gruppierte Aggregate (bis 100 Gruppen).
+- Eine App erlaubt höchstens vier Records-Blöcke, 24 Kennzahlen- und Diagrammblöcke und 24 Scanner-Blöcke.
 
-`documents.preview:true` erlaubt PDF-Vorschauen gespeicherter Entwürfe samt Vorlagendaten, ohne Ausstellung oder Nummernreservierung. Die Quelle darf nur `{{ record.id }}` oder `{{ record.shortId }}` einsetzen, ohne Liquid-Filter/Tags. Vorlagen- oder Base-Schemaänderungen erfordern erneutes Veröffentlichen.
+`referenced_records`, `record`, `html` und `comments` brauchen einen gebundenen Seitendatensatz. Eingehende Relationen müssen auf dessen Tabelle zeigen. Die Record- und HTML-Blöcke einer Seite dürfen zusammen höchstens 30 unterschiedliche Felder zeigen. Bearbeitbare Felder sind eine ausdrückliche beschreibbare Teilmenge der angezeigten Felder. `documents.templateIds` erlaubt das Lesen vorhandener erzeugter Dokumente. Neue Dokumente ausstellen erlaubt es nicht. Ein `html`-Block zeigt ein vorhandenes HTML-Feld in einem isolierten Frame.
 
-`valueFormat` benötigt `style:number|integer|percent`; optional sind `decimalPlaces` (0–20), `unit` (1–20 Zeichen) und `unitPosition:prefix|suffix`. Ganzzahlen erlauben keine Nachkommastellen; nur `number` erlaubt eine eigene Einheit; deren Position benötigt eine Einheit. Ohne diese Optionen gilt die normale Darstellung des Renderers.
+`documents.preview:true` erlaubt PDF-Vorschauen gespeicherter Entwürfe, einschließlich der abgefragten Daten der Vorlagen. Die Vorschau stellt nichts aus und reserviert keine Nummer. Die Quelle darf nur `{{ record.id }}` oder `{{ record.shortId }}` einsetzen, ohne Liquid-Filter oder -Tags. Änderungen an einer Vorlage oder am Schema der Base erfordern eine neue Veröffentlichung.
 
-## Aktionen und Bindungen {icon="arrows-right-left"}
+`valueFormat` braucht `style:number|integer|percent`. Optional sind `decimalPlaces` (0–20), `unit` (1–20 Zeichen) und `unitPosition:prefix|suffix`. Der Stil `integer` lehnt Nachkommastellen ab. Nur der Stil `number` akzeptiert eine eigene Einheit. Eine Einheitenposition braucht eine Einheit. Ohne diese Optionen gilt die normale Darstellung des Renderers.
 
-Aktionen im `actions`-Block benötigen `id`, `label` (1–120) und `kind`. Beide Arten unterstützen `icon` und `availableWhen`.
+## Aktionen und Bindungen konfigurieren {icon="arrows-right-left"}
 
-- `kind:navigate` benötigt zusätzlich `pageId` und `params`; `history` ist standardmäßig `push`, alternativ `replace`.
-- `kind:workflow` benötigt `launcherId`; `inputs` ist standardmäßig `{}`. `confirm` ist optionaler Bestätigungstext (1–240 Zeichen). Binde alle erforderlichen Workflow-Eingaben oder frage sie über `prompt: { inputs: ["date", "amount"], description?, successMessage? }` ab. Die Namen wählen ungebundene skalare Workflow-Eingaben (text, decimal, number, date, dateTime, boolean oder select); Beschriftungen und Validierung stammen aus dem veröffentlichten Workflow. Diese Aktionen öffnen einen kompakten Dialog. Bei unklarem Ausgang bleiben Eingaben und Vorgangsschlüssel für Wiederholungen erhalten. Ein Prompt ist nicht mit `confirm`, `background`, festen Launchern oder Zeilenaktionen kombinierbar. Browser-Eingaben überschreiben niemals Server-Bindungen.
-- Zeilenaktionen erlauben nur `kind:workflow`, mit denselben Feldern und zusätzlich `showLabel:true`. `false` benötigt ein Icon; die Beschriftung bleibt für Barrierefreiheit erforderlich.
-- `rowNavigate` enthält `kind:navigate`, `pageId`, `params` und optional `history:push|replace`, keine Beschriftung oder Aktions-ID.
-- `onSuccessNavigate` enthält `kind:navigate`, `pageId` und `params`. Nach Erfolg wird die Navigation ersetzt; eine `history`-Option gibt es hier nicht.
+Aktionen in einem `actions`-Block brauchen `id`, `label` (1–120) und `kind`. Beide Arten akzeptieren `icon` und `availableWhen`.
 
-Dialog-Vorgänge mit unklarem Ausgang bleiben in diesem Browser-Tab auch nach dem Neuladen erhalten. Auf der ursprünglichen Seite kannst du ihren Status prüfen, auch wenn der ursprüngliche Button nicht mehr angezeigt wird. Wiederholungen bleiben an den ursprünglichen Workflow-Starter gebunden; eine neu veröffentlichte Aktion leitet einen vorhandenen Versuch nicht auf einen anderen Workflow um. Prüfe den Status vor einer weiteren Erfassung. Beim Schließen des Tabs oder Löschen des Browser-Speichers geht diese lokale Wiederaufnahme verloren; prüfe dann die vorhandenen Einträge vor einer erneuten Erfassung.
+- `kind:navigate` braucht zusätzlich `pageId` und `params`. `history` ist standardmäßig `push` und akzeptiert auch `replace`.
+- `kind:workflow` braucht zusätzlich `launcherId`. `inputs` ist standardmäßig `{}`. `confirm` liefert optional einen Bestätigungstext (1–240 Zeichen).
+- Zeilenaktionen verwenden nur `kind:workflow`, mit denselben Schlüsseln und zusätzlich `showLabel:true`. `false` braucht ein Icon. Die Beschriftung bleibt für die Barrierefreiheit Pflicht.
+- `rowNavigate` hat `kind:navigate`, `pageId`, `params` und optional `history:push|replace`. Es hat keine Beschriftung und keine Aktions-ID.
+- `onSuccessNavigate` hat `kind:navigate`, `pageId` und `params`. Nach erfolgreichem Absenden ersetzt die Navigation den Verlaufseintrag. Eine `history`-Option gibt es hier nicht.
 
-Bindungen sind Objekte, keine Ausdrücke. Erlaubte Quellen hängen von ihrer Position ab:
+### Workflow-Eingaben abfragen
+
+Binde alle erforderlichen Workflow-Eingaben oder frage sie mit `prompt: { inputs: ["date", "amount"], description?, successMessage? }` ab. Die Namen wählen ungebundene skalare Workflow-Eingaben: text, decimal, number, date, dateTime, boolean oder select. Beschriftungen und Validierung stammen aus dem veröffentlichten Workflow. Diese Aktionen öffnen einen kompakten Dialog. Ist der Ausgang unklar, behält der Dialog die gesendeten Werte und den Vorgangsschlüssel. Ein Prompt lässt sich nicht mit `confirm`, `background`, festen Launchern oder Zeilenaktionen kombinieren. Browser-Eingaben überschreiben nie Server-Bindungen.
+
+Ein Prompt-Vorgang, der noch auf seinen Ausgang wartet, bleibt in diesem Browser-Tab auch nach dem Neuladen erhalten. Eine Statusaktion auf der ursprünglichen Seite bleibt verfügbar, auch wenn die ursprüngliche Schaltfläche verschwindet. Wiederholungen bleiben beim ursprünglichen Workflow-Launcher. Eine neue Veröffentlichung der Aktion leitet einen vorhandenen Versuch nie auf einen anderen Workflow um. Prüfe den Status, bevor du einen weiteren Vorgang startest.
+
+:::warning Die lokale Wiederaufnahme endet mit dem Tab
+Schließt du den Tab oder löschst du den Browser-Speicher, geht diese lokale Wiederaufnahme verloren. Prüfe dann die vorhandenen Einträge, bevor du erneut absendest.
+:::
+
+### Werte binden
+
+Bindungen sind Objekte, keine Ausdrücke. Die erlaubten Quellen hängen von der Position ab:
 
 | Position | Akzeptierte Bindungsformen |
 | --- | --- |
@@ -82,23 +107,23 @@ Bindungen sind Objekte, keine Ausdrücke. Erlaubte Quellen hängen von ihrer Pos
 | Globale feste Werte | nur `LITERAL`, `AUTH.currentUser` |
 | Globaler Formularerfolg `params` | nur `RESULT.recordId` |
 
-Schlüssel fester Werte sind öffentliche Formularfeld-IDs; Workflow-Schlüssel sind Eingabenamen des Launchers. Bindungen müssen zum Zieltyp passen. `AUTH.currentUser` benötigt eine Anmeldung und ein kompatibles Principal-Feld. Feste Felder werden aus den Eingaben entfernt und serverseitig erneut ausgewertet.
+Schlüssel fester Werte sind öffentliche Formularfeld-IDs. Schlüssel von Workflow-Eingaben sind die Eingabenamen des Launchers. Bindungen müssen zu ihrem Zieltyp passen. `AUTH.currentUser` braucht eine angemeldete Person und ein kompatibles Principal-Feld. Grids entfernt feste Felder aus den gesendeten Eingaben und wertet sie auf dem Server erneut aus.
 
-`sidebar.actions` enthält bis zu zwölf globale Formularaktionen. Pflicht: `id`, `label`, `kind:form`, `formId`. Optional: `icon`, `tone:default|success|danger` (Standard `default`), `availableWhen`, `fixedValues:{}`, `onSuccessNavigate`. Globale Formulare legen immer neue Datensätze an; sie besitzen keinen Seiten-/Datensatzkontext.
+`sidebar.actions` enthält bis zu zwölf globale Formularaktionen. Jede braucht `id`, `label`, `kind:form` und `formId`. Optional sind `icon`, `tone:default|success|danger` (Standard `default`), `availableWhen`, `fixedValues:{}` und `onSuccessNavigate`. Formulare der Seitenleiste erstellen immer neue Datensätze. Sie haben keinen Kontext der aktuellen Seite oder des Datensatzes.
 
-## Verfügbarkeit und Berechtigungen {icon="shield-lock"}
+## Verfügbarkeit und Zugriff steuern {icon="shield-lock"}
 
-`availableWhen:{query}` gilt für Seiten, Blöcke und Aktionen. Eine Ergebniszeile bedeutet verfügbar; leere Ergebnisse oder Fehler bedeuten nicht verfügbar. Der Server prüft Lese- und Schreibzugriffe erneut. Kontext: `@auth`, deklarierte `@params`, `@page`, `@app`, `@base`, `@time`. Globale Aktionen erlauben keinen Seiten-/Parameterkontext. Syntax: [GQL](/app/grids/help/grids-gql).
+`availableWhen:{query}` gilt für Seiten, Blöcke und Aktionen. Eine Ergebniszeile bedeutet verfügbar. Ein leeres Ergebnis oder ein Fehler bedeutet nicht verfügbar. Der Server prüft Lese- und Schreibvorgänge erneut. Der typisierte Kontext ist `@auth`, die deklarierten `@params`, `@page`, `@app`, `@base` und `@time`. Globale Abfragen der Seitenleiste können keinen Seiten- oder Parameterkontext verwenden. Die Syntax beschreibt [GQL](/app/grids/help/grids-gql).
 
-App-Entwicklung benötigt Base Admin. App-Leser erhalten nur veröffentlichte Bereiche, keinen rohen Base-Zugriff. Workflow-Aktionen und Scanner benötigen Anmeldung. Schreibzugriffe behalten Berechtigungs-, Finalisierungs- und Schreibregelprüfungen. Versteckte Navigation ist keine Zugriffskontrolle.
+Das Erstellen einer App braucht Zugriff **Verwalten** auf die Base. Personen, die die App verwenden, erhalten nur die veröffentlichten Bereiche, keinen direkten Zugriff auf die Base. Workflow-Aktionen und Scanner erfordern eine Anmeldung. Alle Schreibvorgänge behalten die Prüfungen für Zugriff, Finalisierung und Änderungsrichtlinie zur Laufzeit. Ausgeblendete Navigation ist keine Zugriffskontrolle.
 
-## Formulare per API ausfüllen und bearbeiten {icon="forms"}
+## Formulare über die API absenden und bearbeiten {icon="forms"}
 
-Zuerst `cld grids apps runtime read APP --page PAGE --params '{"item_id":"REC001"}' --json` lesen. Das `form`-Ergebnis eines Formularblocks enthält `form`, `fields`, `inlineTargetFields`, `submitUrl` und im Bearbeitungsmodus `initialRecord`. Beim Aufruf von `apps runtime submit APP PAGE BLOCK --body-file submission.json --yes` dieselben Seitenparameter mitgeben.
+Führe zuerst `cld grids apps runtime read APP --page PAGE --params '{"item_id":"REC001"}' --json` aus. Das `form`-Ergebnis jedes Formularblocks enthält `form`, `fields`, `inlineTargetFields`, `submitUrl` und im Bearbeitungsmodus `initialRecord`. Gib dieselben Seitenparameter mit, wenn du `apps runtime submit APP PAGE BLOCK --body-file submission.json --yes` aufrufst.
 
-Anlegen akzeptiert ein Feld-Wert-Objekt oder `{data,inlineCreates?,idempotencyKey?}`. Bearbeiten benötigt `{data,version,idempotencyKey,inlineCreates?,inlineUpdates?}`. Schlüssel in `data` sind öffentliche Feld-IDs; Relationswerte sind öffentliche Datensatz-IDs oder unter `inlineCreates` deklarierte temporäre IDs.
+Erstellen akzeptiert ein Feld-Wert-Objekt oder `{data,inlineCreates?,idempotencyKey?}`. Bearbeiten braucht `{data,version,idempotencyKey,inlineCreates?,inlineUpdates?}`. Schlüssel in `data` sind öffentliche Feld-IDs. Relationswerte sind öffentliche Datensatz-IDs oder temporäre IDs, die `inlineCreates` deklariert.
 
-Eine `object_list` ist ein Feldwert, keine Relation: `{"data":{"ITEMS1":[{"Label1":"Beratung","Amount":"19.95"}]}}`. Spalten-IDs und Regeln stehen in `fields[].config`. Exakte Dezimalwerte als Strings senden, berechnete Zellen weglassen. Die Liste ersetzt alle Zeilen; `[]` leert sie, falls erlaubt. Kein `inlineCreates` nötig. Siehe [Listenregeln und Formeln](/app/grids/help/grids-tables-fields).
+Eine `object_list` ist ein Feldwert, keine Relation: `{"data":{"ITEMS1":[{"Label1":"Beratung","Amount":"19.95"}]}}`. Spalten-IDs und Regeln findest du in `fields[].config`. Sende exakte Dezimalwerte als Strings und lass berechnete Zellen weg. Das Senden der Liste ersetzt alle ihre Zeilen. `[]` leert sie, falls erlaubt. `inlineCreates` brauchst du nicht. Siehe [Listenregeln und Formeln](/app/grids/help/grids-tables-fields).
 
 ```json
 {
@@ -110,21 +135,24 @@ Eine `object_list` ist ein Feldwert, keine Relation: `{"data":{"ITEMS1":[{"Label
 }
 ```
 
-Ermittelte IDs und vollständige Formularwerte verwenden: Pflichtwerte beibehalten, zum Leeren explizite Leerwerte senden. Verknüpfte Eingaben erlauben nur `inlineCreate.fields`, höchstens 20 Änderungen/Neuanlagen je Relation und 50 insgesamt. Bearbeitete Kinder bleiben exklusiv bei diesem Eltern-Datensatz in derselben Base verknüpft. Entfernen löscht keine Kinder. Finalisierte Datensätze bleiben gesperrt. Alle Änderungen werden gemeinsam gespeichert oder zurückgerollt.
+Verwende die ermittelten IDs und vollständige Formularwerte. Behalte Pflichtwerte bei und sende ausdrückliche Leerwerte, um einen Wert zu leeren. Verknüpfte Eingaben erlauben nur `inlineCreate.fields`, höchstens 20 Neuanlagen oder Änderungen je Relation und 50 insgesamt. Bearbeitete untergeordnete Datensätze müssen ausschließlich mit diesem übergeordneten Datensatz in derselben Base verknüpft bleiben. Das Lösen einer Verknüpfung löscht keine untergeordneten Datensätze. Finalisierte Datensätze sind schreibgeschützt. Alle Änderungen werden gemeinsam gespeichert oder zurückgerollt.
 
-`initialRecord` enthält Elternversion `version`, Eingaben `values` und vorausgefüllte Einträge in `inlineCreates` mit `{tempId,data,existing:{id,version}}`. Bestehende temporäre Verweise durch `existing.id` ersetzen; vorhandene Änderungen als `inlineUpdates`, nur neue als `inlineCreates` senden. Dies ist kein Schreib-Payload.
+`initialRecord` enthält die `version` des übergeordneten Datensatzes, die bearbeitbaren `values` und Entwürfe in `inlineCreates` mit `{tempId,data,existing:{id,version}}`. Ersetze vorhandene temporäre Verweise durch `existing.id`. Sende Änderungen an vorhandenen Datensätzen als `inlineUpdates` und nur neue Entwürfe als `inlineCreates`. `initialRecord` ist kein Schreib-Payload.
 
-Der Server bestimmt das Bearbeitungsziel aus dem Seitendatensatz, niemals aus einer `recordId` im Body. Base-Schreiber verwenden entsprechend `cld grids forms submit BASE TABLE FORM --record REC001 --body-file submission.json --yes`, mit aktuellen Versionen aus `records show`. HTTP: `POST /api/grids/forms/FORM/records/REC001`; Anlegen: `POST /api/grids/forms/FORM/submit`.
+Der Server bestimmt das Bearbeitungsziel aus dem gebundenen Seitendatensatz, nie aus einer `recordId` im Body. Für Personen mit Zugriff **Bearbeiten** auf die Base ist das Gegenstück `cld grids forms submit BASE TABLE FORM --record REC001 --body-file submission.json --yes`, mit aktuellen Versionen aus `records show`. Der HTTP-Endpunkt ist `POST /api/grids/forms/FORM/records/REC001`. Erstellen verwendet `POST /api/grids/forms/FORM/submit`.
 
-Schlüssel: nichtleer, höchstens 200 Zeichen, ohne NUL; Gültigkeit je Formular/Tabelle und Akteur. Exakte Wiederholungen liefern dieselbe Datensatz-ID ohne weitere Änderung. Andere Payloads, gelöschte Ergebnisse oder alte Versionen ergeben `409`. Nach Timeouts denselben Body/Schlüssel wiederholen oder Ergebnis prüfen; ohne Schlüssel drohen Duplikate. Nach bestätigten Versionskonflikten neu laden und prüfen. Validierungsfehler (`400`/`422`) und Zugriffsfehler (`401`/`403`/`404`) sind keine Speicherung. Anlegen liefert `201`, Bearbeiten `200`, mit `recordId` und optionaler App-Erfolgsnavigation.
+### Sicher wiederholen
 
-### Dokumentaktionen im Hintergrund
+:::reference
+- **Schlüssel:** Nicht leer, höchstens 200 Zeichen, ohne NUL. Ein Schlüssel gilt für ein Formular oder eine Tabelle und einen Akteur.
+- **Exakte Wiederholung:** Liefert die ursprüngliche Datensatz-ID und schreibt nichts erneut.
+- **Konflikt (`409`):** Ein geänderter Payload, ein gelöschtes Ergebnis oder eine veraltete Version.
+- **Zeitüberschreitung:** Wiederhole denselben Body mit demselben Schlüssel oder prüfe das Ergebnis. Ein Erstellen ohne Schlüssel kann doppelt laufen.
+- **Bestätigte veraltete Version:** Lade neu und prüfe die Daten vor einem neuen Versuch.
+- **Nicht gespeichert:** Validierungsfehler (`400`/`422`) und Zugriffsfehler (`401`/`403`/`404`).
+- **Erfolg:** Erstellen liefert `201`, Bearbeiten `200`, jeweils mit `recordId` und der optionalen Erfolgsnavigation der App.
+:::
 
-Workflow-Aktionen können `background: { acceptedMessage, documentBlockId,
-documentTemplateId }` setzen. Dafür braucht die Seite einen Datensatz und einen
-uneingeschränkt verfügbaren Datensatzblock mit dieser Dokumentvorlage. Pro Seite
-ist eine Ergebnisvorlage vorgesehen. `GET` auf dem Aktionsendpunkt liest den
-aktuellen Dokumentstatus; `POST` bestätigt die Annahme direkt. Diese Aktionen
-liefern den Dokumentstatus statt einer Workflow-Lauf-ID. Nur aktuell berechtigte
-App-Leser dürfen ihn sehen. Bei `needs_attention` ist kein weiterer Start möglich;
-ein fertiges Dokument wird direkt geöffnet.
+### Dokumentaktionen im Hintergrund ausführen
+
+Workflow-Aktionen können `background: { acceptedMessage, documentBlockId, documentTemplateId }` setzen. Dafür braucht die Seite einen Datensatz und einen bedingungslos verfügbaren Datensatzblock, der diese Vorlage zeigt. Jede Seite hat eine Ergebnisvorlage für Hintergrundaktionen. `GET` auf dem Aktionsendpunkt liest den aktuellen Dokumentstatus. `POST` bestätigt die Annahme sofort. Diese Aktionen liefern die Dokumentdarstellung statt einer Lauf-ID. Nur Personen, die die App aktuell verwenden dürfen, können diese Darstellung lesen. `needs_attention` verhindert einen weiteren Start. Ein fertiges Dokument öffnet sich direkt. Siehe [Seiten und Blöcke in Grids Apps](/app/grids/help/grids-custom-app-pages-blocks).

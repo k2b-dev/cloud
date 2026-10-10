@@ -48,5 +48,5 @@ Ask these questions:
 - Is it a repeatable operation? Add a workflow.
 
 :::note Keep one source of truth
-Store business facts in tables. Views, forms, Grids Apps, documents, and workflows use those facts and must not keep competing copies.
+Store business facts in tables. Let views, forms, Grids Apps, documents, and workflows use those facts instead of competing copies.
 :::

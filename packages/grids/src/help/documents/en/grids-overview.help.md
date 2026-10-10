@@ -73,7 +73,7 @@ Use **New** in **Edit mode** to create a table, view, form, document template, w
 
 You can always expand **Documents**. Open **All documents**, or select a template to see its generated documents. People with **Manage** access to the Base edit workflow email templates in **Settings → Email templates**.
 
-In **Overview**, switch between **Groups** for shared shortcuts and **All resources** to search by name or type. The selected tab is part of the URL, so links, reloads, and browser history keep it. A Base with groups opens on **Groups**. A Base without groups opens on **All resources**. Opening a form still opens its form dialog.
+In **Overview**, switch between **Groups** for shared shortcuts and **All resources** to search by name or type. The selected tab is part of the URL, so links, reloads, and browser history keep it. By default, a Base with groups opens on **Groups**, and a Base without groups opens on **All resources**. Opening a form still opens its form dialog.
 
 ## Organize the navigation into groups {icon="layout-dashboard"}
 

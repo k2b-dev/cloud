@@ -22,7 +22,7 @@ Die Zusammenfassung zählt aktuelle und gelöschte Datensätze, gespeicherte Rev
 :::reference
 - **Aktiv seit** einem Datum: Der dauerhafte Verlauf hat seinen Ausgangsstand vollständig erstellt. Das Datum ist die früheste Abdeckung, die Grids zusichern kann.
 - **Ausgangsstand wird erstellt:** Die Aktivierung kopiert noch den aktuellen Ausgangsstand. Die Abdeckung ist noch nicht vollständig.
-- **Frühere Zustände nicht verfügbar:** Die Tabelle enthielt schon Datensätze, als der dauerhafte Verlauf aktiviert wurde. Grids kann frühere Zustände nicht rekonstruieren.
+- **Frühere Zustände nicht verfügbar:** Die Tabelle enthält schon Datensätze, aber der dauerhafte Verlauf ist nicht aktiviert. Grids kann frühere Zustände nicht rekonstruieren.
 - **Nicht aktiviert:** Eine leere Tabelle hat noch keinen dauerhaften Revisionsverlauf.
 - **Unvollständig:** Der gespeicherte Aktivierungsstatus und der Abschluss des Ausgangsstands stimmen nicht überein. Behandle die Abdeckung als unvollständig und wende dich zur Prüfung an den Betreiber.
 :::

@@ -27,14 +27,15 @@ The `apps runtime` commands can:
 - read paged records;
 - submit page or sidebar forms;
 - update published editable fields;
-- add and remove comments and attachments;
+- list, create, update, and delete comments;
+- list, upload, replace, download, and delete attachments;
 - download stored PDFs;
 - run actions or scanners and read their run status.
 
 Run a command with `--help` to see its inputs. Page commands require the same parameters as the discovery command.
 
 :::warning Retry without duplicates
-Submissions, updates, scans, and actions require `--yes`. Retry a form submission only with the exact same body and its explicit `idempotencyKey`. A create without a key can run twice. Reuse an operation ID only for the same action. **Queued** means accepted, not finished: inspect the run before you retry.
+Submissions, updates, scans, and actions require `--yes`. Retry a form submission only with the exact same body and its explicit `idempotencyKey`. A create without a key can run twice. Reuse the operation ID of an action only to retry that same operation. **Queued** means accepted, not finished: inspect the run before you retry.
 :::
 
 These commands use the same published app access as the browser. They cannot bypass unavailable blocks. A detail record that is missing, deleted, invalid, unavailable, or not allowed returns a not-found error.
