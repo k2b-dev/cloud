@@ -189,7 +189,11 @@ export type WidgetEndpoint = {
    * `nav.requiresRoles`. Visibility only: the handler still authorizes every request and answers `403`.
    */
   requiresRoles?: readonly Role[];
-  /** @deprecated Ignored: the dashboard has no zones or spans any more. Declare `sizes` and `defaultSize` instead. */
+  /**
+   * @deprecated The dashboard has no zones or widths any more; declare `sizes` and `defaultSize` instead. Keep an
+   * existing value: the dashboard reads it only to convert a board saved before sizes existed into the one the person
+   * saw.
+   */
   presentation?: DashboardWidgetPresentation;
 };
 

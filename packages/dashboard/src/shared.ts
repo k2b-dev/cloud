@@ -1,4 +1,4 @@
-import { type DashboardWidgetSize, fitWidgetSize, isDashboardWidgetSize } from "@k2b/cloud/contracts";
+import { type DashboardWidgetPresentation, type DashboardWidgetSize, fitWidgetSize, isDashboardWidgetSize } from "@k2b/cloud/contracts";
 
 export const DASHBOARD_COOKIE = "dashboard_settings";
 
@@ -169,6 +169,9 @@ export const defaultDashboardBoard = (catalog: readonly DashboardCatalogWidget[]
     .map(({ widget }) => ({ key: widget.key, size: widget.defaultSize }))
     .slice(0, DASHBOARD_MAX_ITEMS);
 
+/** A saved widget the page cannot show now, and its place on the saved board. */
+export type DashboardKeptEntry = DashboardBoardEntry & { index: number };
+
 /**
  * The part of a stored board the page shows, each widget in a size it offers today, and the part it cannot show now:
  * widgets of an app that is not running or that the person may no longer see. The board keeps the second part when it
@@ -177,16 +180,26 @@ export const defaultDashboardBoard = (catalog: readonly DashboardCatalogWidget[]
 export const splitDashboardBoard = (
   board: readonly DashboardBoardEntry[],
   catalog: readonly DashboardCatalogWidget[],
-): { shown: DashboardBoardEntry[]; kept: DashboardBoardEntry[] } => {
+): { shown: DashboardBoardEntry[]; kept: DashboardKeptEntry[] } => {
   const byKey = new Map(catalog.map((widget) => [widget.key, widget]));
   const shown: DashboardBoardEntry[] = [];
-  const kept: DashboardBoardEntry[] = [];
-  for (const entry of board) {
+  const kept: DashboardKeptEntry[] = [];
+  board.forEach((entry, index) => {
     const widget = byKey.get(entry.key);
     if (widget) shown.push({ key: entry.key, size: fitWidgetSize(entry.size, widget) });
-    else kept.push(entry);
-  }
+    else kept.push({ ...entry, index });
+  });
   return { shown, kept };
+};
+
+/** The board to save: `board` as edited, with each widget the page could not show back at its place. */
+export const restoreKeptDashboardEntries = (
+  board: readonly DashboardBoardEntry[],
+  kept: readonly DashboardKeptEntry[],
+): DashboardBoardEntry[] => {
+  const restored = [...board];
+  for (const { key, size, index } of [...kept].sort((a, b) => a.index - b.index)) restored.splice(index, 0, { key, size });
+  return restored.slice(0, DASHBOARD_MAX_ITEMS);
 };
 
 /** The dashboard settings saved before widgets had sizes: zones, spans, one order, and widgets switched off. */
@@ -213,43 +226,47 @@ export const isEmptyLegacyDashboardLayout = (legacy: LegacyDashboardLayout): boo
   legacy.hiddenWidgets.length === 0 && legacy.widgets.length === 0 && legacy.order.length === 0;
 
 const ZONE_RANK = { focus: 0, overview: 1, context: 2 } as const;
+/** The old board put at most this many widgets in the focus zone because their app recommended it. */
+const LEGACY_MAX_RECOMMENDED_FOCUS = 2;
 
 /**
- * Converts settings saved before widgets had sizes into a board, once. The order is the order the old board resolved:
- * the saved order first, then every other widget in registry order, the focus zone above the overview and the side
- * column last. A widget the person set to the side column becomes small, one set to wide becomes large, any other
- * medium, each only when the widget offers that size and otherwise its default size; a widget they left as the app
- * recommended keeps its app's default size. A widget they switched off is not on the board, and neither is one they
- * may not see. Widgets of an app that is not running keep their place. A person who never changed a widget gets
- * `null`: they follow the default board like everyone without saved settings.
+ * Converts settings saved before widgets had sizes into a board, once, as the old board showed it while every app
+ * ran. The order is the saved order, then every other widget in registry order. Each widget sits in the zone and width
+ * the person chose or, without a choice, the one its app recommended; at most two widgets stood in the focus zone on
+ * their app's recommendation, fewer when the person put widgets there. The focus zone comes first and the side column
+ * last. A widget in the side column becomes small, a wide one large, and any other medium. The size is stored as
+ * wanted, and the board shows a widget that does not offer it, for example from an app that still runs an image from
+ * before sizes existed, in its default size until it does. A widget the person switched off is not on the board, and
+ * neither is one they may not see; one the settings name whose app is not running keeps its place. A person who never
+ * changed a widget gets `null`: they follow the default board like everyone without saved settings.
  */
 export const migrateLegacyDashboardLayout = (
   legacy: LegacyDashboardLayout,
-  declared: readonly Pick<DashboardCatalogWidget, "key" | "sizes" | "defaultSize">[],
+  declared: readonly { key: string; presentation?: DashboardWidgetPresentation }[],
   visible: ReadonlySet<string>,
 ): DashboardBoardEntry[] | null => {
   if (isEmptyLegacyDashboardLayout(legacy)) return null;
-  const byKey = new Map(declared.map((widget) => [widget.key, widget]));
+  const recommended = new Map(declared.map((widget) => [widget.key, widget.presentation]));
   const overrides = new Map(legacy.widgets.map((entry) => [entry.key, entry]));
   const hidden = new Set(legacy.hiddenWidgets);
-  const keys = [...new Set([...legacy.order, ...declared.map((widget) => widget.key), ...overrides.keys()])].filter(
-    (key) => !hidden.has(key) && (!byKey.has(key) || visible.has(key)),
+  const keys = [...new Set([...legacy.order, ...recommended.keys(), ...overrides.keys()])].filter(
+    (key) => !hidden.has(key) && (!recommended.has(key) || visible.has(key)),
   );
+  let recommendedFocus = Math.max(0, LEGACY_MAX_RECOMMENDED_FOCUS - keys.filter((key) => overrides.get(key)?.zone === "focus").length);
   return keys
-    .map((key, index) => ({ key, index, zone: ZONE_RANK[overrides.get(key)?.zone ?? "overview"] }))
-    .sort((a, b) => a.zone - b.zone || a.index - b.index)
-    .map(({ key }): DashboardBoardEntry => {
+    .map((key, index) => {
       const override = overrides.get(key);
-      const wanted: DashboardWidgetSize | undefined = override
-        ? override.zone === "context"
-          ? "small"
-          : override.span === "wide"
-            ? "large"
-            : "medium"
-        : undefined;
-      const widget = byKey.get(key);
-      if (!widget) return { key, size: wanted ?? "medium" };
-      return { key, size: wanted ? fitWidgetSize(wanted, widget) : widget.defaultSize };
+      const presentation = recommended.get(key);
+      let zone = override?.zone ?? presentation?.defaultZone ?? "overview";
+      if (!override && zone === "focus") {
+        if (recommendedFocus > 0) recommendedFocus -= 1;
+        else zone = "overview";
+      }
+      const span = override ? override.span : (presentation?.defaultSpan ?? "standard");
+      const size: DashboardWidgetSize = zone === "context" ? "small" : span === "wide" ? "large" : "medium";
+      return { key, size, rank: ZONE_RANK[zone], index };
     })
+    .sort((a, b) => a.rank - b.rank || a.index - b.index)
+    .map(({ key, size }): DashboardBoardEntry => ({ key, size }))
     .slice(0, DASHBOARD_MAX_ITEMS);
 };

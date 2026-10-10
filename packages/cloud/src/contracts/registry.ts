@@ -63,7 +63,7 @@ export type AppRegistryWidget = {
   defaultSize?: DashboardWidgetSize;
   suggest?: boolean;
   requiresRoles?: readonly Role[];
-  /** @deprecated Ignored by the dashboard. */
+  /** @deprecated Read only to convert dashboard boards saved before sizes existed. */
   presentation?: DashboardWidgetPresentation;
 };
 

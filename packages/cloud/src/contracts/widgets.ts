@@ -44,8 +44,8 @@ export type DashboardWidgetZone = "focus" | "overview" | "context";
 export type DashboardWidgetSpan = "standard" | "wide";
 
 /**
- * @deprecated The dashboard ignores zones and spans. Declare `sizes` and `defaultSize` on the widget instead; this
- * type stays only so existing declarations keep compiling.
+ * @deprecated The dashboard has no zones or widths any more. Declare `sizes` and `defaultSize` on the widget instead;
+ * the dashboard reads this recommendation only to convert a board saved before sizes existed.
  */
 export type DashboardWidgetPresentation = {
   defaultZone?: DashboardWidgetZone;

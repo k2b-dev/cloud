@@ -47,6 +47,8 @@ export const app = defineApp({
       sizes: ["small", "medium", "large"],
       defaultSize: "small",
       suggest: true,
+      // Recommended before sizes existed; the dashboard reads it only to convert boards saved then.
+      presentation: { defaultZone: "context" },
     },
   ],
   openapi: "/api/weather/openapi.json",

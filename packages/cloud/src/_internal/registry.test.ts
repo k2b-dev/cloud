@@ -237,6 +237,8 @@ describe("dashboardWidgetsOf", () => {
         defaultSize: "large",
         suggest: false,
         requiresRoles: [],
+        // Still carried, so the dashboard can convert boards saved before sizes existed.
+        presentation: { defaultZone: "focus" },
       },
     ]);
     expect(dashboardWidgetsOf([app]).map((widget) => [widget.title, widget.appName])).toEqual([
@@ -248,7 +250,18 @@ describe("dashboardWidgetsOf", () => {
   test("drops what a registry record from another release declares wrongly instead of the widget", () => {
     const broken = {
       ...liveApp,
-      widgets: [{ id: "odd", path: "/odd", title: " ", sizes: ["huge"], defaultSize: "huge", suggest: "yes", requiresRoles: ["root"] }],
+      widgets: [
+        {
+          id: "odd",
+          path: "/odd",
+          title: " ",
+          sizes: ["huge"],
+          defaultSize: "huge",
+          suggest: "yes",
+          requiresRoles: ["root"],
+          presentation: { defaultZone: "middle", defaultSpan: "wide" },
+        },
+      ],
     } as unknown as typeof liveApp;
     expect(dashboardWidgetsOf([broken])[0]).toMatchObject({
       title: "Demo",
@@ -256,6 +269,8 @@ describe("dashboardWidgetsOf", () => {
       defaultSize: "large",
       suggest: false,
       requiresRoles: [],
+      presentation: { defaultSpan: "wide" },
     });
+    expect(dashboardWidgetsOf([broken])[0]!.presentation?.defaultZone).toBeUndefined();
   });
 });

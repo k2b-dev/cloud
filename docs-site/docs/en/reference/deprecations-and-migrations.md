@@ -24,15 +24,19 @@ accepts `title`, `description`, `sizes`, `defaultSize`, `suggest`, and
 titles and descriptions. A handler reads the requested size with
 `getWidgetRequest(c)` from `@k2b/cloud/server`. A widget without `sizes` keeps
 working as a `large` widget. `presentation.defaultZone` and
-`presentation.defaultSpan` are deprecated and ignored; declare `sizes` and
-`defaultSize` instead. The widget stream accepts `widget=<appId>/<widgetId>@<size>`,
+`presentation.defaultSpan` are deprecated; declare `sizes` and `defaultSize`
+instead, and keep an existing `presentation` while saved boards are converted.
+`defineApp()` now rejects a widget ID that contains `@` and a `suggest` that is
+not a boolean. The widget stream accepts `widget=<appId>/<widgetId>@<size>`,
 and `streamWidgets()` takes `sizes`.
 
-Saved dashboard settings are converted once, on each person's next visit: the
-saved order stays, a widget in the side column becomes small, a wide one
-large, and any other medium, each only when the widget offers that size; a
-widget switched off is not on the board. People who never changed a widget
-follow the new default board. Shortcuts stay; the name color is dropped. The
+Saved dashboard settings are converted once, on each person's next visit, into
+the board they saw: the saved order, the zones and widths they chose, and
+otherwise their apps' recommendations. A widget in the side column becomes
+small, a wide one large, and any other medium; a widget that does not offer
+that size yet shows in its default size until it does. A widget switched off is
+not on the board. People who never changed a widget follow the new default
+board. Shortcuts stay; the name color is dropped. The
 `dashboard.user_settings` table gets a `board` column; the old columns stay
 and are emptied as each person's settings are converted. Deploy Core and the
 Dashboard together; see

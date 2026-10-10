@@ -130,6 +130,8 @@ export const app = defineApp({
       defaultSize: "small",
       suggest: true,
       requiresRoles: ["admin"],
+      // Recommended before sizes existed; the dashboard reads it only to convert boards saved then.
+      presentation: { defaultZone: "context" },
     },
     {
       id: "errors",
@@ -139,6 +141,8 @@ export const app = defineApp({
       sizes: ["small", "medium"],
       defaultSize: "small",
       requiresRoles: ["admin"],
+      // Recommended before sizes existed; the dashboard reads it only to convert boards saved then.
+      presentation: { defaultZone: "context" },
     },
   ],
   routes: [

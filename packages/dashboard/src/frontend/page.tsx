@@ -99,7 +99,10 @@ export default ssr<AuthContext>(async (c) => {
   let shortcuts = stored.settings.shortcuts;
   let board: DashboardBoardEntry[] | null = stored.settings.board;
   if (stored.legacy) {
-    board = await dashboardSettingsService.adoptMigratedBoard(user.id, migrateLegacyDashboardLayout(stored.legacy, declared, visible));
+    ({ shortcuts, board } = await dashboardSettingsService.adoptMigratedBoard(
+      user.id,
+      migrateLegacyDashboardLayout(stored.legacy, declared, visible),
+    ));
   } else if (!stored.exists) {
     const cookie = readLegacyCookie(c.req.raw.headers.get("Cookie") ?? "");
     if (cookie) {

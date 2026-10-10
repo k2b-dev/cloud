@@ -49,8 +49,9 @@ export const app = defineApp({
 });
 ```
 
-The ID must be unique inside the application. The path must be an absolute
-route served by that application.
+The ID must be unique inside the application and must not contain `@`, which
+separates a widget from the size the dashboard asks for. The path must be an
+absolute route served by that application.
 
 | Field | Meaning |
 | --- | --- |
@@ -63,8 +64,9 @@ route served by that application.
 
 Translate `title` and `description` under
 `presentation.translations.<locale>.widgets.<id>`. `defineApp()` rejects a
-duplicated ID, an empty or overlong text, an unknown size or role, and a
-`defaultSize` the widget does not offer.
+duplicated ID or one with `@`, an empty or overlong text, an unknown size or
+role, a `defaultSize` the widget does not offer, and a `suggest` that is not
+`true` or `false`.
 
 `requiresRoles` only decides what the gallery and the default board offer. It
 is not authorization: the handler still checks every request and answers
@@ -90,9 +92,11 @@ A row is about 10.5rem high, so a small or medium widget has room for about
 well. A widget without `sizes` offers only `large`, the height every widget
 had before sizes existed.
 
-`presentation.defaultZone` and `presentation.defaultSpan` are deprecated and
-ignored: the dashboard has no zones or widths any more. Declare `sizes` and
-`defaultSize` instead.
+`presentation.defaultZone` and `presentation.defaultSpan` are deprecated: the
+dashboard has no zones or widths any more. Declare `sizes` and `defaultSize`
+instead, and keep an existing `presentation` for now. The dashboard reads it
+only to convert a board saved before sizes existed into the board the person
+saw.
 
 ### Register the handler
 

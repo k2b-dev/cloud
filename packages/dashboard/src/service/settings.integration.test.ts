@@ -62,15 +62,20 @@ dbTest("settings from before widgets had sizes become a board once, and never ov
       { key: "spaces/today", size: "large" as const },
       { key: "weather/current", size: "small" as const },
     ];
-    expect(await adoptMigratedBoard(userId, migrated)).toEqual(migrated);
+    expect(await adoptMigratedBoard(userId, migrated)).toEqual({ shortcuts: [shortcut], board: migrated });
     expect(await getUserSettings(userId)).toEqual({ exists: true, settings: { shortcuts: [shortcut], board: migrated }, legacy: null });
 
     // A second conversion, such as from a page that loaded at the same time, keeps the board that is stored.
-    expect(await adoptMigratedBoard(userId, [{ key: "notebooks/recent", size: "medium" }])).toEqual(migrated);
+    expect(await adoptMigratedBoard(userId, [{ key: "notebooks/recent", size: "medium" }])).toEqual({
+      shortcuts: [shortcut],
+      board: migrated,
+    });
 
-    // A conversion that started before a return to the default board was saved does not bring the old board back.
-    await saveUserSettings(userId, { shortcuts: [shortcut], board: null });
-    expect(await adoptMigratedBoard(userId, migrated)).toBeNull();
+    // A conversion that started before a return to the default board was saved does not bring the old board back,
+    // and returns the shortcuts saved with it rather than the ones its page read before.
+    const handbook = { ...shortcut, id: "handbook-2", title: "Handbook 2" };
+    await saveUserSettings(userId, { shortcuts: [handbook], board: null });
+    expect(await adoptMigratedBoard(userId, migrated)).toEqual({ shortcuts: [handbook], board: null });
     expect((await getUserSettings(userId)).settings.board).toBeNull();
 
     // Saving the default board again clears the old settings too, so they are not converted a second time.

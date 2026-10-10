@@ -61,10 +61,11 @@ export const saveUserSettings = async (userId: string, input: DashboardSettings)
 /**
  * Stores the board converted from a person's old settings and clears those settings, so they are converted only
  * once. Only a row whose old settings are still waiting changes: a board saved meanwhile, or a return to the default
- * board saved meanwhile, stays. Returns the board that is stored now.
+ * board saved meanwhile, stays. Returns the settings that are stored now, so a page never shows a board saved
+ * meanwhile next to shortcuts read before it.
  */
-export const adoptMigratedBoard = async (userId: string, board: DashboardBoardEntry[] | null): Promise<DashboardBoardEntry[] | null> => {
-  const adopted = await sql<{ board: unknown }[]>`
+export const adoptMigratedBoard = async (userId: string, board: DashboardBoardEntry[] | null): Promise<DashboardSettings> => {
+  const adopted = await sql<{ shortcuts: unknown; board: unknown }[]>`
     UPDATE dashboard.user_settings
     SET
       board = (${board === null ? null : JSON.stringify(board)}::text)::jsonb,
@@ -74,10 +75,11 @@ export const adoptMigratedBoard = async (userId: string, board: DashboardBoardEn
     WHERE user_id = ${userId}
       AND board IS NULL
       AND (cardinality(hidden_widgets) > 0 OR widget_layout <> ${EMPTY_LEGACY_LAYOUT}::jsonb)
-    RETURNING board
+    RETURNING shortcuts, board
   `;
-  if (adopted[0]) return normalizeDashboardBoard(adopted[0].board);
-  return (await getUserSettings(userId)).settings.board;
+  const row = adopted[0];
+  if (row) return { shortcuts: normalizeDashboardShortcuts(row.shortcuts), board: normalizeDashboardBoard(row.board) };
+  return (await getUserSettings(userId)).settings;
 };
 
 export const dashboardSettingsService = {

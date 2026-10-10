@@ -39,6 +39,8 @@ export const app = defineApp({
       sizes: ["medium", "large"],
       defaultSize: "large",
       suggest: true,
+      // Recommended before sizes existed; the dashboard reads it only to convert boards saved then.
+      presentation: { defaultZone: "focus", defaultSpan: "wide" },
     },
   ],
   openapi: "/api/spaces/openapi.json",

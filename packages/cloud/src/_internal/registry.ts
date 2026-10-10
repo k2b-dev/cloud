@@ -4,7 +4,13 @@ import type { CapabilityManifest, CapabilityPresentationCatalog } from "../contr
 import { fileProviderIssues } from "../contracts/file-provider";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
 import { type Role, RoleSchema } from "../contracts/shared";
-import { type DashboardWidgetSize, resolveWidgetSizes, WIDGET_DESCRIPTION_MAX_LENGTH, WIDGET_TITLE_MAX_LENGTH } from "../contracts/widgets";
+import {
+  type DashboardWidgetPresentation,
+  type DashboardWidgetSize,
+  resolveWidgetSizes,
+  WIDGET_DESCRIPTION_MAX_LENGTH,
+  WIDGET_TITLE_MAX_LENGTH,
+} from "../contracts/widgets";
 import { resolveAppPresentations } from "../shared/app-presentation";
 import { compileCapabilityPresentation, parseCapabilityManifest } from "./capabilities";
 import { lazySync } from "./process-sync";
@@ -353,6 +359,20 @@ export type DashboardWidget = {
   suggest: boolean;
   /** Visibility only, like `nav.requiresRoles`; empty means everyone. */
   requiresRoles: Role[];
+  /**
+   * @deprecated The zone and width the app recommended before widgets had sizes. Only the dashboard reads it, to
+   * convert a board saved then into the board the person saw.
+   */
+  presentation?: DashboardWidgetPresentation;
+};
+
+const LEGACY_ZONES = ["focus", "overview", "context"] as const;
+const LEGACY_SPANS = ["standard", "wide"] as const;
+
+const legacyPresentation = (value: DashboardWidgetPresentation | undefined): DashboardWidgetPresentation | undefined => {
+  const defaultZone = LEGACY_ZONES.find((zone) => zone === value?.defaultZone);
+  const defaultSpan = LEGACY_SPANS.find((span) => span === value?.defaultSpan);
+  return defaultZone || defaultSpan ? { defaultZone, defaultSpan } : undefined;
 };
 
 const declaredText = (value: unknown, max: number): string | undefined =>
@@ -376,6 +396,7 @@ export const dashboardWidgetsOf = (apps: readonly AppRegistryEntry[], locale?: s
         defaultSize,
         suggest: w.suggest === true,
         requiresRoles: Array.isArray(w.requiresRoles) ? w.requiresRoles.filter((role) => RoleSchema.safeParse(role).success) : [],
+        presentation: legacyPresentation(w.presentation),
       });
     }
   }
