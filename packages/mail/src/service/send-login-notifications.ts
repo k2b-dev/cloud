@@ -1,6 +1,8 @@
-import { coreSettings, logger, notifications } from "@k2b/cloud/services";
+import { accounts, coreSettings, logger, notifications } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { app } from "../config";
+
+import { requireDraftAccess } from "./access";
 
 const log = logger("mail:send-login-notifications");
 
@@ -14,9 +16,18 @@ const log = logger("mail:send-login-notifications");
 export const notifySendWaitingForLogin = async (params: { outboxId: string; notice: "waiting" | "returned" }): Promise<void> => {
   try {
     const [send] = await sql<
-      { recipient_user_id: string; mailbox_short_id: string; mailbox_name: string; subject: string | null; scheduled: boolean }[]
+      {
+        mailbox_id: string;
+        draft_id: string;
+        recipient_user_id: string;
+        mailbox_short_id: string;
+        mailbox_name: string;
+        subject: string | null;
+        scheduled: boolean;
+      }[]
     >`
       SELECT
+        outbox.mailbox_id, outbox.draft_id,
         command.access_subject_id AS recipient_user_id,
         mailbox.short_id AS mailbox_short_id,
         mailbox.name AS mailbox_name,
@@ -30,6 +41,15 @@ export const notifySendWaitingForLogin = async (params: { outboxId: string; noti
     `;
     // Workflows and service accounts have nobody to tell.
     if (!send) return;
+    const user = await accounts.users.get({ id: send.recipient_user_id });
+    if (!user) return;
+    const access = await requireDraftAccess(
+      { actor: { kind: "user", user }, accessSubject: { type: "user", userId: user.id } },
+      send.mailbox_id,
+      send.draft_id,
+      "read",
+    );
+    if (!access.ok) return;
     await notifications.send(app.notifications.sendWaitingForLogin, {
       recipient: { userId: send.recipient_user_id },
       data: {

@@ -55,6 +55,11 @@ cld --json mail admin mailbox access set <mailbox-id> --access-id <access-id> --
 cld mail admin mailbox access revoke <mailbox-id> --access-id <access-id> --yes
 ```
 
+`--scope mailbox|assigned` applies to both `access grant` and `access set`,
+including the administrator commands above. Omit it on `set` to preserve the
+current scope. Assigned access supports people and groups with `read` or `write`;
+mailbox administration and service-account grants require mailbox scope.
+
 Permissions are `read`, `write`, and `admin`. `grant` creates a new direct
 entry and fails if that principal already has one. `set` is idempotent: with an
 access id it updates that entry; with exactly one `--user`, `--group`, or

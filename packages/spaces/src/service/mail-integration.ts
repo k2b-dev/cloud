@@ -26,7 +26,16 @@ type CapabilityFailure = { code: string; message: string; status: number };
 
 const mailResourceIdSchema = z.string().regex(/^[0-9A-Za-z]{6}$/);
 const mailboxListSchema = z
-  .array(z.object({ ref: z.object({ type: z.literal("mail.mailbox"), id: mailResourceIdSchema }), title: z.string().min(1) }).passthrough())
+  .array(
+    z
+      .object({
+        ref: z.object({ type: z.literal("mail.mailbox"), id: mailResourceIdSchema }),
+        title: z.string().min(1),
+        // Mail versions without the field have no assigned-only access.
+        accessScope: z.enum(["mailbox", "assigned"]).optional(),
+      })
+      .passthrough(),
+  )
   .max(100);
 const senderIdentityListSchema = z
   .array(
@@ -144,12 +153,14 @@ export const listInvitationMailboxes = async (request: MailIntegrationRequest): 
     cursor = nextCursor;
   }
   if (cursor) return { ok: false, code: "RESULT_TOO_LARGE", message: "Too many mailboxes for the invitation picker", status: 422 };
+  // An invitation starts new mail, which access to assigned conversations only does not allow.
+  const composable = mailboxes.filter((mailbox) => mailbox.accessScope !== "assigned");
   const resolved: MailInvitationMailbox[] = [];
   let firstIdentityFailure: IntegrationResult<never> | null = null;
   const identityLookupConcurrency = 8;
-  for (let offset = 0; offset < mailboxes.length; offset += identityLookupConcurrency) {
+  for (let offset = 0; offset < composable.length; offset += identityLookupConcurrency) {
     const group = await Promise.all(
-      mailboxes.slice(offset, offset + identityLookupConcurrency).map(async (mailbox) => {
+      composable.slice(offset, offset + identityLookupConcurrency).map(async (mailbox) => {
         const identities = await listIdentities(mailbox.ref.id, request);
         if (!identities.ok) {
           firstIdentityFailure ??= identities;

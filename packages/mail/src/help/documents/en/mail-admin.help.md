@@ -128,6 +128,7 @@ Agents can change provider subscriptions with `cld mail folder subscribe` and `c
 - Read for reading, search, comments, and personal reminders.
 - Write for sending, provider mail operations, and collaboration changes.
 - Admin for transport, sharing, policies, workflows, and mailbox lifecycle.
+- View assigned only or Edit assigned only for people and groups who should see only the conversations assigned to them. See **Work together in a mailbox** for what they can do.
 
 **Who can manage automatic replies?** is a mailbox policy above the permission list:
 

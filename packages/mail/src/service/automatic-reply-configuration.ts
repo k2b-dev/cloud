@@ -135,7 +135,7 @@ const automaticReplyPreviewData = (params: {
       conversation: {
         id: "00000000-0000-4000-8000-000000000002",
         subject: t.subject,
-        assigneeUserId: null,
+        assigneeUserIds: [],
         workStatus: "needs_action",
         latestMessageAt: occurredAt,
       },

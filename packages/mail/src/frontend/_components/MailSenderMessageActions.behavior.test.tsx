@@ -55,6 +55,7 @@ describe("Mail sender message actions", () => {
             requestUrl="http://localhost/app/mail/Box001/c/Conv01"
             canWrite={true}
             canAdmin={true}
+            mailboxWide
             selectionKey="Conv01"
             selectedConversationId="Conv01"
             message={message}

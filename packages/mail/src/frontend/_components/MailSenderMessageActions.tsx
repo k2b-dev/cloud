@@ -21,6 +21,7 @@ export default function MailSenderMessageActions(props: {
   requestUrl: string;
   canWrite: boolean;
   canAdmin: boolean;
+  mailboxWide: boolean;
   selectionKey: string | null;
   selectedConversationId: string | null;
   message: MessageDetail;
@@ -89,6 +90,7 @@ export default function MailSenderMessageActions(props: {
       totalMessageCount: props.totalMessageCount,
       canWrite: props.canWrite,
       canAdmin: props.canAdmin,
+      mailboxWide: props.mailboxWide,
     });
 
   createEffect(
@@ -161,11 +163,15 @@ export default function MailSenderMessageActions(props: {
                         },
                       ]
                     : []),
-                  {
-                    label: t().reportPhishing,
-                    icon: "ti ti-shield-exclamation",
-                    action: () => void reportPhishing.mutate({ selectionKey: props.selectionKey }),
-                  },
+                  ...(actionVisibility().reportPhishing
+                    ? [
+                        {
+                          label: t().reportPhishing,
+                          icon: "ti ti-shield-exclamation",
+                          action: () => void reportPhishing.mutate({ selectionKey: props.selectionKey }),
+                        },
+                      ]
+                    : []),
                 ],
               },
             ]

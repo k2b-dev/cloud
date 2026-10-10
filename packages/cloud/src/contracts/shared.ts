@@ -329,6 +329,11 @@ export const AccessEntrySchema = z.object({
   avatarHash: z.string().nullable().optional(),
   /** Kind of a `service_account` principal; presentation only, never authorization. */
   serviceAccountKind: ServiceAccountKindSchema.optional(),
+  /**
+   * A narrower part of the resource the grant covers, defined by the application, such as Mail's
+   * `assigned` conversations. Absent for a grant on the whole resource.
+   */
+  scope: z.string().min(1).max(64).optional(),
 });
 export type AccessEntry = z.infer<typeof AccessEntrySchema>;
 

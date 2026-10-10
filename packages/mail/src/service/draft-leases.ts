@@ -1,11 +1,11 @@
 import { lazySync } from "@k2b/cloud";
+import { accounts } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { Lock } from "@k2b/sync";
 import { sql } from "bun";
 import type { AcquiredDraftLease, DraftLease, DraftLeaseHolder } from "../contracts";
-import { requireMailboxPermission } from "./access";
+import { requireDraftAccess } from "./access";
 import type { MailRequestContext } from "./auth";
-import { hasCurrentMailboxUserPermission } from "./collaborators";
 import { mailLive } from "./live";
 
 const DRAFT_LEASE_TTL_MS = 30_000;
@@ -76,7 +76,7 @@ const resolveAuthorizedDraft = async (params: {
   draftId: string;
   permission: "read" | "write";
 }): Promise<Result<string>> => {
-  const allowed = await requireMailboxPermission(params.context, params.mailboxId, params.permission);
+  const allowed = await requireDraftAccess(params.context, params.mailboxId, params.draftId, params.permission);
   if (!allowed.ok) return allowed;
   const [draft] = await sql<{ id: string }[]>`
     SELECT id FROM mail.drafts
@@ -126,11 +126,17 @@ export const invalidateDraftLeaseAfterSend = async (draftId: string): Promise<Re
 const currentValidEntry = async (mailboxId: string, draftId: string) => {
   const entry = await currentEntry(draftId);
   if (!entry || entry.value.holder.kind !== "user") return entry;
-  const active = await hasCurrentMailboxUserPermission({
-    mailboxId,
-    userId: entry.value.holder.id,
-    minimumPermission: "write",
-  });
+  const user = await accounts.users.get({ id: entry.value.holder.id });
+  const active =
+    user &&
+    (
+      await requireDraftAccess(
+        { actor: { kind: "user", user }, accessSubject: { type: "user", userId: user.id } },
+        mailboxId,
+        draftId,
+        "write",
+      )
+    ).ok;
   if (active) return entry;
   await removeEntry(draftId, entry.value);
   return null;
@@ -230,7 +236,7 @@ export const requireDraftLeaseAvailable = async (params: {
   mailboxId: string;
   draftId: string;
 }): Promise<Result<void>> => {
-  const allowed = await requireMailboxPermission(params.context, params.mailboxId, "write");
+  const allowed = await requireDraftAccess(params.context, params.mailboxId, params.draftId, "write");
   if (!allowed.ok) return allowed;
   const holder = holderFromContext(params.context);
   try {

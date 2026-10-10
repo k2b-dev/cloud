@@ -92,14 +92,14 @@ export default function MailConversationQuickLook(props: {
           {(status) => <StatusBadge tone={STATUS[status()].tone} icon={STATUS[status()].icon} label={statusLabel()} />}
         </Show>
         <Show
-          when={props.item.assigneeUserId}
+          when={props.item.assigneeUserIds.length > 0}
           fallback={<StatusBadge class="mail-quick-look__assignee" tone="neutral" icon="ti ti-user-off" label={t().unassigned} />}
         >
           <Show when={!loading()} fallback={<span class="mail-quick-look__placeholder mail-quick-look__placeholder--chip" />}>
             <StatusBadge
               class="mail-quick-look__assignee"
               tone="neutral"
-              icon="ti ti-user-check"
+              icon={props.item.assigneeUserIds.length > 1 ? "ti ti-users" : "ti ti-user-check"}
               label={data()?.assigneeName ?? t().assigned}
             />
           </Show>

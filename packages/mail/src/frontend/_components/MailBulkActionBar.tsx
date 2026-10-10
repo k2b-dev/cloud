@@ -8,8 +8,9 @@ export default function MailBulkActionBar(props: {
   selectedInJunk: boolean;
   busy: boolean;
   onClear: () => void;
-  onAddTags: () => void | Promise<void>;
-  onAssign: () => void | Promise<void>;
+  /** Absent for a person who sees only assigned conversations: both reach the whole mailbox. */
+  onAddTags?: () => void | Promise<void>;
+  onAssign?: () => void | Promise<void>;
   onAction: (actionId: MailActionId) => void | Promise<void>;
 }) {
   const locale = useLocale();
@@ -55,28 +56,36 @@ export default function MailBulkActionBar(props: {
         {props.selectedCount > 0 ? messages().selected({ count: props.selectedCount }) : messages().selectConversations}
       </span>
       <Show when={props.selectedCount > 0}>
-        <Tooltip.Anchor content={messages().addTags}>
-          <IconButton
-            type="button"
-            label={messages().addTagsToSelected({ count: props.selectedCount })}
-            disabled={props.busy}
-            onClick={() => void props.onAddTags()}
-          >
-            <i class="ti ti-tags" aria-hidden="true" />
-          </IconButton>
-        </Tooltip.Anchor>
+        <Show when={props.onAddTags}>
+          {(onAddTags) => (
+            <Tooltip.Anchor content={messages().addTags}>
+              <IconButton
+                type="button"
+                label={messages().addTagsToSelected({ count: props.selectedCount })}
+                disabled={props.busy}
+                onClick={() => void onAddTags()()}
+              >
+                <i class="ti ti-tags" aria-hidden="true" />
+              </IconButton>
+            </Tooltip.Anchor>
+          )}
+        </Show>
         {actionButton("archive")}
         {actionButton("mark_read")}
-        <Tooltip.Anchor content={messages().assign}>
-          <IconButton
-            type="button"
-            label={messages().actionOnSelected({ action: messages().assign, count: props.selectedCount })}
-            disabled={props.busy}
-            onClick={() => void props.onAssign()}
-          >
-            <i class="ti ti-user-plus" aria-hidden="true" />
-          </IconButton>
-        </Tooltip.Anchor>
+        <Show when={props.onAssign}>
+          {(onAssign) => (
+            <Tooltip.Anchor content={messages().assign}>
+              <IconButton
+                type="button"
+                label={messages().actionOnSelected({ action: messages().assign, count: props.selectedCount })}
+                disabled={props.busy}
+                onClick={() => void onAssign()()}
+              >
+                <i class="ti ti-user-plus" aria-hidden="true" />
+              </IconButton>
+            </Tooltip.Anchor>
+          )}
+        </Show>
         {actionButton("move")}
         <Dropdown.Root
           position="bottom-left"

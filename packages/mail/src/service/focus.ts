@@ -2,7 +2,7 @@ import { toPgUuidArray } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import type { MailFocusView } from "../contracts";
-import { isCurrentActorActive, mailboxAccessPrincipalCondition } from "./access";
+import { conversationVisibleTo, isCurrentActorActive, readableMailboxGrants } from "./access";
 import { capByCredentialScopes, type MailRequestContext, userBackedActor } from "./auth";
 import { isUnassignedConversation, listLapsedAssignees } from "./collaborators";
 import { isUnsentOutboundMessage } from "./conversation-timeline";
@@ -21,7 +21,7 @@ export type MailFocusItem = {
   participantSummary: string;
   latestMessageAt: string;
   workStatus: "needs_action" | "waiting" | "done";
-  assigneeUserId: string | null;
+  assigneeUserIds: string[];
   revision: number;
   sourceFolderId: string | null;
   unread: boolean;
@@ -47,7 +47,7 @@ type DbFocusItem = {
   latest_message_at: Date | string;
   cursor_at: string;
   work_status: MailFocusItem["workStatus"];
-  assignee_user_id: string | null;
+  assignee_user_ids: string[];
   revision: number;
   source_folder_id: string | null;
   unread: boolean;
@@ -95,17 +95,11 @@ const boundMailboxId = (context: MailRequestContext): string | null => {
 };
 
 /** Mailboxes the request may read, as a subquery of `mailbox_id` rows. */
-export const readableMailboxes = (context: MailRequestContext) => sql<{ mailbox_id: string }[]>`
-  SELECT ma.mailbox_id
-  FROM mail.mailbox_access ma
-  JOIN auth.access a ON a.id = ma.access_id
-  JOIN mail.mailboxes mailbox ON mailbox.id = ma.mailbox_id AND mailbox.deleted_at IS NULL
-  WHERE ${mailboxAccessPrincipalCondition(context.accessSubject)}
-    AND (${boundMailboxId(context)}::uuid IS NULL OR ma.mailbox_id = ${boundMailboxId(context)}::uuid)
-  GROUP BY ma.mailbox_id
-  HAVING max(CASE a.permission WHEN 'admin' THEN 3 WHEN 'write' THEN 2 WHEN 'read' THEN 1 ELSE 0 END) >= 1
+export const readableMailboxes = (context: MailRequestContext) => sql<{ mailbox_id: string; scope: "mailbox" | "assigned" }[]>`
+  SELECT grants.mailbox_id, grants.scope
+  FROM (${readableMailboxGrants(context)}) grants
+  WHERE (${boundMailboxId(context)}::uuid IS NULL OR grants.mailbox_id = ${boundMailboxId(context)}::uuid)
 `;
-
 /**
  * Every focus list and count covers open conversations only, so each readable conversation
  * carries whether it belongs in the follow-up views; Done ones skip that check. It also carries
@@ -118,7 +112,13 @@ const readableConversations = (context: MailRequestContext, scope: AggregatedVie
     ${staysInAggregatedViews(sql`c.id`, scope)} AS aggregated
   FROM mail.conversations c
   JOIN (${readableMailboxes(context)}) readable ON readable.mailbox_id = c.mailbox_id
-  WHERE EXISTS (
+  WHERE (readable.scope = 'mailbox' OR ${conversationVisibleTo(
+    context.accessSubject.type === "user"
+      ? { scope: "assigned", permission: "read", userId: context.accessSubject.userId }
+      : { scope: "mailbox", permission: "read" },
+    sql`c.id`,
+  )})
+    AND EXISTS (
       SELECT 1
       FROM mail.conversation_messages visible_cm
       LEFT JOIN mail.message_placements visible_mp
@@ -134,7 +134,8 @@ const visibleNow = sql`(c.snoozed_until IS NULL OR c.snoozed_until <= now())`;
 
 /**
  * A mailbox counts unread mail outside Trash and Junk, like All mail, and the conversations that need
- * action; both leave out conversations whose mail is kept inside its folders.
+ * action; both leave out conversations whose mail is kept inside its folders. Rows come in mailbox ID
+ * order, so every caller sees the same list.
  */
 const mailboxCountQuery = (context: MailRequestContext, scope: AggregatedViewScope) => sql<DbMailboxCounts[]>`
   WITH readable_conversations AS (${readableConversations(context, scope)})
@@ -150,6 +151,7 @@ const mailboxCountQuery = (context: MailRequestContext, scope: AggregatedViewSco
   FROM readable_conversations c
   WHERE c.aggregated
   GROUP BY c.mailbox_id
+  ORDER BY c.mailbox_id
 `;
 
 /** The scope of every mailbox the request may read. */
@@ -208,7 +210,7 @@ export const listFocusConversations = async (params: {
         c.latest_message_at,
         to_char(c.latest_message_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at,
         c.work_status,
-        c.assignee_user_id,
+        COALESCE((SELECT array_agg(a.user_id::text ORDER BY a.assigned_at, a.user_id) FROM mail.conversation_assignees a WHERE a.conversation_id = c.id), ARRAY[]::text[]) AS assignee_user_ids,
         c.revision,
         (SELECT CASE WHEN count(DISTINCT mp.folder_id) = 1 THEN min(mp.folder_id::text) ELSE NULL END
           FROM mail.conversation_messages cm
@@ -250,9 +252,9 @@ export const listFocusConversations = async (params: {
       WHERE c.follow_up
         AND ${shown}
         AND (
-          (${view} = 'mine' AND c.assignee_user_id = ${userId}::uuid AND c.work_status = 'needs_action' AND ${visibleNow})
+          (${view} = 'mine' AND EXISTS (SELECT 1 FROM mail.conversation_assignees a WHERE a.conversation_id = c.id AND a.user_id = ${userId}::uuid) AND c.work_status = 'needs_action' AND ${visibleNow})
           OR (${view} = 'unassigned' AND c.aggregated AND ${unassigned} AND c.work_status = 'needs_action' AND ${visibleNow})
-          OR (${view} = 'waiting' AND c.assignee_user_id = ${userId}::uuid AND c.work_status = 'waiting' AND ${visibleNow})
+          OR (${view} = 'waiting' AND EXISTS (SELECT 1 FROM mail.conversation_assignees a WHERE a.conversation_id = c.id AND a.user_id = ${userId}::uuid) AND c.work_status = 'waiting' AND ${visibleNow})
           OR (${view} = 'all' AND c.aggregated AND c.work_status <> 'done' AND ${visibleNow})
         )
         AND (
@@ -265,9 +267,9 @@ export const listFocusConversations = async (params: {
     sql<Array<{ mine: number; unassigned: number; waiting: number; all: number }>>`
       WITH readable_conversations AS (${readableConversations(params.context, scope)})
       SELECT
-        COUNT(*) FILTER (WHERE c.assignee_user_id = ${userId}::uuid AND c.work_status = 'needs_action' AND ${visibleNow})::int AS mine,
+        COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM mail.conversation_assignees a WHERE a.conversation_id = c.id AND a.user_id = ${userId}::uuid) AND c.work_status = 'needs_action' AND ${visibleNow})::int AS mine,
         COUNT(*) FILTER (WHERE c.aggregated AND ${unassigned} AND c.work_status = 'needs_action' AND ${visibleNow})::int AS unassigned,
-        COUNT(*) FILTER (WHERE c.assignee_user_id = ${userId}::uuid AND c.work_status = 'waiting' AND ${visibleNow})::int AS waiting,
+        COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM mail.conversation_assignees a WHERE a.conversation_id = c.id AND a.user_id = ${userId}::uuid) AND c.work_status = 'waiting' AND ${visibleNow})::int AS waiting,
         COUNT(*) FILTER (WHERE c.aggregated AND c.work_status <> 'done' AND ${visibleNow})::int AS all
       FROM readable_conversations c
       WHERE c.follow_up AND ${shown}
@@ -285,7 +287,7 @@ export const listFocusConversations = async (params: {
     participantSummary: row.participant_summary,
     latestMessageAt: toIso(row.latest_message_at),
     workStatus: row.work_status,
-    assigneeUserId: row.assignee_user_id,
+    assigneeUserIds: row.assignee_user_ids,
     revision: Number(row.revision),
     sourceFolderId: row.source_folder_id,
     unread: row.unread,

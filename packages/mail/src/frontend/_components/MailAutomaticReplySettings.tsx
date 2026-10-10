@@ -83,7 +83,7 @@ const AUTOMATIC_REPLY_VARIABLE_GROUPS = [
     variables: [
       "inputs.conversation.id",
       "inputs.conversation.subject",
-      "inputs.conversation.assigneeUserId",
+      "inputs.conversation.assigneeUserIds",
       "inputs.conversation.workStatus",
       "inputs.conversation.latestMessageAt",
     ],

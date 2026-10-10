@@ -8,6 +8,7 @@ const base = {
   totalMessageCount: 2,
   canWrite: true,
   canAdmin: true,
+  mailboxWide: true,
 };
 
 describe("resolveMailMessageActionVisibility", () => {
@@ -19,6 +20,7 @@ describe("resolveMailMessageActionVisibility", () => {
       manageUnsubscribe: true,
       conversationRepair: true,
       editAsNew: true,
+      reportPhishing: true,
     });
   });
 
@@ -30,6 +32,7 @@ describe("resolveMailMessageActionVisibility", () => {
       manageUnsubscribe: false,
       conversationRepair: true,
       editAsNew: true,
+      reportPhishing: true,
     });
   });
 
@@ -48,6 +51,19 @@ describe("resolveMailMessageActionVisibility", () => {
       manageUnsubscribe: false,
       conversationRepair: false,
       editAsNew: false,
+      reportPhishing: true,
+    });
+  });
+
+  test("keeps a writer of assigned conversations to their conversations", () => {
+    expect(resolveMailMessageActionVisibility({ ...base, outgoing: false, canAdmin: false, mailboxWide: false })).toEqual({
+      findSender: true,
+      createIncomingAutomation: false,
+      blockSender: false,
+      manageUnsubscribe: false,
+      conversationRepair: false,
+      editAsNew: false,
+      reportPhishing: false,
     });
   });
 

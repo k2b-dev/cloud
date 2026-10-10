@@ -2,6 +2,8 @@ import type { MailActivityEvent } from "../../service/collaboration";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
 
 type CollaborationSnapshot = {
+  assigneeUserIds?: unknown;
+  /** Activity recorded before a conversation could have several assignees. */
   assigneeUserId?: unknown;
   workStatus?: unknown;
   snoozedUntil?: unknown;
@@ -9,15 +11,24 @@ type CollaborationSnapshot = {
 
 const snapshot = (value: unknown): CollaborationSnapshot => (value && typeof value === "object" ? (value as CollaborationSnapshot) : {});
 
+const assigneesOf = (value: CollaborationSnapshot): string[] => {
+  if (Array.isArray(value.assigneeUserIds)) return value.assigneeUserIds.filter((id): id is string => typeof id === "string");
+  return typeof value.assigneeUserId === "string" ? [value.assigneeUserId] : [];
+};
+
 const collaborationPresentation = (event: MailActivityEvent, locale: string): { label: string; icon: string } => {
   const t = mailConversationUiMessages.resolve([locale]).t;
   const before = snapshot(event.metadata.before);
   const after = snapshot(event.metadata.after);
   const changes: string[] = [];
   let icon = "ti-pencil";
-  if (before.assigneeUserId !== after.assigneeUserId) {
-    changes.push(after.assigneeUserId ? t.activityAssigned : t.activityUnassigned);
-    icon = "ti-user-check";
+  const assigneesBefore = assigneesOf(before);
+  const assigneesAfter = assigneesOf(after);
+  const added = assigneesAfter.some((id) => !assigneesBefore.includes(id));
+  const removed = assigneesBefore.some((id) => !assigneesAfter.includes(id));
+  if (added || removed) {
+    changes.push(assigneesAfter.length === 0 ? t.activityUnassigned : added ? t.activityAssigned : t.activityAssigneeRemoved);
+    icon = assigneesAfter.length === 0 ? "ti-user-off" : "ti-user-check";
   }
   if (before.workStatus !== after.workStatus) {
     const status = after.workStatus === "done" ? t.done : after.workStatus === "waiting" ? t.waitingForReply : t.needsAction;

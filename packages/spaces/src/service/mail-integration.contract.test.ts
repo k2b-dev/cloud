@@ -21,6 +21,7 @@ if (process.env.SPACES_MAIL_INTEGRATION_CHILD !== "1") {
       title: "Team",
       links: [{ rel: "open", href: "/app/mail/Mail01" }],
       permission: "write",
+      accessScope: "mailbox",
       health: "active",
       syncEnabled: true,
     },
@@ -120,6 +121,20 @@ if (process.env.SPACES_MAIL_INTEGRATION_CHILD !== "1") {
     expect(calls.filter((call) => call.capabilityId === "mailbox.list").map((call) => call.input)).toEqual([
       { minimumPermission: "write", limit: 100 },
       { minimumPermission: "write", limit: 100, cursor: "page2" },
+    ]);
+  });
+
+  test("leaves out mailboxes where the caller may only answer assigned conversations", async () => {
+    mailboxPages = [
+      {
+        data: [...mailbox, { ...mailbox[0], ref: { type: "mail.mailbox", id: "Mail02" }, title: "Assigned", accessScope: "assigned" }],
+        page: { hasMore: false },
+      },
+    ];
+    const result = await listInvitationMailboxes({});
+    expect(result.ok && result.data.map((item) => item.id)).toEqual(["Mail01"]);
+    expect(calls.filter((call) => call.capabilityId === "mailbox.identity.list").map((call) => call.input)).toEqual([
+      { mailboxId: "Mail01", limit: 50 },
     ]);
   });
 

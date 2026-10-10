@@ -1,7 +1,7 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
+import { conversationVisibleTo, requireMailboxAccess } from "./access";
 import { type MailRequestContext, userBackedActor } from "./auth";
-import { requireMailboxCollaborationPermission } from "./collaboration";
 import type { CollaborationNotificationKind } from "./notification-outbox";
 
 type SqlClient = typeof sql;
@@ -28,7 +28,7 @@ export const resolveMailNotificationTarget = async (params: {
   db?: SqlClient;
 }): Promise<Result<{ href: `/${string}` }>> => {
   const db = params.db ?? sql;
-  const allowed = await requireMailboxCollaborationPermission(params.context, params.mailboxId, "read", db);
+  const allowed = await requireMailboxAccess(params.context, params.mailboxId, "read", db);
   if (!allowed.ok) return allowed;
 
   const user = userBackedActor(params.context);
@@ -41,6 +41,7 @@ export const resolveMailNotificationTarget = async (params: {
     WHERE reminder.id = ${params.sourceId}::uuid
       AND reminder.user_id = ${user.id}::uuid
       AND conversation.mailbox_id = ${params.mailboxId}::uuid
+      AND ${conversationVisibleTo(allowed.data, sql`conversation.id`)}
   `;
   if (reminder) {
     return ok({ href: conversationHref({ mailboxId: reminder.mailbox_short_id, conversationId: reminder.conversation_short_id }) });
@@ -55,6 +56,7 @@ export const resolveMailNotificationTarget = async (params: {
       AND delivery.recipient_user_id = ${user.id}::uuid
       AND delivery.mailbox_id = ${params.mailboxId}::uuid
       AND conversation.mailbox_id = ${params.mailboxId}::uuid
+      AND ${conversationVisibleTo(allowed.data, sql`conversation.id`)}
     ORDER BY delivery.source_revision DESC
     LIMIT 1
   `;

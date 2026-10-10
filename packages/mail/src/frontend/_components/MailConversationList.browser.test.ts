@@ -68,7 +68,7 @@ const item = (index: number, overrides: Partial<MailListItem> = {}): MailListIte
   hasAttachments: false,
   messageCount: 1,
   workStatus: "needs_action",
-  assigneeUserId: null,
+  assigneeUserIds: [],
   snoozedUntil: null,
   sourceFolderId: null,
   unreadFolderIds: [],
@@ -81,7 +81,7 @@ const items: MailListItem[] = [
   item(0, {
     subject: "Stage technology offer for the 2027 summer festival with a deliberately long subject line",
     participantLabels: ["Mara Example", "Jonas Sample"],
-    assigneeUserId: "user-jonas",
+    assigneeUserIds: ["user-jonas"],
     messageCount: 5,
     hasAttachments: true,
     localTags: [tag("Event", "#8b5cf6"), tag("Offer", "#f59e0b"), tag("Accounting", "#0ea5e9"), tag("Members", "#10b981")],

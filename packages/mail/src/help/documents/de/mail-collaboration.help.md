@@ -12,7 +12,7 @@ Die Unterhaltungsansicht zeigt wichtige Änderungen durch Zusammenarbeit und Wor
 
 ## Zuständigkeit und nächsten Schritt einheitlich verwenden {icon="route"}
 
-- **Zuständig** nennt die Person, die aktuell für die Unterhaltung verantwortlich ist. Weist dir jemand anderes eine Unterhaltung zu, erhältst du eine Cloud-Benachrichtigung, die sie öffnet. Um mehrere Unterhaltungen einer Person zu übertragen, wähle sie in der Liste aus und wähle **Zuweisen**; die zuständige Person erhält für die ganze Auswahl eine einzige Benachrichtigung. Wenn du dich selbst zuweist oder eine Zuweisung entfernst, wird keine Benachrichtigung gesendet.
+- **Zugewiesen an** nennt die Personen, die aktuell für die Unterhaltung verantwortlich sind; eine Unterhaltung kann bis zu 20 haben. Füge sie unter **Unterhaltungsdetails** hinzu oder entferne sie. Weist dir jemand anderes eine Unterhaltung zu, erhältst du eine Cloud-Benachrichtigung, die sie öffnet. Um eine Person zu mehreren Unterhaltungen hinzuzufügen, wähle sie in der Liste aus und wähle **Zuweisen**; die anderen bleiben zugewiesen, und die Person erhält für die ganze Auswahl eine einzige Benachrichtigung. Im selben Menü entfernst du dich selbst oder alle. Wenn du dich selbst zuweist oder jemanden entfernst, wird keine Benachrichtigung gesendet. **Mir zugewiesen** zeigt jede Unterhaltung, der du zugewiesen bist; **Nicht zugewiesen** die, denen niemand zugewiesen ist, der sie noch bearbeiten kann.
 - **Nächster Schritt** wird von Mail abgeleitet. **Aktion erforderlich** bedeutet, dass das Team die Unterhaltung prüfen oder bearbeiten muss. **Wartet auf Antwort** bedeutet, dass eine bestätigte menschliche Antwort gesendet wurde und der nächste Schritt bei einer anderen Person liegt.
 - **Als erledigt markieren** ist der einzige manuelle Bearbeitungsstatus. Wähle ihn, wenn aktuell nichts mehr zu tun ist, und entferne ihn, um die Unterhaltung wieder zu öffnen. Mail leitet den nächsten Schritt dann aus der neuesten verifizierten Nachricht ab.
 - **Später anzeigen** entfernt die Unterhaltung vorübergehend aus der aktiven Arbeit, ohne ihren nächsten Schritt zu ändern. Verwende diese Funktion, wenn die nächste Prüfung von einem Zeitpunkt und nicht von einer anderen Person abhängt. Bis zum gewählten Zeitpunkt liegt die Unterhaltung unter **Später**; eine neue eingehende E-Mail blendet sie sofort wieder ein.
@@ -40,8 +40,21 @@ Der Postfachzugriff wird unter **Einstellungen > Zugriff** vergeben. Alle, die d
 | Lesen | E-Mails lesen und durchsuchen, Anhänge herunterladen, Informationen zur Zusammenarbeit sehen, interne Kommentare schreiben und persönliche Erinnerungen verwenden |
 | Schreiben | Alle Aktionen von Lesen sowie E-Mails verfassen und senden, den E-Mail-Status beim Anbieter ändern, Aufgaben zuweisen, Unterhaltungen erledigen oder wieder öffnen, den Zeitpunkt für das erneute Anzeigen wählen und Schlagwörter verwalten |
 | Admin | Alle Aktionen von Schreiben sowie Verbindungen, Identitäten, Ordnerzuordnungen, gemeinsame Einstellungen, Zugriffe, Antwortregeln, Workflows und das Löschen des Postfachs verwalten |
+| Nur zugewiesene ansehen | Die Aktionen von Lesen, aber nur für die Unterhaltungen, die der Person zugewiesen sind |
+| Nur zugewiesene bearbeiten | Die Aktionen von Schreiben, aber nur für die Unterhaltungen, die der Person zugewiesen sind, und ohne selbst jemanden zuzuweisen |
 
 Über den üblichen Cloud-Berechtigungseditor kann unterstützten Personen, Gruppen oder Dienstkonten Zugriff gewährt werden. Wird der Zugriff entfernt, gilt dies für das gesamte Postfach, einschließlich bereits geöffneter Live-Ansichten und künftiger Aktionen durch Agents oder Dienstkonten.
+
+## Zugriff nur auf zugewiesene Unterhaltungen geben {icon="user-check"}
+
+Wähle unter **Einstellungen > Zugriff** für eine Person oder Gruppe **Nur zugewiesene ansehen** oder **Nur zugewiesene bearbeiten**, wenn sie an ausgewählten Unterhaltungen arbeiten soll, ohne den Rest des Postfachs zu sehen, etwa eine freie Mitarbeiterin oder ein anderes Team. Bei einer Gruppe sieht jedes Mitglied die Unterhaltungen, die ihm zugewiesen sind.
+
+- Sie sieht keine E-Mails, bis jemand mit vollem Postfachzugriff ihr eine Unterhaltung zuweist. Dann sieht sie diese Unterhaltung mit allen Nachrichten, auch später eintreffenden Antworten, sowie ihre Anhänge, Kommentare und Aktivitäten.
+- Die Ordnerliste zeigt nur Ordner, in denen eine ihrer Unterhaltungen liegt, und alle Zähler zählen nur ihre Unterhaltungen. Suche, **Mir zugewiesen**, die Mail-Übersicht, die Cloud-Suche, der Assistent und `cld` verhalten sich genauso.
+- Mit **Nur zugewiesene bearbeiten** kann sie in ihren Unterhaltungen antworten, weiterleiten, als gelesen oder erledigt markieren, verschieben, kommentieren und Tags setzen. Sie kann keine neuen Nachrichten schreiben, niemanden zuweisen, keine Tags oder Ordner anlegen, keine Unterhaltungen zusammenführen oder trennen und keine Postfacheinstellungen ändern.
+- Endet eine Zuweisung, verschwindet die Unterhaltung für sie sofort: aus Listen und geöffneten Ansichten, der Suche, Downloads und Benachrichtigungen. Antworten und Aktionen, die sie dafür eingereiht hat, auch geplante Sendungen, werden nicht mehr ausgeführt.
+
+Wer vollen Zugriff auf das Postfach hat, behält ihn; ein zusätzlicher Zugriff nur auf zugewiesene Unterhaltungen ändert für diese Person nichts.
 
 ## Kontext aus Kontakte verwenden {icon="address-book"}
 

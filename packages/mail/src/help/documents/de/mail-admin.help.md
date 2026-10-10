@@ -104,6 +104,7 @@ Agents können Anbieterabonnements mit `cld mail folder subscribe` und `cld mail
 - **Lesen** für Lesen, Suche, Kommentare und persönliche Erinnerungen.
 - **Schreiben** für Versand, Anbieteraktionen und gemeinsame Arbeitszustände.
 - **Admin** für Verbindung, Freigaben, Regeln, Workflows und Lebenszyklus.
+- **Nur zugewiesene ansehen** oder **Nur zugewiesene bearbeiten** für Personen und Gruppen, die nur die ihnen zugewiesenen Unterhaltungen sehen sollen. Was sie tun können, beschreibt **Gemeinsam in einem Postfach arbeiten**.
 
 Verwende den Cloud-Berechtigungseditor und vergib nur die für die Aufgabe nötige Berechtigung. Die Richtlinie **Wer darf automatische Antworten verwalten?** kann **Schreibberechtigte und Administratoren** einbeziehen oder mit dem sicheren Standard **Nur Administratoren** auf Adminrechte begrenzt bleiben. Identitäten, Referenzmuster und YAML-Workflows bleiben trotzdem Postfach-Administratoren vorbehalten. Zugangsdaten bleiben selbst für Administratoren verborgen. Eine Postfachfreigabe gibt Cloud-Zugriff, aber niemals Anbieterpasswort oder Token weiter.
 

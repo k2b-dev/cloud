@@ -61,6 +61,7 @@ const readerProps: ComponentProps<typeof MailConversationReaderComponent> = {
   requestUrl: "/app/mail/Box001?conversation=Conv01",
   canWrite: true,
   canAdmin: false,
+  mailboxWide: true,
   identities: [],
   selectionKey: "Conv01",
   selectedConversationId: "Conv01",

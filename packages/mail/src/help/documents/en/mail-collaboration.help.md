@@ -12,7 +12,7 @@ The conversation reader places meaningful collaboration and workflow changes qui
 
 ## Use ownership and follow-up consistently {icon="route"}
 
-- **Assignee** names the person currently responsible for the conversation. When someone else assigns a conversation to you, you get a Cloud notification that opens it. To hand several conversations to one person, select them in the list and choose **Assign**; the assignee gets one notification for the whole selection. Assigning yourself or removing an assignee sends no notification.
+- **Assignees** name the people currently responsible for the conversation; a conversation can have up to 20. Add or remove them under **Conversation details**. When someone else assigns a conversation to you, you get a Cloud notification that opens it. To add one person to several conversations, select them in the list and choose **Assign**; the others stay assigned, and the person gets one notification for the whole selection. The same menu removes you or everyone. Assigning yourself or removing someone sends no notification. **Assigned to me** lists every conversation you are one of the assignees of; **Unassigned** lists the ones nobody who can still work on them is assigned to.
 - **Next step** is derived by Mail. **Needs action** means the team must review or act. **Waiting for reply** means a confirmed human reply was sent and the next step belongs to someone else.
 - **Mark as done** is the only manual follow-up state. Select it when no current action remains; clear it to reopen the conversation. Mail then derives the next step from the latest verified message.
 - **Show later** temporarily removes the conversation from active work without changing its next step. Use it when the next review depends on time rather than another person. The conversation stays under **Later** until the selected time; new incoming mail makes it appear immediately.
@@ -40,8 +40,21 @@ Mailbox access is granted in **Settings > Access**. Everyone who can read the ma
 | Read | Read and search mail, download attachments, view collaboration context, write internal comments, and use personal reminders |
 | Write | All Read actions plus compose and send, change provider mail state, assign work, mark conversations done or reopen them, choose when a conversation appears again, and manage conversation tags |
 | Admin | All Write actions plus connections, identities, folder mappings, shared settings, access, response policy, workflows, and mailbox deletion |
+| View assigned only | Read actions, but only for the conversations assigned to the person |
+| Edit assigned only | Write actions, but only for the conversations assigned to the person, and without assigning anyone |
 
 Access can be granted through the standard Cloud permission editor to the supported people, groups, or service accounts. Removing access takes effect for the mailbox, including open live views and future agent or service-account actions.
+
+## Give access to assigned conversations only {icon="user-check"}
+
+Choose **View assigned only** or **Edit assigned only** for a person or group under **Settings > Access** when they should work on selected conversations without seeing the rest of the mailbox, for example a freelancer or another team. For a group, each member sees the conversations assigned to them.
+
+- They see no mail until someone with full mailbox access assigns a conversation to them. They then see that conversation with all its messages, including replies that arrive later, its attachments, comments, and activity.
+- The folder list shows only folders that hold one of their conversations, and every count includes only their conversations. Search, **Assigned to me**, the Mail overview, Cloud search, the Assistant, and `cld` work the same way.
+- With **Edit assigned only** they can reply, forward, mark as read or done, move, comment, and tag their conversations. They cannot write new messages, assign anyone, create tags or folders, merge or split conversations, or change mailbox settings.
+- When an assignment ends, the conversation disappears for them at once: from lists and open views, search, downloads, and notifications. Replies and actions they queued for it, including scheduled sends, are no longer carried out.
+
+People with full access to the mailbox keep it; additional access to assigned conversations only changes nothing for them.
 
 ## Use Contacts context {icon="address-book"}
 

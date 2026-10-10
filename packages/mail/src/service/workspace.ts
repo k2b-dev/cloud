@@ -1,5 +1,5 @@
 import { logger } from "@k2b/cloud/services";
-import { err, fail, i18n, ok, type Result, type ServiceError } from "@k2b/stdlib";
+import { fail, i18n, ok, type Result, type ServiceError } from "@k2b/stdlib";
 import { z } from "zod";
 import {
   type ConversationDraftSummary,
@@ -20,6 +20,7 @@ import {
   replaceMailSearchReferences,
   resolveMailSearchRoute,
 } from "../search-state";
+import { getMailboxAccess, requireMailboxAccess, requireVisibleConversation, requireVisibleMessages } from "./access";
 import type { MailRequestContext } from "./auth";
 import type { ConversationCollaboration, ConversationComment, MailActivityEvent, MailAssignableUser } from "./collaboration";
 import * as collaboration from "./collaboration";
@@ -63,7 +64,7 @@ export type MailListItem = {
   hasAttachments: boolean;
   messageCount: number;
   workStatus: "needs_action" | "waiting" | "done" | null;
-  assigneeUserId: string | null;
+  assigneeUserIds: string[];
   snoozedUntil: string | null;
   sourceFolderId: string | null;
   unreadFolderIds: string[];
@@ -134,6 +135,7 @@ const optionalUuidSearchParam = (url: URL, name: string): string | null => {
 export type MailboxPageData = {
   mailbox: Mailbox;
   permission: "read" | "write" | "admin";
+  access: { scope: "mailbox" | "assigned"; permission: "read" | "write" | "admin" };
   initialLiveCursor: string | null;
   folders: MailFolderView[];
   identities: SenderIdentity[];
@@ -253,7 +255,7 @@ const conversationToListItem = (conversation: ConversationSummary): MailListItem
   hasAttachments: conversation.hasAttachments,
   messageCount: conversation.messageCount,
   workStatus: conversation.workStatus,
-  assigneeUserId: conversation.assigneeUserId,
+  assigneeUserIds: conversation.assigneeUserIds,
   snoozedUntil: conversation.snoozedUntil,
   sourceFolderId: conversation.folderId,
   unreadFolderIds: conversation.unreadFolderIds,
@@ -289,7 +291,7 @@ export const searchHitToListItem = (item: search.MessageSearchHit, listMode: Mai
     hasAttachments: item.hasAttachments,
     messageCount: item.messageCount,
     workStatus: item.workStatus,
-    assigneeUserId: item.assigneeUserId,
+    assigneeUserIds: item.assigneeUserIds,
     snoozedUntil: item.snoozedUntil,
     sourceFolderId: item.sourceFolderId,
     unreadFolderIds: item.unreadFolderIds,
@@ -328,6 +330,8 @@ const loadConversationDetails = async (params: {
   locale?: string | null;
 }) => {
   const errorMessage = (error: ServiceError) => localizeMailError(error, params.locale).message;
+  // Only mailbox-wide writers assign; people who see assigned conversations only get no list to choose from.
+  const assignedOnly = (await getMailboxAccess(params.context, params.mailboxId))?.scope === "assigned";
   const [
     detailResult,
     stateResult,
@@ -344,11 +348,13 @@ const loadConversationDetails = async (params: {
     collaboration.getConversationCollaboration(params),
     localTags.getConversationLocalTags(params),
     collaboration.listConversationComments({ ...params, limit: 100, order: "newest" }),
-    collaboration.listAssignableUsers({
-      context: params.context,
-      mailboxId: params.mailboxId,
-      limit: 200,
-    }),
+    assignedOnly
+      ? Promise.resolve(ok<MailAssignableUser[]>([]))
+      : collaboration.listAssignableUsers({
+          context: params.context,
+          mailboxId: params.mailboxId,
+          limit: 200,
+        }),
     collaboration.listActivity({ ...params, limit: 30 }),
     reminders.getConversationReminder(params),
     conversationReferences.listConversationReferences(params),
@@ -398,8 +404,8 @@ export const loadMailboxConversationDetail = async (params: {
   conversationId: string;
   locale?: string | null;
 }): Promise<MailConversationDetailData | null> => {
-  const permission = await collaboration.requireMailboxCollaborationPermission(params.context, params.mailboxId, "read");
-  if (!permission.ok || permission.data === "none") return null;
+  const permission = await requireMailboxAccess(params.context, params.mailboxId, "read");
+  if (!permission.ok) return null;
   const conversation = await messages.listConversationMessages({
     context: params.context,
     mailboxId: params.mailboxId,
@@ -543,8 +549,11 @@ export type MailWorkspaceRequest = { requestUrl: URL; search: ResolvedMailSearch
 
 /**
  * Resolves the public IDs of a browser workspace URL once, for the SSR page and the workspace-route API alike.
- * Returns null when a resource parameter is not part of this mailbox. A folder or tag condition whose folder or
+ * Returns null when a saved view or folder parameter is not part of this mailbox; a conversation or message that is
+ * not opens the view without it. A folder or tag condition whose folder or
  * tag no longer exists matches nothing, so a stale search link still opens and shows no results.
+ * This runs before access checks, so a folder an assigned-only reader cannot see resolves and lists nothing while an
+ * unknown one returns null: the difference reveals only that the folder ID exists, never its name or content.
  */
 export const resolveWorkspaceRequest = async (publicUrl: URL, mailboxId: string): Promise<MailWorkspaceRequest | null> => {
   const requestUrl = new URL(publicUrl);
@@ -558,6 +567,12 @@ export const resolveWorkspaceRequest = async (publicUrl: URL, mailboxId: string)
     const shortId = requestUrl.searchParams.get(name);
     if (shortId === null) continue;
     const id = await publicResources.resolveMailboxPublicId(table, mailboxId, shortId);
+    // A selection that no longer exists opens the view without it, exactly like one the reader may no longer see,
+    // for example after an assignment ended; the page data drops the hidden one.
+    if (!id && (name === "conversation" || name === "message")) {
+      requestUrl.searchParams.delete(name);
+      continue;
+    }
     if (!id) return null;
     requestUrl.searchParams.set(name, id);
   }
@@ -594,9 +609,8 @@ export const loadMailboxPageData = async (params: {
   locale?: string | null;
 }): Promise<Result<MailboxPageData>> => {
   const t = workspaceMessages.resolve([params.locale ?? "en"]).t;
-  const permission = await collaboration.requireMailboxCollaborationPermission(params.context, params.mailboxId, "read");
+  const permission = await requireMailboxAccess(params.context, params.mailboxId, "read");
   if (!permission.ok) return fail(permission.error);
-  if (permission.data === "none") return fail(err.forbidden());
   const scheduledMode = params.requestUrl.searchParams.get("scheduled") === "1";
 
   let initialLiveCursor: string | null = null;
@@ -637,8 +651,11 @@ export const loadMailboxPageData = async (params: {
   const resolvedSearch = params.search;
   const { query, expression: searchExpression, sort: searchSort } = resolvedSearch;
   const listCursor = params.requestUrl.searchParams.get("cursor");
-  const selectedConversationId = optionalUuidSearchParam(params.requestUrl, "conversation");
-  const selectedMessageId = optionalUuidSearchParam(params.requestUrl, "message");
+  let selectedConversationId = optionalUuidSearchParam(params.requestUrl, "conversation");
+  let selectedMessageId = optionalUuidSearchParam(params.requestUrl, "message");
+  if (selectedConversationId && !(await requireVisibleConversation(permission.data, selectedConversationId)).ok)
+    selectedConversationId = null;
+  if (selectedMessageId && !(await requireVisibleMessages(permission.data, [selectedMessageId])).ok) selectedMessageId = null;
   const folders = folderResult.ok ? folderResult.data : [];
   const activeSavedView = savedViewResult.ok ? (savedViewResult.data.find((view) => view.id === savedViewId) ?? null) : null;
   const listMode = params.listMode ?? "conversations";
@@ -707,7 +724,8 @@ export const loadMailboxPageData = async (params: {
 
   return ok({
     mailbox: mailboxResult.data,
-    permission: permission.data,
+    permission: permission.data.permission,
+    access: { scope: permission.data.scope, permission: permission.data.permission },
     initialLiveCursor,
     folders,
     identities: identityResult.ok ? identityResult.data : [],

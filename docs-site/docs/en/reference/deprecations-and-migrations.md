@@ -10,6 +10,57 @@ updated: 2026-10-10
 
 # Deprecations and migrations
 
+## Mail conversations have several assignees
+
+A Mail conversation can have up to 20 assignees, and a mailbox grant can cover
+only the conversations assigned to a person. The single assignee fields are
+gone without an alias; see
+[Assign conversations and limit access to them](/en/apps/mail#assign-conversations-and-limit-access-to-them).
+
+| Before | Now |
+| --- | --- |
+| `assigneeUserId` on list items, search hits, and focus items | `assigneeUserIds`, an array in assignment order |
+| `assigneeUserId` on `PATCH /api/mail/mailboxes/{mailboxId}/conversations/{conversationId}/collaboration` | `assigneeUserIds`, which replaces the whole set; `[]` clears it |
+| `assigneeUserId` on `POST /api/mail/mailboxes/{mailboxId}/conversations/assign` | `assigneeUserIds` with `mode`: `add`, `remove`, or `replace`; `replace` with `[]` clears it |
+| `assignee` in collaboration data and in the `conversation.read` capability | `assignees`, an array of users |
+| `assignee` in the results of the `conversation.assign`, `conversation.snooze`, and `conversation.status.update` capabilities | `assignees`, an array of users |
+| `assigneeUserId` in the `conversation.assign` and `conversation.assign.batch` capabilities | `assigneeUserIds` with `mode` |
+| `expectedRevision` in the `conversation.assign` capability | Removed; `add` and `remove` change only the people they name |
+| `assignee` in the `conversation.assign.batch` result | `assignees`, the users named in the request |
+| Workflow data field `inputs.conversation.assigneeUserId` | `inputs.conversation.assigneeUserIds` |
+| `cld mail assign --to` replaced the assignee | `--to` adds people; add `--replace` to replace them, use `--remove` to remove some |
+| `cld mail conversation update --assignee` took one user | `--assignee` is repeatable or comma-separated and replaces all assignees; `--unassign` removes them all |
+
+Update a third-party application or script that reads or sends the old fields
+before it talks to the new Mail version. A request with `assigneeUserId` or,
+in `conversation.assign`, `expectedRevision` fails validation, and a missing
+`mode` fails too. These capabilities change under their existing IDs rather
+than new ones, so update their callers together with Mail and refresh cached
+capability schemas. Mailbox responses and the `mailbox.list` and
+`mailbox.browse` capabilities gain `accessScope`, and access entries carry
+`scope: "assigned"` for grants that cover only assigned conversations. Such a
+grant allows replies in the assigned conversations but no new mail, so pick a
+mailbox with `accessScope: "mailbox"` before you create new mail.
+
+A saved workflow that refers to `inputs.conversation.assigneeUserId` keeps its
+bound version, but the field no longer exists in its runs: a step that reads it
+fails with an unavailable reference, and `exists` on it is false. Saving or
+validating the workflow again reports a diagnostic for the unknown field. Replace it with `inputs.conversation.assigneeUserIds`,
+for example `${{ inputs.conversation.assigneeUserIds.0 }}` for the first
+assignee. The workflow action `assignConversation` keeps its `user` input: it
+replaces all assignees with that person, and `null` removes them all.
+
+Platform administrators without a mailbox grant no longer count as mailbox
+users in Mail's background checks either: reminders and other conversation
+notifications, workflow notices, viewing presence, saved views shared with
+them, the person who authorized an incoming automation, and whether an
+assignee can still work on a conversation all need a grant, as opening the
+mailbox always did. An incoming automation that such an administrator
+authorized pauses its Spaces authorization on its next run; give them a
+mailbox grant with Write access and have them authorize it again. On upgrade,
+Mail copies each existing assignment once; see
+[Upgrade Mail to several assignees](/en/docs/operations/deployment-requirements#upgrade-mail-to-several-assignees).
+
 ## Dashboard widgets stream in one by one
 
 The dashboard no longer waits for widgets before it sends the page. It renders

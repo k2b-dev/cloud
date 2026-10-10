@@ -1410,7 +1410,7 @@ steps:
         conversation: {
           id: conversation.short_id,
           subject: "Recovery test",
-          assigneeUserId: null,
+          assigneeUserIds: [],
           workStatus: "needs_action",
           revision: conversation.revision,
           latestMessageAt: new Date().toISOString(),
@@ -1510,7 +1510,7 @@ steps:
       subject: "Summary action test",
       summary: null,
       summaryRevision: Number(conversation.summary_revision),
-      assigneeUserId: null,
+      assigneeUserIds: [],
       workStatus: "needs_action" as const,
       revision: Number(conversation.revision),
       latestMessageAt: new Date().toISOString(),
