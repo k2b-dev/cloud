@@ -5,15 +5,15 @@ section: Platform services
 order: 580
 description: Declare app-owned Markdown once for the shared Help UI, full-page Help, Assistant, and MCP.
 tags: [help, markdown, product, agents]
-updated: 2026-10-09
+updated: 2026-10-10
 ---
 
 # In-product Help
 
 Declare an application's product guidance once. Cloud can then expose the same
 Markdown through the shared Layout, full-page Help, Assistant search and reads,
-and the authenticated [Cloud MCP server](/en/docs/platform/mcp). Every surface
-shows an application's Help only to signed-in users who may see that
+and the authenticated [Cloud MCP server](/en/docs/platform/mcp). These Cloud
+surfaces show an application's Help only to signed-in users who may see that
 application; see [Who can read Help](#who-can-read-help).
 
 The single declaration keeps human and agent guidance aligned even when the
@@ -380,7 +380,8 @@ Assistant, and MCP all read through one shared reader that applies the same
 rule, so no surface shows more than another:
 
 - Without sign-in, the Help API answers `401` and full-page Help redirects to
-  sign-in. No titles, descriptions, or articles are returned.
+  sign-in. No titles, descriptions, or articles are returned. OAuth clients
+  also need the `read` or `admin` scope, as for MCP.
 - The reader uses the signed-in user, or the user an API credential acts for. A
   service account without a user sees no Help.
 - An application's Help follows its declared visibility. `nav.requiresRoles`
@@ -388,7 +389,8 @@ rule, so no surface shows more than another:
 - An application reached only through the admin area, with `adminHref` and no
   own `nav`, shows its Help to administrators.
 - Without either declaration, every signed-in user can read the Help,
-  including guests.
+  including guests. If guests may not use the application, declare
+  `requiresRoles: ["user"]`; that hides both its link and its Help from them.
 
 For anyone else, the application's Help does not exist: search returns no
 results, and reads and full-page Help answer like a missing article. The
@@ -398,6 +400,12 @@ the navigation decides.
 This is visibility, not authorization. The application's routes still decide
 who may use the application, and links from Help to protected pages still
 authorize normally.
+
+The rule covers the Help that Cloud serves. When an application renders
+Markdown from its own declaration, for example with `getMarkdown()`, that text
+is part of the application's page and follows the page's route policy. API
+Docs does this on purpose: its public page shows its getting-started article to
+everyone. Render an article this way only when it may be public.
 
 ## Keep the content safe to expose
 

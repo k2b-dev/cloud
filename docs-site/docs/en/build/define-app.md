@@ -5,7 +5,7 @@ section: Build an app
 order: 120
 description: Declare application identity, routes, navigation, and platform integrations with defineApp().
 tags: [applications, define-app, configuration]
-updated: 2026-10-09
+updated: 2026-10-10
 ---
 
 # Define an application
@@ -85,7 +85,7 @@ nav: {
 | `section` | Yes | — | `"primary"`, `"more"`, or `"hidden"` |
 | `match` | No | `href` without its query | Path used for active navigation |
 | `requiresAuth` | No | — | Hide the link from anonymous visitors |
-| `requiresRoles` | No | — | Show the link only for matching platform roles |
+| `requiresRoles` | No | — | Show the link and the application's [Help](/en/docs/platform/help#who-can-read-help) only for matching platform roles; `guest` matches guests |
 | `badge` | No | — | Route whose count the app bar and app grid show on the icon; see [Show a count on the app icon](/en/docs/frontend/layout-and-navigation#show-a-count-on-the-app-icon) |
 
 Navigation visibility is not authorization. Protect the destination with

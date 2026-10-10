@@ -14,8 +14,10 @@ export type HelpRouteDependencies = {
 export const createHelpRoutes = (dependencies: HelpRouteDependencies = {}) => {
   const reader = dependencies.help ?? createHelpReader;
   // Help is for signed-in people; the reader then hides apps the viewer may not see, like missing ones.
+  // Scoped to Help's paths: Core mounts these routes at its API root, before MCP and the other APIs.
   return new Hono<AuthContext>()
-    .use(dependencies.authenticate ?? auth.requireRole("authenticated"))
+    .use("/help/v1/*", dependencies.authenticate ?? auth.requireRole("authenticated"))
+    .use("/help/v1/*", auth.requireOAuthScope("read", "admin"))
     .get("/help/v1/:appId/search", async (c) => {
       const locale = getLocale(c);
       const query = c.req.query("q")?.trim().slice(0, 200) ?? "";

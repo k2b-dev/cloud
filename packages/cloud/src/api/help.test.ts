@@ -1,6 +1,8 @@
 import { describe, expect, spyOn, test } from "bun:test";
+import type { MiddlewareHandler } from "hono";
 import { fixtureHelpReader } from "../../test/help-reader";
 import type { RequestActor } from "../contracts/shared";
+import type { AuthContext } from "../server";
 import type { HelpReaderFactory } from "../services/help";
 import { session } from "../services/session";
 import { buildProjectedUser } from "../services/session/user";
@@ -82,6 +84,20 @@ describe("Help API", () => {
     } finally {
       authenticate.mockRestore();
     }
+  });
+  test("needs the read scope from OAuth callers, like the other read APIs", async () => {
+    const withScopes =
+      (scopes?: string[]): MiddlewareHandler<AuthContext> =>
+      async (c, next) => {
+        if (scopes) c.set("oauthScopes", scopes);
+        await next();
+      };
+    const status = async (scopes?: string[]) =>
+      (await createHelpRoutes({ help, authenticate: withScopes(scopes) }).request("/help/v1/inventory/documents/start")).status;
+    expect(await status(["openid", "profile"])).toBe(403);
+    expect(await status(["read"])).toBe(200);
+    expect(await status(["admin"])).toBe(200);
+    expect(await status()).toBe(200);
   });
   test("rejects entry before reading and propagates outages", async () => {
     const routes = createHelpRoutes({ help, authenticate: async (c) => c.json({ error: "unauthorized" }, 401) });

@@ -134,6 +134,9 @@ export const defineHelp = (
  * Define one app-owned help corpus. The explicit source list is deliberate:
  * IDs, ordering and ownership stay visible in code; no filesystem scanning or
  * build-time convention is required.
+ *
+ * @deprecated Declare Help with `defineHelp()` and pass it to `app.start({ help })`. This router only
+ * requires sign-in; it does not apply the app's Help visibility, so the mounting app's routes must guard it.
  */
 export const defineHelpCollection = (options: { basePath: string; sources: readonly string[] }): HelpCollection => {
   const basePath = options.basePath.replace(/\/$/, "");

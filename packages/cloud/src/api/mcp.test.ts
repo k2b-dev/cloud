@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from "bun:test";
+import { describe, expect, mock, spyOn, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -13,7 +13,10 @@ import { defineCapabilities } from "../contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
 import { type AuthContext, auth, type RequestActor } from "../server";
 import type { withActiveIdentitySigner } from "../services/identity/key-ring";
+import { oauthTokens } from "../services/oauth-tokens";
+import { buildProjectedUser } from "../services/session/user";
 import { createCapabilityRoutes } from "./capabilities";
+import { createHelpRoutes } from "./help";
 import { cloudMcpResourceUri, createMcpProtectedResourceRoutes, createMcpRoutes as createMcpRoutesBase } from "./mcp";
 
 // The dispatcher records executions and idempotency claims through the store.
@@ -858,8 +861,9 @@ describe("capability MCP projection", () => {
     expect(limited.headers.get("retry-after")).toBe("1");
   });
 
-  test("keeps the MCP authorization challenge when Core composes capability routes first", async () => {
+  test("keeps the MCP authorization challenge when Core composes Help and capability routes first", async () => {
     const routes = new Hono<AuthContext>()
+      .route("/", createHelpRoutes({ help: fixtureHelpReader(async () => [help]) }))
       .route("/", createCapabilityRoutes({ authenticate: async (c) => c.json({ message: "Capability authentication" }, 401) }))
       .route("/", createMcpRoutes({ listApps: async () => [], getAppUrl: async () => "cloud.example", authenticate: undefined }))
       .get("/search", (c) => c.json({ source: "search" }));
@@ -876,6 +880,33 @@ describe("capability MCP projection", () => {
     const search = await routes.request("/search");
     expect(search.status).toBe(200);
     expect(await search.json()).toEqual({ source: "search" });
+  });
+
+  test("admits a token issued only for the MCP resource when Core composes Help first", async () => {
+    // Connectors that register dynamically get tokens whose only audience is the MCP resource.
+    const resource = cloudMcpResourceUri("cloud.example");
+    const audiences: unknown[] = [];
+    const user = buildProjectedUser({ id: crypto.randomUUID(), provider: "local", profile: "user", effective_admin: false });
+    const verify = spyOn(oauthTokens, "verifyAccessToken").mockImplementation(async (_token, audience) => {
+      audiences.push(audience);
+      return audience === resource ? { kind: "user", payload: {}, user, scopes: ["read"] } : null;
+    });
+    try {
+      const routes = new Hono<AuthContext>()
+        .route("/", createHelpRoutes({ help: fixtureHelpReader(async () => [help]) }))
+        .route("/", createMcpRoutes({ listApps: async () => [], getAppUrl: async () => "cloud.example", authenticate: undefined }));
+      const response = await routes.request("/mcp/v1", {
+        method: "POST",
+        headers: { authorization: "Bearer mcp-only", "content-type": "application/json", accept: "application/json, text/event-stream" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+      });
+      expect(response.status).toBe(200);
+      expect(audiences).toEqual([resource]);
+      // The Help API itself still verifies the token for Cloud's own audience and refuses it.
+      expect((await routes.request("/help/v1/inventory/search?q=x", { headers: { authorization: "Bearer mcp-only" } })).status).toBe(401);
+    } finally {
+      verify.mockRestore();
+    }
   });
 
   test("calls the shared dispatcher with a scoped invocation and structured results", async () => {
