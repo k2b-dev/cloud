@@ -166,7 +166,7 @@ export function interactive(state: { initial: number; mounted: number; pendingSc
 
 export function longTaskMetrics(tasks: { start: number; duration: number }[], fcp: number | null, tti: number) {
   return {
-    lastLongTaskEndMs: tasks.length ? Math.round(Math.max(...tasks.map((task) => task.start + task.duration))) : null,
+    lastLongTaskEndMs: tasks.length ? Math.round(Math.max(...tasks.map((task) => task.start + task.duration))) : 0,
     totalBlockingTimeMs:
       fcp === null
         ? null

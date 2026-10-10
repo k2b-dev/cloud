@@ -154,7 +154,8 @@ This definition must be reviewed if the mount runtime changes.
 
 FCP, LCP, and CLS come from performance entries up to that observation point.
 CLS sums layout shifts without recent input over the run. Unsupported entries
-are `null`. Chromium also reports the last long-task end and total blocking
+are `null`. Chromium also reports the last long-task end (0 when no long task
+occurred) and total blocking
 time: for each long task overlapping FCP through TTI, subtract 50 ms from its
 overlap and sum positive remainders. WebKit long-task metrics are `null`.
 These are bounded load observations, not final LCP/CLS over a user's visit.

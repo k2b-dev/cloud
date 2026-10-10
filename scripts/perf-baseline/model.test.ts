@@ -139,7 +139,7 @@ describe("performance baseline contracts", () => {
         550,
       ),
     ).toEqual({ lastLongTaskEndMs: 680, totalBlockingTimeMs: 120 });
-    expect(longTaskMetrics([], 10, 100)).toEqual({ lastLongTaskEndMs: null, totalBlockingTimeMs: 0 });
+    expect(longTaskMetrics([], 10, 100)).toEqual({ lastLongTaskEndMs: 0, totalBlockingTimeMs: 0 });
     expect(longTaskMetrics([], null, 100).totalBlockingTimeMs).toBeNull();
   });
 
