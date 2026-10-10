@@ -26,9 +26,18 @@ import {
   TextEditorToolView,
 } from "./blocks";
 import { CapabilityTablePreview } from "./capability-table";
+import { CloudChartBlock } from "./chart-block";
 import { PresentToolBlock } from "./file-tools";
 import { useAiChatActions } from "./message-actions";
-import { aiToolIcon, capabilityErrorDescription, displayToolName, isCardToolName, isRecord, isSurveyToolName } from "./message-utils";
+import {
+  aiToolIcon,
+  capabilityErrorDescription,
+  displayToolName,
+  isCardToolName,
+  isChartToolName,
+  isRecord,
+  isSurveyToolName,
+} from "./message-utils";
 import { aiChatMessages } from "./messages";
 import { AssistantMarkdownBlock } from "./primitives";
 import { AiToolActivity, AiToolDisclosureProvider, type AiToolDisclosureState } from "./tool-disclosure";
@@ -133,6 +142,7 @@ const stepPhrase = (block: AiTurnBlock | null, t: Messages, withTargets: boolean
   if (name === "present") return withTarget(t.stepDeliveringFile);
   if (name === "code_present") return withTarget(t.stepPreparingView);
   if (isCardToolName(name)) return t.stepPreparingCard;
+  if (isChartToolName(name)) return t.stepPreparingChart;
   if (["code_write", "code_create", "code_update", "code_fork", "code_remove", "code_restore"].includes(name))
     return withTarget(t.stepWritingCode);
   if (["code_run", "code_action", "code_sql"].includes(name)) return withTarget(t.stepRunningCode);
@@ -435,6 +445,9 @@ function AiTurnResultView(props: { result: Accessor<AiTurnResult | undefined>; r
           </Match>
           <Match when={isCardToolName(current().name)}>
             <CloudCardBlock args={current().args} />
+          </Match>
+          <Match when={isChartToolName(current().name)}>
+            <CloudChartBlock args={current().args} completed={current().status === "completed"} />
           </Match>
           <Match when={true}>
             <Show when={!props.receipt()}>

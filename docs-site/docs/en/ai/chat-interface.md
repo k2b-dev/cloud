@@ -254,14 +254,19 @@ order:
    host's `onOpenFile`, the thumbnail is a button that opens the file larger;
    its name is that action, and the alt text describes it. Without `fileUrl`,
    such as in a background run transcript, the step shows no thumbnail.
-2. **Results.** Presented files, `code_present` apps, cards, and
+2. **Results.** Presented files, `code_present` apps, charts, cards, and
    capability tables in the order they were made. A later result with the same
    target, the same file path for `present` or the same title for
    `code_present`, replaces the earlier one at its place. A running delivery
    takes a place once its arguments have arrived, so a new version never shows
    a frame of its own first. A capability table shows the summary and links of
    its result above it. An approved call or a Cloud action that returns a table
-   shows the table here and its receipt in place 4.
+   shows the table here and its receipt in place 4. A chart draws in full with
+   its first frame, at a fixed height, with its title, a Diagram/Table switch,
+   and Copy data; the table scrolls inside the same height, so neither the
+   finished call nor the switch moves anything. While the model still writes a
+   chart's arguments, the work line says it prepares a chart. The terminal
+   client prints the chart's data table instead.
 3. **Newest text.** While the turn runs this is a status: a new text replaces
    the previous one in the same element once its first sentence has streamed,
    and the place keeps its height until the turn ends. Finished, it is the final
@@ -365,8 +370,8 @@ failed compaction, still reaches `error()`.
 
 Capability titles and application icons come from the saved presentation.
 Approval prompts retain their application identity and explicit decision
-controls. Surveys, cards, presented files, editors, and capability tables remain
-visible results. The saved presentation remains readable when an application
+controls. Surveys, charts, cards, presented files, editors, and capability
+tables remain visible results. The saved presentation remains readable when an application
 is temporarily unavailable. Cloud's built-in tools, including every Studio
 tool, show a name in the reader's language, such as "App check" or
 "App-Prüfung"; a test fails when a built-in tool has no English or German name.

@@ -4,8 +4,10 @@ import type { AiFileStat, AiPendingTurnAction, AiPublicModelProfile, CloudAiSurv
 import {
   AI_TURN_ATTACHMENT_MAX_ITEMS,
   CloudAiCardInputSchema,
+  CloudAiChartInputSchema,
   CloudAiSurveyInputSchema,
   CloudAiTextEditorInputSchema,
+  cloudAiChartTable,
 } from "@k2b/cloud/ai/browser";
 import { arg, type CloudCliContext, command, flag } from "@k2b/cloud/cli";
 import type { CapabilityDecision, CodeApproval } from "../artifacts/runtime/capabilities";
@@ -111,6 +113,30 @@ const printCard = (ctx: CloudCliContext, args: unknown): void => {
   if (!card.success) return;
   ctx.print(`${card.data.title}: ${card.data.value}`);
   if (card.data.caption) ctx.print(card.data.caption);
+};
+
+/** A terminal cannot draw the chart; it prints the chart's data table, the same rows the web table shows. */
+const printChart = (ctx: CloudCliContext, args: unknown): void => {
+  const chart = CloudAiChartInputSchema.safeParse(args);
+  if (!chart.success) return;
+  const table = cloudAiChartTable(chart.data, "en");
+  ctx.print();
+  ctx.print(terminalSafeText(chart.data.title));
+  if (chart.data.subtitle) ctx.print(terminalSafeText(chart.data.subtitle));
+  ctx.table(
+    table.rows
+      .slice(0, 100)
+      .map((row) => Object.fromEntries(table.columns.map((column) => [column.id, terminalSafeText(row.cells[column.id] ?? "")]))),
+    table.columns.map((column) => ({ key: column.id, label: column.label })),
+  );
+  if (table.rows.length > 100) ctx.print(`Showing 100 of ${table.rows.length} values; the web chat shows all of them.`);
+  ctx.print();
+};
+
+const printDeliveredBlock = (ctx: CloudCliContext, block: { name: string; status: string; args?: unknown }): void => {
+  if (block.status !== "completed") return;
+  if (block.name === "card") printCard(ctx, block.args);
+  if (block.name === "chart") printChart(ctx, block.args);
 };
 
 const readChoice = async (
@@ -312,7 +338,7 @@ const resolveAttention = async (input: {
       signal: input.signal,
       onCapabilityApproval: (request) => collectCapabilityApproval(input.ctx, input.reader, request),
       onToolBlock: (block) => {
-        if (block.name === "card" && block.status === "completed") printCard(input.ctx, block.args);
+        printDeliveredBlock(input.ctx, block);
       },
     }).finally(() => input.setStreaming(false));
     if (streamed.status !== "needs_attention") return streamed.status === "idle" ? null : streamed;
@@ -403,7 +429,7 @@ export const runInteractiveAssistant = async (
         signal: abort.signal,
         onCapabilityApproval: (request) => collectCapabilityApproval(ctx, reader, request),
         onToolBlock: (block) => {
-          if (block.name === "card" && block.status === "completed") printCard(ctx, block.args);
+          printDeliveredBlock(ctx, block);
         },
       }).finally(() => {
         streaming = false;
@@ -481,7 +507,7 @@ export const runInteractiveAssistant = async (
         signal: abort.signal,
         onCapabilityApproval: (request) => collectCapabilityApproval(ctx, reader, request),
         onToolBlock: (block) => {
-          if (block.name === "card" && block.status === "completed") printCard(ctx, block.args);
+          printDeliveredBlock(ctx, block);
         },
       }).finally(() => {
         streaming = false;

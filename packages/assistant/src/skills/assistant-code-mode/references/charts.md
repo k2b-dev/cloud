@@ -5,6 +5,10 @@
 no DOM, so it works the same in apps, scripts and PDFs. In an app, cartesian
 charts redraw at their real width, so axes and labels fit phones.
 
+To only show a chart in the chat, pass the same options as plain data to the
+`chart` tool instead of writing an app: no `width`, `height` or `format`
+functions, at most 8 series and 480 values per list.
+
 ```js
 const chart = document.querySelector("#chart");
 const draw = (data) => {

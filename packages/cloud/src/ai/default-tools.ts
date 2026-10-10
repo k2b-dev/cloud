@@ -20,6 +20,8 @@ import { createCodeSourceTools } from "./code-source-tools";
 import {
   CloudAiCardInputSchema,
   CloudAiCardOutputSchema,
+  CloudAiChartInputSchema,
+  CloudAiChartOutputSchema,
   CloudAiLocalBashInputSchema,
   CloudAiLocalBashOutputSchema,
   CloudAiSurveyInputSchema,
@@ -48,6 +50,10 @@ export {
   CloudAiCardInputSchema,
   type CloudAiCardOutput,
   CloudAiCardOutputSchema,
+  type CloudAiChartInput,
+  CloudAiChartInputSchema,
+  type CloudAiChartOutput,
+  CloudAiChartOutputSchema,
   type CloudAiLocalBashInput,
   CloudAiLocalBashInputSchema,
   type CloudAiLocalBashOutput,
@@ -71,6 +77,18 @@ export const createCloudAiCardTool = () =>
     outputSchema: CloudAiCardOutputSchema,
     approval: "never",
     promptHint: "show one compact highlight card (metric, KPI, status) — not for tables, lists, or long text.",
+  }).clientView();
+
+export const createCloudAiChartTool = () =>
+  defineAiTool({
+    name: "chart",
+    description:
+      "Show one chart in the chat from data you already have: bar, line (area: true fills it), scatter, pie, donut, histogram, gauge or sparkline. Cloud draws it with the renderer of cloud.chart() in Studio apps and gives the reader a data table and Copy data; no code, sandbox or app check is involved. Aggregate first. Compute derived numbers with calculate or code_run before charting them. Say what the chart shows in title and put the unit, period or source in subtitle. The chart has no state, filters or actions: when the person needs interaction, saved data or reuse, build a Studio app instead. After the chart, state the finding instead of repeating its values.",
+    inputSchema: CloudAiChartInputSchema,
+    outputSchema: CloudAiChartOutputSchema,
+    approval: "never",
+    promptHint:
+      "show data you already have as a chart in the chat, without code. Build a Studio app only when the person needs interaction, saved data, or reuse.",
   }).clientView();
 
 export const createCloudAiSurveyTool = () =>
@@ -182,7 +200,12 @@ export const createCloudAiCodeTools = () => [
   }).server(runManagedCodeTool("code_export")),
 ];
 
-export const createDefaultCloudAiTools = () => [createAiTodoTool(), createCloudAiSurveyTool(), createCloudAiTextEditorTool()];
+export const createDefaultCloudAiTools = () => [
+  createAiTodoTool(),
+  createCloudAiSurveyTool(),
+  createCloudAiTextEditorTool(),
+  createCloudAiChartTool(),
+];
 
 /** Built-ins advertised through discovery and loaded only when needed. */
 export const CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES = new Set<string>([
@@ -190,6 +213,7 @@ export const CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES = new Set<string>([
   ...Object.keys(CODE_SOURCE_TOOLS),
   "survey",
   "text_editor",
+  "chart",
   "list_files",
   "write_file",
   "markdown_to_pdf",

@@ -1,9 +1,14 @@
 # Chat apps
 
-Use `code_present` to show an HTML app as a card in this chat: a chart, a
-calculator, a small dashboard or report that belongs to this answer. The card
-has a fixed height and starts on a click; it never runs while someone scrolls
-past it. Read [HTML apps](apps.md) for the files, styles and sandbox rules.
+Just data → `chart` tool; interaction or persistence → Studio app. A chart of
+numbers you already have needs no app: pass `cloud.chart()` options as plain
+data to the `chart` tool, and Cloud draws it in the chat with a data table.
+
+Use `code_present` to show an HTML app as a card in this chat when the person
+works with it: a calculator, a chart with filters, a small dashboard or report
+that belongs to this answer. The card has a fixed height and starts on a click;
+it never runs while someone scrolls past it. Read [HTML apps](apps.md) for the
+files, styles and sandbox rules.
 
 - **One-off:** `code_present({ title, files: [{ path: "index.html", content }, …] })`.
   The files are stored with the chat. A one-off app has no database, `cloud.kv`
@@ -15,14 +20,20 @@ past it. Read [HTML apps](apps.md) for the files, styles and sandbox rules.
 
 ```js
 // code_present files: index.html
-// <main><h1>Quarter</h1><figure id="chart"></figure></main>
+// <main><h1>Quarter</h1><label>Region <select id="region"></select></label><figure id="chart"></figure></main>
 // app.js
-import { months } from "./data.js";
-document.querySelector("#chart").innerHTML = cloud.chart({
-  kind: "bar",
-  title: "Revenue per month",
-  data: months.map((month) => ({ label: month.label, value: month.revenue })),
-});
+import { months, regions } from "./data.js";
+const select = document.querySelector("#region");
+select.innerHTML = cloud.html`${regions.map((region) => cloud.html`<option>${region}</option>`)}`;
+const draw = () => {
+  document.querySelector("#chart").innerHTML = cloud.chart({
+    kind: "bar",
+    title: `Revenue per month, ${select.value}`,
+    data: months.map((month) => ({ label: month.label, value: month.revenue[select.value] })),
+  });
+};
+select.addEventListener("change", draw);
+draw();
 ```
 
 Compute the numbers first: run a script with `code_run` over the chat files,

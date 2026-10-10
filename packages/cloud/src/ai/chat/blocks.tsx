@@ -8,6 +8,7 @@ import type { AiTurnBlock } from "../protocol";
 import { hasSpecializedBuiltinToolView, SpecializedBuiltinToolBlock } from "./builtin-tools";
 import { hasCapabilityTable } from "./capability-result";
 import { CapabilityTablePreview } from "./capability-table";
+import { CloudChartBlock } from "./chart-block";
 import { PresentToolBlock } from "./file-tools";
 import { useAiChatActions } from "./message-actions";
 import {
@@ -18,6 +19,7 @@ import {
   fetchFileErrorPresentation,
   formatToolDetailText,
   isCardToolName,
+  isChartToolName,
   isRecord,
   isSurveyToolName,
   isTextEditorToolName,
@@ -693,6 +695,9 @@ function ToolBlockView(props: { turnId: string; block: ToolBlock; active?: boole
         </Match>
         <Match when={isCardToolName(props.block.name) && !props.block.isError}>
           <CloudCardBlock args={props.block.args} />
+        </Match>
+        <Match when={isChartToolName(props.block.name) && !props.block.isError}>
+          <CloudChartBlock args={props.block.args} completed={status() === "completed"} />
         </Match>
         <Match when={isSurveyToolName(props.block.name) && !props.block.isError}>
           <SurveyToolView turnId={props.turnId} block={props.block} active={props.active} />
