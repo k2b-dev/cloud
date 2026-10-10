@@ -10,7 +10,7 @@ describe("accountsHelp", () => {
       "accounts-cli",
     ]);
     expect(accountsHelp.getMarkdown("accounts-start")).toContain("Accounts shows your own account context");
-    expect(accountsHelp.getMarkdown("accounts-admin")).toContain("Admin pages are server-rendered lists");
+    expect(accountsHelp.getMarkdown("accounts-admin")).toContain("The administration pages are server-rendered lists");
     expect(accountsHelp.getMarkdown("accounts-lifecycle")).toContain("Direct membership");
     expect(accountsHelp.getMarkdown("accounts-cli")).toContain("The Accounts CLI uses the same");
   });
@@ -26,7 +26,7 @@ describe("accountsHelp", () => {
       expect(document.order).toBe(base!.order);
     }
     expect(accountsHelp.getMarkdown("accounts-start", "de-CH")).toBe(accountsHelp.getMarkdown("accounts-start", "de"));
-    expect(accountsHelp.getMarkdown("accounts-start", "de-CH")).toContain("Accounts zeigt deinen eigenen Kontokontext");
+    expect(accountsHelp.getMarkdown("accounts-start", "de-CH")).toContain("Konten zeigt deinen eigenen Kontokontext");
     expect(accountsHelp.getMarkdown("accounts-start", "fr")).toBe(accountsHelp.getMarkdown("accounts-start"));
   });
 });

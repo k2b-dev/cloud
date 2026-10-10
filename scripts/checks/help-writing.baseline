@@ -1,37 +1,6 @@
 # Known help-writing findings, one per line: <file> | <step|term> | <detail>.
 # The Help rewrite removes lines until the file is empty; the rule never adds lines.
 # `bun scripts/check.ts help-writing --fix` removes lines whose finding is gone.
-packages/accounts/src/help/documents/de/accounts-admin.help.md | term | Administratoren
-packages/accounts/src/help/documents/de/accounts-admin.help.md | term | Administratoren
-packages/accounts/src/help/documents/de/accounts-admin.help.md | term | Administratoren
-packages/accounts/src/help/documents/de/accounts-admin.help.md | term | Berechtigung*
-packages/accounts/src/help/documents/de/accounts-admin.help.md | term | Berechtigung*
-packages/accounts/src/help/documents/de/accounts-start.help.md | term | Administratoren
-packages/accounts/src/help/documents/de/accounts-start.help.md | term | Administratorrecht*
-packages/accounts/src/help/documents/de/accounts-start.help.md | term | Verwaltungsrecht*
-packages/accounts/src/help/documents/en/accounts-admin.help.md | term | admin
-packages/accounts/src/help/documents/en/accounts-admin.help.md | term | admin
-packages/accounts/src/help/documents/en/accounts-admin.help.md | term | admin
-packages/accounts/src/help/documents/en/accounts-admin.help.md | term | login
-packages/accounts/src/help/documents/en/accounts-admin.help.md | term | login
-packages/accounts/src/help/documents/en/accounts-admin.help.md | term | login
-packages/accounts/src/help/documents/en/accounts-admin.help.md | term | login
-packages/accounts/src/help/documents/en/accounts-admin.help.md | term | login
-packages/accounts/src/help/documents/en/accounts-admin.help.md | term | permissions
-packages/accounts/src/help/documents/en/accounts-admin.help.md | term | permissions
-packages/accounts/src/help/documents/en/accounts-cli.help.md | term | admin
-packages/accounts/src/help/documents/en/accounts-cli.help.md | term | login
-packages/accounts/src/help/documents/en/accounts-cli.help.md | term | login
-packages/accounts/src/help/documents/en/accounts-cli.help.md | term | login
-packages/accounts/src/help/documents/en/accounts-lifecycle.help.md | term | read access
-packages/accounts/src/help/documents/en/accounts-start.help.md | term | admins
-packages/accounts/src/help/documents/en/accounts-start.help.md | term | admins
-packages/accounts/src/help/documents/en/accounts-start.help.md | term | admins
-packages/accounts/src/help/documents/en/accounts-start.help.md | term | admins
-packages/accounts/src/help/documents/en/accounts-start.help.md | term | grant
-packages/accounts/src/help/documents/en/accounts-start.help.md | term | login
-packages/accounts/src/help/documents/en/accounts-start.help.md | term | login
-packages/accounts/src/help/documents/en/accounts-start.help.md | term | rights
 packages/api-docs/src/help/documents/en/api-docs-start.help.md | term | grant
 packages/assistant/src/help/documents/de/assistant-guidance.help.md | step | Ergebnis benennen: Beschreibe, was du erhalten möchtest, etwa
 packages/assistant/src/help/documents/de/assistant-guidance.help.md | step | Ergänzende Details unter Zusatzinformationen ablegen: Füge dort Richtlinien,
@@ -89,82 +58,6 @@ packages/assistant/src/help/documents/en/assistant-workflow.help.md | term | tap
 packages/assistant/src/help/documents/en/assistant-workflow.help.md | term | write access
 packages/chat/src/help/documents/de/chat-start.help.md | term | Administratoren
 packages/chat/src/help/documents/de/chat-start.help.md | term | Administratoren
-packages/contacts/src/help/documents/de/contacts-books-sharing.help.md | term | Administratorrecht*
-packages/contacts/src/help/documents/de/contacts-books-sharing.help.md | term | Administratorrecht*
-packages/contacts/src/help/documents/de/contacts-books-sharing.help.md | term | Berechtigung*
-packages/contacts/src/help/documents/de/contacts-books-sharing.help.md | term | Lesezugriff
-packages/contacts/src/help/documents/de/contacts-books-sharing.help.md | term | Schreibzugriff
-packages/contacts/src/help/documents/de/contacts-hierarchy.help.md | term | Lesezugriff
-packages/contacts/src/help/documents/de/contacts-start.help.md | term | Berechtigung*
-packages/contacts/src/help/documents/de/contacts-start.help.md | term | Zugriffsrecht*
-packages/contacts/src/help/documents/de/contacts-work.help.md | term | Administratorrecht*
-packages/contacts/src/help/documents/de/contacts-work.help.md | term | Lesezugriff
-packages/contacts/src/help/documents/en/contacts-books-sharing.help.md | term | admin
-packages/contacts/src/help/documents/en/contacts-books-sharing.help.md | term | admin
-packages/contacts/src/help/documents/en/contacts-books-sharing.help.md | term | admin access
-packages/contacts/src/help/documents/en/contacts-books-sharing.help.md | term | admin access
-packages/contacts/src/help/documents/en/contacts-books-sharing.help.md | term | admins
-packages/contacts/src/help/documents/en/contacts-books-sharing.help.md | term | grant
-packages/contacts/src/help/documents/en/contacts-books-sharing.help.md | term | permission
-packages/contacts/src/help/documents/en/contacts-books-sharing.help.md | term | read access
-packages/contacts/src/help/documents/en/contacts-books-sharing.help.md | term | write access
-packages/contacts/src/help/documents/en/contacts-hierarchy.help.md | term | read access
-packages/contacts/src/help/documents/en/contacts-start.help.md | term | permissions
-packages/contacts/src/help/documents/en/contacts-work.help.md | term | read access
-packages/core/src/help/documents/de/core-admin.help.md | term | Administratorrecht*
-packages/core/src/help/documents/de/core-admin.help.md | term | Anwendung
-packages/core/src/help/documents/de/core-admin.help.md | term | Anwendung
-packages/core/src/help/documents/de/core-admin.help.md | term | Berechtigung*
-packages/core/src/help/documents/de/core-admin.help.md | term | Login
-packages/core/src/help/documents/de/core-admin.help.md | term | klick*
-packages/core/src/help/documents/de/core-notifications.help.md | term | klick*
-packages/core/src/help/documents/de/core-profile.help.md | term | Berechtigung*
-packages/core/src/help/documents/de/core-security.help.md | term | Account
-packages/core/src/help/documents/de/core-security.help.md | term | Berechtigung*
-packages/core/src/help/documents/de/core-security.help.md | term | Login
-packages/core/src/help/documents/de/core-start.help.md | term | Administratorrecht*
-packages/core/src/help/documents/en/core-admin.help.md | term | admin
-packages/core/src/help/documents/en/core-admin.help.md | term | admin
-packages/core/src/help/documents/en/core-admin.help.md | term | admin
-packages/core/src/help/documents/en/core-admin.help.md | term | admin
-packages/core/src/help/documents/en/core-admin.help.md | term | admin
-packages/core/src/help/documents/en/core-admin.help.md | term | admin
-packages/core/src/help/documents/en/core-admin.help.md | term | admin
-packages/core/src/help/documents/en/core-admin.help.md | term | admin
-packages/core/src/help/documents/en/core-admin.help.md | term | application
-packages/core/src/help/documents/en/core-admin.help.md | term | application
-packages/core/src/help/documents/en/core-admin.help.md | term | grant
-packages/core/src/help/documents/en/core-admin.help.md | term | login
-packages/core/src/help/documents/en/core-admin.help.md | term | login
-packages/core/src/help/documents/en/core-admin.help.md | term | login
-packages/core/src/help/documents/en/core-admin.help.md | term | login
-packages/core/src/help/documents/en/core-admin.help.md | term | login
-packages/core/src/help/documents/en/core-admin.help.md | term | permissions
-packages/core/src/help/documents/en/core-notifications.help.md | term | click*
-packages/core/src/help/documents/en/core-notifications.help.md | term | permission
-packages/core/src/help/documents/en/core-notifications.help.md | term | permission
-packages/core/src/help/documents/en/core-notifications.help.md | term | permission
-packages/core/src/help/documents/en/core-notifications.help.md | term | permission
-packages/core/src/help/documents/en/core-profile.help.md | term | login
-packages/core/src/help/documents/en/core-profile.help.md | term | permissions
-packages/core/src/help/documents/en/core-security.help.md | term | login
-packages/core/src/help/documents/en/core-security.help.md | term | login
-packages/core/src/help/documents/en/core-security.help.md | term | login
-packages/core/src/help/documents/en/core-security.help.md | term | login
-packages/core/src/help/documents/en/core-security.help.md | term | login
-packages/core/src/help/documents/en/core-security.help.md | term | login
-packages/core/src/help/documents/en/core-start.help.md | term | admin
-packages/core/src/help/documents/en/core-start.help.md | term | admin
-packages/core/src/help/documents/en/core-start.help.md | term | admin
-packages/core/src/help/documents/en/core-start.help.md | term | admin
-packages/core/src/help/documents/en/core-start.help.md | term | admin
-packages/core/src/help/documents/en/core-start.help.md | term | admin
-packages/core/src/help/documents/en/core-start.help.md | term | admin
-packages/core/src/help/documents/en/core-start.help.md | term | admin
-packages/core/src/help/documents/en/core-start.help.md | term | admin
-packages/core/src/help/documents/en/core-start.help.md | term | admin
-packages/core/src/help/documents/en/core-start.help.md | term | admins
-packages/core/src/help/documents/en/core-start.help.md | term | login
 packages/dashboard/src/help/documents/de/dashboard-start.help.md | term | Benutzerkonto*
 packages/dashboard/src/help/documents/en/dashboard-start.help.md | term | login
 packages/faq/src/help/documents/de/faq-admin.help.md | term | Administratoren
@@ -217,23 +110,6 @@ packages/filesv2/src/help/documents/en/filesv2-start.help.md | term | click*
 packages/filesv2/src/help/documents/en/filesv2-start.help.md | term | grant
 packages/filesv2/src/help/documents/en/filesv2-start.help.md | term | granting
 packages/filesv2/src/help/documents/en/filesv2-start.help.md | term | write access
-packages/gateway-ops/src/help/documents/de/gateway-ops-incident.help.md | term | Administratorrecht*
-packages/gateway-ops/src/help/documents/de/gateway-ops-incident.help.md | term | Anwendung
-packages/gateway-ops/src/help/documents/de/gateway-ops-incident.help.md | term | Anwendung
-packages/gateway-ops/src/help/documents/de/gateway-ops-start.help.md | term | Anwendung
-packages/gateway-ops/src/help/documents/en/gateway-ops-incident.help.md | step | Logs: Use the app or service source and
-packages/gateway-ops/src/help/documents/en/gateway-ops-incident.help.md | step | Postgres or Redis: Check storage diagnostics only when
-packages/gateway-ops/src/help/documents/en/gateway-ops-incident.help.md | term | application
-packages/gateway-ops/src/help/documents/en/gateway-ops-incident.help.md | term | application
-packages/gateway-ops/src/help/documents/en/gateway-ops-incident.help.md | term | application
-packages/gateway-ops/src/help/documents/en/gateway-ops-operations.help.md | term | admin
-packages/gateway-ops/src/help/documents/en/gateway-ops-start.help.md | term | admin
-packages/gateway-ops/src/help/documents/en/gateway-ops-start.help.md | term | admin
-packages/gateway-ops/src/help/documents/en/gateway-ops-start.help.md | term | admin
-packages/gateway-ops/src/help/documents/en/gateway-ops-start.help.md | term | admin
-packages/gateway-ops/src/help/documents/en/gateway-ops-start.help.md | term | admin
-packages/gateway-ops/src/help/documents/en/gateway-ops-start.help.md | term | admin access
-packages/gateway-ops/src/help/documents/en/gateway-ops-start.help.md | term | application
 packages/ipa-hosts/src/help/documents/de/ipa-hosts-start.help.md | term | Administratorrecht*
 packages/ipa-hosts/src/help/documents/en/ipa-hosts-start.help.md | term | admin
 packages/ipa-hosts/src/help/documents/en/ipa-hosts-start.help.md | term | admin

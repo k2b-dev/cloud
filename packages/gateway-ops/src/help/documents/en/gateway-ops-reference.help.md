@@ -2,31 +2,33 @@
 id: gateway-ops-reference
 title: Reference
 icon: ti ti-book
-description: Field meanings, webhook behavior, and what the diagnostics are allowed to show.
+description: Look up health states, webhook delivery rules, and the limits of the diagnostics.
 order: 120
 ---
 
-Gateway Ops summarizes platform signals. It avoids listing raw Redis keys and relies on existing service APIs for logs, telemetry, settings, metrics, and health webhooks.
+Gateway Ops summarizes platform signals. It does not list raw Redis keys. For logs, telemetry, settings, metrics, and health webhooks, it uses the existing service APIs.
 
-## Health states {icon="point"}
-
-:::reference
-- **OK:** The scoped apps are online and their status is fresh enough for the gateway health check.
-- **Warning:** An app can be reached but reports stale health information or another degraded state.
-- **Error:** At least one scoped app is offline or otherwise unhealthy enough to make the scoped health status fail.
-:::
-
-## Webhook delivery {icon="send"}
+## Read the health states {icon="point"}
 
 :::reference
-- **Triggers:** Webhooks can send on OK, warning, error, recovery, or every scheduled check. If no trigger is selected, error and recovery are used.
-- **Repeat interval:** Unresolved warning or error states repeat only after the configured interval. The interval is clamped between one minute and thirty days.
-- **Timeout:** Delivery timeout is clamped between one and thirty seconds. Failed deliveries update the webhook's last error and failure count.
-- **Payload:** GET delivery sends a ping request. POST delivery sends JSON containing the mode and scoped gateway health report.
+- **OK:** The apps in scope are online, and their status is fresh enough for the gateway health check.
+- **Warning:** An app is reachable but reports stale health information or another degraded state.
+- **Error:** At least one app in scope is offline, or so unhealthy that the health status for the scope fails.
 :::
 
-:::info Diagnostics limits
-Redis prefixes come from a bounded sample, not a full raw key browser. Postgres row counts are planner estimates, not exact counts from full table scans.
+## Understand webhook delivery {icon="send"}
+
+:::reference
+- **Send when:** A webhook can send on **OK**, **Warning**, **Error**, **Recovery**, or **Every check**, which means every scheduled check. If you select no trigger, it uses error and recovery.
+- **Repeat interval:** An unresolved warning or error repeats only after the configured interval. The interval must be at least one minute and at most thirty days.
+- **Timeout:** The delivery timeout must be at least one and at most thirty seconds. A failed delivery updates the last error and the failure count of the webhook.
+- **Payload:** A GET delivery sends a ping request. A POST delivery sends JSON with the mode and the gateway health report for the scope.
 :::
 
-PostgreSQL connections and their limit describe the database server. PgBouncer clients, pool limits, and pool wait times are not included; monitor PgBouncer separately. With transaction pooling, sessions represent shared PostgreSQL backends. Failed session or index queries appear as loading errors rather than empty lists.
+:::info Know the limits of the diagnostics
+Redis prefixes come from a bounded sample, not from a full view of all raw keys. Postgres row counts are planner estimates, not exact counts from full table scans.
+:::
+
+## Read Postgres connections {icon="point"}
+
+PostgreSQL connections and their limit describe the database server. They do not include PgBouncer clients, pool limits, or pool wait times; monitor PgBouncer separately. With transaction pooling, sessions stand for shared PostgreSQL backends. A failed session or index query appears as a loading error, not as an empty list.

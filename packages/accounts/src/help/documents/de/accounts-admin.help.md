@@ -2,67 +2,100 @@
 id: accounts-admin
 title: Administration
 icon: ti ti-settings
-description: Personenpflege, Gruppenmitgliedschaften, Dienstkonto-Schlüssel, Benachrichtigungen und Lebenszyklusansichten.
+description: Personen und Gruppen pflegen, doppelte Adressen bereinigen, Schlüssel und Geräte widerrufen, Benachrichtigungen senden und den Lebenszyklus prüfen.
 order: 110
 ---
 
-Die Administrationsseiten sind serverseitig gerenderte Listen mit URL-gestützter Suche, Filtern, Seitennavigation und Aktionsschaltflächen für Kontovorgänge.
+Die Administrationsseiten sind serverseitig gerenderte Listen. Suche, Filter und Seitennavigation stehen in der URL, und Aktionsschaltflächen führen die Kontovorgänge aus.
 
-Globale Vorgaben und Lifecycle-Nachpflege liegen unter **Administration → Accounts & Anmeldung**.
-Nutze **Betrieb** für Lifecycle-Aufträge. Einzelne Datensätze, Anfragen und Historien bleiben hier.
-Optionale Hinweise nach erfolgreichen Benutzer-, Gruppen- und Mitgliedschaftsänderungen
-konfigurierst du unter **Registrierung & Anfragen**. Eine leere Vorlage zeigt nichts an.
-Die Hinweise richten sich an die ausführende Person; sie werden nicht an Nutzer versendet.
+Globale Vorgaben und die Nachpflege des Lebenszyklus liegen in der Cloud-Administration unter **Accounts & Anmeldung**. Starte Lebenszyklus-Aufträge über **Betrieb**. Einzelne Datensätze, Anfragen und Verläufe bleiben hier in Konten.
+
+Unter **Registrierung & Anfragen** kannst du optionale Hinweise zur Nacharbeit festlegen, die von der Aktion abhängen. Sie erscheinen nach erfolgreichen Änderungen an Personen, Gruppen und Mitgliedschaften. Eine leere Vorlage zeigt nichts an. Ein Hinweis richtet sich an die Person, die die Änderung ausführt. Cloud versendet ihn nicht an die Betroffenen.
 
 ## Doppelte E-Mail-Adressen bereinigen {icon="users"}
 
-Öffne **Administration → Doppelte E-Mail-Adressen**, um Konten mit derselben Adresse zu
-vergleichen. Groß- und Kleinschreibung sowie Leerzeichen am Anfang und Ende werden
-ignoriert. Der letzte Cloud-Web-Login wird je Konto angezeigt. Bei FreeIPA kommen
-der letzte Kerberos-Login und der Synchronisierungszeitpunkt dazu. Kerberos-Aktivität
-kann Nutzung außerhalb von Cloud enthalten. Alle Uhrzeiten sind in UTC angegeben.
-**Nicht erfasst** bedeutet nicht, dass das Konto nie benutzt wurde.
+Öffne **Administration → Doppelte E-Mail-Adressen**, um Konten mit derselben Adresse zu vergleichen. Der Vergleich ignoriert Groß- und Kleinschreibung sowie Leerzeichen am Anfang und Ende.
 
-Öffne ein Konto und prüfe seine Zugriffe, bevor du es löschst. Bei einem
-FreeIPA-Konto wird auch der Benutzer in FreeIPA gelöscht. Daten und Berechtigungen
-werden nicht auf das verbleibende Konto übertragen. Bestätige jede Löschung
-einzeln. Bereinigte Adressen verschwinden aus der Liste. Dein eigenes Konto kannst
-du nicht löschen.
+Jedes Konto zeigt seine letzte Cloud-Web-Anmeldung. FreeIPA-Konten zeigen außerdem die letzte Kerberos-Anmeldung und den Zeitpunkt der Synchronisierung. Kerberos-Aktivität kann Nutzung außerhalb von Cloud enthalten. Alle Uhrzeiten sind in UTC. **Nicht erfasst** bedeutet nicht, dass niemand das Konto je benutzt hat.
 
-## Personen und Gruppen verwalten {icon="user-cog"}
+:::warning Das Löschen eines FreeIPA-Kontos löscht auch den Benutzer in FreeIPA
+Daten und Zugriff gehen nicht auf das verbleibende Konto über.
+:::
+
+:::steps
+1. Öffne ein Konto und prüfe seinen Zugriff.
+2. Lösche das Konto.
+3. Bestätige jede Löschung einzeln.
+:::
+
+Bereinigte Adressen verschwinden aus der Liste. Dein eigenes Konto kannst du nicht löschen.
+
+## Personen und Gruppen pflegen {icon="user-cog"}
 
 :::reference
-- **Personen:** Suche Konten nach UID, Name oder E-Mail-Adresse. Filtere nach Anbieter und Profil und öffne eine Person, um Profilfelder, Avatar, Rollen, Anbieter, Ablaufdatum und Gruppenmitgliedschaften zu bearbeiten.
-- **Konten ohne E-Mail-Adresse:** Wenn die Administration lokale Konten ohne E-Mail-Adresse erlaubt, kannst du ein Login-Konto ohne Adresse anlegen oder die Adresse entfernen, indem du das Feld leerst und bestätigst. Die Person meldet sich mit einer gekoppelten App oder einem Passkey an. Gib für die erste Anmeldung ein einmaliges **Anmeldetoken** weiter oder kopple das erste Gerät mit **Anmelde-App koppeln**, wenn Administratoren bei der Kopplung helfen dürfen. Verliert die Person ihr einziges Gerät, widerrufe es unter **Anmeldegeräte** und gib ihr ein neues Anmeldetoken, damit sie sich anmelden und neu koppeln kann. Aktionen, die nur per E-Mail funktionieren, etwa **Benachrichtigen**, sind für diese Konten ausgeblendet.
-- **Gruppen:** Öffne eine Gruppe, um Fakten, Mitglieder, verwaltende Personen und übergeordnete Gruppen zu prüfen. Im jeweiligen Verwaltungsbereich lassen sich Personen und Gruppen hinzufügen oder entfernen.
-- **Linux-Identitäten:** Bei aktivierter Vergabe unter Administration → Accounts & Anmeldung → Linux-Identitäten erhalten neue lokale Vollaccounts und hochgestufte Gäste ihre Linux-Attribute automatisch. Administratoren können fehlende Attribute älterer Accounts ergänzen und Home und Shell überschreiben. FreeIPA-Werte sind schreibgeschützt. Lokale Gruppen können nach der globalen Einrichtung eine GID erhalten. Diese Aktionen aktivieren weder Rechneranmeldung noch sudo.
-- **Gelöschte Konten:** Prüfe Konten, die manuell, durch Ablaufbereinigung, FreeIPA-Rückstufung oder Änderungen am Synchronisierungsbereich entfernt wurden. Die Zeilendetails enthalten weiterhin Metadaten.
-- **Erinnerungsverlauf:** Suche Versuche für Kontoablauferinnerungen samt Ablaufdatum, Vorlaufzeit, Status, Versuchen, letztem Versuch und letztem Fehler.
+- **Benutzer:** Suche Konten nach UID, Name oder E-Mail-Adresse. Filtere nach Anbieter und Profil. Öffne eine Person, um Profilfelder, Avatar, Rollen, Anbieter, Ablaufdatum und Gruppenmitgliedschaften zu bearbeiten.
+- **Gruppen:** Öffne eine Gruppe, um ihre Angaben, Mitglieder, Verantwortlichen und übergeordneten Gruppen zu prüfen. Verantwortliche können Personen und Gruppen hinzufügen oder entfernen, wo die Seite diese Änderungen anbietet.
+- **Linux-Identitäten:** Ist die Vergabe in der Cloud-Administration unter **Accounts & Anmeldung → Linux-Identitäten** eingeschaltet, erhalten neue lokale Vollkonten und hochgestufte Gäste ihre Linux-Attribute automatisch. Die Administration kann fehlende Attribute älterer Konten ergänzen und Home und Shell überschreiben. FreeIPA-Werte sind schreibgeschützt. Lokale Gruppen können nach der globalen Einrichtung eine GID erhalten. Diese Aktionen schalten weder die Anmeldung am Rechner noch sudo frei.
+- **Gelöschte Konten:** Prüfe Konten, die durch eine manuelle Aktion, eine Ablaufbereinigung, eine FreeIPA-Rückstufung oder eine Änderung des Synchronisierungsbereichs entfernt wurden. Die Zeilendetails enthalten weiterhin ihre Metadaten.
+- **Erinnerungsverlauf:** Durchsuche die Versuche, Erinnerungen zum Kontoablauf zu senden. Jeder Eintrag zeigt Ablaufdatum, Vorlaufzeit in Tagen, Status, Anzahl der Versuche, letzten Versuch und letzten Fehler.
 :::
 
-## Zugriff und Nachrichten {icon="shield-lock"}
+## Konto ohne E-Mail-Adresse einrichten {icon="user-cog"}
+
+Ist **Lokale Konten ohne E-Mail-Adresse erlauben** in der Cloud-Administration eingeschaltet, kannst du ein **Login**-Konto ohne Adresse anlegen. Um die Adresse eines bestehenden **Login**-Kontos zu entfernen, leere das Feld und bestätige. Die Person meldet sich dann mit einer gekoppelten App oder einem Passkey an. Für diese Konten sind Aktionen ausgeblendet, die E-Mail brauchen, etwa **Benachrichtigen**.
+
+Für die erste Anmeldung hast du zwei Möglichkeiten:
+
+- Gib ein einmaliges **Anmeldetoken** weiter.
+- Kopple das erste Gerät der Person mit **Anmelde-App koppeln**, wenn **Administratoren dürfen bei der Kopplung helfen** eingeschaltet ist.
+
+Verliert die Person ihr einziges Gerät:
+
+:::steps
+1. Widerrufe das Gerät unter **Anmeldegeräte**.
+2. Gib der Person ein neues **Anmeldetoken**.
+:::
+
+Die Person kann sich dann anmelden und erneut ein Gerät koppeln.
+
+## Schlüssel, Geräte, Benachrichtigungen und Anfragen steuern {icon="shield-lock"}
 
 :::reference
-- **Dienstkonten:** Liste aktive oder widerrufene API-Schlüssel auf, filtere nach personen- oder ressourcengebundenen Eigentümern und widerrufe aktive Schlüssel, wenn der Zugriff enden soll.
-- **Anmeldegeräte:** Die Seite eines Benutzers zeigt die Geräte, die seine App-Anmeldungen bestätigen, mit Kopplungsdatum und letzter Verwendung. Widerrufe dort ein verlorenes Gerät; bestehende Sitzungen bleiben angemeldet, und der Benutzer wird benachrichtigt.
-- **Benachrichtigungen:** Erstelle administrative Benachrichtigungsentwürfe, prüfe die Empfängervorschau, schließe den Batch ab und prüfe Zustellzähler oder fehlgeschlagene Empfänger.
-- **Anfragen:** Erstelle Konten aus offenen Anfragen oder lehne Anfragen ab. Eine angegebene Begründung wird per E-Mail versendet. Bestehende Anfragen bleiben verfügbar, wenn neue Anfragen in der Administration deaktiviert werden.
+- **Dienstkonten:** Liste aktive oder widerrufene API-Schlüssel auf und filtere nach personen- oder ressourcengebundenen Eigentümern. Widerrufe einen aktiven Schlüssel, wenn sein Zugriff enden muss.
+- **Anmeldegeräte:** Die Seite einer Person zeigt die Geräte, die ihre App-Anmeldungen bestätigen, mit Kopplungsdatum und letzter Verwendung. Widerrufe dort ein verlorenes Gerät. Bestehende Sitzungen bleiben angemeldet, und Cloud benachrichtigt die Person.
+- **Benachrichtigungen:** Erstelle Entwürfe für Benachrichtigungen, prüfe die Empfängervorschau und schließe den Batch ab. Prüfe danach die Zustellzähler oder die fehlgeschlagenen Empfänger.
+- **Anfragen:** Erstelle Konten aus offenen Anfragen oder lehne Anfragen ab. Gibst du beim Ablehnen eine Begründung an, sendet Cloud sie per E-Mail. Bestehende Anfragen bleiben verfügbar, wenn neue Anfragen in der Cloud-Administration ausgeschaltet sind.
 :::
 
-:::info Audit-Verlauf
-Konto- und Zugriffsänderungen werden im Audit-Protokoll erfasst. Nutze bei der Untersuchung von API-Schlüssel-Aktivität den Dienstkonto-Filter.
+:::info Änderungen im Audit-Protokoll nachverfolgen
+Das **Audit-Protokoll** erfasst Konto- und Zugriffsänderungen. Filtere nach Dienstkonto, um die Aktivität von API-Schlüsseln zu untersuchen.
 :::
 
-## POSIX-Gruppen {icon="users"}
+## POSIX-Gruppe erstellen {icon="users"}
 
-Wähle beim Anlegen einer lokalen Gruppe **Als POSIX-Gruppe erstellen**, um eine feste GID zu vergeben. Die Option ist standardmäßig aus und setzt aktivierte lokale Linux-Identitäten in der Administration voraus. Ohne diese Option bleibt die Gruppe eine logische Gruppe. Schlägt die Vergabe fehl, wird keine Gruppe erstellt.
+Nur die Administration kann eine GID vergeben. Für eine lokale Gruppe müssen lokale Linux-Identitäten in der Cloud-Administration eingeschaltet sein.
 
-Bei einer bestehenden Gruppe wählst du **In POSIX-Gruppe umwandeln** im Aktionsmenü. Nur Administratoren dürfen eine GID vergeben. Die Vergabe lässt sich nicht rückgängig machen. FreeIPA verwaltet seine Gruppen unabhängig davon. Beide Aktionen legen keine Dateien an.
+:::warning Du kannst die Vergabe einer GID nicht rückgängig machen
+Die Gruppe behält ihre GID. Du kannst sie nicht wieder in eine logische Gruppe umwandeln.
+:::
 
-## Persönliche Linux-Gruppen {icon="user"}
+Wähle beim Anlegen einer lokalen Gruppe **Als POSIX-Gruppe erstellen**, um eine feste GID zu vergeben. Die Option ist anfangs aus. Ohne sie bleibt die Gruppe eine logische Gruppe. Schlägt die Vergabe fehl, entsteht keine Gruppe.
 
-Wenn ein lokales Konto eine Linux-Identität erhält, legt Cloud dafür auch eine persönliche Linux-Gruppe an. Sie trägt den Benutzernamen des Kontos und ist dessen primäre Gruppe. Linux braucht sie, sie ist aber kein Team.
+Um eine bestehende Gruppe umzuwandeln, wähle in ihren Aktionen **In POSIX-Gruppe umwandeln**.
 
-Die Gruppenliste blendet persönliche Linux-Gruppen aus. Um sie zu sehen, öffne **Ansicht** und wähle **Linux → Persönliche Gruppen**. Die Anzahl über der Liste zählt nur die angezeigten Gruppen. Jede persönliche Gruppe ist mit **Persönlich · von** und dem Namen der Person markiert; der Name verweist auf deren Konto.
+FreeIPA verwaltet seine Gruppen unabhängig davon. Keine der beiden Aktionen legt Dateien an.
 
-Eine persönliche Linux-Gruppe kann nicht gelöscht werden, solange sie die primäre Gruppe ihrer Person ist. Gruppenauswahlen, etwa beim Teilen, bei Berechtigungen und bei **Zu Gruppe hinzufügen**, bieten persönliche Gruppen nicht an. Wähle stattdessen die Person.
+## Persönliche Linux-Gruppen finden {icon="user"}
+
+Erhält ein lokales Konto eine Linux-Identität, legt Cloud dafür auch eine persönliche Linux-Gruppe an. Sie trägt den Benutzernamen des Kontos und ist dessen primäre Gruppe. Linux braucht sie, sie ist aber kein Team.
+
+Die Gruppenliste blendet persönliche Linux-Gruppen aus. So zeigst du sie an:
+
+:::steps
+1. Öffne **Ansicht**.
+2. Wähle **Linux → Persönliche Gruppen**.
+:::
+
+Die Anzahl über der Liste zählt nur die angezeigten Gruppen. Jede persönliche Gruppe zeigt **Persönlich · von** und den Namen der Person. Der Name verweist auf ihr Konto.
+
+Eine persönliche Linux-Gruppe kannst du nicht löschen, solange sie die primäre Gruppe ihrer Person ist. Gruppenauswahlen, etwa beim Teilen, beim Zugriff und bei **Zu Gruppe hinzufügen**, bieten persönliche Gruppen nicht an. Wähle stattdessen die Person.

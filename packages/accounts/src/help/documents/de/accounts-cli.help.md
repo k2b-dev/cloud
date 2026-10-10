@@ -2,39 +2,33 @@
 id: accounts-cli
 title: CLI
 icon: ti ti-terminal-2
-description: Agententaugliche Befehle für Konten, Gruppen, Anfragen, Audit und Dienstkonten.
+description: Agententaugliche Befehle für Konten, Gruppen, Anfragen, Audit-Ereignisse und Dienstkonten nutzen.
 order: 120
 ---
 
-Die Accounts-CLI verwendet dieselben APIs wie die App. Agenten können Kontodaten deshalb ohne Browser auflisten, prüfen und ändern. Linux-Identitäten verwenden die eigene API mit Administratorprüfung.
+Die Konten-CLI nutzt dieselben APIs wie die App. Agenten können Kontodaten deshalb ohne Browser auflisten, prüfen und ändern. Linux-Identitäten nutzen eine eigene API, die nur die Administration aufrufen kann.
 
-## Befehlsgruppen {icon="code"}
+## Die richtige Befehlsgruppe finden {icon="code"}
 
 :::reference
-- **users:** Personen auflisten, prüfen, erstellen, ändern und löschen; Anbieter, Profil und Administrationsstatus ändern; Avatare verwalten; IPA-Passwörter zurücksetzen, Anmeldetokens erstellen und Anmeldelinks senden. Wenn die Installation lokale Konten ohne E-Mail-Adresse erlaubt, erstellt `users create` ein lokales Vollkonto auch ohne `--email`, und `users update --remove-email` entfernt eine Adresse.
-- **groups:** Gruppen auflisten, prüfen, erstellen, ändern, in POSIX-Gruppen umwandeln und löschen sowie Mitglieder und verwaltende Personen pflegen.
+- **users:** Personen auflisten, prüfen, erstellen, ändern und löschen. Anbieter, Profil und Administrationsstatus ändern. Avatare lesen, setzen und entfernen, IPA-Passwörter zurücksetzen, mit `users login-token` ein **Anmeldetoken** erstellen und mit `users send-login-link` einen Anmeldelink senden. Erlaubt die Installation lokale Konten ohne E-Mail-Adresse, erstellt `users create` ein lokales Vollkonto auch ohne `--email`, und `users update --remove-email` entfernt eine Adresse.
+- **groups:** Gruppen auflisten, prüfen, erstellen, ändern, in POSIX-Gruppen umwandeln und löschen. Mitglieder und Verantwortliche auflisten, hinzufügen und entfernen.
 - **requests:** Kontoanfragen auflisten, prüfen und ablehnen.
-- **audit:** Audit-Ereignisse nach handelnder Person, Ziel, Aktion, Aktionsgruppe, Dienstkonto, Ergebnis, Anbieter und Zeitraum auflisten.
+- **audit:** Audit-Ereignisse auflisten, gefiltert nach handelnder Person, Ziel, Aktion, Aktionsgruppe, Dienstkonto, Ergebnis, Anbieter und Zeitraum.
 - **service-accounts:** API-Schlüssel von Dienstkonten auflisten und aktive Zugangsdaten widerrufen.
 :::
 
-:::info Ausgabeformat
-Nutze für Automatisierung die JSON-Ausgabe. Die Tabellenausgabe dient der schnellen Prüfung im Terminal.
+:::info Ausgabeformat wählen
+Nutze für Automatisierung die JSON-Ausgabe. Die Tabellenausgabe dient dem schnellen Blick im Terminal.
 :::
 
-## Linux-Identitäten {icon="terminal"}
+## Linux-Identitäten vorbereiten {icon="terminal"}
 
-Prüfe mit `cld accounts users linux get <user> --json` die Identität. Nach der
-globalen Einrichtung ergänzt `users linux prepare <user> --yes` fehlende Attribute
-eines bestehenden lokalen Vollaccounts. Neue lokale Vollaccounts und hochgestufte
-Gäste erhalten diese Attribute bei aktivierter Vergabe automatisch. Beide Pfade setzt du mit
-`users linux update <user> --home /home/alice --shell /bin/bash --yes`.
-`cld accounts groups make-posix <group> --yes` unterstützt lokale und FreeIPA-Gruppen.
+- Prüfe eine Identität mit `cld accounts users linux get <user> --json`.
+- Nach der globalen Einrichtung ergänzt `users linux prepare <user> --yes` fehlende Attribute eines bestehenden lokalen Vollkontos. Bei eingeschalteter Vergabe erhalten neue lokale Vollkonten und hochgestufte Gäste diese Attribute automatisch.
+- `users linux update <user> --home /home/alice --shell /bin/bash --yes` setzt beide Pfade.
+- `cld accounts groups make-posix <group> --yes` funktioniert für lokale und FreeIPA-Gruppen.
 
-Globale Konfiguration und seitenweise Vorschau liegen unter `cld admin linux`.
-Exportiere die Konfiguration mit `config get --json`. Eine aktivierte
-Konfiguration übernimmst du mit
-`config set --config-file ./linux.json --range-reserved --yes`.
-Die Vorbereitung aktiviert weder Computeranmeldung noch sudo oder gemeinsamen Speicher.
+`cld admin linux` enthält die globale Konfiguration und eine seitenweise Vorschau. Exportiere die Konfiguration mit `config get --json`. Wende eine aktivierte Konfiguration mit `config set --config-file ./linux.json --range-reserved --yes` an. Das Vorbereiten einer Identität schaltet weder die Anmeldung am Rechner noch sudo oder gemeinsamen Speicher frei.
 
-Mit `cld accounts groups create team --provider local --posix` erstellst du eine lokale Gruppe mit GID in einem Vorgang. Ohne `--posix` bleibt sie eine logische Gruppe. Lokale POSIX-Erstellung und Umwandlung setzen aktivierte lokale Linux-Identitäten voraus; bei Fehlern bleibt keine teilweise erstellte Gruppe zurück.
+Um eine lokale Gruppe mit GID in einem Schritt zu erstellen, führe `cld accounts groups create team --provider local --posix` aus. Ohne `--posix` bleibt sie eine logische Gruppe. Das Erstellen oder Umwandeln einer lokalen POSIX-Gruppe setzt eingeschaltete lokale Linux-Identitäten voraus. Schlägt einer der beiden Vorgänge fehl, bleibt keine teilweise erstellte Gruppe zurück.
