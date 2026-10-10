@@ -1,4 +1,4 @@
-import type { DialogRender } from "@k2b/ui";
+import { type DialogRender, suppressTextSelection } from "@k2b/ui";
 
 export type SpotlightPosition = { x: number; y: number };
 const STORAGE_KEY = "cloud.spotlight.position.v1";
@@ -42,6 +42,7 @@ export const attachSpotlightPosition = (
     origin: SpotlightPosition;
     previous: SpotlightPosition | null;
     handle: HTMLElement;
+    releaseTextSelection: () => void;
   } | null = null;
 
   const home = document.createElement("div");
@@ -108,6 +109,7 @@ export const attachSpotlightPosition = (
     if (!drag) return;
     const handle = drag.handle;
     const id = drag.id;
+    drag.releaseTextSelection();
     drag = null;
     if (handle.hasPointerCapture(id)) handle.releasePointerCapture(id);
     delete host.dataset.dragging;
@@ -132,6 +134,7 @@ export const attachSpotlightPosition = (
       origin: { x: rect.x, y: rect.y },
       previous: position,
       handle,
+      releaseTextSelection: suppressTextSelection(event.pointerId),
     };
     handle.setPointerCapture(event.pointerId);
   };

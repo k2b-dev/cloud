@@ -939,6 +939,9 @@
   border: 0;
   background: transparent;
   touch-action: none;
+  /* WebKit may resolve a selection gesture before the drag's pointerdown handler suppresses selection. */
+  -webkit-user-select: none;
+  user-select: none;
   transform: translateX(-50%);
 }
 

@@ -449,11 +449,17 @@ describe("the dashboard board in a browser", () => {
     }
   }, 30_000);
 
-  test("drags a widget with the mouse; the others make room", async () => {
+  test("drags a widget with the mouse without selecting page text; the others make room", async () => {
     const { page, close } = await open(desktop);
     try {
       await allLoaded(page);
       await page.getByRole("button", { name: "Edit dashboard" }).click();
+      // iPadOS selects through `-webkit-user-select` alone, so the greeting the widget sweeps across reports that one.
+      const greetingSelect = () =>
+        page
+          .locator("h1", { hasText: "Hi, Mara" })
+          .evaluate((element) => getComputedStyle(element).getPropertyValue("-webkit-user-select"));
+      const before = await greetingSelect();
       const from = await center(page, "gateway/health");
       const to = await center(page, "spaces/today");
       await page.mouse.move(from.x, from.y);
@@ -461,9 +467,12 @@ describe("the dashboard board in a browser", () => {
       await page.mouse.move(from.x + 20, from.y - 20, { steps: 4 });
       await page.locator(".dashboard-tile-ghost").waitFor();
       expect(await tile(page, "gateway/health").getAttribute("data-dragging")).toBe("true");
+      expect(await greetingSelect()).toBe("none");
       await page.mouse.move(to.x, to.y, { steps: 12 });
       await page.mouse.up();
       await page.locator(".dashboard-tile-ghost").waitFor({ state: "detached" });
+      expect(await greetingSelect()).toBe(before);
+      expect(before).not.toBe("none");
       expect((await layout(page)).order[0]).toBe("gateway/health:small");
       await announced(page, "Platform health at position 1 of 5");
     } finally {

@@ -74,7 +74,7 @@ Tab groups stay on one line and scroll horizontally when their tabs no longer fi
 
 Once dragging starts, Panes shows every valid destination at the same time: exact tab insertion positions, add-to-group targets, and explicit Add left, right, top, and bottom targets. Duplicate and no-op destinations are not offered. Releasing elsewhere cancels the move.
 
-While resizing, a separator snaps to a nearby separator of the same direction in a neighboring pane. This aligns adjacent pane heights or widths without adding alignment metadata to the persisted layout. Pointer and keyboard resizing use the same visible geometry.
+While resizing, a separator snaps to a nearby separator of the same direction in a neighboring pane. This aligns adjacent pane heights or widths without adding alignment metadata to the persisted layout. Pointer and keyboard resizing use the same visible geometry. A pointer resize never selects page text.
 
 ## API reference
 

@@ -43,7 +43,7 @@ provided.
 
 ## Window behavior
 
-Desktop windows can be moved and resized. Geometry is clamped to the viewport. Clicking a window brings it in front of other floating windows.
+Desktop windows can be moved and resized. Geometry is clamped to the viewport. Clicking a window brings it in front of other floating windows. Moving or resizing a window never selects page text.
 
 Below 640 pixels, the window becomes an inset surface with a `0.5rem` viewport
 gap and disables movement and resizing.

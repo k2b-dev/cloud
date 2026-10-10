@@ -175,7 +175,8 @@ describe("FloatingWindow browser behaviour", () => {
         clientY: 40,
       }) as unknown as Event,
     );
-    expect(activePointerListeners()).toBe(3);
+    // The drag's move, up, and cancel listeners, and the same three of its text-selection hold.
+    expect(activePointerListeners()).toBe(6);
 
     moving.frame.querySelector<HTMLButtonElement>('[aria-label="Close window"]')?.click();
     expect(closeCalls).toBe(1);
@@ -191,7 +192,7 @@ describe("FloatingWindow browser behaviour", () => {
         clientY: 400,
       }) as unknown as Event,
     );
-    expect(activePointerListeners()).toBe(3);
+    expect(activePointerListeners()).toBe(6);
 
     resizing.dispose();
     expect(activePointerListeners()).toBe(0);

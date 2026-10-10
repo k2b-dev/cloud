@@ -283,12 +283,12 @@ widgets then wait under **Suggested for you** in the gallery. **Default** in the
 edit mode returns to the default board.
 
 **Edit** or a long press on a widget opens the edit mode. People drag widgets
-to move them, or focus one and use the arrow keys; they pick a size at the
-bottom of the widget and remove it with ×. **Add widget** opens the gallery,
-which lists the widgets the person may use, grouped by app, each with a live
-preview of the person's own data in the chosen size. The gallery loads a
-preview only when its card is on screen, at most eight at a time. **Done**
-saves the board without reloading the page.
+to move them, which selects no page text, or focus one and use the arrow keys;
+they pick a size at the bottom of the widget and remove it with ×. **Add
+widget** opens the gallery, which lists the widgets the person may use, grouped
+by app, each with a live preview of the person's own data in the chosen size.
+The gallery loads a preview only when its card is on screen, at most eight at a
+time. **Done** saves the board without reloading the page.
 
 A widget appears on a board at most once. A board keeps the place of a widget
 whose app is not running, and shows it again when the app returns.

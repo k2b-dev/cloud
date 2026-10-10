@@ -190,6 +190,7 @@ moves nothing. The server renders three rows until the browser has measured.
 On a narrow screen the entries keep their titles at a tighter padding, and
 the count shows only “+N”. Dragging a bar with `onEventDrop` moves the event
 by as many days as the pointer moved and highlights the days it would cover.
+No drag in the calendar selects page text.
 
 `mobile-month` keeps its compact picker: its days link to their agenda
 through `getDateHref`, and colored dots stand for the day's events.

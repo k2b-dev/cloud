@@ -1,3 +1,4 @@
+import { suppressTextSelection } from "@k2b/ui";
 import { deserialize as deserializeProps, serialize as serializeProps } from "seroval";
 import type { Component, JSX, ParentProps } from "solid-js";
 import { children, createContext, createMemo, createSignal, For, onCleanup, onMount, Show, useContext } from "solid-js";
@@ -483,10 +484,11 @@ const startDesktopResize = (event: PointerEvent, onMove: (dx: number, dy: number
   const startX = event.clientX;
   const startY = event.clientY;
   const move = (next: PointerEvent) => onMove(next.clientX - startX, next.clientY - startY);
+  const releaseTextSelection = suppressTextSelection(event.pointerId);
   const stop = () => {
     window.removeEventListener("pointermove", move);
     window.removeEventListener("pointerup", stop);
-    document.body.style.userSelect = "";
+    releaseTextSelection();
     document.body.style.cursor = "";
   };
   window.addEventListener("pointermove", move);
@@ -631,10 +633,9 @@ export const DesktopWorkspace = ((props: DesktopWorkspaceProps) => {
 
   const resizeSidebar = (event: PointerEvent) => {
     const pane = sidebar();
-    if (!pane?.resizable) return;
+    if (!pane?.resizable || event.button !== 0) return;
     const start = sidebarOpen() ? sidebarSize() : sidebarColumnSize();
     document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
     startDesktopResize(event, (dx) => {
       const raw = start + dx;
       if (shouldRail(pane, raw)) {
@@ -650,10 +651,9 @@ export const DesktopWorkspace = ((props: DesktopWorkspaceProps) => {
 
   const resizeRight = (event: PointerEvent) => {
     const pane = right();
-    if (!pane?.resizable) return;
+    if (!pane?.resizable || event.button !== 0) return;
     const start = rightOpen() ? rightSize() : rightColumnSize();
     document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
     startDesktopResize(event, (dx) => {
       const raw = start - dx;
       if (shouldRail(pane, raw)) {
@@ -669,10 +669,9 @@ export const DesktopWorkspace = ((props: DesktopWorkspaceProps) => {
 
   const resizeBottom = (event: PointerEvent) => {
     const pane = bottom();
-    if (!pane?.resizable) return;
+    if (!pane?.resizable || event.button !== 0) return;
     const start = bottomOpen() ? bottomSize() : bottomRowSize();
     document.body.style.cursor = "row-resize";
-    document.body.style.userSelect = "none";
     startDesktopResize(event, (_dx, dy) => {
       const raw = start - dy;
       if (shouldRail(pane, raw)) {

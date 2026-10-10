@@ -2,6 +2,7 @@ import { createEffect, createSignal, For, type JSX, on, Show, untrack } from "so
 import { IconButton } from "../actions/Button";
 import { SegmentedControl } from "../actions/SegmentedControl";
 import { createFieldMeta, Field, fieldDescribedBy } from "../internal/field";
+import { suppressTextSelection } from "../internal/text-selection";
 import { useUiMessages } from "../intl/messages";
 import type { ValueFieldProps } from "./field-contract";
 import { commitFieldValue, resolveMaybeAccessor } from "./field-contract";
@@ -98,12 +99,19 @@ export function SignatureInput(props: SignatureInputProps): JSX.Element {
     else props.onValueChange?.(next);
   };
 
-  let stroke: { pointerId: number; pointerType: string; points: SignaturePoint[]; time: number } | null = null;
+  let stroke: {
+    pointerId: number;
+    pointerType: string;
+    points: SignaturePoint[];
+    time: number;
+    releaseTextSelection: () => void;
+  } | null = null;
   /** Drops the stroke in progress without keeping its ink. */
   const abortStroke = () => {
     if (!stroke) return;
-    const { pointerId } = stroke;
+    const { pointerId, releaseTextSelection } = stroke;
     stroke = null;
+    releaseTextSelection();
     setLive("");
     if (svg?.hasPointerCapture(pointerId)) svg.releasePointerCapture(pointerId);
   };
@@ -236,7 +244,13 @@ export function SignatureInput(props: SignatureInputProps): JSX.Element {
       const box = svg.getBoundingClientRect();
       setDrawing({ x: 0, y: 0, width: Math.max(1, box.width), height: Math.max(1, box.height), strokes: [] });
     }
-    stroke = { pointerId: event.pointerId, pointerType: event.pointerType, points: [], time: event.timeStamp };
+    stroke = {
+      pointerId: event.pointerId,
+      pointerType: event.pointerType,
+      points: [],
+      time: event.timeStamp,
+      releaseTextSelection: suppressTextSelection(event.pointerId),
+    };
     addPoint(event, true);
   };
   const moveStroke = (event: PointerEvent) => {
@@ -248,9 +262,10 @@ export function SignatureInput(props: SignatureInputProps): JSX.Element {
   const endStroke = (event: PointerEvent) => {
     if (!stroke || stroke.pointerId !== event.pointerId) return;
     addPoint(event, false);
-    const { points } = stroke;
+    const { points, releaseTextSelection } = stroke;
     const outline = strokeOutline(points, STROKE_SIZE);
     stroke = null;
+    releaseTextSelection();
     setLive("");
     if (!outline) return;
     const space = spaceAfter(points);

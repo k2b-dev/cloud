@@ -3,6 +3,7 @@ export * from "./chat";
 export * from "./content";
 export * from "./feedback";
 export * from "./inputs";
+export { suppressTextSelection } from "./internal/text-selection";
 export * from "./intl";
 export * from "./layout";
 export type { AccentColor, IntentTone } from "./semantics";

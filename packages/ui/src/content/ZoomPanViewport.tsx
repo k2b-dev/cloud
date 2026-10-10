@@ -2,6 +2,7 @@ import { createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js"
 import { Button, IconButton } from "../actions/Button";
 import { dialogCore } from "../feedback/dialog-core";
 import { DialogHeader } from "../feedback/prompts";
+import { suppressTextSelection } from "../internal/text-selection";
 import { LocaleProvider, useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
 import {
@@ -231,6 +232,8 @@ export function ZoomPanViewport(props: ZoomPanViewportProps): JSX.Element {
     const dx = event.clientX - drag.x;
     const dy = event.clientY - drag.y;
     if (!drag.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+    // The pointer's own pointerup or pointercancel ends the hold.
+    if (!drag.moved) suppressTextSelection(event.pointerId);
     drag.moved = true;
     setDragging(true);
     apply(panZoomPan(drag.origin, dx, dy, geometry()), false);

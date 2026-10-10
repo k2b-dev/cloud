@@ -1,5 +1,5 @@
 import { navigateTo } from "@k2b/ssr/nav";
-import { IconButton, IconButtonLink, Tooltip, useLocale } from "@k2b/ui";
+import { IconButton, IconButtonLink, suppressTextSelection, Tooltip, useLocale } from "@k2b/ui";
 import { forceCenter, forceLink, forceManyBody, forceSimulation, type Simulation } from "d3-force";
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { NoteGraph } from "../../../../service/links";
@@ -170,7 +170,7 @@ export default function NotebookGraph(props: Props) {
 
   // Background pan.
   const onCanvasPointerDown = (event: PointerEvent) => {
-    if (event.target !== svgRef && (event.target as Element).tagName !== "rect") return;
+    if (event.button !== 0 || (event.target !== svgRef && (event.target as Element).tagName !== "rect")) return;
     const startX = event.clientX;
     const startY = event.clientY;
     const startPan = pan();
@@ -180,7 +180,9 @@ export default function NotebookGraph(props: Props) {
       setPan({ x: startPan.x + (e.clientX - startX), y: startPan.y + (e.clientY - startY) });
     };
     clearPointerGesture?.();
+    const releaseTextSelection = suppressTextSelection(event.pointerId);
     const finish = () => {
+      releaseTextSelection();
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", finish);
       window.removeEventListener("pointercancel", finish);
@@ -197,7 +199,7 @@ export default function NotebookGraph(props: Props) {
 
   const onNodePointerDown = (node: SimNode, event: PointerEvent) => {
     event.stopPropagation();
-    if (!simulation) return;
+    if (!simulation || event.button !== 0) return;
 
     // Snapshot the node's position at click time. `fx`/`fy` track *absolute*
     // coords from this origin — using `node.x` (which the simulation rewrites
@@ -207,6 +209,7 @@ export default function NotebookGraph(props: Props) {
     const startClientX = event.clientX;
     const startClientY = event.clientY;
     let didMove = false;
+    let releaseTextSelection: (() => void) | undefined;
 
     simulation.alphaTarget(0.3).restart();
     node.fx = origX;
@@ -221,6 +224,7 @@ export default function NotebookGraph(props: Props) {
       // doesn't get classified as a drag (which would suppress the
       // click-to-navigate on pointer-up).
       if (!didMove && Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
+      if (!didMove) releaseTextSelection = suppressTextSelection(e.pointerId);
       didMove = true;
       node.fx = origX + dx;
       node.fy = origY + dy;
@@ -228,6 +232,7 @@ export default function NotebookGraph(props: Props) {
 
     clearPointerGesture?.();
     const finish = (navigate: boolean) => {
+      releaseTextSelection?.();
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
       window.removeEventListener("pointercancel", cancel);

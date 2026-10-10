@@ -1,5 +1,6 @@
 import { type JSX, Show } from "solid-js";
 import type { OpenDialogOptions } from "../feedback/dialog-core";
+import { suppressTextSelection } from "../internal/text-selection";
 import { useUiMessages } from "../intl/messages";
 import PanelDialog from "./PanelDialog";
 
@@ -33,7 +34,7 @@ export type BottomSheetProps = {
 
 function BottomSheetRoot(props: BottomSheetProps) {
   const messages = useUiMessages();
-  let pointer: { id: number; y: number } | undefined;
+  let pointer: { id: number; y: number; releaseTextSelection: () => void } | undefined;
   let suppressClick = false;
   const dismiss = () => {
     if (!props.dismissDisabled) void props.onDismiss();
@@ -49,23 +50,26 @@ function BottomSheetRoot(props: BottomSheetProps) {
           onPointerDown={(event) => {
             if (!event.isPrimary || event.button !== 0 || props.dismissDisabled) return;
             suppressClick = false;
-            pointer = { id: event.pointerId, y: event.clientY };
+            pointer = { id: event.pointerId, y: event.clientY, releaseTextSelection: suppressTextSelection(event.pointerId) };
             event.currentTarget.setPointerCapture(event.pointerId);
           }}
           onPointerUp={(event) => {
             if (pointer?.id !== event.pointerId) return;
             const distance = event.clientY - pointer.y;
+            pointer.releaseTextSelection();
             pointer = undefined;
             // A drag must not turn into a second dismiss request through click.
             suppressClick = Math.abs(distance) > 8;
             if (distance > 60) dismiss();
           }}
           onPointerCancel={() => {
+            pointer?.releaseTextSelection();
             pointer = undefined;
             suppressClick = true;
           }}
           onLostPointerCapture={() => {
             if (pointer) {
+              pointer.releaseTextSelection();
               pointer = undefined;
               suppressClick = true;
             }

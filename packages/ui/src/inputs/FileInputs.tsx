@@ -2,6 +2,7 @@ import { createEffect, createMemo, createSignal, For, type JSX, mergeProps, onCl
 import { Button, IconButton } from "../actions/Button";
 import { Tooltip } from "../feedback/Tooltip";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
+import { suppressTextSelection } from "../internal/text-selection";
 import { useUiMessages } from "../intl/messages";
 import { fileDropTarget } from "./FileDropTarget";
 import type { FieldProps, ValueFieldProps } from "./field-contract";
@@ -481,21 +482,24 @@ export function ImageCropper(props: ImageCropperProps): JSX.Element {
     setCrop(resizeImageCropFromCorner(start, currentSize, aspect(), state.handle, dx, dy));
   };
 
+  let releaseTextSelection: (() => void) | undefined;
   const endDrag = (event: PointerEvent) => {
     const state = drag();
     if (!state || state.pointerId !== event.pointerId) return;
     window.removeEventListener("pointermove", moveCrop);
     window.removeEventListener("pointerup", endDrag);
     window.removeEventListener("pointercancel", endDrag);
+    releaseTextSelection?.();
     setDrag(null);
   };
 
   const startDrag = (handle: DragHandle, event: PointerEvent) => {
     const currentCrop = crop();
-    if (!currentCrop || disabled()) return;
+    if (!currentCrop || disabled() || event.button !== 0) return;
     event.preventDefault();
     event.stopPropagation();
     (event.currentTarget as Element).setPointerCapture?.(event.pointerId);
+    releaseTextSelection = suppressTextSelection(event.pointerId);
     const point = readPointerPosition(event);
     setDrag({
       handle,
@@ -514,6 +518,7 @@ export function ImageCropper(props: ImageCropperProps): JSX.Element {
     window.removeEventListener("pointermove", moveCrop);
     window.removeEventListener("pointerup", endDrag);
     window.removeEventListener("pointercancel", endDrag);
+    releaseTextSelection?.();
   });
 
   const rotateRight = () => {

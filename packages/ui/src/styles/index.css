@@ -354,6 +354,8 @@
   border: 0;
   background: transparent;
   cursor: default;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 /* Cloud: `w-2` / `h-2`. */

@@ -1,3 +1,5 @@
+import { suppressTextSelection } from "../internal/text-selection";
+
 export const CALENDAR_SNAP_MINUTES = 15;
 
 export const snapCalendarMinutes = (minutes: number, step = CALENDAR_SNAP_MINUTES): number => Math.round(minutes / step) * step;
@@ -48,13 +50,13 @@ export const startCalendarPointerSession = <T>(options: CalendarPointerSessionOp
   const startY = options.event.clientY;
   // Leave enough room for normal click jitter before an event becomes a drag.
   const threshold = options.threshold ?? 6;
-  const previousUserSelect = document.body.style.userSelect;
   let clientX = startX;
   let clientY = startY;
   let active = false;
   let finished = false;
   let latest: T | null = null;
   let scrollFrame = 0;
+  let releaseTextSelection: (() => void) | null = null;
 
   const preview = () => {
     const value = options.resolve(clientX, clientY);
@@ -84,14 +86,14 @@ export const startCalendarPointerSession = <T>(options: CalendarPointerSessionOp
     window.removeEventListener("blur", cancel);
     window.removeEventListener("keydown", onKeyDown);
     if (target?.hasPointerCapture?.(pointerId)) target.releasePointerCapture(pointerId);
-    document.body.style.userSelect = previousUserSelect;
+    releaseTextSelection?.();
     if (cancelActiveSession === cancel) cancelActiveSession = null;
   };
 
   const activate = () => {
     if (active) return;
     active = true;
-    document.body.style.userSelect = "none";
+    releaseTextSelection = suppressTextSelection(pointerId);
     target?.setPointerCapture?.(pointerId);
     options.onActivate?.();
     preview();

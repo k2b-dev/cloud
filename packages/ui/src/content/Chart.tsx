@@ -4,6 +4,7 @@ import type { JSX } from "solid-js";
 import { createEffect, createMemo, createSignal, createUniqueId, onCleanup, onMount, Show, splitProps, untrack } from "solid-js";
 import { isServer } from "solid-js/web";
 import { IconButton } from "../actions/Button";
+import { suppressTextSelection } from "../internal/text-selection";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
 import type { ChartCursor } from "./chart-cursor";
@@ -315,6 +316,8 @@ const Chart = (props: ChartProps): JSX.Element => {
       return;
     }
     closeChartTooltip();
+    // The pointer's own pointerup or pointercancel ends the hold.
+    suppressTextSelection(event.pointerId);
     if (interactiveTimeline()) {
       timelineDrag = {
         pointerId: event.pointerId,
