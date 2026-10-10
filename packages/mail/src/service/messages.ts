@@ -5,7 +5,7 @@ import { z } from "zod";
 import type { ConversationView, ConversationWorkStatus, FolderDisplay } from "../contracts";
 import { isAggregatedListing } from "../folder-display-rules";
 import type { MailSecurityAssessment } from "../security-contracts";
-import { conversationVisibleTo, messageVisibleTo, requireVisibleConversation } from "./access";
+import { conversationVisibleTo, draftVisibleTo, messageVisibleTo, requireVisibleConversation } from "./access";
 import { attachmentMimeOrder } from "./attachment-order";
 import { type MailRequestContext, userBackedActor } from "./auth";
 import { isUnassignedConversation, listLapsedAssignees } from "./collaborators";
@@ -180,9 +180,9 @@ export const listFolders = async (context: MailRequestContext, mailboxId: string
   const [draftCount] = draftsFolders.includes(true)
     ? await sql<{ total: number }[]>`
         SELECT COUNT(*)::int AS total
-        FROM mail.drafts
-        WHERE mailbox_id = ${mailboxId}::uuid AND origin = 'user' AND state = 'draft'
-          AND ${conversationVisibleTo(visibility, sql`conversation_id`)}
+        FROM mail.drafts d
+        WHERE d.mailbox_id = ${mailboxId}::uuid AND d.origin = 'user' AND d.state = 'draft'
+          AND ${draftVisibleTo(visibility, sql`d`)}
       `
     : [];
   const displayStates = folderDisplayStates(

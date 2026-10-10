@@ -331,6 +331,18 @@ export const messageVisibleTo = (access: MailboxAccess, messageId: Bun.SQL.Query
       )`;
 
 /**
+ * Whether the draft row `draft` (a table alias) is visible with `access`: its conversation and the
+ * messages it replies to or derives from. Direct reads, lists, counts and queued sends all use this
+ * one rule, so a draft is never listed or sent where it cannot be opened.
+ */
+export const draftVisibleTo = (access: MailboxAccess, draft: Bun.SQL.Query<unknown>) =>
+  access.scope === "mailbox"
+    ? sql`true`
+    : sql`(${conversationVisibleTo(access, sql`${draft}.conversation_id`)}
+      AND (${draft}.source_message_id IS NULL OR ${messageVisibleTo(access, sql`${draft}.source_message_id`)})
+      AND (${draft}.derived_from_message_id IS NULL OR ${messageVisibleTo(access, sql`${draft}.derived_from_message_id`)}))`;
+
+/**
  * Refuses a conversation the request cannot see as not found, so an assigned-only reader learns
  * nothing about the others. Mailbox-wide access passes without a query.
  */
@@ -357,9 +369,7 @@ export const requireDraftAccess = async (
   const allowed = await requireMailboxAccess(context, mailboxId, required, db);
   if (!allowed.ok || allowed.data.scope === "mailbox") return allowed;
   const [draft] = await db<{ visible: boolean }[]>`
-    SELECT (${conversationVisibleTo(allowed.data, sql`d.conversation_id`)}
-      AND (d.source_message_id IS NULL OR ${messageVisibleTo(allowed.data, sql`d.source_message_id`)})
-      AND (d.derived_from_message_id IS NULL OR ${messageVisibleTo(allowed.data, sql`d.derived_from_message_id`)})) AS visible
+    SELECT ${draftVisibleTo(allowed.data, sql`d`)} AS visible
     FROM mail.drafts d
     WHERE d.id = ${draftId}::uuid AND d.mailbox_id = ${mailboxId}::uuid AND d.origin = 'user'
   `;

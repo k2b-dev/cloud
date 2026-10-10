@@ -34,7 +34,7 @@ import { withShortIdDb } from "../lib/short-id";
 import { deriveReplyAddressObjects } from "../reply-recipients";
 import {
   conversationVisibleTo,
-  messageVisibleTo,
+  draftVisibleTo,
   requireDraftAccess,
   requireMailboxAccess,
   requireMailboxPermission,
@@ -1773,26 +1773,11 @@ export const listDrafts = async (context: MailRequestContext, mailboxId: string,
   const rows = await sql<DbDraft[]>`
     SELECT ${draftColumns}
     FROM mail.drafts d
-    WHERE ${conversationVisibleTo(allowed.data, sql`d.conversation_id`)}
+    WHERE ${draftVisibleTo(allowed.data, sql`d`)}
       AND d.mailbox_id = ${mailboxId}::uuid AND d.origin = 'user' AND d.state IN ('draft', 'scheduled', 'sending')
     ORDER BY d.updated_at DESC, d.id DESC
     LIMIT ${Math.min(Math.max(Math.floor(limit), 1), 200)}
   `;
-  if (allowed.data.scope === "assigned" && rows.length > 0) {
-    // A reply's source may have moved to a conversation this reader cannot see.
-    const sourceIds = [...new Set(rows.flatMap((row) => [row.source_message_id, row.derived_from_message_id].filter((id) => id !== null)))];
-    const visibleSources = await sql<{ id: string }[]>`
-      SELECT message.id FROM mail.message_contents message
-      WHERE message.mailbox_id = ${mailboxId}::uuid
-        AND message.id IN (SELECT value::uuid FROM jsonb_array_elements_text(${sourceIds}::jsonb))
-        AND ${messageVisibleTo(allowed.data, sql`message.id`)}
-    `;
-    const visibleIds = new Set(visibleSources.map((row) => row.id));
-    for (const row of rows) {
-      if (row.source_message_id && !visibleIds.has(row.source_message_id)) row.source_message_id = null;
-      if (row.derived_from_message_id && !visibleIds.has(row.derived_from_message_id)) row.derived_from_message_id = null;
-    }
-  }
   return ok(rows.map(mapDraft));
 };
 
@@ -1832,6 +1817,7 @@ export const listConversationDrafts = async (params: {
       AND d.conversation_id = ${params.conversationId}::uuid
       AND d.origin = 'user'
       AND d.state = 'draft'
+      AND ${draftVisibleTo(allowed.data, sql`d`)}
     ORDER BY d.updated_at DESC, d.id DESC
     LIMIT ${Math.min(Math.max(Math.floor(params.limit ?? 20), 1), 50)}
   `;
@@ -1908,7 +1894,7 @@ export const listDraftFolder = async (params: {
     FROM mail.drafts d
     LEFT JOIN auth.users author_user ON d.author_kind = 'user' AND author_user.id = d.author_id
     LEFT JOIN auth.service_accounts author_service ON d.author_kind = 'service_account' AND author_service.id = d.author_id
-    WHERE ${conversationVisibleTo(allowed.data, sql`d.conversation_id`)}
+    WHERE ${draftVisibleTo(allowed.data, sql`d`)}
       AND d.mailbox_id = ${params.mailboxId}::uuid
       AND d.origin = 'user'
       AND d.state = 'draft'
@@ -1921,9 +1907,9 @@ export const listDraftFolder = async (params: {
   `;
   const [count] = await sql<{ total: number }[]>`
     SELECT COUNT(*)::int AS total
-    FROM mail.drafts
-    WHERE mailbox_id = ${params.mailboxId}::uuid AND origin = 'user' AND state = 'draft'
-      AND ${conversationVisibleTo(allowed.data, sql`conversation_id`)}
+    FROM mail.drafts d
+    WHERE d.mailbox_id = ${params.mailboxId}::uuid AND d.origin = 'user' AND d.state = 'draft'
+      AND ${draftVisibleTo(allowed.data, sql`d`)}
   `;
   const page = rows.slice(0, limit);
   const last = page.at(-1);

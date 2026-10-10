@@ -813,6 +813,54 @@ suite("assigned-only Mail actions authorize every target and queued effect", () 
     expect(await commandStillAuthorized(await stored(full.id), "write")).toBe(true);
   });
 
+  test("a mailbox-wide read grant beside assigned write access stops queued writes, as it refuses new ones", async () => {
+    await sql`UPDATE mail.commands SET state = 'confirmed', finished_at = now() WHERE mailbox_id = ${mailboxId}::uuid AND kind <> 'send'`;
+    const command = unwrap(await queueState());
+    const send = unwrap(await queueSend(writer, unwrap(await createReply())));
+    const readGrant = unwrap(
+      await grantMailboxAccess({
+        context: contextFor(owner),
+        mailboxId,
+        principal: { type: "user", userId: writer.id },
+        permission: "read",
+      }),
+    );
+    try {
+      denied(await queueState(), 403);
+      expect(await commandStillAuthorized(await stored(command.id), "write")).toBe(false);
+      expect(await commandStillAuthorized(await stored(send.id), "write")).toBe(false);
+    } finally {
+      unwrap(await revokeMailboxAccess({ context: contextFor(owner), mailboxId, accessId: readGrant.id }));
+    }
+    expect(await commandStillAuthorized(await stored(command.id), "write")).toBe(true);
+    expect((await scheduled.cancelSendCommand({ context: contextFor(writer), mailboxId, commandId: send.id })).ok).toBe(true);
+  });
+
+  test("a scheduled reply stops, like its cancellation, once its source or outgoing message leaves the conversation", async () => {
+    const draft = unwrap(await createReply());
+    const send = unwrap(await queueSend(writer, draft));
+    const [outbox] = await sql<
+      { id: string; message_id: string | null }[]
+    >`SELECT id, message_id FROM mail.outbox_submissions WHERE command_id = ${send.id}::uuid`;
+    if (!outbox?.message_id) throw new Error("Send has no outgoing message");
+    const listed = async () =>
+      unwrap(await scheduled.listScheduledSends({ context: contextFor(writer), mailboxId })).items.some((item) => item.id === outbox.id);
+    expect(await commandStillAuthorized(await stored(send.id), "write")).toBe(true);
+    expect(await listed()).toBe(true);
+    for (const messageId of [c1.messageId, outbox.message_id]) {
+      await sql`UPDATE mail.conversation_messages SET conversation_id = ${c2.id}::uuid WHERE message_id = ${messageId}::uuid`;
+      try {
+        expect(await commandStillAuthorized(await stored(send.id), "write")).toBe(false);
+        expect(await listed()).toBe(false);
+        denied(await scheduled.cancelSendCommand({ context: contextFor(writer), mailboxId, commandId: send.id }), 404);
+      } finally {
+        await sql`UPDATE mail.conversation_messages SET conversation_id = ${c1.id}::uuid WHERE message_id = ${messageId}::uuid`;
+      }
+    }
+    expect(await commandStillAuthorized(await stored(send.id), "write")).toBe(true);
+    expect((await scheduled.cancelSendCommand({ context: contextFor(writer), mailboxId, commandId: send.id })).ok).toBe(true);
+  });
+
   test("capability reviews use scoped services, while assignment reviews still refuse", async () => {
     const context = capContext(writer);
     const input = { mailboxId: mailboxShortId, conversationId: c1.shortId, status: "done" as const, expectedRevision: 1 };

@@ -62,6 +62,7 @@ describe("durable Mail credential snapshots", () => {
 
   test("fails a persisted legacy service command closed before database authorization", async () => {
     const command: StoredCommandAuthorization = {
+      id: "3a0f4f0e-55c2-4d40-9a51-7a8f1c5f0b11",
       kind: "set_flags",
       target: {},
       mailbox_id: "7d37d97c-fe73-49ab-954a-ce155e17610b",

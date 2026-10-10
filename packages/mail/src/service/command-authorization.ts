@@ -1,11 +1,12 @@
 import type { AccessSubject } from "@k2b/cloud/server";
 import { toPgTextArray } from "@k2b/cloud/services";
 import { sql } from "bun";
-import { conversationVisibleTo, type MailboxAccess, mailboxAccessPrincipalCondition, messageVisibleTo } from "./access";
+import { draftVisibleTo, type MailboxAccess, mailboxAccessPrincipalCondition, messageVisibleTo } from "./access";
 
 type SqlClient = typeof sql;
 
 export type StoredCommandAuthorization = {
+  id: string;
   kind: string;
   target: Record<string, unknown> | string;
   mailbox_id: string;
@@ -30,11 +31,17 @@ export const conversationCommandKinds: ReadonlySet<string> = new Set([
   "send",
 ]);
 
+/**
+ * Whether a command's target is visible with `access`. A send also needs its draft visible like
+ * `requireDraftAccess()` and, once queued as command `commandId`, the outgoing message it placed in a
+ * conversation, as cancelling requires; requests and the worker share this check.
+ */
 export const commandTargetVisibleTo = (
   access: MailboxAccess,
   kind: Bun.SQL.Query<unknown>,
   target: Bun.SQL.Query<unknown>,
   mailboxId: string,
+  commandId: Bun.SQL.Query<unknown> = sql`NULL::uuid`,
 ) =>
   access.scope === "mailbox"
     ? sql`true`
@@ -51,7 +58,13 @@ export const commandTargetVisibleTo = (
     WHERE command_draft.id::text = (${target})->>'draftId'
       AND command_draft.mailbox_id = ${mailboxId}::uuid
       AND command_draft.origin = 'user'
-      AND ${conversationVisibleTo(access, sql`command_draft.conversation_id`)}
+      AND ${draftVisibleTo(access, sql`command_draft`)}
+      AND NOT EXISTS (
+        SELECT 1 FROM mail.outbox_submissions command_outbox
+        WHERE command_outbox.command_id = (${commandId})
+          AND command_outbox.message_id IS NOT NULL
+          AND NOT (${messageVisibleTo(access, sql`command_outbox.message_id`)})
+      )
   ))
 )`;
 
@@ -62,7 +75,7 @@ export const commandVisibleTo = (access: MailboxAccess, mailboxId: string) =>
     : sql`(
   c.access_subject_kind = 'user' AND c.access_subject_id = ${access.userId}::uuid
   AND c.actor_kind IN ('user', 'service_account')
-  AND ${commandTargetVisibleTo(access, sql`c.kind`, sql`c.target`, mailboxId)}
+  AND ${commandTargetVisibleTo(access, sql`c.kind`, sql`c.target`, mailboxId, sql`c.id`)}
 )`;
 
 const permissionRank = (permission: string | null | undefined): number => {
@@ -201,7 +214,9 @@ export const commandStillAuthorized = async (
   }
   if (!(await serviceAccountActorAllowed(command, permission, db))) return false;
   if (!(await accessSubjectIsActive(command, db))) return false;
-  if (permissionRank(await loadMailboxGrant(command, db)) >= requiredRank(permission)) return true;
+  // Like a request, any mailbox-wide grant decides alone; an assigned-only grant counts only without one.
+  const mailboxRank = permissionRank(await loadMailboxGrant(command, db));
+  if (mailboxRank > 0) return mailboxRank >= requiredRank(permission);
   if (
     permission !== "write" ||
     command.access_subject_kind !== "user" ||
@@ -221,7 +236,7 @@ export const commandStillAuthorized = async (
       WHERE assigned.mailbox_id = ${command.mailbox_id}::uuid
         AND a.permission IN ('write', 'admin')
         AND ${mailboxAccessPrincipalCondition(subject)}
-    ) AND ${commandTargetVisibleTo({ scope: "assigned", permission: "write", userId: command.access_subject_id }, sql`${command.kind}`, sql`${typeof command.target === "string" ? JSON.parse(command.target) : command.target}::jsonb`, command.mailbox_id)} AS authorized
+    ) AND ${commandTargetVisibleTo({ scope: "assigned", permission: "write", userId: command.access_subject_id }, sql`${command.kind}`, sql`${typeof command.target === "string" ? JSON.parse(command.target) : command.target}::jsonb`, command.mailbox_id, sql`${command.id}::uuid`)} AS authorized
   `;
   return grant?.authorized === true;
 };

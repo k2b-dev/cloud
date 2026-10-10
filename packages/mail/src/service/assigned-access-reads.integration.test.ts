@@ -687,15 +687,20 @@ suite("assigned-only Mail reads fail closed across services, HTTP and capabiliti
     expect(allActivity.items.some((item) => item.action === "message.receipt")).toBe(true);
     await sql`UPDATE mail.drafts SET source_message_id = ${c3.messageId}::uuid WHERE id = ${draft1}::uuid`;
     try {
-      const listed = unwrap(await drafts.listDrafts(contextFor(readerA), mailboxId));
-      expect(listed).toHaveLength(1);
-      expect(listed[0]?.sourceMessageId).toBeNull();
+      // Like opening it, every list and count leaves out a draft whose reply source left the reader's conversations.
+      notFound(await drafts.getDraft(contextFor(readerA), mailboxId, draft1));
+      expect(unwrap(await drafts.listDrafts(contextFor(readerA), mailboxId))).toEqual([]);
+      expect(unwrap(await drafts.listConversationDrafts(params))).toEqual([]);
+      const draftPage = unwrap(await drafts.listDraftFolder(params));
+      expect([draftPage.items, draftPage.total]).toEqual([[], 0]);
+      const folders = unwrap(await messages.listFolders(contextFor(readerA), mailboxId));
+      expect(folders.find((item) => item.id === draftsFolderId)?.total ?? 0).toBe(0);
       expect(unwrap(await drafts.listDrafts(contextFor(readerR), mailboxId)).find((item) => item.id === draft1)?.sourceMessageId).toBe(
         c3.messageId,
       );
       const response = await call(tokenA, `${base()}/drafts`);
       expect(response.status).toBe(200);
-      expect(await response.json()).toMatchObject([{ sourceMessageId: null }]);
+      expect(await response.json()).toEqual([]);
     } finally {
       await sql`UPDATE mail.drafts SET source_message_id = ${c1.messageId}::uuid WHERE id = ${draft1}::uuid`;
     }

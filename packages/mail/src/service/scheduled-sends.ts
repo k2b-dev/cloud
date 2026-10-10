@@ -10,7 +10,7 @@ import type {
   ScheduledSend,
   ScheduledSendPage,
 } from "../contracts";
-import { conversationVisibleTo, type MailboxAccess, requireDraftAccess, requireMailboxAccess, requireVisibleMessages } from "./access";
+import { draftVisibleTo, type MailboxAccess, messageVisibleTo, requireMailboxAccess } from "./access";
 import { auditActorFromRequest, type MailRequestContext } from "./auth";
 import { commandVisibleTo } from "./command-authorization";
 import { enqueueDraftProjectionSnapshot, queueDraftProjectionInTransaction } from "./draft-provider-projection";
@@ -109,16 +109,21 @@ const mapRows = (rows: ScheduledRow[]): ScheduledSend[] =>
     };
   });
 
+/**
+ * Whether the scheduled send `outbox` of draft `draft` is visible: its draft, and the outgoing message
+ * it already placed in a conversation. Cancellation and the queued send check the same.
+ */
+const scheduledSendVisibleTo = (access: MailboxAccess) =>
+  sql`(${draftVisibleTo(access, sql`draft`)} AND (outbox.message_id IS NULL OR ${messageVisibleTo(access, sql`outbox.message_id`)}))`;
+
 const scheduledCount = async (mailboxId: string, access: MailboxAccess, db: SqlClient = sql): Promise<number> => {
   const [row] = await db<{ total: number | string }[]>`
     SELECT COUNT(*)::int AS total
     FROM mail.outbox_submissions outbox
     JOIN mail.commands command ON command.id = outbox.command_id
-    WHERE ( ${access.scope === "mailbox"} OR EXISTS (
-      SELECT 1 FROM mail.drafts visible_draft
-      WHERE visible_draft.id = outbox.draft_id
-        AND ${conversationVisibleTo(access, sql`visible_draft.conversation_id`)}
-    )) AND outbox.mailbox_id = ${mailboxId}::uuid
+    JOIN mail.drafts draft ON draft.id = outbox.draft_id
+    WHERE ${scheduledSendVisibleTo(access)}
+      AND outbox.mailbox_id = ${mailboxId}::uuid
       AND outbox.state IN ('scheduled', 'undo_window')
       AND command.kind = 'send'
       AND command.payload ->> 'scheduledAt' IS NOT NULL
@@ -174,7 +179,7 @@ export const listScheduledSends = async (params: {
         LEFT JOIN auth.users actor_user ON command.actor_kind = 'user' AND actor_user.id = command.actor_id
         LEFT JOIN auth.service_accounts actor_service
           ON command.actor_kind = 'service_account' AND actor_service.id = command.actor_id
-        WHERE ${conversationVisibleTo(currentPermission.data, sql`draft.conversation_id`)}
+        WHERE ${scheduledSendVisibleTo(currentPermission.data)}
           AND outbox.mailbox_id = ${params.mailboxId}::uuid
           AND outbox.state IN ('scheduled', 'undo_window')
           AND command.kind = 'send'
@@ -246,7 +251,7 @@ export const getScheduledSend = async (params: {
         LEFT JOIN auth.users actor_user ON command.actor_kind = 'user' AND actor_user.id = command.actor_id
         LEFT JOIN auth.service_accounts actor_service
           ON command.actor_kind = 'service_account' AND actor_service.id = command.actor_id
-        WHERE ${conversationVisibleTo(currentPermission.data, sql`draft.conversation_id`)}
+        WHERE ${scheduledSendVisibleTo(currentPermission.data)}
           AND outbox.mailbox_id = ${params.mailboxId}::uuid
           AND outbox.id = ${params.scheduledSendId}::uuid
           AND outbox.state IN ('scheduled', 'undo_window')
@@ -299,7 +304,6 @@ const cancelScheduledSendBy = async (params: {
           id: string;
           command_id: string;
           draft_id: string;
-          message_id: string;
           conversation_id: string | null;
           requested_at: Date | string;
           scheduled_at: Date | string;
@@ -311,7 +315,6 @@ const cancelScheduledSendBy = async (params: {
           outbox.id,
           outbox.command_id,
           outbox.draft_id,
-          outbox.message_id,
           draft.conversation_id,
           outbox.requested_at,
           outbox.scheduled_at,
@@ -323,15 +326,11 @@ const cancelScheduledSendBy = async (params: {
         WHERE outbox.mailbox_id = ${params.mailboxId}::uuid
           AND (${params.scheduledSendId ?? null}::uuid IS NULL OR outbox.id = ${params.scheduledSendId ?? null}::uuid)
           AND (${params.commandId ?? null}::uuid IS NULL OR outbox.command_id = ${params.commandId ?? null}::uuid)
-          AND ${conversationVisibleTo(allowed.data, sql`draft.conversation_id`)}
+          AND ${scheduledSendVisibleTo(allowed.data)}
           AND ${commandVisibleTo(allowed.data, params.mailboxId)}
         FOR UPDATE OF outbox, c, draft
       `;
       if (!outbox) return fail(err.notFound("Scheduled send"));
-      const draftAccess = await requireDraftAccess(params.context, params.mailboxId, outbox.draft_id, "write", tx);
-      if (!draftAccess.ok) return draftAccess;
-      const visibleMessage = await requireVisibleMessages(allowed.data, [outbox.message_id], tx);
-      if (!visibleMessage.ok) return visibleMessage;
       if (!["scheduled", "undo_window"].includes(outbox.state) || outbox.command_state !== "queued") {
         return fail(err.conflict("The message is already being processed and can no longer be cancelled"));
       }
