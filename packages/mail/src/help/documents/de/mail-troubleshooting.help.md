@@ -2,168 +2,182 @@
 id: mail-troubleshooting
 title: Mail-Probleme beheben
 icon: ti ti-lifebuoy
-description: Fehlende E-Mails, pausierten Transport, Versandfehler, Entwurfskonflikte und Suchlücken prüfen.
+description: Fehlende E-Mails, pausierten Transport, Versandfehler, Entwurfskonflikte und Lücken in der Suche untersuchen.
 order: 80
 ---
 
-Beginne mit dem sichtbaren Problem. Öffne anschließend **Postfachwerkzeuge > Postfachstatus**, wenn Transport, Ordner oder Suche betroffen sein könnten.
+Beginne mit dem Symptom, das du siehst. Können Transport, Ordner oder Suche beteiligt sein, nutze **Postfachwerkzeuge → Postfachstatus**.
 
 ## Das Postfach fehlt in der Übersicht {icon="lifebuoy"}
 
 :::steps
-1. Leere das Feld **Postfächer suchen**.
-2. Prüfe, ob dir eine Person mit Postfach-Adminrechten Zugriff gegeben hat.
-3. Wurde das Postfach gelöscht, kann es eine Person mit Adminrechten unter **Kürzlich gelöscht** wiederherstellen.
+1. Leere **Postfächer durchsuchen**.
+2. Prüfe, ob dir jemand mit Zugriff **Verwalten** Zugriff auf das Postfach gegeben hat.
+3. Wurde das Postfach gelöscht, kann eine Person mit Zugriff **Verwalten** es unter **Kürzlich gelöscht** wiederherstellen.
 :::
 
-Mail prüft den Zugriff beim Laden der Seite und bei Live-Aktualisierungen. Wurde dein Zugriff entzogen, verweigern neu geladene Seiten und Live-Ansichten den Zugriff, statt veraltete Postfachdaten weiter bereitzustellen.
+Mail prüft den Zugriff beim Laden der Seite und bei Live-Aktualisierungen. Endet dein Zugriff, schlagen Neuladen und Live-Ansichten fehl und zeigen keine alten Daten des Postfachs weiter an.
 
-## Neue E-Mails oder ältere Verläufe fehlen {icon="lifebuoy"}
+## Neue E-Mails oder älterer Verlauf fehlen {icon="lifebuoy"}
 
 :::steps
-1. Prüfe den Statushinweis über der Unterhaltungsliste.
-2. Öffne **Postfachwerkzeuge > Postfachstatus**.
+1. Prüfe die Statuswarnung über der Unterhaltungsliste.
+2. Öffne **Postfachwerkzeuge → Postfachstatus**.
 3. Ist das Postfach pausiert, wähle **Postfach fortsetzen**.
 4. Wähle **Jetzt synchronisieren**.
-5. Fehlen Ordner oder haben sie sich geändert, wähle für die aktive Verbindung **Neu erkennen**.
+5. Fehlen Ordner oder haben sie sich geändert, wähle **Ordner neu ermitteln**.
 :::
 
-Die erste Synchronisierung lädt ältere Nachrichten nach und nach. Eine Nachricht kann erscheinen, bevor ihr vollständiger Inhalt oder die Daten ihrer Anhänge synchronisiert sind. Der Lesebereich zeigt dann **Der Nachrichteninhalt wird noch synchronisiert** und ersetzt den Hinweis durch den Inhalt, sobald die Synchronisierung abgeschlossen ist, ohne dass du die Seite neu laden musst. Startet Mail neu, während es einen Nachrichteninhalt herunterlädt, kann der Lesebereich für diese Nachricht eine Weile **Der Nachrichteninhalt konnte nicht synchronisiert werden** zeigen. Mail lädt den Inhalt nach den übrigen fehlenden Inhalten des Postfachs erneut, was während einer großen ersten Synchronisierung Stunden dauern kann. Zeigt die Konversationsliste **Live-Aktualisierung pausiert**, wähle **Nachricht aktualisieren**, um den aktuellen Stand zu laden.
+Die erste Synchronisierung lädt den Verlauf schrittweise. Eine Nachricht kann erscheinen, bevor ihr vollständiger Inhalt oder ihre Anhänge synchronisiert sind. Der Lesebereich zeigt dann **Der Nachrichteninhalt wird noch synchronisiert**. Sobald die Synchronisierung fertig ist, zeigt er den Inhalt, ohne dass du die Seite neu lädst.
 
-Solange der E-Mail-Anbieter nicht erreichbar ist oder Anmeldungen nur vorübergehend ablehnt, etwa während einer Wartung oder weil zu viele Verbindungen offen sind, versucht Mail es weiter und macht von selbst weiter, sobald der Anbieter wieder antwortet. Nur ein Passwort oder Zugangsdaten, die der Anbieter ablehnt, müssen ersetzt werden.
+Startet Mail neu, während es einen Nachrichteninhalt lädt, kann der Lesebereich für diese Nachricht eine Weile **Der Nachrichteninhalt konnte nicht synchronisiert werden** zeigen. Mail lädt den Inhalt erneut, nachdem die übrigen fehlenden Inhalte des Postfachs geladen sind. Bei einer großen ersten Synchronisierung kann das Stunden dauern. Zeigt die Unterhaltungsliste **Live-Aktualisierung pausiert**, wähle **Nachricht aktualisieren**, um den aktuellen Stand zu laden.
 
-Ein Absender- oder Empfängereintrag mit weniger als 3 oder mehr als 320 Zeichen, etwa ein Textfragment aus einer fehlerhaften Nachricht, lässt sich nicht als Adresse speichern. Mail übernimmt die Nachricht trotzdem und lässt nur diesen Eintrag weg; der ursprüngliche Header bleibt in den Details der Unterhaltung unter **Header** sichtbar.
+Manchmal ist der E-Mail-Anbieter nicht erreichbar oder lehnt Anmeldungen eine Zeit lang ab, etwa während einer Wartung oder weil zu viele Verbindungen offen sind. Mail versucht es weiter und macht von selbst weiter, wenn der Anbieter wieder antwortet. Ein neues Passwort oder neue Zugangsdaten brauchst du nur, wenn der Anbieter die aktuellen ablehnt.
 
-Prüfe bei geteilten Anbieterordnern zuerst, ob das verbundene IMAP-Konto weiterhin das erforderliche Abonnement und die nötigen Berechtigungen besitzt. Mail kann nur Ordner neu erkennen, die der Anbieter für dieses Konto bereitstellt.
+Mail kann einen Absender- oder Empfängereintrag nicht als Adresse speichern, wenn er weniger als 3 oder mehr als 320 Zeichen hat. Ein Beispiel ist ein Textfragment in einer fehlerhaften Nachricht. Mail importiert die Nachricht trotzdem und lässt nur diesen Eintrag weg. Der ursprüngliche Header bleibt unter **Header** in den Unterhaltungsdetails.
+
+Bei Ordnern, die der Anbieter teilt, prüfe zuerst, ob das verbundene IMAP-Konto noch das nötige Abonnement und den nötigen Zugriff beim Anbieter hat. Mail findet nur Ordner, die der Anbieter diesem Konto zeigt.
 
 ## Eine Änderung aus einem anderen E-Mail-Programm erscheint noch nicht {icon="lifebuoy"}
 
-Mail prüft jeden synchronisierten Ordner etwa einmal pro Minute; der Posteingang aktualisiert sich meist sofort. Eine Nachricht, die du in einem anderen E-Mail-Programm oder auf dem Smartphone löschst oder verschiebst, verschwindet bei der nächsten Prüfung aus ihrem bisherigen Ordner, in jedem Ordner. Änderungen am Lesestatus und an Markierungen aus anderen Programmen kommen ebenso an. Bei einem Anbieter, der solche Änderungen nicht meldet, gilt das für die neuesten paar tausend Nachrichten eines Ordners; Änderungen an älteren Nachrichten in einem größeren Ordner kommen nacheinander an und können länger dauern. Synchronisiert eine Installation mehr als 500 Ordner, prüft Mail weiterhin jeden Posteingang jede Minute und die übrigen Ordner abwechselnd; diese können dann einige Minuten brauchen.
+Mail prüft jeden synchronisierten Ordner etwa einmal pro Minute. Der Posteingang aktualisiert sich meist sofort. Eine Nachricht, die du in einem anderen E-Mail-Programm oder auf dem Smartphone löschst oder verschiebst, verlässt ihren alten Ordner bei der nächsten Prüfung, in jedem Ordner. Änderungen an Gelesen-Status und Fahne aus anderen Programmen kommen genauso an.
 
-Um ein Postfach sofort zu prüfen, öffne **Postfachwerkzeuge > Postfachstatus** und wähle **Jetzt synchronisieren**.
+- **Anbieter, die solche Änderungen nicht melden:** Das gilt für die neuesten paar tausend Nachrichten eines Ordners. Änderungen an älteren Nachrichten in einem größeren Ordner kommen nacheinander an und können länger dauern.
+- **Mehr als 500 Ordner:** Synchronisiert eine Installation mehr als 500 Ordner, prüft Mail weiterhin jeden Posteingang jede Minute und die anderen Ordner nacheinander. Diese können einige Minuten brauchen.
+
+Um ein Postfach sofort zu prüfen, öffne **Postfachwerkzeuge → Postfachstatus** und wähle **Jetzt synchronisieren**.
 
 ## Ein Ordner fehlt in der Seitenleiste {icon="folder"}
 
-Personen mit Postfach-Adminrechten sollten **Einstellungen > Ordner** öffnen und zwischen folgenden Fällen unterscheiden:
+Öffne mit Zugriff **Verwalten** **Einstellungen → Ordner** und unterscheide diese Fälle:
 
-- **Seitenleiste ist deaktiviert:** Aktiviere sie, um den Ordner wieder in der Cloud-Navigation anzuzeigen. Beim Anbieter ändert sich dadurch nichts.
-- **Nicht abonniert:** Abonniere den Ordner, wenn dieser Anbieter oder ein anderes E-Mail-Programm die sichtbare Ordnerliste über IMAP-Abonnements steuert.
-- **Nicht verfügbar:** Das verbundene Konto stellt den Ordner nicht mehr bereit. Prüfe Konto, Namespace und Berechtigungen beim Anbieter und führe anschließend **Neu erkennen** aus.
-- **Prüfung erforderlich:** Bei der Ordnererkennung wurden widersprüchliche Anbieterzustände gefunden. Prüfe **Status > Ordnererkennung**, bevor du E-Mails änderst.
+- **Ausgeblendet:** Wähle unter **Wo E-Mails erscheinen** **Überall** oder **Nur im Ordner**, um den Ordner wieder in der Cloud-Navigation zu zeigen. Beim Anbieter ändert sich dadurch nichts.
+- **Nicht abonniert:** Abonniere den Ordner, wenn dieser Anbieter oder ein anderes E-Mail-Programm über IMAP-Abonnements entscheidet, welche Ordner es zeigt.
+- **Nicht verfügbar:** Das verbundene Konto zeigt den Ordner nicht mehr. Prüfe das Konto beim Anbieter, den Namensraum und den Zugriff beim Anbieter und führe dann **Ordner neu ermitteln** aus.
+- **Prüfung erforderlich:** Die Ermittlung hat widersprüchliche Zustände beim Anbieter gefunden. Prüfe **Ordnerermittlung** in **Postfachwerkzeuge → Postfachstatus**, bevor du E-Mails änderst.
 
-Ein ausgeblendeter übergeordneter Ordner blendet auch seine Unterordner aus, damit die Hierarchie verständlich bleibt. Ihre E-Mails und individuellen Sichtbarkeitseinstellungen bleiben erhalten.
+Ein ausgeblendeter übergeordneter Ordner blendet auch seine Unterordner in der Seitenleiste aus, damit die Hierarchie verständlich bleibt. Ihre E-Mails und ihre eigenen Einstellungen zur Sichtbarkeit bleiben erhalten.
 
-## Beim Senden erscheint „Postfachtransport ist pausiert“ {icon="send"}
+## Beim Senden erscheint „Mailbox transport is paused“ {icon="send"}
 
-Eine Person mit Adminrechten hat das Postfach pausiert oder es wurde im vorgeschriebenen pausierten Zustand wiederhergestellt. Öffne **Postfachwerkzeuge > Postfachstatus**, prüfe Verbindung und Status beim Anbieter und wähle anschließend **Postfach fortsetzen**.
-
-Während der Pause laufen weder die Synchronisierung eingehender E-Mails noch vorgemerkte Anbieteränderungen, geplante Zustellungen oder automatische Antworten.
-
-## Eine E-Mail kann nicht gesendet werden {icon="point"}
-
-Prüfe folgende Bedingungen:
-
-- Du hast Schreib- oder Adminrechte.
-- Unter **Von** ist ein bestätigter Absender ausgewählt.
-- **Postfachwerkzeuge > Postfachstatus** zeigt eine nutzbare Verbindung.
-- Der Entwurf enthält Empfänger und entweder einen Nachrichtentext oder einen Anhang.
-- Alle Anhänge wurden vollständig hochgeladen und keine Datei ist größer als 100 MiB.
-- Du hast alle Versandwarnungen für die aktuelle gespeicherte Fassung geprüft. Wenn du Empfänger, Links, Text oder Anhänge nach der Freigabe änderst, ist eine neue Prüfung erforderlich.
-- Die vollständig kodierte Nachricht bleibt innerhalb der aktuellen vom Anbieter veröffentlichten Versandgrenze.
-- Die Zugangsdaten des Anbieters sind weder abgelaufen noch widerrufen.
-
-Ein Anhang kann innerhalb der Mail-Grenze von 100 MiB pro Datei liegen, während die vollständig kodierte Nachricht eine niedrigere Anbietergrenze überschreitet. Entferne einen oder mehrere Anhänge oder erstelle einen öffentlichen Download-Link und sende stattdessen diesen Link. Personen mit Postfach-Adminrechten können die ermittelten Werte unter **Postfachwerkzeuge > Postfachstatus > Anbietergrenzen** prüfen und aktualisieren.
-
-Haben sich die Zugangsdaten des Anbieters geändert, verwende **Einstellungen > Konten und Identitäten > Verbundenes Konto > Ersetzen**. Das vorhandene Geheimnis kann weder angezeigt noch teilweise bearbeitet werden.
-
-## Automatische Antworten melden, dass keine Identität verfügbar ist {icon="send"}
-
-Öffne **Einstellungen > Konten und Identitäten > Absenderidentitäten** und prüfe für eine Identität beide Bedingungen:
+Jemand mit Zugriff **Verwalten** hat das Postfach pausiert oder wiederhergestellt, und ein wiederhergestelltes Postfach startet immer pausiert.
 
 :::steps
-1. Der Status der Identität ist **bestätigt**.
-2. **Automatische Antworten** ist aktiviert.
+1. Öffne **Postfachwerkzeuge → Postfachstatus**.
+2. Prüfe die Verbindung zum Anbieter und den Status.
+3. Wähle **Postfach fortsetzen**.
 :::
 
-Kehre anschließend zu **Automatisierungen > Automatische Antworten** zurück. Bestehende automatische Antworten bleiben sichtbar, wenn keine passende Identität verfügbar ist. Zum Erstellen oder erneuten Aktivieren ist jedoch eine passende Identität erforderlich.
+Solange das Postfach pausiert ist, laufen weder eingehende Synchronisierung noch eingereihte Änderungen beim Anbieter, geplante Zustellungen oder automatische Antworten.
 
-## Eine geplante E-Mail wurde nicht gesendet {icon="send"}
+## Eine Nachricht lässt sich nicht senden {icon="point"}
+
+Prüfe diese Bedingungen:
+
+- Du hast Zugriff **Bearbeiten** oder **Verwalten**.
+- **Von** nutzt eine bestätigte Absenderidentität.
+- **Postfachwerkzeuge → Postfachstatus** zeigt eine funktionierende Verbindung.
+- Der Entwurf hat Empfänger und entweder Text oder einen Anhang.
+- Jeder Upload eines Anhangs ist erfolgreich abgeschlossen, und keine Datei ist größer als 100 MiB.
+- Du hast alle Versandwarnungen für die aktuelle gespeicherte Fassung geprüft. Änderst du nach der Zustimmung Empfänger, Links, Text oder Anhänge, musst du erneut prüfen.
+- Die vollständige kodierte Nachricht passt in das aktuelle Limit für ausgehende Nachrichten, das der Anbieter veröffentlicht.
+- Die Zugangsdaten beim Anbieter sind nicht abgelaufen und wurden nicht widerrufen.
+
+Ein Anhang kann das Limit von Mail mit 100 MiB pro Datei einhalten, während die vollständige kodierte Nachricht ein kleineres Limit des Anbieters überschreitet. Entferne einen oder mehrere Anhänge, oder erstelle einen öffentlichen Download-Link und sende stattdessen diesen Link. Mit Zugriff **Verwalten** prüfst und aktualisierst du die beobachteten Werte unter **Postfachwerkzeuge → Postfachstatus → Anbieterlimits**.
+
+Haben sich die Zugangsdaten beim Anbieter geändert, nutze **Einstellungen → Konten und Identitäten → Verbundenes Konto → Konto bearbeiten**. Mail kann das vorhandene Geheimnis nicht anzeigen, und du kannst es nicht teilweise bearbeiten.
+
+## Automatische Antworten melden, dass keine Absenderidentität verfügbar ist {icon="send"}
+
+Öffne **Einstellungen → Konten und Identitäten → Absenderidentitäten**. Prüfe, dass eine Absenderidentität beide Bedingungen erfüllt:
+
+:::steps
+1. Der Status der Absenderidentität ist **Bereit**.
+2. **Automatische Antworten** ist eingeschaltet.
+:::
+
+Kehre dann zu **Automatisierungen → Automatische Antworten** zurück. Vorhandene automatische Antworten können sichtbar bleiben, solange keine passende Absenderidentität existiert. Um eine automatische Antwort zu erstellen oder wieder einzuschalten, brauchst du eine passende Absenderidentität.
+
+## Eine geplante Nachricht wurde nicht gesendet {icon="send"}
 
 Öffne **Geplant** und prüfe den Eintrag:
 
-- Eine Wiederholungskennzeichnung bedeutet, dass die Zustellung fehlgeschlagen ist und Mail den Eintrag für einen weiteren Versuch aufbewahrt.
-- **Wartet auf Anmeldung** bedeutet, dass das Konto des Postfachs wieder verbunden werden muss. Danach geht die Nachricht hinaus; geschieht das nicht innerhalb von sechs Tagen, liegt sie wieder in den Entwürfen.
-- Bei einem pausierten Postfach wird der Versandversuch nicht ausgeführt.
-- Mit **Abbrechen** kannst du den Eintrag vor Beginn der Zustellung in einen gemeinsamen Entwurf zurückführen oder verwerfen.
+- **Hinweis auf Wiederholung:** Die Zustellung ist fehlgeschlagen, und Mail hat den Eintrag für einen weiteren Versuch behalten.
+- **Wartet auf Anmeldung:** Das Konto des Postfachs muss neu verbunden werden. Danach geht die Nachricht hinaus. Nach sechs Tagen ohne neue Verbindung kehrt sie zu den Entwürfen zurück.
+- **Pausiertes Postfach:** Der Versuch läuft nicht.
+- **Abbrechen:** Bevor die Zustellung beginnt, kannst du den Eintrag in einen gemeinsamen Entwurf zurückverwandeln oder verwerfen.
 
-Der geplante Zeitpunkt muss mindestens eine Minute in der Zukunft liegen. Zeiten werden in der konfigurierten Cloud-Zeitzone angezeigt, die im Planungsdialog genannt ist.
+Der geplante Zeitpunkt muss mindestens eine Minute in der Zukunft liegen. Der Dialog zum Planen zeigt die Zeiten in der eingerichteten Cloud-Zeitzone.
 
-## Ein Entwurf ist schreibgeschützt oder wurde an anderer Stelle geändert {icon="pencil"}
+## Ein Entwurf ist schreibgeschützt oder wurde anderswo geändert {icon="pencil"}
 
-Ein gemeinsamer Entwurf erlaubt eine aktive Bearbeitungssitzung. Der Zusammenarbeitsdialog unterscheidet, sofern die nötigen Angaben verfügbar sind, zwischen einem anderen eigenen Tab und einer identifizierbaren anderen Person.
+Ein gemeinsamer Entwurf erlaubt eine aktive bearbeitende Person. Sind die Angaben verfügbar, unterscheidet der Dialog zur Zusammenarbeit deinen eigenen anderen Tab von einer anderen Person.
 
-- Wähle **Schreibgeschützt ansehen**, um fortzufahren, ohne die andere Bearbeitung zu unterbrechen.
-- Wähle **In diesem Tab bearbeiten** oder **Übernehmen** nur, wenn die andere Bearbeitungssitzung schreibgeschützt werden soll.
-- Versuche es bei einer Verbindungswarnung erneut, nachdem die Verbindung wiederhergestellt ist. Mail behandelt die Warnung weder als andere bearbeitende Person noch öffnet es den Übernahmedialog.
+- Wähle **Schreibgeschützt öffnen**, um weiterzuarbeiten, ohne die andere Person zu unterbrechen.
+- Wähle **In diesem Tab bearbeiten** oder **Bearbeitung übernehmen** nur, wenn die andere Sitzung schreibgeschützt werden soll.
+- Bei einer Verbindungswarnung versuche es erneut, sobald die Verbindung wieder funktioniert. Mail behandelt sie nicht als andere bearbeitende Person und öffnet keinen Dialog zur Übernahme.
 - Meldet Mail Wiederherstellungskopien, prüfe sie, bevor du Inhalte verwirfst oder überschreibst.
-- Wird der Browser nach ungespeicherten Eingaben neu geladen, übernimm die wiederhergestellte Browserfassung, wenn sie deiner Arbeit entspricht.
+- Lädt der Browser nach ungespeicherter Eingabe neu, nimm die wiederhergestellte Browserfassung an, wenn sie deiner Arbeit entspricht.
 
-Eine weitere Antwort blendet vorhandene Arbeit nicht aus. Der Dialog **Entwurf fortsetzen?** zeigt Verfasser, Änderungszeit und Inhaltsvorschau. So kannst du den richtigen Entwurf fortsetzen oder bewusst einen weiteren erstellen.
+Eine weitere Antwort zu beginnen, blendet vorhandene Arbeit nicht aus. Der Dialog **Entwurf fortsetzen?** zeigt Person, Änderungszeit und eine Inhaltsvorschau. Du setzt den richtigen Entwurf fort oder erstellst bewusst einen weiteren.
 
-## Eine gesendete Nachricht fehlt unter Gesendet {icon="send"}
+## Eine gesendete Nachricht fehlt in Gesendet {icon="send"}
 
-Mail legt eine gesendete Nachricht in den Gesendet-Ordner der Identität, sobald es die Kopie dort findet. Bei Gmail folgt die Zuordnung zu „Alle Nachrichten“ mit der nächsten Synchronisierung dieses Ordners.
+Mail legt eine gesendete Nachricht im Ordner Gesendet der Absenderidentität ab, sobald es die Kopie dort findet. Die Ablage in All Mail bei Gmail folgt mit der nächsten Synchronisierung dieses Ordners.
 
-- Zeigt die Nachricht **Gesendet, aber nicht gespeichert**, konnte Mail die Kopie weder ablegen noch finden. Prüfe die Zuordnung des Gesendet-Ordners der Identität und die Rechte des Anbieters für diesen Ordner. Sende die Nachricht nicht erneut.
-- Zeigt eine Unterhaltung neben der gesendeten Nachricht eine zusätzliche Kopie eines Entwurfs, hat eine frühere Version Gmails Entwurfskopie aus „Alle Nachrichten“ übernommen. Eine Person mit Adminrechten entfernt solche Kopien mit **Unterhaltungsansicht reparieren**.
+- Zeigt die Nachricht **Gesendet, aber nicht gespeichert**, konnte Mail die Kopie nicht ablegen oder nicht finden. Prüfe die Zuordnung des Ordners Gesendet der Absenderidentität und den Zugriff auf diesen Ordner beim Anbieter. Sende die Nachricht nicht erneut.
+- Eine Unterhaltung kann neben der gesendeten Nachricht eine zusätzliche Kopie eines Entwurfs zeigen. Eine frühere Version hat die Entwurfskopie von Gmail aus All Mail importiert. Mit Zugriff **Verwalten** entfernst du solche Kopien mit **Unterhaltungsansicht reparieren**.
 
-Für einen einzelnen Ordner im Terminal akzeptiert `cld mail ls "Postfach:Sent Mail"` auch den letzten Namensteil oder die Rolle eines Ordners, etwa `sent`, wenn der Anbieter ihn verschachtelt, zum Beispiel unter `[Gmail]`.
+Um einen Ordner im Terminal zu prüfen, akzeptiert `cld mail ls "Mailbox:Sent Mail"` auch den letzten Namen eines Ordners oder seine Rolle, etwa `sent`. Das hilft, wenn der Anbieter den Ordner verschachtelt, zum Beispiel unter `[Gmail]`.
 
-## Die Suche findet ein erwartetes Ergebnis nicht {icon="search"}
+## Die Suche liefert kein erwartetes Ergebnis {icon="search"}
 
 :::steps
-1. Leere die aktuelle Suche und prüfe, ob die Unterhaltung in einem ungefilterten Ordner oder einer ungefilterten Arbeitsansicht erscheint.
-2. Öffne **Suchfilter** und prüfe, ob **Eine Bedingung** oder **Alle Bedingungen** zu deinem Ziel passt.
-3. Entferne veraltete Felder wie Ordner, lokaler Tag oder Anbieter-Schlüsselwort.
-4. Wird der Nachrichtentext noch synchronisiert, versuche es nach Abschluss erneut.
-5. Befinden sich die fehlenden Wörter in einem neuen Anhang, warte auf die Verarbeitung im Hintergrund und versuche es erneut.
-6. **Bester Treffer** ordnet die neuesten 1.000 passenden Nachrichten eines Postfachs. Steht ein Wort in sehr vielen Nachrichten, ergänze ein genaueres Wort oder wähle **Neueste zuerst**, um ältere zu erreichen.
-7. Bitte eine Person mit Adminrechten, **Status > Suchindex** zu prüfen, wenn die allgemeine Suche im gesamten Postfach fehlschlägt.
+1. Leere die aktuelle Suche. Prüfe, ob die Unterhaltung in einem ungefilterten Ordner oder einer Arbeitsansicht erscheint.
+2. Öffne **Suchfilter**. Prüfe, ob **Mindestens eine Bedingung** oder **Alle Bedingungen** zu deinem Ziel passt.
+3. Entferne veraltete Felder wie Ordner, Lokaler Tag oder Anbieter-Schlüsselwort.
+4. Wird der Nachrichteninhalt noch synchronisiert, versuche es nach dem Laden erneut.
+5. Stehen die gesuchten Wörter in einem neu empfangenen Anhang, warte, bis die Texterkennung im Hintergrund fertig ist. Versuche es dann erneut.
+6. **Bester Treffer** ordnet die neuesten 1.000 passenden Nachrichten eines Postfachs. Ergänze bei einem sehr häufigen Wort ein genaueres Wort.
+7. Um ältere Nachrichten zu erreichen, kannst du auch **Neueste zuerst** wählen.
+8. Schlägt die allgemeine Suche im ganzen Postfach fehl, bitte jemanden mit Zugriff **Verwalten**, den Suchstatus zu prüfen. Er steht unter **Postfachwerkzeuge → Postfachstatus**.
 :::
 
-Lokale Tags und interne Kommentare gibt es nur in Cloud. Anbieterordner und Schlüsselwörter hängen vom synchronisierten entfernten Zustand ab.
+Lokale Tags und interne Kommentare gibt es nur in Cloud. Anbieterordner und Schlüsselwörter hängen vom synchronisierten Zustand beim Anbieter ab.
 
-Die Texterkennung für Anhänge blockiert niemals Empfang, Lesen oder Versand einer Nachricht. Mail wiederholt unterbrochene Verarbeitungen automatisch und nimmt regelmäßig Anhänge wieder auf, die gespeichert wurden, bevor sie einer Verarbeitung zugeordnet werden konnten. Verschlüsselte, gescannte, nicht unterstützte, fehlerhafte oder zu große Anhänge sind endgültige Ergebnisse: Die ursprüngliche Datei bleibt verfügbar, ihr Inhalt ist aber nicht durchsuchbar.
+Die Texterkennung in Anhängen blockiert nie das Empfangen, Lesen oder Senden einer Nachricht. Mail wiederholt unterbrochene Erkennungsarbeit automatisch. Es holt auch regelmäßig Anhänge nach, die gespeichert wurden, bevor ein Worker sie übernehmen konnte. Verschlüsselte, gescannte, nicht unterstützte, fehlerhafte oder zu große Anhänge sind endgültige Ergebnisse: Die ursprüngliche Datei bleibt verfügbar, aber ihr Inhalt ist nicht durchsuchbar.
 
-Zeigt **Status > Reparatur- und Projektionsabdeckung** eine Lücke, kann eine Person mit Adminrechten **Fehlende Inhalte laden**, **Suche neu aufbauen** oder **Unterhaltungsansicht reparieren** einplanen. Warte, bis der dauerhafte Befehl abgeschlossen ist, bevor du ihn wiederholst. Reparaturen von Suche und Unterhaltungen bauen abgeleitete Daten neu auf und erhalten Postfachinhalte sowie Zusammenarbeitsdaten.
+**Postfachwerkzeuge → Postfachstatus** zeigt **Abdeckung von Reparatur und Projektion**. Zeigt sie eine Lücke, kann jemand mit Zugriff **Verwalten** **Fehlende Nachrichteninhalte laden**, **Suche neu aufbauen** oder **Unterhaltungsansicht reparieren** einreihen. Warte, bis der dauerhafte Befehl fertig ist, bevor du ihn wiederholst. Reparaturen von Suche und Unterhaltungen bauen abgeleitete Daten neu auf und behalten Inhalte des Postfachs und den Zustand der Zusammenarbeit.
 
-## Ein Befehl benötigt Aufmerksamkeit {icon="lifebuoy"}
+## Ein Befehl braucht Aufmerksamkeit {icon="lifebuoy"}
 
-Öffne **Postfachwerkzeuge > Postfachstatus > Erweiterte Diagnose und Reparaturen** und suche den bereinigten Befehlseintrag anhand von ID und Fehlercode.
+Öffne **Postfachwerkzeuge → Postfachstatus → Erweiterte Diagnose und Reparatur**. Suche den geschwärzten Befehlseintrag über seine ID und seinen Fehlercode.
 
-- **Wirkung abgleichen** ist bei einem unklaren Anbieterergebnis sicher, weil die Aktion den Anbieterzustand liest, bevor das Befehlsergebnis geändert wird.
-- **Arbeit wiederholen** erscheint nur bei fehlgeschlagenen Wartungslesevorgängen beim Anbieter, wenn noch keine Anbieterwirkung begonnen hat.
-- **Arbeit abbrechen** erscheint nur, solange geeignete Wartungsarbeit vorgemerkt ist oder fehlgeschlagen ist.
+- **Anbietervorgang abgleichen** ist bei einem unklaren Ergebnis beim Anbieter sicher, weil es den Zustand beim Anbieter liest, bevor es das Ergebnis des Befehls ändert.
+- **Vorgang erneut versuchen** erscheint nur bei fehlgeschlagener Wartung, die beim Anbieter liest und bei der beim Anbieter keine Wirkung begonnen hat.
+- **Vorgang abbrechen** erscheint nur, solange passende Wartung eingereiht oder fehlgeschlagen ist.
 
-Ein Verschieben, Löschen, eine Markierungsänderung oder ein Ordnervorgang, der den Mailserver vor dem Start nicht erreichen konnte, benötigt keine Aufmerksamkeit: Mail versucht es über einige Minuten mehrmals erneut. Bleibt der Server unerreichbar, schlägt die Aktion fehl, ohne auf dem Server etwas zu ändern, und du kannst sie später wiederholen.
+Ein Verschieben, Löschen, Ändern einer Fahne oder ein Ordnervorgang, der den Mailserver vor dem Start nicht erreicht hat, braucht keine Aufmerksamkeit. Mail versucht ihn über einige Minuten mehrmals erneut. Bleibt der Server unerreichbar, schlägt die Aktion fehl, ohne auf dem Server etwas zu ändern, und du kannst sie später wiederholen.
 
-Wiederhole weder Verschieben, Löschen, eine Markierungsänderung, einen Ordnervorgang noch den Versand, wenn Mail ein unklares Ergebnis meldet. Kann der Abgleich das entfernte Ergebnis nicht nachweisen, bleibt der Befehl im Zustand **Aufmerksamkeit erforderlich**, bis der Anbieter manuell geprüft wurde.
+:::warning Wiederhole keine Aktion mit unklarem Ergebnis
+Meldet Mail ein unklares Ergebnis, wiederhole kein Verschieben, Löschen, Ändern einer Fahne, keinen Ordnervorgang und keinen Versand. Kann der Abgleich das Ergebnis beim Anbieter nicht nachweisen, bleibt der Befehl bei „braucht Aufmerksamkeit“, bis jemand den Anbieter von Hand prüft.
+:::
 
 ## Eine Ordneraktion beim Anbieter schlägt fehl {icon="lifebuoy"}
 
-Erstellung, Umbenennung, Löschung und Abonnement von Ordnern sowie die Zuordnungen für Archiv, Papierkorb, Junk, Gesendet und Entwürfe hängen vom aktuellen Anbieterzustand ab. Eine Person mit Adminrechten sollte:
+Erstellen, Umbenennen, Löschen und Abonnieren von Ordnern hängen vom aktuellen Zustand beim Anbieter ab. Das gilt auch für die Zuordnungen für Archiv, Papierkorb, Spam, Gesendet und Entwürfe. Mit Zugriff **Verwalten**:
 
 :::steps
-1. unter **Postfachwerkzeuge > Postfachstatus** die Aktion **Neu erkennen** ausführen,
-2. prüfen, ob der Ordner aktiv ist und der Anbieter den erforderlichen Vorgang erlaubt,
-3. bei Bedarf die zugehörige Zuordnung oder das Abonnement aktualisieren und
-4. den Vorgang einmal wiederholen.
+1. Führe **Ordner neu ermitteln** in **Postfachwerkzeuge → Postfachstatus** aus.
+2. Prüfe, ob der Ordner aktiv ist und der Anbieter den nötigen Vorgang erlaubt.
+3. Aktualisiere bei Bedarf die passende Zuordnung oder das Abonnement.
+4. Versuche die Aktion noch einmal.
 :::
 
-Mail lehnt das Verschieben oder Löschen von Nachrichten bei Anbietern ab, die weder die MOVE-Erweiterung noch UIDPLUS unterstützen, weil das Ergebnis beim Anbieter nicht nachweisbar wäre; der Befehl schlägt sofort fehl, statt eine Kopie zurückzulassen. Die Synchronisierung von Entwürfen zum Anbieter benötigt UIDPLUS und Löschrechte im Entwürfe-Ordner; andernfalls bleiben Entwürfe in Cloud und der Postfachstatus meldet das einmalig.
+Mail lehnt das Verschieben oder Löschen von Nachrichten bei einem Anbieter ab, der weder die Erweiterung MOVE noch UIDPLUS anbietet, weil Mail das Ergebnis beim Anbieter nicht nachweisen könnte. Der Befehl schlägt sofort fehl und hinterlässt keine Kopie. Die Synchronisierung von Entwürfen zum Anbieter braucht UIDPLUS und das Recht zum Löschen im Ordner Entwürfe. Sonst bleiben Entwürfe in Cloud, und **Postfachstatus** meldet das einmal.
 
-Geteilte Ordner und Ordner anderer Personen können lesbar sein, obwohl Erstellung, Umbenennung oder Löschung von Ordnern nicht verfügbar sind. Cloud vergibt oder ändert diese vorgelagerten Rechte nicht. Wiederholte Klicks auf eine vorgemerkte Aktion können die Auswertung erschweren. Warte auf die Live-Aktualisierung oder prüfe den Anbieter, bevor du es erneut versuchst.
+Geteilte Ordner und Ordner anderer Nutzer können lesbar sein, während Erstellen, Umbenennen oder Löschen von Ordnern nicht verfügbar ist. Cloud gibt diesen Zugriff beim Anbieter nicht und bearbeitet ihn nicht. Wählst du eine eingereihte Aktion immer wieder, kann das Ergebnis schwerer verständlich werden. Warte auf die Live-Aktualisierung oder prüfe den Anbieter, bevor du es erneut versuchst.
 
-## Das Postfach wurde wiederhergestellt, synchronisiert aber weiterhin nicht {icon="point"}
+## Das Postfach wurde wiederhergestellt, synchronisiert aber nicht {icon="point"}
 
-Das ist beabsichtigt. Nach einer Wiederherstellung bleibt das Postfach pausiert, damit eine Person mit Adminrechten Zugangsdaten, Verbindungsstatus und Ordnererkennung prüfen kann, bevor die Hintergrundarbeit fortgesetzt wird. Schließe diese Prüfungen unter **Postfachwerkzeuge > Postfachstatus** ab und wähle anschließend **Postfach fortsetzen**.
+Das ist so vorgesehen. Eine Wiederherstellung lässt das Postfach bewusst pausiert. Jemand mit Zugriff **Verwalten** kann dann Zugangsdaten, Verbindungsstatus und Ordnerermittlung prüfen, bevor die Hintergrundarbeit weiterläuft. Schließe diese Prüfungen unter **Postfachwerkzeuge → Postfachstatus** ab und wähle dann **Postfach fortsetzen**.

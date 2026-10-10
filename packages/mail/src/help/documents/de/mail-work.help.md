@@ -1,20 +1,22 @@
 ---
 id: mail-work
-title: E-Mails lesen, suchen und organisieren
+title: Lesen, suchen und organisieren
 icon: ti ti-inbox
-description: Unterhaltungen finden, vollständige Verläufe lesen und übertragbare E-Mail-Zustände sicher ändern.
+description: Unterhaltungen finden, vollständige Verläufe lesen und den übertragbaren E-Mail-Zustand sicher ändern.
 order: 20
 ---
 
 ## Die passende Unterhaltung finden {icon="search"}
 
-Mit **Postfach durchsuchen** suchst du schnell im aktuellen Postfach. Standardmäßig ist **Alles** ausgewählt. Die Suche umfasst synchronisierte Nachrichtenfelder und aus Anhängen erkannten Text. Über die Schaltfläche für den Suchbereich kannst du die Suche auf eine beliebige Kombination aus **Absender**, **Empfänger**, **Betreff**, **Nachrichtentext** und **Anhangsnamen** eingrenzen. Gibst du mehrere Wörter ein, passt eine Nachricht, wenn jedes Wort irgendwo in ihr vorkommt, etwa der Name des Absenders und ein Wort aus dem Betreff.
+Mit **Postfach durchsuchen** suchst du schnell im aktuellen Postfach. Standardmäßig ist **Alles** ausgewählt. Das umfasst die synchronisierten Nachrichtenfelder und den aus Anhängen erkannten Text.
 
-Wähle **Suchfilter**, wenn du weitere Bedingungen wie Datum, Empfänger, Anhänge, Ordner, Tags oder Zusammenarbeitsstatus benötigst.
+Um die Suche einzugrenzen, nutze die Schaltfläche für den Suchbereich. Wähle eine beliebige Kombination aus **Absender**, **Empfänger**, **Betreff**, **Nachrichteninhalt** und **Anhangsnamen**. Bei mehreren Wörtern passt eine Nachricht, wenn jedes Wort irgendwo in ihr vorkommt, etwa der Name des Absenders und ein Wort aus dem Betreff.
 
-Der Filterdialog zeigt die aktuelle Suche als bearbeitbare Bedingungen. Wähle **Filter hinzufügen**, um ein weiteres Feld zu ergänzen. Sind mehrere Filter aktiv, legst du fest, ob alle oder mindestens einer zutreffen müssen. **Erweiterte Bedingungen** bleibt geschlossen, bis du alternative oder verschachtelte Gruppen benötigst.
+Für weitere Bedingungen wie Datum, Empfänger, Anhänge, Ordner, Tags oder Status der Zusammenarbeit wählst du **Suchfilter**.
 
-Der Filterdialog kann folgende Felder durchsuchen:
+Der Filterdialog zeigt die aktuelle Suche als Bedingungen, die du bearbeiten kannst. Wähle **Filter hinzufügen** für ein weiteres Feld. Sind mehrere Filter aktiv, legst du fest, ob alle oder mindestens einer zutreffen müssen. **Erweiterte Bedingungen** bleibt eingeklappt, bis du alternative oder verschachtelte Gruppen brauchst.
+
+Der Filterdialog kann diese Felder durchsuchen:
 
 - Von
 - An oder Cc
@@ -26,176 +28,254 @@ Der Filterdialog kann folgende Felder durchsuchen:
 - Ordner
 - Lokaler Tag
 
-Wähle **Eine Bedingung**, damit mindestens ein ausgefülltes Feld übereinstimmen muss, oder **Alle Bedingungen**, damit jedes ausgefüllte Feld übereinstimmen muss. Suchfilter bleiben in der Seiten-URL erhalten. Ein Neuladen oder Teilen der URL bewahrt deshalb das aktuelle Ergebnis. Mit **Suche leeren** kehrst du zur ungefilterten Ansicht zurück.
+Wähle **Mindestens eine Bedingung**, damit mindestens ein ausgefülltes Feld passen muss. Wähle **Alle Bedingungen**, damit jedes ausgefüllte Feld passen muss. Suchfilter bleiben in der Seiten-URL. Ein Neuladen oder eine geteilte URL behält deshalb das aktuelle Ergebnis. Mit **Suche zurücksetzen** kehrst du zur ungefilterten Ansicht zurück.
 
-Anbieter-Schlüsselwörter sind erweiterte synchronisierte Metadaten und kein normales Kennzeichnungssystem. Vorhandene Such-URLs mit Schlüsselwörtern funktionieren weiterhin und bleiben bearbeitbar. Neue Filter verwenden für sichtbare Kennzeichnungen lokale Tags.
+Anbieter-Schlüsselwörter sind erweiterte synchronisierte Metadaten, kein normales System zum Kennzeichnen. Vorhandene Such-URLs mit Schlüsselwörtern funktionieren weiter, und du kannst sie weiter bearbeiten. Neue Filter nutzen für Kennzeichnungen, die Menschen lesen, lokale Tags.
 
-Suchergebnisse werden anhand deiner Berechtigungen geprüft und verwenden die synchronisierte Cloud-Kopie. Während der ersten Synchronisierung können ältere Nachrichten oder Inhalte erst später durchsuchbar werden, wenn Synchronisierung und Laden der Nachrichtentexte fortschreiten.
+Mail prüft für jedes Suchergebnis den Zugriff und durchsucht die synchronisierte Cloud-Kopie. Während der ersten Synchronisierung können ältere Nachrichten oder Inhalte erst später durchsuchbar werden, während Synchronisierung und Laden der Nachrichtentexte weiterlaufen.
 
-Nachdem ein Anhang synchronisiert wurde, erkennt Mail im Hintergrund lesbaren Text aus unterstützten PDF-, Office-Dokument-, Tabellen-, Präsentations-, RTF-, EPUB- und CSV-Dateien. Die allgemeine Standardsuche umfasst diesen erkannten Anhangstext. Ein ausdrücklicher Filter für **Nachrichtentext** durchsucht nur den E-Mail-Inhalt, **Anhangsname** nur Dateinamen. Passwortgeschützte, gescannte, nicht unterstützte, fehlerhafte oder zu große Dateien bleiben herunterladbar, tragen aber keinen durchsuchbaren Text bei.
+Nachdem ein Anhang synchronisiert wurde, erkennt Mail im Hintergrund lesbaren Text. Das gilt für unterstützte PDF-, Office-, Tabellen-, Präsentations-, RTF-, EPUB- und CSV-Dateien. Die allgemeine Standardsuche umfasst diesen erkannten Anhangstext. Ein Filter für **Nachrichteninhalt** durchsucht nur den E-Mail-Text. **Anhangsname** durchsucht Dateinamen. Passwortgeschützte, gescannte, nicht unterstützte, fehlerhafte oder zu große Dateien bleiben herunterladbar, liefern aber keinen durchsuchbaren Text.
 
-Wenn erkannter Anhangstext übereinstimmt, nennt das Ergebnis den Anhang, zeigt einen kurzen passenden Ausschnitt und öffnet genau die Nachricht, zu der er gehört. Verwende die Download-Aktion des Ergebnisses, wenn du die ursprüngliche Datei benötigst.
+Passt erkannter Anhangstext, nennt das Ergebnis den Anhang und zeigt einen kurzen passenden Ausschnitt. Das Ergebnis öffnet genau die Nachricht, zu der der Anhang gehört. Für die ursprüngliche Datei nutzt du die Download-Aktion des Ergebnisses.
 
-## Nachverfolgung, Zuordnung und Ordner gezielt verwenden {icon="layout-list"}
+## Nachverfolgung, Zuweisung und Ordner gezielt nutzen {icon="layout-list"}
 
-Die integrierten Ansichten unter **Nachverfolgung** zeigen, was als Nächstes geschehen soll. **Zuordnung** zeigt, wer zuständig ist. Außer **Erledigt** lassen diese Ansichten Unterhaltungen aus, die nur im Papierkorb oder in Junk liegen, etwa Spam, den dein Anbieter dort abgelegt hat, oder gelöschte E-Mails. Verschiebst du eine Unterhaltung zurück, erscheint sie wieder mit ihrem nächsten Schritt:
+Die eingebauten Ansichten unter **Nachverfolgung** zeigen, was als Nächstes geschieht. **Zuweisung** zeigt, wer zuständig ist. Außer **Erledigt** lassen diese Ansichten Unterhaltungen aus, die nur im Papierkorb oder in Spam liegen. Beispiele sind Spam, den dein Anbieter dort abgelegt hat, oder E-Mails, die jemand gelöscht hat. Verschiebst du eine solche Unterhaltung zurück, erscheint sie wieder mit ihrem nächsten Schritt.
 
 | Abschnitt | Ansicht | Inhalt |
 | --- | --- | --- |
 | Nachverfolgung | Handlungsbedarf | Unterhaltungen, die das Team prüfen oder bearbeiten muss |
-| Nachverfolgung | Wartet auf Antwort | Unterhaltungen, bei denen eine bestätigte Antwort des Teams auf eine Reaktion einer anderen Person wartet. Neue eingehende E-Mails verschieben sie zu Handlungsbedarf. |
-| Nachverfolgung | Später | Unterhaltungen, die bis zum gewählten Zeitpunkt ausgeblendet sind. Der Zeitpunkt blendet sie wieder ein, ohne ihren nächsten Schritt zu ändern. Neue eingehende E-Mails blenden sie sofort wieder ein. |
+| Nachverfolgung | Wartet auf Antwort | Unterhaltungen, bei denen eine bestätigte Antwort des Teams auf eine andere Person wartet. Neue eingehende E-Mails verschieben sie zu Handlungsbedarf. |
+| Nachverfolgung | Später | Unterhaltungen, die bis zum gewählten Zeitpunkt ausgeblendet sind. Zu diesem Zeitpunkt erscheinen sie mit demselben nächsten Schritt wieder. Neue eingehende E-Mails zeigen sie sofort. |
 | Nachverfolgung | Erledigt | Als erledigt markierte Unterhaltungen |
-| Zuordnung | Mir zugewiesen | Dir zugewiesene Unterhaltungen |
-| Zuordnung | Nicht zugewiesen | Unterhaltungen ohne zuständige Person oder deren zuständige Person in diesem Postfach nicht mehr schreiben darf |
-| Mail / Mehr | Alle E-Mails | E-Mails aus allen Anbieterordnern außer Papierkorb, Junk und Ordnern, deren E-Mails im Ordner bleiben |
+| Zuweisung | Mir zugewiesen | Dir zugewiesene Unterhaltungen |
+| Zuweisung | Nicht zugewiesen | Unterhaltungen ohne zugewiesene Person oder deren zugewiesene Person keinen Zugriff **Bearbeiten** auf dieses Postfach mehr hat |
+| E-Mail / Mehr | Alle E-Mails | E-Mails aus allen Anbieterordnern außer Papierkorb, Spam und Ordnern, deren E-Mails im Ordner bleiben |
 | Mehr | Letzte Aktivität | Kürzlich geänderte Unterhaltungen |
-| Mail | Geplant | Nachrichten, die auf eine spätere Zustellung warten |
+| E-Mail | Geplant | Nachrichten, die auf eine spätere Zustellung warten |
 
-Anbieterordner bilden eine andere Ebene. Wenn du eine Unterhaltung in Archiv, Papierkorb, Junk oder einen anderen Anbieterordner verschiebst, ändert sich die entfernte Ablage. Die Änderung kann in anderen E-Mail-Programmen sichtbar sein. Wenn du eine Unterhaltung als **Erledigt** markierst, ändert sich nur der Cloud-Nachverfolgungsstatus. Die E-Mail wird weder archiviert noch verschoben.
+Anbieterordner sind eine andere Ebene. Verschiebst du eine Unterhaltung in Archiv, Papierkorb, Spam oder einen anderen Anbieterordner, verschiebt sich auch die E-Mail beim Anbieter. Andere Programme können das zeigen. Markierst du eine Unterhaltung als **Erledigt**, ändert sich nur der Status der Nachverfolgung in Cloud. Die E-Mail wird weder archiviert noch verschoben.
 
-Ein Postfach-Administrator kann die E-Mails eines Ordners im Ordner halten, etwa bei einem geteilten Teamordner (**Nur im Ordner**). Seine Unterhaltungen fehlen dann in **Handlungsbedarf**, **Wartet auf Antwort**, **Später**, **Erledigt**, **Nicht zugewiesen**, **Alle E-Mails**, **Letzte Aktivität** und der Mail-Übersicht (**Alle Postfächer**) sowie in deren Zählern, außer eine Nachricht der Unterhaltung liegt auch in einem Ordner, dessen E-Mails überall erscheinen, etwa im Posteingang. Im Ordner selbst, in **Mir zugewiesen**, in der Suche und in gespeicherten Ansichten bleiben sie. In der Seitenleiste markiert ein kleines Ordnersymbol neben dem Zähler einen solchen Ordner; der Zähler zeigt weiterhin seine ungelesenen E-Mails. Auf dem Smartphone zeigt die Navigation **Nur im Ordner** unter dem Namen des Ordners. Solange eine dieser Ansichten die E-Mails eines Ordners auslässt, nennt ein Hinweis über der Liste den Ordner und öffnet ihn. Schließt du den Hinweis, bleibt er für diesen Ordner in diesem Browser geschlossen.
+Mit Zugriff **Verwalten** hältst du die E-Mails eines Ordners in diesem Ordner, etwa bei einem gemeinsamen Teamordner (**Nur im Ordner**). Seine Unterhaltungen fehlen dann in diesen Ansichten und ihren Zählern:
 
-Verwende **Wartet auf Antwort**, wenn der nächste Schritt deines Teams von einer anderen Person abhängt. Mail setzt diesen Status, nachdem der Versand einer menschlichen Antwort oder Antwort an alle bestätigt wurde. Das gilt auch für Antworten, die aus einem anderen E-Mail-Programm synchronisiert werden. Verwende **Später anzeigen**, wenn die nächste Prüfung von einem Datum oder einer Uhrzeit abhängt. Bei **Wann soll die Unterhaltung wieder erscheinen?** wählst du den Zeitpunkt. Bis dahin liegt sie unter **Später** und bleibt aus aktiven Ansichten ausgeblendet, sofern nicht vorher eine neue E-Mail eingeht.
+- **Handlungsbedarf**, **Wartet auf Antwort**, **Später** und **Erledigt**;
+- **Nicht zugewiesen**, **Alle E-Mails** und **Letzte Aktivität**;
+- in der Mail-Übersicht (**Alle Postfächer**).
 
-Neue eingehende E-Mails setzen eine Unterhaltung immer auf **Handlungsbedarf** und entfernen sie aus **Später**. Eine menschliche Antwort oder Antwort an alle setzt sie erst auf **Wartet auf Antwort**, wenn die Zustellung bestätigt wurde. Eine neue Nachricht, die du in Cloud schreibst oder die Mail aus einem anderen E-Mail-Programm in deinem Ordner Gesendet findet, beginnt eine Unterhaltung in **Wartet auf Antwort**. E-Mails von deiner eigenen Adresse, die im Posteingang ankommen, etwa von einem Kontaktformular, das im Namen deines Postfachs sendet, beginnen in **Handlungsbedarf**. Weiterleitungen, automatische Antworten, Wiederholungen und unklare Zustellungsergebnisse leiten keinen neuen nächsten Schritt ab. Eine für später geplante Antwort zählt erst, wenn sie gesendet ist: Kommt vorher eine neue E-Mail an, wechselt die Unterhaltung zu **Handlungsbedarf** und bleibt nach der neuesten tatsächlichen Nachricht einsortiert. Sie bleibt auch nach dem Versand der Antwort in **Handlungsbedarf**, weil die Antwort vor dieser E-Mail geschrieben wurde. Die geplante Antwort wird trotzdem zum geplanten Zeitpunkt gesendet, außer du brichst sie unter **Geplant** ab. Unter **Unterhaltungsdetails** entscheidest du nur, ob die Unterhaltung **Erledigt** ist. Wenn du Erledigt entfernst, öffnet Mail sie wieder und leitet den nächsten Schritt aus der letzten bestätigten Nachricht ab.
+Das gilt nicht, wenn eine Nachricht der Unterhaltung auch in einem Ordner liegt, dessen E-Mails überall erscheinen, etwa im Posteingang. Im Ordner selbst, in **Mir zugewiesen**, in der Suche und in gespeicherten Ansichten bleiben die Unterhaltungen.
 
-Mit **In Ordner verschieben** in den Unterhaltungsaktionen oder Mail-Befehlen wählst du das Ziel per Tastatur, Zeigegerät oder Berührung. Auf dem Desktop kannst du eine Unterhaltungszeile außerdem auf einen auswählbaren Ordner in der linken Navigation ziehen. Mail merkt die Verschiebung vor; die Synchronisierung bestätigt das Ergebnis beim Anbieter.
+In der Seitenleiste markiert ein kleines Ordnersymbol neben dem Zähler einen solchen Ordner. Der Zähler zeigt weiterhin seine ungelesenen E-Mails. Auf dem Smartphone zeigt die Navigation **Nur im Ordner** unter dem Namen des Ordners. Lässt eine dieser Ansichten die E-Mails eines Ordners aus, nennt ein Hinweis über der Liste den Ordner und öffnet ihn. Schließt du den Hinweis, blendet dieser Browser ihn für diesen Ordner aus.
 
-Aktiviere die Kontrollkästchen, um mehrere Unterhaltungen zu bearbeiten. Halte die Umschalttaste gedrückt und wähle ein weiteres Kontrollkästchen oder eine weitere Unterhaltungszeile, um den geladenen Bereich dazwischen auszuwählen. Mail begrenzt eine Auswahl auf 50 Unterhaltungen, damit die Anbieterarbeit nachvollziehbar bleibt. Über die Auswahlleiste kannst du den ausgewählten Unterhaltungen Tags hinzufügen, sie archivieren, als gelesen markieren, zuweisen und verschieben. Unter **Weitere** markierst du sie als ungelesen, kennzeichnest sie, entfernst Kennzeichnungen, stufst sie als Junk ein oder verschiebst sie in den Papierkorb. Können nur einige Befehle vorgemerkt werden, bleiben die fehlgeschlagenen Unterhaltungen ausgewählt und Mail meldet jeden Fehler ausdrücklich.
+Verwende **Wartet auf Antwort**, wenn der nächste Schritt deines Teams von einer anderen Person abhängt. Mail setzt den Status, nachdem Mail den Versand einer menschlichen Antwort oder Antwort an alle bestätigt hat. Das gilt auch für Antworten, die Mail aus einem anderen E-Mail-Programm synchronisiert.
 
-Wähle **Zuweisen**, um die ausgewählten Unterhaltungen einer Person zu übertragen. Wähle **Mir zuweisen**, **Zuweisung entfernen** oder suche unter den Personen mit Schreibzugriff auf dieses Postfach. Mail bestätigt, wie viele Unterhaltungen geändert wurden, und bietet **Rückgängig** an. Dabei wird die Zuweisung wieder entfernt, die vorherige Person aber nicht wiederhergestellt. Die neue zuständige Person erhält für die ganze Auswahl eine einzige Benachrichtigung. Gehört eine Unterhaltung nicht mehr zum Postfach, nennt Mail, wie viele nicht geändert wurden.
+Verwende **Später anzeigen**, wenn die nächste Prüfung von einem Datum oder einer Uhrzeit abhängt. Wähle, wann die Unterhaltung wieder erscheint. Bis dahin liegt sie unter **Später**, außerhalb der aktiven Ansichten. Eine neue eingehende E-Mail beendet das früher.
+
+So setzt Mail den nächsten Schritt:
+
+- Neue eingehende E-Mails setzen die Unterhaltung immer auf **Handlungsbedarf** und entfernen sie aus **Später**.
+- Eine menschliche Antwort oder Antwort an alle setzt sie auf **Wartet auf Antwort**, aber erst, wenn Mail die Zustellung bestätigt.
+- Eine neue Nachricht, die du in Cloud schreibst, beginnt eine Unterhaltung in **Wartet auf Antwort**. Das gilt auch für eine Nachricht, die Mail aus einem anderen E-Mail-Programm in deinem Ordner Gesendet findet.
+- E-Mails von deiner eigenen Adresse, die im Posteingang ankommen, beginnen in **Handlungsbedarf**. Ein Beispiel ist ein Kontaktformular, das im Namen deines Postfachs sendet.
+- Weiterleitungen, automatische Antworten, Wiederholungen und unklare Zustellungsergebnisse setzen keinen neuen nächsten Schritt.
+
+Eine für später geplante Antwort zählt erst, wenn Mail sie sendet. Kommt vorher eine neue E-Mail an, wechselt die Unterhaltung zu **Handlungsbedarf** und bleibt nach der neuesten echten Nachricht einsortiert. Sie bleibt auch nach dem Versand der Antwort in **Handlungsbedarf**, weil du die Antwort vor dieser E-Mail geschrieben hast. Mail sendet die geplante Antwort trotzdem zu ihrem Zeitpunkt, außer du brichst sie unter **Geplant** ab.
+
+In den **Unterhaltungsdetails** entscheidest du nur, ob die Unterhaltung **Erledigt** ist. Entfernst du Erledigt, öffnet sich die Unterhaltung wieder, und Mail leitet den nächsten Schritt aus der letzten bestätigten Nachricht ab.
+
+Wähle **In Ordner verschieben** in den Unterhaltungsaktionen, um das Ziel per Tastatur, Zeigegerät oder Berührung zu wählen. Auf dem Desktop kannst du eine Unterhaltungszeile auch auf einen Ordner in der linken Navigation ziehen. Mail reiht die Verschiebung ein, und die Synchronisierung bestätigt das Ergebnis beim Anbieter.
+
+Um mehrere Unterhaltungen zu bearbeiten, wähle ihre Kontrollkästchen aus. Halte **Umschalt** gedrückt und wähle ein weiteres Kontrollkästchen oder eine weitere Zeile aus, um den geladenen Bereich dazwischen auszuwählen. Eine Auswahl hat höchstens 50 Unterhaltungen, damit du die Arbeit beim Anbieter nachverfolgen kannst.
+
+:::reference
+- **Auswahlleiste:** Fügt Tags hinzu, archiviert, markiert als gelesen, weist zu und verschiebt die ausgewählten Unterhaltungen.
+- **Mehr:** Markiert die ausgewählten Unterhaltungen als ungelesen, markiert sie mit einer Fahne, entfernt Fahnen, verschiebt sie in Spam oder in den Papierkorb.
+- **Teilergebnis:** Kann Mail nur einige Befehle einreihen, bleiben die fehlgeschlagenen Unterhaltungen ausgewählt, und Mail meldet jeden Fehler.
+:::
+
+Wähle **Zuweisen**, um die ausgewählten Unterhaltungen einer Person zu geben. Wähle **Mir zuweisen** oder **Zuweisung entfernen**, oder suche unter den Personen mit Zugriff **Bearbeiten** auf dieses Postfach. Mail bestätigt, wie viele Unterhaltungen sich geändert haben, und bietet **Rückgängig** an. **Rückgängig** entfernt die Zuweisung wieder und stellt die vorher zugewiesene Person nicht wieder her. Die neu zugewiesene Person erhält eine einzige Benachrichtigung für die ganze Auswahl. Gehört eine Unterhaltung nicht mehr zum Postfach, nennt Mail, wie viele Unterhaltungen sich nicht geändert haben.
 
 ## Kurz hineinschauen, ohne zu öffnen {icon="eye"}
 
-Lass den Mauszeiger kurz auf einer Zeile der Unterhaltungsliste ruhen. Neben der Liste öffnet sich eine Kurzansicht mit der Zeit der neuesten Nachricht, dem nächsten Schritt, der Zuweisung, den Tags, dem Betreff, der gespeicherten Zusammenfassung, falls es eine gibt, dem Anfang der neuesten Nachricht ohne zitierten Verlauf, dem ersten Anhang und der Zahl früherer Nachrichten. Bewegst du den Zeiger in die Karte, bleibt sie offen. Sie schließt sich, wenn du den Zeiger wegbewegst, die Liste scrollst oder Esc drückst. Mit der Tastatur fokussierst du eine Zeile und blendest die Kurzansicht mit der Leertaste ein oder aus; Enter öffnet weiterhin die Unterhaltung. Wähle die Karte oder die Zeile, um die Unterhaltung zu öffnen.
+Lass den Mauszeiger kurz auf einer Zeile der Unterhaltungsliste ruhen. Neben der Liste öffnet sich eine Kurzansicht. Sie zeigt:
 
-Die Kurzansicht markiert nichts als gelesen, erstellt keine Zusammenfassung und lädt keine externen Bilder. Sie erscheint nicht für die bereits geöffnete Unterhaltung, während du Unterhaltungen auswählst, auf Touch-Geräten und wenn neben der Liste kein Platz für sie ist.
+- die Zeit der neuesten Nachricht, den nächsten Schritt, die zugewiesene Person und die Tags;
+- den Betreff und die gespeicherte Zusammenfassung, falls es eine gibt;
+- den Anfang der neuesten Nachricht ohne zitierten Verlauf;
+- den ersten Anhang und die Zahl früherer Nachrichten.
+
+Bewegst du den Zeiger in die Karte, bleibt sie offen. Sie schließt sich, wenn du den Zeiger wegbewegst, die Liste scrollst oder **Esc** drückst. Mit der Tastatur fokussierst du eine Zeile und blendest die Kurzansicht mit der **Leertaste** ein oder aus. **Enter** öffnet weiterhin die Unterhaltung. Wähle die Karte oder die Zeile, um die Unterhaltung zu öffnen.
+
+Die Kurzansicht markiert nichts als gelesen, erstellt keine Zusammenfassung und lädt keine externen Bilder. Sie erscheint nicht für die bereits geöffnete Unterhaltung und nicht, während du Unterhaltungen auswählst. Sie erscheint auch nicht auf Touch-Geräten und nicht, wenn neben der Liste kein Platz ist.
 
 ## Einen vollständigen Verlauf lesen {icon="route"}
 
-Wähle eine Unterhaltungszeile, um ihren Verlauf zu öffnen. Jede Nachricht hat eigene Absender, Empfänger, Datum, Inhalt und Anhänge. Klappe eine ältere Nachricht auf, wenn du ihren vollständigen Inhalt benötigst.
+Wähle eine Unterhaltungszeile, um ihren Verlauf zu öffnen. Jede Nachricht hat eigene Absender, Empfänger, Datum, Inhalt und Anhänge. Klappe eine ältere Nachricht auf, wenn du ihren vollständigen Inhalt brauchst.
 
-Über den Nachrichten kann eine optionale Unterhaltungszusammenfassung in einer hervorgehobenen Karte erscheinen. Mit **Zusammenfassung bearbeiten** oder **Weitere Unterhaltungsaktionen > Zusammenfassung erstellen** pflegst du sie mit Markdown-Formatierung. Zusammenfassungen sind gemeinsamer Mail-Kontext und können auch von einer Automatisierung aktualisiert werden. Enthält die Unterhaltung nicht abgeschlossene Entwürfe, zeigt die Antwortaktion einen Hinweis. Öffne **Unterhaltungsdetails**, um Verfasser und Änderungszeit des neuesten Entwurfs zu sehen und ihn fortzusetzen.
+Über den Nachrichten kann eine optionale Zusammenfassung der Unterhaltung in einer hervorgehobenen Karte erscheinen. Um sie mit Markdown-Formatierung aktuell zu halten, nutze **Zusammenfassung bearbeiten** oder **Weitere Unterhaltungsaktionen → Zusammenfassung erstellen**. Zusammenfassungen sind gemeinsamer Mail-Kontext, und auch eine Automatisierung kann sie aktualisieren.
 
-Die Unterhaltungsdetails enthalten außerdem einen kleinen Abschnitt **Zugehörige E-Mails** für die gesamte Unterhaltung. Mail ordnet andere Unterhaltungen aus demselben Postfach danach, ob sie eine externe beteiligte Person oder denselben normalisierten Betreff teilen, und zeigt für jedes Ergebnis die passenden Gründe. Davon zu unterscheiden ist die Aktion **Zugehörige E-Mails** auf einer Kontaktkarte. Sie öffnet eine exakte Suche nach dieser einen beteiligten Person. Keine der beiden Funktionen leitet Ähnlichkeit aus Nachrichtentexten, Anhängen oder Kalenderterminen ab.
+Enthält die Unterhaltung nicht abgeschlossene Entwürfe, zeigt die Antwortaktion einen Hinweis. Öffne die **Unterhaltungsdetails**, um zu sehen, wer den neuesten Entwurf erstellt hat und wann er sich geändert hat. Dort setzt du ihn fort.
 
-Beim Öffnen einer ungelesenen Unterhaltung markiert Mail sie als gelesen. Über **Weitere Unterhaltungsaktionen** kannst du sie wieder als ungelesen markieren, eine Markierung hinzufügen oder entfernen oder die Unterhaltung drucken. Eine von dir als ungelesen markierte Unterhaltung bleibt in bereits geöffneten Tabs ungelesen, bis du ihre Zeile bewusst erneut öffnest. Eine Live-Aktualisierung allein markiert sie nicht als gelesen.
+Die Unterhaltungsdetails zeigen außerdem einen kleinen Abschnitt **Verwandte E-Mails** für die gesamte Unterhaltung. Mail ordnet andere Unterhaltungen aus demselben Postfach, die eine externe beteiligte Person oder denselben normalisierten Betreff teilen. Jedes Ergebnis zeigt, warum es passt. Die Aktion **Zugehörige E-Mails** auf einer Kontaktkarte ist etwas anderes: Sie öffnet eine exakte Suche nach dieser einen beteiligten Person. Keine der beiden Funktionen findet ähnliche E-Mails über Nachrichtentexte, Anhänge oder Kalendertermine.
 
-Mail passt Nachrichtentexte standardmäßig an das aktuelle Farbschema an: sicheres HTML im hellen Modus und Klartext im dunklen Modus, sofern beide Fassungen verfügbar sind. Öffne die Aktionen einer einzelnen Nachricht und wähle **Als Klartext anzeigen** oder **Als HTML anzeigen**, um dies für diese Nachricht zu überschreiben. Einen dauerhaften Modus für diesen Browser wählst du unter **Einstellungen > Lesen > Standardformat für Nachrichten**.
+Öffnest du eine ungelesene Unterhaltung, markiert Mail sie als gelesen. Über **Weitere Unterhaltungsaktionen** markierst du sie wieder als ungelesen, fügst eine Fahne hinzu oder entfernst sie oder druckst die Unterhaltung. Eine Unterhaltung, die du als ungelesen markierst, bleibt in bereits geöffneten Tabs ungelesen, bis du ihre Zeile erneut öffnest. Eine Live-Aktualisierung allein markiert sie nicht als gelesen.
 
-HTML-Nachrichten behalten eine begrenzte Auswahl an Layout-, Typografie-, Farb-, Abstands- und Tabellenstilen. Skripte, Formulare, eingebettete Objekte, externe Stylesheets und andere aktive Inhalte werden entfernt. Externe Bilder bleiben zusätzlich blockiert, bis du sie ausdrücklich lädst.
+Standardmäßig passt Mail Nachrichtentexte an das aktuelle Farbschema an: sicheres HTML im hellen Modus und reiner Text im dunklen Modus, wenn beide Fassungen vorhanden sind. Um eine einzelne Nachricht zu ändern, öffne ihre Aktionen und wähle **Als reinen Text anzeigen** oder **Als HTML anzeigen**. Um in diesem Browser einen festen Modus zu nutzen, wähle **Einstellungen → Lesen → Standardformat für Nachrichten**.
 
-Mail klappt den zitierten Verlauf früherer Nachrichten ein. Wähle **Zitierten Text anzeigen**, um ihn aufzuklappen, und **Zitierten Text ausblenden**, um ihn wieder einzuklappen. Ein aufgeklapptes Zitat bleibt offen, während neue Aktivität oder andere Live-Aktualisierungen in der Unterhaltung eintreffen.
+HTML-Nachrichten behalten eine begrenzte Auswahl an Layout-, Typografie-, Farb-, Abstands- und Tabellenstilen. Skripte, Formulare, eingebettete Objekte, externe Stylesheets und andere aktive Inhalte werden entfernt. Externe Bilder bleiben zusätzlich blockiert, bis du sie lädst.
 
-Die oberen Aktionen nehmen die Unterhaltung aus dem Ordner, den du gerade ansiehst, etwa dem Posteingang, auch wenn deine neueste Antwort in Gesendet liegt. In Ansichten über mehrere Ordner, etwa **Alle E-Mails** oder **Handlungsbedarf**, nehmen sie die Unterhaltung aus jedem Ordner, in dem sie abgelegt ist. Deine Kopien in Gesendet und Entwürfe sowie Nachrichten in Junk, Papierkorb oder **Alle Nachrichten** von Gmail bleiben, wo sie sind, außer die Unterhaltung liegt nur dort. Bei Gmail sind Ordner Labels. Dort wirken diese Ansichten auf ein Label: den Posteingang, wenn die Unterhaltung darin liegt. Archivieren entfernt nur das Label Posteingang und behält deine anderen Labels und Sterne. Bei einer Unterhaltung außerhalb des Posteingangs gibt es also nichts zu archivieren. Löschen und Spam verschieben die Nachrichten in diesem einen Label in den Papierkorb oder nach Spam und nehmen sie damit auch aus allen anderen Labels. Nachrichten, die nur unter anderen Labels liegen, bleiben, wo sie sind. **In Ordner verschieben** und das Ziehen einer Zeile folgen derselben Regel.
+Mail klappt den zitierten Verlauf früherer Nachrichten ein. Wähle **Zitierten Text anzeigen**, um ihn aufzuklappen, und **Zitierten Text ausblenden**, um ihn wieder einzuklappen. Ein aufgeklapptes Zitat bleibt offen, während neue Aktivität oder andere Live-Aktualisierungen eintreffen.
 
-In der **Nachrichtenansicht** ist jede Zeile eine Nachricht. Aktionen an einer Zeile, das Ziehen einer Zeile und die Aktionen der geöffneten Nachricht ändern nur diese Nachricht, nicht die anderen Nachrichten ihrer Unterhaltung. Ist dieselbe Nachricht zweimal in einem Ordner angekommen, zeigt Mail sie einmal, und die Aktion ändert beide Kopien. Jede Zeile zeigt, ob diese Nachricht ungelesen ist, und das Öffnen einer ungelesenen Nachricht markiert sie als gelesen. Unter **Versandprobleme** listet die Nachrichtenansicht die Nachrichten, deren Versand Aufmerksamkeit braucht, auch solche, die nie in einem Ordner angekommen sind. Eine solche Nachricht liegt in keinem Ordner. Archivieren, Löschen und Verschieben melden das deshalb, statt sie zu ändern.
+Die oberen Aktionen nehmen die Unterhaltung aus dem Ordner, den du gerade ansiehst, etwa dem Posteingang. Das gilt auch, wenn deine neueste Antwort in Gesendet liegt. In Ansichten über mehrere Ordner, etwa **Alle E-Mails** oder **Handlungsbedarf**, nehmen sie die Unterhaltung aus jedem Ordner, in dem sie liegt. Deine Kopien in Gesendet und Entwürfe bleiben, wo sie sind. Das gilt auch für Nachrichten in Spam, im Papierkorb oder im Ordner **All Mail** von Gmail. Die Ausnahme ist eine Unterhaltung, die nur dort liegt.
 
-- **Archivieren** verschiebt sie in den zugeordneten Archivordner. Gmail hat keinen Archivordner. Ohne Zuordnung entfernt Archivieren die Unterhaltung deshalb aus dem aktuellen Ordner, etwa dem Posteingang, und behält sie in **Alle Nachrichten**.
-- **In Junk verschieben** verschiebt sie in den zugeordneten Junk-Ordner. In Junk wird dieselbe Aktion zu **Kein Spam** und verschiebt die Unterhaltung zurück in den Posteingang.
+Bei Gmail sind Ordner Labels, und diese Ansichten wirken auf ein Label: den Posteingang, wenn die Unterhaltung darin liegt.
+
+- **Archivieren** entfernt nur das Label Posteingang und behält deine anderen Labels und Sterne. Eine Unterhaltung außerhalb des Posteingangs hat nichts zu archivieren.
+- Löschen und Spam verschieben die Nachrichten mit diesem einen Label in den Papierkorb oder nach Spam. Damit verschwinden sie auch aus allen anderen Labels.
+- Nachrichten, die nur unter anderen Labels liegen, bleiben, wo sie sind.
+- **In Ordner verschieben** und das Ziehen einer Zeile folgen derselben Regel.
+
+In der **Nachrichtenansicht** ist jede Zeile eine Nachricht. Aktionen an einer Zeile, das Ziehen einer Zeile und die Aktionen der geöffneten Nachricht ändern nur diese Nachricht. Die anderen Nachrichten ihrer Unterhaltung bleiben, wie sie sind. Ist dieselbe Nachricht zweimal in einem Ordner angekommen, zeigt Mail sie einmal, und die Aktion ändert beide Kopien. Jede Zeile zeigt, ob die Nachricht ungelesen ist. Das Öffnen einer ungelesenen Nachricht markiert sie als gelesen.
+
+Unter **Versandprobleme** listet die Nachrichtenansicht die Nachrichten, deren Versand Aufmerksamkeit braucht, auch solche, die nie in einem Ordner angekommen sind. Eine solche Nachricht liegt in keinem Ordner. Archivieren, Löschen und Verschieben melden das, statt sie zu ändern.
+
+- **Archivieren** verschiebt die Unterhaltung in den zugeordneten Archivordner. Gmail hat keinen Archivordner. Ohne Zuordnung entfernt Archivieren die Unterhaltung aus dem aktuellen Ordner, etwa dem Posteingang, und behält sie in **All Mail**.
+- **In Spam verschieben** verschiebt sie in den zugeordneten Spam-Ordner. In Spam wird dieselbe Aktion zu **Kein Spam** und verschiebt die Unterhaltung zurück in den Posteingang.
 - **Löschen** verschiebt sie in den zugeordneten Papierkorb.
 
-Diese Aktionen erfordern Schreibzugriff und die entsprechende Ordnerzuordnung. Meldet Mail, dass die Unterhaltung keine aktive Anbieterablage besitzt, aktualisiere das Postfach oder bitte eine Person mit Adminrechten, Ordnererkennung und Zuordnungen zu prüfen.
+Diese Aktionen brauchen Zugriff **Bearbeiten** und die passende Ordnerzuordnung. Meldet Mail, dass die Unterhaltung beim Anbieter keinen aktiven Ort hat, aktualisiere das Postfach. Du kannst auch jemanden mit Zugriff **Verwalten** bitten, Ordnererkennung und Zuordnungen zu prüfen.
 
-Mail reiht jede Aktion ein, und der Mailserver führt sie Augenblicke später aus. Nimmt der Server die Änderung nicht vor, etwa weil die Nachricht in einem anderen E-Mail-Programm verschoben wurde, nennt Mail die unveränderte Unterhaltung und bietet **Erneut versuchen** an. Gelesen- und Markierungsänderungen zeigt Mail sofort; eine Änderung, die der Server nicht vorgenommen hat, zeigt wieder den vorherigen Stand, auch wenn du mehrere Änderungen nacheinander gemacht hast. Ist unklar, ob der Server die Änderung vorgenommen hat, bittet Mail dich, die Unterhaltung zu prüfen, statt die Aktion zu wiederholen.
+Mail reiht jede Aktion ein, und der Mailserver führt sie Augenblicke später aus. Manchmal nimmt der Server die Änderung nicht vor, etwa weil jemand die Nachricht in einem anderen E-Mail-Programm verschoben hat. Mail nennt dann die unveränderte Unterhaltung und bietet **Erneut versuchen** an.
 
-Wähle **Mail-Befehle** über der Unterhaltungsliste, um dieselben Aktionen zu durchsuchen, die in Schaltflächen und Menüs erscheinen. Häufige Befehle haben auch Tastaturkürzel. Unter **Tastaturkürzel konfigurieren** in den Mail-Befehlen kannst du sie auf diesem Gerät ändern oder deaktivieren. Kürzel werden nicht ausgeführt, während du in einem Eingabefeld oder Nachrichteneditor schreibst.
+Änderungen an Gelesen-Status und Fahne zeigt Mail sofort. Hat der Server eine dieser Änderungen nicht vorgenommen, zeigt die Unterhaltung wieder den vorherigen Stand, auch nach mehreren Änderungen nacheinander. Ist unklar, ob der Server die Änderung vorgenommen hat, bittet Mail dich, die Unterhaltung zu prüfen, und wiederholt die Änderung nicht.
 
-Öffne die **Organisationsaktionen** einer einzelnen Nachricht für Werkzeuge, die sich auf den Absender beziehen:
+Tippe in der Cloud-Suche `>`, um die Aktionen der Schaltflächen und Menüs als Befehle zu finden. Häufige Aktionen haben auch Tastaturkürzel. Hilfe → **Tastaturkürzel** zeigt die Kürzel der aktuellen Ansicht. Kürzel laufen nicht, während du in einem Eingabefeld oder im Nachrichteneditor schreibst.
 
-- **Alle von diesem Absender suchen** öffnet eine exakte, URL-gestützte Postfachsuche.
-- **Regel aus Absender erstellen**, **Absender blockieren** und **Absenderdomain blockieren** öffnen den geführten Regeleditor mit bereits eingetragenem Absender.
-- **Abbestellung verwalten** erscheint nur, wenn die Nachricht standardisierte Angaben zum Abbestellen einer Mailingliste enthält.
+Öffne bei einer einzelnen Nachricht **Nachrichtenaktionen**. Der Abschnitt **Absender** enthält Werkzeuge für diesen Absender:
+
+- **Alle Nachrichten dieses Absenders suchen** öffnet eine exakte Postfachsuche mit eigener URL.
+- **Automatisierung für diesen Absender erstellen**, **Absender blockieren** und **Absender-Domain blockieren** öffnen den geführten Regeleditor mit eingetragenem Absender.
+- **Abmeldung verwalten** erscheint nur, wenn die Nachricht standardisierte Angaben zum Abmelden von einer Mailingliste enthält.
 
 ## Eine einzelne Nachricht untersuchen {icon="file-search"}
 
-Öffne **Unterhaltungsdetails**, klappe **E-Mail-Details** auf und wähle **Header** oder **Quelle**, wenn du technische Angaben zu einer Nachricht benötigst. Wähle bei einer Unterhaltung mit mehreren Nachrichten oben im Inspektor die genaue Nachricht aus.
+Wenn du technische Angaben zu einer Nachricht brauchst, öffne die **Unterhaltungsdetails**. Klappe **E-Mail-Details** auf und wähle **Header** oder **Quelltext**. Wähle bei einer Unterhaltung mit mehreren Nachrichten oben im Inspektor die genaue Nachricht aus.
 
-- **Übersicht** zeigt Nachrichten-IDs, Anbieterablage, Standardmarkierungen, Anbieter-Schlüsselwörter, MIME-Teile, Anhänge, Synchronisierungsstatus und mögliche Analysewarnungen.
-- **Spam-Diagnose** zeigt vorhandene Spam-Header des Anbieters. Cloud berechnet oder erschließt keinen eigenen Spamwert.
-- **Header** zeigt jeden gespeicherten Header, einschließlich wiederholter Zustellungsheader.
-- **Quelle** zeigt eine begrenzte Vorschau der exakten ursprünglichen Nachricht. Wähle **.eml herunterladen**, um die vollständige bytegenaue Datei zu erhalten.
+- **Übersicht** zeigt Nachrichten-IDs, Ablage beim Anbieter, Standardmarkierungen, Anbieter-Schlüsselwörter, MIME-Teile, Anhänge, Synchronisierungsstatus und Warnungen beim Auswerten.
+- **Spamdiagnose** zeigt die Spam-Header des Anbieters, falls vorhanden. Cloud berechnet oder erschließt keinen eigenen Spamwert.
+- **Header** zeigt jeden gespeicherten Header, auch wiederholte Zustellungsheader.
+- **Quelldaten** zeigt eine begrenzte Vorschau der exakten ursprünglichen Nachricht. Wähle **.eml herunterladen** für die vollständige bytegenaue Datei.
 
-Eine `.eml`-Datei ist hilfreich, um eine einzelne Nachricht in ein anderes E-Mail-Programm zu übertragen, ein Zustellungsproblem zu melden oder die ursprüngliche Nachricht für eine Untersuchung aufzubewahren. Das Öffnen des Inspektors ändert weder die Nachricht noch ihren Anbieterzustand.
+Mit einer `.eml`-Datei überträgst du eine Nachricht in ein anderes E-Mail-Programm, meldest ein Zustellungsproblem oder bewahrst die ursprüngliche Nachricht für eine Untersuchung auf. Das Öffnen des Inspektors ändert weder die Nachricht noch ihren Zustand beim Anbieter.
 
-Anbieter-Schlüsselwörter bleiben für Kompatibilität und Diagnose im Inspektor sichtbar. Verwende lokale Tags für normale Kennzeichnungen. Mail bietet in Nachrichten- und Unterhaltungsmenüs keine Bearbeitung von Anbieter-Schlüsselwörtern an.
+Anbieter-Schlüsselwörter bleiben im Inspektor für Kompatibilität und Diagnose sichtbar. Nutze lokale Tags für normales Kennzeichnen. Mail bietet in den Nachrichten- und Unterhaltungsmenüs kein Bearbeiten von Anbieter-Schlüsselwörtern an.
 
-Unverarbeitete Header und `.eml`-Dateien können private Adressen, Servernamen, Routingangaben, Ergebnisse der Absenderprüfung und den vollständigen Nachrichtentext enthalten. Prüfe sie vor dem Teilen. Bei älteren oder nur teilweise synchronisierten Nachrichten kann der lesbare Inhalt verfügbar sein, obwohl die exakte ursprüngliche Quelle fehlt. Der Inspektor erklärt in diesem Fall, dass Quelle und `.eml`-Download nicht verfügbar sind.
+:::warning Rohdaten vor dem Teilen prüfen
+Rohe Header und `.eml`-Dateien können private Adressen, Servernamen, Routing-Angaben, Authentifizierungsergebnisse und den vollständigen Nachrichtentext enthalten. Prüfe sie, bevor du sie teilst.
+:::
+
+Bei älteren oder teilweise synchronisierten Nachrichten kann Mail den lesbaren Inhalt ohne die exakte ursprüngliche Quelle haben. Dann erklärt der Inspektor, dass Quelldaten und `.eml`-Download nicht verfügbar sind.
 
 ## Mailinglisten verwalten {icon="news"}
 
-Mail erkennt Mailinglisten anhand der standardisierten Listeninformationen in empfangenen Nachrichten. Jede Person mit Leserechten für das Postfach kann unter **Postfachwerkzeuge > Mailinglisten** die erkannten Listen, ihr letztes Nachrichtenaufkommen, ihre neueste Nachricht und die von der Liste angebotenen Aktionen sehen.
+Mail erkennt Mailinglisten an den standardisierten Listenangaben in empfangenen Nachrichten. Alle, die das Postfach ansehen können, öffnen **Postfachwerkzeuge → Mailinglisten**. Die Seite zeigt jede erkannte Liste, ihr aktuelles Volumen, ihre neueste Nachricht und die Aktionen, die die Liste anbietet.
 
-Die verfügbaren Aktionen richten sich nach den Angaben des Absenders. Abbestell- und Aufräumaktionen erfordern Schreib- oder Adminrechte. Personen mit Leserechten können Listen prüfen und deren angebotene Archiv- oder Beitragslinks öffnen.
+Welche Aktionen verfügbar sind, hängt von den Angaben des Absenders ab. Abmelde- und Aufräumaktionen brauchen Zugriff **Bearbeiten** oder **Verwalten**. Mit Zugriff **Ansehen** prüfst du Listen und folgst ihren Archiv- oder Schreiblinks.
 
-- **Abbestellen** fordert die Liste auf, keine weiteren E-Mails zu senden. Unterstützt die Liste eine geschützte Ein-Klick-Anfrage, verwendet Mail sie. Andernfalls öffnet Mail die Abbestellseite der Liste oder bereitet die dafür vorgesehene Abbestell-E-Mail vor.
-- **An Liste schreiben** öffnet die für neue Listennachrichten angegebene Adresse.
-- **Listenarchiv** öffnet das von der Liste angegebene Archiv.
-- Nach einer Ein-Klick-Abbestellung kannst du mit **Vorhandene archivieren** oder **Vorhandene in den Papierkorb verschieben** jeweils bis zu 500 bereits synchronisierte Nachrichten verschieben. Wiederhole die Aktion, wenn Mail meldet, dass weitere Nachrichten vorhanden sind.
+:::warning Prüfe den Listennamen, bevor du dich abmeldest
+Die Anfrage betrifft künftige Zustellungen für dieses Postfach und lässt sich schwer rückgängig machen. Sie löscht keine vorhandenen Nachrichten. Mail kann nicht garantieren, wann ein externer Listenanbieter die Zustellung beendet.
+:::
 
-Prüfe den Listennamen vor dem Abbestellen. Die Anfrage betrifft künftige Zustellungen an dieses Postfach und lässt sich möglicherweise nur schwer rückgängig machen. Sie löscht keine vorhandenen Nachrichten. Mail kann nicht garantieren, wann ein externer Listenanbieter die Zustellung beendet.
+- **Abmelden** bittet die Liste, keine E-Mails mehr zu senden. Mail nutzt eine geschützte Ein-Klick-Anfrage, wenn die Liste sie unterstützt. Sonst öffnet Mail die Abmeldeseite der Liste oder bereitet die Abmelde-E-Mail vor, die die Liste nennt.
+- **An Mailingliste schreiben** öffnet die Adresse, die die Liste für neue Nachrichten nennt.
+- **Archiv der Mailingliste** öffnet das Archiv, das die Liste angibt.
+- Nach einer Ein-Klick-Abmeldung verschieben **Vorhandene archivieren** oder **Vorhandene in den Papierkorb verschieben** bis zu 500 bereits synchronisierte Nachrichten auf einmal. Wiederhole die Aktion, wenn Mail meldet, dass weitere Nachrichten übrig sind.
 
-Mail öffnet niemals einen Abbestelllink, nur weil du eine Nachricht in der Vorschau ansiehst oder liest. Listen ohne standardisierte Listeninformationen erscheinen nicht unter **Mailinglisten**.
+Mail öffnet nie einen Abmeldelink, nur weil du eine Nachricht in der Vorschau siehst oder liest. Listen ohne standardisierte Listenangaben erscheinen nicht unter **Mailinglisten**.
 
 ## Anhänge öffnen und auf eine Nachricht antworten {icon="paperclip"}
 
-Empfangene Anhänge bleiben mit der Nachricht verbunden, mit der sie eingegangen sind. Wähle einen Anhang, um ihn in einem neuen Browser-Tab zu öffnen oder herunterzuladen.
+Empfangene Anhänge bleiben bei der Nachricht, die sie gebracht hat. Wähle einen Anhang, um ihn in einem neuen Browser-Tab zu öffnen oder herunterzuladen.
 
-**Vorschau** öffnet Text, CSV, JSON, Bilder, PDFs, Audio und Video in einem Dialog. Ist eine Textdatei Markdown und beginnt mit einer Überschrift, wird diese Überschrift zum Titel, darunter stehen Dateiname und Größe. Oben im Dialog stehen **Anhang herunterladen** und, für Text, CSV und JSON, **Kopieren**. Auf dem Smartphone füllt die Vorschau den Bildschirm.
+**Vorschau** öffnet Text, CSV, JSON, Bilder, PDFs, Audio und Video in einem Dialog. Ist eine Textdatei Markdown und beginnt mit einer Überschrift, wird diese Überschrift zum Titel, darunter stehen Dateiname und Größe. Der Kopf des Dialogs enthält **Anhang herunterladen**, bei Text, CSV und JSON auch **Kopieren**. Auf dem Smartphone füllt die Vorschau den Bildschirm.
 
-Personen mit Postfach-Adminrechten können außerdem einen öffentlichen Download-Link für einen Anhang erstellen. Die URL wird nur bei der Erstellung angezeigt und kann durch Passwort, Ablaufzeit und eine Höchstzahl an Download-Sitzungen geschützt werden. Bestehende Links verwaltest oder widerrufst du unter **Postfachwerkzeuge > Geteilte Links**.
+Mit Zugriff **Verwalten** erstellst du auch einen öffentlichen Download-Link für einen Anhang. Mail zeigt die URL nur beim Erstellen des Links. Du kannst ihn mit einem Passwort, einem Ablaufzeitpunkt und einer Grenze für Download-Sitzungen schützen. Um vorhandene Links zu ändern oder zu widerrufen, öffne **Postfachwerkzeuge → Freigabelinks**.
 
 ## Externe Bilder steuern {icon="photo-shield"}
 
-Mail blockiert Bilder, die eine Nachricht andernfalls von einem externen Server laden würde. Das Laden eines solchen Bildes kann dem Absender mitteilen, dass die Nachricht geöffnet wurde. Direkt in die Nachricht eingebettete Bilder bleiben sichtbar.
+Mail blockiert Bilder, die eine Nachricht von einem externen Server laden würde. Das Laden eines solchen Bildes kann dem Absender verraten, dass du die Nachricht geöffnet hast. Direkt in der Nachricht enthaltene Bilder bleiben sichtbar.
 
-Enthält eine Nachricht blockierte Bilder, kannst du wählen:
+Enthält eine Nachricht blockierte Bilder, wähle:
 
 - **Bilder laden**, um sie nur für diese geöffnete Nachricht zu laden.
-- **Immer für Absender**, um Bilder in künftigen Nachrichten von genau dieser Adresse zu erlauben.
-- **Immer für Domain**, um Bilder von allen Adressen dieser Domain zu erlauben. Verwende diese umfassendere Option nur für eine Domain, der du vertraust.
+- **Für diesen Absender immer laden**, um Bilder in künftigen Nachrichten genau dieser Adresse zu erlauben.
+- **Für diese Domain immer laden**, um Bilder von jeder Adresse dieser Domain zu erlauben. Nutze diese breitere Option nur für eine Domain, der du vertraust.
 
-Diese Einstellungen gelten nur für dich im aktuellen Postfach. Sie ändern nicht, was andere Personen im Team sehen. Unter **Postfachwerkzeuge > Externe Bilder** kannst du gespeicherte Einstellungen prüfen oder entfernen.
+Diese Einstellungen gelten nur für dich im aktuellen Postfach. Sie ändern nicht, was andere im Team sehen. Um gespeicherte Einstellungen zu prüfen oder zu entfernen, öffne **Postfachwerkzeuge → Externe Bilder**.
 
-Mail ruft erlaubte Bilder über seinen geschützten Bilddienst ab, statt die Bildadresse deinem Browser mitzuteilen. Der externe Server kann weiterhin erkennen, dass sein Bild angefordert wurde. Lass Bilder daher bei unbekannten oder verdächtigen Absendern blockiert.
+Mail lädt erlaubte Bilder über seinen geschützten Bilddienst, dein Browser bekommt die Bildadresse also nie. Der externe Server kann trotzdem erfahren, dass jemand sein Bild angefordert hat. Lass Bilder bei unbekannten oder verdächtigen Absendern blockiert.
 
-Unter einer aufgeklappten Nachricht kannst du wählen:
+Wähle unter einer aufgeklappten Nachricht:
 
 - **Antworten**, um dem Absender zu antworten.
 - **Allen antworten**, um die ursprünglichen Empfänger einzubeziehen.
-- **Weiterleiten**, um eine weitergeleitete Nachricht zu beginnen. Vor der Erstellung des Entwurfs kannst du entscheiden, ob die ursprünglichen Anhänge enthalten sein sollen.
-- **Als neue E-Mail verwenden**, um eine Nachricht in einen unabhängigen, prüfbaren Entwurf zu kopieren, ohne ihre Unterhaltung zu ändern oder sie sofort zu senden.
-- **Auswahl zitieren**, nachdem du Text im Nachrichtentext markiert hast. Mail fügt die ausgewählten Zeilen als Zitat in eine Antwort ein, damit du direkt darunter antworten kannst.
+- **Weiterleiten**, um eine Weiterleitung zu beginnen. Bevor Mail den Entwurf erstellt, entscheidest du, ob die ursprünglichen Anhänge dabei sind.
+- **Als neue Nachricht verwenden**, um eine Nachricht in einen unabhängigen Entwurf zu kopieren, den du prüfen kannst. Das ändert ihre Unterhaltung nicht und sendet nichts.
+- **Auswahl zitieren**, nachdem du Text im Nachrichtentext markiert hast. Mail fügt die markierten Zeilen als zitierte Antwort ein, sodass du direkt darunter antwortest.
 
-Informationen zu Verfassen, Entwürfen, Anhängen, Signaturen und Zustellungsoptionen findest du unter [E-Mails verfassen und senden](/app/mail/help/mail-compose).
+Mehr zu Verfassen, Entwürfen, Anhängen, Signaturen und Zustelloptionen findest du unter [E-Mails verfassen und senden](/app/mail/help/mail-compose).
 
 ## Wiederverwendbare Ansichten und lokale Tags erstellen {icon="layout-list"}
 
-Öffne **Einstellungen > Organisation**, um aus Ordner- und Zusammenarbeitsfiltern eine gespeicherte Ansicht zu erstellen. Eine Ansicht kann nach Ordner, zuständiger Person, nächstem Schritt, lokalem Tag und danach filtern, ob die Unterhaltung unter **Später** liegt. Wie **Nicht zugewiesen** findet ein Filter für Unterhaltungen ohne zuständige Person auch solche, deren zuständige Person in diesem Postfach nicht mehr schreiben darf.
+Öffne **Einstellungen → Organisation**, um aus Ordner- und Zusammenarbeitsfiltern eine gespeicherte Ansicht zu erstellen. Eine Ansicht kann nach Ordner, zugewiesener Person, nächstem Schritt, lokalem Tag und danach filtern, ob die Unterhaltung unter **Später** liegt. Ein Filter für Unterhaltungen ohne zugewiesene Person funktioniert wie **Nicht zugewiesen**: Er findet auch Unterhaltungen, deren zugewiesene Person keinen Zugriff **Bearbeiten** auf dieses Postfach mehr hat.
 
 - **Nur für mich** erstellt eine private Ansicht.
-- **Alle mit Postfachzugriff** erstellt eine Postfachansicht und erfordert Schreibzugriff.
-- Die Sichtbarkeit steht nach der Erstellung fest. Erstelle eine Ersatzansicht, wenn du eine andere Sichtbarkeit benötigst.
+- **Alle Personen mit Postfachzugriff** erstellt eine Postfachansicht und braucht Zugriff **Bearbeiten**.
+- Die Sichtbarkeit kannst du nach dem Erstellen nicht ändern. Erstelle eine neue Ansicht, wenn du eine andere Sichtbarkeit brauchst.
 
-Lokale Tags sind Postfachkennzeichnungen für Personen, Suche und Automatisierungen. Wähle in der linken Navigation unter **Tags** einen Tag aus, um alle passenden Unterhaltungen zu öffnen. Tags sind weder IMAP-Ordner noch Anbieter-Schlüsselwörter und erscheinen nicht in anderen E-Mail-Programmen. Wenn du einen lokalen Tag löschst, wird er aus jeder Unterhaltung dieses Postfachs entfernt. Gespeicherte Ansichten und Suchlinks, die nach einem gelöschten Tag oder Ordner filtern, finden für diese Bedingung keine Unterhaltungen mehr.
+Lokale Tags sind Kennzeichnungen im Postfach für Menschen, Suche und Automatisierungen. Wähle einen Tag unter **Tags** in der linken Navigation, um alle passenden Unterhaltungen zu öffnen. Lokale Tags sind keine IMAP-Ordner und keine Anbieter-Schlüsselwörter, und andere Programme zeigen sie nicht.
 
-## Unterhaltungsgruppierung korrigieren {icon="arrows-split-2"}
+:::warning Ein gelöschter lokaler Tag verschwindet überall
+Mail entfernt einen gelöschten lokalen Tag aus jeder Unterhaltung im Postfach. Gespeicherte Ansichten und Suchlinks, die nach einem gelöschten Tag oder Ordner filtern, finden für diese Bedingung keine Unterhaltungen.
+:::
 
-Mail ordnet eine Nachricht der Unterhaltung zu, auf die ihre Antwort-Header verweisen. Das gilt auch, wenn eine Antwort vor der beantworteten Nachricht synchronisiert wurde, und Antworten auf eine Nachricht, die das Postfach nicht enthält, bleiben zusammen. Eine Nachricht ohne Antwort-Header kommt nur dann in eine frühere Unterhaltung, wenn ihr Betreff mit einem Präfix wie `Re:`, `AW:` oder `Fwd:` beginnt und sie innerhalb von 30 Tagen mit derselben externen Person ausgetauscht wurde. Sonst beginnt sie eine eigene Unterhaltung. Zwei Absender, die beide „Rechnung“ schreiben, bleiben so getrennt.
+## Gruppierung von Unterhaltungen korrigieren {icon="arrows-split-2"}
 
-Eine Nachricht bleibt eine Nachricht, egal wo sie liegt. Verschiebt oder kopiert ein anderes E-Mail-Programm sie in einen anderen Ordner, oder kommt deine eigene Mail über eine Liste, eine Teamadresse oder eine Bcc an dich selbst zurück in den Posteingang, zeigt die Unterhaltung sie nur einmal. Mail erkennt solche Kopien an ihren Kopfzeilen wie Message-ID, Absender, Betreff und Datum, die Kopie einer fremden Nachricht zusätzlich an ihrer unveränderten Größe.
+Mail ordnet eine Nachricht der Unterhaltung zu, auf die ihre Antwort-Header verweisen. Das funktioniert auch, wenn eine Antwort vor der Nachricht synchronisiert wurde, auf die sie antwortet. Antworten auf eine Nachricht, die das Postfach nicht enthält, bleiben zusammen.
 
-Verwende **Mit anderer Unterhaltung zusammenführen**, wenn zwei Cloud-Unterhaltungen zusammengehören. Wähle bei einer einzelnen Nachricht **Neue Unterhaltung mit dieser Nachricht beginnen**, wenn eine Antwort ein neues Thema einführt, oder **Nachricht in andere Unterhaltung verschieben**, wenn sie zu einem vorhandenen Verlauf gehört. Diese Aktionen erfordern Schreibzugriff und ändern die Unterhaltungsgruppierung in Cloud, nicht den Nachrichteninhalt.
+Eine Nachricht ohne Antwort-Header schließt sich einer früheren Unterhaltung nur an, wenn beides zutrifft:
 
-Suche die Zielunterhaltung im selben Postfach nach Absender oder Betreff. Prüfe vor dem Zusammenführen Quelle und Ziel in der Bestätigung. Zuständigkeit und Bearbeitungsstand der Zielunterhaltung bleiben erhalten. Nachrichten, Kommentare, Entwürfe, lokale Tags und Verweise der Quelle werden dorthin übernommen. Persönliche Erinnerungen ziehen ebenfalls um; hat eine Person in beiden Unterhaltungen eine Erinnerung, bleibt ihre Erinnerung am Ziel erhalten. Die Quellunterhaltung wird entfernt.
+- ihr Betreff beginnt mit einem Präfix wie `Re:`, `AW:` oder `Fwd:`;
+- sie wurde innerhalb von 30 Tagen mit derselben externen Person ausgetauscht.
 
-Beim Aufteilen in der Weboberfläche wählst du eine einzelne Nachricht. Sie und ihre verknüpften Kommentare werden in eine neue, nicht zugewiesene Unterhaltung übernommen. Entwürfe, Tags, Verweise, Erinnerungen und andere Kommentare bleiben bei der Quelle. Zuständigkeit und Bearbeitungsstand der Quelle bleiben erhalten. Mindestens eine Nachricht muss dort verbleiben.
+Sonst beginnt sie eine eigene Unterhaltung. Zwei Absender, die beide „Rechnung“ schreiben, bleiben getrennt.
 
-Es gibt kein automatisches Rückgängigmachen. Du kannst die Gruppierung mit denselben Aktionen erneut korrigieren. Frühere Zuständigkeiten, Erinnerungen oder andere Zusammenarbeitsdaten werden dadurch jedoch nicht wiederhergestellt. Die Änderungen erscheinen im Aktivitätsverlauf der Unterhaltung. Ändert eine andere Person vor deiner Bestätigung eine der betroffenen Unterhaltungen, lehnt Mail die veraltete Änderung ab. Lade die Ansicht neu und prüfe sie erneut.
+Eine Nachricht bleibt eine Nachricht, egal wo sie liegt. Ein anderes E-Mail-Programm kann sie in einen anderen Ordner verschieben oder kopieren. Deine eigene E-Mail kann über eine Liste, eine Teamadresse oder eine Bcc an dich selbst wieder im Posteingang ankommen. In diesen Fällen zeigt die Unterhaltung die Nachricht einmal. Mail erkennt eine solche Kopie an ihren Headern, etwa Message-ID, Absender, Betreff und Datum. Eine Kopie der E-Mail einer anderen Person erkennt Mail auch an ihrer unveränderten Größe.
+
+Für diese Aktionen brauchst du Zugriff **Bearbeiten**. Sie ändern, wie Cloud Unterhaltungen gruppiert, nicht den Inhalt der Nachrichten.
+
+:::warning Es gibt kein automatisches Rückgängigmachen
+Du kannst die Gruppierung mit denselben Aktionen erneut anpassen. Das stellt frühere Zuweisungen, Erinnerungen oder andere Zustände der Zusammenarbeit nicht wieder her.
+:::
+
+Wähle die Aktion:
+
+- **Mit einer anderen Unterhaltung zusammenführen**, wenn zwei Cloud-Unterhaltungen zusammengehören.
+- **Aus dieser Nachricht eine neue Unterhaltung erstellen** bei einer einzelnen Nachricht, wenn eine Antwort ein neues Thema beginnt.
+- **Nachricht in eine andere Unterhaltung verschieben** bei einer einzelnen Nachricht, wenn sie in einen vorhandenen Verlauf gehört.
+
+Zum Zusammenführen wählst du das Ziel aus demselben Postfach nach Absender oder Betreff. Prüfe Quelle und Ziel in der Bestätigung und führe dann zusammen.
+
+- Das Ziel behält seine zugewiesene Person und seinen Arbeitsstatus.
+- Nachrichten, Kommentare, Entwürfe, lokale Tags und Referenzen der Quelle wandern zum Ziel.
+- Persönliche Erinnerungen wandern ebenfalls. Hat jemand eine Erinnerung an beiden Unterhaltungen, behält Mail die Erinnerung am Ziel.
+- Mail entfernt die Quellunterhaltung.
+
+Das Aufteilen in der Weboberfläche wählt eine Nachricht aus. Diese Nachricht und ihre verknüpften Kommentare wandern in eine neue, nicht zugewiesene Unterhaltung. Entwürfe, Tags, Referenzen, Erinnerungen und andere Kommentare bleiben bei der Quelle. Die Quelle behält ihre zugewiesene Person und ihren Arbeitsstatus. Mindestens eine Nachricht muss in der Quelle bleiben.
+
+Mail hält Änderungen in der Aktivität der Unterhaltung fest. Ändert eine andere Person eine der beiden Unterhaltungen, bevor du bestätigst, lehnt Mail deine veraltete Änderung ab. Lade neu und prüfe sie erneut.
 
 ## Dieses Postfach durchsuchen {icon="search"}
 
-Mit **Cmd/Ctrl+Shift+K** suchst du in den Nachrichten und Anhängen des geöffneten Postfachs. Entferne den Chip mit dem Postfachnamen, um die gesamte Cloud zu durchsuchen.
+Drücke in einem Postfach **Cmd/Strg+Umschalt+K**, um seine Nachrichten und Anhänge zu durchsuchen. Der Name des Postfachs erscheint als Chip. Entferne den Chip, um die ganze Cloud zu durchsuchen.
 
-Bei einer geöffneten Kalendereinladung bietet die Cloud-Suche **Diesen Termin in Spaces übernehmen oder aktualisieren** und, wenn eine Antwort möglich ist, **Antwort auf diese Einladung vorbereiten** an. Wähle einen beschreibbaren Kalender und bestätige den Import oder wähle deine Antwort. Antworten werden als Entwurf zum Prüfen geöffnet.
+Bei einer geöffneten Kalendereinladung bietet die Cloud-Suche **Diesen Termin in Spaces übernehmen oder aktualisieren** an. Wenn du antworten kannst, bietet sie auch **Antwort auf diese Einladung vorbereiten** an. Wähle einen Kalender, in dem du Zugriff **Bearbeiten** hast. Bestätige dann den Import oder wähle deine Antwort. Antworten öffnen sich als Entwürfe, die du vor dem Senden prüfst.

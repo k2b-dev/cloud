@@ -2,94 +2,101 @@
 id: mail-collaboration
 title: Gemeinsam in einem Postfach arbeiten
 icon: ti ti-users
-description: Aufgaben zuweisen, Antworten koordinieren, intern kommentieren und Zugriffsrechte verstehen.
+description: Arbeit zuweisen, Antworten abstimmen, intern kommentieren und Zugriffsstufen verstehen.
 order: 40
 ---
 
-Die Zusammenarbeit in Cloud bleibt mit einer Unterhaltung verknüpft, während die zugrunde liegende E-Mail eine normale Nachricht beim Anbieter bleibt. Öffne **Unterhaltungsdetails**, um den gemeinsamen Bearbeitungsstand getrennt von deiner privaten persönlichen Erinnerung zu sehen.
+Die Zusammenarbeit in Cloud bleibt an einer Unterhaltung, während die E-Mail selbst normale E-Mail beim Anbieter bleibt. Öffne die **Unterhaltungsdetails**, um den gemeinsamen Status der Nachverfolgung getrennt von deiner privaten persönlichen Erinnerung zu sehen.
 
-Die Unterhaltungsansicht zeigt wichtige Änderungen durch Zusammenarbeit und Workflows dezent und chronologisch zwischen den Nachrichten. Solange die Unterhaltung geöffnet ist, werden sie laufend aktualisiert. Jede Zeile nennt die Person oder den Workflow, die oder der die Änderung ausgelöst hat. Die umfassendere Liste der letzten Aktivitäten bleibt unter **Unterhaltungsdetails** verfügbar; technische Verarbeitungsschritte unterbrechen den Nachrichtenverlauf nicht.
+Der Lesebereich ordnet aussagekräftige Änderungen an Zusammenarbeit und Workflows ruhig zwischen den Nachrichten ein, in zeitlicher Reihenfolge. Er aktualisiert sie, solange die Unterhaltung offen ist. Jede Zeile nennt die Person oder den Workflow, die die Änderung vorgenommen haben. Die längere Liste der letzten Aktivitäten bleibt in den **Unterhaltungsdetails**. Technische Verarbeitungsvorgänge unterbrechen den Nachrichtenverlauf nicht.
 
-## Zuständigkeit und nächsten Schritt einheitlich verwenden {icon="route"}
+## Zuständigkeit und Nachverfolgung einheitlich nutzen {icon="route"}
 
-- **Zugewiesen an** nennt die Personen, die aktuell für die Unterhaltung verantwortlich sind; eine Unterhaltung kann bis zu 20 haben. Füge sie unter **Unterhaltungsdetails** hinzu oder entferne sie. Weist dir jemand anderes eine Unterhaltung zu, erhältst du eine Cloud-Benachrichtigung, die sie öffnet. Um eine Person zu mehreren Unterhaltungen hinzuzufügen, wähle sie in der Liste aus und wähle **Zuweisen**; die anderen bleiben zugewiesen, und die Person erhält für die ganze Auswahl eine einzige Benachrichtigung. Im selben Menü entfernst du dich selbst oder alle. Wenn du dich selbst zuweist oder jemanden entfernst, wird keine Benachrichtigung gesendet. **Mir zugewiesen** zeigt jede Unterhaltung, der du zugewiesen bist; **Nicht zugewiesen** die, denen niemand zugewiesen ist, der sie noch bearbeiten kann.
-- **Nächster Schritt** wird von Mail abgeleitet. **Aktion erforderlich** bedeutet, dass das Team die Unterhaltung prüfen oder bearbeiten muss. **Wartet auf Antwort** bedeutet, dass eine bestätigte menschliche Antwort gesendet wurde und der nächste Schritt bei einer anderen Person liegt.
-- **Als erledigt markieren** ist der einzige manuelle Bearbeitungsstatus. Wähle ihn, wenn aktuell nichts mehr zu tun ist, und entferne ihn, um die Unterhaltung wieder zu öffnen. Mail leitet den nächsten Schritt dann aus der neuesten verifizierten Nachricht ab.
-- **Später anzeigen** entfernt die Unterhaltung vorübergehend aus der aktiven Arbeit, ohne ihren nächsten Schritt zu ändern. Verwende diese Funktion, wenn die nächste Prüfung von einem Zeitpunkt und nicht von einer anderen Person abhängt. Bis zum gewählten Zeitpunkt liegt die Unterhaltung unter **Später**; eine neue eingehende E-Mail blendet sie sofort wieder ein.
+- **Zugewiesen an** zeigt die Personen, die für die Unterhaltung zuständig sind. Eine Unterhaltung kann bis zu 20 zugewiesene Personen haben. Füge sie in den **Unterhaltungsdetails** hinzu oder entferne sie dort. Weist dir jemand anderes eine Unterhaltung zu, bekommst du eine Cloud-Benachrichtigung, die sie öffnet.
+- Um eine Person mehreren Unterhaltungen zuzuweisen, wähle die Unterhaltungen in der Liste aus und wähle **Zuweisen**. Wähle dann die Person. Die anderen zugewiesenen Personen bleiben zugewiesen. Die Person bekommt eine einzige Benachrichtigung für die ganze Auswahl.
+- Dasselbe Menü bietet **Mir zuweisen**, **Mich entfernen** und **Alle Zuweisungen entfernen**. Weist du dir selbst zu oder entfernst du jemanden, sendet Mail keine Benachrichtigung.
+- **Mir zugewiesen** zeigt jede Unterhaltung, der du zugewiesen bist. **Nicht zugewiesen** zeigt die Unterhaltungen, denen niemand zugewiesen ist, der sie noch bearbeiten kann.
+- Mail setzt den nächsten Schritt. **Handlungsbedarf** bedeutet, dass das Team prüfen oder handeln muss. **Wartet auf Antwort** bedeutet, dass eine bestätigte menschliche Antwort gesendet wurde und der nächste Schritt bei jemand anderem liegt.
+- **Als erledigt markieren** ist der einzige Status der Nachverfolgung, den du von Hand setzt. Wähle ihn, wenn nichts mehr zu tun ist. Entferne ihn, um die Unterhaltung wieder zu öffnen. Mail leitet den nächsten Schritt dann aus der letzten bestätigten Nachricht ab.
+- **Später anzeigen** nimmt die Unterhaltung eine Zeit lang aus der aktiven Arbeit und behält ihren nächsten Schritt. Nutze es, wenn die nächste Prüfung von einem Zeitpunkt abhängt, nicht von einer anderen Person. Die Unterhaltung bleibt bis zum gewählten Zeitpunkt unter **Später**. Eine neue eingehende E-Mail zeigt sie sofort wieder.
 
-Eine neue eingehende E-Mail setzt jede Unterhaltung auf **Aktion erforderlich**. Eine bestätigte menschliche Antwort oder Antwort an alle setzt sie auf **Wartet auf Antwort**, und eine neue Nachricht, die du schreibst, beginnt dort. Automatische Antworten, Weiterleitungen, Wiederholungsversuche, fehlgeschlagene Sendevorgänge und unklare Zustellergebnisse erzeugen keinen neuen nächsten Schritt. **Erledigt** ist ein Teamstatus und keine Archivierungsaktion für E-Mails. Das Erledigen und erneute Öffnen entfernen die Unterhaltung außerdem aus **Später**.
+Neue eingehende E-Mails setzen jede Unterhaltung auf **Handlungsbedarf**. Eine bestätigte menschliche Antwort oder Antwort an alle setzt sie auf **Wartet auf Antwort**, und eine neue Nachricht, die du schreibst, beginnt dort. Automatische Antworten, Weiterleitungen, Wiederholungen, fehlgeschlagene Sendungen und unklare Zustellungsergebnisse setzen keinen neuen nächsten Schritt.
+
+Verstehe **Erledigt** als Status des Teams, nicht als Archivierung der E-Mail. Markierst du eine Unterhaltung als erledigt oder öffnest du sie wieder, entfernt das sie auch aus **Später**.
 
 ## Interne Kommentare hinzufügen {icon="point"}
 
-Interne Kommentare sind für Personen sichtbar, die das Postfach lesen dürfen, und werden niemals an E-Mail-Empfänger gesendet. Verwende sie für Übergaben, Entscheidungen und gemeinsamen Kontext. Mail benachrichtigt keine einzelnen Personen über Kommentare. Weise die Unterhaltung deshalb zu, wenn eine bestimmte Person für den nächsten Schritt verantwortlich ist.
+Interne Kommentare sehen alle, die das Postfach lesen können. Sie werden nie an E-Mail-Empfänger gesendet. Nutze sie für Übergaben, Entscheidungen und gemeinsamen Kontext. Mail benachrichtigt einzelne Personen nicht über Kommentare. Ist eine Person für den nächsten Schritt zuständig, weise ihr die Unterhaltung zu.
 
-Verfasser können ihre eigenen Kommentare nach dem Veröffentlichen 10 Minuten lang bearbeiten oder löschen. Kommentare von Workflows und anderen Personen bleiben unveränderlich, auch für Personen mit Postfach-Adminrechten. Gelöschte Kommentare hinterlassen einen Hinweis im Verlauf, statt spurlos aus der Teamhistorie zu verschwinden.
+Du kannst eigene Kommentare 10 Minuten lang nach dem Veröffentlichen bearbeiten oder löschen. Kommentare von Workflows und anderen Personen lassen sich nicht ändern, auch nicht mit Zugriff **Verwalten**. Ein gelöschter Kommentar hinterlässt eine Markierung im Verlauf, damit das Ereignis nicht still aus dem Verlauf des Teams verschwindet.
 
-## Persönliche Erinnerungen und Anwesenheit verwenden {icon="route"}
+## Persönliche Erinnerungen und Anwesenheit nutzen {icon="route"}
 
-Die **Persönliche Erinnerung** ist nur für dich sichtbar. Wenn du sie änderst oder entfernst, bleiben die Erinnerungen anderer Personen unverändert. Zum Fälligkeitszeitpunkt erstellt Mail eine Cloud-Benachrichtigung, sofern du weiterhin Zugriff auf das Postfach hast.
+Die **Persönliche Erinnerung** ist nur für dich. Löschst oder änderst du sie, bleiben die Erinnerungen anderer Personen unverändert. Ist die Erinnerung fällig, erstellt Mail eine Cloud-Benachrichtigung, sofern du noch Zugriff auf das Postfach hast.
 
-Wenn die Live-Anwesenheit verfügbar ist, zeigt **Gerade hier** die Personen, die die Unterhaltung aktuell ansehen oder darin schreiben. Die Anwesenheitsanzeige ist nur ein Hinweis. Die Bearbeitungssperre des gemeinsamen Entwurfs ist das verbindliche Signal dafür, wer einen Entwurf bearbeiten darf: Solange sie jemand hält, weist Mail Änderungen aller anderen ab, bis sie die Bearbeitung übernehmen.
+Ist die Live-Anwesenheit verfügbar, zeigt **Aktive Mitwirkende** die Personen, die die Unterhaltung gerade ansehen oder darin schreiben. Anwesenheit ist nur ein Hinweis. Die gemeinsame Bearbeitungssperre des Entwurfs entscheidet, wer einen Entwurf bearbeiten kann. Solange jemand sie hält, lehnt Mail Änderungen am Entwurf von allen anderen ab, bis jemand die Bearbeitung übernimmt.
 
-## Berechtigungen verstehen {icon="shield-lock"}
+## Zugriffsstufen verstehen {icon="shield-lock"}
 
-Der Postfachzugriff wird unter **Einstellungen > Zugriff** vergeben. Alle, die das Postfach lesen dürfen, sehen unter **Postfachdetails**, der Schaltfläche (i) neben **Verfassen**, wer welchen Zugriff hat. Wer nur lesen darf, findet an dieser Stelle **Über dieses Postfach**. Gastkonten sehen in diesen Details nur ihren eigenen Zugriff und den ihrer Gruppen.
+Zugriff auf das Postfach gibst du unter **Einstellungen → Zugriff**. Alle, die das Postfach ansehen können, sehen unter **Postfachdetails**, wer welchen Zugriff hat: die Schaltfläche (i) neben **Verfassen**. Personen mit Zugriff **Ansehen** sehen dort **Über dieses Postfach**. Gastkonten sehen dort nur ihren eigenen Zugriff und den Zugriff ihrer Gruppen.
 
-| Berechtigung | Erlaubte Aktionen |
+| Zugriff | Was er erlaubt |
 | --- | --- |
-| Lesen | E-Mails lesen und durchsuchen, Anhänge herunterladen, Informationen zur Zusammenarbeit sehen, interne Kommentare schreiben und persönliche Erinnerungen verwenden |
-| Schreiben | Alle Aktionen von Lesen sowie E-Mails verfassen und senden, den E-Mail-Status beim Anbieter ändern, Aufgaben zuweisen, Unterhaltungen erledigen oder wieder öffnen, den Zeitpunkt für das erneute Anzeigen wählen und Schlagwörter verwalten |
-| Admin | Alle Aktionen von Schreiben sowie Verbindungen, Identitäten, Ordnerzuordnungen, gemeinsame Einstellungen, Zugriffe, Antwortregeln, Workflows und das Löschen des Postfachs verwalten |
-| Nur zugewiesene ansehen | Die Aktionen von Lesen, aber nur für die Unterhaltungen, die der Person zugewiesen sind |
-| Nur zugewiesene bearbeiten | Die Aktionen von Schreiben, aber nur für die Unterhaltungen, die der Person zugewiesen sind, und ohne selbst jemanden zuzuweisen |
+| Ansehen | E-Mails lesen und durchsuchen, Anhänge herunterladen, Kontext der Zusammenarbeit sehen, interne Kommentare schreiben und persönliche Erinnerungen nutzen |
+| Bearbeiten | Alles aus Ansehen, dazu verfassen und senden, den E-Mail-Zustand beim Anbieter ändern, Arbeit zuweisen, Unterhaltungen als erledigt markieren oder wieder öffnen, festlegen, wann eine Unterhaltung wieder erscheint, und Tags von Unterhaltungen ändern |
+| Verwalten | Alles aus Bearbeiten, dazu Verbindungen, Absenderidentitäten, Ordnerzuordnungen, gemeinsame Einstellungen, Zugriff, Antwortrichtlinie, Workflows und das Löschen des Postfachs |
+| Nur zugewiesene ansehen | Alles aus Ansehen, aber nur in den Unterhaltungen, die der Person zugewiesen sind |
+| Nur zugewiesene bearbeiten | In den Unterhaltungen, die der Person zugewiesen sind, antworten und handeln, mit den Grenzen aus dem nächsten Abschnitt |
 
-Über den üblichen Cloud-Berechtigungseditor kann unterstützten Personen, Gruppen oder Dienstkonten Zugriff gewährt werden. Wird der Zugriff entfernt, gilt dies für das gesamte Postfach, einschließlich bereits geöffneter Live-Ansichten und künftiger Aktionen durch Agents oder Dienstkonten.
+Du gibst Zugriff mit dem normalen Zugriffseditor von Cloud an die unterstützten Personen, Gruppen oder Dienstkonten. Entfernst du Zugriff, gilt das für das ganze Postfach, auch für offene Live-Ansichten und künftige Aktionen von Agenten oder Dienstkonten.
 
 ## Zugriff nur auf zugewiesene Unterhaltungen geben {icon="user-check"}
 
-Wähle unter **Einstellungen > Zugriff** für eine Person oder Gruppe **Nur zugewiesene ansehen** oder **Nur zugewiesene bearbeiten**, wenn sie an ausgewählten Unterhaltungen arbeiten soll, ohne den Rest des Postfachs zu sehen, etwa eine freie Mitarbeiterin oder ein anderes Team. Bei einer Gruppe sieht jedes Mitglied die Unterhaltungen, die ihm zugewiesen sind.
+Wähle unter **Einstellungen → Zugriff** für eine Person oder Gruppe **Nur zugewiesene ansehen** oder **Nur zugewiesene bearbeiten**, wenn sie an ausgewählten Unterhaltungen arbeiten soll, ohne den Rest des Postfachs zu sehen. Beispiele sind eine freie Mitarbeiterin oder ein anderes Team. In einer Gruppe sieht jedes Mitglied die Unterhaltungen, die ihm zugewiesen sind.
 
-- Sie sieht keine E-Mails, bis jemand mit vollem Postfachzugriff ihr eine Unterhaltung zuweist. Dann sieht sie diese Unterhaltung mit allen Nachrichten, auch später eintreffenden Antworten, sowie ihre Anhänge, Kommentare und Aktivitäten.
-- Die Ordnerliste zeigt nur Ordner, in denen eine ihrer Unterhaltungen liegt, und alle Zähler zählen nur ihre Unterhaltungen. Suche, **Mir zugewiesen**, die Mail-Übersicht, die Cloud-Suche, der Assistent und `cld` verhalten sich genauso.
-- Mit **Nur zugewiesene bearbeiten** kann sie in ihren Unterhaltungen antworten, weiterleiten, als gelesen oder erledigt markieren, verschieben, kommentieren und Tags setzen. Sie kann keine neuen Nachrichten schreiben, niemanden zuweisen, keine Tags oder Ordner anlegen, keine Unterhaltungen zusammenführen oder trennen und keine Postfacheinstellungen ändern.
-- Endet eine Zuweisung, verschwindet die Unterhaltung für sie sofort: aus Listen und geöffneten Ansichten, der Suche, Downloads und Benachrichtigungen. Antworten und Aktionen, die sie dafür eingereiht hat, auch geplante Sendungen, werden nicht mehr ausgeführt.
+- Die Person sieht keine E-Mails, bis jemand mit Zugriff **Bearbeiten** oder **Verwalten** ihr eine Unterhaltung zuweist. Dann sieht sie diese Unterhaltung mit allen Nachrichten, auch mit später eintreffenden Antworten. Sie sieht auch die Anhänge, Kommentare und Aktivität der Unterhaltung.
+- Die Ordnerliste zeigt nur die Ordner, in denen eine ihrer Unterhaltungen liegt. Jeder Zähler zählt nur ihre Unterhaltungen. Suche, **Mir zugewiesen**, die Mail-Übersicht, die Cloud-Suche, Assistant und `cld` verhalten sich genauso.
+- Mit **Nur zugewiesene bearbeiten** kann sie in ihren Unterhaltungen antworten, weiterleiten, als gelesen oder erledigt markieren, verschieben, kommentieren und vorhandene Tags hinzufügen. Sie kann keine neuen Nachrichten schreiben, niemanden zuweisen, keine Tags oder Ordner anlegen, keine Unterhaltungen zusammenführen oder trennen und keine Einstellungen des Postfachs ändern.
+- Endet eine Zuweisung, verschwindet die Unterhaltung sofort für sie: aus Listen, geöffneten Ansichten, der Suche, Downloads und Benachrichtigungen. Mail führt die Antworten und Aktionen, die sie dafür eingereiht hat, nicht mehr aus, auch keine geplanten Sendungen.
 
-Wer vollen Zugriff auf das Postfach hat, behält ihn; ein zusätzlicher Zugriff nur auf zugewiesene Unterhaltungen ändert für diese Person nichts.
+Wer zusätzlich Zugriff **Ansehen**, **Bearbeiten** oder **Verwalten** auf das ganze Postfach hat, behält ihn. Der Zugriff nur auf zugewiesene Unterhaltungen ändert dann für diese Person nichts.
 
-## Kontext aus Kontakte verwenden {icon="address-book"}
+## Kontext aus Contacts nutzen {icon="address-book"}
 
-Öffne **Unterhaltungsdetails**, um Kontakte zu sehen, deren E-Mail-Adressen exakt mit sichtbaren Beteiligten der Unterhaltung übereinstimmen. Mehrere Kontakte können dieselbe Adresse enthalten. Mail zeigt alle aktuell lesbaren Treffer und wählt oder vereint sie nicht. Die Aktion **Zugehörige E-Mails** auf einer Kontaktkarte öffnet in einem neuen Tab eine exakte, URL-basierte Suche nach dieser Person. Der separate Bereich **Zugehörige E-Mails** für die Unterhaltung verwendet gemeinsame Beteiligte und normalisierte Betreffzeilen und erläutert jeden Treffer.
+Öffne die **Unterhaltungsdetails**, um Kontakte zu sehen, deren E-Mail-Adressen genau zu sichtbaren Beteiligten der Unterhaltung passen. Mehrere Kontakte können zur selben Adresse passen. Mail zeigt jeden Treffer, den du gerade lesen kannst, und wählt nicht zwischen ihnen und führt sie nicht zusammen.
 
-Hat eine externe Person keinen passenden Kontakt, wähle **Als Kontakt hinzufügen**, dann ein beschreibbares Adressbuch. Mail legt den Kontakt dort mit dem angezeigten Namen und der E-Mail-Adresse an. Für eine Adresse, die bereits zu einem lesbaren Kontakt passt, wird keine Schaltfläche angezeigt. Das gilt auch für Treffer, die nicht auf der ersten Ergebnisseite stehen.
+Die Aktion **Zugehörige E-Mails** auf einer Kontaktkarte öffnet in einem neuen Tab eine exakte Suche mit eigener URL nach dieser beteiligten Person. Der separate Abschnitt **Verwandte E-Mails** der Unterhaltung nutzt gemeinsame Beteiligte und normalisierte Betreffzeilen und erklärt jeden Treffer.
 
-Mail speichert keine Eigentumsangaben, Notizen, Bankdaten, Zugriffseinträge oder andere privaten Kontaktfelder. Beim Öffnen der Detailansicht fordert Mail von Kontakte eine begrenzte Projektion der Beteiligten an. Cloud-Administratoren können diesen Bereich auf eine andere Kontaktverzeichnis-App umstellen; siehe **Kontaktverzeichnis wählen**. **Als Kontakt hinzufügen** erscheint nur, wenn diese App das Anlegen von Kontakten unterstützt.
+Hat eine externe beteiligte Person keinen passenden Kontakt, wähle **Neuer Kontakt** und wähle ein Adressbuch, in das du schreiben kannst. Mail legt den Kontakt dort mit dem angezeigten Namen und der E-Mail-Adresse an. Für eine Adresse, die schon zu einem Kontakt passt, den du lesen kannst, zeigt Mail keine Schaltfläche. Das gilt auch für Treffer, die nicht auf der ersten Ergebnisseite stehen.
 
-Die CLI stellt Treffer auf Unterhaltungsebene mit `cld mail conversation related`, Kontext aus Kontakte mit `cld mail conversation context` und den gesonderten kontaktbezogenen Verlauf mit `cld mail conversation contact-history` bereit.
+Mail speichert keine Eigentumsangaben, Notizen, Bankdaten, Zugriffseinträge oder andere privaten Felder von Kontakten. Jedes Mal, wenn du den Detailbereich öffnest, fragt Mail bei Contacts eine begrenzte Auswahl an Daten der Beteiligten ab. Die Cloud-Administration kann diesen Abschnitt auf eine andere Kontaktverzeichnis-App umstellen; siehe **Kontaktverzeichnis wählen**. **Neuer Kontakt** erscheint nur, wenn diese App das Anlegen von Kontakten unterstützt.
+
+Die CLI zeigt Treffer zur Unterhaltung über `cld mail conversation related` und Kontext aus Contacts über `cld mail conversation context`. Den kontaktbezogenen Verlauf zeigt sie über `cld mail conversation contact-history`.
 
 ## Unterhaltungen mit Spaces verknüpfen {icon="link"}
 
-Öffne **Unterhaltungsdetails**, um die Unterhaltung mit einer vorhandenen beschreibbaren Aufgabe oder einem Ereignis in Spaces zu verknüpfen. Dort kannst du auch direkt eine verknüpfte Aufgabe oder ein verknüpftes Ereignis erstellen. Das Element in Spaces besitzt die Verknüpfung. Sie bleibt daher erhalten, wenn einer Gruppe Zugriff auf das Postfach oder den Space gewährt wird und eine Person das Team verlässt.
+Öffne die **Unterhaltungsdetails**, um die Unterhaltung mit einer vorhandenen Aufgabe oder einem Termin in einem Space zu verknüpfen, in dem du Zugriff **Bearbeiten** hast. Du kannst auch direkt eine verknüpfte Aufgabe oder einen Termin erstellen. Der Eintrag im Space besitzt die Verknüpfung. Die Verknüpfung bleibt deshalb erhalten, wenn eine Gruppe Zugriff auf Postfach oder Space hat und eine Person das Team verlässt.
 
-Mail zeigt nur Elemente in Spaces, die du aktuell lesen darfst, und bietet nur Ziele an, in denen du schreiben darfst. Beim Öffnen einer verknüpften Mail-Unterhaltung oder eines Elements in Spaces werden die aktuellen Berechtigungen der jeweiligen Anwendung erneut geprüft. Ein entferntes oder nicht mehr zugängliches Ziel kann deshalb als nicht verfügbares Element angezeigt werden, bis eine schreibberechtigte Person in Spaces die Verknüpfung entfernt.
+Mail zeigt nur Einträge aus Spaces, die du gerade ansehen kannst. Als Ziel einer Verknüpfung bietet Mail nur Einträge an, für die du Zugriff **Bearbeiten** hast. Öffnest du eine verknüpfte Mail-Unterhaltung oder einen Eintrag in Spaces, prüft die jeweilige App deinen aktuellen Zugriff erneut. Ein entferntes oder nicht zugängliches Ziel kann deshalb als nicht verfügbare Bezeichnung bleiben, bis jemand mit Zugriff **Bearbeiten** auf den Space die Verknüpfung entfernt.
 
-## Gemeinsame und private Daten unterscheiden {icon="shield-lock"}
+Bei einer geöffneten Unterhaltung bietet die Cloud-Suche auch **Diese Konversation mit Aufgabe oder Termin verknüpfen** an. Wähle einen vorhandenen Eintrag in Spaces. Mail lässt die Unterhaltung geöffnet.
 
-Im Postfach gemeinsam genutzt werden:
+## Wissen, was geteilt und was privat ist {icon="shield-lock"}
 
-- Nachrichten und Anbieterordner, die über das verbundene Konto sichtbar sind,
-- Postfachvorlagen und Standardsignaturen des Postfachs,
+Im ganzen Postfach geteilt:
+
+- Nachrichten und Anbieterordner, die das verbundene Konto zeigt,
+- Vorlagen und Standardsignaturen des Postfachs,
 - gespeicherte Ansichten des Postfachs,
-- lokale Schlagwörter sowie
-- Zuweisung, Status, der unter **Später anzeigen** gewählte Zeitpunkt, Kommentare, Referenzen, Aktivitäten und gemeinsame Entwürfe einer Unterhaltung.
+- lokale Tags,
+- Zuweisung, Status, der mit **Später anzeigen** gewählte Zeitpunkt, Kommentare, Referenzen, Aktivität und gemeinsame Entwürfe einer Unterhaltung.
 
-Privat für eine Person bleiben:
+Privat für eine Person:
 
 - private gespeicherte Ansichten,
 - private Signaturen und Textbausteine,
 - persönliche Standardsignaturen,
-- persönliche Erinnerungen sowie
-- Geräteeinstellungen wie das Format beim Verfassen, das Zeitfenster zum Rückgängigmachen des Sendens und die Anordnung der Bereiche.
+- persönliche Erinnerungen,
+- Geräteeinstellungen wie Format beim Verfassen, Zeitfenster für Senden rückgängig machen und Anordnung der Bereiche.
 
-Weitere Informationen zu Entwürfen und den Folgen einer Übernahme findest du unter [Nachrichten schreiben und senden](/app/mail/help/mail-compose).
-
-Bei einer geöffneten Konversation bietet die Cloud-Suche auch **Diese Konversation mit Aufgabe oder Termin verknüpfen** an. Wähle einen bestehenden Spaces-Eintrag; die Konversation bleibt geöffnet.
+Wie Entwürfe funktionieren und was eine Übernahme bewirkt, steht unter [E-Mails verfassen und senden](/app/mail/help/mail-compose).

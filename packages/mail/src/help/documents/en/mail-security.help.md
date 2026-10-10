@@ -6,40 +6,40 @@ description: Understand Mail warnings, report phishing, and manage organization 
 order: 35
 ---
 
-Mail keeps uncertain signals quiet instead of turning every unusual message into an alarm. A warning appears only when Mail has meaningful, explainable evidence. Ordinary external links, newsletters, and a single minor difference do not create a warning by themselves.
+Mail keeps uncertain signals quiet instead of turning every unusual message into an alarm. A warning appears only when Mail has meaningful evidence that it can explain. Ordinary external links, newsletters, and a single minor difference do not create a warning by themselves.
 
-## When a warning appears {icon="shield-exclamation"}
+## Check a warning {icon="shield-exclamation"}
 
-Read the short reasons shown above the message before opening links or replying. Mail may warn when several details do not fit together, for example when:
+Before you open links or reply, read the short reasons above the message. Mail can warn when several details do not fit together, for example when:
 
 - the visible link text points to a different website;
 - replies go to another domain and another warning sign is present;
 - a protected organization name arrives from an unexpected domain; or
 - your receiving mail system reports that sender verification failed.
 
-Mail always removes active scripts from HTML mail and blocks remote images until you choose to load them. These protections also apply to messages without a phishing warning.
+Mail always removes active scripts from HTML mail. It blocks remote images until you choose to load them. These protections also apply to messages without a phishing warning.
 
-An organization administrator can block an exact sender, a sender domain and its subdomains, or a link domain and its subdomains. Mail then marks matching messages as blocked and disables their links and attachments in the reader. This is stronger than a warning and is used only for explicit organization rules.
+A Cloud administrator can block an exact sender, a sender domain and its subdomains, or a link domain and its subdomains. Mail then marks matching messages as blocked and turns off their links and attachments in the reader. This is stronger than a warning, and Mail uses it only for explicit organization rules.
 
-This protection is deliberately limited to the Mail reader. It does not move messages at the provider or start, cancel, or duplicate automation runs. Configure an incoming automation separately when messages must also be moved, tagged, or excluded from an automatic reply.
+This protection is limited to the Mail reader on purpose. It does not move messages at the provider or start, cancel, or duplicate automation runs. When messages must also be moved, tagged, or excluded from an automatic reply, set up an incoming automation separately.
 
 ## Report a suspicious message {icon="flag"}
 
-Open the message menu and choose **Report phishing**. Mail sends administrators the sender address, message ID, and the warning evidence it calculated. The report does not upload or copy the subject or message body into the administration page.
+Open the message menu and choose **Report phishing**. Mail sends administrators the sender address, the message ID, and the warning evidence that Mail calculated. The report does not upload or copy the subject or message body into the administration page.
 
-Reporting is useful even when Mail shows no warning. Administrators can compare reports, start a review, confirm phishing, or dismiss a false alarm. Reporting the same message again updates the existing report instead of creating a noisy duplicate.
+A report helps even when Mail shows no warning. Administrators can compare reports, start a review, confirm phishing, or dismiss a false alarm. When you report the same message again, Mail updates the existing report and creates no extra duplicate.
 
-If you are unsure, do not follow links or open attachments. Contact the supposed sender through a known phone number, bookmarked website, or a new message to an address you already trust.
+If you are unsure, do not follow links or open attachments. Contact the supposed sender through a phone number that you know, a bookmarked website, or a new message to an address that you already trust.
 
-## For Cloud administrators {icon="settings"}
+## Set organization rules as an administrator {icon="settings"}
 
-Open **Administration > Mail > Security** to review reports and manage organization-wide rules.
+As a Cloud administrator, open **Administration → Mail → Security** to review reports and change organization-wide rules.
 
-- **Block** rules may target one exact sender address, or a sender or link destination domain including its subdomains.
-- **Trust** rules accept one sender address or sender domain only when a configured receiving server reports a passed authentication check aligned with the visible sender domain. A pass for an unrelated domain is ignored, and trust never overrides an explicit block.
-- **Protected identities** connect an exact visible sender name, such as a company or service, to its allowed domains. A mismatch creates a warning; it does not delete or move the message.
-- **Trusted authentication sources** lists the receiving mail servers whose sender-verification results Mail may trust. These are server names from `Authentication-Results`, not sender domains. Leave this empty until your mail administrator supplies the correct value.
+- **Block** rules can target one exact sender address, or a sender domain or link domain including its subdomains.
+- **Trust** rules accept one sender address or sender domain only when a configured receiving server reports a passed authentication check that matches the visible sender domain. A pass for an unrelated domain is ignored, and trust never overrides an explicit block.
+- **Protected identities** connect an exact visible sender name, such as a company or service, to its allowed domains. A mismatch creates a warning. It does not delete or move the message.
+- **Trusted authentication results** lists the receiving mail servers whose sender verification results Mail can trust. These are server names from `Authentication-Results`, not sender domains. Leave the list empty until your mail administrator gives you the correct value.
 
-Keep rules narrow and include a short reason for other administrators. Review reports before adding organization-wide blocks. Mail deliberately does not import public reputation lists or automatically report mail to your provider.
+Keep rules narrow and add a short reason for other administrators. Review reports before you add organization-wide blocks. Mail does not import public reputation lists and does not report mail to your provider automatically.
 
-The CLI exposes the same workflows through `cld mail message report-phishing` and `cld mail admin security ...`.
+The CLI offers the same workflows through `cld mail message report-phishing` and `cld mail admin security ...`.

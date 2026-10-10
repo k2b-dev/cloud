@@ -6,33 +6,33 @@ description: "Write readable Markdown notes, discuss pages, connect them with li
 order: 120
 ---
 
-Write notes as readable Markdown, then use links, tags, attachments, and the sidebar to make the notebook navigable.
+Write notes as readable Markdown. Then use links, tags, attachments, and the sidebar to make the notebook easy to navigate.
 
 **Collaboration**
 
 ## Discuss a page {icon="message-circle"}
 
-Use **Comments** in the note details for questions, feedback, and decisions that belong beside the page but should not change its Markdown.
+Use **Comments** in the note details for questions, feedback, and decisions. Comments belong next to the page but do not change its Markdown.
 
 :::reference
-- **Views:** Writers and admins can follow discussions in Write or Read-only. Book has no detail panel or discussions.
-- **Add:** Writers can post Markdown comments. New comments appear live for other users viewing the detail panel.
-- **Correct:** You can edit or delete your own comment for ten minutes after posting.
-- **Locked notes:** A lock freezes the note body, not its discussion. Writers can still comment on a locked note.
+- **Views:** With **Edit** or **Manage** access, you follow discussions in **Write** or **Read-only**. Book has no detail panel and no discussions.
+- **Add:** With **Edit** access, you can post Markdown comments. Other people who have the detail panel open see new comments immediately.
+- **Correct:** You can edit or delete your own comment for ten minutes after you post it.
+- **Locked notes:** A lock freezes the note text, not its discussion. With **Edit** access, you can still comment on a locked note.
 :::
 
-Keep durable handbook content in the note itself. Use comments to discuss that content before or after it changes.
+Keep lasting handbook content in the note itself. Use comments to discuss that content before or after it changes.
 
-**Edit with AI** opens Assistant with the page and its discussion. Assistant can also correct or delete your recent comments after review; the same author and ten-minute rules apply. Query and TOC drafts can be checked without saving. This check does not validate every Markdown feature or table formula.
+**Edit with AI** opens Assistant with the page and its discussion. After your review, Assistant can also correct or delete your recent comments. The same author and ten-minute rules apply. Assistant can check query and contents drafts without saving them. This check does not cover every Markdown feature or table formula.
 
 **Markdown**
 
 ## Write a useful note {icon="pencil"}
 
 :::reference
-- **Headings:** Use #, ##, and deeper headings to create sections. The first H1, or otherwise the first visible line, is also the note title used by navigation and search.
-- **Lists and tasks:** Use - for lists and - [ ] or - [x] for tasks.
-- **Slash menu:** Use the editor insert menu for common blocks such as notes, files, and tables. Type ::: for data, query, contents, and callout blocks.
+- **Headings:** Use #, ##, and deeper headings to create sections. The first H1 is the note title in navigation and search. Without an H1, the first visible line is the title.
+- **Lists and tasks:** Use - for lists. Use - [ ] or - [x] for tasks.
+- **Slash menu:** Use the insert menu of the editor for common blocks such as notes, files, and tables. Type ::: for data, query, contents, and callout blocks.
 :::
 
 **Normal note**
@@ -54,47 +54,49 @@ Use short paragraphs. Keep one idea per section.
 
 ## Indent with Tab {icon="keyboard"}
 
-Tab indents in the note editor, so you can nest lists and line up code without reaching for the mouse. The note stores plain spaces.
+**Tab** indents in the note editor. You can nest lists and line up code without the mouse. The note stores plain spaces.
 
 :::reference
-- **Text and code:** Tab inserts two spaces at the cursor or indents the selected lines. Shift+Tab removes up to two spaces of indentation.
-- **Lists:** Tab nests the current item under the item above it, and its sub-items move with it. Shift+Tab moves it back out one level.
-- **Tables:** Tab selects the next cell, Shift+Tab the previous one.
-- **Suggestions:** If a suggestion list is open, Tab accepts the highlighted suggestion.
-- **Leave the editor:** Press Esc, then Tab to move to the next control, or Esc, then Shift+Tab to move back.
-- **Keep Tab for focus:** In **Settings**, open **Notebook — View & behavior** and turn on **Tab moves focus instead of indenting**. The choice is stored in this browser and applies immediately.
+- **Text and code:** **Tab** inserts two spaces at the cursor or indents the selected lines. **Shift+Tab** removes up to two spaces of indentation.
+- **Lists:** **Tab** nests the current item under the item above it. Its sub-items move with it. **Shift+Tab** moves it back out one level.
+- **Tables:** **Tab** selects the next cell, **Shift+Tab** the previous cell.
+- **Suggestions:** If a suggestion list is open, **Tab** accepts the highlighted suggestion.
+- **Leave the editor:** Press **Esc**, then **Tab** to move to the next control. Press **Esc**, then **Shift+Tab** to move back.
+- **Keep Tab for focus:** Open **Settings → Notebook → View & behavior** and turn on **Tab moves focus instead of indenting**. This browser stores the choice, and it applies immediately.
 :::
 
 ## Hide the navigation {icon="layout-sidebar-left-collapse"}
 
-Hide the navigation to write with the full width, or when others can see your screen and should not see your notes and folders.
+Hide the navigation to write with the full width. Hide it also when others can see your screen and must not see your notes and folders.
 
 :::reference
-- **Hide:** Select **Hide navigation** at the far left of the editor toolbar, press **Cmd/Ctrl+Alt+S**, type `>` in the Cloud search and run **Hide notebook navigation**, or drag the navigation's edge almost all the way to the left. The navigation disappears completely in both layouts and in Book view, including the navigator's note list and Book view's list of pages.
-- **Show:** Select **Show navigation** in the same place, press **Cmd/Ctrl+Alt+S** again, or type `>` in the Cloud search and run **Show notebook navigation**. Where the editor toolbar is not shown, such as in Book view, in an empty notebook, in Read-only, in the graph, or in the attachments, the button sits in the bottom-left corner.
-- **Stays hidden:** The choice is stored in this browser and applies to every notebook, also after a reload and in other open tabs. A notebook with hidden navigation opens without it, so its note titles do not appear while the page loads.
-- **Your place in the note:** Hiding or showing the navigation keeps the cursor where it is, and the text at the top of the editor or of Book view stays in place.
-- **Phones:** Small screens keep the navigation in the menu. The button appears on wider screens, where the navigation sits beside the note.
+- **Hide:** Choose **Hide navigation** at the far left of the editor toolbar. You can also press **Cmd/Ctrl+Alt+S**, or type `>` in the Cloud search and run **Hide notebook navigation**. You can also drag the edge of the navigation almost all the way to the left.
+- **What disappears:** The navigation disappears completely in both layouts and in Book view. This includes the note list of the navigator and the page list of Book view.
+- **Show:** Choose **Show navigation** in the same place, or press **Cmd/Ctrl+Alt+S** again. You can also type `>` in the Cloud search and run **Show notebook navigation**.
+- **No toolbar:** Some places show no editor toolbar: Book view, an empty notebook, **Read-only**, the graph, and the attachments. There, the button is in the bottom-left corner.
+- **Stays hidden:** This browser stores the choice. It applies to every notebook, also after a reload and in other open tabs. A notebook with hidden navigation opens without it, so its note titles do not appear while the page loads.
+- **Your place in the note:** When you hide or show the navigation, the cursor stays where it is. The text at the top of the editor or of Book view stays in place.
+- **Phones:** On small screens, the navigation stays in the menu. The button appears on wider screens, where the navigation is next to the note.
 :::
 
 ## Arrange notes {icon="arrows-sort"}
 
-Notes on each level of the sidebar read by title until someone arranges them. Writers and admins choose their own order, for example the chapters of a book; everyone sees it in the sidebar and in Book right away.
+On each level of the sidebar, notes are in title order until someone arranges them. With **Edit** or **Manage** access, you choose your own order, for example the chapters of a book. Everyone sees this order immediately in the sidebar and in Book.
 
 :::reference
-- **Drag:** On a computer, drag a note up or down among its neighbours. A line shows where it lands. Notes with sub-notes move with them, and a note stays on its level; use **Move** in the note menu to put it under another note.
+- **Drag:** On a computer, drag a note up or down among its neighbours. A line shows where it lands. Sub-notes move with their note, and the note stays on its level. To put a note under another note, use **Move** in the note menu.
 - **Keyboard:** Select a note in the sidebar and press **Alt+Arrow Up** or **Alt+Arrow Down**.
 - **Phones and menus:** Open the note menu and choose **Move up** or **Move down**.
-- **One level at a time:** Arranging a note fixes the order of its level only. Other levels keep reading by title. New notes on an arranged level appear at the end; notes moved there from elsewhere too.
-- **Back to titles:** In the menu of a note with sub-notes, **Sort subnotes alphabetically** sets that level back to title order. For the top level, use **Sort top level alphabetically** in the menu of any note on it.
-- **Homepage:** The homepage stays first on its level; other notes cannot move above it.
-- **Sorting the sidebar:** The order applies when the sidebar sorts by **Notebook order**. Sorting by **Last updated** or **Created** only changes your view and offers no arranging.
-- **Readers** see the arranged order but cannot change it.
+- **One level at a time:** When you arrange a note, only the order of its level is fixed. Other levels stay in title order. New notes on an arranged level appear at the end. Notes that you move there from elsewhere also appear at the end.
+- **Back to titles:** In the menu of a note with sub-notes, **Sort subnotes alphabetically** sets that level back to title order. For the top level, choose **Sort top level alphabetically** in the menu of any note on it.
+- **Homepage:** The homepage stays first on its level. Other notes cannot move above it.
+- **Sidebar sorting:** The order applies when the sidebar sorts by **Notebook order**. Sorting by **Last updated** or **Created** changes only your view and offers no arranging.
+- **View access:** People with **View** access see the arranged order but cannot change it.
 :::
 
-## Typographic symbols {icon="typography"}
+## Type typographic symbols {icon="typography"}
 
-Notebooks shows some typed sequences as one symbol when you read or edit a note. The note keeps the characters you typed, so search, export, and Assistant see them unchanged.
+When you read or edit a note, Notebooks shows some typed sequences as one symbol. The note keeps the characters that you typed. Search, export, and Assistant see them unchanged.
 
 | You type | You see |
 | --- | --- |
@@ -106,16 +108,25 @@ Notebooks shows some typed sequences as one symbol when you read or edit a note.
 | `--` with a space on both sides | – |
 
 :::reference
-- **See the characters:** Place the cursor on a symbol or select it to edit the typed characters. **Show Markdown source** always shows them. In Book, hover a symbol.
+- **See the characters:** Place the cursor on a symbol or select it to edit the typed characters. **Show Markdown source** always shows them. In Book, hover over a symbol.
 - **Unchanged:** Code, math, links, HTML, data and query blocks, and front matter keep the typed characters.
 - **Keep a sequence:** Type a backslash before its first character, for example `\->`.
 :::
 
 **Readable emphasis**
 
-## Callouts {icon="message-circle"}
+## Add callouts {icon="message-circle"}
 
-Use callouts for context, decisions, warnings, and status that should be visible while scanning a note. Write `:::note`, `:::info`, `:::success`, `:::warning`, or `:::danger` on its own line, the text, and `:::` to close. A callout is a calm box: a light tint for its type, regular text, and no icon. To give it a heading, write it after the type, such as `:::warning Open risk`. The editor, Book, and PDF export show the same box, as do Spaces descriptions, comments, and Help.
+Use callouts for context, decisions, warnings, and status that readers must see while they scan a note.
+
+:::steps
+1. On its own line, write `:::note`, `:::info`, `:::success`, `:::warning`, or `:::danger`.
+2. Optional: Add a heading after the type, for example `:::warning Open risk`.
+3. Write the text on the next lines.
+4. Close the callout with `:::` on its own line.
+:::
+
+A callout is a calm box: a light tint for its type, regular text, and no icon. The editor, Book, and PDF export show the same box. Spaces descriptions, comments, and Help show it too.
 
 **Readable boxes**
 
@@ -139,28 +150,36 @@ Waiting for final prices.
 
 ## Zoom and export diagrams {icon="chart-dots-3"}
 
-Write a Mermaid diagram in a code block marked `mermaid`. The editor and Book show the rendered diagram; in the editor, click it to edit its source.
+Write a Mermaid diagram in a code block marked `mermaid`. The editor and Book show the rendered diagram. In the editor, choose the diagram to edit its source.
 
 :::reference
-- **Zoom:** Use the plus and minus buttons, hold Ctrl or Cmd while scrolling, or pinch on a touch screen. Plain scrolling keeps scrolling the page.
-- **Move:** When zoomed in, drag the diagram or use the arrow keys. The reset button returns to the full diagram.
-- **Keyboard:** Focus the diagram, then press + and - to zoom, 0 to reset, and F to open it fullscreen.
-- **Fullscreen:** The fullscreen button opens the diagram in a large window with the same controls. Press Esc to close it.
-- **Export:** In fullscreen, **Download SVG** saves a scalable file and **Download PNG** saves an image on the theme background. The file name is the note title.
+- **Zoom:** Use the plus and minus buttons, or hold **Ctrl** or **Cmd** while you scroll. On a touch screen, pinch. Plain scrolling still scrolls the page.
+- **Move:** When you have zoomed in, drag the diagram or use the arrow keys. The reset button shows the full diagram again.
+- **Keyboard:** Focus the diagram. Press **+** and **-** to zoom, **0** to reset, and **F** to open it in fullscreen.
+- **Fullscreen:** The fullscreen button opens the diagram in a large window with the same controls. Press **Esc** to close it.
+- **Export:** In fullscreen, **Download SVG** saves a scalable file. **Download PNG** saves an image on the theme background. The file name is the note title.
 :::
 
-In the editor, the controls appear when you point at or focus the diagram. Every diagram opens at its full size again after a reload.
+In the editor, the controls appear when you point at the diagram or focus it. After a reload, every diagram opens at its full size again.
 
 **Organization**
 
-## Links, tags, and attachments {icon="link"}
+## Connect notes with links, tags, and attachments {icon="link"}
 
 :::reference
-- **Note links:** The Markdown form is `[Label](note://shortId)`, but the editor can insert links for you. To open a note at a heading, add the heading name in lowercase with hyphens: `[Label](note://shortId#backup-restore)` opens the heading "Backup & Restore". If the note has no such heading, it opens at the top.
-- **Tags:** Use #garden style tags for cross-note grouping. Tag filters match parsed tags, not arbitrary words.
-- **Attachments:** Images render inline. Other files render as links. Both use attach://shortId references.
-- **How links look:** Links to notes, headings, and files appear as light gray labels with a colored icon for the type: red for PDFs, violet for images, orange for design files, blue-gray for notes, and gray for headings. A link to a heading in another note shows that note first, as in "Color system › Accent color". A file on a line of its own also shows its size. Links to websites and email addresses stay part of the text with a thin underline; website links end in a small ↗. Book view and PDF exports show links this way. The editor uses the same look, but shows only the link text for a heading, takes a file's type from its link text, and shows no file sizes.
-- **Open an attachment:** Select an image to see it full screen. Select a PDF, Markdown, text, JSON, or CSV file to open its preview. The preview has **Download**. PDFs add **Open in new tab**, and text and JSON files add **Copy**. Other files, such as archives, audio, and video, are downloaded after you confirm. So are very large files and images that don't display in the note. This works in the editor, in Book view, in the details panel, and in the attachments view.
+- **Note links:** The Markdown form is `[Label](note://shortId)`. The editor can insert links for you.
+- **Link to a heading:** Add the heading name in lowercase with hyphens. `[Label](note://shortId#backup-restore)` opens the heading "Backup & Restore". If the note has no such heading, it opens at the top.
+- **Tags:** Use tags such as #garden to group notes across the notebook. Tag filters match parsed tags, not any word.
+- **Attachments:** Images appear inline. Other files appear as links. Both use attach://shortId references.
+- **How links look:** Links to notes, headings, and files are light gray labels with a colored type icon. PDFs are red, images violet, design files orange, notes blue-gray, and headings gray.
+- **Heading in another note:** The link shows that note first, as in "Color system › Accent color".
+- **File on its own line:** The link also shows the file size.
+- **Websites and email addresses:** These links stay part of the text with a thin underline. Website links end in a small ↗.
+- **Where links look this way:** Book view and PDF exports show links this way. The editor uses the same look with three differences. It shows only the link text for a heading, takes the file type from the link text, and shows no file sizes.
+- **Open an attachment:** Select an image to see it in fullscreen. Select a PDF, Markdown, text, JSON, or CSV file to open its preview.
+- **Preview actions:** The preview has **Download**. PDFs add **Open in new tab**, and text and JSON files add **Copy**.
+- **Other files:** Notebooks downloads other files, such as archives, audio, and video, after you confirm. The same applies to very large files and to images that the note cannot display.
+- **Where this works:** You can open attachments in the editor, in Book view, in the details panel, and in the attachments view.
 :::
 
 **Hub note with links**

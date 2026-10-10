@@ -6,219 +6,290 @@ description: Manage transport, identities, folders, access, automation, and mail
 order: 50
 ---
 
-Mailbox administrators manage the provider connection and the Cloud policies around it. Open **Settings** from the mailbox navigation.
+With **Manage** access to a mailbox, you control the provider connection and the Cloud rules around it. Open **Settings** from the mailbox navigation.
 
 ## Know which settings are personal {icon="settings"}
 
-Settings are grouped by intent:
+Settings are grouped by purpose:
 
-- **Reading** is available to every mailbox reader and controls whether this browser shows safe HTML, plain text, or adapts to the current theme.
-- **Organization** is available to readers for private saved views. Writers can also create shared views and mailbox tags.
-- **General** is the first administrator category and controls the shared identity and sending safeguards.
-- **Writing** is available to writers and administrators. It contains personal writing preferences, templates, signature defaults, and the email-design editor. Mailbox-wide content and design require Admin access.
-- **General**, **Accounts & identities**, **Calendar invitations**, **Folders**, **Access**, and **Danger zone** are available only to mailbox administrators.
+- **Reading** is available to every mailbox reader. It sets whether this browser shows safe HTML or plain text, or adapts to the current theme.
+- **Organization** is available with **View** access for private saved views. With **Edit** access, you can also create shared views and mailbox tags.
+- **Writing** is available with **Edit** or **Manage** access. It contains personal writing preferences, templates, signature defaults, and the email design editor. Content and design for the whole mailbox require **Manage** access.
+- **General** is the first category that requires **Manage** access. It sets the shared identity and the sending safeguards.
+- **General**, **Accounts & identities**, **Calendar invitations**, **Folders**, **Access**, and **Danger zone** require **Manage** access.
 
-Under **Settings > Calendar invitations**, choose one writable Space as the suggested destination when you import invitations. Mail stores this mailbox-wide preference and Spaces returns only destinations the current user may write. It does not import mail automatically, and every invitation can target another writable Space. Clearing the selection is safe. If the Space is deleted or access is revoked, Mail treats the default as unset.
+In **Settings → Calendar invitations**, choose one Space where you have **Edit** access as the suggested destination for imported invitations. Mail stores this preference for the whole mailbox. Spaces offers each person only destinations where they have **Edit** access.
 
-Operational status and public attachment links are separate from configuration. Open them from **Mailbox tools** in the mailbox navigation.
+The setting does not import mail automatically. Each invitation can go to another Space where you have **Edit** access. You can safely clear the selection. If someone deletes the Space or your access ends, Mail treats the default as not set.
+
+Operational status and public attachment links are separate from the settings. Open them from **Mailbox tools** in the mailbox navigation.
 
 ## Monitor and pause transport {icon="route"}
 
-**Mailbox tools > Mailbox health** shows transport health, the connected account, folder discovery, synchronization, and search-index state.
+**Mailbox tools → Mailbox health** shows the transport health, the connected account, folder discovery, synchronization, and the state of the search index.
 
-- **Sync now** queues a mailbox synchronization; **Last successful sync** shows when one last completed. **Sync now** is unavailable while the mailbox is paused or its account must be connected, reconnected, or verified first.
-- **Rediscover** refreshes folders and remote namespace information.
+- **Sync now** queues a mailbox synchronization. **Last successful sync** shows when the last one finished. **Sync now** is unavailable while the mailbox is paused, or while its account must first be connected, reconnected, or verified.
+- **Rediscover folders** refreshes folders and the remote namespace information.
 - **Verify connection** completes a pending provider connection.
 - **Pause mailbox** stops incoming synchronization, queued provider changes, scheduled delivery, and automatic replies.
-- **Resume mailbox** allows those background operations to continue again.
+- **Resume mailbox** lets these background operations continue.
 
-Pausing is an operational stop, not a visibility control. Existing mirrored mail and collaboration data remain readable according to mailbox permissions.
+Pausing stops operations. It does not hide anything. Existing mirrored mail and collaboration data stay readable for everyone with access to the mailbox.
 
 ### Repair projections and failed work
 
-Mailbox administrators can use **Mailbox tools > Mailbox health > Advanced diagnostics and repairs** for asynchronous repairs. Hydration retry, search rebuild, thread-projection repair, folder rebuild, rediscovery, and synchronization are durable commands: leaving the dialog does not stop them, and Mail rechecks current Admin permission before execution.
+With **Manage** access, you can start background repairs in **Mailbox tools → Mailbox health → Advanced diagnostics and repairs**. Hydration retry, search rebuild, thread repair, folder rebuild, rediscovery, and synchronization are durable commands. Closing the dialog does not stop them. Before a command runs, Mail checks again that you still have **Manage** access.
 
-The action buttons reflect current eligibility. A disabled action includes the reason, such as paused synchronization, an inactive folder, or equivalent work already pending. Search rebuild replaces only derived search chunks. Thread repair creates links for orphaned messages, removes copies of Mail's own drafts that an earlier synchronization imported as messages, and refreshes summaries; it does not discard manual thread overrides, comments, references, assignments, or conversation state.
+The action buttons show what you can do now. A turned-off action names the reason, such as paused synchronization, an inactive folder, or the same work already pending.
 
-Commands with an ambiguous provider outcome offer **Reconcile effect** only. Reconciliation inspects provider state before deciding the result. Mail does not offer a blind retry after a provider effect may have started. **Retry work** and **Cancel work** are limited to provider-read maintenance commands whose provider effect did not start.
+- **Rebuild search** replaces only the derived search chunks.
+- **Repair thread projection** links orphaned messages and refreshes summaries. It removes copies of Mail's own drafts that an earlier synchronization imported as messages. It keeps manual thread overrides, comments, references, assignments, and conversation state.
 
-Cloud administrators can review the same redacted aggregate under **Administration > Mail**. It contains counts, states, timestamps, capability availability, IDs, and error codes, but no subjects, addresses, bodies, attachment names, provider endpoints, credentials, or raw provider errors.
+When the result of a command at the provider is unclear, Mail offers only **Reconcile effect**. Reconciliation checks the state at the provider before it decides the result. Mail offers no blind retry after a provider effect might have started. **Retry work** and **Cancel work** are available only for maintenance commands that read from the provider and whose provider effect did not start.
+
+Cloud administrators can review the same redacted summary in **Administration → Mail**. It contains counts, states, timestamps, available capabilities, IDs, and error codes. It contains no subjects, addresses, bodies, attachment names, provider endpoints, credentials, or raw provider errors.
 
 ## Manage the provider connection {icon="user-cog"}
 
-**Settings > Accounts & identities > Connected account** contains the current incoming- and outgoing-mail credential. Mail verifies both protocols before storing a new or replacement credential.
+**Settings → Accounts & identities → Connected account** contains the current credential for incoming and outgoing mail. Mail verifies both protocols before it stores a new or replacement credential.
 
-Use **Find settings** first. Open **Manual server settings** if discovery is unavailable or incorrect. Enter a password or app password accepted by the provider. Credentials are encrypted and cannot be displayed after saving. Use **Replace** to change them. Mail does not offer Google/Microsoft browser authorization.
+:::steps
+1. Choose **Find settings** first.
+2. If discovery is unavailable or wrong, enter the **Server settings** yourself.
+3. Enter a password or app password that the provider accepts.
+:::
 
-Mail reports IMAP and SMTP verification independently. An IMAP failure blocks synchronization and an SMTP failure blocks sending; correct the reported transport before retrying.
+Mail encrypts the credentials and cannot show them after saving. To replace them, use **Edit account**. Mail offers no browser authorization for Google or Microsoft.
 
-When you connect an account with **Use this address for sending**, Mail first connects receiving and then sets up the default sender. If only the sender step fails, the connected account shows **Receiving is connected; sending is not set up yet** together with the reason. Receiving keeps working. Select **Set up sending** to retry on the existing connection; you don't need to reconnect the account or enter the password again.
+Mail reports the IMAP and SMTP checks separately. An IMAP failure blocks synchronization, and an SMTP failure blocks sending. Fix the reported transport before you try again.
 
-If Mail reports **Synchronization is running**, synchronization or another provider operation is using the account at that moment. Wait a moment and try again; the connection dialog keeps your entries.
+When you connect an account with **Use this address for sending**, Mail first connects receiving and then sets up the default sender. If only the sender step fails, the connected account shows **Receiving is connected; sending is not set up yet** with the reason. Receiving keeps working. Choose **Set up sending** to try again on the existing connection. You do not need to reconnect the account or enter the password again.
 
-Removing the connection disconnects transport. It does not delete provider mail or the retained Cloud mailbox data.
+If Mail reports **Synchronization is running**, synchronization or another provider operation uses the account at that moment. Wait a moment and try again. The connection dialog keeps your entries.
+
+When you remove the connection, the transport stops. Provider mail and the kept Cloud mailbox data stay.
 
 ## Manage sending identities {icon="send"}
 
-**Settings > Accounts & identities > Sending identities** controls the sending contexts available to collaborators. Use separate identities when the same address needs different defaults for roles such as private mail, university work, or a business.
+**Settings → Accounts & identities → Sending identities** controls the sending contexts that collaborators can use. Use separate identities when the same address needs different defaults for roles such as private mail, university work, or a business.
 
-The **Identity label** is visible only inside the mailbox. Recipients see the **Display name** and **From address**. Each identity can also define Reply-to, default Cc and Bcc recipients, message format, priority, receipt requests, a default signature, a contact card, Sent and Drafts folders, and whether it is the default.
+The **Identity label** is visible only inside the mailbox. Recipients see the **Display name** and the **From address**. Each identity can also set:
 
-**Advanced delivery** contains provider-specific settings that most people should leave unchanged. The optional **Return-path address** receives technical delivery failures and bounce reports. Leave it empty unless your mail provider explicitly requires a separate address. A contact card is attached as a `.vcf` file to messages sent with the identity.
+- Reply-to, default Cc, and default Bcc recipients;
+- message format, priority, and receipt requests;
+- a default signature and a contact card;
+- the Sent and Drafts folders;
+- whether it is the default identity.
 
-After a send, Mail places the message in the identity's Sent folder as soon as it stores or finds the copy there, without waiting for the next synchronization. Gmail stores every message sent through its own SMTP server in Sent Mail, so Mail looks for Gmail's copy for a few minutes and adds its own only if it still finds none. With other providers, Mail adds one copy unless **Provider saves sent mail automatically** is on. Then Mail only looks for the provider's copy right after the send; a copy the provider lists later appears with the folder's next synchronization. Turn that on only when the provider really stores sent messages; otherwise no copy exists.
+**Advanced delivery** contains provider-specific settings that most people leave unchanged. The optional **Return-path address** receives technical delivery failures and bounce reports. Leave it empty unless your mail provider explicitly requires a separate address. Mail attaches the contact card as a `.vcf` file to messages sent with the identity.
 
-Default Cc and Bcc recipients are added when a person starts a new message, reply, or forward with that identity. Duplicates and addresses already present in To, Cc, or Bcc are removed. These defaults are not added to automatic replies or workflow messages, and the writer can remove them before sending. A mailbox signature is inserted into new messages, replies, and forwards; changing the identity later does not rewrite an edited draft. A personal signature override takes precedence.
+After a send, Mail places the message in the Sent folder of the identity as soon as it stores or finds the copy there. It does not wait for the next synchronization.
 
-Under **Settings > General**, administrators can list trusted internal email domains and choose when Mail warns about a large recipient set. External-recipient warnings appear only when at least one internal domain is configured. These settings guide the final send review; they do not block legitimate delivery or change recipients automatically.
+- **Gmail:** Gmail stores every message sent through its own SMTP server in Sent Mail. Mail looks for the Gmail copy for a few minutes and adds its own copy only if it still finds none.
+- **Other providers:** Mail adds one copy, unless **Provider saves sent mail automatically** is on. Then Mail looks for the provider copy only right after the send. A copy that the provider lists later appears with the next synchronization of the folder.
+
+:::warning Turn on Provider saves sent mail automatically only when it is true
+If the provider does not store sent messages, no copy exists.
+:::
+
+Mail adds the default Cc and Bcc recipients when a person starts a new message, reply, or forward with that identity. Mail removes duplicates and addresses that are already in To, Cc, or Bcc. Automatic replies and workflow messages do not get these defaults, and the writer can remove them before sending.
+
+Mail inserts a mailbox signature into new messages, replies, and forwards. Changing the identity later does not change an edited draft. A personal signature override comes first.
+
+In **Settings → General**, you can list trusted internal email domains and choose when Mail warns about many recipients. Mail warns about external recipients only when at least one internal domain is set. These settings guide the final send review. They do not block legitimate delivery and do not change recipients automatically.
 
 Priority and receipt requests are suggestions to other mail systems:
 
-- **High** or **Low priority** adds standard importance headers. A recipient's client decides how to display them.
-- **Delivery receipt** asks the sending server for a delivery-status report. It is available only when the selected SMTP transport advertises DSN support.
-- **Read receipt** asks the recipient's mail client for a disposition notification. The recipient or their organization can ignore or refuse it.
+- **Priority** set to **High** or **Low** adds standard importance headers. The client of the recipient decides how to show them.
+- **Request delivery receipts** asks the sending server for a delivery status report. It is available only when the selected SMTP transport announces DSN support.
+- **Request read receipts** asks the mail client of the recipient for a disposition notification. The recipient or their organization can ignore or refuse it.
 
-Received reports appear in conversation activity as reported outcomes. They are useful operational evidence, not proof that a person read or acted on a message.
+Received reports appear in the conversation activity as reported results. They are useful operational evidence, not proof that a person read or acted on a message.
 
-An identity normally uses the mailbox SMTP server. Configure **Custom SMTP server** only when the From address must use a different authenticated submission server. The custom credential is encrypted and write-only. Mail verifies the server before saving it and keeps scheduled sends pinned to the verified transport revision; changing or removing that transport cannot silently reroute an already queued message.
+An identity normally uses the SMTP server of the mailbox. Set up a custom SMTP server only when the From address must use a different authenticated submission server. Mail encrypts the custom credential, and nobody can read it back. Mail verifies the server before saving it. Scheduled sends stay tied to the verified transport version, so a change or removal of that transport cannot silently reroute an already queued message.
 
-Two identities may deliberately share the same From address. Mail keeps their labels, recipient defaults, signatures, Reply-to values, delivery options, transports, folder mappings, and verification states separate. When a reply matches exactly one identity, Mail selects it automatically. If several matching identities are equally valid, the writer must choose one explicitly.
+Two identities can share the same From address on purpose. Mail keeps their labels, recipient defaults, signatures, Reply-to values, delivery options, transports, folder mappings, and verification states separate. When a reply matches exactly one identity, Mail selects it automatically. If several matching identities are equally valid, the writer must choose one.
 
-Verify every identity by choosing the connected account and a recipient for a real verification message. **Ready to send** means that the provider accepted this test with the identity's exact From address and advanced delivery settings. IMAP folder access alone does not prove that the provider permits those sending settings.
+Verify every identity: choose the connected account and a recipient for a real verification message. When the identity is ready to send, the provider accepted this test with the exact From address and the advanced delivery settings of the identity. IMAP folder access alone does not prove that the provider allows these sending settings.
 
-The **Allow automatic replies** option is separate from verification. Automatic replies can use only a ready identity with this option enabled. Enabling it does not itself send anything; an enabled automatic reply or workflow is still required.
+**Allow automatic replies** is separate from verification. Automatic replies can use only an identity that is ready to send and has this option turned on. Turning it on sends nothing by itself. An automatic reply or workflow that is turned on is still required.
 
 ## Manage provider folders {icon="user-cog"}
 
-**Folders** shows the hierarchy discovered from the connected mail provider. From here, a mailbox administrator can:
+**Folders** shows the hierarchy that Mail found at the connected mail provider. With **Manage** access, you can:
 
 - create a top-level folder in the personal mailbox namespace;
-- create a subfolder where the provider grants that right;
-- rename or delete an eligible provider folder;
-- subscribe or unsubscribe on the provider; and
-- choose where each folder's mail appears in Cloud Mail.
+- create a subfolder where the provider allows it;
+- rename or delete a provider folder where this is allowed;
+- subscribe or unsubscribe at the provider; and
+- choose where the mail of each folder appears in Cloud Mail.
 
 These controls affect different things:
 
-- **Where mail appears** is a Cloud setting for everyone in the mailbox. **Everywhere** shows the folder in the sidebar and its mail in All mail and the work views. **Only in the folder** keeps the folder in the sidebar, but conversations whose mail lies only there leave All mail, the work views except **Assigned to me** and **Send problems**, and their counts. **Hidden** also takes the folder out of the sidebar. Search and saved views still find every conversation. None of these choices unsubscribes or deletes the folder, changes provider permissions, or removes synchronized mail.
-- **Subscribe on the mail provider** changes the IMAP subscription. Other mail clients may use that subscription to decide which folders they show.
-- **Provider access** is controlled by the provider. Cloud displays shared and other-user folders only when the connected account can see them, and enables destructive actions only when current provider rights allow them.
-- **Synchronization** follows the configured mailbox scope and provider state. Where mail appears does not change it.
+- **Where mail appears** is a Cloud setting for everyone in the mailbox. **Everywhere** shows the folder in the sidebar and its mail in All mail and the work views. **Only in the folder** keeps the folder in the sidebar. Conversations whose mail is only there leave All mail, the work views, and their counts. **Assigned to me** and **Send problems** still show them. **Hidden** also removes the folder from the sidebar. Search and saved views still find every conversation. None of these choices unsubscribes or deletes the folder, changes provider access, or removes synchronized mail.
+- **Subscribe on provider** changes the IMAP subscription. Other mail clients can use that subscription to decide which folders they show.
+- **Provider access** is controlled by the provider. Cloud shows shared folders and folders of other users only when the connected account can see them. It allows destructive actions only when the current access at the provider allows them.
+- Synchronization follows the configured mailbox scope and the provider state. **Where mail appears** does not change it.
 
-Deleting a folder removes it at the provider and is therefore offered only for an empty folder without subfolders. Inbox and other protected folders cannot be deleted. A folder operation is durable: leaving the settings page does not cancel it, and Mail rediscovers provider state before confirming the result.
+:::warning Deleting a folder removes it at the provider
+Mail offers deletion only for an empty folder without subfolders. You cannot delete Inbox and other protected folders.
+:::
 
-**Folders** shows the hierarchy as a compact tree. Folder groups such as Gmail's `[Gmail]` appear as group rows with their folders below, the chevron beside a folder collapses its subfolders, and a folder whose name occurs more than once shows its path. Select a folder to open its menu. It explains the three choices and holds the folder's actions, such as **New subfolder**, **Rename**, the provider subscription, **Remove from Mail**, and **Delete folder**. A row names its choice only when it differs from **Everywhere**; **Unavailable** and **Needs review** mark provider problems.
+A folder operation is durable. Leaving the settings page does not cancel it. Mail checks the provider state again before it confirms the result.
 
-A subfolder follows its parent when the parent's choice is stricter: it can keep more mail inside, never less. Its row then shows **inherited from** and the parent's name, and its menu names the parent that sets the looser choices. Choosing the parent's choice again lets the subfolder follow the parent once more. Sent, Drafts, Trash, Junk, and provider collections such as Gmail's All Mail, Important, and Starred never decide where mail appears, so **Only in the folder** is not offered for them, and a parent's **Only in the folder** changes nothing for them. Only **Hidden**, their own or their parent's, takes them out of the sidebar.
+**Folders** shows the hierarchy as a compact tree:
 
-**Special folder mappings** appears below the folder hierarchy and selects the active, selectable folders used for Sent, Drafts, Archive, Trash, and Junk operations. Inbox is discovered from the provider. An incorrect or missing mapping can prevent the corresponding conversation action or sent/draft projection from completing.
+- Folder groups, such as `[Gmail]` at Gmail, appear as group rows with their folders below.
+- The chevron next to a folder collapses its subfolders.
+- A folder whose name appears more than once shows its path.
+- Choose a folder to open its menu. The menu explains the three choices and holds the actions of the folder, such as **New subfolder**, **Rename**, the provider subscription, **Remove from Mail**, and **Delete folder**.
+- A row names its choice only when it is not **Everywhere**. **Unavailable** and **Needs review** mark provider problems.
 
-If the IMAP account exposes shared or other-user folders, **Rediscover** can make them appear in the same hierarchy. They are provider state of this connected account, not separate Cloud resources. Cloud does not provide folder-level sharing, edit upstream ACLs, combine similarly named folders from several accounts, or use another person's credential if this connection loses access.
+A subfolder follows its parent when the choice of the parent is stricter. It can keep more mail inside, never less. Its row then shows "inherited from" and the name of the parent. Its menu names the parent that sets the looser choices. When you choose the choice of the parent again, the subfolder follows the parent again.
 
-Provider-side namespace, subscription, or permission changes can make a folder unavailable or ambiguous. Review **Mailbox tools > Mailbox health**, correct the provider state when necessary, then run **Rediscover**.
+Sent, Drafts, Trash, Junk, and provider collections such as All Mail, Important, and Starred at Gmail never decide where mail appears. Mail therefore does not offer **Only in the folder** for them, and **Only in the folder** on a parent does not change them. Only **Hidden**, set on them or on their parent, removes them from the sidebar.
 
-When an unavailable folder is permanently gone, choose **Remove from Mail** from its menu. Confirming removes the unavailable folder and unavailable subfolders from Cloud Mail's folder list. It does not delete anything at the provider and does not remove mirrored messages or history. If the provider exposes the folder again, the next rediscovery restores it automatically.
+**Special folder mappings** appears below the folder hierarchy. It selects the active folders that Mail uses for Sent, Drafts, Archive, Trash, and Junk. Mail finds the Inbox at the provider. A wrong or missing mapping can stop the matching conversation action or the Sent or Drafts view from completing.
+
+If the IMAP account shows shared folders or folders of other users, **Rediscover folders** can add them to the same hierarchy. They are provider state of this connected account, not separate Cloud resources. Cloud does not:
+
+- share single folders;
+- edit access lists at the provider;
+- combine folders with similar names from several accounts;
+- use the credential of another person if this connection loses access.
+
+Changes at the provider to namespaces, subscriptions, or access can make a folder unavailable or unclear. Check **Mailbox tools → Mailbox health**, fix the provider state if needed, then run **Rediscover folders**.
+
+When an unavailable folder is gone for good, choose **Remove from Mail** in its menu. After you confirm, Mail removes the unavailable folder and its unavailable subfolders from its folder list. Nothing is deleted at the provider, and mirrored messages and history stay. If the provider shows the folder again, the next rediscovery restores it automatically.
 
 Agents can change provider subscriptions with `cld mail folder subscribe` and `cld mail folder unsubscribe`. Both commands create the same durable, observable provider command as the web app.
 
 ## Configure access {icon="shield-lock"}
 
-**Access** uses the standard Cloud permission editor. Grant the narrowest permission that supports the person's job:
+**Access** uses the standard Cloud access editor. Give the narrowest access that the person needs for their work:
 
-- Read for reading, search, comments, and personal reminders.
-- Write for sending, provider mail operations, and collaboration changes.
-- Admin for transport, sharing, policies, workflows, and mailbox lifecycle.
-- View assigned only or Edit assigned only for people and groups who should see only the conversations assigned to them. See **Work together in a mailbox** for what they can do.
+- **View** for reading, search, comments, and personal reminders.
+- **Edit** for sending, provider mail operations, and collaboration changes.
+- **Manage** for transport, sharing, rules, workflows, and the mailbox lifecycle.
+- **View assigned only** or **Edit assigned only** for people and groups who work only on the conversations assigned to them. [Work together in a mailbox](/app/mail/help/mail-collaboration) explains what they can do.
 
-**Who can manage automatic replies?** is a mailbox policy above the permission list:
+**Automatic reply management access** is a mailbox setting above the access list:
 
-- **Writers and administrators** lets writers create and change guided out-of-office replies and acknowledgements.
-- **Administrators only** is the secure default for new and existing mailboxes.
+- **Writers and administrators** lets people with **Edit** access create and change guided out-of-office replies and acknowledgements.
+- **Administrators only** is the safe default for new and existing mailboxes.
 
-This policy does not let writers configure identities, reference-number settings, or YAML workflows. Those remain mailbox-admin operations.
+This setting does not let people with **Edit** access change identities, reference number settings, or YAML workflows. These stay operations that require **Manage** access.
 
-Credentials remain hidden even from administrators. Sharing a mailbox grants Cloud access to the mailbox; it does not reveal the provider password or token.
+Credentials stay hidden, also for people with **Manage** access. Sharing a mailbox gives Cloud access to the mailbox. It does not reveal the provider password or token.
 
 ## Share attachments with public links {icon="link"}
 
-Mailbox **Admin** access is required to create, list, or revoke a public attachment link. Open a received message or draft and use the link action beside an attachment. Files larger than 100 MiB cannot be shared this way.
+You need **Manage** access to the mailbox to create, list, or revoke a public attachment link. Open a received message or draft and use the link action next to an attachment. You cannot share files larger than 100 MiB this way.
 
-The public URL is disclosed only once, immediately after creation. Copy it before closing the result: Mail stores a hash of its secret token and cannot show the same URL again. **Mailbox tools > Shared links** lists every link in pages, including older active links, and lets an administrator revoke access without deleting the original message or draft attachment.
+:::warning Copy the URL before you close the result
+The public URL is disclosed only once, immediately after creation. Mail stores only a hash of its secret token and cannot show the same URL again.
+:::
 
-A link can have an optional password, expiry time, and maximum number of download sessions. Passwords are case-sensitive and can contain spaces. Range requests used to resume one granted download do not consume extra download counts. Revoked, expired, exhausted, invalid, and incorrectly passworded links fail without revealing attachment metadata.
+**Mailbox tools → Shared links** lists every link page by page, including older active links. There you can revoke access without deleting the original message or draft attachment.
 
-The CLI provides the same mailbox-admin operations through `cld mail attachment link create`, `list`, and `revoke`. Supply a password through `--password-file` or `--password-stdin`; it is never accepted as a visible command-line value.
+A link can have an optional password, expiry time, and maximum number of download sessions. Passwords are case-sensitive and can contain spaces. Range requests that resume one allowed download do not count as extra downloads. Revoked, expired, used-up, invalid, and wrongly protected links fail without revealing attachment metadata.
+
+The CLI offers the same operations through `cld mail attachment link create`, `list`, and `revoke`. Give a password through `--password-file` or `--password-stdin`. The CLI never accepts it as a visible command-line value.
 
 ## Review Mail storage {icon="database"}
 
-Cloud **Admin** access, which is separate from mailbox Admin access, is required for **Administration > Mail**. The page lists every active mailbox with redacted health, synchronization, storage, access-count, and attention data. It never exposes message or attachment content.
+Only Cloud administrators can open **Administration → Mail**. **Manage** access to a mailbox is not enough. The page lists every active mailbox with redacted data on health, synchronization, storage, number of people with access, and attention. It never shows message or attachment content.
 
-Open **Security** from this page to review reported suspicious messages and maintain exact organization-wide protection rules. See **Recognize and report suspicious mail** for the user-facing behavior and safe rule guidance.
+Open **Security** from this page to review reported suspicious messages and keep exact organization-wide protection rules. For what users see and safe rules, see [Recognize and report suspicious mail](/app/mail/help/mail-security).
 
-Use **Permissions** on a mailbox to recover an orphaned mailbox or correct an accidental grant. This is an explicit, audited access change; Cloud administrators do not implicitly receive mailbox-content access. Add a replacement administrator before removing the last existing administrator.
+Use **Manage permissions** on a mailbox to recover a mailbox without a manager or to correct an accidental access entry. This is an explicit, audited access change. Cloud administrators do not get access to mailbox content implicitly. Add a replacement manager before you remove the last person with **Manage** access.
 
-The CLI exposes the same recovery surface:
+The CLI offers the same recovery tools:
 
-- `cld mail admin mailbox list` discovers mailboxes, including those the current administrator cannot open.
+- `cld mail admin mailbox list` finds mailboxes, including mailboxes that the current administrator cannot open.
 - `cld mail admin mailbox get <mailbox>` shows one redacted operations record.
-- `cld mail admin mailbox access list|grant|set|revoke <mailbox>` manages direct user, group, or service-account grants.
-- `cld mail admin storage show|reconcile` reads or refreshes storage observability.
+- `cld mail admin mailbox access list|grant|set|revoke <mailbox>` changes direct access for users, groups, or service accounts.
+- `cld mail admin storage show|reconcile` reads or refreshes the storage data.
 
-**Reconcile storage** queues a background reconciliation. The page and `cld mail admin storage show` continue to show the last completed snapshot until that job finishes; queuing the job does not synchronously update the numbers. These values are observability data, not storage quotas, and do not provide content drilldown.
+**Refresh storage snapshot** queues a background reconciliation. The page and `cld mail admin storage show` continue to show the last completed snapshot until that job finishes. Queuing the job does not update the numbers immediately. These values are observability data, not storage quotas, and they offer no drilldown into content.
 
 ## Choose the contact directory {icon="address-book"}
 
-Mail uses the built-in Contacts app for recipient suggestions, contacts in **Conversation details**, **New contact**, and contacts attached to **Write with AI**. Nothing needs to be configured for that.
+Mail uses the built-in Contacts app for recipient suggestions, contacts in **Conversation details**, **New contact**, and contacts attached to **Write with AI**. You do not need to set anything up for this.
 
-To use another app, such as a customer-management app, open **Administration > Mail**. **Contact directory** shows the current app and whether it uses the Contacts defaults or a custom mapping. Select **Configure** to open the editor. This also requires Cloud **Admin** access. Choose the app, then choose one of its capabilities for each function. Each list offers only capabilities that match the contact-directory contract; the defaults are filled in when the app provides them.
+To use another app, such as a customer management app, you need to be a Cloud administrator:
+
+:::steps
+1. Open **Administration → Mail**. **Contact directory** shows the current app and whether it uses the Contacts defaults or a custom mapping.
+2. Choose **Configure** to open the editor.
+3. Choose the app.
+4. For each function, choose one of its capabilities.
+5. Choose **Save**.
+:::
+
+Each list offers only capabilities that match the contract for contact directories. When the app provides the defaults, Mail fills them in.
 
 - **Suggest recipients** and **Match participants** are required.
 - **Read a contact** is optional. Without it, **Compose email** from a contact in another app reports that the contact is unavailable.
 - **List writable books** and **Create a contact** are optional and belong together. Without them, Mail hides **New contact**.
 
-**Save** checks every choice against the app's current capabilities and names each field Mail cannot use. Mail always calls the app with each person's own access, so people see only the contacts they may read there. If the app is stopped or later changes incompatibly, the affected features become unavailable, just as when Contacts is unavailable. **Use Contacts defaults** restores the built-in mapping.
+**Save** checks every choice against the current capabilities of the app and names each field that Mail cannot use. Mail always calls the app with the own access of each person, so people see only the contacts that they can read there. If the app stops or later changes in an incompatible way, the affected features become unavailable, as when Contacts is unavailable. **Use Contacts defaults** restores the built-in mapping.
 
-`cld mail admin contact-directory show|candidates|set|reset` does the same from a terminal and uses the same check; an incompatible mapping is not saved and the command lists the same problems.
+`cld mail admin contact-directory show|candidates|set|reset` does the same from a terminal and uses the same check. Mail does not save an incompatible mapping, and the command lists the same problems.
 
 ## Configure signatures and email design {icon="pencil"}
 
-Under **Settings > Writing**, create private or mailbox signatures and snippets. Assign the mailbox default signature under **Accounts & identities > Sending identities**. A collaborator's personal default under **Writing** takes precedence.
+In **Settings → Writing**, create private or mailbox signatures and snippets. Set the default signature of the mailbox in **Accounts & identities → Sending identities**. A personal default of a collaborator in **Writing** comes first.
 
-Markdown messages always receive the built-in readable email design. **Email design** adds validated mailbox CSS overrides for company branding; it does not replace the safe base design. Use the composer Preview to verify the rendered result before relying on a CSS change.
+Markdown messages always get the built-in readable email design. **Email design** adds checked mailbox CSS for company branding. It does not replace the safe base design. Check the result in the **Preview** of the composer before you rely on a CSS change.
 
 ## Configure automatic responses and references {icon="settings"}
 
-Open **Mailbox tools > Automations**:
+Open **Mailbox tools → Automations**:
 
 :::steps
 1. **Overview** shows what is active and opens the exact setup task.
-2. **Automatic replies** offers Out of office, Office-hours acknowledgement, Reference acknowledgement, and Custom presets. Writers can use this section when the Access policy permits it.
-3. **Incoming mail** provides guided matching and a mixed Mail/AI step flow.
-4. **Activity** shows mailbox-scoped workflow runs and incoming-automation backfills.
-5. **Workflows** contains versioned YAML definitions, reference-number configuration, and explicit activation controls.
+2. **Automatic replies** offers the presets **Out of office**, **Office-hours acknowledgement**, **Reference acknowledgement**, and **Custom automatic reply**. People with **Edit** access can use this section when the access setting allows it.
+3. **Incoming mail** offers guided matching and a step flow that mixes Mail and AI steps.
+4. **Activity** shows workflow runs and incoming automation backfills of this mailbox.
+5. **Workflows** contains versioned YAML definitions, the reference number setup, and explicit activation controls.
 :::
 
-Incoming mail, Activity, and Workflows require mailbox-admin access. Automatic-reply timing is stored directly in the guided reply or in the immutable YAML workflow version; there is no separate schedule resource to keep in sync.
+**Incoming mail**, **Activity**, and **Workflows** require **Manage** access. Mail stores the timing of an automatic reply directly in the guided reply or in the unchangeable YAML workflow version. There is no separate schedule resource to keep in sync.
 
-An automatic reply has an enabled state, verified automation sender, subject, body, Markdown or plain-text format, repeat interval per recipient, time zone, active dates, weekly windows, exceptions, and behavior outside the active window:
+An automatic reply has these settings:
+
+- on or off, and a verified automation sender;
+- subject, body, and Markdown or plain-text format;
+- the repeat interval per recipient;
+- time zone, active dates, weekly windows, and exceptions;
+- the behavior outside the active window.
+
+For the behavior outside the active window, choose:
 
 - **Do not reply** ignores messages outside the schedule.
-- **Reply at the next active time** defers the response until the schedule becomes active.
+- **Reply at the next active time** delays the response until the schedule is active.
 
-Preview the exact response before enabling it. Pausing the mailbox stops automatic replies.
+Preview the exact response before you turn it on. Pausing the mailbox stops automatic replies.
 
-For setup steps, schedule consequences, reference patterns, and repeat protection, see [Automate responses and mailbox work](/app/mail/help/mail-automation).
+For setup steps, schedule effects, reference patterns, and repeat protection, see [Automate responses and mailbox work](/app/mail/help/mail-automation).
 
 ## Manage workflows {icon="route"}
 
-Open **Automations > Workflows** for the YAML editor. Saving creates a new immutable version; it does not activate that version automatically. Review the YAML, validation diagnostics, and effect budgets before explicitly activating a version. Inspect mailbox executions separately under **Automations > Activity**.
+Open **Automations → Workflows** for the YAML editor. Saving creates a new unchangeable version. It does not activate that version automatically.
 
-Use the dedicated automatic-reply UI for normal out-of-office or acknowledgement needs. Use workflows when the mailbox needs deterministic conditions and actions beyond that editor.
+:::steps
+1. Review the YAML, the validation diagnostics, and the effect budgets.
+2. Activate the version explicitly.
+3. Check mailbox runs separately in **Automations → Activity**.
+:::
 
-See [Mail workflow YAML reference](/app/mail/help/mail-workflows) for all supported inputs, triggers, actions, conditions, expressions, defaults, and validated examples.
+For normal out-of-office or acknowledgement needs, use the automatic reply interface. Use workflows when the mailbox needs fixed conditions and actions beyond that editor.
+
+See [Mail workflow YAML reference](/app/mail/help/mail-workflows) for all supported inputs, triggers, actions, conditions, expressions, defaults, and checked examples.
 
 ## Delete and restore a mailbox {icon="point"}
 
-**Danger zone > Move to recently deleted** moves the mailbox into a recoverable deleted state. Provider mail and retained Cloud data are not purged.
+**Danger zone → Move to recently deleted** moves the mailbox into a deleted state that you can recover. Mail does not purge provider mail and kept Cloud data.
 
-Deleted mailboxes appear under **Recently deleted** on the Mail overview for administrators who can restore them. A restored mailbox starts paused. Verify the connection, folder discovery, and health under **Mailbox tools > Mailbox health** before selecting **Resume mailbox**.
+Deleted mailboxes appear under **Recently deleted** on the Mail overview for people who can restore them. A restored mailbox starts paused. In **Mailbox tools → Mailbox health**, verify the connection, folder discovery, and health. Then choose **Resume mailbox**.

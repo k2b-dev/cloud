@@ -126,7 +126,7 @@ describe("mailHelp", () => {
     for (const [id, text] of expectedContent) {
       expect(mailHelp.getMarkdown(id)).toContain(text);
     }
-    expect(mailHelp.getMarkdown("mail-compose")).toContain("Select **Write with AI**");
+    expect(mailHelp.getMarkdown("mail-compose")).toContain("Choose **Write with AI**");
     expect(mailHelp.getMarkdown("mail-compose")).toContain("does not gain additional mailbox access");
     expect(mailHelp.getMarkdown("mail-work")).toContain("section for the conversation as a whole");
     expect(mailHelp.getMarkdown("mail-work")).toContain("**Everything** is selected by default");
@@ -149,7 +149,7 @@ describe("mailHelp", () => {
 
     expect(mailHelp.getMarkdown("mail-start", "de-CH")).toContain("Mail spiegelt E-Mails");
     expect(mailHelp.getMarkdown("mail-workflows", "de")).toContain("Mail-Workflow-YAML");
-    expect(mailHelp.getMarkdown("mail-automation", "de")).toContain("**Administration > Systembeobachtung > Workflows**");
+    expect(mailHelp.getMarkdown("mail-automation", "de")).toContain("**Administration → Systembeobachtung → Workflows**");
     expect(mailHelp.getMarkdown("mail-automation", "de")).not.toContain("**Admin > ");
     expect(mailHelp.getMarkdown("mail-start", "fr")).toBe(mailHelp.getMarkdown("mail-start")!);
   });
@@ -157,7 +157,7 @@ describe("mailHelp", () => {
   test("documents permission-scoped Contacts context", () => {
     const collaboration = mailHelp.getMarkdown("mail-collaboration");
     expect(collaboration).toContain("Multiple Contacts can match the same address");
-    expect(collaboration).toContain("Add as contact");
+    expect(collaboration).toContain("New contact");
     expect(collaboration).toContain("choose a writable contact book");
     expect(collaboration).toContain("Mail creates the Contact there");
     expect(collaboration).not.toContain("opens in a new tab");
@@ -207,15 +207,15 @@ describe("mailHelp", () => {
     const admin = mailHelp.getMarkdown("mail-admin");
     const work = mailHelp.getMarkdown("mail-work");
 
-    expect(admin).toContain("Mailbox **Admin** access is required to create, list, or revoke a public attachment link");
+    expect(admin).toContain("You need **Manage** access to the mailbox to create, list, or revoke a public attachment link");
     expect(admin).toContain("public URL is disclosed only once");
     expect(admin).toContain("optional password, expiry time, and maximum number of download sessions");
     expect(admin).toContain("including older active links");
-    expect(admin).toContain("Cloud **Admin** access");
-    expect(admin).toContain("Reconcile storage** queues a background reconciliation");
+    expect(admin).toContain("Only Cloud administrators can open **Administration → Mail**");
+    expect(admin).toContain("Refresh storage snapshot** queues a background reconciliation");
     expect(admin).toContain("continue to show the last completed snapshot until that job finishes");
     expect(admin).toContain("cld mail admin mailbox access list|grant|set|revoke");
-    expect(work).toContain("Mailbox tools > Shared links");
+    expect(work).toContain("Mailbox tools → Shared links");
   });
 
   test("documents the permission-safe message inspector and exact source export", () => {
@@ -240,7 +240,7 @@ describe("mailHelp", () => {
     expect(work).toContain("stays unread in already open tabs");
     expect(work).toContain("View as plain text");
     expect(work).toContain("safe HTML in light mode and plain text in dark mode");
-    expect(work).toContain("Settings > Reading > Default message format");
+    expect(work).toContain("Settings → Reading → Default message format");
     expect(work).toContain("Scripts, forms, embedded objects, external stylesheets");
     expect(admin).toContain("Reading** is available to every mailbox reader");
   });
@@ -251,7 +251,7 @@ describe("mailHelp", () => {
     expect(security).toContain("Report phishing");
     expect(security).toContain("Mail keeps uncertain signals quiet");
     expect(security).toContain("does not upload or copy the subject or message body");
-    expect(security).toContain("Trusted authentication sources");
+    expect(security).toContain("Trusted authentication results");
     expect(security).toContain("A pass for an unrelated domain is ignored");
     expect(security).toContain("does not move messages at the provider or start, cancel, or duplicate automation runs");
   });
@@ -260,7 +260,7 @@ describe("mailHelp", () => {
     const automation = mailHelp.getMarkdown("mail-automation");
     const work = mailHelp.getMarkdown("mail-work");
 
-    expect(automation).toContain("Automations > Incoming mail");
+    expect(automation).toContain("Automations → Incoming mail");
     expect(automation).toContain("All incoming mail");
     expect(automation).toContain("mail automation catalog");
     expect(automation).toContain("shows it read-only in the editor");
@@ -274,9 +274,9 @@ describe("mailHelp", () => {
     expect(work).toContain("Find all from this sender");
     expect(work).not.toContain("Mark all as read");
     expect(work).toContain("Manage unsubscribe");
-    expect(work).toContain("Mailbox tools > Mailing lists");
-    expect(work).toContain("Every mailbox reader");
-    expect(work).toContain("Unsubscribe and cleanup actions require Write or Admin access");
+    expect(work).toContain("Mailbox tools → Mailing lists");
+    expect(work).toContain("Everyone who can view the mailbox");
+    expect(work).toContain("Unsubscribe and cleanup actions require **Edit** or **Manage** access");
     expect(work).toContain("Use as new message");
     expect(work).toContain("Start new conversation from this message");
     expect(automation).toContain("no longer offers `add_keyword` for new steps");
@@ -290,8 +290,8 @@ describe("mailHelp", () => {
 
     expect(start).toContain("**Mailbox tools** for synchronization, health, automations");
     expect(start).not.toContain("- **Automations** for");
-    expect(admin).toContain("Open **Mailbox tools > Automations**");
-    expect(automation).toContain("Open **Mailbox tools > Automations**");
+    expect(admin).toContain("Open **Mailbox tools → Automations**");
+    expect(automation).toContain("Open **Mailbox tools → Automations**");
     expect(work).not.toContain("List help");
     expect(work).not.toContain("advertised help");
     expect(work).toContain("**List archive** opens the archive advertised by the list");

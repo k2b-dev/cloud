@@ -2,15 +2,15 @@
 id: notebooks-structured-blocks
 title: "Strukturierte Blöcke"
 icon: "ti ti-braces"
-description: "Eigene Daten definieren und gefilterte Seitenlisten und Inhaltsverzeichnisse erstellen."
+description: "Eigene Daten festlegen und gefilterte Seitenlisten und Inhaltsverzeichnisse erstellen."
 order: 130
 ---
 
-Nutze benannte Daten für Fakten neben deinem Text, Abfragen für automatische Seitenlisten und Inhaltsverzeichnisse für Überschriften einer Seite. Ein vorgegebenes Metadatenschema ist nicht nötig.
+Nutze benannte Daten für Fakten neben deinem Text, Abfragen für automatische Seitenlisten und ein Inhaltsverzeichnis für die Überschriften einer Seite. Ein vorgegebenes Schema für Metadaten brauchst du nicht.
 
-Setze `:::data`, `:::query` und `:::toc` direkt ins Dokument, außerhalb von Listen, Zitaten, Codebeispielen und anderen Blöcken. Verschachtelte Beispiele werden nicht ausgewertet.
+Setze `:::data`, `:::query` und `:::toc` direkt ins Dokument. Setze sie nicht in Listen, Zitate, Codebeispiele oder andere Blöcke. Notebooks wertet verschachtelte Blöcke nicht aus.
 
-Bei Hinweisblöcken wie `:::info` darf das abschließende `:::` nicht weiter eingerückt sein als die öffnende Zeile.
+Rücke bei Hinweisblöcken wie `:::info` das schließende `:::` nicht weiter ein als die öffnende Zeile.
 
 ## Eigene Daten ergänzen {icon="braces"}
 
@@ -29,15 +29,21 @@ teams:
 :::
 ```
 
-Damit entstehen Felder wie `profile.owner` und `profile.reviewDays`. Namen und Feldschlüssel unterscheiden Groß- und Kleinschreibung. Verwende für Abfragefelder einen Buchstaben, gefolgt von Buchstaben, Zahlen, Unterstrichen oder Bindestrichen, mit höchstens 64 Zeichen pro Teil.
+Damit entstehen Felder wie `profile.owner` und `profile.reviewDays`. Namen und Feldschlüssel unterscheiden Groß- und Kleinschreibung. Beginne für Abfragefelder jeden Teil mit einem Buchstaben, gefolgt von Buchstaben, Zahlen, Unterstrichen oder Bindestrichen. Jeder Teil hat höchstens 64 Zeichen.
 
-Werte sind Zeichenfolgen, Zahlen, Wahrheitswerte oder flache Listen dieser Werte. Setze zahlenähnlichen Text in Anführungszeichen: `"30"` ist nicht die Zahl `30`. Schreibe Listeneinträge auf eigene Zeilen mit zwei Leerzeichen vor `-`; Datenblöcke erlauben keine Inline-Arrays oder verschachtelten Objekte. Datumsangaben bleiben Text statt eines eigenen Datentyps. Ein Schlüssel ohne Wert und Listeneinträge ist eine leere Liste; `""` ist eine leere Zeichenfolge.
+:::reference
+- **Werte:** Zeichenfolgen, Zahlen, Wahrheitswerte oder flache Listen dieser Werte.
+- **Zahlen als Text:** Setze Text, der wie eine Zahl aussieht, in Anführungszeichen. `"30"` ist nicht die Zahl `30`.
+- **Listen:** Schreibe jeden Listeneintrag in eine eigene Zeile mit zwei Leerzeichen vor `-`. Datenblöcke erlauben keine Inline-Arrays und keine verschachtelten Objekte.
+- **Datumsangaben:** Datumsangaben bleiben Text. Einen eigenen Datentyp für Daten gibt es nicht.
+- **Leere Werte:** Ein Schlüssel ohne Wert und ohne Listeneinträge ist eine leere Liste. Verwende `""` für eine leere Zeichenfolge.
+:::
 
-Wiederhole weder Blocknamen noch Schlüssel innerhalb eines Blocks. Ungültige benannte Daten werden aus Abfragen ausgeschlossen und mit einer Diagnose gemeldet. Ein Block unterstützt höchstens 64 Felder, eine Liste 128 Einträge und eine Zeichenfolge 2.000 Zeichen.
+Wiederhole keinen Blocknamen und keinen Schlüssel innerhalb eines Blocks. Abfragen schließen ungültige benannte Daten aus, und Notebooks meldet sie als Diagnose. Ein Block hat höchstens 64 Felder, eine Liste 128 Einträge und eine Zeichenfolge 2.000 Zeichen.
 
 ## Passende Seiten auflisten {icon="list-search"}
 
-Tippe im Editor `:::` und wähle **query**. Dieses Beispiel findet Handbuchseiten mit aktivem Status und einem Prüfintervall von höchstens 30 Tagen:
+Tippe im Editor `:::` und wähle **query**. Dieses Beispiel findet Handbuchseiten mit dem Status active und einem Prüfintervall von höchstens 30 Tagen:
 
 ```text
 :::query
@@ -65,20 +71,20 @@ limit: 25
 :::
 ```
 
-Abfragen lesen ausschließlich gespeicherte Notizen aus dem aktuellen Notizbuch. Sie können keine anderen Notizbücher abrufen, Tabellenzeilen lesen, JavaScript ausführen, Datenbestände verknüpfen oder Änderungen schreiben.
+Abfragen lesen nur gespeicherte Notizen aus dem aktuellen Notizbuch. Sie können keine anderen Notizbücher abrufen, keine Tabellenzeilen lesen, kein JavaScript ausführen, keine Datenbestände verknüpfen und nichts ändern.
 
-Übernimm die Einrückung aus dem Beispiel: zwei Leerzeichen vor Filterlisteneinträgen, Spalten und Sortierfeldern; vier vor `op` und `value` eines Filters. Das Format ähnelt YAML, unterstützt aber nur die hier gezeigte Syntax. Kommentare, Anker und verschachtelte Filterobjekte sind nicht erlaubt. Lasse optionale Einstellungen für ihre Standardwerte ganz weg, statt ihre Werte leer zu lassen.
+Übernimm die Einrückung aus dem Beispiel. Setze zwei Leerzeichen vor Einträge der Filterliste, Spalten und Sortierfelder. Setze vier Leerzeichen vor `op` und `value` eines Filters. Das Format ähnelt YAML, ist aber kein allgemeines YAML. Es unterstützt keine Kommentare, keine Anker und keine verschachtelten Filterobjekte. Für den Standardwert einer optionalen Einstellung lässt du die Einstellung weg. Lass ihren Wert nicht leer.
 
 | Einstellung | Bedeutung |
 | --- | --- |
 | `source` | Pflichtwert: `notes` |
 | `scope` | `notebook` (Standard, einschließlich dieser Notiz), direkte `children` oder alle `descendants` dieser Notiz. Kinder und Nachkommen schließen diese Notiz aus. |
-| `match` | `all` (Standard) verlangt jeden Filter; `any` mindestens einen. Ohne Filter passen alle Notizen im gewählten Bereich. |
+| `match` | `all` (Standard) verlangt jeden Filter; `any` mindestens einen. Ohne Filter passen alle Notizen im Bereich. |
 | `sort` | `field`: `$title`, `$created` oder `$updated`; `direction`: `asc` oder `desc`. Standard: zuletzt geändert, absteigend. |
-| `columns` | Anzuzeigende Felder, je eines als eingerückter Listeneintrag. Ohne diese Einstellung erscheint eine verlinkte Titelliste. |
-| `limit` | 1–100 Ergebnisse, Standard 25. Ein Hinweis zeigt weitere Treffer an; grenze die Filter ein, um diese zu sehen. |
+| `columns` | Anzuzeigende Felder, je eines als eingerückter Listeneintrag. Ohne Spalten zeigt die Abfrage eine Liste verlinkter Titel. |
+| `limit` | 1–100 Ergebnisse, Standard 25. Ein Hinweis zeigt, dass weitere Notizen passen. Grenze die Filter ein, um sie zu sehen. |
 
-Verwende höchstens 32 Filter und 16 verschiedene Spalten pro Abfrage. Eine Seite unterstützt höchstens 20 Abfrageblöcke. Listen in Filtern verwenden Inline-Syntax wie `[active, draft]` mit 1–100 Werten. Eine Filterzeichenfolge darf höchstens 2.000 Zeichen enthalten. Setze Listenwerte mit Kommas in Anführungszeichen, etwa `["Sales, Europe", Support]`.
+Eine Abfrage hat höchstens 32 Filter und 16 verschiedene Spalten. Eine Seite hat höchstens 20 Abfrageblöcke. Listen in Filtern verwenden Inline-Syntax wie `[active, draft]` mit 1–100 Werten. Eine Filterzeichenfolge hat höchstens 2.000 Zeichen. Setze Listenwerte mit Kommas in Anführungszeichen, etwa `["Sales, Europe", Support]`.
 
 ## Filter wählen {icon="filter"}
 
@@ -92,9 +98,16 @@ Verwende höchstens 32 Filter und 16 verschiedene Spalten pro Abfrage. Eine Seit
 | Benannte Zahlen | Zusätzlich `gt`, `gte`, `lt`, `lte` |
 | Benannte Listen | `contains-any`, `contains-all`, `exists`, `missing` |
 
-Lasse `value` bei `exists` und `missing` weg. Operatoren für Listenzugehörigkeit erwarten Listen; die anderen Operatoren einen Einzelwert. `in` prüft einen Einzelwert gegen eine Liste, während `contains-any` und `contains-all` Listeninhalte prüfen.
+Lass `value` bei `exists` und `missing` weg. Operatoren für die Zugehörigkeit zu einer Liste erwarten Listen. Alle anderen Operatoren erwarten einen Einzelwert. `in` prüft einen Einzelwert gegen eine Liste. `contains-any` und `contains-all` prüfen den Inhalt einer Liste.
 
-Gleichheit beachtet Typen und Groß- und Kleinschreibung. Die Textoperatoren `contains` und `starts-with` ignorieren Groß- und Kleinschreibung; Tags ignorieren außerdem ein optionales führendes `#`. `ne` und `not-in` finden keine fehlenden Felder: Verwende dafür bei Bedarf einen zusätzlichen `missing`-Filter mit `match: any`. Leere Eigenschaftslisten existieren; `$tags` existiert nur bei mindestens einem Tag. Es gibt keine verschachtelten Filtergruppen, Ausdrücke, Datumsbereichsvergleiche oder Sortierung nach eigenen Feldern.
+:::reference
+- **Gleichheit:** Beachtet Typen und Groß- und Kleinschreibung.
+- **Text:** `contains` und `starts-with` ignorieren Groß- und Kleinschreibung.
+- **Tags:** Ignorieren Groß- und Kleinschreibung und ein optionales führendes `#`.
+- **Fehlende Felder:** `ne` und `not-in` finden keine fehlenden Felder. Brauchst du sie, ergänze einen eigenen `missing`-Filter mit `match: any`.
+- **Vorhanden:** Leere Eigenschaftslisten sind vorhanden. `$tags` ist nur vorhanden, wenn eine Notiz mindestens einen Tag hat.
+- **Nicht verfügbar:** Verschachtelte Filtergruppen, Ausdrücke, Vergleiche von Datumsbereichen und Sortierung nach eigenen Feldern.
+:::
 
 ## Seiteninhalt verlinken {icon="list"}
 
@@ -107,18 +120,20 @@ max-depth: 3
 :::
 ```
 
-Der Block verlinkt Überschriften dieser Notiz, auch vor und nach dem Block. Die Ebenen reichen von 1 bis 6; Standardwerte sind 1 und 6. `min-depth` darf `max-depth` nicht überschreiten. Das ist ein Inhaltsverzeichnis der Seite, kein Notizbuchverzeichnis.
+Der Block verlinkt die Überschriften dieser Notiz, auch Überschriften vor und nach dem Block. Die Ebenen reichen von 1 bis 6. Die Standardwerte sind 1 und 6. `min-depth` darf nicht größer als `max-depth` sein. Der Block zeigt den Inhalt einer Seite, kein Verzeichnis des Notizbuchs.
 
-Die Buchansicht verlinkt auch Überschriften innerhalb von Listen, Zitaten und Hinweisen. Die Editorvorschau kann nur zu Überschriften mit genauer Quellposition springen; bei anderen Überschriften zeigt sie einen Hinweis.
+Die Buchansicht verlinkt auch Überschriften in Listen, Zitaten und Hinweisen. Die Editorvorschau springt nur zu Überschriften mit genauer Position im Quelltext. Bei anderen Überschriften zeigt sie einen Hinweis.
 
-## Vorschau und Aktualisierung {icon="refresh"}
+## Blöcke in der Vorschau sehen und aktualisieren {icon="refresh"}
 
-Der Rich-Modus zeigt serverseitig gerenderte Abfrage- und Inhaltsvorschauen. Bewege den Cursor in den Block oder wähle **Quelltext anzeigen**, um ihn zu bearbeiten. Ungültige Einstellungen werden an ihren Quellzeilen markiert. Eine Entwurfsvorschau verwendet die Abfrageeinstellungen und Überschriften deines Entwurfs, liest für Abfragen aber weiterhin gespeicherte Daten – auch für die aktuelle Notiz. Sie speichert weder den Entwurf noch ändert sie passende Notizen.
+Der Rich-Modus zeigt Vorschauen für Abfragen und Inhaltsverzeichnisse, die der Server rendert. Um einen Block zu bearbeiten, setze den Cursor hinein oder wähle **Quelltext anzeigen**. Notebooks markiert ungültige Einstellungen in ihren Quellzeilen.
 
-Die Buchansicht rendert dieselben Blöcke auf dem Server ohne Editor. Gespeicherte Änderungen aktualisieren Buchinhalte und Abfragevorschauen automatisch, wenn JavaScript verfügbar ist. Schreibgeschützt bleibt die gespeicherte Quelle bis zum Neuladen unverändert; lade nach deren Änderung neu. Ohne JavaScript zeigt die Buchansicht Ergebnisse und Links weiterhin beim Seitenaufruf.
+Eine Entwurfsvorschau nutzt die Abfrageeinstellungen und Überschriften deines Entwurfs. Abfragen lesen trotzdem gespeicherte Daten, auch für die aktuelle Notiz. Die Vorschau speichert den Entwurf nicht und ändert keine passenden Notizen.
+
+Die Buchansicht rendert dieselben Blöcke auf dem Server, ohne Editor. Ist JavaScript verfügbar, aktualisieren gespeicherte Änderungen die Buchansicht und die Abfragevorschauen automatisch. **Schreibgeschützt** behält den gespeicherten Quelltext bis zum Neuladen. Lade neu, nachdem sich dieser Quelltext geändert hat. Ohne JavaScript zeigt die Buchansicht Ergebnisse und Links beim Laden der Seite.
 
 ## Tabellen und Aufgaben lesbar halten {icon="table"}
 
-Normale Tabellen, Listen, Kontrollkästchen und benannte Abschnitte bleiben Markdown. Verwende Tabellenformeln für Berechnungen innerhalb einer Tabelle; Abfragen indexieren nur benannte `:::data`-Eigenschaften und die oben genannten Systemfelder.
+Normale Tabellen, Listen, Kontrollkästchen und benannte Abschnitte bleiben Markdown. Verwende Tabellenformeln für Berechnungen in einer Tabelle. Abfragen indexieren nur benannte `:::data`-Eigenschaften und die oben genannten Systemfelder.
 
-Die Buchansicht berechnet dieselben Tabellenformeln wie der Editor, einschließlich berechneter Spalten, Summen und Fortschrittsbalken. Formelfehler bleiben in der betroffenen Zelle sichtbar. Tabellenüberschriften und normale Zellen unterstützen außerdem Formatierungen, Links, Bilder und LaTeX; Formelergebnisse bleiben reine Werte.
+Die Buchansicht berechnet dieselben Tabellenformeln wie der Editor, auch berechnete Spalten, Summen und Fortschrittsbalken. Ein Formelfehler bleibt in seiner Zelle sichtbar. Tabellenüberschriften und normale Zellen unterstützen außerdem Formatierungen, Links, Bilder und LaTeX. Formelergebnisse bleiben reine Werte.
