@@ -499,6 +499,10 @@ change runs the checks in
 Run the full `bun run check` and `bun run test` only when you change the
 repository checks, the build or test system, or many packages.
 
+The Grids jobs run Gotenberg at debug log level, so the service log at the end
+of a failed job contains LibreOffice's own error message for a failed PDF/A
+conversion.
+
 An integration suite that starts its own container needs only Docker and its
 `CLOUD_TEST_*` targets, so it runs in the gate as well; the Files
 stable-reference suite starts a private Filegate this way, and the Assistant
