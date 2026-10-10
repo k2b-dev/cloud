@@ -134,7 +134,8 @@ const visibleNow = sql`(c.snoozed_until IS NULL OR c.snoozed_until <= now())`;
 
 /**
  * A mailbox counts unread mail outside Trash and Junk, like All mail, and the conversations that need
- * action; both leave out conversations whose mail is kept inside its folders.
+ * action; both leave out conversations whose mail is kept inside its folders. Rows come in mailbox ID
+ * order, so every caller sees the same list.
  */
 const mailboxCountQuery = (context: MailRequestContext, scope: AggregatedViewScope) => sql<DbMailboxCounts[]>`
   WITH readable_conversations AS (${readableConversations(context, scope)})
@@ -150,6 +151,7 @@ const mailboxCountQuery = (context: MailRequestContext, scope: AggregatedViewSco
   FROM readable_conversations c
   WHERE c.aggregated
   GROUP BY c.mailbox_id
+  ORDER BY c.mailbox_id
 `;
 
 /** The scope of every mailbox the request may read. */
