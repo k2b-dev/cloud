@@ -20,8 +20,8 @@ Gateway Ops fasst Signale der Plattform zusammen. Es zeigt keine rohen Redis-Sch
 
 :::reference
 - **Senden bei:** Ein Webhook kann bei **OK**, **Warnung**, **Fehler**, **Wiederherstellung** oder **Jede Prüfung** senden, also bei jeder geplanten Prüfung. Wählst du keinen Auslöser, nutzt er Fehler und Wiederherstellung.
-- **Wiederholungsintervall:** Eine nicht behobene Warnung oder ein nicht behobener Fehler wird erst nach dem eingestellten Intervall erneut gesendet. Cloud begrenzt das Intervall auf mindestens eine Minute und höchstens dreißig Tage.
-- **Zeitüberschreitung:** Cloud begrenzt die Zeitüberschreitung für die Zustellung auf mindestens eine und höchstens dreißig Sekunden. Eine fehlgeschlagene Zustellung aktualisiert den letzten Fehler und den Fehlerzähler des Webhooks.
+- **Wiederholungsintervall:** Eine nicht behobene Warnung oder ein nicht behobener Fehler wird erst nach dem eingestellten Intervall erneut gesendet. Das Intervall muss mindestens eine Minute und höchstens dreißig Tage betragen.
+- **Zeitüberschreitung:** Die Zeitüberschreitung für die Zustellung muss mindestens eine und höchstens dreißig Sekunden betragen. Eine fehlgeschlagene Zustellung aktualisiert den letzten Fehler und den Fehlerzähler des Webhooks.
 - **Nutzlast:** Eine GET-Zustellung sendet eine Ping-Anfrage. Eine POST-Zustellung sendet JSON mit dem Modus und dem Zustandsbericht des Gateways für den gewählten Umfang.
 :::
 

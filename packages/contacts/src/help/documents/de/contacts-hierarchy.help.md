@@ -14,7 +14,7 @@ Die Kontakthierarchie verknüpft Kontakte im selben Kontaktbuch, wenn ein Kontak
 - **Gehört zu:** Ein optionales Feld im Kontakteditor für den übergeordneten Kontakt. Ist es gesetzt, wird der Kontakt ein Mitglied dieses Kontakts.
 - **Mitglieder:** Ein übergeordneter Kontakt zeigt seine direkten Mitglieder im Detailbereich. Mit Zugriff **Bearbeiten** oder **Verwalten** auf das Kontaktbuch fügst du dort ein Mitglied hinzu.
 - **Hierarchie:** Lädt den obersten übergeordneten Kontakt und alle untergeordneten Kontakte des ausgewählten Kontakts, unabhängig von der aktuellen Ergebnisseite.
-- **Gleiches Kontaktbuch:** Übergeordnete Kontakte und ihre Mitglieder müssen im selben Kontaktbuch liegen. Beim Verschieben eines Kontakts entfernt Kontakte die Verknüpfungen, die über Kontaktbuchgrenzen hinweg reichen würden.
+- **Gleiches Kontaktbuch:** Übergeordnete Kontakte und ihre Mitglieder müssen im selben Kontaktbuch liegen. Verschiebst du einen Kontakt in ein anderes Kontaktbuch, entfallen die Verknüpfungen, die über Kontaktbuchgrenzen hinweg reichen würden.
 :::
 
 ## Die Regeln beachten {icon="book-2"}

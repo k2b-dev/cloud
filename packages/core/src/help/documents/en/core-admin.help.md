@@ -14,7 +14,7 @@ The account settings link to the matching English guide with **Documentation**. 
 
 :::reference
 - **Overview:** Lists the registered apps with administration pages. It also counts the registered apps, the administration pages that you can open, and the navigation entries that people see.
-- **App credentials:** Create a named credential for the background work of one app across apps. User mandates still limit the actions that the credential can take.
+- **App credentials:** Create a named credential that one app uses for background calls to other apps. User mandates still limit the actions that the credential can take.
 - **Announcements:** Create and edit announcements or banners. An entry is active, scheduled, or expired, depending on its publish time and expiry time.
 - **Settings:** Edit the settings by group. Each field shows its current value. It also shows the source of the value where the settings service provides it.
 :::
@@ -73,11 +73,12 @@ Configure FreeIPA and its administrator group mapping in the settings. Cloud has
 1. In **App credentials**, choose **Create credential**.
 2. In the dialog, select the **Application**.
 3. Enter the **Name** and, if needed, the expiry time.
-4. Copy the token. Cloud shows it only once; afterwards only its metadata and **Revoke** stay available.
-5. Give the token only to the owning app, as `CLOUD_APP_CREDENTIAL`, through the secret store of the deployment.
-6. Set Core's private address in `CLOUD_CORE_INTERNAL_ORIGIN`. Background calls need it.
-7. Apply the change and check the background work of the app.
-8. Choose **Revoke** for the old credential and confirm in the dialog.
+4. Choose **Create credential** in the dialog.
+5. Copy the token. Cloud shows it only once; afterwards only its metadata and **Revoke** stay available.
+6. Give the token only to the owning app, as `CLOUD_APP_CREDENTIAL`, through the secret store of the deployment.
+7. Set Core's private address in `CLOUD_CORE_INTERNAL_ORIGIN`. Background calls need it.
+8. Apply the change and check the background work of the app.
+9. Choose **Revoke** for the old credential and confirm in the dialog.
 :::
 
 Revoking stops new calls with that credential.

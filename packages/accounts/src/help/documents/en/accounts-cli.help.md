@@ -11,7 +11,7 @@ The Accounts CLI uses the same APIs as the app, so agents can list, inspect, and
 ## Find the right command group {icon="code"}
 
 :::reference
-- **users:** List, inspect, create, update, and delete users. Change their provider, profile, or administrator state. Read, set, and remove avatars, reset IPA passwords, create sign-in tokens, and send sign-in links. When the installation allows local accounts without email, `users create` accepts a local full account without `--email`, and `users update --remove-email` removes an address.
+- **users:** List, inspect, create, update, and delete users. Change their provider, profile, or administrator state. Read, set, and remove avatars, reset IPA passwords, create a **Login token** with `users login-token`, and send a sign-in link with `users send-login-link`. When the installation allows local accounts without email, `users create` accepts a local full account without `--email`, and `users update --remove-email` removes an address.
 - **groups:** List, inspect, create, update, make POSIX, and delete groups. List, add, and remove members and managers.
 - **requests:** List, inspect, and deny account requests.
 - **audit:** List audit events, filtered by actor, target, action, action group, service account, outcome, provider, and time.

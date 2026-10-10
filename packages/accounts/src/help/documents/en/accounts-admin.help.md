@@ -40,9 +40,9 @@ Resolved addresses disappear from the list. You cannot delete your own account.
 - **Reminder history:** Search the attempts to send account expiry reminders. Each entry shows the target expiry, the threshold days, the status, the attempts, the last attempt, and the last error.
 :::
 
-## Run an account without email {icon="user-cog"}
+## Set up an account without email {icon="user-cog"}
 
-When **Allow local accounts without email** is on in the Cloud administration, you can create a **Login** account without an address. To remove the address of an existing account, clear the field and confirm. The person then signs in with a paired app or a passkey. Accounts hides actions that need email, such as **Notify**, for these accounts.
+When **Allow local accounts without email** is on in the Cloud administration, you can create a **Login** account without an address. To remove the address of an existing **Login** account, clear the field and confirm. The person then signs in with a paired app or a passkey. Accounts hides actions that need email, such as **Notify**, for these accounts.
 
 For the first sign-in, do one of these:
 
@@ -73,11 +73,13 @@ The person can then sign in and pair a device again.
 
 ## Create a POSIX group {icon="users"}
 
-When you create a local group, select **Create as POSIX group** to assign a stable GID. The option is off by default and needs local Linux identities enabled in the Cloud administration. Without it, the group stays a logical group. If the assignment fails, Accounts creates no group.
+Only administrators can assign a GID. For a local group, local Linux identities must be enabled in the Cloud administration.
 
 :::warning You cannot undo a GID assignment
-Only administrators can assign a GID.
+The group keeps its GID. You cannot turn it back into a logical group.
 :::
+
+When you create a local group, select **Create as POSIX group** to assign a stable GID. The option is off by default. Without it, the group stays a logical group. If the assignment fails, Accounts creates no group.
 
 To convert an existing group, choose **Convert to POSIX** in its actions.
 

@@ -19,7 +19,7 @@ Unter **Registrierung & Anfragen** kannst du optionale Hinweise zur Nacharbeit f
 Jedes Konto zeigt seine letzte Cloud-Web-Anmeldung. FreeIPA-Konten zeigen außerdem die letzte Kerberos-Anmeldung und den Zeitpunkt der Synchronisierung. Kerberos-Aktivität kann Nutzung außerhalb von Cloud enthalten. Alle Uhrzeiten sind in UTC. **Nicht erfasst** bedeutet nicht, dass niemand das Konto je benutzt hat.
 
 :::warning Das Löschen eines FreeIPA-Kontos löscht auch den Benutzer in FreeIPA
-Konten überträgt weder Daten noch Zugriff auf das verbleibende Konto.
+Daten und Zugriff gehen nicht auf das verbleibende Konto über.
 :::
 
 :::steps
@@ -40,9 +40,9 @@ Bereinigte Adressen verschwinden aus der Liste. Dein eigenes Konto kannst du nic
 - **Erinnerungsverlauf:** Durchsuche die Versuche, Erinnerungen zum Kontoablauf zu senden. Jeder Eintrag zeigt Ablaufdatum, Vorlaufzeit in Tagen, Status, Anzahl der Versuche, letzten Versuch und letzten Fehler.
 :::
 
-## Konto ohne E-Mail-Adresse führen {icon="user-cog"}
+## Konto ohne E-Mail-Adresse einrichten {icon="user-cog"}
 
-Ist **Lokale Konten ohne E-Mail-Adresse erlauben** in der Cloud-Administration eingeschaltet, kannst du ein **Login**-Konto ohne Adresse anlegen. Um die Adresse eines bestehenden Kontos zu entfernen, leere das Feld und bestätige. Die Person meldet sich dann mit einer gekoppelten App oder einem Passkey an. Aktionen, die E-Mail brauchen, etwa **Benachrichtigen**, blendet Konten für diese Konten aus.
+Ist **Lokale Konten ohne E-Mail-Adresse erlauben** in der Cloud-Administration eingeschaltet, kannst du ein **Login**-Konto ohne Adresse anlegen. Um die Adresse eines bestehenden **Login**-Kontos zu entfernen, leere das Feld und bestätige. Die Person meldet sich dann mit einer gekoppelten App oder einem Passkey an. Für diese Konten sind Aktionen ausgeblendet, die E-Mail brauchen, etwa **Benachrichtigen**.
 
 Für die erste Anmeldung hast du zwei Möglichkeiten:
 
@@ -73,11 +73,13 @@ Das **Audit-Protokoll** erfasst Konto- und Zugriffsänderungen. Filtere nach Die
 
 ## POSIX-Gruppe erstellen {icon="users"}
 
-Wähle beim Anlegen einer lokalen Gruppe **Als POSIX-Gruppe erstellen**, um eine feste GID zu vergeben. Die Option ist anfangs aus und setzt in der Cloud-Administration eingeschaltete lokale Linux-Identitäten voraus. Ohne sie bleibt die Gruppe eine logische Gruppe. Schlägt die Vergabe fehl, legt Konten keine Gruppe an.
+Nur die Administration kann eine GID vergeben. Für eine lokale Gruppe müssen lokale Linux-Identitäten in der Cloud-Administration eingeschaltet sein.
 
 :::warning Du kannst die Vergabe einer GID nicht rückgängig machen
-Nur die Administration kann eine GID vergeben.
+Die Gruppe behält ihre GID. Du kannst sie nicht wieder in eine logische Gruppe umwandeln.
 :::
+
+Wähle beim Anlegen einer lokalen Gruppe **Als POSIX-Gruppe erstellen**, um eine feste GID zu vergeben. Die Option ist anfangs aus. Ohne sie bleibt die Gruppe eine logische Gruppe. Schlägt die Vergabe fehl, entsteht keine Gruppe.
 
 Um eine bestehende Gruppe umzuwandeln, wähle in ihren Aktionen **In POSIX-Gruppe umwandeln**.
 

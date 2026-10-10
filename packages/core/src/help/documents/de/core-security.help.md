@@ -18,7 +18,7 @@ Cloud kennt drei Kontotypen. Deine Organisation kann **Login** anders benennen.
 - **FreeIPA:** Startet mit deinem Passwort.
 :::
 
-Auch **Guest** und **FreeIPA** können sich mit der App anmelden. Nach einer FreeIPA-Anmeldung mit der App öffnet dieser Browser FreeIPA beim nächsten Mal mit der App. Lokale Konten verwenden keine Passwörter.
+Ist die App-Anmeldung eingerichtet, können sich auch **Guest** und **FreeIPA** mit der App anmelden. Nach einer FreeIPA-Anmeldung mit der App öffnet dieser Browser FreeIPA beim nächsten Mal mit der App. Lokale Konten verwenden keine Passwörter.
 
 Ein bestehender Passkey funktioniert weiter, solange dein Kontotyp erlaubt ist. Ist dein Kontotyp verborgen, nutze deinen Einladungslink oder deinen direkten Anmeldelink. Ein verborgener Kontotyp ist nicht dasselbe wie ein gesperrter Zugang. Ist dein Zugang gesperrt, wende dich an die Administration.
 
@@ -48,7 +48,7 @@ Der Link gilt fünf Minuten. Teile ihn nicht außerhalb dieser Einrichtung.
 
 :::steps
 1. Wähle deinen Kontotyp.
-2. Wähle bei **Guest** oder **FreeIPA** die Option **Stattdessen die App nutzen**.
+2. Zeigt die Seite **Stattdessen die App nutzen**, wähle diese Option.
 3. Gib deine E-Mail-Adresse oder dein Kürzel ein.
 4. Wähle **Mit App anmelden**.
 5. Öffne die gekoppelte App.
@@ -67,7 +67,7 @@ Ist das Ergebnis einer Anmeldung unklar, lade die Seite neu, um deine Sitzung zu
 
 Hast du dein Gerät verloren und kannst dich nicht anmelden, bitte die Administration, es zu widerrufen.
 
-:::warning Ein neues Passwort widerruft auch deine gekoppelten Geräte
+:::warning Das Zurücksetzen des Passworts widerruft auch deine gekoppelten Geräte
 Setzt du dein Passwort mit **Passwort zurücksetzen** auf der Anmeldeseite zurück, widerruft Cloud alle deine gekoppelten Geräte. Jede andere Abmeldung deines Kontos auf allen Geräten wirkt genauso. Kopple deine Geräte danach neu.
 :::
 

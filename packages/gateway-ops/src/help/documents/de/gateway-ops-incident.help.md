@@ -16,7 +16,7 @@ Grenze die Störung anhand eines Signals ein, bevor du alle Seiten der Systembeo
 1. **Apps:** Prüfe, ob die betroffene App online, veraltet, beeinträchtigt oder offline ist. Notiere den letzten Heartbeat und das Routenpräfix.
 2. **Routen:** Prüfe, ob das erwartete Präfix der erwarteten App gehört. Prüfe seine Treffer- und Fehlerzähler.
 3. **Telemetrie:** Filtere nach App, Route, Methode, Status, Dauer oder Fehlerart, um die fehlgeschlagenen Anfragen zu finden.
-4. **Protokolle:** Filtere nach der Quelle der App oder des Dienstes und nach einer engen Stufe oder einem Suchbegriff. Suche den Kontext der App aus demselben Zeitraum.
+4. **Protokolle:** Filtere nach der Quelle der App oder des Dienstes und grenze nach Stufe oder Suchbegriff ein. Suche den Kontext der App aus demselben Zeitraum.
 5. **Jobs:** Prüfe die Hintergrundarbeit, wenn das Symptom veraltete oder fehlende Daten sind, nicht eine fehlschlagende Anfrage. Suche nach hängenden Läufen und überfälligen Zeitplänen. Ein Zeitplan, der nicht mehr auslöst, erzeugt selbst keine Fehler.
 6. **Postgres** oder **Redis**: Prüfe die Speicherdiagnosen nur, wenn Anfragen und Protokolle auf Speicherdruck, veraltete Daten oder wachsenden Keyspace hindeuten. Bei Redis sind Verdrängungen und Trefferrate wichtiger als die Anzahl der Schlüssel.
 7. **Benachrichtigungen** und **Webhooks**: Prüfe, ob die Plattform eine Benachrichtigung für den Betrieb gesendet hat oder ob der Versand fehlgeschlagen ist.

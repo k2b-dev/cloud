@@ -14,7 +14,7 @@ Die Kontoeinstellungen verlinken mit **Dokumentation** die passende englische An
 
 :::reference
 - **Übersicht:** Listet die registrierten Apps mit Administrationsseiten. Sie zählt außerdem die registrierten Apps, die Administrationsseiten, die du öffnen kannst, und die Navigationseinträge, die Personen sehen.
-- **App-Zugänge:** Erstelle einen benannten Zugang für die Hintergrundarbeit einer App über App-Grenzen hinweg. Nutzermandate begrenzen weiterhin die Aktionen, die der Zugang ausführen kann.
+- **App-Zugänge:** Erstelle einen benannten Zugang, mit dem eine App im Hintergrund andere Apps aufruft. Nutzermandate begrenzen weiterhin die Aktionen, die der Zugang ausführen kann.
 - **Ankündigungen:** Erstelle und bearbeite Ankündigungen oder Banner. Ein Eintrag ist aktiv, geplant oder abgelaufen, je nach Veröffentlichungszeit und Ablaufzeit.
 - **Einstellungen:** Bearbeite die Einstellungen nach Gruppen. Jedes Feld zeigt seinen aktuellen Wert. Wo der Einstellungsdienst sie bereitstellt, zeigt es auch die Quelle des Werts.
 :::
@@ -73,11 +73,12 @@ FreeIPA und die Gruppenzuordnung für die Administration richtest du in den Eins
 1. Wähle unter **App-Zugänge** die Option **Zugang erstellen**.
 2. Wähle im Dialog die **Anwendung**.
 3. Gib unter **Name** einen Namen und bei Bedarf die Ablaufzeit ein.
-4. Kopiere den Token. Cloud zeigt ihn nur einmal; danach bleiben nur seine Metadaten und **Widerrufen** verfügbar.
-5. Hinterlege den Token über die Secret-Verwaltung des Deployments nur in der zugehörigen App als `CLOUD_APP_CREDENTIAL`.
-6. Trage Cores interne Adresse in `CLOUD_CORE_INTERNAL_ORIGIN` ein. Hintergrundaufrufe brauchen sie.
-7. Wende die Änderung an und prüfe die Hintergrundarbeit der App.
-8. Wähle beim alten Zugang **Widerrufen** und bestätige im Dialog.
+4. Wähle im Dialog **Zugang erstellen**.
+5. Kopiere den Token. Cloud zeigt ihn nur einmal; danach bleiben nur seine Metadaten und **Widerrufen** verfügbar.
+6. Hinterlege den Token über die Secret-Verwaltung des Deployments nur in der zugehörigen App als `CLOUD_APP_CREDENTIAL`.
+7. Trage Cores interne Adresse in `CLOUD_CORE_INTERNAL_ORIGIN` ein. Hintergrundaufrufe brauchen sie.
+8. Wende die Änderung an und prüfe die Hintergrundarbeit der App.
+9. Wähle beim alten Zugang **Widerrufen** und bestätige im Dialog.
 :::
 
 Der Widerruf stoppt neue Aufrufe mit diesem Zugang.

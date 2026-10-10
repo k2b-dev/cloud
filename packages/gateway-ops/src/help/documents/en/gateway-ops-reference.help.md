@@ -20,8 +20,8 @@ Gateway Ops summarizes platform signals. It does not list raw Redis keys. For lo
 
 :::reference
 - **Send when:** A webhook can send on **OK**, **Warning**, **Error**, **Recovery**, or **Every check**, which means every scheduled check. If you select no trigger, it uses error and recovery.
-- **Repeat interval:** An unresolved warning or error repeats only after the configured interval. Cloud limits the interval to at least one minute and at most thirty days.
-- **Timeout:** Cloud limits the delivery timeout to at least one and at most thirty seconds. A failed delivery updates the last error and the failure count of the webhook.
+- **Repeat interval:** An unresolved warning or error repeats only after the configured interval. The interval must be at least one minute and at most thirty days.
+- **Timeout:** The delivery timeout must be at least one and at most thirty seconds. A failed delivery updates the last error and the failure count of the webhook.
 - **Payload:** A GET delivery sends a ping request. A POST delivery sends JSON with the mode and the gateway health report for the scope.
 :::
 

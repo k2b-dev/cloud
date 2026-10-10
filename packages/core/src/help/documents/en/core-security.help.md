@@ -18,7 +18,7 @@ Cloud has three account types. Your organization can give **Login** another name
 - **FreeIPA:** Starts with your password.
 :::
 
-**Guest** and **FreeIPA** can also sign in with the app. After a FreeIPA sign-in with the app, this browser opens FreeIPA with the app next time. Local accounts do not use passwords.
+When app sign-in is configured, **Guest** and **FreeIPA** can also sign in with the app. After a FreeIPA sign-in with the app, this browser opens FreeIPA with the app next time. Local accounts do not use passwords.
 
 An existing passkey keeps working while your account type is allowed. If your account type is hidden, use your invitation link or your direct sign-in link. A hidden account type is not the same as disabled access. If your access is disabled, ask your administrator.
 
@@ -48,7 +48,7 @@ The link expires after five minutes. Do not share it outside this setup.
 
 :::steps
 1. Select your account type.
-2. For **Guest** or **FreeIPA**, choose **Use the app instead**.
+2. If the page shows **Use the app instead**, choose it.
 3. Enter your email or username.
 4. Choose **Sign in with app**.
 5. Open the paired app.

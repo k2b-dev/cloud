@@ -11,7 +11,7 @@ Die Konten-CLI nutzt dieselben APIs wie die App. Agenten können Kontodaten desh
 ## Die richtige Befehlsgruppe finden {icon="code"}
 
 :::reference
-- **users:** Personen auflisten, prüfen, erstellen, ändern und löschen. Anbieter, Profil und Administrationsstatus ändern. Avatare lesen, setzen und entfernen, IPA-Passwörter zurücksetzen, Anmeldetokens erstellen und Anmeldelinks senden. Erlaubt die Installation lokale Konten ohne E-Mail-Adresse, erstellt `users create` ein lokales Vollkonto auch ohne `--email`, und `users update --remove-email` entfernt eine Adresse.
+- **users:** Personen auflisten, prüfen, erstellen, ändern und löschen. Anbieter, Profil und Administrationsstatus ändern. Avatare lesen, setzen und entfernen, IPA-Passwörter zurücksetzen, mit `users login-token` ein **Anmeldetoken** erstellen und mit `users send-login-link` einen Anmeldelink senden. Erlaubt die Installation lokale Konten ohne E-Mail-Adresse, erstellt `users create` ein lokales Vollkonto auch ohne `--email`, und `users update --remove-email` entfernt eine Adresse.
 - **groups:** Gruppen auflisten, prüfen, erstellen, ändern, in POSIX-Gruppen umwandeln und löschen. Mitglieder und Verantwortliche auflisten, hinzufügen und entfernen.
 - **requests:** Kontoanfragen auflisten, prüfen und ablehnen.
 - **audit:** Audit-Ereignisse auflisten, gefiltert nach handelnder Person, Ziel, Aktion, Aktionsgruppe, Dienstkonto, Ergebnis, Anbieter und Zeitraum.

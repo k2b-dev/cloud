@@ -16,7 +16,7 @@ Use one signal to narrow the incident before you open every observability page. 
 1. **Apps:** Check whether the affected app is online, stale, degraded, or offline. Note its latest heartbeat and route prefix.
 2. **Routes:** Check that the expected prefix belongs to the expected app. Check its hit and error counters.
 3. **Telemetry:** Filter by app, route, method, status, duration, or error kind to find the failing requests.
-4. **Logs:** Filter by the app or service source and by a narrow level or search term. Look for app context from the same time.
+4. **Logs:** Filter by the app or service source, then narrow by level or search term. Look for app context from the same time.
 5. **Jobs:** Check background work when the symptom is stale or missing data, not a failing request. Look for stuck runs and overdue schedules. A schedule that quietly stopped firing produces no errors at all.
 6. **Postgres** or **Redis**: Check storage diagnostics only when requests and logs point to storage pressure, stale data, or keyspace growth. On Redis, evictions and hit rate matter more than key counts.
 7. **Notifications** and **Webhooks**: Check whether the platform sent an operator-facing notification, or failed to send it.
