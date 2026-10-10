@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.21.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.20.0...npm-ui-v0.21.0) (2026-10-10)
+
+
+### Features
+
+* **dashboard:** stream widgets in as they load instead of failing the whole board ([#831](https://github.com/k2b-dev/cloud/issues/831)) ([e7ff2ce](https://github.com/k2b-dev/cloud/commit/e7ff2ce2c13a4a6e2e49fc4c2ef7b9a236ca78b9))
+* **spaces:** select days, create over a range, and show long events as one bar in the month view ([#826](https://github.com/k2b-dev/cloud/issues/826)) ([ed10713](https://github.com/k2b-dev/cloud/commit/ed1071320af6a09e177d4115f15328bcfb7bc8a7))
+* **ui:** mark today in every date picker ([#839](https://github.com/k2b-dev/cloud/issues/839)) ([de47b30](https://github.com/k2b-dev/cloud/commit/de47b3010ac5a6f0ef32aff638edaa30dadf50d2))
+
+
+### Bug Fixes
+
+* **ui:** keep busy buttons at their width and name them by their loading label ([#845](https://github.com/k2b-dev/cloud/issues/845)) ([1bd875a](https://github.com/k2b-dev/cloud/commit/1bd875ae479b276cdcea6e3d11a1f95cc1257325))
+* **ui:** show bare dialogs on iPad instead of only blurring the page ([#799](https://github.com/k2b-dev/cloud/issues/799)) ([285b00f](https://github.com/k2b-dev/cloud/commit/285b00ff6b655443e468bf6e167a82ad5ffd2fec))
+
 ## [0.20.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.19.0...npm-ui-v0.20.0) (2026-10-09)
 
 
