@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.22.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.21.0...npm-ui-v0.22.0) (2026-10-10)
+
+
+### Features
+
+* **dashboard:** one board of widgets in three sizes that people can arrange themselves ([#885](https://github.com/k2b-dev/cloud/issues/885)) ([0ff5872](https://github.com/k2b-dev/cloud/commit/0ff5872d5f558b41b27dfa43b50e7d3da6f4b67e))
+* **ui:** keep drags from selecting page text on iPad ([#902](https://github.com/k2b-dev/cloud/issues/902)) ([d65a827](https://github.com/k2b-dev/cloud/commit/d65a827d24a8a7fa10589d07be52e8dc561a1ea4))
+
+
+### Bug Fixes
+
+* **ui:** open hover previews only for the row still under the mouse ([#883](https://github.com/k2b-dev/cloud/issues/883)) ([d9718f7](https://github.com/k2b-dev/cloud/commit/d9718f7695d46b7aff46e33584f6533f619f5e9f))
+
 ## [0.21.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.20.0...npm-ui-v0.21.0) (2026-10-10)
 
 

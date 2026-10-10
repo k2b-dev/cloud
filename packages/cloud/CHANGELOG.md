@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.31.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.30.0...npm-cloud-v0.31.0) (2026-10-10)
+
+
+### Features
+
+* **ai:** ask once per website and per chat instead of for every request ([#861](https://github.com/k2b-dev/cloud/issues/861)) ([52fe800](https://github.com/k2b-dev/cloud/commit/52fe8003e1109c69b8f5e1c863da17145ae844a6))
+* **dashboard:** one board of widgets in three sizes that people can arrange themselves ([#885](https://github.com/k2b-dev/cloud/issues/885)) ([0ff5872](https://github.com/k2b-dev/cloud/commit/0ff5872d5f558b41b27dfa43b50e7d3da6f4b67e))
+* **ui:** keep drags from selecting page text on iPad ([#902](https://github.com/k2b-dev/cloud/issues/902)) ([d65a827](https://github.com/k2b-dev/cloud/commit/d65a827d24a8a7fa10589d07be52e8dc561a1ea4))
+
+
+### Bug Fixes
+
+* **cloud:** keep Cloud pages within the window when vh is taller ([#880](https://github.com/k2b-dev/cloud/issues/880)) ([5fbe2dc](https://github.com/k2b-dev/cloud/commit/5fbe2dc414c38c48ea7ee7808b03fadf2199b036))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.21.0 to 0.22.0
+
 ## [0.30.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.29.1...npm-cloud-v0.30.0) (2026-10-10)
 
 
