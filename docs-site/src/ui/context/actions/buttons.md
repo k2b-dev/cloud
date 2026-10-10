@@ -64,12 +64,19 @@ the main action of a `SplitButton`, so neighbouring buttons and wrapped rows do
 not move when an action starts or ends. With reduced motion, the spinner stands
 still.
 
+Pass the idle content as children and leave it unchanged while `loading` is
+set: no spinner of your own, no hidden icon, no "Saving" text. The invisible
+children set the busy width, so swapping them still moves the button, and the
+button already draws the spinner.
+
 `loadingLabel` is not shown. It becomes the button's accessible name while it
-is busy, so it can describe the running work precisely ("Saving the invoice")
-without changing the width. Without `loadingLabel`, the button keeps its label
-as its name. A busy button is marked `aria-busy="true"` and `disabled`; report
-the result, such as a saved state or an error, where the page reports results,
-for example with a toast.
+is busy, also over an `aria-label` you passed, so it can describe the running
+work precisely ("Saving the invoice") without changing the width. Without
+`loadingLabel`, the button keeps its label or `aria-label` as its name. A busy
+button is marked `aria-busy="true"` and `disabled`. The new name is not
+announced, so report progress that needs attention and the result, such as a
+saved state or an error, where the page reports results, for example with a
+toast.
 
 The `input` variant uses the same height, radius, muted surface, hover border, and inset focus treatment as form fields. Use it for a separate action immediately beside an input, not for actions embedded inside the field shell.
 

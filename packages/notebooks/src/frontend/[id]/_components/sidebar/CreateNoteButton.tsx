@@ -45,7 +45,7 @@ const CreateNoteButton = (props: Props) => {
         loading={mutation.loading()}
         loadingLabel={t().creatingNote}
       >
-        <i class={`ti ${mutation.loading() ? "ti-loader-2 animate-spin" : "ti-file-plus"}`} />
+        <i class="ti ti-file-plus" />
       </IconButton>
     );
   }
@@ -68,14 +68,8 @@ const CreateNoteButton = (props: Props) => {
   if (props.variant === "chip") {
     return (
       <Button size="sm" onClick={handleCreate} loading={mutation.loading()} loadingLabel={t().creatingNote}>
-        {mutation.loading() ? (
-          <i class="ti ti-loader-2 animate-spin" />
-        ) : (
-          <>
-            <i class="ti ti-plus" />
-            <span>{t().newNote}</span>
-          </>
-        )}
+        <i class="ti ti-plus" />
+        <span>{t().newNote}</span>
       </Button>
     );
   }
@@ -95,14 +89,8 @@ const CreateNoteButton = (props: Props) => {
 
   return (
     <Button variant="success" onClick={handleCreate} loading={mutation.loading()} loadingLabel={t().creatingNote}>
-      {mutation.loading() ? (
-        <i class="ti ti-loader-2 animate-spin" />
-      ) : (
-        <>
-          <i class="ti ti-file-plus mr-1 text-emerald-600 dark:text-emerald-400" />
-          <span class="text-emerald-700 dark:text-emerald-300">{t().newNote}</span>
-        </>
-      )}
+      <i class="ti ti-file-plus mr-1 text-emerald-600 dark:text-emerald-400" />
+      <span class="text-emerald-700 dark:text-emerald-300">{t().newNote}</span>
     </Button>
   );
 };

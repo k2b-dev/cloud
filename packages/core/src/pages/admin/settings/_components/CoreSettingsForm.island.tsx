@@ -561,7 +561,7 @@ export default function CoreSettingsForm(props: Props) {
             loadingLabel={t().testingRenderer}
             disabled={hasChanges()}
           >
-            <i class={testPdf.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-file-type-pdf"} /> {t().testRenderer}
+            <i class="ti ti-file-type-pdf" /> {t().testRenderer}
           </Button>
         </Tooltip.Anchor>
       </Show>
@@ -578,7 +578,7 @@ export default function CoreSettingsForm(props: Props) {
             loadingLabel={t().testingConnection}
             disabled={hasChanges()}
           >
-            <i class={testFreeIpa.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-plug-connected"} /> {t().testConnection}
+            <i class="ti ti-plug-connected" /> {t().testConnection}
           </Button>
         </Tooltip.Anchor>
       </Show>
@@ -1111,7 +1111,7 @@ function RunEnrichmentButton() {
   };
   return (
     <Button type="button" variant="secondary" size="sm" loading={running()} loadingLabel={t().running} onClick={() => void run()}>
-      <i class={running() ? "ti ti-loader-2 animate-spin" : "ti ti-player-play"} aria-hidden="true" />
+      <i class="ti ti-player-play" aria-hidden="true" />
       {t().runNow}
     </Button>
   );

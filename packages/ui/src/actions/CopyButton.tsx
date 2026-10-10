@@ -73,7 +73,6 @@ export function CopyButton(props: CopyButtonProps): JSX.Element {
   const visibleLabel = () => (copied() ? (local.copiedLabel ?? messages().copied) : (local.label ?? messages().copy));
   const icon = () => (copied() ? "ti ti-check" : "ti ti-copy");
   const iconOnly = () => local.iconOnly ?? local.label === undefined;
-  const buttonLabel = () => (local.loading && local.loadingLabel ? local.loadingLabel : visibleLabel());
   const button = (tooltip?: string) => (
     <Button
       {...rest}
@@ -85,7 +84,7 @@ export function CopyButton(props: CopyButtonProps): JSX.Element {
       class={`k2b-copy-button ${local.class ?? ""}`}
       size={local.size ?? "sm"}
       variant={local.variant ?? "ghost"}
-      aria-label={iconOnly() ? buttonLabel() : undefined}
+      aria-label={iconOnly() ? visibleLabel() : undefined}
       onClick={copy}
     >
       <i class={icon()} aria-hidden="true" />

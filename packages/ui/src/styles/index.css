@@ -1669,11 +1669,14 @@
 }
 
 /* A busy button keeps exactly its idle box: the idle content stays in the
- * layout, invisible but still named for assistive technology, and the spinner
- * is centered over it. The zero-specificity `position` keeps component rules
- * that already place a button in charge. */
-:where(.k2b-ui .k2b-button:has(> .k2b-button__busy)) {
-  position: relative;
+ * layout, invisible, and the spinner is centered over it. The `position` that
+ * anchors the spinner sits in the components layer at zero specificity, so a
+ * button placed by a utility class such as `absolute` or by a component rule
+ * stays where it is while busy. */
+@layer components {
+  :where(.k2b-ui .k2b-button:has(> .k2b-button__busy)) {
+    position: relative;
+  }
 }
 
 .k2b-ui .k2b-button:has(> .k2b-button__busy) > .k2b-button__label {
@@ -1756,11 +1759,14 @@
    part feedback-parity.css owns. A later line of buttons reaches 8 px up past
    an `sm` button, so lines that wrap or stack keep 0.625rem apart on touch:
    a hit area that only touches the line above still takes a pixel strip at
-   its edge. The zero-specificity `position` keeps component rules that
-   already place a button in charge. */
+   its edge. The `position` that anchors the hit area sits in the components
+   layer at zero specificity, so a button placed by a utility class such as
+   `absolute` or by a component rule stays where it is on touch screens. */
 @media (any-pointer: coarse) {
-  :where(.k2b-ui .k2b-button) {
-    position: relative;
+  @layer components {
+    :where(.k2b-ui .k2b-button) {
+      position: relative;
+    }
   }
 
   .k2b-ui .k2b-button::after {

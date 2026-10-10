@@ -42,6 +42,8 @@ const buttonClass = (className?: string): string => ["k2b-button", className].fi
 
 export function Button(props: ButtonProps): JSX.Element {
   const [local, rest] = splitProps(props, [
+    "aria-label",
+    "aria-labelledby",
     "children",
     "class",
     "disabled",
@@ -62,10 +64,15 @@ export function Button(props: ButtonProps): JSX.Element {
     target = element;
     if (typeof local.ref === "function") local.ref(element);
   };
+  // While busy, a loading label names the button, over any name the caller
+  // gave it, because the idle content it would describe is not visible.
+  const busyName = () => (local.loading && local.loadingLabel) || undefined;
 
   const control = (
     <button
       {...rest}
+      aria-label={busyName() ?? local["aria-label"]}
+      aria-labelledby={busyName() ? undefined : local["aria-labelledby"]}
       ref={setRef}
       type={local.type ?? "button"}
       class={buttonClass(local.class)}
@@ -77,15 +84,11 @@ export function Button(props: ButtonProps): JSX.Element {
       aria-busy={local.loading ? "true" : undefined}
     >
       {/* The idle content keeps its place, invisibly, so the button keeps its
-          size; the spinner is drawn over it and a loading label only replaces
-          the accessible name. */}
-      <span class="k2b-button__label" aria-hidden={local.loading && local.loadingLabel ? "true" : undefined}>
-        {local.children}
-      </span>
+          size; the spinner is drawn over it. */}
+      <span class="k2b-button__label">{local.children}</span>
       <Show when={local.loading}>
-        <span class="k2b-button__busy">
-          <i class="ti ti-loader-2 k2b-spin" aria-hidden="true" />
-          <span class="k2b-sr-only">{local.loadingLabel}</span>
+        <span class="k2b-button__busy" aria-hidden="true">
+          <i class="ti ti-loader-2 k2b-spin" />
         </span>
       </Show>
     </button>
@@ -202,7 +205,7 @@ export const iconTitle = (title: string | undefined, tooltip: JSX.Element | fals
   tooltip === false || tooltip === undefined ? title : isServer && typeof tooltip === "string" ? tooltip : undefined;
 
 export function IconButton(props: IconButtonProps): JSX.Element {
-  const [local, rest] = splitProps(props, ["children", "class", "label", "loading", "loadingLabel", "title", "tooltip", "variant"]);
+  const [local, rest] = splitProps(props, ["children", "class", "label", "title", "tooltip", "variant"]);
   const tooltip = useLabelTooltip(
     () => local.tooltip,
     () => local.title ?? local.label,
@@ -211,10 +214,9 @@ export function IconButton(props: IconButtonProps): JSX.Element {
   return (
     <Button
       {...rest}
-      loading={local.loading}
       variant={local.variant ?? "ghost"}
       class={`k2b-icon-button ${local.class ?? ""}`}
-      aria-label={local.loading ? (local.loadingLabel ?? local.label) : local.label}
+      aria-label={local.label}
       title={iconTitle(local.title, tooltip())}
       tooltip={tooltip()}
     >
