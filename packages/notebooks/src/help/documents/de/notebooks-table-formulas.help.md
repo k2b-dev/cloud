@@ -2,15 +2,15 @@
 id: notebooks-table-formulas
 title: "Tabellenformeln"
 icon: "ti ti-math-function"
-description: "Vollständige Referenz zu Syntax und Funktionen von Tabellenformeln."
+description: "Die vollständige Syntax und alle Funktionen von Tabellenformeln nachschlagen."
 order: 140
 ---
 
-Tabellenformeln machen aus Zellen in Markdown-Tabellen berechnete Werte. Sie sind bewusst kompakt: Schreibe die Formel in die Zelle und lasse die Ausgangsspalten sichtbar.
+Tabellenformeln machen aus Zellen einer Markdown-Tabelle berechnete Werte. Sie sind bewusst klein. Schreibe die Formel in die Zelle und lass die Ausgangsspalten sichtbar.
 
 **Formelaufbau**
 
-## Kleine Beispiele {icon="flask"}
+## Mit kleinen Beispielen beginnen {icon="flask"}
 
 **Fortschritt**
 
@@ -32,40 +32,40 @@ Tabellenformeln machen aus Zellen in Markdown-Tabellen berechnete Werte. Sie sin
 
 **Syntax**
 
-## Formelregeln {icon="ruler-2"}
+## Formelregeln beachten {icon="ruler-2"}
 
 :::reference
-- **Mit = beginnen:** Eine Tabellenformel beginnt mit =, zum Beispiel =SUM(Hours).
-- **Spalten über ihren Namen referenzieren:** Verwende den Spaltennamen direkt. Setze Namen mit Leerzeichen in Backticks, zum Beispiel =SUM(`Total Cost`).
-- **Vergleiche liefern Zahlen:** >, <, == und verwandte Operatoren liefern 1 oder 0.
-- **Formelzellen zählen sich nicht selbst:** Spaltensummen überspringen ihre eigene Formelzelle. =SUM(Hours) bezieht die Summenzelle daher nicht ein.
+- **Mit = beginnen:** Eine Formelzelle beginnt mit =, zum Beispiel =SUM(Hours).
+- **Spalten über ihren Namen ansprechen:** Verwende den Spaltennamen direkt. Setze Namen mit Leerzeichen in Backticks, zum Beispiel =SUM(`Total Cost`).
+- **Vergleiche liefern Zahlen:** >, <, == und die anderen Vergleichsoperatoren liefern 1 oder 0.
+- **Formelzellen zählen sich nicht selbst:** Eine Spaltensumme überspringt ihre eigene Formelzelle. =SUM(Hours) bezieht die Summenzelle nicht ein.
 :::
 
 **Referenz**
 
-## Funktionskatalog {icon="book-2"}
+## Funktion nachschlagen {icon="book-2"}
 
-### Autovervollständigung und Darstellung verwenden diesen Funktionsumfang
+### Autovervollständigung und Darstellung nutzen dieselben Funktionen
 
-Die Autovervollständigung für Tabellen, die Vorschau beim Bearbeiten und die Darstellung im Lesemodus verwenden dieselben Funktionsnamen.
+Die Autovervollständigung für Tabellen, die Vorschau beim Bearbeiten und der Lesemodus nutzen dieselben Funktionsnamen.
 
-### Bei Namen wird die Groß- und Kleinschreibung nicht berücksichtigt
+### Namen unterscheiden keine Groß- und Kleinschreibung
 
-Großbuchstaben verbessern die Lesbarkeit, der Formelauswerter akzeptiert Funktionsnamen jedoch auch in Kleinbuchstaben.
+Namen in Großbuchstaben sind leichter zu lesen. Funktionsnamen in Kleinbuchstaben funktionieren ebenfalls.
 
 ### Fortschritt und Prozentwerte
 
-Verwende diese Funktionen, wenn eine Zelle einen Fortschritt oder Prozentwert anzeigen soll.
+Verwende diese Funktionen, wenn eine Zelle einen Fortschritt oder einen Prozentwert zeigt.
 
 | Funktion | Syntax | Beispiel | Ergebnis und Hinweise |
 | --- | --- | --- | --- |
-| `PROGRESS` | `PROGRESS(ratio)` | `=PROGRESS(0.4)` | Fortschrittsbalken bei 40 %<br>Die visuelle Darstellung wird auf den Bereich von 0 % bis 100 % begrenzt. |
+| `PROGRESS` | `PROGRESS(ratio)` | `=PROGRESS(0.4)` | Fortschrittsbalken bei 40 %<br>Der Balken zeigt mindestens 0 % und höchstens 100 %. |
 | `PROGRESS` | `PROGRESS(done, total)` | `=PROGRESS(2, 10)` | Fortschrittsbalken bei 2/10<br>total darf nicht 0 sein. |
 | `PERCENT` | `PERCENT(part, total)` | `=PERCENT(Done, Total)` | Prozentwert<br>Liefert 40 für 40 %, nicht 0.4. |
 
 ### Spaltenaggregate
 
-Diese Funktionen lesen eine ganze Spalte. Leere oder nicht numerische Zellen werden bei numerischen Funktionen ignoriert.
+Diese Funktionen lesen eine ganze Spalte. Numerische Funktionen ignorieren leere Zellen und Zellen ohne Zahl.
 
 | Funktion | Syntax | Beispiel | Ergebnis und Hinweise |
 | --- | --- | --- | --- |
@@ -83,7 +83,7 @@ Diese Funktionen lesen eine ganze Spalte. Leere oder nicht numerische Zellen wer
 
 ### Zeilenaggregate
 
-Diese Funktionen lesen die aktuelle Zeile. Die Zelle mit der Formel wird übersprungen.
+Diese Funktionen lesen die aktuelle Zeile. Sie überspringen die Zelle mit der Formel.
 
 | Funktion | Syntax | Beispiel | Ergebnis und Hinweise |
 | --- | --- | --- | --- |
@@ -93,7 +93,7 @@ Diese Funktionen lesen die aktuelle Zeile. Die Zelle mit der Formel wird übersp
 
 ### Logik und Bedingungen
 
-Erstelle einfache Entscheidungen. Als wahr gelten Zahlen ungleich null und nicht leerer Text. Eine Zelle wie `0 €` ist Text, vergleiche deshalb den Betrag, zum Beispiel mit `Price > 0`.
+Baue einfache Entscheidungen. Ein Wert ist wahr, wenn er eine Zahl ungleich null oder nicht leerer Text ist. Eine Zelle wie `0 €` ist Text. Vergleiche deshalb den Betrag, zum Beispiel mit `Price > 0`.
 
 | Funktion | Syntax | Beispiel | Ergebnis und Hinweise |
 | --- | --- | --- | --- |
@@ -123,7 +123,7 @@ Bereinige und verbinde Textwerte.
 
 ### Mathematik
 
-Verwende Rechenoperatoren direkt oder Hilfsfunktionen, wenn eine Zelle formatiert werden soll.
+Verwende Rechenoperatoren direkt. Verwende die Hilfsfunktionen, wenn eine Zelle eine Formatierung braucht.
 
 | Funktion | Syntax | Beispiel | Ergebnis und Hinweise |
 | --- | --- | --- | --- |

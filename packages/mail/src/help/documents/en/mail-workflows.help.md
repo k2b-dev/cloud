@@ -6,9 +6,15 @@ description: Reference for Mail workflow inputs, triggers, actions, conditions, 
 order: 70
 ---
 
-Mail workflow YAML has three top-level keys: `inputs`, `triggers`, and `steps`. Only `steps` is required. The workflow name, description, priority, effect budget, saved versions, and activation state are edited outside YAML.
+Mail workflow YAML has three top-level keys: `inputs`, `triggers`, and `steps`. Only `steps` is required. You edit the workflow name, description, priority, effect budget, saved versions, and activation state outside YAML.
 
-Workflow source is limited to 200,000 characters. A saved workflow name accepts 1–160 characters, its optional description at most 2,000 characters, and its priority an integer from -1,000 to 1,000 with a default of 100. Lower priority numbers run first when several Mail workflows accept the same event.
+Workflow source is limited to 200,000 characters.
+
+:::reference
+- **Name:** 1–160 characters.
+- **Description:** Optional, at most 2,000 characters.
+- **Priority:** An integer from -1,000 to 1,000, default 100. When several Mail workflows accept the same event, lower numbers run first.
+:::
 
 ## Start with a received-message workflow {icon="route"}
 
@@ -41,7 +47,7 @@ steps:
           status: waiting
 ```
 
-Select **Validate** before saving. Validation checks strict YAML, the Mail vocabulary, value paths, accessible catalog names, and incompatible action combinations.
+Choose **Validate** before saving. Validation checks strict YAML, the Mail vocabulary, value paths, accessible catalog names, and incompatible action combinations.
 
 ## Declare inputs {icon="point"}
 
@@ -52,9 +58,9 @@ Mail supports two input types:
 | `mailMessage` | One message in this mailbox |
 | `mailConversation` | One conversation in this mailbox |
 
-Each input name must start with a letter or underscore and contain only letters, numbers, and underscores. `required` defaults to `false`; set `required: true` when every caller or trigger must provide the input. A trigger must bind each required input in its `with` block. `steps` must contain at least one step, and unknown root keys or action properties are rejected.
+Each input name must start with a letter or underscore and contain only letters, numbers, and underscores. `required` defaults to `false`. Set `required: true` when every caller or trigger must provide the input. A trigger must bind each required input in its `with` block. `steps` must contain at least one step. Mail rejects unknown root keys and action properties.
 
-A workflow without `triggers` can be validated and saved as an inactive draft, but it cannot be activated. Mail intentionally has no separate manual-run or target-query API.
+You can validate a workflow without `triggers` and save it as an inactive draft, but you cannot activate it. Mail has no separate API for manual runs or target queries, on purpose.
 
 Mail accepts at most 20 inputs, 500 steps, 20 nested step levels, 500 conditions, and 20 nested condition levels. These limits apply after parsing the complete workflow, including every branch.
 
@@ -62,7 +68,7 @@ Mail accepts at most 20 inputs, 500 steps, 20 nested step levels, 500 conditions
 
 ### `messageReceived`
 
-`messageReceived` starts once for a stable newly imported message. It does not start for mail the provider delivers straight to Trash or Junk. A message that another email client moves or copies to another folder, or a copy of a message the mailbox already holds, does not start it again. It exposes:
+`messageReceived` starts once for a stable newly imported message. It does not start for mail that the provider delivers straight to Trash or Junk. It does not start again when another email client moves or copies a message to another folder. It also does not start for a copy of a message that the mailbox already holds. It exposes:
 
 - `trigger.message`
 - `trigger.conversation`
@@ -90,7 +96,7 @@ steps:
 
 ### `schedule`
 
-`schedule` starts future slots from a five-field cron expression of at most 120 characters. `timezone` accepts an IANA time zone of at most 80 characters and defaults to UTC. The runtime supplies `trigger.occurredAt` and `trigger.slot`, but the current Mail vocabulary has no generic date-time input that can retain either value for later steps.
+`schedule` starts future slots from a five-field cron expression of at most 120 characters. `timezone` accepts an IANA time zone of at most 80 characters and defaults to UTC. The runtime supplies `trigger.occurredAt` and `trigger.slot`. The current Mail vocabulary has no generic date-time input that can keep either value for later steps.
 
 ```yaml
 triggers:
@@ -103,9 +109,9 @@ steps:
       message: The scheduled mailbox check ran.
 ```
 
-Trigger values exist only while binding `with`. Scheduled Mail workflows are therefore currently limited to steps that do not require a received message or conversation. `automaticReply` cannot run from a schedule trigger.
+Trigger values exist only while Mail binds `with`. Scheduled Mail workflows can therefore currently use only steps that do not require a received message or conversation. `automaticReply` cannot run from a schedule trigger.
 
-Omit `triggers` while drafting reusable YAML that should remain inactive. An empty `triggers: {}` block is invalid, and activation requires at least one trigger.
+Leave out `triggers` while you draft reusable YAML that stays inactive. An empty `triggers: {}` block is invalid, and activation requires at least one trigger.
 
 ## Read input and context values {icon="route"}
 
@@ -123,7 +129,7 @@ Conversation paths:
 - `inputs.conversation.id`, `subject`, `summary`, `summaryRevision`, `assigneeUserIds`
 - `inputs.conversation.workStatus`, `latestMessageAt`
 
-Mail resource IDs exposed to a workflow use the same stable six-character IDs as Mail URLs and capabilities. Provider references and database UUIDs are internal and are not workflow fields.
+Mail resource IDs in a workflow are the same stable six-character IDs as in Mail URLs and capabilities. Provider references and database UUIDs are internal and are not workflow fields.
 
 Execution context paths:
 
@@ -170,7 +176,7 @@ Variables created inside a branch do not escape that branch. Defining the same v
 | `trashMessage` | `message` | Moves the message to the mailbox trash folder |
 | `junkMessage` | `message` | Moves the message to the mailbox junk folder |
 | `addFlag` / `removeFlag` | `message`, `flag` | Changes `seen`, `answered`, `flagged`, or `draft` through the provider command journal |
-| `assignConversation` | `conversation`, `user` | Assigns by accessible user name or ID; `null` unassigns |
+| `assignConversation` | `conversation`, `user` | Replaces the assignees with one person who can be assigned, by user name or ID; `null` removes all assignees |
 | `setConversationStatus` | `conversation`, `status` | Sets `needs_action`, `waiting`, or `done` |
 | `setConversationSummary` | `conversation`, `summary` | Replaces the editable conversation summary |
 | `ensureConversationReference` | `conversation`; optional `saveAs` | Allocates or reuses the permanent mailbox reference and optionally stores its result |
@@ -191,13 +197,13 @@ Variables created inside a branch do not escape that branch. Defining the same v
 | `succeed` | `message` | Stops the run successfully |
 | `fail` | `message` | Stops the run with a non-retryable workflow error |
 
-Folder, local-tag, user, and sender fields accept an unambiguous accessible name or ID. The saved version binds those catalog values before activation. Response timing is written inline and validated as part of the version.
+Folder, local tag, user, and sender fields accept an accessible name or ID that is not ambiguous. The saved version binds these catalog values before activation. You write the response timing inline, and Mail validates it as part of the version.
 
-`linkSpaceItem` and `createSpaceEvent` are emitted by managed incoming automations. They use the encrypted, revocable Spaces delegation stored with that automation and therefore are not available to unrelated hand-written Mail workflows.
+Managed incoming automations emit `linkSpaceItem` and `createSpaceEvent`. They use the encrypted, revocable Spaces delegation stored with that automation. Unrelated hand-written Mail workflows therefore cannot use them.
 
 ### Check fields, defaults, outputs, and budgets
 
-Reference fields named `message`, `conversation`, or `draft` accept a raw value path and are limited to 500 characters. Folder, keyword, tag, sender, and user selectors are also limited to 500 characters. Variable names in `name` and `saveAs` are identifiers of at most 120 characters.
+Reference fields named `message`, `conversation`, or `draft` accept a raw value path of at most 500 characters. Folder, keyword, tag, sender, and user selectors also have at most 500 characters. Variable names in `name` and `saveAs` are identifiers of at most 120 characters.
 
 | Actions | Additional fields and defaults | Output | Budget per execution |
 | --- | --- | --- | --- |
@@ -219,19 +225,19 @@ Reference fields named `message`, `conversation`, or `draft` accept a raw value 
 | `setVariable` | any JSON-compatible `value` | `name` receives `core.value` | none |
 | `succeed`, `fail` | operator-facing message: at most 1,000 characters | terminal state | none |
 
-`createDraft.to` is required; `cc` and `bcc` are optional. `createReplyDraft` derives recipients and subject from the source message. The `model` field accepts an enabled AI model profile ID of at most 120 characters. AI outputs, draft outputs, reference outputs, and variables are visible only to later steps in the same reachable scope.
+`createDraft.to` is required. `cc` and `bcc` are optional. `createReplyDraft` takes recipients and subject from the source message. The `model` field accepts the ID of an enabled AI model profile, at most 120 characters. AI outputs, draft outputs, reference outputs, and variables are visible only to later steps in the same reachable scope.
 
-One reachable path cannot apply several provider mutations to the same message. For example, adding a keyword and then moving that same message in one branch is rejected. Split those operations into separate workflows when both are required.
+One reachable path cannot apply several provider changes to the same message. For example, Mail rejects a branch that adds a keyword and then moves the same message. When you need both, split them into separate workflows.
 
-`createDraft` and `createReplyDraft` always produce `deliveryClass: normal`. `createReplyDraft` derives the recipient and subject from the source message, preserves reply threading, and stays attached to its conversation. Only `automaticReply` can create `deliveryClass: automatic_reply`; normal workflow sends therefore do not receive automatic-reply headers or a null envelope sender. `scheduleDraftSend` accepts only a `mail.draft` result created earlier in the same reachable scope.
+`createDraft` and `createReplyDraft` always produce `deliveryClass: normal`. `createReplyDraft` takes the recipient and subject from the source message, keeps reply threading, and stays attached to its conversation. Only `automaticReply` can create `deliveryClass: automatic_reply`. Normal workflow sends therefore get no automatic-reply headers and no null envelope sender. `scheduleDraftSend` accepts only a `mail.draft` result created earlier in the same reachable scope.
 
-`forEach` is part of the shared workflow grammar but is deliberately unsupported by the Mail vocabulary. Mail workflows operate on one materialized message target at a time.
+`forEach` is part of the shared workflow grammar, but the Mail vocabulary does not support it on purpose. Mail workflows work on one materialized message target at a time.
 
 ## Classify mail and create drafts with AI {icon="sparkles"}
 
-Mail explicitly enables the shared AI actions. AI produces only a value; Mail actions still perform tagging, assignment, folder, draft, and send effects under normal mailbox authorization and budgets.
+Mail explicitly enables the shared AI actions. AI produces only a value. Mail actions still perform tagging, assignment, folder, draft, and send effects, with the normal mailbox access and budgets.
 
-This example classifies one message into several labels, uses exact array membership to tag and assign the conversation, and creates a draft without sending it:
+This example classifies one message into several labels. It uses exact array membership to tag and assign the conversation, and it creates a draft without sending it:
 
 ```yaml
 inputs:
@@ -290,9 +296,9 @@ steps:
       saveAs: draft
 ```
 
-Use `aiClassify` when exactly one choice is allowed. Use `aiClassifyMany` when zero or more choices may apply; `minChoices` and `maxChoices` bound the result. Choices are exact values, not free-form model output.
+Use `aiClassify` when exactly one choice is allowed. Use `aiClassifyMany` when zero or more choices can apply. `minChoices` and `maxChoices` limit the result. Choices are exact values, not free-form model output.
 
-`aiExtractData` declares its complete output contract instead of accepting free-form JSON Schema. This generated managed-automation example extracts event data and creates a linked Spaces event. If the model cannot supply a valid title or time range, structured validation or the `ready` guard stops the create step:
+`aiExtractData` declares its complete output contract and accepts no free-form JSON Schema. This example from a generated managed automation extracts event data and creates a linked Spaces event. If the model cannot supply a valid title or time range, structured validation or the `ready` guard stops the create step:
 
 ```yaml
 inputs:
@@ -324,15 +330,17 @@ steps:
       event: "${{ eventData }}"
 ```
 
-The generic field types are `text`, `number`, `boolean`, `date_time`, and `enum`. Optional fields may be absent; output rejects undeclared fields. The guided incoming-mail editor supplies the fixed event field contract, an explicit IANA time zone, the message receipt time, and the no-invention guard automatically.
+The generic field types are `text`, `number`, `boolean`, `date_time`, and `enum`. Optional fields can be absent. The output rejects undeclared fields. The guided editor for incoming mail supplies these automatically: the fixed event field contract, an explicit IANA time zone, the time the message arrived, and the guard against invented data.
 
-An optional `model` selects an enabled profile for one action. Otherwise Mail uses the platform workflow model, then the background model, then the platform default. Each newly created AI task consumes one `maxAiCalls` budget unit; Mail defaults that budget to 10 per run.
+An optional `model` selects an enabled profile for one action. Otherwise, Mail uses the platform workflow model, then the background model, then the platform default. Each newly created AI task uses one unit of the `maxAiCalls` budget. By default, this budget is 10 per run.
 
-AI tasks survive worker restarts. Canceling the Mail run aborts running inference when supported and discards late output. A dry run cannot predict AI output, so it reports the unavailable value instead of continuing with a fabricated classification or draft.
+AI tasks survive worker restarts. Cancelling the Mail run stops running inference where possible and discards late output. A dry run cannot predict AI output. It reports the missing value and does not continue with an invented classification or draft.
 
-Prompts, inputs, and outputs are stored with the durable task. Include only message fields needed for the decision. Keep generated replies as drafts when a person should review them; add `scheduleDraftSend` only when unattended sending is intentionally approved. A workflow triggered by `messageReceived` cannot use `scheduleDraftSend` at all, because replying to incoming mail must go through `automaticReply` and its loop protection.
+Mail stores prompts, inputs, and outputs with the durable task. Include only the message fields that the decision needs. Keep generated replies as drafts when a person needs to review them. Add `scheduleDraftSend` only when sending without review is approved on purpose.
 
-To maintain a rolling conversation summary, supply both the current summary and the newly received message to `aiGenerateText`, then pass its normal text output to `setConversationSummary`:
+A workflow triggered by `messageReceived` cannot use `scheduleDraftSend` at all. Replies to incoming mail must go through `automaticReply` and its loop protection.
+
+To keep a rolling conversation summary, give `aiGenerateText` both the current summary and the new message. Then pass its normal text output to `setConversationSummary`:
 
 ```yaml
 inputs:
@@ -363,11 +371,11 @@ steps:
       summary: "{{ updatedSummary }}"
 ```
 
-The summary has its own optimistic revision. If a person edits it while AI is still running, the delayed workflow action fails instead of overwriting the newer human edit.
+The summary has its own optimistic revision. If a person edits it while AI is still running, the delayed workflow action fails and does not overwrite the newer human edit.
 
 ## Allocate a conversation reference {icon="book-2"}
 
-Configure and enable the mailbox reference format under **Automations > Workflows**, or directly inside a Reference acknowledgement editor:
+Set up and turn on the mailbox's reference format in **Automations → Workflows**, or directly in the editor of a **Reference acknowledgement**:
 
 ```yaml
 inputs:
@@ -385,7 +393,7 @@ steps:
       message: "Allocated {{ reference.value }}"
 ```
 
-The action is safe to repeat and does not allocate a second reference for the same conversation. When `saveAs` is present, later steps in the same scope can use:
+You can repeat the action safely. It does not allocate a second reference for the same conversation. When `saveAs` is present, later steps in the same scope can use:
 
 - `{{ reference.value }}` for the permanent human-facing reference such as `REF-K7M3-P9QX-2F4N`.
 - `{{ reference.created }}` to distinguish a new allocation from an existing value.
@@ -450,9 +458,17 @@ Optional fields and defaults:
 - `inactiveBehavior`: `defer` by default, or `skip`
 - `minimumIntervalHours`: `24` by default, from `0` to `8760`
 
-The sender must be verified and enabled for automatic replies. Mail suppresses loops, bulk/list mail, delivery-status messages, repeated responses to one message, and recipients still inside repeat protection.
+The sender must be verified and allowed for automatic replies. Mail suppresses loops, bulk and list mail, delivery status messages, repeated responses to one message, and recipients still inside repeat protection.
 
-`schedule` is explicit: use `{ mode: always }` for an always-active reply, or `mode: windows` with `timeZone`, `activeRanges`, `weeklyWindows`, and `exceptions`. A windowed schedule accepts at most 32 active ranges, 64 weekly windows, 366 exceptions, and 32 windows inside one exception. `weekday` uses ISO numbers from `1` for Monday through `7` for Sunday. Times are local `HH:mm` values in the configured IANA timezone. Windows cannot overlap or cross midnight; `24:00` is allowed only as an end. An empty `activeRanges` list repeats weekly without a date limit. Each range uses an inclusive `from` date and an inclusive `to` date or `null`. A date exception overrides normal weekly windows: `closed: true` disables the whole date, while `closed: false` uses only the listed exception windows.
+`schedule` is explicit. Use `{ mode: always }` for a reply that is always active, or `mode: windows` with `timeZone`, `activeRanges`, `weeklyWindows`, and `exceptions`.
+
+:::reference
+- **Limits:** A schedule with windows accepts at most 32 active ranges, 64 weekly windows, 366 exceptions, and 32 windows inside one exception.
+- **Weekdays:** `weekday` uses ISO numbers from `1` for Monday to `7` for Sunday.
+- **Times:** Times are local `HH:mm` values in the configured IANA timezone. Windows cannot overlap or cross midnight. `24:00` is allowed only as an end.
+- **Ranges:** An empty `activeRanges` list repeats weekly without a date limit. Each range uses an inclusive `from` date and an inclusive `to` date or `null`.
+- **Exceptions:** A date exception overrides the normal weekly windows. `closed: true` turns off the whole date. `closed: false` uses only the listed exception windows.
+:::
 
 ## Add conditions {icon="search"}
 
@@ -527,7 +543,7 @@ steps:
           message: Conversation is already done.
 ```
 
-Values created in a `case` remain inside that case. Use terminal actions inside branches when a later step would need a branch-local value.
+Values created in a `case` stay inside that case. When a later step would need a value from a branch, use terminal actions inside the branches.
 
 ## Understand versions and activation {icon="layout-grid"}
 
@@ -540,7 +556,7 @@ Each saved version has an effect budget. `0` disables an effect category except 
 | `maxFlagChanges`, `maxKeywordChanges`, `maxCollaborationChanges` | 2,000 | 100,000 |
 | `maxAiCalls` | 10 | 1,000 |
 
-The budget belongs to the immutable version and limits one run. The runtime charges the relevant category immediately before starting an effect and fails the run instead of exceeding the limit. Idempotent retries reuse the same effect rather than creating another one.
+The budget belongs to the unchangeable version and limits one run. The runtime counts the matching category immediately before it starts an effect. It fails the run instead of exceeding the limit. Idempotent retries reuse the same effect and do not create another one.
 
 - **Create workflow** stores version 1 but leaves it inactive.
 - **Save version** creates another immutable version. It never edits an older version.
@@ -548,17 +564,17 @@ The budget belongs to the immutable version and limits one run. The runtime char
 - **Update available** means the current saved version differs from the active version.
 - **Deactivate** stops future automatic trigger materialization. Existing run history remains.
 
-Changing an accessible folder or sender does not rewrite a saved version. The mailbox reference pattern is evaluated when a number is allocated, while existing reference values remain unchanged. Changing response timing means saving and explicitly activating a new workflow version because the schedule is part of the YAML itself.
+Changing an accessible folder or sender does not change a saved version. Mail evaluates the mailbox's reference pattern when it allocates a number. Existing reference values stay unchanged. The schedule is part of the YAML itself. To change the response timing, save a new workflow version and activate it explicitly.
 
 ## Validate and inspect runs {icon="layout-list"}
 
-**Validate** checks source and catalog bindings but does not execute steps. Mail workflows start only from their active `messageReceived` or `schedule` triggers; there is no separate manual-run or backfill path.
+**Validate** checks the source and the catalog bindings but does not run steps. Mail workflows start only from their active `messageReceived` or `schedule` triggers. There is no separate path for manual runs or backfills.
 
-Reading and validating workflows requires mailbox Read access. Creating versions, changing metadata, activating, and deactivating require mailbox Admin access. Cross-application run inspection, cancellation, and uncertain-effect resolution require Cloud administrator access.
+To read and validate workflows, you need **View** access to the mailbox. To create versions, change metadata, activate, and deactivate, you need **Manage** access. Only Cloud administrators can inspect runs across all apps, cancel them, and resolve uncertain effects.
 
-Every action rechecks the workflow version's pinned mailbox authority. Removing the activating administrator's later personal access does not disable an already accepted run. Deactivation or replacement prevents new runs; request cancellation to stop unfinished effects in an accepted run. Provider commands additionally pin the kernel execution generation, so a worker that lost its lease cannot reach the mail provider.
+Every action checks the mailbox access that the workflow version pinned. If the person who activated it later loses personal access, an already accepted run continues. Deactivation or replacement prevents new runs. To stop unfinished effects in an accepted run, request cancellation. Provider commands also pin the kernel execution generation, so a worker that lost its lease cannot reach the mail provider.
 
-Administrators inspect runtime history in **Administration > Observability > Workflows**. The shared view shows runs, step outcomes, effects, source events, failures, and items that need attention across all applications. The equivalent CLI commands are:
+Cloud administrators inspect the run history in **Admin → Observability → Workflows**. The shared view shows runs, step results, effects, source events, failures, and items that need attention across all apps. The matching CLI commands are:
 
 ```bash
 cld admin workflows runs --app mail
@@ -567,6 +583,6 @@ cld admin workflows effects --app mail
 cld admin workflows events --app mail
 ```
 
-`cld admin workflows cancel <run-id> --yes` prevents later effects but does not undo completed work. Resolve an uncertain external outcome only after verifying it at the provider, then record that decision with `cld admin workflows resolve`.
+`cld admin workflows cancel <run-id> --yes` prevents later effects but does not undo completed work. Resolve an uncertain external result only after you have checked it at the provider. Then record that decision with `cld admin workflows resolve`.
 
 For setup tasks and operational consequences, see [Automate responses and mailbox work](/app/mail/help/mail-automation).

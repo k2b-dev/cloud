@@ -2,178 +2,294 @@
 id: mail-admin
 title: Ein Postfach einrichten und verwalten
 icon: ti ti-settings
-description: Verbindung, Identitäten, Ordner, Zugriff, Automatisierungen und Lebenszyklus verwalten.
+description: Transport, Absenderidentitäten, Ordner, Zugriff, Automatisierung und Lebenszyklus eines Postfachs verwalten.
 order: 50
 ---
 
-Personen mit Postfach-Adminrechten verwalten die Verbindung zum E-Mail-Anbieter und die gemeinsamen Cloud-Regeln. Öffne **Einstellungen** in der Postfachnavigation.
+Mit Zugriff **Verwalten** auf ein Postfach steuerst du die Verbindung zum Anbieter und die Cloud-Regeln dazu. Öffne **Einstellungen** in der Navigation des Postfachs.
 
 ## Persönliche und gemeinsame Einstellungen unterscheiden {icon="settings"}
 
-- **Lesen** ist persönlich und bestimmt Darstellung, Klartext sowie Anpassung an das aktuelle Farbschema.
-- **Organisation** enthält persönliche gespeicherte Ansichten. Schreibberechtigte Personen können zusätzlich gemeinsame Ansichten und lokale Tags verwalten.
-- **Allgemein** ist die erste Administrationskategorie. Sie steuert die gemeinsame Identität und Schutzmaßnahmen beim Senden.
-- **Schreiben** enthält persönliche Vorgaben, Vorlagen und Signaturen. Postfachweite Inhalte und das E-Mail-Design erfordern Adminrechte.
-- **Allgemein**, **Konten und Identitäten**, **Kalendereinladungen**, **Ordner**, **Zugriff** und **Gefahrenzone** sind Postfach-Administratoren vorbehalten.
+Die Einstellungen sind nach Zweck gruppiert:
 
-Unter **Einstellungen > Kalendereinladungen** kann ein beschreibbarer Space als vorgeschlagenes Ziel für den Import gespeichert werden. Die postfachweite Einstellung importiert keine Einladung automatisch; jede Einladung kann in einen anderen beschreibbaren Space übernommen werden. Das Leeren der Auswahl ist sicher. Wird der Space gelöscht oder der Zugriff entzogen, behandelt Mail die Vorgabe als nicht gesetzt. Spaces liefert nur Ziele, in denen die aktuelle Person schreiben darf.
+- **Lesen** steht allen zur Verfügung, die das Postfach lesen. Es legt fest, ob dieser Browser sicheres HTML oder reinen Text zeigt oder sich an das aktuelle Farbschema anpasst.
+- **Organisation** steht mit Zugriff **Ansehen** für private gespeicherte Ansichten zur Verfügung. Mit Zugriff **Bearbeiten** erstellst du auch geteilte Ansichten und Tags des Postfachs.
+- **Schreiben** steht mit Zugriff **Bearbeiten** oder **Verwalten** zur Verfügung. Es enthält persönliche Schreibeinstellungen, Vorlagen, Standardsignaturen und den Editor für das E-Mail-Design. Inhalte und Design für das ganze Postfach brauchen Zugriff **Verwalten**.
+- **Allgemein** ist der erste Bereich, der Zugriff **Verwalten** braucht. Er legt die gemeinsame Identität und die Schutzregeln für den Versand fest.
+- **Allgemein**, **Konten und Identitäten**, **Kalendereinladungen**, **Ordner**, **Zugriff** und **Gefahrenbereich** brauchen Zugriff **Verwalten**.
 
-Betriebsstatus und öffentliche Anhangslinks gehören nicht zur Konfiguration. Öffne sie über **Postfachwerkzeuge** in der Postfachnavigation.
+Wähle unter **Einstellungen → Kalendereinladungen** einen Space, in dem du Zugriff **Bearbeiten** hast, als vorgeschlagenes Ziel für importierte Einladungen. Mail speichert diese Einstellung für das ganze Postfach. Spaces bietet jeder Person nur Ziele an, in denen sie Zugriff **Bearbeiten** hat.
+
+Die Einstellung importiert keine Einladungen automatisch. Jede Einladung kann in einen anderen Space gehen, in dem du Zugriff **Bearbeiten** hast. Du kannst die Auswahl gefahrlos leeren. Löscht jemand den Space oder endet dein Zugriff, behandelt Mail den Standard als nicht gesetzt.
+
+Betriebsstatus und öffentliche Links zu Anhängen sind von den Einstellungen getrennt. Öffne sie über **Postfachwerkzeuge** in der Navigation des Postfachs.
 
 ## Verbindung überwachen und pausieren {icon="route"}
 
-**Postfachwerkzeuge > Postfachstatus** zeigt Verbindung, Ordnererkennung, Synchronisierung und Suchindex.
+**Postfachwerkzeuge → Postfachstatus** zeigt den Zustand des Transports, das verbundene Konto, die Ordnerermittlung, die Synchronisierung und den Stand des Suchindex.
 
-- **Jetzt synchronisieren** plant eine Synchronisierung ein; **Letzte erfolgreiche Synchronisierung** zeigt, wann zuletzt eine abgeschlossen wurde. Solange das Postfach pausiert ist oder das Konto erst verbunden, erneut verbunden oder geprüft werden muss, ist **Jetzt synchronisieren** nicht verfügbar.
-- **Neu erkennen** aktualisiert Ordner und Namespaces.
-- **Verbindung prüfen** schließt eine ausstehende Anbieterprüfung ab.
-- **Postfach pausieren** stoppt Synchronisierung, vorgemerkte Anbieteränderungen, geplanten Versand und automatische Antworten.
-- **Postfach fortsetzen** erlaubt diese Hintergrundarbeit wieder.
+- **Jetzt synchronisieren** reiht eine Synchronisierung des Postfachs ein. **Letzte erfolgreiche Synchronisierung** zeigt, wann die letzte abgeschlossen wurde. **Jetzt synchronisieren** ist nicht verfügbar, solange das Postfach pausiert ist oder sein Konto zuerst verbunden, neu verbunden oder geprüft werden muss.
+- **Ordner neu ermitteln** aktualisiert die Ordner und die Angaben zum Namensraum beim Anbieter.
+- **Verbindung prüfen** schließt eine ausstehende Verbindung zum Anbieter ab.
+- **Postfach pausieren** stoppt die eingehende Synchronisierung, eingereihte Änderungen beim Anbieter, geplante Zustellungen und automatische Antworten.
+- **Postfach fortsetzen** lässt diese Hintergrundvorgänge weiterlaufen.
 
-Das Pausieren ändert keine Leseberechtigung. Bereits gespiegelte E-Mails und Zusammenarbeitsdaten bleiben erreichbar.
+Pausieren stoppt Vorgänge. Es blendet nichts aus. Vorhandene gespiegelte E-Mails und Daten der Zusammenarbeit bleiben für alle mit Zugriff auf das Postfach lesbar.
 
-### Abgeleitete Daten und fehlgeschlagene Arbeit reparieren
+### Projektionen und fehlgeschlagene Vorgänge reparieren
 
-Unter **Postfachwerkzeuge > Postfachstatus > Erweiterte Diagnose und Reparaturen** stehen asynchrone, dauerhafte Befehle für Hydrierungswiederholung, Suchindex, Unterhaltungsprojektion, Ordner, Erkennung und Synchronisierung bereit. Das Schließen des Dialogs stoppt sie nicht. Vor der Ausführung werden die aktuellen Adminrechte erneut geprüft.
+Mit Zugriff **Verwalten** startest du unter **Postfachwerkzeuge → Postfachstatus → Erweiterte Diagnose und Reparatur** Reparaturen im Hintergrund. Erneutes Laden von Inhalten, Neuaufbau der Suche, Reparatur der Unterhaltungen, Neuaufbau von Ordnern, Neuermittlung und Synchronisierung sind dauerhafte Befehle. Das Schließen des Dialogs stoppt sie nicht. Bevor ein Befehl läuft, prüft Mail erneut, ob du noch Zugriff **Verwalten** hast.
 
-Die Aktionen spiegeln ihre aktuelle Verfügbarkeit. Eine deaktivierte Aktion nennt den Grund, etwa pausierte Synchronisierung, einen inaktiven Ordner oder bereits vorgemerkte gleichwertige Arbeit. Der Neuaufbau der Suche ersetzt nur abgeleitete Suchblöcke. Die Unterhaltungsreparatur verknüpft verwaiste Nachrichten, entfernt Kopien eigener Mail-Entwürfe, die eine frühere Synchronisierung als Nachrichten übernommen hat, und aktualisiert Zusammenfassungen; manuelle Überschreibungen, Kommentare, Referenzen, Zuweisungen und Unterhaltungsstatus bleiben erhalten.
+Die Aktionsschaltflächen zeigen, was gerade möglich ist. Eine ausgeschaltete Aktion nennt den Grund, etwa eine pausierte Synchronisierung, einen inaktiven Ordner oder dieselbe Arbeit, die schon aussteht.
 
-Bei einem unklaren Anbietereffekt bietet Mail ausschließlich **Wirkung abgleichen** an. Eine blinde Wiederholung könnte eine Aktion doppelt ausführen. **Arbeit wiederholen** und **Arbeit abbrechen** erscheinen nur, wenn ihre Wirkung noch nicht begonnen hat.
+- **Suche neu aufbauen** ersetzt nur die abgeleiteten Suchabschnitte.
+- **Unterhaltungsansicht reparieren** verknüpft verwaiste Nachrichten und aktualisiert Zusammenfassungen. Es entfernt Kopien eigener Mail-Entwürfe, die eine frühere Synchronisierung als Nachrichten importiert hat. Manuelle Zuordnungen von Unterhaltungen, Kommentare, Referenzen, Zuweisungen und der Zustand der Unterhaltungen bleiben erhalten.
 
-Cloud-Administratoren sehen denselben bereinigten Gesamtstand unter **Administration > Mail**. Er enthält Anzahlen, Status, Zeitpunkte, verfügbare Funktionen, IDs und Fehlercodes, aber keine Betreffzeilen, Adressen, Nachrichtentexte, Anhangsnamen, Anbieterendpunkte, Zugangsdaten oder unverarbeiteten Anbieterfehler.
+Ist das Ergebnis eines Befehls beim Anbieter unklar, bietet Mail nur **Anbietervorgang abgleichen** an. Der Abgleich prüft den Zustand beim Anbieter, bevor er das Ergebnis festlegt. Mail bietet keinen blinden neuen Versuch an, wenn ein Vorgang beim Anbieter schon begonnen haben könnte. Ein blinder neuer Versuch könnte die Aktion doppelt ausführen. **Vorgang erneut versuchen** und **Vorgang abbrechen** gibt es nur für Wartungsbefehle, die beim Anbieter lesen und deren Wirkung beim Anbieter nicht begonnen hat.
 
-## Das Anbieterkonto verwalten {icon="user-cog"}
+Die Cloud-Administration sieht dieselbe geschwärzte Zusammenfassung unter **Administration → Mail**. Sie enthält Zahlen, Zustände, Zeitstempel, verfügbare Capabilities, IDs und Fehlercodes. Sie enthält keine Betreffzeilen, Adressen, Nachrichtentexte, Anhangsnamen, Anbieter-Endpunkte, Zugangsdaten oder rohen Fehler des Anbieters.
 
-Unter **Konten und Identitäten > Verbundenes Konto** liegt die gemeinsame Eingangs- und Ausgangsverbindung. Mail prüft IMAP und SMTP, bevor neue Zugangsdaten gespeichert werden.
+## Die Verbindung zum Anbieter verwalten {icon="user-cog"}
 
-Verwende zunächst **Einstellungen suchen**. Öffne **Manuelle Servereinstellungen**, wenn die Erkennung nicht funktioniert oder falsche Angaben liefert. Gib ein Passwort oder App-Passwort ein, das der Anbieter akzeptiert. Gespeicherte Zugangsdaten sind verschlüsselt und nicht mehr anzeigbar. Ändere sie über **Ersetzen**. Mail bietet keine Browser-Autorisierung für Google oder Microsoft.
+**Einstellungen → Konten und Identitäten → Verbundenes Konto** enthält die aktuellen Zugangsdaten für ein- und ausgehende E-Mails. Mail prüft beide Protokolle, bevor es neue oder ersetzte Zugangsdaten speichert.
 
-Mail meldet die IMAP- und SMTP-Prüfung getrennt. Eine fehlgeschlagene IMAP-Prüfung blockiert die Synchronisierung, eine fehlgeschlagene SMTP-Prüfung den Versand. Behebe den gemeldeten Transportfehler vor einem neuen Versuch. Das Entfernen der Verbindung trennt den Transport, löscht aber weder E-Mails beim Anbieter noch die in Cloud aufbewahrten Postfachdaten.
+:::steps
+1. Wähle zuerst **Einstellungen suchen**.
+2. Ist die Erkennung nicht verfügbar oder falsch, gib die **Servereinstellungen** selbst ein.
+3. Gib ein Passwort oder App-Passwort ein, das der Anbieter akzeptiert.
+:::
 
-Wenn du ein Konto mit **Diese Adresse zum Senden verwenden** verbindest, richtet Mail zuerst den Empfang und danach die Standard-Absenderidentität ein. Schlägt nur dieser zweite Schritt fehl, zeigt das verbundene Konto **Empfang verbunden, Versand ist noch nicht eingerichtet** mit dem Grund. Der Empfang funktioniert weiter. Wähle **Versand einrichten**, um die Einrichtung mit der bestehenden Verbindung erneut zu versuchen. Du musst das Konto nicht neu verbinden und das Passwort nicht erneut eingeben.
+Mail verschlüsselt die Zugangsdaten und kann sie nach dem Speichern nicht anzeigen. Um sie zu ersetzen, nutze **Konto bearbeiten**. Mail bietet keine Autorisierung im Browser für Google oder Microsoft an.
 
-Meldet Mail **Synchronisierung läuft**, verwendet gerade eine Synchronisierung oder ein anderer Anbietervorgang das Konto. Warte einen Moment und versuche es erneut; der Verbindungsdialog behält deine Eingaben.
+Mail meldet die Prüfung von IMAP und SMTP getrennt. Ein IMAP-Fehler blockiert die Synchronisierung, ein SMTP-Fehler den Versand. Behebe den gemeldeten Transport, bevor du es erneut versuchst.
+
+Verbindest du ein Konto mit **Diese Adresse zum Senden verwenden**, verbindet Mail zuerst den Empfang und richtet dann die Standard-Absenderidentität ein. Schlägt nur der Schritt für den Versand fehl, zeigt das verbundene Konto **Empfang verbunden, Versand ist noch nicht eingerichtet** mit dem Grund. Der Empfang funktioniert weiter. Wähle **Versand einrichten**, um es mit der vorhandenen Verbindung erneut zu versuchen. Du musst das Konto nicht neu verbinden und das Passwort nicht erneut eingeben.
+
+Meldet Mail **Synchronisierung läuft**, nutzt gerade die Synchronisierung oder ein anderer Vorgang beim Anbieter das Konto. Warte einen Moment und versuche es erneut. Der Verbindungsdialog behält deine Eingaben.
+
+Entfernst du die Verbindung, stoppt der Transport. E-Mails beim Anbieter und die aufbewahrten Daten des Cloud-Postfachs bleiben.
 
 ## Absenderidentitäten verwalten {icon="send"}
 
-Unter **Einstellungen > Konten und Identitäten > Absenderidentitäten** werden die Versandkontexte für alle Personen im Postfach verwaltet. Verwende getrennte Identitäten, wenn dieselbe Adresse unterschiedliche Vorgaben für private, hochschulbezogene oder geschäftliche E-Mails benötigt.
+**Einstellungen → Konten und Identitäten → Absenderidentitäten** steuert die Versandkontexte, die andere im Team nutzen können. Nutze getrennte Absenderidentitäten, wenn dieselbe Adresse für Rollen wie private E-Mails, Arbeit an der Universität oder ein Unternehmen andere Standards braucht.
 
-Die **Identitätsbezeichnung** ist nur im Postfach sichtbar. Empfänger sehen **Anzeigename** und **Absenderadresse**. Eine Identität kann außerdem Reply-to, Standardempfänger für Cc und Bcc, Nachrichtenformat, Priorität, Empfangsbestätigungen, Standardsignatur, Kontaktkarte, Ordner für Gesendet und Entwürfe sowie ihren Standardstatus festlegen. Unter **Erweiterte Zustellung** stehen anbieterspezifische Angaben, die meist unverändert bleiben sollten. Die optionale **Return-path-Adresse** empfängt technische Zustellfehler und Bounce-Berichte; lasse sie leer, sofern dein Anbieter keine getrennte Adresse verlangt. Die Kontaktkarte wird als `.vcf` angehängt.
+Die **Bezeichnung der Absenderidentität** ist nur im Postfach sichtbar. Empfänger sehen den **Anzeigename** und die **Absenderadresse**. Jede Absenderidentität kann auch festlegen:
 
-Nach dem Senden legt Mail die Nachricht in den Gesendet-Ordner der Identität, sobald es die Kopie dort ablegt oder findet, ohne auf die nächste Synchronisierung zu warten. Gmail speichert jede über seinen eigenen SMTP-Server gesendete Nachricht unter „Gesendet“. Mail sucht deshalb einige Minuten lang nach Gmails Kopie und legt nur dann eine eigene ab, wenn es keine findet. Bei anderen Anbietern legt Mail eine Kopie ab, außer **Anbieter speichert gesendete E-Mails automatisch** ist eingeschaltet. Dann sucht Mail direkt nach dem Senden nur nach der Kopie des Anbieters; listet der Anbieter sie erst später, erscheint sie mit der nächsten Synchronisierung des Ordners. Schalte das nur ein, wenn der Anbieter gesendete Nachrichten wirklich speichert; sonst entsteht keine Kopie.
+- Antwortadresse sowie Standard-Empfänger für Cc und Bcc;
+- Nachrichtenformat, Priorität und Bestätigungsanfragen;
+- eine Standardsignatur und eine Kontaktkarte;
+- die Ordner für Gesendet und Entwürfe;
+- ob sie die Standard-Absenderidentität ist.
 
-Standard-Cc- und -Bcc-Empfänger werden beim Erstellen einer neuen Nachricht, Antwort oder Weiterleitung mit dieser Identität ergänzt. Doppelte und bereits unter An, Cc oder Bcc vorhandene Adressen werden entfernt; die verfassende Person kann die Vorgaben vor dem Versand löschen. Automatische Antworten und Workflow-E-Mails übernehmen diese Empfänger nicht. Eine Postfachsignatur wird in neue Nachrichten, Antworten und Weiterleitungen eingefügt. Ein späterer Identitätswechsel schreibt einen bereits bearbeiteten Entwurf nicht um; eine persönliche Signaturvorgabe hat Vorrang.
+**Erweiterte Zustellung** enthält anbieterspezifische Einstellungen. Lass sie in den meisten Fällen unverändert. Die optionale **Return-Path-Adresse** empfängt technische Zustellfehler und Unzustellbarkeitsberichte. Lass sie leer, außer dein E-Mail-Anbieter verlangt ausdrücklich eine eigene Adresse. Mail hängt die Kontaktkarte als `.vcf`-Datei an Nachrichten, die mit der Absenderidentität gesendet werden.
 
-Unter **Einstellungen > Allgemein** lassen sich vertrauenswürdige interne E-Mail-Domains und der Schwellwert für Warnungen bei großen Empfängergruppen festlegen. Warnungen vor externen Empfängern erscheinen nur, wenn mindestens eine interne Domain eingerichtet ist. Diese Regeln unterstützen die letzte Versandprüfung, blockieren aber keine berechtigte Zustellung und ändern keine Empfänger.
+Nach einem Versand legt Mail die Nachricht im Ordner Gesendet der Absenderidentität ab, sobald es die Kopie dort speichert oder findet. Mail wartet nicht auf die nächste Synchronisierung.
 
-**Hohe** oder **Niedrige Priorität** fügt Standardkopfzeilen hinzu; das Programm des Empfängers entscheidet über die Anzeige. Eine **Zustellbestätigung** fordert einen Zustellstatusbericht an und ist nur verfügbar, wenn SMTP DSN-Unterstützung meldet. Eine **Lesebestätigung** fordert eine Empfangsbestätigung vom E-Mail-Programm des Empfängers an, die ignoriert oder abgelehnt werden kann. Eingehende Berichte erscheinen in der Unterhaltungsaktivität. Sie sind betriebliche Hinweise und kein Beweis dafür, dass eine Person die Nachricht gelesen oder bearbeitet hat.
+- **Gmail:** Gmail speichert jede Nachricht, die über seinen eigenen SMTP-Server gesendet wird, in Gesendet. Mail sucht einige Minuten nach der Gmail-Kopie und fügt nur dann eine eigene hinzu, wenn es keine findet.
+- **Andere Anbieter:** Mail fügt eine Kopie hinzu, außer **Anbieter speichert gesendete E-Mails automatisch** ist eingeschaltet. Dann sucht Mail nur direkt nach dem Versand nach der Kopie des Anbieters. Eine Kopie, die der Anbieter später auflistet, erscheint mit der nächsten Synchronisierung des Ordners.
 
-Eine Identität verwendet normalerweise den SMTP-Server des Postfachs. Richte einen **Eigenen SMTP-Server** nur ein, wenn die Absenderadresse einen anderen authentifizierten Versandweg benötigt. Die Zugangsdaten sind verschlüsselt und nur schreibbar. Mail prüft den Server vor dem Speichern. Geplante E-Mails bleiben an die geprüfte Transportrevision gebunden; eine Änderung oder Entfernung kann eine eingereihte Nachricht nicht unbemerkt umleiten.
+:::warning Schalte Anbieter speichert gesendete E-Mails automatisch nur ein, wenn es zutrifft
+Speichert der Anbieter gesendete Nachrichten nicht, gibt es keine Kopie.
+:::
 
-Zwei Identitäten dürfen dieselbe Absenderadresse verwenden und behalten trotzdem getrennte Bezeichnungen, Empfängervorgaben, Signaturen, Reply-to-Werte, Zustelloptionen, Transporte, Ordnerzuordnungen und Prüfstatus. Passt eine Antwort eindeutig zu einer Identität, wählt Mail sie automatisch. Bei mehreren gleichwertigen Treffern muss die verfassende Person ausdrücklich wählen.
+Mail fügt die Standard-Empfänger für Cc und Bcc hinzu, wenn jemand mit dieser Absenderidentität eine neue Nachricht, Antwort oder Weiterleitung beginnt. Mail entfernt Duplikate und Adressen, die schon unter An, Cc oder Bcc stehen. Automatische Antworten und Workflow-Nachrichten bekommen diese Standards nicht, und die schreibende Person kann sie vor dem Senden entfernen.
 
-Prüfe jede Identität mit dem verbundenen Konto und einem Empfänger für eine echte Prüfnachricht. **Versandbereit** bedeutet, dass der Anbieter diesen Test mit exakt der Absenderadresse und den erweiterten Zustelleinstellungen angenommen hat. IMAP-Ordnerzugriff allein belegt keine Versanderlaubnis. **Automatische Antworten erlauben** ist eine zusätzliche, separate Freigabe. Sie sendet selbst nichts; dafür wird weiterhin eine aktivierte automatische Antwort oder ein Workflow benötigt.
+Mail fügt eine Postfachsignatur in neue Nachrichten, Antworten und Weiterleitungen ein. Wechselst du später die Absenderidentität, ändert das einen bearbeiteten Entwurf nicht. Eine persönliche Signatur hat Vorrang.
 
-## Anbieterordner verwalten {icon="user-cog"}
+Unter **Einstellungen → Allgemein** trägst du vertrauenswürdige interne E-Mail-Domains ein und legst fest, ab wann Mail vor vielen Empfängern warnt. Vor externen Empfängern warnt Mail nur, wenn mindestens eine interne Domain eingetragen ist. Diese Einstellungen leiten die letzte Prüfung vor dem Versand. Sie blockieren keine legitime Zustellung und ändern keine Empfänger automatisch.
 
-Unter **Ordner** kannst du einen Ordner auf oberster Ebene oder bei entsprechender Anbieterberechtigung einen Unterordner erstellen, geeignete Anbieterordner umbenennen oder löschen, sie beim Anbieter abonnieren oder abbestellen und festlegen, wo die E-Mails eines Ordners in Cloud Mail erscheinen.
+Priorität und Bestätigungsanfragen sind Vorschläge an andere E-Mail-Systeme:
 
-- **Wo E-Mails erscheinen** gilt in der Cloud für alle im Postfach. **Überall** zeigt den Ordner in der Seitenleiste und seine E-Mails in „Alle E-Mails“ und den Arbeitsansichten. **Nur im Ordner** behält den Ordner in der Seitenleiste, aber Unterhaltungen, deren E-Mails nur dort liegen, fehlen in „Alle E-Mails“, den Arbeitsansichten außer **Mir zugewiesen** und **Versandprobleme** und deren Zählern. **Ausgeblendet** nimmt den Ordner zusätzlich aus der Seitenleiste. Suche und gespeicherte Ansichten finden weiterhin jede Unterhaltung. Keine dieser Stufen bestellt den Ordner ab, löscht ihn, ändert Anbieterrechte oder entfernt synchronisierte E-Mails.
-- **Beim Anbieter abonnieren** ändert die IMAP-Subscription.
-- Anbieterrechte bestimmen, welche gemeinsamen oder fremden Ordner sichtbar und veränderbar sind.
-- Die Synchronisierung folgt dem Postfachumfang und hängt nicht davon ab, wo E-Mails erscheinen.
+- **Priorität** mit **Hoch** oder **Niedrig** fügt Standard-Header für die Wichtigkeit hinzu. Das Programm des Empfängers entscheidet, wie es sie zeigt.
+- **Zustellbestätigungen anfordern** bittet den Sendeserver um einen Zustellbericht. Die Option gibt es nur, wenn der gewählte SMTP-Transport DSN-Unterstützung meldet.
+- **Lesebestätigungen anfordern** bittet das E-Mail-Programm des Empfängers um eine Rückmeldung. Der Empfänger oder seine Organisation kann sie ignorieren oder ablehnen.
 
-Nur leere, ungeschützte Ordner ohne Unterordner können beim Anbieter gelöscht werden. Ein dauerhafter Ordnervorgang läuft nach Verlassen der Einstellungen weiter; Mail erkennt den Anbieterzustand neu, bevor das Ergebnis bestätigt wird.
+Empfangene Berichte erscheinen in der Aktivität der Unterhaltung als gemeldete Ergebnisse. Sie sind nützliche Hinweise für den Betrieb, aber kein Beweis, dass eine Person eine Nachricht gelesen oder bearbeitet hat.
 
-**Ordner** zeigt die Hierarchie als kompakten Baum. Ordnergruppen wie `[Gmail]` erscheinen als Gruppenzeilen mit ihren Ordnern darunter, der Pfeil neben einem Ordner klappt seine Unterordner ein, und ein Ordner, dessen Name mehrfach vorkommt, zeigt seinen Pfad. Wähle einen Ordner, um sein Menü zu öffnen. Es erklärt die drei Stufen und enthält die Aktionen des Ordners, etwa **Neuer Unterordner**, **Umbenennen**, das Anbieterabonnement, **Aus Mail entfernen** und **Ordner löschen**. Eine Zeile nennt ihre Stufe nur, wenn sie von **Überall** abweicht; **Nicht verfügbar** und **Prüfung erforderlich** markieren Probleme beim Anbieter.
+Eine Absenderidentität nutzt normalerweise den SMTP-Server des Postfachs. Richte einen eigenen SMTP-Server nur ein, wenn die Absenderadresse einen anderen authentifizierten Einlieferungsserver nutzen muss. Mail verschlüsselt die eigenen Zugangsdaten, und niemand kann sie wieder lesen. Mail prüft den Server vor dem Speichern. Geplante Sendungen bleiben an die geprüfte Version des Transports gebunden, damit eine Änderung oder Entfernung dieses Transports eine bereits eingereihte Nachricht nicht still umleiten kann.
 
-Ein Unterordner folgt seinem übergeordneten Ordner, wenn dessen Stufe strenger ist: Er kann mehr E-Mails im Ordner halten, nie weniger. Seine Zeile zeigt dann **geerbt von** und den Namen des übergeordneten Ordners, und sein Menü nennt den Ordner, der die lockereren Stufen vorgibt. Wählst du wieder die Stufe des übergeordneten Ordners, folgt der Unterordner ihm erneut. Gesendet, Entwürfe, Papierkorb, Junk und Sammelordner des Anbieters wie „Alle Nachrichten“, „Wichtig“ und „Markiert“ von Gmail entscheiden nie, wo E-Mails erscheinen. Für sie gibt es **Nur im Ordner** deshalb nicht, und **Nur im Ordner** eines übergeordneten Ordners ändert für sie nichts. Nur **Ausgeblendet**, ihr eigenes oder das des übergeordneten Ordners, nimmt sie aus der Seitenleiste.
+Zwei Absenderidentitäten können bewusst dieselbe Absenderadresse nutzen. Mail hält ihre Bezeichnungen, Standard-Empfänger, Signaturen, Antwortadressen, Zustelloptionen, Transporte, Ordnerzuordnungen und Prüfstatus getrennt. Passt eine Antwort genau zu einer Absenderidentität, wählt Mail sie automatisch. Sind mehrere passende Absenderidentitäten gleich gültig, muss die schreibende Person eine wählen.
 
-**Zuordnung besonderer Ordner** unterhalb der Hierarchie bestimmt die aktiven auswählbaren Ordner für Gesendet, Entwürfe, Archiv, Papierkorb und Junk. Der Posteingang wird vom Anbieter erkannt. Eine falsche oder fehlende Zuordnung kann die zugehörige Unterhaltungsaktion oder Abbildung gesendeter Nachrichten und Entwürfe verhindern.
+Prüfe jede Absenderidentität: Wähle das verbundene Konto und einen Empfänger für eine echte Prüfnachricht. Ist die Absenderidentität für den Versand bereit, hat der Anbieter diesen Test mit der genauen Absenderadresse und den erweiterten Zustelleinstellungen angenommen. IMAP-Zugriff auf Ordner allein beweist nicht, dass der Anbieter diese Versandeinstellungen erlaubt.
 
-Stellt das IMAP-Konto gemeinsame Ordner oder Ordner anderer Personen bereit, kann **Neu erkennen** sie in derselben Hierarchie anzeigen. Sie sind Anbieterzustand des verbundenen Kontos und keine eigenen Cloud-Ressourcen. Cloud teilt keine einzelnen Ordner, ändert keine vorgelagerten ACLs, vereint keine gleichnamigen Ordner verschiedener Konten und verwendet nicht die Zugangsdaten einer anderen Person, wenn diese Verbindung den Zugriff verliert.
+**Für automatische Antworten zulassen** ist von der Prüfung getrennt. Automatische Antworten können nur eine Absenderidentität nutzen, die für den Versand bereit ist und bei der diese Option eingeschaltet ist. Das Einschalten sendet allein nichts. Es braucht zusätzlich eine eingeschaltete automatische Antwort oder einen Workflow.
 
-Änderungen an Namespace, Subscription oder Berechtigungen beim Anbieter können einen Ordner nicht verfügbar oder mehrdeutig machen. Prüfe **Postfachwerkzeuge > Postfachstatus**, korrigiere bei Bedarf den Anbieterzustand und führe dann **Neu erkennen** aus.
+## Ordner beim Anbieter verwalten {icon="user-cog"}
 
-Ein dauerhaft verschwundener, nicht verfügbarer Ordner kann mit **Aus Mail entfernen** aus der Cloud-Ordnerliste entfernt werden. Das löscht nichts beim Anbieter und keine gespiegelten Nachrichten. Taucht der Ordner erneut auf, stellt die nächste Erkennung ihn wieder her.
+**Ordner** zeigt die Hierarchie, die Mail beim verbundenen E-Mail-Anbieter gefunden hat. Mit Zugriff **Verwalten** kannst du:
 
-Agents können Anbieterabonnements mit `cld mail folder subscribe` und `cld mail folder unsubscribe` ändern. Beide Befehle erstellen denselben dauerhaften, beobachtbaren Anbieterauftrag wie die Webanwendung.
+- einen Ordner auf oberster Ebene im persönlichen Namensraum des Postfachs erstellen;
+- einen Unterordner erstellen, wo der Anbieter es erlaubt;
+- einen Ordner beim Anbieter umbenennen oder löschen, wo das erlaubt ist;
+- Ordner beim Anbieter abonnieren oder das Abonnement beenden; und
+- festlegen, wo die E-Mails jedes Ordners in Cloud Mail erscheinen.
 
-## Zugriff konfigurieren {icon="shield-lock"}
+Diese Einstellungen wirken auf Verschiedenes:
 
-- **Lesen** für Lesen, Suche, Kommentare und persönliche Erinnerungen.
-- **Schreiben** für Versand, Anbieteraktionen und gemeinsame Arbeitszustände.
-- **Admin** für Verbindung, Freigaben, Regeln, Workflows und Lebenszyklus.
-- **Nur zugewiesene ansehen** oder **Nur zugewiesene bearbeiten** für Personen und Gruppen, die nur die ihnen zugewiesenen Unterhaltungen sehen sollen. Was sie tun können, beschreibt **Gemeinsam in einem Postfach arbeiten**.
+- **Wo E-Mails erscheinen** ist eine Cloud-Einstellung für alle im Postfach. **Überall** zeigt den Ordner in der Seitenleiste und seine E-Mails in Alle E-Mails und den Arbeitsansichten. **Nur im Ordner** behält den Ordner in der Seitenleiste. Unterhaltungen, deren E-Mails nur dort liegen, verschwinden aus Alle E-Mails, den Arbeitsansichten und deren Zählern. **Mir zugewiesen** und **Versandprobleme** zeigen sie weiter. **Ausgeblendet** nimmt den Ordner auch aus der Seitenleiste. Suche und gespeicherte Ansichten finden weiter jede Unterhaltung. Keine dieser Optionen beendet ein Abonnement, löscht den Ordner, ändert Zugriffe beim Anbieter oder entfernt synchronisierte E-Mails.
+- **Beim Anbieter abonnieren** ändert das IMAP-Abonnement. Andere E-Mail-Programme können über dieses Abonnement entscheiden, welche Ordner sie zeigen.
+- **Zugriff beim Anbieter** steuert der Anbieter. Cloud zeigt geteilte Ordner und Ordner anderer Nutzer nur, wenn das verbundene Konto sie sehen kann. Zerstörende Aktionen erlaubt Cloud nur, wenn der aktuelle Zugriff beim Anbieter sie erlaubt.
+- Die Synchronisierung folgt dem eingerichteten Umfang des Postfachs und dem Zustand beim Anbieter. **Wo E-Mails erscheinen** ändert sie nicht.
 
-Verwende den Cloud-Berechtigungseditor und vergib nur die für die Aufgabe nötige Berechtigung. Die Richtlinie **Wer darf automatische Antworten verwalten?** kann **Schreibberechtigte und Administratoren** einbeziehen oder mit dem sicheren Standard **Nur Administratoren** auf Adminrechte begrenzt bleiben. Identitäten, Referenzmuster und YAML-Workflows bleiben trotzdem Postfach-Administratoren vorbehalten. Zugangsdaten bleiben selbst für Administratoren verborgen. Eine Postfachfreigabe gibt Cloud-Zugriff, aber niemals Anbieterpasswort oder Token weiter.
+:::warning Löschen entfernt den Ordner beim Anbieter
+Mail bietet das Löschen nur für einen leeren Ordner ohne Unterordner an. Posteingang und andere geschützte Ordner kannst du nicht löschen.
+:::
 
-## Anhänge über öffentliche Links freigeben {icon="link"}
+Ein Ordnervorgang ist dauerhaft. Verlässt du die Einstellungen, bricht er nicht ab. Mail prüft den Zustand beim Anbieter erneut, bevor es das Ergebnis bestätigt.
 
-Postfach-Adminrechte sind zum Erstellen, Auflisten und Widerrufen erforderlich. Öffne eine empfangene Nachricht oder einen Entwurf und verwende die Linkaktion am Anhang. Dateien über 100 MiB können nicht geteilt werden. Ein Link kann Passwort, Ablaufzeit und eine maximale Zahl von Download-Sitzungen enthalten. Passwörter beachten Groß- und Kleinschreibung und dürfen Leerzeichen enthalten. Die vollständige URL wird nur direkt nach der Erstellung angezeigt; kopiere sie vor dem Schließen. Mail speichert nur einen Hash des geheimen Tokens und kann dieselbe URL nicht erneut anzeigen.
+**Ordner** zeigt die Hierarchie als kompakten Baum:
 
-Unter **Postfachwerkzeuge > Geteilte Links** kannst du alle Links einschließlich älterer aktiver Links seitenweise prüfen und widerrufen. Ein Widerruf löscht den ursprünglichen Anhang nicht. Bereichsanfragen zum Fortsetzen eines bereits erlaubten Downloads verbrauchen keine weiteren Downloads. Widerrufene, abgelaufene, ausgeschöpfte oder ungültige Links und falsche Passwörter schlagen fehl, ohne Anhangsmetadaten offenzulegen.
+- Ordnergruppen wie `[Gmail]` bei Gmail erscheinen als Gruppenzeilen mit ihren Ordnern darunter.
+- Der Pfeil neben einem Ordner klappt seine Unterordner ein.
+- Ein Ordner, dessen Name mehrmals vorkommt, zeigt seinen Pfad.
+- Wähle einen Ordner, um sein Menü zu öffnen. Das Menü erklärt die drei Optionen und enthält die Aktionen des Ordners, etwa **Neuer Unterordner**, **Umbenennen**, das Abonnement beim Anbieter, **Aus Mail entfernen** und **Ordner löschen**.
+- Eine Zeile nennt ihre Option nur, wenn sie nicht **Überall** ist. **Nicht verfügbar** und **Prüfung erforderlich** kennzeichnen Probleme beim Anbieter.
 
-Die CLI bietet dieselben Aktionen mit `cld mail attachment link create`, `list` und `revoke`. Übergib Passwörter über `--password-file` oder `--password-stdin`; ein sichtbarer Kommandozeilenwert wird nicht akzeptiert.
+Ein Unterordner folgt seinem übergeordneten Ordner, wenn dessen Option strenger ist. Er kann mehr E-Mails im Ordner halten, nie weniger. Seine Zeile zeigt dann „geerbt von“ und den Namen des übergeordneten Ordners. Sein Menü nennt den Ordner, der die offeneren Optionen festlegt. Wählst du wieder die Option des übergeordneten Ordners, folgt der Unterordner ihm wieder.
+
+Gesendet, Entwürfe, Papierkorb, Spam und Sammlungen des Anbieters wie All Mail, Wichtig und Markiert bei Gmail entscheiden nie, wo E-Mails erscheinen. Mail bietet für sie deshalb **Nur im Ordner** nicht an, und **Nur im Ordner** an einem übergeordneten Ordner ändert sie nicht. Nur **Ausgeblendet**, an ihnen selbst oder am übergeordneten Ordner gesetzt, nimmt sie aus der Seitenleiste.
+
+**Zuordnung besonderer Ordner** steht unter der Ordnerhierarchie. Sie legt die aktiven, auswählbaren Ordner fest, die Mail für Gesendet, Entwürfe, Archiv, Papierkorb und Spam nutzt. Den Posteingang findet Mail beim Anbieter. Eine falsche oder fehlende Zuordnung kann verhindern, dass die passende Aktion an der Unterhaltung oder die Ansicht von Gesendet oder Entwürfen abgeschlossen wird.
+
+Zeigt das IMAP-Konto geteilte Ordner oder Ordner anderer Nutzer, kann **Ordner neu ermitteln** sie in dieselbe Hierarchie aufnehmen. Sie sind Zustand des verbundenen Kontos beim Anbieter, keine eigenen Cloud-Ressourcen. Cloud kann nicht:
+
+- einzelne Ordner teilen;
+- Zugriffslisten beim Anbieter bearbeiten;
+- gleichnamige Ordner aus mehreren Konten zusammenführen;
+- die Zugangsdaten einer anderen Person nutzen, wenn diese Verbindung den Zugriff verliert.
+
+Änderungen beim Anbieter an Namensräumen, Abonnements oder Zugriff können einen Ordner nicht verfügbar oder unklar machen. Prüfe **Postfachwerkzeuge → Postfachstatus**, korrigiere bei Bedarf den Zustand beim Anbieter und führe dann **Ordner neu ermitteln** aus.
+
+Ist ein nicht verfügbarer Ordner endgültig weg, wähle in seinem Menü **Aus Mail entfernen**. Nach der Bestätigung entfernt Mail den nicht verfügbaren Ordner und seine nicht verfügbaren Unterordner aus seiner Ordnerliste. Beim Anbieter wird nichts gelöscht, und gespiegelte Nachrichten und Verlauf bleiben. Zeigt der Anbieter den Ordner wieder, stellt ihn die nächste Neuermittlung automatisch wieder her.
+
+Agenten ändern Abonnements beim Anbieter mit `cld mail folder subscribe` und `cld mail folder unsubscribe`. Beide Befehle erzeugen denselben dauerhaften, nachverfolgbaren Befehl beim Anbieter wie die Web-App.
+
+## Zugriff festlegen {icon="shield-lock"}
+
+**Zugriff** nutzt den normalen Zugriffseditor von Cloud. Gib den kleinsten Zugriff, den die Person für ihre Arbeit braucht:
+
+- **Ansehen** zum Lesen, Suchen, Kommentieren und für persönliche Erinnerungen.
+- **Bearbeiten** für den Versand, Vorgänge an E-Mails beim Anbieter und Änderungen an der Zusammenarbeit.
+- **Verwalten** für Transport, Freigabe, Regeln, Workflows und den Lebenszyklus des Postfachs.
+- **Nur zugewiesene ansehen** oder **Nur zugewiesene bearbeiten** für Personen und Gruppen, die nur an den ihnen zugewiesenen Unterhaltungen arbeiten. Was sie damit tun können, steht in [Gemeinsam in einem Postfach arbeiten](/app/mail/help/mail-collaboration).
+
+**Verwaltungszugriff für automatische Antworten** ist eine Einstellung des Postfachs über der Zugriffsliste:
+
+- **Personen mit Schreib- oder Verwaltungsrechten** lässt Personen mit Zugriff **Bearbeiten** geführte Abwesenheitsnotizen und Empfangsbestätigungen erstellen und ändern.
+- **Nur Personen mit Verwaltungsrechten** ist der sichere Standard für neue und vorhandene Postfächer.
+
+Diese Einstellung lässt Personen mit Zugriff **Bearbeiten** keine Absenderidentitäten, Einstellungen für Referenznummern oder YAML-Workflows ändern. Das bleiben Vorgänge, die Zugriff **Verwalten** brauchen.
+
+Zugangsdaten bleiben verborgen, auch für Personen mit Zugriff **Verwalten**. Wer ein Postfach teilt, gibt Zugriff auf das Postfach in Cloud. Das Passwort oder Token beim Anbieter wird dabei nicht sichtbar.
+
+## Anhänge über öffentliche Links teilen {icon="link"}
+
+Du brauchst Zugriff **Verwalten** auf das Postfach, um einen öffentlichen Link zu einem Anhang zu erstellen, aufzulisten oder zu widerrufen. Öffne eine empfangene Nachricht oder einen Entwurf und nutze die Link-Aktion neben einem Anhang. Dateien über 100 MiB kannst du so nicht teilen.
+
+:::warning Kopiere die URL, bevor du das Ergebnis schließt
+Die öffentliche URL erscheint nur einmal, direkt nach dem Erstellen. Mail speichert nur einen Hash ihres geheimen Tokens und kann dieselbe URL nicht noch einmal zeigen.
+:::
+
+**Postfachwerkzeuge → Freigabelinks** listet alle Links seitenweise, auch ältere aktive Links. Dort widerrufst du den Zugriff, ohne die ursprüngliche Nachricht oder den Anhang des Entwurfs zu löschen.
+
+Ein Link kann ein optionales Passwort, einen Ablaufzeitpunkt und eine Höchstzahl an Download-Sitzungen haben. Passwörter unterscheiden Groß- und Kleinschreibung und können Leerzeichen enthalten. Bereichsanfragen, die einen erlaubten Download fortsetzen, zählen nicht als weitere Downloads. Widerrufene, abgelaufene, aufgebrauchte, ungültige und mit falschem Passwort aufgerufene Links schlagen fehl, ohne Metadaten des Anhangs zu verraten.
+
+Die CLI bietet dieselben Vorgänge über `cld mail attachment link create`, `list` und `revoke`. Übergib ein Passwort über `--password-file` oder `--password-stdin`. Die CLI nimmt es nie als sichtbaren Wert in der Befehlszeile an.
 
 ## Mail-Speicher prüfen {icon="database"}
 
-Cloud-Administrationsrechte sind getrennt von Postfach-Adminrechten. **Administration > Mail** zeigt jedes aktive Postfach mit bereinigten Status-, Synchronisierungs-, Speicher-, Zugriffs- und Aufmerksamkeitsdaten, aber keine Nachrichten- oder Anhangsinhalte.
+Nur die Cloud-Administration kann **Administration → Mail** öffnen. Zugriff **Verwalten** auf ein Postfach reicht nicht. Die Seite listet jedes aktive Postfach mit geschwärzten Angaben zu Zustand, Synchronisierung, Speicher, Zahl der Zugriffseinträge und Handlungsbedarf. Sie zeigt nie Inhalte von Nachrichten oder Anhängen.
 
-Unter **Sicherheit** kannst du gemeldete verdächtige Nachrichten prüfen und exakte organisationsweite Schutzregeln pflegen. Das Verhalten für Personen und Hinweise zu sicheren Regeln stehen unter **Verdächtige E-Mails erkennen und melden**.
+Öffne auf dieser Seite **Sicherheit**, um gemeldete verdächtige Nachrichten zu prüfen und genaue organisationsweite Schutzregeln zu pflegen. Was Nutzer sehen und wie sichere Regeln aussehen, steht unter [Verdächtige E-Mails erkennen und melden](/app/mail/help/mail-security).
 
-Mit **Berechtigungen** kannst du ein verwaistes Postfach wieder zugänglich machen oder eine versehentliche Freigabe korrigieren. Das ist eine ausdrückliche protokollierte Zugriffsänderung; Cloud-Administratoren erhalten nicht automatisch Zugriff auf Postfachinhalte. Füge einen neuen Administrator hinzu, bevor du den letzten vorhandenen entfernst.
+Nutze **Berechtigungen verwalten** an einem Postfach, um ein Postfach ohne verwaltende Person wiederherzustellen oder einen versehentlichen Zugriffseintrag zu korrigieren. Das ist eine ausdrückliche, protokollierte Änderung des Zugriffs. Die Cloud-Administration erhält nicht automatisch Zugriff auf Inhalte des Postfachs. Füge eine neue verwaltende Person hinzu, bevor du die letzte Person mit Zugriff **Verwalten** entfernst.
 
-Die CLI bietet dieselbe Wiederherstellung: `cld mail admin mailbox list` findet auch nicht direkt zugängliche Postfächer, `cld mail admin mailbox get <mailbox>` zeigt einen bereinigten Betriebsdatensatz, `cld mail admin mailbox access list|grant|set|revoke <mailbox>` verwaltet direkte Freigaben für Personen, Gruppen oder Dienstkonten und `cld mail admin storage show|reconcile` liest oder aktualisiert die Speicherbeobachtung.
+Die CLI bietet dieselben Werkzeuge zur Wiederherstellung:
 
-**Speicher abgleichen** stellt einen Hintergrundauftrag ein. Die Seite und `cld mail admin storage show` zeigen bis zu dessen Abschluss den letzten vollständigen Stand; das Einreihen aktualisiert die Zahlen nicht synchron. Die Werte dienen der Beobachtung, sind keine Speicherquoten und erlauben keinen Zugriff auf Inhalte.
+- `cld mail admin mailbox list` findet Postfächer, auch solche, die die aktuelle Administration nicht öffnen kann.
+- `cld mail admin mailbox get <mailbox>` zeigt einen geschwärzten Betriebsdatensatz.
+- `cld mail admin mailbox access list|grant|set|revoke <mailbox>` ändert direkten Zugriff für Nutzer, Gruppen oder Dienstkonten.
+- `cld mail admin storage show|reconcile` liest oder aktualisiert die Speicherdaten.
+
+**Speicherbestand aktualisieren** reiht einen Abgleich im Hintergrund ein. Die Seite und `cld mail admin storage show` zeigen bis zum Ende dieses Auftrags weiter den letzten abgeschlossenen Stand. Das Einreihen aktualisiert die Zahlen nicht sofort. Diese Werte sind Betriebsdaten, keine Speicherkontingente, und sie erlauben keinen Blick in Inhalte.
 
 ## Kontaktverzeichnis wählen {icon="address-book"}
 
-Mail verwendet die integrierte App Kontakte für Empfängervorschläge, Kontakte in den **Unterhaltungsdetails**, **Neuer Kontakt** und Kontakte, die an **Mit KI schreiben** angehängt werden. Dafür ist keine Einrichtung nötig.
+Mail nutzt die eingebaute App Contacts für Empfängervorschläge, Kontakte in den **Unterhaltungsdetails**, **Neuer Kontakt** und Kontakte, die **Mit KI schreiben** anhängt. Dafür musst du nichts einrichten.
 
-Um eine andere App zu verwenden, etwa eine Kundenverwaltung, öffne **Administration > Mail**. **Kontaktverzeichnis** zeigt die aktuelle App und ob sie den Contacts-Standard oder eine angepasste Zuordnung verwendet. Wähle **Konfigurieren**, um den Editor zu öffnen. Auch dafür sind Cloud-Administrationsrechte nötig. Wähle die App und dann für jede Funktion eine ihrer Capabilities. Jede Liste bietet nur Capabilities an, die zum Kontaktverzeichnis-Vertrag passen; die Standardwerte werden vorausgefüllt, wenn die App sie anbietet.
+Um eine andere App zu nutzen, etwa eine App für Kundenbeziehungen, musst du zur Cloud-Administration gehören:
 
-- **Empfänger vorschlagen** und **Beteiligte zuordnen** sind erforderlich.
-- **Kontakt lesen** ist optional. Ohne diese Funktion meldet **E-Mail verfassen** für einen Kontakt aus einer anderen App, dass der Kontakt nicht verfügbar ist.
+:::steps
+1. Öffne **Administration → Mail**. **Kontaktverzeichnis** zeigt die aktuelle App und ob sie den Contacts-Standard oder eine eigene Zuordnung nutzt.
+2. Wähle **Konfigurieren**, um den Editor zu öffnen.
+3. Wähle die App.
+4. Wähle für jede Funktion eine ihrer Capabilities.
+5. Wähle **Speichern**.
+:::
+
+Jede Liste bietet nur Capabilities an, die zum Vertrag für Kontaktverzeichnisse passen. Stellt die App Standardwerte bereit, trägt Mail sie ein.
+
+- **Empfänger vorschlagen** und **Beteiligte zuordnen** sind Pflicht.
+- **Kontakt lesen** ist optional. Ohne diese Funktion meldet **E-Mail verfassen** aus einem Kontakt in einer anderen App, dass der Kontakt nicht verfügbar ist.
 - **Beschreibbare Bücher auflisten** und **Kontakt anlegen** sind optional und gehören zusammen. Ohne sie blendet Mail **Neuer Kontakt** aus.
 
-**Speichern** prüft jede Auswahl gegen die aktuellen Capabilities der App und nennt jedes Feld, das Mail nicht verwenden kann. Mail ruft die App immer mit den eigenen Rechten der jeweiligen Person auf; Personen sehen also nur Kontakte, die sie dort lesen dürfen. Ist die App gestoppt oder ändert sie sich später unpassend, sind die betroffenen Funktionen nicht verfügbar, genau wie bei nicht verfügbaren Kontakten. **Contacts-Standard verwenden** stellt die integrierte Zuordnung wieder her.
+**Speichern** prüft jede Auswahl gegen die aktuellen Capabilities der App und nennt jedes Feld, das Mail nicht nutzen kann. Mail ruft die App immer mit dem Zugriff der jeweiligen Person auf, sodass jede Person dort nur die Kontakte sieht, die sie lesen darf. Stoppt die App oder ändert sie sich später unverträglich, werden die betroffenen Funktionen nicht verfügbar, wie wenn Contacts nicht verfügbar ist. **Contacts-Standard verwenden** stellt die eingebaute Zuordnung wieder her.
 
-`cld mail admin contact-directory show|candidates|set|reset` erledigt dasselbe im Terminal und verwendet dieselbe Prüfung; eine unpassende Zuordnung wird nicht gespeichert, und der Befehl nennt dieselben Probleme.
+`cld mail admin contact-directory show|candidates|set|reset` macht dasselbe im Terminal und nutzt dieselbe Prüfung. Mail speichert keine unverträgliche Zuordnung, und der Befehl listet dieselben Probleme.
 
-## Signaturen und E-Mail-Design {icon="pencil"}
+## Signaturen und E-Mail-Design einrichten {icon="pencil"}
 
-Unter **Einstellungen > Schreiben** kannst du private oder postfachweite Signaturen und Textbausteine verwalten. Weise die Postfach-Standardsignatur unter **Konten und Identitäten > Absenderidentitäten** zu. Ein persönlicher Standard unter **Schreiben** hat Vorrang.
+Erstelle unter **Einstellungen → Schreiben** private Signaturen und Textbausteine oder solche für das Postfach. Lege die Standardsignatur des Postfachs unter **Konten und Identitäten → Absenderidentitäten** fest. Ein persönlicher Standard einer Person unter **Schreiben** hat Vorrang.
 
-Markdown-E-Mails erhalten immer das gut lesbare Basisdesign. **E-Mail-Design** ergänzt validierte postfachweite CSS-Anpassungen für das Erscheinungsbild der Organisation, ersetzt aber nicht das sichere Basisdesign. Prüfe das Ergebnis vor der Verwendung in der Vorschau des Editors.
+Markdown-Nachrichten bekommen immer das eingebaute lesbare E-Mail-Design. **E-Mail-Design** ergänzt geprüftes CSS des Postfachs für das Firmendesign. Es ersetzt nicht das sichere Grunddesign. Prüfe das Ergebnis in der **Vorschau** des Editors, bevor du dich auf eine CSS-Änderung verlässt.
 
 ## Automatische Antworten und Referenzen einrichten {icon="settings"}
 
-Öffne **Postfachwerkzeuge > Automatisierungen**:
+Öffne **Postfachwerkzeuge → Automatisierungen**:
 
 :::steps
-1. **Übersicht** zeigt aktive Automatisierungen und öffnet die genaue Einrichtung.
-2. **Automatische Antworten** bietet Abwesenheit, Bestätigung außerhalb der Geschäftszeiten, Referenzbestätigung und eigene Vorlagen. Schreibberechtigte Personen können diesen Bereich verwenden, wenn die Zugriffsrichtlinie es erlaubt.
-3. **Eingehende E-Mails** bietet geführte Bedingungen und eine gemischte Folge von Mail- und AI-Schritten.
-4. **Aktivität** zeigt postfachbezogene Workflow-Ausführungen und Backfills eingehender Automatisierungen.
-5. **Workflows** enthält versionierte YAML-Definitionen, die Konfiguration von Referenznummern und ausdrückliche Aktivierungsaktionen.
+1. **Übersicht** zeigt, was aktiv ist, und öffnet genau die passende Einrichtung.
+2. **Automatische Antworten** bietet die Vorlagen **Abwesenheitsnotiz**, **Empfangsbestätigung zu Bürozeiten**, **Empfangsbestätigung mit Referenznummer** und **Eigene automatische Antwort**. Personen mit Zugriff **Bearbeiten** nutzen diesen Bereich, wenn die Zugriffseinstellung es erlaubt.
+3. **Eingehende E-Mails** bietet geführte Bedingungen und einen Ablauf, der Mail- und KI-Schritte mischt.
+4. **Aktivität** zeigt Workflow-Läufe und die nachträgliche Verarbeitung von Automatisierungen für eingehende E-Mails in diesem Postfach.
+5. **Workflows** enthält versionierte YAML-Definitionen, die Einrichtung der Referenznummern und ausdrückliche Steuerung der Aktivierung.
 :::
 
-Eingehende E-Mails, Aktivität und Workflows erfordern Postfach-Adminrechte. Zeitregeln für automatische Antworten stehen direkt in der geführten Antwort oder in der unveränderlichen YAML-Workflow-Version; es gibt keine getrennte Zeitplanressource.
+**Eingehende E-Mails**, **Aktivität** und **Workflows** brauchen Zugriff **Verwalten**. Mail speichert den Zeitplan einer automatischen Antwort direkt in der geführten Antwort oder in der unveränderlichen Version des YAML-Workflows. Es gibt keine eigene Zeitplan-Ressource, die du abgleichen musst.
 
-Eine automatische Antwort besitzt Aktivstatus, verifizierte Automatisierungsidentität, Betreff, Nachricht, Markdown- oder Nur-Text-Format, Wiederholungsintervall pro Absender, Zeitzone, aktive Daten, Wochenzeiten, Ausnahmen und ein Verhalten außerhalb aktiver Zeiten: **Nicht antworten** ignoriert solche Nachrichten, **Zum nächsten aktiven Zeitpunkt antworten** verschiebt die Antwort bis dahin. Prüfe die genaue Antwort vor der Aktivierung in der Vorschau. Das Pausieren des Postfachs stoppt automatische Antworten.
+Eine automatische Antwort hat diese Einstellungen:
 
-Einrichtung, Zeitfolgen, Referenzmuster und Wiederholungsschutz werden unter [Antworten und Postfacharbeit automatisieren](/app/mail/help/mail-automation) beschrieben.
+- ein oder aus und eine bestätigte Absenderidentität für Automatisierungen;
+- Betreff, Text und das Format Markdown oder Nur Text;
+- den Wiederholungsabstand pro Empfänger;
+- Zeitzone, aktive Tage, wöchentliche Zeitfenster und Ausnahmen;
+- das Verhalten außerhalb des aktiven Zeitfensters.
+
+Für das Verhalten außerhalb des aktiven Zeitfensters wählst du:
+
+- **Nicht antworten** ignoriert Nachrichten außerhalb des Zeitplans.
+- **Im nächsten aktiven Zeitfenster antworten** verschiebt die Antwort, bis der Zeitplan aktiv ist.
+
+Prüfe die genaue Antwort in der Vorschau, bevor du sie einschaltest. Das Pausieren des Postfachs stoppt automatische Antworten.
+
+Einrichtungsschritte, Auswirkungen des Zeitplans, Referenzmuster und Schutz vor Wiederholungen findest du unter [Antworten und Postfacharbeit automatisieren](/app/mail/help/mail-automation).
 
 ## Workflows verwalten {icon="route"}
 
-Öffne **Automatisierungen > Workflows** für den YAML-Editor. Das Speichern erzeugt eine neue unveränderliche Version und aktiviert sie nicht automatisch. Prüfe YAML, Validierungsdiagnosen und Effektbudgets, bevor du eine Version ausdrücklich aktivierst. Postfachausführungen stehen getrennt unter **Automatisierungen > Aktivität**.
+Öffne **Automatisierungen → Workflows** für den YAML-Editor. Speichern erzeugt eine neue unveränderliche Version. Diese Version wird nicht automatisch aktiviert.
 
-Verwende für übliche Abwesenheits- und Bestätigungsfälle die eigene Oberfläche für automatische Antworten. Workflows sind für deterministische Bedingungen und Aktionen gedacht, die darüber hinausgehen. Alle Eingaben, Auslöser, Aktionen, Bedingungen, Ausdrücke, Standards und geprüften Beispiele stehen in der [Mail-Workflow-YAML-Referenz](/app/mail/help/mail-workflows).
+:::steps
+1. Prüfe YAML, Diagnosen der Validierung und **Ausführungslimits**.
+2. Aktiviere die Version ausdrücklich.
+3. Prüfe die Läufe des Postfachs getrennt unter **Automatisierungen → Aktivität**.
+:::
+
+Für normale Abwesenheitsnotizen und Empfangsbestätigungen nutzt du die Oberfläche für automatische Antworten. Nutze Workflows, wenn das Postfach feste Bedingungen und Aktionen über diesen Editor hinaus braucht.
+
+Alle unterstützten Eingaben, Auslöser, Aktionen, Bedingungen, Ausdrücke, Standardwerte und geprüften Beispiele stehen in der [Mail-Workflow-YAML-Referenz](/app/mail/help/mail-workflows).
 
 ## Ein Postfach löschen und wiederherstellen {icon="point"}
 
-**Gefahrenzone > In „Kürzlich gelöscht“ verschieben** versetzt das Postfach in einen wiederherstellbaren gelöschten Zustand. E-Mails beim Anbieter und aufbewahrte Cloud-Daten werden nicht endgültig gelöscht.
+**Gefahrenbereich → In „Kürzlich gelöscht“ verschieben** setzt das Postfach in einen gelöschten Zustand, den du wiederherstellen kannst. Mail löscht E-Mails beim Anbieter und aufbewahrte Cloud-Daten nicht endgültig.
 
-Gelöschte Postfächer erscheinen für wiederherstellungsberechtigte Administratoren unter **Kürzlich gelöscht** in der Mail-Übersicht. Ein wiederhergestelltes Postfach startet pausiert. Prüfe Verbindung, Ordnererkennung und Status unter **Postfachwerkzeuge > Postfachstatus**, bevor du **Postfach fortsetzen** wählst.
+Gelöschte Postfächer erscheinen in der Mail-Übersicht unter **Kürzlich gelöscht** für Personen, die sie wiederherstellen können. Ein wiederhergestelltes Postfach startet pausiert. Prüfe unter **Postfachwerkzeuge → Postfachstatus** Verbindung, Ordnerermittlung und Zustand. Wähle dann **Postfach fortsetzen**.

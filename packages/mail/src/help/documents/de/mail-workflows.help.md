@@ -6,9 +6,15 @@ description: Referenz für Eingaben, Trigger, Aktionen, Bedingungen, Ausdrücke,
 order: 70
 ---
 
-Mail-Workflow-YAML hat drei Schlüssel auf oberster Ebene: `inputs`, `triggers` und `steps`. Nur `steps` ist erforderlich. Name, Beschreibung, Priorität, Effektbudget, gespeicherte Versionen und Aktivierungsstatus des Workflows werden außerhalb des YAML bearbeitet.
+Mail-Workflow-YAML hat drei Schlüssel auf oberster Ebene: `inputs`, `triggers` und `steps`. Nur `steps` ist erforderlich. Name, Beschreibung, Priorität, Ausführungslimits, gespeicherte Versionen und Aktivierungsstatus des Workflows bearbeitest du außerhalb des YAML.
 
-Der Workflow-Quelltext ist auf 200.000 Zeichen begrenzt. Ein gespeicherter Workflow-Name umfasst 1–160 Zeichen, seine optionale Beschreibung höchstens 2.000 Zeichen und seine Priorität eine ganze Zahl von -1.000 bis 1.000 mit dem Standardwert 100. Niedrigere Prioritätswerte werden zuerst ausgeführt, wenn mehrere Mail-Workflows dasselbe Ereignis annehmen.
+Der Workflow-Quelltext ist auf 200.000 Zeichen begrenzt.
+
+:::reference
+- **Name:** 1–160 Zeichen.
+- **Beschreibung:** Optional, höchstens 2.000 Zeichen.
+- **Priorität:** Eine ganze Zahl von -1.000 bis 1.000, Standard 100. Nehmen mehrere Mail-Workflows dasselbe Ereignis an, laufen niedrigere Werte zuerst.
+:::
 
 ## Mit einem Workflow für empfangene Nachrichten beginnen {icon="route"}
 
@@ -41,7 +47,7 @@ steps:
           status: waiting
 ```
 
-Wähle vor dem Speichern **Validieren**. Die Validierung prüft striktes YAML, das Mail-Vokabular, Wertepfade, zugängliche Katalognamen und unvereinbare Aktionskombinationen.
+Wähle vor dem Speichern **Prüfen**. Die Validierung prüft striktes YAML, das Mail-Vokabular, Wertepfade, zugängliche Katalognamen und unvereinbare Aktionskombinationen.
 
 ## Eingaben deklarieren {icon="point"}
 
@@ -52,9 +58,9 @@ Mail unterstützt zwei Eingabetypen:
 | `mailMessage` | Eine Nachricht in diesem Postfach |
 | `mailConversation` | Eine Unterhaltung in diesem Postfach |
 
-Jeder Eingabename muss mit einem Buchstaben oder Unterstrich beginnen und darf nur Buchstaben, Ziffern und Unterstriche enthalten. `required` hat den Standardwert `false`; setze `required: true`, wenn jeder Aufrufer oder Trigger die Eingabe bereitstellen muss. Ein Trigger muss jede erforderliche Eingabe in seinem `with`-Block binden. `steps` muss mindestens einen Schritt enthalten. Unbekannte Stammschlüssel oder Aktionseigenschaften werden abgelehnt.
+Jeder Eingabename muss mit einem Buchstaben oder Unterstrich beginnen und darf nur Buchstaben, Ziffern und Unterstriche enthalten. `required` hat den Standardwert `false`. Setze `required: true`, wenn jeder Aufrufer oder Trigger die Eingabe bereitstellen muss. Ein Trigger muss jede erforderliche Eingabe in seinem `with`-Block binden. `steps` muss mindestens einen Schritt enthalten. Mail lehnt unbekannte Stammschlüssel und Aktionseigenschaften ab.
 
-Ein Workflow ohne `triggers` kann validiert und als inaktiver Entwurf gespeichert, aber nicht aktiviert werden. Mail hat bewusst keine separate API für manuelle Ausführungen oder Zielabfragen.
+Einen Workflow ohne `triggers` kannst du prüfen und als inaktiven Entwurf speichern, aber nicht aktivieren. Mail hat bewusst keine eigene API für manuelle Ausführungen oder Zielabfragen.
 
 Mail akzeptiert höchstens 20 Eingaben, 500 Schritte, 20 verschachtelte Schrittebenen, 500 Bedingungen und 20 verschachtelte Bedingungsebenen. Diese Grenzen gelten nach dem Parsen des vollständigen Workflows einschließlich aller Zweige.
 
@@ -62,7 +68,7 @@ Mail akzeptiert höchstens 20 Eingaben, 500 Schritte, 20 verschachtelte Schritte
 
 ### `messageReceived`
 
-`messageReceived` startet einmal für eine stabile, neu importierte Nachricht. Für E-Mails, die der Anbieter direkt in den Papierkorb oder nach Junk zustellt, startet er nicht. Verschiebt oder kopiert ein anderes E-Mail-Programm eine Nachricht in einen anderen Ordner, oder kommt eine Kopie einer Nachricht an, die das Postfach schon enthält, startet der Trigger nicht erneut. Der Trigger stellt Folgendes bereit:
+`messageReceived` startet einmal für eine stabile, neu importierte Nachricht. Für E-Mails, die der Anbieter direkt in den Papierkorb oder in Spam zustellt, startet er nicht. Verschiebt oder kopiert ein anderes E-Mail-Programm eine Nachricht in einen anderen Ordner, startet er nicht erneut. Auch für eine Kopie einer Nachricht, die das Postfach schon enthält, startet er nicht. Der Trigger stellt Folgendes bereit:
 
 - `trigger.message`
 - `trigger.conversation`
@@ -103,7 +109,7 @@ steps:
       message: Die geplante Postfachprüfung wurde ausgeführt.
 ```
 
-Trigger-Werte sind nur während der Bindung von `with` vorhanden. Geplante Mail-Workflows sind daher derzeit auf Schritte beschränkt, die keine empfangene Nachricht oder Unterhaltung benötigen. `automaticReply` kann nicht über einen Zeitplan-Trigger ausgeführt werden.
+Trigger-Werte gibt es nur, während Mail `with` bindet. Geplante Mail-Workflows können deshalb derzeit nur Schritte nutzen, die keine empfangene Nachricht oder Unterhaltung brauchen. `automaticReply` kann nicht über einen Zeitplan-Trigger ausgeführt werden.
 
 Lasse `triggers` weg, wenn du wiederverwendbares YAML entwirfst, das inaktiv bleiben soll. Ein leerer Block `triggers: {}` ist ungültig. Für die Aktivierung ist mindestens ein Trigger erforderlich.
 
@@ -123,7 +129,7 @@ Unterhaltungspfade:
 - `inputs.conversation.id`, `subject`, `summary`, `summaryRevision`, `assigneeUserIds`
 - `inputs.conversation.workStatus`, `latestMessageAt`
 
-Ressourcen-IDs, die einem Workflow in Mail bereitgestellt werden, verwenden dieselben stabilen sechsstelligen IDs wie Mail-URLs und Capabilities. Anbieterreferenzen und Datenbank-UUIDs sind intern und keine Workflow-Felder.
+Ressourcen-IDs von Mail in einem Workflow sind dieselben stabilen sechsstelligen IDs wie in Mail-URLs und Capabilities. Anbieterreferenzen und Datenbank-UUIDs sind intern und keine Workflow-Felder.
 
 Pfade des Ausführungskontexts:
 
@@ -156,7 +162,7 @@ steps:
       message: "Nachricht von {{ senderAddress }} wurde um {{ context.occurredAt }} verarbeitet"
 ```
 
-Variablen, die innerhalb eines Zweigs erstellt werden, sind außerhalb dieses Zweigs nicht verfügbar. Derselbe Variablenname darf in einem Gültigkeitsbereich nicht zweimal definiert werden.
+Variablen, die innerhalb eines Zweigs erstellt werden, sind außerhalb dieses Zweigs nicht verfügbar. Du darfst denselben Variablennamen in einem Gültigkeitsbereich nicht zweimal definieren.
 
 ## Mail-Aktionen verwenden {icon="route"}
 
@@ -166,11 +172,11 @@ Variablen, die innerhalb eines Zweigs erstellt werden, sind außerhalb dieses Zw
 | `removeKeyword` | `message`, `keyword` | Entfernt ein übertragbares Anbieter-Schlüsselwort |
 | `moveMessage` | `message`, `folder` | Verschiebt die Nachricht in einen zugänglichen Anbieterordner |
 | `copyMessage` | `message`, `folder` | Kopiert die Nachricht in einen zugänglichen Anbieterordner |
-| `archiveMessage` | `message` | Verschiebt die Nachricht in den Archivordner des Postfachs; bei Gmail ohne zugeordneten Archivordner wie die Aktion Archivieren nach **Alle Nachrichten** |
+| `archiveMessage` | `message` | Verschiebt die Nachricht in den Archivordner des Postfachs; bei Gmail ohne zugeordneten Archivordner wie die Aktion Archivieren nach **All Mail** |
 | `trashMessage` | `message` | Verschiebt die Nachricht in den Papierkorbordner des Postfachs |
 | `junkMessage` | `message` | Verschiebt die Nachricht in den Spamordner des Postfachs |
 | `addFlag` / `removeFlag` | `message`, `flag` | Ändert `seen`, `answered`, `flagged` oder `draft` über das Befehlsjournal des Anbieters |
-| `assignConversation` | `conversation`, `user` | Weist anhand eines zugänglichen Personennamens oder einer ID zu; `null` hebt die Zuweisung auf |
+| `assignConversation` | `conversation`, `user` | Ersetzt die zugewiesenen Personen durch eine Person, die zugewiesen werden kann, anhand ihres Namens oder ihrer ID; `null` entfernt alle Zuweisungen |
 | `setConversationStatus` | `conversation`, `status` | Setzt `needs_action`, `waiting` oder `done` |
 | `setConversationSummary` | `conversation`, `summary` | Ersetzt die bearbeitbare Zusammenfassung der Unterhaltung |
 | `ensureConversationReference` | `conversation`; optional `saveAs` | Vergibt die permanente Postfachreferenz oder verwendet sie erneut und speichert optional das Ergebnis |
@@ -179,7 +185,7 @@ Variablen, die innerhalb eines Zweigs erstellt werden, sind außerhalb dieses Zw
 | `createDraft` | `sender`, `to`, `subject`, `body`, `saveAs` | Erstellt für einen späteren Schritt einen Workflow-Entwurf mit normaler Zustellung |
 | `createReplyDraft` | `message`, `conversation`, `sender`, `body`, `saveAs` | Erstellt in der Quellunterhaltung einen prüfbaren Antwortentwurf |
 | `scheduleDraftSend` | `draft`, `scheduledAt` | Plant den Versand eines erstellten Entwurfs mit normaler Zustellung über den dauerhaften Postausgang |
-| `notifyUser` | `user`, `title`, `body` | Sendet eine interne Benachrichtigung an eine Person mit aktuellem Lesezugriff auf das Postfach |
+| `notifyUser` | `user`, `title`, `body` | Sendet eine interne Benachrichtigung an eine Person, die das Postfach aktuell lesen kann |
 | `automaticReply` | `message`, `conversation`, `sender`, `subject`, `body`, `schedule` | Stellt eine geschützte automatische Antwort in die Warteschlange |
 | `aiGenerateText` | `prompt`, `saveAs` | Erzeugt begrenzten Text; `input`, `model` und `maxOutputChars` sind optional |
 | `aiClassify` | `input`, `prompt`, `choices`, `saveAs` | Gibt genau einen deklarierten Auswahlwert zurück |
@@ -191,15 +197,15 @@ Variablen, die innerhalb eines Zweigs erstellt werden, sind außerhalb dieses Zw
 | `succeed` | `message` | Beendet die Ausführung erfolgreich |
 | `fail` | `message` | Beendet die Ausführung mit einem nicht wiederholbaren Workflow-Fehler |
 
-Felder für Ordner, lokale Tags, Personen und Absender akzeptieren einen eindeutigen zugänglichen Namen oder eine ID. Die gespeicherte Version bindet diese Katalogwerte vor der Aktivierung. Die Antwortzeiten stehen direkt im YAML und werden als Teil der Version validiert.
+Felder für Ordner, lokale Tags, Personen und Absender akzeptieren einen eindeutigen zugänglichen Namen oder eine ID. Die gespeicherte Version bindet diese Katalogwerte vor der Aktivierung. Die Antwortzeiten schreibst du direkt ins YAML, und Mail prüft sie als Teil der Version.
 
-`linkSpaceItem` und `createSpaceEvent` werden von verwalteten Automatisierungen für eingehende E-Mails ausgegeben. Sie verwenden die verschlüsselte, widerrufbare Spaces-Delegation, die mit dieser Automatisierung gespeichert ist. Daher stehen sie nicht für unabhängige, manuell geschriebene Mail-Workflows zur Verfügung.
+Verwaltete Automatisierungen für eingehende E-Mails erzeugen `linkSpaceItem` und `createSpaceEvent`. Sie nutzen die verschlüsselte, widerrufbare Spaces-Delegation, die mit dieser Automatisierung gespeichert ist. Unabhängige, von Hand geschriebene Mail-Workflows können sie deshalb nicht nutzen.
 
-### Felder, Standardwerte, Ausgaben und Budgets prüfen
+### Felder, Standardwerte, Ausgaben und Limits prüfen
 
-Referenzfelder namens `message`, `conversation` oder `draft` akzeptieren einen rohen Wertepfad und sind auf 500 Zeichen begrenzt. Selektoren für Ordner, Schlüsselwort, Tag, Absender und Person sind ebenfalls auf 500 Zeichen begrenzt. Variablennamen in `name` und `saveAs` sind Bezeichner mit höchstens 120 Zeichen.
+Referenzfelder namens `message`, `conversation` oder `draft` akzeptieren einen rohen Wertepfad mit höchstens 500 Zeichen. Selektoren für Ordner, Schlüsselwort, Tag, Absender und Person haben ebenfalls höchstens 500 Zeichen. Variablennamen in `name` und `saveAs` sind Bezeichner mit höchstens 120 Zeichen.
 
-| Aktionen | Zusätzliche Felder und Standardwerte | Ausgabe | Budget pro Ausführung |
+| Aktionen | Zusätzliche Felder und Standardwerte | Ausgabe | Limit pro Ausführung |
 | --- | --- | --- | --- |
 | `addKeyword`, `removeKeyword` | `keyword`: 1–500 Zeichen | keine | 1 `maxKeywordChanges` |
 | `moveMessage` | zugänglicher `folder`-Name oder zugängliche ID | keine | 1 `maxMoves` |
@@ -219,19 +225,19 @@ Referenzfelder namens `message`, `conversation` oder `draft` akzeptieren einen r
 | `setVariable` | beliebiger JSON-kompatibler `value` | `name` erhält `core.value` | keine |
 | `succeed`, `fail` | Meldung für Betriebspersonal: höchstens 1.000 Zeichen | Endzustand | keine |
 
-`createDraft.to` ist erforderlich; `cc` und `bcc` sind optional. `createReplyDraft` leitet Empfänger und Betreff aus der Quellnachricht ab. Das Feld `model` akzeptiert die ID eines aktivierten AI-Modellprofils mit höchstens 120 Zeichen. AI-Ausgaben, Entwurfsausgaben, Referenzausgaben und Variablen sind nur für spätere Schritte im selben erreichbaren Gültigkeitsbereich sichtbar.
+`createDraft.to` ist erforderlich. `cc` und `bcc` sind optional. `createReplyDraft` leitet Empfänger und Betreff aus der Quellnachricht ab. Das Feld `model` akzeptiert die ID eines aktivierten KI-Modellprofils mit höchstens 120 Zeichen. KI-Ausgaben, Entwurfsausgaben, Referenzausgaben und Variablen sind nur für spätere Schritte im selben erreichbaren Gültigkeitsbereich sichtbar.
 
-Ein erreichbarer Pfad kann nicht mehrere Anbieteränderungen auf dieselbe Nachricht anwenden. Beispielsweise wird es abgelehnt, in einem Zweig ein Schlüsselwort zu ergänzen und dieselbe Nachricht anschließend zu verschieben. Teile diese Vorgänge auf separate Workflows auf, wenn beide erforderlich sind.
+Ein erreichbarer Pfad kann nicht mehrere Anbieteränderungen auf dieselbe Nachricht anwenden. Mail lehnt zum Beispiel einen Zweig ab, der ein Schlüsselwort ergänzt und dieselbe Nachricht danach verschiebt. Brauchst du beides, teile es auf separate Workflows auf.
 
 `createDraft` und `createReplyDraft` erzeugen immer `deliveryClass: normal`. `createReplyDraft` leitet Empfänger und Betreff aus der Quellnachricht ab, erhält den Antwortverlauf und bleibt mit seiner Unterhaltung verknüpft. Nur `automaticReply` kann `deliveryClass: automatic_reply` erzeugen. Normale Workflow-Sendungen erhalten daher weder Header für automatische Antworten noch einen leeren Envelope-Absender. `scheduleDraftSend` akzeptiert nur ein `mail.draft`-Ergebnis, das zuvor im selben erreichbaren Gültigkeitsbereich erstellt wurde.
 
-`forEach` gehört zur gemeinsamen Workflow-Grammatik, wird vom Mail-Vokabular aber bewusst nicht unterstützt. Mail-Workflows verarbeiten jeweils ein materialisiertes Nachrichtenziel.
+`forEach` gehört zur gemeinsamen Workflow-Grammatik, aber das Mail-Vokabular unterstützt es bewusst nicht. Mail-Workflows verarbeiten jeweils ein materialisiertes Nachrichtenziel.
 
-## E-Mails mit AI klassifizieren und Entwürfe erstellen {icon="sparkles"}
+## E-Mails mit KI klassifizieren und Entwürfe erstellen {icon="sparkles"}
 
-Mail aktiviert die gemeinsamen AI-Aktionen ausdrücklich. AI erzeugt nur einen Wert. Mail-Aktionen übernehmen weiterhin Tag-, Zuweisungs-, Ordner-, Entwurfs- und Versandwirkungen unter den normalen Postfachberechtigungen und Budgets.
+Mail aktiviert die gemeinsamen KI-Aktionen ausdrücklich. KI erzeugt nur einen Wert. Tags, Zuweisung, Ordner, Entwürfe und Versand bleiben Effekte von Mail-Aktionen, mit dem normalen Zugriff auf das Postfach und den Ausführungslimits.
 
-Dieses Beispiel ordnet eine Nachricht mehreren Labels zu, verwendet die exakte Array-Zugehörigkeit, um die Unterhaltung zu taggen und zuzuweisen, und erstellt einen Entwurf, ohne ihn zu senden:
+Dieses Beispiel ordnet eine Nachricht mehreren Labels zu. Es nutzt die exakte Array-Zugehörigkeit, um die Unterhaltung zu taggen und zuzuweisen, und erstellt einen Entwurf, ohne ihn zu senden:
 
 ```yaml
 inputs:
@@ -290,7 +296,7 @@ steps:
       saveAs: draft
 ```
 
-Verwende `aiClassify`, wenn genau ein Auswahlwert zulässig ist. Verwende `aiClassifyMany`, wenn null oder mehr Auswahlwerte zutreffen können; `minChoices` und `maxChoices` begrenzen das Ergebnis. Auswahlwerte sind exakte Werte, keine frei formulierte Modellausgabe.
+Verwende `aiClassify`, wenn genau ein Auswahlwert zulässig ist. Verwende `aiClassifyMany`, wenn null oder mehr Auswahlwerte zutreffen können. `minChoices` und `maxChoices` begrenzen das Ergebnis. Auswahlwerte sind exakte Werte, keine frei formulierte Modellausgabe.
 
 `aiExtractData` deklariert seinen vollständigen Ausgabevertrag, statt ein frei formuliertes JSON Schema zu akzeptieren. Dieses erzeugte Beispiel einer verwalteten Automatisierung extrahiert Termindaten und erstellt einen verknüpften Spaces-Termin. Wenn das Modell keinen gültigen Titel oder Zeitraum liefern kann, stoppt die strukturierte Validierung oder die `ready`-Schutzbedingung den Erstellungsschritt:
 
@@ -324,13 +330,15 @@ steps:
       event: "${{ eventData }}"
 ```
 
-Die allgemeinen Feldtypen sind `text`, `number`, `boolean`, `date_time` und `enum`. Optionale Felder dürfen fehlen; die Ausgabe lehnt nicht deklarierte Felder ab. Der geführte Editor für eingehende E-Mails stellt automatisch den festen Vertrag für Terminfelder, eine ausdrückliche IANA-Zeitzone, die Empfangszeit der Nachricht und die Schutzbedingung gegen erfundene Angaben bereit.
+Die allgemeinen Feldtypen sind `text`, `number`, `boolean`, `date_time` und `enum`. Optionale Felder dürfen fehlen. Die Ausgabe lehnt nicht deklarierte Felder ab. Der geführte Editor für eingehende E-Mails stellt automatisch bereit: den festen Vertrag für Terminfelder, eine ausdrückliche IANA-Zeitzone, die Empfangszeit der Nachricht und die Schutzbedingung gegen erfundene Angaben.
 
-Ein optionales `model` wählt für eine Aktion ein aktiviertes Profil aus. Andernfalls verwendet Mail zuerst das Workflow-Modell der Plattform, dann das Hintergrundmodell und anschließend den Plattformstandard. Jede neu erstellte AI-Aufgabe verbraucht eine Einheit des Budgets `maxAiCalls`; Mail setzt dieses Budget standardmäßig auf 10 pro Ausführung.
+Ein optionales `model` wählt für eine Aktion ein aktiviertes Profil aus. Andernfalls verwendet Mail zuerst das Workflow-Modell der Plattform, dann das Hintergrundmodell und anschließend den Plattformstandard. Jede neu erstellte KI-Aufgabe zählt einmal gegen das Limit `maxAiCalls`. Standardmäßig liegt dieses Limit bei 10 pro Ausführung.
 
-AI-Aufgaben überstehen Neustarts von Workern. Wird die Mail-Ausführung abgebrochen, bricht sie die laufende Inferenz ab, sofern dies unterstützt wird, und verwirft verspätete Ausgaben. Eine Testausführung kann die AI-Ausgabe nicht vorhersagen. Deshalb meldet sie den nicht verfügbaren Wert, statt mit einer erfundenen Klassifizierung oder einem erfundenen Entwurf fortzufahren.
+KI-Aufgaben überstehen Neustarts von Workern. Brichst du die Mail-Ausführung ab, stoppt sie die laufende Inferenz, wo das möglich ist, und verwirft verspätete Ausgaben. Eine Testausführung kann die KI-Ausgabe nicht vorhersagen. Deshalb meldet sie den nicht verfügbaren Wert, statt mit einer erfundenen Klassifizierung oder einem erfundenen Entwurf fortzufahren.
 
-Prompts, Eingaben und Ausgaben werden mit der dauerhaften Aufgabe gespeichert. Nimm nur die Nachrichtenfelder auf, die für die Entscheidung benötigt werden. Behalte erzeugte Antworten als Entwürfe, wenn eine Person sie prüfen soll. Ergänze `scheduleDraftSend` nur, wenn der unbeaufsichtigte Versand bewusst freigegeben wurde. In einem Workflow mit dem Auslöser `messageReceived` ist `scheduleDraftSend` nicht erlaubt: Antworten auf eingehende Mail müssen über `automaticReply` und dessen Schleifenschutz laufen.
+Mail speichert Prompts, Eingaben und Ausgaben mit der dauerhaften Aufgabe. Nimm nur die Nachrichtenfelder auf, die für die Entscheidung benötigt werden. Behalte erzeugte Antworten als Entwürfe, wenn eine Person sie prüfen soll. Ergänze `scheduleDraftSend` nur, wenn der Versand ohne Prüfung bewusst genehmigt ist.
+
+Ein Workflow mit dem Trigger `messageReceived` kann `scheduleDraftSend` gar nicht nutzen. Antworten auf eingehende E-Mails müssen über `automaticReply` und dessen Schleifenschutz laufen.
 
 Um eine fortlaufende Zusammenfassung der Unterhaltung zu pflegen, übergib sowohl die aktuelle Zusammenfassung als auch die neu empfangene Nachricht an `aiGenerateText`. Übergib anschließend dessen normale Textausgabe an `setConversationSummary`:
 
@@ -363,11 +371,11 @@ steps:
       summary: "{{ updatedSummary }}"
 ```
 
-Die Zusammenfassung hat eine eigene optimistische Revision. Wenn eine Person sie bearbeitet, während AI noch ausgeführt wird, schlägt die verzögerte Workflow-Aktion fehl, statt die neuere menschliche Bearbeitung zu überschreiben.
+Die Zusammenfassung hat eine eigene optimistische Revision. Wenn eine Person sie bearbeitet, während KI noch ausgeführt wird, schlägt die verzögerte Workflow-Aktion fehl, statt die neuere menschliche Bearbeitung zu überschreiben.
 
 ## Eine Unterhaltungsreferenz vergeben {icon="book-2"}
 
-Konfiguriere und aktiviere das Referenzformat des Postfachs unter **Automatisierungen > Workflows** oder direkt in einem Editor für Referenzbestätigungen:
+Richte das Referenzformat des Postfachs unter **Automatisierungen → Workflows** ein und schalte es ein, oder direkt im Editor einer **Empfangsbestätigung mit Referenznummer**:
 
 ```yaml
 inputs:
@@ -385,7 +393,7 @@ steps:
       message: "{{ reference.value }} vergeben"
 ```
 
-Die Aktion kann sicher wiederholt werden und vergibt für dieselbe Unterhaltung keine zweite Referenz. Wenn `saveAs` vorhanden ist, können spätere Schritte im selben Gültigkeitsbereich Folgendes verwenden:
+Du kannst die Aktion gefahrlos wiederholen. Sie vergibt für dieselbe Unterhaltung keine zweite Referenz. Wenn `saveAs` vorhanden ist, können spätere Schritte im selben Gültigkeitsbereich Folgendes verwenden:
 
 - `{{ reference.value }}` für die permanente menschenlesbare Referenz wie `REF-K7M3-P9QX-2F4N`.
 - `{{ reference.created }}`, um eine neue Vergabe von einem vorhandenen Wert zu unterscheiden.
@@ -450,9 +458,17 @@ Optionale Felder und Standardwerte:
 - `inactiveBehavior`: standardmäßig `defer` oder `skip`
 - `minimumIntervalHours`: standardmäßig `24`, von `0` bis `8760`
 
-Der Absender muss für automatische Antworten verifiziert und aktiviert sein. Mail unterdrückt Schleifen, Massen- und Mailinglisten-E-Mails, Zustellstatusnachrichten, wiederholte Antworten auf eine Nachricht und Empfänger, die noch vom Wiederholungsschutz erfasst sind.
+Die Absenderidentität muss bestätigt und für automatische Antworten zugelassen sein. Mail unterdrückt Schleifen, Massen- und Mailinglisten-E-Mails, Zustellstatusnachrichten, wiederholte Antworten auf eine Nachricht und Empfänger, die noch vom Wiederholungsschutz erfasst sind.
 
-`schedule` ist ausdrücklich angegeben: Verwende `{ mode: always }` für eine immer aktive Antwort oder `mode: windows` mit `timeZone`, `activeRanges`, `weeklyWindows` und `exceptions`. Ein Zeitplan mit Zeitfenstern akzeptiert höchstens 32 aktive Zeiträume, 64 wöchentliche Zeitfenster, 366 Ausnahmen und 32 Zeitfenster innerhalb einer Ausnahme. `weekday` verwendet ISO-Zahlen von `1` für Montag bis `7` für Sonntag. Zeiten sind lokale `HH:mm`-Werte in der konfigurierten IANA-Zeitzone. Zeitfenster dürfen sich weder überschneiden noch über Mitternacht hinausgehen; `24:00` ist nur als Ende zulässig. Eine leere Liste `activeRanges` wiederholt sich wöchentlich ohne Datumsgrenze. Jeder Zeitraum verwendet ein einschließendes `from`-Datum und ein einschließendes `to`-Datum oder `null`. Eine Datumsausnahme überschreibt die normalen wöchentlichen Zeitfenster: `closed: true` deaktiviert das gesamte Datum, während `closed: false` nur die aufgeführten Ausnahmezeitfenster verwendet.
+`schedule` ist ausdrücklich angegeben. Verwende `{ mode: always }` für eine immer aktive Antwort oder `mode: windows` mit `timeZone`, `activeRanges`, `weeklyWindows` und `exceptions`.
+
+:::reference
+- **Grenzen:** Ein Zeitplan mit Zeitfenstern akzeptiert höchstens 32 aktive Zeiträume, 64 wöchentliche Zeitfenster, 366 Ausnahmen und 32 Zeitfenster innerhalb einer Ausnahme.
+- **Wochentage:** `weekday` verwendet ISO-Zahlen von `1` für Montag bis `7` für Sonntag.
+- **Zeiten:** Zeiten sind lokale `HH:mm`-Werte in der eingerichteten IANA-Zeitzone. Zeitfenster dürfen sich weder überschneiden noch über Mitternacht gehen. `24:00` ist nur als Ende zulässig.
+- **Zeiträume:** Eine leere Liste `activeRanges` wiederholt sich wöchentlich ohne Datumsgrenze. Jeder Zeitraum nutzt ein einschließendes `from`-Datum und ein einschließendes `to`-Datum oder `null`.
+- **Ausnahmen:** Eine Datumsausnahme ersetzt die normalen wöchentlichen Zeitfenster. `closed: true` schaltet das ganze Datum aus. `closed: false` nutzt nur die aufgeführten Zeitfenster der Ausnahme.
+:::
 
 ## Bedingungen hinzufügen {icon="search"}
 
@@ -527,20 +543,20 @@ steps:
           message: Die Unterhaltung ist bereits abgeschlossen.
 ```
 
-Werte, die in einem `case` erstellt werden, bleiben innerhalb dieses Falls. Verwende Endaktionen innerhalb von Zweigen, wenn ein späterer Schritt einen lokalen Wert des Zweigs benötigen würde.
+Werte, die in einem `case` erstellt werden, bleiben innerhalb dieses Falls. Braucht ein späterer Schritt einen Wert aus einem Zweig, verwende Endaktionen innerhalb der Zweige.
 
 ## Versionen und Aktivierung verstehen {icon="layout-grid"}
 
-Jede gespeicherte Version hat ein Effektbudget. `0` deaktiviert eine Effektkategorie mit Ausnahme von `maxTargets`, das mindestens 1 sein muss.
+Jede gespeicherte Version hat eigene Ausführungslimits. `0` schaltet eine Kategorie von Effekten ab. Ausnahme ist `maxTargets`: Es muss mindestens 1 sein.
 
-| Budget | Standardwert | Maximum |
+| Limit | Standardwert | Maximum |
 | --- | ---: | ---: |
 | `maxTargets` | 1.000 | 50.000 |
 | `maxMoves`, `maxCopies`, `maxSends`, `maxDrafts`, `maxNotifications` | 1.000 | 50.000 |
 | `maxFlagChanges`, `maxKeywordChanges`, `maxCollaborationChanges` | 2.000 | 100.000 |
 | `maxAiCalls` | 10 | 1.000 |
 
-Das Budget gehört zur unveränderlichen Version und begrenzt eine Ausführung. Die Laufzeit belastet die jeweilige Kategorie unmittelbar vor Beginn eines Effekts und lässt die Ausführung fehlschlagen, statt die Grenze zu überschreiten. Idempotente Wiederholungsversuche verwenden denselben Effekt erneut, statt einen weiteren zu erstellen.
+Die Ausführungslimits gehören zur unveränderlichen Version und gelten für eine Ausführung. Die Laufzeit zählt die passende Kategorie unmittelbar, bevor ein Effekt beginnt. Sie lässt die Ausführung fehlschlagen, statt die Grenze zu überschreiten. Idempotente Wiederholungen nutzen denselben Effekt erneut und erstellen keinen weiteren.
 
 - **Workflow erstellen** speichert Version 1, lässt sie aber inaktiv.
 - **Version speichern** erstellt eine weitere unveränderliche Version. Eine ältere Version wird nie bearbeitet.
@@ -548,17 +564,17 @@ Das Budget gehört zur unveränderlichen Version und begrenzt eine Ausführung. 
 - **Aktualisierung verfügbar** bedeutet, dass sich die aktuell gespeicherte Version von der aktiven Version unterscheidet.
 - **Deaktivieren** stoppt die zukünftige automatische Materialisierung von Triggern. Der vorhandene Ausführungsverlauf bleibt erhalten.
 
-Die Änderung eines zugänglichen Ordners oder Absenders schreibt eine gespeicherte Version nicht neu. Das Referenzmuster des Postfachs wird ausgewertet, wenn eine Nummer vergeben wird; vorhandene Referenzwerte bleiben unverändert. Wenn du die Antwortzeiten änderst, musst du eine neue Workflow-Version speichern und ausdrücklich aktivieren, weil der Zeitplan Bestandteil des YAML ist.
+Die Änderung eines zugänglichen Ordners oder Absenders ändert eine gespeicherte Version nicht. Mail wertet das Referenzmuster des Postfachs aus, wenn es eine Nummer vergibt. Vorhandene Referenzwerte bleiben unverändert. Der Zeitplan ist Teil des YAML. Um die Antwortzeiten zu ändern, speichere eine neue Workflow-Version und aktiviere sie ausdrücklich.
 
 ## Ausführungen validieren und prüfen {icon="layout-list"}
 
-**Validieren** prüft den Quelltext und die Katalogbindungen, führt aber keine Schritte aus. Mail-Workflows starten nur über ihre aktiven Trigger `messageReceived` oder `schedule`; es gibt keinen separaten Pfad für manuelle Ausführungen oder rückwirkende Verarbeitung.
+**Prüfen** kontrolliert den Quelltext und die Katalogbindungen, führt aber keine Schritte aus. Mail-Workflows starten nur über ihre aktiven Trigger `messageReceived` oder `schedule`. Es gibt keinen eigenen Weg für manuelle Ausführungen oder rückwirkende Verarbeitung.
 
-Zum Lesen und Validieren von Workflows ist Lesezugriff auf das Postfach erforderlich. Zum Erstellen von Versionen, Ändern von Metadaten, Aktivieren und Deaktivieren ist Admin-Zugriff auf das Postfach erforderlich. Die anwendungsübergreifende Prüfung von Ausführungen, deren Abbruch und die Klärung ungewisser Effekte erfordern Cloud-Administratorzugriff.
+Um Workflows zu lesen und zu prüfen, brauchst du Zugriff **Ansehen** auf das Postfach. Um Versionen zu erstellen, Metadaten zu ändern, zu aktivieren und zu deaktivieren, brauchst du Zugriff **Verwalten**. Nur die Cloud-Administration kann Ausführungen über alle Apps prüfen, abbrechen und ungewisse Effekte klären.
 
-Jede Aktion prüft die an die Workflow-Version gebundene Postfachberechtigung erneut. Wenn der aktivierende Administrator später seinen persönlichen Zugriff verliert, wird eine bereits angenommene Ausführung nicht deaktiviert. Deaktivierung oder Ersetzung verhindert neue Ausführungen. Fordere den Abbruch an, um noch nicht abgeschlossene Effekte einer angenommenen Ausführung zu stoppen. Anbieterbefehle binden zusätzlich die Ausführungsgeneration des Kernels, sodass ein Worker, der seine Lease verloren hat, den E-Mail-Anbieter nicht erreichen kann.
+Jede Aktion prüft erneut den Zugriff auf das Postfach, den die Workflow-Version gebunden hat. Verliert die Person, die aktiviert hat, später ihren persönlichen Zugriff, läuft eine bereits angenommene Ausführung weiter. Deaktivierung oder Ersetzung verhindert neue Ausführungen. Fordere den Abbruch an, um noch nicht abgeschlossene Effekte einer angenommenen Ausführung zu stoppen. Anbieterbefehle binden zusätzlich die Ausführungsgeneration des Kernels, sodass ein Worker, der seine Lease verloren hat, den E-Mail-Anbieter nicht erreichen kann.
 
-Administratoren prüfen den Laufzeitverlauf unter **Administration > Observability > Workflows**. Die gemeinsame Ansicht zeigt Ausführungen, Schrittergebnisse, Effekte, Quellereignisse, Fehler und anwendungsübergreifend Einträge, die Aufmerksamkeit benötigen. Die entsprechenden CLI-Befehle lauten:
+Die Cloud-Administration prüft den Laufzeitverlauf unter **Administration → Systembeobachtung → Workflows**. Die gemeinsame Ansicht zeigt über alle Apps Ausführungen, Schrittergebnisse, Effekte, Quellereignisse, Fehler und Einträge, die Aufmerksamkeit brauchen. Die entsprechenden CLI-Befehle lauten:
 
 ```bash
 cld admin workflows runs --app mail

@@ -2,15 +2,15 @@
 id: notebooks-table-formulas
 title: "Table formulas"
 icon: "ti ti-math-function"
-description: "Complete table formula syntax and function reference."
+description: "Look up the complete syntax and every function of table formulas."
 order: 140
 ---
 
-Table formulas turn Markdown table cells into computed values. They are intentionally small: write the formula in the cell and keep the source columns visible.
+Table formulas turn cells of a Markdown table into computed values. They are small on purpose. Write the formula in the cell and keep the source columns visible.
 
 **Formula shape**
 
-## Small examples {icon="flask"}
+## Start from small examples {icon="flask"}
 
 **Progress**
 
@@ -32,40 +32,40 @@ Table formulas turn Markdown table cells into computed values. They are intentio
 
 **Syntax**
 
-## Formula rules {icon="ruler-2"}
+## Follow the formula rules {icon="ruler-2"}
 
 :::reference
-- **Start with =:** A table formula cell starts with =, for example =SUM(Hours).
-- **Reference columns by name:** Use the column name directly. Wrap names with spaces in backticks, for example =SUM(`Total Cost`).
-- **Comparisons return numbers:** >, <, ==, and related operators return 1 or 0.
-- **Formula cells do not count themselves:** Column totals skip their own formula cell, so =SUM(Hours) does not include the total cell.
+- **Start with =:** A formula cell starts with =, for example =SUM(Hours).
+- **Refer to columns by name:** Use the column name directly. Put names with spaces in backticks, for example =SUM(`Total Cost`).
+- **Comparisons return numbers:** >, <, ==, and the other comparison operators return 1 or 0.
+- **Formula cells do not count themselves:** A column total skips its own formula cell. =SUM(Hours) does not include the total cell.
 :::
 
 **Reference**
 
-## Function catalog {icon="book-2"}
+## Look up a function {icon="book-2"}
 
-### Autocomplete and rendering use this surface
+### Autocomplete and rendering use the same functions
 
-The same function names are used by table autocomplete, edit preview, and read-mode rendering.
+Table autocomplete, the edit preview, and the read mode use the same function names.
 
 ### Names are case-insensitive
 
-Use uppercase for readability, but the formula evaluator accepts lower-case function names too.
+Uppercase names are easier to read. Lowercase function names also work.
 
 ### Progress and percentages
 
-Use these when a cell should show completion or a percent.
+Use these functions when a cell shows completion or a percentage.
 
 | Function | Syntax | Example | Result and notes |
 | --- | --- | --- | --- |
-| `PROGRESS` | `PROGRESS(ratio)` | `=PROGRESS(0.4)` | 40% progress bar<br>The visual bar is clamped between 0% and 100%. |
+| `PROGRESS` | `PROGRESS(ratio)` | `=PROGRESS(0.4)` | 40% progress bar<br>The bar shows at least 0% and at most 100%. |
 | `PROGRESS` | `PROGRESS(done, total)` | `=PROGRESS(2, 10)` | 2/10 progress bar<br>total must not be 0. |
 | `PERCENT` | `PERCENT(part, total)` | `=PERCENT(Done, Total)` | percent number<br>Returns 40 for 40%, not 0.4. |
 
 ### Column aggregates
 
-Read one whole column. Empty or non-numeric cells are ignored for numeric functions.
+These functions read a whole column. Numeric functions ignore empty cells and cells without a number.
 
 | Function | Syntax | Example | Result and notes |
 | --- | --- | --- | --- |
@@ -83,7 +83,7 @@ Read one whole column. Empty or non-numeric cells are ignored for numeric functi
 
 ### Row aggregates
 
-Read the current row. The cell containing the formula is skipped.
+These functions read the current row. They skip the cell that contains the formula.
 
 | Function | Syntax | Example | Result and notes |
 | --- | --- | --- | --- |
@@ -93,7 +93,7 @@ Read the current row. The cell containing the formula is skipped.
 
 ### Logic and conditions
 
-Build simple decisions. Truthy means non-zero number or non-empty text. A cell such as `0 €` is text, so compare the amount instead, for example `Price > 0`.
+Build simple decisions. A value is true when it is a number other than zero or text that is not empty. A cell such as `0 €` is text, so compare the amount instead, for example `Price > 0`.
 
 | Function | Syntax | Example | Result and notes |
 | --- | --- | --- | --- |
@@ -107,7 +107,7 @@ Build simple decisions. Truthy means non-zero number or non-empty text. A cell s
 
 ### Text
 
-Clean and combine text values.
+Clean up and combine text values.
 
 | Function | Syntax | Example | Result and notes |
 | --- | --- | --- | --- |
@@ -123,7 +123,7 @@ Clean and combine text values.
 
 ### Math
 
-Use arithmetic directly, or call helpers when a cell needs formatting.
+Use arithmetic directly. Use the helper functions when a cell needs formatting.
 
 | Function | Syntax | Example | Result and notes |
 | --- | --- | --- | --- |
@@ -137,7 +137,7 @@ Use arithmetic directly, or call helpers when a cell needs formatting.
 
 ### Date and time
 
-Return simple date strings or compare dates.
+These functions return simple date strings or compare dates.
 
 | Function | Syntax | Example | Result and notes |
 | --- | --- | --- | --- |
