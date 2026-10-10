@@ -741,6 +741,11 @@ packages/spaces/src/help/documents/de/spaces-troubleshooting.help.md | term | Le
 packages/spaces/src/help/documents/de/spaces-troubleshooting.help.md | term | Schreibzugriff
 packages/spaces/src/help/documents/de/spaces-views.help.md | term | Schreibzugriff
 packages/spaces/src/help/documents/de/spaces-views.help.md | term | Schreibzugriff
+packages/spaces/src/help/documents/de/spaces-views.help.md | term | klick*
+packages/spaces/src/help/documents/de/spaces-views.help.md | term | klick*
+packages/spaces/src/help/documents/de/spaces-views.help.md | term | klick*
+packages/spaces/src/help/documents/de/spaces-views.help.md | term | klick*
+packages/spaces/src/help/documents/de/spaces-views.help.md | term | klick*
 packages/spaces/src/help/documents/de/spaces-workflow.help.md | term | Adminzugriff
 packages/spaces/src/help/documents/de/spaces-workflow.help.md | term | Adminzugriff
 packages/spaces/src/help/documents/de/spaces-workflow.help.md | term | Bearbeitungsrecht*
@@ -762,6 +767,14 @@ packages/spaces/src/help/documents/en/spaces-troubleshooting.help.md | term | ad
 packages/spaces/src/help/documents/en/spaces-troubleshooting.help.md | term | read access
 packages/spaces/src/help/documents/en/spaces-troubleshooting.help.md | term | read access
 packages/spaces/src/help/documents/en/spaces-troubleshooting.help.md | term | write access
+packages/spaces/src/help/documents/en/spaces-views.help.md | term | click*
+packages/spaces/src/help/documents/en/spaces-views.help.md | term | click*
+packages/spaces/src/help/documents/en/spaces-views.help.md | term | click*
+packages/spaces/src/help/documents/en/spaces-views.help.md | term | click*
+packages/spaces/src/help/documents/en/spaces-views.help.md | term | click*
+packages/spaces/src/help/documents/en/spaces-views.help.md | term | tap
+packages/spaces/src/help/documents/en/spaces-views.help.md | term | tap
+packages/spaces/src/help/documents/en/spaces-views.help.md | term | tap
 packages/spaces/src/help/documents/en/spaces-views.help.md | term | write access
 packages/spaces/src/help/documents/en/spaces-views.help.md | term | write access
 packages/spaces/src/help/documents/en/spaces-workflow.help.md | term | admins
