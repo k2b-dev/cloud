@@ -137,6 +137,7 @@ document.querySelector("#ask").addEventListener("click", () => dialog.showModal(
 dialog.addEventListener("close", async () => { if (dialog.returnValue === "ok") await cloud.download("result.txt", "ok"); });
 </script>`,
     );
+    await page.getByText("Unsaved changes", { exact: true }).waitFor();
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await page.waitForFunction(() => document.querySelector('[aria-busy="true"]') !== null);
     await editor.fill("<main><p>Typed while saving</p></main>");
