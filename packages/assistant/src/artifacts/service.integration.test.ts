@@ -1145,6 +1145,8 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       data: { message: "Write item?", approvalScope: "items:one" },
     });
     const execute = spyOn(capabilityClient, "invokeCapability").mockResolvedValue({ ok: true, data: { data: { written: true } } });
+    // The card for the other chat words the call from the live registry, which this test does not run.
+    const wording = spyOn(capabilityClient, "getCapabilityActionWording").mockResolvedValue(null);
     const [remembered, other] = [crypto.randomUUID(), crypto.randomUUID()];
     for (const chat of [remembered, other])
       await sql`INSERT INTO ai.conversations(id,created_by_user_id) VALUES(${chat}::uuid,${owner.user.id}::uuid)`;
@@ -1171,6 +1173,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       catalog.mockRestore();
       review.mockRestore();
       execute.mockRestore();
+      wording.mockRestore();
       conversation.mockRestore();
       await sql`DELETE FROM ai.conversations WHERE id IN (${remembered}::uuid,${other}::uuid)`;
     }
