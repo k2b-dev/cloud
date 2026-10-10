@@ -157,6 +157,11 @@ Both values are baked into the bundle and exported as `CLOUD_VERSION` and
 The final image contains only the bundle and Bun runtime. It listens on port
 3000.
 
+The monorepo Dockerfiles take the Bun base images and the Dockerfile frontend
+from the public mirror `ghcr.io/k2b-dev/mirror`, pinned to the same digests as
+on Docker Hub. A build from source needs no Docker Hub or GitHub login, but it
+must be able to reach `ghcr.io`.
+
 ## Deploy the service
 
 First select the required services, secrets and feature integrations in

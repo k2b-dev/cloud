@@ -1,5 +1,5 @@
-# syntax=docker/dockerfile:1.7-labs
-FROM --platform=$BUILDPLATFORM oven/bun:1.4.2@sha256:9114c058aeae42162ee16dd5084b95fe9473970bb6bcb5b232ab1630f0546895 AS build
+# syntax=ghcr.io/k2b-dev/mirror/docker/dockerfile:1.7-labs@sha256:b99fecfe00268a8b556fad7d9c37ee25d716ae08a5d7320e6d51c4dd83246894
+FROM --platform=$BUILDPLATFORM ghcr.io/k2b-dev/mirror/oven/bun:1.4.2@sha256:9114c058aeae42162ee16dd5084b95fe9473970bb6bcb5b232ab1630f0546895 AS build
 
 WORKDIR /workspace
 COPY package.json bun.lock bunfig.toml ./
@@ -27,7 +27,7 @@ RUN bun packages/ui/scripts/build.ts \
   && bun run --cwd pwas/pwa-auth build \
   && bun build pwas/pwa-auth/scripts/serve.ts --target=bun --minify --outfile pwas/pwa-auth/server-dist/scripts/serve.js
 
-FROM oven/bun:1.4.2-slim@sha256:cb3bbbb08e13a4a2ff400f24c7a2a1d5efa83f6ef8544d52d95a519631e2fc61
+FROM ghcr.io/k2b-dev/mirror/oven/bun:1.4.2-slim@sha256:cb3bbbb08e13a4a2ff400f24c7a2a1d5efa83f6ef8544d52d95a519631e2fc61
 
 WORKDIR /app
 ARG CLOUD_VERSION=0.0.0-local
