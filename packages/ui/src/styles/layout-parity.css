@@ -1340,7 +1340,9 @@
    host sets `--k2b-app-workspace-title` to a CSS string, the page title. The
    bar, the overlay, and the scrim draw no border lines; the overlay is a raised
    surface with the shared float shadow. The shared controller sets
-   `data-sidebar-overlay="open"` on the workspace root while it is open. */
+   `data-sidebar-overlay="open"` on the workspace root while it is open. A
+   stacked sidebar is an overview's object list and stays above the content
+   instead (see the stacked block below). */
 .k2b-ui .k2b-app-workspace__compact-bar {
   display: none;
 }
@@ -1370,7 +1372,7 @@
     content: var(--k2b-app-workspace-title, "");
   }
 
-  .k2b-ui .k2b-app-workspace__sidebar:not([hidden]) {
+  .k2b-ui .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"]) {
     position: absolute;
     z-index: 30;
     top: 0;
@@ -1387,14 +1389,17 @@
       visibility 0s linear 200ms;
   }
 
-  .k2b-ui .k2b-app-workspace[data-sidebar-overlay="open"] > .k2b-app-workspace__sidebar:not([hidden]),
-  .k2b-ui .k2b-app-workspace[data-sidebar-overlay="open"] > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) {
+  .k2b-ui .k2b-app-workspace[data-sidebar-overlay="open"] > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"]),
+  .k2b-ui
+    .k2b-app-workspace[data-sidebar-overlay="open"]
+    > :is(solid-island, solid-client)
+    > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"]) {
     visibility: visible;
     transform: none;
     transition: transform 200ms ease-out;
   }
 
-  .k2b-ui .k2b-app-workspace__sidebar-desktop {
+  .k2b-ui .k2b-app-workspace__sidebar:not([data-mobile="stacked"]) > .k2b-app-workspace__sidebar-desktop {
     display: flex;
     width: 100%;
     height: 100%;
@@ -1453,9 +1458,10 @@
   }
 }
 
-@media (max-width: 47.999rem) {
-  /* An opt-in stacked sidebar keeps an overview's object list above the
-     content instead of handing navigation to the host's mobile chrome. */
+/* An opt-in stacked sidebar keeps an overview's object list above the content
+   until the sidebar gets its own column at 64 rem, instead of handing it to
+   the host's mobile chrome or to the compact overlay. */
+@media (max-width: 63.999rem) {
   /* A viewport cap, not a percentage: the grid row is content-sized, so a
      percentage would be cyclic and collapse the list to one row. */
   .k2b-ui .k2b-app-workspace__sidebar[data-mobile="stacked"]:not([hidden]) {
@@ -1490,7 +1496,9 @@
     flex-wrap: wrap;
     gap: 0.25rem;
   }
+}
 
+@media (max-width: 47.999rem) {
   .k2b-ui .k2b-app-workspace__main.has-panes > [data-workspace-main-region] {
     display: none;
   }

@@ -109,7 +109,9 @@ const server = new Hono()
   .get(
     "/app/mail/:folder",
     async (c, next) => {
-      c.set("runtime" as never, { apps } as never);
+      // `?name=` renames Mail, for a long app name in the phone header.
+      const name = c.req.query("name");
+      c.set("runtime" as never, { apps: name ? apps.map((app) => (app.id === "mail" ? { ...app, name } : app)) : apps } as never);
       // A missing last name shows the profile notice above the app.
       c.set("user" as never, (c.req.query("notice") ? { ...person, sn: "" } : person) as never);
       await next();
@@ -136,7 +138,12 @@ const server = new Hono()
       await next();
     },
     ...probe.ssr(
-      (c) => () => createComponent(Layout, { c: c as unknown as LayoutContextArg, title: "Public tools", children: "Public content" }),
+      (c) => () =>
+        createComponent(Layout, {
+          c: c as unknown as LayoutContextArg,
+          title: [{ title: "Home", href: "/" }, { title: c.req.query("title") ?? "Public tools" }],
+          children: "Public content",
+        }),
     ),
   );
 
@@ -584,19 +591,51 @@ describe("profile menu in the rail", () => {
 });
 
 describe("anonymous pages", () => {
+  // Without an app bar, the header keeps the phone's app name, help, and search up to lg; from lg it shows the trail.
+  const header = (page: Page) =>
+    page.evaluate(() => {
+      const visible = (element: Element | null) => Boolean(element?.checkVisibility());
+      const header = document.querySelector(".layout-header")!;
+      return {
+        header: getComputedStyle(header).display,
+        signIn: visible(header.querySelector('a[href="/auth/login"]')),
+        help: visible(header.querySelector('[aria-label="Open help"]')),
+        breadcrumbs: visible(header.querySelector("nav")),
+        rail: document.querySelector(".layout-rail"),
+      };
+    });
+
   for (const device of devices) {
     test(`${device.name}: keep the header with sign-in and no rail`, async () => {
       const { context, page } = await open(device, "/public");
       try {
-        const shape = await page.evaluate(() => ({
-          header: getComputedStyle(document.querySelector(".layout-header")!).display,
-          signIn: Boolean(document.querySelector('.layout-header a[href="/auth/login"]')),
-          rail: document.querySelector(".layout-rail"),
-        }));
-        expect(shape).toEqual({ header: "flex", signIn: true, rail: null });
+        expect(await header(page)).toEqual({
+          header: "flex",
+          signIn: true,
+          help: device.width < 1024,
+          breadcrumbs: device.width >= 1024,
+          rail: null,
+        });
       } finally {
         await context.close();
       }
     });
   }
+});
+
+describe("phone header", () => {
+  test("a long title does not squeeze the Home button", async () => {
+    const long = encodeURIComponent("Kundenverwaltung und Abrechnung");
+    for (const path of [`/app/mail/inbox?name=${long}`, `/public?title=${long}`]) {
+      const { context, page } = await open(phone, path);
+      try {
+        const home = await page
+          .locator('.layout-header a[href="/"]:has(img)')
+          .evaluate((link) => link.getBoundingClientRect().toJSON() as DOMRect);
+        expect({ path, width: Math.round(home.width), height: Math.round(home.height) }).toEqual({ path, width: 32, height: 32 });
+      } finally {
+        await context.close();
+      }
+    }
+  });
 });

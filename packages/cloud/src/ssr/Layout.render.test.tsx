@@ -197,12 +197,13 @@ describe("Cloud layouts SSR", () => {
     expect(html).not.toContain('href="/me"');
   });
 
-  test("anonymous pages keep their header with breadcrumbs from md", async () => {
+  test("anonymous pages keep their header, with the app name and controls up to lg and breadcrumbs from lg", async () => {
     const html = await (await server.request("/layout")).text();
     const header = html.match(/<header[^>]*class="(layout-header[^"]*)"/)?.[1];
     expect(header).toBeDefined();
     expect(header).not.toContain("md:hidden");
-    expect(html).toContain('<div class="hidden min-w-0 items-center md:flex">');
+    expect(html).toContain('<div class="hidden min-w-0 items-center lg:flex">');
+    expect(html).toContain('<div class="flex items-center gap-1 lg:hidden">');
   });
 
   test("signed-in pages trade the header for the rail from md and name the page for the compact bar", async () => {
@@ -219,7 +220,7 @@ describe("Cloud layouts SSR", () => {
     }
     // The header remains for phones only, and it never carries breadcrumbs or an avatar.
     expect(html.match(/<header[^>]*class="(layout-header[^"]*)"/)?.[1]).toContain("md:hidden");
-    expect(html).not.toContain("hidden min-w-0 items-center md:flex");
+    expect(html).not.toContain("hidden min-w-0 items-center lg:flex");
     expect(html.split('class="layout-profile-preferences"').length - 1).toBe(1);
     expect(html).toContain('class="layout-rail hidden w-10 shrink-0 flex-col md:flex"');
     // The last title entry, as a CSS string that cannot end early and carries no markup.

@@ -31,6 +31,8 @@ type LayoutHeaderProps = {
  * Phones (below `md`) always get this header. From `md` it remains only on
  * anonymous pages; signed-in people reach Home, search, help, the app grid,
  * and their profile through the rail, so the app area starts at the top edge.
+ * Anonymous pages have no rail: up to `lg` their header keeps the app name,
+ * help, search, and the app grid, and from `lg` it shows the breadcrumbs.
  */
 export default function LayoutHeader(props: LayoutHeaderProps) {
   return (
@@ -39,20 +41,24 @@ export default function LayoutHeader(props: LayoutHeaderProps) {
       style="box-shadow: var(--ui-shadow-surface)"
     >
       <div class="flex min-w-0 items-center gap-2">
-        <IconButtonLink href="/" label={props.homeLabel}>
-          <img src="/branding/logo" alt="" class={props.authenticated ? "h-4 w-4" : "h-6 w-6"} />
-        </IconButtonLink>
+        {/* A long title must not squeeze the button; `shrink-0` sits on a wrapper because the button's own
+            styles would win over a utility on the link. */}
+        <div class="flex shrink-0">
+          <IconButtonLink href="/" label={props.homeLabel}>
+            <img src="/branding/logo" alt="" class={props.authenticated ? "h-4 w-4" : "h-6 w-6"} />
+          </IconButtonLink>
+        </div>
         {!props.authenticated && (
-          <div class="hidden min-w-0 items-center md:flex">
+          <div class="hidden min-w-0 items-center lg:flex">
             <LayoutBreadcrumbs breadcrumbs={props.breadcrumbs} />
           </div>
         )}
-        <div class="flex min-w-0 items-center md:hidden">
+        <div class="flex min-w-0 items-center lg:hidden">
           <span class="truncate font-semibold">{props.appLabel ?? props.breadcrumbs.at(-1)?.title}</span>
         </div>
       </div>
       <div class="flex shrink-0 items-center gap-1">
-        <div class="flex items-center gap-1 md:hidden">
+        <div class="flex items-center gap-1 lg:hidden">
           <LayoutHelpTrigger
             variant="header"
             registerCommand={!props.authenticated}

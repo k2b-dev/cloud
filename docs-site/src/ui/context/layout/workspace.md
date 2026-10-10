@@ -60,7 +60,7 @@ follows the viewport width:
 | Width | Navigation | Work area |
 | --- | --- | --- |
 | Below 48 rem (768 px) | Hidden; the host renders its mobile navigation | One pane at a time; an open `Detail` replaces `Main` |
-| 48 to 64 rem (768 to 1023 px) | An overlay that a compact bar opens | Panes side by side, `Detail` beside `Main` |
+| 48 to 64 rem (768 to 1023 px) | An overlay that a compact bar opens; a `mobile="stacked"` sidebar stays above the content | Panes side by side, `Detail` beside `Main` |
 | From 64 rem (1024 px) | A column beside the work area | Panes side by side, `Detail` beside `Main` |
 
 Below 48 rem the host renders its mobile navigation using
@@ -71,16 +71,20 @@ remain real links.
 
 Between 48 and 64 rem the workspace shows a compact bar above its content: a
 button labeled **Show navigation** and, if the host provides one, the page
-title. The button opens the sidebar over the work area as a raised surface with
-a scrim beside it; the work area keeps its geometry. While it is open, the rest
-of the workspace is inert and Tab stays in the sidebar. Focus starts on the
-current item. Escape, the button, a click on the scrim, choosing a link or an
-item, or widening the window past 64 rem closes it; Escape, the button, and the
-scrim return focus to the button. A folder row that only expands and an item's
-own actions keep it open. The bar, the overlay, and the scrim draw no border
-lines. A sidebar collapsed to its rail on a wide screen opens expanded. The
-shared controller binds the button, so a server-rendered workspace gets the
-overlay without hydrating; the button does nothing before a controller runs.
+title. The button opens the sidebar over the work area, and over the bar, as a
+raised surface with a scrim beside it; the work area keeps its geometry and the
+sidebar takes no width from a `Detail`. While it is open, the rest of the
+workspace is inert, regions the application made inert stay inert after it
+closes, and Tab moves only between the sidebar's tab stops. Focus starts on the
+current item, or on the tree item around it in a `NavTree`. Escape, a click on
+the scrim, choosing a link or an item, hiding the sidebar, or widening the
+window past 64 rem closes it; Escape and the scrim return focus to the button.
+A tree folder that only expands, a row that opens its preview, a section
+toggle, and an item's own actions keep it open. The bar, the overlay, and the
+scrim draw no border lines. A sidebar collapsed to its rail on a wide screen
+opens expanded. The shared controller binds the button, so a server-rendered
+workspace gets the overlay without hydrating; the button does nothing before a
+controller runs. In a nested workspace, its own button opens its own overlay.
 
 The host names the page by setting `--k2b-app-workspace-title` to a CSS string
 on any ancestor, for example `style="--k2b-app-workspace-title: 'Reports'"`.
@@ -852,7 +856,7 @@ one. Object rows truncate their title instead of scrolling it.
 
 Set `mobile="stacked"` on `Sidebar` when the sidebar is the primary object
 list of an overview and the host's mobile navigation does not carry it. Below
-48 rem the sidebar then stays visible as a block above the content, capped at
+64 rem the sidebar then stays visible as a block above the content, capped at
 half the viewport height with its own scrolling body, and the footer wraps
-its items into a row. Leave the default `"hidden"` for workspaces whose
+its items into a row; it gets no compact bar. Leave the default `"hidden"` for workspaces whose
 sidebar is view navigation inside one resource.

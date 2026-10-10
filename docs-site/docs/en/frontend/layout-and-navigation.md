@@ -27,8 +27,9 @@ people navigate.
 
 | Width | Signed-in pages | Anonymous pages |
 | --- | --- | --- |
-| Below 768 px (phones) | Header with Home, the app name, help, search, and the app menu; no app bar | Header with sign-in, language, and theme |
-| 768 to 1535 px (tablets, laptops) | No header. The app bar runs down the left edge, and the app area meets the window's top, right, and bottom edges without spacing, radius, shadow, or border | Header and content as cards on the app background |
+| Below 768 px (phones) | Header with Home, the app name, help, search, and the app menu; no app bar | Flat header with Home, the app name, help, search, the app grid on app pages, theme and language, and sign-in |
+| 768 to 1023 px (tablets) | No header. The app bar runs down the left edge, and the app area meets the window's top, right, and bottom edges without spacing, radius, shadow, or border | The same header controls; header, content, and footer as cards on the app background |
+| 1024 to 1535 px (laptops) | Same as above | Header with breadcrumbs, theme and language, and sign-in; cards on the app background |
 | From 1536 px | No header. The app area is a card with 8 px spacing on the app background | Same as above |
 
 From 768 px the app bar holds Home, the apps, the app grid, search, help, and
@@ -40,6 +41,9 @@ the app area; from 768 to 1535 px it has no radius or border.
 Applications need no changes for any of this. `AppWorkspace` adds its compact
 navigation between 768 and 1023 px on its own; see
 [Application shells](/en/docs/frontend/application-shells#supply-mobile-navigation).
+A regular page, without `fullWidth` or `fullPage`, owns its inset: from 768 px
+no header sits above a signed-in page, so give the content its own padding, as
+`AppOverview` does.
 
 ## Render the application layout
 
@@ -57,7 +61,7 @@ navigation between 768 and 1023 px on its own; see
 
 The last entry is the page title: it names the browser tab and, between 768
 and 1023 px, the compact bar of an `AppWorkspace` with navigation. Anonymous
-pages also show the entries as breadcrumbs in their header from 768 px; the
+pages also show the entries as breadcrumbs in their header from 1024 px; the
 final breadcrumb has no link. Signed-in pages show no breadcrumbs. A plain
 string is valid for a one-level title. `layout.update()` from an island changes
 the tab title and the compact bar together.

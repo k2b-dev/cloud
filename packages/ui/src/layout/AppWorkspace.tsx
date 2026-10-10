@@ -218,9 +218,10 @@ export type AppWorkspaceSidebarProps = {
   class?: string;
   /**
    * Below 48rem (768 px) the sidebar is hidden and the host's mobile
-   * navigation takes over. `"stacked"` keeps it as a block above the content
-   * instead, for overviews whose sidebar is the primary object list. From 48
-   * to 64rem every sidebar is an overlay that the workspace's compact bar opens.
+   * navigation takes over; from 48 to 64rem it is an overlay that the
+   * workspace's compact bar opens. `"stacked"` keeps it as a block above the
+   * content below 64rem instead, for overviews whose sidebar is the primary
+   * object list.
    */
   mobile?: "hidden" | "stacked";
   resizable?: boolean;
@@ -675,10 +676,10 @@ function AppWorkspaceSidebar(props: AppWorkspaceSidebarProps): JSX.Element {
   const messages = useUiMessages();
   return (
     <>
-      {/* Between 48 and 64 rem the navigation is an overlay that this bar opens. The shared controller binds the
-          button, so a server-rendered workspace gets it without hydrating. The host may name the page through
-          `--k2b-app-workspace-title`. */}
-      <Show when={!props.hidden}>
+      {/* Between 48 and 64 rem the navigation is an overlay that this bar opens; a stacked sidebar stays in view
+          instead. The shared controller binds the button, so a server-rendered workspace gets it without hydrating.
+          The host may name the page through `--k2b-app-workspace-title`. */}
+      <Show when={!props.hidden && props.mobile !== "stacked"}>
         <div class="k2b-app-workspace__compact-bar">
           <IconButton label={messages().showNavigation} aria-controls={domId()} aria-expanded="false" data-app-workspace-sidebar-toggle="">
             <i class="ti ti-layout-sidebar" aria-hidden="true" />
@@ -1267,6 +1268,8 @@ const AppWorkspaceNavTree = ((props: AppWorkspaceNavTreeProps) => {
         const selected = () => props.selectedId === item.id;
         const siblingIndex = (id: string) => siblings().findIndex((sibling) => sibling.id === id);
         const movable = () => Boolean(props.onMove && item.movable && !item.disabled);
+        // A folder that nobody selects: its row only expands and collapses it.
+        const disclosureOnly = () => hasChildren() && !item.href && !item.onSelect && !props.onSelectedIdChange;
         let treeItem: HTMLDivElement | undefined;
         const ownRow = () => treeItem?.firstElementChild as HTMLElement | null | undefined;
 
@@ -1285,7 +1288,7 @@ const AppWorkspaceNavTree = ((props: AppWorkspaceNavTreeProps) => {
           if (item.disabled) return;
           treeItem?.focus({ preventScroll: true });
           setFocusedId(item.id);
-          if (hasChildren() && !item.href && !item.onSelect && !props.onSelectedIdChange) {
+          if (disclosureOnly()) {
             setExpanded(item.id, !isExpanded(item.id));
             return;
           }
@@ -1413,7 +1416,8 @@ const AppWorkspaceNavTree = ((props: AppWorkspaceNavTreeProps) => {
             depth={props.indented === false ? 0 : depth}
             tabIndex={-1}
             actions={item.actions}
-            data={{ "has-actions": item.actions ? "true" : undefined }}
+            // The marker tells the workspace controller that choosing this row is no destination.
+            data={{ "has-actions": item.actions ? "true" : undefined, "k2b-nav-tree-disclosure": disclosureOnly() ? "true" : undefined }}
           >
             {rowContent}
           </AppWorkspaceSidebarRow>
