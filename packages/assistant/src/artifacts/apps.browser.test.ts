@@ -156,7 +156,7 @@ test("Studio lists open details with all management actions; publication and ver
       "Update publication",
       "Unpublish",
       "Create your own copy",
-      "Secrets",
+      "Secrets & approvals",
       "Edit manually",
       "SQL console",
       "Personal data",
@@ -246,7 +246,7 @@ test("Studio lists open details with all management actions; publication and ver
     expect(await page.getByRole("button", { name: "Published", exact: true }).count()).toBe(0);
     expect(await page.getByRole("button", { name: "Draft", exact: true }).count()).toBe(0);
     await page.getByRole("button", { name: "Actions", exact: true }).click();
-    for (const name of ["Create your own copy", "Secrets", "Personal data"]) {
+    for (const name of ["Create your own copy", "Secrets & approvals", "Personal data"]) {
       expect(await page.getByRole("menuitem", { name, exact: true }).count()).toBe(1);
     }
     for (const name of ["Delete", "Manage access", "Edit manually", "SQL console", "Shared data", "Manage database"]) {
