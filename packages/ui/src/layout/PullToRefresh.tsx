@@ -106,6 +106,9 @@ export function PullToRefresh(props: PullToRefreshProps): JSX.Element {
   };
   const onPointerMove = (event: PointerEvent) => {
     if (!pointer || event.pointerId !== pointer.id) return;
+    // Before the pull captures the pointer, a release outside the wrapper never
+    // reaches it; a move without the pressed button shows that press is over.
+    if ((event.buttons & 1) === 0) return onPointerCancel(event);
     const travel = event.clientY - pointer.startY;
     if (travel <= 0 && state() === "idle") return;
     if (state() === "idle") {

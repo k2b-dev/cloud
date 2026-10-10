@@ -13,9 +13,10 @@ const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
 const entry = resolve(import.meta.dir, "drag-selection.fixture.ts");
 const fixture = `
 import { createComponent, render } from "solid-js/web";
-import { AppWorkspace, suppressTextSelection } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { AppWorkspace, PullToRefresh, suppressTextSelection } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 
 window.suppressTextSelection = suppressTextSelection;
+window.refreshes = 0;
 
 render(
   () =>
@@ -50,6 +51,26 @@ render(
     }),
   document.getElementById("app"),
 );
+
+render(
+  () =>
+    createComponent(PullToRefresh, {
+      onRefresh: async () => {
+        window.refreshes += 1;
+      },
+      get children() {
+        const port = document.createElement("div");
+        port.style.cssText = "height:100%;overflow:auto";
+        const text = document.createElement("p");
+        text.id = "pull-text";
+        text.style.margin = "0";
+        text.textContent = "Inbox conversation preview. ".repeat(40);
+        port.append(text);
+        return port;
+      },
+    }),
+  document.getElementById("pull"),
+);
 `;
 const build = await Bun.build({ entrypoints: [entry], files: { [entry]: fixture }, target: "browser", format: "iife" });
 if (!build.success) throw new AggregateError(build.logs, "Could not bundle the drag selection fixture for the browser.");
@@ -67,10 +88,12 @@ const load = async () => {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
   await page.setContent(
     `<!doctype html><html lang="en"><head><style>${css}</style></head>` +
-      `<body class="k2b-ui" style="margin:0"><div id="app" style="height:40rem"></div></body></html>`,
+      `<body class="k2b-ui" style="margin:0"><div id="app" style="height:40rem"></div>` +
+      `<div id="pull" style="display:grid;height:8rem"></div></body></html>`,
   );
   await page.addScriptTag({ content: script });
   await page.locator("#text").waitFor();
+  await page.locator("#pull-text").waitFor();
   return page;
 };
 
@@ -138,6 +161,40 @@ describe("workspace resize drag", () => {
         return event.defaultPrevented;
       });
       expect(selectStart).toBe(false);
+    } finally {
+      await page.close();
+    }
+  });
+});
+
+describe("pull to refresh", () => {
+  test("a text selection released outside the list survives a hover back over it", async () => {
+    const page = await load();
+    try {
+      const before = await inlineStyles(page);
+      const text = await page.locator("#pull-text").boundingBox();
+      const start = { x: text!.x + text!.width / 2, y: text!.y + 30 };
+      // Select upward out of the list and release above it, where the list hears no pointerup.
+      await page.mouse.move(start.x, start.y);
+      await page.mouse.down();
+      await page.mouse.move(start.x, text!.y - 60, { steps: 8 });
+      await page.mouse.up();
+      const selected = (await selectedText(page)).length;
+      expect(selected).toBeGreaterThan(20);
+      // Hovering below the start point without a pressed button is no pull.
+      await page.mouse.move(start.x, start.y + 60, { steps: 8 });
+      expect((await selectedText(page)).length).toBe(selected);
+      expect(await inlineStyles(page)).toEqual(before);
+      expect(await page.locator(".k2b-pull-to-refresh").getAttribute("data-state")).toBe("idle");
+      const selectStart = await page.evaluate(() => {
+        const event = new Event("selectstart", { bubbles: true, cancelable: true });
+        document.getElementById("pull-text")!.dispatchEvent(event);
+        return event.defaultPrevented;
+      });
+      expect(selectStart).toBe(false);
+      await page.mouse.down();
+      await page.mouse.up();
+      expect(await page.evaluate(() => (window as unknown as { refreshes: number }).refreshes)).toBe(0);
     } finally {
       await page.close();
     }

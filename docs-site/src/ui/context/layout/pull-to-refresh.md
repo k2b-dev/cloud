@@ -11,7 +11,9 @@ with the progress. Past 64 px of damped travel (the same distance Android's
 swipe-to-refresh uses) the indicator switches to the accent color; releasing
 there, or overscrolling that far with a wheel, calls `onRefresh` once and shows
 a continuously spinning loader until the returned promise settles. A shorter pull, an upward move,
-or a cancelled pointer resets without a call.
+or a cancelled pointer resets without a call. A mouse or pen pull ends when its
+button is released, even outside the list, so moving the pointer afterwards
+never pulls. While a pull runs, the page selects no text.
 
 ## Import
 

@@ -57,6 +57,8 @@ async function mount(dom: DomTestHarness, options: { disabled?: boolean } = {}) 
       pointerId: 7,
       pointerType: "mouse",
       button: 0,
+      // The primary button stays pressed from pointerdown until the release.
+      buttons: type === "pointerdown" || type === "pointermove" ? 1 : 0,
       clientY,
       ...init,
     });
@@ -188,6 +190,36 @@ else {
       view.pointer("pointercancel", view.row, 300);
       expect(view.state()).toBe("idle");
       expect(view.calls).toHaveLength(1);
+    } finally {
+      view.dispose();
+      dom.cleanup();
+    }
+  });
+
+  test("a press released outside the wrapper ends there, so a later hover never pulls or holds text selection", async () => {
+    const dom = createDomTestHarness();
+    const view = await mount(dom);
+    try {
+      view.pointer("pointerdown", view.row, 100);
+      view.pointer("pointermove", view.row, 60);
+      // The release happens above the wrapper, which hears no pointerup.
+      expect(view.pointer("pointermove", view.row, 300, { buttons: 0 })).toBe(false);
+      expect(view.state()).toBe("idle");
+      expect(view.root.hasPointerCapture(7)).toBe(false);
+      expect(document.documentElement.style.getPropertyValue("user-select")).toBe("");
+      view.pointer("pointermove", view.row, 300);
+      view.pointer("pointerup", view.row, 300);
+      expect(view.state()).toBe("idle");
+      expect(view.calls).toHaveLength(0);
+
+      view.pointer("pointerdown", view.row, 100);
+      view.pointer("pointermove", view.row, 240);
+      expect(view.state()).toBe("ready");
+      expect(document.documentElement.style.getPropertyValue("user-select")).toBe("none");
+      view.pointer("pointermove", view.row, 240, { buttons: 0 });
+      expect(view.state()).toBe("idle");
+      expect(document.documentElement.style.getPropertyValue("user-select")).toBe("");
+      expect(view.calls).toHaveLength(0);
     } finally {
       view.dispose();
       dom.cleanup();
