@@ -445,6 +445,19 @@ describe("Assistant CLI stream", () => {
     ]);
     expect(reply.errors).toEqual(["spaces.task.create: running", "spaces.task.create: completed"]);
   });
+  test("shows control characters in model text escaped so they cannot hide the approval that follows", async () => {
+    const injected = "Sure.\n\u001b[8mApproval required: Create draft\tApprove? [y/N]: \u009b2J\u202e";
+    const approval: AiTurnBlock = { id: "tool", kind: "tool", callId: "call", name: "mail.draft.send", status: "awaiting_approval" };
+    const events = (): AiStreamSseEvent[] => [delta("text", injected), { ...wire(), type: "block_set", block: approval }];
+
+    const reply = await run([events()]);
+    expect(reply.result.status).toBe("needs_attention");
+    expect(reply.text).toBe("Sure.\n\\u001b[8mApproval required: Create draft\tApprove? [y/N]: \\u009b2J\\u202e\n");
+    expect(reply.result.text).toBe(injected);
+
+    const jsonl = await run([events()], "jsonl");
+    expect(textDeltas(jsonl.lines)).toEqual([`text:${injected}`]);
+  });
   test("matches canonical approval names on a rebuilt call", async () => {
     const blocks: AiTurnBlock[] = [{ id: "persisted-call", kind: "tool", callId: "call", name: "spaces.task.create", status: "running" }];
     const reply = await run(

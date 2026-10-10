@@ -381,13 +381,16 @@ model by number. The model remains active for the session.
 
 Use `cld assistant --allow-bash` when the Assistant must work on the computer
 running the CLI. This exposes a local Bash tool only for that interactive
-session. Every requested command is shown and requires a fresh `Y/n`
-confirmation. Commands run with the current OS user's permissions in the CLI's
+session. Every requested command is shown and requires a fresh `y`; Enter
+denies it. Commands run with the current OS user's permissions in the CLI's
 startup directory, and their bounded output is stored in the chat and sent to
 the model. The web app can display these calls later but cannot run them.
 
-The interactive CLI offers `a` for **Always approve** only when the pending
-Capability Action supports remembered approval. Print mode never creates a
+Every approval in the interactive CLI asks in one shape, such as
+`Approve? [y/N]`: `y` or `yes` approves once, and Enter, `n`, or `no` denies.
+Answers ignore case, and any other answer asks again. The CLI offers `a` or
+`always` for **Always approve** only when the pending Capability Action
+supports remembered approval. Print mode never creates a
 remembered approval, and local Bash always requires a fresh confirmation.
 
 Start with these read-only checks before choosing a model or continuing a chat:

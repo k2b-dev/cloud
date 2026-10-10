@@ -6,7 +6,7 @@ import { printCapabilityTable } from "./capability-table";
 import { cliCodeHost, closeCliCodeHost } from "./code-host";
 import { printDeliveredBlock } from "./delivered-blocks";
 import { AI_API, jsonRequest } from "./shared";
-import { terminalSafeText } from "./terminal";
+import { terminalSafeModelText, terminalSafeText } from "./terminal";
 
 export type AssistantTurnStreamResult = {
   conversationId: string;
@@ -109,7 +109,7 @@ export const streamAssistantTurn = async (input: {
     printedBlocks.push(block);
     if (id !== undefined) ids.set(id, block);
     emittedText += separator + text;
-    if (ctx.options.output === "text") ctx.write(separator + text);
+    if (ctx.options.output === "text") ctx.write(separator + terminalSafeModelText(text));
     if (id !== undefined && jsonlDeltas) emitJsonLine({ type: "text_delta", blockId: id, delta: text });
   };
   const extend = (block: PrintedBlock, text: string, jsonlDeltas = true) => {
@@ -119,7 +119,7 @@ export const streamAssistantTurn = async (input: {
     const suffix = current.slice(previous.length);
     block.text = text;
     emittedText += suffix;
-    if (ctx.options.output === "text") ctx.write(suffix);
+    if (ctx.options.output === "text") ctx.write(terminalSafeModelText(suffix));
     if (block.id !== undefined && jsonlDeltas) emitJsonLine({ type: "text_delta", blockId: block.id, delta: suffix });
   };
   const emitLiveText = (id: string, text: string) => {
