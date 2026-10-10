@@ -11,7 +11,7 @@ Dashboard verbindet Inhalte mehrerer Apps. Ein nicht verfügbares Widget darf da
 ## Häufige Symptome {icon="lifebuoy"}
 
 :::reference
-- **Ein Widget fehlt:** Wähle **Bearbeiten**, dann **Widget hinzufügen**, und suche es in der Galerie. Die Galerie zeigt nur Widgets, die du nutzen darfst; fehlt es dort, frage eine Administratorin oder einen Administrator, ob seine App installiert ist und ob du Zugriff hast.
+- **Ein Widget fehlt:** Wähle **Bearbeiten**, dann **Widget hinzufügen**, und suche es in der Galerie. Die Galerie zeigt nur Widgets, die du nutzen darfst; fehlt es dort, frage die Administration, ob seine App installiert ist und ob du Zugriff hast.
 - **Ein Widget antwortet nicht:** Wähle in diesem Widget **Erneut versuchen**. Schlägt es wieder fehl, öffne die besitzende App und prüfe, ob sie läuft und du auf ihre Daten zugreifen kannst.
 - **Ein Widget lädt langsam:** Jedes Widget lädt für sich, die anderen erscheinen, sobald ihre Apps antworten. Nach einigen Sekunden sagt das Widget, dass seine App länger als sonst braucht; antwortet die App nicht rechtzeitig, zeigt es **Erneut versuchen**.
 - **Ein Widget zeigt „Kein Zugriff mehr“:** Dein Zugriff auf die App oder ihre Daten hat sich geändert. Entferne das Widget beim Bearbeiten oder bitte erneut um Zugriff.
