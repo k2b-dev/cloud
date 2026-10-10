@@ -74,11 +74,12 @@ export function MailDraftCollaborationDialog(props: {
           </div>
         )}
       </Show>
-      <div class="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-        <Button variant="secondary" type="button" onClick={() => props.close("readonly")}>
+      {/* Both choices share one row while their labels fit and stack, the main choice on top, once they do not. */}
+      <div class="mail-draft-collaboration-actions flex flex-wrap-reverse gap-2">
+        <Button variant="secondary" type="button" class="grow" onClick={() => props.close("readonly")}>
           {t().viewReadOnly}
         </Button>
-        <Button type="button" onClick={() => props.close("takeover")}>
+        <Button type="button" class="grow" onClick={() => props.close("takeover")}>
           {copy().takeoverLabel}
         </Button>
       </div>
