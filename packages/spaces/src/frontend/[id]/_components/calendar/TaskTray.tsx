@@ -216,7 +216,9 @@ export default function TaskTray(props: Props) {
                             draggable={props.onSchedulePointerDown ? false : undefined}
                             aria-describedby={props.onSchedulePointerDown ? dragHintId : undefined}
                             onPointerDown={(event) => {
-                              if (event.button === 0 && event.isPrimary) props.onSchedulePointerDown?.(event, item);
+                              // A task being checked off, or leaving the row after it, stays where it is.
+                              if (event.button !== 0 || !event.isPrimary || busy(item.id) || leaving.held().has(item.id)) return;
+                              props.onSchedulePointerDown?.(event, item);
                             }}
                             onClick={(event) => {
                               if (!shouldHandleDetailClick(event, event.currentTarget)) return;
