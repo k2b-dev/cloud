@@ -131,7 +131,8 @@ select Number, formula(Gross - IF(ISBLANK(payments.paid), 0, payments.paid)) as 
 Join corrections through a second grouped view to avoid duplicated sums. Each view contributes at most one row per invoice. A missing group yields `null`. You can select, calculate with, filter, and sort aggregate aliases. Group each view by one relation to the root and declare its aggregates.
 
 - Only `left join view` works.
-- The view cannot use outer grouping, a source limit, search, a group sort, HAVING, or other clauses that cannot be reused.
+- The outer query cannot group the joined result.
+- The joined view cannot use a source limit, search, a group sort, HAVING, or other clauses that cannot be reused.
 - The root and the child must be stored tables, not Combined tables.
 - Access failures are errors. Results are read-only.
 
@@ -362,7 +363,7 @@ Use a saved view when people return to the result in the raw Base workspace. Kee
 
 ## Find records with issued documents {icon="search"}
 
-In Base queries, `documentCount()` returns the number of distinct associated documents. `latestDocumentAt()` returns their latest creation time, or null. An optional format selects `pdf`, `csv`, `json`, `xml`, `sepa-xml`, or `datev-csv`.
+In Base queries on stored tables, `documentCount()` returns the number of distinct associated documents. `latestDocumentAt()` returns their latest creation time, or null. An optional format selects `pdf`, `csv`, `json`, `xml`, `sepa-xml`, or `datev-csv`.
 
 ```gql
 from table Expenses
@@ -372,7 +373,7 @@ where documentCount('sepa-xml') = 0
 
 - These values stay live after a record is finalized. They do not follow relations and do not prove payment.
 - A document for several records counts once for each explicitly associated record.
-- These functions are not available in stored formula fields or Custom App queries.
+- These functions are not available for Combined tables, in stored formula fields, or in Custom App queries.
 - Use them in row projections and `where`, not in aggregates or `having`.
 - Generic `xml` and `csv` exclude SEPA and DATEV exports. `pdf` includes E-Invoice PDFs.
 

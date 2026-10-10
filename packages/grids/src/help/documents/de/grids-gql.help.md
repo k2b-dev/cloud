@@ -131,7 +131,8 @@ select Number, formula(Gross - IF(ISBLANK(payments.paid), 0, payments.paid)) as 
 Verbinde Korrekturen über eine zweite gruppierte Ansicht, um doppelte Summen zu vermeiden. Jede Ansicht liefert höchstens eine Zeile pro Rechnung. Eine fehlende Gruppe ergibt `null`. Aggregataliasse kannst du auswählen, in Formeln verwenden, filtern und sortieren. Gruppiere jede Ansicht nach einer Relation zur Haupttabelle und deklariere ihre Aggregate.
 
 - Nur `left join view` funktioniert.
-- Die Ansicht darf keine äußere Gruppierung, kein Quellenlimit, keine Suche, keine Gruppensortierung, kein HAVING und keine anderen nicht wiederverwendbaren Klauseln verwenden.
+- Die äußere Abfrage kann das verbundene Ergebnis nicht gruppieren.
+- Die verbundene Ansicht darf kein Quellenlimit, keine Suche, keine Gruppensortierung, kein HAVING und keine anderen nicht wiederverwendbaren Klauseln verwenden.
 - Haupt- und Kindtabelle müssen gespeicherte Tabellen sein, keine kombinierten Tabellen.
 - Fehlender Zugriff ist ein Fehler. Ergebnisse sind schreibgeschützt.
 
@@ -362,7 +363,7 @@ Nutze eine gespeicherte Ansicht, wenn Personen das Ergebnis im Arbeitsbereich de
 
 ## Datensätze mit erzeugten Dokumenten finden {icon="search"}
 
-In Abfragen der Base zählt `documentCount()` die eindeutig zugeordneten Dokumente. `latestDocumentAt()` liefert deren letzten Erstellungszeitpunkt oder null. Ein optionales Format wählt `pdf`, `csv`, `json`, `xml`, `sepa-xml` oder `datev-csv`.
+In Abfragen gespeicherter Tabellen der Base zählt `documentCount()` die eindeutig zugeordneten Dokumente. `latestDocumentAt()` liefert deren letzten Erstellungszeitpunkt oder null. Ein optionales Format wählt `pdf`, `csv`, `json`, `xml`, `sepa-xml` oder `datev-csv`.
 
 ```gql
 from table Expenses
@@ -372,7 +373,7 @@ where documentCount('sepa-xml') = 0
 
 - Diese Werte bleiben nach der Finalisierung aktuell. Sie folgen keinen Relationen und belegen keine Zahlung.
 - Ein Dokument für mehrere Datensätze zählt bei jedem ausdrücklich zugeordneten Datensatz einmal.
-- Diese Funktionen sind nicht in gespeicherten Formelfeldern oder Custom-App-Abfragen verfügbar.
+- Diese Funktionen sind nicht für kombinierte Tabellen, in gespeicherten Formelfeldern oder in Custom-App-Abfragen verfügbar.
 - Nutze sie in Zeilenprojektionen und `where`, nicht in Aggregaten oder `having`.
 - Allgemeines `xml` und `csv` schließen SEPA- und DATEV-Exporte aus. `pdf` enthält auch E-Rechnungs-PDFs.
 

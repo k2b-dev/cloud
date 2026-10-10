@@ -17,7 +17,7 @@ Offene Eingaben bleiben erhalten, bis du **Neu laden** bestätigst. Passt ein Sp
 
 Prüfe, ob die Ressource im Papierkorb liegt oder deaktiviert ist. Bestimme danach die Grenze:
 
-- Tabellen, Ansichten, Formulare, Dokumente und Workflows mit Rohdaten erfordern Zugriff auf die Base, zu der sie gehören.
+- Tabellen, Ansichten, Formulare, Dokumente und Workflows im Arbeitsbereich der Base erfordern Zugriff auf die Base, zu der sie gehören.
 - Eine veröffentlichte Grids App erfordert eigenen Zugriff **Offen**.
 - Die Rolle als Cloud-Administration umgeht den Grids-Zugriff auf normalen App-Seiten nicht.
 
@@ -115,7 +115,7 @@ Ist das Ergebnis der Erzeugung unklar, lass den Dialog offen und wähle **Erzeug
 
 Kann eine Aktion einer Grids App ihr Ergebnis nicht abrufen, wähle **Status prüfen**, solange die Seite offen bleibt. Das verfolgt den vorhandenen Vorgang und startet keinen weiteren Workflow. Ein Statusfehler beweist nicht, dass der Workflow fehlgeschlagen ist.
 
-Ein `dryRun` zeichnet vorhergesagte Auswirkungen auf, führt aber keine Schreibvorgänge und keine externen Anfragen aus. Eine Wiederholung mit `execute` muss einen bewusst gewählten Idempotenzschlüssel verwenden. Empfänger externer HTTP-Anfragen müssen auch doppelte Anfragen sicher annehmen.
+Ein `dryRun` zeichnet vorhergesagte Auswirkungen auf, führt aber keine Schreibvorgänge und keine externen Anfragen aus. Eine Wiederholung mit `execute` muss einen bewusst gewählten Idempotenzschlüssel verwenden. Empfänger externer HTTP-Anfragen müssen doppelte Anfragen so verarbeiten, dass sich ihre Wirkung nicht wiederholt.
 
 Prüfe bei Scanner-, Massen- und Grids-App-Aktionen die Diagnosen der gespeicherten Ausführungsoption, nachdem du Workflow-Eingaben geändert hast.
 

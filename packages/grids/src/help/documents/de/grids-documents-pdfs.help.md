@@ -2,42 +2,60 @@
 id: grids-documents-pdfs
 title: Dokumente und PDFs
 icon: ti ti-file-type-pdf
-description: PDFs aus gespeicherten Datensätzen erstellen, generieren, organisieren und teilen.
+description: Erstelle Vorlagen, erzeuge PDF- und Datendateien und prüfe oder teile unveränderliche Dokumente.
 order: 135
 ---
 Dokumentvorlagen erzeugen PDFs aus Tabellendatensätzen, etwa Rechnungen, Verträge und Etiketten.
 
-Jede Vorlage gehört zu einer Tabelle und definiert eine Dokumentfamilie. Ein generiertes Dokument gehört zu einem ausgewählten Datensatz, erhält eine stabile Nummer und einen stabilen Dateinamen und bewahrt den exakten Quell-Snapshot, nachdem sich die aktiven Datensätze geändert haben. Es erscheint im Bereich Dokumente des Datensatzes, im Arbeitsbereich seiner Vorlage und im basisweiten Katalog **Alle Dokumente**.
+Jede Vorlage gehört zu einer Tabelle und definiert eine Dokumentfamilie. Ein erzeugtes Dokument gehört zu einem ausgewählten Datensatz. Es erhält eine stabile Nummer und einen stabilen Dateinamen und behält den exakten Quell-Snapshot, auch wenn sich die aktiven Datensätze ändern. Es erscheint im Bereich Dokumente des Datensatzes, im Arbeitsbereich seiner Vorlage und im Katalog **Alle Dokumente** der Base.
 
-Nutze Vorlagen für formatierte, teilbare Ausgaben; CSV-/JSON-Exporte für den Datenaustausch.
+Nutze Vorlagen für formatierte, teilbare Ausgaben. Nutze CSV- oder JSON-Exporte für den Datenaustausch.
 
-## Ein unveränderliches Dokumentmodell {icon="shield-check"}
+Workflows erzeugen auch ein PDF aus mehreren Datensätzen, freie CSV-, JSON- oder XML-Dateien, DATEV-Buchungsstapel und SEPA-Überweisungsdateien. Alle sind Dokumente, nicht nur PDFs. [Workflows](/app/grids/help/grids-workflows) beschreibt die Konfiguration von Kopf und Zuordnung.
 
-Workflows erzeugen auch ein PDF aus mehreren Datensätzen, freie CSV-/JSON-/XML-Dateien, DATEV-Buchungsstapel und SEPA-Überweisungsdateien. Alles sind Dokumente, nicht nur PDFs. Kopf- und Spaltenzuordnung stehen unter [Workflows](/app/grids/help/grids-workflows).
+E-Rechnungen erhalten den Status **Nicht geprüft** (`unchecked`). Der Bericht nennt die Prüfungen, die nicht ausgeführt wurden, darunter die Validierung des erzeugten XML und des PDF-Anhangs. Prüfe diesen Bericht, bevor du die Ausgabe verwendest. SEPA-XML wird bei der Erzeugung gegen sein Schema geprüft. Diese Prüfungen zertifizieren nicht den gesamten Geschäftsprozess.
 
-E-Rechnungen erhalten den Ausgabestatus **Nicht geprüft** (`unchecked`): Der Bericht benennt nicht ausgeführte Prüfungen, darunter die Validierung der erzeugten XML und des PDF-Anhangs. Prüfen Sie diesen Bericht vor der Verwendung. SEPA-XML wird bei der Erzeugung gegen ihr Schema geprüft. Diese Prüfungen zertifizieren nicht den gesamten Geschäftsprozess.
+## Das unveränderliche Dokumentmodell verstehen {icon="shield-check"}
 
-Agents finden mit `document.templates` Vorlagen, lesen mit `document.list` und `document.read` gespeicherte Dokumente und stellen mit `document.create` ein Dokument für einen ausgewählten Record aus. Dafür sind Schreibzugriff, ein Idempotenzschlüssel und eine einzelne ausdrückliche Bestätigung nötig. Die Ausstellung ist nicht rückgängig zu machen und erlaubt keine dauerhafte Pauschalfreigabe. Der Download-Link benötigt weiterhin deine Berechtigungen; er erstellt keinen öffentlichen Freigabelink und versendet das Dokument nicht.
+Agents finden mit `document.templates` Vorlagen, lesen mit `document.list` und `document.read` gespeicherte Dokumente und stellen mit `document.create` ein Dokument für einen ausgewählten Datensatz aus. Das Ausstellen erfordert Zugriff **Bearbeiten**, einen Idempotenzschlüssel und eine einzelne Genehmigung. Eine Ausstellung lässt sich nicht rückgängig machen, und eine Genehmigung wird nie zu einer Pauschalgenehmigung. Der zurückgegebene Download-Link verlangt deinen vorhandenen Zugriff. Er erstellt keinen öffentlichen Link und versendet das Dokument nicht.
 
-Eine wiederholte Generierung mit demselben Idempotenzschlüssel gibt dasselbe unveränderliche Dokument zurück; die Wiederverwendung mit anderer Eingabe scheitert.
+Eine Wiederholung mit demselben Idempotenzschlüssel liefert dasselbe unveränderliche Dokument. Wird der Schlüssel mit anderer Eingabe wiederverwendet, scheitert die Anfrage.
 
-Die beim Anlegen feste `issuancePolicy: "oncePerFinalizedRecord"` verwendet über Schlüssel/Läufe hinweg dieselben gespeicherten Daten, Nummer und Dokument. Erst festschreiben, dann erzeugen. Nach Renderfehlern die Erzeugung für denselben Record/dieselbe Vorlage wiederholen, ohne Festschreibung zurückzusetzen oder zu wiederholen. Rechte werden erneut geprüft; eine Live-Vorschau ist unnötig und kann abweichen. Standard: `repeatable`. Kopierte Vorlagen haben getrennte Ausgabebereiche.
+### Einmal je finalisiertem Datensatz ausstellen
 
-**Erzeugung wiederholen** sperrt ursprüngliche Eingaben und gespeicherte Daten; keine Live-Vorschau. Bei `repeatable` nutzt **Neuen Versuch starten** aktuelle Daten für ein weiteres Dokument; prüfe zuerst **Alle Dokumente**. Einmalige Ausgabe verwendet weiterhin das Original. Schreibberechtigte verwalten bestehende Links auch ohne aktivierte Vorlage.
+`issuancePolicy: "oncePerFinalizedRecord"` lässt sich nur beim Anlegen setzen. Es verwendet über Schlüssel und Läufe hinweg dieselbe eingefrorene Eingabe, Nummer und dasselbe Dokument. Finalisiere zuerst und erzeuge danach. Scheitert das Rendern, wiederhole die Erzeugung für denselben Datensatz und dieselbe Vorlage. Setze die Finalisierung nicht zurück und wiederhole sie nicht. Grids prüft den Zugriff erneut. Eine Live-Vorschau ist nicht nötig und kann abweichen. Standard ist `repeatable`. Kopierte Vorlagen haben getrennte Ausstellungsbereiche.
 
-Eine Vorlage wählt einen Renderer aus. Der HTML-Renderer wandelt Liquid-HTML und CSS in ein PDF um. Ein installierter E-Rechnungs-Renderer ordnet den ausgewählten Datensatz über Liquid-JSON zu und erstellt und validiert anschließend PDF und strukturiertes Artefakt gemeinsam. Der Renderer verändert die Artefakte eines Dokuments, nicht das Dokumentmodell oder die Art, wie es generiert, aufgelistet, geprüft oder heruntergeladen wird.
+**Erzeugung wiederholen** sperrt die ursprünglichen Eingaben und die erfassten Daten. Es nutzt keine Live-Vorschau. Bei `repeatable` nutzt **Neuen Versuch starten** die aktuellen Daten für ein weiteres Dokument. Prüfe zuerst **Alle Dokumente**. Eine einmalige Ausstellung verwendet weiterhin das Original. Personen mit Zugriff **Bearbeiten** können mit bestehenden Links weiterarbeiten, auch ohne aktivierte Vorlage.
 
-Die Validierung belegt nur die technischen Prüfungen, die der gewählte Renderer und seine Version benennen. Sie ist keine allgemeine steuerliche, buchhalterische, Signatur-, Aufbewahrungs- oder Rechtskonformitätsentscheidung. Rufe mit `cld grids documents renderers --json` die verfügbaren Renderer einschließlich ihres `inputSchema` ab. `cld grids document-templates reference --json` liefert die Schemas zum Erstellen und Ändern von Vorlagen. Sie beschreiben die Eingabestruktur; die Vorschau prüft zusätzlich die inhaltlichen Regeln des Renderers.
+### Einen Renderer wählen
 
-`de.zugferd.en16931@1` rendert EUR-Ausgangsrechnungen mit deutschen Adressen, Standard-Umsatzsteuer und Überweisung. Es erzeugt PDF/A-3b mit eingebetteter und separater `factur-x.xml`, verwendet exakte Dezimalstrings mit kaufmännischer Rundung (ZUGFeRD 2.5 / Factur-X 1.09 EN 16931). Nicht unterstützt: Korrekturen, Ersatzbelege, Eingangsrechnungen, Steuerbefreiungen, Zu-/Abschläge, Vorauszahlungen, Skonto, Selbstabrechnung und Meldungen. Der Aussteller prüft die Eignung; Grids bestätigt keine Rechtskonformität.
+Eine Vorlage wählt einen Renderer:
 
-Version 2 (`de.zugferd.en16931@2`) rendert zusätzlich Rechnungskorrekturen mit Nummer und Datum der ursprünglichen Rechnung sowie einem Grund und Selbstabrechnungen mit einer Vereinbarungsreferenz. Belegart und Leistungsdatum müssen ausdrücklich angegeben werden. Mengen und Beträge bleiben positiv; die Belegart bestimmt, ob es eine Rechnung oder Korrektur ist. Bei Selbstabrechnungen bleibt der Verkäufer der Leistungserbringer und der Käufer der ausstellende Leistungsempfänger. Die Zahlungsdaten benennen das gewünschte Empfängerkonto; es wird nicht aus der Belegart abgeleitet.
+- Der HTML-Renderer wandelt Liquid-HTML und CSS in ein PDF um.
+- Ein installierter E-Rechnungs-Renderer ordnet den ausgewählten Datensatz über Liquid-JSON zu. Danach erstellt er PDF und strukturiertes Artefakt gemeinsam.
 
-Der Renderer prüft nicht, ob die ursprüngliche Rechnung existiert oder noch Beträge für Korrektur beziehungsweise Provisionsabrechnung verfügbar sind. Das muss der ausstellende Workflow auch bei gleichzeitigen Anfragen sicherstellen. Renderer-Unterstützung allein ist noch keine vollständige Rechnungsanwendung. Bestehende Vorlagen und Wiederholungsversuche behalten ihre ausgewählte Version; eine Vorlage wird ausdrücklich umgestellt.
+Der Renderer ändert die Artefakte eines Dokuments. Das Dokumentmodell ändert er nicht, ebenso wenig, wie Grids Dokumente erzeugt, auflistet, prüft oder herunterlädt.
+
+Die Validierung belegt nur die technischen Prüfungen, die der gewählte Renderer und seine Version nennen. Sie ist keine allgemeine steuerliche, buchhalterische, Signatur-, Aufbewahrungs- oder Rechtskonformitätsentscheidung. Führe `cld grids documents renderers --json` aus, um die Renderer dieser Installation samt ihrem `inputSchema` zu sehen. `cld grids document-templates reference --json` liefert die Schemas zum Erstellen und Ändern von Vorlagen. Diese Schemas beschreiben die Struktur der Eingabe. Die Vorschau prüft zusätzlich die inhaltlichen Regeln des Renderers.
+
+### Den deutschen E-Rechnungs-Renderer verwenden
+
+`de.zugferd.en16931@1` rendert EUR-Ausgangsrechnungen für deutsche Adressen von Verkäufer und Käufer, Standard-Umsatzsteuer und Überweisung. Es erzeugt PDF/A-3b mit eingebetteter und separater `factur-x.xml`. Es zielt auf ZUGFeRD 2.5 / Factur-X 1.09 EN 16931, mit exakten Dezimalstrings und kaufmännischer Rundung.
+
+Nicht unterstützt sind Korrekturen, Ersatzbelege, Eingangsrechnungen, Steuerbefreiungen, Zu- und Abschläge, Vorauszahlungen, Skonto, Selbstabrechnung und Meldungen. Der Aussteller prüft die Eignung; Grids bestätigt keine Rechtskonformität.
+
+Version 2 (`de.zugferd.en16931@2`) rendert zusätzlich:
+
+- Rechnungskorrekturen mit Nummer, Datum und Grund der ursprünglichen Rechnung;
+- Selbstabrechnungen mit einer Vereinbarungsreferenz.
+
+Version 2 verlangt eine ausdrückliche Belegart und ein Leistungsdatum. Mengen und Beträge bleiben positiv. Die Belegart entscheidet, ob es eine Rechnung oder eine Korrektur ist. Bei Selbstabrechnung bleibt der Verkäufer Leistungserbringer und der Käufer der Leistungsempfänger, der den Beleg ausstellt. Die Zahlungsdaten nennen das gewünschte Empfängerkonto. Grids leitet es nicht aus der Belegart ab.
+
+Der Renderer prüft nicht, ob die ursprüngliche Rechnung existiert oder ob noch Beträge für Korrektur oder Provision verfügbar sind. Das muss der ausstellende Workflow sicherstellen, auch bei gleichzeitigen Anfragen. Renderer-Unterstützung allein ist noch keine vollständige Rechnungs-App. Bestehende Vorlagen und Wiederholungen behalten ihre gewählte Version. Eine Vorlage stellst du nur ausdrücklich um.
 
 ## Vom Datensatz zum PDF {icon="table"}
 
-Die Vorlage trennt Datenauswahl und Rendering. **GQL** lädt die Zeilen und Spalten, die das Dokument verwenden darf. Der ausgewählte Renderer erhält anschließend entweder Liquid-HTML und CSS oder ein Liquid-JSON-Objekt.
+Die Vorlage trennt Datenauswahl und Rendering. **GQL** lädt die Zeilen und Spalten, die das Dokument verwenden kann. Der gewählte Renderer erhält danach entweder Liquid-HTML und CSS oder ein Liquid-JSON-Objekt.
 
 **Pipeline**
 
@@ -52,40 +70,39 @@ selected record
 
 Lege Filterung, Sortierung, Joins, Gruppierung und Summen in GQL ab. Beschränke Liquid auf Formulierung und Seitenlayout.
 
-Wähle bei einer E-Rechnungsvorlage den Renderer aus und ordne die Vorschaudaten unter **Renderer-Eingabe** zu. Der Editor erwartet ein JSON-Objekt. Nutze für jeden eingesetzten Wert den Filter `json`, zum Beispiel `"buyerReference": {{ record.id | json }}`, damit Anführungszeichen und andere Zeichen gültiges JSON bleiben. Die Vorschau prüft die Eingaben und erzeugt das PDF, bevor die Vorlage aktiviert wird; sie zertifiziert die Ausgabe nicht.
+Wähle bei einer E-Rechnungsvorlage den Renderer und ordne die Vorschaudaten unter **Renderer-Eingabe** zu. Der Editor erwartet ein JSON-Objekt. Nutze für jeden eingesetzten Wert den Filter `json`, zum Beispiel `"buyerReference": {{ record.id | json }}`. So bleiben Anführungszeichen und andere Zeichen gültiges JSON. Die Vorschau prüft die Eingabe des Renderers und erzeugt das PDF, bevor du die Vorlage aktivierst. Sie zertifiziert die Ausgabe nicht.
 
-## Erste Vorlage erstellen {icon="file-description"}
+## Die erste Vorlage erstellen {icon="file-description"}
+
+Du brauchst Zugriff **Verwalten** auf die Base, um Vorlagen zu erstellen und zu bearbeiten.
 
 :::steps
-1. **Vorlagen öffnen:** Öffne die Tabelle im Bearbeitungsmodus und wähle Vorlagen. Vorlagen gehören zu der Tabelle, für die sie Dokumente erzeugen.
-2. **Starter wählen:** Wähle die Struktur, die der benötigten Ausgabe am nächsten kommt. Jeder Starter bleibt vollständig bearbeitbar.
-3. **Vorschaudatensatz auswählen:** Derselbe Datensatz bildet den Anker für gerendertes GQL, Datenbaum und PDF-Vorschau.
-4. **Vor dem Bearbeiten prüfen:** Quelle zeigt das GQL nach dem Einsetzen der Datensatzwerte. Daten zeigt die exakten Liquid-Pfade. Vorschau zeigt das PDF.
-5. **Jeweils eine Ebene ändern:** Passe GQL bei falschen Daten an. Passe Inhalt, Kopfzeile, Fußzeile oder Seiten-CSS bei falschem Layout an.
-6. **Repräsentative Daten als Vorschau prüfen:** Teste lange Texte, fehlende Werte, viele Zeilen und Seitenumbrüche. Neue Vorlagen sind im Editor zunächst deaktiviert.
-7. **Aktivieren und testen:** Personen mit Schreibzugriff auf die Basis können anschließend einen Datensatz auswählen und ein gespeichertes Dokument generieren.
+1. **Öffne die Vorlagen:** Öffne die Tabelle im **Bearbeitungsmodus** und wähle **Vorlagen**. Vorlagen gehören zu der Tabelle, für die sie Dokumente erzeugen.
+2. **Wähle einen Starter:** Nimm die Struktur, die deiner Ausgabe am nächsten kommt. Jeder Starter bleibt vollständig bearbeitbar.
+3. **Wähle einen Vorschaudatensatz aus:** Derselbe Datensatz verankert das gerenderte GQL, den Baum unter **Daten** und die PDF-Vorschau.
+4. **Prüfe vor dem Bearbeiten:** **Quelle** zeigt das GQL mit eingesetzten Datensatzwerten. **Daten** zeigt die exakten Liquid-Pfade. **Vorschau** zeigt das PDF.
+5. **Ändere eine Ebene nach der anderen:** Passe das GQL an, wenn die Daten falsch sind. Passe Inhalt, Kopfzeile, Fußzeile oder Seiten-CSS an, wenn das Layout falsch ist.
+6. **Prüfe repräsentative Daten in der Vorschau:** Teste lange Texte, fehlende Werte, viele Zeilen und Seitenumbrüche. Der Editor legt neue Vorlagen deaktiviert an.
+7. **Aktiviere und teste:** Danach können Personen mit Zugriff **Bearbeiten** auf die Base einen Datensatz wählen und ein gespeichertes Dokument erzeugen.
 :::
 
-## Ein Dokument für mehrere Datensätze {icon="files"}
+Der ausgewählte Vorschaudatensatz ist nur Testkontext. Wenn Personen später ein Dokument erzeugen, wählen sie den tatsächlichen Datensatz. Sie können den Dateinamen überschreiben oder Tags ergänzen.
 
-Die Quellenliste zeigt aktuelle lesbare Namen, sortiert nach stabilen öffentlichen
-IDs. Eine fehlende erfasste Version bleibt leer statt als Version 0 zu erscheinen.
-Nachweispakete enthalten nur Quell-IDs und erfasste Versionen, keine aktuellen
-Namen oder Löschzustände. Pro Paket sind höchstens 10.000 Quellzuordnungen möglich.
+## Ein Dokument für mehrere Datensätze nutzen {icon="files"}
 
-Ein Workflow kann aus mehreren Datensätzen eine Datei erstellen. Sie wird einmal gespeichert und erscheint bei jedem zugeordneten Datensatz unter Dokumente – auch als CSV, JSON, XML, SEPA oder DATEV. Öffne im Dokumentdialog **Quelldatensätze**, um die erfassten Datensatzversionen anzusehen.
+Ein Workflow kann aus mehreren Datensätzen eine Datei erstellen. Grids speichert die Datei einmal. Sie erscheint im Bereich Dokumente jedes zugeordneten Datensatzes, ob PDF, CSV, JSON, XML, SEPA oder DATEV. Öffne in ihren Details **Quelldatensätze**, um die erfassten Datensatzversionen zu sehen.
 
-Quelldatensätze und Ergebniszeilen sind unterschiedliche Angaben: Ein Join kann einen Datensatz wiederholen; eine Summe kann viele Datensätze in einer Zeile zusammenfassen. Fehlt die Anzahl der Quelldatensätze, wurde keine vollständige Zuordnung erfasst. Das bedeutet nicht null Quelldatensätze. Verknüpfte Kunden, Adressen und andere Relations werden nicht automatisch zugeordnet.
+Die Quellenliste zeigt die aktuellen lesbaren Namen, sortiert nach stabilen öffentlichen IDs. Eine fehlende erfasste Version bleibt leer und erscheint nicht als Version 0. Nachweispakete behalten nur Quell-IDs und erfasste Versionen, keine aktuellen Namen oder Löschzustände. Ein Paket enthält höchstens 10.000 Quellzuordnungen.
 
-Einfache Zeilenabfragen auf gespeicherten Tabellen übernehmen ihre Datensatzidentitäten automatisch. Für eine gruppierte oder verknüpfte Auswertung kann der Workflow mit `associatedData` eine zuvor erfasste Zeilenabfrage als Zuordnung angeben. Diese Auswahl wird nach der Erstellung nicht erneut abgefragt. Die Version bezeichnet den erfassten Stand; Datensatzlinks öffnen den aktuellen Datensatz.
+Quelldatensätze und Ergebniszeilen sind unterschiedliche Anzahlen. Ein Join kann einen Datensatz wiederholen, und eine Summe kann viele Datensätze in einer Zeile zusammenfassen. Fehlt die Anzahl der Quelldatensätze, hat Grids keine vollständige Zuordnung erfasst. Das bedeutet nicht null Quelldatensätze. Verknüpfte Adressen, Kunden und andere Relationen werden nicht automatisch zugeordnet.
 
-Die Zuordnung gewährt keinen Zugriff auf eine gesamte Sammeldatei. Base-Leser können diese Dokumente ansehen. Custom Apps zeigen weiterhin nur die ausdrücklich freigegebenen Dokumente. Eine erstellte SEPA-Datei bedeutet noch nicht, dass die Überweisungen ausgeführt wurden.
+Eine einfache Zeilenabfrage auf einer gespeicherten Tabelle erfasst ihre Datensatzidentitäten automatisch. Für einen gruppierten oder verknüpften Export kann der Workflow mit `associatedData` eine zuvor erfasste Zeilenabfrage angeben. Grids führt diese Auswahl nach der Erzeugung nicht erneut aus. Die Quellversionen beschreiben den erfassten Stand. Datensatzlinks öffnen den aktuellen Datensatz.
 
-Der ausgewählte Vorschaudatensatz ist nur Testkontext. Beim späteren Generieren wählen Personen den tatsächlichen Datensatz aus und können Dateinamen überschreiben oder Tags ergänzen.
+Die Zuordnung zu einem Dokument gibt nie Zugriff auf die ganze Sammeldatei. Personen mit Zugriff auf die Base können diese Dokumente ansehen. Grids Apps zeigen weiterhin nur die Dokumente, die die veröffentlichte App für einen Datensatz ausdrücklich erlaubt. Eine erstellte SEPA-Datei bedeutet nicht, dass ihre Überweisungen bezahlt sind.
 
-## Starter {icon="square-plus"}
+## Mit einem Starter beginnen {icon="square-plus"}
 
-Starter sind bearbeitbare Vorlagen und keine festen Dokumenttypen. Wähle die nächstliegende Struktur und ändere anschließend GQL-Quelle und Liquid-Teile, bis das erzeugte PDF zu den Datensätzen der Tabelle passt.
+Starter sind bearbeitbare Vorlagen, keine festen Dokumenttypen. Wähle die nächstliegende Struktur. Ändere danach die GQL-Quelle und die Liquid-Teile, bis das erzeugte PDF zu den Datensätzen der Tabelle passt.
 
 - `Leere Vorlage`
 - `Rechnung`
@@ -101,9 +118,9 @@ Starter sind bearbeitbare Vorlagen und keine festen Dokumenttypen. Wähle die n�
 - `Checkliste`
 - `Namensschild`
 
-## Bearbeitbare Teile {icon="table"}
+## Die Teile einer Vorlage bearbeiten {icon="table"}
 
-Eine Vorlage besitzt einen Datenteil und bis zu vier Layoutteile. Die GQL-Quelle wird zuerst mit Liquid gerendert. Dadurch kann sie Werte des ausgewählten `record`, der öffentlichen `app` und der gemeinsamen Basiswerte `business` verwenden, bevor die Abfrage geparst wird.
+Eine Vorlage hat einen Datenteil und bis zu vier Layoutteile. Grids rendert die GQL-Quelle zuerst mit Liquid. Die Quelle kann deshalb den ausgewählten `record`, die öffentlichen Werte von `app` und die Werte von `business` der Base verwenden, bevor Grids die Abfrage parst.
 
 | Teil | Sprache | Zweck | Häufige Verwendung |
 | --- | --- | --- | --- |
@@ -113,27 +130,27 @@ Eine Vorlage besitzt einen Datenteil und bis zu vier Layoutteile. Die GQL-Quelle
 | Fußzeile | Liquid + HTML | Optionale Fußzeile auf jeder Seite. | Rechtliche Fußzeile, Bankdaten und Seitenplatzhalter wie `<span class="pageNumber"></span>` und `<span class="totalPages"></span>`. |
 | Seiten-CSS | Liquid + CSS | Optionales CSS, das in den PDF-Inhalt eingefügt wird. | @page-Größe/-Ränder, Tabellenköpfe, Seitenumbrüche, Drucktypografie. |
 
-PDFs werden offline erzeugt: Skripte laufen nicht, und entfernte Bilder, Stylesheets und Schriften werden nicht geladen. Nutze für Bilder Datensatzbilder, `barcode_data_url` oder andere `data:`-URLs. `app.logoDataUri` zeigt das in der Cloud-Administration hochgeladene Logo; ein als Webadresse gesetztes Logo wird nicht geladen.
+PDFs werden offline gerendert. Skripte laufen nicht, und externe Bilder, Stylesheets und Schriften werden nicht geladen. Nutze für Bilder Datensatzbilder, `barcode_data_url` oder andere `data:`-URLs. `app.logoDataUri` druckt das Logo, das in der Cloud-Administration hochgeladen ist. Ein Logo, das als Webadresse gesetzt ist, wird nicht geladen.
 
-## Verfügbare Daten verstehen {icon="layout-grid"}
+## Die verfügbaren Daten verstehen {icon="layout-grid"}
 
-Der Tab Daten ist die maßgebliche Quelle für den aktuellen Vorschaudatensatz. Er zeigt die exakte Struktur, die Liquid nach der Ausführung der GQL-Quelle erhält. Kopiere Pfade aus diesem Baum, statt Objektstrukturen zu erraten.
+Der Tab **Daten** ist die maßgebliche Quelle für den aktuellen Vorschaudatensatz. Er zeigt die genaue Struktur, die Liquid nach dem Ausführen der GQL-Quelle erhält. Kopiere Pfade aus diesem Baum. Rate keine Objektstrukturen.
 
-Betrachte die Daten in Ebenen: `record` ist der ausgewählte Datensatz, `rows` und `columns` sind das GQL-Ergebnis und `document` beschreibt ein gespeichertes Dokument. `template`, `document` und `date` liefern stabile Metadaten für Nummern und Dateinamen. `app` enthält öffentliche Plattformwerte für die Darstellung. `business` enthält die gemeinsamen Dokumentangaben der Basis. Zeilen stellen zusätzlich GQL-Ausgabebezeichnungen bereit, weshalb lesbare Aliasse Vorlagen leichter wartbar machen.
+Betrachte die Daten in Ebenen. `record` ist der ausgewählte Datensatz. `rows` und `columns` sind das GQL-Ergebnis. `document` beschreibt ein gespeichertes Dokument. `template`, `document` und `date` liefern stabile Metadaten für Nummern und Dateinamen. `app` enthält öffentliche Werte der Plattform für die Darstellung. `business` enthält die gemeinsamen Dokumentangaben der Base. Zeilen stellen zusätzlich die GQL-Ausgabebezeichnungen bereit, deshalb machen lesbare Aliasse Vorlagen leichter wartbar.
 
 :::reference
-- **record:** Der aktuelle Datensatz: öffentliche `record.id` und `record.tableId`, `record.version`, `record.data` sowie Erstellungs- und Aktualisierungszeitpunkte.
-- **rows und columns:** Die von der GQL-Quelle zurückgegebenen Zeilen und Spalten. Nutze `column.key` für Zeilenzugriff und `column.label` für lesbare Überschriften.
-- **template, document, date:** Stabile Metadaten für Muster und Dokumenttext: `{{ template.name }}`, `{{ template.id }}`, `{{ document.id }}`, `{{ date.iso }}` und `{{ date.yyyyMMdd }}`. Entwurfsvorschauen verwenden Entwurfswerte des Dokuments, bis ein Dokument existiert.
-- **app:** Öffentliche Plattformwerte für die Dokumentdarstellung: `{{ app.name }}`, `{{ app.contactEmail }}`, `{{ app.url }}`, `{{ app.logoDataUri }}` und `{{ app.timezone }}`.
-- **business:** Dokumentangaben aus Basiseinstellungen → Dokumente. `business.legalName` ist der ausdrücklich hinterlegte Name des Ausstellers; ohne Angabe bleibt er leer und übernimmt nicht `app.name`. `business.address` enthält Straße und Adresszusätze unverändert. Nutze `business.postalCode`, `business.city` und `business.countryCode` getrennt. Steuernummer und USt-IdNr. sind eigene Angaben (`business.taxId`, `business.vatId`). `business.accountName` ist der Kontoinhaber, neben `business.iban`, `business.bic` und `business.bankName`. Absenderzeile, Zahlungsbedingungen, Fußzeile und Kontaktdaten bleiben verfügbar.
-- **images:** Bilddateien, die an Dateifelder des ausgewählten Datensatzes angehängt sind. Nutze `{{ primaryImage.url }}` für das erste unterstützte Bild oder durchlaufe `images`. Zu große und nicht unterstützte Dateien werden ausgelassen.
-- **document:** Dokumentmetadaten wie `{{ document.number }}` und `{{ document.createdAt }}`. Nutze sie in Dateinamen und Inhalt/Kopf-/Fußzeilen-HTML, nachdem das Nummernmuster gerendert wurde. Entwurfsvorschauen besitzen möglicherweise noch keine endgültigen Werte.
-- **snapshot:** Der erfasste Datensatzgraph für ein generiertes Dokument. In aktiven Entwurfsvorschauen ist er `null`.
-- **barcode_data_url:** Ein Grids-Liquid-Filter für Etiketten und Ausweise. Er gibt eine SVG-Daten-URL für QR-Codes und unterstützte BWIP-Barcodesymbole zurück.
+- **record:** Der aktuelle Datensatz: öffentliche `record.id` und `record.tableId`, `record.version`, `record.data` sowie Erstellungs- und Änderungszeitpunkt.
+- **rows und columns:** Die Zeilen und Spalten, die die GQL-Quelle liefert. Nutze `column.key` für den Zugriff auf eine Zeile und `column.label` für lesbare Überschriften.
+- **template, document, date:** Stabile Metadaten für Muster und Dokumenttext: `{{ template.name }}`, `{{ template.id }}`, `{{ document.id }}`, `{{ date.iso }}` und `{{ date.yyyyMMdd }}`. Entwurfsvorschauen verwenden Entwurfswerte, bis ein Dokument existiert.
+- **app:** Öffentliche Werte der Plattform für die Darstellung von Dokumenten: `{{ app.name }}`, `{{ app.contactEmail }}`, `{{ app.url }}`, `{{ app.logoDataUri }}` und `{{ app.timezone }}`.
+- **business:** Dokumentangaben der Base aus **Base-Einstellungen → Dokumente**. `business.legalName` ist der ausdrücklich hinterlegte Name des Ausstellers. Ohne Angabe bleibt er leer und übernimmt nie `app.name`. `business.address` enthält Straße und Adresszusätze so, wie sie eingegeben sind. Nutze `business.postalCode`, `business.city` und `business.countryCode` getrennt. Steuernummer und USt-IdNr. sind getrennte Angaben (`business.taxId`, `business.vatId`). `business.accountName` ist der Kontoinhaber, zusammen mit `business.iban`, `business.bic` und `business.bankName`. Absenderzeile, Zahlungsbedingungen, Fußzeile und Kontaktdaten bleiben verfügbar.
+- **images:** Bilddateien, die an Dateifeldern des ausgewählten Datensatzes hängen. Nutze `{{ primaryImage.url }}` für das erste unterstützte Bild oder durchlaufe `images`. Zu große und nicht unterstützte Dateien lässt Grids weg.
+- **document:** Dokumentmetadaten wie `{{ document.number }}` und `{{ document.createdAt }}`. Nutze sie in Dateinamen und im HTML von Inhalt, Kopf- oder Fußzeile, nachdem das Nummernmuster gerendert ist. Entwurfsvorschauen können noch keine endgültigen Werte haben.
+- **snapshot:** Der erfasste Datensatzgraph eines erzeugten Dokuments. In Live-Entwurfsvorschauen ist er `null`.
+- **barcode_data_url:** Ein Grids-Liquid-Filter für Etiketten und Ausweise. Er liefert eine SVG-Daten-URL für QR-Codes und unterstützte BWIP-Barcodesymbole.
 :::
 
-## Muster für GQL-Quellen {icon="code"}
+## GQL-Quellen schreiben {icon="code"}
 
 Lege Filterung, Sortierung, Joins, Gruppierung und Grenzen in GQL ab. Beschränke Liquid auf die Darstellung.
 
@@ -155,7 +172,7 @@ where record.id = '{{ record.id }}'
 sort item.Name asc
 ```
 
-**Batch oder Checkliste**
+**Stapel oder Checkliste**
 
 ```gql
 from table Items
@@ -165,11 +182,11 @@ sort Name asc
 limit 100
 ```
 
-## Nummern und Dateinamen {icon="paperclip"}
+## Nummern und Dateinamen festlegen {icon="paperclip"}
 
-Ein generiertes Dokument besitzt eine stabile `document.number`. Eine HTML-Vorlage besitzt einen dauerhaften Nummernkreis. Ihr Nummernmuster wird zuerst gerendert; ihr Dateinamenmuster kann anschließend `{{ document.number }}` verwenden. Ein E-Rechnungs-Renderer besitzt seine Nummerierung und Artefaktnamen selbst.
+Ein erzeugtes Dokument hat eine stabile `document.number`. Eine HTML-Vorlage besitzt einen dauerhaften Nummernkreis. Grids rendert zuerst ihr Nummernmuster. Ihr Dateinamenmuster kann danach `{{ document.number }}` verwenden. Ein E-Rechnungs-Renderer bestimmt seine Nummerierung und seine Artefaktnamen selbst.
 
-Das Standard-HTML-Nummernmuster lautet `{{ template.id }}-{{ date.yyyyMMdd }}-{{ document.id }}`. Ein eigenes Muster kann die vergebene `{{ series.value }}` verwenden. Vergaben steigen atomar und werden nie wiederverwendet, aber Rollbacks und technische Fehler können Lücken hinterlassen. Grids behauptet nicht, dass ein Nummernmuster allein Rechtskonformität herstellt.
+Das Standard-Nummernmuster für HTML lautet `{{ template.id }}-{{ date.yyyyMMdd }}-{{ document.id }}`. Ein eigenes Muster kann die vergebene `{{ series.value }}` verwenden. Vergaben steigen atomar und werden nie wiederverwendet, aber Rollbacks und technische Fehler können Lücken hinterlassen. Ein Nummernmuster allein stellt keine Rechtskonformität her.
 
 **Standardnummer**
 
@@ -202,22 +219,22 @@ invoice-{{ record.data.Name | default: document.number }}-{{ document.number }}.
 ```
 
 :::reference
-- **Kontext des Nummernmusters:** Darf `record`, `table`, `template`, `document`, `series`, `date`, `app` und `business` verwenden. `series.id` ist die öffentliche ID des Nummernkreises, `series.value` die vergebene Nummer. `document.id` ist bereits verfügbar; `document.number` wird erst berechnet und ist noch nicht verfügbar.
-- **Kontext des Dateinamenmusters:** Darf den vollständigen gerenderten Datenbaum einschließlich `{{ document.number }}` verwenden. Der endgültige Dateiname wird für sichere PDF-Downloads im Dateisystem bereinigt.
-- **Validierung:** Unbekannte Liquid-Variablen auf oberster Ebene, ungültige Tags, nicht unterstützte Filter, leere Muster und zu große Muster lassen das Speichern der Vorlage scheitern.
+- **Kontext des Nummernmusters:** Kann `record`, `table`, `template`, `document`, `series`, `date`, `app` und `business` verwenden. `series.id` ist die öffentliche ID des Nummernkreises, `series.value` die vergebene Nummer. `document.id` ist bereits verfügbar. `document.number` ist das Ergebnis, das gerade berechnet wird, und deshalb noch nicht verfügbar.
+- **Kontext des Dateinamenmusters:** Kann den vollständigen gerenderten Datenbaum verwenden, einschließlich `{{ document.number }}`. Grids bereinigt den endgültigen Dateinamen für sichere PDF-Downloads.
+- **Validierung:** Das Speichern einer Vorlage scheitert bei unbekannten Liquid-Variablen auf oberster Ebene, ungültigen Tags, nicht unterstützten Filtern, leeren Mustern und zu großen Mustern.
 :::
 
-## Liquid-Referenz {icon="book-2"}
+## Liquid verwenden {icon="book-2"}
 
-Vorlagenteile verwenden Liquid mit Grids-Einschränkungen: strikte Variablen, strikte Filter, maskierte Ausgabe, keine Layouts, keine dynamischen Partials und nur die unten aufgeführten Tags. Unbekannte Filter, ungültige Tags und zu große Ausgaben scheitern, statt ein Teildokument zu erzeugen.
+Vorlagenteile verwenden Liquid mit Grids-Einschränkungen: strikte Variablen, strikte Filter, maskierte Ausgabe, keine Layouts, keine dynamischen Partials und nur die unten aufgeführten Tags. Unbekannte Filter, ungültige Tags und zu große Ausgaben scheitern und erzeugen nie ein Teildokument.
 
 :::reference
 - **Ausgabe:** Gib mit `{{ value }}` einen Wert aus. Die Ausgabe wird standardmäßig für HTML maskiert. Nutze `| raw` nur, wenn eine vertrauenswürdige Vorlage bewusst HTML ausgibt.
-- **Filter:** Leite Werte durch Filter, zum Beispiel `{{ row.Name | default: '-' }}`. Unbekannte Filter führen zu einem Fehler.
+- **Filter:** Leite Werte durch Filter, zum Beispiel `{{ row.Name | default: '-' }}`. Unbekannte Filter scheitern.
 - **Bedingungen:** Nutze `{% if row.Status == 'Open' %}`, `elsif`, `else` und `endif`.
 - **Schleifen:** Nutze `{% for row in rows %}` und `{% endfor %}`. `break` und `continue` sind erlaubt.
 - **Temporäre Werte:** Nutze `assign` für kurze Werte und `capture` für längere gerenderte Fragmente.
-- **Keine externen Partials:** `include`, `render`, `layout` und Tags für externe Partials sind nicht erlaubt. Eine Vorlage muss eigenständig sein.
+- **Keine externen Partials:** `include`, `render`, `layout` und Tags für externe Partials sind nicht erlaubt. Eine Vorlage muss in sich geschlossen sein.
 :::
 
 Erlaubte Tags
@@ -243,9 +260,9 @@ Erlaubte Tags
 - `raw`
 - `endraw`
 
-## Barcodes und QR-Codes {icon="code"}
+## Barcodes und QR-Codes einfügen {icon="code"}
 
-Nutze den Filter `barcode_data_url` in einem `<img>`-Tag. Barcode-IDs sind kleingeschriebene Symbole. Das optionale dritte Argument steuert lesbaren Text für Barcodeformate, die ihn unterstützen.
+Nutze den Filter `barcode_data_url` in einem `<img>`-Tag. Barcode-IDs sind kleingeschriebene Symbole. Das optionale dritte Argument steuert den lesbaren Text bei Barcodeformaten, die ihn unterstützen.
 
 **Code 128 mit Text**
 
@@ -278,7 +295,7 @@ Nutze den Filter `barcode_data_url` in einem `<img>`-Tag. Barcode-IDs sind klein
 | `upca` | UPC-A | US-Produktcode für den Einzelhandel. |
 | `upce` | UPC-E | Komprimierter UPC-Code. |
 | `itf14` | ITF-14 | Code für Kartons und Verpackungen. |
-| `gs1datamatrix` | GS1 Data Matrix | GS1-2D-Code mit Anwendungs-IDs. |
+| `gs1datamatrix` | GS1 Data Matrix | GS1-2D-Code mit GS1-Kennungen wie `(01)`. |
 | `sscc18` | SSCC-18 | Code für Versandbehälter. |
 | `isbn` | ISBN | Barcode für Buchkennungen. |
 | `issn` | ISSN | Barcode für fortlaufende Publikationen. |
@@ -378,7 +395,7 @@ Zusätzliche BWIP-Symbol-IDs
 - `upcacomposite`
 - `upcecomposite`
 
-## Liquid-Muster {icon="point"}
+## Liquid-Muster wiederverwenden {icon="point"}
 
 **Abfragezeilen durchlaufen**
 
@@ -437,54 +454,75 @@ Zusätzliche BWIP-Symbol-IDs
 <img alt="Record QR code" src='{{ document.number | default: table.name | barcode_data_url: "qrcode" }}'>
 ```
 
-## Vorschau, Daten, Quelle {icon="layout-list"}
+## Vorschau, Daten und Quelle prüfen {icon="layout-list"}
 
 :::reference
-- **Vorschau:** Rendert den aktuellen nicht gespeicherten Entwurf als PDF. Nutze **Vorschau öffnen** für eine bildschirmfüllende Prüfung.
-- **Daten:** Zeigt die exakten Liquid-Pfade für den ausgewählten Vorschaudatensatz. Kopiere Pfade von hier, statt Objektstrukturen zu erraten.
-- **Quelle:** Zeigt das GQL nach dem Ersetzen der Liquid-Variablen. Nutze es zur Fehlersuche bei Filtern für den aktuellen Datensatz.
+- **Vorschau:** Rendert den aktuellen ungespeicherten Entwurf als PDF. Nutze **Vorschau öffnen** für eine bildschirmfüllende Prüfung.
+- **Daten:** Zeigt die exakten Liquid-Pfade für den ausgewählten Vorschaudatensatz. Kopiere Pfade von hier. Rate keine Objektstrukturen.
+- **Quelle:** Zeigt das GQL, nachdem Grids die Liquid-Variablen ersetzt hat. Nutze es, um Filter für den aktuellen Datensatz zu prüfen.
 :::
 
-## Mit generierten Dokumenten arbeiten {icon="file-description"}
+## Mit erzeugten Dokumenten arbeiten {icon="file-description"}
 
-Die Dokumentseite listet jedes generierte Dokument einer Vorlage auf. Nutze **Tabelle** für eine durchsuchbare Liste oder **Ordner**, um nach Jahr und Monat zu navigieren. Eine Suche wechselt zum Tabellenergebnis, damit passende Dokumente nicht in Ordnern verborgen bleiben.
+Die Dokumentseite einer Vorlage listet jedes Dokument, das die Vorlage erzeugt hat. Nutze **Tabelle** für eine durchsuchbare Liste oder **Ordner**, um nach Jahr und Monat zu blättern. Eine Suche wechselt zum Tabellenergebnis, damit Ordner keine passenden Dokumente verbergen.
 
-**Alle Dokumente** listet jedes Dokument der Base, egal ob eine Vorlage, ein Workflow oder beide es erzeugt haben, in jedem Dateiformat. Die Seite öffnet sich in der Ansicht **Ordner**, gruppiert nach Dokumentvorlage oder Workflow und anschließend Jahr. Die Suche durchsucht Dateinamen, Dokumentnummern und Tags der gesamten Base, unabhängig vom geöffneten Ordner. Beide Dokumentseiten zeigen ihre ersten Ergebnisse bereits beim Laden der Seite.
+**Alle Dokumente** listet jedes Dokument der Base in jedem Dateiformat, egal ob eine Vorlage, ein Workflow oder beide es erzeugt haben. Die Seite öffnet sich in **Ordner**, gruppiert nach Dokumentvorlage oder Workflow und danach nach Jahr. Ihre Suche umfasst Dateinamen, Dokumentnummern und Tags der ganzen Base, unabhängig vom geöffneten Ordner. Beide Dokumentseiten zeigen ihre ersten Ergebnisse schon beim Laden der Seite.
 
-Filtere **Alle Dokumente** nach **Workflow**, **Vorlage**, **Datensatztabelle** und **Dateityp** und kombiniere die Filter, um die Liste einzugrenzen. **Datensatztabelle** findet nur Dokumente, die für einen Datensatz dieser Tabelle erzeugt wurden, nicht die Quellzeilen eines Workflow-Exports oder die Dateien in einem ZIP. **Sortierung** wechselt zwischen neueste zuerst (Standard), älteste zuerst und Dateiname. Eine Suche, ein Filter oder eine andere Sortierung zeigt eine Liste statt Ordnern. Die Adresse behält alles davon, sodass ein Neuladen oder ein geteilter Link dieselbe Ansicht öffnet.
+### Alle Dokumente filtern und sortieren
 
-Ein Dokument aus einem Workflow nennt seinen Workflow; wähle den Namen, um den Lauf zu öffnen, der es erzeugt hat. Die Details eines ZIP-Dokuments listen seinen **Archivinhalt**: jede verpackte Datei, ihre Größe und das Dokument, aus dem sie stammt. Das Archiv wird nicht mit den Datensätzen dieser Dokumente verknüpft.
+Filtere **Alle Dokumente** nach **Workflow**, **Vorlage**, **Datensatztabelle** und **Dateityp**. Kombiniere die Filter, um die Liste einzugrenzen.
 
-Dokumentdetails zeigen Downloads, übernommene Zeilenanzahl und Datenstand. **Vorschau** zeigt CSV, JSON und XML bis 2 MiB; größere Dateien bleiben herunterladbar. CSV bleibt Originaltext; **Kopieren** kopiert die Datei. **Freigabelinks** erstellt öffentliche Links für die gespeicherte Hauptdatei; **Technische Details** zeigt IDs und Prüfsummen. Unterdialoge führen zurück. **Weitere Aktionen → Erneut erzeugen** folgt der Ausstellungsregel und überschreibt nie das Original.
+- **Datensatztabelle** findet nur Dokumente, die für einen Datensatz dieser Tabelle erzeugt wurden. Quellzeilen eines Workflow-Exports und Dateien in einem ZIP findet sie nicht.
+- **Sortierung** wechselt zwischen neueste zuerst (Standard), älteste zuerst und Dateiname.
 
-Vor der Generierung kannst du Tags ergänzen und bei einer HTML-Vorlage den Dateinamen überschreiben. Ein E-Rechnungsrenderer bestimmt seine Artefaktdateinamen selbst. Nummer, Dateiname, Tags und Artefakte eines abgeschlossenen Dokuments sind unveränderlich.
+Eine Suche, ein Filter oder eine andere Sortierung zeigt eine Liste statt Ordnern. Die Adresse behält alles davon, sodass ein Neuladen oder ein geteilter Link dieselbe Ansicht öffnet.
 
-Der Hauptdownload behält das gespeicherte Dateiformat bei. Freigabelinks liefern
-dieselbe Hauptdatei, ob PDF, CSV, JSON oder XML, immer als Download und nie als
-im Browser angezeigte Seite. Im Input eines Profil-Renderers ist `document.filename` noch
-`null`, weil die Dateien erst erzeugt werden. Den Dateinamen kannst du danach
-am abgeschlossenen Dokument ablesen.
+Ein Dokument aus einem Workflow nennt seinen Workflow. Wähle den Namen, um den Lauf zu öffnen, der es erzeugt hat. Die Details eines ZIP-Dokuments listen seinen **Archivinhalt**: jede verpackte Datei, ihre Größe und das Dokument, aus dem sie stammt. Grids verknüpft das Archiv nicht mit den Datensätzen dieser Dokumente.
 
-Leseberechtigung auf die Basis erlaubt das Durchsuchen und erneute Herunterladen generierter Dokumente. Schreibberechtigung erlaubt zusätzlich Generierung. Personen mit Verwaltungsrechten verwalten Vorlagen. Eine lesende Person einer Grids App darf nur ein Dokument für den aktuellen Seitendatensatz herunterladen, dessen Vorlage in der veröffentlichten Capability dieses Datensatzblocks enthalten ist. Dieser App-begrenzte Download gewährt keinen allgemeinen Dokumentzugriff auf die Basis.
+### Dokumentdetails prüfen
 
-Erstelle einen öffentlichen Link für 1, 7, 30 oder 90 Tage, um ein generiertes Dokument ohne Cloud-Anmeldung zu teilen. Der Link öffnet eine minimale Seite mit dem Dateinamen des Dokuments, seiner verbleibenden Gültigkeit und einer Schaltfläche zum Herunterladen der gespeicherten Hauptdatei in ihrem Originalformat. Er gewährt niemals Zugriff auf andere Dokumente oder Datensätze. Ein optionaler Kommentar erklärt Personen mit Bearbeitungsrechten den Zweck des Links. Die erstellende Person oder eine Person mit Dokumentbearbeitung kann den Link vor Ablauf widerrufen.
+Dokumentdetails bieten die gespeicherten Downloads, die erfasste Zeilenanzahl und den Zeitstempel.
 
-## Snapshots und gespeicherte Dokumente {icon="point"}
+- **Vorschau** zeigt CSV, JSON und XML bis 2 MiB. Größere Dateien bleiben herunterladbar. CSV bleibt Originaltext.
+- **Kopieren** kopiert die Datei.
+- **Freigabelinks** erstellt öffentliche Links für die gespeicherte Hauptdatei.
+- **Technische Details** zeigt IDs und Prüfsummen.
+- **Weitere Aktionen → Erneut erzeugen** folgt der Ausstellungsregel der Vorlage und überschreibt nie das Original.
 
-Beim Generieren eines PDFs entsteht ein rekursiver Snapshot des Wurzeldatensatzes und der über Relationsfelder erreichten verknüpften Datensätze. Ein Snapshot umfasst höchstens vier Relationsebenen und 500 Datensätze. Grids rendert einmal und speichert die exakten abgeschlossenen PDF-Bytes zusammen mit SHA-256, MIME-Typ, Größe, Renderer-Version, Vorlagenrevision, Dokumentnummer und Quell-Snapshot. Downloads geben diese gespeicherten Bytes auch dann zurück, wenn sich aktive Datensätze, Vorlage oder Renderer geändert haben.
+Unterdialoge führen zu den Details zurück.
 
-**Erneut generieren:** `repeatable` erstellt ein weiteres Dokument; `oncePerFinalizedRecord` liefert das Original, auch nach Vorlagenänderungen. Details zeigen Renderer, Quelle, Validierung und Hashes.
+Vor der Erzeugung kannst du Tags ergänzen. Bei einer HTML-Vorlage kannst du auch den Dateinamen überschreiben. Ein E-Rechnungs-Renderer bestimmt seine Artefaktdateinamen selbst. Nummer, Dateiname, Tags und Artefakte eines abgeschlossenen Dokuments sind unveränderlich.
+
+Der Hauptdownload behält das gespeicherte Dateiformat. Freigabelinks liefern dieselbe Hauptdatei, ob PDF, CSV, JSON oder XML. Sie liefern sie immer als Download, nie als Seite im Browser. In der Eingabe eines Profil-Renderers ist `document.filename` `null`, weil der Renderer seine Dateien noch nicht erzeugt hat. Lies den Dateinamen nach der Erzeugung am abgeschlossenen Dokument ab.
+
+### Den Zugriff auf Dokumente steuern
+
+- Zugriff **Ansehen** auf die Base erlaubt das Durchsuchen und erneute Herunterladen erzeugter Dokumente.
+- Zugriff **Bearbeiten** erlaubt zusätzlich die Erzeugung.
+- Zugriff **Verwalten** ist nötig, um Vorlagen zu erstellen und zu ändern.
+
+Eine Person, die eine Grids App verwendet, kann nur ein Dokument für den aktuellen Seitendatensatz herunterladen. Seine Vorlage muss in der veröffentlichten Capability dieses Datensatzblocks stehen. Dieser auf die App begrenzte Download gibt keinen allgemeinen Zugriff auf die Dokumente der Base.
+
+### Ein Dokument mit einem öffentlichen Link teilen
+
+Um ein erzeugtes Dokument ohne Cloud-Anmeldung zu teilen, erstelle einen öffentlichen Link für 1, 7, 30 oder 90 Tage. Der Link öffnet eine minimale Seite mit dem Dateinamen des Dokuments und seiner verbleibenden Gültigkeit. Eine Schaltfläche lädt die gespeicherte Hauptdatei im Originalformat herunter. Der Link gibt nie Zugriff auf andere Dokumente oder Datensätze. Ein optionaler Kommentar erklärt Personen, die Dokumente bearbeiten, den Zweck des Links. Die erstellende Person oder eine Person, die Dokumente bearbeiten kann, kann den Link vor Ablauf widerrufen.
+
+## Sich auf Snapshots und gespeicherte Dokumente verlassen {icon="point"}
+
+Beim Erzeugen eines PDFs entsteht ein rekursiver Snapshot des Wurzeldatensatzes und der verknüpften Datensätze, die Relationsfelder erreichen. Ein Snapshot umfasst höchstens vier Relationsebenen und 500 Datensätze. Grids rendert einmal und speichert die exakten fertigen PDF-Bytes mit SHA-256, MIME-Typ, Größe, Renderer-Version, Vorlagenrevision, Dokumentnummer und Quell-Snapshot. Downloads liefern diese gespeicherten Bytes, auch wenn sich aktive Datensätze, Vorlage oder Renderer ändern.
+
+**Erneut erzeugen** hängt von der Ausstellungsregel ab. `repeatable` erstellt ein weiteres Dokument. `oncePerFinalizedRecord` liefert das Original, auch nach Änderungen an der Vorlage. Die Details zeigen Renderer, Quelle, Validierung und Hashes.
 
 :::reference
-- **Dokumentnummern:** Jedes Dokument erhält eine stabile Nummer. HTML-Vorlagen verwenden ihr konfiguriertes Nummernmuster; ein E-Rechnungsrenderer bestimmt seine Nummerierung selbst. Vergaben werden nie wiederverwendet; technische Lücken sind möglich. Änderungen am Muster betreffen nur zukünftige Dokumente.
-- **Vorlagenänderungen:** Eine Änderung der Vorlage betrifft zukünftige Generierungen. Vorhandene gespeicherte Artefakte werden nie erneut gerendert.
-- **Manuelle Snapshots:** Der Detailbereich eines Datensatzes besitzt zusätzlich eine Snapshot-Schaltfläche, um einen Datensatzzustand ohne PDF-Erzeugung zu erfassen.
-- **Gelöschte Vorlagen:** Das Löschen einer Vorlage entfernt sie aus der aktiven Liste und archiviert ihren vorlageneigenen Nummernkreis. Die Wiederherstellung einer HTML-Vorlage verbindet diesen Nummernkreis und Höchststand erneut. Vorhandene generierte Dokumente bleiben im unveränderlichen Katalog.
+- **Dokumentnummern:** Jedes Dokument erhält eine stabile Nummer. HTML-Vorlagen verwenden ihr konfiguriertes Nummernmuster. Ein E-Rechnungs-Renderer bestimmt seine Nummerierung selbst. Vergaben werden nie wiederverwendet, technische Lücken sind aber möglich. Änderungen am Muster betreffen nur künftige Dokumente.
+- **Vorlagenänderungen:** Eine geänderte Vorlage betrifft künftige Erzeugungen. Vorhandene gespeicherte Artefakte werden nie erneut gerendert.
+- **Manuelle Snapshots:** Die Detailansicht eines Datensatzes hat zusätzlich die Schaltfläche **Snapshot**. Sie erfasst einen Datensatzzustand, ohne ein PDF zu erzeugen.
+- **Gelöschte Vorlagen:** Das Löschen einer Vorlage entfernt sie aus der aktiven Liste und archiviert ihren Nummernkreis. Die Wiederherstellung einer HTML-Vorlage verbindet diesen Nummernkreis und seinen Höchststand wieder. Vorhandene erzeugte Dokumente bleiben im unveränderlichen Katalog.
 :::
 
-## Praktische Grenzen {icon="point"}
+## Die praktischen Grenzen kennen {icon="point"}
 
-Grids lehnt Vorlagen ab, die diese Grenzen überschreiten, statt eine Abfrage oder ein Dokument unbemerkt zu kürzen:
+Grids lehnt Vorlagen ab, die diese Grenzen überschreiten. Es kürzt nie unbemerkt eine Abfrage oder ein Dokument:
 
 | Eingabe | Grenze |
 | --- | ---: |
@@ -497,25 +535,33 @@ Grids lehnt Vorlagen ab, die diese Grenzen überschreiten, statt eine Abfrage od
 | Für Liquid verfügbare Datensatzbilder | 12 Bilder mit jeweils bis zu 2 MB |
 | Rekursiver Snapshot | 4 Relationsebenen und 500 Datensätze |
 
-Dies sind Sicherheitsobergrenzen und keine Layoutziele. Teste bei einem Dokument mit Tausenden Zeilen die Seitenumbrüche und Renderdauer mit realistischen Daten, bevor du die Vorlage aktivierst.
+Das sind Sicherheitsobergrenzen, keine Layoutziele. Teste bei einem Dokument mit Tausenden Zeilen Seitenumbrüche und Renderdauer mit realistischen Daten, bevor du die Vorlage aktivierst.
 
-## Häufige Probleme {icon="point"}
+## Häufige Probleme beheben {icon="point"}
 
 :::reference
-- **Ungültige GQL-Quelle:** Öffne den Tab Quelle. Er zeigt das GQL nach dem Ersetzen der Liquid-Variablen.
-- **Fehlende Liquid-Variable:** Wähle einen Vorschaudatensatz, öffne Daten und kopiere dann den exakten Pfad aus dem Baum.
+- **Ungültige GQL-Quelle:** Öffne den Tab **Quelle**. Er zeigt das GQL, nachdem Grids die Liquid-Variablen ersetzt hat.
+- **Fehlende Liquid-Variable:** Wähle einen Vorschaudatensatz, öffne **Daten** und kopiere den exakten Pfad aus dem Baum.
 - **Leere Dokumentzeilen:** Prüfe den Filter der GQL-Quelle und ob der ausgewählte Vorschaudatensatz dazu passt.
-- **Ungültige E-Rechnungsangaben:** Die Meldung nennt die betroffenen Partei-, Bank- oder Belegfelder. Korrigiere und speichere deren Quelldatensätze und versuche es erneut. Stimmen die Werte bereits, prüfe die Zuordnung unter Renderer-Eingabe. Eine Vorschau vergibt keine offizielle Nummer.
-- **Barcode wird nicht gerendert:** Prüfe Barcode-Typ und Eingabewert. Eine leere Eingabe gibt eine leere Daten-URL zurück.
-- **Mehrseitiges Layout bricht:** Verschiebe wiederholte Inhalte in Kopf-/Fußzeile, lege @page-Ränder fest und prüfe die Vorschau mit ausreichend Zeilen.
+- **Ungültige E-Rechnungsangaben:** Die Meldung nennt die betroffenen Partei-, Bank- oder Belegfelder. Korrigiere und speichere ihre Quelldatensätze und versuche es erneut. Stimmen die Werte schon, prüfe die Zuordnung unter **Renderer-Eingabe** der Vorlage. Eine Vorschau vergibt keine offizielle Nummer.
+- **Barcode wird nicht gerendert:** Prüfe Barcode-Typ und Eingabewert. Eine leere Eingabe liefert eine leere Daten-URL.
+- **Mehrseitiges Layout bricht:** Verschiebe wiederholte Inhalte in Kopf- oder Fußzeile, setze @page-Ränder und prüfe die Vorschau mit genug Zeilen.
 :::
 
 :::note GQL für Daten, Liquid für Layout verwenden
 Lege Filterung, Sortierung, Joins und Gruppierung in GQL ab. Beschränke Liquid auf Schleifen, Bedingungen, Text, Tabellen, Bilder, Barcodes, Kopfzeilen, Fußzeilen und CSS.
 :::
 
-Agents lesen mit `document.content.read` gespeicherte PDF-, XML- oder CSV-Dateien. Der Artefakt-Schlüssel kommt aus `document.read`; ohne Schlüssel wird die primäre Datei gewählt. Code Mode liest den Stream als File, mit höchstens 50 MiB pro Datei. Ein Download extrahiert keinen PDF-Text und erstellt oder versendet kein Dokument. Die aktuelle Leseberechtigung wird beim Download erneut geprüft.
+## Gespeicherte Dateien als Agent lesen {icon="file-description"}
+
+Agents lesen mit `document.content.read` gespeicherte PDF-, XML- oder CSV-Dateien. Wähle einen Artefakt-Schlüssel aus `document.read` oder lass ihn für die Hauptdatei weg. Code Mode liest den gelieferten Stream als File, mit höchstens 50 MiB pro Datei. Ein Download extrahiert keinen PDF-Text und stellt kein Dokument aus und versendet keines. Beim Download prüft Grids erneut, ob du das Dokument noch lesen kannst.
 
 ## Einen Ordner herunterladen {icon="download"}
 
-Wähle in der Ordneransicht **Ordner als ZIP herunterladen** neben einer Vorlage, einem Jahr oder Monat. Das Archiv enthält die gespeicherte Hauptdatei jedes Dokuments einschließlich der Unterordner. Während des Sammelns kannst du abbrechen. Die Grenze beträgt 1.000 Dokumente und 100 MiB; lade größere Sammlungen in kleineren Unterordnern herunter. Bei einem Fehler wird kein unvollständiges Archiv gespeichert. Zusätzliche Artefakte bleiben einzeln herunterladbar. Die Ordnerinhalte werden aktuell gelesen; das ist kein eingefrorenes Backup.
+Wähle in der Ordneransicht **Ordner als ZIP herunterladen** neben einer Vorlage, einem Jahr oder einem Monat. Das Archiv enthält die gespeicherte Hauptdatei jedes Dokuments, einschließlich der Unterordner. Während Grids die Dateien sammelt, kannst du abbrechen.
+
+- Die Grenze liegt bei 1.000 Dokumenten und 100 MiB. Lade größere Sammlungen in kleineren Unterordnern herunter.
+- Bei einem Fehler speichert Grids kein unvollständiges Archiv.
+- Zusätzliche Artefakte bleiben einzelne Downloads.
+
+Das liest den aktuellen Inhalt des Ordners. Es ist keine eingefrorene Sicherung.

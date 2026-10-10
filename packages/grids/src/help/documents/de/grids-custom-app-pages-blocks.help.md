@@ -180,7 +180,7 @@ Die Aktion stellt ihren Status nach Navigation oder Neuladen wieder her. Sie öf
 
 Gleichzeitige Anfragen für dieselbe veröffentlichte Aktion mit denselben Seitendatensätzen und Eingaben schließen sich dem laufenden Lauf an. Das gilt auch für Anfragen einer anderen berechtigten Person, die die App verwendet. Personen sehen den Dokumentstatus, nicht die Workflow-Eingaben, Ausgaben oder rohen Fehler anderer Personen. Muss die Administration den Lauf prüfen, ist kein neuer Start möglich.
 
-Ein Datensatzblock in Tabellendarstellung mit `workflowStatus: true` zeigt diese Zustände neben seinen Zeilen. Er braucht eine direkte `ROW.id`-Navigation zur bedingungslos verfügbaren Datensatzseite des Dokuments. Die Liste bleibt seitenweise und durchsuchbar. Die Laufzeit aktualisiert sichtbare laufende Einträge. Sie wartet nicht auf den Abschluss, bevor sie die Seite zeigt.
+Ein Datensätze-Block in Tabellendarstellung mit `workflowStatus: true` zeigt diese Zustände neben seinen Zeilen. Er braucht eine direkte `ROW.id`-Navigation zur bedingungslos verfügbaren Datensatzseite des Dokuments. Die Liste bleibt seitenweise und durchsuchbar. Die Laufzeit aktualisiert sichtbare laufende Einträge. Sie wartet nicht auf den Abschluss, bevor sie die Seite zeigt.
 
 ### Scanner
 
