@@ -50,7 +50,9 @@ export const NAMED_BLOCK_SCROLL_EVENT = "notebooks.namedBlocks.scrollTo";
 /**
  * Editor-side progressive enhancement: same-notebook note navigation updated
  * the URL + current note without a full SSR roundtrip. Detail = the new note
- * metadata plus SSR-equivalent sidebar/detail data.
+ * metadata plus SSR-equivalent sidebar/detail data, and `href`, the path and
+ * query the note opens at. The event comes before the browser history shows
+ * that address, so read the address from `href`, not from `window.location`.
  */
 export const NOTE_SOFT_NAVIGATED_EVENT = "notebooks.note.softNavigated";
 /** Editor → local workspace surfaces while the persisted projection catches up. */

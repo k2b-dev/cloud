@@ -215,7 +215,7 @@ export default function NoteEditor(props: Props) {
           ],
           title: loaded.props.noteTitle,
         });
-        window.dispatchEvent(new CustomEvent(NOTE_SOFT_NAVIGATED_EVENT, { detail: loaded.eventDetail }));
+        window.dispatchEvent(new CustomEvent(NOTE_SOFT_NAVIGATED_EVENT, { detail: { ...loaded.eventDetail, href: loaded.href } }));
       });
       if (applied) return;
     }

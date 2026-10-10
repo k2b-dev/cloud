@@ -16,7 +16,7 @@ import {
   Tooltip,
   useLocale,
 } from "@k2b/ui";
-import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { createMemo, createSignal, For, onCleanup, onMount, Show, untrack } from "solid-js";
 import { isServer } from "solid-js/web";
 import { mayDeleteOrLockNotes } from "../../../../lib/note-delete-permission";
 import { parseSidebarFilter, type SidebarFilter, withSidebarFilter } from "../../../../lib/sidebar-filter";
@@ -102,20 +102,31 @@ export default function NotebookSidebar(props: Props) {
   };
   const toggleFilter = (view: "favorites" | "recents") => setFilter(filter().view === view ? {} : { view });
   onMount(() => {
-    const follow = () => {
-      const next = currentFilter(props.ctx);
+    const follow = (next: SidebarFilter) => {
       if (!sameFilter(next, filter())) setFilterState(next);
     };
-    window.addEventListener(NOTE_SOFT_NAVIGATED_EVENT, follow);
-    window.addEventListener("popstate", follow);
+    // The editor announces another note before the history shows its address, so the event names that address.
+    const onSoftNavigated = (event: Event) => {
+      const { href } = (event as CustomEvent<{ href: string }>).detail;
+      follow(parseSidebarFilter(new URL(href, window.location.href).searchParams));
+    };
+    const onPopState = () => follow(currentFilter(props.ctx));
+    window.addEventListener(NOTE_SOFT_NAVIGATED_EVENT, onSoftNavigated);
+    window.addEventListener("popstate", onPopState);
     onCleanup(() => {
-      window.removeEventListener(NOTE_SOFT_NAVIGATED_EVENT, follow);
-      window.removeEventListener("popstate", follow);
+      window.removeEventListener(NOTE_SOFT_NAVIGATED_EVENT, onSoftNavigated);
+      window.removeEventListener("popstate", onPopState);
     });
   });
 
   const favorites = useFavoriteNotes({ notebookId: notebook().id, initialFavoriteNoteIds: () => [...favoriteNoteIds()] });
-  const listedNotes = createMemo(() => filterNotes(noteTree(), filter(), favorites.favoriteNoteIds()));
+  // The order on screen, taken when a filter is chosen or the page loads, so a live change never moves a row under the
+  // pointer; choosing the filter again sorts the list anew.
+  const listOrder = createMemo(() => {
+    const current = filter();
+    return untrack(() => filterNotes(noteTree(), current, favorites.favoriteNoteIds()).map((note) => note.id));
+  });
+  const listedNotes = createMemo(() => filterNotes(noteTree(), filter(), favorites.favoriteNoteIds(), listOrder()));
   const filterLabel = () => {
     const current = filter();
     if (current.view === "favorites") return t().favorites;
@@ -126,6 +137,7 @@ export default function NotebookSidebar(props: Props) {
     const current = filter();
     return current.view === "tag" ? current.tag : null;
   };
+  const toggleTag = (tag: string) => setFilter(tagFilter() === tag ? {} : { view: "tag", tag });
   const listHref = (note: NoteTreeNode) => withSidebarFilter(buildNoteUrl(notebook().id, note.id, props.ctx.presentationMode), filter());
   /** Date and the first two tags under a listed note's title. */
   const listMeta = (note: NoteTreeNode) =>
@@ -214,9 +226,24 @@ export default function NotebookSidebar(props: Props) {
     children: level ? node.children.map((child) => noteEntry(child, node.children)) : undefined,
     actions: phoneActions(node, level),
   });
+  // Filters and the sort order change only what the menu shows, so the menu stays open to show the result.
   const filterEntries = (): NavigationItem[] => [
-    { id: "filter:favorites", label: t().favorites, icon: "ti ti-star", action: "filter:favorites", active: filter().view === "favorites" },
-    { id: "filter:recents", label: t().recent, icon: "ti ti-clock", action: "filter:recents", active: filter().view === "recents" },
+    {
+      id: "filter:favorites",
+      label: t().favorites,
+      icon: "ti ti-star",
+      action: "filter:favorites",
+      keepOpen: true,
+      active: filter().view === "favorites",
+    },
+    {
+      id: "filter:recents",
+      label: t().recent,
+      icon: "ti ti-clock",
+      action: "filter:recents",
+      keepOpen: true,
+      active: filter().view === "recents",
+    },
     ...(tags().length > 0 || tagFilter()
       ? [
           {
@@ -230,6 +257,7 @@ export default function NotebookSidebar(props: Props) {
               icon: "ti ti-hash",
               badge: tag.count,
               action: `filter:tag:${tag.tag}`,
+              keepOpen: true,
               active: tagFilter() === tag.tag,
             })),
           },
@@ -259,7 +287,7 @@ export default function NotebookSidebar(props: Props) {
             label: `${filterLabel()} · ${t().noteCount({ count: listedNotes().length })}`,
             section: true,
             children: [
-              { id: "filter:clear", label: t().clearFilter, icon: "ti ti-x", action: "filter:clear" },
+              { id: "filter:clear", label: t().clearFilter, icon: "ti ti-x", action: "filter:clear", keepOpen: true },
               ...listedNotes().map((note) => noteEntry(note, null, listMeta(note))),
             ],
           }
@@ -277,6 +305,7 @@ export default function NotebookSidebar(props: Props) {
                   id: `sort:${option.value}`,
                   label: option.label,
                   action: `sort:${option.value}`,
+                  keepOpen: true,
                   active: treeSort() === option.value,
                 })),
               },
@@ -320,8 +349,7 @@ export default function NotebookSidebar(props: Props) {
         return;
       }
       if (action.startsWith("filter:tag:")) {
-        const tag = action.slice(11);
-        setFilter(tagFilter() === tag ? {} : { view: "tag", tag });
+        toggleTag(action.slice(11));
         return;
       }
       if (action.startsWith("sort:")) {
@@ -420,7 +448,7 @@ export default function NotebookSidebar(props: Props) {
                       description: t().noteCount({ count: tag.count }),
                       choice: "radio" as const,
                       checked: tagFilter() === tag.tag,
-                      action: () => setFilter({ view: "tag", tag: tag.tag }),
+                      action: () => toggleTag(tag.tag),
                     })),
                   },
                 ]}

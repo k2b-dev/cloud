@@ -418,6 +418,89 @@ describe("One notebook sidebar with quick filters", () => {
     }
   }, 30_000);
 
+  test("a link in a note to another note shows the tree, and Back shows the list again", async () => {
+    const page = await open(desktop, filtered());
+    try {
+      await page.getByRole("button", { name: "Favorites" }).click();
+      await page.getByRole("treeitem", { name: /Reels/ }).click();
+      expect(new URL(page.url()).search).toBe("?view=favorites");
+      // A link in the note's text names no filter. The editor announces the note before the history shows its address.
+      await page.evaluate(() => {
+        const link = document.createElement("a");
+        link.href = "/app/notebooks/Book01/notes/Rules1";
+        link.textContent = "Content rules";
+        document.querySelector(".notebook-document-surface")!.append(link);
+      });
+      await page.locator(".notebook-document-surface a").click();
+      await expect(page.evaluate(() => window.openedNotes.at(-1))).resolves.toBe("/app/notebooks/Book01/notes/Rules1");
+      expect(new URL(page.url()).search).toBe("");
+      expect((await listed(page)).map((row) => row.id)).toEqual(["Home01", "Rules1", "Exam01", "Reels1"]);
+      await expect(page.locator(".notebook-sidebar-filter").count()).resolves.toBe(0);
+
+      await page.goBack();
+      await page.locator(".notebook-sidebar-filter").waitFor();
+      expect(new URL(page.url()).search).toBe("?view=favorites");
+      expect((await listed(page)).map((row) => row.id)).toEqual(["Reels1", "Exam01"]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("the chosen tag again shows the tree, and a live change keeps every listed note in its place", async () => {
+    const page = await open(desktop, filtered());
+    try {
+      await page.getByRole("button", { name: "Tags" }).click();
+      await page.getByRole("menuitemradio", { name: /^video/ }).click();
+      expect((await listed(page)).map((row) => row.id)).toEqual(["Reels1", "Exam01"]);
+      await page.getByRole("button", { name: "Tags: video" }).click();
+      await page.getByRole("menuitemradio", { name: /^video/ }).click();
+      expect(new URL(page.url()).search).toBe("");
+      expect((await listed(page)).map((row) => row.id)).toEqual(["Home01", "Rules1", "Exam01", "Reels1"]);
+
+      await page.getByRole("button", { name: "Favorites" }).click();
+      expect((await listed(page)).map((row) => row.id)).toEqual(["Reels1", "Exam01"]);
+      const rows = () =>
+        page.evaluate(() =>
+          Array.from(document.querySelectorAll('[role="tree"] > [role="treeitem"]')).map((row) => row.getBoundingClientRect().top),
+        );
+      const before = await rows();
+      const date = (await listed(page)).find((row) => row.id === "Exam01")!.meta;
+      // Someone saves Examples, which makes it the newest favorite.
+      api.tree.find((node) => node.id === "Exam01")!.updatedAt = "2026-10-02T00:00:00.000Z";
+      await page.evaluate(
+        (exam) =>
+          new Promise<void>((done) => {
+            const covered: Promise<void>[] = [];
+            window.dispatchEvent(
+              new CustomEvent("notebooks.workspace.event", {
+                detail: {
+                  cursor: null,
+                  event: { type: "note.updated", note: exam },
+                  cover: (coverage: Promise<void>) => covered.push(coverage),
+                },
+              }),
+            );
+            void Promise.all(covered).then(() => done());
+          }),
+        api.tree.find((node) => node.id === "Exam01"),
+      );
+      // The row shows the new date in its place.
+      await page.waitForFunction(
+        (date) =>
+          document.querySelector('[data-k2b-nav-tree-id="Exam01"] .k2b-app-workspace__sidebar-item-description')?.textContent !== date,
+        date,
+      );
+      expect((await listed(page)).map((row) => row.id)).toEqual(["Reels1", "Exam01"]);
+      expect(await rows()).toEqual(before);
+      // Choosing the filter anew sorts it newest first.
+      await page.getByRole("button", { name: "Favorites" }).click();
+      await page.getByRole("button", { name: "Favorites" }).click();
+      expect((await listed(page)).map((row) => row.id)).toEqual(["Exam01", "Reels1"]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
   test("a right-click on a tree row opens the note menu, and the notebook name switches notebooks", async () => {
     const page = await open(desktop, { ...filtered(), permission: "write" });
     try {
@@ -437,13 +520,15 @@ describe("One notebook sidebar with quick filters", () => {
     }
   }, 30_000);
 
-  test("on a phone the menu offers the same filters and lists notes with their dates", async () => {
+  test("on a phone the menu offers the same filters, shows the list right away and lists notes with their dates", async () => {
     const page = await open(phone, filtered(), "de");
     try {
       await page.evaluate(() => window.mountPhoneMenu("de", true));
       const menu = page.locator("#phone-menu");
+      // A filter changes only what the menu shows, so the menu stays open with the list.
       await menu.getByRole("button", { name: "Favoriten", exact: true }).click();
       await menu.getByText("Favoriten · 2 Notizen").waitFor();
+      await expect(page.evaluate(() => window.phoneMenuClosed)).resolves.toBe(false);
       const rows = await page.evaluate(() =>
         Array.from(document.querySelectorAll<HTMLElement>('#phone-menu a.k2b-navigation__control[href*="/notes/"]')).map((row) => ({
           href: row.getAttribute("href"),
@@ -457,6 +542,21 @@ describe("One notebook sidebar with quick filters", () => {
       expect(rows[0]!.text).toContain("#video #social");
       await menu.getByRole("button", { name: "Filter aufheben" }).click();
       await menu.getByRole("link", { name: "Startseite Overview" }).waitFor();
+
+      await menu.getByRole("button", { name: "Tags", exact: true }).click();
+      await menu.getByRole("button", { name: /^video/ }).click();
+      await menu.getByText("#video · 2 Notizen").waitFor();
+      expect(new URL(page.url()).search).toBe("?view=tag&tag=video");
+      // The tag again shows the tree again, as on the desktop.
+      await menu.getByRole("button", { name: /^video/ }).click();
+      await menu.getByRole("link", { name: "Startseite Overview" }).waitFor();
+      await menu.getByRole("button", { name: "Notizen sortieren" }).click();
+      await menu.getByRole("button", { name: "Zuletzt geändert" }).click();
+      // The homepage leads; the newest note follows it.
+      await page.waitForFunction(
+        () => document.querySelectorAll('#phone-menu a.k2b-navigation__control[href*="/notes/"]')[1]?.textContent === "Reels",
+      );
+      await expect(page.evaluate(() => window.phoneMenuClosed)).resolves.toBe(false);
     } finally {
       await page.context().close();
     }
@@ -635,6 +735,8 @@ describe("Notebook sidebar order by hand", () => {
         () => document.querySelector('[role="tree"] > [role="treeitem"]:nth-child(2)')?.getAttribute("data-k2b-nav-tree-id") === "Exam01",
       );
       expect(api.requests).toEqual([{ path: "notes/Exam01/move", body: { parentId: null, before: "Rules1" } }]);
+      // A note's action closes the menu before it runs.
+      await expect(page.evaluate(() => window.phoneMenuClosed)).resolves.toBe(true);
     } finally {
       await page.context().close();
     }
