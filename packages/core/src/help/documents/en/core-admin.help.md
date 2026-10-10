@@ -1,67 +1,83 @@
 ---
 id: core-admin
-title: Admin
+title: Administration
 icon: ti ti-settings
-description: Admin overview, announcement lifecycle, and Core settings groups.
+description: Use the administration overview, publish announcements, change Core settings, and rotate app credentials.
 order: 120
 ---
 
-Core admin pages configure platform services and link to app-specific admin panels registered by each app.
+The Core administration pages configure platform services. They also link to the administration pages that each app registers.
 
-Account settings offer **Documentation** links to the relevant English guide in
-a new tab. Under **General**, **Documentation website** selects the public docs,
-a self-hosted mirror or your local Fibel server. This changes help links only;
-it does not configure app sign-in. The built-in Help reader stays independent.
+The account settings link to the matching English guide with **Documentation**. The guide opens in a new tab. In **Settings → General**, **Documentation website** selects the public documentation, your own mirror, or your local Fibel server. This setting changes only the documentation links. It does not configure app sign-in, and the built-in Help stays independent of it.
 
-## Admin pages {icon="user-cog"}
+## Find the administration pages {icon="user-cog"}
 
 :::reference
-- **Overview:** Lists registered apps with admin panels and summarizes registered apps, manageable admin panels, and user-visible navigation entries.
-- **App credentials:** Select an application and create a named credential for background work across apps. Copy the token when it is shown once; afterward only metadata and revocation are available. User mandates still limit the actions it can perform.
-- **Announcements:** Create and edit announcements or banners. Entries can be active, scheduled, or expired based on publish and expiry timestamps.
-- **Settings:** Edit settings by group. Each field shows its current value and source where the settings service exposes it.
+- **Overview:** Lists the registered apps with administration pages. It also counts the registered apps, the administration pages that you can open, and the navigation entries that people see.
+- **App credentials:** Create a named credential for the background work of one app across apps. User mandates still limit the actions that the credential can take.
+- **Announcements:** Create and edit announcements or banners. An entry is active, scheduled, or expired, depending on its publish time and expiry time.
+- **Settings:** Edit the settings by group. Each field shows its current value. It also shows the source of the value where the settings service provides it.
 :::
 
-## Settings groups {icon="settings"}
+## Control account types and sign-in {icon="settings"}
 
-In **Accounts & sign-in → Sign-in**, configure **Guest**, passwordless local **Login** and
-**FreeIPA** separately. Rename Login, for example to **Company account**.
-**Allowed** controls access; **Show in login** only controls the general login
-page. A hidden, allowed account can still use direct links. One visible type
-opens its form without a selector. Guest self-registration stays separate.
-
-Disabling a type denies subsequent requests from existing sessions,
-user OAuth tokens, personal API keys and user-backed background work. It does
-not delete accounts or stop FreeIPA sync. Re-enabling restores otherwise-valid
-credentials. Keep another allowed admin or your emergency token available
-before disabling your own type. Emergency recovery explicitly re-enables all
-local Login accounts without changing login visibility.
+In **Accounts & sign-in → Sign-in**, you configure the account types **Guest**, **Login**, and **FreeIPA** separately. **Login** is the passwordless local account. Rename it with **Login account label**, for example to Company account.
 
 :::reference
-- **General:** Branding, public links and global schedules.
-- **Registration & requests:** Configure Guest self-registration, FreeIPA access requests, account defaults, expiry and reminders. New installations require opt-in for requests; upgrades preserve existing behavior. Disabling new requests leaves pending requests available for processing.
-- **Follow-up notices:** In Registration & requests, configure an optional Liquid-Markdown notice after successful user or group changes. Use `action` to select relevant instructions and preview sample data. Empty output adds no notice. These are instructions for the administrator or group manager, not a notification sent to the user. No NFS instructions are built in.
-- **Operations:** Open filtered lifecycle and FreeIPA sync logs or scheduled jobs. Maintenance repairs account expiry dates, not Linux identities, and can restore access for expired accounts. A toast confirms the job was queued; check its logs for completion. Individual records and request processing stay in Accounts.
-- **Linux identities:** Reserve an ID range and configure home and shell defaults. While enabled, new local full accounts and promoted guests receive Linux attributes automatically. Use **Backfill existing accounts** for older full accounts; enabling the feature does not change them. Disabling assignment hides the backfill table and retains existing identities in Accounts. This does not enable computer login or sudo.
-- **FreeIPA:** FreeIPA connection settings, sync rules, and group mapping.
-- **AI:** Configure model profiles and provider credentials, inspect background work, and use **Skills** or **Projects** to restore access when a shared resource no longer has an administrator. These recovery pages can grant permissions or permanently delete obsolete resources, including Skills initially provided by Cloud.
-- **Mail and PDF rendering:** Configure SMTP delivery, sender credentials, Gotenberg connection, credentials, and render limits.
-- **Templates, security, and legal:** Transactional email templates, rate limits, access protection defaults, Terms of Service, Privacy Policy, and Imprint.
+- **Guest accounts allowed**, **Login accounts allowed**, **FreeIPA accounts allowed:** Control access.
+- **Show Guest in login**, **Show Login in login**, **Show FreeIPA in login:** Control only the general sign-in page. A hidden, allowed account can still use direct links.
 :::
 
-## First administrator access {icon="key"}
+If only one account type is visible, the sign-in page opens its form without a selector. Guest self-registration is a separate decision.
 
-On a fresh installation, the operator supplies a temporary `ADMIN_LOGIN_TOKEN`
-only to Core. Open `/auth/login?method=admin` and enter it. Review and accept
-the displayed legal documents to complete first sign-in. Configure and verify
-normal administrator sign-in, then have the operator remove the token and
-restart Core. Configure FreeIPA and its administrator group mapping in Settings;
-there is no FreeIPA environment bootstrap.
+:::warning Keep a way in before you disable your own account type
+Keep another allowed administrator or your emergency token available.
+:::
+
+Disabling an account type denies later requests from existing sessions, user OAuth tokens, personal API keys, and user-bound background work. It does not delete accounts or stop FreeIPA sync. Allowing the type again makes credentials work again if they are otherwise valid. Emergency recovery explicitly allows all local **Login** accounts again. It does not change which types the sign-in page shows.
+
+## Find the other settings groups {icon="settings"}
+
+:::reference
+- **Settings → General:** Branding, public links, and global schedules.
+- **Accounts & sign-in → Registration & requests:** Guest self-registration, FreeIPA access requests, account defaults, expiry, and reminders. On a new installation, requests are off until you turn them on. An upgrade keeps the earlier behavior. When you turn off new requests, pending requests stay available for processing.
+- **Follow-up notices:** In **Registration & requests**, set an optional Liquid-Markdown notice for successful user or group changes. Use `action` to choose the instructions for each change, and check the preview with sample data. Empty output adds no notice. The notice is an instruction for the administrator or group manager who made the change, not a notification to the user. Cloud has no built-in NFS instructions.
+- **Accounts & sign-in → Operations:** Open filtered lifecycle logs, FreeIPA sync logs, or scheduled jobs. Maintenance repairs account expiry dates, not Linux identities, and can restore access for expired accounts. A toast confirms that the job is queued. Check its logs to see when it finishes. Single records and request processing stay in Accounts.
+- **Accounts & sign-in → Linux identities:** Reserve an ID range and set defaults for home and shell. While assignment is on, new local full accounts and promoted guests get Linux attributes automatically. Turning it on does not change older full accounts; use **Backfill existing accounts** for them. Turning assignment off hides the backfill table and keeps existing identities in Accounts. Linux identities do not enable computer sign-in or sudo.
+- **Accounts & sign-in → FreeIPA:** FreeIPA connection settings, sync rules, and group mapping.
+- **AI:** Configure model profiles and provider credentials, and check background work. Use **Skills** or **Projects** to restore access when nobody has **Manage** access to a shared resource any more. These recovery pages can give access or permanently delete resources that are no longer needed, including Skills that Cloud provided at first.
+- **Settings → Outgoing mail** and **Settings → PDF rendering:** SMTP delivery, sender credentials, the Gotenberg connection and its credentials, and render limits.
+- **Settings → Email templates**, **Settings → Security**, and **Settings → Legal:** Transactional email templates, rate limits, defaults for access protection, Terms of Service, Privacy Policy, and Imprint.
+:::
+
+## Sign in as the first administrator {icon="key"}
+
+On a fresh installation, the operator sets a temporary `ADMIN_LOGIN_TOKEN` for Core only.
+
+:::steps
+1. Open `/auth/login?method=admin`.
+2. Enter the token.
+3. Review and accept the legal documents that Cloud shows. This completes the first sign-in.
+4. Configure the normal administrator sign-in.
+5. Check that the normal administrator sign-in works.
+6. Ask the operator to remove the token and restart Core.
+:::
+
+Configure FreeIPA and its administrator group mapping in the settings. Cloud has no environment bootstrap for FreeIPA.
 
 ## Rotate an app credential {icon="key"}
 
-In **App credentials**, choose **Create credential**. Select the application and enter the name and optional expiration time in the dialog. The table lists existing credentials; **Revoke** opens a confirmation dialog.
-Give it to the owning app as `CLOUD_APP_CREDENTIAL` through the deployment secret
-store. Background calls also require Core's private address in
-`CLOUD_CORE_INTERNAL_ORIGIN`. After applying it and checking background work,
-revoke the old credential. Revocation stops new calls using that credential.
+**App credentials** lists the existing credentials in a table.
+
+:::steps
+1. In **App credentials**, choose **Create credential**.
+2. In the dialog, select the **Application**.
+3. Enter the **Name** and, if needed, the expiry time.
+4. Copy the token. Cloud shows it only once; afterwards only its metadata and **Revoke** stay available.
+5. Give the token only to the owning app, as `CLOUD_APP_CREDENTIAL`, through the secret store of the deployment.
+6. Set Core's private address in `CLOUD_CORE_INTERNAL_ORIGIN`. Background calls need it.
+7. Apply the change and check the background work of the app.
+8. Choose **Revoke** for the old credential and confirm in the dialog.
+:::
+
+Revoking stops new calls with that credential.

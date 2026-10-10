@@ -2,34 +2,35 @@
 id: core-notifications
 title: Notifications
 icon: ti ti-bell
-description: Notification history, filters, preferences, browser delivery, and common delivery problems.
+description: Check the notification history, filter it, set preferences, turn on browser delivery, and fix delivery problems.
 order: 114
 ---
 
-Notifications keep account and app events in one history. Delivery channels and available preferences depend on the platform and the apps you can access.
+Notifications collects account and app events in one history. The delivery channels and preferences depend on the platform and on the apps that you can access.
 
-## Use notification history {icon="bell"}
+## Check the notification history {icon="bell"}
 
-- Open Notifications to review recent entries rather than relying only on a temporary toast or email.
-- Filter the history by delivery status when you need to distinguish delivered, pending, failed, or suppressed attempts.
-- Open the related app or record from the notification when a link is provided.
-- The history contains delivery metadata, not the notification message body.
+- Open **Profile settings → Notifications → Delivery history** to review recent entries. Do not rely only on a short toast or an email.
+- Filter the history by delivery status: **Delivered**, **Pending**, **Failed**, or **Not sent**.
+- Open the related app or record from the notification when it has a link.
+- The history contains delivery metadata, not the message text of the notification.
 
-## Browser notifications {icon="bell"}
+## Turn on browser notifications {icon="bell"}
 
-Browser notifications appear as operating-system notifications, including while Cloud is open or you are already viewing the linked item. Click a notification to open its item. Cloud does not show an additional in-app notification. This device needs browser delivery enabled and notification permission to receive these notifications.
+Browser notifications appear as notifications of the operating system. They also appear while Cloud is open or while you already view the linked item. Choose a notification to open its item. Cloud does not show an extra notification inside the app. This device receives these notifications only with browser delivery turned on and notifications allowed in the browser.
 
 :::steps
-1. Enable browser delivery from your profile when the option is available.
-2. Allow notifications in the browser permission prompt.
-3. Keep the site permission enabled for the Cloud origin you use.
-4. Use notification preferences to disable categories you do not want, instead of blocking every notification at browser level.
+1. Open **Profile settings → Notifications**.
+2. Under **Browser notifications**, choose **Enable**, if the option is available.
+3. Allow notifications when the browser asks.
+4. Keep notifications allowed in the browser for the Cloud address that you use.
+5. Turn off unwanted categories in your notification preferences, instead of blocking every notification in the browser.
 :::
 
-## If notifications do not arrive {icon="bell"}
+## Fix missing notifications {icon="bell"}
 
-- Check the in-app history first to determine whether the event was created.
-- Review the preference for that notification category.
-- Check the browser's site permission and operating-system notification settings.
-- Confirm that you are signed into the expected account and Cloud environment.
-- Ask an administrator to inspect delivery records when the in-app entry exists but an external delivery failed.
+- Check the history first. It shows whether Cloud created the event.
+- Check your preference for that notification category.
+- Check the site settings of the browser and the notification settings of the operating system.
+- Check that you are signed in to the expected account and Cloud environment.
+- If the history shows the entry but an external delivery failed, ask an administrator to check the delivery records.

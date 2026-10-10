@@ -2,34 +2,35 @@
 id: core-notifications
 title: Benachrichtigungen
 icon: ti ti-bell
-description: Zustellverlauf, Einstellungen, Browser-Zustellung und häufige Zustellprobleme.
+description: Zustellverlauf prüfen und filtern, Einstellungen festlegen, Browser-Zustellung einschalten und Zustellprobleme beheben.
 order: 114
 ---
 
-Im Benachrichtigungsbereich kannst du Zustellversuche aus Cloud und den verfügbaren Apps prüfen. Welche Kanäle und Einstellungen verfügbar sind, hängt von der Plattform und deinen Apps ab.
+Im Zustellverlauf prüfst du die Zustellversuche von Cloud und deinen Apps. Welche Kanäle und Einstellungen es gibt, hängt von der Plattform und deinen Apps ab.
 
 ## Zustellverlauf prüfen {icon="bell"}
 
-- Öffne **Benachrichtigungen**, um aktuelle Zustellversuche zu prüfen, statt dich nur auf kurz eingeblendete Meldungen oder E-Mails zu verlassen.
-- Filtere nach Zustellstatus, um zugestellte, ausstehende, fehlgeschlagene oder unterdrückte Versuche zu unterscheiden.
-- Öffne die verknüpfte App oder den zugehörigen Eintrag, wenn ein Link vorhanden ist.
+- Öffne **Profileinstellungen → Benachrichtigungen → Zustellverlauf**, um aktuelle Zustellversuche zu prüfen. Verlass dich nicht nur auf kurz eingeblendete Meldungen oder E-Mails.
+- Filtere nach Zustellstatus: **Zugestellt**, **Ausstehend**, **Fehlgeschlagen** oder **Nicht gesendet**.
+- Öffne die verknüpfte App oder den zugehörigen Eintrag, wenn die Benachrichtigung einen Link hat.
 - Der Verlauf enthält Zustellmetadaten, nicht den Inhalt der Benachrichtigung.
 
-## Browser-Benachrichtigungen aktivieren {icon="bell"}
+## Browser-Benachrichtigungen einschalten {icon="bell"}
 
-Browser-Benachrichtigungen erscheinen als Systembenachrichtigungen, auch während Cloud geöffnet ist oder du den verknüpften Inhalt bereits ansiehst. Ein Klick öffnet den zugehörigen Inhalt. Cloud zeigt dafür keine zusätzliche Meldung innerhalb der App. Ohne aktivierte Browser-Zustellung und Browserberechtigung erhältst du auf diesem Gerät keine solchen Benachrichtigungen.
+Browser-Benachrichtigungen erscheinen als Benachrichtigungen des Betriebssystems. Sie erscheinen auch, während Cloud geöffnet ist oder du den verknüpften Inhalt schon ansiehst. Wähle eine Benachrichtigung, um ihren Inhalt zu öffnen. Cloud zeigt dazu keine zusätzliche Meldung in der App. Dieses Gerät erhält solche Benachrichtigungen nur, wenn die Browser-Zustellung eingeschaltet ist und der Browser Benachrichtigungen erlaubt.
 
 :::steps
-1. Aktiviere die Browser-Zustellung im Kontobereich, wenn sie verfügbar ist.
-2. Erlaube Benachrichtigungen in der Abfrage des Browsers.
-3. Lass die Website-Berechtigung für die verwendete Cloud-Adresse aktiviert.
-4. Deaktiviere nicht gewünschte Kategorien in den Benachrichtigungseinstellungen, statt alle Browser-Benachrichtigungen zu blockieren.
+1. Öffne **Profileinstellungen → Benachrichtigungen**.
+2. Wähle unter **Browser-Benachrichtigungen** die Option **Aktivieren**, wenn sie verfügbar ist.
+3. Erlaube Benachrichtigungen, wenn der Browser fragt.
+4. Lass Benachrichtigungen im Browser für die Cloud-Adresse erlaubt, die du nutzt.
+5. Schalte unerwünschte Kategorien in den Benachrichtigungseinstellungen aus, statt alle Benachrichtigungen im Browser zu blockieren.
 :::
 
-## Wenn Benachrichtigungen ausbleiben {icon="bell"}
+## Fehlende Benachrichtigungen finden {icon="bell"}
 
-- Prüfe zuerst den Zustellverlauf, um festzustellen, ob ein Zustellversuch vorhanden ist.
-- Prüfe die Einstellung für den betreffenden Benachrichtigungstyp.
-- Prüfe die Website-Berechtigung des Browsers und die Benachrichtigungseinstellungen des Betriebssystems.
-- Vergewissere dich, dass du am erwarteten Konto und in der richtigen Cloud-Umgebung angemeldet bist.
-- Wende dich an die Administration, wenn im Verlauf ein fehlgeschlagener externer Zustellversuch angezeigt wird.
+- Prüfe zuerst den Zustellverlauf. Er zeigt, ob es einen Zustellversuch gibt.
+- Prüfe deine Einstellung für den betreffenden Benachrichtigungstyp.
+- Prüfe die Website-Einstellungen des Browsers und die Benachrichtigungseinstellungen des Betriebssystems.
+- Prüfe, ob du mit dem erwarteten Konto in der richtigen Cloud-Umgebung angemeldet bist.
+- Zeigt der Verlauf einen fehlgeschlagenen externen Zustellversuch, wende dich an die Administration.
