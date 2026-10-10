@@ -109,7 +109,7 @@ Personen, die einen aktuellen Datensatz lesen können, öffnen in seiner Detaila
 Nachdem der dauerhafte Verlauf seinen Ausgangsstand fertiggestellt hat, kann eine Person mit Zugriff **Verwalten** auf die Base im selben Abschnitt **Verlauf und Schutz** die **Finalisierung von Datensätzen** aktivieren. Bestehende und neue Datensätze bleiben Entwürfe, bis jemand einen ausdrücklich finalisiert. Die Einstellung gehört zu einer gespeicherten Tabelle und bietet zwei Modi:
 
 - **Direkt:** Eine Person mit Zugriff **Bearbeiten** kann den Datensatz selbst finalisieren.
-- **Vier-Augen-Prinzip:** Eine Person mit Zugriff **Bearbeiten** fordert die Finalisierung der exakt aktuellen Datensatzversion an. Eine andere Person genehmigt und finalisiert sie. Diese Person braucht weiterhin Zugriff **Bearbeiten** und muss aktuelles Mitglied der konfigurierten **Freigabegruppe** sein.
+- **Vier Augen:** Eine Person mit Zugriff **Bearbeiten** fordert die Finalisierung der exakt aktuellen Datensatzversion an. Eine andere Person genehmigt und finalisiert sie. Diese Person braucht weiterhin Zugriff **Bearbeiten** und muss aktuelles Mitglied der konfigurierten **Freigabegruppe** sein.
 
 Die Freigabegruppe gibt keinen Zugriff. Modus und Gruppe werden atomar aktiviert, ohne zwischenzeitlichen Direktmodus. Eine Änderung der Regel macht offene Anfragen ungültig. Geänderte Werte, Relationen, Dateien, Papierkorbzustände oder aktive Felddefinitionen erfordern ebenfalls eine neue Anfrage. Das gilt auch für Feldnamen: Die prüfende Person genehmigt die Bedeutung des ganzen Datensatzes, nicht nur seine Summen. Anfragen, Entscheidungen und Finalisierung bleiben im Audit-Verlauf.
 

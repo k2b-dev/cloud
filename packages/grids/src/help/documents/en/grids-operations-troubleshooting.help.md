@@ -5,140 +5,202 @@ icon: ti ti-bolt
 description: Diagnose common problems without guessing or losing work.
 order: 150
 ---
-## The Base structure changed {icon="refresh"}
+## Reload after the Base structure changed {icon="refresh"}
 
-When someone else changes the structure of the area you are working in, one **Reload** notice appears; the page never reloads on its own, and saving keeps working. Structure means the table name and its fields, a View's source and table, or an App's definition; column widths, display modes, view layouts, field order, and changes elsewhere in the Base show nothing. Your own edits in this tab never trigger the notice. Open inputs stay intact until you confirm Reload; a save that no longer fits the current structure, such as a value for a deleted field, is rejected by the server with a clear message. Lost access or a deleted active resource hides the affected workspace immediately.
+When someone else changes the structure of the area you work in, one **Reload** notice appears. The page never reloads on its own, and saving keeps working.
 
-## A resource is missing or will not open {icon="lifebuoy"}
+Structure means the name and fields of a table, the source and table of a view, or the definition of an app. Column widths, display modes, view layouts, field order, and changes elsewhere in the Base show no notice. Your own edits in this tab never show the notice.
 
-Check that it is not in trash or disabled, then identify the boundary. Raw tables, Views, Forms, documents, and Workflows require the owning Base permission. A published Grids App requires its own Read grant. Cloud administrator status does not bypass Grids access on normal app pages.
+Open inputs stay intact until you confirm **Reload**. If a save no longer fits the current structure, for example a value for a deleted field, the server rejects it with a clear message. When you lose access, or an active resource is deleted, Grids hides the affected workspace immediately.
 
-For a Grids App, confirm that the requested page or block is part of the published snapshot and that its `availableWhen` query returns a row. An unavailable resource deliberately returns **Not Found** and executes no data source or action.
+## Open a missing resource {icon="lifebuoy"}
 
-## Records are missing, duplicated, or out of order {icon="lifebuoy"}
+Check that the resource is not in the trash and not disabled. Then find the boundary:
 
-Read the active search, filters, source view, deleted-record mode, and `limit`. Search respects the current query, so it cannot find records already filtered out.
+- Raw tables, views, forms, documents, and workflows require access to the Base that owns them.
+- A published Grids App requires its own **Open** access.
+- Being a Cloud administrator does not bypass Grids access on normal app pages.
 
-Use exact filters for calculated values, lookups, rollups, files, dates, and empty values. Add a meaningful sort before relying on page order or `offset`. Pages are live reads; changes made between page requests can move matching records.
+For a Grids App, confirm that the requested page or block is part of the published snapshot. Also confirm that its `availableWhen` query returns a row. An unavailable resource returns a not-found error on purpose and runs no data source or action.
 
-Record results refresh in place, including after reconnect. If the table has a search field, its magnifier turns into a small spinner while records load or refresh. Filters, sorting, and totals are recalculated; records can leave the result. Open edit dialogs keep their drafts and flag competing changes. If an automatic refresh fails, select **Updates available** next to the record count to try again. If live updates stop, reload the page.
+## Find missing, duplicated, or unordered records {icon="lifebuoy"}
 
-## A record edit was rejected {icon="table"}
+Read the active search, filters, source view, deleted-record mode, and `limit`. Search applies within the current query, so it cannot find records that a filter already removed.
 
-Another user or tab may have saved a newer version. The edit dialog keeps your input. Choose **Compare current record** to review the latest values, then explicitly keep your edits on that version before saving again. Fields you did not change take their current values. This prevents an older form from silently overwriting newer work.
+Use exact filters for calculated values, lookups, rollups, files, dates, and empty values. Add a meaningful sort before you rely on page order or `offset`. Each page is a live read, so changes between page requests can move matching records.
 
-If the message asks for change context, answer the questions configured under **Table settings → Data integrity**. Protected updates, trash actions, and restores cannot proceed without the required answers.
+Record results refresh in place, also after a reconnect. If the table has a search field, its magnifier turns into a small spinner while records load or refresh. Grids recalculates filters, sorting, and totals, so records can leave the result. Open edit dialogs keep their drafts and flag competing changes. If an automatic refresh fails, choose **Updates available** next to the record count to try again. If live updates stop, reload the page.
 
-If the message says this source is not allowed to change the table, a Base admin must open **Table settings → Data integrity → Record changes** and allow the matching source. The Base UI, API, CLI, Forms, Workflows, and Grids App actions all follow this setting; retrying through another client does not bypass it.
+## Save a rejected record edit {icon="table"}
 
-For API or CLI integrations, patch only the fields the integration owns. Send the current positive Record version as `If-Match` or `--if-version` when a stale projection must not overwrite a newer edit. A stale version returns a conflict; a malformed version is rejected as input. If the normalized scalar and Relation values are already current, Grids returns the Record without creating a new version, Durable History revision, audit entry, or live event.
-
-For a connector that repeatedly projects the same external object, use the external Record upsert instead of searching a visible field and then creating. Its provider, provider account, resource kind, and external ID form one case-sensitive binding; the Record keeps its separate public Grids ID. Reuse the same idempotency key only for an uncertain retry of the same request. A later projection uses a new key and the current Record version. Reusing a key with different input, omitting the version for an existing binding, or sending a stale version returns a conflict without creating a duplicate. The result is an immutable receipt with the public Record ID and the version produced by that request; read the Record separately for current values. Retry receipts expire after 30 days, but the identity binding does not.
-
-For up to 100 independent projections, `cld grids records upsert-external-batch` applies the same contract sequentially. Every item has its own idempotency key and ordered outcome; one conflict does not roll back successful siblings. If the request is interrupted, retry the complete unchanged batch: committed items replay and remaining items continue. `records import` is different: it creates one all-or-nothing batch and is not the retry-safe external-identity path.
-
-For a resumable integration, keep the latest opaque cursor from `cld grids records changes`. The feed contains public Base, Table, and Record IDs plus the committed event type and Record version, not a field-value snapshot. Reread each current Record before projecting it. Base Read access is checked on every page; `--table` only narrows that Base feed. A change appears once every earlier write has ended, so a long import delays the changes after it instead of being skipped. If the feed stays empty while Records change, ask the operator about a transaction left open on the database server. Cursors cover the last 30 days. If a cursor expires, make a fresh full Record scan and start from the new feed position. Bound automated catch-up with `--all --max-events N`.
-
-## A view or Grids App result is wrong {icon="layout"}
-
-Open the source query and verify it before changing presentation:
-
-- use pre-group filters for source records and `having` for aggregate rows;
-- confirm a chart source is grouped and contains the expected aggregate values;
-- check whether a widget uses a saved view or its own local GQL;
-- remember that aggregate-only and grouped results are summaries, not editable records.
-
-An empty result is different from a failed result. Query diagnostics explain syntax, unknown names, incompatible operations, and permission failures.
-
-## A form will not submit {icon="forms"}
-
-Confirm that the Form is active. A raw Base user needs Base Write. A Grids App submission must use an included available Form block. A public Form must still be enabled for token access and opened through its current public URL.
-
-Check required fields, relation inline-create rules, and hidden values. People submitting the form cannot override its hidden values.
-
-If an old public URL stopped working after public access was disabled, share the newly generated URL. The old link is intentionally not restored.
-
-## A document preview or download fails {icon="lifebuoy"}
-
-Choose a preview record, then inspect the template in this order:
+Another person or tab can have saved a newer version. The edit dialog keeps your input.
 
 :::steps
-1. **Source** shows the GQL after current-record Liquid values were inserted.
-2. **Data** shows the exact paths available to Liquid.
+1. Choose **Compare current record**.
+2. Review the latest values.
+3. Keep your edits on that version explicitly.
+4. Save again.
+:::
+
+Fields that you did not change take their current values. This prevents an older form from overwriting newer work silently.
+
+If the message asks for change context, answer the questions configured in **Table settings → Data integrity**. Protected updates, trash actions, and restores cannot continue without the required answers.
+
+The message can say that this source cannot change the table. Then a person with **Manage** access to the Base must allow the matching source in **Table settings → Data integrity → Record changes**. The Base interface, the API, the CLI, forms, workflows, and Grids App actions all follow this setting. A retry through another client does not bypass it.
+
+### Write safely from an integration
+
+For API or CLI integrations, patch only the fields that the integration owns. Send the current positive record version as `If-Match` or `--if-version` when a stale projection must not overwrite a newer edit. A stale version returns a conflict. Grids rejects a malformed version as input. If the normalized scalar and relation values are already current, Grids returns the record. It creates no new version, durable history revision, audit entry, or live event.
+
+For a connector that projects the same external object again and again, use the external record upsert. Do not search a visible field and then create a record. The provider, provider account, resource kind, and external ID form one case-sensitive binding. The record keeps its separate public Grids ID.
+
+- Reuse the same idempotency key only for an uncertain retry of the same request.
+- A later projection uses a new key and the current record version.
+- Reusing a key with different input, leaving out the version for an existing binding, or sending a stale version returns a conflict. No duplicate is created.
+- The result is an immutable receipt with the public record ID and the version that this request produced. Read the record separately for the current values.
+- Retry receipts expire after 30 days. The identity binding does not expire.
+
+For up to 100 independent projections, `cld grids records upsert-external-batch` applies the same contract one item after the other. Every item has its own idempotency key and ordered outcome. One conflict does not roll back successful siblings. If the request is interrupted, retry the complete unchanged batch: committed items replay, and the remaining items continue. `records import` is different. It creates one all-or-nothing batch and is not the retry-safe path for external identities.
+
+### Follow changes from an integration
+
+For a resumable integration, keep the latest opaque cursor from `cld grids records changes`. The feed contains public Base, table, and record IDs and the committed event type and record version. It contains no snapshot of field values. Read each current record again before you project it.
+
+**View** access to the Base is checked on every page. `--table` only narrows the feed of that Base. A change appears once every earlier write has ended. A long import therefore delays the later changes. They are not skipped. If the feed stays empty while records change, ask the operator about a transaction left open on the database server.
+
+Cursors cover the last 30 days. If a cursor expires, scan all records again and start from the new feed position. Bound automated catch-up with `--all --max-events N`.
+
+## Correct a wrong view or Grids App result {icon="layout"}
+
+Open the source query and verify it before you change the presentation:
+
+- Use filters before the grouping for source records and `having` for aggregate rows.
+- Confirm that a chart source is grouped and contains the expected aggregate values.
+- Check whether a widget uses a saved view or its own local GQL.
+- Aggregate-only and grouped results are summaries, not editable records.
+
+An empty result is different from a failed result. Query diagnostics explain syntax errors, unknown names, incompatible operations, and access failures.
+
+## Submit a form that fails {icon="forms"}
+
+Confirm that the form is active. Then check the path:
+
+- A person who works in the Base needs **Edit** access to the Base.
+- A submission through a Grids App must use a form block that the app includes and that is available.
+- A public form must still be enabled for token access and opened through its current public URL.
+
+Check required fields, the rules for creating related records inline, and hidden values. People who submit the form cannot override its hidden values.
+
+If an old public URL stopped working after someone disabled public access, share the newly generated URL. Grids does not restore the old link, on purpose.
+
+## Fix a document preview or download {icon="lifebuoy"}
+
+Choose a preview record. Then inspect the template in this order:
+
+:::steps
+1. **Source** shows the GQL after Grids inserted the Liquid values of the current record.
+2. **Data** shows the exact paths that Liquid can use.
 3. **Preview** shows the rendered PDF.
 :::
 
-Correct the source when rows are empty, and copy paths from Data instead of guessing. For barcodes, verify both the symbol id and a non-empty compatible value. For multipage output, test with enough rows and keep repeated letterhead or page-number content in header and footer parts.
+Correct the source when rows are empty. Copy paths from **Data** instead of guessing them. For barcodes, check both the symbol ID and a compatible value that is not empty. For output with several pages, test with enough rows. Keep repeated letterhead or page numbers in the header and footer parts.
 
-New generated documents download their exact stored PDF bytes. Later record, template, or renderer changes cannot rewrite an existing artifact.
+New generated documents download their exact stored PDF bytes. Later changes to the record, template, or renderer cannot rewrite an existing artifact.
 
-If generation returns an uncertain result, keep the dialog open and use **Retry generation**. It retries the same request rather than creating a new document. Closing abandons that retry context; check **All documents** before starting a new attempt.
+If generation returns an uncertain result, keep the dialog open and choose **Retry generation**. It retries the same request and does not create a new document. Closing the dialog ends that retry context. Check **All documents** before you start a new attempt.
 
-## A workflow did not do what you expected {icon="route"}
+## Investigate an unexpected workflow result {icon="route"}
 
-Open the run detail rather than immediately retrying. Check its revision, mode, channel, inputs, step outcomes, saved outputs, and error. The run executed the revision it pinned when it started, which is not necessarily the YAML on screen now — open the run's linked revision to read what actually ran.
+Open the run detail before you retry. Check its revision, mode, channel, inputs, step outcomes, saved outputs, and error. The run executed the revision that it pinned at its start. This is not necessarily the YAML on screen now. Open the linked revision of the run to read what actually ran.
 
-If a Grids App action cannot retrieve its result, use **Check status** while the page remains open. This follows the existing operation instead of starting another workflow. A status error does not prove the workflow failed.
+If a Grids App action cannot retrieve its result, choose **Check status** while the page stays open. This follows the existing operation and does not start another workflow. A status error does not prove that the workflow failed.
 
-A `dryRun` records predicted effects but does not perform writes or external requests. An `execute` retry should use a deliberate idempotency key; external HTTP receivers should also handle duplicate requests safely.
+A `dryRun` records predicted effects but performs no writes and no external requests. An `execute` retry must use a deliberate idempotency key. External HTTP receivers must also accept duplicate requests safely.
 
-For scanner, bulk, and Grids App actions, inspect the saved run option's diagnostics after changing workflow inputs.
+For scanner, bulk, and Grids App actions, inspect the diagnostics of the saved run option after you change workflow inputs.
 
-## A workflow run never appeared {icon="route"}
+## Find a workflow run that never appeared {icon="route"}
 
-An automatic run only exists if the workflow's published revision was listening for that occurrence. When nothing was listening, there is no failed run to open — there is no run at all. Work through the conditions in order:
+An automatic run exists only if the published revision of the workflow was listening for that occurrence. If nothing was listening, there is no failed run to open. There is no run at all. Check these conditions in order:
 
 :::steps
-1. **Enabled:** A disabled workflow refuses every execute run, schedules and record events included.
-2. **Published:** The trigger has to be in the published YAML. Editing the source in the editor without saving changes nothing that fires.
-3. **Trigger match:** Compare the record event, its optional table restriction, and its filter against the change you made; compare the cron expression and timezone against the time you expected.
-4. **Activation window:** A record change is only picked up if it happened after the trigger became active. Enabling the workflow or publishing a changed record-event trigger restarts that window — changes from before it are not replayed.
-5. **Missed schedule:** A slot that passes while Grids is unavailable is skipped, not caught up later. The next slot runs normally.
-6. **Owner permission:** Schedules and record events run as the workflow owner. If the owner no longer has Base Write, or cannot read a record the trigger binds to an input, the invocation is refused before any run is created.
+1. **Enabled:** A disabled workflow refuses every execute run, including schedules and record events.
+2. **Published:** The trigger must be in the published YAML. Editing the source without saving changes nothing that fires.
+3. **Trigger match:** Compare the record event, its optional table restriction, and its filter with your change. Compare the cron expression and timezone with the expected time.
+4. **Activation window:** Grids picks up a record change only if it happened after the trigger became active. Enabling the workflow, or publishing a changed record-event trigger, restarts that window. Grids does not replay earlier changes.
+5. **Missed schedule:** A slot that passes while Grids is unavailable is skipped and not caught up. The next slot runs normally.
+6. **Owner access:** Schedules and record events run as the workflow owner. Grids refuses the invocation before it creates a run if the owner lost **Edit** access to the Base. It also refuses it if the owner cannot read a record that the trigger binds to an input.
 :::
 
-If all six hold and there is still nothing, ask a Cloud administrator to check **Observability → Workflows**, which lists recorded occurrences that never became runs.
+If all six conditions hold and there is still no run, ask a Cloud administrator to check **Observability → Workflows**. It lists recorded occurrences that never became runs.
 
-## A workflow query reports an incompatible schema {icon="alert-triangle"}
+## Fix a workflow query with an incompatible schema {icon="alert-triangle"}
 
-If a query reports an incompatible schema or binding, review its source and the referenced fields, then publish the workflow again. Start a new run with the new revision; existing runs keep their original plan. Reordering columns alone does not invalidate a query. Do not edit stored hashes to bypass the check.
+If a query reports an incompatible schema or binding, review its source and the referenced fields. Then publish the workflow again. Start a new run with the new revision. Existing runs keep their original plan. Reordering columns alone does not invalidate a query.
+
+:::danger Do not edit hashes
+Do not edit stored hashes to bypass the check.
+:::
 
 This is a failed query, not the `needs_attention` state below.
 
-## A workflow run needs attention {icon="alert-triangle"}
+## Resolve a run that needs attention {icon="alert-triangle"}
 
-Platform administrators can inspect retained delivery failures with `cld grids record-events failures <base-id> --json`. Stopped workflow events stay listed until 30 days after their change; Grids keeps the record state they replay at least that long. Continue with the returned `nextOffset` using `--offset`. After fixing the cause, `cld grids record-events replay <base-id> <failure-id> --yes` replays one stopped event using its original retained data. Use the exact failure UUID from the list. Acceptance does not mean processing completed; Base Admin access alone does not grant this operator action.
+`needs_attention` requires a person to inspect the reason before the run continues.
 
-`needs_attention` requires a person to inspect the reason before continuing.
+If the reason is `WORKFLOW_MODULE_MISMATCH`, an update changed the available workflow actions. Review the workflow and publish it again. Existing runs keep their original plan, and publishing again does not upgrade them. Check completed steps and external effects before you start a new run.
 
-If the reason is `WORKFLOW_MODULE_MISMATCH`, an update changed the available workflow actions. Review and publish the workflow again. Existing runs retain their original plan; republishing does not upgrade them. Check completed steps and external effects before starting a new run.
+### Decide about an interrupted HTTP request
 
-For an interrupted `httpRequest`, the request left Grids without a complete response, so Grids cannot establish whether the receiver acted on it. Grids deliberately neither retries it nor calls it failed: retrying is how a receiver is charged twice, and calling it failed would claim it did not arrive.
+For an interrupted `httpRequest`, the request left Grids without a complete response. Grids therefore cannot tell whether the receiver acted on it. Grids neither retries the step nor calls it failed, on purpose. A retry can charge a receiver twice. Calling it failed would claim that the request did not arrive.
 
-Check the receiving system for the request, then decide. If it did not arrive, start a new run. If it did, no further action is needed and the run stays as the record of what happened. Nothing in the run detail can answer this for you, which is exactly why it stopped for a person.
+:::steps
+1. Check the receiving system for the request.
+2. If the request did not arrive, start a new run.
+3. If it arrived, do nothing more. The run stays as the record of what happened.
+:::
 
-Record changes, generated documents, and sent email do not have this ambiguous HTTP outcome: those steps are either undone by the interruption or safe to resume once.
+The run detail cannot answer this question for you. That is why the run stopped for a person.
 
-## A dry run reported indeterminate {icon="lifebuoy"}
+Record changes, generated documents, and sent email do not have this uncertain HTTP outcome. The interruption either undoes those steps, or they are safe to resume once.
 
-A dry run ends indeterminate when the plan could not be decided, not when something went wrong. The run reads `failed` with a dry-run error code, and the step that could not be planned carries the reason.
+### Replay stopped record events
 
-Two causes account for most of it. A step naming a template, table, field, or record that is deleted, ambiguous, or beyond the run identity's access reports that reference as the reason. Separately, a condition Grids could not evaluate while planning makes an `if` or `switch` undecidable; the dry run then plans **every** branch and marks the control step. Read those branches as alternatives, not as work that will all happen.
+Cloud administrators can inspect retained delivery failures with `cld grids record-events failures <base-id> --json`. Stopped workflow events stay in the list until 30 days after their change. Grids keeps the record state that they replay at least that long. Continue with the returned `nextOffset` through `--offset`.
 
-Fix the named reference. For an undecidable branch, accept that a plan cannot settle it and verify the behaviour with a small execute run instead.
+After you fix the cause, `cld grids record-events replay <base-id> <failure-id> --yes` replays one stopped event with its original retained data. Use the exact failure UUID from the list. Acceptance does not mean that processing completed. **Manage** access to the Base alone does not allow this operator action.
 
-## A Combined table needs attention {icon="lifebuoy"}
+## Read an indeterminate dry run {icon="lifebuoy"}
 
-A Combined table fails closed when a published source, mapping, or source permission is no longer valid. It does not return a smaller partial dataset.
+A dry run ends indeterminate when Grids could not decide the plan, not when something went wrong. The run reads `failed` with a dry-run error code. The step that Grids could not plan carries the reason.
 
-Open **Combined data**, inspect the affected source and field diagnostics, repair the draft, validate it, and publish a complete new revision. A revoked source must be authorized again before republishing.
+Two causes explain most cases:
 
-## Files, exports, and large results {icon="paperclip"}
+- A step names a template, table, field, or record that is deleted, ambiguous, or outside the access of the run identity. The step reports that reference as the reason.
+- Grids could not evaluate a condition while planning, so an `if` or `switch` is undecidable. The dry run then plans **every** branch and marks the control step. Read those branches as alternatives, not as work that will all happen.
 
-Files follow the owning Base or the exact published Grids App capability. Store facts people need to search or filter in normal fields rather than only in a filename.
+Fix the named reference. For an undecidable branch, accept that a plan cannot settle it. Verify the behavior with a small execute run instead.
 
-Exports and result pages load in pages. A query without `limit` can continue through all matching rows; a `limit` intentionally caps the complete result. Use bounded exports and CLI `--max-rows` options when an automated process must enforce its own maximum.
+## Repair a Combined table {icon="lifebuoy"}
 
-:::note Preserve the failing context
-Before editing a query, template, or workflow, keep the diagnostic and the input that produced it. A precise error plus the active source is more useful than a screenshot of an empty result.
+A Combined table fails closed when a published source, mapping, or source access is no longer valid. It does not return a smaller partial dataset.
+
+:::steps
+1. Open **Combined data**.
+2. Inspect the diagnostics of the affected source and fields.
+3. Repair the draft.
+4. Validate it.
+5. Publish a complete new revision.
+:::
+
+A revoked source must be authorized again before you publish again.
+
+## Work with files, exports, and large results {icon="paperclip"}
+
+Files follow the access of the Base that owns them, or the exact published capability of a Grids App. Store facts that people search or filter in normal fields, not only in a filename.
+
+Exports and result pages load in pages. A query without `limit` can continue through all matching rows. A `limit` caps the complete result on purpose. Use bounded exports and the CLI options for `--max-rows` when an automated process must enforce its own maximum.
+
+:::note Keep the failing context
+Before you edit a query, template, or workflow, keep the diagnostic and the input that produced it. A precise error with the active source helps more than a screenshot of an empty result.
 :::

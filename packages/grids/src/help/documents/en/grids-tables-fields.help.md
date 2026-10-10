@@ -109,7 +109,7 @@ People who can read a current record can open **Record versions** in its detail 
 After durable history has finished its baseline, a person with **Manage** access to the Base can enable **Record finalization** in the same **History and protection** section. Existing and new records stay drafts until someone finalizes one explicitly. The setting belongs to one stored table and offers two modes:
 
 - **Direct:** A person with **Edit** access can finalize the record themselves.
-- **Four-eyes:** A person with **Edit** access requests finalization for the exact current record version. A different person approves and finalizes it. That person must still have **Edit** access and be a current member of the configured approver group.
+- **Four-eyes:** A person with **Edit** access requests finalization for the exact current record version. A different person approves and finalizes it. That person must still have **Edit** access and be a current member of the configured **Approver group**.
 
 The approver group gives no access. Mode and group activate atomically, without an interim Direct mode. A policy change invalidates open requests. Changed values, relations, files, trash state, or live field definitions also require a new request. This includes field names: the reviewer approves the meaning of the whole record, not only its totals. Requests, decisions, and finalization stay in the audit history.
 

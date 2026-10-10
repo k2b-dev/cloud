@@ -2,42 +2,26 @@
 id: grids-gql
 title: GQL
 icon: ti ti-code
-description: Grids-Daten mit der Grids Query Language finden, verbinden und zusammenfassen.
+description: Finde, verbinde und fasse Grids-Daten mit der Grids Query Language zusammen.
 order: 125
 ---
-GQL ist die Grids Query Language. Sie beschreibt, welche gespeicherten Daten du benötigst und wie Grids das Ergebnis strukturieren soll. Abfrage-Explorer, gespeicherte Ansichten, Blöcke in Grids Apps, Dokumentquellen, Exporte und die CLI verwenden dieselbe Sprache.
+GQL ist die Grids Query Language. Sie beschreibt, welche gespeicherten Daten du willst und wie Grids das Ergebnis formt. Abfrage-Explorer, gespeicherte Ansichten, Blöcke in Grids Apps, Dokumentquellen, Exporte und die CLI verwenden dieselbe Sprache.
 
-Für gewöhnliche Tabellenarbeit benötigst du kein GQL. Beginne mit den Steuerelementen für Suche, Filter, Sortierung und Berechnete Spalten. Nutze GQL, wenn eine präzise Abfrage als Text leichter zu verstehen, wiederzuverwenden oder zu prüfen ist.
+Für normale Tabellenarbeit brauchst du kein GQL. Beginne mit den Steuerelementen **Suche**, **Filter**, **Sortieren** und **Berechnet**. Nutze GQL, wenn eine genaue Abfrage als Text leichter zu verstehen, wiederzuverwenden oder zu prüfen ist.
 
 ## Abfrage mit KI {icon="sparkles"}
 
-Wähle **Abfrage mit KI**, um einen Assistant-Entwurf mit dieser Base, Quelle und
-Abfrage zu öffnen. Ergänze, was du finden möchtest, und sende ihn ab. Assistant
-findet relevante Felder, prüft Abfragen und zeigt echte Ergebnisse mit denselben
-Berechtigungen wie der Editor. Dieser Chat kann keine Datensätze oder das Schema
-ändern.
+Wähle im Editor **Abfrage mit KI**, um einen Assistant-Entwurf mit dieser Base, Quelle und Abfrage zu öffnen. Ergänze, was du finden willst, und sende ihn ab. Assistant findet relevante Felder, prüft Abfragen und zeigt echte Ergebnisse mit demselben Zugriff wie der Editor. Dieser Chat kann weder Datensätze noch das Schema ändern.
 
-Er kann eine Abfrage als Ansicht speichern, nachdem du Name und persönliche oder
-geteilte Sichtbarkeit bestätigst. Beides erfordert Base-Adminrechte. Über den
-zurückgegebenen Link öffnest du die Abfrage in einem neuen Browser-Tab; der Chat bleibt geöffnet. Sehr lange Abfragen musst
-du gegebenenfalls kopieren. Vorschauen und einzelne Seiten sind keine vollständigen
-Exporte.
+Assistant kann eine Abfrage als Ansicht speichern, nachdem du ihren Namen und ihre persönliche oder geteilte Sichtbarkeit bestätigt hast. Beides erfordert Zugriff **Verwalten** auf die Base. Über den zurückgegebenen Link öffnest du die Abfrage in einem neuen Browser-Tab. Der Chat bleibt offen. Sehr lange Abfragen musst du gegebenenfalls kopieren. Vorschauen und einzelne Seiten sind keine vollständigen Exporte.
 
-Der integrierte Skill **cloud-grids** verweist für Produktfragen und Administration
-auf die aktuelle Hilfe. Wenn kein Werkzeug eine Aktion unterstützt, erklärt
-Assistant die Schritte in der Oberfläche. Der Skill vergibt keine Berechtigungen.
+Der integrierte Skill **cloud-grids** verweist Assistant für Produkt- und Administrationsfragen auf die aktuelle Hilfe. Unterstützt kein Werkzeug eine Aktion, erklärt Assistant die Schritte in der Oberfläche. Der Skill gibt keinen zusätzlichen Zugriff.
 
-Beschreibe bei einer allgemeinen Anfrage zuerst das gewünschte Ergebnis, bevor
-Assistant das Schema liest. Abfragefehler zeigen auch die technische Ursache und
-Position. Eine Korrektur soll die fachlichen Bedingungen erhalten, etwa den
-Ausleihstatus nicht durch den Positionsstatus ersetzen. Auswahl- und
-Mitgliedschaftsfilter auf verknüpften Tabellen werden derzeit nicht unterstützt.
-Eigenständige Assistant-Abfragen verwenden `TODAY()` und `NOW()`; der
-Custom-App-Kontext `@auth` und `@time` wird hier nicht bereitgestellt.
+Beschreibe bei einer allgemeinen Anfrage zuerst das gewünschte Ergebnis, bevor Assistant das Schema liest. Scheitert eine Abfrage, nennt ihre Diagnose auch die technische Ursache und die Position. Eine korrigierte Abfrage muss dieselben fachlichen Bedingungen behalten. Sie darf zum Beispiel einen Status des Kopfs nicht durch einen Positionsstatus ersetzen. Auswahl- und Mitgliedschaftsfilter auf verknüpften Tabellen werden derzeit nicht unterstützt. Eigenständige Assistant-Abfragen verwenden `TODAY()` und `NOW()`. Den Custom-App-Kontext `@auth` und `@time` erhalten sie nicht.
 
 ## Eine erste Abfrage lesen {icon="search"}
 
-Diese Abfrage liest die Tabelle Books, behält verfügbare Bücher, wählt drei Felder aus, sortiert die neuesten zuerst und gibt höchstens 25 Zeilen zurück:
+Diese Abfrage liest die Tabelle Books, behält verfügbare Bücher und wählt drei Felder. Sie sortiert die neuesten zuerst und liefert höchstens 25 Zeilen:
 
 ```gql
 from table Books
@@ -47,15 +31,15 @@ sort Published desc
 limit 25
 ```
 
-Jede Zeile enthält eine Klausel:
+Jede Zeile ist eine Klausel:
 
-- `from` wählt eine Tabelle oder gespeicherte Ansicht aus.
-- `where` entfernt Datensätze, die nicht einer exakten Regel entsprechen.
-- `select` wählt die Ausgabespalten aus.
+- `from` wählt eine Tabelle oder gespeicherte Ansicht.
+- `where` entfernt Datensätze, die einer exakten Regel nicht entsprechen.
+- `select` wählt die Ausgabespalten.
 - `sort` legt die Reihenfolge fest.
-- `limit` begrenzt bewusst das vollständige Ergebnis.
+- `limit` begrenzt das vollständige Ergebnis bewusst.
 
-Schreibe Feld- und Tabellennamen so, wie sie in Grids angezeigt werden. Setze Namen mit Leerzeichen in doppelte Anführungszeichen, zum Beispiel `"Birth year"`. Setze Textwerte in einfache Anführungszeichen, zum Beispiel `'Available'`.
+Schreibe Feld- und Tabellennamen so, wie Grids sie zeigt. Setze Namen mit Leerzeichen in doppelte Anführungszeichen, etwa `"Birth year"`. Setze Textwerte in einfache Anführungszeichen, etwa `'Available'`.
 
 ## Eine Abfrage sicher aufbauen {icon="search"}
 
@@ -65,13 +49,13 @@ Beginne nur mit der Quelle und zeige eine Vorschau an:
 from table Books
 ```
 
-Füge dann jeweils einen Aspekt hinzu: einen Filter, ausgewählte Felder und zuletzt eine aussagekräftige Sortierung. Der Editor löst beim Schreiben zugängliche Tabellen, Ansichten, Felder, Relationen und Aliasse auf. Diagnosen kennzeichnen Syntaxfehler, unbekannte Namen, Mehrdeutigkeiten, inkompatible Operationen und Berechtigungsfehler, statt Annahmen zu treffen.
+Ergänze danach einen Aspekt nach dem anderen: einen Filter, die ausgewählten Felder und zuletzt eine aussagekräftige Sortierung. Der Editor löst beim Tippen zugängliche Tabellen, Ansichten, Felder, Relationen und Aliasse auf. Diagnosen nennen Syntaxfehler, unbekannte Namen, Mehrdeutigkeiten, inkompatible Vorgänge und Zugriffsfehler. Sie raten nie.
 
-Ohne `select` werden alle gewöhnlichen Felder der Quelle zurückgegeben. Aufwendige Felder, die erst nach der Abfrage berechnet werden, wie HTML-Vorlagen, erfordern ein ausdrückliches `select`. Liste wichtige Felder ausdrücklich auf, wenn ein gespeichertes Ergebnis, Dokument oder eine Integration eine stabile Ausgabe benötigt.
+Ohne `select` liefert die Abfrage alle gewöhnlichen Felder der Quelle. Aufwendige Felder, die Grids erst nach der Abfrage berechnet, wie HTML-Vorlagen, erfordern ein ausdrückliches `select`. Liste wichtige Felder ausdrücklich auf, wenn ein gespeichertes Ergebnis, ein Dokument oder eine Integration eine stabile Ausgabe braucht.
 
-Ein ausdrücklich ausgewähltes HTML-Vorlagenfeld wird gerendert, nachdem die begrenzten primären Datensätze gelesen wurden. Es kann nicht in `where`, `sort`, `group by`, `aggregate`, `having` oder Formelausdrücken verwendet werden, weil Liquid und CSS erst nach dem Feststehen des Abfrageergebnisses gerendert werden. Auch die Auswahl einer HTML-Vorlage aus einer verbundenen Tabelle wird nicht unterstützt. Lege das Ausgabefeld stattdessen in der primären gespeicherten Tabelle an.
+Ein ausdrücklich ausgewähltes HTML-Vorlagenfeld rendert Grids, nachdem es die begrenzten primären Datensätze gelesen hat. Du kannst es nicht in `where`, `sort`, `group by`, `aggregate`, `having` oder Formelausdrücken verwenden, weil Liquid und CSS erst rendern, wenn das Abfrageergebnis feststeht. Auch die Auswahl einer HTML-Vorlage aus einer verbundenen Tabelle wird nicht unterstützt. Lege das Ausgabefeld stattdessen in der primären gespeicherten Tabelle an.
 
-## Häufige Abfrageaufgaben {icon="search"}
+## Häufige Abfrageaufgaben lösen {icon="search"}
 
 **Exakte Datensätze finden**
 
@@ -89,7 +73,7 @@ search 'tolkien'
 limit 20
 ```
 
-Die Suche kann auf benannte Felder beschränkt werden:
+Du kannst die Suche auf benannte Felder beschränken:
 
 ```gql
 from table Books
@@ -106,7 +90,7 @@ where Price > 0
 sort gross desc
 ```
 
-Die Berechnung gehört nur zu diesem Ergebnis und erstellt kein Tabellenfeld.
+Die Berechnung gehört zu diesem Ergebnis. Sie erstellt kein Tabellenfeld.
 
 **Datensätze zusammenfassen**
 
@@ -118,11 +102,11 @@ having revenue > 0
 sort "Ordered at" asc
 ```
 
-Eine Gruppierung gibt Zusammenfassungszeilen statt bearbeitbarer Datensätze zurück. Nutze sie für Berichte, Diagramme, Grids Apps, Dokumente und Exporte. `where` filtert die Quelldatensätze vor der Gruppierung; `having` filtert die berechneten Gruppen.
+Eine Gruppierung liefert Zusammenfassungszeilen, keine bearbeitbaren Datensätze. Nutze sie für Berichte, Diagramme, Grids Apps, Dokumente und Exporte. `where` filtert Quelldatensätze vor der Gruppierung. `having` filtert die berechneten Gruppen.
 
 **Einer Relation folgen**
 
-Wenn Orders eine Relation zu Customer besitzt, kann ein Join Felder aus Customers bereitstellen:
+Hat Orders eine Relation zu Customer, kann ein Join Felder aus Customers bereitstellen:
 
 ```gql
 from table Orders
@@ -132,7 +116,7 @@ sort "Order number" asc
 limit 50
 ```
 
-Das Relationsfeld auf der linken Seite muss auf die `id` des verbundenen Alias zeigen. Nutze `left join`, wenn Datensätze ohne verknüpftes Ziel im Ergebnis verbleiben sollen.
+Das Relationsfeld links muss auf die `id` des verbundenen Alias zeigen. Nutze `left join`, wenn Datensätze ohne verknüpftes Ziel im Ergebnis bleiben müssen.
 
 ### Unabhängige Summen verbinden
 
@@ -144,11 +128,16 @@ left join view PaymentTotals as payments on payments.Invoice = bill.id
 select Number, formula(Gross - IF(ISBLANK(payments.paid), 0, payments.paid)) as outstanding
 ```
 
-Verbinde Korrekturen über eine zweite gruppierte Ansicht, um doppelte Summen zu vermeiden. Jede liefert höchstens eine Zeile pro Rechnung; fehlende Gruppen ergeben `null`. Aggregataliasse unterstützen Auswahl, Formeln, Filter und Sortierung. Gruppiere jede Ansicht nach einer Relation zur Haupttabelle und deklariere Aggregate. Nur `left join view` funktioniert; keine äußere Gruppierung oder Quellen mit Limit, Suche, Gruppensortierung, HAVING oder anderen nicht wiederverwendbaren Klauseln. Haupt- und Kindtabelle müssen gespeichert, nicht kombiniert sein. Fehlende Rechte sind Fehler; Ergebnisse sind schreibgeschützt.
+Verbinde Korrekturen über eine zweite gruppierte Ansicht, um doppelte Summen zu vermeiden. Jede Ansicht liefert höchstens eine Zeile pro Rechnung. Eine fehlende Gruppe ergibt `null`. Aggregataliasse kannst du auswählen, in Formeln verwenden, filtern und sortieren. Gruppiere jede Ansicht nach einer Relation zur Haupttabelle und deklariere ihre Aggregate.
 
-## Reihenfolge der Klauseln {icon="search"}
+- Nur `left join view` funktioniert.
+- Die Ansicht darf keine äußere Gruppierung, kein Quellenlimit, keine Suche, keine Gruppensortierung, kein HAVING und keine anderen nicht wiederverwendbaren Klauseln verwenden.
+- Haupt- und Kindtabelle müssen gespeicherte Tabellen sein, keine kombinierten Tabellen.
+- Fehlender Zugriff ist ein Fehler. Ergebnisse sind schreibgeschützt.
 
-Nicht jede Abfrage benötigt jede Klausel. Wenn du Klauseln kombinierst, behalte diese Reihenfolge bei, damit die Quelle leicht zu überblicken bleibt:
+## Die Reihenfolge der Klauseln einhalten {icon="search"}
+
+Nicht jede Abfrage braucht jede Klausel. Kombinierst du Klauseln, behalte diese Reihenfolge bei, damit die Quelle leicht zu überblicken bleibt:
 
 ```text
 from table ...
@@ -171,9 +160,9 @@ Zeilenumbrüche sind optional. Nutze Semikolons, wenn mehrere Klauseln in einer 
 from table Orders; where Status = 'Paid'; sort "Ordered at" desc; limit 10
 ```
 
-Nutze `from`, `where`, `search`, `having`, `limit`, `offset` und den Modus für gelöschte Datensätze jeweils höchstens einmal. Fasse mehrere Felder, Gruppen, Aggregate oder Sortierungen in einer kommagetrennten Klausel zusammen. Eine Abfrage darf mehrere Joins enthalten, weil jeder Join eine weitere Quelle einführt.
+Nutze `from`, `where`, `search`, `having`, `limit`, `offset` und den Modus für gelöschte Datensätze jeweils höchstens einmal. Fasse mehrere Felder, Gruppen, Aggregate oder Sortierungen in einer kommagetrennten Klausel zusammen. Eine Abfrage kann mehrere Joins enthalten, weil jeder Join eine weitere Quelle hinzufügt.
 
-## Klauselreferenz {icon="search"}
+## Klauseln nachschlagen {icon="search"}
 
 | Klausel | Zweck |
 | --- | --- |
@@ -191,24 +180,26 @@ Nutze `from`, `where`, `search`, `having`, `limit`, `offset` und den Modus für 
 | `include deleted` | Schließt aktive und gelöschte Datensätze ein. |
 | `deleted only` | Gibt nur Datensätze im Papierkorb zurück. |
 
-Die beiden Klauseln für gelöschte Datensätze schließen sich gegenseitig aus. Normale Abfragen geben nur aktive Datensätze zurück.
+Die beiden Klauseln für gelöschte Datensätze schließen sich gegenseitig aus. Normale Abfragen liefern nur aktive Datensätze.
 
-`from view` beginnt mit der Abfrage der gespeicherten Ansicht und wendet anschließend die neuen Klauseln an. Das ist nützlich, wenn ein geprüftes Dataset bereits den richtigen Ausgangspunkt bildet. Nicht jede GQL-Abfrage lässt sich als verschachtelte Quelle verwenden: Eine gespeicherte Abfrage mit Relation-Joins, Vergleichen zwischen Feldern oder einem Offset ist beispielsweise nicht als `from view`-Quelle verfügbar. Grids lehnt solche Referenzen ab, statt ihre Filter wegzulassen. Führe die gespeicherte Abfrage direkt aus oder beginne mit ihrer Tabelle und übernimm die benötigten Klauseln ausdrücklich. Auch eine Ansicht, die nach Datensatzmetadaten filtert, kann nicht als Quelle einer anderen Ansicht dienen.
+`from view` beginnt mit der Abfrage der gespeicherten Ansicht und wendet danach die neuen Klauseln an. Nutze es, wenn ein geprüfter Datenbestand schon der richtige Ausgangspunkt ist.
 
-## Namen, Aliasse und Werte {icon="point"}
+Nicht jede GQL-Abfrage funktioniert als verschachtelte Quelle. So ist eine gespeicherte Abfrage mit Relation-Joins, Vergleichen zwischen Feldern oder einem Offset nicht als `from view`-Quelle verfügbar. Grids lehnt solche Verweise ab und lässt nie ihre Filter weg. Führe die gespeicherte Abfrage direkt aus oder beginne mit ihrer Tabelle und übernimm die benötigten Klauseln ausdrücklich. Auch eine Ansicht, die nach Datensatzmetadaten filtert, kann nicht Quelle einer anderen Ansicht sein.
+
+## Namen, Aliasse und Werte schreiben {icon="point"}
 
 - Nutze lesbare Namen von Tabellen, Ansichten und Feldern, wenn sie eindeutig sind.
 - Setze Namen mit Leerzeichen oder Satzzeichen in doppelte Anführungszeichen.
 - Nutze einfache Anführungszeichen für Textliterale.
 - Nutze nach Joins Quellenaliasse, zum Beispiel `customer.Name`.
-- Nutze öffentliche IDs in geschweiften Klammern, wenn generierte Konfigurationen oder eine Migration eine unveränderliche Referenz benötigen.
+- Nutze öffentliche IDs in geschweiften Klammern, wenn eine erzeugte Konfiguration oder eine Migration einen unveränderlichen Verweis braucht.
 - Verwende keine entfernten `#field`-Aliasse.
 
-Aliasse nach `as` müssen mit einem Buchstaben oder Unterstrich beginnen. Danach dürfen sie Buchstaben, Zahlen und Unterstriche enthalten und höchstens 64 Zeichen lang sein. Ein Alias darf kein GQL-Schlüsselwort, logischer Operator oder reserviertes Literal sein. Bei späteren Referenzen auf Aliasse spielt die Groß- und Kleinschreibung keine Rolle.
+Ein Alias nach `as` muss mit einem Buchstaben oder Unterstrich beginnen. Danach kann er Buchstaben, Zahlen und Unterstriche enthalten, bis zu 64 Zeichen. Ein Alias darf kein GQL-Schlüsselwort, kein logischer Operator und kein reserviertes Literal sein. Spätere Verweise auf einen Alias ignorieren Groß- und Kleinschreibung.
 
-Fehlt `from` in einem Tabellen- oder Ansichts-Abfrageeditor, kann die aktuelle Seite die Quelle vorgeben. Schreibe die Klausel ausdrücklich, wenn die Abfrage außerhalb dieser Seite verständlich bleiben soll.
+Hat ein Abfrageeditor einer Tabelle oder Ansicht kein `from`, kann die aktuelle Seite die Quelle liefern. Schreibe `from` ausdrücklich, wenn die Abfrage auch außerhalb dieser Seite verständlich bleiben muss.
 
-## Bedingungen und Hilfsfunktionen {icon="search"}
+## Bedingungen schreiben {icon="search"}
 
 Nutze `=`, `!=`, `>`, `>=`, `<` und `<=` für Vergleiche. Kombiniere Bedingungen mit `and`, `or`, `not` und Klammern:
 
@@ -218,15 +209,15 @@ where (Status = 'Available' or Status = 'Reserved') and Quantity > 0
 sort Name asc
 ```
 
-Nutze die Operatoren zwischen Ausdrücken. Schreibe keine Funktionsformen wie `AND(...)`, `OR(...)` oder `NOT(...)`.
+Nutze die Operatoren zwischen Ausdrücken. Schreibe nicht die Funktionsformen `AND(...)`, `OR(...)` oder `NOT(...)`.
 
-Texthilfen sind `contains`, `startswith`, `endswith` sowie die Varianten `icontains`, `istartswith` und `iendswith`, die Groß- und Kleinschreibung nicht beachten. Mitgliedschaftshilfen unterstützen kontrollierte Felder und Felder mit mehreren Werten:
+Texthilfen sind `contains`, `startswith`, `endswith` und die Varianten `icontains`, `istartswith` und `iendswith`, die Groß- und Kleinschreibung ignorieren. Mitgliedschaftshilfen unterstützen kontrollierte Felder und Felder mit mehreren Werten:
 
 - `oneof(Field, 'a', 'b')`
 - `noneof(Field, 'a', 'b')`
 - `containsall(Field, 'a', 'b')`
 
-Nutze `null` für einen fehlenden Wert. Die Sortierung erfolgt standardmäßig aufsteigend und ordnet fehlende Werte zuletzt ein. Ergänze `desc`, `nulls first` oder `nulls last`, wenn eine andere Reihenfolge erforderlich ist.
+Nutze `null` für einen fehlenden Wert. Die Sortierung ist standardmäßig aufsteigend und setzt fehlende Werte ans Ende. Ergänze `desc`, `nulls first` oder `nulls last` für eine andere Reihenfolge.
 
 Eine Bedingung kann auch eine Formel sein:
 
@@ -236,11 +227,11 @@ where Price <= "Purchase price" * 1.10
 select Name, Price, "Purchase price"
 ```
 
-Öffne **Formeln** für die Ausdruckssyntax und den vollständigen Funktionskatalog.
+[Formeln](/app/grids/help/grids-formulas) beschreibt die Ausdruckssyntax und den vollständigen Funktionskatalog.
 
-## Kontext einer Grids App verwenden {icon="app-window"}
+## Den Kontext einer Grids App verwenden {icon="app-window"}
 
-Abfragen in Grids Apps erhalten automatisch einen typisierten Anfragekontext. Werte werden getrennt vom Abfragetext gebunden.
+Abfragen in Grids Apps erhalten automatisch einen typisierten Anfragekontext. Grids bindet die Werte getrennt vom Abfragetext.
 
 | Referenz | Wert |
 | --- | --- |
@@ -252,9 +243,9 @@ Abfragen in Grids Apps erhalten automatisch einen typisierten Anfragekontext. We
 | `@base.id`, `@base.name` | Identität der zugehörigen Basis |
 | `@time.now`, `@time.today`, `@time.timeZone` | Ein Anfragezeitpunkt, das lokale Datum und die IANA-Zeitzone |
 
-Nutze `@auth.id != null`, wenn eine Abfrage ein angemeldetes Konto erfordert. Eine anonyme App-Anfrage kann ausdrücklich mit `@auth.id = null` erkannt werden. Unbekannte Namensräume und nicht deklarierte Parameter führen zu Veröffentlichungsfehlern.
+Nutze `@auth.id != null`, wenn eine Abfrage ein angemeldetes Konto erfordert. Erkenne eine anonyme App-Anfrage ausdrücklich mit `@auth.id = null`. Unbekannte Namensräume und nicht deklarierte Parameter sind Veröffentlichungsfehler.
 
-Nutze `oneof(Participants, @auth.subjects)`, wenn ein Principal-Feld der aktuellen Person oder einer ihrer wirksamen Gruppen Zugriff auf einen Datensatz gewährt. Wirksame Gruppenmitgliedschaften werden serverseitig aufgelöst. Die Abfrage erhält weder Gruppenmitglieder noch Gruppennamen. `@auth.subjects` ist eine Liste und deshalb nur in den Mitgliedschaftsprädikaten `oneof`, `noneof` oder `containsall` gültig.
+Nutze `oneof(Participants, @auth.subjects)`, wenn ein Principal-Feld der aktuellen Person oder einer ihrer wirksamen Gruppen Zugriff auf einen Datensatz gibt. Der Server ermittelt die wirksamen Gruppenmitgliedschaften. Die Abfrage erhält nie Gruppenmitglieder oder Gruppennamen. `@auth.subjects` ist eine Liste. Es ist deshalb nur in den Mitgliedschaftsprädikaten `oneof`, `noneof` oder `containsall` gültig.
 
 ```gql
 from table Loans
@@ -267,7 +258,7 @@ where record.createdBy = @auth.id and Status = 'Active'
 limit 100
 ```
 
-Regeln für `availableWhen` auf Seiten, Blöcken, Formularen und Aktionen verwenden denselben Kontext. Sie sind nur verfügbar, wenn ihre begrenzte Abfrage mindestens eine Zeile zurückgibt. Fehler, fehlende Werte, Zeitüberschreitungen, Abbrüche und ein leeres Ergebnis bedeuten jeweils nicht verfügbar.
+Regeln für `availableWhen` auf Seiten, Blöcken, Formularen und Aktionen verwenden denselben Kontext. Ein Element ist nur verfügbar, wenn seine begrenzte Abfrage mindestens eine Zeile liefert. Fehler, fehlende Werte, Zeitüberschreitungen, Abbrüche und ein leeres Ergebnis bedeuten alle nicht verfügbar.
 
 ```gql
 from table Loans
@@ -275,7 +266,7 @@ where record.id = @params.loan_id and Status = 'Active'
 limit 1
 ```
 
-### Kompatibilität von Prädikaten
+### Kompatible Prädikate prüfen
 
 | Feldwert | Unterstützte direkte Prädikate |
 | --- | --- |
@@ -286,11 +277,11 @@ limit 1
 | Auswahl | `=`, `!=`, `oneof`, `noneof`, `containsall`; Werte können Optionsbezeichnungen oder Options-IDs sein |
 | Relation | `=`, `!=`, `oneof`, `noneof`, `containsall`; Werte sind öffentliche IDs verknüpfter Datensätze |
 
-`Feld = null` prüft auf leer, `!= null` auf nicht leer. Dateifelder gespeicherter Tabellen unterstützen nur diese Existenzprüfung; kombinierte Tabellen nicht. JSON ist nicht filterbar; berechnete Skalare können boolesche Formeln verwenden.
+`Feld = null` bedeutet leer. `!= null` bedeutet nicht leer. Dateifelder gespeicherter Tabellen unterstützen nur diese Existenzprüfungen. Dateifelder kombinierter Tabellen unterstützen sie nicht. JSON ist nicht filterbar. Berechnete Skalare können boolesche Formeln verwenden.
 
-Verknüpfte `oneof`, `noneof` und `containsall` behalten Typ- und Zugriffsprüfungen bei: `oneof(cost.Verantwortliche, @auth.subjects)` prüft Principal-Mitgliedschaft.
+Verknüpfte `oneof`, `noneof` und `containsall` behalten typisierte Werte und Zugriffsprüfungen. So prüft `oneof(cost.Verantwortliche, @auth.subjects)` eine Principal-Mitgliedschaft.
 
-### Datensatzmetadaten
+### Nach Datensatzmetadaten filtern
 
 Datensatzmetadaten verwenden den reservierten Bereich `record`:
 
@@ -307,15 +298,15 @@ Datensatzmetadaten verwenden den reservierten Bereich `record`:
 | `record.updatedAt` | Sortiert nach dem letzten Aktualisierungszeitpunkt |
 | `record.deletedAt` | Sortiert gelöschte Datensätze nach Löschzeitpunkt |
 
-Metadatenfilter können mit `and` kombiniert, aber nicht in einem `or`-Zweig platziert werden. Personenwerte sind UUIDs; Datensatzwerte sind öffentliche IDs und keine Anzeigenamen.
-`awaitingReview` bedeutet, dass eine aktuelle Vier-Augen-Anfrage weiterhin zur Datensatzversion und Tabellenrichtlinie passt. Abgelehnte und ersetzte Anfragen gehören zum Verlauf und sind keine aktuellen Datensatzstatus.
-Eine Tabelle ohne aktivierte Finalisierung enthält keine Datensätze im Status `draft`.
+Metadatenfilter kannst du mit `and` kombinieren, aber nicht in einen `or`-Zweig setzen. Personenwerte sind UUIDs. Datensatzwerte sind öffentliche IDs, keine Anzeigenamen.
 
-## Referenz für Gruppierung und Aggregate {icon="chart-bar"}
+`awaitingReview` bedeutet, dass eine aktuelle Vier-Augen-Anfrage noch zur Datensatzversion und zur Tabellenregel passt. Abgelehnte und ersetzte Anfragen sind Verlauf, kein aktueller Zustand des Datensatzes. Eine Tabelle ohne aktivierte Finalisierung hat keine Datensätze im Zustand `draft`.
 
-`group by` gibt eine Zeile pro unterschiedlichem Wert zurück. Datumsfelder können zusätzlich `by day`, `week`, `month`, `quarter` oder `year` verwenden. Jedes Nicht-Aggregatfeld, das eine gruppierte Sortierung verwendet, muss auch in `group by` erscheinen. Aggregataliasse können direkt sortiert werden.
+## Gruppieren und aggregieren {icon="chart-bar"}
 
-Jedes Aggregat benötigt einen Ausgabealias:
+`group by` liefert eine Zeile pro unterschiedlichem Wert. Datumsfelder können zusätzlich `by day`, `week`, `month`, `quarter` oder `year` verwenden. Jedes Nicht-Aggregatfeld, das eine gruppierte `sort` verwendet, muss auch in `group by` stehen. Aggregataliasse kannst du direkt sortieren.
+
+Jedes Aggregat braucht einen Ausgabealias:
 
 ```gql
 from table Orders
@@ -334,9 +325,9 @@ sort revenue desc nulls last
 | `min(field)`, `max(field)` | Zahlen-, Datums-, Datum-Uhrzeit- oder Textfelder und Formeln |
 | `earliest(field)`, `latest(field)` | Datums- oder Datum-Uhrzeit-Felder und Formeln |
 
-Aggregiere einen berechneten Wert mit `aggregate sum(formula(Quantity * Price)) as revenue`. Die Formel wird für jeden Quelldatensatz ausgewertet, bevor das Aggregat die Ergebnisse kombiniert.
+Um einen berechneten Wert zu aggregieren, schreibe `aggregate sum(formula(Quantity * Price)) as revenue`. Grids wertet die Formel für jeden Quelldatensatz aus, bevor das Aggregat die Ergebnisse kombiniert.
 
-Lasse `group by` weg, um eine Zusammenfassungszeile für die gesamte passende Menge zu berechnen:
+Lass `group by` weg, um eine Zusammenfassungszeile für die ganze passende Menge zu berechnen:
 
 ```gql
 from table Orders
@@ -345,50 +336,33 @@ aggregate count(*) as orders, sum(Total) as revenue
 having orders >= 1
 ```
 
-Eine reine Aggregatabfrage kann mit `having` ihre Zusammenfassungszeile behalten oder entfernen. Sie kann nicht zugleich Datensatzfelder auswählen oder ihre einzelne Ergebniszeile sortieren. Ergänze `group by`, wenn du mehrere sortierbare Zusammenfassungszeilen benötigst.
+Eine reine Aggregatabfrage kann mit `having` ihre Zusammenfassungszeile behalten oder entfernen. Sie kann nicht zusätzlich Datensatzfelder auswählen oder ihre einzige Ergebniszeile sortieren. Ergänze `group by`, wenn du mehrere sortierbare Zusammenfassungszeilen brauchst.
 
-## Seitennavigation und Ergebnisgrenzen {icon="point"}
+## Ergebnisse seitenweise durchlaufen {icon="point"}
 
-Ohne `limit` kann eine Ergebnisansicht alle passenden Zeilen seitenweise durchlaufen. Mit `limit 100` endet das vollständige Ergebnis nach 100 Zeilen, auch wenn die Oberfläche es in kleineren Seiten darstellt.
+Ohne `limit` kann eine Ergebnisansicht alle passenden Zeilen Seite für Seite durchlaufen. Mit `limit 100` endet das vollständige Ergebnis nach 100 Zeilen, auch wenn die Oberfläche es in kleineren Seiten zeigt.
 
-Eine Änderung der Abfrage beginnt wieder auf der ersten Seite. Seiten zeigen aktuelle Daten statt eines eingefrorenen Ergebnisses. Datensätze, die sich zwischen Seitenanfragen ändern, können deshalb zwischen Seiten wechseln.
+Eine geänderte Abfrage beginnt wieder auf der ersten Seite. Seiten zeigen Live-Daten, kein eingefrorenes Ergebnis. Datensätze, die sich zwischen Seitenaufrufen ändern, können deshalb zwischen Seiten wechseln.
 
 Für automatisierte Lesevorgänge kann die CLI mit `--page-size` eine begrenzte Seite anfordern oder mit `--all --max-rows N` fortfahren.
 
-## Berechtigungen und unterstützte Abfragen {icon="shield-lock"}
+## Zugriff und unterstützte Abfragen verstehen {icon="shield-lock"}
 
-Unmittelbare Grids-Abfragen erfordern Leseberechtigung für die Basis und können die vollständige Basis lesen. Veröffentlichte Abfragen einer Grids App laufen stattdessen über den unveränderlichen Capability-Snapshot der App. Sie können nicht auf nicht deklarierte Quellen oder Felder ausweichen.
+Grids-Abfragen auf Rohdaten erfordern Zugriff **Ansehen** auf die Base und können die ganze Base lesen. Veröffentlichte Abfragen einer Grids App laufen stattdessen über den unveränderlichen Capability-Snapshot der App. Sie können nicht auf nicht deklarierte Quellen oder Felder ausweichen.
 
-Die Autovervollständigung folgt derselben Grenze: Der unmittelbare Editor verwendet das aktuelle Schema der Basis, ein Editor in einer Grids App dagegen einen reinen Schemakatalog für diese App-Definition. Er führt keine Abfragen aus und gibt keine andere Basis preis.
+Die Autovervollständigung folgt derselben Grenze. Der Editor für Rohdaten verwendet das aktuelle Schema der Base. Ein Editor in einer Grids App verwendet einen reinen Schemakatalog dieser App-Definition. Er führt keine Abfragen aus und zeigt keine andere Base.
 
-GQL unterstützt bewusst keine beliebigen Join-Bedingungen, Unterabfragen, Common Table Expressions, Fensterfunktionen oder uneingeschränkten Ausdrücke. Eine nicht unterstützte Abfrage scheitert mit einer Diagnose, statt erraten oder nur teilweise angewendet zu werden.
+GQL unterstützt bewusst keine beliebigen Join-Bedingungen, Unterabfragen, Common Table Expressions, Fensterfunktionen oder uneingeschränkten Ausdrücke. Eine nicht unterstützte Abfrage scheitert mit einer Diagnose. Grids rät sie nie und wendet sie nie teilweise an.
 
-## Ansichten und Abfrageergebnisse {icon="search"}
+## Abfrageergebnisse als Ansichten speichern {icon="search"}
 
-Zeilenförmige Tabellen- und Ansichtsergebnisse können wie Datensätze dargestellt und seitenweise durchlaufen werden. Gruppierte und reine Aggregatergebnisse verwenden eine Zusammenfassungstabelle und sind nicht bearbeitbar. Kompatible Abfrageergebnisse können als Ansichten gespeichert und von Grids Apps, Dokumenten und Exporten wiederverwendet werden.
+Tabellen- und Ansichtsergebnisse mit Zeilen lassen sich wie Datensätze anzeigen und seitenweise durchlaufen. Gruppierte und reine Aggregatergebnisse verwenden eine Zusammenfassungstabelle und sind nicht bearbeitbar. Kompatible Abfrageergebnisse kannst du als Ansichten speichern. Grids Apps, Dokumente und Exporte können sie wiederverwenden.
 
-Nutze eine gespeicherte Ansicht, wenn Personen das Ergebnis im unmittelbaren Arbeitsbereich der Basis wiederholt öffnen. Halte GQL lokal in einem Block der Grids App oder einem Dokument, wenn die Abfrage nur für diese Ressource existiert.
+Nutze eine gespeicherte Ansicht, wenn Personen das Ergebnis im Arbeitsbereich der Base wiederholt öffnen. Halte das GQL lokal in einem Block einer Grids App oder in einem Dokument, wenn die Abfrage nur für diese Ressource existiert.
 
-## Eine Abfrage reparieren {icon="lifebuoy"}
+## Datensätze mit erzeugten Dokumenten finden {icon="search"}
 
-:::reference
-- **Unbekannte Quelle oder unbekanntes Feld:** Prüfe Schreibweise, Anführungszeichen, aktuelle Basis und Zugriff.
-- **Mehrdeutiger Name:** Ergänze einen Quellenalias oder nutze ein eingegrenztes Feld wie `customer.Name`.
-- **Ein Join muss auf eine ID zeigen:** Verbinde das Relationsfeld mit `.id` des verbundenen Alias.
-- **Eine gruppierte Sortierung wird abgelehnt:** Sortiere nach einer Gruppierungs- oder Aggregatausgabe, die in der Zusammenfassung vorhanden ist.
-- **Fehlende Zeilen:** Prüfe `where`, `search`, die Quellansicht, den Löschmodus und `limit`.
-- **Instabile Seitenreihenfolge:** Ergänze eine fachliche Sortierung, bevor du Seiten durchläufst oder `offset` verwendest.
-:::
-
-:::note GQL ist kein zweites Datenmodell
-GQL strukturiert gespeicherte Daten. Es kopiert keine Datensätze und umgeht keine Zugriffs-, Feld- oder Relationsregeln der Basis.
-:::
-
-## Datensätze anhand erzeugter Dokumente finden {icon="search"}
-
-`documentCount()` zählt eindeutig zugeordnete Dokumente. `latestDocumentAt()`
-liefert deren letzten Erstellungszeitpunkt oder null. Als optionales Format sind
-`pdf`, `csv`, `json`, `xml`, `sepa-xml` und `datev-csv` möglich.
+In Abfragen der Base zählt `documentCount()` die eindeutig zugeordneten Dokumente. `latestDocumentAt()` liefert deren letzten Erstellungszeitpunkt oder null. Ein optionales Format wählt `pdf`, `csv`, `json`, `xml`, `sepa-xml` oder `datev-csv`.
 
 ```gql
 from table Expenses
@@ -396,12 +370,25 @@ select Description, documentCount('sepa-xml') as exports
 where documentCount('sepa-xml') = 0
 ```
 
-Nutze diese Funktionen in Zeilenprojektionen und `where`, nicht in Aggregaten
-oder `having`. `xml` und `csv` schließen SEPA- und DATEV-Exporte aus; `pdf`
-enthält auch E-Rechnungs-PDFs. Metadatenfilter prüfen die Dokumente pro
-Datensatz. Grenze große Auswahlen möglichst mit normalen Feldfiltern ein.
+- Diese Werte bleiben nach der Finalisierung aktuell. Sie folgen keinen Relationen und belegen keine Zahlung.
+- Ein Dokument für mehrere Datensätze zählt bei jedem ausdrücklich zugeordneten Datensatz einmal.
+- Diese Funktionen sind nicht in gespeicherten Formelfeldern oder Custom-App-Abfragen verfügbar.
+- Nutze sie in Zeilenprojektionen und `where`, nicht in Aggregaten oder `having`.
+- Allgemeines `xml` und `csv` schließen SEPA- und DATEV-Exporte aus. `pdf` enthält auch E-Rechnungs-PDFs.
 
-Eine Sammeldatei zählt bei jedem ausdrücklich zugeordneten Datensatz einmal.
-Relations werden nicht verfolgt. Die Angaben bleiben nach dem Finalisieren
-aktuell und belegen keine Zahlung. Verfügbar in Abfragen gespeicherter Tabellen
-der Base, nicht in gespeicherten Formelfeldern oder Custom-App-Abfragen.
+Metadatenfilter prüfen die zugeordneten Dokumente jedes infrage kommenden Datensatzes. Grenze große Auswahlen möglichst mit normalen Feldfiltern ein.
+
+## Eine Abfrage reparieren {icon="lifebuoy"}
+
+:::reference
+- **Unbekannte Quelle oder unbekanntes Feld:** Prüfe Schreibweise, Anführungszeichen, aktuelle Base und Zugriff.
+- **Mehrdeutiger Name:** Ergänze einen Quellenalias oder nutze ein eingegrenztes Feld wie `customer.Name`.
+- **Ein Join muss auf eine ID zeigen:** Verbinde das Relationsfeld mit `.id` des verbundenen Alias.
+- **Eine gruppierte Sortierung wird abgelehnt:** Sortiere nach einer Gruppen- oder Aggregatausgabe, die in der Zusammenfassung vorkommt.
+- **Fehlende Zeilen:** Prüfe `where`, `search`, die Quellansicht, den Modus für gelöschte Datensätze und `limit`.
+- **Instabile Seitenreihenfolge:** Ergänze eine fachliche Sortierung, bevor du Seiten durchläufst oder `offset` verwendest.
+:::
+
+:::note GQL ist kein zweites Datenmodell
+GQL formt gespeicherte Daten. Es kopiert keine Datensätze und umgeht keine Zugriffs-, Feld- oder Relationsregeln der Base.
+:::
