@@ -5,7 +5,7 @@ section: AI
 order: 1070
 description: Present conversation state, tools, approvals, and failures with the shared chat controller and components.
 tags: [ai, ui, solidjs]
-updated: 2026-10-09
+updated: 2026-10-10
 ---
 
 # Chat interface
@@ -241,7 +241,9 @@ order:
    or closing it never scrolls the conversation; afterwards the conversation
    follows new steps only while its end is still in view.
    Every step stays there, including results and actions, so input and output
-   remain reachable. Failed steps say "failed" in muted text; a rejected approval says
+   remain reachable. A step that acts on something reads as its sentence: what
+   it will do while it runs, what it did once done, such as "Wrote report.md",
+   and what did not happen after a rejection. Failed steps say "failed" in muted text; a rejected approval says
    "rejected". An app check (`code_check`) reads "Checking the app" while it
    runs, and its row names the outcome in words with its own icon: "passed",
    "3 findings", or "not passed", with warnings counted separately, such as
@@ -254,14 +256,20 @@ order:
    host's `onOpenFile`, the thumbnail is a button that opens the file larger;
    its name is that action, and the alt text describes it. Without `fileUrl`,
    such as in a background run transcript, the step shows no thumbnail.
-2. **Results.** Presented files, `code_present` apps, cards, and
+2. **Results.** Presented files, `code_present` apps, charts, cards, and
    capability tables in the order they were made. A later result with the same
    target, the same file path for `present` or the same title for
    `code_present`, replaces the earlier one at its place. A running delivery
    takes a place once its arguments have arrived, so a new version never shows
    a frame of its own first. A capability table shows the summary and links of
    its result above it. An approved call or a Cloud action that returns a table
-   shows the table here and its receipt in place 4.
+   shows the table here and its receipt in place 4. A chart draws in full with
+   its first frame, at a fixed height, with its title, a Diagram/Table switch,
+   and Copy data; the table scrolls inside the same height, so neither the
+   finished call nor the switch moves anything. While the model still writes a
+   chart's arguments, the work line says it prepares a chart. Text output of
+   `cld assistant`, interactive or not, prints a chart's data table and a
+   card's title and value instead.
 3. **Newest text.** While the turn runs this is a status: a new text replaces
    the previous one in the same element once its first sentence has streamed,
    and the place keeps its height until the turn ends. Finished, it is the final
@@ -270,24 +278,32 @@ order:
 4. **Actions.** Open approvals, surveys, editors, and secret prompts, and
    receipts for capability actions and for every approval the user decided.
    A pending approval is a calm card with a warning tint and no border: its
-   title says what will happen, such as "Mail · Send email", with "Runs only
-   after you approve it" below, then the review text and fields, and Reject
-   next to the action itself. The title wraps instead of being cut off. On
-   phones the fields stack under their labels and the two buttons share the
-   width; a long action name ends in an ellipsis on its button rather than
-   pushing the card wider, while the title above shows it in full. When code
-   asks for approval again, each new request is a new card in the same place.
-   A receipt is one line that names the call in the reader's language with what
-   it acted on, the file name of its path or its name or title as given, never
-   its raw tool name:
-   "Email to Jana Berger sent" from the action's summary with its links,
-   "Approved: Run code · report.ts" for an approved tool that is not a Cloud
-   action, "Running: Send email" while it runs, "Rejected: Send email",
-   "Failed: Send email", or "Not run: Send email · stopped" when the turn ended
-   before the call ran. An approval still waiting when the turn ends reads the
-   same, also for a tool that is not a Cloud action, such as "Not run: Run code
-   · report.ts · stopped", or "Not run: Run code · report.ts" after a time
-   limit or an expired wait. Once the server accepts a decision, the card turns
+   title says what will happen in the owning app's words, such as "Send email
+   to jana@example.com", with "Mail · Runs only after you approve it" below, then
+   the review text and fields, and Reject next to the action itself. When the
+   model gave a reason, it follows under its own label, such as "Why: Jana
+   asked for the offer."; it never replaces the app's sentence. The title wraps
+   instead of being cut off. On phones the fields stack under their labels and
+   the two buttons share the width; a long action name ends in an ellipsis on
+   its button rather than pushing the card wider, while the title above shows
+   it in full. When code asks for approval again, each new request is a new
+   card in the same place.
+   A receipt is one line in the reader's language, never the raw tool name. A
+   Cloud action reads as the sentence its app declares for the outcome, such
+   as "Sent email to jana@example.com", else as the action's own summary with its
+   links. Without either, it names the call with the app's approval sentence
+   or with its title and up to two labelled fields, such as "Done: Send email ·
+   Recipients: jana@example.com". Cloud's own tools word themselves the same way:
+   "Approved: Run code" for an approved tool that is not a Cloud action,
+   "Running: Send email to jana@example.com" while it runs, "Did not send email to
+   jana@example.com" or "Rejected: Send email" after a rejection, "Failed: Send
+   email", and "Email to jana@example.com not sent · stopped" or "Not run: Send
+   email · stopped" when the turn ended before the call ran. An approval still
+   waiting when the turn ends reads the same, also for a tool that is not a
+   Cloud action, such as "Not run: Run code · stopped", or "Not run: Run code"
+   after a time limit or an expired wait. See
+   [Word Actions for people](/en/docs/platform/capabilities#word-actions-for-people)
+   for how an app declares these sentences. Once the server accepts a decision, the card turns
    into its receipt in place, before the turn reports the call; later updates
    change only the receipt's words. If the decision was made in that card,
    focus stays on its place without scrolling. An approved call carries `approved: true` on its
@@ -314,7 +330,7 @@ counts as work, live and in history.
 Screen readers do not hear the work line's ticking clock or a status while it
 streams: both sit outside the conversation log's live announcements. A status
 is announced once it is complete, a waiting approval as one short line such as
-"Approval needed: Send email" without moving focus, and the end of a turn with
+"Approval needed: Send email to jana@example.com" without moving focus, and the end of a turn with
 work as "Answer ready". A plain answer without tools streams into the log as
 before.
 
@@ -365,8 +381,8 @@ failed compaction, still reaches `error()`.
 
 Capability titles and application icons come from the saved presentation.
 Approval prompts retain their application identity and explicit decision
-controls. Surveys, cards, presented files, editors, and capability tables remain
-visible results. The saved presentation remains readable when an application
+controls. Surveys, charts, cards, presented files, editors, and capability
+tables remain visible results. The saved presentation remains readable when an application
 is temporarily unavailable. Cloud's built-in tools, including every Studio
 tool, show a name in the reader's language, such as "App check" or
 "App-Prüfung"; a test fails when a built-in tool has no English or German name.

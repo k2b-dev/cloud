@@ -1,56 +1,64 @@
 ---
 id: spaces-start
-title: Überblick
+title: Mit Spaces beginnen
 icon: ti ti-layout-sidebar
-description: Grundbegriffe und die ersten Schritte mit einem Space.
+description: Lerne die Grundbegriffe kennen, richte einen Space ein und verbinde ihn mit Einladungen aus Mail und anderen Ressourcen.
 order: 100
 ---
 
-Spaces bündelt gemeinsame Arbeit mit Aufgaben, Terminen, Listen, zuständigen Personen, Kommentaren und einfacher Planung. Die Spaces-Übersicht zeigt alle Arbeitsbereiche, auf die du zugreifen kannst. Dort kannst du einen Space erstellen, suchen oder erneut öffnen. Öffnest du Spaces über die Navigation, landest du im Space, den du in diesem Browser zuletzt angesehen hast, auch wenn das in einem anderen Tab war. Wurde er gelöscht oder nicht mehr mit dir geteilt, öffnet sich stattdessen die Übersicht.
+Spaces bündelt gemeinsame Arbeit mit Aufgaben, Terminen, Listen, zuständigen Personen, Kommentaren und einfacher Planung. Die Spaces-Übersicht zeigt alle Spaces, auf die du zugreifen kannst. Dort erstellst, suchst oder öffnest du einen Space.
 
-## Grundbegriffe {icon="layout-grid"}
+Öffnest du Spaces über die Navigation, landest du im Space, den du in diesem Browser zuletzt angesehen hast, auch wenn das in einem anderen Tab war. Wurde er gelöscht oder nicht mehr mit dir geteilt, öffnet sich stattdessen die Übersicht.
+
+## Grundbegriffe kennen {icon="layout-grid"}
 
 :::reference
-- **Space:** Ein Arbeitsbereich für ein Team, Projekt, einen Haushalt, Kurs oder wiederkehrenden Ablauf.
+- **Space:** Ein Arbeitsbereich für ein Team, ein Projekt, einen Haushalt, einen Kurs oder einen wiederkehrenden Ablauf.
 - **Eintrag:** Die grundlegende Arbeitseinheit. Ein Eintrag ist entweder eine Aufgabe mit Fälligkeitsdatum oder ein Termin mit festgelegter Zeit.
 - **Aufgabe:** Arbeit mit Status, Priorität, zuständigen Personen, Fälligkeitsdatum, geschätzter Dauer, Abhängigkeiten, einer einfachen Checkliste, Tags, Beschreibung und Kommentaren.
-- **Termin:** Ein zeitlich geplanter Eintrag, der in Kalenderansichten und optionalen Kalenderexporten erscheint.
-- **Ansicht:** Die aktuelle Darstellung derselben Einträge als Liste, Tabelle, Kanban-Board oder Kalender.
-- **Tags:** Kurze Kennzeichnungen, mit denen sich Arbeit unabhängig von Zuständigkeiten, Fälligkeitsdaten, Terminen und Ansichten gruppieren lässt.
+- **Termin:** Ein zeitlich geplanter Eintrag. Termine erscheinen in Kalenderansichten und in optionalen Kalenderexporten.
+- **Ansicht:** Die aktuelle Darstellung derselben Einträge: **Übersicht**, **Tabelle**, **Kanban** oder **Kalender**.
+- **Tags:** Kurze Kennzeichnungen, die Arbeit unabhängig von Zuständigkeiten, Fälligkeitsdaten, Terminen und Ansichten gruppieren.
 :::
 
-## Einen Space sinnvoll einrichten {icon="route"}
+## Space einrichten {icon="route"}
 
 :::steps
-1. **Space erstellen:** Benenne ihn nach dem gemeinsamen Arbeitsbereich und nicht nach einer einzelnen Aufgabe, zum Beispiel Produktstart, Büroumzug oder Wochenplanung.
-2. **Echte Einträge hinzufügen:** Erstelle einige Aufgaben oder Termine, bevor du Ansichten anpasst. Anhand der tatsächlichen Arbeit wird deutlich, welche Status, Tags und zuständigen Personen benötigt werden.
-3. **Ansichten wählen:** Nutze eine Liste oder Tabelle für den Überblick, Kanban für den Arbeitsfortschritt und den Kalender für zeitlich geplante Arbeit.
-4. **Mit den passenden Personen teilen:** Lade Personen oder Gruppen ein, sobald die Struktur klar genug ist, damit sie ohne zusätzliche Erklärung mitarbeiten können.
+1. **Space erstellen:** Benenne ihn nach dem gemeinsamen Arbeitsbereich, nicht nach einer einzelnen Aufgabe. Beispiele: Produktstart, Büroumzug, Wochenplanung.
+2. **Echte Einträge hinzufügen:** Erstelle einige Aufgaben oder Termine, bevor du Ansichten anpasst. Echte Arbeit zeigt, welche Status, Tags und zuständigen Personen wichtig sind.
+3. **Ansichten wählen:** Nutze **Übersicht** oder **Tabelle**, um Einträge zu überfliegen, **Kanban** für den Statusverlauf und **Kalender** für geplante Arbeit.
+4. **Space teilen:** Lade Personen und Gruppen ein, sobald die Struktur klar ist. Dann arbeiten sie ohne zusätzliche Erklärung mit.
 :::
 
 :::note Wann Spaces passt
-Verwende Spaces, wenn Personen eine übersichtliche gemeinsame Arbeitsfläche benötigen. Verwende Grids, wenn Datensätze typisierte Felder, Beziehungen, Formulare, Dashboards, Formeln, Exporte oder Automatisierungen benötigen.
+Nutze Spaces, wenn Personen einen übersichtlichen gemeinsamen Ort für ihre Arbeit brauchen. Nutze Grids, wenn Datensätze typisierte Felder, Beziehungen, Formulare, Dashboards, Formeln, Exporte oder Automatisierungen brauchen.
 :::
 
-## Spaces mit Einladungen aus Mail verwenden {icon="calendar-share"}
+## Spaces mit Einladungen aus Mail nutzen {icon="calendar-share"}
 
-Spaces verwaltet den importierten Terminstatus, Wiederholungen, organisierende und teilnehmende Personen sowie die Sequenznummern der Einladung. Mail verwaltet die ursprüngliche Nachricht, Postfachidentitäten, bearbeitbare Entwürfe, Anhänge und den Versand. Dadurch liegt jeder Termin in genau einem Kalender, während Einladungen weiterhin über den normalen Versandablauf von Mail versendet werden.
+Spaces ist zuständig für den importierten Terminstatus, Wiederholungen, organisierende und teilnehmende Personen sowie die Sequenznummern der Einladung. Mail ist zuständig für die ursprüngliche Nachricht, Postfachidentitäten, bearbeitbare Entwürfe, Anhänge und den Versand. So liegt jeder Termin in genau einem Kalender, und Einladungen gehen weiter über den normalen Versand von Mail.
 
-- Importiere eine Einladung ausdrücklich aus Mail. Wenn du in Mail antwortest, wird der Termin gespeichert oder aktualisiert und zugleich ein bearbeitbarer Antwortentwurf vorbereitet.
+- Importiere eine Einladung ausdrücklich aus Mail. Oder antworte in Mail: Das speichert oder aktualisiert den Termin und bereitet in einem Schritt einen bearbeitbaren Antwortentwurf vor.
 - Eine erneut zugestellte Einladung mit derselben Kalender-UID aktualisiert den verknüpften Termin nur, wenn ihre Sequenznummer höher ist. Veraltete oder doppelte Zustellungen erzeugen keinen weiteren Termin.
-- Eine Absage schließt den verknüpften Termin ab. Sie kann allein keinen neuen Termin erstellen.
-- Öffne in einem bearbeitbaren Termin **Einladungen**. Wähle ein beschreibbares Postfach und eine aktuell bestätigte Absenderidentität, bevor du einen bearbeitbaren Entwurf in Mail erstellst. Aktualisierungen verwenden eine höhere Sequenznummer, Absagen müssen ausdrücklich ausgelöst werden und Versandfehler bleiben in Spaces sichtbar.
-- Wenn Mail oder die benötigte Capability nicht verfügbar ist, bleiben die Einladungsfunktionen ausgeblendet. Spaces kann weiterhin vollständig als Kalender verwendet werden.
-- Wähle in einem Mail-Entwurf einen vorhandenen Termin oder erstelle einen kompakten Termin in einem beschreibbaren Space. Hänge anschließend die Einladung an. Der Entwurf bleibt bearbeitbar und wird nur über den normalen Versandablauf von Mail gesendet.
+- Eine Absage schließt den verknüpften Termin ab. Eine Absage allein kann keinen neuen Termin erstellen.
+- Öffne in einem bearbeitbaren Termin **Einladungen**. Wähle ein beschreibbares Postfach und eine aktuell bestätigte Absenderidentität. Erstelle dann einen bearbeitbaren Entwurf in Mail.
+- Aktualisierungen verwenden eine höhere Sequenznummer. Eine Absage löst du ausdrücklich aus. Versandfehler bleiben in Spaces sichtbar.
+- Ist Mail oder die Capability, die Spaces braucht, nicht verfügbar, blendet Spaces die Einladungsfunktionen aus. Du kannst Spaces weiter vollständig als Kalender nutzen.
+- Wähle in einem Mail-Entwurf einen vorhandenen Termin oder erstelle einen kompakten Termin in einem beschreibbaren Space. Hänge dann seine Einladung an. Der Entwurf bleibt bearbeitbar, und Mail sendet ihn nur über den normalen Versand.
 
 ## Ressourcen und Seiten mit Arbeit verknüpfen {icon="link"}
 
-Jeder Eintrag hat eine Liste **Links & Ressourcen** für Cloud-Ressourcen und externe Seiten. Wähle beim Bearbeiten **Link hinzufügen**, um eine `http(s)`-URL mit optionaler Bezeichnung anzuhängen, oder **Cloud-Ressource verknüpfen**, um über die Cloud-Suche unterstützte Ressourcen zu finden und anzuhängen, auf die du aktuell zugreifen darfst. Ein Eintrag fasst bis zu 20 externe Links.
+Jeder Eintrag hat eine Liste **Links & Ressourcen** für Cloud-Ressourcen und externe Seiten. In einem bearbeitbaren Eintrag hast du zwei Möglichkeiten:
 
-Ein Link auf ein GitHub-Issue oder einen Pull Request zeigt `Repository#Nummer`, den Titel und ob er offen, geschlossen oder gemergt ist. Andere Links zeigen das Symbol und den Host der Seite oder die Bezeichnung, die du vergeben hast. Vorschauen sind schreibgeschützt und aktualisieren sich wenige Minuten nach einer Änderung auf GitHub; Spaces schreibt nie nach GitHub. Öffentliche Repositories brauchen keine Einrichtung. Für private Repositories kann eine Person mit Adminzugriff unter **Space-Einstellungen › GitHub** ein GitHub-Token hinterlegen; ohne Token erscheinen private Links als einfache Links. Verknüpfe eine Aufgabe mit ihrem Issue, statt das Issue in der Beschreibung zu wiederholen.
+- Wähle **Link hinzufügen**, um eine `http(s)`-URL mit optionaler Bezeichnung anzuhängen. Ein Eintrag fasst bis zu 20 externe Links.
+- Wähle **Cloud-Ressource verknüpfen**, um eine Ressource über die Cloud-Suche zu finden und anzuhängen. Du kannst jede unterstützte Ressource anhängen, auf die du aktuell zugreifen kannst.
 
-Ein Eintrag kann dauerhafte Verweise auf Ressourcen anderer Cloud-Anwendungen enthalten. Mail verwendet dasselbe Modell, um eine gesamte Unterhaltung mit einer bestehenden Aufgabe oder einem Termin zu verknüpfen oder daraus einen neuen verknüpften Eintrag zu erstellen. Importierte Kalendereinladungen fügen denselben Verweis auf die Unterhaltung automatisch hinzu.
+Ein Link auf ein GitHub-Issue oder einen Pull Request zeigt `Repository#Nummer`, den Titel und ob er offen, geschlossen oder gemergt ist. Andere Links zeigen das Symbol und den Host der Seite oder die Bezeichnung, die du vergeben hast. Vorschauen sind schreibgeschützt. Sie aktualisieren sich wenige Minuten nach einer Änderung auf GitHub. Spaces schreibt nie nach GitHub.
 
-Der Verweis gehört zum gemeinsamen Eintrag und nicht zu der Person, die ihn erstellt hat. Der Zugriff auf den Space bestimmt, wer den Verweis sehen oder entfernen darf. Beim Öffnen prüft die Zielanwendung zusätzlich die aktuelle Berechtigung für ihre Ressource. Wenn das Ziel gelöscht oder der Zugriff geändert wurde, bleibt die gespeicherte Bezeichnung für Personen mit Lesezugriff sichtbar. Eine Person mit Schreibzugriff kann den nicht mehr verfügbaren Verweis entfernen.
+Öffentliche Repositories brauchen keine Einrichtung. Für private Repositories kann eine Person mit Zugriff **Verwalten** unter **Space-Einstellungen → GitHub** ein GitHub-Token hinterlegen. Ohne Token erscheinen private Links als einfache Links. Verknüpfe eine Aufgabe mit ihrem Issue, statt das Issue in der Beschreibung zu wiederholen.
 
-Verknüpfungen zu anderen Aufgaben erscheinen getrennt unter **Verwandte Aufgaben**, direkt über dieser Liste. Sie liefern nur zusätzlichen Kontext und blockieren keine der beiden Aufgaben. Eine Verknüpfung darf auf eine Aufgabe in einem anderen Space zeigen, wenn auf beide Einträge zugegriffen werden kann.
+Ein Eintrag kann dauerhafte Verweise auf Ressourcen enthalten, die anderen Cloud-Apps gehören. Mail nutzt dasselbe Modell, um eine ganze Unterhaltung mit einer bestehenden Aufgabe oder einem Termin zu verknüpfen. Mail kann aus den Details der Unterhaltung auch einen verknüpften Eintrag erstellen. Importierte Kalendereinladungen fügen denselben Verweis auf die Unterhaltung automatisch hinzu.
+
+Der Verweis gehört zum gemeinsamen Eintrag, nicht zu der Person, die ihn erstellt hat. Der Zugriff auf den Space bestimmt, wer den Verweis sehen oder entfernen kann. Beim Öffnen prüft die Ziel-App zusätzlich den aktuellen Zugriff auf ihre Ressource. Wird das Ziel entfernt oder ändert sich der Zugriff, sehen alle, die den Space sehen, weiter die gespeicherte Bezeichnung. Mit Zugriff **Bearbeiten** kannst du den nicht mehr verfügbaren Verweis entfernen.
+
+Verknüpfungen zu anderen Aufgaben erscheinen getrennt unter **Verwandte Aufgaben**, direkt über dieser Liste. Sie liefern nur Kontext und blockieren keine der beiden Aufgaben. Eine Verknüpfung kann auf eine Aufgabe in einem anderen Space zeigen, wenn beide Einträge zugänglich sind.

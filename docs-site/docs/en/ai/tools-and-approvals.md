@@ -63,7 +63,7 @@ grant domain permission.
 | --- | --- |
 | `.server(run)` | Cloud runs the implementation |
 | `.client()` | Browser handles the call |
-| `.clientView()` | Browser handles a view-only interaction |
+| `.clientView()` | Cloud answers the call itself; the chat only shows it |
 | `.clientInteraction()` | Browser handles an interactive action |
 
 Register browser handlers with `createAiChatController({ frontendTools })`.
@@ -128,9 +128,42 @@ still apply, and historical projections stay compact for later loops.
 
 `promptHint` adds one short usage nudge to the system prompt. Use it when the
 model could finish with plain text but Cloud prefers the tool-backed experience,
-as with surveys, the long-form text editor, or presented files. Keep
+as with surveys, the long-form text editor, charts, or presented files. Keep
 operation details and arguments in the tool description and schema; the hint
 does not replace either.
+
+The built-in `chart` tool is a `clientView()` that shows one chart in the chat
+from data the model already has. Its input is the plain-data form of
+`cloud.chart()` in Studio code: `bar`, `line` (with `area` to fill it),
+`scatter`, `pie`, `donut`, `histogram`, `gauge`, or `sparkline`, with `title`
+and an optional `subtitle`, but without `width`, `height`, or `format`
+functions. Model providers accept only an object at the root of a tool schema,
+so `CloudAiChartInputSchema` describes every kind as one object whose fields
+name the kinds they belong to, and checks the rules of the chosen kind after
+that. A chart holds at most 8 series, one per palette color, and at most 480
+values per list, one per unit of the 480-unit drawing. `x` is a number, a date
+`YYYY-MM-DD`, or a local date and time `YYYY-MM-DDTHH:mm` or
+`YYYY-MM-DDTHH:mm:ss` without an offset, written in the user's time zone.
+
+The schema checks these bounds first: input outside them fails before anything
+is computed or drawn. It then rejects input that would not draw as written: a date that does not exist, such as February 30; a line with
+fewer than two points in a series; values at or below zero on a `log` axis,
+which the chart would leave out; values outside an axis `domain`; values that
+differ too little for their size to label an axis, such as 1e17 and 1e17 + 16;
+pie slices that add up to zero; or a pie whose legend leaves too little room
+for it. The model gets the reason, and the chat never shows a broken chart or a
+table that hides a value. `parseCloudAiChartInput()` reads the arguments of a
+call as one typed chart without drawing it.
+
+Cloud answers a chart call itself, without a browser and also in background and
+scheduled runs, whose transcript shows the chart later. The call goes from
+running to completed without an open request in between. The chat draws it
+with the `@k2b/ui` chart renderer that `cloud.chart()` uses. The chart has no
+code, sandbox, state, or actions. The reader can switch it to a data table that
+shows and copies every value as given, and axis labels show fractional values
+exactly. When a chart needs filters or buttons, Assistant shows an app in the
+chat with `code_present` instead; data that must be kept or an app that is used
+again becomes a saved Studio App.
 
 The built-in `text_editor` is a `clientInteraction()` for one complete
 plain-text or Markdown draft of at most 20,000 characters. It is appropriate

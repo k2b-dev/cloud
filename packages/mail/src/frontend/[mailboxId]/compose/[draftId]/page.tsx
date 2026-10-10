@@ -34,9 +34,10 @@ export default ssr<AuthContext>(async (c) => {
     context.actor.kind === "user"
       ? { kind: "user" as const, id: context.actor.user.id }
       : { kind: "service_account" as const, id: context.actor.serviceAccount.id };
-  const [mailbox, permission, identities, draft, uploads, calendarIntegrationAvailable] = await Promise.all([
+  const [mailbox, access, identities, draft, uploads, calendarIntegrationAvailable] = await Promise.all([
     mailboxes.getMailbox(context, mailboxId),
-    mailboxAccess.getMailboxPermission(context, mailboxId),
+    // Assigned-only writers reply here too; the draft and seed services refuse anything they cannot see.
+    mailboxAccess.requireMailboxAccess(context, mailboxId, "write"),
     senderIdentities.listSenderIdentities(context, mailboxId),
     drafts.getDraft(context, mailboxId, draftId),
     draftUploads.listUnfinishedDraftAttachmentUploads({ context, mailboxId, draftId }),
@@ -44,7 +45,7 @@ export default ssr<AuthContext>(async (c) => {
   ]);
   if (!mailbox.ok) return ssr.error(c, mailbox.error.status);
   if (!draft.ok) return ssr.error(c, draft.error.status);
-  if (permission !== "write" && permission !== "admin") return ssr.error(c, 403);
+  if (!access.ok) return ssr.error(c, 403);
   const publicData = await projectComposeData({
     mailbox: mailbox.data,
     identities: identities.ok ? identities.data : [],
@@ -80,7 +81,7 @@ export default ssr<AuthContext>(async (c) => {
         returnHref={returnHref}
         popout={popout}
         dateConfig={getDateConfig(c)}
-        canShareAttachments={permission === "admin"}
+        canShareAttachments={access.data.permission === "admin"}
         calendarIntegrationAvailable={calendarIntegrationAvailable}
         contactDirectory={requestContactDirectory(c)}
       />

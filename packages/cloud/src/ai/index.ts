@@ -1,3 +1,4 @@
+export { type AiAppSkillIssue, aiAppSkills, appSkillsRegistryState, reconcileAppSkills } from "./app-skill-store";
 export { type AiApprovalPreferenceRoutes, type AiApprovalPreferenceView, createAiApprovalPreferenceRoutes } from "./approval-routes";
 export {
   type AiToolApprovalContext,
@@ -47,11 +48,17 @@ export { authorizeCodeExecution } from "./code-execution";
 export { CODE_SOURCE_TOOLS, type CodeSourceToolName } from "./code-source-contracts";
 export { listAiCredentialProfileIds } from "./credentials";
 export {
+  CLOUD_AI_CHART_MAX_SERIES,
+  CLOUD_AI_CHART_MAX_VALUES,
   CLOUD_AI_TEXT_EDITOR_MAX_CHARS,
   type CloudAiCardInput,
   CloudAiCardInputSchema,
   type CloudAiCardOutput,
   CloudAiCardOutputSchema,
+  type CloudAiChartInput,
+  CloudAiChartInputSchema,
+  type CloudAiChartOutput,
+  CloudAiChartOutputSchema,
   type CloudAiLocalBashInput,
   CloudAiLocalBashInputSchema,
   type CloudAiLocalBashOutput,
@@ -64,6 +71,7 @@ export {
   CloudAiTextEditorInputSchema,
   type CloudAiTextEditorOutput,
   CloudAiTextEditorOutputSchema,
+  parseCloudAiChartInput,
 } from "./default-tool-contracts";
 export {
   type AiChatEnrichment,
@@ -258,6 +266,7 @@ export {
   type AiSkillAccess,
   type AiSkillAdminListItem,
   type AiSkillAdminSummary,
+  AiSkillAppForbiddenError,
   AiSkillInputError,
   AiSkillLastAdminError,
   type AiSkillPermission,
@@ -265,7 +274,6 @@ export {
   AiSkillRevisionConflictError,
   type AiSkillSummary,
   aiSkills,
-  seedCloudAiSkills,
 } from "./skills";
 export { type AiSkillsRoutes, aiSkillsRoutes } from "./skills-routes";
 export { aiConversations } from "./store";

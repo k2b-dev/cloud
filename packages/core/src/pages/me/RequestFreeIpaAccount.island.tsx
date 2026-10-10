@@ -155,7 +155,7 @@ export default function RequestFreeIpaAccount(props: RequestFreeIpaAccountProps)
 
   return (
     <Button type="button" size="sm" onClick={handleClick} loading={mutation.loading()} loadingLabel={t().requesting}>
-      {mutation.loading() ? <i class="ti ti-loader-2 animate-spin" /> : <i class="ti ti-building-fortress" />}
+      <i class="ti ti-building-fortress" />
       <span>{t().requestFreeIpaAccount}</span>
     </Button>
   );

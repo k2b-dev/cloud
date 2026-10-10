@@ -2,12 +2,16 @@
 id: grids-financial-formats
 title: Finanzdateiformate
 icon: ti ti-file-invoice
-description: Unterstützte E-Rechnungs-, DATEV- und SEPA-Eingaben, Grenzen und sichere Exporte.
+description: Schlage unterstützte E-Rechnungs-, DATEV- und SEPA-Eingaben, ihre Grenzen, Validierung und sichere Exportgrenzen nach.
 order: 136
 ---
-Grids bietet einen definierten Umfang an Finanzformaten. Wähle ein vom Empfänger unterstütztes Format und prüfe eine repräsentative Datei mit dessen Importeinstellungen. Erstellen und Validieren überweist kein Geld, importiert keine Buchhaltung und bestätigt keine Rechtskonformität.
+Grids unterstützt einen festgelegten Umfang an Finanzformaten. Wähle ein Format, das der Empfänger unterstützt. Prüfe danach eine repräsentative Datei mit den Importeinstellungen des Empfängers.
 
-## Formate und Zuständigkeiten {icon="file-description"}
+:::warning Eine gültige Datei ist keine Überweisung
+Erstellen oder Validieren einer Datei überweist kein Geld, importiert keine Buchhaltung und bestätigt keine Rechtskonformität.
+:::
+
+## Ein Format wählen {icon="file-description"}
 
 | Grids-Ausgabe | Unterstütztes Format | Ergebnis |
 | --- | --- | --- |
@@ -15,69 +19,82 @@ Grids bietet einen definierten Umfang an Finanzformaten. Wähle ein vom Empfäng
 | `datev-csv`, Version 1 | DATEV 700/13, EUR | UTF-8-CSV mit BOM; Dateiname `EXTF_*.csv` |
 | `sepa-xml`, Version 1 | SCT `pain.001.001.09`, DK GBIC 5, EUR | Eine XML-Datei mit einer oder mehreren Überweisungen |
 
+## Eingaben für E-Rechnungen vorbereiten {icon="file-invoice"}
 
-## E-Rechnungseingabe {icon="file-invoice"}
+Führe `cld grids documents renderers --json` aus, um den installierten Renderer zu wählen. Sein `inputSchema` ist der Vertrag für die Struktur. Das Liquid-JSON der Vorlage ordnet den ausgewählten Datensatz dieser Eingabe zu. Prüfe die Vorschau, bevor du die Vorlage aktivierst.
 
-`cld grids documents renderers --json` zeigt installierte Renderer; deren `inputSchema` beschreibt die Eingabestruktur. Liquid-JSON der Vorlage ordnet den ausgewählten Datensatz zu. Prüfe die Vorschau, bevor du die Vorlage aktivierst.
+:::reference
+- **Pflicht in beiden Versionen:** `invoiceDate`, `dueDate`, `currency: "EUR"`, `seller`, `buyer`, `buyerReference`, `payment` und `lines`.
+- **Parteien:** `name`, eine deutsche `vatId` und `address: {line1, city, postalCode, countryCode:"DE"}`.
+- **Zahlung:** `iban` und `accountName`.
+- **Daten:** Echte ISO-Kalendertage. Das Fälligkeitsdatum darf nicht vor dem Rechnungsdatum liegen.
+- **Positionen:** 1–1.000 Positionen. Jede hat `name`, eine positive `quantity` mit vier Nachkommastellen, einen nichtnegativen `unitPrice` mit vier Nachkommastellen und eine positive `taxRate` mit zwei Nachkommastellen, höchstens 100.
+:::
 
-Beide Versionen benötigen `invoiceDate`, `dueDate`, `currency: "EUR"`, `seller`, `buyer`, `buyerReference`, `payment` und `lines`. Parteien haben `name`, deutsche `vatId` und `address: {line1, city, postalCode, countryCode:"DE"}`. Zahlung enthält `iban` und `accountName`. Daten sind echte ISO-Kalendertage; Fälligkeit nicht vor Rechnungsdatum.
+Übergib Dezimalstrings, keine Fließkommazahlen. Positionsnettobeträge werden kaufmännisch auf Cent gerundet. Die Steuer wird je Steuersatzgruppe gerundet. PDF und XML verwenden dieselben berechneten Summen.
 
-Jede der 1–1.000 Positionen hat `name`, positive `quantity` mit vier Nachkommastellen, nichtnegative `unitPrice` mit vier und positive `taxRate` mit zwei Nachkommastellen, höchstens 100. Übergebe Dezimalstrings, keine Fließkommazahlen. Positionsnetto wird kaufmännisch auf Cent gerundet, Steuer je Steuersatzgruppe. PDF und XML verwenden dieselben Summen.
-
-Version 2 benötigt zusätzlich `serviceDate` und `billing`:
+Version 2 braucht zusätzlich `serviceDate` und `billing`:
 
 - `{kind:"invoice"}`;
 - `{kind:"creditNote", original:{number, invoiceDate}, reason}`;
 - `{kind:"selfBilling", agreementReference}`.
 
-Positionen in Version 2 erlauben `description` und `unitCode`: `C62` (Standard), `HUR`, `DAY` oder `KGM`. Mengen und Beträge bleiben positiv; die Belegart trägt die Bedeutung. Bei Selbstabrechnung bleibt der Verkäufer Leistungserbringer und der Käufer Kunde. Das Empfängerkonto muss ausdrücklich angegeben werden.
+Positionen in Version 2 können `description` und `unitCode` haben: `C62` (Standard), `HUR`, `DAY` oder `KGM`. Mengen und Beträge bleiben positiv. Die Belegart trägt die Bedeutung. Bei Selbstabrechnung bleibt der Verkäufer Leistungserbringer und der Käufer Kunde. Du musst das Empfängerkonto ausdrücklich angeben. Grids leitet es nicht ab.
 
-Diese Grids-Profile sind enger als ein beliebiges Rechnungsmodell: keine steuerfreien Positionen oder Nullsteuer, Zu-/Abschläge, Vorauszahlungen, Eingangsrechnungsimporte oder beliebige XML-Formate. Ob ein Original existiert und Korrektur-/Provisionsbudgets reichen, prüft der Workflow, nicht der Serialisierer. Die Billing-Vorlage ergänzt fachliche Regeln; der Renderer allein fügt sie nicht hinzu.
+Diese Grids-Profile sind enger als ein beliebiges Rechnungsmodell. Sie unterstützen keine Nullsteuer oder steuerfreien Positionen, keine Zu- oder Abschläge, keine Vorauszahlungen, keinen Import von Eingangsrechnungen und keine beliebigen XML-Formate. Ob das Original existiert und ob Korrektur- oder Provisionsbudgets reichen, prüfen Workflows. Die Serialisierer prüfen das nicht. Die Billing-Vorlage ergänzt fachliche Regeln. Der Renderer allein fügt sie nicht hinzu.
 
-## SEPA-Überweisungen {icon="transfer"}
+## Eingaben für SEPA-Überweisungen vorbereiten {icon="transfer"}
 
-Die Workflow-`output` enthält `kind: sepa-xml`, `version: 1`, `header` und `mapping`. Ausführbare Beispiele für Abfrage und Zuordnung stehen unter [Workflows](/app/grids/help/grids-workflows).
+Die Workflow-`output` hat `kind: sepa-xml`, `version: 1`, `header` und `mapping`. [Workflows](/app/grids/help/grids-workflows) zeigt ausführbare Beispiele für Abfrage und Zuordnung.
 
-Kopf: `destinationKey`, `debtorName` (1–70 Zeichen), `debtorIban`, `executionDate` (ISO-Datum), optional `debtorBic`.
+:::reference
+- **Kopf:** `destinationKey`, `debtorName` (1–70 Zeichen), `debtorIban`, `executionDate` (ISO-Datum) und optional `debtorBic`.
+- **Pflichtzuordnungen:** `businessId`, `endToEndId`, `amount`, `creditorName`, `creditorIban` und `remittance`.
+- **Optionale Zuordnung:** `creditorBic`.
+:::
 
-Pflichtzuordnungen: `businessId`, `endToEndId`, `amount`, `creditorName`, `creditorIban`, `remittance`; optional `creditorBic`. Zugeordnet werden exakte ausgewählte Spaltenaliase, keine Ausdrücke oder Zellwerte.
+Zuordnungswerte sind exakte ausgewählte Spaltenaliase, keine Ausdrücke oder rohen Zellwerte. Jeder Wert muss diese Regeln erfüllen:
 
-- Positiver Betrag mit genau zwei Nachkommastellen, bis `999999999.99`; keine Rundung von Bruchteilen eines Cents.
-- Gültige elektronische SEPA-IBAN in Großbuchstaben, ohne Leerzeichen oder QR-IBAN. Ein angegebener BIC muss gültig sein.
-- Empfängername bis 70, Verwendungszweck bis 140 Zeichen.
-- Namen und Verwendungszweck erlauben A–Z/a–z, Ziffern, Leerzeichen, `+ ? / : ( ) . , ' -` sowie `& * $ % Ä Ö Ü ä ö ü ß`. Andere Zeichen, etwa `é` oder `€`, werden abgelehnt, nicht ersetzt.
-- `endToEndId`: nicht leer, höchstens 35 SEPA-Basiszeichen ohne deutsche Erweiterungen, kein führender/abschließender Schrägstrich oder `//`; eindeutig im Stapel.
-- Eine Überweisung je eindeutiger `businessId`. Grids erzeugt und behält Nachrichten- und Zahlungsgruppen-IDs.
-- Vergangene Ausführungsdaten erzeugen eine Warnung; Grids ersetzt sie nicht durch heute.
+- Der Betrag ist positiv mit genau zwei Nachkommastellen, höchstens `999999999.99`. Grids rundet keine Bruchteile eines Cents.
+- Die IBAN ist eine gültige elektronische SEPA-IBAN in Großbuchstaben, ohne Leerzeichen und keine QR-IBAN. Ein angegebener BIC muss gültig sein.
+- Der Empfängername hat bis zu 70 Zeichen, der Verwendungszweck bis zu 140.
+- Namen und Verwendungszweck erlauben A–Z/a–z, Ziffern, Leerzeichen, `+ ? / : ( ) . , ' -` sowie `& * $ % Ä Ö Ü ä ö ü ß`. Grids lehnt andere Zeichen ab, etwa `é` oder `€`. Grids ersetzt sie nicht.
+- `endToEndId` ist nicht leer und hat höchstens 35 SEPA-Basiszeichen ohne die deutschen Erweiterungen. Sie hat keinen führenden oder abschließenden Schrägstrich und kein `//`. Sie ist im Stapel eindeutig.
+- Grids erstellt eine Überweisung je eindeutiger `businessId`. Grids erzeugt und behält die IDs für Nachricht und Zahlungsinformation.
+- Ein vergangenes Ausführungsdatum erzeugt eine Warnung. Grids ersetzt es nicht durch das heutige Datum.
 
-Das ist SCT, keine Lastschrift oder Echtzeitüberweisung. Die Bank entscheidet über die Annahme.
+Diese Ausgabe ist SCT. Sie ist keine Lastschrift und keine Echtzeitüberweisung. Die empfangende Bank entscheidet, ob sie die Datei annimmt.
 
-## DATEV-Buchungen {icon="receipt"}
+## Eingaben für DATEV-Buchungen vorbereiten {icon="receipt"}
 
-Kopf: `destinationKey`, `consultantNumber`, `clientNumber`, `fiscalYearStart`, `accountLength`, `periodStart`, `periodEnd`, `label` und `finalize`.
+Der Kopf hat `destinationKey`, `consultantNumber`, `clientNumber`, `fiscalYearStart`, `accountLength`, `periodStart`, `periodEnd`, `label` und `finalize`:
 
-- Beraternummer: String mit 4–7 Ziffern, mindestens 1001. Mandant: 1–5 Ziffern, erste Ziffer nicht 0.
-- Daten zwischen 2000 und 2099. Der geordnete Buchungszeitraum liegt innerhalb eines Wirtschaftsjahres.
-- Kontolänge: Ganzzahl 4–8. Bezeichnung: 1–30 Buchstaben/Ziffern, Unterstrich, Punkt, Bindestrich, Schrägstrich oder Leerzeichen.
+- Die Beraternummer ist ein String mit 4–7 Ziffern, mindestens 1001. Die Mandantennummer ist ein String mit 1–5 Ziffern, deren erste Ziffer nicht 0 ist.
+- Daten liegen zwischen 2000 und 2099. Der Buchungszeitraum muss geordnet sein und innerhalb eines Wirtschaftsjahres liegen.
+- Die Kontolänge ist eine Ganzzahl von 4 bis 8. Die Bezeichnung hat 1–30 Buchstaben, Ziffern, Unterstriche, Punkte, Bindestriche, Schrägstriche oder Leerzeichen.
 - `finalize` steuert die Festschreibung beim DATEV-Import, nicht die Finalisierung von Grids-Datensätzen.
 
-Pflichtzuordnungen: `businessId`, `entryId`, `amount`, `direction`, `account`, `counterAccount`, `documentDate`, `documentNumber`. Optional: `text`, `taxKey`, `costCenter1`, `costCenter2`.
+Pflichtzuordnungen sind `businessId`, `entryId`, `amount`, `direction`, `account`, `counterAccount`, `documentDate` und `documentNumber`. Optional sind `text`, `taxKey`, `costCenter1` und `costCenter2`:
 
-- Positiver Betrag mit zwei Nachkommastellen bis `9999999999.99`; Richtung `S` oder `H`, kein negativer Betrag.
-- Konten: Ziffernstrings ungleich null, höchstens 9 Stellen und `accountLength + 1`.
-- Belegdatum im Buchungszeitraum. Belegnummer: 1–36 ASCII-Buchstaben/Ziffern oder `_ $ & % * + - /`, keine Leerzeichen.
-- Text bis 60 Zeichen ohne Steuerzeichen; Steuerschlüssel genau vier Ziffern.
-- Kostenstellen bis 36 Buchstaben/Ziffern, Unterstrich oder Leerzeichen.
-- Mehrere Buchungen dürfen zu einem Geschäftsvorfall gehören; jede `entryId` darin muss eindeutig sein.
+- Der Betrag ist positiv mit zwei Nachkommastellen, bis `9999999999.99`. Die Richtung ist `S` oder `H`. Verwende keine negativen Beträge.
+- Konten sind Ziffernstrings ungleich null, mit höchstens 9 Stellen und höchstens `accountLength + 1`.
+- Das Belegdatum liegt im Buchungszeitraum. Die Belegnummer hat 1–36 ASCII-Buchstaben, Ziffern oder `_ $ & % * + - /` und keine Leerzeichen.
+- Der Text hat bis zu 60 Zeichen ohne Steuerzeichen. Der Steuerschlüssel hat genau vier Ziffern.
+- Kostenstellen haben bis zu 36 Buchstaben, Ziffern, Unterstriche oder Leerzeichen.
+- Mehrere Buchungen können zu einem Geschäftsvorfall gehören. Jede `entryId` darin muss eindeutig sein.
 
-Dies ist ein Buchungsstapel, nicht die gesamte DATEV-Produktfamilie. ADDISON oder andere Software kann bestimmte Importeinstellungen benötigen.
+Diese Ausgabe ist ein Buchungsstapel, nicht die gesamte DATEV-Produktfamilie. ADDISON oder andere Software kann bestimmte Importeinstellungen brauchen.
 
-## Prüfen und Identitäten beibehalten {icon="check"}
+## Einmal prüfen und Identitäten beibehalten {icon="check"}
 
-Beide Workflow-Finanzausgaben erlauben 1–10.000 Zeilen innerhalb des gemeinsamen Speicherlimits für erfasste Daten. `destinationKey`, `businessId` und DATEV-`entryId` haben 1–200 Zeichen ohne umgebende Leer- oder Steuerzeichen. Sie benennen das echte Ziel und den Geschäftsvorfall, nicht Lauf, Dateiname oder neu erzeugten Zufallswert.
+Beide Finanzausgaben von Workflows nehmen 1–10.000 Zeilen innerhalb des gemeinsamen Budgets für erfasste Daten an. `destinationKey`, `businessId` und die DATEV-`entryId` haben 1–200 Zeichen ohne umgebende Leer- oder Steuerzeichen. Sie benennen das echte Ziel und den Geschäftsvorfall. Sie benennen keinen Lauf, keinen Dateinamen und keinen neu erzeugten Zufallswert.
 
-Ein manueller Lauf wartet auf Prüfung. Bestätige vor der Ausstellung den exakten Vorschauhash. Zeit- und datensatzgesteuerte Finanzausgaben sind nicht unterstützt. Abbrechen vor der Ausstellung reserviert keinen Exportanspruch; erfolgreiche Ausstellung speichert Dokument und Exportansprüche atomar. Wiederholen verwendet denselben geprüften Vorgang. Ändere Identitäten nie, um den Doppelexportschutz zu umgehen.
+Ein manueller Lauf wartet auf eine Prüfung. Bestätige vor der Ausstellung den exakten Vorschauhash. Zeitgesteuerte und datensatzgesteuerte Finanzexporte werden nicht unterstützt. Brichst du vor der Ausstellung ab, reserviert Grids nichts für die Prüfung auf Doppelexporte. Eine erfolgreiche Ausstellung speichert das Dokument und seine Exportreservierungen atomar. Eine Wiederholung verwendet denselben geprüften Beleg.
 
-Zur Laufzeit werden Eingaben fachlich und erzeugtes E-Rechnungs-/SEPA-XML gegen das festgelegte XSD geprüft. Nach externem PDF-Rendering liest Grids die eingebettete XML und vergleicht sie. XSD- und Einbettungsprüfung sind keine vollständige Schematron- oder PDF/A-Zertifizierung, Steuerberatung oder Bankannahmeprüfung.
+:::danger Die Prüfung auf Doppelexporte nicht umgehen
+Ändere nie Identitäten, um die Prüfung auf Doppelexporte zu umgehen.
+:::
 
-Weiter: [Dokumentlebenszyklus](/app/grids/help/grids-documents-pdfs), [Billing-Vorlage](/app/grids/help/grids-build-business-app).
+Zur Laufzeit validiert Grids die Eingaben fachlich und prüft erzeugtes E-Rechnungs- und SEPA-XML gegen ein festgelegtes XSD. Nach dem externen PDF-Rendering liest Grids das eingebettete XML und vergleicht es. XSD- und Einbettungsprüfungen sind keine vollständige Schematron-Prüfung, keine PDF/A-Zertifizierung, keine Steuerberatung und kein Annahmetest der Bank.
+
+Weiter: [Dokumente und PDFs](/app/grids/help/grids-documents-pdfs), [Billing-Vorlage](/app/grids/help/grids-build-business-app).

@@ -13,7 +13,7 @@ import {
 
 const collaboration = (revision: number, workStatus: ConversationCollaboration["workStatus"]): ConversationCollaboration => ({
   conversationId: "00000000-0000-4000-8000-000000000001",
-  assignee: null,
+  assignees: [],
   workStatus,
   snoozedUntil: null,
   revision,

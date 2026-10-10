@@ -2,78 +2,84 @@
 id: core-security
 title: Anmeldung und Sicherheit
 icon: ti ti-shield-lock
-description: Anmeldeverfahren, Passwortwiederherstellung, Passkeys, API-Schlüssel, Sitzungen und Kontoschutz.
+description: Anmelden, Zugang wiederherstellen, eine Anmelde-App koppeln und Passkeys, API-Schlüssel und Sitzungen schützen.
 order: 112
 ---
 
-Die verfügbaren Anmeldeverfahren hängen vom Kontodienst und den Einstellungen der Plattform ab. Verwende das Verfahren, das für dein bestehendes Konto angeboten wird, statt ein zweites Konto anzulegen.
+Deine Anmeldeverfahren hängen vom Kontodienst und von den Einstellungen der Plattform ab. Nutze das Verfahren, das Cloud für dein Konto anbietet. Lege kein zweites Konto an.
 
-## Anmelden und Zugriff wiederherstellen {icon="shield-lock"}
+## Anmelden und Zugang wiederherstellen {icon="shield-lock"}
 
-Die Accounttypen heißen **Guest**, **Login** (gegebenenfalls mit einem anderen
-Namen deiner Organisation) und **FreeIPA**. Guest startet mit einem E-Mail-Link
-und FreeIPA mit deinem Passwort. Wenn die App-Anmeldung eingerichtet ist,
-startet Login mit der App, der E-Mail-Link bleibt als Alternative verfügbar;
-bei FreeIPA und Guest wählst du **Stattdessen die App nutzen**. Nach einer
-FreeIPA-Anmeldung mit der App öffnet dieser Browser FreeIPA beim nächsten Mal
-mit der App. Lokale Accounts verwenden keine Passwörter. Ein bestehender
-Passkey funktioniert weiter, solange der Accounttyp erlaubt ist. Nutze bei
-einem verborgenen Typ deinen Einladungs- oder direkten Anmeldelink. Verbergen
-ist nicht dasselbe wie Zugriff sperren; wende dich bei deaktiviertem Zugang an
-die Administration.
+Cloud kennt drei Kontotypen. Deine Organisation kann **Login** anders benennen.
 
-- Verwende die normale Anmeldung für den Kontodienst deines Kontos.
-- Verwende einen bereits registrierten Passkey, wenn Browser und Gerät ihn unterstützen.
-- Fordere die Passwortwiederherstellung nur für Konten mit wiederherstellbarer Passwortanmeldung an.
-- Verwende den Link aus der neuesten Wiederherstellungsnachricht. Ältere oder bereits verwendete Links können ungültig sein.
-- Wende dich an die Administration, wenn das erwartete Anmeldeverfahren fehlt oder der Kontodienst unklar ist.
+:::reference
+- **Guest:** Startet mit einem E-Mail-Link.
+- **Login:** Startet mit der App, wenn die App-Anmeldung eingerichtet ist. Der E-Mail-Link bleibt als Alternative verfügbar.
+- **FreeIPA:** Startet mit deinem Passwort.
+:::
 
-## Anmelde-App koppeln und verwalten {icon="device-mobile"}
+Ist die App-Anmeldung eingerichtet, können sich auch **Guest** und **FreeIPA** mit der App anmelden. Nach einer FreeIPA-Anmeldung mit der App öffnet dieser Browser FreeIPA beim nächsten Mal mit der App. Lokale Konten verwenden keine Passwörter.
 
-Wenn die Administration die App-Anmeldung aktiviert und eingerichtet hat, öffne **Mein Account
-→ Sicherheit → Gerät koppeln**. Scanne den QR-Code, kopiere den Kopplungslink
-in die App. Kehre zur Cloud zurück,
-vergleiche die sechsstelligen Codes und bestätige nur, wenn sie übereinstimmen.
-Lass die App geöffnet, bis sie die Kopplung bestätigt. Der Link gilt fünf
-Minuten; teile ihn nicht außerhalb dieser Einrichtung.
+Ein bestehender Passkey funktioniert weiter, solange dein Kontotyp erlaubt ist. Ist dein Kontotyp verborgen, nutze deinen Einladungslink oder deinen direkten Anmeldelink. Ein verborgener Kontotyp ist nicht dasselbe wie ein gesperrter Zugang. Ist dein Zugang gesperrt, wende dich an die Administration.
 
-Steht unter Sicherheit **Aktiviert — Einrichtung fehlt**, muss die Administration
-die App-Konfiguration noch abschließen. Nutze bis dahin deine bisherige Anmeldung.
+- Nutze die normale Anmeldung für den Kontodienst deines Kontos.
+- Nutze einen Passkey, wenn du schon einen registriert hast und Browser und Gerät ihn unterstützen.
+- Fordere die Passwortwiederherstellung nur für ein Konto mit wiederherstellbarem Passwort an.
+- Nutze den Link aus der neuesten Wiederherstellungsnachricht. Ältere oder bereits verwendete Links können ungültig sein.
+- Fehlt das erwartete Anmeldeverfahren oder ist der Kontodienst unklar, bitte die Administration, ihn zu prüfen.
 
-Wähle bei einer späteren Anmeldung deinen Accounttyp und bei Guest die App-Anmeldung
-als Alternative. Gib E-Mail oder Kürzel ein und wähle **Mit App anmelden**. Öffne die gekoppelte App und
-bestätige nur deine eigene Anfrage mit übereinstimmendem Code. Ohne App können
-lokale Accounts weiterhin einen E-Mail-Link nutzen, FreeIPA-Accounts ihr
-Passwort. Bestehende Passkeys bleiben verfügbar.
+## Anmelde-App koppeln {icon="device-mobile"}
 
-Nach der Anmeldung bittet dich die Cloud einmalig, ihre Nutzungsbedingungen
-anzunehmen und die Datenschutzhinweise zur Kenntnis zu nehmen. Bestätige zum
-Fortfahren oder brich ab, um dich abzumelden.
+Die Administration muss die App-Anmeldung zuerst aktivieren und einrichten. Zeigt **Anmeldung** den Status **Aktiviert — Einrichtung fehlt**, muss die Administration die App-Konfiguration noch abschließen. Nutze bis dahin deine bisherige Anmeldung.
 
-**Gekoppelte Geräte** zeigt Namen, Kopplungsdatum, letzte Nutzung und eine
-mögliche Unterstützung durch die Administration. Benenne Geräte um oder
-widerrufe Geräte, die du nicht mehr kontrollierst. Der Widerruf verhindert neue
-Anmeldungen, beendet aber keine bestehenden Sitzungen. Diese Funktionen bleiben
-auch bei deaktivierter App-Anmeldung verfügbar.
-Hast du dein Gerät verloren und kannst dich nicht anmelden, bitte die
-Administration, es zu widerrufen. Setzt du dein Passwort mit **Passwort
-zurücksetzen** auf der Anmeldeseite zurück oder meldet Cloud dein Konto auf
-andere Weise überall ab, werden auch deine gekoppelten Geräte widerrufen;
-kopple sie danach neu.
+:::warning Gib den Kopplungslink nicht weiter
+Der Link gilt fünf Minuten. Teile ihn nicht außerhalb dieser Einrichtung.
+:::
 
-Koppeln, Umbenennen und Widerrufen können eine Bestätigung deiner Identität verlangen.
-Melde dich mit demselben Account an, ohne dich vorher abzumelden.
-Die Kopplung öffnet sich danach automatisch wieder.
-Ist das Ergebnis einer Anmeldung unklar, lade die Seite neu, um deine Sitzung
-zu prüfen, oder starte eine neue Anfrage.
+:::steps
+1. Öffne **Profileinstellungen → Anmeldung → Gerät koppeln**.
+2. Scanne den QR-Code oder kopiere den Kopplungslink in die App.
+3. Kehre zu Cloud zurück und vergleiche die sechsstelligen Codes.
+4. Wähle **Codes stimmen überein — Gerät koppeln** nur, wenn die Codes übereinstimmen.
+5. Lass die App geöffnet, bis sie die Kopplung bestätigt.
+:::
+
+## Mit der App anmelden {icon="device-mobile"}
+
+:::steps
+1. Wähle deinen Kontotyp.
+2. Zeigt die Seite **Stattdessen die App nutzen**, wähle diese Option.
+3. Gib deine E-Mail-Adresse oder dein Kürzel ein.
+4. Wähle **Mit App anmelden**.
+5. Öffne die gekoppelte App.
+6. Bestätige nur deine eigene Anfrage und nur mit dem übereinstimmenden Code.
+:::
+
+Ohne App können lokale Konten weiter einen E-Mail-Link nutzen und FreeIPA-Konten ihr Passwort. Bestehende Passkeys bleiben verfügbar.
+
+Nach der Anmeldung bittet dich Cloud einmalig, die Nutzungsbedingungen anzunehmen und die Datenschutzhinweise zur Kenntnis zu nehmen. Bestätige, um fortzufahren, oder brich ab, um dich abzumelden.
+
+Ist das Ergebnis einer Anmeldung unklar, lade die Seite neu, um deine Sitzung zu prüfen, oder starte eine neue Anfrage.
+
+## Gekoppelte Geräte prüfen und widerrufen {icon="device-mobile"}
+
+**Gekoppelte Geräte** zeigt für jedes Gerät den Namen, das Kopplungsdatum, die letzte Nutzung und ob die Administration bei der Kopplung geholfen hat. Benenne ein Gerät um oder widerrufe ein Gerät, das du nicht mehr kontrollierst. Ein widerrufenes Gerät kann keine neuen Anmeldungen bestätigen, bestehende Sitzungen bleiben aber angemeldet. Diese Funktionen bleiben auch bei ausgeschalteter App-Anmeldung verfügbar.
+
+Hast du dein Gerät verloren und kannst dich nicht anmelden, bitte die Administration, es zu widerrufen.
+
+:::warning Das Zurücksetzen des Passworts widerruft auch deine gekoppelten Geräte
+Setzt du dein Passwort mit **Passwort zurücksetzen** auf der Anmeldeseite zurück, widerruft Cloud alle deine gekoppelten Geräte. Jede andere Abmeldung deines Kontos auf allen Geräten wirkt genauso. Kopple deine Geräte danach neu.
+:::
+
+Koppeln, Umbenennen und Widerrufen können eine Bestätigung deiner Identität verlangen. Melde dich mit demselben Konto an, ohne dich vorher abzumelden. Die Kopplung öffnet sich danach automatisch wieder.
 
 ## Konto schützen {icon="shield-lock"}
 
-- Registriere Passkeys nur auf Geräten, die du kontrollierst. Vergib erkennbare Namen und entferne Passkeys für verlorene oder nicht mehr verwendete Geräte.
-- Prüfe die Kontoaktivitäten auf unerwartete Änderungen oder die unbekannte Verwendung von Zugangsdaten.
-- Behandle API-Schlüssel wie Passwörter. Verwende pro Integration einen eigenen Schlüssel mit Ablaufdatum und widerrufe ihn, sobald die Integration nicht mehr verwendet wird.
-- Prüfe Browser und Konto, bevor du eine sicherheitsrelevante Aktion bestätigst.
-
-:::warning Wiederherstellungslinks und API-Schlüssel nicht weitergeben
-Wer über einen gültigen Wiederherstellungslink oder aktiven API-Schlüssel verfügt, kann möglicherweise mit den zugehörigen Berechtigungen handeln. Füge solche Daten nicht in Supportnachrichten, Screenshots oder Dokumentationen ein.
+:::warning Gib Wiederherstellungslinks und API-Schlüssel nie weiter
+Wer einen gültigen Wiederherstellungslink oder einen aktiven API-Schlüssel hat, kann möglicherweise mit dessen Zugriff handeln. Füge solche Daten nicht in Supportnachrichten, Screenshots oder Dokumentation ein.
 :::
+
+- Registriere Passkeys nur auf Geräten, die du kontrollierst. Gib ihnen erkennbare Namen und entferne Passkeys für Geräte, die du nicht mehr hast oder nutzt.
+- Prüfe deine letzten Kontoaktivitäten auf unerwartete Änderungen oder eine unbekannte Nutzung von Zugangsdaten.
+- Behandle API-Schlüssel wie Passwörter. Gib jeder Integration einen eigenen Schlüssel mit Ablaufdatum und widerrufe ihn, sobald du die Integration nicht mehr nutzt.
+- Prüfe Browser und Konto, bevor du eine sicherheitsrelevante Aktion bestätigst.

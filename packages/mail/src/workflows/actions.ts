@@ -438,7 +438,7 @@ const conversationMutation = (
           conversationId,
           input:
             kind === "assignConversation"
-              ? { expectedRevision, assigneeUserId: value as string | null }
+              ? { expectedRevision, assigneeUserIds: typeof value === "string" ? [value] : [] }
               : { expectedRevision, workStatus: value as "needs_action" | "waiting" | "done" },
           db: tx,
           activityMetadata: { workflowRunId: ctx.runId, workflowStepKey: ctx.stepKey },

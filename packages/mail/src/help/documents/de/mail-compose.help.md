@@ -1,142 +1,219 @@
 ---
 id: mail-compose
-title: Nachrichten schreiben und senden
+title: E-Mails verfassen und senden
 icon: ti ti-pencil
-description: Nachrichten verfassen, Entwürfe wiederherstellen, Vorlagen verwenden, Dateien anhängen und die Zustellung steuern.
+description: Nachrichten verfassen, Entwürfe wiederherstellen, Vorlagen nutzen, Dateien anhängen und die Zustellung steuern.
 order: 30
 ---
 
 ## Eine Nachricht beginnen {icon="square-plus"}
 
-Wähle **Verfassen** für eine neue Nachricht oder verwende in einer Unterhaltung **Antworten**, **Allen antworten**, **Weiterleiten** oder **Auswahl zitieren**. Mail erstellt zunächst einen gemeinsamen Entwurf und öffnet dann die eigene Verfassen-Seite. Die Absicht des Entwurfs bleibt erhalten. Die abschließende Schaltfläche heißt daher **Senden**, **Antworten**, **Allen antworten** oder **Weiterleiten**.
+Wähle **Verfassen** für eine neue Nachricht. Wähle in einer Unterhaltung **Antworten**, **Allen antworten**, **Weiterleiten** oder **Auswahl zitieren**. Mail erstellt zuerst einen gemeinsamen Entwurf und öffnet dann die Seite des Editors. Mail behält den Zweck des Entwurfs bei, deshalb heißt die letzte Aktionsschaltfläche **Senden**, **Antworten**, **Allen antworten** oder **Weiterleiten**.
 
-Wähle unter **Von** eine verifizierte Absenderidentität, füge Empfänger hinzu und gib Betreff und Nachricht ein. **Cc/Bcc** blendet die zusätzlichen Empfängerfelder ein. Empfänger sehen die Bcc-Liste nie; deine eigene Kopie unter Gesendet behält sie, sodass jeder Mail-Client zeigt, wen du blind kopiert hast.
+Wähle unter **Von** eine bestätigte Absenderidentität, füge Empfänger hinzu und gib Betreff und Text ein. **Cc/Bcc** zeigt die weiteren Empfängerfelder. Empfänger sehen die Bcc-Liste nie. Deine eigene Kopie in Gesendet behält sie, sodass jedes E-Mail-Programm zeigt, wen du in Bcc gesetzt hast.
 
-Der Editor ist vom Postfach-Arbeitsbereich getrennt. Wähle **Zurück zum Postfach**, um die letzten Änderungen zu speichern, die Bearbeitungssperre freizugeben und zurückzukehren. **In neuem Fenster öffnen** verschiebt denselben Entwurf in ein eigenes Browserfenster. Dabei entsteht kein zweiter Entwurf.
+Der Editor ist vom Arbeitsbereich des Postfachs getrennt. **Zurück zum Postfach** speichert die letzten Änderungen, gibt die Bearbeitungssperre frei und kehrt zum Postfach zurück. **In neuem Fenster öffnen** verschiebt denselben Entwurf in ein eigenes Browserfenster. Dabei entsteht nie ein zweiter Entwurf.
 
 ## Den Entwurf mit Assistant fortsetzen {icon="sparkles"}
 
-Wähle **Mit AI schreiben**, um den aktuellen Mail-Entwurf zu speichern und in einem neuen Assistant-Chat zu öffnen. Assistant startet mit dem Entwurf als angehängter Cloud-Ressource und mit begrenzten Mail-Aktionen, über die er den Entwurf lesen und aktualisieren, einen zugehörigen Verlauf durchsuchen und das Senden vorschlagen kann. Eindeutig lesbare Kontakte können für zweifelsfreie Empfänger ebenfalls angehängt werden. Eine fehlende oder nicht verfügbare Kontakte-Integration blockiert den Chat nicht.
+Wähle **Mit KI schreiben**, um den aktuellen Mail-Entwurf zu speichern und in einem neuen Assistant-Chat zu öffnen. Assistant startet mit dem Entwurf als angehängter Cloud-Ressource. Er bekommt nur die Mail-Aktionen, die er braucht, um den Entwurf zu lesen und zu ändern, verwandten Verlauf zu suchen und das Senden vorzuschlagen.
 
-Der Assistant-Chat kopiert die Nachricht nicht in einen separaten Mail-Entwurf und erhält keinen zusätzlichen Postfachzugriff. Mail prüft deine aktuelle Berechtigung bei jedem Lese- oder Änderungsvorgang durch Assistant. Das Aktualisieren oder Senden von E-Mails erscheint als Aktionsprüfung. Das Senden erfordert weiterhin eine ausdrückliche Freigabe und die übliche abschließende Prüfung durch Mail. Über den Link zum Entwurf gelangst du zurück zu Mail, wenn du den verbindlichen Zustand direkt im Editor prüfen möchtest.
+Für eindeutige Empfänger kann Mail auch die passenden Kontakte anhängen, die du im Kontaktverzeichnis lesen kannst. Standardmäßig ist das Contacts. Ein fehlendes oder nicht verfügbares Kontaktverzeichnis blockiert den Chat nicht.
+
+Der Assistant-Chat kopiert die Nachricht nicht in einen separaten Mail-Entwurf und erhält keinen zusätzlichen Zugriff auf das Postfach. Mail prüft deinen aktuellen Zugriff jedes Mal, wenn Assistant den Entwurf liest oder ändert. Assistant zeigt das Ändern oder Senden von E-Mails als Aktionsprüfung. Das Senden braucht weiterhin deine ausdrückliche Zustimmung und die normale letzte Prüfung von Mail. Um den aktuellen Stand im Editor direkt zu prüfen, kehre über den Entwurfslink zu Mail zurück.
 
 ## Cloud Mail für E-Mail-Links verwenden {icon="link"}
 
-Öffne **Postfachwerkzeuge > E-Mail-Link einrichten**, damit der aktuelle Browser Standardlinks mit `mailto:` über Cloud Mail öffnet. Bestätige die Nachfrage des Browsers. Diese Zuordnung gehört zum Browser oder Betriebssystem und nicht zu einem Postfach oder Cloud-Konto. Cloud zeigt daher keinen dauerhaften Schalter für die Standardanwendung an.
+Du kannst den aktuellen Browser bitten, Cloud Mail für normale `mailto:`-Links zu verwenden:
 
-Browser können eine frühere Ablehnung speichern und die Nachfrage unterdrücken. Erscheint keine Nachfrage, öffne neben der Adresse die Website-Einstellungen, gehe zu **Website-Einstellungen**, setze **Protokollhandler** für diese Website zurück und wähle erneut **E-Mail-Link einrichten**.
+:::steps
+1. Öffne **Postfachwerkzeuge → E-Mail-Links einrichten**.
+2. Bestätige die Abfrage, wenn der Browser fragt.
+:::
 
-Ein E-Mail-Link kann An, Cc, Bcc, Betreff und einen Textkörper enthalten. Cloud zeigt das beschreibbare Postfach und die verifizierte Absenderidentität, bevor der Entwurf erstellt wird. Links können keine ausgeblendete Absenderidentität auswählen, lokale Dateien anhängen oder automatisch senden. In Browsern ohne Unterstützung für Protokollhandler kannst du weiterhin normal **Verfassen** verwenden.
+Diese Einstellung gehört zum Browser oder Betriebssystem, nicht zu einem Postfach oder Cloud-Konto. Cloud zeigt deshalb keinen dauerhaften Schalter für eine Standard-App.
+
+Ein Browser kann sich eine frühere Ablehnung merken und nicht erneut fragen. Wenn keine Abfrage erscheint:
+
+:::steps
+1. Öffne die Website-Steuerung neben der Adresse.
+2. Öffne die Website-Einstellungen.
+3. Setze die Protokollhandler für diese Website zurück.
+4. Wähle erneut **E-Mail-Links einrichten**.
+:::
+
+Ein E-Mail-Link kann An, Cc, Bcc, Betreff und einen Text ohne Formatierung ausfüllen. Bevor Cloud den Entwurf erstellt, zeigt es das Postfach, in dem du Zugriff **Bearbeiten** hast, und die bestätigte Absenderidentität. Links können keine verborgene Absenderidentität wählen, keine lokalen Dateien anhängen und nicht automatisch senden. In Browsern ohne Unterstützung für Protokollhandler nutzt du **Verfassen** weiterhin normal.
 
 ## Markdown oder Nur Text wählen {icon="route"}
 
 Öffne **Nachrichtenoptionen** und wähle das Format für den aktuellen Entwurf:
 
 :::compare
-- **Markdown** zeigt **Schreiben** und **Vorschau**. Gehört der Entwurf zu einer Unterhaltung, wird außerdem **Verlauf** angezeigt.
-- **Nur Text** hat keine Vorschau. Eine eigenständige Nachricht bleibt in einem Editor; ein Entwurf in einer Unterhaltung zeigt **Schreiben** und **Verlauf**.
+- **Markdown** zeigt **Verfassen** und **Vorschau**. Gehört der Entwurf zu einer Unterhaltung, zeigt es auch **Verlauf**.
+- **Nur Text** hat keine Vorschau. Eine eigenständige Nachricht bleibt in einem Editor. Ein Entwurf in einer Unterhaltung zeigt **Verfassen** und **Verlauf**.
 :::
 
-Mail sendet Markdown als gut lesbares HTML mit dem E-Mail-Design des Postfachs und einer Textalternative. Nur Text wird ohne HTML-Alternative gesendet. Du kannst die verfügbaren Bereiche anordnen. Mail hält die Anordnung kompatibel, wenn ein anderer Entwurf eine andere Zusammenstellung von Bereichen bietet.
+Mail sendet Markdown als lesbares HTML mit dem E-Mail-Design des Postfachs und einer Textalternative. Nur Text sendet keine HTML-Alternative. Du kannst die verfügbaren Bereiche anordnen. Mail hält das Layout passend, wenn ein anderer Entwurf andere Bereiche anbietet.
 
-Der Verlauf wird erst geladen, wenn du ihn öffnest. Mail klappt zunächst die neueste Nachricht auf. Du kannst mehrere Nachrichten unabhängig voneinander auf- oder zuklappen und ältere Zusammenfassungen seitenweise laden. Eine vollständige Nachricht wird erst beim Aufklappen abgerufen. Für Links und Anhänge gelten dieselben Schutzmaßnahmen wie in der Unterhaltungsansicht.
+Der Verlauf lädt erst, wenn du ihn öffnest. Mail klappt zuerst die neueste Nachricht auf. Du kannst mehrere Nachrichten unabhängig auf- und zuklappen, und Mail lädt frühere Zusammenfassungen seitenweise. Eine vollständige Nachricht lädt Mail erst, wenn du sie aufklappst. Links und Anhänge haben denselben Sicherheitsschutz wie in der Leseansicht.
 
-Dein Standardformat wird unter **Einstellungen > Schreiben > Format beim Verfassen** gespeichert. Eine Änderung des Standards schreibt vorhandene Entwürfe nicht um.
+Dein Standardformat steht unter **Einstellungen → Schreiben → Format beim Verfassen**. Eine Änderung des Standards ändert keine vorhandenen Entwürfe.
 
-## Einen vorhandenen Unterhaltungsentwurf fortsetzen {icon="pencil"}
+## Einen vorhandenen Entwurf einer Unterhaltung fortsetzen {icon="pencil"}
 
-Entwürfe gehören zum Postfach und nicht nur zu dem Browser, in dem sie erstellt wurden. Gibt es für eine Unterhaltung bereits Entwürfe, öffnet **Antworten**, **Allen antworten** oder **Weiterleiten** den Dialog **Entwurf fortsetzen?**. Er zeigt, wer die Entwürfe erstellt hat, wann sie zuletzt geändert wurden und eine Inhaltsvorschau. Setze den passenden Entwurf fort oder erstelle eine eigenständige Nachricht.
+Entwürfe gehören zum Postfach, nicht nur zu dem Browser, der sie erstellt hat. Hat eine Unterhaltung schon Entwürfe, öffnen **Antworten**, **Allen antworten** oder **Weiterleiten** den Dialog **Entwurf fortsetzen?**. Der Dialog zeigt, wer jeden Entwurf erstellt hat, wann er sich geändert hat, und eine Vorschau des Inhalts. Setze den passenden Entwurf fort oder erstelle eine separate Nachricht.
 
-Mail speichert den gemeinsamen Entwurf während der Bearbeitung und führt im Browser ein Wiederherstellungsprotokoll für Änderungen, die den Server noch nicht erreicht haben. Nach einem Neuladen oder einer unterbrochenen Verbindung kann Mail diese Browseränderungen wiederherstellen.
+Mail speichert den gemeinsamen Entwurf, während du arbeitest. Außerdem führt Mail im Browser ein Wiederherstellungsprotokoll für Änderungen, die den Server noch nicht erreicht haben. Nach einem Neuladen oder einer unterbrochenen Verbindung kann Mail diese Browseränderungen wiederherstellen.
 
-Nur die Sitzung mit der aktuellen Bearbeitungssperre kann den Entwurf ändern. Mail weist Speichervorgänge, Anhangsänderungen und das Verwerfen aus jeder anderen Sitzung, jedem Tab, Agenten oder CLI-Aufruf ab und nennt die bearbeitende Person. Hält niemand die Sperre, darf die nächste Sitzung den Entwurf wieder ändern; eine allein arbeitende Person wird also nie durch ihre eigene abgelaufene Sitzung blockiert. Wird er in einem anderen Tab oder von einer anderen Person bearbeitet, nennt Mail diese Sitzung nach Möglichkeit. Du kannst den Entwurf schreibgeschützt öffnen oder die Bearbeitung ausdrücklich in diesen Tab verschieben. Nach dem Schließen des Dialogs bleibt im Editor ein unaufdringlicher Hinweis sichtbar. Wähle **Übernehmen** nur, wenn die andere Sitzung schreibgeschützt werden soll. Ein vorübergehendes Verbindungsproblem wird getrennt angezeigt und fordert nicht zur Übernahme auf. Veraltete Speichervorgänge innerhalb der eigenen Sitzung können Wiederherstellungskopien erzeugen. Mit der Wiederherstellungsaktion im Editor kannst du sie prüfen und wiederherstellen.
+Nur die Sitzung mit der aktuellen Bearbeitungssperre kann den Entwurf ändern. Mail lehnt Speichern, Änderungen an Anhängen und Verwerfen aus jeder anderen Sitzung, jedem Tab, Agenten oder CLI-Aufruf ab und nennt die bearbeitende Person. Hält niemand die Sperre, kann die nächste Sitzung den Entwurf wieder ändern. Deine eigene abgelaufene Sitzung blockiert dich also nie.
 
-Entwürfe liegen in Cloud als gemeinsame Entwürfe. Der Entwürfe-Ordner in der Seitenleiste listet alle gemeinsamen Entwürfe des Postfachs, zuletzt bearbeitete zuerst, und seine Zahl zählt sie; wähle einen Entwurf, um ihn im Editor zu öffnen. Hat eine Unterhaltung Entwürfe, zeigt außerdem **Antworten** einen Hinweis. `cld mail draft list` listet diese Entwürfe ebenfalls, dazu geplante und gerade gesendete Entwürfe. Wenn der Anbieter es erlaubt, legt Mail zusätzlich eine Kopie jedes Entwurfs im Entwürfe-Ordner des Anbieters ab, damit andere E-Mail-Programme ihn zeigen, und Entwürfe, die ein anderes E-Mail-Programm dort speichert, erscheinen in Mail als gemeinsame Entwürfe. Gmail zeigt Entwürfe auch unter „Alle Nachrichten“; Mail übergeht als Entwurf markierte Nachrichten außerhalb des Entwürfe-Ordners. Fehlen Entwürfe aus anderen E-Mail-Programmen, kann eine Person mit Adminrechten unter **Spezielle Ordnerzuordnungen** prüfen, welcher Ordner für Entwürfe gilt.
+Bearbeitet ein anderer Tab oder eine andere Person den Entwurf, nennt Mail diese Sitzung nach Möglichkeit. Du kannst schreibgeschützt weiterarbeiten oder die Bearbeitung gezielt in diesen Tab holen. Nach dem Schließen des Dialogs zeigt der Editor einen ruhigen Hinweis.
 
-Wird der Entwurf zusätzlich in den Entwürfe-Ordner des Anbieters synchronisiert und dort in einem anderen E-Mail-Programm bearbeitet, aktualisiert Mail denselben gemeinsamen Entwurf, statt einen zweiten anzulegen. Mail behält seine eigene Fassung und bietet die externe Fassung als Wiederherstellungskopie an, wenn der Entwurf inzwischen in Mail geändert wurde, wenn das andere Programm seine Kopie neben der aktuellen Kopie von Mail abgelegt statt sie ersetzt hat oder wenn der zurückkommende Text nicht aufgelöste Platzhalter enthält. Wurde der Entwurf bereits gesendet oder verworfen, erscheint ein späteres Speichern aus einem anderen Programm als neuer Entwurf.
+:::warning Bearbeitung übernehmen macht die andere Sitzung schreibgeschützt
+Wähle **Bearbeitung übernehmen** nur, wenn die andere Sitzung die Bearbeitung verlieren soll.
+:::
 
-Wenn eine andere Sitzung den Entwurf plant, sendet oder verwirft, lädt jeder geöffnete Editor den verbindlichen Zustand neu und beendet das Speichern und Verlängern der Bearbeitungssperre. Der Editor bleibt schreibgeschützt, statt ein weiteres Senden oder Übernehmen zu erlauben. Nicht gespeicherter lokaler Text bleibt sichtbar und kann kopiert oder als neuer unabhängiger Entwurf gespeichert werden. Gehört die ursprüngliche Nachricht zu einer Unterhaltung, führt **Nachricht öffnen** dorthin zurück.
+Ein vorübergehendes Verbindungsproblem zeigt Mail getrennt an und fordert dich nicht zur Übernahme auf. Veraltete Speichervorgänge in deiner eigenen Sitzung können Wiederherstellungskopien erzeugen. Mit der Wiederherstellungsaktion im Editor prüfst du sie und stellst sie wieder her.
 
-**Entwurf verwerfen** entfernt den gemeinsamen Entwurf für alle Personen mit Postfachzugriff. Bei der Rückkehr zum Postfach bleibt der Entwurf erhalten.
+Entwürfe liegen in Cloud als gemeinsame Entwürfe.
+
+- **Ordner Entwürfe:** Der Ordner Entwürfe in der Seitenleiste listet alle gemeinsamen Entwürfe des Postfachs, die zuletzt bearbeiteten zuerst. Seine Zahl zählt sie. Wähle einen Entwurf, um ihn im Editor zu öffnen.
+- **Hinweis bei Antworten:** Eine Unterhaltung mit Entwürfen zeigt einen Hinweis an der Antwortaktion.
+- **CLI:** `cld mail draft list` listet diese Entwürfe, zusammen mit geplanten Entwürfen und Entwürfen, die gerade gesendet werden.
+- **Kopie beim Anbieter:** Erlaubt es der Anbieter, legt Mail von jedem Entwurf eine Kopie im Entwürfe-Ordner des Anbieters ab, sodass andere E-Mail-Programme ihn zeigen. Entwürfe, die ein anderes E-Mail-Programm dort speichert, erscheinen in Mail als gemeinsame Entwürfe.
+- **Gmail:** Gmail zeigt Entwürfe auch in All Mail. Mail ignoriert Nachrichten, die außerhalb des Entwürfe-Ordners als Entwurf markiert sind.
+- **Fehlende Entwürfe:** Fehlen Entwürfe aus anderen E-Mail-Programmen, kann jemand mit Zugriff **Verwalten** prüfen, welchen Ordner **Zuordnung besonderer Ordner** für Entwürfe nutzt.
+
+Mail kann den Entwurf in den Entwürfe-Ordner des Anbieters synchronisieren. Bearbeitest du ihn dann in einem anderen E-Mail-Programm, aktualisiert Mail denselben gemeinsamen Entwurf und legt keinen zweiten an. Mail behält in diesen Fällen seine eigene Fassung und bietet die externe Fassung als Wiederherstellungskopie an:
+
+- der Entwurf hat sich inzwischen in Mail geändert;
+- das andere Programm hat seine Kopie neben der aktuellen Kopie von Mail abgelegt, statt sie zu ersetzen;
+- der zurückkommende Text enthält nicht aufgelöste Platzhalter.
+
+Wurde der Entwurf schon gesendet oder verworfen, erscheint ein späteres Speichern aus einem anderen Programm als neuer Entwurf.
+
+Plant, sendet oder verwirft eine andere Sitzung den Entwurf, lädt jeder geöffnete Editor den aktuellen Zustand des Entwurfs neu. Er hört auf zu speichern und verlängert die Bearbeitungssperre nicht mehr. Der Editor bleibt schreibgeschützt und erlaubt kein zweites Senden und keine Übernahme. Nicht gespeicherter lokaler Text bleibt sichtbar. Du kannst ihn kopieren oder als neuen unabhängigen Entwurf speichern. Gehört die ursprüngliche Nachricht zu einer Unterhaltung, führt **Nachricht öffnen** dorthin zurück.
+
+:::warning Entwurf verwerfen entfernt den Entwurf für alle
+**Entwurf verwerfen** entfernt den gemeinsamen Entwurf für alle mit Zugriff auf das Postfach. Um den Entwurf zu behalten, kehre stattdessen zum Postfach zurück.
+:::
 
 ## Signaturen und Textbausteine verwenden {icon="pencil"}
 
-Gib im Nachrichtentext `/` ein, um verfügbare Signaturen und Textbausteine zu durchsuchen. Die ausgewählte Vorlage wird in den Entwurf eingefügt und kann dort bearbeitet oder entfernt werden.
+Tippe im Text `/`, um verfügbare Signaturen und Textbausteine zu suchen. Mail fügt die gewählte Vorlage in den Entwurf ein, wo du sie bearbeiten oder entfernen kannst.
 
-- **Textbausteine** fügen aufgelösten wiederverwendbaren Text ein. Werte wie `{{ actor.email }}` erscheinen als normaler Text. In Markdown-Nachrichten setzt Mail nur vor Zeichen, die sonst die Formatierung ändern würden, einen Backslash, etwa `\*`.
-- **Signaturen** behalten ihre sicheren Liquid-Variablen bis zur Vorschau und zum Senden. Werte wie `{{ sender.display_name }}` oder `{{ mailbox.name }}` werden dadurch erst bei der Zustellung aufgelöst.
-- **Privat** bedeutet, dass eine Vorlage nur für die Person sichtbar ist, der sie gehört.
-- **Postfach** bedeutet, dass eine Vorlage gemeinsam mit anderen Personen im Postfach verwendet wird.
+- **Textbaustein:** Fügt wiederverwendbaren Text mit bereits eingesetzten Werten ein. Werte wie `{{ actor.email }}` erscheinen als normaler Text. In Markdown-Nachrichten setzt Mail nur vor Zeichen einen Backslash, die sonst die Formatierung ändern würden, zum Beispiel `\*`.
+- **Signatur:** Behält ihre sicheren Liquid-Variablen bis zur Vorschau und zum Senden. Werte wie `{{ sender.display_name }}` oder `{{ mailbox.name }}` werden erst bei der Zustellung eingesetzt.
+- **Privat:** Nur die Person, der die Vorlage gehört, sieht sie.
+- **Postfach:** Die Vorlage ist mit anderen im Team geteilt.
 
-Hat eine verifizierte Absenderidentität eine Standardsignatur, fügt Mail sie automatisch in neue Nachrichten, Antworten und Weiterleitungen ein. Bei Antworten und Weiterleitungen steht die Signatur vor dem zitierten Nachrichtenverlauf. Ein persönlicher Standard überschreibt den Postfachstandard für diese Absenderidentität. Der eingefügte Quelltext bleibt bearbeitbar; Signaturen sind weder verpflichtend noch gesperrt.
+Hat eine bestätigte Absenderidentität eine Standardsignatur, fügt Mail sie automatisch in neue Nachrichten, Antworten und Weiterleitungen ein. In einer Antwort oder Weiterleitung setzt Mail die Signatur vor den zitierten Verlauf. Ein persönlicher Standard ersetzt für diese Absenderidentität den Standard des Postfachs. Den eingefügten Quelltext kannst du weiter bearbeiten. Signaturen sind weder Pflicht noch gesperrt.
 
-Administratoren verwalten Vorlagen und Standards unter **Einstellungen > Schreiben**. Wähle dort **Design bearbeiten**, um den CSS-Editor des Postfachs zu öffnen. Seine Vorschau verwendet das aktuell noch nicht gespeicherte CSS. Die Vorschau im Editor verwendet denselben Darstellungsweg wie die Zustellung.
+Mit Zugriff **Verwalten** änderst du Vorlagen und Standards unter **Einstellungen → Schreiben**. Wähle dort **Design bearbeiten**, um den CSS-Editor des Postfachs zu öffnen. Seine Vorschau aktualisiert sich aus dem aktuellen, nicht gespeicherten CSS. Die **Vorschau** im Editor nutzt dieselbe Darstellung wie die Zustellung.
 
 ## Dateien anhängen {icon="paperclip"}
 
-Wähle **Dateien anhängen** und eine oder mehrere Dateien aus oder ziehe Dateien vom Desktop auf den Editor. Der Editor wird hervorgehoben, solange er die Dateien ablegen kann. Uploadfortschritt und Fehler erscheinen neben den Anhängen des Entwurfs. Einen unvollständigen Upload kannst du wiederholen oder abbrechen. Anhänge lassen sich vor dem Senden entfernen. Wurde die Seite während eines Uploads neu geladen oder geschlossen, zeigt der Entwurf die Datei beim nächsten Öffnen als **Upload nicht abgeschlossen**; brich den Upload ab und hänge die Datei erneut an.
+Wähle **Dateien anhängen** und wähle eine oder mehrere Dateien aus, oder ziehe Dateien vom Desktop auf den Editor. Der Editor ist hervorgehoben, solange er die Dateien annehmen kann. Upload-Fortschritt und Fehler erscheinen neben den Anhängen des Entwurfs. Du kannst einen unvollständigen Upload wiederholen oder abbrechen und eine angehängte Datei vor dem Senden entfernen.
 
-Jeder ausgehende Anhang ist auf 100 MiB begrenzt; ein Entwurf enthält höchstens 200 Anhänge mit insgesamt 100 MiB. Eine Nachricht kann nicht gesendet werden, solange ein Anhang unvollständig oder fehlerhaft hochgeladen ist.
+Wurde die Seite während eines Uploads neu geladen oder geschlossen, zeigt der Entwurf diese Datei beim nächsten Öffnen als **Upload nicht abgeschlossen**. Brich den Upload ab und hänge die Datei erneut an.
 
-Dein E-Mail-Anbieter kann für die vollständige ausgehende Nachricht ein niedrigeres Limit festlegen. Mail berücksichtigt die endgültig codierte E-Mail einschließlich Kopfzeilen und Anhangscodierung, bevor die Zustellung eingereiht wird. Durch die Codierung wird eine angehängte Datei bei der Übertragung größer. Veröffentlicht der Anbieter ein aktuelles Limit, lehnt Mail eine zu große Nachricht vor Beginn von SMTP ab und nennt beide Größen. Entferne Anhänge oder teile eine große Datei stattdessen über einen öffentlichen Downloadlink. Ein unbekanntes oder veraltetes Anbieterlimit verhindert das Senden nicht.
+:::reference
+- **Ein Anhang:** Höchstens 100 MiB.
+- **Ein Entwurf:** Höchstens 200 Anhänge und insgesamt 100 MiB.
+- **Unvollständiger Upload:** Du kannst nicht senden, solange ein Upload unvollständig oder fehlgeschlagen ist.
+:::
 
-Beim Weiterleiten einer Nachricht mit Anhängen übernimmt Mail die ursprünglichen Dateien standardmäßig in den neuen Entwurf. Entferne einzelne Anhänge im Editor, wenn der weitergeleitete Nachrichtentext ausreicht.
+Dein E-Mail-Anbieter kann eine kleinere Grenze für die vollständige ausgehende Nachricht setzen. Bevor Mail die Zustellung einreiht, zählt es die fertig kodierte E-Mail, einschließlich Headern und Kodierung der Anhänge. Durch die Kodierung wird eine angehängte Datei beim Versand größer.
+
+Veröffentlicht der Anbieter eine aktuelle Grenze, lehnt Mail eine zu große Nachricht vor dem SMTP-Versand ab und nennt beide Größen. Entferne Anhänge oder teile eine große Datei stattdessen über einen öffentlichen Download-Link. Eine unbekannte oder veraltete Grenze des Anbieters verhindert das Senden nicht.
+
+Leitest du eine Nachricht mit Anhängen weiter, fügt Mail die ursprünglichen Dateien standardmäßig in den neuen Entwurf ein. Reicht der weitergeleitete Text, entferne einzelne Anhänge im Editor.
 
 ## Eine Kalendereinladung hinzufügen {icon="calendar-plus"}
 
-Öffne **Nachrichtenoptionen** und wähle **Kalendereinladung hinzufügen**, um ein vorhandenes Ereignis auszuwählen oder direkt ein kleines Ereignis in einem beschreibbaren Space anzulegen. Spaces besitzt das Ereignis und seine Einladungssequenz; Mail hängt die erzeugte `.ics`-Datei an den aktuellen Entwurf an. Erst die normale Sendeaktion verschickt die Nachricht.
+Öffne **Nachrichtenoptionen** und wähle **Kalendereinladung hinzufügen**. Wähle einen vorhandenen Termin oder erstelle direkt einen kleinen Termin in einem Space, in dem du Zugriff **Bearbeiten** hast. Spaces besitzt den Termin und die Abfolge seiner Einladungen. Mail hängt die erzeugte `.ics`-Datei an den aktuellen Entwurf. Gesendet wird erst, wenn du die normale Sendeaktion nutzt.
 
-Mail leitet den Organisator von der verifizierten Absenderidentität des Entwurfs ab. Empfänger unter **An** und **Cc** werden zu Teilnehmenden der Einladung. Empfänger unter **Bcc** werden bewusst ausgeschlossen, damit verborgene Adressen niemals durch Kalenderdaten offengelegt werden. Ist Spaces nicht verfügbar oder darfst du in keinem Space schreiben, bleibt die Kalenderaktion ausgeblendet und der übrige Editor funktioniert weiter.
+Mail nimmt den Organisator aus der bestätigten Absenderidentität des Entwurfs. Empfänger unter **An** und **Cc** werden Teilnehmende der Einladung. Empfänger unter **Bcc** lässt Mail bewusst weg, damit Kalenderdaten nie verborgene Adressen preisgeben. Ist Spaces nicht verfügbar oder hast du in keinem Space Zugriff **Bearbeiten**, blendet Mail die Kalenderaktion aus. Der übrige Editor funktioniert weiter.
 
-## Warnungen vor dem Senden prüfen {icon="shield-check"}
+## Versandwarnungen prüfen {icon="shield-check"}
 
-Vor einem sofortigen, verzögerten oder geplanten Versand prüft Mail den exakt gespeicherten Entwurf auf häufige Fehler. Mail kann dich auf einen fehlenden Anhang, eine ungewöhnlich große Empfängerliste, externe Empfänger, **Allen antworten**, einen verdächtigen Link oder Platzhalter wie `{{ sender.email }}` hinweisen, die nicht mehr zu einer Signatur oder einem Textbaustein gehören und als reiner Text versendet würden. Der Dialog erläutert jede Warnung und ermöglicht die Rückkehr zum Entwurf. Wähle **Trotzdem senden** erst, nachdem du die aktuellen Empfänger, Links und Anhänge geprüft hast.
+Vor einem sofortigen, verzögerten oder geplanten Versand prüft Mail den exakt gespeicherten Entwurf auf häufige Fehler. Mail kann dich bitten, Folgendes zu prüfen:
 
-Eine Freigabe gilt nur für diese gespeicherte Version des Entwurfs. Wird der Entwurf danach bearbeitet, führt Mail die Prüfungen erneut aus. Für die Zustellungsprüfung speichert Mail die freigegebenen Warnungstypen, aber keine zweite Kopie des Nachrichteninhalts.
+- einen fehlenden Anhang;
+- eine ungewöhnlich große Empfängerliste;
+- externe Empfänger;
+- **Allen antworten**;
+- einen verdächtigen Link;
+- Platzhalter wie `{{ sender.email }}`, die nicht mehr zu einer Signatur oder einem Textbaustein gehören und als reiner Text versendet würden.
+
+Der Dialog erklärt jede Warnung und lässt dich zum Entwurf zurückkehren. Wähle **Trotzdem senden** erst, nachdem du die aktuellen Empfänger, Links und Anhänge geprüft hast.
+
+Eine Zustimmung gilt nur für diese gespeicherte Fassung des Entwurfs. Bearbeitest du den Entwurf danach, prüft Mail erneut. Mail hält die bestätigten Warnungstypen für die Prüfung der Zustellung fest, aber keine zweite Kopie des Nachrichteninhalts.
 
 ## Eine Nachricht sicher wiederverwenden {icon="copy"}
 
-Öffne das Aktionsmenü einer Nachricht und wähle **Als neue Nachricht verwenden**, um aus Empfängern, Betreff und Inhalt einen unabhängigen Entwurf zu erstellen. Du kannst die Absenderidentität wählen und entscheiden, ob Anhänge kopiert werden. Die ursprüngliche Nachricht und Unterhaltung bleiben unverändert. Es wird nichts sofort gesendet: Prüfe Absenderidentität, Empfänger, Inhalt und Anhänge und verwende anschließend den normalen Versand. Wiederholungen derselben Erstellungsanfrage geben denselben Entwurf zurück, statt Duplikate anzulegen.
+Öffne das Aktionsmenü einer Nachricht und wähle **Als neue Nachricht verwenden**. Mail erstellt aus Empfängern, Betreff und Inhalt einen unabhängigen Entwurf. Du wählst die Absenderidentität und ob Mail die Anhänge kopiert.
 
-## Jetzt senden, rückgängig machen oder Versand planen {icon="send"}
+Mail ändert die ursprüngliche Nachricht und Unterhaltung nie, und es wird nichts sofort gesendet. Prüfe Absenderidentität, Empfänger, Inhalt und Anhänge und sende dann über den normalen Versand. Wird dieselbe Anfrage zum Erstellen wiederholt, liefert Mail denselben Entwurf und legt kein Duplikat an.
 
-Wähle die Hauptaktion, um die Zustellung jetzt einzureihen. Ist unter **Einstellungen > Schreiben** für **Zeitfenster zum Rückgängigmachen** ein Wert größer als null eingestellt, verzögert Mail den sofortigen Versand um diese Anzahl Sekunden und bietet unter **Geplant** eine Möglichkeit zum Rückgängigmachen. Der Wert kann zwischen 0 und 60 Sekunden liegen.
+## Jetzt senden, rückgängig machen oder planen {icon="send"}
 
-Öffne das geteilte Aktionsmenü und wähle **Später senden**, um **Versand planen** zu öffnen. Wähle einen Zeitpunkt, der mindestens eine Minute in der Zukunft liegt. Der Dialog zeigt die wirksame Zeitzone des Postfachs und den genauen Zustellzeitpunkt.
+Wähle die Hauptaktion, um die Zustellung jetzt einzureihen. **Versand rückgängig machen** unter **Einstellungen → Schreiben** kann die sofortige Zustellung um 0 bis 60 Sekunden verzögern. Bei einem Wert über null wartet Mail so viele Sekunden und bietet das Rückgängigmachen über **Geplant** an.
 
-Wähle im selben Menü **Als Entwurf speichern**, um sinnvolle Änderungen zu behalten und zum Postfach zurückzukehren. Solange der Editor nur seinen unveränderten Anfangsinhalt enthält, erstellt Mail keinen leeren Entwurf.
+So planst du die Zustellung:
 
-Geplante Nachrichten erscheinen unter **Geplant** mit Empfängern, Inhaltsvorschau, Ersteller, Zustellzeit und Wiederholungsstatus. Bis zum Beginn der Zustellung kannst du über **Abbrechen**:
+:::steps
+1. Öffne das geteilte Aktionsmenü und wähle **Später senden**.
+2. Wähle unter **Zustellung planen** einen Zeitpunkt mindestens eine Minute in der Zukunft.
+3. Prüfe im Dialog die Zeitzone des Postfachs und den genauen Zustellzeitpunkt.
+:::
 
-- das Element weiterhin geplant lassen,
-- es in einen gemeinsamen Entwurf zurückführen oder
-- es verwerfen.
+Wähle im selben Menü **Als Entwurf speichern**, um sinnvolle Änderungen zu behalten und zum Postfach zurückzukehren. Mail legt keinen leeren Entwurf an, solange der Editor nur seinen unveränderten Anfangsinhalt enthält.
 
-Nach erfolgreicher Zustellung wird die Nachricht zu einer normalen gesendeten E-Mail. Sie trägt den Zeitpunkt, zu dem sie verschickt wurde, nicht den Zeitpunkt der Planung. Geplanter Versand und das Rückgängigmachen des Sendens benötigen einen aktiven Postfachtransport. Wird das Postfach pausiert, stoppt die eingereihte Zustellung, bis ein Administrator das Postfach fortsetzt. Braucht das Postfach zum geplanten Zeitpunkt eine erneute Anmeldung, oder wurde sein Passwort ersetzt und Postfach oder Absenderidentität sind damit noch nicht erneut bestätigt, wartet die Nachricht und zeigt **Wartet auf Anmeldung**. Mail benachrichtigt dich einmal und sendet die Nachricht, sobald das Konto wieder verbunden ist; sie trägt trotzdem den Zeitpunkt, zu dem sie verschickt wird. Wird das Konto nicht innerhalb von sechs Tagen nach dem geplanten Zeitpunkt wieder verbunden, zeigt die Nachricht **Senden fehlgeschlagen**, liegt wieder in den Entwürfen, und Mail benachrichtigt dich erneut.
+Geplante Nachrichten erscheinen unter **Geplant** mit Empfängern, Inhaltsvorschau, erstellender Person, Zustellzeit und Status der Wiederholungen. Bis die Zustellung beginnt, kannst du mit **Abbrechen**:
 
-## Ein Sendeproblem beheben {icon="alert-circle"}
+- die Nachricht geplant lassen,
+- sie in einen gemeinsamen Entwurf zurückverwandeln oder
+- sie verwerfen.
 
-Wähle unter einer ausgehenden Nachricht den Zustellstatus, um zu sehen, was geschehen ist und welcher nächste Schritt am sichersten ist.
+Nach erfolgreicher Zustellung wird die Nachricht zu normaler gesendeter E-Mail. Ihr Datum ist der Versandzeitpunkt, nicht der Zeitpunkt der Planung.
 
-Ist der Mailserver nicht erreichbar, bevor Mail die Nachricht übergibt, wurde nichts gesendet. Mail behält die Nachricht und versucht es über einige Minuten mehrmals erneut; der Zustellstatus zeigt den nächsten Versuch. Genauso geht Mail vor, wenn sich das Postfach in diesem Moment neu verbindet oder wenn Mail neu gestartet wurde, bevor es die Nachricht übergeben hat. Hält das Problem an, zeigt die Nachricht **Senden fehlgeschlagen**. Braucht das Postfach eine erneute Anmeldung, wartet die Nachricht länger, wie oben beschrieben.
+Geplante Zustellung und Senden rückgängig machen brauchen einen aktiven Postfachtransport. Pausiert jemand das Postfach, stoppt die eingereihte Zustellung, bis jemand mit Zugriff **Verwalten** sie fortsetzt.
 
-- **Senden fehlgeschlagen** bedeutet, dass Mail sicher weiß, dass die Nachricht nicht gesendet wurde. Wähle **Prüfen und erneut senden**, um den erhaltenen Entwurf vor einem neuen Versuch zu öffnen. Fehler bei Empfängern, Größe oder Zustelloptionen verwenden eine genauere Prüfaktion.
-- **Teilweise gesendet** bedeutet, dass der empfangende Server einige Empfänger akzeptiert und andere abgelehnt hat. Mail legt die Nachricht wie jede gesendete E-Mail im Ordner Gesendet ab; klappt das nicht sofort, versucht Mail es in den nächsten Minuten erneut. Wähle **Verbleibende Empfänger prüfen**, um einen unabhängigen Entwurf nur mit den nicht akzeptierten Adressen zu erstellen. **Alle erneut prüfen…** nimmt auch die ursprünglichen Empfänger auf und kann deshalb doppelte Nachrichten verursachen.
-- **Zustellstatus unklar** bedeutet, dass die Verbindung beendet wurde, bevor Mail das Ergebnis nachweisen konnte. Mail sucht noch einige Male im Ordner Gesendet nach der Kopie des Anbieters und markiert die Nachricht als gesendet, sobald diese Kopie erscheint, auch wenn das erst später geschieht. Wähle zuerst **Erneut prüfen**. Erstelle erst dann einen neuen Sendeentwurf, wenn du berücksichtigt hast, dass die ursprüngliche Nachricht bereits angekommen sein könnte.
-- **Gesendet, aber nicht gespeichert** bedeutet, dass die Zustellung erfolgreich war, Mail die Kopie aber nicht im Ordner Gesendet speichern konnte. Sende die Nachricht nicht erneut.
+Eine fällige Nachricht wartet und zeigt **Wartet auf Anmeldung**, wenn eines davon zutrifft:
 
-Das Erstellen eines Wiederherstellungsentwurfs sendet niemals sofort. Prüfe Absenderidentität, Empfänger, Inhalt und Anhänge im Editor und verwende dann den normalen Versand.
+- das Postfach braucht eine neue Anmeldung;
+- jemand hat sein Passwort ersetzt, und das Postfach oder die Absenderidentität ist noch nicht mit dem neuen Passwort bestätigt.
 
-## Priorität und Empfangsbestätigungen wählen {icon="mail-cog"}
+Mail benachrichtigt dich einmal. Es sendet die Nachricht, sobald das Konto wieder verbunden ist, datiert auf den Versandzeitpunkt. Verbindet niemand das Konto innerhalb von sechs Tagen nach dem Fälligkeitszeitpunkt, zeigt die Nachricht **Senden fehlgeschlagen** und kehrt zu den Entwürfen zurück. Mail benachrichtigt dich dann erneut.
 
-Öffne **Nachrichtenoptionen** und dann **Zustelloptionen**, um die Standards der gewählten Absenderidentität für diesen Entwurf anzupassen:
+## Ein Versandproblem beheben {icon="alert-circle"}
 
-- **Priorität** fügt die üblichen Kopfzeilen für hohe oder niedrige Wichtigkeit hinzu. Das E-Mail-Programm der Empfänger entscheidet, ob und wie sie angezeigt werden.
-- **Zustellbestätigung** fordert vom SMTP-Server einen Zustellstatusbericht an. Die Option ist nur verfügbar, wenn der gewählte Versandserver Unterstützung dafür meldet.
-- **Lesebestätigung** bittet das E-Mail-Programm der Empfänger um eine Empfangsbestätigung. Empfänger oder deren Organisationen können die Anfrage ignorieren oder ablehnen.
+Wähle den Zustellstatus unter einer ausgehenden Nachricht. Er zeigt, was passiert ist, und den sichersten nächsten Schritt.
 
-Mail speichert eingehende Berichte in der Aktivität der Unterhaltung. Ein Zustellbericht beschreibt, was ein Mailserver gemeldet hat. Ein Lesestatus beschreibt, was ein E-Mail-Programm gemeldet hat. Beides beweist nicht, dass eine Person die Nachricht gelesen, verstanden oder bearbeitet hat.
+Erreicht Mail den Mailserver nicht, bevor es die Nachricht übergibt, wurde nichts gesendet. Mail behält die Nachricht und versucht es über einige Minuten mehrmals erneut. Der Zustellstatus zeigt den nächsten Versuch. Dasselbe gilt, wenn sich das Postfach gerade neu verbindet oder Mail vor der Übergabe neu gestartet wurde. Hält das Problem an, zeigt die Nachricht **Senden fehlgeschlagen**. Eine Nachricht, deren Postfach eine neue Anmeldung braucht, wartet länger, wie oben beschrieben.
 
-## Termin über die Cloud-Suche anhängen {icon="calendar-event"}
+- **Senden fehlgeschlagen:** Mail weiß, dass die Nachricht nicht gesendet wurde. Wähle **Prüfen und erneut senden**, um den aufbewahrten Entwurf vor einem neuen Versuch zu öffnen. Fehler bei Empfängern, Größe oder Zustelloptionen haben eine genauere Bezeichnung zum Prüfen.
+- **Teilweise gesendet:** Der empfangende Server hat einige Empfänger angenommen, andere nicht. Mail legt die Nachricht wie andere gesendete E-Mails im Ordner Gesendet ab. Klappt das nicht sofort, versucht Mail es in den nächsten Minuten erneut. Wähle **Übrige Empfänger prüfen**, um einen unabhängigen Entwurf nur mit den Adressen zu erstellen, die der Server nicht angenommen hat.
+- **Zustellstatus unklar:** Die Verbindung endete, bevor Mail das Ergebnis nachweisen konnte. Mail sucht noch einige Male nach der Kopie des Anbieters im Ordner Gesendet. Erscheint diese Kopie, auch später, markiert Mail die Nachricht als gesendet.
+- **Gesendet, aber nicht gespeichert:** Die Zustellung war erfolgreich, aber Mail konnte seine Kopie nicht im Ordner Gesendet ablegen.
 
-Wähle beim Bearbeiten **Kalendereinladung an diesen Entwurf anhängen** in der Cloud-Suche. Mail speichert den Entwurf und öffnet dieselbe Terminauswahl wie der Button im Composer. Empfänger, Text und Anhänge bleiben in diesem Entwurf. Behebe Speicherfehler oder eine Bearbeitungssperre zuerst. Gesendet wird weiterhin separat.
+:::warning Doppelte Nachrichten vermeiden
+**Alle Empfänger erneut prüfen...** nach **Teilweise gesendet** bezieht auch die ursprünglichen Empfänger ein und kann doppelte Nachrichten erzeugen. Wähle bei **Zustellstatus unklar** zuerst **Erneut prüfen**. Erstelle einen Entwurf zum erneuten Senden nur, wenn du bedacht hast, dass die ursprüngliche Nachricht schon angekommen sein kann. Sende eine Nachricht mit **Gesendet, aber nicht gespeichert** nicht erneut.
+:::
+
+Ein Wiederherstellungsentwurf sendet nie sofort. Prüfe Absenderidentität, Empfänger, Inhalt und Anhänge im Editor. Nutze dann die normale Sendeaktion.
+
+## Priorität und Bestätigungen wählen {icon="mail-cog"}
+
+Öffne **Nachrichtenoptionen** und dann **Zustelloptionen**. Dort änderst du die Standards der gewählten Absenderidentität für diesen Entwurf:
+
+- **Priorität** fügt Standard-Header für hohe oder niedrige Wichtigkeit hinzu. Das E-Mail-Programm des Empfängers entscheidet, ob und wie es sie zeigt.
+- **Zustellbestätigung anfordern** bittet den SMTP-Server um einen Zustellbericht. Du kannst die Option nur wählen, wenn der gewählte Sendeserver Unterstützung meldet.
+- **Lesebestätigung anfordern** bittet das E-Mail-Programm des Empfängers um eine Rückmeldung. Empfänger und Organisationen können die Anfrage ignorieren oder ablehnen.
+
+Mail hält empfangene Berichte in der Aktivität der Unterhaltung fest. Ein Zustellbericht sagt, was ein Mailserver gemeldet hat. Eine Lesebestätigung sagt, was ein E-Mail-Programm gemeldet hat. Keines davon beweist, dass eine Person die Nachricht gelesen, verstanden oder bearbeitet hat.
+
+## Einen Termin über die Cloud-Suche hinzufügen {icon="calendar-event"}
+
+Wähle beim Bearbeiten eines Entwurfs in der Cloud-Suche **Kalendereinladung an diesen Entwurf anhängen**. Mail speichert den Entwurf und öffnet dieselbe Terminauswahl wie die Schaltfläche im Editor. Empfänger, Text und Anhänge bleiben in diesem Entwurf. Schlägt das Speichern fehl oder hält jemand anderes die Bearbeitungssperre, behebe das zuerst. Das Senden bleibt ein eigener Schritt.

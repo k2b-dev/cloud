@@ -86,14 +86,8 @@ export default function NewPasswordForm(props: NewPasswordFormProps) {
       )}
 
       <Button type="submit" class="w-full justify-center py-2" loading={mutation.loading()} loadingLabel={t().updatingPassword}>
-        {mutation.loading() ? (
-          <i class="ti ti-loader-2 animate-spin" />
-        ) : (
-          <>
-            <i class="ti ti-lock-check" />
-            <span>{t().setPassword}</span>
-          </>
-        )}
+        <i class="ti ti-lock-check" />
+        <span>{t().setPassword}</span>
       </Button>
     </form>
   );

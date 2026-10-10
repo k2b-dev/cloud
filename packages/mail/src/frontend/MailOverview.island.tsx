@@ -28,8 +28,6 @@ import {
 } from "../contracts";
 import type { MailConversationDetailData } from "../service/workspace";
 import { readApiError } from "./_components/api-response";
-import { openMailboxHealthDialog } from "./_components/MailboxHealthDialog";
-import { openMailboxSettingsDialog } from "./_components/MailboxSettingsDialog";
 import MailDetailsPanel from "./_components/MailDetailsPanel";
 import { MailContactDirectoryProvider } from "./_components/mail-contact-directory-context";
 import { mailboxOverviewSubtitle } from "./_components/mail-health-presentation";
@@ -61,6 +59,10 @@ const participantInitials = (summary: string): string => {
 };
 const avatarTone = (summary: string): string =>
   String([...primaryParticipant(summary, "")].reduce((total, character) => total + character.codePointAt(0)!, 0) % 5);
+
+/** Follow-up dialogs load with the action that opens them, not with the overview. */
+type SettingsDialog = typeof import("./_components/MailboxSettingsDialog");
+type HealthDialog = typeof import("./_components/MailboxHealthDialog");
 
 function MailOverviewView(props: {
   mailboxes: MailboxWithPermission[];
@@ -220,6 +222,8 @@ function MailOverviewView(props: {
     const permission = props.mailboxes.find((mailbox) => mailbox.id === mailboxId)?.permission;
     return permission === "write" || permission === "admin";
   };
+  /** False where the person sees only the conversations assigned to them. */
+  const mailboxWide = (mailboxId: string) => props.mailboxes.find((mailbox) => mailbox.id === mailboxId)?.accessScope !== "assigned";
   const focusScope = () => {
     const hidden = hiddenMailboxItems().length;
     return hidden > 0 ? messages().allMailboxesExceptHidden({ count: hidden }) : messages().allMailboxes;
@@ -325,7 +329,7 @@ function MailOverviewView(props: {
     return [...merged.values()];
   });
 
-  const createMailbox = mutations.create<Mailbox | null, void>({
+  const createMailbox = mutations.create<{ mailbox: Mailbox; settings?: SettingsDialog } | null, void>({
     mutation: async (_input, { abortSignal }) => {
       const values = await prompts.form({
         title: messages().newMailbox,
@@ -343,42 +347,53 @@ function MailOverviewView(props: {
         confirmText: messages().createMailbox,
       });
       if (!values || abortSignal.aborted) return null;
+      // The follow-up dialog loads during the request, behind the same pending state. Without its code, for example
+      // in a tab opened before a release, the new mailbox still opens and its settings stay one click away.
+      const settings = import("./_components/MailboxSettingsDialog").catch(() => undefined);
       const response = await apiClient.mailboxes.$post(
         { json: { name: values.name, description: values.description || null } },
         { init: { signal: abortSignal } },
       );
       if (!response.ok) throw new Error(await readApiError(response, messages().failedCreateMailbox));
-      return response.json();
+      return { mailbox: await response.json(), settings: await settings };
     },
-    onSuccess: (mailbox) => {
-      if (!mailbox) return;
+    onSuccess: (created) => {
+      if (!created) return;
+      const { mailbox, settings } = created;
       toast.success(messages().mailboxCreated);
-      void openMailboxSettingsDialog({
-        mailboxId: mailbox.id,
-        currentUserEmail: props.currentUserEmail,
-        contactDirectory: props.contactDirectory,
-        initialTab: "delivery",
-      }).then((result) => navigateTo(result.deleted ? "/app/mail" : `/app/mail/${mailbox.id}`));
+      if (!settings) return navigateTo(`/app/mail/${mailbox.id}`);
+      void settings
+        .openMailboxSettingsDialog({
+          mailboxId: mailbox.id,
+          currentUserEmail: props.currentUserEmail,
+          contactDirectory: props.contactDirectory,
+          initialTab: "delivery",
+        })
+        .then((result) => navigateTo(result.deleted ? "/app/mail" : `/app/mail/${mailbox.id}`));
     },
     onError: (error) => prompts.error(error.message),
   });
 
-  const restoreMailbox = mutations.create<Mailbox | null, string>({
+  const restoreMailbox = mutations.create<{ mailbox: Mailbox; health?: HealthDialog } | null, string>({
     mutation: async (mailboxId, { abortSignal }) => {
       const confirmed = await prompts.confirm(messages().restoreWarning, {
         title: messages().restoreMailbox,
         confirmText: messages().restoreMailbox,
       });
       if (!confirmed || abortSignal.aborted) return null;
+      // As for a new mailbox: the health dialog loads during the request, and without it the mailbox still opens.
+      const health = import("./_components/MailboxHealthDialog").catch(() => undefined);
       const response = await apiClient.mailboxes[":mailboxId"].restore.$post({ param: { mailboxId } }, { init: { signal: abortSignal } });
       if (!response.ok) throw new Error(await readApiError(response, messages().failedRestoreMailbox));
-      return response.json();
+      return { mailbox: await response.json(), health: await health };
     },
-    onSuccess: (mailbox) => {
-      if (!mailbox) return;
+    onSuccess: (restored) => {
+      if (!restored) return;
+      const { mailbox, health } = restored;
       void deletedResults.refresh();
       toast.success(messages().mailboxRestored);
-      void openMailboxHealthDialog({ mailboxId: mailbox.id }).then(() => navigateTo(`/app/mail/${mailbox.id}`));
+      if (!health) return navigateTo(`/app/mail/${mailbox.id}`);
+      void health.openMailboxHealthDialog({ mailboxId: mailbox.id }).then(() => navigateTo(`/app/mail/${mailbox.id}`));
     },
     onError: (error) => prompts.error(error.message),
   });
@@ -759,6 +774,7 @@ function MailOverviewView(props: {
                       conversationId={selected().conversationId}
                       active={detailOpen()}
                       canWrite={canWriteMailbox(selected().mailboxId)}
+                      mailboxWide={mailboxWide(selected().mailboxId)}
                       initialState={detail().collaborationState!}
                       initialLocalTags={detail().localTags}
                       initialConversationLocalTags={detail().conversationLocalTags!}

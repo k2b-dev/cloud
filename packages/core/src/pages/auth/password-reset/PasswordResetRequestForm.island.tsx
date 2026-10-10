@@ -61,7 +61,7 @@ export default function PasswordResetRequestForm(props: PasswordResetRequestForm
       )}
 
       <Button type="submit" class="w-full justify-center py-2" loading={mutation.loading()} loadingLabel={t().sendingResetLink}>
-        {mutation.loading() ? <i class="ti ti-loader-2 animate-spin" /> : <i class="ti ti-send" />}
+        <i class="ti ti-send" />
         {t().sendResetLink}
       </Button>
     </form>

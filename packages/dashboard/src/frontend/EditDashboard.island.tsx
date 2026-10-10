@@ -1,5 +1,5 @@
-import DashboardControls, { type DashboardControlsProps } from "./dashboard-controls";
+import DashboardControls, { type DashboardShortcutProps } from "./dashboard-controls";
 
-export default function DashboardControlsIsland(props: DashboardControlsProps) {
+export default function DashboardControlsIsland(props: DashboardShortcutProps) {
   return <DashboardControls {...props} />;
 }

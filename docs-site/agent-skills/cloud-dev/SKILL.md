@@ -118,8 +118,8 @@ SolidJS library remains independent of Cloud and application domains.
   floating windows that cannot render fail alone behind a notice (add no wrappers). Prefer typed Hono clients over raw transport calls.
 - Invalidate the canonical read after writes instead of maintaining a second
   client-side domain model.
-- Keep reloadable state in the URL; automatic reloads use `reloadOnce()`. Live updates
-  use `defineLive()` and `liveConnection()`; acknowledge after a covering snapshot.
+- Keep reloadable state in the URL; automatic reloads use `reloadOnce()`, and code only an action needs loads
+  in it through `importOnDemand()`. Live updates use `defineLive()` and `liveConnection()`; acknowledge after a covering snapshot.
 - Hand islands the route as a path (`requestPath(c)` from `@k2b/cloud/ssr`),
   never the absolute request URL: behind the gateway its origin is the
   internal upstream, not the browser's.
@@ -138,26 +138,25 @@ SolidJS library remains independent of Cloud and application domains.
   theme, no Cloud header or navigation, and a shared legal and preferences footer.
   A custom root using none of these layouts must install one provider around its returned tree.
 
-## Ship CLI commands as a plugin
+## Ship CLI commands and Assistant Skills with the app
 
-Read **Application CLI modules** (`/en/docs/platform/cli-modules`) and its
-*Design commands* section before adding `cld` commands. Declare modules as
-`defineApp({ cli: { <name>: { module, references } } })`: `module` exports
-`defineCliCommands()` named `<name>`, `references` holds agent Markdown with
-`index.md`. The app image serves both at `/cli/plugins/<name>/` to signed-in
-callers `cli.plugins.access` allows; `cld` installs them per profile and writes
-the references into the agent skill per version. The server authorizes.
+Read **Application CLI modules** (`/en/docs/platform/cli-modules`) and its *Design commands* section before adding `cld` commands.
+Declare modules as `defineApp({ cli: { <name>: { module, references } } })`: `module` exports `defineCliCommands()` named
+`<name>`, `references` holds agent Markdown with `index.md`. The app image serves both at `/cli/plugins/<name>/` to signed-in
+callers `cli.plugins.access` allows; `cld` installs them per profile and writes the references into the agent skill per version. The server authorizes.
+
+Read **Ship Assistant Skills** (`/en/docs/platform/assistant-skills`) first: keep each Skill in `src/skills/<name>/SKILL.md` (+ `references/*.md`), import the files `with { type: "text" }` in `src/skills.ts`, export `SKILLS = [skill({ markdown, references })]` from `@k2b/cloud`, and pass `skills: SKILLS` to `defineApp()`.
+Cloud validates them at start and updates them by content hash; it offers them only while the app runs and to the people who may see its Help (`nav.requiresRoles`, or administrators for an app reached only through `adminHref`). A Skill grants nothing; never seed or rewrite Skill rows from code.
 
 ## Build and verify one complete slice
 
-For capability design or changes, read **App capabilities** in the Docs
-collection (`/en/docs/platform/capabilities`), especially its machine-composition
-and design-review guidance. Trace real task paths and consumers before choosing
-result fields or changing contracts; keep detailed API rules in that guide.
-Cloud records one execution row for every capability call on every surface;
-an application writes `context.requestId` into its own audit rows so the two
-trails join without sharing payloads. For a shared cross-app contract, read
-`/en/docs/platform/contact-directory` or `/en/docs/platform/file-providers`.
+For capability design or changes, read **App capabilities** in the Docs collection (`/en/docs/platform/capabilities`),
+especially its machine-composition and design-review guidance. Trace real task paths and consumers before choosing
+result fields or changing contracts; keep detailed API rules in that guide. Cloud records one execution row for every
+capability call on every surface; an application writes `context.requestId` into its own audit rows so the two trails
+join without sharing payloads. Actions may word themselves with optional, translated `presentation.sentences`
+(`approval`, `done`, `rejected`, `notRun`; `{input.path}`, `{data.path}` in `done`); consumers never special-case an app.
+For a shared cross-app contract, read `/en/docs/platform/contact-directory` or `/en/docs/platform/file-providers`.
 
 For deployment questions, read **Deployment requirements** in the Docs
 collection (`/en/docs/operations/deployment-requirements`) before selecting

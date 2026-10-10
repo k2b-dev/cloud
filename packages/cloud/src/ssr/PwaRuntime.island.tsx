@@ -1,7 +1,7 @@
 import { observeMobileShell, syncThemeColor, type ToastHandle, toast, useLocale } from "@k2b/ui";
 import { onCleanup, onMount } from "solid-js";
 import { renewAppSession } from "../browser/app-session";
-import { PWA_SCOPE, PWA_SERVICE_WORKER_PATH } from "../contracts/pwa";
+import { PWA_SCOPE, PWA_SERVICE_WORKER_PATH } from "../contracts/pwa-paths";
 import { pwaMessages } from "./pwa-messages";
 
 /** Set once per browsing session, so the first page renews and later navigations do not. */

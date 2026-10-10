@@ -73,6 +73,7 @@ window.mountMailboxDetails = (options) => {
             viewCounts={viewCounts}
             canWrite={options.permission !== "read"}
             canAdmin={options.permission === "admin"}
+            assignedOnly={false}
             managementOpening={null}
             settingsOpening={false}
             detailsOpening={detailsOpening()}

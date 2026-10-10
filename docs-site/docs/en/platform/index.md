@@ -35,6 +35,7 @@ do not copy files into an application or take ownership of its data model.
 | Global discovery | One permission-aware Query projected into Universal Search | Provider discovery, query fan-out, and shared search UI |
 | Dashboard summaries | Authenticated JSON endpoints | Widget discovery, layout, and rendering |
 | Product guidance | Markdown help documents | Search, rendering, and the shared Help surface |
+| [Assistant Skills](/en/docs/platform/assistant-skills) | `SKILL.md` files with optional references | Validation, installation, content-hash updates, app-based access, and administrator overrides |
 | Documents | HTML or Liquid templates and data | Shared Gotenberg configuration and PDF limits |
 | Document extraction | Authorized document bytes | Bounded untrusted Markdown without storage or authorization |
 | Command-line operations | A typed CLI module | Authentication, profiles, output modes, and dispatch |

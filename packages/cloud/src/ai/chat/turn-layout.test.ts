@@ -127,6 +127,19 @@ describe("turn layout", () => {
     expect(ids(layoutAiTurn([late], { phase: "running" }).results)).toEqual(["tool-late"]);
   });
 
+  test("a chart is a result: it takes its place once its arguments arrived and keeps it when done", () => {
+    const args = { kind: "bar", title: "Orders", data: [{ label: "North", value: 12 }] };
+    const starting = tool("chart", "chart", { status: "running", args: undefined, result: undefined });
+    expect(layoutAiTurn([starting], { phase: "running" }).results).toEqual([]);
+    const running = tool("chart", "chart", { status: "running", args, result: undefined });
+    expect(ids(layoutAiTurn([running], { phase: "running" }).results)).toEqual(["tool-chart"]);
+    const done = tool("chart", "chart", { args, result: { displayed: true } });
+    expect(ids(layoutAiTurn([done, text("t", "North leads.")], { phase: "completed" }).results)).toEqual(["tool-chart"]);
+    // Invalid input fails the call; the model gets the error and the chat shows no chart.
+    const invalid = tool("chart", "chart", { status: "failed", isError: true, args: { kind: "bar" } });
+    expect(layoutAiTurn([invalid], { phase: "completed" }).results).toEqual([]);
+  });
+
   test("a new version streams into the earlier place without taking a place of its own first", () => {
     const v1 = tool("v1", "code_present", { args: { title: "Inventory" } });
     // The call starts before its arguments arrive.

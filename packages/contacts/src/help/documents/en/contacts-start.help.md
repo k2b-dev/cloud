@@ -2,27 +2,27 @@
 id: contacts-start
 title: Start
 icon: ti ti-address-book
-description: Contact books, records, tags, and the detail workflow.
+description: Find contacts, create them in a contact book, and work with tags and the detail panel.
 order: 100
 ---
 
-Contacts keeps address books with structured contact records, tags, notes, hierarchy links, and book-level access. The overview immediately searches across every readable book, so you do not need to choose a book before looking someone up.
+Contacts keeps address books with structured contact records, tags, comments, hierarchy links, and access per book. The overview searches every book that you can access right away. You do not need to choose a book before you look someone up.
 
-## Overview {icon="layout-grid"}
+## Know the objects {icon="layout-grid"}
 
 :::reference
-- **Contact book:** An address book with its own tags, permissions, API keys, import, export, and deletion settings.
-- **Contact:** One person, company, supplier, customer, or other party with contact points, addresses, work data, personal data, and bank details.
-- **Tags:** Book-specific labels for filtering and grouping contacts.
-- **Detail panel:** The working view for reading details, editing a contact, adding notes, moving the contact, and managing members.
+- **Contact book:** An address book with its own tags, access, API keys, import, export, and deletion settings.
+- **Contact:** One person, company, supplier, customer, or other party. A contact holds contact points, addresses, work data, personal data, and bank details.
+- **Tags:** Labels of one book for filtering and grouping its contacts.
+- **Detail panel:** The working view to read the details, edit the contact, add comments, move the contact, and change its member links.
 :::
 
-## First useful path {icon="route"}
+## Get started {icon="route"}
 
 :::reference
-- **Search first:** Use All Contacts or Favorites from the overview when you do not yet know the book.
-- **Choose a book:** Open one book when you need its tags, want to create a contact, or need book settings.
-- **Create the contact:** Start with the name and the contact points people use first: email, phone, website, or address.
-- **Add structure:** Add tags, work details, personal details, bank details, notes, or a parent contact when they help later lookup.
-- **Open details:** Select a contact to view the detail panel, edit the record, add notes, move it, or manage member links.
+- **Search first:** Use **All contacts** or **Favorites** in the overview when you do not know the book yet.
+- **Choose a book:** Open one book when you need its tags, want to create a contact, or need the book settings.
+- **Create the contact:** Start with the name and the contact points that people use first: email, phone, website, or address.
+- **Add structure:** Add tags, work details, personal details, bank details, comments, or a parent contact when they help to find the contact later.
+- **Open the details:** Select a contact to open the detail panel. There you edit the contact, add comments, move it, or change its member links.
 :::

@@ -12,8 +12,9 @@ Dashboard verbindet Inhalte mehrerer Apps. Ein nicht verfügbares Widget darf da
 
 :::reference
 - **Ein Widget fehlt:** Öffne Dashboard bearbeiten und prüfe, ob es ausgeblendet oder für deinen Zugriff nicht verfügbar ist.
-- **Ein Widget ist nicht verfügbar:** Öffne die besitzende App und prüfe, ob sie läuft und du auf ihre Daten zugreifen kannst.
-- **Eine Karte lädt langsam oder schlägt fehl:** Lade die Seite einmal neu und öffne dann die besitzende App. Dashboard wartet nicht unbegrenzt auf ein langsames Widget, damit der Rest der Startseite nutzbar bleibt.
+- **Ein Widget ist nicht verfügbar:** Wähle in diesem Widget **Erneut versuchen**. Schlägt es wieder fehl, öffne die besitzende App und prüfe, ob sie läuft und du auf ihre Daten zugreifen kannst.
+- **Eine Karte lädt langsam:** Jedes Widget lädt für sich, die anderen erscheinen, sobald ihre Apps antworten. Ein Widget, das nicht innerhalb weniger Sekunden antwortet, zeigt **Erneut versuchen**, statt länger zu warten.
+- **Ein Widget erscheint oder verschwindet nach dem Neuladen:** Dashboard hält nur für Widgets Platz frei, die etwas anzuzeigen hatten, als du es zuletzt auf diesem Gerät geöffnet hast. Ein Widget, das gerade Inhalt bekommen oder verloren hat, kommt beim nächsten Laden hinzu oder fällt weg, damit auf der geöffneten Seite nichts springt.
 - **Eine Verknüpfung fehlt:** Öffne Dashboard bearbeiten und prüfe die Liste. App-Verknüpfungen können verschwinden, wenn sich der Zugriff auf die App ändert.
 - **Ein eigener Link öffnet sich nicht:** Prüfe, ob es ein unterstützter relativer, HTTP(S)- oder mailto-Link ist und ob der Browser das Ziel zulässt.
 - **Änderungen erscheinen nur auf einem Gerät:** Aktualisiere die Seite nach dem Speichern. Einstellungen angemeldeter Personen werden mit dem Konto gespeichert und sollten auf anderen Geräten wiederverwendet werden.

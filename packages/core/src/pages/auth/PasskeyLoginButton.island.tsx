@@ -46,7 +46,7 @@ export default function PasskeyLoginButton(props: { redirectTo?: string }) {
         loadingLabel={t().signingIn}
         onClick={() => mutation.mutate({})}
       >
-        {mutation.loading() ? <i class="ti ti-loader-2 animate-spin" /> : <i class="ti ti-key" />}
+        <i class="ti ti-key" />
         {t().continueWithPasskey}
       </Button>
       {mutation.error() && (

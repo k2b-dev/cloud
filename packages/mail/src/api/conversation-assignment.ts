@@ -23,7 +23,8 @@ export default new Hono<MailApiContext>().post(
         context: requestContext(c),
         mailboxId: internalMailboxId(c),
         conversationIds: input.conversationIds,
-        assigneeUserId: input.assigneeUserId,
+        assigneeUserIds: input.assigneeUserIds,
+        mode: input.mode,
         locale: getLocale(c),
       }),
     );

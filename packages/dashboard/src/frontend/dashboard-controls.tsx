@@ -38,10 +38,13 @@ import {
 } from "../shared";
 import { dashboardMessages } from "./messages";
 
-export type DashboardControlsProps = {
+export type DashboardShortcutProps = {
   apps: DashboardAppSummary[];
   legalLinks: DashboardLegalLink[];
   settings: DashboardSettings;
+};
+
+export type DashboardControlsProps = DashboardShortcutProps & {
   available: DashboardWidgetSummary[];
   inaccessible: DashboardWidgetSummary[];
 };
@@ -99,7 +102,7 @@ const ShortcutBadge = (props: { icon: string; title: string; href?: string; acce
   );
 };
 
-export default function DashboardControls(props: DashboardControlsProps) {
+export default function DashboardControls(props: DashboardShortcutProps) {
   const t = useDashboardText();
   const appById = createMemo(() => new Map(props.apps.map((app) => [app.id, app])));
   const resolvedShortcuts = createMemo<ResolvedShortcut[]>(() =>
@@ -337,8 +340,9 @@ const EditForm = (params: {
     setLayoutTouched(true);
   };
 
+  // Widgets still arrive or leave while the dialog is open, so a move swaps with the neighbour shown, not a stale one.
   const moveWidget = (key: string, offset: -1 | 1) => {
-    const order = [...widgetOrder()];
+    const order = orderedWidgets().map((widget) => widget.key);
     const index = order.indexOf(key);
     const target = index + offset;
     if (index < 0 || target < 0 || target >= order.length) return;

@@ -1,7 +1,7 @@
 import { sql } from "bun";
 import { buildMailWorkflowCatalog, type MailWorkflowCatalog, type MailWorkflowFolderCatalogEntry } from "../workflows/catalog";
 import type { MailRequestContext } from "./auth";
-import { listCurrentMailboxUsers } from "./collaborators";
+import { listCurrentMailboxUsers, listEligibleAssignees } from "./collaborators";
 import { resolveRoleFolder } from "./folders";
 import type { SqlClient } from "./workflow-data";
 
@@ -80,9 +80,8 @@ export const loadMailWorkflowCatalog = async (params: {
       WHERE mailbox_id = ${params.mailboxId}::uuid
       ORDER BY short_id
     `;
-  const assignableUsers = await listCurrentMailboxUsers({
+  const assignableUsers = await listEligibleAssignees({
     mailboxId: params.mailboxId,
-    minimumPermission: "write",
     limit: 500,
     db,
   });

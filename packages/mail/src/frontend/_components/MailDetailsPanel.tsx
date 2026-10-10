@@ -1,5 +1,6 @@
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { SAVE_FILES_ICON, saveFiles, saveFilesLabel } from "@k2b/cloud/browser/files";
+import { importOnDemand } from "@k2b/cloud/browser/reload";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import {
@@ -17,9 +18,9 @@ import {
   IconButton,
   MarkdownView,
   MultiSelectInput,
+  openSpotlightSearch,
   Placeholder,
   prompts,
-  Select,
   StatusBadge,
   TextInput,
   Tooltip,
@@ -39,7 +40,6 @@ import type { ConversationReminder } from "../../service/reminders";
 import type { MailDetailErrors } from "../../service/workspace";
 import { readApiError } from "./api-response";
 import MailConversationContext from "./MailConversationContext";
-import { openMailMessageInspector } from "./MailMessageInspectorDialog";
 import MailRelatedConversations from "./MailRelatedConversations";
 import { presentMailActivity } from "./mail-activity-presentation";
 import { mailDraftHref } from "./mail-compose-route";
@@ -66,11 +66,18 @@ import { createRetryToasts } from "./mail-feedback";
 const avatarSource = (userId: string | undefined, avatarHash: string | null): string | undefined =>
   userId && avatarHash ? `/api/accounts/users/${encodeURIComponent(userId)}/avatar?rev=${encodeURIComponent(avatarHash)}` : undefined;
 
+type InspectorTab = "headers" | "source";
+
 export default function MailDetailsPanel(props: {
   mailboxId: string;
   conversationId: string;
   active: boolean;
   canWrite: boolean;
+  /**
+   * False for a person who sees only the conversations assigned to them: they cannot change assignees
+   * or create tags, and the related mail and contact context, which look beyond the conversation, stay hidden.
+   */
+  mailboxWide: boolean;
   initialState: ConversationCollaboration;
   initialLocalTags: LocalTag[];
   initialConversationLocalTags: ConversationLocalTags;
@@ -96,7 +103,23 @@ export default function MailDetailsPanel(props: {
 }) {
   const locale = useLocale();
   const t = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
+  const canAssign = () => props.canWrite && props.mailboxWide;
   const retryToast = createRetryToasts();
+  const [inspectorLoading, setInspectorLoading] = createSignal<InspectorTab | null>(null);
+  /** The inspector loads its code on first use; until its modal opens, another activation must not open a second one. */
+  const openMessageInspector = async (messageId: string, initialTab: InspectorTab) => {
+    if (inspectorLoading()) return;
+    setInspectorLoading(initialTab);
+    const inspector = await importOnDemand(() => import("./MailMessageInspectorDialog"));
+    setInspectorLoading(null);
+    if (!inspector) return;
+    await inspector.openMailMessageInspector({
+      mailboxId: props.mailboxId,
+      messages: props.messages,
+      initialMessageId: messageId,
+      initialTab,
+    });
+  };
   const [state, setState] = createSignal(props.initialState);
   const [availableTags, setAvailableTags] = createSignal(props.initialLocalTags);
   const [tagState, setTagState] = createSignal(props.initialConversationLocalTags);
@@ -237,7 +260,7 @@ export default function MailDetailsPanel(props: {
     if (!props.active) return;
     const conversationId = props.conversationId;
     const copy = mailCommandMessages.resolve([locale()]).t;
-    if (props.canWrite && !props.detailErrors.assignableUsers)
+    if (canAssign() && !props.detailErrors.assignableUsers)
       onCleanup(
         registerContextAwareCommand({
           scope: "selection",
@@ -246,19 +269,32 @@ export default function MailDetailsPanel(props: {
           description: copy.assignDescription({ subject: props.subject || t().noSubject }),
           icon: "ti ti-user-check",
           action: async () => {
-            const selected = await prompts.form({
-              title: t().assignee,
-              fields: {
-                userId: {
-                  type: "select",
-                  label: t().assignee,
-                  default: state().assignee?.id ?? "",
-                  options: props.assignableUsers.map((user) => ({ id: user.id, label: user.displayName })),
-                },
+            // Choosing a person toggles them: an assignee is removed, anyone else is added.
+            const assigned = new Set(state().assignees.map((user) => user.id));
+            const selected = await openSpotlightSearch<string>({
+              title: t().assignees,
+              icon: "ti ti-user-check",
+              placeholder: t().searchPeople,
+              minQueryLength: 0,
+              noResultsText: t().noAssignablePeople,
+              resolve: async ({ query }) => {
+                const needle = query.trim().toLocaleLowerCase();
+                return props.assignableUsers
+                  .filter((user) => !needle || `${user.displayName} ${user.uid}`.toLocaleLowerCase().includes(needle))
+                  .map((user) => ({
+                    label: assigned.has(user.id) ? t().removeAssignee({ name: user.displayName }) : user.displayName,
+                    desc: user.description,
+                    icon: assigned.has(user.id) ? "ti ti-user-minus" : "ti ti-user-plus",
+                    value: user.id,
+                  }));
               },
             });
-            if (selected && props.active && props.conversationId === conversationId && props.canWrite)
-              updateCollaboration({ assigneeUserId: selected.userId || null });
+            const userId = selected?.value;
+            if (!userId || !props.active || props.conversationId !== conversationId || !canAssign()) return;
+            const current = state().assignees.map((user) => user.id);
+            updateCollaboration({
+              assigneeUserIds: current.includes(userId) ? current.filter((id) => id !== userId) : [...current, userId],
+            });
           },
         }),
       );
@@ -667,7 +703,7 @@ export default function MailDetailsPanel(props: {
               tone="neutral"
               actions={
                 <Tooltip.Anchor content={t().createTag}>
-                  <IconButton type="button" label={t().createTag} size="xs" disabled={!props.canWrite} onClick={() => void createTag()}>
+                  <IconButton type="button" label={t().createTag} size="xs" disabled={!canAssign()} onClick={() => void createTag()}>
                     <i class="ti ti-tag-plus" aria-hidden="true" />
                   </IconButton>
                 </Tooltip.Anchor>
@@ -696,18 +732,26 @@ export default function MailDetailsPanel(props: {
                   clearable
                   disabled={!props.canWrite}
                 />
-                <Select
-                  label={t().assignee}
-                  value={() => state().assignee?.id ?? null}
-                  selectedLabel={() => state().assignee?.displayName}
-                  onValueChange={(userId) => updateCollaboration({ assigneeUserId: userId || null })}
+                <MultiSelectInput
+                  label={t().assignees}
+                  value={() => state().assignees.map((user) => user.id)}
+                  onValueChange={(userIds) => updateCollaboration({ assigneeUserIds: userIds })}
                   options={props.assignableUsers.map((user) => ({
                     id: user.id,
                     label: user.displayName,
                     description: user.description,
+                    icon: "ti ti-user",
                   }))}
+                  selectedOptions={() =>
+                    state().assignees.map((user) => ({
+                      id: user.id,
+                      label: user.displayName,
+                      icon: "ti ti-user",
+                    }))
+                  }
+                  placeholder={t().unassigned}
                   clearable
-                  disabled={!props.canWrite || Boolean(props.detailErrors.assignableUsers)}
+                  disabled={!canAssign() || Boolean(props.detailErrors.assignableUsers)}
                 />
                 <DateTimePicker
                   label={t().snoozeUntil}
@@ -765,20 +809,22 @@ export default function MailDetailsPanel(props: {
               </section>
             </Show>
 
-            <MailConversationContext
-              subject={props.subject}
-              mailboxId={props.mailboxId}
-              conversationId={props.conversationId}
-              requestUrl={props.requestUrl}
-              active={props.active}
-            />
+            <Show when={props.mailboxWide}>
+              <MailConversationContext
+                subject={props.subject}
+                mailboxId={props.mailboxId}
+                conversationId={props.conversationId}
+                requestUrl={props.requestUrl}
+                active={props.active}
+              />
 
-            <MailRelatedConversations
-              mailboxId={props.mailboxId}
-              conversationId={props.conversationId}
-              active={props.active}
-              dateConfig={props.dateConfig}
-            />
+              <MailRelatedConversations
+                mailboxId={props.mailboxId}
+                conversationId={props.conversationId}
+                active={props.active}
+                dateConfig={props.dateConfig}
+              />
+            </Show>
 
             <Show when={attachments().length > 0}>
               <DetailPanel.Section title={t().attachments} icon="ti ti-paperclip" tone="neutral" meta={attachments().length}>
@@ -982,31 +1028,24 @@ export default function MailDetailsPanel(props: {
                       variant="secondary"
                       size="sm"
                       type="button"
-                      onClick={() =>
-                        void openMailMessageInspector({
-                          mailboxId: props.mailboxId,
-                          messages: props.messages,
-                          initialMessageId: message().id,
-                          initialTab: "headers",
-                        })
-                      }
+                      aria-busy={inspectorLoading() === "headers" ? "true" : undefined}
+                      onClick={() => void openMessageInspector(message().id, "headers")}
                     >
-                      <i class="ti ti-list-details" aria-hidden="true" /> {t().headers}
+                      <i
+                        class={inspectorLoading() === "headers" ? "ti ti-loader-2 animate-spin" : "ti ti-list-details"}
+                        aria-hidden="true"
+                      />{" "}
+                      {t().headers}
                     </Button>
                     <Button
                       variant="secondary"
                       size="sm"
                       type="button"
-                      onClick={() =>
-                        void openMailMessageInspector({
-                          mailboxId: props.mailboxId,
-                          messages: props.messages,
-                          initialMessageId: message().id,
-                          initialTab: "source",
-                        })
-                      }
+                      aria-busy={inspectorLoading() === "source" ? "true" : undefined}
+                      onClick={() => void openMessageInspector(message().id, "source")}
                     >
-                      <i class="ti ti-code" aria-hidden="true" /> {t().source}
+                      <i class={inspectorLoading() === "source" ? "ti ti-loader-2 animate-spin" : "ti ti-code"} aria-hidden="true" />{" "}
+                      {t().source}
                     </Button>
                     <Show when={message().sourceAvailable}>
                       <ButtonLink

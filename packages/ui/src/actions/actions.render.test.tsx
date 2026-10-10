@@ -814,7 +814,50 @@ describe("@k2b/ui complete action migrations", () => {
     expect(html).toContain('aria-label="Saving"');
     expect(html).toContain("ti-loader-2");
     expect(html).not.toContain(">Saving<");
-    expect(html).not.toContain("save icon");
+    // The icon keeps its place under the spinner, invisibly.
+    expect(html).toContain("k2b-button__busy");
+    expect(html).toContain("save icon");
+  });
+
+  test("keeps a busy button's content in place and names it by its loading label", () => {
+    const idle = renderToString(() => createComponent(Button, { loadingLabel: "Saving", children: "Save" }));
+    expect(idle).not.toContain("aria-busy");
+    expect(idle).not.toContain("aria-label");
+    expect(idle).not.toContain("k2b-button__busy");
+    expect(idle).not.toContain("Saving");
+
+    const busy = renderToString(() => createComponent(Button, { loading: true, loadingLabel: "Saving", children: "Save" }));
+    expect(busy).toContain('aria-busy="true"');
+    expect(busy).toContain('aria-label="Saving"');
+    expect(busy).toContain("disabled");
+    expect(busy).toMatch(/<span class="k2b-button__label">Save<\/span>/);
+    expect(busy).toMatch(/<span class="k2b-button__busy" aria-hidden="true"><i class="ti ti-loader-2 k2b-spin"><\/i><\/span>/);
+
+    // Without a loading label the idle label stays the accessible name.
+    const unnamed = renderToString(() => createComponent(Button, { loading: true, children: "Save" }));
+    expect(unnamed).not.toContain("aria-label");
+    expect(unnamed).toMatch(/<span class="k2b-button__label">Save<\/span>/);
+
+    // A loading label also replaces a name the caller gave the button, and
+    // the caller's name comes back once the button is idle again.
+    const named = (loading: boolean) =>
+      renderToString(() =>
+        createComponent(Button, {
+          loading,
+          loadingLabel: "Creating the book",
+          "aria-label": "Create a contact book",
+          "aria-labelledby": "book-heading",
+          children: "New",
+        }),
+      );
+    expect(named(true)).toContain('aria-label="Creating the book"');
+    expect(named(true)).not.toContain("aria-labelledby");
+    expect(named(false)).toContain('aria-label="Create a contact book"');
+    expect(named(false)).toContain('aria-labelledby="book-heading"');
+
+    const css = rule(".k2b-ui .k2b-button__busy");
+    expect(css).toContain("position: absolute");
+    expect(rule(".k2b-ui .k2b-button:has(> .k2b-button__busy) > .k2b-button__label")).toContain("opacity: 0");
   });
 
   test("gives every spotlight trigger variant a styled surface", () => {

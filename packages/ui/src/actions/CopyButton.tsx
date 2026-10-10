@@ -73,22 +73,22 @@ export function CopyButton(props: CopyButtonProps): JSX.Element {
   const visibleLabel = () => (copied() ? (local.copiedLabel ?? messages().copied) : (local.label ?? messages().copy));
   const icon = () => (copied() ? "ti ti-check" : "ti ti-copy");
   const iconOnly = () => local.iconOnly ?? local.label === undefined;
-  const buttonLabel = () => (local.loading && local.loadingLabel ? local.loadingLabel : visibleLabel());
   const button = (tooltip?: string) => (
     <Button
       {...rest}
       tooltip={tooltip}
-      disabled={local.disabled || local.loading}
+      disabled={local.disabled}
+      loading={local.loading}
+      loadingLabel={local.loadingLabel}
       type={local.type ?? "button"}
       class={`k2b-copy-button ${local.class ?? ""}`}
       size={local.size ?? "sm"}
       variant={local.variant ?? "ghost"}
-      aria-busy={local.loading ? "true" : undefined}
-      aria-label={iconOnly() ? buttonLabel() : undefined}
+      aria-label={iconOnly() ? visibleLabel() : undefined}
       onClick={copy}
     >
-      <i class={local.loading ? "ti ti-loader-2 k2b-spin" : icon()} aria-hidden="true" />
-      {!iconOnly() && <span>{buttonLabel()}</span>}
+      <i class={icon()} aria-hidden="true" />
+      {!iconOnly() && <span>{visibleLabel()}</span>}
     </Button>
   );
 

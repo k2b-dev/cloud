@@ -4,7 +4,7 @@
  */
 import type { CloudRuntime } from "../contracts/app";
 import { getLocale } from "../server/locale";
-import { resolveAppPresentations } from "../shared/app-presentation";
+import { resolveAppPresentation, resolveAppPresentations } from "../shared/app-presentation";
 
 export type RuntimeContext = CloudRuntime;
 
@@ -28,4 +28,17 @@ export const getLocalizedRuntimeContext = (carrier: RuntimeCarrier & { req: { ra
   const runtime = getRuntimeContext(carrier);
   const locale = getLocale(carrier as Parameters<typeof getLocale>[0]);
   return { ...runtime, apps: resolveAppPresentations(runtime.apps, locale) };
+};
+
+/** An app's name in the request locale while the app is registered; `fallback` (its stored base name) otherwise. */
+export const localizedAppName = (
+  carrier: RuntimeCarrier & { req: { raw: { headers: Headers } } },
+  appId: string,
+  fallback: string,
+): string => {
+  const runtime = carrier.get("runtime");
+  const apps =
+    runtime && typeof runtime === "object" && Array.isArray((runtime as RuntimeContext).apps) ? (runtime as RuntimeContext).apps : [];
+  const app = apps.find((entry) => entry.id === appId);
+  return app ? resolveAppPresentation(app, getLocale(carrier as Parameters<typeof getLocale>[0])).name : fallback;
 };

@@ -10,6 +10,7 @@ import {
   type AiConversation,
   type AiConversationResourceRef,
   type AiSkill,
+  AiSkillAppForbiddenError,
   AiSkillInputError,
   AiSkillLastAdminError,
   AiSkillRevisionConflictError,
@@ -402,6 +403,7 @@ const SkillPermissionSchema = z.enum(["read", "write", "admin"]);
 const SkillReferenceMetadataSchema = z.object({ path: SkillReferencePathSchema, size: z.number().int().min(0) }).strict();
 const SkillSummaryDataSchema = z
   .object({
+    source: z.object({ appId: z.string(), appName: z.string() }).strict().nullable(),
     id: SkillIdSchema,
     name: SkillNameSchema,
     description: SkillDescriptionSchema,
@@ -532,6 +534,7 @@ const SkillReferenceDataSchema = z
   .strict();
 
 const skillData = (skill: AiSkill): z.infer<typeof SkillDetailDataSchema> => ({
+  source: skill.source,
   id: skill.shortId,
   name: skill.name,
   description: skill.description,
@@ -546,13 +549,15 @@ const skillData = (skill: AiSkill): z.infer<typeof SkillDetailDataSchema> => ({
 });
 
 const skillRevisionError = (error: unknown) =>
-  error instanceof AiSkillRevisionConflictError
-    ? fail(err.conflict(error.message))
-    : error instanceof AiSkillInputError || error instanceof AiSkillLastAdminError
-      ? fail(err.badInput(error.message))
-      : typeof error === "object" && error !== null && "code" in error && error.code === "23505"
-        ? fail(err.conflict("A Skill with this name already exists."))
-        : null;
+  error instanceof AiSkillAppForbiddenError
+    ? fail(err.forbidden(error.message))
+    : error instanceof AiSkillRevisionConflictError
+      ? fail(err.conflict(error.message))
+      : error instanceof AiSkillInputError || error instanceof AiSkillLastAdminError
+        ? fail(err.badInput(error.message))
+        : typeof error === "object" && error !== null && "code" in error && error.code === "23505"
+          ? fail(err.conflict("A Skill with this name already exists."))
+          : null;
 
 const readableSkill = (
   skillId: string,
@@ -711,10 +716,15 @@ export const aiCapabilities = defineCapabilities({
       data: SkillAccessData,
       openWorld: false,
       async run({ skillId }, context) {
-        const skill = await readableSkill(skillId, context, "admin");
-        const grants = skill && (await aiSkills.listAccess(skill.id, context.accessSubject));
-        if (!grants) return fail(err.forbidden("Skill access requires Manage permission."));
-        return ok({ data: { skillId, accessRevision: accessRevision(grants), levels: ["read", "write", "admin"], grants } });
+        try {
+          const skill = await readableSkill(skillId, context, "admin");
+          const grants = skill && (await aiSkills.listAccess(skill.id, context.accessSubject));
+          if (!grants) return fail(err.forbidden("Skill access requires Manage permission."));
+          return ok({ data: { skillId, accessRevision: accessRevision(grants), levels: ["read", "write", "admin"], grants } });
+        } catch (error) {
+          if (error instanceof AiSkillAppForbiddenError) return fail(err.forbidden(error.message));
+          throw error;
+        }
       },
     },
     "ai.skills.list": {
@@ -735,6 +745,7 @@ export const aiCapabilities = defineCapabilities({
         const page = matches.slice(offset, offset + input.limit);
         return ok({
           data: page.map((skill) => ({
+            source: skill.source,
             id: skill.shortId,
             name: skill.name,
             description: skill.description,
@@ -1010,32 +1021,37 @@ export const aiCapabilities = defineCapabilities({
       openWorld: false,
       idempotency: "required",
       async review(input, context) {
-        const skill = await readableSkill(input.skillId, context, "admin");
-        const grants = skill && (await aiSkills.listAccess(skill.id, context.accessSubject));
-        if (!grants) return fail(err.forbidden("Skill access requires Manage permission."));
-        if (accessRevision(grants) !== input.expectedAccessRevision)
-          return fail(err.conflict("Skill grants changed; read and review them again."));
-        const previous = input.accessId ? grants.find((grant) => grant.id === input.accessId) : undefined;
-        if (input.accessId && !previous) return fail(err.notFound("Skill grant not found."));
-        const principal = previous?.principal ?? input.principal;
-        if (!principal) return fail(err.badInput("Recipient is required."));
-        const [recipient] = await resolveDisplayNames([{ principal }]);
-        const { t } = coreCapabilityMessages(context.locale);
-        const level = (permission: "read" | "write" | "admin") => t[permission];
-        return ok({
-          message: t.skillAccessChange({ name: skill.name, id: input.skillId }),
-          details: [
-            { label: t.recipient, value: `${recipient!.displayName} — ${JSON.stringify(principal)}` },
-            { label: t.before, value: previous ? level(previous.permission) : t.noAccess },
-            { label: t.after, value: input.permission ? level(input.permission) : t.removeAccess },
-            { label: t.appAccess, value: t.appAccessUnchanged },
-          ],
-        });
+        try {
+          const skill = await readableSkill(input.skillId, context, "admin");
+          const grants = skill && (await aiSkills.listAccess(skill.id, context.accessSubject));
+          if (!grants) return fail(err.forbidden("Skill access requires Manage permission."));
+          if (accessRevision(grants) !== input.expectedAccessRevision)
+            return fail(err.conflict("Skill grants changed; read and review them again."));
+          const previous = input.accessId ? grants.find((grant) => grant.id === input.accessId) : undefined;
+          if (input.accessId && !previous) return fail(err.notFound("Skill grant not found."));
+          const principal = previous?.principal ?? input.principal;
+          if (!principal) return fail(err.badInput("Recipient is required."));
+          const [recipient] = await resolveDisplayNames([{ principal }]);
+          const { t } = coreCapabilityMessages(context.locale);
+          const level = (permission: "read" | "write" | "admin") => t[permission];
+          return ok({
+            message: t.skillAccessChange({ name: skill.name, id: input.skillId }),
+            details: [
+              { label: t.recipient, value: `${recipient!.displayName} — ${JSON.stringify(principal)}` },
+              { label: t.before, value: previous ? level(previous.permission) : t.noAccess },
+              { label: t.after, value: input.permission ? level(input.permission) : t.removeAccess },
+              { label: t.appAccess, value: t.appAccessUnchanged },
+            ],
+          });
+        } catch (error) {
+          if (error instanceof AiSkillAppForbiddenError) return fail(err.forbidden(error.message));
+          throw error;
+        }
       },
       async run(input, context) {
-        const skill = await readableSkill(input.skillId, context, "admin");
-        if (!skill) return fail(err.forbidden("Skill access requires Manage permission."));
         try {
+          const skill = await readableSkill(input.skillId, context, "admin");
+          if (!skill) return fail(err.forbidden("Skill access requires Manage permission."));
           const changed =
             input.principal && input.permission
               ? Boolean(
@@ -1111,25 +1127,30 @@ export const aiCapabilities = defineCapabilities({
       openWorld: false,
       idempotency: "none",
       async review(input, context) {
-        const skill = await readableSkill(input.skillId, context, "write");
-        if (!skill) return fail(err.notFound("Skill"));
-        if (skill.revision !== input.expectedRevision) return fail(err.conflict(new AiSkillRevisionConflictError().message));
-        const { t } = coreCapabilityMessages(context.locale);
-        return ok({
-          message: t.skillUpdate({ name: skill.name }),
-          details: [
-            ...(input.name !== undefined ? [{ label: t.name, value: input.name }] : []),
-            ...(input.description !== undefined ? [{ label: t.description, value: input.description, display: "block" as const }] : []),
-            ...(input.instructions !== undefined
-              ? [{ label: t.skillInstructions, value: input.instructions, display: "block" as const }]
-              : []),
-          ],
-        });
+        try {
+          const skill = await readableSkill(input.skillId, context, "write");
+          if (!skill) return fail(err.notFound("Skill"));
+          if (skill.revision !== input.expectedRevision) return fail(err.conflict(new AiSkillRevisionConflictError().message));
+          const { t } = coreCapabilityMessages(context.locale);
+          return ok({
+            message: t.skillUpdate({ name: skill.name }),
+            details: [
+              ...(input.name !== undefined ? [{ label: t.name, value: input.name }] : []),
+              ...(input.description !== undefined ? [{ label: t.description, value: input.description, display: "block" as const }] : []),
+              ...(input.instructions !== undefined
+                ? [{ label: t.skillInstructions, value: input.instructions, display: "block" as const }]
+                : []),
+            ],
+          });
+        } catch (error) {
+          if (error instanceof AiSkillAppForbiddenError) return fail(err.forbidden(error.message));
+          throw error;
+        }
       },
       async run(input, context) {
-        const skill = await readableSkill(input.skillId, context, "write");
-        if (!skill) return fail(err.notFound("Skill"));
         try {
+          const skill = await readableSkill(input.skillId, context, "write");
+          if (!skill) return fail(err.notFound("Skill"));
           const updated = await aiSkills.update(skill.id, context.accessSubject, {
             expectedRevision: input.expectedRevision,
             name: input.name ?? skill.name,
@@ -1162,23 +1183,28 @@ export const aiCapabilities = defineCapabilities({
       idempotency: "none",
       approval: "rememberable",
       async review(input, context) {
-        const skill = await readableSkill(input.skillId, context, "write");
-        if (!skill) return fail(err.notFound("Skill"));
-        if (skill.revision !== input.expectedRevision) return fail(err.conflict(new AiSkillRevisionConflictError().message));
-        const { t } = coreCapabilityMessages(context.locale);
-        return ok({
-          message: t.referenceSet({ path: input.path, name: skill.name }),
-          details: [
-            { label: t.reference, value: input.path },
-            { label: t.content, value: input.content, display: "block" },
-          ],
-          approvalScope: "skills",
-        });
+        try {
+          const skill = await readableSkill(input.skillId, context, "write");
+          if (!skill) return fail(err.notFound("Skill"));
+          if (skill.revision !== input.expectedRevision) return fail(err.conflict(new AiSkillRevisionConflictError().message));
+          const { t } = coreCapabilityMessages(context.locale);
+          return ok({
+            message: t.referenceSet({ path: input.path, name: skill.name }),
+            details: [
+              { label: t.reference, value: input.path },
+              { label: t.content, value: input.content, display: "block" },
+            ],
+            approvalScope: "skills",
+          });
+        } catch (error) {
+          if (error instanceof AiSkillAppForbiddenError) return fail(err.forbidden(error.message));
+          throw error;
+        }
       },
       async run(input, context) {
-        const skill = await readableSkill(input.skillId, context, "write");
-        if (!skill) return fail(err.notFound("Skill"));
         try {
+          const skill = await readableSkill(input.skillId, context, "write");
+          if (!skill) return fail(err.notFound("Skill"));
           const updated = await aiSkills.setReference(skill.id, context.accessSubject, input);
           if (!updated) return fail(err.notFound("Skill"));
           return ok({
@@ -1204,23 +1230,28 @@ export const aiCapabilities = defineCapabilities({
       idempotency: "none",
       approval: "rememberable",
       async review(input, context) {
-        const skill = await readableSkill(input.skillId, context, "write");
-        if (!skill) return fail(err.notFound("Skill"));
-        if (skill.revision !== input.expectedRevision) return fail(err.conflict(new AiSkillRevisionConflictError().message));
-        return ok({
-          message: coreCapabilityMessages(context.locale).t.referencesSet({ count: input.references.length, name: skill.name }),
-          details: input.references.map((reference: z.infer<typeof SkillReferencesSetInputSchema>["references"][number]) => ({
-            label: reference.path,
-            value: reference.content,
-            display: "block" as const,
-          })),
-          approvalScope: "skills",
-        });
+        try {
+          const skill = await readableSkill(input.skillId, context, "write");
+          if (!skill) return fail(err.notFound("Skill"));
+          if (skill.revision !== input.expectedRevision) return fail(err.conflict(new AiSkillRevisionConflictError().message));
+          return ok({
+            message: coreCapabilityMessages(context.locale).t.referencesSet({ count: input.references.length, name: skill.name }),
+            details: input.references.map((reference: z.infer<typeof SkillReferencesSetInputSchema>["references"][number]) => ({
+              label: reference.path,
+              value: reference.content,
+              display: "block" as const,
+            })),
+            approvalScope: "skills",
+          });
+        } catch (error) {
+          if (error instanceof AiSkillAppForbiddenError) return fail(err.forbidden(error.message));
+          throw error;
+        }
       },
       async run(input, context) {
-        const skill = await readableSkill(input.skillId, context, "write");
-        if (!skill) return fail(err.notFound("Skill"));
         try {
+          const skill = await readableSkill(input.skillId, context, "write");
+          if (!skill) return fail(err.notFound("Skill"));
           const updated = await aiSkills.setReferences(skill.id, context.accessSubject, input);
           if (!updated) return fail(err.notFound("Skill"));
           return ok({
@@ -1244,19 +1275,24 @@ export const aiCapabilities = defineCapabilities({
       openWorld: false,
       idempotency: "none",
       async review(input, context) {
-        const skill = await readableSkill(input.skillId, context, "write");
-        if (!skill?.references.some((reference) => reference.path === input.path)) return fail(err.notFound("Skill reference"));
-        if (skill.revision !== input.expectedRevision) return fail(err.conflict(new AiSkillRevisionConflictError().message));
-        const { t } = coreCapabilityMessages(context.locale);
-        return ok({
-          message: t.referenceRemove({ path: input.path, name: skill.name }),
-          details: [{ label: t.reference, value: input.path }],
-        });
+        try {
+          const skill = await readableSkill(input.skillId, context, "write");
+          if (!skill?.references.some((reference) => reference.path === input.path)) return fail(err.notFound("Skill reference"));
+          if (skill.revision !== input.expectedRevision) return fail(err.conflict(new AiSkillRevisionConflictError().message));
+          const { t } = coreCapabilityMessages(context.locale);
+          return ok({
+            message: t.referenceRemove({ path: input.path, name: skill.name }),
+            details: [{ label: t.reference, value: input.path }],
+          });
+        } catch (error) {
+          if (error instanceof AiSkillAppForbiddenError) return fail(err.forbidden(error.message));
+          throw error;
+        }
       },
       async run(input, context) {
-        const skill = await readableSkill(input.skillId, context, "write");
-        if (!skill) return fail(err.notFound("Skill"));
         try {
+          const skill = await readableSkill(input.skillId, context, "write");
+          if (!skill) return fail(err.notFound("Skill"));
           const updated = await aiSkills.removeReference(skill.id, context.accessSubject, input);
           if (!updated) return fail(err.notFound("Skill reference"));
           return ok({
@@ -1314,28 +1350,41 @@ export const aiCapabilities = defineCapabilities({
       openWorld: false,
       idempotency: "required",
       async review(input, context) {
-        const skill = await readableSkill(input.skillId, context, "admin");
-        if (!skill) return fail(err.notFound("Skill"));
-        const { t } = coreCapabilityMessages(context.locale);
-        return ok({
-          message: t.skillDelete({ name: skill.name }),
-          details: [
-            { label: t.description, value: skill.description, display: "block" },
-            { label: t.references, value: String(skill.referenceCount) },
-          ],
-        });
+        try {
+          const skill = await readableSkill(input.skillId, context, "admin");
+          if (!skill) return fail(err.notFound("Skill"));
+          const { t } = coreCapabilityMessages(context.locale);
+          return ok({
+            message: t.skillDelete({ name: skill.name }),
+            details: [
+              { label: t.description, value: skill.description, display: "block" },
+              { label: t.references, value: String(skill.referenceCount) },
+            ],
+          });
+        } catch (error) {
+          if (error instanceof AiSkillAppForbiddenError) return fail(err.forbidden(error.message));
+          throw error;
+        }
       },
       async run(input, context) {
-        if (!context.idempotencyKey) return fail(err.badInput("An idempotency key is required"));
-        const skill = await readableSkill(input.skillId, context, "admin");
-        if (!skill) return fail(err.notFound("Skill"));
-        const deleted = await aiSkills.delete(skill.id, context.accessSubject);
-        return audit.recordResultAfterSideEffect({
-          ...actionAudit(context, "ai.skill.delete", "ai_skill", skill.id),
-          result: deleted
-            ? ok({ data: { deleted: true as const }, summary: coreCapabilityMessages(context.locale).t.skillDeleted({ name: skill.name }) })
-            : fail(err.notFound("Skill")),
-        });
+        try {
+          if (!context.idempotencyKey) return fail(err.badInput("An idempotency key is required"));
+          const skill = await readableSkill(input.skillId, context, "admin");
+          if (!skill) return fail(err.notFound("Skill"));
+          const deleted = await aiSkills.delete(skill.id, context.accessSubject);
+          return audit.recordResultAfterSideEffect({
+            ...actionAudit(context, "ai.skill.delete", "ai_skill", skill.id),
+            result: deleted
+              ? ok({
+                  data: { deleted: true as const },
+                  summary: coreCapabilityMessages(context.locale).t.skillDeleted({ name: skill.name }),
+                })
+              : fail(err.notFound("Skill")),
+          });
+        } catch (error) {
+          if (error instanceof AiSkillAppForbiddenError) return fail(err.forbidden(error.message));
+          throw error;
+        }
       },
     },
     "ai.task.create": {

@@ -1,7 +1,7 @@
 import { type AiTurnBlock, isRenderableTurnBlock } from "../protocol";
 import type { AiStoredMessage } from "../types";
 import { hasCapabilityTable } from "./capability-result";
-import { isCardToolName, isRecord, isSurveyToolName, isTextEditorToolName } from "./message-utils";
+import { isCardToolName, isChartToolName, isRecord, isSurveyToolName, isTextEditorToolName } from "./message-utils";
 import { isFailedTool } from "./tool-groups";
 
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
@@ -69,7 +69,7 @@ const isResult = (block: ToolBlock, phase: AiTurnPhase, codePresentations: boole
   // A running delivery reserves its place once its arguments arrived: a new version of an earlier result must find the
   // earlier place before it takes one of its own.
   const delivered = block.status === "completed" || (live(phase) && block.status === "running" && block.args !== undefined);
-  if (block.name === "present" || isCardToolName(block.name)) return delivered;
+  if (block.name === "present" || isCardToolName(block.name) || isChartToolName(block.name)) return delivered;
   if (block.name === "code_present") return codePresentations && delivered;
   return hasCapabilityTable(block);
 };

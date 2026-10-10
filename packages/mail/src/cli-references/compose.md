@@ -2,6 +2,13 @@
 
 Read this reference when creating templates, editing shared drafts, handling attachments, or sending and scheduling mail. Start with [Mail CLI](index.md) for mailbox setup, permissions, search, and collaboration.
 
+With assigned-only write access, reply, reply-all and forward drafts stay within
+conversations currently assigned to you. You can edit, attach files, review
+safety, send or schedule those drafts, and cancel your own pending sends while
+the conversation remains visible. New messages, edit-as-new and resend drafts,
+recipient suggestions, and compose configuration changes require mailbox-wide
+access. Removing your assignment also stops queued sends before delivery.
+
 ## Compose templates and previews
 
 Mail compose templates are either `signature` or `snippet` and either private to the current user or shared at mailbox scope. List, create, update, and archive them:

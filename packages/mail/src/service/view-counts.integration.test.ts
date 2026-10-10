@@ -282,7 +282,7 @@ suite("mail conversation view counts in a large mailbox", () => {
     await sql`
       INSERT INTO mail.conversations (
         id, short_id, mailbox_id, subject, participant_summary, latest_inbound_at, latest_message_at,
-        work_status, snoozed_until, assignee_user_id
+        work_status, snoozed_until
       )
       SELECT
         md5(${suffix} || ':conversation:' || thread.conversation)::uuid, '0' || lpad(to_hex(thread.conversation), 5, '0'),
@@ -291,13 +291,19 @@ suite("mail conversation view counts in a large mailbox", () => {
         CASE
           WHEN thread.conversation % 40 IN (9, 18, 21) THEN now() + interval '1 day'
           WHEN thread.conversation % 40 IN (19, 28) THEN now() - interval '1 hour'
-        END,
-        CASE thread.conversation % 3 WHEN 0 THEN ${readerId}::uuid WHEN 1 THEN ${formerId}::uuid END
+        END
       FROM (
         SELECT (item - 1) * 2 / 5 AS conversation, max(now() - make_interval(mins => item * 7)) AS latest
         FROM generate_series(1, ${MESSAGE_COUNT}) AS item
         GROUP BY 1
       ) thread
+    `;
+    await sql`
+      INSERT INTO mail.conversation_assignees (conversation_id, user_id)
+      SELECT md5(${suffix} || ':conversation:' || thread)::uuid,
+        CASE thread % 3 WHEN 0 THEN ${readerId}::uuid ELSE ${formerId}::uuid END
+      FROM generate_series(0, (${MESSAGE_COUNT} - 1) * 2 / 5) AS thread
+      WHERE thread % 3 IN (0, 1)
     `;
     await sql`
       INSERT INTO mail.conversation_messages (conversation_id, message_id, position, added_by)
@@ -394,7 +400,18 @@ suite("mail conversation view counts in a large mailbox", () => {
       }
     }
 
-    for (const table of ["message_contents", "message_placements", "conversations", "conversation_messages"]) {
+    // The plan must not depend on whether autovacuum has seen the tables filled in bulk above yet. With
+    // statistics it took while earlier tests had emptied mail.conversation_assignees, PostgreSQL took
+    // the 6,700 assignments for one row and checked each conversation's assignees by reading all of
+    // (user_id, conversation_id): about 1 s instead of 100 ms.
+    for (const table of [
+      "message_contents",
+      "message_placements",
+      "conversations",
+      "conversation_messages",
+      "conversation_assignees",
+      "outbox_submissions",
+    ]) {
       await sql.unsafe(`ANALYZE mail.${table}`);
     }
   }, 120_000);

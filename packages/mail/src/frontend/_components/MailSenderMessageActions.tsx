@@ -1,11 +1,11 @@
+import { importOnDemand } from "@k2b/cloud/browser/reload";
 import { mutation } from "@k2b/stdlib/solid";
 import { Dropdown, type DropdownItem, prompts, toast, useLocale } from "@k2b/ui";
-import { createEffect, createMemo, on, onCleanup } from "solid-js";
+import { createEffect, createMemo, createSignal, on, onCleanup } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { DraftDerivationKind, MailAutomationConditions, SenderIdentity, SenderMatchKind } from "../../contracts";
 import type { MessageDetail } from "../../service/messages";
 import { readApiError } from "./api-response";
-import { openIncomingAutomationEditor } from "./MailIncomingAutomationSettings";
 import type { AutomationActionKind } from "./mail-automation-actions";
 import { isOutgoingMessage } from "./mail-conversation-history";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
@@ -21,6 +21,7 @@ export default function MailSenderMessageActions(props: {
   requestUrl: string;
   canWrite: boolean;
   canAdmin: boolean;
+  mailboxWide: boolean;
   selectionKey: string | null;
   selectedConversationId: string | null;
   message: MessageDetail;
@@ -33,10 +34,12 @@ export default function MailSenderMessageActions(props: {
 }) {
   const locale = useLocale();
   const t = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
-  const openIncomingAutomation = (
+  const [automationLoading, setAutomationLoading] = createSignal(false);
+  const openIncomingAutomation = async (
     address: string,
     options: { matchKind?: SenderMatchKind; action?: AutomationActionKind; name?: string } = {},
   ) => {
+    if (automationLoading()) return;
     const matchKind = options.matchKind ?? "sender";
     const matchValue = matchKind === "domain" ? senderDomainFromAddress(address) : address;
     if (!matchValue) return void prompts.error(t().incompleteSenderDomain);
@@ -48,7 +51,12 @@ export default function MailSenderMessageActions(props: {
           : { field: "sender_domain", operator: "is", value: matchValue },
       ],
     };
-    void openIncomingAutomationEditor({
+    // The editor loads on first use; until its modal opens, another choice must not open a second one.
+    setAutomationLoading(true);
+    const editor = await importOnDemand(() => import("./MailIncomingAutomationSettings"));
+    setAutomationLoading(false);
+    if (!editor) return;
+    await editor.openIncomingAutomationEditor({
       mailboxId: props.mailboxId,
       initialName: options.name ?? t().messagesFrom({ value: matchValue }),
       initialScope: { mode: "matching", conditions: initialConditions },
@@ -89,6 +97,7 @@ export default function MailSenderMessageActions(props: {
       totalMessageCount: props.totalMessageCount,
       canWrite: props.canWrite,
       canAdmin: props.canAdmin,
+      mailboxWide: props.mailboxWide,
     });
 
   createEffect(
@@ -121,7 +130,7 @@ export default function MailSenderMessageActions(props: {
                         {
                           label: t().createSenderAutomation,
                           icon: "ti ti-filter-plus",
-                          action: () => openIncomingAutomation(sender()!.address),
+                          action: () => void openIncomingAutomation(sender()!.address),
                         },
                       ]
                     : []),
@@ -131,7 +140,7 @@ export default function MailSenderMessageActions(props: {
                           label: t().blockSender,
                           icon: "ti ti-user-x",
                           action: () =>
-                            openIncomingAutomation(sender()!.address, {
+                            void openIncomingAutomation(sender()!.address, {
                               action: "junk",
                               name: t().blockNamed({ value: sender()!.address }),
                             }),
@@ -142,7 +151,7 @@ export default function MailSenderMessageActions(props: {
                                 label: t().blockSenderDomain,
                                 icon: "ti ti-world-x",
                                 action: () =>
-                                  openIncomingAutomation(sender()!.address, {
+                                  void openIncomingAutomation(sender()!.address, {
                                     matchKind: "domain",
                                     action: "junk",
                                     name: t().blockNamed({ value: senderDomainFromAddress(sender()!.address)! }),
@@ -161,11 +170,15 @@ export default function MailSenderMessageActions(props: {
                         },
                       ]
                     : []),
-                  {
-                    label: t().reportPhishing,
-                    icon: "ti ti-shield-exclamation",
-                    action: () => void reportPhishing.mutate({ selectionKey: props.selectionKey }),
-                  },
+                  ...(actionVisibility().reportPhishing
+                    ? [
+                        {
+                          label: t().reportPhishing,
+                          icon: "ti ti-shield-exclamation",
+                          action: () => void reportPhishing.mutate({ selectionKey: props.selectionKey }),
+                        },
+                      ]
+                    : []),
                 ],
               },
             ]
@@ -204,8 +217,16 @@ export default function MailSenderMessageActions(props: {
           : []),
       ]}
     >
-      <Dropdown.Trigger iconOnly size="sm" type="button" variant="ghost" label={t().messageActions} disabled={pending()}>
-        <i class={`ti ${pending() ? "ti-loader-2 animate-spin" : "ti-dots"}`} aria-hidden="true" />
+      <Dropdown.Trigger
+        iconOnly
+        size="sm"
+        type="button"
+        variant="ghost"
+        label={t().messageActions}
+        disabled={pending()}
+        aria-busy={automationLoading() ? "true" : undefined}
+      >
+        <i class={`ti ${pending() || automationLoading() ? "ti-loader-2 animate-spin" : "ti-dots"}`} aria-hidden="true" />
       </Dropdown.Trigger>
     </Dropdown.Root>
   );

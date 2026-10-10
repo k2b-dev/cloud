@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { spaceMessages } from "../frontend/[id]/messages";
 import { spacesHelp } from ".";
 
 describe("spacesHelp", () => {
@@ -12,7 +13,7 @@ describe("spacesHelp", () => {
     ]);
 
     expect(spacesHelp.getMarkdown("spaces-start")).toContain("Spaces is for shared work");
-    expect(spacesHelp.getMarkdown("spaces-troubleshooting")).toContain("A space is missing from the overview");
+    expect(spacesHelp.getMarkdown("spaces-troubleshooting")).toContain("A Space is missing from the overview");
     expect(spacesHelp.getMarkdown("spaces-workflow")).toContain("**Estimated duration:**");
     expect(spacesHelp.getMarkdown("spaces-workflow")).toContain("**Blocked by:**");
     expect(spacesHelp.getMarkdown("spaces-workflow")).toContain("**Blocks:**");
@@ -38,8 +39,17 @@ describe("spacesHelp", () => {
     expect(spacesHelp.getMarkdown("spaces-start", "de")).toContain("Spaces bündelt gemeinsame Arbeit");
     expect(spacesHelp.getMarkdown("spaces-views", "de")).toContain("Ansichten stellen dieselben Einträge");
     expect(spacesHelp.getMarkdown("spaces-workflow", "de")).toContain("**Geschätzte Dauer:**");
-    expect(spacesHelp.getMarkdown("spaces-sharing", "de")).toContain("Berechtigungen sollten zu den Personen passen");
+    expect(spacesHelp.getMarkdown("spaces-sharing", "de")).toContain("Gib jeder Person und Gruppe nur den Zugriff");
     expect(spacesHelp.getMarkdown("spaces-troubleshooting", "de")).toContain("Eine Aufgabe kann nicht abgeschlossen werden");
+  });
+
+  test("names the views with the labels of the Space sidebar", () => {
+    for (const locale of ["en", "de"] as const) {
+      const { t } = spaceMessages.resolve([locale]);
+      const views = spacesHelp.getMarkdown("spaces-views", locale);
+      for (const label of [t.overview, t.table, t.kanban, t.calendar]) expect(views).toContain(`- **${label}:**`);
+      expect(spacesHelp.getMarkdown("spaces-troubleshooting", locale)).toContain(`**${t.overview}**`);
+    }
   });
 
   test("resolves regional and unknown locales through the fallback chain", () => {

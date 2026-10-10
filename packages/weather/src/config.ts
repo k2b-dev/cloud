@@ -1,5 +1,6 @@
 import { defineApp } from "@k2b/cloud";
 import { WEATHER_SETTINGS } from "@k2b/cloud/services/weather/settings";
+import { SKILLS } from "./skills";
 
 export const app = defineApp({
   id: "weather",
@@ -27,6 +28,7 @@ export const app = defineApp({
   },
   basePath: "/app/weather",
   baseUrl: "http://app-weather:3000",
+  skills: SKILLS,
   adminHref: "/admin/weather",
   nav: {
     href: "/app/weather",

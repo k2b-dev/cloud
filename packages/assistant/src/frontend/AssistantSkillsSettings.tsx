@@ -246,9 +246,14 @@ export function AssistantSkillsSettings(props: { refreshKey: number; onOpenEdito
                 description={`${skill.description}${skill.referenceCount ? ` · ${copy().referenceCount({ count: skill.referenceCount })}` : ""}`}
                 icon={<i class="ti ti-sparkles" aria-hidden="true" />}
               >
-                <Show when={!skill.enabled}>
+                <Show when={skill.source || !skill.enabled}>
                   <SettingsCollection.Item.Status>
-                    <StatusBadge tone="neutral" icon={null} label={text("Disabled")} />
+                    <Show when={skill.source}>
+                      {(source) => <StatusBadge tone="neutral" icon={null} label={copy().fromApp({ app: source().appName })} />}
+                    </Show>
+                    <Show when={!skill.enabled}>
+                      <StatusBadge tone="neutral" icon={null} label={text("Disabled")} />
+                    </Show>
                   </SettingsCollection.Item.Status>
                 </Show>
                 <SettingsCollection.Item.Actions>
@@ -521,6 +526,7 @@ export function AssistantSkillEditor(props: {
   onClose: () => void;
 }) {
   const text = useAssistantText();
+  const copy = useAssistantCopy();
   const [detail] = createResource(
     () => props.request.skillId,
     (skillId) => assistantApi.getSkill(skillId),
@@ -608,20 +614,46 @@ export function AssistantSkillEditor(props: {
               <Show
                 when={readOnly()}
                 fallback={
-                  <NoticeCard
-                    tone="info"
-                    title={text("Description controls when this Skill loads")}
-                    detail={text(
-                      "Assistant sees the name and description before deciding to load a Skill. Say what to do and when to use it.",
+                  <Show
+                    when={detail()?.source}
+                    fallback={
+                      <NoticeCard
+                        tone="info"
+                        title={text("Description controls when this Skill loads")}
+                        detail={text(
+                          "Assistant sees the name and description before deciding to load a Skill. Say what to do and when to use it.",
+                        )}
+                      />
+                    }
+                  >
+                    {(source) => (
+                      <NoticeCard
+                        tone="info"
+                        title={copy().appSkillOverride({ app: source().appName })}
+                        detail={text("Your changes replace the app's version for everyone until an administrator resets it.")}
+                      />
                     )}
-                  />
+                  </Show>
                 }
               >
-                <NoticeCard
-                  tone="neutral"
-                  title={text("This Skill is read only")}
-                  detail={text("You can view and export it, but you cannot change it.")}
-                />
+                <Show
+                  when={detail()?.source}
+                  fallback={
+                    <NoticeCard
+                      tone="neutral"
+                      title={text("This Skill is read only")}
+                      detail={text("You can view and export it, but you cannot change it.")}
+                    />
+                  }
+                >
+                  {(source) => (
+                    <NoticeCard
+                      tone="neutral"
+                      title={copy().fromApp({ app: source().appName })}
+                      detail={text("The app keeps this Skill up to date. You can view and export it.")}
+                    />
+                  )}
+                </Show>
               </Show>
               <div class="flex flex-col gap-4">
                 <TextInput

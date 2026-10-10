@@ -133,7 +133,7 @@ domTest("housekeeping folds at step level and opens in place; steps a reader wat
     expect(group!.querySelector("summary")?.textContent).toContain("Loaded tools and guidance");
     expect(group!.querySelector("summary")?.textContent).toContain("3 steps");
     expect(rest.map((step) => step.querySelector("summary")?.textContent)).toEqual([
-      expect.stringContaining("Run code"),
+      expect.stringContaining("Ran code"),
       expect.stringContaining("App check"),
     ]);
     expect(group!.getAttribute("data-body-inset")).toBe("false");
@@ -152,8 +152,8 @@ domTest("rows a reader sees in the open work list stay when later reasoning or a
   try {
     view.toggle(view.work());
     expect(labels()).toEqual([
-      expect.stringContaining("Run code"),
-      expect.stringContaining("Run code"),
+      expect.stringContaining("Ran code"),
+      expect.stringContaining("Ran code"),
       expect.stringContaining("Loaded tools and guidance"),
     ]);
     const group = view.steps()[2]!;

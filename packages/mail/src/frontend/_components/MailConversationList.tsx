@@ -1,3 +1,4 @@
+import { importOnDemand } from "@k2b/cloud/browser/reload";
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { timed } from "@k2b/stdlib/solid";
@@ -36,7 +37,6 @@ import type { MailListError, MailListMode } from "../../service/workspace";
 import MailBulkActionBar from "./MailBulkActionBar";
 import MailConversationQuickLook from "./MailConversationQuickLook";
 import MailConversationRow from "./MailConversationRow";
-import { openMailSearchBuilder } from "./MailSearchBuilder";
 import { type MailActionId, spamActionForConversation } from "./mail-actions";
 import { mailConversationListMessages } from "./mail-conversation-list-messages";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
@@ -97,12 +97,13 @@ export default function MailConversationList(props: {
   onListModeChange: (mode: MailListMode) => void;
   onToggleSelection: (item: MailListItem, range: boolean) => void;
   onClearSelection: () => void;
-  onAddTags: () => void | Promise<void>;
-  onAssign: () => void | Promise<void>;
+  onAddTags?: () => void | Promise<void>;
+  /** Absent for a person who sees only assigned conversations. */
+  onAssign?: () => void | Promise<void>;
   onBulkAction: (actionId: MailActionId) => void | Promise<void>;
   onItemAction: (item: MailListItem, actionId: MailActionId) => void | Promise<void>;
   onManageTags: (item: MailListItem) => void | Promise<void>;
-  onMergeItem: (item: MailListItem) => void | Promise<void>;
+  onMergeItem?: (item: MailListItem) => void | Promise<void>;
   onOpenHref: (href: string, replace?: boolean) => void | Promise<void>;
   onLoadMore: (href: string) => boolean | Promise<boolean>;
   onRefresh: () => Promise<void>;
@@ -258,8 +259,15 @@ export default function MailConversationList(props: {
       .map((option) => option.label)
       .join(", ");
 
+  const [searchBuilderLoading, setSearchBuilderLoading] = createSignal(false);
   const openAdvancedSearch = async () => {
-    const result = await openMailSearchBuilder({
+    // The builder loads on first use; until its modal opens, a second activation must not open another one.
+    if (searchBuilderLoading()) return;
+    setSearchBuilderLoading(true);
+    const builder = await importOnDemand(() => import("./MailSearchBuilder"));
+    setSearchBuilderLoading(false);
+    if (!builder) return;
+    const result = await builder.openMailSearchBuilder({
       mailboxId: props.mailboxId,
       initialState: currentSearchState(),
       initialQuery: props.query,
@@ -395,9 +403,10 @@ export default function MailConversationList(props: {
                   class={structuredSummary() ? "text-[var(--app-accent)]" : undefined}
                   label={messages().searchFilters}
                   aria-pressed={Boolean(structuredSummary())}
+                  aria-busy={searchBuilderLoading() ? "true" : undefined}
                   onClick={openAdvancedSearch}
                 >
-                  <i class="ti ti-adjustments-search" aria-hidden="true" />
+                  <i class={searchBuilderLoading() ? "ti ti-loader-2 animate-spin" : "ti ti-adjustments-search"} aria-hidden="true" />
                 </IconButton>
               </Tooltip.Anchor>
               <Show when={props.selectedConversationId || props.selectedMessageId}>
@@ -463,9 +472,10 @@ export default function MailConversationList(props: {
               class="mail-search-summary"
               aria-label={`${messages().editStructuredSearch}: ${summary()}`}
               title={summary()}
+              aria-busy={searchBuilderLoading() ? "true" : undefined}
               onClick={openAdvancedSearch}
             >
-              <i class="ti ti-filter-check" aria-hidden="true" />
+              <i class={searchBuilderLoading() ? "ti ti-loader-2 animate-spin" : "ti ti-filter-check"} aria-hidden="true" />
               <span class="mail-search-summary__text">{summary()}</span>
             </button>
           )}
@@ -572,7 +582,13 @@ export default function MailConversationList(props: {
                     ? messages().noConversations
                     : messages().noMessages
               }
-              description={searchActive() ? messages().changeFilters : messages().newMailAppears}
+              description={
+                searchActive()
+                  ? messages().changeFilters
+                  : props.mailbox.accessScope === "assigned"
+                    ? messages().appearsOnceAssigned
+                    : messages().newMailAppears
+              }
               action={
                 searchActive() ? (
                   <ButtonLink

@@ -4,10 +4,10 @@ import {
   ANNOUNCEMENTS_COOKIE,
   ANNOUNCEMENTS_COOKIE_MAX_AGE_SECONDS,
   type AnnouncementCookieState,
-  type AnnouncementDisplayEntry,
   mergeAnnouncementCookieState,
   serializeAnnouncementCookieState,
-} from "../contracts/announcements";
+} from "../contracts/announcement-cookie";
+import type { AnnouncementDisplayEntry } from "../contracts/announcements";
 import { platformMessages } from "./platform-messages";
 
 type Props = {

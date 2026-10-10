@@ -91,6 +91,38 @@ suite("mail baseline schema", () => {
     });
   });
 
+  test("backfills assignees once when upgrading an older database and preserves later changes", async () => {
+    await migrate();
+    const suffix = crypto.randomUUID();
+    const [user] = await sql<
+      { id: string }[]
+    >`INSERT INTO auth.users (uid, provider, profile) VALUES (${`assignee-migration-${suffix}`}, 'local', 'user') RETURNING id`;
+    const [mailbox] = await sql<
+      { id: string }[]
+    >`INSERT INTO mail.mailboxes (short_id, name) VALUES (${newShortId()}, 'Assignee migration') RETURNING id`;
+    if (!user || !mailbox) throw new Error("Migration fixture missing");
+    const [conversation] = await sql<{ id: string; updated_at: Date }[]>`
+      INSERT INTO mail.conversations (short_id, mailbox_id, latest_message_at, assignee_user_id)
+      VALUES (${newShortId()}, ${mailbox.id}::uuid, now(), ${user.id}::uuid) RETURNING id, updated_at
+    `;
+    if (!conversation) throw new Error("Migration conversation missing");
+    try {
+      await sql`DROP TABLE mail.conversation_assignees`;
+      await migrate();
+      const rows = await sql<
+        { user_id: string; assigned_at: Date }[]
+      >`SELECT user_id, assigned_at FROM mail.conversation_assignees WHERE conversation_id = ${conversation.id}::uuid`;
+      expect(rows).toEqual([{ user_id: user.id, assigned_at: conversation.updated_at }]);
+      await sql`DELETE FROM mail.conversation_assignees WHERE conversation_id = ${conversation.id}::uuid`;
+      await migrate();
+      expect(await sql`SELECT 1 FROM mail.conversation_assignees WHERE conversation_id = ${conversation.id}::uuid`).toHaveLength(0);
+    } finally {
+      await migrate();
+      await sql`DELETE FROM mail.mailboxes WHERE id = ${mailbox.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${user.id}::uuid`;
+    }
+  });
+
   test("reruns without waiting for the lock a concurrent index build holds on messages", async () => {
     await migrate();
     const build = await sql.reserve();

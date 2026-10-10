@@ -28,6 +28,7 @@ import { MailIdentitySettings } from "./MailIdentitySettings";
 import MailOrganizationSettings from "./MailOrganizationSettings";
 import { readMailUserPreferences, writeMailUserPreferences } from "./MailSettingsStore";
 import { mailSettingsMessages } from "./mail-settings-messages";
+import { mailboxAccessLevels, mailboxAccessScope } from "./mailbox-access-levels";
 
 const normalizeInitialTab = (tab: string | undefined, canWrite: boolean, canAdmin: boolean, hasCalendar: boolean): string => {
   const aliases: Record<string, string> = {
@@ -687,19 +688,20 @@ export default function MailboxSettings(props: {
                 initialEntries={admin().accessEntries}
                 allowAuthenticated={false}
                 allowServiceAccounts
+                allowedLevels={mailboxAccessLevels(locale())}
                 canEdit
-                grantAccess={async (principal, permission) => {
+                grantAccess={async (principal, permission, _display, scope) => {
                   const response = await apiClient.mailboxes[":mailboxId"].access.$post({
                     param: { mailboxId: props.context.mailbox.id },
-                    json: { principal, permission },
+                    json: { principal, permission, scope: mailboxAccessScope(scope) },
                   });
                   if (!response.ok) throw new Error(await readApiError(response, messages().failedGrantAccess));
                   return response.json();
                 }}
-                updateAccess={async (accessId, permission) => {
+                updateAccess={async (accessId, permission, scope) => {
                   const response = await apiClient.mailboxes[":mailboxId"].access[":accessId"].$patch({
                     param: { mailboxId: props.context.mailbox.id, accessId },
-                    json: { permission },
+                    json: { permission, scope: mailboxAccessScope(scope) },
                   });
                   if (!response.ok) throw new Error(await readApiError(response, messages().failedUpdateAccess));
                 }}

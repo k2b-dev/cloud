@@ -5,39 +5,57 @@ icon: ti ti-file-type-pdf
 description: Create templates, generate PDF and data files, and inspect or share immutable documents.
 order: 135
 ---
-Document templates create PDFs from table records, for example invoices, contracts and labels.
+Document templates create PDFs from table records, for example invoices, contracts, and labels.
 
-Each template belongs to one table and defines one document family. A generated document belongs to one selected record, receives a stable number and filename, and keeps the exact source snapshot after the live records change. It appears in the record's Documents section, its template workspace, and the Base-wide **All documents** catalog.
+Each template belongs to one table and defines one document family. A generated document belongs to one selected record. It receives a stable number and filename and keeps the exact source snapshot after the live records change. It appears in the Documents section of the record, in its template workspace, and in the **All documents** catalog of the Base.
 
-Use templates for formatted, shareable output; CSV/JSON exports for data exchange.
+Use templates for formatted, shareable output. Use CSV or JSON exports for data exchange.
 
-Workflows can also create one PDF from several Records, free CSV/JSON/XML, DATEV booking batches, and SEPA transfer files. All are Documents, not just PDFs. See [workflow outputs](/app/grids/help/grids-workflows) for header/mapping configuration.
+Workflows can also create one PDF from several records, free CSV, JSON, or XML, DATEV booking batches, and SEPA transfer files. All of them are documents, not only PDFs. [Workflows](/app/grids/help/grids-workflows) describes the header and mapping configuration.
 
-E-Invoice output has status **Not checked** (`unchecked`): the report identifies checks that were not performed, including validation of the generated XML and PDF attachment. Review this report before using the output. SEPA XML is validated against its schema during generation. These checks do not certify the whole business process.
+E-Invoice output has the status **Not checked** (`unchecked`). The report names the checks that were not performed, including the validation of the generated XML and of the PDF attachment. Review this report before you use the output. SEPA XML is validated against its schema during generation. These checks do not certify the whole business process.
 
-## One immutable Document model {icon="shield-check"}
+## Understand the immutable document model {icon="shield-check"}
 
-Agents can use `document.templates` to find templates, `document.list` and `document.read` to inspect stored documents, and `document.create` to issue one document for a selected Record. Issuance requires write access, an idempotency key and individual approval. It cannot be undone or remembered as blanket approval. The returned download link requires your existing permissions; it does not create a public share link or send the document.
+Agents can find templates with `document.templates`, inspect stored documents with `document.list` and `document.read`, and issue one document for a selected record with `document.create`. Issuing requires **Edit** access, an idempotency key, and an individual approval. You cannot undo an issuance, and an approval never becomes a blanket approval. The returned download link requires your existing access. It does not create a public share link and does not send the document.
 
-Retrying generation with the same idempotency key returns the same immutable Document; reusing that key with different input fails.
+A retry with the same idempotency key returns the same immutable document. Reusing that key with different input fails.
 
-Creation-only `issuancePolicy: "oncePerFinalizedRecord"` reuses frozen input, number and Document across keys/runs. Finalize, then generate. If rendering fails, retry generation for the same Record/template without resetting or repeating finalization. Access is rechecked; live preview is unnecessary and may differ. Default: `repeatable`. Cloned templates have independent issuance scopes.
+### Issue once per finalized record
 
-**Retry generation** locks original inputs and captured data; no live preview. For `repeatable`, **Start a new attempt** uses current data for another Document; check **All documents** first. Once-only issuance still reuses the original. Writers can manage existing links without an enabled template.
+`issuancePolicy: "oncePerFinalizedRecord"` can be set only on creation. It reuses the frozen input, the number, and the document across keys and runs. Finalize first, then generate. If rendering fails, retry the generation for the same record and template. Do not reset or repeat the finalization. Grids checks access again. A live preview is not needed and can differ. The default is `repeatable`. Cloned templates have independent issuance scopes.
 
-A template selects one renderer. The HTML renderer turns Liquid HTML and CSS into a PDF. An installed E-Invoice renderer maps the selected record through Liquid JSON, then creates the PDF and structured artifact together. The renderer changes the artifacts a Document contains, not the Document model or the way it is generated, listed, inspected, or downloaded.
+**Retry generation** locks the original inputs and the captured data. It uses no live preview. For `repeatable`, **Start a new attempt** uses the current data for another document. Check **All documents** first. Issuance once per record still reuses the original. People with **Edit** access can keep working with existing links, even without an enabled template.
 
-Validation proves only the technical checks named by the selected renderer and version. It is not a general tax, accounting, signature, custody, or legal-compliance decision. Use `cld grids documents renderers --json` to inspect the renderers available on this installation, including each renderer's `inputSchema`. `cld grids document-templates reference --json` provides the template create/update schemas. These describe structural inputs; preview also checks the renderer's semantic rules.
+### Choose a renderer
 
-`de.zugferd.en16931@1` renders outgoing EUR invoices for German seller/buyer addresses, standard VAT and bank transfer. It creates PDF/A-3b with embedded and separate `factur-x.xml`, targets ZUGFeRD 2.5 / Factur-X 1.09 EN 16931 with exact decimal strings and half-up rounding. Unsupported: corrections, incoming invoices, exemptions, allowances, charges, prepayments, discounts, self-billing and filings. The issuer must verify suitability; Grids does not certify legal compliance.
+A template selects one renderer:
 
-Version 2 (`de.zugferd.en16931@2`) additionally renders credit notes with an original invoice number, date and reason, and self-billing with an agreement reference. It requires an explicit document kind and service date. Quantities and amounts stay positive; the document kind determines whether it is an invoice or a credit. For self-billing, the seller remains the supplier and the buyer remains the customer issuing the document. Payment details identify the intended receiving account; they are not inferred from the document kind.
+- The HTML renderer turns Liquid HTML and CSS into a PDF.
+- An installed E-Invoice renderer maps the selected record through Liquid JSON. It then creates the PDF and the structured artifact together.
 
-The renderer does not verify that an original invoice exists or that credit or commission amounts remain available. The issuing workflow must enforce these checks, including concurrent requests. Rendering support alone is not a complete billing application. Existing templates and retries keep their selected version; updating a template is explicit.
+The renderer changes the artifacts that a document contains. It does not change the document model or how Grids generates, lists, inspects, or downloads documents.
 
-## From record to PDF {icon="table"}
+Validation proves only the technical checks that the selected renderer and version name. It is not a general tax, accounting, signature, custody, or legal-compliance decision. Run `cld grids documents renderers --json` to see the renderers of this installation, including the `inputSchema` of each. `cld grids document-templates reference --json` provides the schemas for creating and updating templates. These schemas describe the structure of the input. The preview also checks the semantic rules of the renderer.
 
-The template separates data selection from rendering. **GQL** loads the rows and columns the Document may use. The selected renderer then receives either Liquid HTML and CSS or one Liquid JSON object.
+### Use the German E-Invoice renderer
+
+`de.zugferd.en16931@1` renders outgoing EUR invoices for German seller and buyer addresses, standard VAT, and bank transfer. It creates PDF/A-3b with an embedded and a separate `factur-x.xml`. It targets ZUGFeRD 2.5 / Factur-X 1.09 EN 16931, with exact decimal strings and half-up rounding.
+
+It does not support corrections, incoming invoices, exemptions, allowances, charges, prepayments, discounts, self-billing, or filings. The issuer must verify suitability; Grids does not certify legal compliance.
+
+Version 2 (`de.zugferd.en16931@2`) also renders:
+
+- credit notes with the number and date of the original invoice and a reason for the credit;
+- self-billing with an agreement reference.
+
+Version 2 requires an explicit document kind and service date. Quantities and amounts stay positive. The document kind decides whether the document is an invoice or a credit. In self-billing, the seller stays the supplier, and the buyer stays the customer who issues the document. Payment details name the intended receiving account. Grids does not infer it from the document kind.
+
+The renderer does not check that an original invoice exists or that credit or commission amounts remain available. The issuing workflow must enforce these checks, also for concurrent requests. Rendering support alone is not a complete billing app. Existing templates and retries keep their selected version. You must update a template explicitly.
+
+## Go from a record to a PDF {icon="table"}
+
+The template separates data selection from rendering. **GQL** loads the rows and columns that the document can use. The selected renderer then receives either Liquid HTML and CSS or one Liquid JSON object.
 
 **Pipeline**
 
@@ -52,40 +70,39 @@ selected record
 
 Keep filtering, sorting, joins, grouping, and totals in GQL. Keep Liquid focused on wording and page layout.
 
-For an E-Invoice template, choose its renderer and map the preview data in **Renderer input**. The editor expects one JSON object. Use the `json` filter for every inserted value, for example `"buyerReference": {{ record.id | json }}`, so quotes and other characters remain valid JSON. Previewing checks the renderer's input and generates the PDF before the template is enabled; it does not certify the output.
+For an E-Invoice template, choose its renderer and map the preview data in **Renderer input**. The editor expects one JSON object. Use the `json` filter for every inserted value, for example `"buyerReference": {{ record.id | json }}`. This keeps quotes and other characters valid JSON. The preview checks the input of the renderer and generates the PDF before you enable the template. It does not certify the output.
 
 ## Create your first template {icon="file-description"}
 
+You need **Manage** access to the Base to create and edit templates.
+
 :::steps
-1. **Open templates:** Open the table in edit mode and choose Templates. Templates belong to the table they generate documents for.
-2. **Choose a starter:** Pick the structure closest to the output you need. Every starter remains fully editable.
-3. **Select a preview record:** The same record anchors the rendered GQL, Data tree, and PDF preview.
-4. **Inspect before editing:** Source shows the GQL after record values are inserted. Data shows the exact Liquid paths. Preview shows the PDF.
-5. **Change one layer at a time:** Adjust GQL when data is wrong; adjust Body, Header, Footer, or Page CSS when layout is wrong.
-6. **Preview representative data:** Test long text, missing values, many rows, and page breaks. The editor starts new templates disabled.
-7. **Enable and test:** Base users with Write access can then select a record and generate a saved document.
+1. **Open templates:** Open the table in **Edit mode** and choose **Templates**. Templates belong to the table that they generate documents for.
+2. **Choose a starter:** Pick the structure closest to the output that you need. Every starter stays fully editable.
+3. **Select a preview record:** The same record anchors the rendered GQL, the **Data** tree, and the PDF preview.
+4. **Inspect before you edit:** **Source** shows the GQL with inserted record values. **Data** shows the exact Liquid paths. **Preview** shows the PDF.
+5. **Change one layer at a time:** Adjust the GQL when the data is wrong. Adjust Body, Header, Footer, or Page CSS when the layout is wrong.
+6. **Preview representative data:** Test long text, missing values, many rows, and page breaks. The editor creates new templates disabled.
+7. **Enable and test:** Then people with **Edit** access to the Base can select a record and generate a saved document.
 :::
 
-## Documents shared by several records {icon="files"}
+The selected preview record is only test context. When people generate a document later, they select the actual record. They can override the filename or add tags.
 
-The source inspector shows current readable names in stable public-ID order.
-A missing captured version is left blank rather than shown as version zero.
-Evidence packages retain only source IDs and captured versions, not current
-names or deletion status, with a maximum of 10,000 source entries per package.
+## Share one document between several records {icon="files"}
 
-A workflow can create one file from several records. The file is stored once and appears in each associated record's Documents section, regardless of whether it is PDF, CSV, JSON, XML, SEPA or DATEV. Open **Source records** in its details to inspect the captured record versions.
+A workflow can create one file from several records. Grids stores the file once. It appears in the Documents section of each associated record, whether it is PDF, CSV, JSON, XML, SEPA, or DATEV. Open **Source records** in its details to inspect the captured record versions.
 
-Source records and result rows are different counts: a join can repeat a record, and a total can combine many records into one row. A missing source count means no complete record association was captured, not zero source records. Related addresses, customers and other relations are not automatically associated.
+The source inspector shows the current readable names in stable order of public IDs. A missing captured version stays blank and does not appear as version zero. Evidence packages keep only source IDs and captured versions, not current names or deletion states. A package holds at most 10,000 source entries.
 
-A simple stored-table row query captures its record identities automatically. For an aggregate or joined export, a workflow author can set `associatedData` to a previously captured row query. This selection is not re-run after generation. Source versions describe the captured state; open record links show the current record.
+Source records and result rows are different counts. A join can repeat a record, and a total can combine many records into one row. A missing source count means that Grids captured no complete record association. It does not mean zero source records. Related addresses, customers, and other relations are not associated automatically.
 
-Membership never grants access to an entire batch. Base readers can inspect these documents; Custom App record grants continue to expose only the documents explicitly allowed by the published App. Creating a SEPA file does not mean its transfers have been paid.
+A simple row query on a stored table captures its record identities automatically. For an aggregate or joined export, a workflow author can set `associatedData` to a previously captured row query. Grids does not run this selection again after generation. Source versions describe the captured state. Record links open the current record.
 
-The selected preview record is only test context. Generating later prompts the user to select the actual record and can override the filename or add tags.
+Membership in a document never gives access to the whole batch. People with access to the Base can inspect these documents. Grids Apps still expose only the documents that the published app explicitly allows for a record. Creating a SEPA file does not mean that its transfers are paid.
 
-## Starters {icon="square-plus"}
+## Start from a starter {icon="square-plus"}
 
-Starters are editable templates, not fixed document types. Pick the closest structure, then change the GQL source and Liquid parts until the generated PDF matches the records in the table.
+Starters are editable templates, not fixed document types. Pick the closest structure. Then change the GQL source and the Liquid parts until the generated PDF matches the records in the table.
 
 - `Invoice`
 - `Loan agreement`
@@ -100,9 +117,9 @@ Starters are editable templates, not fixed document types. Pick the closest stru
 - `Checklist`
 - `Badge / name tag`
 
-## Editable parts {icon="table"}
+## Edit the parts of a template {icon="table"}
 
-A template has one data part and up to four layout parts. The GQL source is rendered with Liquid first, so it can use the selected `record`, public `app`, and base `business` values before the query is parsed.
+A template has one data part and up to four layout parts. Grids renders the GQL source with Liquid first. The source can therefore use the selected `record`, the public `app` values, and the `business` values of the Base before Grids parses the query.
 
 | Part | Language | Purpose | Common use |
 | --- | --- | --- | --- |
@@ -112,27 +129,27 @@ A template has one data part and up to four layout parts. The GQL source is rend
 | Footer | Liquid + HTML | Optional footer shown on each page. | Legal footer, bank data, and page placeholders such as `<span class="pageNumber"></span>` and `<span class="totalPages"></span>`. |
 | Page CSS | Liquid + CSS | Optional CSS injected into the PDF body document. | @page size/margins, table headers, page breaks, print typography. |
 
-PDFs render offline: scripts do not run, and remote images, stylesheets, and fonts do not load. For images, use record images, `barcode_data_url`, or other `data:` URLs. `app.logoDataUri` prints the logo uploaded in the Cloud administration; a logo set as a web address does not load.
+PDFs render offline. Scripts do not run, and remote images, stylesheets, and fonts do not load. For images, use record images, `barcode_data_url`, or other `data:` URLs. `app.logoDataUri` prints the logo uploaded in the Cloud administration. A logo set as a web address does not load.
 
 ## Understand the available data {icon="layout-grid"}
 
-The Data tab is the source of truth for the current preview record. It shows the exact shape Liquid receives after the GQL source has run. Copy paths from this tree instead of guessing object shapes.
+The **Data** tab is the source of truth for the current preview record. It shows the exact shape that Liquid receives after the GQL source has run. Copy paths from this tree. Do not guess object shapes.
 
-Think of the data in layers: `record` is the selected record, `rows` and `columns` are the GQL result, and `document` describes a saved Document. `template`, `document`, and `date` provide stable metadata for numbers and filenames. `app` contains public platform branding. `business` contains the Base's shared document details. Rows also expose GQL output labels, so readable aliases make templates easier to maintain.
+Think of the data in layers. `record` is the selected record. `rows` and `columns` are the GQL result. `document` describes a saved document. `template`, `document`, and `date` provide stable metadata for numbers and filenames. `app` contains public platform branding. `business` contains the shared document details of the Base. Rows also expose the GQL output labels, so readable aliases make templates easier to maintain.
 
 :::reference
-- **record:** The current record: public `record.id` and `record.tableId`, `record.version`, `record.data`, created and updated timestamps.
-- **rows and columns:** The rows and columns returned by the GQL source. Use column.key for row access and column.label for human-readable headers.
-- **template, document, date:** Stable metadata for patterns and document copy: `{{ template.name }}`, `{{ template.id }}`, `{{ document.id }}`, `{{ date.iso }}`, and `{{ date.yyyyMMdd }}`. Draft previews use draft document values until a Document exists.
+- **record:** The current record: public `record.id` and `record.tableId`, `record.version`, `record.data`, and the created and updated timestamps.
+- **rows and columns:** The rows and columns that the GQL source returns. Use `column.key` to access a row and `column.label` for readable headers.
+- **template, document, date:** Stable metadata for patterns and document text: `{{ template.name }}`, `{{ template.id }}`, `{{ document.id }}`, `{{ date.iso }}`, and `{{ date.yyyyMMdd }}`. Draft previews use draft document values until a document exists.
 - **app:** Public platform values for document branding: `{{ app.name }}`, `{{ app.contactEmail }}`, `{{ app.url }}`, `{{ app.logoDataUri }}`, and `{{ app.timezone }}`.
-- **business:** Base-level document details configured in Base settings → Documents. `business.legalName` is the explicit issuer name; an unset name stays empty and never inherits `app.name`. `business.address` contains street/building lines, preserved as entered. Use `business.postalCode`, `business.city`, and `business.countryCode` separately. Tax number and VAT ID are separate (`business.taxId`, `business.vatId`). `business.accountName` is the account holder, alongside `business.iban`, `business.bic`, and `business.bankName`. Sender line, payment terms, footer, and contact fields remain available.
-- **images:** Image files attached to file fields on the selected record. Use `{{ primaryImage.url }}` for the first supported image or loop over `images`. Oversized and unsupported files are omitted.
-- **document:** Document metadata such as `{{ document.number }}` and `{{ document.createdAt }}`. Use it in filenames and body/header/footer HTML after the number pattern has rendered. Draft previews may not have final values yet.
-- **snapshot:** The captured record graph for a generated Document. It is null in live draft previews.
+- **business:** Document details of the Base, configured in **Base settings → Documents**. `business.legalName` is the explicit issuer name. When it is not set, it stays empty and never inherits `app.name`. `business.address` contains the street and building lines, as entered. Use `business.postalCode`, `business.city`, and `business.countryCode` separately. The tax number and the VAT ID are separate (`business.taxId`, `business.vatId`). `business.accountName` is the account holder, together with `business.iban`, `business.bic`, and `business.bankName`. The sender line, payment terms, footer, and contact fields stay available.
+- **images:** Image files attached to file fields of the selected record. Use `{{ primaryImage.url }}` for the first supported image, or loop over `images`. Grids leaves out oversized and unsupported files.
+- **document:** Document metadata such as `{{ document.number }}` and `{{ document.createdAt }}`. Use it in filenames and in the body, header, or footer HTML after the number pattern has rendered. Draft previews can lack final values.
+- **snapshot:** The captured record graph of a generated document. It is null in live draft previews.
 - **barcode_data_url:** A Grids Liquid filter for labels and badges. It returns an SVG data URL for QR codes and supported BWIP barcode symbols.
 :::
 
-## GQL source patterns {icon="code"}
+## Write GQL sources {icon="code"}
 
 Keep filtering, sorting, joins, grouping, and limits in GQL. Keep Liquid focused on presentation.
 
@@ -164,11 +181,11 @@ sort Name asc
 limit 100
 ```
 
-## Numbers and filenames {icon="paperclip"}
+## Set numbers and filenames {icon="paperclip"}
 
-A generated Document has a stable `document.number`. An HTML template owns a durable number series. Its number pattern is rendered first, and its filename pattern can then use `{{ document.number }}`. An E-Invoice renderer owns its numbering and artifact filenames.
+A generated document has a stable `document.number`. An HTML template owns a durable number series. Grids renders its number pattern first. Its filename pattern can then use `{{ document.number }}`. An E-Invoice renderer owns its numbering and artifact filenames.
 
-The default HTML number pattern is `{{ template.id }}-{{ date.yyyyMMdd }}-{{ document.id }}`. A custom pattern may use the allocated `{{ series.value }}`. Allocations increase atomically and are never reused, but rollbacks and technical failures can leave gaps. Grids does not claim that a number pattern alone establishes legal compliance.
+The default HTML number pattern is `{{ template.id }}-{{ date.yyyyMMdd }}-{{ document.id }}`. A custom pattern can use the allocated `{{ series.value }}`. Allocations increase atomically and are never reused, but rollbacks and technical failures can leave gaps. A number pattern alone does not establish legal compliance.
 
 **Default number**
 
@@ -201,17 +218,17 @@ invoice-{{ record.data.Name | default: document.number }}-{{ document.number }}.
 ```
 
 :::reference
-- **Number pattern context:** May use `record`, `table`, `template`, `document`, `series`, `date`, `app`, and `business`. `series.id` is the public series ID and `series.value` is the allocated number. `document.id` is already available; `document.number` is the result being calculated and is not yet available.
-- **Filename pattern context:** May use the full rendered data tree, including `{{ document.number }}`. The final filename is cleaned for filesystem-safe PDF downloads.
-- **Validation:** Unknown top-level Liquid variables, invalid tags, unsupported filters, empty patterns, and oversized patterns fail when the template is saved.
+- **Number pattern context:** Can use `record`, `table`, `template`, `document`, `series`, `date`, `app`, and `business`. `series.id` is the public series ID, and `series.value` is the allocated number. `document.id` is already available. `document.number` is the result being calculated, so it is not available yet.
+- **Filename pattern context:** Can use the full rendered data tree, including `{{ document.number }}`. Grids cleans the final filename for safe PDF downloads.
+- **Validation:** Saving a template fails for unknown top-level Liquid variables, invalid tags, unsupported filters, empty patterns, and oversized patterns.
 :::
 
-## Liquid reference {icon="book-2"}
+## Use Liquid {icon="book-2"}
 
-Template parts use Liquid with Grids restrictions: strict variables, strict filters, escaped output, no layouts, no dynamic partials, and only the tags listed below. Unknown filters, invalid tags, and oversized output fail instead of creating a partial document.
+Template parts use Liquid with Grids restrictions: strict variables, strict filters, escaped output, no layouts, no dynamic partials, and only the tags listed below. Unknown filters, invalid tags, and oversized output fail and never create a partial document.
 
 :::reference
-- **Output:** Use `{{ value }}` to print a value. Output is HTML-escaped by default. Use `| raw` only when a trusted template intentionally prints HTML.
+- **Output:** Use `{{ value }}` to print a value. Output is HTML-escaped by default. Use `| raw` only when a trusted template prints HTML on purpose.
 - **Filters:** Pipe values through filters, for example `{{ row.Name | default: '-' }}`. Unknown filters fail.
 - **Conditions:** Use `{% if row.Status == 'Open' %}`, `elsif`, `else`, and `endif`.
 - **Loops:** Use `{% for row in rows %}` and `{% endfor %}`. Break and continue are allowed.
@@ -242,9 +259,9 @@ Allowed tags
 - `raw`
 - `endraw`
 
-## Barcodes and QR codes {icon="code"}
+## Add barcodes and QR codes {icon="code"}
 
-Use the `barcode_data_url` filter in an `<img>` tag. Barcode ids are lowercase symbols. The optional third argument controls human-readable text for barcode formats that support it.
+Use the `barcode_data_url` filter in an `<img>` tag. Barcode IDs are lowercase symbols. The optional third argument controls the readable text for barcode formats that support it.
 
 **Code 128 with text**
 
@@ -277,7 +294,7 @@ Use the `barcode_data_url` filter in an `<img>` tag. Barcode ids are lowercase s
 | `upca` | UPC-A | US retail product code. |
 | `upce` | UPC-E | Compressed UPC code. |
 | `itf14` | ITF-14 | Carton and package code. |
-| `gs1datamatrix` | GS1 Data Matrix | GS1 2D code with application IDs. |
+| `gs1datamatrix` | GS1 Data Matrix | GS1 2D code with GS1 AIs such as `(01)` for the GTIN. |
 | `sscc18` | SSCC-18 | Shipping container code. |
 | `isbn` | ISBN | Book identifier barcode. |
 | `issn` | ISSN | Serial publication barcode. |
@@ -377,7 +394,7 @@ Additional BWIP symbol ids
 - `upcacomposite`
 - `upcecomposite`
 
-## Liquid patterns {icon="point"}
+## Reuse Liquid patterns {icon="point"}
 
 **Loop over query rows**
 
@@ -436,54 +453,75 @@ Additional BWIP symbol ids
 <img alt="Record QR code" src='{{ document.number | default: table.name | barcode_data_url: "qrcode" }}'>
 ```
 
-## Preview, data, source {icon="layout-list"}
+## Check the preview, data, and source {icon="layout-list"}
 
 :::reference
-- **Preview:** Renders the current unsaved draft as a PDF. Use **Open preview** for full-screen inspection.
-- **Data:** Shows the exact Liquid paths for the selected preview record. Copy paths from here instead of guessing object shapes.
-- **Source:** Shows the GQL after Liquid variables have been substituted. Use it to debug current-record filters.
+- **Preview:** Renders the current unsaved draft as a PDF. Use **Open preview** for a full-screen check.
+- **Data:** Shows the exact Liquid paths for the selected preview record. Copy paths from here. Do not guess object shapes.
+- **Source:** Shows the GQL after Grids substituted the Liquid variables. Use it to debug filters for the current record.
 :::
 
 ## Work with generated documents {icon="file-description"}
 
-The document page lists every generated Document for a template. Use **Table** for a searchable list or **Folders** to browse by year and month. Searching switches to the table result so matching documents are not hidden inside folders.
+The document page of a template lists every document that the template generated. Use **Table** for a searchable list or **Folders** to browse by year and month. A search switches to the table result, so folders never hide matching documents.
 
-**All documents** lists every Document of the Base, whether a template, a workflow or both produced it, in any file format. It opens in **Folders**, grouped by document template or workflow and then year. Its search covers filenames, document numbers, and tags across the Base, regardless of the open folder. Both document pages include their first results when the page loads.
+**All documents** lists every document of the Base in any file format, whether a template, a workflow, or both produced it. It opens in **Folders**, grouped by document template or workflow and then by year. Its search covers filenames, document numbers, and tags of the whole Base, regardless of the open folder. Both document pages include their first results when the page loads.
 
-Filter **All documents** by **Workflow**, **Template**, **Record table** and **File type**, and combine the filters to narrow the list. **Record table** matches only Documents generated for one of that table's records, not the source rows of a workflow export or the files inside a ZIP. **Sort** switches between newest first (the default), oldest first and filename. A search, a filter or a different sort shows one list instead of folders. The address keeps all of them, so a reload or a shared link opens the same view.
+### Filter and sort all documents
 
-A Document from a workflow names its workflow; select the name to open the run that generated it. Details of a ZIP Document list its **Archive contents**: each packaged file, its size and the Document it came from. The archive is not linked to those Documents' records.
+Filter **All documents** by **Workflow**, **Template**, **Record table**, and **File type**. Combine the filters to narrow the list.
 
-Document details offer stored downloads, captured row count and timestamp. **Preview** shows CSV, JSON and XML up to 2 MiB; larger files remain downloadable. CSV stays original text; **Copy** copies the file. **Share links** creates public links for the stored primary file; **Technical details** shows IDs and hashes. Subdialogs return here. **More actions → Generate again** follows the template's issuance policy, never overwriting the original.
+- **Record table** matches only documents generated for a record of that table. It does not match the source rows of a workflow export or the files inside a ZIP.
+- **Sort** switches between newest first (the default), oldest first, and filename.
 
-Before generation you can add tags and, for an HTML template, override the filename. An E-Invoice renderer owns its artifact filenames. A completed Document's number, filename, tags, and artifacts are immutable.
+A search, a filter, or a different sort shows one list instead of folders. The address keeps all of them, so a reload or a shared link opens the same view.
 
-The main download preserves the stored file format. Share links serve that same
-primary file, whether it is a PDF, CSV, JSON or XML document, always as a download
-rather than a page shown in the browser.
-In a profile renderer's input, `document.filename` is `null`: the renderer has
-not produced its files yet. Read the completed Document's filename after generation.
+A document from a workflow names its workflow. Select the name to open the run that generated it. The details of a ZIP document list its **Archive contents**: each packaged file, its size, and the document that it came from. Grids does not link the archive to the records of those documents.
 
-Base Read allows browsing and redownloading generated documents. Base Write also allows generation. Base Admin manages templates. A Grids App reader may download only a Document for the current page record whose template is in that Record block's published capability. This App-scoped download does not grant the reader generic Base document access.
+### Inspect document details
 
-To share one generated document without a Cloud login, create a public link for 1, 7, 30, or 90 days. The link opens a minimal page with the document filename, its remaining validity, and a download button for the stored primary file in its original format. It never grants access to other documents or records. An optional comment explains the link's purpose to document editors. The creator or a document editor can revoke the link before it expires.
+Document details offer the stored downloads, the captured row count, and the timestamp.
 
-## Snapshots and stored Documents {icon="point"}
+- **Preview** shows CSV, JSON, and XML up to 2 MiB. Larger files stay downloadable. CSV stays original text.
+- **Copy** copies the file.
+- **Share links** creates public links for the stored primary file.
+- **Technical details** shows IDs and hashes.
+- **More actions → Generate again** follows the issuance policy of the template and never overwrites the original.
 
-Generating a PDF creates a recursive snapshot of the root record and related records reached through relation fields. A snapshot includes at most four relation levels and 500 records. Grids renders once and stores the exact completed PDF bytes together with their SHA-256, MIME type, size, renderer version, template revision, document number, and source snapshot. Downloads return those stored bytes even after live records, the template, or the renderer change.
+Subdialogs return to the details.
 
-**Generate again:** `repeatable` creates another Document; `oncePerFinalizedRecord` retrieves the original, even after template edits. Details show renderer, source, validation and hashes.
+Before generation, you can add tags. For an HTML template, you can also override the filename. An E-Invoice renderer owns its artifact filenames. A completed Document's number, filename, tags, and artifacts are immutable.
+
+The main download keeps the stored file format. Share links serve the same primary file, whether it is a PDF, CSV, JSON, or XML document. They always serve it as a download, never as a page in the browser. In the input of a profile renderer, `document.filename` is `null`, because the renderer has not produced its files yet. Read the filename of the completed document after generation.
+
+### Control access to documents
+
+- **View** access to the Base allows browsing and downloading generated documents again.
+- **Edit** access also allows generation.
+- **Manage** access is required to create and change templates.
+
+A person who uses a Grids App can download only a document for the current page record. Its template must be in the published capability of that Record block. This app-scoped download gives no general access to the documents of the Base.
+
+### Share a document with a public link
+
+To share one generated document without a Cloud sign-in, create a public link for 1, 7, 30, or 90 days. The link opens a minimal page with the filename of the document and its remaining validity. A button downloads the stored primary file in its original format. It never gives access to other documents or records. An optional comment explains the purpose of the link to people who edit documents. The creator, or a person who can edit documents, can revoke the link before it expires.
+
+## Rely on snapshots and stored documents {icon="point"}
+
+Generating a PDF creates a recursive snapshot of the root record and the related records reached through relation fields. A snapshot includes at most four relation levels and 500 records. Grids renders once and stores the exact completed PDF bytes with their SHA-256, MIME type, size, renderer version, template revision, document number, and source snapshot. Downloads return those stored bytes, even after the live records, the template, or the renderer change.
+
+**Generate again** depends on the issuance policy. `repeatable` creates another document. `oncePerFinalizedRecord` returns the original, also after template edits. Details show the renderer, the source, the validation, and the hashes.
 
 :::reference
-- **Document numbers:** Each Document receives a stable number. HTML templates use their configured number pattern; an E-Invoice renderer owns its numbering. Allocations are never reused; technical gaps are possible. Pattern changes affect future Documents only.
+- **Document numbers:** Each document receives a stable number. HTML templates use their configured number pattern. An E-Invoice renderer owns its numbering. Allocations are never reused, but technical gaps are possible. Pattern changes affect only future documents.
 - **Template edits:** Changing a template affects future generations. Existing stored artifacts never render again.
-- **Manual snapshots:** The record detail panel also has a Snapshot button for capturing a record state without generating a PDF.
-- **Deleted templates:** Deleting a template removes it from the active list and archives its template-owned number series. Restoring an HTML template reconnects that series and its high-water mark. Existing generated Documents remain in the immutable catalog.
+- **Manual snapshots:** The record detail panel also has a **Snapshot** button. It captures a record state without generating a PDF.
+- **Deleted templates:** Deleting a template removes it from the active list and archives its number series. Restoring an HTML template reconnects that series and its highest number. Existing generated documents stay in the immutable catalog.
 :::
 
-## Practical limits {icon="point"}
+## Know the practical limits {icon="point"}
 
-Grids rejects templates that exceed these bounds instead of silently truncating a query or document:
+Grids rejects templates that exceed these bounds. It never truncates a query or a document silently:
 
 | Input | Limit |
 | --- | ---: |
@@ -496,25 +534,33 @@ Grids rejects templates that exceed these bounds instead of silently truncating 
 | Record images exposed to Liquid | 12 images, up to 2 MB each |
 | Recursive snapshot | 4 relation levels and 500 records |
 
-These are safety ceilings, not layout targets. For a document with thousands of rows, test page breaks and rendering time with realistic data before enabling the template.
+These are safety ceilings, not layout targets. For a document with thousands of rows, test page breaks and rendering time with realistic data before you enable the template.
 
-## Common issues {icon="point"}
+## Fix common issues {icon="point"}
 
 :::reference
-- **Invalid GQL source:** Open the Source tab. It shows the GQL after Liquid variables were substituted.
-- **Missing Liquid variable:** Choose a preview record, open Data, then copy the exact path from the tree.
-- **Empty document rows:** Check the GQL source filter and confirm the selected preview record matches it.
-- **Invalid E-Invoice details:** The message names the affected party, bank or document fields. Correct and save their source records, then retry. If the values are already correct, check the template's Renderer input mapping. Preview does not allocate an official number.
-- **Barcode does not render:** Check the barcode type and input value. Empty input returns an empty data URL.
-- **Multipage layout breaks:** Move repeated content to header/footer, set @page margins, and preview with enough rows.
+- **Invalid GQL source:** Open the **Source** tab. It shows the GQL after Grids substituted the Liquid variables.
+- **Missing Liquid variable:** Choose a preview record, open **Data**, and copy the exact path from the tree.
+- **Empty document rows:** Check the filter of the GQL source and confirm that the selected preview record matches it.
+- **Invalid E-Invoice details:** The message names the affected party, bank, or document fields. Correct and save their source records, then try again. If the values are already correct, check the **Renderer input** mapping of the template. A preview does not allocate an official number.
+- **Barcode does not render:** Check the barcode type and the input value. An empty input returns an empty data URL.
+- **Multipage layout breaks:** Move repeated content to the header or footer, set @page margins, and preview with enough rows.
 :::
 
 :::note Use GQL for data, Liquid for layout
 Keep filtering, sorting, joins, and grouping in GQL. Keep Liquid focused on loops, conditions, text, tables, images, barcodes, headers, footers, and CSS.
 :::
 
-Agents use `document.content.read` for stored PDF, XML or CSV bytes. Choose an artifact key from `document.read`, or omit it for the primary file. Code mode reads the returned stream as a File, with a 50 MiB per-file limit. Downloading does not extract PDF text, issue or send a document. Current read permission is checked again at download.
+## Read stored files as an agent {icon="file-description"}
+
+Agents use `document.content.read` for stored PDF, XML, or CSV bytes. Choose an artifact key from `document.read`, or leave it out for the primary file. Code mode reads the returned stream as a File, with a limit of 50 MiB per file. Downloading does not extract PDF text and does not issue or send a document. When you download, Grids checks that you can still read the document.
 
 ## Download a folder {icon="download"}
 
-In the folder view, choose **Download folder as ZIP** next to a template, year or month. The archive contains each document's stored primary file, including subfolders. You can cancel while files are being collected. The limit is 1,000 documents and 100 MiB; use smaller subfolders for larger collections. A failed transfer saves no partial archive. Additional artifacts remain individual downloads. This reads the current folder contents and is not a frozen backup.
+In the folder view, choose **Download folder as ZIP** next to a template, a year, or a month. The archive contains the stored primary file of each document, including subfolders. You can cancel while Grids collects the files.
+
+- The limit is 1,000 documents and 100 MiB. Use smaller subfolders for larger collections.
+- A failed transfer saves no partial archive.
+- Additional artifacts stay individual downloads.
+
+This reads the current folder contents. It is not a frozen backup.

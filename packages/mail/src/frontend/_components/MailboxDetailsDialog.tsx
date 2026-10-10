@@ -15,6 +15,7 @@ import { createMemo, For, Show } from "solid-js";
 import type { Mailbox, MailboxHealth, SenderIdentity } from "../../contracts";
 import type { MailboxDetails } from "../../service/mailbox-details";
 import { mailMailboxDetailsMessages } from "./mail-mailbox-details-messages";
+import { mailboxAccessLevels } from "./mailbox-access-levels";
 
 export type MailboxDetailsDialogProps = {
   mailbox: Pick<Mailbox, "name" | "description" | "health" | "healthReason">;
@@ -153,6 +154,7 @@ export function MailboxDetailsDialog(props: MailboxDetailsDialogProps & { close:
         >
           <PermissionEditor
             initialEntries={props.details.access}
+            allowedLevels={mailboxAccessLevels(locale())}
             canEdit={false}
             grantAccess={readOnly}
             updateAccess={readOnly}

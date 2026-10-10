@@ -364,6 +364,81 @@ describe("PermissionEditor last manager", () => {
   });
 });
 
+describe("PermissionEditor scoped levels", () => {
+  if (isServer) {
+    test.skip("runs with browser export conditions", () => {});
+    return;
+  }
+
+  test("offers a level on part of the resource next to the whole-resource levels and reports the scope", async () => {
+    const dom = createDomTestHarness();
+    installPopoverApi(dom);
+    const { default: PermissionEditor } = await import("./PermissionEditor");
+    delegateEvents(["click"]);
+    const updates: { accessId: string; permission: string; scope?: string }[] = [];
+    const dispose = render(
+      () => (
+        <PermissionEditor
+          initialEntries={[
+            grant("qdt", { type: "user", userId: "user-qdt" }, "admin", "Quentin Dorn"),
+            { ...grant("lym", { type: "user", userId: "user-lym" }, "read", "Lya Meyer"), scope: "assigned" },
+            grant("ana", { type: "user", userId: "user-ana" }, "read", "Ana Roth"),
+          ]}
+          allowedLevels={[
+            "read",
+            "write",
+            "admin",
+            { level: "read", scope: "assigned", label: "Assigned: view", icon: "ti-user-check", description: "Only what is assigned" },
+            { level: "write", scope: "assigned", label: "Assigned: edit", icon: "ti-user-edit" },
+          ]}
+          grantAccess={async () => {
+            throw new Error("Not used by this test.");
+          }}
+          updateAccess={async (accessId, permission, scope) => {
+            updates.push({ accessId, permission, ...(scope ? { scope } : {}) });
+          }}
+          revokeAccess={async () => {}}
+        />
+      ),
+      dom.root,
+    );
+    const rowOf = (name: string) =>
+      Array.from(dom.root.querySelectorAll<HTMLElement>(".group\\/access-row")).find((row) => row.textContent?.includes(name))!;
+    const levelsOf = (name: string) => Array.from(rowOf(name).querySelectorAll<HTMLButtonElement>("[role=menuitemradio]"));
+    const chosen = (name: string) => levelsOf(name).find((item) => item.getAttribute("aria-checked") === "true")?.textContent ?? "";
+    try {
+      // The same level reads as its scoped option only on the scoped grant.
+      expect(chosen("Lya Meyer")).toStartWith("Assigned: view");
+      expect(chosen("Ana Roth")).toStartWith("View");
+      expect(levelsOf("Ana Roth").find((item) => item.textContent?.startsWith("Assigned: view"))?.textContent).toContain(
+        "Only what is assigned",
+      );
+      // A grant on part of the resource never manages it: the only whole-resource manager stays locked to Manage.
+      expect(
+        levelsOf("Quentin Dorn")
+          .filter((item) => !item.disabled)
+          .map((item) => item.textContent?.slice(0, 6)),
+      ).toEqual(["Manage"]);
+
+      levelsOf("Ana Roth")
+        .find((item) => item.textContent?.startsWith("Assigned: edit"))!
+        .click();
+      await waitFor(() => chosen("Ana Roth").startsWith("Assigned: edit"), "the scoped level");
+      levelsOf("Lya Meyer")
+        .find((item) => item.textContent?.startsWith("View"))!
+        .click();
+      await waitFor(() => chosen("Lya Meyer").startsWith("View"), "the whole-resource level");
+      expect(updates).toEqual([
+        { accessId: "ana", permission: "write", scope: "assigned" },
+        { accessId: "lym", permission: "read" },
+      ]);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+});
+
 const directoryUser = (index: number) => ({
   id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
   uid: `member${index}`,

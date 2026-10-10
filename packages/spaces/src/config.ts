@@ -1,4 +1,5 @@
 import { defineApp } from "@k2b/cloud";
+import { SKILLS } from "./skills";
 
 export const app = defineApp({
   id: "spaces",
@@ -15,6 +16,7 @@ export const app = defineApp({
   appearance: { accent: "#4d7c0f", background: { from: "#65a30d", to: "#84cc16", angle: 135 } },
   basePath: "/app/spaces",
   baseUrl: "http://app-spaces:3000",
+  skills: SKILLS,
   adminHref: "/admin/spaces",
   nav: {
     href: "/app/spaces?recent=true",

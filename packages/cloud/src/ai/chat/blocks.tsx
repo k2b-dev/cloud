@@ -2,12 +2,15 @@ import { dates } from "@k2b/stdlib";
 import { mutation } from "@k2b/stdlib/solid";
 import { Button, ButtonLink, Chat, isStructuredDataValue, MarkdownView, SplitButton, StructuredDataPreview, useLocale } from "@k2b/ui";
 import { createSignal, createUniqueId, For, type JSX, Match, Show, Switch, untrack } from "solid-js";
+import { capabilityApprovalReason, capabilityApprovalReasonLabel } from "../../_internal/capability-sentences";
 import type { CapabilityActionReview } from "../../contracts/capabilities";
 import { markdown } from "../../shared";
 import type { AiTurnBlock } from "../protocol";
+import { toolOutcome, toolSubject } from "./action-sentences";
 import { hasSpecializedBuiltinToolView, SpecializedBuiltinToolBlock } from "./builtin-tools";
 import { hasCapabilityTable } from "./capability-result";
 import { CapabilityTablePreview } from "./capability-table";
+import { CloudChartBlock } from "./chart-block";
 import { PresentToolBlock } from "./file-tools";
 import { useAiChatActions } from "./message-actions";
 import {
@@ -18,6 +21,7 @@ import {
   fetchFileErrorPresentation,
   formatToolDetailText,
   isCardToolName,
+  isChartToolName,
   isRecord,
   isSurveyToolName,
   isTextEditorToolName,
@@ -216,11 +220,17 @@ export function ApprovalBlockView(props: { turnId: string; block: ToolBlock; onD
     decision = { callId: props.block.callId, approved: input.approved };
     void approval.mutate(input);
   };
-  const title = () => props.block.presentation?.title ?? displayToolName(props.block.name, locale());
+  // The heading says what will happen in the owning app's words; the app or the assistant name stays beside it.
+  const title = () => toolSubject(props.block, locale()) ?? props.block.presentation?.title ?? displayToolName(props.block.name, locale());
   const ownerName = () => props.block.presentation?.appName ?? t().assistant;
+  const capability = () => props.block.presentation?.kind === "capability";
+  // The model's own reason, labelled as such, only where Cloud offered it; it adds to the app's sentence and never replaces it.
+  const reason = () => (props.block.presentation?.approvalReason ? capabilityApprovalReason(props.block.args) : null);
   const description = () => {
     const reviewMessage = props.block.approval?.review?.message.trim();
     if (reviewMessage) return reviewMessage;
+    // An app Action's approval text repeats its heading and reason for text-only readers; the card shows them itself.
+    if (capability()) return null;
     const message = props.block.approval?.message?.trim();
     if (!message) return null;
     const duplicateTitle = props.block.presentation ? `${props.block.presentation.appName}: ${props.block.presentation.title}` : "";
@@ -259,10 +269,10 @@ export function ApprovalBlockView(props: { turnId: string; block: ToolBlock; onD
       <div class="ai-approval__head">
         <i class={`ai-approval__icon ${aiToolIcon(props.block.name, props.block.presentation?.appIcon)}`} aria-hidden="true" />
         <div class="min-w-0">
-          <h3 class="ai-approval__title">
-            {ownerName()} · {title()}
-          </h3>
-          <p class="ai-approval__sub">{t().approvalRunsAfter}</p>
+          <h3 class="ai-approval__title">{title()}</h3>
+          <p class="ai-approval__sub">
+            {ownerName()} · {t().approvalRunsAfter}
+          </p>
         </div>
       </div>
       <Show when={reviewLines().length > 0}>
@@ -317,6 +327,14 @@ export function ApprovalBlockView(props: { turnId: string; block: ToolBlock; onD
             </section>
           )}
         </For>
+      </Show>
+      <Show when={reason()}>
+        {(text) => (
+          <p class="ai-approval__text whitespace-pre-wrap">
+            <strong class="ai-approval__label">{capabilityApprovalReasonLabel(locale())}: </strong>
+            {text()}
+          </p>
+        )}
       </Show>
       <Show when={detailsOpen()}>
         <div id={detailsId} class="w-full min-w-0" role="region" aria-label={t().detailsFor({ title: title() })}>
@@ -518,11 +536,11 @@ function CapabilityToolView(props: { block: ToolBlock }) {
 function RejectedToolView(props: { block: ToolBlock }) {
   const locale = useLocale();
   const presentation = () => props.block.presentation;
-  const title = () => presentation()?.title ?? displayToolName(props.block.name, locale());
+  const title = () => toolSubject(props.block, locale()) ?? presentation()?.title ?? displayToolName(props.block.name, locale());
   return (
     <Chat.Activity
       icon={aiToolIcon(props.block.name, presentation()?.appIcon)}
-      label={aiChatMessages(locale()).toolRejected({ title: title() })}
+      label={toolOutcome(props.block, "rejected", locale()) ?? aiChatMessages(locale()).toolRejected({ title: title() })}
       accent={presentation()?.appAccent}
     />
   );
@@ -694,6 +712,9 @@ function ToolBlockView(props: { turnId: string; block: ToolBlock; active?: boole
         <Match when={isCardToolName(props.block.name) && !props.block.isError}>
           <CloudCardBlock args={props.block.args} />
         </Match>
+        <Match when={isChartToolName(props.block.name) && !props.block.isError}>
+          <CloudChartBlock args={props.block.args} completed={status() === "completed"} />
+        </Match>
         <Match when={isSurveyToolName(props.block.name) && !props.block.isError}>
           <SurveyToolView turnId={props.turnId} block={props.block} active={props.active} />
         </Match>
@@ -791,7 +812,22 @@ export function CompactToolRow(props: { block: ToolBlock; busy?: boolean }) {
   const locale = useLocale();
   const t = () => aiChatMessages(locale());
   const args = () => (isRecord(props.block.args) ? props.block.args : {});
-  const detail = () => [args().path, args().name, args().query, args().title].find((value) => typeof value === "string");
+  /**
+   * A call that acts on something reads as its sentence, which already names what it acts on: what it will do while
+   * it runs or waits, what it did once done, and what did not happen when it was rejected.
+   */
+  const sentence = () => {
+    const status = props.block.status;
+    const outcome =
+      status === "completed" && !props.block.isError
+        ? toolOutcome(props.block, "done", locale())
+        : status === "rejected"
+          ? toolOutcome(props.block, "rejected", locale())
+          : null;
+    return outcome ?? toolSubject(props.block, locale());
+  };
+  const detail = () =>
+    sentence() ? undefined : [args().path, args().name, args().query, args().title].find((value) => typeof value === "string");
   const waiting = () => props.block.status === "awaiting_client" || props.block.status === "awaiting_approval";
   const state = () =>
     waiting() ? t().stepWaiting : props.block.status === "rejected" ? t().stepRejected : isFailedTool(props.block) ? t().stepFailed : "";
@@ -819,7 +855,7 @@ export function CompactToolRow(props: { block: ToolBlock; busy?: boolean }) {
   return (
     <AiToolActivity
       blockId={props.block.id}
-      label={props.block.presentation?.title ?? displayToolName(props.block.name, locale())}
+      label={sentence() ?? props.block.presentation?.title ?? displayToolName(props.block.name, locale())}
       description={[
         props.block.status === "running" ? (props.block.progress ?? "") : "",
         typeof detail() === "string" ? String(detail()) : "",

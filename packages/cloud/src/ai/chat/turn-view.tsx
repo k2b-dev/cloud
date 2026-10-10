@@ -17,6 +17,7 @@ import {
 import { markdown } from "../../shared";
 import { AI_TURN_LEASE_MS, type AiTurnBlock } from "../protocol";
 import type { AiTurnError } from "../types";
+import { toolOutcome, toolSubject } from "./action-sentences";
 import {
   type AiApprovalDecision,
   ApprovalBlockView,
@@ -26,9 +27,18 @@ import {
   TextEditorToolView,
 } from "./blocks";
 import { CapabilityTablePreview } from "./capability-table";
+import { CloudChartBlock } from "./chart-block";
 import { PresentToolBlock } from "./file-tools";
 import { useAiChatActions } from "./message-actions";
-import { aiToolIcon, capabilityErrorDescription, displayToolName, isCardToolName, isRecord, isSurveyToolName } from "./message-utils";
+import {
+  aiToolIcon,
+  capabilityErrorDescription,
+  displayToolName,
+  isCardToolName,
+  isChartToolName,
+  isRecord,
+  isSurveyToolName,
+} from "./message-utils";
 import { aiChatMessages } from "./messages";
 import { AssistantMarkdownBlock } from "./primitives";
 import { AiToolActivity, AiToolDisclosureProvider, type AiToolDisclosureState } from "./tool-disclosure";
@@ -133,6 +143,7 @@ const stepPhrase = (block: AiTurnBlock | null, t: Messages, withTargets: boolean
   if (name === "present") return withTarget(t.stepDeliveringFile);
   if (name === "code_present") return withTarget(t.stepPreparingView);
   if (isCardToolName(name)) return t.stepPreparingCard;
+  if (isChartToolName(name)) return t.stepPreparingChart;
   if (["code_write", "code_create", "code_update", "code_fork", "code_remove", "code_restore"].includes(name))
     return withTarget(t.stepWritingCode);
   if (["code_run", "code_action", "code_sql"].includes(name)) return withTarget(t.stepRunningCode);
@@ -436,6 +447,9 @@ function AiTurnResultView(props: { result: Accessor<AiTurnResult | undefined>; r
           <Match when={isCardToolName(current().name)}>
             <CloudCardBlock args={current().args} />
           </Match>
+          <Match when={isChartToolName(current().name)}>
+            <CloudChartBlock args={current().args} completed={current().status === "completed"} />
+          </Match>
           <Match when={true}>
             <Show when={!props.receipt()}>
               <CapabilityResultRow block={current()} />
@@ -455,33 +469,37 @@ type ReceiptState = Exclude<AiTurnActionState, "open" | "interaction">;
 
 /**
  * One line for an action in place 4, the same element while it runs and once it is done, rejected, failed, or not run.
- * It names the action in the reader's language with what it acted on, such as "Rejected: Run code · report.ts", or the
- * application's own summary of what it did.
+ * It says what happened in the owning app's words: its sentence for the outcome, such as "Moved report.pdf to the
+ * trash", else, once done, the application's own summary of the call. Without either it puts the state in the reader's
+ * language before what the call does, such as "Rejected: Write report.md", or before its title and target.
  */
 function AiReceipt(props: { block: ToolBlock; state: ReceiptState; stopped: boolean }) {
   const locale = useLocale();
   const t = () => aiChatMessages(locale());
   const block = () => props.block;
   const subject = () => {
+    const sentence = toolSubject(block(), locale());
+    if (sentence) return sentence;
     const title = block().presentation?.title ?? displayToolName(block().name, locale());
     const target = toolTarget(block());
     return target ? `${title} · ${target}` : title;
   };
+  const capabilityAction = () => block().presentation?.kind === "capability";
   const links = () => (props.state === "done" ? resultLinks(block()) : []);
   const label = () => {
     const state = props.state;
     if (state === "running") return t().receiptRunning({ title: subject() });
     if (state === "done") {
-      const summary = resultSummary(block());
-      if (summary) return summary;
       // A tool that is not a Cloud action has no effect of its own to report; the receipt records the decision.
-      return block().presentation?.kind === "capability"
-        ? t().receiptDone({ title: subject() })
-        : t().receiptApproved({ title: subject() });
+      if (!capabilityAction()) return t().receiptApproved({ title: subject() });
+      return toolOutcome(block(), "done", locale()) || resultSummary(block()) || t().receiptDone({ title: subject() });
     }
-    if (state === "rejected") return t().receiptRejected({ title: subject() });
+    if (state === "rejected") return toolOutcome(block(), "rejected", locale()) ?? t().receiptRejected({ title: subject() });
     if (state === "failed") return t().receiptFailed({ title: subject() });
-    return t().receiptNotRun({ title: subject(), stopped: props.stopped });
+    const notRun = toolOutcome(block(), "notRun", locale());
+    return notRun
+      ? t().receiptNotRunSentence({ sentence: notRun, stopped: props.stopped })
+      : t().receiptNotRun({ title: subject(), stopped: props.stopped });
   };
   const declined = () => props.state === "rejected" || props.state === "not_run";
   return (
@@ -529,7 +547,7 @@ function AiTurnActionView(props: { action: Accessor<AiTurnAction | undefined>; t
       if (next !== "open" || previous === "open" || !isLive(props.phase) || current?.block.status !== "awaiting_approval") return;
       announce(
         aiChatMessages(locale()).approvalNeeded({
-          title: current.block.presentation?.title ?? displayToolName(current.block.name, locale()),
+          title: toolSubject(current.block, locale()) ?? current.block.presentation?.title ?? displayToolName(current.block.name, locale()),
         }),
       );
     }),

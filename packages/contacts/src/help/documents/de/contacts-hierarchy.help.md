@@ -2,27 +2,27 @@
 id: contacts-hierarchy
 title: Hierarchie
 icon: ti ti-hierarchy
-description: Übergeordnete Kontakte, Mitglieder, Baumansicht und Regeln für Hierarchien.
+description: Einen Kontakt einem übergeordneten Kontakt zuordnen, Mitglieder hinzufügen, die Hierarchie öffnen und ihre Regeln beachten.
 order: 110
 ---
 
 Die Kontakthierarchie verknüpft Kontakte im selben Kontaktbuch, wenn ein Kontakt einem anderen zugeordnet ist.
 
-## So funktioniert die Hierarchie {icon="route"}
+## Kontakte verknüpfen {icon="route"}
 
 :::reference
-- **Gehört zu:** Der Kontakteditor enthält ein optionales Feld für den übergeordneten Kontakt. Ist es gesetzt, erscheint der Kontakt als Mitglied dieses Kontakts.
-- **Mitglieder:** Ein übergeordneter Kontakt zeigt seine direkten Mitglieder im Detailbereich. Dort kannst du ein Mitglied hinzufügen, wenn du das Kontaktbuch bearbeiten darfst.
-- **Hierarchie:** Diese Ansicht lädt den obersten übergeordneten Kontakt und alle untergeordneten Kontakte des ausgewählten Kontakts, unabhängig von der aktuellen Ergebnisseite.
-- **Gleiches Kontaktbuch:** Übergeordnete Kontakte und Mitglieder müssen im selben Kontaktbuch liegen. Beim Verschieben eines Kontakts werden Verknüpfungen entfernt, die Grenzen von Kontaktbüchern überschreiten würden.
+- **Gehört zu:** Ein optionales Feld im Kontakteditor für den übergeordneten Kontakt. Ist es gesetzt, wird der Kontakt ein Mitglied dieses Kontakts.
+- **Mitglieder:** Ein übergeordneter Kontakt zeigt seine direkten Mitglieder im Detailbereich. Mit Zugriff **Bearbeiten** oder **Verwalten** auf das Kontaktbuch fügst du dort ein Mitglied hinzu.
+- **Hierarchie:** Lädt den obersten übergeordneten Kontakt und alle untergeordneten Kontakte des ausgewählten Kontakts, unabhängig von der aktuellen Ergebnisseite.
+- **Gleiches Kontaktbuch:** Übergeordnete Kontakte und ihre Mitglieder müssen im selben Kontaktbuch liegen. Verschiebst du einen Kontakt in ein anderes Kontaktbuch, entfallen die Verknüpfungen, die über Kontaktbuchgrenzen hinweg reichen würden.
 :::
 
-## Diese Regeln gelten {icon="book-2"}
+## Die Regeln beachten {icon="book-2"}
 
 :::reference
-- **Keine Zyklen:** Ein Kontakt kann nicht sein eigener übergeordneter Kontakt sein. Kreisförmige Zuordnungen sind ebenfalls nicht möglich.
+- **Keine Zyklen:** Ein Kontakt kann nicht sein eigener übergeordneter Kontakt sein. Der Server lehnt auch kreisförmige Zuordnungen ab.
 - **Nur die Verknüpfung:** Das Entfernen eines Mitglieds löst nur die Verknüpfung zum übergeordneten Kontakt. Der Kontakt selbst bleibt im Kontaktbuch.
-- **Grenzen bei Lesezugriff:** Mit Lesezugriff kannst du Kontakte ansehen. Zuordnungen lassen sich nur in Kontaktbüchern ändern, die du bearbeiten darfst.
+- **Zugriff Ansehen:** Mit Zugriff **Ansehen** kannst du Kontakte sehen. Um Zuordnungen zu ändern, brauchst du Zugriff **Bearbeiten** oder **Verwalten** auf das Kontaktbuch.
 :::
 
 :::success Hierarchie sparsam einsetzen

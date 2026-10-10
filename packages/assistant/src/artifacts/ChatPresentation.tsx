@@ -225,9 +225,7 @@ export function ChatPresentation(props: {
                   description={error() || undefined}
                   action={
                     <Button loading={loading()} onClick={() => void start()}>
-                      <Show when={!loading()}>
-                        <i class="ti ti-player-play" aria-hidden="true" />
-                      </Show>
+                      <i class="ti ti-player-play" aria-hidden="true" />
                       {t().start}
                     </Button>
                   }

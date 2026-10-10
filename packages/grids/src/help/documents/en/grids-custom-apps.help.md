@@ -2,36 +2,53 @@
 id: grids-custom-apps
 title: Grids Apps
 icon: ti ti-app-window
-description: Choose a guide for building, publishing, or using a focused Grids App.
+description: Choose a guide to build, publish, or use a focused Grids App.
 order: 137
 ---
-Grids Apps give authenticated or public audiences a focused app at `/apps/<id>` without exposing the full Grids workspace. Each app belongs to one Base and composes existing records, Views, Forms, documents, and Workflow actions.
+A Grids App gives signed-in or public audiences a focused app at `/apps/<id>`. It does not open the full Grids workspace. Each app belongs to one Base and combines existing records, views, forms, documents, and workflow actions.
 
-Apps do not copy data. Publishing freezes the definition and the exact resources it may use. Each request checks the current App grant and published capability. App readers do not need Base access; an App grant never permits arbitrary GQL or raw Base access.
+Apps do not copy data. Publishing freezes the definition and the exact resources that the app can use. Each request checks the current access to the app and the published capability. People who use an app do not need access to the Base. Access to an app never allows arbitrary GQL or raw access to the Base.
 
 ## Choose your next step {icon="arrow-right"}
 
-- [Build a Grids App](/app/grids/help/grids-build-custom-app): create a list, submission flow, and record detail page with the visual builder.
-- [Pages & blocks](/app/grids/help/grids-custom-app-pages-blocks): choose blocks, wire record parameters, configure editable fields, documents, and actions.
-- [YAML & CLI](/app/grids/help/grids-custom-app-yaml-cli): follow the complete definition example and validate, plan, apply, and export it.
-- [Publish a Grids App](/app/grids/help/grids-publish-custom-app): review access, publish a draft, restore the live version, or unpublish.
+- [Build a Grids App](/app/grids/help/grids-build-custom-app): Create a list, a submission flow, and a record detail page in the visual builder.
+- [Pages & blocks](/app/grids/help/grids-custom-app-pages-blocks): Choose blocks, connect record parameters, and configure editable fields, documents, and actions.
+- [YAML & CLI](/app/grids/help/grids-custom-app-yaml-cli): Follow the complete definition example. Validate, plan, apply, and export it.
+- [Publish a Grids App](/app/grids/help/grids-publish-custom-app): Review access, publish a draft, restore the live version, or unpublish.
 
-You need Base **Admin** access to build and publish. Readers use only what the publication exposes. Public grants include anonymous visitors, but Workflow actions require a signed-in account.
+You need **Manage** access to the Base to build and publish an app. People who use the app see only what the publication exposes. Public access includes anonymous visitors, but workflow actions require a signed-in account.
 
-## Use an App from the terminal {icon="terminal-2"}
+## Use an app from the terminal {icon="terminal-2"}
 
-Run `cld grids apps runtime read <app-id> --json` with the ID from the App URL. It returns visible pages, block IDs, data, Form fields, and available actions. You do not need Base access. Open a detail page with `--page <page-id> --params '{"request_id":"REC001"}'`, using the parameter name and Record ID from the returned navigation.
+Run `cld grids apps runtime read <app-id> --json` with the ID from the app URL. The result lists the visible pages, block IDs, data, form fields, and available actions. You do not need access to the Base. To open a detail page, add `--page <page-id> --params '{"request_id":"REC001"}'`. Use the parameter name and the record ID from the returned navigation.
 
-The `apps runtime` commands read paged records, submit page or sidebar Forms, update published editable fields, manage comments and attachments, download stored PDFs, invoke actions or scanners, and read their run status. Use `--help` for a command's inputs. Page-scoped commands require the same parameters as discovery.
+The `apps runtime` commands can:
 
-Submissions, updates, scans, and actions require `--yes`. Retry Form submissions with the exact body and its explicit `idempotencyKey`; unkeyed creates can duplicate. Reuse an action's operation ID only for that same operation. **Queued** means accepted, not finished: inspect the run before retrying.
+- read paged records;
+- submit page or sidebar forms;
+- update published editable fields;
+- list, create, update, and delete comments;
+- list, upload, replace, download, and delete attachments;
+- download stored PDFs;
+- run actions or scanners and read their run status.
 
-These commands use the same published App permissions as the browser. They cannot bypass unavailable blocks. Missing, deleted, invalid, unavailable, or unauthorized detail records return **Not Found**.
+Run a command with `--help` to see its inputs. Page commands require the same parameters as the discovery command.
 
-## Keep draft and publication separate {icon="versions"}
+:::warning Retry without duplicates
+Submissions, updates, scans, and actions require `--yes`. Retry a form submission only with the exact same body and its explicit `idempotencyKey`. A create without a key can run twice. Reuse the operation ID of an action only to retry that same operation. **Queued** means accepted, not finished: inspect the run before you retry.
+:::
 
-The builder automatically saves complete edits to the draft. Editing does not change the live App. **Publish changes** validates and publishes the saved draft; fix its diagnostics before retrying. The builder also offers **Publish changes** when a change to a Form, View, field, template, or workflow used by the live App needs a new publication; if the draft has no other changes, the notice reads **Used resources changed**.
+These commands use the same published app access as the browser. They cannot bypass unavailable blocks. A detail record that is missing, deleted, invalid, unavailable, or not allowed returns a not-found error.
 
-**Restore live version** discards pending draft changes. Under **App settings → Lifecycle**, unpublishing removes the live snapshot but keeps the draft and grants; deleting an App removes its route without deleting Base data. Both actions require confirmation.
+## Keep the draft and the publication separate {icon="versions"}
 
-Only the active page and its optional record are loaded. Hidden detail pages are not prefetched.
+The builder saves complete edits to the draft automatically. Editing does not change the live app. **Publish changes** validates and publishes the saved draft. If it reports diagnostics, fix them before you try again.
+
+The builder also offers **Publish changes** when the live app uses a form, view, field, template, or workflow that changed and needs a new publication. If the draft has no other changes, the notice reads **Used resources changed**.
+
+**Restore live version** discards pending draft changes. In **App settings → Lifecycle**, you can unpublish or delete the app. Both actions require a confirmation:
+
+- Unpublishing removes the live snapshot but keeps the draft and the access entries.
+- Deleting an app removes its route. It does not delete Base data.
+
+An app loads only the active page and its optional record. It does not load hidden detail pages in advance.

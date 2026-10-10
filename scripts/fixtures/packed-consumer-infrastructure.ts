@@ -71,6 +71,8 @@ export const checkPackedRuntime = async (root: string, consumer: string, cleanEn
       ],
       env,
     );
+    // An app must start during a rollout before Core has created the optional AI catalog schema.
+    await docker("exec", names[0], "psql", "-U", "postgres", "-d", "consumer", "-c", "DROP SCHEMA ai CASCADE");
     console.log("Verify packed production app registration, HTTP and graceful shutdown");
     await command([process.execPath, "--no-env-file", "src/runtime-check.ts"], env, consumer);
   } finally {

@@ -631,7 +631,7 @@ test.each([0, 1, 2])(
 test("finance exports and resource-scoped one-offs use the existing worker and management routes", async () => {
   const id = "aBc234";
   const bundle = await cliHostBundle();
-  const document = await Bun.file(new URL("../../skills/code-mode/references/finance.md", import.meta.url)).text();
+  const document = await Bun.file(new URL("../skills/assistant-code-mode/references/finance.md", import.meta.url)).text();
   const example = document.match(/```js\n([\s\S]*?)```/)![1]!;
   const code = example.replace(
     "return { bookings:",

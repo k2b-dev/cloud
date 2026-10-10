@@ -1,3 +1,4 @@
+import { type AppSkillDefinition, appSkillManifestHash, registerAppSkills, validateAppSkillCatalog } from "../ai/app-skills";
 import { startLiveOutbox } from "../events/live";
 import { registerHelp } from "../services/help";
 import { preloadLayoutHelp } from "../ssr/help";
@@ -167,6 +168,8 @@ export type AppOptions<S extends AppSettingsMap = {}, N extends NotificationDefi
   settings?: S;
   /** Notification kinds owned by this app, conventionally imported from `src/notifications.ts`. */
   notifications?: N;
+  /** Assistant skills owned by this app, conventionally imported from `src/skills.ts`. */
+  skills?: readonly AppSkillDefinition[];
   /**
    * Legal/info links contributed by this app — aggregated app-wide via
    * `listLegalLinks()` and rendered in login footer, app Footer, rail more
@@ -375,6 +378,8 @@ export const defineApp = <
 >(
   opts: AppOptions<S, N, AppId>,
 ): AppDefinition<S, N, AppId> => {
+  const appSkills = opts.skills ? validateAppSkillCatalog(opts.skills) : undefined;
+  const skillsManifestHash = appSkills ? appSkillManifestHash(appSkills) : undefined;
   configurePostgresApplicationName(opts.id);
   const isDevelopment = env.IS_DEVELOPMENT;
   const notifications = bindNotificationDefinitions(opts.id, opts.notifications);
@@ -603,6 +608,7 @@ export const defineApp = <
             }
           : undefined,
         help: compiledHelp?.summary,
+        skills: skillsManifestHash ? { manifestHash: skillsManifestHash } : undefined,
         legalLinks: meta.legalLinks ? meta.legalLinks.map((l) => ({ ...l })) : undefined,
         searchLinks: meta.searchLinks,
         pwa: meta.pwa
@@ -618,7 +624,10 @@ export const defineApp = <
       // Heartbeat
       const heartbeat = createHeartbeat(meta.id, entry, {
         registry: appRegistry(),
-        beforeWrite: compiledHelp ? () => registerHelp(compiledHelp.corpus) : undefined,
+        beforeWrite: async () => {
+          if (compiledHelp) await registerHelp(compiledHelp.corpus);
+          if (appSkills && skillsManifestHash) await registerAppSkills(meta.id, appSkills, skillsManifestHash);
+        },
         onError: (error) =>
           log.error("Registry heartbeat failed", {
             appId: meta.id,

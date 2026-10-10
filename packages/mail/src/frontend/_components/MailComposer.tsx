@@ -1,5 +1,6 @@
 import { consumeCommandLink, registerCommandHandler, registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { chooseFiles } from "@k2b/cloud/browser/files";
+import { importOnDemand } from "@k2b/cloud/browser/reload";
 import { navigateTo } from "@k2b/ssr/nav";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations, query, timed } from "@k2b/stdlib/solid";
@@ -51,7 +52,6 @@ import { mailDraftCollaborationCopy, openMailDraftCollaborationDialog } from "./
 import MailRecipientInput from "./MailRecipientInput";
 import { chooseScheduledSendTime } from "./MailScheduleDialog";
 import { readMailUserPreferences, writeMailComposerPanes } from "./MailSettingsStore";
-import { launchMailDraftAssistant } from "./mail-assistant-launch";
 import { mailConversationHref, mailDraftHref, mailDraftSeedHref } from "./mail-compose-route";
 import { createMailComposerAttachmentManager, type UnfinishedDraftUpload } from "./mail-composer-attachment-manager";
 import { focusMailComposerEditorAtStart } from "./mail-composer-editor-focus";
@@ -234,7 +234,10 @@ export default function MailComposer(props: {
     mutation: async () => {
       const currentDraft = await persist();
       if (!currentDraft) throw new Error(statusMessage() || t().draftCouldNotBeSaved);
-      const launch = await launchMailDraftAssistant({
+      // The Assistant handoff and its skill parser load only when someone uses it.
+      const assistant = await importOnDemand(() => import("./mail-assistant-launch"));
+      if (!assistant) return;
+      const launch = await assistant.launchMailDraftAssistant({
         contactResolve: contactDirectory.resolve,
         mailboxId: props.mailboxId,
         returnHref: props.returnHref,

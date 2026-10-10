@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.7-labs
+# syntax=ghcr.io/k2b-dev/mirror/docker/dockerfile:1.7-labs@sha256:b99fecfe00268a8b556fad7d9c37ee25d716ae08a5d7320e6d51c4dd83246894
 # Per-app production image.
 #
 #   docker build --build-arg APP_ID=<id> \
@@ -12,7 +12,7 @@
 # ──────────────────────────────────────────────────────────────────────
 # Stage 1: deps — production install (cache-shared, ships to runtime builds).
 # ──────────────────────────────────────────────────────────────────────
-FROM oven/bun:1.4.2-alpine@sha256:d888c0ae6c86d7866ff10c5aafdd9077b36aee6455b33dd270fb93c0dd5cef6f AS deps
+FROM ghcr.io/k2b-dev/mirror/oven/bun:1.4.2-alpine@sha256:d888c0ae6c86d7866ff10c5aafdd9077b36aee6455b33dd270fb93c0dd5cef6f AS deps
 WORKDIR /app
 
 COPY package.json bun.lock bunfig.toml ./
@@ -61,7 +61,7 @@ RUN bun run packages/cloud/scripts/build.ts
 # ──────────────────────────────────────────────────────────────────────
 # Stage 4: runtime — only the bundled output + bun runtime.
 # ──────────────────────────────────────────────────────────────────────
-FROM oven/bun:1.4.2-alpine@sha256:d888c0ae6c86d7866ff10c5aafdd9077b36aee6455b33dd270fb93c0dd5cef6f AS runtime
+FROM ghcr.io/k2b-dev/mirror/oven/bun:1.4.2-alpine@sha256:d888c0ae6c86d7866ff10c5aafdd9077b36aee6455b33dd270fb93c0dd5cef6f AS runtime
 WORKDIR /app
 ARG APP_ID
 ARG CLOUD_VERSION=0.0.0-local

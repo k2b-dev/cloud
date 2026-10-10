@@ -1,6 +1,6 @@
 import { liveConnection } from "@k2b/cloud/browser/live";
-import { reloadOnce } from "@k2b/cloud/browser/reload";
-import { type CloudTheme, getCurrentThemePreference } from "@k2b/cloud/shared";
+import { importOnDemand, reloadOnce } from "@k2b/cloud/browser/reload";
+import type { CloudTheme } from "@k2b/cloud/shared";
 import { documentNavigate, type LinkNavigateEvent, listenPopState, navigate } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { mutation, query } from "@k2b/stdlib/solid";
@@ -18,20 +18,14 @@ import type { ConversationLocalTags } from "../service/local-tags";
 import type { ConversationPresenceSnapshot } from "../service/presence";
 import type { MailboxPageData, MailListItem } from "../service/workspace";
 import { readApiError } from "./_components/api-response";
-import { openMailAttachmentLinksDialog } from "./_components/MailAttachmentLinksDialog";
 import { chooseBulkTags, chooseConversationTags } from "./_components/MailBulkTagDialog";
-import { openMailboxDetailsDialog } from "./_components/MailboxDetailsDialog";
-import { openMailboxHealthDialog } from "./_components/MailboxHealthDialog";
-import { openMailboxSettingsDialog } from "./_components/MailboxSettingsDialog";
 import MailConversationList from "./_components/MailConversationList";
 import MailConversationReader from "./_components/MailConversationReader";
 import MailDetailsPanel from "./_components/MailDetailsPanel";
 import MailDraftsView from "./_components/MailDraftsView";
-import { openMailRemoteContentRulesDialog } from "./_components/MailRemoteContentRulesDialog";
 import MailScheduledView from "./_components/MailScheduledView";
 import { observeMailUserPreferences, writeMailUserPreferences } from "./_components/MailSettingsStore";
 import MailSidebar from "./_components/MailSidebar";
-import { openMailSubscriptionDialog } from "./_components/MailSubscriptionDialog";
 import { createMailActionOutcomes, type MailActionCommand, type MailActionFailureReport } from "./_components/mail-action-outcomes";
 import {
   buildMailActionInput,
@@ -176,6 +170,9 @@ function MailWorkspaceView(props: {
   const selectedConversationIds = createMemo(() => conversationSelection().ids);
   const canWrite = createMemo(() => rank(data.permission) >= 2);
   const canAdmin = createMemo(() => rank(data.permission) >= 3);
+  /** The person sees only the conversations assigned to them; assigning, merging and mailbox tools need the whole mailbox. */
+  const assignedOnly = createMemo(() => data.access.scope === "assigned");
+  const canAssign = createMemo(() => canWrite() && !assignedOnly());
   let routeLoading = () => false;
   const workspaceRefreshBlocked = () => settingsOpening() || managementOpening() !== null;
 
@@ -183,7 +180,8 @@ function MailWorkspaceView(props: {
     // This document may come from history; record only the opened mailbox.
     updateMailWorkspacePreferences({ lastMailboxId: mailboxId });
     const root = document.documentElement;
-    const syncTheme = () => setTheme(getCurrentThemePreference());
+    // Read the class directly: a runtime import from the shared barrel also bundles Markdown, KaTeX and Liquid.
+    const syncTheme = () => setTheme(root.classList.contains("dark") ? "dark" : "light");
     syncTheme();
     const observer = new MutationObserver(syncTheme);
     observer.observe(root, { attributes: true, attributeFilter: ["class"] });
@@ -534,7 +532,10 @@ function MailWorkspaceView(props: {
     if (disposed || settingsOpening()) return;
     setSettingsOpening(true);
     try {
-      const result = await openMailboxSettingsDialog({
+      // Settings, management and details dialogs load their code on first open, behind the pending state.
+      const settings = await importOnDemand(() => import("./_components/MailboxSettingsDialog"));
+      if (!settings || disposed) return;
+      const result = await settings.openMailboxSettingsDialog({
         mailboxId: data.mailbox.id,
         currentUserEmail: props.currentUserEmail,
         contactDirectory: props.contactDirectory,
@@ -550,13 +551,14 @@ function MailWorkspaceView(props: {
     }
   };
 
-  /** Loads the details first, so the dialog opens complete instead of growing as they arrive. */
+  /** Loads the details and the dialog code first, so the dialog opens complete instead of growing as they arrive. */
   const openDetails = async () => {
     if (disposed || detailsOpening()) return;
     setDetailsOpening(true);
     let details: Awaited<ReturnType<typeof loadDetails>>;
+    let dialog: typeof import("./_components/MailboxDetailsDialog") | undefined;
     try {
-      details = await loadDetails();
+      [details, dialog] = await Promise.all([loadDetails(), importOnDemand(() => import("./_components/MailboxDetailsDialog"))]);
     } catch (error) {
       retryToast(error instanceof Error ? error.message : String(error), {
         title: t().mailboxDetailsFailed,
@@ -567,8 +569,8 @@ function MailWorkspaceView(props: {
     } finally {
       if (!disposed) setDetailsOpening(false);
     }
-    if (disposed) return;
-    const result = await openMailboxDetailsDialog({
+    if (!dialog || disposed) return;
+    const result = await dialog.openMailboxDetailsDialog({
       mailbox: data.mailbox,
       identities: data.identities,
       folderCount: data.folders.length,
@@ -587,7 +589,9 @@ function MailWorkspaceView(props: {
     if (disposed || managementOpening()) return;
     setManagementOpening("health");
     try {
-      const result = await openMailboxHealthDialog({ mailboxId: data.mailbox.id, dateConfig: props.dateConfig });
+      const health = await importOnDemand(() => import("./_components/MailboxHealthDialog"));
+      if (!health || disposed) return;
+      const result = await health.openMailboxHealthDialog({ mailboxId: data.mailbox.id, dateConfig: props.dateConfig });
       if (disposed) return;
       if (!result.workspaceChanged) return;
       const refreshResult = await replaceWorkspaceRoute(requestPath());
@@ -601,7 +605,9 @@ function MailWorkspaceView(props: {
     if (disposed || managementOpening()) return;
     setManagementOpening("links");
     try {
-      await openMailAttachmentLinksDialog({ mailboxId: data.mailbox.id, dateConfig: props.dateConfig });
+      const links = await importOnDemand(() => import("./_components/MailAttachmentLinksDialog"));
+      if (!links || disposed) return;
+      await links.openMailAttachmentLinksDialog({ mailboxId: data.mailbox.id, dateConfig: props.dateConfig });
     } finally {
       if (!disposed) setManagementOpening(null);
     }
@@ -611,7 +617,9 @@ function MailWorkspaceView(props: {
     if (disposed || managementOpening()) return;
     setManagementOpening("remote-content");
     try {
-      await openMailRemoteContentRulesDialog(data.mailbox.id);
+      const rules = await importOnDemand(() => import("./_components/MailRemoteContentRulesDialog"));
+      if (!rules || disposed) return;
+      await rules.openMailRemoteContentRulesDialog(data.mailbox.id);
     } finally {
       if (!disposed) setManagementOpening(null);
     }
@@ -621,7 +629,9 @@ function MailWorkspaceView(props: {
     if (disposed || managementOpening()) return;
     setManagementOpening("subscriptions");
     try {
-      await openMailSubscriptionDialog({
+      const subscriptions = await importOnDemand(() => import("./_components/MailSubscriptionDialog"));
+      if (!subscriptions || disposed) return;
+      await subscriptions.openMailSubscriptionDialog({
         mailboxId: data.mailbox.id,
         canWrite: canWrite(),
         initialListKey,
@@ -746,7 +756,7 @@ function MailWorkspaceView(props: {
 
   const applyCollaborationState = (next: ConversationCollaboration) => {
     const patch: MailListOptimisticPatch = {
-      assigneeUserId: next.assignee?.id ?? null,
+      assigneeUserIds: next.assignees.map((assignee) => assignee.id),
       workStatus: next.workStatus,
       snoozedUntil: next.snoozedUntil,
       revision: next.revision,
@@ -1482,14 +1492,15 @@ function MailWorkspaceView(props: {
         conversationIds,
         {
           chooseAssignee: () => chooseMailAssignee({ mailboxId, currentUserId: props.currentUserId }),
-          assign: async (ids, assigneeUserId) => {
+          assign: async (ids, assigneeUserIds, mode) => {
             const response = await apiClient.mailboxes[":mailboxId"].conversations.assign.$post({
               param: { mailboxId },
-              json: { conversationIds: ids, assigneeUserId },
+              json: { conversationIds: ids, assigneeUserIds, mode },
             });
             if (!response.ok) throw new Error(await readApiError(response, t().assignFailed));
             return response.json();
           },
+          assigneesOf: (conversationId) => data.listItems.find((item) => item.conversationId === conversationId)?.assigneeUserIds ?? null,
           clearSelection: () => {
             setConversationSelection(emptyMailConversationSelection());
             setSelectionMode(false);
@@ -1582,6 +1593,7 @@ function MailWorkspaceView(props: {
         viewCounts={data.viewCounts}
         canWrite={canWrite()}
         canAdmin={canAdmin()}
+        assignedOnly={assignedOnly()}
         managementOpening={managementOpening()}
         settingsOpening={settingsOpening()}
         detailsOpening={detailsOpening()}
@@ -1649,18 +1661,26 @@ function MailWorkspaceView(props: {
                     onListModeChange={updateListMode}
                     onToggleSelection={toggleConversationSelection}
                     onClearSelection={clearConversationSelection}
-                    onAddTags={addTagsToSelection}
-                    onAssign={assignSelection}
+                    onAddTags={assignedOnly() ? undefined : addTagsToSelection}
+                    onAssign={canAssign() ? assignSelection : undefined}
                     onBulkAction={runAction}
                     onItemAction={(item, actionId) => {
                       const target = actionTargetForItem(item, actionId);
                       if (target) void runAction(actionId, { targets: [target] });
                     }}
                     onManageTags={manageConversationTags}
-                    onMergeItem={(item) => {
-                      if (item.conversationId)
-                        void mergeConversation({ conversationId: item.conversationId, revision: item.revision, subject: item.subject });
-                    }}
+                    onMergeItem={
+                      assignedOnly()
+                        ? undefined
+                        : (item) => {
+                            if (item.conversationId)
+                              void mergeConversation({
+                                conversationId: item.conversationId,
+                                revision: item.revision,
+                                subject: item.subject,
+                              });
+                          }
+                    }
                     onOpenHref={openWorkspaceHref}
                     onLoadMore={loadMoreConversations}
                     onRefresh={reconcileWorkspace}
@@ -1671,6 +1691,7 @@ function MailWorkspaceView(props: {
                   requestUrl={requestPath()}
                   canWrite={canWrite()}
                   canAdmin={canAdmin()}
+                  mailboxWide={!assignedOnly()}
                   identities={data.identities}
                   selectionKey={data.selectedMessageId ?? data.selectedConversationId}
                   selectedConversationId={data.selectedConversationId}
@@ -1777,6 +1798,7 @@ function MailWorkspaceView(props: {
               conversationId={data.selectedConversationId!}
               active={detailsOpen()}
               canWrite={canWrite()}
+              mailboxWide={!assignedOnly()}
               initialState={data.collaborationState!}
               initialLocalTags={data.localTags}
               initialConversationLocalTags={data.conversationLocalTags!}

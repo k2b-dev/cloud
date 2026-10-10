@@ -1574,6 +1574,25 @@ export class AiTurnExecutor {
     const approvalScope = capabilityApprovalScope ?? aiToolApprovalScope(toolName, approvalPolicy);
     const allowAlways = allowRememberedApprovals && (capabilityApprovalScope !== undefined || aiToolAllowsAlways(approvalPolicy));
 
+    // Display-only client_view tools (cards, charts) need neither a browser nor input: Cloud answers them itself, in
+    // background runs too, whose transcript shows them later. The block goes from running straight to completed:
+    // a published awaiting_client would read as an open request to clients and remount the result in the chat.
+    // nessi emits no tool_execution_end for client tools, so Cloud ends the call itself.
+    if (frontendMode === "client_view") {
+      loop.push({ type: "tool_result", callId: event.callId, result: { displayed: true } });
+      await pipeline.apply({
+        type: "tool_execution_end",
+        callId: event.callId,
+        name: event.name,
+        result: { displayed: true },
+        isError: false,
+      } as OutboundEvent);
+      await aiToolAudit
+        .noteToolCompleted({ turnId, callId: event.callId, isError: false })
+        .catch(() => log.warn("AI tool audit write failed", { code: "tool_audit_complete_failed", turnId, callId: event.callId }));
+      return false;
+    }
+
     const runConfig = await aiConversations.getTurnRunConfig({ conversationId, turnId });
     if (runConfig?.kind !== "compact" && (runConfig?.background || runConfig?.mandate)) {
       input.onBackgroundBlocked?.(
@@ -1586,27 +1605,6 @@ export class AiTurnExecutor {
           result: { error: "This operation requires an interactive browser and is unavailable in a background run." },
         });
       else loop.push({ type: "approval_response", callId: event.callId, approved: false });
-      return false;
-    }
-
-    // Display-only client_view tools (e.g. cards) never need user input — resolve
-    // inline and keep streaming instead of taking a full suspend/continuation trip.
-    if (frontendMode === "client_view") {
-      await pipeline.apply(event);
-      loop.push({ type: "tool_result", callId: event.callId, result: { displayed: true } });
-      // Mark the block completed immediately: nessi emits no tool_execution_end
-      // for client tools, and a block stuck in awaiting_client would look like
-      // an open action request if the turn suspends for another tool later.
-      await pipeline.apply({
-        type: "tool_execution_end",
-        callId: event.callId,
-        name: event.name,
-        result: { displayed: true },
-        isError: false,
-      } as OutboundEvent);
-      await aiToolAudit
-        .noteToolCompleted({ turnId, callId: event.callId, isError: false })
-        .catch(() => log.warn("AI tool audit write failed", { code: "tool_audit_complete_failed", turnId, callId: event.callId }));
       return false;
     }
 

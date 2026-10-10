@@ -1668,6 +1668,30 @@
   justify-content: flex-start;
 }
 
+/* A busy button keeps exactly its idle box: the idle content stays in the
+ * layout, invisible, and the spinner is centered over it. The `position` that
+ * anchors the spinner sits in the components layer at zero specificity, so a
+ * button placed by a utility class such as `absolute` or by a component rule
+ * stays where it is while busy. */
+@layer components {
+  :where(.k2b-ui .k2b-button:has(> .k2b-button__busy)) {
+    position: relative;
+  }
+}
+
+.k2b-ui .k2b-button:has(> .k2b-button__busy) > .k2b-button__label {
+  opacity: 0;
+}
+
+.k2b-ui .k2b-button__busy {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
 .k2b-ui .k2b-icon-button {
   width: 2rem;
   padding: 0;
@@ -1735,11 +1759,14 @@
    part feedback-parity.css owns. A later line of buttons reaches 8 px up past
    an `sm` button, so lines that wrap or stack keep 0.625rem apart on touch:
    a hit area that only touches the line above still takes a pixel strip at
-   its edge. The zero-specificity `position` keeps component rules that
-   already place a button in charge. */
+   its edge. The `position` that anchors the hit area sits in the components
+   layer at zero specificity, so a button placed by a utility class such as
+   `absolute` or by a component rule stays where it is on touch screens. */
 @media (any-pointer: coarse) {
-  :where(.k2b-ui .k2b-button) {
-    position: relative;
+  @layer components {
+    :where(.k2b-ui .k2b-button) {
+      position: relative;
+    }
   }
 
   .k2b-ui .k2b-button::after {
@@ -6311,6 +6338,36 @@
   background: var(--k2b-info-surface);
 }
 
+/* Today: the number in the accent color with a dot below it. The dot is drawn
+   inside the cell, so marking a day never changes the grid's size. On a day of
+   an adjacent month the number keeps its muted color and only the dot carries
+   the accent, so the mark stays lighter without fading the number. */
+.k2b-ui .k2b-date-grid button[data-today="true"] {
+  position: relative;
+  font-weight: 650;
+}
+
+.k2b-ui .k2b-date-grid button[data-today="true"]:not([data-outside="true"], [aria-selected="true"]) {
+  color: var(--k2b-action);
+}
+
+.k2b-ui .k2b-date-grid button[data-today="true"]::after {
+  position: absolute;
+  bottom: 0.1875rem;
+  left: 50%;
+  width: 0.25rem;
+  height: 0.25rem;
+  border-radius: 999px;
+  background: currentColor;
+  content: "";
+  transform: translateX(-50%);
+}
+
+.k2b-ui .k2b-date-grid button[data-today="true"][data-outside="true"]:not([aria-selected="true"])::after {
+  background: var(--k2b-action);
+}
+
+/* A selected day is filled; on a selected today the number and the dot take the fill's contrasting color. */
 .k2b-ui .k2b-date-grid button[aria-selected="true"],
 .k2b-ui .k2b-date-months button[data-selected="true"] {
   color: white;
@@ -10024,6 +10081,13 @@
 
   .k2b-ui .k2b-data-table__scrollbar {
     display: none !important;
+  }
+
+  /* System colors replace the accent, so the dot alone marks today. */
+  .k2b-ui .k2b-date-grid button[data-today="true"]::after,
+  .k2b-ui .k2b-date-grid button[data-today="true"][data-outside="true"]:not([aria-selected="true"])::after {
+    forced-color-adjust: none;
+    background: CanvasText;
   }
 
   .k2b-ui .k2b-button[data-variant="input"]:focus-visible,

@@ -1,10 +1,12 @@
+import { APP_REGISTRY_TTL_MS, listApps, watchAppRegistry } from "@k2b/cloud";
+import { logger, superviseRuntimeTask } from "@k2b/cloud/services";
 import { migrateHelp, startHelpMaintenance } from "@k2b/cloud/services/help";
 /**
  * Core-specific lifecycle helpers.
  * Migrations, background jobs — nothing generic here.
  */
 
-import { aiChatTasks, aiMaintenanceJobs, migrateCloudAi, seedCloudAiSkills } from "@k2b/cloud/ai";
+import { aiChatTasks, aiMaintenanceJobs, appSkillsRegistryState, migrateCloudAi, reconcileAppSkills } from "@k2b/cloud/ai";
 import { startAiRuntime } from "@k2b/cloud/ai/runtime";
 import { migrateCloudCapabilities, startCapabilityExecutionMaintenance } from "@k2b/cloud/capabilities/store";
 import {
@@ -45,6 +47,51 @@ let stopIdentityMaintenance: (() => void) | null = null;
 let stopMandateMaintenance: (() => void) | null = null;
 let stopCapabilityExecutionMaintenance: (() => void) | null = null;
 
+let appSkillsAbort: AbortController | null = null;
+let appSkillsTask: Promise<void> | null = null;
+// Every heartbeat renews a registry entry and fires a change. Reconcile only when what app Skills depend on changed,
+// or while an advertised catalog is still being published. Another Core replica can apply an older registry snapshot
+// after this one did, so a full pass also runs once per registry TTL, the time Cloud already takes to notice a
+// stopped app.
+let appliedAppSkillsState: string | null = null;
+let appliedAppSkillsAt = 0;
+const refreshAppSkills = async (): Promise<void> => {
+  try {
+    const apps = await listApps();
+    const state = appSkillsRegistryState(apps);
+    if (state === appliedAppSkillsState && Date.now() - appliedAppSkillsAt < APP_REGISTRY_TTL_MS) return;
+    const startedAt = Date.now();
+    appliedAppSkillsState = (await reconcileAppSkills(apps)) ? state : null;
+    appliedAppSkillsAt = startedAt;
+  } catch (error) {
+    appliedAppSkillsState = null;
+    logger("core:app-skills").error("App skill reconciliation failed", { error: error instanceof Error ? error.message : String(error) });
+  }
+};
+const startAppSkillsWatcher = async (): Promise<void> => {
+  if (appSkillsTask) return;
+  await refreshAppSkills();
+  appSkillsAbort = new AbortController();
+  appSkillsTask = superviseRuntimeTask({
+    name: "App skills watcher",
+    signal: appSkillsAbort.signal,
+    run: (signal) => watchAppRegistry({ signal, onChange: refreshAppSkills }),
+    onError: ({ error, failureCount, retryInMs }) =>
+      logger("core:app-skills").error("App skills watcher failed; restarting", {
+        error: error instanceof Error ? error.message : String(error),
+        failureCount,
+        retryInMs,
+      }),
+  });
+};
+const stopAppSkillsWatcher = async (): Promise<void> => {
+  appSkillsAbort?.abort();
+  await appSkillsTask?.catch(() => undefined);
+  appSkillsAbort = null;
+  appSkillsTask = null;
+  appliedAppSkillsState = null;
+};
+
 /** Run all core database migrations (auth, notifications, settings, logging). */
 export const runCoreSetup = async (): Promise<void> => {
   const steps = [
@@ -65,7 +112,6 @@ export const runCoreSetup = async (): Promise<void> => {
     { name: "weather", run: migrateWeather },
     { name: "capabilities", run: migrateCloudCapabilities },
     { name: "ai", run: migrateCloudAi },
-    { name: "ai-skills", run: seedCloudAiSkills },
   ];
   for (const step of steps) {
     console.log(`[setup] core:${step.name}`);
@@ -81,6 +127,7 @@ export const startCoreServices = async (
   try {
     await initializeIdentityAuthority();
     stopHelpMaintenance = startHelpMaintenance();
+    await startAppSkillsWatcher();
     stopIdentityMaintenance = startIdentityKeyMaintenance();
     stopMandateMaintenance = startMandateMaintenance();
     stopCapabilityExecutionMaintenance = startCapabilityExecutionMaintenance();
@@ -105,6 +152,7 @@ export const startCoreServices = async (
     await appApprovalRuntime.start(notificationSender);
     await lifecycleJobs.start({ notificationSender });
   } catch (error) {
+    await stopAppSkillsWatcher();
     await stopHelpMaintenance?.();
     stopHelpMaintenance = undefined;
     stopIdentityMaintenance?.();
@@ -135,6 +183,7 @@ export const stopCoreServices = async (aiNotifications?: ReturnType<typeof creat
   try {
     // Sign-in and reset requests already answered must reach the notification store before it stops.
     await drainDeferredAuthRequests();
+    await stopAppSkillsWatcher();
     await stopHelpMaintenance?.();
     stopHelpMaintenance = undefined;
     stopIdentityMaintenance?.();

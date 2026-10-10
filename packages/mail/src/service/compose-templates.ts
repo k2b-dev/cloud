@@ -28,7 +28,7 @@ import {
   updateMailboxComposeStyleInputSchema,
 } from "../contracts";
 import { withShortIdDb } from "../lib/short-id";
-import { requireMailboxPermission } from "./access";
+import { requireMailboxAccess, requireMailboxPermission } from "./access";
 import { actorRefFromRequest, auditActorFromRequest, type MailRequestContext, userBackedActor } from "./auth";
 import { sha256Text } from "./canonical";
 import {
@@ -200,7 +200,7 @@ const writeAudit = async (
 };
 
 export const listComposeTemplates = async (context: MailRequestContext, mailboxId: string): Promise<Result<ComposeTemplate[]>> => {
-  const allowed = await requireMailboxPermission(context, mailboxId, "write");
+  const allowed = await requireMailboxAccess(context, mailboxId, "write");
   if (!allowed.ok) return allowed;
   const ownerUserId = privateOwnerId(context);
   const rows = await sql<DbTemplate[]>`
@@ -423,7 +423,7 @@ export const listComposeSignatureDefaults = async (
   context: MailRequestContext,
   mailboxId: string,
 ): Promise<Result<ComposeSignatureDefault[]>> => {
-  const allowed = await requireMailboxPermission(context, mailboxId, "write");
+  const allowed = await requireMailboxAccess(context, mailboxId, "write");
   if (!allowed.ok) return allowed;
   const ownerUserId = privateOwnerId(context);
   const rows = await sql<DbDefault[]>`
@@ -582,7 +582,7 @@ export const getMailboxComposeStyle = async (
   mailboxId: string,
   db: SqlClient = sql,
 ): Promise<Result<MailboxComposeStyle>> => {
-  const allowed = await requireMailboxPermission(context, mailboxId, "write", db);
+  const allowed = await requireMailboxAccess(context, mailboxId, "write", db);
   if (!allowed.ok) return allowed;
   const [row] = await db<DbStyle[]>`
     SELECT mailbox_id, custom_css, revision, updated_at
@@ -751,7 +751,7 @@ export const previewComposeDraft = async (params: {
   mailboxId: string;
   input: ComposePreviewInput;
 }): Promise<Result<ComposePreview>> => {
-  const allowed = await requireMailboxPermission(params.context, params.mailboxId, "write");
+  const allowed = await requireMailboxAccess(params.context, params.mailboxId, "write");
   if (!allowed.ok) return allowed;
   const rendered = await renderComposeDraft({
     mailboxId: params.mailboxId,
@@ -773,7 +773,7 @@ export const renderComposeSnippet = async (params: {
 }): Promise<Result<{ markdown: string }>> => {
   const parsed = internalRenderComposeSnippetInputSchema.safeParse(params.input);
   if (!parsed.success) return fail(err.badInput(parsed.error.issues[0]?.message ?? "Invalid snippet request"));
-  const allowed = await requireMailboxPermission(params.context, params.mailboxId, "write");
+  const allowed = await requireMailboxAccess(params.context, params.mailboxId, "write");
   if (!allowed.ok) return allowed;
   const ownerUserId = privateOwnerId(params.context);
   const [template] = await sql<DbTemplate[]>`
@@ -805,7 +805,7 @@ export const renderComposeSuggestions = async (params: {
 }): Promise<Result<ComposeSuggestion[]>> => {
   const parsed = internalComposeSuggestionsInputSchema.safeParse(params.input);
   if (!parsed.success) return fail(err.badInput(parsed.error.issues[0]?.message ?? "Invalid compose suggestion request"));
-  const allowed = await requireMailboxPermission(params.context, params.mailboxId, "write");
+  const allowed = await requireMailboxAccess(params.context, params.mailboxId, "write");
   if (!allowed.ok) return allowed;
   const ownerUserId = privateOwnerId(params.context);
   const query = parsed.data.query.toLocaleLowerCase();

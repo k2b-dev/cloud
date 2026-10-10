@@ -2,27 +2,27 @@
 id: pulse-query-language
 title: Query DSL
 icon: ti ti-terminal-2
-description: Metric, event, and state query syntax with aggregations and examples.
+description: Write metric, event, and state queries with aggregations, filters, and exact time ranges.
 order: 120
 ---
-Query DSL answers one data question at a time. Pick whether you need a metric trend, individual or summarized events, or current states, then narrow the query with source, resource, and dimension filters.
+Query DSL answers one data question at a time. First decide whether you need a metric trend, single or summarized events, or current states. Then narrow the query with source, resource, and dimension filters.
 
-## Pick the statement by question {icon="point"}
+## Pick the statement for your question {icon="point"}
 
 - **How did a number change?** Use `metric`. Add an aggregation such as `avg`, `latest`, `rate`, or `increase`.
-- **What happened recently?** Use `events`. Return individual rows for inspection, or count, sum, and count unique actors or sessions over time.
-- **What is true now?** Use `states`. States return the latest known value for facts such as online status, version, configuration, inventory, or current health.
+- **What happened recently?** Use `events`. Return single rows to inspect them. Or count events, sum their numeric values, or count unique actors or sessions over time.
+- **What is true now?** Use `states`. States return the latest known value of facts such as online status, version, configuration, inventory, or current health.
 
 ## Build a query in four steps {icon="search"}
 
 :::steps
-1. **Name the signal:** Choose the metric, event kind, or state key from the UI or Inventory.
-2. **Choose the shape:** Metrics need an aggregation. Events can return rows or use count, sum, or unique aggregation.
-3. **Set the time range:** Use since for the range, and every for metric or summarized-event time windows.
-4. **Narrow the scope:** Add source, resource, resource_type, or where filters when the result includes too many variants or rows.
+1. **Name the signal:** Choose the metric, event kind, or state key in the interface or in **Inventory**.
+2. **Choose the shape:** Metrics need an aggregation. Events can return rows or use the `count`, `sum`, or `unique` aggregation.
+3. **Set the time range:** Use `since` for the range. Use `every` for the time windows of metrics or summarized events.
+4. **Narrow the scope:** Add `source`, `resource`, `resource_type`, or `where` filters when the result has too many variants or rows.
 :::
 
-## Statement types {icon="book-2"}
+## Know the statement types {icon="book-2"}
 
 **Metric**
 
@@ -66,9 +66,9 @@ states [<key>|*]
   [limit <rows>]
 ```
 
-Shared clauses may follow the statement-specific fields in any order. Write each clause at most once. Metric `group by` accepts one resource or dimension group. Event aggregation must follow the event kind directly; summarized events accept up to four dimension groups.
+Shared clauses can follow the statement-specific fields in any order. Write each clause at most once. Metric `group by` accepts one resource or dimension group. Event aggregation must follow the event kind directly. Summarized events accept up to four dimension groups.
 
-## Examples {icon="point"}
+## Learn from examples {icon="point"}
 
 **Current value for one device**
 
@@ -76,7 +76,7 @@ Shared clauses may follow the statement-specific fields in any order. Write each
 metric battery.charge_percent latest every 5m since 24h where device="garage-battery"
 ```
 
-Use latest when the newest gauge value matters more than the average trend.
+Use `latest` when the newest gauge value matters more than the average trend.
 
 **Trend over time**
 
@@ -84,7 +84,7 @@ Use latest when the newest gauge value matters more than the average trend.
 metric solar.output_watts avg every 15m since 7d where inverter=main
 ```
 
-Use avg to smooth noisy gauge samples without changing the unit.
+Use `avg` to smooth noisy gauge samples without changing the unit.
 
 **Throughput from a counter**
 
@@ -92,9 +92,9 @@ Use avg to smooth noisy gauge samples without changing the unit.
 metric http_requests_total rate every 1m since 1h where route=/api
 ```
 
-Use rate when a counter keeps growing and you want per-second throughput.
+Use `rate` when a counter keeps growing and you want the throughput per second.
 
-Pulse computes rate per matched variant, then averages matched variants by default. Use `reduce sum` for total throughput and `group by resource` for one series per resource.
+Pulse computes `rate` per matched variant. By default, it then averages the matched variants. Use `reduce sum` for the total throughput and `group by resource` for one series per resource.
 
 ```text
 metric http_requests_total rate every 1m reduce sum group by resource since 1h
@@ -106,9 +106,9 @@ metric http_requests_total rate every 1m reduce sum group by resource since 1h
 metric orders.created increase every 1h since 7d where channel=web
 ```
 
-Use increase for the observed counter growth assigned to each time window. Use events when you need exact counts by event time.
+Use `increase` for the observed counter growth in each time window. Use events when you need exact counts by event time.
 
-Pulse computes increase per matched variant, then averages matched variants by default. Add `reduce sum` when the variants form one total.
+Pulse computes `increase` per matched variant. By default, it then averages the matched variants. Add `reduce sum` when the variants form one total.
 
 **Fleet CPU by resource**
 
@@ -128,7 +128,7 @@ metric system.filesystem.usage max every 5m group by mount since 24h
 events deploy.finished since 7d where env=prod limit 100
 ```
 
-Use individual events for rows you want to inspect or audit.
+Use single events for rows that you want to inspect or audit.
 
 **Daily unique visitors**
 
@@ -144,9 +144,9 @@ Use `actorId` for unique visitor counts instead of creating one dimension value 
 states integration.enabled resource "webshop" limit 50
 ```
 
-Use states for current truth. Add since only when stale values should disappear.
+Use states for the current truth. Add `since` only when you want stale values to disappear.
 
-## Clause reference {icon="search"}
+## Look up a clause {icon="search"}
 
 | Clause | Applies to | Meaning | Example |
 | --- | --- | --- | --- |
@@ -158,18 +158,18 @@ Use states for current truth. Add since only when stale values should disappear.
 | `group by <dimension>, ...` | summarized events | Split an event summary by one to four dimensions. | `group by campaign, country` |
 | `states [<key>\|*]` | states | Return current state rows by key. Omit the key or use * for all states. States default to limit 500 with no stale-time filter. | `states host.online` |
 | `every <duration>` | metric, summarized events | Group metric values or summarized events into fixed time windows. Use compact durations such as 5m, 1h, or 7d. | `every 15m` |
-| `since <duration>` | metric, events, states | Limit by time. Durations use m, h, or d and may not exceed 90 days. For states, since hides stale current values. | `since 7d` |
+| `since <duration>` | metric, events, states | Limit by time. Durations use m, h, or d and cannot exceed 90 days. For states, since hides stale current values. | `since 7d` |
 | `source <source-id>` | all | Restrict results to one source. The value must be a valid source ID copied from Pulse. | `source Src001` |
 | `resource <id>` | all | Restrict results to one complete `type:id` resource key. | `resource container:app-core` |
 | `resource_type <type>` | all | Restrict results to one resource class such as host, container, service, device, order, or customer. | `resource_type container` |
 | `where <key>=<value>` | all | Filter dimensions by exact equality. Separate multiple filters with commas; one query accepts up to 32 filters. | `where env=prod, region=eu` |
 | `limit <rows>` | events, states | Limit returned rows. Use a positive integer no larger than 1000. | `limit 100` |
 
-## Names, quotes, and exact matching {icon="brackets"}
+## Write names, quotes, and exact values {icon="brackets"}
 
 Statement and clause keywords are case-insensitive. Metric aggregations use the lowercase spelling shown in this reference. Signal names, resource identifiers, dimension keys, and values keep their spelling and match observed data exactly.
 
-Use single or double quotes around names and values containing spaces, commas, or equals signs:
+Put single or double quotes around names and values that contain spaces, commas, or equals signs:
 
 ```text
 events "checkout error" where message="payment, provider=offline" limit 50
@@ -182,11 +182,11 @@ Inside a quoted value, backslash escapes the next character:
 events app.error where message="customer said \"retry\""
 ```
 
-Commas between `where` filters and between `group by` keys are optional. They improve readability but do not change the query.
+Commas between `where` filters and between `group by` keys are optional. They make the query easier to read but do not change it.
 
-## Aggregations {icon="point"}
+## Choose the aggregation {icon="point"}
 
-Choose aggregation from the shape of the data, not from the chart you want. Gauges describe a value at a time, counters only grow, and latency distributions need percentiles.
+Choose the aggregation from the shape of the data, not from the chart that you want. Gauges describe a value at one time. Counters only grow. Latency distributions need percentiles.
 
 | Aggregation | Meaning | Best for | Example |
 | --- | --- | --- | --- |
@@ -201,14 +201,14 @@ Choose aggregation from the shape of the data, not from the chart you want. Gaug
 | `events count / sum` | Count events or sum their numeric value in each time window. | Visits, orders, errors, revenue, and other point-in-time facts. | `events order.created sum every 1h since 7d group by currency` |
 | `events unique actor / session` | Count distinct actorId or sessionId values in each time window. | Visitors, active users, sessions, and engagement without unique identities in dimensions. | `events page.viewed unique actor every 1d since 30d` |
 
-## Rules that matter {icon="book-2"}
+## Know the rules that matter {icon="book-2"}
 
 :::info Metrics summarize values
 `metric` requires a metric and aggregation. Use `every` to choose time windows and `since` to define the time range.
 :::
 
 :::note Metric queries use two reduction stages
-Pulse first applies the metric aggregation independently to every matched variant. It then combines those values with `reduce`, which defaults to `avg`. Add `group by resource` or `group by <dimension>` to create multiple output series. Use `reduce sum` for fleet totals or for counters split across interfaces.
+Pulse first applies the metric aggregation to every matched variant on its own. It then combines those values with `reduce`, which defaults to `avg`. Add `group by resource` or `group by <dimension>` to create several output series. Use `reduce sum` for fleet totals or for counters that are split across interfaces.
 :::
 
 :::success Events return rows or points
@@ -216,35 +216,30 @@ Pulse first applies the metric aggregation independently to every matched varian
 :::
 
 :::info Names and values
-Use `*` or omit the name for all events or all states. `source` accepts a six-character Source ID, while `resource` accepts the exact resource identifier shown by Pulse.
+Use `*` or omit the name for all events or all states. `source` accepts a six-character source ID. `resource` accepts the exact resource identifier that Pulse shows.
 :::
 
 :::warning Performance limits
-Query text is limited to 2,000 characters. Metric queries stop when more than 250 variants match, when the requested range creates more than 2,000 time windows, or when grouped output would exceed 100,000 points. Add `source`, `resource`, or `where` filters, shorten `since`, or increase `every`. Event and state results are capped at 1,000 rows; event summaries accept at most four group keys and return at most 1,000 points.
+Query text is limited to 2,000 characters. Metric queries stop in three cases: more than 250 variants match, the requested range creates more than 2,000 time windows, or the grouped output would exceed 100,000 points. Then add `source`, `resource`, or `where` filters, shorten `since`, or increase `every`. Event and state results are capped at 1,000 rows. Event summaries accept at most four group keys and return at most 1,000 points.
 :::
 
 ### Counter observations and gaps
 
-`rate` and `increase` require a nonnegative counter. Pulse compares consecutive samples within each variant, including one predecessor before the query starts. A decrease is treated as a reset to zero: `100 → 110 → 3 → 8` contributes `10 + 3 + 5 = 18`. Each delta belongs to the bucket of its newer sample. `rate` divides the sum of these deltas by their total observed elapsed seconds; irregular intervals are weighted by time. Reduction across variants happens afterward.
+`rate` and `increase` require a nonnegative counter. Pulse compares consecutive samples within each variant, including one predecessor before the query starts. Pulse treats a decrease as a reset to zero: `100 → 110 → 3 → 8` contributes `10 + 3 + 5 = 18`. Each delta belongs to the bucket of its newer sample. `rate` divides the sum of these deltas by their total observed elapsed seconds, so irregular intervals are weighted by time. The reduction across variants happens afterward.
 
-A sample without a predecessor produces `null`, and empty buckets remain missing. Across a longer gap, the next pair reports average growth across that gap; Pulse cannot infer when individual increments happened. Values are not extrapolated to bucket boundaries and are not PromQL estimates. Percentiles (`p50` through `p99`) describe gauge samples only; histogram and summary quantiles are unsupported.
+A sample without a predecessor produces `null`, and empty buckets stay missing. Across a longer gap, the next pair reports the average growth across that gap. Pulse cannot infer when single increments happened. Pulse does not extrapolate values to bucket boundaries, and the values are not PromQL estimates. Percentiles (`p50` through `p99`) describe gauge samples only. Histogram and summary quantiles are not supported.
 
-## Exact periods and website identities {icon="calendar"}
+## Query exact periods and website identities {icon="calendar"}
 
-Use `from` and `to` together with UTC or offset timestamps. Do not combine them
-with `since`. The start is inclusive and the end exclusive. Relative queries also
-have a fixed upper bound and exclude future events. Ranges outside retention fail.
+Use `from` and `to` together, with UTC or offset timestamps. Do not combine them with `since`. The start is inclusive and the end is exclusive. Relative queries also have a fixed upper bound and exclude future events. Ranges outside the retention fail.
 
 ```text
 events page.viewed unique actor every all from 2026-09-01T00:00:00+02:00 to 2026-10-01T00:00:00+02:00
 events page.viewed count every day timezone Europe/Berlin since 7d group by route
 ```
 
-`every all` counts directly across the entire window. Unique actor/session IDs
-are source-local; missing IDs do not count. Do not add daily uniques to obtain a
-period total. Calendar `day`, `week` and `month` buckets require an IANA time zone;
-weeks start Monday and daylight saving transitions change the length of a day.
-Fixed durations use UTC. Historical metric queries require whole-hour bounds and
-whole-hour buckets after raw retention; percentiles and counter deltas need raw
-samples. Current-state queries keep their `since` syntax and do not accept
-absolute historical windows.
+`every all` counts directly across the entire window. Unique actor and session IDs are local to their source. Missing IDs do not count. Do not add daily unique counts to get a period total.
+
+Calendar `day`, `week`, and `month` buckets require an IANA time zone. Weeks start on Monday, and daylight saving transitions change the length of a day. Fixed durations use UTC.
+
+After the raw retention ends, historical metric queries require whole-hour bounds and whole-hour buckets. Percentiles and counter deltas need raw samples. Current-state queries keep their `since` syntax and do not accept absolute historical windows.

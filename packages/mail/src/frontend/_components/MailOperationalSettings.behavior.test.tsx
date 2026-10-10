@@ -15,6 +15,7 @@ const mailbox: Mailbox = {
   syncEnabled: true,
   searchBackend: "auto",
   automaticReplyManagementPermission: "admin",
+  accessScope: "mailbox",
   composeSafety: { internalDomains: [], largeRecipientThreshold: 20 },
   createdAt: now,
   updatedAt: now,
