@@ -211,6 +211,99 @@ describe("HoverPreview", () => {
     }
   });
 
+  test("opens only for the row still under the mouse, also before the browser reports a scrolled list", async () => {
+    const page = await load();
+    try {
+      await page.evaluate(() => {
+        const body = document.body.dataset;
+        document.querySelector('.row[data-id="r3"]')!.addEventListener("pointerenter", () => (body.entered = "true"));
+        document.querySelector('.row[data-id="r5"]')!.addEventListener("pointermove", () => (body.moved = "true"));
+        document.querySelector<HTMLElement>(".k2b-hover-preview")!.addEventListener("beforetoggle", (event) => {
+          if (event.newState === "open") body.opened = "true";
+        });
+        // WebKit reports pointer events for rows that a list scrolls under a still mouse several scroll steps late.
+        for (const type of ["pointerover", "pointerenter", "pointermove", "pointerout", "pointerleave"]) {
+          window.addEventListener(type, (event) => body.held && event.stopImmediatePropagation(), true);
+        }
+      });
+      await pointAt(page, row("r3"));
+      // The browser may deliver the move after Playwright's call returned, in WebKit even after `:hover` matches.
+      await page.waitForFunction(() => document.body.dataset.entered);
+      await page.clock.runFor(100);
+      // The list scrolls r5 under the mouse; its scroll event may arrive only after the delay ended.
+      await page.evaluate(() => {
+        document.body.dataset.held = "true";
+        document.getElementById("list")!.scrollTop = 144;
+      });
+      await page.clock.runFor(1_000);
+      expect(await page.evaluate(() => document.body.dataset.opened)).toBeUndefined();
+
+      // Once the browser reports the mouse, the row now under it opens.
+      await page.evaluate(() => delete document.body.dataset.held);
+      await pointAt(page, row("r5"), 0.6);
+      await page.waitForFunction(() => document.body.dataset.moved);
+      await page.clock.runFor(200);
+      expect(await shown(page)).toBe("r5");
+    } finally {
+      await close(page);
+    }
+  });
+
+  test("swaps to the row the mouse moved into, also after a layout change moved the point where it entered", async () => {
+    const page = await load();
+    try {
+      await page.evaluate(() => {
+        const body = document.body.dataset;
+        const target = document.querySelector<HTMLElement>('.row[data-id="r5"]')!;
+        target.addEventListener("pointerenter", () => (body.entered = "true"));
+        target.addEventListener("pointermove", (event) => (body.y = String(Math.round(event.clientY))));
+      });
+      await pointAt(page, row("r3"));
+      await page.clock.runFor(200);
+      expect(await shown(page)).toBe("r3");
+
+      // The mouse enters r5 at its top edge and moves on into its lower part.
+      const target = (await box(page, row("r5")))!;
+      const x = target.left + target.width / 2;
+      const y = Math.round(target.top + target.height - 8);
+      await page.mouse.move(x, target.top + 2);
+      await page.waitForFunction(() => document.body.dataset.entered);
+      await page.mouse.move(x, y);
+      await page.waitForFunction((y) => document.body.dataset.y === String(y), y);
+      // A row inserted above moves the list down by 40px; where the mouse entered r5, r4 lies now.
+      await page.evaluate(() => document.getElementById("list")!.insertAdjacentHTML("afterbegin", "<div style='height: 40px'></div>"));
+      await page.clock.runFor(90);
+      expect(await shown(page)).toBe("r5");
+    } finally {
+      await close(page);
+    }
+  });
+
+  test("opens for rows inside a shadow root", async () => {
+    const page = await load();
+    try {
+      // The list moves into the shadow root of a custom element, with its styles.
+      const target = await page.evaluate(() => {
+        const list = document.getElementById("list")!;
+        const host = document.createElement("div");
+        host.style.display = "contents";
+        list.before(host);
+        const root = host.attachShadow({ mode: "open" });
+        root.append(...[...document.querySelectorAll("style")].map((style) => style.cloneNode(true)), list);
+        const row = root.querySelector('.row[data-id="r3"]')!;
+        row.addEventListener("pointerenter", () => (document.body.dataset.entered = "true"));
+        const { top, left, width, height } = row.getBoundingClientRect();
+        return { top, left, width, height };
+      });
+      await page.mouse.move(target.left + target.width / 2, target.top + target.height / 2);
+      await page.waitForFunction(() => document.body.dataset.entered);
+      await page.clock.runFor(200);
+      expect(await shown(page)).toBe("r3");
+    } finally {
+      await close(page);
+    }
+  });
+
   test("a row the pointer rests on right after a close still opens after its delay", async () => {
     const page = await load();
     try {

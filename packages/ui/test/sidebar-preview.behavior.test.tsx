@@ -80,6 +80,8 @@ test("row preview shares hover and click opening, stays pinned, closes on select
     expect(main.getAttribute("aria-controls")).toBe(panel.id);
     expect(main.getAttribute("aria-haspopup")).toBe("dialog");
     expect(row.querySelector(".ti-chevron-right")).not.toBeNull();
+    // happy-dom has no layout: the row is what lies under the resting mouse.
+    dom.document.elementFromPoint = () => main;
     const hover = new Event("pointerenter");
     Object.defineProperty(hover, "pointerType", { value: "mouse" });
     row.dispatchEvent(hover);

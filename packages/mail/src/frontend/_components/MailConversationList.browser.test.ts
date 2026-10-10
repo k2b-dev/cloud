@@ -266,6 +266,8 @@ const requested = async (page: Tracked, path: string, count: number) => {
     await Bun.sleep(20);
   }
 };
+/** The list's scroll container. */
+const listScroller = '[data-scroll-preserve="mail-list-Box001"]';
 const previewPath = (id: string) => `/api/mail/mailboxes/Box001/conversations/${id}/preview`;
 const linkOf = (id: string) => `${row(id)} a.mail-list-row`;
 const expanded = (page: Page, id: string) =>
@@ -505,15 +507,59 @@ describe("Mail quick look", () => {
         await Bun.sleep(30);
         await page.clock.runFor(30);
       }
-      const under = await page.evaluate(() => document.querySelector(".mail-list-entry:hover")?.getAttribute("data-conversation-id"));
+      // The wheel scrolls past the end; WebKit may still be scrolling and update `:hover` and pointer events later.
+      await page.waitForFunction((selector) => {
+        const list = document.querySelector(selector)!;
+        return list.scrollTop + list.clientHeight >= list.scrollHeight - 1;
+      }, listScroller);
+      await page.clock.runFor(500);
+      // The row under the resting mouse, from the layout rather than from `:hover`, which WebKit updates late.
+      const under = await page.evaluate(
+        ([x, y]) => document.elementFromPoint(x!, y!)?.closest(".mail-list-entry")?.getAttribute("data-conversation-id"),
+        [from.left + 120, to.top + 10],
+      );
       // The list really moved rows under the mouse.
       expect(under).toBeDefined();
       expect(under).not.toBe("Cv0008");
-      await page.clock.runFor(500);
       const loaded = (await requests(page)).slice(1).map((request) => request.path);
       // At most the row the mouse rests on once the list stands still, which the card opens for anyway.
       expect(loaded.length).toBeLessThanOrEqual(1);
       if (loaded.length === 1) expect(loaded[0]).toBe(previewPath(under!));
+    } finally {
+      await close(page);
+    }
+  }, 30_000);
+
+  test("starts no request and shows no card for a row the list moved away before the browser reported the mouse", async () => {
+    const page = await load();
+    try {
+      await page.evaluate(() => {
+        const body = document.body.dataset;
+        document
+          .querySelector('.mail-list-entry[data-conversation-id="Cv0003"]')!
+          .addEventListener("pointerenter", () => (body.entered = "true"));
+        // WebKit reports pointer events for rows that a list scrolls under a still mouse several scroll steps
+        // late, and the list's scroll event may arrive only after the delays ended.
+        for (const type of ["pointerover", "pointerenter", "pointermove", "pointerout", "pointerleave", "scroll"]) {
+          window.addEventListener(type, (event) => body.held && event.stopImmediatePropagation(), true);
+        }
+      });
+      const target = (await box(page, row("Cv0003")))!;
+      await page.mouse.move(target.left + target.width * 0.4, target.top + target.height / 2);
+      // The browser may deliver the move after Playwright's call returned, in WebKit even after `:hover` matches.
+      await page.waitForFunction(() => document.body.dataset.entered);
+      await page.clock.runFor(50);
+      // The list scrolls three rows.
+      await page.evaluate(
+        ([selector, by]) => {
+          document.body.dataset.held = "true";
+          document.querySelector(selector)!.scrollTop = by!;
+        },
+        [listScroller, 3 * target.height] as const,
+      );
+      await page.clock.runFor(1_000);
+      expect(await requests(page)).toEqual([]);
+      expect(await shown(page)).toBeNull();
     } finally {
       await close(page);
     }
