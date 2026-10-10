@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { launchBrowser } from "../../../../../ui/test/browser";
+import { type Browser, type BrowserContextOptions, type Page, devices as playwrightDevices } from "playwright";
+import { browserName, launchBrowser } from "../../../../../ui/test/browser";
 
 // Where a click leaves the note depends on real focus, selection, and scrolling, so this runs in a real browser.
 type Measure = { scrollTop: number; windowScroll: number; lineTop: number; text: string; head: number };
@@ -46,9 +46,12 @@ afterAll(async () => {
   server?.stop(true);
 });
 
+// A real phone of the engine, user agent included, so CodeMirror takes its iOS or Android paths for touch and focus.
+const { defaultBrowserType: _, ...phone } = playwrightDevices[browserName === "webkit" ? "iPhone 15" : "Pixel 7"];
+
 const devices: Record<string, BrowserContextOptions> = {
   desktop: { viewport: { width: 1280, height: 800 } },
-  phone: { viewport: { width: 390, height: 664 }, hasTouch: true, isMobile: true, deviceScaleFactor: 3 },
+  phone,
 };
 
 const open = async (device: BrowserContextOptions) => {
