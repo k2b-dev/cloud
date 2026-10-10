@@ -138,7 +138,7 @@ export async function seed(api: Api, runtime: Runtime, selected: PageId[], userI
           ],
           [
             "What does time to interactive mean?",
-            "All initial islands have mounted, and script requests have been quiet for 500 milliseconds.",
+            "The latest of first contentful paint, the end of each initial island mount, the last script response and, in Chromium, the last long task.",
           ],
           [
             "Can these numbers predict a real phone?",

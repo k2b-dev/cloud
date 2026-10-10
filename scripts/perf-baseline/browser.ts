@@ -2,20 +2,30 @@
 import { createRequire } from "node:module";
 import type { Browser, CDPSession, Request } from "playwright";
 import { TIMEZONE_COOKIE } from "../../packages/cloud/src/shared/time";
-import { aggregateMetrics, type BrowserResult, interactive, longTaskMetrics, type Metrics, metricsSchema, validatePage } from "./model";
+import {
+  aggregateMetrics,
+  type BrowserResult,
+  cumulativeLayoutShift,
+  failedRequestError,
+  interactive,
+  longTaskMetrics,
+  type Metrics,
+  metricsSchema,
+  timeToInteractive,
+  validatePage,
+} from "./model";
 
 const { chromium, webkit }: typeof import("playwright") = createRequire(new URL("../../packages/ui/package.json", import.meta.url))(
   "playwright",
 );
 
 export const profiles = ["desktop", "phone"] as const;
-export const fast4g = { latencyMs: 150, downloadBytesPerSecond: 200_000, uploadBytesPerSecond: 93_750 };
+export const phoneNetwork = { latencyMs: 150, downloadBytesPerSecond: 200_000, uploadBytesPerSecond: 93_750 };
 export const measurementTimeoutMs = 45_000;
 /** Fixed browser time zone, stored in Cloud's timezone cookie like on a returning user's device. */
 export const measuredTimeZone = "Europe/Berlin";
+export const measuredLocale = "en-US";
 type TransferType = "document" | "js" | "css" | "other";
-/** Chromium's abort when a host network interface changes mid-load; the load measured nothing. */
-export const isNetworkChange = (error: unknown) => error instanceof Error && error.message.includes("net::ERR_NETWORK_CHANGED");
 
 export function transferType(type: string): TransferType {
   return type.toLowerCase() === "script"
@@ -29,11 +39,12 @@ export function transferType(type: string): TransferType {
 
 type Probe = {
   initial: Element[] | null;
-  mounted: Set<Element>;
+  mounted: Map<Element, number>;
   errors: string[];
   fcp: number | null;
   lcp: number | null;
-  cls: number | null;
+  shifts: { start: number; value: number }[] | null;
+  resources: { name: string; responseEnd: number }[];
   longtasks: { start: number; duration: number }[];
   observers: PerformanceObserver[];
   flush: () => void;
@@ -48,11 +59,12 @@ declare global {
 export function installProbe(chromiumEngine: boolean) {
   const probe: Probe = {
     initial: null,
-    mounted: new Set(),
+    mounted: new Map(),
     errors: [],
     fcp: null,
     lcp: null,
-    cls: null,
+    shifts: null,
+    resources: [],
     longtasks: [],
     observers: [],
     flush: () => {},
@@ -77,7 +89,7 @@ export function installProbe(chromiumEngine: boolean) {
       // The microtask runs after that render stack; thrown/caught errors dispatch ssr:island-error.
       if (mount)
         queueMicrotask(() => {
-          probe.mounted.add(this);
+          if (!probe.mounted.has(this)) probe.mounted.set(this, performance.now());
         });
     },
   });
@@ -99,11 +111,16 @@ export function installProbe(chromiumEngine: boolean) {
   observe("largest-contentful-paint", (entries) => {
     for (const entry of entries) probe.lcp = entry.startTime;
   });
-  if (PerformanceObserver.supportedEntryTypes.includes("layout-shift")) probe.cls = 0;
+  if (PerformanceObserver.supportedEntryTypes.includes("layout-shift")) probe.shifts = [];
   observe("layout-shift", (entries) => {
     for (const entry of entries)
       if ("hadRecentInput" in entry && entry.hadRecentInput === false && "value" in entry && typeof entry.value === "number")
-        probe.cls = (probe.cls ?? 0) + entry.value;
+        probe.shifts?.push({ start: entry.startTime, value: entry.value });
+  });
+  observe("resource", (entries) => {
+    for (const entry of entries)
+      if ("responseEnd" in entry && typeof entry.responseEnd === "number")
+        probe.resources.push({ name: entry.name, responseEnd: entry.responseEnd });
   });
   if (chromiumEngine)
     observe("longtask", (entries) => {
@@ -117,21 +134,14 @@ export function installProbe(chromiumEngine: boolean) {
 export class Browsers {
   readonly engines = new Map<"chromium" | "webkit", Browser>();
   webkitSkip: string | null = null;
-  constructor(
-    readonly tempDirectory: string,
-    readonly signal: AbortSignal,
-  ) {}
+  constructor(readonly signal: AbortSignal) {}
 
-  async launch(startWebkit: () => Promise<string>) {
+  async launch(endpoint: string) {
     this.signal.throwIfAborted();
-    const options = { headless: true, timeout: 30_000, env: { ...Bun.env, TMPDIR: this.tempDirectory } };
-    this.engines.set("chromium", await chromium.launch(options));
+    const options = { timeout: 30_000, headers: { "x-playwright-launch-options": JSON.stringify({ headless: true }) } };
+    this.engines.set("chromium", await chromium.connect(endpoint, options));
     try {
-      const endpoint = await startWebkit();
-      this.engines.set(
-        "webkit",
-        await webkit.connect(endpoint, { timeout: 30_000, headers: { "x-playwright-launch-options": JSON.stringify({ headless: true }) } }),
-      );
+      this.engines.set("webkit", await webkit.connect(endpoint, options));
     } catch (error) {
       this.signal.throwIfAborted();
       this.webkitSkip = error instanceof Error ? error.message : String(error);
@@ -143,8 +153,7 @@ export class Browsers {
     return Object.fromEntries([...this.engines].map(([name, browser]) => [name, browser.version()]));
   }
 
-  async measure(url: string, cookie: string, runs: number): Promise<BrowserResult[]> {
-    const results: BrowserResult[] = [];
+  async measure(url: string, cookie: string, runs: number, results: BrowserResult[]) {
     for (const engine of ["chromium", "webkit"] as const)
       for (const profile of profiles) {
         const browser = this.engines.get(engine);
@@ -154,7 +163,7 @@ export class Browsers {
           status: browser ? "ok" : "skipped",
           reason: browser ? null : this.webkitSkip,
           cpuThrottle: engine === "chromium" ? (profile === "phone" ? 4 : 1) : null,
-          network: engine === "chromium" && profile === "phone" ? fast4g : null,
+          network: engine === "chromium" && profile === "phone" ? phoneNetwork : null,
           transferSource: engine === "chromium" ? "cdp.encodedDataLength" : "playwright.request.sizes",
           contentEncoding: { js: [], css: [] },
           samples: [],
@@ -164,20 +173,20 @@ export class Browsers {
         if (!browser) continue;
         const failures: string[] = [];
         for (let run = 0; run < runs; run++) {
-          this.signal.throwIfAborted();
-          console.log(`  ${engine} ${profile} ${run + 1}/${runs}`);
           try {
-            // Docker on a shared host adds and removes interfaces at any time; Chromium then aborts
-            // the navigation with ERR_NETWORK_CHANGED. Such a load measured nothing, so it is repeated once.
-            const sample = await this.sample(browser, engine, profile, url, cookie).catch((error: unknown) => {
-              if (!isNetworkChange(error)) throw error;
-              console.log(`  ${engine} ${profile} ${run + 1}/${runs}: network changed during load, repeating it`);
-              return this.sample(browser, engine, profile, url, cookie);
-            });
+            this.signal.throwIfAborted();
+            console.log(`  ${engine} ${profile} ${run + 1}/${runs}`);
+            const sample = await this.sample(browser, engine, profile, url, cookie);
             result.samples.push(sample.metrics);
             for (const type of ["js", "css"] as const)
               result.contentEncoding[type] = [...new Set([...result.contentEncoding[type], ...sample.encodings[type]])].sort();
+            this.signal.throwIfAborted();
           } catch (error) {
+            if (this.signal.aborted) {
+              result.status = "failed";
+              result.reason = this.signal.reason instanceof Error ? this.signal.reason.message : String(this.signal.reason);
+              this.signal.throwIfAborted();
+            }
             failures.push(`Run ${run + 1}: ${error instanceof Error ? error.message : String(error)}`);
           }
         }
@@ -195,7 +204,6 @@ export class Browsers {
           }
         }
       }
-    return results;
   }
 
   private async sample(browser: Browser, engine: "chromium" | "webkit", profile: "desktop" | "phone", url: string, cookie: string) {
@@ -204,7 +212,7 @@ export class Browsers {
       deviceScaleFactor: profile === "phone" ? 3 : 1,
       isMobile: profile === "phone",
       hasTouch: profile === "phone",
-      locale: "en-US",
+      locale: measuredLocale,
       timezoneId: measuredTimeZone,
       colorScheme: "light",
       serviceWorkers: "block",
@@ -232,6 +240,7 @@ export class Browsers {
       const counts = { document: 0, js: 0, css: 0, other: 0 };
       const encodings = { js: new Set<string>(), css: new Set<string>() };
       const pendingScripts = new Set<Request>();
+      const scriptUrls = new Set<string>();
       const requests = new Map<string, TransferType>();
       const sizeJobs: Promise<void>[] = [];
       const errors: string[] = [];
@@ -245,6 +254,7 @@ export class Browsers {
         counts[transferType(request.resourceType())]++;
         if (request.resourceType() === "script") {
           pendingScripts.add(request);
+          scriptUrls.add(request.url());
           lastScript = performance.now();
         }
       });
@@ -264,7 +274,9 @@ export class Browsers {
           );
       });
       page.on("requestfailed", (request) => {
-        if (collecting && pendingScripts.has(request)) errors.push(`Script request failed: ${new URL(request.url()).pathname}`);
+        if (!collecting) return;
+        const error = failedRequestError(request.resourceType(), request.url(), request.failure()?.errorText);
+        if (error) errors.push(error);
         finishScript(request);
       });
       let documents = 0;
@@ -307,9 +319,9 @@ export class Browsers {
         if (profile === "phone")
           await cdp.send("Network.emulateNetworkConditions", {
             offline: false,
-            latency: fast4g.latencyMs,
-            downloadThroughput: fast4g.downloadBytesPerSecond,
-            uploadThroughput: fast4g.uploadBytesPerSecond,
+            latency: phoneNetwork.latencyMs,
+            downloadThroughput: phoneNetwork.downloadBytesPerSecond,
+            uploadThroughput: phoneNetwork.uploadBytesPerSecond,
             connectionType: "cellular4g",
           });
       }
@@ -317,7 +329,7 @@ export class Browsers {
       const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: measurementTimeoutMs });
       if (!response) throw new Error("No document response");
       validatePage(response.status(), url, page.url(), await response.text());
-      let tti: number | null = null;
+      let timing: (Pick<Probe, "fcp" | "lcp" | "shifts" | "resources" | "longtasks" | "errors"> & { mountTimes: number[] }) | null = null;
       while (performance.now() - start < measurementTimeoutMs) {
         this.signal.throwIfAborted();
         const state = await page.evaluate(() => ({
@@ -335,22 +347,36 @@ export class Browsers {
             quietMs: performance.now() - lastScript,
           })
         ) {
-          tti = await page.evaluate(() => performance.now());
+          timing = await page.evaluate(() => {
+            const p = window.__cloudPerf;
+            p.flush();
+            for (const observer of p.observers) observer.disconnect();
+            const mountTimes = (p.initial ?? []).map((element) => {
+              const time = p.mounted.get(element);
+              if (time === undefined) throw new Error("Initial island mount time missing at observation stop");
+              return time;
+            });
+            return {
+              mountTimes,
+              resources: p.resources,
+              fcp: p.fcp,
+              lcp: p.lcp,
+              shifts: p.shifts,
+              longtasks: p.longtasks,
+              errors: p.errors,
+            };
+          });
           break;
         }
         await Bun.sleep(50);
       }
-      if (tti === null)
+      if (timing === null)
         throw new Error(`TTI timed out after ${measurementTimeoutMs} ms (initial islands did not mount or scripts did not become quiet)`);
       collecting = false;
       await Promise.all(sizeJobs);
-      const timing = await page.evaluate(() => {
-        const p = window.__cloudPerf;
-        p.flush();
-        for (const observer of p.observers) observer.disconnect();
-        return { fcp: p.fcp, lcp: p.lcp, cls: p.cls, longtasks: p.longtasks, errors: p.errors };
-      });
       if (timing.errors.length || errors.length) throw new Error([...timing.errors, ...errors].join("; "));
+      const tti = timeToInteractive({ ...timing, scriptUrls: [...scriptUrls] });
+      const cls = cumulativeLayoutShift(timing.shifts);
       const longtasks =
         engine === "chromium" ? longTaskMetrics(timing.longtasks, timing.fcp, tti) : { lastLongTaskEndMs: null, totalBlockingTimeMs: null };
       const ms = (n: number | null) => (n === null ? null : Math.round(n));
@@ -366,7 +392,7 @@ export class Browsers {
         requests: Object.values(counts).reduce((a, b) => a + b, 0),
         fcpMs: ms(timing.fcp),
         lcpMs: ms(timing.lcp),
-        cls: timing.cls === null ? null : Number(timing.cls.toFixed(4)),
+        cls: cls === null ? null : Number(cls.toFixed(4)),
         ttiMs: Math.round(tti),
         ...longtasks,
       });

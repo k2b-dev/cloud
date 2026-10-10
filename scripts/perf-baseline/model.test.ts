@@ -4,7 +4,9 @@ import {
   aggregateMetrics,
   assetPath,
   closure,
+  cumulativeLayoutShift,
   decodeAttribute,
+  failedRequestError,
   inspectHtml,
   interactive,
   longTaskMetrics,
@@ -14,6 +16,7 @@ import {
   renderSummary,
   resultSchema,
   sortedJson,
+  timeToInteractive,
   validatePage,
 } from "./model";
 
@@ -119,12 +122,83 @@ describe("performance baseline contracts", () => {
     expect(() => aggregate([Number.NaN])).toThrow();
   });
 
-  test("TTI requires all initial wrappers, completed scripts, and 500 ms of quiet", () => {
+  test("observation stops only after all initial wrappers, completed scripts, and 500 ms of quiet", () => {
     expect(interactive({ initial: 2, mounted: 1, pendingScripts: 0, quietMs: 600 })).toBe(false);
     expect(interactive({ initial: 2, mounted: 2, pendingScripts: 1, quietMs: 600 })).toBe(false);
     expect(interactive({ initial: 2, mounted: 2, pendingScripts: 0, quietMs: 499 })).toBe(false);
     expect(interactive({ initial: 2, mounted: 2, pendingScripts: 0, quietMs: 500 })).toBe(true);
     expect(interactive({ initial: 0, mounted: 0, pendingScripts: 0, quietMs: 500 })).toBe(true);
+  });
+
+  test("TTI excludes the quiet window and host polling latency", () => {
+    const timing = { fcp: 176, mountTimes: [200, 240], scriptUrls: [], resources: [], longtasks: [] };
+    expect(interactive({ initial: 2, mounted: 2, pendingScripts: 0, quietMs: 762 })).toBe(true);
+    expect(timeToInteractive(timing)).toBe(240);
+  });
+
+  test("TTI takes the latest mount, observed script response, or long-task end", () => {
+    const timing = {
+      fcp: 100,
+      mountTimes: [200, 300],
+      scriptUrls: ["https://localhost:4100/entry.js"],
+      resources: [
+        { name: "https://localhost:4100/entry.js", responseEnd: 400 },
+        { name: "https://localhost:4100/font.woff2", responseEnd: 900 },
+      ],
+      longtasks: [{ start: 450, duration: 100 }],
+    };
+    expect(timeToInteractive(timing)).toBe(550);
+    expect(timeToInteractive({ ...timing, longtasks: [] })).toBe(400);
+    expect(timeToInteractive({ ...timing, longtasks: [], mountTimes: [600] })).toBe(600);
+    expect(timeToInteractive({ ...timing, fcp: 800 })).toBe(800);
+    expect(timeToInteractive({ ...timing, fcp: null, longtasks: [] })).toBe(400);
+  });
+
+  test("WebKit TTI works without long tasks, and missing script timing fails loudly", () => {
+    const timing = { fcp: null, mountTimes: [220], scriptUrls: [], resources: [], longtasks: [] };
+    expect(timeToInteractive(timing)).toBe(220);
+    expect(timeToInteractive({ ...timing, mountTimes: [], fcp: 176 })).toBe(176);
+    expect(() => timeToInteractive({ ...timing, scriptUrls: ["https://localhost:4100/missing.js"] })).toThrow(
+      "Missing resource timing for observed script: https://localhost:4100/missing.js",
+    );
+  });
+
+  test("CLS takes the largest session window and preserves unsupported entries", () => {
+    expect(cumulativeLayoutShift(null)).toBeNull();
+    expect(cumulativeLayoutShift([])).toBe(0);
+    expect(
+      cumulativeLayoutShift([
+        { start: 0, value: 0.1 },
+        { start: 2000, value: 0.2 },
+      ]),
+    ).toBe(0.2);
+    expect(
+      cumulativeLayoutShift([
+        { start: 0, value: 0.1 },
+        { start: 500, value: 0.2 },
+      ]),
+    ).toBeCloseTo(0.3);
+    expect(
+      cumulativeLayoutShift([
+        { start: 900, value: 0.1 },
+        { start: 1900, value: 0.2 },
+      ]),
+    ).toBeCloseTo(0.3);
+  });
+
+  test("CLS splits a continuous burst when its session would exceed five seconds", () => {
+    const burst = Array.from({ length: 8 }, (_, i) => ({ start: 700 + i * 900, value: 0.1 }));
+    expect(cumulativeLayoutShift(burst)).toBeCloseTo(0.6);
+  });
+
+  test("failed document, script and stylesheet requests include their path and network error", () => {
+    for (const type of ["document", "script", "stylesheet"])
+      expect(failedRequestError(type, "https://localhost:4100/public/app.css?v=1", "net::ERR_CONNECTION_RESET")).toBe(
+        `${type} request failed: /public/app.css (net::ERR_CONNECTION_RESET)`,
+      );
+    expect(failedRequestError("script", "https://localhost:4100/entry.js", undefined)).toContain("unknown network error");
+    for (const type of ["image", "fetch", "xhr", "font"])
+      expect(failedRequestError(type, "https://localhost:4100/resource", "failed")).toBeNull();
   });
 
   test("blocking time clips long tasks to the FCP/TTI window and subtracts 50 ms per task", () => {
@@ -188,6 +262,7 @@ describe("performance baseline contracts", () => {
     expect(renderSummary(run)).toContain("fixture failed");
     expect(renderSummary(run)).toContain("abc (dirty)");
     expect(renderSummary(run)).toContain("Transport: https-h2-caddy");
+    expect(renderSummary(run)).toContain("Session: throwaway administrator");
     expect(renderSummary(run)).not.toContain("| 0 |");
   });
 

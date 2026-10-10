@@ -4,8 +4,10 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { cpus, loadavg } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
+import { TIMEZONE_COOKIE } from "../packages/cloud/src/shared/time";
+import { runUnderHeavyLock } from "./heavy-lock";
 import { measureStatic } from "./perf-baseline/assets";
-import { Browsers } from "./perf-baseline/browser";
+import { Browsers, measuredLocale, measuredTimeZone } from "./perf-baseline/browser";
 import { pageApps, parseArgs, type Result, renderSummary, resultSchema, sortedJson, validatePage } from "./perf-baseline/model";
 import { buildRoot, command, freeLoopbackPort, localTls, Runtime, repository, runtimeImage, worktreePath } from "./perf-baseline/runtime";
 import { Api, defaultPaths, seed, waitForRoutes } from "./perf-baseline/seed";
@@ -14,23 +16,26 @@ export const help = `Usage: bun --no-env-file scripts/perf-baseline.ts [flags]
 
 Measure production bundles through an isolated local Docker gateway and
 Caddy TLS terminator (HTTPS + HTTP/2; gateway compression passes through).
-Prerequisites: installed workspace dependencies, built @k2b/ui
-  (bun run --cwd packages/ui build), Docker access, local Chromium and its
-  system libraries for the workspace Playwright version (currently 1.63).
-WebKit uses a run-owned Playwright noble container matching the root catalog
-version, with host networking and its browser server on a free loopback port.
-Docker may pull missing images; the WebKit container may download Playwright.
-Local browsers are not installed by this script.
+Prerequisites: installed workspace dependencies and Docker access.
+Both browsers use one run-owned Playwright noble container matching the root
+catalog version, sharing Caddy's network namespace. Docker may pull missing
+images, including the Playwright image (about 3.5 GB); the container may
+download its matching Playwright package.
+The machine-wide heavy lock waits for other check/test runs and blocks them
+while this harness builds and measures. Unless --skip-build is used, it
+rebuilds @k2b/ui before building the selected apps.
 Allow roughly 5–15 minutes for builds/startup plus cold page loads; slower
 hosts or downloads take longer. Each browser load is capped at 45 seconds.
 The script starts and removes only its uniquely named containers/network/
-volumes. It publishes only Caddy on a free loopback port, never 3000; all apps
-use APP_URL=https://localhost:<port>. The harness trusts Caddy's private CA
-only for this local origin; browser contexts ignore local certificate errors.
+volumes. It publishes HTTPS and the browser server on free loopback ports,
+never 3000; all apps use APP_URL=https://localhost:<port>. Bun fetches skip
+certificate verification only for this origin; browser contexts ignore
+certificate errors.
 It does not use or change the development stack or application runtime code.
 After login it accepts the fresh installation's legal terms for the throwaway
 administrator through Core's public consent flow and verifies the session
-before checking authenticated routes or seeding fixtures.
+before checking authenticated routes or seeding fixtures. Every page is
+measured with that administrator session.
 
   --help             Show this help; no build, Docker or browser launch.
   --pages a,b        Restrict pages (default: all seven):
@@ -48,11 +53,16 @@ before checking authenticated routes or seeding fixtures.
                      fixture files; print exact commands to remove them.
 
 Both Chromium and WebKit run desktop (1440x900) and phone (390x844 @3x).
-Chromium phone uses 4x CPU and fast-4G network emulation. WebKit is unthrottled
-and may skip with a recorded image/start/connect error. These are local
-emulations, not real-phone measurements. TTI requires all initial islands to mount plus
-500 ms without script requests. Timeouts and render/fixture failures fail
-the run; partial metrics and errors are still written to both output files.
+Chromium phone uses 4x CPU slowdown, 150 ms request latency, 1.6 Mbit/s
+download and 750 kbit/s upload. WebKit is unthrottled and may skip with a
+recorded connect error; a browser server that does not start fails the run.
+These are local emulations, not real-phone measurements.
+TTI is the latest of FCP, the end of each initial island mount, the last
+script response end and, in Chromium, the last long-task end. Observation
+stops once all initial islands mounted and scripts were quiet for 500 ms;
+that window is not part of TTI, but transfers and performance entries count
+until the stop. Timeouts and render/fixture failures fail the run; partial
+metrics and errors are still written to both output files.
 
 Mail measures the real mailbox view of a seeded mailbox without a provider
 connection: empty list, smaller props, same eager JS. This limitation is
@@ -67,6 +77,7 @@ async function run() {
     console.log(help);
     return;
   }
+  runUnderHeavyLock();
   const timestamp = new Date().toISOString();
   const out = await worktreePath(options.out ?? `.local/perf-baseline/${timestamp.replaceAll(":", "-")}`);
   const previous = options.compare ? resultSchema.parse(JSON.parse(await readFile(options.compare, "utf8"))) : undefined;
@@ -130,9 +141,8 @@ async function run() {
     const apps = ["core", ...new Set(options.pages.map((id) => pageApps[id]).filter((id) => id !== "core")), "gateway"];
     await runtime.build(apps, options.skipBuild);
     await runtime.start(apps);
-    browsers = new Browsers(join(runtime.directory, "tmp"), controller.signal);
-    const installation = runtime;
-    await browsers.launch(() => installation.startWebkit(catalog.playwright));
+    browsers = new Browsers(controller.signal);
+    await browsers.launch(await runtime.startBrowsers(catalog.playwright));
     result.metadata.browserVersions = browsers.versions();
     const api = new Api(origin, controller.signal);
     const userId = await api.login(runtime.adminToken);
@@ -146,14 +156,18 @@ async function run() {
       try {
         const response = await fetch(url, {
           ...localTls(url, origin),
-          headers: { cookie: `session_token=${api.cookie}`, "accept-language": "en" },
+          headers: {
+            cookie: `session_token=${api.cookie}; ${TIMEZONE_COOKIE}=${encodeURIComponent(measuredTimeZone)}`,
+            "accept-language": measuredLocale,
+          },
           redirect: "manual",
           signal: AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]),
         });
         const html = await response.text();
         validatePage(response.status, url, response.url, html);
         page.static = await measureStatic(html, url, buildRoot, apps);
-        page.browsers = await browsers.measure(url, api.cookie, options.runs);
+        page.browsers = [];
+        await browsers.measure(url, api.cookie, options.runs, page.browsers);
         if (page.browsers.some((profile) => profile.status === "failed")) {
           page.status = "failed";
           page.errors.push("One or more browser profiles failed; see the recorded reasons");
@@ -161,6 +175,7 @@ async function run() {
       } catch (error) {
         page.status = "failed";
         page.errors.push(error instanceof Error ? error.message : String(error));
+        controller.signal.throwIfAborted();
       }
     }
   } catch (error) {

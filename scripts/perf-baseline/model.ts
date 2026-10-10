@@ -164,6 +164,47 @@ export function interactive(state: { initial: number; mounted: number; pendingSc
   return state.mounted === state.initial && state.pendingScripts === 0 && state.quietMs >= 500;
 }
 
+export function timeToInteractive(timing: {
+  fcp: number | null;
+  mountTimes: number[];
+  scriptUrls: string[];
+  resources: { name: string; responseEnd: number }[];
+  longtasks: { start: number; duration: number }[];
+}) {
+  let end = timing.fcp ?? 0;
+  for (const time of timing.mountTimes) end = Math.max(end, time);
+  for (const url of timing.scriptUrls) {
+    const entries = timing.resources.filter((entry) => entry.name === url);
+    if (!entries.length) throw new Error(`Missing resource timing for observed script: ${url}`);
+    for (const entry of entries) end = Math.max(end, entry.responseEnd);
+  }
+  for (const task of timing.longtasks) end = Math.max(end, task.start + task.duration);
+  return end;
+}
+
+export function cumulativeLayoutShift(shifts: { start: number; value: number }[] | null) {
+  if (shifts === null) return null;
+  let maximum = 0;
+  let sum = 0;
+  let start = 0;
+  let previous: number | null = null;
+  for (const shift of [...shifts].sort((a, b) => a.start - b.start)) {
+    if (previous === null || shift.start - previous > 1000 || shift.start - start > 5000) {
+      start = shift.start;
+      sum = 0;
+    }
+    sum += shift.value;
+    maximum = Math.max(maximum, sum);
+    previous = shift.start;
+  }
+  return maximum;
+}
+
+export function failedRequestError(resourceType: string, url: string, errorText: string | undefined) {
+  if (!["document", "script", "stylesheet"].includes(resourceType)) return null;
+  return `${resourceType} request failed: ${new URL(url).pathname} (${errorText ?? "unknown network error"})`;
+}
+
 export function longTaskMetrics(tasks: { start: number; duration: number }[], fcp: number | null, tti: number) {
   return {
     lastLongTaskEndMs: tasks.length ? Math.round(Math.max(...tasks.map((task) => task.start + task.duration))) : 0,
@@ -348,6 +389,7 @@ export function renderSummary(result: Result, old?: Result) {
     }`,
     `Runtime: ${m.runtimeImage} · Seed version: ${m.seedVersion}`,
     `Origin: ${m.origin} · Transport: ${m.transport}`,
+    "Session: throwaway administrator",
     "",
     "Bytes and milliseconds are integers; all browser values below are medians. JS/CSS Brotli columns are build sizes, not measured transfers. Transfers include the encoding the browser negotiated.",
     "",

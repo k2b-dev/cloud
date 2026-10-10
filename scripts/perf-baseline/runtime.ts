@@ -13,31 +13,31 @@ export function measurementOrigin(port: number) {
   return `https://localhost:${port}`;
 }
 
-/** Trust this run's private CA only for its exact local HTTPS origin. Callers refuse redirects. */
+/** Skip certificate verification only for this run's exact local HTTPS origin. Callers refuse redirects. */
 export function localTls(url: string | URL, origin: string) {
   const local = new URL(origin);
   if (local.hostname !== "localhost" || local.protocol !== "https:" || new URL(url).origin !== local.origin) return {};
   return { tls: { rejectUnauthorized: false } };
 }
 
-export function renderCaddyfile() {
+export function renderCaddyfile(port: number) {
   return `{
   admin off
   auto_https disable_redirects
 }
 
-https://localhost:443 {
+${measurementOrigin(port)} {
   tls internal
   reverse_proxy gateway:3000
 }
 `;
 }
 
-export function webkitServer(version: string, port: number) {
+export function browserServer(version: string, port: number) {
   return {
     image: `mcr.microsoft.com/playwright:v${version}-noble`,
     args: ["--init", "--ipc=host", "--user", "pwuser", "--workdir", "/home/pwuser"],
-    tail: ["npx", "-y", `playwright@${version}`, "run-server", "--port", String(port), "--host", "127.0.0.1"],
+    tail: ["npx", "-y", `playwright@${version}`, "run-server", "--port", String(port), "--host", "0.0.0.0"],
     endpoint: `ws://127.0.0.1:${port}/`,
   };
 }
@@ -67,15 +67,18 @@ export async function command(
   } = {},
 ): Promise<string> {
   options.signal?.throwIfAborted();
-  const child = Bun.spawn(args, { cwd: options.cwd ?? repository, env: options.env ?? Bun.env, stdout: "pipe", stderr: "pipe" });
-  const timeout = setTimeout(() => child.kill(), options.timeoutMs ?? 60_000);
-  try {
-    const [stdout, stderr, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
-    if (code !== 0) throw new Error(`${args[0]} ${args[1] ?? ""} exited ${code}: ${stderr.trim() || stdout.trim()}`);
-    return options.includeStderr ? [stdout.trim(), stderr.trim()].filter(Boolean).join("\n") : stdout.trim();
-  } finally {
-    clearTimeout(timeout);
-  }
+  const child = Bun.spawn(args, {
+    cwd: options.cwd ?? repository,
+    env: options.env ?? Bun.env,
+    stdout: "pipe",
+    stderr: "pipe",
+    signal: options.signal,
+    timeout: options.timeoutMs ?? 60_000,
+  });
+  const [stdout, stderr, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
+  options.signal?.throwIfAborted();
+  if (code !== 0) throw new Error(`${args[0]} ${args[1] ?? ""} exited ${code}: ${stderr.trim() || stdout.trim()}`);
+  return options.includeStderr ? [stdout.trim(), stderr.trim()].filter(Boolean).join("\n") : stdout.trim();
 }
 
 export function runtimeImage(dockerfile: string) {
@@ -130,7 +133,8 @@ export class Runtime {
   readonly directory = join(repository, ".local/perf-baseline", this.prefix);
   readonly containers: string[] = [];
   readonly volumes: string[] = [];
-  private networkCreated = false;
+  readonly networks: string[] = [];
+  private browserPort: number | null = null;
   readonly adminToken = crypto.randomUUID();
   readonly filegateToken = crypto.randomUUID();
   private readonly appSecret = crypto.randomUUID();
@@ -149,15 +153,26 @@ export class Runtime {
 
   private async owns(kind: "container" | "volume" | "network", name: string) {
     const format = kind === "container" ? '{{index .Config.Labels "cloud.perf.run"}}' : '{{index .Labels "cloud.perf.run"}}';
-    return (await command(["docker", kind, "inspect", "--format", format, name], { timeoutMs: 5000 })) === this.prefix;
+    return (await command(["docker", kind, "inspect", "--format", format, name], { timeoutMs: 5000, signal: this.signal })) === this.prefix;
   }
 
   async build(apps: string[], skip: boolean) {
-    if (["ssr/index.js", "browser/index.js", "base.css"].some((file) => !existsSync(join(repository, "packages/ui/dist", file))))
-      throw new Error("Build @k2b/ui first: bun run --cwd packages/ui build");
     await worktreePath(buildRoot);
     if (!skip && existsSync(join(repository, "dist")))
       throw new Error("Root dist already exists; move it aside inside this worktree before building (the production builder replaces it)");
+    const env = {
+      PATH: Bun.env.PATH,
+      HOME: Bun.env.HOME,
+      NODE_ENV: "production",
+      CLOUD_VERSION: "0.0.0-perf",
+      CLOUD_RELEASE: "perf",
+      BUN_OPTIONS: "--no-env-file",
+      TMPDIR: join(this.directory, "tmp"),
+    };
+    if (!skip) {
+      console.log("Building production @k2b/ui…");
+      await command(["bun", "run", "--cwd", "packages/ui", "build"], { env, timeoutMs: 600_000, signal: this.signal });
+    }
     for (const id of apps) {
       const destination = await worktreePath(join(buildRoot, id, "dist"));
       if (skip) {
@@ -170,17 +185,7 @@ export class Runtime {
       const progress = setInterval(() => console.log(`Building ${id}: ${Math.round((performance.now() - started) / 1000)} s`), 30_000);
       try {
         await command(["bun", "run", "packages/cloud/scripts/build.ts"], {
-          env: {
-            PATH: Bun.env.PATH,
-            HOME: Bun.env.HOME,
-            NODE_ENV: "production",
-            APP_ID: id,
-            APP_DIR: join(repository, "packages", id),
-            CLOUD_VERSION: "0.0.0-perf",
-            CLOUD_RELEASE: "perf",
-            BUN_OPTIONS: "--no-env-file",
-            TMPDIR: join(this.directory, "tmp"),
-          },
+          env: { ...env, APP_ID: id, APP_DIR: join(repository, "packages", id) },
           timeoutMs: 600_000,
           signal: this.signal,
         });
@@ -195,12 +200,9 @@ export class Runtime {
 
   private async volume(service: string) {
     const name = this.name(service);
-    try {
-      await command(["docker", "volume", "create", "--label", `cloud.perf.run=${this.prefix}`, name], { signal: this.signal });
-    } finally {
-      if (await this.owns("volume", name).catch(() => false)) this.volumes.push(name);
-    }
-    if (!this.volumes.includes(name)) throw new Error(`Could not establish volume ownership: ${name}`);
+    this.volumes.push(name);
+    await command(["docker", "volume", "create", "--label", `cloud.perf.run=${this.prefix}`, name], { signal: this.signal });
+    if (!(await this.owns("volume", name))) throw new Error(`Could not establish volume ownership: ${name}`);
     return name;
   }
 
@@ -210,10 +212,11 @@ export class Runtime {
     args: string[] = [],
     tail: string[] = [],
     env?: Record<string, string>,
-    network: "run" | "host" = "run",
+    network: "run" | "host" | `container:${string}` = "run",
   ) {
     this.signal.throwIfAborted();
-    const inspectImage = () => command(["docker", "image", "inspect", "--format", "{{json .Config.Volumes}}", image], { timeoutMs: 5000 });
+    const inspectImage = () =>
+      command(["docker", "image", "inspect", "--format", "{{json .Config.Volumes}}", image], { timeoutMs: 5000, signal: this.signal });
     let imageVolumes: string;
     try {
       imageVolumes = await inspectImage();
@@ -239,45 +242,38 @@ export class Runtime {
       envArgs.push("--env-file", path);
     }
     const name = this.name(service);
-    // A failed start can still leave a created container. Only this run's label
-    // establishes ownership; a name collision never becomes a cleanup target.
-    try {
-      await command(
-        [
-          "docker",
-          "run",
-          "--detach",
-          "--name",
-          name,
-          "--label",
-          `cloud.perf.run=${this.prefix}`,
-          "--network",
-          network === "host" ? "host" : this.prefix,
-          ...(network === "run" ? ["--network-alias", service] : []),
-          "--log-opt",
-          "max-size=4m",
-          ...envArgs,
-          ...args,
-          ...volumes,
-          image,
-          ...tail,
-        ],
-        { timeoutMs: 120_000, signal: this.signal },
-      );
-    } finally {
-      if (await this.owns("container", name).catch(() => false)) this.containers.push(name);
-    }
-    if (!this.containers.includes(name)) throw new Error(`Could not establish container ownership: ${name}`);
+    // Track the attempt before Docker can create anything, even if the command is aborted.
+    this.containers.push(name);
+    await command(
+      [
+        "docker",
+        "run",
+        "--detach",
+        "--name",
+        name,
+        "--label",
+        `cloud.perf.run=${this.prefix}`,
+        "--network",
+        network === "run" ? this.prefix : network,
+        ...(network === "run" ? ["--network-alias", service] : []),
+        "--log-opt",
+        "max-size=4m",
+        ...envArgs,
+        ...args,
+        ...volumes,
+        image,
+        ...tail,
+      ],
+      { timeoutMs: 120_000, signal: this.signal },
+    );
+    if (!(await this.owns("container", name))) throw new Error(`Could not establish container ownership: ${name}`);
   }
 
   async start(apps: string[]) {
     await mkdir(join(this.directory, "tmp"), { recursive: true });
-    try {
-      await command(["docker", "network", "create", "--label", `cloud.perf.run=${this.prefix}`, this.prefix], { signal: this.signal });
-    } finally {
-      this.networkCreated = await this.owns("network", this.prefix).catch(() => false);
-    }
-    if (!this.networkCreated) throw new Error(`Could not establish network ownership: ${this.prefix}`);
+    this.networks.push(this.prefix);
+    await command(["docker", "network", "create", "--label", `cloud.perf.run=${this.prefix}`, this.prefix], { signal: this.signal });
+    if (!(await this.owns("network", this.prefix))) throw new Error(`Could not establish network ownership: ${this.prefix}`);
     await this.container(
       "postgres",
       "postgres:17-alpine",
@@ -295,7 +291,10 @@ export class Runtime {
     await waitFor(
       "PostgreSQL",
       async () => {
-        await command(["docker", "exec", this.name("postgres"), "pg_isready", "-U", "ipa", "-d", "cloud_perf_test"], { timeoutMs: 5000 });
+        await command(["docker", "exec", this.name("postgres"), "pg_isready", "-U", "ipa", "-d", "cloud_perf_test"], {
+          timeoutMs: 5000,
+          signal: this.signal,
+        });
         return true;
       },
       this.signal,
@@ -344,7 +343,7 @@ export class Runtime {
                 "-e",
                 'const r=await fetch("http://127.0.0.1:3000/_cloud/ready");if(!r.ok)process.exit(1)',
               ],
-              { timeoutMs: 8000 },
+              { timeoutMs: 8000, signal: this.signal },
             );
             return true;
           },
@@ -352,12 +351,16 @@ export class Runtime {
         );
     }
     const caddyfile = join(this.directory, "Caddyfile");
-    await writeFile(caddyfile, renderCaddyfile());
+    this.browserPort = await freeLoopbackPort();
+    while (this.browserPort === this.port) this.browserPort = await freeLoopbackPort();
+    await writeFile(caddyfile, renderCaddyfile(this.port));
     await this.container("caddy", caddyImage, [
       "--volume",
       `${caddyfile}:/etc/caddy/Caddyfile:ro`,
       "--publish",
-      `127.0.0.1:${this.port}:443`,
+      `127.0.0.1:${this.port}:${this.port}`,
+      "--publish",
+      `127.0.0.1:${this.browserPort}:${this.browserPort}`,
     ]);
     await waitFor(
       "gateway route table",
@@ -372,11 +375,12 @@ export class Runtime {
     console.log(`Production gateway through Caddy TLS + HTTP/2: ${this.origin} (${this.prefix})`);
   }
 
-  async startWebkit(version: string) {
-    const server = webkitServer(version, await freeLoopbackPort());
-    await this.container("webkit", server.image, server.args, server.tail, undefined, "host");
+  async startBrowsers(version: string) {
+    if (this.browserPort === null) throw new Error("Caddy must publish the browser server port before browsers start");
+    const server = browserServer(version, this.browserPort);
+    await this.container("browsers", server.image, server.args, server.tail, undefined, `container:${this.name("caddy")}`);
     await waitFor(
-      "WebKit browser server",
+      "Playwright browser server",
       async () => (await fetch(server.endpoint.replace("ws:", "http:"), { signal: AbortSignal.timeout(5000) })).ok,
       this.signal,
       60_000,
@@ -409,7 +413,7 @@ export class Runtime {
       await waitFor(
         "Filegate",
         async () => {
-          await command(["docker", "exec", this.name("filegate"), "/app/filegate", "status"], { timeoutMs: 5000 });
+          await command(["docker", "exec", this.name("filegate"), "/app/filegate", "status"], { timeoutMs: 5000, signal: this.signal });
           return true;
         },
         this.signal,
@@ -421,8 +425,24 @@ export class Runtime {
     }
   }
 
+  private async labelled(kind: "container" | "volume" | "network", attempted: string[]) {
+    if (!attempted.length) return [];
+    const output = await command([
+      "docker",
+      kind,
+      "ls",
+      ...(kind === "container" ? ["--all"] : []),
+      "--filter",
+      `label=cloud.perf.run=${this.prefix}`,
+      "--format",
+      kind === "container" ? "{{.Names}}" : "{{.Name}}",
+    ]);
+    const owned = new Set(output.split("\n"));
+    return attempted.filter((name) => owned.has(name));
+  }
+
   async logs() {
-    for (const name of this.containers) {
+    for (const name of await this.labelled("container", this.containers)) {
       const output = await command(["docker", "logs", "--tail", "60", name], { includeStderr: true }).catch((error: unknown) =>
         String(error),
       );
@@ -433,37 +453,34 @@ export class Runtime {
   }
 
   async cleanup(keep: boolean) {
+    // Resolve attempted names by the exact run label; missing or differently labelled names are not ours.
+    // Never filter by name prefix or prune. Cleanup must also work after the run signal was aborted.
+    const failures: string[] = [];
+    const owned = async (kind: "container" | "volume" | "network", attempted: string[]) =>
+      this.labelled(kind, attempted).catch((error: unknown) => {
+        failures.push(String(error));
+        return [];
+      });
+    const [containers, volumes, networks] = await Promise.all([
+      owned("container", this.containers),
+      owned("volume", this.volumes),
+      owned("network", this.networks),
+    ]);
     if (keep) {
+      if (failures.length) throw new Error(`Cannot resolve kept resources: ${failures.join("; ")}`);
       console.log(
-        `Kept resources. Remove exactly this run:\ndocker rm -f ${this.containers.join(" ")}\n${this.volumes.length ? `docker volume rm ${this.volumes.join(" ")}\n` : ""}${this.networkCreated ? `docker network rm ${this.prefix}\n` : ""}Then remove private fixture files: ${this.directory}`,
+        `Kept resources. Remove exactly this run:\n${containers.length ? `docker rm -f ${containers.toReversed().join(" ")}\n` : ""}${volumes.length ? `docker volume rm ${volumes.join(" ")}\n` : ""}${networks.length ? `docker network rm ${networks.join(" ")}\n` : ""}Then remove private fixture files: ${this.directory}`,
       );
       return;
     }
-    // Verify the run label again before removal; never use prefix-wide filters or pruning.
-    const failures: string[] = [];
-    for (const name of this.containers.toReversed()) {
-      try {
-        if (!(await this.owns("container", name))) throw new Error(`Ownership changed: ${name}`);
-        await command(["docker", "rm", "--force", "--volumes", name]);
-      } catch (error) {
-        failures.push(String(error));
-      }
+    for (const name of containers.toReversed()) {
+      await command(["docker", "rm", "--force", "--volumes", name]).catch((error: unknown) => failures.push(String(error)));
     }
-    for (const name of this.volumes) {
-      try {
-        if (!(await this.owns("volume", name))) throw new Error(`Ownership changed: ${name}`);
-        await command(["docker", "volume", "rm", name]);
-      } catch (error) {
-        failures.push(String(error));
-      }
+    for (const name of volumes) {
+      await command(["docker", "volume", "rm", name]).catch((error: unknown) => failures.push(String(error)));
     }
-    if (this.networkCreated) {
-      try {
-        if (!(await this.owns("network", this.prefix))) throw new Error(`Ownership changed: ${this.prefix}`);
-        await command(["docker", "network", "rm", this.prefix]);
-      } catch (error) {
-        failures.push(String(error));
-      }
+    for (const name of networks) {
+      await command(["docker", "network", "rm", name]).catch((error: unknown) => failures.push(String(error)));
     }
     if (failures.length) throw new Error(`Cleanup failed; resources carry ${this.prefix}: ${failures.join("; ")}`);
     await rm(this.directory, { recursive: true, force: true });
