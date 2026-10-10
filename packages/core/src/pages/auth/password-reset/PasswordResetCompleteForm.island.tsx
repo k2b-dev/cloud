@@ -60,14 +60,8 @@ export default function PasswordResetCompleteForm(props: PasswordResetCompleteFo
       )}
 
       <Button type="submit" class="w-full justify-center py-2" loading={mutation.loading()} loadingLabel={t().resettingPassword}>
-        {mutation.loading() ? (
-          <i class="ti ti-loader-2 animate-spin" />
-        ) : (
-          <>
-            <i class="ti ti-lock-check" />
-            <span>{t().setPassword}</span>
-          </>
-        )}
+        <i class="ti ti-lock-check" />
+        <span>{t().setPassword}</span>
       </Button>
     </form>
   );

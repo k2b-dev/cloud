@@ -82,7 +82,7 @@ export default function GuestLoginForm(props: {
           )}
 
           <Button type="submit" class="w-full justify-center py-2" loading={loading()} loadingLabel={t().verifying}>
-            {tokenMutation.loading() ? <i class="ti ti-loader-2 animate-spin" /> : t().verify}
+            {t().verify}
           </Button>
         </form>
       }
@@ -112,7 +112,7 @@ export default function GuestLoginForm(props: {
         )}
 
         <Button type="submit" size="lg" class="w-full justify-center" loading={loading()} loadingLabel={t().sendingLoginLink}>
-          {emailMutation.loading() ? <i class="ti ti-loader-2 animate-spin" /> : <i class="ti ti-send" />}
+          <i class="ti ti-send" />
           {t().sendLoginLink}
         </Button>
 

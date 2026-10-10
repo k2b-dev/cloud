@@ -394,24 +394,22 @@ export default function MailMessageDeliveryControl(props: {
                 : void cancel.mutate({ submissionId: props.delivery.submissionId })
             }
           >
-            <Show when={!cancel.loading()}>
-              <i
-                class={`ti ${
-                  props.delivery.state === "undo_window"
-                    ? "ti-arrow-back-up"
-                    : props.delivery.state === "scheduled" && !props.delivery.lastErrorCode
-                      ? "ti-clock"
-                      : props.delivery.state === "scheduled"
-                        ? waitsForSignIn(props.delivery)
-                          ? "ti-lock"
-                          : "ti-refresh"
-                        : props.delivery.state === "failed" || props.delivery.state === "reconciled_unsent"
-                          ? "ti-alert-circle"
-                          : "ti-alert-triangle"
-                }`}
-                aria-hidden="true"
-              />
-            </Show>
+            <i
+              class={`ti ${
+                props.delivery.state === "undo_window"
+                  ? "ti-arrow-back-up"
+                  : props.delivery.state === "scheduled" && !props.delivery.lastErrorCode
+                    ? "ti-clock"
+                    : props.delivery.state === "scheduled"
+                      ? waitsForSignIn(props.delivery)
+                        ? "ti-lock"
+                        : "ti-refresh"
+                      : props.delivery.state === "failed" || props.delivery.state === "reconciled_unsent"
+                        ? "ti-alert-circle"
+                        : "ti-alert-triangle"
+              }`}
+              aria-hidden="true"
+            />
             <span>{actionLabel()}</span>
           </Button>
         </div>

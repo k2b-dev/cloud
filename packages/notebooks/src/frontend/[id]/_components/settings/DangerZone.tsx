@@ -39,17 +39,8 @@ export function DangerZone(props: { notebook: Notebook }) {
     <SettingsGroup title={t().deleteNotebook} description={t().deleteDescription}>
       <SettingsGroup.Action>
         <Button variant="danger" onClick={handleDelete} loading={mutation.loading()} loadingLabel={t().deleting}>
-          {mutation.loading() ? (
-            <>
-              <i class="ti ti-loader-2 animate-spin" aria-hidden="true" />
-              {t().deleting}
-            </>
-          ) : (
-            <>
-              <i class="ti ti-trash" aria-hidden="true" />
-              {t().deleteNotebook}
-            </>
-          )}
+          <i class="ti ti-trash" aria-hidden="true" />
+          {t().deleteNotebook}
         </Button>
       </SettingsGroup.Action>
     </SettingsGroup>

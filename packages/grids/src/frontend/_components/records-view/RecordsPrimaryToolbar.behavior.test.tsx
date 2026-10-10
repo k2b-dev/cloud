@@ -137,10 +137,15 @@ domTest("the manual refresh appears only when a live reconciliation needs a retr
     expect(refresh()?.querySelector("i")?.className).toBe("ti ti-refresh");
 
     // The retry uses the @k2b/ui Button loading state, whose spinner honors reduced motion.
+    // The refresh icon keeps its place under the spinner, so the button keeps its width.
     toolbar.setLiveRefreshing(true);
     expect(refresh()?.disabled).toBe(true);
     expect(refresh()?.getAttribute("aria-busy")).toBe("true");
-    expect(Array.from(refresh()?.querySelectorAll("i") ?? []).map((icon) => icon.className)).toEqual(["ti ti-loader-2 k2b-spin"]);
+    expect(Array.from(refresh()?.querySelectorAll("i") ?? []).map((icon) => icon.className)).toEqual([
+      "ti ti-refresh",
+      "ti ti-loader-2 k2b-spin",
+    ]);
+    expect(refresh()?.querySelector(".k2b-button__busy > i")?.className).toBe("ti ti-loader-2 k2b-spin");
   } finally {
     toolbar.dispose();
   }
