@@ -10,14 +10,14 @@ const manifests = new WeakMap<object, HelpManifestResult | null>();
 const log = logger("help:ssr");
 export const getLayoutHelp = (c: object): HelpManifestResult | null => manifests.get(c) ?? null;
 
-/** Explicit Help pages also work anonymously; automatic layout loading requires a user. */
+/** Help metadata for the current or an explicit app; `null` without a user or when the user may not see the app. */
 export const preloadLayoutHelp = async (c: Context, appId?: string): Promise<HelpManifestResult | null> => {
   if (manifests.has(c)) return getLayoutHelp(c);
-  if (!c.get("runtime") || (!appId && !c.get("user"))) return null;
+  if (!c.get("runtime") || !c.get("user")) return null;
   const id = appId ?? resolveCurrentApp(getRuntimeContext(c).apps, c.req.path)?.id;
   if (!id) return null;
   try {
-    const manifest = await createHelpReader(getLocale(c)).manifest(id);
+    const manifest = await createHelpReader(getLocale(c), c.get("actor")).manifest(id);
     manifests.set(c, manifest);
     return manifest;
   } catch (error) {
