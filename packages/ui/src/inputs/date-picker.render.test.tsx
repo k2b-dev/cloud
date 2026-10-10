@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, setSystemTime, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
@@ -7,11 +7,13 @@ import { dates } from "@k2b/stdlib";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import {
+  dateKey,
   displayDate,
   filterTimeInput,
   formatDateOnlyRangeDuration,
   isCompleteTime,
   monthNames,
+  msUntilNextDay,
   normalizeTimeInput,
   orderedRange,
   previewRange,
@@ -248,6 +250,99 @@ describe("@k2b/ui complete date picker migration", () => {
     expect(html).toContain('aria-pressed="true"');
     expect(html).toContain("1 hour");
     expect(html).toMatch(/class="k2b-date-actions"[^>]*>[\s\S]*class="k2b-date-durations"[\s\S]*>Apply<\/button>/);
+  });
+
+  describe("today", () => {
+    afterEach(() => setSystemTime());
+
+    /** The rendered day button for a date key, or an empty string. */
+    const dayButton = (html: string, key: string): string => html.match(new RegExp(`<button[^>]*data-date-day="${key}"[^>]*>`))?.[0] ?? "";
+    const todayButtons = (html: string): string[] => html.match(/<button[^>]*data-today="true"[^>]*>/g) ?? [];
+
+    test("marks today with aria-current and a name that says so", () => {
+      setSystemTime(new Date("2026-10-09T10:00:00.000Z"));
+      const html = renderToString(() =>
+        createComponent(DatePicker, { label: "Due", value: null, dateConfig: { timeZone: "Europe/Berlin", locale: "en" } }),
+      );
+
+      expect(todayButtons(html)).toHaveLength(1);
+      const today = dayButton(html, "2026-10-09");
+      expect(today).toContain('data-today="true"');
+      expect(today).toContain('aria-current="date"');
+      expect(today).toContain('aria-label="Today, Friday, October 9, 2026"');
+      expect(today).toContain('aria-selected="false"');
+      // Without a value the roving tab stop starts on today.
+      expect(today).toContain('tabindex="0"');
+      expect(dayButton(html, "2026-10-08")).not.toContain("aria-current");
+    });
+
+    test("keeps the selection on today and names it in the render locale", () => {
+      setSystemTime(new Date("2026-10-09T10:00:00.000Z"));
+      const html = renderToString(() =>
+        createComponent(DatePicker, { label: "Fällig", value: "2026-10-09", dateConfig: { timeZone: "Europe/Berlin", locale: "de" } }),
+      );
+
+      const today = dayButton(html, "2026-10-09");
+      expect(today).toContain('aria-selected="true"');
+      expect(today).toContain('data-today="true"');
+      expect(today).toContain('aria-label="Heute, Freitag, 9. Oktober 2026"');
+    });
+
+    test("marks today on a day outside the visible month", () => {
+      setSystemTime(new Date("2026-10-01T10:00:00.000Z"));
+      const html = renderToString(() =>
+        createComponent(DateRangePicker, {
+          label: "Window",
+          value: { start: "2026-09-14", end: "2026-09-18" },
+          dateConfig: { timeZone: "Europe/Berlin", locale: "en" },
+        }),
+      );
+
+      const today = dayButton(html, "2026-10-01");
+      expect(today).toContain('data-outside="true"');
+      expect(today).toContain('data-today="true"');
+      expect(today).toContain('aria-current="date"');
+    });
+
+    test("reads today in the picker's time zone, not the server clock", () => {
+      // 22:30 UTC is already the next day in Berlin and still the same day in New York.
+      setSystemTime(new Date("2026-10-09T22:30:00.000Z"));
+      const render = (timeZone: string) =>
+        renderToString(() => createComponent(DateTimePicker, { label: "Send", value: null, dateConfig: { timeZone, locale: "en" } }));
+
+      expect(dayButton(render("Europe/Berlin"), "2026-10-10")).toContain('aria-current="date"');
+      expect(dayButton(render("America/New_York"), "2026-10-09")).toContain('aria-current="date"');
+    });
+
+    test("waits until the next midnight in the picker's time zone", () => {
+      const now = new Date("2026-10-09T21:59:30.000Z");
+      expect(msUntilNextDay(now, { timeZone: "Europe/Berlin" })).toBe(30_000);
+      expect(msUntilNextDay(now, { timeZone: "America/New_York" })).toBe(6 * 3_600_000 + 30_000);
+      // The night the clocks go back has a 25-hour day.
+      expect(msUntilNextDay(new Date("2026-10-24T22:00:00.000Z"), { timeZone: "Europe/Berlin" })).toBe(25 * 3_600_000);
+    });
+
+    test("waits for the next day where a DST change skips or repeats midnight", () => {
+      // Cairo and Beirut skip midnight in spring, so the day starts at 01:00;
+      // Santiago turns 24:00 back to 23:00 and repeats the day's last hour.
+      for (const [timeZone, at, nextDay] of [
+        ["Africa/Cairo", "2026-04-23T21:30:00.000Z", "2026-04-24"],
+        ["Asia/Beirut", "2026-03-28T21:30:00.000Z", "2026-03-29"],
+        ["America/Santiago", "2026-04-05T03:30:00.000Z", "2026-04-05"],
+      ] as const) {
+        const now = new Date(at);
+        const delay = msUntilNextDay(now, { timeZone });
+        expect(delay).toBe(30 * 60_000);
+        expect(dateKey(new Date(now.getTime() + delay - 1), { timeZone })).not.toBe(nextDay);
+        expect(dateKey(new Date(now.getTime() + delay), { timeZone })).toBe(nextDay);
+      }
+    });
+
+    test("draws the today dot inside the cell", () => {
+      const rule = uiCss.match(/\.k2b-ui \.k2b-date-grid button\[data-today="true"\]::after \{([^}]*)\}/)?.[1] ?? "";
+      expect(rule).toContain("position: absolute");
+      expect(rule).toContain("background: currentColor");
+    });
   });
 
   test("does not expose the deprecated native compatibility wrapper", () => {
