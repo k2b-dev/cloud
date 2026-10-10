@@ -504,6 +504,24 @@ JSON URL twice. The first request asks and offers
 **Allow this website for this chat**. After you choose it, the second request
 runs without asking and shows its full URL with **Revoke**.
 
+### Update Studio source writes
+
+`code_write` now saves one file per call with top-level `path` and `content`.
+File imports moved to the new `code_import` tool. Results report `lines` next to
+`length`. No configuration change or database migration is required. Stored
+source, revisions and chats are unchanged; older chat blocks keep their recorded
+arguments.
+
+Roll Core and Assistant over together. A mixed version rejects the other side's
+`code_write` input as invalid, and an older Assistant has no `code_import` route.
+Rollback is replacing both images; nothing needs undoing in the database. A turn
+running during the rollout may get one invalid-input error and then follows the
+new tool description.
+
+After rollout, ask Assistant to build a small app with `index.html` and `app.js`.
+The turn should show one `code_write` per file, no approval, and each result
+should list line counts that match the files.
+
 ### Update browser notifications for grouping and badges
 
 Deploy the updated platform package and Core together to enable

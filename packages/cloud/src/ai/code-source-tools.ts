@@ -21,6 +21,7 @@ import { defineAiTool } from "./tools";
 const WRITE_TOOLS = new Set([
   "code_create",
   "code_write",
+  "code_import",
   "code_remove",
   "code_update",
   "code_fork",
@@ -131,7 +132,7 @@ export function createCodeSourceTool(name: CodeSourceToolName) {
       if (!response.ok) throw new Error("Assistant tool request failed.");
       return { data: reply.data.data, status: response.status };
     };
-    if ("review" in definition && (typeof definition.review === "function" ? definition.review(input) : definition.review)) {
+    if ("review" in definition && definition.review) {
       const preview = z.object({ data: z.object({ message: z.string().min(1) }) }).parse((await send(true)).data).data;
       if (!authorizeDatabase && !(await context.requestApproval(preview.message)))
         throw new Error("The user declined this change. No mutation was sent.");
@@ -191,5 +192,6 @@ export const createCodeSourceTools = () => [
   createCodeSourceTool("code_update"),
   createCodeSourceTool("code_create"),
   createCodeSourceTool("code_write"),
+  createCodeSourceTool("code_import"),
   createCodeSourceTool("code_remove"),
 ];

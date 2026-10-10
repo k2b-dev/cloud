@@ -767,23 +767,34 @@ include each local path alongside its chat path. Existing local files are not
 overwritten.
 
 Assistant exposes direct server tools: `code_create`, `code_read`, `code_write`,
-`code_remove`, `code_list`, `code_history`, `code_update`, `code_fork`,
-`code_publish`, `code_versions`, `code_restore`, and `code_sql`. These are
-deferred built-ins with flat inputs, not application capabilities.
+`code_import`, `code_remove`, `code_list`, `code_history`, `code_update`,
+`code_fork`, `code_publish`, `code_versions`, `code_restore`, and `code_sql`.
+These are deferred built-ins with flat inputs, not application capabilities.
 `CODE_SOURCE_TOOLS` from `@k2b/cloud/ai` supplies their shared input contracts.
 Core forwards each operation to Assistant using an operation-bound invocation.
 The server derives the chat context and checks current user, conversation,
 Project and resource permissions. GUI and CLI use the same resource services.
 Writes reuse the platform replay guard; uncertain calls are not repeated.
 `cloud.capabilities.run` remains available for other applications, not these tools.
-`code_write` saves one atomic batch against `expectedRevision`, preserves sibling
-files and reports compilation diagnostics without rejecting incomplete source.
-Conflicting revisions and duplicate paths reject the whole batch. A file can
-use `{path,content}` or `{path,fromChatFile:{path,version}}`; the latter copies
-validated data bytes on the server without printing/retyping them through the
-model. `code_export` returns the required chat path and version. Relative JSON
-imports expose data; CSV/TSV/TXT imports expose text. Execution requires a
-compilable entry exporting one function.
+`code_write` saves one complete file per call with top-level `path` and `content`.
+Source text travels only in top-level strings because some providers corrupt
+strings nested in array arguments. Other files stay unchanged. Pass the revision
+from `code_read`, `code_create` or the previous write as `expectedRevision`, then
+chain each returned revision into the next call. A stale revision returns
+`CONFLICT` without saving. Re-read and reconcile before retrying.
+Results list `lines` and `length` (UTF-16 units) for every file, so a model
+can see when content arrived cut, plus compiler diagnostics for the saved state.
+A trailing newline adds no extra line. Diagnostics do not reject incomplete
+source: a missing import remains a finding until its file is saved. A normal
+multi-file build is one call per file with no approval.
+
+`code_import` atomically copies exact chat, Project or App `fromFile` references
+as UTF-8 source without printing their bytes. Use `code_file_stat` first. Imports
+carry references only and receive one fresh review for the whole batch, because
+source may be shared or published. Source file and bundle byte limits apply;
+stale destination revisions, source versions or duplicate paths reject the batch.
+Relative JSON imports expose data; CSV/TSV/TXT imports expose text. Execution
+requires a compilable entry exporting one function.
 
 The host owns isolation, artifact permissions, input file authorization,
 cancellation, and execution deduplication. Assistant persists call ownership
@@ -946,11 +957,13 @@ Visible running sessions check for updates every 30 seconds and on window focus,
 with at most one background check in flight. Updates offer a restart instead of
 discarding current inputs. Historical selections stay on their selected version.
 
-Code source edits use `code_write({id, expectedRevision, files, entry?})` to
-commit related files in one revision. Each file supplies `content` or
-`fromChatFile: {path, version}`; the latter copies authorized UTF-8 chat data
-without a model-output round trip. JSON and CSV/TSV/text imports are supported.
-Stale destination revisions or source versions fail before saving any files.
+Code source edits use `code_write({id, expectedRevision, path, content, entry?})`
+to save one file per revision. File imports use
+`code_import({id, expectedRevision, files: [{path, fromFile}], entry?})` with exact
+versioned references from `code_file_stat`. One review covers the import batch.
+JSON and CSV/TSV/text imports are supported. Stale destination revisions or source
+versions fail before saving any files. Both tools return `lines` and `length` for
+every file, the new revision, and diagnostics.
 CSV previews expose encoding, delimiter and raw-text choices; Assistant remembers
 those choices in browser-local preferences, without modifying uploaded files.
 
