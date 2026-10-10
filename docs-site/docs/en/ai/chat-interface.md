@@ -265,8 +265,9 @@ order:
    its first frame, at a fixed height, with its title, a Diagram/Table switch,
    and Copy data; the table scrolls inside the same height, so neither the
    finished call nor the switch moves anything. While the model still writes a
-   chart's arguments, the work line says it prepares a chart. The terminal
-   client prints the chart's data table instead.
+   chart's arguments, the work line says it prepares a chart. Text output of
+   `cld assistant`, interactive or not, prints a chart's data table and a
+   card's title and value instead.
 3. **Newest text.** While the turn runs this is a status: a new text replaces
    the previous one in the same element once its first sentence has streamed,
    and the place keeps its height until the turn ends. Finished, it is the final

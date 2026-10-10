@@ -1,5 +1,5 @@
 import { basename } from "node:path";
-import type { AiConversation, AiDraftContentPart, AiFileStat, AiTurnBlock, AiTurnContentPart } from "@k2b/cloud/ai";
+import type { AiConversation, AiDraftContentPart, AiFileStat, AiTurnContentPart } from "@k2b/cloud/ai";
 import {
   AI_IMAGE_INPUT_MAX_BYTES,
   AI_TURN_ATTACHMENT_MAX_ITEMS,
@@ -131,7 +131,6 @@ export const submitAssistantTurn = async (input: {
   approveTools?: readonly string[];
   onCapabilityApproval?: (request: CodeApproval) => Promise<CapabilityDecision>;
   signal?: AbortSignal;
-  onToolBlock?: (block: Extract<AiTurnBlock, { kind: "tool" }>) => void;
   output?: AssistantTurnOutput;
 }): Promise<{ submitted: TurnSubmission; result?: AssistantTurnStreamResult }> => {
   const streamResponse = input.watch
@@ -162,7 +161,6 @@ export const submitAssistantTurn = async (input: {
       approveTools: input.approveTools,
       onCapabilityApproval: input.onCapabilityApproval,
       signal: input.signal,
-      onToolBlock: input.onToolBlock,
       output: input.output,
     }),
   };

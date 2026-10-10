@@ -5,17 +5,17 @@ import {
   type CloudAiChartRow,
   cloudAiChartMarkKey,
   cloudAiChartRenderOptions,
-  cloudAiChartTable,
+  cloudAiChartRows,
 } from "../chart-block";
-import { CloudAiChartInputSchema } from "../default-tool-contracts";
+import { parseCloudAiChartInput } from "../default-tool-contracts";
 import { aiChatMessages } from "./messages";
 
-const tooltip = (columns: CloudAiChartColumn[], row: CloudAiChartRow | undefined) => {
+const tooltip = (columns: CloudAiChartColumn[], row: CloudAiChartRow) => {
   const [first, ...rest] = columns;
   const named = first && !first.numeric;
   return {
-    title: named && row ? row.cells[first.id] : undefined,
-    rows: (named ? rest : columns).map((column) => ({ label: column.label, value: row?.cells[column.id] ?? "" })),
+    title: named ? row.cells[first.id] : undefined,
+    rows: (named ? rest : columns).map((column) => ({ label: column.label, value: row.cells[column.id] ?? "" })),
   };
 };
 
@@ -29,16 +29,20 @@ export function CloudChartBlock(props: { args: unknown; completed: boolean }) {
   // Live updates replace the block with equal arguments; only a real change redraws.
   const source = createMemo(() => JSON.stringify(props.args ?? null));
   const chart = createMemo(() => {
-    const parsed = CloudAiChartInputSchema.safeParse(JSON.parse(source()));
-    if (!parsed.success) return null;
+    // The tool schema drew the chart once to accept it; here it is drawn once more, for display, and the table is
+    // filled from that drawing.
+    const input = parseCloudAiChartInput(JSON.parse(source()));
+    if (!input) return null;
     try {
-      const table = cloudAiChartTable(parsed.data, locale());
-      const rows = new Map(table.rows.map((row) => [row.key, row]));
-      const snapshot = prepareChartSnapshot(cloudAiChartRenderOptions(parsed.data, locale()), {
+      const rows = cloudAiChartRows(input, locale());
+      const snapshot = prepareChartSnapshot(cloudAiChartRenderOptions(input, locale()), {
         key: ({ datum }) => cloudAiChartMarkKey(datum),
-        tooltip: ({ datum }) => tooltip(table.columns, rows.get(cloudAiChartMarkKey(datum))),
+        tooltip: ({ datum }) => {
+          const row = rows.add(datum);
+          return tooltip(rows.columns(), row);
+        },
       });
-      return { input: parsed.data, table, snapshot };
+      return snapshot.marks.length > 0 ? { input, table: rows.table(), snapshot } : null;
     } catch {
       return null;
     }

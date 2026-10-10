@@ -83,12 +83,12 @@ export const createCloudAiChartTool = () =>
   defineAiTool({
     name: "chart",
     description:
-      "Show one chart in the chat from data you already have: bar, line (area: true fills it), scatter, pie, donut, histogram, gauge or sparkline. Cloud draws it with the renderer of cloud.chart() in Studio apps and gives the reader a data table and Copy data; no code, sandbox or app check is involved. Aggregate first. Compute derived numbers with calculate or code_run before charting them. Say what the chart shows in title and put the unit, period or source in subtitle. The chart has no state, filters or actions: when the person needs interaction, saved data or reuse, build a Studio app instead. After the chart, state the finding instead of repeating its values.",
+      "Show one chart in the chat from data you already have: bar, line (area: true fills it), scatter, pie, donut, histogram, gauge or sparkline. Cloud draws it with the renderer of cloud.chart() in Studio apps and gives the reader a data table and Copy data; no code, sandbox or app check is involved. Aggregate first. Compute derived numbers with calculate or code_run before charting them. Say what the chart shows in title and put the unit, period or source in subtitle. The chart has no state, filters or actions: for interaction show an app in the chat with code_present, and build a saved Studio App only when data must be kept or the app reused. After the chart, state the finding instead of repeating its values.",
     inputSchema: CloudAiChartInputSchema,
     outputSchema: CloudAiChartOutputSchema,
     approval: "never",
     promptHint:
-      "show data you already have as a chart in the chat, without code. Build a Studio app only when the person needs interaction, saved data, or reuse.",
+      "show data you already have as a chart in the chat, without code. For interaction use a chat app (code_present); for kept data or reuse, a saved Studio App.",
   }).clientView();
 
 export const createCloudAiSurveyTool = () =>

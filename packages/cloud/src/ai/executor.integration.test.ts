@@ -877,6 +877,95 @@ suite("AI executor integration", () => {
     }
   });
 
+  test("answers a display-only chart call itself, in a chat and in a background run, without an open request", async () => {
+    const userId = await insertUser();
+    try {
+      for (const background of [false, true]) {
+        const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+        try {
+          const runConfig: AiChatTurnRunConfig = {
+            kind: "chat",
+            input: "Chart the orders",
+            ...(background ? { mandate: { id: crypto.randomUUID(), revision: 1 } } : {}),
+          };
+          const { turn } = await aiConversations.submitChatTurn({
+            conversationId: conversation.id,
+            modelProfileId: MODEL_ID,
+            runConfig,
+            userMessage: userMessage("Chart the orders"),
+          });
+          const claim = await aiConversations.claimTurn({
+            conversationId: conversation.id,
+            turnId: turn.id,
+            leaseOwner: "chart-test",
+            leaseMs: 30_000,
+            from: "queue",
+            maxAttempts: 5,
+            runBudgetMs: 60_000,
+          });
+          if (!claim) throw new Error("Expected claimed chart turn");
+          const pipeline = new __aiExecutorTest.StreamPipeline({
+            conversationId: conversation.id,
+            turnId: turn.id,
+            attempt: claim.turn.attempt,
+            startSeq: claim.liveSeq,
+            leaseOwner: "chart-test",
+            seedBlocks: [],
+            allowRememberedApprovals: aiTurnAllowsRememberedApprovals(runConfig),
+          });
+          const prepared: PreparedAiTools = {
+            tools: [],
+            canonicalNames: new Map(),
+            approvalPolicies: new Map([["chart", "never"]]),
+            frontendModes: new Map([["chart", "client_view"]]),
+          };
+          pipeline.setFrontendModes(prepared.frontendModes);
+          const statuses: string[] = [];
+          const emitOp = pipeline["emitOp"].bind(pipeline);
+          pipeline["emitOp"] = async (op) => {
+            if (op.type === "block_set" && op.block.kind === "tool") statuses.push(op.block.status);
+            await emitOp(op);
+          };
+          const args = { kind: "bar", title: "Orders", data: [{ label: "North", value: 12 }] };
+          const fields = { agentId: "cloud", loopId: turn.id, turnId: `${turn.id}:turn:0`, turnIndex: 0 };
+          await pipeline.apply({ type: "tool_execution_start", ...fields, callId: "chart-1", name: "chart", args } as OutboundEvent);
+          const pushed: InboundEvent[] = [];
+          let blocked = "";
+          const suspended = await createExecutor("chart-test")["handleActionRequest"]({
+            event: { type: "tool_action_request", ...fields, kind: "client_tool", callId: "chart-1", name: "chart", args } as Extract<
+              OutboundEvent,
+              { type: "tool_action_request" }
+            >,
+            loop: { push: (value: InboundEvent) => pushed.push(value) } as never,
+            pipeline,
+            conversationId: conversation.id,
+            turnId: turn.id,
+            prepared,
+            allowRememberedApprovals: false,
+            rememberableCapabilityApprovals: new Map(),
+            capabilityActionReviews: new Map(),
+            onBackgroundBlocked: (message) => {
+              blocked = message;
+            },
+          });
+          expect(suspended).toBe(false);
+          // A background run keeps going: the transcript shows the chart later.
+          expect(blocked).toBe("");
+          expect(pushed).toEqual([{ type: "tool_result", callId: "chart-1", result: { displayed: true } }]);
+          // From running straight to completed: an awaiting_client in between would read as an open request.
+          expect(statuses).toEqual(["running", "completed"]);
+          expect(pipeline.blocks.find((block) => block.kind === "tool")).toMatchObject({ status: "completed", args });
+          expect(await listPendingAiTurnActions({ conversationId: conversation.id, turnId: turn.id })).toHaveLength(0);
+          await pipeline.flush();
+        } finally {
+          await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+        }
+      }
+    } finally {
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
   test("runs a chat turn end to end: claim, stream, persist, finish", async () => {
     const userId = await insertUser();
     const conversation = await aiConversations.createConversation({ ownerUserId: userId });

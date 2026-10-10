@@ -1,4 +1,4 @@
-import { type ChartDatum, charts, i18n } from "@k2b/stdlib";
+import { type ChartDatum, charts, computeDomain, i18n, niceStep } from "@k2b/stdlib";
 import type { ChartRenderOptions } from "@k2b/ui";
 import type { CloudAiChartInput } from "./default-tool-contracts";
 
@@ -49,50 +49,128 @@ const CHAR = 6.7;
  * as a little more space left of the axis.
  */
 const NARROW = 480 / 296;
+/** The renderer's tick count when an axis sets none. */
+const TICKS = 5;
+/** Below this radius, about 30px on a 320px phone, a pie no longer reads as one. */
+const MIN_PIE_RADIUS = 48;
+
+const DATE = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2}))?)?$/;
+
+/**
+ * A chart date as UTC milliseconds, so calendar days and wall-clock times stay as written on every device. Impossible
+ * dates such as February 30 are undefined: engines would move them into March or refuse them, each in its own way.
+ */
+export const chartDateTime = (value: string): number | undefined => {
+  const match = DATE.exec(value);
+  if (!match) return undefined;
+  const [, year, month, day, hour = "00", minute = "00", second = "00"] = match;
+  const date = new Date(0);
+  date.setUTCFullYear(Number(year), Number(month) - 1, Number(day));
+  date.setUTCHours(Number(hour), Number(minute), Number(second));
+  // Parts out of range roll over, so a date that does not read back as written does not exist.
+  return date.toISOString().startsWith(`${year}-${month}-${day}T${hour}:${minute}:${second}`) ? date.getTime() : undefined;
+};
+
+const dateTime = (value: number | string) => (typeof value === "number" ? value : (chartDateTime(value) ?? Number.NaN));
+
+const seriesOf = (input: CloudAiChartInput) => (input.kind === "line" || input.kind === "scatter" ? input.series : []);
+
+type ChartAxisInput = { label?: string; domain?: number[]; ticks?: number; scale?: "linear" | "log" };
+
+const bounds = (domain: number[] | undefined): [number, number] | undefined => {
+  const [min, max] = domain ?? [];
+  return min === undefined || max === undefined ? undefined : [min, max];
+};
+
+const axis = ({ domain, ...value }: ChartAxisInput = {}, format: (value: number) => string) => ({
+  ...value,
+  ...(domain ? { domain: bounds(domain) } : {}),
+  format,
+});
+
+/** The value axes of a chart with what they show: the data checks and the label room read them alike. */
+const valueAxes = (input: CloudAiChartInput): { values: number[]; axis?: ChartAxisInput; zero?: boolean }[] => {
+  if (input.kind === "bar") return [{ values: input.data.map((item) => item.value), axis: input.yAxis, zero: true }];
+  if (input.kind === "histogram") return [{ values: input.data }];
+  if (input.kind !== "line" && input.kind !== "scatter") return [];
+  const points = input.series.flatMap((series) => series.data);
+  return [
+    { values: points.map((point) => dateTime(point.x)), axis: input.xAxis },
+    { values: points.map((point) => point.y), axis: input.yAxis },
+  ];
+};
+
+/**
+ * Whether the renderer can step from the lowest to the highest tick. Values that differ by less than the float
+ * precision of their size, such as 1e17 and 1e17 + 16, would make it count forever.
+ */
+const steppable = (values: number[], ticks = TICKS) => {
+  const [min, max] = computeDomain(values);
+  const step = niceStep(max - min, ticks);
+  return [Math.floor(min / step) * step, Math.ceil(max / step) * step].every((value) => value + step !== value && value - step !== value);
+};
+
+/**
+ * The values whose labels are the widest on a value axis: its ends and the ticks next to them. The renderer puts ticks
+ * on multiples of a nice step, or on powers of ten on a log axis, and adds the bounds of a fixed domain.
+ */
+const tickCandidates = (values: number[], value?: ChartAxisInput): number[] => {
+  const domain = bounds(value?.domain);
+  if (value?.scale === "log") {
+    const positive = values.filter((entry) => entry > 0);
+    const [min, max] = domain ?? (positive.length ? [Math.min(...positive), Math.max(...positive)] : [1, 10]);
+    return [min, max, 10 ** Math.floor(Math.log10(min)), 10 ** Math.ceil(Math.log10(max))];
+  }
+  const [min, max] = domain ?? computeDomain(values);
+  const step = niceStep(max - min, value?.ticks ?? TICKS);
+  const low = Math.floor(min / step) * step;
+  const high = Math.ceil(max / step) * step;
+  return [...(domain ?? [low, high]), low + step, high - step];
+};
 
 type Formats = {
   tick: (value: number) => string;
   value: (value: number) => string;
-  x?: { tick: (value: number) => string; value: (value: number) => string };
+  x: { tick: (value: number) => string; value: (value: number) => string };
 };
 
-const dateText = (value: string) => (value.length === 10 ? `${value}T00:00` : value);
-/** Dates are calendar days and wall-clock times in the user's zone; UTC keeps them as written on every device. */
-const dateTime = (value: number | string) => (typeof value === "number" ? value : Date.parse(`${dateText(value)}Z`));
-
-const seriesOf = (input: CloudAiChartInput) => (input.kind === "line" || input.kind === "scatter" ? input.series : []);
-
 const formats = (input: CloudAiChartInput, locale: string): Formats => {
-  const tick = new Intl.NumberFormat(locale, { notation: "compact", maximumFractionDigits: 1 });
-  const value = new Intl.NumberFormat(locale, { maximumFractionDigits: 6 });
+  // Ticks are round numbers already; fifteen significant digits show them exactly (0.005, 1.25M) without float noise.
+  const tick = new Intl.NumberFormat(locale, { notation: "compact", maximumSignificantDigits: 15 });
+  // An x axis often counts years or steps, which compact notation would turn into 2.02K.
+  const xTick = new Intl.NumberFormat(locale, { maximumSignificantDigits: 15, useGrouping: "min2" });
+  // The table, tooltips and Copy data show the value as given.
+  const value = new Intl.NumberFormat(locale, { maximumSignificantDigits: 15 });
   const points = seriesOf(input).flatMap((series) => series.data);
-  const dates = points.some((point) => typeof point.x === "string");
-  const times = points.some((point) => typeof point.x === "string" && point.x.length > 10);
-  const dateTick = new Intl.DateTimeFormat(locale, {
+  const written = points.flatMap((point) => (typeof point.x === "string" ? [point.x] : []));
+  if (written.length === 0)
+    return {
+      tick: (v) => tick.format(v),
+      value: (v) => value.format(v),
+      x: { tick: (v) => xTick.format(v), value: (v) => value.format(v) },
+    };
+  const times = written.some((date) => date.length > 10);
+  const seconds = written.some((date) => date.length > 16);
+  const clock: Intl.DateTimeFormatOptions = times ? { hour: "2-digit", minute: "2-digit", ...(seconds ? { second: "2-digit" } : {}) } : {};
+  const dateTick = new Intl.DateTimeFormat(locale, { timeZone: "UTC", day: "numeric", month: "short", ...clock });
+  const dateValue = new Intl.DateTimeFormat(locale, {
     timeZone: "UTC",
-    day: "numeric",
-    month: "short",
-    ...(times ? { hour: "2-digit", minute: "2-digit" } : {}),
+    dateStyle: "medium",
+    ...(times ? { timeStyle: seconds ? "medium" : "short" } : {}),
   });
-  const dateValue = new Intl.DateTimeFormat(locale, { timeZone: "UTC", dateStyle: "medium", ...(times ? { timeStyle: "short" } : {}) });
   return {
     tick: (v) => tick.format(v),
     value: (v) => value.format(v),
-    x: dates ? { tick: (v) => dateTick.format(v), value: (v) => dateValue.format(v) } : undefined,
+    x: { tick: (v) => dateTick.format(v), value: (v) => dateValue.format(v) },
   };
 };
 
 /** Room for the longest y tick label, so values like 1.2M never run past the left edge on a phone. */
-const leftPadding = (values: number[], tick: (value: number) => string, axisLabel: boolean) => {
-  const finite = values.filter(Number.isFinite);
-  const extremes = finite.length ? [Math.min(0, ...finite), Math.max(...finite)] : [0];
-  // Nice ticks can exceed the data a little; one extra character covers that.
-  const longest = Math.max(...extremes.map((value) => tick(value).length)) + 1;
-  return Math.max(40, Math.ceil((longest * CHAR + 8 + (axisLabel ? 16 : 0)) * NARROW));
+const leftPadding = (values: number[], value: ChartAxisInput | undefined, tick: (value: number) => string) => {
+  // A tick between the ends can carry one more digit than they do.
+  const longest = Math.max(...tickCandidates(values, value).map((entry) => tick(entry).length)) + 1;
+  return Math.max(40, Math.ceil((longest * CHAR + 8 + (value?.label ? 16 : 0)) * NARROW));
 };
-
-type ChartAxisInput = { label?: string; domain?: [number, number]; ticks?: number; scale?: "linear" | "log" };
-const axis = (value: ChartAxisInput | undefined, format: (value: number) => string) => ({ ...value, format });
 
 /**
  * Category labels never shorten: when they would overlap in the narrowest column, every n-th label shows in full and
@@ -110,11 +188,8 @@ export function cloudAiChartRenderOptions(input: CloudAiChartInput, locale: stri
   const format = formats(input, locale);
   switch (input.kind) {
     case "bar": {
-      const left = leftPadding(
-        [...input.data.map((item) => item.value), ...(input.yAxis?.domain ?? [])],
-        format.tick,
-        Boolean(input.yAxis?.label),
-      );
+      const values = input.data.map((item) => item.value);
+      const left = leftPadding(input.yAxis?.scale === "log" ? values : [...values, 0], input.yAxis, format.tick);
       return {
         kind: "bar",
         data: input.colorByBar && input.legend ? input.data : thinned(input.data, left),
@@ -127,24 +202,32 @@ export function cloudAiChartRenderOptions(input: CloudAiChartInput, locale: stri
     }
     case "line":
     case "scatter": {
-      const series = input.series.map((entry) => ({
-        label: entry.label,
+      const t = labels.resolve([locale]).t;
+      const series = input.series.map((entry, index) => ({
+        // The renderer names unnamed series in English; the legend speaks the reader's language like the table.
+        label: entry.label ?? `${t.series} ${index + 1}`,
         data: entry.data.map((point) => ({ x: dateTime(point.x), y: point.y })),
       }));
-      const xs = series.flatMap((entry) => entry.data.map((point) => point.x));
+      const points = series.flatMap((entry) => entry.data);
+      const lastTick = Math.max(
+        ...tickCandidates(
+          points.map((point) => point.x),
+          input.xAxis,
+        ),
+      );
       const common = {
         series,
-        xAxis: axis(input.xAxis, format.x?.tick ?? format.tick),
+        xAxis: axis(input.xAxis, format.x.tick),
         yAxis: axis(input.yAxis, format.tick),
         legend: input.legend ?? input.series.length > 1,
         padding: {
           left: leftPadding(
-            [...series.flatMap((entry) => entry.data.map((point) => point.y)), ...(input.yAxis?.domain ?? [])],
+            points.map((point) => point.y),
+            input.yAxis,
             format.tick,
-            Boolean(input.yAxis?.label),
           ),
-          // Date labels are wide: room for half of the last one right of the plot.
-          ...(format.x ? { right: Math.ceil(((format.x.tick(Math.max(...xs)).length * CHAR) / 2 + 4) * NARROW) } : {}),
+          // Labels center on their tick: room for half of the last one right of the plot.
+          right: Math.max(16, Math.ceil(((format.x.tick(lastTick).length * CHAR) / 2 + 4) * NARROW)),
         },
       };
       return input.kind === "line" ? { kind: "line", ...common, area: input.area, smooth: input.smooth } : { kind: "scatter", ...common };
@@ -159,7 +242,8 @@ export function cloudAiChartRenderOptions(input: CloudAiChartInput, locale: stri
         bins: input.bins,
         xAxis: { format: format.tick },
         yAxis: { format: format.tick },
-        padding: { left: leftPadding([input.data.length], format.tick, false) },
+        // No bin counts more than every observation.
+        padding: { left: leftPadding([0, input.data.length], undefined, format.tick) },
       };
     case "gauge":
       return {
@@ -184,12 +268,17 @@ const decode = (value: string) =>
     .replace(/&gt;/g, ">")
     .replace(/&amp;/g, "&");
 
-/** Draw the options once with inspection metadata; throws what the renderer would throw in the chat. */
-const marks = (options: ChartRenderOptions): ChartDatum[] => {
+/** Draws the options with inspection metadata; throws what the renderer would throw in the chat. */
+const draw = (options: ChartRenderOptions): string => {
   const { kind, ...rest } = options;
-  const svg = (charts[kind] as (value: object) => string)({ ...rest, width: WIDTH, height: HEIGHT, inspect: true });
-  return [...svg.matchAll(/data-chart-datum="([^"]*)"/g)].map((match) => JSON.parse(decode(match[1]!)) as ChartDatum);
+  return (charts[kind] as (value: object) => string)({ ...rest, width: WIDTH, height: HEIGHT, inspect: true });
 };
+
+const marks = (svg: string): ChartDatum[] =>
+  [...svg.matchAll(/data-chart-datum="([^"]*)"/g)].map((match) => JSON.parse(decode(match[1]!)) as ChartDatum);
+
+/** The outer radius of a drawn pie or donut: the first arc of its first slice. */
+const pieRadius = (svg: string) => Number(/class="stdlib-chart-slice[^"]*" d="[^"A]*A ([\d.]+)/.exec(svg)?.[1] ?? 0);
 
 /** One mark, as `prepareChartSnapshot` keys it: series and position in the input. */
 export const cloudAiChartMarkKey = (datum: Pick<ChartDatum, "index" | "seriesIndex">) => `${datum.seriesIndex ?? 0}:${datum.index}`;
@@ -198,8 +287,11 @@ export type CloudAiChartColumn = { id: string; label: string; numeric: boolean }
 export type CloudAiChartRow = { key: string; cells: Record<string, string>; values: Record<string, string | number> };
 export type CloudAiChartTable = { columns: CloudAiChartColumn[]; rows: CloudAiChartRow[] };
 
-/** The data behind every mark of the chart as a table: the accessible alternative and what Copy data copies. */
-export function cloudAiChartTable(input: CloudAiChartInput, locale: string): CloudAiChartTable {
+/**
+ * Builds the data table mark by mark, in the order the renderer emits them, so the chat block fills it from the same
+ * drawing that shows the chart.
+ */
+export function cloudAiChartRows(input: CloudAiChartInput, locale: string) {
   const t = labels.resolve([locale]).t;
   const format = formats(input, locale);
   const series = seriesOf(input);
@@ -208,10 +300,10 @@ export function cloudAiChartTable(input: CloudAiChartInput, locale: string): Clo
   const columns = new Map<string, CloudAiChartColumn>();
   const rows: CloudAiChartRow[] = [];
   const named = series.some((entry) => entry.label);
-  for (const datum of marks(cloudAiChartRenderOptions(input, locale))) {
+  const add = (datum: ChartDatum): CloudAiChartRow => {
     const cells: Record<string, string> = {};
     const values: Record<string, string | number> = {};
-    const add = (id: string, label: string, value: string | number, text: string) => {
+    const cell = (id: string, label: string, value: string | number, text: string) => {
       if (!columns.has(id)) columns.set(id, { id, label, numeric: typeof value === "number" });
       cells[id] = text;
       values[id] = value;
@@ -219,51 +311,67 @@ export function cloudAiChartTable(input: CloudAiChartInput, locale: string): Clo
     if (input.kind === "line" || input.kind === "scatter") {
       if (named || series.length > 1) {
         const name = series[datum.seriesIndex ?? 0]?.label ?? `${t.series} ${(datum.seriesIndex ?? 0) + 1}`;
-        add("series", t.series, name, name);
+        cell("series", t.series, name, name);
       }
     } else {
       // Bars may hide some axis labels; the table names every category.
       const label = input.kind === "bar" || input.kind === "pie" || input.kind === "donut" ? input.data[datum.index]?.label : datum.label;
-      if (label) add("label", t.category, label, label);
+      if (label) cell("label", t.category, label, label);
     }
     for (const field of datum.values) {
       const value = field.value;
       if (typeof value !== "number" || field.key === "total") continue;
       if (field.key === "x") {
         const header = (input.kind === "line" || input.kind === "scatter" ? input.xAxis?.label : undefined) ?? "X";
-        add(
-          "x",
-          input.kind === "sparkline" ? "#" : header,
-          value,
-          input.kind === "sparkline" ? String(value + 1) : (format.x?.value ?? format.value)(value),
-        );
+        cell("x", input.kind === "sparkline" ? "#" : header, value, input.kind === "sparkline" ? String(value + 1) : format.x.value(value));
       } else if (field.key === "y") {
         const header =
           (input.kind === "line" || input.kind === "scatter" ? input.yAxis?.label : undefined) ??
           (input.kind === "sparkline" ? t.value : "Y");
-        add("y", header, value, format.value(value));
+        cell("y", header, value, format.value(value));
       } else if (field.key === "value")
-        add("value", (input.kind === "bar" ? input.yAxis?.label : undefined) ?? t.value, value, `${format.value(value)}${unit}`);
-      else if (field.key === "percent") add("percent", t.share, value, percent.format(value / 100));
+        cell("value", (input.kind === "bar" ? input.yAxis?.label : undefined) ?? t.value, value, `${format.value(value)}${unit}`);
+      else if (field.key === "percent") cell("percent", t.share, value, percent.format(value / 100));
       else if (field.key === "from" || field.key === "to" || field.key === "count" || field.key === "min" || field.key === "max")
-        add(field.key, t[field.key], value, `${format.value(value)}${field.key === "min" || field.key === "max" ? unit : ""}`);
+        cell(field.key, t[field.key], value, `${format.value(value)}${field.key === "min" || field.key === "max" ? unit : ""}`);
     }
-    rows.push({ key: cloudAiChartMarkKey(datum), cells, values });
-  }
-  return { columns: [...columns.values()], rows };
+    const row = { key: cloudAiChartMarkKey(datum), cells, values };
+    rows.push(row);
+    return row;
+  };
+  return { add, columns: () => [...columns.values()], table: (): CloudAiChartTable => ({ columns: [...columns.values()], rows }) };
 }
 
-/** Why valid-looking input would not render, in words the model can act on; undefined when it renders. */
-export function chartInputIssue(input: CloudAiChartInput): string | undefined {
-  const points = seriesOf(input).flatMap((series) => series.data);
-  // The date check reports its own issue.
-  if (points.some((point) => !Number.isFinite(dateTime(point.x)))) return undefined;
-  if (new Set(points.map((point) => typeof point.x)).size > 1) return "Use either numbers or dates for x in all series, not both.";
+/** The data behind every mark of the chart as a table: the accessible alternative and what Copy data copies. */
+export function cloudAiChartTable(input: CloudAiChartInput, locale: string): CloudAiChartTable {
+  const rows = cloudAiChartRows(input, locale);
+  for (const datum of marks(draw(cloudAiChartRenderOptions(input, locale)))) rows.add(datum);
+  return rows.table();
+}
+
+/** Why chart options would not draw, found without drawing them; undefined when nothing is wrong. */
+export function chartDataIssue(input: CloudAiChartInput): string | undefined {
+  if (new Set(seriesOf(input).flatMap((series) => series.data.map((point) => typeof point.x))).size > 1)
+    return "Use either numbers or dates for x in all series, not both.";
   if ((input.kind === "pie" || input.kind === "donut") && !input.data.some((slice) => slice.value > 0))
     return "Pie and donut slices must add up to more than zero.";
+  for (const { values, axis, zero } of valueAxes(input)) {
+    if (axis?.scale === "log") {
+      if (values.some((value) => value <= 0))
+        return "A log axis shows only values above zero; use a linear axis or leave out the values at or below zero.";
+    } else if (!axis?.domain && !steppable(zero ? [...values, 0] : values, axis?.ticks))
+      return "The values differ too little for their size to label an axis; subtract a common offset first.";
+  }
+  return undefined;
+}
+
+/** Why chart options that pass the data checks still would not draw well; draws them once. */
+export function chartDrawingIssue(input: CloudAiChartInput): string | undefined {
   try {
-    if (marks(cloudAiChartRenderOptions(input, "en")).length === 0)
-      return "None of the values can be drawn; a log axis needs values above zero.";
+    const svg = draw(cloudAiChartRenderOptions(input, "en"));
+    if (marks(svg).length === 0) return "None of the values can be drawn.";
+    if ((input.kind === "pie" || input.kind === "donut") && pieRadius(svg) < MIN_PIE_RADIUS)
+      return "The legend leaves too little room for the pie: combine small slices into one, shorten the labels, or use a bar chart.";
     return undefined;
   } catch (error) {
     return `The chart cannot be drawn: ${error instanceof Error ? error.message : String(error)}`;

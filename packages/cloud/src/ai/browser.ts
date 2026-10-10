@@ -29,6 +29,7 @@ export {
   CloudAiLocalBashInputSchema,
   CloudAiSurveyInputSchema,
   CloudAiTextEditorInputSchema,
+  parseCloudAiChartInput,
 } from "./default-tool-contracts";
 export { guessAiMediaType } from "./file-media-type";
 export { AI_IMAGE_INPUT_MAX_BYTES, AI_TURN_ATTACHMENT_MAX_ITEMS, AI_TURN_IMAGE_MAX_TOTAL_BYTES } from "./limits";

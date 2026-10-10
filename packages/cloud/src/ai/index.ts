@@ -71,6 +71,7 @@ export {
   CloudAiTextEditorInputSchema,
   type CloudAiTextEditorOutput,
   CloudAiTextEditorOutputSchema,
+  parseCloudAiChartInput,
 } from "./default-tool-contracts";
 export {
   type AiChatEnrichment,

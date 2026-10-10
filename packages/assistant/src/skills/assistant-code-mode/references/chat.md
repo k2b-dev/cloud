@@ -1,8 +1,9 @@
 # Chat apps
 
-Just data → `chart` tool; interaction or persistence → Studio app. A chart of
-numbers you already have needs no app: pass `cloud.chart()` options as plain
-data to the `chart` tool, and Cloud draws it in the chat with a data table.
+Just data → `chart` tool; interaction → chat app (`code_present`); persistence
+or reuse → saved Studio App. A chart of numbers you already have needs no app:
+pass `cloud.chart()` options as plain data to the `chart` tool, and Cloud draws
+it in the chat with a data table.
 
 Use `code_present` to show an HTML app as a card in this chat when the person
 works with it: a calculator, a chart with filters, a small dashboard or report

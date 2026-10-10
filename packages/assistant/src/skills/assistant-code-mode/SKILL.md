@@ -100,11 +100,11 @@ dashboards, also load `assistant-data-analysis` for metrics and source validatio
 
 ## Choose the delivery
 
-Just data → `chart` tool; interaction or persistence → Studio app. When the
-person only needs to see numbers as a chart, compute them (with `code_run` if
-needed) and pass them to the `chart` tool: Cloud draws it in the chat with a
-data table, no app files or `code_check`. It takes the options of
-`cloud.chart()` as plain data.
+Just data → `chart` tool; interaction → chat app (`code_present`); persistence
+or reuse → saved Studio App. When the person only needs to see numbers as a
+chart, compute them (with `code_run` if needed) and pass them to the `chart`
+tool: Cloud draws it in the chat with a data table, no app files or
+`code_check`. It takes the options of `cloud.chart()` as plain data.
 
 For a calculator, a filterable chart, a report or small dashboard in this
 conversation, compute and check the numbers with `code_run`, then show an HTML
