@@ -2,7 +2,7 @@ import { audit, logger } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { MAX_CONVERSATION_ACTION_MESSAGES } from "../contracts";
-import { requireMailboxPermission } from "./access";
+import { requireMailboxAccess, requireMailboxPermission, requireVisibleConversation } from "./access";
 import { actorRefFromRequest, auditActorFromRequest, type MailRequestContext } from "./auth";
 import { insertActivity } from "./collaboration";
 import { isKeptConversation } from "./conversation-keep-rules";
@@ -55,8 +55,16 @@ const requireConversation = async (
 ): Promise<Result<void>> => {
   // Same mailbox lock order as command creation, including folder commands with many conversations.
   if (lock) await db`SELECT id FROM mail.mailboxes WHERE id = ${params.mailboxId}::uuid FOR UPDATE`;
-  const allowed = await requireMailboxPermission(params.context, params.mailboxId, permission, db);
-  if (!allowed.ok) return allowed;
+  // Reading and keeping follow conversation visibility, so assigned-only access covers its own conversations.
+  if (permission === "admin") {
+    const allowed = await requireMailboxPermission(params.context, params.mailboxId, permission, db);
+    if (!allowed.ok) return allowed;
+  } else {
+    const access = await requireMailboxAccess(params.context, params.mailboxId, permission, db);
+    if (!access.ok) return access;
+    const visible = await requireVisibleConversation(access.data, params.conversationId, db);
+    if (!visible.ok) return visible;
+  }
   const [conversation] = await db`SELECT id FROM mail.conversations
     WHERE id = ${params.conversationId}::uuid AND mailbox_id = ${params.mailboxId}::uuid
     ${lock ? sql`FOR UPDATE` : sql``}`;

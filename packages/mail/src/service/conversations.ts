@@ -2,9 +2,10 @@ import { logger } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import type { MergeConversationsInput, ReassignConversationMessageInput, SplitConversationInput } from "../contracts";
+import { MAIL_CONVERSATION_ASSIGNEE_LIMIT } from "../contracts";
 import { withShortIdDb } from "../lib/short-id";
 import { actorRefFromRequest, type MailRequestContext } from "./auth";
-import { requireMailboxCollaborationPermission } from "./collaboration";
+import { requireMailboxCollaborationPermission, writeConversationAssignees } from "./collaboration";
 import { keepCarriesOver, recordCarriedKeep } from "./conversation-keeps";
 import { mergeConversationReferencesInTransaction } from "./conversation-reference";
 import { isUnsentOutboundMessage } from "./conversation-timeline";
@@ -393,6 +394,13 @@ export const mergeConversations = async (params: {
       if (Number(source.revision) !== params.input.expectedSourceRevision) {
         return fail(err.conflict("Source conversation was changed by another collaborator"));
       }
+      const assignees = await tx<{ user_id: string; assigned_at: string }[]>`
+        SELECT user_id, MIN(assigned_at)::text AS assigned_at FROM mail.conversation_assignees
+        WHERE conversation_id IN (SELECT value::uuid FROM jsonb_array_elements_text(${conversationIds}::jsonb))
+        GROUP BY user_id ORDER BY MIN(assigned_at), user_id
+      `;
+      if (assignees.length > MAIL_CONVERSATION_ASSIGNEE_LIMIT)
+        return fail(err.badInput(`A conversation can have at most ${MAIL_CONVERSATION_ASSIGNEE_LIMIT} assignees`));
       const notificationsAvailable = await lockConversationNotificationDeliveries({ db: tx, conversationIds });
       if (!notificationsAvailable.ok) return notificationsAvailable;
 
@@ -413,6 +421,13 @@ export const mergeConversations = async (params: {
         });
       }
 
+      await writeConversationAssignees(tx, {
+        mailboxId: params.mailboxId,
+        conversationId: params.targetConversationId,
+        userIds: assignees.map((a) => a.user_id),
+        assignedAt: new Map(assignees.map((a) => [a.user_id, a.assigned_at])),
+      });
+      await writeConversationAssignees(tx, { mailboxId: params.mailboxId, conversationId: params.input.sourceConversationId, userIds: [] });
       await tx`
         UPDATE mail.conversation_comments
         SET conversation_id = ${params.targetConversationId}::uuid
@@ -759,6 +774,16 @@ export const splitConversation = async (params: {
       const [created] = createdRows;
       if (!created) return fail(err.internal("Split conversation insert returned no row"));
       const carriesKeep = await keepCarriesOver(tx, params.conversationId, created.id);
+      const assignees = await tx<{ user_id: string; assigned_at: string }[]>`
+        SELECT user_id, assigned_at::text AS assigned_at FROM mail.conversation_assignees WHERE conversation_id = ${params.conversationId}::uuid ORDER BY assigned_at, user_id
+      `;
+      await writeConversationAssignees(tx, {
+        mailboxId: params.mailboxId,
+        conversationId: created.id,
+        userIds: assignees.map((a) => a.user_id),
+        assignedAt: new Map(assignees.map((a) => [a.user_id, a.assigned_at])),
+      });
+
       const moved = await tx<{ message_id: string }[]>`
         UPDATE mail.conversation_messages
         SET conversation_id = ${created.id}::uuid, added_by = 'manual'

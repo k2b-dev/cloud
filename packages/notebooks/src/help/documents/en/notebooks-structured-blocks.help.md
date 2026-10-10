@@ -6,11 +6,11 @@ description: "Define your own data and build filtered page lists and tables of c
 order: 130
 ---
 
-Use named data for facts beside your prose, queries for automatic page lists, and a table of contents for headings on one page. No predefined metadata schema is required.
+Use named data for facts next to your text, queries for automatic page lists, and a table of contents for the headings of one page. You do not need a predefined metadata schema.
 
-Place `:::data`, `:::query`, and `:::toc` directly in the document, outside lists, quotes, code examples, and other blocks. Nested examples are not evaluated.
+Place `:::data`, `:::query`, and `:::toc` directly in the document. Do not put them in lists, quotes, code examples, or other blocks. Notebooks does not evaluate nested blocks.
 
-For notice blocks such as `:::info`, indent the closing `:::` no more than the opening line.
+For notice blocks such as `:::info`, do not indent the closing `:::` more than the opening line.
 
 ## Add your own data {icon="braces"}
 
@@ -29,15 +29,21 @@ teams:
 :::
 ```
 
-This exposes fields such as `profile.owner` and `profile.reviewDays`. Names and field keys are case-sensitive. For query fields, use a letter followed by letters, numbers, underscores, or hyphens, up to 64 characters per part.
+This creates fields such as `profile.owner` and `profile.reviewDays`. Names and field keys are case-sensitive. For query fields, start each part with a letter, followed by letters, numbers, underscores, or hyphens. Each part has at most 64 characters.
 
-Values are strings, numbers, booleans, or flat lists of those values. Quote numeric-looking strings: `"30"` is not the number `30`. Write list items on separate lines with two spaces before `-`; data blocks do not accept inline arrays or nested objects. Dates remain strings rather than a separate type. A key with no value or list items is an empty list; use `""` for an empty string.
+:::reference
+- **Values:** Strings, numbers, booleans, or flat lists of these values.
+- **Numbers as text:** Quote a string that looks like a number. `"30"` is not the number `30`.
+- **Lists:** Write each list item on its own line with two spaces before `-`. Data blocks do not accept inline arrays or nested objects.
+- **Dates:** Dates stay strings. There is no separate date type.
+- **Empty values:** A key with no value and no list items is an empty list. Use `""` for an empty string.
+:::
 
-Do not repeat a block name or a key inside a block. Invalid named data is excluded from queries and reported as a diagnostic. A block supports at most 64 fields, a list 128 items, and a string 2,000 characters.
+Do not repeat a block name, and do not repeat a key inside a block. Queries exclude invalid named data, and Notebooks reports it as a diagnostic. A block has at most 64 fields, a list 128 items, and a string 2,000 characters.
 
 ## List matching pages {icon="list-search"}
 
-Type `:::` in the editor and choose **query**. This example finds handbook pages with active status and a review interval of at most 30 days:
+Type `:::` in the editor and choose **query**. This example finds handbook pages with the status active and a review interval of at most 30 days:
 
 ```text
 :::query
@@ -65,20 +71,20 @@ limit: 25
 :::
 ```
 
-Queries read saved notes from the current notebook only. They cannot fetch other notebooks, read table rows, run JavaScript, join datasets, or write changes.
+Queries read only saved notes from the current notebook. They cannot fetch other notebooks, read table rows, run JavaScript, join data sets, or write changes.
 
-Follow the indentation shown above: two spaces before filter list items, columns, and sort fields; four before a filter's `op` and `value`. This is a small YAML-like format, not general YAML. Comments, anchors, and nested filter objects are not supported. Omit optional settings to use their defaults; do not leave their values blank.
+Use the indentation of the example. Put two spaces before filter list items, columns, and sort fields. Put four spaces before the `op` and `value` of a filter. The format is a small format similar to YAML, not general YAML. It does not support comments, anchors, or nested filter objects. To use the default of an optional setting, leave the setting out. Do not leave its value blank.
 
 | Setting | Meaning |
 | --- | --- |
 | `source` | Required: `notes` |
-| `scope` | `notebook` (default, including this note), direct `children`, or all `descendants` of this note. Children and descendants exclude this note. |
-| `match` | `all` (default) requires every filter; `any` requires at least one. No filters means all notes in scope. |
-| `sort` | `field`: `$title`, `$created`, or `$updated`; `direction`: `asc` or `desc`. Default: updated descending. |
-| `columns` | Fields to display, one per indented list item. Omit for a linked title list. |
-| `limit` | 1–100 results, default 25. A notice indicates additional matches; narrow your filters to see them. |
+| `scope` | `notebook` (default, includes this note), direct `children`, or all `descendants` of this note. Children and descendants exclude this note. |
+| `match` | `all` (default) requires every filter; `any` requires at least one. Without filters, all notes in the scope match. |
+| `sort` | `field`: `$title`, `$created`, or `$updated`; `direction`: `asc` or `desc`. Default: updated, descending. |
+| `columns` | Fields to show, one per indented list item. Without columns, the query shows a list of linked titles. |
+| `limit` | 1–100 results, default 25. A notice shows that more notes match. Narrow your filters to see them. |
 
-Use at most 32 filters and 16 distinct columns per query. A page supports at most 20 query blocks. Lists in filters use inline syntax such as `[active, draft]` with 1–100 values. A filter string can contain at most 2,000 characters. Quote values containing commas inside lists, for example `["Sales, Europe", Support]`.
+A query has at most 32 filters and 16 different columns. A page has at most 20 query blocks. Lists in filters use inline syntax such as `[active, draft]` with 1–100 values. A filter string has at most 2,000 characters. Quote list values that contain commas, for example `["Sales, Europe", Support]`.
 
 ## Choose filters {icon="filter"}
 
@@ -92,9 +98,16 @@ Use at most 32 filters and 16 distinct columns per query. A page supports at mos
 | Named numbers | Also `gt`, `gte`, `lt`, `lte` |
 | Named lists | `contains-any`, `contains-all`, `exists`, `missing` |
 
-Omit `value` for `exists` and `missing`. Membership operators take lists; other operators take one value. `in` tests a scalar against a list, while `contains-any` and `contains-all` test list contents.
+Leave out `value` for `exists` and `missing`. Membership operators take lists. Other operators take one value. `in` tests one value against a list. `contains-any` and `contains-all` test the contents of a list.
 
-Equality preserves types and text case. Text `contains` and `starts-with` ignore case; tags ignore case and an optional leading `#`. `ne` and `not-in` do not match missing fields: use a separate `missing` filter with `match: any` if needed. Empty property lists exist; `$tags` exists only when a note has at least one tag. There are no nested filter groups, expressions, date-range comparisons, or custom-field sorting.
+:::reference
+- **Equality:** Keeps types and text case.
+- **Text:** `contains` and `starts-with` ignore case.
+- **Tags:** Ignore case and an optional leading `#`.
+- **Missing fields:** `ne` and `not-in` do not match missing fields. If you need them, add a separate `missing` filter with `match: any`.
+- **Exists:** Empty property lists exist. `$tags` exists only when a note has at least one tag.
+- **Not available:** Nested filter groups, expressions, date range comparisons, and sorting by your own fields.
+:::
 
 ## Add page contents {icon="list"}
 
@@ -107,18 +120,20 @@ max-depth: 3
 :::
 ```
 
-The block links to headings in this note, including headings before and after the block. Depths range from 1 to 6; defaults are 1 and 6. `min-depth` must not exceed `max-depth`. This is a page contents list, not a notebook index.
+The block links to the headings in this note, also to headings before and after the block. Depths go from 1 to 6. The defaults are 1 and 6. `min-depth` must not be greater than `max-depth`. The block lists the contents of one page, not an index of the notebook.
 
-Book also links to headings inside lists, quotes, and notices. The editor preview can only jump to headings with an exact source position; for other headings it shows a notice.
+Book also links to headings in lists, quotes, and notices. The editor preview can jump only to headings with an exact source position. For other headings, it shows a notice.
 
-## Preview and refresh {icon="refresh"}
+## Preview and refresh blocks {icon="refresh"}
 
-Rich mode shows server-rendered query and contents previews. Move the cursor into a block or choose **Show source** to edit it. Invalid settings are marked at their source lines. A draft preview uses your draft's query settings and headings, but queries still read saved data, including for the current note. It does not save the draft or modify matching notes.
+Rich mode shows query and contents previews that the server renders. To edit a block, move the cursor into it or choose **Show source**. Notebooks marks invalid settings on their source lines.
 
-Book renders the same blocks on the server without an editor. Saved changes refresh Book and query previews automatically when JavaScript is available. Read-only keeps its saved source until you reload; reload after that source changes. Without JavaScript, Book still renders results and links on page load.
+A draft preview uses the query settings and headings of your draft. Queries still read saved data, even for the current note. The preview does not save the draft and does not change matching notes.
+
+Book renders the same blocks on the server, without an editor. When JavaScript is available, saved changes refresh Book and query previews automatically. **Read-only** keeps its saved source until you reload. Reload after that source changes. Without JavaScript, Book still shows results and links when the page loads.
 
 ## Keep tables and tasks readable {icon="table"}
 
-Ordinary tables, lists, checkboxes, and named sections remain Markdown. Use table formulas for calculations within a table; queries only index named `:::data` properties and the system fields above.
+Ordinary tables, lists, checkboxes, and named sections stay Markdown. Use table formulas for calculations in a table. Queries index only named `:::data` properties and the system fields above.
 
-Book evaluates the same table formulas as the editor, including computed columns, totals, and progress bars. Formula errors stay visible in the affected cell. Table headers and ordinary cells also support inline formatting, links, images, and LaTeX; formula results remain plain values.
+Book evaluates the same table formulas as the editor, including computed columns, totals, and progress bars. A formula error stays visible in its cell. Table headers and ordinary cells also support inline formatting, links, images, and LaTeX. Formula results stay plain values.

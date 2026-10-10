@@ -16,7 +16,9 @@
     "zod": "catalog:"
   },
   "devDependencies": {
+    "@k2b/ssr": "workspace:*",
     "@types/bun": "catalog:",
+    "playwright": "catalog:",
     "typescript": "catalog:"
   },
   "license": "AGPL-3.0-or-later"

@@ -5,6 +5,7 @@ import { sql } from "bun";
 import { z } from "zod";
 import type { MailSearchExpression, SearchRequest } from "../contracts";
 import { mailFolderPaths } from "../folder-tree";
+import { conversationVisibleTo, type MailboxAccess, messageVisibleTo } from "./access";
 import { MAIL_ATTACHMENT_EXTRACTOR_VERSION } from "./attachment-extraction-contract";
 import { type MailRequestContext, userBackedActor } from "./auth";
 import { sha256Json } from "./canonical";
@@ -60,7 +61,7 @@ export type MessageSearchHit = {
   unread: boolean;
   messageCount: number;
   workStatus: "needs_action" | "waiting" | "done" | null;
-  assigneeUserId: string | null;
+  assigneeUserIds: string[];
   snoozedUntil: string | null;
   revision: number;
   updatedAt: string;
@@ -109,7 +110,7 @@ type DbSearchHit = {
   unread: boolean;
   message_count: number;
   work_status: "needs_action" | "waiting" | "done" | null;
-  assignee_user_id: string | null;
+  assignee_user_ids: string[];
   snoozed_until: Date | string | null;
   revision: string | number;
   updated_at: Date | string;
@@ -443,7 +444,7 @@ export const compileSearchExpression = (
     return sql`${currentUserId}::uuid IS NOT NULL AND EXISTS (
       SELECT 1
       FROM mail.conversations state
-      WHERE state.id = ${conversationId} AND state.assignee_user_id = ${currentUserId}::uuid
+      WHERE state.id = ${conversationId} AND EXISTS (SELECT 1 FROM mail.conversation_assignees a WHERE a.conversation_id = state.id AND a.user_id = ${currentUserId}::uuid)
     )`;
   }
   if (expression.type === "kept") return isKeptConversation(conversationId);
@@ -481,7 +482,7 @@ export const compileSearchExpression = (
     return expression.userId
       ? sql`EXISTS (
           SELECT 1 FROM mail.conversations state
-          WHERE state.id = ${conversationId} AND state.assignee_user_id = ${expression.userId}::uuid
+          WHERE state.id = ${conversationId} AND EXISTS (SELECT 1 FROM mail.conversation_assignees a WHERE a.conversation_id = state.id AND a.user_id = ${expression.userId}::uuid)
         )`
       : sql`EXISTS (
           SELECT 1 FROM mail.conversations state
@@ -548,13 +549,13 @@ const findIndexedSeed = (expression: MailSearchExpression): IndexedSeed | null =
   return null;
 };
 
-const compileAnyWordsSeed = (seed: AnyWordsSeed, mailboxId: string): SqlFragment => {
+const compileAnyWordsSeed = (seed: AnyWordsSeed, mailboxId: string, access: MailboxAccess): SqlFragment => {
   const query = seed.query.trim();
   // Each word may match a different field, so the seed holds the messages every word matches somewhere.
   const words = wordTokens(query);
   if (words.length > 1) {
     const parts = words.map(
-      (word) => sql`SELECT seed_word.message_id FROM (${compileAnyWordsSeed({ ...seed, query: word }, mailboxId)}) seed_word`,
+      (word) => sql`SELECT seed_word.message_id FROM (${compileAnyWordsSeed({ ...seed, query: word }, mailboxId, access)}) seed_word`,
     );
     return parts.slice(1).reduce((combined, part) => sql`${combined} INTERSECT ${part}`, parts[0]!);
   }
@@ -563,6 +564,7 @@ const compileAnyWordsSeed = (seed: AnyWordsSeed, mailboxId: string): SqlFragment
       SELECT seed_chunk.message_id
       FROM mail.message_search_chunks seed_chunk
       WHERE seed_chunk.mailbox_id = ${mailboxId}::uuid
+      AND ${messageVisibleTo(access, sql`seed_chunk.message_id`)}
         AND seed_chunk.source_kind = 'body'
         AND seed_chunk.search_document @@ plainto_tsquery('simple', ${token})
     `,
@@ -573,6 +575,7 @@ const compileAnyWordsSeed = (seed: AnyWordsSeed, mailboxId: string): SqlFragment
       SELECT seed_chunk.message_id, seed_chunk.attachment_id
       FROM mail.message_search_chunks seed_chunk
       WHERE seed_chunk.mailbox_id = ${mailboxId}::uuid
+      AND ${messageVisibleTo(access, sql`seed_chunk.message_id`)}
         AND seed_chunk.source_kind = 'attachment'
         AND seed_chunk.extractor_version = ${MAIL_ATTACHMENT_EXTRACTOR_VERSION}
         AND seed_chunk.search_document @@ plainto_tsquery('simple', ${token})
@@ -585,6 +588,7 @@ const compileAnyWordsSeed = (seed: AnyWordsSeed, mailboxId: string): SqlFragment
     SELECT seed_message.id AS message_id
     FROM mail.message_contents seed_message
     WHERE seed_message.mailbox_id = ${mailboxId}::uuid
+      AND ${messageVisibleTo(access, sql`seed_message.id`)}
       AND ${ftsMatch(sql`seed_message.subject_search_document`, query, "words")}
 
     UNION
@@ -593,6 +597,7 @@ const compileAnyWordsSeed = (seed: AnyWordsSeed, mailboxId: string): SqlFragment
     FROM (${bodySeed}) seed_body
     JOIN mail.message_contents seed_message ON seed_message.id = seed_body.message_id
     WHERE seed_message.mailbox_id = ${mailboxId}::uuid
+      AND ${messageVisibleTo(access, sql`seed_message.id`)}
 
     UNION
 
@@ -600,6 +605,7 @@ const compileAnyWordsSeed = (seed: AnyWordsSeed, mailboxId: string): SqlFragment
     FROM (${attachmentSeed}) seed_attachment_body
     JOIN mail.message_contents seed_message ON seed_message.id = seed_attachment_body.message_id
     WHERE seed_message.mailbox_id = ${mailboxId}::uuid
+      AND ${messageVisibleTo(access, sql`seed_message.id`)}
 
     UNION
 
@@ -607,6 +613,7 @@ const compileAnyWordsSeed = (seed: AnyWordsSeed, mailboxId: string): SqlFragment
     FROM mail.message_addresses seed_address
     JOIN mail.message_contents seed_message ON seed_message.id = seed_address.message_id
     WHERE seed_message.mailbox_id = ${mailboxId}::uuid
+      AND ${messageVisibleTo(access, sql`seed_message.id`)}
       AND seed_address.role IN ('from', 'reply_to', 'to', 'cc', 'bcc')
       AND ${textMatch(sql`(seed_address.email || ' ' || COALESCE(seed_address.display_name, ''))`, query, "words")}
 
@@ -615,6 +622,7 @@ const compileAnyWordsSeed = (seed: AnyWordsSeed, mailboxId: string): SqlFragment
     SELECT seed_message.id
     FROM mail.message_contents seed_message
     WHERE seed_message.mailbox_id = ${mailboxId}::uuid
+      AND ${messageVisibleTo(access, sql`seed_message.id`)}
       AND ${textMatch(sql`seed_message.message_id`, query, "words")}
 
     UNION
@@ -623,6 +631,7 @@ const compileAnyWordsSeed = (seed: AnyWordsSeed, mailboxId: string): SqlFragment
     FROM mail.attachments seed_attachment
     JOIN mail.message_contents seed_message ON seed_message.id = seed_attachment.message_id
     WHERE seed_message.mailbox_id = ${mailboxId}::uuid
+      AND ${messageVisibleTo(access, sql`seed_message.id`)}
       AND ${textMatch(sql`seed_attachment.filename`, query, "words")}
 
     UNION
@@ -633,6 +642,7 @@ const compileAnyWordsSeed = (seed: AnyWordsSeed, mailboxId: string): SqlFragment
     JOIN mail.folders seed_folder ON seed_folder.id = seed_placement.folder_id
     LEFT JOIN mail.binding_folder_refs seed_folder_ref ON seed_folder_ref.folder_id = seed_folder.id
     WHERE seed_message.mailbox_id = ${mailboxId}::uuid
+      AND ${messageVisibleTo(access, sql`seed_message.id`)}
       AND seed_placement.deleted_at IS NULL
       AND ${textMatch(sql`(seed_folder.name || ' ' || seed_folder.role || ' ' || COALESCE(seed_folder_ref.remote_path, ''))`, query, "words")}
 
@@ -643,6 +653,7 @@ const compileAnyWordsSeed = (seed: AnyWordsSeed, mailboxId: string): SqlFragment
     JOIN mail.message_contents seed_message ON seed_message.id = seed_placement.message_id
     CROSS JOIN LATERAL unnest(seed_placement.keywords) seed_keyword(value)
     WHERE seed_message.mailbox_id = ${mailboxId}::uuid
+      AND ${messageVisibleTo(access, sql`seed_message.id`)}
       AND seed_placement.deleted_at IS NULL
       AND seed_placement.keywords <> '{}'
       AND ${textMatch(sql`seed_keyword.value`, query, "words")}
@@ -654,6 +665,7 @@ const compileAnyWordsSeed = (seed: AnyWordsSeed, mailboxId: string): SqlFragment
     JOIN mail.conversations seed_conversation ON seed_conversation.id = seed_link.conversation_id
     JOIN mail.conversation_comments seed_comment ON seed_comment.conversation_id = seed_conversation.id
     WHERE seed_conversation.mailbox_id = ${mailboxId}::uuid
+      AND ${conversationVisibleTo(access, sql`seed_conversation.id`)}
       AND seed_comment.deleted_at IS NULL
       AND ${textMatch(sql`seed_comment.body_markdown`, query, "words")}
 
@@ -664,6 +676,7 @@ const compileAnyWordsSeed = (seed: AnyWordsSeed, mailboxId: string): SqlFragment
     JOIN mail.conversations seed_conversation ON seed_conversation.id = seed_link.conversation_id
     JOIN mail.conversation_references seed_reference ON seed_reference.conversation_id = seed_conversation.id
     WHERE seed_conversation.mailbox_id = ${mailboxId}::uuid
+      AND ${conversationVisibleTo(access, sql`seed_conversation.id`)}
       AND ${textMatch(sql`seed_reference.value`, query, "words")}
 
     UNION
@@ -676,17 +689,19 @@ const compileAnyWordsSeed = (seed: AnyWordsSeed, mailboxId: string): SqlFragment
       ON seed_tag.id = seed_assignment.tag_id
      AND seed_tag.mailbox_id = seed_assignment.mailbox_id
     WHERE seed_conversation.mailbox_id = ${mailboxId}::uuid
+      AND ${conversationVisibleTo(access, sql`seed_conversation.id`)}
       AND ${textMatch(sql`seed_tag.name`, query, "words")}
   `;
 };
 
-const compileIndexedSeed = (seed: IndexedSeed, mailboxId: string): SqlFragment => {
-  if (seed.field === "any") return compileAnyWordsSeed(seed, mailboxId);
+const compileIndexedSeed = (seed: IndexedSeed, mailboxId: string, access: MailboxAccess): SqlFragment => {
+  if (seed.field === "any") return compileAnyWordsSeed(seed, mailboxId, access);
   if (seed.field === "subject") {
     return sql`
       SELECT seed_message.id AS message_id
       FROM mail.message_contents seed_message
       WHERE seed_message.mailbox_id = ${mailboxId}::uuid
+      AND ${messageVisibleTo(access, sql`seed_message.id`)}
         AND ${ftsMatch(sql`seed_message.subject_search_document`, seed.query.trim(), seed.match)}
     `;
   }
@@ -694,6 +709,7 @@ const compileIndexedSeed = (seed: IndexedSeed, mailboxId: string): SqlFragment =
     SELECT DISTINCT seed_chunk.message_id
     FROM mail.message_search_chunks seed_chunk
     WHERE seed_chunk.mailbox_id = ${mailboxId}::uuid
+      AND ${messageVisibleTo(access, sql`seed_chunk.message_id`)}
       AND seed_chunk.source_kind = 'body'
       AND seed_chunk.search_document @@ phraseto_tsquery('simple', ${seed.query.trim()})
   `;
@@ -796,7 +812,7 @@ const mapHit = (row: DbSearchHit, folders: ResultFolders): MessageSearchHit => (
   unread: row.unread,
   messageCount: row.message_count,
   workStatus: row.work_status,
-  assigneeUserId: row.assignee_user_id,
+  assigneeUserIds: row.assignee_user_ids,
   snoozedUntil: row.snoozed_until
     ? (row.snoozed_until instanceof Date ? row.snoozed_until : new Date(row.snoozed_until)).toISOString()
     : null,
@@ -860,7 +876,7 @@ const WALK_MESSAGES_PER_CANDIDATE = 2 * (DENSITY_PROBE_MESSAGES / DENSE_MATCHES)
  * newest messages with the same condition the search applies, one message at a time like a walk,
  * and each count stops at the threshold.
  */
-const findDenseWords = async (db: typeof sql, mailboxId: string, seed: IndexedSeed | null): Promise<Set<string>> => {
+const findDenseWords = async (db: typeof sql, mailboxId: string, seed: IndexedSeed | null, access: MailboxAccess): Promise<Set<string>> => {
   if (seed?.field !== "any") return new Set();
   const probes = wordTokens(seed.query).map(
     (word) => sql`
@@ -888,6 +904,7 @@ const findDenseWords = async (db: typeof sql, mailboxId: string, seed: IndexedSe
       SELECT recent.id
       FROM mail.message_contents recent
       WHERE recent.mailbox_id = ${mailboxId}::uuid
+        AND ${messageVisibleTo(access, sql`recent.id`)}
       ORDER BY recent.internal_date DESC, recent.id DESC
       LIMIT ${DENSITY_PROBE_MESSAGES}
     )
@@ -908,6 +925,7 @@ const withoutDenseWords = (seed: IndexedSeed | null, denseWords: ReadonlySet<str
 const runSearch = async (params: {
   db: typeof sql;
   mailboxId: string;
+  access: MailboxAccess;
   expression: MailSearchExpression;
   sort: "relevance" | "newest";
   cursor: SearchCursor | null;
@@ -939,7 +957,7 @@ const runSearch = async (params: {
     params.aggregatedScope ? staysInAggregatedViews(conversationId, params.aggregatedScope) : sql`true`;
   // A walk that falls short reads its candidates through the whole seed after all.
   const seed = walk ? foundSeed : indexedSeed;
-  const indexedSeedCte = seed ? sql`indexed_seed AS MATERIALIZED (${compileIndexedSeed(seed, params.mailboxId)}),` : sql``;
+  const indexedSeedCte = seed ? sql`indexed_seed AS MATERIALIZED (${compileIndexedSeed(seed, params.mailboxId, params.access)}),` : sql``;
   const useConversationSeed = conversationOnly;
   const conversationSeedCte = useConversationSeed
     ? sql`
@@ -947,6 +965,7 @@ const runSearch = async (params: {
           SELECT seed_conversation.id
           FROM mail.conversations seed_conversation
           WHERE seed_conversation.mailbox_id = ${params.mailboxId}::uuid
+            AND ${conversationVisibleTo(params.access, sql`seed_conversation.id`)}
             AND (${compileSearchExpression(params.expression, params.currentUserId, sql`seed_conversation.id`, params.lapsedAssignees)})
             -- Only conversations the list can show take a place on the page; one without a visible
             -- message would otherwise end the page early.
@@ -1046,7 +1065,8 @@ const runSearch = async (params: {
         )`
       : sql``;
   const candidateFilter = (seedCoversExpression: boolean) => sql`
-    ${candidateVisibility}
+    ${messageVisibleTo(params.access, sql`mc.id`)}
+    AND ${candidateVisibility}
     AND ${aggregatedScope(sql`cm.conversation_id`)}
     AND (${useConversationSeed || seedCoversExpression ? sql`true` : predicate})
   `;
@@ -1088,6 +1108,7 @@ const runSearch = async (params: {
     SELECT walk.id, walk.internal_date
     FROM mail.message_contents walk
     WHERE walk.mailbox_id = ${params.mailboxId}::uuid
+      AND ${messageVisibleTo(params.access, sql`walk.id`)}
       ${newestPageAfterCursor(sql`walk`)}
     ORDER BY walk.internal_date DESC, walk.id DESC
     LIMIT ${count}
@@ -1134,6 +1155,7 @@ const runSearch = async (params: {
                 SELECT 1
                 FROM mail.message_contents beyond
                 WHERE beyond.mailbox_id = ${params.mailboxId}::uuid
+                  AND ${messageVisibleTo(params.access, sql`beyond.id`)}
                   ${newestPageAfterCursor(sql`beyond`)}
                 ORDER BY beyond.internal_date DESC, beyond.id DESC
                 OFFSET ${walkLimit}
@@ -1368,7 +1390,7 @@ const runSearch = async (params: {
           )
         END AS message_count,
         conversation.work_status,
-        conversation.assignee_user_id,
+        COALESCE((SELECT array_agg(a.user_id::text ORDER BY a.assigned_at, a.user_id) FROM mail.conversation_assignees a WHERE a.conversation_id = conversation.id), ARRAY[]::text[]) AS assignee_user_ids,
         conversation.snoozed_until,
         COALESCE(conversation.revision, 1) AS revision,
         COALESCE(conversation.updated_at, deduplicated.internal_date) AS updated_at,
@@ -1576,7 +1598,7 @@ const executeSearch = async (
     await tx`SET LOCAL plan_cache_mode = force_custom_plan`;
     await tx`SET LOCAL jit = off`;
     if (!boundedCandidates(params)) return runSearch({ ...params, denseWords: new Set(), db: tx });
-    const denseWords = await findDenseWords(tx, params.mailboxId, findIndexedSeed(params.expression));
+    const denseWords = await findDenseWords(tx, params.mailboxId, findIndexedSeed(params.expression), params.access);
     await limitToDeadline(tx, params.deadline);
     return runSearch({ ...params, denseWords, db: tx });
   });
@@ -1604,6 +1626,7 @@ const searchFailure = (error: unknown): Result<never> => {
 
 const executeSearchWithFallback = async (params: {
   mailboxId: string;
+  access: MailboxAccess;
   expression: MailSearchExpression;
   sort: SearchCursor["sort"];
   cursor: SearchCursor | null;
@@ -1661,8 +1684,14 @@ export const searchMessages = async (params: {
   const expression = params.request.expression;
   const complexity = validateSearchComplexity(expression);
   if (!complexity.ok) return complexity;
-  const access = await resolveMailExecution({ mailboxId: params.mailboxId, operation: "actorRead", context: params.context });
+  const access = await resolveMailExecution({
+    mailboxId: params.mailboxId,
+    operation: "actorRead",
+    conversationScoped: true,
+    context: params.context,
+  });
   if (!access.ok) return access;
+  if (!access.data.access) return fail(err.forbidden("Access denied"));
   const sort = params.request.sort ?? "relevance";
   const currentUserId = userBackedActor(params.context)?.id ?? null;
   const groupByConversation = params.groupByConversation !== false;
@@ -1693,6 +1722,7 @@ export const searchMessages = async (params: {
   ]);
   const execution = await executeSearchWithFallback({
     mailboxId: params.mailboxId,
+    access: access.data.access,
     expression,
     sort,
     cursor: cursor.data,

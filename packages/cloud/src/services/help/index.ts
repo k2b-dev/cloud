@@ -1,6 +1,8 @@
 import { type SQL, sql } from "bun";
+import { appAudienceRoles, hasAnyAppRole } from "../../_internal/app-roles";
 import { getApp, listApps } from "../../_internal/registry";
 import type { AppRegistryEntry } from "../../contracts/registry";
+import type { RequestActor } from "../../contracts/shared";
 import { resolveAppPresentations } from "../../shared/app-presentation";
 import { helpLocaleChain } from "../../shared/help";
 import { logger } from "../logging";
@@ -12,8 +14,20 @@ export type { HelpArticle, HelpMatch, HelpMetadata, HelpReader, HelpReaderFactor
 
 const log = logger("help");
 
+/**
+ * Help follows the app's declared visibility: it needs a user (the person, or the user an API credential acts
+ * for), the app's navigation roles limit it, and an app reached only through the admin area is for admins.
+ * The app's routes still authorize the app itself.
+ */
+export const canReadAppHelp = (app: Pick<AppRegistryEntry, "nav">, viewer: RequestActor | undefined): boolean => {
+  const user = viewer?.kind === "user" ? viewer.user : (viewer?.delegatedUser ?? undefined);
+  return !!user && hasAnyAppRole(user, appAudienceRoles(app.nav));
+};
+
+/** Reads Help in one language for one viewer; apps the viewer may not see do not exist for this reader. */
 export const createHelpReader = (
   locale: string,
+  viewer: RequestActor | undefined,
   dependencies: {
     db?: SQL;
     listApps?: () => Promise<AppRegistryEntry[]>;
@@ -21,11 +35,10 @@ export const createHelpReader = (
   } = {},
 ): HelpReader => {
   const db = dependencies.db ?? sql;
+  const visible = (app: AppRegistryEntry | null): app is AppRegistryEntry => app !== null && canReadAppHelp(app, viewer);
   const select = async (appId?: string): Promise<HelpSelection[]> => {
-    const apps = appId
-      ? [await (dependencies.getApp ?? getApp)(appId)].filter((app): app is AppRegistryEntry => app !== null)
-      : await (dependencies.listApps ?? listApps)();
-    return resolveAppPresentations(apps, locale).flatMap((app) =>
+    const apps = appId ? [await (dependencies.getApp ?? getApp)(appId)] : await (dependencies.listApps ?? listApps)();
+    return resolveAppPresentations(apps.filter(visible), locale).flatMap((app) =>
       app.help
         ? [
             {
@@ -41,7 +54,7 @@ export const createHelpReader = (
   return {
     async manifest(appId) {
       const app = await (dependencies.getApp ?? getApp)(appId);
-      if (!app?.help) return null;
+      if (!visible(app) || !app.help) return null;
       const [corpus] = await db`SELECT 1 FROM help.corpora WHERE app_id=${app.id} AND manifest_hash=${app.help.manifestHash}`;
       if (!corpus) return null;
       const rows = await queryHelp(

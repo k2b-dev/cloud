@@ -5,17 +5,17 @@ icon: ti ti-terminal-2
 description: Validate, plan, apply, export, and publish the canonical app definition.
 order: 136
 ---
-The visual builder and CLI share one definition. YAML composes existing resources; it is not a whole-Base deployment bundle. Create tables, fields, Views, Forms, Documents and Workflow launchers first, then use their canonical public resource IDs.
+The visual builder and the CLI share one definition. YAML combines existing resources. It is not a deployment bundle for a whole Base. First create the tables, fields, views, forms, documents, and workflow launchers. Then use their canonical public resource IDs.
 
 ## Read the contract {icon="book-2"}
 
-Read the [Custom App API reference](/app/grids/help/grids-custom-app-api) for every option, default, binding and payload. Fetch `cld grids apps reference --json` for the installed `definitionSchema`. JSON Schema describes input; the server compiler additionally verifies resource access, types, queries and navigation.
+The [Custom App API reference](/app/grids/help/grids-custom-app-api) lists every option, default, binding, and payload. Run `cld grids apps reference --json` to get the installed `definitionSchema`. JSON Schema describes the input. The server compiler also checks resource access, types, queries, and navigation.
 
-For a visual start, run `cld grids apps create MyBase --name "Requests" --json`, then `apps export MyBase Requests --out app.yaml`.
+To start visually, run `cld grids apps create MyBase --name "Requests" --json`. Then run `apps export MyBase Requests --out app.yaml`.
 
 ## Use one strict root document {icon="file-code"}
 
-Replace these illustrative resource IDs with IDs from the selected Base:
+Replace these example resource IDs with IDs from the selected Base:
 
 ```yaml
 schemaVersion: 5
@@ -38,9 +38,9 @@ pages:
                 markdown: "# Requests"
 ```
 
-See [Pages and blocks](/app/grids/help/grids-custom-app-pages-blocks) for audience journeys. Bindings are typed objects, for example `{ source: ROW, path: relation, fieldId: res301 }` for navigation through a selected single relation. Unknown keys, duplicate IDs and incompatible references fail validation.
+[Grids App pages & blocks](/app/grids/help/grids-custom-app-pages-blocks) describes journeys for each audience. Bindings are typed objects. For example, `{ source: ROW, path: relation, fieldId: res301 }` navigates through a selected single relation. Unknown keys, duplicate IDs, and incompatible references fail validation.
 
-## Validate, plan and apply {icon="list-check"}
+## Validate, plan, and apply {icon="list-check"}
 
 ```bash
 cld grids apps validate MyBase --source-file app.yaml --json
@@ -49,9 +49,18 @@ cld grids apps apply MyBase --source-file app.yaml --dry-run --json
 cld grids apps apply MyBase --source-file app.yaml --json
 ```
 
-Validate checks without writing. Plan also compares the saved draft and returns changes, diagnostics and derived publication capabilities. `apply --dry-run` performs that same plan. Ordinary apply creates or updates the supplied App ID; applying an unchanged canonical definition is a no-op. It never publishes. Read diagnostic paths and fix their owning input rather than weakening audience restrictions.
+:::reference
+- **validate:** Checks the definition and writes nothing.
+- **plan:** Also compares the saved draft. It returns changes, diagnostics, and the derived publication capabilities.
+- **apply --dry-run:** Runs the same plan.
+- **apply:** Creates or updates the given app ID. An unchanged canonical definition changes nothing. Apply never publishes.
+:::
+
+Each diagnostic names a path. Fix the input that owns the path. Do not weaken audience restrictions to pass validation.
 
 ## Publish and recover {icon="rocket"}
+
+You need **Manage** access to the Base for these commands:
 
 ```bash
 cld grids apps export MyBase Requests --published --out app-live.yaml
@@ -61,6 +70,15 @@ cld grids apps unpublish MyBase Requests --yes --json
 cld grids apps delete MyBase Requests --yes --json
 ```
 
-These commands require Base Admin. Publish recompiles and replaces the live snapshot only on success. Restore replaces the draft with the published version; unpublish removes the live version; delete removes the App from normal listings and its live route, not its Base resources. Review before using `--yes`. Check the complete journey with the intended audience before publishing; an admin preview does not prove isolation.
+:::reference
+- **publish:** Compiles again. Replaces the live snapshot only on success.
+- **restore:** Replaces the draft with the published version.
+- **unpublish:** Removes the live version.
+- **delete:** Removes the app from normal lists and removes its live route. Its Base resources stay.
+:::
 
-Read [Publish and permissions](/app/grids/help/grids-publish-custom-app) before granting access. CLI command help documents flags; `apps list|get` inspect existing Apps.
+:::warning Test with the real audience
+Review each command before you add `--yes`. Before you publish, check the complete journey with the intended audience. A preview by a person with **Manage** access does not prove isolation.
+:::
+
+Read [Publish a Grids App](/app/grids/help/grids-publish-custom-app) before you give access. The CLI command help lists the flags. `apps list|get` shows existing apps.

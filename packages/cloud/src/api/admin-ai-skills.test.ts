@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import type { MiddlewareHandler } from "hono";
-import { AiSkillRevisionConflictError, aiSkills } from "../ai/skills";
+import { aiAppSkills } from "../ai/app-skill-store";
+import { AiSkillInputError, AiSkillRevisionConflictError, aiSkills } from "../ai/skills";
 import type { AuthContext } from "../server";
 import { createAdminAiSkillsRoutes } from "./admin-ai-skills";
 
@@ -13,10 +14,7 @@ const skill = {
   name: "weekly-status",
   description: "Create weekly status updates.",
   revision: 1,
-  templateId: null,
-  templateVersion: null,
-  currentTemplateVersion: null,
-  templateStatus: null,
+  source: null,
   referenceCount: 0,
   accessCount: 0,
   adminCount: 0,
@@ -47,6 +45,9 @@ describe("admin AI Skill routes", () => {
 
   test("lists platform-wide Skills and orphan summary without exposing internal ids", async () => {
     spyOn(aiSkills.admin, "list").mockResolvedValue({ items: [skill], total: 1, page: 1, perPage: 25 });
+    spyOn(aiAppSkills, "appSkillIssues").mockResolvedValue([
+      { appId: "mail", appName: "Mail", name: "cloud-mail", state: "deleted", available: true },
+    ]);
     spyOn(aiSkills.admin, "summary").mockResolvedValue({ total: 1, unmanaged: 1, totalAccess: 0 });
     const routes = createAdminAiSkillsRoutes(pass);
 
@@ -96,25 +97,69 @@ describe("admin AI Skill routes", () => {
     expect(aiSkills.admin.delete).toHaveBeenCalledWith(skillId);
     expect(await response.json()).toEqual({ deleted: true });
   });
-  test("requires admin access and explicit confirmation for template changes", async () => {
-    const apply = spyOn(aiSkills.admin, "applyTemplate").mockResolvedValue(true);
-    const input = { templateId: "core:skill-creator", templateVersion: 1, expectedRevision: 3, mode: "reset", confirmed: true };
+  test("requires admin access and explicit confirmation for app Skill resets", async () => {
+    const apply = spyOn(aiAppSkills, "reset").mockResolvedValue(true);
+    const input = { expectedRevision: 3, expectedAppVersion: "b".repeat(64), confirmed: true };
     const request = { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input) };
-    expect((await createAdminAiSkillsRoutes().request(`/${skillShortId}/template`, request)).status).toBe(401);
+    expect((await createAdminAiSkillsRoutes().request(`/${skillShortId}/reset`, request)).status).toBe(401);
     const denied: MiddlewareHandler<AuthContext> = async (c) => c.json({ message: "Forbidden" }, 403);
-    expect((await createAdminAiSkillsRoutes(denied).request(`/${skillShortId}/template`, request)).status).toBe(403);
+    expect((await createAdminAiSkillsRoutes(denied).request(`/${skillShortId}/reset`, request)).status).toBe(403);
     expect(apply).not.toHaveBeenCalled();
     spyOn(aiSkills.admin, "getByShortId").mockResolvedValue(skill);
     const routes = createAdminAiSkillsRoutes(pass);
     expect(
-      (await routes.request(`/${skillShortId}/template`, { ...request, body: JSON.stringify({ ...input, confirmed: false }) })).status,
+      (await routes.request(`/${skillShortId}/reset`, { ...request, body: JSON.stringify({ ...input, confirmed: false }) })).status,
     ).toBe(400);
     expect(apply).not.toHaveBeenCalled();
-    expect((await routes.request(`/${skillShortId}/template`, request)).status).toBe(200);
-    expect(apply).toHaveBeenCalledWith(skillId, input);
+    expect((await routes.request(`/${skillShortId}/reset`, request)).status).toBe(200);
+    expect(apply).toHaveBeenCalledWith(skillId, input.expectedRevision, input.expectedAppVersion);
+    const { expectedAppVersion: _reviewed, ...unreviewed } = input;
+    expect((await routes.request(`/${skillShortId}/reset`, { ...request, body: JSON.stringify(unreviewed) })).status).toBe(400);
     apply.mockRejectedValue(new AiSkillRevisionConflictError());
-    const stale = await routes.request(`/${skillShortId}/template`, request);
+    const stale = await routes.request(`/${skillShortId}/reset`, request);
     expect(stale.status).toBe(409);
     expect(await stale.json()).toMatchObject({ message: new AiSkillRevisionConflictError().message });
+  });
+  test("returns serialized current and app content for the diff", async () => {
+    spyOn(aiSkills.admin, "getByShortId").mockResolvedValue(skill);
+    const version = {
+      current: { markdown: "Current", references: [] },
+      app: { markdown: "App", references: [] },
+      appVersion: "e".repeat(64),
+      status: "update_available" as const,
+    };
+    spyOn(aiAppSkills, "appVersion").mockResolvedValue(version);
+    const response = await createAdminAiSkillsRoutes(pass).request(`/${skillShortId}/app-version`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(version);
+    expect(aiAppSkills.appVersion).toHaveBeenCalledWith(skillId);
+  });
+  test.each(["restore", "adopt"] as const)("%s requires confirmation, targets the exact app/name and reports conflicts", async (action) => {
+    const restore = spyOn(aiAppSkills, action).mockResolvedValue(true);
+    const request = { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ confirmed: true }) };
+    const path = `/apps/inventory/skills/inventory-counting/${action}`;
+    expect((await createAdminAiSkillsRoutes().request(path, request)).status).toBe(401);
+    const routes = createAdminAiSkillsRoutes(pass);
+    expect((await routes.request(path, { ...request, body: JSON.stringify({ confirmed: false }) })).status).toBe(400);
+    expect(restore).not.toHaveBeenCalled();
+    expect((await routes.request(path, request)).status).toBe(200);
+    expect(restore).toHaveBeenCalledWith("inventory", "inventory-counting");
+    restore.mockRejectedValue(new AiSkillRevisionConflictError("A Skill with this name already exists."));
+    expect((await routes.request(path, request)).status).toBe(409);
+    restore.mockRejectedValue(new AiSkillInputError("No app source is available for this Skill."));
+    expect((await routes.request(path, request)).status).toBe(400);
+  });
+  test("reset reports missing app source and removed template endpoints stay absent", async () => {
+    spyOn(aiSkills.admin, "getByShortId").mockResolvedValue(skill);
+    spyOn(aiAppSkills, "reset").mockRejectedValue(new AiSkillInputError("No app source is available for this Skill."));
+    const routes = createAdminAiSkillsRoutes(pass);
+    const response = await routes.request(`/${skillShortId}/reset`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ expectedRevision: 1, expectedAppVersion: "c".repeat(64), confirmed: true }),
+    });
+    expect(response.status).toBe(400);
+    expect((await routes.request("/templates")).status).toBe(404);
+    expect((await routes.request(`/${skillShortId}/template`, { method: "POST" })).status).toBe(404);
   });
 });

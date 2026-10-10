@@ -6,14 +6,15 @@ import {
   type CalendarEvent,
   type CalendarEventRenderContext,
   type CalendarEventTimeChange,
+  type CalendarSelectionControls,
   Calendar as CoreCalendar,
   type CalendarView as CoreCalendarView,
+  type DropdownItem,
   dialogCore,
   FilterChip,
   type FilterChipSection,
   PanelDialog,
   panelDialogOptions,
-  type TimelineController,
   toast,
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, Show } from "solid-js";
@@ -35,18 +36,18 @@ import ItemForm, { type ItemFormData } from "../shared/ItemForm";
 import { itemCreateDialogOptions } from "../shared/item-form/dialog";
 import { invalidateSpacesData, requestSpacesRouteNavigation } from "../workspace/workspace-events";
 import { calendarItemColors, isCalendarFlagged, isCalendarTask } from "./colors";
-import {
-  type CalendarColorBy,
-  CalendarColorBySchema,
-  type CalendarFilter,
-  defaultCalendarFilter,
-  parseCalendarRoute,
-  writeCalendarFilter,
-} from "./filter";
+import { type CalendarColorBy, CalendarColorBySchema, type CalendarFilter, defaultCalendarFilter, writeCalendarFilter } from "./filter";
 import { CalendarItemContent } from "./ItemContent";
-import SpacesTimeline from "./SpacesTimeline";
-import { timelineTrayFiltered, timelineTrayFilters, timelineTrayListHref, timelineWindow } from "./timeline";
-import type { CalendarProps, CalendarTimeline, CalendarView } from "./types";
+import QuickCreate, {
+  type CalendarDays,
+  type QuickCreateDefaults,
+  type QuickCreateKind,
+  quickCreateDefaults,
+  quickCreateKind,
+} from "./QuickCreate";
+import TaskTray from "./TaskTray";
+import { taskTrayFiltered, taskTrayFilters, taskTrayListHref } from "./tray";
+import type { CalendarProps, CalendarView } from "./types";
 
 const eventStart = (item: CalendarItem) => item.startsAt ?? item.deadline ?? calendar.today().toISOString();
 const eventEnd = (item: CalendarItem) => item.endsAt ?? item.deadline ?? eventStart(item);
@@ -77,7 +78,7 @@ const buildCalendarHref = (
 };
 
 /** Spaces never shows the compact mobile month, so its links name the month view. */
-const asView = (view: CoreCalendarView | "timeline"): CalendarView => (view === "mobile-month" ? "month" : view);
+const asView = (view: CoreCalendarView): CalendarView => (view === "mobile-month" ? "month" : view);
 
 const toCalendarEvent = (
   item: CalendarItem,
@@ -207,6 +208,8 @@ export default function Calendar(props: CalendarProps) {
   const retryToast = createRetryToasts();
   const [optimisticTimes, setOptimisticTimes] = createSignal<Record<string, CalendarEventTimeChange>>({});
   const [createDialogPending, setCreateDialogPending] = createSignal(false);
+  /** The days selected in the month view; New event and the menus create on them. */
+  const [selectedDays, setSelectedDays] = createSignal<CalendarDays | null>(null);
   const [seriesItemSource, setSeriesItemSource] = createSignal<string | null>(null);
   const reconcileAfterWrite = (): void =>
     void invalidateSpacesData().catch(() => retryToast(t.calendarRefreshFailed, t.retry, reconcileAfterWrite));
@@ -224,13 +227,11 @@ export default function Calendar(props: CalendarProps) {
     },
   });
   const events = () =>
-    props.view === "timeline"
-      ? []
-      : props.items.map((item) => {
-          const event = toCalendarEvent(item, props.columns, props.baseUrl, props.view, props.date, props.filter, props.dateConfig);
-          const optimistic = optimisticTimes()[item.id];
-          return optimistic ? { ...event, start: optimistic.start, end: optimistic.end, allDay: optimistic.allDay } : event;
-        });
+    props.items.map((item) => {
+      const event = toCalendarEvent(item, props.columns, props.baseUrl, props.view, props.date, props.filter, props.dateConfig);
+      const optimistic = optimisticTimes()[item.id];
+      return optimistic ? { ...event, start: optimistic.start, end: optimistic.end, allDay: optimistic.allDay } : event;
+    });
   const itemsById = createMemo(() => new Map(props.items.map((item) => [item.id, item])));
   const renderEvent = (event: CalendarEvent, context: CalendarEventRenderContext) => {
     const item = itemsById().get(event.id);
@@ -531,7 +532,16 @@ export default function Calendar(props: CalendarProps) {
       updateSubmitting = false;
     }
   };
-  const createEventFromSlot = async (slot: CalendarEventTimeChange) => {
+  /** Status and tags a new item takes from the filter, so it shows in the calendar it was created in. */
+  const filterDefaults = () => ({
+    tagIds: props.filter.tagIds,
+    columnId: props.filter.columnIds.length === 1 ? props.filter.columnIds[0] : undefined,
+  });
+  const announceCreated = (item: SpaceItem) => {
+    toast.success(item.startsAt && item.endsAt ? t.eventCreated : t.taskCreated);
+    reconcileAfterWrite();
+  };
+  const openCreateDialog = async (defaults: QuickCreateDefaults) => {
     if (createDialogPending()) return;
     setCreateDialogPending(true);
     const spaceId = props.spaceId;
@@ -545,14 +555,7 @@ export default function Calendar(props: CalendarProps) {
             tags={props.tags}
             templates={props.templates}
             quickCreate
-            defaults={{
-              type: "event",
-              startsAt: slot.start.toISOString(),
-              endsAt: slot.end.toISOString(),
-              allDay: slot.allDay ?? false,
-              tagIds: props.filter.tagIds,
-              columnId: props.filter.columnIds.length === 1 ? props.filter.columnIds[0] : undefined,
-            }}
+            defaults={{ ...filterDefaults(), ...defaults }}
             onSubmit={async (data) => close(await createSpaceItem(spaceId, data, t.createItemFailed))}
             onCancel={() => close(null)}
             dateConfig={props.dateConfig}
@@ -560,52 +563,43 @@ export default function Calendar(props: CalendarProps) {
         ),
         itemCreateDialogOptions,
       );
-      if (item) {
-        toast.success(item.startsAt && item.endsAt ? t.eventCreated : t.taskCreated);
-        reconcileAfterWrite();
-      }
+      if (item) announceCreated(item);
     } finally {
       setCreateDialogPending(false);
     }
   };
-  const creatingEvent = createDialogPending;
-  let timelineController: TimelineController | undefined;
-  /** A new anchor day opens a new strip; the same one keeps the strip and where the reader is. */
-  const timelineAnchor = createMemo(() => (props.view === "timeline" ? props.timeline?.anchor : undefined));
+  const createEventFromSlot = (slot: CalendarEventTimeChange) =>
+    openCreateDialog({
+      type: "event",
+      startsAt: slot.start.toISOString(),
+      endsAt: slot.end.toISOString(),
+      allDay: slot.allDay ?? false,
+    });
+  const daysOf = (range: CalendarEventTimeChange): CalendarDays => ({
+    first: calendar.formatDateKey(range.start, props.dateConfig),
+    last: calendar.formatDateKey(calendar.addDays(range.end, -1, props.dateConfig), props.dateConfig),
+  });
+  /** One selected day gets an event at nine; several get one all-day event over all of them. */
+  const createOnDays = (days: CalendarDays) =>
+    openCreateDialog(quickCreateDefaults(quickCreateKind(undefined, days), days, props.dateConfig));
   /**
-   * An item's link names the strip on screen. While another day or filter loads, the strip stays, and so must the
-   * address its links share with the page, or opening an item would load the whole page instead of its detail.
+   * The day menu creates through the quick create at the days. Without write access it keeps the calendar's own
+   * entries, Open day and Open week.
    */
-  const timelineHref = (timeline: CalendarTimeline, item: CalendarItem) =>
-    buildCalendarHref(
-      props.baseUrl,
-      "timeline",
-      new Date(timeline.anchor),
-      { ...timeline.filter, colorBy: props.filter.colorBy },
-      item.isRecurringInstance ? (item.recurringEventId ?? item.id) : item.id,
-      item.recurrenceId ?? undefined,
-      props.dateConfig,
-    );
-  /** "Today" and the active view link lead to the strip already shown, so they scroll it instead of loading it again. */
-  const navigateHref = (href: string) => {
-    const timeline = props.view === "timeline" ? props.timeline : undefined;
-    const target = parseCalendarRoute(new URL(href, "http://spaces.local"), props.dateConfig);
-    if (timeline && timelineController && target.view === "timeline" && target.date === timeline.anchor) {
-      if (timeline.anchor === calendar.today(props.dateConfig).toISOString()) timelineController.scrollToNow();
-      // Back to where the strip opened, not to the first of the weeks loaded since.
-      else timelineController.scrollToTime(timelineWindow(new Date(timeline.anchor), props.dateConfig).from);
-      // A day the reader asked for before still loads; this link replaces it with the strip they see.
-      if (!props.navigationPending) return;
-    }
-    props.onNavigateHref?.(href);
-  };
-  const defaultNewEventSlot = (): CalendarEventTimeChange => {
-    const dateKey = calendar.formatDateKey(props.date, props.dateConfig);
-    const start = props.dateConfig?.timeZone
-      ? new Date(calendar.zonedDateTimeToInstant(`${dateKey}T09:00`, props.dateConfig.timeZone, { disambiguation: "compatible" }))
-      : new Date(`${dateKey}T09:00:00`);
-    const end = new Date(start.getTime() + 60 * 60 * 1000);
-    return { start, end, allDay: false };
+  const selectionMenu = (_range: CalendarEventTimeChange, controls: CalendarSelectionControls): DropdownItem[] =>
+    props.canWrite ? createMenu(controls) : [];
+  const createMenu = (controls: CalendarSelectionControls): DropdownItem[] => [
+    // New event creates as N and the toolbar do: at nine on one day, all day over several.
+    { label: t.newEvent, icon: "ti ti-calendar-plus", action: () => controls.quickCreate() },
+    { label: t.newAllDayEvent, icon: "ti ti-sun", action: () => controls.quickCreate("allday" satisfies QuickCreateKind) },
+    { label: t.newTaskWithDeadline, icon: "ti ti-square-check", action: () => controls.quickCreate("task" satisfies QuickCreateKind) },
+  ];
+  const creatingEvent = createDialogPending;
+  /** New event creates on the selected days of the month view, and otherwise at nine on the shown date. */
+  const createNewEvent = () => {
+    const days = props.view === "month" ? selectedDays() : null;
+    const date = calendar.formatDateKey(props.date, props.dateConfig);
+    return createOnDays(days ?? { first: date, last: date });
   };
 
   return (
@@ -628,16 +622,16 @@ export default function Calendar(props: CalendarProps) {
               size="sm"
               class="shrink-0 whitespace-nowrap"
               disabled={creatingEvent()}
-              onClick={() => void createEventFromSlot(defaultNewEventSlot())}
+              onClick={() => void createNewEvent()}
             >
               <i class={`ti ${creatingEvent() ? "ti-loader-2 animate-spin" : "ti-calendar-plus"}`} />
-              {/* A phone keeps the icon, so the header holds the five views in one row. */}
+              {/* A phone keeps the icon, so the header holds Today, the views, and this button in one row. */}
               <span class="max-sm:sr-only">{t.newEvent}</span>
             </Button>
           </Show>
         }
         toolbarContent={
-          <div class="no-scrollbar flex shrink-0 items-center gap-2 overflow-x-auto border-b border-zinc-100 bg-zinc-50/65 px-2 py-2 dark:border-zinc-800/70 dark:bg-zinc-950/35">
+          <>
             <FilterChip
               label={t.scope}
               icon="ti ti-filter"
@@ -687,18 +681,11 @@ export default function Calendar(props: CalendarProps) {
                 onValueChange={(tagIds) => setFilter({ tagIds })}
               />
             </Show>
-            <span class="ml-auto inline-flex min-w-16 shrink-0 items-center justify-end gap-1 text-xs text-dimmed">
-              <Show
-                when={props.navigationPending}
-                fallback={props.view === "timeline" ? undefined : t.shownCount({ count: props.items.length })}
-              >
-                <i class="ti ti-loader-2 animate-spin" aria-hidden="true" />
-                {t.updating}
-              </Show>
+            <span class="ml-auto min-w-[7.5rem] text-right text-xs text-[var(--k2b-text-muted)] tabular-nums whitespace-nowrap max-sm:hidden">
+              {t.shownCount({ count: props.items.length })}
             </span>
-          </div>
+          </>
         }
-        customViews={[{ value: "timeline", label: t.timeline }]}
         getViewHref={(view) =>
           buildCalendarHref(props.baseUrl, asView(view), props.date, props.filter, undefined, undefined, props.dateConfig)
         }
@@ -708,7 +695,7 @@ export default function Calendar(props: CalendarProps) {
         getEventHref={(event) => event.href}
         renderEvent={renderEvent}
         selectedEventId={props.selectedItemId}
-        onNavigateHref={props.onNavigateHref ? navigateHref : undefined}
+        onNavigateHref={props.onNavigateHref}
         onPrefetch={props.onPrefetch}
         navigationPending={props.navigationPending}
         onEventActivate={selectEvent}
@@ -719,48 +706,47 @@ export default function Calendar(props: CalendarProps) {
             ? (slot) => void createEventFromSlot(slot)
             : undefined
         }
-      >
-        <Show when={timelineAnchor()} keyed>
-          <Show when={props.timeline}>
-            {(timeline) => (
-              <SpacesTimeline
-                spaceId={props.spaceId}
-                range={timeline()}
-                items={timeline().items}
-                columns={props.columns}
-                colorBy={props.filter.colorBy}
-                busy={timeline().busy || Boolean(props.navigationPending)}
-                canWrite={props.canWrite}
-                currentUserId={props.currentUserId}
-                dateConfig={props.dateConfig}
-                hrefFor={(item) => timelineHref(timeline(), item)}
-                tray={timeline().tray}
-                trayFiltered={timelineTrayFiltered(timeline().filter)}
-                trayItemHref={(item) =>
-                  buildCalendarHref(
-                    props.baseUrl,
-                    "timeline",
-                    new Date(timeline().anchor),
-                    { ...timeline().filter, colorBy: props.filter.colorBy },
-                    item.id,
-                    undefined,
-                    props.dateConfig,
-                  )
-                }
-                trayListHref={(section) => {
-                  const query = timelineTrayFilters(timeline().filter)?.[section];
-                  return query ? timelineTrayListHref(new URL(props.baseUrl, "http://spaces.local").pathname, query) : undefined;
-                }}
-                onLoadEarlier={() => timeline().onLoadEarlier()}
-                onLoadLater={() => timeline().onLoadLater()}
-                controller={(controller) => {
-                  timelineController = controller;
-                }}
-              />
-            )}
-          </Show>
-        </Show>
-      </CoreCalendar>
+        onSelectionChange={(range) => setSelectedDays(range ? daysOf(range) : null)}
+        selectionMenu={selectionMenu}
+        renderQuickCreate={
+          props.canWrite
+            ? (range, { create, close }) => (
+                <QuickCreate
+                  spaceId={props.spaceId}
+                  days={daysOf(range)}
+                  kind={quickCreateKind(create, daysOf(range))}
+                  dateConfig={props.dateConfig}
+                  defaults={filterDefaults()}
+                  columnId={filterDefaults().columnId ?? props.columns[0]?.id ?? ""}
+                  onCreated={(item) => {
+                    close();
+                    announceCreated(item);
+                  }}
+                  onMoreOptions={(defaults) => {
+                    close();
+                    void openCreateDialog(defaults);
+                  }}
+                />
+              )
+            : undefined
+        }
+      />
+      {/* A day has no place for overdue and undated tasks, so they wait in a row below it. */}
+      <Show when={props.view === "day" && taskTrayFilters(props.filter)}>
+        <TaskTray
+          spaceId={props.spaceId}
+          tray={props.tray ?? null}
+          filtered={taskTrayFiltered(props.filter)}
+          canCheck={props.canWrite}
+          currentUserId={props.currentUserId}
+          itemHref={(item) => buildCalendarHref(props.baseUrl, "day", props.date, props.filter, item.id, undefined, props.dateConfig)}
+          listHref={(section) => {
+            const query = taskTrayFilters(props.filter)?.[section];
+            return query ? taskTrayListHref(new URL(props.baseUrl, "http://spaces.local").pathname, query) : undefined;
+          }}
+          dateConfig={props.dateConfig}
+        />
+      </Show>
     </div>
   );
 }

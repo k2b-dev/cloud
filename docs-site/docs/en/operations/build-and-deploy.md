@@ -5,7 +5,7 @@ section: Operations
 order: 1130
 description: Build a standalone application image and connect it to a Cloud deployment.
 tags: [build, docker, deployment]
-updated: 2026-10-08
+updated: 2026-10-10
 ---
 
 # Build and deploy
@@ -157,6 +157,11 @@ Both values are baked into the bundle and exported as `CLOUD_VERSION` and
 The final image contains only the bundle and Bun runtime. It listens on port
 3000.
 
+The monorepo Dockerfiles take the Bun base images and the Dockerfile frontend
+from the public mirror `ghcr.io/k2b-dev/mirror`, pinned to the same digests as
+on Docker Hub. A build from source needs no Docker Hub or GitHub login, but it
+must be able to reach `ghcr.io`.
+
 ## Deploy the service
 
 First select the required services, secrets and feature integrations in
@@ -245,6 +250,41 @@ are unset. Extra parameters apply to helper calls too; review their scope before
 using them to change thinking behavior. See
 [Models and providers](/en/docs/ai/models-and-providers#set-the-thinking-level)
 for validation limits, provider mappings and CLI commands.
+
+## Assistant Skills after the upgrade
+
+Apps now ship their own Assistant Skills; Core no longer contains built-in
+Skill templates. The first Core start of this release links the installed
+built-in Skills to their apps: `cloud-grids` to Grids, `cloud-mail` to Mail,
+`cloud-notebooks` to Notebooks, `cloud-contacts` to Contacts, `cloud-spaces` to
+Spaces, `cloud-weather` to Weather, and `cloud-assistant`, `scheduled-tasks`,
+`skill-creator`, `assistant-code-mode`, and `assistant-data-analysis` to
+Assistant. It keeps Skill IDs, access, personal **Enabled** settings, and
+administrator changes, and does not recreate deleted ones. It creates no
+duplicates and can run again safely.
+
+The migration removes the old seed table, so this is a one-way step for Core.
+Once a Core of this release has started, do not start a Core of an older
+release against that database, also not by restarting an old replica during the
+rollout: it would install the deleted built-in Skills again, open to everyone
+signed in. To go back, restore the database backup taken before the upgrade.
+
+Each app installs or updates its Skills when it starts with the new release. Until
+then, its Skills are not offered to Assistant. An app that does not run offers
+no Skills. Afterwards, open **Administration > AI Skills**:
+
+- **App update available** marks a customized Skill whose app ships different
+  content. Compare it and reset it to the app version if you want the update.
+- **Name in use** marks an app Skill whose name an existing Skill already has,
+  for example a built-in Skill installed before templates were linked. Select
+  **Use existing Skill** to link it to the app and keep its content.
+- **App Skills not installed** lists app Skills that were deleted.
+  **Restore** installs them again.
+
+App Skills are offered only to people who may open the app, by the same rule
+as Help. Guests no longer see the Skills of apps that require a full account,
+such as Grids, Mail, Contacts, Spaces, and Weather. See
+[Ship Assistant Skills](/en/docs/platform/assistant-skills#who-can-use-an-app-skill).
 
 ## Roll out a release
 

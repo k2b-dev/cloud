@@ -15,10 +15,11 @@ import {
   smtpTransportCapabilitiesSchema,
 } from "../contracts";
 import { withShortIdDb } from "../lib/short-id";
-import { requireMailboxPermission } from "./access";
+import { requireDraftAccess, requireMailboxAccess, requireMailboxPermission, requireVisibleMessages } from "./access";
 import { enqueueAttachmentExtractionsForMessage, logAttachmentExtractionEnqueueFailure } from "./attachment-extraction";
 import { actorRefFromRequest, auditActorFromRequest, durableCredentialSnapshot, type MailRequestContext } from "./auth";
 import { sha256Json } from "./canonical";
+import { commandTargetVisibleTo, commandVisibleTo, conversationCommandKinds } from "./command-authorization";
 import { enqueueMailCommand } from "./command-runtime";
 import { validateDraftComposeSafety } from "./compose-safety";
 import { renderComposeDraft } from "./compose-templates";
@@ -754,6 +755,17 @@ type CreateActorCommandInternalParams = Omit<CreateActorCommandParams, "context"
 };
 
 const createActorCommandInTransaction = async (params: CreateActorCommandInternalParams, tx: typeof sql): Promise<Result<MailCommand>> => {
+  if (params.context && conversationCommandKinds.has(params.input.kind)) {
+    const allowed = await requireMailboxAccess(params.context, params.mailboxId, "write", tx);
+    if (!allowed.ok) return allowed;
+    if (params.input.kind === "send") {
+      const draft = await requireDraftAccess(params.context, params.mailboxId, params.input.draftId, "write", tx);
+      if (!draft.ok) return draft;
+    } else if ("messageId" in params.input) {
+      const visible = await requireVisibleMessages(allowed.data, [params.input.messageId], tx);
+      if (!visible.ok) return visible;
+    }
+  }
   const resolved = await resolveActorCommandInput(params.input, params.mailboxId, tx);
   if (!resolved.ok) return resolved;
   const preparedResult = prepareActorCommand(resolved.data);
@@ -776,8 +788,17 @@ const createActorCommandInTransaction = async (params: CreateActorCommandInterna
   `;
   if (!mailbox) return fail(err.notFound("Mailbox"));
   if (params.context) {
-    const permission = await requireMailboxPermission(params.context, params.mailboxId, prepared.requiredPermission, tx);
-    if (!permission.ok) return permission;
+    if (conversationCommandKinds.has(prepared.kind)) {
+      const access = await requireMailboxAccess(params.context, params.mailboxId, "write", tx);
+      if (!access.ok) return access;
+      const [target] = await tx<
+        { visible: boolean }[]
+      >`SELECT ${commandTargetVisibleTo(access.data, sql`${prepared.kind}`, sql`${prepared.target}::jsonb`, params.mailboxId)} AS visible`;
+      if (target?.visible !== true) return fail(err.notFound("Mail command target"));
+    } else {
+      const permission = await requireMailboxPermission(params.context, params.mailboxId, prepared.requiredPermission, tx);
+      if (!permission.ok) return permission;
+    }
   }
   const creationFence = await params.beforeCreate?.(tx);
   if (
@@ -821,6 +842,7 @@ const createActorCommandInTransaction = async (params: CreateActorCommandInterna
     mailboxId: params.mailboxId,
     operation: params.context ? (prepared.kind === "send" ? "actorSend" : "actorMutation") : "automation",
     context: params.context,
+    conversationScoped: conversationCommandKinds.has(prepared.kind),
     folderRequirements: prepared.folderRequirements,
     senderIdentityId: prepared.senderIdentityId,
     db: tx,
@@ -1251,12 +1273,15 @@ export const createMailCommand = (params: {
 };
 
 export const getCommand = async (context: MailRequestContext, mailboxId: string, commandId: string): Promise<Result<MailCommand>> => {
-  const access = await resolveMailExecution({ mailboxId, operation: "actorRead", context });
+  const access = await requireMailboxAccess(context, mailboxId, "read");
   if (!access.ok) return access;
+  const execution = await resolveMailExecution({ mailboxId, operation: "actorRead", context, conversationScoped: true });
+  if (!execution.ok) return execution;
   const [row] = await sql<DbCommand[]>`
     SELECT ${commandColumns}
     FROM mail.commands c
     WHERE c.id = ${commandId}::uuid AND c.mailbox_id = ${mailboxId}::uuid
+      AND ${commandVisibleTo(access.data, mailboxId)}
   `;
   return row ? ok(await normalizeCommand(mapCommand(row))) : fail(err.notFound("Mail command"));
 };
@@ -1270,26 +1295,32 @@ export const getCommandOutcomes = async (
   mailboxId: string,
   commandIds: readonly string[],
 ): Promise<Result<MailCommandOutcome[]>> => {
-  const access = await resolveMailExecution({ mailboxId, operation: "actorRead", context });
+  const access = await requireMailboxAccess(context, mailboxId, "read");
   if (!access.ok) return access;
+  const execution = await resolveMailExecution({ mailboxId, operation: "actorRead", context, conversationScoped: true });
+  if (!execution.ok) return execution;
   const rows = await sql<{ id: string; state: MailCommandOutcome["state"]; last_error_code: string | null }[]>`
-    SELECT id, state, last_error_code
-    FROM mail.commands
-    WHERE mailbox_id = ${mailboxId}::uuid
-      AND id = ANY(${toPgUuidArray([...new Set(commandIds)])}::uuid[])
-    ORDER BY id
+    SELECT c.id, c.state, c.last_error_code
+    FROM mail.commands c
+    WHERE c.mailbox_id = ${mailboxId}::uuid
+      AND c.id = ANY(${toPgUuidArray([...new Set(commandIds)])}::uuid[])
+      AND ${commandVisibleTo(access.data, mailboxId)}
+    ORDER BY c.id
   `;
   return ok(rows.map((row) => ({ id: row.id, state: row.state, code: row.last_error_code })));
 };
 
 export const listCommands = async (context: MailRequestContext, mailboxId: string, limit = 50): Promise<Result<MailCommand[]>> => {
-  const access = await resolveMailExecution({ mailboxId, operation: "actorRead", context });
+  const access = await requireMailboxAccess(context, mailboxId, "read");
   if (!access.ok) return access;
+  const execution = await resolveMailExecution({ mailboxId, operation: "actorRead", context, conversationScoped: true });
+  if (!execution.ok) return execution;
   const boundedLimit = Math.min(Math.max(Math.floor(limit), 1), 100);
   const rows = await sql<DbCommand[]>`
     SELECT ${commandColumns}
     FROM mail.commands c
     WHERE c.mailbox_id = ${mailboxId}::uuid
+      AND ${commandVisibleTo(access.data, mailboxId)}
     ORDER BY c.created_at DESC, c.id DESC
     LIMIT ${boundedLimit}
   `;

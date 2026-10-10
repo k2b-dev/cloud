@@ -5,7 +5,7 @@ section: Build an app
 order: 170
 description: Write clear English and German labels, feedback, errors, notifications, and Help without changing product meaning.
 tags: [writing, copy, tone, english, german, i18n, errors, help]
-updated: 2026-08-29
+updated: 2026-10-09
 ---
 
 # Write product text
@@ -62,7 +62,7 @@ destructive confirmation button names the destructive action.
 | --- | --- | --- |
 | Primary action | Create invoice | Rechnung erstellen |
 | Navigation | Payment settings | Zahlungseinstellungen |
-| Status | Waiting for approval | Wartet auf Freigabe |
+| Status | Waiting for approval | Wartet auf Genehmigung |
 | Icon action | Remove “Quarterly report” | „Quartalsbericht“ entfernen |
 
 ## Write one-sentence guidance
@@ -179,6 +179,10 @@ repeat the page. In English, remove frames such as “It is important to note
 that”. In German, avoid bureaucratic frames such as “Es ist zu beachten, dass”,
 long noun chains, and unnecessary Anglicisms.
 
+[Write app help](/en/docs/build/write-app-help) has the detailed Help rules,
+examples, and the repository check. The [Cloud glossary](/en/docs/reference/glossary)
+lists the one English and one German term for each product concept.
+
 Localized Help uses the same stable article IDs and logical structure as the
 base locale. A translation may be idiomatic and need not mirror sentence order,
 but it must not add a promise, permission, limitation, or workaround absent
@@ -221,7 +225,7 @@ word substitution.
 | --- | --- | --- |
 | State | No payment method is configured. | Es ist keine Zahlungsmethode eingerichtet. |
 | Recovery | Choose a payment method and try again. | Wähle eine Zahlungsmethode und versuche es erneut. |
-| Permission | Ask a workspace administrator for access. | Bitte eine Person mit Administratorrechten für den Workspace um Zugriff. |
+| Access | Ask someone with **Manage** access to give you access. | Bitte eine Person mit Zugriff **Verwalten**, dir Zugriff zu geben. |
 
 ## Keep messages safe to translate
 

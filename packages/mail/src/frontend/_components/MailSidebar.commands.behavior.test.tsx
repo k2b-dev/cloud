@@ -39,6 +39,7 @@ if (!isServer) {
           }}
           canWrite={canWrite()}
           canAdmin={false}
+          assignedOnly={false}
           managementOpening={null}
           settingsOpening={false}
           detailsOpening={false}
@@ -110,6 +111,7 @@ if (!isServer) {
           }}
           canWrite={true}
           canAdmin={true}
+          assignedOnly={false}
           managementOpening={null}
           settingsOpening={false}
           detailsOpening={false}

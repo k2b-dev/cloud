@@ -225,6 +225,7 @@ window.mountMailList = (options) => {
                     requestUrl={requestUrl()}
                     canWrite
                     canAdmin={false}
+                    mailboxWide
                     identities={[]}
                     selectionKey={detail.selectedConversationId}
                     selectedConversationId={detail.selectedConversationId}

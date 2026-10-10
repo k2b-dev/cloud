@@ -39,6 +39,8 @@ The editor updates its local list only after a callback succeeds. `canEdit={fals
 
 `allowedLevels` controls the offered permission levels and their labels. The first level is granted when a principal is added. The user can then change it from the entry row.
 
+A level with a `scope` applies to a narrower part of the resource that the application defines, such as the conversations assigned to a person. It sits in the same menu as the whole-resource levels; give it a label that names the part and, when the label is not enough, a short `description`.
+
 Public access and service accounts are opt-in through `allowPublic` and `allowServiceAccounts`.
 
 Authorization still belongs in the service. Rendering an editor does not grant the current actor permission to change access.

@@ -25,6 +25,7 @@ import {
   StatCell,
   StatGrid,
   StatusBadge,
+  TextInput,
   Timeline,
   type TimelineItem,
 } from "@k2b/ui";
@@ -772,6 +773,28 @@ const timelineDemoRange = (date: Date) => ({
   to: new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + 8)),
 });
 
+/** The month view's quick create: a title for one all-day event over the selected days. */
+const CalendarDemoQuickCreate = (props: { onCreate: (title: string) => void }) => {
+  const [title, setTitle] = createSignal("");
+  const create = () => {
+    if (title().trim()) props.onCreate(title().trim());
+  };
+  return (
+    <form
+      class="flex flex-col gap-2"
+      onSubmit={(event) => {
+        event.preventDefault();
+        create();
+      }}
+    >
+      <TextInput aria-label="Title" placeholder="Title" value={title} onValueChange={setTitle} onSubmit={create} />
+      <Button type="submit" variant="primary" size="sm" class="self-end">
+        Create
+      </Button>
+    </form>
+  );
+};
+
 export const CalendarDemo = () => {
   const initialDate = calendarDemoDate();
   const [date, setDate] = createSignal(initialDate);
@@ -816,6 +839,16 @@ const changeDate = (next: Date) => {
   onEventActivate={(event) => setSelectedEventId(event.id)}
   onEventDrop={moveEvent}
   onEventResize={resizeEvent}
+  // The month view selects days; its quick create adds one all-day event over them.
+  selectionMenu={(_range, { quickCreate }) => [{ label: "New all-day event", icon: "ti ti-sun", action: () => quickCreate() }]}
+  renderQuickCreate={(range, { close }) => (
+    <CalendarDemoQuickCreate
+      onCreate={(title) => {
+        setEvents((current) => [...current, { id: \`new-\${current.length}\`, title, start: range.start, end: range.end, allDay: true }]);
+        close();
+      }}
+    />
+  )}
 >
   {/* A new date opens a new strip from the evening before it. */}
   <Show when={view() === "timeline" && date()} keyed>
@@ -869,6 +902,19 @@ const changeDate = (next: Date) => {
             ),
           )
         }
+        // The month view selects days; its quick create adds one all-day event over them.
+        selectionMenu={(_range, { quickCreate }) => [{ label: "New all-day event", icon: "ti ti-sun", action: () => quickCreate() }]}
+        renderQuickCreate={(range, { close }) => (
+          <CalendarDemoQuickCreate
+            onCreate={(title) => {
+              setEvents((current) => [
+                ...current,
+                { id: `new-${current.length}`, title, start: range.start, end: range.end, allDay: true },
+              ]);
+              close();
+            }}
+          />
+        )}
       >
         <Show when={view() === "timeline" && date()} keyed>
           {(day) => (

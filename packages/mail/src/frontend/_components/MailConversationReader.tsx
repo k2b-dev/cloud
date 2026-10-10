@@ -85,6 +85,8 @@ export default function MailConversationReader(props: {
   requestUrl: string;
   canWrite: boolean;
   canAdmin: boolean;
+  /** False for a person who sees only the conversations assigned to them: no merging or splitting. */
+  mailboxWide: boolean;
   identities: SenderIdentity[];
   selectionKey: string | null;
   selectedConversationId: string | null;
@@ -723,7 +725,7 @@ export default function MailConversationReader(props: {
     return Boolean(message && deriveReplyRecipients(message, "reply_all", props.identities).cc.length > 0);
   };
 
-  const canSplitConversation = () => props.canWrite && (props.totalMessageCount > 1 || props.messages.length > 1);
+  const canSplitConversation = () => props.canWrite && props.mailboxWide && (props.totalMessageCount > 1 || props.messages.length > 1);
 
   const keptLabel = (): string | null => {
     const keep = props.keep;
@@ -845,6 +847,7 @@ export default function MailConversationReader(props: {
       };
     }
     if (id === "merge") {
+      if (!props.mailboxWide) return null;
       return {
         id,
         label: t().mergeWithConversation,
@@ -994,11 +997,15 @@ export default function MailConversationReader(props: {
             disabled: summarySaving() || !props.conversationSummary,
             action: () => void editConversationSummary(),
           },
-          {
-            label: t().mergeWithConversation,
-            icon: "ti ti-git-merge",
-            action: props.onMergeConversation,
-          },
+          ...(props.mailboxWide
+            ? [
+                {
+                  label: t().mergeWithConversation,
+                  icon: "ti ti-git-merge",
+                  action: props.onMergeConversation,
+                },
+              ]
+            : []),
           ...keepMenuItem(),
           ...(canSplitConversation() && latestMessage()
             ? [
@@ -1263,6 +1270,7 @@ export default function MailConversationReader(props: {
                               requestUrl: props.requestUrl,
                               canWrite: props.canWrite,
                               canAdmin: props.canAdmin,
+                              mailboxWide: props.mailboxWide,
                               selectionKey: props.selectionKey,
                               selectedConversationId: props.selectedConversationId,
                               totalMessageCount: props.totalMessageCount,

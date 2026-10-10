@@ -2,7 +2,7 @@ import type { ConversationCollaboration, MailAssignableUser } from "../../servic
 import type { ConversationLocalTags, LocalTag } from "../../service/local-tags";
 
 export type MailCollaborationPatch = {
-  assigneeUserId?: string | null;
+  assigneeUserIds?: string[];
   completion?: "done" | "open";
   snoozedUntil?: string | null;
 };
@@ -12,20 +12,15 @@ export const applyMailCollaborationPatch = (
   patch: MailCollaborationPatch,
   assignableUsers: readonly MailAssignableUser[],
 ): ConversationCollaboration => {
-  const selectedAssignee =
-    patch.assigneeUserId === undefined ? undefined : assignableUsers.find((user) => user.id === patch.assigneeUserId);
+  const knownAssignees = new Map([...current.assignees, ...assignableUsers].map((user) => [user.id, user]));
   return {
     ...current,
-    ...(patch.assigneeUserId !== undefined
+    ...(patch.assigneeUserIds !== undefined
       ? {
-          assignee: selectedAssignee
-            ? {
-                id: selectedAssignee.id,
-                uid: selectedAssignee.uid,
-                displayName: selectedAssignee.displayName,
-                avatarHash: selectedAssignee.avatarHash,
-              }
-            : null,
+          assignees: patch.assigneeUserIds.flatMap((id) => {
+            const user = knownAssignees.get(id);
+            return user ? [{ id: user.id, uid: user.uid, displayName: user.displayName, avatarHash: user.avatarHash }] : [];
+          }),
         }
       : {}),
     ...(patch.snoozedUntil !== undefined ? { snoozedUntil: patch.snoozedUntil } : {}),

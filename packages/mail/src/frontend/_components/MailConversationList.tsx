@@ -97,12 +97,13 @@ export default function MailConversationList(props: {
   onListModeChange: (mode: MailListMode) => void;
   onToggleSelection: (item: MailListItem, range: boolean) => void;
   onClearSelection: () => void;
-  onAddTags: () => void | Promise<void>;
-  onAssign: () => void | Promise<void>;
+  onAddTags?: () => void | Promise<void>;
+  /** Absent for a person who sees only assigned conversations. */
+  onAssign?: () => void | Promise<void>;
   onBulkAction: (actionId: MailActionId) => void | Promise<void>;
   onItemAction: (item: MailListItem, actionId: MailActionId) => void | Promise<void>;
   onManageTags: (item: MailListItem) => void | Promise<void>;
-  onMergeItem: (item: MailListItem) => void | Promise<void>;
+  onMergeItem?: (item: MailListItem) => void | Promise<void>;
   onOpenHref: (href: string, replace?: boolean) => void | Promise<void>;
   onLoadMore: (href: string) => boolean | Promise<boolean>;
   onRefresh: () => Promise<void>;
@@ -572,7 +573,13 @@ export default function MailConversationList(props: {
                     ? messages().noConversations
                     : messages().noMessages
               }
-              description={searchActive() ? messages().changeFilters : messages().newMailAppears}
+              description={
+                searchActive()
+                  ? messages().changeFilters
+                  : props.mailbox.accessScope === "assigned"
+                    ? messages().appearsOnceAssigned
+                    : messages().newMailAppears
+              }
               action={
                 searchActive() ? (
                   <ButtonLink

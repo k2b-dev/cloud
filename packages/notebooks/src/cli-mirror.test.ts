@@ -4,9 +4,11 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { CloudCliContext } from "@k2b/cloud/cli";
 import {
+  fileLinesToNoteLines,
   findManifestFolder,
   findManifestNote,
   findMirror,
+  frontMatterLineCount,
   MANIFEST_FILE,
   type Manifest,
   manifestFiles,
@@ -88,6 +90,65 @@ describe("mirror file format", () => {
   test("keeps foreign front matter as content", () => {
     expect(stripFrontMatter("---\ntitle: Doc\n---\n# Doc\n")).toBe("---\ntitle: Doc\n---\n# Doc\n");
     expect(stripFrontMatter('---\nid: abc123\ntitle: "Doc"\nupdatedAt: x\n---\n# Doc\n')).toBe("# Doc\n");
+  });
+});
+
+describe("mirror file line numbers", () => {
+  test("count the front matter lines that a file actually has", () => {
+    const pulled = renderMirrorFile({ id: "note01", title: "Backup", updatedAt: "x" }, "# Backup\n", "backup.md", attachments, notePaths);
+    expect(frontMatterLineCount(pulled)).toBe(5);
+    expect(frontMatterLineCount("---\nid: note01\n---\n# Backup\n")).toBe(3);
+    expect(frontMatterLineCount("---\nid: note01\ntitle: x\nupdatedAt: x\nextra: y\n---\n")).toBe(6);
+    expect(frontMatterLineCount("# Backup\n")).toBe(0);
+    expect(frontMatterLineCount("---\ntitle: Doc\n---\n# Doc\n")).toBe(0);
+  });
+
+  test("move line edits below the front matter onto the note lines", () => {
+    // File lines 6 and 7 are note lines 1 and 2 below a 5-line front matter.
+    expect(fileLinesToNoteLines({ kind: "replace-lines", startLine: 6, endLine: 7, content: "x" }, 5)).toEqual({
+      kind: "replace-lines",
+      startLine: 1,
+      endLine: 2,
+      content: "x",
+    });
+    expect(fileLinesToNoteLines({ kind: "delete-lines", startLine: 9, endLine: 12 }, 3)).toEqual({
+      kind: "delete-lines",
+      startLine: 6,
+      endLine: 9,
+    });
+    expect(fileLinesToNoteLines({ kind: "insert-before-line", line: 6, content: "x" }, 5)).toEqual({
+      kind: "insert-before-line",
+      line: 1,
+      content: "x",
+    });
+    expect(fileLinesToNoteLines({ kind: "insert-after-line", line: 8, content: "x" }, 6)).toEqual({
+      kind: "insert-after-line",
+      line: 2,
+      content: "x",
+    });
+    // After the closing `---` is before the first note line.
+    expect(fileLinesToNoteLines({ kind: "insert-after-line", line: 5, content: "x" }, 5)).toEqual({
+      kind: "insert-before-line",
+      line: 1,
+      content: "x",
+    });
+  });
+
+  test("refuse line edits that touch the front matter", () => {
+    expect(fileLinesToNoteLines({ kind: "replace-lines", startLine: 5, endLine: 6, content: "x" }, 5)).toBeNull();
+    expect(fileLinesToNoteLines({ kind: "replace-lines", startLine: 1, endLine: 1, content: "x" }, 5)).toBeNull();
+    expect(fileLinesToNoteLines({ kind: "delete-lines", startLine: 3, endLine: 4 }, 3)).toBeNull();
+    expect(fileLinesToNoteLines({ kind: "insert-before-line", line: 5, content: "x" }, 5)).toBeNull();
+    expect(fileLinesToNoteLines({ kind: "insert-after-line", line: 4, content: "x" }, 5)).toBeNull();
+  });
+
+  test("keep line numbers of files without front matter and every other edit", () => {
+    const edit = { kind: "replace-lines", startLine: 1, endLine: 1, content: "x" } as const;
+    expect(fileLinesToNoteLines(edit, 0)).toEqual(edit);
+    const append = { kind: "append", content: "x" } as const;
+    expect(fileLinesToNoteLines(append, 5)).toBe(append);
+    const block = { kind: "replace-block", name: "status", content: "x" } as const;
+    expect(fileLinesToNoteLines(block, 5)).toBe(block);
   });
 });
 

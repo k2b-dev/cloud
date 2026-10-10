@@ -28,7 +28,13 @@ const catalog = i18n.define({
       destination: "Destination",
       add: "Add",
       remove: "Remove",
-      assignee: "Assignee",
+      assignee: "Assignees",
+      invalidAssignees: "Assignees must be active users with mailbox write access or assigned access.",
+      assignmentModeLabel: "Mode",
+      assignmentMode: ({ mode }: { mode: "add" | "remove" | "replace" }) => ({ add: "Add", remove: "Remove", replace: "Replace" })[mode],
+      assignmentReview: ({ mode, users }: { mode: string; users: string }) => `${mode} assignees: ${users}.`,
+      assignmentSummary: ({ count, mode, users, missing }: { count: number; mode: string; users: string; missing: number }) =>
+        `${mode} assignees (${users}) on ${count} conversation(s)${missing ? `; ${missing} not found` : ""}.`,
       status: "Status",
       done: "Done",
       open: "Open",
@@ -226,7 +232,15 @@ const catalog = i18n.define({
       destination: "Ziel",
       add: "Hinzufügen",
       remove: "Entfernen",
-      assignee: "Zugewiesen an",
+      assignee: "Zuständige",
+      invalidAssignees:
+        "Zuständige müssen aktive Benutzer mit Schreibzugriff auf das Postfach oder Zugriff auf zugewiesene Unterhaltungen sein.",
+      assignmentModeLabel: "Modus",
+      assignmentMode: ({ mode }: { mode: "add" | "remove" | "replace" }) =>
+        ({ add: "Hinzufügen", remove: "Entfernen", replace: "Ersetzen" })[mode],
+      assignmentReview: ({ mode, users }: { mode: string; users: string }) => `Zuständige ${mode.toLowerCase()}: ${users}.`,
+      assignmentSummary: ({ count, mode, users, missing }: { count: number; mode: string; users: string; missing: number }) =>
+        `Zuständige (${users}) für ${count} Unterhaltung(en) ${mode.toLowerCase()}${missing ? `; ${missing} nicht gefunden` : ""}.`,
       status: "Status",
       done: "Erledigt",
       open: "Offen",

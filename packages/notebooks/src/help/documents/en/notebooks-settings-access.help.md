@@ -2,54 +2,78 @@
 id: notebooks-settings-access
 title: "Settings & access"
 icon: "ti ti-settings"
-description: "Choose the default view and configure notebook details, permissions, who can delete and lock notes, and exports."
+description: "Choose the default view and change notebook details, access, who can delete and lock notes, and exports."
 order: 170
 ---
 
-Open **Settings** from the notebook sidebar. Settings stay in a modal, so your current note remains in place.
-If you are in **Book**, use the pencil button to edit an unlocked note first. These controls are available to notebook editors and admins.
+You need **Edit** or **Manage** access for these settings. Open **Settings** from the notebook sidebar. Settings open in a dialog, so your current note stays in place. In **Book**, first use the pencil button to edit an unlocked note.
 
 ## Choose how the notebook opens {icon="book"}
 
-Users with read permission always see **Book**: a reading view with page navigation and tag filters, without editing controls, the detail panel, or page discussions. Query blocks (`:::query`) and tables of contents (`:::toc`) are rendered on the server with the page. Mermaid diagrams render in the browser; their source stays readable without JavaScript or if rendering fails.
+People with **View** access always see **Book**. Book is a reading view with page navigation and tag filters. It has no editing controls, no detail panel, and no page discussions. The server renders query blocks (`:::query`) and tables of contents (`:::toc`) with the page. Mermaid diagrams render in the browser. Without JavaScript, or if rendering fails, their source stays readable.
 
-In Book, page links, tag filters, search, and pagination update the content without a full reload. Back and Forward return to previous reading locations. Saved changes refresh the page and query results automatically. Without JavaScript, navigation still works through regular page loads.
+In Book, page links, tag filters, search, and pagination update the content without a full reload. **Back** and **Forward** in the browser return to earlier reading positions. Saved changes refresh the page and the query results automatically. Without JavaScript, navigation still works through normal page loads.
 
-In the Book sidebar, select a page to open it, or use the arrow next to it to show or hide its sub-pages. When Book loads, it shows the current page with its sub-pages. After that, it keeps your choices and only unfolds the pages that contain the page you open. On a phone, the navigation menu shows the same folded pages, keeps them when you close and reopen it, and opens pages in place.
+In the Book sidebar, select a page to open it. Use the arrow next to a page to show or hide its sub-pages. When Book loads, it shows the current page with its sub-pages. After that, Book keeps your choices and unfolds only the pages that contain the page you open. On a phone, the navigation menu shows the same folded pages. It keeps them when you close and reopen it, and it opens pages in place.
 
-The sidebar lists the notebook's start page first, with its sub-pages below it, even when the start page lives under another page. Every other page follows the notebook's order at each level: the order writers arranged by hand, or by title where nobody did, in the order of your language; numbers count as numbers, so "Chapter 2" comes before "Chapter 10". The order follows along when a title, the start page, or the arranged order changes. Set the start page in **Notebook — General**; see **Arrange notes** in **Write & organize** for the order.
+The sidebar lists the notebook's start page first, with its sub-pages below it. This also applies when the start page is under another page. All other pages follow the notebook order on each level:
 
-When you open the notebook itself in Book, it shows the start page, or the first page in the sidebar when there is none. If you last had a page of this notebook open in Write or Read-only, Book shows that page instead.
+- the order that people with **Edit** or **Manage** access arranged by hand;
+- otherwise title order, sorted for your language. Numbers count as numbers, so "Chapter 2" comes before "Chapter 10".
 
-Editors and admins can switch between three views:
+The order updates when a title, the start page, or the arranged order changes. Set the start page in **Settings → Notebook → General**. To arrange the order, see **Arrange notes** in **Write & organize**.
+
+When you open the notebook itself in Book, Book shows the start page. Without a start page, it shows the first page in the sidebar. If you last had a page of this notebook open in **Write** or **Read-only**, Book shows that page instead.
+
+With **Edit** or **Manage** access, you can switch between three views:
 
 - **Write:** Edit the note and use the detail panel.
-- **Read-only:** Keep the editor workspace and detail panel without editing the note body.
+- **Read-only:** Keep the editor workspace and the detail panel without editing the note text.
 - **Book:** Read the notebook as a handbook, without the editor workspace.
 
-In Write, use the book icon in the bottom toolbar to open Book. The detail panel also offers Book and Read-only actions. In Read-only, use **Edit note** in the detail panel to return to Write.
+In **Write**, use the book icon in the bottom toolbar to open Book. The detail panel also offers actions for Book and **Read-only**. In **Read-only**, choose **Edit note** in the detail panel to return to **Write**.
 
-Book and Read-only show a round pencil button at the bottom right when you hover over the document. Keyboard focus also reveals it; on touch devices it stays visible. Locked notes do not show an edit action.
+Book and **Read-only** show a round pencil button at the bottom right when you hover over the document. Keyboard focus also shows it. On touch devices, it stays visible. Locked notes show no edit action.
 
-If no note is selected or the note is locked, Book offers **Open workspace** in the sidebar for editors and admins. Use it to reach settings or create a note. If you have hidden the navigation, show it first with the button at the bottom left.
+If no note is selected or the note is locked, Book shows **Open workspace** in the sidebar to people with **Edit** or **Manage** access. Use it to open the settings or to create a note. If you hid the navigation, first show it with the button at the bottom left.
 
-To choose the default for editors and admins, open **Notebook — View & behavior** and change **Default view**. Only notebook admins can change it, and the change saves immediately. The initial default is **Write**. A view chosen explicitly in the page URL takes precedence over the notebook default.
+You need **Manage** access to change the default view for people with **Edit** or **Manage** access:
 
-Locked notes open in **Read-only** instead of **Write**. Locking does not remove access to page discussions in the detail panel.
+:::steps
+1. Open **Settings → Notebook → View & behavior**.
+2. Change **Default view**.
+:::
+
+Notebooks saves the change immediately. The first default is **Write**. A view in the page URL comes before the notebook default.
+
+Locked notes open in **Read-only** instead of **Write**. A lock does not remove access to page discussions in the detail panel.
 
 ## Decide who can delete and lock notes {icon="trash"}
 
-By default, everyone who can write in a notebook can also delete its notes and lock them permanently. Neither can be undone. To keep notes from disappearing or freezing by accident, an admin opens **Sharing — Access** and sets **Who can delete and lock notes** to **Admins only**. The change saves immediately.
+:::warning You cannot undo a delete or a lock
+By default, everyone with **Edit** access can delete notes and lock them permanently.
+:::
 
-The rule covers deleting whole notes and locking them, nothing else. People and agents with write permission still edit notes as before, including removing text; the version history keeps earlier versions. For them, **Delete** and **Lock note** in the note menu stay visible but disabled and say that the action is reserved for admins. The API, `cld notebooks rm`, and `cld notebooks lock` refuse with the same reason. A locked note keeps its versions readable but can no longer be edited or restored from them.
+With **Manage** access, you can limit both actions:
 
-## Settings tabs {icon="settings"}
+:::steps
+1. Open **Settings → Sharing → Access**.
+2. Set **Who can delete and lock notes** to **Admins only**.
+:::
+
+Notebooks saves the change immediately.
+
+The setting covers only deleting and locking whole notes. People and agents with **Edit** access still edit notes as before, including removing text. The version history keeps earlier versions.
+
+For these people, **Delete** and **Lock note** in the note menu stay visible but are turned off. They explain that in this notebook, only people with **Manage** access can delete or lock notes. The API, `cld notebooks rm`, and `cld notebooks lock` refuse with the same reason. A locked note keeps its versions readable. You can no longer edit it or restore it from a version.
+
+## Find the right settings tab {icon="settings"}
 
 :::reference
-- **Notebook — General:** Name, icon, description, default start page, and the Liquid template used to initialize the H1 of empty new notes. Review the footer, then save or discard your changes.
-- **Notebook — View & behavior:** Admins choose the shared default view. Your sidebar layout and Tab key preference are stored in this browser and apply immediately.
-- **Sharing — Access:** Admin-only permission editor and the choice of who can delete and lock notes. Changes save immediately.
-- **Sharing — API keys:** Admin-only resource credentials for integrations. Changes save immediately, and new tokens are shown once.
-- **Data — Export & snapshots:** Admin-only portable ZIP exports, S3 snapshot configuration, manual uploads, and recent snapshot runs. Snapshot configuration uses the persistent save footer.
-- **Lifecycle — Danger zone:** Admin-only destructive actions such as deleting the notebook and its notes.
+- **Notebook → General:** Name, icon, description, start page, and the Liquid template for the H1 of empty new notes. Check the footer, then save or discard your changes.
+- **Notebook → View & behavior:** People with **Manage** access choose the shared default view. This browser stores your sidebar layout and your Tab key choice, and they apply immediately.
+- **Sharing → Access:** Requires **Manage** access. Change who has access, and choose who can delete and lock notes. Changes save immediately.
+- **Sharing → API keys:** Requires **Manage** access. API keys for integrations that work only with this notebook. Changes save immediately, and Notebooks shows a new key only once.
+- **Data → Export & snapshots:** Requires **Manage** access. Portable ZIP exports, the S3 snapshot setup, manual uploads, and recent snapshot runs. Save the snapshot setup with the footer.
+- **Lifecycle → Danger zone:** Requires **Manage** access. Actions that destroy data, such as deleting the notebook and its notes.
 :::

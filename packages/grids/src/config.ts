@@ -1,5 +1,6 @@
 import { defineApp } from "@k2b/cloud";
 import { NOTIFICATIONS } from "./notifications";
+import { SKILLS } from "./skills";
 
 export const app = defineApp({
   id: "grids",
@@ -23,6 +24,7 @@ export const app = defineApp({
   basePath: "/app/grids",
   baseUrl: "http://app-grids:3000",
   notifications: NOTIFICATIONS,
+  skills: SKILLS,
   adminHref: "/admin/grids",
   nav: {
     href: "/app/grids?recent=true",

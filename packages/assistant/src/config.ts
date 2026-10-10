@@ -1,4 +1,5 @@
 import { defineApp } from "@k2b/cloud";
+import { SKILLS } from "./skills";
 
 export const app = defineApp({
   id: "assistant",
@@ -79,6 +80,7 @@ export const app = defineApp({
   },
   basePath: "/app/assistant",
   baseUrl: "http://app-assistant:3000",
+  skills: SKILLS,
   nav: {
     href: "/app/assistant",
     match: "/app/assistant",

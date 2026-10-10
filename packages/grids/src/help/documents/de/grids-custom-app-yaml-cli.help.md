@@ -2,20 +2,20 @@
 id: grids-custom-app-yaml-cli
 title: Grids App YAML & CLI
 icon: ti ti-terminal-2
-description: Kanonische App-Definition validieren, planen, anwenden, exportieren und veröffentlichen.
+description: Validiere, plane, wende an, exportiere und veröffentliche die kanonische App-Definition.
 order: 136
 ---
-Visueller Builder und CLI verwenden dieselbe Definition. YAML verbindet vorhandene Ressourcen und ist kein Deployment-Paket für eine ganze Base. Tabellen, Felder, Ansichten, Formulare, Dokumentvorlagen und Workflow-Launcher zuerst anlegen; anschließend ihre öffentlichen Ressourcen-IDs verwenden.
+Visueller Builder und CLI verwenden dieselbe Definition. YAML verbindet vorhandene Ressourcen. Es ist kein Deployment-Paket für eine ganze Base. Lege zuerst Tabellen, Felder, Ansichten, Formulare, Dokumentvorlagen und Workflow-Launcher an. Verwende danach ihre kanonischen öffentlichen Ressourcen-IDs.
 
-## Vertrag lesen {icon="book-2"}
+## Den Vertrag lesen {icon="book-2"}
 
-Die [Custom-App-API-Referenz](/app/grids/help/grids-custom-app-api) beschreibt sämtliche Optionen, Standardwerte, Bindungen und Payloads. `cld grids apps reference --json` liefert das installierte `definitionSchema`. JSON Schema beschreibt Eingaben; der Server prüft zusätzlich Zugriffe, Typen, Abfragen und Navigation.
+Die [Custom-App-API-Referenz](/app/grids/help/grids-custom-app-api) beschreibt alle Optionen, Standardwerte, Bindungen und Payloads. Führe `cld grids apps reference --json` aus, um das installierte `definitionSchema` zu erhalten. JSON Schema beschreibt die Eingabe. Der Server-Compiler prüft zusätzlich Ressourcenzugriff, Typen, Abfragen und Navigation.
 
-Für einen visuellen Einstieg: `cld grids apps create MyBase --name "Requests" --json`, danach `apps export MyBase Requests --out app.yaml`.
+Für einen visuellen Einstieg führe `cld grids apps create MyBase --name "Requests" --json` aus. Führe danach `apps export MyBase Requests --out app.yaml` aus.
 
-## Eine strikte Wurzeldefinition {icon="file-code"}
+## Ein striktes Wurzeldokument verwenden {icon="file-code"}
 
-Beispiel-IDs durch tatsächliche IDs aus der gewählten Base ersetzen:
+Ersetze diese Beispiel-IDs durch IDs aus der gewählten Base:
 
 ```yaml
 schemaVersion: 5
@@ -38,7 +38,7 @@ pages:
                 markdown: "# Requests"
 ```
 
-[Seiten und Blöcke](/app/grids/help/grids-custom-app-pages-blocks) erklärt Nutzungsabläufe. Bindungen sind typisierte Objekte, etwa `{ source: ROW, path: relation, fieldId: res301 }` für Navigation über eine ausgewählte Einfachrelation. Unbekannte Schlüssel, doppelte IDs und inkompatible Referenzen scheitern bei der Validierung.
+[Seiten und Blöcke in Grids Apps](/app/grids/help/grids-custom-app-pages-blocks) beschreibt die Abläufe für jede Zielgruppe. Bindungen sind typisierte Objekte. So navigiert etwa `{ source: ROW, path: relation, fieldId: res301 }` über eine ausgewählte Einfachrelation. Unbekannte Schlüssel, doppelte IDs und inkompatible Referenzen scheitern bei der Validierung.
 
 ## Validieren, planen und anwenden {icon="list-check"}
 
@@ -49,9 +49,18 @@ cld grids apps apply MyBase --source-file app.yaml --dry-run --json
 cld grids apps apply MyBase --source-file app.yaml --json
 ```
 
-Validieren schreibt nichts. Plan vergleicht zusätzlich den gespeicherten Entwurf und liefert Änderungen, Diagnosen und abgeleitete Veröffentlichungsberechtigungen. `apply --dry-run` führt denselben Plan aus. Normales Apply erstellt oder aktualisiert die angegebene App-ID; unveränderte kanonische Definitionen bleiben ohne Änderung. Es veröffentlicht nichts. Den verantwortlichen Eingabepfad korrigieren, statt Zielgruppenbeschränkungen abzuschwächen.
+:::reference
+- **validate:** Prüft die Definition und schreibt nichts.
+- **plan:** Vergleicht zusätzlich den gespeicherten Entwurf. Liefert Änderungen, Diagnosen und die abgeleiteten Capabilities der Veröffentlichung.
+- **apply --dry-run:** Führt denselben Plan aus.
+- **apply:** Erstellt oder aktualisiert die angegebene App-ID. Eine unveränderte kanonische Definition ändert nichts. Apply veröffentlicht nie.
+:::
+
+Jede Diagnose nennt einen Pfad. Korrigiere die Eingabe, zu der der Pfad gehört. Schwäche keine Beschränkungen der Zielgruppe ab, nur damit die Validierung durchläuft.
 
 ## Veröffentlichen und wiederherstellen {icon="rocket"}
+
+Für diese Befehle brauchst du Zugriff **Verwalten** auf die Base:
 
 ```bash
 cld grids apps export MyBase Requests --published --out app-live.yaml
@@ -61,6 +70,15 @@ cld grids apps unpublish MyBase Requests --yes --json
 cld grids apps delete MyBase Requests --yes --json
 ```
 
-Diese Befehle benötigen Base Admin. Publish kompiliert erneut und ersetzt die Live-Version nur bei Erfolg. Restore ersetzt den Entwurf durch die veröffentlichte Version; Unpublish entfernt die Live-Version; Delete entfernt die App aus normalen Listen und ihre Live-Route, nicht ihre Base-Ressourcen. Vor `--yes` prüfen. Den vollständigen Ablauf mit der vorgesehenen Zielgruppe testen; eine Admin-Vorschau beweist keine Isolation.
+:::reference
+- **publish:** Kompiliert erneut. Ersetzt den veröffentlichten Snapshot nur bei Erfolg.
+- **restore:** Ersetzt den Entwurf durch die veröffentlichte Version.
+- **unpublish:** Entfernt die veröffentlichte Version.
+- **delete:** Entfernt die App aus normalen Listen und entfernt ihre veröffentlichte Route. Ihre Ressourcen in der Base bleiben erhalten.
+:::
 
-Vor Freigaben [Veröffentlichen und Berechtigungen](/app/grids/help/grids-publish-custom-app) lesen. Die CLI-Hilfe erklärt Flags; `apps list|get` zeigt vorhandene Apps.
+:::warning Mit der echten Zielgruppe testen
+Prüfe jeden Befehl, bevor du `--yes` ergänzt. Teste vor dem Veröffentlichen den vollständigen Ablauf mit der vorgesehenen Zielgruppe. Eine Vorschau durch eine Person mit Zugriff **Verwalten** beweist keine Isolation.
+:::
+
+Lies [Grids App veröffentlichen](/app/grids/help/grids-publish-custom-app), bevor du Zugriff gibst. Die Hilfe der CLI-Befehle beschreibt die Flags. `apps list|get` zeigt vorhandene Apps.

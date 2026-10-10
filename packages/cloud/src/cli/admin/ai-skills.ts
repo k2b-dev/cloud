@@ -4,7 +4,7 @@ import { apiGet, apiJson, queryString } from "./shared";
 
 export const aiSkillCommands = [
   command("ai skills list", {
-    summary: "List all Skills with template origin, version, status, and revision (platform admin)",
+    summary: "List all Skills with source app, availability, status, and revision (platform admin)",
     flags: {
       search: flag.string(),
       page: flag.int({ min: 1, default: 1 }),
@@ -15,49 +15,69 @@ export const aiSkillCommands = [
         ctx,
         `/api/admin/core/ai-skills${queryString(flags)}`,
       );
-      printRows(ctx, result, result.items, [
-        { key: "shortId" },
-        { key: "name" },
-        { key: "revision" },
-        { key: "templateId" },
-        { key: "templateVersion" },
-        { key: "currentTemplateVersion" },
-        { key: "templateStatus" },
-      ]);
-    },
-  }),
-  command("ai skills templates", {
-    summary: "List current trusted Skill template IDs and versions",
-    run: async ({ ctx }) => {
-      const result = await apiGet<{ templates: { templateId: string; name: string; version: number }[] }>(
+      printRows(
         ctx,
-        "/api/admin/core/ai-skills/templates",
+        result,
+        result.items.map((skill) => ({
+          ...skill,
+          app: skill.source?.appName ?? "",
+          status: skill.source?.status ?? "",
+          available: skill.source?.available ?? "",
+          appVersion: skill.source?.appVersion ?? "",
+        })),
+        [
+          { key: "shortId" },
+          { key: "name" },
+          { key: "revision" },
+          { key: "app" },
+          { key: "status" },
+          { key: "available" },
+          { key: "appVersion" },
+        ],
       );
-      printRows(ctx, result, result.templates, [{ key: "templateId" }, { key: "name" }, { key: "version" }]);
     },
   }),
-  ...(["associate", "reset"] as const).map((mode) =>
-    command(`ai skills ${mode}`, {
-      summary:
-        mode === "associate"
-          ? "Associate an existing Skill with a template, preserving all content"
-          : "Replace all linked Skill content and references with the current template",
-      args: { skillId: arg.required() },
-      flags: {
-        templateId: flag.string({ name: "template", required: true }),
-        templateVersion: flag.int({ name: "template-version", required: true, min: 1 }),
-        expectedRevision: flag.int({ name: "revision", required: true, min: 1 }),
-        yes: confirmFlag("Confirm the exact Skill and template; export customized content before resetting"),
-      },
+  command("ai skills reset", {
+    summary: "Replace Skill content and references with the owning app's current version",
+    args: { skillId: arg.required() },
+    flags: {
+      expectedRevision: flag.int({ name: "revision", required: true, min: 1 }),
+      expectedAppVersion: flag.string({ name: "app-version", required: true }),
+      yes: confirmFlag("Confirm resetting this Skill; export customized content first"),
+    },
+    run: async ({ ctx, args, flags }) => {
+      if (!flags.yes) throw new Error("Review the Skill first, then confirm with --yes.");
+      const result = await apiJson(ctx, "POST", `/api/admin/core/ai-skills/${encodeURIComponent(args.skillId)}/reset`, {
+        expectedRevision: flags.expectedRevision,
+        expectedAppVersion: flags.expectedAppVersion,
+        confirmed: true,
+      });
+      if (!printStructured(ctx, result)) ctx.print("Skill reset to the app version.");
+    },
+  }),
+  ...(
+    [
+      ["restore", "Install a deleted app Skill again from the app's version, when its name is free", "App Skill installed."],
+      [
+        "adopt",
+        "Link the existing Skill that holds an app Skill's name to that app, keeping its content",
+        "Existing Skill linked to the app.",
+      ],
+    ] as const
+  ).map(([action, summary, done]) =>
+    command(`ai skills ${action}`, {
+      summary,
+      args: { appId: arg.required(), name: arg.required() },
+      flags: { yes: confirmFlag(`Confirm the app and Skill name to ${action}`) },
       run: async ({ ctx, args, flags }) => {
-        if (!flags.yes) throw new Error("Review the Skill and template first, then confirm with --yes.");
-        const { yes: _yes, ...input } = flags;
-        const result = await apiJson(ctx, "POST", `/api/admin/core/ai-skills/${encodeURIComponent(args.skillId)}/template`, {
-          ...input,
-          mode,
-          confirmed: true,
-        });
-        if (!printStructured(ctx, result)) ctx.print("Skill template updated.");
+        if (!flags.yes) throw new Error("Review the app Skill first, then confirm with --yes.");
+        const result = await apiJson(
+          ctx,
+          "POST",
+          `/api/admin/core/ai-skills/apps/${encodeURIComponent(args.appId)}/skills/${encodeURIComponent(args.name)}/${action}`,
+          { confirmed: true },
+        );
+        if (!printStructured(ctx, result)) ctx.print(done);
       },
     }),
   ),

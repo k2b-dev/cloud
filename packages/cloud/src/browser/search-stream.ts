@@ -1,8 +1,6 @@
 import type { SearchApp, SearchItem, SearchProviderStatus, SearchResponse, SearchStreamLine } from "../api/search/schemas";
 import { LOCALE_HEADER } from "../shared/locale";
-
-/** Kept local so the browser bundle does not load the server-side search schemas. */
-const STREAM_CONTENT_TYPE = "application/x-ndjson";
+import { NDJSON_CONTENT_TYPE, readNdjsonLines } from "./ndjson";
 
 export type SearchAppStatus = SearchProviderStatus | "searching";
 
@@ -119,33 +117,13 @@ export const streamCloudResourceSearch = async (
 ): Promise<void> => {
   const response = await fetch(url, {
     signal: options.signal,
-    headers: { accept: STREAM_CONTENT_TYPE, [LOCALE_HEADER]: options.locale },
+    headers: { accept: NDJSON_CONTENT_TYPE, [LOCALE_HEADER]: options.locale },
   });
   if (!response.ok) throw new Error(`Search failed with ${response.status}`);
-  if (!response.headers.get("content-type")?.startsWith(STREAM_CONTENT_TYPE)) {
+  if (!response.headers.get("content-type")?.startsWith(NDJSON_CONTENT_TYPE)) {
     const body: SearchResponse = await response.json();
     for (const line of linesFromResponse(body)) options.onLine(line);
     return;
   }
-  if (!response.body) throw new Error("Search returned no body");
-  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
-  let buffer = "";
-  let closed = false;
-  while (!closed) {
-    const chunk = await reader.read();
-    if (chunk.done) break;
-    buffer += chunk.value;
-    let end = buffer.indexOf("\n");
-    while (end >= 0) {
-      const text = buffer.slice(0, end).trim();
-      buffer = buffer.slice(end + 1);
-      if (text) {
-        const line: SearchStreamLine = JSON.parse(text);
-        options.onLine(line);
-        if (line.type === "done") closed = true;
-      }
-      end = buffer.indexOf("\n");
-    }
-  }
-  if (!closed) throw new Error("Search stream ended early");
+  await readNdjsonLines(response, options.onLine, "Search");
 };

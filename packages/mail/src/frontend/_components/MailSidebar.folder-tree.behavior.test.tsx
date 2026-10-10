@@ -151,6 +151,7 @@ if (!isServer) {
             }}
             canWrite={true}
             canAdmin={false}
+            assignedOnly={false}
             managementOpening={null}
             settingsOpening={false}
             detailsOpening={false}

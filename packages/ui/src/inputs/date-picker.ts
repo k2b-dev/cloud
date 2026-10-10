@@ -46,6 +46,29 @@ export const monthDate = (year: number, month: number, context?: DateContext): D
   return new Date(year, month, 1, 12);
 };
 
+/**
+ * Milliseconds from `now` until the next calendar day starts in the picker's
+ * time zone, so a panel left open past midnight moves its today mark on time.
+ * The next day's start is resolved from its date key: where a DST change skips
+ * or repeats midnight, the day starts at its first existing instant.
+ */
+export const msUntilNextDay = (now: Date, context?: DateContext): number => {
+  const merged = pickerContext(context);
+  const { timeZone } = merged;
+  const next = timeZone
+    ? Date.parse(
+        dates.zonedDateTimeToInstant(dates.addZoned(`${dateKey(now, merged)}T00:00`, { timeZone, days: 1 }), timeZone, {
+          disambiguation: "compatible",
+        }),
+      )
+    : dates.addDays(now, 1, merged).getTime();
+  const delay = next - now.getTime();
+  // The timer re-arms after every tick, so it must never fire at once. Should a
+  // zone's rules still put the next day behind `now`, look again in a minute,
+  // the finest unit the pickers show.
+  return delay > 0 ? delay : 60_000;
+};
+
 export const parseDateValue = (value: string | null | undefined, context?: DateContext): Date => {
   if (!value) return dates.today(pickerContext(context));
   return dates.parseCalendarDate(value.slice(0, 10), pickerContext(context));

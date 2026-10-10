@@ -39,7 +39,15 @@ export function CalendarItemContent(props: {
             aria-hidden="true"
           />
         </Show>
-        <span class="min-w-0 truncate text-[0.6875rem] font-medium [[data-selected=true]_&]:font-semibold">{props.event.title}</span>
+        <Show when={props.context.leadingTime}>
+          {/* The month view's start time, before the title as in the default event. */}
+          <span class="shrink-0 text-[0.6875rem] font-medium tabular-nums opacity-70 in-[.k2b-calendar-day-list]:text-[0.8125rem] max-md:in-[.k2b-calendar-month]:hidden">
+            {props.context.leadingTime}
+          </span>
+        </Show>
+        <span class="min-w-0 truncate text-[0.6875rem] font-medium in-[.k2b-calendar-day-list]:text-[0.8125rem] [[data-bar=true]_&]:font-semibold [[data-selected=true]_&]:font-semibold">
+          {props.event.title}
+        </span>
         <Show when={props.flag}>
           {(flag) => (
             <i

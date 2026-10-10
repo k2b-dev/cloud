@@ -3,7 +3,7 @@ import type { PermissionLevel } from "@k2b/cloud/contracts";
 import { fail, ok, type Result } from "@k2b/stdlib";
 import type { Mailbox } from "../contracts";
 import { mailFolderPaths } from "../folder-tree";
-import { getMailboxPermission } from "./access";
+import { requireMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import { getMailbox, listMailboxes } from "./mailboxes";
 import { listFolders, type MailFolderView } from "./messages";
@@ -79,7 +79,10 @@ const resolveMailbox = async (
     // Name matches carry list-only fields; read the mailbox itself so both forms answer with one shape.
     const mailbox = byId?.ok && byId.data.id === match.id ? byId : await getMailbox(context, match.id);
     if (!mailbox.ok) return mailbox;
-    return ok({ ...mailbox.data, permission: await getMailboxPermission(context, match.id) });
+    // People who see only assigned conversations address their mailbox too; its folders are already filtered.
+    const access = await requireMailboxAccess(context, match.id, "read");
+    if (!access.ok) return access;
+    return ok({ ...mailbox.data, permission: access.data.permission });
   }
   if (matches.length === 0)
     return notFound(locale, { en: `No mailbox is named "${ref}" or has that ID.`, de: `Kein Postfach heißt „${ref}“ oder hat diese ID.` });

@@ -227,6 +227,8 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
         start: slot.startsAt,
         end: slot.endsAt,
         color: slotState(slot, t()).color,
+        // A month entry shows the state as an icon only; the accessible name says it.
+        accessibleDetail: slotState(slot, t()).label,
         meta: slot.assignments.map((entry) => entry.userDisplayName).join(", ") || t().noOneYet,
         description: slotStaffingLabel(slot, t()),
       })),
@@ -710,6 +712,19 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                     renderEvent={(event, context) => {
                       const slot = slotByKey().get(event.id);
                       const other = otherAssignmentByKey().get(event.id);
+                      // A month entry is one line: the state's icon, the start time, and the title.
+                      if (context.compact)
+                        return (
+                          <span class="flex min-w-0 items-center gap-1">
+                            <Show when={slot}>
+                              {(currentSlot) => <i class={`${slotState(currentSlot(), t()).icon} shrink-0`} aria-hidden="true" />}
+                            </Show>
+                            <Show when={context.leadingTime}>
+                              {(time) => <span class="shrink-0 tabular-nums opacity-75">{time()}</span>}
+                            </Show>
+                            <span class="min-w-0 truncate font-semibold">{event.title}</span>
+                          </span>
+                        );
                       const slotProgress = !context.compact && slot && isSlotActive(slot) ? slot : undefined;
                       const slotAttendees = context.durationHours >= 1.5 ? slot : undefined;
                       return (

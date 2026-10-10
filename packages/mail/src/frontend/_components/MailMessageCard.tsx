@@ -29,6 +29,8 @@ type MailMessageCardContext = {
   requestUrl: string;
   canWrite: boolean;
   canAdmin: boolean;
+  /** False for a person who sees only the conversations assigned to them. */
+  mailboxWide: boolean;
   selectionKey: string | null;
   selectedConversationId: string | null;
   totalMessageCount: number;
@@ -279,6 +281,7 @@ export default function MailMessageCard(props: {
             requestUrl={props.context.requestUrl}
             canWrite={props.context.canWrite}
             canAdmin={props.context.canAdmin}
+            mailboxWide={props.context.mailboxWide}
             selectionKey={props.context.selectionKey}
             selectedConversationId={props.context.selectedConversationId}
             message={props.message}

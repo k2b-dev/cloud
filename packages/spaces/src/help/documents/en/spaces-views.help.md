@@ -17,19 +17,14 @@ Views let the same work appear in the shape that fits the current job. The view 
 - **Calendar:** Best for events, deadlines, planning windows, and work that is primarily time-based.
 :::
 
-## Calendar timeline {icon="timeline"}
+## Overdue and undated tasks in the day view {icon="calendar-due"}
 
 :::reference
-- **Open it:** Choose **Timeline** next to **Day**, **Week**, **Month**, and **Year** in the calendar. It shows one Space as a continuous strip of time, and the link keeps the view, the day, and the filters, so a reload or a shared link opens the same strip.
-- **Read it:** Hours from 06:00 to 22:00 take their real length, so the length of an event, free time between events, and the evening show at a glance. Each night from 22:00 to 06:00 is a narrow strip, and a run of days without timed entries folds into one. All-day events sit in a row above the hours.
-- **Tasks:** A task appears as a marker at the time it is due; a deadline always has a time, 17:00 unless you choose another. A task whose due date was set as a whole day sits in the all-day row. If you may edit the Space, the marker has a checkbox that completes the task; the confirmation offers **Undo**. A task that open tasks still block has no checkbox. Urgent and high priority, and how many tasks still block a task, show with its title where there is room. Completed items are not shown.
-- **Overdue and undated tasks:** A row below the strip shows open tasks whose deadline passed before today, most recent first, and open tasks assigned to you that have no deadline, most urgent first. Each part shows up to five tasks; **Show all** opens the list with every one of them. Select a task to open it, or check it off if you may edit the Space. The row keeps its place and size whatever it holds. A screen reader and **Tab** reach it right after the strip, as on screen. When you check a task off with the keyboard, focus moves to the next task in the row.
-- **Colors:** Events and tasks take the same colors as in the other calendar views, so the **Color by** choice in **Scope** changes them here too.
-- **Overlaps:** Up to three overlapping events share the strip in lanes. More collapse into a **+n** entry that lists them with their times.
-- **Move through time:** Scroll sideways with a trackpad, a swipe, or Shift and the mouse wheel. Where the timeline fills the page, the mouse wheel scrolls it sideways too. It opens on the evening before the chosen day and loads a week at a time as you near either end, up to one year; what you look at stays in place while days load. Where a week brings nothing to see, the strip stops loading at that end until you scroll away and come back. **Today** returns to the current day, and the arrows open the strip one day earlier or later.
-- **Phones:** On a narrow screen the same strip runs from top to bottom.
-- **Keyboard:** The timeline is one stop for **Tab**. The arrow keys move to the previous or next item, **Page Up** and **Page Down** to the previous or next day, **Home** and **End** to the first or last item of a day, and **T** to now. **Enter** opens an item, and **Space** completes a task when you may edit it.
-- **Filters:** The scope, priority, status, and tag filters of the calendar apply to the timeline and its row of tasks too; when a filter leaves the row empty, it says so. While the scope shows only events, the row is hidden.
+- **What it shows:** In the calendar's **Day** view, a row below the day shows open tasks whose deadline passed before today, most recent first, and open tasks assigned to you that have no deadline, most urgent first. Each part shows up to five tasks; **Show all** opens the list with every one of them.
+- **Work with it:** Select a task to open it, or check it off if you may edit the Space; the confirmation offers **Undo**. A task that open tasks still block shows a lock instead of a checkbox.
+- **Layout:** The row keeps its place and size whatever it holds, so the day above never moves. While another day or filter loads, the row stays empty until its tasks are in. More tasks than fit scroll sideways. A screen reader and **Tab** reach it right after the day, as on screen. When you check a task off with the keyboard, focus moves to the next task in the row.
+- **Filters:** The scope, priority, status, and tag filters of the calendar apply to the row; when a filter leaves it empty, it says so. While the scope shows only events, the row is hidden.
+- **Old links:** Spaces no longer has a calendar timeline. A saved link to the timeline opens the month that holds its day.
 :::
 
 ## Filter with intent {icon="search"}
@@ -50,6 +45,18 @@ Views let the same work appear in the shape that fits the current job. The view 
 - **Blocked and Overdue columns:** People with write access can turn on two automatic columns in the Space settings under **Statuses**. **Blocked** gathers open tasks that wait for unfinished tasks; **Overdue** gathers open tasks whose deadline was before today. Such a task appears only there, with its status as a small badge, and the counts of its status column leave it out. A task that is blocked and overdue stays under **Blocked** and shows an **Overdue** badge. Both columns are off for a new or existing Space.
 - **Work in an automatic column:** You cannot drop a card into **Blocked** or **Overdue**; they fill themselves. Drag a card out of one to change its status: completing it moves it to the done column, and any other status keeps it in place with the new status badge until it is no longer blocked or overdue. A card you drag from a done column back to an open status returns to **Blocked** or **Overdue** if it is still blocked or overdue. Arrow keys, **M**, and **D** work there as in every column.
 - **Reorder columns:** People with write access drag a column header to a new position with a mouse or pen, or use the **⋯** menu in the header to move it left or right. On a touch screen, swiping over a header scrolls the board; use the **⋯** menu there. The order changes for everyone in the Space and includes the automatic columns; the settings list under **Statuses** shows the same order.
+:::
+
+## Plan in the month view {icon="calendar-month"}
+
+:::reference
+- **Toolbar:** The filters **Scope**, **Priority**, **Status**, and **Tags** and the number of shown entries sit right after the month name, in every calendar view. When the calendar is narrower, the filters show their icons only or move to a row of their own.
+- **Select days:** A click or tap selects a day; it never leaves the month. Drag across days with a mouse, or hold **Shift** while you click or use the arrow keys, to select several; on a phone, a tap selects one day. The arrow keys move the selection, **Page Up** and **Page Down** change the month, and **Esc** clears the selection.
+- **Create on the selection:** After a click, a small **New entry** form waits beside the day without taking the keyboard: start typing or press **Tab** to fill it in. After a drag across days, a double-click, **Enter**, or **N** it opens ready for the title, and on a phone a second tap on the selected day opens it. Choose **Event**, **All day**, or **Task**; the line beside it says when. **Enter** creates, **With details** opens the full form, and **Esc** or a click elsewhere cancels. A drag over several days, or **New event** in the menu of several days, creates one all-day event over all of them. **New event** in the toolbar opens the full form for the selected days.
+- **Menu:** A right-click, a long press on a phone, or **Shift+F10** on a day or on the selected days offers **New event**, **New all-day event**, and **New task with deadline** for those days, then **Open day** and **Open week**.
+- **Open a day or a week:** Select a day and choose **Day** or **Week** in the view switcher, use **Open day** in the menu or in the day list, or click a week number.
+- **Long events:** An event over several days is one bar per week row with its title. Where a week row cuts it off, its end is torn, and when there is room it says where it continues, for example **until 13** or **from 7**. The next row continues it, and pointing at one part highlights the others.
+- **Full days:** Each day shows as many entries as fit its height; **+N more** counts the rest and opens the whole day, as does **Space** on a selected day.
 :::
 
 ## Calendar colors {icon="palette"}

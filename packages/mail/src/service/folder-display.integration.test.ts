@@ -6,6 +6,7 @@ import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
 import { grantMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
+import { writeConversationAssignees } from "./collaboration";
 import { listFocusConversations, listMailboxCounts } from "./focus";
 import { setFolderDisplay } from "./folders";
 import { createMailbox } from "./mailboxes";
@@ -133,13 +134,20 @@ suite("mail folder display", () => {
     }
     const [conversation] = await sql<{ id: string }[]>`
       INSERT INTO mail.conversations (
-        short_id, mailbox_id, subject, participant_summary, latest_message_at, work_status, assignee_user_id, snoozed_until
+        short_id, mailbox_id, subject, participant_summary, latest_message_at, work_status, snoozed_until
       ) VALUES (
         ${newShortId()}, ${mailbox.mailboxId}::uuid, ${subject}, 'Customer', now() - make_interval(mins => ${minutesAgo}),
-        ${options.status ?? "needs_action"}, ${options.assignee ?? null}::uuid,
+        ${options.status ?? "needs_action"},
         ${options.snoozed ? new Date(Date.now() + 86_400_000) : null}
       ) RETURNING id
     `;
+    await sql.begin((tx) =>
+      writeConversationAssignees(tx, {
+        mailboxId: mailbox.mailboxId,
+        conversationId: conversation!.id,
+        userIds: options.assignee ? [options.assignee] : [],
+      }),
+    );
     for (const [index, messageId] of messageIds.entries()) {
       await sql`
         INSERT INTO mail.conversation_messages (conversation_id, message_id, position, added_by)

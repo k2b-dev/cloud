@@ -1,8 +1,9 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import type { ActorRef, UpdateConversationSummary } from "../contracts";
+import { requireMailboxAccess, requireVisibleConversation } from "./access";
 import type { MailRequestContext } from "./auth";
-import { insertActivity, requireMailboxCollaborationPermission } from "./collaboration";
+import { insertActivity, requireConversationCollaborationPermission } from "./collaboration";
 import { type MailActivityChange, mailLive } from "./live";
 
 type SqlClient = typeof sql;
@@ -60,8 +61,10 @@ export const getConversationSummary = async (params: {
   db?: SqlClient;
 }): Promise<Result<ConversationContentSummary>> => {
   const db = params.db ?? sql;
-  const allowed = await requireMailboxCollaborationPermission(params.context, params.mailboxId, "read", db);
+  const allowed = await requireMailboxAccess(params.context, params.mailboxId, "read", db);
   if (!allowed.ok) return allowed;
+  const visible = await requireVisibleConversation(allowed.data, params.conversationId, db);
+  if (!visible.ok) return visible;
   const summary = await loadSummary({ ...params, db });
   return summary ? ok(mapSummary(summary)) : fail(err.notFound("Conversation"));
 };
@@ -139,7 +142,13 @@ export const updateConversationSummaryInTransaction = async (params: {
   actorOverride?: ActorRef;
   activityMetadata?: Record<string, unknown>;
 }): Promise<Result<ConversationSummaryMutation>> => {
-  const allowed = await requireMailboxCollaborationPermission(params.context, params.mailboxId, "write", params.db);
+  const allowed = await requireConversationCollaborationPermission(
+    params.context,
+    params.mailboxId,
+    params.conversationId,
+    "write",
+    params.db,
+  );
   return allowed.ok ? applyConversationSummaryInTransaction(params) : allowed;
 };
 

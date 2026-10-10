@@ -60,7 +60,8 @@ browser-route rejections and `ssr.error(c, status, options?)` for terminal HTML
 errors. See [SSR pages and routing](/en/docs/frontend/ssr-pages-and-routing).
 
 The root also exports the types bound to an application declaration. This
-includes typed settings and notification definitions. Registry, heartbeat, and
+includes typed settings and notification definitions, and `skill()` with
+`AppSkillDefinition` for [Assistant Skills](/en/docs/platform/assistant-skills). Registry, heartbeat, and
 runtime-composition exports from the same barrel are platform-owned.
 
 See [Define an application](/en/docs/build/define-app).
@@ -213,6 +214,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/browser/reload` | Supported, browser | Bounded automatic page reload that cannot loop | [Realtime UI](/en/docs/frontend/realtime-ui#preserve-reload-behavior) |
 | `@k2b/cloud/browser/resource-clipboard` | Supported, browser | Copy and recognize stable Cloud resource references | [Resource copy and paste](/en/docs/platform/resource-references) |
 | `@k2b/cloud/browser/search` | Supported, browser | Open global search with an optional context and register app navigation | [Universal search](/en/docs/platform/search) |
+| `@k2b/cloud/browser/widgets` | Supported, browser | `streamWidgets`: read dashboard widgets from Core as each one answers | [Dashboard widgets](/en/docs/platform/dashboard-widgets#read-widgets-from-a-browser) |
 | `@k2b/cloud/browser/commands` | Supported, browser | Open interactive Commands, handle command links, and register context actions | [Capabilities](/en/docs/platform/capabilities) |
 | `@k2b/cloud/browser/testing` | Supported, browser tests | Inspect mounted context actions and navigation, and capture search requests | [Universal search](/en/docs/platform/search#test-application-search-and-context-actions) |
 | `@k2b/cloud/browser/resource-picker` | Supported, SolidJS | Choose a stable resource reference through Universal Search | [Universal search](/en/docs/platform/search) |

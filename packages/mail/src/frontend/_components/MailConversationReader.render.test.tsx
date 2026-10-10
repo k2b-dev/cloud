@@ -87,6 +87,7 @@ const renderReader = (
       requestUrl: "https://cloud.example.test/app/mail/Box001?conversation=Conv01",
       canWrite: true,
       canAdmin: options.canAdmin ?? false,
+      mailboxWide: true,
       identities: [],
       selectionKey: "Conv01",
       selectedConversationId: "Conv01",

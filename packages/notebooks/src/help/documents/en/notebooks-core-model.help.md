@@ -6,26 +6,30 @@ description: "Understand notebooks, notes, named data, queries, and attachments.
 order: 110
 ---
 
-A notebook is a shared workspace. A note is its Markdown source document. Named data and queries add structure without replacing that source.
+A notebook is a shared workspace. A note is a Markdown source document in it. Named data and queries add structure and do not replace that source.
 
-## The objects {icon="box-multiple"}
+## Know the objects {icon="box-multiple"}
 
 :::reference
-- **Notebook:** A workspace with notes, attachments, settings, permissions, and exports. Its immutable six-character id appears in URLs and APIs.
-- **Note:** A Markdown document with prose, tasks, links, tables, data, and attachments. Its immutable six-character id appears in URLs and note links.
-- **Note tree:** Notes can have parent notes. Navigation and queries can use that hierarchy.
-- **Homepage:** The note chosen as the notebook's homepage comes first on its level of the sidebar's note tree and shows a home icon. Set it in **Notebook — General**.
-- **Tag:** A #tag in note content groups notes for search, tag pages, and queries.
-- **Attachment:** A file uploaded to the notebook and referenced with attach://shortId.
-- **Named block:** Put @name directly above a table, list, data block, or section to give it a stable name.
-- **Query:** A :::query block lists notes from this notebook, filtered by tags, title, or your named data.
-- **Contents:** A :::toc block links to headings in the current note.
+- **Notebook:** A workspace with notes, attachments, settings, access, and exports. Its six-character ID never changes and appears in URLs and APIs.
+- **Note:** A Markdown document with text, tasks, links, tables, data, and attachments. Its six-character ID never changes and appears in URLs and note links.
+- **Note tree:** A note can have a parent note. Navigation and queries can use this hierarchy.
+- **Homepage:** The homepage note comes first on its level of the note tree in the sidebar and shows a home icon. Set it in **Settings → Notebook → General**.
+- **Tag:** A #tag in the note text groups notes for search, tag pages, and queries.
+- **Attachment:** A file that you upload to the notebook. Notes refer to it with attach://shortId.
+- **Named block:** Write @name directly above a table, list, data block, or section. This gives the block a stable name.
+- **Query:** A `:::query` block lists notes from this notebook. It filters by tags, title, or your named data.
+- **Contents:** A `:::toc` block links to the headings in the current note.
 :::
 
-## One source, three views {icon="book"}
+## Choose one of three views {icon="book"}
 
-**Write** edits the Markdown collaboratively. **Read-only** keeps the workspace and detail panel without editing the body. **Book** displays the note as a web page with navigation and tag filters, but no editor or discussion panel.
+:::reference
+- **Write:** Edit the Markdown together with others.
+- **Read-only:** Keep the workspace and the detail panel, without editing the note text.
+- **Book:** Read the note as a web page with navigation and tag filters. Book has no editor and no discussion panel.
+:::
 
-Read permission always opens Book. Writers and admins can switch views; admins choose their shared default in settings. An explicit URL view takes precedence. Locked notes use Read-only instead of Write.
+**View** access always opens Book. With **Edit** or **Manage** access, you can switch views. People with **Manage** access choose the shared default view in the settings. A view in the URL comes before the default. Locked notes open in **Read-only** instead of **Write**.
 
-Keep important information visible in Markdown. Queries read saved note data; they do not run code, modify pages, or create hidden state.
+Keep important information visible in the Markdown. Queries read saved note data. They do not run code, change pages, or create hidden state.

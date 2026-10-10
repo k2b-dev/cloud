@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.29.1](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.29.0...npm-cloud-v0.29.1) (2026-10-09)
+
+
+### Bug Fixes
+
+* **cloud:** document the Postgres outbox and public HTTPS fetch, and end an outbox batch with its claim ([#787](https://github.com/k2b-dev/cloud/issues/787)) ([d613448](https://github.com/k2b-dev/cloud/commit/d6134480ce7f2ce3f3fe1cd488a30896d76f3899))
+* **scripts:** run one heavy check or test run per machine with bounded type checkers ([#791](https://github.com/k2b-dev/cloud/issues/791)) ([bbc4932](https://github.com/k2b-dev/cloud/commit/bbc493290e9088dbbf2c3f14b4ea141a6609eca5))
+* **ui:** keep short table columns readable next to long ones ([#785](https://github.com/k2b-dev/cloud/issues/785)) ([4f12a78](https://github.com/k2b-dev/cloud/commit/4f12a7807795dc66e68e38d834bb7be4e8ed2967))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.19.0 to 0.20.0
+
 ## [0.29.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.28.0...npm-cloud-v0.29.0) (2026-10-09)
 
 

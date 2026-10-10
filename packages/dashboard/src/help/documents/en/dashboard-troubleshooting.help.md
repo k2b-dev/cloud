@@ -12,8 +12,9 @@ Dashboard combines content published by several apps. One unavailable widget sho
 
 :::reference
 - **A widget is missing:** Open Edit dashboard and check whether it is hidden or unavailable at your access level.
-- **A widget says it is unavailable:** Open the owning app to confirm that the app is running and you can access its data.
-- **A card loads slowly or fails:** Reload once, then open the owning app. Dashboard stops waiting for a slow widget so the rest of the start page remains usable.
+- **A widget says it is unavailable:** Select **Try again** in that widget. If it fails again, open the owning app to confirm that the app is running and you can access its data.
+- **A card loads slowly:** Each widget loads on its own, so the others appear as soon as their apps answer. A widget that does not answer within a few seconds shows **Try again** instead of waiting longer.
+- **A widget appears or disappears after a reload:** Dashboard keeps space only for widgets that had something to show the last time you opened it on this device. A widget that just gained or lost content moves in or out on the next load, so nothing jumps while the page is open.
 - **A shortcut is gone:** Open Edit dashboard and check the shortcut list. App shortcuts can disappear when access to the app changes.
 - **A custom link does not open:** Confirm that it is a supported relative, HTTP(S), or mailto link and that the browser allows the target.
 - **Changes appear on one device only:** Refresh after saving. Signed-in settings are stored with the user account and should be reused on other devices.

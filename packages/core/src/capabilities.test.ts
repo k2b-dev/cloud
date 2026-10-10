@@ -5,6 +5,7 @@ import {
   type AiConversation,
   type AiInterChatMessage,
   type AiSkill,
+  AiSkillAppForbiddenError,
   type AiStoredMessage,
   aiCapabilityId,
   aiChatTasks,
@@ -116,6 +117,7 @@ const taskOccurrence: AiChatTaskOccurrence = {
 };
 
 const skill: AiSkill = {
+  source: null,
   id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   shortId: "sKp234",
   name: "weekly-status",
@@ -447,6 +449,33 @@ describe("Core AI capabilities", () => {
       data: { data: { skillId: skill.shortId, path: "references/style.md", content: "Keep the report concise." } },
     });
     expect(get).toHaveBeenCalledTimes(2);
+  });
+
+  test("includes source app metadata in discovery and reads", async () => {
+    const supplied = { ...skill, source: { appId: "inventory", appName: "Inventory" } };
+    spyOn(aiSkills, "list").mockResolvedValue([supplied]);
+    spyOn(aiSkills, "getByShortId").mockResolvedValue(supplied);
+    expect(await aiCapabilities.queries["ai.skills.list"].run({ query: "", limit: 20 }, context)).toMatchObject({
+      ok: true,
+      data: { data: [{ source: supplied.source }] },
+    });
+    expect(await aiCapabilities.queries["ai.skill.read"].run({ id: supplied.shortId }, context)).toMatchObject({
+      ok: true,
+      data: { data: { source: supplied.source } },
+    });
+  });
+  test("returns the app override error as forbidden for capability reviews and mutations", async () => {
+    spyOn(aiSkills, "getByShortId").mockRejectedValue(new AiSkillAppForbiddenError("Inventory"));
+    const input = { skillId: skill.shortId, expectedRevision: skill.revision, instructions: "Reviewed update" };
+    for (const result of [
+      await aiCapabilities.actions["ai.skill.update"].review!(input, context),
+      await aiCapabilities.actions["ai.skill.update"].run(input, context),
+      await aiCapabilities.actions["ai.skill.delete"].review!({ skillId: skill.shortId }, context),
+      await aiCapabilities.actions["ai.skill.delete"].run({ skillId: skill.shortId }, idempotentContext),
+    ]) {
+      expect(result).toMatchObject({ ok: false, error: { code: "FORBIDDEN", status: 403 } });
+      if (!result.ok) expect(result.error.message).toContain("Inventory");
+    }
   });
 
   test("reviews and executes Skill mutations through the permission-aware service", async () => {

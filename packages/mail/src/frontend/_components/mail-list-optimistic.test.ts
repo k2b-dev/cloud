@@ -19,7 +19,7 @@ const item = (unread: boolean, flagged: boolean, overrides: Partial<MailListItem
   hasAttachments: false,
   messageCount: 1,
   workStatus: "needs_action",
-  assigneeUserId: null,
+  assigneeUserIds: [],
   snoozedUntil: null,
   sourceFolderId: null,
   unreadFolderIds: [],
@@ -60,7 +60,7 @@ describe("Mail list optimistic state", () => {
         id,
         {
           workStatus: "waiting" as const,
-          assigneeUserId: "00000000-0000-4000-8000-000000000002",
+          assigneeUserIds: ["00000000-0000-4000-8000-000000000002"],
           snoozedUntil: "2026-07-23T08:00:00.000Z",
           revision: 2,
           expiresAt: 2_000,
@@ -71,7 +71,7 @@ describe("Mail list optimistic state", () => {
     const stale = reconcileMailListOptimisticState([item(false, false)], pending, 1_000);
     expect(stale.items[0]).toMatchObject({
       workStatus: "waiting",
-      assigneeUserId: "00000000-0000-4000-8000-000000000002",
+      assigneeUserIds: ["00000000-0000-4000-8000-000000000002"],
       snoozedUntil: "2026-07-23T08:00:00.000Z",
       revision: 2,
     });
@@ -81,7 +81,7 @@ describe("Mail list optimistic state", () => {
       [
         item(false, false, {
           workStatus: "waiting",
-          assigneeUserId: "00000000-0000-4000-8000-000000000002",
+          assigneeUserIds: ["00000000-0000-4000-8000-000000000002"],
           snoozedUntil: "2026-07-23T08:00:00.000Z",
           revision: 3,
         }),

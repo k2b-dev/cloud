@@ -2,34 +2,34 @@
 id: grids-formulas
 title: Formeln
 icon: ti ti-function
-description: Werte mit einer gemeinsamen Ausdruckssprache aus Feldern berechnen.
+description: Berechne Werte aus Feldern mit einer gemeinsamen Ausdruckssprache.
 order: 126
 ---
-Formeln berechnen Summen, Bezeichnungen, Datumswerte und Bedingungen aus Datensatzfeldern.
+Formeln berechnen Summen, Bezeichnungen, Datumswerte und Bedingungen aus Feldern eines Datensatzes.
 
-Erstelle ein **Formelfeld**, wenn das Ergebnis zu jedem Datensatz gehört. Füge eine **Berechnete Spalte** hinzu, wenn die Berechnung nur in einer Abfrage benötigt wird. In GQL kann dieselbe Ausdruckssprache Datensätze filtern oder eine Ausgabespalte erzeugen.
+Erstelle ein Feld vom Typ **Formel**, wenn das Ergebnis zu jedem Datensatz gehört. Füge eine **Berechnete Spalte** hinzu, wenn nur eine Abfrage die Berechnung braucht. In GQL kann dieselbe Ausdruckssprache Datensätze filtern oder eine Ausgabespalte erzeugen.
 
-## Wo Formeln ausgeführt werden {icon="math-function"}
+## Wählen, wo eine Formel läuft {icon="math-function"}
 
-- **Formelfelder** werden für Entwürfe automatisch aktualisiert. Berechnungen, die nur von gespeicherten Werten desselben Datensatzes abhängen, werden bei jeder Änderung mitgespeichert und beim Lesen wiederverwendet. Formeländerungen aktualisieren auch bestehende Entwürfe. Die Finalisierung schreibt Werte und Typen fest; spätere Formeländerungen ändern diese Werte nicht.
-- **Berechnete Spalten** sind temporäre Abfrageausgaben und fügen der Tabelle kein Feld hinzu.
+- **Formelfelder** aktualisieren sich für Entwürfe automatisch. Eine Berechnung, die nur von gespeicherten Werten desselben Datensatzes abhängt, wird bei jeder Änderung mitgespeichert und beim Lesen wiederverwendet. Eine geänderte Formel aktualisiert auch bestehende Entwürfe. Die Finalisierung friert Werte und Typen ein. Spätere Formeländerungen ändern sie nicht.
+- **Berechnete Spalten** sind temporäre Ausgaben einer Abfrage. Sie fügen der Tabelle kein Feld hinzu.
 - **GQL-Bedingungen** verwenden einen Ausdruck in `where` oder `having`.
 - **GQL-Ausgaben** verwenden `formula(expression) as alias`.
 
-**Objektlisten-Spalten** berechnen innerhalb einer Zeile: Aktiviere **Regeln und Berechnung** und verweise auf andere Spalten. Finalisierung friert Ergebnisse ein. Datensatzformeln nutzen `LIST_SUM(list, column)`, `LIST_AVG(list, column)`, `LIST_MIN(list, column)`, `LIST_MAX(list, column)` oder `LIST_COUNT(list)`. Spaltennamen in Anführungszeichen: `LIST_SUM(Items, 'Amount')`.
+**Spalten von Objektlisten** rechnen innerhalb einer Zeile: Aktiviere **Regeln und Berechnung** und verweise auf Nachbarspalten. Die Finalisierung friert die Ergebnisse ein. Datensatzformeln werten Listen mit `LIST_SUM(list, column)`, `LIST_AVG(list, column)`, `LIST_MIN(list, column)`, `LIST_MAX(list, column)` oder `LIST_COUNT(list)` aus. Setze Spaltennamen in Anführungszeichen, zum Beispiel `LIST_SUM(Items, 'Amount')`.
 
-Berechnungen mit verknüpften Datensätzen, der aktuellen Zeit oder der Zeitzone des Lesers werden beim Lesen ausgeführt. Du musst keinen Berechnungsmodus auswählen. Berechnungsfehler bleiben sichtbar; bei fehlerhaften Objektlisten bleiben die eingegebenen Zellen zur Korrektur erhalten.
+Hängt eine Formel von verknüpften Datensätzen, der aktuellen Zeit oder der Zeitzone der lesenden Person ab, berechnet Grids sie beim Lesen. Du musst keinen Berechnungsmodus wählen. Ein Berechnungsfehler bleibt sichtbar. Scheitert eine Berechnung in einer Objektliste, bleiben die eingegebenen Zellen erhalten, damit du sie korrigieren kannst.
 
-## Ausdrucksregeln {icon="book-2"}
+## Ausdrücke schreiben {icon="book-2"}
 
 :::reference
-- **Felder:** Referenziere ein einfaches Feld als `Price`. Setze Namen mit Leerzeichen oder Satzzeichen wie `"Unit price"` in doppelte Anführungszeichen. Nutze `{field-id}`, wenn eine generierte Konfiguration eine Umbenennung überstehen muss.
-- **Literale:** Schreibe Text in einfache Anführungszeichen, Zahlen ohne Anführungszeichen und die Werte `true`, `false` und `null` direkt. Doppelte Anführungszeichen bezeichnen immer einen Feldnamen. Nutze in Text `\\'`, `\\\\`, `\\n`, `\\r` oder `\\t` für ein Anführungszeichen, einen umgekehrten Schrägstrich oder ein Steuerzeichen.
-- **Gruppierung:** Nutze Klammern, um eine Berechnung oder Bedingung eindeutig zu machen. Ein optionales führendes `=` wird akzeptiert, Formeln werden aber normalerweise ohne dieses Zeichen geschrieben.
-- **Funktionen:** Bei Funktionsnamen spielt die Groß- und Kleinschreibung keine Rolle. Argumente werden durch Kommas getrennt und ihre Anzahl muss der dokumentierten Funktionssignatur entsprechen.
+- **Felder:** Verweise auf ein einfaches Feld als `Price`. Setze Namen mit Leerzeichen oder Satzzeichen in doppelte Anführungszeichen, etwa `"Unit price"`. Nutze `{field-id}`, wenn eine erzeugte Konfiguration eine Umbenennung überstehen muss.
+- **Literale:** Schreibe Text in einfache Anführungszeichen und Zahlen ohne Anführungszeichen. Schreibe die Werte `true`, `false` und `null` direkt. Doppelte Anführungszeichen bezeichnen immer einen Feldnamen. Nutze in Text `\\'`, `\\\\`, `\\n`, `\\r` oder `\\t` für ein Anführungszeichen, einen umgekehrten Schrägstrich oder ein Steuerzeichen.
+- **Gruppierung:** Nutze Klammern, um eine Berechnung oder Bedingung eindeutig zu machen. Grids akzeptiert ein optionales führendes `=`, Formeln verwenden es aber normalerweise nicht.
+- **Funktionen:** Bei Funktionsnamen spielt Groß- und Kleinschreibung keine Rolle. Trenne Argumente mit Kommas. Die Anzahl der Argumente muss der dokumentierten Signatur entsprechen.
 :::
 
-Prüfe leere Werte, Nullwerte und Grenzfälle. Pro Ausdruck sind bis zu 20.000 Zeichen, 64 Verschachtelungsebenen und 1.024 Ausdrucksknoten (Operatoren, Werte, Referenzen und Aufrufe) erlaubt. Abfragen oder berechnete Spalten können kleinere Textgrenzen haben. Vereinfache zu große Ausdrücke; zusätzliche Klammern verkürzen keine Operatorkette.
+Prüfe leere Werte, Nullwerte und Grenzfälle. Ein Ausdruck erlaubt bis zu 20.000 Zeichen, 64 Verschachtelungsebenen und 1.024 Ausdrucksknoten (Operatoren, Werte, Referenzen und Aufrufe). Eine Abfrage oder eine berechnete Spalte kann eine kleinere Textgrenze haben. Vereinfache einen Ausdruck, der diese Grenzen überschreitet. Zusätzliche Klammern verkürzen keine Operatorkette.
 
 ### Operatoren und Rangfolge
 
@@ -43,50 +43,32 @@ Prüfe leere Werte, Nullwerte und Grenzfälle. Pro Ausdruck sind bis zu 20.000 Z
 | 6 | `and`, `&&` | Beide Bedingungen sind wahr |
 | 7 | `or`, `||` | Mindestens eine Bedingung ist wahr |
 
-Weiter oben stehende Operatoren binden stärker. Klammern überschreiben diese Reihenfolge. Nutze in Formeln, die Personen direkt pflegen, bevorzugt die Wortformen `and`, `or` und `not`.
+Weiter oben stehende Operatoren binden stärker. Klammern überschreiben diese Reihenfolge. Nutze in Formeln, die Personen direkt pflegen, lieber die Wortformen `and`, `or` und `not`.
 
 ### Bedingungen mit Auswahlfeldern
 
-Bei einer Einzelauswahl kannst du `Steuersatz = '19 %'` oder
-`Steuersatz = 'ust-19'` verwenden. Options-IDs müssen exakt passen.
-Bezeichnungen werden ohne Beachtung der Groß- und Kleinschreibung aufgelöst
-und müssen eindeutig sein. Unbekannte Optionen werden abgelehnt.
-Beim Speichern von Formelfeldern, Objektlisten-Berechnungen und berechneten
-Ansichtsspalten wird die Options-ID hinterlegt. Eine spätere Umbenennung der
-Beschriftung verändert die Formel deshalb nicht. Das Entfernen einer noch
-verwendeten Option wird abgelehnt. Ein Auswahlfeld ohne Optionen akzeptiert
-keine beliebigen Optionswerte.
+Bei einer Einfachauswahl verwende `Steuersatz = '19 %'` oder `Steuersatz = 'ust-19'`. Options-IDs müssen exakt passen. Bezeichnungen passen ohne Beachtung der Groß- und Kleinschreibung und müssen eindeutig sein. Grids lehnt unbekannte Optionen ab, auch bei Feldern ohne Optionen.
 
-`HAS_OPTION(Tags, 'approved')` prüft die exakte Mitgliedschaft bei Einzel-
-und Mehrfachauswahl. `ust-1` trifft nicht auf `ust-19` zu.
-`ISBLANK(Steuersatz)` oder `Steuersatz = null` prüft eine leere Auswahl.
-Bei Mehrfachauswahl ist Gleichheit mit Text nicht erlaubt; nutze `HAS_OPTION`.
-`CONTAINS` und andere Textfunktionen sind keine Auswahlprüfungen.
+Speicherst du ein Formelfeld, eine Berechnung in einer Objektliste oder eine berechnete Spalte einer Ansicht, hinterlegt Grids die Options-ID. Eine spätere Umbenennung der Bezeichnung ändert die Bedeutung deshalb nicht. Grids lehnt es ab, eine Option zu entfernen, die diese Formeln noch verwenden.
 
-Beispiel: `IF(Steuersatz = 'ust-19', ROUND(Netto / 100 * 19, 2), 0)`.
-Diese Regeln gelten auch für Auswahlspalten in Objektlisten-Berechnungen.
+`HAS_OPTION(Tags, 'approved')` prüft die exakte Mitgliedschaft bei Einfach- und Mehrfachauswahl. Teil-IDs passen nicht: `ust-1` passt nicht auf `ust-19`. `ISBLANK(Steuersatz)` oder `Steuersatz = null` prüft eine leere Auswahl. Gleichheit zwischen einer Mehrfachauswahl und einem Text lehnt Grids ab. Nutze stattdessen `HAS_OPTION`. `CONTAINS` und andere Textfunktionen prüfen keine Mitgliedschaft in Auswahlfeldern.
 
-Ein Lookup mit einer Liste als Ergebnis ist kein skalarer Formelwert. Verknüpfe
-in GQL die zugehörige Tabelle und prüfe ihr Auswahlfeld direkt, beispielsweise
-`HAS_OPTION(customer.Status, 'approved')`. Nutze keine Textsuche auf JSON.
-Formelfehler verwenden stabile Codes wie `#SELECT_INVALID` und `#NON_SCALAR`.
-Die Formelprüfung erklärt, welche Bedingung ungültig ist.
+Beispiel: `IF(Steuersatz = 'ust-19', ROUND(Netto / 100 * 19, 2), 0)`. Diese Regeln gelten auch für Auswahlspalten in Berechnungen von Objektlisten.
 
-Die Formelprüfung prüft die unterstützten Operationen vor dem Laden von
-Beispieldatensätzen, auch bei einer leeren Tabelle. Ein erfolgreicher Check
-prüft weder alle Datensätze noch die fachliche Bedeutung der Berechnung.
-Kontrolliere die Ergebnisse sowie leere Werte und jede relevante Option.
+Ein Lookup, der eine Liste liefert, ist keine skalare Formeleingabe. Verknüpfe in GQL die zugehörige Tabelle und prüfe ihr Auswahlfeld direkt, zum Beispiel `HAS_OPTION(customer.Status, 'approved')`. Nutze keine Textsuche auf JSON. Formelfehler verwenden stabile Codes wie `#SELECT_INVALID` und `#NON_SCALAR`. Die Formelprüfung erklärt den ungültigen Ausdruck.
+
+Die Formelprüfung validiert die unterstützten Operationen, bevor sie Beispieldatensätze lädt, auch bei einer leeren Tabelle. Eine erfolgreiche Prüfung prüft weder jeden Datensatz noch die fachliche Bedeutung der Berechnung. Kontrolliere die Beispielergebnisse. Teste leere Werte und jede relevante Option.
 
 ### Leere Werte, Wahrheitswerte und Fehler
 
-- Arithmetische Operationen und geordnete Vergleiche geben einen leeren Wert zurück, wenn eine Seite leer ist. Zwei leere Werte sind gleich.
-- `null`, `false`, `0` und leerer Text gelten in einer Bedingung als falsch; andere nicht leere Werte gelten als wahr.
+- Arithmetik und geordnete Vergleiche liefern einen leeren Wert, wenn eine Seite leer ist. Zwei leere Werte sind gleich.
+- In einer Bedingung sind `null`, `false`, `0` und leerer Text falsch. Andere nicht leere Werte sind wahr.
 - `and`, `or`, `AND` und `OR` beenden die Auswertung, sobald das Ergebnis feststeht. `IF` wertet nur den gewählten Zweig aus.
-- Nulldivisoren, negative Quadratwurzeln, überlaufende Potenzen und falsche Argumentanzahlen erzeugen Formelfehler. Unbehandelte Fehler brechen GQL und Workflow-Captures mit `BAD_INPUT` ab, statt Summen unbemerkt zu verkürzen.
-- `IFEMPTY(value, fallback)` behandelt `null` und leeren Text. `IFERROR(value, fallback)` behandelt Formelfehler. Der jeweilige Ersatzwert wird nur bei Bedarf ausgewertet.
-- `CONCAT(value, ...)` verbindet Text am eindeutigsten. Numerisch wirkender Text nimmt an numerischen Berechnungen teil. Verlasse dich deshalb bei Bezeichnungen nicht auf `+`.
+- Nulldivisoren, negative Quadratwurzeln, überlaufende Potenzen und falsche Argumentanzahlen erzeugen Formelfehler. Ein unbehandelter Fehler bricht GQL und Workflow-Captures mit `BAD_INPUT` ab. Aggregate überspringen Fehler nie unbemerkt.
+- `IFEMPTY(value, fallback)` fängt `null` und leeren Text ab. `IFERROR(value, fallback)` fängt Formelfehler ab. Grids wertet den Ersatzwert nur bei Bedarf aus.
+- `CONCAT(value, ...)` verbindet Text am eindeutigsten. Text, der wie eine Zahl aussieht, nimmt an numerischen Berechnungen teil. Verlasse dich bei Bezeichnungen deshalb nicht auf `+`.
 
-Aggregatfunktionen kombinieren Argumente eines Datensatzes, etwa `SUM(Subtotal, Tax)`. GQL `aggregate` fasst Datensätze zusammen. Division und Mittelwerte nutzen Dezimalpräzision ohne Einfluss nachgestellter Nullen. Geldbeträge explizit mit `ROUND` runden; Spaltenregeln prüfen nur das Ergebnis.
+Aggregatfunktionen kombinieren die Argumente eines Datensatzes, etwa `SUM(Subtotal, Tax)`. GQL `aggregate` fasst Datensätze zusammen. Division und Mittelwerte nutzen Dezimalgenauigkeit und ignorieren nachgestellte Nullen. Runde Geldbeträge ausdrücklich mit `ROUND`. Spaltenregeln prüfen sie nur.
 
 ## Häufige Formeln {icon="math-function"}
 
@@ -176,12 +158,15 @@ IFERROR(total / quantity, 0)
 | Datum | DATEADD(date, count, unit?) | Addiert Zeit zu einem Datum; die Einheit ist standardmäßig Tage. | Datum |
 | Datum | DATEDIFF(from, to, unit?) | Differenz zwischen Datumswerten; die Einheit ist standardmäßig Tage. | Zahl |
 
-`ROUND` nutzt standardmäßig null Stellen; negative Stellen runden auf Zehner, Hunderter usw. Gebrochene Stellenzahlen werden Richtung null gekürzt. Außerhalb von −131.072…16.383 entsteht ein Formelfehler. `LEFT`, `RIGHT` und `SUBSTRING` behandeln negative Längen als null; `SUBSTRING` beginnt an Position 0. `REPLACE` ersetzt jeden Treffer.
+`ROUND` rundet standardmäßig auf null Stellen. Negative Stellen runden auf Zehner, Hunderter und so weiter. Gebrochene Stellenzahlen werden Richtung null abgeschnitten. Werte außerhalb von −131.072…16.383 erzeugen einen Formelfehler. `LEFT`, `RIGHT` und `SUBSTRING` werten negative Längen als null. `SUBSTRING` beginnt an Position 0. `REPLACE` ersetzt jeden Treffer.
 
-`TODAY()` gibt das aktuelle Datum und `NOW()` das aktuelle Datum mit Uhrzeit zurück. Kalenderberechnungen mit Datum und Uhrzeit verwenden die Anzeigezeitzone der Anfrage. Wenn keine angegeben ist, verwendet Grids die Zeitzone der Cloud-Anwendung. Reine Datumswerte bleiben Kalenderdaten. `DATEADD` akzeptiert Tag(e), Stunde(n), Minute(n), Monat(e) und Jahr(e), verwendet standardmäßig Tage und erhält beim Addieren von Monaten oder Jahren gültige Monatsenddaten. `DATEDIFF` akzeptiert Tag(e), Stunde(n), Minute(n) und Sekunde(n), verwendet standardmäßig Tage und gibt `to - from`, abgerundet auf ganze Einheiten, zurück.
+`TODAY()` liefert das aktuelle Datum. `NOW()` liefert das aktuelle Datum mit Uhrzeit. Kalenderberechnungen mit Datum und Uhrzeit verwenden die Anzeigezeitzone der Anfrage. Liefert die Anfrage keine, verwendet Grids die Zeitzone der Cloud. Reine Datumswerte bleiben Kalenderdaten.
 
-`DATEADD` erlaubt Ausgangs- und Ergebnisdaten in den Jahren 1000–9999. Bei Datum mit Uhrzeit müssen sowohl der lokale Kalenderwert als auch der resultierende UTC-Zeitpunkt in diesem Bereich liegen. Größere Verschiebungen liefern `#DATEADD_OUT_OF_RANGE`, abfangbar mit `IFERROR`, statt die Datenbankabfrage abzubrechen. Nachkommastellen der Anzahl werden weiterhin Richtung null abgeschnitten.
+- `DATEADD` akzeptiert Tag(e), Stunde(n), Minute(n), Monat(e) und Jahr(e). Standard sind Tage. Beim Addieren von Monaten oder Jahren bleiben Monatsenden gültig.
+- `DATEDIFF` akzeptiert Tag(e), Stunde(n), Minute(n) und Sekunde(n). Standard sind Tage. Es liefert `to - from`, abgerundet auf ganze Einheiten.
 
-:::note Formelwerte
-Formelwerte in Entwürfen werden automatisch aktualisiert; abgeschlossene Datensätze behalten eingefrorene Werte. Korrigiere die Quellfelder, nicht das angezeigte Ergebnis.
+`DATEADD` akzeptiert Eingaben und Ergebnisse in den Jahren 1000–9999. Bei Datum mit Uhrzeit müssen der lokale Kalenderwert und der resultierende UTC-Zeitpunkt in diesem Bereich bleiben. Eine größere Verschiebung liefert `#DATEADD_OUT_OF_RANGE`, das `IFERROR` abfangen kann. Die Datenbankabfrage bricht dabei nicht ab. Nachkommastellen der Anzahl werden weiterhin Richtung null abgeschnitten.
+
+:::note Die Quelle korrigieren, nicht das Ergebnis
+Formelwerte von Entwürfen aktualisieren sich automatisch. Finalisierte Datensätze behalten ihre eingefrorenen Werte. Korrigiere die Quellfelder, nicht das angezeigte Ergebnis.
 :::

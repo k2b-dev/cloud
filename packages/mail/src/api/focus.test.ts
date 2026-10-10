@@ -61,7 +61,7 @@ suite("Mail focus API", () => {
             participantSummary: "Ada",
             latestMessageAt: "2026-08-19T10:00:00.000Z",
             workStatus: "needs_action",
-            assigneeUserId: user.id,
+            assigneeUserIds: [user.id],
             revision: 1,
             sourceFolderId: null,
             unread: true,

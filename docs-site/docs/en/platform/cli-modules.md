@@ -544,9 +544,19 @@ The adapter accepts:
 | `allowedPermissions` | No | Limit grants; defaults to `read`, `write`, and `admin` |
 | `allowPublic` | No | Add public-principal commands; defaults to `false` |
 | `allowServiceAccounts` | No | Add service-account commands; defaults to `false` |
+| `scopes` | No | Parts of the resource a grant can cover, the whole resource first; adds `--scope` |
 | `resourceArgLabel` | No | Value label shown for resource arguments |
 | `resourceArgDescription` | No | Help text for resource arguments |
 | `examples` | No | Examples for each generated access command |
+
+When a resource offers grants on part of it, such as Mail's conversations
+assigned to a person, list the scope names its access API uses in `scopes`,
+with the name of the whole resource first. `access grant` and `access set`
+then accept `--scope` and pass it to `grant` and `update` as their last
+argument; without the flag they pass `undefined`, which means the whole
+resource for a new grant and the grant's current scope for a change.
+`access list` adds a `SCOPE` column that shows the entry's `scope` or the
+whole-resource name.
 
 Public grants and service-account grants are disabled unless the adapter
 explicitly enables them. Principal search uses the same Accounts endpoint as

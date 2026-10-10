@@ -16,7 +16,8 @@ test.skipIf(isServer)("assign and reminder Commands name an untitled conversatio
         conversationId: "Conv01",
         active: true,
         canWrite: true,
-        initialState: { conversationId: "Conv01", assignee: null, workStatus: "needs_action", snoozedUntil: null, revision: 1 },
+        mailboxWide: true,
+        initialState: { conversationId: "Conv01", assignees: [], workStatus: "needs_action", snoozedUntil: null, revision: 1 },
         initialLocalTags: [],
         initialConversationLocalTags: { conversationId: "Conv01", conversationRevision: 1, tags: [] },
         initialComments: [],
@@ -54,7 +55,7 @@ test.skipIf(isServer)("assign and reminder Commands name an untitled conversatio
     const commands = () => collectContextAwareCommands().filter((command) => /\.(assign|reminder)$/.test(command.id));
     for (let i = 0; i < 100 && commands().length !== 2; i++) await Bun.sleep(10);
     expect(commands().map((command) => command.description)).toEqual([
-      "Choose who handles “(No subject)”.",
+      "Add or remove who handles “(No subject)”.",
       "Choose when to be reminded about “(No subject)”.",
     ]);
   } finally {

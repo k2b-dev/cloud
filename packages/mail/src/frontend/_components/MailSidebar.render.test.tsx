@@ -43,6 +43,7 @@ const sidebar = (overrides: Partial<Parameters<typeof MailSidebar>[0]> = {}) =>
     },
     canWrite: true,
     canAdmin: true,
+    assignedOnly: false,
     managementOpening: null,
     settingsOpening: false,
     detailsOpening: false,
@@ -246,5 +247,33 @@ describe("Mail sidebar", () => {
       ),
     );
     expect(germanReader).toContain("Über dieses Postfach");
+
+    // People who see only assigned conversations get the reason instead of mailbox-wide actions.
+    const assigned = renderSidebar({ canWrite: true, canAdmin: false, assignedOnly: true });
+    const assignedRow = actionsRow(assigned);
+    expect(assignedRow).toContain("Only conversations assigned to you");
+    expect(assignedRow).not.toContain("mail-compose-action");
+    expect(assignedRow).not.toContain("mail-details-action");
+    expect(assigned).not.toContain("Mailbox tools");
+    expect(assigned).not.toContain(">Settings<");
+    expect(assigned).not.toContain("Unassigned");
+    expect(assigned).toContain("Assigned to me");
+    const assignedPhone = phoneItems(assigned).map((item) => item.id);
+    expect(assignedPhone).not.toContain("compose");
+    expect(assignedPhone).not.toContain("details");
+    expect(assignedPhone).not.toContain("tools");
+    expect(assignedPhone).not.toContain("settings");
+    expect(
+      actionsRow(
+        renderToString(() =>
+          createComponent(LocaleProvider, {
+            locale: "de",
+            get children() {
+              return sidebar({ canWrite: true, canAdmin: false, assignedOnly: true });
+            },
+          }),
+        ),
+      ),
+    ).toContain("Nur dir zugewiesene Unterhaltungen");
   });
 });

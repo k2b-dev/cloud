@@ -15,7 +15,10 @@ Use `Widget` as the standard frame and add only the blocks the summary needs:
 
 The host owns data loading, permissions, refresh behavior, navigation, and
 placement. `Widget` is the only frame; use `size="content"` when the host owns
-the height and omit `href` when the header is not a destination.
+the height and omit `href` when the header is not a destination. A host that
+fills widgets after the page renders, such as a dashboard, renders the loading
+and failure states in the same fixed frame size so nothing moves when data
+arrives.
 
 ## Import
 
@@ -36,9 +39,12 @@ import {
 
 `Widget` requires `title` and `children`. Optional `icon`, `meta`, and `href`
 build its compact header. `size` is `"content"`, `"compact"`, or `"standard"`;
-the default standard frame is 25rem high, compact is 12rem, and content has no
-fixed height. When `href` is set, only the header becomes a link, so links
-inside the body remain valid.
+the default standard frame is 25rem high, compact is 14rem, and content has no
+fixed height. Compact fits a header with meta above one stat, status, or hero
+and a row of pills. A fixed frame scrolls body content taller than itself
+instead of cutting it off; it does not contain overscroll, so a wheel or swipe
+over a widget whose content fits still scrolls the page. When `href` is set,
+only the header becomes a link, so links inside the body remain valid.
 
 ### Content blocks
 

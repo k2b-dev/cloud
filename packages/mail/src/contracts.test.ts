@@ -3,6 +3,7 @@ import {
   activateWorkflowInputSchema,
   actorCommandInputSchema,
   addConversationLocalTagsSchema,
+  assignConversationsSchema,
   automaticReplyPreviewInputSchema,
   cancelScheduledSendInputSchema,
   conversationTriageInputSchema,
@@ -19,6 +20,7 @@ import {
   deleteSenderIdentityTransportInputSchema,
   draftContentInputSchema,
   draftEditableContentInputSchema,
+  MAIL_CONVERSATION_ASSIGNEE_LIMIT,
   mailSearchExpressionSchema,
   mergeConversationsInputSchema,
   messageStateChangeSchema,
@@ -663,7 +665,7 @@ describe("sender identity transport contracts", () => {
 describe("mail collaboration contracts", () => {
   test("requires one collaboration change", () => {
     expect(updateConversationCollaborationSchema.safeParse({ expectedRevision: 1 }).success).toBe(false);
-    expect(updateConversationCollaborationSchema.safeParse({ expectedRevision: 1, assigneeUserId: null }).success).toBe(true);
+    expect(updateConversationCollaborationSchema.safeParse({ expectedRevision: 1, assigneeUserIds: [] }).success).toBe(true);
     expect(updateConversationCollaborationSchema.safeParse({ expectedRevision: 1, completion: "done" }).success).toBe(true);
     expect(updateConversationCollaborationSchema.safeParse({ expectedRevision: 1, completion: "open" }).success).toBe(true);
     expect(updateConversationCollaborationSchema.safeParse({ expectedRevision: 1, workStatus: "waiting" }).success).toBe(false);
@@ -825,4 +827,23 @@ describe("mail workflow contracts", () => {
     expect(parseConnectorCapabilities(legacy)).toMatchObject({ idle: true, quota: false });
     expect(parseConnectorCapabilities({ ...legacy, idle: "yes" })).toMatchObject({ idle: false, quota: false });
   });
+});
+
+test("assignment schemas bound sets and require users for add and remove", () => {
+  const userId = "00000000-0000-4000-8000-000000000001";
+  for (const mode of ["add", "remove", "replace"] as const) {
+    expect(assignConversationsSchema.safeParse({ conversationIds: ["Conv01"], assigneeUserIds: [userId], mode }).success).toBeTrue();
+    expect(assignConversationsSchema.safeParse({ conversationIds: ["Conv01"], assigneeUserIds: [], mode }).success).toBe(
+      mode === "replace",
+    );
+  }
+  const oversized = Array.from({ length: MAIL_CONVERSATION_ASSIGNEE_LIMIT + 1 }, () => userId);
+  expect(
+    assignConversationsSchema.safeParse({ conversationIds: ["Conv01"], assigneeUserIds: oversized, mode: "replace" }).success,
+  ).toBeFalse();
+  expect(updateConversationCollaborationSchema.safeParse({ expectedRevision: 1, assigneeUserIds: oversized }).success).toBeFalse();
+  expect(
+    assignConversationsSchema.safeParse({ conversationIds: ["Conv01"], assigneeUserIds: [], mode: "replace", assigneeUserId: null })
+      .success,
+  ).toBeFalse();
 });

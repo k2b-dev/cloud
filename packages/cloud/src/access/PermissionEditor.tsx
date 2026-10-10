@@ -20,8 +20,11 @@ import { serviceAccountKindDisplay } from "./service-account-kind";
 export type GrantableLevel = Exclude<PermissionLevel, "none">;
 
 /** Either a bare level (uses the default View / Edit / Manage label and
- *  icon) or an object with per-context overrides. */
-export type AllowedLevel = GrantableLevel | { level: GrantableLevel; label?: string; icon?: string };
+ *  icon) or an object with per-context overrides. A `scope` offers the level
+ *  on a narrower part of the resource that the application defines, such as
+ *  Mail's assigned conversations; it reaches the callbacks and matches the
+ *  entry's `scope`. `description` explains an option in the level menu. */
+export type AllowedLevel = GrantableLevel | { level: GrantableLevel; scope?: string; label?: string; icon?: string; description?: string };
 
 type PermissionEditorProps = {
   /** Initial access entries — caller stays the source of truth for
@@ -41,10 +44,11 @@ type PermissionEditorProps = {
     principal: Principal,
     permission: GrantableLevel,
     display?: { displayName: string; serviceAccountKind?: ServiceAccountKind },
+    scope?: string,
   ) => Promise<AccessEntry>;
 
-  /** Update an existing entry's permission level. */
-  updateAccess: (accessId: string, permission: GrantableLevel) => Promise<void>;
+  /** Update an existing entry's permission level and, for a scoped level, its scope. */
+  updateAccess: (accessId: string, permission: GrantableLevel, scope?: string) => Promise<void>;
 
   /** Revoke an existing entry. Any entry can be revoked except the last
    *  manager: once exactly one entry manages the resource (`admin` for a
@@ -95,9 +99,15 @@ const defaultLabels = (t: ReturnType<typeof accessMessages.resolve>["t"]): Recor
 
 type ResolvedLevel = {
   level: GrantableLevel;
+  scope: string | undefined;
+  /** Unique per option: the level, prefixed by its scope. */
+  key: string;
   label: string;
   icon: string;
+  description: string | undefined;
 };
+
+const levelKey = (level: PermissionLevel, scope: string | undefined): string => (scope ? `${scope}:${level}` : level);
 
 /** Resolve the AllowedLevel union into a flat shape the renderer can
  *  loop over. Falls back to the default View / Edit / Manage list when
@@ -111,8 +121,11 @@ const resolveAllowedLevels = (allowed: AllowedLevel[] | undefined, t: ReturnType
     const def = defaults[level];
     return {
       level,
+      scope: override?.scope,
+      key: levelKey(level, override?.scope),
       label: override?.label ?? def.label,
       icon: override?.icon ?? def.icon,
+      description: override?.description,
     };
   });
 };
@@ -122,10 +135,11 @@ const resolveAllowedLevels = (allowed: AllowedLevel[] | undefined, t: ReturnType
  *  the platform defaults. Tolerates "none" / unknown legacy values. */
 const resolveEntryDisplay = (
   permission: PermissionLevel,
+  scope: string | undefined,
   allowed: ResolvedLevel[],
   t: ReturnType<typeof accessMessages.resolve>["t"],
 ): { label: string; icon: string } => {
-  const fromAllowed = allowed.find((a) => a.level === permission);
+  const fromAllowed = allowed.find((a) => a.key === levelKey(permission, scope));
   if (fromAllowed) return fromAllowed;
   const defaults = defaultLabels(t);
   return defaults[permission] ?? defaults.none;
@@ -186,22 +200,24 @@ export default function PermissionEditor(props: PermissionEditorProps) {
     mutation: async (data: {
       principal: Principal;
       permission: GrantableLevel;
+      scope: string | undefined;
       display: { displayName: string; serviceAccountKind?: ServiceAccountKind };
-    }) => props.grantAccess(data.principal, data.permission, data.display),
+    }) => props.grantAccess(data.principal, data.permission, data.display, data.scope),
     onSuccess: (newEntry) => {
       setEntries(entries.length, { ...newEntry });
     },
     onError: (err) => prompts.error(err.message),
   });
 
-  const updateMut = mutation.create<{ accessId: string; permission: GrantableLevel }, { accessId: string; permission: GrantableLevel }>({
+  type LevelChange = { accessId: string; permission: GrantableLevel; scope: string | undefined };
+  const updateMut = mutation.create<LevelChange, LevelChange>({
     mutation: async (data) => {
-      await props.updateAccess(data.accessId, data.permission);
+      await props.updateAccess(data.accessId, data.permission, data.scope);
       return data;
     },
     onSuccess: (result) => {
       if (result) {
-        setEntries((entry) => entry.id === result.accessId, "permission", result.permission);
+        setEntries((entry) => entry.id === result.accessId, { permission: result.permission, scope: result.scope });
       }
     },
     onError: (err) => prompts.error(err.message),
@@ -226,7 +242,8 @@ export default function PermissionEditor(props: PermissionEditorProps) {
   const busy = () => grantMut.loading() || updateMut.loading() || revokeMut.loading();
   // The service refuses to remove the last manager; the row says so up front.
   const lastManagerId = createMemo(() => {
-    const managers = (props.effectiveEntries?.(entries) ?? entries).filter(isManagerEntry);
+    // A grant on part of the resource never manages it.
+    const managers = (props.effectiveEntries?.(entries) ?? entries).filter((entry) => !entry.scope && isManagerEntry(entry));
     return managers.length === 1 ? managers[0]!.id : null;
   });
 
@@ -247,8 +264,8 @@ export default function PermissionEditor(props: PermissionEditorProps) {
                 lastManager={entry.id === lastManagerId()}
                 allowed={allowed(entry.principal)}
                 singlePicker={allowed(entry.principal).length === 1}
-                onUpdatePermission={(permission) => {
-                  if (!busy()) void updateMut.mutate({ accessId: entry.id, permission });
+                onUpdatePermission={(option) => {
+                  if (!busy()) void updateMut.mutate({ accessId: entry.id, permission: option.level, scope: option.scope });
                 }}
                 onRevoke={() => {
                   if (!busy()) void revokeMut.mutate(entry);
@@ -273,8 +290,8 @@ export default function PermissionEditor(props: PermissionEditorProps) {
           allowServiceAccounts={props.allowServiceAccounts}
           disabled={busy()}
           onSelect={(principal, display) => {
-            const permission = allowed(principal)[0]?.level;
-            if (permission && !busy()) grantMut.mutate({ principal, permission, display });
+            const first = allowed(principal)[0];
+            if (first && !busy()) grantMut.mutate({ principal, permission: first.level, scope: first.scope, display });
           }}
         />
       </Show>
@@ -298,17 +315,18 @@ function AccessEntryRow(props: {
   singlePicker: boolean;
   /** Present for group grants: who currently receives access through the group. */
   coverage?: GroupCoverage;
-  onUpdatePermission: (permission: GrantableLevel) => void;
+  onUpdatePermission: (option: ResolvedLevel) => void;
   onRevoke: () => void;
 }) {
   const locale = useLocale();
   const t = () => accessMessages.resolve([locale()]).t;
   const displayName = () => getEntryDisplayName(props.entry, t(), locale());
-  const display = () => resolveEntryDisplay(props.entry.permission, props.allowed, t());
-  const manageLabel = () => resolveEntryDisplay("admin", props.allowed, t()).label;
+  const entryKey = () => levelKey(props.entry.permission, props.entry.scope);
+  const display = () => resolveEntryDisplay(props.entry.permission, props.entry.scope, props.allowed, t());
+  const manageLabel = () => resolveEntryDisplay("admin", undefined, props.allowed, t()).label;
   const removeLabel = () => (props.lastManager ? t().lastManager({ level: manageLabel() }) : t().remove({ name: displayName() }));
   const isInteractive = () =>
-    props.canEdit && !props.disabled && !props.singlePicker && props.allowed.some((option) => option.level === props.entry.permission);
+    props.canEdit && !props.disabled && !props.singlePicker && props.allowed.some((option) => option.key === entryKey());
 
   const badgeClass =
     "flex min-h-7 items-center gap-1 rounded-full border border-transparent bg-[var(--ui-surface-muted)] px-2.5 py-1 text-xs text-secondary";
@@ -371,21 +389,22 @@ function AccessEntryRow(props: {
         <Show when={isInteractive()} fallback={<span class={`${badgeClass} cursor-default`}>{badgeContent}</span>}>
           <SelectChip
             aria-label={t().permissionFor({ name: displayName() })}
-            value={() => props.entry.permission as GrantableLevel}
+            value={entryKey}
             options={props.allowed.map((option) => {
-              const locked = props.lastManager && option.level !== "admin";
+              const locked = props.lastManager && (option.level !== "admin" || option.scope !== undefined);
               return {
-                value: option.level,
+                value: option.key,
                 label: option.label,
                 icon: `ti ${option.icon}`,
                 disabled: locked,
-                description: locked ? t().lastManagerOption({ level: manageLabel() }) : undefined,
+                description: locked ? t().lastManagerOption({ level: manageLabel() }) : option.description,
               };
             })}
             icon={`ti ${display().icon}`}
             position="bottom-left"
-            onValueChange={(permission) => {
-              if (permission !== props.entry.permission) props.onUpdatePermission(permission);
+            onValueChange={(key) => {
+              const option = props.allowed.find((candidate) => candidate.key === key);
+              if (option && key !== entryKey()) props.onUpdatePermission(option);
             }}
           />
         </Show>

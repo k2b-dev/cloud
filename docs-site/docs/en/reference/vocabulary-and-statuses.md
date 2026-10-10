@@ -5,7 +5,7 @@ section: Reference
 order: 1240
 description: Look up the terms and status values used across Cloud application APIs.
 tags: [vocabulary, statuses, contracts]
-updated: 2026-09-26
+updated: 2026-10-09
 ---
 
 # Shared vocabulary and statuses
@@ -13,6 +13,8 @@ updated: 2026-09-26
 Use the shared term that matches the Cloud contract.
 
 Do not create an application synonym for an existing platform concept.
+The [Cloud glossary](/en/docs/reference/glossary) lists the words that people
+read in Help and in the interface.
 
 ## Identity and access
 

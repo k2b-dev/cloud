@@ -2,28 +2,45 @@
 id: grids-data-exchange
 title: Import, Export und externe Identitäten
 icon: ti ti-arrows-exchange
-description: Datensätze übernehmen, Integrationen sicher wiederholen und Exporte von Sicherungen unterscheiden.
+description: Bringe Datensätze nach Grids, wiederhole Integrationen sicher und unterscheide Exporte von Sicherungen.
 order: 112
 ---
-Wähle nach dem Zweck: Ein einmaliger Import erstellt neue Datensätze. Ein Upsert mit externer Identität gleicht ein bekanntes Quellobjekt ab. Ein Abfrageexport lädt ausgewählte Daten herunter. Ein Evidence-Export bewahrt prüfbare Nachweise.
+Wähle den Vorgang nach seinem Zweck:
+
+:::compare
+- **Import:** Ein einmaliger Import erstellt neue Datensätze.
+- **Upsert mit externer Identität:** Gleicht ein bekanntes Objekt aus einem Quellsystem ab.
+- **Abfrageexport:** Lädt ausgewählte Daten herunter.
+- **Nachweispaket:** Bewahrt einen prüfbaren Verlauf.
+:::
 
 ## Neue Datensätze importieren {icon="file-import"}
 
-Erkunde das Ziel mit `cld grids records shape <base> <table> --json`. JSON verwendet öffentliche Feld-IDs und die echten Typen: Auswahlwerte als Arrays von Options-IDs, Zahlen als exakte Dezimalstrings und Relationen mit öffentlichen Datensatz-IDs. System- und berechnete Felder sind nicht schreibbar.
+Erkunde die Zieltabelle mit `cld grids records shape <base> <table> --json`. JSON-Werte verwenden öffentliche Feld-IDs und den echten Typ jedes Felds:
 
-`cld grids records import <base> <table> --body-file records.json` akzeptiert ein Array oder `{"items":[...]}` mit 1–500 einfachen Datensatz-Wertobjekten. Der Import erstellt alle Datensätze in einer Transaktion. Bei einem Validierungsfehler wird die gesamte Gruppe zurückgerollt. Er aktualisiert nicht anhand eines Namens. Ein wiederholter Import nach unklarem Erfolg kann Duplikate erzeugen.
+- Auswahlwerte sind Arrays von Options-IDs.
+- Zahlen sind exakte Dezimalstrings.
+- Relationen verwenden öffentliche Datensatz-IDs.
 
-Wenn `Name01` die tatsächliche Textfeld-ID ist:
+System- und berechnete Felder kannst du nicht schreiben.
+
+`cld grids records import <base> <table> --body-file records.json` akzeptiert ein Array oder `{"items":[...]}` mit 1–500 einfachen Wertobjekten für Datensätze. Der Import erstellt alle Datensätze in einer Transaktion. Ein Validierungsfehler rollt die ganze Gruppe zurück.
+
+:::warning Ein Import aktualisiert nicht anhand eines Namens
+Ein Import erstellt nur Datensätze. Wiederholst du ihn nach einem unklaren Ergebnis, kann er Duplikate erzeugen.
+:::
+
+Beispiel, wenn `Name01` die echte ID eines Textfelds ist:
 
 ```json
 {"items":[{"Name01":"Erster Eintrag"},{"Name01":"Zweiter Eintrag"}]}
 ```
 
-Pflichtfelder, Eindeutigkeit, Standardwerte, Änderungsrichtlinie und Base-Rechte gelten weiter. Anhänge werden separat über Datei-Aktionen hochgeladen. Kombinierte Tabellen sind nur lesbar und können keine Importe aufnehmen.
+Pflichtfelder, Eindeutigkeit, Standardwerte, Änderungsrichtlinie und Zugriff auf die Base gelten weiter. Lade Anhänge separat über die Dateivorgänge hoch. Kombinierte Tabellen sind schreibgeschützt und nehmen keine Importe an.
 
-## Externes System anbinden {icon="plug"}
+## Ein externes System anbinden {icon="plug"}
 
-Verwende `records upsert-external`, wenn die Quelle stabile Identitäten liefert:
+Verwende `records upsert-external`, wenn eine Quelle stabile Identitäten liefert:
 
 ```sh
 cld grids records upsert-external <base> <table> \
@@ -32,19 +49,24 @@ cld grids records upsert-external <base> <table> \
   --body-file contact.json
 ```
 
-`provider`, `providerAccount`, `resourceKind` und `externalId` identifizieren gemeinsam das Quellobjekt. `--body-file` enthält normale schreibbare Feldwerte. Der Idempotenzschlüssel benennt diese eine logische Anfrage: Bei unklarem Ergebnis unverändert wiederverwenden, nicht für eine neue Änderung.
+`provider`, `providerAccount`, `resourceKind` und `externalId` identifizieren gemeinsam das Quellobjekt. `--body-file` enthält normale schreibbare Feldwerte. Der Idempotenzschlüssel identifiziert diese eine logische Anfrage. Verwende ihn nach einem unklaren Ergebnis unverändert wieder. Verwende ihn nicht für eine neue Änderung.
 
-Eine vorhandene Zuordnung erfordert `--if-version <aktuelle-version>`. Bei einem Versionskonflikt erneut lesen und bewusst zusammenführen, nicht überschreiben. Identitätszuordnung vergleicht keine Anzeigenamen und öffnet keine gelöschten oder finalisierten Datensätze wieder.
+Eine vorhandene Zuordnung erfordert `--if-version <aktuelle-version>`. Lies den Datensatz nach einem Versionskonflikt erneut und führe bewusst zusammen. Erzwinge kein Überschreiben. Die Identitätszuordnung vergleicht keine Anzeigenamen und öffnet keine gelöschten oder finalisierten Datensätze wieder.
 
-`records upsert-external-batch` nimmt `{"items":[...]}` mit bis zu 100 Einträgen an. Jeder hat `externalRef`, `values`, `idempotencyKey`, optional `ifVersion` und optional `audit`. Einträge laufen der Reihe nach und werden unabhängig gespeichert. Prüfe jedes Ergebnis sowie `complete` in der Antwort. Anders als beim normalen Import ist diese Gruppe nicht atomar.
+`records upsert-external-batch` akzeptiert `{"items":[...]}` mit bis zu 100 Einträgen. Jeder Eintrag hat `externalRef`, `values`, `idempotencyKey`, optional `ifVersion` und optional `audit`. Die Einträge laufen der Reihe nach und werden unabhängig gespeichert.
 
-Diese APIs planen keine Synchronisation und gewähren keine Rechte auf andere Cloud-Anwendungen. Zugriff auf die Quelle und Änderungserkennung gehören zum Connector. Ein Dateihash allein identifiziert keine Bankbuchung über überlappende Berichte hinweg.
+:::warning Diese Gruppe ist nicht atomar
+Anders als ein normaler Import kann diese Gruppe einige Einträge speichern und andere nicht. Prüfe jedes Ergebnis und das Feld `complete` der Antwort.
+:::
+
+Diese APIs planen keine Synchronisation. Sie geben keinen Zugriff auf andere Cloud-Apps. Der Connector ist für den Zugriff auf die Quelle und die Änderungserkennung zuständig. Ein Dateihash allein identifiziert keine Bankbuchung über überlappende Berichte hinweg.
 
 ## Die gewünschten Daten exportieren {icon="file-export"}
 
-`records export <base> <table> --format csv|json --out result.csv` nutzt den berechtigungsgeprüften Abfragepfad. `--body-file` übergibt die vollständige Abfrage-/Exportkonfiguration; `--limit` begrenzt auf höchstens 10.000 Zeilen. Eine absichtlich begrenzte Abfrage ist kein vollständiger Tabellenexport. Die CLI-Befehlshilfe erklärt Trennzeichen, Markdown-Ausgabe und Zeilengrenzen.
+`records export <base> <table> --format csv|json --out result.csv` exportiert über den Abfragepfad, der den Zugriff prüft. `--body-file` übergibt die vollständige Konfiguration für Abfrage und Export. `--limit` begrenzt das Ergebnis auf höchstens 10.000 Zeilen. Eine Abfrage mit bewusstem Limit ist kein vollständiger Tabellenexport. Die Hilfe des CLI-Befehls beschreibt Trennzeichen, Markdown-Ausgabe und Zeilengrenzen.
 
-Für wiederholbare, unveränderliche Dateien aus mehreren Datensätzen nutze [Workflow-Abfragen und Dokumentausgaben](/app/grids/help/grids-workflows). PDF, freies CSV/JSON/XML, DATEV-CSV und SEPA-XML teilen den Dokumentlebenszyklus. Eine SEPA-Datei überweist kein Geld; DATEV-CSV wird nicht automatisch in die Buchhaltungssoftware importiert.
+Für wiederholbare, unveränderliche Dateien aus mehreren Datensätzen nutze [Workflow-Abfragen und Dokumentausgaben](/app/grids/help/grids-workflows). PDF, freies CSV/JSON/XML, DATEV-CSV und SEPA-XML teilen den Lebenszyklus von Dokumenten. Eine SEPA-Datei überweist kein Geld. Eine DATEV-CSV-Datei importiert sich nicht selbst in eine Buchhaltungssoftware.
 
-
-Ein CSV-/JSON-Download ist keine vollständige Sicherung: Berechtigungen, Workflow-Zustand, Vorlagen, Anhänge und unveränderliche Historie werden dadurch nicht wiederhergestellt. Verwende [Evidence-Exporte](/app/grids/help/grids-evidence-exports) für prüfbare Nachweise und die Sicherungsprozedur des Betreibers für die Wiederherstellung nach einem Ausfall.
+:::warning Ein Download ist keine Sicherung
+Ein CSV- oder JSON-Download stellt Zugriff, Workflow-Zustand, Vorlagen, Anhänge und unveränderlichen Verlauf nicht wieder her. Verwende [Nachweispakete](/app/grids/help/grids-evidence-exports) für prüfbare aufbewahrte Nachweise. Verwende das Sicherungsverfahren des Betreibers für die Wiederherstellung nach einem Ausfall.
+:::

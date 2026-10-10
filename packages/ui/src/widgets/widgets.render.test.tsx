@@ -42,6 +42,12 @@ describe("@k2b/ui Cloud-faithful widget composition", () => {
     expect(html).toContain('href="/operations" class="k2b-widget__header"');
     expect(html).toContain('href="/jobs?state=failed"');
     expect(html.indexOf('</a><div class="k2b-widget__body">')).toBeGreaterThan(-1);
+    // Compact fits a header with meta above a stat and a row of pills; a fixed frame scrolls taller content instead of
+    // cutting it off, and never contains overscroll, so the page keeps scrolling over a widget whose content fits.
+    expect(parityCss).toContain('.k2b-ui .k2b-widget[data-size="compact"] { height: 14rem; }');
+    expect(parityCss).toContain('.k2b-ui .k2b-widget[data-size="standard"] { height: 25rem; }');
+    expect(parityCss).toContain('.k2b-ui .k2b-widget:not([data-size="content"]) .k2b-widget__body { overflow-y: auto; }');
+    expect(parityCss).not.toMatch(/\.k2b-widget[^{]*\{[^}]*overscroll-behavior/);
   });
 
   test("renders list subtext, empty state, tone, links, and grow behavior", () => {

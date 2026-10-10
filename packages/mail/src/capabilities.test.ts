@@ -25,6 +25,7 @@ import {
   DraftSendInputSchema,
   DraftUpdateInputSchema,
   FolderListDataSchema,
+  MailboxBrowseDataSchema,
   MessageDataSchema,
   MessageListDataSchema,
   SubscriptionListDataSchema,
@@ -182,7 +183,7 @@ const draftFixture = {
 } as const;
 const collaborationFixture = {
   conversationId: internalConversationId,
-  assignee: { id: userId, uid: "ada", displayName: "Ada Lovelace", avatarHash: null },
+  assignees: [{ id: userId, uid: "ada", displayName: "Ada Lovelace", avatarHash: null }],
   workStatus: "done",
   snoozedUntil: timestamp,
   revision: 5,
@@ -223,6 +224,8 @@ const tagFixture = {
 
 beforeEach(() => {
   spyOn(conversationKeeps, "getConversationKeep").mockResolvedValue({ ok: true, data: null });
+  spyOn(mailboxAccess, "requireMailboxAccess").mockResolvedValue({ ok: true, data: { scope: "mailbox", permission: "write" } });
+  spyOn(mailboxAccess, "requireDraftAccess").mockResolvedValue({ ok: true, data: { scope: "mailbox", permission: "write" } });
   spyOn(focus, "listMailboxCounts").mockResolvedValue({ ok: true, data: [{ mailboxId: internalMailboxId, unread: 7, needsAction: 3 }] });
   spyOn(resourceParents, "messageConversation").mockResolvedValue(internalConversationId);
   spyOn(publicResources, "resolvePublicId").mockImplementation(
@@ -336,6 +339,7 @@ describe("mail capabilities", () => {
           name: "Support",
           description: null,
           permission: "write",
+          accessScope: "assigned",
           health: "active",
           healthReason: null,
           syncEnabled: true,
@@ -346,9 +350,20 @@ describe("mail capabilities", () => {
     const result = await query.run(query.input.parse({}), context);
     expect(result).toMatchObject({
       ok: true,
-      data: { data: [{ ref: { type: "mail.mailbox", id: mailboxId }, title: "Support", unreadCount: 7, needsActionCount: 3 }] },
+      data: {
+        data: [
+          {
+            ref: { type: "mail.mailbox", id: mailboxId },
+            title: "Support",
+            accessScope: "assigned",
+            unreadCount: 7,
+            needsActionCount: 3,
+          },
+        ],
+      },
     });
     if (!result.ok) throw new Error("Expected mailbox selection");
+    expect(capabilityResultSchema(MailboxBrowseDataSchema).safeParse(result.data).success).toBeTrue();
     expect(result.data.data[0]).not.toHaveProperty("health");
     expect(result.data.data[0]).not.toHaveProperty("syncEnabled");
     expect(result.data.data[0]).not.toHaveProperty("createdAt");
@@ -666,6 +681,7 @@ describe("mail capabilities", () => {
   test("aligns action reviews with their run permissions", async () => {
     const denied = { ok: false as const, error: { code: "FORBIDDEN", message: "Denied", status: 403 as const } };
     const requirePermission = spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue(denied);
+    const requireAccess = spyOn(mailboxAccess, "requireMailboxAccess").mockResolvedValue(denied);
 
     await mailCapabilities.actions["draft.create"].review(DraftCreateInputSchema.parse({ mailboxId, senderIdentityId }), context);
     await mailCapabilities.actions["delivery.cancel"].review({ mailboxId, deliveryId, disposition: "draft" }, context);
@@ -680,8 +696,8 @@ describe("mail capabilities", () => {
       context,
     );
 
-    expect(requirePermission.mock.calls.slice(0, 5).map((call) => call[2])).toEqual(["write", "write", "write", "write", "write"]);
-    expect(requirePermission.mock.calls[5]?.[2]).toBe("read");
+    expect(requirePermission.mock.calls.map((call) => call[2])).toEqual(["write", "write", "write", "write"]);
+    expect(requireAccess.mock.calls.map((call) => call[2])).toEqual(["write", "read"]);
   });
 
   test("reviews a new draft with its user-visible envelope", async () => {
@@ -871,37 +887,94 @@ describe("mail capabilities", () => {
       ok: true,
       data: { items: [{ subject: "Release follow-up" }], nextCursor: null },
     } as never);
-    spyOn(collaboration, "listCurrentUsers").mockResolvedValue([
+    spyOn(collaboration, "listEligibleAssignees").mockResolvedValue([
       { id: userId, uid: "ada", displayName: "Ada Lovelace", avatarHash: null },
     ] as never);
     const conversationIds = [conversationId, "CvB235", "CvB236", "CvB237", "CvB238"];
 
     const assign = await mailCapabilities.actions["conversation.assign.batch"].review(
-      { mailboxId, conversationIds, assigneeUserId: userId },
+      { mailboxId, conversationIds, assigneeUserIds: [userId], mode: "replace" },
       context,
     );
     const unassign = await mailCapabilities.actions["conversation.assign.batch"].review(
-      { mailboxId, conversationIds: [conversationId], assigneeUserId: null },
+      { mailboxId, conversationIds: [conversationId], assigneeUserIds: [], mode: "replace" },
       { ...context, locale: "de" },
     );
 
     expect(assign).toMatchObject({
       ok: true,
       data: {
-        message: "Assign 5 conversations to Ada Lovelace.",
+        message: "Replace assignees: Ada Lovelace · ada.",
         approvalScope: `mailbox:${mailboxId}`,
         details: [
           { label: "Conversations", value: "Release follow-up and 2 more" },
-          { label: "Assignee", value: "Ada Lovelace · ada" },
+          { label: "Assignees", value: "Ada Lovelace · ada" },
+          { label: "Mode", value: "Replace" },
         ],
       },
     });
-    expect(unassign).toMatchObject({ ok: true, data: { message: "Zuweisung von 1 Unterhaltung entfernen." } });
+    expect(unassign).toMatchObject({ ok: true, data: { message: "Zuständige ersetzen: Nicht zugewiesen." } });
     expect(
       mailCapabilities.actions["conversation.assign.batch"].input.safeParse({
         mailboxId,
         conversationIds: Array.from({ length: 51 }, (_, index) => `Cv${String(index).padStart(4, "0")}`),
-        assigneeUserId: null,
+        assigneeUserIds: [],
+        mode: "replace",
+      }).success,
+    ).toBeFalse();
+  });
+
+  test("assignment capabilities accept bounded modes and review their operation", async () => {
+    spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue({ ok: true, data: "write" });
+    spyOn(messages, "listConversationMessages").mockResolvedValue({
+      ok: true,
+      data: {
+        items: [
+          {
+            id: internalMessageId,
+            subject: "Planning",
+            preview: null,
+            hasAttachments: false,
+            messageId: null,
+            internalDate: "2026-01-01T00:00:00Z",
+            sentAt: null,
+            from: [],
+            to: [],
+            flags: [],
+            keywords: [],
+            hydrationStatus: "complete",
+            remoteAvailable: true,
+            folderId: null,
+          },
+        ],
+        nextCursor: null,
+      },
+    });
+    spyOn(collaboration, "listEligibleAssignees").mockResolvedValue([
+      { id: userId, uid: "ada", displayName: "Ada", avatarHash: null, permission: "write", scope: "mailbox", source: { type: "direct" } },
+    ]);
+    spyOn(collaboration, "listAssigneeCollaborators").mockResolvedValue([{ id: userId, uid: "ada", displayName: "Ada", avatarHash: null }]);
+    for (const mode of ["add", "remove", "replace"] as const) {
+      const input = { mailboxId, conversationId, assigneeUserIds: [userId], mode };
+      expect(mailCapabilities.actions["conversation.assign"].input.safeParse(input).success).toBeTrue();
+      expect(
+        mailCapabilities.actions["conversation.assign.batch"].input.safeParse({
+          mailboxId,
+          conversationIds: [conversationId],
+          assigneeUserIds: [],
+          mode,
+        }).success,
+      ).toBe(mode === "replace");
+      const review = await mailCapabilities.actions["conversation.assign"].review(input, { ...context, locale: "de" });
+      expect(review.ok).toBeTrue();
+      if (review.ok) expect(review.data.details?.some((detail) => detail.label === "Modus")).toBeTrue();
+    }
+    expect(
+      mailCapabilities.actions["conversation.assign"].input.safeParse({
+        mailboxId,
+        conversationId,
+        assigneeUserIds: Array(21).fill(userId),
+        mode: "add",
       }).success,
     ).toBeFalse();
   });
@@ -912,29 +985,29 @@ describe("mail capabilities", () => {
       ok: true,
       data: { items: [{ subject: "Release follow-up" }], nextCursor: null },
     } as never);
-    const listCurrentUsers = spyOn(collaboration, "listCurrentUsers").mockResolvedValue([
+    const listCurrentUsers = spyOn(collaboration, "listEligibleAssignees").mockResolvedValue([
       { id: userId, uid: "ada", displayName: "Ada Lovelace", avatarHash: null },
     ] as never);
 
     const review = await mailCapabilities.actions["conversation.assign"].review(
-      { mailboxId, conversationId, assigneeUserId: userId, expectedRevision: 4 },
+      { mailboxId, conversationId, assigneeUserIds: [userId], mode: "replace" },
       context,
     );
 
     expect(listCurrentUsers).toHaveBeenCalledWith({
       mailboxId: internalMailboxId,
       userIds: [userId],
-      minimumPermission: "write",
       limit: 1,
     });
     expect(review).toMatchObject({
       ok: true,
       data: {
-        message: "Assign Release follow-up to Ada Lovelace.",
+        message: "Replace assignees: Ada Lovelace · ada.",
         approvalScope: `mailbox:${mailboxId}`,
         details: [
           { label: "Conversation", value: "Release follow-up" },
-          { label: "Assignee", value: "Ada Lovelace · ada" },
+          { label: "Assignees", value: "Ada Lovelace · ada" },
+          { label: "Mode", value: "Replace" },
         ],
       },
     });
@@ -1041,7 +1114,7 @@ describe("mail capabilities", () => {
       ok: true,
       data: [{ ...tagFixture, id: internalConversationId }],
     } as never);
-    spyOn(collaboration, "listCurrentUsers").mockResolvedValue([
+    spyOn(collaboration, "listEligibleAssignees").mockResolvedValue([
       { id: userId, uid: "ada", displayName: "Ada Lovelace", avatarHash: null },
     ] as never);
     spyOn(collaboration, "getConversationComment").mockResolvedValue({ ok: true, data: commentFixture } as never);
@@ -1083,11 +1156,11 @@ describe("mail capabilities", () => {
         context,
       ),
       await mailCapabilities.actions["conversation.assign"].review(
-        { mailboxId, conversationId, expectedRevision: 4, assigneeUserId: userId },
+        { mailboxId, conversationId, assigneeUserIds: [userId], mode: "replace" },
         context,
       ),
       await mailCapabilities.actions["conversation.assign.batch"].review(
-        { mailboxId, conversationIds: [conversationId], assigneeUserId: userId },
+        { mailboxId, conversationIds: [conversationId], assigneeUserIds: [userId], mode: "replace" },
         context,
       ),
       await mailCapabilities.actions["conversation.status.update"].review(
@@ -1183,10 +1256,14 @@ describe("mail capabilities", () => {
       data: { conversationId: internalConversationId, conversationRevision: 5, tags: [{ ...tagFixture, id: internalConversationId }] },
     } as never);
     spyOn(conversationAssignments, "updateConversationCollaboration").mockResolvedValue({ ok: true, data: collaborationFixture } as never);
+    spyOn(conversationAssignments, "assignConversation").mockResolvedValue({
+      ok: true,
+      data: { ...collaborationFixture, assignees: [...collaborationFixture.assignees] },
+    });
     spyOn(conversationAssignments, "assignConversations").mockResolvedValue({
       ok: true,
       data: {
-        assignee: { id: userId, uid: "ada", displayName: "Ada Lovelace", avatarHash: null },
+        assignees: [{ id: userId, uid: "ada", displayName: "Ada Lovelace", avatarHash: null }],
         results: [
           { conversationId, status: "ok" },
           { conversationId: relatedConversationId, status: "not_found" },
@@ -1359,7 +1436,7 @@ describe("mail capabilities", () => {
         action: mailCapabilities.actions["conversation.assign"],
         run: () =>
           mailCapabilities.actions["conversation.assign"].run(
-            { mailboxId, conversationId, expectedRevision: 4, assigneeUserId: userId },
+            { mailboxId, conversationId, assigneeUserIds: [userId], mode: "replace" },
             context,
           ),
       },
@@ -1368,7 +1445,7 @@ describe("mail capabilities", () => {
         action: mailCapabilities.actions["conversation.assign.batch"],
         run: () =>
           mailCapabilities.actions["conversation.assign.batch"].run(
-            { mailboxId, conversationIds: [conversationId, relatedConversationId], assigneeUserId: userId },
+            { mailboxId, conversationIds: [conversationId, relatedConversationId], assigneeUserIds: [userId], mode: "replace" },
             context,
           ),
       },
@@ -1496,7 +1573,7 @@ describe("mail capabilities", () => {
       "delivery.cancel": "Cancelled delivery of “Release follow-up” and restored it as a draft.",
       "conversation.mark": "Marked “Planning session” as read and flagged.",
       "conversation.assign": "Assigned “Planning session” to Ada Lovelace.",
-      "conversation.assign.batch": "Assigned 1 conversation to Ada Lovelace. 1 not found.",
+      "conversation.assign.batch": "Replace assignees (Ada Lovelace) on 1 conversation(s); 1 not found.",
       "mailbox.tag.create": "Created mailbox tag #customer.",
       "folder.display.set": "Mail from “Shared” now stays in its folder.",
       "mailing-list.unsubscribe": "Requested unsubscribe from Example Newsletter.",
@@ -1572,7 +1649,7 @@ describe("mail capabilities", () => {
             participantLabels: ["Ada"],
             latestMessageAt: "2026-08-04T10:00:00.000Z",
             workStatus: "needs_action",
-            assigneeUserId: null,
+            assigneeUserIds: [],
             snoozedUntil: null,
             revision: 1,
             updatedAt: "2026-08-04T10:00:00.000Z",
@@ -1625,7 +1702,7 @@ describe("mail capabilities", () => {
             participantSummary: "Ada",
             latestMessageAt: "2026-08-04T10:00:00.000Z",
             workStatus: "needs_action",
-            assigneeUserId: userId,
+            assigneeUserIds: [userId],
             revision: 4,
             sourceFolderId: internalFolderId,
             unread: true,
@@ -1710,7 +1787,7 @@ describe("mail capabilities", () => {
             participantLabels: ["Ada"],
             latestMessageAt: "2026-08-04T10:00:00.000Z",
             workStatus: "needs_action",
-            assigneeUserId: null,
+            assigneeUserIds: [],
             snoozedUntil: null,
             revision: 1,
             updatedAt: "2026-08-04T10:00:00.000Z",
@@ -1814,7 +1891,7 @@ describe("mail capabilities", () => {
     });
     const getCollaboration = spyOn(collaboration, "getConversationCollaboration").mockResolvedValue({
       ok: true,
-      data: { conversationId: internalConversationId, assignee: null, workStatus: "waiting", snoozedUntil: null, revision: 7 },
+      data: { conversationId: internalConversationId, assignees: [], workStatus: "waiting", snoozedUntil: null, revision: 7 },
     });
     const getTags = spyOn(localTags, "getConversationLocalTags").mockResolvedValue({
       ok: true,
@@ -2171,6 +2248,7 @@ describe("mail capabilities", () => {
     spyOn(mailboxes, "getMailbox").mockResolvedValue({
       ok: true,
       data: {
+        accessScope: "mailbox",
         id: internalMailboxId,
         name: "Support",
         description: null,

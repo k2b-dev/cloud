@@ -102,6 +102,9 @@ the application still owns dirty state, saving, discarding, and navigation
 guards.
 
 Only the panel and the category list scroll; the modal's frame stays in place.
+The modal fills the height of its surrounding surface. In a bare dialog, wrap it
+in an element with a fixed height, for example `height: min(86dvh, 40rem)`, as
+described under [custom dialogs](/en/ui/feedback/prompts#custom-dialogs).
 The panel is the containing block for a tab's content. Absolutely positioned
 content without a positioned ancestor of its own, such as a visually hidden
 input, therefore scrolls with the panel and comes into view when it takes

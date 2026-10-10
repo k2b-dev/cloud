@@ -329,6 +329,10 @@ const germanText: Record<string, string> = {
     "Solange dies eingeschaltet ist, kann der Assistent aus deinen nicht archivierten privaten Chats dauerhafte Tatsachen, Präferenzen und wiederkehrende Cloud-Abläufe speichern; du kannst sie unter „Gespeicherte Personalisierung“ prüfen oder löschen.",
   Type: "Typ",
   "You can view and export it, but you cannot change it.": "Du kannst ihn ansehen und exportieren, aber nicht ändern.",
+  "The app keeps this Skill up to date. You can view and export it.":
+    "Die App hält diesen Skill aktuell. Du kannst ihn ansehen und exportieren.",
+  "Your changes replace the app's version for everyone until an administrator resets it.":
+    "Deine Änderungen ersetzen die Version der App für alle, bis eine Administratorin oder ein Administrator ihn zurücksetzt.",
   failed: "fehlgeschlagen",
   ok: "erfolgreich",
   skipped: "übersprungen",
@@ -564,6 +568,8 @@ const copy = i18n.define({
       restoreNamed: ({ name }: { name: string }) => `Restore ${name}`,
       restoringNamed: ({ name }: { name: string }) => `Restoring ${name}`,
       searchChatsIn: ({ project }: { project: string }) => `Search chats in ${project}`,
+      fromApp: ({ app }: { app: string }) => `From app ${app}`,
+      appSkillOverride: ({ app }: { app: string }) => `This Skill comes from the app ${app}`,
       learningRunsPage: ({ count, page, pages }: { count: number; page: number; pages: number }) =>
         `${count === 1 ? "1 run" : `${count} runs`} · page ${page} of ${pages}`,
     },
@@ -593,6 +599,8 @@ const copy = i18n.define({
       restoreNamed: ({ name }: { name: string }) => `${name} wiederherstellen`,
       restoringNamed: ({ name }: { name: string }) => `${name} wird wiederhergestellt`,
       searchChatsIn: ({ project }: { project: string }) => `Chats in ${project} durchsuchen`,
+      fromApp: ({ app }: { app: string }) => `Von App ${app}`,
+      appSkillOverride: ({ app }: { app: string }) => `Dieser Skill kommt aus der App ${app}`,
       learningRunsPage: ({ count, page, pages }: { count: number; page: number; pages: number }) =>
         `${count === 1 ? "1 Lauf" : `${count} Läufe`} · Seite ${page} von ${pages}`,
     },

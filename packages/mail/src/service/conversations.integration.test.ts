@@ -8,7 +8,7 @@ import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
 import { grantMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
-import { createConversationComment } from "./collaboration";
+import { createConversationComment, loadConversationAssigneeIds, writeConversationAssignees } from "./collaboration";
 import { mergeConversations, reassignConversationMessage, splitConversation } from "./conversations";
 import { createLocalTag } from "./local-tags";
 import { createMailbox } from "./mailboxes";
@@ -580,6 +580,25 @@ suite("mail manual conversation threading", () => {
       )
     `;
 
+    const early = "2026-01-01T00:00:00Z";
+    const later = "2026-02-01T00:00:00Z";
+    await sql.begin(async (tx) => {
+      await writeConversationAssignees(tx, {
+        mailboxId,
+        conversationId: targetConversationId,
+        userIds: [writer.id],
+        assignedAt: new Map([[writer.id, later]]),
+      });
+      await writeConversationAssignees(tx, {
+        mailboxId,
+        conversationId: sourceConversationId,
+        userIds: [owner.id, writer.id],
+        assignedAt: new Map([
+          [owner.id, early],
+          [writer.id, early],
+        ]),
+      });
+    });
     const merged = await mergeConversations({
       context: writerContext,
       mailboxId,
@@ -594,6 +613,12 @@ suite("mail manual conversation threading", () => {
     });
     expect(merged.ok).toBe(true);
     if (!merged.ok) return;
+    expect((await loadConversationAssigneeIds(sql, targetConversationId)).sort()).toEqual([owner.id, writer.id].sort());
+    const [earliest] = await sql<
+      { assigned_at: Date }[]
+    >`SELECT assigned_at FROM mail.conversation_assignees WHERE conversation_id = ${targetConversationId}::uuid AND user_id = ${writer.id}::uuid`;
+    expect(earliest?.assigned_at.toISOString()).toBe(new Date(early).toISOString());
+
     expect(merged.data).toMatchObject({
       removedConversationId: sourceConversationId,
       movedMessageCount: 1,
@@ -768,6 +793,17 @@ suite("mail manual conversation threading", () => {
     });
     expect(split.ok).toBe(true);
     if (!split.ok) return;
+    expect(await loadConversationAssigneeIds(sql, split.data.created.id)).toEqual(
+      await loadConversationAssigneeIds(sql, targetConversationId),
+    );
+    const copiedTimes = await sql<{ same: boolean }[]>`
+      SELECT target.assigned_at = copied.assigned_at AS same FROM mail.conversation_assignees target
+      JOIN mail.conversation_assignees copied ON copied.user_id = target.user_id
+      WHERE target.conversation_id = ${targetConversationId}::uuid AND copied.conversation_id = ${split.data.created.id}::uuid
+    `;
+    expect(copiedTimes).toHaveLength(2);
+    expect(copiedTimes.every((row) => row.same)).toBeTrue();
+
     expect(split.data).toMatchObject({
       movedMessageCount: 1,
       source: { id: targetConversationId, revision: 3, messageCount: 1 },
@@ -918,6 +954,10 @@ suite("mail manual conversation threading", () => {
       VALUES (${targetMessage.id}::uuid, 'from', 0, 'Support', 'support@example.com', 'support@example.com')
     `;
 
+    await sql.begin(async (tx) => {
+      await writeConversationAssignees(tx, { mailboxId, conversationId: source.id, userIds: [owner.id] });
+      await writeConversationAssignees(tx, { mailboxId, conversationId: target.id, userIds: [writer.id] });
+    });
     const denied = await reassignConversationMessage({
       context: readerContext,
       mailboxId,
@@ -953,6 +993,9 @@ suite("mail manual conversation threading", () => {
     });
     expect(moved.ok).toBe(true);
     if (!moved.ok) return;
+    expect(await loadConversationAssigneeIds(sql, source.id)).toEqual([owner.id]);
+    expect(await loadConversationAssigneeIds(sql, target.id)).toEqual([writer.id]);
+
     expect(moved.data).toMatchObject({
       messageId: sourceMessages[1]!.id,
       source: { id: source.id, revision: 2, messageCount: 1 },

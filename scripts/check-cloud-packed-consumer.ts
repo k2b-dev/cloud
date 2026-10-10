@@ -109,11 +109,38 @@ try {
       2,
     ),
   );
+  await mkdir(join(consumer, "src/skills/inventory-counting/references"), { recursive: true });
+  await Bun.write(
+    join(consumer, "src/skills/inventory-counting/SKILL.md"),
+    `---
+name: inventory-counting
+description: Count inventory on a shelf.
+---
+
+Count the shelf inventory using the Inventory application.
+Read [Counting rules](references/counting.md) before reporting a total.
+`,
+  );
+  await Bun.write(
+    join(consumer, "src/skills/inventory-counting/references/counting.md"),
+    "Count each item once and report missing labels.\n",
+  );
+  await Bun.write(
+    join(consumer, "src/skills.ts"),
+    `import { skill } from "@k2b/cloud";
+import markdown from "./skills/inventory-counting/SKILL.md" with { type: "text" };
+import counting from "./skills/inventory-counting/references/counting.md" with { type: "text" };
+export const SKILLS = [skill({ markdown, references: { "references/counting.md": counting } })];
+`,
+  );
+  await Bun.write(join(consumer, "src/markdown.d.ts"), 'declare module "*.md" { const text: string; export default text; }\n');
   // A third-party part of the mobile app: declared with pwa, served with PwaLayout behind ssr.pwaAccess.
   await Bun.write(
     join(consumer, "src/config.ts"),
     `import { defineApp } from "@k2b/cloud";
+import { SKILLS } from "./skills";
 export const app = defineApp({
+  skills: SKILLS,
   id: "inventory", name: "Inventory", icon: "ti ti-packages", description: "Packed consumer smoke",
   basePath: "/pwa/inventory", baseUrl: process.env.CONSUMER_BASE_URL ?? "http://inventory:3000", routes: ["/api/inventory"], pwa: {},
 });

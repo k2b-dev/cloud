@@ -442,6 +442,7 @@ const mapMailboxListItem = (mailbox: Mailbox & { permission: "read" | "write" | 
     ...(preview ? { preview } : {}),
     links: [openLink(mailboxHref(id))],
     permission: mailbox.permission,
+    accessScope: mailbox.accessScope,
     health: mailbox.health,
     ...(healthReason ? { healthReason } : {}),
     syncEnabled: mailbox.syncEnabled,
@@ -945,6 +946,7 @@ const queryDefinitions = {
             title: value.title,
             ...(value.preview ? { preview: value.preview } : {}),
             permission: value.permission,
+            accessScope: value.accessScope,
             links: value.links,
             unreadCount: countByMailbox.get(item.id)?.unread ?? 0,
             needsActionCount: countByMailbox.get(item.id)?.needsAction ?? 0,
@@ -1021,11 +1023,11 @@ const queryDefinitions = {
       if (!scope.ok) return scope;
       const mailbox = await mailboxes.getMailbox(mailContext, scope.data.id);
       if (!mailbox.ok) return mailbox;
-      const permission = await mailboxAccess.getMailboxPermission(mailContext, scope.data.id);
-      return permission === "none"
+      const access = await mailboxAccess.requireMailboxAccess(mailContext, scope.data.id, "read");
+      return !access.ok
         ? fail(err.forbidden("Mailbox access is required"))
         : ok({
-            data: mapMailbox({ ...mailbox.data, permission }, scope.data.shortId),
+            data: mapMailbox({ ...mailbox.data, permission: access.data.permission }, scope.data.shortId),
             summary: capabilitySummary(t.readMailbox({ name: mailbox.data.name })),
             refs: [mailboxRef(scope.data.shortId, mailbox.data.name, mailbox.data.description)],
             links: [openLink(mailboxHref(scope.data.shortId))],
@@ -1418,7 +1420,7 @@ const queryDefinitions = {
           summaryRevision: summary.data.summaryRevision,
           keep: keep.data ? { keptAt: keep.data.keptAt, keptBy: keep.data.keptBy.displayName } : null,
           collaboration: {
-            assignee: state.data.assignee,
+            assignees: state.data.assignees,
             workStatus: state.data.workStatus,
             snoozedUntil: state.data.snoozedUntil,
             revision: state.data.revision,
@@ -2227,7 +2229,7 @@ const requireDraftForReview = async (mailboxId: string, draftId: string, context
   const resolvedDraft = await resolveMailboxResource("drafts", scope.data.id, draftId);
   if (!resolvedDraft.ok) return resolvedDraft;
   const mailContext = requestContext(context);
-  const access = await mailboxAccess.requireMailboxPermission(mailContext, scope.data.id, "write");
+  const access = await mailboxAccess.requireDraftAccess(mailContext, scope.data.id, resolvedDraft.data, "write");
   if (!access.ok) return access;
   return drafts.getDraft(mailContext, scope.data.id, resolvedDraft.data);
 };
@@ -2257,7 +2259,10 @@ const requireConversationForReview = async (
   const resolvedConversation = await resolveMailboxResource("conversations", scope.data.id, conversationId);
   if (!resolvedConversation.ok) return resolvedConversation;
   const mailContext = requestContext(context);
-  const access = await mailboxAccess.requireMailboxPermission(mailContext, scope.data.id, permission);
+  const access =
+    permission === "admin"
+      ? await mailboxAccess.requireMailboxPermission(mailContext, scope.data.id, permission)
+      : await mailboxAccess.requireMailboxAccess(mailContext, scope.data.id, permission);
   if (!access.ok) return access;
   const page = await messages.listConversationMessages({
     context: mailContext,
@@ -2803,7 +2808,7 @@ const actionDefinitions = {
       if (!scope.ok) return scope;
       const deliveryId = await resolveMailboxResource("deliveries", scope.data.id, input.deliveryId);
       if (!deliveryId.ok) return deliveryId;
-      const access = await mailboxAccess.requireMailboxPermission(requestContext(context), scope.data.id, "write");
+      const access = await mailboxAccess.requireMailboxAccess(requestContext(context), scope.data.id, "write");
       if (!access.ok) return access;
       const delivery = await scheduledSends.getScheduledSend({
         context: requestContext(context),
@@ -3113,7 +3118,7 @@ const actionDefinitions = {
   },
   "conversation.assign": {
     title: "Assign conversation",
-    description: "Assign one conversation to an eligible mailbox member, or clear its assignee.",
+    description: "Add, remove, or replace the assignees of one conversation.",
     input: c.ConversationAssignInputSchema,
     data: c.CollaborationDataSchema,
     destructive: false,
@@ -3124,22 +3129,35 @@ const actionDefinitions = {
       const t = mailCapabilityMessages(context.locale);
       const conversation = await requireConversationForReview(input.mailboxId, input.conversationId, context);
       if (!conversation.ok) return conversation;
-      const assignee = input.assigneeUserId
-        ? await collaboration.listCurrentUsers({
-            mailboxId: conversation.data.mailboxInternalId,
-            userIds: [input.assigneeUserId],
-            minimumPermission: "write",
-            limit: 1,
-          })
-        : [];
-      if (input.assigneeUserId && !assignee[0]) return fail(err.badInput("Assignee must have current write access to this mailbox"));
+      const access = await mailboxAccess.requireMailboxPermission(requestContext(context), conversation.data.mailboxInternalId, "write");
+      if (!access.ok) return access;
+      const assignees =
+        input.mode === "remove"
+          ? await collaboration.listAssigneeCollaborators(input.assigneeUserIds)
+          : input.assigneeUserIds.length === 0
+            ? []
+            : await collaboration.listEligibleAssignees({
+                mailboxId: conversation.data.mailboxInternalId,
+                userIds: [...new Set(input.assigneeUserIds)],
+                limit: input.assigneeUserIds.length,
+              });
+      if (input.mode !== "remove" && new Set(input.assigneeUserIds).size !== assignees.length)
+        return fail(err.badInput(t.invalidAssignees));
+      const names =
+        input.assigneeUserIds.length === 0
+          ? ""
+          : [...new Set(input.assigneeUserIds)]
+              .map((id) => {
+                const user = assignees.find((user) => user.id === id);
+                return user ? `${user.displayName} · ${user.uid}` : id;
+              })
+              .join(", ");
       return ok({
-        message: input.assigneeUserId
-          ? t.assignReview({ subject: conversation.data.subject, assignee: assignee[0]!.displayName })
-          : t.unassignReview({ subject: conversation.data.subject }),
+        message: t.assignmentReview({ mode: t.assignmentMode({ mode: input.mode }), users: names || t.unassigned }),
         details: [
           { label: t.conversation, value: conversation.data.subject },
-          { label: t.assignee, value: assignee[0] ? `${assignee[0].displayName} · ${assignee[0].uid}` : t.unassigned },
+          { label: t.assignee, value: names || t.unassigned },
+          { label: t.assignmentModeLabel, value: t.assignmentMode({ mode: input.mode }) },
         ],
         links: [{ rel: "open" as const, href: conversation.data.href }],
         approvalScope: mailboxApprovalScope(input.mailboxId),
@@ -3149,24 +3167,27 @@ const actionDefinitions = {
       const t = mailCapabilityMessages(context.locale);
       const conversation = await requireConversationForReview(input.mailboxId, input.conversationId, context);
       if (!conversation.ok) return conversation;
+      const access = await mailboxAccess.requireMailboxPermission(requestContext(context), conversation.data.mailboxInternalId, "write");
+      if (!access.ok) return access;
       const scope = await resolveConversationScope(input.mailboxId, input.conversationId);
       if (!scope.ok) return scope;
       return mapResult(
-        await conversationAssignments.updateConversationCollaboration({
+        await conversationAssignments.assignConversation({
           context: requestContext(context),
           mailboxId: scope.data.mailbox.id,
-          conversationId: scope.data.conversationId,
-          input: {
-            expectedRevision: input.expectedRevision,
-            assigneeUserId: input.assigneeUserId,
-          },
+          conversationId: input.conversationId,
+          assigneeUserIds: input.assigneeUserIds,
+          mode: input.mode,
           locale: context.locale,
         }),
         (item) => ({ ...item, conversationId: input.conversationId }),
         (item) => ({
           summary: capabilitySummary(
-            item.assignee
-              ? t.assignedConversation({ subject: conversation.data.subject, assignee: item.assignee.displayName })
+            item.assignees.length > 0
+              ? t.assignedConversation({
+                  subject: conversation.data.subject,
+                  assignee: item.assignees.map((user) => user.displayName).join(", "),
+                })
               : t.unassignedConversation({ subject: conversation.data.subject }),
           ),
           ...conversationMetadata(input.mailboxId, input.conversationId, conversation.data.subject),
@@ -3177,7 +3198,7 @@ const actionDefinitions = {
   "conversation.assign.batch": {
     title: "Assign conversations",
     description:
-      "Assign up to 50 conversations of one mailbox to one eligible mailbox member, or clear their assignee. Reports each conversation as ok or not_found; the assignee gets one notification.",
+      "Add, remove, or replace assignees on up to 50 conversations of one mailbox. Reports ok or not_found for each conversation; each newly added user gets one notification.",
     input: c.ConversationAssignBatchInputSchema,
     data: c.ConversationAssignBatchDataSchema,
     destructive: false,
@@ -3190,29 +3211,41 @@ const actionDefinitions = {
       if (!scope.ok) return scope;
       const access = await mailboxAccess.requireMailboxPermission(requestContext(context), scope.data.id, "write");
       if (!access.ok) return access;
-      const assignee = input.assigneeUserId
-        ? await collaboration.listCurrentUsers({
-            mailboxId: scope.data.id,
-            userIds: [input.assigneeUserId],
-            minimumPermission: "write",
-            limit: 1,
-          })
-        : [];
-      if (input.assigneeUserId && !assignee[0]) return fail(err.badInput("Assignee must have current write access to this mailbox"));
+      const assignees =
+        input.mode === "remove"
+          ? await collaboration.listAssigneeCollaborators(input.assigneeUserIds)
+          : input.assigneeUserIds.length === 0
+            ? []
+            : await collaboration.listEligibleAssignees({
+                mailboxId: scope.data.id,
+                userIds: [...new Set(input.assigneeUserIds)],
+                limit: input.assigneeUserIds.length,
+              });
+      if (input.mode !== "remove" && new Set(input.assigneeUserIds).size !== assignees.length)
+        return fail(err.badInput(t.invalidAssignees));
+      const names =
+        input.assigneeUserIds.length === 0
+          ? ""
+          : [...new Set(input.assigneeUserIds)]
+              .map((id) => {
+                const user = assignees.find((user) => user.id === id);
+                return user ? `${user.displayName} · ${user.uid}` : id;
+              })
+              .join(", ");
       const shown = input.conversationIds.slice(0, 3);
       const subjects = (
         await Promise.all(shown.map((conversationId) => requireConversationForReview(input.mailboxId, conversationId, context)))
       ).flatMap((conversation) => (conversation.ok ? [conversation.data.subject] : []));
       const hidden = input.conversationIds.length - shown.length;
-      const count = input.conversationIds.length;
       return ok({
-        message: assignee[0] ? t.assignBatchReview({ count, assignee: assignee[0].displayName }) : t.unassignBatchReview({ count }),
+        message: t.assignmentReview({ mode: t.assignmentMode({ mode: input.mode }), users: names || t.unassigned }),
         details: [
           {
             label: t.conversations,
             value: i18n.formatList(hidden > 0 ? [...subjects, t.moreConversations({ count: hidden })] : subjects, context.locale),
           },
-          { label: t.assignee, value: assignee[0] ? `${assignee[0].displayName} · ${assignee[0].uid}` : t.unassigned },
+          { label: t.assignee, value: names || t.unassigned },
+          { label: t.assignmentModeLabel, value: t.assignmentMode({ mode: input.mode }) },
         ],
         approvalScope: mailboxApprovalScope(input.mailboxId),
       });
@@ -3226,7 +3259,8 @@ const actionDefinitions = {
           context: requestContext(context),
           mailboxId: scope.data.id,
           conversationIds: input.conversationIds,
-          assigneeUserId: input.assigneeUserId,
+          assigneeUserIds: input.assigneeUserIds,
+          mode: input.mode,
           locale: context.locale,
         }),
         (result) => result,
@@ -3235,8 +3269,13 @@ const actionDefinitions = {
           const missing = result.results.length - count;
           return {
             summary: capabilitySummary(
-              result.assignee
-                ? t.assignedConversations({ count, assignee: result.assignee.displayName, missing })
+              input.assigneeUserIds.length > 0
+                ? t.assignmentSummary({
+                    count,
+                    mode: t.assignmentMode({ mode: input.mode }),
+                    users: result.assignees.map((user) => user.displayName).join(", ") || input.assigneeUserIds.join(", "),
+                    missing,
+                  })
                 : t.unassignedConversations({ count, missing }),
             ),
           };
@@ -3535,7 +3574,7 @@ const actionDefinitions = {
     approval: "rememberable",
     review: async (input: z.output<typeof c.CommentCreateInputSchema>, context: CapabilityExecutionContext) => {
       const t = mailCapabilityMessages(context.locale);
-      const conversation = await requireConversationForReview(input.mailboxId, input.conversationId, context);
+      const conversation = await requireConversationForReview(input.mailboxId, input.conversationId, context, "read");
       if (!conversation.ok) return conversation;
       return ok({
         message: t.addCommentReview({ subject: conversation.data.subject }),
@@ -3554,7 +3593,7 @@ const actionDefinitions = {
     },
     run: async (input: z.output<typeof c.CommentCreateInputSchema>, context: CapabilityExecutionContext) => {
       const t = mailCapabilityMessages(context.locale);
-      const conversation = await requireConversationForReview(input.mailboxId, input.conversationId, context);
+      const conversation = await requireConversationForReview(input.mailboxId, input.conversationId, context, "read");
       if (!conversation.ok) return conversation;
       const scope = await resolveConversationScope(input.mailboxId, input.conversationId);
       if (!scope.ok) return scope;

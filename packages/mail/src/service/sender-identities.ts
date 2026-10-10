@@ -16,6 +16,7 @@ import {
   smtpTransportCapabilitiesSchema,
   type UpdateSenderIdentityInput,
 } from "../contracts";
+import { requireMailboxAccess } from "./access";
 
 const verificationMessages = i18n.define({
   baseLocale: "en",
@@ -476,7 +477,7 @@ export const createSenderIdentity = async (params: {
 };
 
 export const listSenderIdentities = async (context: MailRequestContext, mailboxId: string): Promise<Result<SenderIdentity[]>> => {
-  const allowed = await requireMailboxPermission(context, mailboxId, "read");
+  const allowed = await requireMailboxAccess(context, mailboxId, "read");
   if (!allowed.ok) return allowed;
   const rows = await sql<DbIdentity[]>`
     SELECT ${identityColumns}

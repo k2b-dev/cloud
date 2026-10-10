@@ -64,8 +64,11 @@ export const applyMailConversationTransition = (
   value: WorkflowJsonValue,
 ): boolean => {
   if (action === "assignConversation") {
-    if ((typeof value !== "string" && value !== null) || conversation.assigneeUserId === value) return false;
-    conversation.assigneeUserId = value;
+    if (typeof value !== "string" && value !== null) return false;
+    const next = value === null ? [] : [value];
+    const current = conversation.assigneeUserIds;
+    if (Array.isArray(current) && current.length === next.length && current.every((id, index) => id === next[index])) return false;
+    conversation.assigneeUserIds = next;
   } else if (action === "setConversationStatus") {
     if (typeof value !== "string" || conversation.workStatus === value) return false;
     conversation.workStatus = value;

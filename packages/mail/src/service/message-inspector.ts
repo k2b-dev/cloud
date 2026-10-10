@@ -2,8 +2,8 @@ import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { z } from "zod";
 import { type MessageInspector, type MessageSourcePreview, messageInspectorSchema, messageSourcePreviewSchema } from "../contracts";
+import { requireMailboxAccess, requireVisibleMessages } from "./access";
 import type { MailRequestContext } from "./auth";
-import { resolveMailExecution } from "./execution";
 import { mailingListMetadata } from "./list-subscriptions";
 import { getStoredBlob, readStoredBlobPrefix } from "./message-blobs";
 import { parseMessageProtocolFacts } from "./message-protocol";
@@ -205,8 +205,10 @@ const requireMessageRead = async (
   mailboxId: string,
   messageId: string,
 ): Promise<Result<InspectorMessageRow>> => {
-  const access = await resolveMailExecution({ mailboxId, operation: "actorRead", context });
+  const access = await requireMailboxAccess(context, mailboxId, "read");
   if (!access.ok) return access;
+  const visible = await requireVisibleMessages(access.data, [messageId]);
+  if (!visible.ok) return visible;
   const message = await loadMessage(mailboxId, messageId);
   return message ? ok(message) : fail(err.notFound("Message"));
 };
@@ -294,11 +296,7 @@ export const inspectMessage = async (params: {
     try {
       const prefix = await readStoredBlobPrefix(message.source_blob_id, MESSAGE_HEADER_LIMIT_BYTES);
       parsedHeaders = parseMessageHeaderBlock(prefix.bytes);
-      const currentAccess = await resolveMailExecution({
-        mailboxId: params.mailboxId,
-        operation: "actorRead",
-        context: params.context,
-      });
+      const currentAccess = await requireMessageRead(params.context, params.mailboxId, params.messageId);
       if (!currentAccess.ok) return currentAccess;
     } catch (error) {
       warnings.push(error instanceof Error ? `Stored source could not be read: ${error.message}` : "Stored source could not be read.");
@@ -326,11 +324,7 @@ export const inspectMessage = async (params: {
     warnings.push("The stored source hash does not match the message source hash.");
   }
 
-  const currentAccess = await resolveMailExecution({
-    mailboxId: params.mailboxId,
-    operation: "actorRead",
-    context: params.context,
-  });
+  const currentAccess = await requireMessageRead(params.context, params.mailboxId, params.messageId);
   if (!currentAccess.ok) return currentAccess;
 
   const protocolFacts = parseMessageProtocolFacts(parseJsonObject(message.protocol_facts));
@@ -419,11 +413,7 @@ export const previewMessageSource = async (params: {
   } catch {
     return fail(err.notFound("Exact message source"));
   }
-  const currentAccess = await resolveMailExecution({
-    mailboxId: params.mailboxId,
-    operation: "actorRead",
-    context: params.context,
-  });
+  const currentAccess = await requireMessageRead(params.context, params.mailboxId, params.messageId);
   if (!currentAccess.ok) return currentAccess;
 
   const parsed = internalMessageSourcePreviewSchema.safeParse({

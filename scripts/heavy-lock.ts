@@ -16,7 +16,7 @@ export const runUnderHeavyLock = (): void => {
   const lock = join(tmpdir(), "cloud-heavy-run.lock");
   if (spawnSync(["flock", "-n", lock, "true"]).exitCode !== 0)
     console.error(`Waiting for another check or test run on this machine to finish (${lock})…`);
-  const child = spawnSync(["flock", lock, process.execPath, ...process.argv.slice(1)], {
+  const child = spawnSync(["flock", lock, process.execPath, ...process.execArgv, ...process.argv.slice(1)], {
     stdio: ["inherit", "inherit", "inherit"],
     env: { ...process.env, CLOUD_HEAVY_LOCK: "held" },
   });

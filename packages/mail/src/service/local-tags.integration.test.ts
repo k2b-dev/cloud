@@ -6,6 +6,7 @@ import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
 import { grantMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
+import { writeConversationAssignees } from "./collaboration";
 import {
   addConversationLocalTags,
   createLocalTag,
@@ -158,15 +159,16 @@ suite("mail local tags and structured search", () => {
     `;
     const [conversation] = await sql<{ id: string }[]>`
       INSERT INTO mail.conversations (short_id,
-        mailbox_id, subject, participant_summary, latest_message_at, assignee_user_id,
+        mailbox_id, subject, participant_summary, latest_message_at,
         work_status, snoozed_until
       ) VALUES (${newShortId()},
-        ${mailboxId}::uuid, 'Priority customer', 'Customer', ${internalDate}, ${writer.id}::uuid,
+        ${mailboxId}::uuid, 'Priority customer', 'Customer', ${internalDate},
         'waiting', ${new Date(Date.now() + 60 * 60_000)}
       )
       RETURNING id
     `;
     conversationId = conversation!.id;
+    await sql.begin((tx) => writeConversationAssignees(tx, { mailboxId, conversationId, userIds: [writer.id] }));
     await sql`
       INSERT INTO mail.conversation_messages (conversation_id, message_id, position, added_by)
       VALUES (${conversationId}::uuid, ${messageId}::uuid, 1, 'headers')

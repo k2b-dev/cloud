@@ -2,16 +2,16 @@
 id: grids-build-custom-app
 title: Erste Grids App erstellen
 icon: ti ti-certificate
-description: Eine Anfrage-App mit Fortschritt, Kommentaren und generiertem Zertifikat erstellen.
+description: Erstelle eine Anfrage-App mit Fortschritt, Kommentaren und erzeugtem Zertifikat.
 order: 133
 ---
-Diese Anleitung erstellt eine App für Zertifikatsanfragen. Eine anfragende Person kann eine Anfrage absenden, ihre Anfragen sehen, eine Anfrage öffnen, sie besprechen, ihren Status verfolgen und das generierte Zertifikat herunterladen. Eine verantwortliche Gruppe kann alle Anfragen in derselben Basis bearbeiten.
+Diese Anleitung erstellt eine App für Zertifikatsanfragen. Eine anfragende Person kann eine Anfrage absenden, ihre Anfragen sehen, eine Anfrage öffnen, sie besprechen, ihren Status verfolgen und das erzeugte Zertifikat herunterladen. Eine verantwortliche Gruppe bearbeitet alle Anfragen in derselben Base.
 
-Die App verwendet eine Tabelle und drei Seiten. Vorhandene Formulare, Ansichten, Workflows und Dokumentvorlagen bleiben jeweils für ihr Verhalten verantwortlich.
+Die App verwendet eine Tabelle und drei Seiten. Vorhandene Formulare, Ansichten, Workflows und Dokumentvorlagen behalten ihr eigenes Verhalten.
 
-## Voraussetzungen {icon="list-check"}
+## Die Ressourcen vorbereiten {icon="list-check"}
 
-Du benötigst Verwaltungsrechte für die Basis. Bereite diese Ressourcen in derselben Basis vor:
+Du brauchst Zugriff **Verwalten** auf die Base. Bereite diese Ressourcen in derselben Base vor:
 
 | Ressource | Erforderliche Konfiguration |
 | --- | --- |
@@ -19,46 +19,71 @@ Du benötigst Verwaltungsrechte für die Basis. Bereite diese Ressourcen in ders
 | Formular **Zertifikat anfragen** | Erstellt Zertifikatsanfragen; Status ist fest auf Eingereicht gesetzt |
 | Ansicht **Meine Zertifikatsanfragen** | Zeigt Titel, Status, Bearbeitungshinweis und Aktualisiert |
 | Dokumentvorlage **Zertifikat** | Verwendet einen Datensatz aus Zertifikatsanfragen |
-| Workflow-Launcher **Zertifikat genehmigen und generieren** | Validiert und aktualisiert die Anfrage, generiert das Dokument und benachrichtigt anschließend die anfragende Person |
+| Workflow-Launcher **Zertifikat genehmigen und generieren** | Validiert und aktualisiert die Anfrage, erzeugt das Dokument und benachrichtigt danach die anfragende Person |
 
-Füge kein Feld für anfragende Personen hinzu, das nur die Identität dupliziert. Jeder Datensatz speichert bereits die erstellende Person. Das GQL der App kann `record.createdBy` mit `@auth.id` vergleichen. Generierte PDFs bleiben als Dokumente angehängt, statt in ein weiteres Dateifeld kopiert zu werden.
+Füge kein Feld für die anfragende Person hinzu, das nur die Identität wiederholt. Jeder Datensatz speichert bereits die erstellende Person, und das GQL der App kann `record.createdBy` mit `@auth.id` vergleichen. Erzeugte PDFs bleiben als Dokumente angehängt. Kopiere sie nicht in ein weiteres Dateifeld.
 
 ## Zuerst den Zugriff konfigurieren {icon="lock"}
 
-Lege die Zielgruppengrenzen fest, bevor du Seiten zusammenstellst:
+Lege die Grenzen jeder Zielgruppe fest, bevor du Seiten baust:
 
 | Zielgruppe | Grenze | Ergebnis |
 | --- | --- | --- |
-| Anfragende Personen | Lesen in der Grids App | Nutzen nur die veröffentlichten Seiten, das persönliche GQL-Ergebnis, das enthaltene Formular, Kommentare und Dokumente. |
-| Verantwortliche Gruppe | Schreiben in der Basis oder eine getrennte Grids App für Mitarbeitende | Bearbeitet alle Anfragen, ohne die Anfrage-App zu erweitern. |
+| Anfragende Personen | Zugriff **Offen** auf die Grids App | Nutzen nur die veröffentlichten Seiten, das persönliche GQL-Ergebnis, das enthaltene Formular, Kommentare und Dokumente. |
+| Verantwortliche Gruppe | Zugriff **Bearbeiten** auf die Base oder eine eigene Grids App für das Team | Bearbeitet alle Anfragen, ohne die Anfrage-App zu erweitern. |
 
-Der Zugriff auf eine Grids App gewährt keinen unmittelbaren Basiszugriff. Die unveränderliche Veröffentlichung listet die exakten Daten und Operationen auf, die anfragenden Personen zur Verfügung stehen. Teste die Anfrage-App und die Oberfläche für Mitarbeitende vor der Veröffentlichung mit getrennten echten Testkonten.
+Zugriff auf eine Grids App gibt keinen direkten Zugriff auf die Base. Die unveränderliche Veröffentlichung listet genau die Daten und Vorgänge auf, die anfragende Personen nutzen können. Probiere die Anfrage-App und die Oberfläche für das Team vor der Veröffentlichung mit getrennten echten Testkonten aus.
 
-**Prüfpunkt:** Eine anfragende Person kann das Formular absenden und die Datensatzabfrage der App gibt nur `record.createdBy = @auth.id` zurück. Die verantwortliche Gruppe kann alle Anfragen über ihre getrennte Grenze bearbeiten. Korrigiere bei einem Fehler die Abfrage oder trenne die Zielgruppen, bevor du weitere Seiten erstellst.
+**Prüfpunkt:** Eine anfragende Person kann das Formular absenden, und die Datensatzabfrage der App liefert nur `record.createdBy = @auth.id`. Die verantwortliche Gruppe kann alle Anfragen über ihre eigene Grenze bearbeiten. Scheitert das, korrigiere die Abfrage oder trenne die Zielgruppen, bevor du weitere Seiten baust.
 
 ## Den Builder öffnen {icon="apps"}
 
-Aktiviere den **Bearbeitungsmodus**, öffne die Basis und wähle unter **Apps** die Option **Neue App**. Der Builder erstellt eine Startseite, die du umbenennen oder erweitern kannst. Du kannst dieselbe kanonische Definition auch mit [YAML und CLI](/app/grids/help/grids-custom-app-yaml-cli) erstellen oder ersetzen. Nur Personen mit Verwaltungsrechten für die Basis sehen diese Steuerelemente.
+Du brauchst Zugriff **Verwalten** auf die Base, um diese Steuerelemente zu sehen.
 
-Der Builder bearbeitet denselben kanonischen Entwurf wie YAML und CLI. Jede strukturell vollständige Änderung wird automatisch gespeichert. Semantische Diagnosen bleiben am Entwurf und blockieren die Veröffentlichung, statt deine Arbeit zu verwerfen. Der Status neben dem App-Namen unterscheidet **Aktiv**, **Unveröffentlichte Änderungen**, **Nur Entwurf** und einen Entwurf, der Aufmerksamkeit benötigt. Der Hinweis unter Seiten zeigt Speicherfehler, veröffentlicht den zuletzt gespeicherten Entwurf und kann den Entwurf nach Bestätigung des Verlusts aller Entwurfsänderungen auf die aktuelle aktive Version zurücksetzen. Das Symbol für einen externen Link öffnet diese aktive Version.
+:::steps
+1. Aktiviere den **Bearbeitungsmodus**.
+2. Öffne die Base.
+3. Wähle unter **Apps** die Option **Neue App**.
+:::
 
-Schlägt das Speichern fehl, wähle **Speichern erneut versuchen** im Entwurfshinweis. Ein Link zu einer anderen Cloud-Seite im selben Tab wartet auf das Speichern ausstehender Änderungen. Das gilt auch beim Verlassen des Bearbeitungsmodus. Schlägt das Speichern fehl, bleibt der Builder geöffnet. Beim Neuladen oder Schließen des Tabs warnt der Browser vor ungespeicherten Änderungen. Brich den Vorgang ab und versuche erneut zu speichern, um deine Änderungen zu behalten.
+Der Builder erstellt eine Startseite, die du umbenennen oder erweitern kannst. Du kannst dieselbe kanonische Definition auch mit [Grids App YAML & CLI](/app/grids/help/grids-custom-app-yaml-cli) erstellen oder ersetzen.
 
-Kann eine Datenvorschau nicht geladen werden, wähle **Vorschau neu laden** im betroffenen Block. So versuchst du es erneut, ohne den Builder neu zu laden.
+### Mit dem Entwurf arbeiten
 
-Diagramme zeigen Kategorien vom Typ Datum als lokalisierte Kalenderdaten. Textkategorien behalten ihre Beschriftung, auch wenn sie wie ein Datum aussehen.
+Der Builder bearbeitet denselben kanonischen Entwurf wie YAML und die CLI. Er speichert jede strukturell vollständige Änderung automatisch. Semantische Diagnosen bleiben am Entwurf und blockieren die Veröffentlichung. Deine Arbeit geht dabei nie verloren.
 
-Die Arbeitsfläche zeigt die aktuelle Entwurfsseite: Gespeicherte Ansichten und parameterlose GQL-Ergebnisse ihrer Entwurfsseiten werden auf dem Server aufgelöst, Datensätze verwenden die gemeinsame Datentabelle, Kennzahlen und Diagramme stellen Aggregatergebnisse dar und Formulare verwenden die vollständige gemeinsame Formularoberfläche, wobei das Absenden während der Bearbeitung deaktiviert ist. Referenzierte Datensätze zeigen einen kontextbezogenen Platzhalter, weil ihr Ergebnis vom aktuellen Datensatz in der veröffentlichten Route abhängt. Gerendertes HTML folgt derselben Regel für kontextbezogene Vorschauen. Bewege den Mauszeiger über einen Block oder fokussiere ihn, um seinen kompakten Verschiebegriff zu zeigen. Ziehe ihn an eine horizontale Kante, um ihn vor oder nach einem anderen Block zu stapeln, oder an eine vertikale Kante, um ihn neben einem Block, einem benachbarten Paar oder dem vollständigen Stapel abzulegen. Zeiger, Berührung und Tastatur verwenden dieselben benannten Ziele und Ansagen. Zeilen, Spalten, leere Layoutcontainer und ausgeglichene Breiten werden automatisch erstellt oder entfernt; nur Blöcke werden ausgewählt und bearbeitet. **Block hinzufügen** gruppiert gewöhnliche Inhalte, Blöcke für den Seitendatensatz und erweiterte Einblicke oder Aktionen. Datenblöcke bevorzugen eine zugängliche gespeicherte Ansicht und verwenden andernfalls eine begrenzte GQL-Quelle aus einer verfügbaren Tabelle. Fehlende Voraussetzungen bleiben im Menü sichtbar, statt einen nicht nutzbaren Block zu erstellen.
+Der Hinweis unter **Seiten** zeigt den Zustand des Entwurfs: **Diese App ist ein Entwurf**, **Änderungen befinden sich in einem Entwurf** oder **Verwendete Ressourcen wurden geändert**. Er zeigt Speicherfehler und veröffentlicht den zuletzt gespeicherten Entwurf. Er kann den Entwurf auch auf die aktuelle veröffentlichte Version zurücksetzen. Vorher fragt er nach, ob alle Änderungen am Entwurf verworfen werden dürfen. **Veröffentlichte App öffnen** öffnet die veröffentlichte Version.
 
-**App-Einstellungen** enthält **Allgemein**, **Zugriff** und **Lebenszyklus**. Änderungen an Name und Symbol verwenden denselben automatisch gespeicherten Entwurf. Wähle unter **Aktionen** eine vorhandene Seitenleisten-Formularaktion oder füge mit **Neue Aktion** eine hinzu. Beschriftung, Formular, feste Werte, Verfügbarkeit und Erfolgsnavigation bearbeitest du im Inspektor. Inline-GQL und Markdown können in einem größeren Editor geöffnet werden, ohne einen zweiten Entwurf oder einen getrennten Speicherschritt zu erstellen.
+Schlägt das Speichern fehl, wähle im Hinweis **Speichern erneut versuchen**. Folgst du im selben Tab einem Link zu einer anderen Cloud-Seite, wartet Grids zuerst, bis ausstehende Änderungen gespeichert sind. Das gilt auch, wenn du den **Bearbeitungsmodus** verlässt. Schlägt das Speichern fehl, bleibt der Builder offen. Lädst du den Tab neu oder schließt ihn, warnt der Browser vor ungespeicherten Änderungen. Brich die Warnung ab und versuche das Speichern erneut, um deine Änderungen zu behalten.
 
-Lege Folgendes fest:
+Kann eine Datenvorschau nicht geladen werden, wähle im betroffenen Block **Vorschau neu laden**. So versuchst du es erneut, ohne den Builder neu zu laden.
+
+Diagramme zeigen Kategorien vom Typ Datum als lokalisierte Kalenderdaten. Textkategorien behalten ihre ursprüngliche Beschriftung, auch wenn sie wie ein Datum aussehen.
+
+### Blöcke auf der Arbeitsfläche anordnen
+
+Die Arbeitsfläche zeigt die aktuelle Entwurfsseite:
+
+- Der Server löst die Ergebnisse gespeicherter Ansichten und von GQL ohne Parameter für die Entwurfsseiten auf.
+- Datensätze verwenden die gemeinsame Datentabelle. Kennzahlen und Diagramme zeigen Aggregatergebnisse.
+- Formulare verwenden die vollständige gemeinsame Formularoberfläche. Das Absenden ist während der Bearbeitung deaktiviert.
+- Referenzierte Datensätze zeigen einen kontextbezogenen Platzhalter, weil ihr Ergebnis vom aktuellen Datensatz in der veröffentlichten Route abhängt. Gerendertes HTML folgt derselben Regel.
+
+Zeige mit dem Mauszeiger auf einen Block oder fokussiere ihn, um seinen kompakten Verschiebegriff zu sehen. Ziehe den Block an eine horizontale Kante, um ihn vor oder nach einem anderen Block zu stapeln. Ziehe ihn an eine vertikale Kante, um ihn neben einen Block, ein benachbartes Paar oder den ganzen Stapel zu setzen. Zeiger, Berührung und Tastatur verwenden dieselben benannten Ziele und Ansagen. Grids erstellt und entfernt Zeilen, Spalten, leere Layoutcontainer und ausgeglichene Breiten automatisch. Du wählst und bearbeitest nur Blöcke.
+
+**Block hinzufügen** gruppiert gewöhnliche Inhalte, Blöcke für den Seitendatensatz und erweiterte Einblicke und Aktionen. Ein Datenblock verwendet eine zugängliche gespeicherte Ansicht, wenn es eine gibt. Sonst beginnt er mit einer begrenzten GQL-Quelle aus einer verfügbaren Tabelle. Ein Block mit fehlenden Voraussetzungen bleibt im Menü sichtbar und erzeugt keinen unbrauchbaren Block.
+
+### Die App konfigurieren
+
+**App-Einstellungen** enthält **Allgemein**, **Zugriff** und **Lebenszyklus**. Änderungen an Name und Symbol verwenden denselben automatisch gespeicherten Entwurf. Wähle unter **Aktionen** einen vorhandenen Eintrag, um eine Formularaktion der Seitenleiste zu bearbeiten, oder wähle **Neue Aktion**, um eine hinzuzufügen. Im Inspektor stehen ihre Beschriftung, ihr Formular, feste Werte, Verfügbarkeit und Erfolgsnavigation. Inline-GQL und Markdown lassen sich in einem größeren Editor öffnen, ohne einen zweiten Entwurf oder einen eigenen Speicherschritt zu erzeugen.
+
+Lege fest:
 
 - **Name:** Zertifikatsanfragen
 - **Symbol:** Zertifikat
 - **Startseite:** Antrag
 
-Erstelle diese Seiten und prüfe sie anschließend im Builder:
+Erstelle diese Seiten und prüfe und verfeinere sie danach im Builder:
 
 | Seiten-ID | Titel | Navigation | Parameter |
 | --- | --- | --- | --- |
@@ -66,92 +91,110 @@ Erstelle diese Seiten und prüfe sie anschließend im Builder:
 | `requests` | Meine Anfragen | Sichtbar | Keine |
 | `request` | Anfragedetails | Verborgen | Erforderlicher Parameter `request_id`, Typ Record, Tabelle Zertifikatsanfragen |
 
-Seiten-IDs sind stabile Kennungen der Definition. Du kannst sie in den Seiteneinstellungen bearbeiten; der Builder aktualisiert Navigationsreferenzen atomar. Bezeichnungen dürfen sich ändern, ohne die Navigation zu unterbrechen. Die verborgene Detailseite wird aus einer Zeile oder nach erfolgreichem Absenden des Formulars geöffnet.
+Seiten-IDs sind stabile Kennungen der Definition. Du kannst sie in den **Seiteneinstellungen** bearbeiten. Der Builder aktualisiert dann die Navigationsverweise atomar. Bezeichnungen können sich ändern, ohne die Navigation zu unterbrechen. Personen erreichen die verborgene Detailseite über eine Zeile oder nach erfolgreichem Absenden des Formulars.
 
-**Prüfpunkt:** Der Entwurf öffnet Antrag, zeigt Antrag und Meine Anfragen in der Navigation und verbirgt Anfragedetails. Korrigiere andernfalls die Startseite, Sichtbarkeit jeder Seite und Reihenfolge im Seitenarray.
+**Prüfpunkt:** Der Entwurf öffnet Antrag, zeigt Antrag und Meine Anfragen in der Navigation und hält Anfragedetails heraus. Korrigiere andernfalls die Startseite, die Sichtbarkeit jeder Seite und die Reihenfolge im Seitenarray.
 
-## Antrag erstellen {icon="forms"}
+## Die Seite Antrag erstellen {icon="forms"}
 
-Füge eine Zeile über die volle Breite mit folgenden Blöcken hinzu:
+:::steps
+1. Füge eine Zeile über die volle Breite hinzu.
+2. Füge einen Markdown-Block hinzu, der die benötigten Informationen und die erwartete Bearbeitungszeit erklärt.
+3. Füge einen Formularblock mit **Zertifikat anfragen** hinzu.
+4. Setze in **Nach dem Absenden** des Formularblocks die **Zielseite** auf `request`.
+5. Binde `request_id` an **Vom Formular erstellter Datensatz**.
+:::
 
-1. Einen Markdown-Block, der die benötigten Informationen und die erwartete Bearbeitungszeit erklärt.
-2. Einen Formularblock mit **Zertifikat anfragen**.
-
-Wähle in den Einstellungen **Nach Erfolg** des Formularblocks **Navigieren**, als Ziel die Seite `request` und binde:
+Die Bindung lautet:
 
 ```text
 request_id = RESULT.recordId
 ```
 
-Aktiviere **Verlauf ersetzen**, damit Zurück nicht zu einem bereits abgeschlossenen Absendezustand führt. Das Formular bleibt für Pflichtfelder, Validierung, festen Status und Datensatzerstellung verantwortlich.
+Ein erfolgreiches Absenden ersetzt den Verlaufseintrag. Zurück führt deshalb nicht zum abgeschlossenen Absenden. Das Formular behält Pflichtfelder, Validierung, festen Status und Datensatzerstellung.
 
-**Prüfpunkt:** Nach erfolgreichem Absenden öffnet sich die Detail-URL der neuen Anfrage. Wenn die Erstellung gelingt, aber die Navigation nicht, korrigiere die Erfolgsbindung statt des Formulars.
+**Prüfpunkt:** Nach erfolgreichem Absenden öffnet sich die Detail-URL der neuen Anfrage. Gelingt die Erstellung, aber nicht die Navigation, korrigiere die Erfolgsbindung, nicht das Formular.
 
-## Meine Anfragen erstellen {icon="list-details"}
+## Die Seite Meine Anfragen erstellen {icon="list-details"}
 
-Füge einen Datensatzblock mit **Meine Zertifikatsanfragen** hinzu. Zeige nur die Felder, die zur Identifikation einer Anfrage benötigt werden. Nutze je nach erwarteter Bildschirmbreite eine kompakte Tabelle oder Karten.
+Füge einen Datensatzblock mit der gespeicherten Ansicht **Meine Zertifikatsanfragen** hinzu. Zeige nur die Felder, die eine Anfrage erkennbar machen. Nutze je nach erwarteter Bildschirmbreite eine kompakte Tabelle oder Karten.
 
-Lege als Zeilenziel die Seite `request` fest und binde:
+Setze **Zeile auf Seite öffnen** auf `request` und binde:
 
 ```text
 request_id = ROW.id
 ```
 
-Das veröffentlichte GQL muss `record.createdBy = @auth.id` in der serverseitig ausgeführten Quelle behalten. Die von der Tabelle dargestellten Zeilen sind Präsentation und niemals Zugriffskontrolle.
+Das veröffentlichte GQL muss `record.createdBy = @auth.id` in der Quelle behalten, die der Server ausführt. Die Zeilen, die die Tabelle zeigt, sind Darstellung und nie Zugriffskontrolle.
 
-**Prüfpunkt:** Die Auswahl einer sichtbaren Zeile öffnet ihre Detailseite. Das Ändern der URL auf eine andere Anfrage darf diesen Datensatz nicht offenlegen. Korrigiere Zeilennavigation und Zeilenautorisierung getrennt.
+**Prüfpunkt:** Die Auswahl einer sichtbaren Zeile öffnet ihre Detailseite. Änderst du die URL auf eine andere Anfrage, legt das diesen Datensatz nicht offen. Korrigiere Zeilennavigation und Zeilenautorisierung getrennt.
 
-## Anfragedetails erstellen {icon="file-description"}
+## Die Seite Anfragedetails erstellen {icon="file-description"}
 
-Füge unter **Routenparameter** einen Record-Parameter mit der ID `request_id` und der Tabelle **Zertifikatsanfragen** hinzu. Ergänze anschließend den Datensatzblock. Der Builder bindet denselben Routenparameter automatisch als Seitendatensatz; es gibt keine getrennte Einstellung für den Seitendatensatz:
+Füge unter **Routenparameter** einen Record-Parameter mit der ID `request_id` und der Tabelle **Zertifikatsanfragen** hinzu. Ergänze danach den Datensatzblock. Der Builder bindet denselben Routenparameter automatisch als Seitendatensatz. Eine eigene Einstellung für den Seitendatensatz gibt es nicht:
 
 ```text
 PARAMS.request_id
 ```
 
-Ordne die Seite nach dem Arbeitsablauf:
+Ordne die Seite in der Reihenfolge der Aufgabe:
 
-1. Ein Datensatzblock mit Titel, Status, Bearbeitungshinweis und eingereichten Details.
+1. Ein Datensatzblock mit Titel, Status, Bearbeitungshinweis und den eingereichten Details.
 2. Ein Kommentarblock für den Seitendatensatz.
-3. Generierte Dokumente im Datensatzblock, begrenzt auf die Vorlage Zertifikat.
-4. Einen Aktionsblock nur, wenn die aktuelle Zielgruppe einen passenden aktivierten Workflow-Launcher besitzt.
+3. Erzeugte Dokumente im Datensatzblock, begrenzt auf die Vorlage Zertifikat.
+4. Ein Aktionsblock, nur wenn die aktuelle Zielgruppe einen passenden aktivierten Workflow-Launcher hat.
 
-Felder für anfragende Personen sollten nach dem Absenden normalerweise schreibgeschützt sein. Wenn Korrekturen erlaubt sind, füge nur diese Felder unter **Bearbeitbare Felder** hinzu. Status, Genehmigungsdaten und generierte Ausgaben bleiben Eigentum des Workflows.
+Felder der anfragenden Person sind nach dem Absenden normalerweise schreibgeschützt. Sind Korrekturen erlaubt, füge nur diese Felder unter **Bearbeitbare Felder** hinzu. Status, Genehmigungsdaten und erzeugte Ausgaben bleiben beim Workflow.
 
-Wenn der Seitendatensatz fehlt, kann der Datensatzblock einen konfigurierten Leertext zeigen. Eine vorhandene Anfrage ohne generiertes Zertifikat besitzt einfach keinen Download-Eintrag; das aktuelle Schema kennt keinen eigenen Leertext für Dokumente.
+Fehlt der Seitendatensatz, kann der Datensatzblock einen konfigurierten Leertext zeigen. Eine vorhandene Anfrage ohne erzeugtes Zertifikat hat keinen Download-Eintrag. Das aktuelle Schema kennt keinen eigenen Leertext für Dokumente.
 
-**Prüfpunkt:** Status, Kommentare und generierte Dokumente bleiben nach dem Neuladen mit derselben Anfrage verknüpft. Ein Fehler gehört zur Datensatzbindung, zum Kommentarzugriff oder zu dem vom fehlerhaften Block benannten Dokument.
+**Prüfpunkt:** Status, Kommentare und erzeugte Dokumente bleiben nach dem Neuladen mit derselben Anfrage verknüpft. Ein Fehler gehört zur Datensatzbindung, zum Zugriff auf Kommentare oder zu dem Dokument, das der fehlerhafte Block nennt.
 
-## Verarbeitung außerhalb des Layouts halten {icon="route"}
+## Die Bearbeitung außerhalb des Layouts halten {icon="route"}
 
-Die verantwortliche Gruppe kann Anfragen im Grids-Arbeitsbereich oder in einer zweiten gewöhnlichen Grids App bearbeiten. Ein besonderer Admin-App-Typ ist nicht erforderlich.
+Die verantwortliche Gruppe kann Anfragen im Grids-Arbeitsbereich oder in einer zweiten gewöhnlichen Grids App bearbeiten. Ein besonderer App-Typ für die Administration ist nicht nötig.
 
-Der Workflow muss die Anfrage vor einer Änderung erneut lesen und validieren. Zusammengehörige Datensatzänderungen verwenden die atomare Grenze des Workflows für Datensatzänderungen; externe Auswirkungen beginnen erst nach der Festschreibung dieser Änderungen. So können nebenläufig prüfende Personen nicht unbemerkt einen veralteten Übergang anwenden.
+Der Workflow muss die Anfrage erneut lesen und validieren, bevor er sie ändert. Zusammengehörige Datensatzänderungen nutzen die atomare Grenze des Workflows für Datensatzänderungen. Externe Auswirkungen beginnen erst, wenn diese Änderungen gespeichert sind. So können gleichzeitig prüfende Personen keinen veralteten Übergang unbemerkt anwenden.
 
 ## Den vollständigen Ablauf testen {icon="shield-check"}
 
-Speichere den Entwurf, gewähre nur eigenen Testkonten für jede Zielgruppe Zugriff und prüfe:
+Speichere den Entwurf. Gib nur eigenen Testkonten Zugriff, je eines für jede Zielgruppe. Prüfe dann:
 
 :::steps
-1. Sende als anfragende Person eine gültige Anfrage und prüfe, dass sich ihre Detailseite sofort öffnet.
-2. Lade die Detail-URL neu und prüfe, dass dieselbe Anfrage geöffnet wird.
-3. Verwende eine andere Anfrage-ID und prüfe, dass weder Existenz noch Daten dieses Datensatzes offengelegt werden.
-4. Prüfe leere Liste, fehlende Kommentare, ausstehendes Dokument, abgeschlossenen Zustand, fehlenden Parameter und verweigerten Zugriff.
-5. Prüfe als verantwortliche Gruppe, dass die vorgesehenen Datensätze und Aktionen für die Verarbeitung verfügbar sind.
+1. Sende als anfragende Person eine gültige Anfrage. Prüfe, dass sich ihre Detailseite sofort öffnet.
+2. Lade die Detail-URL neu. Prüfe, dass sich dieselbe Anfrage öffnet.
+3. Verwende eine andere Anfrage-ID. Prüfe, dass weder der Datensatz noch seine Existenz offengelegt wird.
+4. Prüfe die Zustände: leere Liste, keine Kommentare, ausstehendes Dokument, abgeschlossen, fehlender Parameter und verweigert.
+5. Prüfe als verantwortliche Gruppe, dass die vorgesehenen Datensätze und Aktionen für die Bearbeitung verfügbar sind.
 6. Wiederhole den Ablauf auf breiten und schmalen Bildschirmen mit Tastaturnavigation.
 :::
 
-Die App ist bereit, wenn der Ablauf für anfragende Personen ohne Grids-Arbeitsbereich und ohne Kenntnisse der zugrunde liegenden Tabelle verständlich ist. Im Builder gibt es keinen Modus zur Nachahmung oder anonymen Vorschau. Teste öffentlichen Zugriff nur mit einer bewusst veröffentlichten Test-App.
+Die App ist bereit, wenn eine anfragende Person den Ablauf ohne Grids-Arbeitsbereich und ohne Kenntnis der Tabelle dahinter versteht. Der Builder hat keinen Modus, um als jemand anderes aufzutreten, und keine anonyme Vorschau. Teste öffentlichen Zugriff nur mit einer Test-App, die du bewusst veröffentlichst.
 
 ## Eine App offline nehmen oder löschen {icon="alert-triangle"}
 
-Öffne **App-Einstellungen → Lebenszyklus**. **App-Veröffentlichung aufheben** entfernt den aktiven Snapshot sofort, erhält aber Entwurf und Zugriffsfreigaben. Du kannst die App später weiter bearbeiten und erneut veröffentlichen. **App löschen** entfernt die App und ihre aktive URL, löscht aber keine Tabellen oder Datensätze der Basis. Beide Aktionen zeigen vor der Änderung eine destruktive Bestätigung; das Löschen kann im Builder nicht rückgängig gemacht werden.
+:::warning Das Löschen lässt sich im Builder nicht rückgängig machen
+Nachdem du **App löschen** bestätigt hast, kann der Builder die App nicht wiederherstellen.
+:::
+
+Öffne **App-Einstellungen → Lebenszyklus**:
+
+- **App nicht mehr veröffentlichen** entfernt den veröffentlichten Snapshot sofort. Entwurf und Zugriffseinträge bleiben, sodass du die App später bearbeiten und erneut veröffentlichen kannst.
+- **App löschen** entfernt die App und ihre veröffentlichte URL. Tabellen und Datensätze der Base löscht es nicht.
+
+Beide Aktionen fragen nach einer Bestätigung, bevor sich etwas ändert.
 
 ## Veröffentlichen und prüfen {icon="rocket"}
 
-Führe die Vorabprüfung zur Veröffentlichung aus, prüfe jede angeforderte Capability und veröffentliche die App. Öffne die eigenständige URL und wiederhole den Ablauf für anfragende Personen mit dem veröffentlichten Snapshot.
+:::steps
+1. Führe die Vorabprüfung zur Veröffentlichung aus.
+2. Prüfe jede angeforderte Capability.
+3. Veröffentliche die App.
+4. Öffne die eigenständige URL.
+5. Wiederhole den Ablauf der anfragenden Person mit dem veröffentlichten Snapshot.
+:::
 
-Wenn etwas scheitert, korrigiere die zuständige Ebene:
+Scheitert etwas, korrigiere die zuständige Ebene:
 
 | Problem | Zuständige Ebene |
 | --- | --- |
@@ -160,6 +203,6 @@ Wenn etwas scheitert, korrigiere die zuständige Ebene:
 | Abgelehnte Eingabe | Formular |
 | Veralteter Übergang oder teilweise Datensatzänderung | Workflow |
 | Fehlendes PDF | Dokumentvorlage oder Dokument |
-| Nicht verfügbare Aktion | Veröffentlichte Capability, Launcher-Status oder Berechtigung |
+| Nicht verfügbare Aktion | Veröffentlichte Capability, Launcher-Status oder Zugriff |
 
-Lies [Seiten und Blöcke](/app/grids/help/grids-custom-app-pages-blocks) für alle Einstellungen, [Veröffentlichen und Berechtigungen](/app/grids/help/grids-publish-custom-app) für die Vorabprüfung und [YAML und CLI](/app/grids/help/grids-custom-app-yaml-cli) für den entsprechenden Agentenablauf.
+Lies [Seiten und Blöcke in Grids Apps](/app/grids/help/grids-custom-app-pages-blocks) für alle Einstellungen, [Grids App veröffentlichen](/app/grids/help/grids-publish-custom-app) für die Vorabprüfung und [Grids App YAML & CLI](/app/grids/help/grids-custom-app-yaml-cli) für denselben Ablauf für Agenten.

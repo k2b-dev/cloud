@@ -5,7 +5,7 @@ section: Contributing
 order: 1304
 description: Run unit, render, and integration tests locally, and understand what the pull request gate and nightly run check.
 tags: [contributing, testing, ci]
-updated: 2026-10-09
+updated: 2026-10-10
 ---
 
 # Testing
@@ -247,12 +247,26 @@ branch:
   loaded document, it dispatches the frame's `load` event itself.
 - Fonts differ between machines and engines. A test that expects text to wrap
   or fit uses text that is clearly too long or clearly short enough.
-- Playwright's WebKit on Linux can stop a video for good after a seek when the
-  machine is heavily loaded, also after the seek that a media fragment such as
-  `#t=1` starts with: `waiting` follows, and the time no longer advances. A
-  test that checks that a video plays waits for its `playing` event or for the
-  promise of `play()`. It waits for `ended` only when playing to the end is
-  what it checks.
+- Playwright's WebKit on Linux can stop a video for good when `play()` arrives
+  during a seek or right as it ends. The video reports `playing`, often then
+  `waiting` and `stalled`, and its time no longer advances, although the whole
+  video is buffered. A loaded machine makes it more likely. A media fragment
+  such as `#t=0.001` starts a seek too: WebKit starts it once the first frame
+  has loaded, Chromium already with the metadata. `VideoPlayer` starts a
+  posterless address without a fragment of its own at `#t=0.001`, and a renewed
+  address at the point where it continues. A test that plays or seeks a video
+  waits until it shows a frame and no seek is under way,
+  `!video.seeking && video.readyState >= 2`, and then calls `play()` itself.
+  Played that way, the video did not stall in several hundred runs on a loaded
+  machine; `play()` from the page's own handlers as the seek ended, or one
+  frame later, stalled in 7 of 520. Because `playing` also comes before a
+  stall, a test that checks playback waits for `ended`. A test also lets each
+  seek end before it starts the next one: seeks that overlap can end at the
+  first one's point instead of the last one's. After a renewal, `VideoPlayer`
+  plays on by itself once the metadata has loaded, in WebKit during its seek;
+  moving that `play()` to the end of the seek did not measurably make it stall
+  less often. Renewed playback can therefore stall in Linux WebKit, so its test
+  waits for `ended` in Chromium and only for `playing` in WebKit.
 
 ## Replace modules in tests
 
@@ -465,10 +479,96 @@ Run the same commands locally before opening a pull request.
 
 An integration suite that starts its own container needs only Docker and its
 `CLOUD_TEST_*` targets, so it runs in the gate as well; the Files
-stable-reference suite starts a private Filegate this way. The integration job
-pulls such images first, with retries, because `docker run` does not retry a
-failed pull. When you add a suite like this or change its image, add the image
-to that pull step in `.github/workflows/ci.yml`.
+stable-reference suite starts a private Filegate this way, and the Assistant
+artifact suite a disposable PostgreSQL. The integration job pulls such images
+first through `.github/pull-images.sh`, with retries, because `docker run` does
+not retry a failed pull. When you add a suite like this or change its image,
+add the image to that pull step in `.github/workflows/ci.yml` and
+`.github/workflows/nightly.yml`. The `mirror-images` check cannot see which job
+runs a test file, so it does not report a missing image there; without it, the
+job pulls a Docker Hub image from Docker Hub.
+
+Tests that read a rendered PDF call Poppler's `pdftotext`, `pdfinfo`, and
+`pdffonts` from `PATH`; locally, install Poppler (`poppler-utils` on Debian
+and Ubuntu). CI does not install Poppler on the runner: `.github/poppler.sh
+install` pulls a Poppler image pinned by digest with the job's other images,
+starts it without network access, and links the three tools into
+`/usr/local/bin` as wrappers that run each call in that container. Installing
+from the runner's apt mirror hung, and Homebrew failed when its API host
+`formulae.brew.sh` timed out. In CI, the tools can open only files under the
+checkout, the temporary directory, and `$RUNNER_TEMP`. A test that writes its
+PDF anywhere else fails there with `Couldn't open file`, although it passes
+locally. To move to another Poppler version, bump the image in
+`.github/mirror-images.txt` and the mirror reference in that script, as
+described under [Where CI images come from](#where-ci-images-come-from). The
+image's publisher deletes its date tags after about eight months, so move the
+pin to a newer tag before that.
+
+### Where CI images come from
+
+No workflow pulls from Docker Hub: its limit for anonymous pulls failed CI runs.
+Every Docker Hub image that CI, the release workflows, or the image builds use
+is pinned by digest in `.github/mirror-images.txt` and comes from the public
+mirror `ghcr.io/k2b-dev/mirror/<name>:<tag>`, which serves the same digest:
+
+- Service containers, the `docker/setup-buildx-action` BuildKit image, the
+  SBOM generator of the release image builds, and the `# syntax=` and `FROM`
+  lines of every Dockerfile name the mirror reference, for example
+  `ghcr.io/k2b-dev/mirror/postgres:17-alpine@sha256:…`.
+- Steps and test fixtures that start an image by its Docker Hub name, such as
+  `docker run nats:2.14.3-alpine`, Compose, or the Files Filegate suites, get
+  it from `.github/pull-images.sh` in the same job. The script pulls the
+  mirrored digest and tags it with the Docker Hub name, so Docker finds the
+  image locally and never contacts Docker Hub. A script may name the mirror
+  reference instead, as the runtime recovery acceptance and
+  `.github/poppler.sh` do.
+
+The `mirror` job in `ci.yml` runs `.github/mirror-images.sh` before every job
+that pulls an image. It copies each listed image whose digest the mirror does
+not serve yet, unchanged, and checks that every listed digest can be pulled
+without credentials. Consumers pull by digest, so the mirror's tags are only
+labels. Registry requests are retried, and an image that still fails does not
+stop the others. The same workflow, `mirror-images.yml`, also runs weekly and
+on demand. A new package created by the first copy must be public; if the
+check reports that it is not, change its visibility in the package settings on
+GitHub once.
+
+The `mirror-images` check fails when a workflow or Dockerfile would pull a
+Docker Hub image directly, including through BuildKit's default SBOM generator,
+when a mirror reference does not carry the digest from the list, and when a
+list entry is no longer used.
+
+To add or bump an image:
+
+1. Look up the digest of its manifest list:
+
+   ```bash
+   docker buildx imagetools inspect postgres:17-alpine --format '{{json .Manifest}}' | jq -r .digest
+   ```
+
+2. Add or change the `<name>:<tag>@sha256:<digest>` line in
+   `.github/mirror-images.txt`.
+3. Use `ghcr.io/k2b-dev/mirror/<name>:<tag>@sha256:<digest>` in Dockerfiles,
+   service containers, BuildKit, and scripts, or pass the Docker Hub name to
+   `.github/pull-images.sh` before a step starts it. Run
+   `bun scripts/check.ts mirror-images`; it names every reference that still
+   carries the old digest.
+
+The pull request mirrors the new digest in its own `mirror` job before its other
+jobs pull it. A pull request from a fork cannot write packages: its `mirror` job
+fails on a new digest until a maintainer runs the `Mirror images` workflow on a
+branch of this repository with the same list. Dependabot does not update Docker
+images in this repository; bump them through the list.
+
+To try the copy against a local registry, log in to Docker Hub first: the
+script copies every listed image, which takes more manifest requests than
+Docker Hub allows anonymous clients.
+
+```bash
+docker run --detach --rm --name mirror-registry --publish 127.0.0.1:5000:5000 registry:2
+MIRROR=localhost:5000/mirror .github/mirror-images.sh
+docker rm --force mirror-registry
+```
 
 `gate` is the only required status check. It needs every other job in
 `ci.yml` and passes only when each one reports `success`, or `skipped` for a

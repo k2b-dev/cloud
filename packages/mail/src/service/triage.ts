@@ -2,7 +2,7 @@ import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { type ConversationTriageInput, MAX_CONVERSATION_ACTION_MESSAGES, type MailCommand } from "../contracts";
-import { requireMailboxPermission } from "./access";
+import { requireMailboxAccess, requireVisibleConversation, requireVisibleMessages } from "./access";
 import type { MailRequestContext } from "./auth";
 import { createActorCommands } from "./commands";
 import { isKeepProtectedDestination, isKeptConversation, keepError } from "./conversation-keep-rules";
@@ -28,8 +28,12 @@ export const createConversationTriageCommands = async (params: {
   input: ConversationTriageInput;
 }): Promise<Result<{ correlationId: string; commands: MailCommand[] }>> => {
   const input = params.input;
-  const permission = await requireMailboxPermission(params.context, params.mailboxId, "write");
+  const permission = await requireMailboxAccess(params.context, params.mailboxId, "write");
   if (!permission.ok) return permission;
+  const visible = await requireVisibleConversation(permission.data, params.conversationId);
+  if (!visible.ok) return visible;
+  const requestedMessages = await requireVisibleMessages(permission.data, input.messageIds ?? []);
+  if (!requestedMessages.ok) return requestedMessages;
   const conversationId = params.conversationId;
   const sourceFolderId = input.sourceFolderId;
   const roleDestination = input.kind === "move_to_role" ? await resolveRoleFolder(params.mailboxId, input.role) : null;
@@ -42,6 +46,7 @@ export const createConversationTriageCommands = async (params: {
     mailboxId: params.mailboxId,
     operation: "actorMutation",
     context: params.context,
+    conversationScoped: true,
     folderRequirements: [
       {
         folderId: sourceFolderId,

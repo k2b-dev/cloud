@@ -5,6 +5,7 @@ import { toPgUuidArray } from "@k2b/cloud/services/postgres";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import type { RemoteContentRuleInput, RemoteContentRuleScope } from "../contracts";
+import { requireMailboxAccess, requireVisibleMessages } from "./access";
 import { normalizeEmailAddress, normalizeEmailDomain } from "./address-normalization";
 import { auditActorFromRequest, type MailRequestContext, type PersonalPrincipal, personalPrincipal } from "./auth";
 import { createPinnedLookup, resolvePublicEndpoint } from "./connectors/endpoint-policy";
@@ -189,11 +190,13 @@ export const resolveMessagesRemoteContent = async (params: {
   mailboxId: string;
   messages: Array<{ id: string; from: Array<{ address: string }> }>;
 }): Promise<Result<Map<string, MessageRemoteContent>>> => {
-  const access = await resolveMailExecution({ mailboxId: params.mailboxId, operation: "actorRead", context: params.context });
+  const access = await requireMailboxAccess(params.context, params.mailboxId, "read");
   if (!access.ok) return access;
   const result = new Map<string, MessageRemoteContent>();
   if (params.messages.length === 0) return ok(result);
   const messageIds = params.messages.map((message) => message.id);
+  const visible = await requireVisibleMessages(access.data, messageIds);
+  if (!visible.ok) return visible;
   const images = await sql<RemoteImageRow[]>`
     SELECT image.id, image.message_id
     FROM mail.message_remote_images image
@@ -234,8 +237,10 @@ const remoteImageSource = async (params: {
   messageId: string;
   imageId: string;
 }): Promise<Result<string>> => {
-  const access = await resolveMailExecution({ mailboxId: params.mailboxId, operation: "actorRead", context: params.context });
+  const access = await requireMailboxAccess(params.context, params.mailboxId, "read");
   if (!access.ok) return access;
+  const visible = await requireVisibleMessages(access.data, [params.messageId]);
+  if (!visible.ok) return visible;
   const [image] = await sql<StoredRemoteImage[]>`
     SELECT image.source_url
     FROM mail.message_remote_images image

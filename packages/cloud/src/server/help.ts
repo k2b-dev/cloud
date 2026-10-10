@@ -3,6 +3,7 @@ import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 import { type HelpDocumentManifest, type HelpDocumentPayload, type HelpSearchPayload, helpLocaleChain } from "../shared/help";
 import { markdownToPlainText, renderHelpMarkdown } from "../shared/markdown";
+import { auth } from "./middleware/auth";
 
 const metadataSchema = z.object({
   id: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
@@ -133,6 +134,9 @@ export const defineHelp = (
  * Define one app-owned help corpus. The explicit source list is deliberate:
  * IDs, ordering and ownership stay visible in code; no filesystem scanning or
  * build-time convention is required.
+ *
+ * @deprecated Declare Help with `defineHelp()` and pass it to `app.start({ help })`. This router only
+ * requires sign-in; it does not apply the app's Help visibility, so the mounting app's routes must guard it.
  */
 export const defineHelpCollection = (options: { basePath: string; sources: readonly string[] }): HelpCollection => {
   const basePath = options.basePath.replace(/\/$/, "");
@@ -151,7 +155,10 @@ export const defineHelpCollection = (options: { basePath: string; sources: reado
     url: `${basePath}/${encodeURIComponent(id)}`,
   }));
 
-  const router = new Hono()
+  // Help is for signed-in people wherever an app mounts this router; its own route policy may narrow it further.
+  const router = new Hono();
+  router.use(auth.requireRole("authenticated"), auth.requireUser());
+  router
     .get("/search", (context) => {
       const query = context.req.query("q")?.trim().toLocaleLowerCase().slice(0, 200) ?? "";
       const payload: HelpSearchPayload = {

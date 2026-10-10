@@ -330,5 +330,21 @@ describe("@k2b/ui focus and color contract", () => {
 
     expect(outsideDayCss).toMatch(/color:\s*var\(--k2b-text-muted\)/);
     expect(outsideDayCss).not.toMatch(/opacity:/);
+
+    // Every other rule for an outside day's number, today's mark included, keeps that color.
+    const outsideDayRules = rules.filter(
+      (rule) =>
+        rule.selector.includes(".k2b-date-grid button") &&
+        !rule.selector.includes("::") &&
+        rule.selector.replace(/:not\([^)]*\)/g, "").includes('[data-outside="true"]'),
+    );
+    expect(outsideDayRules.map((rule) => rule.selector)).toContain(selector);
+    const fading = outsideDayRules
+      .filter((rule) => {
+        const declarations = cssDeclarations(rule.body);
+        return declarations.has("opacity") || (declarations.get("color") ?? []).some((color) => color !== "var(--k2b-text-muted)");
+      })
+      .map((rule) => rule.selector);
+    expect(fading).toEqual([]);
   });
 });

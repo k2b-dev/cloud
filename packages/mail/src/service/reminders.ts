@@ -2,6 +2,7 @@ import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import type { CancelConversationReminder, SetConversationReminder } from "../contracts";
 import { withShortIdDb } from "../lib/short-id";
+import { requireMailboxAccess, requireVisibleConversation } from "./access";
 import { type MailRequestContext, userBackedActor } from "./auth";
 import { lockMailboxForCollaboration } from "./collaboration";
 import { enqueueCollaborationNotifications } from "./notification-outbox";
@@ -66,7 +67,7 @@ const lockConversationReminder = async (params: {
   conversationId: string;
   userId: string;
 }): Promise<Result<ReminderRow | null>> => {
-  const allowed = await lockMailboxForCollaboration(params.context, params.mailboxId, "read", params.db);
+  const allowed = await lockMailboxForCollaboration(params.context, params.mailboxId, "read", params.db, params.conversationId);
   if (!allowed.ok) return allowed;
   const [conversation] = await params.db<{ id: string }[]>`
     SELECT id FROM mail.conversations
@@ -102,8 +103,10 @@ export const getConversationReminder = async (params: {
 }): Promise<Result<ConversationReminder | null>> => {
   const user = requireReminderUser(params.context);
   if (!user.ok) return user;
-  const allowed = await lockMailboxForCollaboration(params.context, params.mailboxId, "read", sql);
+  const allowed = await requireMailboxAccess(params.context, params.mailboxId, "read");
   if (!allowed.ok) return allowed;
+  const visible = await requireVisibleConversation(allowed.data, params.conversationId);
+  if (!visible.ok) return visible;
   const [conversation] = await sql<{ id: string }[]>`
     SELECT id FROM mail.conversations
     WHERE id = ${params.conversationId}::uuid AND mailbox_id = ${params.mailboxId}::uuid

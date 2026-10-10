@@ -3,7 +3,7 @@ import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, onMou
 import { createFieldMeta, Field, fieldControlAria, fieldDescribedBy } from "../internal/field";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { useDateConfigLocale } from "../intl/locale";
-import { useUiMessages } from "../intl/messages";
+import { resolveUiMessages, useUiMessages } from "../intl/messages";
 import {
   type DateRangeValue,
   dateKey,
@@ -16,6 +16,7 @@ import {
   isRangeEdge,
   monthDate,
   monthNames,
+  msUntilNextDay,
   normalizeTimeInput,
   orderedRange,
   parseDateValue,
@@ -329,6 +330,31 @@ function DatePickerPanel(props: {
       })),
     );
   });
+  // Today in the picker's time zone, the zone its values use. The browser reads
+  // the clock again at the next midnight there, when a hidden tab becomes visible
+  // again (timers may not fire on time while the device sleeps), and when the
+  // date config changes. The mark and its timer share each reading, so neither
+  // starts from an old one.
+  const [clockCheck, checkClock] = createSignal<void>(undefined, { equals: false });
+  const now = createMemo(() => {
+    clockCheck();
+    context();
+    return new Date();
+  });
+  const todayKey = createMemo(() => dateKey(now(), context()));
+  // The day's name is formatted in the date locale, so "today" joins it in the same language.
+  const todayLabel = (date: string) => resolveUiMessages(context().locale).todayDate({ date });
+  createEffect(() => {
+    const timer = window.setTimeout(() => checkClock(), msUntilNextDay(now(), context()));
+    onCleanup(() => window.clearTimeout(timer));
+  });
+  onMount(() => {
+    const refresh = () => {
+      if (document.visibilityState === "visible") checkClock();
+    };
+    document.addEventListener("visibilitychange", refresh);
+    onCleanup(() => document.removeEventListener("visibilitychange", refresh));
+  });
   let calendar: HTMLElement | undefined;
   // Days that belong to the visible month; the roving tabindex must land on one
   // of them or the grid becomes unreachable by keyboard after month navigation.
@@ -341,10 +367,7 @@ function DatePickerPanel(props: {
   // Remembers where arrow-key navigation left off so Tab returns to that day.
   const [focusedKey, setFocusedKey] = createSignal<string>();
   const defaultFocus = createMemo(() =>
-    resolveFocusDay(
-      monthDayKeys(),
-      focusedKey() || props.focusDate?.() || props.selected?.() || dateKey(dates.today(context()), context()),
-    ),
+    resolveFocusDay(monthDayKeys(), focusedKey() || props.focusDate?.() || props.selected?.() || todayKey()),
   );
 
   const moveMonth = (delta: number) => props.setVisibleMonth(dates.addMonths(props.visibleMonth(), delta, context()));
@@ -443,6 +466,7 @@ function DatePickerPanel(props: {
                     const range = () => props.range?.() ?? { start: null, end: null };
                     const active = () => selected() || isRangeEdge(cell.key, range());
                     const focusable = () => cell.key === defaultFocus();
+                    const today = () => cell.key === todayKey();
                     return (
                       <button
                         type="button"
@@ -451,7 +475,9 @@ function DatePickerPanel(props: {
                         data-date-focus={focusable() ? "true" : undefined}
                         data-outside={cell.outside ? "true" : undefined}
                         data-in-range={inRange(cell.key, range()) && !active() ? "true" : undefined}
-                        aria-label={cell.label}
+                        data-today={today() ? "true" : undefined}
+                        aria-current={today() ? "date" : undefined}
+                        aria-label={today() ? todayLabel(cell.label) : cell.label}
                         aria-selected={active()}
                         tabIndex={focusable() ? 0 : -1}
                         onClick={() => props.onSelect(cell.key)}

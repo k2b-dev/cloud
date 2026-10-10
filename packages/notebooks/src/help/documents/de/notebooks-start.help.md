@@ -1,42 +1,46 @@
 ---
 id: notebooks-start
-title: "Einstieg"
+title: "Mit Notizbüchern starten"
 icon: "ti ti-notebook"
-description: "Einen Markdown-Arbeitsbereich erstellen, Seiten verbinden und automatische Verzeichnisse ergänzen."
+description: "Ein Markdown-Notizbuch erstellen, seine Seiten verbinden und automatische Verzeichnisse ergänzen."
 order: 100
 ---
 
-Notizbücher sind Arbeitsbereiche für Wissen in Markdown. Inhalte bleiben zuerst lesbar und werden nur dort strukturiert oder automatisiert, wo es die Arbeit erleichtert.
+Notizbücher sind Arbeitsbereiche für Wissen in Markdown. Dein Text bleibt zuerst lesbar. Struktur oder Automatik ergänzt du nur dort, wo sie eine Notiz leichter nutzbar machen.
 
 **Von der Übersicht aus**
 
 ## Notizbuch finden oder erstellen {icon="layout-grid"}
 
 :::reference
-- **Alle Notizbücher:** Öffne ein vorhandenes Notizbuch oder erstelle ein neues, wenn die Inhalte eigene Zugriffsrechte und Einstellungen benötigen.
-- **Favoriten:** Markiere häufig verwendete Notizbücher als Favoriten.
-- **Suche und zuletzt verwendet:** Suche nach einem bekannten Namen oder setze deine letzte Arbeit fort.
-- **Weitermachen, wo du warst:** Öffnest du Notizbücher über die Navigation, landest du im Notizbuch, das du in diesem Browser zuletzt angesehen hast, auch wenn das in einem anderen Tab war. Wurde es gelöscht oder nicht mehr mit dir geteilt, öffnet sich stattdessen die Übersicht.
-- **Vorlagen:** Wähle eine Vorlage nur, wenn ihre Struktur zum Vorhaben passt. Für neue Anwendungsfälle ist ein leeres Notizbuch der sicherste Ausgangspunkt.
+- **Alle Notizbücher:** Die Übersicht zeigt alle Notizbücher, auf die du Zugriff hast. Öffne ein Notizbuch, um weiterzuarbeiten. Erstelle ein neues Notizbuch, wenn das Wissen eigenen Zugriff und eigene Einstellungen braucht.
+- **Favoriten:** Markiere ein Notizbuch als Favorit, damit du es in der Übersicht und der Seitenleiste schnell erreichst.
+- **Suche und letzte Notizen:** Suche nach einem bekannten Namen. Unter **Zuletzt bearbeitet** öffnest du eine deiner letzten Notizen aus allen Notizbüchern und arbeitest weiter.
+- **Weitermachen, wo du warst:** **Notizbücher** in der Navigation öffnet das Notizbuch, das du in diesem Browser zuletzt angesehen hast. Das gilt auch, wenn du es in einem anderen Tab angesehen hast. Wurde es gelöscht oder nicht mehr mit dir geteilt, öffnet sich die Übersicht.
+- **Vorlagen:** Wähle eine Vorlage nur, wenn ihre Struktur zur Arbeit passt. Für einen neuen Zweck ist ein leeres Notizbuch der sicherste Start.
 :::
 
 **Überblick**
 
-## In Ebenen arbeiten {icon="layers-subtract"}
+## Notizbuch in Ebenen aufbauen {icon="layers-subtract"}
 
 :::steps
-1. **Schreiben:** Beginne mit Überschriften, Absätzen, Aufgaben, Links und Anhängen.
-2. **Strukturieren:** Ergänze benannte :::data-Blöcke für eigene Felder. Halte Tabellen und Aufgaben neben dem Text, der sie erklärt.
-3. **Seiten auflisten:** Nutze :::query für gefilterte Seitenlisten und :::toc für Überschriften der aktuellen Notiz.
-4. **Lesen:** Nutze die Buchansicht als reduziertes Handbuch. Leserechte öffnen immer Buch; mit Schreib- oder Adminrechten stehen auch Bearbeiten und Schreibgeschützt zur Verfügung.
+1. **Schreiben:** Beginne mit Überschriften, Absätzen, Aufgaben, Links und Anhängen. Reines Markdown bleibt ohne Werkzeuge verständlich.
+2. **Strukturieren:** Ergänze benannte `:::data`-Blöcke für eigene Felder. Halte Tabellen und Aufgaben neben dem Text, der sie erklärt.
+3. **Seiten auflisten:** Ergänze `:::query` für gefilterte Seitenlisten. Ergänze `:::toc` für die Überschriften der aktuellen Notiz.
+4. **Lesen:** Nutze **Buch** als reduzierte Handbuchansicht. Zugriff **Ansehen** öffnet immer Buch. Mit Zugriff **Bearbeiten** oder **Verwalten** wählst du auch **Bearbeiten** oder **Schreibgeschützt**.
 :::
 
-## Häufige Wege {icon="route"}
+**Hier anfangen**
+
+## Häufige Aufgabe wählen {icon="route"}
 
 :::reference
-- **Notizen erfassen:** Erstelle oder öffne eine Notiz und halte Entscheidungen, Besprechungen, Recherchen oder Aufgaben in Markdown fest.
-- **Notiz herunterladen:** Lade den aktuellen Inhalt in den Notizdetails als Markdown oder PDF herunter. Das PDF zeigt die Notiz wie die Buchansicht, mit Hinweisen, benannten Daten, Inhaltsverzeichnis und Abfrageergebnissen; Bilder erscheinen als ihre Beschreibung und Diagramme als Quelltext. Die PDF-Datei wird im Arbeitsspeicher erzeugt und nicht gespeichert.
-- **Wissen verbinden:** Verknüpfe Notizen mit Notizlinks, Tags und Anhängen.
-- **Kleine Datenbestände pflegen:** Nutze Markdown-Tabellen und benannte Blöcke für überschaubare Daten nahe am erklärenden Text.
-- **Verzeichnis erstellen:** Frage Notizen nach Tags und eigenen benannten Daten ab. Ergebnisse aktualisieren sich nach gespeicherten Änderungen, ohne Code auszuführen.
+- **Notizen erfassen:** Öffne ein Notizbuch und erstelle oder wähle eine Notiz. Halte Entscheidungen, Besprechungen, Recherchen, Rezepte, Pläne und kleine Aufgabenlisten in Markdown fest.
+- **Notiz herunterladen:** Öffne die Notizdetails. Lade den aktuellen Inhalt als Markdown oder PDF herunter.
+- **Inhalt des PDFs:** Das PDF zeigt die Notiz wie die Buchansicht, mit Hinweisen, benannten Daten, Inhaltsverzeichnis und Abfrageergebnissen. Bilder erscheinen als ihre Beschreibung, Diagramme als Quelltext.
+- **Format des PDFs:** Der PDF-Export bietet drei A4-Vorlagen und **Eigenes CSS**. Notebooks verarbeitet das aktuelle Markdown, das CSS und das PDF im Arbeitsspeicher und speichert das PDF nicht.
+- **Wissen verbinden:** Nutze Notizlinks, Tags und Anhänge. So findet man verwandte Informationen, ohne alles in eine Datei zu verschieben.
+- **Kleine Daten pflegen:** Nutze Markdown-Tabellen und benannte Blöcke für kleine Datenbestände, die neben ihren Text gehören.
+- **Verzeichnis erstellen:** Frage Notizen nach Tags und eigenen benannten Daten ab. Ergebnisse aktualisieren sich nach gespeicherten Änderungen und führen keinen Code aus.
 :::

@@ -5,6 +5,7 @@ import { z } from "zod";
 import type { ConversationView, ConversationWorkStatus, FolderDisplay } from "../contracts";
 import { isAggregatedListing } from "../folder-display-rules";
 import type { MailSecurityAssessment } from "../security-contracts";
+import { conversationVisibleTo, draftVisibleTo, messageVisibleTo, requireVisibleConversation } from "./access";
 import { attachmentMimeOrder } from "./attachment-order";
 import { type MailRequestContext, userBackedActor } from "./auth";
 import { isUnassignedConversation, listLapsedAssignees } from "./collaborators";
@@ -95,8 +96,10 @@ export const isEffectiveDraftsFolder = (folder: FolderRoles, folders: FolderRole
   (folder.providerRole === "drafts" && !folders.some((candidate) => candidate.configuredRole === "drafts"));
 
 export const listFolders = async (context: MailRequestContext, mailboxId: string): Promise<Result<MailFolderView[]>> => {
-  const access = await resolveMailExecution({ mailboxId, operation: "actorRead", context });
+  const access = await resolveMailExecution({ mailboxId, operation: "actorRead", conversationScoped: true, context });
   if (!access.ok) return access;
+  const visibility = access.data.access;
+  if (!visibility) return fail(err.forbidden("Access denied"));
   const rows = await sql<
     {
       id: string;
@@ -147,12 +150,14 @@ export const listFolders = async (context: MailRequestContext, mailboxId: string
       FROM mail.message_placements placement
       WHERE placement.folder_id = f.id
         AND placement.deleted_at IS NULL
+        AND ${messageVisibleTo(visibility, sql`placement.message_id`)}
     ) placement_counts ON true
     LEFT JOIN LATERAL (
       SELECT COUNT(*)::int AS unread
       FROM mail.message_placements placement
       WHERE placement.folder_id = f.id
         AND placement.deleted_at IS NULL
+        AND ${messageVisibleTo(visibility, sql`placement.message_id`)}
         AND NOT ('\\Seen' = ANY(placement.flags))
     ) unread_counts ON true
     WHERE rr.mailbox_id = ${mailboxId}::uuid
@@ -176,8 +181,9 @@ export const listFolders = async (context: MailRequestContext, mailboxId: string
   const [draftCount] = draftsFolders.includes(true)
     ? await sql<{ total: number }[]>`
         SELECT COUNT(*)::int AS total
-        FROM mail.drafts
-        WHERE mailbox_id = ${mailboxId}::uuid AND origin = 'user' AND state = 'draft'
+        FROM mail.drafts d
+        WHERE d.mailbox_id = ${mailboxId}::uuid AND d.origin = 'user' AND d.state = 'draft'
+          AND ${draftVisibleTo(visibility, sql`d`)}
       `
     : [];
   const displayStates = folderDisplayStates(
@@ -192,26 +198,28 @@ export const listFolders = async (context: MailRequestContext, mailboxId: string
     })),
   );
   return ok(
-    rows.map((row, index) => {
-      const draftsFolder = draftsFolders[index];
-      return {
-        ...displayStates.get(row.id)!,
-        id: row.id,
-        parentId: row.parent_id,
-        name: row.name,
-        role: row.role,
-        providerRole: row.provider_role,
-        configuredRole: row.configured_role,
-        selectable: row.selectable,
-        display: row.display,
-        namespaceKinds: row.namespace_kinds,
-        discoveryState: row.discovery_state,
-        missingSince: row.missing_since ? toIso(row.missing_since) : null,
-        syncStatus: row.sync_status,
-        total: draftsFolder ? (draftCount?.total ?? 0) : row.total,
-        unread: draftsFolder ? 0 : row.unread,
-      };
-    }),
+    rows
+      .map((row, index) => {
+        const draftsFolder = draftsFolders[index];
+        return {
+          ...displayStates.get(row.id)!,
+          id: row.id,
+          parentId: row.parent_id,
+          name: row.name,
+          role: row.role,
+          providerRole: row.provider_role,
+          configuredRole: row.configured_role,
+          selectable: row.selectable,
+          display: row.display,
+          namespaceKinds: row.namespace_kinds,
+          discoveryState: row.discovery_state,
+          missingSince: row.missing_since ? toIso(row.missing_since) : null,
+          syncStatus: row.sync_status,
+          total: draftsFolder ? (draftCount?.total ?? 0) : row.total,
+          unread: draftsFolder ? 0 : row.unread,
+        };
+      })
+      .filter((folder) => visibility.scope === "mailbox" || folder.total > 0),
   );
 };
 
@@ -224,7 +232,7 @@ export type ConversationSummary = {
   participantLabels: string[];
   latestMessageAt: string;
   workStatus: "needs_action" | "waiting" | "done";
-  assigneeUserId: string | null;
+  assigneeUserIds: string[];
   snoozedUntil: string | null;
   revision: number;
   updatedAt: string;
@@ -248,7 +256,7 @@ type DbConversation = {
   participant_labels: unknown;
   latest_message_at: Date | string;
   work_status: ConversationSummary["workStatus"];
-  assignee_user_id: string | null;
+  assignee_user_ids: string[];
   snoozed_until: Date | string | null;
   revision: string | number;
   updated_at: Date | string;
@@ -277,8 +285,15 @@ export const listConversations = async (params: {
   cursor?: string;
   limit?: number;
 }): Promise<Result<{ items: ConversationSummary[]; nextCursor: string | null }>> => {
-  const access = await resolveMailExecution({ mailboxId: params.mailboxId, operation: "actorRead", context: params.context });
+  const access = await resolveMailExecution({
+    mailboxId: params.mailboxId,
+    operation: "actorRead",
+    conversationScoped: true,
+    context: params.context,
+  });
   if (!access.ok) return access;
+  const visibility = access.data.access;
+  if (!visibility) return fail(err.forbidden("Access denied"));
   const limit = Math.min(Math.max(Math.floor(params.limit ?? 50), 1), 100);
   const currentUserId = userBackedActor(params.context)?.id ?? null;
   const view = params.view ?? null;
@@ -312,7 +327,7 @@ export const listConversations = async (params: {
       participant_state.labels AS participant_labels,
       c.latest_message_at,
       c.work_status,
-      c.assignee_user_id,
+      COALESCE((SELECT array_agg(a.user_id::text ORDER BY a.assigned_at, a.user_id) FROM mail.conversation_assignees a WHERE a.conversation_id = c.id), ARRAY[]::text[]) AS assignee_user_ids,
       c.snoozed_until,
       c.revision,
       c.updated_at,
@@ -423,13 +438,14 @@ export const listConversations = async (params: {
       ) AS labels
     ) participant_state ON true
     WHERE c.mailbox_id = ${params.mailboxId}::uuid
+      AND ${conversationVisibleTo(visibility, sql`c.id`)}
       AND (${params.status ?? null}::text IS NULL OR c.work_status = ${params.status ?? null})
       AND (
         ${view}::text IS NULL
         OR (${view} = 'needs_action' AND c.work_status = 'needs_action' AND (c.snoozed_until IS NULL OR c.snoozed_until <= now()))
         OR (
           ${view} = 'mine'
-          AND c.assignee_user_id = ${currentUserId}::uuid
+          AND EXISTS (SELECT 1 FROM mail.conversation_assignees a WHERE a.conversation_id = c.id AND a.user_id = ${currentUserId}::uuid)
           AND c.work_status <> 'done'
           AND (c.snoozed_until IS NULL OR c.snoozed_until <= now())
         )
@@ -516,7 +532,7 @@ export const listConversations = async (params: {
     participantLabels: participantLabelsSchema.parse(row.participant_labels),
     latestMessageAt: toIso(row.latest_message_at),
     workStatus: row.work_status,
-    assigneeUserId: row.assignee_user_id,
+    assigneeUserIds: row.assignee_user_ids,
     snoozedUntil: row.snoozed_until ? toIso(row.snoozed_until) : null,
     revision: Number(row.revision),
     updatedAt: toIso(row.updated_at),
@@ -543,8 +559,15 @@ export const getConversationViewCounts = async (params: {
   context: MailRequestContext;
   mailboxId: string;
 }): Promise<Result<ConversationViewCounts>> => {
-  const access = await resolveMailExecution({ mailboxId: params.mailboxId, operation: "actorRead", context: params.context });
+  const access = await resolveMailExecution({
+    mailboxId: params.mailboxId,
+    operation: "actorRead",
+    conversationScoped: true,
+    context: params.context,
+  });
   if (!access.ok) return access;
+  const visibility = access.data.access;
+  if (!visibility) return fail(err.forbidden("Access denied"));
   const currentUserId = userBackedActor(params.context)?.id ?? null;
   const [lapsedAssignees, aggregatedScope] = await Promise.all([
     listLapsedAssignees({ mailboxIds: [params.mailboxId] }),
@@ -577,7 +600,7 @@ export const getConversationViewCounts = async (params: {
         )::int AS needs_action,
         COUNT(*) FILTER (
           WHERE scope.follow_up
-            AND scope.assignee_user_id = ${currentUserId}::uuid
+            AND EXISTS (SELECT 1 FROM mail.conversation_assignees a WHERE a.conversation_id = scope.id AND a.user_id = ${currentUserId}::uuid)
             AND scope.work_status <> 'done'
             AND (scope.snoozed_until IS NULL OR scope.snoozed_until <= now())
         )::int AS mine,
@@ -598,13 +621,14 @@ export const getConversationViewCounts = async (params: {
         COUNT(*) FILTER (WHERE scope.aggregated AND scope.follow_up AND scope.snoozed_until > now())::int AS snoozed,
         COUNT(*) FILTER (WHERE scope.send_problem)::int AS send_problems,
         COUNT(*) FILTER (WHERE scope.aggregated)::int AS recently_active,
-        (SELECT COUNT(*)::int FROM mail.conversation_keeps keep WHERE keep.mailbox_id = ${params.mailboxId}::uuid) AS kept
+        (SELECT COUNT(*)::int FROM mail.conversation_keeps keep
+          WHERE keep.mailbox_id = ${params.mailboxId}::uuid AND ${conversationVisibleTo(visibility, sql`keep.conversation_id`)}) AS kept
       FROM (
         SELECT
+          c.id,
           c.mailbox_id,
           c.work_status,
           c.snoozed_until,
-          c.assignee_user_id,
           bool_or(${isFollowUpMessage(sql`placement`, sql`outbox.id IS NOT NULL`)}) AS follow_up,
           bool_or(${hasSendProblem(sql`link.message_id`)}) AS send_problem,
           ${staysInAggregatedViewsAggregate(sql`placement.folder_id`, aggregatedScope)} AS aggregated
@@ -617,6 +641,7 @@ export const getConversationViewCounts = async (params: {
           ON outbox.message_id = link.message_id
          AND outbox.state <> 'cancelled'
         WHERE c.mailbox_id = ${params.mailboxId}::uuid
+      AND ${conversationVisibleTo(visibility, sql`c.id`)}
         GROUP BY c.id
         -- A conversation counts while one of its messages is filed somewhere or on its way out.
         HAVING bool_or(placement.message_id IS NOT NULL OR outbox.id IS NOT NULL)
@@ -738,8 +763,17 @@ export const listConversationMessages = async (params: {
   limit?: number;
   latest?: boolean;
 }): Promise<Result<{ items: MessageSummary[]; nextCursor: string | null }>> => {
-  const access = await resolveMailExecution({ mailboxId: params.mailboxId, operation: "actorRead", context: params.context });
+  const access = await resolveMailExecution({
+    mailboxId: params.mailboxId,
+    operation: "actorRead",
+    conversationScoped: true,
+    context: params.context,
+  });
   if (!access.ok) return access;
+  const visibility = access.data.access;
+  if (!visibility) return fail(err.forbidden("Access denied"));
+  const visible = await requireVisibleConversation(visibility, params.conversationId);
+  if (!visible.ok) return visible;
   const cursor = decodeCursor(params.cursor);
   if (!cursor.ok) return cursor;
   const limit = Math.min(Math.max(Math.floor(params.limit ?? 50), 1), 100);
@@ -1024,8 +1058,17 @@ export const listConversationMessageDetails = async (params: {
   preferredFolderId?: string | null;
   limit?: number;
 }): Promise<Result<MessageDetail[]>> => {
-  const access = await resolveMailExecution({ mailboxId: params.mailboxId, operation: "actorRead", context: params.context });
+  const access = await resolveMailExecution({
+    mailboxId: params.mailboxId,
+    operation: "actorRead",
+    conversationScoped: true,
+    context: params.context,
+  });
   if (!access.ok) return access;
+  const visibility = access.data.access;
+  if (!visibility) return fail(err.forbidden("Access denied"));
+  const visible = await requireVisibleConversation(visibility, params.conversationId);
+  if (!visible.ok) return visible;
   const limit = Math.min(Math.max(Math.floor(params.limit ?? 50), 1), 100);
   const rows = await sql<DbMessageDetail[]>`
     WITH selected_messages AS (
@@ -1054,8 +1097,15 @@ export const getMessage = async (params: {
   mailboxId: string;
   messageId: string;
 }): Promise<Result<MessageDetail>> => {
-  const access = await resolveMailExecution({ mailboxId: params.mailboxId, operation: "actorRead", context: params.context });
+  const access = await resolveMailExecution({
+    mailboxId: params.mailboxId,
+    operation: "actorRead",
+    conversationScoped: true,
+    context: params.context,
+  });
   if (!access.ok) return access;
+  const visibility = access.data.access;
+  if (!visibility) return fail(err.forbidden("Access denied"));
   const [row] = await sql<DbMessageDetail[]>`
     SELECT ${messageDetailSelect}
     FROM mail.message_contents mc
@@ -1064,6 +1114,7 @@ export const getMessage = async (params: {
     ${messageDetailAttachmentJoin}
     ${messageDetailDeliveryJoin}
     WHERE mc.id = ${params.messageId}::uuid AND mc.mailbox_id = ${params.mailboxId}::uuid
+      AND ${messageVisibleTo(visibility, sql`mc.id`)}
   `;
   if (!row) return fail(err.notFound("Message"));
   const resolved = await attachMessageMetadata(params.context, params.mailboxId, [mapMessageDetail(row)]);
@@ -1086,8 +1137,15 @@ export const openAttachment = async (params: {
   messageId: string;
   attachmentId: string;
 }): Promise<Result<AttachmentDownload>> => {
-  const access = await resolveMailExecution({ mailboxId: params.mailboxId, operation: "actorRead", context: params.context });
+  const access = await resolveMailExecution({
+    mailboxId: params.mailboxId,
+    operation: "actorRead",
+    conversationScoped: true,
+    context: params.context,
+  });
   if (!access.ok) return access;
+  const visibility = access.data.access;
+  if (!visibility) return fail(err.forbidden("Access denied"));
   const { messageId, attachmentId } = params;
   const [attachment] = await sql<
     {
@@ -1114,6 +1172,7 @@ export const openAttachment = async (params: {
     WHERE a.id = ${attachmentId}::uuid
       AND a.message_id = ${messageId}::uuid
       AND mc.mailbox_id = ${params.mailboxId}::uuid
+      AND ${messageVisibleTo(visibility, sql`mc.id`)}
   `;
   if (!attachment) return fail(err.notFound("Attachment"));
   const total = Number(attachment.byte_length);

@@ -2,9 +2,9 @@ import { markdown } from "@k2b/cloud/shared";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { convert, type HtmlToTextOptions } from "html-to-text";
+import { requireMailboxAccess, requireVisibleConversation } from "./access";
 import { attachmentMimeOrder } from "./attachment-order";
 import type { MailRequestContext } from "./auth";
-import { requireMailboxCollaborationPermission } from "./collaboration";
 import { isUnsentOutboundMessage } from "./conversation-timeline";
 
 /**
@@ -204,13 +204,16 @@ export const getConversationPreview = async (params: {
   mailboxId: string;
   conversationId: string;
 }): Promise<Result<ConversationPreview>> => {
-  const allowed = await requireMailboxCollaborationPermission(params.context, params.mailboxId, "read");
+  const allowed = await requireMailboxAccess(params.context, params.mailboxId, "read");
   if (!allowed.ok) return allowed.error.code === "FORBIDDEN" ? fail(err.notFound("Conversation")) : allowed;
+  const visible = await requireVisibleConversation(allowed.data, params.conversationId);
+  if (!visible.ok) return visible;
   const [row] = await sql<PreviewRow[]>`
     SELECT
       c.id,
       LEFT(c.summary, ${SOURCE_SUMMARY_MAX_LENGTH}) AS summary,
-      CASE WHEN c.assignee_user_id IS NULL THEN NULL ELSE COALESCE(NULLIF(assignee.display_name, ''), assignee.uid) END AS assignee_name,
+      (SELECT string_agg(COALESCE(NULLIF(u.display_name, ''), u.uid), ', ' ORDER BY a.assigned_at, a.user_id)
+        FROM mail.conversation_assignees a JOIN auth.users u ON u.id = a.user_id WHERE a.conversation_id = c.id) AS assignee_name,
       (SELECT COUNT(*)::int FROM mail.conversation_messages count_cm WHERE count_cm.conversation_id = c.id) AS message_count,
       latest.id AS latest_id,
       LEFT(latest_body.plain_text, ${SOURCE_TEXT_MAX_LENGTH}) AS latest_plain_text,
@@ -229,7 +232,6 @@ export const getConversationPreview = async (params: {
       ) AS attachment_count,
       first_attachment.filename AS first_attachment_name
     FROM mail.conversations c
-    LEFT JOIN auth.users assignee ON assignee.id = c.assignee_user_id
     -- Only the newest message's id here: Postgres evaluates select-list expressions on every
     -- row before the top-1 sort, which would decompress every body of a long conversation.
     LEFT JOIN LATERAL (

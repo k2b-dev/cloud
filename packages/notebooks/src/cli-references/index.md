@@ -254,6 +254,7 @@ cld notebooks rm ~/docs-mirror/archiv/neu.md --yes
 - `write <mirror file>` without `--from` uploads the file itself.
 - Writes and edits through a mirror file are checked against the manifest `contentHash`. If the note changed on the server since your pull, the write fails with 409 "changed elsewhere, pull first". Then `pull` reports the file as changed on both sides: copy your version aside, run `pull --force`, merge, and write again.
 - `edit` through a mirror file refuses a file with unsaved local changes; write the file first.
+- Line numbers for `edit` through a mirror file are the lines of the file, as your editor or `grep -n` shows them; `cat <mirror file>` with `--numbered`, `--blocks`, or `--json` numbers the same way. The front matter (5 lines in a pulled file) cannot be edited, so the note starts below it. They only map onto the note while the file matches its pull and the server copy: with local changes, a missing file, or another `--if-content-hash`, line edits are refused, and after a server change they fail with 409. Then write or pull first, or edit the note by ID with line numbers from `cld notebooks cat <id> --numbered`.
 - Changing the first heading renames the file; moving changes its folder. The mirror follows immediately.
 
 ## Read and write notes
@@ -264,11 +265,13 @@ cld notebooks rm ~/docs-mirror/archiv/neu.md --yes
 cld notebooks cat <note>                    # raw Markdown, pipeable
 cld notebooks cat <note> --numbered         # with 1-based line numbers
 cld notebooks cat <note> --blocks           # named block summary
-cld notebooks cat <note> --json             # content plus contentHash, lineCount, blocks
+cld notebooks cat <note> --json             # content plus contentHash, firstLine, lineCount, blocks
 cld notebooks stat <note> --json            # metadata only
 ```
 
 `cat` reads the live content, including changes from an editor that is open in the browser, so its `contentHash` matches what `write` and `edit` check. A note someone is typing in can still change between your read and your write.
+
+Line numbers from `cat` are the ones `edit` takes for the same address, so read and edit through the same address. For a note ID or `<notebook>:<path>`, they count the note lines. For a mirror file, they count the lines of the file: the note starts below its front matter, at line 6 of a pulled file, and `--json` reports that line as `firstLine`.
 
 ### Write a whole note
 
@@ -289,7 +292,7 @@ For an ID or `<notebook>:<path>` target, pass `--if-content-hash` from a previou
 
 ### Edit precisely
 
-Each `edit` performs exactly one operation. Line ranges are 1-based and inclusive; duplicate block indices are 0-based.
+Each `edit` performs exactly one operation. Line ranges are 1-based and inclusive; duplicate block indices are 0-based. Line numbers count as `cat --numbered` shows the same address: the note lines for a note ID or `<notebook>:<path>`, the lines of the file, including its front matter, for a mirror file (see [Daily edit workflow](#daily-edit-workflow)).
 
 ```bash
 cld notebooks edit <note> --append --if-content-hash "$HASH" --dry-run --from - <<'MD'
@@ -438,8 +441,8 @@ Treat JSON fields as the contract and tolerate additional fields.
 
 - `ls` without a notebook returns `{ data: Notebook[], pagination }`. With a notebook it returns `{ notebook: { id, name }, parentId, data: [{ id, title, hasChildren, updatedAt }] }`. `tree` returns the same with nested `children`.
 - `search`, `versions list` return `{ data, pagination }`; continue with `--page` while `pagination.has_next` is true. Search hits are `{ note, notebook: { id, name }, snippet }`.
-- `cat --json` returns `{ note, content, contentHash, lineCount, blocks: [{ name, type, line, startLine, endLine, hash }] }`; `cat --block --json` returns `{ note, block: { name, type, index, startLine, endLine, hash, content } }`.
-- `write --json` returns `{ action: "created" | "updated" | "unchanged", note, contentHash, mirrorPath? }`. `edit --json` returns `{ note, content, changed, beforeHash, afterHash, blocks, mirrorPath? }`. `mv --json` returns `{ note, mirrorPath? }`.
+- `cat --json` returns `{ note, content, contentHash, firstLine, lineCount, blocks: [{ name, type, line, startLine, endLine, hash }] }`; `cat --block --json` returns `{ note, block: { name, type, index, startLine, endLine, hash, content } }`. `firstLine` is the number of the first `content` line, and block lines use the same numbering: 1 for a note ID or `<notebook>:<path>`, below the front matter for a mirror file. `lineCount` counts the lines of `content`.
+- `write --json` returns `{ action: "created" | "updated" | "unchanged", note, contentHash, mirrorPath? }`. `edit --json` returns `{ note, content, changed, beforeHash, afterHash, firstLine, blocks, mirrorPath? }`, numbered like `cat --json`; through a mirror file, as the refreshed file shows them. `mv --json` returns `{ note, mirrorPath? }`.
 - `pull --json` returns `{ root, notebook, notes, written, removed, kept: [{ path, reason }], attachments: { downloaded, removed } }`. Reasons are `local-changes`, `changed-on-both-sides`, `deleted-on-server`, and `path-occupied`.
 - `attach --json` returns `{ attachment, markdown }`.
 - Errors in `--json` mode are printed to stderr as `{ "error": { "message", "status", "exitCode" } }`.

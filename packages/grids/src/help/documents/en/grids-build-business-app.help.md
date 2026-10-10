@@ -5,97 +5,118 @@ icon: ti ti-building-store
 description: Model inventory, loans, CRM, invoices, and expenses around the work people must complete.
 order: 107
 ---
-Start with one complete journey. Configuration requires Base Admin access. Templates are editable examples, not your business rules.
+Start with one complete journey. You need **Manage** access to the Base to configure it. Templates are editable examples, not your business rules.
 
 ## Choose the records you need {icon="table"}
 
-Every template includes Workflows, Document templates and published Apps. Template updates affect new Bases only; existing Bases keep their configuration and data.
+Every template includes workflows, document templates, and published apps. Template updates affect only new Bases. Existing Bases keep their configuration and data.
 
-- **Bookshop:** Start from orders, add positions within the order, and manage the catalog and customers in their own sections. The header shows fulfillment status; **Next step** offers shipping, collection, or completion as appropriate. Short create and edit Forms open in dialogs. Sending the order summary is optional and does not change fulfillment. Review the saved sale prices before sending it; later catalog changes do not update those prices or existing Documents.
-- **Finance:** Record income and expenses, check transactions against your bank, and compare the current month's spending with its budget. Receipt delivery is optional and does not mark a transaction as reconciled. Transfers are excluded from income and spending; the template does not synchronize bank balances.
-- **Inventory:** Borrowers select multiple kits and individual items in one request and track their own requests. At least one kit or item is required. Staff explicitly enable individual items for the catalog and use a separate loan-desk App for preparation, handover, and returns. Issue starts the physical loan; sending the agreement is optional. Returns work from the item detail as well as a scanner.
-- **Billing:** Draft and issue invoices, corrections, and commission self-billing, then record actual payments. Follow the Billing journey below.
+- **Bookshop:** Start from orders and add positions inside the order. The catalog and the customers have their own sections. The header shows the fulfillment status. **Next step** offers shipping, collection, or completion, as the order requires. Short forms to create and edit open in dialogs. Sending the order summary is optional and does not change the fulfillment. Review the saved sale prices before you send it. Later catalog changes do not update those prices or existing documents.
+- **Personal finance:** Record income and expenses, check transactions against your bank, and compare the spending of the current month with its budget. Sending a receipt is optional and does not mark a transaction as reconciled. Transfers count neither as income nor as spending. The template does not synchronize bank balances.
+- **Inventory:** Borrowers select several kits and single items in one request and track their own requests. A request needs at least one kit or item. Staff explicitly enable single items for the catalog. They use a separate loan-desk app for preparation, handover, and returns. Issuing starts the physical loan. Sending the agreement is optional. Returns work from the item detail and from a scanner.
+- **Billing:** Draft and issue invoices, corrections, and commission self-billing. Then record actual payments. Follow the Billing journey below.
 
-Bookshop and Finance each serve one working audience. Inventory separates borrowers from staff because they need different records and actions. Share the appropriate App instead of granting raw Base access to these audiences.
+Bookshop and Personal finance each serve one working audience. Inventory separates borrowers from staff, because they need different records and actions. Share the right app with these audiences instead of giving them raw access to the Base.
 
-Share **Equipment loans** with borrowers and **Loan desk** only with the staff who manage equipment and requests. The template does not assign these audiences automatically. Loan comments are shared with the requester; use the separate admin-notes field for internal notes.
+Share **Equipment loans** with borrowers. Share **Loan desk** only with the staff who look after equipment and requests. The template does not assign these audiences automatically. The requester sees the comments on a loan. Use the separate **Admin notes** field for internal notes.
 
 | Your task | Start with | First check |
 | --- | --- | --- |
 | List equipment | Items and Locations; Categories if needed | Each physical item has its own stable, unique code |
 | Lend equipment | Items, Loans, and Loan positions | One position links one item to one loan and records its issue and return |
-| Track customers and sales | Organisations, Contacts, Opportunities, and Activities | The responsible person and customer are clear |
+| Track customers and sales | Organisations, Contacts, Opportunities, and Activities | The responsible person and the customer are clear |
 | Issue invoices | Customers, Invoices, and Invoice lines | Quantity, price, tax, and customer facts match the intended invoice |
-| Reimburse expenses | Claims, Claim lines, receipt Files, and payment references | The claimant, reviewed facts, and payment evidence are distinguishable |
+| Reimburse expenses | Claims, Claim lines, receipt files, and payment references | The claimant, the reviewed facts, and the payment evidence are distinguishable |
 
-An inventory list needs fields, records and Views; add loans for handovers and returns. Use generated or unique codes for business identities and Principals for Cloud people/groups. Customer Relations do not grant access.
+An inventory list needs fields, records, and views. Add loans for handovers and returns. Use generated or unique codes for business identities. Use principal fields for Cloud people and groups. Customer relations do not give access.
 
-For merchandise management, scope purchases, receipts, orders, shipments, partial returns and stock. Displayed totals do not reserve stock: stock-changing actions must prevent concurrent over-allocation. Grids is not a ready-made ERP, accounting system or payment integration.
+For merchandise management, define the scope of purchases, receipts, orders, shipments, partial returns, and stock. Displayed totals do not reserve stock. Actions that change stock must prevent concurrent over-allocation. Grids is not a ready-made ERP, accounting system, or payment integration.
 
 ## Build in dependency order {icon="route"}
 
 :::steps
-1. **Define decisions.** Specify actors, prerequisites, changes that must happen together, and completion criteria.
-2. **Create tables and fields.** Add Relations after their target tables exist, then calculations. Use stored price and tax facts where later source changes must not alter the business record.
-3. **Try records.** Include missing data, multiple lines and a rejected case.
-4. **Add Forms and Workflows.** Forms collect input; actions enforce transitions such as issue, return, approve, and send. Keep transition fields out of ordinary App editing. Review **Table settings → Data integrity → Record changes** to control other write paths.
-5. **Build the App.** Add a task list, Record details, create Form, actions and Documents. See **Build a Grids App**.
-6. **Check access and publish.** Review the publish preflight and test the published journey with an account from each intended audience.
+1. **Define decisions.** Name the actors, the prerequisites, the changes that must happen together, and the completion criteria.
+2. **Create tables and fields.** Add relations after their target tables exist. Add calculations after that.
+3. **Store prices and tax.** Store price and tax facts where later source changes must not alter the business record.
+4. **Try records.** Include missing data, several lines, and a rejected case.
+5. **Add forms and workflows.** Forms collect input. Actions enforce transitions such as issue, return, approve, and send.
+6. **Protect transition fields.** Keep them out of ordinary app editing. Review **Table settings → Data integrity → Record changes** to control other write paths.
+7. **Build the app.** Add a task list, record details, a create form, actions, and documents. See [Build your first Grids App](/app/grids/help/grids-build-custom-app).
+8. **Check access and publish.** Review the publish preflight. Test the published journey with an account from each intended audience.
 :::
 
-Base Read exposes every record. Personal Views and hidden navigation do not isolate audiences. For narrower access, share Grids Apps with server-enforced queries and availability rules on lists, details, Forms and actions. Test another customer's copied opportunity URL; do not grant raw Base access to make a portal work.
+**View** access to a Base shows every record. Personal views and hidden navigation do not separate audiences. For narrower access, share Grids Apps with server-enforced queries and availability rules on lists, details, forms, and actions. Test a copied opportunity URL of another customer. Do not give raw access to the Base to make a portal work.
 
-Bind all required workflow inputs before publishing. Fixed launchers use stored bindings; `inputMode: prompt` requires App-supplied inputs, not a free-form dialog. Inventory's Add loan position row action binds `item` to `ROW.id` and `loan` to `RECORD.id`, avoiding a raw Base record picker.
+Bind all required workflow inputs before you publish. Fixed launchers use stored bindings. `inputMode: prompt` requires App-supplied inputs, not a free-form dialog. In Inventory, the row action Add loan position binds `item` to `ROW.id` and `loan` to `RECORD.id`. So it needs no raw record picker for the Base.
 
 ## Make handovers and deliveries safe to repeat {icon="repeat"}
 
-Create one loan position per item. Issue checks an approved or active loan, an eligible position and an available item, then stores the allocation and starts the loan. Return must match it: an old loan cannot return a newly lent item. Record damage before making items available. Close loans only after all positions finish.
+Create one loan position per item. Issuing checks for an approved or active loan, an eligible position, and an available item. Then it stores the allocation and starts the loan. The return must match the issue: an old loan cannot return a newly lent item. Record damage before you make items available again. Close a loan only after all its positions are finished.
 
-Inventory supplies issue/return actions; inspect them before adapting. Add positions before approving a requested loan. Kits describe equipment, not enforced future reservations.
+Inventory supplies issue and return actions. Inspect them before you adapt them. Add positions before you approve a requested loan. Kits describe equipment. They do not enforce future reservations.
 
-Use `atomicRecords` for bounded checks and changes that must succeed together. Separate update steps are not one transaction. Competing actions must coordinate on the same existing record. See **Workflows**.
+Use `atomicRecords` for bounded checks and changes that must succeed together. Separate update steps are not one transaction. Competing actions must coordinate on the same existing record. See [Workflows](/app/grids/help/grids-workflows).
 
-Claim a ready delivery before generating documents or sending email. A retry key identifies one invocation; independent requests still need a shared business-state check. Complete delivery only after its steps finish. If stuck, inspect the original run, Documents and email delivery before retrying. Cancellation does not undo sent email or Documents.
+Claim a ready delivery before you generate documents or send email. A retry key identifies one invocation. Independent requests still need a shared check of the business state. Complete the delivery only after all its steps finish.
 
-An interrupted template delivery needs a Base admin to review the original run under **Workflows**. Resolve the delivery there before resetting its status in the Base table; the App intentionally offers no blind resend action.
+:::warning Cancelling does not undo sent items
+Cancellation does not undo sent email or generated documents. If a delivery is stuck, inspect the original run, the documents, and the email delivery before you retry.
+:::
+
+When a template delivery is interrupted, a person with **Manage** access to the Base reviews the original run under **Workflows**. Resolve the delivery there before you reset its status in the Base table. The app offers no blind resend action on purpose.
 
 ## Preserve invoices {icon="file-invoice"}
 
-Generated Documents keep their original snapshot and exact files. Editing sources does not rewrite them. Repeatable templates create another Document; once-per-finalized-record templates retrieve the existing one. Finalizing a header does not recursively finalize related lines. Object-list positions belong to the header and freeze with it. Keep later payments in separate records.
+Generated documents keep their original snapshot and their exact files. Editing the sources does not rewrite them. A repeatable template creates another document. A template that runs once per finalized record returns the existing document. Finalizing a header does not recursively finalize related lines. Object-list positions belong to the header and freeze with it. Keep later payments in separate records.
 
 ## Start with Billing {icon="file-invoice"}
 
-The **Billing** template provides invoices, corrections and commission self-billing in EUR for distinct German business partners with German VAT IDs and 7% or 19% VAT. Other cases need a different model or renderer.
+The **Billing** template provides invoices, corrections, and commission self-billing in EUR. It covers distinct German business partners with German VAT IDs and 7% or 19% VAT. Other cases need a different model or renderer.
 
-1. Ask a Base admin to complete **Base settings → Documents** with real company and bank details. Sample records are drafts.
-2. Create an invoice, choose or create its partner, and enter Object-list positions. Check totals, service date and due date before issuing.
-3. Choose **Issue invoice** on the saved document page. You can keep working while the PDF is created. After a rendering failure, choose **Continue creation**: it keeps the same Document, company details and number. `REF-…` is an internal reference, not the invoice number.
-4. Choose **Record payment received**, **Record payout**, or **Record refund** on the bill. Enter the actual date and amount in the dialog and submit once. Recording and locking happen together; the balance updates immediately. This does not execute a bank transfer. Existing unreviewed entries still need review and confirmation; they do not affect the balance beforehand.
+:::steps
+1. Ask a person with **Manage** access to the Base to complete **Base settings → Documents** with real company and bank details. The sample records are drafts.
+2. Create an invoice. Choose or create its partner and enter the object-list positions.
+3. Check the totals, the service date, and the due date before you issue.
+4. Choose **Issue invoice** on the saved document page. You can keep working while Grids creates the PDF.
+5. After a rendering failure, choose **Continue creation**. It keeps the same document, company details, and number.
+6. Choose **Record payment received**, **Record payout**, or **Record refund** on the bill.
+7. Enter the actual date and amount in the dialog and submit once.
+:::
 
-**Open payments** groups overdue payments, payments due today or later, and credit balances to review. Open an amount due to record a payment. Credit balances open the original document for review. Only confirmed payments affect these lists.
+`REF-…` is an internal reference, not the invoice number. Recording a payment also locks it. The balance updates immediately. Recording a payment does not execute a bank transfer. Existing unreviewed entries still need review and confirmation. Until then, they do not affect the balance.
 
-Choose **Use as new invoice** on a finalized invoice to create a fresh draft with its recipient, buyer reference and positions. Check current partner details and prices, and choose new service and due dates. Payments, corrections, internal notes and issued files are not copied.
+**Open payments** groups payments into **Overdue**, **Due today or later**, and **Overpayments to review**. Open an amount due to record a payment. An overpayment opens the original document for review. Only confirmed payments affect these lists.
 
-Partners receive a read-only customer number such as **KD-00001**, unique within the Base. Find it in the partner list, recipient selection, partner details and bill details. Renaming a partner keeps their number.
+Choose **Use as new invoice** on a finalized invoice to create a fresh draft with its recipient, buyer reference, and positions. Check the current partner details and prices, and choose new service and due dates. Payments, corrections, internal notes, and issued files are not copied.
 
-Prepare corrections from the original invoice; reduce copied positions for a partial correction. Checks preserve the remaining net and VAT at each rate. Self-billing needs an agreement reference and the recipient's bank account; enter positions directly and avoid settling the same obligation twice. **Discard draft** moves unfinished bills to Trash, not issued bills. Internal notes are not included in PDF/XML.
+Partners receive a read-only customer number such as KD-00001, unique within the Base. You find it in the partner list, the recipient selection, the partner details, and the bill details. Renaming a partner keeps the number.
 
-Corrections start with today's document date and no due date; review these before issuing. Record customer refunds with **Record refund** on the original invoice, using a positive amount. Confirmation subtracts the refund from received payments and rejects amounts above the current credit balance, including competing confirmations. A correction has no separate payment balance. Pending payments and refunds can be discarded; confirmed ones remain immutable.
+### Correct and settle bills
 
-HTML invoice starters are not E-Invoices. Check the installed renderer's currency, tax, address and correction scope and both output artifacts. The issuer remains responsible; validation is not tax or legal approval. Bookshop sends order summaries; use Billing for invoices.
+Prepare a correction from the original invoice. For a partial correction, reduce the copied positions. Checks preserve the remaining net and VAT at each rate. Self-billing needs an agreement reference and the bank account of the recipient. Enter its positions directly, and do not settle the same obligation twice. **Discard draft** moves unfinished bills to the trash. It does not apply to issued bills. Internal notes do not appear in the PDF or XML.
+
+A correction starts with today's document date and no due date. Review both before you issue it. Record a customer refund with **Record refund** on the original invoice, with a positive amount. Confirmation subtracts the refund from the received payments. It rejects amounts above the current overpayment, also when confirmations compete. A correction has no separate payment balance. You can discard pending payments and refunds. Confirmed ones stay immutable.
+
+HTML invoice starters are not E-Invoices. Check the currency, tax, address, and correction scope of the installed renderer and both output artifacts. The issuer stays responsible. Validation is not a tax or legal approval. Bookshop sends order summaries. Use Billing for invoices.
 
 ## Review expenses {icon="checklist"}
 
-For expenses, fix the signed-in claimant in the Form instead of letting people choose another identity. Four-eyes Finalization requires a different person from the person who requested Finalization. It does not compare a separate claimant field: if someone submits on the claimant's behalf, you still need to enforce the no-self-approval rule for that claimant.
+For expenses, fix the signed-in claimant in the form. Do not let people choose another identity. Four-eyes finalization requires a person other than the one who requested finalization. It does not compare a separate claimant field. If someone submits for the claimant, you must still enforce that the claimant does not approve their own claim.
 
-Review covers an exact Record version. Changes to its values, Relations or Files invalidate its pending request; related-line edits do not. Define the submission's records and receipt versions and require fresh review after changes. Header approval does not approve later line edits. See **Tables & fields** for access and permanent history/finalization settings.
+A review covers one exact record version. Changes to its values, relations, or files invalidate its pending request. Edits of related lines do not. Define which records and receipt versions a submission contains, and require a fresh review after changes. Header approval does not approve later line edits. [Tables & fields](/app/grids/help/grids-tables-fields) describes access and the permanent settings for history and finalization.
 
-A Paid checkbox transfers nothing. Payment execution needs a connected system, stable references and duplicate/uncertain-request handling. Investigate uncertain HTTP effects there before retrying. Finance tracks transactions and receipt delivery, not claimant/approver reimbursements.
+A Paid checkbox transfers nothing. Payment execution needs a connected system, stable references, and handling of duplicate or uncertain requests. Investigate uncertain HTTP effects in that system before you retry. Personal finance tracks transactions and receipt delivery. It does not reimburse claimants after approval.
 
 ## Verify the whole journey {icon="checklist"}
 
-Test an empty list, a normal submission, a stale edit, and missing or inaccessible record IDs. Repeat the journey after reload and through a copied detail URL. Try two independent issue, send, or payment requests, and inspect an interrupted operation. For expenses, also test claimant self-approval and changed receipts or lines after review.
+:::steps
+1. Test an empty list, a normal submission, a stale edit, and missing or inaccessible record IDs.
+2. Repeat the journey after a reload and through a copied detail URL.
+3. Try two independent issue, send, or payment requests.
+4. Inspect an interrupted operation.
+5. For expenses, test self-approval by the claimant and receipts or lines that change after review.
+:::
 
-Record results, uncertainties, the App link, responsible operator and recovery steps. A valid draft does not prove isolation, safe retries or correct payments.
+Record the results, the uncertainties, the app link, the responsible operator, and the recovery steps. A valid draft does not prove isolation, safe retries, or correct payments.
 
-Continue with [Build a Grids App](/app/grids/help/grids-build-custom-app), [Workflows](/app/grids/help/grids-workflows), [Documents & PDFs](/app/grids/help/grids-documents-pdfs), and [Tables & fields](/app/grids/help/grids-tables-fields).
+Continue with [Build your first Grids App](/app/grids/help/grids-build-custom-app), [Workflows](/app/grids/help/grids-workflows), [Documents & PDFs](/app/grids/help/grids-documents-pdfs), and [Tables & fields](/app/grids/help/grids-tables-fields).
