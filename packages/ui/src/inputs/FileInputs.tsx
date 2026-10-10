@@ -495,7 +495,7 @@ export function ImageCropper(props: ImageCropperProps): JSX.Element {
 
   const startDrag = (handle: DragHandle, event: PointerEvent) => {
     const currentCrop = crop();
-    if (!currentCrop || disabled()) return;
+    if (!currentCrop || disabled() || event.button !== 0) return;
     event.preventDefault();
     event.stopPropagation();
     (event.currentTarget as Element).setPointerCapture?.(event.pointerId);

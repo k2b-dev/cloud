@@ -365,7 +365,7 @@ function PanesSplitRenderer(props: Omit<RendererProps, "node"> & { node: () => P
     };
   };
   const startResize = (event: PointerEvent) => {
-    if (!props.canResize()) return;
+    if (!props.canResize() || event.button !== 0) return;
     event.preventDefault();
     stopActiveResize();
     const pointerId = event.pointerId;
@@ -563,6 +563,7 @@ function PanesGroupRenderer(props: Omit<RendererProps, "node"> & { node: () => P
     syncScrollbar();
   };
   const startScrollbarDrag = (event: PointerEvent & { currentTarget: HTMLDivElement }) => {
+    if (event.button !== 0) return;
     event.preventDefault();
     const track = event.currentTarget;
     const current = scrollbar();

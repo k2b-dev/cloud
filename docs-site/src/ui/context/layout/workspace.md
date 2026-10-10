@@ -567,10 +567,12 @@ iPadOS; outside a drag, text selects as usual.
 
 A custom pointer drag gets the same behavior from `suppressTextSelection`.
 Call it with the pointer's id when the drag starts and call the function it
-returns when the drag ends. The pointer's `pointerup` or `pointercancel` and a
-window `blur` also end it, overlapping drags share it, and the last release
-restores the page's inline styles exactly. A selection from before the press
-stays; one the press or the drag makes is cleared.
+returns when the drag ends. Start a drag only on a primary-button press: a
+context menu can swallow the release of a secondary press, and the hold would
+then last until the pointer's next release. The pointer's `pointerup` or
+`pointercancel` and a window `blur` also end it, overlapping drags share it,
+and the last release restores the page's inline styles exactly. A selection
+from before the press stays; one the press or the drag makes is cleared.
 
 ```ts
 declare function suppressTextSelection(pointerId: number): () => void;

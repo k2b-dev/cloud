@@ -291,6 +291,7 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
   };
 
   const startScrollbarDrag = (event: PointerEvent & { currentTarget: HTMLDivElement }, axis: DataTableScrollbarAxis) => {
+    if (event.button !== 0) return;
     event.preventDefault();
     const metrics = scrollbars()[axis];
     const rect = event.currentTarget.getBoundingClientRect();

@@ -633,7 +633,7 @@ export const DesktopWorkspace = ((props: DesktopWorkspaceProps) => {
 
   const resizeSidebar = (event: PointerEvent) => {
     const pane = sidebar();
-    if (!pane?.resizable) return;
+    if (!pane?.resizable || event.button !== 0) return;
     const start = sidebarOpen() ? sidebarSize() : sidebarColumnSize();
     document.body.style.cursor = "col-resize";
     startDesktopResize(event, (dx) => {
@@ -651,7 +651,7 @@ export const DesktopWorkspace = ((props: DesktopWorkspaceProps) => {
 
   const resizeRight = (event: PointerEvent) => {
     const pane = right();
-    if (!pane?.resizable) return;
+    if (!pane?.resizable || event.button !== 0) return;
     const start = rightOpen() ? rightSize() : rightColumnSize();
     document.body.style.cursor = "col-resize";
     startDesktopResize(event, (dx) => {
@@ -669,7 +669,7 @@ export const DesktopWorkspace = ((props: DesktopWorkspaceProps) => {
 
   const resizeBottom = (event: PointerEvent) => {
     const pane = bottom();
-    if (!pane?.resizable) return;
+    if (!pane?.resizable || event.button !== 0) return;
     const start = bottomOpen() ? bottomSize() : bottomRowSize();
     document.body.style.cursor = "row-resize";
     startDesktopResize(event, (_dx, dy) => {

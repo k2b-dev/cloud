@@ -170,7 +170,7 @@ export default function NotebookGraph(props: Props) {
 
   // Background pan.
   const onCanvasPointerDown = (event: PointerEvent) => {
-    if (event.target !== svgRef && (event.target as Element).tagName !== "rect") return;
+    if (event.button !== 0 || (event.target !== svgRef && (event.target as Element).tagName !== "rect")) return;
     const startX = event.clientX;
     const startY = event.clientY;
     const startPan = pan();
@@ -199,7 +199,7 @@ export default function NotebookGraph(props: Props) {
 
   const onNodePointerDown = (node: SimNode, event: PointerEvent) => {
     event.stopPropagation();
-    if (!simulation) return;
+    if (!simulation || event.button !== 0) return;
 
     // Snapshot the node's position at click time. `fx`/`fy` track *absolute*
     // coords from this origin — using `node.x` (which the simulation rewrites

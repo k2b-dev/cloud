@@ -62,6 +62,7 @@ export function ChoiceGroups(props: {
     syncScrollbar();
   };
   const startScrollbarDrag = (event: PointerEvent & { currentTarget: HTMLDivElement }) => {
+    if (event.button !== 0) return;
     event.preventDefault();
     const track = event.currentTarget;
     const current = scrollbar();
