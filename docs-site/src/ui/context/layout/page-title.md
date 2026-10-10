@@ -32,7 +32,7 @@ back when it widens. It changes no geometry.
 import { PageTitle, type PageTrailState } from "@k2b/ui";
 ```
 
-## Show a title with its way up
+## Use PageTitle
 
 ```tsx
 const trail: PageTrailState = {
@@ -78,7 +78,8 @@ During server rendering the provider's context carries the trail. It also
 publishes the trail into the document, where parts rendered in the browser,
 such as islands, read it with `usePageTrail()`. After an in-page navigation,
 call `setPageTrail(next)`; every reader outside a provider follows.
-`readPageTrail()` returns the published trail. In an app that renders the
+`readPageTrail()` returns the published trail, and `window` receives
+`PAGE_TRAIL_EVENT` each time `setPageTrail()` publishes one. In an app that renders the
 provider itself in the browser, its `trail` prop is the source: pass a signal's
 value, and the readers below follow the prop.
 
@@ -106,3 +107,33 @@ costs no extra layout. Both return a disposer.
   popover; it closes with Escape or a click elsewhere.
 - On touch screens, the small links and `…` get a larger tap area that takes
   no space.
+
+## Runtime
+
+`PageTitle` renders on the server, and its links work without JavaScript.
+Collapsing a path that does not fit needs a hydrated `PageTitle` or
+`installPageTitleController()`. The phone arrow and the row above the title
+switch with CSS at 48 rem, so a page arrives in its final form. A trail
+published with `PageTrailProvider` travels as JSON in a
+`script[data-k2b-page-trail]` element; `setPageTrail()` replaces it in place.
+
+## Example
+
+```tsx
+import { PageTitle, PageTrailProvider, type PageTrailState } from "@k2b/ui";
+
+const trail: PageTrailState = {
+  title: "Supplier A",
+  ancestors: [
+    { title: "Projects", href: "/files?path=Projects" },
+    { title: "2026", href: "/files?path=Projects%2F2026" },
+  ],
+};
+
+<PageTrailProvider trail={trail}>
+  <header class="flex min-h-[2.875rem] items-center gap-2 px-2">
+    <PageTitle trail={trail} subtitle="6 items" />
+  </header>
+  <FolderRows />
+</PageTrailProvider>
+```
