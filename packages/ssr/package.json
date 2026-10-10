@@ -33,17 +33,17 @@
     "@babel/core": "7.29.7",
     "@babel/preset-typescript": "7.29.7",
     "@types/babel__core": "7.20.5",
-    "babel-preset-solid": "1.9.15",
-    "seroval": "1.6.7"
+    "babel-preset-solid": "1.9.16",
+    "seroval": "1.6.8"
   },
   "devDependencies": {
     "@happy-dom/global-registrator": "20.14.5",
     "@types/bun": "1.4.2",
-    "elysia": "1.4.29",
+    "elysia": "1.4.30",
     "file-type": "21.3.4",
     "happy-dom": "20.14.5",
-    "hono": "4.13.9",
-    "solid-js": "1.9.15",
+    "hono": "4.13.13",
+    "solid-js": "1.9.16",
     "typescript": "7.0.2"
   },
   "license": "MIT",
