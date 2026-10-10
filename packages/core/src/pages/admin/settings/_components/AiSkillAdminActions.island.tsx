@@ -4,15 +4,29 @@ import { coreClient } from "@k2b/cloud/clients/core";
 import { AuthenticatedPrincipalSchema } from "@k2b/cloud/contracts";
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
-import { Button, Dropdown, InlineGuidance, NoticeCard, Placeholder, prompts, Select, toast, useLocale } from "@k2b/ui";
-import { createSignal, For, Show } from "solid-js";
+import {
+  Button,
+  Dropdown,
+  dialogCore,
+  InlineGuidance,
+  NoticeCard,
+  PanelDialog,
+  Placeholder,
+  panelDialogWideOptions,
+  prompts,
+  toast,
+  useLocale,
+} from "@k2b/ui";
+import { createMemo, For, Show } from "solid-js";
 import { settingsMessages } from "./messages";
+import { diffSkillVersions } from "./skill-diff";
 
 type Props = {
   skillId: string;
   skillName: string;
   revision: number;
-  templateId: string | null;
+  /** Set for a Skill an app ships; its name is already in the request locale. */
+  source: { appName: string; status: "current" | "modified" | "update_available" } | null;
 };
 
 const readError = async (response: Pick<Response, "json">, fallback: string): Promise<string> => {
@@ -128,86 +142,137 @@ const openPermissionDialog = async (props: Props) => {
   refreshCurrentPath();
 };
 
-const TemplateDialogBody = (props: Props & { close: () => void }) => {
+const AppVersionDialog = (props: Props & { appName: string; close: () => void }) => {
   const locale = useLocale();
   const t = () => settingsMessages.resolve([locale()]).t;
-  const [selected, setSelected] = createSignal(props.templateId ?? "");
-  const templates = query.create({
+  const version = query.create({
     source: () => props.skillId,
-    load: async (_skillId, { abortSignal }) => {
-      const response = await coreClient.admin.core["ai-skills"].templates.$get({}, { init: { signal: abortSignal } });
-      if (!response.ok) throw new Error(await readError(response, t().skillTemplateFailed));
-      return (await response.json()).templates;
+    load: async (skillId, { abortSignal }) => {
+      const response = await coreClient.admin.core["ai-skills"][":skillId"]["app-version"].$get(
+        { param: { skillId } },
+        { init: { signal: abortSignal } },
+      );
+      if (!response.ok) throw new Error(await readError(response, t().appVersionFailed));
+      return response.json();
     },
   });
-  const apply = mutations.create<void, { mode: "associate" | "reset"; templateId: string; templateVersion: number }>({
-    mutation: async (input) => {
-      const response = await coreClient.admin.core["ai-skills"][":skillId"].template.$post({
+  const files = createMemo(() => {
+    const data = version.data();
+    return data?.app ? diffSkillVersions(data.current, data.app) : [];
+  });
+  const reset = mutations.create<void, string>({
+    mutation: async (appVersion) => {
+      const response = await coreClient.admin.core["ai-skills"][":skillId"].reset.$post({
         param: { skillId: props.skillId },
-        json: { ...input, expectedRevision: props.revision, confirmed: true },
+        json: { expectedRevision: props.revision, expectedAppVersion: appVersion, confirmed: true },
       });
-      if (!response.ok) throw new Error(await readError(response, t().skillTemplateFailed));
+      if (!response.ok) throw new Error(await readError(response, t().skillResetFailed));
     },
     onSuccess: () => {
-      toast.success(t().skillTemplateSaved);
+      toast.success(t().skillResetDone);
       props.close();
       refreshCurrentPath();
     },
-    onError: (error) => prompts.error(error.message),
+    onError: (error) => prompts.error(error instanceof Error ? error.message : t().skillResetFailed),
   });
-  const submit = async () => {
-    const template = templates.data()?.find((item) => item.templateId === selected());
-    if (!template || apply.loading()) return;
-    const mode = props.templateId ? "reset" : "associate";
-    if (
-      await prompts.confirm(
-        mode === "reset"
-          ? t().resetSkillTemplateConfirm({ name: props.skillName, template: template.name, version: template.version })
-          : t().associateSkillTemplateConfirm({ name: props.skillName, template: template.name }),
-        {
-          title: mode === "reset" ? t().resetSkillTemplate : t().associateSkillTemplate,
-          confirmText: mode === "reset" ? t().resetSkillTemplate : t().associateSkillTemplate,
-          variant: mode === "reset" ? "danger" : "primary",
-        },
-      )
-    )
-      await apply.mutate({ mode, templateId: template.templateId, templateVersion: template.version });
+  const confirmReset = async () => {
+    const appVersion = version.data()?.appVersion;
+    if (!appVersion) return;
+    const confirmed = await prompts.confirm(t().resetToAppConfirm({ name: props.skillName, app: props.appName }), {
+      title: t().resetToApp,
+      icon: "ti ti-restore",
+      variant: "danger",
+      confirmText: t().resetToApp,
+    });
+    if (confirmed) reset.mutate(appVersion);
   };
+
   return (
-    <div class="space-y-4">
-      <p class="text-sm text-dimmed">{props.templateId ? t().resetSkillTemplateHelp : t().associateSkillTemplateHelp}</p>
-      <Show when={templates.error()}>
-        <Placeholder
-          title={t().skillTemplateFailed}
-          icon="ti ti-alert-circle"
-          action={<Button onClick={() => void templates.refresh()}>{t().retry}</Button>}
-        />
-      </Show>
-      <Show
-        when={templates.data()}
-        fallback={
-          <Show when={!templates.error()}>
-            <InlineGuidance loading>{t().loadingSkillTemplates}</InlineGuidance>
+    <PanelDialog>
+      <PanelDialog.Header
+        title={props.skillName}
+        subtitle={t().compareWithAppSubtitle({ app: props.appName })}
+        icon="ti ti-git-compare"
+        close={props.close}
+        closeDisabled={reset.loading()}
+      />
+      <PanelDialog.Body scrollPreserveKey="admin-ai-skill-app-version">
+        <Show when={!version.loading()} fallback={<Placeholder state="loading" title={t().appVersionLoading} />}>
+          <Show
+            when={version.data()}
+            fallback={
+              <Placeholder
+                state="error"
+                title={t().appVersionFailed}
+                description={version.error()?.message}
+                action={
+                  <Button type="button" variant="secondary" size="sm" onClick={() => void version.refresh()}>
+                    {t().retry}
+                  </Button>
+                }
+              />
+            }
+          >
+            {(data) => (
+              <Show when={data().app} fallback={<Placeholder state="empty" icon="ti ti-plug-off" title={t().appVersionMissing} />}>
+                <Show when={files().length > 0} fallback={<Placeholder state="empty" icon="ti ti-check" title={t().appVersionMatches} />}>
+                  <div class="flex flex-col gap-5">
+                    <p class="text-xs text-dimmed">{t().diffLegend}</p>
+                    <For each={files()}>
+                      {(file) => (
+                        <section class="flex min-w-0 flex-col gap-1" aria-label={file.path}>
+                          <h3 class="flex items-baseline gap-2 text-xs font-medium text-primary">
+                            <span class="truncate font-mono">{file.path}</span>
+                            <span class="shrink-0 tabular-nums text-green-700 dark:text-green-300">+{file.added}</span>
+                            <span class="shrink-0 tabular-nums text-red-700 dark:text-red-300">−{file.removed}</span>
+                          </h3>
+                          <div class="overflow-x-auto rounded-md font-mono text-xs leading-5">
+                            <For each={file.rows}>
+                              {(row) =>
+                                row.kind === "gap" ? (
+                                  <div class="px-2 py-0.5 text-dimmed">{t().unchangedLines({ count: row.count })}</div>
+                                ) : (
+                                  <div
+                                    class={`grid grid-cols-[1.5rem_minmax(0,1fr)] ${
+                                      row.kind === "added"
+                                        ? "bg-green-50 text-green-800 dark:bg-green-950/40 dark:text-green-300"
+                                        : row.kind === "removed"
+                                          ? "bg-red-50 text-red-800 dark:bg-red-950/40 dark:text-red-300"
+                                          : "text-secondary"
+                                    }`}
+                                  >
+                                    <span class="select-none text-center text-dimmed" aria-hidden="true">
+                                      {row.kind === "added" ? "+" : row.kind === "removed" ? "−" : " "}
+                                    </span>
+                                    <span class="whitespace-pre-wrap break-words pr-2">{row.value || " "}</span>
+                                  </div>
+                                )
+                              }
+                            </For>
+                          </div>
+                        </section>
+                      )}
+                    </For>
+                  </div>
+                </Show>
+              </Show>
+            )}
           </Show>
-        }
-      >
-        {(items) => (
-          <>
-            <Select
-              value={selected}
-              onValueChange={(value) => setSelected(value ?? "")}
-              disabled={!!props.templateId || apply.loading()}
-              aria-label={t().skillTemplate}
-              placeholder={t().chooseSkillTemplate}
-              options={items().map((item) => ({ value: item.templateId, label: `${item.name} · v${item.version}` }))}
-            />
-            <Button disabled={!items().some((item) => item.templateId === selected()) || apply.loading()} onClick={() => void submit()}>
-              {props.templateId ? t().resetSkillTemplate : t().associateSkillTemplate}
+        </Show>
+      </PanelDialog.Body>
+      <PanelDialog.Footer>
+        <div class="ml-auto flex items-center gap-2">
+          <Button type="button" variant="secondary" onClick={props.close} disabled={reset.loading()}>
+            {t().close}
+          </Button>
+          <Show when={props.source?.status !== "current" && version.data()?.app}>
+            <Button type="button" variant="danger" onClick={() => void confirmReset()} loading={reset.loading()}>
+              {t().resetToApp}
             </Button>
-          </>
-        )}
-      </Show>
-    </div>
+          </Show>
+        </div>
+      </PanelDialog.Footer>
+    </PanelDialog>
   );
 };
 
@@ -227,7 +292,10 @@ export default function AiSkillAdminActions(props: Props) {
   });
 
   const handleDelete = async () => {
-    const confirmed = await prompts.confirm(t().deleteSkillConfirm({ name: props.skillName }), {
+    const message = props.source
+      ? t().deleteAppSkillConfirm({ name: props.skillName, app: props.source.appName })
+      : t().deleteSkillConfirm({ name: props.skillName });
+    const confirmed = await prompts.confirm(message, {
       title: t().deleteSkill,
       icon: "ti ti-trash",
       variant: "danger",
@@ -236,22 +304,31 @@ export default function AiSkillAdminActions(props: Props) {
     if (confirmed) remove.mutate();
   };
 
+  const openAppVersion = () => {
+    const source = props.source;
+    if (!source) return;
+    return dialogCore.open<void>(
+      (close) => <AppVersionDialog {...props} appName={source.appName} close={() => close()} />,
+      panelDialogWideOptions,
+    );
+  };
+
   return (
     <Dropdown.Root
       position="bottom-left"
-      width="13rem"
+      width="15rem"
       items={[
         {
           items: [
-            {
-              icon: "ti ti-refresh",
-              label: props.templateId ? t().resetSkillTemplate : t().associateSkillTemplate,
-              action: () =>
-                void prompts.dialog<void>((close) => <TemplateDialogBody {...props} close={close} />, {
-                  title: props.skillName,
-                  icon: "ti ti-wand",
-                }),
-            },
+            ...(props.source
+              ? [
+                  {
+                    icon: "ti ti-git-compare",
+                    label: t().compareWithApp,
+                    action: () => void openAppVersion(),
+                  },
+                ]
+              : []),
             {
               icon: "ti ti-shield",
               label: t().permissions,

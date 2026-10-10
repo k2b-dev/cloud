@@ -35,6 +35,7 @@ export {
 export type { RuntimeCompatibilityIssue } from "./_internal/runtime-compatibility";
 export { assessRuntimeCompatibility } from "./_internal/runtime-compatibility";
 export { buildRuntimeFromRegistry } from "./_internal/runtime-context";
+export { type AppSkillDefinition, skill } from "./ai/app-skills";
 export { defineCapabilities } from "./contracts/capabilities";
 export type {
   AnyBoundNotificationDefinition,

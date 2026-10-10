@@ -1,7 +1,9 @@
 import { Hono, type MiddlewareHandler } from "hono";
+import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { AuthenticatedPrincipalSchema } from "../contracts/shared";
 import { type AuthContext, auth, err, fail, ok, rateLimit, respond, v } from "../server";
+import { localizedAppName } from "../ssr/runtime";
 import { aiProjects } from "./projects";
 import {
   AI_SKILL_DESCRIPTION_MAX_CHARS,
@@ -12,9 +14,9 @@ import {
   AI_SKILL_REFERENCE_MAX_CHARS,
   AI_SKILL_REFERENCE_MAX_ITEMS,
 } from "./skill-format";
-import { getBuiltinAiSkillTemplate } from "./skill-seeds";
 import {
   type AiSkill,
+  AiSkillAppForbiddenError,
   AiSkillInputError,
   AiSkillLastAdminError,
   AiSkillRevisionConflictError,
@@ -43,8 +45,13 @@ const SkillAccessSchema = z.object({ principal: AuthenticatedPrincipalSchema, pe
 const SkillAccessUpdateSchema = z.object({ permission: z.enum(["read", "write", "admin"]) });
 const SkillEnabledSchema = z.object({ enabled: z.boolean() });
 
-const publicSummary = (skill: AiSkillSummary): AiSkillSummary => ({ ...skill, id: skill.shortId });
-const publicSkill = (skill: AiSkill): AiSkill => ({ ...skill, id: skill.shortId });
+type RouteContext = Parameters<typeof localizedAppName>[0];
+const publicSource = (c: RouteContext, source: AiSkillSummary["source"]): AiSkillSummary["source"] =>
+  source ? { ...source, appName: localizedAppName(c, source.appId, source.appName) } : null;
+const publicSummary =
+  (c: RouteContext) =>
+  (skill: AiSkillSummary): AiSkillSummary => ({ ...skill, id: skill.shortId, source: publicSource(c, skill.source) });
+const publicSkill = (c: RouteContext, skill: AiSkill): AiSkill => ({ ...skill, id: skill.shortId, source: publicSource(c, skill.source) });
 
 const isUniqueViolation = (error: unknown): boolean =>
   typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === "23505";
@@ -56,13 +63,18 @@ type AiSkillsRouteDependencies = {
 
 const buildAiSkillsRoutes = (dependencies: AiSkillsRouteDependencies = {}) =>
   new Hono<AuthContext>()
+    .onError((error, c) => {
+      if (error instanceof AiSkillAppForbiddenError) return respond(c, fail(err.forbidden(error.message)));
+      if (error instanceof HTTPException) return error.getResponse();
+      throw error;
+    })
     .use(dependencies.limit ?? rateLimit())
     .use("*", dependencies.authenticate ?? auth.requireRole("authenticated"))
     .get("/", v("query", z.object({ q: z.string().trim().max(200).optional() })), async (c) => {
       const subject = c.get("accessSubject") ?? null;
       const { q } = c.req.valid("query");
       const skills = q === undefined ? await aiSkills.list(subject) : (await aiSkills.search(subject, q)).skills;
-      return respond(c, ok({ skills: skills.map(publicSummary) }));
+      return respond(c, ok({ skills: skills.map(publicSummary(c)) }));
     })
     .get(
       "/project-links/:projectId",
@@ -81,7 +93,9 @@ const buildAiSkillsRoutes = (dependencies: AiSkillsRouteDependencies = {}) =>
         const result = project
           ? await aiSkills.projectSkills(project.id, subject, { query: query.q, page: query.page, available: query.available === "true" })
           : null;
-        return result ? respond(c, ok({ ...result, items: result.items.map(publicSummary) })) : respond(c, fail(err.notFound("Project")));
+        return result
+          ? respond(c, ok({ ...result, items: result.items.map(publicSummary(c)) }))
+          : respond(c, fail(err.notFound("Project")));
       },
     )
     .get("/:skillId/projects", async (c) => {
@@ -103,16 +117,11 @@ const buildAiSkillsRoutes = (dependencies: AiSkillsRouteDependencies = {}) =>
         ? respond(c, ok({ linked }))
         : respond(c, fail(err.notFound("Skill or Project")));
     })
-    .get("/templates/:name", dependencies.authenticate ?? auth.requireRole("authenticated"), (c) => {
-      if (!c.get("accessSubject")) return respond(c, fail(err.forbidden("Skill templates require an authenticated access subject.")));
-      const template = getBuiltinAiSkillTemplate(c.req.param("name"));
-      return template ? respond(c, ok({ template })) : respond(c, fail(err.notFound("Skill template")));
-    })
     .post("/", dependencies.authenticate ?? auth.requireRole("authenticated"), v("json", SkillFieldsSchema), async (c) => {
       const subject = c.get("accessSubject");
       if (!subject) return respond(c, fail(err.forbidden("Skills require an authenticated access subject.")));
       try {
-        return respond(c, ok({ skill: publicSkill(await aiSkills.create({ subject, ...c.req.valid("json") })) }), 201);
+        return respond(c, ok({ skill: publicSkill(c, await aiSkills.create({ subject, ...c.req.valid("json") })) }), 201);
       } catch (error) {
         if (isUniqueViolation(error)) return respond(c, fail(err.conflict("A skill with this name already exists.")));
         if (error instanceof AiSkillInputError) return respond(c, fail(err.badInput(error.message)));
@@ -121,14 +130,14 @@ const buildAiSkillsRoutes = (dependencies: AiSkillsRouteDependencies = {}) =>
     })
     .get("/:skillId", async (c) => {
       const skill = await aiSkills.getByShortId(c.req.param("skillId")!, c.get("accessSubject") ?? null);
-      return skill ? respond(c, ok({ skill: publicSkill(skill) })) : respond(c, fail(err.notFound("Skill")));
+      return skill ? respond(c, ok({ skill: publicSkill(c, skill) })) : respond(c, fail(err.notFound("Skill")));
     })
     .put("/:skillId", v("json", UpdateSkillSchema), async (c) => {
       const existing = await aiSkills.getByShortId(c.req.param("skillId")!, c.get("accessSubject") ?? null, "write");
       if (!existing) return respond(c, fail(err.notFound("Skill")));
       try {
         const skill = await aiSkills.update(existing.id, c.get("accessSubject") ?? null, c.req.valid("json"));
-        return skill ? respond(c, ok({ skill: publicSkill(skill) })) : respond(c, fail(err.notFound("Skill")));
+        return skill ? respond(c, ok({ skill: publicSkill(c, skill) })) : respond(c, fail(err.notFound("Skill")));
       } catch (error) {
         if (isUniqueViolation(error)) return respond(c, fail(err.conflict("A skill with this name already exists.")));
         if (error instanceof AiSkillRevisionConflictError) return respond(c, fail(err.conflict(error.message)));

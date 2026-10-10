@@ -3,7 +3,7 @@ import type { MiddlewareHandler } from "hono";
 import type { AuthContext } from "../server";
 import { aiProjects } from "./projects";
 import type { AiSkill } from "./skills";
-import { AiSkillRevisionConflictError, aiSkills } from "./skills";
+import { AiSkillAppForbiddenError, AiSkillRevisionConflictError, aiSkills } from "./skills";
 import { __buildAiSkillsRoutesForTest } from "./skills-routes";
 
 const userId = "11111111-1111-4111-8111-111111111111";
@@ -21,6 +21,7 @@ const authenticate: MiddlewareHandler<AuthContext> = async (c, next) => {
 const pass: MiddlewareHandler<AuthContext> = async (_c, next) => next();
 
 const skill = (permission: AiSkill["permission"] = "admin"): AiSkill => ({
+  source: null,
   id: skillId,
   shortId: skillShortId,
   name: "weekly-status",
@@ -88,26 +89,19 @@ describe("AI Skill routes", () => {
     expect((await routes.request("/?q=" + "x".repeat(201))).status).toBe(400);
   });
 
-  test("previews a built-in template without reading or overwriting an installed Skill", async () => {
-    const read = spyOn(aiSkills, "getByShortId");
-    const update = spyOn(aiSkills, "update");
-    const seed = spyOn(aiSkills, "seedOnce");
+  test("removed template route stays absent", async () => {
     const routes = __buildAiSkillsRoutesForTest({ limit: pass, authenticate });
-    const response = await routes.request("/templates/cloud-mail");
-    expect(response.status).toBe(200);
-    const { template } = await response.json();
-    expect(template.name).toBe("cloud-mail");
-    expect(template.instructions).toContain("Cloud Mail");
-    expect(template).not.toHaveProperty("key");
-    expect(read).not.toHaveBeenCalled();
-    expect(update).not.toHaveBeenCalled();
-    expect(seed).not.toHaveBeenCalled();
-    expect((await routes.request("/templates/not-a-builtin")).status).toBe(404);
-    const anonymous = __buildAiSkillsRoutesForTest({ limit: pass, authenticate: pass });
-    expect((await anonymous.request("/templates/cloud-mail")).status).toBe(403);
+    expect((await routes.request("/templates/cloud-mail")).status).toBe(404);
+  });
+  test("readable app skills explain administrator overrides when a mutation is refused", async () => {
+    spyOn(aiSkills, "getByShortId").mockRejectedValue(new AiSkillAppForbiddenError("Mail"));
+    const routes = __buildAiSkillsRoutesForTest({ limit: pass, authenticate });
+    const response = await routes.request(`/${skillShortId}`, { method: "DELETE" });
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ message: expect.stringContaining("Mail") });
   });
 
-  test("applies a consciously merged template only to the selected Skill at its reviewed revision", async () => {
+  test("updates consciously merged content only to the selected Skill at its reviewed revision", async () => {
     const installed = { ...skill("write"), name: "cloud-mail" };
     spyOn(aiSkills, "getByShortId").mockResolvedValue(installed);
     const update = spyOn(aiSkills, "update").mockResolvedValue({ ...installed, revision: 4 });
@@ -115,14 +109,14 @@ describe("AI Skill routes", () => {
     const remove = spyOn(aiSkills, "delete");
     const enabled = spyOn(aiSkills, "setEnabled");
     const routes = __buildAiSkillsRoutesForTest({ limit: pass, authenticate });
-    const { template } = await (await routes.request("/templates/cloud-mail")).json();
+    const template = { name: installed.name, description: installed.description, instructions: installed.instructions };
     const { skill: current } = await (await routes.request(`/${skillShortId}`)).json();
     const proposal = {
       ...template,
       expectedRevision: current.revision,
       instructions: `${template.instructions}\n\nPreserve our custom policy.`,
       extraFrontmatter: { metadata: { owner: "mail-team" } },
-      references: [...(template.references ?? []), ...current.references],
+      references: [...[], ...current.references],
     };
     const request = () =>
       routes.request(`/${skillShortId}`, {
@@ -131,7 +125,7 @@ describe("AI Skill routes", () => {
         body: JSON.stringify(proposal),
       });
     expect((await request()).status).toBe(200);
-    const { templateId: _templateId, version: _version, ...content } = proposal;
+    const content = proposal;
     expect(update).toHaveBeenCalledWith(skillId, subject, content);
     expect(access).not.toHaveBeenCalled();
     expect(remove).not.toHaveBeenCalled();

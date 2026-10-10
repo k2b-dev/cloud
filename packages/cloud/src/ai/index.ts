@@ -1,3 +1,4 @@
+export { type AiAppSkillIssue, aiAppSkills, reconcileAppSkills } from "./app-skill-store";
 export { type AiApprovalPreferenceRoutes, type AiApprovalPreferenceView, createAiApprovalPreferenceRoutes } from "./approval-routes";
 export {
   type AiToolApprovalContext,
@@ -258,6 +259,7 @@ export {
   type AiSkillAccess,
   type AiSkillAdminListItem,
   type AiSkillAdminSummary,
+  AiSkillAppForbiddenError,
   AiSkillInputError,
   AiSkillLastAdminError,
   type AiSkillPermission,
@@ -265,7 +267,6 @@ export {
   AiSkillRevisionConflictError,
   type AiSkillSummary,
   aiSkills,
-  seedCloudAiSkills,
 } from "./skills";
 export { type AiSkillsRoutes, aiSkillsRoutes } from "./skills-routes";
 export { aiConversations } from "./store";

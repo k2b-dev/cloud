@@ -1620,18 +1620,62 @@ export const migrateCloudAi = async (): Promise<void> => {
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_skills_name ON ai.skills(name)`.simple();
   await sql`ALTER TABLE ai.skills ADD COLUMN IF NOT EXISTS managed_key TEXT`.simple();
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_skills_managed_key ON ai.skills(managed_key) WHERE managed_key IS NOT NULL`.simple();
-  await sql`
-    CREATE TABLE IF NOT EXISTS ai.skill_seeds (
-      key TEXT PRIMARY KEY,
-      seeded_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    )
-  `.simple();
-  // A seed's UUID deliberately has no FK: it is a durable deletion tombstone.
-  await sql`ALTER TABLE ai.skill_seeds ADD COLUMN IF NOT EXISTS skill_id UUID`.simple();
-  await sql`ALTER TABLE ai.skill_seeds ADD COLUMN IF NOT EXISTS catalog_version INTEGER NOT NULL DEFAULT 0`.simple();
-  await sql`ALTER TABLE ai.skills ADD COLUMN IF NOT EXISTS template_id TEXT,
-    ADD COLUMN IF NOT EXISTS template_version INTEGER, ADD COLUMN IF NOT EXISTS template_hash TEXT`.simple();
-  await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_skills_template_id ON ai.skills(template_id) WHERE template_id IS NOT NULL`.simple();
+  await sql.begin(async (tx) => {
+    await tx`SELECT pg_advisory_xact_lock(hashtext('cloud:ai:app-skills'))`;
+    await tx`CREATE TABLE IF NOT EXISTS ai.app_skill_catalogs (
+      app_id text NOT NULL, manifest_hash text NOT NULL, skills jsonb NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now(), last_seen_at timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY (app_id, manifest_hash)
+    )`.simple();
+    await tx`CREATE INDEX IF NOT EXISTS idx_ai_app_skill_catalogs_last_seen ON ai.app_skill_catalogs(last_seen_at)`.simple();
+    await tx`CREATE TABLE IF NOT EXISTS ai.app_skills (
+      key text PRIMARY KEY, app_id text NOT NULL, app_name text NOT NULL, name text NOT NULL,
+      skill_id uuid NULL, source jsonb NULL, source_hash text NULL, applied_hash text NULL,
+      manifest_hash text NULL, available boolean NOT NULL DEFAULT false, required_roles text[] NULL,
+      conflict text NULL CHECK (conflict IN ('name_taken', 'invalid')),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )`.simple();
+    await tx`CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_app_skills_skill ON ai.app_skills(skill_id) WHERE skill_id IS NOT NULL`.simple();
+    await tx`CREATE INDEX IF NOT EXISTS idx_ai_app_skills_app ON ai.app_skills(app_id)`.simple();
+    // Adopt only durable seed associations. A missing linked row remains a deletion tombstone.
+    await tx`DO $$ BEGIN
+      IF to_regclass('ai.skill_seeds') IS NOT NULL THEN
+        -- Installations from before seed links lack these columns; their seeds adopt nothing.
+        ALTER TABLE ai.skill_seeds ADD COLUMN IF NOT EXISTS skill_id uuid;
+        ALTER TABLE ai.skills ADD COLUMN IF NOT EXISTS template_id text, ADD COLUMN IF NOT EXISTS template_hash text;
+        INSERT INTO ai.app_skills(key, app_id, app_name, name, skill_id, applied_hash)
+        SELECT 'app:' || mapping.app_id || '/' || mapping.name, mapping.app_id, mapping.app_name,
+          mapping.name, seed.skill_id,
+          CASE WHEN skill.template_id = seed.key THEN skill.template_hash ELSE NULL END
+        FROM ai.skill_seeds seed
+        JOIN (VALUES
+          ('grids:cloud-grids', 'grids', 'Grids', 'cloud-grids'),
+          ('assistant:cloud-assistant', 'assistant', 'Assistant', 'cloud-assistant'),
+          ('assistant:scheduled-tasks', 'assistant', 'Assistant', 'scheduled-tasks'),
+          ('core:skill-creator', 'assistant', 'Assistant', 'skill-creator'),
+          ('mail:cloud-mail', 'mail', 'Mail', 'cloud-mail'),
+          ('notebooks:cloud-notebooks', 'notebooks', 'Notebooks', 'cloud-notebooks'),
+          ('contacts:cloud-contacts', 'contacts', 'Contacts', 'cloud-contacts'),
+          ('spaces:cloud-spaces', 'spaces', 'Spaces', 'cloud-spaces'),
+          ('weather:cloud-weather', 'weather', 'Weather', 'cloud-weather'),
+          ('assistant:code-mode', 'assistant', 'Assistant', 'assistant-code-mode'),
+          ('assistant:data-analysis', 'assistant', 'Assistant', 'assistant-data-analysis')
+        ) mapping(seed_key, app_id, app_name, name) ON mapping.seed_key = seed.key
+        LEFT JOIN ai.skills skill ON skill.id = seed.skill_id
+        WHERE true
+        ON CONFLICT (key) DO NOTHING;
+        DROP TABLE ai.skill_seeds;
+      END IF;
+    END $$`.simple();
+    // Only alter ai.skills once: ALTER TABLE takes an exclusive lock even when nothing changes.
+    await tx`DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'ai' AND table_name = 'skills'
+        AND column_name IN ('template_id', 'template_version', 'template_hash')) THEN
+        ALTER TABLE ai.skills DROP COLUMN IF EXISTS template_id,
+          DROP COLUMN IF EXISTS template_version, DROP COLUMN IF EXISTS template_hash;
+      END IF;
+    END $$`.simple();
+  });
   await backfillAiShortIds(
     "idx_ai_skills_short_id",
     await sql<{ id: string }[]>`SELECT id FROM ai.skills WHERE short_id IS NULL`,

@@ -219,6 +219,7 @@ The remaining options declare application-owned contributions:
 | `settings` | Typed runtime configuration | [Settings](/en/docs/platform/settings) |
 | `platformPermissions` | Requested platform permissions: `"mail:send"` to send outgoing mail, `"mail:read"` to read other apps' mail an operator grants | [Outgoing mail](/en/docs/platform/outgoing-mail) |
 | `notifications` | Notification definitions the application may send | [Notifications](/en/docs/platform/notifications) |
+| `skills` | Assistant Skills the application ships, from `src/skills.ts` | [Ship Assistant Skills](/en/docs/platform/assistant-skills) |
 | `widgets` | Dashboard widget endpoints | [Dashboard widgets](/en/docs/platform/dashboard-widgets) |
 | `legalLinks` | Application-owned legal and information links | — |
 | `presentation` | Localized overlays for registered human-facing app metadata | [Internationalization](/en/docs/build/internationalization) |

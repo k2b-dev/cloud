@@ -1,7 +1,15 @@
 import { expect, test } from "bun:test";
-import { parseGridsQueryDsl } from "../../../grids/src/query-dsl/parser";
-import { CLOUD_GRIDS_INSTRUCTIONS, CLOUD_GRIDS_QUERY_REFERENCE } from "./grids-skill";
+import { parseGridsQueryDsl } from "./query-dsl/parser";
+import { SKILLS } from "./skills";
 
+const CLOUD_GRIDS_INSTRUCTIONS = SKILLS[0]!.instructions;
+const CLOUD_GRIDS_QUERY_REFERENCE = SKILLS[0]!.references[0]!.content;
+
+test("ships its Skills with every reference linked from the instructions", () => {
+  expect(SKILLS.map((skill) => skill.name)).toEqual(["cloud-grids"]);
+  for (const skill of SKILLS)
+    for (const reference of skill.references) expect(skill.instructions).toContain(`/skills/${skill.name}/${reference.path}`);
+});
 test("Grids Skill examples use valid GQL rather than SQL or GraphQL", () => {
   const examples = [...`${CLOUD_GRIDS_INSTRUCTIONS}\n${CLOUD_GRIDS_QUERY_REFERENCE}`.matchAll(/```gql\n([\s\S]*?)```/g)];
   expect(examples.length).toBe(6);
@@ -40,4 +48,22 @@ test("Grids Skill distinguishes file bytes from inspected contents", () => {
   expect(CLOUD_GRIDS_QUERY_REFERENCE).toContain("capabilities.streams.read");
   expect(CLOUD_GRIDS_QUERY_REFERENCE).toContain("does not extract PDF text");
   expect(CLOUD_GRIDS_QUERY_REFERENCE).toContain("50 MiB");
+});
+
+test("Grids skill names canonical Help and declared capabilities", async () => {
+  const grids = SKILLS[0]!;
+  expect(grids.instructions).toContain("Help is the product handbook");
+  expect(grids.instructions).toContain("search_help");
+  expect(grids.instructions).toContain("read_help");
+  expect(grids.instructions).toContain("For product questions");
+  expect(grids.instructions).toContain("cannot change records");
+  expect(grids.instructions).toContain("Clarify vague goals before discovery");
+  expect(grids.instructions).toContain("preserving the requested entities");
+  expect(grids.instructions).toContain("includeWriteContext true");
+  expect(grids.instructions).toContain("TODAY()");
+  const sources = await Promise.all(["capabilities.ts"].map((path) => Bun.file(new URL(`./${path}`, import.meta.url)).text()));
+  const declared = new Set(sources.flatMap((source) => [...source.matchAll(/"([a-z0-9.-]+)": \{/g)].map((match) => `grids.${match[1]}`)));
+  for (const match of grids.instructions.matchAll(/`(grids\.[a-z0-9.-]+)`/g)) expect(declared.has(match[1]!)).toBeTrue();
+  const help = await Bun.file(new URL("./help/documents/en/grids-gql.help.md", import.meta.url)).text();
+  expect(help).toContain("Query with AI");
 });

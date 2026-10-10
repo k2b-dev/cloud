@@ -102,7 +102,7 @@ test("built worker imports the finance chunk and exports files through the cloud
   });
   runInContext(await runtimeSource(), context, { importModuleDynamically: (specifier) => import(specifier) });
   runInContext('__artifactInit({locale:"en-US",timeZone:"UTC",user:{id:"viewer",name:"Viewer"}},[]);', context);
-  const reference = await Bun.file(new URL("../../../skills/code-mode/references/finance.md", import.meta.url)).text();
+  const reference = await Bun.file(new URL("../../skills/assistant-code-mode/references/finance.md", import.meta.url)).text();
   const example = reference.match(/```js\n([\s\S]*?)```/)?.[1];
   expect(example).toBeDefined();
   await runInContext(example!.trim().replace(/;$/, "").replace("export default", "__artifactStart(") + ");", context);

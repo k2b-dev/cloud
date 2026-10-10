@@ -1,9 +1,11 @@
 import {
+  type AiAppSkillIssue,
   type AiEnrichmentOverview,
   type AiProjectAdminListItem,
   type AiProjectAdminSummary,
   type AiSkillAdminListItem,
   type AiSkillAdminSummary,
+  aiAppSkills,
   aiConversations,
   aiProjects,
   aiSkills,
@@ -24,7 +26,7 @@ import {
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { appApproval, coreSettings, linuxIdentities, settingsService } from "@k2b/cloud/services";
 import { AiUsageQuerySchema } from "@k2b/cloud/shared";
-import { AdminLayout, getRuntimeContext, hasDedicatedRuntimeRoute } from "@k2b/cloud/ssr";
+import { AdminLayout, getLocalizedRuntimeContext, getRuntimeContext, hasDedicatedRuntimeRoute } from "@k2b/cloud/ssr";
 import { SettingsPage } from "@k2b/ui";
 import { z } from "zod";
 import { ssr } from "../../../config";
@@ -257,6 +259,7 @@ export default ssr<AuthContext>(async (c) => {
   let aiSkillTotal = 0;
   let aiSkillPage = 1;
   let aiSkillPerPage = 100;
+  let aiAppSkillIssues: AiAppSkillIssue[] = [];
   const quotaReportData = tab.id === "ai-quotas" ? await quotaReport(c.req.query()) : null;
   const quotaData = quotaReportData
     ? {
@@ -295,10 +298,12 @@ export default ssr<AuthContext>(async (c) => {
     entries = await buildEntries("legal", locale);
     legalInitial = buildLegalInitial(entries);
   } else if (tab.id === "ai-skills") {
-    const [skills, summary] = await Promise.all([
+    const [skills, summary, appSkillIssues] = await Promise.all([
       aiSkills.admin.list({ search: search || undefined, page: Number.isFinite(requestedPage) ? requestedPage : 1, perPage: 100 }),
       aiSkills.admin.summary({ search: search || undefined }),
+      aiAppSkills.appSkillIssues(),
     ]);
+    aiAppSkillIssues = appSkillIssues;
     aiSkillItems = skills.items;
     aiSkillSummary = summary;
     aiSkillTotal = skills.total;
@@ -388,6 +393,8 @@ export default ssr<AuthContext>(async (c) => {
           <AiSkillsAdminPanel
             skills={aiSkillItems}
             summary={aiSkillSummary}
+            appSkillIssues={aiAppSkillIssues}
+            appNames={Object.fromEntries(getLocalizedRuntimeContext(c).apps.map((app) => [app.id, app.name]))}
             total={aiSkillTotal}
             page={aiSkillPage}
             perPage={aiSkillPerPage}

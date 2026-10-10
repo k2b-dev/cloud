@@ -218,7 +218,7 @@ view and use a Skill, `write` can edit it, and `admin` can also share or delete
 it. The final admin grant cannot be removed.
 
 If the sole Skill administrator is removed outside the Skill service, a
-platform administrator can restore access under **Admin > AI > Skills**. The
+platform administrator can restore access under **Administration > AI Skills**. The
 same recovery surface can grant access to or permanently delete any Skill.
 
 `SKILL.md` is the portable source of truth. It starts with YAML frontmatter
@@ -266,24 +266,30 @@ retries, so an edit cannot change an in-progress result. A later turn sees the
 new revision. Reading a mounted file still checks current Cloud access; revoked
 access takes effect immediately.
 
-Cloud installs built-in Skills with `read` access for every authenticated user.
-`cloud-grids` includes a compact GQL syntax guide with lookup, join, and
-aggregation examples. It guides queries and daily work and routes product and
-administration questions to canonical Grids Help. Skill reference files are
-mounted for one turn: load the Skill again before reading its files in a later
-turn. A missing-file error explains this recovery; reloading still checks access.
-`cloud-assistant` covers conversation history and resources, inter-chat
-messaging, and scheduled chat work.
-`skill-creator` explains how to draft a concise Skill and names the
-`core.ai.skill` Capabilities Assistant can use to list, read, create, update,
-manage references, personally enable or disable, and delete Skills.
-`cloud-mail`, `cloud-notebooks`, `cloud-contacts`, `cloud-spaces`, and
-`cloud-weather` provide their application's normal capability paths, domain
-defaults, and cross-application guidance. They remain
-ordinary permission-owned Skills: platform administrators can grant themselves
-access, and Skill administrators can edit, share, or delete them. A deleted
-seed is not recreated during later starts. Like every readable Skill, each
-starts enabled and can be disabled personally.
+Apps ship their own Skills, and third-party apps can do the same; see
+[Ship Assistant Skills](/en/docs/platform/assistant-skills). Cloud installs each
+with `read` access for signed-in people who may open the app, and offers it only
+while the app runs. The built-in apps ship these Skills:
+
+- Grids ships `cloud-grids`, which includes a compact GQL syntax guide with
+  lookup, join, and aggregation examples. It guides queries and daily work and
+  routes product and administration questions to canonical Grids Help.
+- Assistant ships `cloud-assistant` for conversation history and resources,
+  inter-chat messaging, and scheduled chat work; `scheduled-tasks`;
+  `assistant-code-mode` and `assistant-data-analysis`; and `skill-creator`,
+  which explains how to draft a concise Skill and names the `core.ai.skill`
+  Capabilities Assistant can use to list, read, create, update, manage
+  references, personally enable or disable, and delete Skills.
+- Mail, Notebooks, Contacts, Spaces, and Weather ship `cloud-mail`,
+  `cloud-notebooks`, `cloud-contacts`, `cloud-spaces`, and `cloud-weather` with
+  their app's normal capability paths, domain defaults, and cross-application
+  guidance.
+
+Skill reference files are mounted for one turn: load the Skill again before
+reading its files in a later turn. A missing-file error explains this recovery;
+reloading still checks access. Like every readable Skill, an app Skill starts
+enabled and can be disabled personally. Each Skill shows its source, such as
+**From app Grids**, in **Assistant settings > Skills**.
 
 ### Turn recurring work into a Skill
 
@@ -391,66 +397,36 @@ built-in or shared Skill changes only when the user can edit it and wants the
 change for everyone. Otherwise it stays unchanged, and a correction meant only
 for the user can become a personalization preference in the user's own words.
 
-### Update an installed built-in Skill
+### Update and override app Skills
 
-Cloud records each built-in Skill's stable template ID, installed integer
-version, and hash of the last adopted template content. The resource revision
-separately protects edits from concurrent changes. Normal Skill edits and imports
-cannot set template identity or version.
+An app Skill updates when a new release of its app changes the content. Cloud
+compares a hash of the complete content; personal enabled state, access, the
+Skill ID, and turns that already loaded the Skill stay as they are. App Skills
+ship with `read` access only, so the Skill management Actions and
+`cld assistant` cannot change them. They refuse with an error that names the
+app.
 
-At startup, a newer template replaces the installed content only if the complete
-current content still matches that baseline. The check covers name, description,
-instructions, extra frontmatter, and every reference path and content. JSON key
-order and reference ordering do not count as edits. Customized Skills stay intact.
-Concurrent starts apply each upgrade once; older Core versions cannot downgrade a
-Skill or reset it after a newer template has been observed.
+A platform administrator can override an app Skill: give yourself or another
+person `write` access under **Administration > AI Skills > Permissions**, then
+edit the Skill. Cloud keeps the change and marks the Skill **Customized**, or
+**App update available** once the app ships different content.
+**Compare with app version** shows the differences; **Reset to app version**
+replaces the content and lets later updates apply again. A deleted app Skill
+stays deleted until an administrator restores it. When another Skill already
+uses the name, Cloud does not install the app Skill and lists it as
+**Name in use**. See
+[Administrators can override an app Skill](/en/docs/platform/assistant-skills#administrators-can-override-an-app-skill)
+for every state and the CLI.
 
-**Admin > AI > Skills** shows template origin, installed version, and status:
-
-- **Current**: content matches the adopted template.
-- **Modified**: content differs from the adopted template.
-- **Update available**: this Core version ships a newer template. Customizations
-  remain intact until an administrator chooses to reset it.
-
-To replace a linked Skill, select **Reset to current template** and confirm the
-named Skill and template version. This replaces all content and references; it
-does not merge changes or keep a version history. Export the Skill from
-**Assistant settings > Skills** first if you need a copy. An administrator without
-Skill access can grant themselves access through the existing permissions action.
-ID, grants, personal enabled state, and already loaded turn content remain intact.
-A stale resource revision or template version fails; reload before trying again.
-
-Existing installations have seed markers without a reliable Skill association or
-baseline. They require an explicit administrator choice: select **Link to
-template**, choose the correct template, and confirm. Association preserves all
-existing content. Content that differs from the current template stays customized;
-use the separate reset action if replacement is wanted. Names and revision numbers
-never authorize automatic adoption. A template can be linked to only one Skill.
-Deleting a linked Skill is permanent: neither restart nor association to another
-Skill recreates that built-in. Ordinary user-authored Skills remain unaffected.
-
-The same platform-admin workflow is available through the CLI:
-
-```bash
-cld admin ai skills list --json
-cld admin ai skills templates --json
-cld admin ai skills associate <skill-id> --template core:skill-creator --template-version 1 --revision <revision> --yes
-cld admin ai skills reset <skill-id> --template core:skill-creator --template-version 1 --revision <revision> --yes
-```
-
-Use the IDs, template version, and revision returned by the current reads.
-`GET /api/admin/core/ai-skills` lists status and revision;
-`GET /api/admin/core/ai-skills/templates` lists trusted template IDs and versions.
-`POST /api/admin/core/ai-skills/:skillId/template` accepts `templateId`,
-`templateVersion`, `expectedRevision`, `mode` (`associate` or `reset`), and
-`confirmed: true`. All three routes require platform-admin access. Content
-validation and revision protection belong to the shared platform service.
-The authenticated `GET /api/ai/skills/templates/:name` remains a read-only source
-of current template content; a template read does not associate or replace a Skill.
-
-Maintainers must increment the code-owned template version whenever any template
-content changes. Keep the stable ID unchanged. The content hash is deterministic
-SHA-256 over the validated fields; there is no merge engine or history store.
+The platform-admin HTTP API under `/api/admin/core/ai-skills` returns each
+Skill's `source` with app, status, and availability, and the app Skills that
+are not installed as `appSkillIssues`. `GET /:skillId/app-version` returns both
+versions as `SKILL.md` plus references. `POST /:skillId/reset` takes
+`expectedRevision` and `confirmed: true`.
+`POST /apps/:appId/skills/:name/restore` installs a deleted app Skill again, and
+`POST /apps/:appId/skills/:name/adopt` links the Skill that already uses the name;
+both take `confirmed: true`. A stale revision or a name that is already in use
+fails with `409`.
 
 The Skill management Actions are reviewed and recheck the current actor's
 Cloud permission. Updates and reference changes require the exact revision

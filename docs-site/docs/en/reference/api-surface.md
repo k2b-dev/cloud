@@ -60,7 +60,8 @@ browser-route rejections and `ssr.error(c, status, options?)` for terminal HTML
 errors. See [SSR pages and routing](/en/docs/frontend/ssr-pages-and-routing).
 
 The root also exports the types bound to an application declaration. This
-includes typed settings and notification definitions. Registry, heartbeat, and
+includes typed settings and notification definitions, and `skill()` with
+`AppSkillDefinition` for [Assistant Skills](/en/docs/platform/assistant-skills). Registry, heartbeat, and
 runtime-composition exports from the same barrel are platform-owned.
 
 See [Define an application](/en/docs/build/define-app).

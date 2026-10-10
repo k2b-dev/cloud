@@ -88,6 +88,7 @@ export type AppRegistryEntry = {
   adminNav?: AppAdminNavigationGroup[];
   capabilities?: AppRegistryCapabilitySummary;
   help?: AppRegistryHelpSummary;
+  skills?: { manifestHash: string };
   legalLinks?: AppRegistryLegalLink[];
   searchLinks?: readonly AppSearchLink[];
   /** The app's part of the mobile app (preview); `href` is `/pwa/<id>`. Older readers ignore it. */
