@@ -5,7 +5,7 @@ section: Contributing
 order: 1302
 description: How a change on a feature branch becomes a versioned Cloud release with images, CLI, website, PWA, and npm packages.
 tags: [contributing, release, versioning, ci]
-updated: 2026-10-09
+updated: 2026-10-10
 ---
 
 # Release process
@@ -50,19 +50,24 @@ release-please runs on every push to `main`:
 2. Merging the release PR creates the tag. The Cloud component tags
    `cloud-vX.Y.Z`; the npm packages tag `npm-cloud-vX.Y.Z`, `npm-ui-vX.Y.Z`,
    and `npm-ssr-vX.Y.Z` as separate components with their own version lines.
-3. The `cloud-vX.Y.Z` tag triggers the release workflow. It builds every
-   image of the release set (one per application from `scripts/workspace.ts`
-   plus `cloud-website` and `cloud-pwa-auth`; `bun scripts/workspace.ts images`
-   lists them) for `linux/amd64` and `linux/arm64`, the CLI binaries, and
-   publishes a GitHub release with `release.json` and build attestations.
-4. The `npm-cloud-v*`, `npm-ui-v*`, and `npm-ssr-v*` tags publish
-   `@k2b/cloud`, `@k2b/ui`, and `@k2b/ssr` with npm provenance. A prerelease
-   version such as `0.8.0-rc.1` publishes under the `next` dist-tag; a stable
-   version publishes under `latest`. `@k2b/cloud` pins exact `@k2b/ui` and
-   `@k2b/ssr` versions, so it publishes only after both are installable from
-   npm. When the same release publishes either of them, the workflow waits up
-   to 20 minutes in total; otherwise the pinned version must already be on
-   npm, or `@k2b/cloud` stays unpublished and the release fails.
+3. No workflow starts from these tags. The `main.yml` run that created them
+   continues: its `images` job builds every image of the release set once
+   (one per application from `scripts/workspace.ts` plus `cloud-website` and
+   `cloud-pwa-auth`; `bun scripts/workspace.ts images` lists them) for
+   `linux/amd64` and `linux/arm64`, attests its build provenance, and tags it
+   `sha-<12>`, plus `vX.Y.Z` for a Cloud release. `main.yml` then calls
+   `release.yml`. For a Cloud release, it reuses these images instead of
+   building them again, builds the CLI binaries, and attaches the binaries
+   and `release.json` to the `cloud-vX.Y.Z` GitHub release.
+4. For each new `npm-cloud-v*`, `npm-ui-v*`, or `npm-ssr-v*` tag,
+   `release.yml` publishes `@k2b/cloud`, `@k2b/ui`, or `@k2b/ssr` with npm
+   provenance. A prerelease version such as `0.8.0-rc.1` publishes under the
+   `next` dist-tag; a stable version publishes under `latest`. `@k2b/cloud`
+   pins exact `@k2b/ui` and `@k2b/ssr` versions, so it publishes only after
+   both are installable from npm. When the same release publishes either of
+   them, the workflow waits up to 20 minutes in total; otherwise the pinned
+   version must already be on npm, or `@k2b/cloud` stays unpublished and the
+   release fails.
 
 Each package publishes through an npm Trusted Publisher for `k2b-dev/cloud`
 with the workflow file `main.yml`. `release.yml` runs the publish, but it is a

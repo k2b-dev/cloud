@@ -5,7 +5,7 @@ section: Operations
 order: 1110
 description: Develop a built-in application inside the Cloud monorepo.
 tags: [development, monorepo, docker]
-updated: 2026-10-09
+updated: 2026-10-10
 ---
 
 # Monorepo development
