@@ -43,6 +43,7 @@ import { acquireProviderLease, MAIL_PROVIDER_OPERATION_LEASE_MS, mailProviderOpe
 import {
   createSenderIdentity,
   disableSenderIdentity,
+  listSenderIdentities,
   setupDefaultSender,
   updateSenderIdentity,
   verifySenderIdentity,
@@ -779,6 +780,142 @@ suite("mail lifecycle control plane", () => {
     } finally {
       send.mockRestore();
       await sql`DELETE FROM mail.folders WHERE id = ${sentFolder!.id}::uuid`;
+    }
+  });
+
+  test("a sender identity takes the discovered Sent and Drafts folders unless one was chosen", async () => {
+    const [resource] = await sql<{ id: string }[]>`
+      SELECT remote_resource_id AS id FROM mail.provider_bindings WHERE id = ${bindingId}::uuid
+    `;
+    const insertFolder = async (name: string, role: "sent" | "drafts" | "other") => {
+      const [folder] = await sql<{ id: string }[]>`
+        INSERT INTO mail.folders (short_id, remote_resource_id, stable_key, name, role, selectable, selected_for_sync, sync_status)
+        VALUES (${newShortId()}, ${resource!.id}::uuid, ${`${name}-${suffix}`}, ${name}, ${role}, true, true, 'current')
+        RETURNING id
+      `;
+      await sql`
+        INSERT INTO mail.binding_folder_refs (
+          binding_id, folder_id, remote_path, delimiter, subscribed, effective_rights, rights_source, last_verified_at
+        )
+        VALUES (${bindingId}::uuid, ${folder!.id}::uuid, ${name}, '/', true, ARRAY['read', 'insert']::text[], 'acl', now())
+      `;
+      return folder!.id;
+    };
+    const sentFolderId = await insertFolder("Sent preset", "sent");
+    const draftsFolderId = await insertFolder("Drafts preset", "drafts");
+    const chosenFolderId = await insertFolder("Chosen sent", "other");
+    const send = spyOn(imapSmtpConnector, "send").mockImplementation(async (_connection, request) => ({
+      accepted: request.to.map((recipient) => recipient.address),
+      rejected: [],
+      response: "250 accepted",
+      messageId: request.messageId,
+    }));
+    const create = (label: string, folders: { sentFolderId?: string | null; draftsFolderId?: string | null }) =>
+      createSenderIdentity({
+        context: adminContext,
+        mailboxId,
+        input: {
+          label,
+          displayName: label,
+          fromAddress: `${label.toLowerCase().replaceAll(" ", "-")}-${suffix}@example.com`,
+          defaultCc: [],
+          authenticationPolicy: { automation: "disabled" },
+          isDefault: false,
+          ...folders,
+        },
+      });
+    try {
+      const preset = await create("Preset sender", {});
+      expect(preset.ok).toBe(true);
+      if (!preset.ok) return;
+      expect(preset.data).toMatchObject({ sentFolderId, draftsFolderId, status: "unverified", statusReason: "verification_required" });
+
+      const chosen = await create("Chosen sender", { sentFolderId: chosenFolderId, draftsFolderId: null });
+      expect(chosen.ok).toBe(true);
+      if (!chosen.ok) return;
+      expect(chosen.data).toMatchObject({ sentFolderId: chosenFolderId, draftsFolderId: null });
+
+      // An identity from before the preset, or one whose Sent folder was cleared, still has none.
+      const missing = await create("Missing sender", { sentFolderId: null });
+      expect(missing.ok).toBe(true);
+      if (!missing.ok) return;
+      expect(missing.data).toMatchObject({ sentFolderId: null, statusReason: "sent_folder_missing" });
+
+      const verifyAppending = (senderIdentityId: string) =>
+        verifySenderIdentity({
+          context: adminContext,
+          mailboxId,
+          senderIdentityId,
+          bindingId,
+          verificationRecipient: `verify-${suffix}@example.com`,
+          savesSentAutomatically: false,
+        });
+      const verifiedMissing = await verifyAppending(missing.data.id);
+      expect(verifiedMissing.ok).toBe(true);
+      if (verifiedMissing.ok) {
+        expect(verifiedMissing.data).toMatchObject({ sentFolderId, status: "verified", statusReason: null });
+      }
+      const verifiedChosen = await verifyAppending(chosen.data.id);
+      expect(verifiedChosen.ok).toBe(true);
+      if (verifiedChosen.ok) expect(verifiedChosen.data).toMatchObject({ sentFolderId: chosenFolderId, draftsFolderId: null });
+    } finally {
+      send.mockRestore();
+      await sql`
+        DELETE FROM mail.folders
+        WHERE id IN (${sentFolderId}::uuid, ${draftsFolderId}::uuid, ${chosenFolderId}::uuid)
+      `;
+    }
+  });
+
+  test("an unverified sender identity names why it cannot send", async () => {
+    const identity = await createSenderIdentity({
+      context: adminContext,
+      mailboxId,
+      input: {
+        label: "Reason sender",
+        displayName: "Reason sender",
+        fromAddress: `reason-${suffix}@example.com`,
+        defaultCc: [],
+        authenticationPolicy: { automation: "disabled" },
+        isDefault: false,
+      },
+    });
+    expect(identity.ok).toBe(true);
+    if (!identity.ok) return;
+    // This mailbox has no Sent folder, so the identity has none either.
+    expect(identity.data).toMatchObject({ sentFolderId: null, statusReason: "sent_folder_missing" });
+
+    const missing = await verifySenderIdentity({
+      context: adminContext,
+      mailboxId,
+      senderIdentityId: identity.data.id,
+      bindingId,
+      verificationRecipient: `reason-${suffix}@example.com`,
+      savesSentAutomatically: false,
+    });
+    expect(missing).toMatchObject({ ok: false, error: { status: 400 } });
+
+    const send = spyOn(imapSmtpConnector, "send").mockRejectedValue(new Error("fixture sender rejection"));
+    try {
+      const rejected = await verifySenderIdentity({
+        context: adminContext,
+        mailboxId,
+        senderIdentityId: identity.data.id,
+        bindingId,
+        verificationRecipient: `reason-${suffix}@example.com`,
+        savesSentAutomatically: true,
+      });
+      expect(rejected.ok).toBe(false);
+    } finally {
+      send.mockRestore();
+    }
+    const listed = await listSenderIdentities(adminContext, mailboxId);
+    expect(listed.ok).toBe(true);
+    if (listed.ok) {
+      expect(listed.data.find((item) => item.id === identity.data.id)).toMatchObject({
+        status: "rejected",
+        statusReason: "provider_rejected",
+      });
     }
   });
 

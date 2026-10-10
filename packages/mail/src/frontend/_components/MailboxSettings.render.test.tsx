@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import type { SenderIdentity } from "../../contracts";
 import type { MailboxSettingsContext } from "../../settings-context";
 
 const root = mkdtempSync(join(tmpdir(), "mailbox-settings-render-tests-"));
@@ -110,6 +111,60 @@ describe("Mailbox settings composition", () => {
     expect(html).toContain("Connected account");
     expect(html).toContain("Sending identities");
     expect(html).toContain('class="flex flex-col gap-8"');
+  });
+
+  test("names why each sending identity cannot send and offers the fix", () => {
+    const identity = (id: string, status: SenderIdentity["status"], statusReason: SenderIdentity["statusReason"]): SenderIdentity => ({
+      id,
+      mailboxId,
+      label: id,
+      displayName: id,
+      fromAddress: `${id.toLowerCase()}@example.test`,
+      replyTo: null,
+      defaultCc: [],
+      defaultBcc: [],
+      defaultFormat: "markdown",
+      defaultPriority: "normal",
+      defaultDeliveryReceipt: false,
+      defaultReadReceipt: false,
+      vcard: null,
+      envelopeSender: null,
+      defaultSignatureTemplateId: null,
+      transport: {
+        mode: "mailbox",
+        host: null,
+        port: null,
+        tlsMode: null,
+        username: null,
+        secret: { kind: null, isSet: false },
+        revision: 0,
+        status: "active",
+        capabilities: { dsn: false, size: false, maxMessageBytes: null },
+        lastVerifiedAt: null,
+        lastError: null,
+      },
+      authenticationPolicy: { automation: "disabled" },
+      sentFolderId: null,
+      draftsFolderId: null,
+      isDefault: false,
+      status,
+      statusReason,
+      createdAt: now,
+      updatedAt: now,
+    });
+    const html = renderSettings("admin", "delivery", undefined, {
+      identities: [
+        identity("Missing", "unverified", "sent_folder_missing"),
+        identity("Refused", "rejected", "provider_rejected"),
+        identity("Ready", "verified", null),
+      ],
+    });
+
+    expect(html).toContain("Sent folder missing");
+    expect(html).toContain("Choose Sent folder");
+    expect(html).toContain("Rejected by the provider");
+    expect(html).toContain(">Verify<");
+    expect(html).toContain(">Ready<");
   });
 
   test("keeps reader settings personal and hides administrator categories", () => {

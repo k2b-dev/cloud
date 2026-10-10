@@ -2922,6 +2922,15 @@ export const senderIdentityTransportSchema = z.object({
 });
 export type SenderIdentityTransport = z.infer<typeof senderIdentityTransportSchema>;
 
+/**
+ * Why a sender identity cannot send yet, as a stable code that clients translate; `null` once it is verified.
+ * `sent_folder_missing`: no Sent folder is set and the provider was not verified as saving sent mail itself.
+ * `provider_rejected`: the provider refused the last verification message.
+ * `verification_required`: the identity is configured and waits for a verification message.
+ */
+export const senderIdentityStatusReasonSchema = z.enum(["sent_folder_missing", "provider_rejected", "verification_required"]);
+export type SenderIdentityStatusReason = z.infer<typeof senderIdentityStatusReasonSchema>;
+
 export const senderIdentitySchema = z.object({
   id: ResourceShortIdSchema,
   mailboxId: ResourceShortIdSchema,
@@ -2944,6 +2953,7 @@ export const senderIdentitySchema = z.object({
   draftsFolderId: ResourceShortIdSchema.nullable(),
   isDefault: z.boolean(),
   status: z.enum(["unverified", "verified", "rejected", "disabled"]),
+  statusReason: senderIdentityStatusReasonSchema.nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });

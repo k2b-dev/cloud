@@ -1,4 +1,5 @@
 import { consumeCommandLink, openCommand, registerCommandHandler } from "@k2b/cloud/browser/commands";
+import { importOnDemand } from "@k2b/cloud/browser/reload";
 import { CommandPathSchema, cloudResourceRefAppId } from "@k2b/cloud/contracts";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
 import { Button, ButtonLink, NoticeCard, Placeholder, prompts, ScrollArea, Select, useLocale } from "@k2b/ui";
@@ -9,6 +10,7 @@ import type { MailContactDirectory } from "../../contact-directory-settings";
 import type { MailDraftSeed, SenderIdentity } from "../../contracts";
 import { readApiError } from "./api-response";
 import { readContact } from "./contact-capabilities";
+import MailSenderUnavailableNotice from "./MailSenderUnavailableNotice";
 import { type MailComposeIntentErrorCode, parseMailtoIntent } from "./mail-compose-intent";
 import { mailDraftReturnHref, mailDraftSeedHref } from "./mail-compose-route";
 import { mailComposerMessages } from "./mail-composer-messages";
@@ -19,6 +21,7 @@ type WritableMailbox = {
   id: string;
   name: string;
   description: string | null;
+  canManage: boolean;
 };
 
 export default function MailComposeIntentPage(props: {
@@ -28,6 +31,7 @@ export default function MailComposeIntentPage(props: {
   mailto: string | null;
   returnHref: string | null;
   contactDirectory: MailContactDirectory;
+  currentUserEmail: string | null;
 }) {
   const locale = useLocale();
   const t = () => mailComposerMessages.resolve([locale()]).t;
@@ -132,13 +136,14 @@ export default function MailComposeIntentPage(props: {
         { init: { signal: abortSignal } },
       );
       if (!response.ok) throw new Error(await readApiError(response, t().identitiesLoadFailed));
-      return { mailboxId: selectedMailboxId, items: (await response.json()).filter((identity) => identity.status === "verified") };
+      return { mailboxId: selectedMailboxId, items: await response.json() };
     },
   });
-  const identities = () => {
+  const allIdentities = () => {
     const result = identityResults.data();
     return result?.mailboxId === mailboxId() ? result.items : [];
   };
+  const identities = () => allIdentities().filter((identity) => identity.status === "verified");
   const identityLoading = () => identityResults.loading() || identityResults.refreshing();
   const identityError = () => identityResults.error()?.message ?? null;
 
@@ -153,6 +158,25 @@ export default function MailComposeIntentPage(props: {
   });
 
   const selectedMailbox = createMemo(() => props.mailboxes.find((mailbox) => mailbox.id === mailboxId()) ?? null);
+  const [settingsOpening, setSettingsOpening] = createSignal(false);
+  const openSenderSettings = async () => {
+    const mailbox = selectedMailbox();
+    if (!mailbox || settingsOpening()) return;
+    setSettingsOpening(true);
+    try {
+      const settings = await importOnDemand(() => import("./MailboxSettingsDialog"));
+      if (!settings) return;
+      const result = await settings.openMailboxSettingsDialog({
+        mailboxId: mailbox.id,
+        currentUserEmail: props.currentUserEmail,
+        contactDirectory: props.contactDirectory,
+        initialTab: "delivery",
+      });
+      if (result.workspaceChanged) await identityResults.refresh();
+    } finally {
+      setSettingsOpening(false);
+    }
+  };
   const selectedIdentity = createMemo(() => identities().find((identity) => identity.id === identityId()) ?? null);
   const draftCreation = mutations.create<{ seed: MailDraftSeed; identityId: string }, { mailboxId: string; identity: SenderIdentity }>({
     mutation: async ({ mailboxId: selectedMailboxId, identity }, { abortSignal }) => {
@@ -305,8 +329,13 @@ export default function MailComposeIntentPage(props: {
                   </NoticeCard>
                 )}
               </Show>
-              <Show when={mailboxId() && !identityLoading() && !identityError() && identities().length === 0}>
-                <NoticeCard tone="neutral">{t().noVerifiedSender}</NoticeCard>
+              {/* A refresh after the sender settings keeps the notice in place until the new senders arrive. */}
+              <Show when={mailboxId() && !identityResults.loading() && !identityError() && identities().length === 0}>
+                <MailSenderUnavailableNotice
+                  identities={allIdentities()}
+                  onOpenSettings={selectedMailbox()?.canManage ? () => void openSenderSettings() : undefined}
+                  opening={settingsOpening()}
+                />
               </Show>
             </div>
             <Show when={commandError()}>
