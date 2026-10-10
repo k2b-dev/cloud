@@ -1005,8 +1005,42 @@ describe("mail capabilities", () => {
           { label: "Conversation", value: "Release follow-up" },
           { label: "Destination", value: "Projekte / 2025 / Archiv" },
         ],
+        approvalScope: `mailbox:${mailboxId}`,
       },
     });
+  });
+
+  test("asks every time for a move into Trash or Junk named by folder ID", async () => {
+    spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue({ ok: true, data: "write" });
+    spyOn(messages, "listConversationMessages").mockResolvedValue({
+      ok: true,
+      data: { items: [{ subject: "Release follow-up" }], nextCursor: null },
+    } as never);
+    const folders = spyOn(messages, "listFolders");
+    const review = () =>
+      mailCapabilities.actions["conversation.move"].review(
+        ConversationMoveInputSchema.parse({
+          mailboxId,
+          target: { conversationId, sourceFolderId: folderAId },
+          destination: { kind: "folder", folderId },
+        }),
+        context,
+      );
+    const bins = [
+      { role: "trash", providerRole: "trash", configuredRole: null },
+      { role: "junk", providerRole: "other", configuredRole: "junk" },
+      { role: "archive", providerRole: "junk", configuredRole: "archive" },
+    ] as const;
+    for (const roles of bins) {
+      folders.mockResolvedValue({ ok: true, data: [{ id: internalFolderId, parentId: null, name: "Bin", ...roles }] } as never);
+      const reviewed = await review();
+      expect(reviewed.ok).toBeTrue();
+      expect(reviewed.ok && reviewed.data.approvalScope).toBeUndefined();
+    }
+    // A folder the list does not name cannot prove it is no bin.
+    folders.mockResolvedValue({ ok: true, data: [] } as never);
+    const unknown = await review();
+    expect(unknown.ok && unknown.data.approvalScope).toBeUndefined();
   });
 
   test("shows the current and replacement comment directly in the review", async () => {

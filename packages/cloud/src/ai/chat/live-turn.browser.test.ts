@@ -1025,7 +1025,8 @@ for (const view of [
           callId: "run",
           status: "completed",
           approved: true,
-          result: { status: "ok", autoAllowedRequests: [{ method: "GET", url }] },
+          result: { status: "ok" },
+          receipts: [{ method: "GET", url }],
         },
       });
       const work = page.locator(".ai-turn-work > summary");

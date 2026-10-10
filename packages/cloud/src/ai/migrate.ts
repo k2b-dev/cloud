@@ -725,6 +725,16 @@ export const migrateCloudAi = async (): Promise<void> => {
     ON ai.tool_approval_preferences(conversation_id)
     WHERE conversation_id IS NOT NULL
   `.simple();
+  // Addresses a chat's web searches returned and the pages it read link to, normalized; web_extract and fetch_file
+  // read them without asking. Recorded when the tool runs, so a read never scans stored results.
+  await sql`
+    CREATE TABLE IF NOT EXISTS ai.web_addresses (
+      conversation_id UUID NOT NULL REFERENCES ai.conversations(id) ON DELETE CASCADE,
+      address TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (conversation_id, address)
+    )
+  `.simple();
 
   await sql`
     CREATE TABLE IF NOT EXISTS ai.tool_calls (

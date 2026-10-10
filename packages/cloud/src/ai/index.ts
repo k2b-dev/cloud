@@ -367,6 +367,7 @@ export type {
   AiTurnStatus,
   AiTurnToolSource,
   AiUserContentPart,
+  AiWebsiteReceipt,
 } from "./types";
 export { AI_MESSAGE_FEEDBACK_REASONS, isAiImageMediaType } from "./types";
 export { isAiSettingsError } from "./validate";

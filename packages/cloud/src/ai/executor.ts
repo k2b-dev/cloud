@@ -56,7 +56,7 @@ import { isAiVisionModelConfigured, type resolveAiModel } from "./settings";
 import { selectAiSkillCatalog } from "./skill-catalog";
 import { createCloudAiLoadSkillTool, createCloudAiSearchSkillsTool, loadSelectedAiSkills } from "./skill-tool";
 import { aiSkills } from "./skills";
-import { aiConversations } from "./store";
+import { aiConversations, recordAiWebsiteReceipts } from "./store";
 import { AI_LIVE_SNAPSHOT_INTERVAL_MS, publishAiWireEvent } from "./stream";
 import { composeAiSystemPrompt } from "./system-prompt";
 import { aiToolAudit } from "./tool-audit";
@@ -87,6 +87,7 @@ import type {
   AiTurnFinalizedEvent,
   AiTurnRunConfig,
   AiTurnSteer,
+  AiWebsiteReceipt,
 } from "./types";
 import { isAiImageMediaType } from "./types";
 import { validateAiTurnRequest } from "./validate";
@@ -391,9 +392,25 @@ const approvalReviewForCallId = (
  */
 const createEventMapper = (attempt: number, seedBlocks: AiTurnBlock[], allowRememberedApprovals = true) => {
   const toolBlocks = new Map<string, Extract<AiTurnBlock, { kind: "tool" }>>();
+  /** Website receipts by the call that shows them and their index; every later state of that call keeps them. */
+  const receiptsByCall = new Map<string, Map<number, { method: string; url: string }>>();
   for (const block of seedBlocks) {
-    if (block.kind === "tool") toolBlocks.set(block.callId, block);
+    if (block.kind !== "tool") continue;
+    toolBlocks.set(block.callId, block);
+    // A pending nested approval shows on its parent call's block; receipts belong to that block.
+    const shownCallId = block.id === toolBlockId(block.callId) ? block.callId : (customApprovalParentCallId(block.callId) ?? block.callId);
+    if (block.receipts?.length) receiptsByCall.set(shownCallId, new Map(block.receipts.map((receipt, index) => [index, receipt])));
   }
+  const receiptsOf = (callId: string) => {
+    const receipts = receiptsByCall.get(callId);
+    return receipts ? [...receipts].sort(([a], [b]) => a - b).map(([, receipt]) => receipt) : undefined;
+  };
+  const addReceipts = (callId: string, receipts: AiWebsiteReceipt[]) => {
+    const known = receiptsByCall.get(callId) ?? new Map<number, { method: string; url: string }>();
+    for (const { index, method, url } of receipts) known.set(index, { method, url });
+    receiptsByCall.set(callId, known);
+    return receiptsOf(callId) ?? [];
+  };
   /** Real frontend mode per tool name — set once the turn's tools are prepared.
    *  Getting this wrong is not cosmetic: the client auto-resolves plain "client"
    *  blocks, so a mislabeled client_interaction tool (survey) would be answered
@@ -453,6 +470,7 @@ const createEventMapper = (attempt: number, seedBlocks: AiTurnBlock[], allowReme
       frontendMode: patch.frontendMode ?? existing?.frontendMode,
       presentation: patch.presentation ?? existing?.presentation ?? presentations.get(rawName) ?? presentations.get(name),
       ...(approvedCallIds.has(callId) || approvedCallIds.has(displayCallId) || existing?.approved ? { approved: true } : {}),
+      ...(receiptsOf(displayCallId) ? { receipts: receiptsOf(displayCallId) } : {}),
     };
     toolBlocks.set(callId, block);
     return { type: "block_set", block };
@@ -565,6 +583,7 @@ const createEventMapper = (attempt: number, seedBlocks: AiTurnBlock[], allowReme
     setApprovalTargets,
     setRejectedCallIds,
     setApprovedCallIds,
+    addReceipts,
   };
 };
 
@@ -925,6 +944,7 @@ export class AiTurnExecutor {
     const dynamicToolRuntimeContext = {
       turnId,
       reportToolProgress: (callId: string, message: string) => pipeline.reportToolProgress(callId, message),
+      reportWebsiteReceipts: (callId: string, receipts: AiWebsiteReceipt[]) => pipeline.reportWebsiteReceipts(callId, receipts),
       attachedFilePaths: new Set(config.files?.attached.map((file) => file.path) ?? []),
       allowedDataBoundaries: material.modelPolicy?.allowedDataBoundaries,
       projectFiles,
@@ -1990,6 +2010,20 @@ class StreamPipeline {
       type: "block_set",
       block: { id: steerAppliedBlockId(steer.id), kind: "steer_applied", steerId: steer.id },
     });
+    await this.maybeSnapshot();
+  }
+
+  /**
+   * Shows requests a website approval let through on the call's block, and records them on its message before they go
+   * out, so the chat keeps each receipt and its revoke action whether the call succeeds, fails, or the turn stops.
+   */
+  async reportWebsiteReceipts(callId: string, receipts: AiWebsiteReceipt[]): Promise<void> {
+    if (!receipts.length) return;
+    await recordAiWebsiteReceipts({ conversationId: this.conversationId, turnId: this.turnId, callId, receipts });
+    const merged = this.mapper.addReceipts(callId, receipts);
+    const block = this.blocks.find((block) => block.kind === "tool" && block.id === toolBlockId(callId));
+    if (block?.kind !== "tool") return;
+    await this.emitOp({ type: "block_set", block: { ...block, receipts: merged } });
     await this.maybeSnapshot();
   }
 

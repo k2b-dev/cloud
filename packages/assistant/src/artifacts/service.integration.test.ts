@@ -3120,6 +3120,25 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
           approvals: [],
           receipts: [{ method: "GET", url: "https://example.com/data?symbols=NVDA,AAPL" }],
         });
+        // Receipts grow with every request, so each answer carries one page of them and the result follows the last.
+        const many = await runCode(
+          "website-many",
+          'export default async()=>{for(let i=0;i<52;i++)await cloud.http.fetch("https://example.com/data?page="+i);return "ok"}',
+        );
+        expect(many.pending).toBeUndefined();
+        expect(many.state).toMatchObject({ status: "done", moreReceipts: true });
+        expect("receipts" in many.state && many.state.receipts).toHaveLength(50);
+        expect("result" in many.state && many.state.result).toBeUndefined();
+        const rest = await agentHost.call({ ...many.input, receiptsAfter: 50 }, context);
+        expect(rest).toMatchObject({
+          status: "done",
+          moreReceipts: false,
+          receipts: [
+            { method: "GET", url: "https://example.com/data?page=50" },
+            { method: "GET", url: "https://example.com/data?page=51" },
+          ],
+        });
+        expect(rest).toMatchObject({ result: { output: expect.stringContaining("ok") } });
         const sentBefore = sent;
         // A custom header, a body, or another origin always asks; nothing is offered to remember for a header.
         const header = await runCode("website-header", fetchCode("https://example.com/data", '{headers:{"x-mode":"full"}}'));

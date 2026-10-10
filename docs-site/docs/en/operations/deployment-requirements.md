@@ -444,17 +444,21 @@ This release lets people remember an approval for one chat and allow a website
 for one chat or one Studio app. It needs no configuration change. The first
 Core start adds `conversation_id` to `ai.tool_approval_preferences`, replaces
 the unique constraint `ai_tool_approval_preferences_unique` with the index
-`ai_tool_approval_preferences_reach`, and adds two columns to
-`ai.pending_actions`. Assistant adds two columns to
-`assistant.artifact_agent_approvals`. A chat approval is deleted with its chat,
-and an app's website approvals with the app.
+`ai_tool_approval_preferences_reach`, adds two columns to
+`ai.pending_actions`, and creates `ai.web_addresses` for the addresses a
+chat's searches returned and its read pages link to. Assistant adds two
+columns to `assistant.artifact_agent_approvals`. A chat approval and a chat's
+addresses are deleted with the chat, and an app's website approvals with the
+app.
 
 Two behaviors change for people. More built-in Actions can be remembered, and
 `web_extract` and `fetch_file` now ask before reading an address that the
 chat did not supply, which means an address that is not in the person's
-message, a search result, or a link of a page read earlier. A scheduled
-task cannot ask, so a task that reads such an address now fails with a message
-to run it in the normal chat; give it the address in its prompt instead.
+message, a search result, or a link of a page read earlier. Search results and
+pages read before the update are not recorded, so reading one of their links
+in an existing chat asks once. A scheduled task cannot ask, so a task that
+reads such an address now fails with a message to run it in the normal chat;
+give it the address in its prompt instead.
 
 Roll Core and Assistant over together. Before rolling Core back to an earlier
 release, run the following in the Cloud database. An earlier Core expects the

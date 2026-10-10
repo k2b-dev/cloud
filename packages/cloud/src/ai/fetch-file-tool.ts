@@ -38,8 +38,6 @@ export const CloudAiFetchFileOutputSchema = z.object({
   size: z.number().int().nonnegative(),
   mediaType: z.string(),
   url: z.string().url(),
-  /** Downloaded without asking because the person allowed this website for the chat; the chat shows it as a receipt. */
-  allowedForChat: z.literal(true).optional(),
 });
 
 const publicHttpsUrl = (rawUrl: string): URL => {
@@ -228,9 +226,12 @@ const responseLocation = (headers: IncomingHttpHeaders): string | null => {
   return typeof value === "string" && value.trim() ? value : null;
 };
 
+/** How a download that a website approval let through may proceed: only on that origin, each request shown first. */
+type WebsiteApprovedDownload = { origin: string; onRequest: (url: URL, hop: number) => Promise<void> };
+
 export const downloadPublicFile = async (
   rawUrl: string,
-  options: FetchFileDependencies & { maxBytes?: number; signal?: AbortSignal } = {},
+  options: FetchFileDependencies & { maxBytes?: number; signal?: AbortSignal; approvedWebsite?: WebsiteApprovedDownload } = {},
 ): Promise<{ bytes: Uint8Array; headers: IncomingHttpHeaders; url: URL }> => {
   const resolve = options.resolve ?? resolvePublicNetworkAddresses;
   const perform =
@@ -241,6 +242,14 @@ export const downloadPublicFile = async (
   let url = publicHttpsUrl(rawUrl);
 
   for (let redirects = 0; redirects <= FETCH_FILE_MAX_REDIRECTS; redirects++) {
+    if (options.approvedWebsite) {
+      // A website approval covers its own origin only; an open redirect must not carry the address to another one.
+      if (url.origin !== options.approvedWebsite.origin)
+        throw new Error(
+          `Redirect to another website — The file moved to ${url.toString()}, which this chat has not allowed. Download that address directly so the person can decide.`,
+        );
+      await options.approvedWebsite.onRequest(url, redirects);
+    }
     const addresses = await resolveFileAddresses(resolve, url.hostname);
     const response = await perform(url, addresses, { maxBytes, signal: options.signal });
     if (response.statusCode >= 300 && response.statusCode < 400) {
@@ -283,11 +292,15 @@ const responseMediaType = (headers: IncomingHttpHeaders, path: string): string =
 
 export const runCloudAiFetchFile = async (
   input: z.infer<typeof CloudAiFetchFileInputSchema>,
-  context: { conversationId?: string; signal?: AbortSignal },
+  context: { conversationId?: string; signal?: AbortSignal; approvedWebsite?: WebsiteApprovedDownload },
   dependencies: FetchFileDependencies = {},
 ): Promise<z.infer<typeof CloudAiFetchFileOutputSchema>> => {
   if (!context.conversationId) throw new Error("The fetch_file tool needs a conversation context.");
-  const downloaded = await downloadPublicFile(input.url, { ...dependencies, signal: context.signal });
+  const downloaded = await downloadPublicFile(input.url, {
+    ...dependencies,
+    signal: context.signal,
+    approvedWebsite: context.approvedWebsite,
+  });
   const path = normalizeAiFilePath(`/imports/${safeFilename(input.filename, downloaded.url)}`);
   if (!path) throw new Error("Could not derive a valid conversation file path.");
   const stat = await aiFileStore.createAssistantFile({
@@ -311,9 +324,26 @@ export const createCloudAiFetchFileTool = (dependencies: FetchFileDependencies =
     promptHint:
       "fetch an exact public HTTPS source file into the chat when the user provides a file link; inspect it with read_file or view_image and present it when useful.",
   }).server(async (input, context) => {
-    const allowedForChat = await authorizeWebRead("file", input.url, publicHttpsUrl(input.url).toString(), context);
-    const output = await runCloudAiFetchFile(input, context, dependencies);
-    return allowedForChat ? { ...output, allowedForChat: true as const } : output;
+    const url = publicHttpsUrl(input.url);
+    const allowedForChat = await authorizeWebRead("file", url.toString(), context);
+    return runCloudAiFetchFile(
+      input,
+      {
+        ...context,
+        ...(allowedForChat
+          ? {
+              approvedWebsite: {
+                origin: url.origin,
+                // The first request's receipt is already shown; each redirect on the same website adds one.
+                onRequest: async (next: URL, hop: number) => {
+                  if (hop > 0) await context.reportWebsiteReceipts?.([{ index: hop, method: "GET", url: next.toString() }]);
+                },
+              },
+            }
+          : {}),
+      },
+      dependencies,
+    );
   });
 
 export type CloudAiFetchFileInput = z.infer<typeof CloudAiFetchFileInputSchema>;

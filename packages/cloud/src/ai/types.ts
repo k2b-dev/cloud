@@ -303,6 +303,8 @@ export type AiStoredMessage = {
     toolPresentations?: Record<string, AiToolPresentation>;
     /** How the person decided an approval; `expired` when the turn ended while it still waited. */
     toolOutcomes?: Record<string, "rejected" | "approved" | "expired">;
+    /** Requests a website approval let through, by tool call and then by `AiWebsiteReceipt.index`. */
+    websiteReceipts?: Record<string, Record<string, { method: string; url: string }>>;
     /** Why the turn failed, on the last message of its loop. The chat words it in the reader's language. */
     turnError?: AiTurnError;
   } | null;
@@ -1040,6 +1042,12 @@ export type AiApprovalTarget = {
   always: boolean;
 };
 
+/**
+ * A request a remembered website approval let through without asking. The chat shows it with its full URL and a revoke
+ * action; `index` orders the receipts of one tool call, and a receipt reported again with the same index replaces it.
+ */
+export type AiWebsiteReceipt = { index: number; method: string; url: string };
+
 export type AiFrontendToolMode = "client" | "client_view" | "client_interaction";
 
 export type AiCapabilityToolPresentation = {
@@ -1097,6 +1105,8 @@ export type AiToolRuntime<TInput extends z.ZodType = z.ZodType, TOutput extends 
           reportProgress?: (message: string) => Promise<void>;
           /** Asks like `requestApproval`, and lets the person remember the approval of `target`. */
           requestApprovalFor?: (message: string, target: AiApprovalTarget) => Promise<boolean>;
+          /** Shows requests a website approval let through as they go out, so the chat keeps them whatever the outcome. */
+          reportWebsiteReceipts?: (receipts: AiWebsiteReceipt[]) => Promise<void>;
         },
       ): Promise<z.infer<TOutput>>;
     }

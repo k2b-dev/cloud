@@ -14,6 +14,7 @@ import type {
   AiToolApprovalPolicy,
   AiToolDefinition,
   AiToolRuntime,
+  AiWebsiteReceipt,
 } from "./types";
 
 export const defineAiTool = <TInput extends z.ZodType, TOutput extends z.ZodType>(config: {
@@ -63,6 +64,8 @@ export const defineAiTool = <TInput extends z.ZodType, TOutput extends z.ZodType
           reportProgress?: (message: string) => Promise<void>;
           /** Asks like `requestApproval`, and lets the person remember the approval of `target`. */
           requestApprovalFor?: (message: string, target: AiApprovalTarget) => Promise<boolean>;
+          /** Shows requests a website approval let through as they go out, so the chat keeps them whatever the outcome. */
+          reportWebsiteReceipts?: (receipts: AiWebsiteReceipt[]) => Promise<void>;
         },
       ) => Promise<z.infer<TOutput>>,
     ): AiToolRuntime<TInput, TOutput> {
@@ -111,6 +114,7 @@ export type AiToolPreparationContext = {
   reportToolProgress?: (callId: string, message: string) => Promise<void>;
   /** Hears what a nested approval asks for, keyed by the approval's call ID, before the approval is requested. */
   describeApproval?: (approvalCallId: string, target: AiApprovalTarget) => void;
+  reportWebsiteReceipts?: (callId: string, receipts: AiWebsiteReceipt[]) => Promise<void>;
 };
 
 export const prepareAiTools = (input: AiToolPreparationContext & { tools?: AiRuntimeTool[] }): PreparedAiTools => {
@@ -163,6 +167,8 @@ export const prepareAiTools = (input: AiToolPreparationContext & { tools?: AiRun
           locale: input.locale,
           timeZone: input.timeZone,
           reportProgress: callId && report ? (message) => report(callId, message) : undefined,
+          reportWebsiteReceipts:
+            callId && input.reportWebsiteReceipts ? (receipts) => input.reportWebsiteReceipts!(callId, receipts) : undefined,
         });
       });
     }

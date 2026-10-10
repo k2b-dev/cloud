@@ -40,12 +40,19 @@ export const AgentHostRequest = z
     name: z.enum(["code_run", "code_action", "code_inspect", "code_stop", "code_export", "code_present", "code_check"]),
     args: z.unknown(),
     decision: z.object({ id: z.uuid(), approved: z.boolean() }).optional(),
+    /** How many receipts of this call the caller already has; the answer continues after them. */
+    receiptsAfter: z.number().int().min(0).optional(),
   })
   .strict();
 type Call = z.infer<typeof AgentHostRequest>;
 const ApprovalTarget = z.object({ toolName: z.string(), approvalScope: z.string(), always: z.boolean() });
 /** A request a remembered website approval let through without asking; the chat shows it with its full URL. */
 const Receipt = z.object({ method: z.string(), url: z.string() });
+/**
+ * Receipts per poll answer. Core reads at most 256 KiB per answer; a receipt holds one URL of at most 2,000
+ * characters, so 50 take at most about 100 KiB and leave the rest to the call's approvals.
+ */
+const RECEIPTS_PER_POLL = 50;
 type Host = Awaited<ReturnType<typeof createCliCodeHost>>;
 type Session = {
   phase: "starting" | "running";
@@ -534,23 +541,29 @@ export const agentHost = {
     }
     if (session) session.lastUsed = Date.now();
     const rows = await sql<
-      { id: string; message: string; decision: boolean | null; remember: unknown; receipt: unknown }[]
-    >`SELECT id,message,decision,remember,receipt FROM assistant.artifact_agent_approvals WHERE turn_id=${call.turnId}::uuid AND call_id=${call.callId} ORDER BY ordinal`;
-    const approvals = rows
-      .filter((approval) => approval.receipt === null)
-      .map(({ id, message, decision, remember }) => ({
-        id,
-        message,
-        decision,
-        remember: remember ? ApprovalTarget.parse(remember) : undefined,
-      }));
-    const receipts = rows.flatMap((approval) => (approval.receipt === null ? [] : [Receipt.parse(approval.receipt)]));
+      { id: string; message: string; decision: boolean | null; remember: unknown }[]
+    >`SELECT id,message,decision,remember FROM assistant.artifact_agent_approvals
+      WHERE turn_id=${call.turnId}::uuid AND call_id=${call.callId} AND receipt IS NULL ORDER BY ordinal`;
+    const approvals = rows.map(({ id, message, decision, remember }) => ({
+      id,
+      message,
+      decision,
+      remember: remember ? ApprovalTarget.parse(remember) : undefined,
+    }));
+    // Receipts can grow with every request a run makes, so each answer carries only the next page of them.
+    const page = await sql<{ receipt: unknown }[]>`SELECT receipt FROM assistant.artifact_agent_approvals
+      WHERE turn_id=${call.turnId}::uuid AND call_id=${call.callId} AND receipt IS NOT NULL
+      ORDER BY ordinal OFFSET ${call.receiptsAfter ?? 0} LIMIT ${RECEIPTS_PER_POLL + 1}`;
+    const receipts = page.slice(0, RECEIPTS_PER_POLL).map((entry) => Receipt.parse(entry.receipt));
+    const moreReceipts = page.length > RECEIPTS_PER_POLL;
     return {
       status: row.status,
       phase: approvals.some((approval) => approval.decision === null) ? "waiting_for_user" : session?.phase,
-      result: row.result,
+      // The result follows the last receipt, so one answer never carries both in full.
+      result: moreReceipts ? undefined : row.result,
       approvals,
       receipts,
+      moreReceipts,
     };
   },
   async sweep() {

@@ -19,7 +19,7 @@ test("two managed approvals retain their Nessi action IDs across two suspended a
   ];
   const decisions: string[] = [];
   const tool = defineTool({ name: "code_run", description: "Run", inputSchema: z.object({}) }).server(async (_input, context) =>
-    waitForManagedCodeCall(async (decision) => {
+    waitForManagedCodeCall(async ({ decision }) => {
       if (decision) {
         const approval = approvals.find((item) => item.id === decision.id)!;
         expect(approval.decision).toBeNull();
@@ -483,10 +483,15 @@ test("a code call stops retrying a stalled issuance after one refresh window and
   }
 });
 
-test("a code approval names the website or Action it asks for, and the result lists requests a website approval let through", async () => {
+test("a code approval names the website or Action it asks for, and receipts are reported page by page whatever the outcome", async () => {
   const website = { toolName: "website:read", approvalScope: "https://query1.finance.yahoo.com", always: false };
   const asked: Array<{ message: string; target?: unknown }> = [];
-  const receipts = [{ method: "GET", url: "https://query1.finance.yahoo.com/v8/finance/chart/NVDA?range=1d" }];
+  const reported: unknown[] = [];
+  const receipts = [
+    { method: "GET", url: "https://query1.finance.yahoo.com/v8/finance/chart/NVDA?range=1d" },
+    { method: "GET", url: "https://query1.finance.yahoo.com/v8/finance/chart/AAPL?range=1d" },
+    { method: "HEAD", url: "https://query1.finance.yahoo.com/v8/finance/chart/MSFT?range=1d" },
+  ];
   let decided = false;
   const context = {
     signal: AbortSignal.timeout(5000),
@@ -498,29 +503,41 @@ test("a code approval names the website or Action it asks for, and the result li
       asked.push({ message, target });
       return true;
     },
+    reportWebsiteReceipts: async (page: unknown[]) => {
+      reported.push(...page);
+    },
   };
-  const result = await waitForManagedCodeCall(async (decision) => {
-    if (decision) decided = decision.approved;
-    return decided
-      ? {
-          status: "done",
-          result: { status: "ok", output: "1" },
-          approvals: [
-            { id: "11111111-1111-4111-8111-111111111111", message: "GET other", decision: true, remember: website },
-            { id: "22222222-2222-4222-8222-222222222222", message: "POST", decision: true },
-          ],
-          receipts,
-        }
-      : {
-          status: "running",
-          approvals: [{ id: "11111111-1111-4111-8111-111111111111", message: "GET other", decision: null, remember: website }],
-        };
-  }, context);
+  // The host answers two receipts at a time and holds the result back until the last page.
+  const host =
+    (result: unknown) =>
+    async ({ decision, receiptsAfter }: { decision?: { approved: boolean }; receiptsAfter: number }) => {
+      if (decision) decided = decision.approved;
+      const page = receipts.slice(receiptsAfter, receiptsAfter + 2);
+      const moreReceipts = receiptsAfter + 2 < receipts.length;
+      return decided
+        ? {
+            status: "done" as const,
+            ...(moreReceipts ? {} : { result }),
+            approvals: [
+              { id: "11111111-1111-4111-8111-111111111111", message: "GET other", decision: true, remember: website },
+              { id: "22222222-2222-4222-8222-222222222222", message: "POST", decision: true },
+            ],
+            receipts: page,
+            moreReceipts,
+          }
+        : {
+            status: "running" as const,
+            approvals: [{ id: "11111111-1111-4111-8111-111111111111", message: "GET other", decision: null, remember: website }],
+          };
+    };
+  const result = await waitForManagedCodeCall(host({ status: "ok", output: "1" }), context);
   expect(asked).toEqual([{ message: "GET other", target: website }, { message: "POST" }]);
-  expect(result).toEqual({ status: "ok", output: "1", autoAllowedRequests: receipts });
+  // The model gets the result alone; the chat gets each receipt once, in order, with its index.
+  expect(result).toEqual({ status: "ok", output: "1" });
+  expect(reported).toEqual(receipts.map((receipt, index) => ({ index, ...receipt })));
 
-  // A failed run still names every request that went out without asking.
-  await expect(
-    waitForManagedCodeCall(async () => ({ status: "done", result: { failed: true, error: "Boom." }, approvals: [], receipts }), context),
-  ).rejects.toThrow(`Boom. Allowed without asking, because the website is allowed for this chat: GET ${receipts[0]!.url}.`);
+  // A failed run reports its receipts just the same.
+  reported.length = 0;
+  await expect(waitForManagedCodeCall(host({ failed: true, error: "Boom." }), context)).rejects.toThrow("Boom.");
+  expect(reported).toEqual(receipts.map((receipt, index) => ({ index, ...receipt })));
 });

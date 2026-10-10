@@ -685,8 +685,8 @@ Action, and exact scope, and a chat choice also the chat; for example, Mail
 uses one scope per mailbox. Choose the smallest stable domain in which repeated
 calls have the same understandable consequence. A review may omit
 `approvalScope` for arguments whose consequence should be confirmed every time,
-for example a Files copy into another storage base, a Spaces task with
-assignees, or a Mail move to Trash.
+for example a Files copy into another storage base or into a publicly shared
+folder, a Spaces task with assignees, or a Mail move to Trash.
 Cloud rejects this policy on `openWorld` Actions, on `destructive` Actions, and
 on Actions without a `review`. It does not weaken app-side authorization, input validation, audit,
 or concurrency checks, all of which still run for every invocation.

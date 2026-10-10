@@ -9,7 +9,7 @@ import {
   parseAiWebsiteApprovalScope,
 } from "./approvals";
 import { __aiExecutorTest, AiTurnExecutor } from "./executor";
-import { messageBlockId, streamBlockId, toolBlockId } from "./protocol";
+import { type AiTurnBlock, messageBlockId, streamBlockId, toolBlockId } from "./protocol";
 import { aiConversations } from "./store";
 import * as stream from "./stream";
 import { prepareAiTools } from "./tools";
@@ -278,6 +278,56 @@ describe("nessi block event mapping", () => {
         message: "?",
       } as OutboundEvent)[0],
     ).toMatchObject({ block: { approval: { allowAlways: false, allowChat: false } } });
+  });
+
+  test("website receipts stay on a call through its later approval card and its failure", () => {
+    const mapper = createEventMapper(1, []);
+    mapper.setApprovalTargets(
+      new Map([["run-approval-0", { toolName: AI_WEBSITE_APPROVAL_TOOL, approvalScope: "https://a.example", always: false }]]),
+    );
+    mapper.translate({ ...turn, type: "tool_execution_start", callId: "run", name: "code_run", args: {} } as OutboundEvent);
+    expect(mapper.addReceipts("run", [{ index: 1, method: "GET", url: "https://a.example/2" }])).toEqual([
+      { method: "GET", url: "https://a.example/2" },
+    ]);
+    // A replay reports the same index again; it replaces itself, and order follows the index.
+    expect(
+      mapper.addReceipts("run", [
+        { index: 0, method: "GET", url: "https://a.example/1" },
+        { index: 1, method: "GET", url: "https://a.example/2" },
+      ]),
+    ).toEqual([
+      { method: "GET", url: "https://a.example/1" },
+      { method: "GET", url: "https://a.example/2" },
+    ]);
+    const receipts = [
+      { method: "GET", url: "https://a.example/1" },
+      { method: "GET", url: "https://a.example/2" },
+    ];
+    const asking = mapper.translate({
+      ...turn,
+      type: "tool_action_request",
+      kind: "custom_approval",
+      callId: "run-approval-0",
+      name: "code_run",
+      args: {},
+      message: "GET https://b.example",
+    } as OutboundEvent)[0];
+    expect(asking).toMatchObject({ block: { id: "tool-run", status: "awaiting_approval", receipts } });
+    const failed = mapper.translate({
+      ...turn,
+      type: "tool_execution_end",
+      callId: "run",
+      name: "code_run",
+      result: "Request failed with HTTP 401.",
+      isError: true,
+    } as OutboundEvent)[0];
+    expect(failed).toMatchObject({ block: { id: "tool-run", status: "failed", receipts } });
+    // A rebuilt turn keeps them too.
+    const rebuilt = createEventMapper(2, [{ ...(failed as { block: AiTurnBlock }).block }]);
+    expect(rebuilt.addReceipts("run", [{ index: 2, method: "HEAD", url: "https://a.example/3" }])).toEqual([
+      ...receipts,
+      { method: "HEAD", url: "https://a.example/3" },
+    ]);
   });
 
   test("reconnect rebuild replaces the parent call with its pending custom approval", () => {

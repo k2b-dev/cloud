@@ -37,6 +37,7 @@ import type {
   AiTurnStatus,
   AiTurnSteer,
   AiTurnSweepResult,
+  AiWebsiteReceipt,
 } from "./types";
 
 /** A queued turn this old without a claim is considered lost and re-enqueued by the sweep. */
@@ -883,6 +884,35 @@ const recordTurnEnd = async (
       WHERE target.id = outcomes.id
     `;
   }
+};
+
+/**
+ * Records requests a website approval let through on the assistant message that holds the tool call, as each one
+ * goes out, so the chat keeps every receipt whether the call succeeds, fails, or its turn stops. Website approvals
+ * apply only to interactive chats, whose messages live in `ai.messages`. A receipt with a known index replaces itself.
+ */
+export const recordAiWebsiteReceipts = async (input: {
+  conversationId: string;
+  turnId: string;
+  callId: string;
+  receipts: AiWebsiteReceipt[];
+}): Promise<void> => {
+  if (!input.receipts.length) return;
+  const receipts = Object.fromEntries(input.receipts.map(({ index, method, url }) => [String(index), { method, url }]));
+  await sql`
+    UPDATE ai.messages
+    SET meta = COALESCE(meta, '{}'::jsonb) || jsonb_build_object(
+      'websiteReceipts',
+      COALESCE(meta->'websiteReceipts', '{}'::jsonb) || jsonb_build_object(
+        ${input.callId}::text,
+        COALESCE(meta->'websiteReceipts'->${input.callId}::text, '{}'::jsonb) || (${JSON.stringify(receipts)}::text)::jsonb
+      )
+    )
+    WHERE conversation_id = ${input.conversationId}::uuid
+      AND loop_id = ${input.turnId}::text
+      AND role = 'assistant'
+      AND message->'content' @> jsonb_build_array(jsonb_build_object('type', 'tool_call', 'id', ${input.callId}::text))
+  `;
 };
 
 /** Insert a message inside an open conversation-lock transaction and bump the conversation. */

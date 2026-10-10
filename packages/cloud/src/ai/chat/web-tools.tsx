@@ -205,20 +205,11 @@ export function FetchFileToolBlock(props: { block: ToolBlock }) {
 
 type WebsiteReceipt = { method: string; url: string };
 
-/** Requests a website approval for this chat let through without asking, from a code run or a page read. */
-export const websiteReceipts = (block: ToolBlock): WebsiteReceipt[] => {
-  const result = block.result;
-  if (!isRecord(result)) return [];
-  if (block.name === "web_extract" || block.name === "fetch_file")
-    return result.allowedForChat === true && typeof result.url === "string"
-      ? [{ method: "GET", url: isRecord(block.args) && typeof block.args.url === "string" ? block.args.url : result.url }]
-      : [];
-  return Array.isArray(result.autoAllowedRequests)
-    ? result.autoAllowedRequests.filter(
-        (entry): entry is WebsiteReceipt => isRecord(entry) && typeof entry.method === "string" && typeof entry.url === "string",
-      )
-    : [];
-};
+/**
+ * Requests a website approval for this chat let through without asking, from a code run or a page read. The call
+ * reports them as they go out, so they are there whether it succeeded, failed, or its turn stopped.
+ */
+export const websiteReceipts = (block: ToolBlock): WebsiteReceipt[] => block.receipts ?? [];
 
 const originOf = (url: string): string => {
   try {

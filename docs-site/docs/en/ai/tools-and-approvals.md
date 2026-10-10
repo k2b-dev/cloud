@@ -114,7 +114,12 @@ A server tool that asks for something narrower than itself names it with
 instead of `context.requestApproval(message)`. The approval card then offers to
 remember that target, never the tool. Code Mode uses this for the HTTP
 requests and Capability Actions of a code run. The tool looks up remembered
-approvals for its target itself, so AI Core does not.
+approvals for its target itself, so AI Core does not. A tool that lets a
+request through on a remembered website approval reports it with
+`context.reportWebsiteReceipts([{ index, method, url }])` before the request
+goes out. The chat records each receipt on the call, so it stays visible
+whether the call succeeds, fails, or its turn stops; a receipt reported again
+with the same `index` replaces itself.
 
 Use `never` only for safe reads or deterministic presentation. Writes and
 external side effects should require approval.
@@ -421,7 +426,8 @@ these hold:
 Website approvals are never offered as **Always**. `cld`, an API key, or
 another delegated credential may approve the single request, but cannot
 remember the website. Each request let through this way appears in the chat as
-a receipt with its full URL, query included. The receipt and the chat's
+a receipt with its full URL, query included, from the moment it goes out, so a
+run or read that fails afterwards keeps it. The receipt and the chat's
 **Secrets & approvals** dialog both revoke it with one click. The
 remembered-approval name is the reserved `website:read`, which no tool or
 Capability can use.
@@ -436,15 +442,32 @@ The operator of an allowed website still sees every full address the code
 requests, including the query, which may carry data from the chat. Approve
 only websites you would let read what the chat contains.
 
+A website approval covers its own origin, never a website it redirects to.
+Code Mode does not follow redirects, and `fetch_file` stops at a redirect to
+another origin, so the model must read that address directly, which asks.
+`web_extract` reads through Firecrawl, which follows redirects on its side.
+Its receipt names where the read ended, and content from another origin is not
+returned, but the request has reached that origin by then. A website with an
+open redirect can therefore pass an address it receives on to another website.
+
 ### Read web pages with provenance
 
 `web_search` never asks. `web_extract` and `fetch_file` read an address
-without asking only when the chat supplied it: the person wrote it,
-`web_search` returned it, or a page read earlier links to it. Any other
-address, such as one the model built from other data or found in a mail, shows
-an approval card with the full URL and the same website choice as an HTTP
-request. A refused read fetches nothing. A scheduled task cannot ask, so such
-a read fails there.
+without asking only when the chat supplied it: the person wrote it in a
+message, `web_search` returned it, or a page read earlier links to it. The
+address must match one of these as a whole; a host and path that only appear
+inside a longer address do not count. A message another chat sent counts as
+none of these. Any other address, such as one the model built from other data
+or found in a mail, shows an approval card with the full URL and the same
+website choice as an HTTP request. A refused read fetches nothing. A scheduled
+task cannot ask, so such a read fails there; its own prompt counts as the
+person's message.
+
+Links of a page read earlier count as supplied, so a page can offer the model
+addresses to choose from. A page someone else controls can list links that
+differ in one detail and tell the model to pick one according to data from the
+chat; each such read then tells that website one choice. When a chat holds
+data that must not leave it, read pages only from sources you trust.
 
 See [Resource authorization](/en/docs/identity/authorization) for the domain
 permission check.

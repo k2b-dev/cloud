@@ -364,8 +364,14 @@ const successfulEntry = <T>(c: { locale: string }, value: { results: ({ ok: true
   return first.entry;
 };
 type Review = { message: string; details: { label: string; value: string }[]; approvalScope?: string };
-/** A chat may remember approving changes inside one storage base; a person sees that base's audience on the card. */
-const baseApprovalScope = (baseId: string) => `base:${baseId}`;
+/**
+ * A chat may remember approving changes inside one storage base, whose audience the card names. Where the result would
+ * land under an active public download share, it would be published, and sharing asks every time.
+ */
+const baseApprovalScope = async (c: CapabilityExecutionContext, baseId: string, path: string) =>
+  (await filesService.publiclyShared(readActor(c), baseId, path)) ? {} : { approvalScope: `base:${baseId}` };
+const parentOf = (path: string) => path.split("/").slice(0, -1).join("/");
+const nameOf = (path: string) => path.split("/").at(-1) ?? path;
 /** A review message holds at most 1,000 characters; names come from model input of up to 4,096. */
 const REVIEW_NAME_CHARS = 200;
 /**
@@ -432,7 +438,7 @@ export const fileActions = {
             { label: r.t.size, value: r.size(input.size) },
           ],
           // Replacing content asks every time; creating a new file can be remembered for its base.
-          ...(input.onConflict === "overwrite" ? {} : { approvalScope: baseApprovalScope(input.baseId) }),
+          ...(input.onConflict === "overwrite" ? {} : await baseApprovalScope(c, input.baseId, input.path)),
         });
       }),
     run: async (input: z.infer<typeof Upload>, c: CapabilityExecutionContext) =>
@@ -478,7 +484,7 @@ export const fileActions = {
             { label: r.t.path, value: r.path(joinName(folder.path, input.name)) },
             { label: r.t.size, value: r.size(input.size) },
           ],
-          approvalScope: baseApprovalScope(folder.baseId),
+          ...(await baseApprovalScope(c, folder.baseId, joinName(folder.path, input.name))),
         });
       }),
     run: async (input: z.output<typeof FileProviderSaveInputSchema>, c: CapabilityExecutionContext) =>
@@ -536,7 +542,7 @@ export const fileActions = {
           { label: r.t.storage, value: r.base(input.baseId) },
           { label: r.t.restoreTo, value: r.path(destination) },
         ],
-        approvalScope: baseApprovalScope(input.baseId),
+        ...(await baseApprovalScope(c, input.baseId, destination)),
       };
     },
     async (input, c) => {
@@ -548,13 +554,13 @@ export const fileActions = {
   "folder.create": action(
     "Create folder",
     Target,
-    (input, r) => ({
+    async (input, r, c) => ({
       message: r.t.createFolder({ name: r.name(input.path) }),
       details: [
         { label: r.t.storage, value: r.base(input.baseId) },
         { label: r.t.path, value: r.path(input.path) },
       ],
-      approvalScope: baseApprovalScope(input.baseId),
+      ...(await baseApprovalScope(c, input.baseId, input.path)),
     }),
     async (input, c) => {
       const saved = await filesService.mkdir(readActor(c), input);
@@ -565,14 +571,14 @@ export const fileActions = {
   "entry.rename": action(
     "Rename entry",
     Target.extend({ name: z.string().min(1).max(255).describe("New name without directory separators.") }).strict(),
-    (input, r) => ({
+    async (input, r, c) => ({
       message: r.t.renameEntry({ name: r.name(input.path), newName: r.name(input.name) }),
       details: [
         { label: r.t.storage, value: r.base(input.baseId) },
         { label: r.t.path, value: r.path(input.path) },
         { label: r.t.newName, value: input.name },
       ],
-      approvalScope: baseApprovalScope(input.baseId),
+      ...(await baseApprovalScope(c, input.baseId, joinName(parentOf(input.path), input.name))),
     }),
     async (input, c) => {
       const saved = await filesService.rename(readActor(c), input);
@@ -583,14 +589,14 @@ export const fileActions = {
   "entry.move": action(
     "Move entry",
     Target.extend({ folder: Path }).strict(),
-    (input, r) => ({
+    async (input, r, c) => ({
       message: r.t.moveEntry({ name: r.name(input.path) }),
       details: [
         { label: r.t.storage, value: r.base(input.baseId) },
         { label: r.t.path, value: r.path(input.path) },
         { label: r.t.targetFolder, value: r.path(input.folder) },
       ],
-      approvalScope: baseApprovalScope(input.baseId),
+      ...(await baseApprovalScope(c, input.baseId, joinName(input.folder, nameOf(input.path)))),
     }),
     async (input, c) =>
       result(
@@ -602,7 +608,7 @@ export const fileActions = {
   "entry.copy": action(
     "Copy entry",
     Target.extend({ targetBaseId: Base, folder: Path }).strict(),
-    (input, r) => ({
+    async (input, r, c) => ({
       message: r.t.copyEntry({ name: r.name(input.path) }),
       details: [
         { label: r.t.storage, value: r.base(input.baseId) },
@@ -611,7 +617,7 @@ export const fileActions = {
         { label: r.t.targetFolder, value: r.path(input.folder) },
       ],
       // A copy into another base shows the file to that base's audience, so it asks every time.
-      ...(input.targetBaseId === input.baseId ? { approvalScope: baseApprovalScope(input.baseId) } : {}),
+      ...(input.targetBaseId === input.baseId ? await baseApprovalScope(c, input.baseId, joinName(input.folder, nameOf(input.path))) : {}),
     }),
     async (input, c) =>
       result(

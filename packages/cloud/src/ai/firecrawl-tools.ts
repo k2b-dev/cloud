@@ -1,14 +1,13 @@
 import { isIP } from "node:net";
 import { type ToolContext, truncateMiddle } from "@k2b/nessi";
-import { sql } from "bun";
 import { z } from "zod";
 import type { RequestActor } from "../server";
 import { coreSettings } from "../services";
-import { toPgTextArray } from "../services/postgres";
 import { AI_WEBSITE_APPROVAL_TOOL, aiTurnAllowsWebsiteApprovals, aiWebsiteApprovalScope, findRememberedAiToolApproval } from "./approvals";
 import { aiConversations } from "./store";
 import { defineAiTool } from "./tools";
-import type { AiApprovalTarget } from "./types";
+import type { AiApprovalTarget, AiWebsiteReceipt } from "./types";
+import { hasWebAddressProvenance, recordWebAddresses, webAddressesIn } from "./web-provenance";
 
 export const AI_FIRECRAWL_API_KEY_SETTING_KEY = "ai.firecrawl_api_key";
 
@@ -55,8 +54,6 @@ export const CloudAiWebExtractOutputSchema = z.object({
   description: z.string().optional(),
   content: z.string(),
   truncated: z.boolean(),
-  /** Read without asking because the person allowed this website for the chat; the chat shows it as a receipt. */
-  allowedForChat: z.literal(true).optional(),
 });
 
 const readFirecrawlApiKey = async (): Promise<string> =>
@@ -282,44 +279,15 @@ export const createCloudAiWebSearchTool = (config: FirecrawlToolConfig = {}) =>
         ...result,
         snippet: truncateSnippet(result.snippet),
       })),
-  }).server(async (input, ctx) => runCloudAiWebSearch(input, { ...config, signal: ctx.signal }));
-
-/**
- * The forms in which an address counts as the same one. A person often types an address without its scheme or with
- * a trailing slash; a search result or link carries it as written.
- */
-const addressForms = (raw: string, url: string): { exact: string[]; typed: string[] } => {
-  const bare = url.endsWith("/") && new URL(url).pathname === "/" && !new URL(url).search ? url.slice(0, -1) : url;
-  const exact = [...new Set([raw, url, bare])];
-  return { exact, typed: [...new Set([...exact, bare.replace(/^https?:\/\//, "")])] };
-};
-
-/**
- * Whether the chat itself supplied this address: the person wrote it, a web search returned it, or a page read
- * earlier links to it. Anything else, such as an address the model assembled from other data, has no provenance.
- */
-export const hasWebAddressProvenance = async (conversationId: string, raw: string, url: string): Promise<boolean> => {
-  const { exact, typed } = addressForms(raw, url);
-  const [row] = await sql<{ found: boolean }[]>`
-    SELECT EXISTS (
-      SELECT 1 FROM (
-        SELECT role, message FROM ai.messages WHERE conversation_id = ${conversationId}::uuid AND kind = 'message'
-        UNION ALL
-        SELECT role, message FROM ai.task_messages WHERE conversation_id = ${conversationId}::uuid AND kind = 'message'
-      ) entries
-      WHERE (
-        role = 'user'
-        AND EXISTS (SELECT 1 FROM unnest(${toPgTextArray(typed)}::text[]) form WHERE position(form IN (message->'content')::text) > 0)
-      ) OR (
-        role = 'tool_result'
-        AND message->>'name' IN ('web_search', 'web_extract')
-        AND COALESCE((message->>'isError')::boolean, false) = false
-        AND EXISTS (SELECT 1 FROM unnest(${toPgTextArray(exact)}::text[]) form WHERE position(form IN (message->'result')::text) > 0)
-      )
-    ) AS found
-  `;
-  return row?.found === true;
-};
+  }).server(async (input, ctx) => {
+    const results = await runCloudAiWebSearch(input, { ...config, signal: ctx.signal });
+    if (ctx.conversationId)
+      await recordWebAddresses(
+        ctx.conversationId,
+        results.flatMap((result) => [...webAddressesIn(result.url)]),
+      );
+    return results;
+  });
 
 const webReadApprovalMessage = (kind: "page" | "file", url: string, locale: string | undefined) =>
   locale?.startsWith("de")
@@ -334,22 +302,24 @@ const webReadApprovalMessage = (kind: "page" | "file", url: string, locale: stri
         "The full address goes to the website.",
       ].join("\n");
 
-type WebReadContext = Pick<ToolContext, "requestApproval"> & {
+export type WebReadContext = Pick<ToolContext, "requestApproval"> & {
   actor: RequestActor;
   conversationId?: string;
   turnId?: string;
   locale?: string;
   requestApprovalFor?: (message: string, target: AiApprovalTarget) => Promise<boolean>;
+  reportWebsiteReceipts?: (receipts: AiWebsiteReceipt[]) => Promise<void>;
 };
 
 /**
  * Lets a public web read through when the chat supplied its address. A read sends its full address to the website,
  * and an address the chat did not supply may carry private data the model put into it, so any other address asks
  * like an HTTP request from code: with the full URL, and with the website approval of a signed-in chat. Returns
- * whether such an approval let it through without asking. Throws when the person declines.
+ * whether such an approval let it through without asking; the chat then shows the receipt before the read goes out.
+ * Throws when the person declines.
  */
-export const authorizeWebRead = async (kind: "page" | "file", raw: string, url: string, ctx: WebReadContext): Promise<boolean> => {
-  if (ctx.conversationId && (await hasWebAddressProvenance(ctx.conversationId, raw, url))) return false;
+export const authorizeWebRead = async (kind: "page" | "file", url: string, ctx: WebReadContext): Promise<boolean> => {
+  if (ctx.conversationId && (await hasWebAddressProvenance(ctx.conversationId, url))) return false;
   const target = { toolName: AI_WEBSITE_APPROVAL_TOOL, approvalScope: aiWebsiteApprovalScope(new URL(url).origin), always: false };
   const runConfig = ctx.conversationId
     ? await aiConversations.getTurnRunConfig({ conversationId: ctx.conversationId, turnId: ctx.turnId ?? "" }).catch(() => null)
@@ -358,8 +328,10 @@ export const authorizeWebRead = async (kind: "page" | "file", raw: string, url: 
   if (
     aiTurnAllowsWebsiteApprovals(runConfig) &&
     (await findRememberedAiToolApproval({ actorUserId }, { ...target, conversationId: ctx.conversationId, chatOnly: true })) !== null
-  )
+  ) {
+    await ctx.reportWebsiteReceipts?.([{ index: 0, method: "GET", url }]);
     return true;
+  }
   const message = webReadApprovalMessage(kind, url, ctx.locale);
   const approved = ctx.requestApprovalFor ? await ctx.requestApprovalFor(message, target) : await ctx.requestApproval(message);
   if (!approved) throw new Error("The person did not allow reading this address. Use an address from their message or a search result.");
@@ -388,9 +360,26 @@ export const createCloudAiWebExtractTool = (config: FirecrawlToolConfig = {}) =>
       };
     },
   }).server(async (input, ctx) => {
-    const allowedForChat = await authorizeWebRead("page", input.url, assertPublicHttpUrl(input.url), ctx);
-    const output = await runCloudAiWebExtract(input, { ...config, signal: ctx.signal });
-    return allowedForChat ? { ...output, allowedForChat: true as const } : output;
+    const url = assertPublicHttpUrl(input.url);
+    const allowedForChat = await authorizeWebRead("page", url, ctx);
+    const output = await runCloudAiWebExtract({ url }, { ...config, signal: ctx.signal });
+    const final = URL.canParse(output.url) ? new URL(output.url) : null;
+    if (allowedForChat && final && final.href !== url) {
+      // Firecrawl follows redirects on its side. The chat shows where the read ended, and a website approval covers
+      // only content from its own origin.
+      await ctx.reportWebsiteReceipts?.([{ index: 1, method: "GET", url: final.href }]);
+      if (final.origin !== new URL(url).origin)
+        throw new Error(
+          `The page redirected to ${final.href}, which this chat has not allowed. Read that address directly so the person can decide.`,
+        );
+    }
+    // The page and every address it links to may be read again without asking.
+    if (ctx.conversationId)
+      await recordWebAddresses(
+        ctx.conversationId,
+        new Set([...webAddressesIn(url), ...webAddressesIn(output.url), ...webAddressesIn(output.content)]),
+      );
+    return output;
   });
 
 export type CloudAiWebSearchInput = z.infer<typeof CloudAiWebSearchInputSchema>;

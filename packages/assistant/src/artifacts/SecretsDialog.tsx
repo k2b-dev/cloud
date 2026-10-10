@@ -184,7 +184,10 @@ function ApprovalsSection(props: { scope: HttpScope }) {
                     <strong class="block truncate" title={approval.website?.origin ?? approval.title}>
                       {approval.title}
                     </strong>
-                    <p class="truncate text-xs text-secondary">{approval.website ? copy().website : (approval.app?.name ?? "")}</p>
+                    {/* The website note wraps: its second half says the full address goes to the website. */}
+                    <p class={`text-xs text-secondary ${approval.website ? "" : "truncate"}`}>
+                      {approval.website ? copy().website : (approval.app?.name ?? "")}
+                    </p>
                   </div>
                   <Button
                     size="sm"

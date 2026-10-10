@@ -419,10 +419,8 @@ domTest("one click on a website receipt revokes the chat approval for its origin
     name: "code_run",
     status: "completed",
     args: {},
-    result: {
-      status: "ok",
-      autoAllowedRequests: [{ method: "GET", url: "https://query1.finance.yahoo.com/v8/finance/chart/NVDA?range=1d" }],
-    },
+    result: { status: "ok" },
+    receipts: [{ method: "GET", url: "https://query1.finance.yahoo.com/v8/finance/chart/NVDA?range=1d" }],
   };
   const dispose = render(
     () => (

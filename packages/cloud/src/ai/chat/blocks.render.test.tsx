@@ -988,13 +988,11 @@ describe("capability tool presentation", () => {
       name: "code_run",
       args: {},
       status: "completed",
-      result: {
-        status: "ok",
-        autoAllowedRequests: [
-          { method: "GET", url: "https://query1.finance.yahoo.com/v8/finance/chart/NVDA?range=1d&interval=5m" },
-          { method: "HEAD", url: "https://query1.finance.yahoo.com/" },
-        ],
-      },
+      result: { status: "ok" },
+      receipts: [
+        { method: "GET", url: "https://query1.finance.yahoo.com/v8/finance/chart/NVDA?range=1d&interval=5m" },
+        { method: "HEAD", url: "https://query1.finance.yahoo.com/" },
+      ],
     };
     const render = (actions: Parameters<typeof AiChatActionsProvider>[0]["actions"], locale = "en") =>
       renderToString(() =>
@@ -1024,11 +1022,32 @@ describe("capability tool presentation", () => {
       name: "web_extract",
       args: { url: "https://example.com/a?b=1" },
       status: "completed",
-      result: { url: "https://example.com/a?b=1", content: "", truncated: false, allowedForChat: true },
+      result: { url: "https://example.com/a?b=1", content: "", truncated: false },
+      receipts: [{ method: "GET", url: "https://example.com/a?b=1" }],
     };
     expect(renderToString(() => createComponent(AiTurnBlockView, { block: extract, turnId: "turn-1" }))).toContain(
       "Allowed for this chat · 1 request without asking",
     );
+    // A run that failed, as after an HTTP 401, still shows each request that went out, with its revoke action.
+    const failed: AiTurnBlock = {
+      ...run,
+      id: "run-failed",
+      callId: "run-failed",
+      status: "failed",
+      isError: true,
+      result: "Request failed with HTTP 401.",
+    };
+    const failedHtml = renderToString(() =>
+      createComponent(AiChatActionsProvider, {
+        actions: { onRevokeWebsite: async () => undefined },
+        get children() {
+          return createComponent(AiTurnBlockView, { block: failed, turnId: "turn-1" });
+        },
+      }),
+    );
+    expect(failedHtml).toContain("Allowed for this chat · 2 requests without asking");
+    expect(failedHtml).toContain("https://query1.finance.yahoo.com/v8/finance/chart/NVDA?range=1d&amp;interval=5m");
+    expect(failedHtml).toContain('aria-label="Revoke the approval for query1.finance.yahoo.com"');
   });
 
   test("renders a rejected approval as one compact result row", () => {

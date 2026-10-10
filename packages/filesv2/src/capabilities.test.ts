@@ -41,6 +41,8 @@ let baseItems: Array<Record<string, unknown>> | null = null;
 let baseIssues: Array<{ area: string; code: string }> = [];
 let readName: string | null = null;
 let uploaded: FileEntry | null = null;
+/** Paths an active public download share covers, by base. */
+let publicPaths: Array<{ baseId: string; path: string }> = [];
 const ids = new Map<string, { baseId: string; path: string }>();
 const persistedEntryRefId = async (baseId: string, path: string) => {
   const id = entryRefId(baseId, path) ?? `p:${"a".repeat(64)}`;
@@ -84,6 +86,8 @@ mock.module("./service", () => ({
       };
     },
     baseNames: async () => baseItems ?? [base],
+    publiclyShared: async (_actor: unknown, baseId: string, path: string) =>
+      publicPaths.some((shared) => shared.baseId === baseId && (path === shared.path || path.startsWith(`${shared.path}/`))),
     trashEntry: async (_actor: unknown, input: { id: string }) => {
       if (serviceFailure) throw serviceFailure;
       return { id: input.id, original: trashOriginal, name: "report.csv", directory: false, deletedAt: null, state: "trashed" };
@@ -727,6 +731,42 @@ test("reviews stay within the review bounds and never scan storage bases", async
   expect(reviewed.data.message).toContain("…");
   expect(reviewed.data.details).toContainEqual({ label: "Path", value: long });
   expect(basesCalls).toBe(0);
+});
+
+test("a change that would land under a public download share asks every time", async () => {
+  baseItems = [{ ...base, id: "home" }];
+  publicPaths = [{ baseId: "home", path: "Public" }];
+  ids.set("public-folder", { baseId: "home", path: "Public" });
+  try {
+    const reviews = [
+      await filesCapabilities.actions["content.create"].review!(
+        { baseId: "home", path: "Public/summary.md", size: 20, mediaType: "text/markdown", onConflict: "error" },
+        context,
+      ),
+      await filesCapabilities.actions["provider.save"].review!(
+        { parent: "public-folder", name: "summary.md", size: 20, mediaType: "text/markdown" },
+        context,
+      ),
+      await filesCapabilities.actions["folder.create"].review!({ baseId: "home", path: "Public/Drafts" }, context),
+      await filesCapabilities.actions["entry.rename"].review!({ baseId: "home", path: "Public/a.pdf", name: "b.pdf" }, context),
+      await filesCapabilities.actions["entry.move"].review!({ baseId: "home", path: "passport.pdf", folder: "Public" }, context),
+      await filesCapabilities.actions["entry.copy"].review!(
+        { baseId: "home", path: "passport.pdf", targetBaseId: "home", folder: "Public" },
+        context,
+      ),
+      await filesCapabilities.actions["trash.restore"].review!({ baseId: "home", id: "trash-1", path: "Public/report.csv" }, context),
+    ];
+    for (const review of reviews) {
+      expect(review.ok).toBe(true);
+      expect(review.ok && "approvalScope" in review.data).toBe(false);
+    }
+    // The same move into a private folder can still be remembered for the base.
+    expect(
+      await filesCapabilities.actions["entry.move"].review!({ baseId: "home", path: "passport.pdf", folder: "Private" }, context),
+    ).toMatchObject({ ok: true, data: { approvalScope: "base:home" } });
+  } finally {
+    publicPaths = [];
+  }
 });
 
 test("a restore review names the entry and where it returns to", async () => {
