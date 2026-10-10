@@ -44,12 +44,19 @@ provider restart`. `feat` releases a minor version, `fix` a patch, `feat!` a
 major. Never edit `version` fields or `CHANGELOG.md`; release-please owns them.
 See [Release process](docs-site/docs/en/contributing/release-process.md).
 
-Before opening the pull request:
+Before opening the pull request, run the typecheck and the focused tests of
+each package you changed, for example for Grids:
 
 ```bash
-bun run check
-bun run test
+bun run --cwd packages/grids typecheck
+bun run test --filter packages/grids
 ```
+
+The focused run includes the package's browser tests.
+[What CI runs](docs-site/docs/en/contributing/testing.md#what-ci-runs) says
+when to add the integration suites or run the full `bun run check` and
+`bun run test`. The `gate` runs the full suite on the pull request and again in
+the merge queue.
 
 Integration tests run only with `CLOUD_TEST_*` variables set and refuse a
 database whose name does not end in `_test`. See

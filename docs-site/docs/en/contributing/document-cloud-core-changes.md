@@ -5,7 +5,7 @@ section: Contributing
 order: 1300
 description: Keep developer docs, UI examples, and the Fibel-backed Cloud skill aligned with core changes.
 tags: [contributing, documentation, maintenance]
-updated: 2026-08-12
+updated: 2026-10-10
 ---
 
 # Document Cloud core changes
@@ -163,10 +163,11 @@ cross-cutting application invariant changes. Add or update its cases in
 bun run --cwd docs-site verify:docs
 ```
 
-This runs the frontmatter, link, API-surface, example-coverage, UI-catalog,
-harness, and typecheck checks and builds the website. `bun run check` at the
-repository root includes the same documentation checks, and the pull request
-`gate` runs them again.
+This runs the frontmatter, link, API-surface, example-coverage, skills,
+UI-catalog, harness, and typecheck checks and builds the website. Of these,
+`bun run check` at the repository root runs only the skills check and the
+documentation site's typecheck. The pull request `gate` runs `verify:docs` in
+its `docs` job when documentation or a shared input changed.
 
 ## Review the finished change
 

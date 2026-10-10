@@ -384,6 +384,9 @@ bun run check
 bun run test
 ```
 
+Before a pull request, the focused package checks below are usually enough;
+see [What CI runs](/en/docs/contributing/testing#what-ci-runs).
+
 `bun run check` runs the repository rules under `scripts/checks/` (dependencies,
 import boundaries, package cycles, service API contracts, localization,
 capability presentation, CSS architecture, the application set, Help writing,
