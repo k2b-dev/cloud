@@ -2,82 +2,99 @@
 id: grids-financial-formats
 title: Financial file formats
 icon: ti ti-file-invoice
-description: Supported E-Invoice, DATEV and SEPA inputs, limits, validation and safe export boundaries.
+description: Look up the supported E-Invoice, DATEV, and SEPA inputs, their limits, validation, and safe export boundaries.
 order: 136
 ---
-Grids offers a defined subset of financial formats. Choose a format supported by the recipient, then test a representative file with that recipient's import settings. Generating or validating a file does not transfer money, import bookkeeping, or certify legal correctness.
+Grids supports a defined subset of financial formats. Choose a format that the recipient supports. Then test a representative file with the recipient's import settings.
 
-## Formats and ownership {icon="file-description"}
+:::warning A valid file is not a transfer
+Generating or validating a file does not transfer money, does not import bookkeeping, and does not certify legal correctness.
+:::
+
+## Choose a format {icon="file-description"}
 
 | Grids output | Supported format | What it produces |
 | --- | --- | --- |
 | E-Invoice renderer `de.zugferd.en16931`, versions 1 and 2 | ZUGFeRD 2.5 / Factur-X 1.09 EN 16931, CII | PDF with embedded `factur-x.xml` plus the separate XML |
 | `datev-csv`, version 1 | DATEV 700/13, EUR | UTF-8 CSV with BOM; filename `EXTF_*.csv` |
-| `sepa-xml`, version 1 | SCT `pain.001.001.09`, DK GBIC 5, EUR | One XML file containing one or more transfers |
+| `sepa-xml`, version 1 | SCT `pain.001.001.09`, DK GBIC 5, EUR | One XML file with one or more transfers |
 
+## Prepare E-Invoice input {icon="file-invoice"}
 
-## E-Invoice input {icon="file-invoice"}
+Run `cld grids documents renderers --json` to choose the installed renderer. Its `inputSchema` is the structural contract. The Liquid JSON of a template maps the selected record into that input. Preview it before you enable the template.
 
-Choose the installed renderer with `cld grids documents renderers --json`; its `inputSchema` is the structural contract. A template's Liquid JSON maps the selected Record into that input. Preview it before enabling the template.
+:::reference
+- **Required in both versions:** `invoiceDate`, `dueDate`, `currency: "EUR"`, `seller`, `buyer`, `buyerReference`, `payment`, and `lines`.
+- **Parties:** `name`, a German `vatId`, and `address: {line1, city, postalCode, countryCode:"DE"}`.
+- **Payment:** `iban` and `accountName`.
+- **Dates:** Real ISO calendar dates. The due date cannot be before the invoice date.
+- **Lines:** 1–1,000 lines. Each line has `name`, a positive `quantity` with four decimal places, a nonnegative `unitPrice` with four decimal places, and a positive `taxRate` with two decimal places, at most 100.
+:::
 
-Both versions require `invoiceDate`, `dueDate`, `currency: "EUR"`, `seller`, `buyer`, `buyerReference`, `payment` and `lines`. Parties have `name`, German `vatId`, and `address: {line1, city, postalCode, countryCode:"DE"}`. Payment has `iban` and `accountName`. Dates are real ISO calendar dates; due date cannot precede invoice date.
+Pass decimal strings, not floating-point numbers. Line net amounts round half-up to cents. Tax rounds per tax-rate group. PDF and XML use the same calculated totals.
 
-Each of 1–1,000 lines has `name`, positive `quantity` with four decimal places, nonnegative `unitPrice` with four decimal places, and positive `taxRate` with two decimal places, at most 100. Pass decimal strings, not floating-point numbers. Line nets round half-up to cents; tax rounds per tax-rate group. PDF and XML use the same calculated totals.
-
-Version 2 additionally requires `serviceDate` and `billing`:
+Version 2 also requires `serviceDate` and `billing`:
 
 - `{kind:"invoice"}`;
 - `{kind:"creditNote", original:{number, invoiceDate}, reason}`;
 - `{kind:"selfBilling", agreementReference}`.
 
-Version 2 lines may have `description` and `unitCode`: `C62` (default), `HUR`, `DAY`, or `KGM`. Quantities and amounts stay positive; the document kind carries the meaning. Seller remains supplier and buyer remains customer in self-billing. The receiving bank account is explicit, not inferred.
+Lines in version 2 can have `description` and `unitCode`: `C62` (default), `HUR`, `DAY`, or `KGM`. Quantities and amounts stay positive. The document kind carries the meaning. In self-billing, the seller stays the supplier and the buyer stays the customer. You must state the receiving bank account explicitly. Grids does not infer it.
 
-These Grids profiles are narrower than an arbitrary invoice model: no zero/exempt VAT, allowances, charges, prepayments, incoming invoice import, or arbitrary XML formats. Workflows, not serializers, check whether the original exists and correction/commission budgets remain available. The Billing template adds business rules; choosing this renderer alone does not add them.
+These Grids profiles are narrower than an arbitrary invoice model. They do not support zero-rated or exempt VAT, allowances, charges, prepayments, imports of incoming invoices, or arbitrary XML formats. Workflows check whether the original exists and whether correction or commission budgets remain. The serializers do not check this. The Billing template adds business rules. Choosing this renderer alone does not add them.
 
-## SEPA transfer input {icon="transfer"}
+## Prepare SEPA transfer input {icon="transfer"}
 
-The workflow's `output` has `kind: sepa-xml`, `version: 1`, `header`, and `mapping`. See [Workflows](/app/grids/help/grids-workflows) for executable query/mapping examples.
+The workflow `output` has `kind: sepa-xml`, `version: 1`, `header`, and `mapping`. [Workflows](/app/grids/help/grids-workflows) shows executable query and mapping examples.
 
-Header: `destinationKey`, `debtorName` (1–70 characters), `debtorIban`, `executionDate` (ISO date), optional `debtorBic`.
+:::reference
+- **Header:** `destinationKey`, `debtorName` (1–70 characters), `debtorIban`, `executionDate` (ISO date), and an optional `debtorBic`.
+- **Required mappings:** `businessId`, `endToEndId`, `amount`, `creditorName`, `creditorIban`, and `remittance`.
+- **Optional mapping:** `creditorBic`.
+:::
 
-Required mappings: `businessId`, `endToEndId`, `amount`, `creditorName`, `creditorIban`, `remittance`; optional `creditorBic`. Mapping values are exact selected column aliases, not expressions or raw cell values.
+Mapping values are exact selected column aliases, not expressions or raw cell values. Each value must meet these rules:
 
-- Positive amount with exactly two decimal places, at most `999999999.99`; no fractional-cent rounding.
-- Valid uppercase electronic SEPA IBAN, no spaces or QR-IBAN. A BIC, when supplied, must be valid.
-- Creditor name up to 70 characters; remittance up to 140.
-- Names/remittance allow A–Z/a–z, digits, spaces, `+ ? / : ( ) . , ' -` and `& * $ % Ä Ö Ü ä ö ü ß`. Other characters, including `é` and `€`, are rejected, not rewritten.
-- `endToEndId`: nonblank, at most 35 basic SEPA characters (without the German extensions), no leading/trailing slash or `//`; unique within the batch.
-- One transfer per unique `businessId`. Grids creates and retains message/payment-information IDs.
-- Past execution dates produce a warning; Grids does not replace them with today's date.
+- The amount is positive with exactly two decimal places, at most `999999999.99`. Grids does not round fractions of a cent.
+- The IBAN is a valid uppercase electronic SEPA IBAN, without spaces and not a QR-IBAN. A BIC, when supplied, must be valid.
+- The creditor name has up to 70 characters. The remittance has up to 140.
+- Names and remittance allow A–Z/a–z, digits, spaces, `+ ? / : ( ) . , ' -`, and `& * $ % Ä Ö Ü ä ö ü ß`. Grids rejects other characters, including `é` and `€`. It does not rewrite them.
+- `endToEndId` is not blank and has at most 35 basic SEPA characters, without the German extensions. It has no leading or trailing slash and no `//`. It is unique within the batch.
+- Grids creates one transfer for each unique `businessId`. Grids creates and keeps the message and payment-information IDs.
+- A past execution date produces a warning. Grids does not replace it with today's date.
 
-This output is SCT, not direct debit or an instant-payment product. The receiving bank determines file acceptance.
+This output is SCT. It is not a direct debit and not an instant-payment product. The receiving bank decides whether it accepts the file.
 
-## DATEV posting input {icon="receipt"}
+## Prepare DATEV posting input {icon="receipt"}
 
-Header: `destinationKey`, `consultantNumber`, `clientNumber`, `fiscalYearStart`, `accountLength`, `periodStart`, `periodEnd`, `label`, and `finalize`.
+The header has `destinationKey`, `consultantNumber`, `clientNumber`, `fiscalYearStart`, `accountLength`, `periodStart`, `periodEnd`, `label`, and `finalize`:
 
-- Consultant number: 4–7 digit string, at least 1001. Client: 1–5 digit string with nonzero first digit.
-- Dates are in 2000–2099. Posting period must be ordered and within one fiscal year.
-- Account length: integer 4–8. Label: 1–30 letters/digits, underscore, dot, dash, slash, or spaces.
-- `finalize` controls DATEV import finalization, not Grids Record finalization.
+- The consultant number is a string of 4–7 digits, at least 1001. The client number is a string of 1–5 digits whose first digit is not zero.
+- Dates are in 2000–2099. The posting period must be in order and inside one fiscal year.
+- The account length is an integer from 4 to 8. The label has 1–30 letters, digits, underscores, dots, dashes, slashes, or spaces.
+- `finalize` controls the finalization of the DATEV import, not the finalization of Grids records.
 
-Required mappings: `businessId`, `entryId`, `amount`, `direction`, `account`, `counterAccount`, `documentDate`, `documentNumber`. Optional: `text`, `taxKey`, `costCenter1`, `costCenter2`.
+Required mappings are `businessId`, `entryId`, `amount`, `direction`, `account`, `counterAccount`, `documentDate`, and `documentNumber`. Optional mappings are `text`, `taxKey`, `costCenter1`, and `costCenter2`:
 
-- Positive two-decimal amount up to `9999999999.99`; direction `S` or `H`, not negative money.
-- Accounts: nonzero digit strings, at most 9 digits and `accountLength + 1`.
-- Document date inside the posting period. Document number: 1–36 ASCII letters/digits or `_ $ & % * + - /`, no spaces.
-- Text up to 60 characters without controls; tax key exactly four digits.
-- Cost centers up to 36 letters/digits, underscore or spaces.
-- Several postings may share a business event, but each `entryId` within it must be unique.
+- The amount is positive with two decimal places, up to `9999999999.99`. The direction is `S` or `H`. Do not use negative money.
+- Accounts are digit strings other than zero, with at most 9 digits and at most `accountLength + 1`.
+- The document date is inside the posting period. The document number has 1–36 ASCII letters, digits, or `_ $ & % * + - /`, and no spaces.
+- The text has up to 60 characters without control characters. The tax key has exactly four digits.
+- Cost centers have up to 36 letters, digits, underscores, or spaces.
+- Several postings can share a business event, but each `entryId` within that event must be unique.
 
-This is a booking batch, not the complete DATEV product family. ADDISON or other software may need a specific import configuration.
+This output is a booking batch, not the complete DATEV product family. ADDISON or other software can need a specific import configuration.
 
-## Review once, preserve identities {icon="check"}
+## Review once and keep identities {icon="check"}
 
-Both financial workflow outputs accept 1–10,000 rows under the cumulative capture budget. `destinationKey`, `businessId` and DATEV `entryId` are 1–200 characters without surrounding whitespace or control characters. They identify the real destination and business event, not a run, filename, or newly generated random value.
+Both financial workflow outputs accept 1–10,000 rows within the cumulative capture budget. `destinationKey`, `businessId`, and the DATEV `entryId` have 1–200 characters without surrounding whitespace or control characters. They identify the real destination and the business event. They do not identify a run, a filename, or a newly generated random value.
 
-A manual run pauses for review. Confirm the exact preview hash before issuance. Scheduled and record-triggered financial exports are not supported. Cancelling before issuance creates no export claim; successful issuance atomically stores the Document and its claims. Retrying reuses the same reviewed receipt. Never change identities to evade a duplicate-export check.
+A manual run pauses for review. Confirm the exact preview hash before issuance. Scheduled and record-triggered financial exports are not supported. If you cancel before issuance, Grids reserves nothing for the duplicate-export check. A successful issuance stores the document and its export reservations atomically. A retry reuses the same reviewed receipt.
 
-Runtime checks include semantic input validation and pinned XSD validation for generated E-Invoice/SEPA XML. After external PDF rendering, Grids reads and compares the embedded XML. XSD and embedding checks are not full Schematron, PDF/A certification, tax advice or a bank acceptance test.
+:::danger Do not evade the duplicate check
+Never change identities to get past a duplicate-export check.
+:::
 
-Related: [Document lifecycle](/app/grids/help/grids-documents-pdfs), [Billing template](/app/grids/help/grids-build-business-app).
+At runtime, Grids validates the input semantically and validates generated E-Invoice and SEPA XML against a pinned XSD. After external PDF rendering, Grids reads the embedded XML and compares it. XSD and embedding checks are not full Schematron, not PDF/A certification, not tax advice, and not a bank acceptance test.
+
+Related: [Documents & PDFs](/app/grids/help/grids-documents-pdfs), [Billing template](/app/grids/help/grids-build-business-app).

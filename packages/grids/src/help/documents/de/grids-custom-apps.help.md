@@ -2,36 +2,52 @@
 id: grids-custom-apps
 title: Grids Apps
 icon: ti ti-app-window
-description: Finde die passende Anleitung zum Erstellen, Veröffentlichen oder Verwenden einer Grids App.
+description: Finde die passende Anleitung, um eine Grids App zu erstellen, zu veröffentlichen oder zu verwenden.
 order: 137
 ---
-Grids Apps bieten angemeldeten oder öffentlichen Zielgruppen eine gezielte Anwendung unter `/apps/<id>`, ohne den vollständigen Grids-Arbeitsbereich freizugeben. Jede App gehört zu einer Basis und verwendet vorhandene Datensätze, Ansichten, Formulare, Dokumente und Workflow-Aktionen.
+Eine Grids App bietet angemeldeten oder öffentlichen Zielgruppen eine gezielte App unter `/apps/<id>`. Sie öffnet nicht den vollständigen Grids-Arbeitsbereich. Jede App gehört zu einer Base und verwendet vorhandene Datensätze, Ansichten, Formulare, Dokumente und Workflow-Aktionen.
 
-Apps kopieren keine Daten. Eine Veröffentlichung schreibt ihre Definition und die erlaubten Ressourcen fest. Jede Anfrage prüft die aktuelle App-Freigabe und die veröffentlichte Capability. Lesende Personen benötigen keinen Basiszugriff. Eine App-Freigabe erlaubt weder beliebiges GQL noch unmittelbaren Zugriff auf die Basis.
+Apps kopieren keine Daten. Eine Veröffentlichung schreibt die Definition und die Ressourcen fest, die die App verwenden darf. Jede Anfrage prüft den aktuellen Zugriff auf die App und die veröffentlichte Capability. Personen, die eine App verwenden, brauchen keinen Zugriff auf die Base. Zugriff auf eine App erlaubt nie beliebiges GQL oder direkten Zugriff auf die Base.
 
-## Wähle den nächsten Schritt {icon="arrow-right"}
+## Den nächsten Schritt wählen {icon="arrow-right"}
 
-- [Eine Grids App erstellen](/app/grids/help/grids-build-custom-app): Erstelle eine Liste, einen Formularablauf und eine Datensatzdetailseite im visuellen Builder.
+- [Eine Grids App erstellen](/app/grids/help/grids-build-custom-app): Erstelle im visuellen Builder eine Liste, einen Formularablauf und eine Detailseite für Datensätze.
 - [Seiten und Blöcke](/app/grids/help/grids-custom-app-pages-blocks): Wähle Blöcke, verknüpfe Datensatzparameter und konfiguriere bearbeitbare Felder, Dokumente und Aktionen.
-- [YAML und CLI](/app/grids/help/grids-custom-app-yaml-cli): Verwende das vollständige Definitionsbeispiel zum Validieren, Planen, Anwenden und Exportieren.
-- [Eine Grids App veröffentlichen](/app/grids/help/grids-publish-custom-app): Prüfe Zugriffe, veröffentliche einen Entwurf, stelle die aktive Version wieder her oder hebe die Veröffentlichung auf.
+- [YAML und CLI](/app/grids/help/grids-custom-app-yaml-cli): Folge dem vollständigen Definitionsbeispiel. Validiere, plane, wende an und exportiere es.
+- [Eine Grids App veröffentlichen](/app/grids/help/grids-publish-custom-app): Prüfe den Zugriff, veröffentliche einen Entwurf, stelle die veröffentlichte Version wieder her oder hebe die Veröffentlichung auf.
 
-Zum Erstellen und Veröffentlichen benötigst du **Admin**-Zugriff auf die Basis. Lesende Personen verwenden nur die veröffentlichten Funktionen. Öffentliche Freigaben schließen anonyme Besucher ein; Workflow-Aktionen benötigen dennoch ein angemeldetes Konto.
+Zum Erstellen und Veröffentlichen einer App brauchst du Zugriff **Verwalten** auf die Base. Personen, die die App verwenden, sehen nur, was die Veröffentlichung bereitstellt. Öffentlicher Zugriff schließt anonyme Besucher ein. Workflow-Aktionen erfordern trotzdem ein angemeldetes Konto.
 
 ## Eine App im Terminal verwenden {icon="terminal-2"}
 
-Führe `cld grids apps runtime read <app-id> --json` mit der ID aus der App-URL aus. Das Ergebnis enthält sichtbare Seiten, Block-IDs, Daten, Formularfelder und verfügbare Aktionen. Du benötigst keinen Basiszugriff. Öffne eine Detailseite mit `--page <page-id> --params '{"request_id":"REC001"}'`. Verwende den Parameternamen und die Datensatz-ID aus der zurückgegebenen Navigation.
+Führe `cld grids apps runtime read <app-id> --json` mit der ID aus der App-URL aus. Das Ergebnis enthält sichtbare Seiten, Block-IDs, Daten, Formularfelder und verfügbare Aktionen. Du brauchst keinen Zugriff auf die Base. Um eine Detailseite zu öffnen, ergänze `--page <page-id> --params '{"request_id":"REC001"}'`. Verwende den Parameternamen und die Datensatz-ID aus der zurückgegebenen Navigation.
 
-Die Befehle unter `apps runtime` lesen Datensatzseiten, senden Seiten- oder Seitenleistenformulare, ändern veröffentlichte bearbeitbare Felder, verwalten Kommentare und Anhänge, laden gespeicherte PDFs herunter, starten Aktionen oder Scanner und lesen ihren Laufstatus. `--help` erklärt die Eingaben. Seitenbezogene Befehle benötigen dieselben Parameter wie die Discovery.
+Mit den Befehlen unter `apps runtime` kannst du:
 
-Senden, Ändern, Scannen und Aktionen erfordern `--yes`. Formulare mit exakt demselben Body und explizitem `idempotencyKey` wiederholen; ohne Schlüssel drohen Duplikate. Dieselbe Operations-ID nur für dieselbe Aktion verwenden. **Queued** bedeutet angenommen, nicht abgeschlossen: Vor Wiederholung den Lauf prüfen.
+- Datensätze seitenweise lesen;
+- Formulare einer Seite oder der Seitenleiste senden;
+- veröffentlichte bearbeitbare Felder ändern;
+- Kommentare und Anhänge hinzufügen und entfernen;
+- gespeicherte PDFs herunterladen;
+- Aktionen oder Scanner starten und ihren Laufstatus lesen.
 
-Diese Befehle verwenden dieselben veröffentlichten App-Rechte wie der Browser. Sie umgehen keine nicht verfügbaren Blöcke. Fehlende, gelöschte, ungültige, nicht verfügbare oder nicht autorisierte Detaildatensätze liefern **Nicht gefunden**.
+Führe einen Befehl mit `--help` aus, um seine Eingaben zu sehen. Befehle für eine Seite brauchen dieselben Parameter wie der Discovery-Befehl.
 
-## Entwurf und Veröffentlichung trennen {icon="versions"}
+:::warning Ohne Duplikate wiederholen
+Senden, Ändern, Scannen und Aktionen erfordern `--yes`. Wiederhole ein Formular nur mit exakt demselben Body und seinem expliziten `idempotencyKey`. Ein Erstellen ohne Schlüssel kann doppelt laufen. Verwende eine Operations-ID nur für dieselbe Aktion erneut. **Queued** bedeutet angenommen, nicht abgeschlossen: Prüfe den Lauf, bevor du ihn wiederholst.
+:::
 
-Der Builder speichert vollständige Änderungen automatisch im Entwurf. Bearbeiten ändert nicht die aktive App. **Änderungen veröffentlichen** validiert und veröffentlicht den gespeicherten Entwurf. Behebe seine Diagnosen vor einem erneuten Versuch. Der Builder bietet **Änderungen veröffentlichen** auch an, wenn eine Änderung an einem Formular, einer Ansicht, einem Feld, einer Vorlage oder einem Workflow der aktiven App eine erneute Veröffentlichung erfordert. Hat der Entwurf keine weiteren Änderungen, lautet der Hinweis **Verwendete Ressourcen wurden geändert**.
+Diese Befehle verwenden denselben veröffentlichten App-Zugriff wie der Browser. Sie umgehen keine nicht verfügbaren Blöcke. Ein Detaildatensatz, der fehlt, gelöscht, ungültig, nicht verfügbar oder nicht erlaubt ist, liefert einen Nicht-gefunden-Fehler.
 
-**Veröffentlichte Version wiederherstellen** verwirft ausstehende Entwurfsänderungen. Unter **App-Einstellungen → Lebenszyklus** entfernt das Aufheben der Veröffentlichung den aktiven Snapshot, behält aber Entwurf und Freigaben. Das Löschen einer App entfernt ihre Route, nicht die Basisdaten. Beide Aktionen erfordern eine Bestätigung.
+## Entwurf und Veröffentlichung getrennt halten {icon="versions"}
 
-Es werden nur die aktive Seite und ihr optionaler Datensatz geladen. Verborgene Detailseiten werden nicht vorgeladen.
+Der Builder speichert vollständige Änderungen automatisch im Entwurf. Bearbeiten ändert die veröffentlichte App nicht. **Änderungen veröffentlichen** validiert und veröffentlicht den gespeicherten Entwurf. Meldet er Diagnosen, behebe sie vor dem nächsten Versuch.
+
+Der Builder bietet **Änderungen veröffentlichen** auch an, wenn sich ein Formular, eine Ansicht, ein Feld, eine Vorlage oder ein Workflow der veröffentlichten App geändert hat. Dann braucht die App eine neue Veröffentlichung. Hat der Entwurf keine weiteren Änderungen, lautet der Hinweis **Verwendete Ressourcen wurden geändert**.
+
+**Veröffentlichte Version wiederherstellen** verwirft ausstehende Änderungen am Entwurf. Unter **App-Einstellungen → Lebenszyklus** kannst du die Veröffentlichung aufheben oder die App löschen. Beide Aktionen erfordern eine Bestätigung:
+
+- Das Aufheben der Veröffentlichung entfernt den veröffentlichten Snapshot, behält aber Entwurf und Zugriffseinträge.
+- Das Löschen einer App entfernt ihre Route. Daten der Base bleiben erhalten.
+
+Eine App lädt nur die aktive Seite und ihren optionalen Datensatz. Verborgene Detailseiten lädt sie nicht im Voraus.

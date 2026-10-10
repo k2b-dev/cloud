@@ -218,7 +218,7 @@ describe("grids help", () => {
     ]) {
       expect(customApps, `missing Grids App capability ${capability}`).toContain(capability);
     }
-    expect(overview).toContain("Public grants include anonymous visitors");
+    expect(overview).toContain("Public access includes anonymous visitors");
 
     const documents = gridsHelp.getMarkdown("grids-documents-pdfs")!;
     for (const capability of ["recursive snapshot", "public link", "1, 7, 30, or 90 days", "barcode_data_url"]) {
@@ -237,9 +237,9 @@ describe("grids help", () => {
     const permissions = gridsHelp.getMarkdown("grids-permissions")!;
     expect(permissions).toContain("Cloud administrators are not automatic Grids superusers");
     expect(permissions).toContain("Read the complete schema and every record");
-    expect(permissions).toContain("hiding a control in the browser is not authorization");
-    expect(permissions).toContain("Base grants support users, groups, service accounts");
-    expect(permissions).toContain("Grids App grants do not support service accounts");
+    expect(permissions).toContain("Hiding a control in the browser is not authorization");
+    expect(permissions).toContain("You can give access to users, groups, service accounts");
+    expect(permissions).toContain("Grids Apps do not accept service accounts");
     for (const resource of ["Base", "Grids App"]) {
       expect(permissions, `missing permission resource ${resource}`).toContain(resource);
     }
@@ -300,7 +300,7 @@ describe("grids help", () => {
       expect(german, `${id} should resolve de-CH through de`).toBe(gridsHelp.getMarkdown(id, "de-CH"));
       expect(german!.trim().length, `${id} should have complete German content`).toBeGreaterThan(100);
     }
-    expect(gridsHelp.getMarkdown("grids-overview", "de-CH")).toContain("Mit Grids verwaltet ein Team");
+    expect(gridsHelp.getMarkdown("grids-overview", "de-CH")).toContain("Mit Grids hält ein Team");
     expect(gridsHelp.getMarkdown("grids-workflows", "de-CH")).toContain("Ein Workflow benötigt keinen YAML-Trigger");
     expect(gridsHelp.getMarkdown("grids-retention-preservation", "de-CH")).toContain("Mindestaufbewahrung");
   });

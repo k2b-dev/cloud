@@ -2,61 +2,77 @@
 id: grids-field-configuration
 title: Feldkonfiguration nachschlagen
 icon: ti ti-adjustments
-description: Feldtypen, Optionen, Nummernvergabe, Standardwerte und Objektlisten für Base-Autoren.
+description: Schlage Feldtypen, Optionen, erzeugte IDs, Standardwerte und Spalten von Objektlisten nach, wenn du eine Base konfigurierst.
 order: 111
 ---
-Diese Referenz hilft bei Feldkonfigurationen über CLI und API. Zur Auswahl eines Feldtyps siehe [Tabellen und Felder](/app/grids/help/grids-tables-fields). `cld grids fields types --json` liefert den aktuellen Katalog, `cld grids fields type <type> --json` einen einzelnen Typ. Die sichtbare Feldbezeichnung allein erklärt nicht die Konfiguration.
+Nutze diese Referenz, wenn du ein Feld über CLI oder API konfigurierst. Zur Auswahl eines Felds lies [Tabellen und Felder](/app/grids/help/grids-tables-fields). `cld grids fields types --json` liefert den aktuellen Katalog, `cld grids fields type <type> --json` einen einzelnen Typ. Leite die Konfiguration nicht aus der angezeigten Bezeichnung eines Felds ab.
 
-## Gemeinsame Optionen {icon="settings"}
+## Gemeinsame Optionen festlegen {icon="settings"}
 
-Ein Feld hat `name` (1–200 Zeichen), optional `description` (bis 2.000), `icon` (bis 200), eine ganzzahlige `position` und die Schalter `required`, `presentable`, `hideInTable` (standardmäßig false). Namen sind innerhalb der Tabelle eindeutig, ohne Beachtung der Großschreibung und umgebender Leerzeichen. Das Anzeigefeld liefert den Datensatztitel, keine Berechtigung.
+Ein Feld hat diese Optionen:
 
-`type` ist nach dem Anlegen fest. Ein Update von `config` ersetzt die Konfiguration; fehlende Unteroptionen werden nicht ergänzt. APIs verwenden öffentliche Feld- und Tabellen-IDs. Ein Beispielname ist keine ID.
+- `name`: 1–200 Zeichen;
+- `description`: optional, bis 2.000 Zeichen;
+- `icon`: bis 200 Zeichen;
+- `position`: eine Ganzzahl;
+- die Schalter `required`, `presentable` und `hideInTable`, standardmäßig false.
 
-`defaultValue` belegt ausgelassene Werte neuer Datensätze typgerecht vor. `0` und `false` sind echte Werte, keine fehlenden Angaben. `null` bedeutet: kein konfigurierter Standard. Datumsfelder erlauben zusätzlich `{"kind":"now"}`. Bestehende Datensätze bleiben unverändert.
+Namen sind innerhalb der Tabelle eindeutig. Grids ignoriert beim Vergleich Groß- und Kleinschreibung und umgebende Leerzeichen. Das Anzeigefeld liefert die Datensatzbezeichnung. Den Zugriff ändert es nicht.
 
-`indexed` gibt es für Text, Langtext, ID, Zahl, Prozent, Dauer, Datum, Boolean und Einfachauswahl. `uniqueConstraint` gibt es für Text, Langtext, Zahl, Prozent, Datum, Boolean und ID. Indizes helfen bei konkreten Abfragen, verursachen aber zusätzlichen Aufwand beim Schreiben.
+`type` ist nach dem Anlegen fest. Ein Update von `config` ersetzt die ganze Konfiguration. Fehlende Unteroptionen ergänzt es nicht. Verwende in APIs öffentliche Feld- und Tabellen-IDs. Eine Bezeichnung in einem Beispiel ist keine ID.
 
-## Eingegebene Werte {icon="edit"}
+`defaultValue` ist ein typisierter Standard für ausgelassene Werte neuer Datensätze. Ein ausdrückliches `0` oder `false` ist ein Wert, keine fehlende Angabe. `null` bedeutet, dass kein Standard konfiguriert ist. Datumsfelder akzeptieren zusätzlich `{"kind":"now"}`. Standardwerte ändern bestehende Datensätze nie.
+
+`indexed` gibt es für Text, Langtext, ID, Zahl, Prozent, Dauer, Datum, Boolean und Einfachauswahl. `uniqueConstraint` gibt es für Text, Langtext, Zahl, Prozent, Datum, Boolean und ID. Lege Indizes nur für echte Abfragemuster an, weil sie jeden Schreibvorgang aufwendiger machen.
+
+## Eingegebene Werte konfigurieren {icon="edit"}
 
 | `type` | Optionen in `config` und Standards |
 | --- | --- |
-| `text` | `minLength` ≥ 0, `maxLength` ≥ 1, `regex`, `multiline` (false). Umgebende Leerzeichen werden entfernt. |
+| `text` | `minLength` ≥ 0, `maxLength` ≥ 1, `regex`, `multiline` (false). Grids entfernt umgebende Leerzeichen. |
 | `longtext` | `minLength`, `maxLength`, `regex`, `markdown`. Behält Leerzeichen und Umbrüche. |
-| `number` | `min`, `max` als Dezimalstring oder Zahl; `precision` 1–38; `decimalPlaces` 0–20; `integerOnly`; `unit` 1–20 Zeichen; `unitPosition: "prefix" \| "suffix"`. Dezimalwerte bleiben Strings. Zu viele Stellen werden abgelehnt, nicht still gerundet. |
+| `number` | `min`, `max` als Dezimalstring oder Zahl; `precision` 1–38; `decimalPlaces` 0–20; `integerOnly`; `unit` 1–20 Zeichen; `unitPosition: "prefix" \| "suffix"`. Dezimalwerte bleiben Strings. Zu viele Stellen lehnt Grids ab und rundet nie still. |
 | `boolean` | `{}`. Speichert true, false oder bei optionalen Feldern null. |
-| `date` | `includeTime` (false), `min`, `max`. Reine Daten: `YYYY-MM-DD`; Zeitpunkte mit Zeitzone. |
+| `date` | `includeTime` (false), `min`, `max`. Reine Daten verwenden `YYYY-MM-DD`. Zeitpunkte enthalten eine Zeitzone. |
 | `select` | Pflicht: `options: [{id, label, color?, description?}]`; `multiple` (false); `minSelected` ≥ 0; `maxSelected` ≥ 1. Werte sind Arrays von Options-IDs, auch bei Einfachauswahl. |
-| `principal` | `cardinality: "single" \| "multiple"` (multiple). Arrays typisierter Cloud-Nutzer-/Gruppenreferenzen mit UUIDs, höchstens 100. Der Picker beachtet die Sichtbarkeit der Identitäten. |
-| `percent` | `range: "percent" \| "fraction"` (percent), `decimals` 0–8 (2). Fraction 0.19 und percent 19 zeigen jeweils 19 %; für Formeln zählt die gespeicherte Skala. |
-| `duration` | `unit: "seconds" \| "minutes" \| "hours"`. Werte stehen für nichtnegative Sekunden; numerische Eingaben werden auf ganze Sekunden gerundet. Auch `HH:MM:SS` und `MM:SS` sind möglich. Die Anzeigeeinheit ändert die Speichereinheit nicht. |
-| `json` | `{}`. Beliebiger gültiger JSON-Wert ohne einzelne Grids-Felddefinitionen. Ein String als Eingabe wird als JSON-Text interpretiert. |
-| `file` | `maxFiles` 1–100, wenn gesetzt; `accept` mit bis zu 100 MIME-Typen, MIME-Wildcards oder Dateiendungen. Hochladen und Entfernen nutzen Datei-Aktionen, keine Datensatz-JSON-Writes. |
-| `object_list` | Siehe Spaltenvertrag weiter unten. |
+| `principal` | `cardinality: "single" \| "multiple"` (multiple). Werte sind Arrays typisierter Referenzen auf Cloud-Nutzer oder -Gruppen mit UUIDs, höchstens 100. Die Auswahl zeigt nur Identitäten, die die Person sehen kann. |
+| `percent` | `range: "percent" \| "fraction"` (percent), `decimals` 0–8 (2). Fraction 0.19 und percent 19 zeigen beide 19 %. In Formeln zählt die gespeicherte Skala. |
+| `duration` | `unit: "seconds" \| "minutes" \| "hours"`. Werte sind nichtnegative Sekunden. Grids rundet numerische Eingaben auf ganze Sekunden. Akzeptiert auch `HH:MM:SS` und `MM:SS`. Die Anzeigeeinheit ändert die Speichereinheit nicht. |
+| `json` | `{}`. Beliebiger gültiger JSON-Wert. Seine Eigenschaften haben kein deklariertes Grids-Feldschema. Grids liest eine String-Eingabe als JSON-Text. |
+| `file` | `maxFiles` 1–100, wenn gesetzt; `accept` mit bis zu 100 MIME-Typen, MIME-Wildcards oder Dateiendungen. Hochladen und Entfernen nutzen die Dateivorgänge, keine JSON-Schreibvorgänge am Datensatz. |
+| `object_list` | Siehe den Spaltenvertrag weiter unten. |
 
-Ein Principal-Wert ist etwa `[{"type":"user","id":"<user-uuid>"}]` oder eine `group`-Referenz. Eine Identität im Feld ist ein Wert, **keine Freigabe**. Den aktuellen Nutzer sicher einzutragen gehört in die konfigurierte Übermittlung einer veröffentlichten App, nicht in ein veränderbares Eingabefeld.
+Ein Principal-Wert ist etwa `[{"type":"user","id":"<user-uuid>"}]` oder eine `group`-Referenz. Eine Identität in einem Feld ist ein Wert. Sie **gibt keinen Zugriff**. Um die aktuelle Person sicher einzutragen, nutze die konfigurierte Übermittlung einer veröffentlichten App, kein Eingabefeld, das die Person ändern kann.
 
-## Verknüpfungen und berechnete Werte {icon="link"}
+## Relationen und berechnete Werte konfigurieren {icon="link"}
 
 | `type` | `config` |
 | --- | --- |
 | `relation` | `targetTableId`, `cardinality: "single" \| "multiple"` (multiple). Werte sind Arrays öffentlicher Datensatz-IDs. |
-| `lookup` | `relationFieldId`, `targetFieldId`, optional `format`. Liest verknüpfte Werte; keine bearbeitbare Kopie. |
+| `lookup` | `relationFieldId`, `targetFieldId`, optional `format`. Liest verknüpfte Werte. Kopiert sie nicht in eine bearbeitbare Eingabe. |
 | `rollup` | `relationFieldId`, `targetFieldId`, `agg: "count" \| "sum" \| "avg" \| "min" \| "max"`, optional `format`. |
-| `formula` | `expression`, optional `format`. Siehe [Formelreferenz](/app/grids/help/grids-formulas), auch für exakte Dezimalrechnung und typisierte Auswahlvergleiche. |
-| `html_template` | `template` bis 50 KiB, `css` bis 32 KiB mit 200 Regeln/1.000 Deklarationen. Liquid-Wurzeln: `record`, `table`, `app`, `business`, `date`. Ausgabe bis 300 KiB, isoliert und nur lesend. |
+| `formula` | `expression`, optional `format`. Siehe [Formeln](/app/grids/help/grids-formulas), auch für exakte Dezimalrechnung und typisierte Vergleiche mit Auswahlfeldern. |
+| `html_template` | `template` (bis 50 KiB), `css` (bis 32 KiB; 200 Regeln und 1.000 Deklarationen). Liquid-Wurzeln: `record`, `table`, `app`, `business`, `date`. Ausgabe bis 300 KiB, isoliert und schreibgeschützt. |
 
-Berechnete Werte sind keine schreibbaren Datensatzwerte. Lookup und Rollup beachten Zugriffsrechte auf die Daten. Beim Finalisieren werden unterstützte Berechnungen mit ihren Datentypen festgeschrieben. Spätere Formeländerungen berechnen diesen Datensatz nicht neu.
+Schreibvorgänge an Datensätzen können keine berechneten Werte liefern. Lookups und Rollups folgen dem Zugriff auf die Daten. Beim Finalisieren eines Datensatzes friert Grids die unterstützten berechneten Werte mit ihren Typen ein. Eine spätere Formeländerung berechnet diesen eingefrorenen Datensatz nicht neu.
 
-HTML-Vorlagenfelder sind keine Dokumente. Sie benötigen gespeicherte Tabellen und stehen nicht für Filter, Sortierung, Gruppierung, Aggregate, Formeln oder Lookups zur Verfügung. Andere HTML-Vorlagenfelder sind zum Schutz vor Rekursion nicht zugänglich.
+HTML-Vorlagenfelder sind keine Dokumente. Sie brauchen gespeicherte Tabellen. Du kannst sie nicht in Filtern, Sortierungen, Gruppierungen, Aggregaten, Formeln oder Lookups verwenden. Andere HTML-Vorlagenfelder sind darin nicht verfügbar, um Rekursion zu verhindern.
 
-## Anzeige berechneter Werte {icon="numbers"}
+## Berechnete Werte formatieren {icon="numbers"}
 
-Das optionale `format` steuert die Anzeige, nicht die gespeicherte Genauigkeit: `{kind:"decimal", precision?:0..10, thousandsSeparator?:boolean}`, `{kind:"percent", precision?:0..10}`, `{kind:"date", format:"iso"|"short"|"long"|"relative", includeTime?:boolean}`, `{kind:"progress", label?:"value"|"percent"|"none"}` oder `{kind:"barcode", bcid:string, showText?:boolean}`. `bcid` benennt das Barcodeformat mit 1–80 Kleinbuchstaben/Ziffern. Das Format muss zum Ergebnistyp passen.
+Das optionale `format` steuert die Anzeige, nicht die gespeicherte Genauigkeit. Verwende eines dieser Formate:
 
-## Generierte Kennungen {icon="id"}
+- `{kind:"decimal", precision?:0..10, thousandsSeparator?:boolean}`
+- `{kind:"percent", precision?:0..10}`
+- `{kind:"date", format:"iso"|"short"|"long"|"relative", includeTime?:boolean}`
+- `{kind:"progress", label?:"value"|"percent"|"none"}`
+- `{kind:"barcode", bcid:string, showText?:boolean}`
 
-`id` ist ein servergeneriertes Feld, kein frei bearbeitbarer Text. Die Konfiguration lautet:
+`bcid` benennt das Barcodeformat mit 1–80 Kleinbuchstaben oder Ziffern. Verwende nur ein Format, das zum Ergebnistyp passt.
+
+## Erzeugte Kennungen konfigurieren {icon="id"}
+
+`id` ist ein Feld, das der Server erzeugt. Es ist kein normal bearbeitbares Textfeld. Seine Konfiguration verwendet:
 
 | `strategy` | Optionen |
 | --- | --- |
@@ -68,39 +84,39 @@ Das optionale `format` steuert die Anzeige, nicht die gespeicherte Genauigkeit: 
 | `uuidv7` | `prefix` |
 | `ulid` | `prefix` |
 
-Nur die beiden Sequenzstrategien unterstützen `assignment: "creation" | "finalization"`; Standard ist creation. Aktiviere zuerst die Finalisierung der Tabelle, wenn die Nummer erst beim Festschreiben entstehen soll. Entwürfe haben dann noch keine Nummer. Die Vergabe ist atomar und Nummern werden nicht wiederverwendet; daraus folgt keine Zusage rechtlich lückenloser Buchführung.
+Nur die beiden Sequenzstrategien akzeptieren `assignment: "creation" | "finalization"`. Standard ist creation. Aktiviere die Finalisierung der Tabelle, bevor du die Nummernvergabe beim Finalisieren konfigurierst. Entwürfe haben dann keine Nummer. Grids vergibt Werte atomar und verwendet sie nie wieder. Eine rechtlich lückenlose Buchführung garantiert das nicht.
 
-Beispiel für jährliche Dokumentnummern:
+Beispiel für eine jährliche Dokumentnummer:
 
 ```json
 {"strategy":"date_sequence","prefix":"INV-","padding":4,"period":"year","assignment":"finalization"}
 ```
 
-`created_at`, `updated_at`, `created_by` und `updated_by` sind Systemtypen mit `config: {}`. Grids setzt diese Werte; sie sind keine schreibbaren Formularantworten.
+`created_at`, `updated_at`, `created_by` und `updated_by` sind Systemtypen mit `config: {}`. Grids setzt ihre Werte. Sie sind nie schreibbare Formularantworten.
 
-## Spalten einer Objektliste {icon="columns"}
+## Spalten einer Objektliste konfigurieren {icon="columns"}
 
-`object_list.config` enthält `fields` (1–200 Spalten), `minItems` (0–1.000, Standard 0) und `maxItems` (1–1.000, Standard 100). Die gesamte Liste einschließlich berechneter Werte darf 256 KiB groß sein. Verschachtelte Listen, Relationen, Dateien und beliebige Objektspalten sind nicht erlaubt.
+`object_list.config` enthält `fields` (1–200 Spalten), `minItems` (0–1.000, Standard 0) und `maxItems` (1–1.000, Standard 100). Die ganze Liste darf einschließlich berechneter Zellen höchstens 256 KiB groß sein. Verschachtelte Listen, Relationen, Dateien und beliebige verschachtelte Objektspalten sind nicht erlaubt.
 
 Jede Spalte hat:
 
 | Eigenschaft | Bedeutung |
 | --- | --- |
-| `id` | Sechsstellige alphanumerische Spalten-ID; Werte verwenden diese, nicht den Namen |
+| `id` | Sechsstellige alphanumerische Spalten-ID. Werte verwenden diesen Schlüssel, nicht den Namen. |
 | `name` | 1–200 Zeichen |
 | `description` | Optionaler Hinweis, bis 2.000 Zeichen |
 | `type` | `text`, `longtext`, `number`, `boolean`, `date`, `select`, `percent` oder `duration` |
-| `config` | Konfiguration des skalaren Typs |
-| `required` | Ob eine eingegebene Zelle leer sein darf; Standard false |
-| `defaultValue` | Gültiger Literalvorschlag beim Hinzufügen im Editor; nicht für API-Writes, vorhandene Zeilen oder berechnete Spalten |
-| `formula` | Berechnung mit `expression` und optional `format`, mit Referenzen auf Nachbarspalten |
-| `width` | `fullWidth` (Standard) oder `compact`; aufeinanderfolgende kompakte Felder umbrechen gemeinsam |
-| `detailsOnly` | Berechnete Spalte erst bei angezeigten Berechnungsdetails zeigen; Standard false |
+| `config` | Konfiguration dieses skalaren Typs |
+| `required` | Ob eine eingegebene Zelle einen Wert haben muss. Standard false. |
+| `defaultValue` | Ein gültiger Literalwert, den der Editor nur beim Hinzufügen einer Zeile vorschlägt. Gilt nicht für API-Schreibvorgänge oder vorhandene Zeilen. Nicht für berechnete Spalten verfügbar. |
+| `formula` | Berechnung mit `expression` und optional `format`. Sie referenziert Nachbarspalten. |
+| `width` | `fullWidth` (Standard) oder `compact`. Aufeinanderfolgende kompakte Felder umbrechen gemeinsam. |
+| `detailsOnly` | Blendet eine berechnete Spalte aus, bis jemand die Berechnungsdetails anzeigt. Standard false. |
 
-Auswahlspalten und Regex-Regeln sind nur für Eingaben geeignet. Berechnete Spalten verwenden die unterstützten skalaren Formeltypen. Der Editor zeigt sie nur lesend, der Server berechnet sie selbst; mitgesendeten Berechnungswerten wird nicht vertraut.
+Auswahlspalten und Regex-Regeln gelten nur für Eingaben. Berechnete Spalten verwenden die unterstützten skalaren Formeltypen. Der Editor zeigt Berechnungen schreibgeschützt an, und der Server berechnet sie neu. Mitgesendeten berechneten Werten vertraut der Server nicht.
 
-Für Listenauswertungen gibt es `LIST_SUM(Items, 'Amount')`, `LIST_AVG`, `LIST_MIN`, `LIST_MAX` und `LIST_COUNT`. Eine leere Liste ergibt für Summe und Anzahl die Zahl 0; eine fehlende Liste ist keine leere Liste. Syntax unter [Formeln](/app/grids/help/grids-formulas), Layout und Formularstandards unter [Formulare](/app/grids/help/grids-forms).
+Für Listenauswertungen nutze `LIST_SUM(Items, 'Amount')`, `LIST_AVG`, `LIST_MIN`, `LIST_MAX` und `LIST_COUNT`. Eine leere Liste ergibt für Summe und Anzahl null. Eine fehlende Liste ist keine leere Liste. [Formeln](/app/grids/help/grids-formulas) beschreibt Ausdrücke. [Formulare](/app/grids/help/grids-forms) beschreibt Layout und Standardwerte für Formulare.
 
-## Cloud-Ressource {icon="link"}
+## Eine Cloud-Ressource verknüpfen {icon="link"}
 
-Nutze `resource` mit Konfiguration `{}`, um eine Ressource über die Cloud-Suche auszuwählen. Gespeichert wird `{type, id, title?}`. Der optionale Titel bleibt als Beschriftung erhalten; beim Öffnen prüft die Quell-App den aktuellen Zugriff. Es werden keine URL, Tokens oder Rechte gespeichert. Datei dient für Uploads in Grids, Relation für Verbindungen zwischen Grids-Datensätzen.
+Nutze `resource` mit Konfiguration `{}`, um eine Ressource über die Cloud-Auswahl zu wählen. Das Feld speichert `{type, id, title?}`. Der optionale Titel bleibt als Text erhalten. Beim Öffnen gelten der aktuelle kanonische Leser der Ressource und ihre aktuellen Zugriffsregeln. Das Feld speichert keine URL, kein Token und keinen Zugriff. Nutze ein Dateifeld für Uploads, die Grids gehören, und eine Relation für Verbindungen zwischen Grids-Datensätzen.
