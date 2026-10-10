@@ -28,27 +28,64 @@ type Region = { key: string; top: number; left: number };
 type Visit = { url: string; regions: Region[]; up?: string[] };
 type Memory = { visits: Visit[]; returning?: { url: string; from: string } };
 
-/** `path` as a page of this origin, or nothing: read against the origin, `//host`, `@host`, or `javascript:` would lead elsewhere. */
+/**
+ * `path` as a page of this origin, or nothing: read against the origin,
+ * `//host`, `@host`, or `javascript:` would lead elsewhere, and a path that
+ * parses to `//host`, such as `/..//host`, would once an island reads its
+ * pathname.
+ */
 const localPage = (path: string): URL | undefined => {
   if (!path.startsWith("/")) return undefined;
   try {
     const url = new URL(path, location.origin);
-    return url.origin === location.origin ? url : undefined;
+    return url.origin === location.origin && !url.pathname.startsWith("//") ? url : undefined;
   } catch {
     return undefined;
   }
 };
 
-/** The tab's storage is not trusted: a visit counts only when its address is a page of this origin. */
+const isRegion = (value: unknown): value is Region =>
+  typeof value === "object" &&
+  value !== null &&
+  "key" in value &&
+  typeof value.key === "string" &&
+  "top" in value &&
+  typeof value.top === "number" &&
+  "left" in value &&
+  typeof value.left === "number";
+
+/**
+ * The tab's storage is not trusted: a visit or a return counts only when its
+ * addresses are pages of this origin and the rest has the shape this runtime writes.
+ */
 const isVisit = (value: unknown): value is Visit =>
-  typeof value === "object" && value !== null && "url" in value && typeof value.url === "string" && localPage(value.url) !== undefined;
+  typeof value === "object" &&
+  value !== null &&
+  "url" in value &&
+  typeof value.url === "string" &&
+  localPage(value.url) !== undefined &&
+  "regions" in value &&
+  Array.isArray(value.regions) &&
+  value.regions.every(isRegion) &&
+  (!("up" in value) ||
+    (Array.isArray(value.up) && value.up.every((item: unknown) => typeof item === "string" && URL.canParse(item, location.href))));
+
+const isReturning = (value: unknown): value is NonNullable<Memory["returning"]> =>
+  typeof value === "object" &&
+  value !== null &&
+  "url" in value &&
+  typeof value.url === "string" &&
+  localPage(value.url) !== undefined &&
+  "from" in value &&
+  typeof value.from === "string" &&
+  localPage(value.from) !== undefined;
 
 const read = (): Memory => {
   try {
     const value: unknown = JSON.parse(sessionStorage.getItem(STORAGE_KEY) ?? "null");
-    if (value && typeof value === "object" && Array.isArray((value as Memory).visits)) {
-      const memory = value as Memory;
-      return { ...memory, visits: memory.visits.filter(isVisit) };
+    if (value !== null && typeof value === "object" && "visits" in value && Array.isArray(value.visits)) {
+      const visits = value.visits.filter(isVisit);
+      return "returning" in value && isReturning(value.returning) ? { visits, returning: value.returning } : { visits };
     }
   } catch {
     // A full or blocked storage only costs the memory, never the navigation.
@@ -115,22 +152,24 @@ export const upDestination = (href: string): string => {
 /**
  * Goes one or more levels up to `href`, back to how this tab left that page.
  * An island that navigates in place takes the way up itself (see
- * `layout.handleUp`); otherwise the page loads.
+ * `layout.handleUp`); otherwise the page loads. Returns whether it took the
+ * way up; a link it does not take stays a plain link.
  */
-export const goUp = (href: string) => {
+export const goUp = (href: string): boolean => {
   // The way up stays on this origin; a link elsewhere, such as `javascript:`, names no page above.
-  if (resolve(href).origin !== location.origin) return;
+  if (resolve(href).origin !== location.origin) return false;
   rememberPage();
   const destination = upDestination(href);
   // The destination is read as a path of this origin and must stay there; one that starts with `//` names another host.
   const url = localPage(destination);
-  if (!url) return;
+  if (!url) return false;
   const detail: PageUpDetail = { href: destination };
-  if (!window.dispatchEvent(new CustomEvent(PAGE_UP_EVENT, { cancelable: true, detail }))) return;
+  if (!window.dispatchEvent(new CustomEvent(PAGE_UP_EVENT, { cancelable: true, detail }))) return true;
   const memory = read();
   memory.returning = { url: destination, from: here() };
   write(memory);
   location.assign(url.href);
+  return true;
 };
 
 const regionElement = (key: string): HTMLElement | null =>
@@ -217,7 +256,9 @@ const offerPageUp = (labels: PageUpLabels): (() => void) => {
       ...labels(parent.title),
       icon: "ti ti-arrow-up",
       shortcut: "alt+arrowup",
-      action: () => goUp(parent.href),
+      action: () => {
+        goUp(parent.href);
+      },
     });
   };
   update();
@@ -255,9 +296,8 @@ export const installPageTrailRuntime = (labels: PageUpLabels): (() => void) => {
   const onClick = (event: MouseEvent) => {
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     const link = (event.target as Element | null)?.closest?.<HTMLAnchorElement>(TRAIL_LINK);
-    if (!link || (link.target && link.target !== "_self") || resolve(link.href).origin !== location.origin) return;
-    event.preventDefault();
-    goUp(link.href);
+    if (!link || (link.target && link.target !== "_self")) return;
+    if (goUp(link.href)) event.preventDefault();
   };
   document.addEventListener("click", onCapture, true);
   document.addEventListener("keydown", onKey, true);

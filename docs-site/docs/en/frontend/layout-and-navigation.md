@@ -196,7 +196,8 @@ An island that navigates in place, such as a file browser with running
 uploads, takes the way up itself: `layout.handleUp()` gets the destination,
 the parent as this tab left it, and returns `true` when the island goes there
 in place. Otherwise the page loads. The destination is always a path on this
-origin; a level whose link leads elsewhere has no way up.
+origin. A level whose link leads elsewhere, or to a path that starts with `//`
+and would read as another host, stays a plain link.
 
 ```ts
 const stop = layout.handleUp((href) => {
