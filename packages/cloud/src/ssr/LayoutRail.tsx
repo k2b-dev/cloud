@@ -43,7 +43,7 @@ export default function LayoutRail(props: LayoutRailProps) {
       <script id="cloud-rail-data" type="application/json">
         {jsonScript({ apps: props.apps, settings: props.railSettings })}
       </script>
-      <aside class="layout-rail hidden w-10 shrink-0 flex-col lg:flex">
+      <aside class="layout-rail hidden w-10 shrink-0 flex-col md:flex">
         <div class="layout-rail-logo flex h-[2.875rem] shrink-0 items-center justify-center">
           <a href="/" aria-label={props.homeLabel}>
             <img src="/branding/logo" alt="Logo" class="h-5 w-5" />
@@ -66,7 +66,6 @@ export default function LayoutRail(props: LayoutRailProps) {
               avatarSrc={props.profileAvatarSrc}
               initialTheme={props.theme}
               name={props.profileName}
-              placement="rail"
             />
           </div>
         </nav>

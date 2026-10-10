@@ -31,12 +31,21 @@ export const shortcutLabel = (shortcut: string): string => {
   if (!combination) return "";
   const mac = isMac();
   const names = { ctrl: mac ? "⌃" : "Ctrl", alt: mac ? "⌥" : "Alt", shift: mac ? "⇧" : "Shift", meta: mac ? "⌘" : "Meta" };
-  return [...modifiers.filter((key) => combination[key]).map((key) => names[key]), combination.key.toUpperCase()].join(mac ? "" : "+");
+  const arrows: Record<string, string> = { arrowup: "↑", arrowdown: "↓", arrowleft: "←", arrowright: "→" };
+  const key = arrows[combination.key] ?? combination.key.toUpperCase();
+  return [...modifiers.filter((name) => combination[name]).map((name) => names[name]), key].join(mac ? "" : "+");
 };
 
-/** One owner in the Cloud layout; app islands only publish commands. */
+const ARROWS = new Set(["arrowup", "arrowdown", "arrowleft", "arrowright"]);
+
+/**
+ * One owner in the Cloud layout; app islands only publish commands. A command
+ * on an arrow key comes last: the focused element sees the key first, and a
+ * widget that moves with arrow keys, such as a tree that reorders on Alt+↑ or
+ * an open list, keeps it by handling it.
+ */
 export const attachCommandShortcuts = (run: (command: ContextAwareCommand) => void): (() => void) => {
-  const listener = (event: KeyboardEvent) => {
+  const listener = (event: KeyboardEvent, arrows: boolean) => {
     if (event.defaultPrevented || event.repeat || event.isComposing || (!isMac() && event.getModifierState("AltGraph"))) return;
     const target = event.target;
     const editing =
@@ -47,7 +56,7 @@ export const attachCommandShortcuts = (run: (command: ContextAwareCommand) => vo
       if (!command.shortcut) return false;
       if (command.id !== "cloud.search" && dialogOpen) return false;
       const combo = parse(command.shortcut);
-      if (!combo || (editing && !combo.ctrl && !combo.meta)) return false;
+      if (!combo || ARROWS.has(combo.key) !== arrows || (editing && !combo.ctrl && !combo.meta)) return false;
       // Shift+/ reports '?' on common keyboard layouts.
       const key = event.key === "?" && combo.key === "/" ? "/" : event.key.toLowerCase();
       const physicalLetter =
@@ -69,8 +78,14 @@ export const attachCommandShortcuts = (run: (command: ContextAwareCommand) => vo
     run(matches[0]!);
   };
   // Registered app combinations must win over editor bindings such as Mod+Shift+K.
-  window.addEventListener("keydown", listener, true);
-  return () => window.removeEventListener("keydown", listener, true);
+  const first = (event: KeyboardEvent) => listener(event, false);
+  const last = (event: KeyboardEvent) => listener(event, true);
+  window.addEventListener("keydown", first, true);
+  window.addEventListener("keydown", last);
+  return () => {
+    window.removeEventListener("keydown", first, true);
+    window.removeEventListener("keydown", last);
+  };
 };
 
 export { COMMANDS_CHANGED };

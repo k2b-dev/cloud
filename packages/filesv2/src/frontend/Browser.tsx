@@ -1,3 +1,4 @@
+import { PageTrail } from "@k2b/cloud/ssr/islands";
 import { downloadArchive } from "@k2b/filegate/utils";
 import { navigate as commitHistory, type LinkNavigateEvent } from "@k2b/ssr/nav";
 import { cookies } from "@k2b/stdlib/browser";
@@ -1180,6 +1181,8 @@ export default function Browser(props: {
             onDrop={(files, { dataTransfer }) => dropFiles(files, dataTransfer, folder())}
           />
           <header class="filesv2-browser__header">
+            {/* The folder's title with its path; Files draws this header itself, so it holds the shell's trail. */}
+            <PageTrail />
             <div class="flex items-center gap-2">
               <input
                 ref={filePicker}

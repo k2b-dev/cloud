@@ -18,7 +18,7 @@ export function openMobileMenu(view: (beforeSelect: () => Promise<boolean>) => D
     history.pushState({ ...previous, [marker]: id }, "");
     const abort = new AbortController();
     let leavingPage = false;
-    const mobile = window.matchMedia("(max-width: 1023px)");
+    const mobile = window.matchMedia("(max-width: 767px)");
     const pop = () => {
       if (history.state?.[marker] !== id) abort.abort();
     };

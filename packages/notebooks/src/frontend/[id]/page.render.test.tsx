@@ -135,7 +135,9 @@ test("an empty notebook with a hidden navigation offers a visible control that s
   expect(show?.attributes.disabled).toBeUndefined();
 
   const visible = await renderEmptyNotebook("write");
-  expect(await select(visible, '.k2b-icon-button[aria-controls="notebook-navigation"]')).toEqual([]);
+  expect(await select(visible, '.k2b-icon-button[aria-controls="notebook-navigation"]:not([data-app-workspace-sidebar-toggle])')).toEqual(
+    [],
+  );
 });
 
 test("an empty book shows its sidebar placeholder as one line below the pages heading", async () => {
@@ -231,7 +233,9 @@ test("a book page with a hidden navigation is server-rendered without its conten
 
   const visible = await renderBookPage({ navigationHidden: false });
   expect(await select(visible, '[role="tree"] [data-k2b-nav-tree-id]')).toHaveLength(4);
-  expect(await select(visible, '.k2b-icon-button[aria-controls="notebook-navigation"]')).toEqual([]);
+  expect(await select(visible, '.k2b-icon-button[aria-controls="notebook-navigation"]:not([data-app-workspace-sidebar-toggle])')).toEqual(
+    [],
+  );
 });
 
 test.each(["write", "book"] as const)(

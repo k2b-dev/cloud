@@ -15,6 +15,7 @@ const { defineApp } = await import("../_internal/define-app");
 const { person } = await import("../_internal/define-app.test-fixture");
 const railSnapshot = await import("../services/rail-snapshot");
 const settingsMiddleware = await import("../server/middleware/settings");
+const help = await import("./help");
 const { defaultRailPreferences } = await import("../contracts/rail-preferences");
 const { default: Layout } = await import("./Layout");
 const { default: MinimalLayout } = await import("./MinimalLayout");
@@ -76,6 +77,24 @@ const server = new Hono()
         }),
     ),
   )
+  // Admin pages of Core (prefix `/admin`) and of an app (its own `/admin/...` prefix), signed in.
+  .get(
+    "/admin/*",
+    async (c, next) => {
+      const core = { id: "core-probe", name: "Core", icon: "ti ti-settings", description: "Core", routes: ["/admin"] };
+      c.set("runtime" as never, { apps: [core, { ...badgeApps[1], routes: ["/app/mail-probe", "/admin/mail-probe"] }] } as never);
+      c.set("user" as never, person as never);
+      await next();
+    },
+    ...app.ssr(
+      (c) => () =>
+        createComponent(AdminLayout, {
+          c,
+          title: c.req.query("title") ?? "Settings",
+          children: "Admin content",
+        }),
+    ),
+  )
   .get(
     "/layout",
     ...app.ssr((c) => {
@@ -98,7 +117,12 @@ const server = new Hono()
       await next();
     },
     ...app.ssr(
-      (c) => () => createComponent(Layout, { c: c as unknown as LayoutContextArg, title: "Badges", children: "Signed-in content" }),
+      (c) => () =>
+        createComponent(Layout, {
+          c: c as unknown as LayoutContextArg,
+          title: [{ title: "Badges", href: "/app/badges" }, { title: c.req.query("title") ?? "Badges" }],
+          children: "Signed-in content",
+        }),
     ),
   )
   .get(
@@ -137,18 +161,18 @@ describe("Cloud layouts SSR", () => {
       };
     };
     const [page, fullWidth, fullPage] = await Promise.all([render("page"), render("fullWidth"), render("fullPage")]);
-    // From lg, `main` scrolls regular pages; fullWidth and fullPage work surfaces own their scrolling.
-    expect(page.main).toContain("lg:overflow-auto lg:[scrollbar-gutter:stable]");
+    // From md, `main` scrolls regular pages; fullWidth and fullPage work surfaces own their scrolling.
+    expect(page.main).toContain("md:overflow-auto md:[scrollbar-gutter:stable]");
     for (const { main } of [fullWidth, fullPage]) {
       expect(main).toContain("flex flex-col");
       expect(main).not.toContain("scrollbar-gutter");
     }
-    // Below lg the document scrolls every page except fullPage surfaces, which the canvas marks.
+    // Below md the document scrolls every page except fullPage surfaces, which the canvas marks.
     expect(page.canvas).not.toContain("data-layout-full-page");
     expect(fullWidth.canvas).not.toContain("data-layout-full-page");
     expect(fullPage.canvas).toContain('data-layout-full-page="true"');
     const css = await Bun.file(new URL("../styles/global.css", import.meta.url)).text();
-    const mobileStart = css.indexOf("@media (max-width: 1023px) {");
+    const mobileStart = css.indexOf("@media (max-width: 767px) {");
     const mobileShell = css.slice(mobileStart, css.indexOf("\n}", mobileStart));
     expect(mobileShell).toMatch(/html:has\(\.cloud-app-canvas:not\(\[data-layout-full-page\]\)\) \{ scrollbar-gutter: stable; \}/);
   });
@@ -173,6 +197,25 @@ describe("Cloud layouts SSR", () => {
     expect(bounded).toMatch(/k2b-app-workspace__main[^>]+data-scroll="false"/);
     expect(bounded).not.toContain("p-[var(--ui-space-shell)]");
   });
+  test("every admin page is one level below Admin, whether Core or an app owns it", async () => {
+    const spies = [
+      spyOn(railSnapshot, "readRailSnapshot").mockResolvedValue(defaultRailPreferences()),
+      spyOn(settingsMiddleware, "preloadLayoutAnnouncements").mockResolvedValue(undefined),
+      spyOn(help, "preloadLayoutHelp").mockResolvedValue(null),
+    ];
+    try {
+      const trailOf = async (path: string) => {
+        const html = await (await server.request(path, { headers: { "Accept-Language": "en" } })).text();
+        return JSON.parse(html.match(/<script type="application\/json" data-k2b-page-trail>([^<]*)<\/script>/)?.[1] ?? "null");
+      };
+      expect(await trailOf("/admin/settings")).toEqual({ title: "Settings", ancestors: [] });
+      expect(await trailOf("/admin/mail-probe/security?title=Mail%20security")).toEqual({ title: "Mail security", ancestors: [] });
+      expect(await trailOf("/admin/overview?title=Overview")).toEqual({ title: "Admin", ancestors: [] });
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
+  });
+
   test("keeps anonymous login and preferences visible without rendering the application rail", async () => {
     const response = await server.request("/layout", {
       headers: { Cookie: "theme=dark", "Accept-Language": "de-CH" },
@@ -190,6 +233,38 @@ describe("Cloud layouts SSR", () => {
     expect(html).not.toContain("layout-rail-navigation");
     expect(html).not.toContain('data-layout-authenticated="true"');
     expect(html).not.toContain('href="/me"');
+  });
+
+  test("anonymous pages keep their header, with the app name and controls up to lg and breadcrumbs from lg", async () => {
+    const html = await (await server.request("/layout")).text();
+    const header = html.match(/<header[^>]*class="(layout-header[^"]*)"/)?.[1];
+    expect(header).toBeDefined();
+    expect(header).not.toContain("md:hidden");
+    expect(html).toContain('<div class="hidden min-w-0 items-center lg:flex">');
+    expect(html).toContain('<div class="flex items-center gap-1 lg:hidden">');
+  });
+
+  test("signed-in pages trade the header for the rail from md and publish the page trail", async () => {
+    const spies = [
+      spyOn(railSnapshot, "readRailSnapshot").mockResolvedValue(defaultRailPreferences()),
+      spyOn(settingsMiddleware, "preloadLayoutAnnouncements").mockResolvedValue(undefined),
+    ];
+    let html: string;
+    try {
+      const title = encodeURIComponent('Q4 "Plan" \\ <notes>');
+      html = await (await server.request(`/signed-in?title=${title}`, { headers: { "Accept-Language": "en" } })).text();
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
+    // The header remains for phones only, and it never carries breadcrumbs or an avatar.
+    expect(html.match(/<header[^>]*class="(layout-header[^"]*)"/)?.[1]).toContain("md:hidden");
+    expect(html).not.toContain("hidden min-w-0 items-center lg:flex");
+    expect(html.split('class="layout-profile-preferences"').length - 1).toBe(1);
+    expect(html).toContain('class="layout-rail hidden w-10 shrink-0 flex-col md:flex"');
+    // The page trail travels as JSON that cannot end its script element or carry markup.
+    const source = html.match(/<script type="application\/json" data-k2b-page-trail>([^<]*)<\/script>/)?.[1] ?? "";
+    expect(source).toContain("\\u003cnotes>");
+    expect(JSON.parse(source).title).toBe('Q4 "Plan" \\ <notes>');
   });
 
   test("hands the rail and the app grid each app's badge route but renders no count on the server", async () => {

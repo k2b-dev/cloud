@@ -52,7 +52,6 @@ export default ssr<AuthContext>(async (c) => {
   const groupsListHref = buildGroupsUrl(listState, {
     defaultScope,
   });
-  const groupsBackLabel = listState.scope === "managed" ? t.managedGroups : listState.scope === "member" ? t.myGroups : t.allGroups;
   const renderGroupNotFound = () => ssr.error(c, 404, { action: { label: t.backToGroups, href: groupsListHref } });
 
   if (!groupId || !z.uuid().safeParse(groupId).success) {
@@ -235,7 +234,8 @@ export default ssr<AuthContext>(async (c) => {
       title={[
         { title: t.start, href: "/" },
         { title: t.accounts, href: "/app/accounts" },
-        { title: t.groups, href: "/app/accounts/groups" },
+        // The way up keeps the list's scope and filters this detail was opened from.
+        { title: t.groups, href: groupsListHref },
         { title: groupDisplayName(group.name, locale) },
       ]}
     >
@@ -246,13 +246,6 @@ export default ssr<AuthContext>(async (c) => {
         scrollPreserveKey="accounts-group-detail"
       >
         <div class="flex flex-col gap-3">
-          <div>
-            <ButtonLink href={groupsListHref} size="sm" variant="secondary">
-              <i class="ti ti-arrow-left" />
-              {groupsBackLabel}
-            </ButtonLink>
-          </div>
-
           <div class="flex flex-wrap items-start justify-between gap-3 py-2" style="view-transition-name: accounts-group-title">
             <div class="min-w-0 flex-1">
               <div class="flex items-center gap-2 flex-wrap">

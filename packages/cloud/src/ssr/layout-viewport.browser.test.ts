@@ -112,19 +112,20 @@ const open = async (path: string, viewport: Viewport, content = contents.short) 
 const viewports = {
   "an iPad window on an external display": { width: 2307, height: 1307 },
   "an iPad in landscape": { width: 1180, height: 820 },
+  "an iPad in portrait": { width: 820, height: 1180 },
   "a phone": { width: 390, height: 664 },
 };
 const modes = ["page", "fullWidth", "fullPage"] as const;
 
 /**
- * What scrolls a long page. From `lg`, a regular page scrolls its content area and a full-width app its own panes, so
- * the window stays put. Below `lg`, regular and full-width pages grow with their content and the document scrolls. A
+ * What scrolls a long page. From `md`, a regular page scrolls its content area and a full-width app its own panes, so
+ * the window stays put. Below `md`, regular and full-width pages grow with their content and the document scrolls. A
  * full-page surface never lets the document scroll.
  */
 const longPageScroller = (mode: (typeof modes)[number], viewport: Viewport) => {
   if (mode === "fullPage") return "none";
-  // Tailwind's `lg` breakpoint.
-  if (viewport.width < 1024) return "document";
+  // Tailwind's `md` breakpoint.
+  if (viewport.width < 768) return "document";
   return mode === "page" ? "main" : "none";
 };
 

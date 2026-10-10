@@ -64,6 +64,7 @@ import layoutFloatingWindow from "./layout/floating-window.md" with { type: "tex
 import layoutMobileShell from "./layout/mobile-shell.md" with { type: "text" };
 import layoutNavigation from "./layout/navigation.md" with { type: "text" };
 import layoutOverview from "./layout/overview.md" with { type: "text" };
+import layoutPageTitle from "./layout/page-title.md" with { type: "text" };
 import contentPagination from "./layout/pagination.md" with { type: "text" };
 import layoutPanelDialog from "./layout/panel-dialog.md" with { type: "text" };
 import layoutPanes from "./layout/panes.md" with { type: "text" };
@@ -129,6 +130,7 @@ const catalogContextSources = {
   "layout/workspace": { file: "layout/workspace.md", content: layoutWorkspace },
   "layout/detail-panel": { file: "layout/detail-panel.md", content: layoutDetailPanel },
   "layout/discussion": { file: "layout/discussion.md", content: layoutDiscussion },
+  "layout/page-title": { file: "layout/page-title.md", content: layoutPageTitle },
   "layout/panes": { file: "layout/panes.md", content: layoutPanes },
   "layout/scroll-area": { file: "layout/scroll-area.md", content: layoutScrollArea },
   "layout/pull-to-refresh": { file: "layout/pull-to-refresh.md", content: layoutPullToRefresh },

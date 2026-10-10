@@ -1,3 +1,4 @@
+export { default as PageTrail, type PageTrailProps } from "../PageTrail";
 export { default as WorkspaceNavigationProvider } from "../WorkspaceNavigationProvider";
 export { provideWorkspaceNavigation } from "../workspace-navigation";
 export { default as SearchBar } from "./SearchBar";

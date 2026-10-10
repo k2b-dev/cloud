@@ -6,8 +6,10 @@ import { FilegateError } from "@k2b/filegate";
 import { ssr } from "../config";
 import { BrowseQuerySchema, EntryQuerySchema, SearchQuerySchema } from "../contracts";
 import { FilesError, filesService } from "../service";
+import { browserMessages } from "./browser-messages";
 import { browseOptions, parsePreferences, viewFor } from "./browser-preferences";
 import { filesMessages } from "./messages";
+import { snapshotTitle } from "./trail";
 import { filesUrl } from "./urls";
 import Workspace from "./Workspace.island";
 import type { WorkspaceSnapshot } from "./workspace-state";
@@ -81,20 +83,8 @@ export default ssr<AuthContext>(async (c) => {
     } else throw error;
   }
   const cloudUrl = publicCloudOrigin(await coreSettings.get<string>("app.url"));
-  const title = initial.editor
-    ? [
-        {
-          title: t.files,
-          href: filesUrl(
-            initial.editor.base.id,
-            initial.editor.entry.path.split("/").slice(0, -1).join("/"),
-            null,
-            initial.editor.entry.path,
-          ),
-        },
-        { title: initial.editor.entry.name },
-      ]
-    : t.files;
+  const locale = getLocale(c);
+  const title = snapshotTitle(initial, t.files, browserMessages.resolve([locale]).t, locale);
   return () => (
     <Layout c={c} title={title} fullWidth fullPage>
       <Workspace initial={initial} preferences={preferences} cloudUrl={cloudUrl} />
