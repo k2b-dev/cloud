@@ -31,6 +31,72 @@ const calendarMessages = i18n.define({
       calendarNothingPlanned: "Nothing planned.",
       calendarContinuesFrom: ({ day, month }: { day: number; month?: string }) => `from ${month ? `${month} ` : ""}${day}`,
       calendarContinuesUntil: ({ day, month }: { day: number; month?: string }) => `until ${month ? `${month} ` : ""}${day}`,
+      calendarDuration: ({ minutes }: { minutes: number }) => {
+        if (minutes < 60) return `${minutes} min`;
+        const hours = Math.floor(minutes / 60);
+        const rest = minutes % 60;
+        return `${hours} hr${rest ? ` ${rest} min` : hours === 1 ? "" : "s"}`;
+      },
+      calendarFree: ({ duration }: { duration: string }) => `${duration} free`,
+      calendarCreateAt: ({ start, end }: { start: string; end: string }) => `Create event ${start}–${end}`,
+      calendarFreeAction: ({
+        duration,
+        from,
+        to,
+        start,
+        end,
+      }: {
+        duration: string;
+        from: string;
+        to: string;
+        start: string;
+        end: string;
+      }) => `${duration} free, ${from} to ${to}. Create event ${start}–${end}`,
+      calendarRemaining: ({ duration }: { duration: string }) => `${duration} left`,
+      calendarSoon: ({ title, duration }: { title: string; duration: string }) => `${title} in ${duration}`,
+      calendarNight: ({ from, to }: { from: string; to: string }) => `Night · ${from} → ${to}`,
+      calendarNightHours: ({ from, to }: { from: string; to: string }) => `Night · ${from}–${to}`,
+      calendarFoldNight: "Fold",
+      calendarOpenNight: "Open the night",
+      calendarFoldNights: "Fold the nights",
+      calendarOpenNights: ({ from, to }: { from: string; to: string }) => `Open the nights, ${from} to ${to}`,
+      calendarUntil: ({ time }: { time: string }) => `until ${time}`,
+      calendarNothingPlannedShort: "Nothing planned",
+      calendarUnfoldDays: ({ count }: { count: number }): string => (count === 1 ? "Show day" : "Show days"),
+      calendarDayCount: ({ count }: { count: number }) => `${count} days`,
+      calendarDaySummary: ({ events, tasks }: { events: number; tasks: number }) =>
+        [events ? `${events} ${events === 1 ? "event" : "events"}` : "", tasks ? `${tasks} ${tasks === 1 ? "to-do" : "to-dos"}` : ""]
+          .filter(Boolean)
+          .join(" · "),
+      calendarMoreDays: "More days load as you scroll …",
+      calendarAllDayRow: "all day",
+      calendarAllDayRowShort: "all day",
+      calendarAllDayAndDue: "All day and due",
+      calendarDone: ({ title }: { title: string }) => `Done: ${title}`,
+      calendarDue: ({ time }: { time: string }) => `due ${time}`,
+      calendarFits: "fits",
+      calendarTooShort: ({ duration }: { duration: string }) => `${duration} too short`,
+      calendarOverlaps: ({ title }: { title: string }) => `overlaps “${title}”`,
+      calendarWeekNumber: ({ week }: { week: number }) => `W ${week}`,
+      calendarWeek: "Week",
+      calendarDays: "Days",
+      calendarKeyboardHelp: "Arrow keys move between days, events, and free time. Enter opens or creates, Space checks off.",
+      calendarShortcuts: "Keyboard shortcuts",
+      calendarShortcutsNote: "Shortcuts work in the calendar, never in a text field.",
+      calendarCommandToday: "Today",
+      calendarCommandTodayDescription: "Show today in the calendar",
+      calendarCommandNext: "Next",
+      calendarCommandNextDescription: "Show the next day, week, month, or year",
+      calendarCommandPrevious: "Previous",
+      calendarCommandPreviousDescription: "Show the previous day, week, month, or year",
+      calendarCommandView: ({ view }: { view: string }) => `${view} view`,
+      calendarCommandViewDescription: ({ view }: { view: string }) => `Switch the calendar to the ${view.toLowerCase()} view`,
+      calendarCommandGoTo: "Go to",
+      calendarCommandGoToDescription: "Jump to a date or a week number",
+      calendarGoToPlaceholder: "Date, such as 3/15, 2027-03-15, or W 12",
+      calendarGoToHint: "Enter a date or a week number.",
+      calendarGoToUnknown: "Not recognized.",
+      calendarGoToGo: "Go",
     },
     de: {
       calendarView: "Kalenderansicht",
@@ -55,6 +121,60 @@ const calendarMessages = i18n.define({
       calendarNothingPlanned: "Nichts geplant.",
       calendarContinuesFrom: ({ day, month }) => `seit ${day}.${month ? ` ${month}` : ""}`,
       calendarContinuesUntil: ({ day, month }) => `bis ${day}.${month ? ` ${month}` : ""}`,
+      calendarDuration: ({ minutes }) => {
+        if (minutes < 60) return `${minutes} Min`;
+        const hours = Math.floor(minutes / 60);
+        const rest = minutes % 60;
+        return rest ? `${hours} Std. ${rest}` : `${hours} Std.`;
+      },
+      calendarFree: ({ duration }) => `${duration} frei`,
+      calendarCreateAt: ({ start, end }) => `Termin ${start}–${end} anlegen`,
+      calendarFreeAction: ({ duration, from, to, start, end }) => `${duration} frei, ${from} bis ${to}. Termin ${start}–${end} anlegen`,
+      calendarRemaining: ({ duration }) => `noch ${duration}`,
+      calendarSoon: ({ title, duration }) => `${title} in ${duration}`,
+      calendarNight: ({ from, to }) => `Nacht · ${from} → ${to}`,
+      calendarNightHours: ({ from, to }) => `Nacht · ${from}–${to}`,
+      calendarFoldNight: "einklappen",
+      calendarOpenNight: "Nacht ausklappen",
+      calendarFoldNights: "Nächte einklappen",
+      calendarOpenNights: ({ from, to }) => `Nächte ausklappen, ${from}–${to} Uhr`,
+      calendarUntil: ({ time }) => `bis ${time}`,
+      calendarNothingPlannedShort: "Nichts geplant",
+      calendarUnfoldDays: ({ count }) => (count === 1 ? "Tag aufklappen" : "Tage aufklappen"),
+      calendarDayCount: ({ count }) => `${count} Tage`,
+      calendarDaySummary: ({ events, tasks }) =>
+        [events ? `${events} ${events === 1 ? "Termin" : "Termine"}` : "", tasks ? `${tasks} ${tasks === 1 ? "To-do" : "To-dos"}` : ""]
+          .filter(Boolean)
+          .join(" · "),
+      calendarMoreDays: "Weitere Tage laden beim Scrollen …",
+      calendarAllDayRow: "ganztägig",
+      calendarAllDayRowShort: "ganzt.",
+      calendarAllDayAndDue: "Ganztägig und fällig",
+      calendarDone: ({ title }) => `Erledigt: ${title}`,
+      calendarDue: ({ time }) => `fällig ${time}`,
+      calendarFits: "passt",
+      calendarTooShort: ({ duration }) => `${duration} zu kurz`,
+      calendarOverlaps: ({ title }) => `überschneidet „${title}“`,
+      calendarWeekNumber: ({ week }) => `KW ${week}`,
+      calendarWeek: "Woche",
+      calendarDays: "Tage",
+      calendarKeyboardHelp: "Pfeiltasten wechseln zwischen Tagen, Terminen und freier Zeit. Enter öffnet oder legt an, Leertaste hakt ab.",
+      calendarShortcuts: "Tastenkürzel",
+      calendarShortcutsNote: "Kürzel wirken im Kalender und nie in Eingabefeldern.",
+      calendarCommandToday: "Heute",
+      calendarCommandTodayDescription: "Im Kalender heute zeigen",
+      calendarCommandNext: "Weiter",
+      calendarCommandNextDescription: "Nächsten Tag, nächste Woche, nächsten Monat oder nächstes Jahr zeigen",
+      calendarCommandPrevious: "Zurück",
+      calendarCommandPreviousDescription: "Vorigen Tag, vorige Woche, vorigen Monat oder voriges Jahr zeigen",
+      calendarCommandView: ({ view }) => `Ansicht ${view}`,
+      calendarCommandViewDescription: ({ view }) => `Den Kalender als ${view} zeigen`,
+      calendarCommandGoTo: "Gehe zu",
+      calendarCommandGoToDescription: "Zu einem Datum oder einer Kalenderwoche springen",
+      calendarGoToPlaceholder: "Datum, z. B. 15.3., 15.3.2027 oder KW 12",
+      calendarGoToHint: "Datum oder Kalenderwoche eingeben.",
+      calendarGoToUnknown: "Nicht erkannt.",
+      calendarGoToGo: "Springen",
     },
   },
 });

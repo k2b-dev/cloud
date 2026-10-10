@@ -11,6 +11,7 @@ import { renderToString } from "solid-js/web";
 import type { CalendarItem, SpaceColumn, SpaceTag } from "@/contracts";
 import { browserName, launchBrowser } from "../../../../../../ui/test/browser";
 import { parseCalendarRoute } from "./filter";
+import { calendarWindow } from "./range";
 
 // Selection, ranges, menus, bars, and overflow are layout and pointer questions, so the calendar route renders on the
 // server and then runs its real island bundle in a real browser, as the workspace page does. The scratch root sits
@@ -138,7 +139,7 @@ const serverBody = (locale: "en" | "de", href: string, items: CalendarItem[]) =>
         baseUrl: href,
         columns,
         tags,
-        initialState: { ...route, items, weather: {}, tray: null },
+        initialState: { ...route, range: calendarWindow("day", new Date(route.date), dateConfig), items, weather: {}, tray: null },
         selectedItemId: "",
         dateConfig,
         canWrite: true,
@@ -179,7 +180,8 @@ beforeAll(async () => {
         const href = url.searchParams.get("href") ?? "";
         viewRequests.push(href);
         const route = parseCalendarRoute(new URL(href, "http://spaces.local"), dateConfigFor(data.locale));
-        return Response.json({ kind: "calendar", ...route, items: data.items, weather: {}, tray: null });
+        const range = calendarWindow(route.view === "week" ? "week" : "day", new Date(route.date), dateConfigFor(data.locale));
+        return Response.json({ kind: "calendar", ...route, range, items: data.items, weather: {}, tray: null });
       }
       if (url.pathname === "/api/spaces/Space1/items" && request.method === "POST") {
         const body = (await request.json()) as Record<string, unknown>;
@@ -530,17 +532,18 @@ describe(`Spaces month view in ${browserName}`, () => {
       expect(await selectedDays(page)).toEqual(["2026-10-21"]);
       await page.locator(".k2b-calendar-view-switcher").getByRole("radio", { name: "Week" }).click();
       await page.waitForURL(/cv=week&cd=2026-10-21/);
-      for (const date of ["2026-10-28", "2026-11-04"]) {
+      // The week view's arrows go from week start to week start; the URL follows the first day it shows.
+      for (const date of ["2026-10-26", "2026-11-02"]) {
         await page.locator('.k2b-calendar-header__nav-button[aria-label="Next"]').click();
         await page.waitForURL(new RegExp(`cd=${date}`));
       }
       await page.locator(".k2b-calendar-view-switcher").getByRole("radio", { name: "Month" }).click();
-      await page.waitForURL(/cv=month&cd=2026-11-04/);
-      await page.locator(day("2026-11-04")).waitFor();
+      await page.waitForURL(/cv=month&cd=2026-11-02/);
+      await page.locator(day("2026-11-02")).waitFor();
       expect(await selectedDays(page)).toEqual([]);
       await page.getByRole("button", { name: "New event" }).click();
       await dialog.waitFor();
-      expect(await dialog.textContent()).toContain("Nov 4");
+      expect(await dialog.textContent()).toContain("Nov 2");
       expect(await dialog.textContent()).not.toContain("Oct 21");
       await page.keyboard.press("Escape");
       await page.waitForFunction(() => !document.querySelector("dialog[open]"));

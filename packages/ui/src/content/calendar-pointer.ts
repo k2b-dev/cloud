@@ -30,6 +30,13 @@ type CalendarPointerSessionOptions<T> = {
   onCancel?: () => void;
   scrollContainer?: HTMLElement;
   threshold?: number;
+  /**
+   * The edges scroll only once the pointer has been well inside the container, and only while it is over it, so a drag
+   * that comes in from outside, such as from a list below, does not scroll on its way in.
+   */
+  armAutoScroll?: boolean;
+  /** Called on every move once the gesture is active, such as to move a token with the pointer. */
+  onMove?: (clientX: number, clientY: number) => void;
 };
 
 let cancelActiveSession: (() => void) | null = null;
@@ -57,6 +64,7 @@ export const startCalendarPointerSession = <T>(options: CalendarPointerSessionOp
   let latest: T | null = null;
   let scrollFrame = 0;
   let releaseTextSelection: (() => void) | null = null;
+  let armed = !options.armAutoScroll;
 
   const preview = () => {
     const value = options.resolve(clientX, clientY);
@@ -69,7 +77,9 @@ export const startCalendarPointerSession = <T>(options: CalendarPointerSessionOp
     scrollFrame = 0;
     if (!active || !options.scrollContainer) return;
     const rect = options.scrollContainer.getBoundingClientRect();
-    const speed = calendarAutoScrollSpeed(clientY, rect.top, rect.bottom);
+    const inside = clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
+    if (!armed && inside && clientY > rect.top + 56 && clientY < rect.bottom - 56) armed = true;
+    const speed = armed && (inside || !options.armAutoScroll) ? calendarAutoScrollSpeed(clientY, rect.top, rect.bottom) : 0;
     if (speed !== 0) {
       const before = options.scrollContainer.scrollTop;
       options.scrollContainer.scrollTop += speed;
@@ -114,6 +124,7 @@ export const startCalendarPointerSession = <T>(options: CalendarPointerSessionOp
     if (!active && Math.hypot(clientX - startX, clientY - startY) >= threshold) activate();
     if (!active) return;
     event.preventDefault();
+    options.onMove?.(clientX, clientY);
     preview();
   }
 

@@ -18,6 +18,8 @@ export function CalendarItemContent(props: {
   flag: { label: string } | null;
   extra: string[];
 }) {
+  // The day and week views size a band's title and time themselves; the item adds its flag.
+  if (props.context.timeline) return <TimelineContent {...props} />;
   const showTime = () => !props.context.allDay && !props.context.compact && props.context.durationHours >= 0.75;
   const showLocation = () => Boolean(props.event.location && !props.context.compact && props.context.durationHours >= 1.25);
   const showDescription = () =>
@@ -79,5 +81,39 @@ export function CalendarItemContent(props: {
         <span class="mt-1 line-clamp-2 text-[0.625rem] leading-[1.35] text-[var(--k2b-text-muted)]">{props.event.description}</span>
       </Show>
     </span>
+  );
+}
+
+/** A band, a deadline, or an all-day entry of the day and week views, in the calendar's own parts. */
+function TimelineContent(props: { event: CalendarEvent; context: CalendarEventRenderContext; flag: { label: string } | null }) {
+  const band = () => props.context.fill && !props.context.allDay;
+  return (
+    <>
+      <Show when={props.context.leadingTime}>
+        <span class="k2b-calendar-event__time">{props.context.leadingTime}</span>
+      </Show>
+      <span class="k2b-calendar-event__title" data-spaces-calendar-item="">
+        {props.event.title}
+      </span>
+      <Show when={band()}>
+        <span class="k2b-calendar-event__meta">
+          {props.context.timeLabel}
+          <Show when={props.context.remaining}>
+            <span class="k2b-calendar-event__remaining"> · {props.context.remaining}</span>
+          </Show>
+        </span>
+      </Show>
+      <Show when={props.flag}>
+        {(flag) => (
+          <i
+            class="ti ti-flag k2b-calendar-event__flag"
+            style={{ color: CALENDAR_PRIORITY_COLORS.urgent }}
+            title={flag().label}
+            aria-hidden="true"
+            data-spaces-calendar-flag=""
+          />
+        )}
+      </Show>
+    </>
   );
 }

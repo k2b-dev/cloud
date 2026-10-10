@@ -27,6 +27,8 @@ type Props = {
   /** The list view with every task of a part, or undefined where the filter rules the part out. */
   listHref: (section: TaskTraySection) => string | undefined;
   dateConfig?: DateContext;
+  /** Starts dragging a task into the free time of the day above, to plan it there; without it tasks only open. */
+  onSchedulePointerDown?: (event: PointerEvent, item: SpaceItem) => void;
 };
 
 const emptyTray: Tray = { overdue: { items: [], total: 0 }, undated: { items: [], total: 0 } };
@@ -151,6 +153,7 @@ export default function TaskTray(props: Props) {
       timeZone: props.dateConfig?.timeZone,
     }).format(new Date(deadline));
   const empty = () => tray.overdue.items.length === 0 && tray.undated.items.length === 0;
+  const dragHintId = createUniqueId();
 
   const Section = (section: { kind: TaskTraySection; label: string; allLabel: (count: number) => string }) => {
     const headingId = createUniqueId();
@@ -210,6 +213,11 @@ export default function TaskTray(props: Props) {
                           <a
                             href={href()}
                             class="focus-ui relative flex min-w-0 items-center gap-1.5 rounded-[var(--ui-radius-control)] text-secondary hover:app-accent-text"
+                            draggable={props.onSchedulePointerDown ? false : undefined}
+                            aria-describedby={props.onSchedulePointerDown ? dragHintId : undefined}
+                            onPointerDown={(event) => {
+                              if (event.button === 0 && event.isPrimary) props.onSchedulePointerDown?.(event, item);
+                            }}
                             onClick={(event) => {
                               if (!shouldHandleDetailClick(event, event.currentTarget)) return;
                               event.preventDefault();
@@ -227,6 +235,9 @@ export default function TaskTray(props: Props) {
                             </Show>
                             <Show when={blocked()}>
                               <span class="sr-only">, {t.blockedByCount({ count: item.activeBlockerCount })}</span>
+                            </Show>
+                            <Show when={props.onSchedulePointerDown}>
+                              <i class="ti ti-grip-vertical shrink-0 text-sm text-dimmed opacity-45" aria-hidden="true" />
                             </Show>
                           </a>
                         </div>
@@ -283,6 +294,12 @@ export default function TaskTray(props: Props) {
           <div class="flex w-max items-center gap-2 px-1 py-2">
             <Section kind="overdue" label={t.overdue} allLabel={(count) => t.taskTrayAllOverdue({ count })} />
             <Section kind="undated" label={t.taskTrayUndated} allLabel={(count) => t.taskTrayAllUndated({ count })} />
+            <Show when={props.onSchedulePointerDown}>
+              <span id={dragHintId} class="ml-3 shrink-0 pr-2 text-[11px] text-dimmed max-sm:sr-only">
+                <span class="pointer-coarse:hidden">{t.taskTrayDragHint}</span>
+                <span class="hidden pointer-coarse:inline">{t.taskTrayDragHintTouch}</span>
+              </span>
+            </Show>
           </div>
         </ScrollArea>
       </Show>
