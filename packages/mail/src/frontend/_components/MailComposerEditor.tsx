@@ -2,6 +2,7 @@ import {
   AutocompleteEditor,
   Button,
   type Completion,
+  InlineGuidance,
   MarkdownEditor,
   Panes,
   type PanesItem,
@@ -10,7 +11,8 @@ import {
   useLocale,
 } from "@k2b/ui";
 import type { Accessor, JSX } from "solid-js";
-import { createMemo, Show } from "solid-js";
+import { createMemo, For, Show } from "solid-js";
+import { composeFormattingMessages, describeComposeFormattingWarning } from "../../compose-formatting-messages";
 import type { ComposePreview } from "../../contracts";
 import { mailComposerMessages } from "./mail-composer-messages";
 
@@ -77,12 +79,25 @@ export default function MailComposerEditor(props: {
             fallback={<Placeholder state="loading" variant="panel" class="h-full min-h-72" title={t().preparingPreview} />}
           >
             {(value) => (
-              <iframe
-                class="h-full min-h-72 w-full border-0 bg-white"
-                sandbox=""
-                srcdoc={`<style>body{margin:0}</style>${value().html}`}
-                title={t().emailPreview}
-              />
+              <div class="flex h-full min-h-72 flex-col">
+                <iframe
+                  class="min-h-0 w-full flex-1 border-0 bg-white"
+                  sandbox=""
+                  srcdoc={`<style>body{margin:0}</style>${value().html}`}
+                  title={t().emailPreview}
+                />
+                {/* Below the message, so the preview content never moves when the hint appears. */}
+                <Show when={value().formattingWarnings.length > 0}>
+                  <InlineGuidance icon="ti ti-info-circle" class="max-h-28 shrink-0 overflow-y-auto px-3 py-2">
+                    <p>{composeFormattingMessages.resolve([locale()]).t.title}</p>
+                    <ul>
+                      <For each={value().formattingWarnings}>
+                        {(warning) => <li>{describeComposeFormattingWarning(warning, locale())}</li>}
+                      </For>
+                    </ul>
+                  </InlineGuidance>
+                </Show>
+              </div>
             )}
           </Show>
         }

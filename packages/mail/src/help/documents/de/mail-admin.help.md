@@ -253,6 +253,8 @@ Erstelle unter **Einstellungen → Schreiben** private Signaturen und Textbauste
 
 Markdown-Nachrichten bekommen immer das eingebaute lesbare E-Mail-Design. **E-Mail-Design** ergänzt geprüftes CSS des Postfachs für das Firmendesign. Es ersetzt nicht das sichere Grunddesign. Prüfe das Ergebnis in der **Vorschau** des Editors, bevor du dich auf eine CSS-Änderung verlässt.
 
+Das CSS des Postfachs folgt auf das eingebaute Design. Jede seiner Regeln setzt sich für die Elemente, die sie auswählt, gegen das eingebaute Design durch. So ändert etwa `a { color: #262626; }` die Farbe aller Links. Für die ganze Nachricht nutzt du `.mail-content`, zum Beispiel `.mail-content { font-size: 16px; }`. Selektoren können die Elemente nutzen, die die E-Mail behält, und die Klasse `.mail-content`. Andere Klassen, IDs, Pseudoklassen wie `:hover`, `@`-Regeln und `!important` werden nicht angenommen.
+
 ## Automatische Antworten und Referenzen einrichten {icon="settings"}
 
 Öffne **Postfachwerkzeuge → Automatisierungen**:

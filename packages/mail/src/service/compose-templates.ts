@@ -33,6 +33,7 @@ import { actorRefFromRequest, auditActorFromRequest, type MailRequestContext, us
 import { sha256Text } from "./canonical";
 import {
   type ComposeRenderContext,
+  composeFormattingWarnings,
   markComposeTemplateSegment,
   type RenderedComposeContent,
   renderComposeContent,
@@ -119,6 +120,12 @@ const mapTemplate = (row: DbTemplate, mailboxId: string): ComposeTemplate => ({
   archivedAt: row.archived_at ? toIso(row.archived_at) : null,
   createdAt: toIso(row.created_at),
   updatedAt: toIso(row.updated_at),
+});
+
+/** Templates are Markdown; a plain-text draft sends the same source as literal text. */
+const withFormattingWarnings = (template: ComposeTemplate): ComposeTemplate => ({
+  ...template,
+  formattingWarnings: composeFormattingWarnings(template.body, "markdown"),
 });
 
 const mapDefault = (row: DbDefault, ids: { mailboxId: string; senderIdentityId: string; templateId: string }): ComposeSignatureDefault => ({
@@ -282,7 +289,7 @@ export const createComposeTemplate = async (params: {
         },
         tx,
       );
-      return ok(mapTemplate(row, params.mailboxId));
+      return ok(withFormattingWarnings(mapTemplate(row, params.mailboxId)));
     });
   } catch (error) {
     if (databaseCode(error) === "23505") {
@@ -360,7 +367,7 @@ export const updateComposeTemplate = async (params: {
         },
         tx,
       );
-      return ok(mapTemplate(row, params.mailboxId));
+      return ok(withFormattingWarnings(mapTemplate(row, params.mailboxId)));
     });
   } catch (error) {
     if (databaseCode(error) === "23505") {
@@ -763,6 +770,7 @@ export const previewComposeDraft = async (params: {
   return ok({
     html: rendered.data.html ?? `<pre>${escapeHtml(rendered.data.text)}</pre>`,
     text: rendered.data.text,
+    formattingWarnings: composeFormattingWarnings(params.input.draft.body ?? "", params.input.draft.format ?? "markdown"),
   });
 };
 

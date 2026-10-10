@@ -55,6 +55,8 @@ Ein E-Mail-Link kann An, Cc, Bcc, Betreff und einen Text ohne Formatierung ausf�
 
 Mail sendet Markdown als lesbares HTML mit dem E-Mail-Design des Postfachs und einer Textalternative. Nur Text sendet keine HTML-Alternative. Kann die **Vorschau** die Nachricht nicht zeigen, etwa weil sie zu lang ist, nennt sie den Grund und bietet **Erneut versuchen** an. Du kannst die verfügbaren Bereiche anordnen. Mail hält das Layout passend, wenn ein anderer Entwurf andere Bereiche anbietet.
 
+Markdown kann auch einfaches HTML enthalten. Die E-Mail behält die Elemente `a`, `br`, `code`, `div`, `em`, `h1` bis `h3`, `li`, `ol`, `p`, `span`, `strong`, `ul` und die Tabellenelemente. Andere Elemente wie `small` entfernt sie, ihr Text bleibt erhalten. Außerdem entfernt sie `class`, Inline-`style` und die meisten anderen Attribute. Links können Webseiten, E-Mail-Adressen (`mailto:`) und Telefonnummern (`tel:+49 731 000000`) öffnen. Zitate, Bilder und Trennlinien aus Markdown erscheinen nicht in der E-Mail. Entfernt Mail HTML, listet die **Vorschau** es unter der Nachricht auf. Das Aussehen aller Nachrichten ändert, wer das Postfach verwaltet, im E-Mail-Design des Postfachs. Inline-Stile können das nicht.
+
 Der Verlauf lädt erst, wenn du ihn öffnest. Mail klappt zuerst die neueste Nachricht auf. Du kannst mehrere Nachrichten unabhängig auf- und zuklappen, und Mail lädt frühere Zusammenfassungen seitenweise. Eine vollständige Nachricht lädt Mail erst, wenn du sie aufklappst. Links und Anhänge haben denselben Sicherheitsschutz wie in der Leseansicht.
 
 Dein Standardformat steht unter **Einstellungen → Schreiben → Format beim Verfassen**. Eine Änderung des Standards ändert keine vorhandenen Entwürfe.

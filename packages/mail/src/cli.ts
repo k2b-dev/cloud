@@ -23,6 +23,7 @@ import type { AccessEntry, PermissionLevel, Principal } from "@k2b/cloud/contrac
 import { text } from "@k2b/stdlib";
 import { z } from "zod";
 import type { CalendarInvitationImportResult, CalendarInvitationPreview, SpacesMailDestinationContext } from "./app-integration-contracts";
+import { composeFormattingMessages, describeComposeFormattingWarning } from "./compose-formatting-messages";
 import {
   MAIL_CONTACT_DIRECTORY_DEFAULTS,
   type MailContactDirectoryConfig,
@@ -34,6 +35,7 @@ import {
   type AttachmentLink,
   type AttachmentLinkPage,
   type CancelScheduledSendResult,
+  type ComposeFormattingWarning,
   type ComposePreview,
   type ComposeSafetyApproval,
   type ComposeSafetyReview,
@@ -824,6 +826,13 @@ const readComposeDraftInput = async (input: Parameters<typeof readCliInput>[0]) 
 
 const createDraft = async (ctx: CloudCliContext, mailboxId: string, flags: Parameters<typeof readDraftContent>[0]): Promise<MailDraft> =>
   readApi(ctx, `/mailboxes/${mailboxId}/drafts`, jsonRequest("POST", await readDraftContent(flags)));
+
+/** Tells what email leaves out of the HTML in a Markdown body. JSON output carries the same list as `formattingWarnings`. */
+const printFormattingWarnings = (ctx: CloudCliContext, warnings: ComposeFormattingWarning[] | undefined) => {
+  if (!warnings?.length) return;
+  ctx.error(composeFormattingMessages.resolve([ctx.options.locale ?? "en"]).t.title);
+  for (const warning of warnings) ctx.error(`  - ${describeComposeFormattingWarning(warning, ctx.options.locale)}`);
+};
 
 const reviewDraftSafety = async (
   ctx: CloudCliContext,
@@ -2461,6 +2470,7 @@ const everydayCommands = (t: Translate) => {
           }),
         );
         if (printStructured(ctx, draft)) return;
+        printFormattingWarnings(ctx, draft.formattingWarnings);
         ctx.print(
           t({
             en: `Created reply draft ${draft.id} to ${draft.to.map((address) => address.address).join(", ")}. Send it with \`cld mail send ${draft.id}\`.`,
@@ -2524,6 +2534,7 @@ const everydayCommands = (t: Translate) => {
           }),
         );
         if (printStructured(ctx, draft)) return;
+        printFormattingWarnings(ctx, draft.formattingWarnings);
         ctx.print(
           t({
             en: `Created forward draft ${draft.id}. Send it with \`cld mail send ${draft.id}\`.`,
@@ -3148,6 +3159,7 @@ const specialistCommands = {
         );
         if (printStructured(ctx, template)) return;
         ctx.print(`Created ${template.kind} ${template.name} as /${template.shortcut} (${template.id}).`);
+        printFormattingWarnings(ctx, template.formattingWarnings);
       },
     }),
     command("compose template update", {
@@ -3190,6 +3202,7 @@ const specialistCommands = {
         );
         if (printStructured(ctx, template)) return;
         ctx.print(`Updated ${template.name} to revision ${template.revision}.`);
+        printFormattingWarnings(ctx, template.formattingWarnings);
       },
     }),
     command("compose template archive", {
@@ -3368,7 +3381,7 @@ const specialistCommands = {
           required: true,
           stdinName: "css-stdin",
           fileName: "css-file",
-          description: "Validated mailbox email CSS",
+          description: "Validated mailbox email CSS; its rules win over the built-in design for the elements they select",
         }),
       },
       run: async ({ ctx, flags }) => {
@@ -3407,6 +3420,7 @@ const specialistCommands = {
         );
         if (printStructured(ctx, preview)) return;
         ctx.print(preview.html);
+        printFormattingWarnings(ctx, preview.formattingWarnings);
       },
     }),
     command("status", {
@@ -6331,6 +6345,7 @@ const specialistCommands = {
         const draft = await createDraft(ctx, mailbox.id, flags);
         if (printStructured(ctx, draft)) return;
         ctx.print(`Created draft ${draft.id} (revision ${draft.revision}).`);
+        printFormattingWarnings(ctx, draft.formattingWarnings);
       },
     }),
     command("draft update", {
@@ -6358,6 +6373,7 @@ const specialistCommands = {
         );
         if (printStructured(ctx, draft)) return;
         ctx.print(`Updated draft ${draft.id} to revision ${draft.revision}.`);
+        printFormattingWarnings(ctx, draft.formattingWarnings);
       },
     }),
     command("draft recovery list", {

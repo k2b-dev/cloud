@@ -74,6 +74,13 @@ describe("compose safety", () => {
     expect(evaluateComposeSafety(source({ body: "[Project](https://example.org/project)" })).warnings).toHaveLength(0);
   });
 
+  test("treats phone links like mail links", () => {
+    expect(evaluateComposeSafety(source({ body: "Call [+49 731 000000](tel:+49731000000)." })).warnings).toHaveLength(0);
+    expect(evaluateComposeSafety(source({ body: "[Call us](javascript:alert(1))" })).warnings.map((warning) => warning.id)).toContain(
+      "suspicious_link",
+    );
+  });
+
   test("warns about template text that no longer sits inside a rendered segment", () => {
     const raw = evaluateComposeSafety(source({ body: "Regards\n{{ sender.email }}" }));
     expect(raw.warnings.map((warning) => warning.id)).toContain("unrendered_template");

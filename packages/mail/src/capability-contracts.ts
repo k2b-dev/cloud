@@ -1,6 +1,7 @@
 import { CapabilitySemanticLinkSchema, CloudResourceViewSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import {
+  composeFormattingWarningsSchema,
   composeSafetyApprovalSchema,
   composeSafetyReviewSchema,
   draftEditableContentInputSchema,
@@ -675,6 +676,9 @@ export const DraftMutationDataSchema = z
     attachmentsTruncated: z.boolean(),
     revision: z.number().int().positive(),
     state: z.enum(["draft", "scheduled", "sending", "sent", "discarded"]),
+    formattingWarnings: composeFormattingWarningsSchema
+      .optional()
+      .describe("HTML in the Markdown body that email removes: unsupported elements, attributes such as class or style, and links."),
   })
   .strict();
 export const DraftListInputSchema = z.object({ mailboxId: MailboxIdInputSchema, ...PageInputShape }).strict();

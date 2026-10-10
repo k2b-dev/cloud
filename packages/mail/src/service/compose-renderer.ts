@@ -1,10 +1,11 @@
-import { EMAIL_HTML_ALLOWED_ATTRIBUTES, EMAIL_HTML_ALLOWED_SCHEMES, EMAIL_HTML_TAGS, markdown } from "@k2b/cloud/shared";
+import { EMAIL_HTML_ALLOWED_ATTRIBUTES, EMAIL_HTML_SANITIZE_OPTIONS, EMAIL_HTML_TAGS, markdown } from "@k2b/cloud/shared";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { convert } from "html-to-text";
 import juice from "juice";
 import postcss from "postcss";
 import selectorParser from "postcss-selector-parser";
 import sanitizeHtml from "sanitize-html";
+import { type ComposeFormattingWarning, MAX_COMPOSE_FORMATTING_WARNINGS } from "../contracts";
 import { composeRenderFailure } from "./compose-render-errors";
 import { allowedEmailInlineStyles, allowedEmailInlineStyleValue, EMAIL_INLINE_STYLE_PROPERTY_SET } from "./email-inline-style-policy";
 import { renderMailLiquidTemplate, validateMailLiquidTemplate } from "./template-rendering";
@@ -33,11 +34,19 @@ const COMPOSE_SEGMENT = /\u2063([^\u2063\u2064]*)\u2064/g;
 const COMPOSE_SEGMENT_OR_LEFTOVER_MARK = /(\u2063[^\u2063\u2064]*\u2064)|[\u2063\u2064]/g;
 
 const ALLOWED_TAGS = new Set<string>(EMAIL_HTML_TAGS);
-const INLINED_EMAIL_ATTRIBUTES = Object.fromEntries(
-  [...EMAIL_HTML_TAGS].map((tag) => [tag, [...new Set([...(EMAIL_HTML_ALLOWED_ATTRIBUTES[tag] ?? []), "style"])]]),
-);
+const INLINED_EMAIL_SANITIZE_OPTIONS = {
+  ...EMAIL_HTML_SANITIZE_OPTIONS,
+  allowedAttributes: Object.fromEntries(
+    [...EMAIL_HTML_TAGS].map((tag) => [tag, [...new Set([...(EMAIL_HTML_ALLOWED_ATTRIBUTES[tag] ?? []), "style"])]]),
+  ),
+  allowedStyles: allowedEmailInlineStyles(EMAIL_HTML_TAGS),
+} satisfies sanitizeHtml.IOptions;
 const UNSAFE_CSS_VALUE = /(?:url|expression|var|attr)\s*\(|[{}@]|[\u0000-\u0008\u000b\u000c\u000e-\u001f]/i;
 
+/**
+ * The built-in design, inlined before the mailbox CSS. It styles only the message, so its element rules need
+ * no `.mail-content` scope: with the lowest specificity, every rule of the mailbox CSS for the same element wins.
+ */
 export const DEFAULT_MAIL_CSS = `
 .mail-content {
   color: #18181b;
@@ -46,15 +55,15 @@ export const DEFAULT_MAIL_CSS = `
   line-height: 1.55;
   max-width: 720px;
 }
-.mail-content p { margin: 0 0 12px; }
-.mail-content h1 { font-size: 24px; line-height: 1.25; margin: 24px 0 12px; }
-.mail-content h2 { font-size: 20px; line-height: 1.3; margin: 20px 0 10px; }
-.mail-content h3 { font-size: 17px; line-height: 1.35; margin: 18px 0 8px; }
-.mail-content a { color: #0f766e; text-decoration: underline; }
-.mail-content ul, .mail-content ol { margin: 0 0 12px; padding-left: 24px; }
-.mail-content table { border-collapse: collapse; margin: 12px 0; width: 100%; }
-.mail-content th, .mail-content td { border: 1px solid #d4d4d8; padding: 6px 8px; text-align: left; }
-.mail-content code { background-color: #f4f4f5; border-radius: 3px; font-family: monospace; padding: 1px 3px; }
+p { margin: 0 0 12px; }
+h1 { font-size: 24px; line-height: 1.25; margin: 24px 0 12px; }
+h2 { font-size: 20px; line-height: 1.3; margin: 20px 0 10px; }
+h3 { font-size: 17px; line-height: 1.35; margin: 18px 0 8px; }
+a { color: #0f766e; text-decoration: underline; }
+ul, ol { margin: 0 0 12px; padding-left: 24px; }
+table { border-collapse: collapse; margin: 12px 0; width: 100%; }
+th, td { border: 1px solid #d4d4d8; padding: 6px 8px; text-align: left; }
+code { background-color: #f4f4f5; border-radius: 3px; font-family: monospace; padding: 1px 3px; }
 `.trim();
 
 const validateSelector = (selector: string): string | null => {
@@ -287,16 +296,15 @@ export const hasUnrenderedTemplateSyntax = (body: string): boolean => {
   return false;
 };
 
+/** Markdown as the sanitized email fragment, before the design is inlined. */
+const emailHtmlFragment = (source: string): string =>
+  sanitizeHtml(markdown.renderSync(source, { links: "plain" }), EMAIL_HTML_SANITIZE_OPTIONS);
+
 const markdownToPlainText = (source: string): Result<string> => {
   const complexity = validateMarkdownSourceComplexity(source);
   if (!complexity.ok) return complexity;
   try {
-    const html = sanitizeHtml(markdown.renderSync(source, { links: "plain" }), {
-      allowedTags: [...EMAIL_HTML_TAGS],
-      allowedAttributes: EMAIL_HTML_ALLOWED_ATTRIBUTES,
-      allowedSchemes: [...EMAIL_HTML_ALLOWED_SCHEMES],
-    });
-    return ok(convert(html, { wordwrap: false }).trimEnd());
+    return ok(convert(emailHtmlFragment(source), { wordwrap: false }).trimEnd());
   } catch {
     return fail(err.badInput("Compose template could not be converted to plain text"));
   }
@@ -379,11 +387,7 @@ export const renderComposeContent = (params: {
   if (!complexity.ok) return complexity;
 
   try {
-    const fragment = sanitizeHtml(markdown.renderSync(source, { links: "plain" }), {
-      allowedTags: [...EMAIL_HTML_TAGS],
-      allowedAttributes: EMAIL_HTML_ALLOWED_ATTRIBUTES,
-      allowedSchemes: [...EMAIL_HTML_ALLOWED_SCHEMES],
-    });
+    const fragment = emailHtmlFragment(source);
     const elementCount = fragment.match(/<[a-z][^>]*>/gi)?.length ?? 0;
     if (elementCount > MAX_EMAIL_HTML_ELEMENTS) {
       return fail(composeRenderFailure("tooComplex"));
@@ -401,12 +405,7 @@ export const renderComposeContent = (params: {
     });
     if (sourceBytes(inlined) > MAX_RENDERED_SOURCE_BYTES) return fail(composeRenderFailure("tooLarge"));
     // Markdown turns character references such as `&#8291;` into marks; they must not reach the message either.
-    const html = sanitizeHtml(inlined, {
-      allowedTags: [...EMAIL_HTML_TAGS],
-      allowedAttributes: INLINED_EMAIL_ATTRIBUTES,
-      allowedSchemes: [...EMAIL_HTML_ALLOWED_SCHEMES],
-      allowedStyles: allowedEmailInlineStyles(EMAIL_HTML_TAGS),
-    }).replace(COMPOSE_SEGMENT_MARKS, "");
+    const html = sanitizeHtml(inlined, INLINED_EMAIL_SANITIZE_OPTIONS).replace(COMPOSE_SEGMENT_MARKS, "");
     if (sourceBytes(html) > MAX_RENDERED_SOURCE_BYTES) return fail(composeRenderFailure("tooLarge"));
     return ok({
       html,
@@ -418,4 +417,111 @@ export const renderComposeContent = (params: {
   } catch {
     return fail(composeRenderFailure("conversionFailed"));
   }
+};
+
+type HtmlElement = { tag: string; attribs: Record<string, string> };
+
+/** Reads the opening tags of an HTML fragment in document order. It only parses: the returned HTML is discarded. */
+const openingTags = (html: string): HtmlElement[] => {
+  const elements: HtmlElement[] = [];
+  sanitizeHtml(html, {
+    allowedTags: false,
+    allowedAttributes: false,
+    allowVulnerableTags: true,
+    transformTags: {
+      "*": (tagName, attribs) => {
+        elements.push({ tag: tagName, attribs });
+        return { tagName, attribs };
+      },
+    },
+  });
+  return elements;
+};
+
+const escapeAttribute = (value: string): string => value.replace(/[&"<>\r\n]/g, (character) => `&#${character.charCodeAt(0)};`);
+const openingTag = ({ tag, attribs }: HtmlElement): string =>
+  `<${tag}${Object.entries(attribs)
+    .map(([name, value]) => ` ${name}="${escapeAttribute(value)}"`)
+    .join("")}>`;
+const styleProperties = (style: string | undefined): Set<string> =>
+  new Set(
+    (style ?? "")
+      .split(";")
+      .map((declaration) => declaration.split(":")[0]?.trim().toLowerCase() ?? "")
+      .filter(Boolean),
+  );
+
+/**
+ * Sends each element through the same sanitizing passes as a message and returns what survives, in the same
+ * order, or null when the order no longer matches. One HTML block keeps every element raw for Markdown.
+ */
+const sanitizedElements = (elements: HtmlElement[]): HtmlElement[] | null => {
+  // `</br>` would read as a second line break.
+  const block = `<div>\n${elements.map((element) => `${openingTag(element)}${element.tag === "br" ? "" : `</${element.tag}>`}`).join("\n")}\n</div>`;
+  const kept = openingTags(sanitizeHtml(emailHtmlFragment(block), INLINED_EMAIL_SANITIZE_OPTIONS)).slice(1);
+  return kept.length === elements.length && kept.every((element, index) => element.tag === elements[index]?.tag) ? kept : null;
+};
+
+/**
+ * Reports what the email renderer removes from HTML written into a Markdown body or template: unsupported
+ * elements, attributes such as `class` and `style`, and link addresses it does not allow. Markdown formatting
+ * that email leaves out, such as quotes or images, is not reported. The body is analyzed as written, so a
+ * draft, its preview, and a template with the same source report the same list.
+ */
+export const composeFormattingWarnings = (body: string, format: "plain" | "markdown"): ComposeFormattingWarning[] => {
+  if (format !== "markdown") return [];
+  try {
+    return formattingWarnings(body);
+  } catch {
+    // Warnings are a hint: they never stop a save or a preview.
+    return [];
+  }
+};
+
+const formattingWarnings = (body: string): ComposeFormattingWarning[] => {
+  const source = body.replace(COMPOSE_SEGMENT_MARKS, "");
+  // A body the renderer refuses reports that error on preview and send instead.
+  if (sourceBytes(source) > MAX_RENDERED_SOURCE_BYTES || !validateMarkdownSourceComplexity(source).ok) return [];
+
+  const warnings = new Map<string, ComposeFormattingWarning>();
+  const add = (warning: ComposeFormattingWarning) => {
+    const key = `${warning.code}:${warning.element}:${warning.attribute ?? ""}`;
+    if (warnings.size < MAX_COMPOSE_FORMATTING_WARNINGS && !warnings.has(key)) warnings.set(key, warning);
+  };
+  const name = (value: string) => value.slice(0, 64);
+
+  const authored: HtmlElement[] = [];
+  markdown.marked.walkTokens(markdown.marked.lexer(source), (token) => {
+    if (authored.length >= MAX_EMAIL_HTML_ELEMENTS) return;
+    // Inline HTML arrives one tag per token; closing tags and comments carry nothing to report.
+    if (token.type === "html" && !/^<(?:\/|!--)/.test(token.text)) authored.push(...openingTags(token.text));
+    else if (token.type === "link") authored.push({ tag: "a", attribs: { href: token.href } });
+  });
+
+  const probes = new Map<string, HtmlElement>();
+  for (const element of authored.slice(0, MAX_EMAIL_HTML_ELEMENTS)) {
+    if (!ALLOWED_TAGS.has(element.tag)) add({ code: "unsupported_element", element: name(element.tag) });
+    else if (Object.keys(element.attribs).length > 0) probes.set(openingTag(element), element);
+  }
+  const checked = [...probes.values()];
+  const kept = checked.length > 0 ? sanitizedElements(checked) : [];
+  checked.forEach((element, index) => {
+    const survivor = kept?.[index];
+    if (!survivor) return;
+    for (const [attribute, value] of Object.entries(element.attribs)) {
+      if (attribute === "style") {
+        const remaining = styleProperties(survivor.attribs.style);
+        if ([...styleProperties(value)].some((property) => !remaining.has(property))) {
+          add({ code: "unsupported_attribute", element: name(element.tag), attribute });
+        }
+      } else if (survivor.attribs[attribute] === undefined) {
+        add(
+          attribute === "href"
+            ? { code: "unsupported_link", element: name(element.tag) }
+            : { code: "unsupported_attribute", element: name(element.tag), attribute: name(attribute) },
+        );
+      }
+    }
+  });
+  return [...warnings.values()];
 };

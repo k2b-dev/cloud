@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import { MAX_COMPOSE_FORMATTING_WARNINGS } from "../contracts";
 import {
   type ComposeRenderContext,
+  composeFormattingWarnings,
   DEFAULT_MAIL_CSS,
   hasUnrenderedTemplateSyntax,
   markComposeTemplateSegment,
@@ -486,5 +488,83 @@ describe("compose renderer", () => {
     });
 
     expect(rendered).toEqual({ ok: true, data: { html: null, text: "Hello Ada Lovelace" } });
+  });
+
+  test("keeps phone links and drops a tel: link that holds no phone number", () => {
+    const rendered = renderComposeContent({
+      body: '[+49 731 000000](tel:+49731000000), <a href="tel:+49 (731) 000-000;ext=12">desk</a> and [not a number](tel:call-me)',
+      format: "markdown",
+      customCss: "",
+      context,
+      renderLiquid: true,
+    });
+
+    expect(rendered.ok).toBe(true);
+    if (!rendered.ok) return;
+    expect(rendered.data.html).toContain('href="tel:+49731000000"');
+    expect(rendered.data.html).toContain('href="tel:+49 (731) 000-000;ext=12"');
+    expect(rendered.data.html).not.toContain("call-me");
+    expect(rendered.data.html).toContain("not a number</a>");
+  });
+
+  test("lets every mailbox CSS rule win over the built-in design for the same element", () => {
+    const render = (customCss: string) => {
+      const rendered = renderComposeContent({
+        body: "Read [the offer](https://example.test/offer).",
+        format: "markdown",
+        customCss,
+        context,
+        renderLiquid: true,
+      });
+      if (!rendered.ok) throw new Error(rendered.error.message);
+      return rendered.data.html ?? "";
+    };
+
+    expect(render("")).toContain("color:#0f766e");
+    for (const css of ["a { color: #262626; }", "p a { color: #262626; }", ".mail-content a { color: #262626; }"]) {
+      const html = render(css);
+      expect(html).toContain("color:#262626");
+      expect(html).not.toContain("#0f766e");
+    }
+    expect(render("p { margin: 0; }")).toContain('<p style="margin:0">');
+    expect(render(".mail-content { color: #123456; }")).toMatch(/^<div style="[^"]*color:#123456/);
+  });
+
+  test("reports removed elements, attributes and links instead of dropping them silently", () => {
+    expect(
+      composeFormattingWarnings(
+        'Text\n\n<div style="color:#999">a</div> <small>b</small> <span class="x">c</span>\n\n[j](javascript:alert(1)) [t](tel:nope)',
+        "markdown",
+      ),
+    ).toEqual([
+      { code: "unsupported_element", element: "small" },
+      { code: "unsupported_attribute", element: "div", attribute: "style" },
+      { code: "unsupported_attribute", element: "span", attribute: "class" },
+      { code: "unsupported_link", element: "a" },
+    ]);
+  });
+
+  test("reports nothing for supported Markdown, supported HTML, and plain text", () => {
+    const supported = [
+      "**Bold**, _em_, `code`, [web](https://example.test), [mail](mailto:a@example.test), [phone](tel:+49731000000)",
+      '<strong>Bold</strong> <a href="https://example.test" target="_blank">link</a><br>',
+      "| a | b |\n| --- | --- |\n| 1 | 2 |",
+      "> Quote with ![image](https://example.test/a.png)",
+      markComposeTemplateSegment("Regards\n{{ sender.display_name }}"),
+    ];
+    for (const body of supported) expect(composeFormattingWarnings(body, "markdown")).toEqual([]);
+    expect(composeFormattingWarnings('<span class="x">plain</span>', "plain")).toEqual([]);
+  });
+
+  test("keeps the report short and stable for repeated and many removals", () => {
+    expect(
+      composeFormattingWarnings('<span class="a">1</span> <span class="b">2</span> <small>3</small> <small>4</small>', "markdown"),
+    ).toEqual([
+      { code: "unsupported_element", element: "small" },
+      { code: "unsupported_attribute", element: "span", attribute: "class" },
+    ]);
+    const many = Array.from({ length: 50 }, (_, index) => `<x-tag${index}>t</x-tag${index}>`).join(" ");
+    expect(composeFormattingWarnings(many, "markdown")).toHaveLength(MAX_COMPOSE_FORMATTING_WARNINGS);
+    expect(composeFormattingWarnings(`<${"x".repeat(200)}>t`, "markdown")[0]?.element).toHaveLength(64);
   });
 });
