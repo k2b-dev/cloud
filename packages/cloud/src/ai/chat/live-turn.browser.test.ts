@@ -1066,13 +1066,15 @@ for (const view of [
         await page.clock.setFixedTime(new Date("2026-10-07T10:00:00Z"));
         const de = theme === "dark";
         await page.goto(`http://127.0.0.1:${server.port}/?lang=${de ? "de" : "en"}&theme=${theme}`);
+        // A Project file path, long enough that a phone cuts it short.
+        const path = "/project/reports/2026/quarterly-products-export-final.csv";
         const calls = [
           { callId: "tools", name: "load_tools", args: { names: ["files"] }, result: { loaded: ["files"] } },
           { callId: "skill", name: "load_skill", args: { name: "reports" }, result: { loaded: true } },
           ...[0, 16_384, 32_768].map((offset, part) => ({
             callId: `read-${part}`,
             name: "read_file",
-            args: { path: "/products-100.csv", offset, length: 16_384 },
+            args: { path, offset, length: 16_384 },
             result: { content: "id,name", nextOffset: offset + 16_384 },
           })),
           { callId: "search", name: "web_search", args: { query: "product price index" }, result: { results: [] } },
@@ -1142,8 +1144,31 @@ for (const view of [
         expect(live.rows.map(({ left }) => left)).toEqual(live.rows.map(() => live.line));
         expect(live.overflowX).toBeLessThanOrEqual(0);
         const repeat = live.rows[2]!.text;
-        expect(repeat).toContain("/products-100.csv");
+        expect(repeat).toContain(de ? "Datei lesen" : "Read file");
         expect(repeat).toContain(de ? "3-mal" : "3 times");
+        // The counts of the folded rows are never cut, also where a phone cuts the target short.
+        const counts = await page.evaluate(() =>
+          Array.from(document.querySelectorAll(".ai-turn-work .ai-turn-steps > details > summary")).flatMap((summary) => {
+            const count = summary.querySelector(".k2b-chat-activity__trailing");
+            const target = summary.querySelector(".k2b-chat-activity__copy small");
+            if (!count) return [];
+            const row = summary.getBoundingClientRect();
+            const box = count.getBoundingClientRect();
+            return [
+              {
+                text: count.textContent?.trim() ?? "",
+                inside: box.left >= row.left && box.right <= row.right,
+                cut: count.scrollWidth > count.clientWidth,
+                targetCut: target ? target.scrollWidth > target.clientWidth : false,
+              },
+            ];
+          }),
+        );
+        expect(counts.map(({ text, inside, cut }) => ({ text, inside, cut }))).toEqual([
+          { text: de ? "2 Schritte" : "2 steps", inside: true, cut: false },
+          { text: de ? "3-mal" : "3 times", inside: true, cut: false },
+        ]);
+        if (view.name === "phone") expect(counts[1]!.targetCut).toBe(true);
         await page.screenshot({ path: `/tmp/ai-work-flush-${view.name}-${theme}.png` });
 
         // The row opens in place to its three reads at the same left edge; nothing above it moves, and closing it restores the list.
@@ -1154,7 +1179,7 @@ for (const view of [
         // The row grows downwards only: its own top, left, and width and every row above it stay.
         const top = (rows: typeof live.rows) => rows.slice(0, 3).map(({ box }) => box.slice(0, 3));
         expect(top(opened.rows)).toEqual(top(live.rows));
-        const parts = opened.rows.filter(({ text }) => text.includes("/products-100.csv")).slice(1);
+        const parts = opened.rows.filter(({ text }) => text.includes(path)).slice(1);
         expect(parts).toHaveLength(3);
         expect(parts.map(({ left }) => left)).toEqual([live.line, live.line, live.line]);
         expect(opened.overflowX).toBeLessThanOrEqual(0);

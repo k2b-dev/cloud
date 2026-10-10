@@ -191,6 +191,46 @@ const read = (id: string): Extract<AiTurnBlock, { kind: "tool" }> => ({
   status: "completed",
 });
 
+for (const kind of ["repeat", "housekeeping"] as const) {
+  domTest(`${kind} children keep focus and their open group when live and history objects are replaced`, async () => {
+    const entries =
+      kind === "repeat"
+        ? [0, 100, 200].map((offset, index) => ({ ...read(`read-${index}`), args: { path: "/products-100.csv", offset } }))
+        : [tool("tools", "load_tools"), tool("skill", "load_skill")];
+    const lastId = entries.at(-1)!.id;
+    const [blocks, setBlocks] = createSignal<AiTurnBlock[]>([
+      ...entries.map((entry) => (entry.kind === "tool" && entry.id === lastId ? { ...entry, status: "running" as const } : entry)),
+      tool("run", "code_run"),
+      tool("check", "code_check"),
+    ]);
+    const view = await mount(blocks);
+    try {
+      view.toggle(view.work());
+      const group = view.steps()[0]!;
+      view.toggle(group);
+      const children = group.querySelectorAll<HTMLDetailsElement>(".ai-turn-steps > details");
+      expect(children).toHaveLength(entries.length);
+      const summary = children[children.length - 1]!.querySelector("summary")!;
+      summary.focus();
+      expect(document.activeElement).toBe(summary);
+
+      setBlocks((previous) =>
+        previous.map((entry) => (entry.kind === "tool" && entry.id === lastId ? { ...entry, status: "completed" } : entry)),
+      );
+      expect(summary.isConnected).toBe(true);
+      expect(document.activeElement).toBe(summary);
+      expect(group.open).toBe(true);
+
+      setBlocks((previous) => previous.map((entry) => ({ ...entry })));
+      expect(summary.isConnected).toBe(true);
+      expect(document.activeElement).toBe(summary);
+      expect(group.open).toBe(true);
+    } finally {
+      view.cleanup();
+    }
+  });
+}
+
 domTest("repeated reads open in place with their title, target and call count", async () => {
   const view = await mount(
     () => [read("a"), read("b"), read("c"), tool("run", "code_run"), tool("check", "code_check")],

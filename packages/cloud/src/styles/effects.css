@@ -51,7 +51,7 @@
   }
 }
 
-/* Expanded work: one indent, one size, no lines or boxes; intermediate texts are quiet paragraphs. */
+/* Expanded work: at the work line's left edge, one size, no lines or boxes; intermediate texts are quiet paragraphs. */
 .k2b-ui .ai-turn-steps {
   display: flex;
   min-width: 0;

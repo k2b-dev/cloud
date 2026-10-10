@@ -276,7 +276,27 @@ function WorkEntryRow(props: { entry: AiWorkEntry; busy: boolean }) {
   );
 }
 
-/** Housekeeping folded into one row at step level. It opens in place: its steps follow at the same indent. */
+/** The steps of an opened group, keyed by block id, so a row keeps its element and focus when its block is replaced. */
+function WorkEntries(props: { entries: AiWorkEntry[]; active: boolean }) {
+  const entries = createMemo(() => new Map(props.entries.map((entry) => [entry.id, entry])));
+  const ids = createMemo(() => [...entries().keys()]);
+  return (
+    <div class="ai-turn-steps">
+      <For each={ids()}>
+        {(id, index) => (
+          <Show when={entries().get(id)}>
+            {(entry) => <WorkEntryRow entry={entry()} busy={props.active && index() === ids().length - 1} />}
+          </Show>
+        )}
+      </For>
+    </div>
+  );
+}
+
+/**
+ * Housekeeping folded into one row at step level, with its count at the end like the work line's. It opens in place:
+ * its steps follow at the same indent.
+ */
 function HousekeepingGroup(props: { id: string; entries: AiWorkEntry[]; active: boolean }) {
   const locale = useLocale();
   const last = () => props.entries.at(-1)!;
@@ -284,23 +304,18 @@ function HousekeepingGroup(props: { id: string; entries: AiWorkEntry[]; active: 
     <AiToolActivity
       blockId={`group:${props.id}`}
       label={aiChatMessages(locale()).groupLoad}
-      description={countWorkSteps(props.entries, locale())}
+      trailing={<span class="ai-turn-work__meta">{countWorkSteps(props.entries, locale())}</span>}
       icon="ti ti-stack-2"
       bodyInset={false}
       busy={props.active && last().kind === "tool" && (last() as ToolBlock).status === "running"}
-      renderBody={() => (
-        <div class="ai-turn-steps">
-          <For each={props.entries}>
-            {(entry, index) => <WorkEntryRow entry={entry} busy={props.active && index() === props.entries.length - 1} />}
-          </For>
-        </div>
-      )}
+      renderBody={() => <WorkEntries entries={props.entries} active={props.active} />}
     />
   );
 }
 
 /**
- * Consecutive calls of one tool on one target, such as reading one file in parts, folded into one row that opens in place.
+ * Consecutive instances of one call apart from paging, such as reading one file in parts, folded into one row that
+ * opens in place. Its count sits at the end like the work line's, so a narrow screen cuts the target short, never the count.
  */
 function RepeatedSteps(props: { id: string; target: string; entries: AiWorkEntry[]; active: boolean }) {
   const locale = useLocale();
@@ -310,17 +325,12 @@ function RepeatedSteps(props: { id: string; target: string; entries: AiWorkEntry
     <AiToolActivity
       blockId={`repeat:${props.id}`}
       label={first().presentation?.title ?? displayToolName(first().name, locale())}
-      description={`${props.target} · ${aiChatMessages(locale()).repeatCount({ count: tools().length })}`}
+      description={props.target}
+      trailing={<span class="ai-turn-work__meta">{aiChatMessages(locale()).repeatCount({ count: tools().length })}</span>}
       icon={aiToolIcon(first().name, first().presentation?.appIcon)}
       bodyInset={false}
       busy={props.active && tools().at(-1)?.status === "running"}
-      renderBody={() => (
-        <div class="ai-turn-steps">
-          <For each={props.entries}>
-            {(entry, index) => <WorkEntryRow entry={entry} busy={props.active && index() === props.entries.length - 1} />}
-          </For>
-        </div>
-      )}
+      renderBody={() => <WorkEntries entries={props.entries} active={props.active} />}
     />
   );
 }

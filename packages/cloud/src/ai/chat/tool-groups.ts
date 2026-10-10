@@ -52,34 +52,52 @@ export const isHousekeepingTool = (tool: Tool): boolean => {
 
 const isStep = (entry: AiWorkEntry) => entry.kind === "tool" || entry.kind === "compaction";
 
-/** The file, address, or query a call works on. Other arguments, such as offsets, ranges, or pages, do not count. */
+/** The file, address, or query a folded row shows. A call without one never folds with others. */
 const callTarget = (tool: Tool): string | undefined => {
   const args = isRecord(tool.args) ? tool.args : {};
   return [args.path, args.url, args.query].find((value): value is string => typeof value === "string" && value.trim() !== "")?.trim();
 };
 
-type Fold = { kind: "housekeeping" } | { kind: "repeat"; name: string; target: string };
+/** Arguments that page through one call's result, such as read_file's byte slices or an app's cursor and page size. */
+const PAGING_ARGUMENTS = new Set(["offset", "length", "limit", "cursor", "after", "page", "pageSize"]);
+
+type Fold = { kind: "housekeeping" } | { kind: "repeat"; name: string; target: string; identity: string };
 
 /**
- * What a step folds with: housekeeping with housekeeping, a running or finished call with calls of the same tool on the
- * same target. Failed, rejected, and waiting calls never fold.
+ * What a step folds with: housekeeping with housekeeping, a running or finished call with the same call apart from
+ * paging, such as reading one file in parts. Repeated calls need a target; failed, rejected, and waiting calls never repeat.
  */
 const foldOf = (tool: Tool): Fold | null => {
   if (isHousekeepingTool(tool)) return { kind: "housekeeping" };
   const target = callTarget(tool);
   if (!target || isFailedTool(tool) || (tool.status !== "completed" && tool.status !== "running")) return null;
-  return { kind: "repeat", name: tool.name, target };
+  const args = isRecord(tool.args) ? tool.args : {};
+  const identity = JSON.stringify(
+    Object.fromEntries(Object.entries(args).filter(([key]) => !PAGING_ARGUMENTS.has(key))),
+    (_key: string, value: unknown) =>
+      typeof value === "string"
+        ? value.trim()
+        : isRecord(value)
+          ? Object.fromEntries(
+              Object.keys(value)
+                .sort()
+                .map((key) => [key, value[key]]),
+            )
+          : value,
+  );
+  return { kind: "repeat", name: tool.name, target, identity };
 };
 
 const sameFold = (a: Fold, b: Fold): boolean =>
-  a.kind === "housekeeping" ? b.kind === "housekeeping" : b.kind === "repeat" && a.name === b.name && a.target === b.target;
+  a.kind === "housekeeping" ? b.kind === "housekeeping" : b.kind === "repeat" && a.name === b.name && a.identity === b.identity;
 
 /**
  * The rows of the expanded work, in the original order. A run of at least two steps that fold together, with the
- * reasoning between them, becomes one row: housekeeping, or consecutive calls of one tool on one target such as reading
- * one file in parts. Anything else between them, such as an intermediate text, ends the run. A run that would hold all
- * but one of the work's steps shows its steps directly, so the work line never opens to a summary of itself. Entries
- * listed in `shown` already show as rows of their own and never fold, so nothing a reader sees folds away under them.
+ * reasoning between them, becomes one row: housekeeping, or consecutive instances of the same call apart from paging,
+ * such as reading one file in parts. Anything else between them, such as an intermediate text, ends the run. A run that
+ * would hold all but one of the work's steps shows its steps directly, so the work line never opens to a summary of
+ * itself. Entries listed in `shown` already show as rows of their own and never fold, so nothing a reader sees folds
+ * away under them.
  * A folded row is keyed by its first tool, whose id is the same live and in history.
  */
 export function groupWorkBlocks(blocks: readonly AiTurnBlock[], shown: ReadonlySet<string> = new Set()): AiWorkItem[] {

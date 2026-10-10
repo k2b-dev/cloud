@@ -234,11 +234,17 @@ order:
    between those steps; it opens in place without a second indent. A run of
    housekeeping that would hold all but one of the work's steps shows its
    steps directly, so the line never opens to a summary of itself. Consecutive
-   calls of one tool on the same file, address, or query, such as reading one
-   file in parts, also fold into one row such as "Read file · /products.csv ·
-   3 times" that opens in place to the individual calls, provided at least two
-   other steps remain outside it; a failed or rejected call, or text between
-   the calls, is never folded. A row a reader sees while the line is open
+   calls that differ only in paging, their `offset`, `length`, `limit`,
+   `cursor`, `after`, `page`, or `pageSize`, such as reading one file in
+   parts, also fold into one row such as "Read file · /products.csv · 3 times"
+   that opens in place to the individual calls, provided at least two other
+   steps remain outside it. Calls with any other differing argument, such as
+   another storage, address book, filter, or written content, stay separate
+   rows; so does a failed or rejected call, and text between the calls ends
+   the run. A folded row shows its count at its end, like the line's step
+   count, so a narrow screen shortens the target but never the count. Its
+   steps keep their place, open state, and focus while they finish and when
+   the turn becomes history. A row a reader sees while the line is open
    never folds away under them, also when reasoning after it or a call's
    arguments arrive later and would make it part of a group; the next time
    the line opens, it folds like in history. The line opens on a click, Enter,

@@ -185,6 +185,69 @@ test("different paths or tool names do not fold", () => {
   expect(rows([read("a"), { ...read("b"), name: "write_file" }, ...otherSteps])).toEqual(["a", "b", "run", "check"]);
 });
 
+test("different scope ids, filters and append content do not fold on the same target", () => {
+  for (const [name, first, second] of [
+    ["contacts__list", { bookId: "B1", query: "Mueller" }, { bookId: "B2", query: "Mueller" }],
+    ["fs__browse", { baseId: "A", path: "/Docs" }, { baseId: "B", path: "/Docs" }],
+    ["fs__browse", { path: "/Docs", query: "first" }, { path: "/Docs", query: "second" }],
+    ["write_file", { path: "/r.md", content: "1", mode: "append" }, { path: "/r.md", content: "2", mode: "append" }],
+  ] as const) {
+    expect(rows([{ ...tool("a", name), args: first }, { ...tool("b", name), args: second }, ...otherSteps])).toEqual([
+      "a",
+      "b",
+      "run",
+      "check",
+    ]);
+  }
+});
+
+test("only top-level paging arguments may differ or be omitted in a repeat", () => {
+  for (const key of ["offset", "length", "limit", "cursor", "after", "page", "pageSize"]) {
+    expect(
+      rows([
+        { ...tool("a"), args: { path: "/Docs", [key]: 1 } },
+        { ...tool("b"), args: { path: "/Docs", [key]: 2 } },
+        { ...tool("c"), args: { path: "/Docs" } },
+        ...otherSteps,
+      ]),
+    ).toEqual([["a", "b", "c"], "run", "check"]);
+    expect(
+      rows([
+        { ...tool("a"), args: { path: "/Docs", filter: { [key]: 1 } } },
+        { ...tool("b"), args: { path: "/Docs", filter: { [key]: 2 } } },
+        ...otherSteps,
+      ]),
+    ).toEqual(["a", "b", "run", "check"]);
+  }
+});
+
+test("argument key order and surrounding whitespace do not prevent repeats", () => {
+  expect(
+    rows([
+      { ...tool("a", "fs__browse"), args: { baseId: "A", path: "/Docs", after: "x" } },
+      { ...tool("b", "fs__browse"), args: { path: " /Docs ", baseId: " A " } },
+      ...otherSteps,
+    ]),
+  ).toEqual([["a", "b"], "run", "check"]);
+});
+
+test("nested objects and arrays compare by value with trimmed strings", () => {
+  const first = { path: "/Docs", filter: { tags: ["a", { name: "b", enabled: true }], count: 2 } };
+  const equal = { filter: { count: 2, tags: [" a ", { enabled: true, name: " b " }] }, path: "/Docs" };
+  expect(rows([{ ...tool("a"), args: first }, { ...tool("b"), args: equal }, ...otherSteps])).toEqual([["a", "b"], "run", "check"]);
+  for (const filter of [
+    { tags: ["a", { name: "b", enabled: false }], count: 2 },
+    { tags: [{ name: "b", enabled: true }, "a"], count: 2 },
+  ]) {
+    expect(rows([{ ...tool("a"), args: first }, { ...tool("b"), args: { path: "/Docs", filter } }, ...otherSteps])).toEqual([
+      "a",
+      "b",
+      "run",
+      "check",
+    ]);
+  }
+});
+
 test("repeat folds leave at least two other steps", () => {
   const reads = [read("a"), read("b"), read("c")];
   expect(rows(reads)).toEqual(["a", "b", "c"]);
