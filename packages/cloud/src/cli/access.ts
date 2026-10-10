@@ -270,7 +270,7 @@ const accessRows = (entries: AccessEntry[], options: { includeServiceAccounts?: 
       principal: entryDisplayName(entry),
       type: entryTypeLabel(entry),
       permission: entry.permission,
-      scope: entry.scope ?? options.scopes?.[0] ?? "",
+      ...(options.scopes ? { scope: entry.scope ?? options.scopes[0] } : {}),
       createdAt: entry.createdAt,
     }));
 

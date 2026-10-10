@@ -248,11 +248,15 @@ describe("access CLI helper", () => {
     await expect(mod.run(invalid.ctx)).rejects.toThrow("Scope must be one of: mailbox, assigned.");
   });
 
-  test("a resource without scopes offers no --scope flag", async () => {
-    const mod = createModule({ entries: [], grants: [], updates: [], revokes: [] });
+  test("a resource without scopes offers no --scope flag and lists no scope", async () => {
+    const mod = createModule({ entries: [userEntry("read")], grants: [], updates: [], revokes: [] });
     const { ctx, lines } = createContext(["access", "grant"], { help: true }, () => Response.json({}));
     await mod.run(ctx);
     expect(lines.join("\n")).not.toContain("--scope");
+
+    const list = createContext(["access", "list", "resource-a"], {}, () => Response.json({}));
+    await mod.run(list.ctx);
+    expect(list.tables[0]?.map((row) => Object.keys(row))).toEqual([["accessId", "principal", "type", "permission", "createdAt"]]);
   });
 
   test("revoke requires explicit confirmation", async () => {
