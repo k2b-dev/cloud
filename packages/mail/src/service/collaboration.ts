@@ -483,11 +483,14 @@ const applyConversationCollaborationInTransaction = async (params: {
     return fail(err.conflict("Conversation was changed by another collaborator"));
   }
   const currentAssigneeIds = await loadConversationAssigneeIds(params.db, params.conversationId);
+  const nextAssigneeIds = params.input.assigneeUserIds === undefined ? currentAssigneeIds : [...new Set(params.input.assigneeUserIds)];
   if (params.input.assigneeUserIds !== undefined) {
-    const validAssignees = await validateAssignees(params.mailboxId, params.assigneesToValidate ?? params.input.assigneeUserIds, params.db);
-    if (!validAssignees.ok) return validAssignees;
     if (params.input.assigneeUserIds.length > MAIL_CONVERSATION_ASSIGNEE_LIMIT)
       return fail(err.badInput(`A conversation can have at most ${MAIL_CONVERSATION_ASSIGNEE_LIMIT} assignees`));
+    // Only people being added must be eligible; one whose access lapsed stays until someone removes them.
+    const added = nextAssigneeIds.filter((id) => !currentAssigneeIds.includes(id));
+    const validAssignees = await validateAssignees(params.mailboxId, params.assigneesToValidate ?? added, params.db);
+    if (!validAssignees.ok) return validAssignees;
   }
 
   let nextStatus = "workStatus" in params.input && params.input.workStatus ? params.input.workStatus : current.work_status;
@@ -554,7 +557,6 @@ const applyConversationCollaborationInTransaction = async (params: {
     if (nextStatus === "done") return fail(err.badInput("A completed conversation cannot be snoozed"));
   }
 
-  const nextAssigneeIds = params.input.assigneeUserIds === undefined ? currentAssigneeIds : [...new Set(params.input.assigneeUserIds)];
   const assigneesChanged =
     nextAssigneeIds.length !== currentAssigneeIds.length || nextAssigneeIds.some((id) => !currentAssigneeIds.includes(id));
   const completionChanged = "completion" in params.input && params.input.completion !== undefined;
@@ -770,10 +772,6 @@ export const applyConversationAssignments = async (params: {
         { short_id: string; name: string }[]
       >`SELECT short_id, name FROM mail.mailboxes WHERE id = ${params.mailboxId}::uuid`;
       if (!mailbox) return fail(err.notFound("Mailbox"));
-      if (params.mode !== "remove") {
-        const valid = await validateAssignees(params.mailboxId, userIds, tx);
-        if (!valid.ok) return valid;
-      }
       const users = await listAssigneeCollaborators(userIds, tx);
       // Stable lock order prevents concurrent bulk assignments from deadlocking.
       const rows = await tx<{ id: string; short_id: string; revision: string | number }[]>`
@@ -782,6 +780,7 @@ export const applyConversationAssignments = async (params: {
         ORDER BY id FOR UPDATE
       `;
       const next = new Map<string, string[]>();
+      const addedIds = new Set<string>();
       for (const row of rows) {
         const current = await loadConversationAssigneeIds(tx, row.id);
         const ids =
@@ -793,7 +792,11 @@ export const applyConversationAssignments = async (params: {
         if (ids.length > MAIL_CONVERSATION_ASSIGNEE_LIMIT)
           return fail(err.badInput(`A conversation can have at most ${MAIL_CONVERSATION_ASSIGNEE_LIMIT} assignees`));
         next.set(row.id, ids);
+        for (const id of ids) if (!current.includes(id)) addedIds.add(id);
       }
+      // Like a single update, only people being added must be eligible.
+      const valid = await validateAssignees(params.mailboxId, [...addedIds], tx);
+      if (!valid.ok) return valid;
       const events: ChangeEvent[] = [];
       const changedIds: string[] = [];
       const added = new Map<string, string[]>();

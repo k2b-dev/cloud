@@ -397,6 +397,68 @@ suite("mail conversation assignment", () => {
     expect(!missing.ok && missing.error.status).toBe(404);
   });
 
+  test("keeps a lapsed assignee while others are added or removed, and never adds one", async () => {
+    const lapsed = await createUser("lapsed");
+    const grant = await grantMailboxAccess({
+      context: contextFor(owner),
+      mailboxId,
+      principal: { type: "user", userId: lapsed.id },
+      permission: "write",
+    });
+    if (!grant.ok) throw new Error(grant.error.message);
+    const conversation = await createConversation(mailboxId, "Lapsed assignee");
+    const other = await createConversation(mailboxId, "Lapsed assignee elsewhere");
+    const assigned = await assignConversation({
+      context: contextFor(owner),
+      mailboxId,
+      conversationId: conversation.shortId,
+      assigneeUserIds: [lapsed.id],
+      mode: "replace",
+      locale: "en",
+    });
+    if (!assigned.ok) throw new Error(assigned.error.message);
+    await sql`UPDATE auth.users SET account_expires = now() - interval '1 day' WHERE id = ${lapsed.id}::uuid`;
+    const patch = (assigneeUserIds: string[], expectedRevision: number, target = conversation.id) =>
+      updateConversationCollaboration({
+        context: contextFor(owner),
+        mailboxId,
+        conversationId: target,
+        input: { expectedRevision, assigneeUserIds },
+        locale: "en",
+      });
+    // The details panel sends the whole set, which still names the lapsed assignee.
+    const added = await patch([lapsed.id, writer.id], assigned.data.revision);
+    if (!added.ok) throw new Error(added.error.message);
+    expect(added.data.assignees.map((user) => user.id)).toEqual([lapsed.id, writer.id]);
+    const removed = await patch([lapsed.id], added.data.revision);
+    if (!removed.ok) throw new Error(removed.error.message);
+    expect(removed.data.assignees.map((user) => user.id)).toEqual([lapsed.id]);
+    const replaced = await assignConversations({
+      context: contextFor(owner),
+      mailboxId,
+      conversationIds: [conversation.shortId],
+      assigneeUserIds: [lapsed.id, owner.id],
+      mode: "replace",
+      locale: "en",
+    });
+    expect(replaced.ok).toBe(true);
+    expect(await loadConversationAssigneeIds(sql, conversation.id)).toEqual([lapsed.id, owner.id]);
+
+    const [otherRevision] = await sql<{ revision: number }[]>`SELECT revision FROM mail.conversations WHERE id = ${other.id}::uuid`;
+    const newlyAdded = await patch([lapsed.id], Number(otherRevision!.revision), other.id);
+    expect(!newlyAdded.ok && newlyAdded.error.status).toBe(400);
+    const batchAdded = await assignConversations({
+      context: contextFor(owner),
+      mailboxId,
+      conversationIds: [conversation.shortId, other.shortId],
+      assigneeUserIds: [lapsed.id],
+      mode: "add",
+      locale: "en",
+    });
+    expect(!batchAdded.ok && batchAdded.error.status).toBe(400);
+    expect(await assigneesOf([other.id])).toEqual([[]]);
+  });
+
   test("assigned-only direct and nested-group grants make active users eligible but never allow them to assign", async () => {
     const direct = await createUser("assigned-direct");
     const nested = await createUser("assigned-nested");
