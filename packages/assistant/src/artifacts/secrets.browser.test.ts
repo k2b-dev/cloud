@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { chromium } from "playwright";
 import { z } from "zod";
+import { launchBrowser } from "../../../ui/test/browser";
 import { SecretSave, SecretView } from "./http-contracts";
 
 test("trusted secret dialogs store directly, clear values, support replacement and never return credentials to chat", async () => {
@@ -12,6 +12,10 @@ test("trusted secret dialogs store directly, clear values, support replacement a
   if (await build.exited) throw new Error(error);
   let entries: z.infer<typeof SecretView>[] = [];
   let writes = 0;
+  // The server's view of the Studio app "Ab3dEf": may it remember the website, and does an approval exist.
+  let approval: { id: string; origin: string } | null = null;
+  const remembered: boolean[] = [];
+  const revoked: string[] = [];
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
@@ -32,13 +36,43 @@ test("trusted secret dialogs store directly, clear values, support replacement a
         entries = [];
         return Response.json({ deleted: true });
       }
+      if (path.endsWith("/website") && req.method === "POST") {
+        const { remember } = z.object({ remember: z.boolean() }).parse(await req.json());
+        remembered.push(remember);
+        if (remember) approval = { id: crypto.randomUUID(), origin: "https://query1.finance.yahoo.com" };
+        return Response.json({ offer: true, allowed: approval !== null, approvalId: approval?.id ?? null });
+      }
+      if (path === "/api/ai/approval-preferences" && req.method === "GET")
+        return Response.json({
+          approvals: approval
+            ? [
+                {
+                  id: approval.id,
+                  toolName: "website:read",
+                  approvalScope: `${approval.origin} resource:Ab3dEf`,
+                  conversationId: null,
+                  createdAt: new Date().toISOString(),
+                  lastUsedAt: null,
+                  expiresAt: null,
+                  title: "query1.finance.yahoo.com",
+                  app: null,
+                  website: { origin: approval.origin, resourceId: "Ab3dEf" },
+                },
+              ]
+            : [],
+        });
+      if (path.startsWith("/api/ai/approval-preferences/") && req.method === "DELETE") {
+        revoked.push(path.split("/").at(-1)!);
+        approval = null;
+        return Response.json({ deleted: true });
+      }
       return new Response(
         '<!doctype html><link rel="stylesheet" href="/ui.css"><body class="k2b-ui"><div id="root"></div><script src="/bundle.js"></script>',
         { headers: { "content-type": "text/html; charset=utf-8" } },
       );
     },
   });
-  const browser = await chromium.launch({ headless: true, channel: "chrome" });
+  const browser = await launchBrowser({ headless: true });
   try {
     const page = await browser.newPage({ viewport: { width: 1100, height: 850 } }),
       errors: string[] = [];
@@ -70,6 +104,28 @@ test("trusted secret dialogs store directly, clear values, support replacement a
     await page.getByRole("button", { name: "Request HTTP", exact: true }).click();
     await page.getByRole("button", { name: "Send request", exact: true }).click();
     await page.waitForFunction(() => document.querySelector("output")?.textContent === "true");
+
+    // A read from a managed app offers the website for the app; afterwards it runs with a receipt that revokes it.
+    await page.setViewportSize({ width: 1100, height: 850 });
+    await page.getByRole("button", { name: "Fetch quotes", exact: true }).click();
+    await page.getByText("https://query1.finance.yahoo.com/v7/finance/quote?symbols=NVDA,AAPL").waitFor();
+    await page.getByRole("button", { name: "More options for this request", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Allow this website for this app", exact: true }).click();
+    await page.waitForFunction(() => document.querySelector("output")?.textContent === "website:true");
+    expect(remembered.at(-1)).toBe(true);
+    expect(remembered.filter(Boolean)).toHaveLength(1);
+    await page.getByRole("button", { name: "Fetch quotes", exact: true }).click();
+    await page.waitForFunction(() => document.querySelector("output")?.textContent === "website:allowed");
+    await page.getByText("query1.finance.yahoo.com · allowed for this app").waitFor();
+    await page.getByText("GET https://query1.finance.yahoo.com/v7/finance/quote?symbols=NVDA,AAPL").waitFor();
+    await page.screenshot({ path: "/tmp/assistant-website-receipt.png" });
+    // The app's secrets and approvals list the website and revoke it.
+    await page.getByRole("button", { name: "Manage app approvals", exact: true }).click();
+    await page.getByRole("button", { name: "Revoke the approval for query1.finance.yahoo.com", exact: true }).waitFor();
+    await page.screenshot({ path: "/tmp/assistant-app-approvals.png" });
+    await page.getByRole("button", { name: "Revoke the approval for query1.finance.yahoo.com", exact: true }).click();
+    await page.getByText("Nothing is allowed without asking.").waitFor();
+    expect(revoked).toHaveLength(1);
     expect(errors).toEqual([]);
   } finally {
     await browser.close();

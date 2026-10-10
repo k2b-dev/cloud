@@ -1,5 +1,12 @@
 import { createHash } from "node:crypto";
-import { aiConversations, aiProjects } from "@k2b/cloud/ai";
+import {
+  AI_WEBSITE_APPROVAL_TOOL,
+  aiConversations,
+  aiProjects,
+  aiWebsiteApprovalScope,
+  findRememberedAiToolApproval,
+  rememberAiToolApproval,
+} from "@k2b/cloud/ai";
 import { requestPublicHttps, secrets } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { z } from "zod";
@@ -69,7 +76,62 @@ async function bindings(request: HttpRequest, scope: HttpScope, identity: Artifa
   return { ctx, available, used };
 }
 
+const StoredCall = z.object({
+  id: z.uuid(),
+  createdAt: z.number(),
+  scope: HttpScope,
+  request: HttpRequest,
+  used: z.record(z.string(), z.string()),
+});
+async function pendingCall(id: string, userId: string) {
+  const [row] = await sql<
+    { encrypted: string; status: string }[]
+  >`SELECT encrypted,status FROM assistant.http_calls WHERE id=${z.uuid().parse(id)}::uuid AND user_id=${userId}::uuid AND created_at > now() - interval '1 day'`;
+  if (!row || row.status !== "pending") throw new HttpError("HTTP_UNKNOWN");
+  return StoredCall.parse(await secrets.decrypt(row.encrypted));
+}
+
+/** What a website approval may cover: a request that only reads one exact origin. */
+export type HttpWebsiteRead = {
+  origin: string;
+  method: "GET" | "HEAD";
+  url: string;
+  conversationId: string | null;
+  /** The Studio app the request runs for, which the person manages. */
+  resourceId: string | null;
+};
+
 export const httpService = {
+  /**
+   * Derives the website a stored, still pending request reads, from the request itself and never from its caller:
+   * only GET or HEAD without a body and without any header (so without a secret) qualifies, and only from a chat or
+   * from a Studio app the person manages. Returns null for every other request; such a request always asks.
+   */
+  async website(id: string, identity: ArtifactIdentity): Promise<HttpWebsiteRead | null> {
+    const stored = await pendingCall(id, user(identity).id);
+    const { method, body, headers, url } = stored.request;
+    if ((method !== "GET" && method !== "HEAD") || body !== undefined || Object.keys(headers).length > 0) return null;
+    const ctx = await context(stored.scope, identity);
+    if (ctx.resource && ctx.resource.permission !== "admin") return null;
+    return { origin: new URL(url).origin, method, url, conversationId: ctx.conversationId, resourceId: ctx.resource?.id ?? null };
+  },
+  /**
+   * The website approval of a Studio app the person manages, for one pending request: whether its card may offer
+   * "allow this website for this app", whether a remembered approval already allows it, and with `remember`, records
+   * that approval first. A request from a chat or from an app the person does not manage gets neither.
+   */
+  async appWebsite(id: string, remember: boolean, identity: ArtifactIdentity) {
+    const website = await this.website(id, identity);
+    if (!website?.resourceId) {
+      if (remember) throw new HttpError("HTTP_DENIED");
+      return { offer: false, allowed: false, approvalId: null };
+    }
+    const context = { actorUserId: user(identity).id };
+    const approval = { toolName: AI_WEBSITE_APPROVAL_TOOL, approvalScope: aiWebsiteApprovalScope(website.origin, website.resourceId) };
+    if (remember) await rememberAiToolApproval(context, approval);
+    const approvalId = await findRememberedAiToolApproval(context, approval);
+    return { offer: true, allowed: approvalId !== null, approvalId };
+  },
   async cleanup() {
     await sql`UPDATE assistant.http_calls SET status='expired',encrypted='' WHERE status='pending' AND created_at < now() - interval '1 day'`;
     await sql`DELETE FROM assistant.http_calls WHERE created_at < now() - interval '2 days'`;
@@ -152,13 +214,7 @@ export const httpService = {
     authorize?: (request: HttpPrepare) => Promise<void>,
   ) {
     const userId = user(identity).id;
-    const [row] = await sql<
-      { encrypted: string; status: string }[]
-    >`SELECT encrypted,status FROM assistant.http_calls WHERE id=${z.uuid().parse(id)}::uuid AND user_id=${userId}::uuid AND created_at > now() - interval '1 day'`;
-    if (!row || row.status !== "pending") throw new HttpError("HTTP_UNKNOWN");
-    const stored = z
-      .object({ id: z.uuid(), createdAt: z.number(), scope: HttpScope, request: HttpRequest, used: z.record(z.string(), z.string()) })
-      .parse(await secrets.decrypt(row.encrypted));
+    const stored = await pendingCall(id, userId);
     if (!approved) {
       await sql`UPDATE assistant.http_calls SET status='denied',encrypted='' WHERE id=${id}::uuid AND user_id=${userId}::uuid AND status='pending'`;
       throw new HttpError("HTTP_DENIED");

@@ -8,6 +8,8 @@ import { serviceAccountCredentials } from "../services/service-account-credentia
 import { session } from "../services/session/index";
 import { createTestSession } from "../services/session/session.test-fixture";
 import * as platformSettings from "../services/settings";
+import { createAiApprovalPreferenceRoutes } from "./approval-routes";
+import { AI_WEBSITE_APPROVAL_TOOL, findRememberedAiToolApproval, hasRememberedAiToolApproval } from "./approvals";
 import { aiFileStore } from "./files-store";
 import { migrateCloudAi } from "./migrate";
 import { aiProjects } from "./projects";
@@ -518,3 +520,134 @@ suiteFor(
     }
   }, 20_000);
 });
+
+suiteFor("database", "nats")("chat and website approvals", () => {
+  beforeAll(async () => {
+    await migrateCloudAi();
+  });
+
+  test("only a signed-in session marks its turn and remembers a website; an API key approves once", async () => {
+    const userId = await insertUser();
+    const user = await accounts.users.get({ id: userId });
+    if (!user) throw new Error("Missing fixture user");
+    const created = await serviceAccountCredentials.createUserApiToken({ user, name: "Website approvals" });
+    if (!created.ok) throw new Error(created.error.message);
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    const other = await aiConversations.createConversation({ ownerUserId: userId });
+    const session = { Authorization: `Bearer ${await createTestSession(userId)}` };
+    const apiKey = { Authorization: `Bearer ${created.data.token}` };
+    const submissions: Parameters<typeof aiRuntime.submitAiChatTurn>[0][] = [];
+    const submit = spyOn(aiRuntime, "submitAiChatTurn").mockImplementation(async (submission) => {
+      submissions.push(submission);
+      throw new Error("Submission stopped by test");
+    });
+    try {
+      const saved = await aiConversations.saveDraft({
+        conversationId: chat.id,
+        ownerUserId: userId,
+        expectedRevision: chat.draft.revision,
+        content: [{ type: "text", text: "Read the quotes" }],
+      });
+      if (!saved.ok) throw new Error("Draft save failed");
+      for (const headers of [session, apiKey])
+        await aiRoutes.request(`/conversations/${chat.shortId}/turns`, {
+          method: "POST",
+          headers: { ...headers, "Content-Type": "application/json" },
+          body: JSON.stringify({ draftRevision: saved.draft.revision }),
+        });
+      expect(submissions.map((submission) => submission.signedInSession)).toEqual([true, undefined]);
+      submit.mockRestore();
+
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: chat.id,
+        modelProfileId: "mock",
+        runConfig: { kind: "chat", input: "Read the quotes", signedInSession: true },
+        userMessage: { role: "user", content: [{ type: "text", text: "Read the quotes" }] },
+      });
+      const origin = "https://query1.finance.yahoo.com";
+      const ask = (callId: string, extra: Partial<Parameters<typeof aiConversations.savePendingTurnAction>[0]> = {}) =>
+        aiConversations.savePendingTurnAction({
+          turnId: turn.id,
+          conversationId: chat.id,
+          callId,
+          kind: "custom_approval",
+          status: "pending",
+          name: "code_run",
+          args: {},
+          message: `HTTP request: GET ${origin}/v7/finance/quote?symbols=NVDA`,
+          approvalScope: origin,
+          allowAlways: false,
+          allowChat: true,
+          rememberToolName: AI_WEBSITE_APPROVAL_TOOL,
+          resolvedEvent: null,
+          ...extra,
+        });
+      const decide = (callId: string, headers: Record<string, string>, remember?: "chat" | "always") =>
+        aiRoutes.request(`/conversations/${chat.shortId}/turns/${turn.shortId}/actions/${encodeURIComponent(callId)}`, {
+          method: "POST",
+          headers: { ...headers, "Content-Type": "application/json" },
+          body: JSON.stringify({ type: "approval_response", approved: true, ...(remember ? { remember } : {}) }),
+        });
+      const websiteRows = () =>
+        sql<{ conversation_id: string | null }[]>`SELECT conversation_id FROM ai.tool_approval_preferences
+          WHERE actor_user_id=${userId}::uuid AND tool_name=${AI_WEBSITE_APPROVAL_TOOL}`;
+
+      await ask("run-approval-0");
+      // An API key, like `cld` or another delegated credential, may approve this one request, but never the next ones.
+      expect((await decide("run-approval-0", apiKey, "chat")).status).toBe(400);
+      // A website is never remembered everywhere.
+      expect((await decide("run-approval-0", session, "always")).status).toBe(400);
+      expect(await websiteRows()).toEqual([]);
+      expect((await decide("run-approval-0", apiKey)).status).toBe(200);
+      expect(await websiteRows()).toEqual([]);
+
+      await ask("run-approval-1");
+      expect((await decide("run-approval-1", session, "chat")).status).toBe(200);
+      expect(await websiteRows()).toEqual([{ conversation_id: chat.id }]);
+      expect(
+        await findRememberedAiToolApproval(
+          { actorUserId: userId },
+          { toolName: AI_WEBSITE_APPROVAL_TOOL, approvalScope: origin, conversationId: chat.id, chatOnly: true },
+        ),
+      ).not.toBeNull();
+      expect(
+        await findRememberedAiToolApproval(
+          { actorUserId: userId },
+          { toolName: AI_WEBSITE_APPROVAL_TOOL, approvalScope: origin, conversationId: other.id, chatOnly: true },
+        ),
+      ).toBeNull();
+
+      // An Action remembered for the chat applies in this chat only, and both end with the chat.
+      await ask("run-approval-2", {
+        rememberToolName: "spaces.task.create",
+        approvalScope: "space:team01",
+        allowAlways: true,
+        message: "Spaces: Create task",
+      });
+      expect((await decide("run-approval-2", apiKey, "chat")).status).toBe(200);
+      const chatList = await aiApprovalList(session, chat.shortId);
+      expect(chatList.map((approval) => approval.toolName).sort()).toEqual(["spaces.task.create", AI_WEBSITE_APPROVAL_TOOL]);
+      expect(await aiApprovalList(session)).toEqual([]);
+      expect(
+        await hasRememberedAiToolApproval(
+          { actorUserId: userId },
+          { toolName: "spaces.task.create", approvalScope: "space:team01", conversationId: other.id },
+        ),
+      ).toBe(false);
+      await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
+      expect((await sql`SELECT id FROM ai.tool_approval_preferences WHERE actor_user_id=${userId}::uuid`).length).toBe(0);
+    } finally {
+      submit.mockRestore();
+      await sql`DELETE FROM ai.conversations WHERE id IN (${chat.id}::uuid, ${other.id}::uuid)`;
+      await sql`DELETE FROM auth.service_accounts WHERE delegated_user_id = ${userId}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  }, 30_000);
+});
+
+const aiApprovalList = async (headers: Record<string, string>, conversation?: string) => {
+  const routes = createAiApprovalPreferenceRoutes();
+  const response = await routes.request(conversation ? `/?conversation=${conversation}` : "/", { headers });
+  expect(response.status).toBe(200);
+  return ((await response.json()) as { approvals: Array<{ toolName: string }> }).approvals;
+};

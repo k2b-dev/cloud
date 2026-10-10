@@ -641,6 +641,9 @@ export const migrateCloudAi = async (): Promise<void> => {
   )`.simple();
 
   await sql`ALTER TABLE ai.pending_actions ADD COLUMN IF NOT EXISTS review JSONB`.simple();
+  // A code run asks for its nested HTTP requests and Actions; their remembered approval names a website or Action, not the run.
+  await sql`ALTER TABLE ai.pending_actions ADD COLUMN IF NOT EXISTS remember_tool_name TEXT`.simple();
+  await sql`ALTER TABLE ai.pending_actions ADD COLUMN IF NOT EXISTS allow_chat BOOLEAN NOT NULL DEFAULT FALSE`.simple();
 
   await sql`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_pending_actions_turn_call
@@ -700,11 +703,27 @@ export const migrateCloudAi = async (): Promise<void> => {
     FROM ai.tool_approval_preferences
     WHERE tool_name ~ '^[a-z][a-z0-9-]*__(query|action)__'
       AND NOT (length(tool_name) = 64 AND tool_name ~ '__[0-9a-f]{12}$')
-    ON CONFLICT (actor_user_id, tool_name, approval_scope) DO NOTHING
+    ON CONFLICT DO NOTHING
   `.simple();
   await sql`
     DELETE FROM ai.tool_approval_preferences
     WHERE tool_name ~ '^[a-z][a-z0-9-]*__(query|action)__'
+  `.simple();
+
+  // An approval limited to one chat ends with that chat. NULL means it applies everywhere.
+  await sql`
+    ALTER TABLE ai.tool_approval_preferences
+    ADD COLUMN IF NOT EXISTS conversation_id UUID REFERENCES ai.conversations(id) ON DELETE CASCADE
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS ai_tool_approval_preferences_reach
+    ON ai.tool_approval_preferences(actor_user_id, tool_name, approval_scope, conversation_id) NULLS NOT DISTINCT
+  `.simple();
+  await sql`ALTER TABLE ai.tool_approval_preferences DROP CONSTRAINT IF EXISTS ai_tool_approval_preferences_unique`.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_ai_tool_approval_preferences_conversation
+    ON ai.tool_approval_preferences(conversation_id)
+    WHERE conversation_id IS NOT NULL
   `.simple();
 
   await sql`
@@ -724,8 +743,22 @@ export const migrateCloudAi = async (): Promise<void> => {
       rejected_at TIMESTAMPTZ,
       completed_at TIMESTAMPTZ,
       CONSTRAINT ai_tool_calls_status_check CHECK (status IN ('pending', 'running', 'waiting_for_approval', 'waiting_for_frontend', 'completed', 'failed', 'rejected')),
-      CONSTRAINT ai_tool_calls_approval_state_check CHECK (approval_state IN ('not_required', 'waiting', 'approved_once', 'approved_always', 'approved_by_preference', 'rejected'))
+      CONSTRAINT ai_tool_calls_approval_state_check CHECK (approval_state IN ('not_required', 'waiting', 'approved_once', 'approved_for_chat', 'approved_always', 'approved_by_preference', 'rejected'))
     )
+  `.simple();
+  await sql`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'ai_tool_calls_approval_state_check'
+          AND pg_get_constraintdef(oid) LIKE '%approved_for_chat%'
+      ) THEN
+        ALTER TABLE ai.tool_calls DROP CONSTRAINT IF EXISTS ai_tool_calls_approval_state_check;
+        ALTER TABLE ai.tool_calls ADD CONSTRAINT ai_tool_calls_approval_state_check
+          CHECK (approval_state IN ('not_required', 'waiting', 'approved_once', 'approved_for_chat', 'approved_always', 'approved_by_preference', 'rejected'));
+      END IF;
+    END $$
   `.simple();
 
   await sql`

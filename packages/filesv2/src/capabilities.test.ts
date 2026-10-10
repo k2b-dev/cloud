@@ -670,6 +670,7 @@ test("approval reviews name the file, its storage, and the change in the reader'
         { label: "Pfad", value: "Berichte/report.csv" },
         { label: "Neuer Name", value: "q3.csv" },
       ],
+      approvalScope: "base:home",
     },
   });
   const created = await filesCapabilities.actions["content.create"].review!(
@@ -685,8 +686,33 @@ test("approval reviews name the file, its storage, and the change in the reader'
         { label: "Path", value: "test.csv" },
         { label: "Size", value: "2 KiB" },
       ],
+      approvalScope: "base:home",
     },
   });
+  // Replacing content, a copy into another base, and trashing ask every time.
+  const replaced = await filesCapabilities.actions["content.create"].review!(
+    { baseId: "home", path: "test.csv", size: 2048, mediaType: "text/csv", onConflict: "overwrite", expectedRevision: "r1" },
+    context,
+  );
+  expect(replaced.ok && "approvalScope" in replaced.data).toBe(false);
+  baseItems = [
+    { ...base, id: "home" },
+    { ...base, id: "team" },
+  ];
+  const copy = filesCapabilities.actions["entry.copy"].review!;
+  const across = await copy({ baseId: "home", path: "test.csv", targetBaseId: "team", folder: "" }, context);
+  expect(across.ok && "approvalScope" in across.data).toBe(false);
+  expect(await copy({ baseId: "home", path: "test.csv", targetBaseId: "home", folder: "Archiv" }, context)).toMatchObject({
+    ok: true,
+    data: { approvalScope: "base:home" },
+  });
+  expect(filesCapabilities.actions["entry.trash"]).not.toHaveProperty("approval");
+  expect(
+    Object.entries(filesCapabilities.actions)
+      .filter(([, action]) => "approval" in action && action.approval === "rememberable")
+      .map(([id]) => id)
+      .sort(),
+  ).toEqual(["content.create", "entry.copy", "entry.move", "entry.rename", "folder.create", "provider.save", "trash.restore"]);
   const trashed = await filesCapabilities.actions["entry.trash"].run({ baseId: "home", path: "test.csv" }, { ...context, locale: "de" });
   expect(trashed.ok && trashed.data.summary).toBe("In den Papierkorb verschoben");
 });
@@ -714,6 +740,7 @@ test("a restore review names the entry and where it returns to", async () => {
         { label: "Ablage", value: "Meine Dateien" },
         { label: "Wiederherstellen nach", value: "Berichte/report.csv" },
       ],
+      approvalScope: "base:home",
     },
   });
   // An entry without a known origin cannot be restored without a target; the review says so instead of guessing.

@@ -2929,6 +2929,7 @@ const actionDefinitions = {
     destructive: false,
     openWorld: false,
     idempotency: "required",
+    approval: "rememberable",
     review: async (input: z.output<typeof c.ConversationMoveInputSchema>, context: CapabilityExecutionContext) => {
       const t = mailCapabilityMessages(context.locale);
       const conversation = await requireConversationForReview(input.mailboxId, input.target.conversationId, context);
@@ -2950,6 +2951,10 @@ const actionDefinitions = {
           { label: t.destination, value: destination },
         ],
         links: [openLink(conversation.data.href)],
+        // Moving to Trash or Junk works like deleting or reporting mail, so it asks every time.
+        ...(input.destination.kind === "role" && (input.destination.role === "trash" || input.destination.role === "junk")
+          ? {}
+          : { approvalScope: mailboxApprovalScope(input.mailboxId) }),
       });
     },
     run: async (input: z.output<typeof c.ConversationMoveInputSchema>, context: CapabilityExecutionContext) => {
@@ -3767,6 +3772,7 @@ const actionDefinitions = {
     destructive: false,
     openWorld: false,
     idempotency: "none",
+    approval: "rememberable",
     review: async (input: z.output<typeof c.TagUpdateInputSchema>, context: CapabilityExecutionContext) => {
       const t = mailCapabilityMessages(context.locale);
       const scope = await resolveMailboxScope(input.mailboxId);
@@ -3781,6 +3787,7 @@ const actionDefinitions = {
       if (!tag) return fail(err.notFound("Mailbox tag"));
       return ok({
         message: t.updateTagReview({ tag: tag.name }),
+        approvalScope: mailboxApprovalScope(input.mailboxId),
         details: [
           { label: t.currentName, value: tag.name },
           ...(input.name ? [{ label: t.newName, value: input.name }] : []),

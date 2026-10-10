@@ -451,6 +451,7 @@ describe("mail capabilities", () => {
       "conversation.comment.create",
       "conversation.comment.update",
       "conversation.mark",
+      "conversation.move",
       "conversation.reminder.cancel",
       "conversation.reminder.set",
       "conversation.snooze",
@@ -461,6 +462,7 @@ describe("mail capabilities", () => {
       "draft.patch",
       "draft.update",
       "mailbox.tag.create",
+      "mailbox.tag.update",
     ]);
   });
 
@@ -1123,7 +1125,28 @@ describe("mail capabilities", () => {
         context,
       ),
       await mailCapabilities.actions["mailbox.tag.create"].review({ mailboxId, name: "customer", color: "#336699" }, context),
+      await mailCapabilities.actions["mailbox.tag.update"].review({ mailboxId, tagId, expectedRevision: 1, name: "Updated" }, context),
+      await mailCapabilities.actions["conversation.move"].review(
+        ConversationMoveInputSchema.parse({
+          mailboxId,
+          target: { conversationId, sourceFolderId: folderId },
+          destination: { kind: "role", role: "archive" },
+        }),
+        context,
+      ),
     ];
+    // Moving to Trash or Junk works like deleting or reporting mail and asks every time.
+    for (const role of ["trash", "junk"] as const) {
+      const toBin = await mailCapabilities.actions["conversation.move"].review(
+        ConversationMoveInputSchema.parse({
+          mailboxId,
+          target: { conversationId, sourceFolderId: folderId },
+          destination: { kind: "role", role },
+        }),
+        context,
+      );
+      expect(toBin.ok && toBin.data.approvalScope).toBeUndefined();
+    }
     const rememberableCount = (Object.values(mailCapabilities.actions) as CapabilityActionDefinition[]).filter(
       (action) => action.approval === "rememberable",
     ).length;

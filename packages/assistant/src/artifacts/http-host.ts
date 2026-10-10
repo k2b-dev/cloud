@@ -4,6 +4,8 @@ import { HttpRequest, type HttpReview, type HttpScope, type SecretMetadata } fro
 export type HttpApproval = HttpReview & { type: "http"; name: string };
 export type HttpHost = {
   approve: (request: HttpApproval, signal: AbortSignal) => Promise<boolean>;
+  /** Whether a remembered website approval already allows the request; checked before `approve` asks. */
+  allowed?: (request: HttpApproval, signal: AbortSignal) => Promise<boolean>;
   secret?: (scope: HttpScope, input: SecretMetadata, signal: AbortSignal) => Promise<{ configured: boolean; name: string }>;
 };
 export async function runHttp(request: unknown, scope: HttpScope, host: HttpHost, signal: AbortSignal) {
@@ -11,7 +13,8 @@ export async function runHttp(request: unknown, scope: HttpScope, host: HttpHost
   const call = { id: crypto.randomUUID(), createdAt: Date.now(), scope, request: HttpRequest.parse(request) };
   const review = await artifactClient.httpPrepare(call, signal);
   try {
-    const approved = await host.approve({ ...review, type: "http", name: `http.fetch:${new URL(review.url).origin}` }, signal);
+    const approval: HttpApproval = { ...review, type: "http", name: `http.fetch:${new URL(review.url).origin}` };
+    const approved = (await host.allowed?.(approval, signal)) || (await host.approve(approval, signal));
     signal.throwIfAborted();
     if (!approved) throw new Error("HTTP_DENIED");
     return await artifactClient.httpExecute(call.id, true, signal);

@@ -54,6 +54,7 @@ import {
 import { createEffect, createMemo, createSignal, on, onCleanup, onMount, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import { createArtifactAgentRuntime } from "../artifacts/agent-runtime";
+import { revokeChatWebsite } from "../artifacts/approval-preferences";
 import { createCodeApprovals } from "../artifacts/CapabilityApproval";
 import { ChatPresentation } from "../artifacts/ChatPresentation";
 import { artifactMessages } from "../artifacts/messages";
@@ -1826,6 +1827,10 @@ export default function AssistantWorkspace(props: Props) {
                                   actionDisabled: () => chat.runStatus() === "stopping",
                                   onApproval: async (request, input) => {
                                     if (!(await chat.respondToApproval(request, input))) throw new Error(t().submitApprovalFailed);
+                                  },
+                                  onRevokeWebsite: async (origin) => {
+                                    const conversationId = chat.activeConversationId();
+                                    if (conversationId) await revokeChatWebsite(conversationId, origin);
                                   },
                                   onFrontendToolResult: async (request, result) => {
                                     if (!(await chat.submitFrontendToolResult(request, result))) throw new Error(t().submitToolFailed);

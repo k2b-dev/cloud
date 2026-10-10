@@ -7,7 +7,7 @@ import type { RequestActor } from "../server";
 import { logger } from "../services/logging";
 import { superviseRuntimeTask } from "../services/runtime-lifecycle";
 import { coreSettings } from "../services/settings/api";
-import { type AiToolApprovalContext, aiTurnAllowsRememberedApprovals, rememberAiToolApproval } from "./approvals";
+import { AI_WEBSITE_APPROVAL_TOOL, type AiToolApprovalContext, aiTurnAllowsRememberedApprovals, rememberAiToolApproval } from "./approvals";
 import { aiChatAccessSubject, selectAssistantAiModelId } from "./assistant-models";
 import { startAiDictationRuntime } from "./dictation-runtime";
 import { AiTurnExecutor } from "./executor";
@@ -87,6 +87,8 @@ export const enqueueExistingAiTurn = (input: AiTurnJob): Promise<unknown> => enq
 export type SubmitAiChatTurnInput = {
   /** Only interactive Assistant HTTP handlers set this server-owned marker. */
   assistantChat?: true;
+  /** Only a handler that saw a signed-in browser session sets this server-owned marker; see `AiChatTurnRunConfig`. */
+  signedInSession?: true;
   conversationId: string;
   /** Stable public ID exposed as runtime context, not instructions. */
   chatId?: string;
@@ -153,6 +155,7 @@ export const prepareAiChatTurn = async (input: SubmitAiChatTurnInput) => {
       ),
     ],
     ...(input.assistantChat ? { assistantChat: true } : {}),
+    ...(input.signedInSession ? { signedInSession: true } : {}),
     input: canonicalInput,
     chatId: input.chatId,
     actor: input.actor,
@@ -297,7 +300,7 @@ export const abortAiTurn = async (input: { conversationId: string; turnId: strin
 // ---------------------------------------------------------------------------
 
 export const AiTurnActionSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("approval_response"), approved: z.boolean(), remember: z.literal("always").optional() }),
+  z.object({ type: z.literal("approval_response"), approved: z.boolean(), remember: z.enum(["chat", "always"]).optional() }),
   z.object({ type: z.literal("tool_result"), result: z.unknown() }),
 ]);
 export type AiTurnActionInput = z.infer<typeof AiTurnActionSchema>;
@@ -312,7 +315,7 @@ export const listPendingAiTurnActions = async (input: { conversationId: string; 
   const [actions, config] = await Promise.all([aiConversations.listPendingTurnActions(input), aiConversations.getTurnRunConfig(input)]);
   return aiTurnAllowsRememberedApprovals(config)
     ? actions
-    : actions.map((action) => (action.type === "approval_request" ? { ...action, allowAlways: false } : action));
+    : actions.map((action) => (action.type === "approval_request" ? { ...action, allowAlways: false, allowChat: false } : action));
 };
 
 export const submitAiTurnAction = async (input: {
@@ -321,6 +324,8 @@ export const submitAiTurnAction = async (input: {
   callId: string;
   action: AiTurnActionInput;
   toolApprovalContext?: AiToolApprovalContext;
+  /** Whether a person decides in a signed-in browser session; only such a decision may remember a website. */
+  signedInSession?: boolean;
 }): Promise<{ ok: true } | { ok: false; status: 400 | 404 | 409; message: string }> => {
   const pending = await aiConversations.getPendingTurnAction(input);
   if (!pending) return { ok: false, status: 404, message: "This request has expired — the assistant already moved on." };
@@ -338,18 +343,39 @@ export const submitAiTurnAction = async (input: {
 
   if (input.action.type === "approval_response") {
     if (pending.kind === "client_tool") return { ok: false, status: 400, message: "Frontend tool requests require a tool result." };
-    if (input.action.remember === "always") {
+    const remember = input.action.remember;
+    if (remember) {
       const config = await aiConversations.getTurnRunConfig(input);
-      if (!input.action.approved || !pending.allowAlways || !input.toolApprovalContext || !aiTurnAllowsRememberedApprovals(config)) {
+      const toolName = pending.rememberToolName ?? pending.name;
+      const allowed = remember === "always" ? pending.allowAlways : (pending.allowChat ?? pending.allowAlways);
+      if (
+        !input.action.approved ||
+        !allowed ||
+        !input.toolApprovalContext ||
+        !aiTurnAllowsRememberedApprovals(config) ||
+        // A website is remembered only by a person in a signed-in session: `cld`, an API key, or another delegated
+        // credential can approve this one request, but cannot let the next ones through.
+        (toolName === AI_WEBSITE_APPROVAL_TOOL && (remember !== "chat" || !input.signedInSession))
+      ) {
         return { ok: false, status: 400, message: "This approval cannot be remembered." };
       }
-      await rememberAiToolApproval(input.toolApprovalContext, { toolName: pending.name, approvalScope: pending.approvalScope });
+      await rememberAiToolApproval(input.toolApprovalContext, {
+        toolName,
+        approvalScope: pending.approvalScope,
+        conversationId: remember === "chat" ? input.conversationId : null,
+      });
     }
     await aiToolAudit
       .noteApprovalResolved({
         turnId: input.turnId,
         callId: input.callId,
-        approvalState: input.action.approved ? (input.action.remember === "always" ? "approved_always" : "approved_once") : "rejected",
+        approvalState: input.action.approved
+          ? remember === "always"
+            ? "approved_always"
+            : remember === "chat"
+              ? "approved_for_chat"
+              : "approved_once"
+          : "rejected",
       })
       .catch(() => undefined);
 

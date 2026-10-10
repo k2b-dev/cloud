@@ -275,6 +275,7 @@ const germanText: Record<string, string> = {
   "Relevant personal facts, preferences, and workflow defaults are added to new turns.":
     "Relevante persönliche Tatsachen, Präferenzen und Abläufe werden neuen Anfragen hinzugefügt.",
   "Remembered approvals": "Gespeicherte Freigaben",
+  "Website for one Studio app": "Website für eine Studio-App",
   "Remove reference": "Referenz entfernen",
   Retired: "Entfernt",
   "Review background runs and the personalization they changed.": "Hintergrundläufe und ihre Änderungen an der Personalisierung prüfen.",

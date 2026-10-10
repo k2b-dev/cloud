@@ -10,6 +10,7 @@ import type { MandatePolicyV1 } from "../services/mandates/policy";
 import { coreSettings } from "../services/settings/api";
 import { normalizeLocale } from "../shared/locale";
 import {
+  AI_WEBSITE_APPROVAL_TOOL,
   type AiToolApprovalContext,
   aiToolAllowsAlways,
   aiToolApprovalScope,
@@ -75,6 +76,7 @@ import { type AiTurnGuidance, loadAiTurnGuidance } from "./turn-guidance";
 import { type AiTurnPolicyToolCall, applyAiTurnPolicy } from "./turn-policy";
 import { createTurnTimingRecorder, withDurableTurnTiming } from "./turn-timing";
 import type {
+  AiApprovalTarget,
   AiChatTurnRunConfig,
   AiFrontendToolMode,
   AiPendingTurnActionRecord,
@@ -296,7 +298,15 @@ const rebuildBlocksFromMessages = (
         callId: action.callId,
         status: action.kind === "client_tool" ? "awaiting_client" : "awaiting_approval",
         approval:
-          action.kind === "client_tool" ? undefined : { message: action.message, review: action.review, allowAlways: action.allowAlways },
+          action.kind === "client_tool"
+            ? undefined
+            : {
+                message: action.message,
+                review: action.review,
+                allowAlways: action.allowAlways,
+                allowChat: action.allowChat ?? action.allowAlways,
+                ...(action.rememberToolName === AI_WEBSITE_APPROVAL_TOOL ? { website: action.approvalScope } : {}),
+              },
         frontendMode: action.frontendMode,
       };
     }
@@ -408,6 +418,10 @@ const createEventMapper = (attempt: number, seedBlocks: AiTurnBlock[], allowReme
   const setApprovalPolicies = (items: PreparedAiTools["approvalPolicies"]) => {
     approvalPolicies = items;
   };
+  let approvalTargets: ReadonlyMap<string, AiApprovalTarget> = new Map();
+  const setApprovalTargets = (items: ReadonlyMap<string, AiApprovalTarget>) => {
+    approvalTargets = items;
+  };
   let rejectedCallIds = new Set<string>();
   const setRejectedCallIds = (items: Set<string>) => {
     rejectedCallIds = items;
@@ -435,7 +449,7 @@ const createEventMapper = (attempt: number, seedBlocks: AiTurnBlock[], allowReme
       status: patch.status ?? existing?.status ?? "running",
       result: "result" in patch ? patch.result : existing?.result,
       isError: "isError" in patch ? patch.isError : existing?.isError,
-      approval: approval && !allowRememberedApprovals ? { ...approval, allowAlways: false } : approval,
+      approval: approval && !allowRememberedApprovals ? { ...approval, allowAlways: false, allowChat: false } : approval,
       frontendMode: patch.frontendMode ?? existing?.frontendMode,
       presentation: patch.presentation ?? existing?.presentation ?? presentations.get(rawName) ?? presentations.get(name),
       ...(approvedCallIds.has(callId) || approvedCallIds.has(displayCallId) || existing?.approved ? { approved: true } : {}),
@@ -484,6 +498,10 @@ const createEventMapper = (attempt: number, seedBlocks: AiTurnBlock[], allowReme
       case "tool_action_request":
         const displayCallId = event.kind === "custom_approval" ? (customApprovalParentCallId(event.callId) ?? event.callId) : event.callId;
         const review = approvalReviewForCallId(approvalReviews, event.callId);
+        const target = event.kind === "custom_approval" ? approvalTargets.get(event.callId) : undefined;
+        const allowAlways = target
+          ? target.always
+          : review?.approvalScope !== undefined || aiToolAllowsAlways(approvalPolicies.get(event.name));
         return [
           setTool(
             event.callId,
@@ -497,7 +515,9 @@ const createEventMapper = (attempt: number, seedBlocks: AiTurnBlock[], allowReme
                   : {
                       message: event.message,
                       review,
-                      allowAlways: review?.approvalScope !== undefined || aiToolAllowsAlways(approvalPolicies.get(event.name)),
+                      allowAlways,
+                      allowChat: target !== undefined || allowAlways,
+                      ...(target?.toolName === AI_WEBSITE_APPROVAL_TOOL ? { website: target.approvalScope } : {}),
                     },
               frontendMode: event.kind === "client_tool" ? (frontendModes.get(event.name) ?? "client") : undefined,
             },
@@ -542,6 +562,7 @@ const createEventMapper = (attempt: number, seedBlocks: AiTurnBlock[], allowReme
     setCanonicalNames,
     setApprovalPolicies,
     setApprovalReviews,
+    setApprovalTargets,
     setRejectedCallIds,
     setApprovedCallIds,
   };
@@ -900,6 +921,7 @@ export class AiTurnExecutor {
       });
     }
 
+    const approvalTargets = new Map<string, AiApprovalTarget>();
     const dynamicToolRuntimeContext = {
       turnId,
       reportToolProgress: (callId: string, message: string) => pipeline.reportToolProgress(callId, message),
@@ -910,6 +932,7 @@ export class AiTurnExecutor {
       selectedModel: resolved,
       locale: promptLocale,
       timeZone,
+      describeApproval: (approvalCallId: string, target: AiApprovalTarget) => approvalTargets.set(approvalCallId, target),
     };
     const prepared = prepareAiTools({
       tools: activeTools,
@@ -920,6 +943,7 @@ export class AiTurnExecutor {
     let backgroundError: string | null = null;
     const rememberableCapabilityApprovals = new Map<string, string>();
     const capabilityActionReviews = new Map<string, CapabilityActionReview>();
+    pipeline.setApprovalTargets(approvalTargets);
     pipeline.setFrontendModes(prepared.frontendModes);
     pipeline.setCanonicalNames(prepared.canonicalNames);
     pipeline.setApprovalPolicies(prepared.approvalPolicies);
@@ -1332,6 +1356,7 @@ export class AiTurnExecutor {
       allowRememberedApprovals: aiTurnAllowsRememberedApprovals(config),
       rememberableCapabilityApprovals,
       capabilityActionReviews,
+      approvalTargets,
       appliedSteers,
       noteToolRound: turnPolicy.noteToolRound,
       noteToolCall: turnPolicy.noteToolCall,
@@ -1401,6 +1426,7 @@ export class AiTurnExecutor {
     allowRememberedApprovals: boolean;
     rememberableCapabilityApprovals: ReadonlyMap<string, string>;
     capabilityActionReviews: ReadonlyMap<string, CapabilityActionReview>;
+    approvalTargets: ReadonlyMap<string, AiApprovalTarget>;
     appliedSteers: AiTurnSteer[];
     noteToolRound: () => void;
     noteToolCall: (call: AiTurnPolicyToolCall) => void;
@@ -1423,6 +1449,7 @@ export class AiTurnExecutor {
       allowRememberedApprovals,
       rememberableCapabilityApprovals,
       capabilityActionReviews,
+      approvalTargets,
       appliedSteers,
       noteToolRound,
       noteToolCall,
@@ -1446,6 +1473,7 @@ export class AiTurnExecutor {
             allowRememberedApprovals,
             rememberableCapabilityApprovals,
             capabilityActionReviews,
+            approvalTargets,
             onBackgroundBlocked: input.onBackgroundBlocked,
           });
           if (suspended) {
@@ -1549,6 +1577,7 @@ export class AiTurnExecutor {
     allowRememberedApprovals: boolean;
     rememberableCapabilityApprovals: ReadonlyMap<string, string>;
     capabilityActionReviews: ReadonlyMap<string, CapabilityActionReview>;
+    approvalTargets: ReadonlyMap<string, AiApprovalTarget>;
     onBackgroundBlocked?: (message: string) => void;
   }): Promise<boolean> {
     const {
@@ -1562,6 +1591,7 @@ export class AiTurnExecutor {
       allowRememberedApprovals,
       rememberableCapabilityApprovals,
       capabilityActionReviews,
+      approvalTargets,
     } = input;
     const approvalPolicy = prepared.approvalPolicies.get(event.name);
     const toolName = prepared.canonicalNames.get(event.name) ?? event.name;
@@ -1571,8 +1601,13 @@ export class AiTurnExecutor {
       event.kind === "custom_approval"
         ? rememberableCapabilityApprovals.get(customApprovalParentCallId(event.callId) ?? event.callId)
         : undefined;
-    const approvalScope = capabilityApprovalScope ?? aiToolApprovalScope(toolName, approvalPolicy);
-    const allowAlways = allowRememberedApprovals && (capabilityApprovalScope !== undefined || aiToolAllowsAlways(approvalPolicy));
+    // A tool that names what it asks for (a code run's HTTP request or Action, a web page to read) already looked up
+    // its own remembered approvals under its own rules; the approval is remembered for that target, not the tool.
+    const target = event.kind === "custom_approval" ? approvalTargets.get(event.callId) : undefined;
+    const approvalScope = target?.approvalScope ?? capabilityApprovalScope ?? aiToolApprovalScope(toolName, approvalPolicy);
+    const allowAlways =
+      allowRememberedApprovals && (target ? target.always : capabilityApprovalScope !== undefined || aiToolAllowsAlways(approvalPolicy));
+    const allowChat = allowRememberedApprovals && (target !== undefined || allowAlways);
 
     // Display-only client_view tools (cards, charts) need neither a browser nor input: Cloud answers them itself, in
     // background runs too, whose transcript shows them later. The block goes from running straight to completed:
@@ -1609,8 +1644,8 @@ export class AiTurnExecutor {
     }
 
     // Remembered approvals resolve inline too.
-    if (event.kind !== "client_tool" && allowAlways && approvalContext) {
-      const remembered = await hasRememberedAiToolApproval(approvalContext, { toolName, approvalScope }).catch(() => false);
+    if (event.kind !== "client_tool" && !target && allowAlways && approvalContext) {
+      const remembered = await hasRememberedAiToolApproval(approvalContext, { toolName, approvalScope, conversationId }).catch(() => false);
       if (remembered) {
         await aiToolAudit
           .noteApprovalResolved({ turnId, callId: event.callId, approvalState: "approved_by_preference" })
@@ -1632,6 +1667,8 @@ export class AiTurnExecutor {
       review: event.kind === "custom_approval" ? approvalReviewForCallId(capabilityActionReviews, event.callId) : undefined,
       approvalScope,
       allowAlways,
+      allowChat,
+      ...(target ? { rememberToolName: target.toolName } : {}),
       frontendMode,
       resolvedEvent: null,
     });
@@ -1871,7 +1908,9 @@ class StreamPipeline {
     this.blocks = this.allowRememberedApprovals
       ? blocks
       : blocks.map((block) =>
-          block.kind === "tool" && block.approval ? { ...block, approval: { ...block.approval, allowAlways: false } } : block,
+          block.kind === "tool" && block.approval
+            ? { ...block, approval: { ...block.approval, allowAlways: false, allowChat: false } }
+            : block,
         );
   }
 
@@ -1893,6 +1932,10 @@ class StreamPipeline {
 
   setApprovalPolicies(policies: PreparedAiTools["approvalPolicies"]): void {
     this.mapper.setApprovalPolicies(policies);
+  }
+
+  setApprovalTargets(targets: ReadonlyMap<string, AiApprovalTarget>): void {
+    this.mapper.setApprovalTargets(targets);
   }
 
   setRejectedCallIds(callIds: Set<string>): void {

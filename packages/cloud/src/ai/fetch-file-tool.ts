@@ -3,6 +3,7 @@ import { type RequestOptions as HttpsRequestOptions, request as httpsRequest } f
 import { z } from "zod";
 import { type PublicNetworkAddress, resolvePublicNetworkAddresses } from "../services/network-security";
 import { AI_FILES_MAX_FILE_BYTES_DEFAULT, aiFileStore, guessAiMediaType, normalizeAiFilePath } from "./files-store";
+import { authorizeWebRead } from "./firecrawl-tools";
 import { defineAiTool } from "./tools";
 
 const FETCH_FILE_MAX_REDIRECTS = 5;
@@ -37,6 +38,8 @@ export const CloudAiFetchFileOutputSchema = z.object({
   size: z.number().int().nonnegative(),
   mediaType: z.string(),
   url: z.string().url(),
+  /** Downloaded without asking because the person allowed this website for the chat; the chat shows it as a receipt. */
+  allowedForChat: z.literal(true).optional(),
 });
 
 const publicHttpsUrl = (rawUrl: string): URL => {
@@ -307,7 +310,11 @@ export const createCloudAiFetchFileTool = (dependencies: FetchFileDependencies =
     timeoutMs: 90_000,
     promptHint:
       "fetch an exact public HTTPS source file into the chat when the user provides a file link; inspect it with read_file or view_image and present it when useful.",
-  }).server((input, context) => runCloudAiFetchFile(input, context, dependencies));
+  }).server(async (input, context) => {
+    const allowedForChat = await authorizeWebRead("file", input.url, publicHttpsUrl(input.url).toString(), context);
+    const output = await runCloudAiFetchFile(input, context, dependencies);
+    return allowedForChat ? { ...output, allowedForChat: true as const } : output;
+  });
 
 export type CloudAiFetchFileInput = z.infer<typeof CloudAiFetchFileInputSchema>;
 export type CloudAiFetchFileOutput = z.infer<typeof CloudAiFetchFileOutputSchema>;

@@ -934,6 +934,103 @@ describe("capability tool presentation", () => {
     expect(english).not.toContain("Ablehnen");
   });
 
+  test("offers the chat reach first, keeps Always in the menu, and names a website for a code run's request", () => {
+    const render = (approval: NonNullable<Extract<AiTurnBlock, { kind: "tool" }>["approval"]>, locale = "en") =>
+      renderToString(() =>
+        createComponent(LocaleProvider, {
+          locale,
+          get children() {
+            return createComponent(AiChatActionsProvider, {
+              actions: { onApproval: async () => undefined },
+              get children() {
+                return createComponent(AiTurnBlockView, {
+                  turnId: "turn-1",
+                  block: {
+                    id: "run",
+                    kind: "tool",
+                    callId: "run-approval-0",
+                    name: "code_run",
+                    args: {},
+                    status: "awaiting_approval",
+                    approval,
+                  },
+                });
+              },
+            });
+          },
+        }),
+      );
+    const action = render({ message: "Spaces: Create task", allowAlways: true, allowChat: true });
+    expect(action).toContain("Approve for this chat");
+    expect(action).toContain("Always approve");
+    expect(action.indexOf("Approve for this chat")).toBeLessThan(action.indexOf("Always approve"));
+    const website = render({
+      message: "HTTP request: GET https://query1.finance.yahoo.com/v7/finance/quote?symbols=NVDA",
+      allowAlways: false,
+      allowChat: true,
+      website: "https://query1.finance.yahoo.com",
+    });
+    expect(website).toContain("Allow this website for this chat");
+    expect(website).toContain("https://query1.finance.yahoo.com/v7/finance/quote?symbols=NVDA");
+    expect(website).not.toContain("Always approve");
+    expect(website).not.toContain("Approve for this chat");
+    expect(render({ message: "POST", allowAlways: false, allowChat: false })).not.toMatch(/for this chat|Always approve/);
+    const german = render({ message: "GET", allowAlways: false, allowChat: true, website: "https://example.com" }, "de");
+    expect(german).toContain("Diese Website für diesen Chat erlauben");
+    expect(render({ message: "Spaces", allowAlways: true, allowChat: true }, "de")).toContain("Für diesen Chat freigeben");
+  });
+
+  test("shows every request a website approval let through with its full URL and a revoke action", () => {
+    const run: AiTurnBlock = {
+      id: "run-receipts",
+      kind: "tool",
+      callId: "run",
+      name: "code_run",
+      args: {},
+      status: "completed",
+      result: {
+        status: "ok",
+        autoAllowedRequests: [
+          { method: "GET", url: "https://query1.finance.yahoo.com/v8/finance/chart/NVDA?range=1d&interval=5m" },
+          { method: "HEAD", url: "https://query1.finance.yahoo.com/" },
+        ],
+      },
+    };
+    const render = (actions: Parameters<typeof AiChatActionsProvider>[0]["actions"], locale = "en") =>
+      renderToString(() =>
+        createComponent(LocaleProvider, {
+          locale,
+          get children() {
+            return createComponent(AiChatActionsProvider, {
+              actions,
+              get children() {
+                return createComponent(AiTurnBlockView, { block: run, turnId: "turn-1" });
+              },
+            });
+          },
+        }),
+      );
+    const html = render({ onRevokeWebsite: async () => undefined });
+    expect(html).toContain("query1.finance.yahoo.com");
+    expect(html).toContain("Allowed for this chat · 2 requests without asking");
+    expect(html).toContain("https://query1.finance.yahoo.com/v8/finance/chart/NVDA?range=1d&amp;interval=5m");
+    expect(html).toContain('aria-label="Revoke the approval for query1.finance.yahoo.com"');
+    expect(render({})).not.toContain("Revoke the approval");
+    expect(render({ onRevokeWebsite: async () => undefined }, "de")).toContain("Für diesen Chat erlaubt · 2 Abrufe ohne Rückfrage");
+    const extract: AiTurnBlock = {
+      id: "extract",
+      kind: "tool",
+      callId: "extract",
+      name: "web_extract",
+      args: { url: "https://example.com/a?b=1" },
+      status: "completed",
+      result: { url: "https://example.com/a?b=1", content: "", truncated: false, allowedForChat: true },
+    };
+    expect(renderToString(() => createComponent(AiTurnBlockView, { block: extract, turnId: "turn-1" }))).toContain(
+      "Allowed for this chat · 1 request without asking",
+    );
+  });
+
   test("renders a rejected approval as one compact result row", () => {
     const rejected = block("awaiting_approval");
     if (rejected.kind !== "tool") throw new Error("tool block missing");

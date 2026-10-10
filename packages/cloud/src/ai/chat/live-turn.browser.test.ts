@@ -971,3 +971,79 @@ for (const view of [
         await context.close();
       }
     }, 30_000);
+
+for (const view of [
+  { name: "desktop", width: 1280, height: 800, touch: false },
+  { name: "phone", width: 390, height: 844, touch: true },
+] as const)
+  test(`a code run's website request offers the chat, and its receipts show each full URL with one-click revoke (${view.name})`, async () => {
+    const context = await browser.newContext({
+      viewport: { width: view.width, height: view.height },
+      isMobile: view.touch,
+      hasTouch: view.touch,
+      reducedMotion: "reduce",
+    });
+    try {
+      const page = await context.newPage();
+      await page.clock.setFixedTime(new Date("2026-10-07T10:00:00Z"));
+      await page.goto(`http://127.0.0.1:${server.port}/?lang=en&theme=light`);
+      const url = "https://query1.finance.yahoo.com/v8/finance/chart/NVDA?range=1d&interval=5m&includePrePost=false";
+      const run = { id: "tool-run", kind: "tool" as const, callId: "run-approval-0", name: "code_run", args: { code: "…" } };
+      await emit(page, { ...base, seq: 1, type: "turn_started", modelProfileId: "m", providerModel: "m", blocks: [] });
+      await emit(page, {
+        ...base,
+        seq: 2,
+        type: "block_set",
+        block: {
+          ...run,
+          status: "awaiting_approval",
+          approval: {
+            message: `External HTTP request: GET ${url}`,
+            allowAlways: false,
+            allowChat: true,
+            website: "https://query1.finance.yahoo.com",
+          },
+        },
+      });
+      const card = ".ai-turn__action .ai-approval";
+      await page.locator(`${card} .k2b-split-button button[aria-haspopup]`).last().click();
+      const items = await page.getByRole("menuitem").allInnerTexts();
+      expect(items.map((item) => item.trim())).toEqual(["Details", "Allow this website for this chat"]);
+      await page.getByRole("menuitem", { name: "Allow this website for this chat", exact: true }).click();
+      await frames(page);
+      expect(await page.evaluate(() => (window as unknown as { approvals: unknown[] }).approvals)).toEqual([
+        { callId: "run-approval-0", approved: true, remember: "chat" },
+      ]);
+
+      // The run finishes with a request the approval let through: the work line holds its receipt.
+      await emit(page, {
+        ...base,
+        seq: 3,
+        type: "block_set",
+        block: {
+          ...run,
+          callId: "run",
+          status: "completed",
+          approved: true,
+          result: { status: "ok", autoAllowedRequests: [{ method: "GET", url }] },
+        },
+      });
+      const work = page.locator(".ai-turn-work > summary");
+      if ((await work.count()) > 0 && !(await page.$eval(".ai-turn-work", (node) => (node as HTMLDetailsElement).open)))
+        await work.first().click();
+      await page.getByText(url).waitFor();
+      const revoke = page.getByRole("button", { name: "Revoke the approval for query1.finance.yahoo.com", exact: true });
+      const before = (await revoke.boundingBox())!;
+      await revoke.click();
+      await frames(page);
+      expect(await page.evaluate(() => (window as unknown as { revoked: string[] }).revoked)).toEqual(["https://query1.finance.yahoo.com"]);
+      // Revoking keeps the button in place, disabled, so the row does not move.
+      const after = (await revoke.boundingBox())!;
+      expect([after.x, after.y]).toEqual([before.x, before.y]);
+      expect(await revoke.isDisabled()).toBe(true);
+      expect((await layout(page)).overflowX).toBeLessThanOrEqual(0);
+      await page.screenshot({ path: `/tmp/ai-website-receipt-${view.name}.png` });
+    } finally {
+      await context.close();
+    }
+  }, 60_000);

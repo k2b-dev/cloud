@@ -1,6 +1,18 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { readdir } from "node:fs/promises";
-import { aiChatTasks, aiConversations, aiMemories, aiProjects, aiSkills, aiToolAudit, CODE_SOURCE_TOOLS } from "@k2b/cloud/ai";
+import {
+  AI_WEBSITE_APPROVAL_TOOL,
+  aiChatTasks,
+  aiConversations,
+  aiMemories,
+  aiProjects,
+  aiSkills,
+  aiToolAudit,
+  aiWebsiteApprovalScope,
+  CODE_SOURCE_TOOLS,
+  forgetAiToolApproval,
+  rememberAiToolApproval,
+} from "@k2b/cloud/ai";
 import * as capabilityClient from "@k2b/cloud/capabilities/server";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { defineCapabilities } from "@k2b/cloud/contracts";
@@ -29,7 +41,7 @@ import { studioFiles } from "./file-transfer";
 import { CHECK_LIMITS, type CheckReport, checkHash } from "./html/check-contracts";
 import { appChecks } from "./html/check-service";
 import { HttpPrepare } from "./http-contracts";
-import { httpService } from "./http-service";
+import { HttpError, httpService } from "./http-service";
 import { migrateArtifacts } from "./migrate";
 import { artifacts } from "./service";
 import { STUDIO_EVAL_CASE_MS, STUDIO_EVAL_CASES } from "./studio-eval-cases";
@@ -90,7 +102,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     await sql`CREATE TABLE ai.dictations(conversation_id uuid,source_bytes bytea)`;
 
     await sql`CREATE TABLE ai.tool_calls(request_id text,conversation_id uuid,turn_id uuid,location text,call_id text,tool_name text,status text,started_at timestamptz,UNIQUE(turn_id,call_id))`;
-    await sql`CREATE TABLE ai.tool_approval_preferences(id uuid DEFAULT gen_random_uuid(),actor_user_id uuid,tool_name text,approval_scope text,created_at timestamptz DEFAULT now(),last_used_at timestamptz,expires_at timestamptz)`;
+    await sql`CREATE TABLE ai.tool_approval_preferences(id uuid DEFAULT gen_random_uuid(),actor_user_id uuid,tool_name text,approval_scope text,conversation_id uuid REFERENCES ai.conversations(id) ON DELETE CASCADE,created_at timestamptz DEFAULT now(),last_used_at timestamptz,expires_at timestamptz)`;
     await sql`CREATE SCHEMA auth`;
     await sql`CREATE TYPE auth.permission_level AS ENUM ('none','read','write','admin')`;
     await sql`CREATE TABLE auth.users(id uuid PRIMARY KEY, display_name text DEFAULT 'Test', uid text DEFAULT 'test', avatar_hash text)`;
@@ -1102,6 +1114,152 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       review.mockRestore();
       execute.mockRestore();
       wording.mockRestore();
+    }
+  });
+
+  test("code capabilities honor an approval remembered for their chat, and only there", async () => {
+    const definitions = defineCapabilities({
+      protocolVersion: 2,
+      actions: {
+        write: {
+          title: "Write item",
+          description: "Write a test item",
+          input: z.object({ value: z.string().describe("Value") }).strict(),
+          data: z.unknown(),
+          approval: "rememberable",
+          idempotency: "required",
+          destructive: false,
+          openWorld: false,
+          review: async () => ok({ message: "Write item?", approvalScope: "items:one" }),
+          run: async () => ok({ data: {} }),
+        },
+      },
+    });
+    const manifest = compileCapabilityManifest("chatdemo", definitions);
+    const catalog = spyOn(capabilityClient, "getCapabilityCatalogApp").mockResolvedValue({
+      ok: true,
+      data: { appId: "chatdemo", appName: "Demo", appDescription: "", appIcon: "ti ti-app-window", manifest },
+    });
+    const review = spyOn(capabilityClient, "reviewCapabilityAction").mockResolvedValue({
+      ok: true,
+      data: { message: "Write item?", approvalScope: "items:one" },
+    });
+    const execute = spyOn(capabilityClient, "invokeCapability").mockResolvedValue({ ok: true, data: { data: { written: true } } });
+    const [remembered, other] = [crypto.randomUUID(), crypto.randomUUID()];
+    for (const chat of [remembered, other])
+      await sql`INSERT INTO ai.conversations(id,created_by_user_id) VALUES(${chat}::uuid,${owner.user.id}::uuid)`;
+    const conversation = spyOn(aiConversations, "getConversation").mockImplementation(async (request) =>
+      checkConversation(request.conversationId, owner.user.id),
+    );
+    const request = (conversationId: string) => ({
+      id: crypto.randomUUID(),
+      name: "chatdemo.write",
+      input: { value: "one" },
+      conversationId,
+    });
+    try {
+      await rememberAiToolApproval(
+        { actorUserId: owner.user.id },
+        { toolName: "chatdemo.write", approvalScope: "items:one", conversationId: remembered },
+      );
+      expect(await runtimeCapabilities.prepare(request(remembered), owner, {})).toMatchObject({ status: "completed" });
+      expect(await runtimeCapabilities.prepare(request(other), owner, {})).toMatchObject({ status: "approval", allowAlways: true });
+      // A chat approval ends with its chat.
+      await sql`DELETE FROM ai.conversations WHERE id=${remembered}::uuid`;
+      expect((await sql`SELECT id FROM ai.tool_approval_preferences WHERE tool_name='chatdemo.write'`).length).toBe(0);
+    } finally {
+      catalog.mockRestore();
+      review.mockRestore();
+      execute.mockRestore();
+      conversation.mockRestore();
+      await sql`DELETE FROM ai.conversations WHERE id IN (${remembered}::uuid,${other}::uuid)`;
+    }
+  });
+
+  test("an app website approval covers exact-origin reads of an app the person manages, recorded only in a signed-in session", async () => {
+    const resource = await artifacts.create({ kind: "app", title: "Quotes", source }, owner);
+    await artifacts.publish(resource.id, resource.revision, owner, "Quotes");
+    await artifacts.grant(resource.id, { type: "user", userId: reader.user.id }, "read", owner);
+    const prepare = async (
+      identity: typeof owner,
+      request: { url: string; method?: string; headers?: Record<string, string>; body?: string },
+      scope: { resourceId?: string; conversationId?: string } = { resourceId: resource.id },
+    ) => {
+      const call = HttpPrepare.parse({ id: crypto.randomUUID(), createdAt: Date.now(), scope, request });
+      await httpService.prepare(call, identity);
+      return call.id;
+    };
+    const routes = (identity: typeof owner, credentialKind: "session" | "api_key") =>
+      new Hono<AuthContext>()
+        .use("*", async (c, next) => {
+          c.set("actor", identity.actor);
+          c.set("accessSubject", identity.accessSubject);
+          c.set("credentialKind", credentialKind);
+          await next();
+        })
+        .route("/", createArtifactServiceRoutes());
+    const website = async (identity: typeof owner, credentialKind: "session" | "api_key", id: string, remember: boolean) => {
+      const response = await routes(identity, credentialKind).request(`/runtime/http/${id}/website`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ remember }),
+      });
+      return { status: response.status, body: (await response.json()) as { offer?: boolean; allowed?: boolean } };
+    };
+    try {
+      // Derived from the stored request: GET or HEAD, no body, no header (and so no secret), exact origin.
+      const read = await prepare(owner, { url: "https://query1.finance.yahoo.com/v7/finance/quote?symbols=NVDA" });
+      expect(await httpService.website(read, owner)).toEqual({
+        origin: "https://query1.finance.yahoo.com",
+        method: "GET",
+        url: "https://query1.finance.yahoo.com/v7/finance/quote?symbols=NVDA",
+        conversationId: null,
+        resourceId: resource.id,
+      });
+      expect(
+        await httpService.website(await prepare(owner, { url: "https://query1.finance.yahoo.com/", method: "HEAD" }), owner),
+      ).toMatchObject({
+        method: "HEAD",
+      });
+      for (const request of [
+        { url: "https://query1.finance.yahoo.com/q", headers: { accept: "application/json" } },
+        { url: "https://query1.finance.yahoo.com/q", method: "POST", body: btoa("x") },
+        { url: "https://query1.finance.yahoo.com/q", method: "DELETE" },
+      ])
+        expect(await httpService.website(await prepare(owner, request), owner)).toBeNull();
+      // Someone who only uses the app gets no website approval for its code.
+      expect(await httpService.website(await prepare(reader, { url: "https://query1.finance.yahoo.com/q" }), reader)).toBeNull();
+      expect(
+        (await website(reader, "session", await prepare(reader, { url: "https://query1.finance.yahoo.com/q" }), false)).body,
+      ).toMatchObject({
+        offer: false,
+        allowed: false,
+      });
+
+      // An API key or `cld` neither uses nor records one; a signed-in session can.
+      expect((await website(owner, "api_key", read, false)).body).toMatchObject({ offer: false, allowed: false });
+      expect((await website(owner, "api_key", read, true)).status).toBe(403);
+      expect((await website(owner, "session", read, false)).body).toMatchObject({ offer: true, allowed: false });
+      expect((await website(owner, "session", read, true)).body).toMatchObject({ offer: true, allowed: true });
+      const [row] = await sql<{ approval_scope: string; conversation_id: string | null }[]>`
+        SELECT approval_scope,conversation_id FROM ai.tool_approval_preferences
+        WHERE actor_user_id=${owner.user.id}::uuid AND tool_name=${AI_WEBSITE_APPROVAL_TOOL}`;
+      expect(row).toEqual({
+        approval_scope: aiWebsiteApprovalScope("https://query1.finance.yahoo.com", resource.id),
+        conversation_id: null,
+      });
+      const next = await prepare(owner, { url: "https://query1.finance.yahoo.com/v8/finance/chart/AAPL?range=1d" });
+      expect((await website(owner, "session", next, false)).body).toMatchObject({ allowed: true });
+      expect(
+        (await website(owner, "session", await prepare(owner, { url: "https://query2.finance.yahoo.com/q" }), false)).body,
+      ).toMatchObject({
+        allowed: false,
+      });
+      // Deleting the app ends its website approvals.
+      await artifacts.remove(resource.id, owner);
+      expect((await sql`SELECT id FROM ai.tool_approval_preferences WHERE tool_name=${AI_WEBSITE_APPROVAL_TOOL}`).length).toBe(0);
+    } finally {
+      await sql`DELETE FROM ai.tool_approval_preferences WHERE tool_name=${AI_WEBSITE_APPROVAL_TOOL}`;
     }
   });
 
@@ -2608,7 +2766,11 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     spyOn(aiConversations, "getTurn").mockImplementation(
       async () => (await aiConversations.getActiveTurn({ conversationId }))?.turn ?? null,
     );
-    spyOn(aiConversations, "getTurnRunConfig").mockResolvedValue({ kind: "chat", input: "Run", toolSource: { kind: "none" } });
+    const runConfig = spyOn(aiConversations, "getTurnRunConfig").mockResolvedValue({
+      kind: "chat",
+      input: "Run",
+      toolSource: { kind: "none" },
+    });
     const abort = new AbortController();
     const context = { ...owner, conversationId, locale: "en", timeZone: "UTC", signal: abort.signal };
     const call = {
@@ -2904,7 +3066,8 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       }
       let sent = 0;
       const http = spyOn(httpService, "execute").mockImplementation(async (_id, approved) => {
-        expect(approved).toBe(true);
+        // A declined request never goes out.
+        if (!approved) throw new HttpError("HTTP_DENIED");
         sent++;
         return { status: 200, headers: { "content-type": "application/json" }, body: btoa('{"ok":true}') };
       });
@@ -2926,6 +3089,61 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         expect(await wait(network)).toMatchObject({ status: "done", result: { output: '{"ok":true}' } });
         expect(await wait(network)).toMatchObject({ status: "done" });
         expect(sent).toBe(1);
+        // A website approval for this chat lets later exact-origin reads through, each with a receipt, and nothing else.
+        const runCode = async (callId: string, code: string) => {
+          const input = { ...call, callId, args: { code } };
+          for (let i = 0; i < 400; i++) {
+            const state = await agentHost.call(input, context);
+            const pending = state.approvals.find((approval) => approval.decision === null);
+            if (pending || state.status === "done") return { input, state, pending };
+            await Bun.sleep(25);
+          }
+          throw new Error(`Code call ${callId} neither asked nor finished`);
+        };
+        const decline = async (run: Awaited<ReturnType<typeof runCode>>) => {
+          await agentHost.call({ ...run.input, decision: { id: run.pending!.id, approved: false } }, context);
+          return wait(run.input);
+        };
+        const fetchCode = (url: string, init = "{}") =>
+          `export default async()=>(await cloud.http.fetch(${JSON.stringify(url)},${init})).status`;
+        const website = { toolName: AI_WEBSITE_APPROVAL_TOOL, approvalScope: "https://example.com", always: false };
+        runConfig.mockResolvedValue({ kind: "chat", input: "Run", toolSource: { kind: "none" }, signedInSession: true });
+        const first = await runCode("website-first", fetchCode("https://example.com/data"));
+        expect(first.pending).toMatchObject({ remember: website });
+        await rememberAiToolApproval({ actorUserId: owner.user.id }, { ...website, conversationId });
+        await agentHost.call({ ...first.input, decision: { id: first.pending!.id, approved: true } }, context);
+        expect(await wait(first.input)).toMatchObject({ status: "done", receipts: [] });
+        const allowed = await runCode("website-allowed", fetchCode("https://example.com/data?symbols=NVDA,AAPL"));
+        expect(allowed.pending).toBeUndefined();
+        expect(allowed.state).toMatchObject({
+          status: "done",
+          approvals: [],
+          receipts: [{ method: "GET", url: "https://example.com/data?symbols=NVDA,AAPL" }],
+        });
+        const sentBefore = sent;
+        // A custom header, a body, or another origin always asks; nothing is offered to remember for a header.
+        const header = await runCode("website-header", fetchCode("https://example.com/data", '{headers:{"x-mode":"full"}}'));
+        expect(header.pending).toBeDefined();
+        expect(header.pending?.remember).toBeUndefined();
+        await decline(header);
+        const post = await runCode("website-post", fetchCode("https://example.com/data", '{method:"POST",body:"x"}'));
+        expect(post.pending?.remember).toBeUndefined();
+        await decline(post);
+        const other = await runCode("website-other", fetchCode("https://api.example.com/data"));
+        expect(other.pending).toMatchObject({ remember: { ...website, approvalScope: "https://api.example.com" } });
+        await decline(other);
+        // A turn without a signed-in session (`cld`, an API key, a task) never uses it.
+        runConfig.mockResolvedValue({ kind: "chat", input: "Run", toolSource: { kind: "none" } });
+        const delegated = await runCode("website-delegated", fetchCode("https://example.com/data"));
+        expect(delegated.pending).toMatchObject({ remember: website });
+        await decline(delegated);
+        // Revoked, the next request asks again.
+        runConfig.mockResolvedValue({ kind: "chat", input: "Run", toolSource: { kind: "none" }, signedInSession: true });
+        await forgetAiToolApproval({ actorUserId: owner.user.id }, { ...website, conversationId });
+        const revoked = await runCode("website-revoked", fetchCode("https://example.com/data"));
+        expect(revoked.pending).toBeDefined();
+        await decline(revoked);
+        expect(sent).toBe(sentBefore);
       } finally {
         http.mockRestore();
       }

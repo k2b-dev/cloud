@@ -14,6 +14,7 @@ import { resolveAiCapabilityActor } from "./capability-execution";
 import { CODE_CAPABILITY_TOKEN_HEADER, codeCapabilityOperation } from "./code-capability-transport";
 import { authorizeCodeExecution } from "./code-execution";
 import { aiConversations } from "./store";
+import type { AiApprovalTarget } from "./types";
 
 const log = logger("ai:code-runtime");
 const ISSUANCE_TIMEOUT_MS = 5_000;
@@ -24,7 +25,17 @@ const Reply = z.object({
     status: z.enum(["running", "busy", "done", "lost"]),
     phase: z.enum(["starting", "running", "busy", "waiting_for_user"]).optional(),
     result: z.unknown().optional(),
-    approvals: z.array(z.object({ id: z.uuid(), message: z.string(), decision: z.boolean().nullable() })),
+    approvals: z.array(
+      z.object({
+        id: z.uuid(),
+        message: z.string(),
+        decision: z.boolean().nullable(),
+        /** What the person may remember: the website or Action, derived by the host from the stored request. */
+        remember: z.object({ toolName: z.string(), approvalScope: z.string(), always: z.boolean() }).optional(),
+      }),
+    ),
+    /** Requests a website approval for this chat let through without asking. */
+    receipts: z.array(z.object({ method: z.string(), url: z.string() })).default([]),
   }),
 });
 type Context = ToolContext & {
@@ -34,6 +45,7 @@ type Context = ToolContext & {
   locale?: string;
   timeZone?: string;
   reportProgress?: (message: string) => Promise<void>;
+  requestApprovalFor?: (message: string, target: AiApprovalTarget) => Promise<boolean>;
 };
 
 /** The tab only renders progress and approvals; server calls own all execution and resumption. */
@@ -135,29 +147,35 @@ export const runManagedCodeTool =
         throw new Error("Code host request failed; inspect the existing call before starting another execution");
       return Reply.parse(body.data).data;
     };
+    const backgroundApproval = async (): Promise<boolean> => {
+      throw new Error("Background code cannot request interactive approval. Update task grants in the normal chat.");
+    };
     return waitForManagedCodeCall(
       request,
-      runConfig.background
-        ? {
-            ...context,
-            requestApproval: async () => {
-              throw new Error("Background code cannot request interactive approval. Update task grants in the normal chat.");
-            },
-          }
-        : context,
+      runConfig.background ? { ...context, requestApproval: backgroundApproval, requestApprovalFor: backgroundApproval } : context,
     );
   };
 
-/** Ordered reviews are replayed through Nessi before consuming a durable result. */
+const receiptLine = (receipts: ReadonlyArray<{ method: string; url: string }>) =>
+  `Allowed without asking, because the website is allowed for this chat: ${receipts.map((receipt) => `${receipt.method} ${receipt.url}`).join(", ")}.`;
+
+/**
+ * Ordered reviews are replayed through Nessi before consuming a durable result. A result names every request a
+ * website approval let through in `autoAllowedRequests`, so the chat shows each one with its full URL.
+ */
 export async function waitForManagedCodeCall(
-  request: (decision?: { id: string; approved: boolean }) => Promise<z.infer<typeof Reply>["data"]>,
-  context: Pick<ToolContext, "signal" | "requestApproval"> & { locale?: string; reportProgress?: (message: string) => Promise<void> },
+  request: (decision?: { id: string; approved: boolean }) => Promise<z.input<typeof Reply>["data"]>,
+  context: Pick<ToolContext, "signal" | "requestApproval"> & {
+    locale?: string;
+    reportProgress?: (message: string) => Promise<void>;
+    requestApprovalFor?: (message: string, target: AiApprovalTarget) => Promise<boolean>;
+  },
 ): Promise<z.infer<ReturnType<typeof z.json>>> {
   const seen = new Set<string>();
   let lastPhase: string | undefined;
   while (true) {
     context.signal.throwIfAborted();
-    const state = await request();
+    const state = Reply.shape.data.parse(await request());
     if (state.phase && state.phase !== lastPhase) {
       lastPhase = state.phase;
       const labels = context.locale?.startsWith("de")
@@ -179,15 +197,26 @@ export async function waitForManagedCodeCall(
     // Skipping already resolved reviews would shift Nessi's child action IDs.
     for (const approval of state.approvals) {
       if (seen.has(approval.id)) continue;
-      const approved = await context.requestApproval(approval.message);
+      const approved =
+        approval.remember && context.requestApprovalFor
+          ? await context.requestApprovalFor(approval.message, approval.remember)
+          : await context.requestApproval(approval.message);
       seen.add(approval.id);
       if (approval.decision === null) await request({ id: approval.id, approved });
     }
     if (state.status === "done") {
       // Nessi records a thrown error as a failed tool result the model can act on.
       const failure = CodeToolFailure.safeParse(state.result);
-      if (failure.success) throw new Error([failure.data.error, failure.data.guidance].filter(Boolean).join(" "));
-      return z.json().parse(state.result);
+      if (failure.success)
+        throw new Error(
+          [failure.data.error, failure.data.guidance, state.receipts.length ? receiptLine(state.receipts) : undefined]
+            .filter(Boolean)
+            .join(" "),
+        );
+      const result = z.json().parse(state.result);
+      return state.receipts.length && result !== null && typeof result === "object" && !Array.isArray(result)
+        ? { ...result, autoAllowedRequests: state.receipts }
+        : result;
     }
     if (state.status === "lost")
       throw new Error("The isolated code host was lost. The call was not replayed; inspect saved data before starting a new run.");

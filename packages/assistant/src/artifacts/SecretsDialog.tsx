@@ -1,8 +1,9 @@
-import { Button, Dropdown, NoticeCard, Placeholder, prompts, Select, TextInput, useLocale } from "@k2b/ui";
+import { Button, Dropdown, NoticeCard, Placeholder, prompts, Select, SplitButton, TextInput, toast, useLocale } from "@k2b/ui";
 import { createResource, createSignal, For, onCleanup, Show } from "solid-js";
+import { listApprovalPreferences, revokeApprovalPreference } from "./approval-preferences";
 import { artifactClient } from "./client";
 import { type HttpScope, type SecretMetadata, SecretSave } from "./http-contracts";
-import type { HttpHost } from "./http-host";
+import type { HttpApproval, HttpHost } from "./http-host";
 import { artifactMessages } from "./messages";
 import { secretDialogMessages } from "./secret-dialog-messages";
 
@@ -36,7 +37,7 @@ export async function openSecretsDialog(
         />
       );
     },
-    { title: "Secrets", size: "medium" },
+    { title: secretDialogMessages.resolve([document.documentElement.lang || "en"]).t.title, size: "medium" },
   );
   return { configured: !!savedName, name: savedName };
 }
@@ -124,7 +125,84 @@ function SecretsDialog(props: { scope: HttpScope; signal?: AbortSignal; saved: (
           </div>
         </Show>
       </Show>
+      <ApprovalsSection scope={props.scope} />
     </div>
+  );
+}
+/** What this chat or app may do without asking, with one click to make it ask again. */
+function ApprovalsSection(props: { scope: HttpScope }) {
+  const locale = useLocale(),
+    t = () => artifactMessages.resolve([locale()]).t,
+    copy = () => secretDialogMessages.resolve([locale()]).t;
+  const [approvals, { refetch }] = createResource(async () => {
+    if (props.scope.resourceId)
+      return (await listApprovalPreferences()).filter((approval) => approval.website?.resourceId === props.scope.resourceId);
+    return props.scope.conversationId ? listApprovalPreferences(props.scope.conversationId) : [];
+  });
+  const [revoking, setRevoking] = createSignal<string | null>(null),
+    [error, setError] = createSignal("");
+  async function revoke(id: string) {
+    if (revoking()) return;
+    setRevoking(id);
+    setError("");
+    try {
+      await revokeApprovalPreference(id);
+      await refetch();
+    } catch {
+      setError(copy().revokeFailed);
+    } finally {
+      setRevoking(null);
+    }
+  }
+  return (
+    <section class="flex flex-col gap-1 pt-3" aria-labelledby="secrets-dialog-approvals">
+      <h3 id="secrets-dialog-approvals" class="text-sm font-semibold">
+        {copy().approvals}
+      </h3>
+      <p class="text-xs text-secondary">{props.scope.resourceId ? copy().approvalsAppHelp : copy().approvalsChatHelp}</p>
+      <Show when={error()}>
+        <NoticeCard tone="danger" title={error()} />
+      </Show>
+      <Show when={approvals.loading}>
+        <Placeholder state="loading" />
+      </Show>
+      <Show when={!approvals.loading && approvals.error}>
+        <Placeholder state="error" title={t().REQUEST_FAILED} action={<Button onClick={() => void refetch()}>{t().refresh}</Button>} />
+      </Show>
+      <Show when={!approvals.loading && !approvals.error}>
+        <Show when={approvals()?.length} fallback={<p class="py-2 text-sm text-secondary">{copy().noApprovals}</p>}>
+          <ul class="flex max-h-60 flex-col overflow-auto">
+            <For each={approvals()}>
+              {(approval) => (
+                <li class="flex items-center gap-3 py-2">
+                  <i
+                    class={`${approval.website ? "ti ti-world" : (approval.app?.icon ?? "ti ti-tool")} text-secondary`}
+                    style={{ color: approval.app?.accent }}
+                    aria-hidden="true"
+                  />
+                  <div class="min-w-0 flex-1">
+                    <strong class="block truncate" title={approval.website?.origin ?? approval.title}>
+                      {approval.title}
+                    </strong>
+                    <p class="truncate text-xs text-secondary">{approval.website ? copy().website : (approval.app?.name ?? "")}</p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    loading={revoking() === approval.id}
+                    disabled={Boolean(revoking())}
+                    aria-label={copy().revokeFor({ title: approval.title })}
+                    onClick={() => void revoke(approval.id)}
+                  >
+                    {copy().revoke}
+                  </Button>
+                </li>
+              )}
+            </For>
+          </ul>
+        </Show>
+      </Show>
+    </section>
   );
 }
 function openSecretEditor(scope: HttpScope, initial?: SecretMetadata, revision?: string, signal?: AbortSignal) {
@@ -280,9 +358,38 @@ function SecretEditor(props: { scope: HttpScope; initial?: SecretMetadata; revis
     </form>
   );
 }
+/** A request a remembered approval of this app let through: the full URL, and one click to make the next one ask. */
+function websiteReceipt(request: HttpApproval, approvalId: string | null) {
+  const t = artifactMessages.resolve([document.documentElement.lang || "en"]).t;
+  const host = new URL(request.url).host;
+  toast(`${request.method} ${request.url}`, {
+    title: t.websiteAllowedForApp({ host }),
+    iconClass: "ti ti-world-check",
+    action: approvalId
+      ? {
+          label: t.websiteRevoke,
+          onClick: () =>
+            void revokeApprovalPreference(approvalId).then(
+              () => toast.success(t.websiteRevoked({ host })),
+              () => toast.error(t.websiteRevokeFailed),
+            ),
+        }
+      : null,
+  });
+}
+
 export const browserHttpHost: HttpHost = {
   secret: openSecretsDialog,
+  // Only a Studio app the person manages can use a website approval; the server decides from the stored request.
+  allowed: async (request, signal) => {
+    const website = await artifactClient.httpWebsite(request.id, false, signal).catch(() => null);
+    signal.throwIfAborted();
+    if (!website?.allowed) return false;
+    websiteReceipt(request, website.approvalId);
+    return true;
+  },
   approve: async (request, signal) => {
+    const website = await artifactClient.httpWebsite(request.id, false, signal).catch(() => null);
     let approved = false;
     await prompts.dialog<void>(
       (close) => {
@@ -294,8 +401,24 @@ export const browserHttpHost: HttpHost = {
         if (signal.aborted) close();
         // A click that was meant for the app underneath cannot approve: the button arms late.
         const [armed, setArmed] = createSignal(false);
+        const [remembering, setRemembering] = createSignal(false);
+        const [failed, setFailed] = createSignal(false);
         const timer = setTimeout(() => setArmed(true), 500);
         onCleanup(() => clearTimeout(timer));
+        const allowForApp = async () => {
+          if (remembering()) return;
+          setRemembering(true);
+          setFailed(false);
+          try {
+            await artifactClient.httpWebsite(request.id, true, signal);
+            approved = true;
+            close();
+          } catch {
+            setFailed(true);
+          } finally {
+            setRemembering(false);
+          }
+        };
         return (
           <div class="flex flex-col gap-3">
             <NoticeCard tone="warning" title={request.resourceTitle ?? t().httpRequest} detail={t().httpConsent} />
@@ -310,19 +433,43 @@ export const browserHttpHost: HttpHost = {
                 <p>{t().httpTruncated}</p>
               </Show>
             </Show>
+            <Show when={failed()}>
+              <p class="text-sm text-red-700 dark:text-red-300" role="alert">
+                {t().REQUEST_FAILED}
+              </p>
+            </Show>
             <div class="flex justify-end gap-2">
               <Button variant="secondary" onClick={() => close()}>
                 {t().stop}
               </Button>
-              <Button
-                disabled={!armed()}
-                onClick={() => {
-                  approved = true;
-                  close();
-                }}
+              <Show
+                when={website?.offer}
+                fallback={
+                  <Button
+                    disabled={!armed()}
+                    onClick={() => {
+                      approved = true;
+                      close();
+                    }}
+                  >
+                    {t().httpApprove}
+                  </Button>
+                }
               >
-                {t().httpApprove}
-              </Button>
+                <SplitButton
+                  disabled={!armed()}
+                  loading={remembering()}
+                  menuLabel={t().httpMoreOptions}
+                  menuPosition="bottom-right"
+                  items={[{ label: t().allowWebsiteForApp, icon: "ti ti-world-check", action: () => void allowForApp() }]}
+                  onClick={() => {
+                    approved = true;
+                    close();
+                  }}
+                >
+                  {t().httpApprove}
+                </SplitButton>
+              </Show>
             </div>
           </div>
         );

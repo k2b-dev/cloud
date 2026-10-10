@@ -4,6 +4,7 @@ import { type SQL, sql } from "bun";
 import { type CapabilityActionReview, CapabilityActionReviewSchema } from "../contracts/capabilities";
 import { logger } from "../services/logging";
 import { toPgTextArray } from "../services/postgres";
+import { AI_WEBSITE_APPROVAL_TOOL } from "./approvals";
 import { aiTurnErrorText } from "./chat/turn-error";
 import { AI_MEMORY_LEARNING_DEFAULT_ENABLED } from "./prefs";
 import type { AiTurnBlock } from "./protocol";
@@ -202,6 +203,8 @@ type PendingActionRow = {
   review: unknown | null;
   approval_scope: string;
   allow_always: boolean;
+  allow_chat: boolean | null;
+  remember_tool_name: string | null;
   frontend_mode: AiFrontendToolMode | null;
   resolved_event: unknown | null;
 };
@@ -678,6 +681,8 @@ const pendingActionToPublicEvent = (row: PendingActionRow): AiPendingTurnAction 
         message: row.message ?? undefined,
         review: parseCapabilityActionReview(row.review),
         allowAlways: row.allow_always,
+        allowChat: row.allow_always || row.allow_chat === true,
+        ...(row.remember_tool_name === AI_WEBSITE_APPROVAL_TOOL ? { website: row.approval_scope } : {}),
       };
 
 const rowToPendingActionRecord = (row: PendingActionRow): AiPendingTurnActionRecord => ({
@@ -692,6 +697,8 @@ const rowToPendingActionRecord = (row: PendingActionRow): AiPendingTurnActionRec
   review: parseCapabilityActionReview(row.review),
   approvalScope: row.approval_scope,
   allowAlways: row.allow_always,
+  allowChat: row.allow_always || row.allow_chat === true,
+  ...(row.remember_tool_name ? { rememberToolName: row.remember_tool_name } : {}),
   frontendMode: row.frontend_mode ?? undefined,
   resolvedEvent: row.resolved_event ? parseJsonValue<InboundEvent>(row.resolved_event) : null,
 });
@@ -3271,6 +3278,8 @@ export const aiConversations: AiConversationService = {
         review,
         approval_scope,
         allow_always,
+        allow_chat,
+        remember_tool_name,
         frontend_mode,
         status,
         resolved_event,
@@ -3287,6 +3296,8 @@ export const aiConversations: AiConversationService = {
         ${input.review ? JSON.stringify(input.review) : null}::text::jsonb,
         ${input.approvalScope},
         ${input.allowAlways},
+        ${input.allowChat ?? input.allowAlways},
+        ${input.rememberToolName ?? null},
         ${input.frontendMode ?? null},
         ${input.resolvedEvent ? "resolved" : "pending"},
         ${input.resolvedEvent ? JSON.stringify(input.resolvedEvent) : null}::text::jsonb,
@@ -3301,6 +3312,8 @@ export const aiConversations: AiConversationService = {
         review = EXCLUDED.review,
         approval_scope = EXCLUDED.approval_scope,
         allow_always = EXCLUDED.allow_always,
+        allow_chat = EXCLUDED.allow_chat,
+        remember_tool_name = EXCLUDED.remember_tool_name,
         frontend_mode = EXCLUDED.frontend_mode
     `;
   },

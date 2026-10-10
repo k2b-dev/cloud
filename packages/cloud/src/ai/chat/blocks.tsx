@@ -34,7 +34,7 @@ import { AssistantMarkdownBlock } from "./primitives";
 import { AiToolActivity } from "./tool-disclosure";
 import { isFailedTool } from "./tool-groups";
 import { CloudCardBlock, CloudSurveyBlock, CloudSurveyResultBlock, CloudTextEditorBlock, CloudTextEditorResultBlock } from "./visual-tools";
-import { FetchFileToolBlock, WebExtractToolBlock, WebSearchToolBlock } from "./web-tools";
+import { FetchFileToolBlock, WebExtractToolBlock, WebSearchToolBlock, WebsiteReceipts, websiteReceipts } from "./web-tools";
 
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
 type ReviewDetail = NonNullable<CapabilityActionReview["details"]>[number];
@@ -205,7 +205,7 @@ export function ApprovalBlockView(props: { turnId: string; block: ToolBlock; onD
   const [detailsOpen, setDetailsOpen] = createSignal(false);
   // The call this card answered: a later approval for the same block may already have arrived when the server accepts.
   let decision: AiApprovalDecision | null = null;
-  const approval = mutation.create<void, { approved: boolean; remember?: "always" }>({
+  const approval = mutation.create<void, { approved: boolean; remember?: "chat" | "always" }>({
     mutation: async (input) => {
       if (!actions.onApproval) throw new Error("Approval is unavailable.");
       await actions.onApproval(request(), input);
@@ -215,7 +215,7 @@ export function ApprovalBlockView(props: { turnId: string; block: ToolBlock; onD
       if (decision) props.onDecided?.(decision);
     },
   });
-  const submit = (input: { approved: boolean; remember?: "always" }) => {
+  const submit = (input: { approved: boolean; remember?: "chat" | "always" }) => {
     if (actionDisabled() || approval.loading()) return;
     decision = { callId: props.block.callId, approved: input.approved };
     void approval.mutate(input);
@@ -411,6 +411,16 @@ export function ApprovalBlockView(props: { turnId: string; block: ToolBlock; onD
                         icon: detailsOpen() ? "ti ti-eye-off" : "ti ti-eye",
                         action: () => setDetailsOpen((open) => !open),
                       },
+                      // The narrower chat reach comes first: it ends with this chat.
+                      ...(props.block.approval?.allowChat
+                        ? [
+                            {
+                              label: props.block.approval.website ? t().allowWebsiteForChat : t().chatApprove,
+                              icon: props.block.approval.website ? "ti ti-world-check" : "ti ti-message-check",
+                              action: () => submit({ approved: true, remember: "chat" }),
+                            },
+                          ]
+                        : []),
                       ...(props.block.approval?.allowAlways
                         ? [
                             {
@@ -725,6 +735,9 @@ function ToolBlockView(props: { turnId: string; block: ToolBlock; active?: boole
           <Chat.Activity label={displayToolName(props.block.name, locale())} icon={aiToolIcon(props.block.name)} busy />
         </Match>
       </Switch>
+      <Show when={websiteReceipts(props.block).length > 0}>
+        <WebsiteReceipts block={props.block} />
+      </Show>
       <Show when={hasCapabilityTable(props.block)}>
         <CapabilityTablePreview
           result={props.block.result}
@@ -853,35 +866,43 @@ export function CompactToolRow(props: { block: ToolBlock; busy?: boolean }) {
     return aiToolIcon(props.block.name, props.block.presentation?.appIcon);
   };
   return (
-    <AiToolActivity
-      blockId={props.block.id}
-      label={sentence() ?? props.block.presentation?.title ?? displayToolName(props.block.name, locale())}
-      description={[
-        props.block.status === "running" ? (props.block.progress ?? "") : "",
-        typeof detail() === "string" ? String(detail()) : "",
-        state(),
-        outcome(),
-      ]
-        .filter(Boolean)
-        .join(" · ")}
-      icon={icon()}
-      busy={props.busy && props.block.status === "running"}
-      bodyInset={false}
-      renderBody={() => (
-        <div class="flex min-w-0 flex-col gap-2">
-          <div
-            class="max-h-72 overflow-auto overscroll-contain rounded-md bg-zinc-100 p-3 dark:bg-zinc-950"
-            tabIndex={0}
-            role="region"
-            aria-label={t().toolInputOutput}
-          >
-            <ToolDetail title={t().input} toolName={props.block.name} value={props.block.args} />
-            <ToolDetail title={t().output} toolName={props.block.name} value={props.block.result} />
+    <>
+      <AiToolActivity
+        blockId={props.block.id}
+        label={sentence() ?? props.block.presentation?.title ?? displayToolName(props.block.name, locale())}
+        description={[
+          props.block.status === "running" ? (props.block.progress ?? "") : "",
+          typeof detail() === "string" ? String(detail()) : "",
+          state(),
+          outcome(),
+        ]
+          .filter(Boolean)
+          .join(" · ")}
+        icon={icon()}
+        busy={props.busy && props.block.status === "running"}
+        bodyInset={false}
+        renderBody={() => (
+          <div class="flex min-w-0 flex-col gap-2">
+            <div
+              class="max-h-72 overflow-auto overscroll-contain rounded-md bg-zinc-100 p-3 dark:bg-zinc-950"
+              tabIndex={0}
+              role="region"
+              aria-label={t().toolInputOutput}
+            >
+              <ToolDetail title={t().input} toolName={props.block.name} value={props.block.args} />
+              <ToolDetail title={t().output} toolName={props.block.name} value={props.block.result} />
+            </div>
+            {/* Below the input and output, so an image that arrives in an open step grows in like its output and moves nothing above. */}
+            <Show when={image()}>
+              {(viewed) => <StepImage path={viewed().path} src={viewed().src} description={viewed().description} />}
+            </Show>
           </div>
-          {/* Below the input and output, so an image that arrives in an open step grows in like its output and moves nothing above. */}
-          <Show when={image()}>{(viewed) => <StepImage path={viewed().path} src={viewed().src} description={viewed().description} />}</Show>
-        </div>
-      )}
-    />
+        )}
+      />
+      {/* Each request a website approval let through is a step of its own, with its full URL. */}
+      <Show when={websiteReceipts(props.block).length > 0}>
+        <WebsiteReceipts block={props.block} />
+      </Show>
+    </>
   );
 }

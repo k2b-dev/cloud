@@ -26,7 +26,7 @@ import { aiChatMessages } from "./messages";
 /** The active-turn coordinates an approval/tool action needs to resolve on the server. */
 export type AiTurnActionRequest = { turnId: string; callId: string; name: string };
 
-type ApprovalHandler = (request: AiTurnActionRequest, input: { approved: boolean; remember?: "always" }) => void | Promise<void>;
+type ApprovalHandler = (request: AiTurnActionRequest, input: { approved: boolean; remember?: "chat" | "always" }) => void | Promise<void>;
 type FrontendToolResultHandler = (request: AiTurnActionRequest, result: unknown) => void | Promise<void>;
 type ForkMessageHandler = (entry: AiStoredMessage, input?: AiForkMessageInput) => void | Promise<void>;
 type RetryMessageHandler = (entry: AiStoredMessage, input?: AiRetryMessageInput) => void | Promise<void>;
@@ -42,6 +42,8 @@ export type AiChatActions = {
   /** Prevents turn-continuation actions while the current turn is stopping. */
   actionDisabled?: () => boolean;
   onApproval?: ApprovalHandler;
+  /** Revoke the approval that lets this chat read `origin` without asking; the next request asks again. */
+  onRevokeWebsite?: (origin: string) => Promise<void>;
   onFrontendToolResult?: FrontendToolResultHandler;
   onForkMessage?: ForkMessageHandler;
   onRetryMessage?: RetryMessageHandler;

@@ -1,10 +1,15 @@
 import { isDeepStrictEqual } from "node:util";
 import {
+  AI_WEBSITE_APPROVAL_TOOL,
+  type AiApprovalTarget,
   aiChatTasks,
   aiConversations,
+  aiTurnAllowsWebsiteApprovals,
+  aiWebsiteApprovalScope,
   authorizeCodeExecution,
   createAiConversationArtifact,
   createCodeCapabilityTransport,
+  findRememberedAiToolApproval,
   listAiConversationFiles,
   parseCodeToolInput,
   readAiConversationFile,
@@ -38,6 +43,9 @@ export const AgentHostRequest = z
   })
   .strict();
 type Call = z.infer<typeof AgentHostRequest>;
+const ApprovalTarget = z.object({ toolName: z.string(), approvalScope: z.string(), always: z.boolean() });
+/** A request a remembered website approval let through without asking; the chat shows it with its full URL. */
+const Receipt = z.object({ method: z.string(), url: z.string() });
 type Host = Awaited<ReturnType<typeof createCliCodeHost>>;
 type Session = {
   phase: "starting" | "running";
@@ -345,8 +353,42 @@ async function createSession(context: CodeToolContext, turnId: string): Promise<
           if (!session.lastCall) throw new Error("Approval has no originating code call");
           const { turnId, callId } = session.lastCall;
           const id = z.uuid().parse(approval.id);
-          await sql`INSERT INTO assistant.artifact_agent_approvals(turn_id,call_id,id,message)
-      VALUES(${turnId}::uuid,${callId},${id}::uuid,${codeApprovalMessage(approval, context.locale)}) ON CONFLICT DO NOTHING`;
+          const actorUserId = context.actor.kind === "user" ? context.actor.user.id : "";
+          // What the person may remember comes from the stored request, never from the approval the host sent.
+          let target: AiApprovalTarget | null = null;
+          if ("type" in approval) {
+            const website = await httpService.website(id, context).catch(() => null);
+            if (website && website.conversationId === context.conversationId) {
+              target = { toolName: AI_WEBSITE_APPROVAL_TOOL, approvalScope: aiWebsiteApprovalScope(website.origin), always: false };
+              // Website approvals are looked up only here, on the interactive path of a turn a person started in a
+              // signed-in session; a scheduled task, mandate, or delegated credential always asks or uses its grants.
+              if (
+                aiTurnAllowsWebsiteApprovals(config) &&
+                (await findRememberedAiToolApproval(
+                  { actorUserId },
+                  {
+                    toolName: target.toolName,
+                    approvalScope: target.approvalScope,
+                    conversationId: context.conversationId,
+                    chatOnly: true,
+                  },
+                ))
+              ) {
+                await sql`INSERT INTO assistant.artifact_agent_approvals(turn_id,call_id,id,message,decision,receipt)
+      VALUES(${turnId}::uuid,${callId},${id}::uuid,${`${website.method} ${website.url}`},true,
+        (${JSON.stringify({ method: website.method, url: website.url })}::text)::jsonb) ON CONFLICT DO NOTHING`;
+                return { approved: true };
+              }
+            }
+          } else {
+            const [call] = await sql<{ name: string; allow_always: boolean | null; scope: string | null }[]>`
+      SELECT request->>'name' AS name,(prepared->>'allowAlways')::boolean AS allow_always,prepared->>'scope' AS scope
+      FROM assistant.capability_calls WHERE id=${id}::uuid AND user_id=${actorUserId}::uuid AND status='pending'`;
+            if (call?.allow_always && call.scope) target = { toolName: call.name, approvalScope: call.scope, always: true };
+          }
+          await sql`INSERT INTO assistant.artifact_agent_approvals(turn_id,call_id,id,message,remember)
+      VALUES(${turnId}::uuid,${callId},${id}::uuid,${codeApprovalMessage(approval, context.locale)},
+        (${target ? JSON.stringify(target) : null}::text)::jsonb) ON CONFLICT DO NOTHING`;
           const approved = await new Promise<boolean>((resolve) => session.decisions.set(id, resolve));
           session.decisions.delete(id);
           return { approved };
@@ -477,8 +519,8 @@ export const agentHost = {
     if (session && context.capabilityToken)
       session.capabilityContext = { conversationId: context.conversationId!, turnId: call.turnId, token: context.capabilityToken };
     if (session)
-      await sql`INSERT INTO assistant.artifact_agent_approvals(turn_id,call_id,id,message)
-      SELECT ${call.turnId}::uuid,${call.callId},a.id,a.message FROM assistant.artifact_agent_approvals a
+      await sql`INSERT INTO assistant.artifact_agent_approvals(turn_id,call_id,id,message,remember)
+      SELECT ${call.turnId}::uuid,${call.callId},a.id,a.message,a.remember FROM assistant.artifact_agent_approvals a
       JOIN assistant.artifact_agent_calls c USING(turn_id,call_id)
       WHERE c.host_id=${session.id}::uuid AND a.decision IS NULL ORDER BY a.ordinal
       ON CONFLICT DO NOTHING`;
@@ -491,14 +533,24 @@ export const agentHost = {
       if (changed.length) session?.decisions.get(call.decision.id)?.(call.decision.approved);
     }
     if (session) session.lastUsed = Date.now();
-    const approvals = await sql<
-      { id: string; message: string; decision: boolean | null }[]
-    >`SELECT id,message,decision FROM assistant.artifact_agent_approvals WHERE turn_id=${call.turnId}::uuid AND call_id=${call.callId} ORDER BY ordinal`;
+    const rows = await sql<
+      { id: string; message: string; decision: boolean | null; remember: unknown; receipt: unknown }[]
+    >`SELECT id,message,decision,remember,receipt FROM assistant.artifact_agent_approvals WHERE turn_id=${call.turnId}::uuid AND call_id=${call.callId} ORDER BY ordinal`;
+    const approvals = rows
+      .filter((approval) => approval.receipt === null)
+      .map(({ id, message, decision, remember }) => ({
+        id,
+        message,
+        decision,
+        remember: remember ? ApprovalTarget.parse(remember) : undefined,
+      }));
+    const receipts = rows.flatMap((approval) => (approval.receipt === null ? [] : [Receipt.parse(approval.receipt)]));
     return {
       status: row.status,
       phase: approvals.some((approval) => approval.decision === null) ? "waiting_for_user" : session?.phase,
       result: row.result,
       approvals,
+      receipts,
     };
   },
   async sweep() {

@@ -165,6 +165,10 @@ export async function migrateArtifacts() {
     PRIMARY KEY(turn_id,call_id,id),
     FOREIGN KEY(turn_id,call_id) REFERENCES assistant.artifact_agent_calls(turn_id,call_id) ON DELETE CASCADE
   )`;
+  // What the person may remember for this approval, derived on the server; a receipt marks a request a remembered
+  // website approval let through without asking.
+  await sql`ALTER TABLE assistant.artifact_agent_approvals ADD COLUMN IF NOT EXISTS remember JSONB`;
+  await sql`ALTER TABLE assistant.artifact_agent_approvals ADD COLUMN IF NOT EXISTS receipt JSONB`;
   await sql`ALTER TABLE assistant.artifacts ADD COLUMN IF NOT EXISTS check_scratch BOOLEAN NOT NULL DEFAULT false`;
   await sql`ALTER TABLE assistant.artifacts ADD COLUMN IF NOT EXISTS check_conversation_id UUID`;
   await sql`CREATE TABLE IF NOT EXISTS assistant.artifact_checks (

@@ -50,6 +50,32 @@ function Harness() {
       >
         Request HTTP
       </Button>
+      <Button onClick={async () => setResult(JSON.stringify(await openSecretsDialog({ resourceId: "Ab3dEf" })))}>
+        Manage app approvals
+      </Button>
+      <Button
+        onClick={async () => {
+          // The order runHttp uses: a remembered website approval first, then the request dialog.
+          const request = {
+            type: "http" as const,
+            name: "http.fetch:https://query1.finance.yahoo.com",
+            id: crypto.randomUUID(),
+            url: "https://query1.finance.yahoo.com/v7/finance/quote?symbols=NVDA,AAPL",
+            method: "GET",
+            headers: {},
+            bodyBytes: 0,
+            bodyPreview: "",
+            bodyTruncated: false,
+            resourceTitle: "Quotes",
+          };
+          const signal = new AbortController().signal;
+          setResult("");
+          const allowed = await browserHttpHost.allowed!(request, signal);
+          setResult(`website:${allowed ? "allowed" : String(await browserHttpHost.approve(request, signal))}`);
+        }}
+      >
+        Fetch quotes
+      </Button>
       <output>{result()}</output>
     </>
   );

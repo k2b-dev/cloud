@@ -1,14 +1,20 @@
 export { type AiAppSkillIssue, aiAppSkills, appSkillsRegistryState, reconcileAppSkills } from "./app-skill-store";
 export { type AiApprovalPreferenceRoutes, type AiApprovalPreferenceView, createAiApprovalPreferenceRoutes } from "./approval-routes";
 export {
+  AI_WEBSITE_APPROVAL_TOOL,
   type AiToolApprovalContext,
   type AiToolApprovalPreference,
+  type AiToolApprovalRemember,
   aiToolAllowsAlways,
   aiToolApprovalScope,
   aiToolNeedsApproval,
+  aiTurnAllowsWebsiteApprovals,
+  aiWebsiteApprovalScope,
+  findRememberedAiToolApproval,
   forgetAiToolApproval,
   hasRememberedAiToolApproval,
   listAiToolApprovalPreferences,
+  parseAiWebsiteApprovalScope,
   rememberAiToolApproval,
   revokeAiToolApprovalPreference,
 } from "./approvals";
@@ -309,6 +315,7 @@ export {
 } from "./transcription";
 export type {
   AiAccessResult,
+  AiApprovalTarget,
   AiCapabilityToolPresentation,
   AiClientToolId,
   AiConversation,

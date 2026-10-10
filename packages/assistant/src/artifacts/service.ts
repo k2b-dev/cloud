@@ -1,5 +1,6 @@
 import {
   AI_FILES_MAX_CONVERSATION_BYTES_DEFAULT,
+  AI_WEBSITE_APPROVAL_TOOL,
   aiConversations,
   aiProjects,
   CodeResourceId,
@@ -299,6 +300,9 @@ export const artifacts = {
       const cleanup = await db`INSERT INTO assistant.database_cleanup(namespace)
         SELECT namespace FROM assistant.artifact_databases WHERE artifact_id=${id}::uuid ON CONFLICT DO NOTHING RETURNING namespace`;
       await db`DELETE FROM auth.access WHERE id IN (SELECT access_id FROM assistant.artifact_access WHERE artifact_id=${id}::uuid)`;
+      // Website approvals for this app end with it, for every person who gave one.
+      await db`DELETE FROM ai.tool_approval_preferences WHERE tool_name=${AI_WEBSITE_APPROVAL_TOOL} AND conversation_id IS NULL
+        AND approval_scope LIKE ${`% resource:${row.short_id}`}`;
       await db`DELETE FROM assistant.artifacts WHERE id=${id}::uuid`;
       return { deleted: true, databaseCleanupQueued: cleanup.length > 0 };
     });

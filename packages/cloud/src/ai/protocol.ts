@@ -44,7 +44,15 @@ export type AiTurnBlock =
       result?: unknown;
       isError?: boolean;
       /** Present while status is awaiting_approval. */
-      approval?: { message?: string; review?: CapabilityActionReview; allowAlways: boolean };
+      approval?: {
+        message?: string;
+        review?: CapabilityActionReview;
+        allowAlways: boolean;
+        /** Whether the approval can be remembered for this chat. */
+        allowChat?: boolean;
+        /** The website origin a chat approval would allow, for an HTTP request a code run makes. */
+        website?: string;
+      };
       /**
        * `true` once the user approved this call in the chat; `false` when its turn ended while the approval still
        * waited. Either way the approval stays visible as a receipt.
