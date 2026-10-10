@@ -260,12 +260,13 @@ branch:
   Played that way, the video did not stall in several hundred runs on a loaded
   machine; `play()` from the page's own handlers as the seek ended, or one
   frame later, stalled in 7 of 520. Because `playing` also comes before a
-  stall, a test that checks playback waits for `ended`. After a renewal,
-  `VideoPlayer` plays on by itself once the metadata has loaded, in WebKit
-  during its seek; moving that `play()` to the end of the seek did not
-  measurably make it stall less often. Renewed playback can therefore stall in
-  Linux WebKit, so its test waits for `ended` in Chromium and only for
-  `playing` in WebKit.
+  stall, a test that checks playback waits for `ended`. A test also lets each
+  seek end before it starts the next one: seeks that overlap can end at the
+  first one's point instead of the last one's. After a renewal, `VideoPlayer`
+  plays on by itself once the metadata has loaded, in WebKit during its seek;
+  moving that `play()` to the end of the seek did not measurably make it stall
+  less often. Renewed playback can therefore stall in Linux WebKit, so its test
+  waits for `ended` in Chromium and only for `playing` in WebKit.
 
 ## Replace modules in tests
 

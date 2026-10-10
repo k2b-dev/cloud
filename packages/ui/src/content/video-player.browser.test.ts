@@ -225,6 +225,9 @@ const firstFrame = (page: Page) =>
     const video = document.querySelector(".k2b-video-player__video") as HTMLVideoElement | null;
     return video !== null && !video.seeking && video.readyState >= 2;
   });
+/** Waits until no seek is under way. */
+const seekEnded = (page: Page) =>
+  page.waitForFunction(() => !(document.querySelector(".k2b-video-player__video") as HTMLVideoElement).seeking);
 /**
  * Waits until the video has played to its end. When it does not, the error carries the video's state, the page's
  * media events, and its requests, so it shows where playback stopped and what came before.
@@ -374,13 +377,18 @@ describe(`VideoPlayer (${browserName})`, () => {
       // One press is one toggle: the engine's own handling of Space does not toggle a second time.
       await page.waitForTimeout(150);
       expect((await state(page)).paused).toBe(true);
+      // Each seek starts once the one before has ended: WebKit on Linux can end overlapping seeks at the first one's
+      // point instead of the last one's. The time shows the new point as soon as a seek starts, so it cannot tell.
       await page.$eval(".k2b-video-player__video", (element) => {
         (element as HTMLVideoElement).currentTime = 0.5;
       });
+      await seekEnded(page);
       await page.keyboard.press("ArrowRight");
-      await page.waitForFunction(() => (document.querySelector(".k2b-video-player__video") as HTMLVideoElement).currentTime >= 2.9);
+      await seekEnded(page);
+      expect((await state(page)).time).toBeGreaterThanOrEqual(2.9);
       await page.keyboard.press("ArrowLeft");
-      await page.waitForFunction(() => (document.querySelector(".k2b-video-player__video") as HTMLVideoElement).currentTime === 0);
+      await seekEnded(page);
+      expect((await state(page)).time).toBe(0);
       await page.keyboard.press("m");
       expect((await state(page)).muted).toBe(false);
       await page.keyboard.press("k");
