@@ -787,8 +787,8 @@ describe("AI capability catalog", () => {
         requestClientTool: async <T>() => undefined as T,
       },
     );
-    // Text-only readers get the app and what the call does; the review stays separate for the card.
-    expect(approvalMessages).toEqual(["Contacts: Create item · Item title: Ada"]);
+    // Text-only readers such as the CLI get the app and what the call does, then the app's live review of this call.
+    expect(approvalMessages).toEqual(["Contacts: Create item · Item title: Ada\nCreate a contact."]);
     expect(actionReviews).toEqual([
       {
         callId: "call-create",

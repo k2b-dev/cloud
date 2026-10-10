@@ -11,13 +11,11 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
     },
     "draft.send": {
       approval: "Send the reviewed email",
-      done: "Handed the email over for sending",
       rejected: "Did not send the email",
       notRun: "Email not sent",
     },
     "delivery.cancel": {
       approval: "Cancel the email delivery",
-      done: "Cancelled the email delivery",
       rejected: "Did not cancel the email delivery",
       notRun: "Email delivery not cancelled",
     },
@@ -580,7 +578,6 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Zustellung abbrechen",
           sentences: {
             approval: "E-Mail-Versand abbrechen",
-            done: "E-Mail-Versand abgebrochen",
             rejected: "E-Mail-Versand nicht abgebrochen",
             notRun: "E-Mail-Versand nicht abgebrochen",
           },
@@ -665,7 +662,6 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Mail senden",
           sentences: {
             approval: "Geprüfte E-Mail senden",
-            done: "E-Mail zum Versand übergeben",
             rejected: "E-Mail nicht gesendet",
             notRun: "E-Mail nicht gesendet",
           },

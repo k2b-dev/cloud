@@ -302,8 +302,9 @@ preserve their stable codes and structured values.
 An Action can say in its own words what it is about to do and what it did.
 The Assistant's approval card, its receipts and step rows, and the approval
 text of `cld assistant actions` show these sentences, in the reader's
-language. They are optional: an Action without them reads as its title with
-up to two labelled fields, such as "Send email · Recipients: Jana Berger".
+language; the approval text adds the Action's live review message below the
+sentence. They are optional: an Action without them reads as its title with
+up to two labelled fields, such as "Send email · Recipients: jana@example.com".
 
 Declare the base-locale sentences under `presentation.sentences`, keyed by
 Action local ID, and each translation under the Action's entry in
@@ -370,20 +371,30 @@ export const inventoryCapabilities = defineCapabilities({
 Each `{…}` reference names a field by its dotted schema path, like the schema
 presentation maps: `{input.to}` or `{input.to[].name}` for the call input,
 `{data.id}` for the Action's result data. Cloud inserts each value as plain
-one-line text without control or direction characters and never reads it as
-a template. Values are cut at 60 characters, and lists show three entries,
-such as "Jana Berger, Max Weber, and 2 more". Instants in fields with
-`format: "date-time"` and RFC 3339 strings show in the reader's time zone, and
-calendar dates as the same day everywhere. Numbers use the reader's
-locale, and booleans read "yes" or "no". An object reads as its `displayName`,
-`name`, `title`, `label`, `email`, `address`, or `path`, so people and resources
-appear by their display names when the value carries one.
+one-line text without control characters, line breaks, or invisible format
+characters such as direction marks and joiners, and never reads it as a
+template. A value longer than 60 characters keeps its start and its end, so a
+path keeps its file name and an address its domain. Lists show three entries,
+such as "jana@example.com, max@example.com, and 2 more"; an entry without a
+value to show still counts toward "more". Only fields whose schema declares
+`format: "date"` or `format: "date-time"` read as dates: instants in the
+reader's time zone, calendar dates as the same day everywhere. Any other text
+stays exactly as the call carries it, even when it looks like a date, and so
+does a date field's value that is no real day, such as `2026-02-30`. Numbers
+use the reader's locale, and booleans read "yes" or "no". An object reads as
+its `email`, `address`, or `path` when it has one, else as its `displayName`,
+`name`, `title`, or `label`: a name in the call input is not verified, so it
+never stands in for the value the Action acts on.
 
 When a referenced field has no value to show, such as an empty list or an optional
-field, the sentence falls back to the generic wording instead of showing a
-gap. A missing outcome sentence uses the generic state words around the
-approval sentence, such as "Rejected: Send email to Jana Berger", and a
-missing `done` sentence leaves the receipt to the Action's runtime summary.
+field, or the sentence would be longer than 240 characters, it falls back to
+the generic wording instead of showing a gap or losing its last words. A
+missing outcome sentence uses the generic state words around the approval
+sentence, such as "Rejected: Send email to jana@example.com". A `done`
+sentence takes the place of the Action's runtime `summary` in the receipt;
+leave `done` out when the summary says more about the call, as Mail does for
+sending, where the summary names the subject and whether the email was queued
+or scheduled.
 The generic sentence takes labels from the first clause of the localized field
 descriptions, up to 40 characters, and skips identifiers, revisions, flags,
 and long text; start descriptions with a short noun phrase, such as
@@ -404,6 +415,13 @@ When an Action waits for approval, the model may pass an optional
 such as "Why: Jana asked for the offer.", removes it before review,
 authorization, and execution, and never lets it replace the app's sentence.
 An Action whose input declares its own `approvalReason` field keeps it.
+
+An app that asks people to approve a capability call with the chat's approval
+card, as the Assistant does for code, gets the same wording from
+`getCapabilityActionWording(appId, localId, locale)` in
+`@k2b/cloud/capabilities/server` and passes its `sentences` and `fields` into
+the block's capability presentation. It returns `null` for an unknown app or
+Action, which then reads as its title.
 
 ## Understand Types, Queries, and Actions
 

@@ -5,7 +5,6 @@ import { CodeActionInput, CodeRunInput } from "./browser-code-contracts";
 import { CloudAiFetchFileInputSchema } from "./fetch-file-tool";
 import { CloudAiWriteFileInputSchema } from "./file-tools";
 import { CloudAiWebExtractInputSchema } from "./firecrawl-tools";
-import { CloudAiMemoryInputSchema } from "./memory-tool";
 import { CLOUD_AI_TOOL_PRESENTATION } from "./tool-sentences";
 
 const inputs: Record<keyof typeof CLOUD_AI_TOOL_PRESENTATION.sentences, z.ZodType> = {
@@ -14,7 +13,6 @@ const inputs: Record<keyof typeof CLOUD_AI_TOOL_PRESENTATION.sentences, z.ZodTyp
   web_extract: CloudAiWebExtractInputSchema,
   fetch_file: CloudAiFetchFileInputSchema,
   write_file: CloudAiWriteFileInputSchema,
-  memory: CloudAiMemoryInputSchema,
 };
 
 test("Cloud's own tool sentences pass the checks every app's sentences pass, in every shipped locale", () => {

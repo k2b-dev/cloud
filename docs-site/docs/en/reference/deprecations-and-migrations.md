@@ -18,14 +18,18 @@ presentation catalog may now declare `sentences` per Action, `approval`,
 and translate them under `translations.<locale>.actions.<id>.sentences`.
 `app.start()` validates them against the Action's schemas. The Assistant's
 approval card now shows what will happen as its title, with the app name in
-the line below; receipts, step rows, and the approval text of
-`cld assistant actions` use the app's sentences, and an Action without them
-reads as its title with up to two labelled input fields. "Done" receipts now
-read "Done: …" like the other states. The model may add an optional
-`approvalReason` to an Action call that waits for approval; Cloud shows it as
-a labelled reason and removes it before the app sees the call. A Cloud
-release that does not know sentences ignores them and keeps the generic
-wording. Mail, Spaces, and Files word their main Actions. No setting, data, or migration is involved. See
+the line below; receipts, step rows, and code approvals use the app's
+sentences, and an Action without them reads as its title with up to two
+labelled input fields. The approval text of `cld assistant actions` starts
+with the app and its sentence, followed by the live review message it showed
+before. "Done" receipts now read "Done: …" like the other states. The model
+may add an optional `approvalReason` to an Action call that waits for
+approval; Cloud shows it as a labelled reason and removes it before the app
+sees the call. `getCapabilityActionWording()` in
+`@k2b/cloud/capabilities/server` gives an app the same wording for its own
+approval cards. A Cloud release that does not know sentences ignores them and
+keeps the generic wording. Mail, Spaces, and Files word their main Actions. No
+setting, data, or migration is involved. See
 [Word Actions for people](/en/docs/platform/capabilities#word-actions-for-people).
 
 ## Apps ship their own Assistant Skills

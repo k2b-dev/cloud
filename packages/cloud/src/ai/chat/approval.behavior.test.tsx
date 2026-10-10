@@ -283,23 +283,23 @@ const sendMail = (locale: "en" | "de"): Extract<AiTurnBlock, { kind: "tool" }> =
     fields: [{ path: "input.to", label: locale === "de" ? "Empfänger" : "Recipients" }, { path: "data.messageId" }],
     approvalReason: true,
   },
-  approval: { message: "Acme Mail: Send email to Jana Berger", allowAlways: false },
+  approval: { message: "Acme Mail: Send email to jana@example.com", allowAlways: false },
 });
 
 domTest("an app Action's own sentences name the card, the model's labelled reason, and every receipt", async () => {
   const english = await mountTurn([sendMail("en")]);
   try {
     const card = english.place().querySelector<HTMLElement>(".ai-approval")!;
-    expect(card.querySelector(".ai-approval__title")?.textContent).toBe("Send email to Jana Berger");
+    expect(card.querySelector(".ai-approval__title")?.textContent).toBe("Send email to jana@example.com");
     expect(card.querySelector(".ai-approval__sub")?.textContent).toBe("Acme Mail · Runs only after you approve it");
     // The model's reason adds to the app's sentence under its own label; the approval text for text-only readers is not repeated.
     expect(card.textContent).toContain("Why: Jana asked for the offer.");
-    expect(card.textContent).not.toContain("Acme Mail: Send email to Jana Berger");
-    english.button("Send email to Jana Berger").click();
+    expect(card.textContent).not.toContain("Acme Mail: Send email to jana@example.com");
+    english.button("Send email to jana@example.com").click();
     await tick();
     await tick();
     const receipt = english.place().querySelector<HTMLElement>(".ai-turn-receipt")!;
-    expect(receipt.textContent).toBe("Running: Send email to Jana Berger");
+    expect(receipt.textContent).toBe("Running: Send email to jana@example.com");
     english.setPhase("running");
     english.setBlocks([
       {
@@ -311,7 +311,7 @@ domTest("an app Action's own sentences name the card, the model's labelled reaso
       },
     ]);
     expect(english.place().querySelector(".ai-turn-receipt")).toBe(receipt);
-    expect(receipt.textContent).toBe("Sent email to Jana Berger (M-42)");
+    expect(receipt.textContent).toBe("Sent email to jana@example.com (M-42)");
   } finally {
     english.cleanup();
   }
@@ -319,13 +319,13 @@ domTest("an app Action's own sentences name the card, the model's labelled reaso
   const german = await mountTurn([sendMail("de")], { locale: "de" });
   try {
     const card = german.place().querySelector<HTMLElement>(".ai-approval")!;
-    expect(card.querySelector(".ai-approval__title")?.textContent).toBe("E-Mail an Jana Berger senden");
+    expect(card.querySelector(".ai-approval__title")?.textContent).toBe("E-Mail an jana@example.com senden");
     expect(card.querySelector(".ai-approval__sub")?.textContent).toBe("Acme Mail · Wird erst nach deiner Freigabe ausgeführt");
     expect(card.textContent).toContain("Warum: Jana hat um das Angebot gebeten.");
     german.button("Ablehnen").click();
     await tick();
     await tick();
-    expect(german.place().querySelector(".ai-turn-receipt")?.textContent).toBe("E-Mail an Jana Berger nicht gesendet");
+    expect(german.place().querySelector(".ai-turn-receipt")?.textContent).toBe("E-Mail an jana@example.com nicht gesendet");
   } finally {
     german.cleanup();
   }
@@ -333,7 +333,7 @@ domTest("an app Action's own sentences name the card, the model's labelled reaso
   // A stop before the decision leaves the app's not-run sentence; a result without the data a sentence needs keeps the generic words.
   const stopped = await mountTurn([{ ...sendMail("de"), status: "running", approval: undefined }], { locale: "de", phase: "stopped" });
   try {
-    expect(stopped.place().textContent).toBe("E-Mail an Jana Berger nicht gesendet · gestoppt");
+    expect(stopped.place().textContent).toBe("E-Mail an jana@example.com nicht gesendet · gestoppt");
   } finally {
     stopped.cleanup();
   }
@@ -355,7 +355,7 @@ domTest("an Action without sentences reads as its title with its labelled fields
   const view = await mountTurn([plain], { locale: "de" });
   try {
     const card = view.place().querySelector<HTMLElement>(".ai-approval")!;
-    expect(card.querySelector(".ai-approval__title")?.textContent).toBe("E-Mail senden · Empfänger: Jana Berger und max@example.com");
+    expect(card.querySelector(".ai-approval__title")?.textContent).toBe("E-Mail senden · Empfänger: jana@example.com und max@example.com");
     // No reason, no label: the card adds nothing the model did not say.
     expect(card.textContent).not.toContain("Warum");
   } finally {
@@ -369,5 +369,40 @@ domTest("an Action without sentences reads as its title with its labelled fields
     expect(code.place().textContent).not.toContain("Warum");
   } finally {
     code.cleanup();
+  }
+});
+
+domTest("a value shaped like a date that is no real day never breaks the card or its receipt", async () => {
+  const block = sendMail("en");
+  block.presentation = {
+    ...block.presentation!,
+    sentences: { approval: "Send email at {input.sendAt}", rejected: "Did not send email at {input.sendAt}" },
+    fields: [{ path: "input.sendAt", label: "Delivery time", format: "date-time" }],
+  };
+  block.args = { sendAt: "0000-00-00" };
+  const view = await mountTurn([block]);
+  try {
+    expect(view.place().querySelector(".ai-approval__title")?.textContent).toBe("Send email at 0000-00-00");
+    view.button("Reject").click();
+    await tick();
+    await tick();
+    expect(view.place().querySelector(".ai-turn-receipt")?.textContent).toBe("Did not send email at 0000-00-00");
+  } finally {
+    view.cleanup();
+  }
+});
+
+domTest("without a done sentence the receipt is the app's own summary of the call, such as a scheduled send", async () => {
+  const block = sendMail("en");
+  const { done: _done, ...sentences } = block.presentation!.sentences!;
+  block.presentation = { ...block.presentation!, sentences };
+  const view = await mountTurn(
+    [{ ...block, status: "completed", approved: true, approval: undefined, result: { data: {}, summary: "Scheduled “Q4 report”." } }],
+    { phase: "stopped" },
+  );
+  try {
+    expect(view.place().textContent).toBe("Scheduled “Q4 report”.");
+  } finally {
+    view.cleanup();
   }
 });

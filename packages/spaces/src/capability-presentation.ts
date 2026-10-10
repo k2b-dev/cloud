@@ -17,7 +17,6 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
     },
     "comment.create": {
       approval: "Add a comment",
-      done: "Added a comment",
       rejected: "Did not add the comment",
       notRun: "Comment not added",
     },
@@ -499,7 +498,6 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Kommentar erstellen",
           sentences: {
             approval: "Kommentar hinzufügen",
-            done: "Kommentar hinzugefügt",
             rejected: "Kommentar nicht hinzugefügt",
             notRun: "Kommentar nicht hinzugefügt",
           },

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { appIdBranches, rule } from "./app-neutral-assistant";
 
-test("reports comparisons, switches, and literal lists on app ids", () => {
+test("reports comparisons, switches, lookups, and patterns on app ids, names, and tool names", () => {
   const lines = (source: string) => appIdBranches("chat.tsx", source).map((branch) => branch.line);
   expect(
     lines(
@@ -17,6 +17,23 @@ test("reports comparisons, switches, and literal lists on app ids", () => {
       ].join("\n"),
     ),
   ).toEqual([1, 2, 3, 4, 5]);
+  // The same branch spelled another way: a constant, a set, a lookup object, the app name, a pattern, or a tool name.
+  expect(
+    lines(
+      [
+        "if (appId === MAIL_APP_ID) return;",
+        'if (new Set(["mail"]).has(appId)) return;',
+        'const label = ({ mail: "Send" })[presentation.appId];',
+        'if (presentation.appName === "Mail") return;',
+        "if (/^mail$/.test(appId)) return;",
+        'if (presentation["appId"] === "mail") return;',
+        'if (block.name.startsWith("mail__")) return;',
+        'if (name === "mail__action__draft_dot_send") return;',
+        "if (BUILT_IN_APPS.has(appId)) return;",
+        "switch (presentation.appName) { default: break; }",
+      ].join("\n"),
+    ),
+  ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
   // Looking an app up by its id, or labelling a value with it, treats every app the same.
   expect(
     lines(
@@ -24,6 +41,9 @@ test("reports comparisons, switches, and literal lists on app ids", () => {
         "const app = apps.find((candidate) => candidate.appId === appId);",
         'const scope = { appId: "assistant", tag: "chat" };',
         "const meta = text(tool.appId) || text(tool.kind);",
+        "const owner = presentation?.appName ?? t().assistant;",
+        "const icon = icons.get(appId);",
+        'if (block.name === "code_run") return;',
       ].join("\n"),
     ),
   ).toEqual([]);

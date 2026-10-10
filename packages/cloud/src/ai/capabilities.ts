@@ -8,7 +8,7 @@ import {
   type CapabilityActionWording,
   capabilityActionSubject,
   capabilityApprovalReason,
-  capabilityApprovalReasonLabel,
+  capabilityApprovalText,
 } from "../_internal/capability-sentences";
 import { HELP_READ_MAX_CHARS, HELP_SEARCH_MAX_LIMIT, readHelpArticle } from "../_internal/help-catalog";
 import {
@@ -669,14 +669,15 @@ export const createLoadedAiCapabilityTools = (input: {
         if (!input.authorizeBackground && entry.kind === "action" && (entry.operation as CapabilityActionManifest).approval !== "none") {
           const review = (await input.review?.(entry, args, context)) ?? null;
           if (review && context.callId) input.onReview?.(context.callId, review);
-          // Text-only readers such as the CLI read what the chat shows: the app and its sentence, then the model's labelled reason.
+          // Text-only readers such as the CLI read what the card shows: the app's sentence, its review, and the model's reason.
           const locale = input.locale ?? DEFAULT_LOCALE;
-          const reason = offersApprovalReason(entry) ? capabilityApprovalReason(modelArgs) : null;
-          const subject = capabilityActionSubject(aiCapabilityActionWording(entry, locale), args, { locale, timeZone: context.timeZone });
-          const message = [
-            `${entry.display.appName}: ${subject}`,
-            ...(reason ? [`${capabilityApprovalReasonLabel(locale)}: ${reason}`] : []),
-          ].join("\n");
+          const message = capabilityApprovalText({
+            appName: entry.display.appName,
+            subject: capabilityActionSubject(aiCapabilityActionWording(entry, locale), args, { locale, timeZone: context.timeZone }),
+            review: review?.message,
+            reason: offersApprovalReason(entry) ? capabilityApprovalReason(modelArgs) : null,
+            locale,
+          });
           if (!(await context.requestApproval(message))) {
             if (input.actor.kind === "user") {
               await recordRejectedAiCapability({ entry, actor: input.actor, args }).catch(() => undefined);

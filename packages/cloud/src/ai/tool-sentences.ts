@@ -3,7 +3,8 @@ import type { CapabilityPresentationCatalog } from "../contracts/capabilities";
 /**
  * Sentences for Cloud's own Assistant tools that act on something, in the catalog shape every app uses for
  * its Actions and keyed by tool name. The chat words these calls through the same renderer as app Actions;
- * a test checks every placeholder against the tool's input schema.
+ * a test checks every placeholder against the tool's input schema. A tool that only reads or does several
+ * things, such as `memory` searching, adding, or forgetting, keeps its title with what it acted on instead.
  */
 export const CLOUD_AI_TOOL_PRESENTATION = {
   baseLocale: "en",
@@ -14,7 +15,6 @@ export const CLOUD_AI_TOOL_PRESENTATION = {
     web_extract: { approval: "Read {input.url}", done: "Read {input.url}", notRun: "{input.url} not read" },
     fetch_file: { approval: "Download {input.url}", done: "Downloaded {input.url}", notRun: "{input.url} not downloaded" },
     write_file: { approval: "Write {input.path}", done: "Wrote {input.path}", notRun: "{input.path} not written" },
-    memory: { approval: "Use memory", done: "Used memory", notRun: "Memory not used" },
   },
   translations: {
     de: {
@@ -31,9 +31,6 @@ export const CLOUD_AI_TOOL_PRESENTATION = {
         },
         write_file: {
           sentences: { approval: "{input.path} schreiben", done: "{input.path} geschrieben", notRun: "{input.path} nicht geschrieben" },
-        },
-        memory: {
-          sentences: { approval: "Gedächtnis nutzen", done: "Gedächtnis genutzt", notRun: "Gedächtnis nicht genutzt" },
         },
       },
     },

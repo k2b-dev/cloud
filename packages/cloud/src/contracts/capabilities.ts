@@ -353,9 +353,10 @@ export type CapabilitySchemaPresentation = Readonly<Record<string, string>>;
  * What one Action does, in words people read in approvals, receipts, and step rows. Each sentence is a
  * template: `{input.to}` inserts a field of the validated call input by its dotted schema path, and
  * `done` may also read the Action's result data with `{data.id}`. Cloud inserts values as escaped,
- * bounded plain text, formats dates and times for the reader, and names people and resources by their
- * display names when the value carries one. A sentence whose value is missing falls back to the
- * generic wording, so every sentence stays optional.
+ * bounded plain text, formats fields with a `date` or `date-time` schema format for the reader, and
+ * names an object by its email, address, or path before its display name. A sentence whose value is
+ * missing falls back to the generic wording, so every sentence stays optional. A `done` sentence
+ * replaces the result's runtime summary in the receipt.
  */
 export type CapabilityActionSentences = {
   /** What will happen, as a short instruction: "Send email to {input.to}". */

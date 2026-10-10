@@ -55,14 +55,14 @@ test("pending code approval remains visible outside its originating chat and nam
   expect(renderToString(() => createComponent(approvals.View, { conversationTitle: () => undefined }))).not.toContain("Shared app");
 });
 
-test("code approvals present the capability in the reader's language", async () => {
+test("code approvals present the capability in the reader's language and the app's words", async () => {
   const approvals = createRoot(() => createCodeApprovals());
   const signal = new AbortController();
   const request = {
     status: "approval",
     id: "00000000-0000-4000-8000-000000000003",
     name: "mail.draft.create",
-    input: { subject: "Angebot" },
+    input: { subject: "Angebot", to: [{ name: "Jana Berger", address: "jana@example.com" }] },
     appId: "mail",
     appName: "Mail",
     appIcon: "ti ti-mail",
@@ -74,6 +74,9 @@ test("code approvals present the capability in the reader's language", async () 
     review: null,
     allowAlways: true,
     scope: "mailbox:1",
+    // The same sentences and fields a chat call of this Action carries, so both read alike.
+    sentences: { approval: "Entwurf an {input.to} erstellen" },
+    fields: [{ path: "input.subject", label: "Betreff" }],
   } satisfies CapabilityApproval;
   const pending = approvals.ask(request, signal.signal).catch((error) => error.message);
   const html = renderToString(() =>
@@ -84,12 +87,12 @@ test("code approvals present the capability in the reader's language", async () 
       },
     }),
   );
-  expect(html).toContain('ai-approval__title">Entwurf erstellen</h3>');
+  expect(html).toContain('ai-approval__title">Entwurf an jana@example.com erstellen</h3>');
   expect(html).toContain("ti-mail");
   expect(html).toContain("Mail · Wird erst nach deiner Freigabe ausgeführt");
   expect(html).toContain("Ablehnen");
   expect(html).toContain("Immer freigeben");
-  expect(html).toContain('aria-label="Freigabe erforderlich: Entwurf erstellen"');
+  expect(html).toContain('aria-label="Freigabe erforderlich: Entwurf an jana@example.com erstellen"');
   expect(html).not.toContain("Mail: Entwurf erstellen");
   expect(html).not.toMatch(/>(Reject|Action|Always approve)</);
   signal.abort();

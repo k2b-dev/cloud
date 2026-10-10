@@ -114,14 +114,20 @@ describe("sentence rendering", () => {
     const render = (subject: unknown) => renderCapabilitySentence("Send {input.subject}", { input: { subject } }, fields, context);
     expect(render("Offer\n\u001b[31mred‮")).toBe("Send Offer [31mred");
     expect(render("{input.secret} <b>bold</b>")).toBe("Send {input.secret} <b>bold</b>");
-    expect(render("x".repeat(80))).toBe(`Send ${"x".repeat(59)}…`);
+    // Invisible format characters cannot make one value look like another: word joiners, byte order marks, soft
+    // hyphens, and the Arabic letter mark become visible spaces.
+    expect(render("invoice\u2060.pdf")).toBe("Send invoice .pdf");
+    expect(render("a\u061Cb\uFEFFc\u00ADd\u2064e")).toBe("Send a b c d e");
+    // A long value keeps both ends, so a path keeps its file name and an address its domain.
+    expect(render(`${"x".repeat(70)}.pdf`)).toBe(`Send ${"x".repeat(30)}…${"x".repeat(25)}.pdf`);
+    expect(render(`${"a".repeat(59)}@company.example`)).toBe(`Send ${"a".repeat(30)}…${"a".repeat(13)}@company.example`);
     // A value that cannot be shown leaves no gap: the caller words the call generically instead.
     expect(render("   ")).toBeNull();
     expect(render(undefined)).toBeNull();
     expect(renderCapabilitySentence("Send {input.constructor}", { input: {} }, fields, context)).toBeNull();
   });
 
-  test("names people and resources by their display names and bounds lists", () => {
+  test("names what the call acts on, never a name from the input in its place, and bounds lists", () => {
     const to = [
       { name: "Jana Berger", address: "jana@example.com" },
       { address: "max@example.com" },
@@ -129,12 +135,29 @@ describe("sentence rendering", () => {
       { name: "Ida" },
     ];
     expect(renderCapabilitySentence("Send to {input.to}", { input: { to } }, fields, context)).toBe(
-      "Send to Jana Berger, max@example.com, and 2 more",
+      "Send to jana@example.com, max@example.com, and 2 more",
     );
     expect(renderCapabilitySentence("An {input.to} senden", { input: { to: to.slice(0, 2) } }, fields, { locale: "de" })).toBe(
-      "An Jana Berger und max@example.com senden",
+      "An jana@example.com und max@example.com senden",
     );
-    expect(renderCapabilitySentence("Send to {input.to[].name}", { input: { to } }, fields, context)).toBe("Send to Jana Berger and Ida");
+    // A name the model chose cannot hide the address the draft goes to, even one that looks like an address.
+    const spoofed = [{ name: "CFO <cfo@company.example>", address: "steal@evil.example" }];
+    expect(renderCapabilitySentence("Send to {input.to}", { input: { to: spoofed } }, fields, context)).toBe("Send to steal@evil.example");
+    // Objects without such a value read by their name or title.
+    expect(renderCapabilitySentence("Assign {input.owner}", { input: { owner: { id: "U1", displayName: "Ida" } } }, [], context)).toBe(
+      "Assign Ida",
+    );
+  });
+
+  test("counts list entries without a value to show, so a list never reads shorter than the call", () => {
+    const render = (to: unknown[], template = "Send to {input.to[].name}") =>
+      renderCapabilitySentence(template, { input: { to } }, fields, context);
+    expect(render([{ name: "Trusted", address: "t@x.example" }, { address: "attacker@x.example" }])).toBe("Send to Trusted and 1 more");
+    expect(render([{ name: "A" }, { name: "B" }, {}, { name: "D" }])).toBe("Send to A, B, and 2 more");
+    expect(render([{ address: "t@x.example" }, { id: "U1" }], "Send to {input.to}")).toBe("Send to t@x.example and 1 more");
+    // Without a single entry to name, the sentence falls back.
+    expect(render([{ address: "t@x.example" }])).toBeNull();
+    expect(render([])).toBeNull();
   });
 
   test("formats dates, times, numbers, and yes or no for the reader", () => {
@@ -146,11 +169,60 @@ describe("sentence rendering", () => {
       renderCapabilitySentence("Am {input.sendAt}", { input: { sendAt: at } }, fields, { locale: "de", timeZone: "America/New_York" }),
     ).toBe("Am 12. Okt. 2026, 03:00");
     // A calendar date is the same day everywhere.
+    const due = [{ path: "input.due", format: "date" as const }];
     expect(
-      renderCapabilitySentence("Due {input.due}", { input: { due: "2026-10-12" } }, [], { locale: "de", timeZone: "Pacific/Honolulu" }),
+      renderCapabilitySentence("Due {input.due}", { input: { due: "2026-10-12" } }, due, { locale: "de", timeZone: "Pacific/Honolulu" }),
     ).toBe("Due 12. Okt. 2026");
     expect(renderCapabilitySentence("{input.count} Zeilen", { input: { count: 12345.5 } }, [], { locale: "de" })).toBe("12.345,5 Zeilen");
+    // Numbers are bounded like every other value.
+    expect(Array.from(renderCapabilitySentence("Pay {input.amount}", { input: { amount: 1e308 } }, [], context) ?? "")).toHaveLength(64);
     expect(renderCapabilitySentence("Urgent: {input.urgent}", { input: { urgent: false } }, [], { locale: "de" })).toBe("Urgent: nein");
+  });
+
+  test("only fields whose schema declares a date read as dates; other text stays exactly what the call carries", () => {
+    const render = (value: string, format?: "date" | "date-time") =>
+      renderCapabilitySentence("Move {input.path}", { input: { path: value } }, format ? [{ path: "input.path", format }] : [], {
+        locale: "de",
+      });
+    expect(render("2026-10-12")).toBe("Move 2026-10-12");
+    expect(render("2026-10-12T07:00:00Z")).toBe("Move 2026-10-12T07:00:00Z");
+    expect(render("2026-10-12", "date")).toBe("Move 12. Okt. 2026");
+    // A string shaped like a date that is no real day stays text instead of throwing or naming another day.
+    for (const format of ["date", "date-time"] as const) {
+      for (const value of [
+        "2026-13-45",
+        "0000-00-00",
+        "2026-99-99",
+        "2026-02-30",
+        "0000-01-01",
+        "2026-02-30T10:00Z",
+        "2026-01-01T24:00Z",
+      ]) {
+        expect(render(value, format)).toBe(`Move ${value}`);
+      }
+    }
+  });
+
+  test("a sentence that does not fit falls back instead of losing its last words", () => {
+    const long = Array.from({ length: 3 }, (_, index) => ({ address: `${String(index).repeat(50)}@example.com` }));
+    const wording: CapabilityActionWording = {
+      title: "E-Mail senden",
+      sentences: { approval: "E-Mail an {input.to} und {input.cc} nicht senden" },
+      fields: [{ path: "input.subject", label: "Betreff" }],
+    };
+    expect(renderCapabilitySentence(wording.sentences!.approval!, { input: { to: long, cc: long } }, wording.fields, context)).toBeNull();
+    expect(capabilityActionSubject(wording, { to: long, cc: long, subject: "Angebot" }, { locale: "de" })).toBe(
+      "E-Mail senden · Betreff: Angebot",
+    );
+    // The generic sentence is bounded as a whole.
+    const numbers = {
+      title: "Pay",
+      fields: [
+        { path: "input.a", label: "A" },
+        { path: "input.b", label: "B" },
+      ],
+    };
+    expect(Array.from(capabilitySentenceFallback(numbers, { a: 1e308, b: 1e308 }, context)).length).toBeLessThanOrEqual(240);
   });
 
   test("the generic sentence shows the title with the first two labelled fields in schema order", () => {
@@ -264,10 +336,10 @@ describe("one contract for every app", () => {
       expect(capabilityActionSubject(acmeWording, input, { locale })).toBe(capabilityActionSubject(mailWording, input, { locale }));
     }
     expect(capabilityActionSubject(resolveCapabilityActionWording(acmeDraft, acme.presentation, "de"), input, { locale: "de" })).toBe(
-      "Entwurf an Jana Berger erstellen",
+      "Entwurf an jana@example.com erstellen",
     );
     expect(capabilityActionSubject(resolveCapabilityActionWording(acmeDraft, acme.presentation, "en"), input, { locale: "en" })).toBe(
-      "Create a draft to Jana Berger",
+      "Create a draft to jana@example.com",
     );
   });
 });

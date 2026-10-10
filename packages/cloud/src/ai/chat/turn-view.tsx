@@ -456,9 +456,9 @@ type ReceiptState = Exclude<AiTurnActionState, "open" | "interaction">;
 
 /**
  * One line for an action in place 4, the same element while it runs and once it is done, rejected, failed, or not run.
- * It says what happened in the owning app's words, such as "Sent email to Jana Berger". Without such a sentence it
- * names the action with what it acted on in the reader's language, such as "Rejected: Run code · report.ts", or uses
- * the application's own summary of what it did.
+ * It says what happened in the owning app's words: its sentence for the outcome, such as "Moved report.pdf to the
+ * trash", else, once done, the application's own summary of the call. Without either it puts the state in the reader's
+ * language before what the call does, such as "Rejected: Write report.md", or before its title and target.
  */
 function AiReceipt(props: { block: ToolBlock; state: ReceiptState; stopped: boolean }) {
   const locale = useLocale();

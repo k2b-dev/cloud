@@ -447,7 +447,7 @@ describe("assistant CLI", () => {
     expect(requests.every((request) => Boolean(request.idempotencyKey))).toBe(true);
   });
 
-  test("lists a pending approval by what it does in the app's words, with the model's reason on the same line", async () => {
+  test("lists a pending approval by what it does in the app's words, with the app's review and the model's reason on the same line", async () => {
     const request = createContext(["actions", "list", "chat-1", "turn-1"], async (path) => {
       expect(String(path)).toBe("/api/ai/conversations/chat-1/pending-actions/turn-1");
       return json([
@@ -458,7 +458,8 @@ describe("assistant CLI", () => {
           callId: "call-1",
           name: "mail__action__draft_dot_create",
           args: { to: [{ name: "Jana Berger", address: "jana@example.com" }] },
-          message: "E-Mail: Entwurf an Jana Berger erstellen\nWarum: Jana hat um das Angebot gebeten.",
+          message:
+            "E-Mail: Entwurf an jana@example.com erstellen\nEntwurf „Angebot“ an Jana Berger erstellen.\nWarum: Jana hat um das Angebot gebeten.",
           allowAlways: false,
         },
       ]);
@@ -471,7 +472,8 @@ describe("assistant CLI", () => {
         call: "call-1",
         type: "approval_request",
         name: "mail__action__draft_dot_create",
-        detail: "E-Mail: Entwurf an Jana Berger erstellen · Warum: Jana hat um das Angebot gebeten.",
+        detail:
+          "E-Mail: Entwurf an jana@example.com erstellen · Entwurf „Angebot“ an Jana Berger erstellen. · Warum: Jana hat um das Angebot gebeten.",
       },
     ]);
   });

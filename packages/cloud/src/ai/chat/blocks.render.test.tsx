@@ -1574,6 +1574,42 @@ describe("Studio check steps", () => {
     );
   };
 
+  test("a step row and its receipt keep rendering when a date field holds no real day, and memory keeps its target", () => {
+    const send: AiTurnBlock = {
+      id: "send",
+      kind: "tool",
+      callId: "send",
+      name: "acme__action__send",
+      status: "completed",
+      approved: true,
+      args: { sendAt: "2026-13-45" },
+      result: { data: {} },
+      presentation: {
+        kind: "capability",
+        appId: "acme",
+        appName: "Acme",
+        appIcon: "ti ti-mail",
+        title: "Send email",
+        capabilityKind: "action",
+        sentences: { approval: "Send email at {input.sendAt}", done: "Sent email at {input.sendAt}" },
+        fields: [{ path: "input.sendAt", label: "Delivery time", format: "date-time" }],
+      },
+    };
+    const memory: AiTurnBlock = {
+      id: "memory",
+      kind: "tool",
+      callId: "memory",
+      name: "memory",
+      status: "completed",
+      args: { action: "search", query: "invoice" },
+      result: { ok: true, message: "Found 1 memory." },
+    };
+    const html = renderExpanded([send, memory, { id: "final", kind: "text", text: "Done." }], { open: ["group:send"] });
+    expect(html.split("Sent email at 2026-13-45").length - 1).toBeGreaterThanOrEqual(2);
+    // Memory searches, adds, and forgets: its row names the query instead of one sentence for every call.
+    expect(html).toContain("invoice");
+  });
+
   test("names the outcome of a check in words and with its own icon", () => {
     const blocks = [
       check("check-failed", { passed: false, issues: [issue("error"), issue("error"), issue("error"), issue("warning")] }),

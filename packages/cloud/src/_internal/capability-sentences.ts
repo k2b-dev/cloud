@@ -26,8 +26,9 @@ export type CapabilitySentencePlaceholder = { source: "input" | "data"; path: st
 type Part = string | CapabilitySentencePlaceholder;
 
 const PLACEHOLDER = /\{(input|data)\.([A-Za-z_][\w-]*(?:\[\])?(?:\.[A-Za-z_][\w-]*(?:\[\])?)*)\}/g;
-const UNSAFE_CHARACTER = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069]/;
-const UNSAFE_CHARACTERS = new RegExp(UNSAFE_CHARACTER.source, "g");
+/** Controls, invisible format characters such as direction marks, joiners, and soft hyphens, and line breaks. */
+const UNSAFE_CHARACTER = /[\p{Cc}\p{Cf}\u2028\u2029]/u;
+const UNSAFE_CHARACTERS = new RegExp(UNSAFE_CHARACTER.source, "gu");
 
 /** Splits a template into text and placeholders, or names what makes it invalid. */
 export const parseCapabilitySentence = (template: string): { parts: Part[] } | { error: string } => {
@@ -107,35 +108,77 @@ export const capabilityApprovalReason = (args: unknown): string | null => {
 /** The label of the model's reason, so a reader never takes it for the app's own words. */
 export const capabilityApprovalReasonLabel = (locale: string): string => words.resolve([locale]).t.why;
 
+/**
+ * The approval as text, for readers without the card such as the CLI: the app and what the call does, the app's live
+ * review of this call, which may say what the input cannot, such as a scheduled send, then the model's labelled reason.
+ */
+export const capabilityApprovalText = (input: {
+  appName: string;
+  subject: string;
+  review?: string | null;
+  reason?: string | null;
+  locale: string;
+}): string =>
+  [
+    `${input.appName}: ${input.subject}`,
+    ...(input.review?.trim() ? [input.review.trim()] : []),
+    ...(input.reason ? [`${capabilityApprovalReasonLabel(input.locale)}: ${input.reason}`] : []),
+  ].join("\n");
+
 const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(value && typeof value === "object" && !Array.isArray(value));
 
 const own = (value: unknown, key: string): unknown => (isRecord(value) && Object.hasOwn(value, key) ? value[key] : undefined);
 
-/** Plain one-line text without control or direction characters, cut at a code point boundary. */
-const plain = (value: string, max: number): string => {
+/**
+ * Plain one-line text without control or invisible format characters, cut at a code point boundary. A value keeps
+ * its start and its end, so a long path keeps its file name and an address its domain; prose keeps its start.
+ */
+const plain = (value: string, max: number, cut: "end" | "middle" = "end"): string => {
   const text = value.replace(UNSAFE_CHARACTERS, " ").replace(/\s+/g, " ").trim();
   const points = Array.from(text);
-  return points.length <= max
-    ? text
-    : `${points
-        .slice(0, max - 1)
-        .join("")
-        .trimEnd()}…`;
+  if (points.length <= max) return text;
+  if (cut === "end")
+    return `${points
+      .slice(0, max - 1)
+      .join("")
+      .trimEnd()}…`;
+  const tail = Math.floor((max - 1) / 2);
+  return `${points
+    .slice(0, max - 1 - tail)
+    .join("")
+    .trimEnd()}…${points.slice(-tail).join("").trimStart()}`;
 };
+
+/** One inserted value: bounded, and cut in the middle so both of its ends stay readable. */
+const valueText = (value: string): string => plain(value, MAX_VALUE_CHARS, "middle");
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
-const DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})$/;
+const DATE_TIME = /^\d{4}-\d{2}-\d{2}T([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|[+-]([01]\d|2[0-3]):[0-5]\d)$/;
 
-/** A calendar date stays that date everywhere; an instant shows in the reader's time zone, like review details. */
-const formatDate = (value: string, context: CapabilitySentenceContext, withTime: boolean): string | null => {
-  if (DATE.test(value)) return dates.formatDate(`${value}T12:00:00.000Z`, { locale: context.locale, timeZone: "UTC" });
-  if (Number.isNaN(new Date(value).getTime())) return null;
-  const options = { locale: context.locale, timeZone: normalizeTimeZone(context.timeZone) };
-  return withTime ? dates.formatDateTime(value, options) : dates.formatDate(value, options);
+/** A real calendar day: JavaScript rolls "2026-02-30" over to March, and year 0 would read as year 1. */
+const isCalendarDate = (value: string): boolean => {
+  const date = new Date(`${value}T12:00:00.000Z`);
+  return !Number.isNaN(date.getTime()) && date.getUTCFullYear() >= 1 && date.toISOString().slice(0, 10) === value;
 };
 
-/** Keys that name a person or resource, in the order a reader recognizes them best. */
-const DISPLAY_KEYS = ["displayName", "name", "title", "label", "email", "address", "path"] as const;
+/**
+ * A value of a field whose schema declares `format: "date"` or `"date-time"`: a calendar date stays that date
+ * everywhere, an instant shows in the reader's time zone, like review details. Anything that is not a real date
+ * or instant stays the text the call carries, so a sentence never names a different value than the one that runs.
+ */
+const formatDate = (value: string, format: "date" | "date-time", context: CapabilitySentenceContext): string | null => {
+  if (!isCalendarDate(value.slice(0, 10))) return null;
+  if (DATE.test(value)) return dates.formatDate(`${value}T12:00:00.000Z`, { locale: context.locale, timeZone: "UTC" });
+  if (!DATE_TIME.test(value) || Number.isNaN(new Date(value).getTime())) return null;
+  const options = { locale: context.locale, timeZone: normalizeTimeZone(context.timeZone) };
+  return format === "date-time" ? dates.formatDateTime(value, options) : dates.formatDate(value, options);
+};
+
+/**
+ * Keys that name a person or resource. The value an Action acts on comes first: a name from the model's input is
+ * not verified, so "Jana Berger" must never stand in for the address a draft actually goes to.
+ */
+const DISPLAY_KEYS = ["email", "address", "path", "displayName", "name", "title", "label"] as const;
 
 const formatValue = (
   value: unknown,
@@ -147,26 +190,23 @@ const formatValue = (
   if (typeof value === "string") {
     const text = value.trim();
     if (!text) return null;
-    if (DATE.test(text) || DATE_TIME.test(text)) {
-      const formatted = formatDate(text, context, format !== "date");
-      if (formatted) return formatted;
-    }
-    return plain(text, MAX_VALUE_CHARS) || null;
+    return (format ? formatDate(text, format, context) : null) ?? (valueText(text) || null);
   }
-  if (typeof value === "number") return Number.isFinite(value) ? new Intl.NumberFormat(context.locale).format(value) : null;
+  if (typeof value === "number") return Number.isFinite(value) ? valueText(new Intl.NumberFormat(context.locale).format(value)) : null;
   if (typeof value === "boolean") {
     const t = words.resolve([context.locale]).t;
     return value ? t.yes : t.no;
   }
   if (depth >= MAX_DEPTH) return null;
   if (Array.isArray(value)) {
+    // An entry without a value to show still counts, so a list never reads shorter than the call it describes.
     const items = value.flatMap((item) => {
       const text = formatValue(item, format, context, depth + 1);
       return text ? [text] : [];
     });
     if (items.length === 0) return null;
-    const shown = items.slice(0, items.length > MAX_LIST_ITEMS ? MAX_LIST_ITEMS - 1 : MAX_LIST_ITEMS);
-    const rest = items.length - shown.length;
+    const shown = items.slice(0, value.length > MAX_LIST_ITEMS ? MAX_LIST_ITEMS - 1 : MAX_LIST_ITEMS);
+    const rest = value.length - shown.length;
     const list = rest > 0 ? [...shown, words.resolve([context.locale]).t.more({ count: rest })] : shown;
     return new Intl.ListFormat(context.locale, { type: "conjunction" }).format(list);
   }
@@ -179,7 +219,10 @@ const formatValue = (
   return null;
 };
 
-/** Reads a dotted schema path such as `to[].name` from a value without touching inherited properties. */
+/**
+ * Reads a dotted schema path such as `to[].name` from a value without touching inherited properties. Inside a list
+ * an entry without the field stays as `undefined`, so `{input.to[].name}` still counts a recipient without a name.
+ */
 const valueAt = (root: unknown, path: string): unknown => {
   let current: unknown[] = [root];
   let list = false;
@@ -188,8 +231,8 @@ const valueAt = (root: unknown, path: string): unknown => {
     const key = many ? segment.slice(0, -2) : segment;
     current = current.flatMap((entry) => {
       const next = own(entry, key);
-      if (!many) return next === undefined ? [] : [next];
-      return Array.isArray(next) ? next : [];
+      if (many && Array.isArray(next)) return next;
+      return list || (!many && next !== undefined) ? [many ? undefined : next] : [];
     });
     list ||= many;
   }
@@ -197,8 +240,9 @@ const valueAt = (root: unknown, path: string): unknown => {
 };
 
 /**
- * Renders one template, or `null` when a placeholder has no value to show: the caller then words the
- * call generically instead of showing a sentence with a gap.
+ * Renders one template, or `null` when a placeholder has no value to show or the sentence would not fit: the
+ * caller then words the call generically instead of showing a sentence with a gap or without its last words,
+ * which in German often carry the verb or a "nicht".
  */
 export const renderCapabilitySentence = (
   template: string,
@@ -220,7 +264,8 @@ export const renderCapabilitySentence = (
     if (value === null) return null;
     text += value;
   }
-  return plain(text, MAX_RENDERED_CHARS) || null;
+  const rendered = plain(text, Number.MAX_SAFE_INTEGER);
+  return rendered && Array.from(rendered).length <= MAX_RENDERED_CHARS ? rendered : null;
 };
 
 /** The generic sentence: the title with up to two labelled input fields, in schema order. */
@@ -236,7 +281,7 @@ export const capabilitySentenceFallback = (
     const value = formatValue(valueAt(input, field.path.slice("input.".length)), field.format, context);
     if (value) details.push(`${field.label}: ${value}`);
   }
-  return [plain(wording.title, MAX_VALUE_CHARS * 2), ...details].join(" · ");
+  return plain([plain(wording.title, MAX_VALUE_CHARS * 2), ...details].join(" · "), MAX_RENDERED_CHARS);
 };
 
 /** What the call does, as one sentence: the app's approval sentence, else the generic sentence. */

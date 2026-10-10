@@ -273,7 +273,7 @@ order:
    receipts for capability actions and for every approval the user decided.
    A pending approval is a calm card with a warning tint and no border: its
    title says what will happen in the owning app's words, such as "Send email
-   to Jana Berger", with "Mail · Runs only after you approve it" below, then
+   to jana@example.com", with "Mail · Runs only after you approve it" below, then
    the review text and fields, and Reject next to the action itself. When the
    model gave a reason, it follows under its own label, such as "Why: Jana
    asked for the offer."; it never replaces the app's sentence. The title wraps
@@ -284,14 +284,14 @@ order:
    card in the same place.
    A receipt is one line in the reader's language, never the raw tool name. A
    Cloud action reads as the sentence its app declares for the outcome, such
-   as "Sent email to Jana Berger", else as the action's own summary with its
+   as "Sent email to jana@example.com", else as the action's own summary with its
    links. Without either, it names the call with the app's approval sentence
    or with its title and up to two labelled fields, such as "Done: Send email ·
-   Recipients: Jana Berger". Cloud's own tools word themselves the same way:
+   Recipients: jana@example.com". Cloud's own tools word themselves the same way:
    "Approved: Run code" for an approved tool that is not a Cloud action,
-   "Running: Send email to Jana Berger" while it runs, "Did not send email to
-   Jana Berger" or "Rejected: Send email" after a rejection, "Failed: Send
-   email", and "Email to Jana Berger not sent · stopped" or "Not run: Send
+   "Running: Send email to jana@example.com" while it runs, "Did not send email to
+   jana@example.com" or "Rejected: Send email" after a rejection, "Failed: Send
+   email", and "Email to jana@example.com not sent · stopped" or "Not run: Send
    email · stopped" when the turn ended before the call ran. An approval still
    waiting when the turn ends reads the same, also for a tool that is not a
    Cloud action, such as "Not run: Run code · stopped", or "Not run: Run code"
@@ -324,7 +324,7 @@ counts as work, live and in history.
 Screen readers do not hear the work line's ticking clock or a status while it
 streams: both sit outside the conversation log's live announcements. A status
 is announced once it is complete, a waiting approval as one short line such as
-"Approval needed: Send email to Jana Berger" without moving focus, and the end of a turn with
+"Approval needed: Send email to jana@example.com" without moving focus, and the end of a turn with
 work as "Answer ready". A plain answer without tools streams into the log as
 before.
 
