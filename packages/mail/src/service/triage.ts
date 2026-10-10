@@ -5,8 +5,10 @@ import { type ConversationTriageInput, MAX_CONVERSATION_ACTION_MESSAGES, type Ma
 import { requireMailboxAccess, requireVisibleConversation, requireVisibleMessages } from "./access";
 import type { MailRequestContext } from "./auth";
 import { createActorCommands } from "./commands";
+import { isKeepProtectedDestination, isKeptConversation, keepError } from "./conversation-keep-rules";
 import { resolveMailExecution } from "./execution";
 import { resolveRoleFolder } from "./folders";
+import { enqueueMailInvalidation, mailLive } from "./live";
 import { applyStateChange, providerStateChange } from "./local-state-projection";
 
 type ConversationTarget = {
@@ -76,10 +78,58 @@ export const createConversationTriageCommands = async (params: {
     ORDER BY conversation_message.position, ref.uid, ref.id
     LIMIT ${MAX_CONVERSATION_ACTION_MESSAGES + 1}
   `;
-  if (targets.length === 0) return fail(err.notFound("Conversation messages in the selected folder"));
-  if (targets.length > MAX_CONVERSATION_ACTION_MESSAGES) {
+  // Cloud's own copies of kept messages the server deleted: the server has nothing left to change, so the action
+  // changes them in Cloud, together with the commands for the server's messages.
+  const keptCopies = sql`
+    SELECT placement.remote_message_ref_id, placement.flags, placement.keywords
+    FROM mail.conversation_messages link
+    JOIN mail.conversations conversation ON conversation.id = link.conversation_id
+    JOIN mail.message_placements placement ON placement.message_id = link.message_id
+    JOIN mail.remote_message_refs ref ON ref.id = placement.remote_message_ref_id
+    WHERE link.conversation_id = ${conversationId}::uuid AND conversation.mailbox_id = ${params.mailboxId}::uuid
+      AND ${isKeptConversation(sql`conversation.id`)} AND placement.folder_id = ${sourceFolderId}::uuid
+      AND (${messageIds}::uuid[] IS NULL OR link.message_id = ANY(${messageIds}::uuid[]))
+      AND placement.deleted_at IS NULL AND ref.stale_at IS NOT NULL
+    ORDER BY link.position, placement.remote_message_ref_id
+  `;
+  const copies = await sql<ConversationProjectionTarget[]>`${keptCopies} LIMIT ${MAX_CONVERSATION_ACTION_MESSAGES + 1}`;
+  if (targets.length === 0 && copies.length === 0) return fail(err.notFound("Conversation messages in the selected folder"));
+  if (targets.length + copies.length > MAX_CONVERSATION_ACTION_MESSAGES) {
     return fail(err.badInput(`Conversation action exceeds the ${MAX_CONVERSATION_ACTION_MESSAGES}-message safety limit`));
   }
+  if (copies.length > 0 && destinationFolderId) {
+    const [destination] = await sql<{ blocked: boolean }[]>`
+      SELECT ${isKeepProtectedDestination(sql`${destinationFolderId}::uuid`)} AS blocked
+    `;
+    if (destination?.blocked) return fail(keepError("CONVERSATION_KEPT"));
+  }
+  const updateKeptCopies = async (tx: typeof sql): Promise<void> => {
+    if (copies.length === 0) return;
+    // Locks and reads them again: a release may have hidden them, or another action changed them meanwhile.
+    const current = await tx<
+      ConversationProjectionTarget[]
+    >`${keptCopies} LIMIT ${MAX_CONVERSATION_ACTION_MESSAGES} FOR UPDATE OF placement`;
+    for (const copy of current) {
+      if (input.kind === "change_state") {
+        const change = providerStateChange(input.change);
+        await tx`
+          UPDATE mail.message_placements
+          SET
+            flags = ${toPgTextArray(applyStateChange(copy.flags, change.addFlags, change.removeFlags))}::text[],
+            keywords = ${toPgTextArray(applyStateChange(copy.keywords, change.addKeywords, change.removeKeywords))}::text[],
+            updated_at = now()
+          WHERE remote_message_ref_id = ${copy.remote_message_ref_id}::uuid
+        `;
+      } else {
+        await tx`
+          UPDATE mail.message_placements
+          SET folder_id = ${destinationFolderId}::uuid, updated_at = now()
+          WHERE remote_message_ref_id = ${copy.remote_message_ref_id}::uuid
+        `;
+      }
+    }
+    if (current.length > 0) await enqueueMailInvalidation(tx, { mailboxId: params.mailboxId, conversationId });
+  };
 
   const correlationId = input.correlationId?.trim() || crypto.randomUUID();
   const commands = await createActorCommands({
@@ -106,70 +156,68 @@ export const createConversationTriageCommands = async (params: {
             correlationId,
           },
     ),
-    afterCreate:
-      input.kind === "change_state"
-        ? async (tx, createdCommands) => {
-            const change = providerStateChange(input.change);
-            // A replay returns an existing command that already projected its change. Projecting it again would
-            // overwrite what later commands show, and locking the placement after the replayed command row would
-            // take the locks in the opposite order of a rollback, which locks the placement before later commands.
-            const fresh = await tx<{ id: string }[]>`
-              SELECT id
-              FROM mail.commands
-              WHERE id = ANY(${toPgUuidArray(createdCommands.map((command) => command.id))}::uuid[])
-                AND state IN ('queued', 'executing', 'ambiguous')
-                AND NOT (transport_metadata ? 'localStateProjection')
-            `;
-            const freshIds = new Set(fresh.map((command) => command.id));
-            const freshTargets = createdCommands.flatMap((command, index) => {
-              const target = targets[index];
-              return freshIds.has(command.id) && target
-                ? [{ commandId: command.id, remoteMessageRefId: target.remote_message_ref_id }]
-                : [];
-            });
-            if (freshTargets.length === 0) return;
-            const projectionTargets = await tx<ConversationProjectionTarget[]>`
-              SELECT
-                placement.remote_message_ref_id,
-                placement.flags,
-                placement.keywords
-              FROM mail.message_placements placement
-              WHERE placement.remote_message_ref_id = ANY(${toPgUuidArray(freshTargets.map((target) => target.remoteMessageRefId))}::uuid[])
-                AND placement.deleted_at IS NULL
-              FOR UPDATE
-            `;
-            const projectionTargetById = new Map(projectionTargets.map((target) => [target.remote_message_ref_id, target] as const));
-            for (const freshTarget of freshTargets) {
-              const target = projectionTargetById.get(freshTarget.remoteMessageRefId);
-              if (!target) throw new Error("Conversation command target projection changed");
-              const flags = applyStateChange(target.flags, change.addFlags, change.removeFlags);
-              const keywords = applyStateChange(target.keywords, change.addKeywords, change.removeKeywords);
-              await tx`
-                UPDATE mail.commands
-                SET transport_metadata = transport_metadata || ${{
-                  localStateProjection: {
-                    remoteMessageRefId: target.remote_message_ref_id,
-                    previousFlags: target.flags,
-                    previousKeywords: target.keywords,
-                    projectedFlags: flags,
-                    projectedKeywords: keywords,
-                  },
-                }}::jsonb
-                WHERE id = ${freshTarget.commandId}::uuid
-              `;
-              await tx`
-                UPDATE mail.message_placements
-                SET
-                  flags = ${toPgTextArray(flags)}::text[],
-                  keywords = ${toPgTextArray(keywords)}::text[],
-                  updated_at = now()
-                WHERE remote_message_ref_id = ${target.remote_message_ref_id}::uuid
-                  AND deleted_at IS NULL
-              `;
-            }
-          }
-        : undefined,
+    afterCreate: async (tx, createdCommands) => {
+      await updateKeptCopies(tx);
+      if (input.kind !== "change_state") return;
+      const change = providerStateChange(input.change);
+      // A replay returns an existing command that already projected its change. Projecting it again would
+      // overwrite what later commands show, and locking the placement after the replayed command row would
+      // take the locks in the opposite order of a rollback, which locks the placement before later commands.
+      const fresh = await tx<{ id: string }[]>`
+        SELECT id
+        FROM mail.commands
+        WHERE id = ANY(${toPgUuidArray(createdCommands.map((command) => command.id))}::uuid[])
+          AND state IN ('queued', 'executing', 'ambiguous')
+          AND NOT (transport_metadata ? 'localStateProjection')
+      `;
+      const freshIds = new Set(fresh.map((command) => command.id));
+      const freshTargets = createdCommands.flatMap((command, index) => {
+        const target = targets[index];
+        return freshIds.has(command.id) && target ? [{ commandId: command.id, remoteMessageRefId: target.remote_message_ref_id }] : [];
+      });
+      if (freshTargets.length === 0) return;
+      const projectionTargets = await tx<ConversationProjectionTarget[]>`
+        SELECT
+          placement.remote_message_ref_id,
+          placement.flags,
+          placement.keywords
+        FROM mail.message_placements placement
+        WHERE placement.remote_message_ref_id = ANY(${toPgUuidArray(freshTargets.map((target) => target.remoteMessageRefId))}::uuid[])
+          AND placement.deleted_at IS NULL
+        FOR UPDATE
+      `;
+      const projectionTargetById = new Map(projectionTargets.map((target) => [target.remote_message_ref_id, target] as const));
+      for (const freshTarget of freshTargets) {
+        const target = projectionTargetById.get(freshTarget.remoteMessageRefId);
+        if (!target) throw new Error("Conversation command target projection changed");
+        const flags = applyStateChange(target.flags, change.addFlags, change.removeFlags);
+        const keywords = applyStateChange(target.keywords, change.addKeywords, change.removeKeywords);
+        await tx`
+          UPDATE mail.commands
+          SET transport_metadata = transport_metadata || ${{
+            localStateProjection: {
+              remoteMessageRefId: target.remote_message_ref_id,
+              previousFlags: target.flags,
+              previousKeywords: target.keywords,
+              projectedFlags: flags,
+              projectedKeywords: keywords,
+            },
+          }}::jsonb
+          WHERE id = ${freshTarget.commandId}::uuid
+        `;
+        await tx`
+          UPDATE mail.message_placements
+          SET
+            flags = ${toPgTextArray(flags)}::text[],
+            keywords = ${toPgTextArray(keywords)}::text[],
+            updated_at = now()
+          WHERE remote_message_ref_id = ${target.remote_message_ref_id}::uuid
+            AND deleted_at IS NULL
+        `;
+      }
+    },
   });
   if (!commands.ok) return commands;
+  if (copies.length > 0) mailLive.wake();
   return ok({ correlationId, commands: commands.data });
 };

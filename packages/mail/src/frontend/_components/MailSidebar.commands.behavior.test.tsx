@@ -26,7 +26,17 @@ if (!isServer) {
           activeSavedViewId={null}
           activeTagId={null}
           searchActive={false}
-          viewCounts={{ needs_action: 0, mine: 0, unassigned: 0, waiting: 0, done: 0, snoozed: 0, send_problems: 0, recently_active: 0 }}
+          viewCounts={{
+            needs_action: 0,
+            mine: 0,
+            unassigned: 0,
+            waiting: 0,
+            done: 0,
+            snoozed: 0,
+            send_problems: 0,
+            recently_active: 0,
+            kept: 0,
+          }}
           canWrite={canWrite()}
           canAdmin={false}
           assignedOnly={false}
@@ -88,7 +98,17 @@ if (!isServer) {
           activeSavedViewId={null}
           activeTagId={null}
           searchActive={false}
-          viewCounts={{ needs_action: 0, mine: 0, unassigned: 0, waiting: 0, done: 0, snoozed: 0, send_problems: 0, recently_active: 0 }}
+          viewCounts={{
+            needs_action: 0,
+            mine: 0,
+            unassigned: 0,
+            waiting: 0,
+            done: 0,
+            snoozed: 0,
+            send_problems: 0,
+            recently_active: 0,
+            kept: 0,
+          }}
           canWrite={true}
           canAdmin={true}
           assignedOnly={false}

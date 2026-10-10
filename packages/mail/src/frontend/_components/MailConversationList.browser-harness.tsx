@@ -7,6 +7,7 @@ import type { Mailbox } from "../../contracts";
 import type { MailFolderView, MessageDetail } from "../../service/messages";
 import MailConversationList from "./MailConversationList";
 import MailConversationReader from "./MailConversationReader";
+import type { MailConversationToolbarActionId } from "./mail-conversation-toolbar";
 import type { MailListItem } from "./mail-navigation";
 
 export type MailListHarnessOptions = {
@@ -22,6 +23,10 @@ export type MailListHarnessOptions = {
    * history, the detail arrives as one reconciled snapshot, and back and forward restore it.
    */
   reader?: boolean;
+  /** The reader's toolbar; Reply by default. */
+  toolbarActions?: MailConversationToolbarActionId[];
+  /** The mail server deleted the messages of kept conversations, so the reader shows Cloud's copies. */
+  deletedOnServer?: boolean;
 };
 
 declare global {
@@ -41,7 +46,7 @@ const mailbox = { id: "Box001", name: "Example Club", health: "healthy" } as unk
 const noop = () => {};
 
 /** One message per conversation; even rows have an HTML body in its frame, odd rows a plain text body. */
-const detailFor = (item: MailListItem | undefined) => {
+const detailFor = (item: MailListItem | undefined, deletedOnServer = false) => {
   if (!item?.conversationId) return { selectedConversationId: null, subject: "", messages: [] as MessageDetail[] };
   const html = Number(item.conversationId.slice(2)) % 2 === 0;
   const message: MessageDetail = {
@@ -61,6 +66,7 @@ const detailFor = (item: MailListItem | undefined) => {
     hydrationStatus: "complete",
     remoteAvailable: true,
     folderId: "Fold01",
+    deletedOnServer: deletedOnServer && item.kept,
     contentType: html ? "text/html" : "text/plain",
     sizeBytes: 64,
     plainText: `Body of ${item.subject}`,
@@ -84,11 +90,34 @@ window.mountMailList = (options) => {
   const [hintFolders, setHintFolders] = createSignal(options.folderOnlyHints ?? []);
   window.setMailItems = (items) => setList("items", reconcile(items));
   const [selected, setSelected] = createSignal(options.selectedConversationId);
-  const [detail, setDetail] = createStore(detailFor(options.items.find((item) => item.conversationId === selected())));
+  const [detail, setDetail] = createStore(
+    detailFor(
+      options.items.find((item) => item.conversationId === selected()),
+      options.deletedOnServer,
+    ),
+  );
+  // Keeping arrives with the next snapshot, like the workspace's: the open row's state decides the reader's.
+  const keep = () => {
+    const item = list.items.find((candidate) => candidate.conversationId === selected());
+    return item?.kept && item.conversationId
+      ? {
+          conversationId: item.conversationId,
+          keptAt: "2026-09-30T08:00:00.000Z",
+          keptBy: { kind: "user" as const, id: "user-grace", displayName: "Grace Hopper", avatarHash: null },
+        }
+      : null;
+  };
   const open = (conversationId: string | null) =>
     batch(() => {
       setSelected(conversationId);
-      setDetail(reconcile(detailFor(list.items.find((item) => item.conversationId === conversationId))));
+      setDetail(
+        reconcile(
+          detailFor(
+            list.items.find((item) => item.conversationId === conversationId),
+            options.deletedOnServer,
+          ),
+        ),
+      );
     });
   const requestUrl = () => `/app/mail/Box001${selected() ? `?conversation=${selected()}` : ""}`;
   if (options.reader) {
@@ -204,6 +233,7 @@ window.mountMailList = (options) => {
                     unread={false}
                     flagged={false}
                     inJunk={false}
+                    keep={keep()}
                     reference={null}
                     subject={detail.subject}
                     messages={detail.messages}
@@ -218,7 +248,7 @@ window.mountMailList = (options) => {
                     calendarIntegrationAvailable={false}
                     listCollapsed={false}
                     detailsOpen={false}
-                    toolbarActions={["reply"]}
+                    toolbarActions={options.toolbarActions ?? ["reply"]}
                     onRestoreList={noop}
                     onToggleDetails={noop}
                     onToolbarActionsChange={noop}
@@ -229,6 +259,8 @@ window.mountMailList = (options) => {
                     onMergeConversation={noop}
                     onReassignMessage={noop}
                     onSplitMessage={noop}
+                    onKeep={noop}
+                    onStopKeeping={noop}
                     onSummarySaved={async () => {}}
                     onReconcile={async () => {}}
                     onReconcileAfterWrite={async () => {}}

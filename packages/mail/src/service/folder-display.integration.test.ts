@@ -453,6 +453,7 @@ suite("mail folder display", () => {
         done: 0,
         snoozed: 0,
         send_problems: 1,
+        kept: 0,
         recently_active: 3,
       },
     });

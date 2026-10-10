@@ -14,6 +14,7 @@ const detail = (overrides: Partial<MailSelectionDetail> = {}): MailSelectionDeta
   assignableUsers: [],
   activity: [],
   reminder: null,
+  keep: null,
   collaborationError: null,
   detailErrors: {
     collaboration: null,
@@ -22,6 +23,7 @@ const detail = (overrides: Partial<MailSelectionDetail> = {}): MailSelectionDeta
     assignableUsers: null,
     activity: null,
     reminder: null,
+    keep: null,
     reference: null,
     summary: null,
     drafts: null,

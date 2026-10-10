@@ -803,6 +803,7 @@ export const mailSearchSnoozedSchema = z
     value: z.boolean().describe("Required snoozed state."),
   })
   .strict();
+export const mailSearchKeptSchema = z.object({ type: z.literal("kept").describe("Match kept conversations.") }).strict();
 export const mailSearchAllSchema = z.object({ type: z.literal("all").describe("Match-all search expression.") }).strict();
 // Requests carry public folder and tag IDs. After the transport boundary resolves them, services and
 // stored saved views carry internal UUIDs, so each form of the expression has its own schema.
@@ -874,6 +875,7 @@ export type MailSearchExpression =
   | z.infer<typeof mailSearchWorkStatusSchema>
   | z.infer<typeof mailSearchAssigneeSchema>
   | z.infer<typeof mailSearchSnoozedSchema>
+  | z.infer<typeof mailSearchKeptSchema>
   | z.infer<typeof mailSearchAllSchema>
   | z.infer<typeof mailSearchFolderIdSchema>
   | z.infer<typeof mailSearchLocalTagIdSchema>
@@ -892,6 +894,7 @@ const mailSearchExpressionSchemaFor = (references: ReturnType<typeof mailSearchR
       mailSearchAssigneeSchema,
       mailSearchSnoozedSchema,
       mailSearchAllSchema,
+      mailSearchKeptSchema,
       references.folder,
       references.tag,
       mailSearchAssignedToMeSchema,
@@ -933,6 +936,12 @@ const mailSearchExpressionSchemaFor = (references: ReturnType<typeof mailSearchR
 const mailSearchExpressionOpenApi = {
   $dynamicAnchor: "MailSearchExpression",
   oneOf: [
+    {
+      type: "object",
+      properties: { type: { const: "kept", description: "Match kept conversations." } },
+      required: ["type"],
+      additionalProperties: false,
+    },
     {
       type: "object",
       properties: {
@@ -1840,6 +1849,7 @@ export const conversationViewSchema = z.enum([
   "snoozed",
   "send_problems",
   "recently_active",
+  "kept",
 ]);
 export type ConversationView = z.infer<typeof conversationViewSchema>;
 

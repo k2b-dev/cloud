@@ -409,6 +409,9 @@ function SearchConditionValue(props: {
       <Show when={node().type === "assigned_to_me"}>
         <p class="flex h-full items-center text-sm text-secondary">{messages().usesCurrentViewer}</p>
       </Show>
+      <Show when={node().type === "kept"}>
+        <p class="flex h-full items-center text-sm text-secondary">{messages().matchesKeptConversations}</p>
+      </Show>
       <Show when={node().type === "all"}>
         <p class="flex h-full items-center text-sm text-secondary">{messages().matchesEveryConversation}</p>
       </Show>

@@ -294,6 +294,17 @@ export default function MailMessageCard(props: {
           />
         </div>
       </div>
+      <Show when={props.message.deletedOnServer}>
+        {/* Full width and wrapping, so the notice stays readable on a phone; the hint explains it on hover. */}
+        <p
+          class="flex items-start gap-1.5 px-3 pb-1 text-xs text-secondary"
+          title={messages().deletedOnServerHint}
+          data-mail-deleted-on-server
+        >
+          <i class="ti ti-lock mt-0.5 shrink-0" aria-hidden="true" />
+          <span>{messages().deletedOnServer}</span>
+        </p>
+      </Show>
       <Show when={controllableDelivery()}>
         {(delivery) => (
           <MailMessageDeliveryControl

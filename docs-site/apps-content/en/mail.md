@@ -97,6 +97,68 @@ and `cld mail folders` show each folder's own display, the effective one, and
 the parent it comes from. Newly discovered folders show their mail everywhere,
 whether or not the account subscribes to them.
 
+## Keep conversations that must not be deleted
+
+Some mail is evidence, for example that a customer was informed. Anyone who can
+write in a mailbox can **Keep** a conversation; the lock it gets protects the
+whole conversation, including replies that join it later and messages that are
+split off or merged elsewhere; the conversation that receives them becomes kept
+too. While a conversation is kept, Mail refuses to delete its messages, to move
+them to Trash, Junk, or Drafts, or to delete a folder that holds them, with
+status 409 and the code `CONVERSATION_KEPT` (for a folder,
+`FOLDER_HAS_KEPT_CONVERSATIONS`). A folder counts as Trash, Junk, or Drafts by
+the provider's role or by the role configured in Mail; Drafts is included
+because Mail imports what lands there as drafts, and discarding a draft deletes
+it on the server. The check sits where every Mail command is
+created and again right before the mail server is changed, so the web app,
+selections, incoming automations, workflows, the API, `cld`, and the Assistant
+all get the same answer, also for a delete queued shortly before the keep.
+Archiving, moving between other folders, marking, and replying stay allowed.
+Cancelling a scheduled message also stays allowed, because it was never sent;
+if it was the conversation's only message, the conversation and its keep end
+with it, and the audit log records the cancellation as
+`mail.scheduled_send.cancel`.
+
+Mail already stores the original source and the decoded attachments of every
+message it loads. Keeping a conversation loads its remaining messages first and
+retries messages whose loading failed earlier, except those over 128 MB. When
+another client or the server deletes a kept message, or a delete that Cloud
+started just before the keep finishes, Mail keeps showing its copy in the
+folder where it was last, marked as deleted on the server. The copy can be read,
+searched, and exported as `.eml`. Conversation actions (archive, move, mark)
+change it in Cloud only, next to the commands for the server's messages; a
+command for that one message on the mail server, such as
+`cld mail message delete`, reports `KEPT_COPY_ONLY`. A message the server
+deletes before Mail could load it, for example while the mailbox is paused or
+its folder is not synchronized, or one larger than 128 MB, has no Cloud copy.
+When another client deletes a whole folder, Mail shows the folder as missing
+and keeps its messages there, without the deleted-on-server mark.
+
+Only mailbox administrators (**Manage**) lift the protection, after a
+confirmation that names the consequence: the conversation can be deleted
+again, and messages of which only Cloud's copy remains disappear from the
+mailbox; keeping it again later does not bring them back. Keeping and lifting
+are recorded in the conversation activity and the audit log
+(`mail.conversation.keep`, `mail.conversation.keep.release`). A keep that a
+merge, split, or reassignment carried into another conversation is recorded
+there as `mail.conversation.keep` by the person who moved the messages, with
+`carriedFrom` naming the source conversation. There is no retention date.
+
+| Surface | Keep | Lift |
+| --- | --- | --- |
+| Web app | **More conversation actions > Keep**, or the toolbar | **Stop keeping** |
+| API | `PUT /api/mail/mailboxes/{mailboxId}/conversations/{conversationId}/keep` | `DELETE` on the same path |
+| `cld` | `cld mail keep <conversation-id>...` | `cld mail unkeep <conversation-id>` |
+| Capabilities | `conversation.keep` | `conversation.keep.release` |
+
+The **Kept** view (`view=kept`, `cld mail ls --view kept`) and the search
+condition `{"type":"kept"}` list a mailbox's kept conversations from every
+folder, newest first. Conversation rows carry `kept`, messages carry
+`deletedOnServer` (with `remoteAvailable: false`), and `conversation.read`
+names who kept the conversation and since when. See
+[Mail storage for kept conversations](/en/docs/operations/deployment-requirements#mail-storage-for-kept-conversations)
+for the storage this takes.
+
 ## Delete and restore a mailbox
 
 The Mail overview lists your mailboxes in a sidebar with their unread and

@@ -52,6 +52,7 @@ The built-in **Follow-up** views show what happens next. **Assignment** shows wh
 | Assignment | Unassigned | Conversations with no assignee who can still work on them, for example because the assignees lost their access |
 | Mail / More | All mail | Mail from every provider folder except Trash, Junk, and folders whose mail stays inside them |
 | More | Recent activity | Recently changed conversations |
+| More | Kept | Conversations protected from deletion, from every folder |
 | Mail | Scheduled | Messages that wait for later delivery |
 
 Provider folders are a different layer. When you move a conversation to Archive, Trash, Junk, or another provider folder, the remote mail moves too. Other clients can show this. Marking a conversation **Done** changes only the Cloud follow-up state. It does not archive or move the email.
@@ -140,7 +141,7 @@ Under **Send problems**, Message view lists the messages whose sending needs att
 
 - **Archive** moves it to the mapped archive folder. Gmail has no archive folder. Without a mapping, Archive removes the conversation from the current folder, such as Inbox, and keeps it in **All Mail**.
 - **Move to Junk** moves it to the mapped junk folder. In Junk, the same action becomes **Not spam** and moves the conversation back to Inbox.
-- **Delete** moves it to the mapped trash folder.
+- **Delete** moves it to the mapped trash folder. A kept conversation can't be deleted or moved to Junk.
 
 These actions require **Edit** access and the matching folder mapping. If Mail reports that the conversation has no active place at the provider, refresh the mailbox. You can also ask someone with **Manage** access to review folder discovery and mappings.
 
@@ -155,6 +156,20 @@ Open **Message actions** on an individual message. Its **Sender** section has to
 - **Find all from this sender** opens an exact mailbox search with its own URL.
 - **Create automation from sender**, **Block sender**, and **Block sender domain** open the guided rule editor with the sender filled in.
 - **Manage unsubscribe** appears only when the message contains standard mailing-list unsubscribe information.
+
+## Keep conversations that must not be deleted {icon="lock"}
+
+Some mail is evidence, for example that a customer was informed. Choose **More conversation actions > Keep** to protect the whole conversation. Everyone who can write in the mailbox can keep a conversation. A lock in the conversation list and next to the subject shows that it is kept; point at the lock next to the subject to see who kept it and since when. To keep conversations in one step, add **Keep** under **More conversation actions > Customize toolbar**.
+
+The protection covers the conversation as it grows. Replies that join it later are kept too, and so are messages that someone splits off or merges into another conversation. The conversation that receives them is kept as well, and its activity names who moved them there.
+
+While a conversation is kept, Cloud refuses to delete its messages, to move them to Trash, Junk, or Drafts, and to delete a folder that contains them. This applies to every way Cloud changes mail: the conversation and message actions, a selection of several conversations, incoming rules and other automations, workflows, the `cld` command line, and the Assistant. Each of them reports that the conversation is kept. You can still archive the conversation, move it to other folders, mark it read or flagged, and reply. Cancelling a scheduled message stays possible, because Cloud never sent it; if it was the conversation's only message, the conversation and its keep end with it.
+
+Cloud keeps its own complete copy of every kept message: the original message with its attachments. Other email clients and the mail server are outside Cloud's control and can still delete the message there. The message then stays in Cloud, in the folder where it was last, marked **Deleted on the server, kept in Cloud**. You can read, search, and download that copy as `.eml`. Archiving, moving, and marking the conversation change that copy in Cloud only, because the mail server no longer has it. If Cloud has not loaded a message completely yet, or loading it failed earlier, keeping the conversation loads it. Cloud has no copy of a message that the server deleted before Cloud could load it, for example while the mailbox was paused or its folder was not synchronized, or of a message larger than 128 MB.
+
+Open **Mail > More > Kept** to list every kept conversation of the mailbox, newest first, in any folder. In search, the **Kept** condition finds them as well, combines with other conditions, and can be saved as a view.
+
+Only people who manage the mailbox can lift the protection. Choose **More conversation actions > Stop keeping** and confirm. Afterwards, the conversation can be deleted in Cloud again, and messages of which only Cloud's copy is left disappear from the mailbox. Keeping the conversation again later does not bring them back. Keeping and stopping are recorded with the person and the time in the conversation's activity and in the Cloud audit log. A kept conversation has no end date; it stays kept until someone stops keeping it.
 
 ## Inspect an individual message {icon="file-search"}
 

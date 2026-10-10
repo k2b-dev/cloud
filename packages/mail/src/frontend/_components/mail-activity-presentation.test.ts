@@ -63,6 +63,23 @@ describe("mail activity presentation", () => {
     expect(showMailActivityInline(workflowEvent)).toBe(true);
   });
 
+  test("shows who started and stopped keeping a conversation in the timeline", () => {
+    const kept = { ...event(), action: "conversation.kept" };
+    const released = { ...event(), action: "conversation.keep_released" };
+    expect(showMailActivityInline(kept)).toBe(true);
+    expect(showMailActivityInline(released)).toBe(true);
+    expect(mailActivityIcon(kept)).toBe("ti-lock");
+    expect(mailActivityIcon(released)).toBe("ti-lock-open");
+    expect(mailActivityLabel(kept)).toBe("started keeping the conversation");
+    expect(mailActivityLabel(released, "de")).toBe("hat die Aufbewahrung aufgehoben");
+    const carried = { ...kept, metadata: { carriedFrom: "conversation-1" } };
+    expect(mailActivityLabel(carried)).toBe("moved kept messages here, so this conversation is kept too");
+    expect(mailActivityLabel(carried, "de")).toBe(
+      "hat aufbewahrte Nachrichten hierher verschoben, daher wird auch diese Unterhaltung aufbewahrt",
+    );
+    expect(mailActivityIcon(carried)).toBe("ti-lock");
+  });
+
   test("keeps technical activity and human draft churn out of the inline timeline", () => {
     expect(showMailActivityInline(event())).toBe(true);
     expect(showMailActivityInline({ ...event(), action: "command.execute" })).toBe(false);

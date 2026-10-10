@@ -16,6 +16,7 @@ import * as composeTemplates from "./compose-templates";
 import * as contactDirectory from "./contact-directory";
 import * as conversationAssignments from "./conversation-assignments";
 import * as conversationContext from "./conversation-context";
+import * as conversationKeeps from "./conversation-keeps";
 import * as conversationPreviews from "./conversation-preview";
 import * as conversationReferences from "./conversation-reference";
 import * as conversationSummaries from "./conversation-summary";
@@ -100,6 +101,7 @@ export {
   contactDirectory,
   conversationAssignments,
   conversationContext,
+  conversationKeeps,
   conversationPreviews,
   conversationReferences,
   conversationSummaries,
@@ -154,6 +156,7 @@ export const mailService = {
   composeSafety,
   composeTemplates,
   conversations,
+  conversationKeeps,
   conversationReferences,
   conversationSummaries,
   draftLeases,

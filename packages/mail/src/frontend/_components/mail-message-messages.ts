@@ -38,6 +38,8 @@ export const mailMessageMessages = i18n.define({
       viewHtml: "View as HTML",
       viewPlain: "View as plain text",
       outgoingMessage: "Outgoing message",
+      deletedOnServer: "Deleted on the server, kept in Cloud",
+      deletedOnServerHint: "The mail server no longer has this message. Cloud shows its own copy because the conversation is kept.",
       incomingMessage: "Incoming message",
       blockedInReader: "Blocked in the Mail reader",
       checkCarefully: "Check this message carefully",
@@ -93,6 +95,9 @@ export const mailMessageMessages = i18n.define({
       viewHtml: "Als HTML anzeigen",
       viewPlain: "Als reinen Text anzeigen",
       outgoingMessage: "Ausgehende Nachricht",
+      deletedOnServer: "Auf dem Server gelöscht, in Cloud aufbewahrt",
+      deletedOnServerHint:
+        "Der Mailserver hat diese Nachricht nicht mehr. Cloud zeigt die eigene Kopie, weil die Unterhaltung aufbewahrt wird.",
       incomingMessage: "Eingehende Nachricht",
       blockedInReader: "In Mail blockiert",
       checkCarefully: "Diese Nachricht sorgfältig prüfen",

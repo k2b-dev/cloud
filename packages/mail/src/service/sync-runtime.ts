@@ -17,6 +17,7 @@ import { sha256Json } from "./canonical";
 import { releaseDueSnoozes } from "./collaboration";
 import type { ConnectorEnvelope, FlagChange } from "./connectors";
 import { imapSmtpConnector } from "./connectors";
+import { keepLastKeptPlacements, retireKeptCopyPlacements } from "./conversation-keep-rules";
 import { isAutomaticSubmission } from "./conversation-work-state";
 import { databaseErrorCode, databaseErrorConstraint, isPermanentDataError } from "./database-errors";
 import {
@@ -926,6 +927,8 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
       updated_at = now()
   `;
 
+  await retireKeptCopyPlacements(params.db, messageContentId, remoteRef.id);
+
   const [existingConversation] = await params.db<{ conversation_id: string }[]>`
     SELECT conversation_id
     FROM mail.conversation_messages
@@ -1170,7 +1173,12 @@ const markMissingUids = async (params: {
     SET deleted_at = now(), updated_at = now()
     FROM missing
     WHERE mp.remote_message_ref_id = missing.id
+    RETURNING mp.remote_message_ref_id
   `;
+  await keepLastKeptPlacements(
+    params.db,
+    result.map((row: { remote_message_ref_id: string }) => row.remote_message_ref_id),
+  );
   return result.count;
 };
 
@@ -1904,7 +1912,7 @@ export const commitSyncBatch = async (params: {
     }
     const isDraftFolder = await isEffectiveDraftsFolder(tx, params.folder, params.folderId);
     if (params.uidValidityChanged && !isDraftFolder) {
-      await tx`
+      const hidden = await tx<{ remote_message_ref_id: string }[]>`
         WITH stale AS (
           UPDATE mail.remote_message_refs
           SET stale_at = now()
@@ -1915,7 +1923,12 @@ export const commitSyncBatch = async (params: {
         SET deleted_at = now(), updated_at = now()
         FROM stale
         WHERE mp.remote_message_ref_id = stale.id
+        RETURNING mp.remote_message_ref_id
       `;
+      await keepLastKeptPlacements(
+        tx,
+        hidden.map((row) => row.remote_message_ref_id),
+      );
     }
 
     const hydratedIds: string[] = [];

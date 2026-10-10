@@ -6,6 +6,7 @@ import { MAIL_CONVERSATION_ASSIGNEE_LIMIT } from "../contracts";
 import { withShortIdDb } from "../lib/short-id";
 import { actorRefFromRequest, type MailRequestContext } from "./auth";
 import { requireMailboxCollaborationPermission, writeConversationAssignees } from "./collaboration";
+import { keepCarriesOver, recordCarriedKeep } from "./conversation-keeps";
 import { mergeConversationReferencesInTransaction } from "./conversation-reference";
 import { isUnsentOutboundMessage } from "./conversation-timeline";
 import { deriveConversationWorkState, isAutomaticSubmission } from "./conversation-work-state";
@@ -403,6 +404,7 @@ export const mergeConversations = async (params: {
       const notificationsAvailable = await lockConversationNotificationDeliveries({ db: tx, conversationIds });
       if (!notificationsAvailable.ok) return notificationsAvailable;
 
+      const carriesKeep = await keepCarriesOver(tx, params.input.sourceConversationId, params.targetConversationId);
       const moved = await tx<{ message_id: string }[]>`
         UPDATE mail.conversation_messages
         SET conversation_id = ${params.targetConversationId}::uuid, added_by = 'manual'
@@ -410,6 +412,14 @@ export const mergeConversations = async (params: {
         RETURNING message_id
       `;
       if (moved.length === 0) return fail(err.badInput("Source conversation has no messages"));
+      if (carriesKeep) {
+        await recordCarriedKeep(tx, {
+          context: params.context,
+          mailboxId: params.mailboxId,
+          conversationId: params.targetConversationId,
+          sourceConversationId: params.input.sourceConversationId,
+        });
+      }
 
       await writeConversationAssignees(tx, {
         mailboxId: params.mailboxId,
@@ -587,6 +597,7 @@ export const reassignConversationMessage = async (params: {
         return fail(err.badInput("Move the whole conversation instead of removing its only message"));
       }
 
+      const carriesKeep = await keepCarriesOver(tx, params.sourceConversationId, params.input.targetConversationId);
       const moved = await tx<{ message_id: string }[]>`
         UPDATE mail.conversation_messages
         SET conversation_id = ${params.input.targetConversationId}::uuid, added_by = 'manual'
@@ -596,6 +607,14 @@ export const reassignConversationMessage = async (params: {
       `;
       if (moved.length !== 1)
         throw Object.assign(new Error("Conversation message changed during reassignment"), { code: SPLIT_MESSAGES_CHANGED });
+      if (carriesKeep) {
+        await recordCarriedKeep(tx, {
+          context: params.context,
+          mailboxId: params.mailboxId,
+          conversationId: params.input.targetConversationId,
+          sourceConversationId: params.sourceConversationId,
+        });
+      }
 
       const movedCommentCount = await moveMessageComments({
         db: tx,
@@ -754,6 +773,7 @@ export const splitConversation = async (params: {
       );
       const [created] = createdRows;
       if (!created) return fail(err.internal("Split conversation insert returned no row"));
+      const carriesKeep = await keepCarriesOver(tx, params.conversationId, created.id);
       const assignees = await tx<{ user_id: string; assigned_at: string }[]>`
         SELECT user_id, assigned_at::text AS assigned_at FROM mail.conversation_assignees WHERE conversation_id = ${params.conversationId}::uuid ORDER BY assigned_at, user_id
       `;
@@ -775,6 +795,14 @@ export const splitConversation = async (params: {
       `;
       if (moved.length !== params.input.messageIds.length) {
         throw Object.assign(new Error("Conversation messages changed during split"), { code: SPLIT_MESSAGES_CHANGED });
+      }
+      if (carriesKeep) {
+        await recordCarriedKeep(tx, {
+          context: params.context,
+          mailboxId: params.mailboxId,
+          conversationId: created.id,
+          sourceConversationId: params.conversationId,
+        });
       }
 
       const movedCommentCount = await moveMessageComments({

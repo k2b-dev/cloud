@@ -20,6 +20,7 @@ import * as commands from "./commands";
 import { reviewDraftComposeSafety } from "./compose-safety";
 import * as compose from "./compose-templates";
 import { getConversationContext } from "./conversation-context";
+import * as conversationKeeps from "./conversation-keeps";
 import { updateConversationSummary } from "./conversation-summary";
 import * as conversations from "./conversations";
 import * as leases from "./draft-leases";
@@ -303,6 +304,19 @@ suite("assigned-only Mail actions authorize every target and queued effect", () 
     await sql`DELETE FROM auth.access WHERE user_id IN (SELECT value::uuid FROM jsonb_array_elements_text(${userIds}::jsonb)) OR group_id = ${groupId || null}::uuid`;
     if (groupId) await sql`DELETE FROM auth.groups WHERE id = ${groupId}::uuid`;
     await sql`DELETE FROM auth.users WHERE id IN (SELECT value::uuid FROM jsonb_array_elements_text(${userIds}::jsonb))`;
+  });
+
+  test("assigned writers keep visible conversations, and only managers stop keeping them", async () => {
+    try {
+      expect(unwrap(await conversationKeeps.keepConversation(params(writer))).conversationId).toBe(c1.id);
+      expect(unwrap(await conversationKeeps.getConversationKeep(params(reader)))?.conversationId).toBe(c1.id);
+      denied(await conversationKeeps.keepConversation(params(writer, c2)), 404);
+      denied(await conversationKeeps.getConversationKeep(params(reader, c2)), 404);
+      denied(await conversationKeeps.keepConversation(params(reader)), 403);
+      denied(await conversationKeeps.releaseConversationKeep(params(writer)), 403);
+    } finally {
+      await sql`DELETE FROM mail.conversation_keeps WHERE conversation_id = ${c1.id}::uuid`;
+    }
   });
 
   test("assigned group writers queue read, flag, move, copy and delete only for visible messages", async () => {

@@ -10,6 +10,7 @@ import { attachmentMimeOrder } from "./attachment-order";
 import { type MailRequestContext, userBackedActor } from "./auth";
 import { isUnassignedConversation, listLapsedAssignees } from "./collaborators";
 import { type ConversationCursorScope, decodeConversationCursor, encodeConversationCursor } from "./conversation-cursor";
+import { isKeptConversation, isKeptMessage } from "./conversation-keep-rules";
 import { hasSendProblem, isUnsentOutboundMessage } from "./conversation-timeline";
 import { resolveMailExecution } from "./execution";
 import {
@@ -223,6 +224,7 @@ export const listFolders = async (context: MailRequestContext, mailboxId: string
 };
 
 export type ConversationSummary = {
+  kept: boolean;
   id: string;
   primaryReference: string | null;
   subject: string;
@@ -246,6 +248,7 @@ export type ConversationSummary = {
 };
 
 type DbConversation = {
+  kept: boolean;
   id: string;
   primary_reference: string | null;
   subject: string;
@@ -295,7 +298,7 @@ export const listConversations = async (params: {
   const currentUserId = userBackedActor(params.context)?.id ?? null;
   const view = params.view ?? null;
   const folderId = params.folderId ?? null;
-  const excludedFolderIds = [...new Set(params.excludedFolderIds ?? [])].sort();
+  const excludedFolderIds = view === "kept" ? [] : [...new Set(params.excludedFolderIds ?? [])].sort();
   const includedPlacement = (folderId: Bun.SQL.Query<unknown>) => sql`
     NOT (${folderId} IN (
       SELECT value::uuid FROM jsonb_array_elements_text(${excludedFolderIds}::jsonb)
@@ -317,6 +320,7 @@ export const listConversations = async (params: {
   const rows = await sql<(DbConversation & { cursor_at: string })[]>`
     SELECT
       c.id,
+      ${isKeptConversation(sql`c.id`)} AS kept,
       primary_reference.value AS primary_reference,
       c.subject,
       c.participant_summary,
@@ -463,6 +467,7 @@ export const listConversations = async (params: {
               AND ${hasSendProblem(sql`problem_cm.message_id`)}
           )
         )
+        OR (${view} = 'kept' AND ${isKeptConversation(sql`c.id`)})
         OR ${view} = 'recently_active'
       )
       AND ${view && FOLLOW_UP_VIEWS.includes(view) ? isFollowUpConversation(sql`c.id`) : sql`true`}
@@ -482,7 +487,7 @@ export const listConversations = async (params: {
         ${params.unread ?? null}::boolean IS NULL
         OR (cardinality(unread_state.folder_ids) > 0) = ${params.unread ?? null}
       )
-      AND EXISTS (
+      AND ((${view} = 'kept' AND ${isKeptConversation(sql`c.id`)}) OR EXISTS (
         SELECT 1
         FROM mail.conversation_messages visible_cm
         LEFT JOIN mail.message_placements visible_mp
@@ -505,7 +510,7 @@ export const listConversations = async (params: {
               )
             )
           )
-      )
+      ))
       AND (
         ${cursor.data?.id ?? null}::uuid IS NULL
         OR (
@@ -519,6 +524,7 @@ export const listConversations = async (params: {
   const hasMore = rows.length > limit;
   const pageRows = hasMore ? rows.slice(0, limit) : rows;
   const items = pageRows.map((row) => ({
+    kept: row.kept,
     id: row.id,
     primaryReference: row.primary_reference,
     subject: row.subject,
@@ -582,6 +588,7 @@ export const getConversationViewCounts = async (params: {
         snoozed: number;
         send_problems: number;
         recently_active: number;
+        kept: number;
       }[]
     >`
       SELECT
@@ -613,7 +620,9 @@ export const getConversationViewCounts = async (params: {
         COUNT(*) FILTER (WHERE scope.aggregated AND scope.work_status = 'done')::int AS done,
         COUNT(*) FILTER (WHERE scope.aggregated AND scope.follow_up AND scope.snoozed_until > now())::int AS snoozed,
         COUNT(*) FILTER (WHERE scope.send_problem)::int AS send_problems,
-        COUNT(*) FILTER (WHERE scope.aggregated)::int AS recently_active
+        COUNT(*) FILTER (WHERE scope.aggregated)::int AS recently_active,
+        (SELECT COUNT(*)::int FROM mail.conversation_keeps keep
+          WHERE keep.mailbox_id = ${params.mailboxId}::uuid AND ${conversationVisibleTo(visibility, sql`keep.conversation_id`)}) AS kept
       FROM (
         SELECT
           c.id,
@@ -648,6 +657,7 @@ export const getConversationViewCounts = async (params: {
     snoozed: row?.snoozed ?? 0,
     send_problems: row?.send_problems ?? 0,
     recently_active: row?.recently_active ?? 0,
+    kept: row?.kept ?? 0,
   });
 };
 
@@ -720,7 +730,8 @@ const messageSummarySelect = sql`
   placement.folder_id,
   EXISTS (
     SELECT 1 FROM mail.message_placements available
-    WHERE available.message_id = mc.id AND available.deleted_at IS NULL
+    JOIN mail.remote_message_refs available_ref ON available_ref.id = available.remote_message_ref_id
+    WHERE available.message_id = mc.id AND available.deleted_at IS NULL AND available_ref.stale_at IS NULL
   ) AS remote_available
 `;
 
@@ -816,6 +827,7 @@ export type MessageDeliveryState =
   | "needs_attention";
 
 export type MessageDetail = MessageSummary & {
+  deletedOnServer: boolean;
   contentType: string | null;
   sizeBytes: number;
   replyTo: Array<{ name: string | null; address: string }>;
@@ -852,6 +864,7 @@ export type MessageDetail = MessageSummary & {
 };
 
 type DbMessageDetail = DbMessageSummary & {
+  deleted_on_server: boolean;
   content_type: string | null;
   size_bytes: string | number;
   reply_to_addresses: Array<{ name: string | null; address: string }> | string;
@@ -889,6 +902,7 @@ export const messageForwardText = (plainText: string | null, sanitizedHtml: stri
 
 const mapMessageDetail = (row: DbMessageDetail): MessageDetail => ({
   ...mapMessageSummary(row),
+  deletedOnServer: row.deleted_on_server,
   contentType: row.content_type,
   sizeBytes: Number(row.size_bytes),
   replyTo: parseJsonArray(row.reply_to_addresses),
@@ -969,6 +983,10 @@ const attachMessageMetadata = async (
 
 const messageDetailSelect = sql`
   ${messageSummarySelect},
+  (${isKeptMessage(sql`mc.id`)}
+    AND NOT EXISTS (SELECT 1 FROM mail.remote_message_refs live_ref WHERE live_ref.message_id = mc.id AND live_ref.stale_at IS NULL)
+    AND EXISTS (SELECT 1 FROM mail.message_placements kept_placement WHERE kept_placement.message_id = mc.id AND kept_placement.deleted_at IS NULL)
+  ) AS deleted_on_server,
   NULLIF(mc.protocol_facts->>'contentType', '') AS content_type,
   mc.size_bytes,
   mc.plain_text,

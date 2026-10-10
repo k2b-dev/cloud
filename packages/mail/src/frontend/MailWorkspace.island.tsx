@@ -47,6 +47,7 @@ import {
   toggleMailConversationSelection,
 } from "./_components/mail-conversation-selection";
 import type { MailConversationToolbarActionId } from "./_components/mail-conversation-toolbar";
+import { mailConversationUiMessages } from "./_components/mail-conversation-ui-messages";
 import { mergeMailCursorPage } from "./_components/mail-cursor-page";
 import { preserveUnavailableMailDetail } from "./_components/mail-detail-availability";
 import { reconcileConversationSummary } from "./_components/mail-details-reconciliation";
@@ -111,6 +112,7 @@ function MailWorkspaceView(props: {
 }) {
   const locale = useLocale();
   const t = createMemo(() => mailWorkspaceMessages.resolve([locale()]).t);
+  const conversationText = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
   // A store keeps shell, list, and detail consumers granular even though the
   // server snapshot remains one canonical contract.
   const [data, setData] = createStore(props.data);
@@ -1191,6 +1193,51 @@ function MailWorkspaceView(props: {
     return splitMessageMutation.mutate({ messageId, conversationId, revision });
   };
 
+  // Keeping is conversation state in Cloud, not a provider change: save it, then reload the canonical view.
+  const keepMutation = mutation.create<
+    { refreshError: Error | null } | undefined,
+    { conversationId: string; keep: boolean },
+    { keep: boolean }
+  >({
+    onBefore: ({ keep }) => ({ keep }),
+    mutation: async ({ conversationId, keep }, { abortSignal }) => {
+      if (!keep) {
+        const confirmed = await prompts.confirm(conversationText().stopKeepingConsequence, {
+          title: conversationText().stopKeepingTitle,
+          icon: "ti ti-lock-open",
+          confirmText: conversationText().stopKeeping,
+          variant: "danger",
+        });
+        if (!confirmed || abortSignal.aborted || disposed) return;
+      }
+      const route = apiClient.mailboxes[":mailboxId"].conversations[":conversationId"].keep;
+      const request = { param: { mailboxId, conversationId } };
+      const response = keep
+        ? await route.$put(request, { init: { signal: abortSignal } })
+        : await route.$delete(request, { init: { signal: abortSignal } });
+      if (!response.ok) {
+        throw new Error(await readApiError(response, keep ? conversationText().keepFailed : conversationText().stopKeepingFailed));
+      }
+      if (abortSignal.aborted || disposed) return;
+      const refreshError = await captureMailWorkspaceRefreshError(requireWorkspaceReconcile);
+      return { refreshError };
+    },
+    onSuccess: (result, context) => {
+      if (!result) return;
+      toast.success(context?.keep === false ? conversationText().stopKeepingDone : conversationText().keepSaved);
+      if (result.refreshError) reportRefreshFailure(result.refreshError, t().refreshMailboxFailed);
+    },
+    onError: (error, context) =>
+      prompts.error(error.message, {
+        title: context?.keep === false ? conversationText().stopKeepingFailed : conversationText().keepFailed,
+      }),
+  });
+  const setConversationKept = (keep: boolean) => {
+    const conversationId = data.selectedConversationId;
+    if (!conversationId || disposed || actionPending() || (keep ? !canWrite() : !canAdmin())) return Promise.resolve();
+    return keepMutation.mutate({ conversationId, keep });
+  };
+
   // A queued action runs later. Follow its commands so a change the mail server did not make still
   // reaches the user who was told it was queued.
   const actionOutcomes = createMailActionOutcomes();
@@ -1213,6 +1260,11 @@ function MailWorkspaceView(props: {
       case "DESTINATION_UNAVAILABLE":
       case "FOLDER_UNAVAILABLE":
         return t().failureFolderUnavailable;
+      case "CONVERSATION_KEPT":
+      case "FOLDER_HAS_KEPT_CONVERSATIONS":
+        return t().failureKept;
+      case "KEPT_COPY_ONLY":
+        return t().failureKeptCopyOnly;
       case "cancelled":
         return t().failureCancelled;
       case "needs_attention":
@@ -1527,6 +1579,7 @@ function MailWorkspaceView(props: {
     mergeConversationMutation.loading() ||
     reassignMessageMutation.loading() ||
     splitMessageMutation.loading() ||
+    keepMutation.loading() ||
     addTagsMutation.loading() ||
     manageConversationTagsMutation.loading();
   onCleanup(() => {
@@ -1699,6 +1752,7 @@ function MailWorkspaceView(props: {
                   unread={selectedUnread()}
                   flagged={selectedFlagged()}
                   inJunk={selectedInJunk()}
+                  keep={data.keep}
                   reference={data.selectedReference}
                   subject={data.selectedSubject}
                   messages={data.detailMessages}
@@ -1727,6 +1781,8 @@ function MailWorkspaceView(props: {
                   onMergeConversation={mergeSelectedConversation}
                   onReassignMessage={reassignMessage}
                   onSplitMessage={splitMessage}
+                  onKeep={() => setConversationKept(true)}
+                  onStopKeeping={() => setConversationKept(false)}
                   onSummarySaved={applySavedConversationSummary}
                   onReconcile={reconcileWorkspace}
                   onReconcileAfterWrite={requireWorkspaceReconcile}

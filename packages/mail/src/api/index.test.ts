@@ -2,6 +2,11 @@ import { describe, expect, test } from "bun:test";
 import api from "./index";
 
 describe("Mail API composition", () => {
+  test("exposes bodyless conversation keep read, mark and release routes", () => {
+    const path = "/mailboxes/:mailboxId/conversations/:conversationId/keep";
+    for (const method of ["GET", "PUT", "DELETE"])
+      expect(api.routes.some((route) => route.method === method && route.path === path)).toBeTrue();
+  });
   test("scopes the platform-admin guard to admin routes", () => {
     const adminGuard = api.routes.find((route) => route.method === "ALL" && route.path === "/admin/*");
     const mailboxRoute = api.routes.find((route) => route.method === "GET" && route.path === "/mailboxes");

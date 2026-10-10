@@ -16,7 +16,8 @@ export type MailSearchFieldKey =
   | "all"
   | "folder_id"
   | "local_tag_id"
-  | "assigned_to_me";
+  | "assigned_to_me"
+  | "kept";
 
 export const MAIL_SEARCH_FIELD_GROUPS = [
   { value: "recommended" },
@@ -55,6 +56,7 @@ export const MAIL_SEARCH_FIELD_OPTIONS: MailSearchFieldOption[] = [
   { id: "folder_id", icon: "ti ti-folder-check", groups: ["recommended", "mailbox"] },
   { id: "local_tag_id", icon: "ti ti-tag", groups: ["recommended", "mailbox"] },
   { id: "assigned_to_me", icon: "ti ti-user-pin", groups: ["people", "mailbox"] },
+  { id: "kept", icon: "ti ti-lock", groups: ["mailbox"] },
   { id: "all", icon: "ti ti-mail", groups: ["mailbox"] },
 ];
 
@@ -140,6 +142,7 @@ export const createMailSearchCondition = (
   if (field === "folder_id") return { type: "folder_id", folderId: "" };
   if (field === "local_tag_id") return { type: "local_tag_id", tagId: "" };
   if (field === "assigned_to_me") return { type: "assigned_to_me" };
+  if (field === "kept") return { type: "kept" };
   if (field === "all") return { type: "all" };
   return { type: "snoozed", value: true };
 };
@@ -261,6 +264,7 @@ export const summarizeMailSearchExpression = (
       return name ? messages.hasTag({ name }) : messages.hasDeletedTag;
     }
     if (node.type === "assigned_to_me") return messages.assignedToMe;
+    if (node.type === "kept") return messages.searchField({ field: "kept" });
     return messages.searchField({ field: "all" });
   };
   return summarize(expression);

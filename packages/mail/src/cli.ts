@@ -107,6 +107,7 @@ import type {
   MailAssignableUser,
 } from "./service/collaboration";
 import type { ContactDirectoryAdminView } from "./service/contact-directory";
+import type { ConversationKeep } from "./service/conversation-keeps";
 import type {
   ConversationReference,
   ConversationReferenceConfiguration,
@@ -1741,7 +1742,7 @@ const everydayCommands = (t: Translate) => {
       },
       flags: {
         status: flag.enum(["needs_action", "waiting", "done"] as const, { description: t({ en: "Work status", de: "Bearbeitungsstand" }) }),
-        view: flag.enum(["needs_action", "mine", "unassigned", "waiting", "done", "snoozed", "recently_active"] as const, {
+        view: flag.enum(["needs_action", "mine", "unassigned", "waiting", "done", "snoozed", "recently_active", "kept"] as const, {
           description: t({ en: "Built-in collaboration view", de: "Eingebaute Zusammenarbeitsansicht" }),
         }),
         cursor: flag.string({ description: t({ en: "Cursor from a previous page", de: "Cursor einer vorherigen Seite" }) }),
@@ -2030,6 +2031,70 @@ const everydayCommands = (t: Translate) => {
             ctx.error(`${item.conversationId}: ${t({ en: "not found in this mailbox", de: "in diesem Postfach nicht gefunden" })}`);
         }
         return missing.length > 0 ? 1 : undefined;
+      },
+    }),
+    command("keep", {
+      summary: t({ en: "Keep conversations and later replies", de: "Unterhaltungen und spätere Antworten aufbewahren" }),
+      args: conversationsArg(t),
+      flags: mailboxOption,
+      examples: ["cld mail keep Convo1 Convo2"],
+      run: async ({ ctx, args, flags }) => {
+        const ids = requireConversationIds(args.conversations, t);
+        const mailbox = await resolveMailbox(ctx, flags.mailbox, t);
+        // Like the other batch commands, one failing conversation does not stop the others.
+        const results: Array<({ status: "ok" } & ConversationKeep) | { conversationId: string; status: "error"; error: string }> = [];
+        for (const conversationId of ids) {
+          try {
+            const keep = await readApi<ConversationKeep>(ctx, `/mailboxes/${mailbox.id}/conversations/${conversationId}/keep`, {
+              method: "PUT",
+            });
+            results.push({ status: "ok", ...keep, conversationId });
+          } catch (error) {
+            results.push({ conversationId, status: "error", error: error instanceof Error ? error.message : String(error) });
+          }
+        }
+        const failed = results.filter((result) => result.status === "error");
+        if (!printStructured(ctx, { results })) {
+          const count = results.length - failed.length;
+          ctx.print(t({ en: `Kept ${count} conversation(s).`, de: `${count} Unterhaltung(en) werden aufbewahrt.` }));
+          for (const item of failed) if (item.status === "error") ctx.error(`${item.conversationId}: ${item.error}`);
+        }
+        return failed.length > 0 ? 1 : undefined;
+      },
+    }),
+    command("unkeep", {
+      summary: t({
+        en: "Stop keeping a conversation (Manage access required)",
+        de: "Unterhaltung nicht mehr aufbewahren (Verwaltungszugriff erforderlich)",
+      }),
+      args: { conversation: arg.required({ description: t({ en: "Conversation ID", de: "Unterhaltungs-ID" }) }) },
+      flags: {
+        ...mailboxOption,
+        yes: confirmFlag(
+          t({
+            en: "The conversation can be deleted again. Cloud copies already deleted on the mail server disappear from view; their stored contents remain. Stop keeping it?",
+            de: "Die Unterhaltung kann wieder gelöscht werden. Cloud-Kopien bereits auf dem Mailserver gelöschter Nachrichten verschwinden aus der Ansicht; ihre gespeicherten Inhalte bleiben. Nicht mehr aufbewahren?",
+          }),
+        ),
+      },
+      examples: ["cld mail unkeep Convo1 --yes"],
+      run: async ({ ctx, args, flags }) => {
+        if (!flags.yes)
+          throw new Error(
+            t({
+              en: "Pass --yes to confirm stopping the keep. The conversation can be deleted again and Cloud copies already deleted on the mail server disappear from view.",
+              de: "Bestätige mit --yes, dass die Unterhaltung nicht mehr aufbewahrt wird. Sie kann wieder gelöscht werden und Cloud-Kopien bereits auf dem Mailserver gelöschter Nachrichten verschwinden aus der Ansicht.",
+            }),
+          );
+        const id = requireMailResourceId(args.conversation, t({ en: "Conversation ID", de: "Unterhaltungs-ID" }));
+        const mailbox = await resolveMailbox(ctx, flags.mailbox, t);
+        const result = await readApi<{ conversationId: string; released: boolean }>(
+          ctx,
+          `/mailboxes/${mailbox.id}/conversations/${id}/keep`,
+          { method: "DELETE" },
+        );
+        if (!printStructured(ctx, result))
+          ctx.print(t({ en: "The conversation is no longer kept.", de: "Die Unterhaltung wird nicht mehr aufbewahrt." }));
       },
     }),
     conversationActionCommand(

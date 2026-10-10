@@ -85,6 +85,7 @@ describe("Mail details feedback", () => {
             assignableUsers: null,
             activity: null,
             reminder: null,
+            keep: null,
             reference: null,
             summary: null,
             drafts: null,

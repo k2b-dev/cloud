@@ -29,6 +29,7 @@ const summary = (id: string, subject: string, internalDate: string): MessageSumm
 
 const detail = (message: MessageSummary, dangerous: boolean): MessageDetail => ({
   ...message,
+  deletedOnServer: false,
   contentType: "text/plain",
   sizeBytes: 128,
   replyTo: [],

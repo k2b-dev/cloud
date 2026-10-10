@@ -23,6 +23,12 @@ export const safeErrorDetail = (text: string, secrets: readonly string[] = []): 
 };
 
 const genericGermanMessage = (error: HumanFacingError): string => {
+  if (error.code === "CONVERSATION_KEPT")
+    return "Diese Unterhaltung wird aufbewahrt und kann nicht gelöscht oder in den Papierkorb, den Spam-Ordner oder die Entwürfe verschoben werden. Verschieben und Archivieren sind weiterhin möglich.";
+  if (error.code === "FOLDER_HAS_KEPT_CONVERSATIONS")
+    return "Dieser Ordner enthält aufbewahrte Unterhaltungen und kann nicht gelöscht werden. Verschiebe sie zuerst in einen anderen Ordner.";
+  if (error.code === "KEPT_COPY_ONLY")
+    return "Von diesen Nachrichten ist nur noch die in Cloud aufbewahrte Kopie vorhanden. Sie können auf dem Mailserver nicht geändert werden.";
   if (error.code === "BAD_INPUT") {
     const detail = safeErrorDetail(error.message);
     return detail ? `Die Eingabe ist ungültig: ${detail}` : "Die Eingabe ist ungültig";

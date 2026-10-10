@@ -81,6 +81,11 @@ const catalog = i18n.define({
       moreConversations: ({ count }: { count: number }) => `${count} more`,
       statusReview: ({ subject, done }: { subject: string; done: boolean }) =>
         `${done ? "Mark" : "Reopen"} ${subject}${done ? " done" : ""}.`,
+      keepReview: ({ subject }: { subject: string }) => `Keep “${subject}” and its later replies. Cloud will protect them from deletion.`,
+      releaseKeepReview: ({ subject }: { subject: string }) =>
+        `Stop keeping “${subject}”. The conversation can be deleted again. Cloud's copies of messages already deleted on the mail server disappear from view; their stored contents remain in Cloud.`,
+      keptConversation: ({ subject }: { subject: string }) => `Kept “${subject}”.`,
+      releasedKeep: ({ subject }: { subject: string }) => `Stopped keeping “${subject}”.`,
       snoozeReview: ({ subject }: { subject: string }) => `Show ${subject} later.`,
       clearSnoozeReview: ({ subject }: { subject: string }) => `Show ${subject} again now.`,
       setReminderReview: ({ subject }: { subject: string }) => `Set your reminder for ${subject}.`,
@@ -278,6 +283,11 @@ const catalog = i18n.define({
       conversations: "Unterhaltungen",
       moreConversations: ({ count }) => `${count} weitere`,
       statusReview: ({ subject, done }) => `${subject} als ${done ? "erledigt" : "offen"} markieren.`,
+      keepReview: ({ subject }) => `„${subject}“ und spätere Antworten aufbewahren. Cloud schützt sie vor dem Löschen.`,
+      releaseKeepReview: ({ subject }) =>
+        `„${subject}“ nicht mehr aufbewahren. Die Unterhaltung kann wieder gelöscht werden. In Cloud aufbewahrte Kopien bereits auf dem Mailserver gelöschter Nachrichten verschwinden aus der Ansicht; ihre gespeicherten Inhalte bleiben in Cloud.`,
+      keptConversation: ({ subject }) => `„${subject}“ wird aufbewahrt.`,
+      releasedKeep: ({ subject }) => `„${subject}“ wird nicht mehr aufbewahrt.`,
       snoozeReview: ({ subject }) => `${subject} später anzeigen.`,
       clearSnoozeReview: ({ subject }) => `${subject} jetzt wieder anzeigen.`,
       setReminderReview: ({ subject }) => `Persönliche Erinnerung für ${subject} festlegen.`,

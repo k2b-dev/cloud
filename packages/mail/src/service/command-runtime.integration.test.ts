@@ -11,7 +11,10 @@ import { sha256Json } from "./canonical";
 import { executeMutationCommand } from "./command-runtime";
 import { createActorCommand } from "./commands";
 import { imapSmtpConnector } from "./connectors";
+import { checkCommandKeepProtection } from "./conversation-keep-rules";
+import { keepConversation, releaseConversationKeep } from "./conversation-keeps";
 import { createMailbox } from "./mailboxes";
+import { getMessage } from "./messages";
 import { createProviderConnection } from "./provider-connections";
 import { MAIL_PROVIDER_OPERATION_LEASE_MS, mailProviderOperationMutex, recordProviderReachable } from "./provider-operation-lock";
 
@@ -313,8 +316,11 @@ suite("mail command runtime provider safety", () => {
     return { id: message!.id, rfcMessageId };
   };
 
-  /** A provider whose message exists until it is deleted; each queued failure rejects one state lookup first. */
-  const deletingProvider = (rfcMessageId: string, failures: Error[] = []) => {
+  /**
+   * A provider whose message exists until it is deleted; each queued failure rejects one state lookup first.
+   * `whileDeleting` runs while the server deletes the message, after the command marked its effect.
+   */
+  const deletingProvider = (rfcMessageId: string, failures: Error[] = [], whileDeleting?: () => Promise<void>) => {
     let deleted = false;
     const state = spyOn(imapSmtpConnector, "getMessageState").mockImplementation(async () => {
       const failure = failures.shift();
@@ -322,6 +328,7 @@ suite("mail command runtime provider safety", () => {
       return { exists: !deleted, flags: [], keywords: [], messageId: rfcMessageId, modseq: "1" };
     });
     const remove = spyOn(imapSmtpConnector, "delete").mockImplementation(async () => {
+      await whileDeleting?.();
       deleted = true;
     });
     return {
@@ -360,6 +367,156 @@ suite("mail command runtime provider safety", () => {
     `;
     return row;
   };
+
+  const threadMessage = async (messageId: string) => {
+    const [conversation] = await sql<{ id: string }[]>`INSERT INTO mail.conversations (short_id, mailbox_id, subject, latest_message_at)
+      VALUES (${newShortId()}, ${mailboxId}::uuid, 'Kept evidence', now()) RETURNING id`;
+    await sql`INSERT INTO mail.conversation_messages (conversation_id, message_id, position) VALUES (${conversation!.id}::uuid, ${messageId}::uuid, 0)`;
+    return conversation!.id;
+  };
+  test("kept conversation commands refuse deletion, deleted flags and effective trash/junk roles while allowing normal moves and copies", async () => {
+    const message = await inboxMessage("keep-command", 424280);
+    const conversationId = await threadMessage(message.id);
+    const scope = { context: adminContext, mailboxId, conversationId };
+    expect((await keepConversation(scope)).ok).toBeTrue();
+    const create = (input: Parameters<typeof createActorCommand>[0]["input"]) =>
+      createActorCommand({ context: adminContext, mailboxId, input, enqueue: false });
+    const key = () => crypto.randomUUID();
+    expect(await create({ kind: "delete", messageId: message.id, folderId: inboxFolderId, idempotencyKey: key() })).toMatchObject({
+      ok: false,
+      error: { code: "CONVERSATION_KEPT", status: 409 },
+    });
+    for (const flag of ["\\Deleted", "\\dElEtEd", "deleted"])
+      expect(
+        await create({ kind: "set_flags", messageId: message.id, folderId: inboxFolderId, flags: [flag], idempotencyKey: key() }),
+      ).toMatchObject({ ok: false, error: { code: "CONVERSATION_KEPT" } });
+    const move = { kind: "move" as const, messageId: message.id, sourceFolderId: inboxFolderId, destinationFolderId: archiveFolderId };
+    expect((await create({ ...move, idempotencyKey: key() })).ok).toBeTrue();
+    expect((await create({ ...move, kind: "copy", idempotencyKey: key() })).ok).toBeTrue();
+    expect(
+      (
+        await create({
+          kind: "set_flags",
+          messageId: message.id,
+          folderId: inboxFolderId,
+          flags: ["\\Seen", "\\Flagged"],
+          idempotencyKey: key(),
+        })
+      ).ok,
+    ).toBeTrue();
+    for (const role of ["trash", "junk"]) {
+      await sql`INSERT INTO mail.folder_role_overrides (mailbox_id, role, folder_id) VALUES (${mailboxId}::uuid, ${role}, ${archiveFolderId}::uuid)`;
+      try {
+        expect(await create({ ...move, idempotencyKey: key() })).toMatchObject({ ok: false, error: { code: "CONVERSATION_KEPT" } });
+      } finally {
+        await sql`DELETE FROM mail.folder_role_overrides WHERE mailbox_id = ${mailboxId}::uuid AND role = ${role}`;
+      }
+    }
+    // A folder must protect even a kept copy whose provider ref is already stale.
+    const [ref] = await sql<{ id: string }[]>`INSERT INTO mail.remote_message_refs (folder_id, message_id, uid_validity, uid, stale_at)
+      VALUES (${archiveFolderId}::uuid, ${message.id}::uuid, 20, 424280, now()) RETURNING id`;
+    await sql`INSERT INTO mail.message_placements (remote_message_ref_id, folder_id, message_id) VALUES (${ref!.id}::uuid, ${archiveFolderId}::uuid, ${message.id}::uuid)`;
+    expect(await create({ kind: "delete_folder", folderId: archiveFolderId, idempotencyKey: key() })).toMatchObject({
+      ok: false,
+      error: { code: "FOLDER_HAS_KEPT_CONVERSATIONS" },
+    });
+    expect(
+      await sql.begin((db) =>
+        checkCommandKeepProtection(db, {
+          kind: "change_message_state",
+          target: { remoteMessageRefId: ref!.id },
+          payload: { addFlags: ["\\Deleted"] },
+        }),
+      ),
+    ).toMatchObject({ ok: false, error: { code: "CONVERSATION_KEPT" } });
+    await releaseConversationKeep(scope);
+  });
+
+  test("a delete accepted before the keep fails at runtime without reaching the provider", async () => {
+    const message = await inboxMessage("keep-queued-delete", 424281);
+    const conversationId = await threadMessage(message.id);
+    const commandId = await deleteCommand(message.id, "keep-queued-delete");
+    expect((await keepConversation({ context: adminContext, mailboxId, conversationId })).ok).toBeTrue();
+    const provider = deletingProvider(message.rfcMessageId);
+    try {
+      expect(await executeMutationCommand(commandId)).toBe("failed");
+      expect(provider.remove).not.toHaveBeenCalled();
+      const [command] =
+        await sql`SELECT state, last_error_code, provider_effect_started_at FROM mail.commands WHERE id = ${commandId}::uuid`;
+      expect(command).toMatchObject({ state: "failed", last_error_code: "CONVERSATION_KEPT", provider_effect_started_at: null });
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("queued folder deletion and deleted flags fail when a keep is added before execution", async () => {
+    const message = await inboxMessage("keep-queued-folder", 424282);
+    const conversationId = await threadMessage(message.id);
+    const [ref] = await sql<{ id: string }[]>`INSERT INTO mail.remote_message_refs (folder_id, message_id, uid_validity, uid)
+      VALUES (${archiveFolderId}::uuid, ${message.id}::uuid, 20, 424282) RETURNING id`;
+    await sql`INSERT INTO mail.message_placements (remote_message_ref_id, folder_id, message_id) VALUES (${ref!.id}::uuid, ${archiveFolderId}::uuid, ${message.id}::uuid)`;
+    const deletion = await createActorCommand({
+      context: adminContext,
+      mailboxId,
+      enqueue: false,
+      input: { kind: "delete_folder", folderId: archiveFolderId, idempotencyKey: `keep-queued-folder-${suffix}` },
+    });
+    const flags = await createActorCommand({
+      context: adminContext,
+      mailboxId,
+      enqueue: false,
+      input: {
+        kind: "set_flags",
+        messageId: message.id,
+        folderId: inboxFolderId,
+        flags: ["\\Deleted"],
+        idempotencyKey: `keep-queued-flags-${suffix}`,
+      },
+    });
+    if (!deletion.ok || !flags.ok) throw new Error("Failed to queue keep runtime fixtures");
+    expect((await keepConversation({ context: adminContext, mailboxId, conversationId })).ok).toBeTrue();
+    const provider = deletingProvider(message.rfcMessageId);
+    try {
+      for (const [command, code] of [
+        [deletion.data, "FOLDER_HAS_KEPT_CONVERSATIONS"],
+        [flags.data, "CONVERSATION_KEPT"],
+      ] as const) {
+        expect(await executeMutationCommand(command.id)).toBe("failed");
+        const [state] = await sql`SELECT last_error_code, provider_effect_started_at FROM mail.commands WHERE id = ${command.id}::uuid`;
+        expect(state).toMatchObject({ last_error_code: code, provider_effect_started_at: null });
+      }
+      expect(provider.state).not.toHaveBeenCalled();
+      expect(provider.remove).not.toHaveBeenCalled();
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("a delete the server finishes after someone kept the conversation leaves Cloud's copy in its folder", async () => {
+    const message = await inboxMessage("keep-during-delete", 424283);
+    const conversationId = await threadMessage(message.id);
+    const scope = { context: adminContext, mailboxId, conversationId };
+    const commandId = await deleteCommand(message.id, "keep-during-delete");
+    const provider = deletingProvider(message.rfcMessageId, [], async () => {
+      expect((await keepConversation(scope)).ok).toBeTrue();
+    });
+    try {
+      expect(await executeMutationCommand(commandId)).toBe("confirmed");
+      expect(provider.remove).toHaveBeenCalledTimes(1);
+      expect(
+        await sql<
+          { folder_id: string }[]
+        >`SELECT folder_id FROM mail.message_placements WHERE message_id = ${message.id}::uuid AND deleted_at IS NULL`,
+      ).toEqual([{ folder_id: inboxFolderId }]);
+      expect(await getMessage({ context: adminContext, mailboxId, messageId: message.id })).toMatchObject({
+        ok: true,
+        data: { deletedOnServer: true, remoteAvailable: false },
+      });
+    } finally {
+      provider.restore();
+      await releaseConversationKeep(scope);
+    }
+  });
 
   test("a delete that cannot reach the provider before its effect runs again once the provider is back", async () => {
     const message = await inboxMessage("unreachable-delete", 424250);
@@ -614,6 +771,37 @@ suite("mail command runtime provider safety", () => {
       expect(provider.steps()[4]).not.toBe(provider.steps()[0]);
     } finally {
       await provider.restore();
+    }
+  }, 15_000);
+
+  test("a Trash move the server made before the keep still reconciles, and Cloud's copy waits in the destination", async () => {
+    const message = await inboxMessage("keep-ambiguous-trash", 424284);
+    const conversationId = await threadMessage(message.id);
+    const scope = { context: adminContext, mailboxId, conversationId };
+    await sql`INSERT INTO mail.folder_role_overrides (mailbox_id, role, folder_id) VALUES (${mailboxId}::uuid, 'trash', ${archiveFolderId}::uuid)`;
+    const provider = await movingProvider(message.rfcMessageId, {
+      afterMove: Object.assign(new Error("Connection not available"), { code: "NoConnection" }),
+    });
+    try {
+      const commandId = await moveCommand(message.id, "keep-ambiguous-trash");
+      expect(await executeMutationCommand(commandId)).toBe("ambiguous");
+      expect((await keepConversation(scope)).ok).toBeTrue();
+      provider.recover();
+      // Reconciling only reads the server, so the keep does not turn a finished move into a failure.
+      expect(await executeMutationCommand(commandId)).toBe("reconciled");
+      // The destination copy has no known UID until the folder sync finds it; Cloud's copy shows there meanwhile.
+      expect(
+        await sql<{ folder_id: string; stale: boolean }[]>`
+          SELECT placement.folder_id, ref.stale_at IS NOT NULL AS stale
+          FROM mail.message_placements placement
+          JOIN mail.remote_message_refs ref ON ref.id = placement.remote_message_ref_id
+          WHERE placement.message_id = ${message.id}::uuid AND placement.deleted_at IS NULL
+        `,
+      ).toEqual([{ folder_id: archiveFolderId, stale: true }]);
+    } finally {
+      await provider.restore();
+      await sql`DELETE FROM mail.folder_role_overrides WHERE mailbox_id = ${mailboxId}::uuid AND role = 'trash'`;
+      await releaseConversationKeep(scope);
     }
   }, 15_000);
 

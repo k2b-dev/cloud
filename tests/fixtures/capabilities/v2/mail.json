@@ -1116,7 +1116,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": ["needs_action", "mine", "unassigned", "waiting", "done", "snoozed", "recently_active"]
+                "enum": ["needs_action", "mine", "unassigned", "waiting", "done", "snoozed", "recently_active", "kept"]
               },
               {
                 "type": "null"
@@ -1991,6 +1991,18 @@
                 "properties": {
                   "type": {
                     "type": "string",
+                    "const": "kept",
+                    "description": "Match kept conversations."
+                  }
+                },
+                "required": ["type"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
                     "const": "folder_id",
                     "description": "Folder search expression."
                   },
@@ -2196,6 +2208,18 @@
                               "type": "string",
                               "const": "all",
                               "description": "Match-all search expression."
+                            }
+                          },
+                          "required": ["type"],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "const": "kept",
+                              "description": "Match kept conversations."
                             }
                           },
                           "required": ["type"],
@@ -2429,6 +2453,18 @@
                           "properties": {
                             "type": {
                               "type": "string",
+                              "const": "kept",
+                              "description": "Match kept conversations."
+                            }
+                          },
+                          "required": ["type"],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
                               "const": "folder_id",
                               "description": "Folder search expression."
                             },
@@ -2638,6 +2674,18 @@
                             "type": "string",
                             "const": "all",
                             "description": "Match-all search expression."
+                          }
+                        },
+                        "required": ["type"],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "const": "kept",
+                            "description": "Match kept conversations."
                           }
                         },
                         "required": ["type"],

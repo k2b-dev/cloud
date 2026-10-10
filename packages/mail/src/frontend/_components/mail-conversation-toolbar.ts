@@ -13,6 +13,7 @@ export const MAIL_CONVERSATION_TOOLBAR_ACTION_IDS = [
   "tags",
   "merge",
   "split",
+  "keep",
   "print",
 ] as const;
 
@@ -80,6 +81,7 @@ export const getMailConversationToolbarSections = (locale: string): readonly Mai
       options: [
         { id: "merge", label: t.merge, description: t.mergeDescription, icon: "ti ti-git-merge" },
         { id: "split", label: t.splitConversation, description: t.splitDescription, icon: "ti ti-arrows-split-2" },
+        { id: "keep", label: t.keep, description: t.keepDescription, icon: "ti ti-lock" },
       ],
     },
     {

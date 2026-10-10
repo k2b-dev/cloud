@@ -6,11 +6,16 @@ import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
 import type { MailRequestContext } from "./auth";
 import { sha256Json } from "./canonical";
+import { createActorCommand, createMaintenanceCommand } from "./commands";
 import type { ConnectorEnvelope } from "./connectors";
 import { imapSmtpConnector } from "./connectors";
+import { keepConversation, releaseConversationKeep } from "./conversation-keeps";
 import { createMailbox } from "./mailboxes";
+import { executeMaintenanceCommand } from "./maintenance-runtime";
+import { getMessage } from "./messages";
 import { createProviderConnection } from "./provider-connections";
 import { submitDueFolderSyncs, syncFolderBatch } from "./sync-runtime";
+import { createConversationTriageCommands } from "./triage";
 
 const suite = suiteFor("database", "nats", "valkey");
 
@@ -64,8 +69,8 @@ const createProvider = (params: { condstore: boolean; draftSearchRefused: boolea
       inReplyTo: null,
       references: [],
       subject: `Remote change ${message.messageId}`,
-      sentAt: new Date(),
-      internalDate: new Date(),
+      sentAt: new Date("2026-10-09T10:00:00Z"),
+      internalDate: new Date("2026-10-09T10:00:00Z"),
       sizeBytes: 42,
       flags: [...message.flags].sort(),
       labels: [],
@@ -139,6 +144,12 @@ const createProvider = (params: { condstore: boolean; draftSearchRefused: boolea
       target.entries.set(placed, { messageId, flags: new Set(flags) });
       target.nextUid = Math.max(target.nextUid, placed + 1);
       return placed;
+    },
+    resetUidValidity: (path: string) => {
+      const target = folder(path);
+      target.uidValidity = String(Number(target.uidValidity) + 1000);
+      target.entries.clear();
+      target.nextUid = 1;
     },
     remove: (path: string, uid: number) => folder(path).entries.delete(uid),
     refuseDraftCount: (refused: boolean) => {
@@ -297,6 +308,171 @@ suite("mail sync of changes made in other clients", () => {
       for (const { access_id } of access) await sql`DELETE FROM auth.access WHERE id = ${access_id}::uuid`;
     }
     if (userId) await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+  });
+
+  test("a kept message remains in its last folder after an external deletion, retires on reappearance and hides on release", async () => {
+    const mailbox = await connect("keep-vanish", true);
+    const uid = mailbox.remote.put("archive", id("kept-copy"));
+    await mailbox.sync("archive");
+    const [content] = await sql<{ id: string; conversation_id: string }[]>`SELECT message.id, link.conversation_id
+      FROM mail.message_contents message JOIN mail.conversation_messages link ON link.message_id = message.id
+      WHERE message.mailbox_id = ${mailbox.mailboxId}::uuid AND message.message_id = ${id("kept-copy")}`;
+    if (!content) throw new Error("Synced keep fixture missing");
+    // No hydration worker runs here; a complete stored copy should not queue a download.
+    await sql`UPDATE mail.message_contents SET hydration_status = 'complete', plain_text = 'Stored evidence' WHERE id = ${content.id}::uuid`;
+    const scope = { context: ownerContext, mailboxId: mailbox.mailboxId, conversationId: content.conversation_id };
+    expect((await keepConversation(scope)).ok).toBeTrue();
+    mailbox.remote.remove("archive", uid);
+    await mailbox.sync("archive");
+    expect(await mailbox.placements(id("kept-copy"))).toEqual([{ role: "archive", deleted: false, flags: [] }]);
+    expect(await getMessage({ context: ownerContext, mailboxId: mailbox.mailboxId, messageId: content.id })).toMatchObject({
+      ok: true,
+      data: { deletedOnServer: true, plainText: "Stored evidence" },
+    });
+    // The folder stays writable on the server; only the message is gone there.
+    await sql`
+      UPDATE mail.binding_folder_refs SET effective_rights = ARRAY['read', 'write_flags']::text[]
+      WHERE folder_id = ${mailbox.folderId("archive")}::uuid
+    `;
+    // Marking only Cloud's copy read changes it in Cloud and leaves the server alone.
+    expect(
+      await createConversationTriageCommands({
+        ...scope,
+        input: {
+          kind: "change_state",
+          sourceFolderId: mailbox.folderId("archive"),
+          change: { addFlags: ["seen"], removeFlags: [], addKeywords: [], removeKeywords: [] },
+          idempotencyKey: `kept-triage-${suffix}`,
+        },
+      }),
+    ).toMatchObject({ ok: true, data: { commands: [] } });
+    expect(await mailbox.placements(id("kept-copy"))).toEqual([{ role: "archive", deleted: false, flags: ["\\Seen"] }]);
+    const newUid = mailbox.remote.put("inbox", id("kept-copy"));
+    await mailbox.sync("inbox");
+    expect(await mailbox.placements(id("kept-copy"))).toEqual([
+      { role: "archive", deleted: true, flags: ["\\Seen"] },
+      { role: "inbox", deleted: false, flags: [] },
+    ]);
+    expect(await getMessage({ context: ownerContext, mailboxId: mailbox.mailboxId, messageId: content.id })).toMatchObject({
+      ok: true,
+      data: { deletedOnServer: false },
+    });
+    mailbox.remote.remove("inbox", newUid);
+    await mailbox.sync("inbox");
+    expect((await releaseConversationKeep(scope)).ok).toBeTrue();
+    expect((await mailbox.placements(id("kept-copy"))).every((placement) => placement.deleted)).toBeTrue();
+    expect(await sql<{ plain_text: string }[]>`SELECT plain_text FROM mail.message_contents WHERE id = ${content.id}::uuid`).toEqual([
+      { plain_text: "Stored evidence" },
+    ]);
+  });
+
+  test("archive and mark read change Cloud's kept copy in Cloud next to the server's messages, and never move it to Drafts", async () => {
+    const mailbox = await connect("keep-triage", true);
+    const goneUid = mailbox.remote.put("inbox", id("kept-gone"));
+    mailbox.remote.put("inbox", id("kept-live"));
+    await mailbox.sync("inbox");
+    const rows = await sql<{ id: string; message_id: string; conversation_id: string }[]>`
+      SELECT message.id, message.message_id, link.conversation_id
+      FROM mail.message_contents message JOIN mail.conversation_messages link ON link.message_id = message.id
+      WHERE message.mailbox_id = ${mailbox.mailboxId}::uuid
+    `;
+    const gone = rows.find((row) => row.message_id === id("kept-gone"));
+    const live = rows.find((row) => row.message_id === id("kept-live"));
+    if (!gone || !live) throw new Error("Synced triage fixture missing");
+    // A reply that joined the kept conversation; no hydration worker runs here.
+    await sql`UPDATE mail.conversation_messages SET conversation_id = ${gone.conversation_id}::uuid WHERE message_id = ${live.id}::uuid`;
+    await sql`UPDATE mail.message_contents SET hydration_status = 'complete' WHERE mailbox_id = ${mailbox.mailboxId}::uuid`;
+    await sql`
+      UPDATE mail.binding_folder_refs SET effective_rights = ARRAY['read', 'write_flags', 'insert', 'move']::text[]
+      WHERE folder_id IN (${mailbox.folderId("inbox")}::uuid, ${mailbox.folderId("archive")}::uuid, ${mailbox.folderId("drafts")}::uuid)
+    `;
+    const scope = { context: ownerContext, mailboxId: mailbox.mailboxId, conversationId: gone.conversation_id };
+    expect((await keepConversation(scope)).ok).toBeTrue();
+    mailbox.remote.remove("inbox", goneUid);
+    await mailbox.sync("inbox");
+    expect(await mailbox.placements(id("kept-gone"))).toEqual([{ role: "inbox", deleted: false, flags: [] }]);
+    expect(await getMessage({ context: ownerContext, mailboxId: mailbox.mailboxId, messageId: gone.id })).toMatchObject({
+      ok: true,
+      data: { deletedOnServer: true, remoteAvailable: false },
+    });
+    // A command for one message names the reason instead of a missing placement.
+    expect(
+      await createActorCommand({
+        context: ownerContext,
+        mailboxId: mailbox.mailboxId,
+        enqueue: false,
+        input: { kind: "delete", messageId: gone.id, folderId: mailbox.folderId("inbox"), idempotencyKey: `kept-direct-${suffix}` },
+      }),
+    ).toMatchObject({ ok: false, error: { code: "KEPT_COPY_ONLY", status: 409 } });
+    const triage = (input: Parameters<typeof createConversationTriageCommands>[0]["input"]) =>
+      createConversationTriageCommands({ ...scope, input });
+    const read = await triage({
+      kind: "change_state",
+      sourceFolderId: mailbox.folderId("inbox"),
+      change: { addFlags: ["seen"], removeFlags: [], addKeywords: [], removeKeywords: [] },
+      idempotencyKey: `kept-read-${suffix}`,
+    });
+    expect(read.ok && read.data.commands.map((command) => command.kind)).toEqual(["change_message_state"]);
+    expect(await mailbox.placements(id("kept-gone"))).toEqual([{ role: "inbox", deleted: false, flags: ["\\Seen"] }]);
+    // Drafts would import the message as a draft, and discarding a draft deletes it on the server.
+    expect(
+      await triage({
+        kind: "move_to_folder",
+        sourceFolderId: mailbox.folderId("inbox"),
+        destinationFolderId: mailbox.folderId("drafts"),
+        idempotencyKey: `kept-drafts-${suffix}`,
+      }),
+    ).toMatchObject({ ok: false, error: { code: "CONVERSATION_KEPT", status: 409 } });
+    const archived = await triage({
+      kind: "move_to_role",
+      role: "archive",
+      sourceFolderId: mailbox.folderId("inbox"),
+      idempotencyKey: `kept-archive-${suffix}`,
+    });
+    expect(archived.ok && archived.data.commands.map((command) => command.kind)).toEqual(["move"]);
+    expect(await mailbox.placements(id("kept-gone"))).toEqual([{ role: "archive", deleted: false, flags: ["\\Seen"] }]);
+    // Only Cloud's copy is in Archive: moving it back queues nothing for the server.
+    expect(
+      await triage({
+        kind: "move_to_role",
+        role: "inbox",
+        sourceFolderId: mailbox.folderId("archive"),
+        idempotencyKey: `kept-back-${suffix}`,
+      }),
+    ).toMatchObject({ ok: true, data: { commands: [] } });
+    expect(await mailbox.placements(id("kept-gone"))).toEqual([{ role: "inbox", deleted: false, flags: ["\\Seen"] }]);
+  });
+
+  test("UIDVALIDITY reset and folder rebuild preserve a kept copy", async () => {
+    const mailbox = await connect("keep-reset", true);
+    mailbox.remote.put("archive", id("kept-reset"));
+    await mailbox.sync("archive");
+    const [content] = await sql<{ id: string; conversation_id: string }[]>`SELECT message.id, link.conversation_id
+      FROM mail.message_contents message JOIN mail.conversation_messages link ON link.message_id = message.id
+      WHERE message.mailbox_id = ${mailbox.mailboxId}::uuid AND message.message_id = ${id("kept-reset")}`;
+    if (!content) throw new Error("Synced reset fixture missing");
+    await sql`UPDATE mail.message_contents SET hydration_status = 'complete' WHERE id = ${content.id}::uuid`;
+    expect(
+      (await keepConversation({ context: ownerContext, mailboxId: mailbox.mailboxId, conversationId: content.conversation_id })).ok,
+    ).toBeTrue();
+    mailbox.remote.resetUidValidity("archive");
+    await mailbox.sync("archive");
+    expect(await mailbox.placements(id("kept-reset"))).toEqual([{ role: "archive", deleted: false, flags: [] }]);
+    mailbox.remote.put("archive", id("kept-reset"));
+    await mailbox.sync("archive");
+    const rebuild = await createMaintenanceCommand({
+      context: ownerContext,
+      mailboxId: mailbox.mailboxId,
+      enqueue: false,
+      input: { kind: "rebuild_folder", folderId: mailbox.folderId("archive"), idempotencyKey: `keep-rebuild-${suffix}` },
+    });
+    if (!rebuild.ok) throw new Error(rebuild.error.message);
+    expect(await executeMaintenanceCommand(rebuild.data.id, async () => undefined, { enqueueWork: false })).toBe("confirmed");
+    expect((await mailbox.placements(id("kept-reset"))).filter((placement) => !placement.deleted)).toHaveLength(1);
+    expect(await getMessage({ context: ownerContext, mailboxId: mailbox.mailboxId, messageId: content.id })).toMatchObject({
+      ok: true,
+      data: { deletedOnServer: true },
+    });
   });
 
   test("a message deleted or moved in another client leaves its folder at the next sync, outside Inbox too", async () => {

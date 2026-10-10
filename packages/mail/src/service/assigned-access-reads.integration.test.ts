@@ -376,6 +376,9 @@ suite("assigned-only Mail reads fail closed across services, HTTP and capabiliti
     >`INSERT INTO mail.conversation_reminders (short_id, mailbox_id, conversation_id, user_id, due_at)
       VALUES (${newShortId()}, ${mailboxId}::uuid, ${c1.id}::uuid, ${readerA.id}::uuid, now() + interval '1 day') RETURNING id`;
     if (!reminder) throw new Error("Reminder fixture was not created");
+    // A hidden kept conversation stays out of the Kept view and its count.
+    await sql`INSERT INTO mail.conversation_keeps (conversation_id, mailbox_id, kept_by_kind, kept_by_id)
+      VALUES (${c3.id}::uuid, ${mailboxId}::uuid, 'user', ${owner.id}::uuid)`;
     reminder1 = reminder.id;
     tokenA = unwrap(await serviceAccountCredentials.createUserApiToken({ user: readerA, name: `A ${suffix}` })).token;
     tokenB = unwrap(await serviceAccountCredentials.createUserApiToken({ user: writerB, name: `B ${suffix}` })).token;
@@ -418,6 +421,7 @@ suite("assigned-only Mail reads fail closed across services, HTTP and capabiliti
       snoozed: 0,
       send_problems: 0,
       recently_active: visible ? 1 : 0,
+      kept: 0,
     });
     for (const view of ["mine", "waiting", "unassigned", "all"] as const) {
       const page = unwrap(await focus.listFocusConversations({ context, view }));

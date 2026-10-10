@@ -133,6 +133,7 @@ const expectedCounts = (keptInside?: Folder): ConversationViewCounts => {
     snoozed: 0,
     send_problems: 0,
     recently_active: 0,
+    kept: 0,
   };
   for (const [conversation, state] of evidence) {
     if (!state.visible) continue;

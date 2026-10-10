@@ -176,7 +176,7 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
         "conversation.list": {
           title: "Gespräche auflisten",
           description:
-            "Durchsuchen Sie kompakte Konversationsvorschauen in einem bekannten Postfach, optional nach Ordner, Arbeitsansicht oder ungelesenem Status. Ohne folderId lassen alle Ansichten außer mine und send_problems Unterhaltungen aus Ordnern mit folder_only oder hidden weg; mit folderId werden sie aufgelistet. Das Ergebnis verfügt über genügend Status, um eine Konversation auszuwählen oder eine Anbietermarkierung/-verschiebung durchzuführen Actions; Verwenden Sie conversation.read für Details zur Zusammenarbeit.",
+            "Durchsuchen Sie kompakte Konversationsvorschauen in einem bekannten Postfach, optional nach Ordner, Arbeitsansicht oder ungelesenem Status. Ohne folderId lassen alle Ansichten außer mine, send_problems und kept Unterhaltungen aus Ordnern mit folder_only oder hidden weg; mit folderId werden sie aufgelistet. Das Ergebnis verfügt über genügend Status, um eine Konversation auszuwählen oder eine Anbietermarkierung/-verschiebung durchzuführen Actions; Verwenden Sie conversation.read für Details zur Zusammenarbeit.",
           input: {
             mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             folderId: "Optionaler Anbieterordner ID-Filter.",
@@ -533,6 +533,18 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
             dueAt: "Zukünftiger Zeitpunkt, zu dem der aktuelle Benutzer benachrichtigt werden soll.",
             expectedRevision: "Aktuelle Erinnerungsrevision oder null beim Erstellen.",
           },
+        },
+        "conversation.keep": {
+          title: "Unterhaltung aufbewahren",
+          description:
+            "Schützt die ganze Unterhaltung einschließlich späterer Antworten vor dem Löschen durch Cloud. Erfordert Schreibzugriff auf das Postfach.",
+          input: { mailboxId: "Exakte Postfach-ID.", conversationId: "Exakte Unterhaltungs-ID." },
+        },
+        "conversation.keep.release": {
+          title: "Aufbewahrung aufheben",
+          description:
+            "Erlaubt wieder das Löschen und blendet Cloud-Kopien bereits auf dem Mailserver gelöschter Nachrichten aus. Erfordert Verwaltungszugriff auf das Postfach.",
+          input: { mailboxId: "Exakte Postfach-ID.", conversationId: "Exakte Unterhaltungs-ID." },
         },
         "conversation.snooze": {
           title: "Unterhaltung später anzeigen",

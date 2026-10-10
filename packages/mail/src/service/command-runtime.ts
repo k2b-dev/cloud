@@ -11,6 +11,7 @@ import { rediscoverProviderBinding } from "./bindings";
 import { commandStillAuthorized } from "./command-authorization";
 import { imapSmtpConnector, type RemoteMessageSet, type RemoteMessageState, type RemoteMutationTarget } from "./connectors";
 import type { SmtpConnectionConfig } from "./connectors/contract";
+import { checkCommandKeepProtection, keepLastKeptPlacements, retireKeptCopyPlacements } from "./conversation-keep-rules";
 import { isMailReceivedSinceSend, refreshConversationTimeline } from "./conversation-timeline";
 import { deriveConversationWorkState } from "./conversation-work-state";
 import { isTransientDatabaseError } from "./database-errors";
@@ -431,6 +432,7 @@ const updateMutationProjection = async (params: {
         WHERE remote_message_ref_id = ${params.source.remote_message_ref_id}::uuid
       `;
     }
+    let destinationProjected = false;
     if ((params.command.kind === "copy" || params.command.kind === "move") && params.destination) {
       if (params.destinationUidValidity && params.destinationUid) {
         const [remoteRef] = await tx<{ id: string }[]>`
@@ -471,6 +473,8 @@ const updateMutationProjection = async (params: {
               deleted_at = NULL,
               updated_at = now()
           `;
+          await retireKeptCopyPlacements(tx, params.source.message_content_id, remoteRef.id);
+          destinationProjected = true;
         }
       }
     }
@@ -485,6 +489,13 @@ const updateMutationProjection = async (params: {
         SET deleted_at = now(), updated_at = now()
         WHERE remote_message_ref_id = ${params.source.remote_message_ref_id}::uuid
       `;
+      // A message kept after this command passed its check keeps one visible placement: where a delete removed it,
+      // or in the destination of a move whose new copy the folder sync has not seen yet.
+      await keepLastKeptPlacements(
+        tx,
+        [params.source.remote_message_ref_id],
+        params.command.kind === "move" && !destinationProjected ? params.destination?.folder_id : undefined,
+      );
     }
     return true;
   });
@@ -527,6 +538,7 @@ const AMBIGUOUS_COMMAND_CODES = new Set([
 
 export const mutationFailureState = (error: unknown, providerEffectStarted = true): CommandState => {
   const code = normalizeCode(error, "");
+  if (["CONVERSATION_KEPT", "FOLDER_HAS_KEPT_CONVERSATIONS", "KEPT_COPY_ONLY"].includes(code)) return "failed";
   if (PARTIAL_MUTATION_CODES.has(code)) return "needs_attention";
   if (AMBIGUOUS_COMMAND_CODES.has(code)) return "ambiguous";
   // A started provider effect can never be replayed, so its outcome is reconciled instead of retried.
@@ -668,6 +680,12 @@ const beginProviderEffect = async (
         code: "ACCESS_REVOKED",
       });
     }
+    const protection = await checkCommandKeepProtection(tx, {
+      kind: command.kind,
+      target: parseJsonRecord(command.target),
+      payload: parseJsonRecord(command.payload),
+    });
+    if (!protection.ok) throw Object.assign(new Error(protection.error.message), protection.error);
     const updated = await tx`
       UPDATE mail.commands
       SET
@@ -945,6 +963,17 @@ const destinationUidFloor = (command: DbCommandExecution, uidValidity: string): 
   return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : 0;
 };
 
+const assertCommandKeepProtection = async (command: DbCommandExecution): Promise<void> => {
+  const result = await sql.begin((tx) =>
+    checkCommandKeepProtection(tx, {
+      kind: command.kind,
+      target: parseJsonRecord(command.target),
+      payload: parseJsonRecord(command.payload),
+    }),
+  );
+  if (!result.ok) throw Object.assign(new Error(result.error.message), result.error);
+};
+
 /**
  * Moves the messages of fresh move commands that share their source and destination folder over
  * one session: one UIDNEXT of the destination as the baseline, one FETCH to check the messages,
@@ -956,8 +985,14 @@ const destinationUidFloor = (command: DbCommandExecution, uidValidity: string): 
 const executeFreshMoves = async (commands: DbCommandExecution[], assertLeaseActive: LeaseAssertion, fail: MoveFailure): Promise<void> => {
   const authorized: DbCommandExecution[] = [];
   for (const command of commands) {
-    if (await commandStillAuthorized(command, "write")) authorized.push(command);
-    else await fail(command, commandError("Mailbox write access was revoked before execution", "ACCESS_REVOKED"));
+    try {
+      if (!(await commandStillAuthorized(command, "write")))
+        throw commandError("Mailbox write access was revoked before execution", "ACCESS_REVOKED");
+      await assertCommandKeepProtection(command);
+      authorized.push(command);
+    } catch (error) {
+      await fail(command, error);
+    }
   }
   const [first] = authorized;
   if (!first) return;
@@ -1096,6 +1131,7 @@ const executeFreshMutation = async (command: DbCommandExecution, assertLeaseActi
     );
     return;
   }
+  await assertCommandKeepProtection(command);
   const binding = await loadPinnedBinding(command);
   const runtime = await loadPinnedRuntime(binding);
   const target = sourceTargetSchema.parse(parseJsonRecord(command.target));
@@ -1264,6 +1300,7 @@ const reconcileMutation = async (command: DbCommandExecution): Promise<void> => 
     );
     return;
   }
+  // Reconciliation only reads the provider, so a keep added after the effect started cannot hide what it did.
   const runtime = await loadPinnedRuntime(await loadPinnedBinding(command));
   const target = sourceTargetSchema.parse(parseJsonRecord(command.target));
   const source = await loadReconciliationSource(command, target);
@@ -1687,6 +1724,7 @@ const runFolderOperation = async (claimed: ClaimedCommand, assertJobLeaseActive:
     );
     return RAN;
   }
+  if (!reconcilesEarlierEffect(claimed)) await assertCommandKeepProtection(command);
   const operation = await prepareFolderOperation(command);
   const { lock, retryAfterMs } = await acquireCommandLease(command, operation.binding.remote_resource_id);
   if (!lock) {
