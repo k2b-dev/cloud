@@ -97,6 +97,42 @@ export const HttpRequest = z
     if (JSON.stringify(v.headers).length > LIMITS.text) c.addIssue({ code: "custom", message: "Headers exceed budget" });
   });
 export type HttpRequest = z.infer<typeof HttpRequest>;
+/**
+ * Request headers a website read may carry: those that only describe the response the code wants or the client it is,
+ * never who asks or what to do. None of them carries a credential, overrides the method, or changes routing, and the
+ * HTTP service forwards no cookie or Cloud authentication, so the request stays an anonymous read of the same origin.
+ * `HeaderName` already rejects `cookie`, `proxy-*`, and the other headers the HTTP service controls; `authorization`,
+ * API keys, method overrides, and every other header ask every time.
+ */
+export const WEBSITE_READ_HEADERS: ReadonlySet<string> = new Set([
+  "accept",
+  "accept-language",
+  "range",
+  "user-agent",
+  "if-none-match",
+  "if-modified-since",
+]);
+/**
+ * Each value of such a header holds at most this many characters, the Fetch standard's limit for a CORS-safelisted
+ * request header value. The receipt of a request a website approval lets through shows only its method and URL, so this
+ * keeps what the code can add beside the URL small. A longer value makes the request ask.
+ */
+export const WEBSITE_READ_HEADER_LENGTH = 128;
+
+/**
+ * Whether a request only reads its website: GET or HEAD, which never has a body, and every header plain, listed in
+ * `WEBSITE_READ_HEADERS`, and short. The approval card and dialog say "reads" only for such a request, and only such a
+ * request can be covered by a website approval; the server additionally refuses a header one of the person's secrets
+ * is bound to.
+ */
+export function isWebsiteRead(request: { method: string; headers: Record<string, string | SecretReference> }): boolean {
+  return (
+    (request.method === "GET" || request.method === "HEAD") &&
+    Object.entries(request.headers).every(
+      ([name, value]) => typeof value === "string" && WEBSITE_READ_HEADERS.has(name) && value.length <= WEBSITE_READ_HEADER_LENGTH,
+    )
+  );
+}
 export const HttpPrepare = z.object({ id: z.uuid(), createdAt: z.number().int(), scope: HttpScope, request: HttpRequest }).strict();
 export type HttpPrepare = z.infer<typeof HttpPrepare>;
 export const HttpReview = z.object({

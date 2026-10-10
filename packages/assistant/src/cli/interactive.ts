@@ -3,6 +3,7 @@ import { createInterface } from "node:readline";
 import type { AiFileStat, AiPendingTurnAction, AiPublicModelProfile, CloudAiSurveyInput, CloudAiTextEditorInput } from "@k2b/cloud/ai";
 import { AI_TURN_ATTACHMENT_MAX_ITEMS, CloudAiSurveyInputSchema, CloudAiTextEditorInputSchema } from "@k2b/cloud/ai/browser";
 import { arg, type CloudCliContext, command, flag } from "@k2b/cloud/cli";
+import { httpApprovalNotice } from "../artifacts/code-approval-message";
 import type { CapabilityDecision, CodeApproval } from "../artifacts/runtime/capabilities";
 import { closeCliCodeHost } from "./code-host";
 import { deniedLocalBashResult, parseLocalBashInput, runLocalBash } from "./local-bash";
@@ -313,7 +314,7 @@ export async function collectCapabilityApproval(
 ): Promise<CapabilityDecision> {
   if ("type" in request) {
     ctx.print(terminalSafeText(`External HTTP: ${request.method} ${request.url}`));
-    ctx.print("This request may change external data or incur charges. Secret values are injected only by the server.");
+    ctx.print(terminalSafeText(httpApprovalNotice(request, "en")));
     ctx.print(terminalSafeText(JSON.stringify(request.headers, null, 2)));
     if (request.bodyBytes) ctx.print(terminalSafeText(`${request.bodyBytes} bytes: ${request.bodyPreview}`));
     if (request.bodyTruncated) ctx.print("Body preview is incomplete; review source and inputs before approving.");

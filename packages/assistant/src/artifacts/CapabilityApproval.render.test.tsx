@@ -148,6 +148,44 @@ test("an approval from managed code reads as the app's localized review, never a
   expect(http.split("\n")[0]).toBe("Externer HTTP-Aufruf: POST https://api.example.test/items");
   expect(http).toContain("authorization: Bearer [Secret „API_TOKEN“]");
   expect(http).toContain('Inhalt (13 B): {"name":"x"}');
+  // A write keeps the warning; a read says that it reads, and mentions secrets only when it references one.
+  expect(http).toContain(
+    "Dieser Request sendet Daten an einen externen Dienst und kann Daten ändern oder Kosten verursachen. Secret-Referenzen werden nur auf dem Server aufgelöst.",
+  );
+  const read = {
+    type: "http" as const,
+    name: "http.fetch:https://query1.finance.yahoo.com",
+    id: "00000000-0000-4000-8000-000000000006",
+    url: "https://query1.finance.yahoo.com/v8/finance/chart/NVDA",
+    method: "GET",
+    headers: { "user-agent": "Mozilla/5.0", accept: "application/json" },
+    bodyBytes: 0,
+    bodyPreview: "",
+    bodyTruncated: false,
+    resourceTitle: "Stock monitor",
+  };
+  const readMessage = codeApprovalMessage(read, "en");
+  expect(readMessage).toContain(
+    "This request reads data from query1.finance.yahoo.com. Returned data is available to this code and may be shared by the app.",
+  );
+  expect(readMessage).not.toMatch(/sends data|may change data|incur charges|Secret references/);
+  expect(readMessage).toContain("accept: application/json");
+  expect(codeApprovalMessage(read, "de")).toContain("Dieser Request liest Daten von query1.finance.yahoo.com.");
+  // Only what a website approval could cover reads: a secret, a method override, any other header, or a long value warns.
+  const warned: Record<string, string | { secret: string; prefix: string }>[] = [
+    { "x-api-key": { secret: "QUOTES", prefix: "" } },
+    { "x-http-method-override": "DELETE" },
+    { accept: "application/json", "content-type": "application/json" },
+    { "user-agent": "x".repeat(129) },
+  ];
+  for (const headers of warned) {
+    const message = codeApprovalMessage({ ...read, headers }, "en");
+    expect(message).toContain("This request sends data to an external service and may change data or incur charges.");
+    expect(message).not.toContain("reads data");
+  }
+  expect(codeApprovalMessage({ ...read, method: "HEAD", headers: { "x-api-key": { secret: "QUOTES", prefix: "" } } }, "en")).toContain(
+    "may change data or incur charges. Secret references are resolved only on the server. Returned data",
+  );
 
   const html = renderToString(() =>
     createComponent(LocaleProvider, {

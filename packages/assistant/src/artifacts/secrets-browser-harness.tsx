@@ -62,7 +62,7 @@ function Harness() {
             id: crypto.randomUUID(),
             url: "https://query1.finance.yahoo.com/v7/finance/quote?symbols=NVDA,AAPL",
             method: "GET",
-            headers: {},
+            headers: { "user-agent": "Mozilla/5.0 (X11; Linux x86_64)", accept: "application/json" },
             bodyBytes: 0,
             bodyPreview: "",
             bodyTruncated: false,
