@@ -893,6 +893,7 @@ export const listFiltered = async (params: {
 }): Promise<ItemListResult> => {
   const { spaceId, filter, currentUserId } = params;
   const {
+    itemIds,
     type,
     status,
     activity: activityFilter,
@@ -913,6 +914,13 @@ export const listFiltered = async (params: {
   // Build WHERE conditions as SQL fragments (safe from injection)
   // Base condition - always filter by space
   let conditions = sql`i.space_id = ${spaceId}`;
+
+  // Resolve public item IDs in the query so deleted or unknown items simply do not match.
+  if (itemIds !== undefined) {
+    conditions = sql`${conditions} AND i.id IN (
+      SELECT id FROM spaces.items WHERE space_id = ${spaceId}::uuid AND short_id = ANY(${toPgTextArray(itemIds)}::text[])
+    )`;
+  }
 
   // Type filter (task vs event)
   if (type === "task") {
