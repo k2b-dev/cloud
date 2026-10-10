@@ -20,6 +20,10 @@ class SpacerWidget extends WidgetType {
     spacer.appendChild(line);
     return spacer;
   }
+
+  override eq(other: WidgetType) {
+    return other instanceof SpacerWidget;
+  }
 }
 
 class DotWidget extends WidgetType {
@@ -31,6 +35,10 @@ class DotWidget extends WidgetType {
     wrapper.setAttribute("inert", "true");
     wrapper.innerHTML = "&bull;";
     return wrapper;
+  }
+
+  override eq(other: WidgetType) {
+    return other instanceof DotWidget;
   }
 }
 

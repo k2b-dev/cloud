@@ -73,6 +73,25 @@ describe("editor checklist boxes", () => {
     }
   });
 
+  test("parser progress keeps the bullet dots and indent guides already on screen", () => {
+    const doc = `- Groceries\n  - Milk\n${"Some prose that fills the note.\n".repeat(40_000)}`;
+    const { view, cleanup } = mount(doc, 0);
+    try {
+      const dot = view.dom.querySelector(".custom-list-marker");
+      const guide = view.dom.querySelector(".custom-list-indent");
+      expect(dot).not.toBeNull();
+      expect(guide).not.toBeNull();
+      const tree = syntaxTree(view.state);
+      forceParsing(view, doc.length, 5000);
+      // The newer tree rebuilt the list decorations, but the unchanged widgets keep their elements.
+      expect(syntaxTree(view.state)).not.toBe(tree);
+      expect(view.dom.querySelector(".custom-list-marker") === dot).toBe(true);
+      expect(view.dom.querySelector(".custom-list-indent") === guide).toBe(true);
+    } finally {
+      cleanup();
+    }
+  });
+
   test("a press ticks and unticks the box with one change, leaves the caret, and asks for no scrolling", () => {
     const doc = "Intro\n- [ ] Buy milk\n- [x] Call Ada\n";
     const { view, transactions, press, cleanup } = mount(doc, 2);
