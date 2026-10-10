@@ -13,7 +13,7 @@ Der E-Mail-Anbieter bleibt die Quelle für übertragbare E-Mail-Zustände. Wenn 
 ## Den passenden Einstieg wählen {icon="square-plus"}
 
 - Wenn du Mail über die App-Navigation öffnest, siehst du **Fokus**. Fokus ist eine gemeinsame Arbeitsliste für alle Postfächer, die du ansehen kannst.
-- **Für mich** zeigt dir zugewiesene Unterhaltungen mit Handlungsbedarf. **Nicht zugewiesen** zeigt Arbeit ohne zuständige Person.
+- **Für mich** zeigt dir zugewiesene Unterhaltungen mit Handlungsbedarf. **Nicht zugewiesen** zeigt Arbeit mit Handlungsbedarf, der niemand zugewiesen ist, der sie noch bearbeiten kann.
 - **Wartet** zeigt deine zugewiesenen Unterhaltungen, die auf eine Antwort warten. **Alle aktiven** zeigt alle nicht erledigten Unterhaltungen, die du ansehen kannst und die nicht unter **Später** liegen.
 - Jede Postfachschaltfläche zeigt, wie viele Unterhaltungen Handlungsbedarf haben. Ein Punkt am Postfachsymbol bedeutet ungelesene Unterhaltungen außerhalb von Papierkorb und Spam. Zeige auf die Schaltfläche, um beide genauen Zahlen zu sehen.
 - Öffne ein Postfach, wenn du Ordner, eine Suche im ganzen Postfach oder Einstellungen brauchst.

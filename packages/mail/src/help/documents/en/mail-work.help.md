@@ -49,7 +49,7 @@ The built-in **Follow-up** views show what happens next. **Assignment** shows wh
 | Follow-up | Later | Conversations hidden until the selected time. At that time, they appear again with the same next step. New incoming mail shows them immediately. |
 | Follow-up | Done | Conversations marked Done |
 | Assignment | Assigned to me | Conversations assigned to you |
-| Assignment | Unassigned | Conversations without an assignee, or whose assignee no longer has **Edit** access to this mailbox |
+| Assignment | Unassigned | Conversations with no assignee who can still work on them, for example because the assignees lost their access |
 | Mail / More | All mail | Mail from every provider folder except Trash, Junk, and folders whose mail stays inside them |
 | More | Recent activity | Recently changed conversations |
 | Mail | Scheduled | Messages that wait for later delivery |
@@ -92,13 +92,13 @@ To act on several conversations, select their checkboxes. Hold **Shift** while y
 - **Partial result:** If Mail can queue only some commands, it keeps the failed conversations selected and reports each failure.
 :::
 
-Choose **Assign** to give the selected conversations to one person. Choose **Assign to me** or **Unassign**, or search the people with **Edit** access to this mailbox. Mail confirms how many conversations changed and offers **Undo**. **Undo** removes the assignee again and does not restore the earlier assignee. The new assignee receives one notification for the whole selection. If a conversation no longer belongs to the mailbox, Mail says how many conversations did not change.
+Choose **Assign** to change the assignees of the selected conversations. Choose **Assign to me**, **Remove me**, or **Remove all assignees**, or search for a person who can be assigned. A person that you add joins the other assignees and receives one notification for the whole selection. Mail confirms how many conversations changed and offers **Undo**. **Undo** reverses the change only in the conversations that it changed. **Remove all assignees** has no **Undo**. If a conversation no longer belongs to the mailbox, Mail says how many conversations did not change.
 
 ## Take a quick look before opening {icon="eye"}
 
 With a mouse, rest the pointer on a conversation row for a moment. A quick look opens next to the list. It shows:
 
-- the time of the newest message, the next step, the assignee, and tags;
+- the time of the newest message, the next step, the assignees, and tags;
 - the subject and the stored summary, if one exists;
 - the start of the newest message without quoted history;
 - the first attachment and the number of earlier messages.
@@ -226,7 +226,7 @@ For composing, drafts, attachments, signatures, and delivery options, see [Write
 
 ## Create reusable views and local tags {icon="layout-list"}
 
-Open **Settings → Organization** to create a saved view from folder and collaboration filters. A view can filter by folder, assignee, next step, local tag, and whether the conversation is in **Later**. A filter for conversations without an assignee works like **Unassigned**: it also finds conversations whose assignee no longer has **Edit** access to this mailbox.
+Open **Settings → Organization** to create a saved view from folder and collaboration filters. A view can filter by folder, assignee, next step, local tag, and whether the conversation is in **Later**. A filter for conversations without an assignee works like **Unassigned**: it also finds conversations whose assignees can no longer work on them.
 
 - **Only me** creates a private view.
 - **Everyone with mailbox access** creates a mailbox view and requires **Edit** access.
@@ -265,12 +265,12 @@ Choose the action:
 
 To merge, choose the destination from the same mailbox by sender or subject. Review the source and the destination in the confirmation, then merge.
 
-- The target keeps its assignee and work state.
+- The target keeps its work state. The assignees of both conversations stay assigned. Mail does not merge conversations that together have more than 20 assignees.
 - Source messages, comments, drafts, local tags, and references move to the target.
 - Personal reminders also move. If someone has a reminder on both conversations, Mail keeps their reminder on the target.
 - Mail removes the source conversation.
 
-Splitting in the web interface selects one message. That message and its linked comments move to a new, unassigned conversation. Drafts, tags, references, reminders, and other comments stay with the source. The source keeps its assignee and work state. At least one message must stay in the source.
+Splitting in the web interface selects one message. That message and its linked comments move to a new conversation with the same assignees. Drafts, tags, references, reminders, and other comments stay with the source. The source keeps its assignees and work state. At least one message must stay in the source.
 
 Mail records changes in the conversation activity. If another person changes either conversation before you confirm, Mail rejects your outdated change. Reload and review it again.
 

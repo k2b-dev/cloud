@@ -49,7 +49,7 @@ Die eingebauten Ansichten unter **Nachverfolgung** zeigen, was als Nächstes ges
 | Nachverfolgung | Später | Unterhaltungen, die bis zum gewählten Zeitpunkt ausgeblendet sind. Zu diesem Zeitpunkt erscheinen sie mit demselben nächsten Schritt wieder. Neue eingehende E-Mails zeigen sie sofort. |
 | Nachverfolgung | Erledigt | Als erledigt markierte Unterhaltungen |
 | Zuweisung | Mir zugewiesen | Dir zugewiesene Unterhaltungen |
-| Zuweisung | Nicht zugewiesen | Unterhaltungen ohne zugewiesene Person oder deren zugewiesene Person keinen Zugriff **Bearbeiten** auf dieses Postfach mehr hat |
+| Zuweisung | Nicht zugewiesen | Unterhaltungen, denen niemand zugewiesen ist, der sie noch bearbeiten kann, zum Beispiel weil die zugewiesenen Personen keinen Zugriff mehr haben |
 | E-Mail / Mehr | Alle E-Mails | E-Mails aus allen Anbieterordnern außer Papierkorb, Spam und Ordnern, deren E-Mails im Ordner bleiben |
 | Mehr | Letzte Aktivität | Kürzlich geänderte Unterhaltungen |
 | E-Mail | Geplant | Nachrichten, die auf eine spätere Zustellung warten |
@@ -92,13 +92,13 @@ Um mehrere Unterhaltungen zu bearbeiten, wähle ihre Kontrollkästchen aus. Halt
 - **Teilergebnis:** Kann Mail nur einige Befehle einreihen, bleiben die fehlgeschlagenen Unterhaltungen ausgewählt, und Mail meldet jeden Fehler.
 :::
 
-Wähle **Zuweisen**, um die ausgewählten Unterhaltungen einer Person zu geben. Wähle **Mir zuweisen** oder **Zuweisung entfernen**, oder suche unter den Personen mit Zugriff **Bearbeiten** auf dieses Postfach. Mail bestätigt, wie viele Unterhaltungen sich geändert haben, und bietet **Rückgängig** an. **Rückgängig** entfernt die Zuweisung wieder und stellt die vorher zugewiesene Person nicht wieder her. Die neu zugewiesene Person erhält eine einzige Benachrichtigung für die ganze Auswahl. Gehört eine Unterhaltung nicht mehr zum Postfach, nennt Mail, wie viele Unterhaltungen sich nicht geändert haben.
+Wähle **Zuweisen**, um die zugewiesenen Personen der ausgewählten Unterhaltungen zu ändern. Wähle **Mir zuweisen**, **Mich entfernen** oder **Alle Zuweisungen entfernen**, oder suche eine Person, die zugewiesen werden kann. Eine Person, die du hinzufügst, kommt zu den anderen zugewiesenen Personen dazu und erhält eine einzige Benachrichtigung für die ganze Auswahl. Mail bestätigt, wie viele Unterhaltungen sich geändert haben, und bietet **Rückgängig** an. **Rückgängig** macht die Änderung nur in den Unterhaltungen rückgängig, die sie geändert hat. **Alle Zuweisungen entfernen** bietet kein **Rückgängig**. Gehört eine Unterhaltung nicht mehr zum Postfach, nennt Mail, wie viele Unterhaltungen sich nicht geändert haben.
 
 ## Kurz hineinschauen, ohne zu öffnen {icon="eye"}
 
 Lass den Mauszeiger kurz auf einer Zeile der Unterhaltungsliste ruhen. Neben der Liste öffnet sich eine Kurzansicht. Sie zeigt:
 
-- die Zeit der neuesten Nachricht, den nächsten Schritt, die zugewiesene Person und die Tags;
+- die Zeit der neuesten Nachricht, den nächsten Schritt, die zugewiesenen Personen und die Tags;
 - den Betreff und die gespeicherte Zusammenfassung, falls es eine gibt;
 - den Anfang der neuesten Nachricht ohne zitierten Verlauf;
 - den ersten Anhang und die Zahl früherer Nachrichten.
@@ -226,7 +226,7 @@ Mehr zu Verfassen, Entwürfen, Anhängen, Signaturen und Zustelloptionen findest
 
 ## Wiederverwendbare Ansichten und lokale Tags erstellen {icon="layout-list"}
 
-Öffne **Einstellungen → Organisation**, um aus Ordner- und Zusammenarbeitsfiltern eine gespeicherte Ansicht zu erstellen. Eine Ansicht kann nach Ordner, zugewiesener Person, nächstem Schritt, lokalem Tag und danach filtern, ob die Unterhaltung unter **Später** liegt. Ein Filter für Unterhaltungen ohne zugewiesene Person funktioniert wie **Nicht zugewiesen**: Er findet auch Unterhaltungen, deren zugewiesene Person keinen Zugriff **Bearbeiten** auf dieses Postfach mehr hat.
+Öffne **Einstellungen → Organisation**, um aus Ordner- und Zusammenarbeitsfiltern eine gespeicherte Ansicht zu erstellen. Eine Ansicht kann nach Ordner, zugewiesener Person, nächstem Schritt, lokalem Tag und danach filtern, ob die Unterhaltung unter **Später** liegt. Ein Filter für Unterhaltungen ohne zugewiesene Person funktioniert wie **Nicht zugewiesen**: Er findet auch Unterhaltungen, deren zugewiesene Personen sie nicht mehr bearbeiten können.
 
 - **Nur für mich** erstellt eine private Ansicht.
 - **Alle Personen mit Postfachzugriff** erstellt eine Postfachansicht und braucht Zugriff **Bearbeiten**.
@@ -265,12 +265,12 @@ Wähle die Aktion:
 
 Zum Zusammenführen wählst du das Ziel aus demselben Postfach nach Absender oder Betreff. Prüfe Quelle und Ziel in der Bestätigung und führe dann zusammen.
 
-- Das Ziel behält seine zugewiesene Person und seinen Arbeitsstatus.
+- Das Ziel behält seinen Arbeitsstatus. Die zugewiesenen Personen beider Unterhaltungen bleiben zugewiesen. Mail führt keine Unterhaltungen zusammen, die zusammen mehr als 20 zugewiesene Personen haben.
 - Nachrichten, Kommentare, Entwürfe, lokale Tags und Referenzen der Quelle wandern zum Ziel.
 - Persönliche Erinnerungen wandern ebenfalls. Hat jemand eine Erinnerung an beiden Unterhaltungen, behält Mail die Erinnerung am Ziel.
 - Mail entfernt die Quellunterhaltung.
 
-Das Aufteilen in der Weboberfläche wählt eine Nachricht aus. Diese Nachricht und ihre verknüpften Kommentare wandern in eine neue, nicht zugewiesene Unterhaltung. Entwürfe, Tags, Referenzen, Erinnerungen und andere Kommentare bleiben bei der Quelle. Die Quelle behält ihre zugewiesene Person und ihren Arbeitsstatus. Mindestens eine Nachricht muss in der Quelle bleiben.
+Das Aufteilen in der Weboberfläche wählt eine Nachricht aus. Diese Nachricht und ihre verknüpften Kommentare wandern in eine neue Unterhaltung mit denselben zugewiesenen Personen. Entwürfe, Tags, Referenzen, Erinnerungen und andere Kommentare bleiben bei der Quelle. Die Quelle behält ihre zugewiesenen Personen und ihren Arbeitsstatus. Mindestens eine Nachricht muss in der Quelle bleiben.
 
 Mail hält Änderungen in der Aktivität der Unterhaltung fest. Ändert eine andere Person eine der beiden Unterhaltungen, bevor du bestätigst, lehnt Mail deine veraltete Änderung ab. Lade neu und prüfe sie erneut.
 

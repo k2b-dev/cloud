@@ -4,6 +4,8 @@ import { compileWorkflow } from "@k2b/cloud/workflows/language";
 import { z } from "zod";
 import mailCli from "../cli";
 import { createAutomaticReplyConfigurationSchema, createIncomingAutomationSchema } from "../contracts";
+import { mailboxAccessLevels } from "../frontend/_components/mailbox-access-levels";
+import { mailWorkspaceMessages } from "../frontend/mail-workspace-messages";
 import { bindMailWorkflow } from "../workflows/binder";
 import { buildMailWorkflowCatalog } from "../workflows/catalog";
 import { mailWorkflows } from "../workflows/module";
@@ -152,6 +154,34 @@ describe("mailHelp", () => {
     expect(mailHelp.getMarkdown("mail-automation", "de")).toContain("**Administration → Systembeobachtung → Workflows**");
     expect(mailHelp.getMarkdown("mail-automation", "de")).not.toContain("**Admin > ");
     expect(mailHelp.getMarkdown("mail-start", "fr")).toBe(mailHelp.getMarkdown("mail-start")!);
+  });
+
+  test("documents several assignees and access to assigned conversations only with the interface labels", () => {
+    for (const locale of ["en", "de"] as const) {
+      const collaboration = mailHelp.getMarkdown("mail-collaboration", locale)!;
+      const work = mailHelp.getMarkdown("mail-work", locale)!;
+      const admin = mailHelp.getMarkdown("mail-admin", locale)!;
+      const t = mailWorkspaceMessages.resolve([locale]).t;
+      for (const label of [t.assignToMe, t.removeMe, t.unassign]) {
+        expect(collaboration).toContain(`**${label}**`);
+        expect(work).toContain(`**${label}**`);
+      }
+      const levels = mailboxAccessLevels(locale)({ type: "user", userId: "00000000-0000-4000-8000-000000000000" });
+      const scoped = levels.flatMap((level) => (typeof level === "object" && level.scope === "assigned" ? [level.label!] : []));
+      expect(scoped).toHaveLength(2);
+      for (const label of scoped) {
+        expect(collaboration).toContain(`**${label}**`);
+        expect(admin).toContain(`**${label}**`);
+      }
+      expect(collaboration).toContain("20");
+      expect(collaboration).toContain('{icon="user-check"}');
+      expect(mailHelp.getMarkdown("mail-workflows", locale)).toContain("`assigneeUserIds`");
+    }
+    const work = mailHelp.getMarkdown("mail-work")!;
+    expect(work).toContain("The assignees of both conversations stay assigned");
+    expect(work).toContain("a new conversation with the same assignees");
+    expect(work).not.toContain("unassigned conversation");
+    expect(work).toContain("**Remove all assignees** has no **Undo**");
   });
 
   test("documents permission-scoped Contacts context", () => {

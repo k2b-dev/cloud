@@ -176,7 +176,7 @@ Variables created inside a branch do not escape that branch. Defining the same v
 | `trashMessage` | `message` | Moves the message to the mailbox trash folder |
 | `junkMessage` | `message` | Moves the message to the mailbox junk folder |
 | `addFlag` / `removeFlag` | `message`, `flag` | Changes `seen`, `answered`, `flagged`, or `draft` through the provider command journal |
-| `assignConversation` | `conversation`, `user` | Assigns by accessible user name or ID; `null` unassigns |
+| `assignConversation` | `conversation`, `user` | Replaces the assignees with one person who can be assigned, by user name or ID; `null` removes all assignees |
 | `setConversationStatus` | `conversation`, `status` | Sets `needs_action`, `waiting`, or `done` |
 | `setConversationSummary` | `conversation`, `summary` | Replaces the editable conversation summary |
 | `ensureConversationReference` | `conversation`; optional `saveAs` | Allocates or reuses the permanent mailbox reference and optionally stores its result |

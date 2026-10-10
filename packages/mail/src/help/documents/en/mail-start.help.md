@@ -13,7 +13,7 @@ The email provider stays the source for portable mail state. When you move a mes
 ## Choose the right starting point {icon="square-plus"}
 
 - When you open Mail from the app navigation, you see **Focus**. Focus is one work queue across every mailbox that you can view.
-- **For me** shows conversations assigned to you that need action. **Unassigned** shows work without an owner.
+- **For me** shows conversations assigned to you that need action. **Unassigned** shows work that needs action and has no assignee who can still work on it.
 - **Waiting** shows your assigned conversations that wait for a reply. **All active** shows every unfinished conversation that you can view and that is not in **Later**.
 - Each mailbox button shows how many conversations need action. A dot on the mailbox icon means unread conversations outside Trash and Junk. Point at the button to see both exact counts.
 - Open a mailbox when you need folders, a search across the mailbox, or settings.
