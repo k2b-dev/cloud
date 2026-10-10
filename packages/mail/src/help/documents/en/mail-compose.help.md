@@ -107,7 +107,7 @@ Type `/` in the body to search available signatures and snippets. Mail inserts t
 - **Private:** Only the owner sees the template.
 - **Mailbox:** The template is shared with collaborators.
 
-When a verified sender has a default signature, Mail inserts it automatically into new messages, replies, and forwards. In a reply or forward, Mail places the signature before the quoted message history. A personal default replaces the mailbox default for that sender. You can still edit the inserted source. Signatures are not mandatory or locked. If you delete only part of a signature, the rest is sent as the text you see.
+When a verified sender has a default signature, Mail inserts it automatically into new messages, replies, and forwards. In a reply or forward, Mail places the signature before the quoted message history. A personal default replaces the mailbox default for that sender. You can still edit the inserted source. Signatures are not mandatory or locked. If you delete only part of a signature, Mail may no longer recognize the rest as a signature. Mail then sends the rest as written and warns you about any placeholders in it before sending.
 
 With **Manage** access, you change templates and defaults in **Settings → Writing**. Choose **Edit design** there to open the mailbox CSS editor. Its preview updates from the current unsaved CSS. The Preview in the composer uses the same rendering as delivery.
 

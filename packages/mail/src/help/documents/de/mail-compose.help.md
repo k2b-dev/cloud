@@ -107,7 +107,7 @@ Tippe im Text `/`, um verfügbare Signaturen und Textbausteine zu suchen. Mail f
 - **Privat:** Nur die Person, der die Vorlage gehört, sieht sie.
 - **Postfach:** Die Vorlage ist mit anderen im Team geteilt.
 
-Hat eine bestätigte Absenderidentität eine Standardsignatur, fügt Mail sie automatisch in neue Nachrichten, Antworten und Weiterleitungen ein. In einer Antwort oder Weiterleitung setzt Mail die Signatur vor den zitierten Verlauf. Ein persönlicher Standard ersetzt für diese Absenderidentität den Standard des Postfachs. Den eingefügten Quelltext kannst du weiter bearbeiten. Signaturen sind weder Pflicht noch gesperrt. Löschst du nur einen Teil einer Signatur, wird der Rest als der Text versendet, den du siehst.
+Hat eine bestätigte Absenderidentität eine Standardsignatur, fügt Mail sie automatisch in neue Nachrichten, Antworten und Weiterleitungen ein. In einer Antwort oder Weiterleitung setzt Mail die Signatur vor den zitierten Verlauf. Ein persönlicher Standard ersetzt für diese Absenderidentität den Standard des Postfachs. Den eingefügten Quelltext kannst du weiter bearbeiten. Signaturen sind weder Pflicht noch gesperrt. Löschst du nur einen Teil einer Signatur, erkennt Mail den Rest vielleicht nicht mehr als Signatur. Mail versendet den Rest dann so, wie er dasteht, und warnt dich vor dem Senden vor den Platzhaltern darin.
 
 Mit Zugriff **Verwalten** änderst du Vorlagen und Standards unter **Einstellungen → Schreiben**. Wähle dort **Design bearbeiten**, um den CSS-Editor des Postfachs zu öffnen. Seine Vorschau aktualisiert sich aus dem aktuellen, nicht gespeicherten CSS. Die **Vorschau** im Editor nutzt dieselbe Darstellung wie die Zustellung.
 

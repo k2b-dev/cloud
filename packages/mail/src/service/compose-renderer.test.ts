@@ -202,6 +202,10 @@ describe("compose renderer", () => {
     expect(hasUnrenderedTemplateSyntax("\u2063{{ sender.email }}")).toBe(true);
     expect(hasUnrenderedTemplateSyntax(`\u2063{{ sender.email }}${markComposeTemplateSegment("Regards")}`)).toBe(true);
     expect(hasUnrenderedTemplateSyntax("{{ sender.email }}\u2064")).toBe(true);
+    expect(hasUnrenderedTemplateSyntax("{\u2064{ sender.email }}")).toBe(true);
+    // A marked segment that is no valid signature template is sent as written, too.
+    expect(hasUnrenderedTemplateSyntax(markComposeTemplateSegment("{{ customer.name }}"))).toBe(true);
+    expect(hasUnrenderedTemplateSyntax(markComposeTemplateSegment("{% if actor.email %}Hi"))).toBe(true);
   });
 
   test("keeps unknown user braces literal and prevents Markdown injection from variables", () => {
@@ -220,16 +224,15 @@ describe("compose renderer", () => {
     expect(rendered.data.text).toContain("[Reset](https://evil.example)");
   });
 
-  test("rejects Liquid output inside Markdown link destinations", () => {
-    const rendered = renderComposeContent({
-      body: markComposeTemplateSegment("[Email support](mailto:{{ sender.email }})"),
-      format: "markdown",
-      customCss: "",
-      context,
-      renderLiquid: true,
-    });
+  test("never fills in Liquid output inside Markdown link destinations", () => {
+    const body = markComposeTemplateSegment("[Email support](mailto:{{ sender.email }})");
+    const rendered = renderComposeContent({ body, format: "markdown", customCss: "", context, renderLiquid: true });
 
-    expect(rendered).toMatchObject({ ok: false });
+    expect(rendered.ok).toBe(true);
+    if (!rendered.ok) return;
+    expect(rendered.data.text).toBe("[Email support](mailto:{{ sender.email }})");
+    expect(rendered.data.html).not.toContain("href=");
+    expect(hasUnrenderedTemplateSyntax(body)).toBe(true);
   });
 
   test("keeps plaintext variables unescaped", () => {
@@ -314,6 +317,23 @@ describe("compose renderer", () => {
     }
   });
 
+  test("reads the largest body of nothing but marks without going through all of it", () => {
+    // Every API path accepts a body of 2 MiB characters; these are a million empty segments.
+    const body = "\u2063\u2064".repeat(1_048_576);
+    const start = performance.now();
+    expect(renderComposeContent({ body, format: "plain", customCss: "", context, renderLiquid: true })).toMatchObject({
+      ok: false,
+      error: { composeRender: { reason: "tooManySignatures", limit: 100 } },
+    });
+    expect(removeOrphanComposeSegmentMarks(body)).toBe(body);
+    expect(hasUnrenderedTemplateSyntax(body)).toBe(false);
+    expect(hasUnrenderedTemplateSyntax(`{{ customer.name }}${body}`)).toBe(true);
+    // The review stops where rendering stops: a body with more segments is never sent.
+    expect(hasUnrenderedTemplateSyntax(`${body}{{ customer.name }}`)).toBe(false);
+    // Reading every segment took about two seconds; reading up to the cap takes a small part of that.
+    expect(performance.now() - start).toBeLessThan(1_500);
+  });
+
   describe("keeps text of a partly deleted signature as plain text", () => {
     const render = (body: string) => renderComposeContent({ body, format: "markdown", customCss: "", context, renderLiquid: true });
     const textOf = (body: string) => {
@@ -341,6 +361,42 @@ describe("compose renderer", () => {
     test("complete signatures next to leftovers", () => {
       const body = `\u2064A ${markComposeTemplateSegment("{{ actor.display_name }}")} B \u2063C ${markComposeTemplateSegment("{{ actor.email }}")}\u2064`;
       expect(textOf(body)).toBe("A Ada Lovelace B C ada@example.test");
+    });
+
+    test("a signature whose Liquid a hand edit broke", () => {
+      for (const format of ["markdown", "plain"] as const) {
+        const send = (body: string) => renderComposeContent({ body, format, customCss: "", context, renderLiquid: true });
+        // Only the closing tag was deleted; the marks still enclose the rest.
+        const unclosed = "Hi\n\n\u2063{% if sender.email %}Best, {{ actor.display_name }}\u2064";
+        // A pasted end mark closes the signature early; a pasted start mark opens a second one.
+        const pastedEnd = "\u2063{% if actor.display_name %}Regards\u2064{% endif %}\u2064";
+        const pastedStart = "\u2063{% if actor.display_name %}Regards\u2063{% endif %}\u2064";
+        // The end of one signature and the start of the next were deleted, so their marks enclose the text between.
+        const original = `Hi\n\n${markComposeTemplateSegment("Regards {{ actor.display_name }}")}\n\nPS: use {{ name }} in your template\n\n${markComposeTemplateSegment("Sent by {{ sender.email }}")}`;
+        const crossed =
+          "Hi\n\n\u2063Regards {{ actor.display_name }}\n\nPS: use {{ name }} in your template\n\nSent by {{ sender.email }}\u2064";
+        expect(send(original)).toMatchObject({
+          ok: true,
+          data: { text: "Hi\n\nRegards Ada Lovelace\n\nPS: use {{ name }} in your template\n\nSent by support@example.test" },
+        });
+        for (const [body, text] of [
+          [unclosed, "Hi\n\n{% if sender.email %}Best, {{ actor.display_name }}"],
+          [pastedEnd, "{% if actor.display_name %}Regards{% endif %}"],
+          [pastedStart, "{% if actor.display_name %}Regards{% endif %}"],
+          [crossed, "Hi\n\nRegards {{ actor.display_name }}\n\nPS: use {{ name }} in your template\n\nSent by {{ sender.email }}"],
+        ] as const) {
+          expect(send(body)).toMatchObject({ ok: true, data: { text } });
+          // Saving keeps the draft sendable, and the review before sending points out the text sent as written.
+          expect(send(removeOrphanComposeSegmentMarks(body))).toMatchObject({ ok: true, data: { text } });
+          expect(hasUnrenderedTemplateSyntax(body)).toBe(true);
+        }
+      }
+    });
+
+    test("marks written as character references", () => {
+      const rendered = render("&#8291;{{ actor.email }}&#8292; and &#x2063;");
+      expect(rendered).toMatchObject({ ok: true, data: { text: "{{ actor.email }} and" } });
+      expect(rendered.ok && `${rendered.data.html}${rendered.data.text}`).not.toMatch(/[\u2063\u2064]|&#(?:8291|8292|x206[34]);/i);
     });
 
     test("leftover marks in filled-in values never reach the message", () => {
