@@ -10,7 +10,7 @@ describe("gatewayOpsHelp", () => {
       "gateway-ops-reference",
     ]);
 
-    expect(gatewayOpsHelp.getMarkdown("gateway-ops-start")).toContain("Gateway Ops is the admin console");
+    expect(gatewayOpsHelp.getMarkdown("gateway-ops-start")).toContain("Gateway Ops is the administration console");
     expect(gatewayOpsHelp.getMarkdown("gateway-ops-incident")).toContain("Use one signal to narrow the incident");
   });
 
@@ -36,6 +36,6 @@ describe("gatewayOpsHelp", () => {
     expect(gatewayOpsHelp.getMarkdown("gateway-ops-start", "de-CH")).toBe(gatewayOpsHelp.getMarkdown("gateway-ops-start", "de")!);
     expect(gatewayOpsHelp.getMarkdown("gateway-ops-start", "de-CH")).toContain("Gateway Ops ist die Administrationsoberfläche");
     expect(gatewayOpsHelp.getMarkdown("gateway-ops-start", "fr")).toBe(gatewayOpsHelp.getMarkdown("gateway-ops-start")!);
-    expect(gatewayOpsHelp.getMarkdown("gateway-ops-start", "fr")).toContain("Gateway Ops is the admin console");
+    expect(gatewayOpsHelp.getMarkdown("gateway-ops-start", "fr")).toContain("Gateway Ops is the administration console");
   });
 });
