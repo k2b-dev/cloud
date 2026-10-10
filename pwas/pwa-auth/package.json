@@ -21,14 +21,14 @@
     "zod": "catalog:"
   },
   "devDependencies": {
-    "@babel/core": "8.0.6",
-    "@babel/preset-typescript": "8.0.1",
+    "@babel/core": "8.0.7",
+    "@babel/preset-typescript": "8.0.7",
     "@nats-io/jetstream": "catalog:",
     "@types/babel__core": "7.20.5",
     "@types/bun": "catalog:",
     "@types/subset-font": "2.3.0",
     "@types/web-push": "3.6.4",
-    "babel-preset-solid": "1.9.15",
+    "babel-preset-solid": "1.9.16",
     "playwright": "catalog:",
     "subset-font": "2.9.0",
     "typescript": "catalog:",
