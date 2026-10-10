@@ -2,6 +2,7 @@ export { CloudAiTranscribeAudioInputSchema, CloudAiTranscribeAudioOutputSchema, 
 export {
   CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES,
   createCloudAiCardTool,
+  createCloudAiChartTool,
   createCloudAiCodeTools,
   createCloudAiLocalBashTool,
   createCloudAiSurveyTool,

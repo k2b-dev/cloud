@@ -1,12 +1,7 @@
 import { basename } from "node:path";
 import { createInterface } from "node:readline";
 import type { AiFileStat, AiPendingTurnAction, AiPublicModelProfile, CloudAiSurveyInput, CloudAiTextEditorInput } from "@k2b/cloud/ai";
-import {
-  AI_TURN_ATTACHMENT_MAX_ITEMS,
-  CloudAiCardInputSchema,
-  CloudAiSurveyInputSchema,
-  CloudAiTextEditorInputSchema,
-} from "@k2b/cloud/ai/browser";
+import { AI_TURN_ATTACHMENT_MAX_ITEMS, CloudAiSurveyInputSchema, CloudAiTextEditorInputSchema } from "@k2b/cloud/ai/browser";
 import { arg, type CloudCliContext, command, flag } from "@k2b/cloud/cli";
 import type { CapabilityDecision, CodeApproval } from "../artifacts/runtime/capabilities";
 import { closeCliCodeHost } from "./code-host";
@@ -104,13 +99,6 @@ const printResumeHint = (ctx: CloudCliContext, conversationId: string, created =
   printInfo(ctx, created ? "New chat created. Resume this chat later with:" : "Resume this chat later with:");
   ctx.print(`      cld assistant --chat ${terminalSafeText(conversationId)}`);
   ctx.print();
-};
-
-const printCard = (ctx: CloudCliContext, args: unknown): void => {
-  const card = CloudAiCardInputSchema.safeParse(args);
-  if (!card.success) return;
-  ctx.print(`${card.data.title}: ${card.data.value}`);
-  if (card.data.caption) ctx.print(card.data.caption);
 };
 
 const readChoice = async (
@@ -311,9 +299,6 @@ const resolveAttention = async (input: {
       output: input.output,
       signal: input.signal,
       onCapabilityApproval: (request) => collectCapabilityApproval(input.ctx, input.reader, request),
-      onToolBlock: (block) => {
-        if (block.name === "card" && block.status === "completed") printCard(input.ctx, block.args);
-      },
     }).finally(() => input.setStreaming(false));
     if (streamed.status !== "needs_attention") return streamed.status === "idle" ? null : streamed;
     result = { status: "needs_attention", turnId: input.turnId };
@@ -402,9 +387,6 @@ export const runInteractiveAssistant = async (
         output,
         signal: abort.signal,
         onCapabilityApproval: (request) => collectCapabilityApproval(ctx, reader, request),
-        onToolBlock: (block) => {
-          if (block.name === "card" && block.status === "completed") printCard(ctx, block.args);
-        },
       }).finally(() => {
         streaming = false;
       });
@@ -480,9 +462,6 @@ export const runInteractiveAssistant = async (
         output,
         signal: abort.signal,
         onCapabilityApproval: (request) => collectCapabilityApproval(ctx, reader, request),
-        onToolBlock: (block) => {
-          if (block.name === "card" && block.status === "completed") printCard(ctx, block.args);
-        },
       }).finally(() => {
         streaming = false;
       });

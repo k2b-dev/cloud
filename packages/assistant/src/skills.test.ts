@@ -16,6 +16,10 @@ test("ships its Skills with every reference linked from the instructions", () =>
 test("Assistant skills retain workflow and capability guidance", async () => {
   const inputs = SKILLS;
   const codeMode = inputs.find((candidate) => candidate.name === "assistant-code-mode");
+  // A chart of known data is the chart tool, not an app; both skills give the same rule.
+  const rule = "Just data → `chart` tool; interaction → chat app (`code_present`); persistence or reuse → saved Studio App.";
+  expect(codeMode?.instructions.replace(/\s+/g, " ")).toContain(rule);
+  expect(inputs.find((candidate) => candidate.name === "assistant-data-analysis")?.instructions.replace(/\s+/g, " ")).toContain(rule);
   // The platform prompt requires calculate for derived numbers; the catalog must not suggest answering directly.
   expect(codeMode?.description).toContain("For plain arithmetic or date offsets, use calculate.");
   expect(codeMode?.references?.map((reference) => reference.path)).toContain("references/debugging.md");

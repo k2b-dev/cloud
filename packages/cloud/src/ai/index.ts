@@ -48,11 +48,17 @@ export { authorizeCodeExecution } from "./code-execution";
 export { CODE_SOURCE_TOOLS, type CodeSourceToolName } from "./code-source-contracts";
 export { listAiCredentialProfileIds } from "./credentials";
 export {
+  CLOUD_AI_CHART_MAX_SERIES,
+  CLOUD_AI_CHART_MAX_VALUES,
   CLOUD_AI_TEXT_EDITOR_MAX_CHARS,
   type CloudAiCardInput,
   CloudAiCardInputSchema,
   type CloudAiCardOutput,
   CloudAiCardOutputSchema,
+  type CloudAiChartInput,
+  CloudAiChartInputSchema,
+  type CloudAiChartOutput,
+  CloudAiChartOutputSchema,
   type CloudAiLocalBashInput,
   CloudAiLocalBashInputSchema,
   type CloudAiLocalBashOutput,
@@ -65,6 +71,7 @@ export {
   CloudAiTextEditorInputSchema,
   type CloudAiTextEditorOutput,
   CloudAiTextEditorOutputSchema,
+  parseCloudAiChartInput,
 } from "./default-tool-contracts";
 export {
   type AiChatEnrichment,

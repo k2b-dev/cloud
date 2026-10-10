@@ -196,16 +196,20 @@ describe("AI tools", () => {
     expect(prepared.tools[0]?.def.outputSchema).toBe(tool.def.outputSchema);
   });
 
-  test("ships default interaction tools without offering Card to the Assistant", () => {
+  test("ships default interaction tools and the chart without offering Card to the Assistant", () => {
     const prepared = prepareAiTools({ tools: createDefaultCloudAiTools(), actor });
 
-    expect(prepared.tools.map((tool) => tool.def.name)).toEqual(["todo_write", "survey", "text_editor"]);
-    expect(prepared.tools.map((tool) => tool.kind)).toEqual(["server", "client", "client"]);
+    expect(prepared.tools.map((tool) => tool.def.name)).toEqual(["todo_write", "survey", "text_editor", "chart"]);
+    expect(prepared.tools.map((tool) => tool.kind)).toEqual(["server", "client", "client", "client"]);
     expect(prepared.frontendModes.get("survey")).toBe("client_interaction");
     expect(prepared.frontendModes.get("text_editor")).toBe("client_interaction");
+    // Display only: the server answers the call itself, so a chart never waits for a browser.
+    expect(prepared.frontendModes.get("chart")).toBe("client_view");
     expect(prepared.approvalPolicies.get("survey")).toBe("never");
     expect(prepared.approvalPolicies.get("text_editor")).toBe("never");
+    expect(prepared.approvalPolicies.get("chart")).toBe("never");
     expect(CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES.has("card")).toBe(false);
+    expect(CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES.has("chart")).toBe(true);
   });
 
   test("managed execution is deferred and only user-facing code tools need a browser", () => {
@@ -268,6 +272,7 @@ describe("AI tools", () => {
       "todo_write",
       "survey",
       "text_editor",
+      "chart",
       "list_files",
       "read_file",
       "fetch_file",

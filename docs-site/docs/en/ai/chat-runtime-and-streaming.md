@@ -162,9 +162,9 @@ repositories, authenticate to a website, or reach private network targets.
 `calculate` stays loaded because, whenever a turn offers it, the system
 prompt requires it for every amount, sum, or other number the model derives
 itself. A conversation with a fixed tool scope that excludes it, or a model
-without tool support, gets neither the tool nor that rule. Cards, surveys, the
-long-form text editor, file writes and presentation, and Markdown-to-PDF load
-on demand. Built-in usage hints remain in the system prompt even while their
+without tool support, gets neither the tool nor that rule. Surveys, the
+long-form text editor, charts, file writes and presentation, and
+Markdown-to-PDF load on demand. Built-in usage hints remain in the system prompt even while their
 schemas are deferred. These built-ins provide no arbitrary code execution,
 host access, or network access beyond the explicit web tools. See
 [Tools and approvals](/en/docs/ai/tools-and-approvals).
@@ -314,8 +314,12 @@ existing item in its persisted timeline position while new output is appended.
 The conversation stream uses SSE. Use `parseAiSse()`
 from `@k2b/cloud/ai/browser` for a low-level or CLI client. This
 client entry point also exports attachment limits, `guessAiMediaType()`,
-`isAiImageMediaType()`, the card, survey, text-editor, and local-bash input
-schemas, and `CLOUD_AI_TEXT_EDITOR_MAX_CHARS`. These helpers do not initialize
+`isAiImageMediaType()`, the card, chart, survey, text-editor, and local-bash
+input schemas, `CLOUD_AI_TEXT_EDITOR_MAX_CHARS`, the chart limits
+`CLOUD_AI_CHART_MAX_SERIES` and `CLOUD_AI_CHART_MAX_VALUES`,
+`parseCloudAiChartInput()`, which reads a chart call as one typed chart, and
+`cloudAiChartTable()`, which turns that chart into the rows its data table
+shows. These helpers do not initialize
 Cloud server services. Import AI types with `import type` from
 `@k2b/cloud/ai`. Solid applications should use
 `createAiChatController()` from `@k2b/cloud/ai/solid`; it subscribes to the
@@ -530,7 +534,9 @@ match exactly, and the owner's current access still applies to each call.
 
 A background run cannot ask for approval. Remembered approvals from the chat
 do not apply, and an operation that needs an approval or a browser fails the
-run, which moves the task to `needs_attention`. Action grants are accepted only
+run, which moves the task to `needs_attention`. A display-only `clientView()`
+tool such as `chart` needs neither: Cloud answers it, and the run's transcript
+shows it. Action grants are accepted only
 for Actions whose manifest declares `approval: "rememberable"` or `"none"`;
 Actions that ask for every call cannot be scheduled. Before each run, Core
 checks that the owner is active, the chat is not archived, and the mandate is
