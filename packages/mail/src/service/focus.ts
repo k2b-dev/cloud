@@ -299,7 +299,6 @@ const loadFocusPage = async (focus: FocusReader, view: MailFocusView, cursor: Fo
           SELECT c.*
           FROM mail.conversations c
           WHERE c.mailbox_id = readable.mailbox_id
-            AND NOT (c.mailbox_id = ANY(${toPgUuidArray(focus.excludedMailboxIds)}::uuid[]))
             AND ${conversationReadable(focus.context)}
             AND ${viewCondition(view, focus.userId, focus.unassigned, staysInAggregatedViews(sql`c.id`, focus.scope))}
             AND ${isFollowUpConversation(sql`c.id`)}
@@ -310,6 +309,8 @@ const loadFocusPage = async (focus: FocusReader, view: MailFocusView, cursor: Fo
           ORDER BY c.latest_message_at DESC, c.id DESC
           LIMIT ${limit + 1}
         ) page
+        -- A hidden mailbox leaves before the join, so its index is never walked.
+        WHERE NOT (readable.mailbox_id = ANY(${toPgUuidArray(focus.excludedMailboxIds)}::uuid[]))
         ORDER BY page.latest_message_at DESC, page.id DESC
         LIMIT ${limit + 1}
       ) c

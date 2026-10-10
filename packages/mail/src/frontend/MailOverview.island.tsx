@@ -42,6 +42,8 @@ type MailFocusOverview = {
   mailboxCounts: MailFocusPage["mailboxCounts"];
 };
 type MailboxOverviewItem = { id: string; href: string; name: string; subtitle: string };
+/** A Focus page and the hidden mailboxes it leaves out. */
+type MailFocusViewPage = MailFocusPage & { excludedMailboxIds: string[] };
 
 /** The object list needs room for a title and an address; the overview does not resize. */
 const OVERVIEW_LAYOUT = { version: 2 as const, sidebarWidth: 304 };
@@ -102,7 +104,7 @@ function MailOverviewView(props: {
   // Focus leaves out every stored hidden mailbox, as on the server, including one beyond the
   // listed mailboxes; the server ignores IDs of mailboxes that are gone or unreadable.
   const createFocusQuery = (focusView: MailFocusView) =>
-    queries.createInfinite<string[], MailFocusPage, string>({
+    queries.createInfinite<string[], MailFocusViewPage, string>({
       source: hiddenMailboxIds,
       isSameSource: (left, right) => left.join() === right.join(),
       enabled: () => view() === focusView && !initialFocusError(),
@@ -114,6 +116,7 @@ function MailOverviewView(props: {
                 ...props.initialFocus.pages[focusView],
                 counts: props.initialFocus.counts,
                 mailboxCounts: props.initialFocus.mailboxCounts,
+                excludedMailboxIds: props.initialHiddenMailboxIds,
               },
             ],
           }
@@ -132,10 +135,12 @@ function MailOverviewView(props: {
         );
         if (!response.ok) throw new Error(await readApiError(response, messages().failedLoadFocus));
         const page = await response.json();
+        // A response that arrived as its view was left or its mailboxes changed is no longer current.
+        abortSignal.throwIfAborted();
         assertCursorProgress(cursor, page.nextCursor, "mail-focus");
         setInitialFocusError(null);
         setLatestCounts({ counts: page.counts, mailboxCounts: page.mailboxCounts });
-        return page;
+        return { ...page, excludedMailboxIds };
       },
       getNextCursor: (page) => page.nextCursor,
     });
@@ -291,6 +296,15 @@ function MailOverviewView(props: {
   const expectedRows = () => Math.min(counts()[view()], FOCUS_PAGE_SIZE);
   const skeletonRows = () => Array.from({ length: expectedRows() || 1 });
   const focusError = () => focusResults().error()?.message ?? initialFocusError();
+  // The empty state is the answer of a finished read for the mailboxes shown now. While the view
+  // refreshes, that answer stays only as long as the counts agree; after a mailbox was hidden or
+  // shown, or when the count says the view has rows, the view shows its rows loading instead.
+  const focusEmpty = () => {
+    const results = focusResults();
+    const page = results.pages()[0];
+    if (!page || page.excludedMailboxIds.join() !== hiddenMailboxIds().join()) return false;
+    return counts()[view()] === 0 || !(results.stale() || results.refreshing());
+  };
   const [selection, setSelection] = createSignal<MailFocusSelection | null>(props.initialSelection);
   const [wideLayout, setWideLayout] = createSignal(false);
   const detailOpen = () => wideLayout() && selection() !== null;
@@ -554,7 +568,7 @@ function MailOverviewView(props: {
         )}
       </Show>
       {/* A view without a finished read shows its rows still loading, never the empty state. */}
-      <Show when={!focusError() && focusResults().pages().length === 0}>
+      <Show when={!focusError() && focusItems().length === 0 && !focusEmpty()}>
         <div class="mail-focus-list mail-focus-skeleton" classList={{ "min-h-56": expectedRows() === 0 }} role="status" aria-busy="true">
           <span class="sr-only">{messages().loadingFocus}</span>
           <For each={skeletonRows()}>
@@ -587,7 +601,7 @@ function MailOverviewView(props: {
           </For>
         </div>
       </Show>
-      <Show when={!focusError() && focusResults().pages().length > 0 && focusItems().length === 0}>
+      <Show when={!focusError() && focusItems().length === 0 && focusEmpty()}>
         <Placeholder
           title={
             view() === "mine"

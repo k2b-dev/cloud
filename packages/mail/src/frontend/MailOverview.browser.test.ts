@@ -184,6 +184,47 @@ describe("Mail overview views", () => {
       }
     }, 30_000);
 
+    test(`switches to an empty view whose count grew since without its empty state on a ${name}`, async () => {
+      const page = await load(context, {
+        initialView: "unassigned",
+        initialFocusError: null,
+        initialFocus: {
+          pages: {
+            mine: { items: [], nextCursor: null },
+            unassigned: { items: [item(1), item(2)], nextCursor: null },
+            waiting: { items: [], nextCursor: null },
+            all: { items: [item(1), item(2)], nextCursor: null },
+          },
+          counts: { mine: 0, unassigned: 2, waiting: 0, all: 2 },
+          mailboxCounts: [],
+        },
+      });
+      try {
+        // Another view's read brings the newer counts: one conversation is now assigned to the person.
+        await choose(page, "Waiting");
+        await answered(page, 1);
+        const grown = { mine: 1, unassigned: 1, waiting: 0, all: 2 };
+        held[0]!.respond({ items: [], counts: grown, nextCursor: null });
+        await idle(page);
+        await page.evaluate(() => window.watchFocus());
+
+        // For me still holds the server's empty page; its count says one row is coming.
+        await choose(page, "For me");
+        await page.waitForSelector(".mail-focus-skeleton");
+        const skeleton = await listLayout(page, ".mail-focus-skeleton > .mail-focus-row");
+        expect(skeleton.rows).toHaveLength(1);
+        await answered(page, 2);
+        expect(held[1]!.view).toBe("mine");
+        held[1]!.respond({ items: [plain(1)], counts: grown, nextCursor: null });
+        await idle(page);
+        expect(await listLayout(page, "a.mail-focus-row")).toEqual(skeleton);
+        expect((await page.evaluate(() => window.focusSeen)).empty).toEqual([]);
+        expect(page.errors).toEqual([]);
+      } finally {
+        await close(page);
+      }
+    }, 30_000);
+
     test(`shows loading rows of the final size, never the empty state, while a view loads on a ${name}`, async () => {
       const page = await load(context, { initialView: "mine", initialFocusError: "Mail is restarting", initialFocus: null });
       try {

@@ -15,12 +15,14 @@ const suite = suiteFor("database", "nats");
 // on PostgreSQL 15. The budget fails both. The opt-in performance run measures up to 100,000 messages.
 const DEFAULT_MESSAGE_COUNT = 25_000;
 const requestedMessageCount = Number.parseInt(process.env.MAIL_PERFORMANCE_MESSAGE_COUNT ?? "", 10);
-const MESSAGE_COUNT =
+const requestedTotal =
   process.env.MAIL_PERFORMANCE_TESTS === "1" && Number.isFinite(requestedMessageCount)
     ? Math.min(Math.max(requestedMessageCount, DEFAULT_MESSAGE_COUNT), 100_000)
     : DEFAULT_MESSAGE_COUNT;
 const MAILBOX_COUNT = 4;
-const MESSAGES_PER_MAILBOX = MESSAGE_COUNT / MAILBOX_COUNT;
+// Every mailbox holds the same mail, so the requested count rounds down to a multiple of the mailboxes.
+const MESSAGES_PER_MAILBOX = Math.floor(requestedTotal / MAILBOX_COUNT);
+const MESSAGE_COUNT = MESSAGES_PER_MAILBOX * MAILBOX_COUNT;
 // The median of the warm runs keeps one stall on a busy host from failing the budget.
 const BUDGET_MS = 500;
 const WARM_RUNS = 5;
