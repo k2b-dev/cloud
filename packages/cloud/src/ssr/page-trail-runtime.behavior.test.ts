@@ -103,12 +103,143 @@ else {
     });
     try {
       tab.visit("/app/things?item=41", ["javascript:alert(1)", "https://elsewhere.example/app/things"]);
-      goUp("javascript:alert(1)");
-      goUp("https://elsewhere.example/app/things");
+      expect(goUp("javascript:alert(1)")).toBe(false);
+      expect(goUp("https://elsewhere.example/app/things")).toBe(false);
       expect({ taken, loads: tab.loads }).toEqual({ taken: [], loads: [] });
-      // A same-origin path that starts with `//` stays a path of this origin.
-      goUp("http://localhost//elsewhere.example/app");
-      expect(tab.loads).toEqual(["http://localhost//elsewhere.example/app"]);
+      // A same-origin path that starts with `//` would read as another host, so it names no page above.
+      expect(goUp("http://localhost//elsewhere.example/app")).toBe(false);
+      expect({ taken, loads: tab.loads }).toEqual({ taken: [], loads: [] });
+      // Parsing a remembered path must not turn it into another host for an island.
+      sessionStorage.setItem(
+        "cloud:page-trail",
+        JSON.stringify({
+          visits: [
+            { url: "/..//elsewhere.example/app", regions: [] },
+            { url: "/./\\elsewhere.example/app", regions: [] },
+          ],
+        }),
+      );
+      expect(goUp("http://localhost//elsewhere.example/app")).toBe(false);
+      expect({ taken, loads: tab.loads }).toEqual({ taken: [], loads: [] });
+    } finally {
+      stop();
+      tab.close();
+    }
+  });
+
+  test("a trail link the way up does not take stays a plain link", () => {
+    const tab = open();
+    const stop = installPageTrailRuntime(labels);
+    try {
+      tab.visit("/app/x", ["/app/things"]);
+      const plain = document.createElement("a");
+      plain.setAttribute("data-k2b-page-trail-link", "");
+      plain.href = "http://localhost//app/things";
+      const up = document.createElement("a");
+      up.setAttribute("data-k2b-page-trail-link", "");
+      up.href = "/app/things";
+      document.body.append(plain, up);
+      // A path that names no page above stays a plain link.
+      const plainClick = new MouseEvent("click", { button: 0, bubbles: true, cancelable: true });
+      plain.dispatchEvent(plainClick);
+      expect(plainClick.defaultPrevented).toBe(false);
+      expect(tab.loads).toEqual([]);
+      // A page above is taken by the runtime and cancels the anchor's activation.
+      const upClick = new MouseEvent("click", { button: 0, bubbles: true, cancelable: true });
+      up.dispatchEvent(upClick);
+      expect(upClick.defaultPrevented).toBe(true);
+      expect(tab.loads).toEqual(["http://localhost/app/things"]);
+    } finally {
+      stop();
+      tab.close();
+    }
+  });
+
+  test("a malformed memory entry is ignored, never thrown", async () => {
+    const tab = open();
+    try {
+      tab.visit("/app/x", ["/app/things"]);
+      // Malformed ancestors and scroll regions do not count as visits.
+      sessionStorage.setItem(
+        "cloud:page-trail",
+        JSON.stringify({
+          visits: [
+            { url: "/app/things?q=a", regions: [], up: "x" },
+            { url: "/app/things?q=b", regions: [], up: ["http://["] },
+            { url: "/app/things?q=c", regions: {} },
+            { url: "/app/things?q=d", regions: [{ key: 1, top: 0, left: 0 }] },
+            { url: "/app/things?q=e", regions: [{ key: "@main", top: "1", left: 0 }] },
+          ],
+        }),
+      );
+      expect(upDestination("/app/things")).toBe("/app/things");
+      expect(goUp("/app/things")).toBe(true);
+      expect(tab.loads).toEqual(["http://localhost/app/things"]);
+      const row = document.createElement("a");
+      row.href = "/app/things";
+      document.body.append(row);
+      // A malformed return neither throws during installation nor marks a row later.
+      for (const returning of [
+        { url: "http://[", from: "/app/things" },
+        { url: "/app/current", from: 5 },
+        { url: "//evil.example/app/current", from: "/app/things" },
+      ]) {
+        tab.visit("/app/current");
+        sessionStorage.setItem("cloud:page-trail", JSON.stringify({ visits: [{ url: "/app/current", regions: {} }], returning }));
+        expect(() => installPageTrailRuntime(labels)()).not.toThrow();
+        await frames();
+        expect(document.querySelector("[data-page-trail-recent]")).toBeNull();
+      }
+    } finally {
+      tab.close();
+    }
+  });
+
+  test("going up keeps a remembered page's query and hash and loads it on this origin", () => {
+    const tab = open();
+    const taken: string[] = [];
+    const stop = modules!.layout.handleUp((href) => {
+      taken.push(href);
+      return false;
+    });
+    try {
+      tab.visit("/app/things?q=red#row-4");
+      rememberPage();
+      tab.visit("/app/things?item=41", ["/app/things"]);
+      goUp("/app/things");
+      expect(taken).toEqual(["/app/things?q=red#row-4"]);
+      expect(tab.loads).toEqual(["http://localhost/app/things?q=red#row-4"]);
+      // A parent never visited loads at its own path.
+      tab.visit("/app/mail/m1", ["/app/mail"]);
+      goUp("/app/mail");
+      expect(taken).toEqual(["/app/things?q=red#row-4", "/app/mail"]);
+      expect(tab.loads).toEqual(["http://localhost/app/things?q=red#row-4", "http://localhost/app/mail"]);
+    } finally {
+      stop();
+      tab.close();
+    }
+  });
+
+  // Both relative addresses resolve to the parent, but after the origin as text either one names another host.
+  test.each(["@evil.example/../things", ".evil.example/../../app/things"])("a tampered memory entry is ignored (%s)", (tampered) => {
+    const tab = open();
+    const taken: string[] = [];
+    const stop = modules!.layout.handleUp((href) => {
+      taken.push(href);
+      return false;
+    });
+    try {
+      tab.visit("/app/x", ["/app/things"]);
+      const urls = [tampered, "//evil.example/app/things", "/\\evil.example/app/things", "javascript:alert(1)"];
+      sessionStorage.setItem("cloud:page-trail", JSON.stringify({ visits: [...urls.map((url) => ({ url, regions: [] })), null] }));
+      expect(upDestination("/app/things")).toBe("/app/things");
+      goUp("/app/things");
+      expect(taken).toEqual(["/app/things"]);
+      expect(tab.loads).toEqual(["http://localhost/app/things"]);
+      rememberPage();
+      expect(JSON.parse(sessionStorage.getItem("cloud:page-trail") ?? "null").visits).toEqual([
+        { url: "/app/x", regions: [], up: ["/app/things"] },
+      ]);
     } finally {
       stop();
       tab.close();
