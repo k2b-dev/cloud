@@ -268,6 +268,27 @@ Spaces actions, or enabling it again, requires the original author. If Cloud
 denies that change, ask the author to authorize it rather than bypassing the
 check. Cosmetic edits do not restore paused or revoked access.
 
+## Re-run failed incoming automations
+
+A backfill skips every message that an earlier backfill already handed to the
+same automation version, even when that run failed or was canceled. To run such
+messages once more, a mailbox administrator starts a retry backfill:
+
+```bash
+cld --json mail automation backfill start <automation-id> --revision <revision> --retry-failed --yes
+cld --json mail automation backfill status <automation-id> <operation-id>
+```
+
+A retry backfill takes only messages whose latest run of the current automation
+version ended `failed` or `canceled`, whether that run came from new mail or
+from an earlier backfill. It never repeats a run that succeeded or that needs
+attention. Like a normal backfill, it hands over at most 100 messages: while
+the status says `limited`, start another retry backfill. Each message runs at
+most once per retry operation. Repeated actions do not change the result: a
+move skips a message that is already in its target folder, and status and tags
+stay the same. Messages that never had a run need a normal backfill without
+`--retry-failed`. **Automations > Activity** shows how the new runs ended.
+
 ## How Mail fits Cloud
 
 Mail owns mailbox synchronization, conversations, drafts, sending, and mailbox

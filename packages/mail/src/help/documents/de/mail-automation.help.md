@@ -80,6 +80,7 @@ Neue Automatisierungen für eingehende E-Mails starten inaktiv. Ein Ablauf ohne 
 - Eine nachträgliche Verarbeitung übergibt höchstens 100 Nachrichten an die Automatisierung. Passen mehr Nachrichten, endet sie mit **Limit erreicht** und zeigt, wie viele offen sind. Starte sie erneut, um mit den nächsten Nachrichten weiterzumachen.
 - Eine nachträgliche Verarbeitung übersteht Neustarts. Mail wiederholt eine fehlgeschlagene Nachricht, ohne andere Workflow-Läufe zu stoppen.
 - Eine wiederholte nachträgliche Verarbeitung überspringt Nachrichten, die für dieselbe unveränderliche Version schon angenommen wurden.
+- Als Postfachadministrator kannst du Nachrichten erneut verarbeiten, deren letzter Lauf derselben Automatisierungsversion fehlgeschlagen ist oder abgebrochen wurde: `cld mail automation backfill start <automation-id> --revision <revision> --retry-failed --yes`.
 - **Abgeschlossen** bedeutet, dass Mail jede passende Nachricht an die Automatisierung übergeben hat. Die Aktionen selbst laufen danach in der Workflow-Laufzeit und erscheinen unter **Aktivität**.
 - Die Fortschrittszahlen wachsen während einer nachträglichen Verarbeitung nur. Das Menü der Automatisierung zeigt den Fortschritt und lässt dich die Verarbeitung abbrechen oder erneut starten.
 

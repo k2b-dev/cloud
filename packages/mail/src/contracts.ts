@@ -2660,6 +2660,7 @@ export const startIncomingAutomationBackfillInputSchema = z
   .object({
     operationId: z.string().uuid(),
     expectedRevision: z.number().int().positive(),
+    retryFailed: z.boolean().optional(),
   })
   .strict();
 export type StartIncomingAutomationBackfillInput = z.infer<typeof startIncomingAutomationBackfillInputSchema>;
@@ -2669,11 +2670,16 @@ export const incomingAutomationBackfillSchema = z
     operationId: z.string().uuid(),
     automationId: ResourceShortIdSchema,
     workflowVersionId: z.string().uuid(),
+    retryFailed: z.boolean(),
     /** `limited`: the run applied its per-run limit and `remainingCount` candidates still need another backfill. */
     state: z.enum(["queued", "running", "waiting", "completed", "limited", "failed", "canceled"]),
+    /** Frozen at start: matching messages up to the cutoff; in retry mode, only those whose latest run of this version failed or was canceled. */
     candidateCount: z.number().int().nonnegative(),
+    /** Candidates already handed over at start; frozen and always zero in retry mode. */
     alreadyAcceptedCount: z.number().int().nonnegative(),
+    /** Messages this operation handed over (re-ran in retry mode); never decreases. */
     newlyAcceptedCount: z.number().int().nonnegative(),
+    /** Candidates this operation has not handed over yet. */
     remainingCount: z.number().int().nonnegative(),
     failureCount: z.number().int().nonnegative(),
     lastError: z.string().nullable(),

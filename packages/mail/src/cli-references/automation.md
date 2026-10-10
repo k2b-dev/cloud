@@ -168,6 +168,7 @@ Preview sender-scoped work before changing existing messages:
 ```bash
 cld --json mail sender preview --match sender --value news@example.com
 cld --json mail automation backfill start <automation-id> --revision <revision> --yes
+cld --json mail automation backfill start <automation-id> --revision <revision> --retry-failed --yes
 cld --json mail automation backfill status <automation-id> <operation-id>
 cld --json mail automation backfill cancel <automation-id> <operation-id> --yes
 ```
@@ -182,6 +183,10 @@ Backfill `state` is `queued`, `running`, or `waiting` while active, then one of 
 - `canceled`.
 
 `candidateCount` and `alreadyAcceptedCount` are fixed when the backfill starts, and `newlyAcceptedCount` never decreases. "Accepted" means the message was handed to the workflow runtime, not that its actions already ran; the Mail **Automations > Activity** view shows execution.
+
+`--retry-failed` re-runs messages that a backfill would otherwise skip: matching messages whose latest run of the current automation version ended `failed` or `canceled`, whether it started from new mail or an earlier backfill. It never repeats `succeeded` or `needs_attention` runs; messages that never had a run need a normal backfill. A retry backfill has the same permission, revision, AI, and 100-message limits as a normal one, and the response reports `retryFailed: true`. Its `candidateCount` is the number of such messages at start, `alreadyAcceptedCount` is `0`, `newlyAcceptedCount` counts messages it re-ran, and `remainingCount` counts the rest; start another retry backfill while the state is `limited`. Each message runs at most once per retry operation, so replaying the same request emits nothing new; a later retry operation re-runs a message whose retry failed again. Actions converge: a move skips a message already in its target folder, and repeated status and tag actions keep the same result.
+
+To repair messages an automation did not process, run a normal backfill for messages without a run, then retry backfills until the state is `completed`, and check **Automations > Activity** for the results.
 
 AI flows intentionally process only future mail. Cancel an active backfill before editing, disabling, or deleting its automation. Mutations require the revision shown by `automation get`; they refuse stale state instead of silently adopting the latest revision.
 
