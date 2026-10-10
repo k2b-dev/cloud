@@ -488,6 +488,22 @@ add the image to that pull step in `.github/workflows/ci.yml` and
 runs a test file, so it does not report a missing image there; without it, the
 job pulls a Docker Hub image from Docker Hub.
 
+Tests that read a rendered PDF call Poppler's `pdftotext`, `pdfinfo`, and
+`pdffonts` from `PATH`; locally, install Poppler (`poppler-utils` on Debian
+and Ubuntu). CI does not install Poppler on the runner: `.github/poppler.sh
+install` pulls a Poppler image pinned by digest with the job's other images,
+starts it without network access, and links the three tools into
+`/usr/local/bin` as wrappers that run each call in that container. Installing
+from the runner's apt mirror hung, and Homebrew failed when its API host
+`formulae.brew.sh` timed out. In CI, the tools can open only files under the
+checkout, the temporary directory, and `$RUNNER_TEMP`. A test that writes its
+PDF anywhere else fails there with `Couldn't open file`, although it passes
+locally. To move to another Poppler version, bump the image in
+`.github/mirror-images.txt` and the mirror reference in that script, as
+described under [Where CI images come from](#where-ci-images-come-from). The
+image's publisher deletes its date tags after about eight months, so move the
+pin to a newer tag before that.
+
 ### Where CI images come from
 
 No workflow pulls from Docker Hub: its limit for anonymous pulls failed CI runs.
@@ -504,7 +520,8 @@ mirror `ghcr.io/k2b-dev/mirror/<name>:<tag>`, which serves the same digest:
   it from `.github/pull-images.sh` in the same job. The script pulls the
   mirrored digest and tags it with the Docker Hub name, so Docker finds the
   image locally and never contacts Docker Hub. A script may name the mirror
-  reference instead, as the runtime recovery acceptance does.
+  reference instead, as the runtime recovery acceptance and
+  `.github/poppler.sh` do.
 
 The `mirror` job in `ci.yml` runs `.github/mirror-images.sh` before every job
 that pulls an image. It copies each listed image whose digest the mirror does
@@ -552,20 +569,6 @@ docker run --detach --rm --name mirror-registry --publish 127.0.0.1:5000:5000 re
 MIRROR=localhost:5000/mirror .github/mirror-images.sh
 docker rm --force mirror-registry
 ```
-
-Tests that read a rendered PDF call Poppler's `pdftotext`, `pdfinfo`, and
-`pdffonts` from `PATH`; locally, install Poppler (`poppler-utils` on Debian
-and Ubuntu). CI does not install Poppler on the runner: `.github/poppler.sh
-install` pulls a Poppler image pinned by digest with the job's other images,
-starts it without network access, and links the three tools into
-`/usr/local/bin` as wrappers that run each call in that container. Installing
-from the runner's apt mirror hung, and Homebrew failed when its API host
-`formulae.brew.sh` timed out. In CI, the tools can open only files under the
-checkout, the temporary directory, and `$RUNNER_TEMP`. A test that writes its
-PDF anywhere else fails there with `Couldn't open file`, although it passes
-locally. To move to another Poppler version, change the image and digest in
-that script. The image's publisher deletes its date tags after about eight
-months, so move the pin to a newer tag before that.
 
 `gate` is the only required status check. It needs every other job in
 `ci.yml` and passes only when each one reports `success`, or `skipped` for a

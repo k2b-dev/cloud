@@ -142,11 +142,13 @@ test("rejects malformed and unused list entries and mirror references that are n
       ".github/mirror-images.txt": `${list}postgres:17-alpine\nghcr.io/x/y:1@${digest("d")}\nnats:2.14.3-alpine@${digest("e")}\n`,
       Dockerfile: `FROM ${bun}\nFROM ghcr.io/k2b-dev/mirror/debian:13-slim@${digest("f")}\n`,
       "packages/example/scripts/acceptance.ts": `await docker("run", "ghcr.io/k2b-dev/mirror/oven/bun:1.4.2@${digest("c")}");\n`,
+      ".github/tool.sh": `image=ghcr.io/k2b-dev/mirror/nats:2.14.3-alpine@${digest("c")}\n`,
     }),
   ).toEqual([
     ".github/mirror-images.txt:4 expected a Docker Hub image as <name>:<tag>@sha256:<digest>, got postgres:17-alpine",
     `.github/mirror-images.txt:5 expected a Docker Hub image as <name>:<tag>@sha256:<digest>, got ghcr.io/x/y:1@${digest("d")}`,
     ".github/mirror-images.txt:6 nats:2.14.3-alpine is listed twice",
+    `.github/tool.sh:1 use ${nats}, the digest pinned in .github/mirror-images.txt`,
     `Dockerfile:2 ghcr.io/k2b-dev/mirror/debian:13-slim@${digest("f")} is not in .github/mirror-images.txt`,
     `packages/example/scripts/acceptance.ts:1 use ${bun}, the digest pinned in .github/mirror-images.txt`,
     ".github/mirror-images.txt:2 no workflow or Dockerfile uses nats:2.14.3-alpine; remove it from the list",

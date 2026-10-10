@@ -4,6 +4,7 @@
 # failed CI runs. .github/mirror-images.sh copies them, and the
 # `mirror-images` check keeps workflows and Dockerfiles in line with this list.
 # To add or bump an image, see docs-site/docs/en/contributing/testing.md.
+backplane/pdf:20261009@sha256:0e9b353de3fa9f3399d7a5c5e3ab6233ec963e37e1db5c5c8cd5cb2e6b580168
 debian:13-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f
 docker/buildkit-syft-scanner:1.12.0@sha256:ae4f3b554449e7e25548e7d8ccc029d17357348e30c6e3df01b92bc93654d6a9
 docker/dockerfile:1.7-labs@sha256:b99fecfe00268a8b556fad7d9c37ee25d716ae08a5d7320e6d51c4dd83246894

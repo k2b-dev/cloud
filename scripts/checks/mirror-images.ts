@@ -237,7 +237,7 @@ const repositoryFiles = (root: string): string[] => {
  * containers, `docker://` steps, BuildKit, the SBOM generator and Dockerfiles
  * name the mirror at exactly the listed digest, and a job that starts a Docker
  * Hub image by name (`docker run`, Compose) first pulls it through
- * .github/pull-images.sh. A TypeScript script or fixture may name the mirror
+ * .github/pull-images.sh. A TypeScript or shell script or a fixture may name the mirror
  * at the listed digest; a Docker Hub name in one is out of reach here, because
  * nothing here knows which job runs the file, so that job's pull-images.sh
  * call has to list it.
@@ -254,7 +254,7 @@ export const rule: Rule = {
       if (/^Dockerfile/.test(basename(path))) checkDockerfile(state, read(path));
       else if (/^\.github\/workflows\/[^/]+\.ya?ml$/.test(path)) checkWorkflow(state, read(path), workspaceRoot);
       // Scripts and fixtures may name the mirror directly; their digests must follow the list too.
-      else if (/\.tsx?$/.test(path) && !path.startsWith("scripts/checks/")) checkMirrorReferences(state, read(path));
+      else if (/\.(tsx?|sh)$/.test(path) && !path.startsWith("scripts/checks/")) checkMirrorReferences(state, read(path));
     }
     for (const [image, entry] of state.entries)
       if (!state.used.has(image))
