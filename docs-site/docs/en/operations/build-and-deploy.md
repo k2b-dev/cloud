@@ -5,7 +5,7 @@ section: Operations
 order: 1130
 description: Build a standalone application image and connect it to a Cloud deployment.
 tags: [build, docker, deployment]
-updated: 2026-10-09
+updated: 2026-10-10
 ---
 
 # Build and deploy

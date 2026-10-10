@@ -5,7 +5,7 @@ section: Contributing
 order: 1304
 description: Run unit, render, and integration tests locally, and understand what the pull request gate and nightly run check.
 tags: [contributing, testing, ci]
-updated: 2026-10-09
+updated: 2026-10-10
 ---
 
 # Testing
