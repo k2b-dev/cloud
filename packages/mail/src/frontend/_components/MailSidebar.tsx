@@ -293,7 +293,10 @@ export default function MailSidebar(props: {
         appearance="plain"
         class="k2b-app-workspace__sidebar-item"
         label={messages().mailboxTools}
-        disabled={props.managementOpening !== null || sync.loading()}
+        // A dialog's code can still be loading: the trigger keeps focus so the dialog can return it, and the opener
+        // ignores another choice until then.
+        disabled={sync.loading()}
+        aria-busy={props.managementOpening ? "true" : undefined}
       >
         <span class="k2b-app-workspace__sidebar-item-icon" aria-hidden="true">
           <i class={props.managementOpening || sync.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-tool"} />
@@ -727,8 +730,8 @@ export default function MailSidebar(props: {
             <Show when={!props.assignedOnly}>
               {mailboxTools()}
               <AppWorkspace.SidebarItem
+                // Stays enabled while the dialog's code loads, so the dialog can return focus to it.
                 icon={props.settingsOpening ? "ti ti-loader-2 animate-spin" : "ti ti-settings"}
-                disabled={props.settingsOpening}
                 onClick={props.onOpenSettings}
               >
                 {messages().settings}

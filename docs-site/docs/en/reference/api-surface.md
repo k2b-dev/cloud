@@ -211,7 +211,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/browser/app-approval` | Supported, browser | Authenticator namespace for pairing links, device keys and signed API calls | [App approval](/en/docs/operations/app-approval) |
 | `@k2b/cloud/browser/mermaid` | Supported, browser | Mermaid configuration that follows Cloud's light and dark colors | [Styling and accessibility](/en/docs/frontend/styling-and-accessibility#render-mermaid-diagrams-with-cloud-colors) |
 | `@k2b/cloud/browser/notifications` | Supported, browser | Browser notification state | [Notifications](/en/docs/platform/notifications) |
-| `@k2b/cloud/browser/reload` | Supported, browser | Bounded automatic page reload that cannot loop | [Realtime UI](/en/docs/frontend/realtime-ui#preserve-reload-behavior) |
+| `@k2b/cloud/browser/reload` | Supported, browser | `reloadOnce`: bounded automatic page reload that cannot loop; `importOnDemand`: load code when an action needs it and offer a reload when it cannot load | [Realtime UI](/en/docs/frontend/realtime-ui#preserve-reload-behavior), [Islands](/en/docs/frontend/islands-and-hydration#keep-the-first-load-small) |
 | `@k2b/cloud/browser/resource-clipboard` | Supported, browser | Copy and recognize stable Cloud resource references | [Resource copy and paste](/en/docs/platform/resource-references) |
 | `@k2b/cloud/browser/search` | Supported, browser | Open global search with an optional context and register app navigation | [Universal search](/en/docs/platform/search) |
 | `@k2b/cloud/browser/widgets` | Supported, browser | `streamWidgets`: read dashboard widgets from Core as each one answers | [Dashboard widgets](/en/docs/platform/dashboard-widgets#read-widgets-from-a-browser) |

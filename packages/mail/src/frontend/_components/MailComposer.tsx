@@ -1,5 +1,6 @@
 import { consumeCommandLink, registerCommandHandler, registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { chooseFiles } from "@k2b/cloud/browser/files";
+import { importOnDemand } from "@k2b/cloud/browser/reload";
 import { navigateTo } from "@k2b/ssr/nav";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations, query, timed } from "@k2b/stdlib/solid";
@@ -234,8 +235,9 @@ export default function MailComposer(props: {
       const currentDraft = await persist();
       if (!currentDraft) throw new Error(statusMessage() || t().draftCouldNotBeSaved);
       // The Assistant handoff and its skill parser load only when someone uses it.
-      const { launchMailDraftAssistant } = await import("./mail-assistant-launch");
-      const launch = await launchMailDraftAssistant({
+      const assistant = await importOnDemand(() => import("./mail-assistant-launch"));
+      if (!assistant) return;
+      const launch = await assistant.launchMailDraftAssistant({
         contactResolve: contactDirectory.resolve,
         mailboxId: props.mailboxId,
         returnHref: props.returnHref,

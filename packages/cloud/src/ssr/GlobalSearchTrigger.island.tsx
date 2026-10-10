@@ -3,6 +3,7 @@ import { createEffect, onCleanup, onMount } from "solid-js";
 import { registerContextAwareCommand } from "../browser/command-bridge";
 import { attachCommandShortcuts } from "../browser/command-shortcuts";
 import type { NavigationSearchItem } from "../browser/navigation-search";
+import { importOnDemand } from "../browser/reload";
 import { openGlobalSearch } from "../browser/search";
 import { registerGlobalSearchHost } from "../browser/search-bridge";
 import { createGlobalSearchHost } from "./global-search-host";
@@ -30,7 +31,8 @@ export default function GlobalSearchTrigger(props: GlobalSearchTriggerProps) {
     onMount(() =>
       onCleanup(
         attachCommandShortcuts(
-          (command) => void import("../browser/commands").then(({ runContextAwareCommand }) => runContextAwareCommand(command)),
+          (command) =>
+            void importOnDemand(() => import("../browser/commands")).then((commands) => commands?.runContextAwareCommand(command)),
         ),
       ),
     );

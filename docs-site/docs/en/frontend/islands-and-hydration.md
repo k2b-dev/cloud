@@ -84,26 +84,44 @@ service that imports Bun SQL.
 Every static import of an island downloads and runs before the island mounts,
 on every page that renders it. Load code that only an action needs, such as a
 settings dialog, an editor, an inspector, or a handoff to another app, inside
-that action:
+that action with `importOnDemand` from `@k2b/cloud/browser/reload`:
 
-```ts
-const openSettings = async () => {
-  setOpening(true);
-  try {
-    const { openMailboxSettingsDialog } = await import("./MailboxSettingsDialog");
-    await openMailboxSettingsDialog({ mailboxId });
-  } finally {
+```tsx
+import { importOnDemand } from "@k2b/cloud/browser/reload";
+import { IconButton } from "@k2b/ui";
+import { createSignal } from "solid-js";
+
+export function InventorySettingsButton(props: { inventoryId: string; label: string }) {
+  const [opening, setOpening] = createSignal(false);
+  const open = async () => {
+    if (opening()) return;
+    setOpening(true);
+    const dialog = await importOnDemand(() => import("./InventorySettingsDialog"));
     setOpening(false);
-  }
-};
+    if (!dialog) return;
+    await dialog.openInventorySettings({ inventoryId: props.inventoryId });
+  };
+  return (
+    <IconButton label={props.label} aria-busy={opening() ? "true" : undefined} onClick={open}>
+      <i class={opening() ? "ti ti-loader-2 animate-spin" : "ti ti-settings"} aria-hidden="true" />
+    </IconButton>
+  );
+}
 ```
 
-Show the action's pending state while the code loads. Keep content that the page
-renders on mount in static imports; a dynamic import there only delays it.
+While the code loads, the trigger shows a spinner in place of its icon and
+ignores another activation, so a second click cannot open a second dialog.
+It stays enabled: a disabled button loses focus, and the dialog could not
+return focus to it when it closes.
 
-Avoid runtime imports from `@k2b/cloud/shared` in an island: the barrel
-bundles Markdown, KaTeX, and Liquid even for one small helper. Type imports
-(`import type`) cost nothing.
+A release replaces the application's code files. A page that was open before
+the release cannot load code it has not loaded yet, and a dropped connection
+fails the same way. `importOnDemand` then resolves `undefined` and shows a
+toast that offers a reload, so the action only has to end.
+
+Keep content that the page renders on mount in static imports; a dynamic
+import there only delays it. Import types with `import type`; they never reach
+the browser.
 
 ## Preserve the server result
 

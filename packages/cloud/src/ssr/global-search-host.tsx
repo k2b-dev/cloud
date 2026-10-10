@@ -1,6 +1,7 @@
 import { dialogCore, toast } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import type { NavigationSearchItem } from "../browser/navigation-search";
+import { importOnDemand } from "../browser/reload";
 import { resourceSearchDialogOptions } from "../browser/resource-search-dialog";
 import { resourceSearchMessages } from "../browser/resource-search-messages";
 import type { GlobalSearchOptions } from "../browser/search-bridge";
@@ -22,9 +23,10 @@ export const createGlobalSearchHost = (searchLinks: () => NavigationSearchItem[]
       const current = new AbortController();
       controller = current;
       const locale = document.documentElement.lang || "en";
-      void import("./GlobalSearchDialog")
-        .then(({ default: GlobalSearchDialog }) => {
-          if (current.signal.aborted) return;
+      void importOnDemand(() => import("./GlobalSearchDialog"))
+        .then((loaded) => {
+          if (!loaded || current.signal.aborted) return;
+          const GlobalSearchDialog = loaded.default;
           return dialogCore.open<void>(
             (close, context) => (
               <GlobalSearchDialog

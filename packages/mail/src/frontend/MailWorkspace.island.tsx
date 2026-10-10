@@ -1,5 +1,5 @@
 import { liveConnection } from "@k2b/cloud/browser/live";
-import { reloadOnce } from "@k2b/cloud/browser/reload";
+import { importOnDemand, reloadOnce } from "@k2b/cloud/browser/reload";
 import type { CloudTheme } from "@k2b/cloud/shared";
 import { documentNavigate, type LinkNavigateEvent, listenPopState, navigate } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
@@ -533,8 +533,9 @@ function MailWorkspaceView(props: {
     setSettingsOpening(true);
     try {
       // Settings, management and details dialogs load their code on first open, behind the pending state.
-      const { openMailboxSettingsDialog } = await import("./_components/MailboxSettingsDialog");
-      const result = await openMailboxSettingsDialog({
+      const settings = await importOnDemand(() => import("./_components/MailboxSettingsDialog"));
+      if (!settings || disposed) return;
+      const result = await settings.openMailboxSettingsDialog({
         mailboxId: data.mailbox.id,
         currentUserEmail: props.currentUserEmail,
         contactDirectory: props.contactDirectory,
@@ -555,9 +556,9 @@ function MailWorkspaceView(props: {
     if (disposed || detailsOpening()) return;
     setDetailsOpening(true);
     let details: Awaited<ReturnType<typeof loadDetails>>;
-    let openMailboxDetailsDialog: typeof import("./_components/MailboxDetailsDialog").openMailboxDetailsDialog;
+    let dialog: typeof import("./_components/MailboxDetailsDialog") | undefined;
     try {
-      [details, { openMailboxDetailsDialog }] = await Promise.all([loadDetails(), import("./_components/MailboxDetailsDialog")]);
+      [details, dialog] = await Promise.all([loadDetails(), importOnDemand(() => import("./_components/MailboxDetailsDialog"))]);
     } catch (error) {
       retryToast(error instanceof Error ? error.message : String(error), {
         title: t().mailboxDetailsFailed,
@@ -568,8 +569,8 @@ function MailWorkspaceView(props: {
     } finally {
       if (!disposed) setDetailsOpening(false);
     }
-    if (disposed) return;
-    const result = await openMailboxDetailsDialog({
+    if (!dialog || disposed) return;
+    const result = await dialog.openMailboxDetailsDialog({
       mailbox: data.mailbox,
       identities: data.identities,
       folderCount: data.folders.length,
@@ -588,8 +589,9 @@ function MailWorkspaceView(props: {
     if (disposed || managementOpening()) return;
     setManagementOpening("health");
     try {
-      const { openMailboxHealthDialog } = await import("./_components/MailboxHealthDialog");
-      const result = await openMailboxHealthDialog({ mailboxId: data.mailbox.id, dateConfig: props.dateConfig });
+      const health = await importOnDemand(() => import("./_components/MailboxHealthDialog"));
+      if (!health || disposed) return;
+      const result = await health.openMailboxHealthDialog({ mailboxId: data.mailbox.id, dateConfig: props.dateConfig });
       if (disposed) return;
       if (!result.workspaceChanged) return;
       const refreshResult = await replaceWorkspaceRoute(requestPath());
@@ -603,8 +605,9 @@ function MailWorkspaceView(props: {
     if (disposed || managementOpening()) return;
     setManagementOpening("links");
     try {
-      const { openMailAttachmentLinksDialog } = await import("./_components/MailAttachmentLinksDialog");
-      await openMailAttachmentLinksDialog({ mailboxId: data.mailbox.id, dateConfig: props.dateConfig });
+      const links = await importOnDemand(() => import("./_components/MailAttachmentLinksDialog"));
+      if (!links || disposed) return;
+      await links.openMailAttachmentLinksDialog({ mailboxId: data.mailbox.id, dateConfig: props.dateConfig });
     } finally {
       if (!disposed) setManagementOpening(null);
     }
@@ -614,8 +617,9 @@ function MailWorkspaceView(props: {
     if (disposed || managementOpening()) return;
     setManagementOpening("remote-content");
     try {
-      const { openMailRemoteContentRulesDialog } = await import("./_components/MailRemoteContentRulesDialog");
-      await openMailRemoteContentRulesDialog(data.mailbox.id);
+      const rules = await importOnDemand(() => import("./_components/MailRemoteContentRulesDialog"));
+      if (!rules || disposed) return;
+      await rules.openMailRemoteContentRulesDialog(data.mailbox.id);
     } finally {
       if (!disposed) setManagementOpening(null);
     }
@@ -625,8 +629,9 @@ function MailWorkspaceView(props: {
     if (disposed || managementOpening()) return;
     setManagementOpening("subscriptions");
     try {
-      const { openMailSubscriptionDialog } = await import("./_components/MailSubscriptionDialog");
-      await openMailSubscriptionDialog({
+      const subscriptions = await importOnDemand(() => import("./_components/MailSubscriptionDialog"));
+      if (!subscriptions || disposed) return;
+      await subscriptions.openMailSubscriptionDialog({
         mailboxId: data.mailbox.id,
         canWrite: canWrite(),
         initialListKey,

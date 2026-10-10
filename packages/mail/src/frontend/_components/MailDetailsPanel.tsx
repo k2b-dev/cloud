@@ -1,5 +1,6 @@
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { SAVE_FILES_ICON, saveFiles, saveFilesLabel } from "@k2b/cloud/browser/files";
+import { importOnDemand } from "@k2b/cloud/browser/reload";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import {
@@ -65,9 +66,7 @@ import { createRetryToasts } from "./mail-feedback";
 const avatarSource = (userId: string | undefined, avatarHash: string | null): string | undefined =>
   userId && avatarHash ? `/api/accounts/users/${encodeURIComponent(userId)}/avatar?rev=${encodeURIComponent(avatarHash)}` : undefined;
 
-/** The inspector loads its code on first use. */
-const openMessageInspector = async (params: Parameters<typeof import("./MailMessageInspectorDialog").openMailMessageInspector>[0]) =>
-  (await import("./MailMessageInspectorDialog")).openMailMessageInspector(params);
+type InspectorTab = "headers" | "source";
 
 export default function MailDetailsPanel(props: {
   mailboxId: string;
@@ -106,6 +105,21 @@ export default function MailDetailsPanel(props: {
   const t = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
   const canAssign = () => props.canWrite && props.mailboxWide;
   const retryToast = createRetryToasts();
+  const [inspectorLoading, setInspectorLoading] = createSignal<InspectorTab | null>(null);
+  /** The inspector loads its code on first use; until its modal opens, another activation must not open a second one. */
+  const openMessageInspector = async (messageId: string, initialTab: InspectorTab) => {
+    if (inspectorLoading()) return;
+    setInspectorLoading(initialTab);
+    const inspector = await importOnDemand(() => import("./MailMessageInspectorDialog"));
+    setInspectorLoading(null);
+    if (!inspector) return;
+    await inspector.openMailMessageInspector({
+      mailboxId: props.mailboxId,
+      messages: props.messages,
+      initialMessageId: messageId,
+      initialTab,
+    });
+  };
   const [state, setState] = createSignal(props.initialState);
   const [availableTags, setAvailableTags] = createSignal(props.initialLocalTags);
   const [tagState, setTagState] = createSignal(props.initialConversationLocalTags);
@@ -1014,31 +1028,24 @@ export default function MailDetailsPanel(props: {
                       variant="secondary"
                       size="sm"
                       type="button"
-                      onClick={() =>
-                        void openMessageInspector({
-                          mailboxId: props.mailboxId,
-                          messages: props.messages,
-                          initialMessageId: message().id,
-                          initialTab: "headers",
-                        })
-                      }
+                      aria-busy={inspectorLoading() === "headers" ? "true" : undefined}
+                      onClick={() => void openMessageInspector(message().id, "headers")}
                     >
-                      <i class="ti ti-list-details" aria-hidden="true" /> {t().headers}
+                      <i
+                        class={inspectorLoading() === "headers" ? "ti ti-loader-2 animate-spin" : "ti ti-list-details"}
+                        aria-hidden="true"
+                      />{" "}
+                      {t().headers}
                     </Button>
                     <Button
                       variant="secondary"
                       size="sm"
                       type="button"
-                      onClick={() =>
-                        void openMessageInspector({
-                          mailboxId: props.mailboxId,
-                          messages: props.messages,
-                          initialMessageId: message().id,
-                          initialTab: "source",
-                        })
-                      }
+                      aria-busy={inspectorLoading() === "source" ? "true" : undefined}
+                      onClick={() => void openMessageInspector(message().id, "source")}
                     >
-                      <i class="ti ti-code" aria-hidden="true" /> {t().source}
+                      <i class={inspectorLoading() === "source" ? "ti ti-loader-2 animate-spin" : "ti ti-code"} aria-hidden="true" />{" "}
+                      {t().source}
                     </Button>
                     <Show when={message().sourceAvailable}>
                       <ButtonLink
