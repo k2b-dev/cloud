@@ -133,14 +133,14 @@ const callProvider = async (options: {
 };
 
 /**
- * `<appId>/<widgetId>` with an optional `@small`, `@medium`, or `@large`, as the key and the size it asks for. A value
- * that names a declared widget as it stands is that widget, so an ID that itself ends in such a suffix keeps working.
+ * `<appId>/<widgetId>` with an optional `@small`, `@medium`, or `@large`, as the key and the size it asks for. The
+ * suffix is a size whenever the key before it is declared; `defineApp()` rejects `@` in widget IDs, so only an app
+ * built before sizes existed can declare an ID that ends in such a suffix, and it is still asked by that whole ID.
  */
 const parseRequestedWidget = (value: string, declared: ReadonlySet<string>): [string, DashboardWidgetSize | undefined] => {
-  if (declared.has(value)) return [value, undefined];
   const at = value.lastIndexOf("@");
   const size = at < 0 ? undefined : value.slice(at + 1);
-  return isDashboardWidgetSize(size) ? [value.slice(0, at), size] : [value, undefined];
+  return isDashboardWidgetSize(size) && declared.has(value.slice(0, at)) ? [value.slice(0, at), size] : [value, undefined];
 };
 
 export const createWidgetRoutes = (dependencies: WidgetRouteDependencies = {}) => {

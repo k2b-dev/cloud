@@ -35,6 +35,8 @@ describe("compileWidgetDeclarations", () => {
       expect(() => compileWidgetDeclarations("inventory", widgets)).toThrow(message);
     fails([widget(), widget()], "declared twice");
     fails([widget({ id: " " })], "non-empty id");
+    // `@` starts the size in a dashboard request, so `stock@small` could not be told apart from `stock` in small.
+    fails([widget({ id: "stock@small" })], 'must not contain "@"');
     fails([widget({ title: "" })], "title must contain 1 to 80 characters");
     fails([widget({ description: "x".repeat(201) })], "description must contain 1 to 200 characters");
     fails([widget({ sizes: [] })], "distinct values");
@@ -44,5 +46,7 @@ describe("compileWidgetDeclarations", () => {
     // Without sizes a widget offers only `large`.
     fails([widget({ defaultSize: "small" })], "defaultSize it offers");
     fails([widget({ requiresRoles: ["root" as "admin"] })], "unknown role");
+    // An app written in JavaScript gets no type check; a string would silently count as "not suggested".
+    fails([widget({ suggest: "true" as unknown as boolean })], "suggest as true or false");
   });
 });

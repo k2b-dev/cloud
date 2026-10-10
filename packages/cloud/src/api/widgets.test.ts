@@ -471,17 +471,35 @@ describe("Core widget stream", () => {
     expect(lines[0]).toEqual({ type: "start", widgets: ["app-0/summary", "app-1/summary", "weather/current"] });
     expect(asked).toEqual({ "app-0": "large", "app-1": "medium", "app-weather": "small" });
 
-    // A widget whose own ID ends in a size suffix is still asked by its ID.
-    const suffixed: DashboardWidget = { ...widget, appId: "legacy", widgetId: "stats@small", url: "http://app-legacy:3000/widget" };
-    const legacy = createWidgetRoutes({
-      authenticate,
-      listWidgets: async () => [suffixed],
-      fetch: async () => Response.json({ title: "ok", blocks: [] }),
+    // An app from before sizes existed may declare an ID that ends in a size suffix. It is still asked by its whole
+    // ID, and when it also declares the ID without the suffix, the suffix asks that widget for a size.
+    const legacyAsked: string[] = [];
+    const legacyWidget = (widgetId: string): DashboardWidget => ({
+      ...widget,
+      appId: "legacy",
+      widgetId,
+      url: "http://app-legacy:3000/widget",
     });
-    expect((await readLines(await legacy.request("/widgets/v1?widget=legacy/stats@small")))[0]).toEqual({
+    const legacy = (widgets: DashboardWidget[]) =>
+      createWidgetRoutes({
+        authenticate,
+        listWidgets: async () => widgets,
+        fetch: async (input) => {
+          const url = new URL(input instanceof Request ? input.url : input);
+          legacyAsked.push(`${decodeURIComponent(url.pathname.split("/").at(-1)!)}?${url.searchParams.get("size")}`);
+          return Response.json({ title: "ok", blocks: [] });
+        },
+      });
+    expect((await readLines(await legacy([legacyWidget("stats@small")]).request("/widgets/v1?widget=legacy/stats@small")))[0]).toEqual({
       type: "start",
       widgets: ["legacy/stats@small"],
     });
+    const both = legacy([legacyWidget("stock"), legacyWidget("stock@small")]);
+    expect((await readLines(await both.request("/widgets/v1?widget=legacy/stock@small&widget=legacy/stock@small@medium")))[0]).toEqual({
+      type: "start",
+      widgets: ["legacy/stock", "legacy/stock@small"],
+    });
+    expect(legacyAsked.slice(1).sort()).toEqual(["stock?small", "stock@small?medium"]);
 
     const single = await routes.request("/widgets/v1/weather/current?size=medium");
     expect(single.status).toBe(200);
