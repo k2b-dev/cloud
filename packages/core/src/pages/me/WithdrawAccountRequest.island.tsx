@@ -41,7 +41,7 @@ export default function WithdrawAccountRequest() {
       loadingLabel={t().withdrawing}
       class="leading-none"
     >
-      {mutation.loading() ? <i class="ti ti-loader-2 animate-spin text-sm" /> : <i class="ti ti-x text-sm" />}
+      <i class="ti ti-x text-sm" />
       {t().withdrawRequest}
     </Button>
   );

@@ -66,7 +66,7 @@ export default function AdminLoginForm(props: { redirectTo?: string; requiresRec
         loading={mutation.loading()}
         loadingLabel={t().signingIn}
       >
-        {mutation.loading() ? <i class="ti ti-loader-2 animate-spin" /> : <i class="ti ti-shield" />}
+        <i class="ti ti-shield" />
         {t().signInWithAdminToken}
       </Button>
     </form>

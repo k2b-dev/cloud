@@ -344,14 +344,8 @@ export default function VersionHistory(props: Props) {
               loadingLabel={t().creatingNote}
               title={t().createFromVersionHint}
             >
-              {restoreAsNewMut.loading() ? (
-                <i class="ti ti-loader-2 animate-spin" />
-              ) : (
-                <>
-                  <i class="ti ti-file-plus mr-1" />
-                  {t().createFromVersion}
-                </>
-              )}
+              <i class="ti ti-file-plus mr-1" />
+              {t().createFromVersion}
             </Button>
           </div>
         </Show>

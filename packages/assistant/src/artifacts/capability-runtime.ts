@@ -2,6 +2,7 @@ import { aiConversations, hasRememberedAiToolApproval, rememberAiToolApproval } 
 import { CodeResourceId } from "@k2b/cloud/ai/browser";
 import {
   type CapabilityCaller,
+  getCapabilityActionWording,
   getCapabilityCatalogApp,
   invokeCapability,
   reviewCapabilityAction,
@@ -181,6 +182,8 @@ export const runtimeCapabilities = {
       (await hasRememberedAiToolApproval({ actorUserId: actor.id }, { toolName: request.name, approvalScope: scope }));
     if (!untrusted && (!target.action || target.action.approval === "none" || remembered))
       return runtimeCapabilities.resolve(request.id, { approved: true }, identity, caller);
+    // The card words this call like the same Action called from a chat: the app's sentences and labelled fields.
+    const wording = target.action ? await getCapabilityActionWording(target.appId, target.localId, caller.locale ?? undefined) : null;
     return {
       status: "approval" as const,
       id: request.id,
@@ -189,6 +192,8 @@ export const runtimeCapabilities = {
       appName: target.appName,
       appIcon: target.appIcon,
       ...prepared,
+      ...(wording?.sentences ? { sentences: wording.sentences } : {}),
+      ...(wording?.fields?.length ? { fields: [...wording.fields] } : {}),
     };
   },
   async resolve(id: string, decision: { approved: boolean; remember?: "always" }, identity: ArtifactIdentity, caller: CapabilityCaller) {

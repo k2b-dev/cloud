@@ -53,11 +53,34 @@ import { Button, ButtonLink, IconButton, IconButtonLink, SplitButton } from "@k2
 </SplitButton>
 ```
 
-`size` accepts `xs`, `sm`, `md`, or `lg`. `Button` defaults to `primary`; `IconButton` defaults to `ghost`. Loading disables the action, exposes busy semantics, and may replace the visible label through `loadingLabel`.
+`size` accepts `xs`, `sm`, `md`, or `lg`. `Button` defaults to `primary`; `IconButton` defaults to `ghost`.
+
+### Loading
+
+`loading` disables the action and keeps the button exactly the size it had: its
+label and icons stay in place but invisible, and a spinner sits centered over
+them. This holds for every variant and size, for `IconButton`, `CopyButton`, and
+the main action of a `SplitButton`, so neighbouring buttons and wrapped rows do
+not move when an action starts or ends. With reduced motion, the spinner stands
+still.
+
+Pass the idle content as children and leave it unchanged while `loading` is
+set: no spinner of your own, no hidden icon, no "Saving" text. The invisible
+children set the busy width, so swapping them still moves the button, and the
+button already draws the spinner.
+
+`loadingLabel` is not shown. It becomes the button's accessible name while it
+is busy, also over an `aria-label` you passed, so it can describe the running
+work precisely ("Saving the invoice") without changing the width. Without
+`loadingLabel`, the button keeps its label or `aria-label` as its name. A busy
+button is marked `aria-busy="true"` and `disabled`. The new name is not
+announced, so report progress that needs attention and the result, such as a
+saved state or an error, where the page reports results, for example with a
+toast.
 
 The `input` variant uses the same height, radius, muted surface, hover border, and inset focus treatment as form fields. Use it for a separate action immediately beside an input, not for actions embedded inside the field shell.
 
-Button labels stay on one line by default, including loading labels. Let the surrounding toolbar wrap whole
+Button labels stay on one line by default. Let the surrounding toolbar wrap whole
 actions when space is limited. Set `wrap` on `Button` or `ButtonLink` for
 deliberately long or rich content that should wrap within the available width.
 This also applies to buttons composed through `SplitButton`.

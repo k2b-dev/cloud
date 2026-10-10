@@ -74,9 +74,7 @@ export default function RecordsPrimaryToolbar(props: Props) {
               loading={props.liveRefreshing}
               onClick={props.onRefresh}
             >
-              <Show when={!props.liveRefreshing}>
-                <i class="ti ti-refresh" />
-              </Show>
+              <i class="ti ti-refresh" />
               {t().updatesAvailable}
             </Button>
           </Tooltip.Anchor>

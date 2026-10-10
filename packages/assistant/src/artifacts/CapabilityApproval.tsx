@@ -30,6 +30,8 @@ function Approval(props: { request: CapabilityApproval; respond: (value: Capabil
               appIcon: props.request.appIcon,
               title: props.request.title,
               capabilityKind: props.request.kind,
+              ...(props.request.sentences ? { sentences: props.request.sentences } : {}),
+              ...(props.request.fields ? { fields: [...props.request.fields] } : {}),
             },
             approval: {
               message: props.request.review?.message ?? `${props.request.appName}: ${props.request.title}`,

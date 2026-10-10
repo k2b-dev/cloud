@@ -242,10 +242,12 @@ describe("Venue settings lifecycle behavior", () => {
     await flush();
     expect(pending.at(-1)).toBeTrue();
     expect(requestSignal.aborted).toBeFalse();
-    // The running deletion shows on the button itself, busy for assistive technology too.
+    // The running deletion shows on the button itself, busy for assistive technology too:
+    // a spinner over the idle label, which keeps the width, and the loading label as its name.
     const button = dom.root.querySelector<HTMLButtonElement>("button")!;
     expect(button.getAttribute("aria-busy")).toBe("true");
-    expect(button.textContent?.trim()).toBe("Deleting");
+    expect(button.getAttribute("aria-label")).toBe("Deleting");
+    expect(button.textContent?.trim()).toBe("Delete venue");
 
     dispose();
     expect(requestSignal.aborted).toBeTrue();

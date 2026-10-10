@@ -349,6 +349,26 @@ export type CapabilityUniversalSearchDefinition = {
 
 export type CapabilitySchemaPresentation = Readonly<Record<string, string>>;
 
+/**
+ * What one Action does, in words people read in approvals, receipts, and step rows. Each sentence is a
+ * template: `{input.to}` inserts a field of the validated call input by its dotted schema path, and
+ * `done` may also read the Action's result data with `{data.id}`. Cloud inserts values as escaped,
+ * bounded plain text, formats fields with a `date` or `date-time` schema format for the reader, and
+ * names an object by its email, address, or path before its display name. A sentence whose value is
+ * missing falls back to the generic wording, so every sentence stays optional. A `done` sentence
+ * replaces the result's runtime summary in the receipt.
+ */
+export type CapabilityActionSentences = {
+  /** What will happen, as a short instruction: "Send email to {input.to}". */
+  approval?: string;
+  /** What happened after the Action ran: "Sent email to {input.to}". */
+  done?: string;
+  /** What did not happen because the person rejected it: "Did not send email to {input.to}". */
+  rejected?: string;
+  /** What did not happen because the turn ended first: "Email to {input.to} not sent". */
+  notRun?: string;
+};
+
 export type CapabilityOperationPresentationTranslation = {
   title?: string;
   description?: string;
@@ -358,6 +378,8 @@ export type CapabilityOperationPresentationTranslation = {
   data?: CapabilitySchemaPresentation;
   /** Search-tag presentation keyed by the stable tag token. */
   searchTags?: Readonly<Record<string, { title?: string; description?: string }>>;
+  /** Actions only: the complete set of sentences in this locale. */
+  sentences?: CapabilityActionSentences;
 };
 
 export type CapabilityPresentationTranslation = {
@@ -370,6 +392,8 @@ export type CapabilityPresentationTranslation = {
 export type CapabilityPresentationCatalog = {
   /** Locale of the complete Type, Query, Action, search-tag, and schema presentation. */
   baseLocale: string;
+  /** Optional Action sentences in the base locale, keyed by Action local ID. */
+  sentences?: Readonly<Record<string, CapabilityActionSentences>>;
   /** Partial presentation overlays with exact -> ancestor -> base fallback. */
   translations: Readonly<Record<string, CapabilityPresentationTranslation>>;
 };

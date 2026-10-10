@@ -81,8 +81,8 @@ export default function BrowserNotificationSetup() {
               loadingLabel={state()?.enabled ? t().disabling : t().enabling}
               onClick={() => void (state()?.enabled ? disable() : enable())}
             >
-              <i class={pending() ? "ti ti-loader-2 animate-spin" : state()?.enabled ? "ti ti-bell-off" : "ti ti-bell-plus"} />
-              {pending() ? t().working : state()?.enabled ? t().disable : t().enable}
+              <i class={state()?.enabled ? "ti ti-bell-off" : "ti ti-bell-plus"} />
+              {state()?.enabled ? t().disable : t().enable}
             </Button>
           </Show>
         </span>

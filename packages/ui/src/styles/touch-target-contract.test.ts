@@ -14,7 +14,8 @@ const declarations = (selector: string, context = coarse) =>
 
 describe("@k2b/ui touch targets", () => {
   test("gives buttons, the dialog close control, and the toast action and close button a 2.75rem hit area on coarse pointers", () => {
-    expect(declarations(":where(.k2b-ui .k2b-button)").get("position")).toEqual(["relative"]);
+    // In the components layer, so a button placed with a utility such as `absolute` stays placed.
+    expect(declarations(":where(.k2b-ui .k2b-button)", `${coarse} > @layer components`).get("position")).toEqual(["relative"]);
     expect(declarations(".k2b-ui .k2b-dialog__close").get("position")).toEqual(["relative"]);
     expect(declarations(".k2b-ui .k2b-toast__action").get("position")).toEqual(["relative"]);
     expect(declarations(".k2b-ui .k2b-toast__close").get("position")).toEqual(["relative"]);

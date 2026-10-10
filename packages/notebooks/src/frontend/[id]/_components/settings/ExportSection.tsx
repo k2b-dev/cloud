@@ -42,10 +42,8 @@ function SnapshotUploadAction(props: {
           loading={props.loading}
           loadingLabel={t().uploading}
         >
-          <Show when={!props.loading} fallback={<i class="ti ti-loader-2 animate-spin" />}>
-            <i class="ti ti-cloud-upload" />
-            {t().uploadNow}
-          </Show>
+          <i class="ti ti-cloud-upload" />
+          {t().uploadNow}
         </Button>
         <Show when={props.lastRun}>
           {(result) => (

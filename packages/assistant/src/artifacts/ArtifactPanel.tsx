@@ -309,9 +309,7 @@ export function ArtifactPanel(props: {
                 description={safeMode() ? t().safeModeHelp : undefined}
                 action={
                   <Button loading={loading()} disabled={!metadata()} onClick={() => void start()}>
-                    <Show when={!loading()}>
-                      <i class="ti ti-player-play" aria-hidden="true" />
-                    </Show>
+                    <i class="ti ti-player-play" aria-hidden="true" />
                     {t().start}
                   </Button>
                 }

@@ -91,7 +91,7 @@ export default function LoginForm(props: { redirectTo?: string; showBanner?: boo
       )}
 
       <Button type="submit" size="lg" class="w-full justify-center" loading={mutation.loading()} loadingLabel={t().signingIn}>
-        {mutation.loading() ? <i class="ti ti-loader-2 animate-spin" /> : <i class="ti ti-login-2" />}
+        <i class="ti ti-login-2" />
         {t().signInWithFreeIpa}
       </Button>
     </form>

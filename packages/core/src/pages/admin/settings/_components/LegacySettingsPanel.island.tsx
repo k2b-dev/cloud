@@ -84,7 +84,7 @@ export function LegacySettingsSection() {
           loadingLabel={t().cleaningUp}
           disabled={legacySettings.loading || (legacySettings()?.length ?? 0) === 0}
         >
-          <i class={`ti ${cleanup.loading() ? "ti-loader-2 animate-spin" : "ti-trash"} text-sm`} />
+          <i class="ti ti-trash text-sm" />
           {t().cleanUp}
         </Button>
       }

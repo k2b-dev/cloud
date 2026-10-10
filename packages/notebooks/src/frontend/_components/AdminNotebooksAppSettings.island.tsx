@@ -278,7 +278,7 @@ const SettingsBody = (props: { close: () => void }) => {
             {t().cancel}
           </Button>
           <Button type="button" size="sm" onClick={onSave} loading={save.loading() || reconciling()} loadingLabel={t().saving}>
-            <i class={`ti ${save.loading() ? "ti-loader-2 animate-spin" : "ti-check"} text-sm`} />
+            <i class="ti ti-check text-sm" />
             {t().save}
           </Button>
         </div>
