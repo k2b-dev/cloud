@@ -100,6 +100,8 @@ export const upDestination = (href: string): string => {
  * `layout.handleUp`); otherwise the page loads.
  */
 export const goUp = (href: string) => {
+  // The way up stays on this origin; a link elsewhere, such as `javascript:`, names no page above.
+  if (resolve(href).origin !== location.origin) return;
   rememberPage();
   const destination = upDestination(href);
   const detail: PageUpDetail = { href: destination };
@@ -107,7 +109,8 @@ export const goUp = (href: string) => {
   const memory = read();
   memory.returning = { url: destination, from: here() };
   write(memory);
-  location.assign(destination);
+  // The destination is a path; after the origin, even one that starts with `//` stays on this origin.
+  location.assign(`${location.origin}${destination}`);
 };
 
 const regionElement = (key: string): HTMLElement | null =>

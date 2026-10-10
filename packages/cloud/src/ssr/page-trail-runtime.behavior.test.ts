@@ -66,7 +66,7 @@ else {
       tab.visit("/app/things?item=42", ["/app/things"]);
       expect(upDestination("/app/things")).toBe("/app/things?q=red");
       goUp("/app/things");
-      expect(tab.loads).toEqual(["/app/things?q=red"]);
+      expect(tab.loads).toEqual(["http://localhost/app/things?q=red"]);
     } finally {
       tab.close();
     }
@@ -87,7 +87,28 @@ else {
       // Somewhere the island does not handle, the page loads.
       tab.visit("/app/filesv2/shares", ["/app/mail"]);
       goUp("/app/mail");
-      expect(tab.loads).toEqual(["/app/mail"]);
+      expect(tab.loads).toEqual(["http://localhost/app/mail"]);
+    } finally {
+      stop();
+      tab.close();
+    }
+  });
+
+  test("the way up never leaves this origin", () => {
+    const tab = open();
+    const taken: string[] = [];
+    const stop = modules!.layout.handleUp((href) => {
+      taken.push(href);
+      return false;
+    });
+    try {
+      tab.visit("/app/things?item=41", ["javascript:alert(1)", "https://elsewhere.example/app/things"]);
+      goUp("javascript:alert(1)");
+      goUp("https://elsewhere.example/app/things");
+      expect({ taken, loads: tab.loads }).toEqual({ taken: [], loads: [] });
+      // A same-origin path that starts with `//` stays a path of this origin.
+      goUp("http://localhost//elsewhere.example/app");
+      expect(tab.loads).toEqual(["http://localhost//elsewhere.example/app"]);
     } finally {
       stop();
       tab.close();

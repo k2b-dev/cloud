@@ -1,6 +1,13 @@
 import type { PageTrailLink, PageTrailState } from "@k2b/ui";
 import type { LayoutBreadcrumb } from "./layout-runtime";
 
+/** `path` without trailing slashes, in one pass: a regular expression would backtrack on long runs of `/`. */
+const withoutTrailingSlashes = (path: string): string => {
+  let end = path.length;
+  while (end > 0 && path[end - 1] === "/") end--;
+  return path.slice(0, end);
+};
+
 /** Path and query of a same-origin link, without a trailing slash; the hash names no other page. */
 const pageOf = (href: string): string => {
   const hash = href.indexOf("#");
@@ -8,7 +15,7 @@ const pageOf = (href: string): string => {
   const queryStart = withoutHash.indexOf("?");
   const path = queryStart >= 0 ? withoutHash.slice(0, queryStart) : withoutHash;
   const query = queryStart >= 0 ? withoutHash.slice(queryStart) : "";
-  return (path.length > 1 ? path.replace(/\/+$/, "") : path) + (query.length > 1 ? query : "");
+  return (path.length > 1 ? withoutTrailingSlashes(path) : path) + (query.length > 1 ? query : "");
 };
 
 /** The trail without levels that link to `page` itself, by path and query. */
