@@ -8,7 +8,8 @@ import type { CloudAiChartInput } from "./default-tool-contracts";
  * schema, the browser, and the CLI read a chart the same way.
  */
 
-const labels = i18n.define({
+// Marked pure so a bundle that does not read charts, such as a Studio app frame, can leave the labels out.
+const labels = /* @__PURE__ */ i18n.define({
   baseLocale: "en",
   messages: {
     en: {
