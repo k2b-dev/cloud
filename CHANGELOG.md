@@ -3,6 +3,25 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.38.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.37.0...cloud-v0.38.0) (2026-10-10)
+
+
+### Features
+
+* **ai:** ask once per website and per chat instead of for every request ([#861](https://github.com/k2b-dev/cloud/issues/861)) ([52fe800](https://github.com/k2b-dev/cloud/commit/52fe8003e1109c69b8f5e1c863da17145ae844a6))
+* **dashboard:** one board of widgets in three sizes that people can arrange themselves ([#885](https://github.com/k2b-dev/cloud/issues/885)) ([0ff5872](https://github.com/k2b-dev/cloud/commit/0ff5872d5f558b41b27dfa43b50e7d3da6f4b67e))
+* **mail:** keep conversations that must not be deleted ([#795](https://github.com/k2b-dev/cloud/issues/795)) ([5bf51dd](https://github.com/k2b-dev/cloud/commit/5bf51dda16fa57f113b03533f0ec2580fa5ce5ac))
+* **spaces:** let claimed tasks move between Kanban columns and let any writer take a claim over ([#835](https://github.com/k2b-dev/cloud/issues/835)) ([7875d2b](https://github.com/k2b-dev/cloud/commit/7875d2b596ccb56681999ec3cf1cbb9af1f2c0ee))
+* **ui:** keep drags from selecting page text on iPad ([#902](https://github.com/k2b-dev/cloud/issues/902)) ([d65a827](https://github.com/k2b-dev/cloud/commit/d65a827d24a8a7fa10589d07be52e8dc561a1ea4))
+
+
+### Bug Fixes
+
+* **cloud:** keep Cloud pages within the window when vh is taller ([#880](https://github.com/k2b-dev/cloud/issues/880)) ([5fbe2dc](https://github.com/k2b-dev/cloud/commit/5fbe2dc414c38c48ea7ee7808b03fadf2199b036))
+* **mail:** let incoming automations move messages instead of cancelling their commands ([#899](https://github.com/k2b-dev/cloud/issues/899)) ([23ff84d](https://github.com/k2b-dev/cloud/commit/23ff84d044a19610e90abda051cec7ee60a69dcd)), closes [#876](https://github.com/k2b-dev/cloud/issues/876)
+* **notebooks:** keep the editor still when a checklist box is ticked with the mouse ([#900](https://github.com/k2b-dev/cloud/issues/900)) ([cb3b91b](https://github.com/k2b-dev/cloud/commit/cb3b91b7e03002bc74facfd3c227d44e7f7448c1))
+* **ui:** open hover previews only for the row still under the mouse ([#883](https://github.com/k2b-dev/cloud/issues/883)) ([d9718f7](https://github.com/k2b-dev/cloud/commit/d9718f7695d46b7aff46e33584f6533f619f5e9f))
+
 ## [0.37.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.36.0...cloud-v0.37.0) (2026-10-10)
 
 
