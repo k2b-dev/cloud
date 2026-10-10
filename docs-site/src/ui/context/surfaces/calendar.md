@@ -221,7 +221,8 @@ and the visible hours.
   lists its entries as chips with their time.
 - **The day view** is one scroll through the loaded days with each day's
   heading on top while the day is in view. Runs of empty days merge into one
-  row, "Nothing planned", that opens them; today never folds. The wheel slows
+  row, "Nothing planned", that opens them; today, the day of `date`, and a day
+  that Go to finds inside such a run never fold. The wheel slows
   down within 72 px of a day start, and a scroll that rests within 40 px (88 px
   after a finger) glides onto it; a line at the top of the heading fills while
   the start passes. The previous and next buttons glide to the day before or
@@ -232,7 +233,9 @@ and the visible hours.
   axis it started on, and the strip settles on a day start once it rests. The
   previous and next buttons move to the start of the week before or after,
   and Today returns to this week, on a phone to today within it. Nights open
-  for the whole strip when an entry of the shown week lies in one.
+  for the whole strip when an entry of the shown week lies in one. The all-day
+  row is as high as the weeks in view need, so a week that loads off screen
+  moves nothing.
 - **Entries.** Timed events are bands as long as they last, side by side when
   they overlap, with their time; the running one fills up with the time that
   passed and says what is left, such as "27 min left". `display: "marker"`
@@ -241,12 +244,13 @@ and the visible hours.
   all-day row; in the week view a long event is one bar per week with a torn
   edge and, where it has room, "from 20" and "until 27".
 - **Checkboxes.** An event with `checked` shows a checkbox before its title,
-  drawn by the calendar; `onEventCheck(event, checked)` makes it a control.
-  The check draws itself and the title strikes through until the host's
-  events agree.
+  drawn by the calendar; `onEventCheck(event, checked)` makes it a control,
+  and Space on the entry checks it as well. The check draws itself and the
+  title strikes through until the host's events agree; when `onEventCheck`
+  returns a promise that rejects, the box goes back.
 - **Free time** between the timed entries of the waking hours is labelled
   from an hour on, such as "1 hr 15 min free", and stands out from three
-  hours on. Activating it opens `renderQuickCreate` with that time, or calls
+  hours on. Shorter free time shows only while something is dragged into it. Activating it opens `renderQuickCreate` with that time, or calls
   `onSlotActivate` without it: a gap up to two hours whole, a longer one for
   an hour from its start, and a free morning from 09:00. In the week view
   free time shows in the column under the pointer or the focus, or after a
@@ -267,9 +271,11 @@ exclusive: the start of the day after the last one. Without it the views
 cover the day or the week of `date`. Near the first or the last loaded day,
 scrolling toward it calls `onLoadEarlier` or `onLoadLater` once for each
 range; extend `range` and `events` there. Days that arrive above the view do
-not move what the reader sees. `onVisibleDateChange(date)` reports the first
-day on screen after scrolling, for example to keep it in the URL; the header
-title, the view switcher, and the previous and next links follow it too.
+not move what the reader sees. `onVisibleDateChange(date, last)` reports the
+first and the last day on screen once the view opened and whenever scrolling
+changed them, for example to keep the first in the URL or to count what is in
+view; the header title, the view switcher, and the previous and next links
+follow the first too.
 `onSelectionChange` reports a selected hour or day of these views as it does
 the month's days.
 
@@ -292,7 +298,14 @@ pointer can hover, which opens a dialog with the same list. `controller`
 receives `quickCreate(create)`, which opens the quick create where a new
 entry fits (the selection, today at the next full hour while today shows, or
 09:00 of the first shown day), and `createTarget()`, which returns that
-time.
+time. The year view has no quick create, so `quickCreate` does nothing there.
+
+While the month's quiet quick create waits for typing, the calendar publishes
+its commands and those of `commands` without their single keys, so the first
+letter typed at a selected day starts the title; Ctrl and Meta combinations
+stay. With `onCommandsChange` the left and right arrow keys page like K and J
+while the keyboard is in the calendar or nowhere, unless something there uses
+them, such as the grid of the week or the month, or a text field.
 
 On a device with a coarse pointer, the previous and next buttons accept taps
 in the same invisible 44 px area as other buttons, following the
@@ -449,7 +462,7 @@ type CalendarProps<V extends string = never> = {
   customViews?: CalendarCustomView<V>[]; children?: JSX.Element; labels?: CalendarLabels; dateConfig?: DateContext; timeZone?: string; firstDayOfWeek?: 0 | 1;
   withWeekNumbers?: boolean; startHour?: number; endHour?: number;
   dayHours?: readonly [start: number, end: number]; range?: CalendarRange;
-  onLoadEarlier?: () => unknown; onLoadLater?: () => unknown; onVisibleDateChange?: (date: Date) => void;
+  onLoadEarlier?: () => unknown; onLoadLater?: () => unknown; onVisibleDateChange?: (date: Date, last: Date) => void;
   visibleStartHour?: number;
   visibleEndHour?: number; allDayMaxHeightRem?: number; hideAllDay?: boolean; selectedDate?: Date | string;
   selectedEventId?: string; dayBadges?: Record<string, CalendarDayBadge>;
@@ -463,7 +476,7 @@ type CalendarProps<V extends string = never> = {
   onEventDrop?: (event: CalendarEvent, next: CalendarEventTimeChange) => void;
   onEventResize?: (event: CalendarEvent, next: CalendarEventTimeChange) => void;
   onSlotActivate?: (slot: CalendarEventTimeChange) => void; slotActivation?: "single" | "double";
-  onEventCheck?: (event: CalendarEvent, checked: boolean) => void;
+  onEventCheck?: (event: CalendarEvent, checked: boolean) => void | Promise<unknown>;
   onSelectionChange?: (range: CalendarEventTimeChange | null) => void;
   selectionMenu?: (range: CalendarEventTimeChange, controls: CalendarSelectionControls) => readonly DropdownItem[];
   renderQuickCreate?: (range: CalendarEventTimeChange, controls: CalendarQuickCreateControls) => JSX.Element;
@@ -499,9 +512,11 @@ the checkbox and fill animations stop.
 In the week view with `dayHours` the grid is one tab stop: the arrow keys move
 between the day headings, entries, and free time of a column and to the
 nearest stop of the next column, Home and End go to the first and last stop
-of the column, Enter opens or creates, and Space checks off. The day view
-keeps every entry and every gap of an hour or more in the tab order, in time
-order; Tab into it starts at the first stop on screen.
+of the column, Enter opens or creates, and Space checks off. Free time of
+less than an hour, which the column hides, is no stop. The day view keeps
+every entry and every gap of an hour or more in the tab order, in time order;
+Tab into it starts at the first stop on screen, and Space on an entry with a
+checkbox checks it off.
 
 ## Runtime
 

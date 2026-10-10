@@ -9,7 +9,7 @@ import { useSpaceMessages } from "../../messages";
 import { type ClaimFields, resolveCompletionClaim } from "../shared/claim/claim";
 import { setItemCompleted, showCompletion } from "../shared/completion";
 import { createLeavingItems, keepHeld, snapshotOf } from "../shared/leaving";
-import { invalidateSpacesData, requestSpacesRouteNavigation } from "../workspace/workspace-events";
+import { invalidateSpacesData, requestSpacesDetailNavigation } from "../workspace/workspace-events";
 import type { CalendarTray as Tray } from "../workspace/workspace-types";
 import type { TaskTraySection } from "./tray";
 
@@ -221,7 +221,7 @@ export default function TaskTray(props: Props) {
                             onClick={(event) => {
                               if (!shouldHandleDetailClick(event, event.currentTarget)) return;
                               event.preventDefault();
-                              requestSpacesRouteNavigation(href(), { scroll: "preserve" });
+                              requestSpacesDetailNavigation(href(), { scroll: "preserve" });
                             }}
                           >
                             <span class={`truncate font-medium ${shownDone(item) ? "text-dimmed line-through" : ""}`}>{item.title}</span>

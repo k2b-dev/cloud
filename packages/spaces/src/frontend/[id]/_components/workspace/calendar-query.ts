@@ -66,6 +66,12 @@ export const useSpacesCalendarQuery = (params: {
   const [colorBy, setColorBy] = createSignal(params.initialSnapshot.filter.colorBy);
   let committedSource = initialSource;
   let committedHref = params.initialSource;
+  /**
+   * Sources the committed snapshot also answers: the day and week views name the day the reader scrolled to in the
+   * URL, and the days they loaded hold it. Opening an item or going back there needs no other calendar data.
+   */
+  let followed = new Set<string>();
+  const answersCommitted = (source: string) => source === committedSource || followed.has(source);
   let nextNavigationId = 0;
   let disposed = false;
   onCleanup(() => {
@@ -146,6 +152,7 @@ export const useSpacesCalendarQuery = (params: {
         }
       }
       committedSource = request.source;
+      followed = new Set();
       committedHref = pathWithQuery(target);
       setColorBy(colorByOf(committedHref));
       setPreview(loaded.snapshot);
@@ -172,7 +179,7 @@ export const useSpacesCalendarQuery = (params: {
       return;
     }
     const nextSource = calendarViewSource(href);
-    if (nextSource === committedSource) {
+    if (answersCommitted(nextSource)) {
       if (pending()) {
         setPending(null);
         setSource(committedSource);
@@ -204,7 +211,7 @@ export const useSpacesCalendarQuery = (params: {
     committedHref = pathWithQuery(new URL(window.location.href));
     const rememberDetailSelection = () => {
       const href = pathWithQuery(new URL(window.location.href));
-      if (calendarViewSource(href) === committedSource) committedHref = href;
+      if (answersCommitted(calendarViewSource(href))) committedHref = href;
     };
     window.addEventListener(SPACES_DETAIL_STATE_EVENT, rememberDetailSelection);
     onCleanup(() => window.removeEventListener(SPACES_DETAIL_STATE_EVENT, rememberDetailSelection));
@@ -221,5 +228,18 @@ export const useSpacesCalendarQuery = (params: {
     pending: () => pending() !== null || view.loading() || view.refreshing(),
     navigateHref: (href: string) => start(href, "push"),
     open: (href: string, options: { replace?: boolean } = {}) => start(href, options.replace ? "replace" : "push"),
+    /**
+     * The day or week view scrolled to another day of the days it loaded: the URL names that day from now on, so a
+     * reload or a shared link opens there, and the open item's detail keeps it. A navigation that loads meanwhile
+     * names its own day.
+     */
+    follow: (rawHref: string) => {
+      const href = normalize(rawHref);
+      if (!href || pending()) return;
+      followed.add(calendarViewSource(href));
+      committedHref = href;
+      navigate(href, { replace: true, scroll: "manual", viewTransition: false });
+      reconcileSpacesDetailRoute(href);
+    },
   };
 };

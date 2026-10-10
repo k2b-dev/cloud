@@ -23,8 +23,10 @@ import {
   GAP_LONG_MINUTES,
   gapProposal,
   instantInDay,
+  instantsInDay,
   minuteInDay,
   readDayGeometry,
+  resizedInDay,
   snapMinutes,
   subtractTerms,
   termsCss,
@@ -183,6 +185,16 @@ export const createTimeView = (props: TimeViewProps) => {
   );
   const checkedOf = (event: CalendarEvent): boolean | undefined =>
     event.checked === undefined ? undefined : (checks()[event.id] ?? event.checked);
+  /** What Space on an entry's chip does: check its box, where it has one the reader may change. */
+  const checkOf = (event: CalendarEvent) =>
+    checkedOf(event) !== undefined && props.owner.onEventCheck ? () => toggleCheck(event) : undefined;
+  const forgetJustChecked = (id: string) =>
+    setJustChecked((value) => {
+      if (!value.has(id)) return value;
+      const rest = new Set(value);
+      rest.delete(id);
+      return rest;
+    });
   const toggleCheck = (event: CalendarEvent) => {
     const current = checkedOf(event);
     if (current === undefined || !props.owner.onEventCheck) return;
@@ -190,17 +202,18 @@ export const createTimeView = (props: TimeViewProps) => {
     setChecks((value) => ({ ...value, [event.id]: next }));
     if (next) {
       setJustChecked((value) => new Set([...value, event.id]));
-      window.setTimeout(
-        () =>
-          setJustChecked((value) => {
-            const rest = new Set(value);
-            rest.delete(event.id);
-            return rest;
-          }),
-        1100,
-      );
+      window.setTimeout(() => forgetJustChecked(event.id), 1100);
     }
-    props.owner.onEventCheck(event, next);
+    // A change the host refuses puts the box back as it was.
+    void Promise.resolve(props.owner.onEventCheck(event, next)).catch(() => {
+      forgetJustChecked(event.id);
+      setChecks((value) => {
+        if (value[event.id] !== next) return value;
+        const rest = { ...value };
+        delete rest[event.id];
+        return rest;
+      });
+    });
   };
 
   const entries = createMemo((): DayEntry<CalendarEvent>[] => {
@@ -234,6 +247,7 @@ export const createTimeView = (props: TimeViewProps) => {
   const clock = (minute: number) => clockAt(minute, props.hours);
   const duration = (minutes: number) => messages().calendarDuration({ minutes: Math.max(1, Math.round(minutes)) });
   const instant = (key: string, minute: number) => instantInDay(key, minute, props.hours, dateConfig());
+  const slot = (key: string, start: number, end: number) => instantsInDay(key, start, end, props.hours, dateConfig());
   const dayStartMinute = (hour: number) => Math.max(0, (hour - props.hours[0]) * 60);
 
   /** A day's timed piece as the event chip reads it. */
@@ -256,7 +270,7 @@ export const createTimeView = (props: TimeViewProps) => {
   const rangeOfSelection = (value: TimeSelection): CalendarEventTimeChange =>
     value.start === undefined || value.end === undefined
       ? { start: parseKey(value.key), end: calendar.addDays(parseKey(value.key), 1, dateConfig()), allDay: true }
-      : { start: instant(value.key, value.start), end: instant(value.key, value.end), allDay: false };
+      : { ...slot(value.key, value.start, value.end), allDay: false };
   createEffect(on(selection, (value) => props.owner.onSelectionChange?.(value ? rangeOfSelection(value) : null), { defer: true }));
   onCleanup(() => {
     if (untrack(selection)) props.owner.onSelectionChange?.(null);
@@ -417,8 +431,13 @@ export const createTimeView = (props: TimeViewProps) => {
         swallowNextClick();
         if (next.key === key && next.start === start && next.end === end) return;
         const source = sourceOf().get(event);
+        // A moved entry keeps its real length, also when it lands across a clock change.
         const startDate = instant(next.key, next.start);
-        const endDate = marker ? startDate : instant(next.key, next.end);
+        const endDate = marker
+          ? startDate
+          : source
+            ? new Date(startDate.getTime() + source.end.getTime() - source.start.getTime())
+            : slot(next.key, next.start, next.end).end;
         if (source && source.start.getTime() === startDate.getTime() && source.end.getTime() === endDate.getTime()) return;
         props.owner.onEventDrop?.(event, { start: startDate, end: endDate, allDay: false });
       },
@@ -472,7 +491,9 @@ export const createTimeView = (props: TimeViewProps) => {
         endGesture();
         swallowNextClick();
         if (next.start === start && next.end === end) return;
-        props.owner.onEventResize?.(event, { start: instant(key, next.start), end: instant(key, next.end), allDay: false });
+        const source = sourceOf().get(event);
+        const range = source ? resizedInDay(source, edge, key, next, props.hours, dateConfig()) : slot(key, next.start, next.end);
+        props.owner.onEventResize?.(event, { ...range, allDay: false });
       },
       onCancel: endGesture,
     });
@@ -608,7 +629,7 @@ export const createTimeView = (props: TimeViewProps) => {
         onCommit: (next) => {
           cleanup();
           swallowNextClick();
-          if (next.key) onDrop({ start: instant(next.key, next.start), end: instant(next.key, next.end), allDay: false });
+          if (next.key) onDrop({ ...slot(next.key, next.start, next.end), allDay: false });
         },
         onCancel: cleanup,
       });
@@ -666,6 +687,7 @@ export const createTimeView = (props: TimeViewProps) => {
     normalized,
     checkedOf,
     toggleCheck,
+    checkOf,
     justChecked,
     selection,
     setSelection,
@@ -698,10 +720,15 @@ export const createTimeView = (props: TimeViewProps) => {
 
 export type TimeView = ReturnType<typeof createTimeView>;
 
-/** German short dates read "Fr 9. Okt", without the dots of the abbreviations. */
-export const compactGermanDate = (text: string, locale: string | undefined) =>
+/**
+ * German short dates read "Fr 9. Okt", without the dots of the abbreviations; with `comma`, a title such as
+ * "Fr, 9. Okt 2026" keeps the comma after the day.
+ */
+export const compactGermanDate = (text: string, locale: string | undefined, comma = false) =>
   locale?.startsWith("de")
-    ? text.replace(/\b(Mo|Di|Mi|Do|Fr|Sa|So)\.,?/g, "$1").replace(/\b(Jan|Feb|Mär|Apr|Jun|Jul|Aug|Sep|Sept|Okt|Nov|Dez)\./g, "$1")
+    ? text
+        .replace(comma ? /\b(Mo|Di|Mi|Do|Fr|Sa|So)\./g : /\b(Mo|Di|Mi|Do|Fr|Sa|So)\.,?/g, "$1")
+        .replace(/\b(Jan|Feb|Mär|Apr|Jun|Jul|Aug|Sep|Sept|Okt|Nov|Dez)\./g, "$1")
     : text;
 
 /** A short day such as "Fri 9" or "Fr 9.", in the calendar's locale. */
@@ -840,6 +867,7 @@ export const TimeBand = (props: {
         showLocation={props.showLocation && size() === "m" && pixels() >= 64}
         remaining={remaining()}
         checkbox={checked() !== undefined}
+        onCheck={view.checkOf(event())}
         moving={view.movingId() === event().id}
         tabIndex={props.tabIndex}
         stop={props.stop}
@@ -913,6 +941,7 @@ export const TimeMarker = (props: {
           compact
           timeline
           checkbox={checked() !== undefined}
+          onCheck={view.checkOf(props.event)}
           tabIndex={props.tabIndex}
           stop={props.stop}
           trailing={
@@ -951,10 +980,13 @@ export const TimeGap = (props: {
     return current && current.key === props.dayKey && current.start === props.gap.start ? current : null;
   };
   const top = () => dayYTerms(view.wake(), props.expanded, props.gap.start);
+  /** Shorter free time is hidden until something is dragged into it, so it is no keyboard stop. */
+  const labelled = () => length() >= GAP_LABEL_MINUTES;
+  const stop = () => (labelled() ? props.stop : undefined);
   return (
     <div
       class="k2b-calendar-gap"
-      data-short={length() < GAP_LABEL_MINUTES ? "true" : undefined}
+      data-short={labelled() ? undefined : "true"}
       data-long={length() >= GAP_LONG_MINUTES ? "true" : undefined}
       data-past={props.gap.past ? "true" : undefined}
       data-aside={props.aside ? "true" : undefined}
@@ -966,10 +998,10 @@ export const TimeGap = (props: {
         <button
           type="button"
           class="k2b-calendar-gap__button"
-          tabIndex={props.tabIndex ?? (length() >= GAP_LABEL_MINUTES && !props.gap.past ? 0 : -1)}
-          data-stop={props.stop?.id}
-          data-col={props.stop?.column}
-          data-minute={props.stop?.minute}
+          tabIndex={labelled() ? (props.tabIndex ?? (props.gap.past ? -1 : 0)) : -1}
+          data-stop={stop()?.id}
+          data-col={stop()?.column}
+          data-minute={stop()?.minute}
           aria-label={view.messages().calendarFreeAction({
             duration: view.duration(length()),
             from: view.clock(props.gap.start),
@@ -1202,6 +1234,7 @@ export const AllDayChips = (props: { view: TimeView; dayKey: string; spans: read
               timeline
               bar={!span.marker}
               checkbox={checked() !== undefined}
+              onCheck={view.checkOf(event)}
               continuesBefore={span.firstKey < props.dayKey}
               continuesAfter={span.lastKey > props.dayKey}
             />

@@ -19,7 +19,7 @@ const options = window.fixtureOptions ?? {};
 const offset = (wall) => (wall < "2026-10-25T03:00" ? "+02:00" : "+01:00");
 const at = (wall) => (wall.length === 10 ? wall : wall + ":00" + offset(wall));
 const event = (id, title, start, end, more = {}) => ({ id, title, start: at(start), end: at(end), colorHex: "#0ea5e9", ...more });
-const week = (shift, tag) => {
+const week = (shift, tag, offsite = false) => {
   const day = (value) => {
     const date = new Date(value + "T12:00:00Z");
     date.setUTCDate(date.getUTCDate() + shift);
@@ -28,6 +28,13 @@ const week = (shift, tag) => {
   return [
     event("standup" + tag, "Stand-up", day("2026-10-05") + "T09:00", day("2026-10-05") + "T09:30"),
     event("review" + tag, "Design review", day("2026-10-07") + "T14:00", day("2026-10-07") + "T15:30"),
+    // Two all-day entries over the same days need two rows of the week's all-day row.
+    ...(offsite
+      ? [
+          event("offsite" + tag, "Offsite", day("2026-10-05"), day("2026-10-08"), { allDay: true }),
+          event("audit" + tag, "Audit", day("2026-10-06"), day("2026-10-09"), { allDay: true }),
+        ]
+      : []),
   ];
 };
 const base = [
@@ -69,7 +76,7 @@ render(
         return gate(() => {
           earlier++;
           batch(() => {
-            setItems((current) => [...week(-7 * earlier, "-" + earlier), ...current]);
+            setItems((current) => [...week(-7 * earlier, "-" + earlier, true), ...current]);
             const date = new Date(from() + "T12:00:00Z");
             date.setUTCDate(date.getUTCDate() - 7);
             setFrom(date.toISOString().slice(0, 10));
@@ -281,10 +288,27 @@ describe(`Calendar day and week views in ${browserName}`, () => {
       });
       await page.waitForFunction(() => (window as unknown as Fixture).loads.includes("earlier"));
       const before = await place(page, '[data-calendar-head="2026-10-05"]');
+      const hours = await place(page, '[data-calendar-body="2026-10-07"]');
       await page.evaluate(() => (window as unknown as Fixture).release());
       await page.waitForSelector('[data-calendar-head="2026-09-25"]', { state: "attached" });
       await page.waitForTimeout(100);
       expect(await place(page, '[data-calendar-head="2026-10-05"]')).toEqual(before);
+      // The week that came in needs two all-day rows; off screen it changes nothing, and the hours stay put.
+      expect(await place(page, '[data-calendar-body="2026-10-07"]')).toEqual(hours);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  test("the arrows of the week skip free time too short to show", async () => {
+    const page = await open(desktop, { view: "week" });
+    try {
+      // Between lunch and the planning there are 45 free minutes, which the column hides.
+      await page.locator('[data-calendar-entry="lunch"] .k2b-calendar-event').focus();
+      await page.keyboard.press("ArrowDown");
+      expect(await page.evaluate(() => document.activeElement?.closest<HTMLElement>("[data-calendar-entry]")?.dataset.calendarEntry)).toBe(
+        "planning",
+      );
     } finally {
       await page.close();
     }

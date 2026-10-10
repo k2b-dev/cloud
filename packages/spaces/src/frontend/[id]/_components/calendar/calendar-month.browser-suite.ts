@@ -30,6 +30,19 @@ const styleEntries = [
   resolve(import.meta.dir, "../../../../styles/app.css"),
   resolve(import.meta.dir, "../../../../../../cloud/src/styles/global.css"),
 ];
+// The page's shortcut dispatcher, as the Cloud layout mounts it, for the tests that press the calendar's keys.
+const dispatcherEntry = resolve(import.meta.dir, "command-dispatcher.browser-fixture.ts");
+const dispatcherBuild = await Bun.build({
+  entrypoints: [dispatcherEntry],
+  files: {
+    [dispatcherEntry]: `import { attachCommandShortcuts } from ${JSON.stringify(resolve(import.meta.dir, "../../../../../../cloud/src/browser/command-shortcuts.ts"))};
+attachCommandShortcuts((command) => { if (typeof command.action === "function") void command.action(); });`,
+  },
+  target: "browser",
+  format: "iife",
+});
+if (!dispatcherBuild.success) throw new AggregateError(dispatcherBuild.logs, "Could not bundle the shortcut dispatcher.");
+const dispatcher = await dispatcherBuild.outputs[0]!.text();
 /** Light screenshots of the month view on a desktop and a phone, kept for review. */
 const shots = join(tmpdir(), "spaces-calendar-month", browserName);
 
@@ -586,6 +599,35 @@ describe(`Spaces month view in ${browserName}`, () => {
       await page.locator(".k2b-calendar-header__title").click();
       await page.waitForFunction(() => !document.querySelector(".k2b-calendar-popover:popover-open"));
       expect(created).toHaveLength(1);
+    } finally {
+      await page.context().close();
+    }
+  }, 60_000);
+
+  test("desktop: with the page's shortcut keys on, the first letter typed at a selected day starts the quick create's title", async () => {
+    const page = await open(desktop);
+    try {
+      await page.addScriptTag({ content: dispatcher });
+      await clickDay(page, "2026-10-15");
+      await page.locator(openPopover).waitFor();
+      const when = await quickCreateWhen(page);
+      // Shift+N is New task with a deadline, but here it is the first letter of a title.
+      await page.keyboard.press("Shift+N");
+      await page.keyboard.type("achbereitung");
+      expect(await page.locator(`${openPopover} input`).inputValue()).toBe("Nachbereitung");
+      expect(await quickCreateWhen(page)).toBe(when);
+      await page.keyboard.press("Escape");
+      await page.waitForFunction(() => !document.querySelector(".k2b-calendar-popover:popover-open"));
+      // J is Next; at a selected day it starts a title as well.
+      await clickDay(page, "2026-10-21");
+      await page.locator(openPopover).waitFor();
+      await page.keyboard.type("jour fixe");
+      expect(await page.locator(`${openPopover} input`).inputValue()).toBe("jour fixe");
+      // Once the quick create closed, J pages again.
+      await page.keyboard.press("Escape");
+      await page.waitForFunction(() => !document.querySelector(".k2b-calendar-popover:popover-open"));
+      await page.keyboard.press("j");
+      await page.waitForFunction(() => document.querySelector(".k2b-calendar-header__title > span")?.textContent?.startsWith("November"));
     } finally {
       await page.context().close();
     }

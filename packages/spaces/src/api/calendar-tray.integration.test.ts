@@ -195,6 +195,10 @@ suite("Spaces calendar day view", () => {
       await item(team, "Theirs", { assignee: colleagueId });
       await item(team, "Nobody's", {});
       await item(team, "Mine but done", { assignee: memberId, completed: true });
+      // A task planned into a time slot shows in the calendar, so the tray leaves it out, late or without a deadline.
+      const slot = { startsAt: new Date(Date.now() + 3_600_000).toISOString(), endsAt: new Date(Date.now() + 7_200_000).toISOString() };
+      await item(team, "Late but planned", { deadline: daysAgo(4), ...slot });
+      await item(team, "Mine and planned", { assignee: memberId, ...slot });
 
       const loaded = await accounts.users.get({ id: memberId });
       if (!loaded) throw new Error("Missing fixture user");

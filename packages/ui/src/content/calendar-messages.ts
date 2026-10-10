@@ -81,6 +81,7 @@ const calendarMessages = i18n.define({
       calendarWeek: "Week",
       calendarDays: "Days",
       calendarKeyboardHelp: "Arrow keys move between days, events, and free time. Enter opens or creates, Space checks off.",
+      calendarDayKeyboardHelp: "Tab moves through the events and free time of each day. Enter opens or creates, Space checks off.",
       calendarShortcuts: "Keyboard shortcuts",
       calendarShortcutsNote: "Shortcuts work in the calendar, never in a text field.",
       calendarCommandToday: "Today",
@@ -159,6 +160,8 @@ const calendarMessages = i18n.define({
       calendarWeek: "Woche",
       calendarDays: "Tage",
       calendarKeyboardHelp: "Pfeiltasten wechseln zwischen Tagen, Terminen und freier Zeit. Enter öffnet oder legt an, Leertaste hakt ab.",
+      calendarDayKeyboardHelp:
+        "Tab wechselt zwischen den Terminen und der freien Zeit jedes Tages. Enter öffnet oder legt an, Leertaste hakt ab.",
       calendarShortcuts: "Tastenkürzel",
       calendarShortcutsNote: "Kürzel wirken im Kalender und nie in Eingabefeldern.",
       calendarCommandToday: "Heute",

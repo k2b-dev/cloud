@@ -80,7 +80,10 @@ export const CalendarDayView = (props: TimeViewProps) => {
     return dayKeyRange(from, last);
   });
   // Today and the day the reader opened never fold, so a day opened from the month shows its hours to create in.
-  const groups = createMemo(() => dayGroups(keys(), (key) => view.dayOf(key).empty, [view.nowKey(), view.anchorKey()], unfolded()));
+  const groups = createMemo(() =>
+    dayGroups(keys(), (key) => view.dayOf(key).empty, new Set([view.nowKey(), view.anchorKey(), ...unfolded()])),
+  );
+  const unfold = (keys: readonly string[]) => setUnfolded((value) => new Set([...value, ...keys]));
   const groupIds = createMemo(() => groups().map(groupId));
   const groupsById = createMemo(() => new Map(groups().map((group) => [groupId(group), group])));
 
@@ -138,6 +141,10 @@ export const CalendarDayView = (props: TimeViewProps) => {
     glideTimer = window.setTimeout(() => {
       glideTarget = null;
     }, 1600);
+    // What the view keeps in place from now on is where the glide arrives, not where it started.
+    const index = stopIndexAt(tops, target);
+    const section = sections[index];
+    if (section) anchor = { key: keysOf(section)[0]!, delta: target - tops[index]! };
     scroller.scrollTo({ top: target, behavior: reducedMotion() ? "instant" : "smooth" });
   };
 
@@ -230,16 +237,22 @@ export const CalendarDayView = (props: TimeViewProps) => {
   };
 
   let reportTimer = 0;
+  let reported = "";
+  /** Tells the host the days the reader sees once they changed, after the scroll calmed down. */
+  const reportVisible = () => {
+    const { first, last } = untrack(visibleKeys);
+    if (`${first}/${last}` === reported) return;
+    reported = `${first}/${last}`;
+    window.clearTimeout(reportTimer);
+    reportTimer = window.setTimeout(() => props.owner.onVisibleDateChange?.(view.parseKey(first), view.parseKey(last)), 250);
+  };
   const updateChrome = () => {
     if (!scroller) return;
     const top = scroller.scrollTop;
     const index = stopIndexAt(tops, top);
     const key = keysOf(sections[index])[0];
-    if (key && key !== untrack(topKey)) {
-      setTopKey(key);
-      window.clearTimeout(reportTimer);
-      reportTimer = window.setTimeout(() => props.owner.onVisibleDateChange?.(view.parseKey(key)), 250);
-    }
+    if (key && key !== untrack(topKey)) setTopKey(key);
+    reportVisible();
     for (const [position, section] of sections.entries()) {
       const head = section.firstElementChild as HTMLElement | null;
       if (!head) continue;
@@ -281,7 +294,8 @@ export const CalendarDayView = (props: TimeViewProps) => {
         ? undefined
         : new ResizeObserver(() => {
             measure();
-            restoreAnchor();
+            // A glide owns the scroll until it arrives; putting the view back meanwhile would stop it.
+            if (glideTarget === null) restoreAnchor();
           });
     if (track) observer?.observe(track);
     onCleanup(() => {
@@ -358,6 +372,8 @@ export const CalendarDayView = (props: TimeViewProps) => {
   const loaded = (key: string) => key >= view.range().first && key <= view.range().last;
   const goTo = (key: string) => {
     if (!loaded(key) || !scroller) return false;
+    // A day inside a run of empty days opens on its own, so the view goes to that day and not to the run.
+    if (untrack(groups).some((group) => group.kind === "empty" && group.keys.includes(key))) unfold([key]);
     measure();
     const top = topFor(key);
     if (top === null) return false;
@@ -490,11 +506,7 @@ export const CalendarDayView = (props: TimeViewProps) => {
                     current().kind === "day" ? (
                       <DaySection view={view} dayKey={groupFirst(current())} hover={hover} setHover={setHover} scroller={() => scroller} />
                     ) : (
-                      <EmptyRun
-                        view={view}
-                        keys={(current() as Extract<DayGroup, { kind: "empty" }>).keys}
-                        onUnfold={(first) => setUnfolded((value) => new Set([...value, first]))}
-                      />
+                      <EmptyRun view={view} keys={(current() as Extract<DayGroup, { kind: "empty" }>).keys} onUnfold={unfold} />
                     )
                   }
                 </Show>
@@ -507,7 +519,7 @@ export const CalendarDayView = (props: TimeViewProps) => {
         </div>
       </div>
       <p class="k2b-calendar-sr" id={helpId}>
-        {view.messages().calendarKeyboardHelp}
+        {view.messages().calendarDayKeyboardHelp}
       </p>
       <TimeQuickCreate view={view} />
     </div>
@@ -807,7 +819,7 @@ const dayHeightTermsNight = (wake: number) => {
   return [0, total[1], total[2], 0] as const;
 };
 
-const EmptyRun = (props: { view: TimeView; keys: string[]; onUnfold: (first: string) => void }) => {
+const EmptyRun = (props: { view: TimeView; keys: string[]; onUnfold: (keys: readonly string[]) => void }) => {
   const view = props.view;
   const headingId = createUniqueId();
   const first = () => props.keys[0]!;
@@ -845,7 +857,7 @@ const EmptyRun = (props: { view: TimeView; keys: string[]; onUnfold: (first: str
           {props.keys.length > 1 ? view.messages().calendarDayCount({ count: props.keys.length }) : ""}
         </span>
       </header>
-      <button type="button" class="k2b-calendar-days__empty" data-calendar-unfold="" onClick={() => props.onUnfold(first())}>
+      <button type="button" class="k2b-calendar-days__empty" data-calendar-unfold="" onClick={() => props.onUnfold(props.keys)}>
         <span>{view.messages().calendarNothingPlannedShort}</span>
         <span class="k2b-calendar-days__empty-action">
           <i class="ti ti-arrows-vertical" aria-hidden="true" />

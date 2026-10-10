@@ -40,7 +40,7 @@ import { confirmCompletion, setItemCompleted } from "../shared/completion";
 import { createSpaceItem } from "../shared/editItem";
 import ItemForm, { type ItemFormData } from "../shared/ItemForm";
 import { itemCreateDialogOptions } from "../shared/item-form/dialog";
-import { invalidateSpacesData, requestSpacesRouteNavigation } from "../workspace/workspace-events";
+import { invalidateSpacesData, requestSpacesDetailNavigation, requestSpacesRouteNavigation } from "../workspace/workspace-events";
 import { calendarItemColors, isCalendarFlagged, isCalendarTask } from "./colors";
 import { countCalendarEvents } from "./count";
 import { type CalendarColorBy, CalendarColorBySchema, type CalendarFilter, defaultCalendarFilter, writeCalendarFilter } from "./filter";
@@ -52,7 +52,7 @@ import QuickCreate, {
   quickCreateDefaults,
   quickCreateKind,
 } from "./QuickCreate";
-import { CALENDAR_DAY_HOURS, isScrollingCalendarView } from "./range";
+import { CALENDAR_DAY_HOURS, countCalendarDays, isScrollingCalendarView } from "./range";
 import TaskTray from "./TaskTray";
 import { taskTrayFiltered, taskTrayFilters, taskTrayListHref } from "./tray";
 import type { CalendarProps, CalendarView } from "./types";
@@ -243,9 +243,38 @@ export default function Calendar(props: CalendarProps) {
   const [controller, setController] = createSignal<CalendarController | null>(null);
   /** The first day the day or week view shows after scrolling; the URL and other views follow it. */
   const [visibleDate, setVisibleDate] = createSignal<Date | null>(null);
-  createEffect(on([() => props.view, () => props.date.getTime()], () => setVisibleDate(null), { defer: true }));
+  /** The days the day or week view shows, for the count of what is in view. */
+  const [visibleDays, setVisibleDays] = createSignal<{ first: string; last: string } | null>(null);
+  createEffect(
+    on(
+      [() => props.view, () => props.date.getTime()],
+      () => {
+        setVisibleDate(null);
+        setVisibleDays(null);
+      },
+      { defer: true },
+    ),
+  );
   /** The date filters and the view switcher keep: the day the reader scrolled to, else the route's. */
   const shownDate = () => visibleDate() ?? props.date;
+  /** The toolbar counts what is in view: the days the day or week view shows, else the month or year. */
+  const shownCount = () => {
+    if (!isScrollingCalendarView(props.view)) return props.items.length;
+    const days = visibleDays() ?? routeDays();
+    return countCalendarDays(props.items, days.first, days.last, props.dateConfig);
+  };
+  /** The days the route opens before the view says what it shows: the day, or its week. */
+  const routeDays = () => {
+    const day = calendar.formatDateKey(props.date, props.dateConfig);
+    if (props.view === "day") return { first: day, last: day };
+    // The calendar's weeks start on Monday unless the date context says otherwise.
+    const context = { weekStartsOn: 1 as const, ...props.dateConfig };
+    const start = calendar.startOfWeek(props.date, context);
+    return {
+      first: calendar.formatDateKey(start, context),
+      last: calendar.formatDateKey(calendar.addDays(start, 6, context), context),
+    };
+  };
   const reconcileAfterWrite = (): void =>
     void invalidateSpacesData().catch(() => retryToast(t.calendarRefreshFailed, t.retry, reconcileAfterWrite));
   const seriesItemQuery = query.create<string | null, { source: string; item: SpaceItem }, { cursor: string | null }>({
@@ -392,8 +421,9 @@ export default function Calendar(props: CalendarProps) {
       { replace: true },
     );
   };
+  // The day and week views keep the URL on the day the reader scrolled to, so an item opens on the URL as it stands.
   const selectEvent = (event: CalendarEvent) => {
-    if (event.href) requestSpacesRouteNavigation(event.href, { scroll: "preserve" });
+    if (event.href) requestSpacesDetailNavigation(event.href, { scroll: "preserve" });
   };
   const loadSeriesItem = async (itemId: string) => {
     setSeriesItemSource(itemId);
@@ -499,7 +529,8 @@ export default function Calendar(props: CalendarProps) {
     { eventId: string }
   >({
     onBefore: ({ event, sourceItem, next }) => {
-      const optimistic = sourceItem?.deadline && !sourceItem.startsAt ? { ...next, end: next.start, allDay: true } : next;
+      // A deadline moved in the hours of the day or week view keeps its time; the month moves it to a day.
+      const optimistic = sourceItem?.deadline && !sourceItem.startsAt ? { ...next, end: next.start, allDay: next.allDay ?? true } : next;
       setOptimisticTimes({ ...optimisticTimes(), [event.id]: optimistic });
       return { eventId: event.id };
     },
@@ -508,7 +539,7 @@ export default function Calendar(props: CalendarProps) {
         const itemId = event.dataSpaceItemId ?? event.id;
         const res = await apiClient[":id"].items[":itemId"].$patch({
           param: { id: props.spaceId, itemId },
-          json: { deadline: next.start.toISOString(), startsAt: null, endsAt: null, allDay: true },
+          json: { deadline: next.start.toISOString(), startsAt: null, endsAt: null, allDay: next.allDay ?? true },
         });
         if (!res.ok) throw new Error(await readResponseError(res, t.deadlineUpdateFailed));
         return true;
@@ -517,13 +548,13 @@ export default function Calendar(props: CalendarProps) {
         if (!recurringScope || !parent) return false;
         return applyRecurringTimeChange(event, parent, next, recurringScope);
       }
+      // A task planned into a time slot keeps its deadline when its slot moves.
       const itemId = event.dataSpaceItemId ?? event.id;
       const res = await apiClient[":id"].items[":itemId"].$patch({
         param: { id: props.spaceId, itemId },
         json: {
           startsAt: next.start.toISOString(),
           endsAt: next.end.toISOString(),
-          deadline: null,
           allDay: next.allDay ?? false,
         },
       });
@@ -649,7 +680,10 @@ export default function Calendar(props: CalendarProps) {
     return createOnDays(days ?? { first: date, last: date });
   };
 
-  /** Checks off a task from the calendar; the reader's own claim goes with it, as in the task row. */
+  /**
+   * Checks off a task from the calendar; the reader's own claim goes with it, as in the task row. A refused change
+   * rejects, so the calendar puts the box back.
+   */
   const checkItem = async (event: CalendarEvent, completed: boolean) => {
     const itemId = event.dataSpaceItemId ?? event.id;
     try {
@@ -661,7 +695,7 @@ export default function Calendar(props: CalendarProps) {
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t.updateFailed);
       reconcileAfterWrite();
-      return;
+      throw error;
     }
     // A completed task leaves the calendar with the refresh, so the toast confirms it and offers Undo.
     confirmCompletion({ spaceId: props.spaceId, itemId, completed }, t);
@@ -687,6 +721,11 @@ export default function Calendar(props: CalendarProps) {
     reconcileAfterWrite();
   };
 
+  /** The year view has no quick create, so a task opens in the full dialog on the shown date, as New event does. */
+  const createTaskInDialog = () => {
+    const day = calendar.formatDateKey(props.date, props.dateConfig);
+    return openCreateDialog(quickCreateDefaults("task", { first: day, last: day }, props.dateConfig));
+  };
   // The calendar's shortcuts and the two of Spaces, published as commands of this page for the keys, the command
   // palette, and the help; the calendar's shortcuts dialog lists the same ones.
   const spacesCommands = createMemo((): CalendarCommand[] =>
@@ -698,7 +737,7 @@ export default function Calendar(props: CalendarProps) {
             description: t.newEventShortcutDescription,
             shortcut: "n",
             icon: "ti ti-calendar-plus",
-            run: () => controller()?.quickCreate(),
+            run: () => (props.view === "year" ? void createNewEvent() : controller()?.quickCreate()),
           },
           {
             id: "spaces.calendar.new-task",
@@ -706,7 +745,7 @@ export default function Calendar(props: CalendarProps) {
             description: t.newTaskShortcutDescription,
             shortcut: "shift+n",
             icon: "ti ti-square-check",
-            run: () => controller()?.quickCreate("task" satisfies QuickCreateKind),
+            run: () => (props.view === "year" ? void createTaskInDialog() : controller()?.quickCreate("task" satisfies QuickCreateKind)),
           },
         ]
       : [],
@@ -739,14 +778,19 @@ export default function Calendar(props: CalendarProps) {
         range={props.range}
         onLoadEarlier={props.onLoadEarlier}
         onLoadLater={props.onLoadLater}
-        onVisibleDateChange={(date) => {
-          setVisibleDate(date);
+        onVisibleDateChange={(first, last) => {
+          setVisibleDays({ first: calendar.formatDateKey(first, props.dateConfig), last: calendar.formatDateKey(last, props.dateConfig) });
+          setVisibleDate(first);
           // The URL follows the day the reader scrolled to, so a reload or a shared link opens there.
           const url = new URL(window.location.href);
-          url.searchParams.set("cd", calendar.formatDateKey(date, props.dateConfig));
-          navigate(`${url.pathname}${url.search}${url.hash}`, { replace: true, scroll: "manual", viewTransition: false });
+          const day = calendar.formatDateKey(first, props.dateConfig);
+          if (url.searchParams.get("cd") === day) return;
+          url.searchParams.set("cd", day);
+          const href = `${url.pathname}${url.search}${url.hash}`;
+          if (props.onFollowHref) props.onFollowHref(href);
+          else navigate(href, { replace: true, scroll: "manual", viewTransition: false });
         }}
-        onEventCheck={props.canWrite ? (event, checked) => void checkItem(event, checked) : undefined}
+        onEventCheck={props.canWrite ? (event, checked) => checkItem(event, checked) : undefined}
         commands={spacesCommands()}
         onCommandsChange={setCommands}
         controller={setController}

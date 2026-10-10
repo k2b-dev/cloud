@@ -40,13 +40,36 @@ export const calendarBlock = (range: CalendarRange, edge: "earlier" | "later", d
   return Date.parse(to) - Date.parse(from) > CALENDAR_MAX_DAYS * DAY_MS ? null : block;
 };
 
-/** Whether the calendar query placed an item in the range: events overlap it, tasks are due inside it. */
-const touches = (item: CalendarItem, range: CalendarRange): boolean => {
+const nextDayKey = (key: string) => {
+  const [year = 1970, month = 1, day = 1] = key.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day + 1)).toISOString().slice(0, 10);
+};
+
+/** The instant a day of the day and week views starts: its start hour on the wall clock, also on a clock change. */
+const dayStart = (key: string, dateConfig?: DateContext): number => {
+  const wall = `${key}T${String(CALENDAR_DAY_HOURS[0]).padStart(2, "0")}:00`;
+  return dateConfig?.timeZone
+    ? Date.parse(dates.zonedDateTimeToInstant(wall, dateConfig.timeZone, { disambiguation: "compatible" }))
+    : new Date(wall).getTime();
+};
+
+/**
+ * The end of what a day or week view loads for its days: the night after the last day belongs to it, so items up to
+ * the start hour of the day after `to` count, on the wall clock.
+ */
+export const calendarItemsEnd = (to: string, dateConfig?: DateContext): string =>
+  new Date(dayStart(dates.formatDateKey(new Date(to), dateConfig), dateConfig)).toISOString();
+
+/**
+ * Whether the calendar query placed an item in the range of a day or week view: events overlap it, tasks are due
+ * inside it, and the night after its last day counts, as the server loads it.
+ */
+const touches = (item: CalendarItem, range: CalendarRange, dateConfig?: DateContext): boolean => {
   const from = Date.parse(range.from);
-  const to = Date.parse(range.to);
-  if (item.startsAt && item.endsAt) return Date.parse(item.startsAt) < to && Date.parse(item.endsAt) > from;
+  const to = Date.parse(calendarItemsEnd(range.to, dateConfig));
   const due = item.deadline ? Date.parse(item.deadline) : Number.NaN;
-  return due >= from && due < to;
+  const overlaps = Boolean(item.startsAt && item.endsAt) && Date.parse(item.startsAt!) < to && Date.parse(item.endsAt!) > from;
+  return overlaps || (due >= from && due < to);
 };
 
 /**
@@ -56,12 +79,38 @@ const touches = (item: CalendarItem, range: CalendarRange): boolean => {
 export const mergeCalendarItems = (
   current: CalendarRange & { items: CalendarItem[] },
   incoming: CalendarRange & { items: CalendarItem[] },
+  dateConfig?: DateContext,
 ): CalendarRange & { items: CalendarItem[] } => {
   const fresh = new Set(incoming.items.map((item) => item.id));
-  const kept = current.items.filter((item) => !fresh.has(item.id) && !touches(item, incoming));
+  const kept = current.items.filter((item) => !fresh.has(item.id) && !touches(item, incoming, dateConfig));
   return {
     from: Date.parse(incoming.from) < Date.parse(current.from) ? incoming.from : current.from,
     to: Date.parse(incoming.to) > Date.parse(current.to) ? incoming.to : current.to,
     items: [...kept, ...incoming.items],
   };
+};
+
+/**
+ * How many items the day or week view shows on the days from `first` to `last`, both `YYYY-MM-DD`: timed items from
+ * the start hour of the first day to the start hour after the last, all-day ones by their dates.
+ */
+export const countCalendarDays = (items: readonly CalendarItem[], first: string, last: string, dateConfig?: DateContext): number => {
+  const from = dayStart(first, dateConfig);
+  const to = dayStart(nextDayKey(last), dateConfig);
+  return items.filter((item) => {
+    if (item.allDay) {
+      const start = item.startsAt ?? item.deadline;
+      if (!start) return false;
+      const firstKey = dates.formatDateKey(new Date(start), dateConfig);
+      // An all-day range ends at the midnight after its last day.
+      const lastKey =
+        item.endsAt && Date.parse(item.endsAt) > Date.parse(start)
+          ? dates.formatDateKey(new Date(Date.parse(item.endsAt) - 1), dateConfig)
+          : firstKey;
+      return firstKey <= last && lastKey >= first;
+    }
+    if (item.startsAt && item.endsAt) return Date.parse(item.startsAt) < to && Date.parse(item.endsAt) > from;
+    const due = item.deadline ? Date.parse(item.deadline) : Number.NaN;
+    return due >= from && due < to;
+  }).length;
 };

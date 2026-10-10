@@ -165,14 +165,17 @@ export const CalendarWeekView = (props: TimeViewProps) => {
     scroller.style.marginRight = rest > 0 ? `${rest}px` : "";
   };
   let reportTimer = 0;
+  let reported = "";
   const syncFirst = () => {
     const index = visibleIndex();
-    if (index === untrack(firstIndex)) return;
-    setFirstIndex(index);
-    const key = keys()[index];
-    if (!key) return;
+    if (index !== untrack(firstIndex)) setFirstIndex(index);
+    if (!untrack(keys)[index]) return;
+    // The host learns the days the reader sees once they changed, after the scroll calmed down.
+    const { first, last } = untrack(visibleKeys);
+    if (`${first}/${last}` === reported) return;
+    reported = `${first}/${last}`;
     window.clearTimeout(reportTimer);
-    reportTimer = window.setTimeout(() => props.owner.onVisibleDateChange?.(view.parseKey(key)), 250);
+    reportTimer = window.setTimeout(() => props.owner.onVisibleDateChange?.(view.parseKey(first), view.parseKey(last)), 250);
   };
 
   // A gesture keeps its axis; the strip settles on a day start once the scroll rests.
@@ -273,8 +276,13 @@ export const CalendarWeekView = (props: TimeViewProps) => {
   createComputed(
     on(
       keys,
-      (_next, drawn) => {
-        if (untrack(mounted) && drawn) rememberAnchor(drawn);
+      (next, drawn) => {
+        if (!untrack(mounted) || !drawn) return;
+        rememberAnchor(drawn);
+        // Days that come in before the strip move every index; the first day in view stays the same day, so what
+        // depends on the days in view, such as the all-day row, never sees the days that came in.
+        const shift = dayKeyNumber(drawn[0]!) - dayKeyNumber(next[0]!);
+        if (shift !== 0) setFirstIndex((index) => index + shift);
       },
       { defer: true },
     ),
@@ -309,6 +317,7 @@ export const CalendarWeekView = (props: TimeViewProps) => {
             if (!scroller) return;
             scroller.scrollLeft = leftOf(before);
             lastLeft = scroller.scrollLeft;
+            syncFirst();
           });
     if (scroller) observer?.observe(scroller);
     onCleanup(() => {
@@ -421,19 +430,31 @@ export const CalendarWeekView = (props: TimeViewProps) => {
       weeks.push({ offset, keys: week });
       index = offset + week.length;
     }
-    const layouts = weeks.map((week) => ({ ...week, layout: layoutMonthWeek(week.keys, entries) }));
-    const rows = Math.max(
+    return weeks.map((week) => {
+      const layout = layoutMonthWeek(week.keys, entries);
+      const lanes = Math.max(0, ...layout.bars.map((bar) => bar.lane + 1));
+      return { ...week, layout, rows: lanes + Math.max(0, ...layout.singles.map((singles) => singles.length)) };
+    });
+  });
+  /**
+   * The rows the weeks in view need, as in a week of its own. A week that loads off screen never changes them, so the
+   * hours stay where they are; its entries below these rows wait hidden until it comes into view.
+   */
+  const allDayRows = createMemo(() => {
+    const first = firstIndex();
+    const last = first + visibleCount() - 1;
+    return Math.max(
       1,
-      ...layouts.map(({ layout }) => {
-        const lanes = Math.max(0, ...layout.bars.map((bar) => bar.lane + 1));
-        return lanes + Math.max(0, ...layout.singles.map((singles) => singles.length));
-      }),
+      ...allDay()
+        .filter((week) => week.offset <= last && week.offset + week.keys.length - 1 >= first)
+        .map((week) => week.rows),
     );
-    return { layouts, rows };
   });
 
-  // Keyboard: one tab stop in the grid; the arrows move between days, entries, and free time.
-  const stops = () => [...(scroller?.querySelectorAll<HTMLElement>("[data-stop]") ?? [])];
+  // Keyboard: one tab stop in the grid; the arrows move between days, entries, and free time. Only what is drawn can
+  // take the focus.
+  const stops = () =>
+    [...(scroller?.querySelectorAll<HTMLElement>("[data-stop]") ?? [])].filter((stop) => stop.getClientRects().length > 0);
   const focusDayKey = () => {
     const current = view.selection()?.key;
     const { first, last } = visibleKeys();
@@ -630,7 +651,7 @@ export const CalendarWeekView = (props: TimeViewProps) => {
               class="k2b-calendar-week__all-day"
               role="group"
               aria-label={view.messages().calendarAllDayAndDue}
-              style={{ "grid-template-rows": `repeat(${allDay().rows}, var(--k2b-calendar-all-day-row))` }}
+              style={{ "grid-template-rows": `repeat(${allDayRows()}, var(--k2b-calendar-all-day-row))` }}
               onPointerDown={(event) => {
                 if (event.target instanceof Element && event.target.closest("a,button,[data-calendar-event]")) return;
                 startAllDayRange(event, event.currentTarget);
@@ -656,7 +677,7 @@ export const CalendarWeekView = (props: TimeViewProps) => {
                   />
                 )}
               </Show>
-              <For each={allDay().layouts}>
+              <For each={allDay()}>
                 {(week) => (
                   <>
                     <For each={week.layout.bars}>
@@ -682,6 +703,7 @@ export const CalendarWeekView = (props: TimeViewProps) => {
                             style={{
                               "grid-column": `${week.offset + bar.startColumn + 1} / ${week.offset + bar.endColumn + 2}`,
                               "grid-row": String(bar.lane + 1),
+                              display: bar.lane + 1 > allDayRows() ? "none" : undefined,
                             }}
                           >
                             <EventChip
@@ -732,6 +754,7 @@ export const CalendarWeekView = (props: TimeViewProps) => {
                                     "grid-column": String(week.offset + column() + 1),
                                     "grid-row": String(lanes() + row() + 1),
                                     "--k2b-calendar-accent": eventAccent(event),
+                                    display: lanes() + row() + 1 > allDayRows() ? "none" : undefined,
                                   }}
                                 >
                                   <Show when={checked() !== undefined}>
@@ -744,6 +767,7 @@ export const CalendarWeekView = (props: TimeViewProps) => {
                                     compact
                                     timeline
                                     checkbox={checked() !== undefined}
+                                    onCheck={view.checkOf(event)}
                                     tabIndex={tabOf(id)}
                                     stop={{ id, column: week.offset + column(), minute: -1 + (lanes() + row()) / 100 }}
                                   />

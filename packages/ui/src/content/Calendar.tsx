@@ -199,8 +199,11 @@ export type CalendarProps<V extends string = never> = {
   onLoadEarlier?: () => unknown;
   /** Called once when the reader nears the last loaded day, again once `range.to` moved. */
   onLoadLater?: () => unknown;
-  /** Day and week views with `dayHours`: the first day the reader sees changed by scrolling, such as for the URL. */
-  onVisibleDateChange?: (date: Date) => void;
+  /**
+   * Day and week views with `dayHours`: the first and the last day the reader sees, once the view opened and whenever
+   * scrolling changed them, such as for the URL or a count of what is in view.
+   */
+  onVisibleDateChange?: (date: Date, last: Date) => void;
   visibleStartHour?: number;
   visibleEndHour?: number;
   allDayMaxHeightRem?: number;
@@ -229,8 +232,11 @@ export type CalendarProps<V extends string = never> = {
   onEventDrop?: (event: CalendarEvent, next: CalendarEventTimeChange) => void;
   onEventResize?: (event: CalendarEvent, next: CalendarEventTimeChange) => void;
   onSlotActivate?: (slot: CalendarEventTimeChange) => void;
-  /** Changes the checkbox of an entry with `checked`; leave it out when the reader may not change it. */
-  onEventCheck?: (event: CalendarEvent, checked: boolean) => void;
+  /**
+   * Changes the checkbox of an entry with `checked`; leave it out when the reader may not change it. The box shows the
+   * change at once; a returned promise that rejects puts it back.
+   */
+  onEventCheck?: (event: CalendarEvent, checked: boolean) => void | Promise<unknown>;
   /** Pointer gesture used for empty slots. Keyboard activation is always immediate. */
   slotActivation?: "single" | "double";
   /**
@@ -694,10 +700,12 @@ const CalendarHeader = <V extends string>(props: {
   };
   const previous = () => adjacentCalendarDate(base(), props.view, -1, dateConfig());
   const next = () => adjacentCalendarDate(base(), props.view, 1, dateConfig());
-  const format = (date: Date, options: Intl.DateTimeFormatOptions) =>
+  /** The day view's title, such as "Fri, Oct 9, 2026" or "Fr, 9. Okt 2026". */
+  const formatDayTitle = (date: Date) =>
     compactGermanDate(
-      new Intl.DateTimeFormat(dateConfig().locale ?? "en", { ...options, timeZone: dateConfig().timeZone }).format(date),
+      new Intl.DateTimeFormat(dateConfig().locale ?? "en", { ...dayTitleOptions, timeZone: dateConfig().timeZone }).format(date),
       dateConfig().locale,
+      true,
     );
   const formatRange = (from: Date, to: Date) =>
     compactGermanDate(
@@ -708,7 +716,7 @@ const CalendarHeader = <V extends string>(props: {
   const timeMode = () => Boolean(props.owner.dayHours) && (props.view === "day" || props.view === "week");
   const title = () => {
     const shown = timeView()?.visibleKeys();
-    if (timeMode() && props.view === "day") return format(shown ? parseKey(shown.first) : props.date, dayTitleOptions);
+    if (timeMode() && props.view === "day") return formatDayTitle(shown ? parseKey(shown.first) : props.date);
     if (timeMode()) {
       const start = shown ? parseKey(shown.first) : calendar.startOfWeek(props.date, dateConfig());
       return formatRange(start, shown ? parseKey(shown.last) : calendar.addDays(start, 6, dateConfig()));
@@ -749,7 +757,7 @@ const CalendarHeader = <V extends string>(props: {
       const first = zonedMonthDate(year, month, context);
       return Array.from({ length: 7 }, (_, offset) =>
         timeMode()
-          ? format(calendar.addDays(first, 21 + offset, context), dayTitleOptions)
+          ? formatDayTitle(calendar.addDays(first, 21 + offset, context))
           : calendar.addDays(first, 21 + offset, context).toLocaleDateString(context.locale ?? "en", {
               weekday: "long",
               month: "long",
@@ -1196,7 +1204,10 @@ type MonthItem = {
 type MonthSelection = { first: string; last: string };
 
 /** What the calendar's controller asks of the month view. */
-type MonthCreateHandle = Pick<CalendarController, "quickCreate" | "createTarget">;
+type MonthCreateHandle = Pick<CalendarController, "quickCreate" | "createTarget"> & {
+  /** The quiet quick create waits for the person to type its title. */
+  typing: () => boolean;
+};
 
 type MonthPopover =
   | { kind: "day"; dayKey: string; anchor: HTMLElement }
@@ -1496,6 +1507,7 @@ const MonthView = (props: {
         if (!openCreate(range, { active: true, create })) props.owner.onSlotActivate?.(rangeOf(range));
       },
       createTarget: () => rangeOf(selection() ?? { first: rovingKey(), last: rovingKey() }),
+      typing: () => popover()?.kind === "create" && !createActive(),
     }),
   );
   onCleanup(() => props.register?.(null));
@@ -2928,9 +2940,35 @@ const CalendarRoot = <V extends string = never>(props: CalendarProps<V>): JSX.El
     ];
   });
   const allCommands = createMemo(() => [...ownCommands(), ...(props.commands ?? [])]);
+  /** While the month's quiet quick create waits for typing, a single key is the first letter of a title. */
+  const typing = () => view() === "month" && (monthCreate()?.typing() ?? false);
   createEffect(() => {
-    const commands = allCommands();
+    const commands = typing()
+      ? allCommands().map((command) => (command.shortcut && singleKey(command.shortcut) ? { ...command, shortcut: undefined } : command))
+      : allCommands();
     untrack(() => props.onCommandsChange?.(commands));
+  });
+  // The arrow keys page like J and K while the keyboard is in the calendar or nowhere, unless something there uses
+  // them, such as the grid of the week or the month.
+  let root: HTMLElement | undefined;
+  onMount(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      if (event.defaultPrevented || event.isComposing || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      if (!props.onCommandsChange || custom() || document.querySelector('dialog[open], [role="dialog"][aria-modal="true"]')) return;
+      const target = event.target;
+      const inCalendar = target instanceof Element && Boolean(root?.contains(target));
+      if (!inCalendar && target !== document.body && target !== document.documentElement) return;
+      if (
+        target instanceof Element &&
+        target.closest("input, textarea, select, [contenteditable]:not([contenteditable=false]), [role=textbox], [popover], [role=dialog]")
+      )
+        return;
+      event.preventDefault();
+      step(event.key === "ArrowRight" ? 1 : -1);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    onCleanup(() => window.removeEventListener("keydown", onKeyDown));
   });
   const headerNav: CalendarHeaderNav = {
     timeView,
@@ -2974,7 +3012,7 @@ const CalendarRoot = <V extends string = never>(props: CalendarProps<V>): JSX.El
   });
 
   return (
-    <section class={`k2b-content-calendar ${props.class ?? ""}`} aria-busy={props.navigationPending ? "true" : undefined}>
+    <section ref={root} class={`k2b-content-calendar ${props.class ?? ""}`} aria-busy={props.navigationPending ? "true" : undefined}>
       <CalendarHeader
         date={date()}
         view={view()}
@@ -3040,6 +3078,9 @@ const CalendarRoot = <V extends string = never>(props: CalendarProps<V>): JSX.El
     </section>
   );
 };
+
+/** A shortcut without Ctrl, Meta, or Mod, which typing would set off. */
+const singleKey = (shortcut: string) => !/(^|\+)(ctrl|meta|mod)\+/i.test(shortcut);
 
 /** JSX infers the values of `customViews`; inference from the last signature, as in `createComponent`, sees plain props. */
 function Calendar<V extends string = never>(props: CalendarProps<V>): JSX.Element;

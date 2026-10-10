@@ -18,8 +18,10 @@ import {
   freeGaps,
   gapProposal,
   instantInDay,
+  instantsInDay,
   minuteInDay,
   placeEntry,
+  resizedInDay,
   termsCss,
   wakeMinutes,
 } from "./calendar-days";
@@ -85,6 +87,28 @@ describe("clock changes", () => {
     expect(placed).toEqual({ kind: "band", key: "2026-10-24", band: { item: "Backup", start: 1230, end: 1275 } });
   });
 
+  test("a slot the spring change cuts into keeps the length it was drawn with", () => {
+    // 02:30 to 03:00 does not exist on 2026-03-29; 02:30 moves forward to 03:30, past the end.
+    const slot = instantsInDay("2026-03-28", 1230, 1260, hours, berlin);
+    expect([slot.start.toISOString(), slot.end.toISOString()]).toEqual(["2026-03-29T01:30:00.000Z", "2026-03-29T02:00:00.000Z"]);
+    // Elsewhere a slot is its two wall-clock times.
+    const morning = instantsInDay("2026-03-29", 180, 240, hours, berlin);
+    expect([morning.start.toISOString(), morning.end.toISOString()]).toEqual([
+      at("2026-03-29T09:00").toISOString(),
+      at("2026-03-29T10:00").toISOString(),
+    ]);
+  });
+
+  test("a resized entry in the hour the autumn change repeats keeps the instant of its other edge", () => {
+    // 02:15 CET, the second 02:15 of 2026-10-25, to 04:00 CET; its end moves to 05:00.
+    const entry = { start: new Date("2026-10-25T01:15:00.000Z"), end: new Date("2026-10-25T03:00:00.000Z") };
+    const later = resizedInDay(entry, "end", "2026-10-24", { start: 1215, end: 1380 }, hours, berlin);
+    expect([later.start.toISOString(), later.end.toISOString()]).toEqual(["2026-10-25T01:15:00.000Z", "2026-10-25T04:00:00.000Z"]);
+    // Its start moves to 03:00 CET; the end stays.
+    const shorter = resizedInDay(entry, "start", "2026-10-24", { start: 1260, end: 1320 }, hours, berlin);
+    expect([shorter.start.toISOString(), shorter.end.toISOString()]).toEqual(["2026-10-25T02:00:00.000Z", "2026-10-25T03:00:00.000Z"]);
+  });
+
   test("the day after a change still starts at six on the wall clock", () => {
     expect(dayKeyOf(at("2026-10-25T05:59"), hours, berlin)).toBe("2026-10-24");
     expect(minuteInDay("2026-10-25", at("2026-10-25T06:00"), hours, berlin)).toBe(0);
@@ -128,7 +152,7 @@ describe("days", () => {
   test("runs of empty days merge, today and the opened day never fold, and an unfolded run shows its days", () => {
     const empty = new Set(["2026-10-10", "2026-10-11", "2026-10-13", "2026-10-14"]);
     const keys = ["2026-10-09", "2026-10-10", "2026-10-11", "2026-10-12", "2026-10-13", "2026-10-14"];
-    expect(dayGroups(keys, (key) => empty.has(key), ["2026-10-13"], new Set())).toEqual([
+    expect(dayGroups(keys, (key) => empty.has(key), new Set(["2026-10-13"]))).toEqual([
       { kind: "day", key: "2026-10-09" },
       { kind: "empty", keys: ["2026-10-10", "2026-10-11"] },
       { kind: "day", key: "2026-10-12" },
@@ -136,13 +160,24 @@ describe("days", () => {
       { kind: "empty", keys: ["2026-10-14"] },
     ]);
     // The day the reader opened stays a day of its own.
-    expect(dayGroups(keys, (key) => empty.has(key), ["2026-10-01", "2026-10-11"], new Set()).slice(1, 3)).toEqual([
+    expect(dayGroups(keys, (key) => empty.has(key), new Set(["2026-10-01", "2026-10-11"])).slice(1, 3)).toEqual([
       { kind: "empty", keys: ["2026-10-10"] },
       { kind: "day", key: "2026-10-11" },
     ]);
-    expect(dayGroups(keys, (key) => empty.has(key), ["2026-10-01"], new Set(["2026-10-10"])).slice(1, 3)).toEqual([
+    expect(dayGroups(keys, (key) => empty.has(key), new Set(["2026-10-10", "2026-10-11"])).slice(1, 3)).toEqual([
       { kind: "day", key: "2026-10-10" },
       { kind: "day", key: "2026-10-11" },
+    ]);
+  });
+
+  test("empty days that load before an unfolded run fold on their own and leave the run open", () => {
+    const unfolded = new Set(["2026-10-10", "2026-10-11"]);
+    const keys = ["2026-10-07", "2026-10-08", "2026-10-09", "2026-10-10", "2026-10-11", "2026-10-12"];
+    expect(dayGroups(keys, (key) => key !== "2026-10-12", unfolded)).toEqual([
+      { kind: "empty", keys: ["2026-10-07", "2026-10-08", "2026-10-09"] },
+      { kind: "day", key: "2026-10-10" },
+      { kind: "day", key: "2026-10-11" },
+      { kind: "day", key: "2026-10-12" },
     ]);
   });
 });

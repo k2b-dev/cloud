@@ -89,7 +89,7 @@ export default function SpacesCalendarRoute(props: Props) {
         const current = untrack(stream);
         setStream(
           incoming && current && current.source === incoming.source && current.anchor === incoming.anchor
-            ? { ...current, ...mergeCalendarItems(current, incoming) }
+            ? { ...current, ...mergeCalendarItems(current, incoming, props.dateConfig) }
             : incoming,
         );
       },
@@ -136,7 +136,7 @@ export default function SpacesCalendarRoute(props: Props) {
         if (snapshot.kind !== "calendar" || !latest || latest.anchor !== anchor) return;
         const moved = edge === "earlier" ? latest.from !== block.to : latest.to !== block.from;
         if (snapshotsStarted !== started || latest.source !== current.source || moved) continue;
-        const merged = mergeCalendarItems(latest, { ...block, items: snapshot.items });
+        const merged = mergeCalendarItems(latest, { ...block, items: snapshot.items }, props.dateConfig);
         // Weeks at both ends load at once; together they must stay within the range a refresh may ask for.
         if (Date.parse(merged.to) - Date.parse(merged.from) > CALENDAR_MAX_DAYS * DAY_MS) return;
         setStream({ ...latest, ...merged });
@@ -196,6 +196,7 @@ export default function SpacesCalendarRoute(props: Props) {
         currentUserId={props.currentUserId}
         onNavigateHref={navigation.navigateHref}
         onRouteChange={navigation.open}
+        onFollowHref={navigation.follow}
         navigationPending={navigation.pending() || loadingBlocks() > 0}
         onLoadEarlier={stream() ? () => loadBlock("earlier") : undefined}
         onLoadLater={stream() ? () => loadBlock("later") : undefined}

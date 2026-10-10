@@ -42,4 +42,9 @@ export type CalendarProps = {
   /** Day and week views: load the week before or after the loaded days. */
   onLoadEarlier?: () => unknown;
   onLoadLater?: () => unknown;
+  /**
+   * Day and week views: names the day the reader scrolled to in the URL, as `href`. Without it the calendar replaces
+   * the URL itself.
+   */
+  onFollowHref?: (href: string) => void;
 };

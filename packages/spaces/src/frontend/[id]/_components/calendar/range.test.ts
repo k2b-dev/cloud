@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { CalendarItem } from "@/contracts";
-import { CALENDAR_MAX_DAYS, calendarBlock, calendarWindow, mergeCalendarItems } from "./range";
+import { CALENDAR_MAX_DAYS, calendarBlock, calendarItemsEnd, calendarWindow, countCalendarDays, mergeCalendarItems } from "./range";
 
 const berlin = { timeZone: "Europe/Berlin", locale: "de", firstDayOfWeek: 1 as const };
 
@@ -81,5 +81,40 @@ describe("Spaces calendar day and week ranges", () => {
     expect(merged.to).toBe("2026-10-16T22:00:00.000Z");
     expect(merged.items.map((entry) => entry.id).sort()).toEqual(["early-task", "kept-event", "moved-event"]);
     expect(merged.items.find((entry) => entry.id === "moved-event")?.startsAt).toBe("2026-10-09T08:00:00.000Z");
+  });
+
+  test("the loaded days hold the night after the last one until 06:00 on the wall clock, also when the clocks go back", () => {
+    // The days up to Friday, October 9: the night runs until 06:00 summer time on Saturday.
+    expect(calendarItemsEnd("2026-10-09T22:00:00.000Z", berlin)).toBe("2026-10-10T04:00:00.000Z");
+    // The days up to Saturday, October 24: at 03:00 the clocks go back, so the night ends at 06:00 winter time.
+    expect(calendarItemsEnd("2026-10-24T22:00:00.000Z", berlin)).toBe("2026-10-25T05:00:00.000Z");
+  });
+
+  test("a fresh load also replaces what it covered in the night after its last day", () => {
+    const current = {
+      from: "2026-09-30T22:00:00.000Z",
+      to: "2026-10-16T22:00:00.000Z",
+      // Due at 04:00 on Saturday: the night of Friday, October 9.
+      items: [item("done-in-the-night", { deadline: "2026-10-10T02:00:00.000Z" })],
+    };
+    const merged = mergeCalendarItems(current, { from: "2026-09-30T22:00:00.000Z", to: "2026-10-09T22:00:00.000Z", items: [] }, berlin);
+    expect(merged.items).toEqual([]);
+  });
+
+  test("counts what the days in view show, with each night on the day before it", () => {
+    const items = [
+      item("standup", { startsAt: "2026-10-09T07:15:00.000Z", endsAt: "2026-10-09T07:30:00.000Z" }),
+      // 05:00 on Saturday still belongs to Friday's night.
+      item("night-deadline", { deadline: "2026-10-10T03:00:00.000Z" }),
+      item("saturday", { deadline: "2026-10-10T08:00:00.000Z" }),
+      // A deadline without a time on Saturday, stored at its midnight.
+      item("due-saturday", { deadline: "2026-10-09T22:00:00.000Z", allDay: true }),
+      // All day from Thursday to Saturday.
+      item("fair", { startsAt: "2026-10-07T22:00:00.000Z", endsAt: "2026-10-10T22:00:00.000Z", allDay: true }),
+      item("next-week", { startsAt: "2026-10-12T08:00:00.000Z", endsAt: "2026-10-12T09:00:00.000Z" }),
+    ];
+    expect(countCalendarDays(items, "2026-10-09", "2026-10-09", berlin)).toBe(3);
+    expect(countCalendarDays(items, "2026-10-10", "2026-10-10", berlin)).toBe(3);
+    expect(countCalendarDays(items, "2026-10-05", "2026-10-11", berlin)).toBe(5);
   });
 });

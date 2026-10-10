@@ -397,7 +397,7 @@ describe("@k2b/ui Cloud content contract", () => {
 
       const dayDe = render("de", "day");
       // The header names the shown day, as the browser does once it measured.
-      expect(dayDe).toContain("Fr 9. Okt 2026");
+      expect(dayDe).toContain("Fr, 9. Okt 2026");
       expect(dayDe).toContain("Heute");
       expect(dayDe).toContain("Freitag, 9. Oktober");
       // The day starts at six; its night folds.

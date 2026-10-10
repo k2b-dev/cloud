@@ -99,6 +99,8 @@ export const EventChip = (props: {
   tabIndex?: number;
   /** A keyboard stop of the week grid: its id, its day column, and its minute for moving between columns. */
   stop?: CalendarStop;
+  /** Day and week views: Space on the chip checks the box the calendar draws beside it, as on the box itself. */
+  onCheck?: () => void;
   onMovePointerDown?: (event: PointerEvent, onActivate: () => void) => void;
 }): JSX.Element => {
   const messages = useCalendarMessages();
@@ -209,8 +211,15 @@ export const EventChip = (props: {
     event.stopPropagation();
     props.owner.onEventActivate(props.event);
   };
+  /** Space on an entry with a box checks it; Enter still opens the entry. */
+  const onCheckKeyDown = (event: KeyboardEvent) => {
+    if (event.key !== " " || !props.onCheck || event.altKey || event.ctrlKey || event.metaKey) return false;
+    event.preventDefault();
+    props.onCheck();
+    return true;
+  };
   const onButtonKeyDown = (event: KeyboardEvent) => {
-    if (!isInteractive() || (event.key !== "Enter" && event.key !== " ")) return;
+    if (onCheckKeyDown(event) || !isInteractive() || (event.key !== "Enter" && event.key !== " ")) return;
     event.preventDefault();
     props.owner.onEventActivate?.(props.event);
   };
@@ -253,6 +262,7 @@ export const EventChip = (props: {
       onDblClick={onDoubleClick}
       onDragStart={props.onMovePointerDown ? (event) => event.preventDefault() : undefined}
       onPointerDown={onPointerDown}
+      onKeyDown={onCheckKeyDown}
     >
       {content()}
     </a>
@@ -270,7 +280,7 @@ export const EventChip = (props: {
       {content()}
     </button>
   ) : (
-    <div {...attributes()} role="group" tabIndex={props.tabIndex}>
+    <div {...attributes()} role="group" tabIndex={props.tabIndex} onKeyDown={onCheckKeyDown}>
       {content()}
     </div>
   );

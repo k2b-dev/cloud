@@ -64,6 +64,44 @@ export const instantInDay = (key: string, minute: number, hours: CalendarDayHour
   return wallInstant(`${addDayKeys(key, day)}T${pad(Math.floor(rest / 60))}:${pad(rest % 60)}`, context);
 };
 
+/**
+ * The instants of a slot of the day `key`. A time the change to summer time skips moves forward, so a slot drawn there
+ * could end before it starts; it then keeps the length it was drawn with.
+ */
+export const instantsInDay = (
+  key: string,
+  start: number,
+  end: number,
+  hours: CalendarDayHours,
+  context?: DateContext,
+): { start: Date; end: Date } => {
+  const from = instantInDay(key, start, hours, context);
+  const to = instantInDay(key, end, hours, context);
+  return { start: from, end: to >= from ? to : new Date(from.getTime() + Math.max(0, end - start) * 60_000) };
+};
+
+/**
+ * An entry with one edge dragged to a minute of the day `key`, given as the slot `minutes` it now spans there. The
+ * other edge keeps its instant, so an entry in the hour a change from summer time repeats keeps its real time; the
+ * entry never ends before it starts.
+ */
+export const resizedInDay = (
+  entry: { start: Date; end: Date },
+  edge: "start" | "end",
+  key: string,
+  minutes: { start: number; end: number },
+  hours: CalendarDayHours,
+  context?: DateContext,
+): { start: Date; end: Date } => {
+  const length = Math.max(0, minutes.end - minutes.start) * 60_000;
+  if (edge === "end") {
+    const end = instantInDay(key, minutes.end, hours, context);
+    return { start: entry.start, end: end > entry.start ? end : new Date(entry.start.getTime() + length) };
+  }
+  const start = instantInDay(key, minutes.start, hours, context);
+  return { start: start < entry.end ? start : new Date(entry.end.getTime() - length), end: entry.end };
+};
+
 /** The day an instant belongs to: before the start hour it is still the night of the day before. */
 export const dayKeyOf = (instant: Date, hours: CalendarDayHours, context?: DateContext): string => {
   const wall = wallClock(instant, context);
@@ -220,24 +258,19 @@ export type DayGroup = { kind: "day"; key: string } | { kind: "empty"; keys: str
 
 /**
  * The days of the stream: each day with something in it alone, runs of empty days as one. The days in `keep`, such
- * as today and the day the reader opened, never fold.
+ * as today, the day the reader opened, and every day of a run the reader unfolded, never fold, so days that load
+ * next to an unfolded run fold on their own and leave it open.
  */
-export const dayGroups = (
-  keys: readonly string[],
-  empty: (key: string) => boolean,
-  keep: readonly string[],
-  unfolded: ReadonlySet<string>,
-): DayGroup[] => {
+export const dayGroups = (keys: readonly string[], empty: (key: string) => boolean, keep: ReadonlySet<string>): DayGroup[] => {
   const groups: DayGroup[] = [];
   let run: string[] = [];
   const flush = () => {
     if (run.length === 0) return;
-    if (unfolded.has(run[0]!)) for (const key of run) groups.push({ kind: "day", key });
-    else groups.push({ kind: "empty", keys: run });
+    groups.push({ kind: "empty", keys: run });
     run = [];
   };
   for (const key of keys) {
-    if (empty(key) && !keep.includes(key)) run.push(key);
+    if (empty(key) && !keep.has(key)) run.push(key);
     else {
       flush();
       groups.push({ kind: "day", key });

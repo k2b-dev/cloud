@@ -152,12 +152,17 @@ In the day and week views a day runs from 06:00 to 06:00, so the night after
 day view runs down through the days with runs of empty days folded into one
 row; the week view scrolls sideways through them, seven at a time or three on
 a phone, and its arrows move by whole weeks. Both load the week before and
-after while you scroll, and the URL follows the first day you see. Deadlines
-show as dashed lines with a checkbox to check the task off, free time creates
-an event where it lies, and a task dragged from the row below the day view
-into free time gets that time and keeps its deadline. **H**, **J**, **K**,
-**1** to **4**, **G**, **N**, and **Shift+N** move, switch views, go to a date,
-and create in the calendar; the keyboard button of the calendar lists them.
+after while you scroll, and the URL follows the first day you see; an item
+opens there in place. The count next to the filters counts the days you see.
+Deadlines show as dashed lines with a checkbox, or **Space**, to check the
+task off, and keep their time when you drag them. Free time creates an event
+where it lies, and a task dragged from the row below the day view into free
+time gets that time, keeps its deadline also when it moves later, and leaves
+the row. **H**, **J**, **K**, **1** to **4**, **G**, **N**, and **Shift+N**
+move, switch views, go to a date, and create in the calendar, and the left
+and right arrow keys page like **K** and **J**; the keyboard button of the
+calendar lists them. In the year view, **N** and **Shift+N** open the full
+form on the shown date.
 See [Day and week views](/en/ui/surfaces/calendar#day-and-week-views-with-dayhours)
 for the behavior in detail.
 
