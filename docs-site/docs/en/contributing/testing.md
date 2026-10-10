@@ -218,6 +218,15 @@ branch:
   or moves a finger, or that changes the default font size, needs Chromium's
   DevTools protocol. Such a test is skipped in WebKit with
   `test.skipIf(browserName === "webkit")` and a comment that names the reason.
+- `Input.dispatchTouchEvent` stamps an event without `timestamp` when its
+  call arrives, and Chromium flings a touch scroll at the speed it reads from
+  these stamps. On a loaded machine several moves arrive at once and the list
+  flings far further. A test that scrolls by touch and then touches something
+  in the scrolled list stamps its events one 60 Hz frame apart and stamps the
+  lift 100 ms after the last move. Chromium treats a finger that rests 80 ms
+  or longer before it lifts as stopped, so the list stops without a fling.
+  It moves about as far as the finger did, give or take a few pixels, so
+  assert a bound rather than an exact scroll position.
 - WebKit matches `forced-colors: active` under emulation but has no forced
   colours mode that repaints author colours.
 - WebKit does not support `reading-flow` yet, so focus and VoiceOver keep the
