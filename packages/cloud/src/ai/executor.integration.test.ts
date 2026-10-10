@@ -946,6 +946,7 @@ suite("AI executor integration", () => {
             allowRememberedApprovals: false,
             rememberableCapabilityApprovals: new Map(),
             capabilityActionReviews: new Map(),
+            approvalTargets: new Map(),
             onBackgroundBlocked: (message) => {
               blocked = message;
             },
