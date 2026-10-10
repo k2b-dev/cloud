@@ -135,8 +135,9 @@ The row above the title is 12 px text and the title 14 px, stacked in one
 detail keeps the same height. Below 768 px a back arrow left of the title
 replaces the row; its accessible name names the parent, for example "Back to
 Users". Depth decides rather than the app, so the same depth looks the same
-in every app, and an app cannot pick a form that breaks on a narrow screen. Anonymous pages, which keep their breadcrumb header, and
-focus-mode surfaces such as pop-out editors show the title alone.
+in every app, and an app cannot pick a form that breaks on a narrow screen.
+Anonymous pages, which keep their breadcrumb header, and focus-mode surfaces
+such as pop-out editors show the title alone.
 
 The way up appears where the page's title belongs:
 
@@ -144,6 +145,8 @@ The way up appears where the page's title belongs:
   page the head stays away from 1024 px, because the app's own heading or its
   sidebar names the page and the app bar marks the app; from 768 to 1023 px
   the head also holds the navigation button and then shows the title alone.
+  So a one-level page without a heading of its own shows no title from
+  1024 px; render a heading or `PageTrail` when the page should name itself.
 - A page without a workspace gets a row from the shell above its content, only
   when there is a level above.
 - An app that draws its own header places `PageTrail` there, from
@@ -527,7 +530,9 @@ managed shortcuts add at most 16 KiB to the page's personal rail snapshot.
 </AdminLayout>
 ```
 
-`AdminLayout.title` sets breadcrumbs. The page renders its own heading.
+`AdminLayout.title` names the page. Admin is the root of its area, so every
+admin page is one level deep and shows no way up, whichever app owns it; the
+admin sidebar leads between the pages. The page renders its own heading.
 The admin shell stays within the viewport, with independent sidebar and content
 scrolling. For a bounded child such as `SettingsPage`, pass `scroll={false}` to
 `AdminLayout`: the child then owns content scrolling and its fixed save footer.
