@@ -24,6 +24,13 @@ const label = (children) => createComponent(AppWorkspace.SidebarItemLabel, { chi
 const action = (label, visibility) => createComponent(AppWorkspace.SidebarItemAction, { icon: "ti ti-dots", label, visibility });
 const button = (label) => createComponent(IconButton, { label, size: "xs", variant: "ghost", children: "+" });
 const preview = (label, trigger) => ({ label, trigger, content: label });
+const group = (labels) =>
+  createComponent(AppWorkspace.SidebarItemActions, {
+    visibility: "hover",
+    get children() {
+      return labels.map(button);
+    },
+  });
 // Every supported combination of trailing row controls.
 const rows = () => [
   { href: "#hover", children: [label("Hover action"), action("Row actions", "hover")] },
@@ -46,7 +53,59 @@ const rows = () => [
   },
   { preview: preview("Open archive", "row"), children: [label("Visible action and chevron"), action("Archive")] },
   { href: "#count", meta: "12", children: [label("Count and hover action"), action("Inbox actions", "hover")] },
+  {
+    href: "#group",
+    get actions() {
+      return group(["Pin"]);
+    },
+    children: [label("Hover group")],
+  },
+  {
+    href: "#group-count",
+    meta: "12",
+    get actions() {
+      return group(["Pin", "Hide"]);
+    },
+    children: [label("Count and hover group")],
+  },
+  {
+    href: "#object-group",
+    variant: "object",
+    description: "Updated today",
+    get actions() {
+      return group(["Flag"]);
+    },
+    children: [label("Object and hover group")],
+  },
 ];
+
+// A tree row keeps its chevron at the end and a list row has a second line; both reveal a hover group.
+const tree = () =>
+  createComponent(AppWorkspace.NavTree, {
+    ariaLabel: "Notes",
+    defaultExpandedIds: ["parent"],
+    get children() {
+      return createComponent(AppWorkspace.NavTree.Item, {
+        id: "parent",
+        label: "Tree row with sub-notes",
+        href: "#parent",
+        get actions() {
+          return group(["Note actions"]);
+        },
+        get children() {
+          return createComponent(AppWorkspace.NavTree.Item, {
+            id: "child",
+            label: "Tree row with a date",
+            description: "Yesterday · #garden",
+            href: "#child",
+            get actions() {
+              return group(["Date actions"]);
+            },
+          });
+        },
+      });
+    },
+  });
 
 render(
   () =>
@@ -60,12 +119,15 @@ render(
                 get children() {
                   return createComponent(AppWorkspace.SidebarBody, {
                     get children() {
-                      return createComponent(AppWorkspace.SidebarSection, {
-                        title: "Rows",
-                        get children() {
-                          return rows().map((row) => createComponent(AppWorkspace.SidebarItem, row));
-                        },
-                      });
+                      return [
+                        createComponent(AppWorkspace.SidebarSection, { title: "Tree", get children() { return tree(); } }),
+                        createComponent(AppWorkspace.SidebarSection, {
+                          title: "Rows",
+                          get children() {
+                            return rows().map((row) => createComponent(AppWorkspace.SidebarItem, row));
+                          },
+                        }),
+                      ];
                     },
                   });
                 },
@@ -142,7 +204,7 @@ const inspect = (page: Page, label: string, rest: string[] | null) =>
           const style = getComputedStyle(node);
           if (style.opacity !== "1" || style.pointerEvents === "none" || style.display === "none") return false;
         }
-        return true;
+        return getComputedStyle(element).visibility === "visible";
       };
       const controls = Array.from(
         owner.querySelectorAll(":scope > .k2b-app-workspace__sidebar-item-action, :scope > .k2b-app-workspace__sidebar-item-actions > *"),
@@ -160,6 +222,8 @@ const inspect = (page: Page, label: string, rest: string[] | null) =>
   );
 
 const labels = [
+  "Tree row with sub-notes",
+  "Tree row with a date",
   "Hover action",
   "Preview",
   "Hover action and preview",
@@ -169,6 +233,9 @@ const labels = [
   "Action group and preview",
   "Visible action and chevron",
   "Count and hover action",
+  "Hover group",
+  "Count and hover group",
+  "Object and hover group",
 ];
 
 describe("@k2b/ui sidebar row controls", () => {
@@ -194,11 +261,16 @@ describe("@k2b/ui sidebar row controls", () => {
           await page.keyboard.press("Tab");
           const stop = await page.evaluate(() => {
             const focused = document.activeElement;
-            const owner = focused?.closest(".k2b-app-workspace__sidebar-item");
+            // Roving focus rests on a tree node, which holds its own row.
+            const owner =
+              focused?.closest(".k2b-app-workspace__sidebar-item") ?? focused?.querySelector(":scope > .k2b-app-workspace__nav-tree-row");
             if (!focused || !owner) return null;
             return {
               label: owner.querySelector(".k2b-app-workspace__sidebar-item-label")?.textContent?.trim() ?? "",
-              control: focused.getAttribute("aria-label") ?? focused.textContent?.trim() ?? "",
+              control:
+                owner === focused.closest(".k2b-app-workspace__sidebar-item")
+                  ? (focused.getAttribute("aria-label") ?? focused.textContent?.trim() ?? "")
+                  : "tree node",
               preview: focused.matches(".k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger])"),
             };
           });
@@ -225,6 +297,11 @@ describe("@k2b/ui sidebar row controls", () => {
           "Action group and preview": touch ? ["Pin", "Share", "Review details"] : ["Pin", "Share"],
           "Visible action and chevron": ["Archive", "Open archive"],
           "Count and hover action": ["Inbox actions"],
+          "Tree row with sub-notes": ["Note actions"],
+          "Tree row with a date": ["Date actions"],
+          "Hover group": ["Pin"],
+          "Count and hover group": ["Pin", "Hide"],
+          "Object and hover group": ["Flag"],
         });
         // With a fine pointer alone, the focused preview button takes the place of the control before it.
         expect(previewFocused).toEqual({

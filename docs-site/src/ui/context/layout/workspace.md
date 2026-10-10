@@ -193,8 +193,11 @@ appears, so the label keeps its width and the text or metadata under the
 button fades out. A long label that scrolls on hover stops before the faded
 end. In a row that also shows an always-visible action or a
 `SidebarItemActions` group, the hover action keeps its own slot after them
-instead. Hidden metadata and `SidebarItemActions` take no space until
-revealed. Everything remains visible on touch devices. Actions also stay
+instead. A hover `SidebarItemActions` group that ends the row overlays its end
+the same way, before the chevron of a `NavTree` row, so revealing it moves
+nothing in the row; the fade covers one or two controls. Hidden metadata takes
+no space until revealed. Hidden actions are out of the tab order until their
+row shows them. Everything remains visible on touch devices. Actions also stay
 visible while a menu or other popup they opened is open, so the pointer can
 leave the row to reach it. Keep errors, unread counts, and other important
 state visible with the default `"always"` value.

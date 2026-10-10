@@ -24,7 +24,9 @@ const hoverActionRules = shippedRules
 const accessoryDisplayRules = shippedRules
   .filter(
     (rule) =>
-      rule.context === FINE_POINTER && rule.selector.includes('[data-visibility="hover"]') && cssDeclarations(rule.body).has("display"),
+      rule.context === FINE_POINTER &&
+      rule.selector.includes('[data-visibility="hover"]') &&
+      (cssDeclarations(rule.body).has("display") || cssDeclarations(rule.body).has("visibility")),
   )
   .map((rule) => {
     const selector = rule.selector.replaceAll(":hover", "[data-hover]").replaceAll(":focus-within", "[data-focus-within]");
@@ -110,9 +112,10 @@ const renderNoteTree = async () => {
     Array.from(menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')).find((candidate) => candidate.textContent === label)!;
   // Happy DOM keeps an element's :has() match when a descendant attribute such as aria-expanded
   // changes; a transient child clears that element's cache so every read starts from a fresh cascade.
-  const actionsDisplay = () => {
+  // Hidden hover actions keep their box and only become invisible, so nothing moves when they show.
+  const actionsVisibility = () => {
     actions.appendChild(dom.document.createComment("")).remove();
-    return getComputedStyle(actions).display;
+    return getComputedStyle(actions).visibility;
   };
   return {
     dom,
@@ -121,7 +124,7 @@ const renderNoteTree = async () => {
     trigger,
     menu,
     item,
-    actionsDisplay,
+    actionsVisibility,
     selected,
     cleanup: () => {
       dispose();
@@ -133,11 +136,11 @@ const renderNoteTree = async () => {
 test("a hover-only row menu stays open while the pointer travels into it", async () => {
   const view = await renderNoteTree();
   try {
-    expect(view.actionsDisplay()).toBe("none");
+    expect(view.actionsVisibility()).toBe("hidden");
 
     view.trigger.click();
     expect(view.trigger.getAttribute("aria-expanded")).toBe("true");
-    expect(view.actionsDisplay()).not.toBe("none");
+    expect(view.actionsVisibility()).toBe("visible");
 
     for (const [target, type] of [
       [view.node("recipes"), "pointerleave"],
@@ -150,14 +153,14 @@ test("a hover-only row menu stays open while the pointer travels into it", async
     await nextTask();
     expect(view.menu.matches(":popover-open")).toBe(true);
     expect(view.trigger.getAttribute("aria-expanded")).toBe("true");
-    expect(view.actionsDisplay()).not.toBe("none");
+    expect(view.actionsVisibility()).toBe("visible");
 
     view.item("Duplicate").click();
     await nextTask();
     expect(view.selected).toEqual(["duplicate"]);
     expect(view.menu.matches(":popover-open")).toBe(false);
     expect(view.trigger.getAttribute("aria-expanded")).toBe("false");
-    expect(view.actionsDisplay()).toBe("none");
+    expect(view.actionsVisibility()).toBe("hidden");
   } finally {
     view.cleanup();
   }
@@ -166,8 +169,8 @@ test("a hover-only row menu stays open while the pointer travels into it", async
 test("keyboard opens the row menu into a rendered item and Escape returns focus to the trigger", async () => {
   const view = await renderNoteTree();
   try {
-    const displayOnFocus: string[] = [];
-    view.menu.addEventListener("focusin", () => displayOnFocus.push(view.actionsDisplay()));
+    const visibilityOnFocus: string[] = [];
+    view.menu.addEventListener("focusin", () => visibilityOnFocus.push(view.actionsVisibility()));
     view.trigger.focus();
     view.trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
     expect(view.trigger.getAttribute("aria-expanded")).toBe("true");
@@ -176,9 +179,8 @@ test("keyboard opens the row menu into a rendered item and Escape returns focus 
 
     view.item("New sub-note").dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
     expect(view.dom.document.activeElement).toBe(view.item("Duplicate"));
-    // Focus inside a hidden subtree is dropped by the browser, so the menu's row actions must stay rendered.
-    expect(displayOnFocus).toHaveLength(2);
-    expect(displayOnFocus).not.toContain("none");
+    // Focus inside a hidden subtree is dropped by the browser, so the menu's row actions must stay visible.
+    expect(visibilityOnFocus).toEqual(["visible", "visible"]);
 
     view.item("Duplicate").dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     await nextTask();
@@ -237,7 +239,7 @@ const renderNestedTree = async () => {
     ["recipes", "soups", "stock"].filter((id) => {
       const actions = row(id).querySelector<HTMLElement>(":scope > .k2b-app-workspace__sidebar-item-actions")!;
       actions.appendChild(dom.document.createComment("")).remove();
-      return getComputedStyle(actions).display !== "none";
+      return getComputedStyle(actions).visibility !== "hidden";
     });
   return {
     dom,
