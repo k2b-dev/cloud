@@ -25,6 +25,7 @@ import {
   DraftSendInputSchema,
   DraftUpdateInputSchema,
   FolderListDataSchema,
+  MailboxBrowseDataSchema,
   MessageDataSchema,
   MessageListDataSchema,
   SubscriptionListDataSchema,
@@ -336,6 +337,7 @@ describe("mail capabilities", () => {
           name: "Support",
           description: null,
           permission: "write",
+          accessScope: "assigned",
           health: "active",
           healthReason: null,
           syncEnabled: true,
@@ -346,9 +348,20 @@ describe("mail capabilities", () => {
     const result = await query.run(query.input.parse({}), context);
     expect(result).toMatchObject({
       ok: true,
-      data: { data: [{ ref: { type: "mail.mailbox", id: mailboxId }, title: "Support", unreadCount: 7, needsActionCount: 3 }] },
+      data: {
+        data: [
+          {
+            ref: { type: "mail.mailbox", id: mailboxId },
+            title: "Support",
+            accessScope: "assigned",
+            unreadCount: 7,
+            needsActionCount: 3,
+          },
+        ],
+      },
     });
     if (!result.ok) throw new Error("Expected mailbox selection");
+    expect(capabilityResultSchema(MailboxBrowseDataSchema).safeParse(result.data).success).toBeTrue();
     expect(result.data.data[0]).not.toHaveProperty("health");
     expect(result.data.data[0]).not.toHaveProperty("syncEnabled");
     expect(result.data.data[0]).not.toHaveProperty("createdAt");

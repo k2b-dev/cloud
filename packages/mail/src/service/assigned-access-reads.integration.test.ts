@@ -742,7 +742,7 @@ suite("assigned-only Mail reads fail closed across services, HTTP and capabiliti
     const context = capContext(readerA);
     const listed = await mailCapabilities.queries["mailbox.list"].run(MailboxListInputSchema.parse({}), context);
     if (!listed.ok) throw new Error(listed.error.message);
-    expect(listed.data.data.map((item) => item.ref.id)).toEqual([mailboxShortId]);
+    expect(listed.data.data.map((item) => [item.ref.id, item.accessScope])).toEqual([[mailboxShortId, "assigned"]]);
     const search = mailCapabilities.queries["conversation.search"];
     const hidden = unwrap(
       await search.run(

@@ -20,6 +20,7 @@ describe("Mail agent contracts", () => {
       ref: { type: "mail.mailbox", id: "MbA123" },
       title: "Support",
       permission: "write",
+      accessScope: "mailbox",
       links: [{ rel: "open", href: "/app/mail/MbA123" }],
     };
     expect(MailboxListDataSchema.safeParse([{ ...base, health: "active", syncEnabled: true }]).success).toBeTrue();

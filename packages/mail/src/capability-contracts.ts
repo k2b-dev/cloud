@@ -121,10 +121,14 @@ export const MailboxDataSchema = z
     updatedAt: TimestampSchema,
   })
   .strict();
+const MailboxAccessScopeSchema = z
+  .enum(["mailbox", "assigned"])
+  .describe("assigned: the permission covers only conversations assigned to the caller, who cannot start new mail there.");
 export const MailboxListDataSchema = z
   .array(
     compactResourceViewSchema("mail.mailbox").extend({
       permission: z.enum(["read", "write", "admin"]),
+      accessScope: MailboxAccessScopeSchema,
       health: MailboxDataSchema.shape.health,
       healthReason: z.string().max(240).optional(),
       syncEnabled: z.boolean(),
@@ -156,6 +160,7 @@ export const MailboxBrowseDataSchema = z
     compactResourceViewSchema("mail.mailbox")
       .extend({
         permission: z.enum(["read", "write", "admin"]),
+        accessScope: MailboxAccessScopeSchema,
         unreadCount: z.number().int().nonnegative(),
         needsActionCount: z.number().int().nonnegative(),
         problem: z
