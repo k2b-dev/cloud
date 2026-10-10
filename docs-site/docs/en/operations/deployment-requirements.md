@@ -416,6 +416,10 @@ This Mail release lets a conversation have several assignees and adds mailbox
 grants that cover only assigned conversations. It needs no configuration
 change. Its first start creates `mail.conversation_assignees`, copies every
 existing assignment into it once, and creates `mail.mailbox_assigned_access`.
+Platform administrators now need a mailbox grant like everyone else: an
+incoming automation authorized by an administrator without one pauses its
+Spaces authorization on its next run until that person has a grant with Write
+access and authorizes it again.
 From then on the new table is the only source of assignments; Mail keeps the
 previous column `mail.conversations.assignee_user_id` at the earliest
 assignee so that an older image still shows one of them.

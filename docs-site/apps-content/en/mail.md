@@ -140,8 +140,10 @@ A conversation can have up to 20 assignees. People with mailbox-wide Write or
 Admin access assign them; each newly added person gets one notification per
 request. **Assigned to me** lists the conversations a person is one of the
 assignees of, and **Unassigned** the ones without an assignee who can still
-work on them. The API takes `assigneeUserIds` with the modes `add`, `remove`,
-and `replace` on `POST /api/mail/mailboxes/{mailboxId}/conversations/assign`,
+work on them. Only people being added must have access; someone whose access
+ended stays assigned until removed, also when others are added. The API takes
+`assigneeUserIds` with the modes `add`, `remove`, and `replace` on
+`POST /api/mail/mailboxes/{mailboxId}/conversations/assign`,
 and replaces the whole set with `assigneeUserIds` on the collaboration
 `PATCH`. Lists, search, focus items, and the workflow data type
 `mailConversation` report `assigneeUserIds`; collaboration reports
@@ -179,6 +181,9 @@ Such people:
 
 Every other conversation, message, draft, and attachment answers 404 to them,
 as if it did not exist, and they see and cancel only the commands they started.
+A reply draft or scheduled send disappears for them, and a scheduled send no
+longer goes out, once the message it answers or sends moves to a conversation
+they cannot see.
 A link to a folder without one of their conversations opens that folder empty,
 while a link to a folder that does not exist opens the mailbox, so such a link
 tells them only that the folder exists, never its name or content. When an
