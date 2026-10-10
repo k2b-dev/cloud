@@ -11,7 +11,10 @@ const directLaunch = /\b(?:chromium|firefox|webkit)\.(?:launch|connect)\w*\(/g;
 const playwrightImport = /\bfrom\s+["'](?:playwright|[^"']*\/test\/browser(?:\.ts)?)["']/;
 /** Integration tests run with `bun run test --integration`, in Chromium only. */
 const integrationImport = /scripts\/fixtures\/test-infra/;
-/** Assistant's artifact suites run nightly in Google Chrome, a Chromium channel, and never in the gate. */
+/**
+ * Assistant's artifact suites may still start Google Chrome, a Chromium channel, which runs only nightly.
+ * The artifact suites that import the launcher run in the gate's WebKit job like any other browser test.
+ */
 const exempt = /^packages\/assistant\/src\/artifacts\//;
 
 /**

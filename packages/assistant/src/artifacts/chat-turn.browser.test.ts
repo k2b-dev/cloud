@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { type Browser, chromium, type Page } from "playwright";
+import type { Browser, Page } from "playwright";
+import { launchBrowser } from "../../../ui/test/browser";
 import { appRuntimeRoute } from "./html/test-assets";
 
 // Where things stand when a long turn ends needs a real layout engine. The harness scripts one live turn with a Studio
@@ -65,8 +66,7 @@ beforeAll(async () => {
       );
     },
   });
-  // Like the other artifact browser suites, this runs nightly in Google Chrome rather than through the shared launcher.
-  browser = await chromium.launch({ channel: "chrome", headless: true });
+  browser = await launchBrowser();
 }, 60_000);
 
 afterAll(async () => {
@@ -164,7 +164,7 @@ for (const viewport of [
 
       // The turn ends: the same elements stay in place; only the work line text and the message actions change.
       await step(page, "finish");
-      await page.getByRole("button", { name: "Copy" }).waitFor();
+      await page.getByRole("button", { name: "Kopieren", exact: true }).waitFor();
       await announced(page, "Antwort fertig");
       const after = await measure(page);
       expect(after).toEqual(before);
