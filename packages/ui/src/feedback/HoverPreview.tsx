@@ -95,6 +95,8 @@ export function createHoverPreview<T>(options: HoverPreviewOptions<T> = {}): Hov
   /** The anchor that Space or `toggle()` opened the card for; only it outlasts the pointer leaving. */
   let pinned: Anchor<T> | undefined;
   let dismissed: Anchor<T> | undefined;
+  /** Where the mouse last moved on an anchor; a mouse rest checks this point when its delay ends. */
+  let mouse: { x: number; y: number } | undefined;
   let ring = true;
   let observer: ResizeObserver | undefined;
 
@@ -245,27 +247,30 @@ export function createHoverPreview<T>(options: HoverPreviewOptions<T> = {}): Hov
     return true;
   };
   /**
-   * Whether the mouse at the point of `pointer` still rests on `anchor`. A list
-   * that scrolls under a still mouse moves its rows before the browser reports
-   * another pointer event, in WebKit only once the scrolling stops.
+   * Whether the mouse still rests on `anchor`. A scrolling list or a layout
+   * change moves rows under a still mouse before the browser reports another
+   * pointer event; WebKit reports it only several scroll steps later.
    */
-  const restsOn = (anchor: Anchor<T>, pointer: PointerEvent) => {
-    const hit = document.elementFromPoint(pointer.clientX, pointer.clientY);
+  const restsOn = (anchor: Anchor<T>) => {
+    if (!mouse) return false;
+    // Inside a shadow root, the document reports only the shadow host.
+    const root = anchor.element.getRootNode();
+    const hit = (root instanceof ShadowRoot ? root : document).elementFromPoint(mouse.x, mouse.y);
     return hit !== null && anchor.element.contains(hit);
   };
   /**
    * Shows `anchor` after `delay`; a keyboard swap (`follow`) carries an existing
-   * pin along. A mouse rest passes its `pointer` event and shows the anchor only
-   * if it is still under the mouse.
+   * pin along. A mouse rest (`rest`) shows the anchor only if it still lies
+   * under the mouse.
    */
-  const schedule = (anchor: Anchor<T>, delay: number, follow = false, pointer?: PointerEvent) => {
+  const schedule = (anchor: Anchor<T>, delay: number, follow = false, rest = false) => {
     clear();
     if (!open()) {
       pending = anchor;
       document.addEventListener("keydown", escape);
     }
     timer = setTimeout(() => {
-      if (pointer && !restsOn(anchor, pointer)) clear();
+      if (rest && !restsOn(anchor)) clear();
       else if (open()) show(anchor, follow && pinned !== undefined);
       else if (blocked()) clear();
       else show(anchor, false);
@@ -308,14 +313,18 @@ export function createHoverPreview<T>(options: HoverPreviewOptions<T> = {}): Hov
       const pointerEnter = (event: PointerEvent) => {
         // Touch and pen have no resting hover; the card stays a mouse affordance.
         if (event.pointerType !== "mouse") return;
+        mouse = { x: event.clientX, y: event.clientY };
         clear();
         if ((open() && current() === entry) || dismissed === entry) return;
-        schedule(entry, open() ? SWAP_DELAY : (options.openDelay ?? 250), false, event);
+        schedule(entry, open() ? SWAP_DELAY : (options.openDelay ?? 250), false, true);
       };
       // The open delay counts from the moment the mouse rests. An open card
-      // swaps on entering another anchor and ignores movement inside it.
+      // swaps on entering another anchor; movement inside it only moves the
+      // position that the swap checks.
       const pointerMove = (event: PointerEvent) => {
-        if (event.pointerType === "mouse" && !open() && dismissed !== entry) schedule(entry, options.openDelay ?? 250, false, event);
+        if (event.pointerType !== "mouse") return;
+        mouse = { x: event.clientX, y: event.clientY };
+        if (!open() && dismissed !== entry) schedule(entry, options.openDelay ?? 250, false, true);
       };
       // A press acts on the row, such as opening it or its menu; a card about to open stays closed.
       const pointerDown = () => clear();

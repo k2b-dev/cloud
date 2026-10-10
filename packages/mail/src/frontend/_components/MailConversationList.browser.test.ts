@@ -538,8 +538,9 @@ describe("Mail quick look", () => {
         document
           .querySelector('.mail-list-entry[data-conversation-id="Cv0003"]')!
           .addEventListener("pointerenter", () => (body.entered = "true"));
-        // WebKit reports pointer events for rows that a list scrolls under a still mouse only once it stops.
-        for (const type of ["pointerover", "pointerenter", "pointermove", "pointerout", "pointerleave"]) {
+        // WebKit reports pointer events for rows that a list scrolls under a still mouse several scroll steps
+        // late, and the list's scroll event may arrive only after the delays ended.
+        for (const type of ["pointerover", "pointerenter", "pointermove", "pointerout", "pointerleave", "scroll"]) {
           window.addEventListener(type, (event) => body.held && event.stopImmediatePropagation(), true);
         }
       });
@@ -548,7 +549,7 @@ describe("Mail quick look", () => {
       // The browser may deliver the move after Playwright's call returned, in WebKit even after `:hover` matches.
       await page.waitForFunction(() => document.body.dataset.entered);
       await page.clock.runFor(50);
-      // The list scrolls three rows; its scroll event may arrive only after the delays ended.
+      // The list scrolls three rows.
       await page.evaluate(
         ([selector, by]) => {
           document.body.dataset.held = "true";

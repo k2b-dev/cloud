@@ -78,11 +78,12 @@ of the region, it does not open at all, so it never covers the list.
 - A resting mouse opens the card after `openDelay`. The delay starts again
   while the mouse moves over the anchor, and a press on the anchor cancels it.
   The card opens only if the anchor is still under the mouse when the delay
-  ends: a list that scrolls under a still mouse moves its rows before the
-  browser reports the pointer again, in WebKit only once the scrolling stops.
+  ends: a scrolling list or a layout change moves rows under a still mouse
+  before the browser reports the pointer again, WebKit several scroll steps late.
 - The card does not open while a menu, date picker, or other light-dismiss
   popover is open, so it never closes one that someone opened.
-- With the card open, moving to another anchor swaps the content after 90 ms.
+- With the card open, moving to another anchor swaps the content after 90 ms,
+  again only if that anchor is still under the mouse then.
 - The card stays open while the pointer moves into it. It closes 180 ms after
   the pointer leaves the anchor and the card.
 - Space and `toggle()` pin the card to their anchor: it stays open after the
