@@ -8,14 +8,17 @@
  * The field supports two operating modes:
  *
  *  - **Default mode** (no `incremental` option): rebuild on every
- *    doc change, rebuild on selection changes that cross a range
- *    boundary. Used by image/link extensions whose `build` already
- *    walks the syntax tree incrementally — a full call is cheap.
+ *    doc change and every newly delivered syntax tree, rebuild on
+ *    selection changes that cross a range boundary. Used by
+ *    image/link extensions whose `build` already walks the syntax
+ *    tree incrementally — a full call is cheap.
  *
  *  - **Incremental mode** (with `incremental.changesMightAffectSyntax`):
  *    on doc change, skip the rebuild when the doc has no relevant
  *    marker syntax AND the change doesn't introduce any, OR when
- *    the existing ranges are unaffected by the change. Used by
+ *    the existing ranges are unaffected by the change. A newly
+ *    delivered syntax tree always rebuilds, also when it arrives
+ *    with a doc change that carries it past its old end. Used by
  *    extensions whose `build` does a full `doc.toString() +
  *    regex.matchAll()` pass (katex, tag-pill) — those
  *    rebuilds are expensive enough to be worth gating.
@@ -36,7 +39,7 @@
  * an extra cached `blockWidgetDecorations` field that doesn't fit
  * the standard shape.
  */
-import { forceParsing } from "@codemirror/language";
+import { forceParsing, syntaxTree } from "@codemirror/language";
 import type { EditorState, Extension, SelectionRange, Transaction } from "@codemirror/state";
 import { Prec, StateEffect, StateField } from "@codemirror/state";
 import type { DecorationSet, ViewUpdate } from "@codemirror/view";
@@ -79,6 +82,13 @@ export const selectionIntersectsRange = (selection: SelectionRange, from: number
 export const isPointerSelectionTransaction = (tr: Transaction): boolean =>
   !tr.docChanged && !!tr.selection && tr.isUserEvent("select.pointer");
 
+/** True when a transaction changed the document or delivered a new syntax tree.
+ *  CodeMirror parses a long note in steps and hands each further part of the tree
+ *  over in a transaction without a document change, so a decoration field that
+ *  reads the tree must rebuild on both. Selection and focus transactions keep the
+ *  same tree and stay cheap. */
+export const treeOrDocChanged = (tr: Transaction): boolean => tr.docChanged || syntaxTree(tr.startState) !== syntaxTree(tr.state);
+
 export const refreshMarkdownDecorationsEffect = StateEffect.define<void>();
 
 export const initialMarkdownDecorationRefreshExtension = (): Extension =>
@@ -95,11 +105,11 @@ export const initialMarkdownDecorationRefreshExtension = (): Extension =>
         this.raf = window.requestAnimationFrame(() => {
           this.raf = null;
           this.attempts += 1;
-          // Markdown parsing is viewport/background-driven. Force one parse
-          // pass after mount so syntax-tree based widgets don't stay raw until
-          // the first cursor transaction.
+          // Markdown parsing is viewport/background-driven. Force the parse
+          // to the end after mount so syntax-tree based widgets don't stay raw
+          // until the parser reaches them. forceParsing hands a newer tree over
+          // in a transaction, and every tree-based field rebuilds on it.
           const parsed = forceParsing(this.view, this.view.state.doc.length, 50);
-          this.view.dispatch({ effects: refreshMarkdownDecorationsEffect.of() });
           if (!parsed && this.attempts < 4) this.schedule();
         });
       }
@@ -246,6 +256,13 @@ const mapRanges = (tr: Transaction, ranges: CursorZoneRange[]): CursorZoneRange[
     }))
     .filter((r) => r.from < r.to);
 
+/** True when a doc change also carried the syntax tree past the end of the previous,
+ *  partial tree. CodeMirror parses up to the viewport while it applies an edit, so an
+ *  edit after a jump into the unparsed end of a long note can bring new code or math
+ *  nodes that the incremental skip checks can't see. */
+const treeGrewPastOldEnd = (tr: Transaction): boolean =>
+  syntaxTree(tr.state).length > tr.changes.mapPos(syntaxTree(tr.startState).length, 1);
+
 export const cursorZoneStateField = (
   build: (state: EditorState) => CursorZoneState,
   incremental?: IncrementalOptions,
@@ -257,7 +274,7 @@ export const cursorZoneStateField = (
         return build(tr.state);
       }
       if (tr.docChanged) {
-        if (incremental) {
+        if (incremental && !treeGrewPastOldEnd(tr)) {
           const decorations = value.decorations.map(tr.changes);
           const atomicDecorations = value.atomicDecorations?.map(tr.changes);
           const mightAffect = incremental.changesMightAffectSyntax(tr);
@@ -280,6 +297,7 @@ export const cursorZoneStateField = (
         }
         return build(tr.state);
       }
+      if (treeOrDocChanged(tr)) return build(tr.state);
       if (!tr.selection) return value;
       const oldKey = cursorKey(tr.startState, value.ranges);
       const newKey = cursorKey(tr.state, value.ranges);

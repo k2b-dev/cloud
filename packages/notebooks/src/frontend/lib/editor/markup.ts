@@ -14,6 +14,7 @@ import type { EditorState, Extension, Range } from "@codemirror/state";
 import { RangeSet, StateField } from "@codemirror/state";
 import type { DecorationSet } from "@codemirror/view";
 import { Decoration, EditorView, WidgetType } from "@codemirror/view";
+import { treeOrDocChanged } from "./_lib/cursor-zone-field";
 
 // =============================================================================
 // Widgets
@@ -316,8 +317,8 @@ export const markupExtension = (): Extension => {
       };
     },
     update(value, tr) {
-      if (tr.docChanged) {
-        // Doc changed — full rebuild. Track ranges anew.
+      if (treeOrDocChanged(tr)) {
+        // Doc or syntax tree changed — full rebuild. Track ranges anew.
         const tracked = collectMarkupTrackedRanges(tr.state);
         return {
           decorations: RangeSet.of(buildDecorations(tr.state), true),
