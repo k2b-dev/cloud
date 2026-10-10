@@ -15,6 +15,7 @@ import {
   Select,
   Slider,
   Switch,
+  suppressTextSelection,
   Tooltip,
   useLocale,
 } from "@k2b/ui";
@@ -485,6 +486,8 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
     if (cropBusy() || dragging() || !e.isPrimary || (e.pointerType === "mouse" && e.button !== 0)) return;
     e.preventDefault();
     e.stopPropagation();
+    // A crop drag can leave the image across the inspector; the pointer's own pointerup or pointercancel ends the hold.
+    suppressTextSelection(e.pointerId);
     setDragging(handle);
     setDragStart({ ...getCropPointerPos(e), rect: { ...cropRect() }, pointerId: e.pointerId });
   };

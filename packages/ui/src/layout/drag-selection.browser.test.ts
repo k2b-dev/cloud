@@ -126,6 +126,11 @@ describe("workspace resize drag", () => {
     const page = await load();
     try {
       const before = await inlineStyles(page);
+      // The handle itself never starts a selection, however early the platform resolves the gesture.
+      const handleUserSelect = await page
+        .locator('[data-app-workspace-resize="sidebar"]')
+        .evaluate((element) => getComputedStyle(element).getPropertyValue("-webkit-user-select"));
+      expect(handleUserSelect).toBe("none");
       const handle = await page.locator('[data-app-workspace-resize="sidebar"]').boundingBox();
       const text = await page.locator("#text").boundingBox();
       const y = text!.y + 10;
