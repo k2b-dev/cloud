@@ -206,11 +206,12 @@ export default function Layout(props: LayoutProps) {
   if (!page.title) page.title = pageTitle;
   const breadcrumbs: Breadcrumb[] = !title ? [{ title: appName }] : typeof title === "string" ? [{ title }] : title;
   // The way up is derived from the title array by one rule (see `derivePageTrail`). Anonymous pages keep their
-  // header breadcrumbs, and focus surfaces such as pop-out editors have no way up; both show the title alone.
-  const pageTrail =
-    user && !focusMode
-      ? derivePageTrail(title ?? appName, currentRoute?.prefix, appName, `${pathname}${new URL(c.req.raw.url).search}`)
-      : { title: pageTitle, ancestors: [] };
+  // header breadcrumbs, and focus surfaces such as pop-out editors have no way up; both show the title alone. The
+  // canvas carries this for `layout.update()`.
+  const titleOnly = !user || focusMode;
+  const pageTrail = titleOnly
+    ? { title: pageTitle, ancestors: [] }
+    : derivePageTrail(title ?? appName, currentRoute?.prefix, appName, `${pathname}${new URL(c.req.raw.url).search}`);
   const showRail = !!user;
   // The profile menu offers the mobile app only while the installation runs it.
   const appHref = user && isPwaShellAvailable(runtime.apps) ? "/me/app" : undefined;
@@ -234,6 +235,7 @@ export default function Layout(props: LayoutProps) {
           style={canvasStyle}
           data-app-id={currentApp?.id}
           data-app-base={currentRoute?.prefix}
+          data-page-trail-title-only=""
           data-layout-full-page="true"
           data-workspace-sidebar-collapsed={workspaceLayout?.sidebarCollapsed ? "true" : undefined}
         >
@@ -259,6 +261,7 @@ export default function Layout(props: LayoutProps) {
         style={canvasStyle}
         data-app-id={currentApp?.id}
         data-app-base={currentRoute?.prefix}
+        data-page-trail-title-only={titleOnly ? "" : undefined}
         data-layout-full-page={fullPage ? "true" : undefined}
         data-layout-authenticated={showRail ? "true" : undefined}
         data-workspace-sidebar-collapsed={workspaceLayout?.sidebarCollapsed ? "true" : undefined}

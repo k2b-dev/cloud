@@ -80,12 +80,17 @@ const AccountsWorkspace = (props: { children: JSX.Element }) => (
     </AppWorkspace.Content>
   </AppWorkspace>
 );
+const folderHref = (depth: number) => `/app/files?path=${encodeURIComponent(folders.slice(0, depth).join("/"))}`;
 const filesTitle = (depth: number): Title => [
   { title: "Files", href: "/app/files" },
-  ...folders
-    .slice(0, depth - 1)
-    .map((name, index) => ({ title: name, href: `/app/files?path=${encodeURIComponent(folders.slice(0, index + 1).join("/"))}` })),
+  ...folders.slice(0, depth - 1).map((name, index) => ({ title: name, href: folderHref(index + 1) })),
   { title: folders[depth - 1]! },
+];
+/** A document in the editor, as Files names it: its way up is its folder with the document's row selected. */
+const editorTitle = (depth: number, file: string): Title => [
+  ...filesTitle(depth).slice(0, -1),
+  { title: folders[depth - 1]!, href: `${folderHref(depth)}&file=${encodeURIComponent(file)}` },
+  { title: file.split("/").at(-1)! },
 ];
 
 export const server = new Hono()
@@ -103,6 +108,10 @@ export const server = new Hono()
         <Page c={c} title={[start, accountsRoot, { title: "Users" }]}>
           <AccountsWorkspace>
             <h1 class="p-3 font-semibold">{group ? `Users in ${group}` : "Users"}</h1>
+            {/* A region that scrolls sideways once its content arrives, as a wide table that renders late does. */}
+            <div data-scroll-preserve="accounts-wide" class="accounts-wide" style="width:300px;overflow:auto">
+              <div class="accounts-wide-content" style="width:300px;height:8px" />
+            </div>
             <table class="w-full">
               <tbody>
                 {shown.map((uid) => (
@@ -137,8 +146,9 @@ export const server = new Hono()
     "/app/files",
     ...probe.ssr((c) => {
       const depth = (c.req.query("path") ?? "").split("/").filter(Boolean).length || 1;
+      const file = c.req.query("view") === "edit" ? c.req.query("file") : undefined;
       return () => (
-        <Page c={c} title={filesTitle(depth)}>
+        <Page c={c} title={file ? editorTitle(depth, file) : filesTitle(depth)}>
           <AppWorkspace mobileSurface="flush" class="min-h-0 flex-1">
             <AppWorkspace.Sidebar id="files-navigation" label="Storage">
               <AppWorkspace.SidebarDesktop>

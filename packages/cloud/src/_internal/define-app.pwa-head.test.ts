@@ -67,7 +67,7 @@ const WEB_DOCUMENT = `<!DOCTYPE html>
     <link rel="stylesheet" href="/public/global.css?v=*">
     <script>!function(){var e=document.documentElement;if(!e.hasAttribute("data-theme-fixed")){var t="light";document.cookie.split(";").forEach(function(e){var r=e.trim(),i=r.indexOf("=");if(i>0&&r.slice(0,i)==="theme"){var o;try{o=decodeURIComponent(r.slice(i+1))}catch(e){o=r.slice(i+1)}(o==="light"||o==="dark")&&(t=o)}});e.classList.remove("light","dark");e.classList.add(t)}}();</script>
   </head>
-  <body class="k2b-ui" data-k2b-app-workspace-controller="global" data-k2b-page-title-controller="global">
+  <body class="k2b-ui" data-k2b-app-workspace-controller="global">
     body
   </body>
   <style>solid-client,solid-island{display:contents}</style>

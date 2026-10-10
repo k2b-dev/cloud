@@ -15,6 +15,7 @@ const { defineApp } = await import("../_internal/define-app");
 const { person } = await import("../_internal/define-app.test-fixture");
 const railSnapshot = await import("../services/rail-snapshot");
 const settingsMiddleware = await import("../server/middleware/settings");
+const help = await import("./help");
 const { defaultRailPreferences } = await import("../contracts/rail-preferences");
 const { default: Layout } = await import("./Layout");
 const { default: MinimalLayout } = await import("./MinimalLayout");
@@ -73,6 +74,24 @@ const server = new Hono()
           get children() {
             return `Admin content locale=${createComponent(() => useLocale()(), {})}`;
           },
+        }),
+    ),
+  )
+  // Admin pages of Core (prefix `/admin`) and of an app (its own `/admin/...` prefix), signed in.
+  .get(
+    "/admin/*",
+    async (c, next) => {
+      const core = { id: "core-probe", name: "Core", icon: "ti ti-settings", description: "Core", routes: ["/admin"] };
+      c.set("runtime" as never, { apps: [core, { ...badgeApps[1], routes: ["/app/mail-probe", "/admin/mail-probe"] }] } as never);
+      c.set("user" as never, person as never);
+      await next();
+    },
+    ...app.ssr(
+      (c) => () =>
+        createComponent(AdminLayout, {
+          c,
+          title: c.req.query("title") ?? "Settings",
+          children: "Admin content",
         }),
     ),
   )
@@ -178,6 +197,25 @@ describe("Cloud layouts SSR", () => {
     expect(bounded).toMatch(/k2b-app-workspace__main[^>]+data-scroll="false"/);
     expect(bounded).not.toContain("p-[var(--ui-space-shell)]");
   });
+  test("every admin page is one level below Admin, whether Core or an app owns it", async () => {
+    const spies = [
+      spyOn(railSnapshot, "readRailSnapshot").mockResolvedValue(defaultRailPreferences()),
+      spyOn(settingsMiddleware, "preloadLayoutAnnouncements").mockResolvedValue(undefined),
+      spyOn(help, "preloadLayoutHelp").mockResolvedValue(null),
+    ];
+    try {
+      const trailOf = async (path: string) => {
+        const html = await (await server.request(path, { headers: { "Accept-Language": "en" } })).text();
+        return JSON.parse(html.match(/<script type="application\/json" data-k2b-page-trail>([^<]*)<\/script>/)?.[1] ?? "null");
+      };
+      expect(await trailOf("/admin/settings")).toEqual({ title: "Settings", ancestors: [] });
+      expect(await trailOf("/admin/mail-probe/security?title=Mail%20security")).toEqual({ title: "Mail security", ancestors: [] });
+      expect(await trailOf("/admin/overview?title=Overview")).toEqual({ title: "Admin", ancestors: [] });
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
+  });
+
   test("keeps anonymous login and preferences visible without rendering the application rail", async () => {
     const response = await server.request("/layout", {
       headers: { Cookie: "theme=dark", "Accept-Language": "de-CH" },

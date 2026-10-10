@@ -33,13 +33,10 @@ export default function AdminLayout(props: Props) {
   const url = new URL(c.req.raw.url);
   const currentPath = `${url.pathname}${url.search}`;
   const runtime = getLocalizedRuntimeContext(c);
-  const breadcrumbs: Breadcrumb[] = [
-    { title: t.start, href: "/" },
-    { title: t.admin, href: "/admin" },
-  ];
-  if (title !== "Overview" && title !== t.overview) {
-    breadcrumbs.push({ title });
-  }
+  // Admin is the area's root, as an app's root is: the rail and the admin sidebar lead there. So it is no level
+  // above an admin page, and every admin page shows its title alone, whichever app owns it.
+  const overview = title === "Overview" || title === t.overview;
+  const breadcrumbs: Breadcrumb[] = [{ title: t.start, href: "/" }, { title: overview ? t.admin : title }];
   return (
     <Layout c={c} fullWidth fullPage title={breadcrumbs}>
       <AppWorkspace mobileSurface="flush" class="min-h-0 flex-1" resizable={false}>

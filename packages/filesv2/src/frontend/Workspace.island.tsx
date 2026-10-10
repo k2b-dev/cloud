@@ -225,6 +225,18 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
       }),
     ),
   );
+  // The way up (the path above the title, or Alt+↑) moves between folders in place like every other link here,
+  // so uploads keep running and an open editor can ask about unsaved changes first.
+  onMount(() =>
+    onCleanup(
+      layout.handleUp((href) => {
+        const url = new URL(href, window.location.origin);
+        if (url.pathname !== "/app/filesv2") return false;
+        void go(`${url.pathname}${url.search}`);
+        return true;
+      }),
+    ),
+  );
 
   /*
    * Sidebar tree: subfolders are loaded on demand and lists are swapped only once fresh data arrived.

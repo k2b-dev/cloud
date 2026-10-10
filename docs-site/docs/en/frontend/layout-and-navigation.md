@@ -118,7 +118,9 @@ apps.
 1. The last entry is the page. Above it, Start (`href: "/"`), the app's own
    root (an `href` equal to the app's route prefix, such as `/app/accounts`),
    entries without an `href`, and an entry that links to the page itself are
-   dropped. The app bar already leads to Start and the app.
+   dropped. The app bar already leads to Start and the app. Admin is the root
+   of its area in the same way: an `AdminLayout` page shows its title alone,
+   whether Core or an application owns it.
 2. What remains are the levels below the app root. Their number alone decides
    the form:
 
@@ -139,9 +141,9 @@ focus-mode surfaces such as pop-out editors show the title alone.
 The way up appears where the page's title belongs:
 
 - In an `AppWorkspace`, its head above the work area shows it. On a one-level
-  page the head stays away from 1024 px, because the app's own heading names
-  the page; from 768 to 1023 px the head also holds the navigation button and
-  then shows the title alone.
+  page the head stays away from 1024 px, because the app's own heading or its
+  sidebar names the page and the app bar marks the app; from 768 to 1023 px
+  the head also holds the navigation button and then shows the title alone.
 - A page without a workspace gets a row from the shell above its content, only
   when there is a level above.
 - An app that draws its own header places `PageTrail` there, from
@@ -162,23 +164,43 @@ The links keep the parent's `href` from the title array, so a new tab, a
 copied link, and a reload lead to the page itself. A plain click returns to
 the page as this tab left it: Cloud remembers each page's last URL and scroll
 position per tab, so filters, search, and position survive the way down and
-back up, and the row that led down is marked. Put a list's filters into the
-parent's `href` when a page knows them, as Accounts does for its user list.
+back up, and the row that led down is marked. A page below the parent, such as
+a document whose address carries its folder's query, never counts as the
+parent. Put a list's filters into the parent's `href` when a page knows them,
+as Accounts does for its user list.
 
 **One level up** (`Alt+↑`, `⌥↑` on a Mac) goes to the parent the same way.
 It is a context command: help, the command palette, and the shortcut list show
-it, with the parent's name, only on a page with a level above, and it does
-nothing while the focus is in a text field.
+it, with the parent's name, only on a page with a level above. It does nothing
+while the focus is in a text field, and a focused widget that uses the keys
+itself keeps them, such as a tree item that moves up or an open list.
 
 After an in-page navigation, call `layout.update()` from the island with the
-new title array; the way up, the head, and `PageTrail` follow. `title` alone
-renames the page and keeps the levels above it:
+new title array; the way up, the head, and `PageTrail` follow, also a
+`PageTrail` rendered on the server. The array follows the same rule as on the
+server. Cloud finds a link to the page itself by the address at the end of the
+current task, so change the address in the same task, before or after the
+call. `title` alone renames the page and keeps the levels above it:
 
 ```ts
 import { layout } from "@k2b/cloud/ssr/layout-runtime";
 
 layout.update({ breadcrumbs: [{ title: "Files", href: "/app/files" }, ...folders, { title: folder.name }] });
 layout.update({ title: note.title });
+```
+
+An island that navigates in place, such as a file browser with running
+uploads, takes the way up itself: `layout.handleUp()` gets the destination,
+the parent as this tab left it, and returns `true` when the island goes there
+in place. Otherwise the page loads.
+
+```ts
+const stop = layout.handleUp((href) => {
+  if (new URL(href, location.origin).pathname !== "/app/files") return false;
+  void openFolder(href);
+  return true;
+});
+onCleanup(stop);
 ```
 
 Do not add a back button of your own for a page the title array already

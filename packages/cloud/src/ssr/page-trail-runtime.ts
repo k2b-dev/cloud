@@ -9,6 +9,7 @@
 
 import { PAGE_TRAIL_EVENT, readPageTrail } from "@k2b/ui";
 import { registerContextAwareCommand } from "../browser/command-bridge";
+import { PAGE_UP_EVENT, type PageUpDetail } from "./layout-runtime";
 
 const STORAGE_KEY = "cloud:page-trail";
 /**
@@ -23,7 +24,8 @@ const TRAIL_LINK = "a[data-k2b-page-trail-link]";
 const MAIN = ".layout-content-main";
 
 type Region = { key: string; top: number; left: number };
-type Visit = { url: string; regions: Region[] };
+/** A page as this tab left it; `up` holds the links of the levels above it then. */
+type Visit = { url: string; regions: Region[]; up?: string[] };
 type Memory = { visits: Visit[]; returning?: { url: string; from: string } };
 
 const read = (): Memory => {
@@ -52,6 +54,11 @@ const isPage = (visited: URL, target: URL) =>
   visited.origin === target.origin &&
   pathOf(visited) === pathOf(target) &&
   [...target.searchParams].every(([key, value]) => visited.searchParams.getAll(key).includes(value));
+/** How many of `from`'s query values `url` carries, less the ones the two do not share. */
+const queryMatch = (url: URL, from: URL) => {
+  const shared = [...url.searchParams].filter(([key, value]) => from.searchParams.getAll(key).includes(value)).length;
+  return 2 * shared - ([...url.searchParams].length - shared) - ([...from.searchParams].length - shared);
+};
 
 /** The page's scroll positions: the window, the shell's page scroller, and every keyed `data-scroll-preserve` region. */
 const captureRegions = (): Region[] => {
@@ -65,25 +72,38 @@ const captureRegions = (): Region[] => {
   return regions.filter((region) => region.top || region.left);
 };
 
-/** Remembers the page as it is now, newest first. */
+/** Remembers the page as it is now, newest first, with the levels above it. */
 export const rememberPage = () => {
   const memory = read();
   const url = here();
-  memory.visits = [{ url, regions: captureRegions() }, ...memory.visits.filter((visit) => visit.url !== url)].slice(0, VISIT_LIMIT);
+  const up = readPageTrail()?.ancestors.map((level) => level.href) ?? [];
+  memory.visits = [{ url, regions: captureRegions(), up }, ...memory.visits.filter((visit) => visit.url !== url)].slice(0, VISIT_LIMIT);
   write(memory);
 };
 
-/** Where an up link leads in this tab: the page's last URL here, or its own `href`. */
+/**
+ * Where an up link leads in this tab: the page's last URL here, or its own
+ * `href`. A page below the target is never that page, even when its address
+ * carries the target's query, as a Files document carries its folder's: it
+ * names the target as a level above it.
+ */
 export const upDestination = (href: string): string => {
   const target = resolve(href);
-  const visit = read().visits.find((candidate) => isPage(resolve(candidate.url), target));
+  const below = (visit: Visit) => (visit.up ?? []).some((level) => isPage(resolve(level), target) && isPage(target, resolve(level)));
+  const visit = read().visits.find((candidate) => isPage(resolve(candidate.url), target) && !below(candidate));
   return visit?.url ?? `${target.pathname}${target.search}${target.hash}`;
 };
 
-/** Goes one or more levels up to `href`, back to how this tab left that page. */
+/**
+ * Goes one or more levels up to `href`, back to how this tab left that page.
+ * An island that navigates in place takes the way up itself (see
+ * `layout.handleUp`); otherwise the page loads.
+ */
 export const goUp = (href: string) => {
   rememberPage();
   const destination = upDestination(href);
+  const detail: PageUpDetail = { href: destination };
+  if (!window.dispatchEvent(new CustomEvent(PAGE_UP_EVENT, { cancelable: true, detail }))) return;
   const memory = read();
   memory.returning = { url: destination, from: here() };
   write(memory);
@@ -95,6 +115,9 @@ const regionElement = (key: string): HTMLElement | null =>
     ? document.querySelector<HTMLElement>(MAIN)
     : document.querySelector<HTMLElement>(`[data-scroll-preserve="${CSS.escape(key)}"]`);
 
+/** Scores of links to the page itself rank above every link to a page above it, which score by path length. */
+const SAME_PAGE = 1_000_000;
+
 /**
  * The link on this page that led towards `from`: the same page, or, for
  * nested paths, the nearest page above it. Navigation, the rail, and trails
@@ -102,17 +125,18 @@ const regionElement = (key: string): HTMLElement | null =>
  */
 const rowTowards = (from: URL): HTMLElement | null => {
   const scope = document.querySelector(MAIN) ?? document.body;
-  let best: { element: HTMLAnchorElement; length: number } | null = null;
+  let best: { element: HTMLAnchorElement; score: number } | null = null;
   for (const link of scope.querySelectorAll<HTMLAnchorElement>("a[href]")) {
     if (link.closest(".k2b-page-title, .k2b-app-workspace__sidebar, .layout-rail, nav")) continue;
     const url = resolve(link.getAttribute("href") ?? "");
     if (url.origin !== from.origin) continue;
-    // The row may carry the list's query or leave it out; either way it names the same page.
-    const exact = isPage(from, url) || isPage(url, from);
-    const above = !exact && url.search === "" && pathOf(from).startsWith(`${pathOf(url)}/`);
-    if (!exact && !above) continue;
-    const length = exact ? Number.MAX_SAFE_INTEGER : pathOf(url).length;
-    if (!best || length > best.length) best = { element: link, length };
+    // The row may carry the list's query or leave it out; either way it names the same page. The closer its query
+    // is to `from`'s, the surer it is the row: a link without one, such as "All things", only names the list.
+    const same = isPage(from, url) || isPage(url, from);
+    const above = !same && url.search === "" && pathOf(from).startsWith(`${pathOf(url)}/`);
+    if (!same && !above) continue;
+    const score = same ? SAME_PAGE + queryMatch(url, from) : pathOf(url).length;
+    if (!best || score > best.score) best = { element: link, score };
   }
   return best ? (best.element.closest<HTMLElement>("tr, [role='row'], li") ?? best.element) : null;
 };
@@ -124,16 +148,17 @@ const restoreReturn = (visit: Visit | undefined, from: URL) => {
   let frames = 0;
   const step = () => {
     for (const [key, region] of pending) {
+      // A region is restored once both axes hold; content that renders late can still widen or lengthen it.
       if (key === "@window") {
         window.scrollTo(region.left, region.top);
-        if (Math.abs(window.scrollY - region.top) < 1) pending.delete(key);
+        if (Math.abs(window.scrollY - region.top) < 1 && Math.abs(window.scrollX - region.left) < 1) pending.delete(key);
         continue;
       }
       const element = regionElement(key);
       if (!element) continue;
       element.scrollTop = region.top;
       element.scrollLeft = region.left;
-      if (Math.abs(element.scrollTop - region.top) < 1) pending.delete(key);
+      if (Math.abs(element.scrollTop - region.top) < 1 && Math.abs(element.scrollLeft - region.left) < 1) pending.delete(key);
     }
     if (!marked?.isConnected) {
       marked = rowTowards(from);
@@ -181,9 +206,10 @@ const offerPageUp = (labels: PageUpLabels): (() => void) => {
 };
 
 /**
- * Installs the runtime for the document. Every click remembers the page as it
- * is before anything navigates; a plain click on a trail link goes up through
- * the memory. Returns the disposer.
+ * Installs the runtime for the document. Every click and Enter remembers the
+ * page as it is before anything navigates, also in place, as a list row that
+ * opens on Enter does; a plain click on a trail link goes up through the
+ * memory. Returns the disposer.
  */
 export const installPageTrailRuntime = (labels: PageUpLabels): (() => void) => {
   const stopPageUp = offerPageUp(labels);
@@ -200,6 +226,9 @@ export const installPageTrailRuntime = (labels: PageUpLabels): (() => void) => {
       );
   }
   const onCapture = () => rememberPage();
+  const onKey = (event: KeyboardEvent) => {
+    if (event.key === "Enter") rememberPage();
+  };
   const onClick = (event: MouseEvent) => {
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     const link = (event.target as Element | null)?.closest?.<HTMLAnchorElement>(TRAIL_LINK);
@@ -208,11 +237,13 @@ export const installPageTrailRuntime = (labels: PageUpLabels): (() => void) => {
     goUp(link.href);
   };
   document.addEventListener("click", onCapture, true);
+  document.addEventListener("keydown", onKey, true);
   document.addEventListener("click", onClick);
   window.addEventListener("pagehide", onCapture);
   return () => {
     stopPageUp();
     document.removeEventListener("click", onCapture, true);
+    document.removeEventListener("keydown", onKey, true);
     document.removeEventListener("click", onClick);
     window.removeEventListener("pagehide", onCapture);
   };

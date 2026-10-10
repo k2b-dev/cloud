@@ -318,6 +318,28 @@ describe("the rule decides the form by depth", () => {
         if (device.width < 768) expect(entry.arrow?.label).toBe("Back to Website relaunch");
         else expect(entry.back).toMatchObject({ text: "Website relaunch", href: "/app/timetrack/projects/web" });
         expect(await page.locator(".timetrack-head .k2b-page-title__subtitle").textContent()).toBe("2:15 h");
+
+        // After an in-page navigation the server-rendered header follows, in its place and with its subtitle.
+        await page.evaluate(() => {
+          (window as unknown as { layout: { update: (value: unknown) => void } }).layout.update({
+            breadcrumbs: [
+              { title: "Time", href: "/app/timetrack" },
+              { title: "Other project", href: "/app/timetrack/projects/other" },
+              { title: "Second entry" },
+            ],
+          });
+          window.history.pushState(null, "", "/app/timetrack/entries/e2");
+        });
+        await settle(page);
+        const next = await trail(page);
+        expect(next.title).toMatchObject({ text: "Second entry", tag: "h1" });
+        if (device.width < 768) expect(next.arrow).toMatchObject({ label: "Back to Other project", href: "/app/timetrack/projects/other" });
+        else expect(next.back).toMatchObject({ text: "Other project", href: "/app/timetrack/projects/other" });
+        expect(await page.locator(".timetrack-head .k2b-page-title__subtitle").textContent()).toBe("2:15 h");
+        expect(await page.evaluate(() => document.querySelector(".timetrack-head")!.firstElementChild!.className)).toContain(
+          "k2b-page-title",
+        );
+        expect(next.shellRow?.display).toBe("none");
       } finally {
         await context.close();
       }
@@ -330,17 +352,27 @@ describe("layout.update() keeps the trail current", () => {
     const { context, page } = await open(laptop, "/app/accounts/users");
     try {
       type Update = { title?: string; breadcrumbs?: { title: string; href?: string }[] };
-      const update = (value: Update) =>
-        page.evaluate((next) => (window as unknown as { layout: { update: (value: Update) => void } }).layout.update(next), value);
+      // As an island does: it updates the title and moves to the new address in the same task.
+      const update = (value: Update, address?: string) =>
+        page.evaluate(
+          ([next, url]) => {
+            (window as unknown as { layout: { update: (value: Update) => void } }).layout.update(next as Update);
+            if (url) window.history.pushState(null, "", url as string);
+          },
+          [value, address] as const,
+        );
       expect((await trail(page)).head?.display).toBe("none");
-      await update({
-        breadcrumbs: [
-          { title: "Start", href: "/" },
-          { title: "Accounts", href: "/app/accounts" },
-          { title: "Users", href: "/app/accounts/users" },
-          { title: "user09" },
-        ],
-      });
+      await update(
+        {
+          breadcrumbs: [
+            { title: "Start", href: "/" },
+            { title: "Accounts", href: "/app/accounts" },
+            { title: "Users", href: "/app/accounts/users" },
+            { title: "user09" },
+          ],
+        },
+        "/app/accounts/users/user09",
+      );
       await settle(page);
       expect(await trail(page)).toMatchObject({
         head: { display: "flex" },
@@ -353,19 +385,26 @@ describe("layout.update() keeps the trail current", () => {
       await update({ title: "user09 (renamed)" });
       await settle(page);
       expect(await trail(page)).toMatchObject({ form: "back", title: { text: "user09 (renamed)" }, back: { text: "Users" } });
-      await update({
-        breadcrumbs: [
-          { title: "Accounts", href: "/app/accounts" },
-          { title: "Users", href: "/app/accounts/users" },
-          { title: "user09", href: "/app/accounts/users/user09" },
-          { title: "Keys" },
-        ],
-      });
+      await update(
+        {
+          breadcrumbs: [
+            { title: "Accounts", href: "/app/accounts" },
+            { title: "Users", href: "/app/accounts/users" },
+            { title: "user09", href: "/app/accounts/users/user09" },
+            { title: "Keys" },
+          ],
+        },
+        "/app/accounts/users/user09/keys",
+      );
       await settle(page);
       expect(await trail(page)).toMatchObject({ form: "path", crumbs: ["Users", "user09"], title: { text: "Keys" } });
-      await update({ breadcrumbs: [{ title: "Accounts", href: "/app/accounts" }, { title: "Users" }] });
+      await update({ breadcrumbs: [{ title: "Accounts", href: "/app/accounts" }, { title: "Users" }] }, "/app/accounts/users");
       await settle(page);
       expect((await trail(page)).head?.display).toBe("none");
+      // The array the server rendered, sent again: a link to the page itself is no level here either.
+      await update({ breadcrumbs: [{ title: "Users", href: "/app/accounts/users" }, { title: "All users" }] });
+      await settle(page);
+      expect(await trail(page)).toMatchObject({ head: { display: "none" } });
     } finally {
       await context.close();
     }
@@ -380,8 +419,22 @@ describe("going up returns to the page as this tab left it", () => {
     test(`${device.name}: the back link keeps filters and scroll and marks the row; a new tab gets the plain list`, async () => {
       const { context, page } = await open(device, "/app/accounts/users?group=sales");
       try {
+        // A wide region whose content arrives a few frames after the page, as a table an island renders.
+        await context.addInitScript(() => {
+          addEventListener("DOMContentLoaded", () => {
+            let frame = 0;
+            const widen = () => {
+              frame += 1;
+              if (frame < 8) requestAnimationFrame(widen);
+              else document.querySelector<HTMLElement>(".accounts-wide-content")?.style.setProperty("width", "3000px");
+            };
+            requestAnimationFrame(widen);
+          });
+        });
         await page.evaluate(() => {
           document.querySelector<HTMLElement>('[data-scroll-preserve="accounts-users"]')!.scrollTop = 600;
+          document.querySelector<HTMLElement>(".accounts-wide-content")!.style.width = "3000px";
+          document.querySelector<HTMLElement>('[data-scroll-preserve="accounts-wide"]')!.scrollLeft = 450;
         });
         const scrolled = await scrollOf(page);
         expect(scrolled).toBeGreaterThan(0);
@@ -398,6 +451,12 @@ describe("going up returns to the page as this tab left it", () => {
         await page.waitForFunction(() => document.querySelector("[data-page-trail-recent]"));
         expect(await scrollOf(page)).toBe(scrolled);
         expect(await page.locator("[data-page-trail-recent]").textContent()).toBe("user25");
+        // Sideways too, once the content is wide enough again.
+        await page.waitForFunction(() => document.querySelector<HTMLElement>(".accounts-wide-content")!.style.width === "3000px");
+        await settle(page);
+        expect(await page.evaluate(() => document.querySelector<HTMLElement>('[data-scroll-preserve="accounts-wide"]')!.scrollLeft)).toBe(
+          450,
+        );
 
         // Another tab has its own memory: the same link leads to the list itself.
         const other = await context.newPage();
@@ -441,6 +500,55 @@ describe("going up returns to the page as this tab left it", () => {
       } finally {
         await context.close();
       }
+    }
+  });
+
+  test("a widget that moves with Alt+↑, such as a tree item, keeps the keys", async () => {
+    const { context, page } = await open(laptop, "/app/accounts/users/user03");
+    try {
+      await page.evaluate(() => {
+        const item = document.createElement("div");
+        item.id = "movable";
+        item.tabIndex = 0;
+        item.setAttribute("role", "treeitem");
+        item.textContent = "Movable note";
+        item.addEventListener("keydown", (event) => {
+          if (!event.altKey || event.key !== "ArrowUp") return;
+          event.preventDefault();
+          item.dataset.moved = "up";
+        });
+        document.querySelector(".layout-content-main")!.append(item);
+      });
+      await page.locator("#movable").focus();
+      await page.keyboard.press("Alt+ArrowUp");
+      await settle(page);
+      expect(page.url()).toContain("user03");
+      expect(await page.locator("#movable").getAttribute("data-moved")).toBe("up");
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("from a document, the way up leads to its folder with the document's row, never back to the editor", async () => {
+    const folder = `/app/files?path=${encodeURIComponent(folders[0]!)}`;
+    const file = `${folders[0]}/plan.md`;
+    const { context, page } = await open(laptop, folder);
+    try {
+      for (const how of ["link", "keys"] as const) {
+        await page.evaluate((href) => window.location.assign(href), `${folder}&file=${encodeURIComponent(file)}&view=edit`);
+        await page.waitForURL((url) => url.searchParams.get("view") === "edit");
+        await settle(page);
+        if (how === "link") await page.locator(".k2b-page-title__up:visible").click();
+        else {
+          await page.locator("body").click({ position: { x: 600, y: 400 } });
+          await page.keyboard.press("Alt+ArrowUp");
+        }
+        await page.waitForURL((url) => url.searchParams.get("view") !== "edit", { timeout: 5_000 });
+        const landed = new URL(page.url()).searchParams;
+        expect({ how, path: landed.get("path"), file: landed.get("file") }).toEqual({ how, path: folders[0]!, file });
+      }
+    } finally {
+      await context.close();
     }
   });
 });
