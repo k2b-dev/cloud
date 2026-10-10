@@ -1,8 +1,17 @@
-import { expect, test } from "bun:test";
+import { expect, mock, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
 import type { Mailbox } from "../../contracts";
+
+/** The builder's dialog itself has its own tests; here only how often the list opens it matters. */
+const searchBuilderOpens: unknown[] = [];
+mock.module("./MailSearchBuilder", () => ({
+  openMailSearchBuilder: async (params: unknown) => {
+    searchBuilderOpens.push(params);
+    return undefined;
+  },
+}));
 
 const listProps = (requestUrl: string) => ({
   mailbox: { id: "Box001", name: "Support", health: "healthy" } as unknown as Mailbox,
@@ -103,6 +112,33 @@ test.skipIf(isServer)("the structured search summary is one named button that co
     expect(summary.querySelector("i.ti-filter-check")?.getAttribute("aria-hidden")).toBe("true");
     expect(summary.querySelector(".mail-search-summary__text")?.textContent).toContain("sdsd");
     expect(summary.parentElement?.querySelectorAll(":scope > button.mail-search-summary")).toHaveLength(1);
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
+test.skipIf(isServer)("search filters open one builder however often they are pressed while its code loads", async () => {
+  const dom = createDomTestHarness();
+  const { default: MailConversationList } = await import("./MailConversationList");
+  const dispose = render(
+    () => createComponent(MailConversationList, { ...listProps("/app/mail/Box001?q=sdsd"), query: "sdsd", onRefresh: async () => {} }),
+    dom.root,
+  );
+  try {
+    const filters = dom.root.querySelector<HTMLButtonElement>('button[aria-label="Search filters"]')!;
+    const summary = dom.root.querySelector<HTMLButtonElement>(".mail-search-summary")!;
+    filters.click();
+    // The trigger shows that it is busy and stays enabled, so it keeps focus for the dialog to return it.
+    expect(filters.getAttribute("aria-busy")).toBe("true");
+    expect(filters.disabled).toBe(false);
+    expect(filters.querySelector("i.ti-loader-2")).not.toBeNull();
+    filters.click();
+    summary.click();
+    for (let attempt = 0; attempt < 100 && filters.hasAttribute("aria-busy"); attempt += 1) await Bun.sleep(5);
+    expect(searchBuilderOpens).toHaveLength(1);
+    expect(filters.hasAttribute("aria-busy")).toBe(false);
+    expect(filters.querySelector("i.ti-adjustments-search")).not.toBeNull();
   } finally {
     dispose();
     dom.cleanup();

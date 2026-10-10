@@ -118,8 +118,8 @@ SolidJS library remains independent of Cloud and application domains.
   floating windows that cannot render fail alone behind a notice (add no wrappers). Prefer typed Hono clients over raw transport calls.
 - Invalidate the canonical read after writes instead of maintaining a second
   client-side domain model.
-- Keep reloadable state in the URL; automatic reloads use `reloadOnce()`. Live updates
-  use `defineLive()` and `liveConnection()`; acknowledge after a covering snapshot.
+- Keep reloadable state in the URL; automatic reloads use `reloadOnce()`, and code only an action needs loads
+  in it through `importOnDemand()`. Live updates use `defineLive()` and `liveConnection()`; acknowledge after a covering snapshot.
 - Hand islands the route as a path (`requestPath(c)` from `@k2b/cloud/ssr`),
   never the absolute request URL: behind the gateway its origin is the
   internal upstream, not the browser's.

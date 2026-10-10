@@ -2,11 +2,11 @@ import { documentNavigate } from "@k2b/ssr/nav";
 import { IconButton, ScrollArea, TextInput, useLocale } from "@k2b/ui";
 import { createSignal, For, type JSX, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
+import { importOnDemand } from "../browser/reload";
 import type { CloudTheme } from "../shared/theme";
 import { AppBadge, useAppBadgeDescription } from "./AppBadge";
 import { MobileProfileActions } from "./MobileProfileActions";
 import { platformMessages } from "./platform-messages";
-import { openRailEditor } from "./RailEditor";
 import { readRailContext } from "./rail-context";
 import { railMessages } from "./rail-messages";
 import { projectRailNavigation } from "./rail-navigation";
@@ -64,6 +64,7 @@ export const AppLaunchpadPanel = (
   const t = () => railMessages.resolve([locale()]).t;
   const rail = readRailContext();
   const [query, setQuery] = createSignal("");
+  const [editorLoading, setEditorLoading] = createSignal(false);
   const messages = () => platformMessages.resolve([locale()]).t;
   const matches = (label: string, description = "") =>
     `${label} ${description}`.toLocaleLowerCase(locale()).includes(query().trim().toLocaleLowerCase(locale()));
@@ -106,14 +107,22 @@ export const AppLaunchpadPanel = (
               label={t().customize}
               tooltip={t().customize}
               tooltipDelay={0}
+              aria-busy={editorLoading() ? "true" : undefined}
               onClick={async () => {
+                if (editorLoading()) return;
+                // The editor and its validation load only when someone customizes the app bar, while this panel
+                // stays open and shows that it is busy. The button stays enabled so it keeps focus.
+                setEditorLoading(true);
+                const editor = await importOnDemand(() => import("./RailEditor"));
+                setEditorLoading(false);
+                if (!editor) return;
                 if (props.beforeSelect) {
                   if (!(await props.beforeSelect())) return;
                 } else props.close();
-                openRailEditor(locale());
+                editor.openRailEditor(locale());
               }}
             >
-              <i class="ti ti-adjustments-horizontal" aria-hidden="true" />
+              <i class={editorLoading() ? "ti ti-loader-2 animate-spin" : "ti ti-adjustments-horizontal"} aria-hidden="true" />
             </IconButton>
           </div>
         </Show>
