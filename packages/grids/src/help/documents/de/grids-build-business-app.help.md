@@ -87,7 +87,7 @@ Die Vorlage **Rechnungswesen** bietet Rechnungen, Korrekturen und Provisionsguts
 
 **Offene Zahlungen** gruppiert Zahlungen in **Überfällig**, **Heute oder später fällig** und **Überzahlungen prüfen**. Öffne einen fälligen Betrag, um eine Zahlung zu erfassen. Eine Überzahlung öffnet den ursprünglichen Beleg zur Prüfung. Nur bestätigte Zahlungen zählen in diesen Listen.
 
-Wähle an einer finalisierten Rechnung **Als neue Rechnung übernehmen**, um einen neuen Entwurf mit Empfänger, Bestellreferenz und Positionen zu erstellen. Prüfe aktuelle Partnerangaben und Preise und wähle Leistungsdatum und Fälligkeit neu. Zahlungen, Korrekturen, interne Notizen und ausgestellte Dateien werden nicht übernommen.
+Wähle an einer finalisierten Rechnung **Als neue Rechnung übernehmen**, um einen neuen Entwurf mit Empfänger, Bestellreferenz und Positionen zu erstellen. Prüfe aktuelle Partnerangaben und Preise und wähle Leistungsdatum und Fälligkeit neu. Der neue Entwurf enthält keine Zahlungen, Korrekturen, internen Notizen oder ausgestellten Dateien.
 
 Partner erhalten eine schreibgeschützte Kundennummer wie KD-00001, die innerhalb der Base eindeutig ist. Du findest sie in der Partnerliste, der Empfängerauswahl, den Partnerdetails und den Belegdetails. Eine Umbenennung behält die Nummer.
 

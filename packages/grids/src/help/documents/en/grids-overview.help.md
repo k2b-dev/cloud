@@ -71,7 +71,7 @@ When you open Grids from the navigation, Grids returns to the Base page that you
 
 Use **New** in **Edit mode** to create a table, view, form, document template, workflow, or app. The menu offers only actions that you can use. For a resource that is based on a table, select a table. Grids preselects the current table when it fits. **View** opens the query editor, where you configure and save the view.
 
-You can always expand **Documents**. Open **All documents**, or select a template to see its generated documents. People with **Manage** access to the Base edit workflow email templates in **Settings → Email templates**.
+You can always expand **Documents**. Open **All documents**, or select a template to see its generated documents. Workflow email templates are in **Settings → Email templates**. Viewing, creating, editing, and deleting them require **Manage** access to the Base.
 
 In **Overview**, switch between **Groups** for shared shortcuts and **All resources** to search by name or type. The selected tab is part of the URL, so links, reloads, and browser history keep it. By default, a Base with groups opens on **Groups**, and a Base without groups opens on **All resources**. Opening a form still opens its form dialog.
 

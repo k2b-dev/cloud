@@ -42,7 +42,7 @@ Eine andere Person oder ein anderer Tab kann eine neuere Version gespeichert hab
 4. Speichere erneut.
 :::
 
-Felder, die du nicht geändert hast, übernehmen ihren aktuellen Wert. So überschreibt ein älteres Formular keine neuere Arbeit unbemerkt.
+Felder, die du nicht geändert hast, erhalten ihren aktuellen Wert. So überschreibt ein älteres Formular keine neuere Arbeit unbemerkt.
 
 Verlangt die Meldung einen Änderungskontext, beantworte die Fragen, die unter **Tabelleneinstellungen → Datenintegrität** konfiguriert sind. Geschützte Aktualisierungen, Papierkorbaktionen und Wiederherstellungen laufen ohne die erforderlichen Antworten nicht weiter.
 
@@ -117,7 +117,7 @@ Kann eine Aktion einer Grids App ihr Ergebnis nicht abrufen, wähle **Status pr�
 
 Ein `dryRun` zeichnet vorhergesagte Auswirkungen auf, führt aber keine Schreibvorgänge und keine externen Anfragen aus. Eine Wiederholung mit `execute` muss einen bewusst gewählten Idempotenzschlüssel verwenden. Empfänger externer HTTP-Anfragen müssen doppelte Anfragen so verarbeiten, dass sich ihre Wirkung nicht wiederholt.
 
-Prüfe bei Scanner-, Massen- und Grids-App-Aktionen die Diagnosen der gespeicherten Ausführungsoption, nachdem du Workflow-Eingaben geändert hast.
+Prüfe bei Scanner-, Bulk- und Grids-App-Aktionen die Diagnosen der gespeicherten Ausführungsoption, nachdem du Workflow-Eingaben geändert hast.
 
 ## Einen Workflow-Lauf finden, der nie erschienen ist {icon="route"}
 
@@ -127,7 +127,7 @@ Ein automatischer Lauf existiert nur, wenn die veröffentlichte Revision des Wor
 1. **Aktiviert:** Ein deaktivierter Workflow lehnt jeden `execute`-Lauf ab, auch Zeitpläne und Datensatzereignisse.
 2. **Veröffentlicht:** Der Trigger muss im veröffentlichten YAML stehen. Bearbeitest du die Quelle ohne zu speichern, ändert das nichts an der Auslösung.
 3. **Passender Trigger:** Vergleiche Datensatzereignis, optionale Tabellenbeschränkung und Filter mit deiner Änderung. Vergleiche Cron-Ausdruck und Zeitzone mit der erwarteten Zeit.
-4. **Aktivierungsfenster:** Grids erfasst eine Datensatzänderung nur, wenn sie nach der Aktivierung des Triggers geschah. Das Aktivieren des Workflows oder das Veröffentlichen eines geänderten Datensatztriggers startet dieses Fenster neu. Frühere Änderungen spielt Grids nicht erneut ab.
+4. **Aktivierungszeitraum:** Grids erfasst eine Datensatzänderung nur, wenn sie nach der Aktivierung des Triggers geschah. Das Aktivieren des Workflows oder das Veröffentlichen eines geänderten Datensatzereignis-Triggers startet diesen Zeitraum neu. Frühere Änderungen spielt Grids nicht erneut ab.
 5. **Verpasster Zeitplan:** Ein Zeitpunkt, der vergeht, während Grids nicht verfügbar ist, wird übersprungen und nicht nachgeholt. Der nächste Zeitpunkt läuft normal.
 6. **Zugriff der verantwortlichen Person:** Zeitpläne und Datensatzereignisse laufen als verantwortliche Person des Workflows. Grids lehnt den Aufruf ab, bevor ein Lauf entsteht, wenn diese Person keinen Zugriff **Bearbeiten** auf die Base mehr hat. Grids lehnt ihn auch ab, wenn sie einen Datensatz nicht lesen kann, den der Trigger an eine Eingabe bindet.
 :::

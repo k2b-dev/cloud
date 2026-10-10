@@ -5,7 +5,7 @@ icon: ti ti-route
 description: Wiederholbare Arbeit mit typisierten Eingaben, sicheren Aktionen und nachvollziehbaren Läufen automatisieren.
 order: 140
 ---
-Ein Workflow führt Schritte aus, die Datensätze ändern, Dokumente erzeugen, E-Mails senden und HTTP-Endpunkte aufrufen. Jeder Lauf behält seine veröffentlichte Revision und seine Ergebnisse. Änderungen am Workflow betreffen laufende Läufe nicht.
+Ein Workflow führt Schritte aus, die Datensätze ändern, Dokumente erzeugen, E-Mails senden und HTTP-Endpunkte aufrufen. Jeder Lauf behält seine veröffentlichte Revision und seine Ergebnisse. Änderungen am Workflow betreffen bereits gestartete Läufe nicht.
 
 Verwende Formeln für Werte, Formulare zum Erstellen von Datensätzen und Workflows für Vorgänge mit mehreren Schritten. Gib jedem Workflow ein klares Ergebnis.
 
@@ -78,7 +78,7 @@ Ausführungsoptionen stehen außerhalb des YAML. Scanner ordnen gescannten Text 
 
 :::reference
 - **Eingaben:** Typisierte Werte eines direkten Aufrufs, einer Ausführungsoption oder eines automatischen Triggers. Grids löst Datensatzeingaben auf, bevor die Schritte laufen.
-- **Revision:** Ein Lauf schreibt seine Startrevision fest und führt diesen Plan bis zum Ende aus. Bearbeiten, Wiederherstellen oder Deaktivieren des Workflows verändert einen bereits laufenden Lauf nicht.
+- **Revision:** Ein Lauf schreibt seine Startrevision fest und führt diesen Plan bis zum Ende aus. Bearbeiten, Wiederherstellen oder Deaktivieren des Workflows verändert einen bereits gestarteten Lauf nicht.
 - **Schritte:** Aktionen und Kontrollfluss werden der Reihe nach ausgeführt. Ein fehlgeschlagener Schritt stoppt den Lauf und schreibt Meldung und Fehlercode in den Verlauf des Laufs.
 - **Beobachtung:** Jeder Lauf bewahrt Revision, Modus, Kanal, Eingaben, Status, Zeiten, Schrittergebnisse, Ergebnis oder Fehler und generierte Dokumente auf.
 :::
@@ -89,9 +89,9 @@ Ein Idempotenzschlüssel identifiziert einen logischen Aufruf. Eine Wiederholung
 
 ### Den Lebenszyklus eines Laufs verfolgen
 
-Das Starten eines Workflows erstellt sofort einen Lauf. Öffne ihn, um aktuellen Status, Fortschrittsmeldung, Eingaben, auslösende Stelle, Ausführungsoption und einzelne Schritte zu verfolgen. Ein Lauf kann auf externe Arbeit warten, ohne als fehlgeschlagen zu erscheinen. Seine Details benennen, worauf sie wartet.
+Das Starten eines Workflows erstellt sofort einen Lauf. Öffne ihn, um aktuellen Status, Fortschrittsmeldung, Eingaben, auslösende Stelle, Ausführungsoption und einzelne Schritte zu verfolgen. Ein Lauf kann auf externe Arbeit warten, ohne als fehlgeschlagen zu erscheinen. Seine Details benennen, worauf er wartet.
 
-Du kannst einen eingereihten, laufenden oder wartenden Lauf abbrechen. Der Abbruch ist eine Anfrage: Der ausführende Worker bemerkt sie und wickelt seinen aktuellen Zustand ab, statt den Lauf unter ihm zu löschen. Spätere Schritte werden gestoppt. Bereits abgeschlossene Datensatzänderungen, Dokumente, E-Mails oder HTTP-Anfragen werden nicht rückgängig gemacht. Behandle diese Auswirkungen bei Bedarf ausdrücklich.
+Du kannst einen eingereihten, laufenden oder wartenden Lauf abbrechen. Der Abbruch ist eine Anfrage: Der ausführende Worker bemerkt sie und wickelt seinen aktuellen Zustand ab, statt den Lauf unter ihm zu löschen. Spätere Schritte werden gestoppt. Bereits abgeschlossene Datensatzänderungen, Dokumente, E-Mails oder HTTP-Anfragen werden nicht rückgängig gemacht. Prüfe diese Auswirkungen und korrigiere sie bei Bedarf selbst.
 
 **Erneut ausführen** öffnet den Eingabedialog mit den Eingaben des ausgewählten Laufs und startet danach die aktuelle Revision des Workflows im Modus des ursprünglichen Laufs. Prüfe die Eingaben vor dem Start, weil sich der Workflow inzwischen geändert haben kann. Öffne in den Details des Laufs die verknüpfte Revision, um genau zu prüfen, was ein älterer Lauf ausgeführt hat.
 
@@ -115,7 +115,7 @@ Jede Eingabe besitzt `type`. Optionale Texte `label` und `description` erscheine
 
 Dezimalfelder akzeptieren das Dezimaltrennzeichen der Sprache, ohne Tausendertrennzeichen. Der Lauf erhält normalisierte Dezimalstrings ohne Gleitkommakonvertierung im unterstützten Wertebereich gewöhnlicher Zahlenfelder. Verwende `decimal` für exakte Beträge.
 
-Bevor die Schritte starten, prüft Grids, ob jede Datensatzeingabe zur gebundenen Tabelle gehört und die aufrufende Person sie aktuell lesen kann. Unbekannte Eingaben, fehlende Datensätze, unzugängliche Tabellen, falsche Werttypen und Werte außerhalb der Optionen einer Auswahl lehnen den Aufruf ab.
+Bevor die Schritte starten, prüft Grids, ob jede Datensatzeingabe zur gebundenen Tabelle gehört und der Lauf aktuell Zugriff darauf hat. Unbekannte Eingaben, fehlende Datensätze, unzugängliche Tabellen, falsche Werttypen und Werte außerhalb der Optionen einer Auswahl lehnen den Aufruf ab.
 
 **Eingabedeklarationen (Ausschnitt)**
 
@@ -345,7 +345,7 @@ Ordne exakte GQL-Aliase den folgenden Feldern zu; Grenzen stehen in der Workflow
 
 `createCorrectionDraft` verknüpft einen neuen Entwurf mit dem finalisierten Original und setzt seinen Typ. `copyFields` kopiert bis zu 100 Wertefelder samt Leerwerten und Objektlisten-Eingaben, aber keine eindeutigen Felder, IDs, Dateien, Relationen oder Berechnungen. Optionales `values` ergänzt bis zu 100 Eingaben, auch Pflichtrelationen; es überschreibt Kopien, nie Typ/Original. Relationen benötigen öffentliche IDs (`inputs.original.Kunde.recordId`). `saveAs` benennt das Ergebnis. Validierung, Zugriffsregeln und aktuelle Formeln gelten weiter. Wiederholung liefert denselben Entwurf.
 
-`createRecord` kann ausgewählte Eingaben eines vorhandenen Datensatzes derselben Tabelle übernehmen: `copyFrom: inputs.original` zusammen mit `copyFields: [Positionen]`. Wähle bis zu 100 gespeicherte Wertfelder. IDs, eindeutige Felder, Dateien, Relationen und berechnete Felder werden nicht kopiert. Objektlisten übernehmen ihre Eingaben und berechnen Formeln neu. Explizite `values` überschreiben Kopien und durchlaufen die normale Schreibvalidierung. Das Original bleibt unverändert; eine Wiederholung desselben Workflow-Schritts liefert denselben neuen Datensatz. Diese Option gilt für die eigenständige Aktion, nicht für Einträge in `atomicRecords`.
+`createRecord` kann ausgewählte Eingaben eines vorhandenen Datensatzes derselben Tabelle kopieren: `copyFrom: inputs.original` zusammen mit `copyFields: [Positionen]`. Wähle bis zu 100 gespeicherte Wertfelder. IDs, eindeutige Felder, Dateien, Relationen und berechnete Felder werden nicht kopiert. Objektlisten erhalten ihre Eingaben und berechnen Formeln neu. Explizite `values` überschreiben Kopien und durchlaufen die normale Schreibvalidierung. Das Original bleibt unverändert; eine Wiederholung desselben Workflow-Schritts liefert denselben neuen Datensatz. Diese Option gilt für die eigenständige Aktion, nicht für Einträge in `atomicRecords`.
 
 Der Starter beschriftet die Aktion als **Korrektur** oder **Stornierung**; die Ausführungsoption muss dazu passen. Der gewählte Auswahlwert speichert diese Bedeutung. Beides erstellt verknüpfte Entwürfe zum Vervollständigen, ohne Beträge, Steuern oder Buchungen umzukehren oder Dokumente zu erzeugen.
 
@@ -677,10 +677,10 @@ Unterbrochene Läufe setzen anhand gespeicherter Ergebnisse fort, nicht von vorn
 
 :::reference
 - **Zugriff zum Ausführen:** Direkte Aufrufe und eigenständige Ausführungsoptionen erfordern Zugriff **Bearbeiten** auf die Base. Eine veröffentlichte Grids App kann nur ihren exakt enthaltenen Launcher aufrufen. Öffentliche Besucher können keine Workflow-Aktionen ausführen.
-- **Identität:** Direkte Aufrufe (Kanal `api`), Scanner und Bulk nutzen den Aufrufer; Zugriff über eine App verlangt angemeldete Personen, keine Dienstkonten. Zeitpläne und Ereignisse nutzen die aktuellen Gruppen der verantwortlichen Person. Ereignisse vermerken die auslösende Person, übernehmen aber nicht deren Zugriff.
+- **Identität:** Direkte Aufrufe (Kanal `api`), Scanner und Bulk nutzen den Aufrufer; Zugriff über eine App verlangt angemeldete Personen, keine Dienstkonten. Zeitpläne und Ereignisse nutzen die aktuellen Gruppen der verantwortlichen Person. Ereignisse vermerken die auslösende Person, nutzen aber nicht deren Zugriff.
 - **Zugriff für Aktionen:** Läufe in der Base nutzen den Zugriff auf die Base. Vor Auswirkungen prüft Grids erneut Zugriff auf die App, Veröffentlichung, Eingaben, Launcher und `availableWhen`. `atomicRecords` prüft einmal nach den Sperren; eigene Änderungen machen diesen Schritt nicht ungültig. Spätere Effekte prüfen erneut. Sichere den Startzustand atomar. App-Workflows können alle Tabellen ihrer Base nutzen, nicht nur sichtbare. Personen mit Zugriff **Verwalten** auf die Base verantworten Geschäftsregeln und das, was Exporte offenlegen.
 - **App-Ergebnis:** Aktionen fragen ihren Lauf ab: `running`, `succeeded` oder `failed`. `fail.message` und atomare `checks[].message` erreichen Leser wörtlich: Nenne sichere Abhilfen. Andere Fehler erhalten sichere Hinweise, nie interne Details oder rohen Verlauf.
-- **E-Mail-Zustellung:** Das Bearbeiten von E-Mail-Vorlagen erfordert Zugriff **Verwalten** auf die Base. Workflow-Läufe können aktivierte Vorlagen verwenden, ohne deren HTML in der Autovervollständigung offenzulegen.
+- **E-Mail-Zustellung:** Ansehen, Erstellen, Bearbeiten und Löschen von E-Mail-Vorlagen erfordern Zugriff **Verwalten** auf die Base. Workflow-Läufe können aktivierte Vorlagen verwenden, ohne deren HTML in der Autovervollständigung offenzulegen.
 - **Abhängigkeiten von E-Mail-Vorlagen:** Grids zeigt, welche Workflows eine E-Mail-Vorlage verwenden, und verweigert das Löschen einer referenzierten Vorlage. Ändere zuerst diese Workflows.
 - **HTTP-Schutzregeln:** Nur öffentliche Internetadressen sind erlaubt. Private, lokale oder reservierte Ziele werden abgelehnt, auch Hostnamen mit gleichzeitig öffentlichen und privaten Adressen. Keine Einstellung oder Erlaubnisliste ermöglicht interne Netzwerkaufrufe.
 - **HTTP-Grenzen:** `httpRequest` begrenzt Anfrage- und Antwortinhalt auf 64 KiB. Die konfigurierte Zeitüberschreitung gilt für die vollständige Anfrage einschließlich Zielauflösung. In der URL eingebettete Anmeldedaten lehnt der Schritt ab. Verbindungs- und Übertragungsheader können nicht überschrieben werden.

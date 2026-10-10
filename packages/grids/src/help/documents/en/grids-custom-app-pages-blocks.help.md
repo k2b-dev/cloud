@@ -178,7 +178,7 @@ Set the `background` of a workflow action to `{ acceptedMessage, documentBlockId
 
 The action recovers its status after navigation or a reload. It opens the stored file when the file is ready. If an authorized, visible Record block already shows the exact ready document, Grids leaves out the duplicate completion action. Otherwise, the ready action stays available.
 
-Concurrent requests for the same published action, page records, and inputs join the active run, also from another authorized person who uses the app. People see the document state, not the workflow inputs, outputs, or raw errors of another user. When an administrator must check the run, no new start is possible.
+Concurrent requests for the same published action, page records, and inputs join the active run, also from another authorized person who uses the app. People see the document state, not the workflow inputs, outputs, or raw errors of another user. While the run needs review (`needs_attention`), no new start is possible.
 
 A table Records block with `workflowStatus: true` shows these states next to its rows. It requires direct `ROW.id` navigation to the unconditional Record page of the document. The list stays paginated and searchable. The runtime refreshes visible running entries. It does not wait for completion before it shows the page.
 

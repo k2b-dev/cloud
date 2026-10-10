@@ -295,7 +295,7 @@ Nutze den Filter `barcode_data_url` in einem `<img>`-Tag. Barcode-IDs sind klein
 | `upca` | UPC-A | US-Produktcode für den Einzelhandel. |
 | `upce` | UPC-E | Komprimierter UPC-Code. |
 | `itf14` | ITF-14 | Code für Kartons und Verpackungen. |
-| `gs1datamatrix` | GS1 Data Matrix | GS1-2D-Code mit GS1-Kennungen wie `(01)`. |
+| `gs1datamatrix` | GS1 Data Matrix | GS1-2D-Code mit GS1-Application-Identifiern (AIs) wie `(01)` für die GTIN. |
 | `sscc18` | SSCC-18 | Code für Versandbehälter. |
 | `isbn` | ISBN | Barcode für Buchkennungen. |
 | `issn` | ISSN | Barcode für fortlaufende Publikationen. |

@@ -71,7 +71,7 @@ In dieser Reihenfolge bleiben Fehler günstig. Eine klare Tabelle und einige rep
 
 Mit **Neu** im **Bearbeitungsmodus** erstellst du eine Tabelle, Ansicht, ein Formular, eine Dokumentvorlage, einen Workflow oder eine App. Das Menü zeigt nur Aktionen, die du ausführen darfst. Für eine Ressource, die auf einer Tabelle beruht, wählst du eine Tabelle aus. Grids wählt die aktuelle Tabelle vor, wenn sie passt. **Ansicht** öffnet den Abfrageeditor, in dem du die Ansicht konfigurierst und speicherst.
 
-**Dokumente** kannst du immer aufklappen. Öffne **Alle Dokumente** oder wähle eine Vorlage aus, um ihre erzeugten Dokumente zu sehen. Personen mit Zugriff **Verwalten** auf die Base bearbeiten E-Mail-Vorlagen für Workflows unter **Einstellungen → E-Mail-Vorlagen**.
+**Dokumente** kannst du immer aufklappen. Öffne **Alle Dokumente** oder wähle eine Vorlage aus, um ihre erzeugten Dokumente zu sehen. E-Mail-Vorlagen für Workflows findest du unter **Einstellungen → E-Mail-Vorlagen**. Ansehen, Erstellen, Bearbeiten und Löschen erfordern Zugriff **Verwalten** auf die Base.
 
 Wechsle unter **Übersicht** zwischen **Gruppen** für gemeinsame Schnellzugriffe und **Alle Ressourcen** für die Suche nach Name oder Typ. Der ausgewählte Tab steht in der URL. Links, Neuladen und der Browserverlauf behalten ihn deshalb. Standardmäßig öffnet eine Base mit Gruppen **Gruppen** und eine Base ohne Gruppen **Alle Ressourcen**. Ein Formular öffnet weiterhin seinen Dialog.
 

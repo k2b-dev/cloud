@@ -174,13 +174,15 @@ Die App ist bereit, wenn eine anfragende Person den Ablauf ohne Grids-Arbeitsber
 ## Eine App offline nehmen oder löschen {icon="alert-triangle"}
 
 :::warning Das Löschen lässt sich im Builder nicht rückgängig machen
-Beide Aktionen zeigen eine Bestätigung, bevor sich etwas ändert. Das Löschen kann im Builder nicht rückgängig gemacht werden.
+Nachdem du **App löschen** bestätigt hast, kann der Builder die App nicht wiederherstellen.
 :::
 
 Öffne **App-Einstellungen → Lebenszyklus**:
 
 - **App nicht mehr veröffentlichen** entfernt den veröffentlichten Snapshot sofort. Entwurf und Zugriffseinträge bleiben, sodass du die App später bearbeiten und erneut veröffentlichen kannst.
 - **App löschen** entfernt die App und ihre veröffentlichte URL. Tabellen und Datensätze der Base löscht es nicht.
+
+Beide Aktionen fragen nach einer Bestätigung, bevor sich etwas ändert.
 
 ## Veröffentlichen und prüfen {icon="rocket"}
 

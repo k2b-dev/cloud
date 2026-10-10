@@ -68,7 +68,7 @@ An execute run starts in one of these ways:
 - a `schedule` trigger;
 - a `recordEvent` trigger.
 
-Direct requests and run options need no YAML trigger. You must declare and publish automatic triggers. Disabled workflows reject execution. An occurrence that no trigger handles creates no run.
+Direct requests and run options need no YAML trigger. You must declare and publish automatic triggers. Disabled workflows reject execution. An occurrence that matches no trigger creates no run.
 
 A **dry run is not an event**: it plans the newest published revision without consulting triggers, including for disabled workflows.
 
@@ -91,9 +91,9 @@ An idempotency key identifies one logical invocation. Retrying with the same key
 
 Starting a workflow creates a run immediately. Open that run to follow its current status, progress message, inputs, starter, run option, and individual steps. A run can wait for external work without appearing failed. Its detail names what it is waiting for.
 
-You can cancel a queued, running, or waiting run. Cancellation is a request: the worker holding the run notices and unwinds where it is, rather than the run being deleted underneath it. It stops later steps, but it does not undo record changes, documents, emails, or HTTP requests that already finished. Resolve those effects explicitly when needed.
+You can cancel a queued, running, or waiting run. Cancellation is a request: the worker holding the run notices and unwinds where it is, rather than the run being deleted underneath it. It stops later steps, but it does not undo record changes, documents, emails, or HTTP requests that already finished. Check those effects and correct them yourself when needed.
 
-**Run again** opens the input dialog pre-filled from the selected run, then starts the workflow's current revision in the same mode the original used. Review the inputs before you start, because the workflow can have changed since. To inspect exactly what an older run executed, open its linked revision from the run detail.
+**Run again** opens the input dialog pre-filled from the selected run, then starts the workflow's current revision in the same mode the original used. Review the inputs before you start, because the workflow might have changed since. To inspect exactly what an older run executed, open its linked revision from the run detail.
 
 Publishing new YAML creates an immutable revision. The revision number therefore counts published plans, not edits. Renaming a workflow or changing its description does not create a revision. Restoring an older revision never deletes history; it publishes that definition as a new current revision. Enabling a workflow with a schedule or record-event trigger requires a confirmation, because the workflow can then start work without any further action.
 
@@ -115,7 +115,7 @@ Every input has `type`. Optional `label` and `description` text appears in gener
 
 Decimal controls accept the locale’s decimal separator, without grouping separators. Runs receive normalized decimal strings without floating-point conversion, within the ordinary Number field’s supported range. Use `decimal` for exact amounts.
 
-Before the steps start, Grids checks that each record input belongs to the bound table and that the caller can currently read it. Unknown inputs, missing records, inaccessible tables, wrong value types, and values outside a select's options reject the invocation.
+Before the steps start, Grids checks that each record input belongs to the bound table and that the run currently has access to it. Unknown inputs, missing records, inaccessible tables, wrong value types, and values outside a select's options reject the invocation.
 
 **Input declarations (fragment)**
 
@@ -291,9 +291,9 @@ steps:
       saveAs: reportDocument
 ```
 
-Do not combine `data`/`output` with `template`/`record`. File steps can share captured data; retries return the existing Document. Generation checks again the direct access to the Base or the published workflow authorization of the app, not the table visibility in the interface. Find files in **All documents** or in the run. Dry runs do not render.
+Do not combine `data`/`output` with `template`/`record`. File steps can share captured data; retries return the existing Document. Generation rechecks the direct access to the Base or the published workflow authorization of the app, not table visibility in the interface. Find files in **All documents** or in the run. Dry runs do not render.
 
-- **CSV:** UTF-8, CRLF, ordered aliases as headers. `delimiter` accepts comma (default), semicolon, tab (`"\t"`) or pipe. Null becomes an empty cell; nested values require `nestedValues: json`. Default `textProtection: spreadsheet` prefixes risky text, including `+`/`-` phone numbers, with an apostrophe; the report counts changed cells. Use `raw` only when the recipient handles unmodified text safely.
+- **CSV:** UTF-8, CRLF, ordered aliases as headers. `delimiter` accepts comma (default), semicolon, tab (`"\t"`) or pipe. Null becomes an empty cell; nested values require `nestedValues: json`. Default `textProtection: spreadsheet` prefixes risky text, including `+`/`-` phone numbers, with an apostrophe; the report counts changed cells. Use `raw` only when the recipient processes unmodified text safely.
 - **CSV column selection:** Optional `columns: [{ source: Amount, label: Total }, { source: Name }]` selects and orders exact GQL aliases. Omit `label` to keep the alias. Unknown or repeated sources, empty selections and duplicate headings fail. Use aliases, not internal column keys.
 - **JSON:** `output: { kind: json }` creates row objects using unique aliases. Exact decimals remain strings; arrays, booleans and null keep their types.
 - **JSON wrapper:** Optional `wrapper: { rowsKey: items, values: { approved: "${{ inputs.approved }}" } }` adds typed root properties beside the row array. `values` defaults to `{}` and must not contain `rowsKey`. The property name is literal; values use workflow expressions. Combined output must fit 5 MiB.
@@ -670,16 +670,16 @@ Interrupted runs resume from recorded outcomes, not from the beginning:
 - Record changes and `createDocumentLink` commit atomically with their recorded outcome; committed changes are not repeated.
 - `generateDocument` and `sendEmail` reuse their run/step identity, preventing duplicate Documents and recipient deliveries.
 - `setVariable`, `succeed`, `fail` and control flow have no external effects and can be reevaluated.
-- An `httpRequest` without a complete response can already have reached its receiver. Grids stops with `needs_attention`, rather than retrying or claiming failure. Check the receiving system before starting a new run. Prefer receivers that honor `Idempotency-Key`.
+- An `httpRequest` can reach its receiver even when Grids gets no complete response. Grids stops with `needs_attention`, rather than retrying or claiming failure. Check the receiving system before starting a new run. Prefer receivers that honor `Idempotency-Key`.
 
 ## Understand access and limits {icon="shield-lock"}
 
 :::reference
 - **Run access:** Direct calls and standalone run options require **Edit** access to the Base. A published Grids App can invoke only its exact included launcher. Public visitors cannot run workflow actions.
 - **Identity:** Direct calls (channel `api`), scanners and bulk use the caller; access through an app requires a signed-in user, not a service account. Schedules and events use the current groups of the owner. Events record the triggering user without inheriting that user's access.
-- **Action access:** Runs in the Base use the access to the Base. Before effects, Grids checks again the access to the app, the publication, the inputs, the launcher, and `availableWhen`. `atomicRecords` checks once after acquiring locks; its own changes do not invalidate that step. Later effects check again. Enforce starting state with atomic checks. App workflows can use all tables in their Base, not only visible ones. People with **Manage** access to the Base are responsible for business restrictions and for what exports disclose.
+- **Action access:** Runs in the Base use the access to the Base. Before effects, Grids rechecks the access to the app, the publication, the inputs, the launcher, and `availableWhen`. `atomicRecords` checks once after acquiring locks; its own changes do not invalidate that step. Later effects check again. Enforce starting state with atomic checks. App workflows can use all tables in their Base, not only visible ones. People with **Manage** access to the Base are responsible for business restrictions and for what exports disclose.
 - **App result:** Actions poll their own run: `running`, `succeeded` or `failed`. `fail.message` and atomic `checks[].message` reach readers verbatim: write safe recovery instructions. Other errors get safe hints, never internal details or raw history.
-- **Email delivery:** Editing email templates requires **Manage** access to the Base. Workflow runs can use enabled email templates without exposing template HTML in autocomplete.
+- **Email delivery:** Viewing, creating, editing, and deleting email templates require **Manage** access to the Base. Workflow runs can use enabled email templates without exposing template HTML in autocomplete.
 - **Email-template dependencies:** Grids shows which workflows use an email template and refuses to delete a referenced template. Change those workflows first.
 - **HTTP guardrails:** Only public internet addresses are allowed. Private, local or reserved targets are rejected, including hostnames resolving to both public and private addresses. No setting or allowlist enables internal network calls.
 - **HTTP limits:** `httpRequest` limits request and response bodies to 64 KiB. It applies the configured timeout to the complete request, including target resolution. It rejects credentials embedded in the URL. Connection and transfer headers cannot be overridden.

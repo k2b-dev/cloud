@@ -106,7 +106,7 @@ cld grids bases destruction status 8yMtTb RUN001 --json
 cld grids bases destruction cancel 8yMtTb RUN001 --yes --json
 ```
 
-`run` always fetches a fresh preview and selects only that bounded set. The command refuses an empty batch and a `--confirm` value that does not match the Base name exactly. You can cancel a queued run immediately. A running run stops its remaining work at the next safe boundary.
+`run` always fetches a fresh preview and selects only that bounded set. The command refuses an empty batch and a `--confirm` value that does not match the Base name exactly. You can cancel a queued run immediately. A run that has already started stops its remaining work at the next safe boundary.
 
 ## Preserve a Base or one table {icon="lock"}
 

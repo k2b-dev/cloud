@@ -83,7 +83,7 @@ Required mappings are `businessId`, `entryId`, `amount`, `direction`, `account`,
 - Cost centers have up to 36 letters, digits, underscores, or spaces.
 - Several postings can share a business event, but each `entryId` within that event must be unique.
 
-This output is a booking batch, not the complete DATEV product family. ADDISON or other software can need a specific import configuration.
+This output is a booking batch, not the complete DATEV product family. ADDISON and other software sometimes need a specific import configuration.
 
 ## Review once and keep identities {icon="check"}
 

@@ -33,7 +33,7 @@ Record results refresh in place, also after a reconnect. If the table has a sear
 
 ## Save a rejected record edit {icon="table"}
 
-Another person or tab can have saved a newer version. The edit dialog keeps your input.
+Another person or tab might have saved a newer version. The edit dialog keeps your input.
 
 :::steps
 1. Choose **Compare current record**.
@@ -115,7 +115,7 @@ Open the run detail before you retry. Check its revision, mode, channel, inputs,
 
 If a Grids App action cannot retrieve its result, choose **Check status** while the page stays open. This follows the existing operation and does not start another workflow. A status error does not prove that the workflow failed.
 
-A `dryRun` records predicted effects but performs no writes and no external requests. An `execute` retry must use a deliberate idempotency key. External HTTP receivers must also handle duplicate requests without repeating their effects.
+A `dryRun` records predicted effects but performs no writes and no external requests. An `execute` retry must use a deliberate idempotency key. External HTTP receivers must also recognize duplicate requests and must not repeat their effects.
 
 For scanner, bulk, and Grids App actions, inspect the diagnostics of the saved run option after you change workflow inputs.
 

@@ -24,7 +24,7 @@ Die Zusammenfassung zählt aktuelle und gelöschte Datensätze, gespeicherte Rev
 - **Ausgangsstand wird erstellt:** Die Aktivierung kopiert noch den aktuellen Ausgangsstand. Die Abdeckung ist noch nicht vollständig.
 - **Frühere Zustände nicht verfügbar:** Die Tabelle enthält schon Datensätze, aber der dauerhafte Verlauf ist nicht aktiviert. Grids kann frühere Zustände nicht rekonstruieren.
 - **Nicht aktiviert:** Eine leere Tabelle hat noch keinen dauerhaften Revisionsverlauf.
-- **Unvollständig:** Der gespeicherte Aktivierungsstatus und der Abschluss des Ausgangsstands stimmen nicht überein. Behandle die Abdeckung als unvollständig und wende dich zur Prüfung an den Betreiber.
+- **Unvollständig:** Der gespeicherte Aktivierungsstatus und der Abschluss des Ausgangsstands stimmen nicht überein. Gehe von unvollständiger Abdeckung aus und wende dich zur Prüfung an den Betreiber.
 :::
 
 Die Spalte **Finalisiert** steht getrennt, weil das Aktivieren des dauerhaften Verlaufs keine Datensätze finalisiert. Sie zeigt **Nicht aktiviert** oder die Anzahl der aktuell finalisierten Datensätze. Tabellen im Papierkorb bleiben als Nachweisquellen sichtbar. Aus dieser Liste kannst du sie aber nicht öffnen.

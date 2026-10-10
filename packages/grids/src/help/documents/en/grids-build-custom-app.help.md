@@ -174,13 +174,15 @@ The app is ready when a requester understands the journey without the Grids work
 ## Take an app offline or delete it {icon="alert-triangle"}
 
 :::warning You cannot undo deletion in the builder
-Both actions show a confirmation before anything changes. Deleting cannot be undone in the builder.
+After you confirm **Delete app**, the builder cannot restore the app.
 :::
 
 Open **App settings → Lifecycle**:
 
 - **Unpublish app** removes the live snapshot immediately. It keeps the draft and the access entries, so you can edit and publish the app again later.
 - **Delete app** removes the app and its live URL. It does not delete Base tables or records.
+
+Both actions ask for a confirmation before anything changes.
 
 ## Publish and verify {icon="rocket"}
 

@@ -44,7 +44,7 @@ Diese Befehle verwenden denselben veröffentlichten App-Zugriff wie der Browser.
 
 Der Builder speichert vollständige Änderungen automatisch im Entwurf. Bearbeiten ändert die veröffentlichte App nicht. **Änderungen veröffentlichen** validiert und veröffentlicht den gespeicherten Entwurf. Meldet er Diagnosen, behebe sie vor dem nächsten Versuch.
 
-Der Builder bietet **Änderungen veröffentlichen** auch an, wenn sich ein Formular, eine Ansicht, ein Feld, eine Vorlage oder ein Workflow der veröffentlichten App geändert hat. Dann braucht die App eine neue Veröffentlichung. Hat der Entwurf keine weiteren Änderungen, lautet der Hinweis **Verwendete Ressourcen wurden geändert**.
+Der Builder bietet **Änderungen veröffentlichen** auch an, wenn eine Änderung an einem Formular, einer Ansicht, einem Feld, einer Vorlage oder einem Workflow ändert, was die veröffentlichte App lesen, schreiben oder starten darf. Hat der Entwurf keine weiteren Änderungen, lautet der Hinweis **Verwendete Ressourcen wurden geändert**.
 
 **Veröffentlichte Version wiederherstellen** verwirft ausstehende Änderungen am Entwurf. Unter **App-Einstellungen → Lebenszyklus** kannst du die Veröffentlichung aufheben oder die App löschen. Beide Aktionen erfordern eine Bestätigung:
 

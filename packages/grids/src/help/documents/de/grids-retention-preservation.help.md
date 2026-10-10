@@ -106,7 +106,7 @@ cld grids bases destruction status 8yMtTb RUN001 --json
 cld grids bases destruction cancel 8yMtTb RUN001 --yes --json
 ```
 
-`run` ruft immer eine neue Vorschau ab und wählt nur diese begrenzte Menge. Der Befehl lehnt einen leeren Durchgang ab und ebenso einen `--confirm`-Wert, der nicht exakt dem Namen der Base entspricht. Einen eingereihten Lauf kannst du sofort abbrechen. Ein laufender Lauf beendet seine verbleibende Arbeit an der nächsten sicheren Grenze.
+`run` ruft immer eine neue Vorschau ab und wählt nur diese begrenzte Menge. Der Befehl lehnt einen leeren Durchgang ab und ebenso einen `--confirm`-Wert, der nicht exakt dem Namen der Base entspricht. Einen eingereihten Lauf kannst du sofort abbrechen. Ein bereits gestarteter Lauf beendet seine verbleibende Arbeit an der nächsten sicheren Grenze.
 
 ## Eine Base oder eine Tabelle erhalten {icon="lock"}
 

@@ -294,7 +294,7 @@ Use the `barcode_data_url` filter in an `<img>` tag. Barcode IDs are lowercase s
 | `upca` | UPC-A | US retail product code. |
 | `upce` | UPC-E | Compressed UPC code. |
 | `itf14` | ITF-14 | Carton and package code. |
-| `gs1datamatrix` | GS1 Data Matrix | GS1 2D code with GS1 identifiers such as `(01)`. |
+| `gs1datamatrix` | GS1 Data Matrix | GS1 2D code with GS1 AIs such as `(01)` for the GTIN. |
 | `sscc18` | SSCC-18 | Shipping container code. |
 | `isbn` | ISBN | Book identifier barcode. |
 | `issn` | ISSN | Serial publication barcode. |
@@ -553,7 +553,7 @@ Keep filtering, sorting, joins, and grouping in GQL. Keep Liquid focused on loop
 
 ## Read stored files as an agent {icon="file-description"}
 
-Agents use `document.content.read` for stored PDF, XML, or CSV bytes. Choose an artifact key from `document.read`, or leave it out for the primary file. Code mode reads the returned stream as a File, with a limit of 50 MiB per file. Downloading does not extract PDF text and does not issue or send a document. At download, Grids checks again that you can still read the document.
+Agents use `document.content.read` for stored PDF, XML, or CSV bytes. Choose an artifact key from `document.read`, or leave it out for the primary file. Code mode reads the returned stream as a File, with a limit of 50 MiB per file. Downloading does not extract PDF text and does not issue or send a document. When you download, Grids checks that you can still read the document.
 
 ## Download a folder {icon="download"}
 

@@ -63,7 +63,7 @@ Jeder Block braucht `id` und `type`. Alle Blöcke akzeptieren optional `title` (
 
 - Eine Tabelle aus einer gespeicherten Ansicht braucht mindestens eine Spalte.
 - Eine Inline-GQL-Tabelle zeigt mit `columnIds:[]` normalerweise die ausgewählten Spalten der Abfrage. Eine nichtleere Liste begrenzt die angezeigten Felder. Die ausgewählten Felder bleiben für das Verhalten verfügbar.
-- Karten übernehmen die Kartenkonfiguration einer gespeicherten Ansicht und können kein Inline-GQL verwenden.
+- Karten verwenden die Kartenkonfiguration einer gespeicherten Ansicht und können kein Inline-GQL verwenden.
 - Kennzahlen brauchen ungruppierte skalare Aggregate (bis 12). Diagramme brauchen gruppierte Aggregate (bis 100 Gruppen).
 - Eine App erlaubt höchstens vier Records-Blöcke, 24 Kennzahlen- und Diagrammblöcke und 24 Scanner-Blöcke.
 

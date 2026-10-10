@@ -13,7 +13,7 @@ You do not need GQL for ordinary table work. Start with the **Search**, **Filter
 
 Choose **Query with AI** in the editor to open an Assistant draft with this Base, source, and query. Add what you want to find, then send it. Assistant discovers relevant fields, checks queries, and shows actual results with the same access as the editor. This chat cannot change records or the schema.
 
-Assistant can save a query as a view after you confirm its name and its personal or shared visibility. Both require **Manage** access to the Base. Use the returned link to open the query in a new browser tab. The conversation stays open. You can need to copy very long queries instead. Previews and paginated results are not complete exports.
+Assistant can save a query as a view after you confirm its name and its personal or shared visibility. Both require **Manage** access to the Base. Use the returned link to open the query in a new browser tab. The conversation stays open. If a query is too long for a link, copy it instead. Previews and paginated results are not complete exports.
 
 The built-in **cloud-grids** Skill sends Assistant to the current Help for product and administration questions. When no tool supports an operation, Assistant explains the steps in the interface. The Skill gives no additional access.
 

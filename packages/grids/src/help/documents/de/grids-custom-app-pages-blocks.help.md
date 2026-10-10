@@ -66,7 +66,7 @@ Referenzierte Datensätze ist nur auf einer Datensatzseite verfügbar. Der Block
 
 Kennzahlen und Diagramm lesen eine vorhandene gespeicherte Ansicht oder eine Inline-GQL-Abfrage. Die Laufzeit wendet gemeinsame Abfragebudgets an.
 
-Kennzahlen übernehmen das Zahlenformat normalerweise von den ausgewählten Feldern. Für Aggregatausdrücke ohne Feldinformationen setze ein gemeinsames `valueFormat`, etwa `{ style: "number", decimalPlaces: 2, unit: "EUR" }`. Diese Vorgabe gilt für jeden Wert des Blocks. Grids leitet keine Währung aus der Abfrage ab. Das Format ändert nur die Anzeige und behält die exakten berechneten Werte.
+Kennzahlen verwenden normalerweise das Zahlenformat der ausgewählten Felder. Für Aggregatausdrücke ohne Feldinformationen setze ein gemeinsames `valueFormat`, etwa `{ style: "number", decimalPlaces: 2, unit: "EUR" }`. Diese Vorgabe gilt für jeden Wert des Blocks. Grids leitet keine Währung aus der Abfrage ab. Das Format ändert nur die Anzeige und behält die exakten berechneten Werte.
 
 - Kennzahlen akzeptiert eine nicht gruppierte Aggregatabfrage und zeigt bis zu 12 benannte skalare Ergebnisse.
 - Diagramm akzeptiert eine gruppierte Aggregatabfrage und zeigt ein Ring-, Balken- oder Liniendiagramm mit mindestens einer Reihe von Aggregatwerten. Ein Diagrammblock zeigt über sein `limit` höchstens 100 Gruppen.
@@ -158,7 +158,7 @@ Die Ausgabe läuft in einer Sandbox ohne Skripte, Formulare, Pop-ups, Zugriff au
 
 Kommentare braucht einen Seitendatensatz und eine angemeldete Person, die die App verwendet. Der Block lädt eine begrenzte erste Seite erst, wenn er gerendert wird. Danach lädt er ältere Kommentare mit Keyset-Seitennavigation. Der veröffentlichte Kommentarblock und der aktuelle Zugriff auf die App erlauben das Erstellen von Kommentaren ohne Zugriff **Bearbeiten** auf Base oder Datensatz. Verfassende Personen können ihre eigenen Kommentare bearbeiten und löschen. Personen mit Zugriff **Verwalten** auf die Base können jeden Kommentar moderieren. Gelöschte Kommentare bleiben als Platzhalter mit Zeitstempel, damit die Reihenfolge des Gesprächs verständlich bleibt.
 
-Kommentare übernehmen die Sichtbarkeit des Datensatzes. Sie führen keine eigene Zielgruppe und keinen eigenen Zugriffsspeicher ein.
+Kommentare haben dieselbe Sichtbarkeit wie der Datensatz. Sie führen keine eigene Zielgruppe und keinen eigenen Zugriffsspeicher ein.
 
 ### Aktionen
 
@@ -178,7 +178,7 @@ Setze `background` einer Workflow-Aktion auf `{ acceptedMessage, documentBlockId
 
 Die Aktion stellt ihren Status nach Navigation oder Neuladen wieder her. Sie öffnet die gespeicherte Datei, sobald sie bereit ist. Zeigt ein berechtigter, sichtbarer Datensatzblock bereits genau dieses fertige Dokument, lässt Grids die doppelte Abschlussaktion weg. Sonst bleibt die Aktion verfügbar.
 
-Gleichzeitige Anfragen für dieselbe veröffentlichte Aktion mit denselben Seitendatensätzen und Eingaben schließen sich dem laufenden Lauf an. Das gilt auch für Anfragen einer anderen berechtigten Person, die die App verwendet. Personen sehen den Dokumentstatus, nicht die Workflow-Eingaben, Ausgaben oder rohen Fehler anderer Personen. Muss die Administration den Lauf prüfen, ist kein neuer Start möglich.
+Gleichzeitige Anfragen für dieselbe veröffentlichte Aktion mit denselben Seitendatensätzen und Eingaben schließen sich dem aktiven Lauf an. Das gilt auch für Anfragen einer anderen berechtigten Person, die die App verwendet. Personen sehen den Dokumentstatus, nicht die Workflow-Eingaben, Ausgaben oder rohen Fehler anderer Personen. Solange der Lauf geprüft werden muss (`needs_attention`), ist kein neuer Start möglich.
 
 Ein Datensätze-Block in Tabellendarstellung mit `workflowStatus: true` zeigt diese Zustände neben seinen Zeilen. Er braucht eine direkte `ROW.id`-Navigation zur bedingungslos verfügbaren Datensatzseite des Dokuments. Die Liste bleibt seitenweise und durchsuchbar. Die Laufzeit aktualisiert sichtbare laufende Einträge. Sie wartet nicht auf den Abschluss, bevor sie die Seite zeigt.
 
