@@ -6,8 +6,15 @@ import { conversationVisibleTo, isCurrentActorActive, readableMailboxGrants } fr
 import { capByCredentialScopes, type MailRequestContext, userBackedActor } from "./auth";
 import { isUnassignedConversation, listLapsedAssignees } from "./collaborators";
 import { isUnsentOutboundMessage } from "./conversation-timeline";
-import { type AggregatedViewScope, loadAggregatedViewScope, staysInAggregatedViews } from "./folder-display";
-import { isFollowUpConversation, isTrashOrJunkFolder } from "./follow-up-scope";
+import {
+  type AggregatedViewScope,
+  loadAggregatedViewScope,
+  staysInAggregatedViews,
+  staysInAggregatedViewsAggregate,
+} from "./folder-display";
+import { isFollowUpConversation, isFollowUpMessage, isTrashOrJunkFolder } from "./follow-up-scope";
+
+type SqlFragment = Bun.SQL.Query<unknown>;
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -32,6 +39,8 @@ export type MailFocusItem = {
 
 export type MailFocusCounts = Record<MailFocusView, number>;
 
+const FOCUS_VIEWS: readonly MailFocusView[] = ["mine", "unassigned", "waiting", "all"];
+
 export type MailFocusMailboxCounts = {
   mailboxId: string;
   unread: number;
@@ -54,12 +63,6 @@ type DbFocusItem = {
   flagged: boolean;
   has_attachments: boolean;
   preview: string | null;
-};
-
-type DbMailboxCounts = {
-  mailbox_id: string;
-  unread: number;
-  needs_action: number;
 };
 
 const toIso = (value: Date | string): string => (value instanceof Date ? value : new Date(value)).toISOString();
@@ -100,107 +103,158 @@ export const readableMailboxes = (context: MailRequestContext) => sql<{ mailbox_
   FROM (${readableMailboxGrants(context)}) grants
   WHERE (${boundMailboxId(context)}::uuid IS NULL OR grants.mailbox_id = ${boundMailboxId(context)}::uuid)
 `;
-/**
- * Every focus list and count covers open conversations only, so each readable conversation
- * carries whether it belongs in the follow-up views; Done ones skip that check. It also carries
- * whether it belongs in views that mix folders, which leave out mail kept inside its folder.
- */
-const readableConversations = (context: MailRequestContext, scope: AggregatedViewScope) => sql`
-  SELECT
-    c.*,
-    CASE WHEN c.work_status <> 'done' THEN ${isFollowUpConversation(sql`c.id`)} ELSE false END AS follow_up,
-    ${staysInAggregatedViews(sql`c.id`, scope)} AS aggregated
-  FROM mail.conversations c
-  JOIN (${readableMailboxes(context)}) readable ON readable.mailbox_id = c.mailbox_id
-  WHERE (readable.scope = 'mailbox' OR ${conversationVisibleTo(
+
+const visibleNow = sql`(c.snoozed_until IS NULL OR c.snoozed_until <= now())`;
+
+/** Conversations of a readable mailbox that the request may see: all of them, or only those assigned to the person. */
+const conversationReadable = (context: MailRequestContext) =>
+  sql`(readable.scope = 'mailbox' OR ${conversationVisibleTo(
     context.accessSubject.type === "user"
       ? { scope: "assigned", permission: "read", userId: context.accessSubject.userId }
       : { scope: "mailbox", permission: "read" },
     sql`c.id`,
-  )})
-    AND EXISTS (
-      SELECT 1
-      FROM mail.conversation_messages visible_cm
-      LEFT JOIN mail.message_placements visible_mp
-        ON visible_mp.message_id = visible_cm.message_id AND visible_mp.deleted_at IS NULL
-      LEFT JOIN mail.outbox_submissions visible_outbox
-        ON visible_outbox.message_id = visible_cm.message_id AND visible_outbox.state <> 'cancelled'
-      WHERE visible_cm.conversation_id = c.id
-        AND (visible_mp.message_id IS NOT NULL OR visible_outbox.id IS NOT NULL)
-    )
-`;
+  )})`;
 
-const visibleNow = sql`(c.snoozed_until IS NULL OR c.snoozed_until <= now())`;
+const assignedTo = (userId: string | null) =>
+  sql`EXISTS (SELECT 1 FROM mail.conversation_assignees a WHERE a.conversation_id = c.id AND a.user_id = ${userId}::uuid)`;
 
 /**
- * A mailbox counts unread mail outside Trash and Junk, like All mail, and the conversations that need
- * action; both leave out conversations whose mail is kept inside its folders. Rows come in mailbox ID
- * order, so every caller sees the same list.
+ * The rule of one view for conversation `c`, besides "it needs follow-up". Mine and Waiting keep
+ * conversations whose mail stays inside its folder; Unassigned and All leave them out with `aggregated`.
  */
-const mailboxCountQuery = (context: MailRequestContext, scope: AggregatedViewScope) => sql<DbMailboxCounts[]>`
-  WITH readable_conversations AS (${readableConversations(context, scope)})
-  SELECT c.mailbox_id,
-    COUNT(*) FILTER (WHERE EXISTS (
-      SELECT 1 FROM mail.conversation_messages cm
-      JOIN mail.message_placements mp ON mp.message_id = cm.message_id
-      WHERE cm.conversation_id = c.id AND mp.deleted_at IS NULL
-        AND NOT ('\\Seen' = ANY(mp.flags))
-        AND NOT ${isTrashOrJunkFolder(sql`mp.folder_id`)}
-    ))::int AS unread,
-    COUNT(*) FILTER (WHERE c.work_status = 'needs_action' AND ${visibleNow} AND c.follow_up)::int AS needs_action
-  FROM readable_conversations c
-  WHERE c.aggregated
-  GROUP BY c.mailbox_id
-  ORDER BY c.mailbox_id
-`;
-
-/** The scope of every mailbox the request may read. */
-const readableAggregatedViewScope = async (context: MailRequestContext): Promise<AggregatedViewScope> =>
-  loadAggregatedViewScope((await readableMailboxes(context)).map((row) => row.mailbox_id));
-
-export const listMailboxCounts = async (context: MailRequestContext): Promise<Result<MailFocusMailboxCounts[]>> => {
-  if (!(await isCurrentActorActive(context)) || capByCredentialScopes(context, "read") === "none") {
-    return fail(err.forbidden("Access denied"));
-  }
-  const rows = await mailboxCountQuery(context, await readableAggregatedViewScope(context));
-  return ok(rows.map((row) => ({ mailboxId: row.mailbox_id, unread: row.unread, needsAction: row.needs_action })));
+const viewCondition = (view: MailFocusView, userId: string | null, unassigned: SqlFragment, aggregated: SqlFragment) => {
+  if (view === "mine") return sql`c.work_status = 'needs_action' AND ${visibleNow} AND ${assignedTo(userId)}`;
+  if (view === "waiting") return sql`c.work_status = 'waiting' AND ${visibleNow} AND ${assignedTo(userId)}`;
+  if (view === "unassigned") return sql`c.work_status = 'needs_action' AND ${visibleNow} AND ${aggregated} AND ${unassigned}`;
+  return sql`c.work_status <> 'done' AND ${visibleNow} AND ${aggregated}`;
 };
 
-export const listFocusConversations = async (params: {
-  context: MailRequestContext;
-  view?: MailFocusView;
-  cursor?: string;
-  limit?: number;
-  /**
-   * Mailboxes the person hid from their overview. Their conversations leave the list and the
-   * view counts; `mailboxCounts` still covers them so a revealed hidden mailbox keeps its counts.
-   */
-  excludedMailboxIds?: string[];
-}): Promise<
-  Result<{ items: MailFocusItem[]; counts: MailFocusCounts; mailboxCounts: MailFocusMailboxCounts[]; nextCursor: string | null }>
-> => {
-  if (!(await isCurrentActorActive(params.context))) return fail(err.forbidden("Access denied"));
-  if (capByCredentialScopes(params.context, "read") === "none") return fail(err.forbidden("Access denied"));
+type DbFocusStats = {
+  mailbox_id: string;
+  mine: number;
+  unassigned: number;
+  waiting: number;
+  all: number;
+  unread: number;
+  needs_action: number;
+  aggregated: number;
+};
 
-  const view = params.view ?? "mine";
-  const userId = userBackedActor(params.context)?.id ?? null;
-  if ((view === "mine" || view === "waiting") && !userId) {
-    return fail(err.badInput(`The ${view} view requires a user-backed actor`));
-  }
-  const cursor = decodeCursor(params.cursor, view, userId);
-  if (!cursor.ok) return cursor;
-  const limit = Math.min(Math.max(Math.floor(params.limit ?? 50), 1), 100);
-  const readableMailboxIds = (await readableMailboxes(params.context)).map((row) => row.mailbox_id);
+/**
+ * Every count of the overview in one grouped pass over the messages of the readable mailboxes,
+ * one row per mailbox: the view counts and the mailbox counts. Each conversation is decided once,
+ * as in the Mail workspace view counts, instead of in a correlated check per conversation and count.
+ * PostgreSQL prices the per-message folder checks so high that it would compile the query with JIT,
+ * which took seconds in a few mailboxes with 50,000 messages while the counting itself takes about 100 ms.
+ *
+ * Every view covers open conversations that need follow-up. A mailbox counts unread mail outside
+ * Trash and Junk, like All mail, and the conversations that need action; both leave out conversations
+ * whose mail is kept inside its folders.
+ */
+const loadFocusStats = (params: FocusReader) =>
+  sql.begin(async (tx) => {
+    await tx`SET LOCAL jit = off`;
+    return tx<DbFocusStats[]>`
+      SELECT
+        c.mailbox_id,
+        COUNT(*) FILTER (WHERE c.follow_up AND ${viewCondition("mine", params.userId, params.unassigned, sql`c.aggregated`)})::int AS mine,
+        COUNT(*) FILTER (WHERE c.follow_up AND ${viewCondition("unassigned", params.userId, params.unassigned, sql`c.aggregated`)})::int AS unassigned,
+        COUNT(*) FILTER (WHERE c.follow_up AND ${viewCondition("waiting", params.userId, params.unassigned, sql`c.aggregated`)})::int AS waiting,
+        COUNT(*) FILTER (WHERE c.follow_up AND ${viewCondition("all", params.userId, params.unassigned, sql`c.aggregated`)})::int AS all,
+        COUNT(*) FILTER (WHERE c.aggregated AND c.unread)::int AS unread,
+        COUNT(*) FILTER (WHERE c.aggregated AND c.follow_up AND c.work_status = 'needs_action' AND ${visibleNow})::int AS needs_action,
+        COUNT(*) FILTER (WHERE c.aggregated)::int AS aggregated
+      FROM (
+        SELECT
+          c.id,
+          c.mailbox_id,
+          c.work_status,
+          c.snoozed_until,
+          bool_or(${isFollowUpMessage(sql`placement`, sql`outbox.id IS NOT NULL`)}) AS follow_up,
+          COALESCE(bool_or(
+            placement.message_id IS NOT NULL
+            AND NOT ('\\Seen' = ANY(placement.flags))
+            AND NOT ${isTrashOrJunkFolder(sql`placement.folder_id`)}
+          ), false) AS unread,
+          ${staysInAggregatedViewsAggregate(sql`placement.folder_id`, params.scope)} AS aggregated
+        FROM (${readableMailboxes(params.context)}) readable
+        JOIN mail.conversations c ON c.mailbox_id = readable.mailbox_id
+        JOIN mail.conversation_messages link ON link.conversation_id = c.id
+        LEFT JOIN mail.message_placements placement
+          ON placement.message_id = link.message_id
+         AND placement.deleted_at IS NULL
+        LEFT JOIN mail.outbox_submissions outbox
+          ON outbox.message_id = link.message_id
+         AND outbox.state <> 'cancelled'
+        WHERE ${conversationReadable(params.context)}
+        GROUP BY c.id
+        -- A conversation shows while one of its messages is filed somewhere or on its way out.
+        HAVING bool_or(placement.message_id IS NOT NULL OR outbox.id IS NOT NULL)
+      ) c
+      GROUP BY c.mailbox_id
+      ORDER BY c.mailbox_id
+    `;
+  });
+
+/** Rows come in mailbox ID order, so every caller sees the same list. */
+const toMailboxCounts = (rows: readonly DbFocusStats[]): MailFocusMailboxCounts[] =>
+  rows.filter((row) => row.aggregated > 0).map((row) => ({ mailboxId: row.mailbox_id, unread: row.unread, needsAction: row.needs_action }));
+
+/** What every focus read of one request shares: who reads, which mailboxes, and their rules. */
+type FocusReader = {
+  context: MailRequestContext;
+  userId: string | null;
+  scope: AggregatedViewScope;
+  unassigned: SqlFragment;
+  excludedMailboxIds?: string[];
+};
+
+const loadFocusReader = async (context: MailRequestContext, excludedMailboxIds?: string[]): Promise<FocusReader> => {
+  const readableMailboxIds = (await readableMailboxes(context)).map((row) => row.mailbox_id);
   const [lapsedAssignees, scope] = await Promise.all([
     listLapsedAssignees({ mailboxIds: readableMailboxIds }),
     loadAggregatedViewScope(readableMailboxIds),
   ]);
-  const unassigned = isUnassignedConversation(lapsedAssignees);
-  const shown = sql`NOT (c.mailbox_id = ANY(${toPgUuidArray(params.excludedMailboxIds)}::uuid[]))`;
+  return {
+    context,
+    userId: userBackedActor(context)?.id ?? null,
+    scope,
+    unassigned: isUnassignedConversation(lapsedAssignees),
+    excludedMailboxIds,
+  };
+};
 
-  const [rows, countRows, mailboxCountRows] = await Promise.all([
-    sql<DbFocusItem[]>`
-      WITH readable_conversations AS (${readableConversations(params.context, scope)})
+const canReadFocus = async (context: MailRequestContext): Promise<boolean> =>
+  (await isCurrentActorActive(context)) && capByCredentialScopes(context, "read") !== "none";
+
+export const listMailboxCounts = async (context: MailRequestContext): Promise<Result<MailFocusMailboxCounts[]>> => {
+  if (!(await canReadFocus(context))) return fail(err.forbidden("Access denied"));
+  return ok(toMailboxCounts(await loadFocusStats(await loadFocusReader(context))));
+};
+
+/** Hidden mailboxes leave the view counts but keep their own counts. */
+const toFocusCounts = (rows: readonly DbFocusStats[], excludedMailboxIds?: string[]): MailFocusCounts => {
+  const excluded = new Set(excludedMailboxIds);
+  const counts: MailFocusCounts = { mine: 0, unassigned: 0, waiting: 0, all: 0 };
+  for (const row of rows) {
+    if (excluded.has(row.mailbox_id)) continue;
+    for (const view of FOCUS_VIEWS) counts[view] += row[view];
+  }
+  return counts;
+};
+
+type FocusPage = { items: MailFocusItem[]; nextCursor: string | null };
+
+/**
+ * One page of a view: the newest matching conversations of each readable mailbox, merged. Every
+ * mailbox walks its own index by recency and stops after one page, so a page reads about one page
+ * of conversations per mailbox instead of deciding every conversation of every mailbox, and the
+ * details of a row are read only for the conversations on the page.
+ */
+const loadFocusPage = async (focus: FocusReader, view: MailFocusView, cursor: FocusCursor | null, limit: number): Promise<FocusPage> => {
+  const rows = await sql.begin(async (tx) => {
+    await tx`SET LOCAL jit = off`;
+    return tx<DbFocusItem[]>`
       SELECT
         c.id,
         c.mailbox_id,
@@ -238,7 +292,27 @@ export const listFocusConversations = async (params: {
           WHERE attachment_cm.conversation_id = c.id
         ) AS has_attachments,
         latest.preview
-      FROM readable_conversations c
+      FROM (
+        SELECT page.*
+        FROM (${readableMailboxes(focus.context)}) readable
+        CROSS JOIN LATERAL (
+          SELECT c.*
+          FROM mail.conversations c
+          WHERE c.mailbox_id = readable.mailbox_id
+            AND NOT (c.mailbox_id = ANY(${toPgUuidArray(focus.excludedMailboxIds)}::uuid[]))
+            AND ${conversationReadable(focus.context)}
+            AND ${viewCondition(view, focus.userId, focus.unassigned, staysInAggregatedViews(sql`c.id`, focus.scope))}
+            AND ${isFollowUpConversation(sql`c.id`)}
+            AND (
+              ${cursor?.id ?? null}::uuid IS NULL
+              OR (c.latest_message_at, c.id) < (${cursor?.date ?? null}::timestamptz, ${cursor?.id ?? null}::uuid)
+            )
+          ORDER BY c.latest_message_at DESC, c.id DESC
+          LIMIT ${limit + 1}
+        ) page
+        ORDER BY page.latest_message_at DESC, page.id DESC
+        LIMIT ${limit + 1}
+      ) c
       JOIN mail.mailboxes mailbox ON mailbox.id = c.mailbox_id
       LEFT JOIN LATERAL (
         SELECT LEFT(COALESCE(content.plain_text, ''), 320) AS preview
@@ -249,62 +323,83 @@ export const listFocusConversations = async (params: {
         ORDER BY content.internal_date DESC, content.id DESC
         LIMIT 1
       ) latest ON true
-      WHERE c.follow_up
-        AND ${shown}
-        AND (
-          (${view} = 'mine' AND EXISTS (SELECT 1 FROM mail.conversation_assignees a WHERE a.conversation_id = c.id AND a.user_id = ${userId}::uuid) AND c.work_status = 'needs_action' AND ${visibleNow})
-          OR (${view} = 'unassigned' AND c.aggregated AND ${unassigned} AND c.work_status = 'needs_action' AND ${visibleNow})
-          OR (${view} = 'waiting' AND EXISTS (SELECT 1 FROM mail.conversation_assignees a WHERE a.conversation_id = c.id AND a.user_id = ${userId}::uuid) AND c.work_status = 'waiting' AND ${visibleNow})
-          OR (${view} = 'all' AND c.aggregated AND c.work_status <> 'done' AND ${visibleNow})
-        )
-        AND (
-          ${cursor.data?.id ?? null}::uuid IS NULL
-          OR (c.latest_message_at, c.id) < (${cursor.data?.date ?? null}::timestamptz, ${cursor.data?.id ?? null}::uuid)
-        )
       ORDER BY c.latest_message_at DESC, c.id DESC
-      LIMIT ${limit + 1}
-    `,
-    sql<Array<{ mine: number; unassigned: number; waiting: number; all: number }>>`
-      WITH readable_conversations AS (${readableConversations(params.context, scope)})
-      SELECT
-        COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM mail.conversation_assignees a WHERE a.conversation_id = c.id AND a.user_id = ${userId}::uuid) AND c.work_status = 'needs_action' AND ${visibleNow})::int AS mine,
-        COUNT(*) FILTER (WHERE c.aggregated AND ${unassigned} AND c.work_status = 'needs_action' AND ${visibleNow})::int AS unassigned,
-        COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM mail.conversation_assignees a WHERE a.conversation_id = c.id AND a.user_id = ${userId}::uuid) AND c.work_status = 'waiting' AND ${visibleNow})::int AS waiting,
-        COUNT(*) FILTER (WHERE c.aggregated AND c.work_status <> 'done' AND ${visibleNow})::int AS all
-      FROM readable_conversations c
-      WHERE c.follow_up AND ${shown}
-    `,
-    mailboxCountQuery(params.context, scope),
-  ]);
-
+    `;
+  });
   const hasMore = rows.length > limit;
   const pageRows = hasMore ? rows.slice(0, limit) : rows;
-  const items = pageRows.map((row) => ({
-    id: row.id,
-    mailboxId: row.mailbox_id,
-    mailboxName: row.mailbox_name,
-    subject: row.subject,
-    participantSummary: row.participant_summary,
-    latestMessageAt: toIso(row.latest_message_at),
-    workStatus: row.work_status,
-    assigneeUserIds: row.assignee_user_ids,
-    revision: Number(row.revision),
-    sourceFolderId: row.source_folder_id,
-    unread: row.unread,
-    flagged: row.flagged,
-    hasAttachments: row.has_attachments,
-    preview: row.preview || null,
-  }));
   const last = pageRows.at(-1);
-  const counts = countRows[0] ?? { mine: 0, unassigned: 0, waiting: 0, all: 0 };
-  return ok({
-    items,
-    counts,
-    mailboxCounts: mailboxCountRows.map((row) => ({
+  return {
+    items: pageRows.map((row) => ({
+      id: row.id,
       mailboxId: row.mailbox_id,
+      mailboxName: row.mailbox_name,
+      subject: row.subject,
+      participantSummary: row.participant_summary,
+      latestMessageAt: toIso(row.latest_message_at),
+      workStatus: row.work_status,
+      assigneeUserIds: row.assignee_user_ids,
+      revision: Number(row.revision),
+      sourceFolderId: row.source_folder_id,
       unread: row.unread,
-      needsAction: row.needs_action,
+      flagged: row.flagged,
+      hasAttachments: row.has_attachments,
+      preview: row.preview || null,
     })),
-    nextCursor: hasMore && last ? encodeCursor({ version: 1, view, userId, date: last.cursor_at, id: last.id }) : null,
+    nextCursor: hasMore && last ? encodeCursor({ version: 1, view, userId: focus.userId, date: last.cursor_at, id: last.id }) : null,
+  };
+};
+
+const pageLimit = (limit: number | undefined) => Math.min(Math.max(Math.floor(limit ?? 50), 1), 100);
+
+export const listFocusConversations = async (params: {
+  context: MailRequestContext;
+  view?: MailFocusView;
+  cursor?: string;
+  limit?: number;
+  /**
+   * Mailboxes the person hid from their overview. Their conversations leave the list and the
+   * view counts; `mailboxCounts` still covers them so a revealed hidden mailbox keeps its counts.
+   */
+  excludedMailboxIds?: string[];
+}): Promise<Result<FocusPage & { counts: MailFocusCounts; mailboxCounts: MailFocusMailboxCounts[] }>> => {
+  if (!(await canReadFocus(params.context))) return fail(err.forbidden("Access denied"));
+
+  const view = params.view ?? "mine";
+  const userId = userBackedActor(params.context)?.id ?? null;
+  if ((view === "mine" || view === "waiting") && !userId) {
+    return fail(err.badInput(`The ${view} view requires a user-backed actor`));
+  }
+  const cursor = decodeCursor(params.cursor, view, userId);
+  if (!cursor.ok) return cursor;
+  const focus = await loadFocusReader(params.context, params.excludedMailboxIds);
+  const [page, stats] = await Promise.all([loadFocusPage(focus, view, cursor.data, pageLimit(params.limit)), loadFocusStats(focus)]);
+  return ok({ ...page, counts: toFocusCounts(stats, params.excludedMailboxIds), mailboxCounts: toMailboxCounts(stats) });
+};
+
+/**
+ * The first page of every view with the counts they share, for a person opening the overview: each
+ * view then opens at once, and the counts are computed once instead of once per view.
+ */
+export const listFocusOverview = async (params: {
+  context: MailRequestContext;
+  limit?: number;
+  excludedMailboxIds?: string[];
+}): Promise<Result<{ pages: Record<MailFocusView, FocusPage>; counts: MailFocusCounts; mailboxCounts: MailFocusMailboxCounts[] }>> => {
+  if (!(await canReadFocus(params.context))) return fail(err.forbidden("Access denied"));
+  if (!userBackedActor(params.context)) return fail(err.badInput("The focus overview requires a user-backed actor"));
+  const focus = await loadFocusReader(params.context, params.excludedMailboxIds);
+  const limit = pageLimit(params.limit);
+  const [stats, mine, unassigned, waiting, all] = await Promise.all([
+    loadFocusStats(focus),
+    loadFocusPage(focus, "mine", null, limit),
+    loadFocusPage(focus, "unassigned", null, limit),
+    loadFocusPage(focus, "waiting", null, limit),
+    loadFocusPage(focus, "all", null, limit),
+  ]);
+  return ok({
+    pages: { mine, unassigned, waiting, all },
+    counts: toFocusCounts(stats, params.excludedMailboxIds),
+    mailboxCounts: toMailboxCounts(stats),
   });
 };
