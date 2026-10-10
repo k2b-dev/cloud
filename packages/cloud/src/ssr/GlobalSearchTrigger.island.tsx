@@ -1,11 +1,11 @@
 import { IconButton, Tooltip, useLocale } from "@k2b/ui";
 import { createEffect, onCleanup, onMount } from "solid-js";
+import { registerContextAwareCommand } from "../browser/command-bridge";
 import { attachCommandShortcuts } from "../browser/command-shortcuts";
-import { registerContextAwareCommand, runContextAwareCommand } from "../browser/commands";
 import type { NavigationSearchItem } from "../browser/navigation-search";
 import { openGlobalSearch } from "../browser/search";
 import { registerGlobalSearchHost } from "../browser/search-bridge";
-import { createGlobalSearchHost } from "./GlobalSearchDialog";
+import { createGlobalSearchHost } from "./global-search-host";
 import { platformMessages } from "./platform-messages";
 
 type GlobalSearchTriggerProps = {
@@ -26,7 +26,14 @@ export default function GlobalSearchTrigger(props: GlobalSearchTriggerProps) {
     onMount(() => {
       onCleanup(registerGlobalSearchHost(host.open, host.dispose));
     });
-    onMount(() => onCleanup(attachCommandShortcuts((command) => void runContextAwareCommand(command))));
+    // Commands, their schemas and the capability client load on the first shortcut, not with every page.
+    onMount(() =>
+      onCleanup(
+        attachCommandShortcuts(
+          (command) => void import("../browser/commands").then(({ runContextAwareCommand }) => runContextAwareCommand(command)),
+        ),
+      ),
+    );
     createEffect(() =>
       onCleanup(
         registerContextAwareCommand({

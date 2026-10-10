@@ -6,7 +6,6 @@ import type { CloudTheme } from "../shared/theme";
 import { AppBadge, useAppBadgeDescription } from "./AppBadge";
 import { MobileProfileActions } from "./MobileProfileActions";
 import { platformMessages } from "./platform-messages";
-import { openRailEditor } from "./RailEditor";
 import { readRailContext } from "./rail-context";
 import { railMessages } from "./rail-messages";
 import { projectRailNavigation } from "./rail-navigation";
@@ -110,7 +109,8 @@ export const AppLaunchpadPanel = (
                 if (props.beforeSelect) {
                   if (!(await props.beforeSelect())) return;
                 } else props.close();
-                openRailEditor(locale());
+                // The editor and its validation load only when someone customizes the app bar.
+                void import("./RailEditor").then(({ openRailEditor }) => openRailEditor(locale()));
               }}
             >
               <i class="ti ti-adjustments-horizontal" aria-hidden="true" />
