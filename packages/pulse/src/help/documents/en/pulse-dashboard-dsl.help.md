@@ -2,19 +2,19 @@
 id: pulse-dashboard-dsl
 title: Dashboard DSL
 icon: ti ti-layout-dashboard
-description: Controls, sections, rows, cards, widgets, markdown, and conditions.
+description: Write a dashboard as text with controls, sections, rows, cards, widgets, Markdown, and conditions.
 order: 130
 ---
-Dashboard DSL describes the whole dashboard. Write and preview it as text so layout, queries, notes, and visual warning states stay together in one editable document.
+Dashboard DSL describes the whole dashboard. You write and preview it as text, so the layout, queries, notes, and visual warning states stay together in one editable document.
 
-## Build in layers {icon="square-plus"}
+## Build a dashboard in layers {icon="square-plus"}
 
 :::steps
-1. **Start with one section:** Give the dashboard a name and add the smallest section that answers one real question.
-2. **Add one widget:** Use stat, gauge, line, bar, histogram, heatmap, map, or table depending on the query output.
-3. **Add controls when repetition appears:** Use controls for range, source, resource, resource_type, label, or text values that multiple widgets share.
-4. **Group related widgets:** Use rows for side-by-side charts, cards for a related cluster, and sections for larger topics.
-5. **Explain decisions in place:** Use descriptions and markdown for operating notes, assumptions, and links.
+1. **Start with one section:** Name the dashboard. Add the smallest section that answers one real question.
+2. **Add one widget:** Use `stat`, `gauge`, `line`, `bar`, `histogram`, `heatmap`, `map`, or `table`, depending on the query output.
+3. **Add controls when values repeat:** Use controls for values that several widgets share. The control types are `range`, `source`, `resource`, `resource_type`, `label`, and `text`.
+4. **Group related widgets:** Use rows for charts side by side, cards for a related group, and sections for larger topics.
+5. **Explain decisions in place:** Use descriptions and Markdown for operating notes, assumptions, and links.
 :::
 
 ## Start with the smallest useful dashboard {icon="layout-dashboard"}
@@ -31,13 +31,13 @@ dashboard "Ops" {
 }
 ```
 
-This is enough to render useful content: a root document, one section, one widget, and one query. An empty `dashboard "Name" {}` document is valid while creating a dashboard, but it has nothing to display.
+This is enough to render useful content: a root document, one section, one widget, and one query. An empty `dashboard "Name" {}` document is valid while you create a dashboard, but it has nothing to display.
 
 ## Write exact Dashboard DSL {icon="braces"}
 
 Dashboard statements and visual names are case-sensitive. Use the spelling shown in this reference, including `barGauge`.
 
-Names, descriptions, messages, and other quoted text use double quotes. Inside quoted text, `\n` creates a line break, `\t` creates a tab, and a backslash escapes the following character. Markdown content uses triple double quotes:
+Names, descriptions, messages, and other quoted text use double quotes. Inside quoted text, `\n` creates a line break and `\t` creates a tab. A backslash escapes the following character. Markdown content uses triple double quotes:
 
 ```text
 description "Line one\nLine two"
@@ -72,11 +72,11 @@ dashboard "Ops" {
 }
 ```
 
-Controls create variables such as `$range` or `$resource_key`. If `variable` is omitted, Pulse derives it from the label, for example `Resource type` becomes `$resource_type`. If `default` is omitted, Pulse uses the first option. A range with neither a default nor options uses `24h`; other controls use an empty value.
+Controls create variables such as `$range` or `$resource_key`. Without `variable`, Pulse derives the variable from the label: for example, `Resource type` becomes `$resource_type`. Without `default`, Pulse uses the first option. A range with neither a default nor options uses `24h`. Other controls then use an empty value.
 
 Public displays use control defaults and do not show interactive controls, so choose defaults that make sense without interaction.
 
-## Full shape {icon="point"}
+## See the full shape {icon="point"}
 
 **Shape**
 
@@ -161,7 +161,7 @@ dashboard "Solar overview" {
 }
 ```
 
-## Statement reference {icon="book-2"}
+## Look up a statement {icon="book-2"}
 
 | Statement | Scope | Meaning | Example |
 | --- | --- | --- | --- |
@@ -179,18 +179,18 @@ dashboard "Solar overview" {
 | `label\|series dimension\|attribute <path>` | map | Optionally adds point labels or separates points into colored series. | `series dimension campaign` |
 | `size count\|sum` | map | Sizes points by matching event count or by the sum of numeric event values. Count is the default. | `size count` |
 | `visual <type>` | widget | Overrides the visual declared by the outer widget keyword. It accepts the same visual names. Prefer the direct widget keyword for hand-written DSL. | `line "Current value" { visual stat query metric service.online latest since 10m }` |
-| `query <Query DSL>` | widget | Uses metric, events, or states Query DSL. Dashboard controls may be referenced as $variables. Summarized events can drive numeric widgets. | `query events order.created count every 1h since $range group by channel` |
+| `query <Query DSL>` | widget | Uses metric, events, or states Query DSL. You can reference dashboard controls as `$variables`. Summarized events can drive numeric widgets. | `query events order.created count every 1h since $range group by channel` |
 | `warn\|critical when value <op> <value>` | metric widget | Applies visual state to metric values only. Operators are >, >=, <, <=, =, and !=. Optional message text can explain the condition. | `critical when value > 95 message "Capacity almost full"` |
 | `# comment or // comment` | anywhere whitespace is allowed | Adds a line comment that does not change the rendered dashboard. | `# explain why this section exists` |
 
-## Design rules {icon="book-2"}
+## Follow the design rules {icon="book-2"}
 
 :::info Dashboards compose query output
 Widget `query` lines use the same Query DSL. Metrics and summarized events show values and charts. Table widgets show individual events and current states. Metric `group by resource` and `group by <dimension>` create separate chart series.
 :::
 
 :::info Maps summarize event locations
-Use a map for events that contain decimal latitude and longitude fields. Pulse groups matching events by location, optional label, and optional series across the selected range. Invalid or out-of-range coordinates are ignored. A map shows at most 1,000 aggregated points, so use source, resource, and dimension filters when a broad query would hide useful detail. On a public dashboard, the aggregated coordinates, labels, and series shown by the map are public too.
+Use a map for events that contain decimal latitude and longitude fields. Pulse groups matching events by location, optional label, and optional series across the selected range. Pulse ignores invalid or out-of-range coordinates. A map shows at most 1,000 aggregated points, so use source, resource, and dimension filters when a broad query would hide useful detail. On a public dashboard, the aggregated coordinates, labels, and series that the map shows are public too.
 :::
 
 :::info Controls define variables
@@ -202,14 +202,14 @@ Public links render with each control's default value. Keep public dashboards de
 :::
 
 :::info Refresh is a dashboard setting
-Auto-refresh is configured outside Dashboard DSL. Choose 1, 5, 10, or 60 seconds, or disable automatic refresh. New dashboards default to five seconds, and editing DSL keeps the existing refresh setting.
+You set the automatic refresh outside Dashboard DSL. Choose 1, 5, 10, or 60 seconds, or turn the automatic refresh off. New dashboards refresh every five seconds by default. Editing the DSL keeps the existing refresh setting.
 :::
 
 :::warning Conditions are visual
 Use `warn when value > 80` or `critical when value = false` to mark metric widgets visually. Alert delivery and webhooks are a separate future layer.
 :::
 
-## Limits {icon="ruler"}
+## Stay within the limits {icon="ruler"}
 
 - Dashboard DSL is limited to 40,000 characters.
 - Titles are limited to 160 characters. Dashboard descriptions are limited to 1,000 characters; section, card, widget, and Markdown descriptions to 500.
@@ -219,12 +219,12 @@ Use `warn when value > 80` or `critical when value = false` to mark metric widge
 - A row supports up to 12 cells. `span` must be an integer from 1 to 12.
 - One widget supports up to eight visual conditions.
 
-## Validation and unavailable data {icon="alert-circle"}
+## Understand validation and missing data {icon="alert-circle"}
 
-Pulse stores the DSL source and refresh setting. It compiles one render model from that source; old layouts, string-encoded configuration, invalid values, and oversized documents are rejected rather than repaired. The same controls resolve in previews, server rendering, and browser refreshes.
+Pulse stores the DSL source and the refresh setting, and compiles one render model from that source. Pulse rejects old layouts, string-encoded configuration, invalid values, and oversized documents instead of repairing them. The same controls resolve in previews, server rendering, and browser refreshes.
 
-A dashboard supports at most 36 data widgets, 24 controls, 24 rows per container and 12 widgets per row. These limits apply before saving, including public dashboards. Excess widgets are never silently omitted.
+A dashboard supports at most 36 data widgets, 24 controls, 24 rows per container, and 12 widgets per row. These limits apply before saving, also for public dashboards. Pulse never silently omits excess widgets.
 
-A failed query or a deleted source makes the refresh fail visibly. The private dashboard keeps its previous complete snapshot and marks the refresh as failed; it does not combine old and newly fetched widget data. Public snapshots also return an error instead of empty success data.
+A failed query or a deleted source makes the refresh fail visibly. The private dashboard keeps its previous complete snapshot and marks the refresh as failed. It does not combine old and newly fetched widget data. Public snapshots also return an error instead of empty success data.
 
-Missing metric values remain missing: charts do not turn them into zero, lines break across missing buckets, and gauges show no data when the latest value is unavailable. A measured zero remains a valid observation.
+Missing metric values stay missing. Charts do not turn them into zero, lines break across missing buckets, and gauges show no data when the latest value is unavailable. A measured zero stays a valid observation.

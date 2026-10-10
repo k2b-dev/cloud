@@ -1,31 +1,33 @@
 ---
 id: tools-start
-title: Start
+title: Mit Tools beginnen
 icon: ti ti-tool
-description: Werkzeugkategorien, Suche, lokale Verarbeitung im Browser und serverseitige Verarbeitung.
+description: Finde ein Werkzeug über Kategorie oder Suche und erkenne, welche Werkzeuge Daten im Browser oder auf dem Server verarbeiten.
 order: 100
 ---
 
-Tools ist ein Arbeitsbereich für Generatoren, Konverter, Sicherheits- und Medienwerkzeuge sowie Netzwerktests. Jedes Werkzeug lässt sich über die Übersicht finden.
+Tools ist ein Arbeitsbereich für Generatoren, Konverter, Sicherheits- und Medienwerkzeuge sowie Netzwerktests. Jedes Werkzeug findest du in der Übersicht, bevor du es öffnest.
 
-## So legst du los {icon="route"}
+## Werkzeug finden und nutzen {icon="route"}
 
-:::reference
-- **Werkzeug finden:** Öffne das passende Werkzeug über die Übersicht, die Gruppen in der Seitenleiste oder die Werkzeugsuche.
-- **Eingabe festlegen:** Die meisten Werkzeuge aktualisieren ihre Ausgabe direkt und bieten passende Aktionen zum Kopieren oder Herunterladen.
-- **Datenverarbeitung prüfen:** Lokal arbeitende Werkzeuge behalten die Daten im Browser. Dokumentkonvertierung, PDF-Erstellung und Netzwerkwerkzeuge rufen den Server auf, weil sie serverseitige Verarbeitung oder einen stabilen Endpunkt benötigen.
+:::steps
+1. Öffne das Werkzeug über die Übersicht, eine Gruppe in der Seitenleiste oder die Werkzeugsuche.
+2. Gib nur die Eingabe ein, die du brauchst. Die meisten Werkzeuge aktualisieren ihre Ausgabe direkt aus den Werten auf der Seite.
+3. Kopiere das Ergebnis oder lade es herunter, wenn das Werkzeug das anbietet.
 :::
 
-## Werkzeuggruppen {icon="book-2"}
+Prüfe, wohin deine Daten gehen. Lokal arbeitende Werkzeuge behalten die Daten im Browser. Dokumentkonvertierung, PDF-Erstellung und die Netzwerkwerkzeuge rufen den Server auf, weil sie serverseitige Verarbeitung oder einen stabilen Endpunkt brauchen.
+
+## Werkzeuggruppen kennen {icon="book-2"}
 
 :::reference
 - **Generatoren:** Mailto-Links, QR-Codes, UUIDs, Lorem-Ipsum-Text und Passwörter.
-- **Encoder:** Base64, Hex, Base32, Farbumrechnung, serverseitige Textextraktion aus Dokumenten und Markdown-zu-PDF-Rendering.
+- **Konverter:** Base64, Hex, Base32, Farbumrechnung, Textextraktion aus Dokumenten auf dem Server und Markdown-zu-PDF-Rendering.
 - **Sicherheit:** Hashes, Passwörter und Verschlüsselung.
 - **Medien:** Bilder im Stapel konvertieren sowie im Detail skalieren, zuschneiden, filtern, drehen, beschriften und exportieren.
-- **Netzwerk:** Geschwindigkeitstests gegen den Cloud-Server und das Testen von Webhook-Endpunkten.
+- **Netzwerk:** Geschwindigkeitstests gegen den Cloud-Server und Tests von Webhook-Endpunkten.
 :::
 
 :::info Daten im Webhook-Tester
-Webhook-Endpunkte und Anfrageprotokolle werden zur Auswertung auf dem Server gespeichert. Der Tester schwärzt sensible Header wie Authorization und Cookie vor dem Protokollieren.
+Der Server speichert Webhook-Endpunkte und Anfrageprotokolle, damit du sie auswerten kannst. Der Tester schwärzt sensible Header wie Authorization und Cookie, bevor er eine Anfrage protokolliert.
 :::

@@ -1,37 +1,41 @@
 ---
 id: spaces-sharing
-title: Freigabe und Einstellungen
+title: Space teilen und Einstellungen ändern
 icon: ti ti-lock
-description: Zugriffsrechte, Einstellungen und Kalenderexporte.
+description: Gib Personen die passende Zugriffsstufe, ändere die Space-Einstellungen und teile Kalenderexporte sicher.
 order: 130
 ---
 
-Spaces sind Bereiche für gemeinsame Arbeit. Berechtigungen sollten zu den Personen passen, die diese Arbeit lesen, bearbeiten oder verwalten dürfen.
+Gib jeder Person und Gruppe nur den Zugriff, den sie in diesem Space braucht.
 
 ## Space-Einstellungen öffnen {icon="settings"}
 
-Öffne in der Seitenleiste des Space die **Space-Einstellungen**. Die Einstellungen werden in einem Dialog angezeigt. Du kannst danach zur aktuellen Ansicht zurückkehren, ohne den Space zu verlassen.
+Wähle in der Seitenleiste des Space **Space-Einstellungen**. Die Einstellungen öffnen sich in einem Dialog. So kehrst du zur aktuellen Ansicht zurück, ohne den Space zu verlassen.
 
 Die Kategorien ordnen die Einstellungen nach Zuständigkeit und Auswirkung:
 
-- **Space** enthält den gemeinsamen Namen, Tags und Workflow-Status.
-- **Persönlich** enthält deine Browser-Voreinstellungen. Änderungen gelten sofort für dich.
-- **Verbindungen** enthält den Kalender-Feed, Wormholes und das GitHub-Token für Linkvorschauen; Wormholes und Token verwalten Personen mit Adminzugriff.
-- **Freigabe** enthält Berechtigungen und API-Schlüssel für Personen mit Adminzugriff.
+- **Space** enthält den gemeinsamen Namen und die Angaben, Tags und Workflow-Status.
+- **Persönlich** enthält deine Browser-Voreinstellungen. Sie gelten sofort und nur für dich.
+- **Verbindungen** enthält das Kalender-Abonnement, die Wormholes und das GitHub-Token für Linkvorschauen. Wormholes und Token ändern nur Personen mit Zugriff **Verwalten**.
+- **Freigabe** enthält Zugriff und API-Schlüssel. Sie ist für Personen mit Zugriff **Verwalten**.
 - **Verwaltung** enthält das endgültige Löschen des Space.
 
-Formulare mit einer Fußzeile zeigen die Anzahl der Änderungen. Prüfe diese Zahl und wähle **Änderungen speichern**. Einzelne Aktionen wie das Hinzufügen eines Status, das Ändern eines Zugriffs oder das Widerrufen eines Schlüssels werden direkt nach der Bestätigung gespeichert.
+Formulare mit einer Fußzeile zeigen die Anzahl der Änderungen. Prüfe diese Zahl und wähle **Änderungen speichern**. Aktionen in einer Liste, etwa einen Status hinzufügen, einen Zugriff ändern oder einen Schlüssel widerrufen, speichern sofort nach deiner Bestätigung.
 
-## Zugriffsrechte {icon="shield-lock"}
+## Zugriffsstufe wählen {icon="shield-lock"}
 
 :::reference
-- **Lesen:** Die Person kann den Space und seine Einträge sehen.
-- **Schreiben:** Die Person kann Einträge und Kommentare erstellen und bearbeiten sowie Status, Termine, Fälligkeitsdaten und Zuständigkeiten ändern.
-- **Admin:** Die Person kann Angaben zum Space, Zugriffsrechte, Tags, Status, Kalenderexporte, das GitHub-Token und Löscheinstellungen ändern.
-- **GitHub-Token:** Optional und je Space. Es wird verschlüsselt gespeichert, nur für Vorschauen von GitHub-Links an Einträgen dieses Space verwendet und nie wieder angezeigt. Verwende bevorzugt ein fein abgestuftes Token mit Lesezugriff auf Issues und Pull Requests der Repositories, an denen der Space arbeitet. Entferne es, wenn es nicht mehr gebraucht wird.
-- **Kalenderexport:** Verwende den Kalenderexport, wenn geplante Arbeit in einem externen Kalender erscheinen soll. Behandle Export-URLs wie einen Lesezugriff auf die Termindetails.
+- **Ansehen:** Den Space und seine Einträge sehen. Eigene Voreinstellungen ändern und das Kalender-Abonnement kopieren.
+- **Bearbeiten:** Zusätzlich Einträge, Kommentare, Status, Datumsangaben und Zuständigkeiten erstellen und ändern. Angaben zum Space, Tags, Status, die automatischen Kanban-Spalten und die Spaltenreihenfolge ändern.
+- **Verwalten:** Zusätzlich Wormholes, GitHub-Token, Zugriff, API-Schlüssel, den Kalenderexport und das Löschen ändern.
 :::
 
-:::note Einstellungen mit Adminzugriff
-Nur Personen mit Adminzugriff können Wormholes, das GitHub-Token, Zugriffsrechte, API-Schlüssel und das Löschen verwalten. Personen mit Schreibzugriff können gemeinsame Angaben zum Space, Tags, Status, die automatischen Kanban-Spalten und die Spaltenreihenfolge verwalten. Personen mit Lesezugriff können ihre persönlichen Voreinstellungen ändern und den Kalender-Feed kopieren.
-:::
+## GitHub-Token hinterlegen {icon="brand-github"}
+
+Das GitHub-Token ist optional und gehört zu einem Space. Spaces speichert es verschlüsselt und nutzt es nur für Vorschauen von GitHub-Links an Einträgen dieses Space. Spaces zeigt das Token nie wieder an.
+
+Verwende bevorzugt ein fein abgestuftes Token, das nur Issues und Pull Requests der Repositories lesen kann, an denen der Space arbeitet. Entferne das Token, wenn du es nicht mehr brauchst.
+
+## Kalenderexport teilen {icon="calendar-share"}
+
+Nutze den Kalenderexport, wenn geplante Arbeit in einem externen Kalender erscheinen soll. Behandle eine Export-URL wie einen Zugriff, mit dem jemand die Termindetails lesen kann.
