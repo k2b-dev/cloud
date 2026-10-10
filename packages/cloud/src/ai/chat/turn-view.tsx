@@ -716,6 +716,7 @@ function AiTurnText(props: {
   );
   const html = createMemo(() => markdown.renderSync(source(), { locale: locale() }));
   const shownId = createMemo(() => props.blocks()[0]?.id);
+  const quiet = createMemo(() => props.quiet());
   const [minHeight, setMinHeight] = createSignal<number | null>(null);
   let element!: HTMLDivElement;
   let lastHeight = 0;
@@ -727,15 +728,21 @@ function AiTurnText(props: {
     observer.observe(element);
     onCleanup(() => observer.disconnect());
   });
-  // A new status and the switch to the quiet style both keep the place's height, so nothing below moves up.
+  /** The quiet text's height in answer typography, measured in place before the browser paints. */
+  const answerHeight = () => {
+    element.classList.remove("ai-turn__text--status");
+    const height = element.offsetHeight;
+    element.classList.add("ai-turn__text--status");
+    return height;
+  };
+  // A new status keeps the height of the one before it. A quiet status keeps the height it has as the answer, also when
+  // it first shows quietly after a reload, so nothing below moves when it is replaced or becomes the answer again.
   createEffect(
-    on(
-      [shownId, props.quiet],
-      () => {
-        if (props.live() && lastHeight > 0) setMinHeight((current) => Math.max(current ?? 0, lastHeight));
-      },
-      { defer: true },
-    ),
+    on([shownId, quiet], ([id, isQuiet], previous) => {
+      if (!props.live()) return;
+      const height = Math.max(previous && previous[0] !== id ? lastHeight : 0, isQuiet ? answerHeight() : 0);
+      if (height > 0) setMinHeight((current) => Math.max(current ?? 0, height));
+    }),
   );
   createEffect(() => {
     if (!props.live()) setMinHeight(null);
@@ -756,7 +763,7 @@ function AiTurnText(props: {
     <div
       ref={element}
       class="ai-turn__text"
-      classList={{ "ai-turn__text--status": props.quiet() }}
+      classList={{ "ai-turn__text--status": quiet() }}
       aria-live={status() ? "off" : undefined}
       style={minHeight() ? { "min-height": `${minHeight()}px` } : undefined}
     >

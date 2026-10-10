@@ -845,7 +845,7 @@ for (const view of [
       const style = (selector: string) =>
         page.$eval(`${selector} .assistant-markdown-block`, (node) => {
           const computed = getComputedStyle(node);
-          return { color: computed.color, fontSize: computed.fontSize };
+          return { color: computed.color, fontSize: computed.fontSize, lineHeight: computed.lineHeight };
         });
       await emit(page, { ...base, seq: 1, type: "turn_started", modelProfileId: "m", providerModel: "m", blocks: [] });
       await emit(page, {
@@ -888,14 +888,148 @@ for (const view of [
       expect(await viewportBox(page, receipt)).toEqual(before.receipt);
       expect((await layout(page)).overflowX).toBeLessThanOrEqual(0);
 
-      // It looks like the intermediate texts in the expanded work.
+      // It looks like the intermediate texts in the expanded work, but keeps the answer's line height, so a status and the
+      // text that replaces it line up instead of jumping by a few pixels at every switch.
       await page.locator(".ai-turn-work > summary").click();
       await page.locator(".ai-turn-steps__text").first().waitFor();
-      expect(await style(".ai-turn-steps__text")).toEqual(statusStyle);
+      expect(await style(".ai-turn-steps__text")).toEqual({ ...statusStyle, lineHeight: "18.6px" });
+      expect(statusStyle.lineHeight).toBe(answerStyle.lineHeight);
     } finally {
       await context.close();
     }
   }, 30_000);
+
+for (const view of [
+  { name: "desktop", width: 1280, height: 800, touch: false },
+  { name: "phone", width: 390, height: 844, touch: true },
+] as const)
+  test(`a status that first shows quietly after a reload keeps its height as the answer, so the turn's end moves nothing (${view.name})`, async () => {
+    const context = await browser.newContext({
+      viewport: { width: view.width, height: view.height },
+      isMobile: view.touch,
+      hasTouch: view.touch,
+      reducedMotion: "reduce",
+    });
+    try {
+      const page = await context.newPage();
+      await page.clock.setFixedTime(new Date("2026-10-07T10:00:00Z"));
+      await page.goto(`http://127.0.0.1:${server.port}/?lang=en&theme=light`);
+      const presentation = {
+        kind: "capability" as const,
+        appId: "mail",
+        appName: "Mail",
+        appIcon: "ti ti-mail",
+        title: "Send email",
+        capabilityKind: "action" as const,
+      };
+      const read = { id: "tool-read", kind: "tool" as const, callId: "read", name: "read_file", args: { path: "/chart.json" } };
+      const send = { id: "tool-send", kind: "tool" as const, callId: "send", name: "mail__action__send", args: {}, presentation };
+      const text = [
+        "## Monthly totals",
+        "The chart API returns the totals per month, so the dashboard needs no second request for the summary row.",
+        "- January and February are complete.\n- March still misses the last week.",
+        "I send the summary to Jana Berger now, so she has it before the planning meeting.",
+      ].join("\n\n");
+      const sent = "Email to Jana Berger sent";
+      const place = ".ai-turn__text";
+      const receipt = ".ai-turn__action .ai-turn-receipt";
+      // The chat opens while the action after the text runs: the text never showed as the answer before it is quiet.
+      await emit(page, {
+        ...base,
+        seq: 1,
+        type: "turn_started",
+        modelProfileId: "m",
+        providerModel: "m",
+        blocks: [
+          { ...read, status: "completed", result: "{}" },
+          { id: "text-1", kind: "text", text },
+          { ...send, status: "running", approved: true },
+        ],
+      });
+      const request = storedMessage(10, "turn", { role: "user", content: [{ type: "text", text: "Summarize the chart for Jana" }] });
+      await emit(page, { ...base, seq: 2, type: "message_saved", message: request });
+      expect(await page.locator(`${place}.ai-turn__text--status`).count()).toBe(1);
+      const before = { text: await viewportBox(page, place), receipt: await viewportBox(page, receipt) };
+
+      // The turn ends without another text: the status becomes the final message in answer typography within the height
+      // its place already kept, so the receipt below stays where it is.
+      await emit(page, {
+        ...base,
+        seq: 3,
+        type: "block_set",
+        block: { ...send, status: "completed", approved: true, result: { summary: sent } },
+      });
+      expect(await viewportBox(page, receipt)).toEqual(before.receipt);
+      await emit(page, {
+        ...base,
+        seq: 4,
+        type: "turn_finished",
+        status: "completed",
+        error: null,
+        messages: [
+          request,
+          storedMessage(11, "turn", {
+            role: "assistant",
+            content: [{ type: "tool_call", id: "read", name: "read_file", args: read.args }],
+          }),
+          storedMessage(12, "turn", { role: "tool_result", callId: "read", name: "read_file", result: "{}", isError: false }),
+          storedMessage(
+            13,
+            "turn",
+            {
+              role: "assistant",
+              content: [
+                { type: "text", text },
+                { type: "tool_call", id: "send", name: "mail__action__send", args: {} },
+              ],
+            },
+            { meta: { toolPresentations: { send: presentation } } },
+          ),
+          storedMessage(
+            14,
+            "turn",
+            { role: "tool_result", callId: "send", name: "mail__action__send", result: { summary: sent }, isError: false },
+            { meta: { toolOutcomes: { send: "approved" } }, loopDoneReason: "stop", createdAt: "2026-10-07T10:00:00.000Z" },
+          ),
+        ],
+      });
+      expect(await page.locator(`${place}.ai-turn__text--status`).count()).toBe(0);
+      expect(await page.$eval(`${place} .assistant-markdown-block`, (node) => getComputedStyle(node).fontSize)).toBe("14px");
+      expect(await page.locator(receipt).innerText()).toBe(sent);
+      expect(await viewportBox(page, place)).toEqual(before.text);
+      expect(await viewportBox(page, receipt)).toEqual(before.receipt);
+    } finally {
+      await context.close();
+    }
+  }, 30_000);
+
+test("a streaming answer without steps reserves no height, so it reflows live when its Markdown settles", async () => {
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    isMobile: true,
+    hasTouch: true,
+    reducedMotion: "reduce",
+  });
+  try {
+    const page = await context.newPage();
+    await page.goto(`http://127.0.0.1:${server.port}/?lang=en&theme=light`);
+    await emit(page, { ...base, seq: 1, type: "turn_started", modelProfileId: "m", providerModel: "m", blocks: [] });
+    const words = "The quarterly numbers grew in every region, and the strongest month was March.".split(" ");
+    for (const [index, word] of words.entries()) {
+      await emit(page, {
+        ...base,
+        seq: index + 2,
+        type: "block_delta",
+        blockId: "text-1",
+        blockKind: "text",
+        delta: `${index ? " " : ""}${word}`,
+      });
+      expect(await page.locator(".ai-turn__text").evaluate((node: HTMLElement) => node.style.minHeight)).toBe("");
+    }
+  } finally {
+    await context.close();
+  }
+}, 30_000);
 
 for (const width of [390, 320])
   test(`a long action title shortens the approve button on a phone instead of pushing it out of the card (${width} px)`, async () => {

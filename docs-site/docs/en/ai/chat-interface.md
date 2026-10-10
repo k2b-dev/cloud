@@ -287,8 +287,12 @@ order:
    and the place keeps its height until the turn ends. A text that ends the
    turn so far may still be the answer and keeps answer typography. As soon as
    a step starts after it, it reads quietly in the muted, smaller style of the
-   intermediate texts in the expanded work line. It changes together with the
-   work line's new step and keeps its place and line height, so nothing moves.
+   intermediate texts in the expanded work line, also while an approval or
+   survey waits for the user; its card says what is asked. It changes together
+   with the work line's new step and keeps its line height. The place keeps the
+   height the text has as the answer, also when the chat opens while a step
+   runs, so nothing moves when the text turns quiet, is replaced, or becomes
+   the final message.
    Finished, it is the final message in answer typography: the turn's last
    text, even if a tool call followed it. A stopped or failed turn has no final
    message; its texts stay in the work line.
