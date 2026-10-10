@@ -10,6 +10,39 @@ updated: 2026-10-10
 
 # Deprecations and migrations
 
+## The dashboard becomes one board of widgets in three sizes
+
+The dashboard no longer has the focus, overview, and side zones, widget
+widths, arrow ordering, the name color, or the per-device cookie that left
+empty widgets out. Each person has one board: an ordered list of widgets, each
+in a small, medium, or large size, edited on the board itself and saved without
+a reload. A gallery lists the widgets the person may use, with live previews.
+
+The widget declaration is extended, not replaced. `defineApp({ widgets })`
+accepts `title`, `description`, `sizes`, `defaultSize`, `suggest`, and
+`requiresRoles`, and `presentation.translations.<locale>.widgets` translates
+titles and descriptions. A handler reads the requested size with
+`getWidgetRequest(c)` from `@k2b/cloud/server`. A widget without `sizes` keeps
+working as a `large` widget. `presentation.defaultZone` and
+`presentation.defaultSpan` are deprecated; declare `sizes` and `defaultSize`
+instead, and keep an existing `presentation` while saved boards are converted.
+`defineApp()` now rejects a widget ID that contains `@` and a `suggest` that is
+not a boolean. The widget stream accepts `widget=<appId>/<widgetId>@<size>`,
+and `streamWidgets()` takes `sizes`.
+
+Saved dashboard settings are converted once, on each person's next visit, into
+the board they saw: the saved order, the zones and widths they chose, and
+otherwise their apps' recommendations. A widget in the side column becomes
+small, a wide one large, and any other medium; a widget that does not offer
+that size yet shows in its default size until it does. A widget switched off is
+not on the board. People who never changed a widget follow the new default
+board. Shortcuts stay; the name color is dropped. The
+`dashboard.user_settings` table gets a `board` column; the old columns stay
+and are emptied as each person's settings are converted. Deploy Core and the
+Dashboard together; see
+[Upgrade the dashboard to one board](/en/docs/operations/deployment-requirements#upgrade-the-dashboard-to-one-board)
+and [Dashboard widgets](/en/docs/platform/dashboard-widgets#board-and-gallery).
+
 ## Actions can word their own approvals and receipts
 
 This change is additive; existing declarations behave as before. A capability

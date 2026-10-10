@@ -1,6 +1,6 @@
 import type { WidgetBlock, WidgetResponse } from "@k2b/cloud/contracts";
 import { hasRole } from "@k2b/cloud/contracts";
-import { type AuthContext, auth, getLocale } from "@k2b/cloud/server";
+import { type AuthContext, auth, getLocale, getWidgetRequest } from "@k2b/cloud/server";
 import { latestGatewayRouteSnapshot } from "@k2b/cloud/services";
 import { formatDurationMs, formatNumber } from "@k2b/cloud/shared";
 import { type Context, Hono } from "hono";
@@ -9,7 +9,8 @@ import { gatewayOpsMessages } from "./messages";
 
 /**
  * Platform health widget — admin only. Status includes app liveness and the
- * operational signals evaluated by the central health service.
+ * operational signals evaluated by the central health service; the medium
+ * size adds the counts as pills.
  */
 export const gatewayHealthWidgetHandler = async (c: Context<AuthContext>) => {
   const actor = c.get("actor") as AuthContext["Variables"]["actor"] | undefined;
@@ -38,7 +39,9 @@ export const gatewayHealthWidgetHandler = async (c: Context<AuthContext>) => {
         ? t.gatewayUptime({ uptime: formatDurationMs(Date.now() - snapshot.startedAt, { locale }), total: formatNumber(total, { locale }) })
         : t.widgetNoRouterSnapshot({ total: formatNumber(total, { locale }) }),
     },
-    {
+  ];
+  if (getWidgetRequest(c).size !== "small") {
+    blocks.push({
       kind: "pills",
       pills: [
         {
@@ -52,8 +55,8 @@ export const gatewayHealthWidgetHandler = async (c: Context<AuthContext>) => {
           ? [{ label: t.unmatched, value: formatNumber(snapshot.stats.noRouteCount, { locale }), tone: "amber" as const }]
           : []),
       ],
-    },
-  ];
+    });
+  }
 
   const body: WidgetResponse = {
     title: t.platformHealth,

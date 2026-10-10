@@ -38,16 +38,61 @@ const WidgetHrefSchema = z
 export const WidgetToneSchema = z.enum(["emerald", "amber", "red", "blue", "zinc"]);
 export type WidgetTone = z.infer<typeof WidgetToneSchema>;
 
+/** @deprecated The dashboard no longer has zones; declare `sizes` and `defaultSize` instead. */
 export type DashboardWidgetZone = "focus" | "overview" | "context";
+/** @deprecated The dashboard no longer has spans; declare `sizes` and `defaultSize` instead. */
 export type DashboardWidgetSpan = "standard" | "wide";
 
 /**
- * Stable, app-owned recommendation for a widget's initial dashboard layout.
- * Explicit user layout settings always take precedence.
+ * @deprecated The dashboard has no zones or widths any more. Declare `sizes` and `defaultSize` on the widget instead;
+ * the dashboard reads this recommendation only to convert a board saved before sizes existed.
  */
 export type DashboardWidgetPresentation = {
   defaultZone?: DashboardWidgetZone;
   defaultSpan?: DashboardWidgetSpan;
+};
+
+/**
+ * The three sizes a widget can take on the dashboard board, which has four columns on wider screens and two on
+ * phones: `small` is one column and one row, `medium` two columns and one row, and `large` two columns and two rows.
+ * On a phone, `small` takes half the width and `medium` and `large` the full width.
+ */
+export const DASHBOARD_WIDGET_SIZES = ["small", "medium", "large"] as const;
+export type DashboardWidgetSize = (typeof DASHBOARD_WIDGET_SIZES)[number];
+
+/** Longest declared widget title, in characters, the same bound as a shortcut title. */
+export const WIDGET_TITLE_MAX_LENGTH = 80;
+/** Longest declared widget description, in characters: one sentence in the widget gallery. */
+export const WIDGET_DESCRIPTION_MAX_LENGTH = 200;
+
+export const isDashboardWidgetSize = (value: unknown): value is DashboardWidgetSize =>
+  DASHBOARD_WIDGET_SIZES.some((size) => size === value);
+
+/**
+ * The sizes a widget offers and the size it starts with. A widget that declares no valid size offers only `large`,
+ * the height every widget had before sizes existed; without a valid `defaultSize`, it starts at its largest size.
+ */
+export const resolveWidgetSizes = (declaration: {
+  sizes?: readonly unknown[];
+  defaultSize?: unknown;
+}): { sizes: DashboardWidgetSize[]; defaultSize: DashboardWidgetSize } => {
+  const declared = DASHBOARD_WIDGET_SIZES.filter((size) => declaration.sizes?.includes(size));
+  const sizes: DashboardWidgetSize[] = declared.length > 0 ? declared : ["large"];
+  const defaultSize =
+    isDashboardWidgetSize(declaration.defaultSize) && sizes.includes(declaration.defaultSize) ? declaration.defaultSize : sizes.at(-1)!;
+  return { sizes, defaultSize };
+};
+
+/** `requested` when the widget offers it, otherwise the widget's default size. */
+export const fitWidgetSize = (
+  requested: unknown,
+  widget: { sizes: readonly DashboardWidgetSize[]; defaultSize: DashboardWidgetSize },
+): DashboardWidgetSize => (isDashboardWidgetSize(requested) && widget.sizes.includes(requested) ? requested : widget.defaultSize);
+
+/** What the dashboard asks a widget handler for, read with `getWidgetRequest(c)`. */
+export type WidgetRequest = {
+  /** The size the widget is shown in, always one the widget declares. */
+  size: DashboardWidgetSize;
 };
 
 export const WidgetAccentSchema = z

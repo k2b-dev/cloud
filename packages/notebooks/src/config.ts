@@ -13,6 +13,7 @@ export const app = defineApp({
       de: {
         name: "Notizbücher",
         description: "Gemeinsam bearbeitete Notizbücher mit strukturierten Notizen und Echtzeitsynchronisierung.",
+        widgets: { recent: { title: "Letzte Notizen", description: "Deine zuletzt geänderten Notizen." } },
       },
     },
   },
@@ -35,7 +36,19 @@ export const app = defineApp({
     section: "primary",
     requiresAuth: true,
   },
-  widgets: [{ id: "recent", path: "/api/notebooks/widget/recent", presentation: { defaultSpan: "wide" } }],
+  widgets: [
+    {
+      id: "recent",
+      path: "/api/notebooks/widget/recent",
+      title: "Recent notes",
+      description: "Your most recently changed notes.",
+      sizes: ["medium", "large"],
+      defaultSize: "medium",
+      suggest: true,
+      // Recommended before sizes existed; the dashboard reads it only to convert boards saved then.
+      presentation: { defaultSpan: "wide" },
+    },
+  ],
   openapi: "/api/notebooks/openapi.json",
   routes: ["/api/notebooks", "/app/notebooks", "/admin/notebooks", "/public/notebooks"],
   settings: {

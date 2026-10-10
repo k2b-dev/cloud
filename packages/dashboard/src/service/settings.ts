@@ -1,67 +1,89 @@
-import { toPgTextArray } from "@k2b/cloud/services";
 import { sql } from "bun";
-import { type DashboardSettings, DEFAULT_DASHBOARD_SETTINGS, normalizeDashboardSettings } from "../shared";
+import {
+  type DashboardBoardEntry,
+  type DashboardSettings,
+  DEFAULT_DASHBOARD_SETTINGS,
+  isEmptyLegacyDashboardLayout,
+  type LegacyDashboardLayout,
+  normalizeDashboardBoard,
+  normalizeDashboardShortcuts,
+  normalizeLegacyDashboardLayout,
+} from "../shared";
 
 type SettingsRow = {
-  gradient: string;
-  hiddenWidgets: string[];
   shortcuts: unknown;
+  board: unknown;
+  hiddenWidgets: string[];
   layout: unknown;
 };
 
 export type DashboardSettingsResult = {
   exists: boolean;
   settings: DashboardSettings;
+  /** Settings from before widgets had sizes that still wait to become a board; only while `board` is `null`. */
+  legacy: LegacyDashboardLayout | null;
 };
 
-const fromRow = (row: SettingsRow): DashboardSettings =>
-  normalizeDashboardSettings({
-    gradient: row.gradient,
-    hiddenWidgets: row.hiddenWidgets,
-    shortcuts: row.shortcuts,
-    layout: row.layout,
-  });
+const EMPTY_LEGACY_LAYOUT = '{"widgets":[],"order":[]}';
 
 export const getUserSettings = async (userId: string): Promise<DashboardSettingsResult> => {
   const rows = await sql<SettingsRow[]>`
-    SELECT
-      gradient,
-      hidden_widgets AS "hiddenWidgets",
-      shortcuts,
-      widget_layout AS layout
+    SELECT shortcuts, board, hidden_widgets AS "hiddenWidgets", widget_layout AS layout
     FROM dashboard.user_settings
     WHERE user_id = ${userId}
   `;
   const row = rows[0];
-  return row
-    ? { exists: true, settings: fromRow(row) }
-    : { exists: false, settings: normalizeDashboardSettings(DEFAULT_DASHBOARD_SETTINGS) };
+  if (!row) return { exists: false, settings: { ...DEFAULT_DASHBOARD_SETTINGS }, legacy: null };
+  const settings = { shortcuts: normalizeDashboardShortcuts(row.shortcuts), board: normalizeDashboardBoard(row.board) };
+  const legacy = settings.board === null ? normalizeLegacyDashboardLayout(row.hiddenWidgets, row.layout) : null;
+  return { exists: true, settings, legacy: legacy && !isEmptyLegacyDashboardLayout(legacy) ? legacy : null };
 };
 
+/** Saves the shortcuts and the board; `board: null` makes the person follow the default board again. */
 export const saveUserSettings = async (userId: string, input: DashboardSettings): Promise<DashboardSettings> => {
-  const settings = normalizeDashboardSettings(input);
+  const settings = { shortcuts: normalizeDashboardShortcuts(input.shortcuts), board: normalizeDashboardBoard(input.board) };
+  const board = settings.board === null ? null : JSON.stringify(settings.board);
+  // A saved board replaces whatever the old settings said, so they are never converted again.
   await sql`
-    INSERT INTO dashboard.user_settings (user_id, gradient, hidden_widgets, shortcuts, widget_layout, updated_at)
-    VALUES (
-      ${userId},
-      ${settings.gradient},
-      ${toPgTextArray(settings.hiddenWidgets)}::text[],
-      (${JSON.stringify(settings.shortcuts)}::text)::jsonb,
-      (${JSON.stringify(settings.layout)}::text)::jsonb,
-      now()
-    )
+    INSERT INTO dashboard.user_settings (user_id, shortcuts, board, updated_at)
+    VALUES (${userId}, (${JSON.stringify(settings.shortcuts)}::text)::jsonb, (${board}::text)::jsonb, now())
     ON CONFLICT (user_id)
     DO UPDATE SET
-      gradient = EXCLUDED.gradient,
-      hidden_widgets = EXCLUDED.hidden_widgets,
       shortcuts = EXCLUDED.shortcuts,
-      widget_layout = EXCLUDED.widget_layout,
+      board = EXCLUDED.board,
+      hidden_widgets = '{}'::text[],
+      widget_layout = ${EMPTY_LEGACY_LAYOUT}::jsonb,
       updated_at = now()
   `;
   return settings;
 };
 
+/**
+ * Stores the board converted from a person's old settings and clears those settings, so they are converted only
+ * once. Only a row whose old settings are still waiting changes: a board saved meanwhile, or a return to the default
+ * board saved meanwhile, stays. Returns the settings that are stored now, so a page never shows a board saved
+ * meanwhile next to shortcuts read before it.
+ */
+export const adoptMigratedBoard = async (userId: string, board: DashboardBoardEntry[] | null): Promise<DashboardSettings> => {
+  const adopted = await sql<{ shortcuts: unknown; board: unknown }[]>`
+    UPDATE dashboard.user_settings
+    SET
+      board = (${board === null ? null : JSON.stringify(board)}::text)::jsonb,
+      hidden_widgets = '{}'::text[],
+      widget_layout = ${EMPTY_LEGACY_LAYOUT}::jsonb,
+      updated_at = now()
+    WHERE user_id = ${userId}
+      AND board IS NULL
+      AND (cardinality(hidden_widgets) > 0 OR widget_layout <> ${EMPTY_LEGACY_LAYOUT}::jsonb)
+    RETURNING shortcuts, board
+  `;
+  const row = adopted[0];
+  if (row) return { shortcuts: normalizeDashboardShortcuts(row.shortcuts), board: normalizeDashboardBoard(row.board) };
+  return (await getUserSettings(userId)).settings;
+};
+
 export const dashboardSettingsService = {
   get: getUserSettings,
   save: saveUserSettings,
+  adoptMigratedBoard,
 };

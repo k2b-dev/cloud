@@ -2,6 +2,9 @@ import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { readBoundedJson } from "../_internal/bounded-json";
 import { type DashboardWidget, listWidgets } from "../_internal/registry";
 import {
+  type DashboardWidgetSize,
+  fitWidgetSize,
+  isDashboardWidgetSize,
   WIDGET_MAX_RESPONSE_BYTES,
   type WidgetResponse,
   WidgetResponseSchema,
@@ -9,6 +12,7 @@ import {
   widgetKey,
 } from "../contracts/widgets";
 import { type AuthContext, auth, preferredLocale, rejectReservedWorkloadCredential } from "../server";
+import { WIDGET_SIZE_PARAM } from "../server/widget-request";
 import { CLOUD_INVOCATION_TOKEN_TTL_SECONDS } from "../services/identity/constants";
 import { invocationAuthorityFromRequest } from "../services/identity/invocation-authority";
 import { widgetInvocationOperation } from "../services/identity/invocation-operations";
@@ -78,6 +82,8 @@ type ProviderOutcome =
 const callProvider = async (options: {
   c: Context<AuthContext>;
   widget: DashboardWidget;
+  /** What the browser asked for, fitted to the widget's declared sizes before it reaches the app. */
+  size: unknown;
   token: string;
   requestId: string | undefined;
   signal: AbortSignal;
@@ -98,6 +104,7 @@ const callProvider = async (options: {
     headers.set("x-cloud-invocation-operation", widgetInvocationOperation(widget.widgetId));
 
     const targetUrl = new URL(`/api/_internal/widgets/v1/${encodeURIComponent(widget.widgetId)}`, widget.url);
+    targetUrl.searchParams.set(WIDGET_SIZE_PARAM, fitWidgetSize(options.size, widget));
     signal.throwIfAborted();
     const response = await options.fetch(targetUrl, { headers, signal });
     if (response.status === 204 || response.status === 403) {
@@ -123,6 +130,17 @@ const callProvider = async (options: {
       ? { status: "timeout", phase, reason: "deadline_exceeded" }
       : { status: "error", phase, reason: signal.aborted ? "request_cancelled" : "operation_failed" };
   }
+};
+
+/**
+ * `<appId>/<widgetId>` with an optional `@small`, `@medium`, or `@large`, as the key and the size it asks for. The
+ * suffix is a size whenever the key before it is declared; `defineApp()` rejects `@` in widget IDs, so only an app
+ * built before sizes existed can declare an ID that ends in such a suffix, and it is still asked by that whole ID.
+ */
+const parseRequestedWidget = (value: string, declared: ReadonlySet<string>): [string, DashboardWidgetSize | undefined] => {
+  const at = value.lastIndexOf("@");
+  const size = at < 0 ? undefined : value.slice(at + 1);
+  return isDashboardWidgetSize(size) && declared.has(value.slice(0, at)) ? [value.slice(0, at), size] : [value, undefined];
 };
 
 export const createWidgetRoutes = (dependencies: WidgetRouteDependencies = {}) => {
@@ -155,17 +173,20 @@ export const createWidgetRoutes = (dependencies: WidgetRouteDependencies = {}) =
       .use(rejectReservedWorkloadCredential)
       .use(auth.requireOAuthScope("read", "admin"))
       /**
-       * Every requested widget (`?widget=<appId>/<widgetId>`, repeatable; all declared widgets without one) as an
-       * NDJSON stream: one line per widget as soon as it answers, each within its own budget.
+       * Every requested widget (`?widget=<appId>/<widgetId>`, repeatable, optionally with `@<size>`; all declared
+       * widgets without one) as an NDJSON stream: one line per widget as soon as it answers, each within its own budget.
        */
       .get("/widgets/v1", async (c) => {
         const requestId = normalizeInvocationRequestId(c.req.header("x-request-id"));
-        const requested = new Set(c.req.queries("widget") ?? []);
         const setup = AbortSignal.any([c.req.raw.signal, AbortSignal.timeout(timeoutMs)]);
         let widgets: DashboardWidget[];
+        let requested = new Map<string, DashboardWidgetSize | undefined>();
         try {
           const keys = new Set<string>();
-          widgets = (await waitWithin(registry(), setup)).filter((widget) => {
+          const declared = await waitWithin(registry(), setup);
+          const declaredKeys = new Set(declared.map((widget) => widgetKey(widget.appId, widget.widgetId)));
+          requested = new Map((c.req.queries("widget") ?? []).map((value) => parseRequestedWidget(value, declaredKeys)));
+          widgets = declared.filter((widget) => {
             const key = widgetKey(widget.appId, widget.widgetId);
             if (keys.has(key) || (requested.size > 0 && !requested.has(key))) return false;
             keys.add(key);
@@ -222,6 +243,7 @@ export const createWidgetRoutes = (dependencies: WidgetRouteDependencies = {}) =
               signal: AbortSignal.any([fanoutSignal, timeout]),
               timeout,
               fetch: fetchWidget,
+              size: requested.get(key),
             });
             if (outcome.status === "ok") return { type: "widget", key, status: "ok", widget: outcome.widget, ms: elapsed() };
             // A widget the stream itself stopped has already been settled, and is logged once, below.
@@ -276,7 +298,16 @@ export const createWidgetRoutes = (dependencies: WidgetRouteDependencies = {}) =
           );
 
           phase = "provider";
-          const outcome = await callProvider({ c, widget, token: signed.token, requestId, signal, timeout, fetch: fetchWidget });
+          const outcome = await callProvider({
+            c,
+            widget,
+            size: c.req.query(WIDGET_SIZE_PARAM),
+            token: signed.token,
+            requestId,
+            signal,
+            timeout,
+            fetch: fetchWidget,
+          });
           if (outcome.status === "ok") return Response.json(outcome.widget, { headers: { "content-type": "application/json" } });
           if (!("reason" in outcome))
             return new Response(null, { status: outcome.status === "empty" ? 204 : 403, headers: { "content-type": "application/json" } });

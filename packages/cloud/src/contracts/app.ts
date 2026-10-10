@@ -2,7 +2,7 @@ import type { Sync } from "@k2b/sync";
 import type { PlatformPermission } from "./outgoing-mail";
 import type { AppRegistryHelpSummary } from "./registry";
 import type { Role } from "./shared";
-import type { DashboardWidgetPresentation } from "./widgets";
+import type { DashboardWidgetPresentation, DashboardWidgetSize } from "./widgets";
 
 /**
  * One link entry contributed by an app to the global legal/info footer
@@ -69,6 +69,13 @@ export type AppPresentationTranslation = {
   searchLinks?: Readonly<Record<string, string>>;
   /** Search-link descriptions keyed by their stable same-origin href. */
   searchLinkDescriptions?: Readonly<Record<string, string>>;
+  /** Dashboard widget titles and descriptions keyed by `widgets[].id`. */
+  widgets?: Readonly<Record<string, AppWidgetTranslation>>;
+};
+
+export type AppWidgetTranslation = {
+  title?: string;
+  description?: string;
 };
 
 export type AppPresentationCatalog = {
@@ -161,7 +168,32 @@ export type WidgetEndpoint = {
   id: string;
   /** Absolute path on the app's HTTP service, e.g. "/api/accounts/widget/open-requests". */
   path: string;
-  /** Optional initial layout recommendation. Explicit user choices win. */
+  /**
+   * Name of the widget in the dashboard and its widget gallery, up to 80 characters, in the app's `baseLocale`;
+   * translate it with `presentation.translations[locale].widgets[id].title`. Defaults to the app's name.
+   */
+  title?: string;
+  /** One sentence for the widget gallery, up to 200 characters; translated like `title`. Defaults to the app's description. */
+  description?: string;
+  /** Sizes the widget offers on the board. Defaults to `["large"]`; offer smaller sizes only when the handler fills them. */
+  sizes?: readonly DashboardWidgetSize[];
+  /** Size the widget starts in, one of `sizes`. Defaults to the largest offered size. */
+  defaultSize?: DashboardWidgetSize;
+  /**
+   * Put the widget on the default board of everyone who may see it and list it under "Suggested for you" in the
+   * gallery. Suggest only widgets that are useful without any setup.
+   */
+  suggest?: boolean;
+  /**
+   * Show the widget in the gallery and on the default board only to people with one of these roles, like
+   * `nav.requiresRoles`. Visibility only: the handler still authorizes every request and answers `403`.
+   */
+  requiresRoles?: readonly Role[];
+  /**
+   * @deprecated The dashboard has no zones or widths any more; declare `sizes` and `defaultSize` instead. Keep an
+   * existing value: the dashboard reads it only to convert a board saved before sizes existed into the one the person
+   * saw.
+   */
   presentation?: DashboardWidgetPresentation;
 };
 

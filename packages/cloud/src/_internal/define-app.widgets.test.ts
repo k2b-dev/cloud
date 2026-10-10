@@ -7,6 +7,7 @@ import { getLocale } from "../server/locale";
 import { type AuthContext, auth } from "../server/middleware/auth";
 import { runtime } from "../server/middleware/runtime";
 import { settings } from "../server/middleware/settings";
+import { getWidgetRequest } from "../server/widget-request";
 import * as invocationActor from "../services/identity/invocation-actor";
 import * as invocationToken from "../services/identity/invocation-token";
 import * as notificationCatalog from "../services/notifications/catalog";
@@ -113,6 +114,7 @@ test("internal invocation widgets receive runtime, settings, actor and locale li
         actorKind: c.get("actor").kind,
         userId: c.get("user").id,
         locale: getLocale(c),
+        size: getWidgetRequest(c).size,
       });
     };
     const publicRoutes = new Hono<AuthContext>()
@@ -125,7 +127,7 @@ test("internal invocation widgets receive runtime, settings, actor and locale li
       description: "Context regression test",
       baseUrl: "http://widget-context:3000",
       routes: ["/api/widget-context"],
-      widgets: [{ id: "context", path: "/api/widget-context/widget" }],
+      widgets: [{ id: "context", path: "/api/widget-context/widget", sizes: ["small", "medium"], defaultSize: "small" }],
     });
     const server = await app.start({ fetch: publicRoutes.fetch, widgets: { context: handler } });
     const headers = { authorization: `Bearer ${invocationCandidate}`, "x-cloud-locale": "de-CH" };
@@ -135,8 +137,20 @@ test("internal invocation widgets receive runtime, settings, actor and locale li
     expect(internal.status).toBe(200);
     expect(direct.status).toBe(200);
     const body = await internal.json();
-    expect(body).toEqual(await direct.json());
-    expect(body).toEqual({ runtimeApps: [], settings: { app: { locale: "en" } }, actorKind: "user", userId: user.id, locale: "de-CH" });
+    const context = { runtimeApps: [], settings: { app: { locale: "en" } }, actorKind: "user", userId: user.id, locale: "de-CH" };
+    // The internal route fits the requested size to the declaration; the public route knows no declaration.
+    expect(body).toEqual({ ...context, size: "small" });
+    expect(await direct.json()).toEqual({ ...context, size: "large" });
+    for (const [requested, size] of [
+      ["medium", "medium"],
+      ["large", "small"],
+      ["huge", "small"],
+    ] as const) {
+      const sized = await server.fetch(
+        new Request(`http://widget-context/api/_internal/widgets/v1/context?size=${requested}`, { headers }),
+      );
+      expect((await sized.json()).size).toBe(size);
+    }
     for (const scopes of [[], ["openid", "profile"], ["write"], ["read"], ["admin"]]) {
       activeClaims = { ...claims, credential_kind: "oauth", scopes };
       const previousCalls = handlerCalls;

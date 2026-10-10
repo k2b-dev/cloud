@@ -8,13 +8,28 @@ export const app = defineApp({
   description: "Manage FreeIPA hosts, hostgroups, and mirrored host membership data.",
   presentation: {
     baseLocale: "en",
-    translations: { de: { description: "FreeIPA-Hosts, Hostgruppen und gespiegelte Mitgliedschaften verwalten." } },
+    translations: {
+      de: {
+        description: "FreeIPA-Hosts, Hostgruppen und gespiegelte Mitgliedschaften verwalten.",
+        widgets: { sync: { title: "IPA-Hosts", description: "Ob jeder gespiegelte Host einer Hostgruppe angehört." } },
+      },
+    },
   },
   appearance: { accent: "#0e7490", background: { from: "#06b6d4", to: "#14b8a6", angle: 135 } },
   basePath: "/admin/ipa-hosts",
   baseUrl: "http://app-ipa-hosts:3000",
   adminHref: "/admin/ipa-hosts",
-  widgets: [{ id: "sync", path: "/api/ipa-hosts/widget/sync" }],
+  widgets: [
+    {
+      id: "sync",
+      path: "/api/ipa-hosts/widget/sync",
+      title: "IPA hosts",
+      description: "Whether every mirrored host belongs to a hostgroup.",
+      sizes: ["small", "medium"],
+      defaultSize: "medium",
+      requiresRoles: ["admin"],
+    },
+  ],
   openapi: "/api/ipa-hosts/openapi.json",
   routes: ["/api/ipa-hosts", "/admin/ipa-hosts", "/public/ipa-hosts"],
 });

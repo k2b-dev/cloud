@@ -38,9 +38,10 @@ import {
 ### Frames
 
 `Widget` requires `title` and `children`. Optional `icon`, `meta`, and `href`
-build its compact header. `size` is `"content"`, `"compact"`, or `"standard"`;
-the default standard frame is 25rem high, compact is 14rem, and content has no
-fixed height. Compact fits a header with meta above one stat, status, or hero
+build its compact header. `size` is `"content"`, `"compact"`, `"standard"`, or
+`"fill"`; the default standard frame is 25rem high, compact is 14rem, fill takes
+the height its container gives it, such as a cell of a dashboard grid, and
+content has no fixed height. Compact fits a header with meta above one stat, status, or hero
 and a row of pills. A fixed frame scrolls body content taller than itself
 instead of cutting it off; it does not contain overscroll, so a wheel or swipe
 over a widget whose content fits still scrolls the page. When `href` is set,

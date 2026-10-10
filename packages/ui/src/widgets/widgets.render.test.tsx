@@ -46,6 +46,7 @@ describe("@k2b/ui Cloud-faithful widget composition", () => {
     // cutting it off, and never contains overscroll, so the page keeps scrolling over a widget whose content fits.
     expect(parityCss).toContain('.k2b-ui .k2b-widget[data-size="compact"] { height: 14rem; }');
     expect(parityCss).toContain('.k2b-ui .k2b-widget[data-size="standard"] { height: 25rem; }');
+    expect(parityCss).toContain('.k2b-ui .k2b-widget[data-size="fill"] { height: 100%; }');
     expect(parityCss).toContain('.k2b-ui .k2b-widget:not([data-size="content"]) .k2b-widget__body { overflow-y: auto; }');
     expect(parityCss).not.toMatch(/\.k2b-widget[^{]*\{[^}]*overscroll-behavior/);
   });

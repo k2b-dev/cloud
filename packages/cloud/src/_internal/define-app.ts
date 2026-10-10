@@ -54,6 +54,7 @@ import { matchedRouteTemplate, routeTemplate } from "../server/middleware/route-
 import { runtime as runtimeMiddleware } from "../server/middleware/runtime";
 import { preloadLayoutAnnouncements, settings as settingsMiddleware } from "../server/middleware/settings";
 import { validationErrorResponse } from "../server/middleware/validator";
+import { setWidgetRequest } from "../server/widget-request";
 import {
   capabilityInvocationOperation,
   searchInvocationOperation,
@@ -92,6 +93,7 @@ import { ensureRuntimeWatcher, getCurrentRuntime, stopRuntimeWatcher } from "./r
 import { servePublicAsset } from "./static-assets";
 import { createStatusPreservingSsrHandler } from "./status-preserving-ssr";
 import { WEB_VITALS_ASSET_HREF } from "./web-vitals-asset";
+import { compileWidgetDeclarations } from "./widget-declarations";
 
 /** Cache-busting version stamp — changes on every server start / rebuild. */
 const v = Date.now();
@@ -515,7 +517,7 @@ export const defineApp = <
     legalLinks: opts.legalLinks ? [...opts.legalLinks] : undefined,
     searchLinks: opts.searchLinks?.map((link) => ({ ...link, keywords: link.keywords ? [...link.keywords] : undefined })),
     pwa: pwaPart,
-    widgets: opts.widgets ? opts.widgets.map((w) => ({ ...w })) : undefined,
+    widgets: compileWidgetDeclarations(opts.id, opts.widgets),
     settingKeys: opts.settings ? Object.keys(opts.settings) : undefined,
     openapi: opts.openapi,
     cli: opts.cli,
@@ -614,7 +616,11 @@ export const defineApp = <
         pwa: meta.pwa
           ? { href: meta.pwa.href, requiresRoles: meta.pwa.requiresRoles ? [...meta.pwa.requiresRoles] : undefined }
           : undefined,
-        widgets: meta.widgets ? meta.widgets.map((w) => ({ ...w })) : undefined,
+        widgets: meta.widgets?.map((widget) => ({
+          ...widget,
+          sizes: widget.sizes ? [...widget.sizes] : undefined,
+          requiresRoles: widget.requiresRoles ? [...widget.requiresRoles] : undefined,
+        })),
         platformPermissions: meta.platformPermissions ? [...meta.platformPermissions] : undefined,
         settingKeys: meta.settingKeys ? [...meta.settingKeys] : undefined,
         openapi: advertiseOpenapi ? opts.openapi : undefined,
@@ -863,8 +869,12 @@ export const defineApp = <
           runtimeMiddleware(),
           settingsMiddleware(),
           async (c) => {
-            const handler = startOpts.widgets?.[c.req.param("widgetId") ?? ""];
-            return handler ? handler(c, async () => {}) : c.json({ message: "Widget not found" }, 404);
+            const widgetId = c.req.param("widgetId") ?? "";
+            const handler = startOpts.widgets?.[widgetId];
+            const declaration = meta.widgets?.find((widget) => widget.id === widgetId);
+            if (!handler || !declaration) return c.json({ message: "Widget not found" }, 404);
+            setWidgetRequest(c, declaration);
+            return handler(c, async () => {});
           },
         );
       }

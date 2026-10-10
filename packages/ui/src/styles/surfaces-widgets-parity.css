@@ -833,6 +833,8 @@
 /* Compact fits a header with meta above one stat, status, or hero and a row of pills. */
 .k2b-ui .k2b-widget[data-size="compact"] { height: 14rem; }
 .k2b-ui .k2b-widget[data-size="standard"] { height: 25rem; }
+/* Fill takes the height of its container, such as a dashboard grid cell, and scrolls like the fixed sizes. */
+.k2b-ui .k2b-widget[data-size="fill"] { height: 100%; }
 .k2b-ui .k2b-widget__header { display: flex; flex: 0 0 auto; align-items: center; gap: 0.75rem; padding: 1rem 1rem 0.5rem; color: inherit; text-decoration: none; }
 /* Cloud tints the title and chevron on header hover, never the header itself. */
 .k2b-ui a.k2b-widget__header:hover { background: transparent; }

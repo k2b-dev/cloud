@@ -1,3 +1,4 @@
+import { DASHBOARD_WIDGET_SIZES } from "@k2b/cloud/contracts";
 import { type AuthContext, auth, getUserBackedActor, rateLimit, respond, v } from "@k2b/cloud/server";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { type Context, Hono } from "hono";
@@ -37,24 +38,18 @@ const ShortcutSchema = z.discriminatedUnion("kind", [
 ]);
 
 const SettingsSchema = z.object({
-  hiddenWidgets: z.array(z.string().trim().min(1).max(DASHBOARD_MAX_ID_LENGTH)).max(DASHBOARD_MAX_ITEMS).default([]),
-  gradient: z.string().trim().min(1).max(DASHBOARD_MAX_ID_LENGTH).default("default"),
   shortcuts: z.array(ShortcutSchema).max(DASHBOARD_MAX_SHORTCUTS).default([]),
-  layout: z
-    .object({
-      widgets: z
-        .array(
-          z.object({
-            key: z.string().trim().min(1).max(DASHBOARD_MAX_ID_LENGTH),
-            zone: z.enum(["focus", "overview", "context"]),
-            span: z.enum(["standard", "wide"]),
-          }),
-        )
-        .max(DASHBOARD_MAX_ITEMS)
-        .default([]),
-      order: z.array(z.string().trim().min(1).max(DASHBOARD_MAX_ID_LENGTH)).max(DASHBOARD_MAX_ITEMS).default([]),
-    })
-    .default({ widgets: [], order: [] }),
+  /** The person's board in reading order, or `null` to follow the default board. */
+  board: z
+    .array(
+      z.object({
+        key: z.string().trim().min(1).max(DASHBOARD_MAX_ID_LENGTH),
+        size: z.enum(DASHBOARD_WIDGET_SIZES),
+      }),
+    )
+    .max(DASHBOARD_MAX_ITEMS)
+    .refine((board) => new Set(board.map((entry) => entry.key)).size === board.length, "Each widget can be on the board once.")
+    .nullable(),
 });
 
 const requireUserBackedActor = (c: Context<AuthContext>): Result<NonNullable<ReturnType<typeof getUserBackedActor>>> => {

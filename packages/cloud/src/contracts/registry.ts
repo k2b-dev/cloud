@@ -2,7 +2,7 @@ import type { AppAdminNavigationGroup, AppAppearance, AppAppearanceColor, AppPre
 import type { CapabilityManifest, CapabilityPresentationCatalog } from "./capabilities";
 import type { PlatformPermission } from "./outgoing-mail";
 import type { Role } from "./shared";
-import type { DashboardWidgetPresentation } from "./widgets";
+import type { DashboardWidgetPresentation, DashboardWidgetSize } from "./widgets";
 
 /**
  * App-registry entry type. Populated internally by `defineApp()` + the
@@ -52,10 +52,18 @@ export type AppRegistryLegalLink = {
   icon?: string;
 };
 
+/** A widget declaration as the registry carries it; see `WidgetEndpoint`. Older apps send only `id` and `path`. */
 export type AppRegistryWidget = {
   id: string;
   /** Absolute path on the app's HTTP service, e.g. "/api/quotes/widget/random". */
   path: string;
+  title?: string;
+  description?: string;
+  sizes?: readonly DashboardWidgetSize[];
+  defaultSize?: DashboardWidgetSize;
+  suggest?: boolean;
+  requiresRoles?: readonly Role[];
+  /** @deprecated Read only to convert dashboard boards saved before sizes existed. */
   presentation?: DashboardWidgetPresentation;
 };
 

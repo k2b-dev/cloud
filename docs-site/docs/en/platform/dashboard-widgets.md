@@ -23,40 +23,93 @@ Cloud also forwards the Dashboard request's resolved locale in the
 `x-cloud-locale` header. Resolve it with `getLocale(c)` in the endpoint; do not
 rely on `Accept-Language` surviving the server-side fan-out.
 
-## Register a handler
+## Declare a widget
 
 ```ts
 export const app = defineApp({
   id: "inventory",
   // ...
+  presentation: {
+    baseLocale: "en",
+    translations: {
+      de: { widgets: { stock: { title: "Bestand", description: "Knappe Artikel in allen Lagern." } } },
+    },
+  },
   widgets: [
     {
       id: "stock",
       path: "/api/inventory/widget/stock",
-      presentation: {
-        defaultZone: "overview",
-        defaultSpan: "standard",
-      },
+      title: "Stock",
+      description: "Low-stock items across all warehouses.",
+      sizes: ["small", "medium"],
+      defaultSize: "medium",
+      suggest: true,
     },
   ],
 });
 ```
 
-The ID must be unique inside the application. The path must be an absolute
-route served by that application.
+The ID must be unique inside the application and must not contain `@`, which
+separates a widget from the size the dashboard asks for. The path must be an
+absolute route served by that application.
 
-`defaultZone` is `focus`, `overview`, or `context`. `defaultSpan` is `standard`
-or `wide`. These are initial recommendations. A user's saved layout wins.
+| Field | Meaning |
+| --- | --- |
+| `title` | Name in the dashboard and its gallery, up to 80 characters. Defaults to the app's name. |
+| `description` | One sentence for the gallery, up to 200 characters. Defaults to the app's description. |
+| `sizes` | Sizes the widget offers: `small`, `medium`, `large`. Defaults to `["large"]`. |
+| `defaultSize` | Size the widget starts in, one of `sizes`. Defaults to the largest offered size. |
+| `suggest` | Put the widget on the default board and under **Suggested for you**. |
+| `requiresRoles` | Offer the widget only to people with one of these roles, like `nav.requiresRoles`. |
+
+Translate `title` and `description` under
+`presentation.translations.<locale>.widgets.<id>`. `defineApp()` rejects a
+duplicated ID or one with `@`, an empty or overlong text, an unknown size or
+role, a `defaultSize` the widget does not offer, and a `suggest` that is not
+`true` or `false`.
+
+`requiresRoles` only decides what the gallery and the default board offer. It
+is not authorization: the handler still checks every request and answers
+`403` to anyone who may not see the widget.
+
+Suggest only widgets that are useful without any setup and that rarely have
+nothing to show. A suggested widget appears on the board of everyone who has
+not arranged their own board yet.
+
+### Choose sizes
+
+The board has four columns on wider screens and two on phones. Every widget
+has one of three fixed sizes:
+
+| Size | Four columns | Phone | Typical content |
+| --- | --- | --- | --- |
+| `small` | one column, one row | half the width | one number, one status, or one hero |
+| `medium` | two columns, one row | full width | a status with its counts, or two list rows |
+| `large` | two columns, two rows | full width, two rows | a list of about six rows, or several blocks |
+
+A row is about 10.5rem high, so a small or medium widget has room for about
+7rem of content below its header. Offer a size only when the handler fills it
+well. A widget without `sizes` offers only `large`, the height every widget
+had before sizes existed.
+
+`presentation.defaultZone` and `presentation.defaultSpan` are deprecated: the
+dashboard has no zones or widths any more. Declare `sizes` and `defaultSize`
+instead, and keep an existing `presentation` for now. The dashboard reads it
+only to convert a board saved before sizes existed into the board the person
+saw.
+
+### Register the handler
 
 Export the Hono handler used by that route and register the same function with
 `app.start()`:
 
 ```ts
-import type { AuthContext } from "@k2b/cloud/server";
+import { type AuthContext, getWidgetRequest } from "@k2b/cloud/server";
 import type { Context } from "hono";
 
 export const stockWidgetHandler = async (c: Context<AuthContext>) => {
-  // Load and authorize c.get("accessSubject"), then return WidgetResponse.
+  const { size } = getWidgetRequest(c);
+  // Load and authorize c.get("accessSubject"), then return a WidgetResponse that fits `size`.
 };
 
 export default await app.start({
@@ -69,6 +122,12 @@ The declaration is the discovery contract; the `app.start({ widgets })` map is
 the framework-owned internal invocation contract. Startup rejects an internal
 handler whose ID was not declared. Invocation JWTs are accepted only by the generated internal widget
 route, never by the public application route.
+
+`getWidgetRequest(c)` returns `{ size }`: the size the board shows the widget
+in, always one the widget declares. Return the content that fits it, for
+example only the most important number in `small` and a longer list in
+`large`. Outside a dashboard invocation, such as a request to the handler's
+own public route, the size is `large`.
 
 ## Return widget data
 
@@ -171,26 +230,27 @@ Return:
 - `403` when the user lacks the required access;
 - `204` when the widget has no content.
 
-Cloud lists a `403` widget as unavailable at the user's access level. While the
-dashboard does not yet know a widget's answer on a device, a `204` or `403`
-widget keeps its space and shows a calm "Nothing to show right now" or locked
-state there; on later loads it gets no space. A timeout or another non-success
-response is logged with a bounded failure reason and shown inside that widget
-only.
+A widget keeps its place on the board whatever it answers. A `403` widget
+shows "No access any more" in its frame, and a `204` widget shows "Nothing to
+show right now". A timeout or another non-success response is logged with a
+bounded failure reason and shown inside that widget only.
 
 ## Loading, timeouts, and failures
 
-The dashboard page renders its layout first, with a fixed space for every
-widget and a loading state inside it. The browser then asks Core for all of
-the user's visible widgets in one streamed request, the same way Universal
-Search streams its results. Each widget fills its own space as soon as its app
-answers; widgets that already arrived never wait for slower ones.
+The dashboard page renders the board first, with a frame in the final size for
+every widget and a loading state inside it. The browser then asks Core for all
+widgets on the board in one streamed request, the same way Universal Search
+streams its results, each in the size the board shows it in. Each widget fills
+its own frame as soon as its app answers; widgets that already arrived never
+wait for slower ones.
 
 - **Concurrency:** Core asks at most eight widgets at the same time and starts
   the rest as earlier ones finish.
 - **Timeout:** each widget has its own 8-second budget, counted from the moment
   Core starts it. Core signs every invocation of one dashboard together, so
-  widgets do not wait on one another for authorization.
+  widgets do not wait on one another for authorization. A widget still loading
+  after three seconds says in its frame that its app is taking longer than
+  usual.
 - **Stream deadline:** one stream ends after 30 seconds, when the invocations
   Core signed for it expire. Every widget that has not answered by then
   reports `timeout`, including one still waiting for a free place that was
@@ -198,35 +258,59 @@ answers; widgets that already arrived never wait for slower ones.
   many slow widgets reaches this deadline.
 - **Failure:** a widget that times out, answers with an unexpected status, or
   returns invalid JSON shows a short message and **Try again** in its own
-  space. Retrying asks only that widget again. The rest of the board is never
+  frame. Retrying asks only that widget again. The rest of the board is never
   affected.
-- **Layout:** a widget's space has the fixed height of a `@k2b/ui` widget
-  frame: `standard` (25rem) in the main columns and `compact` (14rem) in the
-  side column. Longer content scrolls inside the widget, so plan for the most
-  important information at the top.
-- **Absent widgets:** the dashboard remembers, for each account on each
-  device, which widgets answered `403` or `204` last time and reserves no
-  space for them. Such a widget is still asked on every load, so a change
-  appears on the next load instead of moving the open page.
+- **Layout:** the frame's size comes from the board, not from the content.
+  Longer content scrolls inside the widget, so put the most important
+  information at the top.
+- **Resizing:** when a person changes a widget's size, the board asks the
+  widget again in the new size and keeps the old content until the new one
+  arrives.
 
 Keep widget queries bounded and fast: a widget is a glanceable summary, and a
 slow one keeps showing its loading state until it answers or its budget ends.
 Link to the application for detailed work instead of turning the widget into a
 full page.
 
-### Read widgets from a browser
+## Board and gallery
+
+Each person has one board: an ordered list of widgets, each in one of its
+sizes, in the same reading order on every device. Until a person changes
+something, they follow the default board: every suggested widget they may see,
+in its default size, large ones first. Widgets an app suggests later appear on
+it by themselves. After the first change the board belongs to the person; new
+widgets then wait under **Suggested for you** in the gallery. **Default** in the
+edit mode returns to the default board.
+
+**Edit** or a long press on a widget opens the edit mode. People drag widgets
+to move them, or focus one and use the arrow keys; they pick a size at the
+bottom of the widget and remove it with ×. **Add widget** opens the gallery,
+which lists the widgets the person may use, grouped by app, each with a live
+preview of the person's own data in the chosen size. The gallery loads a
+preview only when its card is on screen, at most eight at a time. **Done**
+saves the board without reloading the page.
+
+A widget appears on a board at most once. A board keeps the place of a widget
+whose app is not running, and shows it again when the app returns.
+
+## Read widgets from a browser
 
 The stream is `GET /api/widgets/v1` with `Accept: application/x-ndjson`. Each
 line is a `WidgetStreamLine` from `@k2b/cloud/contracts`: `start` names the
 widgets in registry order, one `widget` line follows per widget with status
 `ok`, `empty`, `forbidden`, `timeout`, or `error`, and `done` ends the stream.
-Repeat `widget=<appId>/<widgetId>` to ask only some widgets. A browser reads
-it with `streamWidgets()` from `@k2b/cloud/browser/widgets`; aborting its
-signal stops every widget Core still waits for.
+Repeat `widget=<appId>/<widgetId>` to ask only some widgets, and append
+`@small`, `@medium`, or `@large` to ask a widget in that size, for example
+`widget=inventory/stock@small`. A widget asked without a size, or in one it
+does not offer, answers in its default size. A browser reads the stream with
+`streamWidgets()` from `@k2b/cloud/browser/widgets`, which takes the sizes as
+`sizes`, keyed by widget; aborting its signal stops every widget Core still
+waits for.
 
 `GET /api/widgets/v1/<appId>/<widgetId>` returns one widget as JSON with the
-same per-widget budget: `200` with the response, `204`, `403`, `504` for a
-timeout, or `502` for another failure.
+same per-widget budget; append `?size=small` to ask for a size. It answers
+`200` with the response, `204`, `403`, `504` for a timeout, or `502` for
+another failure.
 
 See [Request identity](/en/docs/identity/authentication) and
 [Resource authorization](/en/docs/identity/authorization).

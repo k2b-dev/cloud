@@ -4,7 +4,7 @@ import { z } from "zod";
 import { futureLibrary } from "../../test/future-capability-manifest";
 import { defineCapabilities } from "../contracts/capabilities";
 import { capabilityHash, compileCapabilities, resolveCapabilityManifestPresentation } from "./capabilities";
-import { type AppRegistrySnapshot, requireUsableAppRegistry, resolveLiveCapabilityRegistryEntry } from "./registry";
+import { type AppRegistrySnapshot, dashboardWidgetsOf, requireUsableAppRegistry, resolveLiveCapabilityRegistryEntry } from "./registry";
 
 const compiled = compileCapabilities(
   "demo",
@@ -184,5 +184,93 @@ describe("resolveLiveCapabilityRegistryEntry", () => {
     } finally {
       warn.mockRestore();
     }
+  });
+});
+
+describe("dashboardWidgetsOf", () => {
+  const app = {
+    ...liveApp,
+    presentation: {
+      baseLocale: "en",
+      translations: { de: { name: "Lager", widgets: { stock: { title: "Bestand" } } } },
+    },
+    widgets: [
+      {
+        id: "stock",
+        path: "/api/demo/widget/stock",
+        title: "Stock",
+        description: "Low stock across warehouses.",
+        sizes: ["large", "small"] as const,
+        defaultSize: "small" as const,
+        suggest: true,
+        requiresRoles: ["admin" as const],
+      },
+      // An app from before sizes existed declares only id and path.
+      { id: "legacy", path: "widget/legacy", presentation: { defaultZone: "focus" as const } },
+    ],
+  };
+
+  test("resolves every optional field so readers see one shape, translated for the reader", () => {
+    expect(dashboardWidgetsOf([app], "de-CH")).toEqual([
+      {
+        appId: "demo",
+        appName: "Lager",
+        appIcon: "box",
+        widgetId: "stock",
+        url: "http://demo:3000/custom/path/api/demo/widget/stock",
+        title: "Bestand",
+        description: "Low stock across warehouses.",
+        sizes: ["small", "large"],
+        defaultSize: "small",
+        suggest: true,
+        requiresRoles: ["admin"],
+      },
+      {
+        appId: "demo",
+        appName: "Lager",
+        appIcon: "box",
+        widgetId: "legacy",
+        url: "http://demo:3000/custom/path/widget/legacy",
+        title: "Lager",
+        description: "Demo app",
+        sizes: ["large"],
+        defaultSize: "large",
+        suggest: false,
+        requiresRoles: [],
+        // Still carried, so the dashboard can convert boards saved before sizes existed.
+        presentation: { defaultZone: "focus" },
+      },
+    ]);
+    expect(dashboardWidgetsOf([app]).map((widget) => [widget.title, widget.appName])).toEqual([
+      ["Stock", "Demo"],
+      ["Demo", "Demo"],
+    ]);
+  });
+
+  test("drops what a registry record from another release declares wrongly instead of the widget", () => {
+    const broken = {
+      ...liveApp,
+      widgets: [
+        {
+          id: "odd",
+          path: "/odd",
+          title: " ",
+          sizes: ["huge"],
+          defaultSize: "huge",
+          suggest: "yes",
+          requiresRoles: ["root"],
+          presentation: { defaultZone: "middle", defaultSpan: "wide" },
+        },
+      ],
+    } as unknown as typeof liveApp;
+    expect(dashboardWidgetsOf([broken])[0]).toMatchObject({
+      title: "Demo",
+      sizes: ["large"],
+      defaultSize: "large",
+      suggest: false,
+      requiresRoles: [],
+      presentation: { defaultSpan: "wide" },
+    });
+    expect(dashboardWidgetsOf([broken])[0]!.presentation?.defaultZone).toBeUndefined();
   });
 });

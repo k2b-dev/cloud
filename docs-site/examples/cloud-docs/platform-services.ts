@@ -56,7 +56,9 @@ export const platformApp = defineApp({
     {
       id: "stock",
       path: "/api/inventory/widget/stock",
-      presentation: { defaultZone: "overview" },
+      title: "Stock",
+      sizes: ["small", "medium"],
+      defaultSize: "medium",
     },
   ],
 });

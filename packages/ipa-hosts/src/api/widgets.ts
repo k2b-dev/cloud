@@ -1,6 +1,6 @@
-import type { WidgetBlock, WidgetResponse } from "@k2b/cloud/contracts";
+import type { DashboardWidgetSize, WidgetBlock, WidgetResponse } from "@k2b/cloud/contracts";
 import { hasRole } from "@k2b/cloud/contracts";
-import { type AuthContext, auth, getLocale } from "@k2b/cloud/server";
+import { type AuthContext, auth, getLocale, getWidgetRequest } from "@k2b/cloud/server";
 import { i18n } from "@k2b/stdlib";
 import { type Context, Hono } from "hono";
 import { ipaHostsService } from "../service";
@@ -38,13 +38,24 @@ const widgetMessages = i18n.define({
 
 type IpaHostsWidgetStats = Awaited<ReturnType<typeof ipaHostsService.stats>>;
 
-export const ipaHostsWidgetBody = (stats: IpaHostsWidgetStats, requestedLocale: string): WidgetResponse => {
+/** The sync state in one widget size: small shows the status line, medium adds the counts. */
+export const ipaHostsWidgetBody = (
+  stats: IpaHostsWidgetStats,
+  requestedLocale: string,
+  size: DashboardWidgetSize = "medium",
+): WidgetResponse => {
   const { locale, t } = widgetMessages.resolve([requestedLocale]);
   const number = new Intl.NumberFormat(locale);
   const blocks: WidgetBlock[] = [];
 
   if (stats.hostsTotal === 0 && stats.hostgroupsTotal === 0) {
-    blocks.push({ kind: "hero", icon: "ti ti-server-off", tone: "blue", title: t.emptyMirror, subtitle: t.emptyMirrorHint });
+    blocks.push({
+      kind: "hero",
+      icon: "ti ti-server-off",
+      tone: "blue",
+      title: t.emptyMirror,
+      subtitle: size === "small" ? undefined : t.emptyMirrorHint,
+    });
   } else {
     const tone: "ok" | "warn" = stats.hostsUngrouped > 0 ? "warn" : "ok";
     blocks.push({
@@ -61,14 +72,15 @@ export const ipaHostsWidgetBody = (stats: IpaHostsWidgetStats, requestedLocale: 
           : t.mirroredHosts({ count: number.format(stats.hostsTotal) }),
       icon: "ti ti-server",
     });
-    blocks.push({
-      kind: "pills",
-      pills: [
-        { label: t.groups, value: stats.hostgroupsTotal, tone: "blue" },
-        { label: t.inGroups, value: stats.hostsInGroups },
-        ...(stats.hostsUngrouped > 0 ? [{ label: t.ungrouped, value: stats.hostsUngrouped, tone: "amber" as const }] : []),
-      ],
-    });
+    if (size !== "small")
+      blocks.push({
+        kind: "pills",
+        pills: [
+          { label: t.groups, value: stats.hostgroupsTotal, tone: "blue" },
+          { label: t.inGroups, value: stats.hostsInGroups },
+          ...(stats.hostsUngrouped > 0 ? [{ label: t.ungrouped, value: stats.hostsUngrouped, tone: "amber" as const }] : []),
+        ],
+      });
   }
 
   return { title: t.title, icon: "ti ti-server", href: "/admin/ipa-hosts", blocks };
@@ -86,7 +98,7 @@ export const ipaSyncWidgetHandler = async (c: Context<AuthContext>) => {
   if (!user || !hasRole(user, "admin")) return c.body(null, 403);
 
   const stats = await ipaHostsService.stats();
-  return c.json(ipaHostsWidgetBody(stats, getLocale(c)));
+  return c.json(ipaHostsWidgetBody(stats, getLocale(c), getWidgetRequest(c).size));
 };
 
 const app = new Hono<AuthContext>().use(auth.requireRole("*")).get("/sync", ipaSyncWidgetHandler);

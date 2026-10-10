@@ -1,4 +1,4 @@
-import type { WidgetResponse } from "@k2b/cloud/contracts";
+import type { WidgetBlock, WidgetResponse } from "@k2b/cloud/contracts";
 import {
   AccessEntrySchema,
   ErrorResponseSchema,
@@ -14,6 +14,7 @@ import {
   err,
   fail,
   getLocale,
+  getWidgetRequest,
   jsonResponse,
   ok,
   type Result,
@@ -183,26 +184,28 @@ export const venueTodayWidgetHandler = async (c: Context<AuthContext>) => {
   const nextShift = dashboard.myUpcomingShifts[0];
   const missing = dashboard.slots.reduce((sum, slot) => sum + slot.missingPeople, 0);
 
-  const response: WidgetResponse = {
-    title: venue.name,
-    icon: venue.icon || "ti ti-building-carousel",
-    href: `/app/venue/${publicVenue!.id}`,
-    meta: status?.statusLabel ?? t.widgetVenue,
-    blocks: [
-      {
-        kind: "status",
-        tone: status?.open ? "ok" : "info",
-        title: status?.statusLabel ?? t.widgetStatusUnavailable,
-        message: status?.todayLabel ?? t.widgetNoStatus,
-        icon: status?.open ? "ti ti-door-gate-open" : "ti ti-door",
-      },
-      {
-        kind: "stat",
-        label: t.widgetOpenRegistrations,
-        value: missing,
-        sub: t.widgetRegistrationNeeded({ count: missing }),
-        accent: missing > 0 ? { tone: "amber", icon: "ti ti-user-plus" } : { tone: "emerald", icon: "ti ti-check" },
-      },
+  // Small shows whether the venue is open, medium adds the open shifts, large the person's next shift.
+  const { size } = getWidgetRequest(c);
+  const blocks: WidgetBlock[] = [
+    {
+      kind: "status",
+      tone: status?.open ? "ok" : "info",
+      title: status?.statusLabel ?? t.widgetStatusUnavailable,
+      message: status?.todayLabel ?? t.widgetNoStatus,
+      icon: status?.open ? "ti ti-door-gate-open" : "ti ti-door",
+      grow: size === "small",
+    },
+  ];
+  if (size !== "small")
+    blocks.push({
+      kind: "stat",
+      label: t.widgetOpenRegistrations,
+      value: missing,
+      sub: t.widgetRegistrationNeeded({ count: missing }),
+      accent: missing > 0 ? { tone: "amber", icon: "ti ti-user-plus" } : { tone: "emerald", icon: "ti ti-check" },
+    });
+  if (size === "large")
+    blocks.push(
       nextShift
         ? {
             kind: "list",
@@ -216,7 +219,13 @@ export const venueTodayWidgetHandler = async (c: Context<AuthContext>) => {
             ],
           }
         : { kind: "placeholder", title: t.widgetNoUpcoming, icon: "ti ti-calendar-off" },
-    ],
+    );
+  const response: WidgetResponse = {
+    title: venue.name,
+    icon: venue.icon || "ti ti-building-carousel",
+    href: `/app/venue/${publicVenue!.id}`,
+    meta: status?.statusLabel ?? t.widgetVenue,
+    blocks,
   };
   return respond(c, ok(response));
 };

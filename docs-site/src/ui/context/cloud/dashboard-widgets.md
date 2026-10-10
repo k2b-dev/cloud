@@ -31,7 +31,7 @@ Every stat needs a label and context. Widget and row links need destination-spec
 
 ## Runtime
 
-The dashboard page renders a fixed `@k2b/ui` widget frame with a loading state for every widget. The browser then reads all widgets from Core in one stream (`GET /api/widgets/v1`); each fills its frame as soon as its app answers, within its own 8-second budget. A widget that fails or times out shows a calm inline state with **Try again**, which asks only that widget again. Endpoint responses are JSON; applications never return Solid elements through this contract.
+The dashboard is one board of widgets in three fixed sizes, `small`, `medium`, and `large`, on four columns or two on phones. The page renders every widget's `@k2b/ui` frame at its final size with a loading state. The browser then reads all widgets from Core in one stream (`GET /api/widgets/v1`), each in the size the board shows it in; each fills its frame as soon as its app answers, within its own 8-second budget. A slow widget says so after three seconds; a widget that fails or times out shows a calm inline state with **Try again**, which asks only that widget again. A locked or empty widget keeps its frame. Endpoint responses are JSON; applications never return Solid elements through this contract. A handler reads the requested size with `getWidgetRequest(c)` and returns content that fits it.
 
 ## Example
 

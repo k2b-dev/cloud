@@ -3,7 +3,14 @@ import type { AppAppearanceColor } from "../contracts/app";
 import type { CapabilityManifest, CapabilityPresentationCatalog } from "../contracts/capabilities";
 import { fileProviderIssues } from "../contracts/file-provider";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
-import type { DashboardWidgetPresentation } from "../contracts/widgets";
+import { type Role, RoleSchema } from "../contracts/shared";
+import {
+  type DashboardWidgetPresentation,
+  type DashboardWidgetSize,
+  resolveWidgetSizes,
+  WIDGET_DESCRIPTION_MAX_LENGTH,
+  WIDGET_TITLE_MAX_LENGTH,
+} from "../contracts/widgets";
 import { resolveAppPresentations } from "../shared/app-presentation";
 import { compileCapabilityPresentation, parseCapabilityManifest } from "./capabilities";
 import { lazySync } from "./process-sync";
@@ -332,7 +339,9 @@ export const listLegalLinks = async (locale?: string): Promise<Array<{ label: st
  * the dashboard app to build the widget grid and for Core to resolve the
  * exact target before proxying a widget request.
  *
- * Order = registration order across apps.
+ * Order = registration order across apps. Every optional declaration field is
+ * resolved here, so readers never see a registry record from an older app
+ * without `title`, `sizes`, or `defaultSize`, nor an unknown size or role.
  */
 export type DashboardWidget = {
   appId: string;
@@ -341,23 +350,58 @@ export type DashboardWidget = {
   widgetId: string;
   /** Fully-qualified URL — `<baseUrl>/<path>`. */
   url: string;
+  /** The declared title in the requested locale, or the app's name. */
+  title: string;
+  /** The declared description in the requested locale, or the app's description. */
+  description: string;
+  sizes: DashboardWidgetSize[];
+  defaultSize: DashboardWidgetSize;
+  suggest: boolean;
+  /** Visibility only, like `nav.requiresRoles`; empty means everyone. */
+  requiresRoles: Role[];
+  /**
+   * @deprecated The zone and width the app recommended before widgets had sizes. Only the dashboard reads it, to
+   * convert a board saved then into the board the person saw.
+   */
   presentation?: DashboardWidgetPresentation;
 };
 
-export const listWidgets = async (): Promise<DashboardWidget[]> => {
-  const apps = await listApps();
+const LEGACY_ZONES = ["focus", "overview", "context"] as const;
+const LEGACY_SPANS = ["standard", "wide"] as const;
+
+const legacyPresentation = (value: DashboardWidgetPresentation | undefined): DashboardWidgetPresentation | undefined => {
+  const defaultZone = LEGACY_ZONES.find((zone) => zone === value?.defaultZone);
+  const defaultSpan = LEGACY_SPANS.find((span) => span === value?.defaultSpan);
+  return defaultZone || defaultSpan ? { defaultZone, defaultSpan } : undefined;
+};
+
+const declaredText = (value: unknown, max: number): string | undefined =>
+  typeof value === "string" && value.trim() && value.trim().length <= max ? value.trim() : undefined;
+
+/** The widgets `apps` declare, resolved as `listWidgets()` returns them. */
+export const dashboardWidgetsOf = (apps: readonly AppRegistryEntry[], locale?: string): DashboardWidget[] => {
   const out: DashboardWidget[] = [];
-  for (const app of apps) {
+  for (const app of locale ? resolveAppPresentations(apps, locale) : apps) {
     for (const w of app.widgets ?? []) {
+      const { sizes, defaultSize } = resolveWidgetSizes(w);
       out.push({
         appId: app.id,
         appName: app.name,
         appIcon: app.icon,
         widgetId: w.id,
         url: `${app.baseUrl.replace(/\/$/, "")}${w.path.startsWith("/") ? w.path : `/${w.path}`}`,
-        presentation: w.presentation,
+        title: declaredText(w.title, WIDGET_TITLE_MAX_LENGTH) ?? app.name,
+        description: declaredText(w.description, WIDGET_DESCRIPTION_MAX_LENGTH) ?? app.description,
+        sizes,
+        defaultSize,
+        suggest: w.suggest === true,
+        requiresRoles: Array.isArray(w.requiresRoles) ? w.requiresRoles.filter((role) => RoleSchema.safeParse(role).success) : [],
+        presentation: legacyPresentation(w.presentation),
       });
     }
   }
   return out;
 };
+
+/** Every declared widget, with titles and descriptions in `locale` when given. */
+export const listWidgets = async (locale?: string): Promise<DashboardWidget[]> => dashboardWidgetsOf(await listApps(), locale);
