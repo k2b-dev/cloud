@@ -1,6 +1,6 @@
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { announce, Checkbox, Tag } from "@k2b/ui";
+import { Checkbox, Tag } from "@k2b/ui";
 import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { INACTIVE_ITEM_DAYS, type SpaceColumn, type SpaceItem, type SpaceTag } from "@/contracts";
 import { shouldHandleDetailClick, subscribeToDetailSelection } from "../../../lib/detail";
@@ -8,7 +8,7 @@ import type { RetryToast } from "../../../lib/feedback";
 import { useSpaceMessages } from "../../messages";
 import AssigneeAvatars from "../shared/AssigneeAvatars";
 import { type ClaimFields, resolveCompletionClaim } from "../shared/claim/claim";
-import { confirmCompletion, setItemCompleted } from "../shared/completion";
+import { setItemCompleted, showCompletion } from "../shared/completion";
 import { isInactiveTask } from "../shared/item-activity";
 import { type LeavingItems, snapshotOf } from "../shared/leaving";
 import { invalidateSpacesData, requestSpacesRouteNavigation } from "../workspace/workspace-events";
@@ -70,55 +70,24 @@ export default function ItemRow(props: ItemRowProps) {
 
   /** The state the reader just set, shown from the tick until the list has it. */
   const [ticked, setTicked] = createSignal<boolean | null>(null);
-  /** Whether an Undo of this row's last change runs. */
-  const [undoing, setUndoing] = createSignal(false);
-  /** The Undo of a change that took the row out of the list; unticking the row while it leaves runs it too. */
-  let pendingUndo: (() => void) | null = null;
   type Completion = { completed: boolean; claim: ClaimFields; previous: SpaceItem };
   const completeMutation = mutations.create<SpaceItem, Completion, Completion>({
     onBefore: (vars) => vars,
     mutation: ({ completed, claim }) =>
       setItemCompleted({ spaceId: props.spaceId, itemId: props.item.id, completed, ...claim }, t.updateFailed),
+    // A row the list's filters now hide stays a moment as the reader left it, then collapses; the toast confirms it and
+    // offers Undo, which puts it back in place. The row of a task tagged several times shows in several groups, so the
+    // list owns what the rows show and the Undo.
     onSuccess: (changed, context) => {
       if (!context) return;
-      const { isListed, leaving, retryToast } = props;
       const { completed, previous } = context;
-      const id = previous.id;
-      // A row that stays shows its new state, and a screen reader is told, as the row may move to another place. A row
-      // the list's filters now hide stays a moment, done, then collapses; the toast confirms it and offers Undo, which
-      // puts it back in place.
-      void invalidateSpacesData().then(
-        () => {
-          setTicked(null);
-          if (isListed(id)) {
-            leaving.release(id);
-            return announce(completed ? t.itemCompleted : t.itemReopened);
-          }
-          leaving.leave(id);
-          const shown = { ...previous, completedAt: completed ? new Date().toISOString() : null };
-          const change = { spaceId: props.spaceId, previous, changed, currentUserId: props.currentUserId };
-          pendingUndo = confirmCompletion(change, t, {
-            undoing: () => {
-              setUndoing(true);
-              leaving.hold(previous);
-            },
-            undone: (restored) => {
-              setUndoing(false);
-              if (restored) {
-                pendingUndo = null;
-                return leaving.release(id);
-              }
-              leaving.hold(shown);
-              leaving.leave(id);
-            },
-          });
-        },
-        () => {
-          setTicked(null);
-          leaving.release(id);
-          retryToast(t.listRefreshFailed, t.retry, refreshList);
-        },
-      );
+      const change = { spaceId: props.spaceId, previous, changed, currentUserId: props.currentUserId, completed };
+      const view = {
+        leaving: props.leaving,
+        isListed: props.isListed,
+        refreshFailed: () => props.retryToast(t.listRefreshFailed, t.retry, refreshList),
+      };
+      void showCompletion(change, view, t).then(() => setTicked(null));
     },
     onError: (err, context) => {
       setTicked(null);
@@ -126,18 +95,22 @@ export default function ItemRow(props: ItemRowProps) {
       props.retryToast(err.message, t.retry, () => context && void tick(context.completed, context.claim));
     },
   });
-  /** Shows the new state at once and keeps the row where it is until the list knows whether it stays. */
+  /**
+   * Shows the new state at once and keeps the row where it is until the list knows whether it stays. The row keeps
+   * the place the task had before the change, such as among the overdue tasks, until it has left.
+   */
   const tick = (completed: boolean, claim: ClaimFields) => {
     const previous = snapshotOf(props.item);
     setTicked(completed);
-    props.leaving.hold({ ...previous, completedAt: completed ? new Date().toISOString() : null });
+    props.leaving.hold(previous, completed);
     return completeMutation.mutate({ completed, claim, previous });
   };
   /** A task someone else claimed asks once to take the claim over; declining changes nothing. */
   const toggleCompleted = async (completed: boolean) => {
     if (busy()) return;
     // Unticking a row that is still leaving is its Undo.
-    if (pendingUndo && props.leaving.held().has(props.item.id)) return pendingUndo();
+    const undo = props.leaving.undo(props.item.id);
+    if (undo) return undo();
     // The box shows the tick at once; declining to take a claim over clears it again.
     setTicked(completed);
     const claim = await resolveCompletionClaim(props.item.claim, props.currentUserId, completed, t);
@@ -145,8 +118,10 @@ export default function ItemRow(props: ItemRowProps) {
     else setTicked(null);
   };
   const refreshList = (): void => void invalidateSpacesData().catch(() => props.retryToast(t.listRefreshFailed, t.retry, refreshList));
-  const isCompleted = () => ticked() ?? !!props.item.completedAt;
-  const busy = () => ticked() !== null || undoing() || completeMutation.loading();
+  const isCompleted = () => ticked() ?? props.leaving.completed(props.item.id) ?? !!props.item.completedAt;
+  /** A change of the task or its Undo runs: a held row that offers no Undo has one under way. */
+  const busy = () =>
+    ticked() !== null || completeMutation.loading() || (props.leaving.held().has(props.item.id) && !props.leaving.undo(props.item.id));
   const collapsing = () => props.leaving.collapsing(props.item.id);
   let row: HTMLDivElement | undefined;
   // A row that leaves while it holds keyboard focus hands it to the same control of the row that takes its place, else
@@ -216,17 +191,18 @@ export default function ItemRow(props: ItemRowProps) {
         >
           <span class="flex shrink-0" title={props.canWrite && completionBlocked() ? t.completeBlockersFirst : undefined}>
             <Checkbox
-              aria-label={`${props.canWrite ? t.markComplete : t.completed}: ${props.item.title}`}
+              // A reader who cannot change the task hears its title and whether it is checked.
+              aria-label={props.canWrite ? `${t.markComplete}: ${props.item.title}` : props.item.title}
               value={isCompleted()}
               disabled={!props.canWrite || completionBlocked()}
               onValueChange={(completed) => void toggleCompleted(completed)}
             />
           </span>
 
-          {/* Item Link - Main content area */}
+          {/* Item Link - Main content area. It paints over the checkbox's touch area, so a tap on the task opens it. */}
           <a
             href={itemUrl()}
-            class="focus-ui flex min-w-0 flex-1 items-center gap-3 rounded-[var(--ui-radius-control)]"
+            class="focus-ui relative flex min-w-0 flex-1 items-center gap-3 rounded-[var(--ui-radius-control)]"
             aria-current={isSelectedLocal() ? "true" : undefined}
             onClick={(event) => {
               if (!shouldHandleDetailClick(event, event.currentTarget)) return;

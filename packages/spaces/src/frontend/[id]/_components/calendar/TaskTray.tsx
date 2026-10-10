@@ -7,7 +7,7 @@ import { shouldHandleDetailClick } from "../../../lib/detail";
 import { createRetryToasts } from "../../../lib/feedback";
 import { useSpaceMessages } from "../../messages";
 import { type ClaimFields, resolveCompletionClaim } from "../shared/claim/claim";
-import { confirmCompletion, setItemCompleted } from "../shared/completion";
+import { setItemCompleted, showCompletion } from "../shared/completion";
 import { createLeavingItems, keepHeld, snapshotOf } from "../shared/leaving";
 import { invalidateSpacesData, requestSpacesRouteNavigation } from "../workspace/workspace-events";
 import type { CalendarTray as Tray } from "../workspace/workspace-types";
@@ -50,19 +50,24 @@ export default function TaskTray(props: Props) {
       return next;
     });
   const refresh = (): Promise<void> => invalidateSpacesData().catch(() => retryToast(t.calendarRefreshFailed, t.retry, () => refresh()));
-  /** Tasks checked off here stay in the row, done, for a moment after the refresh drops them, then shrink away. */
+  /**
+   * Tasks checked off here stay in the row, done, for a moment after the refresh drops them, then shrink away. While a
+   * task leaves, unticking it runs the Undo its confirmation offers.
+   */
   const leaving = createLeavingItems<SpaceItem>();
-  /** The Undo of each task checked off here, while its toast offers it. */
-  const undos = new Map<string, () => void>();
   /** Whether the tray as loaded has the task; a task leaves it once it is completed. */
   const inTray = (id: string) =>
     [...(props.tray?.overdue.items ?? []), ...(props.tray?.undated.items ?? [])].some((item) => item.id === id);
+  /** Whether the task's change or its Undo runs: a held task without an Undo still has one under way. */
+  const busy = (id: string) => id in checking() || (leaving.held().has(id) && !leaving.undo(id));
+  /** Whether the box shows the task done: the reader's latest choice, else what the tray holds or has. */
+  const shownDone = (item: SpaceItem) => checking()[item.id] ?? leaving.completed(item.id) ?? Boolean(item.completedAt);
   /** A task the reader claimed completes with that claim; one claimed by someone else asks once to take it over. */
   const toggle = async (item: SpaceItem, completed: boolean) => {
-    if (item.id in checking()) return;
+    if (busy(item.id)) return;
     // Unticking a task that is still leaving is its Undo.
-    const pendingUndo = undos.get(item.id);
-    if (pendingUndo && leaving.held().has(item.id)) return pendingUndo();
+    const undo = leaving.undo(item.id);
+    if (undo) return undo();
     // The box shows the tick at once; declining to take a claim over clears it again.
     setChecking((current) => ({ ...current, [item.id]: completed }));
     const previous = snapshotOf(item);
@@ -70,8 +75,7 @@ export default function TaskTray(props: Props) {
       ? await resolveCompletionClaim(item.claim, props.currentUserId, completed, t)
       : {};
     if (!claim) return settle(item.id);
-    const done = { ...previous, completedAt: completed ? new Date().toISOString() : null };
-    leaving.hold(done);
+    leaving.hold(previous, completed);
     let changed: SpaceItem;
     try {
       changed = await setItemCompleted({ spaceId: props.spaceId, itemId: item.id, completed, ...claim }, t.updateFailed);
@@ -81,29 +85,15 @@ export default function TaskTray(props: Props) {
       toast.error(error instanceof Error ? error.message : t.updateFailed);
       return;
     }
-    await refresh();
+    // A completed task leaves the tray, so the toast confirms it and offers Undo, which puts the task back in its place,
+    // also while it is still leaving.
+    const change = { spaceId: props.spaceId, previous, changed, currentUserId: props.currentUserId, completed };
+    await showCompletion(
+      change,
+      { leaving, isListed: inTray, refreshFailed: () => retryToast(t.calendarRefreshFailed, t.retry, refresh) },
+      t,
+    );
     settle(item.id);
-    if (inTray(item.id)) return leaving.release(item.id);
-    leaving.leave(item.id);
-    // The task leaves the tray, so the toast confirms it and offers Undo, which puts the task back in its place, also
-    // while it is still leaving.
-    const undo = confirmCompletion({ spaceId: props.spaceId, previous, changed, currentUserId: props.currentUserId }, t, {
-      undoing: () => {
-        // The box shows the task as it was again and ignores clicks until Undo is through.
-        setChecking((current) => ({ ...current, [item.id]: !completed }));
-        leaving.hold(previous);
-      },
-      undone: (restored) => {
-        settle(item.id);
-        if (restored) {
-          undos.delete(item.id);
-          return leaving.release(item.id);
-        }
-        leaving.hold(done);
-        leaving.leave(item.id);
-      },
-    });
-    undos.set(item.id, undo);
   };
   // A task keeps its row while it stays in the tray, so a refresh that brings the same tasks again, such as after a
   // change elsewhere in the Space, leaves keyboard focus where it is. A task just checked off keeps its place a moment.
@@ -165,90 +155,101 @@ export default function TaskTray(props: Props) {
   const Section = (section: { kind: TaskTraySection; label: string; allLabel: (count: number) => string }) => {
     const headingId = createUniqueId();
     const list = () => tray[section.kind];
+    // A part whose last tasks leave shrinks with them, heading and gap included, so the part after it slides over
+    // instead of jumping once the tasks have gone. The space between two parts belongs to the first.
+    const collapsing = () => list().items.length > 0 && list().items.every((item) => leaving.collapsing(item.id));
     return (
       <Show when={list().items.length > 0}>
-        <h3
-          id={headingId}
-          class={`shrink-0 text-[11px] font-semibold uppercase tracking-wide ${
-            section.kind === "overdue" ? "text-red-600 dark:text-red-400" : "text-dimmed"
-          } [&:not(:first-child)]:ml-3`}
+        <div
+          class={`grid shrink-0 transition-[grid-template-columns,margin,opacity] duration-200 ease-out motion-reduce:transition-none ${
+            collapsing() ? "-mr-2 grid-cols-[0fr] opacity-0" : "grid-cols-[1fr] [&:not(:last-child)]:mr-3"
+          }`}
         >
-          {section.label}
-        </h3>
-        <ul aria-labelledby={headingId} class="flex shrink-0 items-center gap-2">
-          <For each={list().items}>
-            {(item) => {
-              const blocked = () => item.activeBlockerCount > 0;
-              const href = () => props.itemHref(item);
-              const collapsing = () => leaving.collapsing(item.id);
-              return (
-                // A task that leaves shrinks to nothing, gap included, so the tasks after it slide over instead of jumping.
-                <Row
-                  item={item.id}
-                  class={`grid shrink-0 transition-[grid-template-columns,margin,opacity] duration-200 ease-out motion-reduce:transition-none ${
-                    collapsing() ? "-mr-2 grid-cols-[0fr] overflow-hidden opacity-0" : "grid-cols-[1fr]"
-                  }`}
-                  onClick={(event) => {
-                    // Until the change is in, the box ignores another click or Space, so it cannot get out of step with
-                    // the change. Unlike disabling it, this keeps keyboard focus on the box.
-                    if (event.target instanceof HTMLInputElement && item.id in checking()) event.preventDefault();
-                  }}
-                >
-                  <div
-                    class={`flex h-7 min-w-0 max-w-72 items-center gap-1.5 rounded-full bg-[var(--ui-surface-muted)] px-2.5 text-xs ${
-                      collapsing() ? "overflow-hidden" : ""
-                    }`}
-                  >
-                    <Show when={props.canCheck && !blocked()}>
-                      <Checkbox
-                        aria-label={`${t.markComplete}: ${item.title}`}
-                        value={checking()[item.id] ?? Boolean(item.completedAt)}
-                        onValueChange={(completed) => void toggle(item, completed)}
-                      />
-                    </Show>
-                    <Show when={blocked()}>
-                      <i class="ti ti-lock shrink-0 text-amber-700 dark:text-amber-300" aria-hidden="true" />
-                    </Show>
-                    <a
-                      href={href()}
-                      class="focus-ui flex min-w-0 items-center gap-1.5 rounded-[var(--ui-radius-control)] text-secondary hover:app-accent-text"
+          <div class={`flex min-w-0 items-center gap-2 ${collapsing() ? "overflow-hidden" : ""}`}>
+            <h3
+              id={headingId}
+              class={`shrink-0 text-[11px] font-semibold uppercase tracking-wide ${
+                section.kind === "overdue" ? "text-red-600 dark:text-red-400" : "text-dimmed"
+              }`}
+            >
+              {section.label}
+            </h3>
+            <ul aria-labelledby={headingId} class="flex shrink-0 items-center gap-2">
+              <For each={list().items}>
+                {(item) => {
+                  const blocked = () => item.activeBlockerCount > 0;
+                  const href = () => props.itemHref(item);
+                  const collapsing = () => leaving.collapsing(item.id);
+                  return (
+                    // A task that leaves shrinks to nothing, gap included, so the tasks after it slide over instead of
+                    // jumping. The chip's padding sits inside a wrapper without any, so the column can reach zero.
+                    <Row
+                      item={item.id}
+                      class={`grid shrink-0 transition-[grid-template-columns,margin,opacity] duration-200 ease-out motion-reduce:transition-none ${
+                        collapsing() ? "-mr-2 grid-cols-[0fr] opacity-0" : "grid-cols-[1fr]"
+                      }`}
                       onClick={(event) => {
-                        if (!shouldHandleDetailClick(event, event.currentTarget)) return;
-                        event.preventDefault();
-                        requestSpacesRouteNavigation(href(), { scroll: "preserve" });
+                        // Until the change is in, the box ignores another click or Space, so it cannot get out of step
+                        // with the change. Unlike disabling it, this keeps keyboard focus on the box.
+                        if (event.target instanceof HTMLInputElement && busy(item.id)) event.preventDefault();
                       }}
                     >
-                      <span class={`truncate font-medium ${item.completedAt ? "text-dimmed line-through" : ""}`}>{item.title}</span>
-                      <Show when={section.kind === "overdue" && item.deadline}>
-                        {(deadline) => (
-                          <span class="shrink-0 tabular-nums text-red-600 dark:text-red-400">
-                            <span class="sr-only">{t.deadline}: </span>
-                            {dueDay(deadline())}
-                          </span>
-                        )}
-                      </Show>
-                      <Show when={blocked()}>
-                        <span class="sr-only">, {t.blockedByCount({ count: item.activeBlockerCount })}</span>
-                      </Show>
-                    </a>
-                  </div>
+                      <div class={`min-w-0 ${collapsing() ? "overflow-hidden" : ""}`}>
+                        <div class="flex h-7 min-w-0 max-w-72 items-center gap-1.5 rounded-full bg-[var(--ui-surface-muted)] px-2.5 text-xs">
+                          <Show when={props.canCheck && !blocked()}>
+                            <Checkbox
+                              aria-label={`${t.markComplete}: ${item.title}`}
+                              value={shownDone(item)}
+                              onValueChange={(completed) => void toggle(item, completed)}
+                            />
+                          </Show>
+                          <Show when={blocked()}>
+                            <i class="ti ti-lock shrink-0 text-amber-700 dark:text-amber-300" aria-hidden="true" />
+                          </Show>
+                          {/* It paints over the checkbox's touch area, so a tap on the task opens it. */}
+                          <a
+                            href={href()}
+                            class="focus-ui relative flex min-w-0 items-center gap-1.5 rounded-[var(--ui-radius-control)] text-secondary hover:app-accent-text"
+                            onClick={(event) => {
+                              if (!shouldHandleDetailClick(event, event.currentTarget)) return;
+                              event.preventDefault();
+                              requestSpacesRouteNavigation(href(), { scroll: "preserve" });
+                            }}
+                          >
+                            <span class={`truncate font-medium ${shownDone(item) ? "text-dimmed line-through" : ""}`}>{item.title}</span>
+                            <Show when={section.kind === "overdue" && item.deadline}>
+                              {(deadline) => (
+                                <span class="shrink-0 tabular-nums text-red-600 dark:text-red-400">
+                                  <span class="sr-only">{t.deadline}: </span>
+                                  {dueDay(deadline())}
+                                </span>
+                              )}
+                            </Show>
+                            <Show when={blocked()}>
+                              <span class="sr-only">, {t.blockedByCount({ count: item.activeBlockerCount })}</span>
+                            </Show>
+                          </a>
+                        </div>
+                      </div>
+                    </Row>
+                  );
+                }}
+              </For>
+              <Show when={list().total > list().items.length}>
+                <Row class="shrink-0">
+                  {/* The name starts with the visible words, so voice control finds the link by what it shows. */}
+                  <a
+                    href={props.listHref(section.kind)}
+                    aria-label={section.allLabel(list().total)}
+                    class="focus-ui flex h-7 items-center rounded-full px-2 text-xs font-medium text-dimmed hover:app-accent-text"
+                  >
+                    {t.taskTrayShowAll}
+                  </a>
                 </Row>
-              );
-            }}
-          </For>
-          <Show when={list().total > list().items.length}>
-            <Row class="shrink-0">
-              {/* The name starts with the visible words, so voice control finds the link by what it shows. */}
-              <a
-                href={props.listHref(section.kind)}
-                aria-label={section.allLabel(list().total)}
-                class="focus-ui flex h-7 items-center rounded-full px-2 text-xs font-medium text-dimmed hover:app-accent-text"
-              >
-                {t.taskTrayShowAll}
-              </a>
-            </Row>
-          </Show>
-        </ul>
+              </Show>
+            </ul>
+          </div>
+        </div>
       </Show>
     );
   };
@@ -262,6 +263,8 @@ export default function TaskTray(props: Props) {
       aria-busy={props.tray ? undefined : "true"}
       class="focus-ui flex h-11 shrink-0 items-center"
       data-spaces-task-tray
+      // Moving the pointer over the tray, maybe towards the next task, keeps the tasks that left in place a while longer.
+      on:pointermove={(event) => event.pointerType === "mouse" && leaving.postpone()}
     >
       <Show
         when={!empty()}

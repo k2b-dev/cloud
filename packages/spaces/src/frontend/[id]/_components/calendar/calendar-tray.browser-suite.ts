@@ -169,6 +169,8 @@ const completions: unknown[] = [];
 const removed = new Map<string, SpaceItem>();
 /** Holds the answer to a view request until the test lets it go; the answer itself is read when the request comes in. */
 let hold: (href: string) => Promise<void> = async () => {};
+/** Holds the answer to a completion until the test lets it go. */
+let holdCompletion: () => Promise<void> = async () => {};
 let browser: Browser;
 
 beforeAll(async () => {
@@ -204,6 +206,7 @@ beforeAll(async () => {
       const completion = /^\/api\/spaces\/Space1\/items\/(\w+)\/(completed|move)$/.exec(url.pathname);
       if (completion && request.method === "POST" && data) {
         const [, itemId, kind] = completion;
+        await holdCompletion();
         const key = `${request.headers.get("x-case")}:${itemId}`;
         const body = (await request.json()) as { completed: boolean; claimId?: string; columnId?: string; rank?: string };
         completions.push({ itemId, ...(kind === "move" ? { move: true } : {}), ...body });
@@ -545,10 +548,15 @@ describe(`Spaces task tray in ${browserName}`, () => {
     const page = await open(desktop);
     completions.splice(0);
     const tray = await rounded(page, TRAY);
+    const answer = gate();
+    holdCompletion = () => answer.wait;
     await page.locator('[data-spaces-tray-item="Late01"] .k2b-check').click();
-    // The tick shows at once, with the title struck through.
+    // The tick shows at once, with the title struck through, while the server still works on it.
     expect(await page.getByRole("checkbox", { name: "Als erledigt markieren: Vertrag Stadtwerke gegenzeichnen" }).isChecked()).toBe(true);
     await page.locator('[data-spaces-tray-item="Late01"] .line-through').waitFor();
+    expect(completions).toEqual([]);
+    holdCompletion = async () => {};
+    answer.open();
     await page.getByRole("button", { name: "Rückgängig" }).click();
     await page.locator('[data-spaces-tray-item="Late01"] .line-through').waitFor({ state: "detached" });
     for (let tries = 0; tries < 200 && completions.length < 2; tries++) await Bun.sleep(25);
@@ -565,6 +573,41 @@ describe(`Spaces task tray in ${browserName}`, () => {
         .evaluateAll((rows) => rows.map((row) => row.getAttribute("data-spaces-tray-item"))),
     ).toEqual(["Late01", "Late02", "Open01", "Open02"]);
     expect(await rounded(page, TRAY)).toEqual(tray);
+    await page.context().close();
+  }, 60_000);
+
+  test("closes the gap of tasks that leave and of their part without a jump", async () => {
+    const page = await open(desktop);
+    /** Where the first undated task starts once the task has collapsed, and once it has gone. */
+    const leave = async (id: string) => {
+      const positions = page.evaluate(
+        (itemId) =>
+          new Promise<{ collapsed: number; gone: number }>((done) => {
+            const tray = document.querySelector("[data-spaces-task-tray]")!;
+            const x = () => tray.querySelector('[data-spaces-tray-item="Open01"]')!.getBoundingClientRect().x;
+            let collapsed: number | null = null;
+            const observer = new MutationObserver(() => {
+              const row = tray.querySelector(`[data-spaces-tray-item="${itemId}"]`);
+              if (row?.classList.contains("grid-cols-[0fr]") && collapsed === null) collapsed = x();
+              if (!row && collapsed !== null) {
+                observer.disconnect();
+                done({ collapsed, gone: x() });
+              }
+            });
+            observer.observe(tray, { subtree: true, childList: true, attributes: true });
+          }),
+        id,
+      );
+      await page.locator(`[data-spaces-tray-item="${id}"] .k2b-check`).click();
+      return positions;
+    };
+    // A task shrinks to nothing, its padding and the gap after it included, so nothing moves once it has gone.
+    const one = await leave("Late02");
+    expect(one.gone).toBe(one.collapsed);
+    // The last overdue task takes its heading and the space before the next part with it.
+    const part = await leave("Late01");
+    expect(part.gone).toBe(part.collapsed);
+    expect(part.gone).toBeLessThan(one.gone);
     await page.context().close();
   }, 60_000);
 

@@ -43,10 +43,12 @@ describe("createLeavingItems", () => {
 
   const leavingRoot = () => createRoot((dispose) => ({ leaving: createLeavingItems<Row>(), dispose }));
 
-  test("shows a dropped row for the delay after its hold, then collapses it, then lets it go", () => {
+  test("shows a dropped row as held for the delay after the tick, then collapses it, then lets it go", () => {
     jest.useFakeTimers();
     const { leaving, dispose } = leavingRoot();
-    leaving.hold({ id: "a", done: true });
+    leaving.hold({ id: "a" }, true);
+    expect(leaving.completed("a")).toBe(true);
+    expect(leaving.completed("b")).toBeUndefined();
     // The server and the refresh take a while; the delay counts from the tick.
     jest.advanceTimersByTime(300);
     leaving.leave("a");
@@ -60,43 +62,68 @@ describe("createLeavingItems", () => {
     dispose();
   });
 
-  test("gives every row its own timer, so ticking another row neither waits nor cuts the first short", () => {
+  test("lets the rows wait while the reader keeps ticking, then collapses them together", () => {
     jest.useFakeTimers();
     const { leaving, dispose } = leavingRoot();
-    leaving.hold({ id: "a" });
+    leaving.hold({ id: "a" }, true);
     leaving.leave("a");
     jest.advanceTimersByTime(400);
-    leaving.hold({ id: "b" });
+    leaving.hold({ id: "b" }, true);
     leaving.leave("b");
-    jest.advanceTimersByTime(300);
-    expect([leaving.collapsing("a"), leaving.collapsing("b")]).toEqual([true, false]);
+    // The first row would be due now, but the reader just ticked the next one: nothing moves under the pointer.
+    jest.advanceTimersByTime(LEAVE_DELAY_MS - 1);
+    expect([leaving.collapsing("a"), leaving.collapsing("b")]).toEqual([false, false]);
+    jest.advanceTimersByTime(1);
+    expect([leaving.collapsing("a"), leaving.collapsing("b")]).toEqual([true, true]);
     jest.advanceTimersByTime(COLLAPSE_MS);
-    expect([...leaving.held().keys()]).toEqual(["b"]);
-    jest.advanceTimersByTime(LEAVE_DELAY_MS);
     expect(leaving.held().size).toBe(0);
     dispose();
   });
 
-  test("holding a leaving row again, as Undo does, stops its collapse", () => {
+  test("lets the rows wait while the pointer moves over the view", () => {
     jest.useFakeTimers();
     const { leaving, dispose } = leavingRoot();
-    leaving.hold({ id: "a", done: true });
+    leaving.hold({ id: "a" }, true);
     leaving.leave("a");
+    jest.advanceTimersByTime(600);
+    leaving.postpone();
+    jest.advanceTimersByTime(600);
+    leaving.postpone();
+    jest.advanceTimersByTime(LEAVE_DELAY_MS - 1);
+    expect(leaving.collapsing("a")).toBe(false);
+    jest.advanceTimersByTime(1);
+    expect(leaving.collapsing("a")).toBe(true);
+    dispose();
+  });
+
+  test("offers the Undo of a held row until it is held again, and holding a leaving row again stops its collapse", () => {
+    jest.useFakeTimers();
+    const { leaving, dispose } = leavingRoot();
+    const undo = () => {};
+    leaving.hold({ id: "a" }, true);
+    leaving.leave("a");
+    leaving.offerUndo("a", undo);
+    expect(leaving.undo("a")).toBe(undo);
     jest.advanceTimersByTime(LEAVE_DELAY_MS + 50);
     expect(leaving.collapsing("a")).toBe(true);
-    leaving.hold({ id: "a", done: false });
+    leaving.hold({ id: "a", done: false }, false);
     expect(leaving.collapsing("a")).toBe(false);
+    expect(leaving.undo("a")).toBeUndefined();
+    expect(leaving.completed("a")).toBe(false);
     jest.advanceTimersByTime(LEAVE_DELAY_MS + COLLAPSE_MS);
     expect(leaving.held().get("a")).toEqual({ id: "a", done: false });
     leaving.release("a");
     expect(leaving.held().size).toBe(0);
+    // An item that is not held offers nothing.
+    leaving.offerUndo("a", undo);
+    expect(leaving.undo("a")).toBeUndefined();
     dispose();
   });
 
   test("stops its timers with its owner", () => {
     jest.useFakeTimers();
     const { leaving, dispose } = leavingRoot();
-    leaving.hold({ id: "a" });
+    leaving.hold({ id: "a" }, true);
     leaving.leave("a");
     dispose();
     jest.advanceTimersByTime(LEAVE_DELAY_MS + COLLAPSE_MS);

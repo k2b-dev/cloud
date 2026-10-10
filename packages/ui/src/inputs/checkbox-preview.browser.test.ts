@@ -109,6 +109,56 @@ describe("Checkbox previews ticking", () => {
     }
   }, 30_000);
 
+  test("takes taps beside a box without label text on a touch screen, and moves nothing", async () => {
+    const page = await open(phone);
+    try {
+      expect(await page.evaluate(() => matchMedia("(any-pointer: coarse)").matches)).toBe(true);
+      const rest = await check(page, "Open");
+      const { x, y, width, height } = rest.box;
+      /** Whether a tap at the point lands on the box with the label, not on what lies around it. */
+      const hits = (label: string, px: number, py: number) =>
+        page.evaluate(
+          ([name, hx, hy]) =>
+            document.elementFromPoint(Number(hx), Number(hy))?.closest("label")?.querySelector("input")?.ariaLabel === name,
+          [label, px, py] as const,
+        );
+      // The 44 px touch area reaches 14 px past each edge of the 16 px box; further away a tap misses it.
+      expect(await hits("Open", x - 12, y + height / 2)).toBe(true);
+      expect(await hits("Open", x + width + 12, y + height / 2)).toBe(true);
+      expect(await hits("Open", x + width / 2, y - 12)).toBe(true);
+      expect(await hits("Open", x + width / 2, y + height + 12)).toBe(true);
+      expect(await hits("Open", x - 18, y + height / 2)).toBe(false);
+      await page.touchscreen.tap(x + width / 2, y + height + 12);
+      expect(await page.locator('input[aria-label="Open"]').isChecked()).toBe(true);
+      expect((await check(page, "Open")).box).toEqual(rest.box);
+      // A disabled box takes no taps around it.
+      const locked = (await check(page, "Locked")).box;
+      expect(await hits("Locked", locked.x - 8, locked.y + locked.height / 2)).toBe(false);
+
+      // A labelled box needs no touch area of its own: its label takes the tap.
+      await page.setContent(
+        `<!doctype html><html><head><style>${css}</style></head><body class="k2b-ui">` +
+          renderToString(() => createComponent(Checkbox, { label: "Send a summary", value: false })) +
+          "</body></html>",
+      );
+      const after = await page.evaluate(() => getComputedStyle(document.querySelector(".k2b-check__control")!, "::after").content);
+      expect(after).toBe("none");
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  test("keeps a box's own size as its target under a fine pointer", async () => {
+    const page = await open(desktop);
+    try {
+      const { x, y, height } = (await check(page, "Open")).box;
+      await page.mouse.click(x - 6, y + height / 2);
+      expect(await page.locator('input[aria-label="Open"]').isChecked()).toBe(false);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
   test("does not leave the preview behind after a tap on a touch screen", async () => {
     const page = await open(phone);
     try {

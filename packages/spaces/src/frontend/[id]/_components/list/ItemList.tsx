@@ -74,7 +74,7 @@ export default function ItemList(props: ItemListProps) {
     const current = grouped();
     return current.groups.filter((group) => (current.itemsByGroup[group.key] || []).length > 0);
   });
-  /** Keys of the shown groups: a group keeps its section while it has rows. */
+  /** Keys of the shown groups: a group keeps its section while it has rows, also rows that are leaving. */
   const groupKeys = createMemo(() => nonEmptyGroups().map((group) => group.key));
   let list: HTMLDivElement | undefined;
 
@@ -102,7 +102,8 @@ export default function ItemList(props: ItemListProps) {
   );
 
   return (
-    <div ref={list} class="min-w-0">
+    // Moving the pointer over the list, maybe towards the next task, keeps the rows that left in place a while longer.
+    <div ref={list} class="min-w-0" on:pointermove={(event) => event.pointerType === "mouse" && props.leaving.postpone()}>
       {props.groupBy === "none" ? (
         <div class="flex flex-col rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-1.5">
           <Rows items={rows} />
@@ -114,13 +115,24 @@ export default function ItemList(props: ItemListProps) {
               const group = () => nonEmptyGroups().find((candidate) => candidate.key === key);
               const items = () => grouped().itemsByGroup[key] ?? [];
               const headingId = `space-list-group-${key}`;
+              // A group whose last rows collapse collapses with them, header and gap included, so the groups after it
+              // slide up instead of jumping once the rows have gone.
+              const collapsing = () => items().length > 0 && items().every((item) => props.leaving.collapsing(item.id));
               return (
-                <section aria-labelledby={headingId} class="rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-1.5">
-                  <GroupHeader config={group() ?? { key, label: "" }} count={items().length} id={headingId} />
-                  <div class="flex flex-col">
-                    <Rows items={items()} />
+                <div
+                  class={`grid transition-[grid-template-rows,margin,opacity] duration-200 ease-out motion-reduce:transition-none ${
+                    collapsing() ? "-mb-[var(--ui-space-section)] grid-rows-[0fr] opacity-0" : "grid-rows-[1fr]"
+                  }`}
+                >
+                  <div class={`min-h-0 ${collapsing() ? "overflow-hidden" : ""}`}>
+                    <section aria-labelledby={headingId} class="rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-1.5">
+                      <GroupHeader config={group() ?? { key, label: "" }} count={items().length} id={headingId} />
+                      <div class="flex flex-col">
+                        <Rows items={items()} />
+                      </div>
+                    </section>
                   </div>
-                </section>
+                </div>
               );
             }}
           </For>

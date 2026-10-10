@@ -1,10 +1,11 @@
-import { toast } from "@k2b/ui";
+import { announce, toast } from "@k2b/ui";
 import { apiClient } from "@/api/client";
 import type { SpaceItem } from "@/contracts";
 import { readResponseError } from "../../../lib/response";
 import type { spaceMessages } from "../../messages";
 import { invalidateSpacesData } from "../workspace/workspace-events";
 import { resolveCompletionClaim } from "./claim/claim";
+import type { LeavingItems } from "./leaving";
 
 type Messages = ReturnType<typeof spaceMessages.resolve>["t"];
 type Completion = { spaceId: string; itemId: string; completed: boolean; claimId?: string; force?: true };
@@ -83,4 +84,50 @@ export const confirmCompletion = (change: CompletionChange, t: Messages, trackin
     action: { label: t.undo, onClick: undo },
   });
   return undo;
+};
+
+/**
+ * Shows a completion change once the server has it. The view is read again: an item it still lists stays, and a
+ * screen reader is told, as the item may move. An item it no longer lists stays a moment as the reader left it, then
+ * collapses, and the toast confirms the change with Undo, which unticking the item while it leaves runs too. When the
+ * view cannot be read again, the toast still confirms the change with Undo, and the item shows what the view last read.
+ */
+export const showCompletion = async (
+  change: CompletionChange & { completed: boolean },
+  view: { leaving: LeavingItems<SpaceItem>; isListed: (itemId: string) => boolean; refreshFailed: () => void },
+  t: Messages,
+): Promise<void> => {
+  const { previous, completed } = change;
+  const { leaving } = view;
+  const id = previous.id;
+  const refreshed = await invalidateSpacesData().then(
+    () => true,
+    () => false,
+  );
+  if (refreshed && view.isListed(id)) {
+    leaving.release(id);
+    announce(completed ? t.itemCompleted : t.itemReopened);
+    return;
+  }
+  if (refreshed) leaving.leave(id);
+  else {
+    leaving.release(id);
+    view.refreshFailed();
+  }
+  // Undo shows the item as it was while it runs. An item that has already gone comes back with the refresh after Undo.
+  let shown = false;
+  const undo = confirmCompletion(change, t, {
+    undoing: () => {
+      shown = leaving.held().has(id);
+      if (shown) leaving.hold(previous, Boolean(previous.completedAt));
+    },
+    undone: (restored) => {
+      if (restored) return leaving.release(id);
+      if (!shown) return;
+      leaving.hold(previous, completed);
+      leaving.leave(id);
+      leaving.offerUndo(id, undo);
+    },
+  });
+  if (refreshed) leaving.offerUndo(id, undo);
 };
