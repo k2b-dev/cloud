@@ -23,7 +23,7 @@ Nutze **Kommentare** in den Notizdetails für Fragen, Feedback und Entscheidunge
 
 Dauerhaftes Handbuchwissen gehört in die Notiz selbst. Nutze Kommentare, um diesen Inhalt vor oder nach einer Änderung zu besprechen.
 
-**Mit KI bearbeiten** öffnet Assistant mit der Seite und ihrer Diskussion. Nach deiner Prüfung kann Assistant auch deine neuen Kommentare korrigieren oder löschen. Es gelten dieselben Regeln für Autor und zehn Minuten. Assistant kann Entwürfe für Abfragen und Inhaltsverzeichnisse prüfen, ohne sie zu speichern. Diese Prüfung deckt nicht alle Markdown-Funktionen oder Tabellenformeln ab.
+**Mit KI bearbeiten** öffnet Assistant mit der Seite und ihrer Diskussion. Nach einer Prüfung kann Assistant auch deine neuen Kommentare korrigieren oder löschen. Es gelten dieselben Regeln für Autor und zehn Minuten. Assistant kann Entwürfe für Abfragen und Inhaltsverzeichnisse prüfen, ohne sie zu speichern. Diese Prüfung deckt nicht alle Markdown-Funktionen oder Tabellenformeln ab.
 
 **Markdown**
 

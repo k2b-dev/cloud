@@ -22,7 +22,7 @@ Der Filterdialog kann diese Felder durchsuchen:
 - An oder Cc
 - Betreff
 - Nachrichtentext
-- Anhangsname
+- Name des Anhangs
 - Interner Kommentar
 - Unterhaltungsreferenz
 - Ordner
@@ -34,7 +34,7 @@ Anbieter-Schlüsselwörter sind erweiterte synchronisierte Metadaten, kein norma
 
 Mail prüft für jedes Suchergebnis den Zugriff und durchsucht die synchronisierte Cloud-Kopie. Während der ersten Synchronisierung können ältere Nachrichten oder Inhalte erst später durchsuchbar werden, während Synchronisierung und Laden der Nachrichtentexte weiterlaufen.
 
-Nachdem ein Anhang synchronisiert wurde, erkennt Mail im Hintergrund lesbaren Text. Das gilt für unterstützte PDF-, Office-, Tabellen-, Präsentations-, RTF-, EPUB- und CSV-Dateien. Die allgemeine Standardsuche umfasst diesen erkannten Anhangstext. Ein Filter für **Nachrichteninhalt** durchsucht nur den E-Mail-Text. **Anhangsname** durchsucht Dateinamen. Passwortgeschützte, gescannte, nicht unterstützte, fehlerhafte oder zu große Dateien bleiben herunterladbar, liefern aber keinen durchsuchbaren Text.
+Nachdem ein Anhang synchronisiert wurde, erkennt Mail im Hintergrund lesbaren Text. Das gilt für unterstützte PDF-, Office-, Tabellen-, Präsentations-, RTF-, EPUB- und CSV-Dateien. Die allgemeine Standardsuche umfasst diesen erkannten Anhangstext. Ein Filter für **Nachrichteninhalt** durchsucht nur den E-Mail-Text. **Name des Anhangs** durchsucht Dateinamen. Passwortgeschützte, gescannte, nicht unterstützte, fehlerhafte oder zu große Dateien bleiben herunterladbar, liefern aber keinen durchsuchbaren Text.
 
 Passt erkannter Anhangstext, nennt das Ergebnis den Anhang und zeigt einen kurzen passenden Ausschnitt. Das Ergebnis öffnet genau die Nachricht, zu der der Anhang gehört. Für die ursprüngliche Datei nutzt du die Download-Aktion des Ergebnisses.
 
@@ -82,7 +82,7 @@ Eine für später geplante Antwort zählt erst, wenn Mail sie sendet. Kommt vorh
 
 In den **Unterhaltungsdetails** entscheidest du nur, ob die Unterhaltung **Erledigt** ist. Entfernst du Erledigt, öffnet sich die Unterhaltung wieder, und Mail leitet den nächsten Schritt aus der letzten bestätigten Nachricht ab.
 
-Wähle **In Ordner verschieben** in den Unterhaltungsaktionen, um das Ziel per Tastatur, Zeigegerät oder Berührung zu wählen. Auf dem Desktop kannst du eine Unterhaltungszeile auch auf einen Ordner in der linken Navigation ziehen. Mail reiht die Verschiebung ein, und die Synchronisierung bestätigt das Ergebnis beim Anbieter.
+Wähle **In Ordner verschieben** in den Unterhaltungsaktionen, um das Ziel per Tastatur, Zeigegerät oder Berührung zu wählen. Auf dem Desktop kannst du eine Unterhaltungszeile auch auf einen auswählbaren Ordner in der linken Navigation ziehen. Mail reiht die Verschiebung ein, und die Synchronisierung bestätigt das Ergebnis beim Anbieter.
 
 Um mehrere Unterhaltungen zu bearbeiten, wähle ihre Kontrollkästchen aus. Halte **Umschalt** gedrückt und wähle ein weiteres Kontrollkästchen oder eine weitere Zeile aus, um den geladenen Bereich dazwischen auszuwählen. Eine Auswahl hat höchstens 50 Unterhaltungen, damit du die Arbeit beim Anbieter nachverfolgen kannst.
 
@@ -138,7 +138,7 @@ In der **Nachrichtenansicht** ist jede Zeile eine Nachricht. Aktionen an einer Z
 
 Unter **Versandprobleme** listet die Nachrichtenansicht die Nachrichten, deren Versand Aufmerksamkeit braucht, auch solche, die nie in einem Ordner angekommen sind. Eine solche Nachricht liegt in keinem Ordner. Archivieren, Löschen und Verschieben melden das, statt sie zu ändern.
 
-- **Archivieren** verschiebt die Unterhaltung in den zugeordneten Archivordner. Gmail hat keinen Archivordner. Ohne Zuordnung entfernt Archivieren die Unterhaltung aus dem aktuellen Ordner, etwa dem Posteingang, und behält sie in **All Mail**.
+- **Archivieren** verschiebt sie in den zugeordneten Archivordner. Gmail hat keinen Archivordner. Ohne Zuordnung entfernt Archivieren die Unterhaltung aus dem aktuellen Ordner, etwa dem Posteingang, und behält sie in **All Mail**.
 - **In Spam verschieben** verschiebt sie in den zugeordneten Spam-Ordner. In Spam wird dieselbe Aktion zu **Kein Spam** und verschiebt die Unterhaltung zurück in den Posteingang.
 - **Löschen** verschiebt sie in den zugeordneten Papierkorb.
 
@@ -198,7 +198,7 @@ Empfangene Anhänge bleiben bei der Nachricht, die sie gebracht hat. Wähle eine
 
 **Vorschau** öffnet Text, CSV, JSON, Bilder, PDFs, Audio und Video in einem Dialog. Ist eine Textdatei Markdown und beginnt mit einer Überschrift, wird diese Überschrift zum Titel, darunter stehen Dateiname und Größe. Der Kopf des Dialogs enthält **Anhang herunterladen**, bei Text, CSV und JSON auch **Kopieren**. Auf dem Smartphone füllt die Vorschau den Bildschirm.
 
-Mit Zugriff **Verwalten** erstellst du auch einen öffentlichen Download-Link für einen Anhang. Mail zeigt die URL nur beim Erstellen des Links. Du kannst ihn mit einem Passwort, einem Ablaufzeitpunkt und einer Grenze für Download-Sitzungen schützen. Um vorhandene Links zu ändern oder zu widerrufen, öffne **Postfachwerkzeuge → Freigabelinks**.
+Mit Zugriff **Verwalten** erstellst du auch einen öffentlichen Download-Link für einen Anhang. Mail zeigt die URL nur beim Erstellen des Links. Du kannst ihn mit einem Passwort, einem Ablaufzeitpunkt und einer Grenze für Download-Sitzungen schützen. Um vorhandene Links zu prüfen oder zu widerrufen, öffne **Postfachwerkzeuge → Freigabelinks**.
 
 ## Externe Bilder steuern {icon="photo-shield"}
 

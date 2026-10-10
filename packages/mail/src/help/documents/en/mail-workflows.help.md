@@ -336,7 +336,7 @@ An optional `model` selects an enabled profile for one action. Otherwise, Mail u
 
 AI tasks survive worker restarts. Cancelling the Mail run stops running inference where possible and discards late output. A dry run cannot predict AI output. It reports the missing value and does not continue with an invented classification or draft.
 
-Mail stores prompts, inputs, and outputs with the durable task. Include only the message fields that the decision needs. Keep generated replies as drafts when a person must review them. Add `scheduleDraftSend` only when sending without review is explicitly approved.
+Mail stores prompts, inputs, and outputs with the durable task. Include only the message fields that the decision needs. Keep generated replies as drafts when a person needs to review them. Add `scheduleDraftSend` only when sending without review is approved on purpose.
 
 A workflow triggered by `messageReceived` cannot use `scheduleDraftSend` at all. Replies to incoming mail must go through `automaticReply` and its loop protection.
 

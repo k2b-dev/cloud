@@ -45,9 +45,9 @@ The action buttons show what you can do now. A turned-off action names the reaso
 - **Rebuild search** replaces only the derived search chunks.
 - **Repair thread projection** links orphaned messages and refreshes summaries. It removes copies of Mail's own drafts that an earlier synchronization imported as messages. It keeps manual thread overrides, comments, references, assignments, and conversation state.
 
-When the result of a command at the provider is unclear, Mail offers only **Reconcile effect**. Reconciliation checks the state at the provider before it decides the result. Mail offers no blind retry after a provider effect might have started. **Retry work** and **Cancel work** are available only for maintenance commands that read from the provider and whose provider effect did not start.
+When the result of a command at the provider is unclear, Mail offers only **Reconcile effect**. Reconciliation checks the state at the provider before it decides the result. Mail offers no blind retry after a provider effect might have started, because a blind retry could run the action twice. **Retry work** and **Cancel work** are available only for maintenance commands that read from the provider and whose provider effect did not start.
 
-Cloud administrators can review the same redacted summary in **Administration → Mail**. It contains counts, states, timestamps, available capabilities, IDs, and error codes. It contains no subjects, addresses, bodies, attachment names, provider endpoints, credentials, or raw provider errors.
+Cloud administrators can review the same redacted summary in **Admin → Mail**. It contains counts, states, timestamps, available capabilities, IDs, and error codes. It contains no subjects, addresses, bodies, attachment names, provider endpoints, credentials, or raw provider errors.
 
 ## Manage the provider connection {icon="user-cog"}
 
@@ -81,7 +81,7 @@ The **Identity label** is visible only inside the mailbox. Recipients see the **
 - the Sent and Drafts folders;
 - whether it is the default identity.
 
-**Advanced delivery** contains provider-specific settings that most people leave unchanged. The optional **Return-path address** receives technical delivery failures and bounce reports. Leave it empty unless your mail provider explicitly requires a separate address. Mail attaches the contact card as a `.vcf` file to messages sent with the identity.
+**Advanced delivery** contains provider-specific settings. In most cases, leave them unchanged. The optional **Return-path address** receives technical delivery failures and bounce reports. Leave it empty unless your mail provider explicitly requires a separate address. Mail attaches the contact card as a `.vcf` file to messages sent with the identity.
 
 After a send, Mail places the message in the Sent folder of the identity as soon as it stores or finds the copy there. It does not wait for the next synchronization.
 
@@ -149,7 +149,7 @@ A subfolder follows its parent when the choice of the parent is stricter. It can
 
 Sent, Drafts, Trash, Junk, and provider collections such as All Mail, Important, and Starred at Gmail never decide where mail appears. Mail therefore does not offer **Only in the folder** for them, and **Only in the folder** on a parent does not change them. Only **Hidden**, set on them or on their parent, removes them from the sidebar.
 
-**Special folder mappings** appears below the folder hierarchy. It selects the active folders that Mail uses for Sent, Drafts, Archive, Trash, and Junk. Mail finds the Inbox at the provider. A wrong or missing mapping can stop the matching conversation action or the Sent or Drafts view from completing.
+**Special folder mappings** appears below the folder hierarchy. It selects the active, selectable folders that Mail uses for Sent, Drafts, Archive, Trash, and Junk. Mail finds the Inbox at the provider. A wrong or missing mapping can stop the matching conversation action or the Sent or Drafts view from completing.
 
 If the IMAP account shows shared folders or folders of other users, **Rediscover folders** can add them to the same hierarchy. They are provider state of this connected account, not separate Cloud resources. Cloud does not:
 
@@ -192,13 +192,13 @@ The public URL is disclosed only once, immediately after creation. Mail stores o
 
 **Mailbox tools → Shared links** lists every link page by page, including older active links. There you can revoke access without deleting the original message or draft attachment.
 
-A link can have an optional password, expiry time, and maximum number of download sessions. Passwords are case-sensitive and can contain spaces. Range requests that resume one allowed download do not count as extra downloads. Revoked, expired, used-up, invalid, and wrongly protected links fail without revealing attachment metadata.
+A link can have an optional password, expiry time, and maximum number of download sessions. Passwords are case-sensitive and can contain spaces. Range requests that resume one allowed download do not count as extra downloads. Revoked, expired, used-up, and invalid links fail without revealing attachment metadata. So does a link opened with a wrong password.
 
 The CLI offers the same operations through `cld mail attachment link create`, `list`, and `revoke`. Give a password through `--password-file` or `--password-stdin`. The CLI never accepts it as a visible command-line value.
 
 ## Review Mail storage {icon="database"}
 
-Only Cloud administrators can open **Administration → Mail**. **Manage** access to a mailbox is not enough. The page lists every active mailbox with redacted data on health, synchronization, storage, number of people with access, and attention. It never shows message or attachment content.
+Only Cloud administrators can open **Admin → Mail**. **Manage** access to a mailbox is not enough. The page lists every active mailbox with redacted data on health, synchronization, storage, the number of access entries, and attention. It never shows message or attachment content.
 
 Open **Security** from this page to review reported suspicious messages and keep exact organization-wide protection rules. For what users see and safe rules, see [Recognize and report suspicious mail](/app/mail/help/mail-security).
 
@@ -220,7 +220,7 @@ Mail uses the built-in Contacts app for recipient suggestions, contacts in **Con
 To use another app, such as a customer management app, you need to be a Cloud administrator:
 
 :::steps
-1. Open **Administration → Mail**. **Contact directory** shows the current app and whether it uses the Contacts defaults or a custom mapping.
+1. Open **Admin → Mail**. **Contact directory** shows the current app and whether it uses the Contacts defaults or a custom mapping.
 2. Choose **Configure** to open the editor.
 3. Choose the app.
 4. For each function, choose one of its capabilities.

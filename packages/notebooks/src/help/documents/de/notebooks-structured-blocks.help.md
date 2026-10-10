@@ -35,7 +35,7 @@ Damit entstehen Felder wie `profile.owner` und `profile.reviewDays`. Namen und F
 - **Werte:** Zeichenfolgen, Zahlen, Wahrheitswerte oder flache Listen dieser Werte.
 - **Zahlen als Text:** Setze Text, der wie eine Zahl aussieht, in Anführungszeichen. `"30"` ist nicht die Zahl `30`.
 - **Listen:** Schreibe jeden Listeneintrag in eine eigene Zeile mit zwei Leerzeichen vor `-`. Datenblöcke erlauben keine Inline-Arrays und keine verschachtelten Objekte.
-- **Datumsangaben:** Datumsangaben bleiben Text. Einen eigenen Datentyp für Daten gibt es nicht.
+- **Datumsangaben:** Datumsangaben bleiben Text. Einen eigenen Datentyp für Datumsangaben gibt es nicht.
 - **Leere Werte:** Ein Schlüssel ohne Wert und ohne Listeneinträge ist eine leere Liste. Verwende `""` für eine leere Zeichenfolge.
 :::
 

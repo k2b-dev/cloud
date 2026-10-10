@@ -160,7 +160,7 @@ Open **Mailbox tools → Mailbox health → Advanced diagnostics and repairs**. 
 A move, delete, flag change, or folder operation that could not reach the mail server before it started needs no attention. Mail tries it again several times over a few minutes. If the server stays unreachable, the action fails without changing anything on the server, and you can repeat it later.
 
 :::warning Do not repeat an action with an unclear result
-When Mail reports an unclear result, do not repeat a move, delete, flag change, folder operation, or send. If reconciliation cannot prove the remote result, the command stays in "needs attention" until someone checks the provider by hand.
+When Mail reports an unclear result, do not repeat a move, delete, flag change, folder operation, or send. If reconciliation cannot prove the remote result, the command stays at **Needs review** until someone checks the provider by hand.
 :::
 
 ## A provider folder action fails {icon="lifebuoy"}

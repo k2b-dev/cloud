@@ -211,7 +211,7 @@ describe("mailHelp", () => {
     expect(admin).toContain("public URL is disclosed only once");
     expect(admin).toContain("optional password, expiry time, and maximum number of download sessions");
     expect(admin).toContain("including older active links");
-    expect(admin).toContain("Only Cloud administrators can open **Administration → Mail**");
+    expect(admin).toContain("Only Cloud administrators can open **Admin → Mail**");
     expect(admin).toContain("Refresh storage snapshot** queues a background reconciliation");
     expect(admin).toContain("continue to show the last completed snapshot until that job finishes");
     expect(admin).toContain("cld mail admin mailbox access list|grant|set|revoke");

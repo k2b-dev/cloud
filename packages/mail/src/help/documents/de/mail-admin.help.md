@@ -45,7 +45,7 @@ Die Aktionsschaltflächen zeigen, was gerade möglich ist. Eine ausgeschaltete A
 - **Suche neu aufbauen** ersetzt nur die abgeleiteten Suchabschnitte.
 - **Unterhaltungsansicht reparieren** verknüpft verwaiste Nachrichten und aktualisiert Zusammenfassungen. Es entfernt Kopien eigener Mail-Entwürfe, die eine frühere Synchronisierung als Nachrichten importiert hat. Manuelle Zuordnungen von Unterhaltungen, Kommentare, Referenzen, Zuweisungen und der Zustand der Unterhaltungen bleiben erhalten.
 
-Ist das Ergebnis eines Befehls beim Anbieter unklar, bietet Mail nur **Anbietervorgang abgleichen** an. Der Abgleich prüft den Zustand beim Anbieter, bevor er das Ergebnis festlegt. Mail bietet keinen blinden neuen Versuch an, wenn ein Vorgang beim Anbieter schon begonnen haben könnte. **Vorgang erneut versuchen** und **Vorgang abbrechen** gibt es nur für Wartungsbefehle, die beim Anbieter lesen und deren Wirkung beim Anbieter nicht begonnen hat.
+Ist das Ergebnis eines Befehls beim Anbieter unklar, bietet Mail nur **Anbietervorgang abgleichen** an. Der Abgleich prüft den Zustand beim Anbieter, bevor er das Ergebnis festlegt. Mail bietet keinen blinden neuen Versuch an, wenn ein Vorgang beim Anbieter schon begonnen haben könnte. Ein blinder neuer Versuch könnte die Aktion doppelt ausführen. **Vorgang erneut versuchen** und **Vorgang abbrechen** gibt es nur für Wartungsbefehle, die beim Anbieter lesen und deren Wirkung beim Anbieter nicht begonnen hat.
 
 Die Cloud-Administration sieht dieselbe geschwärzte Zusammenfassung unter **Administration → Mail**. Sie enthält Zahlen, Zustände, Zeitstempel, verfügbare Capabilities, IDs und Fehlercodes. Sie enthält keine Betreffzeilen, Adressen, Nachrichtentexte, Anhangsnamen, Anbieter-Endpunkte, Zugangsdaten oder rohen Fehler des Anbieters.
 
@@ -81,7 +81,7 @@ Die **Bezeichnung der Absenderidentität** ist nur im Postfach sichtbar. Empfän
 - die Ordner für Gesendet und Entwürfe;
 - ob sie die Standard-Absenderidentität ist.
 
-**Erweiterte Zustellung** enthält anbieterspezifische Einstellungen, die die meisten nicht ändern. Die optionale **Return-Path-Adresse** empfängt technische Zustellfehler und Unzustellbarkeitsberichte. Lass sie leer, außer dein E-Mail-Anbieter verlangt ausdrücklich eine eigene Adresse. Mail hängt die Kontaktkarte als `.vcf`-Datei an Nachrichten, die mit der Absenderidentität gesendet werden.
+**Erweiterte Zustellung** enthält anbieterspezifische Einstellungen. Lass sie in den meisten Fällen unverändert. Die optionale **Return-Path-Adresse** empfängt technische Zustellfehler und Unzustellbarkeitsberichte. Lass sie leer, außer dein E-Mail-Anbieter verlangt ausdrücklich eine eigene Adresse. Mail hängt die Kontaktkarte als `.vcf`-Datei an Nachrichten, die mit der Absenderidentität gesendet werden.
 
 Nach einem Versand legt Mail die Nachricht im Ordner Gesendet der Absenderidentität ab, sobald es die Kopie dort speichert oder findet. Mail wartet nicht auf die nächste Synchronisierung.
 
@@ -149,7 +149,7 @@ Ein Unterordner folgt seinem übergeordneten Ordner, wenn dessen Option strenger
 
 Gesendet, Entwürfe, Papierkorb, Spam und Sammlungen des Anbieters wie All Mail, Wichtig und Markiert bei Gmail entscheiden nie, wo E-Mails erscheinen. Mail bietet für sie deshalb **Nur im Ordner** nicht an, und **Nur im Ordner** an einem übergeordneten Ordner ändert sie nicht. Nur **Ausgeblendet**, an ihnen selbst oder am übergeordneten Ordner gesetzt, nimmt sie aus der Seitenleiste.
 
-**Zuordnung besonderer Ordner** steht unter der Ordnerhierarchie. Sie legt die aktiven Ordner fest, die Mail für Gesendet, Entwürfe, Archiv, Papierkorb und Spam nutzt. Den Posteingang findet Mail beim Anbieter. Eine falsche oder fehlende Zuordnung kann verhindern, dass die passende Aktion an der Unterhaltung oder die Ansicht von Gesendet oder Entwürfen abgeschlossen wird.
+**Zuordnung besonderer Ordner** steht unter der Ordnerhierarchie. Sie legt die aktiven, auswählbaren Ordner fest, die Mail für Gesendet, Entwürfe, Archiv, Papierkorb und Spam nutzt. Den Posteingang findet Mail beim Anbieter. Eine falsche oder fehlende Zuordnung kann verhindern, dass die passende Aktion an der Unterhaltung oder die Ansicht von Gesendet oder Entwürfen abgeschlossen wird.
 
 Zeigt das IMAP-Konto geteilte Ordner oder Ordner anderer Nutzer, kann **Ordner neu ermitteln** sie in dieselbe Hierarchie aufnehmen. Sie sind Zustand des verbundenen Kontos beim Anbieter, keine eigenen Cloud-Ressourcen. Cloud kann nicht:
 
@@ -198,7 +198,7 @@ Die CLI bietet dieselben Vorgänge über `cld mail attachment link create`, `lis
 
 ## Mail-Speicher prüfen {icon="database"}
 
-Nur die Cloud-Administration kann **Administration → Mail** öffnen. Zugriff **Verwalten** auf ein Postfach reicht nicht. Die Seite listet jedes aktive Postfach mit geschwärzten Angaben zu Zustand, Synchronisierung, Speicher, Zahl der Personen mit Zugriff und Handlungsbedarf. Sie zeigt nie Inhalte von Nachrichten oder Anhängen.
+Nur die Cloud-Administration kann **Administration → Mail** öffnen. Zugriff **Verwalten** auf ein Postfach reicht nicht. Die Seite listet jedes aktive Postfach mit geschwärzten Angaben zu Zustand, Synchronisierung, Speicher, Zahl der Zugriffseinträge und Handlungsbedarf. Sie zeigt nie Inhalte von Nachrichten oder Anhängen.
 
 Öffne auf dieser Seite **Sicherheit**, um gemeldete verdächtige Nachrichten zu prüfen und genaue organisationsweite Schutzregeln zu pflegen. Was Nutzer sehen und wie sichere Regeln aussehen, steht unter [Verdächtige E-Mails erkennen und melden](/app/mail/help/mail-security).
 
@@ -230,7 +230,7 @@ Um eine andere App zu nutzen, etwa eine App für Kundenbeziehungen, musst du zur
 Jede Liste bietet nur Capabilities an, die zum Vertrag für Kontaktverzeichnisse passen. Stellt die App Standardwerte bereit, trägt Mail sie ein.
 
 - **Empfänger vorschlagen** und **Beteiligte zuordnen** sind Pflicht.
-- **Kontakt lesen** ist optional. Ohne diese Funktion meldet „Compose email“ aus einem Kontakt in einer anderen App, dass der Kontakt nicht verfügbar ist.
+- **Kontakt lesen** ist optional. Ohne diese Funktion meldet **E-Mail verfassen** aus einem Kontakt in einer anderen App, dass der Kontakt nicht verfügbar ist.
 - **Beschreibbare Bücher auflisten** und **Kontakt anlegen** sind optional und gehören zusammen. Ohne sie blendet Mail **Neuer Kontakt** aus.
 
 **Speichern** prüft jede Auswahl gegen die aktuellen Capabilities der App und nennt jedes Feld, das Mail nicht nutzen kann. Mail ruft die App immer mit dem eigenen Zugriff jeder Person auf, sodass jede Person dort nur die Kontakte sieht, die sie lesen darf. Stoppt die App oder ändert sie sich später unverträglich, werden die betroffenen Funktionen nicht verfügbar, wie wenn Contacts nicht verfügbar ist. **Contacts-Standard verwenden** stellt die eingebaute Zuordnung wieder her.

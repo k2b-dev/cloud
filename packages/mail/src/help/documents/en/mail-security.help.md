@@ -33,7 +33,7 @@ If you are unsure, do not follow links or open attachments. Contact the supposed
 
 ## Set organization rules as an administrator {icon="settings"}
 
-As a Cloud administrator, open **Administration → Mail → Security** to review reports and change organization-wide rules.
+As a Cloud administrator, open **Admin → Mail → Security** to review reports and change organization-wide rules.
 
 - **Block** rules can target one exact sender address, or a sender domain or link domain including its subdomains.
 - **Trust** rules accept one sender address or sender domain only when a configured receiving server reports a passed authentication check that matches the visible sender domain. A pass for an unrelated domain is ignored, and trust never overrides an explicit block.

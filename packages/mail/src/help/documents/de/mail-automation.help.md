@@ -195,6 +195,6 @@ Wirkungsbudgets sind harte Obergrenzen für Verschiebungen, Sendungen, Änderung
 
 Mit Zugriff **Verwalten** nutzt du **Automatisierungen → Aktivität** für die automatischen Antworten, Automatisierungen für eingehende E-Mails, eigenen Workflows und fortsetzbaren Backfills des Postfachs. Die Tabelle zeigt Typ der Automatisierung, Status, Dauer, Zeitpunkt und eine kurze Fehler- oder Ergebnismeldung. Die Cloud-Administration behält die Detailansicht über alle Apps unter **Administration → Systembeobachtung → Workflows**.
 
-Wähle **Abbrechen**, wenn keine weiteren Wirkungen beginnen sollen. Das Abbrechen macht bereits abgeschlossene Verschiebungen, Sendungen oder Änderungen an der Zusammenarbeit nicht rückgängig. Ein Lauf mit Klärungsbedarf wartet, bis jemand mit Zugriff **Verwalten** festhält, ob eine unklare externe Wirkung eingetreten ist. Das Ausschalten eines Mail-Workflows verhindert neue passende Auslöser. Es ändert den abgeschlossenen Verlauf nicht.
+Wähle **Abbrechen**, wenn keine weiteren Wirkungen beginnen sollen. Das Abbrechen macht bereits abgeschlossene Verschiebungen, Sendungen oder Änderungen an der Zusammenarbeit nicht rückgängig. Ein Lauf mit Klärungsbedarf wartet, bis die Cloud-Administration festhält, ob eine unklare externe Wirkung eingetreten ist. Das Ausschalten eines Mail-Workflows verhindert neue passende Auslöser. Es ändert den abgeschlossenen Verlauf nicht.
 
 Das vollständige YAML-Vokabular und geprüfte Beispiele stehen in der [Mail-Workflow-YAML-Referenz](/app/mail/help/mail-workflows).

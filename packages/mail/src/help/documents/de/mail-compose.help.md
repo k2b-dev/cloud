@@ -185,13 +185,13 @@ Eine fällige Nachricht wartet und zeigt **Wartet auf Anmeldung**, wenn eines da
 - das Postfach braucht eine neue Anmeldung;
 - jemand hat sein Passwort ersetzt, und das Postfach oder die Absenderidentität ist noch nicht mit dem neuen Passwort bestätigt.
 
-Mail benachrichtigt dich einmal. Es sendet die Nachricht, sobald das Konto wieder verbunden ist, datiert auf den Versandzeitpunkt. Verbindet niemand das Konto innerhalb von sechs Tagen nach dem Fälligkeitszeitpunkt, zeigt die Nachricht **Konnte nicht gesendet werden** und kehrt zu den Entwürfen zurück. Mail benachrichtigt dich dann erneut.
+Mail benachrichtigt dich einmal. Es sendet die Nachricht, sobald das Konto wieder verbunden ist, datiert auf den Versandzeitpunkt. Verbindet niemand das Konto innerhalb von sechs Tagen nach dem Fälligkeitszeitpunkt, zeigt die Nachricht **Senden fehlgeschlagen** und kehrt zu den Entwürfen zurück. Mail benachrichtigt dich dann erneut.
 
 ## Ein Versandproblem beheben {icon="alert-circle"}
 
 Wähle den Zustellstatus unter einer ausgehenden Nachricht. Er zeigt, was passiert ist, und den sichersten nächsten Schritt.
 
-Erreicht Mail den Mailserver nicht, bevor es die Nachricht übergibt, wurde nichts gesendet. Mail behält die Nachricht und versucht es über einige Minuten mehrmals erneut. Der Zustellstatus zeigt den nächsten Versuch. Dasselbe gilt, wenn sich das Postfach gerade neu verbindet oder Mail vor der Übergabe neu gestartet wurde. Hält das Problem an, zeigt die Nachricht **Konnte nicht gesendet werden**. Eine Nachricht, deren Postfach eine neue Anmeldung braucht, wartet länger, wie oben beschrieben.
+Erreicht Mail den Mailserver nicht, bevor es die Nachricht übergibt, wurde nichts gesendet. Mail behält die Nachricht und versucht es über einige Minuten mehrmals erneut. Der Zustellstatus zeigt den nächsten Versuch. Dasselbe gilt, wenn sich das Postfach gerade neu verbindet oder Mail vor der Übergabe neu gestartet wurde. Hält das Problem an, zeigt die Nachricht **Senden fehlgeschlagen**. Eine Nachricht, deren Postfach eine neue Anmeldung braucht, wartet länger, wie oben beschrieben.
 
 - **Konnte nicht gesendet werden:** Mail weiß, dass die Nachricht nicht gesendet wurde. Wähle **Prüfen und erneut senden**, um den aufbewahrten Entwurf vor einem neuen Versuch zu öffnen. Fehler bei Empfängern, Größe oder Zustelloptionen haben eine genauere Bezeichnung zum Prüfen.
 - **Teilweise gesendet:** Der empfangende Server hat einige Empfänger angenommen, andere nicht. Mail legt die Nachricht wie andere gesendete E-Mails im Ordner Gesendet ab. Klappt das nicht sofort, versucht Mail es in den nächsten Minuten erneut. Wähle **Übrige Empfänger prüfen**, um einen unabhängigen Entwurf nur mit den Adressen zu erstellen, die der Server nicht angenommen hat.
@@ -199,7 +199,7 @@ Erreicht Mail den Mailserver nicht, bevor es die Nachricht übergibt, wurde nich
 - **Gesendet, aber nicht gespeichert:** Die Zustellung war erfolgreich, aber Mail konnte seine Kopie nicht im Ordner Gesendet ablegen.
 
 :::warning Doppelte Nachrichten vermeiden
-**Alle Empfänger erneut prüfen...** nach **Teilweise gesendet** bezieht auch die ursprünglichen Empfänger ein und kann doppelte Nachrichten erzeugen. Wähle bei **Versandstatus unklar** zuerst **Erneut prüfen**. Erstelle einen Entwurf zum erneuten Senden nur, wenn du bedacht hast, dass die ursprüngliche Nachricht schon angekommen sein kann. Sende eine Nachricht mit **Gesendet, aber nicht gespeichert** nicht erneut.
+**Alle Empfänger erneut prüfen...** nach **Teilweise gesendet** bezieht auch die ursprünglichen Empfänger ein und kann doppelte Nachrichten erzeugen. Wähle bei **Zustellstatus unklar** zuerst **Erneut prüfen**. Erstelle einen Entwurf zum erneuten Senden nur, wenn du bedacht hast, dass die ursprüngliche Nachricht schon angekommen sein kann. Sende eine Nachricht mit **Gesendet, aber nicht gespeichert** nicht erneut.
 :::
 
 Ein Wiederherstellungsentwurf sendet nie sofort. Prüfe Absenderidentität, Empfänger, Inhalt und Anhänge im Editor. Nutze dann die normale Sendeaktion.

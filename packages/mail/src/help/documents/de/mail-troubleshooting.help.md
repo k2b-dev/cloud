@@ -111,7 +111,7 @@ Der geplante Zeitpunkt muss mindestens eine Minute in der Zukunft liegen. Der Di
 
 ## Ein Entwurf ist schreibgeschützt oder wurde anderswo geändert {icon="pencil"}
 
-Ein gemeinsamer Entwurf erlaubt eine aktive bearbeitende Person. Sind die Angaben verfügbar, unterscheidet der Dialog zur Zusammenarbeit deinen eigenen anderen Tab von einer anderen Person.
+Ein gemeinsamer Entwurf erlaubt eine aktive Bearbeitungssitzung. Sind die Angaben verfügbar, unterscheidet der Dialog zur Zusammenarbeit deinen eigenen anderen Tab von einer anderen Person.
 
 - Wähle **Schreibgeschützt öffnen**, um weiterzuarbeiten, ohne die andere Person zu unterbrechen.
 - Wähle **In diesem Tab bearbeiten** oder **Bearbeitung übernehmen** nur, wenn die andere Sitzung schreibgeschützt werden soll.
@@ -125,7 +125,7 @@ Eine weitere Antwort zu beginnen, blendet vorhandene Arbeit nicht aus. Der Dialo
 
 Mail legt eine gesendete Nachricht im Ordner Gesendet der Absenderidentität ab, sobald es die Kopie dort findet. Die Ablage in All Mail bei Gmail folgt mit der nächsten Synchronisierung dieses Ordners.
 
-- Zeigt die Nachricht **Gesendet, aber nicht gespeichert**, konnte Mail die Kopie nicht ablegen oder nicht finden. Prüfe die Zuordnung des Ordners Gesendet der Absenderidentität und den Zugriff auf diesen Ordner beim Anbieter. Sende die Nachricht nicht erneut.
+- Zeigt die Nachricht **Gesendet, aber nicht gespeichert**, konnte Mail die Kopie weder ablegen noch finden. Prüfe die Zuordnung des Ordners Gesendet der Absenderidentität und den Zugriff auf diesen Ordner beim Anbieter. Sende die Nachricht nicht erneut.
 - Eine Unterhaltung kann neben der gesendeten Nachricht eine zusätzliche Kopie eines Entwurfs zeigen. Eine frühere Version hat die Entwurfskopie von Gmail aus All Mail importiert. Mit Zugriff **Verwalten** entfernst du solche Kopien mit **Unterhaltungsansicht reparieren**.
 
 Um einen Ordner im Terminal zu prüfen, akzeptiert `cld mail ls "Mailbox:Sent Mail"` auch den letzten Namen eines Ordners oder seine Rolle, etwa `sent`. Das hilft, wenn der Anbieter den Ordner verschachtelt, zum Beispiel unter `[Gmail]`.
@@ -133,7 +133,7 @@ Um einen Ordner im Terminal zu prüfen, akzeptiert `cld mail ls "Mailbox:Sent Ma
 ## Die Suche liefert kein erwartetes Ergebnis {icon="search"}
 
 :::steps
-1. Leere die aktuelle Suche. Prüfe, ob die Unterhaltung in einem ungefilterten Ordner oder einer Arbeitsansicht erscheint.
+1. Leere die aktuelle Suche. Prüfe, ob die Unterhaltung in einem ungefilterten Ordner oder einer ungefilterten Arbeitsansicht erscheint.
 2. Öffne **Suchfilter**. Prüfe, ob **Mindestens eine Bedingung** oder **Alle Bedingungen** zu deinem Ziel passt.
 3. Entferne veraltete Felder wie Ordner, Lokaler Tag oder Anbieter-Schlüsselwort.
 4. Wird der Nachrichteninhalt noch synchronisiert, versuche es nach dem Laden erneut.
@@ -160,7 +160,7 @@ Die Texterkennung in Anhängen blockiert nie das Empfangen, Lesen oder Senden ei
 Ein Verschieben, Löschen, Ändern einer Fahne oder ein Ordnervorgang, der den Mailserver vor dem Start nicht erreicht hat, braucht keine Aufmerksamkeit. Mail versucht ihn über einige Minuten mehrmals erneut. Bleibt der Server unerreichbar, schlägt die Aktion fehl, ohne auf dem Server etwas zu ändern, und du kannst sie später wiederholen.
 
 :::warning Wiederhole keine Aktion mit unklarem Ergebnis
-Meldet Mail ein unklares Ergebnis, wiederhole kein Verschieben, Löschen, Ändern einer Fahne, keinen Ordnervorgang und keinen Versand. Kann der Abgleich das Ergebnis beim Anbieter nicht nachweisen, bleibt der Befehl bei „braucht Aufmerksamkeit“, bis jemand den Anbieter von Hand prüft.
+Meldet Mail ein unklares Ergebnis, wiederhole kein Verschieben, Löschen, Ändern einer Fahne, keinen Ordnervorgang und keinen Versand. Kann der Abgleich das Ergebnis beim Anbieter nicht nachweisen, bleibt der Befehl bei **Prüfung erforderlich**, bis jemand den Anbieter von Hand prüft.
 :::
 
 ## Eine Ordneraktion beim Anbieter schlägt fehl {icon="lifebuoy"}

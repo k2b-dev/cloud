@@ -336,7 +336,7 @@ Ein optionales `model` wählt für eine Aktion ein aktiviertes Profil aus. Ander
 
 KI-Aufgaben überstehen Neustarts von Workern. Brichst du die Mail-Ausführung ab, stoppt sie die laufende Inferenz, wo das möglich ist, und verwirft verspätete Ausgaben. Eine Testausführung kann die KI-Ausgabe nicht vorhersagen. Deshalb meldet sie den nicht verfügbaren Wert, statt mit einer erfundenen Klassifizierung oder einem erfundenen Entwurf fortzufahren.
 
-Mail speichert Prompts, Eingaben und Ausgaben mit der dauerhaften Aufgabe. Nimm nur die Nachrichtenfelder auf, die für die Entscheidung benötigt werden. Behalte erzeugte Antworten als Entwürfe, wenn eine Person sie prüfen soll. Ergänze `scheduleDraftSend` nur, wenn der Versand ohne Prüfung ausdrücklich genehmigt ist.
+Mail speichert Prompts, Eingaben und Ausgaben mit der dauerhaften Aufgabe. Nimm nur die Nachrichtenfelder auf, die für die Entscheidung benötigt werden. Behalte erzeugte Antworten als Entwürfe, wenn eine Person sie prüfen soll. Ergänze `scheduleDraftSend` nur, wenn der Versand ohne Prüfung bewusst genehmigt ist.
 
 Ein Workflow mit dem Trigger `messageReceived` kann `scheduleDraftSend` gar nicht nutzen. Antworten auf eingehende E-Mails müssen über `automaticReply` und dessen Schleifenschutz laufen.
 

@@ -82,7 +82,7 @@ A reply that you scheduled for later counts only when Mail sends it. If new mail
 
 In **Conversation details**, you decide only whether the conversation is **Done**. When you clear Done, the conversation opens again, and Mail takes the next step from the latest verified message.
 
-Choose **Move to folder** in the conversation actions to choose a destination with the keyboard, a pointer, or touch. On a desktop, you can also drag a conversation row onto a folder in the left navigation. Mail queues the move, and synchronization confirms the result at the provider.
+Choose **Move to folder** in the conversation actions to choose a destination with the keyboard, a pointer, or touch. On a desktop, you can also drag a conversation row onto a selectable folder in the left navigation. Mail queues the move, and synchronization confirms the result at the provider.
 
 To act on several conversations, select their checkboxes. Hold **Shift** while you select another checkbox or row to select the loaded range between them. One selection has at most 50 conversations, so you can follow the work at the provider.
 
@@ -138,7 +138,7 @@ In **Message view**, each row is one message. Actions on a row, dragging a row, 
 
 Under **Send problems**, Message view lists the messages whose sending needs attention, including messages that never reached a folder. Such a message is in no folder. Archive, Delete, and moving report this instead of changing it.
 
-- **Archive** moves the conversation to the mapped archive folder. Gmail has no archive folder. Without a mapping, Archive removes the conversation from the current folder, such as Inbox, and keeps it in **All Mail**.
+- **Archive** moves it to the mapped archive folder. Gmail has no archive folder. Without a mapping, Archive removes the conversation from the current folder, such as Inbox, and keeps it in **All Mail**.
 - **Move to Junk** moves it to the mapped junk folder. In Junk, the same action becomes **Not spam** and moves the conversation back to Inbox.
 - **Delete** moves it to the mapped trash folder.
 
@@ -198,7 +198,7 @@ Received attachments stay with the message that carried them. Choose an attachme
 
 **Preview** opens text, CSV, JSON, images, PDFs, audio, and video in a dialog. When a text file is Markdown and starts with a heading, that heading becomes the title, with the file name and size below it. The dialog header has **Download attachment**, and for text, CSV, and JSON also **Copy**. On a phone, the preview fills the screen.
 
-With **Manage** access, you can also create a public download link for an attachment. Mail shows the URL only when you create the link. You can protect it with a password, an expiry time, and a limit on download sessions. To change or revoke existing links, open **Mailbox tools → Shared links**.
+With **Manage** access, you can also create a public download link for an attachment. Mail shows the URL only when you create the link. You can protect it with a password, an expiry time, and a limit on download sessions. To review or revoke existing links, open **Mailbox tools → Shared links**.
 
 ## Control remote images {icon="photo-shield"}
 
