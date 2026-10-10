@@ -42,3 +42,21 @@ test("Back dismisses; pagehide does not wait for an impossible history return", 
   expect(dialogCore.isOpen()).toBe(false);
   dom.cleanup();
 });
+
+test("an address that an open menu replaces returns to the earlier one when the menu closes", async () => {
+  const dom = createDomTestHarness();
+  const { openMobileMenu } = await import("./mobile-menu-history");
+  history.replaceState({}, "", "/app/notes/one");
+  let close = () => {};
+  const menu = openMobileMenu(() => (dismiss) => {
+    close = dismiss;
+    return document.createElement("button");
+  });
+  // An action that keeps the menu open, such as a filter, writes its address on the menu's entry.
+  history.replaceState(history.state, "", "/app/notes/one?view=favorites");
+  close();
+  await menu;
+  expect(`${location.pathname}${location.search}`).toBe("/app/notes/one");
+  expect(history.state).toEqual({});
+  dom.cleanup();
+});
