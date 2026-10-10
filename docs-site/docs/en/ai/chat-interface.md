@@ -225,18 +225,24 @@ order:
    it reads "Worked 3 min" with the step count, and "Worked 1 min · stopped"
    after a stop. A failed turn reads "Worked 4 min" too and says why in a
    notice at its end; a failed turn from an earlier release, which recorded no
-   reason, reads "Worked 4 min · interrupted". Expanding it shows, one level below the line, intermediate texts as quiet
-   paragraphs and the steps between them directly, each with its input and
-   output on demand in place. Only housekeeping, loading tools, skills, and
-   knowledge and reading a loaded skill's files, folds into one row such as
+   reason, reads "Worked 4 min · interrupted". Expanding it shows work at the
+   same left edge as the line: intermediate texts as quiet paragraphs and the
+   steps between them directly, each with its input and output on demand in
+   place. Housekeeping, loading tools, skills, and knowledge and reading a
+   loaded skill's files, folds into one row such as
    "Loaded tools and guidance · 4 steps" at step level, with the reasoning
    between those steps; it opens in place without a second indent. A run of
    housekeeping that would hold all but one of the work's steps shows its
-   steps directly, so the line never opens to a summary of itself. A row a
-   reader sees while the line is open never folds away under them, also when
-   reasoning after it or a call's arguments arrive later and would make it
-   housekeeping; the next time the line opens, it folds like in history. The
-   line opens on a click, Enter, or Space in every state, live or finished,
+   steps directly, so the line never opens to a summary of itself. Consecutive
+   calls of one tool on the same file, address, or query, such as reading one
+   file in parts, also fold into one row such as "Read file · /products.csv ·
+   3 times" that opens in place to the individual calls, provided at least two
+   other steps remain outside it; a failed or rejected call, or text between
+   the calls, is never folded. A row a reader sees while the line is open
+   never folds away under them, also when reasoning after it or a call's
+   arguments arrive later and would make it part of a group; the next time
+   the line opens, it folds like in history. The line opens on a click, Enter,
+   or Space in every state, live or finished,
    also while its clock ticks, and stays open while new steps stream in. Opening
    or closing it never scrolls the conversation; afterwards the conversation
    follows new steps only while its end is still in view.

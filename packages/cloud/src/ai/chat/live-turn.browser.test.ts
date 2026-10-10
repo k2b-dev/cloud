@@ -1048,3 +1048,171 @@ for (const view of [
       await context.close();
     }
   }, 60_000);
+
+for (const view of [
+  { name: "desktop", width: 1280, height: 800, touch: false },
+  { name: "phone", width: 390, height: 844, touch: true },
+] as const)
+  for (const theme of ["light", "dark"] as const)
+    test(`the expanded work sits flush with the work line and folds one file read in parts into one row (${view.name}, ${theme})`, async () => {
+      const context = await browser.newContext({
+        viewport: { width: view.width, height: view.height },
+        isMobile: view.touch,
+        hasTouch: view.touch,
+        reducedMotion: "reduce",
+      });
+      try {
+        const page = await context.newPage();
+        await page.clock.setFixedTime(new Date("2026-10-07T10:00:00Z"));
+        const de = theme === "dark";
+        await page.goto(`http://127.0.0.1:${server.port}/?lang=${de ? "de" : "en"}&theme=${theme}`);
+        const calls = [
+          { callId: "tools", name: "load_tools", args: { names: ["files"] }, result: { loaded: ["files"] } },
+          { callId: "skill", name: "load_skill", args: { name: "reports" }, result: { loaded: true } },
+          ...[0, 16_384, 32_768].map((offset, part) => ({
+            callId: `read-${part}`,
+            name: "read_file",
+            args: { path: "/products-100.csv", offset, length: 16_384 },
+            result: { content: "id,name", nextOffset: offset + 16_384 },
+          })),
+          { callId: "search", name: "web_search", args: { query: "product price index" }, result: { results: [] } },
+          { callId: "write", name: "write_file", args: { path: "/report.md", content: "# Report" }, result: { path: "/report.md" } },
+        ];
+        const request = storedMessage(10, "turn", { role: "user", content: [{ type: "text", text: "Summarize the products" }] });
+        await emit(page, { ...base, seq: 1, type: "turn_started", modelProfileId: "m", providerModel: "m", blocks: [] });
+        await emit(page, { ...base, seq: 2, type: "message_saved", message: request });
+        let seq = 3;
+        for (const [index, call] of calls.entries()) {
+          if (index === 2)
+            await emit(page, {
+              ...base,
+              seq: seq++,
+              type: "block_delta",
+              blockId: "text-1",
+              blockKind: "text",
+              delta: "I read the file in parts.",
+            });
+          await emit(page, {
+            ...base,
+            seq: seq++,
+            type: "block_set",
+            block: {
+              id: `tool-${call.callId}`,
+              kind: "tool",
+              callId: call.callId,
+              name: call.name,
+              args: call.args,
+              status: "completed",
+              result: call.result,
+            },
+          });
+        }
+        await emit(page, { ...base, seq: seq++, type: "block_delta", blockId: "text-2", blockKind: "text", delta: "Here is the report." });
+
+        /** Left edges of the work line and of every row and paragraph it shows when open, relative to the timeline content. */
+        const rows = () =>
+          page.evaluate(() => {
+            const content = document.querySelector(".k2b-chat-timeline__content")!.getBoundingClientRect();
+            const viewport = document.querySelector(".k2b-chat-timeline__viewport")!;
+            const left = (node: Element) => Math.round(node.getBoundingClientRect().left - content.left);
+            const work = document.querySelector(".ai-turn-work")!;
+            return {
+              overflowX: viewport.scrollWidth - viewport.clientWidth,
+              line: left(work.querySelector(":scope > summary .k2b-chat-activity__leading")!),
+              rows: Array.from(work.querySelectorAll(".ai-turn-steps > :is(details, div)")).map((node) => {
+                const leading = node.querySelector(
+                  ":scope > summary .k2b-chat-activity__leading, :scope > .k2b-chat-activity__row .k2b-chat-activity__leading",
+                );
+                const box = node.getBoundingClientRect();
+                return {
+                  text: (node.querySelector(":scope > summary") ?? node).textContent?.trim() ?? "",
+                  left: leading ? left(leading) : left(node),
+                  box: [box.left - content.left, box.top - content.top, box.width, box.height].map(Math.round),
+                };
+              }),
+            };
+          });
+        const workBefore = await viewportBox(page, ".ai-turn-work > summary");
+        await page.locator(".ai-turn-work > summary").click();
+        await frames(page);
+        expect(await viewportBox(page, ".ai-turn-work > summary")).toEqual(workBefore);
+        const live = await rows();
+        // Housekeeping, the intermediate text, the three reads as one row, the search, and the write.
+        expect(live.rows).toHaveLength(5);
+        expect(live.rows.map(({ left }) => left)).toEqual(live.rows.map(() => live.line));
+        expect(live.overflowX).toBeLessThanOrEqual(0);
+        const repeat = live.rows[2]!.text;
+        expect(repeat).toContain("/products-100.csv");
+        expect(repeat).toContain(de ? "3-mal" : "3 times");
+        await page.screenshot({ path: `/tmp/ai-work-flush-${view.name}-${theme}.png` });
+
+        // The row opens in place to its three reads at the same left edge; nothing above it moves, and closing it restores the list.
+        const repeatSummary = page.locator(".ai-turn-work .ai-turn-steps > details").nth(1).locator(":scope > summary");
+        await repeatSummary.click();
+        await frames(page);
+        const opened = await rows();
+        // The row grows downwards only: its own top, left, and width and every row above it stay.
+        const top = (rows: typeof live.rows) => rows.slice(0, 3).map(({ box }) => box.slice(0, 3));
+        expect(top(opened.rows)).toEqual(top(live.rows));
+        const parts = opened.rows.filter(({ text }) => text.includes("/products-100.csv")).slice(1);
+        expect(parts).toHaveLength(3);
+        expect(parts.map(({ left }) => left)).toEqual([live.line, live.line, live.line]);
+        expect(opened.overflowX).toBeLessThanOrEqual(0);
+        await page.screenshot({ path: `/tmp/ai-work-repeat-open-${view.name}-${theme}.png` });
+        await repeatSummary.click();
+        await frames(page);
+        expect((await rows()).rows).toEqual(live.rows);
+
+        // The turn ends: its history shows the same rows in the same places.
+        await emit(page, {
+          ...base,
+          seq: seq++,
+          type: "turn_finished",
+          status: "completed",
+          error: null,
+          messages: [
+            request,
+            storedMessage(11, "turn", {
+              role: "assistant",
+              content: calls.slice(0, 2).map((call) => ({ type: "tool_call" as const, id: call.callId, name: call.name, args: call.args })),
+            }),
+            ...calls.slice(0, 2).map((call, index) =>
+              storedMessage(12 + index, "turn", {
+                role: "tool_result",
+                callId: call.callId,
+                name: call.name,
+                result: call.result,
+                isError: false,
+              }),
+            ),
+            storedMessage(14, "turn", {
+              role: "assistant",
+              content: [
+                { type: "text", text: "I read the file in parts." },
+                ...calls.slice(2).map((call) => ({ type: "tool_call" as const, id: call.callId, name: call.name, args: call.args })),
+              ],
+            }),
+            ...calls.slice(2).map((call, index) =>
+              storedMessage(15 + index, "turn", {
+                role: "tool_result",
+                callId: call.callId,
+                name: call.name,
+                result: call.result,
+                isError: false,
+              }),
+            ),
+            storedMessage(
+              20,
+              "turn",
+              { role: "assistant", content: [{ type: "text", text: "Here is the report." }] },
+              { loopDoneReason: "stop", createdAt: "2026-10-07T10:00:00.000Z" },
+            ),
+          ],
+        });
+        await frames(page);
+        const history = await rows();
+        expect(history.rows.map(({ text, left }) => ({ text, left }))).toEqual(live.rows.map(({ text, left }) => ({ text, left })));
+      } finally {
+        await context.close();
+      }
+    }, 60_000);

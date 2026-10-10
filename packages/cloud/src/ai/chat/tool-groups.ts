@@ -1,18 +1,20 @@
 import { aiSkillFilePathFromMount } from "../file-mount";
 import type { AiTurnBlock } from "../protocol";
+import { isRecord } from "./message-utils";
 import { aiChatMessages } from "./messages";
 
 type Tool = Extract<AiTurnBlock, { kind: "tool" }>;
 type Text = Extract<AiTurnBlock, { kind: "text" }>;
 export type AiWorkEntry = Exclude<AiTurnBlock, { kind: "text" } | { kind: "steer_message" }>;
 /**
- * One row of the expanded work, all at one indent: an intermediate text, a step, or a group that folds housekeeping
- * steps and opens in place.
+ * One row of the expanded work: an intermediate text, a step, or a group that folds housekeeping or repeated calls
+ * on one target and opens in place.
  */
 export type AiWorkItem =
   | { kind: "text"; block: Text }
   | { kind: "step"; entry: AiWorkEntry }
-  | { kind: "housekeeping"; id: string; entries: AiWorkEntry[] };
+  | { kind: "housekeeping"; id: string; entries: AiWorkEntry[] }
+  | { kind: "repeat"; id: string; target: string; entries: AiWorkEntry[] };
 
 /** A failed call, including a code run that reported an error. A rejected approval is a decision, not a failure. */
 export function isFailedTool(tool: Tool): boolean {
@@ -50,33 +52,67 @@ export const isHousekeepingTool = (tool: Tool): boolean => {
 
 const isStep = (entry: AiWorkEntry) => entry.kind === "tool" || entry.kind === "compaction";
 
+/** The file, address, or query a call works on. Other arguments, such as offsets, ranges, or pages, do not count. */
+const callTarget = (tool: Tool): string | undefined => {
+  const args = isRecord(tool.args) ? tool.args : {};
+  return [args.path, args.url, args.query].find((value): value is string => typeof value === "string" && value.trim() !== "")?.trim();
+};
+
+type Fold = { kind: "housekeeping" } | { kind: "repeat"; name: string; target: string };
+
 /**
- * The rows of the expanded work, in the original order. A run of at least two housekeeping steps, with the reasoning
- * between them, folds into one group, unless it would hold all but one of the work's steps: then the steps show
- * directly, so the work line never opens to a summary of itself. Entries listed in `shown` already show as rows of
- * their own and never fold into a group, so nothing a reader sees folds away under them. A group is keyed by its first
- * tool, whose id is the same live and in history.
+ * What a step folds with: housekeeping with housekeeping, a running or finished call with calls of the same tool on the
+ * same target. Failed, rejected, and waiting calls never fold.
+ */
+const foldOf = (tool: Tool): Fold | null => {
+  if (isHousekeepingTool(tool)) return { kind: "housekeeping" };
+  const target = callTarget(tool);
+  if (!target || isFailedTool(tool) || (tool.status !== "completed" && tool.status !== "running")) return null;
+  return { kind: "repeat", name: tool.name, target };
+};
+
+const sameFold = (a: Fold, b: Fold): boolean =>
+  a.kind === "housekeeping" ? b.kind === "housekeeping" : b.kind === "repeat" && a.name === b.name && a.target === b.target;
+
+/**
+ * The rows of the expanded work, in the original order. A run of at least two steps that fold together, with the
+ * reasoning between them, becomes one row: housekeeping, or consecutive calls of one tool on one target such as reading
+ * one file in parts. Anything else between them, such as an intermediate text, ends the run. A run that would hold all
+ * but one of the work's steps shows its steps directly, so the work line never opens to a summary of itself. Entries
+ * listed in `shown` already show as rows of their own and never fold, so nothing a reader sees folds away under them.
+ * A folded row is keyed by its first tool, whose id is the same live and in history.
  */
 export function groupWorkBlocks(blocks: readonly AiTurnBlock[], shown: ReadonlySet<string> = new Set()): AiWorkItem[] {
   const entries = blocks.filter((block): block is AiWorkEntry | Text => block.kind !== "steer_message");
   const steps = entries.filter((entry) => entry.kind !== "text" && isStep(entry)).length;
   const items: AiWorkItem[] = [];
+  let fold: Fold | null = null;
   let run: AiWorkEntry[] = [];
   let trailing: AiWorkEntry[] = [];
   const flush = () => {
-    if (run.length > 0) {
+    if (fold && run.length > 0) {
       const runSteps = run.filter(isStep).length;
-      if (runSteps >= 2 && steps - runSteps >= 2) items.push({ kind: "housekeeping", id: run[0]!.id, entries: run });
+      const id = run[0]!.id;
+      if (runSteps >= 2 && steps - runSteps >= 2)
+        items.push(
+          fold.kind === "housekeeping"
+            ? { kind: "housekeeping", id, entries: run }
+            : { kind: "repeat", id, target: fold.target, entries: run },
+        );
       else for (const entry of run) items.push({ kind: "step", entry });
     }
-    // Reasoning after the last housekeeping step belongs to what comes next.
+    // Reasoning after the last folded step belongs to what comes next.
     for (const entry of trailing) items.push({ kind: "step", entry });
+    fold = null;
     run = [];
     trailing = [];
   };
   for (const entry of entries) {
     const foldable = !shown.has(entry.id);
-    if (foldable && entry.kind === "tool" && isHousekeepingTool(entry)) {
+    const next = foldable && entry.kind === "tool" ? foldOf(entry) : null;
+    if (next && entry.kind === "tool") {
+      if (fold && !sameFold(fold, next)) flush();
+      fold = next;
       run.push(...trailing, entry);
       trailing = [];
     } else if (foldable && entry.kind === "thinking" && run.length > 0) trailing.push(entry);

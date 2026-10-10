@@ -236,6 +236,7 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
       tone={working() ? "ai" : "neutral"}
       busy={working()}
       trailing={trailing()}
+      bodyInset={false}
       renderBody={() => <AiWorkSteps blocks={layout().work} active={working()} />}
     />
   );
@@ -298,6 +299,32 @@ function HousekeepingGroup(props: { id: string; entries: AiWorkEntry[]; active: 
   );
 }
 
+/**
+ * Consecutive calls of one tool on one target, such as reading one file in parts, folded into one row that opens in place.
+ */
+function RepeatedSteps(props: { id: string; target: string; entries: AiWorkEntry[]; active: boolean }) {
+  const locale = useLocale();
+  const tools = () => props.entries.filter((entry): entry is ToolBlock => entry.kind === "tool");
+  const first = () => tools()[0]!;
+  return (
+    <AiToolActivity
+      blockId={`repeat:${props.id}`}
+      label={first().presentation?.title ?? displayToolName(first().name, locale())}
+      description={`${props.target} · ${aiChatMessages(locale()).repeatCount({ count: tools().length })}`}
+      icon={aiToolIcon(first().name, first().presentation?.appIcon)}
+      bodyInset={false}
+      busy={props.active && tools().at(-1)?.status === "running"}
+      renderBody={() => (
+        <div class="ai-turn-steps">
+          <For each={props.entries}>
+            {(entry, index) => <WorkEntryRow entry={entry} busy={props.active && index() === props.entries.length - 1} />}
+          </For>
+        </div>
+      )}
+    />
+  );
+}
+
 function WorkText(props: { text: string }) {
   const locale = useLocale();
   // Render Markdown only when the text itself changes, not on every update of the turn around it.
@@ -311,13 +338,19 @@ function WorkText(props: { text: string }) {
 }
 
 const workItemKey = (item: AiWorkItem): string =>
-  item.kind === "text" ? `text:${item.block.id}` : item.kind === "step" ? `step:${item.entry.id}` : `group:${item.id}`;
+  item.kind === "text"
+    ? `text:${item.block.id}`
+    : item.kind === "step"
+      ? `step:${item.entry.id}`
+      : item.kind === "repeat"
+        ? `repeat:${item.id}`
+        : `group:${item.id}`;
 
 /**
- * Expanded work, one indent below the work line and one size: intermediate texts as quiet paragraphs, the steps between
- * them directly, and housekeeping folded at step level. A row shown while this list is open never folds away under the
- * reader, also when reasoning or arguments that would fold it arrive later; the next time it opens, it folds like in
- * history.
+ * Expanded work, at the work line's indent and one size: intermediate texts as quiet paragraphs, the steps between
+ * them directly, and housekeeping or repeated steps folded at step level. A row shown while this list is open never
+ * folds away under the reader, also when reasoning or arguments that would fold it arrive later; the next time it
+ * opens, it folds like in history.
  */
 function AiWorkSteps(props: { blocks: AiTurnBlock[]; active: boolean }) {
   const shown = new Set<string>();
@@ -344,12 +377,19 @@ function AiWorkSteps(props: { blocks: AiTurnBlock[]; active: boolean }) {
             const value = item();
             return value?.kind === "housekeeping" ? value : undefined;
           };
+          const repeat = () => {
+            const value = item();
+            return value?.kind === "repeat" ? value : undefined;
+          };
           const active = () => props.active && index() === keys().length - 1;
           return (
             <Switch>
               <Match when={text()}>{(value) => <WorkText text={value()} />}</Match>
               <Match when={step()}>{(entry) => <WorkEntryRow entry={entry()} busy={active()} />}</Match>
               <Match when={group()}>{(value) => <HousekeepingGroup id={value().id} entries={value().entries} active={active()} />}</Match>
+              <Match when={repeat()}>
+                {(value) => <RepeatedSteps id={value().id} target={value().target} entries={value().entries} active={active()} />}
+              </Match>
             </Switch>
           );
         }}

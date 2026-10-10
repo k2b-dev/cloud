@@ -53,11 +53,12 @@ const mount = async (blocks: () => AiTurnBlock[], phase: () => "running" | "comp
   };
 };
 
-domTest("streaming appends steps one level below the work line without remounting them or revealing payloads", async () => {
+domTest("streaming appends steps at the work line's indent without remounting them or revealing payloads", async () => {
   const [blocks, setBlocks] = createSignal([tool("one"), tool("two")]);
   const view = await mount(blocks);
   try {
     const work = view.work();
+    expect(work.getAttribute("data-body-inset")).toBe("false");
     expect(view.dom.root.textContent).not.toContain("hidden payload");
     view.toggle(work);
     const [first] = view.steps();
@@ -176,6 +177,62 @@ domTest("rows a reader sees in the open work list stay when later reasoning or a
     setBlocks([...before, { ...read, args: { path: "/skills/report/SKILL.md" } }]);
     expect(view.steps().at(-1)).toBe(row);
     expect(group.querySelector("summary")?.textContent).toContain("2 steps");
+  } finally {
+    view.cleanup();
+  }
+});
+
+const read = (id: string): Extract<AiTurnBlock, { kind: "tool" }> => ({
+  id,
+  kind: "tool",
+  callId: id,
+  name: "read_file",
+  args: { path: "/products-100.csv" },
+  status: "completed",
+});
+
+domTest("repeated reads open in place with their title, target and call count", async () => {
+  const view = await mount(
+    () => [read("a"), read("b"), read("c"), tool("run", "code_run"), tool("check", "code_check")],
+    () => "completed",
+  );
+  try {
+    view.toggle(view.work());
+    const steps = view.steps();
+    expect(steps).toHaveLength(3);
+    const repeat = steps[0]!;
+    expect(repeat.querySelector("summary")?.textContent).toContain("Read file");
+    expect(repeat.querySelector("summary")?.textContent).toContain("/products-100.csv");
+    expect(repeat.querySelector("summary")?.textContent).toContain("3 times");
+    expect(steps.slice(1).map((step) => step.querySelector("summary")?.textContent)).toEqual([
+      expect.stringContaining("Ran code"),
+      expect.stringContaining("App check"),
+    ]);
+    expect(repeat.getAttribute("data-body-inset")).toBe("false");
+    view.toggle(repeat);
+    expect(repeat.querySelectorAll(".ai-turn-steps > details")).toHaveLength(3);
+  } finally {
+    view.cleanup();
+  }
+});
+
+domTest("a failed read stays outside repeated reads as its own row", async () => {
+  const view = await mount(
+    () => [read("a"), read("b"), { ...read("bad"), isError: true }, read("c"), read("d")],
+    () => "completed",
+  );
+  try {
+    view.toggle(view.work());
+    const steps = view.steps();
+    expect(steps).toHaveLength(3);
+    expect(steps[1]!.querySelector("summary")?.textContent).toContain("failed");
+    expect(steps[0]!.querySelector("summary")?.textContent).toContain("2 times");
+    expect(steps[2]!.querySelector("summary")?.textContent).toContain("2 times");
+    for (const repeat of [steps[0]!, steps[2]!]) {
+      view.toggle(repeat);
+      expect(repeat.querySelectorAll(".ai-turn-steps > details")).toHaveLength(2);
+      expect(repeat.textContent).not.toContain("failed");
+    }
   } finally {
     view.cleanup();
   }
