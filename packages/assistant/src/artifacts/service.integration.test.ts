@@ -3065,7 +3065,9 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         memories.mockRestore();
       }
       let sent = 0;
-      const http = spyOn(httpService, "execute").mockImplementation(async (_id, approved) => {
+      const http = spyOn(httpService, "execute").mockImplementation(async (id, approved) => {
+        // Settle the stored call like the service does, so a run with many requests stays within the pending budget.
+        await sql`UPDATE assistant.http_calls SET status=${approved ? "completed" : "denied"},encrypted='' WHERE id=${id}::uuid`;
         // A declined request never goes out.
         if (!approved) throw new HttpError("HTTP_DENIED");
         sent++;
