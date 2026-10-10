@@ -106,6 +106,12 @@ export const CalendarWeekView = (props: TimeViewProps) => {
     const first = keys()[Math.min(keys().length - 1, Math.max(0, firstIndex()))] ?? view.anchorKey();
     return { first, last: addDayKeys(first, visibleCount() - 1) };
   };
+  /** Now shows in the hours while today is among the days in view, like the prototype's week. */
+  const nowShown = () => {
+    const { first, last } = visibleKeys();
+    const today = view.nowKey();
+    return today >= first && today <= last && view.nowMinute() >= 0 && view.nowMinute() < (nightsOpen() ? DAY_MINUTES : wake());
+  };
 
   let settling = false;
   let glideTarget: number | null = null;
@@ -150,7 +156,13 @@ export const CalendarWeekView = (props: TimeViewProps) => {
   const measureCount = () => {
     const width = columnWidth();
     if (!scroller || width <= 0) return;
-    setVisibleCount(Math.max(1, Math.round((scroller.clientWidth - gutterWidth()) / width)));
+    // Whole-pixel columns leave a few pixels at the right edge; the strip ends at its last whole day instead of
+    // showing a sliver of the next one.
+    const room = scroller.clientWidth + (Number.parseFloat(scroller.style.marginRight) || 0) - gutterWidth();
+    const count = Math.max(1, Math.round(room / width));
+    setVisibleCount(count);
+    const rest = Math.floor(room - count * width);
+    scroller.style.marginRight = rest > 0 ? `${rest}px` : "";
   };
   let reportTimer = 0;
   const syncFirst = () => {
@@ -753,7 +765,7 @@ export const CalendarWeekView = (props: TimeViewProps) => {
                 {(minute) => (
                   <span
                     class="k2b-calendar-week__hour"
-                    data-near-now={keys().includes(view.nowKey()) && isNearNow(view, view.nowKey(), minute) ? "true" : undefined}
+                    data-near-now={nowShown() && isNearNow(view, view.nowKey(), minute) ? "true" : undefined}
                     style={{ top: termsCss(dayYTerms(wake(), nightsOpen(), minute)) }}
                     aria-hidden="true"
                   >
@@ -796,9 +808,7 @@ export const CalendarWeekView = (props: TimeViewProps) => {
                 <i class="ti ti-moon" aria-hidden="true" />
                 <i class={`ti ${nightsOpen() ? "ti-chevron-up" : "ti-chevron-down"}`} aria-hidden="true" />
               </button>
-              <Show
-                when={keys().includes(view.nowKey()) && view.nowMinute() >= 0 && view.nowMinute() < (nightsOpen() ? DAY_MINUTES : wake())}
-              >
+              <Show when={nowShown()}>
                 <span
                   class="k2b-calendar-week__now-time"
                   style={{ top: termsCss(dayYTerms(wake(), nightsOpen(), view.nowMinute())) }}
@@ -832,9 +842,7 @@ export const CalendarWeekView = (props: TimeViewProps) => {
                   )}
                 </For>
               </Show>
-              <Show
-                when={keys().includes(view.nowKey()) && view.nowMinute() >= 0 && view.nowMinute() < (nightsOpen() ? DAY_MINUTES : wake())}
-              >
+              <Show when={nowShown()}>
                 <span class="k2b-calendar-week__now-line" style={{ top: termsCss(dayYTerms(wake(), nightsOpen(), view.nowMinute())) }} />
               </Show>
             </div>
