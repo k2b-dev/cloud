@@ -7,6 +7,7 @@ import { dates } from "@k2b/stdlib";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import {
+  dateKey,
   displayDate,
   filterTimeInput,
   formatDateOnlyRangeDuration,
@@ -319,6 +320,22 @@ describe("@k2b/ui complete date picker migration", () => {
       expect(msUntilNextDay(now, { timeZone: "America/New_York" })).toBe(6 * 3_600_000 + 30_000);
       // The night the clocks go back has a 25-hour day.
       expect(msUntilNextDay(new Date("2026-10-24T22:00:00.000Z"), { timeZone: "Europe/Berlin" })).toBe(25 * 3_600_000);
+    });
+
+    test("waits for the next day where a DST change skips or repeats midnight", () => {
+      // Cairo and Beirut skip midnight in spring, so the day starts at 01:00;
+      // Santiago turns 24:00 back to 23:00 and repeats the day's last hour.
+      for (const [timeZone, at, nextDay] of [
+        ["Africa/Cairo", "2026-04-23T21:30:00.000Z", "2026-04-24"],
+        ["Asia/Beirut", "2026-03-28T21:30:00.000Z", "2026-03-29"],
+        ["America/Santiago", "2026-04-05T03:30:00.000Z", "2026-04-05"],
+      ] as const) {
+        const now = new Date(at);
+        const delay = msUntilNextDay(now, { timeZone });
+        expect(delay).toBe(30 * 60_000);
+        expect(dateKey(new Date(now.getTime() + delay - 1), { timeZone })).not.toBe(nextDay);
+        expect(dateKey(new Date(now.getTime() + delay), { timeZone })).toBe(nextDay);
+      }
     });
 
     test("draws the today dot inside the cell", () => {

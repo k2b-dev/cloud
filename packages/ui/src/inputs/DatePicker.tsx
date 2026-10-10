@@ -330,20 +330,27 @@ function DatePickerPanel(props: {
       })),
     );
   });
-  // Today in the picker's time zone, the zone its values use. The browser moves
-  // the mark at the next midnight there, and when a hidden tab becomes visible
-  // again, since timers may not fire on time while the device sleeps.
-  const [now, setNow] = createSignal(new Date());
+  // Today in the picker's time zone, the zone its values use. The browser reads
+  // the clock again at the next midnight there, when a hidden tab becomes visible
+  // again (timers may not fire on time while the device sleeps), and when the
+  // date config changes. The mark and its timer share each reading, so neither
+  // starts from an old one.
+  const [clockCheck, checkClock] = createSignal<void>(undefined, { equals: false });
+  const now = createMemo(() => {
+    clockCheck();
+    context();
+    return new Date();
+  });
   const todayKey = createMemo(() => dateKey(now(), context()));
   // The day's name is formatted in the date locale, so "today" joins it in the same language.
   const todayLabel = (date: string) => resolveUiMessages(context().locale).todayDate({ date });
   createEffect(() => {
-    const timer = window.setTimeout(() => setNow(new Date()), msUntilNextDay(now(), context()));
+    const timer = window.setTimeout(() => checkClock(), msUntilNextDay(now(), context()));
     onCleanup(() => window.clearTimeout(timer));
   });
   onMount(() => {
     const refresh = () => {
-      if (document.visibilityState === "visible") setNow(new Date());
+      if (document.visibilityState === "visible") checkClock();
     };
     document.addEventListener("visibilitychange", refresh);
     onCleanup(() => document.removeEventListener("visibilitychange", refresh));

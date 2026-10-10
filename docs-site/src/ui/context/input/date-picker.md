@@ -83,14 +83,17 @@ An explicit `dateConfig.locale` wins; without one the pickers inherit the render
 Every calendar marks today: the day number in the accent color with a small
 dot below it. A selected today keeps the filled selection, and its number and
 dot take the fill's contrasting color. Today on a day outside the visible
-month keeps a lighter mark. The mark is drawn inside the day cell, so it never
-changes the grid's size.
+month keeps the muted number of the other outside days, and only its dot takes
+the accent color. The mark is drawn inside the day cell, so it never changes
+the grid's size.
 
 Today is the current date in `dateConfig.timeZone`, the zone the values use,
 not in the server's or the device's zone. Without a time zone it is the runtime's
-local date. An open page moves the mark at the next midnight in that zone and
-when a hidden tab becomes visible again. The pickers have no built-in **Today**
-preset; add one through `presets` when a form needs it.
+local date. An open page moves the mark when the next day starts in that zone,
+also where a daylight saving change skips or repeats midnight. It also checks
+the date again when a hidden tab becomes visible and when `dateConfig` changes.
+The pickers have no built-in **Today** preset; add one through `presets` when a
+form needs it.
 
 ## API reference
 

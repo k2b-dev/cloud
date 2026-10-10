@@ -2,12 +2,15 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type axeCore from "axe-core";
-import type { Browser, Page } from "playwright";
+import type { Browser, Locator, Page } from "playwright";
 import { launchBrowser } from "../../test/browser";
 
 declare global {
   interface Window {
     axe?: typeof axeCore;
+    /** Replaces the "Sent" picker's dateConfig, as a reactive config would. */
+    setSentDateConfig?: (config: { timeZone: string; locale: string }) => void;
+    timeoutCalls?: number;
   }
 }
 
@@ -19,15 +22,24 @@ const axeSource = readFileSync(Bun.resolveSync("axe-core/axe.min.js", import.met
 // Lives only in memory; its path makes bare imports resolve from this package.
 const entry = resolve(import.meta.dir, "date-picker-today.fixture.ts");
 const fixture = `
+import { createSignal } from "solid-js";
 import { createComponent, render } from "solid-js/web";
 import { DatePicker, DateRangePicker } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 
 const berlin = { timeZone: "Europe/Berlin", locale: "en" };
+const [sentConfig, setSentConfig] = createSignal({ timeZone: "America/New_York", locale: "en" });
+window.setSentDateConfig = setSentConfig;
 render(
   () => [
     createComponent(DatePicker, { label: "Due", value: null, dateConfig: berlin }),
     createComponent(DatePicker, { label: "Picked", value: "2026-10-09", dateConfig: berlin }),
-    createComponent(DatePicker, { label: "Sent", value: null, dateConfig: { timeZone: "America/New_York", locale: "en" } }),
+    createComponent(DatePicker, {
+      label: "Sent",
+      value: null,
+      get dateConfig() {
+        return sentConfig();
+      },
+    }),
     createComponent(DateRangePicker, { label: "Window", value: { start: "2026-09-14", end: "2026-09-18" }, dateConfig: berlin }),
   ],
   document.getElementById("app"),
@@ -57,9 +69,10 @@ const load = async (
   options: (typeof viewports)[keyof typeof viewports],
   theme: "light" | "dark" = "light",
   time = beforeBerlinMidnight,
+  timezoneId = "Pacific/Auckland",
 ) => {
   // The browser's own zone is neither picker's zone; today must follow `dateConfig`.
-  const page = await browser.newPage({ ...options, timezoneId: "Pacific/Auckland" });
+  const page = await browser.newPage({ ...options, timezoneId });
   await page.clock.install({ time });
   await page.setContent(
     `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style>` +
@@ -96,6 +109,47 @@ const cells = (page: Page): Promise<Cell[]> =>
 
 const todayKeys = (list: Cell[]) => list.filter((cell) => cell.today).map((cell) => cell.key);
 
+/**
+ * WCAG contrast of a day's number and of its dot against the surface behind
+ * the day. axe leaves one- and two-digit day numbers incomplete, so the ratio
+ * is computed here, from the computed colors composited over the first opaque
+ * ancestor.
+ */
+const contrast = (day: Locator) =>
+  day.evaluate((button) => {
+    const canvas = document.createElement("canvas").getContext("2d", { willReadFrequently: true });
+    if (!canvas) throw new Error("No 2D canvas to resolve colors.");
+    // The canvas resolves any CSS color, color-mix() and oklch() included, to sRGB.
+    const rgba = (color: string) => {
+      canvas.clearRect(0, 0, 1, 1);
+      canvas.fillStyle = color;
+      canvas.fillRect(0, 0, 1, 1);
+      const [r = 0, g = 0, b = 0, a = 0] = canvas.getImageData(0, 0, 1, 1).data;
+      return [r, g, b, a / 255];
+    };
+    const over = ([r = 0, g = 0, b = 0, a = 0]: number[], below: number[]) =>
+      [r, g, b].map((channel, index) => channel * a + (below[index] ?? 0) * (1 - a));
+    const layers: number[][] = [];
+    for (let element: Element | null = button; element; element = element.parentElement) {
+      layers.unshift(rgba(getComputedStyle(element).backgroundColor));
+      if (layers[0]?.[3] === 1) break;
+    }
+    const surface = layers.reduce((below, layer) => over(layer, below), [255, 255, 255]);
+    const luminance = (rgb: number[]) => {
+      const [r = 0, g = 0, b = 0] = rgb.map((channel) => {
+        const value = channel / 255;
+        return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const ratio = (color: string) => {
+      const [light, dark] = [luminance(over(rgba(color), surface)), luminance(surface)].sort((a, b) => b - a);
+      return ((light ?? 0) + 0.05) / ((dark ?? 0) + 0.05);
+    };
+    const color = getComputedStyle(button).color;
+    return { color, text: ratio(color), dot: ratio(getComputedStyle(button, "::after").backgroundColor) };
+  });
+
 describe("date pickers mark today", () => {
   for (const [name, options] of Object.entries(viewports)) {
     test(`moves the mark at midnight in the picker's zone without resizing a cell (${name})`, async () => {
@@ -127,6 +181,52 @@ describe("date pickers mark today", () => {
     await page.close();
   });
 
+  for (const [timeZone, time, nextDay] of [
+    // 23:01 in Cairo, an hour before the clocks jump from midnight to 01:00.
+    ["Africa/Cairo", "2026-04-23T21:01:00.000Z", "2026-04-24"],
+    // 23:01 in Santiago, in the hour that repeats when 24:00 turns back to 23:00.
+    ["America/Santiago", "2026-04-05T03:01:00.000Z", "2026-04-05"],
+  ] as const) {
+    test(`waits for a midnight that a DST change skips or repeats without re-arming its timer (${timeZone})`, async () => {
+      // On a device in UTC, the date library's start of such a day lies before 23:01.
+      const page = await load(viewports.desktop, "light", new Date(time), "UTC");
+      await page.evaluate(() => {
+        const setTimeout = window.setTimeout.bind(window);
+        window.timeoutCalls = 0;
+        window.setTimeout = ((...args: Parameters<typeof setTimeout>) => {
+          window.timeoutCalls = (window.timeoutCalls ?? 0) + 1;
+          return setTimeout(...args);
+        }) as typeof window.setTimeout;
+      });
+      await page.evaluate((zone) => window.setSentDateConfig?.({ timeZone: zone, locale: "en" }), timeZone);
+      // The new zone arms one timer for its next day, and no picker's day ends within the hour.
+      await page.clock.runFor(58 * 60_000);
+      expect(await page.evaluate(() => window.timeoutCalls)).toBe(1);
+      await page.clock.runFor(2 * 60_000);
+      await openPicker(page, "Sent");
+      expect(todayKeys(await cells(page))).toEqual([nextDay]);
+      await page.close();
+    });
+  }
+
+  test("reads the clock again when the date config changes", async () => {
+    // 08:00 in New York. The clock then moves on without firing a timer, as on a device that slept.
+    const page = await load(viewports.desktop, "light", new Date("2026-10-09T12:00:00.000Z"));
+    await page.clock.setSystemTime(new Date("2026-10-09T22:30:00.000Z"));
+    // It is already 10 October in Berlin, while New York is still on 9 October.
+    await page.evaluate(() => window.setSentDateConfig?.({ timeZone: "Europe/Berlin", locale: "en" }));
+    await openPicker(page, "Sent");
+    expect(todayKeys(await cells(page))).toEqual(["2026-10-10"]);
+    await page.keyboard.press("Escape");
+
+    // Back in New York, the timer counts from now to midnight there, not from 08:00.
+    await page.evaluate(() => window.setSentDateConfig?.({ timeZone: "America/New_York", locale: "en" }));
+    await page.clock.runFor(5.5 * 3_600_000 + 60_000);
+    await openPicker(page, "Sent");
+    expect(todayKeys(await cells(page))).toEqual(["2026-10-10"]);
+    await page.close();
+  });
+
   for (const theme of ["light", "dark"] as const) {
     test(`paints today in the accent and keeps the dot visible on a selected today (${theme})`, async () => {
       const page = await load(viewports.desktop, theme);
@@ -147,6 +247,10 @@ describe("date pickers mark today", () => {
       expect(today.color).not.toBe(plain.color);
       expect(plain.dot.content).toBe("none");
       expect(today.dot).toEqual({ content: '""', position: "absolute", width: "4px", background: today.color });
+      const todayDay = page.locator('.k2b-date-popover:popover-open [data-date-day="2026-10-09"]');
+      expect((await contrast(todayDay)).text).toBeGreaterThanOrEqual(4.5);
+      await todayDay.hover();
+      expect((await contrast(todayDay)).text).toBeGreaterThanOrEqual(4.5);
       await page.keyboard.press("Escape");
 
       await openPicker(page, "Picked");
@@ -159,19 +263,27 @@ describe("date pickers mark today", () => {
     });
   }
 
-  test("marks today subtly on a day outside the visible month", async () => {
-    // September's panel ends on Sunday 4 October.
-    const page = await load(viewports.desktop, "light", new Date("2026-10-02T10:00:00.000Z"));
-    await openPicker(page, "Window");
-    const day = (key: string) => page.locator(`.k2b-date-popover:popover-open [data-date-day="${key}"]`);
-    expect(await day("2026-10-02").getAttribute("data-outside")).toBe("true");
-    expect(await day("2026-10-02").getAttribute("aria-current")).toBe("date");
-    const [todayColor, otherColor] = await Promise.all(
-      ["2026-10-02", "2026-10-01"].map((key) => day(key).evaluate((button) => getComputedStyle(button).color)),
-    );
-    expect(todayColor).not.toBe(otherColor);
-    await page.close();
-  });
+  for (const theme of ["light", "dark"] as const) {
+    test(`marks today outside the visible month with the dot alone, at full contrast (${theme})`, async () => {
+      // September's panel ends on Sunday 4 October.
+      const page = await load(viewports.desktop, theme, new Date("2026-10-02T10:00:00.000Z"));
+      await openPicker(page, "Window");
+      const day = (key: string) => page.locator(`.k2b-date-popover:popover-open [data-date-day="${key}"]`);
+      const today = day("2026-10-02");
+      expect(await today.getAttribute("data-outside")).toBe("true");
+      expect(await today.getAttribute("aria-current")).toBe("date");
+      // The number keeps the muted color of the other outside days; the accent dot marks today.
+      const [marked, neighbour] = await Promise.all([contrast(today), contrast(day("2026-10-01"))]);
+      expect(marked.color).toBe(neighbour.color);
+      expect(marked.text).toBeGreaterThanOrEqual(4.5);
+      expect(marked.dot).toBeGreaterThanOrEqual(3);
+      await today.hover();
+      const hovered = await contrast(today);
+      expect(hovered.text).toBeGreaterThanOrEqual(4.5);
+      expect(hovered.dot).toBeGreaterThanOrEqual(3);
+      await page.close();
+    });
+  }
 
   for (const theme of ["light", "dark"] as const) {
     for (const label of ["Due", "Picked", "Window"]) {
