@@ -2,8 +2,10 @@ import { createContext, createEffect, createSignal, createUniqueId, type JSX, Sh
 import { Button } from "../actions/Button";
 import { Tabs } from "../actions/Tabs";
 import type { OpenDialogOptions } from "../feedback/dialog-core";
+import { resolvePromptMessages } from "../feedback/prompt-messages";
 import { prompts } from "../feedback/prompts";
-import { resolveUiMessages, useUiMessages } from "../intl/messages";
+import { useUiMessages } from "../intl/messages";
+import { usePanelDialogMessages } from "./panel-dialog-messages";
 import { createScrollFade } from "./scroll-fade";
 
 export type PanelDialogSurface = "contained" | "floating";
@@ -100,10 +102,10 @@ export const confirmDiscardIfDirty = async (dirty: boolean | (() => boolean)): P
   const hasChanges = typeof dirty === "function" ? dirty() : dirty;
   if (!hasChanges) return true;
   return Boolean(
-    await prompts.confirm(resolveUiMessages().discardUnsavedChanges, {
-      title: resolveUiMessages().unsavedChangesTitle,
+    await prompts.confirm(resolvePromptMessages().discardUnsavedChanges, {
+      title: resolvePromptMessages().unsavedChangesTitle,
       variant: "danger",
-      confirmText: resolveUiMessages().discard,
+      confirmText: resolvePromptMessages().discard,
     }),
   );
 };
@@ -259,13 +261,13 @@ const PanelDialogSection = (props: PanelDialogSectionProps): JSX.Element => {
 };
 
 const PanelDialogTabs = <T extends string>(props: PanelDialogTabsProps<T>): JSX.Element => {
-  const messages = useUiMessages();
+  const panelDialogMessages = usePanelDialogMessages();
   return (
     <Tabs
       class="k2b-panel-dialog__tabs"
       value={props.value}
       onValueChange={props.onValueChange}
-      ariaLabel={props.ariaLabel ?? props.label ?? messages().dialogTabs}
+      ariaLabel={props.ariaLabel ?? props.label ?? panelDialogMessages().dialogTabs}
       options={props.options}
     />
   );

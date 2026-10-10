@@ -8,6 +8,8 @@ import { fileDropTarget } from "./FileDropTarget";
 import type { FieldProps, ValueFieldProps } from "./field-contract";
 import { commitFieldValue, resolveMaybeAccessor } from "./field-contract";
 import { fileDropEngine, liveDocument } from "./file-drop";
+import { useFileDropMessages } from "./file-drop-messages";
+import { useFileInputMessages } from "./file-input-messages";
 import {
   clampImageCropRect,
   getInitialImageCropRect,
@@ -42,7 +44,8 @@ export type FileDropzoneProps = FieldProps & {
 };
 
 export function FileDropzone(props: FileDropzoneProps): JSX.Element {
-  const messages = useUiMessages();
+  const fileInputMessages = useFileInputMessages();
+  const fileDropMessages = useFileDropMessages();
   const meta = createFieldMeta(props.id);
   const disabled = () => Boolean(props.disabled || props.busy);
   const [chooseError, setChooseError] = createSignal<string>();
@@ -58,12 +61,12 @@ export function FileDropzone(props: FileDropzoneProps): JSX.Element {
     setChooseError();
     chooseFiles().then(
       (files) => emit([...files]),
-      (cause: unknown) => setChooseError(cause instanceof Error && cause.message ? cause.message : messages().failedLoadFiles),
+      (cause: unknown) => setChooseError(cause instanceof Error && cause.message ? cause.message : fileInputMessages().failedLoadFiles),
     );
   };
   // Drops take the same path as every other file drop target: files only, the most specific target wins, and files
   // that do not fit `accept` are left out with a message.
-  const dropLabel = () => props.dropLabel ?? messages().dropToUpload;
+  const dropLabel = () => props.dropLabel ?? fileInputMessages().dropToUpload;
   const dropRef = fileDropTarget({
     get label() {
       return dropLabel();
@@ -92,12 +95,12 @@ export function FileDropzone(props: FileDropzoneProps): JSX.Element {
   });
   const title = () =>
     props.busy
-      ? messages().uploading
+      ? fileInputMessages().uploading
       : dragState() === "invalid"
-        ? messages().fileTypeNotAccepted
+        ? fileDropMessages().fileTypeNotAccepted
         : dragState() === "over"
           ? dropLabel()
-          : (props.title ?? messages().dropFiles);
+          : (props.title ?? fileInputMessages().dropFiles);
 
   return (
     <Field
@@ -138,7 +141,7 @@ export function FileDropzone(props: FileDropzoneProps): JSX.Element {
               </Show>
             }
           >
-            <span class="k2b-dropzone__subtitle">{messages().chooseMatchingFile}</span>
+            <span class="k2b-dropzone__subtitle">{fileInputMessages().chooseMatchingFile}</span>
           </Show>
           <Show when={props.hint}>
             <span class="k2b-dropzone__hint">{props.hint}</span>
@@ -154,7 +157,11 @@ export function FileDropzone(props: FileDropzoneProps): JSX.Element {
           type="file"
           aria-label={
             props["aria-label"] ??
-            (typeof props.label === "string" ? props.label : props.multiple === false ? messages().chooseFile : messages().chooseFiles)
+            (typeof props.label === "string"
+              ? props.label
+              : props.multiple === false
+                ? fileInputMessages().chooseFile
+                : fileInputMessages().chooseFiles)
           }
           accept={props.accept}
           multiple={props.multiple ?? true}
@@ -190,6 +197,7 @@ const defaultImageTransform = async (file: File): Promise<string> => {
 
 export function ImageInput(props: ImageInputProps): JSX.Element {
   const messages = useUiMessages();
+  const fileInputMessages = useFileInputMessages();
   const meta = createFieldMeta(props.id);
   const [busy, setBusy] = createSignal(false);
   const [localError, setLocalError] = createSignal<string>();
@@ -201,7 +209,7 @@ export function ImageInput(props: ImageInputProps): JSX.Element {
     return current && !current.includes(props.fallbackMarker ?? "?fallback") ? current : null;
   };
   const compact = () => props.variant === "small";
-  const changeLabel = () => (value() ? messages().changeImage : messages().addImage);
+  const changeLabel = () => (value() ? fileInputMessages().changeImage : fileInputMessages().addImage);
   const changeIcon = () => (value() ? "ti ti-pencil" : "ti ti-photo-plus");
   const select = async (file: File | undefined) => {
     if (!file || disabled()) return;
@@ -211,7 +219,7 @@ export function ImageInput(props: ImageInputProps): JSX.Element {
       const transformed = await (props.transform ?? defaultImageTransform)(file);
       commitFieldValue(props, transformed);
     } catch (error) {
-      setLocalError(error instanceof Error ? error.message : messages().imageProcessingFailed);
+      setLocalError(error instanceof Error ? error.message : fileInputMessages().imageProcessingFailed);
     } finally {
       setBusy(false);
       if (input) input.value = "";
@@ -239,7 +247,7 @@ export function ImageInput(props: ImageInputProps): JSX.Element {
       >
         <div class="k2b-image-input__preview">
           <Show when={value()} fallback={<i class="ti ti-photo-off" aria-hidden="true" />}>
-            {(source) => <img src={source()} alt={typeof props.label === "string" ? props.label : messages().selectedImage} />}
+            {(source) => <img src={source()} alt={typeof props.label === "string" ? props.label : fileInputMessages().selectedImage} />}
           </Show>
         </div>
         <div class="k2b-image-input__actions">
@@ -249,7 +257,7 @@ export function ImageInput(props: ImageInputProps): JSX.Element {
               <Button
                 variant="secondary"
                 loading={busy()}
-                loadingLabel={messages().processingImage}
+                loadingLabel={fileInputMessages().processingImage}
                 disabled={disabled()}
                 onClick={() => input?.click()}
               >
@@ -261,7 +269,7 @@ export function ImageInput(props: ImageInputProps): JSX.Element {
             <IconButton
               label={changeLabel()}
               loading={busy()}
-              loadingLabel={messages().processingImage}
+              loadingLabel={fileInputMessages().processingImage}
               disabled={disabled()}
               onClick={() => input?.click()}
             >
@@ -277,7 +285,7 @@ export function ImageInput(props: ImageInputProps): JSX.Element {
                 </Button>
               }
             >
-              <IconButton label={messages().removeImage} disabled={disabled()} onClick={() => commitFieldValue(props, null)}>
+              <IconButton label={fileInputMessages().removeImage} disabled={disabled()} onClick={() => commitFieldValue(props, null)}>
                 <i class="ti ti-trash" aria-hidden="true" />
               </IconButton>
             </Show>
@@ -363,7 +371,7 @@ const loadPreviewState = async (source: ImageCropSource): Promise<PreviewState> 
 };
 
 export function ImageCropper(props: ImageCropperProps): JSX.Element {
-  const messages = useUiMessages();
+  const fileInputMessages = useFileInputMessages();
   let frame: HTMLDivElement | undefined;
   let activePreview: PreviewState | null = null;
   const aspect = () => props.aspect ?? "free";
@@ -421,7 +429,7 @@ export function ImageCropper(props: ImageCropperProps): JSX.Element {
         if (disposed) return;
         replacePreview(null);
         setCrop(null);
-        setError(messages().failedLoadImage);
+        setError(fileInputMessages().failedLoadImage);
       } finally {
         if (!disposed) setLoading(false);
       }
@@ -584,18 +592,18 @@ export function ImageCropper(props: ImageCropperProps): JSX.Element {
   return (
     <div class={`k2b-image-cropper ${props.class ?? ""}`}>
       <div class="k2b-image-cropper__stage">
-        <Show when={!loading()} fallback={<small>{messages().preparingImage}</small>}>
+        <Show when={!loading()} fallback={<small>{fileInputMessages().preparingImage}</small>}>
           <Show when={!error()} fallback={<small class="k2b-image-cropper__error">{error()}</small>}>
             <Show when={preview() && crop()}>
               <div ref={frame} class="k2b-image-cropper__frame" style={previewFrameStyle()}>
-                <img src={preview()!.url} alt={messages().cropPreview} draggable={false} style={previewImageStyle()} />
+                <img src={preview()!.url} alt={fileInputMessages().cropPreview} draggable={false} style={previewImageStyle()} />
                 <div
                   class="k2b-image-cropper__selection"
                   data-shape={previewShape()}
                   style={cropStyle()}
                   role="group"
                   tabIndex={disabled() ? undefined : 0}
-                  aria-label={messages().cropArea}
+                  aria-label={fileInputMessages().cropArea}
                   onPointerDown={(event) => startDrag("move", event)}
                   onKeyDown={(event) => nudgeCrop("move", event)}
                 >
@@ -606,7 +614,7 @@ export function ImageCropper(props: ImageCropperProps): JSX.Element {
                           type="button"
                           class="k2b-image-cropper__handle"
                           data-handle={handle}
-                          aria-label={messages().resizeCrop({ handle })}
+                          aria-label={fileInputMessages().resizeCrop({ handle })}
                           disabled={disabled()}
                           onPointerDown={(event) => startDrag(handle, event)}
                           onKeyDown={(event) => nudgeCrop(handle, event)}
@@ -618,8 +626,8 @@ export function ImageCropper(props: ImageCropperProps): JSX.Element {
                 <Tooltip.Trigger
                   type="button"
                   class="k2b-image-cropper__rotate"
-                  content={messages().rotateRight}
-                  aria-label={messages().rotateRight}
+                  content={fileInputMessages().rotateRight}
+                  aria-label={fileInputMessages().rotateRight}
                   disabled={disabled() || !crop() || Boolean(error())}
                   onClick={rotateRight}
                 >

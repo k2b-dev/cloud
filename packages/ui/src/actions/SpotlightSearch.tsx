@@ -2,6 +2,7 @@ import type { JSX } from "solid-js";
 import type { PromptSearchInput, PromptSearchItem, PromptSearchOptions } from "../feedback/prompts";
 import { prompts } from "../feedback/prompts";
 import { resolveUiMessages, useUiMessages } from "../intl/messages";
+import { resolveSpotlightMessages } from "./spotlight-messages";
 
 export type SpotlightSearchResolver<T = unknown> = (input: PromptSearchInput) => Promise<PromptSearchItem<T>[]> | PromptSearchItem<T>[];
 
@@ -28,11 +29,12 @@ export const openSpotlightSearch = <T extends unknown = unknown>(
 ): Promise<PromptSearchItem<T> | undefined> => {
   const { resolve, ...promptOptions } = options;
   const messages = resolveUiMessages();
+  const spotlightMessages = resolveSpotlightMessages();
   return prompts.search(resolve, {
     icon: "ti ti-search",
     placeholder: messages.search,
     minQueryLength: 0,
-    noResultsText: messages.spotlightNoResults,
+    noResultsText: spotlightMessages.spotlightNoResults,
     size: "small",
     ...promptOptions,
   });

@@ -157,11 +157,15 @@ try {
   if (browserOutput.includes("react/jsx-runtime")) {
     throw new Error("packed browser build still requires a React JSX transform");
   }
-  // About half of this unminified build is the shared message catalog, which
-  // does not tree-shake. A leaked component family adds 40 KB or more; the
-  // budget catches that and leaves room for the two components to grow.
-  if (browserOutput.length > 105_000) {
+  // With component-family catalogs, this unminified build is 54,376 bytes.
+  // Keep about 3% headroom for Button, DatePicker, and their common chrome.
+  if (browserOutput.length > 56_000) {
     throw new Error(`packed Button + DatePicker browser build is too large: ${browserOutput.length} bytes`);
+  }
+  for (const unusedMessage of ["chartCopyFailed", "installCopyLink", "qrCameraPreview", "pdfPreviewHttpError", "composerFormatting"]) {
+    if (browserOutput.includes(unusedMessage)) {
+      throw new Error(`packed browser build retained unused ${unusedMessage} messages`);
+    }
   }
   for (const unusedFamily of ["reconcilePanesLayout", "FileBrowserPanel", "ChatComposer"]) {
     if (browserOutput.includes(unusedFamily)) {

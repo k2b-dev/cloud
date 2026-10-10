@@ -1,6 +1,6 @@
 import { Lexer, type MarkedExtension, Tokenizer, type TokenizerAndRendererExtension } from "marked";
-import { resolveUiMessages, type UiMessages } from "../intl/messages";
 import { NOTICE_CARD_CLASSES, type NoticeTone } from "../surfaces/NoticeCard";
+import { type MarkdownInfoBlockMessages, resolveMarkdownInfoBlockMessages } from "./markdown-info-block-messages";
 
 /**
  * Markdown info blocks: one grammar and one look for every Markdown surface.
@@ -57,7 +57,7 @@ const FENCE = /^( *)(`{3,}|~{3,})(.*)$/;
 type ContainerKind = "code" | "fences" | "list" | "blockquote" | "html";
 type ContainerToken = NonNullable<ReturnType<Tokenizer[ContainerKind]>>;
 
-const LABELS: Record<MarkdownInfoBlockType, (t: UiMessages) => string> = {
+const LABELS: Record<MarkdownInfoBlockType, (t: MarkdownInfoBlockMessages) => string> = {
   note: (t) => t.infoBlockNote,
   info: (t) => t.infoBlockInfo,
   success: (t) => t.infoBlockSuccess,
@@ -234,7 +234,7 @@ export const scanMarkdownInfoBlock = (source: string): MarkdownInfoBlock | null 
   return { ...block, length };
 };
 
-const renderBlock = (input: Omit<MarkdownInfoBlockRenderInput, "locale">, messages: UiMessages): string => {
+const renderBlock = (input: Omit<MarkdownInfoBlockRenderInput, "locale">, messages: MarkdownInfoBlockMessages): string => {
   const name = input.title
     ? `<p class="${NOTICE_CARD_CLASSES.title}">${escapeHtml(input.title)}</p>`
     : `<span class="k2b-sr-only">${escapeHtml(LABELS[input.type](messages))}: </span>`;
@@ -247,7 +247,8 @@ const renderBlock = (input: Omit<MarkdownInfoBlockRenderInput, "locale">, messag
  * and names the block; without one, the localized type name is announced to
  * screen readers only.
  */
-export const renderMarkdownInfoBlock = (input: MarkdownInfoBlockRenderInput): string => renderBlock(input, resolveUiMessages(input.locale));
+export const renderMarkdownInfoBlock = (input: MarkdownInfoBlockRenderInput): string =>
+  renderBlock(input, resolveMarkdownInfoBlockMessages(input.locale));
 
 /**
  * What one `marked` lexer run knows about its document: the opening lines, the
@@ -310,7 +311,7 @@ const nextBlockStart = (document: DocumentState, position: number, rules: RegExp
 const paragraphRule = (lexer: Lexer): RegExp =>
   Lexer.rules.block[lexer.options.pedantic ? "pedantic" : lexer.options.gfm ? "gfm" : "normal"].paragraph;
 
-const createExtension = (messages: UiMessages): MarkedExtension => {
+const createExtension = (messages: MarkdownInfoBlockMessages): MarkedExtension => {
   const extension: TokenizerAndRendererExtension = {
     name: "markdownInfoBlock",
     level: "block",
@@ -384,7 +385,7 @@ const createExtension = (messages: UiMessages): MarkedExtension => {
   };
 };
 
-const extensions = new WeakMap<UiMessages, MarkedExtension>();
+const extensions = new WeakMap<MarkdownInfoBlockMessages, MarkedExtension>();
 
 /**
  * `marked` extension for info blocks at the top level of a document. Blocks
@@ -394,7 +395,7 @@ const extensions = new WeakMap<UiMessages, MarkedExtension>();
  * extension, so a host may cache one `marked` instance per extension.
  */
 export const markdownInfoBlocks = (options: { locale?: string } = {}): MarkedExtension => {
-  const messages = resolveUiMessages(options.locale);
+  const messages = resolveMarkdownInfoBlockMessages(options.locale);
   const extension = extensions.get(messages) ?? createExtension(messages);
   extensions.set(messages, extension);
   return extension;
