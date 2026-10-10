@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
@@ -68,6 +68,8 @@ requestAnimationFrame(() => {
 const build = await Bun.build({ entrypoints: [entry], files: { [entry]: fixture }, target: "browser", format: "iife" });
 if (!build.success) throw new AggregateError(build.logs, "Could not bundle the floating detail fixture.");
 const script = await build.outputs[0]!.text();
+// Each test opens its own page and waits on real frames; like the other browser suites, a test gets 30 s.
+setDefaultTimeout(30_000);
 let browser: Browser;
 beforeAll(async () => {
   browser = await launchBrowser();
@@ -75,8 +77,10 @@ beforeAll(async () => {
 afterAll(async () => {
   await browser?.close();
 });
+// Geometry and interaction tests run without motion: each transition costs frames, and a loaded host makes
+// frames slow. The motion test asks for motion itself.
 const load = async (width: number, height: number, params = "", options: BrowserContextOptions = {}) => {
-  const page = await browser.newPage({ viewport: { width, height }, ...options });
+  const page = await browser.newPage({ viewport: { width, height }, reducedMotion: "reduce", ...options });
   await page.setContent(
     `<!doctype html><html lang="en"><head><style>${css}</style></head><body class="k2b-ui" style="margin:0"><div id="app" style="height:100vh"></div></body></html>`,
   );
@@ -85,7 +89,6 @@ const load = async (width: number, height: number, params = "", options: Browser
   }, params);
   await page.addScriptTag({ content: script });
   await page.locator("#row-0").waitFor();
-  await page.waitForFunction(() => document.body.dataset.secondMotion !== undefined);
   return page;
 };
 const geometry = (page: Page) =>
@@ -281,6 +284,7 @@ describe("floating workspace detail", () => {
     for (const reducedMotion of ["no-preference", "reduce"] as const) {
       const page = await load(1366, 900, "initial=1&persisted=520", { reducedMotion });
       try {
+        await page.waitForFunction(() => document.body.dataset.secondMotion !== undefined);
         expect(await page.locator("body").getAttribute("data-initial-motion")).toBe("false");
         expect(await page.locator("body").getAttribute("data-first-motion")).toBe("false");
         expect(await page.locator("body").getAttribute("data-second-motion")).toBe("true");

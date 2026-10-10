@@ -1142,6 +1142,14 @@
   padding-inline: 0;
 }
 
+/* The body's scrollbar sits on the panel's edge, and its content keeps the
+   panel's inset inside the scrollport, so overlay scrollbars never leave the
+   text against the rounded edge. */
+.k2b-ui .k2b-app-workspace__detail .k2b-detail-panel__body {
+  padding-inline-end: var(--k2b-detail-panel-scroll-inset, 0rem);
+  scrollbar-width: thin;
+}
+
 /* While the sheet is at half height, `Main` ends where the sheet begins, so
    the selected row and the rest of the list stay reachable above it. At full
    height `Main` keeps its size under the sheet. */
