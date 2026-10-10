@@ -11004,8 +11004,6 @@
   .k2b-ui .k2b-chart-explorer__dimension:has(> .k2b-field:hover) .k2b-chart-explorer__steps { visibility: visible; }
 }
 
-.k2b-ui .k2b-chart-explorer__sort-icon { display: inline-block; width: 1em; text-align: center; flex-shrink: 0; }
-
 .k2b-ui .k2b-chart-group-controls { display: grid; gap: .75rem; padding: 1rem; }
 .k2b-ui .k2b-chart [data-chart-reference="true"] > :is(rect, circle, path) { fill: none !important; pointer-events: all; stroke: var(--k2b-chart-reference-color); stroke-width: 1.5px; vector-effect: non-scaling-stroke; }
 

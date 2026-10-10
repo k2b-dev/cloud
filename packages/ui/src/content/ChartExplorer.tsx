@@ -182,10 +182,13 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
                         })
                       }
                     >
-                      {props.columns.find((column) => column.id === col.id)?.label}{" "}
-                      <span class="k2b-chart-explorer__sort-icon" aria-hidden="true">
-                        {sort()?.key === col.id ? (sort()?.direction === "asc" ? "↑" : "↓") : "↕"}
-                      </span>
+                      {props.columns.find((column) => column.id === col.id)?.label}
+                      {/* The data table's own marker: inactive columns keep a dimmed arrow so the header reads as sortable. */}
+                      <i
+                        class={`k2b-data-table__sort-icon ti ${sort()?.key === col.id && sort()?.direction === "asc" ? "ti-arrow-up" : "ti-arrow-down"}`}
+                        data-active={sort()?.key === col.id ? "true" : undefined}
+                        aria-hidden="true"
+                      />
                     </Button>
                   ) : (
                     render()
