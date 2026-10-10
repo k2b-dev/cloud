@@ -609,6 +609,12 @@ the time of that step.
 - PostgreSQL logs checkpoints by default. A long checkpoint in the same window
   can point to slow disk writes on the runner.
 
+Estimated row counts far below the rows a test inserted mean the plan came
+from statistics that autovacuum took before the test filled the table. Such a
+plan changes with whether autovacuum ran in between. A test that measures a
+query runs `ANALYZE` on every table it filled that the query reads before it
+measures, as `packages/mail/src/service/view-counts.integration.test.ts` does.
+
 The log is bounded: Docker keeps two log files of 4 MB for each PostgreSQL
 container and drops the oldest entries when both are full. A full local
 integration run writes about 0.7 MB, most of it the text of large migrations
