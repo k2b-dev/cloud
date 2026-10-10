@@ -128,8 +128,9 @@ engine of Safari and of every browser on iOS. `bun run check` fails when a test
 starts a Playwright browser type directly, or when a Playwright test does not
 import the launcher directly as `.../test/browser`, without a file extension:
 `bun run test --browser` finds the tests by that import. The Assistant artifact
-suites are the only exception: they run nightly in Google Chrome, except the
-HTML app frame, runner and chat card suites, which use the launcher.
+suites are the only exception: the ones that still start Google Chrome run only
+nightly. The artifact suites that import the launcher run like any other browser
+test.
 
 `bun run test --browser` runs only these tests, each file in a process of its
 own, and fails when it finds none. Files that also need `CLOUD_TEST_*`
