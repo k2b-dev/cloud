@@ -167,6 +167,11 @@ export const validateAppRegistryEntry = (value: unknown): string | null => {
     }
   }
   if (
+    value.skills !== undefined &&
+    (!isRecord(value.skills) || !isString(value.skills.manifestHash) || !/^[a-f0-9]{64}$/.test(value.skills.manifestHash))
+  )
+    return invalid("skills", "a valid app skill manifest hash");
+  if (
     value.help !== undefined &&
     (!isRecord(value.help) ||
       !isString(value.help.manifestHash) ||

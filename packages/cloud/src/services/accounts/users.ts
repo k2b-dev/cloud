@@ -223,6 +223,21 @@ export const getMinimal = async (params: { id: string } | { uid: string }): Prom
   return buildUserMutationTarget(rows[0]!);
 };
 
+/** Audience roles for a resolved access subject, including delegated users and group managers. */
+export const getRoles = async (userId: string): Promise<Role[]> => {
+  const { groupsAdmin } = await getFreeIpaConfig();
+  const [row] = await sql<DbRow[]>`SELECT u.provider, u.profile,
+    CASE WHEN u.provider='local' THEN u.admin ELSE EXISTS (
+      SELECT 1 FROM auth.ipa_user_effective_groups eg WHERE eg.user_id=u.id
+        AND eg.group_name=ANY(${toPgTextArray(groupsAdmin)}::text[])
+    ) END AS effective_admin,
+    ARRAY(${managedGroupsNamesSubquery(sql`u.id`)}) AS manages
+    FROM auth.users u WHERE u.id=${userId}::uuid`;
+  if (!row) return [];
+  const { provider, profile } = resolveProviderProfile(row);
+  return buildRoles({ provider, profile, memberofGroup: [], manages: stringArray(row.manages), admin: Boolean(row.effective_admin) });
+};
+
 export const getByUid = async (params: { uid: string }): Promise<{ id: string; roles: Role[] } | null> => {
   const { groupsAdmin } = await getFreeIpaConfig();
   const rows = await sql<DbRow[]>`

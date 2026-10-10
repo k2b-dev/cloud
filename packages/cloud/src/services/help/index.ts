@@ -1,5 +1,5 @@
 import { type SQL, sql } from "bun";
-import { hasAnyAppRole } from "../../_internal/app-roles";
+import { appAudienceRoles, hasAnyAppRole } from "../../_internal/app-roles";
 import { getApp, listApps } from "../../_internal/registry";
 import type { AppRegistryEntry } from "../../contracts/registry";
 import type { RequestActor } from "../../contracts/shared";
@@ -21,9 +21,7 @@ const log = logger("help");
  */
 export const canReadAppHelp = (app: Pick<AppRegistryEntry, "nav">, viewer: RequestActor | undefined): boolean => {
   const user = viewer?.kind === "user" ? viewer.user : (viewer?.delegatedUser ?? undefined);
-  if (!user) return false;
-  const adminAreaOnly = !!app.nav && !app.nav.href && !!app.nav.adminHref;
-  return hasAnyAppRole(user, app.nav?.requiresRoles ?? (adminAreaOnly ? ["admin"] : undefined));
+  return !!user && hasAnyAppRole(user, appAudienceRoles(app.nav));
 };
 
 /** Reads Help in one language for one viewer; apps the viewer may not see do not exist for this reader. */

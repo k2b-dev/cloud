@@ -85,7 +85,7 @@ nav: {
 | `section` | Yes | — | `"primary"`, `"more"`, or `"hidden"` |
 | `match` | No | `href` without its query | Path used for active navigation |
 | `requiresAuth` | No | — | Hide the link from anonymous visitors |
-| `requiresRoles` | No | — | Show the link and the application's [Help](/en/docs/platform/help#who-can-read-help) only for matching platform roles; `guest` matches guests |
+| `requiresRoles` | No | — | Show the link, the application's [Help](/en/docs/platform/help#who-can-read-help), and its [Assistant Skills](/en/docs/platform/assistant-skills#who-can-use-an-app-skill) only for matching platform roles; `guest` matches guests |
 | `badge` | No | — | Route whose count the app bar and app grid show on the icon; see [Show a count on the app icon](/en/docs/frontend/layout-and-navigation#show-a-count-on-the-app-icon) |
 
 Navigation visibility is not authorization. Protect the destination with
@@ -219,6 +219,7 @@ The remaining options declare application-owned contributions:
 | `settings` | Typed runtime configuration | [Settings](/en/docs/platform/settings) |
 | `platformPermissions` | Requested platform permissions: `"mail:send"` to send outgoing mail, `"mail:read"` to read other apps' mail an operator grants | [Outgoing mail](/en/docs/platform/outgoing-mail) |
 | `notifications` | Notification definitions the application may send | [Notifications](/en/docs/platform/notifications) |
+| `skills` | Assistant Skills the application ships, from `src/skills.ts` | [Ship Assistant Skills](/en/docs/platform/assistant-skills) |
 | `widgets` | Dashboard widget endpoints | [Dashboard widgets](/en/docs/platform/dashboard-widgets) |
 | `legalLinks` | Application-owned legal and information links | — |
 | `presentation` | Localized overlays for registered human-facing app metadata | [Internationalization](/en/docs/build/internationalization) |

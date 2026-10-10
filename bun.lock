@@ -255,6 +255,7 @@
         "@k2b/sync": "catalog:",
         "@k2b/ui": "workspace:*",
         "@simplewebauthn/browser": "14.0.0",
+        "diff": "9.0.0",
         "hono": "catalog:",
         "imapflow": "catalog:",
         "jose": "catalog:",

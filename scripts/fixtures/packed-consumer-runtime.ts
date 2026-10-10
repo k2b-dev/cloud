@@ -2,6 +2,8 @@
 import { strict as assert } from "node:assert";
 import { getApp, startProcessSync } from "@k2b/cloud";
 
+assert.match(await Bun.file("dist/server.js").text(), /Count the shelf inventory using the Inventory application/);
+assert.match(await Bun.file("dist/server.js").text(), /Count each item once and report missing labels/);
 const sync = await startProcessSync({ application: "consumer-observer" });
 const reservation = Bun.serve({ port: 0, fetch: () => new Response() });
 const port = reservation.port;
@@ -20,6 +22,7 @@ try {
     if (child.exitCode !== null) throw new Error(`App exited before readiness: ${await output}`);
     const entry = await getApp("inventory");
     if (entry) {
+      assert.match(entry.skills?.manifestHash ?? "", /^[a-f0-9]{64}$/);
       assert.equal(entry.baseUrl, baseUrl);
       assert.deepEqual(entry.routes, ["/api/inventory", "/pwa/inventory"]);
       assert.deepEqual(entry.pwa, { href: "/pwa/inventory" });

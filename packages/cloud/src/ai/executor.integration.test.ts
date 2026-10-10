@@ -9,9 +9,11 @@ import { compileCapabilities } from "../_internal/capabilities";
 import * as registry from "../_internal/registry";
 import type { User } from "../contracts";
 import { defineCapabilities } from "../contracts/capabilities";
-import type { CapabilityRegistryEntry } from "../contracts/registry";
+import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
 import { coreSettings } from "../services";
 import { type CapabilityGrant, mandates } from "../services/mandates";
+import { reconcileAppSkills } from "./app-skill-store";
+import { type AppSkillDefinition, skill as appSkill, appSkillManifestHash, registerAppSkills } from "./app-skills";
 import { aiTurnAllowsRememberedApprovals, rememberAiToolApproval } from "./approvals";
 import * as capabilityExecution from "./capability-execution";
 import { aiChatTasks } from "./chat-tasks";
@@ -197,6 +199,35 @@ const toolCallCompletion = (id: string, name: string, args: unknown): string[] =
 ];
 
 /** Reported as skipped rather than silently passing when the backing service is absent. */
+
+/** Installs one app Skill through the public catalog path and returns its cleanup. */
+const installAppSkill = async (definition: AppSkillDefinition) => {
+  // The test database may hold an older copy of the name; the app Skill must own it here.
+  for (const row of await sql<{ id: string }[]>`SELECT id FROM ai.skills WHERE name = ${definition.name}`)
+    await aiSkills.admin.delete(row.id);
+  await sql`DELETE FROM ai.app_skills WHERE name = ${definition.name}`;
+  const manifestHash = appSkillManifestHash([definition]);
+  const entry: AppRegistryEntry = {
+    id: `skills-${crypto.randomUUID()}`,
+    name: "Assistant",
+    description: "Assistant",
+    icon: "ti ti-sparkles",
+    baseUrl: "http://assistant:3000",
+    routes: [],
+    skills: { manifestHash },
+  };
+  await registerAppSkills(entry.id, [definition], manifestHash);
+  await reconcileAppSkills([entry]);
+  return {
+    remove: async () => {
+      const [row] = await sql<{ skill_id: string | null }[]>`SELECT skill_id FROM ai.app_skills WHERE app_id = ${entry.id}`;
+      if (row?.skill_id) await aiSkills.admin.delete(row.skill_id);
+      await sql`DELETE FROM ai.app_skills WHERE app_id = ${entry.id}`;
+      await sql`DELETE FROM ai.app_skill_catalogs WHERE app_id = ${entry.id}`;
+    },
+  };
+};
+
 const suite = databaseSuite();
 
 beforeAll(() => {
@@ -568,9 +599,14 @@ suite("AI executor integration", () => {
   test("offers to keep recurring work as a Skill only in chats a person follows with skill-creator", async () => {
     const userId = await insertUser();
     const owner = { type: "user" as const, userId };
-    // The integration bootstrap seeds the built-in Skills; every signed-in user can read skill-creator.
+    // Assistant ships skill-creator as an app Skill; install it the same way through the registry catalog.
+    const creatorApp = await installAppSkill(
+      appSkill({
+        markdown: "---\nname: skill-creator\ndescription: Create and improve reusable Assistant Skills.\n---\n\nDraft the Skill.\n",
+      }),
+    );
     const creator = (await aiSkills.list(owner)).find((candidate) => candidate.name === "skill-creator");
-    if (!creator?.enabled) throw new Error("Expected the seeded skill-creator to be enabled for a new user");
+    if (!creator?.enabled) throw new Error("Expected the app's skill-creator to be enabled for a new user");
     const skill = await aiSkills.create({
       subject: owner,
       name: `weekly-report-${crypto.randomUUID().slice(0, 8)}`,
@@ -670,6 +706,7 @@ suite("AI executor integration", () => {
       onCompletionRequest = null;
       await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
       await aiSkills.delete(skill.id, owner);
+      await creatorApp.remove();
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
     }
   });

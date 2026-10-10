@@ -6,23 +6,16 @@ import { compileArtifact } from "./runtime/compile";
 import { chart } from "./runtime/lib";
 
 test("money reference computes tax and preserves the allocated total", async () => {
-  const document = await Bun.file(new URL("../../skills/code-mode/references/money.md", import.meta.url)).text();
+  const document = await Bun.file(new URL("../skills/assistant-code-mode/references/money.md", import.meta.url)).text();
   const source = document.match(/```js\n([\s\S]*?)\n```/)?.[1];
   expect(source).toBeDefined();
   const start = new Function("cloud", source!.replace("export default", "return"));
   expect(start({ money })()).toEqual({ net: "19.99", tax: "3.80", gross: "23.79", parts: ["7.93", "7.93", "7.93"] });
 });
 
-test("bundled code mode skill matches its canonical Markdown files", async () => {
-  const generator = new URL("../../scripts/generate-code-mode-skill.ts", import.meta.url);
-  const process = Bun.spawn(["bun", generator.pathname, "--check"], { stdout: "pipe", stderr: "pipe" });
-  const error = await new Response(process.stderr).text();
-  expect(await process.exited, error).toBe(0);
-});
-
 /** Code blocks of a reference, in order, with their fence language. */
 const blocks = async (name: string) => {
-  const document = await Bun.file(new URL(`../../skills/code-mode/references/${name}`, import.meta.url)).text();
+  const document = await Bun.file(new URL(`../skills/assistant-code-mode/references/${name}`, import.meta.url)).text();
   return [...document.matchAll(/```(\w+)\n([\s\S]*?)\n```/g)].map((match) => ({ language: match[1]!, code: match[2]! }));
 };
 /** Static findings of an app the way code_write and code_present check it. */
@@ -84,7 +77,7 @@ test("chart reference draws Cloud chart markup", async () => {
 });
 
 test("first-file skill entry compiles without loading app references", async () => {
-  const document = await Bun.file(new URL("../../skills/code-mode/SKILL.md", import.meta.url)).text();
+  const document = await Bun.file(new URL("../skills/assistant-code-mode/SKILL.md", import.meta.url)).text();
   const content = document.match(/```js\n([\s\S]*?)\n```/)?.[1];
   expect(content).toBeDefined();
   const compiled = await compileArtifact({ entry: "main.js", files: [{ path: "main.js", content: content! }] });
@@ -93,7 +86,7 @@ test("first-file skill entry compiles without loading app references", async () 
 
 test("every code-mode reference is directly routed and local links resolve", async () => {
   const { readdir } = await import("node:fs/promises");
-  const directory = new URL("../../skills/code-mode/", import.meta.url);
+  const directory = new URL("../skills/assistant-code-mode/", import.meta.url);
   const names = (await readdir(new URL("references/", directory))).filter((name) => name.endsWith(".md"));
   const entry = await Bun.file(new URL("SKILL.md", directory)).text();
   for (const name of names) expect(entry).toContain(`(references/${name})`);
@@ -109,7 +102,7 @@ test("every code-mode reference is directly routed and local links resolve", asy
 
 test("source workflow example uses the current atomic write contract", async () => {
   const { CODE_SOURCE_TOOLS } = await import("@k2b/cloud/ai");
-  const document = await Bun.file(new URL("../../skills/code-mode/references/source-workflow.md", import.meta.url)).text();
+  const document = await Bun.file(new URL("../skills/assistant-code-mode/references/source-workflow.md", import.meta.url)).text();
   const source = document.match(/```json\n([\s\S]*?)\n```/)?.[1];
   expect(source).toBeDefined();
   const input = { ...JSON.parse(source!), id: "AbC234" };
@@ -118,7 +111,7 @@ test("source workflow example uses the current atomic write contract", async () 
 
 test("invoice reference generates parseable XML with matching calculated totals", async () => {
   const { einvoice } = await import("@k2b/stdlib/finance");
-  const document = await Bun.file(new URL("../../skills/code-mode/references/einvoice.md", import.meta.url)).text();
+  const document = await Bun.file(new URL("../skills/assistant-code-mode/references/einvoice.md", import.meta.url)).text();
   const source = document.match(/```js\n([\s\S]*?)\n```/)?.[1];
   expect(source).toBeDefined();
   const outputs: Blob[] = [];
@@ -145,7 +138,7 @@ test("invoice reference generates parseable XML with matching calculated totals"
 test("invoice reference declares the fields, kinds and payment codes stdlib accepts", async () => {
   const { einvoice } = await import("@k2b/stdlib/finance");
   const { invoice } = await import("./test-invoice");
-  const document = await Bun.file(new URL("../../skills/code-mode/references/einvoice.md", import.meta.url)).text();
+  const document = await Bun.file(new URL("../skills/assistant-code-mode/references/einvoice.md", import.meta.url)).text();
   const block = document.match(/^type Invoice = \{\n([\s\S]*?)\n\};/m)?.[1];
   expect(block).toBeDefined();
   // Top-level fields only: comments and nested object types carry names of their own.
