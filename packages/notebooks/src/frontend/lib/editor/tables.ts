@@ -21,8 +21,8 @@
  *     snaps cursor positions that fall inside the widget range to
  *     the nearest edge.
  *
- *  2. StateField rebuild only on `docChanged` OR cursor-crosses-
- *     table-boundary (NOT on every `tr.selection`). Prevents
+ *  2. StateField rebuild only on a doc or syntax-tree change OR
+ *     cursor-crosses-table-boundary (NOT on every `tr.selection`). Prevents
  *     widget destroy+recreate on every vertical-nav keystroke,
  *     which was thrashing layout heights mid-move.
  *
@@ -59,7 +59,7 @@ import { type EvalContext, evaluateFormula, isFormula } from "@k2b/cloud/shared"
 import { clipboard } from "@k2b/stdlib/browser";
 import { isNamedBlockHandle } from "../../../lib/named-blocks";
 import { formatFormulaError, formatFormulaValue, renderPrettyTableHtml } from "../pretty-table";
-import { refreshMarkdownDecorationsEffect, selectionIntersectsRange } from "./_lib/cursor-zone-field";
+import { refreshMarkdownDecorationsEffect, selectionIntersectsRange, treeOrDocChanged } from "./_lib/cursor-zone-field";
 import { splitTableLineCells, tableCellText } from "./_lib/table-cell";
 import { applyLigatures } from "./ligatures";
 
@@ -446,9 +446,9 @@ export const tablesExtension = (notebookId: string): Extension => {
       if (tr.effects.some((effect) => effect.is(refreshMarkdownDecorationsEffect))) {
         return scanTables(tr.state, notebookId);
       }
-      // Doc changed → tables may have appeared / disappeared / shifted
-      // positions. Full rescan.
-      if (tr.docChanged) {
+      // Doc or syntax tree changed → tables may have appeared /
+      // disappeared / shifted positions. Full rescan.
+      if (treeOrDocChanged(tr)) {
         return scanTables(tr.state, notebookId);
       }
       // Selection unchanged AND doc unchanged → nothing to do.
