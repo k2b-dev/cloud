@@ -28,7 +28,7 @@ Treat **Done** as a team state, not as an email archive action. Marking a conver
 
 Internal comments are visible to people who can read the mailbox and are never sent to email recipients. Use them for handoffs, decisions, and shared context. Mail does not notify single people about comments. When one collaborator is responsible for the next step, assign the conversation.
 
-You can edit or delete your own comments for 10 minutes after posting. Comments of workflows and of other people cannot change, also not for people with **Manage** access. A deleted comment leaves a marker in the thread, so the event does not silently disappear from the team history.
+You can edit or delete your own comments for 10 minutes after posting. Nobody can change comments from workflows or from other people, not even with **Manage** access. A deleted comment leaves a marker in the thread, so the event does not silently disappear from the team history.
 
 ## Use personal reminders and presence {icon="route"}
 
@@ -54,7 +54,7 @@ You give access with the standard Cloud access editor to the supported people, g
 
 Choose **View assigned only** or **Edit assigned only** for a person or group in **Settings → Access** when they must work on selected conversations without seeing the rest of the mailbox. Examples are a freelancer or another team. In a group, each member sees the conversations that are assigned to them.
 
-- They see no mail until someone with **Edit** or **Manage** access assigns a conversation to them. Then they see that conversation with all its messages, also replies that arrive later. They also see its attachments, comments, and activity.
+- They see no mail until someone with **Edit** or **Manage** access assigns a conversation to them. Then they see that conversation with all its messages, including replies that arrive later. They also see its attachments, comments, and activity.
 - The folder list shows only the folders that contain one of their conversations. Every count includes only their conversations. Search, **Assigned to me**, the Mail overview, Cloud search, Assistant, and `cld` work the same way.
 - With **Edit assigned only**, they can reply, forward, mark as read or done, move, comment, and add existing tags in their conversations. They cannot write new messages, assign anyone, create tags or folders, merge or split conversations, or change mailbox settings.
 - When an assignment ends, the conversation disappears for them immediately: from lists, open views, search, downloads, and notifications. Mail no longer carries out the replies and actions that they queued for it, including scheduled sends.

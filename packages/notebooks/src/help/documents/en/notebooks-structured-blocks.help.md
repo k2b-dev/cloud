@@ -128,7 +128,7 @@ Book also links to headings in lists, quotes, and notices. The editor preview ca
 
 Rich mode shows query and contents previews that the server renders. To edit a block, move the cursor into it or choose **Show source**. Notebooks marks invalid settings on their source lines.
 
-A draft preview uses the query settings and headings of your draft. Queries still read saved data, also for the current note. The preview does not save the draft and does not change matching notes.
+A draft preview uses the query settings and headings of your draft. Queries still read saved data, even for the current note. The preview does not save the draft and does not change matching notes.
 
 Book renders the same blocks on the server, without an editor. When JavaScript is available, saved changes refresh Book and query previews automatically. **Read-only** keeps its saved source until you reload. Reload after that source changes. Without JavaScript, Book still shows results and links when the page loads.
 

@@ -20,7 +20,7 @@ Settings are grouped by purpose:
 
 In **Settings → Calendar invitations**, choose one Space where you have **Edit** access as the suggested destination for imported invitations. Mail stores this preference for the whole mailbox. Spaces offers each person only destinations where they have **Edit** access.
 
-The setting does not import mail automatically. Each invitation can go to another Space where you have **Edit** access. You can safely clear the selection. If someone deletes the Space or your access ends, Mail treats the default as not set.
+The setting does not import invitations automatically. Each invitation can go to another Space where you have **Edit** access. You can safely clear the selection. If someone deletes the Space or your access ends, Mail treats the default as not set.
 
 Operational status and public attachment links are separate from the settings. Open them from **Mailbox tools** in the mailbox navigation.
 
@@ -83,7 +83,7 @@ The **Identity label** is visible only inside the mailbox. Recipients see the **
 
 **Advanced delivery** contains provider-specific settings. In most cases, leave them unchanged. The optional **Return-path address** receives technical delivery failures and bounce reports. Leave it empty unless your mail provider explicitly requires a separate address. Mail attaches the contact card as a `.vcf` file to messages sent with the identity.
 
-After a send, Mail places the message in the Sent folder of the identity as soon as it stores or finds the copy there. It does not wait for the next synchronization.
+After a send, Mail places the message in the identity's Sent folder as soon as it stores or finds the copy there. It does not wait for the next synchronization.
 
 - **Gmail:** Gmail stores every message sent through its own SMTP server in Sent Mail. Mail looks for the Gmail copy for a few minutes and adds its own copy only if it still finds none.
 - **Other providers:** Mail adds one copy, unless **Provider saves sent mail automatically** is on. Then Mail looks for the provider copy only right after the send. A copy that the provider lists later appears with the next synchronization of the folder.
@@ -102,11 +102,11 @@ Priority and receipt requests are suggestions to other mail systems:
 
 - **Priority** set to **High** or **Low** adds standard importance headers. The client of the recipient decides how to show them.
 - **Request delivery receipts** asks the sending server for a delivery status report. It is available only when the selected SMTP transport announces DSN support.
-- **Request read receipts** asks the mail client of the recipient for a disposition notification. The recipient or their organization can ignore or refuse it.
+- **Request read receipts** asks the recipient's mail client for a disposition notification. The recipient or their organization can ignore or refuse it.
 
 Received reports appear in the conversation activity as reported results. They are useful operational evidence, not proof that a person read or acted on a message.
 
-An identity normally uses the SMTP server of the mailbox. Set up a custom SMTP server only when the From address must use a different authenticated submission server. Mail encrypts the custom credential, and nobody can read it back. Mail verifies the server before saving it. Scheduled sends stay tied to the verified transport version, so a change or removal of that transport cannot silently reroute an already queued message.
+An identity normally uses the mailbox's SMTP server. Set up a custom SMTP server only when the From address must use a different authenticated submission server. Mail encrypts the custom credential, and nobody can read it back. Mail verifies the server before saving it. Scheduled sends stay tied to the verified transport version, so a change or removal of that transport cannot silently reroute an already queued message.
 
 Two identities can share the same From address on purpose. Mail keeps their labels, recipient defaults, signatures, Reply-to values, delivery options, transports, folder mappings, and verification states separate. When a reply matches exactly one identity, Mail selects it automatically. If several matching identities are equally valid, the writer must choose one.
 
@@ -233,13 +233,13 @@ Each list offers only capabilities that match the contract for contact directori
 - **Read a contact** is optional. Without it, **Compose email** from a contact in another app reports that the contact is unavailable.
 - **List writable books** and **Create a contact** are optional and belong together. Without them, Mail hides **New contact**.
 
-**Save** checks every choice against the current capabilities of the app and names each field that Mail cannot use. Mail always calls the app with the own access of each person, so people see only the contacts that they can read there. If the app stops or later changes in an incompatible way, the affected features become unavailable, as when Contacts is unavailable. **Use Contacts defaults** restores the built-in mapping.
+**Save** checks every choice against the app's current capabilities and names each field that Mail cannot use. Mail always calls the app with each person's own access, so people see only the contacts that they can read there. If the app stops or later changes in an incompatible way, the affected features become unavailable, as when Contacts is unavailable. **Use Contacts defaults** restores the built-in mapping.
 
 `cld mail admin contact-directory show|candidates|set|reset` does the same from a terminal and uses the same check. Mail does not save an incompatible mapping, and the command lists the same problems.
 
 ## Configure signatures and email design {icon="pencil"}
 
-In **Settings → Writing**, create private or mailbox signatures and snippets. Set the default signature of the mailbox in **Accounts & identities → Sending identities**. A personal default of a collaborator in **Writing** comes first.
+In **Settings → Writing**, create private or mailbox signatures and snippets. Set the mailbox default signature in **Accounts & identities → Sending identities**. A personal default of a collaborator in **Writing** comes first.
 
 Markdown messages always get the built-in readable email design. **Email design** adds checked mailbox CSS for company branding. It does not replace the safe base design. Check the result in the **Preview** of the composer before you rely on a CSS change.
 
@@ -279,7 +279,7 @@ For setup steps, schedule effects, reference patterns, and repeat protection, se
 Open **Automations → Workflows** for the YAML editor. Saving creates a new unchangeable version. It does not activate that version automatically.
 
 :::steps
-1. Review the YAML, the validation diagnostics, and the effect budgets.
+1. Review the YAML, the validation diagnostics, and the **Effect budget**.
 2. Activate the version explicitly.
 3. Check mailbox runs separately in **Automations → Activity**.
 :::

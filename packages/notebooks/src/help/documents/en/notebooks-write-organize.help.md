@@ -74,7 +74,7 @@ Hide the navigation to write with the full width. Hide it also when others can s
 - **What disappears:** The navigation disappears completely in both layouts and in Book view. This includes the note list of the navigator and the page list of Book view.
 - **Show:** Choose **Show navigation** in the same place, or press **Cmd/Ctrl+Alt+S** again. You can also type `>` in the Cloud search and run **Show notebook navigation**.
 - **No toolbar:** Some places show no editor toolbar: Book view, an empty notebook, **Read-only**, the graph, and the attachments. There, the button is in the bottom-left corner.
-- **Stays hidden:** This browser stores the choice. It applies to every notebook, also after a reload and in other open tabs. A notebook with hidden navigation opens without it, so its note titles do not appear while the page loads.
+- **Stays hidden:** This browser stores the choice. It applies to every notebook, even after a reload and in other open tabs. A notebook with hidden navigation opens without it, so its note titles do not appear while the page loads.
 - **Your place in the note:** When you hide or show the navigation, the cursor stays where it is. The text at the top of the editor or of Book view stays in place.
 - **Phones:** On small screens, the navigation stays in the menu. The button appears on wider screens, where the navigation is next to the note.
 :::

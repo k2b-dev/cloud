@@ -6,7 +6,7 @@ description: Referenz für Eingaben, Trigger, Aktionen, Bedingungen, Ausdrücke,
 order: 70
 ---
 
-Mail-Workflow-YAML hat drei Schlüssel auf oberster Ebene: `inputs`, `triggers` und `steps`. Nur `steps` ist erforderlich. Name, Beschreibung, Priorität, Effektbudget, gespeicherte Versionen und Aktivierungsstatus des Workflows bearbeitest du außerhalb des YAML.
+Mail-Workflow-YAML hat drei Schlüssel auf oberster Ebene: `inputs`, `triggers` und `steps`. Nur `steps` ist erforderlich. Name, Beschreibung, Priorität, Ausführungslimits, gespeicherte Versionen und Aktivierungsstatus des Workflows bearbeitest du außerhalb des YAML.
 
 Der Workflow-Quelltext ist auf 200.000 Zeichen begrenzt.
 
@@ -172,7 +172,7 @@ Variablen, die innerhalb eines Zweigs erstellt werden, sind außerhalb dieses Zw
 | `removeKeyword` | `message`, `keyword` | Entfernt ein übertragbares Anbieter-Schlüsselwort |
 | `moveMessage` | `message`, `folder` | Verschiebt die Nachricht in einen zugänglichen Anbieterordner |
 | `copyMessage` | `message`, `folder` | Kopiert die Nachricht in einen zugänglichen Anbieterordner |
-| `archiveMessage` | `message` | Verschiebt die Nachricht in den Archivordner des Postfachs; bei Gmail ohne zugeordneten Archivordner wie die Aktion Archivieren nach **Alle Nachrichten** |
+| `archiveMessage` | `message` | Verschiebt die Nachricht in den Archivordner des Postfachs; bei Gmail ohne zugeordneten Archivordner wie die Aktion Archivieren nach **All Mail** |
 | `trashMessage` | `message` | Verschiebt die Nachricht in den Papierkorbordner des Postfachs |
 | `junkMessage` | `message` | Verschiebt die Nachricht in den Spamordner des Postfachs |
 | `addFlag` / `removeFlag` | `message`, `flag` | Ändert `seen`, `answered`, `flagged` oder `draft` über das Befehlsjournal des Anbieters |
@@ -201,11 +201,11 @@ Felder für Ordner, lokale Tags, Personen und Absender akzeptieren einen eindeut
 
 Verwaltete Automatisierungen für eingehende E-Mails erzeugen `linkSpaceItem` und `createSpaceEvent`. Sie nutzen die verschlüsselte, widerrufbare Spaces-Delegation, die mit dieser Automatisierung gespeichert ist. Unabhängige, von Hand geschriebene Mail-Workflows können sie deshalb nicht nutzen.
 
-### Felder, Standardwerte, Ausgaben und Budgets prüfen
+### Felder, Standardwerte, Ausgaben und Limits prüfen
 
 Referenzfelder namens `message`, `conversation` oder `draft` akzeptieren einen rohen Wertepfad mit höchstens 500 Zeichen. Selektoren für Ordner, Schlüsselwort, Tag, Absender und Person haben ebenfalls höchstens 500 Zeichen. Variablennamen in `name` und `saveAs` sind Bezeichner mit höchstens 120 Zeichen.
 
-| Aktionen | Zusätzliche Felder und Standardwerte | Ausgabe | Budget pro Ausführung |
+| Aktionen | Zusätzliche Felder und Standardwerte | Ausgabe | Limit pro Ausführung |
 | --- | --- | --- | --- |
 | `addKeyword`, `removeKeyword` | `keyword`: 1–500 Zeichen | keine | 1 `maxKeywordChanges` |
 | `moveMessage` | zugänglicher `folder`-Name oder zugängliche ID | keine | 1 `maxMoves` |
@@ -235,7 +235,7 @@ Ein erreichbarer Pfad kann nicht mehrere Anbieteränderungen auf dieselbe Nachri
 
 ## E-Mails mit KI klassifizieren und Entwürfe erstellen {icon="sparkles"}
 
-Mail aktiviert die gemeinsamen KI-Aktionen ausdrücklich. KI erzeugt nur einen Wert. Mail-Aktionen führen weiterhin Wirkungen für Tags, Zuweisung, Ordner, Entwürfe und Versand aus, mit dem normalen Zugriff auf das Postfach und den Budgets.
+Mail aktiviert die gemeinsamen KI-Aktionen ausdrücklich. KI erzeugt nur einen Wert. Tags, Zuweisung, Ordner, Entwürfe und Versand bleiben Effekte von Mail-Aktionen, mit dem normalen Zugriff auf das Postfach und den Ausführungslimits.
 
 Dieses Beispiel ordnet eine Nachricht mehreren Labels zu. Es nutzt die exakte Array-Zugehörigkeit, um die Unterhaltung zu taggen und zuzuweisen, und erstellt einen Entwurf, ohne ihn zu senden:
 
@@ -332,7 +332,7 @@ steps:
 
 Die allgemeinen Feldtypen sind `text`, `number`, `boolean`, `date_time` und `enum`. Optionale Felder dürfen fehlen. Die Ausgabe lehnt nicht deklarierte Felder ab. Der geführte Editor für eingehende E-Mails stellt automatisch bereit: den festen Vertrag für Terminfelder, eine ausdrückliche IANA-Zeitzone, die Empfangszeit der Nachricht und die Schutzbedingung gegen erfundene Angaben.
 
-Ein optionales `model` wählt für eine Aktion ein aktiviertes Profil aus. Andernfalls verwendet Mail zuerst das Workflow-Modell der Plattform, dann das Hintergrundmodell und anschließend den Plattformstandard. Jede neu erstellte KI-Aufgabe verbraucht eine Einheit des Budgets `maxAiCalls`. Standardmäßig ist dieses Budget 10 pro Ausführung.
+Ein optionales `model` wählt für eine Aktion ein aktiviertes Profil aus. Andernfalls verwendet Mail zuerst das Workflow-Modell der Plattform, dann das Hintergrundmodell und anschließend den Plattformstandard. Jede neu erstellte KI-Aufgabe zählt einmal gegen das Limit `maxAiCalls`. Standardmäßig liegt dieses Limit bei 10 pro Ausführung.
 
 KI-Aufgaben überstehen Neustarts von Workern. Brichst du die Mail-Ausführung ab, stoppt sie die laufende Inferenz, wo das möglich ist, und verwirft verspätete Ausgaben. Eine Testausführung kann die KI-Ausgabe nicht vorhersagen. Deshalb meldet sie den nicht verfügbaren Wert, statt mit einer erfundenen Klassifizierung oder einem erfundenen Entwurf fortzufahren.
 
@@ -547,16 +547,16 @@ Werte, die in einem `case` erstellt werden, bleiben innerhalb dieses Falls. Brau
 
 ## Versionen und Aktivierung verstehen {icon="layout-grid"}
 
-Jede gespeicherte Version hat ein Effektbudget. `0` deaktiviert eine Effektkategorie mit Ausnahme von `maxTargets`, das mindestens 1 sein muss.
+Jede gespeicherte Version hat eigene Ausführungslimits. `0` schaltet eine Kategorie von Effekten ab. Ausnahme ist `maxTargets`: Es muss mindestens 1 sein.
 
-| Budget | Standardwert | Maximum |
+| Limit | Standardwert | Maximum |
 | --- | ---: | ---: |
 | `maxTargets` | 1.000 | 50.000 |
 | `maxMoves`, `maxCopies`, `maxSends`, `maxDrafts`, `maxNotifications` | 1.000 | 50.000 |
 | `maxFlagChanges`, `maxKeywordChanges`, `maxCollaborationChanges` | 2.000 | 100.000 |
 | `maxAiCalls` | 10 | 1.000 |
 
-Das Budget gehört zur unveränderlichen Version und begrenzt eine Ausführung. Die Laufzeit zählt die passende Kategorie unmittelbar, bevor ein Effekt beginnt. Sie lässt die Ausführung fehlschlagen, statt die Grenze zu überschreiten. Idempotente Wiederholungen nutzen denselben Effekt erneut und erstellen keinen weiteren.
+Die Ausführungslimits gehören zur unveränderlichen Version und gelten für eine Ausführung. Die Laufzeit zählt die passende Kategorie unmittelbar, bevor ein Effekt beginnt. Sie lässt die Ausführung fehlschlagen, statt die Grenze zu überschreiten. Idempotente Wiederholungen nutzen denselben Effekt erneut und erstellen keinen weiteren.
 
 - **Workflow erstellen** speichert Version 1, lässt sie aber inaktiv.
 - **Version speichern** erstellt eine weitere unveränderliche Version. Eine ältere Version wird nie bearbeitet.

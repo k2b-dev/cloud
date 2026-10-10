@@ -145,7 +145,7 @@ Um einen Ordner im Terminal zu prüfen, akzeptiert `cld mail ls "Mailbox:Sent Ma
 
 Lokale Tags und interne Kommentare gibt es nur in Cloud. Anbieterordner und Schlüsselwörter hängen vom synchronisierten Zustand beim Anbieter ab.
 
-Die Texterkennung in Anhängen blockiert nie das Empfangen, Lesen oder Senden einer Nachricht. Mail wiederholt unterbrochene Erkennungsarbeit automatisch. Es holt auch regelmäßig Anhänge nach, die gespeichert wurden, bevor ein Worker sie übernehmen konnte. Verschlüsselte, gescannte, nicht unterstützte, fehlerhafte oder zu große Anhänge sind endgültige Ergebnisse: Die ursprüngliche Datei bleibt verfügbar, aber ihr Inhalt ist nicht durchsuchbar.
+Die Texterkennung in Anhängen blockiert nie das Empfangen, Lesen oder Senden einer Nachricht. Mail wiederholt unterbrochene Erkennungsarbeit automatisch. Es holt auch regelmäßig Anhänge nach, die gespeichert wurden, bevor ein Worker sie verarbeiten konnte. Verschlüsselte, gescannte, nicht unterstützte, fehlerhafte oder zu große Anhänge sind endgültige Ergebnisse: Die ursprüngliche Datei bleibt verfügbar, aber ihr Inhalt ist nicht durchsuchbar.
 
 **Postfachwerkzeuge → Postfachstatus** zeigt **Abdeckung von Reparatur und Projektion**. Zeigt sie eine Lücke, kann jemand mit Zugriff **Verwalten** **Fehlende Nachrichteninhalte laden**, **Suche neu aufbauen** oder **Unterhaltungsansicht reparieren** einreihen. Warte, bis der dauerhafte Befehl fertig ist, bevor du ihn wiederholst. Reparaturen von Suche und Unterhaltungen bauen abgeleitete Daten neu auf und behalten Inhalte des Postfachs und den Zustand der Zusammenarbeit.
 

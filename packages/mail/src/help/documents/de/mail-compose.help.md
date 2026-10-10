@@ -127,7 +127,7 @@ Dein E-Mail-Anbieter kann eine kleinere Grenze für die vollständige ausgehende
 
 Veröffentlicht der Anbieter eine aktuelle Grenze, lehnt Mail eine zu große Nachricht vor dem SMTP-Versand ab und nennt beide Größen. Entferne Anhänge oder teile eine große Datei stattdessen über einen öffentlichen Download-Link. Eine unbekannte oder veraltete Grenze des Anbieters verhindert das Senden nicht.
 
-Leitest du eine Nachricht mit Anhängen weiter, übernimmt Mail die ursprünglichen Dateien standardmäßig in den neuen Entwurf. Reicht der weitergeleitete Text, entferne einzelne Anhänge im Editor.
+Leitest du eine Nachricht mit Anhängen weiter, fügt Mail die ursprünglichen Dateien standardmäßig in den neuen Entwurf ein. Reicht der weitergeleitete Text, entferne einzelne Anhänge im Editor.
 
 ## Eine Kalendereinladung hinzufügen {icon="calendar-plus"}
 
@@ -146,7 +146,7 @@ Vor einem sofortigen, verzögerten oder geplanten Versand prüft Mail den exakt 
 - einen verdächtigen Link;
 - Platzhalter wie `{{ sender.email }}`, die nicht mehr zu einer Signatur oder einem Textbaustein gehören und als reiner Text versendet würden.
 
-Der Dialog erklärt jede Warnung und führt dich zurück zum Entwurf. Wähle **Trotzdem senden** erst, nachdem du die aktuellen Empfänger, Links und Anhänge geprüft hast.
+Der Dialog erklärt jede Warnung und lässt dich zum Entwurf zurückkehren. Wähle **Trotzdem senden** erst, nachdem du die aktuellen Empfänger, Links und Anhänge geprüft hast.
 
 Eine Zustimmung gilt nur für diese gespeicherte Fassung des Entwurfs. Bearbeitest du den Entwurf danach, prüft Mail erneut. Mail hält die bestätigten Warnungstypen für die Prüfung der Zustellung fest, aber keine zweite Kopie des Nachrichteninhalts.
 
@@ -193,9 +193,9 @@ Wähle den Zustellstatus unter einer ausgehenden Nachricht. Er zeigt, was passie
 
 Erreicht Mail den Mailserver nicht, bevor es die Nachricht übergibt, wurde nichts gesendet. Mail behält die Nachricht und versucht es über einige Minuten mehrmals erneut. Der Zustellstatus zeigt den nächsten Versuch. Dasselbe gilt, wenn sich das Postfach gerade neu verbindet oder Mail vor der Übergabe neu gestartet wurde. Hält das Problem an, zeigt die Nachricht **Senden fehlgeschlagen**. Eine Nachricht, deren Postfach eine neue Anmeldung braucht, wartet länger, wie oben beschrieben.
 
-- **Konnte nicht gesendet werden:** Mail weiß, dass die Nachricht nicht gesendet wurde. Wähle **Prüfen und erneut senden**, um den aufbewahrten Entwurf vor einem neuen Versuch zu öffnen. Fehler bei Empfängern, Größe oder Zustelloptionen haben eine genauere Bezeichnung zum Prüfen.
+- **Senden fehlgeschlagen:** Mail weiß, dass die Nachricht nicht gesendet wurde. Wähle **Prüfen und erneut senden**, um den aufbewahrten Entwurf vor einem neuen Versuch zu öffnen. Fehler bei Empfängern, Größe oder Zustelloptionen haben eine genauere Bezeichnung zum Prüfen.
 - **Teilweise gesendet:** Der empfangende Server hat einige Empfänger angenommen, andere nicht. Mail legt die Nachricht wie andere gesendete E-Mails im Ordner Gesendet ab. Klappt das nicht sofort, versucht Mail es in den nächsten Minuten erneut. Wähle **Übrige Empfänger prüfen**, um einen unabhängigen Entwurf nur mit den Adressen zu erstellen, die der Server nicht angenommen hat.
-- **Versandstatus unklar:** Die Verbindung endete, bevor Mail das Ergebnis nachweisen konnte. Mail sucht noch einige Male nach der Kopie des Anbieters im Ordner Gesendet. Erscheint diese Kopie, auch später, markiert Mail die Nachricht als gesendet.
+- **Zustellstatus unklar:** Die Verbindung endete, bevor Mail das Ergebnis nachweisen konnte. Mail sucht noch einige Male nach der Kopie des Anbieters im Ordner Gesendet. Erscheint diese Kopie, auch später, markiert Mail die Nachricht als gesendet.
 - **Gesendet, aber nicht gespeichert:** Die Zustellung war erfolgreich, aber Mail konnte seine Kopie nicht im Ordner Gesendet ablegen.
 
 :::warning Doppelte Nachrichten vermeiden

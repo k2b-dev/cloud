@@ -15,7 +15,7 @@ Notebooks are Markdown workspaces for knowledge. Your text stays readable first.
 :::reference
 - **All notebooks:** The overview lists every notebook that you can access. Open a notebook to continue. Create a new notebook when the knowledge needs its own access and settings.
 - **Favorites:** Make a notebook a favorite to keep it easy to reach from the overview and the sidebar.
-- **Search and recents:** Search for a name that you know. Use **Recents** to continue in the last notebook.
+- **Search and recent notes:** Search for a name that you know. Under **Recently edited**, open one of your latest notes from any notebook to continue.
 - **Back where you left off:** When you open Notebooks from the navigation, you see the notebook that you viewed last in this browser. This also works if you viewed it in another tab. If that notebook was deleted or is no longer shared with you, the overview opens.
 - **Templates:** Choose a template only when its structure fits the work. For a new use case, a blank notebook is the safest start.
 :::

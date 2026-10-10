@@ -16,7 +16,7 @@ In Book, page links, tag filters, search, and pagination update the content with
 
 In the Book sidebar, select a page to open it. Use the arrow next to a page to show or hide its sub-pages. When Book loads, it shows the current page with its sub-pages. After that, Book keeps your choices and unfolds only the pages that contain the page you open. On a phone, the navigation menu shows the same folded pages. It keeps them when you close and reopen it, and it opens pages in place.
 
-The sidebar lists the start page of the notebook first, with its sub-pages below it. This also applies when the start page is under another page. All other pages follow the notebook order on each level:
+The sidebar lists the notebook's start page first, with its sub-pages below it. This also applies when the start page is under another page. All other pages follow the notebook order on each level:
 
 - the order that people with **Edit** or **Manage** access arranged by hand;
 - otherwise title order, sorted for your language. Numbers count as numbers, so "Chapter 2" comes before "Chapter 10".
@@ -65,7 +65,7 @@ Notebooks saves the change immediately.
 
 The setting covers only deleting and locking whole notes. People and agents with **Edit** access still edit notes as before, including removing text. The version history keeps earlier versions.
 
-For these people, **Delete** and **Lock note** in the note menu stay visible but are turned off. They show the reason: this notebook is set to **Admins only**. The API, `cld notebooks rm`, and `cld notebooks lock` refuse with the same reason. A locked note keeps its versions readable. You can no longer edit it or restore it from a version.
+For these people, **Delete** and **Lock note** in the note menu stay visible but are turned off. They explain that in this notebook, only people with **Manage** access can delete or lock notes. The API, `cld notebooks rm`, and `cld notebooks lock` refuse with the same reason. A locked note keeps its versions readable. You can no longer edit it or restore it from a version.
 
 ## Find the right settings tab {icon="settings"}
 

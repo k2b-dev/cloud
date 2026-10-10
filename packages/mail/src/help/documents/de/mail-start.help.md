@@ -31,7 +31,7 @@ Fokus kopiert oder verschiebt keine E-Mails zwischen Postfächern. Jede Zeile be
 
 :::steps
 1. Wähle **Neues Postfach**.
-2. Gib einen **Name** ein, den andere im Team wiedererkennen. Die **Beschreibung** ist optional.
+2. Gib unter **Name** einen Namen ein, den andere im Team wiedererkennen. Die **Beschreibung** ist optional.
 3. Öffne im Einstellungsdialog **Konten und Identitäten** und verbinde das Konto.
 4. Gib die E-Mail-Adresse ein und wähle **Einstellungen suchen**. Du kannst IMAP- und SMTP-Host, Ports und TLS-Modi auch selbst eingeben.
 5. Gib das Passwort oder App-Passwort ein, das dein IMAP-/SMTP-Anbieter akzeptiert.
@@ -41,7 +41,7 @@ Fokus kopiert oder verschiebt keine E-Mails zwischen Postfächern. Jede Zeile be
 
 Mail prüft IMAP und SMTP getrennt, bevor es die Zugangsdaten speichert. Mail verschlüsselt die Zugangsdaten, und nach dem Speichern kann niemand sie wieder lesen: weder Personen im Postfach noch die Administration. Mail bietet keine Autorisierung im Browser und keine automatische Erneuerung von Tokens. Ersetze manuelle Tokens, wenn sie ablaufen. Dein Anbieter muss die gewählte IMAP-/SMTP-Anmeldung erlauben.
 
-Nach der Einrichtung findet Mail die Ordner des Anbieters und startet die Synchronisierung. Ältere Nachrichten können nach und nach erscheinen, während du das Postfach schon nutzt. Öffne **Postfachwerkzeuge → Postfachstatus**, um den Verbindungsstatus und den Stand von Ordnererkennung, Synchronisierung und Suche zu sehen.
+Nach der Einrichtung findet Mail die Ordner des Anbieters und startet die Synchronisierung. Ältere Nachrichten können nach und nach erscheinen, während du das Postfach schon nutzt. Öffne **Postfachwerkzeuge → Postfachstatus**, um den Verbindungsstatus und den Stand von Ordnerermittlung, Synchronisierung und Suche zu sehen.
 
 ## Versandbereitschaft prüfen {icon="send"}
 

@@ -69,19 +69,19 @@ Der geführte Editor und die CLI nutzen dieselbe strikte Definition. Mail lehnt 
 Mail erzeugt aus dem Ablauf kanonisches Workflow-YAML und zeigt es im Editor schreibgeschützt. Die Schritte laufen von oben nach unten in der gemeinsamen Workflow-Laufzeit.
 
 - **Mehrere passende Automatisierungen:** Die älteste Automatisierung entscheidet, wohin die Nachricht kommt. Eine spätere Automatisierung überspringt ihren Schritt zum Verschieben, Löschen oder Verschieben in Spam, statt zu scheitern. Ihre übrigen Schritte laufen weiter.
-- **Fehlgeschlagener Schritt:** Schlägt ein späterer Schritt fehl, bleiben die Wirkungen früherer abgeschlossener Schritte.
+- **Fehlgeschlagener Schritt:** Schlägt ein späterer Schritt fehl, bleiben die Effekte früherer abgeschlossener Schritte.
 - **Versionen:** Eine Änderung am Ablauf veröffentlicht eine neue unveränderliche Workflow-Version. Änderst du nur den Namen oder den Aktivstatus, entsteht keine doppelte identische Quelle.
 - **Geschützte Ziele:** Zerstörende Aktionen dürfen keine Absenderidentität des Postfachs, keine eingerichtete interne Domain, keine ihrer Subdomains und keine unsichere übergeordnete Domain treffen.
 
 Textbedingungen unterstützen exakte Übereinstimmung, Enthält, Beginnt mit und Endet mit. Reguläre Ausdrücke sind bewusst nicht verfügbar, bis Mail einen begrenzten RE2-kompatiblen Abgleich erzwingen kann.
 
-Neue Automatisierungen für eingehende E-Mails starten inaktiv. Ein Ablauf ohne KI-Schritte kann vorhandene passende Nachrichten mit einem fortsetzbaren Backfill in der Vorschau prüfen und verarbeiten:
+Neue Automatisierungen für eingehende E-Mails starten inaktiv. Ein Ablauf ohne KI-Schritte kann vorhandene passende Nachrichten mit einer fortsetzbaren nachträglichen Verarbeitung in der Vorschau prüfen und verarbeiten:
 
-- Ein Backfill übergibt höchstens 100 Nachrichten an die Automatisierung. Passen mehr Nachrichten, endet er mit **Limit erreicht** und zeigt, wie viele offen sind. Starte ihn erneut, um mit den nächsten Nachrichten weiterzumachen.
-- Ein Backfill übersteht Neustarts. Mail wiederholt eine fehlgeschlagene Nachricht, ohne andere Workflow-Läufe zu stoppen.
-- Ein wiederholter Backfill überspringt Nachrichten, die für dieselbe unveränderliche Version schon angenommen wurden.
+- Eine nachträgliche Verarbeitung übergibt höchstens 100 Nachrichten an die Automatisierung. Passen mehr Nachrichten, endet sie mit **Limit erreicht** und zeigt, wie viele offen sind. Starte sie erneut, um mit den nächsten Nachrichten weiterzumachen.
+- Eine nachträgliche Verarbeitung übersteht Neustarts. Mail wiederholt eine fehlgeschlagene Nachricht, ohne andere Workflow-Läufe zu stoppen.
+- Eine wiederholte nachträgliche Verarbeitung überspringt Nachrichten, die für dieselbe unveränderliche Version schon angenommen wurden.
 - **Abgeschlossen** bedeutet, dass Mail jede passende Nachricht an die Automatisierung übergeben hat. Die Aktionen selbst laufen danach in der Workflow-Laufzeit und erscheinen unter **Aktivität**.
-- Die Fortschrittszahlen wachsen während eines Backfills nur. Das Menü der Automatisierung zeigt den Fortschritt und lässt dich den Backfill abbrechen oder erneut starten.
+- Die Fortschrittszahlen wachsen während einer nachträglichen Verarbeitung nur. Das Menü der Automatisierung zeigt den Fortschritt und lässt dich die Verarbeitung abbrechen oder erneut starten.
 
 Ein Ablauf mit einem KI-Schritt verarbeitet nur künftige Nachrichten. Mail prüft die Bedingungen, bevor die KI läuft. Der Bereich Sicherheit zeigt die höchste Zahl an KI-Aufrufen pro passender Nachricht.
 
@@ -179,7 +179,7 @@ Die Vorlage **Empfangsbestätigung mit Referenznummer** vergibt die Referenz vor
 
 :::steps
 1. Öffne **Automatisierungen → Workflows** und wähle **Neuer Workflow**.
-2. Gib Name, Beschreibung, Priorität, YAML und Wirkungsbudgets ein.
+2. Gib Name, Beschreibung, Priorität und YAML ein und lege die Limits unter **Ausführungslimits** fest.
 3. Wähle **Prüfen** und behebe jede Diagnose in ihrer Zeile.
 4. Wähle **Workflow erstellen** oder **Version speichern**.
 5. Prüfe die neue Version unter **Versionen**.
@@ -189,12 +189,12 @@ Die Vorlage **Empfangsbestätigung mit Referenznummer** vergibt die Referenz vor
 
 Speichern aktiviert nie eine Version. Eine aktive Version läuft weiter, bis jemand mit Zugriff **Verwalten** die neuere ausdrücklich aktiviert. **Aktualisierung verfügbar** bedeutet, dass sich die gespeicherte aktuelle Version und die aktive Version unterscheiden.
 
-Wirkungsbudgets sind harte Obergrenzen für Verschiebungen, Sendungen, Änderungen an Schlüsselwörtern, Änderungen an der Zusammenarbeit und KI-Aufrufe während eines Laufs. Ein Lauf stoppt, bevor er eine Wirkung anwendet, die sein Budget überschreiten würde. KI-Ausgaben bleiben Daten, bis eine spätere Mail-Aktion sie nutzt. Klassifizieren, Taggen, Zuweisen, Entwerfen und Senden bleiben deshalb Schritte, die du einzeln prüfen kannst.
+Die **Ausführungslimits** sind harte Obergrenzen für Verschiebungen, Sendungen, Änderungen an Schlüsselwörtern, Änderungen an der Zusammenarbeit und KI-Aufrufe während eines Laufs. Ein Lauf stoppt, bevor er einen Effekt anwendet, der ein Limit überschreiten würde. KI-Ausgaben bleiben Daten, bis eine spätere Mail-Aktion sie nutzt. Klassifizieren, Taggen, Zuweisen, Entwerfen und Senden bleiben deshalb Schritte, die du einzeln prüfen kannst.
 
 ## Workflow-Läufe beobachten und stoppen {icon="activity"}
 
-Mit Zugriff **Verwalten** nutzt du **Automatisierungen → Aktivität** für die automatischen Antworten, Automatisierungen für eingehende E-Mails, eigenen Workflows und fortsetzbaren Backfills des Postfachs. Die Tabelle zeigt Typ der Automatisierung, Status, Dauer, Zeitpunkt und eine kurze Fehler- oder Ergebnismeldung. Die Cloud-Administration behält die Detailansicht über alle Apps unter **Administration → Systembeobachtung → Workflows**.
+Mit Zugriff **Verwalten** nutzt du **Automatisierungen → Aktivität** für die automatischen Antworten, Automatisierungen für eingehende E-Mails, eigenen Workflows und die fortsetzbare nachträgliche Verarbeitung des Postfachs. Die Tabelle zeigt Typ der Automatisierung, Status, Dauer, Zeitpunkt und eine kurze Fehler- oder Ergebnismeldung. Die Cloud-Administration behält die Detailansicht über alle Apps unter **Administration → Systembeobachtung → Workflows**.
 
-Wähle **Abbrechen**, wenn keine weiteren Wirkungen beginnen sollen. Das Abbrechen macht bereits abgeschlossene Verschiebungen, Sendungen oder Änderungen an der Zusammenarbeit nicht rückgängig. Ein Lauf mit Klärungsbedarf wartet, bis die Cloud-Administration festhält, ob eine unklare externe Wirkung eingetreten ist. Das Ausschalten eines Mail-Workflows verhindert neue passende Auslöser. Es ändert den abgeschlossenen Verlauf nicht.
+Wähle **Abbrechen**, wenn keine weiteren Effekte beginnen sollen. Das Abbrechen macht bereits abgeschlossene Verschiebungen, Sendungen oder Änderungen an der Zusammenarbeit nicht rückgängig. Ein Lauf mit Klärungsbedarf wartet, bis die Cloud-Administration festhält, ob ein unklarer externer Effekt eingetreten ist. Das Ausschalten eines Mail-Workflows verhindert neue passende Auslöser. Es ändert den abgeschlossenen Verlauf nicht.
 
 Das vollständige YAML-Vokabular und geprüfte Beispiele stehen in der [Mail-Workflow-YAML-Referenz](/app/mail/help/mail-workflows).

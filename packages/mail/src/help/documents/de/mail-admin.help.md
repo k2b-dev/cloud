@@ -20,13 +20,13 @@ Die Einstellungen sind nach Zweck gruppiert:
 
 Wähle unter **Einstellungen → Kalendereinladungen** einen Space, in dem du Zugriff **Bearbeiten** hast, als vorgeschlagenes Ziel für importierte Einladungen. Mail speichert diese Einstellung für das ganze Postfach. Spaces bietet jeder Person nur Ziele an, in denen sie Zugriff **Bearbeiten** hat.
 
-Die Einstellung importiert keine E-Mails automatisch. Jede Einladung kann in einen anderen Space gehen, in dem du Zugriff **Bearbeiten** hast. Du kannst die Auswahl gefahrlos leeren. Löscht jemand den Space oder endet dein Zugriff, behandelt Mail den Standard als nicht gesetzt.
+Die Einstellung importiert keine Einladungen automatisch. Jede Einladung kann in einen anderen Space gehen, in dem du Zugriff **Bearbeiten** hast. Du kannst die Auswahl gefahrlos leeren. Löscht jemand den Space oder endet dein Zugriff, behandelt Mail den Standard als nicht gesetzt.
 
 Betriebsstatus und öffentliche Links zu Anhängen sind von den Einstellungen getrennt. Öffne sie über **Postfachwerkzeuge** in der Navigation des Postfachs.
 
 ## Verbindung überwachen und pausieren {icon="route"}
 
-**Postfachwerkzeuge → Postfachstatus** zeigt den Zustand des Transports, das verbundene Konto, die Ordnererkennung, die Synchronisierung und den Stand des Suchindex.
+**Postfachwerkzeuge → Postfachstatus** zeigt den Zustand des Transports, das verbundene Konto, die Ordnerermittlung, die Synchronisierung und den Stand des Suchindex.
 
 - **Jetzt synchronisieren** reiht eine Synchronisierung des Postfachs ein. **Letzte erfolgreiche Synchronisierung** zeigt, wann die letzte abgeschlossen wurde. **Jetzt synchronisieren** ist nicht verfügbar, solange das Postfach pausiert ist oder sein Konto zuerst verbunden, neu verbunden oder geprüft werden muss.
 - **Ordner neu ermitteln** aktualisiert die Ordner und die Angaben zum Namensraum beim Anbieter.
@@ -233,7 +233,7 @@ Jede Liste bietet nur Capabilities an, die zum Vertrag für Kontaktverzeichnisse
 - **Kontakt lesen** ist optional. Ohne diese Funktion meldet **E-Mail verfassen** aus einem Kontakt in einer anderen App, dass der Kontakt nicht verfügbar ist.
 - **Beschreibbare Bücher auflisten** und **Kontakt anlegen** sind optional und gehören zusammen. Ohne sie blendet Mail **Neuer Kontakt** aus.
 
-**Speichern** prüft jede Auswahl gegen die aktuellen Capabilities der App und nennt jedes Feld, das Mail nicht nutzen kann. Mail ruft die App immer mit dem eigenen Zugriff jeder Person auf, sodass jede Person dort nur die Kontakte sieht, die sie lesen darf. Stoppt die App oder ändert sie sich später unverträglich, werden die betroffenen Funktionen nicht verfügbar, wie wenn Contacts nicht verfügbar ist. **Contacts-Standard verwenden** stellt die eingebaute Zuordnung wieder her.
+**Speichern** prüft jede Auswahl gegen die aktuellen Capabilities der App und nennt jedes Feld, das Mail nicht nutzen kann. Mail ruft die App immer mit dem Zugriff der jeweiligen Person auf, sodass jede Person dort nur die Kontakte sieht, die sie lesen darf. Stoppt die App oder ändert sie sich später unverträglich, werden die betroffenen Funktionen nicht verfügbar, wie wenn Contacts nicht verfügbar ist. **Contacts-Standard verwenden** stellt die eingebaute Zuordnung wieder her.
 
 `cld mail admin contact-directory show|candidates|set|reset` macht dasselbe im Terminal und nutzt dieselbe Prüfung. Mail speichert keine unverträgliche Zuordnung, und der Befehl listet dieselben Probleme.
 
@@ -251,7 +251,7 @@ Markdown-Nachrichten bekommen immer das eingebaute lesbare E-Mail-Design. **E-Ma
 1. **Übersicht** zeigt, was aktiv ist, und öffnet genau die passende Einrichtung.
 2. **Automatische Antworten** bietet die Vorlagen **Abwesenheitsnotiz**, **Empfangsbestätigung zu Bürozeiten**, **Empfangsbestätigung mit Referenznummer** und **Eigene automatische Antwort**. Personen mit Zugriff **Bearbeiten** nutzen diesen Bereich, wenn die Zugriffseinstellung es erlaubt.
 3. **Eingehende E-Mails** bietet geführte Bedingungen und einen Ablauf, der Mail- und KI-Schritte mischt.
-4. **Aktivität** zeigt Workflow-Läufe und Nachbearbeitungen von Automatisierungen für eingehende E-Mails in diesem Postfach.
+4. **Aktivität** zeigt Workflow-Läufe und die nachträgliche Verarbeitung von Automatisierungen für eingehende E-Mails in diesem Postfach.
 5. **Workflows** enthält versionierte YAML-Definitionen, die Einrichtung der Referenznummern und ausdrückliche Steuerung der Aktivierung.
 :::
 
@@ -279,7 +279,7 @@ Einrichtungsschritte, Auswirkungen des Zeitplans, Referenzmuster und Schutz vor 
 Öffne **Automatisierungen → Workflows** für den YAML-Editor. Speichern erzeugt eine neue unveränderliche Version. Diese Version wird nicht automatisch aktiviert.
 
 :::steps
-1. Prüfe YAML, Diagnosen der Validierung und Wirkungsbudgets.
+1. Prüfe YAML, Diagnosen der Validierung und **Ausführungslimits**.
 2. Aktiviere die Version ausdrücklich.
 3. Prüfe die Läufe des Postfachs getrennt unter **Automatisierungen → Aktivität**.
 :::
@@ -292,4 +292,4 @@ Alle unterstützten Eingaben, Auslöser, Aktionen, Bedingungen, Ausdrücke, Stan
 
 **Gefahrenbereich → In „Kürzlich gelöscht“ verschieben** setzt das Postfach in einen gelöschten Zustand, den du wiederherstellen kannst. Mail löscht E-Mails beim Anbieter und aufbewahrte Cloud-Daten nicht endgültig.
 
-Gelöschte Postfächer erscheinen in der Mail-Übersicht unter **Kürzlich gelöscht** für Personen, die sie wiederherstellen können. Ein wiederhergestelltes Postfach startet pausiert. Prüfe unter **Postfachwerkzeuge → Postfachstatus** Verbindung, Ordnererkennung und Zustand. Wähle dann **Postfach fortsetzen**.
+Gelöschte Postfächer erscheinen in der Mail-Übersicht unter **Kürzlich gelöscht** für Personen, die sie wiederherstellen können. Ein wiederhergestelltes Postfach startet pausiert. Prüfe unter **Postfachwerkzeuge → Postfachstatus** Verbindung, Ordnerermittlung und Zustand. Wähle dann **Postfach fortsetzen**.

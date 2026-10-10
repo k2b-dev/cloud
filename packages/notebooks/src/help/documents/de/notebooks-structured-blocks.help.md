@@ -73,7 +73,7 @@ limit: 25
 
 Abfragen lesen nur gespeicherte Notizen aus dem aktuellen Notizbuch. Sie können keine anderen Notizbücher abrufen, keine Tabellenzeilen lesen, kein JavaScript ausführen, keine Datenbestände verknüpfen und nichts ändern.
 
-Übernimm die Einrückung aus dem Beispiel. Setze zwei Leerzeichen vor Einträge der Filterliste, Spalten und Sortierfelder. Setze vier Leerzeichen vor `op` und `value` eines Filters. Das Format ähnelt YAML, ist aber kein allgemeines YAML. Es unterstützt keine Kommentare, keine Anker und keine verschachtelten Filterobjekte. Für den Standardwert einer optionalen Einstellung lässt du die Einstellung weg. Lass ihren Wert nicht leer.
+Rücke wie im Beispiel ein. Setze zwei Leerzeichen vor Einträge der Filterliste, Spalten und Sortierfelder. Setze vier Leerzeichen vor `op` und `value` eines Filters. Das Format ähnelt YAML, ist aber kein allgemeines YAML. Es unterstützt keine Kommentare, keine Anker und keine verschachtelten Filterobjekte. Für den Standardwert einer optionalen Einstellung lässt du die Einstellung weg. Lass ihren Wert nicht leer.
 
 | Einstellung | Bedeutung |
 | --- | --- |

@@ -123,7 +123,7 @@ Starting another reply does not hide existing work. The **Continue a draft?** di
 
 ## A sent message is missing from Sent {icon="send"}
 
-Mail places a sent message in the Sent folder of the identity once it finds the copy there. The placement in All Mail at Gmail follows with the next synchronization of that folder.
+Mail places a sent message in the identity's Sent folder once it finds the copy there. The placement in All Mail at Gmail follows with the next synchronization of that folder.
 
 - If the message shows **Sent, but not saved**, Mail could not store or find the copy. Check the Sent folder mapping of the identity and the access to that folder at the provider. Do not resend the message.
 - A conversation can show an extra copy of a draft next to the sent message. An earlier version imported the Gmail draft copy from All Mail. With **Manage** access, you can remove such copies with **Repair thread projection**.

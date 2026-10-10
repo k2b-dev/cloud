@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { notebooksPageMessages } from "../frontend/messages";
 import { renderNotebookBook } from "../lib/book-renderer";
 import { extractNamedDataProperties } from "../lib/named-blocks";
 import { parseNotebookQueryBlocks, parseNotebookTocBlocks } from "../lib/query-blocks";
@@ -33,6 +34,15 @@ describe("notebookHelp", () => {
     }
     expect(notebookHelp.getMarkdown("notebooks-start", "de-CH")).toContain("Notizbücher sind Arbeitsbereiche");
     expect(notebookHelp.getMarkdown("notebooks-start", "fr")).toBe(notebookHelp.getMarkdown("notebooks-start", "en")!);
+  });
+
+  test("points to the recent notes the overview shows, with its label", () => {
+    for (const locale of ["en", "de"] as const) {
+      const start = notebookHelp.getMarkdown("notebooks-start", locale)!;
+      expect(start).toContain(`**${notebooksPageMessages.resolve([locale]).t.recentlyEdited}**`);
+    }
+    expect(notebookHelp.getMarkdown("notebooks-start", "en")).not.toContain("**Recents**");
+    expect(notebookHelp.getMarkdown("notebooks-start", "de")).not.toContain("**Zuletzt verwendet**");
   });
 
   test("keeps German articles structurally complete", () => {

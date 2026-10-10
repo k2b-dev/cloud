@@ -142,7 +142,7 @@ Unter **Versandprobleme** listet die Nachrichtenansicht die Nachrichten, deren V
 - **In Spam verschieben** verschiebt sie in den zugeordneten Spam-Ordner. In Spam wird dieselbe Aktion zu **Kein Spam** und verschiebt die Unterhaltung zurück in den Posteingang.
 - **Löschen** verschiebt sie in den zugeordneten Papierkorb.
 
-Diese Aktionen brauchen Zugriff **Bearbeiten** und die passende Ordnerzuordnung. Meldet Mail, dass die Unterhaltung beim Anbieter keinen aktiven Ort hat, aktualisiere das Postfach. Du kannst auch jemanden mit Zugriff **Verwalten** bitten, Ordnererkennung und Zuordnungen zu prüfen.
+Diese Aktionen brauchen Zugriff **Bearbeiten** und die passende Ordnerzuordnung. Meldet Mail, dass die Unterhaltung beim Anbieter keinen aktiven Ort hat, aktualisiere das Postfach. Du kannst auch jemanden mit Zugriff **Verwalten** bitten, Ordnerermittlung und Zuordnungen zu prüfen.
 
 Mail reiht jede Aktion ein, und der Mailserver führt sie Augenblicke später aus. Manchmal nimmt der Server die Änderung nicht vor, etwa weil jemand die Nachricht in einem anderen E-Mail-Programm verschoben hat. Mail nennt dann die unveränderte Unterhaltung und bietet **Erneut versuchen** an.
 

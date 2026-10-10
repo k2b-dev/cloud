@@ -4,6 +4,9 @@ import { compileWorkflow } from "@k2b/cloud/workflows/language";
 import { z } from "zod";
 import mailCli from "../cli";
 import { createAutomaticReplyConfigurationSchema, createIncomingAutomationSchema } from "../contracts";
+import { mailConversationUiMessages } from "../frontend/_components/mail-conversation-ui-messages";
+import { mailRemainingMessages } from "../frontend/_components/mail-remaining-messages";
+import { mailSettingsMessages } from "../frontend/_components/mail-settings-messages";
 import { mailboxAccessLevels } from "../frontend/_components/mailbox-access-levels";
 import { mailWorkspaceMessages } from "../frontend/mail-workspace-messages";
 import { bindMailWorkflow } from "../workflows/binder";
@@ -182,6 +185,29 @@ describe("mailHelp", () => {
     expect(work).toContain("a new conversation with the same assignees");
     expect(work).not.toContain("unassigned conversation");
     expect(work).toContain("**Remove all assignees** has no **Undo**");
+  });
+
+  test("quotes the German labels of the delivery control, folder discovery, and workflow limits", () => {
+    const german = (id: string) => mailHelp.getMarkdown(id, "de")!;
+    const delivery = mailConversationUiMessages.resolve(["de"]).t;
+    const compose = german("mail-compose");
+    expect(compose).toContain(`**${delivery.couldNotSend}:**`);
+    expect(compose).toContain(`**${delivery.deliveryUnclear}:**`);
+    expect(compose).not.toContain("Konnte nicht gesendet werden");
+    expect(compose).not.toContain("Versandstatus unklar");
+
+    const all = expectedIds.map(german).join("\n");
+    expect(all).toContain(mailSettingsMessages.resolve(["de"]).t.folderDiscovery);
+    expect(all).toContain(`**${mailRemainingMessages.resolve(["de"]).t.effectBudget}**`);
+    for (const variant of ["Ordnererkennung", "Wirkungsbudget", "Effektbudget", "Nachbearbeitung", "Backfill", "**Alle Nachrichten**"]) {
+      expect(all).not.toContain(variant);
+    }
+    expect(mailHelp.getMarkdown("mail-automation")).toContain(`**${mailRemainingMessages.resolve(["en"]).t.effectBudget}**`);
+  });
+
+  test("says that a default calendar Space never imports invitations automatically", () => {
+    expect(mailHelp.getMarkdown("mail-admin")).toContain("does not import invitations automatically");
+    expect(mailHelp.getMarkdown("mail-admin", "de")).toContain("importiert keine Einladungen automatisch");
   });
 
   test("documents permission-scoped Contacts context", () => {

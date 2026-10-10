@@ -53,7 +53,7 @@ Open **Message options** and choose the format for the current draft:
 - **Plain text** has no Preview pane. A standalone message stays in one editor. A conversation draft shows **Write** and **History**.
 :::
 
-Mail sends Markdown as readable HTML with the email design of the mailbox and a text alternative. Plain text sends no HTML alternative. You can arrange the available panes. Mail keeps the layout compatible when another draft offers a different set of panes.
+Mail sends Markdown as readable HTML with the mailbox email design and a text alternative. Plain text sends no HTML alternative. You can arrange the available panes. Mail keeps the layout compatible when another draft offers a different set of panes.
 
 History loads only when you open it. Mail first expands the newest message. You can expand or collapse several messages independently, and Mail loads earlier summaries page by page. Mail loads a complete message only when you expand it. Links and attachments have the same security protection as in the conversation reader.
 
@@ -80,11 +80,11 @@ Drafts live in Cloud as shared drafts.
 - **Drafts folder:** The Drafts folder in the sidebar lists every shared draft of the mailbox, the most recently edited first. Its number counts them. Choose a draft to open it in the composer.
 - **Reply indicator:** A conversation with drafts shows an indicator on Reply.
 - **CLI:** `cld mail draft list` lists these drafts, together with drafts that are scheduled or being sent.
-- **Provider copy:** When the provider allows it, Mail keeps a copy of each draft in the Drafts folder of the provider, so other mail programs show it. Drafts that another mail program saves there appear in Mail as shared drafts.
+- **Provider copy:** When the provider allows it, Mail keeps a copy of each draft in the provider's Drafts folder, so other mail programs show it. Drafts that another mail program saves there appear in Mail as shared drafts.
 - **Gmail:** Gmail also shows drafts in All Mail. Mail ignores messages marked as drafts outside the Drafts folder.
 - **Missing drafts:** If drafts from other mail programs are missing, someone with **Manage** access can check which folder **Special folder mappings** uses for Drafts.
 
-Mail can synchronize the draft to the Drafts folder of the provider. If you then edit it in another mail program, Mail updates the same shared draft and does not add a second one. Mail keeps its own version and offers the external version as a recovery copy in these cases:
+Mail can synchronize the draft to the provider's Drafts folder. If you then edit it in another mail program, Mail updates the same shared draft and does not add a second one. Mail keeps its own version and offers the external version as a recovery copy in these cases:
 
 - the draft changed in Mail in the meantime;
 - the other program saved its copy next to the current copy of Mail instead of replacing it;
@@ -109,7 +109,7 @@ Type `/` in the body to search available signatures and snippets. Mail inserts t
 
 When a verified sender has a default signature, Mail inserts it automatically into new messages, replies, and forwards. In a reply or forward, Mail places the signature before the quoted message history. A personal default replaces the mailbox default for that sender. You can still edit the inserted source. Signatures are not mandatory or locked.
 
-With **Manage** access, you change templates and defaults in **Settings → Writing**. Choose **Edit design** there to open the CSS editor of the mailbox. Its preview updates from the current unsaved CSS. The Preview in the composer uses the same rendering as delivery.
+With **Manage** access, you change templates and defaults in **Settings → Writing**. Choose **Edit design** there to open the mailbox CSS editor. Its preview updates from the current unsaved CSS. The Preview in the composer uses the same rendering as delivery.
 
 ## Attach files {icon="paperclip"}
 
@@ -195,7 +195,7 @@ If Mail cannot reach the mail server before it hands the message over, nothing w
 
 - **Couldn’t send:** Mail knows that the message was not sent. Choose **Review and resend** to reopen the kept draft before you try again. Errors with recipients, size, or delivery options use a more specific review label.
 - **Partially sent:** The receiving server accepted some recipients but not others. Mail stores the message in the Sent folder like other sent mail. If that does not work immediately, Mail tries again over the next few minutes. Choose **Review remaining recipients** to create an independent draft with only the addresses that the server did not accept.
-- **Delivery status unclear:** The connection ended before Mail could prove the result. Mail looks a few more times for the copy of the provider in the Sent folder. When that copy appears, also later, Mail marks the message as sent.
+- **Delivery status unclear:** The connection ended before Mail could prove the result. Mail looks a few more times for the provider's copy in the Sent folder. When that copy appears, even later, Mail marks the message as sent.
 - **Sent, but not saved:** Delivery succeeded, but Mail could not store its copy in the Sent folder.
 
 :::warning Avoid duplicate messages
@@ -210,7 +210,7 @@ Open **Message options**, then **Delivery options**. There you change the defaul
 
 - **Priority** adds standard headers for high or low importance. The mail client of the recipient decides whether and how to show them.
 - **Request a delivery receipt** asks the SMTP server for a delivery status report. You can choose it only when the selected sending server announces support.
-- **Request a read receipt** asks the mail client of the recipient to report a disposition. Recipients and organizations can ignore or refuse the request.
+- **Request a read receipt** asks the recipient's mail client to report a disposition. Recipients and organizations can ignore or refuse the request.
 
 Mail records received reports in the conversation activity. A delivery report says what a mail server reported. A read report says what a mail client reported. Neither proves that a person read, understood, or acted on the message.
 

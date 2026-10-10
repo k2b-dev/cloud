@@ -41,7 +41,7 @@ Focus does not copy or move mail between mailboxes. Each row keeps its source ma
 
 Mail verifies IMAP and SMTP separately before it saves the credentials. Mail encrypts the credentials, and nobody can read them back after saving: no mailbox user and no administrator. Mail offers no browser authorization and no automatic token renewal. Replace manual tokens when they expire. Your provider must allow the IMAP/SMTP authentication method that you choose.
 
-After setup, Mail finds the folders of the provider and starts synchronization. Older messages can appear step by step while you already use the mailbox. Open **Mailbox tools → Mailbox health** to see the connection health, folder discovery, synchronization, and search state.
+After setup, Mail finds the provider's folders and starts synchronization. Older messages can appear step by step while you already use the mailbox. Open **Mailbox tools → Mailbox health** to see the connection health, folder discovery, synchronization, and search state.
 
 ## Check that sending is ready {icon="send"}
 
@@ -70,7 +70,7 @@ The left navigation contains:
 
 **Mailbox details** shows everyone who can view the mailbox the same overview. People with **View** access see it as **About this mailbox**. The overview shows:
 
-- the addresses of the mailbox, each with a copy button;
+- the mailbox addresses, each with a copy button;
 - the connection and when Mail last synchronized;
 - the number of folders;
 - your own access, and who has which access.

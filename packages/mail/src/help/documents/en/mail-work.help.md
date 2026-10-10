@@ -146,7 +146,7 @@ These actions require **Edit** access and the matching folder mapping. If Mail r
 
 Mail queues every action, and the mail server applies it moments later. Sometimes the server does not make the change, for example because someone moved the message in another email client. Mail then names the conversation that stayed unchanged and offers **Try again**.
 
-Read and flag changes show immediately. If the server did not make one of these changes, the conversation shows its earlier state again, also after several changes in a row. If it is unclear whether the server made the change, Mail asks you to check the conversation and does not repeat the change.
+Read and flag changes show immediately. If the server did not make one of these changes, the conversation shows its earlier state again, even after several changes in a row. If it is unclear whether the server made the change, Mail asks you to check the conversation and does not repeat the change.
 
 Type `>` in the Cloud search to find the actions of the buttons and menus as commands. Common actions also have keyboard shortcuts. Help → **Shortcuts** lists the shortcuts of the current view. Shortcuts do not run while you type in an input field or in the message editor.
 
@@ -161,7 +161,7 @@ Open **Message actions** on an individual message. Its **Sender** section has to
 When you need technical information about one message, open **Conversation details**. Expand **Mail details** and choose **Headers** or **Source**. In a conversation with several messages, select the exact message at the top of the inspector.
 
 - **Overview** shows message identifiers, provider placement, standard flags, provider keywords, MIME parts, attachments, synchronization state, and parsing warnings.
-- **Spam diagnostics** shows the spam headers of the provider, if present. Cloud does not calculate or infer its own spam score.
+- **Spam diagnostics** shows the provider's spam headers, if present. Cloud does not calculate or infer its own spam score.
 - **Headers** shows every stored header, including repeated delivery headers.
 - **Source** shows a limited preview of the exact original message. Choose **Download .eml** for the complete byte-exact file.
 

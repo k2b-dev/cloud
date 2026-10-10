@@ -162,14 +162,14 @@ Supported pattern parts:
 - `{{ uuid }}` inserts an opaque random UUID.
 - `{{ uuid_v7 }}` inserts a sortable UUID that reveals its allocation time.
 - `{{ ulid }}` inserts a compact sortable ID that reveals its allocation time.
-- `{{ sequence }}` inserts the next number of the mailbox and therefore reveals order and approximate volume.
+- `{{ sequence }}` inserts the mailbox's next number and therefore reveals order and approximate volume.
 - `{{ sequence | pad_start: 6 }}` pads the counter to six digits. The width can be from 1 to 120.
 - `{{ year }}`, `{{ month }}`, `{{ month_name }}`, and `{{ day }}` insert parts of the UTC allocation date.
 - Letters, numbers, spaces, `.`, `_`, `-`, and `/` work as literal separators.
 
 Use exactly one of the five identifier outputs. Date parts are optional and do not make a reference unique.
 
-- **Same result on repeat:** Running the same action again returns the existing reference of the conversation and allocates no new one.
+- **Same result on repeat:** Running the same action again returns the conversation's existing reference and allocates no new one.
 - **Merges:** References stay attached as aliases after conversations are merged.
 - **Turning allocation off:** Mail allocates no new references but does not change existing values.
 
@@ -179,7 +179,7 @@ The **Reference acknowledgement** preset assigns the reference before sending an
 
 :::steps
 1. Open **Automations → Workflows** and choose **New workflow**.
-2. Enter the name, description, priority, YAML, and effect budgets.
+2. Enter the name, description, priority, and YAML, and set the limits under **Effect budget**.
 3. Choose **Validate** and fix every diagnostic on its line.
 4. Choose **Create workflow** or **Save version**.
 5. Review the new version under **Versions**.

@@ -65,7 +65,7 @@ Notebooks speichert die Änderung sofort.
 
 Die Einstellung betrifft nur das Löschen und Sperren ganzer Notizen. Personen und Agenten mit Zugriff **Bearbeiten** bearbeiten Notizen weiter wie bisher und können auch Text entfernen. Der Versionsverlauf bewahrt frühere Fassungen.
 
-Für diese Personen bleiben **Löschen** und **Notiz sperren** im Notizmenü sichtbar, sind aber ausgeschaltet. Sie nennen den Grund: In diesem Notizbuch gilt dafür **Nur Admins**. Die API, `cld notebooks rm` und `cld notebooks lock` lehnen mit demselben Grund ab. Eine gesperrte Notiz behält ihre Versionen lesbar. Du kannst sie aber weder bearbeiten noch aus einer Version wiederherstellen.
+Für diese Personen bleiben **Löschen** und **Notiz sperren** im Notizmenü sichtbar, sind aber ausgeschaltet. Sie erklären, dass in diesem Notizbuch nur Personen mit Zugriff **Verwalten** Notizen löschen oder sperren können. Die API, `cld notebooks rm` und `cld notebooks lock` lehnen mit demselben Grund ab. Eine gesperrte Notiz behält ihre Versionen lesbar. Du kannst sie aber weder bearbeiten noch aus einer Version wiederherstellen.
 
 ## Den richtigen Bereich der Einstellungen finden {icon="settings"}
 

@@ -375,7 +375,7 @@ The summary has its own optimistic revision. If a person edits it while AI is st
 
 ## Allocate a conversation reference {icon="book-2"}
 
-Set up and turn on the reference format of the mailbox in **Automations → Workflows**, or directly in the editor of a **Reference acknowledgement**:
+Set up and turn on the mailbox's reference format in **Automations → Workflows**, or directly in the editor of a **Reference acknowledgement**:
 
 ```yaml
 inputs:
@@ -564,7 +564,7 @@ The budget belongs to the unchangeable version and limits one run. The runtime c
 - **Update available** means the current saved version differs from the active version.
 - **Deactivate** stops future automatic trigger materialization. Existing run history remains.
 
-Changing an accessible folder or sender does not change a saved version. Mail evaluates the reference pattern of the mailbox when it allocates a number. Existing reference values stay unchanged. The schedule is part of the YAML itself. To change the response timing, save a new workflow version and activate it explicitly.
+Changing an accessible folder or sender does not change a saved version. Mail evaluates the mailbox's reference pattern when it allocates a number. Existing reference values stay unchanged. The schedule is part of the YAML itself. To change the response timing, save a new workflow version and activate it explicitly.
 
 ## Validate and inspect runs {icon="layout-list"}
 
