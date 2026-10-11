@@ -239,7 +239,10 @@ surfaces in dark themes.
 On hover-capable fine pointers, `SidebarBody` keeps its scrollbar thumb hidden
 until the sidebar is hovered or contains keyboard focus. Its scrollbar geometry
 does not change. Touch, coarse-pointer, and forced-color environments retain
-their normal visible scrollbar treatment.
+their normal visible scrollbar treatment. Rows keep the same inset on the
+right as on the left: the narrow scrollbar track sits in the sidebar's right
+inset, and a browser with overlay scrollbars draws its scrollbar over that
+inset.
 
 The sidebar compound members cover these jobs:
 
