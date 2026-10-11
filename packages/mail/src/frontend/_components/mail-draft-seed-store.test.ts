@@ -73,6 +73,23 @@ describe("mail draft seed storage", () => {
     expect(storage.getItem(mailDraftSeedKey(mailboxId, seedId))).toBeNull();
   });
 
+  test("preserves seeds with an inline signature from before the upgrade during reads and cleanup", () => {
+    const storage = memoryStorage();
+    const value = seed();
+    delete value.content.signatureTemplateId;
+    value.content.body = "Recovered\n\n\u2063Best regards\u2064";
+    const raw = JSON.stringify({ ...value, initialSignatureSource: "Best regards" });
+    const key = mailDraftSeedKey(mailboxId, seedId);
+    storage.setItem(key, raw);
+
+    expect(readMailDraftSeed(storage, mailboxId, seedId)).toEqual(value);
+    expect(storage.getItem(key)).toBe(raw);
+
+    storeMailDraftSeed(storage, { ...seed(), id: "20000000-0000-4000-8000-000000000003" });
+    expect(storage.getItem(key)).toBe(raw);
+    expect(readMailDraftSeed(storage, mailboxId, seedId)?.content).not.toHaveProperty("signatureTemplateId");
+  });
+
   test("removes malformed and expired local seeds", () => {
     const storage = memoryStorage();
     storage.setItem(mailDraftSeedKey(mailboxId, seedId), "{broken");
