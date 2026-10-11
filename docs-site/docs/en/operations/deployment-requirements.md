@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-10-10
+updated: 2026-10-11
 ---
 
 # Deployment requirements
@@ -465,6 +465,27 @@ mail volume. The stored sources and attachments are in
 `mail.message_part_chunks`, so
 `SELECT pg_size_pretty(pg_total_relation_size('mail.message_part_chunks'))`
 shows the largest share.
+
+### Queue Mail sender verification behind provider work
+
+Mail no longer refuses a sender verification with `409 PROVIDER_BUSY` while a
+sync or other provider work holds the mailbox. It keeps the verification as a
+`verify_sender_identity` command that runs when it is its turn and ends within
+10 minutes. No configuration change is needed. The first Mail start after the
+update replaces the `commands_kind_check` constraint of `mail.commands` so that
+it allows the new command kind. It does not read the table for this.
+
+During a rolling update, Mail processes of the previous version leave these
+commands to updated processes. A `cld` from before this release prints
+`Verified` for a verification that still waits, so update `cld` together with
+Mail. API clients that verify an identity or set up the default sender must
+check `pendingVerificationCommandId` in the response: a `200` response no
+longer always means that the identity is verified.
+
+Rolling back keeps the wider constraint, and the previous version ignores
+waiting verifications. After the next update, a verification that waited
+longer than 10 minutes fails with `SENDER_VERIFICATION_TIMEOUT`, and the person
+verifies the identity again.
 
 ### Update Assistant approvals for chats and websites
 
