@@ -23,7 +23,7 @@ export const assistantApprovalCommands = [
         result.approvals.map((approval) => ({
           id: approval.id,
           title: approval.title,
-          app: approval.app?.name ?? "Website",
+          app: approval.website ? "Website" : (approval.app?.name ?? "Cloud AI tool"),
           scope: approval.conversationId ? "chat" : "everywhere",
           lastUsed: approval.lastUsedAt ?? "",
         })),

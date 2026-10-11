@@ -19,7 +19,7 @@ import { readApprovalPreferences, revokeApprovalPreference } from "./approvals";
 import { closeCliCodeHost } from "./code-host";
 import { createLineReader, type LineReader } from "./line-reader";
 import { deniedLocalBashResult, parseLocalBashInput, runLocalBash } from "./local-bash";
-import { classifyLocalPath, completeLocalPath, extractMessageAttachments, resolveLocalPath } from "./local-paths";
+import { classifyLocalPath, completeLocalPath, extractMessageAttachments, lastMentionToken, resolveLocalPath } from "./local-paths";
 import { jsonRequest, readApi, readProjectsApi } from "./shared";
 import { type AssistantTurnOutput, type AssistantTurnStreamResult, createAssistantTurnOutput, streamAssistantTurn } from "./stream";
 import { selectNumberedChoice, terminalInfo, terminalSafeText } from "./terminal";
@@ -71,7 +71,7 @@ export const completeInteractiveLine = (line: string, cwd: string): [string[], s
   if (line.startsWith("/") && !/\s/.test(line)) {
     return [INTERACTIVE_COMMANDS.map((command) => command.name).filter((name) => name.startsWith(line)), line];
   }
-  const token = line.startsWith("/attach ") ? line.slice(8) : (line.split(/\s+/).at(-1) ?? "");
+  const token = line.startsWith("/attach ") ? line.slice(8) : lastMentionToken(line);
   return [line.startsWith("/attach ") || token.startsWith("@") ? completeLocalPath(token, cwd) : [], token];
 };
 
@@ -278,15 +278,16 @@ const resolveAttention = async (input: {
   signal: AbortSignal;
   localTools: LocalToolsMode;
   workspace: string;
-  setStreaming: (streaming: boolean) => void;
   output: AssistantTurnOutput;
 }): Promise<AssistantTurnStreamResult | null> => {
   let result = { status: "needs_attention" as const, turnId: input.turnId };
   while (result.status === "needs_attention") {
+    if (input.signal.aborted) return null;
     const actions = await readApi<AiPendingTurnAction[]>(
       input.ctx,
       conversationPath(input.conversationId, `/pending-actions/${encodeURIComponent(input.turnId)}`),
     );
+    if (input.signal.aborted) return null;
     const action = actions[0];
     if (!action) return null;
 
@@ -312,6 +313,7 @@ const resolveAttention = async (input: {
       if (answer === null) return null;
       const bashResult =
         answer === "once" ? await runLocalBash(bash.command, { cwd: input.workspace, signal: input.signal }) : deniedLocalBashResult();
+      if (input.signal.aborted) return null;
       if (bashResult.stdout) input.ctx.error(terminalSafeText(bashResult.stdout.trimEnd()));
       if (bashResult.stderr) input.ctx.error(terminalSafeText(bashResult.stderr.trimEnd()));
       if (bashResult.truncated) input.ctx.error("[Local Bash output truncated]");
@@ -338,7 +340,6 @@ const resolveAttention = async (input: {
       return null;
     }
 
-    input.setStreaming(true);
     const streamed = await streamAssistantTurn({
       ctx: input.ctx,
       conversationId: input.conversationId,
@@ -346,7 +347,7 @@ const resolveAttention = async (input: {
       output: input.output,
       signal: input.signal,
       onCapabilityApproval: (request) => collectCapabilityApproval(input.ctx, input.reader, request),
-    }).finally(() => input.setStreaming(false));
+    });
     if (streamed.status !== "needs_attention") return streamed.status === "idle" ? null : streamed;
     result = { status: "needs_attention", turnId: input.turnId };
   }
@@ -393,16 +394,14 @@ export const runInteractiveAssistant = async (
   let savedMode: LocalToolsMode = (await ctx.getDefault("assistant.localTools")) === "off" ? "off" : "ask";
   let localTools: LocalToolsMode = options.noBash ? "off" : options.allowBash ? "ask" : savedMode;
   let modeSource = options.noBash || options.allowBash ? "this session" : savedMode === "off" ? "profile default" : "default";
-  let attachments = [...(options.attachments ?? [])];
+  let attachments: string[] = [];
   const preparedAttachments = new Map<string, Awaited<ReturnType<typeof uploadAttachment>>>();
   let activeAbort: AbortController | null = null;
-  let streaming = false;
   let exitRequested = false;
-  const removeInterrupt = reader.onInterrupt(() => {
-    if (activeAbort && streaming) activeAbort.abort();
-    else {
+  const removeInterrupt = reader.onInterrupt((question) => {
+    if (activeAbort) activeAbort.abort();
+    else if (!question) {
       exitRequested = true;
-      activeAbort?.abort();
       reader.close();
     }
   });
@@ -416,7 +415,7 @@ export const runInteractiveAssistant = async (
       throw new Error(`Attachment not found: ${terminalSafeText(path)}`);
     }
     if (attachments.some((attached) => realpathSync(resolveLocalPath(attached, workspace)) === target)) return;
-    const access = classifyLocalPath(target, { workspace });
+    const access = classifyLocalPath(path, { workspace });
     if (access.access === "blocked") {
       ctx.error(`Not attached: ${terminalSafeText(path)} is cld's configuration.`);
       return;
@@ -447,7 +446,6 @@ export const runInteractiveAssistant = async (
     let turnId = resuming ? input.turnId : undefined;
     activeAbort = abort;
     try {
-      streaming = true;
       let result: AssistantTurnStreamResult | undefined;
       if ("turnId" in input) {
         result = await streamAssistantTurn({
@@ -476,7 +474,6 @@ export const runInteractiveAssistant = async (
           preparedAttachments.clear();
         }
       }
-      streaming = false;
       if (result?.status === "needs_attention" && result.turnId) {
         result =
           (await resolveAttention({
@@ -488,13 +485,10 @@ export const runInteractiveAssistant = async (
             signal: abort.signal,
             localTools,
             workspace,
-            setStreaming: (value) => {
-              streaming = value;
-            },
           })) ?? undefined;
-        if (!result) return 2;
+        if (!result && !abort.signal.aborted) return 2;
       }
-      if (result?.status === "aborted") {
+      if (result?.status === "aborted" || (!result && abort.signal.aborted)) {
         if (turnId) await readApi(ctx, conversationPath(chatId, `/turns/${encodeURIComponent(turnId)}/abort`), { method: "POST" });
         printInfo(ctx, "Turn stopped.");
         return resuming ? 130 : 0;
@@ -511,7 +505,6 @@ export const runInteractiveAssistant = async (
       ctx.error(error instanceof Error ? error.message : String(error));
       return 0;
     } finally {
-      streaming = false;
       activeAbort = null;
     }
   };
@@ -527,7 +520,11 @@ export const runInteractiveAssistant = async (
   };
 
   const send = async (message: string): Promise<number> => {
-    for (const path of extractMessageAttachments(message, workspace)) await attachLocalFile(path);
+    for (const path of extractMessageAttachments(message, workspace)) {
+      const count = attachments.length;
+      await attachLocalFile(path);
+      if (attachments.length > count) printInfo(ctx, `Attached: ${basename(path)}`);
+    }
     await validateLocalAttachments(attachments);
     if (!activeConversation) activeConversation = await resolveConversation(ctx, { conversationId, title: options.title, projectId });
     const conversation = activeConversation;
@@ -668,8 +665,19 @@ export const runInteractiveAssistant = async (
           ctx.print("Nothing to answer again yet.");
           break;
         }
-        const detail = await readApi<{ messages: AiStoredMessage[] }>(ctx, conversationPath(conversationId));
-        const message = detail.messages.findLast((stored) => stored.kind === "message" && stored.message.role === "user");
+        const detail = await readApi<{ messages: AiStoredMessage[]; hasMoreMessages: boolean }>(ctx, conversationPath(conversationId));
+        let { messages, hasMoreMessages: hasMore } = detail;
+        let message = messages.findLast((stored) => stored.kind === "message" && stored.message.role === "user");
+        while (!message && hasMore && messages.length > 0) {
+          const before = Math.min(...messages.map((stored) => stored.seq));
+          const page = await readApi<{ messages: AiStoredMessage[]; hasMore: boolean }>(
+            ctx,
+            conversationPath(conversationId, `/messages?before=${before}&limit=200`),
+          );
+          messages = page.messages;
+          hasMore = page.hasMore;
+          message = messages.findLast((stored) => stored.kind === "message" && stored.message.role === "user");
+        }
         if (!message) {
           ctx.print("Nothing to answer again yet.");
           break;
@@ -817,7 +825,7 @@ export const runInteractiveAssistant = async (
               choices: approvals.map((approval) => ({
                 value: approval,
                 label: approval.title,
-                description: `${approval.app?.name ?? "Website"} · ${approval.conversationId ? "this chat" : "everywhere"}`,
+                description: `${approval.website ? "Website" : (approval.app?.name ?? "Cloud AI tool")} · ${approval.conversationId ? "this chat" : "everywhere"}`,
               })),
               emptyMessage: "No remembered Cloud approvals.",
             });
@@ -847,6 +855,7 @@ export const runInteractiveAssistant = async (
         ? `Local tools: ask · ${workspace} · Bash runs as your OS user after you confirm each command; commands and output go to this chat and the model. Change with /permissions.${homeNotice}`
         : "Local tools: off · Change with /permissions.",
     );
+    for (const path of options.attachments ?? []) await attachLocalFile(path);
     if (conversationId) {
       const code = await openChat(conversationId);
       if (code !== 0) return code;

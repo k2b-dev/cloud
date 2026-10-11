@@ -110,22 +110,48 @@ describe("Assistant line reader", () => {
 
   test("Ctrl+C clears typed and buffered messages before interrupting at an empty prompt", async () => {
     const { input, reader } = setup();
-    let interrupts = 0;
-    reader.onInterrupt(() => {
-      interrupts++;
+    const interrupts: boolean[] = [];
+    reader.onInterrupt((question) => {
+      interrupts.push(question);
     });
     const message = reader.readMessage("> ");
     input.write("partial\x03");
-    expect(interrupts).toBe(0);
+    expect(interrupts).toEqual([]);
     input.write("buffer\\\r\x03");
-    expect(interrupts).toBe(0);
+    expect(interrupts).toEqual([]);
     input.write("done\r");
     expect(await message).toBe("done");
     const empty = reader.readMessage("> ");
     input.write("\x03");
-    expect(interrupts).toBe(1);
+    expect(interrupts).toEqual([false]);
     reader.close();
     expect(await empty).toBeNull();
+  });
+
+  test("Ctrl+C cancels a typed question and leaves the following Enter idle", async () => {
+    const { input, reader, printed } = setup();
+    const interrupts: boolean[] = [];
+    reader.onInterrupt((question) => interrupts.push(question));
+    const answer = reader.read("Approve? ", { typedOnly: true });
+    input.write("y\x03\r");
+    expect(await answer).toBeNull();
+    expect(interrupts).toEqual([true]);
+    expect(printed()).toContain("Input is ignored");
+    const next = reader.read("Again? ", { typedOnly: true });
+    input.write("n\r");
+    expect(await next).toBe("n");
+  });
+
+  test("discards input buffered while paused before the next question", async () => {
+    const { input, reader, printed } = setup();
+    reader.pause?.();
+    input.write("y\r");
+    reader.resume?.();
+    const answer = reader.read("Use this text? ", { typedOnly: true });
+    await tick();
+    input.write("n\r");
+    expect(await answer).toBe("n");
+    expect(printed()).not.toContain("Input is ignored");
   });
 
   test("enables bracketed paste once and disables it around pause and close", async () => {

@@ -35,21 +35,25 @@ const protectedPath = (path: string): boolean =>
 export const classifyLocalPath = (path: string, options: { workspace: string; home?: string }): LocalPathAccess => {
   const home = realPath(resolve(options.home ?? homedir()));
   const workspace = realPath(resolve(options.workspace));
-  const target = realPath(resolveLocalPath(path, options.workspace, home));
+  const given = resolveLocalPath(path, options.workspace, home);
+  const target = realPath(given);
   // Keep these locations aligned with packages/cloud-cli/src/config.ts.
   const configDirectory = realPath(resolve(process.env.XDG_CONFIG_HOME || join(home, ".config"), "cloud", "cld"));
   const configFile = process.env.CLD_CONFIG ? realPath(resolveLocalPath(process.env.CLD_CONFIG, process.cwd(), home)) : undefined;
   if (contains(configDirectory, target) || target === configFile) return { access: "blocked", reason: "cld-config" };
   if (contains(workspace, home)) return { access: "ask", reason: "home" };
-  if (protectedPath(target)) return { access: "ask", reason: "protected" };
+  if (protectedPath(given) || protectedPath(target)) return { access: "ask", reason: "protected" };
   if (!contains(workspace, target)) return { access: "ask", reason: "outside" };
   return { access: "free" };
 };
 
+/** Return the last token, keeping escaped whitespace inside file mentions. */
+export const lastMentionToken = (line: string): string => line.split(/(?<!\\)\s+/).at(-1) ?? "";
+
 /** Complete a local token, preserving an optional @ prefix and the user's path spelling. */
 export const completeLocalPath = (token: string, cwd: string): string[] => {
   const marker = token.startsWith("@") ? "@" : "";
-  const path = token.slice(marker.length);
+  const path = marker ? token.slice(1).replace(/\\(\s)/g, "$1") : token;
   const slash = path.lastIndexOf("/");
   const prefix = path.slice(0, slash + 1);
   const name = path.slice(slash + 1);
@@ -68,7 +72,8 @@ export const completeLocalPath = (token: string, cwd: string): string[] => {
             // A dangling or unreadable symlink still completes by name.
           }
         }
-        return `${marker}${prefix}${entry.name}${directoryEntry ? "/" : ""}`;
+        const completed = `${prefix}${entry.name}${directoryEntry ? "/" : ""}`;
+        return marker ? `@${completed.replace(/\s/g, "\\$&")}` : completed;
       });
   } catch {
     return [];
@@ -77,19 +82,22 @@ export const completeLocalPath = (token: string, cwd: string): string[] => {
 
 /** Extract existing @file targets once each; other mentions remain ordinary text. */
 export const extractMessageAttachments = (message: string, workspace: string): string[] => {
-  const files = new Set<string>();
-  for (const token of message.split(/\s+/)) {
+  const files = new Map<string, string>();
+  for (const token of message.split(/(?<!\\)\s+/)) {
     if (!token.startsWith("@") || token.length === 1) continue;
-    const path = token.slice(1);
+    const path = token.slice(1).replace(/\\(\s)/g, "$1");
     for (const candidate of [path, path.replace(/[,.;:!?)]+$/, "")]) {
       try {
         const target = resolveLocalPath(candidate, workspace);
-        if (statSync(target).isFile()) files.add(realpathSync(target));
+        if (statSync(target).isFile()) {
+          const real = realpathSync(target);
+          if (!files.has(real)) files.set(real, target);
+        }
         break;
       } catch {
         // Retry punctuation only when the literal path does not exist.
       }
     }
   }
-  return [...files];
+  return [...files.values()];
 };

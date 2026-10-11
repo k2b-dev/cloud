@@ -392,7 +392,7 @@ Local Bash is never approved non-interactively and is never remembered.
 Cloud approvals use numbered **Approve once**, **Approve for this chat**, and
 **Always approve** choices where allowed; Enter rejects. When only one-time
 approval is possible, `Approve? [y/N]` accepts `y` or `yes` and rejects Enter,
-`n`, or `no`. Typed-ahead or pasted input never answers a question. Websites
+`n`, or `no`. Typed-ahead or pasted input never answers an approval. Websites
 cannot be remembered from cld. Use `/approvals` or `cld assistant approvals
 list|revoke` to review and revoke remembered Cloud approvals, including
 websites saved in the web. `list --chat <chat-id>` lists only that chat's

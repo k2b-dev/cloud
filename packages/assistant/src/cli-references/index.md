@@ -60,7 +60,8 @@ only local tool is `local_bash`. Use `--no-bash` for `off` in this session,
 combined. `/permissions ask|off` changes only the session; the numbered picker
 can save your choice for the current profile. Only `off` is stored in
 `assistant.localTools`; saving `ask` removes the key. A saved default can only
-restrict local access.
+restrict local access. `/retry` answers again with the local tools of the
+original turn, not the current mode; in `off` mode a Bash call is still denied.
 
 Before each Bash command, the CLI shows the exact command and start folder,
 then asks `Run? [y/N]`: `y` or `yes` runs it; Enter, `n`, or `no` denies it.
@@ -79,18 +80,27 @@ Websites are never remembered from cld; website approvals saved in the web can
 still be listed and revoked with `/approvals`.
 
 A pasted block is one multi-line message; Enter sends it. A `\` at the end of
-a typed line continues the message on the next line. Typed-ahead or pasted
-input never answers a choice or confirmation question. Input typed while a
-turn runs is ignored. Ctrl+C clears typed input, stops a running turn, or ends
-the session at an empty prompt.
+a typed line continues the message on the next line. Input typed while a turn
+runs or while an editor is open is ignored, so it never answers the next
+question. Pasted input never answers an approval, a numbered choice, or a
+confirmation; survey answers accept pasted text.
+
+At the prompt, Ctrl+C clears typed input and ends the session when the prompt
+is empty. During a turn, Ctrl+C stops the turn, also while it waits for your
+answer or runs Bash. At other questions, such as a numbered list, Ctrl+C
+cancels the question and keeps the session open.
 
 Mention `@path` to attach a local file like `/attach`; its bytes are stored as a
-chat file in Cloud, and the message text stays unchanged. Paths inside the
-start folder attach without a question, except protected files such as `.env`,
-keys, and `.git/`. Files outside that folder ask first. Starting in your home
-folder or above asks for every file. cld's own configuration is refused. Tab
-completes slash commands and `@` paths. Relative Cloud links in answers print
-as absolute links to the selected server.
+chat file in Cloud, and the message text stays unchanged. Each `@` file that
+is attached prints an `Info: Attached:` line. Write a space in an `@` path as
+`\ `, for example `@Rechnung\ März.pdf`; Tab completion inserts it this way.
+Paths inside the start folder attach without a question, except protected
+files such as `.env`, keys, and `.git/`, also when such a name is a link to
+another file. Files outside that folder ask first. Starting in your home folder
+or above asks for every file. cld's own configuration is refused. `--attach`
+paths follow the same rules when the session starts. Tab completes slash
+commands and `@` paths. Relative Cloud links in answers print as absolute links
+to the selected server.
 
 Use `--print` or `-p` to stream one response and exit:
 
@@ -117,7 +127,7 @@ Useful options:
 - `--title <title>` names a newly created chat and preserves that title through the first message and automatic enrichment. `chats create --title <title>` does the same. The CLI trims the title and checks the 1 to 120 character limit before creating anything. The exact title `New chat` matches the default placeholder and keeps automatic naming.
 - `--model <profile-id>` selects a model from `cld assistant models`.
 - `--project <project-id>` creates the new chat in an accessible Project.
-- Repeat `--attach <local-file>` for local images or documents. This flag does not accept a Cloud resource ID.
+- Repeat `--attach <local-file>` for local images or documents. This flag does not accept a Cloud resource ID and refuses cld's own configuration.
 - `--detach` submits the turn and returns its ID without waiting in print mode.
 - Repeat `--approve <exact-tool-name>` in print mode to approve only those tools for that turn. There is deliberately no approve-all flag.
 

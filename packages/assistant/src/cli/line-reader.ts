@@ -1,12 +1,12 @@
 import { type Completer, createInterface, type Key } from "node:readline";
-import { completeLocalPath } from "./local-paths";
+import { completeLocalPath, lastMentionToken } from "./local-paths";
 import { terminalInfo } from "./terminal";
 
 export type LineReader = {
   readMessage(prompt: string): Promise<string | null>;
   read(prompt: string, options?: { typedOnly?: boolean }): Promise<string | null>;
   close(): void;
-  onInterrupt(handler: () => void): () => void;
+  onInterrupt(handler: (question: boolean) => void): () => void;
   pause?(): void;
   resume?(): void;
 };
@@ -34,18 +34,20 @@ export const createLineReader = (
     completer:
       options.completer ??
       ((line: string) => {
-        const token = line.split(/\s+/).at(-1) ?? "";
+        const token = lastMentionToken(line);
         return [token.startsWith("@") ? completeLocalPath(token, cwd) : [], token];
       }),
   });
   const terminal = "isTTY" in output && output.isTTY === true;
-  const interrupts = new Set<() => void>();
+  const interrupts = new Set<(question: boolean) => void>();
   let closed = false;
   let pending: PendingRead | undefined;
   let pasting = false;
   let pastedSinceLine = false;
   let idleNotice = false;
   let bracketedPaste = false;
+  let discarding = false;
+  let discarded = false;
   const setBracketedPaste = (enabled: boolean) => {
     if (!terminal || bracketedPaste === enabled) return;
     output.write(enabled ? "\x1b[?2004h" : "\x1b[?2004l");
@@ -60,6 +62,10 @@ export const createLineReader = (
     Object.assign(rl, { line: "", cursor: 0 });
   };
   const onKeypress = (_text: string, key: Key) => {
+    if (discarding) {
+      discarded = true;
+      return;
+    }
     if (key.name === "paste-start") {
       pasting = true;
       pastedSinceLine = true;
@@ -72,6 +78,10 @@ export const createLineReader = (
   };
   input.on("keypress", onKeypress);
   rl.on("line", (line: string) => {
+    if (discarding) {
+      discarded = true;
+      return;
+    }
     const pasted = pasting || pastedSinceLine;
     pastedSinceLine = false;
     if (!pending) {
@@ -103,6 +113,16 @@ export const createLineReader = (
     read.resolve([...read.lines, line].join("\n"));
   });
   rl.on("SIGINT", () => {
+    if (pending && !pending.message) {
+      clearLine();
+      pastedSinceLine = false;
+      output.write("\n");
+      const read = pending;
+      pending = undefined;
+      read.resolve(null);
+      for (const handler of interrupts) handler(true);
+      return;
+    }
     if (pending?.message && (rl.line || pending.lines.length > 0)) {
       clearLine();
       pending.lines = [];
@@ -112,7 +132,7 @@ export const createLineReader = (
       prompt(pending.prompt);
       return;
     }
-    for (const handler of interrupts) handler();
+    for (const handler of interrupts) handler(false);
   });
   rl.once("close", () => {
     closed = true;
@@ -142,8 +162,17 @@ export const createLineReader = (
     },
     resume: () => {
       if (closed) return;
+      discarding = true;
       rl.resume();
       setBracketedPaste(true);
+      setImmediate(() => {
+        discarding = false;
+        if (!discarded || closed) return;
+        discarded = false;
+        clearLine();
+        pastedSinceLine = false;
+        if (pending) prompt(pending.prompt);
+      });
     },
     onInterrupt(handler) {
       interrupts.add(handler);

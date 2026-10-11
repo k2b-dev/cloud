@@ -57,6 +57,17 @@ describe("local path completion", () => {
     expect(completeInteractiveLine("plain text", workspace)).toEqual([[], "text"]);
   });
 
+  test("escaped spaced mentions complete and round-trip through extraction", () => {
+    const path = file(join(workspace, "quarterly report.pdf"));
+    const candidates = ["@quarterly\\ report.pdf"];
+    expect(completeLocalPath("@quar", workspace)).toEqual(candidates);
+    expect(completeLocalPath("@quarterly\\ re", workspace)).toEqual(candidates);
+    expect(completeInteractiveLine("Summarize @quarterly\\ re", workspace)).toEqual([candidates, "@quarterly\\ re"]);
+    expect(extractMessageAttachments("Summarize @quarterly\\ report.pdf", workspace)).toEqual([path]);
+    expect(extractMessageAttachments(`Summarize ${candidates[0]}`, workspace)).toEqual([path]);
+    expect(completeInteractiveLine("/attach quar", workspace)).toEqual([["quarterly report.pdf"], "quar"]);
+  });
+
   test("directory symlinks complete with / and unreadable targets do not throw", () => {
     mkdirSync(join(workspace, "directory"));
     symlinkSync(join(workspace, "directory"), join(workspace, "alias"));
@@ -102,6 +113,14 @@ describe("local access classification", () => {
     ".git/hooks/x",
   ])("asks for protected %s inside the workspace", (path) => {
     expect(classifyLocalPath(path, { workspace, home })).toEqual({ access: "ask", reason: "protected" });
+  });
+
+  test("asks for a protected symlink name even when its target is ordinary", () => {
+    const target = file(join(workspace, "secrets.txt"));
+    const alias = join(workspace, ".env");
+    symlinkSync(target, alias);
+    expect(classifyLocalPath(alias, { workspace, home })).toEqual({ access: "ask", reason: "protected" });
+    expect(extractMessageAttachments("Read @.env @secrets.txt", workspace)).toEqual([alias]);
   });
 
   test("home, root, and a home ancestor never grant free access", () => {

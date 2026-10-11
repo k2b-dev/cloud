@@ -7,10 +7,11 @@ const context = (args: string[], output: CloudCliContext["options"]["output"] = 
   const values: unknown[] = [];
   const requests: Array<{ path: string; method: string }> = [];
   const tables: Array<{ rows: Parameters<CloudCliContext["table"]>[0]; columns: string[] }> = [];
-  const approval: { id: string; title: string; app: { name: string }; conversationId: string | null; lastUsedAt: string } = {
+  const approval: { id: string; title: string; app: { name: string }; website: null; conversationId: string | null; lastUsedAt: string } = {
     id: "preference",
     title: "Create task",
     app: { name: "Spaces" },
+    website: null,
     conversationId: null,
     lastUsedAt: "2026-10-10T12:00:00Z",
   };
@@ -78,9 +79,29 @@ test.each(["json", "jsonl"] as const)("approvals list supports %s with printRows
 test("approvals list labels websites and missing last use", async () => {
   const session = context(["approvals", "list"]);
   session.ctx.fetch = async () =>
-    Response.json({ approvals: [{ id: "website", title: "example.com", app: null, conversationId: null, lastUsedAt: null }] });
+    Response.json({
+      approvals: [
+        {
+          id: "website",
+          title: "example.com",
+          app: null,
+          website: { origin: "https://example.com", resourceId: null },
+          conversationId: null,
+          lastUsedAt: null,
+        },
+      ],
+    });
   await assistant.run(session.ctx);
   expect(session.tables[0]?.rows).toEqual([{ id: "website", title: "example.com", app: "Website", scope: "everywhere", lastUsed: "" }]);
+});
+
+test("approvals list labels a missing app separately from a website", async () => {
+  const session = context(["approvals", "list"]);
+  session.ctx.fetch = async () => Response.json({ approvals: [{ ...session.approval, app: null, website: null }] });
+  await assistant.run(session.ctx);
+  expect(session.tables[0]?.rows).toEqual([
+    { id: "preference", title: "Create task", app: "Cloud AI tool", scope: "everywhere", lastUsed: "2026-10-10T12:00:00Z" },
+  ]);
 });
 
 test.each(["text", "json", "jsonl"] as const)("approvals revoke needs no --yes and supports %s", async (output) => {

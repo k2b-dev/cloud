@@ -95,6 +95,10 @@ export const streamAssistantTurn = async (input: {
     const rewritten = output.links.push(text);
     if (rewritten) ctx.write(terminalSafeModelText(rewritten));
   };
+  const flushLinks = () => {
+    const held = output.links?.flush();
+    if (held) ctx.write(terminalSafeModelText(held));
+  };
   const emitTable = (callId: string, result: unknown) => {
     if (ctx.options.output !== "text" || renderedTables.has(callId)) return;
     if (printCapabilityTable(ctx, result)) renderedTables.add(callId);
@@ -170,6 +174,7 @@ export const streamAssistantTurn = async (input: {
   const reconcileBlocks = (baseline: AiTurnBlock[]) =>
     reconcile(baseline.filter((block) => block.kind === "text").filter((block) => block.text.trim()));
   const finish = (result: AssistantTurnStreamResult): AssistantTurnStreamResult => {
+    flushLinks();
     for (const stored of result.messages) {
       if (stored.message.role !== "tool_result") continue;
       emitTable(stored.message.callId, stored.message.result);
@@ -184,7 +189,7 @@ export const streamAssistantTurn = async (input: {
       false,
     );
     if (ctx.options.output === "text") {
-      const tail = result.status === "needs_attention" ? "" : (output.links?.flush() ?? "");
+      const tail = output.links?.flush() ?? "";
       if (tail) ctx.write(terminalSafeModelText(tail));
       if (result.text || emittedText || tail) {
         ctx.write("\n");
@@ -195,11 +200,13 @@ export const streamAssistantTurn = async (input: {
   };
 
   const handleToolBlock = async (block: Extract<AiTurnBlock, { kind: "tool" }>): Promise<AssistantTurnStreamResult | null> => {
+    const changed = toolStatuses.get(block.callId) !== block.status;
+    if (changed && ctx.options.output === "text") flushLinks();
     if (block.status === "completed") {
       emitTable(block.callId, block.result);
       emitDelivered(block);
     }
-    if (toolStatuses.get(block.callId) !== block.status) {
+    if (changed) {
       toolStatuses.set(block.callId, block.status);
       emitJsonLine({ type: "tool", callId: block.callId, name: block.name, status: block.status });
       if (ctx.options.output === "text") {

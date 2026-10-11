@@ -12,6 +12,8 @@ import {
   runInteractiveAssistant,
 } from "./interactive";
 import type { LineReader } from "./line-reader";
+import * as localBash from "./local-bash";
+import { validateLocalAttachments } from "./turn";
 
 test("cld describes an HTTP request in the same words as the approval card", async () => {
   const printed: string[] = [];
@@ -156,6 +158,8 @@ test("capability approvals offer numbered Always approve only when allowed", asy
   const once = approvalTest(["y"]);
   expect(await collectCapabilityApproval(once.ctx, once.reader, { ...request, allowAlways: false })).toEqual({ approved: true });
   expect(once.prompts).toEqual([{ prompt: "Approve? [y/N]: ", options: { typedOnly: true } }]);
+  const cancelled = approvalTest([null]);
+  expect(await collectCapabilityApproval(cancelled.ctx, cancelled.reader, request)).toEqual({ approved: false });
 });
 
 test("text editor confirmation requires typed input and surveys allow pasted free text", async () => {
@@ -282,18 +286,98 @@ test("/attach asks for protected files and never attaches cld configuration", as
   }
 });
 
+test("a protected @ symlink asks before attaching its ordinary target", async () => {
+  const directory = mkdtempSync(join(import.meta.dir, ".attachment-test-"));
+  try {
+    const target = join(directory, "secrets.txt");
+    const alias = join(directory, ".env");
+    writeFileSync(target, "private");
+    symlinkSync(target, alias);
+    const session = await attachmentSession([`Read @${alias}`, "/exit"], [null]);
+    expect(session.prompts).toEqual([{ prompt: `Attach ${alias}? It may contain secrets. [y/N]: `, options: { typedOnly: true } }]);
+    expect(session.uploads).toEqual([]);
+    expect(session.printed).toContain(`Not attached: ${alias}`);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("--attach refuses cld configuration and print-mode validation rejects it too", async () => {
+  const directory = mkdtempSync(join(import.meta.dir, ".attachment-test-"));
+  const previousXdg = process.env.XDG_CONFIG_HOME;
+  try {
+    const configDirectory = join(directory, "cloud/cld");
+    mkdirSync(configDirectory, { recursive: true });
+    const config = join(configDirectory, "config.json");
+    writeFileSync(config, "{}");
+    process.env.XDG_CONFIG_HOME = directory;
+    const session = await attachmentSession(["hello", "/exit"], [], [config]);
+    expect(session.errors).toEqual([`Not attached: ${config} is cld's configuration.`]);
+    expect(session.uploads).toEqual([]);
+    expect(session.prompts).toEqual([]);
+    await expect(validateLocalAttachments([config])).rejects.toThrow(`Not attached: ${config} is cld's configuration.`);
+  } finally {
+    if (previousXdg === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = previousXdg;
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("--attach asks for outside files and deduplicates real files with mentions", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "assistant-attach-"));
+  try {
+    const path = join(directory, "outside.txt");
+    const alias = join(directory, "alias.txt");
+    writeFileSync(path, "outside");
+    symlinkSync(path, alias);
+    const session = await attachmentSession([`Read @${alias}`, "/exit"], ["y"], [path, alias]);
+    expect(session.uploads).toEqual(["outside.txt"]);
+    expect(session.prompts).toEqual([{ prompt: `Attach ${path}? It is outside ${process.cwd()}. [y/N]: `, options: { typedOnly: true } }]);
+    expect(session.errors).toEqual([]);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("a missing --attach file fails before opening the chat or reading messages", async () => {
+  const directory = mkdtempSync(join(import.meta.dir, ".attachment-test-"));
+  try {
+    const path = join(directory, "missing.txt");
+    const messages = ["/exit"];
+    const session = interactiveSession(messages, [], { conversationId: "old", attachments: [path] });
+    await expect(session.run()).rejects.toThrow(`Attachment not found: ${path}`);
+    expect(messages).toEqual(["/exit"]);
+    expect(session.requests.map((request) => request.path)).toEqual(["/api/ai/status"]);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("spaced @files print one attachment notice for each newly attached file", async () => {
+  const directory = mkdtempSync(join(import.meta.dir, ".attachment-test-"));
+  try {
+    const path = join(directory, "quarterly report.pdf");
+    writeFileSync(path, "report");
+    const token = `@${path.replace(/\s/g, "\\$&")}`;
+    const session = await attachmentSession([`Read ${token} ${token}`, "/exit"], []);
+    expect(session.uploads).toEqual(["quarterly report.pdf"]);
+    expect(session.printed.filter((line) => line.includes("Attached: quarterly report.pdf"))).toHaveLength(1);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("the attachment limit counts explicit attachments and @files together", async () => {
   const directory = mkdtempSync(join(import.meta.dir, ".attachment-test-"));
   try {
-    const existing = join(directory, "existing.txt");
+    const existing = Array.from({ length: AI_TURN_ATTACHMENT_MAX_ITEMS }, (_, index) => {
+      const path = join(directory, `existing-${index}.txt`);
+      writeFileSync(path, "existing");
+      return path;
+    });
     const added = join(directory, "added.txt");
-    writeFileSync(existing, "existing");
     writeFileSync(added, "added");
-    const session = await attachmentSession(
-      [`Read @${added}`, "/exit"],
-      [],
-      Array.from({ length: AI_TURN_ATTACHMENT_MAX_ITEMS }, () => existing),
-    );
+    const session = await attachmentSession([`Read @${added}`, "/exit"], [], existing);
     expect(session.uploads).toEqual([]);
     expect(session.drafts).toEqual([]);
     expect(session.errors).toEqual([`At most ${AI_TURN_ATTACHMENT_MAX_ITEMS} attachments can be sent with one message.`]);
@@ -326,7 +410,7 @@ const finishedStream = (conversationId: string, turnId = "turn-1", status = "com
       messages: [],
     })}\n\n`,
   );
-const pendingStream = (conversationId: string, name = "local_bash") =>
+const pendingStream = (conversationId: string, name = "local_bash", status = "awaiting_client") =>
   new Response(
     `data: ${JSON.stringify({
       type: "state",
@@ -343,7 +427,7 @@ const pendingStream = (conversationId: string, name = "local_bash") =>
             callId: "call-1",
             name,
             args: { command: "echo should-not-run" },
-            status: "awaiting_client",
+            status,
           },
         ],
       },
@@ -408,6 +492,120 @@ const interactiveSession = (
 
 const submissions = (session: ReturnType<typeof interactiveSession>) =>
   session.requests.filter((request) => request.path.endsWith("/turns"));
+
+test("Ctrl+C at /model cancels the picker and keeps reading messages", async () => {
+  const messages = ["/model", "hello", "/exit"];
+  const session = interactiveSession(messages);
+  let interrupt: (question: boolean) => void = () => {};
+  session.reader.onInterrupt = (handler) => {
+    interrupt = handler;
+    return () => {};
+  };
+  session.reader.read = async () => {
+    interrupt(true);
+    return null;
+  };
+  expect(await session.run()).toBe(0);
+  expect(messages).toEqual([]);
+  expect(submissions(session)).toHaveLength(1);
+});
+
+test.each(["local_bash", "server_tool"])("Ctrl+C at a %s question stops the turn and keeps the session", async (name) => {
+  const messages = ["hello", "/exit"];
+  const session = interactiveSession(messages, [], {}, undefined, (path) => {
+    if (path.endsWith("/stream")) return pendingStream("new-1", name, name === "local_bash" ? "awaiting_client" : "awaiting_approval");
+    if (path.endsWith("/pending-actions/turn-1"))
+      return Response.json([
+        {
+          type: name === "local_bash" ? "frontend_tool" : "approval_request",
+          conversationId: "new-1",
+          turnId: "turn-1",
+          callId: "call-1",
+          name,
+          args: { command: "echo should-not-run" },
+          mode: "client",
+        },
+      ]);
+  });
+  let interrupt: (question: boolean) => void = () => {};
+  session.reader.onInterrupt = (handler) => {
+    interrupt = handler;
+    return () => {};
+  };
+  session.reader.read = async () => {
+    interrupt(true);
+    return null;
+  };
+  expect(await session.run()).toBe(0);
+  expect(messages).toEqual([]);
+  expect(session.requests.find((request) => request.path.endsWith("/abort"))).toMatchObject({ method: "POST" });
+  expect(session.requests.some((request) => request.path.includes("/actions/"))).toBeFalse();
+  expect(session.printed.join("\n")).toContain("Turn stopped.");
+});
+
+test.each([false, true])("Ctrl+C during local Bash stops without submitting a result (throws: %s)", async (throws) => {
+  const messages = ["hello", "/exit"];
+  let interrupt: (question: boolean) => void = () => {};
+  const session = interactiveSession(messages, ["y"], {}, undefined, (path) => {
+    if (path.endsWith("/stream")) return pendingStream("new-1");
+    if (path.endsWith("/pending-actions/turn-1"))
+      return Response.json([
+        {
+          type: "frontend_tool",
+          conversationId: "new-1",
+          turnId: "turn-1",
+          callId: "call-1",
+          name: "local_bash",
+          args: { command: "echo should-not-run" },
+          mode: "client",
+        },
+      ]);
+  });
+  session.reader.onInterrupt = (handler) => {
+    interrupt = handler;
+    return () => {};
+  };
+  const bash = spyOn(localBash, "runLocalBash").mockImplementation(async (_command, options) => {
+    interrupt(false);
+    expect(options?.signal?.aborted).toBeTrue();
+    if (throws) throw new DOMException("Stopped", "AbortError");
+    return { status: "completed", exitCode: 0, stdout: "done", stderr: "", truncated: false };
+  });
+  try {
+    expect(await session.run()).toBe(0);
+    expect(bash).toHaveBeenCalledTimes(1);
+    expect(messages).toEqual([]);
+    expect(session.requests.some((request) => request.path.includes("/actions/"))).toBeFalse();
+    expect(session.requests.find((request) => request.path.endsWith("/abort"))).toMatchObject({ method: "POST" });
+    expect(session.printed.join("\n")).toContain("Turn stopped.");
+  } finally {
+    bash.mockRestore();
+  }
+});
+
+test.each(["stream", "pending-actions"])("an interrupt during %s prevents pending questions on a resumed turn", async (stage) => {
+  let interrupt: (question: boolean) => void = () => {};
+  const session = interactiveSession([], [], { conversationId: "old" }, undefined, (path) => {
+    if (path === "/api/ai/conversations/old")
+      return Response.json({ conversation: chat("old"), activeTurn: { turnId: "turn-1", status: "waiting_for_action" } });
+    if (path.endsWith("/stream")) {
+      if (stage === "stream") interrupt(false);
+      return pendingStream("old");
+    }
+    if (path.endsWith("/pending-actions/turn-1")) {
+      interrupt(false);
+      return Response.json([{ type: "frontend_tool", name: "local_bash", args: { command: "echo should-not-run" } }]);
+    }
+  });
+  session.reader.onInterrupt = (handler) => {
+    interrupt = handler;
+    return () => {};
+  };
+  expect(await session.run()).toBe(130);
+  expect(session.prompts).toEqual([]);
+  expect(session.requests.find((request) => request.path.endsWith("/abort"))).toMatchObject({ method: "POST" });
+  expect(session.requests.some((request) => request.path.includes("/actions/"))).toBeFalse();
+});
 
 test("unknown commands are explained and never sent; absolute paths remain messages", async () => {
   const session = interactiveSession(["/unknown extra", "/etc/hosts is broken", "/exit"]);
@@ -642,6 +840,37 @@ test.each(["retry", "details", "concise"])("/retry %s posts to the last stored u
   expect(session.requests.some((request) => request.path.endsWith("/draft"))).toBeFalse();
 });
 
+test("/retry searches older history for the last user message", async () => {
+  const session = interactiveSession(["/retry details", "/exit"], [], { conversationId: "old" }, undefined, (path) => {
+    if (path === "/api/ai/conversations/old")
+      return Response.json({
+        conversation: chat("old"),
+        activeTurn: null,
+        hasMoreMessages: true,
+        messages: [
+          { id: "tool", seq: 201, kind: "message", message: { role: "tool_result" } },
+          { id: "answer", seq: 202, kind: "message", message: { role: "assistant" } },
+        ],
+      });
+    if (path === "/api/ai/conversations/old/messages?before=201&limit=200")
+      return Response.json({
+        hasMore: true,
+        messages: [
+          { id: "first", seq: 1, kind: "message", message: { role: "user" } },
+          { id: "last", seq: 2, kind: "message", message: { role: "user" } },
+          { id: "summary", seq: 3, kind: "summary", message: { role: "user" } },
+        ],
+      });
+  });
+  expect(await session.run()).toBe(0);
+  expect(session.requests.find((request) => request.path.endsWith("/retry"))).toMatchObject({
+    path: "/api/ai/conversations/old/messages/last/retry",
+    method: "POST",
+    body: { mode: "details" },
+  });
+  expect(session.requests.filter((request) => request.path.includes("/messages?"))).toHaveLength(1);
+});
+
 test("/retry picker uses the web actions and reports missing user messages", async () => {
   const session = interactiveSession(["/retry", "/exit"], [], { conversationId: "old" });
   expect(await session.run()).toBe(0);
@@ -712,9 +941,21 @@ test("/usage formats shares, resets, unlimited models, and unknown usage", async
 test("/approvals lists both scopes including websites and revokes the selected exact id", async () => {
   const session = interactiveSession(["/approvals", "/exit"], ["2"], { conversationId: "old" }, undefined, (path, init) => {
     if (path === "/api/ai/approval-preferences")
-      return Response.json({ approvals: [{ id: "everywhere", title: "Create task", app: { name: "Spaces" }, conversationId: null }] });
+      return Response.json({
+        approvals: [{ id: "everywhere", title: "Create task", app: { name: "Spaces" }, website: null, conversationId: null }],
+      });
     if (path === "/api/ai/approval-preferences?conversation=old")
-      return Response.json({ approvals: [{ id: "website", title: "example.com", app: null, conversationId: "chat-uuid" }] });
+      return Response.json({
+        approvals: [
+          {
+            id: "website",
+            title: "example.com",
+            app: null,
+            website: { origin: "https://example.com", resourceId: null },
+            conversationId: "chat-uuid",
+          },
+        ],
+      });
     if (path === "/api/ai/approval-preferences/website" && init?.method === "DELETE") return Response.json({ deleted: true });
   });
   expect(await session.run()).toBe(0);

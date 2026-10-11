@@ -102,7 +102,7 @@ const runCli = async (server: string, args: string[], input?: string) => {
   const proc = Bun.spawn({
     cmd: [process.execPath, "run", "../cloud-cli/src/index.ts", "--server", server, "--token", "test-token", ...args],
     cwd: new URL("..", import.meta.url).pathname,
-    env: { ...process.env, XDG_CONFIG_HOME: cliHome },
+    env: { ...process.env, CLD_LOCALE: "en", XDG_CONFIG_HOME: cliHome },
     stdin: input === undefined ? "ignore" : "pipe",
     stdout: "pipe",
     stderr: "pipe",
