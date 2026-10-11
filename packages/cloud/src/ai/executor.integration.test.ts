@@ -3015,7 +3015,13 @@ suite("AI executor integration", () => {
       expect([...liveTools.keys()]).toEqual(historyTools.map((block) => block.id));
       const failed = historyTools.find((block) => block.callId === malformed.id);
       if (!failed) throw new Error("Missing failed history step");
-      expect(liveTools.get(failed.id)).toMatchObject({ status: "failed", isError: true, result: result.result });
+      expect(liveTools.get(failed.id)).toMatchObject({
+        status: "failed",
+        isError: true,
+        result: result.result,
+        at: failed.at,
+        name: failed.name,
+      });
       expect(failed).toMatchObject({ status: "failed", isError: true, result: result.result });
     } finally {
       completionQueue = [];

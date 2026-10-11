@@ -40,6 +40,7 @@ const { createEventMapper, rebuildAttemptBaseline, rebuildBlocksFromMessages } =
 const turn = { agentId: "cloud", loopId: "turn-1", turnId: "turn-1:turn:0", turnIndex: 0 };
 
 describe("malformed tool call steering", () => {
+  const at = "2026-10-11T00:00:00.000Z";
   const issue: ToolStreamIssue = {
     kind: "malformed_tool_call",
     reason: "invalid_tool_arguments",
@@ -158,7 +159,7 @@ describe("malformed tool call steering", () => {
           append: async (message, opts) => {
             if (message.role !== "user") {
               await store.append(message, opts);
-              for (const op of mapper.storedMessage(message)) {
+              for (const op of mapper.storedMessage(message, at)) {
                 if (op.type === "block_set") liveBlocks.push(op.block);
               }
             }
@@ -229,7 +230,7 @@ describe("malformed tool call steering", () => {
         steeringReads,
         repairAttempts,
         compactions,
-        messages: await store.load(),
+        messages: (await store.load()).map((row) => ({ ...row, createdAt: at })),
         liveBlocks,
       };
     } finally {
@@ -321,25 +322,20 @@ describe("malformed tool call steering", () => {
   });
 
   test("stored history preserves the live failed step, including a safe tool name", async () => {
-    for (const name of ["code_run", "invalid.tool", undefined]) {
+    for (const name of ["code_run", "notes__action__create", "invalid.tool", undefined]) {
       const result = await run(1, false, { issue: { ...issue, name } });
       const live = result.liveBlocks.find((block) => block.kind === "tool" && isMalformedToolCallId(block.callId));
       const history = buildBlocksFromMessages(result.messages).find(
         (block) => block.kind === "tool" && isMalformedToolCallId(block.callId),
       );
       if (live?.kind !== "tool" || history?.kind !== "tool") throw new Error("Missing failed step");
-      expect(history).toMatchObject({
-        id: live.id,
-        callId: live.callId,
-        name: live.name,
-        args: {},
-        status: "failed",
-        result: live.result,
-        isError: true,
-      });
+      expect(live).toEqual(history);
+      expect(live.at).toBe(at);
       expect(live.args).toEqual({});
       expect(history.result).toBe(buildMalformedToolCallRepairText({ ...issue, name }));
-      expect(history.name).toBe(name === "code_run" ? "code_run" : "unknown_tool");
+      const expectedName = name === "code_run" ? "code_run" : name === "notes__action__create" ? "notes.create" : "unknown_tool";
+      expect(live.name).toBe(expectedName);
+      expect(history.name).toBe(expectedName);
     }
   });
 
@@ -463,13 +459,14 @@ describe("nessi block event mapping", () => {
     expect(mapper.translate(event)).toEqual([]);
     const callId = `malformed_${"a".repeat(24)}`;
     const result = buildMalformedToolCallRepairText(issue);
-    expect(mapper.storedMessage({ role: "tool_result", callId, name: "code_run", result, isError: true })).toMatchObject([
+    const at = "2026-10-11T00:00:00.000Z";
+    expect(mapper.storedMessage({ role: "tool_result", callId, name: "code_run", result, isError: true }, at)).toMatchObject([
       {
         type: "block_set",
-        block: { id: toolBlockId(callId), callId, name: "code_run", args: {}, status: "failed", result, isError: true },
+        block: { id: toolBlockId(callId), callId, name: "code_run", args: {}, status: "failed", at, result, isError: true },
       },
     ]);
-    expect(mapper.storedMessage({ role: "tool_result", callId: "ordinary", name: "code_run", result })).toEqual([]);
+    expect(mapper.storedMessage({ role: "tool_result", callId: "ordinary", name: "code_run", result }, at)).toEqual([]);
     expect(mapper.translate({ ...event, issue: { kind: "runtime_error", message: "Other issue", retryable: false } })).toEqual([]);
   });
   test("text blocks map to attempt+turn scoped ids across start, delta, end", () => {

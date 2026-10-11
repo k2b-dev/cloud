@@ -39,7 +39,8 @@ export const createAiProvider = (profile: AiModelProfile, apiKey?: string, heade
     case "anthropic":
       return anthropic(profile.model, commonOptions(profile, apiKey));
     case "mistral":
-      return mistral(profile.model, commonOptions(profile, apiKey));
+      // Mistral requires nine alphanumeric characters; map stored and other providers' ids at the transport boundary.
+      return mistral(profile.model, { ...commonOptions(profile, apiKey), normalizeToolCallIds: "strict9" });
     case "gemini":
       return gemini(profile.model, commonOptions(profile, apiKey));
     case "ollama":

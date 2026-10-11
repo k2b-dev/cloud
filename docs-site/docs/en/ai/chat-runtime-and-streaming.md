@@ -650,8 +650,11 @@ that are not valid JSON, the chat keeps it as a failed tool step. Its error
 result asks the model to re-send the call with its exact tool name and complete,
 valid, properly escaped JSON arguments. The step appears when Cloud saves the
 response, after the other steps of that response, and stays in the same place
-after reload and in history. A response that is never saved, for example after
-a provider failure, shows no such step. Cloud never runs a malformed call, also
+after reload and in history. A provider failure keeps a partial response that
+has content, and its failed step, in history. A response that is never saved,
+for example an attempt that exceeded the context window and that compaction
+retries, or an empty response after a provider failure, shows no such step.
+Cloud never runs a malformed call, also
 when a run stopped before it saved the error result. Cloud allows at most two
 repairs per turn, also across approvals, resumes, and compaction. If the model
 sends another malformed call, the turn fails with reason `failed` and keeps the

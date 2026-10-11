@@ -17,7 +17,9 @@ const buildStoredMalformedToolCallRepairText = (name: string): string => `The to
 
 export const buildMalformedToolCallRepairText = (issue: ToolStreamIssue): string => `${malformedToolCallMessage(issue)} ${REPAIR_REQUEST}`;
 
-// The prefix lets resumed turns count repairs independently of ordinary tool calls; the id fits every provider's limits.
+// The prefix lets resumed turns count repairs independently of ordinary tool calls. The id is 34 characters of [a-z0-9_],
+// within OpenAI's 40- and Anthropic's 64-character limits; stricter providers (Mistral's nine alphanumeric characters)
+// map ids at the transport boundary (see provider.ts).
 export const newMalformedToolCallId = (): string => `malformed_${crypto.randomUUID().replaceAll("-", "").slice(0, 24)}`;
 
 export const isMalformedToolCallId = (id: string): boolean => /^malformed_[0-9a-f]{24}$/.test(id);
@@ -25,6 +27,8 @@ export const isMalformedToolCallId = (id: string): boolean => /^malformed_[0-9a-
 export const malformedToolCallName = (issue: ToolStreamIssue): string =>
   issue.name && /^[A-Za-z0-9_-]{1,64}$/.test(issue.name) ? issue.name : "unknown_tool";
 
+// Partial responses (error/interrupted) count too: their stored error result requests the repair on resume, so each
+// saved response with a malformed call spends one repair, as in the live run.
 export const countMalformedToolCallRepairs = (messages: readonly Pick<AiStoredMessage, "message">[]): number =>
   messages.filter(
     ({ message }) =>

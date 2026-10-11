@@ -49,6 +49,7 @@ import {
   type AiWireEvent,
   applyWireEventToBlocks,
   buildBlocksFromMessages,
+  canonicalToolName,
   compactionBlockId,
   reconcileResolvedTurnActions,
   steerAppliedBlockId,
@@ -615,13 +616,14 @@ const createEventMapper = (attempt: number, seedBlocks: AiTurnBlock[], allowReme
     }
   };
 
-  const storedMessage = (message: Message): BlockOp[] =>
+  const storedMessage = (message: Message, at: string): BlockOp[] =>
     message.role === "tool_result" && isMalformedToolCallId(message.callId)
       ? [
           setTool(message.callId, {
-            name: message.name,
+            name: canonicalToolName(message.name),
             args: {},
             status: "failed",
+            at,
             result: message.result,
             isError: true,
             clearApproval: true,
@@ -2128,7 +2130,7 @@ class StreamPipeline {
 
   async emitMessage(message: AiStoredMessage): Promise<void> {
     // A malformed call shows once its error result is saved, at the end of its response as in history.
-    for (const op of this.mapper.storedMessage(message.message)) await this.emitOp(op);
+    for (const op of this.mapper.storedMessage(message.message, message.createdAt)) await this.emitOp(op);
     const seq = this.nextSeq();
     await this.publish(this.envelope({ type: "message_saved" as const, seq, message }));
     await this.maybeSnapshot();
