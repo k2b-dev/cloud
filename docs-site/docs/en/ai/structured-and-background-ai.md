@@ -90,6 +90,10 @@ keep their model defaults. The profile thinking level does not apply. Profile
 The function resolves the model, requests structured output, validates the
 result, and records a trace span.
 
+Cloud streams the answer from the model provider. A model that sends nothing
+for 60 seconds, before or during its answer, fails the call. A slow model that
+keeps answering can take as long as it needs.
+
 Prompts and model output are not written to the trace. Metadata includes the
 model, duration, token counts, output mode, repair state, and attempts.
 

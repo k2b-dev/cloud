@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { ProviderEvent } from "@k2b/nessi";
+import { z } from "zod";
 import { createAiProvider } from "./provider";
 import type { AiModelProfile } from "./types";
 
@@ -15,6 +16,29 @@ const profile = (overrides: Partial<AiModelProfile>): AiModelProfile => ({
 });
 
 describe("AI provider factory", () => {
+  test("complete sends a streaming request and returns the streamed text", async () => {
+    const requests: { stream: boolean }[] = [];
+    const server = Bun.serve({
+      port: 0,
+      async fetch(request) {
+        requests.push(z.object({ stream: z.boolean() }).parse(await request.json()));
+        return new Response(
+          'data: {"choices":[{"delta":{"content":"Streamed "}}]}\n\ndata: {"choices":[{"delta":{"content":"answer"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":2}}\n\ndata: [DONE]\n\n',
+          { headers: { "Content-Type": "text/event-stream" } },
+        );
+      },
+    });
+    try {
+      const provider = createAiProvider(profile({ provider: "vllm", model: "mock", baseURL: `http://localhost:${server.port}/v1` }));
+      const result = await provider.complete({ messages: [{ role: "user", content: [{ type: "text", text: "Hello" }] }] });
+      expect(requests).toEqual([{ stream: true }]);
+      expect(result.message.content).toEqual([{ type: "text", text: "Streamed answer" }]);
+      expect(result.finishReason).toBe("stop");
+    } finally {
+      server.stop(true);
+    }
+  });
+
   test("maps Cloud model profiles to Nessi provider metadata without provider calls", () => {
     const provider = createAiProvider(profile({ provider: "openrouter", model: "openai/gpt-4.1-mini" }), "secret");
 

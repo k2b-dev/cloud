@@ -23,6 +23,7 @@ import { AI_WEBSITE_APPROVAL_TOOL, aiTurnAllowsRememberedApprovals, rememberAiTo
 import * as capabilityExecution from "./capability-execution";
 import { aiChatMessages } from "./chat/messages";
 import { aiChatTasks } from "./chat-tasks";
+import { DEFAULT_COMPACTION_PROMPT } from "./compaction";
 import { __aiExecutorTest, AiTurnExecutor } from "./executor";
 import { aiFileStore } from "./files-store";
 import { isMalformedToolCallId } from "./malformed-tool-call-repair";
@@ -32,7 +33,7 @@ import { aiModelAccess } from "./model-access";
 import { visionPdfFixture } from "./pdf-render.fixture";
 import { aiProjects } from "./projects";
 import { type AiTurnBlock, type AiWireEvent, buildBlocksFromMessages } from "./protocol";
-import { createAiProvider } from "./provider";
+import { completeThroughStream, createAiProvider } from "./provider";
 import { AiQuotaError } from "./quotas";
 import { listPendingAiTurnActions } from "./runtime";
 import * as settings from "./settings";
@@ -61,6 +62,7 @@ const MODEL_ID = "mock-exec";
 let mockServer: ReturnType<typeof Bun.serve> | null = null;
 /** The SSE chunks the mock returns for the next /chat/completions call. */
 let nextCompletion: string[] = [];
+/** The JSON text the mock streams for structured calls (view_image) while set; it takes precedence over the chat completions. */
 let nextJsonCompletion: string | null = null;
 let completionQueue: string[][] = [];
 /** HTTP failures answered before the next queued completions. */
@@ -284,7 +286,17 @@ beforeAll(() => {
             usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 },
           });
         }
-        const chunks = completionQueue.shift() ?? nextCompletion;
+        const chunks =
+          nextJsonCompletion !== null
+            ? [
+                sseChunk({ choices: [{ delta: { role: "assistant", content: nextJsonCompletion } }] }),
+                sseChunk({
+                  choices: [{ delta: {}, finish_reason: "stop" }],
+                  usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 },
+                }),
+                "data: [DONE]\n\n",
+              ]
+            : (completionQueue.shift() ?? nextCompletion);
         const body = new ReadableStream<Uint8Array>({
           start(controller) {
             const encoder = new TextEncoder();
@@ -2481,7 +2493,7 @@ suite("AI executor integration", () => {
 
   test.each([
     { label: "manual compaction fails promptly without changing history", manual: true },
-    { label: "optional compaction is skipped promptly and the chat answer completes", manual: false },
+    { label: "forced automatic compaction fails promptly and the chat answer still completes", manual: false },
   ])("when the summarizing model stalls, $label", async ({ manual }) => {
     const userId = await insertUser();
     const conversation = await aiConversations.createConversation({ ownerUserId: userId });
@@ -2490,8 +2502,15 @@ suite("AI executor integration", () => {
       port: 0,
       idleTimeout: 0,
       async fetch(req) {
-        const { stream } = z.object({ stream: z.boolean().optional() }).parse(await req.json());
-        if (!stream) {
+        const { messages } = z.object({ messages: z.array(z.object({ role: z.string(), content: z.unknown() })) }).parse(await req.json());
+        if (
+          messages.some(
+            (message) =>
+              message.role === "system" &&
+              typeof message.content === "string" &&
+              message.content.includes(DEFAULT_COMPACTION_PROMPT.split("\n")[0]!),
+          )
+        ) {
           compactionRequests++;
           return new Promise<Response>(() => {});
         }
@@ -2531,14 +2550,16 @@ suite("AI executor integration", () => {
             })
           ).turn;
       const before = await aiConversations.listMessages({ conversationId: conversation.id });
-      const provider = openAICompatible({
-        name: "stalled-compaction",
-        model: "mock",
-        baseURL: `http://localhost:${server.port}/v1`,
-        // The prior answers alone exceed this window, so automatic compaction must be attempted.
-        contextWindow: 1_000,
-        timeouts: { firstByteMs: 200, idleMs: 200 },
-      });
+      const provider = completeThroughStream(
+        openAICompatible({
+          name: "stalled-compaction",
+          model: "mock",
+          baseURL: `http://localhost:${server.port}/v1`,
+          // The prior answers far exceed this window, so nessi forces automatic compaction.
+          contextWindow: 1_000,
+          timeouts: { firstByteMs: 200, idleMs: 200 },
+        }),
+      );
       const claim = await aiConversations.claimTurn({
         conversationId: conversation.id,
         turnId: turn.id,
@@ -3151,6 +3172,7 @@ suite("AI executor integration", () => {
     const userId = await insertUser();
     const conversation = await aiConversations.createConversation({ ownerUserId: userId });
     const requests: z.infer<typeof toolRepairRequestSchema>[] = [];
+    const loggedError = status === "failed" ? spyOn(console, "error").mockImplementation(() => {}) : undefined;
     try {
       completionQueue = Array.from({ length: rounds }, () => malformedToolCallCompletion());
       if (status === "completed") completionQueue.push(textCompletion("Done"));
@@ -3191,6 +3213,16 @@ suite("AI executor integration", () => {
       const finalTurn = await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id });
       expect(finalTurn?.status).toBe(status);
       expect(requests).toHaveLength(3);
+      for (let index = 1; index <= 2; index++) {
+        const repairs = requests[index]!.messages.filter(
+          (message) => message.role === "tool" && typeof message.tool_call_id === "string" && isMalformedToolCallId(message.tool_call_id),
+        );
+        expect(repairs).toHaveLength(index);
+        for (const repair of repairs) {
+          expect(typeof repair.content).toBe("string");
+          expect(repair.content).toContain("Re-send the call");
+        }
+      }
       for (const request of requests) {
         expect(request.messages.filter((message) => message.role === "user")).toEqual([
           expect.objectContaining({ content: "Summarize the report" }),
@@ -3207,12 +3239,18 @@ suite("AI executor integration", () => {
         ),
       ).toBe(false);
       if (status === "failed") {
+        expect(loggedError).toHaveBeenCalledWith(
+          "[ai:executor]",
+          "AI turn failed",
+          expect.objectContaining({ code: "failed", error: expect.stringMatching(/^The tool call to search_tools could not be used: /) }),
+        );
         expect(messages.at(-1)?.meta?.turnError).toEqual({ code: "failed" });
         expect(finalTurn?.error).toBe("Something went wrong. The results so far are kept. Send a new message to continue.");
       } else {
         expect(messages.at(-1)?.message).toMatchObject({ role: "assistant", content: [{ type: "text", text: "Done" }] });
       }
     } finally {
+      loggedError?.mockRestore();
       completionQueue = [];
       onCompletionRequest = null;
       await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
