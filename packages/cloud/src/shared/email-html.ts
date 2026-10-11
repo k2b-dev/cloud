@@ -65,9 +65,13 @@ const hrefScheme = (href: string): string | undefined =>
     .match(/^([a-z][a-z\d+.-]*):/i)?.[1]
     ?.toLowerCase();
 
-/** Drops a `tel:` link that holds no phone number; its text stays. */
+/**
+ * Drops a `tel:` link that holds no phone number; its text stays. sanitize-html removes HTML comments before
+ * it reads a scheme, so a link address with a comment, such as `te<!---->l:`, is dropped too.
+ */
 const keepPhoneNumberHref: sanitizeHtml.Transformer = (tagName, attribs) => {
-  if (attribs.href === undefined || hrefScheme(attribs.href) !== "tel" || isPhoneNumberHref(attribs.href)) {
+  const href = attribs.href;
+  if (href === undefined || (!href.includes("<!--") && (hrefScheme(href) !== "tel" || isPhoneNumberHref(href)))) {
     return { tagName, attribs };
   }
   const { href: _dropped, ...kept } = attribs;

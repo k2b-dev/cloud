@@ -54,7 +54,7 @@ cld --json mail compose preview --draft-file draft.json
 
 Pass `--conversation <conversation-id>` when the compose context belongs to an existing conversation. `compose suggestions` accepts an empty query when its optional positional argument is omitted.
 
-Markdown bodies may contain simple HTML. Email keeps `a`, `br`, `code`, `div`, `em`, `h1`–`h3`, `li`, `ol`, `p`, `span`, `strong`, `ul`, and the table elements, and links to `http:`, `https:`, `mailto:`, and `tel:` addresses. A `tel:` address must hold a phone number, such as `tel:+49-731-000000`. Everything else is removed; text stays. `compose preview`, `compose template create|update`, `draft create|update`, `reply`, and `forward` report what was removed in `formattingWarnings`:
+Markdown bodies may contain simple HTML. Email keeps `a`, `br`, `code`, `div`, `em`, `h1`–`h3`, `li`, `ol`, `p`, `span`, `strong`, `ul`, and the table elements, and links to `http:`, `https:`, `mailto:`, and `tel:` addresses. A `tel:` address must hold a phone number, such as `tel:+49-731-000000`. Everything else is removed; text stays. Markdown images are removed too and reported as `img`. `compose preview`, `compose template create|update`, `draft create|update`, `reply`, and `forward` report what was removed in `formattingWarnings`:
 
 ```json
 {
@@ -78,7 +78,7 @@ cld --json mail compose style get
 cld --json mail compose style set --css-file mail.css
 ```
 
-Mailbox CSS rules apply after the built-in design and win for the elements they select: `a { color: #262626; }` restyles every link, and `.mail-content { font-size: 16px; }` styles the whole message. Selectors may use the elements that email keeps and the `.mail-content` class; other classes, IDs, pseudo-classes, at-rules, and `!important` are rejected.
+Mailbox CSS rules apply after the built-in design and win for the elements they select: `a { color: #262626; }` restyles every link, and `.mail-content { font-size: 16px; }` styles the whole message. Selectors may use the elements that email keeps and the `.mail-content` class; other classes, IDs, pseudo-classes, at-rules, and `!important` are rejected, and so are values that load an image, such as `url()` or `image-set()`, and backslash escapes.
 
 Mailbox administrators assign the mailbox default with `cld mail identity add --default-signature <template-id>` or `cld mail identity configure <identity-id> --default-signature <template-id>`. Clear it with `--clear-default-signature`. A personal default takes precedence.
 

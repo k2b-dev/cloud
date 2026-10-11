@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { MAX_COMPOSE_FORMATTING_WARNINGS } from "../contracts";
+import { type ComposeFormattingWarning, MAX_COMPOSE_FORMATTING_WARNINGS } from "../contracts";
 import {
   type ComposeRenderContext,
   composeFormattingWarnings,
@@ -401,6 +401,22 @@ describe("compose renderer", () => {
       expect(rendered.ok && `${rendered.data.html}${rendered.data.text}`).not.toMatch(/[\u2063\u2064]|&#(?:8291|8292|x206[34]);/i);
     });
 
+    test("marks inside a link address never hide its scheme from the sanitizer", () => {
+      for (const body of [
+        '<a href="java&#8291;script:alert(1)">click</a>',
+        "[click](java&#8291;script:alert(1))",
+        '<a href="te&#8291;l:*123#">click</a>',
+        "[click](te&#x2064;l:*123#)",
+      ]) {
+        const rendered = render(body);
+        expect(rendered.ok).toBe(true);
+        if (!rendered.ok) continue;
+        expect(rendered.data.html).toContain(">click</a>");
+        expect(rendered.data.html).not.toContain("href");
+        expect(composeFormattingWarnings(body, "markdown")).toEqual([{ code: "unsupported_link", element: "a" }]);
+      }
+    });
+
     test("leftover marks in filled-in values never reach the message", () => {
       const rendered = renderComposeContent({
         body: markComposeTemplateSegment("{{ actor.display_name }}"),
@@ -448,6 +464,14 @@ describe("compose renderer", () => {
       ".mail-content a:hover { color: red; }",
       ".mail-content { background-image: url(https://example.test/x); }",
       ".mail-content { position: fixed; }",
+      // Other functions that load an image, CSS escapes that spell one, and a function after a line break.
+      "a { background: image-set('https://example.test/p.png' 1x); }",
+      "a { background: -webkit-image-set(url(https://example.test/p.png) 1x); }",
+      "a { background: cross-fade(50% 'https://example.test/p.png', red); }",
+      "a { background: -moz-element(#x); }",
+      "p { background: u\\72l(https://example.test/p); }",
+      "p { background: \\75\\72\\6c(https://example.test/p); }",
+      "p { background: #fff\n  image-set('https://example.test/p.png' 1x); }",
     ]) {
       expect(validateComposeCss(css).ok).toBe(false);
     }
@@ -475,7 +499,8 @@ describe("compose renderer", () => {
   });
 
   test("keeps the built-in stylesheet valid", () => {
-    expect(validateComposeCss(DEFAULT_MAIL_CSS).ok).toBe(true);
+    // Mailbox CSS may not use pseudo-classes; the built-in design uses `:where()` only to lower its specificity.
+    expect(validateComposeCss(DEFAULT_MAIL_CSS.replace(":where(.mail-content)", ".mail-content")).ok).toBe(true);
   });
 
   test("keeps plain text plain while resolving Liquid", () => {
@@ -528,6 +553,12 @@ describe("compose renderer", () => {
     }
     expect(render("p { margin: 0; }")).toContain('<p style="margin:0">');
     expect(render(".mail-content { color: #123456; }")).toMatch(/^<div style="[^"]*color:#123456/);
+    // The message wrapper is a `div` too.
+    const wrapper = render("div { color: #ff0000; font-size: 18px; }").match(/^<div style="([^"]*)"/)?.[1] ?? "";
+    expect(wrapper).toContain("color:#ff0000");
+    expect(wrapper).toContain("font-size:18px");
+    expect(wrapper).not.toContain("#18181b");
+    expect(wrapper).not.toContain("15px");
   });
 
   test("reports removed elements, attributes and links instead of dropping them silently", () => {
@@ -544,12 +575,41 @@ describe("compose renderer", () => {
     ]);
   });
 
+  test("reports raw HTML links whose address email removes, like Markdown links", () => {
+    for (const href of ["sms:+49", "javascript:alert(1)", "data:text/html,x", "note:abc"]) {
+      expect(composeFormattingWarnings(`<a href="${href}">x</a>`, "markdown")).toEqual([{ code: "unsupported_link", element: "a" }]);
+      expect(composeFormattingWarnings(`[x](${href})`, "markdown")).toEqual([{ code: "unsupported_link", element: "a" }]);
+    }
+  });
+
+  test("reports HTML after a closing tag or a comment in the same block", () => {
+    const expected: ComposeFormattingWarning[] = [
+      { code: "unsupported_element", element: "small" },
+      { code: "unsupported_attribute", element: "span", attribute: "class" },
+    ];
+    expect(composeFormattingWarnings('<div>\n\ntext\n\n</div>\n<small>Bye</small> <span class="x">y</span>', "markdown")).toEqual(expected);
+    expect(composeFormattingWarnings('<!-- note --><small>Bye</small> <span class="x">y</span>', "markdown")).toEqual(expected);
+  });
+
+  test("reports Markdown images like <img>, because email leaves both out", () => {
+    const image: ComposeFormattingWarning[] = [{ code: "unsupported_element", element: "img" }];
+    expect(composeFormattingWarnings("![logo](https://example.test/l.png)", "markdown")).toEqual(image);
+    expect(composeFormattingWarnings('<img src="https://example.test/l.png" alt="logo">', "markdown")).toEqual(image);
+  });
+
+  test("reports names as printable text only", () => {
+    const [element] = composeFormattingWarnings("<div>\n<x\u001b]0;pwn\u0007 class=y>hi</x>\n</div>", "markdown");
+    expect(element).toEqual({ code: "unsupported_element", element: "x]0;pwn" });
+    const [attribute] = composeFormattingWarnings('<div>\n<span \u001b[2j="1">hi</span>\n</div>', "markdown");
+    expect(attribute).toEqual({ code: "unsupported_attribute", element: "span", attribute: "[2j" });
+  });
+
   test("reports nothing for supported Markdown, supported HTML, and plain text", () => {
     const supported = [
       "**Bold**, _em_, `code`, [web](https://example.test), [mail](mailto:a@example.test), [phone](tel:+49731000000)",
       '<strong>Bold</strong> <a href="https://example.test" target="_blank">link</a><br>',
       "| a | b |\n| --- | --- |\n| 1 | 2 |",
-      "> Quote with ![image](https://example.test/a.png)",
+      "> A quote keeps its text",
       markComposeTemplateSegment("Regards\n{{ sender.display_name }}"),
     ];
     for (const body of supported) expect(composeFormattingWarnings(body, "markdown")).toEqual([]);

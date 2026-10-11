@@ -34,21 +34,35 @@ const COMPOSE_SEGMENT = /\u2063([^\u2063\u2064]*)\u2064/g;
 const COMPOSE_SEGMENT_OR_LEFTOVER_MARK = /(\u2063[^\u2063\u2064]*\u2064)|[\u2063\u2064]/g;
 
 const ALLOWED_TAGS = new Set<string>(EMAIL_HTML_TAGS);
+const withoutSegmentMarks = (attribs: sanitizeHtml.Attributes): sanitizeHtml.Attributes =>
+  Object.fromEntries(Object.entries(attribs).map(([name, value]) => [name, value.replace(COMPOSE_SEGMENT_MARKS, "")]));
+/**
+ * The last pass over a message. Markdown turns character references such as `&#8291;` into marks, and they
+ * must not reach the message. They are removed from the parsed text and attributes before any check runs, so
+ * a mark inside `java&#8291;script:` cannot hide the scheme from the check and nothing changes the HTML after it.
+ */
 const INLINED_EMAIL_SANITIZE_OPTIONS = {
   ...EMAIL_HTML_SANITIZE_OPTIONS,
   allowedAttributes: Object.fromEntries(
     [...EMAIL_HTML_TAGS].map((tag) => [tag, [...new Set([...(EMAIL_HTML_ALLOWED_ATTRIBUTES[tag] ?? []), "style"])]]),
   ),
   allowedStyles: allowedEmailInlineStyles(EMAIL_HTML_TAGS),
+  transformTags: {
+    a: (tagName, attribs) => EMAIL_HTML_SANITIZE_OPTIONS.transformTags.a(tagName, withoutSegmentMarks(attribs)),
+    "*": (tagName, attribs) => ({ tagName, attribs: withoutSegmentMarks(attribs) }),
+  },
+  textFilter: (text) => text.replace(COMPOSE_SEGMENT_MARKS, ""),
 } satisfies sanitizeHtml.IOptions;
-const UNSAFE_CSS_VALUE = /(?:url|expression|var|attr)\s*\(|[{}@]|[\u0000-\u0008\u000b\u000c\u000e-\u001f]/i;
+// A backslash starts a CSS escape, which can spell any function name, such as `u\72l(`.
+const UNSAFE_CSS_VALUE = /(?:url|expression|var|attr)\s*\(|[{}@\\]|[\u0000-\u0008\u000b\u000c\u000e-\u001f]/i;
 
 /**
  * The built-in design, inlined before the mailbox CSS. It styles only the message, so its element rules need
- * no `.mail-content` scope: with the lowest specificity, every rule of the mailbox CSS for the same element wins.
+ * no `.mail-content` scope, and `:where()` gives the wrapper rule no specificity: with the lowest specificity,
+ * every rule of the mailbox CSS for the same element wins, `div` on the wrapper included.
  */
 export const DEFAULT_MAIL_CSS = `
-.mail-content {
+:where(.mail-content) {
   color: #18181b;
   font-family: Arial, Helvetica, sans-serif;
   font-size: 15px;
@@ -404,8 +418,7 @@ export const renderComposeContent = (params: {
       preserveKeyFrames: false,
     });
     if (sourceBytes(inlined) > MAX_RENDERED_SOURCE_BYTES) return fail(composeRenderFailure("tooLarge"));
-    // Markdown turns character references such as `&#8291;` into marks; they must not reach the message either.
-    const html = sanitizeHtml(inlined, INLINED_EMAIL_SANITIZE_OPTIONS).replace(COMPOSE_SEGMENT_MARKS, "");
+    const html = sanitizeHtml(inlined, INLINED_EMAIL_SANITIZE_OPTIONS);
     if (sourceBytes(html) > MAX_RENDERED_SOURCE_BYTES) return fail(composeRenderFailure("tooLarge"));
     return ok({
       html,
@@ -421,7 +434,10 @@ export const renderComposeContent = (params: {
 
 type HtmlElement = { tag: string; attribs: Record<string, string> };
 
-/** Reads the opening tags of an HTML fragment in document order. It only parses: the returned HTML is discarded. */
+/**
+ * Reads the opening tags of an HTML fragment in document order, with their attributes as written. It only
+ * parses: the returned HTML is discarded, and the copy keeps attributes that the parse itself would drop.
+ */
 const openingTags = (html: string): HtmlElement[] => {
   const elements: HtmlElement[] = [];
   sanitizeHtml(html, {
@@ -430,7 +446,7 @@ const openingTags = (html: string): HtmlElement[] => {
     allowVulnerableTags: true,
     transformTags: {
       "*": (tagName, attribs) => {
-        elements.push({ tag: tagName, attribs });
+        elements.push({ tag: tagName, attribs: { ...attribs } });
         return { tagName, attribs };
       },
     },
@@ -438,6 +454,14 @@ const openingTags = (html: string): HtmlElement[] => {
   return elements;
 };
 
+/** The address as marked writes it into a link; marked leaves an address it cannot encode as plain text. */
+const markedLinkAddress = (href: string): string | null => {
+  try {
+    return encodeURI(href).replace(/%25/g, "%");
+  } catch {
+    return null;
+  }
+};
 const escapeAttribute = (value: string): string => value.replace(/[&"<>\r\n]/g, (character) => `&#${character.charCodeAt(0)};`);
 const openingTag = ({ tag, attribs }: HtmlElement): string =>
   `<${tag}${Object.entries(attribs)
@@ -464,9 +488,10 @@ const sanitizedElements = (elements: HtmlElement[]): HtmlElement[] | null => {
 
 /**
  * Reports what the email renderer removes from HTML written into a Markdown body or template: unsupported
- * elements, attributes such as `class` and `style`, and link addresses it does not allow. Markdown formatting
- * that email leaves out, such as quotes or images, is not reported. The body is analyzed as written, so a
- * draft, its preview, and a template with the same source report the same list.
+ * elements, attributes such as `class` and `style`, and link addresses it does not allow. Markdown images
+ * are reported like `<img>`; other Markdown formatting that email leaves out, such as quote markers, is not.
+ * The body is analyzed as written, so a draft, its preview, and a template with the same source report the
+ * same list.
  */
 export const composeFormattingWarnings = (body: string, format: "plain" | "markdown"): ComposeFormattingWarning[] => {
   if (format !== "markdown") return [];
@@ -488,14 +513,19 @@ const formattingWarnings = (body: string): ComposeFormattingWarning[] => {
     const key = `${warning.code}:${warning.element}:${warning.attribute ?? ""}`;
     if (warnings.size < MAX_COMPOSE_FORMATTING_WARNINGS && !warnings.has(key)) warnings.set(key, warning);
   };
-  const name = (value: string) => value.slice(0, 64);
+  // Names come from the body as written and reach terminals through the CLI: keep printable ASCII only.
+  const name = (value: string) => value.replace(/[^\x21-\x7e]/g, "").slice(0, 64) || "?";
 
   const authored: HtmlElement[] = [];
   markdown.marked.walkTokens(markdown.marked.lexer(source), (token) => {
     if (authored.length >= MAX_EMAIL_HTML_ELEMENTS) return;
-    // Inline HTML arrives one tag per token; closing tags and comments carry nothing to report.
-    if (token.type === "html" && !/^<(?:\/|!--)/.test(token.text)) authored.push(...openingTags(token.text));
-    else if (token.type === "link") authored.push({ tag: "a", attribs: { href: token.href } });
+    // A block of HTML may start with a closing tag or a comment and still open elements after it.
+    if (token.type === "html") authored.push(...openingTags(token.text));
+    else if (token.type === "link") {
+      // Like marked, which writes the address into the HTML, where character references such as `&#8291;` are read.
+      const href = markedLinkAddress(token.href);
+      if (href !== null) authored.push(...openingTags(`<a href="${href}">`));
+    } else if (token.type === "image") authored.push({ tag: "img", attribs: {} });
   });
 
   const probes = new Map<string, HtmlElement>();

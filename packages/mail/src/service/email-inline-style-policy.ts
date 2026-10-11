@@ -1,7 +1,8 @@
 export const EMAIL_INLINE_STYLE_PROPERTIES = [
   // Properties common in generated email templates (MJML, Mailchimp, SendGrid, Outlook-safe table layouts).
   // Positioning (`position`, `z-index`, `inset`), `visibility`, `opacity` and `display: none` stay excluded,
-  // and every value passes SAFE_EMAIL_INLINE_STYLE_VALUE, which blocks url(), expression(), var() and attr().
+  // and every value passes SAFE_EMAIL_INLINE_STYLE_VALUE, which blocks url(), the other functions that load an
+  // image such as image-set(), and expression(), var() and attr().
   "background",
   "background-color",
   "border",
@@ -81,7 +82,10 @@ export const EMAIL_INLINE_STYLE_PROPERTIES = [
 
 export const EMAIL_INLINE_STYLE_PROPERTY_SET = new Set<string>(EMAIL_INLINE_STYLE_PROPERTIES);
 
-export const SAFE_EMAIL_INLINE_STYLE_VALUE = /^(?!.*(?:url|expression|var|attr)\s*\()[^{}@\u0000-\u0008\u000b\u000c\u000e-\u001f]*$/i;
+// `image-set` and `cross-fade` also match their `-webkit-` forms, `element` matches `-moz-element`. The `s` flag
+// lets the check read past a line break inside the value.
+export const SAFE_EMAIL_INLINE_STYLE_VALUE =
+  /^(?!.*(?:url|image-set|cross-fade|image|element|src|expression|var|attr)\s*\()[^{}@\u0000-\u0008\u000b\u000c\u000e-\u001f]*$/is;
 
 /**
  * Properties whose values are limited further. Buttons need `display: inline-block` so their padding

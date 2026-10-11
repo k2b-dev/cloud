@@ -14,6 +14,12 @@ describe("email HTML sanitizer", () => {
     }
   });
 
+  test("drops a link address that hides its scheme in an HTML comment", () => {
+    for (const href of ["te<!--x-->l:nope", "tel<!---->:nope", "https://example.test/<!--x-->"]) {
+      expect(sanitizeEmailHtml(`<a href="${href}">Call</a>`)).toBe("<a>Call</a>");
+    }
+  });
+
   test("still drops other schemes", () => {
     expect(sanitizeEmailHtml('<a href="javascript:alert(1)">x</a> <a href="sms:+49">y</a>')).toBe("<a>x</a> <a>y</a>");
   });
