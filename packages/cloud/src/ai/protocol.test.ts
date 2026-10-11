@@ -2,6 +2,23 @@ import { expect, test } from "bun:test";
 import { aiCapabilityToolName } from "./capabilities";
 import { buildBlocksFromMessages } from "./protocol";
 
+test.each(["completed", "failed", "rejected"] as const)("rebuilds the %s outcome time from the tool result", (status) => {
+  const createdAt = "2026-10-07T10:23:45.000Z";
+  const call = {
+    seq: 1,
+    createdAt: "2026-10-07T10:00:00.000Z",
+    message: { role: "assistant" as const, content: [{ type: "tool_call" as const, id: "call", name: "send", args: {} }] },
+  };
+  expect(buildBlocksFromMessages([call])[0]).not.toHaveProperty("at");
+  const result = {
+    seq: 2,
+    message: { role: "tool_result" as const, callId: "call", name: "send", result: {}, isError: status !== "completed" },
+    meta: status === "rejected" ? { toolOutcomes: { call: "rejected" as const } } : null,
+  };
+  expect(buildBlocksFromMessages([call, result])[0]).not.toHaveProperty("at");
+  expect(buildBlocksFromMessages([call, { ...result, createdAt }])[0]).toMatchObject({ status, at: createdAt });
+});
+
 const rebuiltName = (name: string) => {
   const message = { role: "assistant" as const, content: [{ type: "tool_call" as const, id: "call", name, args: {} }] };
   const blocks = buildBlocksFromMessages([{ seq: 1, message }]);

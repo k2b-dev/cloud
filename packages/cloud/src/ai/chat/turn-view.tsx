@@ -1,3 +1,4 @@
+import { dates } from "@k2b/stdlib";
 import { announce, Button, ButtonLink, Chat, NoticeCard, useLocale } from "@k2b/ui";
 import {
   type Accessor,
@@ -17,7 +18,7 @@ import {
 import { markdown } from "../../shared";
 import { AI_TURN_LEASE_MS, type AiTurnBlock } from "../protocol";
 import type { AiTurnError } from "../types";
-import { toolOutcome, toolSubject } from "./action-sentences";
+import { toolOutcome, toolSubject, useReaderTimeZone } from "./action-sentences";
 import {
   type AiApprovalDecision,
   ApprovalBlockView,
@@ -525,10 +526,11 @@ type ReceiptState = Exclude<AiTurnActionState, "open" | "interaction">;
  */
 function AiReceipt(props: { block: ToolBlock; state: ReceiptState; stopped: boolean }) {
   const locale = useLocale();
+  const timeZone = useReaderTimeZone();
   const t = () => aiChatMessages(locale());
   const block = () => props.block;
   const subject = () => {
-    const sentence = toolSubject(block(), locale());
+    const sentence = toolSubject(block(), locale(), timeZone);
     if (sentence) return sentence;
     const title = block().presentation?.title ?? displayToolName(block().name, locale());
     const target = toolTarget(block());
@@ -536,22 +538,26 @@ function AiReceipt(props: { block: ToolBlock; state: ReceiptState; stopped: bool
   };
   const capabilityAction = () => block().presentation?.kind === "capability";
   const links = () => (props.state === "done" ? resultLinks(block()) : []);
-  const label = () => {
+  const outcomeLabel = () => {
     const state = props.state;
     if (state === "running") return t().receiptRunning({ title: subject() });
     if (state === "done") {
       // A tool that is not a Cloud action has no effect of its own to report; the receipt records the decision.
       if (!capabilityAction()) return t().receiptApproved({ title: subject() });
-      return toolOutcome(block(), "done", locale()) || resultSummary(block()) || t().receiptDone({ title: subject() });
+      return toolOutcome(block(), "done", locale(), timeZone) || resultSummary(block()) || t().receiptDone({ title: subject() });
     }
-    if (state === "rejected") return toolOutcome(block(), "rejected", locale()) ?? t().receiptRejected({ title: subject() });
+    if (state === "rejected") return toolOutcome(block(), "rejected", locale(), timeZone) ?? t().receiptRejected({ title: subject() });
     if (state === "failed") return t().receiptFailed({ title: subject() });
-    const notRun = toolOutcome(block(), "notRun", locale());
+    const notRun = toolOutcome(block(), "notRun", locale(), timeZone);
     return notRun
       ? t().receiptNotRunSentence({ sentence: notRun, stopped: props.stopped })
       : t().receiptNotRun({ title: subject(), stopped: props.stopped });
   };
   const declined = () => props.state === "rejected" || props.state === "not_run";
+  const label = () => {
+    const at = block().at;
+    return at && props.state !== "running" ? `${outcomeLabel()} · ${dates.formatTime(at, { locale: locale(), timeZone })}` : outcomeLabel();
+  };
   return (
     <Chat.Activity
       class="ai-turn-receipt"
@@ -567,6 +573,7 @@ function AiReceipt(props: { block: ToolBlock; state: ReceiptState; stopped: bool
 
 function AiTurnActionView(props: { action: Accessor<AiTurnAction | undefined>; turnId: string; phase: AiTurnPhase }) {
   const locale = useLocale();
+  const timeZone = useReaderTimeZone();
   let row!: HTMLDivElement;
   // Set while focus is in this place, including after the focused control disappeared with the decided card.
   let focusedHere = false;
@@ -597,7 +604,10 @@ function AiTurnActionView(props: { action: Accessor<AiTurnAction | undefined>; t
       if (next !== "open" || previous === "open" || !isLive(props.phase) || current?.block.status !== "awaiting_approval") return;
       announce(
         aiChatMessages(locale()).approvalNeeded({
-          title: toolSubject(current.block, locale()) ?? current.block.presentation?.title ?? displayToolName(current.block.name, locale()),
+          title:
+            toolSubject(current.block, locale(), timeZone) ??
+            current.block.presentation?.title ??
+            displayToolName(current.block.name, locale()),
         }),
       );
     }),

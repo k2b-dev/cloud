@@ -320,8 +320,14 @@ order:
    its button rather than pushing the card wider, while the title above shows
    it in full. When code asks for approval again, each new request is a new
    card in the same place.
-   A receipt is one line in the reader's language, never the raw tool name. A
-   Cloud action reads as the sentence its app declares for the outcome, such
+   A receipt is one line in the reader's language, never the raw tool name.
+   Once the call has an outcome, the receipt ends with its time, such as
+   "· 10:42"; older history without a recorded time shows none. Pass the reader's
+   time zone, such as `timeZone: getTimeZone(c)` from the page, to
+   `createAiChatTimeline` so server-rendered history shows the same times as
+   the browser. Without it, times and dates in the chat use the browser's zone
+   and UTC on the server.
+   A Cloud action reads as the sentence its app declares for the outcome, such
    as "Sent email to jana@example.com", else as the action's own summary with its
    links. Without either, it names the call with the app's approval sentence
    or with its title and up to two labelled fields, such as "Done: Send email ·
