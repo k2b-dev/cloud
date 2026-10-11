@@ -41,7 +41,10 @@ import {
 } from "./sender-verification";
 
 const log = logger("mail:commands");
-const internalDraftEditableContentInputSchema = draftEditableContentInputSchema.extend({ senderIdentityId: z.string().uuid() });
+const internalDraftEditableContentInputSchema = draftEditableContentInputSchema.extend({
+  senderIdentityId: z.string().uuid(),
+  signatureTemplateId: z.string().uuid().nullable().optional(),
+});
 
 type DbCommand = {
   id: string;
@@ -188,6 +191,7 @@ type DraftForOutbox = {
   intent: "new" | "reply" | "reply_all" | "forward";
   display_name: string;
   sender_identity_id: string;
+  signature_template_id: string | null;
   from_address: string;
   reply_to: string | null;
   envelope_sender: string | null;
@@ -499,6 +503,7 @@ const createSendOutbox = async (params: {
       d.subject,
       d.body_markdown,
       d.body_format,
+      d.signature_template_id,
       d.priority,
       d.request_delivery_receipt,
       d.request_read_receipt,
@@ -562,6 +567,7 @@ const createSendOutbox = async (params: {
   if (!safety.ok) throw Object.assign(new Error(safety.error.message), safety.error);
   const content = internalDraftEditableContentInputSchema.safeParse({
     senderIdentityId: draft.sender_identity_id,
+    signatureTemplateId: draft.signature_template_id,
     to: draft.to_addresses,
     cc: draft.cc_addresses,
     bcc: draft.bcc_addresses,

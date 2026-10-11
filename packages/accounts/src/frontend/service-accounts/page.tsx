@@ -1,3 +1,4 @@
+import { isModelsOnlyApiKey } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
 import {
@@ -8,7 +9,7 @@ import {
 import { Layout } from "@k2b/cloud/ssr";
 import { SearchBar } from "@k2b/cloud/ssr/islands";
 import { dates } from "@k2b/stdlib";
-import { DataTable, type DataTableColumn, Pagination, Paper, Placeholder, StatusBadge, type StatusTone } from "@k2b/ui";
+import { DataTable, type DataTableColumn, Pagination, Paper, Placeholder, StatusBadge, type StatusTone, Tag } from "@k2b/ui";
 import AccountAvatar from "@/frontend/AccountAvatar";
 import { ssr } from "../../config";
 import AccountsWorkspace from "../AccountsWorkspace";
@@ -127,7 +128,14 @@ export default ssr<AuthContext>(async (c) => {
                   if (col.id === "key") {
                     return (
                       <div class="flex min-w-0 flex-col gap-1">
-                        <span class="truncate font-medium text-primary">{entry.name}</span>
+                        <div class="flex min-w-0 items-center gap-2">
+                          <span class="truncate font-medium text-primary">{entry.name}</span>
+                          {isModelsOnlyApiKey(entry) && (
+                            <Tag icon="ti ti-sparkles" size="sm">
+                              {t.modelsOnlyKey}
+                            </Tag>
+                          )}
+                        </div>
                         <span class="truncate font-mono text-xs text-dimmed">cld_{entry.tokenPrefix}_...</span>
                       </div>
                     );

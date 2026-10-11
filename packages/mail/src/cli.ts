@@ -79,11 +79,13 @@ import {
   type MailStorageSummary,
   type MailSubscriptionPage,
   type MailSubscriptionSummary,
+  type MailSyncRunPage,
   type MailWorkflow,
   type MailWorkflowDetail,
   type MailWorkflowVersion,
   type MessageInspector,
   mailSearchExpressionSchema,
+  mailSyncRunStateSchema,
   type PlatformMailboxOperationSummary,
   type PlatformMailOperations,
   type ProviderBinding,
@@ -751,7 +753,18 @@ const readOptionalVcard = async (input: Parameters<typeof readCliInput>[0]): Pro
 
 const receiptSetting = (value: "on" | "off" | undefined): boolean | undefined => (value === undefined ? undefined : value === "on");
 
+const draftSignatureChoice = (flags: { signature?: string; noSignature?: boolean }) => {
+  if (flags.signature && flags.noSignature) throw new Error("Use either --signature or --no-signature.");
+  return flags.noSignature
+    ? { signatureTemplateId: null }
+    : flags.signature
+      ? { signatureTemplateId: requireMailResourceId(flags.signature, "Signature template id") }
+      : {};
+};
+
 const draftEditableContentFlags = {
+  signature: flag.string({ description: "Signature template id; omitted keeps the default or current signature" }),
+  noSignature: flag.boolean({ name: "no-signature", description: "Use no signature" }),
   identity: flag.string({ required: true, description: "Sender identity id" }),
   to: flag.stringList({ description: "Recipient; repeatable" }),
   cc: flag.stringList({ description: "Cc recipient; repeatable" }),
@@ -777,7 +790,7 @@ const draftEditableContentFlags = {
 
 const composeTemplateVariableWidth = Math.max(...Object.keys(composeTemplateVariables).map((name) => name.length));
 const composeTemplateHelpDescription = [
-  "Signatures keep their Liquid variables until preview and send; snippets are filled in when they are inserted.",
+  "Signatures are chosen per draft with --signature or --no-signature and filled at preview and send; snippets are filled when inserted.",
   "Variables:",
   ...Object.entries(composeTemplateVariables).map(
     ([name, description]) => `  ${name.padEnd(composeTemplateVariableWidth)}  ${description}`,
@@ -796,6 +809,7 @@ const composeDraftExample = {
 } satisfies DraftEditableContentInput;
 
 const composeDraftHelpDescription = [
+  "Signatures are chosen per draft with signatureTemplateId (null for none); snippet rendering and suggestions return only body snippets.",
   "Draft JSON:",
   "  senderIdentityId is required: a verified sender identity ID from cld mail identity list.",
   '  to, cc, and bcc are arrays of { "address": string, "name"?: string|null } objects, not plain strings; name is optional; default [].',
@@ -844,6 +858,8 @@ const readDraftEditableContent = async (flags: {
   priority?: MailPriority;
   deliveryReceipt?: "on" | "off";
   readReceipt?: "on" | "off";
+  signature?: string;
+  noSignature?: boolean;
 }) => {
   if (!flags.identity) throw new Error("Missing sender identity.");
   const senderIdentityId = requireMailResourceId(flags.identity, "Sender identity id");
@@ -853,6 +869,7 @@ const readDraftEditableContent = async (flags: {
   });
   return {
     senderIdentityId,
+    ...draftSignatureChoice(flags),
     to: parseAddresses(flags.to),
     cc: parseAddresses(flags.cc),
     bcc: parseAddresses(flags.bcc),
@@ -2502,6 +2519,10 @@ const everydayCommands = (t: Translate) => {
       args: { conversation: arg.required({ description: t({ en: "Conversation ID", de: "Unterhaltungs-ID" }) }) },
       flags: {
         ...mailboxOption,
+        signature: flag.string({
+          description: t({ en: "Signature template ID instead of the default", de: "Signaturvorlagen-ID statt der Standardsignatur" }),
+        }),
+        noSignature: flag.boolean({ name: "no-signature", description: t({ en: "Send without a signature", de: "Ohne Signatur senden" }) }),
         all: flag.boolean({ description: t({ en: "Reply to all recipients", de: "Allen Empfängern antworten" }) }),
         message: flag.string({
           description: t({
@@ -2529,6 +2550,7 @@ const everydayCommands = (t: Translate) => {
           `/mailboxes/${mailbox.id}/drafts`,
           jsonRequest("POST", {
             senderIdentityId,
+            ...draftSignatureChoice(flags),
             to: [],
             cc: [],
             bcc: [],
@@ -2559,6 +2581,10 @@ const everydayCommands = (t: Translate) => {
       args: { conversation: arg.required({ description: t({ en: "Conversation ID", de: "Unterhaltungs-ID" }) }) },
       flags: {
         ...mailboxOption,
+        signature: flag.string({
+          description: t({ en: "Signature template ID instead of the default", de: "Signaturvorlagen-ID statt der Standardsignatur" }),
+        }),
+        noSignature: flag.boolean({ name: "no-signature", description: t({ en: "Send without a signature", de: "Ohne Signatur senden" }) }),
         to: flag.stringList({ description: t({ en: "Recipient; repeatable", de: "Empfänger; wiederholbar" }) }),
         cc: flag.stringList({ description: t({ en: "Cc recipient; repeatable", de: "Cc-Empfänger; wiederholbar" }) }),
         message: flag.string({
@@ -2593,6 +2619,7 @@ const everydayCommands = (t: Translate) => {
           `/mailboxes/${mailbox.id}/drafts`,
           jsonRequest("POST", {
             senderIdentityId,
+            ...draftSignatureChoice(flags),
             to: parseAddresses(flags.to),
             cc: parseAddresses(flags.cc),
             bcc: [],
@@ -3211,7 +3238,7 @@ const specialistCommands = {
         shortcut: flag.string({
           required: true,
           description:
-            "Slash command that inserts the template in the composer, for example sig for /sig; lowercase letters, digits and underscores, starting with a letter, at most 40 characters",
+            "Slash command for a snippet, for example meeting for /meeting, or a short unique name for a signature; lowercase letters, digits and underscores, starting with a letter, at most 40 characters",
         }),
         body: flag.input({
           required: true,
@@ -3238,7 +3265,9 @@ const specialistCommands = {
           }),
         );
         if (printStructured(ctx, template)) return;
-        ctx.print(`Created ${template.kind} ${template.name} as /${template.shortcut} (${template.id}).`);
+        ctx.print(
+          `Created ${template.kind} ${template.name} as ${template.kind === "snippet" ? "/" : ""}${template.shortcut} (${template.id}).`,
+        );
         printFormattingWarnings(ctx, template.formattingWarnings);
       },
     }),
@@ -3313,7 +3342,7 @@ const specialistCommands = {
       },
     }),
     command("compose snippet render", {
-      summary: "Render a visible signature or snippet for a draft",
+      summary: "Render a visible snippet for a draft",
       description: composeDraftHelpDescription,
       examples: ["cld mail compose snippet render Templ1 --draft-file draft.json"],
       args: {
@@ -3342,7 +3371,7 @@ const specialistCommands = {
       },
     }),
     command("compose suggestions", {
-      summary: "List rendered signatures and snippets matching a shortcut or name",
+      summary: "List rendered snippets matching a shortcut or name",
       description: composeDraftHelpDescription,
       examples: ["cld mail compose suggestions --draft-file draft.json"],
       args: {
@@ -3528,7 +3557,7 @@ const specialistCommands = {
             `Folders: ${health.discovery.activeFolders} active, ${health.discovery.missingFolders} missing, ${health.discovery.ambiguousFolders} ambiguous`,
           );
           ctx.print(
-            `Sync: ${health.sync.lastAt ? `last completed ${health.sync.lastAt}` : "never completed"}, ${health.sync.runningRuns} running, ${health.sync.failedRuns} failed; hydration ${health.hydration.pending} pending/${health.hydration.failed} failed`,
+            `Sync: ${health.sync.lastAt ? `last completed ${health.sync.lastAt}` : "never completed"}, ${health.sync.runningRuns} running, ${health.sync.failedRuns} failed in the last 24 hours; hydration ${health.hydration.pending} pending/${health.hydration.failed} failed`,
           );
           ctx.print(`Commands: ${health.commands.maintenanceQueued} maintenance pending; search ${health.search.configuredBackend}`);
         }
@@ -4298,6 +4327,42 @@ const specialistCommands = {
         const result = flags.wait ? await waitForCommand(ctx, mailbox.id, command.id, flags.timeoutSeconds) : command;
         if (printStructured(ctx, result)) return;
         printSyncRequest(ctx, "Folder sync", result);
+      },
+    }),
+    command("sync runs", {
+      summary: "List recent sync runs with their folder and error code",
+      description:
+        "Lists the sync runs Mail keeps for 30 days, newest first. Each attempt to sync a folder batch is one run, also one that a retry completed afterwards.",
+      examples: ["cld mail sync runs --state failed", "cld --json mail sync runs --state failed --limit 100"],
+      flags: {
+        ...mailboxFlag,
+        state: flag.enum(mailSyncRunStateSchema.options, { description: "Only runs in this state" }),
+        limit: flag.int({ min: 1, max: 100, default: 50 }),
+        cursor: flag.string({ description: "Opaque cursor returned by a previous page" }),
+      },
+      run: async ({ ctx, flags }) => {
+        const mailbox = await resolveMailbox(ctx, flags.mailbox);
+        const query = new URLSearchParams({ limit: String(flags.limit ?? 50) });
+        if (flags.state) query.set("state", flags.state);
+        if (flags.cursor) query.set("cursor", flags.cursor);
+        const page = await readApi<MailSyncRunPage>(ctx, `/mailboxes/${mailbox.id}/sync-runs?${query}`);
+        printTable(
+          ctx,
+          page,
+          page.items.map((run) => ({
+            started: run.startedAt,
+            state: run.state,
+            folder: run.folderPath ?? "-",
+            error: run.errorCode ?? "-",
+          })),
+          [
+            { key: "started", label: "STARTED" },
+            { key: "state", label: "STATE" },
+            { key: "folder", label: "FOLDER" },
+            { key: "error", label: "ERROR" },
+          ],
+        );
+        if (ctx.options.output === "text" && page.nextCursor) ctx.print(`Next cursor: ${page.nextCursor}`);
       },
     }),
     command("rediscover", {
@@ -6356,6 +6421,7 @@ const specialistCommands = {
         {
           ctx.print(`${draft.subject || "[No subject]"} (${draft.id})`);
           ctx.print(`State: ${draft.state}; revision ${draft.revision}; ${draft.attachments.length} attachment(s)`);
+          ctx.print(`Signature: ${draft.signatureTemplateId ?? "none"}`);
           ctx.print("");
           ctx.print(draft.body);
         }

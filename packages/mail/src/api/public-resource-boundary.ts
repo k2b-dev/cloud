@@ -70,6 +70,7 @@ const relationTables: Record<string, RelationTable> = {
   viewId: "savedViews",
   templateId: "composeTemplates",
   defaultSignatureTemplateId: "composeTemplates",
+  signatureTemplateId: "composeTemplates",
   automationId: "incomingAutomations",
   configurationId: "automaticReplyConfigurations",
   scheduledSendId: "deliveries",

@@ -26,6 +26,7 @@ const stack = (trusted: string[]) => {
         createProxyStats(),
         () => {},
         resolveClientAddress(req.headers.get("x-forwarded-for"), server.requestIP(req)?.address ?? null, proxies),
+        server.timeout.bind(server),
       ),
   });
   // The test process is the reverse proxy: it connects from loopback and names the client.

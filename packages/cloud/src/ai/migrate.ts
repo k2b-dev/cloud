@@ -649,6 +649,7 @@ export const migrateCloudAi = async (): Promise<void> => {
   // A code run asks for its nested HTTP requests and Actions; their remembered approval names a website or Action, not the run.
   await sql`ALTER TABLE ai.pending_actions ADD COLUMN IF NOT EXISTS remember_tool_name TEXT`.simple();
   await sql`ALTER TABLE ai.pending_actions ADD COLUMN IF NOT EXISTS allow_chat BOOLEAN NOT NULL DEFAULT FALSE`.simple();
+  await sql`ALTER TABLE ai.pending_actions ADD COLUMN IF NOT EXISTS consumed_inline BOOLEAN NOT NULL DEFAULT FALSE`.simple();
 
   await sql`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_pending_actions_turn_call

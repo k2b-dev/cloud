@@ -834,8 +834,10 @@
   background: var(--k2b-surface-muted);
 }
 
+/* The container caps the body's content at the sidebar's content edge. */
 .k2b-ui .k2b-app-workspace__sidebar-desktop {
   display: none;
+  container-type: inline-size;
 }
 
 /* A row with a trailing action renders as a wrapper element, so `:disabled`

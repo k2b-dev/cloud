@@ -112,6 +112,15 @@ const dependencies = (overrides: Partial<Dependencies> = {}): Dependencies => ({
 });
 
 describe("identity key administration", () => {
+  test("refuses the reserved inference scope on standalone API keys", async () => {
+    const routes = createAdminIdentityRoutes(authenticateAdmin, dependencies());
+    const response = await routes.request(`/service-accounts/${STANDALONE_ID}/api-keys`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "forbidden", scopes: ["ai:inference"] }),
+    });
+    expect(response.status).toBe(400);
+  });
   test("requires an administrator by default", async () => {
     expect((await createAdminIdentityRoutes().request("/keys")).status).toBe(401);
   });

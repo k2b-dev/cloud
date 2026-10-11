@@ -22,6 +22,7 @@ const uniqueShortIds = (count: number): string[] => {
 };
 
 suite("mail large-mailbox performance", () => {
+  const analyzedTables = ["message_contents", "message_addresses", "message_placements", "conversations", "conversation_messages"];
   const suffix = crypto.randomUUID().slice(0, 8);
   const ids: { userId?: string; mailboxId?: string; accessIds: string[] } = { accessIds: [] };
   let context: MailRequestContext;
@@ -205,11 +206,7 @@ suite("mail large-mailbox performance", () => {
       FROM mail.message_contents mc
       WHERE mc.mailbox_id = ${mailbox.data.id}::uuid
     `;
-    await sql`ANALYZE mail.message_contents`;
-    await sql`ANALYZE mail.message_addresses`;
-    await sql`ANALYZE mail.message_placements`;
-    await sql`ANALYZE mail.conversations`;
-    await sql`ANALYZE mail.conversation_messages`;
+    for (const table of analyzedTables) await sql.unsafe(`ANALYZE mail.${table}`);
   }, 120_000);
 
   afterAll(async () => {
@@ -252,6 +249,10 @@ suite("mail large-mailbox performance", () => {
       await sql`DELETE FROM auth.access WHERE id IN (SELECT value::uuid FROM jsonb_array_elements_text(${ids.accessIds}::jsonb))`;
     }
     if (ids.userId) await sql`DELETE FROM auth.users WHERE id = ${ids.userId}::uuid`;
+    if (ids.mailboxId) {
+      // Leave statistics that match the emptied tables; later files would otherwise plan with those of the bulk load.
+      for (const table of analyzedTables) await sql.unsafe(`ANALYZE mail.${table}`);
+    }
   }, 120_000);
 
   test(`keeps structured indexed search bounded at ${MESSAGE_COUNT.toLocaleString("en-US")} messages`, async () => {

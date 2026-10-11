@@ -6,12 +6,14 @@ import type { MailContactDirectory } from "../../contact-directory-settings";
 import type { MailDraft, MailDraftSeed, SenderIdentity } from "../../contracts";
 import MailComposer from "./MailComposer";
 import type { UnfinishedDraftUpload } from "./mail-composer-attachment-manager";
+import type { MailComposerSignatures } from "./mail-composer-signature";
 import { MailContactDirectoryProvider } from "./mail-contact-directory-context";
 
 export default function MailComposerPage(props: {
   mailboxId: string;
   currentActor: { kind: "user" | "service_account"; id: string };
   identities: SenderIdentity[];
+  signatures: MailComposerSignatures;
   initialDraft?: MailDraft;
   initialSeed?: MailDraftSeed;
   unfinishedUploads?: UnfinishedDraftUpload[];
@@ -36,6 +38,7 @@ export default function MailComposerPage(props: {
             mailboxId={props.mailboxId}
             currentActor={props.currentActor}
             identities={props.identities}
+            signatures={props.signatures}
             initialDraft={props.initialDraft}
             initialSeed={props.initialSeed}
             unfinishedUploads={props.unfinishedUploads}

@@ -61,6 +61,8 @@ const groupBySchedule = (items: SpaceItem[], dateConfig?: DateContext) => {
     itemsByGroup[group.key]?.push(item);
   }
 
+  const groupOrder = (key: string) => (key === "overdue" ? 0 : key === "past-events" ? 1 : key === "none" ? 3 : 2);
+  groups.sort((a, b) => groupOrder(a.key) - groupOrder(b.key) || a.key.localeCompare(b.key));
   return { groups, itemsByGroup };
 };
 

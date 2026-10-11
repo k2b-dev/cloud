@@ -538,6 +538,26 @@ const germanText: Record<string, string> = {
     "Lege fest, wie der Assistent eine wiederkehrende Aufgabe erledigt, und füge bei Bedarf Zusatzinformationen hinzu.",
   "Save skill": "Skill speichern",
   "For example, IT support": "Zum Beispiel IT-Support",
+  "API access": "API-Zugang",
+  "Use your Assistant models in other apps through an OpenAI-compatible API.":
+    "Nutze die Modelle des Assistenten in anderen Apps über eine OpenAI-kompatible API.",
+  Connection: "Verbindung",
+  "Apps with an OpenAI-compatible provider, such as a dictation app, need this address, an API key, and a model ID. They get the models only: no chats, files, or personalization.":
+    "Apps mit einem OpenAI-kompatiblen Anbieter, etwa eine Diktier-App, brauchen diese Adresse, einen API-Schlüssel und eine Modell-ID. Sie bekommen nur die Modelle: keine Chats, keine Dateien und keine Personalisierung.",
+  "Base URL": "Base-URL",
+  "Copy base URL": "Base-URL kopieren",
+  "API key": "API-Schlüssel",
+  "In your profile, create a key with the access “AI models only”.":
+    "Erstelle in deinem Profil einen Schlüssel mit dem Zugriff „Nur KI-Modelle“.",
+  "Create API key": "API-Schlüssel erstellen",
+  Models: "Modelle",
+  "Use one of these model IDs. Requests count toward your Assistant usage limits.":
+    "Nutze eine dieser Modell-IDs. Anfragen zählen zu deinen Nutzungslimits im Assistenten.",
+  "No AI model is available to you. An administrator can grant model access in the AI settings.":
+    "Dir steht kein KI-Modell zur Verfügung. Eine Administratorin oder ein Administrator kann dir in den KI-Einstellungen Zugriff geben.",
+  Hosted: "Gehostet",
+  Private: "Privat",
+  "Copy model ID": "Modell-ID kopieren",
 };
 
 export const missingAssistantGermanText = (values: Iterable<string>): string[] =>

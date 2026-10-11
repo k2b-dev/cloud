@@ -15,6 +15,8 @@ test("Mail skill retains capability and reply guidance", async () => {
   expect(mail?.instructions).toContain("mail.conversation.focus");
   expect(mail?.instructions).toContain("mail.draft.send.review");
   expect(mail?.instructions).toContain("let Mail derive reply recipients and threading");
+  expect(mail?.instructions).toContain("Never write a signature into the body");
+  expect(mail?.instructions).toContain("choose it with `signatureTemplateId` or leave the default");
   expect(mail?.instructions).toContain("Never introduce or sign as an AI or Cloud Assistant");
   expect(mail?.instructions).toContain("consider Contacts and its Skill rather than guessing an address");
   expect(mail?.instructions).toContain("consider Spaces and preserve a link to the mail conversation");

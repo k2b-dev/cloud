@@ -76,7 +76,7 @@ import {
   createAssistantChatContextState,
 } from "./AssistantChatContext";
 import { AssistantChatSidebarPanel, type ChatSidebarJump, openAssistantChatSidebarSheet } from "./AssistantChatSidebar";
-import { resolveAssistantCloudResource } from "./AssistantContextContent";
+import { openAssistantCloudReference, resolveAssistantCloudResource } from "./AssistantContextContent";
 import AssistantEmptyChat, { type AssistantStarterAction } from "./AssistantEmptyChat";
 import { openAssistantCreateProjectDialog } from "./AssistantProjectsDialog";
 import AssistantProjectView from "./AssistantProjectView";
@@ -1920,6 +1920,7 @@ export default function AssistantWorkspace(props: Props) {
                                         : null;
                                     },
                                     fileUrl: chat.fileContentUrl,
+                                    onOpenReference: (title, ref) => void openAssistantCloudReference(title, ref),
                                   }}
                                 >
                                   <ConversationTimeline />

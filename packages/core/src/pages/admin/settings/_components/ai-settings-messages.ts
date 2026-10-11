@@ -80,6 +80,11 @@ export const aiSettingsMessages = i18n.define({
       globalInstructions: "Global instructions",
       globalInstructionsDescription:
         "Liquid template appended after the platform prompt in every Cloud AI conversation. Type {{ for variable completions.",
+      localClientInstructions: "Instructions for local clients",
+      localClientInstructionsDescription:
+        "Added to turns from cld and editors after the organization instructions. Leave empty to use the built-in text; your text replaces it completely.",
+      showLocalClientInstructions: "Show built-in text",
+      localClientBuiltInDescription: "Copy it as a starting point; facts such as the workspace folder are added above it for every turn.",
       showPlatformPrompt: "Show the built-in platform prompt",
       platformPromptDescription:
         "Every conversation starts with this Liquid template. It is rendered for each turn with the current user, chat, time, tools, and memory state. Global instructions are appended directly after it.",
@@ -354,6 +359,11 @@ export const aiSettingsMessages = i18n.define({
       globalInstructions: "Globale Anweisungen",
       globalInstructionsDescription:
         "Liquid-Vorlage, die in jedem Cloud-KI-Chat an den Plattform-Prompt angehängt wird. Tippe {{ für Variablenvorschläge.",
+      localClientInstructions: "Anweisungen für lokale Clients",
+      localClientInstructionsDescription:
+        "Wird an Anfragen aus cld und Editoren nach den Organisationsanweisungen angehängt. Leer lassen, um den mitgelieferten Text zu nutzen; dein Text ersetzt ihn vollständig.",
+      showLocalClientInstructions: "Mitgelieferten Text anzeigen",
+      localClientBuiltInDescription: "Kopiere ihn als Ausgangspunkt; Angaben wie der Arbeitsordner kommen bei jeder Anfrage davor.",
       showPlatformPrompt: "Integrierten Plattform-Prompt anzeigen",
       platformPromptDescription:
         "Jeder Chat beginnt mit dieser Liquid-Vorlage. Sie wird für jeden Durchlauf mit Benutzer, Chat, Zeit, Werkzeugen und Erinnerungen gerendert. Die globalen Anweisungen werden direkt angehängt.",

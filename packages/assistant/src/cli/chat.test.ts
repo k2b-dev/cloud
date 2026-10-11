@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { type CloudCliContext, defineCliCommands } from "@k2b/cloud/cli";
-import { assistantChatCommands } from "./chat";
+import { assistantChatCommands, assistantManagementCommands } from "./chat";
 import { resolveConversation } from "./turn";
 
 const context = (args: string[] = [], flags: CloudCliContext["flags"] = {}) => {
@@ -91,4 +91,19 @@ test("creating a titled chat preserves its project assignment", async () => {
     { path: "/api/ai/conversations", method: "POST", body: { projectId: "project" } },
     { path: "/api/ai/conversations/chat", method: "PATCH", body: { title: "Research" } },
   ]);
+});
+
+test("system-prompt --local includes this computer and the profile's local tools default", async () => {
+  const { ctx, requests } = context(["prefs", "system-prompt"], { local: true });
+  ctx.getDefault = async (key) => (key === "assistant.localTools" ? "off" : undefined);
+  await defineCliCommands({ name: "assistant", summary: "Assistant", commands: [...assistantManagementCommands] }).run(ctx);
+  const request = requests[0];
+  if (!request || typeof request !== "object" || !("path" in request) || typeof request.path !== "string")
+    throw new Error("Expected prompt request");
+  const params = new URL(request.path, ctx.options.server).searchParams;
+  expect(params.get("clientKind")).toBe("cli");
+  expect(params.get("cwd")).toBe(process.cwd());
+  expect(params.get("os")).toBeTruthy();
+  expect(params.get("shell")).toBe("/bin/bash");
+  expect(params.get("localTools")).toBe("off");
 });

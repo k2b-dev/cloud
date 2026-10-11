@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { createDecipheriv, createECDH, createHmac, randomBytes } from "node:crypto";
+import { createDecipheriv, createECDH, createHash, createHmac, randomBytes } from "node:crypto";
 import { request as httpRequest } from "node:http";
 import { sendPinnedWebPush } from "@k2b/cloud/services/notifications/web-push-transport";
 import { createSync, type Sync } from "@k2b/sync";
@@ -153,6 +153,32 @@ suite("Cloud Login push service", () => {
     expect(deliveries(phone.path)).toHaveLength(1);
   });
 
+  test("Action wake-ups have their own message, dedupe key and topic; the old body still wakes sign-ins", async () => {
+    const phone = await subscribe();
+    const request = { token: phone.token, cloudOrigin: "https://cloud.example.test", requestRef: crypto.randomUUID() };
+    expect((await notify(request, "198.51.100.30")).status).toBe(202);
+    expect((await notify({ ...request, kind: "action" }, "198.51.100.31")).status).toBe(202);
+    expect((await notify({ ...request, kind: "action" }, "198.51.100.32")).status).toBe(202);
+    await until(() => deliveries(phone.path).length === 2);
+    const messages = deliveries(phone.path).map((push) => ({
+      message: decrypt(push.body, phone.browser, phone.auth),
+      topic: push.headers.get("topic"),
+    }));
+    for (const type of ["login", "action"] as const) {
+      const result = messages.find((entry) => entry.message.type === type);
+      expect(result?.message).toEqual({ v: 1, type, cloud: request.cloudOrigin, ref: request.requestRef });
+      expect(result?.topic).toBe(
+        createHash("sha256")
+          .update(`${type === "action" ? "action:" : ""}${request.cloudOrigin}`)
+          .digest("base64url")
+          .slice(0, 32),
+      );
+    }
+    await Bun.sleep(500);
+    expect(deliveries(phone.path)).toHaveLength(2);
+    expect((await notify({ ...request, kind: "unknown" }, "198.51.100.33")).status).toBe(400);
+  });
+
   test("a push service 410 deletes the subscription and later notifications answer 410", async () => {
     const phone = await subscribe();
     statuses.set(phone.path, [410]);
@@ -202,6 +228,39 @@ suite("Cloud Login push service", () => {
       seen.push(await notify({ token: other.token, cloudOrigin: "https://a.example.test", requestRef: ref }, "192.0.2.99"));
     expect(seen.map((response) => response.status)).toEqual([202, 202, 202, 429, 429]);
     expect(Number(seen[4]!.headers.get("retry-after"))).toBeGreaterThan(0);
+  });
+
+  test("30 Action wake-ups across Clouds leave the sign-in and test budget intact; the 31st Action is limited", async () => {
+    const phone = await subscribe();
+    for (let i = 0; i < 30; i++) {
+      expect(
+        (
+          await notify(
+            { token: phone.token, cloudOrigin: `https://cloud-${i}.example.test`, requestRef: crypto.randomUUID(), kind: "action" },
+            `192.0.2.${100 + i}`,
+          )
+        ).status,
+      ).toBe(202);
+    }
+    expect(
+      (
+        await notify(
+          { token: phone.token, cloudOrigin: "https://cloud.example.test", requestRef: crypto.randomUUID(), kind: "action" },
+          "192.0.2.130",
+        )
+      ).status,
+    ).toBe(429);
+    expect(
+      (await notify({ token: phone.token, cloudOrigin: "https://cloud.example.test", requestRef: crypto.randomUUID() }, "192.0.2.131"))
+        .status,
+    ).toBe(202);
+    expect((await routes().request("/push/test", { method: "POST", body: JSON.stringify({ token: phone.token }) })).status).toBe(202);
+    expect(
+      (await notify({ token: phone.token, cloudOrigin: "https://cloud.example.test", requestRef: crypto.randomUUID() }, "192.0.2.132"))
+        .status,
+    ).toBe(202);
+    // This suite lowers the shared sign-in/test budget to three; Actions used none of it.
+    expect((await routes().request("/push/test", { method: "POST", body: JSON.stringify({ token: phone.token }) })).status).toBe(429);
   });
 
   test("rejects oversized, malformed and unknown requests", async () => {

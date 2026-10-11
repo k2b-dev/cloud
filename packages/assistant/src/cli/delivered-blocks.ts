@@ -6,6 +6,8 @@ import {
   CloudAiViewSummarySchema,
   type CloudAiViewTable,
   cloudAiChartTable,
+  cloudAiDetailsRows,
+  cloudAiStatsTiles,
   cloudAiViewTable,
   isAiViewFile,
   parseCloudAiChartToolView,
@@ -97,7 +99,37 @@ async function printView(ctx: CloudCliContext, result: unknown, conversationId: 
       ctx.print();
       ctx.print(terminalSafeText(view.title));
       if (view.subtitle) ctx.print(terminalSafeText(view.subtitle));
-      printTable(ctx, cloudAiViewTable(view, ctx.options.locale ?? "en"), true);
+      const locale = ctx.options.locale ?? "en";
+      if (view.view === "stats" || view.view === "details") {
+        const rows =
+          view.view === "stats"
+            ? cloudAiStatsTiles(view, locale).map((tile) => ({
+                label: tile.label,
+                value: `${tile.value}${tile.delta ? ` (${tile.delta.text})` : ""}${tile.sub ? ` · ${tile.sub}` : ""}`,
+              }))
+            : cloudAiDetailsRows(view, locale).map((row) => ({
+                label: row.label,
+                value: row.ref ? `${row.text} (${row.ref.type}:${row.ref.id})` : row.text,
+              }));
+        ctx.table(
+          rows.map((row) => ({ label: terminalSafeText(row.label), value: terminalSafeText(row.value) })),
+          [
+            { key: "label", label: "Field" },
+            { key: "value", label: "Value" },
+          ],
+        );
+      } else {
+        const table = cloudAiViewTable(view, locale);
+        for (const row of [...table.rows, ...(table.footer ? [table.footer] : [])]) {
+          const cells = row.key === "footer" ? view.footer : view.rows[Number(row.key)];
+          for (const column of view.columns) {
+            const ref = cells && Object.hasOwn(cells, column.id) ? cells[column.id] : undefined;
+            if (column.type === "ref" && ref && typeof ref === "object")
+              row.cells[column.id] = `${ref.title ?? ref.id} (${ref.type}:${ref.id})`;
+          }
+        }
+        printTable(ctx, table, true);
+      }
       ctx.print();
     }
   } catch {

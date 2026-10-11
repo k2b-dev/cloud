@@ -179,7 +179,11 @@ function ComposeTemplateEditor(props: {
             />
             <TextInput
               label={messages().shortcut}
-              description={messages().shortcutDescription({ shortcut: shortcut() || messages().shortcutExample })}
+              description={
+                kind() === "signature"
+                  ? messages().signatureShortcutDescription
+                  : messages().shortcutDescription({ shortcut: shortcut() || messages().shortcutExample })
+              }
               value={shortcut}
               onValueChange={setShortcut}
               prefix="/"

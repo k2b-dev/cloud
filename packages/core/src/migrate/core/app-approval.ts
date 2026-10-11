@@ -11,6 +11,9 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
   )`.simple();
   // Opaque authenticator push token; it can only trigger a wake-up notification.
   await db`ALTER TABLE auth.app_devices ADD COLUMN IF NOT EXISTS push_token TEXT`.simple();
+  await db`ALTER TABLE auth.app_devices ADD COLUMN IF NOT EXISTS actions_at TIMESTAMPTZ`.simple();
+  await db`ALTER TABLE auth.app_devices ADD COLUMN IF NOT EXISTS action_wake_at TIMESTAMPTZ`.simple();
+  await db`ALTER TABLE auth.app_devices ADD COLUMN IF NOT EXISTS action_wake_ref UUID`.simple();
   await db`CREATE INDEX IF NOT EXISTS app_devices_owner ON auth.app_devices(issuer, user_id, created_at, id)`.simple();
   // Signing an account out everywhere revokes its devices under every issuer, often in per-user loops.
   await db`CREATE INDEX IF NOT EXISTS app_devices_user ON auth.app_devices(user_id)`.simple();

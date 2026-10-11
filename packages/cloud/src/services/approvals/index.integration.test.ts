@@ -63,6 +63,7 @@ databaseSuite()("platform approvals", () => {
       WHERE conrelid='approvals.requests'::regclass AND conname='requests_decided_via_check'`;
     const first = await constraint();
     expect(first[0]?.definition).toContain("acp_bridge");
+    expect(first[0]?.definition).toContain("cloud_login");
     expect(first[0]?.convalidated).toBe(true);
     await migrateApprovals();
     expect(await constraint()).toEqual(first);
@@ -72,6 +73,46 @@ databaseSuite()("platform approvals", () => {
       status: "approved",
     });
   });
+  test("upgrades the ACP constraint once and Cloud Login approves both assurance levels with device provenance", async () => {
+    await sql`ALTER TABLE approvals.requests DROP CONSTRAINT requests_decided_via_check`.simple();
+    await sql`ALTER TABLE approvals.requests ADD CONSTRAINT requests_decided_via_check
+      CHECK (decided_via IS NULL OR decided_via IN ('web_session','app_session','oauth','api_key','invocation','acp_bridge')) NOT VALID`.simple();
+    await migrateApprovals();
+    const constraint = () => sql<
+      { oid: number; definition: string }[]
+    >`SELECT oid,pg_get_constraintdef(oid) AS definition FROM pg_constraint
+      WHERE conrelid='approvals.requests'::regclass AND conname='requests_decided_via_check'`;
+    const first = await constraint();
+    expect(first[0]?.definition).toContain("cloud_login");
+    await migrateApprovals();
+    expect(await constraint()).toEqual(first);
+    // The decision locks the active device, so a revoked device cannot decide.
+    const device = async (revoked: boolean) => {
+      const id = crypto.randomUUID();
+      await sql`INSERT INTO auth.app_devices(id,issuer,user_id,name,public_key,assisted,revoked_at)
+        VALUES (${id}::uuid,'https://cloud.example.test',${userId}::uuid,'Phone',${JSON.stringify({ id })}::text::jsonb,false,${revoked ? new Date() : null})`;
+      return id;
+    };
+    const revoked = await ask({ ...input(), assurance: "confirm" });
+    expect(await approvals.decide(revoked.id, { approved: true }, { userId, via: "cloud_login", deviceId: await device(true) })).toEqual({
+      ok: false,
+      code: "NOT_FOUND",
+    });
+    expect(await approvals.get(revoked.id)).toMatchObject({ status: "pending" });
+    const deviceId = await device(false);
+    for (const assurance of ["standard", "confirm"] as const) {
+      const record = await ask({ ...input(), assurance });
+      expect(await approvals.decide(record.id, { approved: true }, { userId, via: "cloud_login", deviceId })).toMatchObject({
+        ok: true,
+        status: "approved",
+      });
+      const [event] = await sql<
+        { metadata: unknown }[]
+      >`SELECT metadata FROM audit.events WHERE target_type='approval_request' AND target_id=${record.id}`;
+      expect(event?.metadata).toMatchObject({ decidedVia: "cloud_login", deviceId });
+    }
+  });
+
   test("ACP can reject every assurance and approve standard, but confirm stays pending without an audit", async () => {
     const record = await ask({ ...input(), assurance: "confirm" });
     const before = await approvals.get(record.id);

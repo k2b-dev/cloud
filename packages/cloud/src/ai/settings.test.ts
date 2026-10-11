@@ -483,3 +483,11 @@ test("profile header validation rejects incompatible providers and never exposes
   expect(parsed.error).toBeUndefined();
   expect(JSON.stringify(parsed.profiles)).not.toContain("hidden-value");
 });
+
+test("local client instructions default empty and remain literal text in the settings snapshot", async () => {
+  const input = { enabled: false, defaultModelId: "", profilesJson: "[]" };
+  expect((await resolveAiSettingsStateFromRaw(input)).localClientInstructions).toBe("");
+  expect(
+    (await resolveAiSettingsStateFromRaw({ ...input, localClientInstructions: "Keep {{ user.uid }} literal." })).localClientInstructions,
+  ).toBe("Keep {{ user.uid }} literal.");
+});

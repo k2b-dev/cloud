@@ -94,7 +94,7 @@ If the provider does not store sent messages, no copy exists.
 
 Mail adds the default Cc and Bcc recipients when a person starts a new message, reply, or forward with that identity. Mail removes duplicates and addresses that are already in To, Cc, or Bcc. Automatic replies and workflow messages do not get these defaults, and the writer can remove them before sending.
 
-Mail inserts a mailbox signature into new messages, replies, and forwards. Changing the identity later does not change an edited draft. A personal signature override comes first.
+New messages, replies, and forwards start with the sender's default signature, separate from the text. A personal default takes precedence over the mailbox default. Switching the sender in the composer switches to that sender's default signature.
 
 In **Settings → General**, you can list trusted internal email domains and choose when Mail warns about many recipients. Mail warns about external recipients only when at least one internal domain is set. These settings guide the final send review. They do not block legitimate delivery and do not change recipients automatically.
 
@@ -254,7 +254,7 @@ In **Settings → Writing**, create private or mailbox signatures and snippets. 
 
 Markdown messages always get the built-in readable email design. **Email design** adds checked mailbox CSS for company branding. It does not replace the safe base design. Check the result in the **Preview** of the composer before you rely on a CSS change.
 
-The mailbox CSS comes after the built-in design. Each of its rules wins over the built-in design for the elements it selects. For example, `a { color: #262626; }` changes the color of every link. Use `.mail-content` for the whole message, for example `.mail-content { font-size: 16px; }`. Selectors can use the elements that email keeps and the `.mail-content` class. Other classes, IDs, pseudo-classes such as `:hover`, `@` rules, and `!important` are not accepted. Values cannot load images, for example with `url()` or `image-set()`, and cannot contain backslash escapes. A quoted value, such as a font name, must end on the same line and cannot contain the other kind of quote.
+The mailbox CSS comes after the built-in design. Each of its rules wins over the built-in design for the elements it selects. For example, `a { color: #262626; }` changes the color of every link. Use `.mail-content` for the whole message, for example `.mail-content { font-size: 16px; }`. Use `.mail-signature` for the signature, for example `.mail-signature { color: #52525b; }`. Selectors can use the elements that email keeps and the `.mail-content` and `.mail-signature` classes. Other classes, IDs, pseudo-classes such as `:hover`, `@` rules, and `!important` are not accepted. Values cannot load images, for example with `url()` or `image-set()`, and cannot contain backslash escapes. A quoted value, such as a font name, must end on the same line and cannot contain the other kind of quote.
 
 Mail checks the CSS when you save it. If a saved design contains a value that a later Cloud version no longer accepts, the mailbox keeps sending. Mail leaves out only those values and keeps the rest of the design. If Mail cannot read the saved design at all, it uses the built-in design until the design is fixed. **Settings → Writing** shows which values are left out, and the composer **Preview** lists them below the message. Remove or replace them in the design. Saving still needs CSS that passes the check.
 

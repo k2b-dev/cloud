@@ -3,8 +3,10 @@ import {
   APP_APPROVAL_LIMITS,
   APP_APPROVAL_PATH,
   APP_APPROVAL_PROTOCOL,
+  type AppActionView,
   AppDeviceRequestSchema,
   AppPairingClaimSchema,
+  appActionDigest,
   appDeviceProofMessage,
   appPairingProofMessage,
 } from "../contracts/app-approval";
@@ -93,7 +95,7 @@ describe("public authenticator browser SDK", () => {
                     ? "revoked"
                     : command.operation === "push"
                       ? "updated"
-                      : command.decision === "approve"
+                      : command.operation === "decide" && command.decision === "approve"
                         ? "approved"
                         : "denied",
               },
@@ -153,4 +155,60 @@ describe("public authenticator browser SDK", () => {
       "INVALID_RESPONSE",
     );
   });
+});
+
+const actionView = async (): Promise<AppActionView> => {
+  const view = {
+    actionId: id,
+    app: { id: "mail", name: "Mail" },
+    requester: { app: { id: "assistant", name: "Assistant" }, title: null },
+    assurance: "confirm" as const,
+    sentence: "Send draft",
+    message: null,
+    details: [],
+    truncated: false,
+    createdAt: new Date().toISOString(),
+    expiresAt: expiresAt(),
+    argsDigest: "input-digest",
+  };
+  return { ...view, digest: await appActionDigest(issuer, view) };
+};
+
+test("discovers Actions, parses inbox, checks the view digest, and signs an explicit decision", async () => {
+  const key = await appApproval.createKey();
+  const device = { issuer, deviceId: id, key };
+  const view = await actionView();
+  let tampered = false;
+  const client = await appApproval.connect({
+    issuer,
+    authenticatorOrigin,
+    fetch: async (url, init) => {
+      if (url.endsWith("/info")) return Response.json({ ...info, features: ["actions"] });
+      const request = AppDeviceRequestSchema.parse(JSON.parse(String(init.body)));
+      await verify(key, appDeviceProofMessage(request.proof), request.signature);
+      const command = request.proof.command;
+      if (command.operation === "inbox") return Response.json({ logins: [], actions: [], moreActions: 2, pollAfterSeconds: 5 });
+      if (command.operation === "action") return Response.json(tampered ? { ...view, sentence: "Different effect" } : view);
+      if (command.operation !== "act") throw new Error("Unexpected command");
+      expect(JSON.parse(appDeviceProofMessage(request.proof)).slice(7)).toEqual(["act", id, view.digest, command.decision]);
+      return Response.json({ state: command.decision === "approve" ? "approved" : "denied" });
+    },
+  });
+  expect(client.actions).toBe(true);
+  expect(await client.inbox(device)).toEqual({ logins: [], actions: [], moreActions: 2, pollAfterSeconds: 5 });
+  expect(await client.action(device, id)).toEqual(view);
+  expect(await client.act(device, view, "approve")).toEqual({ state: "approved" });
+  expect(await client.act(device, view, "deny")).toEqual({ state: "denied" });
+  tampered = true;
+  await expect(client.action(device, id)).rejects.toEqual(new AppApprovalClientError("INVALID_RESPONSE"));
+  await expect(client.act(device, { ...view, sentence: "Different effect" }, "approve")).rejects.toEqual(
+    new AppApprovalClientError("INVALID_INPUT"),
+  );
+});
+
+test("older discovery and unknown features do not announce Actions", async () => {
+  for (const discovery of [info, { ...info, features: ["future"] }]) {
+    const client = await appApproval.connect({ issuer, authenticatorOrigin, fetch: async () => Response.json(discovery) });
+    expect(client.actions).toBe(false);
+  }
 });

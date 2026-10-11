@@ -21,6 +21,7 @@ const ids = {
   automation: "00000000-0000-4000-8000-000000000005",
   folder: "00000000-0000-4000-8000-000000000006",
   childFolder: "00000000-0000-4000-8000-000000000007",
+  signature: "00000000-0000-4000-8000-000000000008",
 };
 const shorts = new Map([
   [ids.mailbox, "Box001"],
@@ -30,6 +31,7 @@ const shorts = new Map([
   [ids.automation, "Auto01"],
   [ids.folder, "Fold01"],
   [ids.childFolder, "Fold02"],
+  [ids.signature, "Sign01"],
 ]);
 const loadIds = async (_table: string, values: Array<string | null | undefined>) =>
   new Map(values.flatMap((id) => (id && shorts.has(id) ? [[id, shorts.get(id)!] as const] : [])));
@@ -243,8 +245,11 @@ describe("Mail SSR public boundary", () => {
     const data = {
       mailbox: { id: ids.mailbox },
       identities: [],
+      signatures: [{ id: ids.signature, name: "Support" }],
+      personalSignatureDefaults: [{ senderIdentityId: ids.folder, templateId: ids.signature }],
       draft: {
         id: ids.draft,
+        signatureTemplateId: ids.signature,
         conversationId: ids.conversation,
         derivedFromMessageId: null,
         senderIdentityId: null,
@@ -254,7 +259,9 @@ describe("Mail SSR public boundary", () => {
     const projected = await projectComposeData(data, loadIds);
     expect(projected).toMatchObject({
       mailbox: { id: "Box001" },
-      draft: { id: "Draft1", conversationId: "Conv01", attachments: [{ id: "Attach" }] },
+      signatures: [{ id: "Sign01", name: "Support" }],
+      personalSignatureDefaults: [{ senderIdentityId: "Fold01", templateId: "Sign01" }],
+      draft: { id: "Draft1", signatureTemplateId: "Sign01", conversationId: "Conv01", attachments: [{ id: "Attach" }] },
     });
   });
 });

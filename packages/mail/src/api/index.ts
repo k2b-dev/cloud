@@ -72,6 +72,8 @@ import {
   mailFocusViewSchema,
   mailFolderSchema,
   mailingListDispositionInputSchema,
+  mailSyncRunPageSchema,
+  mailSyncRunStateSchema,
   maintenanceCommandInputSchema,
   materializeDraftSeedInputSchema,
   mergeConversationsInputSchema,
@@ -206,6 +208,9 @@ const conversationMessagesQuerySchema = cursorQuerySchema.extend({
 });
 const subscriptionQuerySchema = cursorQuerySchema.extend({
   listKey: z.string().trim().toLowerCase().min(1).max(4096).optional(),
+});
+const syncRunsQuerySchema = cursorQuerySchema.extend({
+  state: mailSyncRunStateSchema.optional(),
 });
 const platformOperationsQuerySchema = z.object({
   cursor: z.string().max(2_000).optional(),
@@ -1241,6 +1246,36 @@ const mailOperationsApi = new Hono<MailApiContext>()
   )
   .get("/mailboxes/:mailboxId/health", v("param", mailboxParamSchema), async (c) =>
     respondPublic(c, health.getMailboxOperationalHealth(requestContext(c), internalMailboxId(c))),
+  )
+  .get(
+    "/mailboxes/:mailboxId/sync-runs",
+    describeRoute({
+      tags: ["Mail:Mailboxes"],
+      summary: "List recent sync runs",
+      description:
+        "Lists the mailbox's retained sync runs, newest first, with folder, state, and error code. Requires mailbox read access.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(mailSyncRunPageSchema, "One page of sync runs"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid state, limit, or cursor"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+      },
+    }),
+    v("param", mailboxParamSchema),
+    v("query", syncRunsQuerySchema),
+    async (c) => {
+      const query = c.req.valid("query");
+      return respondPublic(
+        c,
+        health.listMailboxSyncRuns({
+          context: requestContext(c),
+          mailboxId: internalMailboxId(c),
+          state: query.state,
+          cursor: query.cursor,
+          limit: query.limit,
+        }),
+      );
+    },
   )
   .get("/mailboxes/:mailboxId/subscriptions", v("param", mailboxParamSchema), v("query", subscriptionQuerySchema), async (c) => {
     const params = internalParams(c, c.req.valid("param"));

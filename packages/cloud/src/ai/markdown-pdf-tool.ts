@@ -7,6 +7,7 @@ import {
   type RenderMarkdownToPdfOptions,
   renderMarkdownToPdf,
 } from "../services/pdf";
+import { aiMissingChatFileError } from "./file-error";
 import { aiProjectFilePathFromMount } from "./file-mount";
 import { type AiFileContent, aiFileStore, normalizeAiFilePath } from "./files-store";
 import { withAiPdfConversionSlot } from "./pdf-conversions";
@@ -65,7 +66,7 @@ export const createCloudAiMarkdownToPdfTool = (dependencies: MarkdownPdfToolDepe
     if (!ctx.conversationId) throw new Error("The markdown_to_pdf tool needs a conversation context.");
     const sourcePath = conversationPath(input.path);
     const source = await read({ conversationId: ctx.conversationId, path: sourcePath });
-    if (!source) throw new Error(`No such file: ${sourcePath}`);
+    if (!source) throw aiMissingChatFileError(sourcePath, ctx.localToolsEnabled);
     if (source.origin !== "assistant") {
       throw new Error(`Create an assistant-owned Markdown file with write_file before converting ${sourcePath}.`);
     }

@@ -8,6 +8,7 @@ import {
   type RenderHtmlToPdfResult,
   renderHtmlToPdfWithConfig,
 } from "../services/pdf";
+import { aiMissingChatFileError } from "./file-error";
 import { aiProjectFilePathFromMount, aiSkillFilePathFromMount } from "./file-mount";
 import { type AiFileContent, type AiFileStat, aiFileStore, normalizeAiFilePath } from "./files-store";
 import { withAiPdfConversionSlot } from "./pdf-conversions";
@@ -122,7 +123,7 @@ export const createCloudAiHtmlToPdfTool = (dependencies: HtmlPdfToolDependencies
     for (const path of [sourcePath, cssPath, headerPath, footerPath, ...assetPaths]) {
       if (path === undefined) continue;
       const file = await stat({ conversationId, path });
-      if (!file) throw new Error(`No such file: ${path}`);
+      if (!file) throw aiMissingChatFileError(path, ctx.localToolsEnabled);
       if (path === sourcePath && file.origin !== "assistant") {
         throw new Error(`Create an assistant-owned HTML file with write_file before converting ${sourcePath}.`);
       }
@@ -134,7 +135,7 @@ export const createCloudAiHtmlToPdfTool = (dependencies: HtmlPdfToolDependencies
 
     const load = async (path: string): Promise<AiFileContent> => {
       const file = await read({ conversationId, path });
-      if (!file) throw new Error(`No such file: ${path}`);
+      if (!file) throw aiMissingChatFileError(path, ctx.localToolsEnabled);
       return file;
     };
     const text = async (path: string | undefined): Promise<string | undefined> => (path === undefined ? undefined : utf8(await load(path)));

@@ -45,6 +45,7 @@ import { createSearchRoutes } from "./search";
 import { createSyncOpsProxyRoutes } from "./sync-ops";
 import { createWidgetRoutes } from "./widgets";
 
+export { createAiOpenAiRoutes } from "../ai/openai-api";
 export { type CapabilityDispatchDependencies, dispatchCapability } from "./capabilities";
 export { cliPluginListRoutes } from "./cli-plugins";
 export { createPwaPhoneRoutes } from "./pwa-phone";

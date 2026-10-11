@@ -15,6 +15,7 @@ export const emailDesignPreviewDocument = (css: string, text: EmailDesignPreview
   `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><style>
   body { margin: 0; padding: 24px; color: #18181b; background: #fff; font: 15px/1.55 system-ui, sans-serif; }
   .mail-content { max-width: 640px; margin: 0 auto; }
+  .mail-signature { margin-top: 16px; }
   h1 { margin: 0 0 16px; font-size: 22px; }
   p { margin: 0 0 14px; }
   a { color: #0f766e; }
@@ -25,5 +26,5 @@ export const emailDesignPreviewDocument = (css: string, text: EmailDesignPreview
   <p>${text.greeting}</p>
   <p>${text.body}</p>
   <blockquote>${text.quote}</blockquote>
-  <p>${text.closing}<br>${text.team}</p>
+  <div class="mail-signature">${text.closing}<br>${text.team}</div>
 </main></body></html>`;

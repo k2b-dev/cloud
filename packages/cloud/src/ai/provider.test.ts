@@ -36,6 +36,45 @@ describe("AI provider factory", () => {
     ).toThrow('AI model profile "custom" requires baseURL');
   });
 
+  test("normalizes Mistral tool call and result ids consistently to nine alphanumeric characters", async () => {
+    const originalFetch = globalThis.fetch;
+    const requests: { messages: { role: string; tool_calls?: { id: string }[]; tool_call_id?: string }[] }[] = [];
+
+    globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      requests.push(JSON.parse(String(init?.body)));
+      return new Response(
+        [
+          'data: {"choices":[{"delta":{"content":"Done"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1}}',
+          "data: [DONE]",
+          "",
+        ].join("\n\n"),
+        { headers: { "content-type": "text/event-stream" } },
+      );
+    }) as typeof fetch;
+
+    try {
+      const provider = createAiProvider(profile({ provider: "mistral", model: "mistral-large-latest" }), "secret");
+      const callId = `malformed_${"a".repeat(24)}`;
+      for await (const _event of provider.stream({
+        messages: [
+          { role: "user", content: [{ type: "text", text: "Run" }] },
+          { role: "assistant", content: [{ type: "tool_call", id: callId, name: "code_run", args: {} }] },
+          { role: "tool_result", callId, name: "code_run", result: "retry", isError: true },
+        ],
+      })) {
+        // Exhaust the stream so the request body is captured.
+      }
+
+      const assistantId = requests[0]?.messages.find((message) => message.role === "assistant")?.tool_calls?.[0]?.id;
+      const resultId = requests[0]?.messages.find((message) => message.role === "tool")?.tool_call_id;
+      expect(assistantId).toEqual(resultId);
+      expect(assistantId).toMatch(/^[A-Za-z0-9]{9}$/);
+      expect(resultId).toMatch(/^[A-Za-z0-9]{9}$/);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   test("surfaces vLLM reasoning deltas as Nessi thinking events", async () => {
     const originalFetch = globalThis.fetch;
     const requests: unknown[] = [];

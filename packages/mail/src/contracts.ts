@@ -592,6 +592,31 @@ export const mailboxOperationalHealthSchema = z.object({
 });
 export type MailboxOperationalHealth = z.infer<typeof mailboxOperationalHealthSchema>;
 
+export const mailSyncRunStateSchema = z.enum(["running", "completed", "failed", "cancelled", "stale_fence"]);
+export type MailSyncRunState = z.infer<typeof mailSyncRunStateSchema>;
+
+/** One attempt to synchronize a folder batch, as an operator needs it to tell retries from a real problem. */
+export const mailSyncRunSchema = z
+  .object({
+    kind: z.string(),
+    state: mailSyncRunStateSchema,
+    folderId: ResourceShortIdSchema.nullable(),
+    folderPath: z.string().nullable(),
+    errorCode: z.string().nullable(),
+    startedAt: z.string().datetime(),
+    finishedAt: z.string().datetime().nullable(),
+  })
+  .strict();
+export type MailSyncRun = z.infer<typeof mailSyncRunSchema>;
+
+export const mailSyncRunPageSchema = z
+  .object({
+    items: z.array(mailSyncRunSchema),
+    nextCursor: z.string().nullable(),
+  })
+  .strict();
+export type MailSyncRunPage = z.infer<typeof mailSyncRunPageSchema>;
+
 export const attachmentLinkSchema = z.object({
   id: z.string().uuid(),
   mailboxId: ResourceShortIdSchema,
@@ -3149,7 +3174,7 @@ export const draftSchema = z.object({
   revision: z.number().int().positive(),
   state: z.enum(["draft", "scheduled", "sending", "sent", "discarded"]),
   deliveryClass: draftDeliveryClassSchema,
-  initialSignatureSource: z.string().nullable().optional(),
+  signatureTemplateId: ResourceShortIdSchema.nullable(),
   /** Returned by create and update only. */
   formattingWarnings: composeFormattingWarningsSchema.optional(),
   createdAt: z.string().datetime(),
@@ -3221,6 +3246,11 @@ export type CancelScheduledSendResult = z.infer<typeof cancelScheduledSendResult
 export const draftEditableContentInputSchema = z
   .object({
     senderIdentityId: ResourceShortIdSchema.describe("Verified sender-identity ID."),
+    signatureTemplateId: ResourceShortIdSchema.nullable()
+      .optional()
+      .describe(
+        "Signature template shown after the body, or null for none. On create, omit it to use the sender's default signature; on update, omit it to keep the current choice.",
+      ),
     to: z.array(mailAddressSchema).max(200).default([]).describe("Primary recipients."),
     cc: z.array(mailAddressSchema).max(200).default([]).describe("Carbon-copy recipients."),
     bcc: z.array(mailAddressSchema).max(200).default([]).describe("Blind-carbon-copy recipients."),
@@ -3310,7 +3340,6 @@ export const mailDraftSeedSchema = z
     derivationKind: draftDerivationKindSchema.nullable(),
     content: draftEditableContentInputSchema,
     attachments: z.array(draftAttachmentSchema),
-    initialSignatureSource: z.string().nullable(),
     origin: draftSeedOriginSchema,
     createdAt: z.string().datetime(),
   })

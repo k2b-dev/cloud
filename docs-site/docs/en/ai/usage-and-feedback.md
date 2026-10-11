@@ -5,7 +5,7 @@ section: AI
 order: 1065
 description: Inspect AI reference costs, configure Assistant budgets and a background emergency stop, and investigate workflow costs.
 tags: [ai, usage, feedback, administration]
-updated: 2026-10-08
+updated: 2026-10-11
 ---
 
 # Usage and feedback
@@ -128,6 +128,9 @@ groups all calls for one definition, including after a rename. Click its name
 to open its runs in workflow observability. Filter usage by `workflowId` or
 `workflowRunId` to inspect costs for a definition or one execution.
 
+Calls through the [OpenAI-compatible API](/en/docs/ai/openai-compatible-api)
+count against the person’s chat allowance and appear as task `openai-api`.
+
 Compaction, enrichment, memory learning and image inspection appear under their
 own internal task names with available chat/turn references. They do not invent
 workflow references. System-owned tasks can have no user; choose **Unassigned**
@@ -152,8 +155,9 @@ both a finite wildcard and a finite model budget apply. Model-specific unlimited
 does not override a finite wildcard. Unpriced models are exempt from both.
 Model permissions remain separate, including for administrators.
 
-These budgets cover only direct Assistant calls, including API/CLI submissions,
-queued messages and retries. Compaction, enrichment, image inspection, audio,
+These budgets cover direct Assistant calls, including API/CLI submissions,
+queued messages and retries, and OpenAI-compatible API calls. Compaction,
+enrichment, image inspection, audio,
 scheduled tasks and workflows are excluded. Switching chat models does not
 refill the shared wildcard allowance.
 

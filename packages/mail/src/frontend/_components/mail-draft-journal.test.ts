@@ -58,6 +58,23 @@ describe("mail draft journals", () => {
     expect(target.getItem("draft")).toBeNull();
   });
 
+  test("retains a newer signature choice during a save and removes it once saved", () => {
+    const target = storage();
+    const savedContent = { ...content("same body"), signatureTemplateId: "Sign01" };
+    const current = { ...savedContent, signatureTemplateId: null };
+    target.setItem("draft", JSON.stringify({ revision: 4, content: current }));
+    expect(advanceMailDraftJournalAfterSave({ storage: target, key: "draft", revision: 5, savedContent })).toBe(true);
+    expect(readMailDraftJournal(target, "draft")).toEqual({ revision: 5, content: current });
+    expect(advanceMailDraftJournalAfterSave({ storage: target, key: "draft", revision: 6, savedContent: current })).toBe(false);
+  });
+
+  test("treats a legacy missing signature as an explicit No signature choice", () => {
+    const target = storage();
+    const savedContent = { ...content("same body"), signatureTemplateId: null };
+    target.setItem("draft", JSON.stringify({ revision: 4, content: content("same body") }));
+    expect(advanceMailDraftJournalAfterSave({ storage: target, key: "draft", revision: 5, savedContent })).toBe(false);
+  });
+
   test("removes malformed journals instead of exposing partial content", () => {
     const target = storage();
     target.setItem("draft", JSON.stringify({ revision: 1, content: { body: "partial" } }));

@@ -14,10 +14,29 @@ export const APP_APPROVAL_LIMITS = {
   pageSize: 20,
   pollSeconds: 5,
 } as const;
+/**
+ * Bounds of Action approvals on a device. Kept apart from `APP_APPROVAL_LIMITS`, whose every value a version 1
+ * authenticator checks when it connects. The texts are cut so that a whole inbox or Action stays within `bodyBytes`.
+ */
+export const APP_ACTION_LIMITS = {
+  inboxActions: 5,
+  nameChars: 60,
+  titleChars: 80,
+  summaryChars: 120,
+  sentenceChars: 280,
+  messageChars: 500,
+  details: 8,
+  labelChars: 40,
+  valueChars: 300,
+} as const;
+/** Commands a Cloud serves beyond the first version, announced in `/info` as `features`. */
+export const APP_APPROVAL_FEATURES = ["actions"] as const;
 
 const Id = z.string().uuid();
 const Secret = z.string().regex(/^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/);
 const Signature = z.string().regex(/^[A-Za-z0-9_-]{85}[AQgw]$/);
+/** Unpadded base64url of a SHA-256 hash. */
+const Digest = Secret;
 export const AppDevicePublicKeySchema = z
   .object({
     kty: z.literal("EC"),
@@ -57,6 +76,12 @@ export const AppDeviceCommandSchema = z.discriminatedUnion("operation", [
   z.object({ operation: z.literal("account") }).strict(),
   /** Stores the authenticator's opaque push token for sign-in wake-ups on this device. */
   z.object({ operation: z.literal("push"), token: z.string().regex(/^[A-Za-z0-9_-]{43}$/) }).strict(),
+  /** Pending sign-ins and the newest open Action approvals of the signing device's account in one call. */
+  z.object({ operation: z.literal("inbox") }).strict(),
+  /** One open Action approval as the device shows it, with the digest the device recomputes before it decides. */
+  z.object({ operation: z.literal("action"), actionId: Id }).strict(),
+  /** Decides an Action approval. `digest` binds the decision to exactly the view the person saw. */
+  z.object({ operation: z.literal("act"), actionId: Id, digest: Digest, decision: z.enum(["approve", "deny"]) }).strict(),
   z
     .object({
       operation: z.literal("decide"),
@@ -96,6 +121,8 @@ export const appDeviceProofMessage = (proof: AppDeviceProof): string => {
     c.operation,
     ...(c.operation === "decide" ? [c.requestId, c.challenge, c.comparison, c.decision] : []),
     ...(c.operation === "push" ? [c.token] : []),
+    ...(c.operation === "action" ? [c.actionId] : []),
+    ...(c.operation === "act" ? [c.actionId, c.digest, c.decision] : []),
   ]);
 };
 export const appPairingProofMessage = (issuer: string, claim: Omit<z.infer<typeof AppPairingClaimSchema>, "signature">): string =>
@@ -188,6 +215,97 @@ export const AppDeviceAccountSchema = z
   })
   .strict();
 export type AppDeviceAccount = z.infer<typeof AppDeviceAccountSchema>;
+/** Plain text on one line: no control, format or bidirectional characters, so an app cannot fake Cloud's own frame. */
+const PlainText = (max: number) =>
+  z
+    .string()
+    .refine((value) => Array.from(value).length <= max, `Must contain at most ${max} code points`)
+    .regex(/^[^\p{Cc}\p{Cf}\p{Zl}\p{Zp}]*$/u);
+const ActionApp = z
+  .object({ id: PlainText(APP_ACTION_LIMITS.nameChars).min(1), name: PlainText(APP_ACTION_LIMITS.nameChars).min(1) })
+  .strict();
+const actionFields = {
+  actionId: Id,
+  /** The app that owns the effect, named from the Cloud's registry, never from the request. */
+  app: ActionApp,
+  /** The app that asked, such as the Assistant, and the title of its chat. The title is chat content, not Cloud's words. */
+  requester: z.object({ app: ActionApp, title: PlainText(APP_ACTION_LIMITS.titleChars).nullable() }).strict(),
+  /** `confirm` asks every time; `standard` could also be remembered in Cloud. A device decides both alike. */
+  assurance: z.enum(["standard", "confirm"]),
+  createdAt: DateTime,
+  expiresAt: DateTime,
+};
+/** One inbox row. `sentence` is the start of the app's sentence; read the Action for everything the person approves. */
+export const AppActionSummarySchema = z.object({ ...actionFields, sentence: PlainText(APP_ACTION_LIMITS.summaryChars).min(1) }).strict();
+export const AppActionViewSchema = z
+  .object({
+    ...actionFields,
+    /** What the Action does, in the app's words and the person's language. */
+    sentence: PlainText(APP_ACTION_LIMITS.sentenceChars).min(1),
+    /** The app's review of this call, or `null`. */
+    message: PlainText(APP_ACTION_LIMITS.messageChars).nullable(),
+    details: z
+      .array(
+        z
+          .object({
+            label: PlainText(APP_ACTION_LIMITS.labelChars).min(1),
+            value: PlainText(APP_ACTION_LIMITS.valueChars),
+            /** A date (`YYYY-MM-DD` or RFC 3339) or an RFC 3339 date-time the device shows in its own locale and time zone. */
+            format: z.enum(["date", "date-time"]).optional(),
+          })
+          .strict(),
+      )
+      .max(APP_ACTION_LIMITS.details),
+    /** Cloud shortened or left out text; the complete request is in Cloud. */
+    truncated: z.boolean(),
+    /** SHA-256 of the Action's real input. The device cannot check it; it binds the decision to that input. */
+    argsDigest: z.string().min(1).max(128),
+    digest: Digest,
+  })
+  .strict();
+export type AppActionSummary = z.infer<typeof AppActionSummarySchema>;
+export type AppActionView = z.infer<typeof AppActionViewSchema>;
+export const AppDeviceInboxSchema = z
+  .object({
+    logins: z.array(AppPendingLoginSchema).max(APP_APPROVAL_LIMITS.pendingPerAccount),
+    /** Newest first. */
+    actions: z.array(AppActionSummarySchema).max(APP_ACTION_LIMITS.inboxActions),
+    /** Open Action approvals beyond `actions`. */
+    moreActions: z.number().int().nonnegative(),
+    pollAfterSeconds: z.number().positive(),
+  })
+  .strict();
+export type AppDeviceInbox = z.infer<typeof AppDeviceInboxSchema>;
+
+/** UTF-8 of this exact JSON array is hashed into an Action's `digest`. Every field the device shows is part of it. */
+export const appActionDigestMessage = (issuer: string, view: Omit<AppActionView, "digest">): string =>
+  JSON.stringify([
+    "cloud-action-v1",
+    issuer,
+    view.actionId,
+    view.app.id,
+    view.app.name,
+    view.requester.app.id,
+    view.requester.app.name,
+    view.requester.title,
+    view.assurance,
+    view.sentence,
+    view.message,
+    view.details.map((detail) => [detail.label, detail.value, detail.format ?? null]),
+    view.truncated,
+    view.createdAt,
+    view.expiresAt,
+    view.argsDigest,
+  ]);
+/** Unpadded base64url of SHA-256 over `appActionDigestMessage`. Cloud and the device compute it alike. */
+export const appActionDigest = async (issuer: string, view: Omit<AppActionView, "digest">): Promise<string> => {
+  const hash = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(appActionDigestMessage(issuer, view))));
+  return btoa(String.fromCharCode(...hash))
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replaceAll("=", "");
+};
+
 export const AppDeviceResponseSchema = z.union([
   z
     .object({
@@ -197,6 +315,8 @@ export const AppDeviceResponseSchema = z.union([
     .strict(),
   z.object({ state: z.enum(["approved", "denied", "revoked", "updated"]) }).strict(),
   AppDeviceAccountSchema,
+  AppDeviceInboxSchema,
+  AppActionViewSchema,
 ]);
 export const AppLoginStartResultSchema = z
   .object({ requestId: Id, browserSecret: Secret, comparison: Comparison, expiresAt: DateTime, pollAfterSeconds: z.number().positive() })

@@ -315,7 +315,15 @@ export const projectAutomationWorkspace = async <T extends MailAutomationAccessD
   return projected;
 };
 
-export const projectComposeData = async <T extends { mailbox: { id: string }; identities: Array<{ id: string }>; draft?: unknown }>(
+export const projectComposeData = async <
+  T extends {
+    mailbox: { id: string };
+    identities: Array<{ id: string }>;
+    signatures?: Array<{ id: string }>;
+    personalSignatureDefaults?: Array<{ senderIdentityId: string; templateId: string }>;
+    draft?: unknown;
+  },
+>(
   data: T,
   loadPublicIds?: LoadPublicIds,
 ): Promise<T> => {
@@ -327,9 +335,15 @@ export const projectComposeData = async <T extends { mailbox: { id: string }; id
     add(paths, "folders", ["identities", index, "sentFolderId"], value.sentFolderId);
     add(paths, "folders", ["identities", index, "draftsFolderId"], value.draftsFolderId);
   });
+  addResourceList(paths, "composeTemplates", ["signatures"], data.signatures ?? []);
+  data.personalSignatureDefaults?.forEach((entry, index) => {
+    add(paths, "senderIdentities", ["personalSignatureDefaults", index, "senderIdentityId"], entry.senderIdentityId);
+    add(paths, "composeTemplates", ["personalSignatureDefaults", index, "templateId"], entry.templateId);
+  });
   if (data.draft && typeof data.draft === "object") {
     const draft = data.draft as Record<string, unknown>;
     add(paths, "drafts", ["draft", "id"], draft.id);
+    add(paths, "composeTemplates", ["draft", "signatureTemplateId"], draft.signatureTemplateId);
     add(paths, "conversations", ["draft", "conversationId"], draft.conversationId);
     add(paths, "messages", ["draft", "derivedFromMessageId"], draft.derivedFromMessageId);
     add(paths, "senderIdentities", ["draft", "senderIdentityId"], draft.senderIdentityId);

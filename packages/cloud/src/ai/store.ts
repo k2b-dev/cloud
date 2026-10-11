@@ -2898,6 +2898,7 @@ export const aiConversations: AiConversationService = {
           WHERE turn_id = ${input.turnId}
             AND conversation_id = ${input.conversationId}
             AND status = 'resolved'
+            AND consumed_inline = FALSE
         ) < ${maxAttempts}
         AND (
           (
@@ -3115,6 +3116,7 @@ export const aiConversations: AiConversationService = {
             WHERE action.turn_id = turn_row.id
               AND action.conversation_id = turn_row.conversation_id
               AND action.status = 'resolved'
+              AND action.consumed_inline = FALSE
           ) >= ${maxAttempts}
           AND (
             turn_row.status = 'queued'
@@ -3278,6 +3280,7 @@ export const aiConversations: AiConversationService = {
           WHERE action.turn_id = turn_row.id
             AND action.conversation_id = turn_row.conversation_id
             AND action.status = 'resolved'
+            AND action.consumed_inline = FALSE
         ) < ${maxAttempts}
         AND EXISTS (
           SELECT 1
@@ -3439,6 +3442,17 @@ export const aiConversations: AiConversationService = {
       RETURNING *
     `;
     return rows[0] ? rowToPendingActionRecord(rows[0]) : null;
+  },
+
+  markPendingTurnActionConsumedInline: async (input) => {
+    await sql`
+      UPDATE ai.pending_actions
+      SET consumed_inline = TRUE
+      WHERE conversation_id = ${input.conversationId}
+        AND turn_id = ${input.turnId}
+        AND call_id = ${input.callId}
+        AND status = 'resolved'
+    `;
   },
 
   clearPendingTurnActions: async (input) => {

@@ -21,14 +21,14 @@ const seed: MailDraftSeed = {
     cc: [],
     bcc: [],
     subject: "",
-    body: "Best regards,\nCloud Team",
+    body: "",
+    signatureTemplateId: "Sign01",
     format: "markdown",
     priority: "normal",
     requestDeliveryReceipt: false,
     requestReadReceipt: false,
   },
   attachments: [],
-  initialSignatureSource: "Best regards,\nCloud Team",
   origin: {
     kind: "compose",
     input: {
@@ -79,6 +79,13 @@ describe("createSerializedDraftMutationQueue", () => {
 describe("draft seed changes", () => {
   test("does not treat the prepared signature-only baseline as a user edit", () => {
     expect(draftSeedContentChanged(seed, seed.content)).toBe(false);
+  });
+
+  test("includes the signature choice in dirty detection and treats an absent choice as null", () => {
+    expect(draftSeedContentChanged(seed, { ...seed.content, signatureTemplateId: null })).toBe(true);
+    expect(draftSeedContentChanged(seed, { ...seed.content, signatureTemplateId: "Sign02" })).toBe(true);
+    const legacy = { ...seed, content: { ...seed.content, signatureTemplateId: undefined } };
+    expect(draftSeedContentChanged(legacy, { ...legacy.content, signatureTemplateId: null })).toBe(false);
   });
 
   test("detects meaningful body and recipient changes", () => {

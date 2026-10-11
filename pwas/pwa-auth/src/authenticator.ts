@@ -4,6 +4,9 @@ import { type Binding, type CloudDetails, storage } from "./storage";
 
 export type Client = Awaited<ReturnType<typeof appApproval.connect>>;
 export type Login = Awaited<ReturnType<Client["pending"]>>["requests"][number];
+export type ActionSummary = Awaited<ReturnType<Client["inbox"]>>["actions"][number];
+export type ActionView = Awaited<ReturnType<Client["action"]>>;
+export type InboxState = { requests: Login[]; actions: ActionSummary[]; moreActions: number; error?: Failure };
 export type PairingPayload = ReturnType<typeof appApproval.parsePairingLink>;
 export type Failure = "unavailable" | "forbidden" | "stale" | "storage" | "uncertain";
 export function failure(error: unknown): Failure {
@@ -22,7 +25,7 @@ export function consumePairingLocation() {
 }
 export function createAuthenticator(vault: import("./vault").Vault) {
   const [bindings, setBindings] = createSignal<Binding[]>([]);
-  const [states, setStates] = createSignal<Record<string, { requests: Login[]; error?: Failure }>>({});
+  const [states, setStates] = createSignal<Record<string, InboxState>>({});
   const [storageError, setStorageError] = createSignal(false);
   const [now, setNow] = createSignal(Date.now());
   const [online, setOnline] = createSignal(navigator.onLine);
@@ -31,13 +34,14 @@ export function createAuthenticator(vault: import("./vault").Vault) {
   const mutations = new Set<AbortController>();
   const backoff = new Map<string, number>();
   const channel = new BroadcastChannel("cloud-login-bindings");
+  let disposed = false;
   const reload = async () => {
-    if (vault.status() !== "open") return;
+    if (disposed || vault.status() !== "open") return;
     const owner = vault.session();
     try {
       const values = await storage.bindings();
       owner.check();
-      if (vault.status() !== "open") return;
+      if (disposed || vault.status() !== "open") return;
       setBindings(values);
       setStorageError(false);
     } catch {
@@ -58,7 +62,7 @@ export function createAuthenticator(vault: import("./vault").Vault) {
     return value;
   };
   const poll = async (binding: Binding) => {
-    if (active.has(binding.id) || vault.status() !== "open") return;
+    if (disposed || active.has(binding.id) || vault.status() !== "open") return;
     const abort = new AbortController();
     active.set(binding.id, abort);
     const pollId = `poll:${binding.id}`;
@@ -66,18 +70,23 @@ export function createAuthenticator(vault: import("./vault").Vault) {
       // Reserve the server polling interval; an interrupted tab must not stall all tabs for a proof lifetime.
       if (!(await storage.reserve(pollId, Date.now() + appApproval.limits.pollSeconds * 1000))) return;
       abort.signal.throwIfAborted();
-      const result = await (await client(binding.issuer, abort.signal)).pending(binding, abort.signal);
+      const api = await client(binding.issuer, abort.signal);
+      const result = api.actions ? await api.inbox(binding, abort.signal) : await api.pending(binding, abort.signal);
+      const state: InboxState =
+        "logins" in result
+          ? { requests: result.logins, actions: result.actions, moreActions: result.moreActions }
+          : { requests: result.requests, actions: [], moreActions: 0 };
       abort.signal.throwIfAborted();
       vault.session().check();
-      setStates((s) => ({ ...s, [binding.id]: { requests: result.requests } }));
-      channel.postMessage({ type: "pending", id: binding.id, requests: result.requests });
+      setStates((s) => ({ ...s, [binding.id]: state }));
+      channel.postMessage({ type: "pending", id: binding.id, ...state });
       backoff.delete(binding.id);
       await storage.defer(pollId, Date.now() + Math.max(appApproval.limits.pollSeconds, result.pollAfterSeconds) * 1000);
     } catch (error) {
       if (!abort.signal.aborted) {
         const delay = Math.min(appApproval.limits.proofSeconds, (backoff.get(binding.id) ?? appApproval.limits.pollSeconds) * 2);
         backoff.set(binding.id, delay);
-        setStates((s) => ({ ...s, [binding.id]: { requests: [], error: failure(error) } }));
+        setStates((s) => ({ ...s, [binding.id]: { requests: [], actions: [], moreActions: 0, error: failure(error) } }));
         await storage.defer(pollId, Date.now() + delay * 1000).catch(() => setStorageError(true));
       } else {
         await storage.defer(pollId, Date.now() + appApproval.limits.pollSeconds * 1000).catch(() => {});
@@ -88,6 +97,7 @@ export function createAuthenticator(vault: import("./vault").Vault) {
   };
   let cleanupAfter = Date.now() + appApproval.limits.loginSeconds * 1000;
   const tick = () => {
+    if (disposed) return;
     setNow(Date.now());
     if (vault.status() !== "open" || document.visibilityState !== "visible" || !navigator.onLine || storageError()) return;
     if (Date.now() >= cleanupAfter) {
@@ -111,9 +121,12 @@ export function createAuthenticator(vault: import("./vault").Vault) {
   onMount(() => {
     void reload().then(tick);
     const timer = setInterval(tick, 1000);
-    channel.onmessage = (event: MessageEvent<{ type: "pending"; id: string; requests: Login[] }>) => {
+    channel.onmessage = (event: MessageEvent<InboxState & { type: "pending"; id: string }>) => {
       if (vault.status() === "open" && event.data?.type === "pending" && bindings().some((b) => b.id === event.data.id)) {
-        setStates((s) => ({ ...s, [event.data.id]: { requests: event.data.requests } }));
+        setStates((s) => ({
+          ...s,
+          [event.data.id]: { requests: event.data.requests, actions: event.data.actions, moreActions: event.data.moreActions },
+        }));
       } else {
         void reload();
       }
@@ -122,6 +135,7 @@ export function createAuthenticator(vault: import("./vault").Vault) {
     window.addEventListener("online", visibility);
     window.addEventListener("offline", visibility);
     onCleanup(() => {
+      disposed = true;
       clearInterval(timer);
       for (const abort of active.values()) abort.abort();
       for (const abort of mutations) abort.abort();
@@ -185,9 +199,61 @@ export function createAuthenticator(vault: import("./vault").Vault) {
     }
     setStates((s) => ({
       ...s,
-      [binding.id]: { requests: (s[binding.id]?.requests ?? []).filter((r) => r.requestId !== request.requestId) },
+      [binding.id]: {
+        actions: [],
+        moreActions: 0,
+        ...s[binding.id],
+        requests: (s[binding.id]?.requests ?? []).filter((r) => r.requestId !== request.requestId),
+      },
     }));
-    channel.postMessage("changed");
+    channel.postMessage({ type: "pending", id: binding.id, ...states()[binding.id] });
+    if (decision === "approve") await remember(binding, { approvedAt: new Date().toISOString() });
+  };
+  const action = async (binding: Binding, actionId: string, signal?: AbortSignal): Promise<ActionView> => {
+    const owner = vault.session();
+    const result = await (await client(binding.issuer, signal)).action(binding, actionId, signal);
+    owner.check();
+    return result;
+  };
+  // A decided Action, or one the Cloud no longer offers, leaves the list in every tab right away.
+  const dropAction = (binding: Binding, actionId: string) => {
+    setStates((s) => ({
+      ...s,
+      [binding.id]: {
+        requests: [],
+        moreActions: 0,
+        ...s[binding.id],
+        actions: (s[binding.id]?.actions ?? []).filter((item) => item.actionId !== actionId),
+      },
+    }));
+    channel.postMessage({ type: "pending", id: binding.id, ...states()[binding.id] });
+  };
+  const act = async (binding: Binding, view: ActionView, decision: "approve" | "deny") => {
+    if (!navigator.onLine || document.visibilityState !== "visible" || Date.parse(view.expiresAt) <= Date.now()) throw new Error("stale");
+    const abort = new AbortController();
+    mutations.add(abort);
+    try {
+      const owner = vault.session();
+      const api = await client(binding.issuer, abort.signal);
+      owner.check();
+      // Reserve before sending, including when another tab or a lost response already used this request.
+      if (!(await storage.reserve(`act:${binding.id}:${view.actionId}`, Date.parse(view.expiresAt)))) throw new Error("uncertain");
+      abort.signal.throwIfAborted();
+      owner.check();
+      if (!navigator.onLine || document.visibilityState !== "visible" || Date.parse(view.expiresAt) <= Date.now()) throw new Error("stale");
+      await api.act(binding, view, decision, abort.signal);
+      owner.check();
+    } catch (error) {
+      if (error instanceof AppApprovalClientError && error.status === 409) {
+        dropAction(binding, view.actionId);
+        throw new Error("stale");
+      }
+      if (error instanceof Error && error.message === "stale") throw error;
+      throw new Error("uncertain");
+    } finally {
+      mutations.delete(abort);
+    }
+    dropAction(binding, view.actionId);
     if (decision === "approve") await remember(binding, { approvedAt: new Date().toISOString() });
   };
   // One attempt per Cloud and token per app session; older Clouds reject the command.
@@ -252,6 +318,8 @@ export function createAuthenticator(vault: import("./vault").Vault) {
     stored,
     account,
     decide,
+    action,
+    act,
     revoke,
     syncPush,
     rename: async (binding: Binding, label: string) => {

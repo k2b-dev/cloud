@@ -1,12 +1,4 @@
 async function _run(page) {
-  const fillAppPin = async (target, value) => {
-    await target.waitForFunction(() => !document.querySelector("dialog input:disabled, dialog input[readonly]"));
-    const digits = target.getByRole("group", { name: "App PIN", exact: true }).locator("input");
-    if (await digits.count()) {
-      for (let i = 0; i < value.length; i++) await digits.nth(i).fill(value[i]);
-    } else await target.getByLabel("App PIN", { exact: true }).fill(value);
-  };
-
   const context = await page.context().browser().newContext({ locale: "en" });
   let p = await context.newPage();
   const errors = [];
@@ -18,9 +10,6 @@ async function _run(page) {
     await p.waitForFunction(() => navigator.serviceWorker.controller !== null);
     await p.waitForFunction(() => !history.state?.k2bDialog);
     await p.getByRole("button", { name: "Add Cloud", exact: true }).click();
-    await fillAppPin(p, "012345");
-    await p.getByLabel("Repeat PIN", { exact: true }).fill("012345");
-    await p.getByRole("button", { name: "Save protection", exact: true }).click();
     await p.getByRole("heading", { name: "Add Cloud", exact: true }).waitFor();
     await p.getByRole("button", { name: "Close", exact: true }).click();
     await p.waitForFunction(() => !history.state?.k2bDialog);
@@ -37,9 +26,7 @@ async function _run(page) {
       if (context.browser().browserType().name() !== "webkit" || !String(error).includes("WebKit encountered an internal error"))
         throw error;
     });
-    await p.getByText("You are offline. Connect to the internet to pair or approve sign-ins.", { exact: true }).waitFor();
-    if (!(await p.getByRole("dialog").count())) await p.getByRole("button", { name: "Unlock", exact: true }).click();
-    await fillAppPin(p, "012345");
+    await p.getByText("You are offline. Connect to the internet to pair or approve requests.", { exact: true }).waitFor();
     await p.waitForFunction(() => !history.state?.k2bDialog);
     await p.getByRole("button", { name: "Add Cloud", exact: true }).waitFor();
     if ((await p.evaluate(() => document.body.dataset.testVersion)) !== "1") throw new Error("Offline shell absent");
@@ -62,7 +49,7 @@ async function _run(page) {
     const after = await p.evaluate(async () => await caches.keys());
     if (after.length !== 1 || !after[0].endsWith("test2")) throw new Error("Old shell cache retained " + after);
     return {
-      offlinePinUnlock: true,
+      offlineLocalVault: true,
       offlineStart: true,
       noCachedApi: true,
       updateWaits: true,

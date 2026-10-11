@@ -290,16 +290,32 @@ order:
    and one column on phones. With `linkX`, line charts of the same x type share
    a cursor on hover, arrow keys and tap. A phone tap pins it; dragging scrolls
    the page. Each chart keeps its own y axis.
-   A presented `/views/*.view.json` file renders inline as a chart, group or
-   table. The finished `present` summary reserves its height while loading;
+   A card shows one stat tile, the same look as stats views; its `tone` is
+   not shown, and its trend stays neutral because a card does not say whether
+   up is better. A presented `/views/*.view.json` file renders inline
+   as a chart, group, table, stats or details. Stats show 1..6 comparable key
+   figures above charts, with optional scope text, sparkline and change;
+   use them instead of several cards or stat charts for computed figures.
+   Details show one record's 1..100 exact fields, such as a checked invoice,
+   as read-only rows. Table ref columns and details ref fields show Cloud
+   objects found by a script instead of Markdown links. They carry only
+   `{type, id, title?}`, never a URL; on click, a confirmation precedes opening
+   through the owning app's reader with the viewer's current access. The finished
+   `present` summary reserves its height while loading;
    group summaries list each chart's kind and title, so every frame reserves
-   its own height. While the call runs, the work line names the step and the
-   place stays empty. Table header labels stay on one line and the table
+   its own height. Stats summaries carry per-item booleans for sparkline, sub
+   and delta to reserve the exact tile height; details summaries carry the
+   field count and the label, reference flag and text length of the first
+   twelve fields, so wrapped values keep their room on a phone. These
+   summaries contain no values. A card's text wraps instead of being cut off. While the call runs, the work
+   line names the step and the place stays empty. Table header labels stay on one line and the table
    scrolls sideways, so up to eight rows fit the reserved height on a phone.
    Readers validate the file again; missing or invalid data shows unavailable
    in that frame. A group chart that cannot be drawn shows unavailable in its
    own frame. The CLI fetches and validates views and prints their tables
    (first 100 rows per table, plus a table footer), or `View unavailable: <path>`.
+   Stats and details use Field/Value tables; reference text includes `(type:id)`.
+   [Tools and approvals](/en/docs/ai/tools-and-approvals) defines these contracts.
 3. **Newest text.** While the turn runs this is a status: a new text replaces
    the previous one in the same element once its first sentence has streamed,
    and the place keeps its height until the turn ends. A text that ends the
@@ -627,8 +643,11 @@ forwards only IDs that have a handler. The client-run tools are `code_open` and
 `code_secret`, which need a client with a code host: the web app, or
 `cld assistant` while it watches the turn. Entering a secret through
 `code_secret` still needs the web app; in the CLI the call fails with that
-hint. `local_bash` needs interactive `cld assistant` in local tools mode `ask`
-(the default); use `--no-bash` or `/permissions off` to disable it. Detached CLI
+hint. The local client tools `local_bash`, `local_list`, `local_read`,
+`local_upload`, `local_download`, `local_write`, `local_move`, and
+`load_local_skill` also need a client that declares and handles them.
+See [local client tools](/en/docs/ai/tools-and-approvals#run-an-optional-tool-in-a-local-cli)
+for execution and approval boundaries. Detached CLI
 turns, API clients without a code host, and scheduled tasks never get `code_open` or
 `code_secret`. The other code tool names are still accepted in `clientToolIds`
 and have no effect. Unknown names are ignored so older clients keep working

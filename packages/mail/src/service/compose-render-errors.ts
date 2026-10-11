@@ -10,7 +10,8 @@ const composeRenderMessages = i18n.define({
         `A Markdown message may have at most ${limit.toLocaleString("en")} lines. Shorten it and try again.`,
       tooComplex: "This message is too complex to render safely. Shorten it or simplify its formatting.",
       tooManySignatures: ({ limit }: { limit: number }) => `A message may contain at most ${limit} signatures. Remove some and try again.`,
-      signatureFailed: "A signature in this message could not be filled in. Remove it, or check it in Settings → Writing.",
+      signatureFailed:
+        "The signature of this message could not be filled in. Choose another signature or none, or check it in Settings → Writing.",
       conversionFailed: "This message could not be converted to email. Check its formatting and try again.",
     },
     de: {
@@ -21,7 +22,7 @@ const composeRenderMessages = i18n.define({
       tooManySignatures: ({ limit }) =>
         `Eine Nachricht darf höchstens ${limit} Signaturen enthalten. Entferne einige und versuche es erneut.`,
       signatureFailed:
-        "Eine Signatur in dieser Nachricht konnte nicht ausgefüllt werden. Entferne sie oder prüfe sie unter Einstellungen → Schreiben.",
+        "Die Signatur dieser Nachricht konnte nicht ausgefüllt werden. Wähle eine andere oder keine Signatur, oder prüfe sie unter Einstellungen → Schreiben.",
       conversionFailed: "Diese Nachricht konnte nicht in eine E-Mail umgewandelt werden. Prüfe die Formatierung und versuche es erneut.",
     },
   },

@@ -36,7 +36,7 @@ this service set.
 | NATS JetStream 2.14.3+ | Registry, coordination, durable jobs, schedules and live events | Supply `NATS_SERVERS` and one `SYNC_NAMESPACE` shared by the deployment. Use persistent storage on three nodes (default `SYNC_REPLICAS=3`) and `max_payload: 16MB` for notebook updates. The JetStream account must fit every stream's configured byte limit times its replicas; see [Reserve JetStream storage](#reserve-jetstream-storage) for the budget per application. Production can use mounted credentials and TLS through `NATS_CREDS_FILE` and `NATS_TLS_CA_FILE`; both are optional in `compose.prod.yml`. The supplied Compose wires one shared credentials path into every application service; per-application NATS credentials or a separate system credential need per-service overrides of that shared environment. |
 | Valkey / Redis-compatible service | Rate limits, caches and short-lived authentication flows | Supply `REDIS_URL`. JWT browser sessions do not use Redis session storage. |
 | Private service network | Gateway-to-app traffic, public-key retrieval and Core broker calls | Make each advertised app address reachable. Do not publish individual app, database or coordination ports. Protect cross-host traffic with authenticated TLS or an equivalent protected transport. |
-| Public gateway and HTTPS origin | Browser/API entry, callbacks, secure cookies and WebSockets | Configure DNS, ingress/TLS and `app.url` (`APP_URL` can bootstrap it). Preserve streaming, WebSocket upgrades and the `Origin` header: application live sockets signed in with a session accept only the origin of `app.url`. Only the gateway receives public application traffic. |
+| Public gateway and HTTPS origin | Browser/API entry, callbacks, secure cookies and WebSockets | Configure DNS, ingress/TLS and `app.url` (`APP_URL` can bootstrap it). Preserve streaming, WebSocket upgrades and the `Origin` header: application live sockets signed in with a session accept only the origin of `app.url`. Only the gateway receives public application traffic. The gateway waits up to 4 minutes for an app's response headers and then answers 502; a reverse proxy in front of the gateway must wait at least 5 minutes for response headers. |
 | Clock synchronization | JWT expiry and short-lived invocations | Synchronize all hosts; invocation clock-skew tolerance is two seconds. |
 | Browser for diagrams | Mermaid diagrams in Notebooks and rendered Markdown | Users on Safari need Safari 17.4 or later (iOS and iPadOS 17.4 or later). Mermaid 12 targets ES2024 and is not transpiled for older browsers. |
 
@@ -455,6 +455,20 @@ it changes are lost when Mail is updated again. After the rollout, assign two
 people to a test conversation and check that
 `cld --json mail show <conversation-id>` lists both.
 
+### Mail draft signatures
+
+Mail adds the column `mail.drafts.signature_template_id` on its next start. No
+configuration change is needed. Drafts keep their signature in that column
+instead of in the editable text; see
+[Deprecations and migrations](/en/docs/reference/deprecations-and-migrations#mail-drafts-keep-the-signature-outside-the-body).
+
+Roll the Mail replicas over in one go. A replica of the previous version does
+not read the column, so a message it sends from a draft that the new version
+saved goes out without its signature. Rolling Mail back keeps the column and
+has the same effect for drafts saved after the update. After the rollout, open
+a new message in a mailbox with a default signature and check that the preview
+shows the signature below the text.
+
 ### Mail storage for kept conversations
 
 Mail adds the table `mail.conversation_keeps` and a trigger on
@@ -621,6 +635,42 @@ Check that each shows the waiting request.
 Try to approve a `confirm` request through a client that sends
 `x-cloud-client: acp`. It must return `403` and leave the request open.
 Approve it in Cloud and check the decision in the audit log.
+
+### Approve Actions in Cloud Login
+
+Deploy the updated platform package and Core together. On start, Core adds
+`cloud_login` to the `decided_via` constraint of `approvals.requests` and adds
+two nullable timestamps, `actions_at` and `action_wake_at`, to
+`auth.app_devices`. These migrations are idempotent. No configuration change
+is required.
+
+Update the Cloud Login image too. A newer Cloud still works with an older
+Cloud Login server: that server answers Action wake-ups with `400`, which
+Cloud ignores. Existing paired phones keep signing in. They show Actions
+after the authenticator app updates, without pairing again.
+
+The updated Cloud Login app no longer uses an app PIN. On a phone that still
+has one, the app asks for it one last time and then opens without it. Its
+connected Clouds stay paired. If someone forgot the PIN, **Reset Cloud Login**
+works as before; they then revoke the old device in Cloud and pair again. Tell
+users that the phone's own screen lock now protects their approvals.
+
+After the rollout, ask for an Action through `cld` or an editor bridge. Check
+that a paired phone shows the request and that its decision continues the
+waiting chat. See [Approve an Action](./app-approval.md#approve-an-action)
+for the signed protocol and push rules.
+
+Rolling back leaves the widened constraint and new columns in place. Older
+Core ignores the columns and keeps the widened constraint. Existing sign-in
+commands and pairing keys remain valid.
+
+### Run Assistant in editors
+
+The Assistant `cld` plugin adds `cld assistant acp` (shortcut `cld acp`), an
+ACP agent for editors such as T3 Code and Zed. It uses the existing Assistant
+API and approval rules and needs no configuration or infrastructure change.
+People who installed the plugin earlier get the command with
+`cld plugins update`. See [Assistant in editors](/en/docs/ai/editors).
 
 ### Update browser notifications for grouping and badges
 

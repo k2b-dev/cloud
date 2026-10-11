@@ -1,12 +1,4 @@
 async function _run(page) {
-  const fillAppPin = async (target, value) => {
-    await target.waitForFunction(() => !document.querySelector("dialog input:disabled, dialog input[readonly]"));
-    const digits = target.getByRole("group", { name: "App PIN", exact: true }).locator("input");
-    if (await digits.count()) {
-      for (let i = 0; i < value.length; i++) await digits.nth(i).fill(value[i]);
-    } else await target.getByLabel("App PIN", { exact: true }).fill(value);
-  };
-
   const context = await page
     .context()
     .browser()
@@ -15,7 +7,6 @@ async function _run(page) {
   const errors = [];
   p.on("pageerror", (e) => errors.push(e.message));
   const button = (name) => p.getByRole("button", { name, exact: true });
-  const pin = async (value) => fillAppPin(p, value);
   const ready = async () => p.waitForFunction(() => !history.state?.k2bDialog);
   let step = "setup";
   try {
@@ -23,13 +14,6 @@ async function _run(page) {
     await button("Continue in browser").click();
     await ready();
     await button("Add Cloud").click();
-    await p.getByRole("heading", { name: "Set app PIN" }).waitFor();
-    await p.waitForFunction(() => document.activeElement === document.querySelector("dialog input"));
-    await pin("012345");
-    await p.getByLabel("Repeat PIN", { exact: true }).fill("012346");
-    if (!(await button("Save protection").isDisabled())) throw new Error("Mismatched PIN accepted");
-    await p.getByLabel("Repeat PIN", { exact: true }).fill("012345");
-    await button("Save protection").click();
     await p.getByRole("heading", { name: "Add Cloud", exact: true }).waitFor();
     await button("Close").click();
     await ready();
@@ -169,7 +153,6 @@ async function _run(page) {
     logoFails = true;
     step = "reload";
     await p.reload();
-    await pin("012345");
     await ready();
     await p.getByRole("heading", { name: "Renamed Cloud", exact: true }).waitFor();
     await p.waitForFunction(

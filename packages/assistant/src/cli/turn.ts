@@ -4,15 +4,17 @@ import {
   AI_IMAGE_INPUT_MAX_BYTES,
   AI_TURN_ATTACHMENT_MAX_ITEMS,
   AI_TURN_IMAGE_MAX_TOTAL_BYTES,
-  CODE_RUNTIME_TOOL_NAMES,
+  AiLocalClientSchema,
+  AiLocalContextSchema,
   guessAiMediaType,
   isAiImageMediaType,
 } from "@k2b/cloud/ai/browser";
 import { type CloudCliContext, printStructured } from "@k2b/cloud/cli";
+import { z } from "zod";
 import type { CapabilityDecision, CodeApproval } from "../artifacts/runtime/capabilities";
 import { classifyLocalPath } from "./local-paths";
 import { AI_API, jsonRequest, printValue, readApi } from "./shared";
-import { type AssistantTurnOutput, type AssistantTurnStreamResult, streamAssistantTurn } from "./stream";
+import { type AssistantClientTools, type AssistantTurnOutput, type AssistantTurnStreamResult, streamAssistantTurn } from "./stream";
 
 export type ConversationDetail = {
   conversation: AiConversation;
@@ -71,17 +73,27 @@ export const uploadAttachment = async (
   ctx: CloudCliContext,
   conversationId: string,
   localPath: string,
-): Promise<AiTurnContentPart & { version: number }> => {
+  directory?: string,
+  signal?: AbortSignal,
+): Promise<Extract<AiTurnContentPart, { type: "attachment" }> & { version: number }> => {
   const file = Bun.file(localPath);
   if (!(await file.exists())) throw new Error(`Attachment not found: ${localPath}`);
   const mediaType = file.type || guessAiMediaType(localPath);
-  if (isAiImageMediaType(mediaType) && file.size > AI_IMAGE_INPUT_MAX_BYTES) {
-    throw new Error(`Image attachment exceeds the ${AI_IMAGE_INPUT_MAX_BYTES / (1024 * 1024)} MB limit: ${localPath}`);
-  }
+  return uploadAttachmentFile(ctx, conversationId, new File([file], basename(localPath), { type: mediaType }), directory, signal);
+};
+
+export const uploadAttachmentFile = async (
+  ctx: CloudCliContext,
+  conversationId: string,
+  file: File,
+  directory?: string,
+  signal?: AbortSignal,
+): Promise<Extract<AiTurnContentPart, { type: "attachment" }> & { version: number }> => {
   const form = new FormData();
-  form.set("file", new File([await file.arrayBuffer()], basename(localPath), { type: mediaType }));
+  form.set("file", file);
+  if (directory !== undefined) form.set("directory", directory);
   const uploaded = await ctx.readJson<{ file: AiFileStat }>(
-    await ctx.fetch(`${AI_API}${conversationPath(conversationId, "/files")}`, { method: "POST", body: form }),
+    await ctx.fetch(`${AI_API}${conversationPath(conversationId, "/files")}`, { method: "POST", body: form, signal }),
   );
   return {
     type: "attachment",
@@ -94,12 +106,28 @@ export const uploadAttachment = async (
 
 const submitDraftBody = async (ctx: CloudCliContext, conversationId: string, body: unknown, codeHost: boolean): Promise<unknown> => {
   if (!body || typeof body !== "object") return body;
-  const input = body as {
-    message?: string;
-    content?: Array<{ type: string; text?: string; path?: string; mediaType?: string; size?: number; version?: number }>;
-    modelProfileId?: string;
-    clientToolIds?: string[];
-  };
+  const input = z
+    .object({
+      message: z.string().optional(),
+      content: z
+        .array(
+          z.discriminatedUnion("type", [
+            z.object({ type: z.literal("text"), text: z.string() }),
+            z.object({ type: z.literal("attachment"), path: z.string(), mediaType: z.string(), size: z.number(), version: z.number() }),
+            z.object({
+              type: z.literal("resource"),
+              ref: z.object({ type: z.literal("core.ai.skill"), id: z.string() }),
+              title: z.string(),
+            }),
+          ]),
+        )
+        .optional(),
+      modelProfileId: z.string().optional(),
+      clientToolIds: z.array(z.string()).optional(),
+      client: AiLocalClientSchema.optional(),
+      localContext: AiLocalContextSchema.optional(),
+    })
+    .parse(body);
   const detail = await readConversationDetail(ctx, conversationId);
   if (detail.conversation.draft.content.length > 0) {
     throw new Error("This conversation has an unsent composer draft. Send or clear it in Assistant before using the CLI.");
@@ -107,6 +135,7 @@ const submitDraftBody = async (ctx: CloudCliContext, conversationId: string, bod
   const content = [
     ...(input.message?.trim() ? [{ type: "text" as const, text: input.message.trim() }] : []),
     ...(input.content ?? []).flatMap((part): AiDraftContentPart[] => {
+      if (part.type === "resource") return [part];
       if (part.type === "text" && part.text?.trim()) return [{ type: "text" as const, text: part.text.trim() }];
       if (part.type === "attachment" && part.path && part.mediaType && typeof part.size === "number" && typeof part.version === "number") {
         return [{ type: "file" as const, path: part.path, mediaType: part.mediaType, size: part.size, version: part.version }];
@@ -122,7 +151,9 @@ const submitDraftBody = async (ctx: CloudCliContext, conversationId: string, bod
   return {
     draftRevision: draft.revision,
     modelProfileId: input.modelProfileId,
-    clientToolIds: [...new Set([...(input.clientToolIds ?? []), ...(codeHost ? CODE_RUNTIME_TOOL_NAMES : [])])],
+    ...(input.client ? { client: input.client } : {}),
+    ...(input.localContext ? { localContext: input.localContext } : {}),
+    clientToolIds: [...new Set([...(input.clientToolIds ?? []), ...(codeHost ? ["code_open", "code_secret"] : [])])],
   };
 };
 
@@ -132,10 +163,16 @@ export const submitAssistantTurn = async (input: {
   path: string;
   body: unknown;
   watch: boolean;
+  codeHost?: boolean;
   approveTools?: readonly string[];
   onCapabilityApproval?: (request: CodeApproval) => Promise<CapabilityDecision>;
   signal?: AbortSignal;
   output?: AssistantTurnOutput;
+  clientTools?: AssistantClientTools;
+  onToolBlock?: Parameters<typeof streamAssistantTurn>[0]["onToolBlock"];
+  onThinkingDelta?: (delta: string) => void;
+  waitingApprovals?: ReadonlySet<string>;
+  onSubmitted?: (submitted: TurnSubmission) => void;
 }): Promise<{ submitted: TurnSubmission; result?: AssistantTurnStreamResult }> => {
   const streamResponse = input.watch
     ? await input.ctx.fetch(`${AI_API}${conversationPath(input.conversationId, "/stream")}`, {
@@ -147,13 +184,14 @@ export const submitAssistantTurn = async (input: {
   let submitted: TurnSubmission;
   try {
     const body = input.path.endsWith("/turns")
-      ? await submitDraftBody(input.ctx, input.conversationId, input.body, input.watch)
+      ? await submitDraftBody(input.ctx, input.conversationId, input.body, input.codeHost ?? input.watch)
       : input.body;
     submitted = await readApi<TurnSubmission>(input.ctx, input.path, jsonRequest("POST", body));
   } catch (error) {
     await streamResponse?.body?.cancel().catch(() => undefined);
     throw error;
   }
+  input.onSubmitted?.(submitted);
   if (!input.watch) return { submitted };
   return {
     submitted,
@@ -166,6 +204,10 @@ export const submitAssistantTurn = async (input: {
       onCapabilityApproval: input.onCapabilityApproval,
       signal: input.signal,
       output: input.output,
+      clientTools: input.clientTools,
+      onToolBlock: input.onToolBlock,
+      onThinkingDelta: input.onThinkingDelta,
+      waitingApprovals: input.waitingApprovals,
     }),
   };
 };

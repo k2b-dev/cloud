@@ -99,6 +99,10 @@ A dashboard widget handler reads the size the board asks for with
 entry point. Pass it as `initial` to the shared `Approvals` component.
 See [Show approvals in your app](/en/docs/identity/approvals#show-approvals-in-your-app).
 
+For a slow handler, `setRequestTimeout`, `REQUEST_IDLE_TIMEOUT_SECONDS`, and
+`REQUEST_IDLE_TIMEOUT_MAX_SECONDS` control the bounded request idle timer;
+see [Answer slow requests](/en/docs/server/http#answer-slow-requests).
+
 See [Server APIs](/en/docs/server) for the request path.
 
 ### Core approval routes
@@ -157,8 +161,10 @@ and `accountCategoryLabel`. See
 
 The contracts barrel also exports the versioned app-approval input schemas,
 signing-message helpers and protocol limits for independent authenticator
-clients. `appApproval` in the services barrel is a Core-owned maintainer service,
-not general application authentication. Use the
+clients. Action approval schemas, `APP_ACTION_LIMITS`, and the Action digest
+helpers support the signed `inbox`, `action`, and `act` commands.
+`appApproval` in the services barrel is a Core-owned maintainer service, not
+general application authentication. Use the
 [app approval HTTP contract](/en/docs/operations/app-approval) for external clients.
 
 ## Share types with the browser
@@ -207,11 +213,13 @@ documents all process variables; that larger list is not the shape of `env`.
 
 View readers and types are exported from `@k2b/cloud/ai/browser` and
 `@k2b/cloud/ai`: `CloudAiChartView`, `CloudAiGroupView`, `CloudAiTableView`,
+`CloudAiStatsView`, `CloudAiDetailsView`, `CloudAiViewReference`,
 `CloudAiView`, `CloudAiViewSummary`, `CloudAiViewSummarySchema`,
 `parseCloudAiView`, `checkCloudAiView`, `cloudAiViewSummary`, `cloudAiViewTable`,
+`cloudAiStatsTiles`, `cloudAiDetailsRows`,
 `cloudAiTableTsv`, `isAiViewFile`, `isAiViewPath` and `parseCloudAiChartToolView`,
 plus the view directory, suffix, byte and table limits. Both entry points expose
-`CLOUD_AI_GROUP_MAX_CHARTS` (6), `CLOUD_AI_VIEW_MAX_MARKS` (3,840),
+`CLOUD_AI_STATS_MAX_ITEMS` (6), `CLOUD_AI_GROUP_MAX_CHARTS` (6), `CLOUD_AI_VIEW_MAX_MARKS` (3,840),
 `CLOUD_AI_CHART_MAX_SERIES` (8), `CLOUD_AI_CHART_MAX_VALUES` (480),
 `CloudAiChartInput`, `CloudAiChartInputSchema`, `parseCloudAiChartInput`,
 `cloudAiChartSchema`, `cloudAiAppChartSchema`, `cloudAiNumberFormatSchema`,
@@ -241,7 +249,7 @@ for execution, model access, and usage accounting.
 
 | Entry point | Status | Use | Guide |
 | --- | --- | --- | --- |
-| `@k2b/cloud/ai/browser` | Supported, client | Launch Assistant drafts; use SSE parsing, attachment helpers, and client-tool input schemas in browser or CLI clients | [Chat and streaming](/en/docs/ai/chat-runtime-and-streaming) |
+| `@k2b/cloud/ai/browser` | Supported, client | Launch Assistant drafts; use SSE parsing, attachment helpers, and client-tool input and output schemas in browser or CLI clients | [Chat and streaming](/en/docs/ai/chat-runtime-and-streaming) |
 | `@k2b/cloud/ai/solid` | Supported, browser | AI chat controller over the conversation SSE stream | [Chat interface](/en/docs/ai/chat-interface) |
 | `@k2b/cloud/ai/tools` | Advanced, server-only | Mount Cloud's standard agent-tool factories, including document-aware `read_file` and conversation-file `markdown_to_pdf` and `html_to_pdf` | [Files and Projects](/en/docs/ai/files-projects-and-personalization) |
 | `@k2b/cloud/ai/ui` | Supported, SolidJS | Shared AI chat components | [Chat interface](/en/docs/ai/chat-interface) |
@@ -318,7 +326,7 @@ exports behind it are `Preview`. Their guides say so at the top.
 
 | Entry point | Status | Meaning |
 | --- | --- | --- |
-| `@k2b/cloud/api` | Platform-owned | Builds the Core platform router |
+| `@k2b/cloud/api` | Platform-owned | Builds the Core platform router, including `createAiOpenAiRoutes` for Core’s models-only [OpenAI-compatible API](/en/docs/ai/openai-compatible-api) |
 | `@k2b/cloud/services/help` | Platform-owned | Core Help migration and shared publication/read service |
 | `@k2b/cloud/services/approvals` | Platform-owned | Platform requests, decisions, consumption, lists, and counts; see [Action approvals](/en/docs/identity/approvals) |
 | `@k2b/cloud/ssr/help` | Supported, server-only | Request-scoped Help metadata for specialized embedded readers |

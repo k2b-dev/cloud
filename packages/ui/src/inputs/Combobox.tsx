@@ -100,6 +100,7 @@ export function Combobox(props: ComboboxProps): JSX.Element {
       <div class="k2b-combobox" data-invalid={error() ? "true" : undefined}>
         <div ref={popover.setTrigger} class="k2b-combobox__input">
           <i class="ti ti-search" aria-hidden="true" />
+          {/* A click, typing, or an arrow key opens the list. Focus alone (Tab, a dialog's initial focus) does not, so Escape still closes the enclosing dialog. */}
           <input
             ref={(element) => {
               inputRef = element;
@@ -115,7 +116,6 @@ export function Combobox(props: ComboboxProps): JSX.Element {
             aria-controls={listboxId}
             aria-activedescendant={focusedOption() ? `${listboxId}-${focusedIndex()}` : undefined}
             {...fieldControlAria(meta, props)}
-            onFocus={() => open()}
             onClick={() => open()}
             onInput={(event) => {
               setQuery(event.currentTarget.value);

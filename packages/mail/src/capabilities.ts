@@ -30,6 +30,7 @@ import {
   collaboration,
   commands,
   composeSafety,
+  composeTemplates,
   conversationAssignments,
   conversationContext,
   conversationKeeps,
@@ -461,6 +462,7 @@ type DraftPublicIds = {
   messages: Map<string, string>;
   senderIdentities: Map<string, string>;
   draftAttachments: Map<string, string>;
+  composeTemplates: Map<string, string>;
 };
 
 const mapDraft = (draft: MailDraft, ids: DraftPublicIds) => {
@@ -472,6 +474,7 @@ const mapDraft = (draft: MailDraft, ids: DraftPublicIds) => {
     intent: draft.intent,
     sourceMessageId: draft.sourceMessageId ? requirePublicId(ids.messages, draft.sourceMessageId) : null,
     senderIdentityId: requirePublicId(ids.senderIdentities, draft.senderIdentityId),
+    signatureTemplateId: draft.signatureTemplateId ? requirePublicId(ids.composeTemplates, draft.signatureTemplateId) : null,
     to: draft.to.slice(0, 50).map(mapAddress),
     cc: draft.cc.slice(0, 50).map(mapAddress),
     bcc: draft.bcc.slice(0, 50).map(mapAddress),
@@ -529,6 +532,7 @@ const mapDraftSummary = (draft: MailDraft, ids: DraftPublicIds, locale?: string)
 };
 
 const mapDraftMutation = (draft: MailDraft, ids: DraftPublicIds) => ({
+  signatureTemplateId: draft.signatureTemplateId ? requirePublicId(ids.composeTemplates, draft.signatureTemplateId) : null,
   id: requirePublicId(ids.drafts, draft.id),
   conversationId: draft.conversationId ? requirePublicId(ids.conversations, draft.conversationId) : null,
   attachments: draft.attachments.slice(0, 50).map((attachment) => ({
@@ -641,7 +645,7 @@ const mapMessageListItem = (mailboxId: string, message: MessageSummary, messageI
 
 const draftPublicIds = async (drafts: MailDraft[]): Promise<DraftPublicIds> => {
   const attachments = drafts.flatMap((draft) => draft.attachments);
-  const [mailboxes, draftIds, conversations, messages, senderIdentityIds, draftAttachments] = await Promise.all([
+  const [mailboxes, draftIds, conversations, messages, senderIdentityIds, draftAttachments, composeTemplates] = await Promise.all([
     publicResources.publicIds(
       "mailboxes",
       drafts.map((draft) => draft.mailboxId),
@@ -666,8 +670,12 @@ const draftPublicIds = async (drafts: MailDraft[]): Promise<DraftPublicIds> => {
       "draftAttachments",
       attachments.map((attachment) => attachment.id),
     ),
+    publicResources.publicIds(
+      "composeTemplates",
+      drafts.map((draft) => draft.signatureTemplateId),
+    ),
   ]);
-  return { mailboxes, drafts: draftIds, conversations, messages, senderIdentities: senderIdentityIds, draftAttachments };
+  return { mailboxes, drafts: draftIds, conversations, messages, senderIdentities: senderIdentityIds, draftAttachments, composeTemplates };
 };
 
 const projectComments = async <T extends { id: string; conversationId: string; referencedMessageId: string | null }>(
@@ -2311,7 +2319,7 @@ const actionDefinitions = {
   "draft.patch": {
     title: "Change selected draft fields",
     description:
-      "Change only supplied fields at expectedRevision. Omitted fields are preserved server-side, including long bodies and all recipients. Supplied recipient arrays replace that entire recipient list; [] clears it. Does not send mail; send review remains required.",
+      "Change only supplied fields at expectedRevision. Omitted fields are preserved server-side, including long bodies and all recipients. Supplied recipient arrays replace that entire recipient list; [] clears it. The body must not contain a signature: Mail adds the chosen signature after it. signatureTemplateId null removes the signature. Does not send mail; send review remains required.",
     input: c.DraftPatchInputSchema,
     data: c.DraftMutationDataSchema,
     destructive: false,
@@ -2347,6 +2355,11 @@ const actionDefinitions = {
         if (!identity.ok) return identity;
         patch.senderIdentityId = identity.data;
       }
+      if (patch.signatureTemplateId) {
+        const signature = await resolveMailboxResource("composeTemplates", scope.data.mailbox.id, patch.signatureTemplateId);
+        if (!signature.ok) return signature;
+        patch.signatureTemplateId = signature.data;
+      }
       const draft = current.data;
       const result = await drafts.updateDraft({
         context: requestContext(context),
@@ -2355,6 +2368,7 @@ const actionDefinitions = {
         expectedRevision: input.expectedRevision,
         input: {
           senderIdentityId: patch.senderIdentityId ?? draft.senderIdentityId,
+          signatureTemplateId: patch.signatureTemplateId,
           to: patch.to ?? draft.to,
           cc: patch.cc ?? draft.cc,
           bcc: patch.bcc ?? draft.bcc,
@@ -2379,7 +2393,8 @@ const actionDefinitions = {
   },
   "draft.create": {
     title: "Create draft",
-    description: "Create an idempotent editable mail draft with an optional small inline attachment.",
+    description:
+      "Create an idempotent editable mail draft with an optional small inline attachment. The body must not contain a signature: Mail adds the sender's default signature after it. Omit signatureTemplateId to keep that default, or pass null for no signature.",
     input: c.DraftCreateInputSchema,
     data: c.DraftMutationDataSchema,
     destructive: false,
@@ -2416,18 +2431,23 @@ const actionDefinitions = {
       if (!key.ok) return key;
       const scope = await resolveMailboxScope(input.mailboxId);
       if (!scope.ok) return scope;
-      const [senderIdentity, conversation, sourceMessage] = await Promise.all([
+      const [senderIdentity, conversation, sourceMessage, signature] = await Promise.all([
         resolveMailboxResource("senderIdentities", scope.data.id, input.senderIdentityId),
         input.conversationId ? resolveMailboxResource("conversations", scope.data.id, input.conversationId) : ok(null),
         input.sourceMessageId ? resolveMailboxResource("messages", scope.data.id, input.sourceMessageId) : ok(null),
+        input.signatureTemplateId
+          ? resolveMailboxResource("composeTemplates", scope.data.id, input.signatureTemplateId)
+          : ok(input.signatureTemplateId),
       ]);
       if (!senderIdentity.ok) return senderIdentity;
       if (!conversation.ok) return conversation;
       if (!sourceMessage.ok) return sourceMessage;
+      if (!signature.ok) return signature;
       const totalBytes = input.attachments.reduce((sum, attachment) => sum + Buffer.byteLength(attachment.base64, "base64"), 0);
       if (totalBytes > 105 * 1024) return fail(err.badInput("Inline attachments exceed the 105 KiB capability limit"));
       const draftContent = {
         senderIdentityId: senderIdentity.data,
+        signatureTemplateId: signature.data,
         to: input.to,
         cc: input.cc,
         bcc: input.bcc,
@@ -2487,7 +2507,7 @@ const actionDefinitions = {
   "draft.update": {
     title: "Update draft",
     description:
-      "Replace ALL editable draft content using an optimistic revision. Never construct this from truncated draft.read output: check editableSnapshotComplete first. Prefer draft.patch for selected fields or incomplete snapshots.",
+      "Replace ALL editable draft content using an optimistic revision. Never construct this from truncated draft.read output: check editableSnapshotComplete first. Prefer draft.patch for selected fields or incomplete snapshots. The body must not contain a signature: Mail adds the chosen signature after it. Omit signatureTemplateId to keep the current choice, or pass null for no signature.",
     input: c.DraftUpdateInputSchema,
     data: c.DraftMutationDataSchema,
     destructive: false,
@@ -2522,12 +2542,16 @@ const actionDefinitions = {
       if (!scope.ok) return scope;
       const senderIdentity = await resolveMailboxResource("senderIdentities", scope.data.mailbox.id, input.draft.senderIdentityId);
       if (!senderIdentity.ok) return senderIdentity;
+      const signature = input.draft.signatureTemplateId
+        ? await resolveMailboxResource("composeTemplates", scope.data.mailbox.id, input.draft.signatureTemplateId)
+        : ok(input.draft.signatureTemplateId);
+      if (!signature.ok) return signature;
       const result = await drafts.updateDraft({
         context: requestContext(context),
         mailboxId: scope.data.mailbox.id,
         draftId: scope.data.draftId,
         expectedRevision: input.expectedRevision,
-        input: { ...input.draft, senderIdentityId: senderIdentity.data },
+        input: { ...input.draft, senderIdentityId: senderIdentity.data, signatureTemplateId: signature.data },
       });
       if (!result.ok) return result;
       const ids = await draftPublicIds([result.data]);
@@ -2729,6 +2753,12 @@ const actionDefinitions = {
       ]);
       if (!draft.ok) return draft;
       if (!safety.ok) return safety;
+      let signature = t.none;
+      if (draft.data.signatureTemplateId) {
+        const templates = await composeTemplates.listComposeTemplates(requestContext(context), scope.data.mailbox.id);
+        if (!templates.ok) return templates;
+        signature = templates.data.find((template) => template.id === draft.data.signatureTemplateId)?.name ?? t.otherPersonSignature;
+      }
       return ok({
         message: t.sendDraftReview({ subject: reviewSubject(draft.data.subject, context), scheduled: Boolean(input.scheduledAt) }),
         details: [
@@ -2738,6 +2768,7 @@ const actionDefinitions = {
             ? { label: t.delivery, value: input.scheduledAt, format: "date-time" as const }
             : { label: t.delivery, value: t.undoWindow({ seconds: input.undoSeconds }) },
           ...safety.data.warnings.map((warning) => ({ label: warning.title, value: warning.description })),
+          { label: t.signature, value: signature },
           ...bodyReviewDetails({
             body: draft.data.body,
             label: t.body,

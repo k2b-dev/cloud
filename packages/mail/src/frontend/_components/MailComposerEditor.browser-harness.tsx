@@ -3,6 +3,7 @@ import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import type { ComposeFormattingWarning, ComposePreview } from "../../contracts";
 import MailComposerEditor from "./MailComposerEditor";
+import MailComposerSignature from "./MailComposerSignature";
 
 export type MailComposerEditorHarnessOptions = { locale: "en" | "de" };
 
@@ -27,6 +28,8 @@ window.mountComposerEditor = (options) => {
     text: "First paragraph of the message.\n\nRegards",
     formattingWarnings: [],
   });
+  const [signatureTemplateId, setSignatureTemplateId] = createSignal<string | null>("Sign01");
+  const signatures = { templates: [{ id: "Sign01", name: "Support signature" }], personalDefaults: [] };
   window.setFormattingWarnings = (formattingWarnings) => setPreview({ ...preview(), formattingWarnings });
   render(
     () => (
@@ -45,6 +48,13 @@ window.mountComposerEditor = (options) => {
             previewPending={() => false}
             onRetryPreview={() => undefined}
             onEditorReady={() => undefined}
+          />
+          <MailComposerSignature
+            signatures={signatures}
+            value={signatureTemplateId()}
+            senderDefaultId="Sign01"
+            disabled={false}
+            onChange={setSignatureTemplateId}
           />
         </div>
       </LocaleProvider>

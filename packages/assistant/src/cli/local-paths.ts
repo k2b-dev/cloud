@@ -27,9 +27,17 @@ const contains = (directory: string, path: string): boolean => {
   return child === "" || (child !== ".." && !child.startsWith(`..${sep}`) && !child.startsWith(sep));
 };
 
-const protectedPath = (path: string): boolean =>
-  /^(?:\.env(?:\..*)?|.*\.(?:pem|key|p12)|id_rsa.*|id_ed25519.*|\.npmrc|\.netrc|\.git-credentials)$/.test(basename(path)) ||
-  path.split(sep).some((segment) => [".ssh", ".gnupg", ".aws", ".git"].includes(segment));
+export const isProtectedLocalPath = (path: string): boolean =>
+  /^(?:\.env(?:\..*)?|.*\.(?:pem|key|p12)|id_rsa.*|id_ed25519.*|\.npmrc|\.netrc|\.git-credentials)$/i.test(basename(path)) ||
+  path.split(sep).some((segment) => [".ssh", ".gnupg", ".aws", ".git"].includes(segment.toLowerCase()));
+
+/** Keep these real configuration locations aligned with packages/cloud-cli/src/config.ts. */
+export const getLocalConfigPaths = (home = homedir()) => {
+  home = realPath(resolve(home));
+  const configDirectory = realPath(resolve(process.env.XDG_CONFIG_HOME || join(home, ".config"), "cloud", "cld"));
+  const configFile = process.env.CLD_CONFIG ? realPath(resolveLocalPath(process.env.CLD_CONFIG, process.cwd(), home)) : undefined;
+  return { configDirectory, configFile };
+};
 
 /** Classify local access by the real target, including symlinks and future files. */
 export const classifyLocalPath = (path: string, options: { workspace: string; home?: string }): LocalPathAccess => {
@@ -37,12 +45,10 @@ export const classifyLocalPath = (path: string, options: { workspace: string; ho
   const workspace = realPath(resolve(options.workspace));
   const given = resolveLocalPath(path, options.workspace, home);
   const target = realPath(given);
-  // Keep these locations aligned with packages/cloud-cli/src/config.ts.
-  const configDirectory = realPath(resolve(process.env.XDG_CONFIG_HOME || join(home, ".config"), "cloud", "cld"));
-  const configFile = process.env.CLD_CONFIG ? realPath(resolveLocalPath(process.env.CLD_CONFIG, process.cwd(), home)) : undefined;
+  const { configDirectory, configFile } = getLocalConfigPaths(home);
   if (contains(configDirectory, target) || target === configFile) return { access: "blocked", reason: "cld-config" };
   if (contains(workspace, home)) return { access: "ask", reason: "home" };
-  if (protectedPath(given) || protectedPath(target)) return { access: "ask", reason: "protected" };
+  if (isProtectedLocalPath(given) || isProtectedLocalPath(target)) return { access: "ask", reason: "protected" };
   if (!contains(workspace, target)) return { access: "ask", reason: "outside" };
   return { access: "free" };
 };

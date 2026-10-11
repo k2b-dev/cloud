@@ -22,6 +22,6 @@ Your account area combines local Cloud data, optional FreeIPA data, and the acti
 ## Protect sign-in and automation {icon="shield-lock"}
 
 :::reference
-- **Developer → API keys:** Personal keys for automation. A key has the same access as your account. Cloud shows the full key only once, right after you create it.
+- **Developer → API keys:** Personal keys for automation. A key with **Full access** has the same access as your account. When your administrator offers the OpenAI-compatible API, you can choose **AI models only** instead: such a key can only call the AI models you may use in Assistant, for example from a dictation app. Cloud shows the full key only once, right after you create it.
 - **Sign-in → Passkeys:** WebAuthn passkeys for passkey sign-in to your account. After you remove a passkey, nobody can sign in with it.
 :::

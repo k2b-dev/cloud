@@ -105,7 +105,11 @@ If another session schedules, sends, or discards the draft, every open composer 
 
 ## Use signatures and snippets {icon="pencil"}
 
-Type `/` in the body to search available signatures and snippets. Mail inserts the chosen template into the draft, where you can edit or remove it.
+The composer shows **Signature** below your text when a signature is available. New messages, replies, and forwards start with the sender's default signature. A personal default takes precedence over the mailbox default for that sender. Choose another signature or **No signature**. Switching the sender switches to that sender's default.
+
+Signatures stay separate from the editable text. Preview and the sent message show the signature after your text. When you write above a quoted reply or a forwarded message, the signature goes between your text and that message. The copy in the provider's Drafts folder contains only your text, so add a signature yourself if you send the draft from another mail program. When you open an older draft that still has its signature in the text, Mail moves the signature into the signature choice.
+
+Type `/` in the body to search snippets only. Mail inserts the chosen snippet into the text, where you can edit or remove it.
 
 - **Snippet:** Inserts reusable text with its values already filled in. Values such as `{{ actor.email }}` appear as plain text. In Markdown messages, Mail adds a backslash only before characters that would change the formatting, for example `\*`.
 - **Signature:** Keeps its safe Liquid variables until preview and send.
@@ -138,7 +142,7 @@ Best regards
 To separate the addresses in `message.to` and `message.cc`, use `join`:
 `{{ message.to | join: ", " }}`.
 
-When a verified sender has a default signature, Mail inserts it automatically into new messages, replies, and forwards. In a reply or forward, Mail places the signature before the quoted message history. A personal default replaces the mailbox default for that sender. You can still edit the inserted source. Signatures are not mandatory or locked. If you delete only part of a signature, Mail may no longer recognize the rest as a signature. Mail then sends the rest as written and warns you about any placeholders in it before sending.
+Mail warns you before sending about placeholders that remain in the text and would be sent as written.
 
 With **Manage** access, you change templates and defaults in **Settings → Writing**. Choose **Edit design** there to open the mailbox CSS editor. Its preview updates from the current unsaved CSS. The Preview in the composer uses the same rendering as delivery.
 

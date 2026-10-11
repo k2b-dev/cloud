@@ -22,18 +22,20 @@ import * as capabilityExecution from "./capability-execution";
 import { aiChatTasks } from "./chat-tasks";
 import { __aiExecutorTest, AiTurnExecutor } from "./executor";
 import { aiFileStore } from "./files-store";
+import { isMalformedToolCallId } from "./malformed-tool-call-repair";
 import { aiMemories } from "./memories";
 import { migrateCloudAi } from "./migrate";
 import { aiModelAccess } from "./model-access";
 import { visionPdfFixture } from "./pdf-render.fixture";
 import { aiProjects } from "./projects";
-import type { AiWireEvent } from "./protocol";
+import { type AiTurnBlock, type AiWireEvent, buildBlocksFromMessages } from "./protocol";
 import { createAiProvider } from "./provider";
 import { AiQuotaError } from "./quotas";
 import { listPendingAiTurnActions } from "./runtime";
 import * as settings from "./settings";
 import { aiSkills } from "./skills";
 import { aiConversations } from "./store";
+import * as stream from "./stream";
 import { type AiLiveTopicEvent, aiStreamTopic } from "./stream";
 import type { PreparedAiTools } from "./tools";
 import type { AiChatTurnRunConfig, AiModelProfile, AiTurnFinalizedEvent } from "./types";
@@ -85,6 +87,7 @@ const fakeValidateTurn: typeof validateAiTurnRequest = async () => {
       enabled: true,
       defaultModelId: MODEL_ID,
       globalInstructions: "",
+      localClientInstructions: "",
       compactionInstructions: "",
       maxToolResultChars: 2_000,
       firecrawlConfigured: false,
@@ -105,6 +108,7 @@ const fakeValidateWithProvider =
         enabled: true,
         defaultModelId: MODEL_ID,
         globalInstructions: "",
+        localClientInstructions: "",
         compactionInstructions: "",
         maxToolResultChars: 2_000,
         firecrawlConfigured: false,
@@ -134,6 +138,7 @@ const fakeValidateToolTurn: typeof validateAiTurnRequest = async () => {
       enabled: true,
       defaultModelId: MODEL_ID,
       globalInstructions: "",
+      localClientInstructions: "",
       compactionInstructions: "",
       maxToolResultChars: 2_000,
       firecrawlConfigured: false,
@@ -151,6 +156,7 @@ const fakeValidateBoundedToolTurn: typeof validateAiTurnRequest = async () => {
       enabled: true,
       defaultModelId: MODEL_ID,
       globalInstructions: "",
+      localClientInstructions: "",
       compactionInstructions: "",
       maxToolResultChars: 2_000,
       firecrawlConfigured: false,
@@ -168,6 +174,7 @@ const fakeValidateVisionTurn: typeof validateAiTurnRequest = async () => {
       enabled: true,
       defaultModelId: MODEL_ID,
       globalInstructions: "",
+      localClientInstructions: "",
       compactionInstructions: "",
       maxToolResultChars: 2_000,
       firecrawlConfigured: false,
@@ -200,6 +207,30 @@ const toolCallCompletion = (id: string, name: string, args: unknown): string[] =
   sseChunk({ choices: [{ delta: {}, finish_reason: "tool_calls" }], usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 } }),
   "data: [DONE]\n\n",
 ];
+
+const malformedToolCallCompletion = (withValidCall = false): string[] => [
+  sseChunk({ choices: [{ delta: { role: "assistant" } }] }),
+  sseChunk({
+    choices: [
+      {
+        delta: {
+          tool_calls: [
+            { index: 0, id: "bad-1", type: "function", function: { name: "search_tools", arguments: '{"query": "unterminated' } },
+            ...(withValidCall
+              ? [{ index: 1, id: "call-1", type: "function", function: { name: "missing_tool", arguments: '{"path":"/report.csv"}' } }]
+              : []),
+          ],
+        },
+      },
+    ],
+  }),
+  sseChunk({ choices: [{ delta: {}, finish_reason: "tool_calls" }], usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 } }),
+  "data: [DONE]\n\n",
+];
+
+const toolRepairRequestSchema = z.object({
+  messages: z.array(z.looseObject({ role: z.string(), tool_call_id: z.string().optional(), content: z.unknown().optional() })),
+});
 
 /** Reported as skipped rather than silently passing when the backing service is absent. */
 
@@ -974,6 +1005,7 @@ suite("AI executor integration", () => {
             turnIndex: 0,
           } as Extract<OutboundEvent, { type: "tool_action_request" }>;
           const suspended = await createExecutor("approval-test")["handleActionRequest"]({
+            signal: new AbortController().signal,
             event,
             loop: { push: (value: InboundEvent) => pushed.push(value) } as never,
             pipeline,
@@ -996,6 +1028,7 @@ suite("AI executor integration", () => {
             expect(await listPendingAiTurnActions({ conversationId: conversation.id, turnId: turn.id })).toHaveLength(0);
             let blocked = "";
             const clientSuspended = await createExecutor("approval-test")["handleActionRequest"]({
+              signal: new AbortController().signal,
               event: { ...event, kind: "client_tool" },
               loop: { push: (value: InboundEvent) => pushed.push(value) } as never,
               pipeline,
@@ -1084,6 +1117,7 @@ suite("AI executor integration", () => {
           const pushed: InboundEvent[] = [];
           let blocked = "";
           const suspended = await createExecutor("chart-test")["handleActionRequest"]({
+            signal: new AbortController().signal,
             event: { type: "tool_action_request", ...fields, kind: "client_tool", callId: "chart-1", name: "chart", args } as Extract<
               OutboundEvent,
               { type: "tool_action_request" }
@@ -1172,6 +1206,7 @@ suite("AI executor integration", () => {
       };
       const ask = (callId: string, approvalId: string) =>
         createExecutor("linked-approval-test")["handleActionRequest"]({
+          signal: new AbortController().signal,
           event: {
             type: "tool_action_request",
             kind: "custom_approval",
@@ -1283,6 +1318,7 @@ suite("AI executor integration", () => {
         ] as const) {
           const pushed: InboundEvent[] = [];
           await createExecutor("chat-approval-test")["handleActionRequest"]({
+            signal: new AbortController().signal,
             event: {
               type: "tool_action_request",
               kind,
@@ -1864,7 +1900,7 @@ suite("AI executor integration", () => {
       expect(requests).toHaveLength(1);
       const request = JSON.stringify(requests[0]);
       expect(request).toContain('"name":"local_bash"');
-      expect(request).toContain("user's local CLI computer");
+      expect(request).toContain("workspace folder on the user's computer");
     } finally {
       onCompletionRequest = null;
       await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
@@ -2922,6 +2958,198 @@ suite("AI executor integration", () => {
     }
   });
 
+  test("a malformed tool call is stored as a failed step the model repairs, with the same steps live and in history", async () => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+    const requests: z.infer<typeof toolRepairRequestSchema>[] = [];
+    try {
+      completionQueue = [malformedToolCallCompletion(true), textCompletion("Done")];
+      onCompletionRequest = (body) => {
+        requests.push(toolRepairRequestSchema.parse(body));
+      };
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelProfileId: MODEL_ID,
+        runConfig: {
+          kind: "chat",
+          input: "Summarize the report",
+          actor: { kind: "user", user: actorUser(userId) },
+          toolSource: { kind: "default" },
+        },
+        userMessage: userMessage("Summarize the report"),
+      });
+      const collecting = collectWire(conversation.id, (event) => event.type === "turn_finished");
+      const claim = await aiConversations.claimTurn({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        leaseOwner: "malformed-exec",
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+      if (!claim) throw new Error("Expected turn claim");
+      await createExecutor("malformed-exec", undefined, fakeValidateToolTurn).run({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        claim,
+        signal: new AbortController().signal,
+      });
+      const events = await collecting;
+      expect(events.find((event) => event.type === "turn_finished")).toMatchObject({ status: "completed" });
+      expect((await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id }))?.status).toBe("completed");
+      const messages = await aiConversations.listTurnMessages({ conversationId: conversation.id, loopId: turn.id });
+      const assistant = messages.find(({ message }) => message.role === "assistant")?.message;
+      if (assistant?.role !== "assistant") throw new Error("Missing assistant message");
+      const calls = assistant.content.filter((block) => block.type === "tool_call");
+      const malformed = calls.find((call) => isMalformedToolCallId(call.id));
+      if (!malformed) throw new Error("Missing malformed call");
+      expect(calls.map((call) => call.id)).toEqual(["call-1", malformed.id]);
+      expect(malformed).toMatchObject({ name: "search_tools", args: {} });
+      const result = messages.find(({ message }) => message.role === "tool_result" && message.callId === malformed.id)?.message;
+      if (result?.role !== "tool_result") throw new Error("Missing malformed result");
+      expect(result.isError).toBe(true);
+      expect(result.result).toContain("Re-send the call");
+      expect(requests).toHaveLength(2);
+      expect(requests[1]?.messages).toContainEqual(
+        expect.objectContaining({
+          role: "tool",
+          tool_call_id: malformed.id,
+          content: result.result,
+        }),
+      );
+      const liveTools = new Map<string, Extract<AiTurnBlock, { kind: "tool" }>>();
+      for (const event of events) {
+        if (event.type === "block_set" && event.block.kind === "tool") liveTools.set(event.block.id, event.block);
+      }
+      const historyTools = buildBlocksFromMessages(messages).filter((block) => block.kind === "tool");
+      expect([...liveTools.keys()]).toEqual(historyTools.map((block) => block.id));
+      const failed = historyTools.find((block) => block.callId === malformed.id);
+      if (!failed) throw new Error("Missing failed history step");
+      expect(liveTools.get(failed.id)).toMatchObject({
+        status: "failed",
+        isError: true,
+        result: result.result,
+        at: failed.at,
+        name: failed.name,
+      });
+      expect(failed).toMatchObject({ status: "failed", isError: true, result: result.result });
+    } finally {
+      completionQueue = [];
+      onCompletionRequest = null;
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
+  test.each([
+    { label: "two repairs that compaction archived", rounds: 2, compacted: true, missingResult: false, status: "failed", requests: 1 },
+    {
+      label: "a third malformed response the stopped run stored",
+      rounds: 3,
+      compacted: false,
+      missingResult: false,
+      status: "failed",
+      requests: 0,
+    },
+    {
+      label: "a malformed call stored without its error result",
+      rounds: 1,
+      compacted: false,
+      missingResult: true,
+      status: "completed",
+      requests: 1,
+    },
+  ] as const)("a resumed turn handles $label", async (scenario) => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+    const requests: z.infer<typeof toolRepairRequestSchema>[] = [];
+    const genericText =
+      "The tool call to search_tools could not be used. Re-send the call with its exact tool name and complete, valid, properly escaped JSON arguments.";
+    try {
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelProfileId: MODEL_ID,
+        runConfig: {
+          kind: "chat",
+          input: "Summarize the report",
+          actor: { kind: "user", user: actorUser(userId) },
+          toolSource: { kind: "default" },
+        },
+        userMessage: userMessage("Summarize the report"),
+      });
+      const deadClaim = await aiConversations.claimTurn({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        leaseOwner: "malformed-dead-worker",
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+      if (!deadClaim) throw new Error("Expected dead worker claim");
+      const earlier = aiConversations.createSessionStore({
+        conversationId: conversation.id,
+        modelProfileId: MODEL_ID,
+        turnId: turn.id,
+        leaseOwner: "malformed-dead-worker",
+      });
+      for (let index = 0; index < scenario.rounds; index++) {
+        const callId = `malformed_${String(index).padStart(24, "0")}`;
+        await earlier.append({
+          role: "assistant",
+          content: [{ type: "tool_call", id: callId, name: "search_tools", args: {} }],
+          stopReason: "stop",
+        });
+        if (!scenario.missingResult)
+          await earlier.append({ role: "tool_result", callId, name: "search_tools", result: genericText, isError: true });
+      }
+      if (scenario.compacted) await sql`UPDATE ai.messages SET compacted_at = now() WHERE loop_id = ${turn.id} AND role <> 'user'`;
+      await sql`UPDATE ai.turns SET lease_expires_at = now() - interval '1 second' WHERE id = ${turn.id}`;
+      completionQueue = scenario.compacted ? [malformedToolCallCompletion(), textCompletion("Done")] : [textCompletion("Done")];
+      onCompletionRequest = (body) => {
+        requests.push(toolRepairRequestSchema.parse(body));
+      };
+      const claim = await aiConversations.claimTurn({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        leaseOwner: "malformed-live-worker",
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+      if (!claim) throw new Error("Expected live worker claim");
+      await createExecutor("malformed-live-worker", undefined, fakeValidateToolTurn).run({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        claim,
+        signal: new AbortController().signal,
+      });
+      expect((await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id }))?.status).toBe(scenario.status);
+      expect(requests).toHaveLength(scenario.requests);
+      const messages = await aiConversations.listTurnMessages({ conversationId: conversation.id, loopId: turn.id, includeCompacted: true });
+      if (scenario.status === "failed") {
+        expect(messages.at(-1)?.meta?.turnError).toEqual({ code: "failed" });
+      } else {
+        const callId = `malformed_${"0".repeat(24)}`;
+        expect(messages.find(({ message }) => message.role === "tool_result" && message.callId === callId)?.message).toEqual({
+          role: "tool_result",
+          callId,
+          name: "search_tools",
+          result: genericText,
+          isError: true,
+        });
+        expect(requests[0]?.messages).toContainEqual(expect.objectContaining({ role: "tool", tool_call_id: callId, content: genericText }));
+      }
+    } finally {
+      completionQueue = [];
+      onCompletionRequest = null;
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
   test("a resumed turn counts the calls it already finished, also those compaction archived", async () => {
     const userId = await insertUser();
     const conversation = await aiConversations.createConversation({ ownerUserId: userId });
@@ -2997,4 +3225,161 @@ suite("AI executor integration", () => {
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
     }
   });
+});
+
+suite("local client in-lease results", () => {
+  beforeAll(async () => {
+    await migrateCloudAi();
+  });
+  test.each(["fast", "late", "at-suspend"] as const)(
+    "%s client result continues safely and is not applied twice on a later resume",
+    async (mode) => {
+      const userId = await insertUser();
+      const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+      const client = { kind: "cli" as const, cwd: "/work", os: "Linux", shell: "bash", localTools: "ask" as const };
+      const result = { status: "completed", path: "/work", entries: [], nextAfter: null };
+      let turnId = "";
+      let publishedAt = 0;
+      let overheadMs = 0;
+      const publish = stream.publishAiWireEvent;
+      const publishing = spyOn(stream, "publishAiWireEvent").mockImplementation(async (event) => {
+        await publish(event);
+        if (
+          event.type === "block_set" &&
+          event.block.kind === "tool" &&
+          event.block.callId === "local-1" &&
+          event.block.status === "awaiting_client"
+        ) {
+          publishedAt = performance.now();
+          if (mode === "fast") await resolve("local-1", result);
+        }
+      });
+      const resolve = async (callId: string, output: unknown) => {
+        expect(
+          await aiConversations.resolvePendingTurnAction({
+            conversationId: conversation.id,
+            turnId,
+            callId,
+            event: { type: "tool_result", callId, result: output },
+          }),
+        ).not.toBeNull();
+      };
+      const suspend = aiConversations.suspendTurn;
+      const suspending = spyOn(aiConversations, "suspendTurn").mockImplementation(async (input) => {
+        if (
+          mode === "at-suspend" &&
+          input.turnId === turnId &&
+          (await aiConversations.getPendingTurnAction({ ...input, callId: "local-1" }))?.status === "pending"
+        )
+          await resolve("local-1", result);
+        return suspend(input);
+      });
+      const claims = spyOn(aiConversations, "claimTurn");
+      const continuations: string[] = [];
+      const requests: unknown[] = [];
+      onCompletionRequest = (body, index) => {
+        requests.push(body);
+        if (index === 2) overheadMs = performance.now() - publishedAt;
+      };
+      try {
+        completionRequestCount = 0;
+        completionQueue = [
+          toolCallCompletion("load-local", "load_tools", { names: ["local_list", "survey"] }),
+          toolCallCompletion("local-1", "local_list", { path: "." }),
+          toolCallCompletion("survey-1", "survey", {
+            title: "Choose",
+            questions: [
+              {
+                type: "single",
+                id: "choice",
+                label: "Which one?",
+                options: [
+                  { value: "A", label: "A" },
+                  { value: "B", label: "B" },
+                ],
+              },
+            ],
+          }),
+          textCompletion("Done"),
+        ];
+        const { turn } = await aiConversations.submitChatTurn({
+          conversationId: conversation.id,
+          modelProfileId: MODEL_ID,
+          runConfig: {
+            kind: "chat",
+            input: "List files, then ask",
+            actor: { kind: "user", user: actorUser(userId) },
+            client,
+            localContext: {
+              instructions: [{ path: "/work/AGENTS.md", content: "Workspace rules." }],
+              skills: [{ name: "local-work", description: "Work locally.", scope: "project" }],
+              selectedSkills: [],
+            },
+            clientToolIds: ["local_list", "load_local_skill"],
+            toolSource: { kind: "default" },
+          },
+          userMessage: userMessage("List files, then ask"),
+        });
+        turnId = turn.id;
+        const executor = new AiTurnExecutor({
+          leaseOwner: "local-wait-exec",
+          heartbeatMs: 200,
+          validateTurn: fakeValidateToolTurn,
+          enqueueContinuation: async ({ turnId }) => {
+            continuations.push(turnId);
+          },
+        });
+        const run = async (from: "queue" | "waiting") => {
+          const claim = await aiConversations.claimTurn({
+            conversationId: conversation.id,
+            turnId,
+            leaseOwner: "local-wait-exec",
+            leaseMs: 30_000,
+            from,
+            maxAttempts: 5,
+            runBudgetMs: 60_000,
+          });
+          if (!claim) throw new Error("Expected claim");
+          await executor.run({ conversationId: conversation.id, turnId, claim, signal: new AbortController().signal });
+        };
+        await run("queue");
+        expect(claims).toHaveBeenCalledTimes(1);
+        const firstRunCalls = mode === "fast" ? 3 : 2;
+        expect(requests).toHaveLength(firstRunCalls);
+        expect(continuations).toHaveLength(1);
+        expect((await aiConversations.getTurn({ conversationId: conversation.id, turnId }))?.status).toBe("waiting_for_action");
+        if (mode !== "fast") {
+          if (mode === "late") await resolve("local-1", result);
+          await run("waiting");
+          expect(requests).toHaveLength(3);
+          expect(continuations).toHaveLength(2);
+        }
+        expect(await aiConversations.getPendingTurnAction({ conversationId: conversation.id, turnId, callId: "local-1" })).toMatchObject({
+          status: "resolved",
+        });
+        expect(JSON.stringify(requests[0])).toContain("# Local client");
+        expect(JSON.stringify(requests[0])).toContain("# Workspace instructions");
+        expect(JSON.stringify(requests[0])).toContain("local-work [local]");
+        expect(await aiConversations.getPendingTurnAction({ conversationId: conversation.id, turnId, callId: "survey-1" })).toMatchObject({
+          status: "pending",
+          frontendMode: "client_interaction",
+        });
+        await resolve("survey-1", { submitted: true, answers: { choice: "A" } });
+        await run("waiting");
+        expect((await aiConversations.getTurn({ conversationId: conversation.id, turnId }))?.status).toBe("completed");
+        const messages = await aiConversations.listTurnMessages({ conversationId: conversation.id, loopId: turnId });
+        expect(messages.filter(({ message }) => message.role === "tool_result" && message.callId === "local-1")).toHaveLength(1);
+        if (mode === "fast")
+          console.log(`Local client overhead (awaiting_client publish to next model request): ${overheadMs.toFixed(1)} ms`);
+      } finally {
+        publishing.mockRestore();
+        suspending.mockRestore();
+        claims.mockRestore();
+        onCompletionRequest = null;
+        completionQueue = [];
+        await sql`DELETE FROM ai.conversations WHERE id=${conversation.id}::uuid`;
+        await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+      }
+    },
+  );
 });

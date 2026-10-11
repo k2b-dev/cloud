@@ -5,7 +5,7 @@ section: Reference
 order: 1220
 description: Look up the route prefixes reserved by Cloud and those owned by applications.
 tags: [routes, gateway, prefixes]
-updated: 2026-10-06
+updated: 2026-10-11
 ---
 
 # Route conventions
@@ -13,7 +13,10 @@ updated: 2026-10-06
 Every application declares the URL prefixes it owns.
 
 The gateway matches the longest registered prefix and proxies the unchanged
-request to the application's `baseUrl`.
+request to the application's `baseUrl`. When the client disconnects, before or
+during the response, the gateway cancels the upstream request, and
+`c.req.raw.signal` aborts in the application. Pass that signal to costly work
+such as provider calls so that it stops with the request.
 
 ## Use standard application prefixes
 

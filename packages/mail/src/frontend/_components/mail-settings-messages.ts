@@ -458,7 +458,7 @@ export const mailSettingsMessages = i18n.define({
       addDefaultBcc: "Add default Bcc recipient",
       writingDefaults: "Writing defaults",
       defaultSignature: "Default signature",
-      defaultSignatureDescription: "Inserted into new messages unless a writer has a personal override.",
+      defaultSignatureDescription: "Selected for new messages, replies, and forwards unless a writer has a personal default.",
       messageFormat: "Message format",
       messageFormatDescription: "Writers can change this for each draft.",
       priority: "Priority",
@@ -620,7 +620,7 @@ export const mailSettingsMessages = i18n.define({
       template: "Template",
       templateInsertDescription: "Inserted from the composer with a slash command.",
       type: "Type",
-      templateTypeDescription: "Signatures stay dynamic until send; snippets insert resolved text.",
+      templateTypeDescription: "Writers choose a signature below the text, filled in at send; snippets insert resolved text.",
       snippet: "Snippet",
       signature: "Signature",
       visibility: "Visibility",
@@ -631,6 +631,7 @@ export const mailSettingsMessages = i18n.define({
       shortcutExample: "shortcut",
       shortcutDescription: ({ shortcut }: { shortcut: string }) =>
         `Type /${shortcut} in the composer. Use lowercase letters, numbers, or underscores.`,
+      signatureShortcutDescription: "A short unique name for this signature. Use lowercase letters, numbers, or underscores.",
       content: "Content",
       templateContentDescription: "Markdown is converted to branded email HTML. Variables use syntax such as {{ actor.display_name }}.",
       templateContent: "Template content",
@@ -669,7 +670,8 @@ export const mailSettingsMessages = i18n.define({
       defaultUpdatedRefreshFailed: "Default updated, refresh failed",
       signatureDefaultUpdated: "Signature default updated",
       signaturesAndSnippets: "Signatures and snippets",
-      signaturesAndSnippetsDescription: "Use slash commands while writing. Mailbox templates are shared; private templates remain yours.",
+      signaturesAndSnippetsDescription:
+        "Choose signatures below the text and insert snippets with slash commands. Mailbox templates are shared; private templates remain yours.",
       noSignaturesOrSnippets: "No signatures or snippets yet.",
       addTemplate: "Add template",
       mySignatureOverrides: "My signature overrides",
@@ -1300,7 +1302,8 @@ export const mailSettingsMessages = i18n.define({
       addDefaultBcc: "Standard-Bcc-Adresse hinzufügen",
       writingDefaults: "Standards beim Verfassen",
       defaultSignature: "Standardsignatur",
-      defaultSignatureDescription: "Wird in neue Nachrichten eingefügt, sofern keine persönliche Überschreibung besteht.",
+      defaultSignatureDescription:
+        "Wird für neue Nachrichten, Antworten und Weiterleitungen gewählt, sofern kein persönlicher Standard besteht.",
       messageFormat: "Nachrichtenformat",
       messageFormatDescription: "Kann für jeden Entwurf geändert werden.",
       priority: "Priorität",
@@ -1465,7 +1468,8 @@ export const mailSettingsMessages = i18n.define({
       template: "Vorlage",
       templateInsertDescription: "Wird im Editor über einen Schrägstrichbefehl eingefügt.",
       type: "Typ",
-      templateTypeDescription: "Signaturen bleiben bis zum Versand dynamisch; Textbausteine fügen aufgelösten Text ein.",
+      templateTypeDescription:
+        "Signaturen wählst du unter dem Text, ausgefüllt werden sie beim Senden; Textbausteine fügen aufgelösten Text ein.",
       snippet: "Textbaustein",
       signature: "Signatur",
       visibility: "Sichtbarkeit",
@@ -1475,6 +1479,7 @@ export const mailSettingsMessages = i18n.define({
       shortcut: "Kurzbefehl",
       shortcutExample: "kurzbefehl",
       shortcutDescription: ({ shortcut }) => `Gib /${shortcut} im Editor ein. Verwende Kleinbuchstaben, Zahlen oder Unterstriche.`,
+      signatureShortcutDescription: "Ein kurzer, eindeutiger Name für diese Signatur. Verwende Kleinbuchstaben, Zahlen oder Unterstriche.",
       content: "Inhalt",
       templateContentDescription:
         "Markdown wird in E-Mail-HTML mit dem Postfachdesign umgewandelt. Variablen verwenden eine Syntax wie {{ actor.display_name }}.",
@@ -1517,7 +1522,7 @@ export const mailSettingsMessages = i18n.define({
       signatureDefaultUpdated: "Standardsignatur aktualisiert",
       signaturesAndSnippets: "Signaturen und Textbausteine",
       signaturesAndSnippetsDescription:
-        "Füge sie beim Schreiben über Schrägstrichbefehle ein. Postfachvorlagen werden geteilt; private Vorlagen bleiben persönlich.",
+        "Signaturen wählst du unter dem Text, Textbausteine fügst du mit Schrägstrichbefehlen ein. Postfachvorlagen werden geteilt; private Vorlagen bleiben persönlich.",
       noSignaturesOrSnippets: "Noch keine Signaturen oder Textbausteine.",
       addTemplate: "Vorlage hinzufügen",
       mySignatureOverrides: "Meine abweichenden Signaturen",

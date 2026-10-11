@@ -23,10 +23,15 @@ import {
 
 ## Search and selection
 
-`fetchData(query, signal)` runs immediately with an empty query when the field
-opens and after a 150 ms debounce while the user types. Set `debounceMs` when
-the data source needs a different delay. A new query or closed popover aborts
-the previous request.
+A click, typing, or Arrow Up/Down opens the results. Focus alone, whether from
+Tab or a dialog focusing the field as it opens, leaves the results closed so
+Escape can close the enclosing dialog. While the results are open, Escape
+closes only them.
+
+`fetchData(query, signal)` runs immediately with the current query when a click
+or Arrow Up/Down opens the results, and after a 150 ms debounce while the user
+types. Set `debounceMs` when the data source needs a different delay. A new
+query or closed popover aborts the previous request.
 
 Each result has `id`, `label`, and optional `description` and `icon`. The
 selected callback receives that complete object. `Combobox` adds the `ti`

@@ -8,6 +8,8 @@ order: 100
 
 Der Assistent ist der zentrale Arbeitsbereich für deinen persönlichen Cloud-Agenten. Derselbe Agent kann beim Schreiben, Zusammenfassen, Erklären und Planen helfen, unterstützte Dateien verarbeiten sowie freigegebene Daten und Aktionen aus Cloud-Anwendungen nutzen. Jeder Chat wird in deinem Benutzerkonto gespeichert und ist über die Übersicht des Assistenten verfügbar. Das gilt auch für Chats, die in einer anderen Anwendung begonnen wurden, etwa aus einem E-Mail-Entwurf.
 
+Mit `cld acp` kannst du den Assistenten auch in Editoren wie T3 Code und Zed nutzen. Wenn der Assistent aus dem Editor etwas senden, löschen, teilen oder jemanden einladen soll, wartet er auf deine Bestätigung in Cloud.
+
 ## Überblick {icon="layout-grid"}
 
 :::reference

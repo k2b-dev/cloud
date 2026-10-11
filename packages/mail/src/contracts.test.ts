@@ -101,6 +101,16 @@ const draftEditableContent = {
 };
 
 describe("mail draft contracts", () => {
+  test("signature choices distinguish omission, none, and a public template ID", () => {
+    expect(draftEditableContentInputSchema.parse(draftEditableContent)).not.toHaveProperty("signatureTemplateId");
+    expect(draftEditableContentInputSchema.parse({ ...draftEditableContent, signatureTemplateId: null }).signatureTemplateId).toBeNull();
+    expect(draftEditableContentInputSchema.parse({ ...draftEditableContent, signatureTemplateId: "Sign01" }).signatureTemplateId).toBe(
+      "Sign01",
+    );
+    expect(
+      draftEditableContentInputSchema.safeParse({ ...draftEditableContent, signatureTemplateId: crypto.randomUUID() }).success,
+    ).toBeFalse();
+  });
   test("keeps draft context immutable and bounds attachment uploads", () => {
     expect(draftEditableContentInputSchema.safeParse({ ...draftEditableContent, intent: "reply" }).success).toBe(false);
     expect(

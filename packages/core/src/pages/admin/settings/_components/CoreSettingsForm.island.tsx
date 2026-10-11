@@ -20,6 +20,7 @@ import type { AccessEntry } from "@k2b/cloud/contracts/shared";
 import {
   ACCOUNT_ACTION_NOTICE_SAMPLE,
   AccountActionNoticeSchema,
+  AI_LOCAL_CLIENT_DEFAULT_INSTRUCTIONS,
   AI_PLATFORM_PROMPT_TEMPLATE,
   formatBytes,
   renderAccountActionNotice,
@@ -186,6 +187,7 @@ const AI_PROFILE_SETTING_KEY = "ai.model_profiles_json";
 const AI_DEFAULT_MODEL_SETTING_KEY = "ai.default_model_id";
 const AI_ENABLED_SETTING_KEY = "ai.enabled";
 const AI_GLOBAL_INSTRUCTIONS_SETTING_KEY = "ai.global_instructions";
+const AI_LOCAL_CLIENT_INSTRUCTIONS_SETTING_KEY = "ai.local_client_instructions";
 const AI_COMPACTION_INSTRUCTIONS_SETTING_KEY = "ai.compaction_instructions";
 const AI_CHAT_ENRICHMENT_INSTRUCTIONS_SETTING_KEY = "ai.chat_enrichment_instructions";
 const AI_MEMORY_LEARNING_INSTRUCTIONS_SETTING_KEY = "ai.memory_learning_instructions";
@@ -218,6 +220,7 @@ const AI_SETTINGS_HANDLED_BY_PANEL = new Set<string>([
   AI_DEFAULT_MODEL_SETTING_KEY,
   AI_PROFILE_SETTING_KEY,
   AI_GLOBAL_INSTRUCTIONS_SETTING_KEY,
+  AI_LOCAL_CLIENT_INSTRUCTIONS_SETTING_KEY,
   AI_COMPACTION_INSTRUCTIONS_SETTING_KEY,
   AI_CHAT_ENRICHMENT_INSTRUCTIONS_SETTING_KEY,
   AI_MEMORY_LEARNING_INSTRUCTIONS_SETTING_KEY,
@@ -1426,6 +1429,30 @@ function AiSettingsPanel(props: {
               <p class="text-xs text-dimmed">{t().platformPromptDescription}</p>
               <pre class="max-h-72 overflow-auto whitespace-pre-wrap rounded-md bg-zinc-50 p-2.5 font-mono text-[11px] leading-relaxed text-zinc-700 [box-shadow:var(--ui-control-recess)] dark:bg-zinc-900 dark:text-zinc-300">
                 {AI_PLATFORM_PROMPT_TEMPLATE}
+              </pre>
+            </div>
+          </details>
+
+          <TextInput
+            variant="ai"
+            multiline
+            lines={10}
+            label={t().localClientInstructions}
+            description={t().localClientInstructionsDescription}
+            value={() => asString(props.valueOf(AI_LOCAL_CLIENT_INSTRUCTIONS_SETTING_KEY))}
+            onValueChange={(value) => props.onChange(AI_LOCAL_CLIENT_INSTRUCTIONS_SETTING_KEY, value)}
+            placeholder={AI_LOCAL_CLIENT_DEFAULT_INSTRUCTIONS}
+            error={() => props.errorFor(AI_LOCAL_CLIENT_INSTRUCTIONS_SETTING_KEY)}
+          />
+          <details class="group">
+            <summary class="flex cursor-pointer select-none items-center gap-1.5 text-xs font-medium text-secondary hover:text-primary">
+              <i class="ti ti-chevron-right transition-transform group-open:rotate-90" aria-hidden="true" />
+              {t().showLocalClientInstructions}
+            </summary>
+            <div class="mt-2 flex flex-col gap-1.5">
+              <p class="text-xs text-dimmed">{t().localClientBuiltInDescription}</p>
+              <pre class="max-h-72 overflow-auto whitespace-pre-wrap rounded-md bg-zinc-50 p-2.5 font-mono text-[11px] leading-relaxed text-zinc-700 [box-shadow:var(--ui-control-recess)] dark:bg-zinc-900 dark:text-zinc-300">
+                {AI_LOCAL_CLIENT_DEFAULT_INSTRUCTIONS}
               </pre>
             </div>
           </details>

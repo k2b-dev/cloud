@@ -16,6 +16,18 @@ import {
 afterEach(() => mock.restore());
 
 describe("Mail public response projection", () => {
+  test("maps signature relations in draft and seed content in both directions", async () => {
+    const id = "00000000-0000-4000-8000-000000000001";
+    const resolve = spyOn(publicResources, "resolveMailboxPublicIds").mockResolvedValue([id]);
+    const project = spyOn(publicResources, "publicIds").mockResolvedValue(new Map([[id, "Sign01"]]));
+    const request = { draft: { signatureTemplateId: "Sign01" }, seed: { content: { signatureTemplateId: "Sign01" } } };
+    const internal = { draft: { signatureTemplateId: id }, seed: { content: { signatureTemplateId: id } } };
+    expect(await resolvePublicRelations("mailbox", request)).toEqual(internal);
+    expect(resolve).toHaveBeenCalledWith("composeTemplates", "mailbox", ["Sign01"]);
+    expect(await projectPublicRelations(internal)).toEqual(request);
+    expect(project).toHaveBeenCalledWith("composeTemplates", [id]);
+  });
+
   test("localizes final API errors from the request locale", async () => {
     const app = new Hono<MailApiContext>().get("/", (c) => respondPublic(c, fail(err.notFound("Mailbox"))));
     const response = await app.request("/", { headers: { "Accept-Language": "de-CH,de;q=0.9" } });
