@@ -8,15 +8,15 @@ import { z } from "zod";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
-import { createCoreApiRouter } from "../api";
-import type { AuthContext } from "../server";
-import { accounts } from "../services/accounts";
-import { serviceAccountCredentials } from "../services/service-account-credentials";
-import { session } from "../services/session";
-import { coreSettings } from "../services/settings/api";
-import { aiLive, aiLiveChannels } from "./live";
-import { createAiOpenAiRoutes } from "./openai-api";
-import type { AiModelProfile } from "./types";
+import { aiLive, aiLiveChannels } from "../../src/ai/live";
+import { createAiOpenAiRoutes } from "../../src/ai/openai-api";
+import type { AiModelProfile } from "../../src/ai/types";
+import { createCoreApiRouter } from "../../src/api";
+import type { AuthContext } from "../../src/server";
+import { accounts } from "../../src/services/accounts";
+import { serviceAccountCredentials } from "../../src/services/service-account-credentials";
+import { session } from "../../src/services/session";
+import { coreSettings } from "../../src/services/settings/api";
 
 const suite = databaseSuite();
 const profile: AiModelProfile = {
