@@ -2507,7 +2507,7 @@ type HydrationTarget = {
   remote_resource_id: string;
 };
 
-type HydrationBatch = { hydrated: boolean; settled: number; missingFromUid: number | null; targetError: unknown };
+type HydrationBatch = { hydrated: boolean; settled: number; stopped: boolean; missingFromUid: number | null; targetError: unknown };
 
 const requestedHydrationTarget = async (messageId: string): Promise<HydrationTarget | null> => {
   const [target] = await sql<HydrationTarget[]>`
@@ -2666,7 +2666,7 @@ export const hydrateMessageBatch = async (
         ORDER BY (mc.id = ${message.id}::uuid) DESC, mc.hydration_attempt > 0, mc.internal_date DESC, mc.id DESC
         LIMIT ${HYDRATION_BATCH_SIZE}
       `;
-            if (candidates.length === 0) return { hydrated: false, settled: 0, missingFromUid: null, targetError: null };
+            if (candidates.length === 0) return { hydrated: false, settled: 0, stopped: false, missingFromUid: null, targetError: null };
 
             let hydrated = false;
             // Only a job for one requested message fails with its message and retries; a mailbox job
@@ -2754,6 +2754,7 @@ export const hydrateMessageBatch = async (
             return {
               hydrated,
               settled: settled.size,
+              stopped: stoppedAfter !== null,
               missingFromUid: missingUids.length > 0 ? Math.min(...missingUids) : null,
               targetError,
             };
@@ -2768,9 +2769,10 @@ export const hydrateMessageBatch = async (
       // Folder reconciliation retires the references of messages the provider deleted.
       if (batch.missingFromUid !== null) await enqueueFolderReconciliation(message.folder_id, batch.missingFromUid);
       if (batch.targetError) throw batch.targetError;
-      // A batch that settled nothing must not requeue itself, and bodies that were already tried
+      // A batch that settled nothing and was not cut short must not requeue itself. A batch that
+      // ended early for a waiting folder sync or command requeues behind it. Bodies already tried
       // wait for the next `mail:sync-due` tick instead of being retried back to back.
-      if ("mailboxId" in ctx.input && batch.settled > 0 && (await newestPendingBody(ctx.input.mailboxId, false))) {
+      if ("mailboxId" in ctx.input && (batch.settled > 0 || batch.stopped) && (await newestPendingBody(ctx.input.mailboxId, false))) {
         ctx.resubmit({ delayMs: 0 });
       }
       return { hydrated: batch.hydrated };

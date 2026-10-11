@@ -30,6 +30,7 @@ import {
   enqueueFolderSync,
   enqueueMailboxHydration,
   FOLDER_SYNC_REQUEST_MS,
+  hydrateMessageBatch,
   onSyncFolderJobError,
   runSyncFolderJob,
   startHydrationRuntime,
@@ -1010,6 +1011,53 @@ suite("mail provider lease fairness", () => {
     expect(backfillDone).toBe(false);
     await backfill;
   }, 120_000);
+
+  test("a body batch that yields to a folder sync queues its remaining bodies even if the first body was already complete", async () => {
+    const mailbox = await connect("yielded-body");
+    await deliverAndSync(mailbox, 21, "yielded-bodies");
+    const waiter = {
+      resource: mailbox.remoteResourceId,
+      waiter: `sync:${mailbox.folderId(INBOX)}`,
+      priority: "sync" as const,
+      ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS,
+    };
+    const resubmitted: Array<{ delayMs?: number } | undefined> = [];
+    let handedOver = 0;
+    spyOn(imapSmtpConnector, "downloadSourceBatch").mockImplementationOnce(async (config, path, requests, consume) => {
+      expect(requests).toHaveLength(20);
+      const first = requests[0]!;
+      // Another hydration completed this body after the batch selected its candidates.
+      await sql`UPDATE mail.message_contents SET hydration_status = 'complete' WHERE id = ${first.key}::uuid`;
+      const waiting = await acquireProviderLease(waiter);
+      try {
+        expect(waiting.lock).toBeNull();
+      } finally {
+        if (waiting.lock) await releaseProviderLease(waiting.lock);
+      }
+      for (const request of requests) {
+        const source = sourceOf(folderOf(config.username, path).entries.get(request.uid)!);
+        handedOver += 1;
+        const result = await consume({ ...request, expectedSize: Buffer.byteLength(source), stream: Readable.from([source]) });
+        expect(result).toBe("stop");
+        if (result === "stop") break;
+      }
+    });
+    try {
+      await hydrateMessageBatch({
+        input: { mailboxId: mailbox.mailboxId },
+        heartbeat: async () => undefined,
+        resubmit: (options) => {
+          resubmitted.push(options);
+        },
+      });
+      expect(handedOver).toBe(1);
+      expect(resubmitted).toEqual([{ delayMs: 0 }]);
+    } finally {
+      // Take the waiting sync's turn to remove its place from the provider lease line.
+      const waiting = await acquireProviderLease(waiter);
+      if (waiting.lock) await releaseProviderLease(waiting.lock);
+    }
+  }, 30_000);
 
   test("a mailbox's body hydration cannot keep its folder sync from bringing in new mail", async () => {
     bodyDownloadMs = 300;
