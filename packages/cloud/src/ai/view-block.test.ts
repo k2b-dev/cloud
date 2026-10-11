@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { CLOUD_AI_GROUP_MAX_CHARTS, CLOUD_AI_VIEW_MAX_MARKS, type CloudAiChartInput } from "./default-tool-contracts";
 import {
   CLOUD_AI_TABLE_MAX_ROWS,
   type CloudAiTableView,
@@ -12,7 +13,7 @@ import {
   sortCloudAiViewRows,
 } from "./view-block";
 
-const table = {
+const table: CloudAiTableView = {
   view: "table",
   title: "Prices",
   columns: [
@@ -275,5 +276,83 @@ describe("declarative views", () => {
     // A missing "constructor" cell must not sort as Object.prototype.constructor.
     for (const direction of ["asc", "desc"] as const)
       expect(sortCloudAiViewRows(rows, { key: "constructor", direction }, "en").map((row) => row.cells.name)[0]).toBe("high");
+  });
+});
+
+describe("chart groups", () => {
+  const line = (x: number | string = 1): CloudAiChartInput => ({
+    kind: "line",
+    title: "Trend",
+    series: [
+      {
+        data: [
+          { x, y: 1 },
+          { x: typeof x === "number" ? x + 1 : "2026-01-02", y: 2 },
+        ],
+      },
+    ],
+  });
+  test("parses and checks groups, summaries reserve all charts without their data", () => {
+    const group = { view: "group", title: "Overview", subtitle: "Source", charts: [line(), line()], linkX: true, layout: "grid" };
+    const parsed = parseCloudAiView(group);
+    if (!parsed) throw new Error("Missing group");
+    expect(checkCloudAiView(group)).toEqual({ view: parsed });
+    expect(cloudAiViewSummary(parsed)).toEqual({
+      view: "group",
+      title: "Overview",
+      subtitle: "Source",
+      linkX: true,
+      layout: "grid",
+      charts: [
+        { kind: "line", title: "Trend" },
+        { kind: "line", title: "Trend" },
+      ],
+    });
+    const defaults = parseCloudAiView({ view: "group", title: "Overview", charts: [line(), line()] });
+    if (!defaults) throw new Error("Missing group");
+    expect(cloudAiViewSummary(defaults)).toMatchObject({ linkX: false, layout: "stack" });
+    expect(parseCloudAiView({ ...group, charts: [line()] })).toBeUndefined();
+    expect(issues({ ...group, charts: Array.from({ length: CLOUD_AI_GROUP_MAX_CHARTS + 1 }, () => line()) })).toContain(
+      `${CLOUD_AI_GROUP_MAX_CHARTS} charts`,
+    );
+  });
+  test("renderer revalidation checks data and mark budget without drawing", () => {
+    const bar = { kind: "bar", title: "B", data: [{ label: "A", value: 9 }], yAxis: { domain: [0, 1] } };
+    const group = { view: "group", title: "G", charts: [line(), bar] };
+    expect(parseCloudAiView(group)).toBeDefined();
+    expect(issues(group)).toStartWith("charts[1]: The chart cannot be drawn:");
+    const boxes = (count: number) => ({
+      kind: "boxplot",
+      title: "B",
+      data: [{ label: "A", values: Array.from({ length: count }, () => 1) }],
+    });
+    const budget = { view: "group", title: "G", charts: [boxes(2000), boxes(1840)] };
+    expect(parseCloudAiView(budget)).toBeDefined();
+    expect(parseCloudAiView({ ...budget, charts: [boxes(2000), boxes(1841)] })).toBeUndefined();
+    expect(issues({ ...budget, charts: [boxes(2000), boxes(1841)] })).toContain(
+      `3841 marks; the limit is ${CLOUD_AI_VIEW_MAX_MARKS}. Aggregate or split into several views.`,
+    );
+    expect(issues({ ...group, charts: [line(), { ...bar, data: [] }] })).toContain("charts[1].data:");
+  });
+  test("linkX only links line charts with the same kind of x", () => {
+    for (const charts of [
+      [line(), line("2026-01-01")],
+      [line(), { kind: "gauge", title: "G", value: 1 }],
+    ]) {
+      expect(issues({ view: "group", title: "G", charts, linkX: true })).toContain("linkX links line charts with the same kind of x.");
+      expect(parseCloudAiView({ view: "group", title: "G", charts })).toBeDefined();
+    }
+    expect(parseCloudAiView({ view: "group", title: "G", charts: [line("2026-01-01"), line("2026-01-01")], linkX: true })).toBeDefined();
+  });
+  test("Phase S view files retain their original canonical shape", () => {
+    for (const chart of [
+      line(),
+      { kind: "bar", title: "B", data: [{ label: "A", value: 1 }] },
+      { kind: "gauge", title: "G", value: 50, unit: "%" },
+    ] satisfies CloudAiChartInput[]) {
+      const file = { view: "chart" as const, ...chart };
+      expect(parseCloudAiView(JSON.parse(JSON.stringify(file)))).toEqual(file);
+    }
+    expect(parseCloudAiView(JSON.parse(JSON.stringify(table)))).toEqual(table);
   });
 });

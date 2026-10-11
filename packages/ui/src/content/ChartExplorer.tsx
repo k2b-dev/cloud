@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, createUniqueId, type JSX, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, createUniqueId, For, type JSX, Show } from "solid-js";
 import { Button, IconButton } from "../actions/Button";
 import { CopyButton } from "../actions/CopyButton";
 import { SelectChip } from "../inputs/SelectChip";
@@ -22,6 +22,15 @@ export type ChartExplorerColumn<T> = {
   sortValue?: (row: T) => string | number | null;
   align?: "left" | "center" | "right";
 };
+/** One legend entry; `color` is the palette index the renderer gave the series (0 is `--stdlib-chart-c1`). */
+export type ChartLegendEntry = {
+  label: string;
+  color: number;
+  /** Line pattern of a line series; a solid series shows a filled swatch. */
+  style?: "solid" | "dashed" | "dotted";
+  /** A comparison series, drawn hollow like its marks. */
+  reference?: boolean;
+};
 export type ChartExplorerProps<T extends ChartExplorerRow> = {
   cursor?: ChartCursor;
   title: string;
@@ -39,6 +48,11 @@ export type ChartExplorerProps<T extends ChartExplorerRow> = {
   /** false hides the complete local detail area for a shared selection panel. */
   renderDetails?: false | ((row: T) => JSX.Element);
   height?: string;
+  /**
+   * Series names below the chart, wrapping inside the fixed viewport height. Use it instead of the renderer's legend,
+   * which draws in one row and runs out of narrow columns.
+   */
+  legend?: readonly ChartLegendEntry[];
   /** What the viewport shows without rows, for example while they load; defaults to "No data". */
   empty?: JSX.Element;
   class?: string;
@@ -142,7 +156,11 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
       <Show when={copyFailed()}>
         <span role="alert">{chartMessages().chartCopyFailed}</span>
       </Show>
-      <div class="k2b-chart-explorer__viewport" style={{ height: props.height ?? "18rem" }}>
+      <div
+        class="k2b-chart-explorer__viewport"
+        data-legend={view() === "chart" && props.legend?.length && data().rows.length > 0 ? "true" : undefined}
+        style={{ height: props.height ?? "18rem" }}
+      >
         <Show when={data().rows.length > 0} fallback={<div class="k2b-chart__empty">{props.empty ?? messages().noData}</div>}>
           <Show
             when={view() === "chart"}
@@ -206,8 +224,26 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
               snapshot={data().chart}
               selectedKey={selected()}
               onSelect={select}
-              style={{ height: "100%" }}
+              style={props.legend?.length ? undefined : { height: "100%" }}
             />
+            <Show when={props.legend?.length}>
+              <ul class="k2b-chart-legend" aria-label={chartMessages().chartLegend}>
+                <For each={props.legend}>
+                  {(entry) => (
+                    <li>
+                      <span
+                        class="k2b-chart-legend__swatch"
+                        data-style={entry.style && entry.style !== "solid" ? entry.style : undefined}
+                        data-reference={entry.reference ? "true" : undefined}
+                        style={{ "--k2b-chart-legend-color": `var(--stdlib-chart-c${(Math.abs(Math.trunc(entry.color)) % 8) + 1})` }}
+                        aria-hidden="true"
+                      />
+                      {entry.label}
+                    </li>
+                  )}
+                </For>
+              </ul>
+            </Show>
           </Show>
         </Show>
       </div>

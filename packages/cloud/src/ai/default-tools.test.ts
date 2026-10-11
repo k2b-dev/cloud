@@ -1,11 +1,14 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { z } from "zod";
 import { coreSettings } from "../services";
 import * as credentials from "./credentials";
+import { type CloudAiChartInput, CloudAiChartInputSchema, parseCloudAiChartInput } from "./default-tool-contracts";
 import { createConfiguredDefaultCloudAiTools } from "./default-tools";
 import { aiModelAccess } from "./model-access";
 import * as settings from "./settings";
 import { aiToolPromptHints } from "./tools";
 import type { AiModelProfile } from "./types";
+import { parseCloudAiChartToolView } from "./view-block";
 
 const audio: AiModelProfile = {
   id: "speech",
@@ -132,3 +135,42 @@ for (const [provider, boundaries, expected, code] of [
     expect(failure.message).toContain("administrator");
   });
 }
+
+describe("flat chart tool schema", () => {
+  const bar = { kind: "bar", title: "B", data: [{ label: "A", value: 1 }] } satisfies CloudAiChartInput;
+  test("accepts old arguments and exactly one of kind or charts", () => {
+    expect(CloudAiChartInputSchema.parse(bar)).toEqual(bar);
+    const group = { title: "G", charts: [bar, bar], layout: "grid" as const, linkX: false };
+    expect(CloudAiChartInputSchema.parse(group)).toEqual(group);
+    expect(parseCloudAiChartToolView(group)).toEqual({ ...group, view: "group" });
+    expect(parseCloudAiChartToolView(bar)).toEqual({ ...bar, view: "chart" });
+    for (const args of [
+      { title: "G" },
+      { ...bar, charts: [bar, bar] },
+      { ...bar, linkX: true },
+      { ...bar, layout: "stack" },
+      { ...group, data: bar.data },
+      { ...group, value: 1 },
+      { ...group, series: [] },
+      { ...group, charts: [{ ...bar, charts: [bar, bar] }, bar] },
+    ])
+      expect(CloudAiChartInputSchema.safeParse(args).success).toBe(false);
+  });
+  test("overlapping item shapes keep per-item bounds, box values and heatmap axes", () => {
+    for (const input of [
+      { kind: "barGauge", title: "G", data: [{ label: "A", value: 3, min: 1, max: 5 }] },
+      { kind: "heatmap", title: "H", data: [{ x: "A", y: "B", value: 0.21 }] },
+      { kind: "boxplot", title: "B", data: [{ label: "A", values: [1, 2, 3] }] },
+    ] satisfies CloudAiChartInput[])
+      expect(parseCloudAiChartInput(CloudAiChartInputSchema.parse(input))).toEqual(input);
+  });
+  test("JSON schema is a single object, including groups and the new kinds", () => {
+    const schema = z.toJSONSchema(CloudAiChartInputSchema, { target: "draft-07" });
+    expect(schema.type).toBe("object");
+    for (const key of ["oneOf", "anyOf", "allOf"]) expect(schema).not.toHaveProperty(key);
+    const text = JSON.stringify(schema);
+    for (const kind of ["boxplot", "barGauge", "heatmap", "stat"]) expect(text).toContain(`"${kind}"`);
+    expect(text).toContain('"charts"');
+    expect(text).not.toContain('"items":[');
+  });
+});

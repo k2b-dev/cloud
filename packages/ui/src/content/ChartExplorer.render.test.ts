@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import type { ChartExplorerProps } from "./ChartExplorer";
+import type { ChartExplorerProps, ChartLegendEntry } from "./ChartExplorer";
 import type { DataTableProps } from "./DataTable";
 
 const root = mkdtempSync(resolve(tmpdir(), "cloud-chart-explorer-tests-"));
@@ -53,6 +53,33 @@ describe("SSR chart exploration", () => {
     expect(html).toContain("data-selected");
     expect(html).toContain("--k2b-chart-selection-color:");
   });
+});
+
+test("a legend wraps below the chart inside the fixed viewport and leaves with the table", () => {
+  const legend: ChartLegendEntry[] = [
+    { label: "Frontend & <api>", color: 0 },
+    { label: "Last year", color: 9, style: "dashed", reference: true },
+  ];
+  const render = (view: "chart" | "table") =>
+    renderToString(() =>
+      createComponent(ChartExplorer, {
+        title: "Latency",
+        view,
+        height: "12rem",
+        data: { chart: chart(), rows },
+        columns: [{ id: "label", label: "Queue", value: (row: (typeof rows)[number]) => row.label }],
+        legend,
+      }),
+    );
+  const html = render("chart");
+  expect(html).toContain('data-legend="true"');
+  expect(html).toContain("height:12rem");
+  expect(html).toContain('aria-label="Legend"');
+  expect(html).toContain("Frontend &amp; &lt;api>");
+  // Palette indices wrap like the renderer's eight series colors.
+  expect(html).toContain("var(--stdlib-chart-c2)");
+  expect(html).toContain('data-style="dashed"');
+  expect(render("table")).not.toContain("k2b-chart-legend");
 });
 
 test("reference glyphs and linked controls are present in the server output", async () => {

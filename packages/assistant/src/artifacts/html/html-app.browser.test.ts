@@ -589,7 +589,7 @@ document.querySelector("#rows").textContent = rows[0].Name + " " + rows[0].Betra
     expect(await page.evaluate(() => globalThis.harness.calls)).toContain("chunk:csv");
     const chart = app(page).locator(".k2b-chart__svg");
     const width = () => chart.evaluate((element: HTMLElement) => element.style.getPropertyValue("--k2b-chart-width"));
-    expect(await eventually(width, (value) => value !== "640px")).not.toBe("640px");
+    expect(await eventually(width, (value) => value !== "480px")).not.toBe("480px");
     expect(await app(page).locator(".k2b-chart").getAttribute("aria-label")).toBe("Umsatz");
     const snapshot = await page.evaluate(() => globalThis.harness.snapshot());
     expect(snapshot).not.toMatch(/<script/i);

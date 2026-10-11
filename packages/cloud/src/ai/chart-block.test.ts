@@ -4,14 +4,20 @@ import { z } from "zod";
 import {
   chartDateTime,
   checkCloudAiChartLabels,
+  cloudAiChartLegend,
   cloudAiChartMarkKey,
+  cloudAiChartMarks,
+  cloudAiChartReferenceMark,
   cloudAiChartRenderOptions,
   cloudAiChartRows,
   cloudAiChartTable,
+  cloudAiChartXValueFormat,
+  cloudAiNumberFormatters,
 } from "./chart-block";
 import {
   CLOUD_AI_CHART_MAX_SERIES,
   CLOUD_AI_CHART_MAX_VALUES,
+  CLOUD_AI_VIEW_MAX_MARKS,
   type CloudAiChartInput,
   CloudAiChartInputSchema,
   parseCloudAiChartInput,
@@ -379,5 +385,288 @@ describe("chart axes", () => {
       "2025",
       "2026",
     ]);
+  });
+});
+
+describe("richer chart contracts", () => {
+  test("number formats share value precision, units and distinct tick precision", () => {
+    const fmt = cloudAiNumberFormatters({ style: "percent", decimals: 0, compact: false, unit: "share" }, "en");
+    expect(fmt.value(0.214)).toBe("21% share");
+    expect(fmt.tick(0.214)).toBe("21.4% share");
+    const money = cloudAiNumberFormatters({ style: "currency", currency: "EUR", decimals: 2, compact: true }, "en");
+    expect(money.value(1200)).toBe("€1.20K");
+    expect(money.tick(1250)).toBe("€1.25K");
+    expect(cloudAiNumberFormatters(undefined, "en").value(0.00000001)).toBe("0.00000001");
+    expect(cloudAiNumberFormatters(undefined, "en").tick(1250000)).toBe("1.25M");
+  });
+
+  test("bar showValues prints values with the value precision, which the y ticks then share", () => {
+    const input = parse({
+      kind: "bar",
+      title: "Rate",
+      data: [{ label: "A", value: 0.214 }],
+      showValues: true,
+      yAxis: { format: { style: "percent", decimals: 0 } },
+    });
+    expect(cloudAiChartTable(input, "en").rows[0]?.cells.value).toBe("21%");
+    const options = cloudAiChartRenderOptions(input, "en");
+    if (options.kind !== "bar") throw new Error("Expected bar");
+    const svg = charts.bar({ ...options, width: 480, height: 280 });
+    expect(/class="stdlib-chart-bar-value"[^>]*>([^<]*)</.exec(svg)?.[1]).toBe("21%");
+    expect(options.yAxis?.format?.(0.05)).toBe("5%");
+  });
+
+  test.each(["day", "minute", "second"] as const)("date format %s controls x ticks and values", (date) => {
+    const input = parse({
+      kind: "scatter",
+      title: "Time",
+      xAxis: { format: { date } },
+      series: [{ data: [{ x: "2026-01-01T10:15:30", y: 1 }] }],
+    });
+    const options = cloudAiChartRenderOptions(input, "en");
+    if (options.kind !== "scatter") throw new Error("Expected scatter");
+    const x = chartDateTime("2026-01-01T10:15:30")!;
+    const text = cloudAiChartXValueFormat(input, "en")(x);
+    expect(cloudAiChartTable(input, "en").rows[0]?.cells.x).toBe(text);
+    expect(text).toContain("Jan 1, 2026");
+    if (date === "day") {
+      expect(text).not.toContain("10:");
+      expect(options.xAxis?.format?.(x)).not.toContain("10:");
+    } else {
+      expect(text).toContain(date === "second" ? "10:15:30" : "10:15");
+      expect(options.xAxis?.format?.(x)).toContain(date === "second" ? "10:15:30" : "10:15");
+    }
+  });
+
+  test("formats must match their axes and currency is only for currency style", () => {
+    for (const [x, format] of [
+      [1, { date: "day" }],
+      ["2026-01-01", { style: "number" }],
+    ])
+      expect(issues({ kind: "scatter", title: "X", series: [{ data: [{ x, y: 1 }] }], xAxis: { format } })[0]).toContain(
+        "format for the x axis",
+      );
+    expect(issues({ kind: "bar", title: "Y", data: [{ label: "A", value: 1 }], yAxis: { format: { date: "day" } } })[0]).toContain(
+      "number format",
+    );
+    for (const format of [{ style: "currency" }, { currency: "EUR" }, { style: "percent", currency: "EUR" }])
+      expect(parseCloudAiChartInput({ kind: "gauge", title: "G", value: 1, format })).toBeUndefined();
+  });
+
+  test("references extend domains, keep zero and include their labels in the padding", () => {
+    const plain = parse({ kind: "bar", title: "B", data: [{ label: "A", value: 2 }] });
+    const input = parse({ ...plain, references: [{ value: 100000000 }] });
+    const options = cloudAiChartRenderOptions(input, "en");
+    const before = cloudAiChartRenderOptions(plain, "en");
+    if (options.kind !== "bar" || before.kind !== "bar") throw new Error("Expected bar");
+    expect(options.yAxis?.domain?.[0]).toBeLessThanOrEqual(0);
+    expect(options.yAxis?.domain?.[1]).toBeGreaterThanOrEqual(100000000);
+    expect(typeof options.padding === "object" && options.padding.left).toBeGreaterThan(
+      typeof before.padding === "object" ? before.padding.left! : 0,
+    );
+    expect(charts.bar({ ...options, inspect: true })).toContain("stdlib-chart-reference");
+    for (const kind of ["line", "scatter"] as const) {
+      const dateInput = parse({
+        kind,
+        title: "D",
+        series: [
+          {
+            data: [
+              { x: "2026-01-01", y: 1 },
+              { x: "2026-01-02", y: 2 },
+            ],
+          },
+        ],
+        references: [{ axis: "x", value: "2026-02-01" }, { value: 10 }],
+      });
+      const mapped = cloudAiChartRenderOptions(dateInput, "en");
+      if (mapped.kind !== "line" && mapped.kind !== "scatter") throw new Error("Expected series chart");
+      expect(mapped.xAxis?.domain?.[1]).toBeGreaterThanOrEqual(chartDateTime("2026-02-01")!);
+      expect(mapped.references?.[0]?.value).toBe(chartDateTime("2026-02-01"));
+    }
+    const histogram = cloudAiChartRenderOptions(
+      parse({ kind: "histogram", title: "H", data: [1, 2, 3], references: [{ axis: "x", value: 10 }, { value: 20 }] }),
+      "en",
+    );
+    if (histogram.kind !== "histogram") throw new Error("Expected histogram");
+    expect(histogram.xAxis?.domain?.[1]).toBeGreaterThanOrEqual(10);
+    expect(histogram.yAxis?.domain?.[0]).toBeLessThanOrEqual(0);
+    expect(histogram.yAxis?.domain?.[1]).toBeGreaterThanOrEqual(20);
+  });
+
+  test("invalid references fail instead of disappearing", () => {
+    const input = { kind: "bar", title: "B", data: [{ label: "A", value: 2 }] };
+    expect(issues({ ...input, yAxis: { domain: [0, 3] }, references: [{ value: 10 }] })).toEqual([
+      "Extend the y domain to include every reference.",
+    ]);
+    expect(issues({ ...input, yAxis: { scale: "log" }, references: [{ value: 0 }] })[0]).toContain("above zero");
+    expect(issues({ ...input, references: [{ axis: "x", value: 1 }] })[0]).toContain("Use y references");
+    expect(issues({ ...input, references: [{ value: "2026-01-01" }] })[0]).toContain("numbers for y references");
+    expect(issues({ ...input, references: Array.from({ length: 9 }, () => ({ value: 1 })) })[0]).toContain("8 references");
+    expect(
+      issues({ kind: "scatter", title: "S", series: [{ data: [{ x: "2026-01-01", y: 1 }] }], references: [{ axis: "x", value: 1 }] })[0],
+    ).toContain("dates for x references");
+  });
+
+  test("line style, comparison marks and outside legends use the same defaults", () => {
+    const data = [
+      { x: 1, y: 1 },
+      { x: 2, y: 2 },
+    ];
+    const input = parse({
+      kind: "line",
+      title: "L",
+      series: [{ data }, { data, role: "reference" }, { data, style: "dotted", role: "reference" }],
+    });
+    const mapped = cloudAiChartRenderOptions(input, "de", { legend: "outside" });
+    if (mapped.kind !== "line") throw new Error("Expected line");
+    expect(mapped.series.map((series) => series.lineStyle)).toEqual([undefined, "dashed", "dotted"]);
+    expect(mapped.legend).toBe(false);
+    expect(cloudAiChartLegend(input, "de")).toEqual([
+      { label: "Datenreihe 1", color: 0, style: "solid" },
+      { label: "Datenreihe 2", color: 1, style: "dashed", reference: true },
+      { label: "Datenreihe 3", color: 2, style: "dotted", reference: true },
+    ]);
+    const datum = { index: 0, role: "point" as const, anchor: [0, 0] as [number, number], values: [] };
+    // A line's comparison is dashed; only scatter points of a comparison series draw hollow.
+    expect(cloudAiChartReferenceMark(input, { ...datum, seriesIndex: 1 })).toBe(false);
+    const scatter = parse({
+      ...input,
+      kind: "scatter",
+      series: input.kind === "line" ? input.series.map(({ style: _, ...series }) => series) : [],
+    });
+    expect(cloudAiChartReferenceMark(scatter, { ...datum, seriesIndex: 1 })).toBe(true);
+    expect(cloudAiChartReferenceMark(scatter, datum)).toBe(false);
+    expect(cloudAiChartLegend(parse({ ...input, legend: false }), "en")).toEqual([]);
+    const bar = parse({ kind: "bar", title: "B", data: [{ label: "A", value: 1 }], colorByBar: true, legend: true });
+    expect(cloudAiChartLegend(bar, "en")).toEqual([{ label: "A", color: 0 }]);
+    const outside = cloudAiChartRenderOptions(bar, "en", { legend: "outside" });
+    expect(outside.kind === "bar" && outside.legend).toBe(false);
+    const pie = cloudAiChartRenderOptions(parse({ kind: "pie", title: "P", data: [{ label: "A", value: 1 }] }), "en", {
+      legend: "outside",
+    });
+    expect(pie.kind === "pie" && pie.legend).toBe(true);
+  });
+
+  test("new kinds map options and every inspected datum to localized table rows", () => {
+    const box = parse({
+      kind: "boxplot",
+      title: "B",
+      data: [
+        { label: "A", values: [1, 1, 1, 1, 20] },
+        { label: "B", values: [2, 2, 2, 2, 30] },
+      ],
+      references: [{ value: 40 }],
+    });
+    const boxOptions = cloudAiChartRenderOptions(box, "en");
+    expect(boxOptions.kind === "boxplot" && boxOptions.groups).toEqual(box.kind === "boxplot" ? box.data : []);
+    const boxes = cloudAiChartTable(box, "de");
+    expect(boxes.rows).toHaveLength(4);
+    expect(new Set(boxes.rows.map((row) => row.key)).size).toBe(4);
+    expect(boxes.rows[0]?.values).toMatchObject({ label: "A", count: 5, q1: 1, q2: 1, q3: 1, whiskerLow: 1, whiskerHigh: 1 });
+    expect(boxes.columns.map((column) => column.label)).toContain("Median");
+    expect(boxes.rows[1]?.values).toEqual({ label: "A", value: 20 });
+    const heatmap = parse({
+      kind: "heatmap",
+      title: "H",
+      data: [{ x: "A", y: "B", value: 0.21 }],
+      format: { style: "percent" },
+      min: 0,
+      max: 1,
+      showValues: true,
+    });
+    const heat = cloudAiChartRenderOptions(heatmap, "en");
+    if (heat.kind !== "heatmap") throw new Error("Expected heatmap");
+    expect(heat.format?.(0.21)).toBe("21%");
+    expect(heat.showValues).toBe(true);
+    expect(cloudAiChartTable(heatmap, "en").rows[0]?.cells).toEqual({ x: "A", y: "B", value: "21%" });
+    const barGauge = parse({
+      kind: "barGauge",
+      title: "G",
+      data: [{ label: "A", value: 3, min: 1, max: 5 }],
+      thresholds: [{ value: 2 }, { value: 5 }],
+      unit: "kg",
+    });
+    const bars = cloudAiChartRenderOptions(barGauge, "en");
+    expect(bars.kind === "barGauge" && bars.thresholds).toEqual([{ value: 2 }, { value: 5 }]);
+    expect(cloudAiChartTable(barGauge, "en").rows[0]?.cells).toEqual({ label: "A", value: "3 kg", min: "1 kg", max: "5 kg" });
+    const stat = parse({
+      kind: "stat",
+      title: "S",
+      value: 0.21,
+      delta: 0.02,
+      better: "down",
+      sparkline: [0.1, 0.21],
+      format: { style: "percent" },
+    });
+    const options = cloudAiChartRenderOptions(stat, "en");
+    if (options.kind !== "stat") throw new Error("Expected stat");
+    expect(options.trend).toBe("down");
+    expect(options.label).toBe("");
+    expect(options.deltaFormat?.(0.02)).toBe("2%");
+    const stats = cloudAiChartTable(stat, "en");
+    expect(stats.rows[0]?.cells).toEqual({ value: "21%", delta: "+2%" });
+    expect(stats.rows).toHaveLength(3);
+    expect(new Set(stats.rows.map((row) => row.key)).size).toBe(3);
+    expect(stats.rows[1]?.cells).toEqual({ x: "1", y: "10%" });
+    for (const [delta, better, trend] of [
+      [-1, "down", "up"],
+      [1, "up", "up"],
+      [0, "up", "neutral"],
+      [1, undefined, "neutral"],
+    ] as const) {
+      const mapped = cloudAiChartRenderOptions(parse({ kind: "stat", title: "S", value: 1, delta, better }), "en");
+      expect(mapped.kind === "stat" && mapped.trend).toBe(trend);
+    }
+    for (const kind of ["pie", "donut"])
+      expect(
+        cloudAiChartTable(parse({ kind, title: "P", data: [{ label: "A", value: 0.21 }], format: { style: "percent" } }), "en").rows[0]
+          ?.cells.value,
+      ).toBe("21%");
+  });
+
+  test("thresholds, pairs, labels and marks stay within the shared drawing limits", () => {
+    for (const thresholds of [[], [{ value: 2 }, { value: 1 }], [{ value: 101 }], Array.from({ length: 9 }, (_, value) => ({ value }))])
+      expect(issues({ kind: "gauge", title: "G", value: 50, thresholds })).not.toEqual([]);
+    expect(issues({ kind: "barGauge", title: "G", data: Array.from({ length: 9 }, () => ({ label: "A", value: 1 })) })).not.toEqual([]);
+    expect(issues({ kind: "barGauge", title: "G", data: [{ label: "A".repeat(30), value: 1 }] })[0]).toBe(
+      "Use bar gauge labels of at most 10 characters, or a bar chart for longer names.",
+    );
+    const cell = { x: "A", y: "B", value: 1 };
+    expect(issues({ kind: "heatmap", title: "H", data: [cell, cell] })).toEqual(["Use each heatmap x/y pair once."]);
+    const columns = ["North region", "South region", "East region", "West region"].map((x) => ({ x, y: "B", value: 1 }));
+    expect(issues({ kind: "heatmap", title: "H", data: columns })).toEqual([
+      "Use column labels of at most 8 characters for 4 columns, or swap x and y.",
+    ]);
+    expect(issues({ kind: "heatmap", title: "H", data: columns.map((cell) => ({ ...cell, x: cell.x.slice(0, 5) })) })).toEqual([]);
+    const box = {
+      kind: "boxplot",
+      title: "B",
+      data: [{ label: "A", values: Array.from({ length: CLOUD_AI_VIEW_MAX_MARKS + 1 }, () => 1) }],
+    };
+    expect(issues(box)[0]).toContain(`3841 marks; the limit is ${CLOUD_AI_VIEW_MAX_MARKS}`);
+    for (const input of [
+      { kind: "gauge", title: "G", value: 1 },
+      { kind: "stat", title: "S", value: 1, sparkline: [1, 2] },
+      { kind: "boxplot", title: "B", data: [{ label: "A", values: [1, 2, 3] }] },
+    ])
+      expect(cloudAiChartMarks(parse(input))).toBe(input.kind === "gauge" ? 1 : 3);
+  });
+
+  test("pixel-exact width uses full label room instead of narrow-column scaling", () => {
+    const input = parse({
+      kind: "bar",
+      title: "B",
+      data: Array.from({ length: 12 }, (_, value) => ({ label: `Month ${value}`, value: 1250000 })),
+    });
+    const narrow = cloudAiChartRenderOptions(input, "en"),
+      wide = cloudAiChartRenderOptions(input, "en", { width: 480 });
+    if (narrow.kind !== "bar" || wide.kind !== "bar" || typeof narrow.padding !== "object" || typeof wide.padding !== "object")
+      throw new Error("Expected padding");
+    expect(wide.padding.left!).toBeLessThan(narrow.padding.left!);
+    expect(wide.data.filter((item) => item.label).length).toBeGreaterThan(narrow.data.filter((item) => item.label).length);
+    const heat = cloudAiChartRenderOptions(parse({ kind: "heatmap", title: "H", data: [{ x: "A", y: "Long row label", value: 1 }] }), "en");
+    if (heat.kind !== "heatmap") throw new Error("Expected heatmap");
+    expect(typeof heat.padding === "object" && heat.padding.left).toBeGreaterThan(100);
   });
 });

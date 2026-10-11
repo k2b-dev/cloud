@@ -20,6 +20,7 @@ const chartMessages = i18n.define({
       chartPreviousData: "The chart and table still show the last loaded filters",
       chartCopyData: "Copy data",
       chartCopyFailed: "Could not copy data",
+      chartLegend: "Legend",
       interactiveLineChart: "Interactive line chart",
       interactiveChart:
         "Interactive chart. Use arrow keys to inspect, Enter to select, Escape to dismiss. On maps and timelines use Alt with arrow keys to inspect.",
@@ -80,6 +81,7 @@ const chartMessages = i18n.define({
       chartPreviousData: "Diagramm und Tabelle zeigen weiterhin die zuletzt geladenen Filter",
       chartCopyData: "Daten kopieren",
       chartCopyFailed: "Daten konnten nicht kopiert werden",
+      chartLegend: "Legende",
       interactiveLineChart: "Interaktives Liniendiagramm",
       interactiveChart:
         "Interaktives Diagramm. Pfeiltasten zum Erkunden, Enter zum Auswählen, Escape zum Schließen. In Karten und Zeitleisten Alt mit Pfeiltasten zum Erkunden.",

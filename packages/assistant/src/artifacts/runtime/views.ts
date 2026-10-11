@@ -1,27 +1,11 @@
+import { CloudAiViewSummarySchema } from "@k2b/cloud/ai/browser";
 import { computeDomain, niceStep } from "@k2b/stdlib";
 import { z } from "zod";
 import type { RuntimeContext } from "./cloud";
 import { CloudError } from "./errors";
 
 const viewRefSchema = () =>
-  z.discriminatedUnion("view", [
-    z.object({
-      path: z.string().startsWith("/views/").endsWith(".view.json"),
-      view: z.literal("chart"),
-      kind: z.enum(["bar", "line", "scatter", "pie", "donut", "histogram", "gauge", "sparkline"]),
-      title: z.string(),
-      subtitle: z.string().optional(),
-    }),
-    z.object({
-      path: z.string().startsWith("/views/").endsWith(".view.json"),
-      view: z.literal("table"),
-      title: z.string(),
-      subtitle: z.string().optional(),
-      rows: z.number().int().nonnegative().max(3840),
-      footer: z.boolean(),
-      columns: z.number().int().min(1).max(100),
-    }),
-  ]);
+  z.intersection(CloudAiViewSummarySchema, z.object({ path: z.string().startsWith("/views/").endsWith(".view.json") }));
 export const ViewRefSchema = /* @__PURE__ */ viewRefSchema();
 export type ViewRef = z.output<typeof ViewRefSchema>;
 
@@ -35,9 +19,9 @@ const object = (value: unknown, path: string): Row => {
   if (!value || typeof value !== "object" || Array.isArray(value) || value instanceof Date) return invalid(path, "Expected an object.");
   return Object.fromEntries(Object.entries(value));
 };
-const rowsOf = (value: unknown): Row[] => {
-  if (!Array.isArray(value)) return invalid("rows", "Expected an array of objects.");
-  return value.map((row, index) => object(row, `rows[${index}]`));
+const rowsOf = (value: unknown, path = "rows"): Row[] => {
+  if (!Array.isArray(value)) return invalid(path, "Expected an array of objects.");
+  return value.map((row, index) => object(row, `${path}[${index}]`));
 };
 const columnId = (value: unknown, path: string): string =>
   typeof value === "string" && value ? value : invalid(path, "Expected a column name.");
@@ -59,6 +43,71 @@ const wallClock = (value: Date, timeZone: string, path: string): string => {
   return `${part("year")}-${part("month")}-${part("day")}T${part("hour")}:${part("minute")}:${part("second")}`;
 };
 
+/** Dates become wall-clock chart strings; apps also accept ISO instants with an offset. */
+export function normalizeChartDates(spec: Row, timeZone: string, prefix = "", instants = false): Row {
+  const date = (value: unknown, path: string) => {
+    if (value instanceof Date) return wallClock(value, timeZone, path);
+    if (instants && typeof value === "string" && /^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:?\d{2})$/.test(value))
+      return wallClock(new Date(value), timeZone, path);
+    return value;
+  };
+  const record = (value: unknown): Row | undefined =>
+    value && typeof value === "object" && !Array.isArray(value) && !(value instanceof Date)
+      ? Object.fromEntries(Object.entries(value))
+      : undefined;
+  let midnight = true;
+  const converted = new WeakSet<object>();
+  const series =
+    (spec.kind === "line" || spec.kind === "scatter") && Array.isArray(spec.series)
+      ? spec.series.map((raw, i) => {
+          const entry = record(raw);
+          if (!entry || !Array.isArray(entry.data)) return raw;
+          return {
+            ...entry,
+            data: entry.data.map((raw, j) => {
+              const point = record(raw);
+              if (!point) return raw;
+              const x = date(point.x, `${prefix}series[${i}].data[${j}].x`);
+              const normalized = { ...point, x };
+              if (x !== point.x) {
+                converted.add(normalized);
+                if (typeof x === "string" && !x.endsWith("T00:00:00")) midnight = false;
+              }
+              return normalized;
+            }),
+          };
+        })
+      : undefined;
+  const day = (x: unknown) => (midnight && typeof x === "string" && x.endsWith("T00:00:00") ? x.slice(0, 10) : x);
+  return {
+    ...spec,
+    ...(series
+      ? {
+          series: series.map((raw) => {
+            const entry = record(raw);
+            return entry && Array.isArray(entry.data)
+              ? {
+                  ...entry,
+                  data: entry.data.map((raw) => {
+                    const point = record(raw);
+                    return point && typeof raw === "object" && raw !== null && converted.has(raw) ? { ...point, x: day(point.x) } : raw;
+                  }),
+                }
+              : raw;
+          }),
+        }
+      : {}),
+    ...(Array.isArray(spec.references)
+      ? {
+          references: spec.references.map((raw, index) => {
+            const ref = record(raw);
+            return ref ? { ...ref, value: date(ref.value, `${prefix}references[${index}].value`) } : raw;
+          }),
+        }
+      : {}),
+  };
+}
+
 const labelText = (value: unknown, timeZone: string, path: string): string => {
   if (value instanceof Date) {
     const time = wallClock(value, timeZone, path);
@@ -68,8 +117,8 @@ const labelText = (value: unknown, timeZone: string, path: string): string => {
   return invalid(path, "Expected a label: text, a number or a Date.");
 };
 
-function histogram(values: number[], bins: unknown, locale: string) {
-  if (!values.length) return invalid("rows", "A histogram needs at least one number.");
+function histogram(values: number[], bins: unknown, locale: string, prefix = "") {
+  if (!values.length) return invalid(`${prefix}rows`, "A histogram needs at least one number.");
   let min = Infinity,
     max = -Infinity;
   for (const value of values) {
@@ -79,18 +128,18 @@ function histogram(values: number[], bins: unknown, locale: string) {
   const format = new Intl.NumberFormat(locale, { maximumSignificantDigits: 15 });
   let edges: number[];
   if (Array.isArray(bins)) {
-    edges = bins.map((value, index) => number(value, `bins[${index}]`));
+    edges = bins.map((value, index) => number(value, `${prefix}bins[${index}]`));
     if (edges.length < 2 || edges.length > 481 || edges.some((edge, index) => index > 0 && edge <= edges[index - 1]!))
-      return invalid("bins", "Use 2..481 ascending finite edges.");
-    if (edges[0]! > min || edges[edges.length - 1]! < max) return invalid("bins", "Edges must cover every observation.");
+      return invalid(`${prefix}bins`, "Use 2..481 ascending finite edges.");
+    if (edges[0]! > min || edges[edges.length - 1]! < max) return invalid(`${prefix}bins`, "Edges must cover every observation.");
   } else {
-    const count = bins === undefined ? Math.min(480, Math.ceil(Math.log2(values.length)) + 1) : number(bins, "bins");
-    if (!Number.isInteger(count) || count < 1 || count > 480) return invalid("bins", "Use a bin count from 1 to 480.");
+    const count = bins === undefined ? Math.min(480, Math.ceil(Math.log2(values.length)) + 1) : number(bins, `${prefix}bins`);
+    if (!Number.isInteger(count) || count < 1 || count > 480) return invalid(`${prefix}bins`, "Use a bin count from 1 to 480.");
     if (min === max) return [{ label: format.format(min), value: values.length }];
     const domain = computeDomain([min, max]);
     let step = niceStep(domain[1] - domain[0], count);
     if (!Number.isFinite(step) || step <= 0 || min + step === min)
-      return invalid("bins", "Values cannot form finite bin edges; subtract a common offset first.");
+      return invalid(`${prefix}bins`, "Values cannot form finite bin edges; subtract a common offset first.");
     // Edges are whole multiples of the step. A quotient such as 0.3 / 0.1 = 2.9999999999999996 is rounded before it
     // picks an edge, so a value on an edge starts the next bin as documented.
     const index = (value: number) => Number((value / step).toPrecision(15));
@@ -102,7 +151,7 @@ function histogram(values: number[], bins: unknown, locale: string) {
       first = Math.floor(index(min));
       size = Math.max(1, Math.ceil(index(max)) - first);
     }
-    if (size > 480 || !Number.isFinite(size)) return invalid("bins", "At most 480 bins are allowed.");
+    if (size > 480 || !Number.isFinite(size)) return invalid(`${prefix}bins`, "At most 480 bins are allowed.");
     // Each edge keeps the step's decimal places, so 3 × 0.1 is 0.3 like the value in the data.
     const [digits, exponent = "0"] = Number(step.toPrecision(15)).toString().split("e");
     const decimals = Math.max(0, (digits!.split(".")[1]?.length ?? 0) - Number(exponent));
@@ -138,66 +187,107 @@ export function createViews(
   const available = () => {
     if (!script) throw new CloudError("unavailable", "cloud.view.* works in code_run scripts; an app draws charts with cloud.chart().");
   };
+  const convertRows = (raw: unknown, prefix = ""): Row => {
+    const spec = object(raw, prefix ? prefix.slice(0, -1) : "chart");
+    if (spec.rows === undefined) return spec;
+    const { rows: input, x, y, value, bins, series, ...options } = spec;
+    const rows = rowsOf(input, `${prefix}rows`);
+    const values = (id: string) =>
+      rows.flatMap((row, index) => (cellOf(row, id) == null ? [] : [number(cellOf(row, id), `${prefix}rows[${index}].${id}`)]));
+    if (spec.kind === "gauge" || spec.kind === "stat") return invalid(`${prefix}rows`, `A ${spec.kind} takes a value, not rows.`);
+    if (spec.kind === "histogram")
+      return { ...options, kind: "bar", data: histogram(values(columnId(value, `${prefix}value`)), bins, context.locale, prefix) };
+    if (spec.kind === "heatmap") {
+      const xId = columnId(x, `${prefix}x`),
+        yId = columnId(y, `${prefix}y`),
+        valueId = columnId(value, `${prefix}value`);
+      return {
+        ...options,
+        data: rows.flatMap((row, index) =>
+          cellOf(row, valueId) == null
+            ? []
+            : [
+                {
+                  x: labelText(cellOf(row, xId), context.timeZone, `${prefix}rows[${index}].${xId}`),
+                  y: labelText(cellOf(row, yId), context.timeZone, `${prefix}rows[${index}].${yId}`),
+                  value: number(cellOf(row, valueId), `${prefix}rows[${index}].${valueId}`),
+                },
+              ],
+        ),
+      };
+    }
+    const ys = Array.isArray(y) ? y.map((id, index) => columnId(id, `${prefix}y[${index}]`)) : [columnId(y, `${prefix}y`)];
+    if (spec.kind === "sparkline") {
+      if (ys.length !== 1) return invalid(`${prefix}y`, "Choose one value column.");
+      return { ...options, data: values(ys[0]!) };
+    }
+    const label = columnId(x, `${prefix}x`);
+    if (spec.kind === "boxplot") {
+      if (ys.length !== 1) return invalid(`${prefix}y`, "Choose one value column.");
+      const grouped = new Map<string, number[]>();
+      rows.forEach((row, index) => {
+        if (cellOf(row, ys[0]!) == null) return;
+        const name = labelText(cellOf(row, label), context.timeZone, `${prefix}rows[${index}].${label}`);
+        const values = grouped.get(name) ?? [];
+        values.push(number(cellOf(row, ys[0]!), `${prefix}rows[${index}].${ys[0]}`));
+        grouped.set(name, values);
+      });
+      return { ...options, data: [...grouped].map(([label, values]) => ({ label, values })) };
+    }
+    if (spec.kind === "bar" || spec.kind === "pie" || spec.kind === "donut" || spec.kind === "barGauge") {
+      if (ys.length !== 1) return invalid(`${prefix}y`, "Choose one value column.");
+      return {
+        ...options,
+        data: rows.flatMap((row, index) =>
+          cellOf(row, ys[0]!) == null
+            ? []
+            : [
+                {
+                  label: labelText(cellOf(row, label), context.timeZone, `${prefix}rows[${index}].${label}`),
+                  value: number(cellOf(row, ys[0]!), `${prefix}rows[${index}].${ys[0]}`),
+                },
+              ],
+        ),
+      };
+    }
+    if (spec.kind !== "line" && spec.kind !== "scatter") return invalid(`${prefix}kind`, "Unknown chart kind.");
+    if (series !== undefined && ys.length !== 1) return invalid(`${prefix}series`, "Long format needs one y column.");
+    const group = series === undefined ? undefined : columnId(series, `${prefix}series`);
+    const grouped = new Map<unknown, { label: string; data: { x: string | number | Date; y: number }[] }>();
+    for (const [index, row] of rows.entries())
+      for (const id of ys) {
+        if (cellOf(row, id) == null) continue;
+        const groupCell = group ? cellOf(row, group) : id;
+        const groupLabel = labelText(groupCell, context.timeZone, `${prefix}rows[${index}].${group ?? id}`);
+        const key = groupCell instanceof Date ? groupLabel : groupCell;
+        let entry = grouped.get(key);
+        if (!entry) {
+          entry = { label: groupLabel, data: [] };
+          grouped.set(key, entry);
+        }
+        const cell = cellOf(row, label);
+        if (cell instanceof Date && !Number.isFinite(cell.getTime()))
+          return invalid(`${prefix}rows[${index}].${label}`, "Expected a valid Date.");
+        const pointX = cell instanceof Date ? cell : typeof cell === "string" ? cell : number(cell, `${prefix}rows[${index}].${label}`);
+        entry.data.push({ x: pointX, y: number(cellOf(row, id), `${prefix}rows[${index}].${id}`) });
+      }
+    return { ...options, series: [...grouped.values()] };
+  };
+  // The server validates the result; converting only names the script's own rows and dates.
+  const convertChart = (raw: unknown, prefix = "") => {
+    const { view: _view, ...chart } = normalizeChartDates(convertRows(raw, prefix), context.timeZone, prefix);
+    return chart;
+  };
   return {
     async chart(raw: unknown): Promise<ViewRef> {
       available();
-      const spec = object(raw, "chart");
-      if (spec.rows === undefined) return save({ ...spec, view: "chart" });
-      const { rows: input, x, y, value, bins, series, ...options } = spec;
-      const rows = rowsOf(input);
-      const values = (id: string) =>
-        rows.flatMap((row, index) => (cellOf(row, id) == null ? [] : [number(cellOf(row, id), `rows[${index}].${id}`)]));
-      if (spec.kind === "gauge") return invalid("rows", "A gauge takes a value, not rows.");
-      if (spec.kind === "histogram")
-        return save({ ...options, view: "chart", kind: "bar", data: histogram(values(columnId(value, "value")), bins, context.locale) });
-      const ys = Array.isArray(y) ? y.map((id, index) => columnId(id, `y[${index}]`)) : [columnId(y, "y")];
-      if (spec.kind === "sparkline") {
-        if (ys.length !== 1) return invalid("y", "Choose one value column.");
-        return save({ ...options, view: "chart", data: values(ys[0]!) });
-      }
-      const label = columnId(x, "x");
-      if (spec.kind === "bar" || spec.kind === "pie" || spec.kind === "donut") {
-        if (ys.length !== 1) return invalid("y", "Choose one value column.");
-        return save({
-          ...options,
-          view: "chart",
-          data: rows.flatMap((row, index) =>
-            cellOf(row, ys[0]!) == null
-              ? []
-              : [
-                  {
-                    label: labelText(cellOf(row, label), context.timeZone, `rows[${index}].${label}`),
-                    value: number(cellOf(row, ys[0]!), `rows[${index}].${ys[0]}`),
-                  },
-                ],
-          ),
-        });
-      }
-      if (spec.kind !== "line" && spec.kind !== "scatter") return invalid("kind", "Unknown chart kind.");
-      if (series !== undefined && ys.length !== 1) return invalid("series", "Long format needs one y column.");
-      const group = series === undefined ? undefined : columnId(series, "series");
-      const grouped = new Map<unknown, { label: string; data: { x: string | number; y: number }[] }>();
-      for (const [index, row] of rows.entries())
-        for (const id of ys) {
-          if (cellOf(row, id) == null) continue;
-          const groupCell = group ? cellOf(row, group) : id;
-          const groupLabel = labelText(groupCell, context.timeZone, `rows[${index}].${group ?? id}`);
-          const key = groupCell instanceof Date ? groupLabel : groupCell;
-          let entry = grouped.get(key);
-          if (!entry) {
-            entry = { label: groupLabel, data: [] };
-            grouped.set(key, entry);
-          }
-          const cell = cellOf(row, label);
-          const pointX =
-            cell instanceof Date
-              ? wallClock(cell, context.timeZone, `rows[${index}].${label}`)
-              : typeof cell === "string"
-                ? cell
-                : number(cell, `rows[${index}].${label}`);
-          entry.data.push({ x: pointX, y: number(cellOf(row, id), `rows[${index}].${id}`) });
-        }
-      return save({ ...options, view: "chart", series: [...grouped.values()] });
+      return save({ ...convertChart(raw), view: "chart" });
+    },
+    async group(raw: unknown): Promise<ViewRef> {
+      available();
+      const spec = object(raw, "group");
+      if (!Array.isArray(spec.charts)) return invalid("charts", "Expected an array of charts.");
+      return save({ ...spec, view: "group", charts: spec.charts.map((chart, index) => convertChart(chart, `charts[${index}].`)) });
     },
     async table(raw: unknown): Promise<ViewRef> {
       available();

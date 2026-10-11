@@ -85,7 +85,79 @@ const small = {
   ],
   footer: { region: "Total", count: 398 },
 };
+const days = (base: number, step: number) =>
+  Array.from({ length: 30 }, (_, index) => ({ x: `2026-09-${String(index + 1).padStart(2, "0")}`, y: base + ((index * step) % 17) }));
+// Two measures with different units share the x cursor instead of a second y axis.
+const linked = {
+  view: "group",
+  title: "Offers and acceptance",
+  subtitle: "Daily, September 2026",
+  linkX: true,
+  charts: [
+    {
+      kind: "line",
+      title: "Offers",
+      series: [
+        { label: "Frontend service", data: days(40, 7) },
+        { label: "Gateway service", data: days(30, 5) },
+        { label: "Catalog service", data: days(20, 3) },
+        { label: "Same day last year", data: days(25, 4), role: "reference" },
+      ],
+      references: [{ value: 50, label: "Target" }],
+    },
+    {
+      kind: "line",
+      title: "Acceptance rate",
+      series: [{ label: "Accepted", data: days(0.2, 0.01) }],
+      yAxis: { format: { style: "percent" } },
+    },
+  ],
+};
+const kinds = {
+  view: "group",
+  title: "Prices and capacity",
+  layout: "grid",
+  charts: [
+    {
+      kind: "boxplot",
+      title: "Price by region",
+      data: ["North", "South", "West"].map((label, index) => ({
+        label,
+        values: [40, 42, 45, 47, 50, 90].map((value) => value + index * 5),
+      })),
+      yAxis: { format: { style: "currency", currency: "EUR", compact: true } },
+    },
+    {
+      kind: "heatmap",
+      title: "Offers by weekday",
+      data: ["Mon", "Tue", "Wed", "Thu", "Fri"].flatMap((x, column) => ["AM", "PM"].map((y, row) => ({ x, y, value: column * 2 + row }))),
+      showValues: true,
+    },
+    {
+      kind: "barGauge",
+      title: "Storage",
+      data: [
+        { label: "Files", value: 72 },
+        { label: "Mail", value: 35 },
+        { label: "Backups", value: 91 },
+      ],
+      unit: "%",
+      thresholds: [{ value: 60 }, { value: 85 }, { value: 100 }],
+    },
+    {
+      kind: "stat",
+      title: "Acceptance",
+      value: 0.31,
+      format: { style: "percent" },
+      delta: 0.04,
+      better: "up",
+      sparkline: [0.24, 0.26, 0.25, 0.29, 0.31],
+    },
+  ],
+};
 const files: Record<string, unknown> = {
+  "/views/offers-and-acceptance-7a8b9c0d.view.json": linked,
+  "/views/prices-and-capacity-1b2c3d4e.view.json": kinds,
   "/views/offers-by-status-1a2b3c4d.view.json": chart,
   "/views/offers-per-month-5e6f7a8b.view.json": table,
   "/views/prices-by-region-3c4d5e6f.view.json": small,
@@ -140,7 +212,17 @@ const present = (path: string, view: unknown): ToolBlock => ({
   status: "completed",
   result: { path, size: 900, mediaType: "application/json", view },
 });
+const groupSummary = (group: typeof linked | typeof kinds) => ({
+  view: "group",
+  title: group.title,
+  ...("subtitle" in group ? { subtitle: group.subtitle } : {}),
+  linkX: "linkX" in group ? group.linkX : false,
+  layout: "layout" in group ? group.layout : "stack",
+  charts: group.charts.map((chart) => ({ kind: chart.kind, title: chart.title })),
+});
 const blocks = [
+  present("/views/offers-and-acceptance-7a8b9c0d.view.json", groupSummary(linked)),
+  present("/views/prices-and-capacity-1b2c3d4e.view.json", groupSummary(kinds)),
   present("/views/offers-by-status-1a2b3c4d.view.json", { view: "chart", kind: "bar", title: chart.title, subtitle: chart.subtitle }),
   present("/views/offers-per-month-5e6f7a8b.view.json", {
     view: "table",
@@ -187,8 +269,19 @@ for (const view of [
         await page.waitForSelector("[data-view-path]");
         const loading = await boxes(page);
         await page.waitForSelector('[data-view-path] [data-chart-kind="bar"]');
+        await page.waitForSelector('[data-view-path] [data-chart-kind="stat"]');
+        expect(await page.locator('[data-view-path] [data-interactive="true"]').count()).toBe(7);
         await page.waitForFunction(() => document.querySelectorAll("[data-view-path] table").length === 2);
         await page.waitForFunction(() => document.querySelectorAll('[data-view-path] [role="status"]').length === 1);
+        // Every series name stays inside its chart's column, also on a phone.
+        const legends = await page.evaluate(() =>
+          Array.from(document.querySelectorAll(".k2b-chart-legend li")).map((item) => {
+            const box = item.getBoundingClientRect();
+            const frame = item.closest(".k2b-chart-explorer")!.getBoundingClientRect();
+            return box.left >= frame.left - 0.5 && box.right <= frame.right + 0.5;
+          }),
+        );
+        expect(legends).toEqual([true, true, true, true]);
         expect(await boxes(page)).toEqual(loading);
         // Up to eight rows, header and totals included, show without scrolling inside the reserved viewport.
         const small = await page.evaluate(() => {
@@ -203,3 +296,30 @@ for (const view of [
         await context.close();
       }
     });
+
+test("a tap on one chart of a linked group moves the cursor in every chart of the group (phone)", async () => {
+  const context = await browser.newContext({
+    viewport: { width: 360, height: 800 },
+    isMobile: true,
+    hasTouch: true,
+    reducedMotion: "reduce",
+  });
+  try {
+    const page = await context.newPage();
+    await page.goto(`http://127.0.0.1:${server.port}/`);
+    await page.evaluate((value) => (window as unknown as { show: (blocks: ToolBlock[]) => void }).show(value), [blocks[0]!]);
+    const charts = page.locator('[data-view-path] [data-interactive="true"]');
+    await page.waitForFunction(() => document.querySelectorAll('[data-view-path] [data-interactive="true"]').length === 2);
+    const box = (await charts.first().boundingBox())!;
+    await page.touchscreen.tap(box.x + box.width * 0.6, box.y + box.height * 0.4);
+    await page.waitForFunction(() =>
+      Array.from(document.querySelectorAll('[data-view-path] [data-interactive="true"]')).every(
+        (chart) => chart.getAttribute("data-inspecting") === "series",
+      ),
+    );
+    // The shared tooltip names the day once, in the reader's format.
+    expect(await page.locator(".k2b-chart__tooltip:popover-open").first().textContent()).toContain("Sep");
+  } finally {
+    await context.close();
+  }
+});

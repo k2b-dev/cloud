@@ -12,7 +12,7 @@ import {
   parseCloudAiView,
   sortCloudAiViewRows,
 } from "../view-block";
-import { CloudChartView } from "./chart-block";
+import { CloudChartGroupView, CloudChartView } from "./chart-block";
 import { useAiChatActions } from "./message-actions";
 import { aiChatMessages } from "./messages";
 
@@ -38,6 +38,7 @@ async function loadView(url: string, path: string, signal: AbortSignal): Promise
 
 type TableSummary = Extract<CloudAiViewSummary, { view: "table" }>;
 type ChartSummary = Extract<CloudAiViewSummary, { view: "chart" }>;
+type GroupSummary = Extract<CloudAiViewSummary, { view: "group" }>;
 
 /** The header row, the rows up to the viewport's, and the totals row when there is one. */
 const tableHeight = (summary: TableSummary) =>
@@ -130,6 +131,18 @@ function CloudTableView(props: { summary: TableSummary; input: CloudAiTableView 
   );
 }
 
+/** Whether a loaded file still has the shape its summary reserved; a changed file shows unavailable instead of moving. */
+const matches = (view: CloudAiView, summary: CloudAiViewSummary) => {
+  if (view.view === "chart") return summary.view === "chart" && view.kind === summary.kind;
+  if (view.view === "group")
+    return (
+      summary.view === "group" &&
+      view.charts.length === summary.charts.length &&
+      view.charts.every((chart, index) => chart.kind === summary.charts[index]?.kind)
+    );
+  return summary.view === "table";
+};
+
 /**
  * A presented view file. It takes its full size from the `present` summary in the first frame, then loads the file
  * with the viewer's access; a missing file or one that no longer matches its summary shows the unavailable state in
@@ -145,19 +158,15 @@ export function CloudViewBlock(props: { path: string; summary: CloudAiViewSummar
     const abort = new AbortController();
     onCleanup(() => abort.abort());
     void loadView(url, props.path, abort.signal).then((loaded) => {
-      if (!abort.signal.aborted)
-        setView(
-          loaded?.view === props.summary.view &&
-            !(loaded.view === "chart" && props.summary.view === "chart" && loaded.kind !== props.summary.kind)
-            ? loaded
-            : null,
-        );
+      if (!abort.signal.aborted) setView(loaded && matches(loaded, props.summary) ? loaded : null);
     });
   });
   const chartSummary = (): ChartSummary | undefined => (props.summary.view === "chart" ? props.summary : undefined);
   const tableSummary = (): TableSummary | undefined => (props.summary.view === "table" ? props.summary : undefined);
+  const groupSummary = (): GroupSummary | undefined => (props.summary.view === "group" ? props.summary : undefined);
   function loaded(kind: "chart"): Extract<CloudAiView, { view: "chart" }> | null | undefined;
   function loaded(kind: "table"): CloudAiTableView | null | undefined;
+  function loaded(kind: "group"): Extract<CloudAiView, { view: "group" }> | null | undefined;
   function loaded(kind: CloudAiView["view"]) {
     const value = view();
     return value && value.view !== kind ? null : value;
@@ -167,6 +176,7 @@ export function CloudViewBlock(props: { path: string; summary: CloudAiViewSummar
       <Switch>
         <Match when={chartSummary()}>{(summary) => <CloudChartView summary={summary()} input={loaded("chart")} />}</Match>
         <Match when={tableSummary()}>{(summary) => <CloudTableView summary={summary()} input={loaded("table")} />}</Match>
+        <Match when={groupSummary()}>{(summary) => <CloudChartGroupView summary={summary()} group={loaded("group")} />}</Match>
       </Switch>
     </div>
   );

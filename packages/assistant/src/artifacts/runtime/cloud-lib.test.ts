@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
-import { boundMoney, chart, html } from "./lib";
+import { createCloud } from "./cloud";
+import { boundMoney, chart, chartOptions, chartSvg, html } from "./lib";
 import { parseCsv, toCsv } from "./sheet-lib";
 
 test("cloud.html escapes values, joins arrays and keeps nested markup", () => {
@@ -16,7 +17,8 @@ test("cloud.chart drops stdlib's fixed colors and sizes text in pixels", () => {
   expect(markup).toStartWith(
     '<div class="k2b-chart" data-chart-kind="bar" role="img" aria-label="Umsatz"><div class="k2b-chart__svg" data-stretch',
   );
-  expect(markup).toContain("1.200");
+  expect(markup).toContain(">1200</text>");
+  expect(markup).toContain("--k2b-chart-width:480px");
   expect(markup).toMatch(/<text\b[^>]* style="transform-origin:-?[\d.]+px -?[\d.]+px[^"]*">/);
   expect(() => chart({ kind: "map" }, "de-DE")).toThrow(/unknown kind "map"/);
 });
@@ -100,4 +102,113 @@ test("CSV diagnostics count blank and quoted physical lines", async () => {
     code: "invalid",
     message: expect.stringContaining("line 4"),
   });
+});
+
+test("chart function formats survive validation and measured redraws", () => {
+  const markup = String(
+    chart(
+      {
+        kind: "line",
+        title: "Formats",
+        series: [
+          {
+            data: [
+              { x: 1, y: 1 },
+              { x: 2, y: 2 },
+            ],
+          },
+        ],
+        xAxis: { format: (v: number) => `X${v}` },
+        yAxis: { format: (v: number) => `Y${v}` },
+      },
+      "en",
+    ),
+  );
+  expect(markup).toContain(">X1</text>");
+  expect(markup).toContain(">Y1</text>");
+  const id = /data-chart-id="([^"]+)"/.exec(markup)?.[1];
+  const saved = chartOptions.get(id ?? "");
+  if (!saved) throw new Error("Missing redraw options");
+  const redrawn = chartSvg(saved, "en", 300, 280);
+  expect(redrawn).toContain('viewBox="0 0 300 280"');
+  expect(redrawn).toContain(">X1</text>");
+  expect(redrawn).toContain(">Y1</text>");
+  for (const kind of ["gauge", "stat"])
+    expect(String(chart({ kind, value: 12, format: (v: number) => `Value ${v}` }, "en"))).toContain("Value 12");
+  expect(String(chart({ kind: "barGauge", data: [{ label: "A", value: 12 }], format: (v: number) => `Value ${v}` }, "en"))).toContain(
+    "Value 12",
+  );
+  expect(
+    String(chart({ kind: "heatmap", data: [{ x: "A", y: "B", value: 12 }], showValues: true, format: (v: number) => `Value ${v}` }, "en")),
+  ).toContain("Value 12");
+});
+
+test("chart Date points and ISO instants become viewer wall-clock times before mapping", () => {
+  const cloud = createCloud(async () => undefined, { locale: "en", timeZone: "America/New_York", user: null });
+  const markup = String(
+    cloud.chart({
+      kind: "line",
+      title: "Time",
+      series: [
+        {
+          data: [
+            { x: new Date("2026-01-02T00:30:00Z"), y: 1 },
+            { x: "2026-01-02T02:00:00+01:00", y: 2 },
+          ],
+        },
+      ],
+      references: [{ axis: "x", value: new Date("2026-01-02T03:00:00Z") }],
+    }),
+  );
+  const id = /data-chart-id="([^"]+)"/.exec(markup)?.[1];
+  expect(chartOptions.get(id ?? "")?.input).toMatchObject({
+    series: [
+      {
+        data: [
+          { x: "2026-01-01T19:30:00", y: 1 },
+          { x: "2026-01-01T20:00:00", y: 2 },
+        ],
+      },
+    ],
+    references: [{ axis: "x", value: "2026-01-01T22:00:00" }],
+  });
+  expect(markup).toContain("stdlib-chart-reference");
+});
+
+test("chart new kinds draw at the shared size and invalid shared contracts throw CloudError", () => {
+  for (const options of [
+    { kind: "boxplot", data: [{ label: "A", values: [1, 2, 3] }] },
+    { kind: "heatmap", data: [{ x: "A", y: "B", value: 1 }] },
+    { kind: "barGauge", data: [{ label: "A", value: 1 }] },
+    { kind: "stat", value: 1, sparkline: [1, 2] },
+  ]) {
+    const markup = String(chart(options, "en"));
+    expect(markup).toContain(`data-chart-kind="${options.kind}"`);
+    expect(markup).toContain('viewBox="0 0 480 280"');
+    expect(markup).not.toContain("<style>");
+  }
+  expect(String(chart({ kind: "gauge", value: 1 }, "en"))).toContain('viewBox="0 0 480 280"');
+  expect(String(chart({ kind: "sparkline", data: [1, 2] }, "en"))).toContain('viewBox="0 0 160 40"');
+  expect(() => chart({ kind: "bar", data: Array.from({ length: 481 }, () => ({ label: "A", value: 1 })) }, "en")).toThrow(
+    expect.objectContaining({ code: "invalid", message: expect.stringContaining("cloud.chart:") }),
+  );
+  expect(() =>
+    chart(
+      {
+        kind: "scatter",
+        series: [
+          {
+            data: [
+              { x: 1, y: 1 },
+              { x: "2026-01-01", y: 2 },
+            ],
+          },
+        ],
+      },
+      "en",
+    ),
+  ).toThrow(/Use either numbers or dates/);
+  expect(() => chart({ kind: "bar", data: [{ label: "A", value: 2 }], yAxis: { domain: [0, 1] } }, "en")).toThrow(
+    /cloud.chart: The chart cannot be drawn/,
+  );
 });
