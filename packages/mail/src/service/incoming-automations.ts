@@ -43,6 +43,7 @@ import {
   incomingAutomationActions,
   incomingAutomationBudget,
   incomingAutomationHasAi,
+  incomingAutomationHasNonRepeatableSteps,
   incomingAutomationHasSpaces,
   resolveIncomingAutomationReferences,
 } from "./incoming-automation-definition";
@@ -763,7 +764,8 @@ const incomingAutomationBackfillCandidateSql = (input: IncomingAutomationBackfil
         SELECT latest.remote_message_ref_id FROM (
           SELECT DISTINCT ON (event.context #>> '{preconditions,message,remoteMessageRefId}')
             event.context #>> '{preconditions,message,remoteMessageRefId}' AS remote_message_ref_id,
-            run.state
+            run.state,
+            run.finished_at
           FROM workflows.event_delivery delivery
           JOIN workflows.event event ON event.id = delivery.event_id
           LEFT JOIN workflows.run run
@@ -775,7 +777,7 @@ const incomingAutomationBackfillCandidateSql = (input: IncomingAutomationBackfil
             AND event.type = ${MAIL_WORKFLOW_EVENT.messageReceived}
           ORDER BY event.context #>> '{preconditions,message,remoteMessageRefId}', event.created_at DESC, event.id DESC
         ) latest
-        WHERE latest.state IN ('failed', 'canceled')
+        WHERE latest.state IN ('failed', 'canceled') AND latest.finished_at <= ${input.cutoffAt}
       )
       OR ${incomingAutomationBackfillAcceptedSql(input)}
     )
@@ -869,7 +871,9 @@ const loadIncomingAutomationBackfillCounts = async (
  * Backfill progress for one operation:
  *
  * - `candidateCount` and `alreadyAcceptedCount` are frozen when the operation starts. Retry
- *   candidates have a failed or canceled latest run of this version; already accepted is zero.
+ *   candidates are messages whose latest run of this version ended failed or canceled before
+ *   the backfill started. Runs that fail later are left for the next retry backfill;
+ *   already accepted is zero.
  * - `newlyAcceptedCount` is the pump's durable dispatch counter, so it never decreases, even
  *   when executed actions move accepted messages out of the candidate set.
  * - `remainingCount` counts candidates with no accepted event for this operation's mode.
@@ -958,6 +962,15 @@ export const startIncomingAutomationBackfill = async (params: {
             if (!current.enabled) unwrap(fail(err.badInput("Enable the mail automation before applying it to existing messages")));
             if (incomingAutomationHasAi(current.steps)) {
               unwrap(fail(err.badInput("Flows with AI run only for future incoming mail")));
+            }
+            if (parsed.data.retryFailed === true && incomingAutomationHasNonRepeatableSteps(current.steps)) {
+              unwrap(
+                fail(
+                  err.badInput(
+                    "A retry backfill cannot run flows that add comments, create reply drafts, or create Spaces events, because a second run would create them again",
+                  ),
+                ),
+              );
             }
             unwrap(await rejectActiveBackfillMutation(current, parsed.data.operationId));
             unwrap(

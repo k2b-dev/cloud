@@ -2673,7 +2673,11 @@ export const incomingAutomationBackfillSchema = z
     retryFailed: z.boolean(),
     /** `limited`: the run applied its per-run limit and `remainingCount` candidates still need another backfill. */
     state: z.enum(["queued", "running", "waiting", "completed", "limited", "failed", "canceled"]),
-    /** Frozen at start: matching messages up to the cutoff; in retry mode, only those whose latest run of this version failed or was canceled. */
+    /**
+     * Frozen at start: matching messages up to the cutoff. Retry candidates are messages whose latest
+     * run of this version ended failed or canceled before the backfill started; runs that fail later
+     * are left for the next retry backfill.
+     */
     candidateCount: z.number().int().nonnegative(),
     /** Candidates already handed over at start; frozen and always zero in retry mode. */
     alreadyAcceptedCount: z.number().int().nonnegative(),
