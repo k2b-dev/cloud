@@ -105,9 +105,35 @@ If another session schedules, sends, or discards the draft, every open composer 
 Type `/` in the body to search available signatures and snippets. Mail inserts the chosen template into the draft, where you can edit or remove it.
 
 - **Snippet:** Inserts reusable text with its values already filled in. Values such as `{{ actor.email }}` appear as plain text. In Markdown messages, Mail adds a backslash only before characters that would change the formatting, for example `\*`.
-- **Signature:** Keeps its safe Liquid variables until preview and send. Values such as `{{ sender.display_name }}` or `{{ mailbox.name }}` are filled in at delivery.
+- **Signature:** Keeps its safe Liquid variables until preview and send.
 - **Private:** Only the owner sees the template.
 - **Mailbox:** The template is shared with collaborators.
+
+Use these Liquid variables in your template:
+
+| Variable | Value |
+| --- | --- |
+| `actor.display_name` | Name of the person who previews or sends the message, or inserts the snippet; a user-bound service account uses the name of its user, another service account its own name, other automations "Mailbox automation" |
+| `actor.email` | Email address of the person in actor.display_name; empty when there is none |
+| `sender.display_name` | Display name of the sender identity, or its address when it has no name |
+| `sender.email` | From address of the sender identity |
+| `sender.reply_to` | Reply-To address of the sender identity; empty when not set |
+| `mailbox.name` | Mailbox name |
+| `mailbox.description` | Mailbox description; empty when not set |
+| `message.subject` | Subject of the draft |
+| `message.to` | List of To addresses |
+| `message.cc` | List of Cc addresses |
+
+For example, write this signature:
+
+```liquid
+Best regards
+{{ actor.display_name }}
+{{ mailbox.name }}
+```
+
+To separate the addresses in `message.to` and `message.cc`, use `join`:
+`{{ message.to | join: ", " }}`.
 
 When a verified sender has a default signature, Mail inserts it automatically into new messages, replies, and forwards. In a reply or forward, Mail places the signature before the quoted message history. A personal default replaces the mailbox default for that sender. You can still edit the inserted source. Signatures are not mandatory or locked. If you delete only part of a signature, Mail may no longer recognize the rest as a signature. Mail then sends the rest as written and warns you about any placeholders in it before sending.
 

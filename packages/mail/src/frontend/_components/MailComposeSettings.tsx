@@ -18,29 +18,19 @@ import {
 } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
-import type {
-  ComposeSignatureDefault,
-  ComposeTemplate,
-  ComposeTemplateKind,
-  ComposeTemplateScope,
-  MailboxComposeStyle,
-  SenderIdentity,
+import {
+  type ComposeSignatureDefault,
+  type ComposeTemplate,
+  type ComposeTemplateKind,
+  type ComposeTemplateScope,
+  composeTemplateVariables,
+  type MailboxComposeStyle,
+  type SenderIdentity,
 } from "../../contracts";
 import { readApiError } from "./api-response";
 import { mailSettingsMessages } from "./mail-settings-messages";
 
-const TEMPLATE_VARIABLES = [
-  "actor.display_name",
-  "actor.email",
-  "mailbox.name",
-  "mailbox.description",
-  "sender.display_name",
-  "sender.email",
-  "sender.reply_to",
-  "message.subject",
-  "message.to",
-  "message.cc",
-] as const;
+const TEMPLATE_VARIABLES = Object.keys(composeTemplateVariables);
 const templateEditorDialogOptions = { ...panelDialogOptions, cancelBehavior: "ignore" as const };
 const emailDesignDialogOptions = { ...panelDialogFixedOptions, cancelBehavior: "ignore" as const };
 

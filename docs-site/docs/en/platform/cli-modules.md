@@ -247,6 +247,9 @@ Flags are named and typed:
 | `flag.stringList()` | `string[]` | `separator`, `default` |
 | `flag.input()` | Input descriptor | Direct value, file, or stdin |
 
+Command help marks flags declared with `required: true` and no `default` as
+`Required.`
+
 Every flag also accepts `name`, `aliases`, `description`, and `valueLabel`.
 Object keys use kebab case by default, so `perPage` becomes `--per-page`.
 

@@ -30,11 +30,50 @@ cld mail compose template archive <template-id> --revision <revision> --yes
 
 Template bodies use Markdown and Liquid. Presets are application behavior, not persisted template kinds.
 
-Compose rendering needs the same editable draft context as the Mail composer. Store it as JSON so recipients, sending identity, subject, format, and body remain explicit:
+| Variable | Value |
+| --- | --- |
+| `actor.display_name` | Name of the person who previews or sends the message, or inserts the snippet; a user-bound service account uses the name of its user, another service account its own name, other automations "Mailbox automation" |
+| `actor.email` | Email address of the person in actor.display_name; empty when there is none |
+| `sender.display_name` | Display name of the sender identity, or its address when it has no name |
+| `sender.email` | From address of the sender identity |
+| `sender.reply_to` | Reply-To address of the sender identity; empty when not set |
+| `mailbox.name` | Mailbox name |
+| `mailbox.description` | Mailbox description; empty when not set |
+| `message.subject` | Subject of the draft |
+| `message.to` | List of To addresses |
+| `message.cc` | List of Cc addresses |
+
+For example, use this signature:
+
+```liquid
+Best regards
+{{ actor.display_name }}
+{{ mailbox.name }}
+```
+
+Mail fills in snippet values when you insert the snippet. Signatures keep their
+Liquid variables until preview and send. To separate the addresses in
+`message.to` and `message.cc`, use `join`: `{{ message.to | join: ", " }}`.
+
+`--shortcut` is required when you create a template. It names the slash command,
+for example `sig` for `/sig`. Use lowercase letters, digits, and underscores,
+start with a letter, and use at most 40 characters. An unknown variable fails
+validation with an error that lists the available variables.
+`cld mail compose template create --help` lists them too.
+
+Compose rendering needs the same editable draft context as the Mail composer.
+`senderIdentityId` is required. Use a verified sender identity ID from
+`cld mail identity list`. The other fields are optional: `to`, `cc`, and `bcc`
+default to empty arrays; `subject` and `body` default to empty strings; `format`
+defaults to `markdown` and also accepts `plain`. Recipient arrays hold objects
+with `address` (a string) and an optional `name` (a string or null).
+`priority` defaults to `normal` and also accepts `low` and `high`.
+`requestDeliveryReceipt` and `requestReadReceipt` default to `false`.
+Store the draft as JSON:
 
 ```json
 {
-  "senderIdentityId": "<identity-id>",
+  "senderIdentityId": "Ident1",
   "to": [{ "name": null, "address": "recipient@example.com" }],
   "cc": [],
   "bcc": [],

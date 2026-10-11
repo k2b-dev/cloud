@@ -45,6 +45,7 @@ import {
   type ConversationDraftSummary,
   type CreatedAttachmentLink,
   type CreateIncomingAutomation,
+  composeTemplateVariables,
   createAutomaticReplyConfigurationSchema,
   createIncomingAutomationSchema,
   DEFAULT_CONVERSATION_REFERENCE_PATTERN,
@@ -52,6 +53,7 @@ import {
   type DeletedMailboxPage,
   type DeriveDraftFromMessageInput,
   type DraftAttachmentUpload,
+  type DraftEditableContentInput,
   type DraftIntent,
   type DraftLease,
   type DraftRecoveryCopy,
@@ -736,6 +738,39 @@ const draftEditableContentFlags = {
     description: "Request a read receipt; recipients may ignore the request",
   }),
 };
+
+const composeTemplateVariableWidth = Math.max(...Object.keys(composeTemplateVariables).map((name) => name.length));
+const composeTemplateHelpDescription = [
+  "Signatures keep their Liquid variables until preview and send; snippets are filled in when they are inserted.",
+  "Variables:",
+  ...Object.entries(composeTemplateVariables).map(
+    ([name, description]) => `  ${name.padEnd(composeTemplateVariableWidth)}  ${description}`,
+  ),
+  'To separate list items such as message.to, use join: {{ message.to | join: ", " }}',
+].join("\n");
+
+const composeDraftExample = {
+  senderIdentityId: "Ident1",
+  to: [{ name: null, address: "recipient@example.com" }],
+  cc: [],
+  bcc: [],
+  subject: "Example",
+  body: "Hello",
+  format: "markdown",
+} satisfies DraftEditableContentInput;
+
+const composeDraftHelpDescription = [
+  "Draft JSON:",
+  "  senderIdentityId is required: a verified sender identity ID from cld mail identity list.",
+  '  to, cc, and bcc are arrays of { "address": string, "name"?: string|null } objects, not plain strings; name is optional; default [].',
+  '  subject and body are strings; default "".',
+  "  format is markdown or plain; default markdown.",
+  "  priority (low, normal, or high), requestDeliveryReceipt, and requestReadReceipt are optional; defaults: normal, false, false.",
+  "Example draft.json:",
+  ...JSON.stringify(composeDraftExample, null, 2)
+    .split("\n")
+    .map((line) => `  ${line}`),
+].join("\n");
 
 const composeDraftInputFlag = flag.input({
   required: true,
@@ -3125,19 +3160,28 @@ const specialistCommands = {
     }),
     command("compose template create", {
       summary: "Create a private or mailbox compose template",
+      description: composeTemplateHelpDescription,
+      examples: [
+        "printf 'Best regards\\n{{ actor.display_name }}\\n{{ mailbox.name }}\\n' > signature.md",
+        'cld mail compose template create --kind signature --scope mailbox --name "Team signature" --shortcut sig --body-file signature.md',
+      ],
       flags: {
         ...mailboxFlag,
-        kind: flag.enum(["signature", "snippet"] as const, { required: true }),
+        kind: flag.enum(["signature", "snippet"] as const, { required: true, description: "Template kind" }),
         scope: flag.enum(["private", "mailbox"] as const, {
           default: "private",
         }),
-        name: flag.string({ required: true }),
-        shortcut: flag.string({ required: true }),
+        name: flag.string({ required: true, description: "Template name" }),
+        shortcut: flag.string({
+          required: true,
+          description:
+            "Slash command that inserts the template in the composer, for example sig for /sig; lowercase letters, digits and underscores, starting with a letter, at most 40 characters",
+        }),
         body: flag.input({
           required: true,
           stdinName: "body-stdin",
           fileName: "body-file",
-          description: "Markdown and Liquid template source",
+          description: "Markdown with Liquid variables; see below",
         }),
       },
       run: async ({ ctx, flags }) => {
@@ -3164,6 +3208,7 @@ const specialistCommands = {
     }),
     command("compose template update", {
       summary: "Update a compose template at an expected revision",
+      description: composeTemplateHelpDescription,
       args: {
         templateId: arg.required({ description: "Compose template id" }),
       },
@@ -3233,6 +3278,8 @@ const specialistCommands = {
     }),
     command("compose snippet render", {
       summary: "Render a visible signature or snippet for a draft",
+      description: composeDraftHelpDescription,
+      examples: ["cld mail compose snippet render Templ1 --draft-file draft.json"],
       args: {
         templateId: arg.required({ description: "Compose template id" }),
       },
@@ -3260,6 +3307,8 @@ const specialistCommands = {
     }),
     command("compose suggestions", {
       summary: "List rendered signatures and snippets matching a shortcut or name",
+      description: composeDraftHelpDescription,
+      examples: ["cld mail compose suggestions --draft-file draft.json"],
       args: {
         query: arg.optional({
           description: "Shortcut or template name fragment; omit to list all suggestions",
@@ -3401,6 +3450,8 @@ const specialistCommands = {
     }),
     command("compose preview", {
       summary: "Render a draft payload through the canonical email pipeline",
+      description: composeDraftHelpDescription,
+      examples: ["cld mail compose preview --draft-file draft.json"],
       flags: {
         ...mailboxFlag,
         draft: composeDraftInputFlag,

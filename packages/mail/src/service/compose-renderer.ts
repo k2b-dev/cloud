@@ -5,7 +5,7 @@ import juice from "juice";
 import postcss from "postcss";
 import selectorParser from "postcss-selector-parser";
 import sanitizeHtml from "sanitize-html";
-import { type ComposeFormattingWarning, MAX_COMPOSE_FORMATTING_WARNINGS } from "../contracts";
+import { type ComposeFormattingWarning, composeTemplateVariables, MAX_COMPOSE_FORMATTING_WARNINGS } from "../contracts";
 import { composeRenderFailure } from "./compose-render-errors";
 import { allowedEmailInlineStyles, allowedEmailInlineStyleValue, EMAIL_INLINE_STYLE_PROPERTY_SET } from "./email-inline-style-policy";
 import { renderMailLiquidTemplate, validateMailLiquidTemplate } from "./template-rendering";
@@ -198,18 +198,6 @@ const isUnsupportedMarkdownUrlContext = (source: string, offset: number, length:
 };
 
 const sourceBytes = (source: string): number => new TextEncoder().encode(source).byteLength;
-const COMPOSE_TEMPLATE_VARIABLES = [
-  "actor.display_name",
-  "actor.email",
-  "mailbox.description",
-  "mailbox.name",
-  "message.cc",
-  "message.subject",
-  "message.to",
-  "sender.display_name",
-  "sender.email",
-  "sender.reply_to",
-] as const;
 
 const validateMarkdownSourceComplexity = (source: string): Result<void> => {
   let lines = 0;
@@ -243,7 +231,7 @@ export const validateComposeTemplateSource = (source: string): Result<void> => {
     return fail(err.badInput("Email template contains reserved control characters"));
   }
   const valid = validateMailLiquidTemplate(source, {
-    allowedVariables: COMPOSE_TEMPLATE_VARIABLES,
+    allowedVariables: Object.keys(composeTemplateVariables),
     output: "markdown",
   });
   if (!valid.ok) return valid;

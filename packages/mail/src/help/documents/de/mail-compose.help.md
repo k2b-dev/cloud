@@ -105,9 +105,35 @@ Plant, sendet oder verwirft eine andere Sitzung den Entwurf, lädt jeder geöffn
 Tippe im Text `/`, um verfügbare Signaturen und Textbausteine zu suchen. Mail fügt die gewählte Vorlage in den Entwurf ein, wo du sie bearbeiten oder entfernen kannst.
 
 - **Textbaustein:** Fügt wiederverwendbaren Text mit bereits eingesetzten Werten ein. Werte wie `{{ actor.email }}` erscheinen als normaler Text. In Markdown-Nachrichten setzt Mail nur vor Zeichen einen Backslash, die sonst die Formatierung ändern würden, zum Beispiel `\*`.
-- **Signatur:** Behält ihre sicheren Liquid-Variablen bis zur Vorschau und zum Senden. Werte wie `{{ sender.display_name }}` oder `{{ mailbox.name }}` werden erst bei der Zustellung eingesetzt.
+- **Signatur:** Behält ihre sicheren Liquid-Variablen bis zur Vorschau und zum Senden.
 - **Privat:** Nur die Person, der die Vorlage gehört, sieht sie.
 - **Postfach:** Die Vorlage ist mit anderen im Team geteilt.
+
+Nutze diese Liquid-Variablen in deiner Vorlage:
+
+| Variable | Wert |
+| --- | --- |
+| `actor.display_name` | Name der Person, die die Vorschau öffnet, die Nachricht sendet oder den Textbaustein einfügt. Ein benutzergebundenes Dienstkonto nutzt den Namen seines Benutzers, ein anderes Dienstkonto seinen eigenen Namen, andere Automationen „Mailbox automation“. |
+| `actor.email` | E-Mail-Adresse der Person aus `actor.display_name`. Leer, wenn es keine gibt. |
+| `sender.display_name` | Anzeigename der Absenderidentität. Ohne Namen erscheint ihre E-Mail-Adresse. |
+| `sender.email` | Von-Adresse der Absenderidentität. |
+| `sender.reply_to` | Antwortadresse der Absenderidentität. Leer, wenn keine gesetzt ist. |
+| `mailbox.name` | Name des Postfachs. |
+| `mailbox.description` | Beschreibung des Postfachs. Leer, wenn keine gesetzt ist. |
+| `message.subject` | Betreff des Entwurfs. |
+| `message.to` | Liste der An-Adressen. |
+| `message.cc` | Liste der Cc-Adressen. |
+
+Schreibe zum Beispiel diese Signatur:
+
+```liquid
+Viele Grüße
+{{ actor.display_name }}
+{{ mailbox.name }}
+```
+
+Trenne die Adressen in `message.to` und `message.cc` mit `join`:
+`{{ message.to | join: ", " }}`.
 
 Hat eine bestätigte Absenderidentität eine Standardsignatur, fügt Mail sie automatisch in neue Nachrichten, Antworten und Weiterleitungen ein. In einer Antwort oder Weiterleitung setzt Mail die Signatur vor den zitierten Verlauf. Ein persönlicher Standard ersetzt für diese Absenderidentität den Standard des Postfachs. Den eingefügten Quelltext kannst du weiter bearbeiten. Signaturen sind weder Pflicht noch gesperrt. Löschst du nur einen Teil einer Signatur, erkennt Mail den Rest vielleicht nicht mehr als Signatur. Mail versendet den Rest dann so, wie er dasteht, und warnt dich vor dem Senden vor den Platzhaltern darin.
 

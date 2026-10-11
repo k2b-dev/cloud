@@ -5,7 +5,7 @@ section: Work
 order: 110
 description: Connected mailboxes with search, team context, reliable sending, and automation.
 tags: [mail, email, collaboration]
-updated: 2026-10-09
+updated: 2026-10-11
 ---
 
 # Mail
@@ -301,6 +301,36 @@ including messages the automation already processed on arrival, so their steps
 run again. After a retry backfill, the automation menu in Mail settings offers
 **Retry failed messages** to continue with another retry. **Automations >
 Activity** shows how the new runs ended.
+
+## Write signatures and snippets
+
+Use Markdown and Liquid in signatures and snippets. Type `/` in the composer
+to choose a template. Mail fills in snippet values when you insert them.
+Signatures keep their variables until preview and send.
+
+| Variable | Value |
+| --- | --- |
+| `actor.display_name` | Name of the person who previews or sends the message, or inserts the snippet; a user-bound service account uses the name of its user, another service account its own name, other automations "Mailbox automation" |
+| `actor.email` | Email address of the person in actor.display_name; empty when there is none |
+| `sender.display_name` | Display name of the sender identity, or its address when it has no name |
+| `sender.email` | From address of the sender identity |
+| `sender.reply_to` | Reply-To address of the sender identity; empty when not set |
+| `mailbox.name` | Mailbox name |
+| `mailbox.description` | Mailbox description; empty when not set |
+| `message.subject` | Subject of the draft |
+| `message.to` | List of To addresses |
+| `message.cc` | List of Cc addresses |
+
+For example, write this signature:
+
+```liquid
+Best regards
+{{ actor.display_name }}
+{{ mailbox.name }}
+```
+
+To separate the addresses in `message.to` and `message.cc`, use `join`:
+`{{ message.to | join: ", " }}`.
 
 ## How Mail fits Cloud
 

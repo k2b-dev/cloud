@@ -1,8 +1,22 @@
 import { describe, expect, test } from "bun:test";
 import { DEFAULT_CONVERSATION_REFERENCE_PATTERN } from "../contracts";
-import { addConversationReferenceToReplySubject, formatConversationReference } from "./conversation-reference";
+import {
+  addConversationReferenceToReplySubject,
+  formatConversationReference,
+  validateConversationReferencePattern,
+} from "./conversation-reference";
 
 describe("conversation reference formatting", () => {
+  test("lists available scalar variables for an unknown root", () => {
+    expect(validateConversationReferencePattern("MAIL-{{ seq }}")).toMatchObject({
+      ok: false,
+      error: {
+        message:
+          'Mail template variable "seq" is not available here. Available: short_id, uuid, uuid_v7, ulid, sequence, year, month, month_name, day.',
+      },
+    });
+  });
+
   test("uses a privacy-safe default", () => {
     expect(DEFAULT_CONVERSATION_REFERENCE_PATTERN).toBe("REF-{{ short_id }}");
     expect(

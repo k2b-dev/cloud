@@ -225,7 +225,13 @@ describe("CLI command builder", () => {
       commands: [
         command("logs list", {
           summary: "List logs",
-          flags: { search: flag.string({ aliases: ["q"], description: "Free-text search" }) },
+          flags: {
+            search: flag.string({ aliases: ["q"], description: "Free-text search" }),
+            name: flag.string({ required: true, description: "Log name" }),
+            kind: flag.enum(["live", "archived"] as const, { required: true, default: "live", description: "Log kind" }),
+            count: flag.int({ required: true, description: "Log count" }),
+            body: flag.input({ required: true, description: "Log body" }),
+          },
           examples: ["cld admin logs list --search timeout"],
           run: () => undefined,
         }),
@@ -251,6 +257,19 @@ describe("CLI command builder", () => {
     const output = commandHelp.lines.join("\n");
     expect(output).toContain("cld admin logs list");
     expect(output).toContain("--search <value>, -q");
+    for (const [name, description] of [
+      ["name", "Log name. Required."],
+      ["kind", "Log kind. Default: live. Values: live, archived."],
+      ["count", "Log count. Required."],
+      ["body", "Log body. Required."],
+    ]) {
+      const line = output.split("\n").find((line) => line.trimStart().startsWith(`--${name} `));
+      expect(line).toContain(description);
+      if (name === "kind") expect(line).not.toContain("Required.");
+    }
+    const optionalLine = output.split("\n").find((line) => line.trimStart().startsWith("--search "));
+    expect(optionalLine?.trim().replace(/^--search <value>, -q\s+/, "")).toBe("Free-text search");
+    expect(optionalLine).not.toContain("Required.");
     expect(output).toContain("cld admin logs list --search timeout");
   });
 

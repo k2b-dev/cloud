@@ -3,7 +3,12 @@ import type { CloudCliContext } from "@k2b/cloud/cli";
 import { compileWorkflow } from "@k2b/cloud/workflows/language";
 import { z } from "zod";
 import mailCli from "../cli";
-import { createAutomaticReplyConfigurationSchema, createIncomingAutomationSchema } from "../contracts";
+import {
+  composeTemplateVariables,
+  createAutomaticReplyConfigurationSchema,
+  createIncomingAutomationSchema,
+  draftEditableContentInputSchema,
+} from "../contracts";
 import { mailConversationUiMessages } from "../frontend/_components/mail-conversation-ui-messages";
 import { mailRemainingMessages } from "../frontend/_components/mail-remaining-messages";
 import { mailSettingsMessages } from "../frontend/_components/mail-settings-messages";
@@ -113,6 +118,82 @@ const expectedIds = [
 ];
 
 describe("mailHelp", () => {
+  test("compose template create help marks required flags and describes every variable", async () => {
+    const help = await renderMailCliHelp(["compose", "template", "create"]);
+    for (const flag of ["kind", "name", "shortcut", "body"]) {
+      const line = help.split("\n").find((line) => line.trimStart().startsWith(`--${flag} `));
+      expect(line).toContain("Required.");
+    }
+    for (const [name, description] of Object.entries(composeTemplateVariables)) {
+      const line = help.split("\n").find((line) => line.trimStart().startsWith(`${name} `));
+      expect(line).toContain(description);
+    }
+    expect(help).toContain('To separate list items such as message.to, use join: {{ message.to | join: ", " }}');
+    expect(help).toContain("--shortcut sig --body-file signature.md");
+  });
+
+  test("compose template update help describes every variable", async () => {
+    const help = await renderMailCliHelp(["compose", "template", "update"]);
+    for (const [name, description] of Object.entries(composeTemplateVariables)) {
+      const line = help.split("\n").find((line) => line.trimStart().startsWith(`${name} `));
+      expect(line).toContain(description);
+    }
+  });
+
+  test.each(["compose preview", "compose snippet render", "compose suggestions"])(
+    "%s help shows a draft JSON example that matches the contract",
+    async (command) => {
+      const help = await renderMailCliHelp(command.split(" "));
+      expect(help).toContain("senderIdentityId is required");
+      expect(help).toContain("cld mail identity list");
+      expect(help).toContain(
+        '  to, cc, and bcc are arrays of { "address": string, "name"?: string|null } objects, not plain strings; name is optional; default [].',
+      );
+      expect(help).toContain("--draft-file draft.json");
+      expect(help).toContain("Example draft.json:");
+      const example = help.match(/^  \{\n[\s\S]*?^  \}/m)?.[0];
+      expect(example).toBeDefined();
+      if (!example) throw new Error("Draft JSON example is missing from compose help");
+      const parsed = draftEditableContentInputSchema.parse(JSON.parse(example));
+      expect(parsed).toMatchObject({
+        senderIdentityId: "Ident1",
+        to: [{ name: null, address: "recipient@example.com" }],
+        cc: [],
+        bcc: [],
+        subject: "Example",
+        body: "Hello",
+        format: "markdown",
+        priority: "normal",
+        requestDeliveryReceipt: false,
+        requestReadReceipt: false,
+      });
+    },
+  );
+
+  test.each([
+    "../cli-references/compose.md",
+    "./documents/en/mail-compose.help.md",
+    "./documents/de/mail-compose.help.md",
+    "../../../../docs-site/apps-content/en/mail.md",
+  ])("%s documents every compose template variable", async (file) => {
+    const document = await Bun.file(new URL(file, import.meta.url)).text();
+    const lines = document.split("\n");
+    const headers = lines.filter((line) => line.startsWith("| Variable |"));
+    if (headers.length === 0) throw new Error(`Compose variable table header is missing in ${file}`);
+    expect(headers).toHaveLength(1);
+    const headerIndex = lines.findIndex((line) => line.startsWith("| Variable |"));
+    const rows: [string, string][] = [];
+    for (const line of lines.slice(headerIndex + 2)) {
+      if (!line.startsWith("|")) break;
+      const match = line.match(/^\| `([^`]+)` \| (.*) \|$/);
+      if (!match) throw new Error(`Invalid compose variable table row in ${file}: ${line}`);
+      rows.push([match[1]!, match[2]!]);
+    }
+    const names = rows.map(([name]) => name);
+    expect(names).toEqual(Object.keys(composeTemplateVariables));
+    if (file !== "./documents/de/mail-compose.help.md") expect(Object.fromEntries(rows)).toEqual(composeTemplateVariables);
+  });
+
   test("owns the task-oriented Mail help collection", () => {
     expect(mailHelp.documents.map((document) => document.id)).toEqual(expectedIds);
 

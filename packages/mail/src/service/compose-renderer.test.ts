@@ -253,6 +253,13 @@ describe("compose renderer", () => {
     expect(validateComposeTemplateSource("Regards, {{ actor.display_name }}").ok).toBe(true);
     expect(validateComposeTemplateSource("{% if actor.email %}Hi{% endif %}").ok).toBe(true);
     expect(validateComposeTemplateSource("{{ actor.unknown }}").ok).toBe(false);
+    expect(validateComposeTemplateSource("{{ user.name }}\n")).toMatchObject({
+      ok: false,
+      error: {
+        message:
+          'Mail template variable "user.name" is not available here. Available: actor.display_name, actor.email, sender.display_name, sender.email, sender.reply_to, mailbox.name, mailbox.description, message.subject, message.to, message.cc.',
+      },
+    });
     expect(validateComposeTemplateSource("<{{ sender.reply_to }}>").ok).toBe(false);
     expect(validateComposeTemplateSource("[Support]: mailto:{{ sender.email }}").ok).toBe(false);
   });

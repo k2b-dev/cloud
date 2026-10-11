@@ -2800,6 +2800,21 @@ export const composeTemplateShortcutSchema = z
   .max(40)
   .regex(/^[a-z][a-z0-9_]*$/, "Shortcut must start with a letter and use lowercase letters, numbers, or underscores");
 
+/** The validator, CLI help, and documentation tests read this list. */
+export const composeTemplateVariables = {
+  "actor.display_name":
+    'Name of the person who previews or sends the message, or inserts the snippet; a user-bound service account uses the name of its user, another service account its own name, other automations "Mailbox automation"',
+  "actor.email": "Email address of the person in actor.display_name; empty when there is none",
+  "sender.display_name": "Display name of the sender identity, or its address when it has no name",
+  "sender.email": "From address of the sender identity",
+  "sender.reply_to": "Reply-To address of the sender identity; empty when not set",
+  "mailbox.name": "Mailbox name",
+  "mailbox.description": "Mailbox description; empty when not set",
+  "message.subject": "Subject of the draft",
+  "message.to": "List of To addresses",
+  "message.cc": "List of Cc addresses",
+} as const satisfies Record<string, string>;
+
 export const composeTemplateSchema = z.object({
   id: ResourceShortIdSchema,
   mailboxId: ResourceShortIdSchema,
