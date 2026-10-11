@@ -16,6 +16,7 @@ import type { AiActiveTurn } from "../client/projection";
 import { type AiActiveTurnSegment, type AiTurnBlock, splitActiveTurnBlocks } from "../protocol";
 import { type AiAssistantTimelineItem, buildAiMessageTimeline } from "../timeline";
 import type { AiConversationTimelineEntry, AiStoredMessage, AiTurnError } from "../types";
+import { AiReaderTimeZoneProvider } from "./action-sentences";
 import { type AiChatActions, AiChatActionsProvider, createAssistantMessageActions, useAiChatActions } from "./message-actions";
 import { isRecord, isSurveyToolName, textFromMessage } from "./message-utils";
 import { aiChatMessages } from "./messages";
@@ -112,7 +113,7 @@ const isEmptyLayout = (layout: AiTurnLayout) => !isWideLayout(layout) && layout.
  * Turn views live in their own roots, keyed by timeline id. A changed segment updates its view instead of
  * replacing it, so host state inside a turn, such as a running Studio session, survives every update.
  */
-const createTurnViews = (disclosureState: AiToolDisclosureState) => {
+const createTurnViews = (disclosureState: AiToolDisclosureState, timeZone: string | undefined) => {
   const owner = getOwner();
   const views = new Map<string, { set: Setter<AiTurnSegment>; content: JSX.Element; dispose: () => void }>();
   onCleanup(() => {
@@ -128,7 +129,11 @@ const createTurnViews = (disclosureState: AiToolDisclosureState) => {
       }
       return createRoot((dispose) => {
         const [current, set] = createSignal(segment);
-        const content = <AiTurnView segment={current} disclosureState={disclosureState} />;
+        const content = (
+          <AiReaderTimeZoneProvider value={timeZone}>
+            <AiTurnView segment={current} disclosureState={disclosureState} />
+          </AiReaderTimeZoneProvider>
+        );
         views.set(segment.id, { set, content, dispose });
         return content;
       }, owner);
@@ -472,6 +477,11 @@ export type AiChatTimelineSource = {
   activeTurn: Accessor<AiActiveTurn | null>;
   /** The conversation stream lost its connection and reconnects, such as `streamStatus() === "reconnecting"`. */
   reconnecting?: Accessor<boolean>;
+  /**
+   * The reader's IANA time zone, such as the page's `getTimeZone(c)`, so times in server-rendered history match the
+   * browser. Defaults to the browser's own zone, and to UTC outside a browser.
+   */
+  timeZone?: string;
 };
 
 /**
@@ -483,7 +493,7 @@ export function createAiChatTimeline(source: AiChatTimelineSource): Accessor<rea
   const actions = useAiChatActions();
   const locale = useLocale();
   const disclosureState = createAiToolDisclosureState();
-  const views = createTurnViews(disclosureState);
+  const views = createTurnViews(disclosureState, source.timeZone);
   // While the stream reconnects or a model call waits for its retry, the live turn says so and its clock stands.
   const reconnecting = createMemo(() => source.activeTurn()?.providerRetry === true || source.reconnecting?.() === true);
   const clock = createActiveTurnClock(source, reconnecting);

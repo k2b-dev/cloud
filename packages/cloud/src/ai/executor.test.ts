@@ -59,8 +59,7 @@ describe("nessi block event mapping", () => {
     const [done] = mapper.translate({ ...tool, type: "tool_execution_end", result: {}, isError: status !== "completed" });
     if (done?.type !== "block_set" || done.block.kind !== "tool") throw new Error("Expected tool block");
     expect(done.block.status).toBe(status);
-    expect(done.block.at).toBeDefined();
-    const outcomeTime = Date.parse(done.block.at!);
+    const outcomeTime = Date.parse(done.block.at ?? "");
     expect(outcomeTime).toBeGreaterThanOrEqual(before);
     expect(outcomeTime).toBeLessThanOrEqual(Date.now());
     // A later patch without an outcome keeps the recorded time.

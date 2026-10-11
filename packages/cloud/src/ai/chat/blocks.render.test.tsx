@@ -15,6 +15,7 @@ const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
+const { AiReaderTimeZoneProvider } = await import("./action-sentences");
 const { AiTurnBlockView } = await import("./blocks");
 const { AiChatActionsProvider } = await import("./message-actions");
 const { createAiChatTimeline } = await import("./presentation");
@@ -1536,28 +1537,36 @@ describe("assistant activity width", () => {
 });
 
 describe("turn places in the reader's language", () => {
-  const renderPlaces = (blocks: AiTurnBlock[], options: { locale?: string; phase?: AiTurnPhase; workedMs?: number } = {}) => {
+  const renderPlaces = (
+    blocks: AiTurnBlock[],
+    options: { locale?: string; phase?: AiTurnPhase; workedMs?: number; timeZone?: string } = {},
+  ) => {
     const phase = options.phase ?? "completed";
     return renderToString(() =>
       createComponent(LocaleProvider, {
         locale: options.locale ?? "en",
         get children() {
-          return createComponent(AiTurnView, {
-            segment: () => ({
-              id: "ai-turn:turn-1:start",
-              turnId: "turn-1",
-              phase,
-              layout: layoutAiTurn(blocks, { phase }),
-              earlier: false,
-              duration: () => (options.workedMs === undefined ? null : { workedMs: options.workedMs, waitingMs: null }),
-            }),
-            disclosureState: createAiToolDisclosureState(),
+          return createComponent(AiReaderTimeZoneProvider, {
+            value: options.timeZone,
+            get children() {
+              return createComponent(AiTurnView, {
+                segment: () => ({
+                  id: "ai-turn:turn-1:start",
+                  turnId: "turn-1",
+                  phase,
+                  layout: layoutAiTurn(blocks, { phase }),
+                  earlier: false,
+                  duration: () => (options.workedMs === undefined ? null : { workedMs: options.workedMs, waitingMs: null }),
+                }),
+                disclosureState: createAiToolDisclosureState(),
+              });
+            },
           });
         },
       }),
     );
   };
-  const mail = (result: unknown): AiTurnBlock => ({
+  const mail = (result: unknown): Extract<AiTurnBlock, { kind: "tool" }> => ({
     id: "tool-send",
     kind: "tool",
     callId: "send",
@@ -1582,18 +1591,58 @@ describe("turn places in the reader's language", () => {
 
   test.each(["en", "de"])("receipt outcome times stay on one line in %s, absent while running or unavailable", (locale) => {
     const at = "2026-10-07T10:23:45.000Z";
-    const date = new Date(at);
-    const localTime = `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
-    const receipt = mail({ summary: "Sent email" });
+    const receipt = { ...mail({ summary: "Sent email" }), approved: true };
     for (const status of ["completed", "failed", "rejected"] as const) {
-      const html = renderPlaces([{ ...receipt, status, approved: true, at }], { locale });
-      expect(html).toContain(` · ${localTime}</strong>`);
+      const html = renderPlaces([{ ...receipt, status, at }], { locale, timeZone: "Europe/Berlin" });
+      expect(html).toContain(" · 12:23</strong>");
       expect(html.match(/class="[^"]*ai-turn-receipt[^"]*"/g)).toHaveLength(1);
     }
-    expect(renderPlaces([receipt], { locale })).not.toContain(` · ${localTime}`);
-    const running = renderPlaces([{ ...receipt, status: "running", approved: true, at }], { locale, phase: "running" });
+    // Outside a browser and without a reader time zone, the time stays in UTC.
+    expect(renderPlaces([{ ...receipt, at }], { locale })).toContain(" · 10:23</strong>");
+    expect(renderPlaces([receipt], { locale, timeZone: "Europe/Berlin" })).not.toContain(" · 12:23");
+    const running = renderPlaces([{ ...receipt, status: "running", at }], { locale, phase: "running", timeZone: "Europe/Berlin" });
     expect(running).toContain(locale === "de" ? "Wird ausgeführt" : "Running");
-    expect(running).not.toContain(` · ${localTime}`);
+    expect(running).not.toContain(" · 12:23");
+  });
+
+  test("server-rendered history shows the receipt time in the reader's time zone", () => {
+    const stored = (seq: number, message: AiStoredMessage["message"], meta: AiStoredMessage["meta"] = null): AiStoredMessage => ({
+      id: `stored-${seq}`,
+      shortId: `stored${seq}`,
+      conversationId: "chat",
+      seq,
+      kind: "message",
+      message,
+      loopId: "turn-1",
+      modelProfileId: null,
+      providerModel: null,
+      usage: null,
+      stopReason: null,
+      loopAggregate: null,
+      loopDoneReason: null,
+      compactedAt: null,
+      meta,
+      createdAt: "2026-10-07T10:23:45.000Z",
+    });
+    const messages = [
+      stored(1, { role: "assistant", content: [{ type: "tool_call", id: "send", name: "send_email", args: {} }] }),
+      stored(
+        2,
+        { role: "tool_result", callId: "send", name: "send_email", result: {}, isError: false },
+        { toolOutcomes: { send: "approved" } },
+      ),
+      stored(3, { role: "assistant", content: [{ type: "text", text: "Done." }] }),
+    ];
+    const html = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "en",
+        get children() {
+          const items = createAiChatTimeline({ messages: () => messages, activeTurn: () => null, timeZone: "Europe/Berlin" })();
+          return createComponent(Chat.Timeline, { items, scrollFade: false });
+        },
+      }),
+    );
+    expect(html).toContain(" · 12:23</strong>");
   });
 
   test("labels receipt links without a title in the reader's language", () => {

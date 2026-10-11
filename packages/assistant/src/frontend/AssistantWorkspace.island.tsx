@@ -1738,6 +1738,7 @@ export default function AssistantWorkspace(props: Props) {
       messages: chat.messages,
       activeTurn: chat.activeTurn,
       reconnecting: () => chat.streamStatus() === "reconnecting",
+      timeZone: props.timeZone,
     });
 
     return (
