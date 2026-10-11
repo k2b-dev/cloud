@@ -35,6 +35,52 @@ test.each(["bar", "pie", "donut"])("converts %s rows and skips null y", async (k
   });
   expect(specs[0]).toEqual({ view: "chart", kind, title: "Counts", legend: false, data: [{ label: "A", value: 1 }] });
 });
+test.each(["bar", "pie", "donut"])("converts %s Date and numeric labels in the run time zone", async (kind) => {
+  const { view, specs } = fixture("Europe/Berlin");
+  await view.chart({
+    kind,
+    title: "Days",
+    rows: [
+      { day: new Date("2025-12-31T23:00:00Z"), n: 1 },
+      { day: new Date("2026-01-01T12:30:00Z"), n: 2 },
+      { day: 3, n: 3 },
+      { n: null },
+      {},
+    ],
+    x: "day",
+    y: "n",
+  });
+  expect(specs[0]).toMatchObject({
+    data: [
+      { label: "2026-01-01", value: 1 },
+      { label: "2026-01-01T13:30:00", value: 2 },
+      { label: "3", value: 3 },
+    ],
+  });
+});
+test.each(["bar", "pie", "donut"])("rejects missing and invalid %s labels with the row and column", async (kind) => {
+  const { view } = fixture();
+  for (const month of [undefined, null, {}, true, NaN, Infinity, new Date(NaN)])
+    await expect(
+      view.chart({
+        kind,
+        title: "Months",
+        rows: [
+          { month: "Jan", n: 1 },
+          { month, n: 2 },
+        ],
+        x: "month",
+        y: "n",
+      }),
+    ).rejects.toMatchObject({
+      code: "invalid",
+      message: expect.stringContaining("rows[1].month: Expected"),
+    });
+  await expect(view.chart({ kind, title: "Months", rows: [{ month: "Jan", n: 1 }, { n: 2 }], x: "month", y: "n" })).rejects.toMatchObject({
+    code: "invalid",
+    message: "rows[1].month: Expected a label: text, a number or a Date.",
+  });
+});
 test.each(["line", "scatter"])("converts wide %s rows", async (kind) => {
   const { view, specs } = fixture();
   await view.chart({
@@ -111,6 +157,55 @@ test("long format keeps distinct values even when their labels match", async () 
     ],
   });
 });
+test.each(["line", "scatter"])("rejects missing and invalid %s series cells", async (kind) => {
+  const { view } = fixture();
+  for (const group of [undefined, null, {}, true, NaN, Infinity, new Date(NaN)])
+    await expect(
+      view.chart({ kind, title: "Groups", rows: [{ x: 1, group, n: 2 }], x: "x", y: "n", series: "group" }),
+    ).rejects.toMatchObject({
+      code: "invalid",
+      message: expect.stringContaining("rows[0].group: Expected"),
+    });
+  await expect(view.chart({ kind, title: "Groups", rows: [{ x: 1, n: 2 }], x: "x", y: "n", series: "group" })).rejects.toMatchObject({
+    code: "invalid",
+    message: "rows[0].group: Expected a label: text, a number or a Date.",
+  });
+});
+test.each(["line", "scatter"])("groups equal %s Date series by wall-clock text in first-seen order", async (kind) => {
+  const { view, specs } = fixture("Europe/Berlin");
+  await view.chart({
+    kind,
+    title: "Groups",
+    rows: [
+      { x: 1, day: new Date("2025-12-31T23:00:00Z"), n: 1 },
+      { x: 2, day: new Date("2026-01-01T12:30:00Z"), n: 2 },
+      { x: 3, day: new Date("2025-12-31T23:00:00Z"), n: 3 },
+      { x: 4, day: new Date("2026-01-01T12:30:00Z"), n: 4 },
+      { x: 5, n: null },
+    ],
+    x: "x",
+    y: "n",
+    series: "day",
+  });
+  expect(specs[0]).toMatchObject({
+    series: [
+      {
+        label: "2026-01-01",
+        data: [
+          { x: 1, y: 1 },
+          { x: 3, y: 3 },
+        ],
+      },
+      {
+        label: "2026-01-01T13:30:00",
+        data: [
+          { x: 2, y: 2 },
+          { x: 4, y: 4 },
+        ],
+      },
+    ],
+  });
+});
 test("canonical chart forms pass through for every kind including gauge", async () => {
   const { view, specs } = fixture();
   const charts = [
@@ -159,6 +254,19 @@ test("histogram uses half-open bins, includes the upper edge and handles equal v
   await view.chart({ kind: "histogram", title: "Equal", rows: [{ n: 2 }, { n: 2 }], value: "n" });
   expect(specs[1]).toMatchObject({ data: [{ label: "2", value: 2 }] });
 });
+test.each([
+  { values: [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7], bins: 7, counts: [1, 1, 1, 1, 1, 1, 2], first: "0–0.1" },
+  { values: [0, 0.1, 0.2, 0.3, 0.4], bins: 4, counts: [1, 1, 1, 2], first: "0–0.1" },
+  { values: [0, 1, 2, 3, 4], bins: 4, counts: [1, 1, 1, 2], first: "0–1" },
+  { values: [0.3, 0.4, 0.5, 0.6, 0.7], bins: 4, counts: [1, 1, 1, 2], first: "0.3–0.4" },
+])("generated histogram edges keep half-open counts: %j", async ({ values, bins, counts, first }) => {
+  const { view, specs } = fixture();
+  await view.chart({ kind: "histogram", title: "Edges", rows: values.map((n) => ({ n })), value: "n", bins });
+  const checked = checkCloudAiView(specs[0]);
+  if ("issues" in checked || checked.view.view !== "chart" || checked.view.kind !== "bar") throw new Error("Expected binned chart");
+  expect(checked.view.data.map((bin) => bin.value)).toEqual([...counts]);
+  expect(checked.view.data[0]?.label).toBe(first);
+});
 test("histogram rejects invalid or incomplete edges and bin counts", async () => {
   const { view } = fixture();
   for (const bins of [[1, 0], [1, 2], [0, 1], 0, 481, 1.5])
@@ -189,6 +297,24 @@ test("table infers first-seen columns, normalizes dates, undefined and footer", 
     ],
     footer: { n: 3, time: null, label: null, later: null },
   });
+});
+test("table infers empty columns from footer cells and validates on the server", async () => {
+  const { view, specs } = fixture();
+  await view.table({ title: "t", columns: ["name", "n"], rows: [], footer: { name: "Total", n: 0 } });
+  expect(specs[0]).toMatchObject({
+    columns: [
+      { id: "name", type: "text" },
+      { id: "n", type: "number" },
+    ],
+    rows: [],
+    footer: { name: "Total", n: 0 },
+  });
+});
+test("table infers all-null columns as text with or without a text footer", async () => {
+  const { view, specs } = fixture();
+  for (const footer of [{ name: "Total" }, undefined])
+    await view.table({ title: "t", columns: ["name"], rows: [{ name: null }, {}], ...(footer ? { footer } : {}) });
+  for (const spec of specs) expect(spec).toMatchObject({ columns: [{ id: "name", type: "text" }], rows: [{ name: null }, { name: null }] });
 });
 test("table keeps only listed columns and passes format and sort", async () => {
   const { view, specs } = fixture();
@@ -229,7 +355,7 @@ test.each([true, {}, [], Infinity, NaN])("table rejects unsupported cells with c
 });
 test("conversion errors name chart row and column, gauge cannot use rows", async () => {
   const { view } = fixture();
-  await expect(view.chart({ kind: "bar", title: "Rows", rows: [{ n: "1" }], x: "name", y: "n" })).rejects.toMatchObject({
+  await expect(view.chart({ kind: "bar", title: "Rows", rows: [{ name: "A", n: "1" }], x: "name", y: "n" })).rejects.toMatchObject({
     code: "invalid",
     message: expect.stringContaining("rows[0].n"),
   });

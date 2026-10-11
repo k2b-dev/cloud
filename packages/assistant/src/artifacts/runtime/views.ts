@@ -59,6 +59,15 @@ const wallClock = (value: Date, timeZone: string, path: string): string => {
   return `${part("year")}-${part("month")}-${part("day")}T${part("hour")}:${part("minute")}:${part("second")}`;
 };
 
+const labelText = (value: unknown, timeZone: string, path: string): string => {
+  if (value instanceof Date) {
+    const time = wallClock(value, timeZone, path);
+    return time.endsWith("T00:00:00") ? time.slice(0, 10) : time;
+  }
+  if (typeof value === "string" || (typeof value === "number" && Number.isFinite(value))) return String(value);
+  return invalid(path, "Expected a label: text, a number or a Date.");
+};
+
 function histogram(values: number[], bins: unknown, locale: string) {
   if (!values.length) return invalid("rows", "A histogram needs at least one number.");
   let min = Infinity,
@@ -82,16 +91,26 @@ function histogram(values: number[], bins: unknown, locale: string) {
     let step = niceStep(domain[1] - domain[0], count);
     if (!Number.isFinite(step) || step <= 0 || min + step === min)
       return invalid("bins", "Values cannot form finite bin edges; subtract a common offset first.");
-    let low = Math.floor(min / step) * step;
-    let size = Math.ceil((max - low) / step);
+    // Edges are whole multiples of the step. A quotient such as 0.3 / 0.1 = 2.9999999999999996 is rounded before it
+    // picks an edge, so a value on an edge starts the next bin as documented.
+    const index = (value: number) => Number((value / step).toPrecision(15));
+    let first = Math.floor(index(min));
+    let size = Math.max(1, Math.ceil(index(max)) - first);
     // Rounding the step down may exceed the chart's mark budget.
     if (size > 480) {
       step = niceStep(domain[1] - domain[0], count / 2);
-      low = Math.floor(min / step) * step;
-      size = Math.ceil((max - low) / step);
+      first = Math.floor(index(min));
+      size = Math.max(1, Math.ceil(index(max)) - first);
     }
     if (size > 480 || !Number.isFinite(size)) return invalid("bins", "At most 480 bins are allowed.");
-    edges = Array.from({ length: size + 1 }, (_, index) => low + index * step);
+    // Each edge keeps the step's decimal places, so 3 × 0.1 is 0.3 like the value in the data.
+    const [digits, exponent = "0"] = Number(step.toPrecision(15)).toString().split("e");
+    const decimals = Math.max(0, (digits!.split(".")[1]?.length ?? 0) - Number(exponent));
+    edges = Array.from({ length: size + 1 }, (_, offset) => {
+      const edge = (first + offset) * step;
+      // toFixed supports at most 100 fraction digits.
+      return Number(decimals <= 100 ? edge.toFixed(decimals) : edge.toPrecision(15));
+    });
     if (edges[edges.length - 1]! < max) edges[edges.length - 1] = max;
   }
   if (min === max) return [{ label: format.format(min), value: values.length }];
@@ -145,7 +164,12 @@ export function createViews(
           data: rows.flatMap((row, index) =>
             cellOf(row, ys[0]!) == null
               ? []
-              : [{ label: String(cellOf(row, label)), value: number(cellOf(row, ys[0]!), `rows[${index}].${ys[0]}`) }],
+              : [
+                  {
+                    label: labelText(cellOf(row, label), context.timeZone, `rows[${index}].${label}`),
+                    value: number(cellOf(row, ys[0]!), `rows[${index}].${ys[0]}`),
+                  },
+                ],
           ),
         });
       }
@@ -156,10 +180,12 @@ export function createViews(
       for (const [index, row] of rows.entries())
         for (const id of ys) {
           if (cellOf(row, id) == null) continue;
-          const key = group ? cellOf(row, group) : id;
+          const groupCell = group ? cellOf(row, group) : id;
+          const groupLabel = labelText(groupCell, context.timeZone, `rows[${index}].${group ?? id}`);
+          const key = groupCell instanceof Date ? groupLabel : groupCell;
           let entry = grouped.get(key);
           if (!entry) {
-            entry = { label: String(key), data: [] };
+            entry = { label: groupLabel, data: [] };
             grouped.set(key, entry);
           }
           const cell = cellOf(row, label);
@@ -177,15 +203,22 @@ export function createViews(
       available();
       const spec = object(raw, "table");
       const rows = rowsOf(spec.rows);
+      const footer = spec.footer === undefined ? undefined : object(spec.footer, "footer");
       const inputColumns = spec.columns ?? [...new Set(rows.flatMap((row) => Object.keys(row)))];
       if (!Array.isArray(inputColumns)) return invalid("columns", "Expected column names or objects.");
       const columns = inputColumns.map((raw, index) => {
         const column = typeof raw === "string" ? { id: raw } : object(raw, `columns[${index}]`);
         const id = columnId(column.id, `columns[${index}].id`);
-        const cells = rows.map((row) => cellOf(row, id)).filter((cell) => cell != null);
+        const cells = [...rows.map((row) => cellOf(row, id)), ...(footer ? [cellOf(footer, id)] : [])].filter((cell) => cell != null);
         const type =
           column.type ??
-          (cells.every((cell) => typeof cell === "number") ? "number" : cells.every((cell) => cell instanceof Date) ? "datetime" : "text");
+          (!cells.length
+            ? "text"
+            : cells.every((cell) => typeof cell === "number")
+              ? "number"
+              : cells.every((cell) => cell instanceof Date)
+                ? "datetime"
+                : "text");
         return { ...column, id, type };
       });
       const normalize = (row: Row, path: string) =>
@@ -207,7 +240,7 @@ export function createViews(
         view: "table",
         columns,
         rows: rows.map((row, index) => normalize(row, `rows[${index}]`)),
-        ...(spec.footer === undefined ? {} : { footer: normalize(object(spec.footer, "footer"), "footer") }),
+        ...(footer ? { footer: normalize(footer, "footer") } : {}),
       });
     },
   };
