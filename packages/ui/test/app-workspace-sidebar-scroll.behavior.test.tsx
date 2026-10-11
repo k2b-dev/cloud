@@ -20,13 +20,13 @@ const runInlineScript = (dom: DomTestHarness) => {
   }
 };
 
-const mountSidebar = async (dom: DomTestHarness) => {
+const mountSidebar = async (dom: DomTestHarness, current: "page" | "true" = "page") => {
   const { default: AppWorkspace } = await import("../src/layout/AppWorkspace");
   const dispose = render(
     () => (
       <AppWorkspace.SidebarBody>
         <a href="/admin">Overview</a>
-        <a href="/admin/observability/nats" aria-current="page">
+        <a href="/admin/observability/nats" aria-current={current}>
           NATS
         </a>
       </AppWorkspace.SidebarBody>
@@ -34,9 +34,9 @@ const mountSidebar = async (dom: DomTestHarness) => {
     dom.root,
   );
   const body = dom.root.firstElementChild as HTMLElement;
-  const current = body.querySelector<HTMLElement>('[aria-current="page"]');
-  if (!current) throw new Error("current item missing");
-  const scrollIntoView = spyOn(current, "scrollIntoView").mockImplementation(() => {});
+  const item = body.querySelector<HTMLElement>(`[aria-current="${current}"]`);
+  if (!item) throw new Error("current item missing");
+  const scrollIntoView = spyOn(item, "scrollIntoView").mockImplementation(() => {});
   return { body, dispose, scrollIntoView };
 };
 
@@ -54,6 +54,19 @@ describe("@k2b/ui AppWorkspace sidebar scroll memory", () => {
     try {
       runInlineScript(dom);
       expect(body.scrollTop).toBe(300);
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" });
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+
+  test("on a page deeper than the sidebar lists, keeps the item that contains it in view", async () => {
+    const dom = createDomTestHarness();
+    dom.window.location.href = "http://localhost/admin/observability/nats/streams";
+    const { dispose, scrollIntoView } = await mountSidebar(dom, "true");
+    try {
+      runInlineScript(dom);
       expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" });
     } finally {
       dispose();

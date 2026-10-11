@@ -787,8 +787,9 @@ const AppWorkspaceSidebarDesktop = (props: { children: JSX.Element }): JSX.Eleme
 // hydrates. Islands load asynchronously and server-only sidebars never mount,
 // so `onMount` would be too late or never run. The memory is one
 // `sessionStorage` entry per path segment and sidebar position and ends with
-// the tab. A stored offset is applied first; the current item is then kept in
-// view, which is a no-op when the offset already shows it. The frame callback
+// the tab. A stored offset is applied first; the current item, or on a deeper
+// page the item that contains it, is then kept in view, which is a no-op when
+// the offset already shows it. The frame callback
 // repeats the restore once the whole document is parsed, because content that
 // follows the sidebar can still change its height before the first paint.
 const SIDEBAR_SCROLL_MEMORY_SCRIPT = [
@@ -798,7 +799,7 @@ const SIDEBAR_SCROLL_MEMORY_SCRIPT = [
   'var key="k2b-sidebar-scroll:"+location.pathname.split("/")[1]+":"+document.querySelectorAll(".k2b-app-workspace__sidebar-body").length;',
   "var restore=function(){",
   "var stored=storage.getItem(key);if(stored!==null)body.scrollTop=Number(stored);",
-  'var current=body.querySelector(\'[aria-current="page"]\');if(current)current.scrollIntoView({block:"nearest"});',
+  'var current=body.querySelector(\'[aria-current="page"]\')||body.querySelector(\'[aria-current="true"]\');if(current)current.scrollIntoView({block:"nearest"});',
   "};",
   "restore();requestAnimationFrame(restore);",
   "var frame=0;",
