@@ -1,8 +1,8 @@
 import { createContext, createRoot, createSignal, createUniqueId, For, type JSX, onCleanup, onMount, Show, useContext } from "solid-js";
 import { Dynamic, insert, isServer } from "solid-js/web";
 import { IconButtonLink } from "../actions/Button";
-import { useWorkspaceMessages } from "./workspace-messages";
 import { installPageTitleController, PAGE_TITLE_CONTROLLER_ATTRIBUTE } from "./page-title-controller";
+import { useWorkspaceMessages } from "./workspace-messages";
 
 /** A page above the current one. Only pages someone can go back to are levels, so each has a link. */
 export type PageTrailLink = { title: string; href: string };
