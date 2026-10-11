@@ -393,6 +393,45 @@ describe(`conversation ChatComposer in ${browserName}`, () => {
     }
   }, 30_000);
 
+  test("on a phone the empty field shows the placeholder on one line, as tall as the field with one typed character", async () => {
+    for (const width of [390, 320]) {
+      for (const locale of ["en", "de"] as const) {
+        const page = await open({ width, locale }, { hasTouch: true, isMobile: true });
+        const field = page.locator("textarea").first();
+        const empty = await field.evaluate((element) => {
+          // The placeholder's unwrapped width in the field's font, against the room the field leaves for text.
+          const style = getComputedStyle(element);
+          const probe = document.createElement("span");
+          probe.style.cssText = `position:absolute;visibility:hidden;white-space:pre;font:${style.font};letter-spacing:${style.letterSpacing}`;
+          probe.textContent = element.getAttribute("placeholder");
+          document.body.append(probe);
+          const text = probe.getBoundingClientRect().width;
+          probe.remove();
+          return {
+            text,
+            room: element.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
+            height: element.getBoundingClientRect().height,
+            scrollHeight: element.scrollHeight,
+            clientHeight: element.clientHeight,
+          };
+        });
+        // The German placeholder is wider than the field on both phones, so the test covers the overflow case whatever
+        // the exact wording; the English one fits at 390.
+        if (locale === "de") expect(empty.text).toBeGreaterThan(empty.room);
+        // Both engines count a wrapped placeholder in the empty field's scroll height.
+        expect(empty.scrollHeight).toBeLessThanOrEqual(empty.clientHeight);
+        const before = await layout(page);
+
+        await field.tap();
+        await page.keyboard.type("x");
+        await frames(page, 2);
+        expect(await field.evaluate((element) => element.getBoundingClientRect().height)).toBe(empty.height);
+        expect(await layout(page)).toEqual(before);
+        await page.close();
+      }
+    }
+  }, 30_000);
+
   test("the formatting row starts at the field's edge also with the add menu or without an attach control", async () => {
     const devices: [number, BrowserContextOptions][] = [
       [720, {}],
