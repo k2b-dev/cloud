@@ -294,13 +294,14 @@ function CloudStatsView(props: { summary: StatsSummary; input: CloudAiStatsView 
 const DETAILS_MAX_REM = CLOUD_AI_DETAILS_VIEWPORT_ITEMS * 2.25;
 
 /**
- * Stand-in text of a value's length. Words of five digits wrap about as early as real words, and a digit is a little
+ * Stand-in text of a value's length. Words of four digits wrap about as early as real words, and a digit is a little
  * wider than an average letter, so the stand-in usually takes the lines of the value it stands for or one more: a row
- * may keep a little room below it rather than hide its last line behind a scroll.
+ * may keep a little room below it rather than hide its last line behind a scroll. Five-digit words reserved up to three
+ * extra lines in fonts whose digits are much wider than their letters, as WebKit's fallback font.
  */
 const placeholder = (chars: number) =>
-  "00000 "
-    .repeat(Math.ceil(chars / 6))
+  "0000 "
+    .repeat(Math.ceil(chars / 5))
     .slice(0, chars)
     .trimEnd();
 
