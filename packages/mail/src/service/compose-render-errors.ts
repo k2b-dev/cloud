@@ -5,8 +5,6 @@ const composeRenderMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
-      mailboxStyle:
-        "The email design of this mailbox is no longer valid. Someone with Manage access can fix it with Edit design in Settings → Writing.",
       tooLarge: "This message is too large to render safely. Shorten it and try again.",
       tooManyLines: ({ limit }: { limit: number }) =>
         `A Markdown message may have at most ${limit.toLocaleString("en")} lines. Shorten it and try again.`,
@@ -16,8 +14,6 @@ const composeRenderMessages = i18n.define({
       conversionFailed: "This message could not be converted to email. Check its formatting and try again.",
     },
     de: {
-      mailboxStyle:
-        "Das E-Mail-Design dieses Postfachs ist nicht mehr gültig. Jemand mit Zugriff „Verwalten“ kann es unter Einstellungen → Schreiben mit „Design bearbeiten“ korrigieren.",
       tooLarge: "Diese Nachricht ist zu groß, um sie sicher darzustellen. Kürze sie und versuche es erneut.",
       tooManyLines: ({ limit }) =>
         `Eine Markdown-Nachricht darf höchstens ${limit.toLocaleString("de")} Zeilen haben. Kürze sie und versuche es erneut.`,

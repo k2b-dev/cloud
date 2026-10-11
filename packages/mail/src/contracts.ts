@@ -2775,16 +2775,30 @@ export const draftLeaseTokenSchema = z.object({ token: z.string().uuid() }).stri
 export const MAX_COMPOSE_FORMATTING_WARNINGS = 20;
 
 /**
- * Something the email renderer removes from HTML written into a Markdown message: an element it does not
- * support (its text stays), an attribute such as `class` or `style`, or a link address it does not allow.
+ * Formatting the email renderer leaves out: unsupported HTML elements, attributes or links in a Markdown
+ * message, or parts of a stored mailbox design that no longer pass the CSS check.
  */
-export const composeFormattingWarningSchema = z
-  .object({
-    code: z.enum(["unsupported_element", "unsupported_attribute", "unsupported_link"]),
-    element: z.string().max(64).describe("HTML element name, such as small or span."),
-    attribute: z.string().max(64).optional().describe("Removed attribute, such as class or style, for unsupported_attribute."),
-  })
-  .strict();
+export const composeFormattingWarningSchema = z.discriminatedUnion("code", [
+  z
+    .object({
+      code: z.enum(["unsupported_element", "unsupported_attribute", "unsupported_link"]),
+      element: z.string().max(64).describe("HTML element name, such as small or span."),
+      attribute: z.string().max(64).optional().describe("Removed attribute, such as class or style, for unsupported_attribute."),
+    })
+    .strict(),
+  z
+    .object({
+      code: z.literal("ignored_mailbox_css"),
+      property: z
+        .string()
+        .max(64)
+        .optional()
+        .describe(
+          "CSS property of the mailbox email design whose value email ignores, such as font-family, or an at-rule such as @media. Absent when the whole design is ignored.",
+        ),
+    })
+    .strict(),
+]);
 export type ComposeFormattingWarning = z.infer<typeof composeFormattingWarningSchema>;
 export const composeFormattingWarningsSchema = z.array(composeFormattingWarningSchema).max(MAX_COMPOSE_FORMATTING_WARNINGS);
 
@@ -2882,6 +2896,7 @@ export const setComposeSignatureDefaultInputSchema = z
 export type SetComposeSignatureDefaultInput = z.infer<typeof setComposeSignatureDefaultInputSchema>;
 
 export const mailboxComposeStyleSchema = z.object({
+  formattingWarnings: composeFormattingWarningsSchema,
   mailboxId: ResourceShortIdSchema,
   customCss: z.string(),
   revision: z.number().int().positive(),

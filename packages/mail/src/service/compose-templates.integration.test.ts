@@ -1,16 +1,18 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { type ComposeFormattingWarning, type DraftEditableContentInput, MAX_COMPOSE_FORMATTING_WARNINGS } from "../contracts";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
 import { grantMailboxAccess } from "./access";
-import type { MailRequestContext } from "./auth";
+import { actorRefFromRequest, type MailRequestContext } from "./auth";
 import { markComposeTemplateSegment } from "./compose-renderer";
 import {
   createComposeTemplate,
   getMailboxComposeStyle,
   listComposeTemplates,
   previewComposeDraft,
+  renderComposeDraft,
   renderComposeSnippet,
   renderComposeSuggestions,
   setComposeSignatureDefault,
@@ -607,5 +609,68 @@ suite("mail compose templates", () => {
     expect(preview.data.html).toContain("color:#262626");
     expect(preview.data.html).not.toContain("#0f766e");
     expect(preview.data.formattingWarnings).toEqual([{ code: "unsupported_attribute", element: "span", attribute: "class" }]);
+  });
+
+  test("keeps rendering stored designs safe and available while saving stays strict", async () => {
+    const customCss = String.raw`.mail-content { color: #123456; font-family: "\5FAE\8F6F\96C5\9ED1", sans-serif; }
+h1 { background: image-set("https://example.test/a.png" 1x); font-size: 30px; }`;
+    await sql`UPDATE mail.compose_styles SET custom_css = ${customCss} WHERE mailbox_id = ${mailboxId}::uuid`;
+    const designWarnings: ComposeFormattingWarning[] = [
+      { code: "ignored_mailbox_css", property: "font-family" },
+      { code: "ignored_mailbox_css", property: "background" },
+    ];
+    const draft: DraftEditableContentInput = {
+      senderIdentityId,
+      to: [{ name: null, address: "reader@example.test" }],
+      cc: [],
+      bcc: [],
+      subject: "Old design",
+      body: "# Hello\n\n<small>Fine print</small>",
+      format: "markdown",
+    };
+    const preview = await previewComposeDraft({ context: owner, mailboxId, input: { draft, conversationId: null } });
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) return;
+    expect(preview.data.html).toContain("color:#123456");
+    expect(preview.data.html).toContain("font-size:30px");
+    for (const removed of ["\\", "5FAE", "image-set", "example.test"]) expect(preview.data.html).not.toContain(removed);
+    expect(preview.data.formattingWarnings).toEqual([...designWarnings, { code: "unsupported_element", element: "small" }]);
+    for (const renderLiquid of [true, false]) {
+      const rendered = await renderComposeDraft({ mailboxId, draft, actor: actorRefFromRequest(owner), renderLiquid });
+      expect(rendered).toEqual({
+        ok: true,
+        data: { html: preview.data.html, text: preview.data.text, formattingWarnings: designWarnings },
+      });
+    }
+    const capped = await previewComposeDraft({
+      context: owner,
+      mailboxId,
+      input: {
+        draft: { ...draft, body: Array.from({ length: 25 }, (_, i) => `<bad${i}>Text</bad${i}>`).join("\n") },
+        conversationId: null,
+      },
+    });
+    expect(capped.ok).toBe(true);
+    if (!capped.ok) return;
+    expect(capped.data.formattingWarnings).toHaveLength(MAX_COMPOSE_FORMATTING_WARNINGS);
+    expect(capped.data.formattingWarnings.slice(0, 2)).toEqual(designWarnings);
+
+    const style = await getMailboxComposeStyle(owner, mailboxId);
+    expect(style.ok).toBe(true);
+    if (!style.ok) return;
+    expect(style.data.customCss).toBe(customCss);
+    expect(style.data.formattingWarnings).toEqual(designWarnings);
+    const rejected = await updateMailboxComposeStyle({
+      context: owner,
+      mailboxId,
+      input: { expectedRevision: style.data.revision, customCss },
+    });
+    expect(rejected).toMatchObject({ ok: false, error: { status: 400, message: 'CSS value for "font-family" is not allowed' } });
+    const fixed = await updateMailboxComposeStyle({
+      context: owner,
+      mailboxId,
+      input: { expectedRevision: style.data.revision, customCss: ".mail-content { color: #123456; } h1 { font-size: 30px; }" },
+    });
+    expect(fixed).toMatchObject({ ok: true, data: { formattingWarnings: [] } });
   });
 });

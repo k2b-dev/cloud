@@ -256,6 +256,8 @@ Markdown-Nachrichten bekommen immer das eingebaute lesbare E-Mail-Design. **E-Ma
 
 Das CSS des Postfachs folgt auf das eingebaute Design. Jede seiner Regeln setzt sich für die Elemente, die sie auswählt, gegen das eingebaute Design durch. So ändert etwa `a { color: #262626; }` die Farbe aller Links. Für die ganze Nachricht nutzt du `.mail-content`, zum Beispiel `.mail-content { font-size: 16px; }`. Selektoren können die Elemente nutzen, die die E-Mail behält, und die Klasse `.mail-content`. Andere Klassen, IDs, Pseudoklassen wie `:hover`, `@`-Regeln und `!important` werden nicht angenommen. Werte können keine Bilder laden, etwa mit `url()` oder `image-set()`, und keine Backslash-Escapes enthalten.
 
+Mail prüft das CSS beim Speichern. Enthält ein gespeichertes Design einen Wert, den eine spätere Cloud-Version nicht mehr zulässt, sendet das Postfach weiter. Mail lässt nur diese Werte weg und behält den Rest des Designs. **Einstellungen → Schreiben** zeigt, welche Werte wegfallen. Die **Vorschau** im Editor listet sie unter der Nachricht auf. Entferne oder ersetze sie im Design. Zum Speichern muss das CSS weiterhin die Prüfung bestehen.
+
 ## Automatische Antworten und Referenzen einrichten {icon="settings"}
 
 Öffne **Postfachwerkzeuge → Automatisierungen**:

@@ -256,6 +256,8 @@ Markdown messages always get the built-in readable email design. **Email design*
 
 The mailbox CSS comes after the built-in design. Each of its rules wins over the built-in design for the elements it selects. For example, `a { color: #262626; }` changes the color of every link. Use `.mail-content` for the whole message, for example `.mail-content { font-size: 16px; }`. Selectors can use the elements that email keeps and the `.mail-content` class. Other classes, IDs, pseudo-classes such as `:hover`, `@` rules, and `!important` are not accepted. Values cannot load images, for example with `url()` or `image-set()`, and cannot contain backslash escapes.
 
+Mail checks the CSS when you save it. If a saved design contains a value that a later Cloud version no longer accepts, the mailbox keeps sending. Mail leaves out only those values and keeps the rest of the design. **Settings → Writing** shows which values are left out, and the composer **Preview** lists them below the message. Remove or replace them in the design. Saving still needs CSS that passes the check.
+
 ## Configure automatic responses and references {icon="settings"}
 
 Open **Mailbox tools → Automations**:

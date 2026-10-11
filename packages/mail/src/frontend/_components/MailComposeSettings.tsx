@@ -4,6 +4,7 @@ import {
   confirmDiscardIfDirty,
   dialogCore,
   IconButton,
+  InlineGuidance,
   MarkdownEditor,
   PanelDialog,
   panelDialogFixedOptions,
@@ -18,7 +19,9 @@ import {
 } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
+import { describeIgnoredMailboxCss } from "../../compose-formatting-messages";
 import {
+  type ComposeFormattingWarning,
   type ComposeSignatureDefault,
   type ComposeTemplate,
   type ComposeTemplateKind,
@@ -31,6 +34,21 @@ import { readApiError } from "./api-response";
 import { mailSettingsMessages } from "./mail-settings-messages";
 
 const TEMPLATE_VARIABLES = Object.keys(composeTemplateVariables);
+
+/** One notice about the saved design; it stays the same while the CSS is edited, so nothing moves. */
+function IgnoredDesignNotice(props: { warnings: ComposeFormattingWarning[] }) {
+  const locale = useLocale();
+  return (
+    <Show when={describeIgnoredMailboxCss(props.warnings, locale())}>
+      {(notice) => (
+        <InlineGuidance tone="warning" icon="ti ti-alert-triangle">
+          {notice()}
+        </InlineGuidance>
+      )}
+    </Show>
+  );
+}
+
 const templateEditorDialogOptions = { ...panelDialogOptions, cancelBehavior: "ignore" as const };
 const emailDesignDialogOptions = { ...panelDialogFixedOptions, cancelBehavior: "ignore" as const };
 
@@ -276,6 +294,7 @@ function EmailDesignEditor(props: {
       />
       <PanelDialog.Body>
         <PanelDialog.Section title={messages().cssAndPreview} subtitle={messages().cssAndPreviewDescription} icon="ti ti-code">
+          <IgnoredDesignNotice warnings={props.style.formattingWarnings} />
           <div class="grid min-w-0 grid-cols-1 gap-3 lg:grid-cols-2">
             <TextInput
               label={messages().mailboxCss}
@@ -557,6 +576,7 @@ export default function MailComposeSettings(props: {
               {messages().editDesign}
             </Button>
           </SettingsGroup.Action>
+          <IgnoredDesignNotice warnings={style().formattingWarnings} />
         </SettingsGroup>
       </Show>
     </div>
