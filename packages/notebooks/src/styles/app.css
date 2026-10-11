@@ -507,25 +507,14 @@
   flex-basis: auto;
 }
 
-@media (min-width: 48rem) and (max-width: 63.999rem) {
-  .k2b-ui .notebooks-overview-workspace .k2b-app-workspace__content {
-    flex-direction: row;
-  }
-
-  .k2b-ui .notebooks-overview-workspace .notebooks-overview-main {
-    display: flex !important;
-  }
-
-  .k2b-ui .notebooks-overview-workspace .notebooks-overview-activity {
-    display: flex !important;
-    width: 20rem;
-    flex: 0 0 20rem;
-  }
-}
-
 @media (max-width: 47.999rem) {
   .k2b-ui .notebooks-overview-workspace .notebooks-overview-main {
     display: flex !important;
+  }
+
+  /* The activity column stays open but hidden here, so Main drops the space it would leave for a phone sheet. */
+  .k2b-ui .notebooks-overview-workspace .notebooks-overview-main::after {
+    content: none !important;
   }
 
   .k2b-ui .notebooks-overview-workspace .notebooks-overview-activity {

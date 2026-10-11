@@ -496,6 +496,14 @@
   height: min(34rem, 70vh);
 }
 
+/* On a phone the detail sheet belongs to the window. The demo keeps it inside
+   its frame, so an open demo panel never covers the page being read. */
+@media (max-width: 47.999rem) {
+  .ui-workspace-demo {
+    contain: layout;
+  }
+}
+
 .ui-discussion-showcase {
   --k2b-detail-panel-accent: var(--c-accent-ink);
 

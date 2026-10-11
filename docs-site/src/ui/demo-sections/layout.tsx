@@ -215,7 +215,7 @@ const WorkspaceDemo = () => {
             <div class="ui-demo-pane">Main 2</div>
           </AppWorkspace.MainPane>
         </AppWorkspace.Main>
-        <AppWorkspace.Detail id="record" open={detailOpen()} width="sm">
+        <AppWorkspace.Detail id="record" open={detailOpen()} onClose={() => setDetailOpen(false)} width="sm">
           <div class="ui-demo-pane">Selected item</div>
         </AppWorkspace.Detail>
       </AppWorkspace.Content>
@@ -268,7 +268,7 @@ const [navigationHidden, setNavigationHidden] = createSignal(false);
       <AppWorkspace.MainPane id="main-2" label="Main 2" open={paneOpen()}>…</AppWorkspace.MainPane>
       …
     </AppWorkspace.Main>
-    <AppWorkspace.Detail id="record" open={detailOpen()} width="sm">…</AppWorkspace.Detail>
+    <AppWorkspace.Detail id="record" open={detailOpen()} onClose={() => setDetailOpen(false)} width="sm">…</AppWorkspace.Detail>
   </AppWorkspace.Content>
   <AppWorkspace.BottomDrawer id="events" open={drawerOpen()} height="sm">…</AppWorkspace.BottomDrawer>
 </AppWorkspace>`}

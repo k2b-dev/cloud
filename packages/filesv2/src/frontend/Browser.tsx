@@ -1171,6 +1171,12 @@ export default function Browser(props: {
     more: b().more,
     up: b().parentFolderUp,
   });
+  const closeInspector = () => {
+    const focused = selection.focused();
+    selection.clear();
+    if (focused) selection.focus(focused);
+  };
+
   return (
     <>
       <AppWorkspace.Main scroll={false} class="filesv2-browser" aria-busy={props.pending}>
@@ -1531,7 +1537,7 @@ export default function Browser(props: {
           </nav>
         </div>
       </AppWorkspace.Main>
-      <AppWorkspace.Detail id="filesv2-inspector" open={detailOpen()} width="md">
+      <AppWorkspace.Detail id="filesv2-inspector" open={detailOpen()} onClose={closeInspector} width="md">
         <Show when={detailOpen()}>
           <FileInspector
             base={props.directory.base}
@@ -1540,11 +1546,7 @@ export default function Browser(props: {
             selected={selected()}
             initial={props.detail}
             busy={busy()}
-            onClose={() => {
-              const focused = selection.focused();
-              selection.clear();
-              if (focused) selection.focus(focused);
-            }}
+            onClose={closeInspector}
             onOpen={open}
             onPreview={preview}
             editable={editable}

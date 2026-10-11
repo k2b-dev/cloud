@@ -420,7 +420,8 @@ function CapabilityRunner(props: Props) {
             <Button size="sm" variant="secondary" onClick={reset}>
               <i class="ti ti-refresh" aria-hidden="true" /> {t().reset}
             </Button>
-            <IconButtonLink href={props.closeHref} size="sm" label={t().closeDetails}>
+            {/* The page renders the detail on the server, so Escape and swipes follow this link. */}
+            <IconButtonLink href={props.closeHref} size="sm" label={t().closeDetails} data-workspace-detail-close>
               <i class="ti ti-x" aria-hidden="true" />
             </IconButtonLink>
           </div>

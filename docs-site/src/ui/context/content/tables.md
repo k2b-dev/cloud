@@ -145,7 +145,7 @@ type DataTableProps<T> = {
   loadingMore?: boolean; onLoadMore?: () => void; empty?: JSX.Element; density?: "compact" | "normal";
   stickyHeader?: boolean; highlightColumns?: boolean; verticalAlign?: "top" | "middle" | "bottom";
   cellContentClass?: string; fillHeight?: boolean; surface?: "paper" | "plain"; class?: string;
-  tableClass?: string; scrollPreserveKey?: string | false;
+  tableClass?: string; scrollClass?: string; scrollPreserveKey?: string | false;
 };
 
 type DataTablePanelProps = {
@@ -168,7 +168,7 @@ type DataTablePanelFooterProps = {
 
 The four panel types correspond to `DataTable.Panel`, `.Header`, `.Controls`, and `.Footer`. All row callbacks receive the original row. Footer values are keyed by **column id**. `getRowId` returns a stable string. `onLoadMore` returns `void`; expose request state through `loadingMore` and append rows after success.
 
-Defaults: `density="normal"`, `stickyHeader=true`, `verticalAlign="middle"`. Use `onRowClick`/`onRowDoubleClick` only for real row actions; selection remains controlled through `selectedRowId`. `scrollPreserveKey={false}` disables restoration for the table. `fillHeight` makes the table fill a bounded parent's height. `hoverRows` defaults to whether a row callback exists; `highlightColumns` defaults on when row hover is enabled. Omitted `surface` is paper without a custom class and plain with one, so set it explicitly when styling. `rowClass` styles rows, `tableClass` the table, and `class` its outer shell.
+Defaults: `density="normal"`, `stickyHeader=true`, `verticalAlign="middle"`. Use `onRowClick`/`onRowDoubleClick` only for real row actions; selection remains controlled through `selectedRowId`. `scrollPreserveKey={false}` disables restoration for the table. `fillHeight` makes the table fill a bounded parent's height. `hoverRows` defaults to whether a row callback exists; `highlightColumns` defaults on when row hover is enabled. Omitted `surface` is paper without a custom class and plain with one, so set it explicitly when styling. `rowClass` styles rows, `tableClass` the table, `scrollClass` the scroll container, and `class` its outer shell. Pass `scrollClass="k2b-detail-trail"` when a wide table should continue under a [floating workspace detail](/en/ui/layout/workspace#floating-detail); a table that fits keeps its width, and the panel's space follows it.
 
 ## Accessibility
 

@@ -15,7 +15,12 @@ import {
   useContext,
 } from "solid-js";
 import { IconButton } from "../actions/Button";
-import { APP_WORKSPACE_SIDEBAR_HIDE_EVENT, installAppWorkspaceController } from "./app-workspace-controller";
+import {
+  APP_WORKSPACE_DETAIL_CLOSE_EVENT,
+  APP_WORKSPACE_DETAIL_STEP_EVENT,
+  APP_WORKSPACE_SIDEBAR_HIDE_EVENT,
+  installAppWorkspaceController,
+} from "./app-workspace-controller";
 import {
   APP_WORKSPACE_DETAIL_DEFAULT,
   APP_WORKSPACE_DETAIL_MAX,
@@ -200,6 +205,17 @@ export type AppWorkspaceDetailProps = {
   resizable?: boolean;
   minWidth?: number;
   maxWidth?: number;
+  /**
+   * Closes the panel: Escape, a swipe on a touch screen, and dragging the
+   * phone sheet down call it. A panel rendered on the server only marks its
+   * own close button or link with `data-workspace-detail-close` instead, and
+   * those gestures click it. Without either, they leave the panel open, and on
+   * a touch tablet in portrait the panel makes room beside `Main` instead of
+   * overlaying it as a drawer.
+   */
+  onClose?: () => void;
+  /** Shows the previous (`-1`) or next (`1`) item; J and K call it while the panel is open. */
+  onStep?: (direction: 1 | -1) => void;
 };
 export type AppWorkspaceBottomDrawerHeight = "sm" | "md" | "lg";
 export type AppWorkspaceBottomDrawerProps = {
@@ -569,19 +585,49 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
 }
 
 function AppWorkspaceDetail(props: AppWorkspaceDetailProps): JSX.Element {
+  const workspaceMessages = useWorkspaceMessages();
   const rootResizable = useContext(ResizeContext);
   const panelId = () => assertStableUiId(props.id, "AppWorkspace.Detail id");
   const domId = () => `k2b-workspace-detail-${panelId()}`;
   const variable = () => appWorkspacePanelVariable("detail", panelId());
-  // Cloud's `detailDefaultWidth`. These feed `aria-valuenow` and the
+  // Start widths of 20, 26, 30, and 34 rem. They feed `aria-valuenow` and the
   // `var(…, Npx)` first-paint fallback, so they are behaviour, not taste.
-  const widths = { sm: 288, md: 384, lg: 480, xl: 544 };
+  const widths = { sm: 320, md: 416, lg: 480, xl: 544 };
   const defaultWidth = () => widths[props.width ?? "md"] ?? APP_WORKSPACE_DETAIL_DEFAULT;
   const minWidth = () => props.minWidth ?? APP_WORKSPACE_DETAIL_MIN;
   const maxWidth = () => Math.max(minWidth(), props.maxWidth ?? APP_WORKSPACE_DETAIL_MAX);
   const resizable = () => props.resizable ?? rootResizable;
+  const size = () => (resizable() ? `var(${variable()}, ${defaultWidth()}px)` : `${defaultWidth()}px`);
+  const sizeStyle = () => ({
+    "--k2b-workspace-panel-size": size(),
+    "--k2b-workspace-panel-min": `${minWidth()}px`,
+    "--k2b-workspace-panel-max": `${maxWidth()}px`,
+  });
+  // The panel floats over the content area, and `Main` beside it makes room
+  // in CSS alone, so a server-rendered page arrives in its final geometry. A
+  // sibling cannot read the panel's own variables, so this rule hands the
+  // open panel's size to the content area around it.
+  const contentRule = () => {
+    const open = `#${domId()}:not([hidden])`;
+    return `.k2b-app-workspace__content:has(> ${open}, > :is(solid-island, solid-client) > ${open}){--k2b-detail-size:${size()};--k2b-detail-min:${minWidth()}px;--k2b-detail-max:${maxWidth()}px}`;
+  };
+  let aside: HTMLElement | undefined;
+  onMount(() => {
+    const close = () => props.onClose?.();
+    const step = (event: Event) => {
+      const direction = event instanceof CustomEvent ? event.detail?.direction : undefined;
+      if (direction === 1 || direction === -1) props.onStep?.(direction);
+    };
+    aside?.addEventListener(APP_WORKSPACE_DETAIL_CLOSE_EVENT, close);
+    aside?.addEventListener(APP_WORKSPACE_DETAIL_STEP_EVENT, step);
+    onCleanup(() => {
+      aside?.removeEventListener(APP_WORKSPACE_DETAIL_CLOSE_EVENT, close);
+      aside?.removeEventListener(APP_WORKSPACE_DETAIL_STEP_EVENT, step);
+    });
+  });
   return (
     <>
+      <style innerHTML={contentRule()} />
       <Show when={resizable()}>
         <ResizeHandle
           kind="detail"
@@ -591,23 +637,30 @@ function AppWorkspaceDetail(props: AppWorkspaceDetailProps): JSX.Element {
           defaultSize={defaultWidth()}
           minSize={minWidth()}
           maxSize={maxWidth()}
-          shadow
-          style={{ "--k2b-workspace-panel-size": `var(${variable()}, ${defaultWidth()}px)` }}
+          style={sizeStyle()}
         />
       </Show>
       <aside
+        ref={aside}
         id={domId()}
         class={`k2b-app-workspace__detail ${props.class ?? ""}`}
         data-width={props.width ?? "md"}
         data-workspace-panel-id={panelId()}
         data-workspace-resizable={resizable() ? "true" : "false"}
+        data-workspace-detail-closable={props.onClose ? "true" : undefined}
+        data-workspace-detail-steppable={props.onStep ? "true" : undefined}
         hidden={!props.open}
-        style={{
-          "--k2b-workspace-panel-size": `var(${variable()}, ${defaultWidth()}px)`,
-          "--k2b-workspace-panel-min": `${minWidth()}px`,
-          "view-transition-name": props.viewTransitionName,
-        }}
+        style={{ ...sizeStyle(), "view-transition-name": props.viewTransitionName }}
       >
+        {/* Only the phone sheet shows the grabber: a tap switches between half and full height. */}
+        <button
+          type="button"
+          class="k2b-app-workspace__detail-grabber"
+          aria-label={workspaceMessages().detailFullHeight}
+          aria-pressed="false"
+        >
+          <span aria-hidden="true" />
+        </button>
         {props.children}
       </aside>
     </>

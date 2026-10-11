@@ -97,6 +97,8 @@ export type DataTableProps<T> = {
   class?: string;
   /** Additional classes for the table element. Core table geometry is always retained. */
   tableClass?: string;
+  /** Additional classes for the scrolling region, such as `k2b-detail-trail`. */
+  scrollClass?: string;
   scrollPreserveKey?: string | false;
 };
 
@@ -479,7 +481,7 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
           aria-label={labelledBy() ? undefined : (props.ariaLabel ?? dataTableMessages().dataTable)}
           aria-labelledby={labelledBy()}
           tabIndex={0}
-          class="k2b-table-wrap"
+          class={`k2b-table-wrap${props.scrollClass ? ` ${props.scrollClass}` : ""}`}
           data-density={props.density === "compact" ? "compact" : undefined}
           data-has-footer={props.footer ? "true" : undefined}
           data-surface={surface()}
