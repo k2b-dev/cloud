@@ -163,25 +163,40 @@ export type CloudAiViewTable = CloudAiChartTable & { footer?: CloudAiChartRow };
 export function cloudAiViewTable(view: CloudAiTableView, locale: string): CloudAiViewTable {
   // Missing cells stay null even when a column id names an Object.prototype property.
   const cellOf = (cells: CloudAiTableView["rows"][number], id: string) => (Object.hasOwn(cells, id) ? cells[id] : null);
+  const numberFormats = new Map(
+    view.columns
+      .filter((column) => column.type === "number")
+      .map((column) => {
+        const format = column.format;
+        const options: Intl.NumberFormatOptions = format
+          ? {
+              style: format.style === "number" ? "decimal" : format.style,
+              currency: format.currency,
+              ...(format.decimals === undefined ? {} : { minimumFractionDigits: format.decimals, maximumFractionDigits: format.decimals }),
+              ...(format.compact ? { notation: "compact" } : {}),
+            }
+          : { maximumSignificantDigits: 15 };
+        return [column.id, new Intl.NumberFormat(locale, options)];
+      }),
+  );
+  let dateFormat: Intl.DateTimeFormat | undefined;
+  let shortTimeFormat: Intl.DateTimeFormat | undefined;
+  let mediumTimeFormat: Intl.DateTimeFormat | undefined;
   const formatCell = (column: CloudAiTableView["columns"][number], cell: string | number): string => {
-    if (column.type === "number" && typeof cell === "number") {
-      const format = column.format;
-      const options: Intl.NumberFormatOptions = format
-        ? {
-            style: format.style === "number" ? "decimal" : format.style,
-            currency: format.currency,
-            ...(format.decimals === undefined ? {} : { minimumFractionDigits: format.decimals, maximumFractionDigits: format.decimals }),
-            ...(format.compact ? { notation: "compact" } : {}),
-          }
-        : { maximumSignificantDigits: 15 };
-      return `${new Intl.NumberFormat(locale, options).format(cell)}${format?.unit ? ` ${format.unit}` : ""}`;
-    }
+    if (column.type === "number" && typeof cell === "number")
+      return `${numberFormats.get(column.id)!.format(cell)}${column.format?.unit ? ` ${column.format.unit}` : ""}`;
     if ((column.type === "date" || column.type === "datetime") && typeof cell === "string") {
-      return new Intl.DateTimeFormat(locale, {
-        timeZone: "UTC",
-        dateStyle: "medium",
-        ...(column.type === "datetime" ? { timeStyle: cell.length > 16 ? "medium" : "short" } : {}),
-      }).format(chartDateTime(cell));
+      const options = { timeZone: "UTC", dateStyle: "medium" } as const;
+      if (column.type === "date") {
+        dateFormat ??= new Intl.DateTimeFormat(locale, options);
+        return dateFormat.format(chartDateTime(cell));
+      }
+      if (cell.length > 16) {
+        mediumTimeFormat ??= new Intl.DateTimeFormat(locale, { ...options, timeStyle: "medium" });
+        return mediumTimeFormat.format(chartDateTime(cell));
+      }
+      shortTimeFormat ??= new Intl.DateTimeFormat(locale, { ...options, timeStyle: "short" });
+      return shortTimeFormat.format(chartDateTime(cell));
     }
     return String(cell);
   };

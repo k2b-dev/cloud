@@ -1881,3 +1881,22 @@ test("present without a valid view reference stays a file chip", () => {
     expect(html).toContain(result.path);
   }
 });
+
+test("a running view present leaves the result slot empty until its summary sizes the view", () => {
+  const running = (path: string): AiTurnBlock => ({
+    id: path,
+    kind: "tool",
+    name: "present",
+    callId: path,
+    args: { path },
+    status: "running",
+  });
+  const view = renderToString(() =>
+    createComponent(AiTurnBlockView, { block: running("/views/result-12345678.view.json"), turnId: "turn" }),
+  );
+  expect(view).not.toContain("Preparing file");
+  expect(view).not.toContain("data-view-path");
+  // Ordinary files keep their one-line activity, which the file chip replaces at the same height.
+  const file = renderToString(() => createComponent(AiTurnBlockView, { block: running("/report.pdf"), turnId: "turn" }));
+  expect(file).toContain("Preparing file");
+});

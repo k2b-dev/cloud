@@ -31,12 +31,29 @@ const presentedView = (block: ToolBlock) => {
     : null;
 };
 
+/**
+ * A view's size comes with the finished call's summary. Until then the work line names the step and the result slot
+ * stays empty, so no one-line placeholder grows into the chart or table.
+ */
+const preparingView = (block: ToolBlock) =>
+  block.status === "running" && isRecord(block.args) && typeof block.args.path === "string"
+    ? isAiViewFile({ path: block.args.path.trim(), origin: "assistant" })
+    : false;
+
 /** A presented file: a view file shows as its chart or table, every other file as a chip to open and download. */
 export function PresentToolBlock(props: { block: ToolBlock }) {
   // Live updates replace the block with an equal result; only a different view loads again.
   const view = createMemo(() => presentedView(props.block), null, { equals: (a, b) => JSON.stringify(a) === JSON.stringify(b) });
   return (
-    <Show when={view()} keyed fallback={<PresentedFile block={props.block} />}>
+    <Show
+      when={view()}
+      keyed
+      fallback={
+        <Show when={!preparingView(props.block)}>
+          <PresentedFile block={props.block} />
+        </Show>
+      }
+    >
       {(view) => <CloudViewBlock path={view.path} summary={view.summary} />}
     </Show>
   );

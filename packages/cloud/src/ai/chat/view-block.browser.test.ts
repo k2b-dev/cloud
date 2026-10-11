@@ -69,9 +69,26 @@ const table = {
   })),
   footer: { region: "Total", count: 1284 },
 };
+// A short table fits its reserved rows without scrolling, even where long header labels would wrap on a phone.
+const small = {
+  view: "table",
+  title: "Prices by region",
+  columns: [
+    { id: "region", label: "Sales region", type: "text" },
+    { id: "median", label: "Median price per accepted offer", type: "number", format: { style: "currency", currency: "EUR" } },
+    { id: "count", label: "Accepted offers", type: "number" },
+  ],
+  rows: [
+    { region: "North", median: 4950, count: 128 },
+    { region: "South", median: 5120, count: 97 },
+    { region: "West", median: 4780, count: 173 },
+  ],
+  footer: { region: "Total", count: 398 },
+};
 const files: Record<string, unknown> = {
   "/views/offers-by-status-1a2b3c4d.view.json": chart,
   "/views/offers-per-month-5e6f7a8b.view.json": table,
+  "/views/prices-by-region-3c4d5e6f.view.json": small,
 };
 
 let browser: Browser;
@@ -133,6 +150,13 @@ const blocks = [
     columns: table.columns.length,
     footer: true,
   }),
+  present("/views/prices-by-region-3c4d5e6f.view.json", {
+    view: "table",
+    title: small.title,
+    rows: small.rows.length,
+    columns: small.columns.length,
+    footer: true,
+  }),
   present("/views/deleted-9c0d1e2f.view.json", { view: "table", title: "Deleted view", rows: 3, columns: 2, footer: false }),
 ];
 
@@ -163,9 +187,15 @@ for (const view of [
         await page.waitForSelector("[data-view-path]");
         const loading = await boxes(page);
         await page.waitForSelector('[data-view-path] [data-chart-kind="bar"]');
-        await page.waitForSelector("[data-view-path] table");
+        await page.waitForFunction(() => document.querySelectorAll("[data-view-path] table").length === 2);
         await page.waitForFunction(() => document.querySelectorAll('[data-view-path] [role="status"]').length === 1);
         expect(await boxes(page)).toEqual(loading);
+        // Up to eight rows, header and totals included, show without scrolling inside the reserved viewport.
+        const small = await page.evaluate(() => {
+          const wrap = document.querySelector('[data-view-path*="prices-by-region"] .k2b-table-wrap')!;
+          return { scroll: wrap.scrollHeight, client: wrap.clientHeight };
+        });
+        expect(small.scroll).toBeLessThanOrEqual(small.client);
         expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
         if (process.env.VIEW_SHOTS)
           await page.screenshot({ path: `${process.env.VIEW_SHOTS}/views-${view.name}-${theme}.png`, fullPage: true });

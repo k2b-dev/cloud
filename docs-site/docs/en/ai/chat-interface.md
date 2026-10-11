@@ -282,10 +282,15 @@ order:
    chart's arguments, the work line says it prepares a chart. Text output of
    `cld assistant`, interactive or not, prints a chart's data table and a
    card's title and value instead. A presented `/views/*.view.json` file renders
-   inline as its chart or table, reserving its height while loading. Readers
-   validate the file again; missing or invalid data shows unavailable in that
-   frame. The CLI fetches and validates a view and prints its table (first 100
-   rows, plus a table footer), or `View unavailable: <path>`.
+   inline as its chart or table, reserving its height while loading. The height
+   comes from the summary of the finished `present` call; while the call runs,
+   the work line names the step and the place stays empty, so no one-line
+   placeholder grows into the view. Table header labels stay on one line, and
+   the table scrolls sideways instead, so up to eight rows fit the reserved
+   height on a phone too. Readers validate the file again; missing or invalid
+   data shows unavailable in that frame. The CLI fetches and validates a view
+   and prints its table (first 100 rows, plus a table footer), or
+   `View unavailable: <path>`.
 3. **Newest text.** While the turn runs this is a status: a new text replaces
    the previous one in the same element once its first sentence has streamed,
    and the place keeps its height until the turn ends. A text that ends the

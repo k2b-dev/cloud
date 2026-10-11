@@ -141,6 +141,58 @@ describe("declarative views", () => {
     expect(en.footer?.cells.money).toBe("€1,234.50");
     expect(en.columns[0]).toEqual({ id: "money", label: "Amount", numeric: true });
   });
+  test("table formatters are constructed per column, not per cell", () => {
+    const view: CloudAiTableView = {
+      view: "table",
+      title: "Many cells",
+      columns: [
+        ...Array.from({ length: 10 }, (_, index): CloudAiTableView["columns"][number] => ({
+          id: `n${index}`,
+          type: "number",
+          ...(index < 5 ? { format: { style: "currency", currency: "EUR" } } : {}),
+        })),
+        { id: "day", type: "date" },
+        { id: "time", type: "datetime" },
+      ],
+      rows: Array.from({ length: 3840 }, (_, index) => ({
+        ...Object.fromEntries(Array.from({ length: 10 }, (_, column) => [`n${column}`, index + column / 10])),
+        day: "2026-01-02",
+        time: index % 2 ? "2026-01-02T12:30:45" : "2026-01-02T12:30",
+      })),
+    };
+    const NumberFormat = globalThis.Intl.NumberFormat;
+    const DateTimeFormat = globalThis.Intl.DateTimeFormat;
+    let numbers = 0,
+      dates = 0;
+    try {
+      globalThis.Intl.NumberFormat = new Proxy(NumberFormat, {
+        construct(target, args) {
+          numbers++;
+          return Reflect.construct(target, args);
+        },
+      });
+      globalThis.Intl.DateTimeFormat = new Proxy(DateTimeFormat, {
+        construct(target, args) {
+          dates++;
+          return Reflect.construct(target, args);
+        },
+      });
+      const formatted = cloudAiViewTable(view, "en-US");
+      expect(formatted.rows).toHaveLength(3840);
+      expect(formatted.rows[0]?.cells).toMatchObject({
+        n0: "€0.00",
+        n5: "0.5",
+        day: "Jan 2, 2026",
+        time: "Jan 2, 2026, 12:30 PM",
+      });
+      expect(formatted.rows[1]?.cells.time).toBe("Jan 2, 2026, 12:30:45 PM");
+      expect(numbers).toBe(10);
+      expect(dates).toBe(3);
+    } finally {
+      globalThis.Intl.NumberFormat = NumberFormat;
+      globalThis.Intl.DateTimeFormat = DateTimeFormat;
+    }
+  });
   test("TSV quotes cells, includes footer and guards spreadsheet formulas in text", () => {
     const view = parseCloudAiView({
       view: "table",

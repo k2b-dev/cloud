@@ -97,6 +97,8 @@ function CloudTableView(props: { summary: TableSummary; input: CloudAiTableView 
               columns={value().columns.map((column) => ({
                 id: column.id,
                 header: column.label,
+                // A wrapped label would make the header taller than the reserved row; the table scrolls sideways instead.
+                headerClass: "whitespace-nowrap",
                 value: (row) => row.cells[column.id] ?? "",
                 align: column.numeric ? "right" : "left",
                 sortable: true,
