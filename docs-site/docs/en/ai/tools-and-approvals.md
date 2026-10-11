@@ -308,6 +308,8 @@ series columns have at most 8 distinct values, step at most 480; all need
 non-null cells in every row. Comparison needs a step and only line/scatter views.
 Titles and subtitles use the table bounds; explorers allow at most 3,840 rows,
 100 columns and 3,840 marks per view (rows × y columns), within the file limit.
+Each view draws at most 480 bars per step (in total without a step) and 480
+points per series per step.
 
 Bars need one row per displayed x label per step, heatmaps one per displayed
 x/y pair per step. Scripts aggregate to that grain before saving. Labels use

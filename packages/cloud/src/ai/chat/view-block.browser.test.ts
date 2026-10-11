@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
@@ -293,6 +293,36 @@ const largeExplorer = {
   ...explorer,
   rows: explorer.rows.flatMap((row) => [row, { ...row, region: `${row.region} annex` }]),
 };
+// Realistic data labels: a long step column label, a long filter label and step names of different lengths.
+const longSteps = ["2024", "Fiscal year 2025 (preliminary figures)", "Fiscal year 2026 (preliminary figures)"];
+const longExplorer = {
+  ...explorer,
+  columns: explorer.columns.map((column) =>
+    column.id === "year"
+      ? { ...column, label: "Fiscal reporting year of the original observation recorded in this dataset" }
+      : column.id === "region"
+        ? { ...column, label: "Sales region of the responsible office" }
+        : column,
+  ),
+  rows: longSteps.flatMap((year, y) =>
+    explorer.rows.filter((row) => row.year === "2025").map((row) => ({ ...row, year, count: row.count + y * 3 })),
+  ),
+};
+// A column named like an Object member, with a missing cell that must sort as missing, not as the inherited member.
+const memberExplorer = {
+  view: "explorer",
+  title: "Member names",
+  columns: [
+    { id: "name", label: "Name", type: "text" },
+    { id: "constructor", label: "Constructor", type: "number" },
+  ],
+  rows: [
+    { name: "One", constructor: 1 },
+    { name: "Two", constructor: 2 },
+    { name: "Missing", constructor: null },
+  ],
+  views: [{ id: "bar", label: "Bar", kind: "bar", x: "name", y: "constructor" }],
+};
 const referenceExplorer = {
   view: "explorer",
   title: "Product references",
@@ -335,6 +365,8 @@ const files: Record<string, unknown> = {
   "/views/retitled-stats-6a7b8c9d.view.json": { ...stats, title: "Updated offers at a glance" },
   "/views/resubtitled-table-7b8c9d0e.view.json": { ...table, subtitle: "Updated median price in EUR" },
   "/views/explorer-more-0a1b2c3e.view.json": largeExplorer,
+  "/views/explorer-long-labels-0a1b2c41.view.json": longExplorer,
+  "/views/explorer-member-names-0a1b2c42.view.json": memberExplorer,
   "/views/explorer-views-edited-0a1b2c3f.view.json": { ...explorer, views: explorer.views.slice(1) },
   "/views/explorer-controls-edited-0a1b2c40.view.json": { ...explorer, controls: { step: "year" } },
   // Edited after `present`: the cursor is no longer linked, and a chart gained a subtitle its summary did not reserve.
@@ -352,6 +384,20 @@ const files: Record<string, unknown> = {
 
 let browser: Browser;
 let server: ReturnType<typeof Bun.serve>;
+/** Files a test holds back until it releases them, so it can measure the loading frame without racing the file. */
+const held = new Map<string, PromiseWithResolvers<void>>();
+const release = (path: string) => {
+  held.get(path)?.resolve();
+  held.delete(path);
+};
+const hold = (path: string) => {
+  held.set(path, Promise.withResolvers<void>());
+  return () => release(path);
+};
+// A test that fails while holding a file must not leave it held for the next one.
+afterEach(() => {
+  for (const path of [...held.keys()]) release(path);
+});
 beforeAll(async () => {
   const [harness, styles] = await Promise.all([
     buildHarness(),
@@ -367,8 +413,9 @@ beforeAll(async () => {
       if (url.pathname === "/harness.js") return new Response(harness, { headers: { "content-type": "text/javascript" } });
       // View files arrive late, so a block that sized itself by its content would move what follows it.
       if (url.pathname === "/files") {
-        const file = files[url.searchParams.get("path") ?? ""];
-        return Bun.sleep(400).then(() =>
+        const path = url.searchParams.get("path") ?? "";
+        const file = files[path];
+        return Promise.all([Bun.sleep(400), held.get(path)?.promise]).then(() =>
           file ? Response.json(file, { headers: { "X-Cloud-Ai-File-Origin": "assistant" } }) : new Response(null, { status: 404 }),
         );
       }
@@ -804,10 +851,28 @@ test("a view file edited after present shows unavailable instead of what its sum
 });
 
 const explorerViewport = (page: Page) =>
-  page.locator(".k2b-chart-explorer__viewport").evaluate((node) => {
-    const box = node.getBoundingClientRect();
+  page.evaluate(() => {
+    const box = document.querySelector(".k2b-chart-explorer__viewport")!.getBoundingClientRect();
     return [box.top, box.height].map(Math.round);
   });
+/**
+ * The frame of a presented explorer whose file the test holds back: every view box and the explorer viewport,
+ * measured in one call, so the loaded explorer can never replace the measured nodes halfway.
+ */
+const explorerLoadingFrame = async (page: Page) => {
+  await page.waitForSelector('[data-view-path] .k2b-chart-explorer__viewport [role="status"]');
+  return page.evaluate(() => {
+    const viewport = document.querySelector(".k2b-chart-explorer__viewport")!.getBoundingClientRect();
+    return {
+      interactive: document.querySelectorAll('[data-view-path] [data-interactive="true"]').length,
+      boxes: Array.from(document.querySelectorAll("[data-view-path]")).map((node) => {
+        const box = node.getBoundingClientRect();
+        return [box.top, box.height].map(Math.round);
+      }),
+      viewport: [viewport.top, viewport.height].map(Math.round),
+    };
+  });
+};
 const explorerRows = (page: Page) =>
   page
     .locator("tbody .k2b-data-table__row")
@@ -843,13 +908,12 @@ for (const view of [
           await page.locator("main").evaluate((node) => {
             node.style.maxWidth = "352px";
           });
-        await page.evaluate(
-          (value) => window.show(value),
-          [present("/views/offers-by-month-and-region-0a1b2c3d.view.json", explorerSummary)],
-        );
-        await page.waitForSelector("[data-view-path]");
-        const loading = await boxes(page);
-        const viewport = await explorerViewport(page);
+        const path = "/views/offers-by-month-and-region-0a1b2c3d.view.json";
+        const loaded = hold(path);
+        await page.evaluate((value) => window.show(value), [present(path, explorerSummary)]);
+        const frame = await explorerLoadingFrame(page);
+        expect(frame.interactive).toBe(0);
+        const { boxes: loading, viewport } = frame;
         expect(viewport[1]).toBe(288);
         const stable = async () => {
           expect(await boxes(page)).toEqual(loading);
@@ -877,6 +941,7 @@ for (const view of [
             await page.screenshot({ path: `${process.env.VIEW_SHOTS}/explorer-${view.name}-${theme}${suffix}.png` });
         };
         await shot("-loading");
+        loaded();
         await page.waitForSelector('[data-view-path] [data-interactive="true"]');
         expect(await page.locator(".k2b-chart-legend li").allTextContents()).toEqual(regions);
         await stable();
@@ -973,6 +1038,73 @@ for (const view of [
       }
     }, 30_000);
 
+test("an explorer keeps its controls on one line inside a phone column with long labels and step names", async () => {
+  const context = await browser.newContext({
+    viewport: { width: 360, height: 800 },
+    isMobile: true,
+    hasTouch: true,
+    reducedMotion: "reduce",
+  });
+  try {
+    const page = await context.newPage();
+    await page.goto(`http://127.0.0.1:${server.port}/`);
+    // A 320px chat column inside the 360px phone, including the harness's padding.
+    await page.locator("main").evaluate((node) => {
+      node.style.maxWidth = "352px";
+    });
+    const path = "/views/explorer-long-labels-0a1b2c41.view.json";
+    const loaded = hold(path);
+    await page.evaluate((value) => window.show(value), [present(path, { ...explorerSummary, rows: longExplorer.rows.length })]);
+    const frame = await explorerLoadingFrame(page);
+    loaded();
+    await page.waitForSelector('[data-view-path] [data-interactive="true"]');
+    const layout = () =>
+      page.evaluate(() => {
+        const section = document.querySelector(".k2b-chart-explorer")!;
+        const box = section.getBoundingClientRect();
+        const controls = Array.from(section.querySelectorAll(".k2b-chart-explorer__dimension, .k2b-filter-chip, .k2b-chart-explorer__pin"));
+        return {
+          overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+          width: Math.round(box.width),
+          track: Math.round(section.querySelector('input[type="range"]')!.getBoundingClientRect().width),
+          inside: controls.every((node) => {
+            const control = node.getBoundingClientRect();
+            return control.left >= box.left - 0.5 && control.right <= box.right + 0.5;
+          }),
+        };
+      });
+    expect(await boxes(page)).toEqual(frame.boxes);
+    const initial = await layout();
+    expect(initial).toMatchObject({ overflow: 0, inside: true });
+    expect(initial.width).toBeLessThanOrEqual(320);
+    expect(initial.track).toBeGreaterThan(120);
+
+    // Pinning shows the long step name in the pin; stepping shows shorter and longer names. Nothing moves or grows.
+    await page.getByRole("button", { name: "Pin as reference" }).click();
+    await page.getByRole("slider").focus();
+    for (const step of [longSteps[1], longSteps[0]]) {
+      await page.keyboard.press("ArrowLeft");
+      await page.waitForFunction((label) => document.querySelector('input[type="range"]')?.getAttribute("aria-valuetext") === label, step);
+      expect(await layout()).toEqual(initial);
+      expect(await boxes(page)).toEqual(frame.boxes);
+    }
+
+    // The filter names each region in the color the chart draws it with.
+    const legendColor = await page
+      .locator(".k2b-chart-legend li", { hasText: "South · 2024" })
+      .locator(".k2b-chart-legend__swatch")
+      .evaluate((node) => getComputedStyle(node).backgroundColor);
+    await page.locator(".k2b-chart-explorer .k2b-filter-chip").tap();
+    const filterColor = await page
+      .getByRole("menuitemcheckbox", { name: "South", exact: true })
+      .locator(".k2b-dropdown__color")
+      .evaluate((node) => getComputedStyle(node).backgroundColor);
+    expect(filterColor).toBe(legendColor);
+  } finally {
+    await context.close();
+  }
+});
+
 test("an explorer table caps the combined current and reference rows at 100", async () => {
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: "reduce" });
   try {
@@ -1000,6 +1132,31 @@ test("an explorer table caps the combined current and reference rows at 100", as
       largeExplorer.rows.slice(0, 100).map((row) => [row.year, String(row.month), row.region]),
     );
     expect(await boxes(page)).toEqual(frame);
+  } finally {
+    await context.close();
+  }
+});
+
+test("an explorer table sorts a missing cell last, also in a column named like an Object member", async () => {
+  const parsed = parseCloudAiView(memberExplorer);
+  if (!parsed) throw new Error("Invalid member explorer");
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: "reduce" });
+  try {
+    const page = await context.newPage();
+    await page.goto(`http://127.0.0.1:${server.port}/`);
+    await page.evaluate(
+      (block) => window.show([block]),
+      present("/views/explorer-member-names-0a1b2c42.view.json", cloudAiViewSummary(parsed)),
+    );
+    await page.waitForSelector('[data-view-path] [data-interactive="true"]');
+    await pickExplorerView(page, "Table");
+    const header = page.getByRole("button", { name: "Constructor", exact: true });
+    await header.click();
+    await page.waitForFunction(() => document.querySelector("tbody tr td")?.textContent?.trim() === "One");
+    expect((await explorerRows(page)).map((cells) => cells[0])).toEqual(["One", "Two", "Missing"]);
+    await header.click();
+    await page.waitForFunction(() => document.querySelector("tbody tr td")?.textContent?.trim() === "Two");
+    expect((await explorerRows(page)).map((cells) => cells[0])).toEqual(["Two", "One", "Missing"]);
   } finally {
     await context.close();
   }

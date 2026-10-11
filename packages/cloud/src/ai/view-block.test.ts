@@ -786,6 +786,54 @@ describe("explorer views", () => {
       }),
     ).toContain("views[0]: The view has 3842 marks");
   });
+  test("bars obey the value bound per step, counting only numeric y cells", () => {
+    const value: CloudAiExplorerView = {
+      ...explorer,
+      controls: undefined,
+      views: [{ id: "bars", label: "Products", kind: "bar", x: "name", y: "y" }],
+      rows: Array.from({ length: 481 }, (_, i) => ({ name: `Product ${i}`, y: i, step: String(i % 2) })),
+    };
+    expect(issues(value)).toBe(
+      "views[0]: The view draws 481 bars in total; the limit is 480. Aggregate the rows, keep the top ones, or add a step column.",
+    );
+    expect(parseCloudAiView(value)).toBeUndefined();
+    const stepped = { ...value, controls: { step: "step" } };
+    expect(checkCloudAiView(stepped)).toEqual({ view: stepped });
+    const sparse = { ...value, rows: value.rows.map((row, i) => (i === 480 ? { ...row, y: null } : row)) };
+    expect(checkCloudAiView(sparse)).toEqual({ view: sparse });
+    expect(issues({ ...stepped, rows: value.rows.map((row) => ({ ...row, step: "one" })) })).toBe(
+      "views[0]: The view draws 481 bars in one step; the limit is 480. Aggregate the rows, keep the top ones, or add a step column.",
+    );
+  });
+  test.each(["line", "scatter"] as const)("%s bounds each series within a step and allows one-point series", (kind) => {
+    const value: CloudAiExplorerView = {
+      ...explorer,
+      views: [{ id: "points", label: "Points", kind, x: "x", y: "y", series: "series" }],
+      rows: Array.from({ length: 481 }, (_, i) => ({ x: i, y: i, step: "one", series: "open" })),
+    };
+    expect(issues(value)).toBe(
+      "views[0]: The view draws 481 points in one series in one step; the limit is 480. Aggregate the rows, keep the top ones, or add a step column.",
+    );
+    const stepped = { ...value, rows: value.rows.map((row, i) => ({ ...row, step: i === 480 ? "two" : "one" })) };
+    expect(checkCloudAiView(stepped)).toEqual({ view: stepped });
+    const grouped = { ...value, rows: value.rows.map((row, i) => ({ ...row, series: i === 480 ? "paid" : "open" })) };
+    expect(checkCloudAiView(grouped)).toEqual({ view: grouped });
+    const sparse = { ...value, rows: value.rows.map((row, i) => (i === 480 ? { ...row, x: null } : row)) };
+    expect(checkCloudAiView(sparse)).toEqual({ view: sparse });
+    expect(issues({ ...value, controls: undefined })).toContain("481 points in one series in total; the limit is 480.");
+  });
+  test("each y column is a separate bounded series", () => {
+    const value: CloudAiExplorerView = {
+      ...explorer,
+      controls: undefined,
+      views: [{ id: "points", label: "Points", kind: "scatter", x: "x", y: ["x", "y"] }],
+      rows: Array.from({ length: 480 }, (_, i) => ({ x: i, y: i })),
+    };
+    expect(checkCloudAiView(value)).toEqual({ view: value });
+    expect(issues({ ...value, rows: [...value.rows, { x: 480, y: null }] })).toContain(
+      "views[0]: The view draws 481 points in one series in total; the limit is 480.",
+    );
+  });
   test.each(["bar", "heatmap"])("%s labels must be unique within each step by displayed text", (kind) => {
     const chart =
       kind === "bar" ? { id: "v", label: "V", kind, x: "name", y: "y" } : { id: "v", label: "V", kind, x: "name", y: "series", value: "y" };

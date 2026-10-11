@@ -307,6 +307,34 @@ const ExplorerViewSchema = ExplorerDataSchema.superRefine((value, ctx) => {
     }
   });
   if (ctx.issues.length) return;
+  value.views.forEach((chart, index) => {
+    if (chart.kind === "heatmap") return;
+    const ys = Array.isArray(chart.y) ? chart.y : [chart.y];
+    const counts = new Map<string | number | null, Map<string | number | null, number>>();
+    let largest = 0;
+    for (const row of value.rows) {
+      if (chart.kind !== "bar" && cloudAiViewScalarCellOf(row, chart.x) == null) continue;
+      const step = value.controls?.step === undefined ? null : cloudAiViewScalarCellOf(row, value.controls.step);
+      for (const id of ys) {
+        if (typeof cloudAiViewScalarCellOf(row, id) !== "number") continue;
+        const series = chart.kind !== "bar" && chart.series !== undefined ? cloudAiViewScalarCellOf(row, chart.series) : id;
+        let state = counts.get(step);
+        if (!state) {
+          state = new Map();
+          counts.set(step, state);
+        }
+        const count = (state.get(series) ?? 0) + 1;
+        state.set(series, count);
+        largest = Math.max(largest, count);
+      }
+    }
+    if (largest > CLOUD_AI_CHART_MAX_VALUES)
+      issue(
+        ["views", index],
+        `The view draws ${largest} ${chart.kind === "bar" ? "bars" : "points in one series"} ${value.controls?.step === undefined ? "in total" : "in one step"}; the limit is ${CLOUD_AI_CHART_MAX_VALUES}. Aggregate the rows, keep the top ones, or add a step column.`,
+      );
+  });
+  if (ctx.issues.length) return;
   const whole = cloudAiExplorerState(value, {}, "en");
   // Date axes vary by step. Group once; checking their points needs neither legends nor dataset-wide domains again.
   const stepRows = new Map<string | number | null, typeof value.rows>();

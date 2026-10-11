@@ -19,7 +19,10 @@ export type ChartExplorerColumn<T> = {
   value: (row: T) => string;
   /** Optional table cell presentation; value remains the plain text used for copy/details. */
   render?: (row: T) => JSX.Element;
-  /** Explicit comparable value. Omit to leave the column unsortable. */
+  /**
+   * Explicit comparable value. Omit to leave the column unsortable.
+   * Returning a number also exempts the cell from spreadsheet formula guarding on copy.
+   */
   sortValue?: (row: T) => string | number | null;
   align?: "left" | "center" | "right";
 };
@@ -72,7 +75,10 @@ export type ChartExplorerProps<T extends ChartExplorerRow> = {
   class?: string;
 };
 
-const tsvCell = (value: string) => (/[\t\r\n"]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value);
+const tsvCell = (value: string, numeric = false) => {
+  const safe = !numeric && /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+  return /[\t\r\n"]/.test(safe) ? `"${safe.replaceAll('"', '""')}"` : safe;
+};
 
 export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerProps<T>) {
   const messages = useUiMessages();
@@ -152,7 +158,7 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
   const copyText = () =>
     [
       props.columns.map((c) => tsvCell(c.label)).join("\t"),
-      ...rows().map((row) => props.columns.map((c) => tsvCell(c.value(row))).join("\t")),
+      ...rows().map((row) => props.columns.map((c) => tsvCell(c.value(row), typeof c.sortValue?.(row) === "number")).join("\t")),
     ].join("\n");
   return (
     <section class={`k2b-chart-explorer ${props.class ?? ""}`} aria-labelledby={id}>

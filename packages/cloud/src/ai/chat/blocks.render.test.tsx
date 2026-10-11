@@ -2076,3 +2076,71 @@ test("an empty explorer keeps the summary's slider, filter and comparison rows",
     expect(html).toMatch(/<button[^>]*k2b-chart-explorer__pin[^>]*disabled/);
   }
 });
+
+test("an explorer view without a drawable value in the shown rows says so in the reader's language", async () => {
+  const { CloudExplorerView } = await import("./explorer-block");
+  const { cloudAiViewSummary, parseCloudAiView } = await import("../view-block");
+  const { LocaleProvider } = await import("@k2b/ui");
+  // The last step, shown first, has rows but no y value to plot.
+  const input = parseCloudAiView({
+    view: "explorer",
+    title: "Sparse dataset",
+    columns: [
+      { id: "year", type: "text" },
+      { id: "x", type: "number" },
+      { id: "y", type: "number" },
+    ],
+    rows: [
+      { year: "2025", x: 1, y: 5 },
+      { year: "2025", x: 2, y: 6 },
+      { year: "2026", x: 1, y: null },
+      { year: "2026", x: 2, y: null },
+    ],
+    views: [{ id: "trend", label: "Trend", kind: "scatter", x: "x", y: "y" }],
+    controls: { step: "year" },
+  });
+  if (!input || input.view !== "explorer") throw new Error("Invalid sparse explorer");
+  const summary = cloudAiViewSummary(input);
+  if (summary.view !== "explorer") throw new Error("Expected explorer");
+  const html = renderToString(() =>
+    createComponent(LocaleProvider, {
+      locale: "de",
+      get children() {
+        return createComponent(CloudExplorerView, { summary, input });
+      },
+    }),
+  );
+  expect(html).toContain("Diese Ansicht lässt sich für diese Auswahl nicht zeichnen.");
+  expect(html).not.toContain("data-chart-datum");
+});
+
+test("the series filter shows chart colors only when the shown view colors its series by the filter column", async () => {
+  const { CloudExplorerView } = await import("./explorer-block");
+  const { cloudAiViewSummary, parseCloudAiView } = await import("../view-block");
+  const swatches = (views: unknown[]) => {
+    const input = parseCloudAiView({
+      view: "explorer",
+      title: "Offers",
+      columns: [
+        { id: "region", type: "text" },
+        { id: "month", type: "number" },
+        { id: "count", type: "number" },
+      ],
+      rows: [
+        { region: "North", month: 1, count: 3 },
+        { region: "North", month: 2, count: 4 },
+        { region: "South", month: 1, count: 5 },
+        { region: "South", month: 2, count: 6 },
+      ],
+      views,
+      controls: { filter: "region" },
+    });
+    if (!input || input.view !== "explorer") throw new Error("Invalid explorer");
+    const summary = cloudAiViewSummary(input);
+    if (summary.view !== "explorer") throw new Error("Expected explorer");
+    return renderToString(() => createComponent(CloudExplorerView, { summary, input })).split("k2b-dropdown__color").length - 1;
+  };
+  expect(swatches([{ id: "trend", label: "Trend", kind: "line", x: "month", y: "count", series: "region" }])).toBe(2);
+  // Without a series column every line is one region mix, so a region color would describe nothing the chart draws.
+  expect(swatches([{ id: "trend", label: "Trend", kind: "line", x: "month", y: "count" }])).toBe(0);
+});

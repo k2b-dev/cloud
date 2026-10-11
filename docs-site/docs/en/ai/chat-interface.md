@@ -319,17 +319,25 @@ order:
    in the header's switcher. Its summary lists the view ids, labels and kinds
    and the `step`, `filter` and `compare` flags, so the slider row and the row
    with the series filter and the comparison pin are reserved before the file
-   loads. Those rows never wrap: the slider spans the block, and a long step
-   label in the pin is shortened. The chart, its legend and the table share one
-   18rem viewport, also on a phone. Filtering removes rows from every chart and
-   the table; the step starts at the last step in row order. Pinning a step and
+   loads. Those rows never wrap: the slider spans the block, and a long column
+   label, step name, filter label or step label in the pin is shortened on one
+   line. The step name keeps the width of the longest one, so the slider never
+   resizes while stepping. The chart, its legend and the table share one
+   18rem viewport, also on a phone. The series filter shows the chart's colors
+   only while the shown view colors its series by the filter column. A view
+   that draws no value of the shown rows says so in the reader's language
+   instead of showing an empty plot; only the shown view is drawn. Filtering
+   removes rows from every chart and the table; the step starts at the last
+   step in row order. Pinning a step and
    moving the slider adds that step as dashed lines or hollow scatter points in
    the same colors. Comparison needs a step and line/scatter views. Numeric
    axes and heatmap color bounds cover the whole dataset, so filtering and
    stepping never rescale them; date x axes follow the shown points. A selected
    row stays selected across charts and the table. The table renders up to 100
    rows of the current state, including the pinned step, in the reader's sort;
-   **Copy data** copies all of them. Explorer files contain plain data,
+   **Copy data** copies all of them and, like a table view, puts an
+   apostrophe before text that a spreadsheet would read as a formula. Explorer
+   files contain plain data,
    validated on write and on every read. Filtering, steps, comparison,
    row selection and sorting run in the browser and reset on reload. The CLI prints the title,
    subtitle and the table of the initial state: the last step with every filter

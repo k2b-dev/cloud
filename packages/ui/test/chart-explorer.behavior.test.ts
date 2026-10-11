@@ -223,6 +223,47 @@ describe("chart explorer presentation", () => {
       else Reflect.deleteProperty(navigator.clipboard, "writeText");
     }
   });
+  test("Copy data guards formula text and headers while preserving numeric cells and TSV quoting", async () => {
+    const fixture = data();
+    fixture.rows = [
+      { key: "a", label: "=1+1", value: -5 },
+      { key: "b", label: "-x", value: -5 },
+      { key: "c", label: "+x", value: -5 },
+      { key: "d", label: "@x", value: -5 },
+      { key: "e", label: "\tx", value: -5 },
+      { key: "f", label: "\rx", value: -5 },
+      { key: "g", label: 'a\n"b"', value: -5 },
+    ];
+    const copied: string[] = [];
+    const original = Object.getOwnPropertyDescriptor(navigator.clipboard, "writeText");
+    Object.defineProperty(navigator.clipboard, "writeText", {
+      configurable: true,
+      value: async (text: string) => {
+        copied.push(text);
+      },
+    });
+    const dispose = render(
+      () =>
+        createComponent(Explorer<Row>, {
+          title: "Copy safety",
+          data: fixture,
+          columns: [
+            { ...columns[0]!, label: "=Text" },
+            { ...columns[1]!, label: "-Number" },
+          ],
+        }),
+      dom.root,
+    );
+    try {
+      dom.root.querySelector<HTMLButtonElement>('[aria-label="Copy data"]')!.click();
+      await tick();
+      expect(copied).toEqual(['\'=Text\t\'-Number\n\'=1+1\t-5\n\'-x\t-5\n\'+x\t-5\n\'@x\t-5\n"\'\tx"\t-5\n"\'\rx"\t-5\n"a\n""b"""\t-5']);
+    } finally {
+      dispose();
+      if (original) Object.defineProperty(navigator.clipboard, "writeText", original);
+      else Reflect.deleteProperty(navigator.clipboard, "writeText");
+    }
+  });
   test("server-prepared line explorer follows a shared cursor without selecting rows", async () => {
     const { createChartCursor } = await import("../src/content/chart-cursor");
     const cursor = createChartCursor({ formatX: (x) => `Time ${x}` });

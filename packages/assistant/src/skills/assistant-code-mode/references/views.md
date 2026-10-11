@@ -252,8 +252,10 @@ export default async () => {
 
 Use `await cloud.view.explorer({title, subtitle?, rows, columns?, views, controls?})`
 for one computed dataset the reader should filter, step through or compare.
-For categorical CSV or spreadsheet analyses (status per category, price against
-stock), return `cloud.view.stats` key figures and an explorer over the rows.
+For categorical CSV or spreadsheet analyses where the reader will compare or
+filter (status per category, price against stock), return `cloud.view.stats`
+key figures and an explorer over the rows. A single answer stays a stats or
+chart view.
 Do not default to isolated distributions or an offer to build a filter app.
 
 Columns and cell conversion follow Tables above, without footer or initial sort.
@@ -289,8 +291,10 @@ them. Date x axes follow the shown points. Validation rejects unsafe axis
 precision and heatmap labels that cannot fit a phone, across all steps.
 
 Limits are 3,840 rows, 100 unique columns, 6 views and 3,840 marks per view
-(rows × y columns), within the 1 MiB file limit. Titles use 1..160 characters,
-subtitles 1..300, column ids and labels 1..80. Number formats belong only to
+(rows × y columns), within the 1 MiB file limit. Each view draws at most 480
+bars per step (in total without a step) and 480 points per series per step;
+aggregate, keep the top rows or add a step beyond that. Titles use 1..160
+characters, subtitles 1..300, column ids and labels 1..80. Number formats belong only to
 number columns. No extra keys, markup options or functions belong in the spec.
 
 Filtering, steps, comparison, row selection and sorting happen locally and reset
@@ -351,7 +355,8 @@ export default async (_input, { files }) => {
       { id: "stockValue", label: "Stock value", format: { style: "currency", currency: "EUR" } }],
     views: [
       { id: "price-stock", label: "Price and stock", kind: "scatter", x: "price", y: "stock", series: "status" },
-      { id: "stock-value", label: "Stock value", kind: "bar", x: "product", y: "stockValue" },
+      // Keep the per-product bars within the chart limit.
+      ...(rows.length <= 480 ? [{ id: "stock-value", label: "Stock value", kind: "bar", x: "product", y: "stockValue" }] : []),
     ],
     controls: { filter: "status" },
   });
@@ -362,6 +367,10 @@ export default async (_input, { files }) => {
   return { products: rows.length, stock, stockValue };
 };
 ```
+
+With more than 480 products the example leaves out the bar view; show a top-N
+ranking as a `cloud.view.chart` instead. The scatter still allows at most 480
+products per status; aggregate or add a step column beyond that.
 
 Present all three returned view paths. State the key findings and any missing-data
 limits in the answer. A distribution over all rows (histogram, boxplot) stays a

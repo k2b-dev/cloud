@@ -254,6 +254,21 @@ test("the CSV view example converts through the real runtime and validates every
       { label: "25–30", value: 1 },
     ],
   });
+  specs.length = 0;
+  const largerCsv = [
+    "product,category,status,price,stock",
+    ...Array.from({ length: 481 }, (_, i) => `Product ${i},Tools,${i % 2 ? "paid" : "open"},${i + 1},1`),
+  ].join("\n");
+  await run({ view, sheet: { parseCsv: (file: Blob) => parseCsv(file, {}, "en-US") } })(null, {
+    files: [{ file: async () => new File([largerCsv], "larger-inventory.csv") }],
+  });
+  expect(specs).toHaveLength(3);
+  expect(specs[1]).toMatchObject({
+    view: "explorer",
+    controls: { filter: "status" },
+    views: [{ id: "price-stock", kind: "scatter", x: "price", y: "stock", series: "status" }],
+    rows: Array.from({ length: 481 }, (_, i) => ({ product: `Product ${480 - i}` })),
+  });
 });
 
 test("W1 view examples compile, preserve CSV numbers and page the actual task capability contract", async () => {

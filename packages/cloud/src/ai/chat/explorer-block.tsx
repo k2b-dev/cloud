@@ -30,9 +30,8 @@ type Charts = Record<string, ChartExplorerData<CloudAiChartRow>>;
 const VISIBLE_ROWS = 100;
 /** Every explorer chart kind draws a plot with axes, so all share the chart block's viewport. */
 const HEIGHT = "18rem";
-/** The data table has its own entry; chart entries are prefixed so a view named "table" stays apart. */
+/** createChartExplorer holds the shown rows as its only entry; views are drawn from them on demand. */
 const TABLE = "table";
-const chartKey = (id: string) => `view:${id}`;
 
 const emptySnapshot = (kind: ChartSnapshot["kind"]): ChartSnapshot => ({
   kind,
@@ -43,62 +42,68 @@ const emptySnapshot = (kind: ChartSnapshot["kind"]): ChartSnapshot => ({
   marks: [],
 });
 
-/**
- * One state of the explorer as snapshots: each view drawn from the rows the request shows, plus the table of those
- * rows. A view that cannot be drawn for this state gets no rows, so its frame shows why instead of an empty plot.
- */
-function explorerSnapshot(view: CloudAiExplorerView, table: CloudAiChartRow[], request: CloudAiExplorerRequest, locale: string) {
+/** One state of the explorer: the rows its request shows, as the table, and every view projected from them. */
+function explorerState(view: CloudAiExplorerView, table: CloudAiChartRow[], request: CloudAiExplorerRequest, locale: string) {
   const state = cloudAiExplorerState(view, request, locale);
   const rows = state.rows.map((index) => table[index]!);
-  const columnLabel = (id: string) => view.columns.find((column) => column.id === id)?.label ?? id;
   const charts: Charts = { [TABLE]: { chart: emptySnapshot("bar"), rows } };
-  const failed = new Set<string>();
-  for (const spec of view.views) {
-    const chart = state.charts[spec.id];
-    if (!chart) continue;
-    const rowOf = (datum: { seriesIndex?: number; index: number }) => chart.marks[datum.seriesIndex ?? 0]?.[datum.index];
-    // The tooltip names what this view encodes; the table and Copy data carry every column.
-    const encoded = (seriesIndex: number) => {
-      const ys = Array.isArray(spec.y) ? spec.y : [spec.y];
-      // Several y columns are one series each; with a series column every series shows the single y.
-      const y = spec.kind === "line" || spec.kind === "scatter" ? ys[ys.length > 1 ? seriesIndex % 8 : 0] : spec.y;
-      return [
-        spec.x,
-        ...(y ? [y] : []),
-        ...(spec.kind === "heatmap" ? [spec.value] : []),
-        ...(spec.kind !== "heatmap" && spec.kind !== "bar" && spec.series ? [spec.series] : []),
-        ...(view.controls?.step ? [view.controls.step] : []),
-      ];
-    };
-    try {
-      const snapshot = prepareChartSnapshot(cloudAiChartRenderOptions(chart.input, locale, { legend: "outside" }), {
-        key: ({ datum }) => cloudAiChartMarkKey(datum),
-        rowKey: ({ datum }) => String(rowOf(datum)),
-        tooltip: ({ datum }) => {
-          const row = table[rowOf(datum) ?? -1];
-          const series =
-            chart.input.kind === "line" || chart.input.kind === "scatter" ? chart.input.series[datum.seriesIndex ?? 0] : undefined;
-          return {
-            title: series?.label ?? (row ? row.cells[spec.x] : undefined),
-            rows: row
-              ? [...new Set(encoded(datum.seriesIndex ?? 0))].map((id) => ({ label: columnLabel(id), value: row.cells[id] ?? "" }))
-              : [],
-          };
-        },
-        reference: ({ datum }) => cloudAiChartReferenceMark(chart.input, datum),
-      });
-      // createChartExplorer rejects a mark without a row; such a view shows why instead of failing the block.
-      const shown = new Set(rows.map((row) => row.key));
-      if (!snapshot.marks.every((mark) => shown.has(mark.rowKey))) throw new Error("A mark has no row");
-      charts[chartKey(spec.id)] = { chart: snapshot, rows };
-    } catch {
-      failed.add(spec.id);
-      charts[chartKey(spec.id)] = { chart: emptySnapshot(spec.kind), rows: [] };
-    }
-  }
-  return { snapshot: { request: { ...request }, charts }, legends: state.charts, failed };
+  return { snapshot: { request: { ...request }, charts }, rows, charts: state.charts };
 }
-type ExplorerState = ReturnType<typeof explorerSnapshot>;
+type ExplorerState = ReturnType<typeof explorerState>;
+
+/**
+ * One view of a state, drawn. Drawing is the expensive part, so only a view someone shows is drawn. A view that
+ * draws no mark of the shown rows returns undefined, so its frame says why instead of showing an empty plot.
+ */
+function drawExplorerView(
+  view: CloudAiExplorerView,
+  spec: CloudAiExplorerView["views"][number],
+  table: CloudAiChartRow[],
+  state: ExplorerState,
+  locale: string,
+): ChartExplorerData<CloudAiChartRow> | undefined {
+  const chart = state.charts[spec.id];
+  if (!chart) return undefined;
+  const columnLabel = (id: string) => view.columns.find((column) => column.id === id)?.label ?? id;
+  const rowOf = (datum: { seriesIndex?: number; index: number }) => chart.marks[datum.seriesIndex ?? 0]?.[datum.index];
+  // The tooltip names what this view encodes; the table and Copy data carry every column.
+  const encoded = (seriesIndex: number) => {
+    const ys = Array.isArray(spec.y) ? spec.y : [spec.y];
+    // Several y columns are one series each; with a series column every series shows the single y.
+    const y = spec.kind === "line" || spec.kind === "scatter" ? ys[ys.length > 1 ? seriesIndex % 8 : 0] : spec.y;
+    return [
+      spec.x,
+      ...(y ? [y] : []),
+      ...(spec.kind === "heatmap" ? [spec.value] : []),
+      ...(spec.kind !== "heatmap" && spec.kind !== "bar" && spec.series ? [spec.series] : []),
+      ...(view.controls?.step ? [view.controls.step] : []),
+    ];
+  };
+  try {
+    const snapshot = prepareChartSnapshot(cloudAiChartRenderOptions(chart.input, locale, { legend: "outside" }), {
+      key: ({ datum }) => cloudAiChartMarkKey(datum),
+      rowKey: ({ datum }) => String(rowOf(datum)),
+      tooltip: ({ datum }) => {
+        const row = table[rowOf(datum) ?? -1];
+        const series =
+          chart.input.kind === "line" || chart.input.kind === "scatter" ? chart.input.series[datum.seriesIndex ?? 0] : undefined;
+        return {
+          title: series?.label ?? (row ? row.cells[spec.x] : undefined),
+          rows: row
+            ? [...new Set(encoded(datum.seriesIndex ?? 0))].map((id) => ({ label: columnLabel(id), value: row.cells[id] ?? "" }))
+            : [],
+        };
+      },
+      reference: ({ datum }) => cloudAiChartReferenceMark(chart.input, datum),
+    });
+    // createChartExplorer rejects a mark without a row; such a view shows why instead of failing the block.
+    const shown = new Set(state.rows.map((row) => row.key));
+    if (!snapshot.marks.length || !snapshot.marks.every((mark) => shown.has(mark.rowKey))) return undefined;
+    return { chart: snapshot, rows: state.rows };
+  } catch {
+    return undefined;
+  }
+}
 
 const hasControls = (summary: ExplorerSummary) => summary.step || summary.filter;
 
@@ -144,25 +149,41 @@ function LoadedExplorer(props: { summary: ExplorerSummary; input: CloudAiExplore
   const t = () => aiChatMessages(locale());
   const table = createMemo(() => cloudAiViewTable({ ...props.input, view: "table" }, locale()).rows);
   const controls = createMemo(() => cloudAiExplorerControls(props.input, locale()));
-  // Legends and undrawable views belong to the snapshot createChartExplorer adopted, not to the latest request.
-  const states = new WeakMap<Charts, ExplorerState>();
+  // createChartExplorer owns the request and the selection over the shown rows; each view is drawn when shown, once
+  // per state, so a filter or step change draws one view instead of all of them.
+  const states = new WeakMap<Charts, { state: ExplorerState; drawn: Map<string, ChartExplorerData<CloudAiChartRow> | undefined> }>();
   const build = (request: ChartExplorerRequest) => {
-    const next = explorerSnapshot(props.input, table(), request, locale());
-    states.set(next.snapshot.charts, next);
+    const next = explorerState(props.input, table(), request, locale());
+    states.set(next.snapshot.charts, { state: next, drawn: new Map() });
     return next.snapshot;
   };
   const explorer = createChartExplorer<Charts>({ snapshot: () => build(controls().initial), load: build });
-  const state = () => states.get(explorer.snapshot().charts);
   const [chart, setChart] = createSignal(props.input.views[0]!.id);
   const [view, setView] = createSignal<"chart" | "table">("chart");
-  const current = () => (view() === "table" ? TABLE : chartKey(chart()));
+  const spec = () => props.input.views.find((entry) => entry.id === chart()) ?? props.input.views[0]!;
+  const shown = createMemo(() => {
+    const charts = explorer.snapshot().charts;
+    const entry = states.get(charts)!;
+    if (view() === "table") return { data: charts[TABLE]!, failed: false };
+    const id = spec().id;
+    if (!entry.drawn.has(id)) entry.drawn.set(id, drawExplorerView(props.input, spec(), table(), entry.state, locale()));
+    const data = entry.drawn.get(id);
+    return data ? { data, failed: false } : { data: { chart: emptySnapshot(spec().kind), rows: [] }, failed: true };
+  });
+  const legend = () =>
+    view() === "chart" && !shown().failed ? states.get(explorer.snapshot().charts)?.state.charts[spec().id]?.legend : undefined;
+  // Swatches name chart colors only where the shown view colors its series by the filter column.
+  const colored = () => {
+    const current = spec();
+    return view() === "chart" && (current.kind === "line" || current.kind === "scatter") && current.series === props.input.controls?.filter;
+  };
   const columns = createMemo(() =>
     props.input.columns.map(
       (column): ChartExplorerColumn<CloudAiChartRow> => ({
         id: column.id,
         label: column.label ?? column.id,
         value: (row) => row.cells[column.id] ?? "",
-        sortValue: (row) => row.values[column.id] ?? null,
+        sortValue: (row) => (Object.hasOwn(row.values, column.id) ? (row.values[column.id] ?? null) : null),
         align: column.type === "number" ? "right" : "left",
         ...(column.type === "ref"
           ? {
@@ -184,14 +205,14 @@ function LoadedExplorer(props: { summary: ExplorerSummary; input: CloudAiExplore
       title={props.input.title}
       description={props.input.subtitle ? <span class="text-sm text-secondary">{props.input.subtitle}</span> : undefined}
       height={HEIGHT}
-      data={explorer.snapshot().charts[current()]!}
+      data={shown().data}
       columns={columns()}
       charts={props.input.views}
       chart={chart()}
       onChartChange={setChart}
       view={view()}
       onViewChange={setView}
-      legend={view() === "chart" ? state()?.legends[chart()]?.legend : undefined}
+      legend={legend()}
       selectedKey={explorer.selectedKey()}
       onSelectedKeyChange={explorer.select}
       tableRows={VISIBLE_ROWS}
@@ -203,7 +224,11 @@ function LoadedExplorer(props: { summary: ExplorerSummary; input: CloudAiExplore
             steps={controls().steps.length ? controls().steps : props.summary.step ? [{ key: "0", label: "" }] : undefined}
             series={
               controls().series.length
-                ? controls().series.map((entry) => ({ ...entry, color: `var(--stdlib-chart-c${(entry.color % 8) + 1})` }))
+                ? controls().series.map(({ key, label, color }) => ({
+                    key,
+                    label,
+                    ...(colored() ? { color: `var(--stdlib-chart-c${(color % 8) + 1})` } : {}),
+                  }))
                 : props.summary.filter
                   ? [{ key: "0", label: "", color: "var(--stdlib-chart-c1)" }]
                   : undefined
@@ -216,7 +241,11 @@ function LoadedExplorer(props: { summary: ExplorerSummary; input: CloudAiExplore
           />
         ) : undefined
       }
-      empty={<span role="status">{view() === "chart" && state()?.failed.has(chart()) ? t().explorerUndrawable : t().explorerNoRows}</span>}
+      empty={
+        <span role="status">
+          {shown().failed && explorer.snapshot().charts[TABLE]!.rows.length ? t().explorerUndrawable : t().explorerNoRows}
+        </span>
+      }
       renderDetails={false}
     />
   );

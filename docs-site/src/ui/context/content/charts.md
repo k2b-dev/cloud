@@ -621,7 +621,11 @@ inherited locale, and nulls stay last in both directions. Default click order is
 ascending, then descending. Sort and view changes never load data. Controlled props
 stay owner-owned until the corresponding value is updated. Sorting only rearranges
 the supplied rows; copy includes all rows in that order, not just the scroll window,
-as escaped tab-separated text with column headings. Clipboard failures appear inline.
+as escaped tab-separated text with column headings. Copy data prefixes text and
+headings starting with `=`, `+`, `-`, `@`, tab or carriage return with an apostrophe
+to guard spreadsheet formulas, then quotes tabs, carriage returns, newlines and
+quotes. A cell whose `sortValue(row)` returns a number keeps its numeric text,
+including negative values, without the apostrophe. Clipboard failures appear inline.
 
 `ChartExplorerControlsProps<C>` requires `explorer` and `title`; optional `steps`
 are ordered `{ key, label }` entries, optional `series` entries are
@@ -677,8 +681,11 @@ const [view, setView] = createSignal<"chart" | "table">("chart");
 Set `compare` on `ChartFilterControls` to include the comparison pin. The slider
 spans the block; the series filter and pin share the row below without wrapping.
 The pin label truncates with an ellipsis, so pinning or unpinning keeps the same
-row height down to a 320px block. Keep series slots stable while filtering, as described under
-comparison semantics, so a hidden series never recolors the others. The live
+row height down to a 320px block. The slider label, the step name and the filter
+label keep one line and truncate too; next to the pin the filter takes at most
+half the row. The step name keeps the width of the longest step name, up to 40%
+of the row or 10rem, so the slider never resizes while stepping. Keep series
+slots stable while filtering, as described under comparison semantics, so a hidden series never recolors the others. The live
 example "One dataset, several charts" filters regions, steps through two years
 and pins one year as a dashed reference.
 
@@ -778,7 +785,9 @@ from `prepareChartSnapshot`; never accept arbitrary SVG from a script or network
 response. Selection uses the snapshot row keys. Its viewport is snapshot-owned.
 
 `ChartFilterControls` accepts `request`, `displayedRequest`, `onRequest`, optional
-`steps: {key,label}[]`, `series: {key,label,color}[]`, `dimensionLabel`, `seriesLabel`
+`steps: {key,label}[]`, `series: {key,label,color?}[]` (pass `color` only when
+the chart colors that series that way; without it the filter shows no swatch),
+`dimensionLabel`, `seriesLabel`
 (the filter chip's label, default **Series visibility**; name the column the series come from), `disabled`,
 `failed`, and `onRetry`. It does not load data. Keep the displayed request tied to
 the last committed snapshot while a new desired request is pending. Its exported
