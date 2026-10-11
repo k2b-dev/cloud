@@ -1,5 +1,5 @@
 /**
- * Prepares the shared integration database once per `bun run test --integration`.
+ * Creates the target integration database if missing and prepares it once per `bun run test --integration`.
  *
  * Runs the real production migration path: Core setup first, then every
  * application `migrate()` (or `initializeSchema()` for Pulse). All of them are
@@ -9,8 +9,32 @@
  */
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { SQL } from "bun";
 import { appIds, workspaceRoot } from "../workspace";
-import { requireInfra } from "./test-infra";
+import { requireDatabaseUrl, requireInfra } from "./test-infra";
+
+// The fixture validates the expanded _test name on import; its target probe
+// must wait until creation through the server's maintenance database.
+const maintenanceUrl = new URL(requireDatabaseUrl());
+const name = decodeURIComponent(maintenanceUrl.pathname.slice(1));
+maintenanceUrl.pathname = "/postgres";
+const admin = new SQL(maintenanceUrl.toString());
+try {
+  const exists = async (): Promise<boolean> => {
+    const [row] = await admin<{ found: boolean }[]>`SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = ${name}) AS found`;
+    return row!.found;
+  };
+  if (!(await exists())) {
+    try {
+      await admin.unsafe(`CREATE DATABASE "${name.replaceAll('"', '""')}"`);
+    } catch (error) {
+      // Concurrent creators can report duplicate_database or a catalog unique violation.
+      if (!(error instanceof SQL.PostgresError) || !["42P04", "23505"].includes(error.errno ?? "") || !(await exists())) throw error;
+    }
+  }
+} finally {
+  await admin.close();
+}
 
 await requireInfra("database");
 
