@@ -114,11 +114,17 @@ With `stream: true`, the response is Server-Sent Events. Each event is
 4. If requested and reported, a usage chunk with `choices: []`.
 5. `data: [DONE]\n\n`.
 
+While the stream is open, Cloud sends the SSE comment line `: keepalive` every
+5 seconds so that idle connections stay open. OpenAI clients ignore comment
+lines.
+
 Quota rejection and provider failure before the first text arrive as HTTP JSON
 errors. A provider failure after text arrives as one `data: {"error": {...}}`
-event; the stream then closes without `[DONE]`. Client disconnection cancels
-the provider call. Missing usage after cancellation is booked as an estimate
-through the normal inference accounting.
+event; the stream then closes without `[DONE]`. With and without streaming, a
+provider that sends nothing for 60 seconds before or during its answer fails
+the request with `upstream_error`. Client disconnection cancels the provider
+call. Missing usage after cancellation is booked as an estimate through the
+normal inference accounting.
 
 ## Limits and usage
 
@@ -141,8 +147,10 @@ No request or response content is stored in the inference ledger.
   queued chat turns; these synchronous requests bypass that queue. Operators
   with more provider capacity can raise the limit to 64.
 
-Slots refresh every 30 seconds and expire after two minutes if a process crashes.
-A concurrency refusal returns `Retry-After: 1`.
+A request takes its slot after authentication, before Cloud reads the request
+body, and holds it until the response ends; a request that is then rejected
+releases it at once. Slots refresh every 30 seconds and expire after two
+minutes if a process crashes. A concurrency refusal returns `Retry-After: 1`.
 
 **Models without reference prices have no usage limit.** As in Assistant, chat
 allowances do not cover them. Only rate and concurrency limits protect their

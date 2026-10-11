@@ -36,13 +36,14 @@ const provider: Provider = {
   contextWindow: 1000,
   capabilities: { streaming: true, tools: false, thinking: false, images: false, usage: true },
   async complete() {
-    return {
-      message: { role: "assistant", content: [{ type: "text", text: "Completed" }] },
-      finishReason: "stop",
-      usage: { input: 10, output: 2, total: 12 },
-    };
+    throw new Error("The OpenAI-compatible API serves every request through stream()");
   },
-  async *stream() {},
+  async *stream() {
+    yield { type: "block_start", blockId: "text", index: 0, kind: "text" };
+    yield { type: "block_delta", blockId: "text", delta: "Completed" };
+    yield { type: "block_end", blockId: "text", index: 0, block: { type: "text", text: "Completed" } };
+    yield { type: "usage", usage: { input: 10, output: 2, total: 12 }, finishReason: "stop" };
+  },
 };
 // Bun's WebSocket takes handshake headers, which the DOM type does not declare.
 const BunWebSocket = WebSocket as unknown as new (url: string, options: Bun.WebSocketOptions) => WebSocket;
@@ -143,6 +144,7 @@ suite("models-only API identity and inference boundaries", () => {
         body: JSON.stringify({ model: profile.id, messages: [{ role: "user", content: "Hi" }] }),
       });
       expect(completed.status).toBe(200);
+      expect((await completed.json()).choices[0].message.content).toBe("Completed");
       const rows = await sql<{ kind: string; task: string; user_id: string; input: number; output: number }[]>`
         SELECT kind,task,user_id,input::int AS input,output::int AS output FROM ai.inference_calls WHERE user_id=${id}::uuid AND task='openai-api'`;
       expect(rows).toEqual([{ kind: "chat", task: "openai-api", user_id: id, input: 10, output: 2 }]);
