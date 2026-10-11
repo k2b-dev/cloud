@@ -1,8 +1,174 @@
 import { describe, expect, spyOn, test } from "bun:test";
+import { REQUEST_IDLE_TIMEOUT_SECONDS, setRequestTimeout } from "@k2b/cloud/server/request-timeout.ts";
 import * as services from "@k2b/cloud/services";
+import { Hono } from "hono";
 import { boundTemplateCardinality, resetTemplateCardinality } from "./path-template";
 import { createProxyStats, proxyRequest } from "./proxy";
 import { buildRouteTable } from "./trie";
+
+describe("upstream response wait", () => {
+  test("a slow app can answer through a real gateway", async () => {
+    const app = new Hono().post("/slow", async (c) => {
+      await c.req.text();
+      setRequestTimeout(c, 30);
+      try {
+        await Bun.sleep(13_000);
+        return c.text("slow app answer");
+      } finally {
+        setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
+      }
+    });
+    const upstream = Bun.serve({ port: 0, fetch: app.fetch });
+    const telemetry = spyOn(services, "publishRequestTelemetry").mockImplementation(() => {});
+    const table = buildRouteTable([{ prefix: "/", appId: "slow", baseUrl: upstream.url.href }]);
+    let gateway: ReturnType<typeof Bun.serve> | undefined;
+    try {
+      gateway = Bun.serve({
+        port: 0,
+        idleTimeout: REQUEST_IDLE_TIMEOUT_SECONDS,
+        fetch: (req, server) => proxyRequest(req, table, createProxyStats(), () => {}, null, server.timeout.bind(server)),
+      });
+      const response = await fetch(new URL("/slow", gateway.url), {
+        method: "POST",
+        body: "request body",
+        signal: AbortSignal.timeout(25_000),
+      });
+      expect(response.status).toBe(200);
+      expect(await response.text()).toBe("slow app answer");
+    } finally {
+      await gateway?.stop(true);
+      await upstream.stop(true);
+      telemetry.mockRestore();
+    }
+  }, 30_000);
+
+  test.each(["success", "failure", "disconnect"])("GET raises before fetch and restores after %s", async (outcome) => {
+    const telemetry = spyOn(services, "publishRequestTelemetry").mockImplementation(() => {});
+    const controller = new AbortController();
+    const req = new Request("http://cloud.test/slow", { signal: controller.signal });
+    const calls: (number | string)[] = [];
+    const upstream = spyOn(globalThis, "fetch").mockImplementation(
+      Object.assign(
+        async (_url: RequestInfo | URL, init?: BunFetchRequestInit) => {
+          expect(calls).toEqual([300]);
+          calls.push("fetch");
+          expect(init?.timeout).toBe(300_000);
+          expect(init?.signal).toBe(req.signal);
+          if (outcome === "disconnect") controller.abort();
+          if (outcome !== "success") throw new Error("upstream failed");
+          return new Response("ok");
+        },
+        { preconnect: fetch.preconnect },
+      ),
+    );
+    try {
+      const response = await proxyRequest(
+        req,
+        buildRouteTable([{ prefix: "/", appId: `timeout-${outcome}`, baseUrl: "http://upstream" }]),
+        createProxyStats(),
+        () => {},
+        null,
+        (request, seconds) => {
+          expect(request).toBe(req);
+          calls.push(seconds);
+        },
+      );
+      expect(response.status).toBe(outcome === "success" ? 200 : outcome === "disconnect" ? 499 : 502);
+      expect(calls).toEqual([300, "fetch", 10]);
+      expect(upstream).toHaveBeenCalledTimes(1);
+      expect(upstream.mock.calls[0]?.[1]).toMatchObject({ timeout: 300_000, signal: req.signal });
+    } finally {
+      upstream.mockRestore();
+      telemetry.mockRestore();
+    }
+  });
+
+  test("POST raises only after the client body ends", async () => {
+    const telemetry = spyOn(services, "publishRequestTelemetry").mockImplementation(() => {});
+    const started = Promise.withResolvers<void>();
+    const bodyController = Promise.withResolvers<ReadableStreamDefaultController<Uint8Array>>();
+    const events: (string | number)[] = [];
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("request body"));
+        bodyController.resolve(controller);
+      },
+    });
+    const upstream = spyOn(globalThis, "fetch").mockImplementation(
+      Object.assign(
+        async (_url: RequestInfo | URL, init?: BunFetchRequestInit) => {
+          expect(events).toEqual([]);
+          expect(init?.timeout).toBe(300_000);
+          if (!(init?.body instanceof ReadableStream)) throw new Error("Missing forwarded body");
+          events.push("fetch");
+          started.resolve();
+          expect(await new Response(init.body).text()).toBe("request body");
+          events.push("upstream headers");
+          return new Response("ok");
+        },
+        { preconnect: fetch.preconnect },
+      ),
+    );
+    try {
+      const response = proxyRequest(
+        new Request("http://cloud.test/slow", { method: "POST", body }),
+        buildRouteTable([{ prefix: "/", appId: "timeout-body", baseUrl: "http://upstream" }]),
+        createProxyStats(),
+        () => {},
+        null,
+        (_req, seconds) => events.push(seconds),
+      );
+      await started.promise;
+      expect(events).toEqual(["fetch"]);
+      events.push("body end");
+      (await bodyController.promise).close();
+      expect((await response).status).toBe(200);
+      expect(events).toEqual(["fetch", "body end", 300, "upstream headers", 10]);
+    } finally {
+      upstream.mockRestore();
+      telemetry.mockRestore();
+    }
+  });
+
+  test("a body ending after response headers cannot raise the timeout again", async () => {
+    const telemetry = spyOn(services, "publishRequestTelemetry").mockImplementation(() => {});
+    const bodyController = Promise.withResolvers<ReadableStreamDefaultController<Uint8Array>>();
+    const forwarded = Promise.withResolvers<ReadableStream>();
+    const events: (string | number)[] = [];
+    const body = new ReadableStream<Uint8Array>({ start: (controller) => bodyController.resolve(controller) });
+    const upstream = spyOn(globalThis, "fetch").mockImplementation(
+      Object.assign(
+        async (_url: RequestInfo | URL, init?: BunFetchRequestInit) => {
+          expect(init?.timeout).toBe(300_000);
+          if (!(init?.body instanceof ReadableStream)) throw new Error("Missing forwarded body");
+          forwarded.resolve(init.body);
+          events.push("upstream headers");
+          return new Response("early answer");
+        },
+        { preconnect: fetch.preconnect },
+      ),
+    );
+    try {
+      const response = await proxyRequest(
+        new Request("http://cloud.test/slow", { method: "POST", body }),
+        buildRouteTable([{ prefix: "/", appId: "timeout-late-body", baseUrl: "http://upstream" }]),
+        createProxyStats(),
+        () => {},
+        null,
+        (_req, seconds) => events.push(seconds),
+      );
+      expect(response.status).toBe(200);
+      expect(events).toEqual(["upstream headers", 10]);
+      events.push("body end");
+      (await bodyController.promise).close();
+      expect(await new Response(await forwarded.promise).text()).toBe("");
+      expect(events).toEqual(["upstream headers", 10, "body end"]);
+    } finally {
+      upstream.mockRestore();
+      telemetry.mockRestore();
+    }
+  });
+});
 
 describe("public share telemetry", () => {
   const token = "abcdefghijklmnopqrstuvwxyzABCDEF";
@@ -14,6 +180,8 @@ describe("public share telemetry", () => {
         new Request(`http://cloud.test//share/demo/${token}/?secret=query-secret`),
         buildRouteTable([]),
         createProxyStats(),
+        () => {},
+        null,
         () => {},
       );
       expect(response.status).toBe(502);
@@ -37,6 +205,8 @@ describe("public share telemetry", () => {
         buildRouteTable([{ prefix: "/share/demo", appId: "share-failure", baseUrl: "http://upstream" }]),
         createProxyStats(),
         (message, metadata) => entries.push({ message, metadata }),
+        null,
+        () => {},
       );
       expect(response.status).toBe(502);
       expect(entries).toHaveLength(1);
@@ -62,6 +232,8 @@ describe("public share telemetry", () => {
         new Request(`http://cloud.test/share/demo/${token}`),
         buildRouteTable([{ prefix: "/share/demo", appId: "demo", baseUrl: "http://upstream" }]),
         createProxyStats(),
+        () => {},
+        null,
         () => {},
       );
       expect(response.status).toBe(200);
@@ -97,6 +269,8 @@ describe("bearer-token fallback telemetry", () => {
         buildRouteTable([{ prefix, appId: `failure-${prefix}`, baseUrl: "http://upstream" }]),
         createProxyStats(),
         (message, metadata) => entries.push({ message, metadata }),
+        null,
+        () => {},
       );
       expect(response.status).toBe(502);
       expect(entries).toHaveLength(1);
@@ -118,6 +292,8 @@ describe("bearer-token fallback telemetry", () => {
         new Request(`http://cloud.test${path}?secret=query-secret`),
         buildRouteTable([]),
         createProxyStats(),
+        () => {},
+        null,
         () => {},
       );
       expect(response.status).toBe(502);
@@ -144,6 +320,8 @@ describe("bearer-token fallback telemetry", () => {
         buildRouteTable([{ prefix: "/api/venue", appId, baseUrl: "http://upstream" }]),
         createProxyStats(),
         (_, metadata) => entries.push(metadata),
+        null,
+        () => {},
       );
       expect(entries).toHaveLength(1);
       expect(entries[0]).toEqual({ appId, path: "/api/venue/calendar/:token", error: "TypeError" });
@@ -168,6 +346,8 @@ describe("bearer-token fallback telemetry", () => {
         buildRouteTable([{ prefix: "/api/venue", appId, baseUrl: "http://upstream" }]),
         createProxyStats(),
         (_, metadata) => entries.push(metadata),
+        null,
+        () => {},
       );
       expect(telemetry).toHaveBeenCalledWith(expect.objectContaining({ pathTemplate: "(other)" }));
       expect(entries).toHaveLength(1);
@@ -205,8 +385,8 @@ describe("client cancellation", () => {
     const table = buildRouteTable([{ prefix: "/share/demo", appId: "cancelled", baseUrl: `http://127.0.0.1:${upstream.port}` }]);
     const gateway = Bun.serve({
       port: 0,
-      fetch: async (req) => {
-        const response = await proxyRequest(req, table, stats, (message) => entries.push(message));
+      fetch: async (req, server) => {
+        const response = await proxyRequest(req, table, stats, (message) => entries.push(message), null, server.timeout.bind(server));
         finished.resolve(response);
         return response;
       },
@@ -275,7 +455,10 @@ describe("client cancellation", () => {
     const table = buildRouteTable([{ prefix: "/", appId: "streamed", baseUrl: `http://127.0.0.1:${upstream.port}` }]);
     const stats = createProxyStats();
     const entries: string[] = [];
-    const gateway = Bun.serve({ port: 0, fetch: (req) => proxyRequest(req, table, stats, (message) => entries.push(message)) });
+    const gateway = Bun.serve({
+      port: 0,
+      fetch: (req, server) => proxyRequest(req, table, stats, (message) => entries.push(message), null, server.timeout.bind(server)),
+    });
     try {
       const response = await fetch(`http://127.0.0.1:${gateway.port}/stream`, { signal: AbortSignal.timeout(5_000) });
       const signal = await started.promise;
@@ -321,7 +504,14 @@ describe("client address headers", () => {
         Forwarded: "for=198.51.100.7",
       };
       const proxy = (client: Parameters<typeof proxyRequest>[4]) =>
-        proxyRequest(new Request("http://cloud.example/", { headers: spoofed }), table, createProxyStats(), () => {}, client);
+        proxyRequest(
+          new Request("http://cloud.example/", { headers: spoofed }),
+          table,
+          createProxyStats(),
+          () => {},
+          client,
+          () => {},
+        );
       await proxy({ address: "203.0.113.10", forwardedFor: "203.0.113.10, 172.18.0.2" });
       await proxy(null);
       expect(seen).toEqual([
@@ -348,7 +538,15 @@ describe("service worker scope", () => {
         { prefix: "/", appId: "core", baseUrl },
         { prefix: "/pwa/spaces", appId: "spaces", baseUrl },
       ]);
-      const proxy = (path: string) => proxyRequest(new Request(`http://cloud.example${path}`), table, createProxyStats(), () => {});
+      const proxy = (path: string) =>
+        proxyRequest(
+          new Request(`http://cloud.example${path}`),
+          table,
+          createProxyStats(),
+          () => {},
+          null,
+          () => {},
+        );
       expect((await proxy("/service-worker.js")).headers.get("Service-Worker-Allowed")).toBe("/");
       const part = await proxy("/pwa/spaces/sw.js");
       expect(part.headers.get("X-Gateway-App")).toBe("spaces");
@@ -382,6 +580,8 @@ describe("service worker scope", () => {
           new Request(`http://cloud.example${path}`, { headers: worker ? { "Service-Worker": "script" } : {} }),
           table,
           createProxyStats(),
+          () => {},
+          null,
           () => {},
         );
       expect((await proxy("/pwa/sw.js")).status).toBe(200);
@@ -425,7 +625,10 @@ describe("byte ranges", () => {
     });
     const table = buildRouteTable([{ prefix: "/", appId: "spaces", baseUrl: `http://127.0.0.1:${upstream.port}` }]);
     // The gateway answers on the wire as in production, so the browser sees what Bun.serve sends.
-    const gateway = Bun.serve({ port: 0, fetch: (req) => proxyRequest(req, table, createProxyStats(), () => {}, null) });
+    const gateway = Bun.serve({
+      port: 0,
+      fetch: (req, server) => proxyRequest(req, table, createProxyStats(), () => {}, null, server.timeout.bind(server)),
+    });
     try {
       const response = await fetch(`http://127.0.0.1:${gateway.port}/api/spaces/S/items/I/attachments/A/content`, {
         headers: { Range: "bytes=1000-1999" },
@@ -486,7 +689,11 @@ describe("upstream origin", () => {
       },
     });
     const table = buildRouteTable([{ prefix: "/", appId: "core", baseUrl: `http://127.0.0.1:${app.port}` }]);
-    const gateway = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: (req) => proxyRequest(req, table, createProxyStats(), () => {}) });
+    const gateway = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: (req, server) => proxyRequest(req, table, createProxyStats(), () => {}, null, server.timeout.bind(server)),
+    });
     const other = `127.0.0.1:${elsewhere.port}`;
     try {
       const cases: [sent: string, forwarded: string][] = [

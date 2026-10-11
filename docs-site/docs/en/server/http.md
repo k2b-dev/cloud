@@ -5,7 +5,7 @@ section: Server
 order: 220
 description: Validate a Hono endpoint, publish its contract, and use its typed browser client.
 tags: [server, hono, validation, clients]
-updated: 2026-09-29
+updated: 2026-10-11
 ---
 
 # Build typed HTTP APIs
@@ -161,6 +161,25 @@ The route:
 
 Authorization for a particular item belongs in the service. See
 [Resource authorization](/en/docs/identity/authorization).
+
+## Answer slow requests
+
+Cloud app servers and the gateway close connections after 10 seconds without
+traffic. After reading and validating the body, a handler that needs more time
+can call `setRequestTimeout(c, seconds)` from `@k2b/cloud/server`. Each call
+restarts the idle timer. Only integer values from 1 to 300 are accepted; other
+values throw `RangeError`. The 300-second maximum matches the gateway's
+upstream idle limit while waiting for response headers.
+
+Call `setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS)` (10) in `finally`
+once the handler starts answering, including error responses. Bun retains a
+raised timeout on the keep-alive socket after the response, so every raise
+must be restored. The helper and both constants, `REQUEST_IDLE_TIMEOUT_SECONDS`
+and `REQUEST_IDLE_TIMEOUT_MAX_SECONDS` (300), are public server exports.
+
+The helper does nothing outside Bun's HTTP server, such as in `app.request()`
+tests. Prefer streaming with regular traffic or a background job for longer
+work.
 
 ## Export the final router type
 
