@@ -20,7 +20,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 setDefaultTimeout(30_000);
 
 const { Hono } = await import("hono");
-const { AppWorkspace, dropdownPosition } = await import("@k2b/ui");
+const { AppWorkspace, Button, dropdownPosition } = await import("@k2b/ui");
 const { defineApp } = await import("../_internal/define-app");
 const { person } = await import("../_internal/define-app.test-fixture");
 const railSnapshot = await import("../services/rail-snapshot");
@@ -105,6 +105,37 @@ const workspace = (selected: string) =>
     },
   });
 
+/**
+ * A task-list page: a long list in Main and an open detail that the server renders with its own close
+ * control, as Contacts and Capabilities do. Invented content.
+ */
+const listWorkspace = () =>
+  createComponent(AppWorkspace, {
+    class: "min-h-0 flex-1",
+    get children() {
+      return createComponent(AppWorkspace.Content, {
+        get children() {
+          return [
+            createComponent(AppWorkspace.Main, {
+              get children() {
+                return Array.from({ length: 80 }, (_, index) =>
+                  createComponent(Button, { class: "list-row", align: "start", children: `Task ${index + 1}` }),
+                );
+              },
+            }),
+            createComponent(AppWorkspace.Detail, {
+              id: "task-detail",
+              open: true,
+              get children() {
+                return createComponent(Button, { "data-workspace-detail-close": "", children: "Close task" });
+              },
+            }),
+          ];
+        },
+      });
+    },
+  });
+
 const server = new Hono()
   .get(
     "/app/mail/:folder",
@@ -119,6 +150,19 @@ const server = new Hono()
     ...probe.ssr((c) => {
       const folder = c.req.param("folder") ?? "inbox";
       const title = folder[0]!.toUpperCase() + folder.slice(1);
+      // `?list=` renders the task list: `scroll` in a page that grows with its content, `page` in a full page.
+      const list = c.req.query("list");
+      if (list)
+        return () =>
+          createComponent(Layout, {
+            c: c as unknown as LayoutContextArg,
+            fullWidth: true,
+            fullPage: list === "page",
+            title: [{ title: "Home", href: "/" }, { title: "Tasks" }],
+            get children() {
+              return listWorkspace();
+            },
+          });
       return () =>
         createComponent(Layout, {
           c: c as unknown as LayoutContextArg,
@@ -371,15 +415,15 @@ describe("signed-in shell", () => {
             expect(shape.workspace?.radius).not.toBe("0px");
             expect(shape.workspace?.shadow).not.toBe("none");
           }
-          // The sidebar and the main area draw no lines; the list/reader and
-          // main/detail separators are the ones origin/main already draws.
+          // Sidebar and Main draw no lines. List/reader panes keep their
+          // separator; the raised detail floats without one.
           expect(shape.sidebar?.borders).toEqual(none);
           expect(shape.main?.borders).toEqual(none);
           expect(shape.pane?.borders).toEqual([0, 1, 0, 0]);
-          expect(shape.detail?.borders).toEqual([0, 0, 0, 1]);
-          // List and reader stay side by side, the detail beside them.
+          expect(shape.detail?.borders).toEqual([0, 0, 0, 0]);
+          // List and reader stay side by side; the detail floats inside the content.
           expect(shape.pane!.box.right).toBeLessThanOrEqual(shape.detail!.box.left);
-          expect(shape.pane!.box.top).toBe(shape.detail!.box.top);
+          expect(shape.detail!.box.top).toBe(shape.pane!.box.top + 8);
           if (compact(device)) {
             expect(shape.bar?.display).toBe("flex");
             expect(shape.bar?.borders).toEqual(none);
@@ -636,6 +680,46 @@ describe("phone header", () => {
       } finally {
         await context.close();
       }
+    }
+  });
+});
+
+describe("workspace detail", () => {
+  // Pages that are not `fullPage` grow with their content on a phone, so the sheet must not hang from the
+  // bottom of the content area: it belongs to the window.
+  for (const list of ["scroll", "page"] as const) {
+    test(`phone, ${list === "scroll" ? "a page that grows with its list" : "a full page"}: the half sheet sits at the window's bottom edge and the last row scrolls above it`, async () => {
+      const { context, page } = await open(phone, `/app/mail/inbox?list=${list}`);
+      try {
+        const sheet = await page
+          .locator(".k2b-app-workspace__detail")
+          .evaluate((element) => element.getBoundingClientRect().toJSON() as DOMRect);
+        expect(Math.round(sheet.bottom)).toBe(phone.height);
+        expect(sheet.height).toBeCloseTo(phone.height * 0.55, 0);
+        const last = await page.evaluate(() => {
+          const main = document.querySelector(".k2b-app-workspace__main")!;
+          main.scrollTop = main.scrollHeight;
+          window.scrollTo(0, document.scrollingElement!.scrollHeight);
+          return [...document.querySelectorAll(".list-row")].at(-1)!.getBoundingClientRect().bottom;
+        });
+        expect(last).toBeLessThanOrEqual(sheet.top);
+      } finally {
+        await context.close();
+      }
+    });
+  }
+
+  test("iPad portrait: a server-rendered panel with its own close control overlays Main as a drawer", async () => {
+    const { context, page } = await open(ipadPortrait, "/app/mail/inbox?list=page");
+    try {
+      const widths = await page.evaluate(() =>
+        [".k2b-app-workspace__content", ".k2b-app-workspace__main"].map((selector) =>
+          Math.round(document.querySelector(selector)!.getBoundingClientRect().width),
+        ),
+      );
+      expect(widths[1]).toBe(widths[0]!);
+    } finally {
+      await context.close();
     }
   });
 });

@@ -80,6 +80,7 @@ register("code_restore", CODE_SOURCE_TOOLS.code_restore.input, artifactCodeHandl
 register("code_update", CODE_SOURCE_TOOLS.code_update.input, artifactCodeHandlers.code_update);
 register("code_create", CODE_SOURCE_TOOLS.code_create.input, artifactCodeHandlers.code_create);
 register("code_write", CODE_SOURCE_TOOLS.code_write.input, artifactCodeHandlers.code_write);
+register("code_import", CODE_SOURCE_TOOLS.code_import.input, artifactCodeHandlers.code_import);
 register("code_remove", CODE_SOURCE_TOOLS.code_remove.input, artifactCodeHandlers.code_remove);
 
 for (const name of ["code_run", "code_action", "code_inspect", "code_stop", "code_export", "code_present", "code_check"] as const) {

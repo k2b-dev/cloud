@@ -103,7 +103,7 @@ describe("DetailPanel", () => {
     const bodyRule = css.match(/\.k2b-ui \.k2b-detail-panel__body \{([^}]*)\}/)?.[1];
     const workspaceDetailRule = layoutCss.match(/\.k2b-ui \.k2b-app-workspace__detail \{([^}]*)\}/)?.[1];
 
-    expect(workspaceDetailRule).toContain("--k2b-detail-panel-scroll-inset: 0.75rem");
+    expect(workspaceDetailRule).toContain("--k2b-detail-panel-scroll-inset: 1rem");
     expect(panelRule).toContain("width: calc(100% + var(--k2b-detail-panel-scroll-inset, 0rem))");
     expect(panelRule).toContain("margin-inline-end: calc(-1 * var(--k2b-detail-panel-scroll-inset, 0rem))");
     expect(headerRule).toContain("padding-inline-end: var(--k2b-detail-panel-scroll-inset, 0rem)");

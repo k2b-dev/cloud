@@ -514,6 +514,20 @@ describe("incoming automation contracts", () => {
       startIncomingAutomationBackfillInputSchema.safeParse({
         operationId: "6962b64e-6de0-4e73-838b-f067d805f46e",
         expectedRevision: 2,
+        retryFailed: true,
+      }).success,
+    ).toBe(true);
+    expect(
+      startIncomingAutomationBackfillInputSchema.safeParse({
+        operationId: "6962b64e-6de0-4e73-838b-f067d805f46e",
+        expectedRevision: 2,
+        retryFailed: "true",
+      }).success,
+    ).toBe(false);
+    expect(
+      startIncomingAutomationBackfillInputSchema.safeParse({
+        operationId: "6962b64e-6de0-4e73-838b-f067d805f46e",
+        expectedRevision: 2,
       }).success,
     ).toBe(true);
     expect(

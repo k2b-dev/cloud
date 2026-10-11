@@ -80,6 +80,8 @@ New incoming automations start inactive. A flow without AI steps can preview and
 - One backfill hands at most 100 messages to the automation. If more messages match, it ends as **Limit reached** and shows how many are left. Run it again to continue with the next messages.
 - A backfill survives restarts. Mail retries a failed message without stopping unrelated workflow runs.
 - A repeated backfill skips messages already accepted for the same unchangeable version.
+- As a mailbox administrator, you can re-run messages whose last run of the same automation version failed or was canceled: `cld mail automation backfill start <automation-id> --revision <revision> --retry-failed --yes`.
+- A retry runs the whole flow again. Flows that add internal comments, create reply drafts, or create Spaces events cannot be retried, because a second run would create them again. After a retry, the automation menu shows **Retry failed messages**. Use it to continue with the next failed messages.
 - **Completed** means that Mail handed every matching message to the automation. The actions themselves then run in the workflow runtime and appear under **Activity**.
 - Progress counts only grow while a backfill runs. The automation menu shows the progress and lets you cancel the backfill or run it again.
 

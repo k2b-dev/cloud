@@ -819,10 +819,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     // A new App starts as an index.html interface; static findings of its JavaScript come back on write.
     expect((await artifacts.get(id, owner)).source.entry).toBe("index.html");
     const write = async (path: string, content: string, entry?: string) =>
-      artifactCodeHandlers.code_write(
-        { id, expectedRevision: (await artifacts.get(id, owner)).revision, files: [{ path, content }], entry },
-        context,
-      );
+      artifactCodeHandlers.code_write({ id, expectedRevision: (await artifacts.get(id, owner)).revision, path, content, entry }, context);
     const html = await write("app.js", 'alert("hi"); import x from "lodash";');
     if (!html.ok) throw new Error("Write failed");
     expect(JSON.stringify(html.data.data)).toContain("alert, confirm and prompt do not work");
@@ -839,22 +836,29 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     });
     expect((await artifacts.get(id, owner)).source.files).toHaveLength(3);
     const expectedRevision = (await artifacts.get(id, owner)).revision;
-    const batch = await artifactCodeHandlers.code_write(
-      {
-        id,
-        expectedRevision,
-        files: [
-          { path: "a.ts", content: "export const a=1;" },
-          { path: "b.ts", content: "export const b=2;" },
-        ],
+    const content = 'export const a = "first";\nexport const next = "second";\n';
+    const first = await artifactCodeHandlers.code_write({ id, expectedRevision, path: "a.ts", content }, context);
+    expect(first).toMatchObject({
+      ok: true,
+      data: {
+        data: { revision: expectedRevision + 1, files: expect.arrayContaining([{ path: "a.ts", lines: 2, length: content.length }]) },
       },
+    });
+    if (!first.ok) throw new Error("Write failed");
+    expect((await artifacts.get(id, owner)).source.files.find((file) => file.path === "a.ts")?.content).toBe(content);
+    const second = await artifactCodeHandlers.code_write(
+      { id, expectedRevision: first.data.data.revision, path: "b.ts", content: "export const b=2;" },
       context,
     );
-    expect(batch).toMatchObject({ ok: true });
-    expect((await artifacts.get(id, owner)).revision).toBe(expectedRevision + 1);
-    expect(
-      await artifactCodeHandlers.code_write({ id, expectedRevision, files: [{ path: "a.ts", content: "stale" }] }, context),
-    ).toMatchObject({ ok: false, error: { code: "CONFLICT" } });
+    expect(second).toMatchObject({
+      ok: true,
+      data: { data: { revision: expectedRevision + 2, files: expect.arrayContaining([{ path: "b.ts", lines: 1, length: 17 }]) } },
+    });
+    expect((await artifacts.get(id, owner)).revision).toBe(expectedRevision + 2);
+    expect(await artifactCodeHandlers.code_write({ id, expectedRevision, path: "a.ts", content: "stale" }, context)).toMatchObject({
+      ok: false,
+      error: { code: "CONFLICT" },
+    });
     expect((await artifacts.get(id, owner)).source.files).toHaveLength(5);
     await write("main.ts", "export default !!!");
     expect(await artifactCodeHandlers.code_read({ id, path: "main.ts", offset: 0 }, context)).toMatchObject({
@@ -862,10 +866,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       data: { data: { content: "export default !!!", complete: true } },
     });
     expect(
-      await artifactCodeHandlers.code_write(
-        { id, expectedRevision: 1, files: [{ path: "main.ts", content: "x" }] },
-        { ...context, ...stranger },
-      ),
+      await artifactCodeHandlers.code_write({ id, expectedRevision: 1, path: "main.ts", content: "x" }, { ...context, ...stranger }),
     ).toMatchObject({ ok: false, error: { code: "ACCESS_DENIED" } });
     expect(await artifactCodeHandlers.code_remove({ id, path: "main.ts" }, context)).toMatchObject({
       ok: true,
@@ -3129,22 +3130,38 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       const file = z.object({ path: z.string(), version: z.number() }).parse("result" in exported ? exported.result : null);
       const resource = await artifacts.create({ title: "Imported data", source }, owner);
       const fileReference = (await studioFiles.read({ scope: "chat", id: context.conversationId, path: file.path }, context))!.reference;
-      const written = await artifactCodeHandlers.code_write(
+      const script = await artifactCodeHandlers.code_write(
         {
           id: resource.id,
           expectedRevision: 1,
           entry: "main.ts",
-          files: [
-            { path: "data.json", fromFile: fileReference },
-            {
-              path: "main.ts",
-              content: 'import data from "./data.json"; export default()=>({rows:data.length,first:data[0],last:data.at(-1)});',
-            },
-          ],
+          path: "main.ts",
+          content: 'import data from "./data.json"; export default()=>({rows:data.length,first:data[0],last:data.at(-1)});',
         },
         context,
       );
-      expect(written.ok).toBe(true);
+      if (!script.ok) throw new Error("Write failed");
+      const importInput = {
+        id: resource.id,
+        expectedRevision: script.data.data.revision,
+        files: [{ path: "data.json", fromFile: fileReference }],
+      };
+      const preview = await artifactCodeHandlers.code_import(importInput, { ...context, review: true });
+      expect(preview).toMatchObject({ ok: true, data: { data: { message: expect.stringContaining("data.json") } } });
+      expect((await artifacts.get(resource.id, owner)).revision).toBe(2);
+      const written = await artifactCodeHandlers.code_import(importInput, context);
+      expect(written).toMatchObject({
+        ok: true,
+        data: {
+          data: {
+            saved: true,
+            revision: 3,
+            imported: importInput.files,
+            files: expect.arrayContaining([{ path: "data.json", lines: 1, length: JSON.stringify(generated).length }]),
+            diagnostics: [],
+          },
+        },
+      });
       expect((await artifacts.get(resource.id, owner)).source.files.find((file) => file.path === "data.json")?.content).toBe(
         JSON.stringify(generated),
       );
@@ -3153,20 +3170,20 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         result: {
           status: "ready",
           id: resource.id,
-          revision: 2,
+          revision: 3,
           output: JSON.stringify({ rows: 1000, first: generated[0], last: generated.at(-1) }),
         },
       });
-      const stale = await artifactCodeHandlers.code_write(
+      const stale = await artifactCodeHandlers.code_import(
         {
           id: resource.id,
-          expectedRevision: 2,
+          expectedRevision: 3,
           files: [{ path: "data.json", fromFile: { scope: "chat", id: context.conversationId, path: file.path, version: "2" } }],
         },
         context,
       );
       expect(stale.ok).toBe(false);
-      expect((await artifacts.get(resource.id, owner)).revision).toBe(2);
+      expect((await artifacts.get(resource.id, owner)).revision).toBe(3);
       const lookup = spyOn(aiConversations, "getConversationByShortId").mockImplementation(async (request) =>
         aiConversations.getConversation({ conversationId, ownerUserId: request.ownerUserId }),
       );

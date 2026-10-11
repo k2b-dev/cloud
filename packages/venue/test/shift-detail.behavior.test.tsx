@@ -256,7 +256,10 @@ describe("Venue shift detail", () => {
       expect(page.detail().hidden).toBe(false);
       expect(page.detail().textContent).toContain("Sam Sample");
       expect(page.detail().textContent).toContain("2 of 3–4 staffed");
-      expect(page.detail().querySelectorAll("button:not([aria-label='Close shift details'])")).toHaveLength(0);
+      // The phone sheet's grabber belongs to the panel, not to the shift.
+      expect(
+        page.detail().querySelectorAll("button:not([aria-label='Close shift details']):not(.k2b-app-workspace__detail-grabber)"),
+      ).toHaveLength(0);
       expect(page.sheet()).toBeNull();
       dispose();
 

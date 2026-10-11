@@ -1773,29 +1773,42 @@ export default function MailIncomingAutomationSettings(props: {
     onError: (error) => prompts.error(error.message),
   });
 
-  const startBackfill = mutation.create<IncomingAutomationBackfill | null, IncomingAutomation, { operationId: string }>({
+  const startBackfill = mutation.create<
+    IncomingAutomationBackfill | null,
+    { automation: IncomingAutomation; retryFailed: boolean },
+    { operationId: string }
+  >({
     onBefore: () => ({ operationId: crypto.randomUUID() }),
-    mutation: async (automation, { abortSignal, operationId }) => {
+    mutation: async ({ automation, retryFailed }, { abortSignal, operationId }) => {
       if (hasAi(automation.steps)) throw new Error(messages().aiFutureOnly);
-      const previewResponse = await apiClient.mailboxes[":mailboxId"]["incoming-automations"].preview.$post(
-        { param: { mailboxId: props.mailboxId }, json: { scope: automation.scope } },
-        { init: { signal: abortSignal } },
-      );
-      if (!previewResponse.ok) throw new Error(await readApiError(previewResponse, messages().couldNotPreviewExisting));
-      const preview = await previewResponse.json();
-      if (preview.messageCount === 0) {
-        toast(messages().noExistingMatches, { title: messages().nothingToBackfill });
-        return null;
+      if (retryFailed) {
+        // A retry takes only messages whose last run failed or was canceled, so the scope preview count does not apply.
+        const confirmed = await prompts.confirm(messages().retryFailedConfirmation, {
+          title: messages().retryFailedTitle,
+          confirmText: messages().startRetry,
+        });
+        if (!confirmed || abortSignal.aborted) return null;
+      } else {
+        const previewResponse = await apiClient.mailboxes[":mailboxId"]["incoming-automations"].preview.$post(
+          { param: { mailboxId: props.mailboxId }, json: { scope: automation.scope } },
+          { init: { signal: abortSignal } },
+        );
+        if (!previewResponse.ok) throw new Error(await readApiError(previewResponse, messages().couldNotPreviewExisting));
+        const preview = await previewResponse.json();
+        if (preview.messageCount === 0) {
+          toast(messages().noExistingMatches, { title: messages().nothingToBackfill });
+          return null;
+        }
+        const confirmed = await prompts.confirm(messages().backfillConfirmation({ count: preview.messageCount }), {
+          title: messages().applyExistingMail,
+          confirmText: messages().startBackfill,
+        });
+        if (!confirmed || abortSignal.aborted) return null;
       }
-      const confirmed = await prompts.confirm(messages().backfillConfirmation({ count: preview.messageCount }), {
-        title: messages().applyExistingMail,
-        confirmText: messages().startBackfill,
-      });
-      if (!confirmed || abortSignal.aborted) return null;
       const response = await apiClient.mailboxes[":mailboxId"]["incoming-automations"][":automationId"].backfills.$post(
         {
           param: { mailboxId: props.mailboxId, automationId: automation.id },
-          json: { operationId, expectedRevision: automation.revision },
+          json: { operationId, expectedRevision: automation.revision, ...(retryFailed ? { retryFailed: true } : {}) },
         },
         { init: { signal: abortSignal } },
       );
@@ -1929,25 +1942,32 @@ export default function MailIncomingAutomationSettings(props: {
             if (!backfill) return <span class="text-dimmed">{messages().notRun}</span>;
             const accepted = backfill.alreadyAcceptedCount + backfill.newlyAcceptedCount;
             if (activeBackfillStates.has(backfill.state)) {
+              const progress = { accepted: formatNumber(accepted), total: formatNumber(backfill.candidateCount) };
               return (
                 <StatusBadge
                   tone="running"
-                  label={messages().backfillProgress({ accepted: formatNumber(accepted), total: formatNumber(backfill.candidateCount) })}
+                  label={backfill.retryFailed ? messages().retryProgress(progress) : messages().backfillProgress(progress)}
                 />
               );
             }
-            if (backfill.state === "completed")
-              return <StatusBadge tone="ok" label={messages().completedNew({ count: formatNumber(backfill.newlyAcceptedCount) })} />;
-            if (backfill.state === "limited")
+            if (backfill.state === "completed") {
+              const count = formatNumber(backfill.newlyAcceptedCount);
+              return (
+                <StatusBadge
+                  tone="ok"
+                  label={backfill.retryFailed ? messages().retryCompleted({ count }) : messages().completedNew({ count })}
+                />
+              );
+            }
+            if (backfill.state === "limited") {
+              const progress = { count: formatNumber(backfill.newlyAcceptedCount), remaining: formatNumber(backfill.remainingCount) };
               return (
                 <StatusBadge
                   tone="warning"
-                  label={messages().limitedNew({
-                    count: formatNumber(backfill.newlyAcceptedCount),
-                    remaining: formatNumber(backfill.remainingCount),
-                  })}
+                  label={backfill.retryFailed ? messages().retryLimited(progress) : messages().limitedNew(progress)}
                 />
               );
+            }
             if (backfill.state === "failed") return <StatusBadge tone="warning" label={messages().failed} />;
             return <StatusBadge tone="neutral" label={messages().canceled} />;
           }
@@ -1976,11 +1996,19 @@ export default function MailIncomingAutomationSettings(props: {
                     : []),
                   ...(row.enabled && !hasAi(row.steps) && !active
                     ? [
-                        {
-                          label: backfill || row.latestBackfillOperationId ? messages().runBackfillAgain : messages().applyToExistingMail,
-                          icon: "ti ti-database-import",
-                          action: () => startBackfill.mutate(row),
-                        },
+                        // Continue a retry with another retry: a normal backfill skips messages an earlier backfill handed over, even failed ones.
+                        backfill?.retryFailed
+                          ? {
+                              label: messages().retryFailedMessages,
+                              icon: "ti ti-refresh",
+                              action: () => startBackfill.mutate({ automation: row, retryFailed: true }),
+                            }
+                          : {
+                              label:
+                                backfill || row.latestBackfillOperationId ? messages().runBackfillAgain : messages().applyToExistingMail,
+                              icon: "ti ti-database-import",
+                              action: () => startBackfill.mutate({ automation: row, retryFailed: false }),
+                            },
                       ]
                     : []),
                   ...(backfill && active

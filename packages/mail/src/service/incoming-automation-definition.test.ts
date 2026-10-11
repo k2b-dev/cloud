@@ -8,11 +8,63 @@ import {
   buildIncomingAutomationWorkflowSource,
   incomingAutomationBudget,
   incomingAutomationHasAi,
+  incomingAutomationHasNonRepeatableSteps,
   resolveIncomingAutomationReferences,
 } from "./incoming-automation-definition";
 
 const classifyId = "00000000-0000-4000-8000-000000000001";
 describe("incoming automation workflow compiler", () => {
+  test("detects steps that create something again in a new run, including either if branch", () => {
+    const steps: MailAutomationStep[] = [
+      { id: crypto.randomUUID(), kind: "add_comment", body: { kind: "custom", value: "Filed by rule" } },
+      {
+        id: crypto.randomUUID(),
+        kind: "create_reply_draft",
+        body: { kind: "custom", value: "Thanks for your message." },
+        senderIdentityId: crypto.randomUUID(),
+      },
+      {
+        id: crypto.randomUUID(),
+        kind: "create_space_event",
+        spaceId: "Space1",
+        columnId: "Col001",
+        event: {
+          kind: "custom",
+          title: "Meeting",
+          startsAt: "2026-10-11T10:00:00Z",
+          endsAt: "2026-10-11T11:00:00Z",
+          allDay: false,
+        },
+      },
+    ];
+    for (const step of steps) {
+      expect(incomingAutomationHasNonRepeatableSteps([step])).toBe(true);
+      for (const branch of ["then", "else"] as const) {
+        const nested: MailAutomationStep[] = [
+          {
+            id: crypto.randomUUID(),
+            kind: "if",
+            condition: { sourceStepId: classifyId, operator: "equals", value: "Important" },
+            then: branch === "then" ? [step] : [],
+            else: branch === "else" ? [step] : [],
+          },
+        ];
+        expect(incomingAutomationHasNonRepeatableSteps(nested)).toBe(true);
+      }
+    }
+  });
+
+  test("allows steps that converge when run again", () => {
+    const steps: MailAutomationStep[] = [
+      { id: crypto.randomUUID(), kind: "mail_action", action: { kind: "set_status", status: "needs_action" } },
+      { id: crypto.randomUUID(), kind: "mail_action", action: { kind: "move_to_folder", folderId: "Arch01" } },
+      { id: crypto.randomUUID(), kind: "mail_action", action: { kind: "add_keyword", keyword: "routine" } },
+      { id: crypto.randomUUID(), kind: "set_summary", body: { kind: "custom", value: "Waiting for support review." } },
+      { id: crypto.randomUUID(), kind: "link_space_item", itemId: "Item01" },
+    ];
+    expect(incomingAutomationHasNonRepeatableSteps(steps)).toBe(false);
+  });
+
   test("compiles normal output references and conditions deterministically", async () => {
     const textId = "00000000-0000-4000-8000-000000000017";
     const steps: MailAutomationStep[] = [

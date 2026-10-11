@@ -9,6 +9,7 @@ import { readResponseError } from "../../../lib/response";
 import { useSpaceMessages } from "../../messages";
 import {
   publishSpacesDetailState,
+  requestSpacesRouteNavigation,
   SPACES_DETAIL_NAVIGATION_EVENT,
   type SpacesDetailNavigation,
   shouldInvalidateSpacesDetail,
@@ -296,7 +297,12 @@ export default function ItemDetailRoute(props: Props) {
     `spaces-detail-${props.spaceId}-${detail()?.item.id ?? "empty"}-${detail()?.recurringContext?.recurrenceId ?? "series"}`;
 
   return (
-    <AppWorkspace.Detail id="space-detail-panel" open={hasDetailSelection()} viewTransitionName="space-detail-panel-shell">
+    <AppWorkspace.Detail
+      id="space-detail-panel"
+      open={hasDetailSelection()}
+      onClose={() => requestSpacesRouteNavigation(detailBaseHref(source()), { scroll: "preserve" })}
+      viewTransitionName="space-detail-panel-shell"
+    >
       <div class="h-full min-h-0 flex-1">
         <Show
           when={detail()}

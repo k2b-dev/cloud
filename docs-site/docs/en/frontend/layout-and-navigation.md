@@ -47,6 +47,16 @@ A regular page, without `fullWidth` or `fullPage`, owns its inset: from 768 px
 no header sits above a signed-in page, so give the content its own padding, as
 `AppOverview` does.
 
+`AppWorkspace.Detail` floats inside the application content. Below 768 px it
+is a half or full sheet at the window’s bottom edge; from 768 px Main makes
+room for it. A closable panel on a coarse pointer from 768 to 1023 px overlays
+Main as a drawer. Pass its existing close action as `onClose` in a hydrated
+component, or mark a server-rendered panel’s close control with
+`data-workspace-detail-close`. For boards, wide tables, and week calendars,
+mark the horizontal scroller with `k2b-detail-trail` and add
+`var(--k2b-detail-space, 0px)` to fixed rows’ trailing padding. See
+[Add contextual detail](/en/docs/frontend/application-shells#add-contextual-detail).
+
 ## Render the application layout
 
 ```tsx

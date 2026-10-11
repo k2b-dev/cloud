@@ -7079,6 +7079,9 @@ const specialistCommands = {
       flags: {
         ...mailboxFlag,
         revision: flag.int({ required: true, min: 1, description: "Expected current revision" }),
+        "retry-failed": flag.boolean({
+          description: "Re-run only messages whose latest run of this automation version failed or was canceled",
+        }),
         yes: confirmFlag("Confirm starting the incoming-automation backfill"),
       },
       run: async ({ ctx, args, flags }) => {
@@ -7097,9 +7100,16 @@ const specialistCommands = {
           jsonRequest("POST", {
             operationId: crypto.randomUUID(),
             expectedRevision: flags.revision,
+            ...(flags["retry-failed"] ? { retryFailed: true } : {}),
           }),
         );
         if (printStructured(ctx, result)) return;
+        if (result.retryFailed) {
+          ctx.print(
+            `Started retry backfill ${result.operationId} for ${result.candidateCount} message${result.candidateCount === 1 ? "" : "s"} whose last run failed or was canceled.`,
+          );
+          return;
+        }
         ctx.print(
           `Started backfill ${result.operationId} for ${result.candidateCount} candidate message${result.candidateCount === 1 ? "" : "s"}.`,
         );
@@ -7119,6 +7129,14 @@ const specialistCommands = {
           `/mailboxes/${mailbox.id}/incoming-automations/${requireMailResourceId(args.automationId, "Incoming automation id")}/backfills/${args.operationId}`,
         );
         if (printStructured(ctx, result)) return;
+        if (result.retryFailed) {
+          ctx.print(
+            `${result.state}: ${result.newlyAcceptedCount}/${result.candidateCount} re-run, ${result.remainingCount} remaining${
+              result.state === "limited" ? "; run another retry backfill to continue" : ""
+            }${result.lastError ? ` · ${result.lastError}` : ""}`,
+          );
+          return;
+        }
         ctx.print(
           `${result.state}: ${result.alreadyAcceptedCount + result.newlyAcceptedCount}/${result.candidateCount} accepted, ${
             result.remainingCount

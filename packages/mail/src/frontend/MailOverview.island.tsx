@@ -250,6 +250,10 @@ function MailOverviewView(props: {
   const [selection, setSelection] = createSignal<MailFocusSelection | null>(props.initialSelection);
   const [wideLayout, setWideLayout] = createSignal(false);
   const detailOpen = () => wideLayout() && selection() !== null;
+  const closeDetail = () => {
+    setSelection(null);
+    updateSelectionUrl(null);
+  };
   const selectionSource = () => {
     const current = selection();
     return current ? `${current.mailboxId}/${current.conversationId}` : null;
@@ -725,7 +729,7 @@ function MailOverviewView(props: {
           </div>
         </AppWorkspace.Main>
 
-        <AppWorkspace.Detail id="mail-focus-detail" open={detailOpen()} width="lg" resizable={false}>
+        <AppWorkspace.Detail id="mail-focus-detail" open={detailOpen()} onClose={closeDetail} width="lg" resizable={false}>
           <Show
             when={selection()}
             fallback={
@@ -794,10 +798,7 @@ function MailOverviewView(props: {
                       dateConfig={props.dateConfig}
                       onCollaborationChange={() => void focusResults.invalidate()}
                       onConversationTagsChange={() => undefined}
-                      onClose={() => {
-                        setSelection(null);
-                        updateSelectionUrl(null);
-                      }}
+                      onClose={closeDetail}
                       onOpenHref={(href) => navigateTo(href)}
                       onReconcile={() => detailResult.refresh()}
                     />

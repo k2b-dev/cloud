@@ -492,12 +492,12 @@ describe("@k2b/ui complete advanced layout migrations", () => {
       max: 296,
     });
     expect(appWorkspaceResizeLimits({ kind: "detail", workspaceSize: 1400, reservedSize: 208 })).toEqual({
-      min: 288,
+      min: 320,
       max: 640,
     });
     expect(appWorkspaceResizeLimits({ kind: "detail", workspaceSize: 900, reservedSize: 500 })).toEqual({
-      min: 288,
-      max: 288,
+      min: 320,
+      max: 320,
     });
     expect(appWorkspaceResizeLimits({ kind: "pane", workspaceSize: 1200, reservedSize: 320 })).toEqual({
       min: 240,
@@ -680,11 +680,14 @@ describe("@k2b/ui complete advanced layout migrations", () => {
   test("uses Cloud's default detail widths and drawer heights", () => {
     // These land in `aria-valuenow` and in the `var(…, Npx)` first-paint
     // fallback, so a drifting default is a visible first-paint difference.
-    const detail = (width: "lg" | "xl") =>
+    const detail = (width: "sm" | "md" | "lg" | "xl") =>
       renderToString(() => createComponent(AppWorkspace.Detail, { id: "d", open: true, width, children: "x" }));
     const drawer = (height: "sm" | "lg") =>
       renderToString(() => createComponent(AppWorkspace.BottomDrawer, { id: "b", open: true, height, children: "x" }));
 
+    expect(detail("sm")).toContain('aria-valuenow="320"');
+    expect(detail("md")).toContain('aria-valuenow="416"');
+    expect(detail("md")).toContain('aria-valuemin="320"');
     expect(detail("lg")).toContain("480px");
     expect(detail("xl")).toContain("544px");
     expect(drawer("sm")).toContain("192px");
@@ -746,20 +749,17 @@ describe("@k2b/ui complete advanced layout migrations", () => {
       const resize = rule(".k2b-app-workspace__resize");
       expect(resize).toContain("position:absolute");
       expect(resize).toContain("width:var(--k2b-workspace-resize-hit-size)");
-      const inlineResize = rule(
-        ".k2b-app-workspace__main>.k2b-app-workspace__resize[data-app-workspace-resize=pane],.k2b-ui .k2b-app-workspace__content>.k2b-app-workspace__resize[data-app-workspace-resize=detail]",
-      );
-      expect(inlineResize).toContain("flex:0 0 var(--k2b-workspace-resize-hit-size)");
-      // The detail handle is emitted before its panel. Giving only the handle
-      // an order moves it behind the panel and puts the hit target on the
-      // trailing edge instead of between main and detail.
-      expect(inlineResize).not.toContain("order:");
+      const paneResize = rule(".k2b-app-workspace__main>.k2b-app-workspace__resize[data-app-workspace-resize=pane]");
+      expect(paneResize).toContain("flex:0 0 var(--k2b-workspace-resize-hit-size)");
+      const detailResize = rule(".k2b-app-workspace__resize[data-app-workspace-resize=detail]");
+      expect(detailResize).toContain("right:calc(var(--k2b-workspace-detail-fit) + .5rem)");
+      expect(detailResize).not.toContain("order:");
     });
 
     test("keeps workspace geometry transparent across Solid island wrappers", () => {
       expect(css).toMatch(/>:is\(solid-island,solid-client\)>\.k2b-app-workspace__sidebar/);
       expect(css).toMatch(/>:is\(solid-island,solid-client\)>\.k2b-app-workspace__detail:not\(\[hidden\]\)/);
-      expect(css).toMatch(/>:is\(solid-island,solid-client\)>\.k2b-app-workspace__resize\[data-app-workspace-resize=detail\]/);
+      expect(rule(".k2b-app-workspace__resize[data-app-workspace-resize=detail]")).toContain("--k2b-workspace-detail-fit");
       expect(css).toMatch(/>:is\(solid-island,solid-client\)>\.k2b-app-workspace__resize\[data-app-workspace-resize=drawer\]/);
     });
 
@@ -805,8 +805,10 @@ describe("@k2b/ui complete advanced layout migrations", () => {
       expect(rule(".k2b-app-workspace__sidebar-icon-action")).toContain("width:100%");
       expect(rule(".k2b-app-workspace__main-pane[data-surface=navigation]")).toContain("background:var(--k2b-surface-muted)");
       expect(rule(".k2b-app-workspace__main-pane[data-surface=navigation]")).toContain("padding:.5rem");
-      expect(rule(".k2b-app-workspace__detail")).toContain("background:var(--k2b-surface-muted)");
-      expect(rule(".k2b-app-workspace__detail")).toContain("padding:.75rem");
+      expect(rule(".k2b-app-workspace__detail")).toContain("background:var(--k2b-surface-elevated)");
+      // A phone sheet belongs to the window; from 48 rem the panel floats inside the content area.
+      expect(rule(".k2b-app-workspace__detail")).toContain("position:fixed");
+      expect(css).toContain(".k2b-ui .k2b-app-workspace__detail{position:absolute;");
       expect(rule(".k2b-app-workspace__drawer")).toContain("background:var(--k2b-surface-muted)");
     });
 
