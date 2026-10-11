@@ -328,6 +328,27 @@ type ProviderOperationBarrierResult<T> = { acquired: false } | { acquired: true;
 
 const mailboxProviderOperationKey = (mailboxId: string): string => `mailbox:${mailboxId}`;
 
+/** Runs `work` while it renews `locks`; a lock it cannot renew fails the work as a lost lease. */
+const withHeldProviderLocks = <T>(locks: readonly Lock[], work: (assertLeaseActive: () => Promise<void>) => Promise<T>): Promise<T> =>
+  withLeaseHeartbeat({
+    intervalMs: Math.floor(MAIL_PROVIDER_OPERATION_LEASE_MS / 3),
+    heartbeat: async () => {
+      const extended = await Promise.all(
+        locks.map((lock) =>
+          lifecycleBarrierMutex()
+            .extend(lock, { ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS })
+            .catch(() => false),
+        ),
+      );
+      if (extended.some((active) => !active)) {
+        throw Object.assign(new Error("Mailbox provider operation barrier was lost"), {
+          code: "MAIL_PROVIDER_OPERATION_LEASE_LOST",
+        });
+      }
+    },
+    work,
+  });
+
 export const withProviderOperationBarrier = async <T>(
   remoteResourceIds: readonly string[],
   work: (assertLeaseActive: () => Promise<void>) => Promise<T>,
@@ -335,25 +356,7 @@ export const withProviderOperationBarrier = async <T>(
   const locks = await acquireMailboxProviderBarrier(remoteResourceIds);
   if (!locks) return { acquired: false };
   try {
-    const value = await withLeaseHeartbeat({
-      intervalMs: Math.floor(MAIL_PROVIDER_OPERATION_LEASE_MS / 3),
-      heartbeat: async () => {
-        const extended = await Promise.all(
-          locks.map((lock) =>
-            lifecycleBarrierMutex()
-              .extend(lock, { ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS })
-              .catch(() => false),
-          ),
-        );
-        if (extended.some((active) => !active)) {
-          throw Object.assign(new Error("Mailbox provider operation barrier was lost"), {
-            code: "MAIL_PROVIDER_OPERATION_LEASE_LOST",
-          });
-        }
-      },
-      work,
-    });
-    return { acquired: true, value };
+    return { acquired: true, value: await withHeldProviderLocks(locks, work) };
   } finally {
     await releaseMailboxProviderBarrier(locks);
   }
@@ -365,3 +368,43 @@ export const withMailboxProviderOperationBarrier = async <T>(
   work: (assertLeaseActive: () => Promise<void>) => Promise<T>,
 ): Promise<ProviderOperationBarrierResult<T>> =>
   withProviderOperationBarrier([mailboxProviderOperationKey(mailboxId), ...remoteResourceIds], work);
+
+export type ProviderOperationTurn<T> = { acquired: false; retryAfterMs: number } | { acquired: true; value: T };
+
+/**
+ * Runs `work` with the same exclusivity as `withMailboxProviderOperationBarrier` on one remote
+ * mailbox, but takes its turn in the mailbox's provider lease line as a user command instead of
+ * polling past it: folder syncs that keep a large mailbox busy cannot pass it forever. Returns
+ * when to try again while it is not `waiter`'s turn; `waiter` must stay the same across tries to
+ * keep its place. The mailbox-wide key, held only by short lifecycle changes, is taken without
+ * waiting once the lease is held.
+ */
+export const withMailboxProviderOperationTurn = async <T>(
+  params: { mailboxId: string; remoteResourceId: string; waiter: string },
+  work: (assertLeaseActive: () => Promise<void>) => Promise<T>,
+): Promise<ProviderOperationTurn<T>> => {
+  const turn = await acquireProviderLease({
+    resource: params.remoteResourceId,
+    waiter: params.waiter,
+    priority: "command",
+    ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS,
+  });
+  if (!turn.lock) return { acquired: false, retryAfterMs: turn.retryAfterMs };
+  const lease = turn.lock;
+  try {
+    const mailboxLock = await mailProviderOperationMutex().acquire({
+      resource: mailboxProviderOperationKey(params.mailboxId),
+      ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS,
+    });
+    if (!mailboxLock) return { acquired: false, retryAfterMs: LEASE_RETRY_STEP_MS };
+    try {
+      return { acquired: true, value: await withHeldProviderLocks([lease, mailboxLock], work) };
+    } finally {
+      await mailProviderOperationMutex()
+        .release(mailboxLock)
+        .catch(() => false);
+    }
+  } finally {
+    await releaseProviderLease(lease);
+  }
+};

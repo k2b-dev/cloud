@@ -349,9 +349,31 @@ const senderIdentityReasonText: Record<SenderIdentityStatusReason, string> = {
   sent_folder_missing: "Sent folder missing",
   provider_rejected: "rejected by the provider",
   verification_required: "not verified yet",
+  verification_pending: "verification waits for running provider work",
 };
 const senderIdentityStatusText = (identity: SenderIdentity): string =>
   identity.statusReason ? `${identity.status}, ${senderIdentityReasonText[identity.statusReason]}` : identity.status;
+
+/**
+ * A verification that found provider work running waits as a durable command. With `--wait` the
+ * CLI waits for that command and reads the identity again; it fails when the verification failed.
+ */
+const settleSenderVerification = async (
+  ctx: CloudCliContext,
+  mailboxId: string,
+  identity: SenderIdentity,
+  wait: boolean | undefined,
+  timeoutSeconds: number | undefined,
+): Promise<SenderIdentity> => {
+  if (!wait || !identity.pendingVerificationCommandId) return identity;
+  await waitForCommand(ctx, mailboxId, identity.pendingVerificationCommandId, timeoutSeconds);
+  const identities = await readApi<SenderIdentity[]>(ctx, `/mailboxes/${mailboxId}/sender-identities`);
+  return identities.find((item) => item.id === identity.id) ?? identity;
+};
+
+const pendingSenderVerificationText = (identity: SenderIdentity, commandId: string): string =>
+  `Verification of ${identity.fromAddress} waits for running provider work and starts automatically (command ${commandId}). ` +
+  `Follow it with \`cld mail command wait ${commandId}\`, or pass --wait.`;
 
 const listMailboxes = (ctx: CloudCliContext): Promise<MailboxWithPermission[]> => readApi(ctx, "/mailboxes?limit=200");
 const getMailbox = (ctx: CloudCliContext, mailboxId: string, signal?: AbortSignal): Promise<Mailbox> =>
@@ -5970,10 +5992,12 @@ const specialistCommands = {
           name: "provider-saves-sent",
           description: "Provider automatically stores submitted messages in Sent",
         }),
+        wait: flag.boolean({ description: "Wait for a verification that waits behind running provider work" }),
+        ...waitFlags,
       },
       run: async ({ ctx, args, flags }) => {
         const mailbox = await resolveMailbox(ctx, flags.mailbox);
-        const identity = await readApi<SenderIdentity>(
+        const requested = await readApi<SenderIdentity>(
           ctx,
           `/mailboxes/${mailbox.id}/sender-identities/default/setup`,
           jsonRequest("POST", {
@@ -5983,8 +6007,11 @@ const specialistCommands = {
             savesSentAutomatically: flags.providerSavesSent,
           }),
         );
+        const identity = await settleSenderVerification(ctx, mailbox.id, requested, flags.wait, flags.timeoutSeconds);
         if (printStructured(ctx, identity)) return;
-        ctx.print(`Default identity ${identity.label} is ${senderIdentityStatusText(identity)}.`);
+        if (identity.pendingVerificationCommandId)
+          ctx.print(pendingSenderVerificationText(identity, identity.pendingVerificationCommandId));
+        else ctx.print(`Default identity ${identity.label} is ${senderIdentityStatusText(identity)}.`);
       },
     }),
     command("identity configure", {
@@ -6202,10 +6229,12 @@ const specialistCommands = {
           name: "provider-saves-sent",
           description: "Provider automatically stores submitted mail in Sent",
         }),
+        wait: flag.boolean({ description: "Wait for a verification that waits behind running provider work" }),
+        ...waitFlags,
       },
       run: async ({ ctx, args, flags }) => {
         const mailbox = await resolveMailbox(ctx, flags.mailbox);
-        const identity = await readApi<SenderIdentity>(
+        const requested = await readApi<SenderIdentity>(
           ctx,
           `/mailboxes/${mailbox.id}/sender-identities/${requireMailResourceId(args.identityId, "Sender identity id")}/verify`,
           jsonRequest("POST", {
@@ -6214,8 +6243,11 @@ const specialistCommands = {
             savesSentAutomatically: flags.providerSavesSent,
           }),
         );
+        const identity = await settleSenderVerification(ctx, mailbox.id, requested, flags.wait, flags.timeoutSeconds);
         if (printStructured(ctx, identity)) return;
-        ctx.print(`Verified ${identity.fromAddress}.`);
+        if (identity.pendingVerificationCommandId)
+          ctx.print(pendingSenderVerificationText(identity, identity.pendingVerificationCommandId));
+        else ctx.print(`Verified ${identity.fromAddress}.`);
       },
     }),
     command("draft list", {

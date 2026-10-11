@@ -34,6 +34,11 @@ import { OUTBOX_DISPATCH_GRACE_SECONDS } from "./outbound-delivery";
 import { materializeOutboundMessage, type OutboundMessageProjection } from "./outbound-message-projection";
 import { measureMimeStream, outboundDraftSnapshotSchema } from "./outbound-mime";
 import { activeSmtpMessageLimit, assertProviderMessageSize, loadBindingProviderLimits } from "./provider-limits";
+import {
+  queuedSenderVerificationPayloadSchema,
+  queuedSenderVerificationTargetSchema,
+  type SenderVerificationRequest,
+} from "./sender-verification";
 
 const log = logger("mail:commands");
 const internalDraftEditableContentInputSchema = draftEditableContentInputSchema.extend({ senderIdentityId: z.string().uuid() });
@@ -1256,6 +1261,122 @@ export const createMaintenanceCommand = async (params: {
   } catch (error) {
     if (isServiceError(error)) return fail(error);
     return fail(err.internal("Failed to create mail maintenance command"));
+  }
+};
+
+/**
+ * Queues a sender verification that found provider work running as a durable
+ * `verify_sender_identity` command, which runs once the mailbox's provider lease line lets it.
+ * An identity waits with one verification at a time: the same request joins it, another one
+ * conflicts until it ended.
+ */
+export const queueSenderVerification = async (params: {
+  context: MailRequestContext;
+  request: SenderVerificationRequest;
+}): Promise<Result<MailCommand>> => {
+  const { request } = params;
+  const actor = actorRefFromRequest(params.context);
+  const credential = durableCredentialSnapshot(params.context);
+  if (!credential) return fail(err.forbidden("Durable Mail work requires a current service credential"));
+  const target = queuedSenderVerificationTargetSchema.parse({ senderIdentityId: request.senderIdentityId, bindingId: request.bindingId });
+  const payload = queuedSenderVerificationPayloadSchema.parse({
+    verificationRecipient: request.verificationRecipient,
+    savesSentAutomatically: request.savesSentAutomatically,
+    locale: request.locale,
+    auditActor: auditActorFromRequest(params.context),
+    requestId: params.context.requestId ?? null,
+  });
+  const requestHash = sha256Json({
+    kind: "verify_sender_identity",
+    target,
+    payload: { verificationRecipient: payload.verificationRecipient, savesSentAutomatically: payload.savesSentAutomatically },
+  });
+  try {
+    const result = await sql.begin(async (tx) => {
+      const [mailbox] = await tx<{ id: string }[]>`
+        SELECT id FROM mail.mailboxes WHERE id = ${request.mailboxId}::uuid AND deleted_at IS NULL FOR UPDATE
+      `;
+      if (!mailbox) return fail(err.notFound("Mailbox"));
+      const permission = await requireMailboxPermission(params.context, request.mailboxId, "admin", tx);
+      if (!permission.ok) return permission;
+      const [identity] = await tx<{ id: string }[]>`
+        SELECT id FROM mail.sender_identities
+        WHERE id = ${request.senderIdentityId}::uuid AND mailbox_id = ${request.mailboxId}::uuid AND status <> 'disabled'
+        FOR UPDATE
+      `;
+      if (!identity) return fail(err.notFound("Sender identity or provider binding"));
+      const [pending] = await tx<DbCommand[]>`
+        SELECT ${commandColumns}
+        FROM mail.commands c
+        WHERE c.mailbox_id = ${request.mailboxId}::uuid
+          AND c.kind = 'verify_sender_identity'
+          AND c.state IN ('queued', 'executing')
+          AND c.target ->> 'senderIdentityId' = ${request.senderIdentityId}
+        ORDER BY c.created_at DESC, c.id DESC
+        LIMIT 1
+      `;
+      if (pending) {
+        return pending.request_hash === requestHash
+          ? ok({ command: mapCommand(pending), created: false })
+          : fail(err.conflict("A verification of this sender identity is already waiting; try again once it ended"));
+      }
+      const [row] = await tx<DbCommand[]>`
+        INSERT INTO mail.commands AS c (
+          mailbox_id, kind, actor_kind, actor_id, delegated_user_id, idempotency_key,
+          request_hash, correlation_id, target, payload, transport_metadata,
+          initiator_actor_kind, initiator_actor_id,
+          access_subject_kind, access_subject_id, credential_scopes, credential_id, credential_expires_at
+        )
+        VALUES (
+          ${request.mailboxId}::uuid,
+          'verify_sender_identity',
+          ${actor.kind},
+          ${actorDatabaseId(actor)}::uuid,
+          ${actor.kind === "service_account" ? actor.delegatedUserId : null}::uuid,
+          ${`sender-verification:${crypto.randomUUID()}`},
+          ${requestHash},
+          NULL,
+          ${target}::jsonb,
+          ${payload}::jsonb,
+          '{}'::jsonb,
+          ${actor.kind},
+          ${actorDatabaseId(actor)}::uuid,
+          ${params.context.accessSubject.type},
+          ${accessSubjectDatabaseId(params.context)}::uuid,
+          ${toPgTextArray(credential.scopes)}::text[],
+          ${credential.credentialId}::uuid,
+          ${credential.credentialExpiresAt}::timestamptz
+        )
+        RETURNING ${commandColumns}
+      `;
+      if (!row) throw new Error("Sender verification command insert returned no row");
+      await tx`
+        INSERT INTO mail.activity_events (
+          mailbox_id, command_id, actor_kind, actor_id, action, outcome, target_type, target_id, metadata
+        )
+        VALUES (
+          ${request.mailboxId}::uuid,
+          ${row.id}::uuid,
+          ${actor.kind},
+          ${actorDatabaseId(actor)}::uuid,
+          'command.verify_sender_identity',
+          'requested',
+          'command',
+          ${row.id}::uuid,
+          ${{ correlationId: null }}::jsonb
+        )
+      `;
+      return ok({ command: mapCommand(row), created: true });
+    });
+    if (!result.ok) return result;
+    if (result.data.created) {
+      mailLive.wake();
+      await enqueueMailCommand(result.data.command.id, "verify_sender_identity").catch(() => undefined);
+    }
+    return ok(result.data.command);
+  } catch (error) {
+    if (isServiceError(error)) return fail(error);
+    return fail(err.internal("Failed to queue sender verification"));
   }
 };
 

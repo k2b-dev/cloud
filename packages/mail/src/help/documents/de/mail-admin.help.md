@@ -119,6 +119,7 @@ Eine Absenderidentität, die nicht für den Versand bereit ist, zeigt den Grund 
 - **Ordner für gesendete E-Mails fehlt:** Wähle **Ordner für gesendete E-Mails wählen**, speichere die Absenderidentität und bestätige sie. Speichert der Anbieter gesendete E-Mails selbst, bestätige sie stattdessen mit eingeschaltetem **Anbieter speichert gesendete E-Mails automatisch**.
 - **Vom Anbieter abgelehnt:** Prüfe die Absenderadresse und die erweiterten Zustelleinstellungen und bestätige die Absenderidentität erneut.
 - **Nicht bestätigt:** Wähle **Bestätigen** und sende die Testnachricht.
+- **Bestätigung wartet:** Mail synchronisiert das Postfach. Mail sendet die Testnachricht automatisch, sobald die Synchronisierung es zulässt. Geschieht das nicht innerhalb von 10 Minuten, bestätige die Absenderidentität erneut.
 
 Hat ein Postfach keine Absenderidentität, die für den Versand bereit ist, zeigen **Verfassen**, **Antworten** und **Weiterleiten** denselben Grund. Personen mit Zugriff **Verwalten** öffnen dort direkt die Absendereinstellungen.
 

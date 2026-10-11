@@ -352,6 +352,13 @@ A new identity takes the Sent and Drafts folders that discovery found for the ma
 | `sent_folder_missing` | No Sent folder is set, and the provider was not verified as saving sent mail itself. | `identity configure <identity-id> --sent-folder <folder-id>`, or verify with `--provider-saves-sent`. |
 | `provider_rejected` | The provider refused the last verification message. | Check the From address and delivery settings, then verify again. |
 | `verification_required` | The identity is configured and waits for verification. | `identity verify <identity-id> <binding-id> --recipient <address>` |
+| `verification_pending` | A verification waits for running provider work, such as a sync, and starts automatically. | Wait, or follow `pendingVerificationCommandId` with `command wait <command-id>`. |
+
+Verification sends its test message through the mailbox's provider connection, so it never runs at the same time as a folder sync or other provider work of the mailbox. When such work is running, `identity verify` and `identity setup-default` do not fail. The verification waits as a durable `verify_sender_identity` command and takes its turn before later syncs. The identity then reports `verification_pending`, and `pendingVerificationCommandId` names the command. Pass `--wait` to wait for it; `--timeout-seconds` bounds the wait, which can take minutes on a large mailbox. A verification that cannot start within 10 minutes fails with `SENDER_VERIFICATION_TIMEOUT` and leaves the identity unchanged; verify again. While a verification waits, the same request joins it, and a request with another binding or recipient fails with `CONFLICT`.
+
+```bash
+cld --json mail identity verify <identity-id> <binding-id> --recipient support@example.com --wait --timeout-seconds 600
+```
 
 The identity label is internal. Recipients see the display name and From address. Multiple identities may use the same From address while keeping separate Reply-to, default Cc/Bcc, format, priority, receipt requests, contact card, signature, transport, folder mappings, and verification. Recipient defaults apply only when a person creates a draft; workflows and automatic replies keep their recipients explicit. `--clear-vcard`, `--clear-default-bcc`, and the other `--clear-*` flags remove optional defaults.
 

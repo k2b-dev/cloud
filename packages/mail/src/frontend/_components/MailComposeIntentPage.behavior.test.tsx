@@ -111,6 +111,7 @@ const unverifiedIdentity = (statusReason: SenderIdentity["statusReason"]): Sende
   isDefault: true,
   status: "unverified",
   statusReason,
+  pendingVerificationCommandId: null,
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-01-01T00:00:00.000Z",
 });

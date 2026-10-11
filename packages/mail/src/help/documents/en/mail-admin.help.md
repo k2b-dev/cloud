@@ -119,6 +119,7 @@ An identity that is not ready to send shows the reason as its status:
 - **Sent folder missing:** Choose **Choose Sent folder**, save the identity, and verify it. If the provider stores sent mail itself, verify it with **Provider saves sent mail automatically** turned on instead.
 - **Rejected by the provider:** Check the From address and the advanced delivery settings, then verify again.
 - **Not verified:** Choose **Verify** and send the test message.
+- **Verification waiting:** Mail is synchronizing the mailbox. Mail sends the test message automatically when the synchronization lets it. If this does not happen in 10 minutes, verify the identity again.
 
 When a mailbox has no identity that is ready to send, **Compose**, **Reply**, and **Forward** show the same reason. People with **Manage** access can open the sender settings from there.
 

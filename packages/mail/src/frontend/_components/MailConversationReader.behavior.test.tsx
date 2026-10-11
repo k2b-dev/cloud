@@ -422,6 +422,7 @@ test.skipIf(isServer)("a reply without a verified sender names the reason and le
     isDefault: true,
     status: "unverified",
     statusReason: "sent_folder_missing",
+    pendingVerificationCommandId: null,
     createdAt: now,
     updatedAt: now,
   };

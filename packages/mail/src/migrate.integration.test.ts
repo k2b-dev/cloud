@@ -338,6 +338,38 @@ suite("mail baseline schema", () => {
     }
   });
 
+  test("lets a database installed before queue sender verifications as commands", async () => {
+    await migrate();
+    await sql`ALTER TABLE mail.commands DROP CONSTRAINT commands_kind_check`;
+    await sql`
+      ALTER TABLE mail.commands ADD CONSTRAINT commands_kind_check CHECK (kind = ANY (ARRAY[
+        'set_flags', 'change_message_state', 'move', 'copy', 'delete', 'create_folder', 'rename_folder', 'delete_folder',
+        'set_folder_subscription', 'send', 'sync_mailbox', 'sync_folder', 'discover_folders', 'verify_binding', 'rebuild_folder',
+        'hydrate_missing', 'rebuild_search', 'rebuild_threads', 'reconcile_effect', 'retry_command', 'cancel_command'
+      ]))
+    `;
+    const [mailbox] = await sql<{ id: string }[]>`
+      INSERT INTO mail.mailboxes (short_id, name) VALUES (${newShortId()}, 'Sender verification')
+      RETURNING id
+    `;
+    // A real promise: `expect().rejects` does not run a pending SQL query.
+    const addCommand = async (kind: string) => {
+      await sql`
+        INSERT INTO mail.commands (mailbox_id, kind, actor_kind, idempotency_key, request_hash, target, payload, access_subject_kind)
+        VALUES (${mailbox!.id}::uuid, ${kind}, 'system', ${crypto.randomUUID()}, ${"0".repeat(64)}, '{}'::jsonb, '{}'::jsonb, 'system')
+      `;
+    };
+    try {
+      await expect(addCommand("verify_sender_identity")).rejects.toThrow(/commands_kind_check/);
+      await migrate();
+      await migrate();
+      await addCommand("verify_sender_identity");
+      await expect(addCommand("unknown_kind")).rejects.toThrow(/commands_kind_check/);
+    } finally {
+      await sql`DELETE FROM mail.mailboxes WHERE id = ${mailbox!.id}::uuid`;
+    }
+  });
+
   test("moves the live updates of a database installed before into the platform outbox", async () => {
     await migrate();
     // The database before this update: Mail's own table, and the function that wrote to it.

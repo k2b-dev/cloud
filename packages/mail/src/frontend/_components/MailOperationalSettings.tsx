@@ -81,6 +81,7 @@ const activityLabel = (kind: RedactedOperatorCommand["kind"], messages: Messages
     delete_folder: messages.folderDeletion,
     set_folder_subscription: messages.folderSubscription,
     send: messages.messageDelivery,
+    verify_sender_identity: messages.senderVerification,
   })[kind];
 
 const activityState = (state: RedactedOperatorCommand["state"], messages: Messages): { label: string; icon: string; tone: StatusTone } => {
