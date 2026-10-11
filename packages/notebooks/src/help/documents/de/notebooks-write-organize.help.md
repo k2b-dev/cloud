@@ -31,7 +31,7 @@ Dauerhaftes Handbuchwissen gehört in die Notiz selbst. Nutze Kommentare, um die
 
 :::reference
 - **Überschriften:** Gliedere die Notiz mit #, ## und tieferen Überschriften. Die erste H1 ist der Notiztitel in Navigation und Suche. Ohne H1 ist die erste sichtbare Zeile der Titel.
-- **Listen und Aufgaben:** Verwende - für Listen. Verwende - [ ] oder - [x] für Aufgaben.
+- **Listen und Aufgaben:** Verwende - für Listen. Verwende - [ ] oder - [x] für Aufgaben. Verwende 1. für nummerierte Listen. Sie zählen ab ihrer ersten Nummer weiter. Verschachtelte nummerierte Listen zeigen a., b. und dann i., ii. im Editor, in der Buchansicht und im PDF.
 - **Slash-Menü:** Nutze das Einfügemenü des Editors für häufige Blöcke wie Notizlinks, Dateien und Tabellen. Tippe ::: für Daten, Abfragen, Inhaltsverzeichnisse und Hinweisblöcke.
 - **Markdown-Zeichen:** Der Rich-Modus zeigt Zeichen wie `**` oder `#`, wenn dein Cursor darin steht. Wenn du mit der Maus Text auswählst, erscheinen sie erst nach dem Loslassen der Taste. Der Text bleibt beim Ziehen an seiner Stelle.
 :::

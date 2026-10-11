@@ -1,3 +1,4 @@
+import { forceParsing } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { ScrollArea } from "@k2b/ui";
@@ -7,6 +8,7 @@ import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { fadeScrollMarginsExtension, fadeScrollPadding } from "./fade-scroll-margins";
 import { editor } from "./index";
+import { listStateField } from "./lists";
 import { pressMissedEditor } from "./surface-press";
 
 // The note editor's rich-mode arrangement: CodeMirror grows inside a fading ScrollArea whose surface takes stray presses.
@@ -124,8 +126,57 @@ const settle = async () => {
   }
 };
 
+const loadDocument = (markdown: string) => {
+  view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: markdown }, selection: { anchor: 0 } });
+  forceParsing(view, markdown.length, 5000);
+  port!.scrollTop = 0;
+};
+
+const placeCaretOnLine = (number: number) => {
+  view.dispatch({ selection: { anchor: view.state.doc.line(number).to } });
+};
+
+const measureLists = () => ({
+  contentHeight: view.contentHeight,
+  lines: view.state.field(listStateField).structure.items.map((item) => {
+    const dom = view.domAtPos(item.contentFrom).node;
+    const line = (dom instanceof Element ? dom : dom.parentElement)?.closest(".cm-line");
+    if (!line) throw new Error(`List line ${item.line} is not rendered.`);
+    const rect = line.getBoundingClientRect();
+    const first = view.coordsAtPos(item.contentFrom, 1);
+    if (!first) throw new Error(`No text coordinates on line ${item.line}.`);
+    let wrappedX: number | null = null;
+    const end = view.state.doc.line(item.line).to;
+    for (let position = item.contentFrom + 1; position < end; position++) {
+      const next = view.coordsAtPos(position, 1);
+      if (next && next.top > first.top + 1) {
+        wrappedX = next.left;
+        break;
+      }
+    }
+    return {
+      line: item.line,
+      depth: item.depth,
+      textX: first.left,
+      wrappedX,
+      box: { top: rect.top, left: rect.left, width: rect.width, height: rect.height },
+      guides: Array.from(line.querySelectorAll(".custom-list-guide")).map((guide) => {
+        const rect = guide.getBoundingClientRect();
+        return { x: rect.left + rect.width / 2, opacity: Number(getComputedStyle(guide).opacity) };
+      }),
+      label: line.querySelector(".custom-list-marker-ordered")?.textContent ?? null,
+      checkbox: line.querySelector(".custom-list-task-marker") !== null,
+    };
+  }),
+});
+
+export type ListMeasurements = ReturnType<typeof measureLists>;
+
 Object.assign(window, {
   harness: {
+    loadDocument,
+    placeCaretOnLine,
+    measureLists,
     scrollToMiddle,
     measure,
     placeCursor,

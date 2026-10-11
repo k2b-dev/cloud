@@ -31,7 +31,7 @@ Keep lasting handbook content in the note itself. Use comments to discuss that c
 
 :::reference
 - **Headings:** Use #, ##, and deeper headings to create sections. The first H1 is the note title in navigation and search. Without an H1, the first visible line is the title.
-- **Lists and tasks:** Use - for lists. Use - [ ] or - [x] for tasks.
+- **Lists and tasks:** Use - for lists. Use - [ ] or - [x] for tasks. Use 1. for numbered lists. They count up from their first number. Nested numbered lists show a., b. and then i., ii. in the editor, Book view, and PDF.
 - **Slash menu:** Use the insert menu of the editor for common blocks such as notes, files, and tables. Type ::: for data, query, contents, and callout blocks.
 - **Markdown characters:** Rich mode shows characters such as `**` or `#` when your cursor is in them. When you select with the mouse, they appear after you release the button. The text stays still while you drag.
 :::
