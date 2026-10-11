@@ -20,6 +20,7 @@ export default ssr<AuthContext>(async (c) => {
     accessSubject: c.get("accessSubject"),
     requestId: c.req.header("x-request-id") ?? null,
   };
+  const currentUserEmail = (context.actor.kind === "user" ? context.actor.user : context.actor.delegatedUser)?.mail ?? null;
   const currentActor =
     context.actor.kind === "user"
       ? { kind: "user" as const, id: context.actor.user.id }
@@ -49,6 +50,8 @@ export default ssr<AuthContext>(async (c) => {
         popout={popout}
         dateConfig={getDateConfig(c)}
         canShareAttachments={access.data.permission === "admin"}
+        canManageMailbox={access.data.permission === "admin"}
+        currentUserEmail={currentUserEmail}
         calendarIntegrationAvailable={calendarIntegrationAvailable}
         contactDirectory={requestContactDirectory(c)}
       />

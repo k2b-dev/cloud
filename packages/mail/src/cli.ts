@@ -89,6 +89,7 @@ import {
   type SavedConversationViewFilter,
   type ScheduledSendPage,
   type SenderIdentity,
+  type SenderIdentityStatusReason,
   savedConversationViewFilterSchema,
   type UnsubscribeMailingListResult,
   type WorkflowEffectBudget,
@@ -340,6 +341,15 @@ const pollUntil = async <T>(params: {
     await new Promise((resolve) => setTimeout(resolve, Math.min(pollIntervalMs, Math.max(0, deadline - Date.now()))));
   }
 };
+
+/** Why an identity cannot send; JSON output carries the stable `statusReason` code. */
+const senderIdentityReasonText: Record<SenderIdentityStatusReason, string> = {
+  sent_folder_missing: "Sent folder missing",
+  provider_rejected: "rejected by the provider",
+  verification_required: "not verified yet",
+};
+const senderIdentityStatusText = (identity: SenderIdentity): string =>
+  identity.statusReason ? `${identity.status}, ${senderIdentityReasonText[identity.statusReason]}` : identity.status;
 
 const listMailboxes = (ctx: CloudCliContext): Promise<MailboxWithPermission[]> => readApi(ctx, "/mailboxes?limit=200");
 const getMailbox = (ctx: CloudCliContext, mailboxId: string, signal?: AbortSignal): Promise<Mailbox> =>
@@ -5843,6 +5853,7 @@ const specialistCommands = {
               .join(", "),
             transport: identity.transport.mode,
             status: identity.status,
+            reason: identity.statusReason ? senderIdentityReasonText[identity.statusReason] : "",
             automation: identity.authenticationPolicy.automation === "mailbox" ? "enabled" : "disabled",
             default: identity.isDefault ? "yes" : "",
             id: identity.id,
@@ -5858,6 +5869,7 @@ const specialistCommands = {
             { key: "receipts", label: "RECEIPTS" },
             { key: "transport", label: "SMTP" },
             { key: "status", label: "STATUS" },
+            { key: "reason", label: "REASON" },
             { key: "automation", label: "AUTOMATIC REPLIES" },
             { key: "default", label: "DEFAULT" },
             { key: "id", label: "IDENTITY ID" },
@@ -5895,7 +5907,7 @@ const specialistCommands = {
         }),
         sentFolder: flag.string({
           name: "sent-folder",
-          description: "Canonical Sent folder id",
+          description: "Sent folder id; default the mailbox's discovered Sent folder",
         }),
         default: flag.boolean({ description: "Set as default identity" }),
         automation: flag.enum(["mailbox", "disabled"] as const, {
@@ -5928,7 +5940,7 @@ const specialistCommands = {
           }),
         );
         if (printStructured(ctx, identity)) return;
-        ctx.print(`Created unverified identity ${identity.label} (${identity.id}).`);
+        ctx.print(`Created identity ${identity.label} (${identity.id}): ${senderIdentityStatusText(identity)}.`);
       },
     }),
     command("identity setup-default", {
@@ -5958,7 +5970,7 @@ const specialistCommands = {
           }),
         );
         if (printStructured(ctx, identity)) return;
-        ctx.print(`Default identity ${identity.label} is ${identity.status}.`);
+        ctx.print(`Default identity ${identity.label} is ${senderIdentityStatusText(identity)}.`);
       },
     }),
     command("identity configure", {
@@ -6073,7 +6085,7 @@ const specialistCommands = {
           jsonRequest("PATCH", update),
         );
         if (printStructured(ctx, identity)) return;
-        ctx.print(`Updated ${identity.label} (${identity.status}).`);
+        ctx.print(`Updated ${identity.label} (${senderIdentityStatusText(identity)}).`);
       },
     }),
     command("identity transport set", {

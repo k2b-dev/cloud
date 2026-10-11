@@ -23,9 +23,12 @@ export default ssr<AuthContext>(async (c) => {
           id: mailbox.id,
           name: mailbox.name,
           description: mailbox.description,
+          canManage: mailbox.permission === "admin",
         }))
     : [];
   const writableMailboxes = await projectSsrMailboxList(internalWritableMailboxes);
+  const actor = c.get("actor");
+  const user = actor.kind === "user" ? actor.user : actor.delegatedUser;
   const requestedMailboxId = c.req.query("mailbox");
   const initialMailboxId = writableMailboxes.some((mailbox) => mailbox.id === requestedMailboxId)
     ? requestedMailboxId!
@@ -42,6 +45,7 @@ export default ssr<AuthContext>(async (c) => {
         mailto={c.req.query("mailto") ?? null}
         returnHref={c.req.query("return") ?? null}
         contactDirectory={requestContactDirectory(c)}
+        currentUserEmail={user?.mail ?? null}
       />
     </Layout>
   );

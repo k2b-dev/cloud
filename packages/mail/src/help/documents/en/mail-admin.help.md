@@ -112,6 +112,16 @@ Two identities can share the same From address on purpose. Mail keeps their labe
 
 Verify every identity: choose the connected account and a recipient for a real verification message. When the identity is ready to send, the provider accepted this test with the exact From address and the advanced delivery settings of the identity. IMAP folder access alone does not prove that the provider allows these sending settings.
 
+A new identity uses the Sent and Drafts folders that Mail found for the mailbox. You can choose other folders under **Advanced delivery**. If an identity has no Sent folder when you verify it, Mail uses the mailbox's Sent folder. Creating or verifying an identity never replaces a folder that is already set. **Set up sending** differs: it sets the identity of the account's address to the mailbox's current Sent and Drafts folders.
+
+An identity that is not ready to send shows the reason as its status:
+
+- **Sent folder missing:** Choose **Choose Sent folder**, save the identity, and verify it. If the provider stores sent mail itself, verify it with **Provider saves sent mail automatically** turned on instead.
+- **Rejected by the provider:** Check the From address and the advanced delivery settings, then verify again.
+- **Not verified:** Choose **Verify** and send the test message.
+
+When a mailbox has no identity that is ready to send, **Compose**, **Reply**, and **Forward** show the same reason. People with **Manage** access can open the sender settings from there.
+
 **Allow automatic replies** is separate from verification. Automatic replies can use only an identity that is ready to send and has this option turned on. Turning it on sends nothing by itself. An automatic reply or workflow that is turned on is still required.
 
 ## Manage provider folders {icon="user-cog"}

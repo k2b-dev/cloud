@@ -1746,6 +1746,7 @@ function MailWorkspaceView(props: {
                   canAdmin={canAdmin()}
                   mailboxWide={!assignedOnly()}
                   identities={data.identities}
+                  onOpenDeliverySettings={() => void openSettings("delivery")}
                   selectionKey={data.selectedMessageId ?? data.selectedConversationId}
                   selectedConversationId={data.selectedConversationId}
                   selectedMessageId={data.selectedMessageId}

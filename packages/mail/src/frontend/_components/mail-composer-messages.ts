@@ -201,7 +201,6 @@ export const mailComposerMessages = i18n.define({
       mailbox: "Mailbox",
       chooseMailbox: "Choose mailbox",
       loadingSenders: "Loading senders...",
-      noVerifiedSender: "This mailbox has no verified sender. Add and verify an identity in mailbox Settings before composing.",
       emailLink: "Email link",
       emailLinkTooLarge: "This email link is too large to open safely.",
       emailLinkInvalid: "This is not a valid email link.",
@@ -468,8 +467,6 @@ export const mailComposerMessages = i18n.define({
       mailbox: "Postfach",
       chooseMailbox: "Postfach auswählen",
       loadingSenders: "Absender werden geladen…",
-      noVerifiedSender:
-        "Dieses Postfach hat keine bestätigte Absenderidentität. Füge in den Postfacheinstellungen eine Identität hinzu und bestätige sie.",
       emailLink: "E-Mail-Link",
       emailLinkTooLarge: "Der E-Mail-Link ist zu groß, um ihn sicher zu öffnen.",
       emailLinkInvalid: "Dies ist kein gültiger E-Mail-Link.",

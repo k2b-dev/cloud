@@ -89,6 +89,7 @@ const renderReader = (
       canAdmin: options.canAdmin ?? false,
       mailboxWide: true,
       identities: [],
+      onOpenDeliverySettings: () => undefined,
       selectionKey: "Conv01",
       selectedConversationId: "Conv01",
       selectedMessageId: options.selectedMessageId ?? null,
