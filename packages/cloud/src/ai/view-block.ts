@@ -1,10 +1,21 @@
+import { computeDomain, extendDomainToNice, niceStep } from "@k2b/stdlib";
 import { z } from "zod";
 import { CloudResourceReferenceSchema } from "../contracts/capabilities";
-import { type CloudAiChartRow, type CloudAiChartTable, chartDateTime, chartDrawingIssue, cloudAiNumberFormatters } from "./chart-block";
+import {
+  type CloudAiChartRow,
+  type CloudAiChartTable,
+  chartDataIssue,
+  chartDateTime,
+  chartDrawingIssue,
+  chartSteppingIssue,
+  cloudAiNumberFormatters,
+} from "./chart-block";
 import {
   CLOUD_AI_CHART_MAX_SERIES,
   CLOUD_AI_CHART_MAX_VALUES,
   CLOUD_AI_GROUP_MAX_CHARTS,
+  CLOUD_AI_VIEW_MAX_MARKS,
+  type CloudAiChartInput,
   cloudAiChartKindSchema,
   cloudAiChartSchema,
   cloudAiGroupSchema,
@@ -105,7 +116,7 @@ const detailsViewSchema = () =>
       .max(CLOUD_AI_TABLE_MAX_COLUMNS),
   });
 const chartViewSchema = () => z.object({ view: z.literal("chart") }).and(cloudAiChartSchema());
-const tableViewSchema = () => {
+const tableRowSchema = () => {
   const cell = cellSchema();
   // z.record drops __proto__; column ids must survive validation without changing the object's prototype.
   const row = z.unknown().transform((value, ctx) => {
@@ -122,46 +133,64 @@ const tableViewSchema = () => {
     }
     return Object.fromEntries(entries);
   });
+  return row;
+};
+const tableColumnsSchema = () => {
+  return z
+    .array(
+      z.strictObject({
+        id: z.string().trim().min(1).max(80),
+        label: z.string().min(1).max(80).optional(),
+        type: cellTypeSchema(),
+        format: cloudAiNumberFormatSchema().optional(),
+      }),
+    )
+    .min(1)
+    .max(CLOUD_AI_TABLE_MAX_COLUMNS);
+};
+const tableViewSchema = () => {
+  const row = tableRowSchema();
   return z
     .strictObject({
       view: z.literal("table"),
       title: z.string().trim().min(1).max(160),
       subtitle: z.string().trim().min(1).max(300).optional(),
-      columns: z
-        .array(
-          z.strictObject({
-            id: z.string().trim().min(1).max(80),
-            label: z.string().min(1).max(80).optional(),
-            type: cellTypeSchema(),
-            format: cloudAiNumberFormatSchema().optional(),
-          }),
-        )
-        .min(1)
-        .max(CLOUD_AI_TABLE_MAX_COLUMNS),
+      columns: tableColumnsSchema(),
       rows: z.array(row).max(CLOUD_AI_TABLE_MAX_ROWS),
       footer: row.optional(),
       sort: z.strictObject({ column: z.string(), direction: z.enum(["asc", "desc"]) }).optional(),
     })
     .superRefine((value, ctx) => {
-      const columns = new Map(value.columns.map((column) => [column.id, column]));
-      value.columns.forEach((column, index) => {
-        if (value.columns.findIndex((entry) => entry.id === column.id) !== index)
-          ctx.addIssue({ code: "custom", path: ["columns", index, "id"], message: "Column ids must be unique." });
-        if (column.format && column.type !== "number")
-          ctx.addIssue({ code: "custom", path: ["columns", index, "format"], message: "Only number columns may have a format." });
-      });
-      const checkRow = (cells: z.output<typeof row>, path: (string | number)[]) => {
-        for (const [id, cell] of Object.entries(cells)) {
-          const column = columns.get(id);
-          const message = column ? cellIssue(column.type, cell) : "Unknown column id.";
-          if (message) ctx.addIssue({ code: "custom", path: [...path, id], message });
-        }
-      };
-      value.rows.forEach((cells, index) => checkRow(cells, ["rows", index]));
-      if (value.footer) checkRow(value.footer, ["footer"]);
+      const columns = checkTableData(value, ctx);
       if (value.sort && !columns.has(value.sort.column))
         ctx.addIssue({ code: "custom", path: ["sort", "column"], message: "Unknown column id." });
     });
+};
+const checkTableData = (
+  value: {
+    columns: z.output<ReturnType<typeof tableColumnsSchema>>;
+    rows: z.output<ReturnType<typeof tableRowSchema>>[];
+    footer?: z.output<ReturnType<typeof tableRowSchema>>;
+  },
+  ctx: z.RefinementCtx,
+) => {
+  const columns = new Map(value.columns.map((column) => [column.id, column]));
+  value.columns.forEach((column, index) => {
+    if (value.columns.findIndex((entry) => entry.id === column.id) !== index)
+      ctx.addIssue({ code: "custom", path: ["columns", index, "id"], message: "Column ids must be unique." });
+    if (column.format && column.type !== "number")
+      ctx.addIssue({ code: "custom", path: ["columns", index, "format"], message: "Only number columns may have a format." });
+  });
+  const checkRow = (cells: z.output<ReturnType<typeof tableRowSchema>>, path: (string | number)[]) => {
+    for (const [id, cell] of Object.entries(cells)) {
+      const column = columns.get(id);
+      const message = column ? cellIssue(column.type, cell) : "Unknown column id.";
+      if (message) ctx.addIssue({ code: "custom", path: [...path, id], message });
+    }
+  };
+  value.rows.forEach((cells, index) => checkRow(cells, ["rows", index]));
+  if (value.footer) checkRow(value.footer, ["footer"]);
+  return columns;
 };
 const groupViewSchema = () => cloudAiGroupSchema().safeExtend({ view: z.literal("group") });
 const GroupViewSchema = /* @__PURE__ */ groupViewSchema();
@@ -174,7 +203,221 @@ export type CloudAiTableView = z.output<typeof TableViewSchema>;
 export type CloudAiGroupView = z.output<typeof GroupViewSchema>;
 export type CloudAiStatsView = z.output<typeof StatsViewSchema>;
 export type CloudAiDetailsView = z.output<typeof DetailsViewSchema>;
-export type CloudAiView = CloudAiChartView | CloudAiTableView | CloudAiGroupView | CloudAiStatsView | CloudAiDetailsView;
+export type CloudAiView =
+  | CloudAiChartView
+  | CloudAiTableView
+  | CloudAiGroupView
+  | CloudAiStatsView
+  | CloudAiDetailsView
+  | CloudAiExplorerView;
+
+const explorerViewSchema = () => {
+  const common = { id: z.string().trim().min(1).max(40), label: z.string().trim().min(1).max(80), x: z.string() };
+  const ys = z.union([z.string(), z.array(z.string()).min(1).max(CLOUD_AI_CHART_MAX_SERIES)]);
+  const points = { ...common, y: ys, series: z.string().optional() };
+  return z.strictObject({
+    view: z.literal("explorer"),
+    title: z.string().trim().min(1).max(160),
+    subtitle: z.string().trim().min(1).max(300).optional(),
+    columns: tableColumnsSchema(),
+    rows: z.array(tableRowSchema()).max(CLOUD_AI_TABLE_MAX_ROWS),
+    views: z
+      .array(
+        z.discriminatedUnion("kind", [
+          z.strictObject({ ...common, kind: z.literal("bar"), y: z.string() }),
+          z.strictObject({ ...points, kind: z.literal("line") }),
+          z.strictObject({ ...points, kind: z.literal("scatter") }),
+          z.strictObject({ ...common, kind: z.literal("heatmap"), y: z.string(), value: z.string() }),
+        ]),
+      )
+      .min(1)
+      .max(CLOUD_AI_GROUP_MAX_CHARTS),
+    controls: z.strictObject({ filter: z.string().optional(), step: z.string().optional(), compare: z.boolean().optional() }).optional(),
+  });
+};
+const ExplorerDataSchema = /* @__PURE__ */ explorerViewSchema();
+export type CloudAiExplorerView = z.output<typeof ExplorerDataSchema>;
+const ExplorerViewSchema = ExplorerDataSchema.superRefine((value, ctx) => {
+  const columns = checkTableData(value, ctx);
+  const issue = (path: (string | number)[], message: string) => ctx.addIssue({ code: "custom", path, message });
+  const reference = (id: string, path: (string | number)[], types?: readonly string[]) => {
+    const column = columns.get(id);
+    if (!column) issue(path, "Unknown column id; choose an id from columns.");
+    // A reference opens an object; it has no value to plot, group or step by.
+    else if (column.type === "ref") issue(path, "Reference columns show only in the table; choose a text, number or date column.");
+    else if (types && !types.includes(column.type)) issue(path, `Choose a ${types.join(", ")} column.`);
+  };
+  const nonNull = (id: string, path: (string | number)[], max: number) => {
+    reference(id, path);
+    const cells = value.rows.map((row) => cloudAiViewScalarCellOf(row, id));
+    if (cells.some((cell) => cell == null)) issue(path, "Every row needs a non-null cell in this column; fill missing cells first.");
+    if (new Set(cells).size > max) issue(path, `Use at most ${max} distinct values in this column; aggregate or split the dataset.`);
+  };
+  if (value.controls?.filter !== undefined) nonNull(value.controls.filter, ["controls", "filter"], CLOUD_AI_CHART_MAX_SERIES);
+  if (value.controls?.step !== undefined) nonNull(value.controls.step, ["controls", "step"], CLOUD_AI_CHART_MAX_VALUES);
+  if (value.controls?.compare && value.controls.step === undefined)
+    issue(["controls", "compare"], "Comparison needs controls.step; choose a step column.");
+  value.views.forEach((chart, index) => {
+    const path = ["views", index];
+    if (value.views.findIndex((entry) => entry.id === chart.id) !== index)
+      issue([...path, "id"], "View ids must be unique; choose a different id.");
+    const point = chart.kind === "line" || chart.kind === "scatter";
+    reference(chart.x, [...path, "x"], point ? ["number", "date", "datetime"] : undefined);
+    const ys = Array.isArray(chart.y) ? chart.y : [chart.y];
+    ys.forEach((id, i) => {
+      const yPath = [...path, "y", ...(Array.isArray(chart.y) ? [i] : [])];
+      reference(id, yPath, chart.kind === "heatmap" ? undefined : ["number"]);
+      if (ys.indexOf(id) !== i) issue(yPath, "Y columns must be unique; remove the repeated column.");
+    });
+    if (chart.kind === "heatmap") reference(chart.value, [...path, "value"], ["number"]);
+    if (point && chart.series !== undefined) {
+      if (Array.isArray(chart.y)) issue([...path, "series"], "Series needs a single y column; use y as a column id.");
+      nonNull(chart.series, [...path, "series"], CLOUD_AI_CHART_MAX_SERIES);
+    }
+    if (value.controls?.compare && !point) issue(path, "Comparison needs line or scatter views; change the kind or disable compare.");
+    if (value.rows.length * ys.length > CLOUD_AI_VIEW_MAX_MARKS)
+      issue(
+        path,
+        `The view has ${value.rows.length * ys.length} marks; the limit is ${CLOUD_AI_VIEW_MAX_MARKS}. Aggregate or split into several views.`,
+      );
+  });
+  // Projection assumes typed cells and known columns; report those errors before computing axes.
+  if (ctx.issues.length) return;
+  const format = cloudAiViewCellFormatter(value.columns, "en");
+  value.views.forEach((chart, index) => {
+    if (chart.kind !== "bar" && chart.kind !== "heatmap") return;
+    const seen = new Map<string | number | null, Set<string>>();
+    for (const row of value.rows) {
+      if (cloudAiViewScalarCellOf(row, chart.kind === "bar" ? chart.y : chart.value) == null) continue;
+      const step = value.controls?.step === undefined ? null : cloudAiViewScalarCellOf(row, value.controls.step);
+      const labels = chart.kind === "bar" ? [format(chart.x, row)] : [format(chart.x, row), format(chart.y, row)];
+      const key = JSON.stringify(labels);
+      const keys = seen.get(step) ?? new Set<string>();
+      if (keys.has(key)) {
+        issue(
+          ["views", index],
+          chart.kind === "bar"
+            ? "Use one row per displayed x label in each step; aggregate rows first."
+            : "Use one row per displayed x/y label pair in each step; aggregate rows first.",
+        );
+        break;
+      }
+      keys.add(key);
+      seen.set(step, keys);
+    }
+  });
+  if (ctx.issues.length) return;
+  value.views.forEach((chart, index) => {
+    if (chart.kind === "heatmap") return;
+    const ys = Array.isArray(chart.y) ? chart.y : [chart.y];
+    const counts = new Map<string | number | null, Map<string | number | null, number>>();
+    let largest = 0;
+    for (const row of value.rows) {
+      if (chart.kind !== "bar" && cloudAiViewScalarCellOf(row, chart.x) == null) continue;
+      const step = value.controls?.step === undefined ? null : cloudAiViewScalarCellOf(row, value.controls.step);
+      for (const id of ys) {
+        if (typeof cloudAiViewScalarCellOf(row, id) !== "number") continue;
+        const series = chart.kind !== "bar" && chart.series !== undefined ? cloudAiViewScalarCellOf(row, chart.series) : id;
+        let state = counts.get(step);
+        if (!state) {
+          state = new Map();
+          counts.set(step, state);
+        }
+        const count = (state.get(series) ?? 0) + 1;
+        state.set(series, count);
+        largest = Math.max(largest, count);
+      }
+    }
+    if (largest > CLOUD_AI_CHART_MAX_VALUES)
+      issue(
+        ["views", index],
+        `The view draws ${largest} ${chart.kind === "bar" ? "bars" : "points in one series"} ${value.controls?.step === undefined ? "in total" : "in one step"}; the limit is ${CLOUD_AI_CHART_MAX_VALUES}. Aggregate the rows, keep the top ones, or add a step column.`,
+      );
+  });
+  if (ctx.issues.length) return;
+  const whole = cloudAiExplorerState(value, {}, "en");
+  // Date axes vary by step. Group once; checking their points needs neither legends nor dataset-wide domains again.
+  const stepRows = new Map<string | number | null, typeof value.rows>();
+  if (value.controls?.step !== undefined)
+    for (const row of value.rows) {
+      const key = cloudAiViewScalarCellOf(row, value.controls.step);
+      const rows = stepRows.get(key);
+      if (rows) rows.push(row);
+      else stepRows.set(key, [row]);
+    }
+  value.views.forEach((chart, index) => {
+    const input = whole.charts[chart.id]!.input;
+    // Check the whole fixed domain, including values whose other coordinate is null.
+    let raw: CloudAiChartInput = input;
+    if (input.kind === "bar")
+      raw = { ...input, data: [...input.data, ...(input.yAxis?.domain ?? []).map((value) => ({ label: "", value }))], yAxis: undefined };
+    if (input.kind === "line" || input.kind === "scatter") {
+      const points = input.series.flatMap((series) => series.data);
+      const xDomain = input.xAxis?.domain;
+      const yDomain = input.yAxis?.domain;
+      raw = {
+        ...input,
+        xAxis: undefined,
+        yAxis: undefined,
+        series: [
+          {
+            data: [
+              ...points,
+              ...(yDomain ?? []).map((y) => ({ x: points[0]?.x ?? xDomain?.[0] ?? 0, y })),
+              ...(xDomain ?? []).map((x) => ({ x, y: yDomain?.[0] ?? 0 })),
+            ],
+          },
+        ],
+      };
+    }
+    const domains = [
+      ...("xAxis" in input && input.xAxis?.domain ? [input.xAxis.domain] : []),
+      ...("yAxis" in input && input.yAxis?.domain ? [input.yAxis.domain] : []),
+    ];
+    const stepping = domains.some(
+      ([min, max]) =>
+        min === undefined ||
+        max === undefined ||
+        !Number.isFinite(min) ||
+        !Number.isFinite(max) ||
+        min >= max ||
+        !Number.isFinite(max - min),
+    )
+      ? "The values cannot form a finite axis; rescale them first."
+      : chartSteppingIssue(raw);
+    if (stepping) issue(["views", index], stepping);
+    if (chart.kind === "heatmap" && input.kind === "heatmap") {
+      const pairs = new Map(
+        value.rows.map((row) => {
+          const cell = { x: format(chart.x, row), y: format(chart.y, row), value: 0 };
+          return [JSON.stringify([cell.x, cell.y]), cell];
+        }),
+      );
+      const fit = chartDataIssue({ kind: "heatmap", title: chart.label, data: [...pairs.values()] });
+      if (fit) issue(["views", index], fit);
+    }
+    if (
+      (input.kind === "line" || input.kind === "scatter") &&
+      columns.get(chart.x)!.type !== "number" &&
+      value.controls?.step !== undefined
+    ) {
+      const ys = Array.isArray(chart.y) ? chart.y : [chart.y];
+      stepRows.forEach((rows) => {
+        const data: { x: string; y: number }[] = [];
+        for (const row of rows) {
+          const x = cloudAiViewScalarCellOf(row, chart.x);
+          if (typeof x !== "string") continue;
+          for (const id of ys) {
+            const y = cloudAiViewScalarCellOf(row, id);
+            if (typeof y === "number") data.push({ x, y });
+          }
+        }
+        const error = chartSteppingIssue({ ...input, series: [{ data }] });
+        if (error) issue(["views", index], error);
+      });
+    }
+  });
+});
 
 const summarySchema = () =>
   z.discriminatedUnion("view", [
@@ -194,6 +437,26 @@ const summarySchema = () =>
         .array(z.object({ kind: cloudAiChartKindSchema(), title: z.string(), subtitle: z.string().optional() }))
         .min(2)
         .max(CLOUD_AI_GROUP_MAX_CHARTS),
+    }),
+    z.object({
+      view: z.literal("explorer"),
+      title: z.string(),
+      subtitle: z.string().optional(),
+      rows: z.number().int().nonnegative().max(CLOUD_AI_TABLE_MAX_ROWS),
+      columns: z.number().int().min(1).max(CLOUD_AI_TABLE_MAX_COLUMNS),
+      views: z
+        .array(
+          z.object({
+            id: z.string().min(1).max(40),
+            label: z.string().min(1).max(80),
+            kind: z.enum(["bar", "line", "scatter", "heatmap"]),
+          }),
+        )
+        .min(1)
+        .max(CLOUD_AI_GROUP_MAX_CHARTS),
+      step: z.boolean(),
+      filter: z.boolean(),
+      compare: z.boolean(),
     }),
     z.object({
       view: z.literal("table"),
@@ -231,7 +494,7 @@ export type CloudAiViewSummary = z.output<typeof CloudAiViewSummarySchema>;
 
 const unknownViewSchema = () =>
   z.unknown().transform((_value, ctx) => {
-    ctx.addIssue({ code: "custom", path: ["view"], message: "Expected one of chart, group, table, stats, details." });
+    ctx.addIssue({ code: "custom", path: ["view"], message: "Expected one of chart, group, table, stats, details, explorer." });
     return z.NEVER;
   });
 const UnknownViewSchema = /* @__PURE__ */ unknownViewSchema();
@@ -248,6 +511,8 @@ const parse = (value: unknown) => {
         return StatsViewSchema.safeParse(value);
       case "details":
         return DetailsViewSchema.safeParse(value);
+      case "explorer":
+        return ExplorerViewSchema.safeParse(value);
     }
   }
   return UnknownViewSchema.safeParse(value);
@@ -283,6 +548,17 @@ export const checkCloudAiView = (value: unknown): { view: CloudAiView } | { issu
 };
 export const cloudAiViewSummary = (view: CloudAiView): CloudAiViewSummary => {
   const common = { title: view.title, ...(view.subtitle ? { subtitle: view.subtitle } : {}) };
+  if (view.view === "explorer")
+    return {
+      view: "explorer",
+      ...common,
+      rows: view.rows.length,
+      columns: view.columns.length,
+      views: view.views.map(({ id, label, kind }) => ({ id, label, kind })),
+      step: view.controls?.step !== undefined,
+      filter: view.controls?.filter !== undefined,
+      compare: view.controls?.compare ?? false,
+    };
   if (view.view === "group")
     return {
       view: "group",
@@ -417,12 +693,19 @@ export function cloudAiDetailsRows(
 }
 
 export type CloudAiViewTable = CloudAiChartTable & { footer?: CloudAiChartRow };
-/** Row keys are original row indices, so hosts resolve refs through view.rows[Number(row.key)][column.id] even after sorting. */
-export function cloudAiViewTable(view: CloudAiTableView, locale: string): CloudAiViewTable {
-  // Missing cells stay null even when a column id names an Object.prototype property.
-  const cellOf = (cells: CloudAiTableView["rows"][number], id: string) => (Object.hasOwn(cells, id) ? cells[id] : null);
+// Column ids are data; missing cells must not read Object.prototype.
+export const cloudAiViewCellOf = (cells: CloudAiTableView["rows"][number], id: string) => (Object.hasOwn(cells, id) ? cells[id]! : null);
+
+/** Explorer encodings reject ref columns before projection; reference cells have no scalar value. */
+export const cloudAiViewScalarCellOf = (cells: CloudAiTableView["rows"][number], id: string): string | number | null => {
+  const cell = cloudAiViewCellOf(cells, id);
+  return typeof cell === "object" ? null : cell;
+};
+
+export function cloudAiViewCellFormatter(columns: CloudAiTableView["columns"], locale: string) {
+  const byId = new Map(columns.map((column) => [column.id, column]));
   const numberFormats = new Map(
-    view.columns
+    columns
       .filter((column) => column.type === "number")
       .map((column) => {
         return [column.id, cloudAiNumberFormatters(column.format, locale).value] as const;
@@ -438,11 +721,18 @@ export function cloudAiViewTable(view: CloudAiTableView, locale: string): CloudA
     if ((column.type === "date" || column.type === "datetime") && typeof cell === "string") return date(column.type, cell);
     return String(cell);
   };
+  return (id: string, cells: CloudAiTableView["rows"][number]): string => {
+    const cell = cloudAiViewCellOf(cells, id);
+    return cell == null ? "" : formatCell(byId.get(id)!, cell);
+  };
+}
+/** Row keys are original row indices, so hosts resolve refs through view.rows[Number(row.key)][column.id] even after sorting. */
+export function cloudAiViewTable(view: CloudAiTableView | CloudAiExplorerView, locale: string): CloudAiViewTable {
+  const cellOf = cloudAiViewCellOf;
+  const formatCell = cloudAiViewCellFormatter(view.columns, locale);
   const row = (cells: CloudAiTableView["rows"][number], key: string): CloudAiChartRow => ({
     key,
-    cells: Object.fromEntries(
-      view.columns.map((column) => [column.id, cellOf(cells, column.id) == null ? "" : formatCell(column, cellOf(cells, column.id)!)]),
-    ),
+    cells: Object.fromEntries(view.columns.map((column) => [column.id, formatCell(column.id, cells)])),
     values: Object.fromEntries(
       view.columns.flatMap((column) => {
         const cell = cellOf(cells, column.id);
@@ -454,8 +744,8 @@ export function cloudAiViewTable(view: CloudAiTableView, locale: string): CloudA
   return {
     columns: view.columns.map((column) => ({ id: column.id, label: column.label ?? column.id, numeric: column.type === "number" })),
     // The view's own order, so every reader starts from the same rows.
-    rows: view.sort ? sortCloudAiViewRows(rows, { key: view.sort.column, direction: view.sort.direction }, locale) : rows,
-    ...(view.footer ? { footer: row(view.footer, "footer") } : {}),
+    rows: "sort" in view && view.sort ? sortCloudAiViewRows(rows, { key: view.sort.column, direction: view.sort.direction }, locale) : rows,
+    ...("footer" in view && view.footer ? { footer: row(view.footer, "footer") } : {}),
   };
 }
 
@@ -488,4 +778,164 @@ export function cloudAiTableTsv(table: CloudAiViewTable): string {
       table.columns.map((column) => cell(row.cells[column.id] ?? "", column.numeric)).join("\t"),
     ),
   ].join("\n");
+}
+
+export type CloudAiExplorerRequest = { step?: string; visibleKeys?: readonly string[]; referenceStep?: string };
+type Cell = string | number | null;
+const distinct = (view: CloudAiExplorerView, id: string) => [...new Set(view.rows.map((row) => cloudAiViewScalarCellOf(row, id)))];
+
+/** Localized step and filter choices in dataset order, initially showing the last step. */
+export function cloudAiExplorerControls(view: CloudAiExplorerView, locale: string) {
+  const format = cloudAiViewCellFormatter(view.columns, locale);
+  const entries = (id: string | undefined) =>
+    id === undefined ? [] : distinct(view, id).map((cell, position) => ({ key: String(position), label: format(id, { [id]: cell }) }));
+  const steps = entries(view.controls?.step);
+  const series = entries(view.controls?.filter).map((entry, color) => ({ ...entry, color }));
+  const initial: CloudAiExplorerRequest = steps.length ? { step: steps.at(-1)!.key } : {};
+  return { steps, series, initial };
+}
+
+type ExplorerChartState = {
+  input: CloudAiChartInput;
+  marks: number[][];
+  legend: { label: string; color: number; style?: "solid" | "dashed"; reference?: boolean }[];
+};
+
+/** Project current and reference rows into every view, retaining dataset-wide axes and series palette slots. */
+export function cloudAiExplorerState(
+  view: CloudAiExplorerView,
+  request: CloudAiExplorerRequest,
+  locale: string,
+): {
+  rows: number[];
+  charts: Record<string, ExplorerChartState>;
+} {
+  const format = cloudAiViewCellFormatter(view.columns, locale);
+  const columns = new Map(view.columns.map((column) => [column.id, column]));
+  const stepId = view.controls?.step;
+  const filterId = view.controls?.filter;
+  const steps = stepId === undefined ? [] : distinct(view, stepId);
+  const filters = filterId === undefined ? [] : distinct(view, filterId);
+  const stepValue = (key: string | undefined): Cell | undefined =>
+    key === undefined ? undefined : steps.find((_, index) => String(index) === key);
+  const current = stepValue(request.step);
+  const reference = stepValue(request.referenceStep);
+  // A reference on the shown step would only draw every point twice; it compares once the slider moves.
+  const comparing = stepId !== undefined && reference !== undefined && request.referenceStep !== request.step;
+  const visible = filterId === undefined || request.visibleKeys === undefined ? undefined : new Set(request.visibleKeys);
+  const included = (index: number) =>
+    !visible || visible.has(String(filters.indexOf(cloudAiViewScalarCellOf(view.rows[index]!, filterId!))));
+  const currentRows = view.rows.flatMap((row, index) =>
+    included(index) && (stepId === undefined || request.step === undefined || cloudAiViewScalarCellOf(row, stepId) === current)
+      ? [index]
+      : [],
+  );
+  const referenceRows = comparing
+    ? view.rows.flatMap((row, index) => (included(index) && cloudAiViewScalarCellOf(row, stepId!) === reference ? [index] : []))
+    : [];
+  const shown = new Set([...currentRows, ...referenceRows]);
+  const rows = view.rows.flatMap((_, index) => (shown.has(index) ? [index] : []));
+  const numbers = (ids: string[]) =>
+    view.rows.flatMap((row) =>
+      ids.flatMap((id) => {
+        const cell = cloudAiViewScalarCellOf(row, id);
+        return typeof cell === "number" ? [cell] : [];
+      }),
+    );
+  const domain = (values: number[], zero = false): [number, number] => {
+    const [min, max] = computeDomain(zero ? [...values, 0] : values);
+    const step = niceStep(max - min, 5);
+    const ends = [Math.floor(min / step) * step, Math.ceil(max / step) * step];
+    // Invalid input is inspected before rejection too; never enter the stdlib tick loop for unsafe ranges.
+    if (!Number.isFinite(step) || step <= 0 || ends.some((end) => !Number.isFinite(end) || end + step === end || end - step === end))
+      return [min, max];
+    return extendDomainToNice(min, max, step).domain;
+  };
+  // A number x axis spans exactly the data, so months 1..12 do not start at a padded 0; value axes round to nice ends.
+  const axis = (ids: string[], options: { zero?: boolean; exact?: boolean } = {}) => {
+    const column = columns.get(ids[0]!)!;
+    const values = column.type === "number" ? numbers(ids) : [];
+    const [min, max] = values.length ? [Math.min(...values), Math.max(...values)] : [0, 0];
+    return {
+      ...(ids.length === 1 ? { label: column.label ?? column.id } : {}),
+      ...(column.format ? { format: column.format } : {}),
+      ...(column.type === "number" ? { domain: options.exact && min < max ? [min, max] : domain(values, options.zero) } : {}),
+    };
+  };
+  const charts = view.views.map((chart): [string, ExplorerChartState] => {
+    const title = chart.label;
+    if (chart.kind === "bar") {
+      const marks: number[][] = [[]];
+      const data = rows.flatMap((index) => {
+        const row = view.rows[index]!;
+        const value = cloudAiViewScalarCellOf(row, chart.y);
+        if (typeof value !== "number") return [];
+        marks[0]!.push(index);
+        return [{ label: format(chart.x, row), value }];
+      });
+      return [chart.id, { input: { kind: "bar", title, data, yAxis: axis([chart.y], { zero: true }) }, marks, legend: [] }];
+    }
+    if (chart.kind === "heatmap") {
+      const marks: number[][] = [[]];
+      const data = rows.flatMap((index) => {
+        const row = view.rows[index]!;
+        const value = cloudAiViewScalarCellOf(row, chart.value);
+        if (typeof value !== "number") return [];
+        marks[0]!.push(index);
+        return [{ x: format(chart.x, row), y: format(chart.y, row), value }];
+      });
+      const [min, max] = computeDomain(numbers([chart.value]));
+      return [chart.id, { input: { kind: "heatmap", title, data, min, max, format: columns.get(chart.value)!.format }, marks, legend: [] }];
+    }
+    const ys = Array.isArray(chart.y) ? chart.y : [chart.y];
+    const groups = chart.series === undefined ? undefined : distinct(view, chart.series);
+    const names = groups
+      ? groups.map((cell) => format(chart.series!, { [chart.series!]: cell }))
+      : ys.map((id) => columns.get(id)!.label ?? id);
+    const series: { label: string; data: { x: string | number; y: number }[]; role?: "reference" }[] = [];
+    const marks: number[][] = [];
+    const legend: ExplorerChartState["legend"] = [];
+    const stepLabel = (cell: Cell | undefined) => (stepId === undefined || cell === undefined ? "" : format(stepId, { [stepId]: cell }));
+    const add = (indexes: number[], offset: number, reference = false) => {
+      while (series.length < offset + names.length) {
+        series.push({ label: "", data: [] });
+        marks.push([]);
+      }
+      names.forEach((name, slot) => {
+        series[offset + slot] = {
+          label: comparing ? `${name} · ${stepLabel(reference ? stepValue(request.referenceStep) : current)}` : name,
+          data: [],
+          ...(reference ? { role: "reference" } : {}),
+        };
+      });
+      for (const index of indexes) {
+        const row = view.rows[index]!;
+        ys.forEach((id, yIndex) => {
+          const x = cloudAiViewScalarCellOf(row, chart.x);
+          const y = cloudAiViewScalarCellOf(row, id);
+          if (x == null || typeof y !== "number") return;
+          const slot = offset + (groups ? groups.indexOf(cloudAiViewScalarCellOf(row, chart.series!)) : yIndex);
+          series[slot]!.data.push({ x, y });
+          marks[slot]!.push(index);
+        });
+      }
+      names.forEach((_, slot) => {
+        const entry = series[offset + slot]!;
+        if (entry.data.length)
+          legend.push({
+            label: entry.label,
+            color: slot % 8,
+            ...(chart.kind === "line" ? { style: reference ? "dashed" : "solid" } : {}),
+            ...(reference ? { reference: true } : {}),
+          });
+      });
+    };
+    add(currentRows, 0);
+    if (comparing) add(referenceRows, 8, true);
+    return [
+      chart.id,
+      { input: { kind: chart.kind, title, series, xAxis: axis([chart.x], { exact: true }), yAxis: axis(ys) }, marks, legend },
+    ];
+  });
+  return { rows, charts: Object.fromEntries(charts) };
 }

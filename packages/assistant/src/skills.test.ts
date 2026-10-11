@@ -19,6 +19,7 @@ test("Assistant skills retain workflow and capability guidance", async () => {
   // Both skills keep computed values inside the run and deliver view references.
   for (const skill of [codeMode, inputs.find((candidate) => candidate.name === "assistant-data-analysis")]) {
     expect(skill?.instructions).toContain("cloud.view.");
+    expect(skill?.instructions).toContain("cloud.view.explorer");
     expect(skill?.instructions).toContain("present({path})");
     expect(skill?.instructions).toContain("cloud.view.stats");
     expect(skill?.instructions).toContain("cloud.view.details");

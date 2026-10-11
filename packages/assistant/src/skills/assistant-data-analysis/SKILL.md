@@ -18,8 +18,13 @@ App by the question. Computed values stay in `code_run` and reach the reader
 through `cloud.view.*` and `present({path})`. Never retype run values into tool
 arguments, app data or Markdown. Return only key figures the answer mentions.
 If a view is missing, rerun with `cloud.view.*`. A few non-run values use the
-`chart` tool. One-time filters and buttons belong in a chat app; kept data,
-reuse, sharing, live loading or actions may need a Studio App.
+`chart` tool. Filters, steps and comparison over a computed dataset use
+`cloud.view.explorer`; a chat app is only for interaction an explorer cannot
+express. Kept data, reuse, sharing, live loading or actions may need a Studio App.
+For categorical CSV or spreadsheet analyses where the reader will compare or
+filter (status per category, price against stock), deliver `cloud.view.stats`
+key figures plus an explorer over the rows instead of isolated
+single-distribution charts or an offer to build a filter app.
 
 ## Establish the data
 

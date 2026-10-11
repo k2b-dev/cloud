@@ -1,8 +1,10 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
+import { z } from "zod";
 import { launchBrowser } from "../../../../ui/test/browser";
+import type { CloudResourceRef } from "../../contracts/capabilities";
 import type { AiTurnBlock } from "../protocol";
 import { cloudAiViewSummary, parseCloudAiView } from "../view-block";
 
@@ -245,7 +247,99 @@ const tasks = {
   ],
   sort: { column: "late", direction: "desc" },
 };
+// One dataset in a few views: monthly offers per region over two years, filtered by region and stepped by year.
+const regions = ["North", "South", "West"];
+const explorer = {
+  view: "explorer",
+  title: "Offers by month and region",
+  subtitle: "Number of offers and median price, 2025 and 2026",
+  columns: [
+    { id: "year", label: "Year", type: "text" },
+    { id: "month", label: "Month", type: "number" },
+    { id: "region", label: "Region", type: "text" },
+    { id: "count", label: "Offers", type: "number" },
+    { id: "median", label: "Median price", type: "number", format: { style: "currency", currency: "EUR" } },
+  ],
+  rows: ["2025", "2026"].flatMap((year, y) =>
+    regions.flatMap((region, r) =>
+      Array.from({ length: 12 }, (_, index) => ({
+        year,
+        month: index + 1,
+        region,
+        count: 30 + r * 12 + y * 8 + ((index * (r + 5)) % 17),
+        median: 4200 + r * 300 + y * 150 + ((index * 113) % 600),
+      })),
+    ),
+  ),
+  views: [
+    { id: "count", label: "Offers", kind: "line", x: "month", y: "count", series: "region" },
+    { id: "median", label: "Median price", kind: "scatter", x: "month", y: "median", series: "region" },
+  ],
+  controls: { filter: "region", step: "year", compare: true },
+};
+const explorerSummary = {
+  view: "explorer",
+  title: explorer.title,
+  subtitle: explorer.subtitle,
+  rows: explorer.rows.length,
+  columns: explorer.columns.length,
+  views: explorer.views.map(({ id, label, kind }) => ({ id, label, kind })),
+  step: true,
+  filter: true,
+  compare: true,
+};
+// Comparison exceeds the inline row budget, while each individual step fits.
+const largeExplorer = {
+  ...explorer,
+  rows: explorer.rows.flatMap((row) => [row, { ...row, region: `${row.region} annex` }]),
+};
+// Realistic data labels: a long step column label, a long filter label and step names of different lengths.
+const longSteps = ["2024", "Fiscal year 2025 (preliminary figures)", "Fiscal year 2026 (preliminary figures)"];
+const longExplorer = {
+  ...explorer,
+  columns: explorer.columns.map((column) =>
+    column.id === "year"
+      ? { ...column, label: "Fiscal reporting year of the original observation recorded in this dataset" }
+      : column.id === "region"
+        ? { ...column, label: "Sales region of the responsible office" }
+        : column,
+  ),
+  rows: longSteps.flatMap((year, y) =>
+    explorer.rows.filter((row) => row.year === "2025").map((row) => ({ ...row, year, count: row.count + y * 3 })),
+  ),
+};
+// A column named like an Object member, with a missing cell that must sort as missing, not as the inherited member.
+const memberExplorer = {
+  view: "explorer",
+  title: "Member names",
+  columns: [
+    { id: "name", label: "Name", type: "text" },
+    { id: "constructor", label: "Constructor", type: "number" },
+  ],
+  rows: [
+    { name: "One", constructor: 1 },
+    { name: "Two", constructor: 2 },
+    { name: "Missing", constructor: null },
+  ],
+  views: [{ id: "bar", label: "Bar", kind: "bar", x: "name", y: "constructor" }],
+};
+const referenceExplorer = {
+  view: "explorer",
+  title: "Product references",
+  columns: [
+    { id: "item", label: "Item", type: "ref" },
+    { id: "name", type: "text" },
+    { id: "stock", type: "number" },
+  ],
+  rows: [
+    { item: { type: "spaces.item", id: "first", title: "First product" }, name: "A", stock: 1 },
+    { item: { type: "spaces.item", id: "second", title: "Second product" }, name: "B", stock: 2 },
+    { item: null, name: "C", stock: 3 },
+  ],
+  views: [{ id: "stock", label: "Stock", kind: "bar", x: "name", y: "stock" }],
+};
 const files: Record<string, unknown> = {
+  "/views/product-references-12345678.view.json": referenceExplorer,
   "/views/offers-at-a-glance-0a1b2c3d.view.json": stats,
   "/views/invoice-re-2026-0412-4d5e6f7a.view.json": invoice,
   "/views/overdue-tasks-8b9c0d1e.view.json": tasks,
@@ -270,6 +364,11 @@ const files: Record<string, unknown> = {
   // Edited after `present`: the stats title and table subtitle changed.
   "/views/retitled-stats-6a7b8c9d.view.json": { ...stats, title: "Updated offers at a glance" },
   "/views/resubtitled-table-7b8c9d0e.view.json": { ...table, subtitle: "Updated median price in EUR" },
+  "/views/explorer-more-0a1b2c3e.view.json": largeExplorer,
+  "/views/explorer-long-labels-0a1b2c41.view.json": longExplorer,
+  "/views/explorer-member-names-0a1b2c42.view.json": memberExplorer,
+  "/views/explorer-views-edited-0a1b2c3f.view.json": { ...explorer, views: explorer.views.slice(1) },
+  "/views/explorer-controls-edited-0a1b2c40.view.json": { ...explorer, controls: { step: "year" } },
   // Edited after `present`: the cursor is no longer linked, and a chart gained a subtitle its summary did not reserve.
   "/views/unlinked-4e5f6a7b.view.json": { ...linked, linkX: false },
   "/views/subtitled-8c9d0e1f.view.json": chart,
@@ -280,10 +379,25 @@ const files: Record<string, unknown> = {
   "/views/offers-by-status-1a2b3c4d.view.json": chart,
   "/views/offers-per-month-5e6f7a8b.view.json": table,
   "/views/prices-by-region-3c4d5e6f.view.json": small,
+  "/views/offers-by-month-and-region-0a1b2c3d.view.json": explorer,
 };
 
 let browser: Browser;
 let server: ReturnType<typeof Bun.serve>;
+/** Files a test holds back until it releases them, so it can measure the loading frame without racing the file. */
+const held = new Map<string, PromiseWithResolvers<void>>();
+const release = (path: string) => {
+  held.get(path)?.resolve();
+  held.delete(path);
+};
+const hold = (path: string) => {
+  held.set(path, Promise.withResolvers<void>());
+  return () => release(path);
+};
+// A test that fails while holding a file must not leave it held for the next one.
+afterEach(() => {
+  for (const path of [...held.keys()]) release(path);
+});
 beforeAll(async () => {
   const [harness, styles] = await Promise.all([
     buildHarness(),
@@ -299,8 +413,9 @@ beforeAll(async () => {
       if (url.pathname === "/harness.js") return new Response(harness, { headers: { "content-type": "text/javascript" } });
       // View files arrive late, so a block that sized itself by its content would move what follows it.
       if (url.pathname === "/files") {
-        const file = files[url.searchParams.get("path") ?? ""];
-        return Bun.sleep(400).then(() =>
+        const path = url.searchParams.get("path") ?? "";
+        const file = files[path];
+        return Promise.all([Bun.sleep(400), held.get(path)?.promise]).then(() =>
           file ? Response.json(file, { headers: { "X-Cloud-Ai-File-Origin": "assistant" } }) : new Response(null, { status: 404 }),
         );
       }
@@ -322,6 +437,12 @@ afterAll(async () => {
 });
 
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
+declare global {
+  interface Window {
+    show: (blocks: ToolBlock[]) => void;
+    opened: { title: string; ref: CloudResourceRef }[];
+  }
+}
 const present = (path: string, view: unknown): ToolBlock => ({
   id: path,
   kind: "tool",
@@ -400,7 +521,7 @@ for (const view of [
       try {
         const page = await context.newPage();
         await page.goto(`http://127.0.0.1:${server.port}/?lang=${theme === "dark" ? "de" : "en"}&theme=${theme}`);
-        await page.evaluate((value) => (window as unknown as { show: (blocks: ToolBlock[]) => void }).show(value), blocks);
+        await page.evaluate((value) => window.show(value), blocks);
         await page.waitForSelector("[data-view-path]");
         const loading = await boxes(page);
         await page.waitForSelector('[data-view-path] [data-chart-kind="bar"]');
@@ -585,7 +706,7 @@ test("a tap on one chart of a linked group moves the cursor in every chart of th
   try {
     const page = await context.newPage();
     await page.goto(`http://127.0.0.1:${server.port}/`);
-    await page.evaluate((value) => (window as unknown as { show: (blocks: ToolBlock[]) => void }).show(value), [blocks[0]!]);
+    await page.evaluate((value) => window.show(value), [blocks[0]!]);
     const charts = page.locator('[data-view-path] [data-interactive="true"]');
     await page.waitForFunction(() => document.querySelectorAll('[data-view-path] [data-interactive="true"]').length === 2);
     const box = (await charts.first().boundingBox())!;
@@ -613,7 +734,7 @@ test("a long legend never squeezes its chart on a phone", async () => {
     const page = await context.newPage();
     await page.goto(`http://127.0.0.1:${server.port}/`);
     await page.evaluate(
-      (value) => (window as unknown as { show: (blocks: ToolBlock[]) => void }).show(value),
+      (value) => window.show(value),
       [
         present("/views/offers-by-office-2d3e4f5a.view.json", { view: "chart", kind: "bar", title: crowded.title }),
         present("/views/offers-by-sales-channel-6b7c8d9e.view.json", { view: "chart", kind: "line", title: named.title }),
@@ -699,7 +820,7 @@ test("a view file edited after present shows unavailable instead of what its sum
     const page = await context.newPage();
     await page.goto(`http://127.0.0.1:${server.port}/`);
     await page.evaluate(
-      (value) => (window as unknown as { show: (blocks: ToolBlock[]) => void }).show(value),
+      (value) => window.show(value),
       [
         present("/views/unlinked-4e5f6a7b.view.json", groupSummary(linked)),
         present("/views/subtitled-8c9d0e1f.view.json", { view: "chart", kind: "bar", title: chart.title }),
@@ -714,14 +835,367 @@ test("a view file edited after present shows unavailable instead of what its sum
           columns: table.columns.length,
           footer: true,
         }),
+        present("/views/explorer-views-edited-0a1b2c3f.view.json", explorerSummary),
+        present("/views/explorer-controls-edited-0a1b2c40.view.json", explorerSummary),
       ],
     );
-    // Both charts of the group, the single chart, both stats views, the record and the table.
+    // Both charts of the group, the single chart, both stats views, the record, the table and the two edited explorers.
     await page.waitForFunction(() => {
-      const statuses = Array.from(document.querySelectorAll('[data-view-path] [role="status"]'));
-      return statuses.length === 7 && statuses.every((node) => node.textContent?.startsWith("This view is no longer available"));
+      const statuses = Array.from(document.querySelectorAll('[data-view-path] [role="status"]')).filter((node) => node.textContent?.trim());
+      return statuses.length === 9 && statuses.every((node) => node.textContent?.startsWith("This view is no longer available"));
     });
     expect(await page.locator('[data-view-path] [data-interactive="true"]').count()).toBe(0);
+  } finally {
+    await context.close();
+  }
+});
+
+const explorerViewport = (page: Page) =>
+  page.evaluate(() => {
+    const box = document.querySelector(".k2b-chart-explorer__viewport")!.getBoundingClientRect();
+    return [box.top, box.height].map(Math.round);
+  });
+/**
+ * The frame of a presented explorer whose file the test holds back: every view box and the explorer viewport,
+ * measured in one call, so the loaded explorer can never replace the measured nodes halfway.
+ */
+const explorerLoadingFrame = async (page: Page) => {
+  await page.waitForSelector('[data-view-path] .k2b-chart-explorer__viewport [role="status"]');
+  return page.evaluate(() => {
+    const viewport = document.querySelector(".k2b-chart-explorer__viewport")!.getBoundingClientRect();
+    return {
+      interactive: document.querySelectorAll('[data-view-path] [data-interactive="true"]').length,
+      boxes: Array.from(document.querySelectorAll("[data-view-path]")).map((node) => {
+        const box = node.getBoundingClientRect();
+        return [box.top, box.height].map(Math.round);
+      }),
+      viewport: [viewport.top, viewport.height].map(Math.round),
+    };
+  });
+};
+const explorerRows = (page: Page) =>
+  page
+    .locator("tbody .k2b-data-table__row")
+    .evaluateAll((rows) => rows.map((row) => Array.from(row.querySelectorAll("td")).map((cell) => cell.textContent?.trim())));
+const pickExplorerView = async (page: Page, label: string, german = false) => {
+  await page.getByRole("button", { name: german ? "Diagrammansicht" : "Chart view", exact: true }).click();
+  await page.getByRole("menuitemradio", { name: label, exact: true }).click();
+};
+const PointSchema = z.object({
+  index: z.number(),
+  seriesIndex: z.number(),
+  values: z.array(z.object({ key: z.string(), value: z.union([z.string(), z.number()]) })),
+});
+
+for (const view of [
+  { name: "desktop", width: 1280, height: 900, touch: false },
+  { name: "phone", width: 360, height: 800, touch: true },
+] as const)
+  for (const theme of ["light", "dark"] as const)
+    test(`an explorer preserves its frame and shares comparison, filtering and selection (${view.name}, ${theme})`, async () => {
+      const context = await browser.newContext({
+        viewport: { width: view.width, height: view.height },
+        isMobile: view.touch,
+        hasTouch: view.touch,
+        reducedMotion: "reduce",
+      });
+      try {
+        const page = await context.newPage();
+        const german = theme === "dark";
+        await page.goto(`http://127.0.0.1:${server.port}/?lang=${german ? "de" : "en"}&theme=${theme}`);
+        // Exercise a 320px chat column inside the 360px phone, including the harness's padding.
+        if (view.touch)
+          await page.locator("main").evaluate((node) => {
+            node.style.maxWidth = "352px";
+          });
+        const path = "/views/offers-by-month-and-region-0a1b2c3d.view.json";
+        const loaded = hold(path);
+        await page.evaluate((value) => window.show(value), [present(path, explorerSummary)]);
+        const frame = await explorerLoadingFrame(page);
+        expect(frame.interactive).toBe(0);
+        const { boxes: loading, viewport } = frame;
+        expect(viewport[1]).toBe(288);
+        const stable = async () => {
+          expect(await boxes(page)).toEqual(loading);
+          expect(await explorerViewport(page)).toEqual(viewport);
+        };
+        const fits = async () => {
+          expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
+          const controls = await page.locator(".k2b-chart-explorer").evaluate((node) => {
+            const frame = node.getBoundingClientRect();
+            const slider = node.querySelector(".k2b-chart-explorer__dimension")!.getBoundingClientRect();
+            const filter = node.querySelector(".k2b-filter-chip")!.getBoundingClientRect();
+            const pin = node.querySelector(".k2b-chart-explorer__pin")!.getBoundingClientRect();
+            return {
+              width: frame.width,
+              inside: [slider, filter, pin].every((box) => box.left >= frame.left - 0.5 && box.right <= frame.right + 0.5),
+              sameRow: Math.abs((filter.top + filter.bottom) / 2 - (pin.top + pin.bottom) / 2) <= 0.5,
+              sliderAbove: slider.bottom <= filter.top,
+            };
+          });
+          expect(controls).toMatchObject({ inside: true, sameRow: true, sliderAbove: true });
+          if (view.touch) expect(controls.width).toBeLessThanOrEqual(320);
+        };
+        const shot = async (suffix = "") => {
+          if (process.env.VIEW_SHOTS)
+            await page.screenshot({ path: `${process.env.VIEW_SHOTS}/explorer-${view.name}-${theme}${suffix}.png` });
+        };
+        await shot("-loading");
+        loaded();
+        await page.waitForSelector('[data-view-path] [data-interactive="true"]');
+        expect(await page.locator(".k2b-chart-legend li").allTextContents()).toEqual(regions);
+        await stable();
+        await fits();
+        await shot();
+
+        await page.getByRole("button", { name: german ? "Als Vergleich merken" : "Pin as reference" }).click();
+        await stable();
+        await fits();
+        const slider = page.getByRole("slider", { name: "Year", exact: true });
+        await slider.focus();
+        await page.keyboard.press("ArrowLeft");
+        await page.waitForFunction(() => document.querySelector('input[type="range"]')?.getAttribute("aria-valuetext") === "2025");
+        await page.waitForSelector('.k2b-chart-legend [data-reference="true"]');
+        const expectedLegend = regions.map((region) => `${region} · 2025`).concat(regions.map((region) => `${region} · 2026`));
+        expect(await page.locator(".k2b-chart-legend li").allTextContents()).toEqual(expectedLegend);
+        expect(await page.locator('.k2b-chart-legend [data-reference="true"][data-style="dashed"]').count()).toBe(3);
+        await stable();
+        await fits();
+        await shot("-compare");
+        await page.getByRole("button", { name: german ? "Diagrammansicht" : "Chart view", exact: true }).click();
+        expect(await page.getByRole("menuitemradio").allTextContents()).toEqual(["Offers", "Median price", german ? "Tabelle" : "Table"]);
+        await shot("-menu");
+        await page.getByRole("menuitemradio", { name: "Median price", exact: true }).click();
+        await page.waitForSelector('[data-chart-kind="scatter"]');
+        await stable();
+        await pickExplorerView(page, german ? "Tabelle" : "Table", german);
+        await page.waitForSelector("tbody .k2b-data-table__row");
+        const expectedRows = explorer.rows.map((row) => [row.year, String(row.month), row.region, String(row.count)]);
+        expect((await explorerRows(page)).map((cells) => cells.slice(0, 4))).toEqual(expectedRows);
+        expect(await page.locator("tbody .k2b-data-table__row").count()).toBeLessThanOrEqual(100);
+        await stable();
+
+        // The table's Region header is a sort button too; the series filter is the chip.
+        await page.locator(".k2b-chart-explorer .k2b-filter-chip").getByText("Region", { exact: true }).click();
+        const north = page.getByRole("menuitemcheckbox", { name: "North", exact: true });
+        expect(await north.getAttribute("aria-checked")).toBe("true");
+        await north.click();
+        await page.waitForFunction(() => document.querySelectorAll("tbody .k2b-data-table__row").length === 48);
+        expect(await north.getAttribute("aria-checked")).toBe("false");
+        await page.keyboard.press("Escape");
+        const filtered = expectedRows.filter((cells) => cells[2] !== "North");
+        expect((await explorerRows(page)).map((cells) => cells.slice(0, 4))).toEqual(filtered);
+        await stable();
+        await pickExplorerView(page, "Offers", german);
+        await page.waitForSelector('[data-chart-kind="line"]');
+        expect(await page.locator(".k2b-chart-legend li").allTextContents()).toEqual(
+          expectedLegend.filter((label) => !label.startsWith("North")),
+        );
+        expect(await page.locator('.k2b-chart-legend [data-reference="true"][data-style="dashed"]').count()).toBe(2);
+        await stable();
+        await fits();
+
+        await pickExplorerView(page, "Median price", german);
+        await page.waitForSelector('[data-chart-kind="scatter"]');
+        const mark = page.locator("[data-chart-datum]:not([data-chart-reference])").nth(4);
+        if (view.touch) await mark.tap();
+        else await mark.click();
+        await page.waitForSelector("[data-chart-datum][data-selected]");
+        const selected = PointSchema.parse(JSON.parse((await mark.getAttribute("data-chart-datum"))!));
+        expect(selected).toMatchObject({ index: 4, seriesIndex: 1 });
+        // The tooltip names the encoded columns of the picked row, also for a series other than the first.
+        const tooltip = await page.locator(".k2b-chart__tooltip:popover-open").first().textContent();
+        expect(tooltip).toContain("Median price");
+        expect(tooltip).toContain("Month");
+        await pickExplorerView(page, german ? "Tabelle" : "Table", german);
+        await page.waitForSelector('tbody .k2b-data-table__row[data-selected="true"]');
+        expect(await page.locator('tbody .k2b-data-table__row[data-selected="true"] td').allTextContents()).toEqual(
+          (await explorerRows(page))[4]!,
+        );
+        expect((await explorerRows(page))[4]?.slice(0, 3)).toEqual(["2025", "5", "South"]);
+        const other = page.locator("tbody .k2b-data-table__row").nth(16);
+        if (view.touch) await other.locator("button").tap();
+        else await other.locator("button").click();
+        expect(await other.getAttribute("data-selected")).toBe("true");
+        expect((await explorerRows(page))[16]?.slice(0, 3)).toEqual(["2025", "5", "West"]);
+        await pickExplorerView(page, "Median price", german);
+        await page.waitForSelector("[data-chart-datum][data-selected]");
+        expect(await page.locator("[data-chart-datum][data-selected]").count()).toBe(1);
+        const highlighted = PointSchema.parse(
+          JSON.parse((await page.locator("[data-chart-datum][data-selected]").getAttribute("data-chart-datum"))!),
+        );
+        expect(highlighted).toMatchObject({ index: 4, seriesIndex: 2 });
+        expect(highlighted.values.find((value) => value.key === "x")?.value).toBe(5);
+        await stable();
+        await fits();
+        await shot("-selected");
+        await page.getByRole("button", { name: german ? "Vergleich entfernen: 2026" : "Remove comparison: 2026" }).click();
+        await page.waitForFunction(() => !document.querySelector("[data-chart-reference]"));
+        await stable();
+        await fits();
+      } finally {
+        await context.close();
+      }
+    }, 30_000);
+
+test("an explorer keeps its controls on one line inside a phone column with long labels and step names", async () => {
+  const context = await browser.newContext({
+    viewport: { width: 360, height: 800 },
+    isMobile: true,
+    hasTouch: true,
+    reducedMotion: "reduce",
+  });
+  try {
+    const page = await context.newPage();
+    await page.goto(`http://127.0.0.1:${server.port}/`);
+    // A 320px chat column inside the 360px phone, including the harness's padding.
+    await page.locator("main").evaluate((node) => {
+      node.style.maxWidth = "352px";
+    });
+    const path = "/views/explorer-long-labels-0a1b2c41.view.json";
+    const loaded = hold(path);
+    await page.evaluate((value) => window.show(value), [present(path, { ...explorerSummary, rows: longExplorer.rows.length })]);
+    const frame = await explorerLoadingFrame(page);
+    loaded();
+    await page.waitForSelector('[data-view-path] [data-interactive="true"]');
+    const layout = () =>
+      page.evaluate(() => {
+        const section = document.querySelector(".k2b-chart-explorer")!;
+        const box = section.getBoundingClientRect();
+        const controls = Array.from(section.querySelectorAll(".k2b-chart-explorer__dimension, .k2b-filter-chip, .k2b-chart-explorer__pin"));
+        return {
+          overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+          width: Math.round(box.width),
+          track: Math.round(section.querySelector('input[type="range"]')!.getBoundingClientRect().width),
+          inside: controls.every((node) => {
+            const control = node.getBoundingClientRect();
+            return control.left >= box.left - 0.5 && control.right <= box.right + 0.5;
+          }),
+        };
+      });
+    expect(await boxes(page)).toEqual(frame.boxes);
+    const initial = await layout();
+    expect(initial).toMatchObject({ overflow: 0, inside: true });
+    expect(initial.width).toBeLessThanOrEqual(320);
+    expect(initial.track).toBeGreaterThan(120);
+
+    // Pinning shows the long step name in the pin; stepping shows shorter and longer names. Nothing moves or grows.
+    await page.getByRole("button", { name: "Pin as reference" }).click();
+    await page.getByRole("slider").focus();
+    for (const step of [longSteps[1], longSteps[0]]) {
+      await page.keyboard.press("ArrowLeft");
+      await page.waitForFunction((label) => document.querySelector('input[type="range"]')?.getAttribute("aria-valuetext") === label, step);
+      expect(await layout()).toEqual(initial);
+      expect(await boxes(page)).toEqual(frame.boxes);
+    }
+
+    // The filter names each region in the color the chart draws it with.
+    const legendColor = await page
+      .locator(".k2b-chart-legend li", { hasText: "South · 2024" })
+      .locator(".k2b-chart-legend__swatch")
+      .evaluate((node) => getComputedStyle(node).backgroundColor);
+    await page.locator(".k2b-chart-explorer .k2b-filter-chip").tap();
+    const filterColor = await page
+      .getByRole("menuitemcheckbox", { name: "South", exact: true })
+      .locator(".k2b-dropdown__color")
+      .evaluate((node) => getComputedStyle(node).backgroundColor);
+    expect(filterColor).toBe(legendColor);
+  } finally {
+    await context.close();
+  }
+});
+
+test("an explorer table caps the combined current and reference rows at 100", async () => {
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: "reduce" });
+  try {
+    const page = await context.newPage();
+    await page.goto(`http://127.0.0.1:${server.port}/`);
+    await page.evaluate(
+      (value) => window.show(value),
+      [present("/views/explorer-more-0a1b2c3e.view.json", { ...explorerSummary, rows: largeExplorer.rows.length })],
+    );
+    await page.waitForSelector('[data-interactive="true"]');
+    const frame = await boxes(page);
+    await pickExplorerView(page, "Table");
+    await page.waitForSelector("tbody .k2b-data-table__row");
+    expect((await explorerRows(page)).map((cells) => cells.slice(0, 3))).toEqual(
+      largeExplorer.rows.filter((row) => row.year === "2026").map((row) => [row.year, String(row.month), row.region]),
+    );
+    expect(await page.locator(".k2b-chart-explorer__note").count()).toBe(0);
+    await page.getByRole("button", { name: "Pin as reference" }).click();
+    await page.getByRole("slider", { name: "Year", exact: true }).focus();
+    await page.keyboard.press("ArrowLeft");
+    await page.waitForSelector(".k2b-chart-explorer__note");
+    expect(await page.locator("tbody .k2b-data-table__row").count()).toBe(100);
+    expect(await page.locator(".k2b-chart-explorer__note").textContent()).toContain("Showing 100 of 144 rows");
+    expect((await explorerRows(page)).map((cells) => cells.slice(0, 3))).toEqual(
+      largeExplorer.rows.slice(0, 100).map((row) => [row.year, String(row.month), row.region]),
+    );
+    expect(await boxes(page)).toEqual(frame);
+  } finally {
+    await context.close();
+  }
+});
+
+test("an explorer table sorts a missing cell last, also in a column named like an Object member", async () => {
+  const parsed = parseCloudAiView(memberExplorer);
+  if (!parsed) throw new Error("Invalid member explorer");
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: "reduce" });
+  try {
+    const page = await context.newPage();
+    await page.goto(`http://127.0.0.1:${server.port}/`);
+    await page.evaluate(
+      (block) => window.show([block]),
+      present("/views/explorer-member-names-0a1b2c42.view.json", cloudAiViewSummary(parsed)),
+    );
+    await page.waitForSelector('[data-view-path] [data-interactive="true"]');
+    await pickExplorerView(page, "Table");
+    const header = page.getByRole("button", { name: "Constructor", exact: true });
+    await header.click();
+    await page.waitForFunction(() => document.querySelector("tbody tr td")?.textContent?.trim() === "One");
+    expect((await explorerRows(page)).map((cells) => cells[0])).toEqual(["One", "Two", "Missing"]);
+    await header.click();
+    await page.waitForFunction(() => document.querySelector("tbody tr td")?.textContent?.trim() === "Two");
+    expect((await explorerRows(page)).map((cells) => cells[0])).toEqual(["Two", "One", "Missing"]);
+  } finally {
+    await context.close();
+  }
+});
+
+test("explorer references open the original dataset row after table sorting and copy only titles", async () => {
+  const parsed = parseCloudAiView(referenceExplorer);
+  if (!parsed) throw new Error("Invalid reference explorer");
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: "reduce" });
+  try {
+    const page = await context.newPage();
+    await page.goto(`http://127.0.0.1:${server.port}/`);
+    await page.evaluate(
+      (block) => window.show([block]),
+      present("/views/product-references-12345678.view.json", cloudAiViewSummary(parsed)),
+    );
+    await page.waitForSelector('[data-view-path] [data-interactive="true"]');
+    await pickExplorerView(page, "Table");
+    await page.getByRole("button", { name: "Item", exact: true }).click();
+    await page.getByRole("button", { name: "Item", exact: true }).click();
+    expect(await page.locator("tbody tr").first().textContent()).toContain("Second product");
+    await page.getByRole("button", { name: "Second product", exact: true }).click();
+    expect(await page.evaluate(() => window.opened)).toEqual([{ title: "Second product", ref: { type: "spaces.item", id: "second" } }]);
+    await page.evaluate(() => {
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: {
+          writeText: (text: string) => {
+            document.body.dataset.copied = text;
+            return Promise.resolve();
+          },
+        },
+      });
+    });
+    await page.getByRole("button", { name: "Copy data", exact: true }).click();
+    const copied = await page.evaluate(() => document.body.dataset.copied);
+    expect(copied).toContain("Second product");
+    expect(copied).not.toContain("spaces.item");
+    expect(copied).not.toContain("second");
   } finally {
     await context.close();
   }

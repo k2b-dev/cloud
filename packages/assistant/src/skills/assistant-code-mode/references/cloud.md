@@ -237,6 +237,7 @@ type ViewRef = { path: string; title: string; subtitle?: string } & (
   | { view: "chart"; kind: ChartKind }
   | { view: "group"; linkX: boolean; layout: "stack" | "grid"; charts: { kind: ChartKind; title: string; subtitle?: string }[] }
   | { view: "table"; rows: number; columns: number; footer: boolean }
+  | { view: "explorer"; rows: number; columns: number; views: { id: string; label: string; kind: "bar" | "line" | "scatter" | "heatmap" }[]; step: boolean; filter: boolean; compare: boolean }
   | { view: "stats"; items: { label: string; sparkline: boolean; sub: boolean; delta: boolean }[] }
   | { view: "details"; items: number; fields: { label: string; ref: boolean; chars: number }[] }
 );
@@ -272,6 +273,17 @@ type ViewTableSpec = ViewBase & {
   footer?: Record<string, unknown>;
   sort?: { column: string; direction: "asc" | "desc" };
 };
+type ViewExplorerChart = { id: string; label: string } & (
+  | { kind: "bar"; x: string; y: string }
+  | { kind: "line" | "scatter"; x: string; y: string | string[]; series?: string }
+  | { kind: "heatmap"; x: string; y: string; value: string }
+);
+type ViewExplorerSpec = ViewBase & {
+  rows: ViewRows;
+  columns?: (string | ViewColumn)[];
+  views: ViewExplorerChart[];
+  controls?: { filter?: string; step?: string; compare?: boolean };
+};
 type ViewReference = { type: string; id: string; title?: string };
 type ViewStatsSpec = ViewBase & { items: {
   label: string; value: number | string; format?: ViewFormat; sub?: string;
@@ -289,6 +301,8 @@ interface CloudView {
   table(spec: ViewTableSpec): Promise<ViewRef>;
   stats(spec: ViewStatsSpec): Promise<ViewRef>;
   details(spec: ViewDetailsSpec): Promise<ViewRef>;
+  /** One dataset with local filtering, steps and comparison; see views.md. */
+  explorer(spec: ViewExplorerSpec): Promise<ViewRef>;
 }
 
 // ---------------------------------------------------------------- money
@@ -435,7 +449,7 @@ interface Cloud {
   html(strings: TemplateStringsArray, ...values: unknown[]): Html;
   /** Chart markup in Cloud colors for innerHTML, cloud.html or PDF HTML. */
   chart(options: ChartOptions): Html;
-  /** Script runs only: validated, file-backed charts and tables shown with present({path}). */
+  /** Script runs only: validated, file-backed charts, groups, tables, stats, details and explorers shown with present({path}). */
   view: CloudView;
   money: CloudMoney;
   pdf: CloudPdf;

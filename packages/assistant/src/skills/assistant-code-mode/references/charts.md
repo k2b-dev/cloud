@@ -5,8 +5,9 @@
 no DOM, so it works the same in apps, scripts and PDFs. In an app, cartesian
 charts redraw at their real width, so axes and labels fit phones.
 
-For computed values in the chat, call `cloud.view.chart`, `cloud.view.group` or
-`cloud.view.table` in the run, then `present({path})`; read [Views in the chat](views.md). The
+For computed values in the chat, call `cloud.view.chart`, `cloud.view.group`,
+`cloud.view.table`, `cloud.view.stats`, `cloud.view.details` or `cloud.view.explorer`
+in the run, then `present({path})`; read [Views in the chat](views.md). The
 `chart` tool is for a few values that did not come from a run. Neither choice
 needs an app. Views use plain data, without drawing functions.
 

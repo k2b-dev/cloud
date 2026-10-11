@@ -3,7 +3,6 @@ import {
   DataTable,
   type DataTableSort,
   DescriptionList,
-  markdownReferenceIcon,
   StatCell,
   type StatCellAccent,
   StatGrid,
@@ -16,10 +15,10 @@ import {
   CLOUD_AI_DETAILS_VIEWPORT_ITEMS,
   CLOUD_AI_VIEW_MAX_BYTES,
   type CloudAiDetailsView,
+  type CloudAiExplorerView,
   type CloudAiStatsView,
   type CloudAiTableView,
   type CloudAiView,
-  type CloudAiViewReference,
   type CloudAiViewSummary,
   cloudAiDetailsRows,
   cloudAiStatsTiles,
@@ -31,8 +30,10 @@ import {
   sortCloudAiViewRows,
 } from "../view-block";
 import { CloudChartGroupView, CloudChartView } from "./chart-block";
+import { CloudExplorerView } from "./explorer-block";
 import { useAiChatActions } from "./message-actions";
 import { aiChatMessages } from "./messages";
+import { ReferenceText } from "./reference-text";
 
 /** Rows a table shows inline, as capability tables do; sorting and Copy data use all of them. */
 const VISIBLE_ROWS = 100;
@@ -69,39 +70,10 @@ function ViewHeading(props: { id: string; title: string; subtitle?: string; acti
   );
 }
 
-/**
- * A Cloud object a view names. It carries no URL: the host resolves it on click with the viewer's access and confirms
- * before it opens. It looks like a reference to Cloud content in Markdown, a calm pill, and stays text without a host.
- * A Cloud reference names an object of the owning app, not a kind the chat knows, such as a task or an event, so the
- * pill keeps the neutral page icon that relative links in chat Markdown also show. Without a reference it only takes
- * the pill's room, for a hidden copy that reserves it.
- */
-function ReferenceText(props: { text: string; reference?: CloudAiViewReference }) {
-  const actions = useAiChatActions();
-  return (
-    <Show when={actions.onOpenReference} fallback={props.text}>
-      {(open) => (
-        <button
-          type="button"
-          // The pill's fill reaches past the text without making a compact table row taller than the one reserved.
-          class="k2b-reference -my-[0.125em] cursor-pointer text-left"
-          data-reference="page"
-          onClick={() => {
-            const reference = props.reference;
-            if (reference) open()(props.text, { type: reference.type, id: reference.id });
-          }}
-        >
-          <i class={`k2b-reference__icon ti ${markdownReferenceIcon("page")}`} aria-hidden="true" />
-          {props.text}
-        </button>
-      )}
-    </Show>
-  );
-}
-
 type TableSummary = Extract<CloudAiViewSummary, { view: "table" }>;
 type ChartSummary = Extract<CloudAiViewSummary, { view: "chart" }>;
 type GroupSummary = Extract<CloudAiViewSummary, { view: "group" }>;
+type ExplorerSummary = Extract<CloudAiViewSummary, { view: "explorer" }>;
 
 /** The header row, the rows up to the viewport's, and the totals row when there is one. */
 const tableHeight = (summary: TableSummary) =>
@@ -375,6 +347,15 @@ const matches = (view: CloudAiView, summary: CloudAiViewSummary) => {
   // A stats file must keep every tile's label and parts, which set the tile heights its summary reserved.
   if (loaded.view === "stats")
     return summary.view === "stats" && sameHeading(loaded, summary) && JSON.stringify(loaded.items) === JSON.stringify(summary.items);
+  if (loaded.view === "explorer")
+    return (
+      summary.view === "explorer" &&
+      sameHeading(loaded, summary) &&
+      loaded.step === summary.step &&
+      loaded.filter === summary.filter &&
+      loaded.compare === summary.compare &&
+      JSON.stringify(loaded.views) === JSON.stringify(summary.views)
+    );
   if (loaded.view === "chart") return summary.view === "chart" && loaded.kind === summary.kind && sameHeading(loaded, summary);
   return (
     loaded.view === "group" &&
@@ -410,11 +391,13 @@ export function CloudViewBlock(props: { path: string; summary: CloudAiViewSummar
   const groupSummary = (): GroupSummary | undefined => (props.summary.view === "group" ? props.summary : undefined);
   const statsSummary = (): StatsSummary | undefined => (props.summary.view === "stats" ? props.summary : undefined);
   const detailsSummary = (): DetailsSummary | undefined => (props.summary.view === "details" ? props.summary : undefined);
+  const explorerSummary = (): ExplorerSummary | undefined => (props.summary.view === "explorer" ? props.summary : undefined);
   function loaded(kind: "chart"): Extract<CloudAiView, { view: "chart" }> | null | undefined;
   function loaded(kind: "table"): CloudAiTableView | null | undefined;
   function loaded(kind: "group"): Extract<CloudAiView, { view: "group" }> | null | undefined;
   function loaded(kind: "stats"): CloudAiStatsView | null | undefined;
   function loaded(kind: "details"): CloudAiDetailsView | null | undefined;
+  function loaded(kind: "explorer"): CloudAiExplorerView | null | undefined;
   function loaded(kind: CloudAiView["view"]) {
     const value = view();
     return value && value.view !== kind ? null : value;
@@ -427,6 +410,7 @@ export function CloudViewBlock(props: { path: string; summary: CloudAiViewSummar
         <Match when={groupSummary()}>{(summary) => <CloudChartGroupView summary={summary()} group={loaded("group")} />}</Match>
         <Match when={statsSummary()}>{(summary) => <CloudStatsView summary={summary()} input={loaded("stats")} />}</Match>
         <Match when={detailsSummary()}>{(summary) => <CloudDetailsView summary={summary()} input={loaded("details")} />}</Match>
+        <Match when={explorerSummary()}>{(summary) => <CloudExplorerView summary={summary()} input={loaded("explorer")} />}</Match>
       </Switch>
     </div>
   );

@@ -21,6 +21,8 @@ const chartMessages = i18n.define({
       chartCopyData: "Copy data",
       chartCopyFailed: "Could not copy data",
       chartLegend: "Legend",
+      chartRowsShown: ({ shown, total }: { shown: string; total: string }) =>
+        `Showing ${shown} of ${total} rows. Sort to see others; Copy data copies all of them.`,
       interactiveLineChart: "Interactive line chart",
       interactiveChart:
         "Interactive chart. Use arrow keys to inspect, Enter to select, Escape to dismiss. On maps and timelines use Alt with arrow keys to inspect.",
@@ -82,6 +84,8 @@ const chartMessages = i18n.define({
       chartCopyData: "Daten kopieren",
       chartCopyFailed: "Daten konnten nicht kopiert werden",
       chartLegend: "Legende",
+      chartRowsShown: ({ shown, total }: { shown: string; total: string }) =>
+        `${shown} von ${total} Zeilen werden angezeigt. Sortiere, um andere zu sehen; „Daten kopieren“ kopiert alle.`,
       interactiveLineChart: "Interaktives Liniendiagramm",
       interactiveChart:
         "Interaktives Diagramm. Pfeiltasten zum Erkunden, Enter zum Auswählen, Escape zum Schließen. In Karten und Zeitleisten Alt mit Pfeiltasten zum Erkunden.",
