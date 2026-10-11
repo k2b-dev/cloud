@@ -31,6 +31,7 @@ import {
   restoreWorkflowVersion,
   updateWorkflowMetadata,
 } from "./workflow-definition-service";
+import { mailWorkflowMessagePrecondition } from "./workflow-message-preconditions";
 import { runMailWorkflow } from "./workflow-runtime";
 
 const suite = suiteFor("database", "nats");
@@ -443,7 +444,7 @@ steps:
     ]);
   });
 
-  test("emits only first-link incremental inbound events and converges duplicate delivery", async () => {
+  test("emits only incremental inbound receipts and converges duplicate delivery", async () => {
     const source = `triggers:
   messageReceived:
     with: {}
@@ -572,6 +573,99 @@ steps:
     expect(persisted).toEqual(
       workflowIds.toSorted().map((targetWorkflowId) => ({ target_workflow_id: targetWorkflowId, events: 1, runs: 1 })),
     );
+  });
+
+  test("receives all-mail copies once in a regular folder", async () => {
+    const roleSource = "provider";
+    const created = await createWorkflow({
+      context,
+      mailboxId,
+      input: {
+        name: `All-mail ${roleSource} ${suffix}`,
+        priority: 100,
+        source: "triggers:\n  messageReceived:\n    with: {}\nsteps:\n  - succeed:\n      message: Received\n",
+        effectBudget: noEffectBudget,
+      },
+    });
+    if (!created.ok) throw new Error(created.error.message);
+    const workflowId = created.data.id;
+    const activated = await activateWorkflow({
+      context,
+      mailboxId,
+      workflowId,
+      input: { expectedVersionId: created.data.currentVersion.id },
+    });
+    if (!activated.ok) throw new Error(activated.error.message);
+    const allFolderKey = `workflow-all-${roleSource}-${suffix}`;
+    const [allFolder] = await sql<{ id: string }[]>`
+      INSERT INTO mail.folders (short_id, remote_resource_id, stable_key, name, role, sync_status)
+      VALUES (${newShortId()}, ${remoteResourceId}::uuid, ${allFolderKey}, 'All Mail', 'all', 'current')
+      RETURNING id
+    `;
+    if (!allFolder) throw new Error("Failed to create All Mail fixture");
+    const events = () => sql<{ dedupe_key: string; context: ReturnType<typeof mailWorkflowEventContext> }[]>`
+      SELECT dedupe_key, context FROM workflows.event WHERE target_workflow_id = ${workflowId}::uuid
+    `;
+    const inbound = {
+      ...envelope({ uid: 7010, providerMessageId: `workflow-all-${roleSource}-${suffix}` }),
+      labels: ["\\Inbox", "\\Important", "review"],
+    };
+    const ingest = (folderId: string, message: typeof inbound) =>
+      sql.begin((tx) =>
+        ingestEnvelope({
+          db: tx,
+          mailboxId,
+          remoteResourceId,
+          folderId,
+          message,
+          captureWorkflowTriggers: true,
+        }),
+      );
+    const messageId = await ingest(allFolder.id, {
+      ...inbound,
+      remoteRef: { ...inbound.remoteRef, folderStableKey: allFolderKey },
+    });
+    expect(await events()).toEqual([]);
+
+    expect(await ingest(inboxFolderId, inbound)).toBe(messageId);
+    const [remote] = await sql<{ id: string }[]>`
+      SELECT id FROM mail.remote_message_refs
+      WHERE folder_id = ${inboxFolderId}::uuid AND message_id = ${messageId}::uuid
+    `;
+    if (!remote) throw new Error("Failed to load received Inbox copy");
+    const received = await events();
+    expect(received).toHaveLength(1);
+    expect(received[0]!.dedupe_key).toBe(`message:${remote.id}:${workflowId}`);
+    expect(
+      mailWorkflowMessagePrecondition(received[0]!.context, {
+        messageId,
+        remoteMessageRefId: remote.id,
+        folderId: inboxFolderId,
+      }),
+    ).toEqual({ modseq: inbound.remoteRef.modseq, flags: [], keywords: ["review"] });
+
+    await ingest(inboxFolderId, inbound);
+    await ingest(copyFolderId, {
+      ...inbound,
+      remoteRef: { ...inbound.remoteRef, folderStableKey: `workflow-copy-${suffix}` },
+    });
+    await ingest(allFolder.id, {
+      ...inbound,
+      remoteRef: { ...inbound.remoteRef, folderStableKey: allFolderKey },
+    });
+    expect(await events()).toHaveLength(1);
+
+    const outbound = {
+      ...inbound,
+      ...envelope({
+        uid: 7011,
+        providerMessageId: `workflow-all-outbound-${roleSource}-${suffix}`,
+        from: "support@example.test",
+      }),
+    };
+    await ingest(allFolder.id, { ...outbound, remoteRef: { ...outbound.remoteRef, folderStableKey: allFolderKey } });
+    await ingest(inboxFolderId, outbound);
+    expect(await events()).toHaveLength(1);
   });
 
   test("keeps a 100-workflow inbox lookup mailbox-scoped and index-backed", async () => {

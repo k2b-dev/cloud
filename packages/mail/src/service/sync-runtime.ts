@@ -30,7 +30,7 @@ import {
 } from "./draft-provider-projection";
 import { deleteAbandonedDraftAttachmentUploads } from "./draft-uploads";
 import { resolveMailExecution } from "./execution";
-import { isInboxFolder, isSentFolder, isTrashOrJunkFolder } from "./follow-up-scope";
+import { isAllMailFolder, isInboxFolder, isSentFolder, isTrashOrJunkFolder } from "./follow-up-scope";
 import { withLeaseHeartbeat } from "./lease-heartbeat";
 import { enqueueMailInvalidation, mailLive } from "./live";
 import { mailScheduler } from "./mail-scheduler";
@@ -703,10 +703,13 @@ const storableEnvelope = (
 
 /**
  * Mail the provider delivers straight to Trash or Junk, such as spam its filter caught, is not
- * received mail for automations: an automatic reply would answer the spammer.
+ * received mail for automations: an automatic reply would answer the spammer. All Mail copies
+ * wait for the message to arrive in a regular folder.
  */
-const isTrashOrJunkPlacement = async (db: typeof sql, folderId: string): Promise<boolean> => {
-  const [folder] = await db<{ excluded: boolean }[]>`SELECT ${isTrashOrJunkFolder(sql`${folderId}::uuid`)} AS excluded`;
+const isMessageReceivedExcludedPlacement = async (db: typeof sql, folderId: string): Promise<boolean> => {
+  const [folder] = await db<{ excluded: boolean }[]>`
+    SELECT ${isTrashOrJunkFolder(sql`${folderId}::uuid`)} OR ${isAllMailFolder(sql`${folderId}::uuid`)} AS excluded
+  `;
   return folder?.excluded === true;
 };
 
@@ -929,13 +932,6 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
 
   await retireKeptCopyPlacements(params.db, messageContentId, remoteRef.id);
 
-  const [existingConversation] = await params.db<{ conversation_id: string }[]>`
-    SELECT conversation_id
-    FROM mail.conversation_messages
-    WHERE message_id = ${messageContentId}::uuid
-  `;
-  if (existingConversation) return messageContentId;
-
   const ownAddresses = await params.db<{ address: string; sender_identity: boolean }[]>`
     SELECT from_address AS address, true AS sender_identity
     FROM mail.sender_identities
@@ -948,6 +944,94 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
   const senderIdentities = new Set(ownAddresses.filter((row) => row.sender_identity).map((row) => storedAddress(row.address)));
   const mailboxAddresses = new Set(ownAddresses.map((row) => storedAddress(row.address)));
   const isOutbound = params.message.addresses.from.some((address) => senderIdentities.has(storedAddress(address.address)));
+
+  const [existingConversation] = await params.db<{ conversation_id: string }[]>`
+    SELECT conversation_id
+    FROM mail.conversation_messages
+    WHERE message_id = ${messageContentId}::uuid
+  `;
+  const emitMessageReceived = async (): Promise<void> => {
+    const deliveryKey = `message:${remoteRef.id}`;
+    const snapshot = await getWorkflowSnapshot({
+      mailboxId: params.mailboxId,
+      remoteMessageRefId: remoteRef.id,
+      db: params.db,
+    });
+    if (!snapshot) throw new Error("Received message workflow snapshot could not be loaded");
+    const occurredAt = params.message.internalDate.toISOString();
+    const workflowIds = await params.db<{ workflow_id: string }[]>`
+      SELECT workflow.id::text AS workflow_id
+      FROM mail.workflow_profile profile
+      JOIN workflows.workflow workflow ON workflow.id = profile.id
+      WHERE profile.mailbox_id = ${params.mailboxId}::uuid
+        AND profile.enabled
+        AND workflow.active_version_id IS NOT NULL
+      ORDER BY profile.priority, workflow.id
+    `;
+    const activations =
+      workflowIds.length === 0
+        ? []
+        : await params.db<{ workflow_id: string; trigger_config: Record<string, WorkflowJsonValue> | string }[]>`
+      SELECT
+        activation.workflow_id::text,
+        activation.config AS trigger_config
+      FROM workflows.activation activation
+      JOIN workflows.workflow workflow
+        ON workflow.id = activation.workflow_id
+       AND workflow.active_version_id = activation.workflow_version_id
+      JOIN mail.workflow_profile profile
+        ON profile.id = workflow.id
+       AND profile.enabled
+      WHERE activation.workflow_id = ANY(${toPgUuidArray(workflowIds.map((row) => row.workflow_id))}::uuid[])
+        AND profile.mailbox_id = ${params.mailboxId}::uuid
+        AND activation.event_type = ${MAIL_WORKFLOW_EVENT.messageReceived}
+        AND activation.enabled
+      ORDER BY
+        array_position(${toPgUuidArray(workflowIds.map((row) => row.workflow_id))}::uuid[], activation.workflow_id),
+        activation.id
+    `;
+    const triggerValues = {
+      message: snapshot.source.message,
+      conversation: snapshot.source.conversation,
+      occurredAt,
+    };
+    for (const activation of activations) {
+      const config = typeof activation.trigger_config === "string" ? JSON.parse(activation.trigger_config) : activation.trigger_config;
+      const withValues =
+        config.with !== null && typeof config.with === "object" && !Array.isArray(config.with)
+          ? (config.with as Record<string, WorkflowJsonValue>)
+          : {};
+      await emitWorkflowEvent(
+        {
+          appId: MAIL_WORKFLOW_APP_ID,
+          scopeId: params.mailboxId,
+          type: MAIL_WORKFLOW_EVENT.messageReceived,
+          targetWorkflowId: activation.workflow_id,
+          data: evaluateWorkflowTriggerInputs(triggerValues, withValues, occurredAt),
+          context: mailWorkflowEventContext(snapshot),
+          dedupeKey: `${deliveryKey}:${activation.workflow_id}`,
+          occurredAt: new Date(occurredAt),
+        },
+        { db: params.db },
+      );
+    }
+  };
+  if (existingConversation) {
+    if (params.captureWorkflowTriggers && !isOutbound && !(await isMessageReceivedExcludedPlacement(params.db, params.folderId))) {
+      // All Mail can link the message first. Its first regular copy is a receipt;
+      // retries of that copy use the same delivery deduplication key.
+      const [otherPlacements] = await params.db<{ only_all_mail: boolean }[]>`
+        SELECT COUNT(*) > 0 AND bool_and(${isAllMailFolder(sql`other.folder_id`)}) AS only_all_mail
+        FROM mail.message_placements other
+        WHERE other.message_id = ${messageContentId}::uuid
+          AND other.remote_message_ref_id <> ${remoteRef.id}::uuid
+          AND other.deleted_at IS NULL
+      `;
+      if (otherPlacements?.only_all_mail) await emitMessageReceived();
+    }
+    return messageContentId;
+  }
+
   // The account address counts as the mailbox's side too, even before sending is set up.
   const fromMailbox = isOutbound || params.message.addresses.from.some((address) => mailboxAddresses.has(storedAddress(address.address)));
   const { addresses } = params.message;
@@ -1030,72 +1114,8 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
     RETURNING message_id
   `;
   if (!linked) return messageContentId;
-  if (params.captureWorkflowTriggers && !isOutbound && !(await isTrashOrJunkPlacement(params.db, params.folderId))) {
-    const deliveryKey = `message:${remoteRef.id}`;
-    const snapshot = await getWorkflowSnapshot({
-      mailboxId: params.mailboxId,
-      remoteMessageRefId: remoteRef.id,
-      db: params.db,
-    });
-    if (!snapshot) throw new Error("Received message workflow snapshot could not be loaded");
-    const occurredAt = params.message.internalDate.toISOString();
-    const workflowIds = await params.db<{ workflow_id: string }[]>`
-      SELECT workflow.id::text AS workflow_id
-      FROM mail.workflow_profile profile
-      JOIN workflows.workflow workflow ON workflow.id = profile.id
-      WHERE profile.mailbox_id = ${params.mailboxId}::uuid
-        AND profile.enabled
-        AND workflow.active_version_id IS NOT NULL
-      ORDER BY profile.priority, workflow.id
-    `;
-    const activations =
-      workflowIds.length === 0
-        ? []
-        : await params.db<{ workflow_id: string; trigger_config: Record<string, WorkflowJsonValue> | string }[]>`
-      SELECT
-        activation.workflow_id::text,
-        activation.config AS trigger_config
-      FROM workflows.activation activation
-      JOIN workflows.workflow workflow
-        ON workflow.id = activation.workflow_id
-       AND workflow.active_version_id = activation.workflow_version_id
-      JOIN mail.workflow_profile profile
-        ON profile.id = workflow.id
-       AND profile.enabled
-      WHERE activation.workflow_id = ANY(${toPgUuidArray(workflowIds.map((row) => row.workflow_id))}::uuid[])
-        AND profile.mailbox_id = ${params.mailboxId}::uuid
-        AND activation.event_type = ${MAIL_WORKFLOW_EVENT.messageReceived}
-        AND activation.enabled
-      ORDER BY
-        array_position(${toPgUuidArray(workflowIds.map((row) => row.workflow_id))}::uuid[], activation.workflow_id),
-        activation.id
-    `;
-    const triggerValues = {
-      message: snapshot.source.message,
-      conversation: snapshot.source.conversation,
-      occurredAt,
-    };
-    for (const activation of activations) {
-      const config = typeof activation.trigger_config === "string" ? JSON.parse(activation.trigger_config) : activation.trigger_config;
-      const withValues =
-        config.with !== null && typeof config.with === "object" && !Array.isArray(config.with)
-          ? (config.with as Record<string, WorkflowJsonValue>)
-          : {};
-      await emitWorkflowEvent(
-        {
-          appId: MAIL_WORKFLOW_APP_ID,
-          scopeId: params.mailboxId,
-          type: MAIL_WORKFLOW_EVENT.messageReceived,
-          targetWorkflowId: activation.workflow_id,
-          data: evaluateWorkflowTriggerInputs(triggerValues, withValues, occurredAt),
-          context: mailWorkflowEventContext(snapshot),
-          dedupeKey: `${deliveryKey}:${activation.workflow_id}`,
-          occurredAt: new Date(occurredAt),
-        },
-        { db: params.db },
-      );
-    }
-  }
+  if (params.captureWorkflowTriggers && !isOutbound && !(await isMessageReceivedExcludedPlacement(params.db, params.folderId)))
+    await emitMessageReceived();
   return messageContentId;
 };
 
