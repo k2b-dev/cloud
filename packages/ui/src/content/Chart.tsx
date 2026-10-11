@@ -11,6 +11,7 @@ import type { ChartCursor } from "./chart-cursor";
 import { type ChartDatumRef, type ChartSelection, type ChartTooltipFormatter, createChartInspection } from "./chart-inspection";
 import { lineGapsSvg } from "./chart-line-gaps";
 import { DEFAULT_MAP_VIEWPORT, normalizeMapViewport, panMapViewport, zoomMapViewport } from "./chart-map-viewport";
+import { useChartMessages } from "./chart-messages";
 import {
   panStateTimelineViewport,
   renderStateTimelineSvg,
@@ -21,6 +22,7 @@ import {
   zoomStateTimelineViewport,
 } from "./chart-state-timeline";
 import { responsiveChartSvg, responsiveMapSvg, selectedChartSvg } from "./chart-svg";
+import { useViewportMessages } from "./viewport-messages";
 
 /**
  * Chart — minimal Solid wrapper around `stdlib.charts`.
@@ -210,6 +212,8 @@ const isEmpty = (props: ChartProps): boolean => {
 const Chart = (props: ChartProps): JSX.Element => {
   const [, drawingProps] = splitProps(props, ["selected", "onSelect", "tooltip", "cursor"]);
   const messages = useUiMessages();
+  const chartMessages = useChartMessages();
+  const viewportMessages = useViewportMessages();
   const locale = useLocale();
   let containerRef: HTMLDivElement | undefined;
   let chartTooltipRef: HTMLSpanElement | undefined;
@@ -466,18 +470,18 @@ const Chart = (props: ChartProps): JSX.Element => {
     select: (selection) => props.onSelect?.(selection),
     format: (selection) => {
       if (props.tooltip) return props.tooltip(selection);
-      const fields = messages().chartFields;
+      const fields = chartMessages().chartFields;
       const format = new Intl.NumberFormat(locale(), { maximumFractionDigits: 6 });
       return {
         title:
           selection.datum.label ??
           (selection.datum.seriesIndex !== undefined
-            ? `${labels().series ?? messages().series} ${selection.datum.seriesIndex + 1}`
+            ? `${labels().series ?? chartMessages().series} ${selection.datum.seriesIndex + 1}`
             : undefined),
         rows: selection.datum.values.map((field) => ({
           label:
             selection.kind === "line" && field.key === "y"
-              ? (selection.datum.label ?? labels().series ?? messages().series)
+              ? (selection.datum.label ?? labels().series ?? chartMessages().series)
               : fields({ key: field.key }),
           value:
             field.formatted ??
@@ -572,16 +576,16 @@ const Chart = (props: ChartProps): JSX.Element => {
         role="group"
         aria-label={
           interactiveMap()
-            ? (labels().interactiveMap ?? messages().interactiveMap)
+            ? (labels().interactiveMap ?? chartMessages().interactiveMap)
             : interactiveTimeline()
-              ? (labels().interactiveTimeline ?? messages().interactiveTimeline)
+              ? (labels().interactiveTimeline ?? chartMessages().interactiveTimeline)
               : interactiveLine()
-                ? (labels().interactiveLine ?? messages().interactiveLineChart)
+                ? (labels().interactiveLine ?? chartMessages().interactiveLineChart)
                 : interactive()
-                  ? (labels().interactiveChart ?? messages().interactiveChart)
+                  ? (labels().interactiveChart ?? chartMessages().interactiveChart)
                   : undefined
         }
-        aria-description={interactive() ? messages().interactiveChart : undefined}
+        aria-description={interactive() ? chartMessages().interactiveChart : undefined}
         tabIndex={interactive() ? 0 : undefined}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
@@ -617,10 +621,12 @@ const Chart = (props: ChartProps): JSX.Element => {
         </Show>
         <Show when={draggable()}>
           <div class="k2b-chart__controls">
-            {control(labels().zoomIn ?? messages().zoomIn, "+", "ti-plus", () => zoom(1))}
-            {control(labels().zoomOut ?? messages().zoomOut, "-", "ti-minus", () => zoom(-1))}
+            {control(labels().zoomIn ?? viewportMessages().zoomIn, "+", "ti-plus", () => zoom(1))}
+            {control(labels().zoomOut ?? viewportMessages().zoomOut, "-", "ti-minus", () => zoom(-1))}
             {control(
-              interactiveMap() ? (labels().resetMap ?? messages().resetMapView) : (labels().resetTimeline ?? messages().resetTimelineView),
+              interactiveMap()
+                ? (labels().resetMap ?? chartMessages().resetMapView)
+                : (labels().resetTimeline ?? chartMessages().resetTimelineView),
               "0",
               "ti-focus-centered",
               reset,

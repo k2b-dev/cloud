@@ -17,11 +17,13 @@ import {
   resolveSuggestions,
   type Suggestion,
 } from "../completion";
+import { useCompletionMessages } from "../completion-messages";
 import type { ValueFieldProps } from "../field-contract";
 import { resolveMaybeAccessor } from "../field-contract";
 import { computeActiveFormats } from "./active-formats";
 import { handleListContinuation, handleShortcut, handleSmartPaste } from "./behaviors";
 import { isInCodeZone } from "./code-zone";
+import { useMarkdownEditorMessages } from "./editor-messages";
 import Toolbar from "./Toolbar";
 
 export type MarkdownEditorProps = ValueFieldProps<string> & {
@@ -56,6 +58,8 @@ type CompletionState = {
 
 export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
   const messages = useUiMessages();
+  const markdownEditorMessages = useMarkdownEditorMessages();
+  const completionMessages = useCompletionMessages();
   const locale = useLocale();
   const formatCount = (value: number) => new Intl.NumberFormat(locale()).format(value);
   const meta = createFieldMeta(props.id);
@@ -474,7 +478,7 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
         <Tooltip.Trigger
           type="button"
           class="k2b-markdown-editor__tool"
-          content={messages().saveShortcut}
+          content={markdownEditorMessages().saveShortcut}
           aria-label={messages().save}
           tabIndex={-1}
           disabled={props.disabled || props.saveDisabled || props.saving}
@@ -592,9 +596,9 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
         </div>
         <Show when={(props.showStats ?? true) && !props.disabled}>
           <div class="k2b-markdown-editor__stats" aria-hidden="true" data-empty={stats().chars === 0 ? "true" : undefined}>
-            <span>{messages().editorLines({ count: stats().lines, value: formatCount(stats().lines) })}</span>
-            <span>{messages().editorWords({ count: stats().words, value: formatCount(stats().words) })}</span>
-            <span>{messages().editorCharacters({ count: stats().chars, value: formatCount(stats().chars) })}</span>
+            <span>{markdownEditorMessages().editorLines({ count: stats().lines, value: formatCount(stats().lines) })}</span>
+            <span>{markdownEditorMessages().editorWords({ count: stats().words, value: formatCount(stats().words) })}</span>
+            <span>{markdownEditorMessages().editorCharacters({ count: stats().chars, value: formatCount(stats().chars) })}</span>
           </div>
         </Show>
         <Show when={state() || loading() || completionError()}>
@@ -603,9 +607,9 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
             popover="manual"
             class="k2b-autocomplete__options"
             role="presentation"
-            aria-label={messages().completionSuggestions}
+            aria-label={completionMessages().completionSuggestions}
           >
-            <div id={listboxId} class="k2b-autocomplete__listbox" role="listbox" aria-label={messages().suggestions}>
+            <div id={listboxId} class="k2b-autocomplete__listbox" role="listbox" aria-label={completionMessages().suggestions}>
               <Show when={loading()}>
                 <div class="k2b-autocomplete__status" role="status">
                   <i class="ti ti-loader-2 k2b-spin" aria-hidden="true" />

@@ -13,6 +13,7 @@ import {
   resolveSuggestions,
   type Suggestion,
 } from "./completion";
+import { useCompletionMessages } from "./completion-messages";
 import type { ValueFieldProps } from "./field-contract";
 import { resolveMaybeAccessor } from "./field-contract";
 
@@ -40,6 +41,7 @@ type CompletionState = {
 
 export function AutocompleteEditor(props: AutocompleteEditorProps): JSX.Element {
   const messages = useUiMessages();
+  const completionMessages = useCompletionMessages();
   const meta = createFieldMeta(props.id);
   let textarea: HTMLTextAreaElement | undefined;
   let preview: HTMLDivElement | undefined;
@@ -223,7 +225,7 @@ export function AutocompleteEditor(props: AutocompleteEditorProps): JSX.Element 
     } catch (error) {
       if (signal.aborted || isAbortError(error)) return;
       setLoading(false);
-      setCompletionError(error instanceof Error ? error.message : messages().suggestionsCouldNotLoad);
+      setCompletionError(error instanceof Error ? error.message : completionMessages().suggestionsCouldNotLoad);
       setDropdownOpen(true);
       queueMicrotask(positionDropdown);
     }
@@ -246,7 +248,7 @@ export function AutocompleteEditor(props: AutocompleteEditorProps): JSX.Element 
     } catch (error) {
       if (signal.aborted || isAbortError(error)) return;
       setLoading(false);
-      setCompletionError(error instanceof Error ? error.message : messages().suggestionsCouldNotLoad);
+      setCompletionError(error instanceof Error ? error.message : completionMessages().suggestionsCouldNotLoad);
       setDropdownOpen(true);
       queueMicrotask(positionDropdown);
     }
@@ -489,9 +491,9 @@ export function AutocompleteEditor(props: AutocompleteEditorProps): JSX.Element 
             popover="manual"
             class="k2b-autocomplete__options"
             role="presentation"
-            aria-label={messages().completionSuggestions}
+            aria-label={completionMessages().completionSuggestions}
           >
-            <div id={listboxId} class="k2b-autocomplete__listbox" role="listbox" aria-label={messages().suggestions}>
+            <div id={listboxId} class="k2b-autocomplete__listbox" role="listbox" aria-label={completionMessages().suggestions}>
               <Show when={loading()}>
                 <div class="k2b-autocomplete__status" role="status">
                   <i class="ti ti-loader-2 k2b-spin" aria-hidden="true" />

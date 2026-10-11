@@ -2,6 +2,7 @@ import { children, createMemo, createUniqueId, For, type JSX, Show } from "solid
 import { IconButton } from "../actions/Button";
 import { useUiMessages } from "../intl/messages";
 import Placeholder from "../surfaces/Placeholder";
+import { useSettingsMessages } from "./settings-messages";
 
 const SETTINGS_COLLECTION_ACTION = Symbol("SettingsCollection.Action");
 const SETTINGS_COLLECTION_ITEM = Symbol("SettingsCollection.Item");
@@ -84,22 +85,22 @@ const SettingsCollectionItemActions = (props: SettingsCollectionItemActionsProps
   definition(SETTINGS_COLLECTION_ITEM_ACTIONS, props);
 
 const SettingsCollectionItemReorder = (props: SettingsCollectionItemReorderProps): JSX.Element => {
-  const messages = useUiMessages();
+  const settingsMessages = useSettingsMessages();
   return (
     <>
       <IconButton
-        label={messages().moveNamedUp({ label: props.label })}
+        label={settingsMessages().moveNamedUp({ label: props.label })}
         size="sm"
-        title={messages().moveUp}
+        title={settingsMessages().moveUp}
         disabled={props.disabled || props.index <= 0}
         onClick={() => props.onMove(-1)}
       >
         <i class="ti ti-arrow-up" aria-hidden="true" />
       </IconButton>
       <IconButton
-        label={messages().moveNamedDown({ label: props.label })}
+        label={settingsMessages().moveNamedDown({ label: props.label })}
         size="sm"
-        title={messages().moveDown}
+        title={settingsMessages().moveDown}
         disabled={props.disabled || props.index >= props.count - 1}
         onClick={() => props.onMove(1)}
       >

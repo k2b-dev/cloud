@@ -1,6 +1,6 @@
 import { createSignal, type JSX, onCleanup, onMount } from "solid-js";
 import { suppressTextSelection } from "../internal/text-selection";
-import { useUiMessages } from "../intl/messages";
+import { useRefreshMessages } from "./refresh-messages";
 
 /** Android's SwipeRefreshLayout triggers at 64dp; the pull is damped to half the input travel. */
 const THRESHOLD = 64;
@@ -33,7 +33,7 @@ const INTERACTIVE = "a, button, input, textarea, select, [contenteditable], [rol
  * reload) next to it.
  */
 export function PullToRefresh(props: PullToRefreshProps): JSX.Element {
-  const messages = useUiMessages();
+  const refreshMessages = useRefreshMessages();
   const [state, setState] = createSignal<PullToRefreshState>("idle");
   const [distance, setDistance] = createSignal(0);
   let root!: HTMLDivElement;
@@ -198,7 +198,7 @@ export function PullToRefresh(props: PullToRefreshProps): JSX.Element {
         <span class="k2b-pull-to-refresh__icon" aria-hidden="true">
           <i class={state() === "refreshing" ? "ti ti-loader-2 k2b-spin" : "ti ti-refresh"} />
         </span>
-        <span class="k2b-sr-only">{state() === "refreshing" ? (props.label ?? messages().refreshing) : ""}</span>
+        <span class="k2b-sr-only">{state() === "refreshing" ? (props.label ?? refreshMessages().refreshing) : ""}</span>
       </div>
       {props.children}
     </div>

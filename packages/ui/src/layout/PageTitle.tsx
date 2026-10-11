@@ -1,8 +1,8 @@
 import { createContext, createRoot, createSignal, createUniqueId, For, type JSX, onCleanup, onMount, Show, useContext } from "solid-js";
 import { Dynamic, insert, isServer } from "solid-js/web";
 import { IconButtonLink } from "../actions/Button";
-import { useUiMessages } from "../intl/messages";
 import { installPageTitleController, PAGE_TITLE_CONTROLLER_ATTRIBUTE } from "./page-title-controller";
+import { useWorkspaceMessages } from "./workspace-messages";
 
 /** A page above the current one. Only pages someone can go back to are levels, so each has a link. */
 export type PageTrailLink = { title: string; href: string };
@@ -111,7 +111,7 @@ export const usePageTrail = (): (() => PageTrailState | undefined) => {
  * On phones a back arrow left of the title replaces the row above.
  */
 export function PageTitle(props: PageTitleProps): JSX.Element {
-  const messages = useUiMessages();
+  const messages = useWorkspaceMessages();
   // A title rendered on the server from the host's trail follows the host's later trails (see `followPageTrail`).
   const host = isServer ? useContext(PageTrailContext) : undefined;
   const menuId = `k2b-page-title-menu-${createUniqueId()}`;

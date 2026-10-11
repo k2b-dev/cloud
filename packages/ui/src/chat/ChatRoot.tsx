@@ -1,5 +1,5 @@
 import type { JSX } from "solid-js";
-import { useUiMessages } from "../intl/messages";
+import { useChatMessages } from "./chat-messages";
 
 export type ChatRootProps = {
   children: JSX.Element;
@@ -8,9 +8,9 @@ export type ChatRootProps = {
 };
 
 export function ChatRoot(props: ChatRootProps): JSX.Element {
-  const messages = useUiMessages();
+  const chatMessages = useChatMessages();
   return (
-    <section class={`k2b-chat ${props.class ?? ""}`} aria-label={props.label ?? messages().chat}>
+    <section class={`k2b-chat ${props.class ?? ""}`} aria-label={props.label ?? chatMessages().chat}>
       {props.children}
     </section>
   );

@@ -1,3 +1,4 @@
+import { useVideoMessages } from "./video-messages";
 /**
  * VideoPlayer — one video with the browser's own controls inside a frame whose
  * size never depends on the video. The frame fills the height its host gives
@@ -7,7 +8,7 @@
  */
 
 import { batch, createEffect, createSignal, type JSX, Match, Switch } from "solid-js";
-import { useUiMessages } from "../intl/messages";
+
 import Placeholder from "../surfaces/Placeholder";
 
 export type VideoPlayerProps = {
@@ -59,7 +60,7 @@ const RESUME_TOLERANCE = 0.05;
 const FALLBACK_FOCUS = ".k2b-video-player__fallback :is(a[href], button:not(:disabled))";
 
 export function VideoPlayer(props: VideoPlayerProps) {
-  const messages = useUiMessages();
+  const videoMessages = useVideoMessages();
   const [source, setSource] = createSignal<string | null>(props.src);
   /** Where the address in `source` starts, in seconds: 0 from the beginning, otherwise where a renewal continues. */
   const [start, setStart] = createSignal(0);
@@ -225,8 +226,8 @@ export function VideoPlayer(props: VideoPlayerProps) {
             class="k2b-video-player__fallback"
             state="error"
             icon="ti ti-video-off"
-            title={messages().videoCannotPlay}
-            description={messages().videoCannotPlayDescription}
+            title={videoMessages().videoCannotPlay}
+            description={videoMessages().videoCannotPlayDescription}
             action={props.fallbackAction}
           />
         </Match>
@@ -260,7 +261,7 @@ export function VideoPlayer(props: VideoPlayerProps) {
             onCanPlay={ready}
             onError={() => void fail()}
           >
-            {messages().videoUnsupported}
+            {videoMessages().videoUnsupported}
           </video>
         </Match>
       </Switch>

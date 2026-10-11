@@ -2,6 +2,7 @@ import { children, createEffect, createMemo, createSignal, createUniqueId, For, 
 import { IconButton } from "../actions/Button";
 import { useUiMessages } from "../intl/messages";
 import { createScrollFade } from "./scroll-fade";
+import { useSettingsMessages } from "./settings-messages";
 import { assertUniqueStableUiIds } from "./stable-id";
 
 const SETTINGS_MODAL_TAB = Symbol("SettingsModal.Tab");
@@ -115,6 +116,7 @@ function SettingsModalFooter(props: SettingsModalFooterProps): JSX.Element {
 
 const SettingsModal = ((props: SettingsModalProps): JSX.Element => {
   const messages = useUiMessages();
+  const settingsMessages = useSettingsMessages();
   const resolved = children(() => props.children);
   const railEntries = createMemo(() => collectRailEntries(resolved()));
   const tabs = createMemo(() => {
@@ -206,7 +208,7 @@ const SettingsModal = ((props: SettingsModalProps): JSX.Element => {
         <nav
           ref={tabList}
           class="k2b-settings__tabs"
-          aria-label={messages().sectionsLabel({ title: props.title })}
+          aria-label={settingsMessages().sectionsLabel({ title: props.title })}
           role="tablist"
           data-scroll-fade-mode="both"
           data-scroll-fade-axis="horizontal"

@@ -1,5 +1,5 @@
 import { createEffect, createSignal, type JSX, on, Show } from "solid-js";
-import { useUiMessages } from "../intl/messages";
+import { useAvatarMessages } from "./avatar-messages";
 
 export type AvatarSize = "xs" | "sm" | "md" | "lg" | "xl";
 
@@ -36,9 +36,9 @@ const tintFor = (name: string): number => {
 };
 
 export function Avatar(props: AvatarProps): JSX.Element {
-  const messages = useUiMessages();
+  const avatarMessages = useAvatarMessages();
   const [failed, setFailed] = createSignal(false);
-  const label = () => props.name.trim() || messages().unknownUser;
+  const label = () => props.name.trim() || avatarMessages().unknownUser;
   // Derive initials from the given name, not from the accessible-name fallback:
   // an empty `name` must render "?" the way Cloud's avatar does, not "UU".
   const fallback = () => props.fallback ?? initialsFor(props.name);
@@ -63,7 +63,7 @@ export function Avatar(props: AvatarProps): JSX.Element {
           data-tint={tintFor(props.name.trim())}
           style={props.style}
           role="img"
-          aria-label={props.alt ?? messages().avatarLabel({ name: label() })}
+          aria-label={props.alt ?? avatarMessages().avatarLabel({ name: label() })}
         >
           {fallbackContent()}
         </span>
@@ -72,7 +72,7 @@ export function Avatar(props: AvatarProps): JSX.Element {
       {(src) => (
         <img
           src={src()}
-          alt={props.alt ?? messages().avatarLabel({ name: label() })}
+          alt={props.alt ?? avatarMessages().avatarLabel({ name: label() })}
           class={className()}
           data-size={props.size ?? "md"}
           style={props.style}

@@ -1,9 +1,9 @@
 import { createMemo, For, type JSX } from "solid-js";
-import { useUiMessages } from "../intl/messages";
 import { PANES_LAYOUT_VERSION, type PanesLayout } from "../layout/panes-layout";
 import { AutocompleteEditor, type AutocompleteEditorProps } from "./AutocompleteEditor";
 import type { Completion, Suggestion } from "./completion";
 import { TextInput } from "./TextInput";
+import { useTemplateMessages } from "./template-messages";
 
 export type TemplateVariableKind = "string" | "email" | "url" | "number" | "boolean" | "array" | "object";
 
@@ -149,14 +149,14 @@ const highlightTemplate = (text: string): string => {
 };
 
 export function TemplateEditor(props: TemplateEditorProps): JSX.Element {
-  const messages = useUiMessages();
+  const templateMessages = useTemplateMessages();
   const completions = createMemo(() => templateCompletions(props.variables));
   return (
     <AutocompleteEditor
       {...props}
       lines={props.lines ?? 22}
       spellcheck={props.spellcheck ?? false}
-      placeholder={props.placeholder ?? messages().templateEditorPlaceholder}
+      placeholder={props.placeholder ?? templateMessages().templateEditorPlaceholder}
       highlight={highlightTemplate}
       completions={completions()}
     />
@@ -164,10 +164,10 @@ export function TemplateEditor(props: TemplateEditorProps): JSX.Element {
 }
 
 export function TemplatePreview(props: TemplatePreviewProps): JSX.Element {
-  const messages = useUiMessages();
+  const templateMessages = useTemplateMessages();
   return (
     <section class={`k2b-template-preview ${props.class ?? ""}`}>
-      <iframe sandbox="" srcdoc={props.html} title={props.title ?? messages().templatePreview} />
+      <iframe sandbox="" srcdoc={props.html} title={props.title ?? templateMessages().templatePreview} />
     </section>
   );
 }

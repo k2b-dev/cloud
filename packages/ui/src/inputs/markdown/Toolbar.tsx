@@ -1,6 +1,5 @@
 import { For, type JSX, Show } from "solid-js";
 import { Tooltip } from "../../feedback/Tooltip";
-import { useUiMessages } from "../../intl/messages";
 import {
   insertLink,
   toggleBold,
@@ -11,6 +10,7 @@ import {
   toggleNumberedList,
   toggleQuote,
 } from "./actions";
+import { useMarkdownToolbarMessages } from "./toolbar-messages";
 
 type ToolbarProps = {
   textarea: () => HTMLTextAreaElement | null;
@@ -45,19 +45,19 @@ const TOOLS: readonly Tool[] = [
 ];
 
 export default function Toolbar(props: ToolbarProps): JSX.Element {
-  const messages = useUiMessages();
+  const markdownToolbarMessages = useMarkdownToolbarMessages();
   const title = (id: string, fallback: string): string =>
     ({
-      bold: messages().boldShortcut,
-      italic: messages().italicShortcut,
-      code: messages().inlineCodeShortcut,
-      link: messages().linkShortcut,
-      h1: messages().heading1Shortcut,
-      h2: messages().heading2Shortcut,
-      h3: messages().heading3Shortcut,
-      bullet: messages().bulletListShortcut,
-      ordered: messages().numberedListShortcut,
-      quote: messages().quote,
+      bold: markdownToolbarMessages().boldShortcut,
+      italic: markdownToolbarMessages().italicShortcut,
+      code: markdownToolbarMessages().inlineCodeShortcut,
+      link: markdownToolbarMessages().linkShortcut,
+      h1: markdownToolbarMessages().heading1Shortcut,
+      h2: markdownToolbarMessages().heading2Shortcut,
+      h3: markdownToolbarMessages().heading3Shortcut,
+      bullet: markdownToolbarMessages().bulletListShortcut,
+      ordered: markdownToolbarMessages().numberedListShortcut,
+      quote: markdownToolbarMessages().quote,
     })[id] ?? fallback;
   let toolbar!: HTMLDivElement;
   const moveFocus = (event: KeyboardEvent): void => {
@@ -83,7 +83,13 @@ export default function Toolbar(props: ToolbarProps): JSX.Element {
   };
 
   return (
-    <div ref={toolbar} class="k2b-markdown-editor__toolbar" role="toolbar" aria-label={messages().markdownFormatting} onKeyDown={moveFocus}>
+    <div
+      ref={toolbar}
+      class="k2b-markdown-editor__toolbar"
+      role="toolbar"
+      aria-label={markdownToolbarMessages().markdownFormatting}
+      onKeyDown={moveFocus}
+    >
       <For each={TOOLS}>
         {(tool, index) =>
           tool.kind === "separator" ? (

@@ -18,6 +18,7 @@ import Dropdown, { type DropdownItem } from "../actions/Dropdown";
 import { announce } from "../feedback/announce";
 import { useDateConfigLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
+import { useTimelineMessages } from "./timeline-messages";
 import {
   buildTimelineModel,
   parseTimelineTime,
@@ -119,6 +120,7 @@ const verticalScroller = (from: Element): Element | undefined => {
  */
 export default function Timeline(props: TimelineProps): JSX.Element {
   const messages = useUiMessages();
+  const timelineMessages = useTimelineMessages();
   const context = useDateConfigLocale(() => ({ ...props.dateConfig, timeZone: props.timeZone ?? props.dateConfig?.timeZone }));
   const baseId = createUniqueId().replace(/[^a-zA-Z0-9_-]/g, "-");
   const [clock, setClock] = createSignal(Date.now());
@@ -160,20 +162,23 @@ export default function Timeline(props: TimelineProps): JSX.Element {
     first === last ? format.format(noonOf(first)) : `${format.format(noonOf(first))} – ${format.format(noonOf(last))}`;
   const nightLabel = createMemo(() => {
     const format = new Intl.DateTimeFormat(locale(), { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: "UTC" });
-    return messages().timelineNight({ start: format.format(Date.UTC(2000, 0, 1, 22)), end: format.format(Date.UTC(2000, 0, 1, 6)) });
+    return timelineMessages().timelineNight({
+      start: format.format(Date.UTC(2000, 0, 1, 22)),
+      end: format.format(Date.UTC(2000, 0, 1, 6)),
+    });
   });
   const spoken = (entry: TimelineItemEntry): string => {
     const item = entry.item;
     const parts = [item.label];
     if (entry.kind === "all-day") parts.push(messages().allDay);
     else if (entry.end > entry.start)
-      parts.push(messages().timelineTimeRange({ start: formatTime(entry.start), end: formatTime(entry.end) }));
+      parts.push(timelineMessages().timelineTimeRange({ start: formatTime(entry.start), end: formatTime(entry.end) }));
     else parts.push(formatTime(entry.start));
     if (item.detail) parts.push(item.detail);
     parts.push(
       entry.kind === "all-day" ? dayRange(entry.firstKey, entry.lastKey, longDayFormat()) : longDayFormat().format(new Date(entry.start)),
     );
-    if (item.checked !== undefined) parts.push(item.checked ? messages().timelineDone : messages().timelineOpen);
+    if (item.checked !== undefined) parts.push(item.checked ? timelineMessages().timelineDone : timelineMessages().timelineOpen);
     return parts.join(", ");
   };
   /** When an item happens, for a "+n" menu row. */
@@ -352,7 +357,7 @@ export default function Timeline(props: TimelineProps): JSX.Element {
       const happening = current();
       if (happening) focusEntry(happening);
       else scrollToTime(now(), "center");
-      announce(messages().timelineNow({ time: formatTime(now()) }));
+      announce(timelineMessages().timelineNow({ time: formatTime(now()) }));
       return;
     }
     if (!entry) return;
@@ -619,17 +624,17 @@ export default function Timeline(props: TimelineProps): JSX.Element {
     const entry = () => moreProps.entry;
     const label = () => {
       const current = entry();
-      const count = messages().timelineMore({ count: current.hidden.length });
+      const count = timelineMessages().timelineMore({ count: current.hidden.length });
       return current.area === "all-day"
         ? count
-        : `${count}, ${messages().timelineTimeRange({ start: formatTime(current.start), end: formatTime(current.end) })}`;
+        : `${count}, ${timelineMessages().timelineTimeRange({ start: formatTime(current.start), end: formatTime(current.end) })}`;
     };
     // A row opens its item as a click on it does. Where only the checkbox may change, the row is that checkbox.
     const items = (): DropdownItem[] =>
       entry().hidden.map((hidden): DropdownItem => {
         const { item } = hidden;
         const parts = [when(hidden), ...(item.detail ? [item.detail] : [])];
-        const state = item.checked === undefined ? [] : [item.checked ? messages().timelineDone : messages().timelineOpen];
+        const state = item.checked === undefined ? [] : [item.checked ? timelineMessages().timelineDone : timelineMessages().timelineOpen];
         const icon = item.checked === undefined ? undefined : item.checked ? "ti ti-circle-check" : "ti ti-circle";
         const base = { label: item.label, description: [...parts, ...state].join(", "), icon };
         const open = props.onActivate;
@@ -721,7 +726,9 @@ export default function Timeline(props: TimelineProps): JSX.Element {
                 style={{ "--k2b-timeline-at": spanCss(fold().at), "--k2b-timeline-size": spanCss(fold().size) }}
               >
                 <i class="ti ti-moon" />
-                <span class="k2b-timeline__fold-label">{fold().kind === "night" ? nightLabel() : messages().timelineNothingPlanned}</span>
+                <span class="k2b-timeline__fold-label">
+                  {fold().kind === "night" ? nightLabel() : timelineMessages().timelineNothingPlanned}
+                </span>
               </div>
             )}
           </Index>
@@ -740,7 +747,7 @@ export default function Timeline(props: TimelineProps): JSX.Element {
                 data-past={gap().end <= now() ? "true" : undefined}
                 style={{ "--k2b-timeline-at": spanCss(gap().at) }}
               >
-                {messages().timelineFree({ duration: hoursFormat().format(gap().hours) })}
+                {timelineMessages().timelineFree({ duration: hoursFormat().format(gap().hours) })}
               </span>
             )}
           </Index>
@@ -780,7 +787,7 @@ export default function Timeline(props: TimelineProps): JSX.Element {
     <section
       ref={root}
       class={`k2b-timeline ${props.class ?? ""}`}
-      aria-label={props.label ?? messages().timeline}
+      aria-label={props.label ?? timelineMessages().timeline}
       aria-describedby={`${baseId}-hint`}
       aria-busy={props.busy ? "true" : undefined}
       onFocusIn={(event) => {
@@ -802,7 +809,7 @@ export default function Timeline(props: TimelineProps): JSX.Element {
         </div>
       </div>
       <span id={`${baseId}-hint`} class="k2b-sr-only">
-        {messages().timelineHint}
+        {timelineMessages().timelineHint}
       </span>
     </section>
   );

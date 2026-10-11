@@ -2,6 +2,7 @@ import { createMemo, createSignal, For, Show } from "solid-js";
 import CopyButton from "../actions/CopyButton";
 import { type MaybeAccessor, resolveMaybeAccessor } from "../inputs/field-contract";
 import { useUiMessages } from "../intl/messages";
+import { useStructuredDataMessages } from "./structured-data-messages";
 
 export type StructuredDataPreviewMode = "formatted" | "raw";
 export type StructuredDataValue =
@@ -65,6 +66,7 @@ const formatJson = (data: StructuredDataValue): string => JSON.stringify(data, n
 
 export default function StructuredDataPreview(props: StructuredDataPreviewProps) {
   const messages = useUiMessages();
+  const structuredDataMessages = useStructuredDataMessages();
   const [internalMode, setInternalMode] = createSignal<StructuredDataPreviewMode>(props.defaultMode ?? "formatted");
   const mode = () => (props.mode === undefined ? internalMode() : resolveMaybeAccessor(props.mode));
   const setMode = (next: StructuredDataPreviewMode) => {
@@ -126,7 +128,7 @@ export default function StructuredDataPreview(props: StructuredDataPreviewProps)
       <div class="k2b-content-structured-data__footer">
         <Show when={hasData()}>
           <button type="button" class="k2b-content-structured-data__action" onClick={() => setMode(showRaw() ? "formatted" : "raw")}>
-            {showRaw() ? messages().viewFormatted : messages().viewRaw}
+            {showRaw() ? structuredDataMessages().viewFormatted : structuredDataMessages().viewRaw}
           </button>
         </Show>
       </div>
