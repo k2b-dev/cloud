@@ -60,7 +60,8 @@ const INLINED_EMAIL_SANITIZE_OPTIONS = {
   textFilter: (text) => text.replace(COMPOSE_SEGMENT_MARKS, ""),
 } satisfies sanitizeHtml.IOptions;
 // A backslash starts a CSS escape, which can spell any function name, such as `u\72l(`.
-const UNSAFE_CSS_VALUE = /(?:url|expression|var|attr)\s*\(|[{}@\\]|[\u0000-\u0008\u000b\u000c\u000e-\u001f]/i;
+// juice decodes character references after this check, so `&` could spell quotes or backslashes.
+const UNSAFE_CSS_VALUE = /(?:url|expression|var|attr)\s*\(|[{}@\\&]|[\u0000-\u0008\u000b\u000c\u000e-\u001f]/i;
 // juice inlines every double quote as a single quote, so a quoted string must not contain the other kind of quote.
 const INLINE_SAFE_CSS_QUOTES = /^(?:[^"']|"[^"']*"|'[^"']*')*$/;
 

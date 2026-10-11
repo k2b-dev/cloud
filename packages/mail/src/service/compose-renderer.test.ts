@@ -526,6 +526,35 @@ describe("compose renderer", () => {
     }
   });
 
+  test("rejects HTML entities in CSS strings before inlining and ignores unsafe stored declarations", () => {
+    for (const selector of [".mail-content", ".mail-signature"]) {
+      for (const value of [
+        `"&apos;;background:u&#92;72l(https://example.test/pixel);x:&apos;"`,
+        `'&quot;;background:u&#x5c;72l(https://example.test/pixel);x:&quot;'`,
+      ]) {
+        const customCss = `${selector} { font-family: ${value}; }`;
+        expect(validateComposeCss(customCss)).toMatchObject({
+          ok: false,
+          error: { message: 'CSS value for "font-family" is not allowed' },
+        });
+        const stored = storedComposeCss(customCss);
+        expect(stored.css).not.toContain("font-family");
+        expect(stored.formattingWarnings).toEqual([{ code: "ignored_mailbox_css", property: "font-family" }]);
+        const rendered = renderComposeContent({
+          body: "Hello",
+          signature: selector === ".mail-signature" ? "Regards" : undefined,
+          format: "markdown",
+          customCss,
+          context,
+          renderLiquid: false,
+        });
+        expect(rendered.ok).toBe(true);
+        if (!rendered.ok) continue;
+        for (const removed of ["example.test", "background"]) expect(rendered.data.html).not.toContain(removed);
+      }
+    }
+  });
+
   test("allows line breaks outside CSS strings and separate strings with different quotes", () => {
     for (const css of ["p { font-family: Arial,\n  sans-serif; }", `p { font-family: "Segoe UI", 'Arial', sans-serif; }`]) {
       expect(validateComposeCss(css).ok).toBe(true);

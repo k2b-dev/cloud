@@ -74,6 +74,15 @@ describe("incoming mail HTML", () => {
     expect(sanitized).not.toContain("tracker.example");
   });
 
+  test("drops escaped CSS URL functions while keeping safe sibling declarations", () => {
+    const sanitized = sanitizeIncomingMailHtmlWithRemoteImages(
+      String.raw`<p style="background:u\72l(https://example.test/p);color:red">x</p>`,
+    );
+    expect(sanitized.html).toContain("color:red");
+    expect(sanitized.html).not.toContain("background");
+    expect(sanitized.html).not.toContain("example.test");
+  });
+
   test("removes executable content and remote tracking images", () => {
     const sanitized = sanitizeIncomingMailHtml(`
       <script>alert('xss')</script>

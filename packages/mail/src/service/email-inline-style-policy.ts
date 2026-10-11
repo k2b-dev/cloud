@@ -85,9 +85,10 @@ export const EMAIL_INLINE_STYLE_PROPERTY_SET = new Set<string>(EMAIL_INLINE_STYL
 // `image-set` and `cross-fade` also match their `-webkit-` forms, `element` matches `-moz-element`. The `s` flag
 // lets the check read past a line break inside the value. A quoted string must close before a line break: the
 // browser ends it there and reads the rest as new declarations. Escapes are read as pairs, as CSS reads them, so
-// an escaped quote neither opens nor closes a string.
+// an escaped quote neither opens nor closes a string. Outside quotes, escapes must not spell ASCII identifier
+// characters, which could disguise a blocked function name; non-ASCII hex escapes remain allowed for font names.
 export const SAFE_EMAIL_INLINE_STYLE_VALUE =
-  /^(?!.*(?:url|image-set|cross-fade|image|element|src|expression|var|attr)\s*\()(?:[^"'\\{}@\u0000-\u0008\u000b\u000c\u000e-\u001f]|\\[^{}@\u0000-\u001f]|"(?:[^"\\{}@\u0000-\u0008\u000a-\u001f]|\\[^{}@\u0000-\u001f])*"|'(?:[^'\\{}@\u0000-\u0008\u000a-\u001f]|\\[^{}@\u0000-\u001f])*')*$/is;
+  /^(?!.*(?:url|image-set|cross-fade|image|element|src|expression|var|attr)\s*\()(?:[^"'\\{}@\u0000-\u0008\u000b\u000c\u000e-\u001f]|\\0*(?:[89a-f][0-9a-f]|[1-9a-f][0-9a-f]{2,5})|\\[^0-9a-z_\-{}@\u0000-\u001f]|"(?:[^"\\{}@\u0000-\u0008\u000a-\u001f]|\\[^{}@\u0000-\u001f])*"|'(?:[^'\\{}@\u0000-\u0008\u000a-\u001f]|\\[^{}@\u0000-\u001f])*')*$/is;
 
 /**
  * Properties whose values are limited further. Buttons need `display: inline-block` so their padding

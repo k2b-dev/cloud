@@ -123,7 +123,7 @@ cld --json mail compose style get
 cld --json mail compose style set --css-file mail.css
 ```
 
-Mailbox CSS rules apply after the built-in design and win for the elements they select: `a { color: #262626; }` restyles every link, and `.mail-content { font-size: 16px; }` styles the whole message. Use `.mail-signature { color: #52525b; }` to style the signature. Selectors may use the elements that email keeps and the `.mail-content` and `.mail-signature` classes; other classes, IDs, pseudo-classes, at-rules, and `!important` are rejected, and so are values that load an image, such as `url()` or `image-set()`, backslash escapes, and quoted values that span lines or contain the other kind of quote.
+Mailbox CSS rules apply after the built-in design and win for the elements they select: `a { color: #262626; }` restyles every link, and `.mail-content { font-size: 16px; }` styles the whole message. Use `.mail-signature { color: #52525b; }` to style the signature. Selectors may use the elements that email keeps and the `.mail-content` and `.mail-signature` classes; other classes, IDs, pseudo-classes, at-rules, and `!important` are rejected, and so are values that load an image, such as `url()` or `image-set()`, backslash escapes, `&`, and quoted values that span lines or contain the other kind of quote.
 
 Saving CSS with `compose style set` stays strict. Remove or replace rejected values before saving. A stored design that no longer passes the check keeps its safe parts when rendering, in `.mail-content` and `.mail-signature` rules alike.
 
