@@ -1,4 +1,4 @@
-import { expect, spyOn, test } from "bun:test";
+import { expect, setSystemTime, spyOn, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../ui/test/dom";
@@ -118,6 +118,25 @@ const toastAction = (dom: DomTestHarness, label: string) =>
 
 if (isServer) test.skip("requires browser conditions", () => {});
 else {
+  test("only marks past-day task deadlines overdue", () => {
+    setSystemTime(new Date("2026-10-09T12:00:00Z"));
+    const page = mount({
+      items: [
+        { ...tents, deadline: "2026-10-09T09:00:00Z" },
+        { ...flyer, deadline: "2026-10-08T09:00:00Z" },
+      ],
+    });
+    try {
+      const deadlines = page.dom.root.querySelectorAll(".spaces-pwa__when");
+      expect(deadlines).toHaveLength(2);
+      expect(deadlines[0]?.hasAttribute("data-overdue")).toBe(false);
+      expect(deadlines[1]?.getAttribute("data-overdue")).toBe("true");
+    } finally {
+      page.dispose();
+      setSystemTime();
+    }
+  });
+
   test("checks a task off at once, reads the list again once the server saved it, and Undo reopens it", async () => {
     let finish: (response: Response) => void = () => {};
     let open = [flyer];
