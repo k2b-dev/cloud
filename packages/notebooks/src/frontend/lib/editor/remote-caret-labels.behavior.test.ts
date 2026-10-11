@@ -144,6 +144,101 @@ describe("remote caret labels", () => {
     }
   });
 
+  test("remote Backspace mid-text reactivates only that client's label", async () => {
+    const { applyRemoteUpdate, ada, grace, cleanup } = await mount();
+    try {
+      const cursor = ada.setCursor(5);
+      grace.setCursor(10);
+      jest.advanceTimersByTime(3_000);
+      expect(ada.idle()).toBe(true);
+      expect(grace.idle()).toBe(true);
+      ada.text.delete(4, 1);
+      applyRemoteUpdate();
+      expect(JSON.stringify(ada.awareness.getLocalState()?.cursor)).toBe(JSON.stringify(cursor));
+      expect(ada.idle()).toBe(false);
+      expect(grace.idle()).toBe(true);
+      jest.advanceTimersByTime(3_000);
+      expect(ada.idle()).toBe(true);
+    } finally {
+      cleanup();
+    }
+  });
+
+  test("remote Backspace at the end of the document reactivates the label", async () => {
+    const { applyRemoteUpdate, ada, cleanup } = await mount();
+    try {
+      const cursor = ada.setCursor(ada.text.length);
+      jest.advanceTimersByTime(3_000);
+      expect(ada.idle()).toBe(true);
+      ada.text.delete(ada.text.length - 1, 1);
+      applyRemoteUpdate();
+      expect(JSON.stringify(ada.awareness.getLocalState()?.cursor)).toBe(JSON.stringify(cursor));
+      expect(ada.idle()).toBe(false);
+      jest.advanceTimersByTime(3_000);
+      expect(ada.idle()).toBe(true);
+    } finally {
+      cleanup();
+    }
+  });
+
+  test("remote Backspace after nulling the cursor reactivates the republished caret", async () => {
+    const { applyRemoteUpdate, ada, grace, cleanup } = await mount();
+    try {
+      const cursor = ada.setCursor(5);
+      grace.setCursor(10);
+      jest.advanceTimersByTime(3_000);
+      expect(ada.idle()).toBe(true);
+      ada.awareness.setLocalStateField("cursor", null);
+      ada.publish();
+      ada.text.delete(4, 1);
+      applyRemoteUpdate();
+      ada.awareness.setLocalStateField("cursor", cursor);
+      ada.publish();
+      expect(ada.idle()).toBe(false);
+      expect(grace.idle()).toBe(true);
+      jest.advanceTimersByTime(3_000);
+      expect(ada.idle()).toBe(true);
+    } finally {
+      cleanup();
+    }
+  });
+
+  test("a republished cursor pointing at deleted text matches by absolute position", async () => {
+    const { applyRemoteUpdate, ada, cleanup } = await mount();
+    try {
+      const cursor = ada.setCursor(4);
+      jest.advanceTimersByTime(3_000);
+      expect(ada.idle()).toBe(true);
+      ada.awareness.setLocalStateField("cursor", null);
+      ada.publish();
+      ada.text.delete(4, 1);
+      applyRemoteUpdate();
+      ada.awareness.setLocalStateField("cursor", cursor);
+      ada.publish();
+      expect(ada.idle()).toBe(false);
+    } finally {
+      cleanup();
+    }
+  });
+
+  test("republishing the same cursor after a remembered deletion expires stays idle", async () => {
+    const { applyRemoteUpdate, ada, cleanup } = await mount();
+    try {
+      const cursor = ada.setCursor(5);
+      jest.advanceTimersByTime(3_000);
+      ada.awareness.setLocalStateField("cursor", null);
+      ada.publish();
+      ada.text.delete(4, 1);
+      applyRemoteUpdate();
+      jest.advanceTimersByTime(3_000);
+      ada.awareness.setLocalStateField("cursor", cursor);
+      ada.publish();
+      expect(ada.idle()).toBe(true);
+    } finally {
+      cleanup();
+    }
+  });
+
   test("nulling and republishing the same cursor creates an immediately idle caret", async () => {
     const { view, ada, grace, cleanup } = await mount();
     try {

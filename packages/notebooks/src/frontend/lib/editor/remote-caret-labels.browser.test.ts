@@ -63,6 +63,8 @@ describe("remote caret labels", () => {
   test("an idle name fades without moving the caret, and shows at once on hover and on movement", async () => {
     const page = await open();
     try {
+      // Start the activity window now rather than at page load, so a slow launch cannot make the caret idle first.
+      await page.evaluate(() => (window as unknown as { harness: Harness }).harness.moveTo(31));
       const active = await label(page);
       expect(active.opacity).toBe("1");
       expect(active.transitionDuration).toBe("0s");

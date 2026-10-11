@@ -25,11 +25,14 @@ export const remoteCaretLabels = (ytext: Y.Text, awareness: Awareness): Extensio
     class {
       lastActive = new Map<number, number>();
       cursorKeys = new Map<number, string>();
+      nullCursors = new Set<number>();
+      deletions: { position: Y.RelativePosition; time: number }[] = [];
       timer: ReturnType<typeof setTimeout> | undefined;
 
       constructor(readonly view: EditorView) {
         this.trackCursors([...awareness.getStates().keys()]);
         awareness.on("change", this.onAwarenessChange);
+        ytext.observe(this.onTextChange);
         doc.on("afterTransaction", this.onTransaction);
         this.apply();
       }
@@ -38,7 +41,25 @@ export const remoteCaretLabels = (ytext: Y.Text, awareness: Awareness): Extensio
         for (const client of clients) {
           if (client === doc.clientID) continue;
           const cursor: unknown = awareness.getStates().get(client)?.cursor;
-          if (!hasCursor(cursor)) continue;
+          if (!hasCursor(cursor)) {
+            this.nullCursors.add(client);
+            continue;
+          }
+          if (this.nullCursors.delete(client)) {
+            const now = Date.now();
+            this.pruneDeletions(now);
+            const position = Y.createRelativePositionFromJSON(cursor.head);
+            const head = Y.createAbsolutePositionFromRelativePosition(position, doc);
+            const deletion = this.deletions.findIndex(({ position: deleted }) => {
+              if (Y.compareRelativePositions(position, deleted)) return true;
+              const absolute = Y.createAbsolutePositionFromRelativePosition(deleted, doc);
+              return head?.type === ytext && absolute?.type === ytext && head.index === absolute.index;
+            });
+            if (deletion !== -1) {
+              this.lastActive.set(client, now);
+              this.deletions.splice(deletion, 1);
+            }
+          }
           const key = JSON.stringify([cursor.anchor, cursor.head]);
           if (this.cursorKeys.get(client) === key) continue;
           this.cursorKeys.set(client, key);
@@ -52,8 +73,37 @@ export const remoteCaretLabels = (ytext: Y.Text, awareness: Awareness): Extensio
         for (const client of removed) {
           this.lastActive.delete(client);
           this.cursorKeys.delete(client);
+          this.nullCursors.delete(client);
         }
         this.apply();
+      };
+
+      pruneDeletions(now: number) {
+        this.deletions = this.deletions.filter(({ time }) => now - time < REMOTE_CARET_LABEL_IDLE_MS);
+      }
+
+      onTextChange = (event: Y.YTextEvent, transaction: Y.Transaction) => {
+        if (transaction.local) return;
+        const now = Date.now();
+        let index = 0;
+        for (const op of event.delta) {
+          if (op.retain !== undefined) index += op.retain;
+          if (op.insert !== undefined) index += typeof op.insert === "string" ? op.insert.length : 1;
+          if (op.delete === undefined) continue;
+          let matched = false;
+          for (const [client, state] of awareness.getStates()) {
+            if (client === doc.clientID || !hasCursor(state.cursor)) continue;
+            const head = Y.createAbsolutePositionFromRelativePosition(Y.createRelativePositionFromJSON(state.cursor.head), doc);
+            if (head?.type !== ytext || head.index !== index) continue;
+            this.lastActive.set(client, now);
+            matched = true;
+          }
+          if (!matched) {
+            // The deletion can arrive before an idle sender republishes its cursor.
+            this.pruneDeletions(now);
+            this.deletions.push({ position: Y.createRelativePositionFromTypeIndex(ytext, index), time: now });
+          }
+        }
       };
 
       onTransaction = (transaction: Y.Transaction) => {
@@ -93,6 +143,7 @@ export const remoteCaretLabels = (ytext: Y.Text, awareness: Awareness): Extensio
 
       destroy() {
         awareness.off("change", this.onAwarenessChange);
+        ytext.unobserve(this.onTextChange);
         doc.off("afterTransaction", this.onTransaction);
         if (this.timer !== undefined) clearTimeout(this.timer);
       }
