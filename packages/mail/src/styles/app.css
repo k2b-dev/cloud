@@ -184,8 +184,8 @@
     background: var(--ui-surface);
   }
 
-  /* The overview is deliberately not a mailbox: one page title, one scope
-     chip, one list. Objects live in the sidebar and open their own workspace. */
+  /* The overview is deliberately not a mailbox: one page title, the views,
+     one list. Objects live in the sidebar and open their own workspace. */
   .mail-overview-page {
     display: flex;
     min-width: 0;
@@ -423,11 +423,35 @@
   .mail-focus-chevron {
     align-self: center;
     color: var(--color-zinc-400);
-    transition: transform 120ms ease;
   }
 
-  .mail-focus-row:hover .mail-focus-chevron {
-    transform: translateX(0.125rem);
+  /* Loading rows have the layout of the rows they stand for, so the list keeps its size when the
+     rows arrive. They appear only once a read takes a moment, so a fast one never flashes them. */
+  .mail-focus-skeleton > .mail-focus-row {
+    animation: mail-focus-skeleton-appear 150ms ease-out 300ms both;
+  }
+
+  .mail-focus-skeleton > .mail-focus-row:hover {
+    background: none;
+  }
+
+  /* A line of text, not a flex row of icons, so the line keeps the height of the text it stands for. */
+  .mail-focus-skeleton .mail-focus-meta > span {
+    display: block;
+  }
+
+  .mail-focus-skeleton-shape {
+    display: inline-block;
+    height: 0.75em;
+    border-radius: 0.25rem;
+    vertical-align: middle;
+    background: var(--k2b-surface-muted);
+  }
+
+  .mail-focus-skeleton .mail-focus-avatar.mail-focus-skeleton-shape {
+    height: 2.75rem;
+    border-radius: 999px;
+    background: var(--k2b-surface-muted);
   }
 
   .dark :is(.mail-focus-sender, .mail-focus-subject) {
@@ -459,6 +483,10 @@
 
     .mail-focus-avatar {
       width: 2.375rem;
+      height: 2.375rem;
+    }
+
+    .mail-focus-skeleton .mail-focus-avatar.mail-focus-skeleton-shape {
       height: 2.375rem;
     }
 
@@ -937,8 +965,15 @@
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .k2b-ui .mail-quick-look__placeholder {
+  .k2b-ui .mail-quick-look__placeholder,
+  .k2b-ui .mail-focus-skeleton-shape {
     animation: mail-quick-look-pulse 1.4s ease-in-out infinite;
+  }
+}
+
+@keyframes mail-focus-skeleton-appear {
+  from {
+    opacity: 0;
   }
 }
 

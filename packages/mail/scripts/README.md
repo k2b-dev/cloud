@@ -9,7 +9,8 @@ The large-mailbox measurements need the integration preloads. From the repositor
 ```sh
 MAIL_PERFORMANCE_TESTS=1 MAIL_PERFORMANCE_MESSAGE_COUNT=100000 bun --no-env-file test --timeout 600000 \
   --preload ./scripts/fixtures/test-infra.ts --preload ./packages/mail/test/integration-preload.ts \
-  packages/mail/src/service/performance.integration.test.ts packages/mail/src/service/view-counts.integration.test.ts
+  packages/mail/src/service/performance.integration.test.ts packages/mail/src/service/view-counts.integration.test.ts \
+  packages/mail/src/service/focus-performance.integration.test.ts
 ```
 
-Without `MAIL_PERFORMANCE_TESTS=1`, the performance suite is skipped and the view counts suite runs with 25,000 messages as part of the integration suites. At that size PostgreSQL would compile the counts with JIT inlining and optimization, so the suite fails if the read stops turning JIT off; smaller values of `MAIL_PERFORMANCE_MESSAGE_COUNT` are raised to it.
+Without `MAIL_PERFORMANCE_TESTS=1`, the performance suite is skipped, and the view counts and Focus suites run with 25,000 messages as part of the integration suites; the Focus suite spreads them over four mailboxes. At that size PostgreSQL would compile the counts and the Focus reads with JIT inlining and optimization, so both suites fail if a read stops turning JIT off; smaller values of `MAIL_PERFORMANCE_MESSAGE_COUNT` are raised to it.
