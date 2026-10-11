@@ -26,7 +26,7 @@ With **Manage** access, you create one guided flow under **Automations → Incom
 - Choose **All incoming mail** when you need no condition.
 - Or combine up to eight conditions on sender, domain, subject, body text, or attachment presence. Choose whether all or any condition must match.
 
-An incoming automation runs once per received message. Mail that the provider delivers straight to Trash or Junk, such as spam that its filter caught, does not start incoming automations or automatic replies. Someone can move the message to another folder in a different email client, for example back to the Inbox after the automation moved it away. The automation then does not run again.
+An incoming automation runs once per received message. Mail that the provider delivers straight to Trash or Junk, such as spam that its filter caught, does not start incoming automations or automatic replies. At Gmail, the automation runs on the copy in the Inbox or in another folder, never on the copy in **All Mail**. Someone can move the message to another folder in a different email client, for example back to the Inbox after the automation moved it away. The automation then does not run again.
 
 Add steps in the order in which they run. A flow can freely mix:
 

@@ -703,13 +703,10 @@ const storableEnvelope = (
 
 /**
  * Mail the provider delivers straight to Trash or Junk, such as spam its filter caught, is not
- * received mail for automations: an automatic reply would answer the spammer. All Mail copies
- * wait for the message to arrive in a regular folder.
+ * received mail for automations: an automatic reply would answer the spammer.
  */
-const isMessageReceivedExcludedPlacement = async (db: typeof sql, folderId: string): Promise<boolean> => {
-  const [folder] = await db<{ excluded: boolean }[]>`
-    SELECT ${isTrashOrJunkFolder(sql`${folderId}::uuid`)} OR ${isAllMailFolder(sql`${folderId}::uuid`)} AS excluded
-  `;
+const isTrashOrJunkPlacement = async (db: typeof sql, folderId: string): Promise<boolean> => {
+  const [folder] = await db<{ excluded: boolean }[]>`SELECT ${isTrashOrJunkFolder(sql`${folderId}::uuid`)} AS excluded`;
   return folder?.excluded === true;
 };
 
@@ -932,24 +929,6 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
 
   await retireKeptCopyPlacements(params.db, messageContentId, remoteRef.id);
 
-  const ownAddresses = await params.db<{ address: string; sender_identity: boolean }[]>`
-    SELECT from_address AS address, true AS sender_identity
-    FROM mail.sender_identities
-    WHERE mailbox_id = ${params.mailboxId}::uuid
-    UNION ALL
-    SELECT email AS address, false AS sender_identity
-    FROM mail.provider_connections
-    WHERE owner_mailbox_id = ${params.mailboxId}::uuid
-  `;
-  const senderIdentities = new Set(ownAddresses.filter((row) => row.sender_identity).map((row) => storedAddress(row.address)));
-  const mailboxAddresses = new Set(ownAddresses.map((row) => storedAddress(row.address)));
-  const isOutbound = params.message.addresses.from.some((address) => senderIdentities.has(storedAddress(address.address)));
-
-  const [existingConversation] = await params.db<{ conversation_id: string }[]>`
-    SELECT conversation_id
-    FROM mail.conversation_messages
-    WHERE message_id = ${messageContentId}::uuid
-  `;
   const emitMessageReceived = async (): Promise<void> => {
     const deliveryKey = `message:${remoteRef.id}`;
     const snapshot = await getWorkflowSnapshot({
@@ -1016,22 +995,42 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
       );
     }
   };
+  // An incoming message whose first copy is in All Mail waits for its first copy in another folder:
+  // automations act on that copy, as an All Mail copy carries Gmail's labels instead of keywords.
+  // That copy receives the message once, so a later move or new label does not receive it again.
+  const receivePendingMessage = async (): Promise<void> => {
+    const [pending] = await params.db<{ id: string }[]>`
+      UPDATE mail.message_contents
+      SET receipt_pending = false
+      WHERE id = ${messageContentId}::uuid AND receipt_pending AND NOT ${isAllMailFolder(sql`${params.folderId}::uuid`)}
+      RETURNING id
+    `;
+    if (pending && params.captureWorkflowTriggers && !(await isTrashOrJunkPlacement(params.db, params.folderId)))
+      await emitMessageReceived();
+  };
+
+  const [existingConversation] = await params.db<{ conversation_id: string }[]>`
+    SELECT conversation_id
+    FROM mail.conversation_messages
+    WHERE message_id = ${messageContentId}::uuid
+  `;
   if (existingConversation) {
-    if (params.captureWorkflowTriggers && !isOutbound && !(await isMessageReceivedExcludedPlacement(params.db, params.folderId))) {
-      // All Mail can link the message first. Its first regular copy is a receipt;
-      // retries of that copy use the same delivery deduplication key.
-      const [otherPlacements] = await params.db<{ only_all_mail: boolean }[]>`
-        SELECT COUNT(*) > 0 AND bool_and(${isAllMailFolder(sql`other.folder_id`)}) AS only_all_mail
-        FROM mail.message_placements other
-        WHERE other.message_id = ${messageContentId}::uuid
-          AND other.remote_message_ref_id <> ${remoteRef.id}::uuid
-          AND other.deleted_at IS NULL
-      `;
-      if (otherPlacements?.only_all_mail) await emitMessageReceived();
-    }
+    await receivePendingMessage();
     return messageContentId;
   }
 
+  const ownAddresses = await params.db<{ address: string; sender_identity: boolean }[]>`
+    SELECT from_address AS address, true AS sender_identity
+    FROM mail.sender_identities
+    WHERE mailbox_id = ${params.mailboxId}::uuid
+    UNION ALL
+    SELECT email AS address, false AS sender_identity
+    FROM mail.provider_connections
+    WHERE owner_mailbox_id = ${params.mailboxId}::uuid
+  `;
+  const senderIdentities = new Set(ownAddresses.filter((row) => row.sender_identity).map((row) => storedAddress(row.address)));
+  const mailboxAddresses = new Set(ownAddresses.map((row) => storedAddress(row.address)));
+  const isOutbound = params.message.addresses.from.some((address) => senderIdentities.has(storedAddress(address.address)));
   // The account address counts as the mailbox's side too, even before sending is set up.
   const fromMailbox = isOutbound || params.message.addresses.from.some((address) => mailboxAddresses.has(storedAddress(address.address)));
   const { addresses } = params.message;
@@ -1113,9 +1112,19 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
     ON CONFLICT (message_id) DO NOTHING
     RETURNING message_id
   `;
-  if (!linked) return messageContentId;
-  if (params.captureWorkflowTriggers && !isOutbound && !(await isMessageReceivedExcludedPlacement(params.db, params.folderId)))
-    await emitMessageReceived();
+  if (!linked) {
+    await receivePendingMessage();
+    return messageContentId;
+  }
+  if (params.captureWorkflowTriggers && !isOutbound) {
+    const [pending] = await params.db<{ id: string }[]>`
+      UPDATE mail.message_contents
+      SET receipt_pending = true
+      WHERE id = ${messageContentId}::uuid AND ${isAllMailFolder(sql`${params.folderId}::uuid`)}
+      RETURNING id
+    `;
+    if (!pending && !(await isTrashOrJunkPlacement(params.db, params.folderId))) await emitMessageReceived();
+  }
   return messageContentId;
 };
 

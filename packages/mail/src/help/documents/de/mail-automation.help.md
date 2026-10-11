@@ -26,7 +26,7 @@ Mit Zugriff **Verwalten** erstellst du unter **Automatisierungen → Eingehende 
 - Wähle **Alle eingehenden E-Mails**, wenn du keine Bedingung brauchst.
 - Oder verbinde bis zu acht Bedingungen für Absender, Domain, Betreff, Nachrichtentext oder vorhandene Anhänge. Lege fest, ob alle oder eine Bedingung zutreffen müssen.
 
-Eine Automatisierung für eingehende E-Mails läuft einmal pro empfangener Nachricht. E-Mails, die der Anbieter direkt in den Papierkorb oder in Spam zustellt, etwa Spam, den sein Filter erkannt hat, starten weder Automatisierungen für eingehende E-Mails noch automatische Antworten. Jemand kann die Nachricht in einem anderen E-Mail-Programm in einen anderen Ordner verschieben, etwa zurück in den Posteingang, nachdem die Automatisierung sie verschoben hat. Die Automatisierung läuft dann nicht erneut.
+Eine Automatisierung für eingehende E-Mails läuft einmal pro empfangener Nachricht. E-Mails, die der Anbieter direkt in den Papierkorb oder in Spam zustellt, etwa Spam, den sein Filter erkannt hat, starten weder Automatisierungen für eingehende E-Mails noch automatische Antworten. Bei Gmail läuft die Automatisierung auf der Kopie im Posteingang oder in einem anderen Ordner, nie auf der Kopie in **All Mail**. Jemand kann die Nachricht in einem anderen E-Mail-Programm in einen anderen Ordner verschieben, etwa zurück in den Posteingang, nachdem die Automatisierung sie verschoben hat. Die Automatisierung läuft dann nicht erneut.
 
 Füge Schritte in der Reihenfolge hinzu, in der sie laufen. Ein Ablauf kann frei mischen:
 

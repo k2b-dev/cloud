@@ -575,13 +575,12 @@ steps:
     );
   });
 
-  test("receives all-mail copies once in a regular folder", async () => {
-    const roleSource = "provider";
+  test("receives a message that All Mail stored first once, by its first copy in another folder", async () => {
     const created = await createWorkflow({
       context,
       mailboxId,
       input: {
-        name: `All-mail ${roleSource} ${suffix}`,
+        name: `All Mail receipt ${suffix}`,
         priority: 100,
         source: "triggers:\n  messageReceived:\n    with: {}\nsteps:\n  - succeed:\n      message: Received\n",
         effectBudget: noEffectBudget,
@@ -596,7 +595,7 @@ steps:
       input: { expectedVersionId: created.data.currentVersion.id },
     });
     if (!activated.ok) throw new Error(activated.error.message);
-    const allFolderKey = `workflow-all-${roleSource}-${suffix}`;
+    const allFolderKey = `workflow-all-${suffix}`;
     const [allFolder] = await sql<{ id: string }[]>`
       INSERT INTO mail.folders (short_id, remote_resource_id, stable_key, name, role, sync_status)
       VALUES (${newShortId()}, ${remoteResourceId}::uuid, ${allFolderKey}, 'All Mail', 'all', 'current')
@@ -607,24 +606,18 @@ steps:
       SELECT dedupe_key, context FROM workflows.event WHERE target_workflow_id = ${workflowId}::uuid
     `;
     const inbound = {
-      ...envelope({ uid: 7010, providerMessageId: `workflow-all-${roleSource}-${suffix}` }),
+      ...envelope({ uid: 7010, providerMessageId: `workflow-all-${suffix}` }),
       labels: ["\\Inbox", "\\Important", "review"],
     };
-    const ingest = (folderId: string, message: typeof inbound) =>
-      sql.begin((tx) =>
-        ingestEnvelope({
-          db: tx,
-          mailboxId,
-          remoteResourceId,
-          folderId,
-          message,
-          captureWorkflowTriggers: true,
-        }),
-      );
-    const messageId = await ingest(allFolder.id, {
-      ...inbound,
-      remoteRef: { ...inbound.remoteRef, folderStableKey: allFolderKey },
+    type Envelope = typeof inbound;
+    const ingest = (folderId: string, message: Envelope, captureWorkflowTriggers = true) =>
+      sql.begin((tx) => ingestEnvelope({ db: tx, mailboxId, remoteResourceId, folderId, message, captureWorkflowTriggers }));
+    const copyIn = (folderStableKey: string, message: Envelope, uid = message.remoteRef.uid): Envelope => ({
+      ...message,
+      remoteRef: { ...message.remoteRef, folderStableKey, uid, modseq: uid },
     });
+
+    const messageId = await ingest(allFolder.id, copyIn(allFolderKey, inbound));
     expect(await events()).toEqual([]);
 
     expect(await ingest(inboxFolderId, inbound)).toBe(messageId);
@@ -636,6 +629,7 @@ steps:
     const received = await events();
     expect(received).toHaveLength(1);
     expect(received[0]!.dedupe_key).toBe(`message:${remote.id}:${workflowId}`);
+    // Gmail's system labels on the copy are not keywords a precondition can hold.
     expect(
       mailWorkflowMessagePrecondition(received[0]!.context, {
         messageId,
@@ -645,25 +639,20 @@ steps:
     ).toEqual({ modseq: inbound.remoteRef.modseq, flags: [], keywords: ["review"] });
 
     await ingest(inboxFolderId, inbound);
-    await ingest(copyFolderId, {
-      ...inbound,
-      remoteRef: { ...inbound.remoteRef, folderStableKey: `workflow-copy-${suffix}` },
-    });
-    await ingest(allFolder.id, {
-      ...inbound,
-      remoteRef: { ...inbound.remoteRef, folderStableKey: allFolderKey },
-    });
+    await ingest(copyFolderId, copyIn(`workflow-copy-${suffix}`, inbound));
+    await ingest(allFolder.id, copyIn(allFolderKey, inbound));
+    // Archived, then moved back to the Inbox: the new copy has a new UID and the old one is gone.
+    await sql`UPDATE mail.message_placements SET deleted_at = now() WHERE message_id = ${messageId}::uuid AND folder_id <> ${allFolder.id}::uuid`;
+    await ingest(inboxFolderId, copyIn(`workflow-inbox-${suffix}`, inbound, "7020"));
     expect(await events()).toHaveLength(1);
 
-    const outbound = {
-      ...inbound,
-      ...envelope({
-        uid: 7011,
-        providerMessageId: `workflow-all-outbound-${roleSource}-${suffix}`,
-        from: "support@example.test",
-      }),
-    };
-    await ingest(allFolder.id, { ...outbound, remoteRef: { ...outbound.remoteRef, folderStableKey: allFolderKey } });
+    // An archived message stored during the backfill and later moved to the Inbox was not just received.
+    const archived = envelope({ uid: 7011, providerMessageId: `workflow-all-archived-${suffix}` });
+    await ingest(allFolder.id, copyIn(allFolderKey, archived), false);
+    await ingest(inboxFolderId, archived);
+
+    const outbound = envelope({ uid: 7012, providerMessageId: `workflow-all-outbound-${suffix}`, from: "support@example.test" });
+    await ingest(allFolder.id, copyIn(allFolderKey, outbound));
     await ingest(inboxFolderId, outbound);
     expect(await events()).toHaveLength(1);
   });

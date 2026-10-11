@@ -152,6 +152,18 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
     CREATE INDEX IF NOT EXISTS outbox_sent_copy_pending_idx ON mail.outbox_submissions USING btree (id)
     WHERE sent_copy_pending
   `.simple();
+  // An incoming message whose first copy is in All Mail waits for its first copy in another folder,
+  // which receives it for automations. Like the claim index, the column is only added when missing,
+  // so a start does not wait for the table lock that a running BM25 build holds.
+  const [receiptPending] = await tx<{ present: boolean }[]>`
+    SELECT EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = 'mail' AND table_name = 'message_contents' AND column_name = 'receipt_pending'
+    ) AS present
+  `;
+  if (!receiptPending?.present) {
+    await tx`ALTER TABLE mail.message_contents ADD COLUMN IF NOT EXISTS receipt_pending boolean DEFAULT false NOT NULL`.simple();
+  }
 };
 
 /**
