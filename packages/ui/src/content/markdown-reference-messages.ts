@@ -1,5 +1,4 @@
 import { i18n } from "@k2b/stdlib";
-import { useLocale } from "../intl/locale";
 
 const markdownReferenceMessages = i18n.define({
   baseLocale: "en",
@@ -28,12 +27,6 @@ const markdownReferenceMessages = i18n.define({
 });
 
 export type MarkdownReferenceMessages = ReturnType<(typeof markdownReferenceMessages)["resolve"]>["t"];
-
-/** Resolved from the inherited render locale. */
-export const useMarkdownReferenceMessages = (): (() => MarkdownReferenceMessages) => {
-  const locale = useLocale();
-  return () => markdownReferenceMessages.resolve([locale()]).t;
-};
 
 /** Imperative UI inherits the document locale when no locale is supplied. */
 export const resolveMarkdownReferenceMessages = (locale?: string): MarkdownReferenceMessages =>

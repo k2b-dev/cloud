@@ -157,8 +157,9 @@ try {
   if (browserOutput.includes("react/jsx-runtime")) {
     throw new Error("packed browser build still requires a React JSX transform");
   }
-  // With component-family catalogs, this unminified build is 54,376 bytes.
-  // Keep about 3% headroom for Button, DatePicker, and their common chrome.
+  // Each component family owns its message catalog, so this unminified build
+  // carries only the common strings. A leaked family adds several kilobytes;
+  // the budget leaves a few percent for the two components to grow.
   if (browserOutput.length > 56_000) {
     throw new Error(`packed Button + DatePicker browser build is too large: ${browserOutput.length} bytes`);
   }

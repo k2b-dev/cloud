@@ -1,5 +1,4 @@
 import { i18n } from "@k2b/stdlib";
-import { useLocale } from "../intl/locale";
 
 const spotlightMessages = i18n.define({
   baseLocale: "en",
@@ -14,12 +13,6 @@ const spotlightMessages = i18n.define({
 });
 
 export type SpotlightMessages = ReturnType<(typeof spotlightMessages)["resolve"]>["t"];
-
-/** Resolved from the inherited render locale. */
-export const useSpotlightMessages = (): (() => SpotlightMessages) => {
-  const locale = useLocale();
-  return () => spotlightMessages.resolve([locale()]).t;
-};
 
 /** Imperative UI inherits the document locale when no locale is supplied. */
 export const resolveSpotlightMessages = (locale?: string): SpotlightMessages =>
