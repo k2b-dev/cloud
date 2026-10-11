@@ -9,6 +9,7 @@ import {
   isAiViewFile,
   isAiViewPath,
   parseCloudAiView,
+  sortCloudAiViewRows,
 } from "./view-block";
 
 const table = {
@@ -202,5 +203,25 @@ describe("declarative views", () => {
     if (!view || view.view !== "table") throw new Error("Missing table");
     expect(cloudAiViewTable(view, "en").rows[0]?.cells).toEqual({ toString: "one", constructor: "two", ["__proto__"]: "three" });
     expect(issues({ ...input, columns: [{ id: "name", type: "text" }] })).toContain("rows[0].__proto__: Unknown column id.");
+  });
+
+  test("every reader starts from the view's own order; empty and inherited cells sort last", () => {
+    const view = parseCloudAiView({
+      view: "table",
+      title: "Scores",
+      columns: [
+        { id: "name", type: "text" },
+        { id: "score", type: "number" },
+        { id: "constructor", type: "text" },
+      ],
+      rows: [{ name: "low", score: 2 }, { name: "none" }, { name: "high", score: 10, constructor: "A" }],
+      sort: { column: "score", direction: "desc" },
+    });
+    if (!view || view.view !== "table") throw new Error("Missing table");
+    const rows = cloudAiViewTable(view, "en").rows;
+    expect(rows.map((row) => row.cells.name)).toEqual(["high", "low", "none"]);
+    // A missing "constructor" cell must not sort as Object.prototype.constructor.
+    for (const direction of ["asc", "desc"] as const)
+      expect(sortCloudAiViewRows(rows, { key: "constructor", direction }, "en").map((row) => row.cells.name)[0]).toBe("high");
   });
 });

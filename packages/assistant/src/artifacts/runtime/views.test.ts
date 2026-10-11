@@ -254,3 +254,17 @@ test("HTML app createCloud rejects both view methods before RPC", async () => {
     });
   expect(calls).toBe(0);
 });
+
+test("a Date in a date column keeps the calendar day of the run's time zone", async () => {
+  const { view, specs } = fixture("Europe/Berlin");
+  await view.table({
+    title: "Days",
+    columns: [{ id: "day", type: "date" }, "at"],
+    rows: [{ day: new Date("2026-01-01T23:30:00Z"), at: new Date("2026-01-01T23:30:00Z") }],
+    footer: { day: new Date("2026-01-02T00:00:00Z") },
+  });
+  expect(specs[0]).toMatchObject({
+    rows: [{ day: "2026-01-02", at: "2026-01-02T00:30:00" }],
+    footer: { day: "2026-01-02" },
+  });
+});

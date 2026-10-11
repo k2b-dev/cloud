@@ -8,7 +8,7 @@ import { hasInterface, LIMITS } from "./contracts";
 import { lintApp } from "./html/compose";
 import { type HttpHost, runHttp } from "./http-host";
 import { type ApproveCapability, runCapability } from "./runtime/capabilities";
-import { CloudError } from "./runtime/errors";
+import { CloudError, cloudError } from "./runtime/errors";
 import { type ArtifactSession, createArtifactSession } from "./runtime/session";
 import { sharedStorage } from "./runtime/shared-storage";
 import { ViewRefSchema } from "./runtime/views";
@@ -262,11 +262,13 @@ export function createArtifactAgentRuntime(
                     });
                     const result: unknown = await response.json();
                     if (!response.ok) {
-                      const message =
-                        result && typeof result === "object" && "message" in result && typeof result.message === "string"
-                          ? result.message
-                          : `View could not be saved (HTTP ${response.status}).`;
-                      throw new CloudError(response.status === 400 ? "invalid" : "unavailable", message);
+                      // The route's code (INVALID_INPUT, STORAGE_FULL, CONFLICT) keeps its meaning for the script.
+                      const body = z.object({ code: z.string().optional(), message: z.string().optional() }).catch({}).parse(result);
+                      throw cloudError({
+                        code: body.code,
+                        status: response.status,
+                        message: body.message ?? `View could not be saved (HTTP ${response.status}).`,
+                      });
                     }
                     const parsed = ViewRefSchema.safeParse(result);
                     if (!parsed.success) throw new CloudError("unavailable", "The view service returned an invalid reference.");

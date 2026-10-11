@@ -6,7 +6,7 @@ import { artifactClient } from "./client";
 import * as sessions from "./runtime/session";
 import type { ViewRef } from "./runtime/views";
 
-test("script view transport carries run identity, preserves contract errors and bounds service failures", async () => {
+test("script view transport carries run identity, keeps the route's error codes and bounds service failures", async () => {
   const dom = createDomTestHarness();
   let dispose = () => {};
   let save: sessions.SessionOptions["view"];
@@ -52,6 +52,11 @@ test("script view transport carries run identity, preserves contract errors and 
       code: "invalid",
       message: "View rejected: rows[0].n: Expected a number or null.",
     });
+    // The route's own codes keep their meaning: a full chat is a limit, a foreign file at the path a conflict.
+    fetch.mockResolvedValue(Response.json({ code: "STORAGE_FULL", message: "Conversation storage limit exceeded." }, { status: 400 }));
+    await expect(save(spec, 3, signal)).rejects.toMatchObject({ code: "limit" });
+    fetch.mockResolvedValue(Response.json({ code: "CONFLICT", message: "Destination file already exists." }, { status: 409 }));
+    await expect(save(spec, 3, signal)).rejects.toMatchObject({ code: "conflict" });
     fetch.mockResolvedValue(Response.json({ message: "Storage unavailable" }, { status: 503 }));
     await expect(save(spec, 3, signal)).rejects.toMatchObject({ code: "unavailable", message: "Storage unavailable" });
     fetch.mockResolvedValue(Response.json({ path: "/other.json" }));

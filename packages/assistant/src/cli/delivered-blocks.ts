@@ -44,14 +44,15 @@ export const printDeliveredBlock = async (
   ctx: CloudCliContext,
   block: { name: string; args?: unknown; result?: unknown },
   conversationId: string,
+  signal: AbortSignal,
 ): Promise<boolean> => {
-  if (block.name === "present") return printView(ctx, block.result, conversationId);
+  if (block.name === "present") return printView(ctx, block.result, conversationId, signal);
   if (block.name === "card") return printCard(ctx, block.args);
   if (block.name === "chart") return printChart(ctx, block.args);
   return false;
 };
 
-async function printView(ctx: CloudCliContext, result: unknown, conversationId: string): Promise<boolean> {
+async function printView(ctx: CloudCliContext, result: unknown, conversationId: string, signal: AbortSignal): Promise<boolean> {
   if (!result || typeof result !== "object" || !("view" in result) || !("path" in result) || typeof result.path !== "string") return false;
   const path = result.path;
   try {
@@ -59,6 +60,7 @@ async function printView(ctx: CloudCliContext, result: unknown, conversationId: 
     if (!summary.success || !isAiViewFile({ path, origin: "assistant" })) throw new Error("Invalid view reference");
     const response = await ctx.fetch(
       `/api/ai/conversations/${encodeURIComponent(conversationId)}/files/content?${new URLSearchParams({ path })}`,
+      { signal },
     );
     if (!response.ok || !isAiViewFile({ path, origin: response.headers.get("X-Cloud-Ai-File-Origin") ?? "" }))
       throw new Error("Missing view");

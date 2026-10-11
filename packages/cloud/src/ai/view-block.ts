@@ -194,11 +194,32 @@ export function cloudAiViewTable(view: CloudAiTableView, locale: string): CloudA
       view.columns.flatMap((column) => (cellOf(cells, column.id) == null ? [] : [[column.id, cellOf(cells, column.id)!]])),
     ),
   });
+  const rows = view.rows.map((cells, index) => row(cells, String(index)));
   return {
     columns: view.columns.map((column) => ({ id: column.id, label: column.label ?? column.id, numeric: column.type === "number" })),
-    rows: view.rows.map((cells, index) => row(cells, String(index))),
+    // The view's own order, so every reader starts from the same rows.
+    rows: view.sort ? sortCloudAiViewRows(rows, { key: view.sort.column, direction: view.sort.direction }, locale) : rows,
     ...(view.footer ? { footer: row(view.footer, "footer") } : {}),
   };
+}
+
+/** Rows of a view table in the given order: numbers by value, text by the locale, empty cells last in both directions. */
+export function sortCloudAiViewRows(
+  rows: readonly CloudAiChartRow[],
+  sort: { key: string; direction: "asc" | "desc" },
+  locale: string,
+): CloudAiChartRow[] {
+  const collator = new Intl.Collator(locale, { numeric: true });
+  // Column ids are data; a missing cell must not read an inherited property such as "constructor".
+  const value = (row: CloudAiChartRow) => (Object.hasOwn(row.values, sort.key) ? row.values[sort.key] : undefined);
+  return [...rows].sort((a, b) => {
+    const av = value(a);
+    const bv = value(b);
+    if (av === undefined) return bv === undefined ? 0 : 1;
+    if (bv === undefined) return -1;
+    const comparison = typeof av === "number" && typeof bv === "number" ? av - bv : collator.compare(String(av), String(bv));
+    return sort.direction === "asc" ? comparison : -comparison;
+  });
 }
 export function cloudAiTableTsv(table: CloudAiViewTable): string {
   const cell = (text: string, numeric = false) => {

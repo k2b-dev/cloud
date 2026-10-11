@@ -190,10 +190,14 @@ export function createViews(
       });
       const normalize = (row: Row, path: string) =>
         Object.fromEntries(
-          columns.map(({ id }) => {
+          columns.map(({ id, type }) => {
             const cell = cellOf(row, id);
             if (cell == null) return [id, null];
-            if (cell instanceof Date) return [id, wallClock(cell, context.timeZone, `${path}.${id}`)];
+            // A date column keeps the calendar day of the run's time zone.
+            if (cell instanceof Date) {
+              const time = wallClock(cell, context.timeZone, `${path}.${id}`);
+              return [id, type === "date" ? time.slice(0, 10) : time];
+            }
             if (typeof cell === "string" || (typeof cell === "number" && Number.isFinite(cell))) return [id, cell];
             return invalid(`${path}.${id}`, "Unsupported cell; convert it to text or a number.");
           }),

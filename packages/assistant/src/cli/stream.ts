@@ -106,7 +106,7 @@ export const streamAssistantTurn = async (input: {
   // Cards and charts draw in the web chat; every text client prints what they show instead.
   const emitDelivered = async (block: Extract<AiTurnBlock, { kind: "tool" }>) => {
     if (ctx.options.output !== "text" || renderedTables.has(block.callId)) return;
-    if (await printDeliveredBlock(ctx, block, conversationId)) renderedTables.add(block.callId);
+    if (await printDeliveredBlock(ctx, block, conversationId, abort.signal)) renderedTables.add(block.callId);
   };
 
   const emitJsonLine = (value: Record<string, unknown>) => {
@@ -179,7 +179,7 @@ export const streamAssistantTurn = async (input: {
       if (stored.message.role !== "tool_result") continue;
       emitTable(stored.message.callId, stored.message.result);
       if (!stored.message.isError && !renderedTables.has(stored.message.callId) && ctx.options.output === "text") {
-        if (await printDeliveredBlock(ctx, { name: stored.message.name, result: stored.message.result }, conversationId))
+        if (await printDeliveredBlock(ctx, { name: stored.message.name, result: stored.message.result }, conversationId, abort.signal))
           renderedTables.add(stored.message.callId);
       }
       const path = stored.message.isError ? null : presentedPath(stored.message.name, stored.message.result);

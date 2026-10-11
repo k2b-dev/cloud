@@ -9,6 +9,7 @@ import {
   cloudAiTableTsv,
   cloudAiViewTable,
   isAiViewFile,
+  sortCloudAiViewRows,
   parseCloudAiView,
 } from "../view-block";
 import { CloudChartView } from "./chart-block";
@@ -52,26 +53,16 @@ function CloudTableView(props: { summary: TableSummary; input: CloudAiTableView 
   const id = `cloud-view-${createUniqueId()}`;
   const table = createMemo(() => (props.input ? cloudAiViewTable(props.input, locale()) : null));
   // The view's own order applies until the reader picks one.
-  const [picked, setSort] = createSignal<DataTableSort | null>();
-  const sort = () => {
+  const [picked, setSort] = createSignal<DataTableSort>();
+  const sort = (): DataTableSort | null => {
     const own = props.input?.sort;
-    return picked() === undefined ? (own ? { key: own.column, direction: own.direction } : null) : (picked() ?? null);
+    return picked() ?? (own ? { key: own.column, direction: own.direction } : null);
   };
+  // cloudAiViewTable returns the view's own order; a picked one sorts again.
   const rows = createMemo(() => {
     const value = table();
-    if (!value) return [];
-    const order = sort();
-    if (!order) return value.rows;
-    const collator = new Intl.Collator(locale(), { numeric: true });
-    return [...value.rows].sort((a, b) => {
-      const av = a.values[order.key];
-      const bv = b.values[order.key];
-      // Empty cells stay last in both directions.
-      if (av === undefined) return bv === undefined ? 0 : 1;
-      if (bv === undefined) return -1;
-      const comparison = typeof av === "number" && typeof bv === "number" ? av - bv : collator.compare(String(av), String(bv));
-      return order.direction === "asc" ? comparison : -comparison;
-    });
+    const order = picked();
+    return !value ? [] : order ? sortCloudAiViewRows(value.rows, order, locale()) : value.rows;
   });
   const copyText = createMemo(() => {
     const value = table();

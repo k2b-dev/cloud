@@ -399,4 +399,5 @@ export {
   isAiViewPath,
   cloudAiViewTable,
   cloudAiTableTsv,
+  sortCloudAiViewRows,
 } from "./view-block";
