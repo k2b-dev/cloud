@@ -5,7 +5,7 @@ section: Operations
 order: 1110
 description: Develop a built-in application inside the Cloud monorepo.
 tags: [development, monorepo, docker]
-updated: 2026-10-10
+updated: 2026-10-11
 ---
 
 # Monorepo development
@@ -425,7 +425,7 @@ integration files and reports which ones. With them, the suites run and fail
 loudly when a target is unreachable:
 
 ```bash
-CLOUD_TEST_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/cloud_test \
+CLOUD_TEST_DATABASE_URL='postgres://postgres:postgres@127.0.0.1:5432/cloud_{checkout}_test' \
 CLOUD_TEST_NATS_SERVERS=nats://127.0.0.1:4222 \
 CLOUD_TEST_NATS_CREDS_FILE=/path/to/cloud/.local/nats/test.creds \
 CLOUD_TEST_VALKEY_URL=redis://127.0.0.1:6380 \
@@ -445,13 +445,14 @@ settings, for example `app.url`, with the tests' values. The test Valkey keeps
 no data across restarts.
 
 If you [changed the host ports](#change-host-ports), use them in these URLs.
-The database name must end in `_test`; the fixture refuses anything else so a
-run can never touch the development database. Create that database once on the
-development PostgreSQL:
-
-```bash
-docker compose -f compose.yml exec postgres createdb -U postgres cloud_test
-```
+The expanded database name must end in `_test`; the fixture refuses anything
+else so a run can never touch the development database. `{checkout}` gives
+each worktree its own database, so forward-only migrations from one branch
+do not change another branch's test schema. `bun run test --integration`
+creates the database if missing before applying migrations; the PostgreSQL
+role needs permission to create databases. See
+[Run integration tests](/en/docs/contributing/testing#run-integration-tests)
+for the database name token rules.
 
 Files (`filesv2`), Grids PDF rendering, and Assistant Studio suites additionally read
 `CLOUD_TEST_FILEGATE_URL`, `CLOUD_TEST_GOTENBERG_URL`, and `CLOUD_TEST_RSQL_URL`.

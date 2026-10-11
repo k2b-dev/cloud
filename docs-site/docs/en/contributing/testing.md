@@ -5,7 +5,7 @@ section: Contributing
 order: 1304
 description: Run unit, render, and integration tests locally, and understand what the pull request gate and nightly run check.
 tags: [contributing, testing, ci]
-updated: 2026-10-10
+updated: 2026-10-11
 ---
 
 # Testing
@@ -291,7 +291,7 @@ Integration tests gate themselves on `CLOUD_TEST_*` variables through
 
 | Variable | Example |
 | --- | --- |
-| `CLOUD_TEST_DATABASE_URL` | `postgres://postgres:postgres@127.0.0.1:5432/cloud_test` |
+| `CLOUD_TEST_DATABASE_URL` | `postgres://postgres:postgres@127.0.0.1:5432/cloud_{checkout}_test` |
 | `CLOUD_TEST_NATS_SERVERS` | `nats://127.0.0.1:4222` |
 | `CLOUD_TEST_NATS_CREDS_FILE` | `/path/to/cloud/.local/nats/test.creds` (absolute path) |
 | `CLOUD_TEST_VALKEY_URL` | `redis://127.0.0.1:6380` (no database index) |
@@ -346,12 +346,26 @@ like `.env` exists there. Start a direct run from that directory with
 `BUN_OPTIONS=--no-env-file bun test …`: unlike `bun --no-env-file test`, the
 variable also reaches the Bun processes that tests and package scripts start.
 
-The database name must end in `_test`. Integration tests create and delete
-rows; the fixture refuses any other name. Never point them at the development
-database.
+Use `{checkout}` in the database name to give each worktree its own test
+database. It expands to the checkout directory's name in lowercase, with
+non-alphanumeric characters replaced by underscores, repeated underscores
+collapsed, and leading and trailing underscores removed. The slug is shortened
+so the full PostgreSQL database name fits within 63 bytes. For example,
+`cloud_{checkout}_test` becomes `cloud_fix_cache_test` in a checkout named
+`fix-cache`. A URL without the token keeps its existing database name.
 
-Every suite shares the test database, and it keeps what earlier runs left
-behind. A test that asserts on a database-wide listing with a limit, such as
+The expanded database name must end in `_test`. Integration tests create and
+delete rows; the fixture refuses any other name. Never point them at the
+development database. `bun run test --integration` connects to the `postgres`
+maintenance database on the same server and creates the target database if
+missing, before probing it and running migrations. The configured PostgreSQL
+role needs permission to create databases when the target does not exist.
+
+Use the token when running tests from several worktrees: migrations are
+forward-only, so sharing a database lets one branch's schema changes leak into
+another branch's tests. Every suite in a checkout shares its target database,
+and it keeps what earlier runs left behind. A test that asserts on a
+database-wide listing with a limit, such as
 the oldest candidates of a background job, runs in a private database from
 `useFreshDatabase()` in `scripts/fixtures/test-infra`.
 
@@ -378,7 +392,7 @@ the fixture refuses one. In CI, the gate's Valkey serves only the tests, so it
 stays on `6379`.
 
 ```bash
-CLOUD_TEST_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/cloud_test \
+CLOUD_TEST_DATABASE_URL='postgres://postgres:postgres@127.0.0.1:5432/cloud_{checkout}_test' \
 CLOUD_TEST_NATS_SERVERS=nats://127.0.0.1:4222 \
 CLOUD_TEST_NATS_CREDS_FILE=/path/to/cloud/.local/nats/test.creds \
 CLOUD_TEST_VALKEY_URL=redis://127.0.0.1:6380 \

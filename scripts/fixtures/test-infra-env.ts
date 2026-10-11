@@ -12,7 +12,7 @@
  * documented off switch for those clients (`NATS_SERVERS` defaults to none).
  */
 import { existsSync } from "node:fs";
-import { isAbsolute, join } from "node:path";
+import { basename, isAbsolute, join } from "node:path";
 
 export type InfraKind = "database" | "nats" | "valkey" | "filegate" | "gotenberg" | "rsql";
 
@@ -31,8 +31,32 @@ export const infraMappings: Record<InfraKind, InfraMapping> = {
   rsql: { test: "CLOUD_TEST_RSQL_URL", runtime: ["RSQL_URL", "RSQL_TEST_URL"] },
 };
 
-export const readTestTarget = (env: Record<string, string | undefined>, kind: InfraKind): string | undefined =>
-  env[infraMappings[kind].test]?.trim() || undefined;
+/** Expand only the database name, keeping it within Postgres's 63-byte identifier limit. */
+export const expandTestDatabaseUrl = (url: string, checkoutRoot = join(import.meta.dir, "..", "..")): string => {
+  if (!url.includes("{checkout}")) return url;
+  const parsed = new URL(url);
+  const name = decodeURIComponent(parsed.pathname.slice(1));
+  const parts = name.split("{checkout}");
+  if (parts.length === 1) return url;
+  const limit = Math.floor((63 - Buffer.byteLength(parts.join(""))) / (parts.length - 1));
+  if (limit < 1) throw new Error("CLOUD_TEST_DATABASE_URL leaves no room for {checkout} within a 63-byte database name");
+  const slug = (
+    basename(checkoutRoot)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "") || "checkout"
+  )
+    .slice(0, limit)
+    .replace(/_+$/, "");
+  // The pathname setter leaves `%` as is, so re-encode the decoded name.
+  parsed.pathname = `/${encodeURIComponent(parts.join(slug))}`;
+  return parsed.toString();
+};
+
+export const readTestTarget = (env: Record<string, string | undefined>, kind: InfraKind): string | undefined => {
+  const target = env[infraMappings[kind].test]?.trim() || undefined;
+  return kind === "database" && target ? expandTestDatabaseUrl(target) : target;
+};
 
 /**
  * The `.creds` file of the NATS test identity, or `undefined` for a broker
