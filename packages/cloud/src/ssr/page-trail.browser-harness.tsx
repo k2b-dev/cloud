@@ -66,11 +66,11 @@ const Page = (props: { c: unknown; title: Title; children: JSX.Element }) => (
     {props.children}
   </Layout>
 );
-const AccountsWorkspace = (props: { children: JSX.Element }) => (
+const AccountsWorkspace = (props: { children: JSX.Element; active?: boolean }) => (
   <AppWorkspace mobileSurface="flush" class="min-h-0 flex-1">
     <AppWorkspace.Sidebar id="accounts-navigation" label="Accounts">
       <AppWorkspace.SidebarDesktop>
-        <AppWorkspace.SidebarItem href="/app/accounts/users" icon="ti ti-user" active>
+        <AppWorkspace.SidebarItem href="/app/accounts/users" icon="ti ti-user" active={props.active ?? true}>
           Users
         </AppWorkspace.SidebarItem>
       </AppWorkspace.SidebarDesktop>
@@ -134,13 +134,59 @@ export const server = new Hono()
       const uid = c.req.param("uid") ?? "";
       return () => (
         <Page c={c} title={[start, accountsRoot, { title: "Users", href: "/app/accounts/users" }, { title: uid }]}>
-          <AccountsWorkspace>
+          <AccountsWorkspace active={false}>
             <p class="p-3">Profile of {uid}</p>
             <input aria-label="Note" class="m-3" />
           </AccountsWorkspace>
         </Page>
       );
     }),
+  )
+  .get(
+    "/app/accounts/teams",
+    ...probe.ssr((c) => () => (
+      <Page c={c} title={[start, accountsRoot, { title: "Directory", href: "/app/accounts/directory" }, { title: "Teams" }]}>
+        <AppWorkspace mobileSurface="flush" class="min-h-0 flex-1">
+          <AppWorkspace.Sidebar label="Directory">
+            <AppWorkspace.SidebarDesktop>
+              <AppWorkspace.SidebarItem href="/app/accounts/teams" active>
+                Teams
+              </AppWorkspace.SidebarItem>
+            </AppWorkspace.SidebarDesktop>
+          </AppWorkspace.Sidebar>
+          <AppWorkspace.Content>
+            <AppWorkspace.Main>
+              <input aria-label="Search teams" placeholder="Search Teams…" />
+            </AppWorkspace.Main>
+          </AppWorkspace.Content>
+        </AppWorkspace>
+      </Page>
+    )),
+  )
+  .get(
+    "/app/accounts/teams/engineering",
+    ...probe.ssr((c) => () => (
+      <Page c={c} title={[start, accountsRoot, { title: "Teams", href: "/app/accounts/teams" }, { title: "Engineering" }]}>
+        <AppWorkspace mobileSurface="flush" class="min-h-0 flex-1">
+          <AppWorkspace.Sidebar label="Directory">
+            <AppWorkspace.SidebarDesktop>
+              <AppWorkspace.SidebarItem href="/app/accounts/teams">Teams</AppWorkspace.SidebarItem>
+            </AppWorkspace.SidebarDesktop>
+          </AppWorkspace.Sidebar>
+          <AppWorkspace.Content>
+            <AppWorkspace.Main>Team members</AppWorkspace.Main>
+          </AppWorkspace.Content>
+        </AppWorkspace>
+      </Page>
+    )),
+  )
+  .get(
+    "/app/accounts/directory",
+    ...probe.ssr((c) => () => (
+      <Page c={c} title={[{ title: "Directory" }]}>
+        <h1>Directory</h1>
+      </Page>
+    )),
   )
   .get(
     "/app/files",

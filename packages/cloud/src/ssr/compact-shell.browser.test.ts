@@ -421,13 +421,13 @@ describe("signed-in shell", () => {
           expect(shape.main?.borders).toEqual(none);
           expect(shape.pane?.borders).toEqual([0, 1, 0, 0]);
           expect(shape.detail?.borders).toEqual([0, 0, 0, 0]);
-          // List and reader stay side by side; the detail floats inside the content.
+          // List and reader stay side by side; the detail spans the workspace.
           expect(shape.pane!.box.right).toBeLessThanOrEqual(shape.detail!.box.left);
-          expect(shape.detail!.box.top).toBe(shape.pane!.box.top + 8);
+          expect(shape.detail!.box.top).toBe(shape.workspace!.box.top + shape.workspace!.borders[0]! + 8);
           if (compact(device)) {
             expect(shape.bar?.display).toBe("flex");
             expect(shape.bar?.borders).toEqual(none);
-            expect(shape.bar?.box).toMatchObject({ left: 48, top: 0, right: device.width, height: 46 });
+            expect(shape.bar?.box).toMatchObject({ left: 48, top: 0, right: device.width - 328, height: 46 });
             expect(shape.bar?.title).toBe("Inbox");
             expect(shape.sidebar?.visibility).toBe("hidden");
             expect(shape.pane!.box.top).toBe(46);

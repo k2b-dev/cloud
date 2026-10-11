@@ -47,15 +47,14 @@ A regular page, without `fullWidth` or `fullPage`, owns its inset: from 768 px
 no header sits above a signed-in page, so give the content its own padding, as
 `AppOverview` does.
 
-`AppWorkspace.Detail` floats inside the application content. Below 768 px it
-is a half or full sheet at the window’s bottom edge; from 768 px Main makes
-room for it. A closable panel on a coarse pointer from 768 to 1023 px overlays
+`AppWorkspace.Detail` occupies a full-height column beside the workspace head
+and panes from 768 px. Below 768 px it is a half or full sheet at the window's
+bottom edge. A closable panel on a coarse pointer from 768 to 1023 px overlays
 Main as a drawer. Pass its existing close action as `onClose` in an island or
 client component, or mark a server-rendered panel’s close control with
-`data-workspace-detail-close`. For boards, wide tables, and week calendars,
-mark the horizontal scroller with `k2b-detail-trail` and add
-`var(--k2b-detail-space, 0px)` to fixed rows’ trailing padding. See
-[Add contextual detail](/en/docs/frontend/application-shells#add-contextual-detail).
+`data-workspace-detail-close`. Use `scrollClass="k2b-detail-trail"` on
+DataTable to keep column widths beside the panel; boards need nothing extra.
+See [Add contextual detail](/en/docs/frontend/application-shells#add-contextual-detail).
 
 ## Render the application layout
 
@@ -172,6 +171,18 @@ import { PageTrail } from "@k2b/cloud/ssr/islands";
   <TimerButton />
 </header>
 ```
+
+From 1024 px, when a visible, non-collapsed workspace sidebar marks the exact
+current page with `aria-current="page"`, the workspace shows no title row and
+no back link. `AppWorkspace.SidebarItem active` renders that attribute. The
+page title stays as a visually hidden `h1` and as the document title. Pages
+deeper than the sidebar lists keep their back link, as do compact layouts
+from 768 to 1023 px and phones. Alt+Up still goes to the parent.
+
+Name the page in its content: Grids names the table in its search field with
+text such as "Search Devices…"; a note in Notebooks has its own first heading.
+The sidebar also names the page. Mark only the exact current page with
+`active`, never an ancestor of a deeper page, which would hide that page's way up.
 
 The links keep the parent's `href` from the title array, so a new tab, a
 copied link, and a reload lead to the page itself. A plain click returns to

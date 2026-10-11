@@ -132,9 +132,10 @@ const sizeLimits = (root: HTMLElement, handle: HTMLElement, kind: AppWorkspaceRe
         (pane) => pane.closest(".k2b-app-workspace__main") === main && !pane.classList.contains("is-primary") && isVisible(pane),
       )
     : [];
-  // A detail shares the content area with the main region, as the stylesheet
-  // fits it. The area already leaves out a sidebar in its own column; as the
-  // compact overlay or stacked above the content, the sidebar takes none of it.
+  // Content ends before the detail track, so its width alone would shrink a
+  // persisted panel again on every reconciliation. Measure from Content's
+  // start to the workspace's inner end: this includes the detail column and
+  // leaves out a desktop sidebar, while an overlay sidebar takes no width.
   const content = kind === "detail" ? controlled?.closest<HTMLElement>(".k2b-app-workspace__content") : null;
   const defaultMin =
     kind === "sidebar"
@@ -159,10 +160,12 @@ const sizeLimits = (root: HTMLElement, handle: HTMLElement, kind: AppWorkspaceRe
         ? root.getBoundingClientRect().height
         : kind === "pane" && main
           ? main.getBoundingClientRect().width
-          : (content ?? root).getBoundingClientRect().width,
+          : content
+            ? root.getBoundingClientRect().right - root.clientLeft - content.getBoundingClientRect().left
+            : root.getBoundingClientRect().width,
     reservedSize:
       kind === "detail"
-        ? 16
+        ? 8
         : kind === "pane"
           ? panes.reduce((total, pane) => total + (pane === controlled ? 0 : elementSize(pane, "pane")), 0)
           : 0,
@@ -453,7 +456,6 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   const reducedMotion = typeof window.matchMedia === "function" ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
   const detailSelector = ".k2b-app-workspace__detail";
   const grabberSelector = ".k2b-app-workspace__detail-grabber";
-  const trailSelector = ".k2b-detail-trail";
   type RememberedItem = {
     item: HTMLElement;
     interaction: "pointer" | "keyboard";
@@ -465,8 +467,6 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   const detailHidden = new WeakMap<HTMLElement, boolean>();
   const remembered = new WeakMap<HTMLElement, RememberedItem>();
   const lastFocus = new WeakMap<HTMLElement, Element>();
-  const trailPadding = new WeakMap<HTMLElement, number>();
-  const heldTrails = new Set<HTMLElement>();
   const touchedDetails = new Set<HTMLElement>();
   // Only a panel blocks scrolling for its touch gestures; a document-wide
   // non-passive listener would make every scroll on the page wait for script.
@@ -605,38 +605,8 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     aside.style.removeProperty("transform");
     delete aside.dataset.workspaceDetailDragging;
   };
-  const trailsIn = (root: HTMLElement) => {
-    const main = mainElement(root);
-    return main ? rootElements(root, trailSelector).filter((trail) => main.contains(trail)) : [];
-  };
-  const clearHolds = (root: HTMLElement) => {
-    for (const trail of trailsIn(root)) {
-      trail.style.removeProperty("--k2b-detail-trail-hold");
-      heldTrails.delete(trail);
-    }
-  };
-  const rememberTrailPadding = (root: HTMLElement) => {
-    if (!openDetails(root).some(isVisible)) return;
-    for (const trail of trailsIn(root)) trailPadding.set(trail, Number.parseFloat(getComputedStyle(trail).paddingInlineEnd) || 0);
-  };
-  const shrinkHold = (trail: HTMLElement) => {
-    const hold = Number.parseFloat(trail.style.getPropertyValue("--k2b-detail-trail-hold")) || 0;
-    const visible =
-      trail.scrollWidth <= trail.clientWidth || trail.scrollLeft < 1
-        ? 0
-        : Math.min(hold, Math.max(0, Math.ceil(trail.scrollLeft + trail.clientWidth - (trail.scrollWidth - hold))));
-    if (visible > 0) trail.style.setProperty("--k2b-detail-trail-hold", `${visible}px`);
-    else {
-      trail.style.removeProperty("--k2b-detail-trail-hold");
-      heldTrails.delete(trail);
-    }
-  };
-  const onTrailScroll = (event: Event) => {
-    const target = eventElement(event);
-    if (target instanceof HTMLElement && heldTrails.has(target)) shrinkHold(target);
-  };
   const anchorItem = (root: HTMLElement, aside: HTMLElement, snapshot: RememberedItem | undefined) => {
-    if (!wide?.matches || (touchDrawer?.matches && closable(aside)) || trailsIn(root).length || !snapshot?.item.isConnected) return;
+    if (!wide?.matches || (touchDrawer?.matches && closable(aside)) || !snapshot?.item.isConnected) return;
     if (!mainElement(root)?.contains(snapshot.item) || snapshot.item.closest(ROOT_SELECTOR) !== root) return;
     const scroller = snapshot.scroller;
     if (scroller?.isConnected && scroller.scrollTop === snapshot.scrollTop)
@@ -655,17 +625,6 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     if (snapshot) snapshot.fresh = false;
     if (aside.hidden) {
       if (pendingTitle?.aside === aside) cancelTitle();
-      const trails = trailsIn(root);
-      // Restore all padding before the first layout read, or the browser can
-      // clamp scrollLeft as soon as the open panel's trailing space disappears.
-      for (const trail of trails) {
-        const hold = trailPadding.get(trail) ?? 0;
-        if (hold > 0) {
-          trail.style.setProperty("--k2b-detail-trail-hold", `${hold}px`);
-          heldTrails.add(trail);
-        }
-      }
-      trails.forEach(shrinkHold);
       anchorItem(root, aside, snapshot);
       const focused = ownerDocument.activeElement;
       if (
@@ -677,10 +636,8 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
       if (detailDrag?.aside === aside) finishDetailDrag(true);
       return;
     }
-    clearHolds(root);
     anchorItem(root, aside, snapshot);
     if (phone?.matches) setDetent(aside, false);
-    rememberTrailPadding(root);
     if (followedInteraction && snapshot) {
       revealFrames.set(
         root,
@@ -975,7 +932,6 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     if (getComputedStyle(root).getPropertyValue(variable).trim())
       root.style.setProperty(variable, `${numberData(handle, "workspaceDefaultSize", APP_WORKSPACE_DETAIL_DEFAULT)}px`);
     updateHandleValue(root, handle, "detail", currentSize(root, handle, "detail"));
-    rememberTrailPadding(root);
     options.writeState?.(layoutState);
   };
 
@@ -1053,7 +1009,6 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
         finished.kind === "pane" ? finished.liveSize : applySize(finished.root, finished.handle, finished.kind, finished.liveSize);
       persistSize(finished.handle, finished.kind, size);
       if (finished.kind !== "drawer") reconcilePanes(finished.root, layoutState);
-      if (finished.kind === "detail") rememberTrailPadding(finished.root);
     }
     if (finished.handle.hasPointerCapture?.(finished.pointerId)) finished.handle.releasePointerCapture(finished.pointerId);
     finished.releaseTextSelection();
@@ -1125,7 +1080,6 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     event.preventDefault();
     persistSize(handle, kind, applySize(root, handle, kind, requested));
     if (kind === "sidebar" || kind === "detail") reconcilePanes(root, layoutState);
-    if (kind === "detail") rememberTrailPadding(root);
   };
 
   const allRoots = () => {
@@ -1146,7 +1100,6 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
           if (aside.dataset.workspaceDetailSheet === "full") setDetent(aside, false);
         }
       }
-      rememberTrailPadding(root);
     });
     roots().forEach((root) => {
       // `data-workspace-resizable="false"` already refuses pointer and keyboard
@@ -1179,7 +1132,6 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
         });
       reconcilePanes(root, layoutState, active?.root === root ? active : null);
     });
-    heldTrails.forEach(shrinkHold);
   };
   /**
    * A handle's limits move whenever anything around it does — opening a detail
@@ -1282,7 +1234,6 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
           }),
         );
       }
-      rememberTrailPadding(root);
     });
   };
   const layoutNode = (node: Node) =>
@@ -1326,7 +1277,6 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   eventRoot.addEventListener("pointerdown", rememberInteraction, true);
   eventRoot.addEventListener("keydown", rememberInteraction, true);
   eventRoot.addEventListener("focusin", onDetailFocusIn);
-  eventRoot.addEventListener("scroll", onTrailScroll, { passive: true, capture: true });
   eventRoot.addEventListener("pointerdown", onSheetPointerDown);
   eventRoot.addEventListener("click", onGrabberClick);
   eventRoot.addEventListener("dblclick", onDetailDoubleClick);
@@ -1359,7 +1309,6 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     motionFrames.forEach(cancelAnimationFrame);
     revealFrames.forEach(cancelAnimationFrame);
     motionRoots.forEach((root) => delete root.dataset.workspaceMotion);
-    heldTrails.forEach((trail) => trail.style.removeProperty("--k2b-detail-trail-hold"));
     touchedDetails.forEach((aside) => {
       clearDrag(aside);
       delete aside.dataset.workspaceDetailSheet;
@@ -1373,7 +1322,6 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     eventRoot.removeEventListener("pointerdown", rememberInteraction, true);
     eventRoot.removeEventListener("keydown", rememberInteraction, true);
     eventRoot.removeEventListener("focusin", onDetailFocusIn);
-    eventRoot.removeEventListener("scroll", onTrailScroll, true);
     eventRoot.removeEventListener("pointerdown", onSheetPointerDown);
     eventRoot.removeEventListener("click", onGrabberClick);
     eventRoot.removeEventListener("dblclick", onDetailDoubleClick);

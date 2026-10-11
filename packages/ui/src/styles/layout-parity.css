@@ -1371,6 +1371,7 @@
 
   .k2b-ui .k2b-app-workspace[data-workspace-motion] .k2b-app-workspace__detail[hidden] {
     transform: translateX(calc(100% + var(--k2b-workspace-detail-inset)));
+    transition-duration: 140ms;
     transition-timing-function: ease-in;
   }
 

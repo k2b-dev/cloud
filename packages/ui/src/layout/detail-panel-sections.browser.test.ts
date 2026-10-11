@@ -80,7 +80,7 @@ const discussion = (comments: Comments, composer: boolean) =>
 // The order of a real inspector: a summary, a group, a section placed directly
 // in the body, the comments, and a closing group.
 const panel = (id: string, comments: Comments, composer = false) =>
-  `<div class="k2b-app-workspace__content" style="height:60rem"><aside id="${id}" class="k2b-app-workspace__detail" style="--k2b-workspace-panel-size:416px;--k2b-workspace-panel-min:320px;--k2b-workspace-panel-max:640px">${renderToString(
+  `<div class="k2b-app-workspace" style="height:60rem;--k2b-detail-size:416px;--k2b-detail-min:320px;--k2b-detail-max:640px"><div class="k2b-app-workspace__content"><div class="k2b-app-workspace__main"></div><aside id="${id}" class="k2b-app-workspace__detail" style="--k2b-workspace-panel-size:416px;--k2b-workspace-panel-min:320px;--k2b-workspace-panel-max:640px">${renderToString(
     () =>
       createComponent(DetailPanel, {
         get children() {
@@ -108,11 +108,11 @@ const panel = (id: string, comments: Comments, composer = false) =>
           ];
         },
       }),
-  )}</aside></div>`;
+  )}</aside></div></div>`;
 
 // A discussion placed in a group is one of its sections; inside a section the section frames it.
 const nested = () =>
-  `<div class="k2b-app-workspace__content" style="height:40rem"><aside id="nested" class="k2b-app-workspace__detail" style="--k2b-workspace-panel-size:416px;--k2b-workspace-panel-min:320px;--k2b-workspace-panel-max:640px">${renderToString(
+  `<div class="k2b-app-workspace" style="height:40rem;--k2b-detail-size:416px;--k2b-detail-min:320px;--k2b-detail-max:640px"><div class="k2b-app-workspace__content"><div class="k2b-app-workspace__main"></div><aside id="nested" class="k2b-app-workspace__detail" style="--k2b-workspace-panel-size:416px;--k2b-workspace-panel-min:320px;--k2b-workspace-panel-max:640px">${renderToString(
     () =>
       createComponent(DetailPanel, {
         get children() {
@@ -130,7 +130,7 @@ const nested = () =>
           });
         },
       }),
-  )}</aside></div>`;
+  )}</aside></div></div>`;
 
 // A panel reused inside a tinted dialog group: that group turns field wells white
 // for its tint, but every frame of the panel paints its own surface again.

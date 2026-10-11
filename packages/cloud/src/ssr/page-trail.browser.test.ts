@@ -74,7 +74,10 @@ window.shortcuts = () => contextCommandsWithShortcuts().filter((command) => comm
           "</head>",
           `<style>${css}</style><style>*,*::before,*::after{transition:none!important;animation:none!important}</style></head>`,
         )
-        .replace("</body>", `<script>${runtime}</script></body>`);
+        .replace(
+          "</body>",
+          `<script>window.initialMainRect=document.querySelector(".k2b-app-workspace__main")?.getBoundingClientRect().toJSON();</script><script>${runtime}</script></body>`,
+        );
       return new Response(markup, { status: response.status, headers: { "content-type": "text/html; charset=utf-8" } });
     },
   });
@@ -204,7 +207,7 @@ describe("the rule decides the form by depth", () => {
           expect(detail.head!.box.height).toBe(46);
           // Flush up to 1536 px; the card's own edge above it.
           expect(detail.head!.box.top).toBeLessThanOrEqual(device.width >= 1536 ? 9 : 0);
-          expect(detail).toMatchObject({ form: "back", title: { text: "user07", tag: "p" }, arrow: null });
+          expect(detail).toMatchObject({ form: "back", title: { text: "user07", tag: "h1" }, arrow: null });
           expect(detail.back).toMatchObject({ text: "Users", label: "Back to Users", href: "/app/accounts/users" });
           expect(detail.hairlines).toEqual([]);
 
@@ -259,12 +262,11 @@ describe("the rule decides the form by depth", () => {
       const { context, page } = await open(ipadPortrait, path, { language });
       try {
         const before = await trail(page);
-        // The first level and the parent stay; the middle becomes "…".
+        // The permanent detail now narrows the head too. Only the parent fits;
+        // the first level joins the middle levels in the menu.
         expect(before.more).toBe(true);
-        expect(before.crumbs[0]).toBe(folders[0]);
-        expect(before.crumbs.at(-1)).toBe(folders[3]);
-        expect(before.crumbs).toContain("…");
-        const hidden = folders.slice(1, 3).filter((name) => !before.crumbs.includes(name));
+        expect(before.crumbs).toEqual(["…", folders[3]!]);
+        const hidden = folders.slice(0, 3);
         expect(hidden.length).toBeGreaterThan(0);
         // The collapse changes no geometry.
         expect(before.head!.box.height).toBe(46);
@@ -356,6 +358,10 @@ describe("layout.update() keeps the trail current", () => {
       const update = (value: Update, address?: string) =>
         page.evaluate(
           ([next, url]) => {
+            // The page's navigation follows the route too: only the exact list marks Users.
+            const item = document.querySelector('.k2b-app-workspace__sidebar [href="/app/accounts/users"]');
+            if (url && url !== "/app/accounts/users") item?.removeAttribute("aria-current");
+            else if (url) item?.setAttribute("aria-current", "page");
             (window as unknown as { layout: { update: (value: Update) => void } }).layout.update(next as Update);
             if (url) window.history.pushState(null, "", url as string);
           },
@@ -547,6 +553,52 @@ describe("going up returns to the page as this tab left it", () => {
         const landed = new URL(page.url()).searchParams;
         expect({ how, path: landed.get("path"), file: landed.get("file") }).toEqual({ how, path: folders[0]!, file });
       }
+    } finally {
+      await context.close();
+    }
+  });
+});
+
+describe("workspace title beside exact-current navigation", () => {
+  for (const device of [laptop, ipadPortrait, phone]) {
+    test(`${device.name}: the marked page keeps an accessible h1, stable main and working way up`, async () => {
+      const { context, page } = await open(device, "/app/accounts/teams");
+      try {
+        const heading = page.getByRole("heading", { level: 1, name: "Teams", exact: true });
+        expect(await heading.count()).toBe(1);
+        expect(await page.locator("h1").count()).toBe(1);
+        expect(await page.title()).toBe("Teams");
+        const head = page.locator('.k2b-app-workspace__head[data-trail="up"]');
+        if (device.width >= 1024) {
+          const box = await head.boundingBox();
+          expect(box!.width).toBeLessThanOrEqual(1);
+          expect(box!.height).toBeLessThanOrEqual(1);
+          expect(await head.locator(".k2b-page-title__trail").evaluate((element) => getComputedStyle(element).display)).toBe("none");
+          expect(await page.locator(".k2b-page-title__up:visible,.k2b-page-title__back:visible").count()).toBe(0);
+        } else {
+          expect(await head.locator(device.width < 768 ? ".k2b-page-title__back" : ".k2b-page-title__up").isVisible()).toBe(true);
+        }
+        const main = () => page.locator(".k2b-app-workspace__main").evaluate((element) => element.getBoundingClientRect().toJSON());
+        const initial = await page.evaluate(() => (window as unknown as { initialMainRect: unknown }).initialMainRect);
+        expect(await main()).toEqual(initial);
+        await page.waitForTimeout(1000);
+        expect(await main()).toEqual(initial);
+        expect(await page.title()).toBe("Teams");
+        await page.keyboard.press("Alt+ArrowUp");
+        await page.waitForURL(/\/app\/accounts\/directory$/);
+      } finally {
+        await context.close();
+      }
+    });
+  }
+  test("a deeper unmarked page keeps its desktop back link", async () => {
+    const { context, page } = await open(laptop, "/app/accounts/teams/engineering");
+    try {
+      expect(await page.locator('.k2b-app-workspace__sidebar [aria-current="page"]').count()).toBe(0);
+      const back = page.locator(".k2b-app-workspace__head .k2b-page-title__up");
+      expect(await back.isVisible()).toBe(true);
+      expect(await back.getAttribute("href")).toBe("/app/accounts/teams");
+      expect((await page.locator(".k2b-app-workspace__head").boundingBox())!.height).toBe(46);
     } finally {
       await context.close();
     }

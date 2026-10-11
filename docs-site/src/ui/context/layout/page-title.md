@@ -84,7 +84,16 @@ provider itself in the browser, its `trail` prop is the source: pass a signal's
 value, and the readers below follow the prop.
 
 `AppWorkspace` shows the host's trail in its [head](/en/ui/layout/workspace)
-when the page has a page above it. Once the host runs `followPageTrail()`, a
+when the page has a page above it. The workspace head renders the page title
+as an `h1`. From 64 rem (1024 px), a visible, non-collapsed workspace sidebar
+that marks the exact current page with `aria-current="page"` hides the head
+and its back link. `AppWorkspace.SidebarItem active` supplies that attribute.
+The title remains a visually hidden heading for assistive technology. Deeper
+pages without an exact-current sidebar item keep their back link, as do
+compact layouts and phones. Mark only the exact page, never its ancestor.
+The host's document title and Alt+Up shortcut remain available.
+
+Once the host runs `followPageTrail()`, a
 server-rendered title of the host's trail that never hydrates follows
 `setPageTrail()`: a workspace head and a page's own header title alike. The
 live title takes the same place, element, class, and subtitle.
