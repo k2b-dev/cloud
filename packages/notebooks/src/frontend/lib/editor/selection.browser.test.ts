@@ -170,7 +170,7 @@ describe("rich editor selection", () => {
     try {
       const from = await find(page, "[web link]");
       const to = await find(page, "inside prose", 6);
-      const label = (await page.locator("#a .cm-link-label").boundingBox())!;
+      const label = (await page.locator("#a .cm-link-label:not(.cm-link-open)").boundingBox())!;
       const end = await point(page, to);
       await page.mouse.move(label.x + 1, label.y + label.height / 2);
       await page.mouse.down();
@@ -180,14 +180,14 @@ describe("rich editor selection", () => {
       expect((await selection(page)).to).toBe(to);
       await expectCopy(page);
       await select(page, "a", await find(page, "Final paragraph"));
-      const rendered = (await page.locator("#a .cm-link-label").boundingBox())!;
+      const rendered = (await page.locator("#a .cm-link-label:not(.cm-link-open)").boundingBox())!;
       await page.mouse.move(rendered.x + 1, rendered.y + rendered.height / 2);
       await page.mouse.down();
       expect(await page.evaluate(() => window.selectionHarness.held("a"))).toBe(true);
-      expect(await page.locator("#a .cm-link-label").count()).toBe(1);
+      expect(await page.locator("#a .cm-link-label:not(.cm-link-open)").count()).toBe(1);
       await release(page);
       expect((await selection(page)).head).toBe(from);
-      expect(await page.locator("#a .cm-link-label").count()).toBe(0);
+      expect(await page.locator("#a .cm-link-label:not(.cm-link-open)").count()).toBe(0);
       expect(await page.locator("#a .cm-content").textContent()).toContain("[web link](https://example.com)");
     } finally {
       await page.context().close();
@@ -222,18 +222,27 @@ describe("rich editor selection", () => {
   }, 30_000);
 
   test.each([
-    ["heading", "Project heading", "Some **bold**"],
+    // Each drag ends next to plain text: a position beside a hidden mark shares its point with the mark's other side.
+    ["heading", "Project heading", "Some"],
     ["list", "First bullet", "Open task"],
     ["checklist", "Open task", "Done task"],
     ["table", "Done task", "Final paragraph"],
   ])(
-    "dragging across a %s copies the selected source",
+    "dragging across a %s selects from the pressed to the released character and copies that source",
     async (_name, start, end) => {
       const page = await open();
       try {
         // Leave all target blocks rendered before taking pointer coordinates.
         await select(page, "a", await find(page, "words to select"));
-        await drag(page, await find(page, start), await find(page, end, end.length));
+        const from = await find(page, start);
+        const to = await find(page, end, end.length);
+        await drag(page, from, to);
+        const selected = await selection(page);
+        // The press on a heading's first character may resolve before its hidden `# `.
+        const lineStart = await page.evaluate((from) => window.selectionHarness.views.a.state.doc.lineAt(from).from, from);
+        expect(selected.anchor).toBeGreaterThanOrEqual(lineStart);
+        expect(selected.anchor).toBeLessThanOrEqual(from);
+        expect(selected.head).toBe(to);
         await expectCopy(page);
       } finally {
         await page.context().close();
@@ -241,6 +250,71 @@ describe("rich editor selection", () => {
     },
     30_000,
   );
+
+  test.each([
+    ["tag", "#a .cm-tag-pill", "#mytag"],
+    ["note reference", "#a .k2b-reference", "[Other note]"],
+    ["mail link", "#a .cm-link-label.cm-link-open", "[mail me]"],
+  ])(
+    "a drag that starts on a %s selects text and keeps the pill until release",
+    async (_name, selector, source) => {
+      const page = await open();
+      try {
+        await select(page, "a", await find(page, "words to select"));
+        const from = await find(page, source);
+        const to = await find(page, "trailing words", "trailing words".length);
+        const pill = (await page.locator(selector).boundingBox())!;
+        const end = await point(page, to);
+        await page.mouse.move(pill.x + 2, pill.y + pill.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(end.x, end.y, { steps: 8 });
+        expect(await page.locator(selector).count()).toBe(1);
+        await release(page);
+        expect((await selection(page)).anchor).toBe(from);
+        expect((await selection(page)).head).toBe(to);
+        expect(await page.locator(selector).count()).toBe(0);
+        await expectCopy(page);
+        expect(await page.evaluate(() => window.selectionHarness.opened)).toEqual([]);
+      } finally {
+        await page.context().close();
+      }
+    },
+    30_000,
+  );
+
+  test.each([
+    ["note reference", "#a .k2b-reference", "/app/notebooks/n1/notes/abc123"],
+    ["mail link", "#a .cm-link-label.cm-link-open", "mailto:ada@example.com"],
+  ])(
+    "a click on a %s opens it and keeps the editor's cursor",
+    async (_name, selector, target) => {
+      const page = await open();
+      try {
+        const caret = await find(page, "words to select");
+        await select(page, "a", caret);
+        await page.locator(selector).click();
+        await page.waitForFunction(() => !window.selectionHarness.held("a"));
+        await settle(page);
+        expect(await page.evaluate(() => window.selectionHarness.opened)).toEqual([target]);
+        expect((await selection(page)).head).toBe(caret);
+        expect((await selection(page)).anchor).toBe(caret);
+        expect(await page.locator(selector).count()).toBe(1);
+      } finally {
+        await page.context().close();
+      }
+    },
+    30_000,
+  );
+
+  test("a click on a tag opens the tag's notes", async () => {
+    const page = await open();
+    try {
+      await select(page, "a", await find(page, "words to select"));
+      await Promise.all([page.waitForURL("**/app/notebooks/n1/tags/mytag"), page.locator("#a .cm-tag-pill").click()]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
 
   test("remote carets follow text height and remain visible in replaced links and tables", async () => {
     const page = await open();

@@ -326,6 +326,32 @@ describe("remote cursors", () => {
     }
   });
 
+  test("remote redraws keep an idle-hidden local cursor hidden until the local selection moves", async () => {
+    const { view, awareness, ada, cleanup } = await mount();
+    const focused = spyOn(document, "hasFocus").mockReturnValue(true);
+    try {
+      const { REMOTE_CARET_LABEL_IDLE_MS } = await import("./remote-cursors");
+      view.focus();
+      view.dispatch({ selection: { anchor: 3 } });
+      awareness.setLocalStateField("cursor", null);
+      ada.setCursor(2);
+      expect(awareness.getLocalState()?.cursor).toBeNull();
+      jest.advanceTimersByTime(REMOTE_CARET_LABEL_IDLE_MS + 1);
+      expect(await ada.idle()).toBe(true);
+      expect(awareness.getLocalState()?.cursor).toBeNull();
+      view.dispatch({ selection: { anchor: 1 } });
+      const Y = await import("yjs");
+      const text = awareness.doc.getText("codemirror");
+      expect(awareness.getLocalState()?.cursor).toEqual({
+        anchor: Y.createRelativePositionFromTypeIndex(text, 1),
+        head: Y.createRelativePositionFromTypeIndex(text, 1),
+      });
+    } finally {
+      focused.mockRestore();
+      cleanup();
+    }
+  });
+
   test("draws a remote multi-line selection in a layer without decorating lines", async () => {
     const { view, ada, cleanup } = await mount(false, "First line\nSecond line\nLast line");
     try {

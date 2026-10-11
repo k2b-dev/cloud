@@ -56,6 +56,9 @@ const label = (page: Page) =>
     return { opacity: style.opacity, transitionDuration: style.transitionDuration, caret: [box.left, box.top, box.width, box.height] };
   });
 
+// An invisible dot must not take presses meant for the text under it.
+const dotPointerEvents = (page: Page) => page.$eval(".cm-remoteCaretDot", (dot) => getComputedStyle(dot).pointerEvents);
+
 const waitForIdle = (page: Page) =>
   page.waitForSelector(`.cm-remoteCaret.${REMOTE_CARET_IDLE_CLASS}`, { timeout: REMOTE_CARET_LABEL_IDLE_MS + 2_000 });
 
@@ -68,8 +71,10 @@ describe("remote caret labels", () => {
       const active = await label(page);
       expect(active.opacity).toBe("1");
       expect(active.transitionDuration).toBe("0s");
+      expect(await dotPointerEvents(page)).toBe("none");
 
       await waitForIdle(page);
+      expect(await dotPointerEvents(page)).toBe("auto");
       await page.waitForFunction(() => getComputedStyle(document.querySelector(".cm-remoteCaretLabel")!).opacity === "0");
       const idle = await label(page);
       expect(idle.transitionDuration).toBe("0.3s");

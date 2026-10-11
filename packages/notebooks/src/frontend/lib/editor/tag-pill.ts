@@ -15,6 +15,7 @@ import { RangeSet } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType } from "@codemirror/view";
 import { notebookWorkspaceMessages } from "../../[id]/messages";
 import { type CursorZoneState, cursorZoneStateField, selectionIntersectsRange } from "./_lib/cursor-zone-field";
+import { makeOpener } from "./_lib/link-opener";
 
 /** Match `(start-of-line OR whitespace) #tag` — with `#tag` allowing nested
  *  `parent/child` and at least one letter as the first char to exclude
@@ -29,7 +30,7 @@ class TagWidget extends WidgetType {
     super();
   }
 
-  override toDOM() {
+  override toDOM(view: EditorView) {
     const el = document.createElement("a");
     el.className =
       "cm-tag-pill inline-flex items-center px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 cursor-pointer hover:bg-emerald-100 dark:hover:bg-emerald-900/50 no-underline";
@@ -37,16 +38,8 @@ class TagWidget extends WidgetType {
     el.title = notebookWorkspaceMessages.resolve([document.documentElement.lang]).t.showNotesWithTag({ tag: this.tag });
     el.textContent = `#${this.tag}`;
 
-    // Block CM cursor positioning — same pattern as note-link / file pill.
-    el.onmousedown = (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-    };
-    el.onclick = (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      window.location.assign(el.href);
-    };
+    // Same press handling as the note and file pills: a click opens the tag and keeps the cursor, a drag selects.
+    makeOpener(el, view, () => window.location.assign(el.href));
     return el;
   }
 
@@ -54,8 +47,8 @@ class TagWidget extends WidgetType {
     return other instanceof TagWidget && other.tag === this.tag && other.notebookId === this.notebookId;
   }
 
-  override ignoreEvent() {
-    return true;
+  override ignoreEvent(event: Event) {
+    return event.type !== "mousedown";
   }
 }
 

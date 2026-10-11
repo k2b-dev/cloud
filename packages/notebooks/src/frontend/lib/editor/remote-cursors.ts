@@ -115,9 +115,9 @@ const remoteCursorTheme = EditorView.theme({
     borderRadius: "50%",
     backgroundColor: "var(--remote-color)",
     opacity: "0",
-    pointerEvents: "auto",
   },
-  ".cm-remoteCaret-idle .cm-remoteCaretDot": { opacity: "1" },
+  // Only a visible dot takes the pointer; an invisible one would swallow presses on the text below it.
+  ".cm-remoteCaret-idle .cm-remoteCaretDot": { opacity: "1", pointerEvents: "auto" },
   ".cm-remoteCaret-idle:not(:hover) .cm-remoteCaretLabel": { opacity: "0", transition: "opacity 300ms ease-out" },
   "@media (prefers-reduced-motion: reduce)": { ".cm-remoteCaret-idle:not(:hover) .cm-remoteCaretLabel": { transition: "none" } },
 });
@@ -246,6 +246,7 @@ export const remoteCursors = (ytext: Y.Text, awareness: Awareness): Extension =>
       }
 
       update(update: ViewUpdate) {
+        if (!update.selectionSet && !update.docChanged && !update.focusChanged) return;
         const localState = awareness.getLocalState();
         if (localState !== null) {
           const hasFocus = update.view.hasFocus && update.view.dom.ownerDocument.hasFocus();

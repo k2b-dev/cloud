@@ -3,6 +3,7 @@ import { BlockType, EditorView } from "@codemirror/view";
 import { yCollab } from "y-codemirror.next";
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from "y-protocols/awareness";
 import * as Y from "yjs";
+import { handleSoftNoteNavigationRequests } from "../soft-navigation";
 import { pointerSelectionHeld } from "./_lib/cursor-zone-field";
 import { editor } from "./index";
 import { remoteCursors } from "./remote-cursors";
@@ -21,6 +22,8 @@ const doc = [
   "| Alpha | 1 |",
   "",
   "Final paragraph with plain words to select.",
+  "",
+  "Tagged #mytag, [Other note](note://abc123) and [mail me](mailto:ada@example.com) then more plain trailing words here.",
 ].join("\n");
 
 const makeClient = (parent: HTMLElement, name: string, color: string, seed?: Y.Doc) => {
@@ -89,6 +92,17 @@ b.awareness.on("update", ({ added, updated, removed }: { added: number[]; update
 });
 
 const views = { a: a.view, b: b.view };
+
+// Links that would leave the page record where they lead instead.
+const opened: string[] = [];
+handleSoftNoteNavigationRequests(async (href) => {
+  opened.push(href);
+  return { kind: "applied", href };
+});
+window.open = (url) => {
+  opened.push(String(url));
+  return null;
+};
 type Side = keyof typeof views;
 
 const find = (side: Side, text: string, offset = 0) => {
@@ -104,6 +118,7 @@ const settle = async () => {
 
 const harness = {
   views,
+  opened,
   find,
   settle,
   held: (side: Side) => views[side].state.field(pointerSelectionHeld),

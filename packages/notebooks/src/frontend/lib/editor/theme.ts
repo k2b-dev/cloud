@@ -55,7 +55,6 @@ const baseEditorCSS = EditorView.theme({
     paddingLeft: "8px",
   },
   ".cm-foldPlaceholder": { backgroundColor: "transparent", border: "none" },
-  "&:not(.cm-focused) .cm-activeLineGutter": { backgroundColor: "transparent" },
   ".cm-cursor": { borderLeftWidth: "2px" },
   ".cm-cursor-primary": {
     borderLeftWidth: "2px",
@@ -177,7 +176,6 @@ export const customDarkInit = (options?: Partial<CreateThemeOptions>) => {
         selection: "#003d73",
         selectionMatch: "#3f3f46",
         gutterBackground: "transparent",
-        lineHighlight: "#36334280",
         ...settings,
       },
       styles: [...customDarkStyle, ...styles],
@@ -215,7 +213,6 @@ export const rawDarkInit = () => [
       selection: "#003d73",
       selectionMatch: "#3f3f46",
       gutterBackground: "transparent",
-      lineHighlight: "#36334280",
     },
     styles: [],
   }),
