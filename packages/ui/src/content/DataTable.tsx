@@ -71,6 +71,11 @@ export type DataTableProps<T> = {
    * server-rendered: sorting is a query change, not client state.
    */
   sortHref?: (next: DataTableSort) => string;
+  /**
+   * Sorts on the client instead: sortable headers become buttons that report the
+   * next order, with the same look and order of directions as `sortHref`.
+   */
+  onSortChange?: (next: DataTableSort) => void;
   selectedRowId?: string | null;
   /** Optional multi-selection shared with another collection view. Requires getRowId. */
   selection?: CollectionSelection;
@@ -343,21 +348,21 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
     col.sortable === true ? col.id : typeof col.sortable === "string" ? col.sortable : null;
 
   /**
-   * Sorting is a link, not a handler: these tables are server-rendered, so the
-   * order belongs in the URL. Clicking the active column flips its direction.
+   * Sorting is a link by default: server-rendered tables keep the order in the
+   * URL. Client tables pass onSortChange instead. Clicking the active column
+   * flips its direction.
    */
-  const sortLinkFor = (col: DataTableColumn<T>): { href: string; active: boolean; direction: "asc" | "desc" } | null => {
+  const sortLinkFor = (col: DataTableColumn<T>): { next: DataTableSort; active: boolean } | null => {
     const key = sortKeyOf(col);
-    if (!key || !props.sortHref) return null;
+    if (!key || (!props.sortHref && !props.onSortChange)) return null;
     const active = props.sort?.key === key;
-    const direction: "asc" | "desc" = active && props.sort?.direction === "desc" ? "asc" : "desc";
-    return { href: props.sortHref({ key, direction }), active, direction };
+    return { next: { key, direction: active && props.sort?.direction === "desc" ? "asc" : "desc" }, active };
   };
 
   /** Only a sortable column carries a sort state; the rest carry none at all. */
   const ariaSortFor = (col: DataTableColumn<T>): "ascending" | "descending" | "none" | undefined => {
     const key = sortKeyOf(col);
-    if (!key || (!props.sortHref && !props.renderHeader)) return undefined;
+    if (!key || (!props.sortHref && !props.onSortChange && !props.renderHeader)) return undefined;
     if (props.sort?.key !== key) return "none";
     return props.sort?.direction === "asc" ? "ascending" : "descending";
   };
@@ -380,18 +385,31 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
         </div>
       );
 
-    return (
-      <a href={sort.href} class="k2b-data-table__header-content k2b-data-table__sort" data-align={alignAttr(col)}>
-        <span class="k2b-data-table__header-line">
-          {title}
-          {/* Inactive columns keep a dimmed marker so the row reads as sortable. */}
-          <i
-            class={`k2b-data-table__sort-icon ti ${props.sort?.direction === "asc" && sort.active ? "ti-arrow-up" : "ti-arrow-down"}`}
-            data-active={sort.active ? "true" : undefined}
-            aria-hidden="true"
-          />
-        </span>
+    const line = (
+      <span class="k2b-data-table__header-line">
+        {title}
+        {/* Inactive columns keep a dimmed marker so the row reads as sortable. */}
+        <i
+          class={`k2b-data-table__sort-icon ti ${props.sort?.direction === "asc" && sort.active ? "ti-arrow-up" : "ti-arrow-down"}`}
+          data-active={sort.active ? "true" : undefined}
+          aria-hidden="true"
+        />
+      </span>
+    );
+    const { sortHref, onSortChange } = props;
+    return sortHref ? (
+      <a href={sortHref(sort.next)} class="k2b-data-table__header-content k2b-data-table__sort" data-align={alignAttr(col)}>
+        {line}
       </a>
+    ) : (
+      <button
+        type="button"
+        class="k2b-data-table__header-content k2b-data-table__sort"
+        data-align={alignAttr(col)}
+        onClick={() => onSortChange?.(sort.next)}
+      >
+        {line}
+      </button>
     );
   };
 

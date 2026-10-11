@@ -94,6 +94,10 @@ Mark a column `sortable: true`, or provide the server's sort key as a string. Pa
 
 Sorting is link-based so it works on a cold server render and survives reload, sharing, and browser navigation. The same rule applies to filters and pagination: put user intent in the URL, query the server, then pass the returned rows to the table.
 
+For a complete local dataset, pass `onSortChange` instead of `sortHref`: sortable
+headers become buttons. The caller sorts the rows and passes the updated `sort`.
+If both are supplied, `sortHref` takes precedence.
+
 Do not filter or sort a paginated result in the browser. The client does not own the complete dataset.
 
 ## Presentation
@@ -139,6 +143,7 @@ type DataTableFooter<T> = {
 type DataTableProps<T> = {
   rows: readonly T[]; columns: readonly DataTableColumn<T>[]; ariaLabel?: string; ariaLabelledBy?: string;
   getRowId?: (row: T) => string; sort?: DataTableSort | null; sortHref?: (next: DataTableSort) => string;
+  onSortChange?: (next: DataTableSort) => void;
   selectedRowId?: string | null; rowClass?: string | ((row: T) => string | undefined); hoverRows?: boolean;
   onRowClick?: (row: T) => void; onRowDoubleClick?: (row: T) => void; renderCell?: DataTableRenderCell<T>;
   renderHeader?: DataTableRenderHeader<T>; footer?: DataTableFooter<T>; hasMore?: boolean;

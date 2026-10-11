@@ -39,6 +39,8 @@ export type ChartExplorerProps<T extends ChartExplorerRow> = {
   /** false hides the complete local detail area for a shared selection panel. */
   renderDetails?: false | ((row: T) => JSX.Element);
   height?: string;
+  /** What the viewport shows without rows, for example while they load; defaults to "No data". */
+  empty?: JSX.Element;
   class?: string;
 };
 
@@ -141,7 +143,7 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
         <span role="alert">{chartMessages().chartCopyFailed}</span>
       </Show>
       <div class="k2b-chart-explorer__viewport" style={{ height: props.height ?? "18rem" }}>
-        <Show when={data().rows.length > 0} fallback={<div class="k2b-chart__empty">{messages().noData}</div>}>
+        <Show when={data().rows.length > 0} fallback={<div class="k2b-chart__empty">{props.empty ?? messages().noData}</div>}>
           <Show
             when={view() === "chart"}
             fallback={

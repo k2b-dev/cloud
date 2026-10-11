@@ -7083,6 +7083,16 @@
   color: var(--k2b-text);
 }
 
+/* A client-sorted header is a button that reads like the header link. */
+.k2b-ui button.k2b-data-table__sort {
+  @apply w-full cursor-pointer border-0 bg-transparent p-0;
+}
+
+.k2b-ui .k2b-data-table__sort:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: min(var(--k2b-focus-offset), 1px);
+}
+
 .k2b-ui .k2b-data-table__header-line {
   @apply inline-flex items-center gap-1;
 }
