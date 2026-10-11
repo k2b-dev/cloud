@@ -7,6 +7,10 @@ import { isInternalPath, upstreamUrl } from "./request-boundary";
 import type { RouteTable } from "./trie";
 import { matchRoute } from "./trie";
 
+// Bun's largest idle timeout keeps the client socket open until the upstream timeout
+// (REQUEST_IDLE_TIMEOUT_MAX_SECONDS, ~8 s timer granularity) has answered 502.
+const CLIENT_WAIT_SECONDS = 255;
+
 // ─── Proxy statistics ────────────────────────────────────────────────────────
 
 export type AppStats = {
@@ -166,7 +170,7 @@ export const proxyRequest = async (
     // Bun parses headers before calling fetch, so slow headers keep the default timeout.
     let waitingForHeaders = true;
     const raiseTimeout = () => {
-      if (waitingForHeaders) timeout(req, REQUEST_IDLE_TIMEOUT_MAX_SECONDS);
+      if (waitingForHeaders) timeout(req, CLIENT_WAIT_SECONDS);
     };
     const body = req.body?.pipeThrough(new TransformStream({ flush: raiseTimeout }));
     let proxyRes: Response;

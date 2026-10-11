@@ -58,7 +58,7 @@ and durable data.
 - Durable background work that calls another application stores one revocable
   mandate for the workload. It authenticates to Core with its app-bound
   workload credential and never stores the user's session or personal API key.
-- Keep transport conversion in handlers and domain rules in the application. Pass `c.req.raw.signal` to costly request work: the gateway cancels the upstream request when the client disconnects. A handler answering more than 10 seconds after the request raises its own idle timeout with `setRequestTimeout(c, seconds)` (at most 300) and restores it once answering; longer work streams or runs as a job.
+- Keep transport conversion in handlers and domain rules in the application. Pass `c.req.raw.signal` to costly request work: the gateway cancels the upstream request when the client disconnects. A handler answering more than 10 seconds after the request raises its own idle timeout with `setRequestTimeout(c, seconds)` (at most 240) and restores it once answering; longer work streams or runs as a job.
 - Ship server-side files (templates, fixtures a service reads at runtime)
   under `src/assets/` and resolve them with `appAssetPath()` from
   `@k2b/cloud/server`; `import.meta.url` does not point at the source tree in

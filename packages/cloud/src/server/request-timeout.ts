@@ -2,8 +2,11 @@ import type { Context } from "hono";
 
 /** Idle timeout of every Cloud app server and the gateway: Bun's default, kept explicit. */
 export const REQUEST_IDLE_TIMEOUT_SECONDS = 10;
-/** Longest a request may stay silent: the gateway waits this long for an app's response headers. */
-export const REQUEST_IDLE_TIMEOUT_MAX_SECONDS = 300;
+/**
+ * Longest a request may stay silent; the gateway waits this long for an app's response headers.
+ * Stays below Bun's 255-second limit with headroom for the gateway's coarse upstream timer.
+ */
+export const REQUEST_IDLE_TIMEOUT_MAX_SECONDS = 240;
 
 /**
  * Restart this request's bounded idle timer while waiting to answer.

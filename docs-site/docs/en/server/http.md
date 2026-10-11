@@ -167,15 +167,16 @@ Authorization for a particular item belongs in the service. See
 Cloud app servers and the gateway close connections after 10 seconds without
 traffic. After reading and validating the body, a handler that needs more time
 can call `setRequestTimeout(c, seconds)` from `@k2b/cloud/server`. Each call
-restarts the idle timer. Only integer values from 1 to 300 are accepted; other
-values throw `RangeError`. The 300-second maximum matches the gateway's
-upstream idle limit while waiting for response headers.
+restarts the idle timer. Only integer values from 1 to 240 are accepted; other
+values throw `RangeError`. The 240-second maximum matches how long the gateway
+waits for an app's response headers. It stays below Bun's limit of 255 seconds
+per connection, so the gateway can still answer a timed-out upstream with 502.
 
 Call `setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS)` (10) in `finally`
 once the handler starts answering, including error responses. Bun retains a
 raised timeout on the keep-alive socket after the response, so every raise
 must be restored. The helper and both constants, `REQUEST_IDLE_TIMEOUT_SECONDS`
-and `REQUEST_IDLE_TIMEOUT_MAX_SECONDS` (300), are public server exports.
+and `REQUEST_IDLE_TIMEOUT_MAX_SECONDS` (240), are public server exports.
 
 The helper does nothing outside Bun's HTTP server, such as in `app.request()`
 tests. Prefer streaming with regular traffic or a background job for longer

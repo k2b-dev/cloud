@@ -1,5 +1,5 @@
 import { describe, expect, spyOn, test } from "bun:test";
-import { REQUEST_IDLE_TIMEOUT_SECONDS, setRequestTimeout } from "@k2b/cloud/server/request-timeout.ts";
+import { REQUEST_IDLE_TIMEOUT_MAX_SECONDS, REQUEST_IDLE_TIMEOUT_SECONDS, setRequestTimeout } from "@k2b/cloud/server/request-timeout.ts";
 import * as services from "@k2b/cloud/services";
 import { Hono } from "hono";
 import { boundTemplateCardinality, resetTemplateCardinality } from "./path-template";
@@ -42,19 +42,23 @@ describe("upstream response wait", () => {
     }
   }, 30_000);
 
-  test.each(["success", "failure", "disconnect"])("GET raises before fetch and restores after %s", async (outcome) => {
+  test.each(["success", "failure", "timeout", "disconnect"])("GET raises before fetch and restores after %s", async (outcome) => {
     const telemetry = spyOn(services, "publishRequestTelemetry").mockImplementation(() => {});
     const controller = new AbortController();
     const req = new Request("http://cloud.test/slow", { signal: controller.signal });
     const calls: (number | string)[] = [];
+    const logs: string[] = [];
+    const stats = createProxyStats();
     const upstream = spyOn(globalThis, "fetch").mockImplementation(
       Object.assign(
         async (_url: RequestInfo | URL, init?: BunFetchRequestInit) => {
-          expect(calls).toEqual([300]);
+          expect(calls).toEqual([255]);
+          expect(calls[0]).toBeGreaterThanOrEqual(REQUEST_IDLE_TIMEOUT_MAX_SECONDS + 10);
           calls.push("fetch");
-          expect(init?.timeout).toBe(300_000);
+          expect(init?.timeout).toBe(240_000);
           expect(init?.signal).toBe(req.signal);
           if (outcome === "disconnect") controller.abort();
+          if (outcome === "timeout") throw new DOMException("Upstream timed out", "TimeoutError");
           if (outcome !== "success") throw new Error("upstream failed");
           return new Response("ok");
         },
@@ -65,8 +69,8 @@ describe("upstream response wait", () => {
       const response = await proxyRequest(
         req,
         buildRouteTable([{ prefix: "/", appId: `timeout-${outcome}`, baseUrl: "http://upstream" }]),
-        createProxyStats(),
-        () => {},
+        stats,
+        (message) => logs.push(message),
         null,
         (request, seconds) => {
           expect(request).toBe(req);
@@ -74,9 +78,15 @@ describe("upstream response wait", () => {
         },
       );
       expect(response.status).toBe(outcome === "success" ? 200 : outcome === "disconnect" ? 499 : 502);
-      expect(calls).toEqual([300, "fetch", 10]);
+      expect(calls).toEqual([255, "fetch", 10]);
+      if (outcome === "timeout") {
+        expect(req.signal.aborted).toBe(false);
+        expect(logs).toEqual(["Upstream unavailable"]);
+        expect(stats.byApp.get("timeout-timeout")?.errors).toBe(1);
+        expect(telemetry).toHaveBeenCalledWith(expect.objectContaining({ status: 502, errorKind: "upstream_unavailable" }));
+      }
       expect(upstream).toHaveBeenCalledTimes(1);
-      expect(upstream.mock.calls[0]?.[1]).toMatchObject({ timeout: 300_000, signal: req.signal });
+      expect(upstream.mock.calls[0]?.[1]).toMatchObject({ timeout: 240_000, signal: req.signal });
     } finally {
       upstream.mockRestore();
       telemetry.mockRestore();
@@ -98,7 +108,7 @@ describe("upstream response wait", () => {
       Object.assign(
         async (_url: RequestInfo | URL, init?: BunFetchRequestInit) => {
           expect(events).toEqual([]);
-          expect(init?.timeout).toBe(300_000);
+          expect(init?.timeout).toBe(240_000);
           if (!(init?.body instanceof ReadableStream)) throw new Error("Missing forwarded body");
           events.push("fetch");
           started.resolve();
@@ -123,7 +133,7 @@ describe("upstream response wait", () => {
       events.push("body end");
       (await bodyController.promise).close();
       expect((await response).status).toBe(200);
-      expect(events).toEqual(["fetch", "body end", 300, "upstream headers", 10]);
+      expect(events).toEqual(["fetch", "body end", 255, "upstream headers", 10]);
     } finally {
       upstream.mockRestore();
       telemetry.mockRestore();
@@ -139,7 +149,7 @@ describe("upstream response wait", () => {
     const upstream = spyOn(globalThis, "fetch").mockImplementation(
       Object.assign(
         async (_url: RequestInfo | URL, init?: BunFetchRequestInit) => {
-          expect(init?.timeout).toBe(300_000);
+          expect(init?.timeout).toBe(240_000);
           if (!(init?.body instanceof ReadableStream)) throw new Error("Missing forwarded body");
           forwarded.resolve(init.body);
           events.push("upstream headers");

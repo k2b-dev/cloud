@@ -3,6 +3,10 @@ import { Hono } from "hono";
 import { REQUEST_IDLE_TIMEOUT_MAX_SECONDS, REQUEST_IDLE_TIMEOUT_SECONDS, setRequestTimeout } from "./request-timeout";
 
 describe("request idle timeout", () => {
+  test("the maximum stays below Bun.serve's 255-second idle timeout limit", () => {
+    expect(REQUEST_IDLE_TIMEOUT_MAX_SECONDS).toBeLessThan(255);
+  });
+
   test("a raised timeout lets a slow handler answer while the default closes its connection", async () => {
     const app = new Hono()
       .get("/raised", async (c) => {
