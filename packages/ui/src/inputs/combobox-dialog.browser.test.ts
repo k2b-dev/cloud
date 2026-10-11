@@ -75,6 +75,21 @@ describe("@k2b/ui Combobox focus and Escape inside a dialog", () => {
     }
   });
 
+  test("with focus outside the dialog, one Escape still closes it", async () => {
+    const page = await open();
+    try {
+      // Escape with focus outside the field was ruled out as the WebKit cause.
+      await page.evaluate(() => {
+        if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+      });
+      expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
+      await page.keyboard.press("Escape");
+      await page.locator("dialog[open]").waitFor({ state: "hidden", timeout: 2_000 });
+    } finally {
+      await page.close();
+    }
+  });
+
   test("with the list open, Escape closes only the list, and the next Escape closes the dialog", async () => {
     const page = await open();
     try {
