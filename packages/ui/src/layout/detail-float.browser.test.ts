@@ -32,6 +32,7 @@ const mainContent = () => {
     return [toolbar, createComponent(DataTable, {
       class:"fixture-table", surface:"paper", fillHeight:true, scrollClass:"k2b-detail-trail",
       rows:Array.from({length:2}, (_, index) => ({index})),
+      onRowClick:() => setOpen(true),
       columns:Array.from({length:8}, (_, index) => ({id:String(index), header:"Field " + index, value:row => "Cell " + row.index + "." + index})),
       renderCell:({row,col,value}) => col.id === "0" ? button(row.index) : value,
     })];
@@ -98,7 +99,9 @@ const load = async (width: number, height: number, params = "", options: Browser
       new URLSearchParams(params).has("card")
         ? "#app{box-sizing:border-box;padding:0.5rem}"
         : ".k2b-ui .k2b-app-workspace{border:0;--k2b-workspace-radius:0px}"
-    }.fixture-main{padding:0.5rem}</style></head><body class="k2b-ui" style="margin:0"><div id="app" style="height:100vh"></div></body></html>`,
+    }.fixture-main{padding:0.5rem}${
+      new URLSearchParams(params).has("wide") ? ".fixture-table td,.fixture-table th{min-width:240px}" : ""
+    }</style></head><body class="k2b-ui" style="margin:0"><div id="app" style="height:100vh"></div></body></html>`,
   );
   await page.evaluate((params) => {
     document.body.dataset.params = params;
@@ -302,6 +305,44 @@ describe("floating workspace detail", () => {
             ),
         ).toBe(false);
         expect(css).not.toContain("--k2b-detail-trail-hold");
+      } finally {
+        await page.close();
+      }
+    });
+  }
+  for (const [width, height, params] of [
+    [1366, 900, "table=1&wide=1"],
+    [1920, 1080, "table=1&wide=1&card=1"],
+  ] as const) {
+    test(`${width}×${height}: reveals the last visible table cell beside the detail panel`, async () => {
+      const page = await load(width, height, params);
+      try {
+        const column = await page.locator(".k2b-table-wrap").evaluate((wrap) => {
+          const bounds = wrap.getBoundingClientRect();
+          const cells = [...wrap.querySelectorAll("tbody tr:first-child td")];
+          return cells.findLastIndex((cell) => {
+            const rect = cell.getBoundingClientRect();
+            return rect.left >= bounds.left && rect.right <= bounds.right;
+          });
+        });
+        expect(column).toBeGreaterThan(0);
+        const selector = `.k2b-table-wrap tbody tr:first-child td:nth-child(${column + 1})`;
+        await page.locator(selector).click();
+        await settlePanel(page);
+        await page.waitForFunction((selector) => {
+          const cell = document.querySelector(selector)!.getBoundingClientRect();
+          const wrap = document.querySelector(".k2b-table-wrap")!.getBoundingClientRect();
+          return cell.left >= wrap.left - 0.5 && cell.right <= wrap.right + 0.5;
+        }, selector);
+        const shape = await page.locator(selector).evaluate((cell) => {
+          const rect = cell.getBoundingClientRect();
+          const wrap = cell.closest(".k2b-table-wrap")!.getBoundingClientRect();
+          const detail = document.querySelector(".k2b-app-workspace__detail")!.getBoundingClientRect();
+          return { left: rect.left, right: rect.right, wrapLeft: wrap.left, wrapRight: wrap.right, detailLeft: detail.left };
+        });
+        expect(shape.left).toBeGreaterThanOrEqual(shape.wrapLeft - 0.5);
+        expect(shape.right).toBeLessThanOrEqual(shape.wrapRight + 0.5);
+        expect(shape.right).toBeLessThanOrEqual(shape.detailLeft);
       } finally {
         await page.close();
       }

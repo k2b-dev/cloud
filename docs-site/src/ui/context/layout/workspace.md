@@ -107,7 +107,8 @@ panel is open moves focus to the new title. A phone sheet also focuses its
 title after a pointer selection; wider pointer opens keep focus on the item.
 Focus stays where it is when the person moves it first. The controller keeps
 the selected row at its vertical position through reflow and reveals a freshly
-selected item beside the panel. Closing returns focus to the remembered
+selected item beside the panel; in a table it reveals the clicked cell, also
+in a row wider than its scroller. Closing returns focus to the remembered
 item when focus was in the panel.
 
 The first server-rendered or newly inserted panel appears without motion.

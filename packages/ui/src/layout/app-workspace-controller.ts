@@ -458,6 +458,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   const grabberSelector = ".k2b-app-workspace__detail-grabber";
   type RememberedItem = {
     item: HTMLElement;
+    cell: HTMLElement | null;
     interaction: "pointer" | "keyboard";
     scroller: HTMLElement | null;
     scrollTop: number;
@@ -502,6 +503,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     snapshot.top = snapshot.item.getBoundingClientRect().top;
     snapshot.scrollTop = snapshot.scroller?.scrollTop ?? 0;
   };
+  // A table row can exceed its scroller's width, so keep the clicked cell for horizontal reveal.
   const rememberInteraction = (event: Event) => {
     const target = eventElement(event);
     const root = target?.closest<HTMLElement>(ROOT_SELECTOR);
@@ -512,8 +514,10 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     const item = target.closest<HTMLElement>(FOCUSABLE_SELECTOR);
     if (!main || !item || !main.contains(item) || item.closest(ROOT_SELECTOR) !== root) return;
     if (event instanceof KeyboardEvent && event.key !== "Enter" && event.key !== " ") return;
+    const cell = target.closest<HTMLElement>("td, th");
     const snapshot: RememberedItem = {
       item,
+      cell: cell && main.contains(cell) && cell.closest(ROOT_SELECTOR) === root ? cell : null,
       interaction: event instanceof KeyboardEvent ? "keyboard" : "pointer",
       scroller: verticalScroller(item, main),
       scrollTop: 0,
@@ -676,7 +680,11 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
               const main = mainElement(root);
               if (overlap > 0 && main)
                 (verticalScroller(snapshot.item, main) ?? ownerDocument.scrollingElement)?.scrollBy({ top: overlap, behavior });
-            } else snapshot.item.scrollIntoView({ block: "nearest", inline: "nearest", behavior });
+            } else {
+              const cell = snapshot.cell;
+              const target = cell?.isConnected && mainElement(root)?.contains(cell) ? cell : snapshot.item;
+              target.scrollIntoView({ block: "nearest", inline: "nearest", behavior });
+            }
           }
         }),
       );
