@@ -61,6 +61,8 @@ const applyBaseline = async (tx: SqlClient): Promise<void> => {
  * older Mail image, which records no version for them, still starts on it.
  */
 const applyAdditions = async (tx: SqlClient): Promise<void> => {
+  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS signature_template_id uuid
+    REFERENCES mail.compose_templates(id) ON DELETE SET NULL`.simple();
   await tx`
     CREATE TABLE IF NOT EXISTS mail.conversation_keeps (
       conversation_id uuid PRIMARY KEY REFERENCES mail.conversations(id) ON DELETE CASCADE,

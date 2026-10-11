@@ -44,8 +44,8 @@ import {
 import { attachmentMimeOrder } from "./attachment-order";
 import { actorRefFromRequest, type MailRequestContext } from "./auth";
 import { sha256Json } from "./canonical";
-import { composeFormattingWarnings, removeOrphanComposeSegmentMarks } from "./compose-renderer";
-import { resolveDefaultSignatureSource } from "./compose-templates";
+import { composeFormattingWarnings, moveSignatureSegment, removeOrphanComposeSegmentMarks } from "./compose-renderer";
+import { requireSelectableSignature, resolveDefaultSignatureTemplateId, selectableSignatures } from "./compose-templates";
 import { applyConversationReferenceToReplySubjectInTransaction } from "./conversation-reference";
 import { requireDraftLeaseAvailable, withOwnedDraftLease } from "./draft-leases";
 import { MAX_DRAFT_ATTACHMENTS } from "./draft-provider-mime";
@@ -58,10 +58,12 @@ const InternalIdSchema = z.string().uuid();
 const savedDraftBodySchema = draftEditableContentInputSchema.shape.body.transform(removeOrphanComposeSegmentMarks);
 const internalDraftEditableContentSchema = draftEditableContentInputSchema.extend({
   senderIdentityId: InternalIdSchema,
+  signatureTemplateId: InternalIdSchema.nullable().optional(),
   body: savedDraftBodySchema,
 });
 const internalDraftContentSchema = draftContentInputSchema.extend({
   senderIdentityId: InternalIdSchema,
+  signatureTemplateId: InternalIdSchema.nullable().optional(),
   body: savedDraftBodySchema,
   conversationId: InternalIdSchema.nullable().optional(),
   sourceMessageId: InternalIdSchema.nullable().optional(),
@@ -117,6 +119,7 @@ type DbDraft = {
   derived_from_message_id: string | null;
   derivation_kind: MailDraft["derivationKind"];
   sender_identity_id: string;
+  signature_template_id: string | null;
   author_kind: DraftActor["kind"];
   author_id: string | null;
   last_editor_kind: DraftActor["kind"];
@@ -175,6 +178,8 @@ const draftColumns = sql`
   d.derived_from_message_id,
   d.derivation_kind,
   d.sender_identity_id,
+  (SELECT template.id FROM mail.compose_templates template
+    WHERE template.id = d.signature_template_id AND template.archived_at IS NULL) AS signature_template_id,
   d.author_kind,
   d.author_id,
   d.last_editor_kind,
@@ -235,21 +240,6 @@ const parseArray = <T>(value: T[] | string): T[] => (typeof value === "string" ?
 const parseRecord = <T>(value: T | string): T => (typeof value === "string" ? (JSON.parse(value) as T) : value);
 const toIso = (value: Date | string): string => (value instanceof Date ? value : new Date(value)).toISOString();
 const draftBodyPreview = (value: string): string => value.replace(/\s+/gu, " ").trim().slice(0, DRAFT_BODY_PREVIEW_LENGTH);
-const appendSignature = (body: string, signature: string | null, intent: DraftIntent): string => {
-  if (!signature) return body;
-  if (intent === "new") return [body.trimEnd(), signature].filter(Boolean).join("\n\n");
-  const lines = body.split("\n");
-  const quotedAt = lines.findIndex(
-    (line, index) =>
-      line.startsWith(">") ||
-      line === "---------- Forwarded message ----------" ||
-      (/\bwrote:\s*$/iu.test(line) && lines.slice(index + 1).some((candidate) => candidate.startsWith(">"))),
-  );
-  if (quotedAt < 0) return [body.trimEnd(), signature].filter(Boolean).join("\n\n");
-  const reply = lines.slice(0, quotedAt).join("\n").trimEnd();
-  const history = lines.slice(quotedAt).join("\n").trimStart();
-  return [reply, signature, history].filter(Boolean).join("\n\n");
-};
 const reusableMessageBody = (plainText: string | null, sanitizedHtml: string | null): string => {
   if (plainText?.trim()) return plainText.trimEnd();
   if (!sanitizedHtml) return "";
@@ -290,6 +280,7 @@ const mapDraft = (row: DbDraft): MailDraft => ({
   derivedFromMessageId: row.derived_from_message_id,
   derivationKind: row.derivation_kind,
   senderIdentityId: row.sender_identity_id,
+  signatureTemplateId: row.signature_template_id,
   to: parseArray(row.to_addresses),
   cc: parseArray(row.cc_addresses),
   bcc: parseArray(row.bcc_addresses),
@@ -580,7 +571,6 @@ type PreparedComposeDraft = {
   sourceMessageId: string | null;
   content: DraftEditableContent;
   attachments: DraftAttachment[];
-  initialSignatureSource: string | null;
 };
 
 const sourceAttachmentPreviews = async (db: typeof sql, sourceMessageId: string | null): Promise<DraftAttachment[]> => {
@@ -697,12 +687,18 @@ const prepareComposeDraftInTransaction = async (params: {
   if (parsed.data.includeSourceAttachments && draftContext.data.intent !== "forward") {
     return fail(err.badInput("Original attachments can only be included when forwarding a message"));
   }
-  const defaultSignature = await resolveDefaultSignatureSource({
-    db: params.db,
-    context: params.context,
-    mailboxId: params.mailboxId,
-    senderIdentityId: parsed.data.senderIdentityId,
-  });
+  let signatureTemplateId = parsed.data.signatureTemplateId;
+  if (signatureTemplateId === undefined) {
+    signatureTemplateId = await resolveDefaultSignatureTemplateId({
+      db: params.db,
+      context: params.context,
+      mailboxId: params.mailboxId,
+      senderIdentityId: parsed.data.senderIdentityId,
+    });
+  } else if (signatureTemplateId !== null) {
+    const signature = await requireSelectableSignature(params.db, params.context, params.mailboxId, signatureTemplateId);
+    if (!signature.ok) return signature;
+  }
   const initialSubject =
     draftContext.data.intent === "reply" || draftContext.data.intent === "reply_all"
       ? await applyConversationReferenceToReplySubjectInTransaction({
@@ -739,14 +735,15 @@ const prepareComposeDraftInTransaction = async (params: {
       defaultBcc: identity.data.defaultBcc,
     }),
     subject: initialSubject,
-    body: appendSignature(parsed.data.body, defaultSignature, draftContext.data.intent),
+    body: parsed.data.body,
+    signatureTemplateId,
     format: parsed.data.format ?? identity.data.defaultFormat,
     priority: parsed.data.priority ?? identity.data.defaultPriority,
     requestDeliveryReceipt: parsed.data.requestDeliveryReceipt ?? identity.data.defaultDeliveryReceipt,
     requestReadReceipt: parsed.data.requestReadReceipt ?? identity.data.defaultReadReceipt,
   });
   if (!initialContent.success) {
-    return fail(err.badInput(initialContent.error.issues[0]?.message ?? "Default signature makes the draft too large"));
+    return fail(err.badInput(initialContent.error.issues[0]?.message ?? "Invalid draft"));
   }
   const attachments = parsed.data.includeSourceAttachments
     ? await prepareSourceAttachments(params.db, draftContext.data.sourceMessageId)
@@ -756,7 +753,6 @@ const prepareComposeDraftInTransaction = async (params: {
     ...draftContext.data,
     content: initialContent.data,
     attachments: attachments.data,
-    initialSignatureSource: defaultSignature,
   });
 };
 
@@ -784,7 +780,7 @@ const insertComposeDraftInTransaction = async (params: {
       author_kind, author_id, last_editor_kind, last_editor_id,
       to_addresses, cc_addresses, bcc_addresses, subject, body_markdown, body_format,
       priority, request_delivery_receipt, request_read_receipt,
-      materialization_key, materialization_request_hash
+      materialization_key, materialization_request_hash, signature_template_id
     ) VALUES (
       ${shortId},
       ${params.mailboxId}::uuid,
@@ -806,7 +802,8 @@ const insertComposeDraftInTransaction = async (params: {
       ${params.content.requestDeliveryReceipt},
       ${params.content.requestReadReceipt},
       ${params.materializationKey ?? null},
-      ${params.materializationRequestHash ?? null}
+      ${params.materializationRequestHash ?? null},
+      ${params.content.signatureTemplateId ?? null}::uuid
     )
     RETURNING ${draftColumns}
   `,
@@ -845,10 +842,7 @@ const insertComposeDraftInTransaction = async (params: {
     },
   });
   await queueDraftProjectionInTransaction({ db: params.db, draftId: row.id });
-  return ok({
-    ...mapDraft(created),
-    initialSignatureSource: params.prepared.initialSignatureSource,
-  });
+  return ok(mapDraft(created));
 };
 
 export const createDraft = async (params: {
@@ -961,6 +955,7 @@ const prepareDerivedDraftInTransaction = async (params: {
     bcc: parseArray(source.bcc_addresses),
     subject: source.subject,
     body: reusableMessageBody(source.plain_text, source.sanitized_html),
+    signatureTemplateId: null,
     format: "plain",
     priority: identity.data.defaultPriority,
     requestDeliveryReceipt: identity.data.defaultDeliveryReceipt,
@@ -1081,7 +1076,6 @@ const prepareDraftSeedOriginInTransaction = async (params: {
       derivationKind: null,
       content: prepared.data.content,
       attachments: prepared.data.attachments,
-      initialSignatureSource: prepared.data.initialSignatureSource,
     });
   }
   const prepared = await prepareDerivedDraftInTransaction({
@@ -1099,7 +1093,6 @@ const prepareDraftSeedOriginInTransaction = async (params: {
     derivationKind: prepared.data.kind,
     content: prepared.data.content,
     attachments: prepared.data.attachments,
-    initialSignatureSource: null,
   });
 };
 
@@ -1248,20 +1241,27 @@ export const materializeDraftSeed = async (params: {
           requestHash,
         });
       }
+      const signatureTemplateId =
+        parsed.data.draft.signatureTemplateId === undefined
+          ? (preparedSeed.data.content.signatureTemplateId ?? null)
+          : parsed.data.draft.signatureTemplateId;
+      if (signatureTemplateId !== null && signatureTemplateId !== preparedSeed.data.content.signatureTemplateId) {
+        const signature = await requireSelectableSignature(tx, params.context, params.mailboxId, signatureTemplateId);
+        if (!signature.ok) return signature;
+      }
       const prepared: PreparedComposeDraft = {
         conversationId: preparedSeed.data.conversationId,
         intent: preparedSeed.data.intent,
         sourceMessageId: preparedSeed.data.sourceMessageId,
         content: preparedSeed.data.content,
         attachments: preparedSeed.data.attachments,
-        initialSignatureSource: preparedSeed.data.initialSignatureSource,
       };
       return insertComposeDraftInTransaction({
         db: tx,
         mailboxId: params.mailboxId,
         actor,
         prepared,
-        content: parsed.data.draft,
+        content: { ...parsed.data.draft, signatureTemplateId },
         materializationKey: parsed.data.idempotencyKey,
         materializationRequestHash: requestHash,
       });
@@ -1711,6 +1711,9 @@ export const createWorkflowDraftInTransaction = async (params: {
     : fail(err.conflict("Workflow draft id is in use"));
 };
 
+const legacySignature = async (db: typeof sql, context: MailRequestContext, mailboxId: string, body: string) =>
+  body.includes("\u2063") ? moveSignatureSegment(body, await selectableSignatures(db, context, mailboxId)) : null;
+
 export const updateDraft = async (params: {
   context: MailRequestContext;
   mailboxId: string;
@@ -1730,8 +1733,10 @@ export const updateDraft = async (params: {
       const allowed = await requireDraftAccess(params.context, params.mailboxId, params.draftId, "write", tx);
       if (!allowed.ok) return allowed;
       const draftId = params.draftId;
-      const [current] = await tx<{ state: string; revision: string | number }[]>`
-        SELECT state, revision
+      const [current] = await tx<
+        { state: string; revision: string | number; body_markdown: string; signature_template_id: string | null }[]
+      >`
+        SELECT state, revision, body_markdown, signature_template_id
         FROM mail.drafts
         WHERE id = ${draftId}::uuid AND mailbox_id = ${params.mailboxId}::uuid AND origin = 'user'
         FOR UPDATE
@@ -1750,6 +1755,21 @@ export const updateDraft = async (params: {
         await storeRecoveryCopy({ db: tx, draftId, baseRevision: params.expectedRevision, content: parsed.data, actor });
         return conflict("Sender identity is no longer available; the submitted content was saved as a recovery copy");
       }
+      const currentLegacy =
+        current.signature_template_id === null ? await legacySignature(tx, params.context, params.mailboxId, current.body_markdown) : null;
+      const incomingLegacy = await legacySignature(tx, params.context, params.mailboxId, parsed.data.body);
+      const signatureTemplateId =
+        parsed.data.signatureTemplateId === undefined
+          ? (incomingLegacy?.signatureTemplateId ?? current.signature_template_id ?? currentLegacy?.signatureTemplateId ?? null)
+          : parsed.data.signatureTemplateId;
+      if (
+        parsed.data.signatureTemplateId !== undefined &&
+        signatureTemplateId !== null &&
+        signatureTemplateId !== current.signature_template_id
+      ) {
+        const signature = await requireSelectableSignature(tx, params.context, params.mailboxId, signatureTemplateId);
+        if (!signature.ok) return signature;
+      }
       const [row] = await tx<DbDraft[]>`
         UPDATE mail.drafts d
         SET
@@ -1758,7 +1778,8 @@ export const updateDraft = async (params: {
           cc_addresses = ${parsed.data.cc}::jsonb,
           bcc_addresses = ${parsed.data.bcc}::jsonb,
           subject = ${parsed.data.subject},
-          body_markdown = ${parsed.data.body},
+          body_markdown = ${incomingLegacy?.body ?? parsed.data.body},
+          signature_template_id = ${signatureTemplateId}::uuid,
           body_format = ${parsed.data.format},
           priority = ${parsed.data.priority},
           request_delivery_receipt = ${parsed.data.requestDeliveryReceipt},
@@ -1948,9 +1969,10 @@ export const listDraftFolder = async (params: {
 export const getDraft = async (context: MailRequestContext, mailboxId: string, draftId: string): Promise<Result<MailDraft>> => {
   const allowed = await requireDraftAccess(context, mailboxId, draftId, "read");
   if (!allowed.ok) return allowed;
-  const [row] = await sql<DbDraft[]>`
+  const [row] = await sql<(DbDraft & { stored_signature_template_id: string | null })[]>`
     SELECT
       ${draftColumns},
+      d.signature_template_id AS stored_signature_template_id,
       lifecycle.conversation_id AS lifecycle_conversation_id,
       CASE d.last_editor_kind
         WHEN 'user' THEN COALESCE(editor_user.display_name, 'Former user')
@@ -1973,7 +1995,12 @@ export const getDraft = async (context: MailRequestContext, mailboxId: string, d
     ) lifecycle ON true
     WHERE d.id = ${draftId}::uuid AND d.mailbox_id = ${mailboxId}::uuid AND d.origin = 'user'
   `;
-  return row ? ok(mapDraft(row)) : fail(err.notFound("Draft"));
+  if (!row) return fail(err.notFound("Draft"));
+  const moved =
+    row.state === "draft" && row.stored_signature_template_id === null
+      ? await legacySignature(sql, context, mailboxId, row.body_markdown)
+      : null;
+  return ok({ ...mapDraft(row), ...(moved ?? {}) });
 };
 
 export const listDraftRecoveryCopies = async (params: {
@@ -2095,6 +2122,8 @@ export const restoreDraftRecoveryCopy = async (params: {
           bcc_addresses = ${content.data.bcc}::jsonb,
           subject = ${content.data.subject},
           body_markdown = ${content.data.body},
+          signature_template_id = CASE WHEN ${content.data.signatureTemplateId !== undefined}
+            THEN ${content.data.signatureTemplateId ?? null}::uuid ELSE d.signature_template_id END,
           body_format = ${content.data.format},
           priority = ${content.data.priority},
           request_delivery_receipt = ${content.data.requestDeliveryReceipt},

@@ -31,7 +31,6 @@ const seed: MailDraftSeed = {
   derivationKind: null,
   content: content("", "first@example.test"),
   attachments: [],
-  initialSignatureSource: null,
   origin: {
     kind: "compose",
     input: {
@@ -59,6 +58,7 @@ const draft = (revision: number, editable: DraftEditableContent): MailDraft => (
   derivedFromMessageId: null,
   derivationKind: null,
   ...editable,
+  signatureTemplateId: editable.signatureTemplateId ?? null,
   attachments: [],
   createdBy: { kind: "user", userId: "Usr001" },
   lastEditedBy: { kind: "user", userId: "Usr001" },

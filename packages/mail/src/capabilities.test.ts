@@ -117,6 +117,7 @@ const publicIdsByTable = {
   attachments: new Map([[internalAttachmentId, attachmentId]]),
   drafts: new Map([[internalDraftId, draftId]]),
   draftAttachments: new Map([[internalDraftAttachmentId, draftAttachmentId]]),
+  composeTemplates: new Map([[technicalTargetId, "Sign01"]]),
   reminders: new Map([[internalReminderId, reminderId]]),
 } as const;
 const internalIdsByTable = {
@@ -131,6 +132,7 @@ const internalIdsByTable = {
   comments: new Map([[commentId, internalCommentId]]),
   draftAttachments: new Map([[draftAttachmentId, internalDraftAttachmentId]]),
   attachments: new Map([[attachmentId, internalAttachmentId]]),
+  composeTemplates: new Map([["Sign01", technicalTargetId]]),
 } as const;
 const context = {
   actor: { kind: "user", user: { id: userId } },
@@ -151,6 +153,7 @@ const draftFixture = {
   derivedFromMessageId: null,
   derivationKind: null,
   senderIdentityId: internalConversationId,
+  signatureTemplateId: null,
   to: [{ name: "Ada", address: "ada@example.test" }],
   cc: [],
   bcc: [],
@@ -181,6 +184,13 @@ const draftFixture = {
   createdAt: timestamp,
   updatedAt: timestamp,
 } as const;
+const mutableDraftFixture = {
+  ...draftFixture,
+  to: [...draftFixture.to],
+  cc: [...draftFixture.cc],
+  bcc: [...draftFixture.bcc],
+  attachments: [...draftFixture.attachments],
+};
 const collaborationFixture = {
   conversationId: internalConversationId,
   assignees: [{ id: userId, uid: "ada", displayName: "Ada Lovelace", avatarHash: null }],
@@ -246,6 +256,58 @@ beforeEach(() => {
 afterEach(() => mock.restore());
 
 describe("mail capabilities", () => {
+  test.each([undefined, null, "Sign01"])("draft.create resolves the signature choice %j", async (signatureTemplateId) => {
+    const materialize = spyOn(drafts, "materializeDraftSeed").mockResolvedValue({
+      ok: true,
+      data: { ...mutableDraftFixture, signatureTemplateId: signatureTemplateId ? technicalTargetId : null },
+    });
+    const action = mailCapabilities.actions["draft.create"];
+    const input = action.input.parse({
+      mailboxId,
+      senderIdentityId,
+      body: "Body only",
+      ...(signatureTemplateId !== undefined ? { signatureTemplateId } : {}),
+    });
+    const result = await action.run(input, { ...context, idempotencyKey: "signature-create" });
+    expect(result.ok).toBeTrue();
+    const expected = signatureTemplateId ? technicalTargetId : signatureTemplateId;
+    expect(materialize.mock.calls[0]?.[0].input.draft.signatureTemplateId).toBe(expected);
+    expect(materialize.mock.calls[0]?.[0].input.origin).toMatchObject({
+      kind: "compose",
+      input: { signatureTemplateId: expected, body: "Body only" },
+    });
+    expect(result).toMatchObject({ ok: true, data: { data: { signatureTemplateId: signatureTemplateId ?? null } } });
+  });
+
+  test.each([undefined, null, "Sign01"])("draft.update and draft.patch resolve the signature choice %j", async (signatureTemplateId) => {
+    spyOn(drafts, "getDraft").mockResolvedValue({ ok: true, data: mutableDraftFixture });
+    const update = spyOn(drafts, "updateDraft").mockResolvedValue({ ok: true, data: mutableDraftFixture });
+    const replace = mailCapabilities.actions["draft.update"];
+    const patch = mailCapabilities.actions["draft.patch"];
+    const choice = signatureTemplateId === undefined ? {} : { signatureTemplateId };
+    expect(
+      (
+        await replace.run(
+          replace.input.parse({ mailboxId, draftId, expectedRevision: 2, draft: { senderIdentityId, body: "Body only", ...choice } }),
+          context,
+        )
+      ).ok,
+    ).toBeTrue();
+    expect(
+      (await patch.run(patch.input.parse({ mailboxId, draftId, expectedRevision: 2, patch: { subject: "Changed", ...choice } }), context))
+        .ok,
+    ).toBeTrue();
+    for (const [request] of update.mock.calls)
+      expect(request.input.signatureTemplateId).toBe(signatureTemplateId ? technicalTargetId : signatureTemplateId);
+  });
+
+  test("draft.read projects the selected signature to a public ID", async () => {
+    spyOn(resourceParents, "draft").mockResolvedValue(internalMailboxId);
+    spyOn(drafts, "getDraft").mockResolvedValue({ ok: true, data: { ...mutableDraftFixture, signatureTemplateId: technicalTargetId } });
+    const result = await mailCapabilities.queries["draft.read"].run({ id: draftId }, context);
+    expect(result).toMatchObject({ ok: true, data: { data: { signatureTemplateId: "Sign01" } } });
+  });
+
   test("mailbox browsing pages beyond the former 200-mailbox ceiling", async () => {
     const rows = Array.from({ length: 205 }, (_, index) => ({
       id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,

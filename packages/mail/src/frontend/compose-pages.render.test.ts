@@ -10,9 +10,10 @@ import * as rail from "@k2b/cloud/services/rail-snapshot";
 import { createConfig } from "@k2b/ssr";
 import { err, fail, ok } from "@k2b/stdlib";
 import { Hono } from "hono";
-import { composeSafetyConfigSchema, type Mailbox, type MailDraft } from "../contracts";
+import { type ComposeTemplate, composeSafetyConfigSchema, type Mailbox, type MailDraft } from "../contracts";
 import * as access from "../service/access";
 import * as integrations from "../service/app-integrations";
+import * as composeTemplates from "../service/compose-templates";
 import * as draftUploads from "../service/draft-uploads";
 import * as drafts from "../service/drafts";
 import * as mailboxes from "../service/mailboxes";
@@ -88,6 +89,7 @@ const draft: MailDraft = {
   revision: 1,
   state: "draft",
   deliveryClass: "normal",
+  signatureTemplateId: null,
   createdAt: "2026-10-01T00:00:00.000Z",
   updatedAt: "2026-10-01T00:00:00.000Z",
 };
@@ -107,6 +109,8 @@ beforeEach(() => {
   );
   spies.push(spyOn(mailboxes, "getMailbox").mockResolvedValue(ok(mailbox)));
   spies.push(spyOn(senderIdentities, "listSenderIdentities").mockResolvedValue(ok([])));
+  spies.push(spyOn(composeTemplates, "listComposeTemplates").mockResolvedValue(ok([])));
+  spies.push(spyOn(composeTemplates, "listComposeSignatureDefaults").mockResolvedValue(ok([])));
   spies.push(spyOn(publicResources, "resolveMailboxPublicId").mockResolvedValue(draftId));
   spies.push(spyOn(drafts, "getDraft").mockResolvedValue(ok(draft)));
   spies.push(spyOn(draftUploads, "listUnfinishedDraftAttachmentUploads").mockResolvedValue(ok([])));
@@ -167,6 +171,48 @@ for (const page of pages) {
     );
     expect(response.status).toBe(200);
     expect(await response.text()).toContain(page.island);
+  });
+
+  test(`${page.island} loads only signature names and personal defaults, with empty lists on failure`, async () => {
+    spies.push(spyOn(access, "requireMailboxAccess").mockResolvedValue(ok({ scope: "mailbox", permission: "write", userId: user.id })));
+    const signatureId = "77777777-7777-4777-8777-777777777777";
+    const template: ComposeTemplate = {
+      id: signatureId,
+      mailboxId,
+      kind: "signature",
+      scope: "private",
+      ownerUserId: user.id,
+      name: "Personal sign-off",
+      shortcut: "sig",
+      body: "Private template source",
+      revision: 1,
+      archivedAt: null,
+      createdAt: draft.createdAt,
+      updatedAt: draft.updatedAt,
+    };
+    const templates = spyOn(composeTemplates, "listComposeTemplates").mockResolvedValue(
+      ok([template, { ...template, kind: "snippet", name: "Snippet name" }]),
+    );
+    const entry = { mailboxId, senderIdentityId: draft.senderIdentityId, templateId: signatureId, revision: 1, updatedAt: draft.updatedAt };
+    const defaults = spyOn(composeTemplates, "listComposeSignatureDefaults").mockResolvedValue(
+      ok([
+        { ...entry, userId: user.id },
+        { ...entry, userId: null },
+      ]),
+    );
+    spies.push(templates, defaults);
+    const html = await (await request(page.path)).text();
+    expect(templates).toHaveBeenCalledWith(expect.objectContaining({ actor: { kind: "user", user } }), mailboxId);
+    expect(defaults).toHaveBeenCalledWith(expect.objectContaining({ actor: { kind: "user", user } }), mailboxId);
+    expect(html).toContain("Personal sign-off");
+    expect(html).not.toContain("Private template source");
+    expect(html).not.toContain("Snippet name");
+    expect(html).toContain("personalDefaults");
+    templates.mockResolvedValue(fail(err.forbidden("Unavailable")));
+    defaults.mockResolvedValue(fail(err.forbidden("Unavailable")));
+    const fallback = await request(page.path);
+    expect(fallback.status).toBe(200);
+    expect(await fallback.text()).not.toContain("Personal sign-off");
   });
 
   test(`a reader without write access gets the shared 403 page instead of ${page.island}`, async () => {

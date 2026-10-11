@@ -48,6 +48,7 @@ import { openMailComposerCalendarDialog } from "./MailComposerCalendarDialog";
 import MailComposerEditor from "./MailComposerEditor";
 import MailComposerHistory from "./MailComposerHistory";
 import MailComposerLifecycleNotice from "./MailComposerLifecycleNotice";
+import MailComposerSignature from "./MailComposerSignature";
 import { mailDraftCollaborationCopy, openMailDraftCollaborationDialog } from "./MailDraftCollaborationDialog";
 import MailRecipientInput from "./MailRecipientInput";
 import { chooseScheduledSendTime } from "./MailScheduleDialog";
@@ -58,6 +59,7 @@ import { createMailComposerAttachmentManager, type UnfinishedDraftUpload } from 
 import { focusMailComposerEditorAtStart } from "./mail-composer-editor-focus";
 import { mailComposerMessages } from "./mail-composer-messages";
 import { reconcileMailComposerPanes } from "./mail-composer-panes";
+import { defaultSignatureTemplateId, type MailComposerSignatures } from "./mail-composer-signature";
 import { createMailComposerTransition } from "./mail-composer-transition";
 import { useMailContactDirectory } from "./mail-contact-directory-context";
 import { removeMailDraftSeed } from "./mail-draft-seed-store";
@@ -81,6 +83,7 @@ export default function MailComposer(props: {
   mailboxId: string;
   currentActor: { kind: "user" | "service_account"; id: string };
   identities: SenderIdentity[];
+  signatures: MailComposerSignatures;
   initialDraft?: MailDraft;
   initialSeed?: MailDraftSeed;
   unfinishedUploads?: UnfinishedDraftUpload[];
@@ -104,6 +107,7 @@ export default function MailComposer(props: {
   const initialContent = props.initialDraft
     ? {
         senderIdentityId: props.initialDraft.senderIdentityId,
+        signatureTemplateId: props.initialDraft.signatureTemplateId,
         to: props.initialDraft.to,
         cc: props.initialDraft.cc,
         bcc: props.initialDraft.bcc,
@@ -119,13 +123,20 @@ export default function MailComposer(props: {
   const verifiedIdentities = () => props.identities.filter((identity) => identity.status === "verified");
   const preferences = readMailUserPreferences(props.mailboxId);
   const [identityId, setIdentityId] = createSignal(initialContent.senderIdentityId);
+  const [signatureTemplateId, setSignatureTemplateId] = createSignal(initialContent.signatureTemplateId ?? null);
+  // Keep the row's presence fixed from the initial snapshot, including an unavailable shared signature.
+  const signatureRowVisible = () => props.signatures.templates.length > 0 || Boolean(initialContent.signatureTemplateId);
+  const senderDefaultSignatureId = () => defaultSignatureTemplateId(props.signatures, props.identities, identityId());
   const selectedIdentity = () => verifiedIdentities().find((identity) => identity.id === identityId()) ?? null;
   const identityMenuItems = createMemo<DropdownItem[]>(() =>
     verifiedIdentities().map((identity) => ({
       icon: identity.id === identityId() ? "ti ti-check" : "ti ti-user",
       label: `${identity.label} · ${identity.fromAddress}`,
       action: () => {
-        setIdentityId(identity.id);
+        if (identity.id !== identityId()) {
+          setIdentityId(identity.id);
+          setSignatureTemplateId(defaultSignatureTemplateId(props.signatures, props.identities, identity.id));
+        }
         writeMailSenderPreference(localStorage, props.mailboxId, identity.id);
       },
     })),
@@ -166,6 +177,7 @@ export default function MailComposer(props: {
 
   const content = (): DraftEditableContent => ({
     senderIdentityId: identityId(),
+    signatureTemplateId: signatureTemplateId(),
     to: parseMailRecipients(to()),
     cc: parseMailRecipients(cc()),
     bcc: parseMailRecipients(bcc()),
@@ -179,6 +191,7 @@ export default function MailComposer(props: {
 
   const applyDraftContent = (value: DraftEditableContent) => {
     setIdentityId(value.senderIdentityId);
+    setSignatureTemplateId(value.signatureTemplateId ?? null);
     setTo(formatMailRecipients(value.to));
     setCc(formatMailRecipients(value.cc));
     setBcc(formatMailRecipients(value.bcc));
@@ -1339,6 +1352,16 @@ export default function MailComposer(props: {
               : undefined
           }
         />
+
+        <Show when={signatureRowVisible()}>
+          <MailComposerSignature
+            signatures={props.signatures}
+            value={signatureTemplateId()}
+            senderDefaultId={senderDefaultSignatureId()}
+            disabled={!editable()}
+            onChange={setSignatureTemplateId}
+          />
+        </Show>
 
         <MailComposerAttachments
           attachments={() => draft()?.attachments ?? props.initialSeed?.attachments ?? []}

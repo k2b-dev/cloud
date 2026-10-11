@@ -751,7 +751,18 @@ const readOptionalVcard = async (input: Parameters<typeof readCliInput>[0]): Pro
 
 const receiptSetting = (value: "on" | "off" | undefined): boolean | undefined => (value === undefined ? undefined : value === "on");
 
+const draftSignatureChoice = (flags: { signature?: string; noSignature?: boolean }) => {
+  if (flags.signature && flags.noSignature) throw new Error("Use either --signature or --no-signature.");
+  return flags.noSignature
+    ? { signatureTemplateId: null }
+    : flags.signature
+      ? { signatureTemplateId: requireMailResourceId(flags.signature, "Signature template id") }
+      : {};
+};
+
 const draftEditableContentFlags = {
+  signature: flag.string({ description: "Signature template id; omitted keeps the default or current signature" }),
+  noSignature: flag.boolean({ name: "no-signature", description: "Use no signature" }),
   identity: flag.string({ required: true, description: "Sender identity id" }),
   to: flag.stringList({ description: "Recipient; repeatable" }),
   cc: flag.stringList({ description: "Cc recipient; repeatable" }),
@@ -777,7 +788,7 @@ const draftEditableContentFlags = {
 
 const composeTemplateVariableWidth = Math.max(...Object.keys(composeTemplateVariables).map((name) => name.length));
 const composeTemplateHelpDescription = [
-  "Signatures keep their Liquid variables until preview and send; snippets are filled in when they are inserted.",
+  "Signatures are chosen per draft with --signature or --no-signature and filled at preview and send; snippets are filled when inserted.",
   "Variables:",
   ...Object.entries(composeTemplateVariables).map(
     ([name, description]) => `  ${name.padEnd(composeTemplateVariableWidth)}  ${description}`,
@@ -796,6 +807,7 @@ const composeDraftExample = {
 } satisfies DraftEditableContentInput;
 
 const composeDraftHelpDescription = [
+  "Signatures are chosen per draft with signatureTemplateId (null for none); snippet rendering and suggestions return only body snippets.",
   "Draft JSON:",
   "  senderIdentityId is required: a verified sender identity ID from cld mail identity list.",
   '  to, cc, and bcc are arrays of { "address": string, "name"?: string|null } objects, not plain strings; name is optional; default [].',
@@ -844,6 +856,8 @@ const readDraftEditableContent = async (flags: {
   priority?: MailPriority;
   deliveryReceipt?: "on" | "off";
   readReceipt?: "on" | "off";
+  signature?: string;
+  noSignature?: boolean;
 }) => {
   if (!flags.identity) throw new Error("Missing sender identity.");
   const senderIdentityId = requireMailResourceId(flags.identity, "Sender identity id");
@@ -853,6 +867,7 @@ const readDraftEditableContent = async (flags: {
   });
   return {
     senderIdentityId,
+    ...draftSignatureChoice(flags),
     to: parseAddresses(flags.to),
     cc: parseAddresses(flags.cc),
     bcc: parseAddresses(flags.bcc),
@@ -2502,6 +2517,10 @@ const everydayCommands = (t: Translate) => {
       args: { conversation: arg.required({ description: t({ en: "Conversation ID", de: "Unterhaltungs-ID" }) }) },
       flags: {
         ...mailboxOption,
+        signature: flag.string({
+          description: t({ en: "Signature template ID instead of the default", de: "Signaturvorlagen-ID statt der Standardsignatur" }),
+        }),
+        noSignature: flag.boolean({ name: "no-signature", description: t({ en: "Send without a signature", de: "Ohne Signatur senden" }) }),
         all: flag.boolean({ description: t({ en: "Reply to all recipients", de: "Allen Empfängern antworten" }) }),
         message: flag.string({
           description: t({
@@ -2529,6 +2548,7 @@ const everydayCommands = (t: Translate) => {
           `/mailboxes/${mailbox.id}/drafts`,
           jsonRequest("POST", {
             senderIdentityId,
+            ...draftSignatureChoice(flags),
             to: [],
             cc: [],
             bcc: [],
@@ -2559,6 +2579,10 @@ const everydayCommands = (t: Translate) => {
       args: { conversation: arg.required({ description: t({ en: "Conversation ID", de: "Unterhaltungs-ID" }) }) },
       flags: {
         ...mailboxOption,
+        signature: flag.string({
+          description: t({ en: "Signature template ID instead of the default", de: "Signaturvorlagen-ID statt der Standardsignatur" }),
+        }),
+        noSignature: flag.boolean({ name: "no-signature", description: t({ en: "Send without a signature", de: "Ohne Signatur senden" }) }),
         to: flag.stringList({ description: t({ en: "Recipient; repeatable", de: "Empfänger; wiederholbar" }) }),
         cc: flag.stringList({ description: t({ en: "Cc recipient; repeatable", de: "Cc-Empfänger; wiederholbar" }) }),
         message: flag.string({
@@ -2593,6 +2617,7 @@ const everydayCommands = (t: Translate) => {
           `/mailboxes/${mailbox.id}/drafts`,
           jsonRequest("POST", {
             senderIdentityId,
+            ...draftSignatureChoice(flags),
             to: parseAddresses(flags.to),
             cc: parseAddresses(flags.cc),
             bcc: [],
@@ -3313,7 +3338,7 @@ const specialistCommands = {
       },
     }),
     command("compose snippet render", {
-      summary: "Render a visible signature or snippet for a draft",
+      summary: "Render a visible snippet for a draft",
       description: composeDraftHelpDescription,
       examples: ["cld mail compose snippet render Templ1 --draft-file draft.json"],
       args: {
@@ -3342,7 +3367,7 @@ const specialistCommands = {
       },
     }),
     command("compose suggestions", {
-      summary: "List rendered signatures and snippets matching a shortcut or name",
+      summary: "List rendered snippets matching a shortcut or name",
       description: composeDraftHelpDescription,
       examples: ["cld mail compose suggestions --draft-file draft.json"],
       args: {
@@ -6354,6 +6379,7 @@ const specialistCommands = {
         {
           ctx.print(`${draft.subject || "[No subject]"} (${draft.id})`);
           ctx.print(`State: ${draft.state}; revision ${draft.revision}; ${draft.attachments.length} attachment(s)`);
+          ctx.print(`Signature: ${draft.signatureTemplateId ?? "none"}`);
           ctx.print("");
           ctx.print(draft.body);
         }

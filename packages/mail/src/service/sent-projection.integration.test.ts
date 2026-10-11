@@ -13,7 +13,7 @@ import { rediscoverProviderBinding } from "./bindings";
 import { sha256Json } from "./canonical";
 import { executeOutboxSubmission, executeOutboxSubmissionWithHeartbeat, recoverStaleExecutions } from "./command-runtime";
 import { createActorCommand, createMailCommand } from "./commands";
-import { markComposeTemplateSegment } from "./compose-renderer";
+import { archiveComposeTemplate, createComposeTemplate } from "./compose-templates";
 import { imapSmtpConnector } from "./connectors";
 import { mapFetchedEnvelope } from "./connectors/imap-smtp";
 import { mergeConversations } from "./conversations";
@@ -32,10 +32,13 @@ import { createMailbox } from "./mailboxes";
 import { executeMaintenanceCommand } from "./maintenance-runtime";
 import { listConversations, listFolders } from "./messages";
 import { OUTBOX_MAX_ATTEMPTS } from "./outbound-delivery";
+import { outboundDraftSnapshotSchema } from "./outbound-mime";
 import { createProviderConnection } from "./provider-connections";
 import { getScheduledSend } from "./scheduled-sends";
 import { enqueueFolderReconciliation, hydrateMessageBatch, ingestEnvelope, syncFolderBatch } from "./sync-runtime";
 import { loadMailboxPageData, resolveWorkspaceRequest } from "./workspace";
+
+const markComposeTemplateSegment = (source: string): string => `\u2063${source}\u2064`;
 
 const suite = suiteFor("database", "nats", "valkey");
 
@@ -1114,6 +1117,172 @@ suite("mail sent message projection", () => {
     `;
     return outbox!;
   };
+
+  test("send snapshots put the selected signature between body and reply or forwarded history", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const inbound = await receive(provider, mailbox, "signature-order");
+      const signature = await createComposeTemplate({
+        context,
+        mailboxId: mailbox.mailboxId,
+        input: {
+          kind: "signature",
+          scope: "private",
+          name: "Send signature",
+          shortcut: "sendsig",
+          body: "Signed by {{ actor.display_name }}",
+        },
+      });
+      if (!signature.ok) throw new Error(signature.error.message);
+      for (const [index, history] of [
+        "",
+        "Ada wrote:\n> Original history",
+        "---------- Forwarded message ----------\nOriginal history",
+      ].entries()) {
+        const draft = await createDraft({
+          context,
+          mailboxId: mailbox.mailboxId,
+          input: {
+            cc: [],
+            bcc: [],
+            subject: "Signature test",
+            senderIdentityId: mailbox.identityId,
+            signatureTemplateId: signature.data.id,
+            to: [{ name: "Customer", address: CUSTOMER }],
+            body: ["My answer", history].filter(Boolean).join("\n\n"),
+            format: "markdown",
+            ...(history
+              ? {
+                  intent: index === 1 ? ("reply" as const) : ("forward" as const),
+                  conversationId: inbound.conversation_id,
+                  sourceMessageId: inbound.id,
+                }
+              : {}),
+          },
+        });
+        if (!draft.ok) throw new Error(draft.error.message);
+        expect(draft.data.body).not.toContain("Signed by");
+        const outbox = await schedule(mailbox, draft.data.id, draft.data.revision, `signature-order-${index}`);
+        const [row] = await sql<
+          { snapshot: unknown }[]
+        >`SELECT draft_snapshot AS snapshot FROM mail.outbox_submissions WHERE id = ${outbox.id}::uuid`;
+        const snapshot = outboundDraftSnapshotSchema.parse(row?.snapshot);
+        const text = snapshot.renderedText ?? "";
+        const html = snapshot.renderedHtml ?? "";
+        expect(text).toContain(`Signed by mail-sent-projection-${suffix}`);
+        expect(html).toContain('class="mail-signature"');
+        for (const output of [text, html]) {
+          expect(output.indexOf("My answer")).toBeLessThan(output.indexOf("Signed by"));
+          if (history) expect(output.indexOf("Signed by")).toBeLessThan(output.indexOf("Original history"));
+          expect(output.match(/Signed by/g)).toHaveLength(1);
+        }
+      }
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("sending a never-saved legacy draft fills its in-body signature once", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const signature = await createComposeTemplate({
+        context,
+        mailboxId: mailbox.mailboxId,
+        input: {
+          kind: "signature",
+          scope: "private",
+          name: "Legacy signature",
+          shortcut: "legacysig",
+          body: "Legacy {{ actor.display_name }}",
+        },
+      });
+      if (!signature.ok) throw new Error(signature.error.message);
+      const body = `Answer\n\n${markComposeTemplateSegment(signature.data.body)}`;
+      const draft = await createDraft({
+        context,
+        mailboxId: mailbox.mailboxId,
+        input: {
+          cc: [],
+          bcc: [],
+          subject: "Signature test",
+          senderIdentityId: mailbox.identityId,
+          signatureTemplateId: null,
+          to: [{ name: null, address: CUSTOMER }],
+          body,
+          format: "markdown",
+        },
+      });
+      if (!draft.ok) throw new Error(draft.error.message);
+      const outbox = await schedule(mailbox, draft.data.id, draft.data.revision, "legacy-signature");
+      const [row] = await sql<
+        { snapshot: unknown }[]
+      >`SELECT draft_snapshot AS snapshot FROM mail.outbox_submissions WHERE id = ${outbox.id}::uuid`;
+      const snapshot = outboundDraftSnapshotSchema.parse(row?.snapshot);
+      expect(snapshot.renderedText).toBe(`Answer\n\nLegacy mail-sent-projection-${suffix}`);
+      expect(snapshot.renderedHtml?.match(/Legacy /g)).toHaveLength(1);
+      const [stored] = await sql<
+        { body: string; signature: string | null }[]
+      >`SELECT body_markdown AS body, signature_template_id AS signature FROM mail.drafts WHERE id = ${draft.data.id}::uuid`;
+      expect(stored).toEqual({ body, signature: null });
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("archived selected signatures are omitted from the send snapshot", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const signature = await createComposeTemplate({
+        context,
+        mailboxId: mailbox.mailboxId,
+        input: {
+          kind: "signature",
+          scope: "private",
+          name: "Archived signature",
+          shortcut: "archivedsig",
+          body: "Archived signature",
+        },
+      });
+      if (!signature.ok) throw new Error(signature.error.message);
+      const draft = await createDraft({
+        context,
+        mailboxId: mailbox.mailboxId,
+        input: {
+          cc: [],
+          bcc: [],
+          subject: "Signature test",
+          senderIdentityId: mailbox.identityId,
+          signatureTemplateId: signature.data.id,
+          to: [{ name: null, address: CUSTOMER }],
+          body: "Answer",
+          format: "plain",
+        },
+      });
+      if (!draft.ok) throw new Error(draft.error.message);
+      expect(
+        (
+          await archiveComposeTemplate({
+            context,
+            mailboxId: mailbox.mailboxId,
+            templateId: signature.data.id,
+            input: { expectedRevision: signature.data.revision },
+          })
+        ).ok,
+      ).toBeTrue();
+      const outbox = await schedule(mailbox, draft.data.id, draft.data.revision, "archived-signature");
+      const [row] = await sql<
+        { snapshot: unknown }[]
+      >`SELECT draft_snapshot AS snapshot FROM mail.outbox_submissions WHERE id = ${outbox.id}::uuid`;
+      const snapshot = outboundDraftSnapshotSchema.parse(row?.snapshot);
+      expect(snapshot.renderedText).toBe("Answer");
+      expect(snapshot.renderedHtml).toBeNull();
+    } finally {
+      provider.restore();
+    }
+  });
 
   /** Leaves the outbox as a worker does that claimed it eleven minutes ago and then stopped. */
   const stopWorkerAfterClaim = async (outboxId: string, state: "sending" | "unknown", effectStarted: boolean) => {

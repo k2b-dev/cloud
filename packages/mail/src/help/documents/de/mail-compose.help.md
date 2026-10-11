@@ -105,7 +105,11 @@ Plant, sendet oder verwirft eine andere Sitzung den Entwurf, lädt jeder geöffn
 
 ## Signaturen und Textbausteine verwenden {icon="pencil"}
 
-Tippe im Text `/`, um verfügbare Signaturen und Textbausteine zu suchen. Mail fügt die gewählte Vorlage in den Entwurf ein, wo du sie bearbeiten oder entfernen kannst.
+Unter deinem Text zeigt der Editor **Signatur**, wenn eine Signatur verfügbar ist. Neue Nachrichten, Antworten und Weiterleitungen beginnen mit der Standardsignatur der Absenderidentität. Ein persönlicher Standard hat Vorrang vor dem Standard des Postfachs für diese Absenderidentität. Wähle eine andere Signatur oder **Keine Signatur**. Wechselst du die Absenderidentität, wechselt die Signatur zu deren Standard.
+
+Signaturen bleiben vom bearbeitbaren Text getrennt. Die Vorschau und die gesendete Nachricht zeigen die Signatur nach deinem Text und vor der zitierten oder weitergeleiteten Nachricht. Öffnest du einen älteren Entwurf, dessen Signatur noch im Text steht, verschiebt Mail die Signatur in die Signaturauswahl.
+
+Tippe im Text `/`, um ausschließlich Textbausteine zu suchen. Mail fügt den gewählten Textbaustein in den Text ein, wo du ihn bearbeiten oder entfernen kannst.
 
 - **Textbaustein:** Fügt wiederverwendbaren Text mit bereits eingesetzten Werten ein. Werte wie `{{ actor.email }}` erscheinen als normaler Text. In Markdown-Nachrichten setzt Mail nur vor Zeichen einen Backslash, die sonst die Formatierung ändern würden, zum Beispiel `\*`.
 - **Signatur:** Behält ihre sicheren Liquid-Variablen bis zur Vorschau und zum Senden.
@@ -138,7 +142,7 @@ Viele Grüße
 Trenne die Adressen in `message.to` und `message.cc` mit `join`:
 `{{ message.to | join: ", " }}`.
 
-Hat eine bestätigte Absenderidentität eine Standardsignatur, fügt Mail sie automatisch in neue Nachrichten, Antworten und Weiterleitungen ein. In einer Antwort oder Weiterleitung setzt Mail die Signatur vor den zitierten Verlauf. Ein persönlicher Standard ersetzt für diese Absenderidentität den Standard des Postfachs. Den eingefügten Quelltext kannst du weiter bearbeiten. Signaturen sind weder Pflicht noch gesperrt. Löschst du nur einen Teil einer Signatur, erkennt Mail den Rest vielleicht nicht mehr als Signatur. Mail versendet den Rest dann so, wie er dasteht, und warnt dich vor dem Senden vor den Platzhaltern darin.
+Mail warnt dich vor dem Senden vor Platzhaltern, die im Text stehen bleiben und unverändert versendet würden.
 
 Mit Zugriff **Verwalten** änderst du Vorlagen und Standards unter **Einstellungen → Schreiben**. Wähle dort **Design bearbeiten**, um den CSS-Editor des Postfachs zu öffnen. Seine Vorschau aktualisiert sich aus dem aktuellen, nicht gespeicherten CSS. Die **Vorschau** im Editor nutzt dieselbe Darstellung wie die Zustellung.
 

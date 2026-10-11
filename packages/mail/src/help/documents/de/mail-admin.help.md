@@ -94,7 +94,7 @@ Speichert der Anbieter gesendete Nachrichten nicht, gibt es keine Kopie.
 
 Mail fügt die Standard-Empfänger für Cc und Bcc hinzu, wenn jemand mit dieser Absenderidentität eine neue Nachricht, Antwort oder Weiterleitung beginnt. Mail entfernt Duplikate und Adressen, die schon unter An, Cc oder Bcc stehen. Automatische Antworten und Workflow-Nachrichten bekommen diese Standards nicht, und die schreibende Person kann sie vor dem Senden entfernen.
 
-Mail fügt eine Postfachsignatur in neue Nachrichten, Antworten und Weiterleitungen ein. Wechselst du später die Absenderidentität, ändert das einen bearbeiteten Entwurf nicht. Eine persönliche Signatur hat Vorrang.
+Neue Nachrichten, Antworten und Weiterleitungen beginnen mit der Standardsignatur der Absenderidentität, getrennt vom Text. Ein persönlicher Standard hat Vorrang vor dem Standard des Postfachs. Wechselst du die Absenderidentität im Editor, wechselt die Signatur zu deren Standard.
 
 Unter **Einstellungen → Allgemein** trägst du vertrauenswürdige interne E-Mail-Domains ein und legst fest, ab wann Mail vor vielen Empfängern warnt. Vor externen Empfängern warnt Mail nur, wenn mindestens eine interne Domain eingetragen ist. Diese Einstellungen leiten die letzte Prüfung vor dem Versand. Sie blockieren keine legitime Zustellung und ändern keine Empfänger automatisch.
 
@@ -254,7 +254,7 @@ Erstelle unter **Einstellungen → Schreiben** private Signaturen und Textbauste
 
 Markdown-Nachrichten bekommen immer das eingebaute lesbare E-Mail-Design. **E-Mail-Design** ergänzt geprüftes CSS des Postfachs für das Firmendesign. Es ersetzt nicht das sichere Grunddesign. Prüfe das Ergebnis in der **Vorschau** des Editors, bevor du dich auf eine CSS-Änderung verlässt.
 
-Das CSS des Postfachs folgt auf das eingebaute Design. Jede seiner Regeln setzt sich für die Elemente, die sie auswählt, gegen das eingebaute Design durch. So ändert etwa `a { color: #262626; }` die Farbe aller Links. Für die ganze Nachricht nutzt du `.mail-content`, zum Beispiel `.mail-content { font-size: 16px; }`. Selektoren können die Elemente nutzen, die die E-Mail behält, und die Klasse `.mail-content`. Andere Klassen, IDs, Pseudoklassen wie `:hover`, `@`-Regeln und `!important` werden nicht angenommen. Werte können keine Bilder laden, etwa mit `url()` oder `image-set()`, und keine Backslash-Escapes enthalten.
+Das CSS des Postfachs folgt auf das eingebaute Design. Jede seiner Regeln setzt sich für die Elemente, die sie auswählt, gegen das eingebaute Design durch. So ändert etwa `a { color: #262626; }` die Farbe aller Links. Für die ganze Nachricht nutzt du `.mail-content`, zum Beispiel `.mail-content { font-size: 16px; }`. Für die Signatur nutzt du `.mail-signature`, zum Beispiel `.mail-signature { color: #52525b; }`. Selektoren können die Elemente nutzen, die die E-Mail behält, und die Klassen `.mail-content` und `.mail-signature`. Andere Klassen, IDs, Pseudoklassen wie `:hover`, `@`-Regeln und `!important` werden nicht angenommen. Werte können keine Bilder laden, etwa mit `url()` oder `image-set()`, und keine Backslash-Escapes enthalten.
 
 ## Automatische Antworten und Referenzen einrichten {icon="settings"}
 

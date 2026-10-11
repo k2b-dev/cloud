@@ -28,13 +28,12 @@ import {
   updateMailboxComposeStyleInputSchema,
 } from "../contracts";
 import { withShortIdDb } from "../lib/short-id";
-import { requireMailboxAccess, requireMailboxPermission } from "./access";
+import { draftVisibleTo, requireMailboxAccess, requireMailboxPermission } from "./access";
 import { actorRefFromRequest, auditActorFromRequest, type MailRequestContext, userBackedActor } from "./auth";
 import { sha256Text } from "./canonical";
 import {
   type ComposeRenderContext,
   composeFormattingWarnings,
-  markComposeTemplateSegment,
   type RenderedComposeContent,
   renderComposeContent,
   renderComposeTemplateSource,
@@ -44,7 +43,10 @@ import {
 
 type SqlClient = typeof sql;
 
-const internalDraftEditableContentSchema = draftEditableContentInputSchema.extend({ senderIdentityId: z.string().uuid() });
+const internalDraftEditableContentSchema = draftEditableContentInputSchema.extend({
+  senderIdentityId: z.string().uuid(),
+  signatureTemplateId: z.string().uuid().nullable().optional(),
+});
 const internalSetComposeSignatureDefaultInputSchema = setComposeSignatureDefaultInputSchema.extend({
   templateId: z.string().uuid().nullable(),
 });
@@ -744,7 +746,15 @@ export const renderComposeDraft = async (params: {
     actor: params.actor,
   });
   if (!context.ok) return context;
+  const [signature] = parsed.data.signatureTemplateId
+    ? await db<{ body_template: string }[]>`
+        SELECT body_template FROM mail.compose_templates
+        WHERE id = ${parsed.data.signatureTemplateId}::uuid AND mailbox_id = ${params.mailboxId}::uuid
+          AND kind = 'signature' AND archived_at IS NULL
+      `
+    : [];
   return renderComposeContent({
+    signature: signature?.body_template ?? null,
     body: parsed.data.body,
     format: parsed.data.format,
     customCss: await mailboxStyleSource(db, params.mailboxId),
@@ -758,11 +768,28 @@ export const previewComposeDraft = async (params: {
   mailboxId: string;
   input: ComposePreviewInput;
 }): Promise<Result<ComposePreview>> => {
+  const parsed = internalDraftEditableContentSchema.safeParse(params.input.draft);
+  if (!parsed.success) return fail(err.badInput(parsed.error.issues[0]?.message ?? "Invalid draft"));
   const allowed = await requireMailboxAccess(params.context, params.mailboxId, "write");
   if (!allowed.ok) return allowed;
+  if (parsed.data.signatureTemplateId) {
+    const ownerUserId = privateOwnerId(params.context);
+    const [signature] = await sql<{ id: string }[]>`
+      SELECT template.id FROM mail.compose_templates template
+      WHERE template.id = ${parsed.data.signatureTemplateId}::uuid
+        AND template.mailbox_id = ${params.mailboxId}::uuid
+        AND template.kind = 'signature' AND template.archived_at IS NULL
+        AND (template.scope = 'mailbox' OR template.owner_user_id = ${ownerUserId}::uuid OR EXISTS (
+          SELECT 1 FROM mail.drafts d
+          WHERE d.mailbox_id = ${params.mailboxId}::uuid AND d.signature_template_id = template.id
+            AND ${draftVisibleTo(allowed.data, sql`d`)}
+        ))
+    `;
+    if (!signature) return fail(err.badInput("The selected signature is not available"));
+  }
   const rendered = await renderComposeDraft({
     mailboxId: params.mailboxId,
-    draft: params.input.draft,
+    draft: parsed.data,
     actor: actorRefFromRequest(params.context),
     renderLiquid: true,
   });
@@ -793,7 +820,8 @@ export const renderComposeSnippet = async (params: {
       AND (template.scope = 'mailbox' OR template.owner_user_id = ${ownerUserId}::uuid)
   `;
   if (!template) return fail(err.notFound("Compose template"));
-  if (template.kind === "signature") return ok({ markdown: markComposeTemplateSegment(template.body_template) });
+  if (template.kind === "signature")
+    return fail(err.badInput("Signatures are not inserted into the body; choose one with signatureTemplateId on the draft"));
   const context = await composeRenderContext({
     db: sql,
     mailboxId: params.mailboxId,
@@ -824,6 +852,7 @@ export const renderComposeSuggestions = async (params: {
       FROM mail.compose_templates source
       WHERE source.mailbox_id = ${params.mailboxId}::uuid
         AND source.archived_at IS NULL
+        AND source.kind = 'snippet'
         AND (source.scope = 'mailbox' OR source.owner_user_id = ${ownerUserId}::uuid)
       ORDER BY
         source.shortcut,
@@ -852,10 +881,7 @@ export const renderComposeSuggestions = async (params: {
   if (!context.ok) return context;
   const suggestions: ComposeSuggestion[] = [];
   for (const template of rows) {
-    const rendered =
-      template.kind === "signature"
-        ? ok(markComposeTemplateSegment(template.body_template))
-        : renderComposeTemplateSource(template.body_template, context.data, parsed.data.draft.format);
+    const rendered = renderComposeTemplateSource(template.body_template, context.data, parsed.data.draft.format);
     if (!rendered.ok) return rendered;
     suggestions.push({
       templateId: template.id,
@@ -868,15 +894,45 @@ export const renderComposeSuggestions = async (params: {
   return ok(suggestions);
 };
 
-export const resolveDefaultSignatureSource = async (params: {
+export const selectableSignatures = async (
+  db: SqlClient,
+  context: MailRequestContext,
+  mailboxId: string,
+): Promise<Array<{ id: string; body: string }>> => {
+  const ownerUserId = privateOwnerId(context);
+  return db<{ id: string; body: string }[]>`
+    SELECT id, body_template AS body FROM mail.compose_templates
+    WHERE mailbox_id = ${mailboxId}::uuid AND kind = 'signature' AND archived_at IS NULL
+      AND (scope = 'mailbox' OR owner_user_id = ${ownerUserId}::uuid)
+    ORDER BY id
+  `;
+};
+
+export const requireSelectableSignature = async (
+  db: SqlClient,
+  context: MailRequestContext,
+  mailboxId: string,
+  templateId: string,
+): Promise<Result<void>> => {
+  const ownerUserId = privateOwnerId(context);
+  const [template] = await db<{ id: string }[]>`
+    SELECT id FROM mail.compose_templates
+    WHERE id = ${templateId}::uuid AND mailbox_id = ${mailboxId}::uuid
+      AND kind = 'signature' AND archived_at IS NULL
+      AND (scope = 'mailbox' OR owner_user_id = ${ownerUserId}::uuid)
+  `;
+  return template ? ok() : fail(err.badInput("The selected signature is not available"));
+};
+
+export const resolveDefaultSignatureTemplateId = async (params: {
   db: SqlClient;
   context: MailRequestContext;
   mailboxId: string;
   senderIdentityId: string;
 }): Promise<string | null> => {
   const ownerUserId = privateOwnerId(params.context);
-  const [template] = await params.db<{ body_template: string }[]>`
-    SELECT template.body_template
+  const [template] = await params.db<{ id: string }[]>`
+    SELECT template.id
     FROM mail.compose_signature_defaults default_signature
     JOIN mail.compose_templates template ON template.id = default_signature.template_id
     WHERE default_signature.mailbox_id = ${params.mailboxId}::uuid
@@ -891,7 +947,7 @@ export const resolveDefaultSignatureSource = async (params: {
     ORDER BY (default_signature.user_id IS NOT NULL) DESC
     LIMIT 1
   `;
-  return template ? markComposeTemplateSegment(template.body_template) : null;
+  return template?.id ?? null;
 };
 
 const escapeHtml = (value: string): string =>

@@ -118,6 +118,17 @@ const expectedIds = [
 ];
 
 describe("mailHelp", () => {
+  test("documents the separate signature choice and CSS selectors in both languages", () => {
+    const english = mailHelp.getMarkdown("mail-compose");
+    const german = mailHelp.getMarkdown("mail-compose", "de");
+    expect(english).toContain("**Signature** below your text");
+    expect(english).toContain("**No signature**");
+    expect(english).toContain("Switching the sender switches to that sender's default");
+    expect(english).toContain("search snippets only");
+    expect(german).toContain("**Keine Signatur**");
+    expect(german).toContain("Signaturen bleiben vom bearbeitbaren Text getrennt");
+    for (const locale of ["en", "de"]) expect(mailHelp.getMarkdown("mail-admin", locale)).toContain(".mail-signature { color: #52525b; }");
+  });
   test("compose template create help marks required flags and describes every variable", async () => {
     const help = await renderMailCliHelp(["compose", "template", "create"]);
     for (const flag of ["kind", "name", "shortcut", "body"]) {

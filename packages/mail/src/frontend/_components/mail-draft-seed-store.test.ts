@@ -14,19 +14,19 @@ const seed = (createdAt = new Date().toISOString()): MailDraftSeed => ({
   derivedFromMessageId: null,
   derivationKind: null,
   content: {
+    signatureTemplateId: "Sign01",
     senderIdentityId: "Send01",
     to: [],
     cc: [],
     bcc: [],
     subject: "",
-    body: "Default signature",
+    body: "",
     format: "markdown",
     priority: "normal",
     requestDeliveryReceipt: false,
     requestReadReceipt: false,
   },
   attachments: [],
-  initialSignatureSource: "Default signature",
   origin: {
     kind: "compose",
     input: {

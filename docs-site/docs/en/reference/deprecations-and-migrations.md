@@ -5,10 +5,28 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-10-10
+updated: 2026-10-11
 ---
 
 # Deprecations and migrations
+
+## Mail drafts keep the signature outside the body
+
+Mail drafts now store a signature choice separately from the editable body.
+Preview and delivery place it after the text and before quoted or forwarded
+history. The composer offers **Signature** below the text, including **No
+signature**; switching the sender selects that sender's default.
+
+Drafts and draft seeds no longer return `initialSignatureSource`. Use
+`signatureTemplateId` instead: a signature template ID, or `null` for none.
+On create, omitting it uses the sender's default; on update or patch, omitting
+it keeps the current choice. Keep signatures out of the body. Compose
+suggestions return snippets only, and render-snippet refuses signatures.
+
+Existing drafts move recognized signatures out of the body when opened or
+saved. Drafts that have not yet been saved again still send correctly. No
+operator action is needed beyond deploying Mail: its migration adds one
+nullable column.
 
 ## Studio source writes save one file per call
 

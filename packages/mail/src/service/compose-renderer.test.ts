@@ -5,13 +5,16 @@ import {
   composeFormattingWarnings,
   DEFAULT_MAIL_CSS,
   hasUnrenderedTemplateSyntax,
-  markComposeTemplateSegment,
+  moveSignatureSegment,
   removeOrphanComposeSegmentMarks,
   renderComposeContent,
   renderComposeTemplateSource,
+  splitQuotedHistory,
   validateComposeCss,
   validateComposeTemplateSource,
 } from "./compose-renderer";
+
+const markComposeTemplateSegment = (source: string): string => `\u2063${source}\u2064`;
 
 const context: ComposeRenderContext = {
   actor: { display_name: "Ada Lovelace", email: "ada@example.test" },
@@ -507,7 +510,7 @@ describe("compose renderer", () => {
 
   test("keeps the built-in stylesheet valid", () => {
     // Mailbox CSS may not use pseudo-classes; the built-in design uses `:where()` only to lower its specificity.
-    expect(validateComposeCss(DEFAULT_MAIL_CSS.replace(":where(.mail-content)", ".mail-content")).ok).toBe(true);
+    expect(validateComposeCss(DEFAULT_MAIL_CSS.replace(/:where\((\.[a-z-]+)\)/g, "$1")).ok).toBe(true);
   });
 
   test("keeps plain text plain while resolving Liquid", () => {
@@ -633,5 +636,179 @@ describe("compose renderer", () => {
     const many = Array.from({ length: 50 }, (_, index) => `<x-tag${index}>t</x-tag${index}>`).join(" ");
     expect(composeFormattingWarnings(many, "markdown")).toHaveLength(MAX_COMPOSE_FORMATTING_WARNINGS);
     expect(composeFormattingWarnings(`<${"x".repeat(200)}>t`, "markdown")[0]?.element).toHaveLength(64);
+  });
+});
+
+describe("separate draft signatures", () => {
+  test.each([
+    ["Hello", "Hello", ""],
+    ["Hello\n\n", "Hello", ""],
+    ["Hello\n\n---------- Forwarded message ----------\nOld", "Hello", "---------- Forwarded message ----------\nOld"],
+    ["Hello\n\n---------- Weitergeleitete Nachricht ----------\nAlt", "Hello", "---------- Weitergeleitete Nachricht ----------\nAlt"],
+    ["Hello\n\nAda wrote:\n> Old\n> text", "Hello", "Ada wrote:\n> Old\n> text"],
+    ["Hallo\n\nAm Montag schrieb Ada:\n> Alt", "Hallo", "Am Montag schrieb Ada:\n> Alt"],
+    ["> Old\n\nMy answer", "> Old\n\nMy answer", ""],
+    ["Hello\n\n> Old\n\n \n", "Hello", "> Old\n\n \n"],
+    ["Hello\n\nNot attribution\n> Old", "Hello\n\nNot attribution", "> Old"],
+    ["\n\n> Old", "", "> Old"],
+    ["Hello\n> First\n\n> Last", "Hello\n> First", "> Last"],
+  ])("splits quoted history in %j", (body, reply, history) => {
+    expect(splitQuotedHistory(body)).toEqual({ reply, history });
+  });
+
+  test.each([
+    "Ada wrote:\n> Original",
+    "---------- Forwarded message ----------\nOriginal",
+    "---------- Weitergeleitete Nachricht ----------\nOriginal",
+  ])("renders the signature before %s", (history) => {
+    const result = renderComposeContent({
+      body: `Answer\n\n${history}`,
+      signature: "Regards **{{ actor.display_name }}**",
+      format: "markdown",
+      customCss: "",
+      context,
+      renderLiquid: false,
+    });
+    expect(result.ok).toBeTrue();
+    if (!result.ok) throw new Error(result.error.message);
+    const html = result.data.html ?? "";
+    expect(html).toContain('class="mail-signature"');
+    expect(html.indexOf("Answer")).toBeLessThan(html.indexOf('class="mail-signature"'));
+    expect(html.indexOf("Ada Lovelace")).toBeLessThan(html.indexOf("Original"));
+    expect(result.data.text.indexOf("Answer")).toBeLessThan(result.data.text.indexOf("Regards Ada Lovelace"));
+    expect(result.data.text.indexOf("Regards Ada Lovelace")).toBeLessThan(result.data.text.indexOf("Original"));
+  });
+
+  test("plain signatures fill Liquid and follow bottom-posted text", () => {
+    const params = { signature: "Regards {{ sender.email }}", format: "plain" as const, customCss: "", context, renderLiquid: false };
+    expect(renderComposeContent({ ...params, body: "Answer\n\nAda wrote:\n> Original" })).toEqual({
+      ok: true,
+      data: { html: null, text: "Answer\n\nRegards support@example.test\n\nAda wrote:\n> Original" },
+    });
+    expect(renderComposeContent({ ...params, body: "> Original\n\nAnswer" })).toMatchObject({
+      ok: true,
+      data: { text: "> Original\n\nAnswer\n\nRegards support@example.test" },
+    });
+  });
+
+  test("broken signatures return the signature failure", () => {
+    expect(
+      renderComposeContent({
+        body: "Answer",
+        signature: "{% if actor.email %}",
+        format: "markdown",
+        customCss: "",
+        context,
+        renderLiquid: false,
+      }),
+    ).toMatchObject({ ok: false, error: { composeRender: { reason: "signatureFailed" } } });
+  });
+
+  test("signature selectors are allowed and style only signature paragraphs", () => {
+    for (const selector of [".mail-signature", ".mail-signature p", ".mail-content .mail-signature a"])
+      expect(validateComposeCss(`${selector} { color: #52525b; }`).ok).toBeTrue();
+    expect(validateComposeCss(".other p { color: #52525b; }")).toMatchObject({
+      ok: false,
+      error: { message: "Only .mail-content and .mail-signature class selectors are allowed" },
+    });
+    const result = renderComposeContent({
+      body: "Answer\n\nAda wrote:\n> Original",
+      signature: "Regards",
+      format: "markdown",
+      customCss: ".mail-signature p { color: #52525b; }",
+      context,
+      renderLiquid: true,
+    });
+    expect(result.ok).toBeTrue();
+    if (!result.ok) throw new Error(result.error.message);
+    expect(result.data.html).toMatch(/<div class="mail-signature"[^>]*><p[^>]*color:#52525b[^>]*>Regards<\/p>\s*<\/div>/);
+    expect(result.data.html?.match(/color:#52525b/g)).toHaveLength(1);
+  });
+
+  test("combined source and fragment limits include the signature", () => {
+    expect(
+      renderComposeContent({
+        body: "x".repeat(3 * 1024 * 1024),
+        signature: "Regards",
+        format: "plain",
+        customCss: "",
+        context,
+        renderLiquid: false,
+      }),
+    ).toMatchObject({ ok: false, error: { composeRender: { reason: "tooLarge" } } });
+    expect(
+      renderComposeContent({
+        body: "x\n".repeat(4_990),
+        signature: "y\n".repeat(20),
+        format: "markdown",
+        customCss: "",
+        context,
+        renderLiquid: false,
+      }),
+    ).toMatchObject({ ok: false, error: { composeRender: { reason: "tooManyLines" } } });
+    expect(
+      renderComposeContent({
+        body: "<span>x</span>".repeat(600),
+        signature: "<span>y</span>".repeat(400),
+        format: "markdown",
+        customCss: "",
+        context,
+        renderLiquid: false,
+      }),
+    ).toMatchObject({ ok: false, error: { composeRender: { reason: "tooComplex" } } });
+  });
+
+  test("the selected signature shares the Liquid budget with legacy segments", () => {
+    let reads = 0;
+    const slowContext: ComposeRenderContext = {
+      ...context,
+      actor: {
+        ...context.actor,
+        get display_name() {
+          reads += 1;
+          const start = performance.now();
+          while (performance.now() - start < 1) {}
+          return "";
+        },
+      },
+    };
+    const segment = markComposeTemplateSegment("{% for i in (1..100) %}{{ actor.display_name }}{% endfor %}");
+    const signature = "{% for i in (1..600) %}{{ actor.display_name }}{% endfor %}";
+    const result = renderComposeContent({
+      body: segment.repeat(6),
+      signature,
+      format: "markdown",
+      customCss: "",
+      context: slowContext,
+      renderLiquid: true,
+    });
+    expect(result).toMatchObject({ ok: false, error: { composeRender: { reason: "signatureFailed" } } });
+    expect(reads).toBeGreaterThan(600);
+    expect(reads).toBeLessThan(1_200);
+  });
+
+  test("null signature preserves rendering byte for byte", () => {
+    for (const format of ["plain", "markdown"] as const) {
+      const params = { body: "Hello  \n\n> Quote\n", format, customCss: "", context, renderLiquid: true };
+      expect(renderComposeContent({ ...params, signature: null })).toEqual(renderComposeContent(params));
+    }
+  });
+
+  test("moves only the first exact complete legacy signature and one separator", () => {
+    const signatures = [{ id: "sig", body: "Regards {{ actor.display_name }}" }];
+    const segment = markComposeTemplateSegment(signatures[0]!.body);
+    expect(moveSignatureSegment(`Answer\n\n${segment}\n\nAda wrote:\n> Old`, signatures)).toEqual({
+      body: "Answer\n\nAda wrote:\n> Old",
+      signatureTemplateId: "sig",
+    });
+    expect(moveSignatureSegment(`Answer\n\n${segment}`, signatures)).toEqual({ body: "Answer", signatureTemplateId: "sig" });
+    expect(moveSignatureSegment(`${segment}\n\n> Old`, signatures)).toEqual({ body: "> Old", signatureTemplateId: "sig" });
+    expect(moveSignatureSegment(`${segment}\n\n${segment}`, signatures)).toEqual({ body: segment, signatureTemplateId: "sig" });
+    expect(moveSignatureSegment(markComposeTemplateSegment("Different"), signatures)).toBeNull();
+    expect(moveSignatureSegment("\u2063Regards {{ actor.display_name }}", signatures)).toBeNull();
+    expect(moveSignatureSegment(`\u2064Answer\n\n${segment}\u2063`, signatures)).toEqual({
+      body: "\u2064Answer\u2063",
+      signatureTemplateId: "sig",
+    });
   });
 });

@@ -160,7 +160,11 @@ function ComposeTemplateEditor(props: {
             />
             <TextInput
               label={messages().shortcut}
-              description={messages().shortcutDescription({ shortcut: shortcut() || messages().shortcutExample })}
+              description={
+                kind() === "signature"
+                  ? messages().signatureShortcutDescription
+                  : messages().shortcutDescription({ shortcut: shortcut() || messages().shortcutExample })
+              }
               value={shortcut}
               onValueChange={setShortcut}
               prefix="/"
@@ -297,6 +301,7 @@ function EmailDesignEditor(props: {
                 srcdoc={`<!doctype html><html><head><meta charset="utf-8"><style>
                   body { margin: 0; padding: 24px; color: #18181b; background: #fff; font: 15px/1.55 system-ui, sans-serif; }
                   .mail-content { max-width: 640px; margin: 0 auto; }
+                  .mail-signature { margin-top: 16px; }
                   h1 { margin: 0 0 16px; font-size: 22px; }
                   p { margin: 0 0 14px; }
                   a { color: #0f766e; }
@@ -307,7 +312,7 @@ function EmailDesignEditor(props: {
                   <p>${messages().previewGreeting}</p>
                   <p>${messages().previewBody}</p>
                   <blockquote>${messages().previewQuote}</blockquote>
-                  <p>${messages().previewClosing}<br>${messages().previewTeam}</p>
+                  <div class="mail-signature">${messages().previewClosing}<br>${messages().previewTeam}</div>
                 </main></body></html>`}
               />
             </div>

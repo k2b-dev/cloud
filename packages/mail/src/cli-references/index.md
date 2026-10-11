@@ -150,6 +150,8 @@ cld --json mail forward <conversation-id> --to colleague@example.com --body "FYI
 cld --json mail send <draft-id> --wait
 ```
 
+`reply` and `forward` accept `--signature <template-id>` or `--no-signature` to choose the signature separately from the body.
+
 Both use the conversation's latest message unless `--message` names another, and the mailbox's verified default identity unless `--identity` names another. `reply --all` replies to all recipients. See [Mail compose and drafts](compose.md) for new messages, attachments, scheduling, and safety review.
 
 ## Discuss a conversation
