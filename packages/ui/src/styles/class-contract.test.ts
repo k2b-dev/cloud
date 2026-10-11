@@ -194,6 +194,19 @@ describe("@k2b/ui class extraction coverage", () => {
   });
 });
 
+/** Splits at separators outside parentheses, so a pseudo-class argument stays in its compound. */
+const splitTopLevel = (text: string, separator: RegExp): string[] => {
+  const parts = [""];
+  let depth = 0;
+  for (const char of text) {
+    if (char === "(") depth += 1;
+    if (char === ")") depth -= 1;
+    if (depth === 0 && separator.test(char)) parts.push("");
+    else parts[parts.length - 1] += char;
+  }
+  return parts;
+};
+
 const hasRule = (token: string) => new RegExp(`\\.${token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`).test(styles);
 
 describe("@k2b/ui package class contract", () => {
@@ -227,10 +240,11 @@ describe("@k2b/ui package class contract", () => {
         const selector = rule[1]!.replace(/\/\*[\s\S]*?\*\//g, "").trim();
         if (!selector || selector.startsWith("@")) continue;
 
-        for (const part of selector.split(",").map((entry) => entry.trim())) {
+        for (const part of splitTopLevel(selector, /,/).map((entry) => entry.trim())) {
           // Only the compound that a rule actually targets matters: a selector
           // headed by a `k2b-` ancestor cannot reach unrelated consumer markup.
-          for (const compound of part.split(/\s+|>|~|\+/).filter(Boolean)) {
+          // A class inside `:is()` or `:has()` belongs to the compound around it.
+          for (const compound of splitTopLevel(part, /[\s>~+]/).filter(Boolean)) {
             const classes = [...compound.matchAll(/\.([\w-]+)/g)].map((match) => match[1]!);
             const unprefixed = classes.filter((name) => name !== "k2b-ui" && name !== "dark" && !name.startsWith("k2b-"));
             if (!unprefixed.length) continue;

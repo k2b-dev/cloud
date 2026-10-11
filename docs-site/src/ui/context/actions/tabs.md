@@ -68,7 +68,9 @@ Use `variant="pill"` for compact rounded tabs. Each option (or `Tabs.Item`)
 may provide `onClose` and a localized `closeLabel`. Closing reports intent;
 the application owns confirmation, item removal, and the next selected value.
 Delete or Backspace closes the focused tab when a close handler is present.
-Close controls appear on hover, keyboard focus, or touch devices.
+The selected tab always shows its close control. With any pointer that can
+hover, including a mouse on a tablet, other tabs show theirs on hover or
+keyboard focus; touch-only screens show every close control.
 
 The tab list scrolls horizontally and never vertically; the selected
 underline and focus ring stay whole inside it. Where the platform shows

@@ -3107,14 +3107,15 @@
   margin-bottom: 0;
 }
 
-@media (hover: hover) and (pointer: fine) {
+@media (any-hover: hover) {
   .k2b-ui .k2b-discussion__item-actions[data-visibility="progressive"] {
     opacity: 0;
     transition: opacity 120ms ease-out;
   }
 
   .k2b-ui .k2b-discussion__item:hover .k2b-discussion__item-actions[data-visibility="progressive"],
-  .k2b-ui .k2b-discussion__item:focus-within .k2b-discussion__item-actions[data-visibility="progressive"] {
+  .k2b-ui .k2b-discussion__item:focus-within .k2b-discussion__item-actions[data-visibility="progressive"],
+  .k2b-ui .k2b-discussion__item-actions[data-visibility="progressive"]:has([aria-expanded="true"]) {
     opacity: 1;
   }
 }
@@ -3293,7 +3294,7 @@
   color: var(--k2b-danger-text);
 }
 
-@media (hover: hover) and (pointer: fine) {
+@media (any-hover: hover) {
   .k2b-ui .k2b-detail-panel__action-secondary,
   .k2b-ui .k2b-detail-panel__action-menu-trigger {
     opacity: 0;
@@ -4408,7 +4409,11 @@
   padding-inline-end: 0.125rem;
 }
 
-@media (hover: hover) and (pointer: fine) {
+/* Row actions: once any pointer can hover, such as a mouse on a tablet whose
+   primary pointer is the finger, a row shows its hover actions only while it is
+   hovered, focused, current, or has its menu open. The current row keeps them,
+   so a finger still reaches them; a touch-only screen shows them on every row. */
+@media (any-hover: hover) {
   .k2b-ui .k2b-app-workspace__sidebar-section-actions {
     opacity: 0;
     pointer-events: none;
@@ -4435,7 +4440,7 @@
     display: inline-flex;
   }
 
-  .k2b-ui .k2b-app-workspace__sidebar-item:is(:hover, :focus-within) .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"] {
+  .k2b-ui .k2b-app-workspace__sidebar-item:is(:hover, :focus-within, .is-active, :has(> [aria-current="page"])) .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"] {
     visibility: visible;
   }
 
@@ -4487,7 +4492,7 @@
 
   .k2b-ui
     :is(
-      .k2b-app-workspace__sidebar-item:is(:hover, :focus-within),
+      .k2b-app-workspace__sidebar-item:is(:hover, :focus-within, .is-active, :has(> [aria-current="page"])),
       .k2b-app-workspace__nav-tree-node:focus-within:not(:has(> .k2b-app-workspace__nav-tree-group:focus-within))
         > .k2b-app-workspace__nav-tree-row,
       .k2b-app-workspace__sidebar-item:has(> .k2b-app-workspace__sidebar-item-actions [aria-haspopup][aria-expanded="true"])
@@ -4500,7 +4505,7 @@
 
   .k2b-ui
     :is(
-      .k2b-app-workspace__sidebar-item:is(:hover, :focus-within),
+      .k2b-app-workspace__sidebar-item:is(:hover, :focus-within, .is-active, :has(> [aria-current="page"])),
       .k2b-app-workspace__nav-tree-node:focus-within:not(:has(> .k2b-app-workspace__nav-tree-group:focus-within))
         > .k2b-app-workspace__nav-tree-row,
       .k2b-app-workspace__sidebar-item:has(> .k2b-app-workspace__sidebar-item-actions [aria-haspopup][aria-expanded="true"])
@@ -4547,7 +4552,7 @@
   }
 
   .k2b-ui
-    .k2b-app-workspace__sidebar-item:where(:hover, :focus-within, :has(.k2b-app-workspace__sidebar-preview:popover-open))
+    .k2b-app-workspace__sidebar-item:where(:hover, :focus-within, .is-active, :has(> [aria-current="page"]), :has(.k2b-app-workspace__sidebar-preview:popover-open))
     > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"] {
     opacity: 1;
     pointer-events: auto;
@@ -4557,7 +4562,7 @@
     .k2b-app-workspace__sidebar-item:not(
       [data-has-actions="true"],
       :has(> .k2b-app-workspace__sidebar-item-action:not([data-visibility="hover"]))
-    ):where(:hover, :focus-within, :has(.k2b-app-workspace__sidebar-preview:popover-open)):has(
+    ):where(:hover, :focus-within, .is-active, :has(> [aria-current="page"]), :has(.k2b-app-workspace__sidebar-preview:popover-open)):has(
       > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"]:not(.k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger]))
     )
     > .k2b-app-workspace__sidebar-item-main {
@@ -4568,7 +4573,7 @@
     .k2b-app-workspace__sidebar-item:not(
       [data-has-actions="true"],
       :has(> .k2b-app-workspace__sidebar-item-action:not([data-visibility="hover"]))
-    ):where(:hover, :focus-within, :has(.k2b-app-workspace__sidebar-preview:popover-open)):has(
+    ):where(:hover, :focus-within, .is-active, :has(> [aria-current="page"]), :has(.k2b-app-workspace__sidebar-preview:popover-open)):has(
       > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"]:not(.k2b-app-workspace__sidebar-preview-trigger)
     ):has(> .k2b-app-workspace__sidebar-preview-trigger[data-row-trigger])
     > .k2b-app-workspace__sidebar-item-main {
@@ -4655,7 +4660,7 @@
   .k2b-ui
     .k2b-app-workspace__sidebar-item[data-variant="object"]:has(
       > .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]
-    ):is(:hover, :focus-within)
+    ):is(:hover, :focus-within, .is-active, :has(> [aria-current="page"]))
     .k2b-app-workspace__sidebar-item-meta {
     opacity: 0;
   }
@@ -10958,7 +10963,7 @@
   max-width: 100%;
 }
 
-@media (hover: hover) and (pointer: fine) {
+@media (any-hover: hover) {
   .k2b-ui .k2b-description-list[data-action-visibility="progressive"] .k2b-description-list__action {
     opacity: 0;
   }
@@ -10967,7 +10972,8 @@
   .k2b-ui
     .k2b-description-list[data-action-visibility="progressive"]
     .k2b-description-list__item:focus-within
-    .k2b-description-list__action {
+    .k2b-description-list__action,
+  .k2b-ui .k2b-description-list[data-action-visibility="progressive"] .k2b-description-list__action:has([aria-expanded="true"]) {
     opacity: 1;
   }
 }
@@ -11022,13 +11028,25 @@
   font-weight: 500;
 }
 
+/* Progressive actions in an application's own rows, cards, and list items: a
+   `k2b-progressive-action` inside a `k2b-progressive-row` follows the same rule
+   as the row actions of the components. Do not nest progressive rows. */
+@media (any-hover: hover) {
+  .k2b-ui .k2b-progressive-action { opacity:0; transition:opacity 120ms ease-out; }
+  .k2b-ui .k2b-progressive-row:is(:hover, :focus-within) .k2b-progressive-action,
+  .k2b-ui .k2b-progressive-action:is(:focus-within, :has([aria-expanded="true"])) { opacity:1; }
+}
+
 /* Tab controls keep overflow separate from fixed actions. */
 .k2b-ui .k2b-tabs__bar { display:flex; min-width:0; align-items:center; gap:.25rem; }
 .k2b-ui .k2b-tabs__item { display:flex; flex:none; align-items:center; min-width:0; }
 .k2b-ui .k2b-tabs__trailing { flex:none; }
-.k2b-ui .k2b-tabs__list .k2b-tabs__close { padding:.25rem; min-height:1.5rem; border:0; margin:0; opacity:0; }
-.k2b-ui .k2b-tabs__item:hover .k2b-tabs__close, .k2b-ui .k2b-tabs__item:focus-within .k2b-tabs__close { opacity:1; }
-@media (hover:none) { .k2b-ui .k2b-tabs__list .k2b-tabs__close { opacity:1; } }
+.k2b-ui .k2b-tabs__list .k2b-tabs__close { padding:.25rem; min-height:1.5rem; border:0; margin:0; }
+/* Like row actions: hidden only once any pointer can hover, and the selected tab keeps its close button for a finger. */
+@media (any-hover: hover) {
+  .k2b-ui .k2b-tabs__list .k2b-tabs__close { opacity:0; }
+  .k2b-ui .k2b-tabs__item:is(:hover, :focus-within, :has(> [aria-selected="true"])) .k2b-tabs__close { opacity:1; }
+}
 .k2b-ui .k2b-tabs[data-variant="pill"] .k2b-tabs__list { padding-bottom:0; border:0; box-shadow:none; }
 .k2b-ui .k2b-tabs[data-variant="pill"] .k2b-tabs__item { border-radius:.75rem; padding-right:.25rem; background:var(--k2b-surface-canvas); }
 .k2b-ui .k2b-tabs[data-variant="pill"] .k2b-tabs__item:hover,

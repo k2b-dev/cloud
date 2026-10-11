@@ -61,8 +61,9 @@ import { Button, DescriptionList } from "@k2b/ui";
 screens. Set `layout="rows"` for a compact inspector-style label/value list. An
 item may provide one short action directly related to its value. Set
 `actionVisibility="progressive"` when repeated row actions should stay quiet:
-fine pointers reveal them on row hover or focus, while touch layouts keep them
-visible.
+with a mouse or trackpad, including a tablet with a mouse, they stay hidden
+until their row is hovered, keyboard-focused, or has its menu open. Touch-only
+screens always show them.
 
 Use `layout="compact"` for read-mostly metadata in previews and small panels.
 Labels size to their content (up to 40% of the available width), with a smaller
@@ -92,8 +93,9 @@ control keeps its own role and name; the row-wide hit area only extends where a
 pointer reaches it and adds no second tab stop. Terms must be concise,
 descriptions must remain meaningful without visual position, and icon-only
 actions need labels. Progressive actions remain keyboard-focusable and become
-visible through `focus-within`; visibility must never be the only indication
-that an action exists.
+visible through `focus-within`. An open menu keeps its trigger visible, and
+touch-only screens always show progressive actions. Visibility must never be
+the only indication that an action exists.
 
 ## Runtime
 

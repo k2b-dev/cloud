@@ -204,6 +204,31 @@ uses the [`@k2b/ssr` navigation contract](/en/docs/frontend/url-state-and-naviga
 The host loads and renders the destination; passing a callback alone does not
 fetch data. See each component for scroll policy and other navigation callbacks.
 
+### Progressive actions in your own rows
+
+Components with row actions, such as `AppWorkspace` sidebar rows,
+`DetailPanel`, `Discussion`, `DescriptionList`, and closable `Tabs`, decide
+on their own when the actions show. For a row, card, or list item of your own,
+add `k2b-progressive-row` to the item and `k2b-progressive-action` to each
+optional action or its wrapper:
+
+```tsx
+<li class="k2b-progressive-row flex items-center gap-2">
+  <a href={member.href}>{member.name}</a>
+  <IconButton class="k2b-progressive-action" label={`Remove ${member.name}`} onClick={remove}>
+    <i class="ti ti-x" aria-hidden="true" />
+  </IconButton>
+</li>
+```
+
+As soon as any pointer can hover, including a mouse on a tablet, the action
+stays hidden until its item is hovered or keyboard-focused, or until a menu it
+opened is open. Touch-only screens always show it. Hiding changes only the
+opacity, so nothing moves. Do not nest progressive rows, and do not build the
+same rule from `(hover: hover)`, `(hover: none)`, `(pointer: fine)`, or
+Tailwind's `hover:` and `group-hover:` variants: they describe only the
+primary pointer, which stays the finger on a tablet with a mouse.
+
 ## Choose a control
 
 Choose a component from the interaction it needs to support:

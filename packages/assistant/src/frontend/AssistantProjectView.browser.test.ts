@@ -106,7 +106,7 @@ describe(`Assistant Project view in ${browserName}`, () => {
       const layout = await browserPage.evaluate(() => {
         const header = document.querySelector('[aria-labelledby="project-chats-heading"] > header')!.getBoundingClientRect();
         const scroller = document.querySelector(".assistant-project-chats-scroll")!;
-        const rows = Array.from(scroller.querySelectorAll(".group"), (row) => {
+        const rows = Array.from(scroller.querySelectorAll(".k2b-progressive-row"), (row) => {
           const box = row.getBoundingClientRect();
           return { left: box.left - header.left, right: header.right - box.right };
         });

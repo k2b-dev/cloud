@@ -695,7 +695,7 @@ export default function ContactDetailPanel(props: Props) {
                             <ul class="flex flex-col gap-1">
                               <For each={c().members}>
                                 {(member) => (
-                                  <li class="group flex items-center gap-1">
+                                  <li class="k2b-progressive-row flex items-center gap-1">
                                     <DetailPanel.Action
                                       type="button"
                                       class="min-w-0 flex-1"
@@ -724,7 +724,7 @@ export default function ContactDetailPanel(props: Props) {
                                           variant="ghost"
                                           size="xs"
                                           onClick={() => actions.unlinkMember(member, c())}
-                                          class="shrink-0 text-dimmed opacity-100 hover:text-red-500 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
+                                          class="k2b-progressive-action shrink-0 text-dimmed hover:text-red-500"
                                           label={t().removeMemberLabel({
                                             name: resolveContactName(member as ContactRef, t().unnamedContact),
                                           })}

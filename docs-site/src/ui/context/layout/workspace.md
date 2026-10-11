@@ -268,10 +268,10 @@ needs a compact header action such as creating a resource. The section owns
 the header alignment; the control still owns its accessible name and action
 behavior. Section headers and their actions are hidden with the compact rail
 and mobile section layout, so expose an equivalent reachable action in those
-compositions. On hover-capable fine pointers, section actions remain quiet
-until the header is hovered or contains keyboard focus. They remain visible on
-touch and coarse-pointer devices. An open dropdown keeps its section action
-visible and interactive until the menu closes.
+compositions. With a mouse or trackpad, including a tablet with a mouse,
+section actions stay hidden until the header is hovered or contains keyboard
+focus. Touch-only screens always show them. An open dropdown keeps its section
+action visible and interactive until the menu closes.
 
 Section titles are quiet sentence-case labels. Keep them short and let the
 navigation rows carry the stronger visual emphasis.
@@ -303,10 +303,12 @@ the controls remain siblings of the row link or button instead of invalid
 nested interactive content.
 
 Set `visibility="hover"` on metadata or actions only when the information is
-optional. On fine pointers it stays hidden until its own row is hovered
-or keyboard-focused; in a `NavTree`, parent and child rows reveal theirs
-independently. A hover `SidebarItemAction` overlays the end of the row when it
-appears, so the label keeps its width and the text or metadata under the
+optional. With any pointer that can hover, such as a mouse or trackpad,
+including a tablet with a mouse, actions stay hidden until their own row is
+hovered, keyboard-focused, current, or has its menu open. Optional metadata
+appears on row hover or keyboard focus. In a `NavTree`, parent and child rows
+reveal theirs independently. A hover `SidebarItemAction` overlays the end of
+the row when it appears, so the label keeps its width and the text or metadata under the
 button fades out. A long label that scrolls on hover stops before the faded
 end. In a row that also shows an always-visible action or a
 `SidebarItemActions` group, the hover action keeps its own slot after them
@@ -314,7 +316,9 @@ instead. A hover `SidebarItemActions` group that ends the row overlays its end
 the same way, before the chevron of a `NavTree` row, so revealing it moves
 nothing in the row; the fade covers one or two controls. Hidden metadata takes
 no space until revealed. Hidden actions are out of the tab order until their
-row shows them. Everything remains visible on touch devices. Actions also stay
+row shows them. The current row always shows its actions, so they stay in
+the tab order, also in a `NavTree` while focus is on another item. Touch-only
+screens always show them. Actions also stay
 visible while a menu or other popup they opened is open, so the pointer can
 leave the row to reach it. Keep errors, unread counts, and other important
 state visible with the default `"always"` value.
@@ -937,9 +941,11 @@ quiet meta line with at most one secondary fact, and `SidebarItemMeta` stacks
 trailing counts at the end of the row. Keep counts tabular and put their
 accessible wording in visually hidden text. The count column keeps a minimum
 width, so counts line up across rows. When an object row has trailing counts,
-`SidebarItemActions visibility="hover"` overlays that column on fine pointers
-instead of pushing it toward the title. The counts stay in the accessibility
-tree while hidden. Omit the leading icon when every object would show the same
+`SidebarItemActions visibility="hover"` overlays that column with a mouse or
+trackpad, including a tablet with a mouse, instead of pushing it toward the
+title. It appears when the row is hovered, keyboard-focused, current, or has
+its menu open. Touch-only screens always show the actions. The counts stay in
+the accessibility tree while hidden. Omit the leading icon when every object would show the same
 one. Object rows truncate their title instead of scrolling it.
 
 ```tsx

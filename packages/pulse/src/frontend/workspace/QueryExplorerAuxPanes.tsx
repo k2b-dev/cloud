@@ -32,7 +32,7 @@ export function SavedQueriesPane(props: {
         <Show when={props.queries().length > 0} fallback={<p class="px-1 py-2 text-xs text-dimmed">{t().noSavedQueries}</p>}>
           <For each={props.queries()}>
             {(item) => (
-              <div class="group flex items-start gap-2 rounded px-2 py-2 hover:bg-zinc-100 dark:hover:bg-zinc-900">
+              <div class="k2b-progressive-row flex items-start gap-2 rounded px-2 py-2 hover:bg-zinc-100 dark:hover:bg-zinc-900">
                 <button type="button" class="min-w-0 flex-1 text-left" onClick={() => props.onSelect(item.query)}>
                   <span class="block truncate text-sm font-medium text-secondary">{item.name}</span>
                   <code class="block truncate font-mono text-[11px] text-dimmed">{item.query}</code>
@@ -42,7 +42,7 @@ export function SavedQueriesPane(props: {
                     label={t().removeNamedSavedQuery({ name: item.name })}
                     variant="ghost"
                     size="xs"
-                    class="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+                    class="k2b-progressive-action"
                     onClick={() => void props.onRemove(item)}
                   >
                     <i class="ti ti-trash" />

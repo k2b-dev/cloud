@@ -129,10 +129,11 @@ color; the row and optional Dots menu trigger stay transparent. When a
 destination has secondary actions, pass declarative
 `menuItems` together with the required accessible `menuLabel`. The primary link
 and the Dots trigger render as sibling controls, so the whole main row remains
-a native destination without nesting a button inside the link. On fine-pointer
-devices the Dots trigger appears on row hover, keyboard focus, or while its menu
-is open; it remains visible on touch devices. Do not use it for static key-value
-data, comments, history, or form fields. Stacked action rows sit flush, so on
+a native destination without nesting a button inside the link. With a mouse or
+trackpad, including a tablet with a mouse, the Dots trigger stays hidden until
+the row is hovered, keyboard-focused, or its menu is open. Touch-only screens
+always show it. Do not use it for static key-value data, comments, history, or
+form fields. Stacked action rows sit flush, so on
 touch devices each row is at least 44 px (2.75rem) tall, including its
 secondary and Dots buttons, and its tap area keeps the row height instead of
 reaching into the neighbouring row. This follows the device, not the input in
@@ -144,9 +145,9 @@ as deleting an attachment, pass `secondaryAction` with an `icon`, an accessible
 `label`, and `onClick`. Name the label after the row, such as
 `Delete budget.xlsx`, so repeated buttons stay distinguishable. It renders as a
 sibling icon button at the end of the row, before an optional Dots trigger, and
-follows the same reveal: hover or keyboard focus on fine pointers, always
-visible on touch devices. Set `variant: "danger"` for a destructive command;
-hover and focus then use the danger text color. The button only reports the
+appears on row hover or keyboard focus with any pointer that can hover.
+Touch-only screens always show it. Set `variant: "danger"` for a destructive
+command; hover and focus then use the danger text color. The button only reports the
 click. The application confirms destructive work, performs it, and refreshes
 the list. When that removes the focused row, the application moves focus to
 the row that takes its place. Keep further commands in `menuItems`.

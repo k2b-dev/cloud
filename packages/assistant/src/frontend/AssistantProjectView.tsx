@@ -408,7 +408,7 @@ export default function AssistantProjectView(props: Props) {
                 <div class="flex flex-col gap-0.5">
                   <For each={chatItems()}>
                     {(chat: AiConversation) => (
-                      <div class="group flex min-w-0 items-center gap-1 rounded-lg transition-colors hover:bg-[var(--ui-surface-subtle)] focus-within:bg-[var(--ui-surface-subtle)]">
+                      <div class="k2b-progressive-row flex min-w-0 items-center gap-1 rounded-lg transition-colors hover:bg-[var(--ui-surface-subtle)] focus-within:bg-[var(--ui-surface-subtle)]">
                         <Link
                           href={assistantConversationHref("/app/assistant", chat.id)}
                           class="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-1.5 focus-visible:outline focus-visible:outline-2"
@@ -420,7 +420,7 @@ export default function AssistantProjectView(props: Props) {
                           <Format.RelativeTime class="shrink-0 text-xs text-dimmed" value={chat.updatedAt} />
                         </Link>
                         <IconButton
-                          class="mr-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+                          class="k2b-progressive-action mr-1"
                           size="xs"
                           variant="subtle"
                           label={copy().editNamed({ name: chat.title })}

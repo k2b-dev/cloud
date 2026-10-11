@@ -179,9 +179,13 @@ const load = async (
     items?: MailListItem[];
     toolbarActions?: MailListHarnessOptions["toolbarActions"];
     deletedOnServer?: boolean;
+    /** Serves this stylesheet in place of the compiled one. */
+    css?: string;
   } = {},
 ) => {
   const page = await (await browser.newContext(options.context ?? desktop)).newPage();
+  const stylesheet = options.css;
+  if (stylesheet) await page.route("**/styles.css", (route) => route.fulfill({ contentType: "text/css; charset=utf-8", body: stylesheet }));
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   // Every API request of the page, and whether the page aborted it. The page looks up once, while idle, which apps
@@ -961,4 +965,112 @@ describe("Mail kept conversations", () => {
       }
     }
   });
+});
+
+describe("Mail row actions", () => {
+  const environments = [
+    { name: "desktop mouse", hover: "hover", "any-hover": "hover", pointer: "fine", "any-pointer": ["fine"] },
+    { name: "tablet with mouse", hover: "none", "any-hover": "hover", pointer: "coarse", "any-pointer": ["coarse", "fine"] },
+    { name: "touch-only phone", hover: "none", "any-hover": "none", pointer: "coarse", "any-pointer": ["coarse"] },
+  ] as const;
+  // Neither engine emulates a touch primary pointer with a hovering secondary one, so the pointer media are rewritten.
+  const pointerCss = (environment: (typeof environments)[number]) =>
+    css.replace(/\((hover|any-hover|pointer|any-pointer)\s*:\s*(hover|none|fine|coarse)\)/g, (_, feature: string, value: string) => {
+      const matches =
+        feature === "any-pointer"
+          ? environment["any-pointer"].some((pointer) => pointer === value)
+          : environment[feature as "hover" | "any-hover" | "pointer"] === value;
+      return matches ? "(min-width:0)" : "(max-width:0)";
+    }) + "*,*::before,*::after{transition:none!important}";
+  const matched = item(1, {
+    subject: "Question about invoice 2026-0418",
+    attachmentMatch: {
+      attachmentId: "At0001",
+      messageId: "Ms0001",
+      filename: "invoice.pdf",
+      snippet: "Invoice total",
+      reason: "attachment_content",
+    },
+  });
+  const rowItems = items.map((entry) => (entry.id === matched.id ? matched : entry));
+  /** Per row: the opacity of its time and of each of its actions, and the boxes of everything in it. */
+  const state = (page: Page) =>
+    page.evaluate(() =>
+      ["Cv0001", "Cv0002"].map((id) => {
+        const entry = document.querySelector(`.mail-list-entry[data-conversation-id="${id}"]`)!;
+        const opacity = (element: Element | null) => (element ? Number(getComputedStyle(element).opacity) : null);
+        return {
+          id,
+          time: opacity(entry.querySelector(".mail-list-time")),
+          actions: [...entry.querySelectorAll(".k2b-progressive-action")].map(opacity),
+          // The open menu is a popover in the top layer, not part of the row's layout.
+          boxes: [entry, ...entry.querySelectorAll(":not([popover], [popover] *)")].map((element) => {
+            const { top, left, width, height } = element.getBoundingClientRect();
+            return [top, left, width, height];
+          }),
+        };
+      }),
+    );
+  const blur = (page: Page) => page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+
+  for (const environment of environments) {
+    describe(environment.name, () => {
+      const hides = environment["any-hover"] === "hover";
+      let page: Awaited<ReturnType<typeof load>>;
+      let rest: Awaited<ReturnType<typeof state>>;
+      /** Cv0001 has the matched attachment's download link besides its menu; Cv0002 only its menu. */
+      const expectRows = (visible: string | null) =>
+        state(page).then((rows) => {
+          for (const [index, row] of rows.entries()) {
+            const actions = !hides || row.id === visible ? 1 : 0;
+            expect(row.time, row.id).toBe(1 - actions);
+            expect(row.actions, row.id).toEqual(Array(row.id === "Cv0001" ? 2 : 1).fill(actions));
+            // Only opacity changes; nothing in the rows moves.
+            expect(row.boxes, row.id).toEqual(rest[index]!.boxes);
+          }
+        });
+
+      // One page per environment: WebKit takes about a second per step on this page.
+      beforeAll(async () => {
+        page = await load({ items: rowItems, css: pointerCss(environment) });
+        await away(page);
+        rest = await state(page);
+      }, 30_000);
+      afterAll(async () => {
+        await close(page);
+      });
+
+      test(hides ? "hides every row's actions at rest and shows the time" : "shows every row's actions in place of the time", async () => {
+        await expectRows(null);
+      });
+
+      test("shows the hovered row's actions", async () => {
+        await pointAt(page, row("Cv0001"));
+        await expectRows("Cv0001");
+        await away(page);
+        await expectRows(null);
+      }, 30_000);
+
+      test("shows the focused row's actions", async () => {
+        await page.focus(linkOf("Cv0002"));
+        await expectRows("Cv0002");
+        await blur(page);
+        await expectRows(null);
+      }, 30_000);
+
+      test("keeps a row's actions while its menu is open", async () => {
+        const trigger = `${row("Cv0002")} .k2b-progressive-action button[aria-haspopup]`;
+        await page.click(trigger);
+        await away(page);
+        await blur(page);
+        await expectRows("Cv0002");
+        await page.keyboard.press("Escape");
+        // With focus on the body, the browser closes the popover and reports it in a later toggle event.
+        await page.waitForFunction((selector) => document.querySelector(selector)?.getAttribute("aria-expanded") !== "true", trigger);
+        await blur(page);
+        await expectRows(null);
+        expect(page.errors).toEqual([]);
+      }, 30_000);
+    });
+  }
 });

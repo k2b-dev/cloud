@@ -289,8 +289,17 @@ loading, error, and dark treatments.
   `k2b-focus-inset` to your own element that clips focusable content with
   `overflow`. Never add padding or margins so that a ring fits. See
   [Focus rings](/en/ui/focus).
-- Keep progressive actions discoverable by keyboard focus and touch when they
-  are hidden at rest on fine pointers.
+- With a mouse or trackpad, including a tablet with a mouse, keep progressive
+  actions hidden until their row is hovered, keyboard-focused, or has its menu
+  open. AppWorkspace sidebar actions also appear on the current row, and a
+  tab's close control on the selected tab. Touch-only screens always show
+  them. In your own rows, add `k2b-progressive-row` to the row and
+  `k2b-progressive-action` to the action instead of writing the rule; see
+  [Getting started](/en/ui/getting-started). Custom CSS hides them under
+  `@media (any-hover: hover)`, never `(hover: hover)`, `(hover: none)`, or
+  `(pointer: fine)`, and not with Tailwind's `hover:` or `group-hover:`
+  variants, which carry `(hover: hover)`: a tablet's primary pointer stays the
+  finger when a mouse is attached.
 - Use `InlineGuidance` for a short local hint, action error, or loading message
   while the affected content remains visible. Use its `loading` prop for inline
   progress rather than assembling a spinner and text.

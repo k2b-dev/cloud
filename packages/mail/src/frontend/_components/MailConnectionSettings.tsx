@@ -602,7 +602,7 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
         }
       >
         {(connection) => (
-          <div class="group flex min-h-14 items-center gap-3 rounded-[var(--ui-radius-control)] px-2 py-2 hover:bg-[var(--ui-hover)]">
+          <div class="k2b-progressive-row flex min-h-14 items-center gap-3 rounded-[var(--ui-radius-control)] px-2 py-2 hover:bg-[var(--ui-hover)]">
             <span class="thumbnail flex h-9 w-9 shrink-0 items-center justify-center">
               <i class="ti ti-server text-secondary" aria-hidden="true" />
             </span>
@@ -661,7 +661,7 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
                 iconOnly
                 type="button"
                 variant="ghost"
-                class="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
+                class="k2b-progressive-action"
                 label={messages().connectedAccountActions}
                 disabled={props.reloading || revoke.loading()}
               >

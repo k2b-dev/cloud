@@ -6,31 +6,31 @@ import { createDomTestHarness } from "./dom";
 
 // Once the pointer leaves the row on its way to the menu, the row no longer matches :hover, and
 // Chromium does not carry :focus-within out of the top-layer menu into the row. The test loads the
-// rules that still apply in that state: the fine-pointer hide rule and the open-menu reveal rule.
-const FINE_POINTER = "@media (hover: hover) and (pointer: fine)";
+// rules that still apply in that state: the hover-pointer hide rule and the open-menu reveal rule.
+const HOVER_POINTER = "@media (any-hover: hover)";
 const shippedRules = readShippedCssRules(resolve(import.meta.dir, "../src/styles"));
 const hoverActionRules = shippedRules
   .filter(
     (rule) =>
-      rule.context === FINE_POINTER &&
+      rule.context === HOVER_POINTER &&
       rule.selector.startsWith('.k2b-ui .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]'),
   )
-  .map((rule) => `${FINE_POINTER} { ${rule.selector} { ${rule.body} } }`)
+  .map((rule) => `${HOVER_POINTER} { ${rule.selector} { ${rule.body} } }`)
   .join("\n");
 
 // Happy DOM matches neither :hover nor :focus-within. Browsers apply both to the hovered or focused
 // element and its ancestors; the nested-tree test marks that chain with attributes and loads every
-// fine-pointer rule that decides whether hover accessories render, with the marks in their place.
+// hover-pointer rule that decides whether hover accessories render, with the marks in their place.
 const accessoryDisplayRules = shippedRules
   .filter(
     (rule) =>
-      rule.context === FINE_POINTER &&
+      rule.context === HOVER_POINTER &&
       rule.selector.includes('[data-visibility="hover"]') &&
       (cssDeclarations(rule.body).has("display") || cssDeclarations(rule.body).has("visibility")),
   )
   .map((rule) => {
     const selector = rule.selector.replaceAll(":hover", "[data-hover]").replaceAll(":focus-within", "[data-focus-within]");
-    return `${FINE_POINTER} { ${selector} { ${rule.body} } }`;
+    return `${HOVER_POINTER} { ${selector} { ${rule.body} } }`;
   })
   .join("\n");
 
