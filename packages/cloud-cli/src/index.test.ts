@@ -17,6 +17,7 @@ type MockServerState = {
   appsCalls?: number;
   appsSearch?: string | null;
   capabilityCatalog?: unknown;
+  cliPlugins?: Array<{ name: string; app: string; version: string }>;
   acceptLanguages?: Array<string | null>;
   cookies?: Array<string | null>;
 };
@@ -76,6 +77,7 @@ const startMockServer = (state: MockServerState) =>
       state.acceptLanguages.push(request.headers.get("accept-language"));
       state.cookies ??= [];
       state.cookies.push(request.headers.get("cookie"));
+      if (url.pathname === "/cli/plugins" && state.cliPlugins) return Response.json({ plugins: state.cliPlugins });
       if (url.pathname === "/oauth/token") {
         if (state.tokenDelayMs) await Bun.sleep(state.tokenDelayMs);
         const body = await request.formData();
@@ -685,6 +687,34 @@ describe("cloud CLI OAuth session handling", () => {
       expect(config.profiles.local.oauth.accessToken).toBe("login-access");
       expect(config.profiles.local.oauth.refreshToken).toBe("login-refresh");
       expect("clientId" in config.profiles.local.oauth).toBe(false);
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("login records served names even when the plugin offer has nothing missing", async () => {
+    const state: MockServerState = { refreshCalls: 0, revokeCalls: 0, meCalls: 0, cliPlugins: [] };
+    const server = startMockServer(state);
+    const dir = await createTempDir();
+    const configPath = join(dir, "config.json");
+    const origin = `http://127.0.0.1:${server.port}`;
+    try {
+      const proc = startCli(configPath, ["login", "local", "--server", origin, "--no-open"]);
+      const stderrPromise = new Response(proc.stderr).text();
+      const stdout = await readUntil(proc.stdout, "Waiting for the OAuth callback.");
+      const printedLoginUrl = stdout.match(/Login URL:\n(?<url>http:\/\/127\.0\.0\.1:\d+\/oauth\/authorize[^\n]+)/)?.groups?.url;
+      if (!printedLoginUrl) throw new Error("CLI did not print a login URL.");
+      const loginUrl = new URL(printedLoginUrl);
+      const redirectUri = loginUrl.searchParams.get("redirect_uri");
+      const stateParam = loginUrl.searchParams.get("state");
+      if (!redirectUri || !stateParam) throw new Error("Login URL is missing callback parameters.");
+      const callbackUrl = new URL(redirectUri);
+      callbackUrl.searchParams.set("code", "test-code");
+      callbackUrl.searchParams.set("state", stateParam);
+      callbackUrl.searchParams.set("iss", origin);
+      expect((await fetch(callbackUrl)).status).toBe(200);
+      expect(await proc.exited, await stderrPromise).toBe(0);
+      expect(JSON.parse(await readFile(configPath, "utf8")).profiles.local.servedPlugins).toEqual([]);
     } finally {
       server.stop(true);
     }

@@ -436,6 +436,121 @@ test("served but uninstalled module names stay reserved offline and snapshots re
   expect((await cli.config()).profiles.a.servedPlugins).toEqual(["echo", "mail"]);
 }, 30_000);
 
+test("missing served snapshots keep short names inactive until a successful list", async () => {
+  const echo = await servedEchoPlugin("1.0.0", "unverified", { name: "echo", alias: "mail" });
+  const cloud: PluginCloudState = {
+    plugins: [echo, await servedEchoPlugin("1.0.0", "mail", { name: "mail" })],
+    authorizations: [],
+    listStatus: 503,
+  };
+  const cli = await setup({ a: cloud });
+  const installed = await cli.run(["plugins", "install", "echo"]);
+  expect(installed.exitCode, installed.stderr).toBe(0);
+  expect((await cli.config()).profiles.a.servedPlugins).toBeUndefined();
+  const before = cloud.authorizations.length;
+  const blocked = await cli.run(["mail", "whoami"]);
+  expect(blocked.exitCode).toBe(1);
+  expect(blocked.stderr).toContain('Unknown command "mail"');
+  expect(blocked.stderr).toContain("cld plugins install mail");
+  const help = await cli.run(["help"]);
+  expect(help.exitCode, help.stderr).toBe(0);
+  expect(help.stderr).toContain(
+    'cld: "mail" from echo is inactive until cld knows which modules your Cloud serves; run `cld plugins list`.',
+  );
+  expect(cloud.authorizations.length).toBe(before);
+
+  cloud.listStatus = undefined;
+  const listed = await cli.run(["plugins", "list", "--json"]);
+  expect(listed.exitCode, listed.stderr).toBe(0);
+  expect((await cli.config()).profiles.a.servedPlugins).toEqual(["echo", "mail"]);
+  expect(JSON.parse(listed.stdout).plugins.find((row: { name: string }) => row.name === "echo")).toMatchObject({ inactive: ["mail"] });
+
+  cloud.plugins = [echo];
+  expect((await cli.run(["plugins", "list"])).exitCode).toBe(0);
+  expect((await cli.config()).profiles.a.servedPlugins).toEqual(["echo"]);
+  expect((await cli.run(["mail", "whoami"])).exitCode).toBe(0);
+}, 30_000);
+
+test("listing refreshes stale served names before rendering short names and warnings", async () => {
+  const echo = await servedEchoPlugin("1.0.0", "stale", { name: "echo", alias: "mail" });
+  const cloud: PluginCloudState = { plugins: [echo], authorizations: [] };
+  const cli = await setup({ a: cloud });
+  expect((await cli.run(["plugins", "install", "echo"])).exitCode).toBe(0);
+  expect((await cli.config()).profiles.a.servedPlugins).toEqual(["echo"]);
+  expect((await cli.run(["mail", "whoami"])).exitCode).toBe(0);
+
+  cloud.plugins.push(await servedEchoPlugin("1.0.0", "mail", { name: "mail" }));
+  const listed = await cli.run(["plugins", "list"]);
+  expect(listed.exitCode, listed.stderr).toBe(0);
+  expect(listed.stdout).toContain("mail (inactive)");
+  expect(listed.stderr).toContain('"mail" from echo is inactive: a module has that name.');
+  expect((await cli.config()).profiles.a.servedPlugins).toEqual(["echo", "mail"]);
+  const json = await cli.run(["plugins", "list", "--json"]);
+  expect(json.exitCode, json.stderr).toBe(0);
+  expect(JSON.parse(json.stdout).plugins.find((row: { name: string }) => row.name === "echo")).toMatchObject({ inactive: ["mail"] });
+  const before = cloud.authorizations.length;
+  const blocked = await cli.run(["mail", "whoami"]);
+  expect(blocked.exitCode).toBe(1);
+  expect(blocked.stderr).toContain('Unknown command "mail"');
+  expect(blocked.stderr).toContain("cld plugins install mail");
+  expect(cloud.authorizations.length).toBe(before);
+}, 30_000);
+
+test("malformed served snapshots count as missing without crashing help", async () => {
+  const cloud: PluginCloudState = {
+    plugins: [await servedEchoPlugin("1.0.0", "malformed", { name: "echo", alias: "e" })],
+    authorizations: [],
+  };
+  const cli = await setup({ a: cloud });
+  expect((await cli.run(["plugins", "install", "echo"])).exitCode).toBe(0);
+  for (const value of [5, "e"]) {
+    const config = await cli.config();
+    config.profiles.a.servedPlugins = value;
+    await writeFile(join(cli.dir, "config.json"), JSON.stringify(config));
+    const before = cloud.authorizations.length;
+    const help = await cli.run(["help"]);
+    expect(help.exitCode, help.stderr).toBe(0);
+    expect(help.stderr).toContain('"e" from echo is inactive until cld knows which modules your Cloud serves');
+    const german = await cli.run(["--locale", "de", "help"]);
+    expect(german.exitCode, german.stderr).toBe(0);
+    expect(german.stderr).toContain(
+      'cld: "e" von echo ist inaktiv, bis cld weiß, welche Module deine Cloud bereitstellt; führe `cld plugins list` aus.',
+    );
+    const blocked = await cli.run(["e", "whoami"]);
+    expect(blocked.exitCode).toBe(1);
+    expect(blocked.stderr).toContain('Unknown command "e"');
+    expect(cloud.authorizations.length).toBe(before);
+  }
+}, 30_000);
+
+test("installing a package plugin warns when its ID takes a shortcut's name", async () => {
+  const cloud: PluginCloudState = {
+    plugins: [await servedEchoPlugin("1.0.0", "package-warning", { name: "echo", shortcuts: { me: "whoami" } })],
+    authorizations: [],
+  };
+  const cli = await setup({ a: cloud });
+  expect((await cli.run(["plugins", "install", "echo"])).exitCode).toBe(0);
+  expect((await cli.run(["me"])).exitCode).toBe(0);
+  const directory = join(cli.dir, "package-me");
+  await mkdir(directory);
+  await writeFile(
+    join(directory, "package.json"),
+    JSON.stringify({ name: "test-package-me", version: "1.0.0", cld: { apiVersion: 1, entry: "cli.js" } }),
+  );
+  await writeFile(
+    join(directory, "cli.js"),
+    `export default {
+    name: "me", summary: "Package fixture", requiresCloud: false,
+    run: (ctx) => { ctx.print("package me"); return 0; },
+  };`,
+  );
+  const installed = await cli.run(["plugins", "install", directory, "--yes"]);
+  expect(installed.exitCode, installed.stderr).toBe(0);
+  expect(installed.stdout).toContain('Installed plugin "me"');
+  expect(installed.stderr).toContain('"me" from echo is inactive: a module has that name.');
+  expect((await cli.run(["me"])).stdout).toBe("package me\n");
+}, 30_000);
+
 test("built-ins and package module names win, while package short-name declarations are ignored", async () => {
   const cloud: PluginCloudState = {
     plugins: [

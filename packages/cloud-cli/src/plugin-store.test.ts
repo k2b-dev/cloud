@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { type LockedPlugin, readPluginLock, resolveShortNames } from "./plugin-store";
+import { type LockedPlugin, readPluginLock, readServedPlugins, resolveShortNames } from "./plugin-store";
 
 const entry = (metadata: Partial<LockedPlugin> = {}): LockedPlugin => ({
   app: "test-app",
@@ -9,7 +9,11 @@ const entry = (metadata: Partial<LockedPlugin> = {}): LockedPlugin => ({
   ...metadata,
 });
 
-const taken = (modules: string[] = [], builtIn: string[] = []) => ({ modules: new Set(modules), builtIn: new Set(builtIn) });
+const taken = (modules: string[] = [], builtIn: string[] = [], served: ReadonlySet<string> | undefined = new Set<string>()) => ({
+  modules: new Set(modules),
+  builtIn: new Set(builtIn),
+  served,
+});
 
 describe("short-name resolution", () => {
   test("resolves aliases and multi-segment shortcuts", () => {
@@ -42,7 +46,7 @@ describe("short-name resolution", () => {
     expect(result.inactive).toEqual([{ name: "help", claimedBy: ["assistant", "foo"], reason: "built-in" }]);
   });
 
-  for (const source of ["installed", "served but not installed", "package"]) {
+  for (const source of ["installed", "package"]) {
     test(`protects ${source} module names`, () => {
       const lock = { foo: entry({ alias: "mail" }), ...(source === "installed" ? { mail: entry() } : {}) };
       const result = resolveShortNames(lock, taken(["foo", "mail"]));
@@ -51,10 +55,45 @@ describe("short-name resolution", () => {
     });
   }
 
+  test("protects served-only module names", () => {
+    const result = resolveShortNames({ echo: entry({ alias: "mail" }) }, taken(["echo"], [], new Set(["mail"])));
+    expect(result.active.size).toBe(0);
+    expect(result.inactive).toEqual([{ name: "mail", claimedBy: ["echo"], reason: "module" }]);
+  });
+
+  test("missing served names disable aliases and shortcuts after checking conflicts", () => {
+    const result = resolveShortNames(
+      {
+        echo: entry({ alias: "e", shortcuts: { me: "whoami", help: "whoami", mail: "whoami", shared: "whoami" } }),
+        foo: entry({ shortcuts: { help: "whoami", mail: "whoami", shared: "whoami" } }),
+      },
+      { ...taken(["help", "mail"], ["help"]), served: undefined },
+    );
+    expect(result.active.size).toBe(0);
+    expect(result.inactive).toEqual([
+      { name: "e", claimedBy: ["echo"], reason: "unverified" },
+      { name: "help", claimedBy: ["echo", "foo"], reason: "built-in" },
+      { name: "mail", claimedBy: ["echo", "foo"], reason: "module" },
+      { name: "me", claimedBy: ["echo"], reason: "unverified" },
+      { name: "shared", claimedBy: ["echo", "foo"], reason: "ambiguous" },
+    ]);
+  });
+
   test("ignores all short names of a shadowed plugin", () => {
     const result = resolveShortNames({ help: entry({ alias: "ai", shortcuts: { inbox: "messages list" } }) }, taken([], ["help"]));
     expect(result.active.size).toBe(0);
     expect(result.inactive).toEqual([]);
+  });
+});
+
+describe("served plugin snapshot", () => {
+  test("accepts only complete lists of valid module names", () => {
+    const names = ["echo", "mail"];
+    expect(readServedPlugins(names)).toBe(names);
+    expect(readServedPlugins([])).toEqual([]);
+    for (const value of [5, "mail", ["Mail"], [1], ["echo", 1], null, undefined]) {
+      expect(readServedPlugins(value)).toBeUndefined();
+    }
   });
 });
 

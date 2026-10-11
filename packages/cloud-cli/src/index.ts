@@ -30,6 +30,7 @@ import {
   type PluginLock,
   placePlugin,
   readPluginLock,
+  readServedPlugins,
   readStoredReference,
   resolveShortNames,
 } from "./plugin-store";
@@ -106,7 +107,7 @@ type CloudCliProfile = TokenProviderConfig & {
   clientCredentials?: ClientCredentialsConfig;
   /** Plugins served by this profile's Cloud, locked to one stored version each. */
   plugins?: PluginLock;
-  /** Names the Cloud served at the last install or update; short names never shadow them. */
+  /** Names the Cloud served when cld last listed its plugins. Short names never take them; without the list, none is active. */
   servedPlugins?: string[];
 };
 
@@ -1512,9 +1513,11 @@ const profileLock = (config: CloudCliConfig, profileName: string): PluginLock =>
 /** Build the profile table from metadata only, including names not installed yet. */
 const profileShortNames = async (config: CloudCliConfig, profileName: string) => {
   const lock = profileLock(config, profileName);
+  const served = readServedPlugins(config.profiles?.[profileName]?.servedPlugins);
   return resolveShortNames(lock, {
     builtIn: reservedNames,
-    modules: new Set([...Object.keys(lock), ...(await pluginIds()), ...(config.profiles?.[profileName]?.servedPlugins ?? [])]),
+    modules: new Set([...Object.keys(lock), ...(await pluginIds())]),
+    served: served === undefined ? undefined : new Set(served),
   });
 };
 
@@ -1534,11 +1537,17 @@ const warnInactiveShortNames = (inactive: InactiveShortName[], locale: string): 
               `cld: "${name}" from ${modules} is inactive: a built-in command has that name.`,
               `cld: "${name}" von ${modules} ist inaktiv: ein eingebauter Befehl heißt so.`,
             )
-          : text(
-              locale,
-              `cld: "${name}" from ${modules} is inactive: a module has that name.`,
-              `cld: "${name}" von ${modules} ist inaktiv: ein Modul heißt so.`,
-            ),
+          : reason === "unverified"
+            ? text(
+                locale,
+                `cld: "${name}" from ${modules} is inactive until cld knows which modules your Cloud serves; run \`cld plugins list\`.`,
+                `cld: "${name}" von ${modules} ist inaktiv, bis cld weiß, welche Module deine Cloud bereitstellt; führe \`cld plugins list\` aus.`,
+              )
+            : text(
+                locale,
+                `cld: "${name}" from ${modules} is inactive: a module has that name.`,
+                `cld: "${name}" von ${modules} ist inaktiv: ein Modul heißt so.`,
+              ),
     );
   }
 };
@@ -1808,6 +1817,18 @@ type PluginChange = {
   message?: string;
 };
 
+/** Save the names the profile's Cloud serves now; never creates a profile. */
+const saveServedPlugins = async (profileName: string, plugins: readonly CloudCliPluginSummary[]): Promise<void> => {
+  const servedPlugins = plugins.map((plugin) => plugin.name).sort();
+  await withConfigLock(async () => {
+    const config = await loadConfig();
+    const profile = config.profiles?.[profileName];
+    if (!profile || JSON.stringify(readServedPlugins(profile.servedPlugins)) === JSON.stringify(servedPlugins)) return;
+    profile.servedPlugins = servedPlugins;
+    await saveConfig(config);
+  });
+};
+
 /**
  * Fetch, verify and lock plugins for one profile. Downloads run outside the
  * config lock; placing them in the store, updating the lock, and pruning
@@ -1887,7 +1908,8 @@ const syncProfilePlugins = async (
       if (incoming) await placePlugin(incoming, locked.digest);
       lock[name] = locked;
     }
-    const snapshotChanged = servedPlugins !== undefined && JSON.stringify(profile.servedPlugins) !== JSON.stringify(servedPlugins);
+    const snapshotChanged =
+      servedPlugins !== undefined && JSON.stringify(readServedPlugins(profile.servedPlugins)) !== JSON.stringify(servedPlugins);
     if (staged.length === 0 && !snapshotChanged) return;
     config.profiles[cloud.profile] = {
       ...profile,
@@ -1945,12 +1967,12 @@ type PluginRow = {
 const listProfilePlugins = async (global: GlobalArgs, profileName: string, current: boolean): Promise<PluginRow[]> => {
   const config = await loadConfig();
   const lock = profileLock(config, profileName);
-  const shortNames = await profileShortNames(config, profileName);
   let available: CloudCliPluginSummary[] | null = null;
   const digests = new Map<string, string>();
   try {
     const cloud = await pluginCloud(global, current ? undefined : profileName);
     available = await fetchAvailablePlugins(cloud.fetch);
+    await saveServedPlugins(profileName, available);
     await Promise.all(
       Object.keys(lock)
         .filter((name) => available?.some((plugin) => plugin.name === name))
@@ -1963,6 +1985,7 @@ const listProfilePlugins = async (global: GlobalArgs, profileName: string, curre
       printErrorLine(`cld: profile "${profileName}": ${error instanceof Error ? error.message : String(error)}`);
     }
   }
+  const shortNames = await profileShortNames(await loadConfig(), profileName);
   const names = [...new Set([...Object.keys(lock), ...(available ?? []).map((plugin) => plugin.name)])].sort();
   return names.map((name) => {
     const locked = lock[name];
@@ -2075,7 +2098,8 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
       );
     }
     for (const plugin of plugins) if (plugin.status !== "ok") warnSkippedPlugin(plugin, locale);
-    for (const profileName of profileNames) warnInactiveShortNames((await profileShortNames(config, profileName)).inactive, locale);
+    const latestConfig = await loadConfig();
+    for (const profileName of profileNames) warnInactiveShortNames((await profileShortNames(latestConfig, profileName)).inactive, locale);
     return 0;
   }
 
@@ -2120,6 +2144,8 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
           ),
         );
       }
+      const latestConfig = await loadConfig();
+      warnInactiveShortNames((await profileShortNames(latestConfig, resolveProfileName(latestConfig, global.profile))).inactive, locale);
       return 0;
     } finally {
       await staged.cleanup();
@@ -2947,9 +2973,9 @@ const offerCloudPlugins = async (global: GlobalArgs, yes: boolean): Promise<void
   try {
     const cloud = await pluginCloud({ ...global, server: undefined, token: undefined }, global.profile);
     const lock = profileLock(await loadConfig(), cloud.profile);
-    const missing = (await fetchAvailablePlugins(cloud.fetch))
-      .map((plugin) => plugin.name)
-      .filter((name) => !lock[name] && !reservedNames.has(name));
+    const plugins = await fetchAvailablePlugins(cloud.fetch);
+    await saveServedPlugins(cloud.profile, plugins);
+    const missing = plugins.map((plugin) => plugin.name).filter((name) => !lock[name] && !reservedNames.has(name));
     if (missing.length === 0) return;
     const list = missing.join(", ");
     if (!yes) {

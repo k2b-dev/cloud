@@ -208,13 +208,20 @@ exact command with its own handler. A generated group alone, an unknown path,
 preset flags, and preset arguments are invalid.
 
 Core commands take precedence, followed by modules with exactly the requested
-name, then short names. Names of package plugins and modules the Cloud served
-at the last install or update are reserved too, including modules the profile
-has not installed. Resolution uses saved metadata without contacting the Cloud.
+name, then short names. Names of package plugins and modules the profile's
+Cloud serves are reserved, including modules the profile has not installed.
+`cld` resolves short names from saved metadata without contacting the Cloud.
+The served names are the list `cld` saw the last time it listed the Cloud's
+plugins during `cld login`, `cld plugins list`, `install`, or `update`.
+Until a profile has such a list, its short names are inactive. A module the
+Cloud starts serving later takes its name back at the next of these commands.
+Until then, a short name with that name still runs its plugin.
+
 If more than one installed module claims a name, or the name collides with a
 core command or module, the short name is inactive for every claimant. The last
 installed plugin never wins a conflict. `cld help` and `cld plugins list`,
-`install`, and `update` warn about inactive names on stderr.
+`install`, and `update` warn about inactive names on stderr. Installing a
+package plugin also warns when it makes a short name inactive.
 
 Agents and scripts should use full module names: a short name may be inactive
 on another profile.
@@ -775,8 +782,10 @@ skips the offer. A command whose plugin is not installed fails with a hint to
 run `cld plugins install <name>`. `cld help` lists the modules installed for
 the current profile.
 
-Short names come from the profile's plugin lock. They are available per profile
-after `cld plugins install` or `cld plugins update`. `cld help` shows active
+Short names need both the profile's plugin lock and its saved list of served
+modules. `cld plugins install` or `cld plugins update` saves the lock. The served
+list is saved when `cld login`, `cld plugins list`, `install`, or `update`
+successfully lists the Cloud's plugins. `cld help` shows active
 aliases beside module names and lists command shortcuts. Package plugins do
 not get short names.
 
@@ -865,7 +874,12 @@ that a profile locks cannot share a name; remove one before you install the
 other.
 
 `cld plugins list` shows the profile (`*` for package plugins), name, app,
-installed and available version, status, and source:
+installed and available version, status, and source. The SHORT NAMES column
+shows the alias and shortcuts; `(inactive)` marks a name with a conflict or
+without a served list. JSON rows include `alias` (a string or null), `shortcuts`
+(an object, empty when none), and `inactive` (a list of names). Package plugin
+rows and uninstalled rows have `alias: null`, `shortcuts: {}`, and `inactive: []`.
+The status values are:
 
 | Status | Meaning |
 | --- | --- |

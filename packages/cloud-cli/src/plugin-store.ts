@@ -265,15 +265,21 @@ export const readPluginLock = (value: unknown): PluginLock => {
   return lock;
 };
 
+/** Read a complete list of served module names; malformed snapshots count as missing. */
+export const readServedPlugins = (value: unknown): string[] | undefined =>
+  Array.isArray(value) && value.every((name): name is string => typeof name === "string" && CLOUD_CLI_MODULE_NAME.test(name))
+    ? value
+    : undefined;
+
 /** A module alias has an empty path; a shortcut supplies a whole command path. */
 export type PluginShortName = { name: string; module: string; path: string[] };
 /** All modules claiming an unavailable name and the reason it is inactive. */
-export type InactiveShortName = { name: string; claimedBy: string[]; reason: "ambiguous" | "built-in" | "module" };
+export type InactiveShortName = { name: string; claimedBy: string[]; reason: "ambiguous" | "built-in" | "module" | "unverified" };
 
-/** Resolve profile claims without importing plugins or contacting the Cloud. */
+/** Resolve claims offline; built-ins, modules and conflicts win, and missing served names keep remaining claims inactive. */
 export const resolveShortNames = (
   lock: PluginLock,
-  taken: { builtIn: ReadonlySet<string>; modules: ReadonlySet<string> },
+  taken: { builtIn: ReadonlySet<string>; modules: ReadonlySet<string>; served: ReadonlySet<string> | undefined },
 ): { active: Map<string, PluginShortName>; inactive: InactiveShortName[] } => {
   const claims = new Map<string, PluginShortName[]>();
   for (const [module, entry] of Object.entries(lock)) {
@@ -294,11 +300,13 @@ export const resolveShortNames = (
     const claimedBy = [...new Set(list.map((claim) => claim.module))].sort();
     const reason = taken.builtIn.has(name)
       ? "built-in"
-      : taken.modules.has(name)
+      : taken.modules.has(name) || taken.served?.has(name)
         ? "module"
         : claimedBy.length > 1
           ? "ambiguous"
-          : undefined;
+          : taken.served === undefined
+            ? "unverified"
+            : undefined;
     if (reason) inactive.push({ name, claimedBy, reason });
     else if (list[0]) active.set(name, list[0]);
   }
