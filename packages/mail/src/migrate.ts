@@ -165,6 +165,20 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
   if (!receiptPending?.present) {
     await tx`ALTER TABLE mail.message_contents ADD COLUMN IF NOT EXISTS receipt_pending boolean DEFAULT false NOT NULL`.simple();
   }
+  // A mailbox completes thousands of sync runs a day and keeps them for 30 days. Listing its rare
+  // failed, cancelled, superseded, or running runs seeks here instead of reading every completed one.
+  // Building it reads the table once, on the first start after the update; later starts skip the
+  // statement, so they do not wait for the table lock that the build takes.
+  const [syncRunStateIndex] = await tx<{ present: boolean }[]>`
+    SELECT to_regclass('mail.sync_runs_resource_not_completed_idx') IS NOT NULL AS present
+  `;
+  if (!syncRunStateIndex?.present) {
+    await tx`
+      CREATE INDEX IF NOT EXISTS sync_runs_resource_not_completed_idx
+      ON mail.sync_runs USING btree (remote_resource_id, state, started_at DESC, id DESC)
+      WHERE state <> 'completed'
+    `.simple();
+  }
 };
 
 /**

@@ -14,6 +14,7 @@ import {
 import { mailFolderPaths } from "../folder-tree";
 import { isCurrentPlatformAdmin, requireMailboxPermission } from "./access";
 import type { MailRequestContext } from "./auth";
+import { SYNC_RUN_STATUS_WINDOW_HOURS } from "./health";
 import {
   getOperatorActionEligibility,
   type OperatorTargetCommandState,
@@ -135,7 +136,7 @@ const loadMailboxOperations = async (
     FROM mail.sync_runs run
     JOIN mail.remote_resources resource ON resource.id = run.remote_resource_id
     WHERE resource.mailbox_id = ${mailboxId}::uuid
-      AND (run.state IN ('running', 'failed') OR run.started_at > now() - interval '24 hours')
+      AND (run.state = 'running' OR run.started_at > now() - ${SYNC_RUN_STATUS_WINDOW_HOURS}::int * interval '1 hour')
     GROUP BY run.state
   `;
   const [coverage] = await sql<
