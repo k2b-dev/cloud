@@ -40,7 +40,7 @@ const mainContent = () => {
   if (!params.has("trail")) return [toolbar, ...Array.from({length:40}, (_, index) => button(index))];
   const trail = document.createElement("div");
   trail.id = "board";
-  trail.className = "fixture-board";
+  trail.className = "k2b-detail-trail fixture-board";
   trail.style.cssText = "min-height:0;flex:1;overflow:auto";
   const cards = document.createElement("div");
   cards.style.cssText = "display:flex;width:max-content;gap:16px";
@@ -426,6 +426,29 @@ describe("floating workspace detail", () => {
         const shape = await geometry(page);
         expectInset(shape);
         expect(shape.main.width).toBeCloseTo(fixed ? shape.root.width - shape.detail.width - 8 : shape.content.width, 1);
+      } finally {
+        await page.close();
+      }
+    });
+  }
+  for (const params of ["trail=1", "table=1&wide=1"]) {
+    test(`820×1180 touch tablet: the last ${params.startsWith("trail") ? "card" : "column"} scrolls out from under the drawer`, async () => {
+      const page = await load(820, 1180, params, { hasTouch: true });
+      try {
+        await openRow(page);
+        const scroller = params.startsWith("trail") ? "#board" : ".k2b-table-wrap";
+        const shape = await page.locator(scroller).evaluate((element, board) => {
+          element.scrollLeft = element.scrollWidth;
+          const last = board ? document.getElementById("row-7")! : [...element.querySelectorAll("thead th")].at(-1)!;
+          return {
+            last: last.getBoundingClientRect().right,
+            drawer: document.querySelector(".k2b-app-workspace__detail")!.getBoundingClientRect().left,
+            scroller: element.getBoundingClientRect().right,
+          };
+        }, params.startsWith("trail"));
+        // The drawer overlays the scroller, and the scroller's end space brings its last column beside it.
+        expect(shape.drawer).toBeLessThan(shape.scroller);
+        expect(shape.last).toBeLessThanOrEqual(shape.drawer);
       } finally {
         await page.close();
       }

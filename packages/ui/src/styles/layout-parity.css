@@ -807,6 +807,8 @@
   --k2b-workspace-detail-inset: 0.5rem;
   --k2b-workspace-detail-track: 0px;
   --k2b-workspace-main-keep: 0px;
+  /* Space at the end of a `k2b-detail-trail` scroller under the tablet drawer. */
+  --k2b-detail-space: 0px;
   --k2b-workspace-radius: var(--k2b-radius-dialog);
   position: relative;
   display: grid;
@@ -1293,7 +1295,9 @@
 }
 
 /* A touch tablet in portrait: a panel the person can close is a drawer from
-   the right over `Main`, which keeps its width. A panel is closable with
+   the right over `Main`, which keeps its width. A board or table under it
+   gets the drawer's width and both gaps as space at its end, so its last
+   column scrolls out from under the drawer. A panel is closable with
    `onClose` or with its own close control marked
    `data-workspace-detail-close`, which a server-rendered panel carries from
    the first paint. */
@@ -1309,6 +1313,9 @@
     ) {
     --k2b-workspace-detail-track: 0px;
     --k2b-workspace-main-keep: 0px;
+    --k2b-detail-space: calc(
+      max(var(--k2b-detail-min), min(var(--k2b-detail-size), var(--k2b-detail-max))) + 2 * var(--k2b-workspace-detail-inset)
+    );
   }
 
   .k2b-ui .k2b-app-workspace__detail:is([data-workspace-detail-closable], :has([data-workspace-detail-close])) {
@@ -1328,11 +1335,21 @@
   }
 }
 
-/* A data table beside the panel keeps the width it has without it: its
-   columns stay where they are, and it scrolls instead. Its scroller carries
-   `k2b-detail-trail`. */
+/* A horizontal scroller in `Main` marked `k2b-detail-trail`. Under the
+   tablet drawer it gets the drawer's space at its end, and scrolling an item
+   into view stops beside the drawer. */
+.k2b-ui .k2b-detail-trail {
+  padding-inline-end: var(--k2b-detail-space, 0px);
+  scroll-padding-inline-end: var(--k2b-detail-space, 0px);
+}
+
+/* A data table keeps the width it has without the panel: its columns stay
+   where they are, and it scrolls instead. Beside the panel it adds the
+   nominal track: where `Main` is already at its 20 rem minimum and the grid
+   narrows the panel's column, the table grows by the part of the track the
+   column does not get. */
 .k2b-ui .k2b-detail-trail > .k2b-data-table {
-  width: calc(100% + var(--k2b-workspace-detail-track));
+  width: calc(100% + var(--k2b-workspace-detail-track) + var(--k2b-detail-space, 0px));
 }
 
 /* Motion: the sheet rises in 220 ms and drops in 160 ms. From 48 rem the

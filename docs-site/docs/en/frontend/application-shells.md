@@ -117,7 +117,10 @@ reduced motion makes opening and closing instant.
 
 For DataTable, pass `scrollClass="k2b-detail-trail"` to keep column widths
 while the scroller narrows beside the panel. Closing returns the full width
-without extra space. Boards and calendars need no marker or extra padding.
+without extra space. Mark a board's horizontal scroller with
+`k2b-detail-trail` as well: under the tablet drawer, the marked scroller gets
+the drawer's width as space at its end, so its last column scrolls out from
+under the drawer.
 See [AppWorkspace](/en/ui/layout/workspace#floating-detail) for focus, keyboard
 shortcuts, gestures, motion, and sizing.
 

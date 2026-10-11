@@ -90,8 +90,13 @@ bottom drawer round their own outer corners. On touch tablets from 48 to
 
 Use `scrollClass="k2b-detail-trail"` on DataTable to keep the columns at their
 width without the panel. The scroller narrows beside Detail and scrolls the
-same table. Boards and calendars need no marker or extra padding: their
-surfaces narrow with Main and keep their own scroll content.
+same table. Where Main is already at its 20 rem minimum, the panel's column
+narrows, and the table grows by the part of the panel's width the column does
+not get. Boards and calendars
+narrow with Main and keep their own scroll content. Mark a board's horizontal
+scroller with `k2b-detail-trail` too: under the tablet drawer, which leaves
+Main its width, a marked scroller gets the drawer's width as space at its end,
+so its last column scrolls out from under the drawer.
 
 Escape closes a closable panel. J and K step a steppable panel. F6 switches
 focus between Main’s remembered item and the panel title, with or without
