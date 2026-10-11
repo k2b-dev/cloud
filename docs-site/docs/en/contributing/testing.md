@@ -352,7 +352,7 @@ non-alphanumeric characters replaced by underscores, repeated underscores
 collapsed, and leading and trailing underscores removed. The slug is shortened
 so the full PostgreSQL database name fits within 63 bytes. For example,
 `cloud_{checkout}_test` becomes `cloud_fix_cache_test` in a checkout named
-`fix-cache`. A URL without the placeholder keeps its existing database name.
+`fix-cache`. A URL without the token keeps its existing database name.
 
 The expanded database name must end in `_test`. Integration tests create and
 delete rows; the fixture refuses any other name. Never point them at the
@@ -361,7 +361,7 @@ maintenance database on the same server and creates the target database if
 missing, before probing it and running migrations. The configured PostgreSQL
 role needs permission to create databases when the target does not exist.
 
-Use the placeholder when running tests from several worktrees: migrations are
+Use the token when running tests from several worktrees: migrations are
 forward-only, so sharing a database lets one branch's schema changes leak into
 another branch's tests. Every suite in a checkout shares its target database,
 and it keeps what earlier runs left behind. A test that asserts on a

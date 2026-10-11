@@ -452,7 +452,7 @@ do not change another branch's test schema. `bun run test --integration`
 creates the database if missing before applying migrations; the PostgreSQL
 role needs permission to create databases. See
 [Run integration tests](/en/docs/contributing/testing#run-integration-tests)
-for the placeholder rules.
+for the database name token rules.
 
 Files (`filesv2`), Grids PDF rendering, and Assistant Studio suites additionally read
 `CLOUD_TEST_FILEGATE_URL`, `CLOUD_TEST_GOTENBERG_URL`, and `CLOUD_TEST_RSQL_URL`.
