@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { resolve } from "node:path";
 import { createZip } from "@k2b/stdlib/browser";
 import { parseAiSkillArchive, readAiSkillImport } from "./assistant-skill-files";
 
@@ -47,7 +48,7 @@ describe("Assistant Skill import", () => {
 
   test("imports the repository cloud-cli folder shape and skips agent configuration", async () => {
     const archive = await createZip([
-      { filename: "cloud-cli/SKILL.md", source: await Bun.file("skills/cloud-cli/SKILL.md").text() },
+      { filename: "cloud-cli/SKILL.md", source: await Bun.file(resolve(import.meta.dir, "../../../../skills/cloud-cli/SKILL.md")).text() },
       { filename: "cloud-cli/references/commands.md", source: "Commands" },
       { filename: "cloud-cli/agents/openai.yaml", source: "interface: {}" },
     ]);
