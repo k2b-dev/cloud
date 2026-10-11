@@ -5,7 +5,7 @@ section: Reference
 order: 1205
 description: Choose a supported Cloud import and check its runtime and stability.
 tags: [api, imports, boundaries, compatibility]
-updated: 2026-10-10
+updated: 2026-10-11
 ---
 
 # API surface
@@ -192,11 +192,29 @@ documents all process variables; that larger list is not the shape of `env`.
 ## Specialized entry points
 
 View readers and types are exported from `@k2b/cloud/ai/browser` and
-`@k2b/cloud/ai`: `parseCloudAiView`, `checkCloudAiView`, `cloudAiViewSummary`,
-`cloudAiViewTable`, `cloudAiTableTsv`, `isAiViewFile` and `isAiViewPath`, plus the
-view directory, suffix, byte and table limits. Server integrations save run
-results with `createAiConversationView` and receive `AiViewInvalidError` for
-invalid specs. See [Tools and approvals](/en/docs/ai/tools-and-approvals).
+`@k2b/cloud/ai`: `CloudAiChartView`, `CloudAiGroupView`, `CloudAiTableView`,
+`CloudAiView`, `CloudAiViewSummary`, `CloudAiViewSummarySchema`,
+`parseCloudAiView`, `checkCloudAiView`, `cloudAiViewSummary`, `cloudAiViewTable`,
+`cloudAiTableTsv`, `isAiViewFile`, `isAiViewPath` and `parseCloudAiChartToolView`,
+plus the view directory, suffix, byte and table limits. Both entry points expose
+`CLOUD_AI_GROUP_MAX_CHARTS` (6), `CLOUD_AI_VIEW_MAX_MARKS` (3,840),
+`CLOUD_AI_CHART_MAX_SERIES` (8), `CLOUD_AI_CHART_MAX_VALUES` (480),
+`CloudAiChartInput`, `CloudAiChartInputSchema`, `parseCloudAiChartInput`,
+`cloudAiChartSchema`, `cloudAiNumberFormatSchema`, `cloudAiFormatSchema` and
+`CloudAiNumberFormat`, `CloudAiDateFormat`, `CloudAiFormat`.
+Server integrations save run results with `createAiConversationView` and receive
+`AiViewInvalidError` for invalid specs. See
+[Tools and approvals](/en/docs/ai/tools-and-approvals) for validation and groups.
+
+Custom chart hosts use browser exports `cloudAiChartRenderOptions`,
+`cloudAiChartLegend`, `cloudAiChartRows`, `cloudAiChartTable`, `cloudAiChartMarkKey`,
+`cloudAiChartReferenceMark`, `cloudAiChartXValueFormat`, `cloudAiNumberFormatters`,
+`cloudAiChartMarks` and `chartDrawingIssue`, with `CloudAiChartColumn`,
+`CloudAiChartRow` and `CloudAiChartTable`. These map validated chart input to
+rendering, legend, comparison marks and locale-formatted rows. `ChartExplorer`
+from `@k2b/ui` accepts `legend` entries typed as `ChartLegendEntry`
+(`{label, color, style?, reference?}`) for a wrapping legend inside its fixed
+height; see [Chart Explorer](/en/ui/content/charts#chart-explorer).
 
 `@k2b/cloud/ai` exposes `AiTaskRequestSchema`, `AiTaskRequest`,
 `AiTaskRequestInput`, and `executeAiTask` for bounded text generation,

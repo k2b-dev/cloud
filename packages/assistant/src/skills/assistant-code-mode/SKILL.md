@@ -107,8 +107,8 @@ Choose by where the values came from:
 1. A few values already in the conversation, a web page or a small capability
    result, without a run → `chart` tool.
 2. Numbers from code (files, CSV, Cloud data or capability results read with
-   `cloud.capabilities.run`) → `cloud.view.chart` or `cloud.view.table` in the
-   run, then `present({path})` per view. Never retype run values into tool
+   `cloud.capabilities.run`) → `cloud.view.chart`, `cloud.view.group` or
+   `cloud.view.table` in the run, then `present({path})` per view. Never retype run values into tool
    arguments, `data.js` or Markdown. If a view is missing, rerun with
    `cloud.view.*`. Return only key figures the answer text mentions.
 3. Exact values beyond a small table → `cloud.view.table`.
@@ -118,7 +118,9 @@ Choose by where the values came from:
 6. A file as the result → `cloud.download`, `code_export`, `present`.
 
 A successful run is visible to the agent only; present its views or files
-before saying the person can see them. Read [Views in the chat](references/views.md).
+before saying the person can see them. Put related measures in a group; use
+`linkX` for line charts over the same kind of x. There is no second y axis:
+keep different units in separate charts. Read [Views in the chat](references/views.md).
 
 For a Studio App: `code_create`, one `code_write` per file, then `code_open`
 beside the chat or `code_present({id})` in it. Send the writes one at a time,

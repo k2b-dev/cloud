@@ -5,151 +5,141 @@ description: Analyze source data, explain metrics and comparisons, and build evi
 
 # Analyze data and deliver an inspectable result
 
-Start with the question the reader needs to answer. Choose a direct answer, a
-chart, an app shown in this chat, an exported file, or a reusable Studio app
-accordingly. Computed values use `cloud.view.chart` or `cloud.view.table` in
-`code_run`, then `present({path})` for each view. A few values that did not come
-from a run use the `chart` tool. Never retype run values into tool arguments,
-`data.js` or Markdown; return only key figures the answer mentions. If a view is
-missing, rerun with `cloud.view.*`. These results need no app.
-Filters and buttons for a one-time analysis belong in a chat app; only data
-that must be kept or an app that is used again needs a saved Studio App. Load
-`assistant-code-mode` with `load_skill` (skills are not tools for
-`load_tools`) and read its `/skills/assistant-code-mode/references/views.md`
-for computed charts and tables,
-`/skills/assistant-code-mode/references/charts.md` for chart options and
-`/skills/assistant-code-mode/references/apps.md` for interfaces. Loading this
-skill does not install a library or grant access.
+Start with the question the reader needs to answer. Load `assistant-code-mode`
+with `load_skill`, not `load_tools`, for execution, delivery and approval rules.
+Read its `/skills/assistant-code-mode/references/views.md` for computed charts,
+groups and tables, `/skills/assistant-code-mode/references/charts.md` for
+`cloud.chart()` in apps/PDFs, and `/skills/assistant-code-mode/references/apps.md`
+for interfaces. Loading a skill installs no library and grants no access.
 
-## Keep a working plan
-
-For work with several real steps, use `todo_write` to keep a short chat plan.
-Replace the full `todos` list each time; give each item a stable `id`, actionable
-`content`, and `status` (`pending`, `in_progress`, `completed`, or `cancelled`).
-At most one step is active. Update as work changes, including user corrections;
-mark a step completed only after doing and checking it. Preserve exact commands
-when they matter. Skip this tool for a simple calculation or conversational reply.
-
-For analysis, useful steps are reconcile source data, build the analysis, and
-verify totals, filters and conclusions. A rendered dashboard alone is not proof
-that its numbers are correct. Keep blocked source work open and explain why.
+Choose a direct answer, views, an exported file, a chat app or a reusable Studio
+App by the question. Computed values stay in `code_run` and reach the reader
+through `cloud.view.*` and `present({path})`. Never retype run values into tool
+arguments, app data or Markdown. Return only key figures the answer mentions.
+If a view is missing, rerun with `cloud.view.*`. A few non-run values use the
+`chart` tool. One-time filters and buttons belong in a chat app; kept data,
+reuse, sharing, live loading or actions may need a Studio App.
 
 ## Establish the data
 
-Identify the actual source, unit of observation, time window, timezone, and
-latest complete period. Read files or discover the relevant Cloud capabilities
-before selecting fields. For a CSV, TSV or spreadsheet, `read_file` at most its
-first block to see the columns; then select the file with `code_run`
-`inputPaths` and get its structure, counts and figures in the script. Paging
-through a whole table with `read_file` only fills the context. External APIs use `cloud.http.fetch`; credentials are entered
-only through the trusted `code_secret` dialog.
+For several real steps, keep a short `todo_write` plan: reconcile sources,
+build the analysis, verify results. Replace the full list with stable IDs,
+actionable content and statuses (`pending`, `in_progress`, `completed`,
+`cancelled`); keep at most one step active. Update
+it for corrections, retain important commands, and mark work complete only
+after checking it. Skip it for a simple calculation or conversational reply.
+Keep blocked source work open and explain the blocker.
 
-Inspect a bounded sample, missing values, duplicate keys, types, and coverage.
-Reconcile totals and join cardinalities before drawing conclusions. Keep raw
-numbers separate from display formatting. Distinguish zero from unavailable data;
-state exclusions and denominator choices. Do not substitute fixture data for a
-blocked source unless the user requested a mockup.
+Identify the source, unit of observation, time window, time zone and latest
+complete period before selecting fields. Read files or discover Cloud
+capabilities. For CSV, TSV or spreadsheets, use `read_file` at most for the
+first block to learn columns, then select the path with `code_run.inputPaths`
+and compute structure, counts and figures in code. Do not page the whole table
+into context. External APIs use `cloud.http.fetch`; credentials enter only
+through the trusted `code_secret` dialog.
 
-Keep the source query or transformation in the saved source or an accompanying
-file so another run can reproduce the result. Preserve the source identity and
-retrieval timestamp, without credentials or credential-bearing URLs.
+Inspect a bounded sample, types, missing values, duplicate keys and coverage.
+Reconcile totals and join cardinalities. Distinguish zero from unavailable data;
+state exclusions and denominators. Fixture data may replace a blocked source
+only for a requested mockup, and must be labeled visibly.
 
-## Build one consistent analysis
+Keep the query or transformation in saved source or an accompanying file.
+Retain source identity and the real retrieval or file-snapshot timestamp,
+without credentials or credential-bearing URLs. A timestamp does not establish
+upstream completeness; keep it stable when rerendering a snapshot.
 
-Derive charts, metrics, and tables from the same reviewed data. Aggregate large
-inputs in a script before they reach an app; an app shows aggregates, not raw
-exports. Give exact chat values a `cloud.view.table`; inside an app, a
-`<details>` table under the chart is appropriate.
+## Choose the evidence
 
-Choose the simplest chart that answers the question. Use tables for exact
-records, bars for category comparisons, lines for ordered trends, and distributions
-for spread. Sort bars of counts or totals by value unless the categories have
-their own order. A pie or donut fits only two to four shares of one whole; six
-status counts read better as sorted bars. A distribution uses the histogram rows
-form over all observations, rather than a sample. Color must mean something
-(series, threshold, highlight): use `colorByBar` only to highlight one bar.
-State units, comparison windows, and whether a percent is a fraction or an
-already scaled number. Do not imply causation from correlation.
+Derive charts, metrics and tables from the same reviewed data. Aggregate large
+inputs in a script; apps show aggregates rather than raw exports. Use a
+`cloud.view.table` for inspectable chat records, or a `<details>` table in an app.
+Choose the chart by the question:
 
-Name the measure as it was computed in the title or subtitle, such as
-"Sum of price × stock" or "Number of products", and check that the formula
-matches the name before you use a business term like stock value. A sum of unit
-prices is not a stock value. An analysis compares or breaks down where the
-question allows it (status per category, price against stock) instead of
-showing only single distributions, and puts rows the person may check into a
-`cloud.view.table`.
+| Question | Chart |
+| --- | --- |
+| Compare category counts or totals | Bar; sort by value unless categories have their own order. |
+| Show ordered trends | Line; several measures over the same time axis use a group with `linkX`, each with its own units. There is no second y axis. |
+| Show a continuous distribution | Histogram rows form over all observations, rather than a sample. |
+| Compare distributions across categories | Boxplot; observations count toward the mark budget, so check the limits before delivery. |
+| Compare two categorical dimensions | Heatmap; aggregate to one value per x/y pair. |
+| Compare a few values against capacity | BarGauge; at most 8 items, short labels, meaningful min/max and thresholds. |
+| Show one headline number with change | Stat; compute `delta` in the value's units and set `better` only when improvement has a defined direction. |
+| Show shares of one whole | Pie/donut for two to four shares; many status counts read better as sorted bars. |
 
-Lead reports with the finding, then supporting evidence and limitations.
-Lead dashboards with the important measurements, then trends and diagnostic
-breakdowns. Use shared filters only when they affect all claimed views. Keep the
-initial view useful without interaction. Avoid unrelated metrics added merely to
-fill a grid.
+Use `references` for targets or averages. For a last-period comparison, align
+periods to comparable x values and put the comparison in a line/scatter series
+with `role: "reference"`. Name both windows. Missing observations stay missing;
+zero is not a substitute. Color must mean something (series, threshold, a
+category the legend names); do not use `colorByBar` to decorate bars the axis
+already names. Group related measures;
+add no unrelated metrics to fill a grid.
 
-Show the source context in the app: whether it is a snapshot, when the data was
-retrieved, its sources, and relevant notes. A timestamp records when the data
-was retrieved; it does not prove that the upstream source is complete. Label
-partial or fixture data visibly.
+State units and whether percentages are fractions or already scaled numbers.
+Keep raw numbers separate from display formatting; never round fractions before
+percent formatting. Preserve precision until display. Do not imply causation
+from correlation.
 
-## Validate before delivery
+Name the measure as computed, such as "Sum of price × stock" or "Number of
+products". Check the formula before using a business term: a sum of unit prices
+is not stock value. Compare or break down where the question allows it
+(status per category, price against stock), rather than showing only isolated
+distributions. Include records the reader may need to check.
 
-Compute in a script with `code_run` and inspect the result. Put the filter and
-aggregation logic of an app into a module the script can import too
-(`lib/totals.js`), and test it there with filters, empty results and failed
-loads. Reconcile the values the app will show with the reviewed totals and check
-that filters describe the data actually displayed. A successful schema
-validation does not establish analytical correctness. `code_check` renders apps
-on desktop and phone; look at every screenshot, fix visible defects and check
-again.
+Lead reports with the finding, evidence and limitations; lead dashboards with
+important measurements, trends and diagnostic breakdowns. Shared filters must
+affect every claimed view. Keep the initial view useful without interaction.
+Show source context: snapshot or live loading, retrieval time, sources and
+coverage notes. Label partial data visibly.
 
-Validate the logic the app actually uses, rather than pasting its formulas into a
-second test script. Keep an independent expectation from the input data: row
-counts, unmatched joins, totals and representative boundary cases. For targets,
-state their grain (for example month × region) and aggregate each target once;
-multiple selected regions must sum their distinct targets. Compare inspected raw
-KPI values and plotted series with independent expectations. A formatted value
-matching after rounding does not validate the raw ratio. Never round fractions before formatting them as percent. Preserve precision
-until display formatting. Test reset, one/multiple/all selections, empty results,
-and complete versus partial periods. A newly generated timestamp is not source
-freshness: keep the real retrieval or file-snapshot timestamp stable.
+## Validate the actual result
 
-For a Studio App data snapshot, export the validated dataset with `cloud.download` and
-`code_export`, then copy its exact path/version into the App's files with
-`code_file_copy` (see the Code Mode file transfers reference); importing private
-files into an App receives fresh review. Read it in the app with
-`JSON.parse(await (await cloud.files.read("data.json")).text())`. Never rebuild a
-truncated dataset by copying tool output. Keep transformations and source
-identity alongside the snapshot.
+Run the analysis with `code_run` and inspect it. Share app filtering and
+aggregation in a module a script can import (`lib/totals.js`); test the actual
+logic, not a second copy of its formulas. Keep independent expectations from
+the input: row counts, unmatched joins, totals and boundary cases. Reconcile
+raw KPI values and series before formatting; matching rounded values does not
+validate a ratio. Schema validation and a rendered dashboard do not establish
+analytical correctness.
 
-Human approval and uncertain HTTP outcomes follow the Code Mode HTTP contract.
-Do not replay an external mutation to refresh a chart. Separate local filtering
-from external loading; an Apply button can avoid a request for every slider move.
+For targets, state the grain (for example month × region) and aggregate each
+target once; multiple selected regions sum distinct targets. Test reset,
+one/multiple/all selections, empty results, failed loads, and complete versus
+partial periods. Check that filters describe the data actually displayed.
+Use `code_check` on desktop and phone; inspect every screenshot, fix visible
+defects and check again before delivery.
 
-## Save, share, and hand off
+For a Studio App snapshot, export the validated dataset through `cloud.download`
+and `code_export`, then transfer its exact path/version with `code_file_copy`
+(see the Code Mode file transfers reference). Private imports receive fresh
+review. Read it with `JSON.parse(await (await cloud.files.read("data.json")).text())`;
+never reconstruct a truncated dataset from tool output. Retain transformations
+and source identity with the snapshot.
 
-Deliver computed charts and tables as views first, with `cloud.view.*` and
-`present({path})`. Use a chat app only for interaction; test its numbers with
-`code_run`, render it with `code_check`, inspect the screenshots, then deliver
-with `code_present({title, files})`. A successful run alone is not visible.
-Retain source identity, reviewed input data and their real retrieval timestamp. Put writes and external reloads behind explicit buttons; opening an
-old result must not repeat earlier actions. The user can download the current
-view as PDF or static HTML.
+Follow Code Mode's HTTP approval and uncertain-outcome contract. Never replay
+an external mutation to refresh a chart. Keep filtering separate from external
+loading; an Apply button can avoid a request on every slider move. Put writes
+and external reloads behind explicit buttons so opening an old result does not
+repeat actions.
 
-For reusable Studio Apps, reuse one Cloud resource for later revisions of the same report or dashboard.
-Save its source, test that revision, and use the normal Code Mode publication
-workflow when publication is requested. Publishing a version and granting reader
-access are separate operations. Preserve existing access; a dashboard request
-does not authorize broadening it. Personal secrets are never copied to readers.
+## Deliver and retain the result
 
-A published source version is not automatically a frozen data snapshot. A frozen
-report must retain the reviewed data explicitly in its authorized resource or
-output file. A live app must implement its loader and display the retrieval time;
-loading once is not continuous monitoring. No background refresh exists unless
-implemented through an appropriate supported workflow.
+Present views or exported files; a successful run alone is not visible. Use a
+chat app for interaction, delivered with `code_present({title, files})` after
+checking numbers and rendering. The user can download its current view as PDF
+or static HTML. The answer carries findings, caveats and decisions, not values
+already shown in views. Include the result link/path, data timestamp and material
+coverage limits; say whether it is a snapshot or reloads from sources.
 
-Present the views, chat app, resource link or exported file, the data
-timestamp, and material coverage limitations. The answer text carries findings,
-caveats and decisions, such as "only a fifth is in stock", not the values the
-views already show. Say whether it is a snapshot or reloads from its sources.
+Reuse one Cloud resource for revisions of a reusable report or dashboard.
+Save and test its source, and follow Code Mode publication when requested.
+Publishing a version and granting readers access are separate operations;
+preserve existing access. A dashboard request does not authorize broader
+sharing, and personal secrets never go to readers.
+
+A published source version does not freeze its data. Frozen reports retain
+reviewed data in an authorized resource or output file. Live apps implement
+a loader and show retrieval time; loading once is not continuous monitoring.
+Background refresh requires an implemented, supported workflow.
 If publication fails, retain the tested resource and report the failed stage;
-do not claim success or create a different public destination. Sites-specific
-hosting, access policies, and editor storage are not part of this Cloud workflow.
+do not claim success or create another public destination. Sites hosting,
+access policies and editor storage are outside this Cloud workflow.

@@ -5,7 +5,7 @@ section: AI
 order: 1070
 description: Present conversation state, tools, approvals, and failures with the shared chat controller and components.
 tags: [ai, ui, solidjs]
-updated: 2026-10-10
+updated: 2026-10-11
 ---
 
 # Chat interface
@@ -282,17 +282,24 @@ order:
    and Copy data; the table scrolls inside the same height, so neither the
    finished call nor the switch moves anything. While the model still writes a
    chart's arguments, the work line says it prepares a chart. Text output of
-   `cld assistant`, interactive or not, prints a chart's data table and a
-   card's title and value instead. A presented `/views/*.view.json` file renders
-   inline as its chart or table, reserving its height while loading. The height
-   comes from the summary of the finished `present` call; while the call runs,
-   the work line names the step and the place stays empty, so no one-line
-   activity grows into the view. Table header labels stay on one line, and
-   the table scrolls sideways instead, so up to eight rows fit the reserved
-   height on a phone too. Readers validate the file again; missing or invalid
-   data shows unavailable in that frame. The CLI fetches and validates a view
-   and prints its table (first 100 rows, plus a table footer), or
-   `View unavailable: <path>`.
+   `cld assistant`, interactive or not, prints chart data tables (one per chart
+   for a group) and a card's title and value instead. Series legends wrap below
+   the chart inside its fixed viewport: 18rem for ordinary charts, 8rem for
+   sparkline, 10rem for stat and 12rem for barGauge. A group stacks 2..6 charts;
+   `layout: "grid"` uses two columns when the chat column is at least 42rem wide,
+   and one column on phones. With `linkX`, line charts of the same x type share
+   a cursor on hover, arrow keys and tap. A phone tap pins it; dragging scrolls
+   the page. Each chart keeps its own y axis.
+   A presented `/views/*.view.json` file renders inline as a chart, group or
+   table. The finished `present` summary reserves its height while loading;
+   group summaries list each chart's kind and title, so every frame reserves
+   its own height. While the call runs, the work line names the step and the
+   place stays empty. Table header labels stay on one line and the table
+   scrolls sideways, so up to eight rows fit the reserved height on a phone.
+   Readers validate the file again; missing or invalid data shows unavailable
+   in that frame. A group chart that cannot be drawn shows unavailable in its
+   own frame. The CLI fetches and validates views and prints their tables
+   (first 100 rows per table, plus a table footer), or `View unavailable: <path>`.
 3. **Newest text.** While the turn runs this is a status: a new text replaces
    the previous one in the same element once its first sentence has streamed,
    and the place keeps its height until the turn ends. A text that ends the
@@ -644,8 +651,8 @@ code tools report it to the model as a tool error.
 `inputPaths`, takes a fixed snapshot of current source, and returns a run ID and
 compact state. There is no required source revision. An app whose interface is
 `index.html` does not run there; `code_open` and `code_present` show it.
-`code_run` and `code_inspect` also return `views`: paths and chart/table summaries
-without values. Present each view with `present({path})`.
+`code_run` and `code_inspect` also return `views`: paths and chart, group or table
+summaries without values. Present each view with `present({path})`.
 `code_inspect` returns status, progress, logs, output and captured files, and can
 wait for background work with `waitMs`.
 Inspection also reports the tested source revision. `code_open` never starts the visible
@@ -757,9 +764,32 @@ lays out the HTML of every `cloud.pdf.render` call at its printed width with the
 base stylesheet and print media, as the renderer prints it, and reports the same
 findings for the PDF. It loads no images from `assets`; the findings rest on
 margins and text. Visible values such as `NaN`, `undefined`, `Invalid Date` or
-`[object Object]` warn in the page and in PDFs. `cloud.chart` keeps complete
-category labels and skips some at narrow widths; it does not shorten them to
-one or two characters.
+`[object Object]` warn in the page and in PDFs.
+
+`cloud.chart(options)` returns chart markup for apps, scripts and PDFs without
+needing a DOM. It validates with the same contract and maps options through the
+same path as chat charts: bar, line, scatter, pie, donut, histogram, gauge,
+sparkline, boxplot, heatmap, barGauge and stat. See
+[Tools and approvals](/en/docs/ai/tools-and-approvals#tool-contracts) for data,
+axes, declarative formats, references, thresholds, series style/role and limits.
+There is no grouped or stacked bar mode, or second y axis. For related computed
+measures in chat, use `cloud.view.group`.
+
+Function `format(value)` is also accepted on axes and values. `width` and
+`height` set the logical size: 480 × 280 by default, or 160 × 40 for sparkline.
+Apps redraw stretched charts at their measured width when `width` is omitted;
+pie, donut and gauge keep their aspect ratio. Date and ISO-with-offset x values
+become the viewer's wall-clock time. Converted x values that are all at midnight
+use `YYYY-MM-DD`; Date references become wall-clock date-time strings.
+Category labels remain complete; some are skipped when they do not fit.
+
+Contract violations throw `invalid`: field errors name paths such as
+`series[0].data`, while chart-wide checks explain the reason. More than 480
+points in a series, mixed x types or an undrawable chart fail validation.
+Options supported only by stdlib and outside this contract are ignored.
+Pie and donut slices show shares, so a value `format` only changes the values
+in chat tooltips and tables. A scatter comparison series (`role: "reference"`)
+draws hollow points in chat; `cloud.chart()` draws them filled.
 
 Checks use the existing host admission and a 45-second deadline. Each user can
 hold at most 16 disposable check copies at a time, two for each of the eight

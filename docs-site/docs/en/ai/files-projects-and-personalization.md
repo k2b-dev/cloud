@@ -5,7 +5,7 @@ section: AI
 order: 1050
 description: Give AI controlled access to chat files, shared Project context and Skills, and durable personal preferences.
 tags: [ai, files, projects, skills, memory]
-updated: 2026-10-10
+updated: 2026-10-11
 ---
 
 # Files, Projects, Skills, and personalization
@@ -49,7 +49,7 @@ The conversation owner can delete one file with
 `cld assistant files delete` and Assistant's file list. Reading or deleting a
 path that does not exist in the chat returns `404` with `File not found`.
 
-Code runs save validated chart and table views under `/views/*.view.json`.
+Code runs save validated chart, group and table views under `/views/*.view.json`.
 These are ordinary files: visible in the chat's file list, downloadable and
 counted toward its storage budget. Model write tools cannot write or append
 under `/views`; only `cloud.view.*` creates views. The owner can still edit,

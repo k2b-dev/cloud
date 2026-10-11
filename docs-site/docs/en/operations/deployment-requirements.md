@@ -247,6 +247,16 @@ the memory occupied by files loaded for analysis. View files are ordinary chat
 files under `/views` and count toward the per-chat file budget; they need no
 configuration or migration.
 
+Assistant's `cloud.chart()` validates Studio app, script and PDF charts against
+the chat chart contract. Application authors must aggregate series beyond 480
+points and correct mixed x types or other contract violations; these throw
+`invalid` instead of passing directly to stdlib. Options outside the contract
+are ignored. The default logical width is 480 instead of 640 (height 280);
+sparkline remains 160 × 40, and apps without explicit width redraw at their
+measured width. Chart groups and the additional chart kinds need no configuration
+or data migration. See
+[Code Mode charts](/en/docs/ai/chat-interface#check-an-html-app-before-showing-it).
+
 ### Assistant Chromium isolation
 
 Assistant runs headless Chromium in its own container as the unprivileged

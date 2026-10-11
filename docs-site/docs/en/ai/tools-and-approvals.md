@@ -5,7 +5,7 @@ section: AI
 order: 1040
 description: Let models request application actions while keeping authorization and approval explicit.
 tags: [ai, tools, approvals]
-updated: 2026-10-10
+updated: 2026-10-11
 ---
 
 # Tools and approvals
@@ -155,71 +155,110 @@ as with surveys, the long-form text editor, charts, or presented files. Keep
 operation details and arguments in the tool description and schema; the hint
 does not replace either.
 
-The built-in `chart` tool is a `clientView()` that shows one chart in the chat
-from a few values the model already has that did not come from a code run. Its input is the plain-data form of
-`cloud.chart()` in Studio code: `bar`, `line` (with `area` to fill it),
-`scatter`, `pie`, `donut`, `histogram`, `gauge`, or `sparkline`, with `title`
-and an optional `subtitle`, but without `width`, `height`, or `format`
-functions. Model providers accept only an object at the root of a tool schema,
-so `CloudAiChartInputSchema` describes every kind as one object whose fields
-name the kinds they belong to, and checks the rules of the chosen kind after
-that. A chart holds at most 8 series, one per palette color, and at most 480
-values per list, one per unit of the 480-unit drawing. `x` is a number, a date
-`YYYY-MM-DD`, or a local date and time `YYYY-MM-DDTHH:mm` or
-`YYYY-MM-DDTHH:mm:ss` without an offset, written in the user's time zone.
+The built-in `chart` tool is a `clientView()` for a few values the model already
+has that did not come from a code run. It shares the chart contract of
+`cloud.chart()` in Studio code, without `width`, `height`, or format functions.
+Set exactly one of `kind` or `charts` at the tool's flat root, with `title` and
+optional `subtitle` (unit, period or source).
 
-The schema checks these bounds first: input outside them fails before anything
-is computed or drawn. It then rejects input that would not draw as written: a date that does not exist, such as February 30; a line with
-fewer than two points in a series; values at or below zero on a `log` axis,
-which the chart would leave out; values outside an axis `domain`; values that
-differ too little for their size to label an axis, such as 1e17 and 1e17 + 16;
-pie slices that add up to zero; or a pie whose legend leaves too little room
-for it. The model gets the reason, and the chat never shows a broken chart or a
-table that hides a value. `parseCloudAiChartInput()` reads the arguments of a
-call as one typed chart without drawing it.
+| Kind | Data and options |
+| --- | --- |
+| `bar` | `data: [{label, value}]`; `yAxis`, `colorByBar`, `showValues`, `legend`, `references` |
+| `line`, `scatter` | `series: [{label?, data: [{x, y}], role?}]`; `xAxis`, `yAxis`, `legend`, `references`. Line also accepts `area`, `smooth` and series `style`. |
+| `pie`, `donut` | `data: [{label, value}]`; `legend`, `showLabels`, `format` |
+| `histogram` | `data: number[]`; `bins` (count or ascending edges), `references` |
+| `gauge` | `value`; `min`, `max`, `label`, `unit`, `format`, `thresholds` |
+| `sparkline` | `data: number[]`; `area` |
+| `boxplot` | `data: [{label, values: number[]}]`; `yAxis`, `references` |
+| `heatmap` | `data: [{x, y, value}]`, with text categories and each x/y pair once; `min`, `max`, `showValues`, `format` |
+| `barGauge` | 1..8 `data` items `{label, value, min?, max?}`; labels at most 10 characters. Optional shared `min`, `max`, `unit`, `format`, `thresholds`. |
+| `stat` | `value`; `format`, `unit`, `delta` (change in the value's units), `better: "up" | "down"`, `sparkline: number[]` |
 
-Cloud answers a chart call itself, without a browser and also in background and
-scheduled runs, whose transcript shows the chart later. The call goes from
-running to completed without an open request in between. The chat draws it
-with the `@k2b/ui` chart renderer that `cloud.chart()` uses. The chart has no
-code, sandbox, state, or actions. The reader can switch it to a data table that
-shows and copies every value as given, and axis labels show fractional values
-exactly. When a chart needs filters or buttons, Assistant shows an app in the
-chat with `code_present` instead; data that must be kept or an app that is used
-again becomes a saved Studio App.
+Axes accept `label`, `domain: [min, max]`, `ticks` (2..12), `scale: "linear" |
+"log"` and `format`. Number formats are `{style?: "number" | "percent" |
+"currency", currency?, unit?, decimals?, compact?}`. Currency requires an
+uppercase three-letter code exactly when style is currency; percent takes
+fractions, decimals is 0..10, and unit is a suffix of at most 12 characters.
+Date x axes take `{date: "day" | "minute" | "second"}`. With `showValues` on
+bars, y ticks use the value format. Pie and donut slices show shares, so their
+format applies to the values in tooltips and the data table.
 
-Computed results stay in `code_run`: the script calls `cloud.view.chart` or
-`cloud.view.table`, then the model calls `present({path})` for every view the
-person should see. It never retypes run values into chart arguments, app data
-or Markdown. A missing view requires another run with `cloud.view.*`.
+`references` holds at most 8 `{value, axis?, label?}` lines, defaulting to y.
+Only line, scatter and histogram accept x references. Reference values match
+the axis type; automatic domains include them, and explicit domains must contain
+them. Gauge and barGauge `thresholds` hold 1..8 `{value, label?}` bounds in
+strictly ascending order within every effective min..max range (defaults 0..100).
+Cloud uses palette colors for bands. Line series `style` is `solid`, `dashed` or
+`dotted`; `role: "reference"` defaults a line to dashed unless style is set,
+and makes scatter points hollow in chat. For stat, `better` lets the host choose
+the change color; absent `better` or a zero change is neutral.
+
+A group takes `charts` (2..6 complete chart specs), optional `linkX` and
+`layout: "stack" | "grid"` (default stack). `linkX` requires line charts whose
+x values are all numbers or all dates. There is no second y axis; use a group
+for related measures with different units. Groups are separate charts, not
+grouped or stacked bars; neither bar mode is supported
+([upstream issue](https://github.com/k2b-dev/stdlib/issues/5)). See
+[Chat interface](/en/docs/ai/chat-interface) for layout and cursor behavior.
+
+Limits are 8 series and 480 values per series or ordinary data list. Boxplots
+allow up to 480 groups; their observations count toward the 3,840-mark budget.
+Heatmaps allow up to 3,840 cells. Each chart and each group has a total budget of
+3,840 input marks, including boxplot observations and a stat's headline plus
+sparkline. A line or sparkline needs at least two points; scatter needs one.
+x values are finite numbers or `YYYY-MM-DD[THH:mm[:ss]]`, wall-clock time without
+an offset. All series in a chart use the same x type.
+
+The schema checks bounds before computing or drawing. It rejects nonexistent
+dates, values at or below zero on a log axis, values outside an explicit domain,
+values too close for their size to label an axis, zero-total pies and legends
+that leave too little room for a pie. Heatmap column labels must fit a phone-wide
+chart; validation names the allowed length or asks for fewer columns. The model
+gets the reason. `parseCloudAiChartInput()` reads one chart without drawing;
+`parseCloudAiChartToolView()` reads either a chart or a group.
+
+Cloud answers chart calls without a browser, also in background and scheduled
+runs. The transcript shows them later. Readers can switch each chart to its
+data table and use Copy data. Filters or buttons belong in a chat app delivered
+with `code_present`; kept data or a reused app belongs in a saved Studio App.
+
+Computed results stay in `code_run`: the script calls `cloud.view.chart`,
+`cloud.view.group` or `cloud.view.table`, then the model calls `present({path})`
+for each view the person should see. It never retypes run values into chart
+arguments, app data or Markdown. A missing view requires another run with
+`cloud.view.*`.
 
 Views are declarative JSON chat files under `/views/*.view.json`, validated on
-the server on every write. Charts use the same kinds and rules as the chart
-tool. Tables have unique typed columns, rows, an optional footer and initial
-sort; numeric formats support currency, fractions as percent, decimals, compact
-notation and a plain unit suffix. Views contain no markup or functions, and
+every server write. Chart views use the contract above; group views are
+`{view: "group", title, subtitle?, charts, linkX?, layout?}`. Code runs may use
+rows convenience forms for chart specs, including each chart in a group.
+Tables have unique typed columns, rows, an optional footer and initial sort;
+number columns use the same number formats. Views contain no markup or functions;
 labels and cells render as text. Limits are 3,840 table rows, 100 columns and
-1 MiB per view; views and captured downloads share 64 outputs per run. Model
-write tools reject `/views` paths. Users retain normal file editing, download,
-rename and deletion rights.
+1 MiB per view; views and downloads share 64 outputs per run. Model write tools
+reject `/views` paths. Users retain file editing, download, rename and deletion
+rights.
 
 `present` returns a summary without values and renders an assistant-owned view
-inline. Every reader validates the current file again; invalid or missing files
+inline. A group summary lists each chart's kind and title to reserve its frame
+while loading. Every reader validates the current file; invalid or missing files
 show unavailable. Only assistant files below `/views/` ending in `.view.json`
 qualify. HTML apps cannot save views; they draw with `cloud.chart()`.
 
 The pure readers in `@k2b/cloud/ai/browser` are `parseCloudAiView`,
-`checkCloudAiView`, `cloudAiViewSummary`, `cloudAiViewTable`, `cloudAiTableTsv`
-and `isAiViewFile` (with `isAiViewPath` for namespace checks). Parsing checks the
+`checkCloudAiView`, `cloudAiViewSummary`, `cloudAiViewTable`, `cloudAiTableTsv`,
+`isAiViewFile`, `isAiViewPath` and `parseCloudAiChartToolView`. Parsing checks
 schema and data without drawing; checking also verifies chart drawing for
 writes. Table formatting uses the reader's locale; TSV quotes cells and guards
-text against spreadsheet formulas. The view types and these helpers are also
-exported from `@k2b/cloud/ai`, alongside `createAiConversationView` and
-`AiViewInvalidError`. The writer checks conversation ownership and archival,
-uses a title slug and a deterministic run/index hash, and preserves artifact
-retry and conflict semantics. Rejections name the issue path and limit.
+text against spreadsheet formulas. The view types, including `CloudAiGroupView`,
+and these helpers are also exported from `@k2b/cloud/ai`, alongside
+`createAiConversationView` and `AiViewInvalidError`. The writer checks conversation
+ownership and archival, uses a title slug and deterministic run/index hash, and
+preserves artifact retry and conflict semantics. Validation reports the issue;
+field errors include paths, and group chart errors identify `charts[i]`.
 `CLOUD_AI_VIEW_DIRECTORY`, `CLOUD_AI_VIEW_SUFFIX`, `CLOUD_AI_VIEW_MAX_BYTES`,
-`CLOUD_AI_TABLE_MAX_ROWS` and `CLOUD_AI_TABLE_MAX_COLUMNS` export the bounds.
+`CLOUD_AI_TABLE_MAX_ROWS`, `CLOUD_AI_TABLE_MAX_COLUMNS`, `CLOUD_AI_VIEW_MAX_MARKS`
+and `CLOUD_AI_GROUP_MAX_CHARTS` export the bounds.
 
 The built-in `text_editor` is a `clientInteraction()` for one complete
 plain-text or Markdown draft of at most 20,000 characters. It is appropriate
