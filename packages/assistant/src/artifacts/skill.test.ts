@@ -206,47 +206,54 @@ test("the CSV view example converts through the real runtime and validates every
     { locale: "en-US", timeZone: "UTC" },
     true,
   );
-  const example = examples.find(({ code }) => code.includes("Orders and prices"));
+  const example = examples.find(({ code }) => code.includes("Inventory overview"));
   if (!example) throw new Error("Missing CSV example");
   const run = new Function("cloud", example.code.replace("export default", "return"));
-  const csv = "status,price,category,date\npaid,10,A,2026-01-02\nopen,20,B,2026-01-03\npaid,30,A,2026-02-01";
+  const csv = "product,category,status,price,stock\nA,Tools,open,10,2\nB,Tools,paid,20,3\nC,Parts,open,30,4";
   expect(
     await run({ view, sheet: { parseCsv: (file: Blob) => parseCsv(file, {}, "en-US") } })(null, {
-      files: [{ file: async () => new File([csv], "orders.csv") }],
+      files: [{ file: async () => new File([csv], "inventory.csv") }],
     }),
-  ).toEqual({ orders: 3, total: 60 });
+  ).toEqual({ products: 3, stock: 9, stockValue: 200 });
   expect(specs).toHaveLength(3);
   expect(specs[0]).toMatchObject({
-    view: "group",
-    layout: "grid",
-    charts: [
-      {
-        kind: "bar",
-        data: [
-          { label: "paid", value: 2 },
-          { label: "open", value: 1 },
-        ],
-      },
-      {
-        // The histogram rows form stores all observations as bin counts.
-        kind: "bar",
-        data: [
-          { label: "10–15", value: 1 },
-          { label: "15–20", value: 0 },
-          { label: "20–25", value: 1 },
-          { label: "25–30", value: 1 },
-        ],
-      },
+    view: "stats",
+    title: "Inventory overview",
+    subtitle: "Selected CSV · stock value = price × stock",
+    items: [
+      { label: "Products", value: 3 },
+      { label: "Stock", value: 9 },
+      { label: "Stock value", value: 200 },
     ],
   });
   expect(specs[1]).toMatchObject({
-    kind: "boxplot",
-    data: [
-      { label: "A", values: [10, 30] },
-      { label: "B", values: [20] },
+    view: "explorer",
+    title: "Inventory",
+    subtitle: "Selected CSV · stock value = price × stock",
+    controls: { filter: "status" },
+    rows: [
+      { product: "C", stockValue: 120 },
+      { product: "B", stockValue: 60 },
+      { product: "A", stockValue: 20 },
+    ],
+    views: [
+      { id: "price-stock", kind: "scatter", x: "price", y: "stock", series: "status" },
+      { id: "stock-value", kind: "bar", x: "product", y: "stockValue" },
     ],
   });
-  expect(specs[2]).toMatchObject({ footer: { month: "Total", amount: 60 } });
+  expect(specs[2]).toMatchObject({
+    view: "chart",
+    kind: "bar",
+    title: "Price distribution",
+    subtitle: "EUR · all rows",
+    // The histogram rows form stores every observation as bin counts.
+    data: [
+      { label: "10–15", value: 1 },
+      { label: "15–20", value: 0 },
+      { label: "20–25", value: 1 },
+      { label: "25–30", value: 1 },
+    ],
+  });
 });
 
 test("W1 view examples compile, preserve CSV numbers and page the actual task capability contract", async () => {

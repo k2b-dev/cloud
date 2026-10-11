@@ -43,6 +43,17 @@ export type ChartExplorerProps<T extends ChartExplorerRow> = {
   view?: "chart" | "table";
   defaultView?: "chart" | "table";
   onViewChange?: (view: "chart" | "table") => void;
+  /**
+   * Several charts of the same rows. The switcher then lists each chart and the table; `chart` names the one `data`
+   * holds, and `onChartChange` reports a pick, so the owner passes the matching data.
+   */
+  charts?: readonly { id: string; label: string }[];
+  chart?: string;
+  onChartChange?: (id: string) => void;
+  /** Filter controls between the header and the viewport, such as ChartFilterControls. */
+  controls?: JSX.Element;
+  /** The table renders at most this many rows of the sorted order; sorting and Copy data use every row. */
+  tableRows?: number;
   sort?: DataTableSort | null;
   defaultSort?: DataTableSort | null;
   onSortChange?: (sort: DataTableSort | null) => void;
@@ -120,6 +131,24 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
       return order.direction === "asc" ? comparison : -comparison;
     });
   });
+  const shownRows = () => (props.tableRows === undefined ? rows() : rows().slice(0, props.tableRows));
+  // Chart ids are data; a prefix keeps one named "table" apart from the table entry.
+  const switcherValue = () => (view() === "table" || !props.charts?.length ? view() : `chart:${props.chart ?? props.charts[0]?.id}`);
+  const switcherOptions = () =>
+    props.charts?.length
+      ? [
+          ...props.charts.map((chart) => ({ value: `chart:${chart.id}`, label: chart.label })),
+          { value: "table", label: chartMessages().chartData },
+        ]
+      : [
+          { value: "chart", label: chartMessages().chartDiagram },
+          { value: "table", label: chartMessages().chartData },
+        ];
+  const pick = (value: string) => {
+    if (value === "table" || value === "chart") return setView(value);
+    setView("chart");
+    props.onChartChange?.(value.slice("chart:".length));
+  };
   const copyText = () =>
     [
       props.columns.map((c) => tsvCell(c.label)).join("\t"),
@@ -147,81 +176,90 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
             onCopyError={() => setCopyFailed(true)}
             onCopied={() => setCopyFailed(false)}
           />
-          <SelectChip<"chart" | "table">
-            value={view()}
-            onValueChange={setView}
+          <SelectChip<string>
+            value={switcherValue()}
+            onValueChange={pick}
             aria-label={chartMessages().chartView}
-            options={[
-              { value: "chart", label: chartMessages().chartDiagram },
-              { value: "table", label: chartMessages().chartData },
-            ]}
+            options={switcherOptions()}
           />
         </div>
       </header>
       <Show when={copyFailed()}>
         <span role="alert">{chartMessages().chartCopyFailed}</span>
       </Show>
+      {props.controls}
       <div
         class="k2b-chart-explorer__viewport"
         data-legend={view() === "chart" && props.legend?.length && data().rows.length > 0 ? "true" : undefined}
+        data-capped={view() === "table" && shownRows().length < rows().length ? "true" : undefined}
         style={{ height: props.height ?? "18rem" }}
       >
         <Show when={data().rows.length > 0} fallback={<div class="k2b-chart__empty">{props.empty ?? messages().noData}</div>}>
           <Show
             when={view() === "chart"}
             fallback={
-              <DataTable
-                rows={rows()}
-                columns={props.columns.map((column) => ({
-                  id: column.id,
-                  header: column.label,
-                  value: column.value,
-                  align: column.align,
-                  sortable: Boolean(column.sortValue),
-                }))}
-                ariaLabelledBy={id}
-                getRowId={(row) => row.key}
-                selectedRowId={selected()}
-                sort={sort()}
-                fillHeight
-                surface="paper"
-                onRowClick={(row) => select(row.key)}
-                renderCell={({ row, col, value, render }) => {
-                  const custom = props.columns.find((column) => column.id === col.id)?.render;
-                  const cell = () => (custom ? custom(row) : render(value));
-                  return col.id === props.columns[0]?.id ? (
-                    <Button variant="text" size="sm" onClick={() => select(row.key)}>
-                      {cell()}
-                    </Button>
-                  ) : (
-                    cell()
-                  );
-                }}
-                renderHeader={({ col, render }) =>
-                  col.sortable ? (
-                    <Button
-                      variant="text"
-                      size="sm"
-                      onClick={() =>
-                        setSort({
-                          key: col.id,
-                          direction: sort()?.key === col.id && sort()?.direction === "asc" ? "desc" : "asc",
-                        })
-                      }
-                    >
-                      {props.columns.find((column) => column.id === col.id)?.label}
-                      {/* The data table's own marker: inactive columns keep a dimmed arrow so the header reads as sortable. */}
-                      <i
-                        class={`k2b-data-table__sort-icon ti ${sort()?.key === col.id && sort()?.direction === "asc" ? "ti-arrow-up" : "ti-arrow-down"}`}
-                        data-active={sort()?.key === col.id ? "true" : undefined}
-                        aria-hidden="true"
-                      />
-                    </Button>
-                  ) : (
-                    render()
-                  )
-                }
-              />
+              <>
+                <DataTable
+                  rows={shownRows()}
+                  columns={props.columns.map((column) => ({
+                    id: column.id,
+                    header: column.label,
+                    value: column.value,
+                    align: column.align,
+                    sortable: Boolean(column.sortValue),
+                  }))}
+                  ariaLabelledBy={id}
+                  getRowId={(row) => row.key}
+                  selectedRowId={selected()}
+                  sort={sort()}
+                  fillHeight
+                  surface="paper"
+                  onRowClick={(row) => select(row.key)}
+                  renderCell={({ row, col, value, render }) => {
+                    const custom = props.columns.find((column) => column.id === col.id)?.render;
+                    const cell = () => (custom ? custom(row) : render(value));
+                    return !custom && col.id === props.columns[0]?.id ? (
+                      <Button variant="text" size="sm" onClick={() => select(row.key)}>
+                        {cell()}
+                      </Button>
+                    ) : (
+                      cell()
+                    );
+                  }}
+                  renderHeader={({ col, render }) =>
+                    col.sortable ? (
+                      <Button
+                        variant="text"
+                        size="sm"
+                        onClick={() =>
+                          setSort({
+                            key: col.id,
+                            direction: sort()?.key === col.id && sort()?.direction === "asc" ? "desc" : "asc",
+                          })
+                        }
+                      >
+                        {props.columns.find((column) => column.id === col.id)?.label}
+                        {/* The data table's own marker: inactive columns keep a dimmed arrow so the header reads as sortable. */}
+                        <i
+                          class={`k2b-data-table__sort-icon ti ${sort()?.key === col.id && sort()?.direction === "asc" ? "ti-arrow-up" : "ti-arrow-down"}`}
+                          data-active={sort()?.key === col.id ? "true" : undefined}
+                          aria-hidden="true"
+                        />
+                      </Button>
+                    ) : (
+                      render()
+                    )
+                  }
+                />
+                <Show when={shownRows().length < rows().length}>
+                  <p class="k2b-chart-explorer__note">
+                    {chartMessages().chartRowsShown({
+                      shown: new Intl.NumberFormat(locale()).format(shownRows().length),
+                      total: new Intl.NumberFormat(locale()).format(rows().length),
+                    })}
+                  </p>
+                </Show>
+              </>
             }
           >
             <ChartSnapshotView

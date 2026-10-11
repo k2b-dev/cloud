@@ -124,7 +124,9 @@ html:has(.cloud-app-canvas[data-layout-full-page="true"]) {
   height: 100%;
 }
 
-/* HTML legends next to a chart name the same colors. */
+/* Cloud's chart palette everywhere, so legends and series filters (also in popovers) name the colors the chart draws;
+   charts carry their own palette, which the second selector overrides. */
+:root,
 :root :is(.stdlib-chart, .k2b-chart-legend) {
   --stdlib-chart-c1: #14b8a6;
   --stdlib-chart-c2: #f97316;

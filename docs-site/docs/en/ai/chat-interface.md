@@ -293,7 +293,7 @@ order:
    A card shows one stat tile, the same look as stats views; its `tone` is
    not shown, and its trend stays neutral because a card does not say whether
    up is better. A presented `/views/*.view.json` file renders inline
-   as a chart, group, table, stats or details. Stats show 1..6 comparable key
+   as a chart, group, table, stats, details or explorer. Stats show 1..6 comparable key
    figures above charts, with optional scope text, sparkline and change;
    use them instead of several cards or stat charts for computed figures.
    Details show one record's 1..100 exact fields, such as a checked invoice,
@@ -315,6 +315,25 @@ order:
    own frame. The CLI fetches and validates views and prints their tables
    (first 100 rows per table, plus a table footer), or `View unavailable: <path>`.
    Stats and details use Field/Value tables; reference text includes `(type:id)`.
+   An explorer shows one typed dataset in up to six chart views and a table, picked
+   in the header's switcher. Its summary lists the view ids, labels and kinds
+   and the `step`, `filter` and `compare` flags, so the slider row and the row
+   with the series filter and the comparison pin are reserved before the file
+   loads. Those rows never wrap: the slider spans the block, and a long step
+   label in the pin is shortened. The chart, its legend and the table share one
+   18rem viewport, also on a phone. Filtering removes rows from every chart and
+   the table; the step starts at the last step in row order. Pinning a step and
+   moving the slider adds that step as dashed lines or hollow scatter points in
+   the same colors. Comparison needs a step and line/scatter views. Numeric
+   axes and heatmap color bounds cover the whole dataset, so filtering and
+   stepping never rescale them; date x axes follow the shown points. A selected
+   row stays selected across charts and the table. The table renders up to 100
+   rows of the current state, including the pinned step, in the reader's sort;
+   **Copy data** copies all of them. Explorer files contain plain data,
+   validated on write and on every read. Filtering, steps, comparison,
+   row selection and sorting run in the browser and reset on reload. The CLI prints the title,
+   subtitle and the table of the initial state: the last step with every filter
+   value visible (first 100 rows).
    [Tools and approvals](/en/docs/ai/tools-and-approvals) defines these contracts.
 3. **Newest text.** While the turn runs this is a status: a new text replaces
    the previous one in the same element once its first sentence has streamed,
@@ -676,7 +695,7 @@ code tools report it to the model as a tool error.
 `inputPaths`, takes a fixed snapshot of current source, and returns a run ID and
 compact state. There is no required source revision. An app whose interface is
 `index.html` does not run there; `code_open` and `code_present` show it.
-`code_run` and `code_inspect` also return `views`: paths and chart, group or table
+`code_run` and `code_inspect` also return `views`: paths and chart, group, table, stats, details or explorer
 summaries without values. Present each view with `present({path})`.
 `code_inspect` returns status, progress, logs, output and captured files, and can
 wait for background work with `waitMs`.

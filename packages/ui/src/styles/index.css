@@ -11045,9 +11045,18 @@
 .k2b-ui .k2b-chart-explorer__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
 .k2b-ui .k2b-chart-explorer__header { justify-content: space-between; }
 .k2b-ui .k2b-chart-explorer__title { margin: 0; font-size: 1rem; font-weight: 600; }
+.k2b-ui .k2b-chart-explorer__legend:has(> .k2b-chart-explorer__pin) { flex-wrap: nowrap; }
+.k2b-ui .k2b-chart-explorer__legend > .k2b-filter-chip { flex: none; }
+/* The pin stands as tall as the series chip next to it, so the row looks like one set of controls. */
+.k2b-ui .k2b-chart-explorer__pin { min-width: 0; min-height: 2.25rem; flex: 0 1 auto; }
+.k2b-ui .k2b-chart-explorer__pin span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .k2b-ui .k2b-chart-explorer__status { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; font-size: .8rem; }
 .k2b-ui .k2b-chart-explorer__viewport { min-width: 0; overflow: auto; }
 .k2b-ui .k2b-chart-explorer__viewport > .k2b-table-shell { height: 100%; }
+/* A capped table keeps its note inside the viewport, so switching views never changes the block's height. */
+.k2b-ui .k2b-chart-explorer__viewport[data-capped] { display: flex; flex-direction: column; gap: .5rem; }
+.k2b-ui .k2b-chart-explorer__viewport[data-capped] > .k2b-table-shell { flex: 1 1 0; min-height: 0; height: auto; }
+.k2b-ui .k2b-chart-explorer__note { flex: none; margin: 0; color: var(--k2b-text-muted); font-size: .75rem; line-height: 1rem; }
 /* A legend takes its rows from the chart, never from the page: the viewport keeps its height. The chart keeps most of
    it however many names there are; a longer legend scrolls in the rest. */
 .k2b-ui .k2b-chart-explorer__viewport[data-legend] { display: flex; flex-direction: column; gap: .5rem; }

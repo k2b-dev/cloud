@@ -15,6 +15,8 @@ const messages = i18n.define({
       viewCopyData: "Copy data",
       viewRowsCapped: ({ shown, total }: { shown: string; total: string }) =>
         `Showing ${shown} of ${total} rows. Sort to see others; Copy data copies all of them.`,
+      explorerNoRows: "No rows match this selection.",
+      explorerUndrawable: "This view cannot be drawn for this selection. The table shows its rows.",
       tableCapped: "Showing the first 100 returned rows. The full tool result remains available in details.",
       tableMore: "More rows are available. Ask for the next page or open the result in the application.",
       assistantTurns: "Assistant turns",
@@ -314,6 +316,8 @@ const messages = i18n.define({
       viewCopyData: "Daten kopieren",
       viewRowsCapped: ({ shown, total }: { shown: string; total: string }) =>
         `${shown} von ${total} Zeilen werden angezeigt. Sortiere, um andere zu sehen; „Daten kopieren“ kopiert alle.`,
+      explorerNoRows: "Keine Zeilen passen zu dieser Auswahl.",
+      explorerUndrawable: "Diese Ansicht lässt sich für diese Auswahl nicht zeichnen. Die Tabelle zeigt ihre Zeilen.",
       tableCapped:
         "Die ersten 100 zurückgegebenen Zeilen werden angezeigt. Das vollständige Werkzeugergebnis bleibt in den Details verfügbar.",
       tableMore: "Weitere Zeilen sind verfügbar. Frage nach der nächsten Seite oder öffne das Ergebnis in der Anwendung.",

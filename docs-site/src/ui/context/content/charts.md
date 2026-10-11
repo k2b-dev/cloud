@@ -588,6 +588,9 @@ throw. Disposal aborts work; refresh after disposal does not load.
 | `title`, `data`, `columns` | Required heading, `ChartExplorerData<T>`, and nonempty columns with unique nonempty IDs. |
 | `selectedKey`, `onSelectedKeyChange` | Optional controlled row selection. Omit key for local selection. A missing local row never clears a sibling's controlled selection. |
 | `view`, `onViewChange` | Optional controlled `"chart" \| "table"`. Otherwise, `defaultView` initializes local view; default `"chart"`. |
+| `charts`, `chart`, `onChartChange` | Optional `{ id, label }[]` for several charts of the same rows. The switcher then lists each chart and the table instead of Diagram and Table. `chart` names the chart that `data` holds; a pick calls `onChartChange(id)` and switches `view` to `"chart"`, and the owner passes that chart's data. Keep `data.rows` the same rows for every chart so selection, sorting and Copy data stay put while switching. |
+| `controls` | Optional JSX between the header and the viewport, such as `ChartFilterControls` with `compare`. It is part of the block: give it a fixed layout so a change of filter or pin never moves the viewport. |
+| `tableRows` | Optional number of rows the table renders, in the current sort order. A note inside the viewport names the shown and total rows; sorting and Copy data use every row. Use it for datasets that are larger than a readable table, such as more than 100 rows. |
 | `sort`, `onSortChange` | Optional controlled `DataTableSort \| null`. Otherwise `defaultSort` initializes local sort; default `null`. |
 | `renderDetails` | Optional row renderer replacing the DescriptionList inside the selection Paper. `false` hides the whole local detail area, for a parent-owned shared Paper. |
 | `description`, `class` | Optional JSX below the heading and extra root class. |
@@ -611,6 +614,8 @@ type ChartExplorerColumn<T> = {
 `value` is plain text for copy and default details. `render` optionally customizes
 the table cell, such as a current value with a muted reference and change below.
 Include the same reference information in `value` so copying remains complete.
+A custom first cell owns its content, including links or buttons; the row still
+supports selection with Enter or Space. Default first cells have a selection button.
 `sortValue` opts into sorting: finite numbers compare numerically, strings use the
 inherited locale, and nulls stay last in both directions. Default click order is
 ascending, then descending. Sort and view changes never load data. Controlled props
@@ -630,9 +635,52 @@ before the reference buttons appears after 200 ms; buttons do not shift. The
 accessible status names the old displayed step. Failures expose Retry. Pinning is
 disabled while loading, on failure, or when the displayed step is already pinned.
 
+`ChartFilterControlsProps` requires `request`, `displayedRequest` and `onRequest`.
+Optional `steps` and `series` use the same entries as above; `dimensionLabel`
+and `seriesLabel` name the slider and filter. Set `compare` to show a comparison
+pin when there are steps. It pins the requested step through `onRequest`, and
+clicking the pinned label clears `referenceStep`. The pin is disabled with
+`disabled`, or when there is no requested step to pin. `failed` and `onRetry`
+show the failure and retry action; `displayedRequest` names the previous data.
+
 For a shared Paper, set `renderDetails={false}` on the chart components and read
 `explorer.selectedKey()` and the matching rows in `explorer.snapshot().charts` in
 the parent. Use a single shared selection action, with clearly named metrics.
+
+### Several charts of one dataset
+
+When the reader should look at the same rows in different ways, give one
+`ChartExplorer` several charts instead of stacking explorers. Build every chart
+and the table rows from the same request in one `createChartExplorer` snapshot,
+keyed by chart id plus an entry for the table, and pass the entry of the current
+pick as `data`. The filters in `controls` change all charts at once, and the
+selection is a row key, so it stays on the same row in every chart and the table.
+The viewport keeps its height for every chart and the table.
+
+```tsx
+const explorer = createChartExplorer({ snapshot: () => initial, load: buildLocally });
+const [chart, setChart] = createSignal("orders");
+const [view, setView] = createSignal<"chart" | "table">("chart");
+
+<ChartExplorer
+  title="Orders by region"
+  charts={[{ id: "orders", label: "Orders" }, { id: "basket", label: "Average basket" }]}
+  chart={chart()} onChartChange={setChart} view={view()} onViewChange={setView}
+  data={explorer.snapshot().charts[view() === "table" ? "table" : chart()]}
+  selectedKey={explorer.selectedKey()} onSelectedKeyChange={explorer.select}
+  tableRows={100} columns={columns}
+  controls={<ChartFilterControls request={explorer.desired()} displayedRequest={explorer.snapshot().request}
+    steps={years} series={regions} compare onRequest={explorer.setRequest} />}
+/>
+```
+
+Set `compare` on `ChartFilterControls` to include the comparison pin. The slider
+spans the block; the series filter and pin share the row below without wrapping.
+The pin label truncates with an ellipsis, so pinning or unpinning keeps the same
+row height down to a 320px block. Keep series slots stable while filtering, as described under
+comparison semantics, so a hidden series never recolors the others. The live
+example "One dataset, several charts" filters regions, steps through two years
+and pins one year as a dashed reference.
 
 ### Synchronized inspection
 
@@ -730,7 +778,8 @@ from `prepareChartSnapshot`; never accept arbitrary SVG from a script or network
 response. Selection uses the snapshot row keys. Its viewport is snapshot-owned.
 
 `ChartFilterControls` accepts `request`, `displayedRequest`, `onRequest`, optional
-`steps: {key,label}[]`, `series: {key,label,color}[]`, `dimensionLabel`, `disabled`,
+`steps: {key,label}[]`, `series: {key,label,color}[]`, `dimensionLabel`, `seriesLabel`
+(the filter chip's label, default **Series visibility**; name the column the series come from), `disabled`,
 `failed`, and `onRetry`. It does not load data. Keep the displayed request tied to
 the last committed snapshot while a new desired request is pending. Its exported
 `ChartFilterControlsProps` type describes the same contract.

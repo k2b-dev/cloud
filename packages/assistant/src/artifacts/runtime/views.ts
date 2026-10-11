@@ -301,6 +301,53 @@ export function createViews(
     const { view: _view, ...chart } = normalizeChartDates(convertRows(raw, prefix), context.timeZone, prefix);
     return chart;
   };
+  const convertDataset = (raw: unknown, kind: "table" | "explorer") => {
+    const spec = object(raw, kind);
+    const rows = rowsOf(spec.rows);
+    const footer = kind !== "table" || spec.footer === undefined ? undefined : object(spec.footer, "footer");
+    const inputColumns = spec.columns ?? [...new Set(rows.flatMap((row) => Object.keys(row)))];
+    if (!Array.isArray(inputColumns)) return invalid("columns", "Expected column names or objects.");
+    const columns = inputColumns.map((raw, index) => {
+      const column = typeof raw === "string" ? { id: raw } : object(raw, `columns[${index}]`);
+      const id = columnId(column.id, `columns[${index}].id`);
+      const cells = [...rows.map((row) => cellOf(row, id)), ...(footer ? [cellOf(footer, id)] : [])].filter((cell) => cell != null);
+      const type =
+        column.type ??
+        (!cells.length
+          ? "text"
+          : cells.every((cell) => typeof cell === "number")
+            ? "number"
+            : cells.every((cell) => cell instanceof Date)
+              ? "datetime"
+              : cells.every((cell) => reference(cell, `columns[${index}].${id}`) !== undefined)
+                ? "ref"
+                : "text");
+      return { ...column, id, type };
+    });
+    const normalize = (row: Row, path: string) =>
+      Object.fromEntries(
+        columns.map(({ id, type }) => {
+          const cell = cellOf(row, id);
+          if (cell == null) return [id, null];
+          // A date column keeps the calendar day of the run's time zone.
+          if (cell instanceof Date) {
+            const time = wallClock(cell, context.timeZone, `${path}.${id}`);
+            return [id, type === "date" ? time.slice(0, 10) : time];
+          }
+          if (typeof cell === "string" || (typeof cell === "number" && Number.isFinite(cell))) return [id, cell];
+          const ref = reference(cell, `${path}.${id}`);
+          if (ref) return [id, ref];
+          return invalid(`${path}.${id}`, "Unsupported cell; convert it to text or a number, or use a Cloud reference {type, id, title?}.");
+        }),
+      );
+    return {
+      ...spec,
+      view: kind,
+      columns,
+      rows: rows.map((row, index) => normalize(row, `rows[${index}]`)),
+      ...(footer ? { footer: normalize(footer, "footer") } : {}),
+    };
+  };
   return {
     async chart(raw: unknown): Promise<ViewRef> {
       available();
@@ -343,56 +390,13 @@ export function createViews(
       });
       return save({ ...spec, view: "details", items });
     },
+    async explorer(raw: unknown): Promise<ViewRef> {
+      available();
+      return save(convertDataset(raw, "explorer"));
+    },
     async table(raw: unknown): Promise<ViewRef> {
       available();
-      const spec = object(raw, "table");
-      const rows = rowsOf(spec.rows);
-      const footer = spec.footer === undefined ? undefined : object(spec.footer, "footer");
-      const inputColumns = spec.columns ?? [...new Set(rows.flatMap((row) => Object.keys(row)))];
-      if (!Array.isArray(inputColumns)) return invalid("columns", "Expected column names or objects.");
-      const columns = inputColumns.map((raw, index) => {
-        const column = typeof raw === "string" ? { id: raw } : object(raw, `columns[${index}]`);
-        const id = columnId(column.id, `columns[${index}].id`);
-        const cells = [...rows.map((row) => cellOf(row, id)), ...(footer ? [cellOf(footer, id)] : [])].filter((cell) => cell != null);
-        const type =
-          column.type ??
-          (!cells.length
-            ? "text"
-            : cells.every((cell) => typeof cell === "number")
-              ? "number"
-              : cells.every((cell) => cell instanceof Date)
-                ? "datetime"
-                : cells.every((cell) => reference(cell, `columns[${index}].${id}`) !== undefined)
-                  ? "ref"
-                  : "text");
-        return { ...column, id, type };
-      });
-      const normalize = (row: Row, path: string) =>
-        Object.fromEntries(
-          columns.map(({ id, type }) => {
-            const cell = cellOf(row, id);
-            if (cell == null) return [id, null];
-            // A date column keeps the calendar day of the run's time zone.
-            if (cell instanceof Date) {
-              const time = wallClock(cell, context.timeZone, `${path}.${id}`);
-              return [id, type === "date" ? time.slice(0, 10) : time];
-            }
-            if (typeof cell === "string" || (typeof cell === "number" && Number.isFinite(cell))) return [id, cell];
-            const ref = reference(cell, `${path}.${id}`);
-            if (ref) return [id, ref];
-            return invalid(
-              `${path}.${id}`,
-              "Unsupported cell; convert it to text or a number, or use a Cloud reference {type, id, title?}.",
-            );
-          }),
-        );
-      return save({
-        ...spec,
-        view: "table",
-        columns,
-        rows: rows.map((row, index) => normalize(row, `rows[${index}]`)),
-        ...(footer ? { footer: normalize(footer, "footer") } : {}),
-      });
+      return save(convertDataset(raw, "table"));
     },
   };
 }

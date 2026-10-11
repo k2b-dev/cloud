@@ -985,3 +985,57 @@ test("a resumed attempt that replays a finished call as running prints its statu
   const output = await run([[state([tool("completed")]), state([tool("running")]), state([tool("completed")]), finished([])]]);
   expect(output.errors).toEqual(["local_move: completed"]);
 });
+
+test("a presented explorer prints only its last-step rows with table formatting", async () => {
+  const path = "/views/inventory-12345678.view.json";
+  const block: AiTurnBlock = {
+    id: "explorer",
+    kind: "tool",
+    callId: "explorer",
+    name: "present",
+    args: { path },
+    status: "completed",
+    result: {
+      path,
+      view: {
+        view: "explorer",
+        title: "Inventory",
+        rows: 2,
+        columns: 4,
+        views: [{ id: "price", label: "Price", kind: "bar" }],
+        step: true,
+        filter: false,
+        compare: false,
+      },
+    },
+  };
+  const view = {
+    view: "explorer",
+    title: "Inventory",
+    subtitle: "Snapshot",
+    columns: [
+      { id: "product", type: "text" },
+      { id: "item", label: "Item", type: "ref" },
+      { id: "year", type: "text" },
+      { id: "price", label: "Price", type: "number", format: { style: "currency", currency: "EUR" } },
+    ],
+    rows: [
+      { product: "Old", year: "2025", price: 1, item: { type: "spaces.item", id: "old", title: "Old item" } },
+      { product: "New", year: "2026", price: 2, item: { type: "spaces.item", id: "new", title: "New item" } },
+    ],
+    views: [{ id: "price", label: "Price", kind: "bar", x: "product", y: "price" }],
+    controls: { step: "year" },
+  };
+  const output = await run(
+    [[{ ...wire(), type: "block_set", block }, finished([])]],
+    "text",
+    undefined,
+    undefined,
+    "de-DE",
+    Response.json(view, { headers: { "X-Cloud-Ai-File-Origin": "assistant" } }),
+  );
+  expect(output.printed).toContain("Inventory");
+  expect(output.printed).toContain("Snapshot");
+  expect(output.tables).toHaveLength(1);
+  expect(output.tables[0]?.rows).toEqual([{ product: "New", item: "New item (spaces.item:new)", year: "2026", price: "2,00 €" }]);
+});

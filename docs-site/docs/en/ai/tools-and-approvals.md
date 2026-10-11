@@ -237,12 +237,13 @@ gets the reason. `parseCloudAiChartInput()` reads one chart without drawing;
 
 Cloud answers chart calls without a browser, also in background and scheduled
 runs. The transcript shows them later. Readers can switch each chart to its
-data table and use Copy data. Filters or buttons belong in a chat app delivered
-with `code_present`; kept data or a reused app belongs in a saved Studio App.
+data table and use Copy data. Filters, steps and comparison over computed rows
+use `cloud.view.explorer` in `code_run`. Interaction beyond that uses a chat app
+delivered with `code_present`; kept data or a reused app belongs in a saved Studio App.
 
 Computed results stay in `code_run`: the script calls `cloud.view.chart`,
-`cloud.view.group`, `cloud.view.table`, `cloud.view.stats` or
-`cloud.view.details`, then the model calls `present({path})`
+`cloud.view.group`, `cloud.view.table`, `cloud.view.stats`,
+`cloud.view.details` or `cloud.view.explorer`, then the model calls `present({path})`
 for each view the person should see. It never retypes run values into chart
 arguments, app data or Markdown. A missing view requires another run with
 `cloud.view.*`.
@@ -295,6 +296,34 @@ A view grants no access. Table sorting and Copy data use that visible text;
 the CLI adds `(type:id)`. Stats and details print a Field/Value table in the
 CLI, using the same locale formatting as the web host.
 
+Explorers store one dataset as `{view: "explorer", title, subtitle?, columns,
+rows, views, controls?}`. Columns and cells follow the table contract. Reference columns are allowed in
+the table but cannot be encoded as x, y, series, value, filter or step.
+`views` holds 1..6 strict chart mappings, each with a unique `id` (1..40
+characters) and switcher `label` (1..80): bar (`x`, numeric `y`), line/scatter
+(numeric or date/datetime `x`, numeric `y` or 1..8 unique y columns, optional
+`series` with a single y), or heatmap (`x`, `y`, numeric `value`). All references
+name existing column ids. `controls` is `{filter?, step?, compare?}`: filter and
+series columns have at most 8 distinct values, step at most 480; all need
+non-null cells in every row. Comparison needs a step and only line/scatter views.
+Titles and subtitles use the table bounds; explorers allow at most 3,840 rows,
+100 columns and 3,840 marks per view (rows × y columns), within the file limit.
+
+Bars need one row per displayed x label per step, heatmaps one per displayed
+x/y pair per step. Scripts aggregate to that grain before saving. Labels use
+the table's localized cell text. Numeric axes and heatmap color bounds cover
+the entire dataset, so filters and steps never rescale them; date x axes follow
+the shown points. Validation checks axis precision without drawing, including
+each date-axis step, and heatmap label fit over the union of steps. Strict
+objects reject extra view, mapping or control keys.
+
+Explorer filtering, stepping, pinned comparison, shared row selection and table
+sorting happen locally and reset on reload. Hidden series retain their colors;
+comparison lines are dashed and scatter points hollow. The table and **Copy
+data** use the current state's rows, including the pinned step. The last
+first-seen step opens initially, with every filter value visible. No saved
+executable code or additional browser requests are needed for these interactions.
+
 `present` returns a summary without values and renders an assistant-owned view
 inline. A group summary lists each chart's kind and title to reserve its frame
 while loading. Stats summaries include each label and booleans for sparkline,
@@ -303,28 +332,37 @@ Details summaries carry the field count and, for the first twelve fields, each
 label, whether the value is a reference, and the length of its English display
 text. The host sizes the record from a hidden copy of these fields with stand-in
 text, so values that wrap on a phone keep their room; it shows at most twelve
-one-line rows before the record scrolls. Every reader validates the current
+one-line rows before the record scrolls. Explorer summaries list view ids,
+labels and kinds, plus the `step`, `filter` and `compare` flags: step reserves
+a slider row, filter or compare a controls row. Every reader validates the current
 file; a file whose headings, stats parts or details sizes no longer match its
-summary, and invalid or missing files, show unavailable. Only assistant files below `/views/` ending in `.view.json`
-qualify. HTML apps cannot save views; they draw with `cloud.chart()`.
+summary, including changed explorer mappings or control flags, and invalid or
+missing files, show unavailable. Only assistant files below `/views/` ending in
+`.view.json` qualify. HTML apps cannot save views; they draw with `cloud.chart()`.
 
 The pure readers in `@k2b/cloud/ai/browser` are `parseCloudAiView`,
 `checkCloudAiView`, `cloudAiViewSummary`, `cloudAiViewTable`, `cloudAiStatsTiles`,
 `cloudAiDetailsRows`, `cloudAiTableTsv`,
-`isAiViewFile`, `isAiViewPath` and `parseCloudAiChartToolView`. Parsing checks
+`isAiViewFile`, `isAiViewPath`, `parseCloudAiChartToolView`,
+`cloudAiExplorerControls` and `cloudAiExplorerState`. Parsing checks
 schema and data without drawing; checking also verifies chart drawing for
-writes. Table formatting uses the reader's locale; TSV quotes cells and guards
+writes; explorers check data and stepping without drawing on both write and read.
+`cloudAiExplorerControls` returns localized filter and step choices in dataset
+order and the initial request. `cloudAiExplorerState` projects chart inputs,
+mark-to-dataset-row indexes and visible legends for a requested step, filter
+keys and reference step. Table formatting uses the reader's locale; TSV quotes cells and guards
 text against spreadsheet formulas. Table row keys are original row indices even
 after sorting; hosts obtain a ref from `view.rows[Number(row.key)][column.id]`.
 `cloudAiStatsTiles` returns formatted values and signed delta text, direction
 and better/worse/neutral tone. `cloudAiDetailsRows` returns formatted text and
 optional refs, with empty text for null. The view types, including
-`CloudAiGroupView`, `CloudAiStatsView`, `CloudAiDetailsView` and `CloudAiViewReference`,
+`CloudAiGroupView`, `CloudAiExplorerView`, `CloudAiExplorerRequest`, `CloudAiStatsView`, `CloudAiDetailsView` and `CloudAiViewReference`,
 and these helpers are also exported from `@k2b/cloud/ai`, alongside
 `createAiConversationView` and `AiViewInvalidError`. The writer checks conversation
 ownership and archival, uses a title slug and deterministic run/index hash, and
 preserves artifact retry and conflict semantics. Validation reports the issue;
-field errors include paths, and group chart errors identify `charts[i]`.
+field errors include paths; chart errors identify `charts[i]` in groups and
+`views[i]` in explorers.
 `CLOUD_AI_VIEW_DIRECTORY`, `CLOUD_AI_VIEW_SUFFIX`, `CLOUD_AI_VIEW_MAX_BYTES`,
 `CLOUD_AI_TABLE_MAX_ROWS`, `CLOUD_AI_TABLE_MAX_COLUMNS`, `CLOUD_AI_VIEW_MAX_MARKS`,
 `CLOUD_AI_GROUP_MAX_CHARTS` and `CLOUD_AI_STATS_MAX_ITEMS` export the bounds.

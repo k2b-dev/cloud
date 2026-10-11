@@ -1957,6 +1957,51 @@ test("presented views reserve inline frames and escape summary text", () => {
   }
 });
 
+test("a presented explorer reserves its title, control rows and 18rem viewport before loading its file", () => {
+  for (const controls of [
+    { step: true, filter: true, compare: true },
+    { step: true, filter: false, compare: false },
+    { step: false, filter: true, compare: false },
+    { step: true, filter: false, compare: true },
+    { step: false, filter: false, compare: false },
+  ]) {
+    const path = "/views/explorer-12345678.view.json";
+    const block: AiTurnBlock = {
+      id: "explorer",
+      kind: "tool",
+      name: "present",
+      callId: "explorer",
+      args: { path },
+      status: "completed",
+      result: {
+        path,
+        view: {
+          view: "explorer",
+          title: "Offers by region",
+          rows: 72,
+          columns: 5,
+          views: [{ id: "offers", label: "Offers", kind: "line" }],
+          ...controls,
+        },
+      },
+    };
+    const html = renderToString(() => createComponent(AiTurnBlockView, { block, turnId: "turn" }));
+    expect(html).toContain(`data-view-path="${path}"`);
+    expect(html).toContain(">Offers by region</h3>");
+    expect(html).toContain("Loading");
+    expect(html).toMatch(/class="k2b-chart-explorer__viewport"[^>]*style="height:18rem"/);
+    expect(html.includes("k2b-chart-explorer__legend")).toBe(controls.step || controls.filter);
+    expect(html.includes('type="range"')).toBe(controls.step);
+    expect(html.includes("k2b-filter-chip ")).toBe(controls.filter);
+    expect(html.includes("ti ti-pin")).toBe(controls.compare);
+    if (controls.step || controls.filter) {
+      expect(html.indexOf("k2b-chart-explorer__legend")).toBeGreaterThan(html.indexOf("</header>"));
+      expect(html.indexOf("k2b-chart-explorer__legend")).toBeLessThan(html.indexOf("k2b-chart-explorer__viewport"));
+    }
+    expect(html).not.toContain("data-chart-datum");
+  }
+});
+
 test("present without a valid view reference stays a file chip", () => {
   for (const result of [
     { path: "/views/result.view.json", size: 10 },
@@ -1996,4 +2041,38 @@ test("a running view present leaves the result slot empty until its summary size
   // Ordinary files keep their one-line activity, which the file chip replaces at the same height.
   const file = renderToString(() => createComponent(AiTurnBlockView, { block: running("/report.pdf"), turnId: "turn" }));
   expect(file).toContain("Preparing file");
+});
+
+test("view references stay plain text without a host action", async () => {
+  const { ReferenceText } = await import("./reference-text");
+  const html = renderToString(() => createComponent(ReferenceText, { text: "Product", reference: { type: "spaces.item", id: "product" } }));
+  expect(html).toBe("Product");
+});
+
+test("an empty explorer keeps the summary's slider, filter and comparison rows", async () => {
+  const { CloudExplorerView } = await import("./explorer-block");
+  const { cloudAiViewSummary, parseCloudAiView } = await import("../view-block");
+  const input = parseCloudAiView({
+    view: "explorer",
+    title: "Empty dataset",
+    columns: [
+      { id: "x", type: "number" },
+      { id: "y", type: "number" },
+      { id: "year", type: "text" },
+      { id: "region", type: "text" },
+    ],
+    rows: [],
+    views: [{ id: "trend", label: "Trend", kind: "line", x: "x", y: "y" }],
+    controls: { step: "year", filter: "region", compare: true },
+  });
+  if (!input) throw new Error("Invalid empty explorer");
+  const summary = cloudAiViewSummary(input);
+  if (summary.view !== "explorer" || input.view !== "explorer") throw new Error("Expected explorer");
+  for (const value of [undefined, input]) {
+    const html = renderToString(() => createComponent(CloudExplorerView, { summary, input: value }));
+    expect(html).toContain('type="range"');
+    expect(html).toContain("k2b-filter-chip");
+    expect(html).toContain("k2b-chart-explorer__pin");
+    expect(html).toMatch(/<button[^>]*k2b-chart-explorer__pin[^>]*disabled/);
+  }
 });

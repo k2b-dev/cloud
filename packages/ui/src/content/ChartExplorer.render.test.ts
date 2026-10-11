@@ -191,6 +191,37 @@ test("empty explorers retain the header and height with caller-owned feedback", 
   expect(html).toContain("height:18rem");
 });
 
+test("caller controls render between the explorer header and its viewport", () => {
+  const html = renderToString(() =>
+    createComponent(ChartExplorer, {
+      title: "Queues",
+      data: { chart: chart(), rows },
+      columns: [{ id: "label", label: "Queue", value: (row: (typeof rows)[number]) => row.label }],
+      controls: "Reserved explorer controls",
+    }),
+  );
+  const controls = html.indexOf("Reserved explorer controls");
+  expect(controls).toBeGreaterThan(html.indexOf("</header>"));
+  expect(controls).toBeLessThan(html.indexOf('class="k2b-chart-explorer__viewport"'));
+});
+
+test("seriesLabel names the filter chip while omitted labels retain Series visibility", async () => {
+  const { ChartFilterControls } = await import("./ChartFilterControls");
+  const render = (seriesLabel?: string) =>
+    renderToString(() =>
+      createComponent(ChartFilterControls, {
+        request: {},
+        displayedRequest: {},
+        series: [{ key: "north", label: "North", color: "red" }],
+        seriesLabel,
+        onRequest: () => {},
+      }),
+    );
+  expect(render("Region")).toContain('aria-label="Region"');
+  expect(render("Region")).not.toContain("Series visibility");
+  expect(render()).toContain('aria-label="Series visibility"');
+});
+
 test("DataTable renders keyboard-accessible client sort buttons and retains server sort links", async () => {
   const { default: DataTable } = await import("./DataTable");
   const table = (links: boolean) =>
@@ -207,4 +238,47 @@ test("DataTable renders keyboard-accessible client sort buttons and retains serv
   expect(table(false)).toContain('aria-sort="ascending"');
   expect(table(true)).toContain('<a href="?sort=n"');
   expect(table(true)).not.toContain('<button type="button" class="k2b-data-table__header-content');
+});
+
+test("filter controls place the comparison pin between the series chip and status, with an accessible removal label", async () => {
+  const { ChartFilterControls } = await import("./ChartFilterControls");
+  const render = (referenceStep?: string, disabled = false, step: string | null = "2026") =>
+    renderToString(() =>
+      createComponent(ChartFilterControls, {
+        request: { step: step ?? undefined, referenceStep, visibleKeys: ["north"] },
+        displayedRequest: {},
+        steps: [
+          { key: "2025", label: "Previous year" },
+          { key: "2026", label: "Current year" },
+        ],
+        series: [{ key: "north", label: "North", color: "red" }],
+        compare: true,
+        disabled,
+        onRequest: () => {},
+      }),
+    );
+  const html = render();
+  expect(html).toContain("k2b-chart-explorer__pin");
+  expect(html).toContain('data-variant="secondary"');
+  expect(html).toContain("ti ti-pin");
+  expect(html).toContain("<span>Pin as reference</span>");
+  expect(html.indexOf("k2b-chart-explorer__pin")).toBeGreaterThan(html.indexOf("k2b-filter-chip"));
+  expect(html.indexOf("k2b-chart-explorer__pin")).toBeLessThan(html.indexOf("k2b-chart-explorer__status"));
+  const pinned = render("2025");
+  expect(pinned).toContain("<span>Reference: Previous year</span>");
+  expect(pinned).toContain('aria-label="Remove comparison: Previous year"');
+  expect(pinned).toContain("ti ti-x");
+  expect(pinned).not.toContain("ti ti-pin");
+  expect(render(undefined, true)).toMatch(/<button[^>]*k2b-chart-explorer__pin[^>]*disabled/);
+  expect(render(undefined, false, null)).toMatch(/<button[^>]*k2b-chart-explorer__pin[^>]*disabled/);
+});
+
+test("filter controls omit the comparison pin without steps or opt-in", async () => {
+  const { ChartFilterControls } = await import("./ChartFilterControls");
+  for (const options of [{ compare: true }, { compare: true, steps: [] }, { steps: [{ key: "year", label: "Year" }] }]) {
+    const html = renderToString(() =>
+      createComponent(ChartFilterControls, { request: { step: "year" }, displayedRequest: {}, onRequest: () => {}, ...options }),
+    );
+    expect(html).not.toContain("k2b-chart-explorer__pin");
+  }
 });
