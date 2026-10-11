@@ -9668,6 +9668,19 @@
   padding: 0.40625rem 0.25rem 0.40625rem 0.875rem;
 }
 
+/* The field is one line until text arrives, so a placeholder longer than a narrow phone's field ends in an ellipsis
+   instead of wrapping into a second, cut-off line. Typed text still wraps. Chromium ignores text-overflow on
+   ::placeholder and inherits it from the field instead. */
+.k2b-ui .k2b-chat-composer[data-variant="conversation"] .k2b-chat-composer__input textarea,
+.k2b-ui .k2b-chat-composer[data-variant="conversation"] .k2b-chat-composer__input textarea::placeholder {
+  text-overflow: ellipsis;
+}
+
+.k2b-ui .k2b-chat-composer[data-variant="conversation"] .k2b-chat-composer__input textarea::placeholder {
+  overflow: hidden;
+  white-space: nowrap;
+}
+
 /* A hidden copy of the field measures the text, so the field itself never collapses to be measured. */
 .k2b-ui .k2b-chat-composer .k2b-chat-composer__input textarea.k2b-chat-composer__measure {
   position: absolute;
