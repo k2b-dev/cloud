@@ -17,6 +17,7 @@ const canonicalSharedStylesheetImports: readonly string[] = [
   "utilities-markdown-editor.css",
   "base-popover.css",
   "effects.css",
+  "approvals.css",
   "input.css",
   "resource-search.css",
   "file-chooser.css",
