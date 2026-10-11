@@ -833,6 +833,14 @@ The Action still revalidates its input, authorization, version or revision,
 and domain invariants in `run`. If reviewed state changes before execution,
 fail the Action rather than applying a different effect.
 
+Cloud reviews an approved call again directly before it runs and compares the
+result with the review the person approved; see
+[Action approvals](/en/docs/identity/approvals). Return the same review for the
+same input and unchanged state: no current time, counters, or random values.
+Otherwise every approval of the Action asks again. The repeated review protects
+only what it shows, so an Action that refers to changeable state, such as a
+draft, also carries the expected revision in its input.
+
 ## Write valid contracts
 
 Cloud validates the declaration at startup:

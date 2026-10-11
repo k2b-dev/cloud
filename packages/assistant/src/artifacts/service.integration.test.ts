@@ -19,6 +19,7 @@ import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { defineCapabilities } from "@k2b/cloud/contracts";
 import { type AuthContext, accessRevision } from "@k2b/cloud/server";
 import { secrets } from "@k2b/cloud/services";
+import { approvals, migrateApprovals } from "@k2b/cloud/services/approvals";
 import { ok } from "@k2b/stdlib";
 import { sql } from "bun";
 import { Hono } from "hono";
@@ -112,6 +113,11 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     await sql`CREATE TABLE auth.group_groups_v2(parent_group_id uuid,child_group_id uuid)`;
     await sql`CREATE TABLE auth.access(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),user_id uuid,group_id uuid,service_account_id uuid,authenticated_only boolean DEFAULT false,permission auth.permission_level,created_at timestamptz DEFAULT now())`;
     for (const who of [owner, reader, editor, stranger]) await sql`INSERT INTO auth.users(id) VALUES(${who.user!.id}::uuid)`;
+    await migrateApprovals();
+    await sql`CREATE SCHEMA audit`;
+    await sql`CREATE TABLE audit.events(id bigserial PRIMARY KEY,created_at timestamptz DEFAULT now(),action text,outcome text,
+      actor_user_id uuid,actor_uid text,actor_provider text,actor_roles text[],target_type text,target_id text,target_label text,
+      target_provider text,reason text,error_code text,error_message text,request_id text,metadata jsonb)`;
     await migrateArtifacts();
     await migrateArtifacts();
     id = (await artifacts.create({ title: "Analysis", source }, owner)).id;
@@ -1055,6 +1061,11 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     });
     const caller = { cookie: "test-cookie", locale: "en" };
     const request = () => ({ id: crypto.randomUUID(), name: "demo.write", input: { value: "one" }, artifactId: applet.id });
+    const approvalFor = async (id: string) => {
+      const [call] = await sql<{ approval_id: string | null }[]>`SELECT approval_id FROM assistant.capability_calls WHERE id=${id}::uuid`;
+      if (!call?.approval_id) throw new Error("Missing platform approval");
+      return (await approvals.get(call.approval_id))!;
+    };
     try {
       const denied = request();
       // The card gets the Action's wording in the caller's locale, as a chat call of the same Action would.
@@ -1075,6 +1086,20 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       const readsBeforeDecline = catalog.mock.calls.length;
       expect(await runtimeCapabilities.resolve(denied.id, { approved: false }, owner, caller)).toEqual({ status: "denied" });
       expect(catalog.mock.calls.length).toBe(readsBeforeDecline);
+      expect(await approvalFor(denied.id)).toMatchObject({
+        status: "rejected",
+        decidedVia: "web_session",
+        requesterTitle: applet.title,
+        assurance: "standard",
+      });
+      expect(execute).not.toHaveBeenCalled();
+      const expired = request();
+      await runtimeCapabilities.prepare(expired, owner, caller);
+      const expiredApproval = await approvalFor(expired.id);
+      await sql`UPDATE approvals.requests SET expires_at=now()-interval '1 second' WHERE id=${expiredApproval.id}::uuid`;
+      await expect(runtimeCapabilities.resolve(expired.id, { approved: true }, owner, caller)).rejects.toMatchObject({ code: "CONFLICT" });
+      expect(await approvalFor(expired.id)).toMatchObject({ status: "expired" });
+      expect(await runtimeCapabilities.resolve(expired.id, { approved: false }, owner, caller)).toEqual({ status: "denied" });
       expect(execute).not.toHaveBeenCalled();
       const changed = request();
       await runtimeCapabilities.prepare(changed, owner, caller);
@@ -1092,11 +1117,78 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       );
       expect(await runtimeCapabilities.resolve(switched.id, { approved: true }, owner, caller)).toMatchObject({ status: "completed" });
       expect(execute).toHaveBeenCalledTimes(1);
+      expect(await approvalFor(switched.id)).toMatchObject({ status: "consumed", decidedVia: "web_session" });
       execute.mockClear();
+      const relay = request();
+      await runtimeCapabilities.prepare(relay, owner, caller);
+      const relayedIdentity = { ...owner, credentialKind: "invocation" as const };
+      await expect(runtimeCapabilities.resolve(relay.id, { approved: true }, relayedIdentity, caller)).rejects.toMatchObject({
+        code: "CONFLICT",
+      });
+      expect(await approvalFor(relay.id)).toMatchObject({ status: "pending" });
+      expect(execute).not.toHaveBeenCalled();
+      const linked = await approvalFor(relay.id);
+      await approvals.decide(linked.id, { approved: true }, { userId: owner.user.id, via: "web_session" });
+      expect(await runtimeCapabilities.resolve(relay.id, { approved: true }, relayedIdentity, caller)).toMatchObject({
+        status: "completed",
+      });
+      expect(await approvalFor(relay.id)).toMatchObject({ id: linked.id, status: "consumed", decidedVia: "web_session" });
+      expect(execute).toHaveBeenCalledTimes(1);
+      execute.mockClear();
+      // Simulate a call saved before the platform migration; no catalog is needed to decline it.
+      const legacy = request();
+      await runtimeCapabilities.prepare(legacy, owner, caller);
+      const legacyApproval = await approvalFor(legacy.id);
+      await sql`UPDATE assistant.capability_calls SET approval_id=NULL WHERE id=${legacy.id}::uuid`;
+      await sql`DELETE FROM approvals.requests WHERE id=${legacyApproval.id}::uuid`;
+      const readsBeforeLegacyDecline = catalog.mock.calls.length;
+      expect(await runtimeCapabilities.resolve(legacy.id, { approved: false }, relayedIdentity, caller)).toEqual({ status: "denied" });
+      expect(catalog.mock.calls.length).toBe(readsBeforeLegacyDecline);
+      expect(await approvalFor(legacy.id)).toMatchObject({
+        status: "rejected",
+        decidedVia: "invocation",
+        requesterKind: "studio_app",
+        requesterRef: legacy.id,
+      });
+      const legacyApproved = request();
+      await runtimeCapabilities.prepare(legacyApproved, owner, caller);
+      const previous = await approvalFor(legacyApproved.id);
+      await sql`UPDATE assistant.capability_calls SET approval_id=NULL WHERE id=${legacyApproved.id}::uuid`;
+      await sql`DELETE FROM approvals.requests WHERE id=${previous.id}::uuid`;
+      await runtimeCapabilities.resolve(legacyApproved.id, { approved: true }, owner, caller);
+      expect(await approvalFor(legacyApproved.id)).toMatchObject({ status: "consumed", decidedVia: "web_session" });
+      expect(execute).toHaveBeenCalledTimes(1);
+      execute.mockClear();
+      // A call from before the upgrade keeps the day it had to wait: an older one can only be declined.
+      const overdue = request();
+      await runtimeCapabilities.prepare(overdue, owner, caller);
+      await sql`DELETE FROM approvals.requests WHERE id=${(await approvalFor(overdue.id)).id}::uuid`;
+      await sql`UPDATE assistant.capability_calls SET approval_id=NULL,created_at=now()-interval '2 days' WHERE id=${overdue.id}::uuid`;
+      await expect(runtimeCapabilities.resolve(overdue.id, { approved: true }, owner, caller)).rejects.toMatchObject({
+        code: "CONFLICT",
+      });
+      expect(await approvalFor(overdue.id)).toMatchObject({ status: "expired" });
+      expect(await runtimeCapabilities.resolve(overdue.id, { approved: false }, owner, caller)).toEqual({ status: "denied" });
+      // A call that waited past a day is abandoned with its open approval when the next call is prepared.
+      const stale = request();
+      await runtimeCapabilities.prepare(stale, owner, caller);
+      await sql`UPDATE assistant.capability_calls SET created_at=now()-interval '2 days' WHERE id=${stale.id}::uuid`;
+      // A rememberable Action whose review leaves out the scope asks as `confirm`, as in a chat.
+      review.mockResolvedValueOnce({ ok: true, data: { message: "Write item into another base?" } });
+      const scopeless = request();
+      await runtimeCapabilities.prepare(scopeless, owner, caller);
+      expect(await approvalFor(stale.id)).toMatchObject({ status: "cancelled" });
+      expect(await approvalFor(scopeless.id)).toMatchObject({ assurance: "confirm" });
+      expect(await runtimeCapabilities.resolve(scopeless.id, { approved: false }, owner, caller)).toEqual({ status: "denied" });
+      // A call ID an earlier approval request still holds never inherits that request or its decision.
+      await sql`DELETE FROM assistant.capability_calls WHERE id=${scopeless.id}::uuid`;
+      await expect(runtimeCapabilities.prepare(scopeless, owner, caller)).rejects.toMatchObject({ code: "CONFLICT" });
+      expect(execute).not.toHaveBeenCalled();
       const approved = request();
       await runtimeCapabilities.prepare(approved, owner, caller);
       await runtimeCapabilities.resolve(approved.id, { approved: true, remember: "always" }, owner, caller);
       expect(execute).toHaveBeenCalledTimes(1);
+      expect(await approvalFor(approved.id)).toMatchObject({ status: "consumed", decidedVia: "web_session" });
       expect(execute.mock.calls[0]![0]).toMatchObject({ idempotencyKey: `code-${approved.id}`, input: { value: "one" } });
       expect(await runtimeCapabilities.resolve(approved.id, { approved: true }, owner, caller)).toEqual({
         status: "completed",

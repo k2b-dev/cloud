@@ -64,6 +64,8 @@ export const defineAiTool = <TInput extends z.ZodType, TOutput extends z.ZodType
           reportProgress?: (message: string) => Promise<void>;
           /** Asks like `requestApproval`, and lets the person remember the approval of `target`. */
           requestApprovalFor?: (message: string, target: AiApprovalTarget) => Promise<boolean>;
+          /** Relays a decision for an effect another platform component consumes and executes. */
+          requestRelayedApproval?: (message: string, options: { approvalId?: string; target?: AiApprovalTarget }) => Promise<boolean>;
           /** Shows requests a website approval let through as they go out, so the chat keeps them whatever the outcome. */
           reportWebsiteReceipts?: (receipts: AiWebsiteReceipt[]) => Promise<void>;
         },
@@ -112,18 +114,93 @@ export type AiToolPreparationContext = {
   locale?: string;
   timeZone?: string;
   reportToolProgress?: (callId: string, message: string) => Promise<void>;
-  /** Hears what a nested approval asks for, keyed by the approval's call ID, before the approval is requested. */
+  /** Uses the approved snapshot immediately before the tool executes its effect. */
+  consumeApproval?: (approvalCallId: string, input: unknown) => Promise<AiApprovalUse>;
+  /** Links a relayed decision to the record the effect owner will consume. */
+  linkApproval?: (approvalCallId: string, approvalId: string) => void;
+  /** Hears what a nested approval asks for before the approval is requested. */
   describeApproval?: (approvalCallId: string, target: AiApprovalTarget) => void;
   reportWebsiteReceipts?: (callId: string, receipts: AiWebsiteReceipt[]) => Promise<void>;
 };
+
+/**
+ * What using an approval found: `approved` lets the effect run, `changed` means the approved snapshot no longer
+ * matches and asks again, and `used` means an earlier run of the call already used it, so the call must not run again.
+ */
+export type AiApprovalUse = "approved" | "changed" | "used";
+
+const approvalCallIdPattern = /^(.*)-approval-(\d+)$/;
+
+/**
+ * Whether `askedCallIds` holds a question of the same tool call that Nessi asked after `approvalCallId`, the call's
+ * own approval or one of its numbered questions. A turn that continues after such a question runs the tool from its
+ * start again, so the approvals before it are used again by the same call.
+ */
+export const aiApprovalAskedLater = (approvalCallId: string, askedCallIds: Iterable<string>): boolean => {
+  const own = approvalCallIdPattern.exec(approvalCallId);
+  const callId = own ? own[1] : approvalCallId,
+    index = own ? Number(own[2]) : -1;
+  for (const asked of askedCallIds) {
+    const later = approvalCallIdPattern.exec(asked);
+    if (later && later[1] === callId && Number(later[2]) > index) return true;
+  }
+  return false;
+};
+
+const approvalUsedError = () =>
+  new Error("This approval was already used, so Cloud does not run the call again. Check its outcome before you call again.");
 
 export const prepareAiTools = (input: AiToolPreparationContext & { tools?: AiRuntimeTool[] }): PreparedAiTools => {
   const canonicalNames = new Map<string, string>();
   const approvalPolicies = new Map<string, AiToolApprovalPolicy>();
   const frontendModes = new Map<string, AiFrontendToolMode>();
 
+  const approvalContext = async (toolInput: unknown, ctx: ToolContext, needsApproval: boolean) => {
+    const callId = ctx.callId;
+    const use = (approvalCallId: string): Promise<AiApprovalUse> =>
+      input.consumeApproval ? input.consumeApproval(approvalCallId, toolInput) : Promise.resolve("approved");
+    if (needsApproval && input.consumeApproval) {
+      const used = callId ? await use(callId) : "changed";
+      if (used === "used") throw approvalUsedError();
+      if (used === "changed") throw new Error("This approval no longer matches the call. Ask again.");
+    }
+    // Nessi numbers the approvals of one execution in request order; count them to name each one's call ID.
+    let approvals = 0;
+    const requestApproval = async (message: string, target?: AiApprovalTarget): Promise<boolean> => {
+      while (true) {
+        const approvalCallId = `${callId}-approval-${approvals++}`;
+        if (target) input.describeApproval?.(approvalCallId, target);
+        if (!(await ctx.requestApproval(message))) return false;
+        const used = await use(approvalCallId);
+        if (used === "approved") return true;
+        if (used === "used") throw approvalUsedError();
+        // A changed snapshot requires a new human decision under the next Nessi action ID.
+      }
+    };
+    return {
+      ...ctx,
+      requestApproval,
+      requestApprovalFor: (message: string, target: AiApprovalTarget) => requestApproval(message, target),
+      requestRelayedApproval: async (message: string, options: { approvalId?: string; target?: AiApprovalTarget }) => {
+        const approvalCallId = `${callId}-approval-${approvals++}`;
+        if (options.approvalId) input.linkApproval?.(approvalCallId, options.approvalId);
+        if (options.target) input.describeApproval?.(approvalCallId, options.target);
+        if (!(await ctx.requestApproval(message))) return false;
+        // The effect's own record is used where it runs. Without one, as for a website request from code, the relay
+        // that hands over the decision uses the chat's record; a decision it cannot use is not handed over as approval.
+        return options.approvalId !== undefined || (await use(approvalCallId)) === "approved";
+      },
+    };
+  };
+
   const tools = (input.tools ?? []).map((tool): Tool => {
-    if (!isCloudAiTool(tool)) return tool;
+    if (!isCloudAiTool(tool)) {
+      if (tool.kind !== "server") return tool;
+      return {
+        ...tool,
+        execute: async (toolInput, ctx) => tool.execute(toolInput, await approvalContext(toolInput, ctx, tool.def.needsApproval === true)),
+      };
+    }
 
     canonicalNames.set(tool.def.name, tool.def.canonicalName ?? tool.def.name);
     approvalPolicies.set(tool.def.name, tool.def.approval);
@@ -139,23 +216,12 @@ export const prepareAiTools = (input: AiToolPreparationContext & { tools?: AiRun
     });
 
     if (tool.location === "server") {
-      return nessiTool.server((toolInput, ctx) => {
+      return nessiTool.server(async (toolInput, ctx) => {
         if (!input.actor) throw new Error(`AI server tool "${tool.def.name}" requires a request actor.`);
         const report = input.reportToolProgress;
         const callId = ctx.callId;
-        // Nessi numbers the approvals of one execution in request order; count them to name each one's call ID.
-        let approvals = 0;
-        const requestApproval = (message: string) => {
-          approvals += 1;
-          return ctx.requestApproval(message);
-        };
         return tool.run(toolInput, {
-          ...ctx,
-          requestApproval,
-          requestApprovalFor: (message, target) => {
-            input.describeApproval?.(`${callId}-approval-${approvals}`, target);
-            return requestApproval(message);
-          },
+          ...(await approvalContext(toolInput, ctx, aiToolNeedsApproval(tool.def.approval))),
           actor: input.actor,
           conversationId: input.conversationId,
           turnId: input.turnId,

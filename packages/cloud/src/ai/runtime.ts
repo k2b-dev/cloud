@@ -4,6 +4,7 @@ import type { QueueMessage } from "@k2b/sync";
 import { z } from "zod";
 import { lazySync } from "../_internal/process-sync";
 import type { RequestActor } from "../server";
+import { type ApprovalDecisionChannel, approvals } from "../services/approvals";
 import { logger } from "../services/logging";
 import { superviseRuntimeTask } from "../services/runtime-lifecycle";
 import { coreSettings } from "../services/settings/api";
@@ -323,6 +324,7 @@ export const submitAiTurnAction = async (input: {
   turnId: string;
   callId: string;
   action: AiTurnActionInput;
+  decidedBy: { userId: string; via: ApprovalDecisionChannel };
   toolApprovalContext?: AiToolApprovalContext;
   /** Whether a person decides in a signed-in browser session; only such a decision may remember a website. */
   signedInSession?: boolean;
@@ -359,6 +361,16 @@ export const submitAiTurnAction = async (input: {
       ) {
         return { ok: false, status: 400, message: "This approval cannot be remembered." };
       }
+    }
+    if (pending.approvalId) {
+      const decision = await approvals.decide(pending.approvalId, { approved: input.action.approved }, input.decidedBy);
+      if (!decision.ok)
+        return decision.code === "ALREADY_DECIDED"
+          ? { ok: false, status: 409, message: "AI action was already resolved with a different response." }
+          : { ok: false, status: 404, message: "This request has expired — the assistant already moved on." };
+    }
+    if (remember && input.toolApprovalContext) {
+      const toolName = pending.rememberToolName ?? pending.name;
       await rememberAiToolApproval(input.toolApprovalContext, {
         toolName,
         approvalScope: pending.approvalScope,
@@ -369,6 +381,7 @@ export const submitAiTurnAction = async (input: {
       .noteApprovalResolved({
         turnId: input.turnId,
         callId: input.callId,
+        decidedVia: input.decidedBy.via,
         approvalState: input.action.approved
           ? remember === "always"
             ? "approved_always"

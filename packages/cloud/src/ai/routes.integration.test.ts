@@ -4,6 +4,7 @@ import { tinyJpeg, withCameraMetadata } from "../../../../scripts/fixtures/image
 import { databaseSuite, suiteFor } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
 import { accounts } from "../services/accounts";
+import { approvalScopeFromToolName, approvals } from "../services/approvals";
 import { serviceAccountCredentials } from "../services/service-account-credentials";
 import { session } from "../services/session/index";
 import { createTestSession } from "../services/session/session.test-fixture";
@@ -565,13 +566,13 @@ suiteFor("database", "nats")("chat and website approvals", () => {
         userMessage: { role: "user", content: [{ type: "text", text: "Read the quotes" }] },
       });
       const origin = "https://query1.finance.yahoo.com";
-      const ask = (callId: string, extra: Partial<Parameters<typeof aiConversations.savePendingTurnAction>[0]> = {}) =>
-        aiConversations.savePendingTurnAction({
+      const ask = async (callId: string, extra: Partial<Parameters<typeof aiConversations.savePendingTurnAction>[0]> = {}) => {
+        const snapshot = {
           turnId: turn.id,
           conversationId: chat.id,
           callId,
-          kind: "custom_approval",
-          status: "pending",
+          kind: "custom_approval" as const,
+          status: "pending" as const,
           name: "code_run",
           args: {},
           message: `HTTP request: GET ${origin}/v7/finance/quote?symbols=NVDA`,
@@ -581,7 +582,23 @@ suiteFor("database", "nats")("chat and website approvals", () => {
           rememberToolName: AI_WEBSITE_APPROVAL_TOOL,
           resolvedEvent: null,
           ...extra,
+        };
+        const record = await approvals.request({
+          ...approvalScopeFromToolName(snapshot.name),
+          approvalScope: snapshot.approvalScope,
+          requester: { kind: "assistant_turn", ref: `${turn.id}/${callId}`, appId: "assistant", title: chat.title },
+          subjectId: userId,
+          approverUserId: userId,
+          assurance: "standard",
+          sentence: snapshot.message,
+          input: snapshot.args,
+          review: snapshot.review,
+          expiresInMs: 60_000,
         });
+        if (!record.ok) throw new Error("Expected a new approval request");
+        await aiConversations.savePendingTurnAction({ ...snapshot, approvalId: record.id });
+        return record.id;
+      };
       const decide = (callId: string, headers: Record<string, string>, remember?: "chat" | "always") =>
         aiRoutes.request(`/conversations/${chat.shortId}/turns/${turn.shortId}/actions/${encodeURIComponent(callId)}`, {
           method: "POST",
@@ -592,17 +609,20 @@ suiteFor("database", "nats")("chat and website approvals", () => {
         sql<{ conversation_id: string | null }[]>`SELECT conversation_id FROM ai.tool_approval_preferences
           WHERE actor_user_id=${userId}::uuid AND tool_name=${AI_WEBSITE_APPROVAL_TOOL}`;
 
-      await ask("run-approval-0");
+      const firstApproval = await ask("run-approval-0");
       // An API key, like `cld` or another delegated credential, may approve this one request, but never the next ones.
       expect((await decide("run-approval-0", apiKey, "chat")).status).toBe(400);
       // A website is never remembered everywhere.
       expect((await decide("run-approval-0", session, "always")).status).toBe(400);
       expect(await websiteRows()).toEqual([]);
+      expect(await approvals.get(firstApproval)).toMatchObject({ status: "pending" });
       expect((await decide("run-approval-0", apiKey)).status).toBe(200);
       expect(await websiteRows()).toEqual([]);
 
-      await ask("run-approval-1");
+      expect(await approvals.get(firstApproval)).toMatchObject({ status: "approved", decidedVia: "api_key" });
+      const secondApproval = await ask("run-approval-1");
       expect((await decide("run-approval-1", session, "chat")).status).toBe(200);
+      expect(await approvals.get(secondApproval)).toMatchObject({ status: "approved", decidedVia: "web_session" });
       expect(await websiteRows()).toEqual([{ conversation_id: chat.id }]);
       expect(
         await findRememberedAiToolApproval(

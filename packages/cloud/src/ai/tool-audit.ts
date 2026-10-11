@@ -1,4 +1,5 @@
 import { sql } from "bun";
+import type { ApprovalDecisionChannel } from "../services/approvals";
 
 /**
  * AI-specific tool-call state only: approval, turn linkage, and the request id
@@ -147,12 +148,14 @@ export const aiToolAudit = {
     turnId: string;
     callId: string;
     approvalState: Exclude<AiToolApprovalState, "not_required" | "waiting">;
+    decidedVia?: ApprovalDecisionChannel;
   }): Promise<void> => {
     const approved = input.approvalState !== "rejected";
     await sql`
       UPDATE ai.tool_calls
       SET
         approval_state = ${input.approvalState},
+        approval_decided_via = ${input.decidedVia ?? null},
         status = CASE WHEN ${approved} THEN status ELSE 'rejected' END,
         approved_at = CASE WHEN ${approved} THEN now() ELSE approved_at END,
         rejected_at = CASE WHEN ${approved} THEN rejected_at ELSE now() END

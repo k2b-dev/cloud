@@ -3,6 +3,7 @@ import { compact, nessi } from "@k2b/nessi";
 import { listCapabilities } from "../_internal/registry";
 import type { CapabilityActionReview } from "../contracts/capabilities";
 import type { AccessSubject, RequestActor } from "../server";
+import { approvalAssurance, approvalScopeFromToolName, approvals } from "../services/approvals";
 import { createHelpReader } from "../services/help";
 import { logger } from "../services/logging";
 import { getMandate } from "../services/mandates";
@@ -62,7 +63,7 @@ import { composeAiSystemPrompt } from "./system-prompt";
 import { aiToolAudit } from "./tool-audit";
 import { acceptCanonicalToolNames } from "./tool-call-names";
 import { resolveAiToolResultMaxChars } from "./tool-result-budget";
-import { aiToolPromptHints, type PreparedAiTools, prepareAiTools } from "./tools";
+import { type AiApprovalUse, aiApprovalAskedLater, aiToolPromptHints, type PreparedAiTools, prepareAiTools } from "./tools";
 import { AiTranscriptionError } from "./transcription";
 import {
   AiTurnFailure,
@@ -941,6 +942,8 @@ export class AiTurnExecutor {
     }
 
     const approvalTargets = new Map<string, AiApprovalTarget>();
+    const linkedApprovals = new Map<string, string>();
+    const freshApprovalRequired = new Set<string>();
     const dynamicToolRuntimeContext = {
       turnId,
       reportToolProgress: (callId: string, message: string) => pipeline.reportToolProgress(callId, message),
@@ -952,6 +955,34 @@ export class AiTurnExecutor {
       selectedModel: resolved,
       locale: promptLocale,
       timeZone,
+      linkApproval: (approvalCallId: string, approvalId: string) => {
+        linkedApprovals.set(approvalCallId, approvalId);
+      },
+      consumeApproval: async (approvalCallId: string, input: unknown): Promise<AiApprovalUse> => {
+        const pending = await aiConversations.getPendingTurnAction({ conversationId, turnId, callId: approvalCallId });
+        if (!pending?.approvalId) return "approved";
+        const result = await approvals.consume(pending.approvalId, {
+          input,
+          review: approvalReviewForCallId(capabilityActionReviews, approvalCallId) ?? null,
+          requester: { kind: "assistant_turn", ref: `${turnId}/${approvalCallId}` },
+        });
+        if (result.ok) return "approved";
+        if (result.code === "ALREADY_CONSUMED") {
+          // A later question of the same call proves this run resumes after it, not after a crash during the effect.
+          const [open, resolved] = await Promise.all([
+            aiConversations.listPendingActionRecords({ conversationId, turnId }),
+            aiConversations.listResolvedPendingActions({ conversationId, turnId }),
+          ]);
+          return aiApprovalAskedLater(
+            approvalCallId,
+            [...open, ...resolved].map((action) => action.callId),
+          )
+            ? "approved"
+            : "used";
+        }
+        freshApprovalRequired.add(customApprovalParentCallId(approvalCallId) ?? approvalCallId);
+        return "changed";
+      },
       describeApproval: (approvalCallId: string, target: AiApprovalTarget) => approvalTargets.set(approvalCallId, target),
     };
     const prepared = prepareAiTools({
@@ -1377,6 +1408,8 @@ export class AiTurnExecutor {
       rememberableCapabilityApprovals,
       capabilityActionReviews,
       approvalTargets,
+      linkedApprovals,
+      freshApprovalRequired,
       appliedSteers,
       noteToolRound: turnPolicy.noteToolRound,
       noteToolCall: turnPolicy.noteToolCall,
@@ -1447,6 +1480,8 @@ export class AiTurnExecutor {
     rememberableCapabilityApprovals: ReadonlyMap<string, string>;
     capabilityActionReviews: ReadonlyMap<string, CapabilityActionReview>;
     approvalTargets: ReadonlyMap<string, AiApprovalTarget>;
+    linkedApprovals: ReadonlyMap<string, string>;
+    freshApprovalRequired?: ReadonlySet<string>;
     appliedSteers: AiTurnSteer[];
     noteToolRound: () => void;
     noteToolCall: (call: AiTurnPolicyToolCall) => void;
@@ -1494,6 +1529,8 @@ export class AiTurnExecutor {
             rememberableCapabilityApprovals,
             capabilityActionReviews,
             approvalTargets,
+            linkedApprovals: input.linkedApprovals,
+            freshApprovalRequired: input.freshApprovalRequired,
             onBackgroundBlocked: input.onBackgroundBlocked,
           });
           if (suspended) {
@@ -1598,6 +1635,8 @@ export class AiTurnExecutor {
     rememberableCapabilityApprovals: ReadonlyMap<string, string>;
     capabilityActionReviews: ReadonlyMap<string, CapabilityActionReview>;
     approvalTargets: ReadonlyMap<string, AiApprovalTarget>;
+    linkedApprovals: ReadonlyMap<string, string>;
+    freshApprovalRequired?: ReadonlySet<string>;
     onBackgroundBlocked?: (message: string) => void;
   }): Promise<boolean> {
     const {
@@ -1664,7 +1703,14 @@ export class AiTurnExecutor {
     }
 
     // Remembered approvals resolve inline too.
-    if (event.kind !== "client_tool" && !target && allowAlways && approvalContext) {
+    if (
+      event.kind !== "client_tool" &&
+      !target &&
+      allowAlways &&
+      approvalContext &&
+      // A stale decided snapshot needs another human decision, even if the first response also remembered it.
+      !input.freshApprovalRequired?.has(customApprovalParentCallId(event.callId) ?? event.callId)
+    ) {
       const remembered = await hasRememberedAiToolApproval(approvalContext, { toolName, approvalScope, conversationId }).catch(() => false);
       if (remembered) {
         await aiToolAudit
@@ -1675,7 +1721,40 @@ export class AiTurnExecutor {
       }
     }
 
+    const review = event.kind === "custom_approval" ? approvalReviewForCallId(capabilityActionReviews, event.callId) : undefined;
+    let approvalId: string | undefined;
+    let presented = event;
+    if (event.kind !== "client_tool") {
+      const conversation = await aiConversations.getConversation({ conversationId });
+      const owner = conversation?.createdByUserId;
+      if (!owner) throw new Error("Approval requires a conversation owner");
+      const linked = input.linkedApprovals.get(event.callId);
+      if (linked) {
+        const record = await approvals.get(linked);
+        if (!record || record.status !== "pending" || record.requesterKind !== "studio_app" || record.approverUserId !== owner)
+          throw new Error("Approval does not belong to an open Studio request of the conversation owner");
+        approvalId = linked;
+        // The card shows the question the effect's own record holds, never the text the relay sent.
+        presented = { ...event, message: record.sentence };
+      } else {
+        const record = await approvals.request({
+          ...approvalScopeFromToolName(toolName),
+          approvalScope,
+          requester: { kind: "assistant_turn", ref: `${turnId}/${event.callId}`, appId: "assistant", title: conversation.title },
+          subjectId: owner,
+          approverUserId: owner,
+          assurance: approvalAssurance(target !== undefined || capabilityApprovalScope !== undefined || aiToolAllowsAlways(approvalPolicy)),
+          sentence: event.message ?? toolName,
+          review,
+          input: event.args,
+          expiresInMs: AI_ACTION_BUDGET_MS,
+        });
+        if (!record.ok) throw new Error("This approval was already decided or has expired.");
+        approvalId = record.id;
+      }
+    }
     await aiConversations.savePendingTurnAction({
+      approvalId,
       turnId,
       conversationId,
       callId: event.callId,
@@ -1683,8 +1762,8 @@ export class AiTurnExecutor {
       status: "pending",
       name: toolName,
       args: event.args,
-      message: event.message,
-      review: event.kind === "custom_approval" ? approvalReviewForCallId(capabilityActionReviews, event.callId) : undefined,
+      message: presented.message,
+      review,
       approvalScope,
       allowAlways,
       allowChat,
@@ -1710,7 +1789,7 @@ export class AiTurnExecutor {
         .catch(() => undefined);
     }
 
-    await pipeline.apply(event);
+    await pipeline.apply(presented);
     const suspended = await aiConversations.suspendTurn({
       conversationId,
       turnId,

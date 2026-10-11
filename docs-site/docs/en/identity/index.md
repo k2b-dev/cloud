@@ -5,7 +5,7 @@ section: Identity and access
 order: 300
 description: Separate credential, route, and resource decisions in an application.
 tags: [identity, authentication, authorization]
-updated: 2026-08-12
+updated: 2026-10-10
 ---
 
 # Identity and access
@@ -41,6 +41,7 @@ on the same permission-aware application service.
 | Check access to one domain resource | [Resource authorization](/en/docs/identity/authorization) |
 | Create a credential for one resource | [Resource API keys](/en/docs/identity/resource-api-keys) |
 | Integrate an OAuth client | [OAuth](/en/docs/identity/oauth) |
+| Understand how a person approves an Action | [Action approvals](/en/docs/identity/approvals) |
 | Allow a route without a session | [Public access](/en/docs/identity/public-and-anonymous-access) |
 
 OAuth and API keys change how Cloud establishes the actor; they do not create a

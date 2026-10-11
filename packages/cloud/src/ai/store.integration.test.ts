@@ -4,6 +4,7 @@ import { sql } from "bun";
 import { collectPages, descending } from "../../../../scripts/fixtures/stable-paging";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
+import { approvalArgsDigest, approvalReviewDigest, approvals } from "../services/approvals";
 import { toPgTextArray } from "../services/postgres";
 import { session as authSession } from "../services/session";
 import { createTestSession } from "../services/session/session.test-fixture";
@@ -55,6 +56,126 @@ const runConfig = { kind: "chat" as const, input: "hi", toolSource: { kind: "non
 suite("AI conversation store integration", () => {
   beforeAll(async () => {
     await migrateCloudAi();
+  });
+  test("backfills legacy pending approvals with canonical digests and the original deadline", async () => {
+    const userId = await insertUser();
+    const chat = await aiConversations.createConversation({ ownerUserId: userId, title: "Legacy chat" });
+    try {
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: chat.id,
+        modelProfileId: "mock",
+        runConfig,
+        userMessage: userMessage("Run"),
+      });
+      const args = { z: "last", a: { second: 2, first: 1 } },
+        review = { message: "Write this item?" };
+      await aiConversations.savePendingTurnAction({
+        conversationId: chat.id,
+        turnId: turn.id,
+        callId: "legacy",
+        kind: "custom_approval",
+        status: "pending",
+        name: "demo.item.write",
+        args,
+        review,
+        message: "Write item?",
+        approvalScope: "one",
+        allowAlways: false,
+        allowChat: true,
+        resolvedEvent: null,
+      });
+      await sql`UPDATE ai.turns SET status='waiting_for_action',deadline=now()+interval '1 hour' WHERE id=${turn.id}::uuid`;
+      await migrateCloudAi();
+      const pending = await aiConversations.getPendingTurnAction({ conversationId: chat.id, turnId: turn.id, callId: "legacy" });
+      expect(pending?.approvalId).toBeDefined();
+      const record = await approvals.get(pending!.approvalId!);
+      // The first message titles the chat; the request keeps the title the chat has when the migration runs.
+      const current = await aiConversations.getConversation({ conversationId: chat.id });
+      expect(record).toMatchObject({
+        appId: "demo",
+        action: "item.write",
+        assurance: "standard",
+        requesterRef: `${turn.id}/legacy`,
+        requesterTitle: current?.title,
+        subjectId: userId,
+        approverUserId: userId,
+        argsDigest: approvalArgsDigest(args),
+        reviewDigest: approvalReviewDigest(review),
+      });
+      const [deadline] = await sql<{ deadline: Date }[]>`SELECT deadline FROM ai.turns WHERE id=${turn.id}::uuid`;
+      expect(record!.expiresAt).toEqual(deadline!.deadline);
+      await migrateCloudAi();
+      expect((await aiConversations.getPendingTurnAction({ conversationId: chat.id, turnId: turn.id, callId: "legacy" }))?.approvalId).toBe(
+        record!.id,
+      );
+      await aiConversations.clearPendingTurnActions({ conversationId: chat.id, turnId: turn.id });
+      expect(await approvals.get(record!.id)).toMatchObject({ status: "cancelled" });
+    } finally {
+      await cleanupFixture({ userId, conversationIds: [chat.id] });
+    }
+  });
+  test("ending a turn cancels its open and unused approvals but keeps used ones and a linked Studio decision", async () => {
+    const userId = await insertUser();
+    const chat = await aiConversations.createConversation({ ownerUserId: userId, title: "Approvals" });
+    try {
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: chat.id,
+        modelProfileId: "mock",
+        runConfig,
+        userMessage: userMessage("Run"),
+      });
+      const ask = async (callId: string, requester: { kind: "assistant_turn" | "studio_app"; ref: string }, decided: boolean) => {
+        const record = await approvals.request({
+          appId: "demo",
+          action: "write",
+          requester: { ...requester, appId: "assistant" },
+          subjectId: userId,
+          approverUserId: userId,
+          assurance: "confirm",
+          sentence: "Write?",
+          input: { callId },
+          expiresInMs: 60_000,
+        });
+        if (!record.ok) throw new Error("Expected a new approval request");
+        if (decided) await approvals.decide(record.id, { approved: true }, { userId, via: "web_session" });
+        await aiConversations.savePendingTurnAction({
+          approvalId: record.id,
+          conversationId: chat.id,
+          turnId: turn.id,
+          callId,
+          kind: "custom_approval",
+          status: decided ? "resolved" : "pending",
+          name: "demo.write",
+          args: { callId },
+          approvalScope: "demo.write",
+          allowAlways: false,
+          resolvedEvent: decided ? { type: "approval_response", callId, approved: true } : null,
+        });
+        return record.id;
+      };
+      const open = await ask("open", { kind: "assistant_turn", ref: `${turn.id}/open` }, false);
+      const unused = await ask("unused", { kind: "assistant_turn", ref: `${turn.id}/unused` }, true);
+      const used = await ask("used", { kind: "assistant_turn", ref: `${turn.id}/used` }, true);
+      expect(
+        await approvals.consume(used, {
+          input: { callId: "used" },
+          review: null,
+          requester: { kind: "assistant_turn", ref: `${turn.id}/used` },
+        }),
+      ).toEqual({ ok: true });
+      const linked = await ask("linked", { kind: "studio_app", ref: crypto.randomUUID() }, true);
+      expect(await aiConversations.completeTurn({ conversationId: chat.id, turnId: turn.id, status: "aborted" })).not.toBe("lost");
+      expect(await Promise.all([open, unused, used, linked].map(async (id) => (await approvals.get(id))?.status))).toEqual([
+        "cancelled",
+        "cancelled",
+        "consumed",
+        "approved",
+      ]);
+    } finally {
+      await sql`DELETE FROM audit.events WHERE actor_user_id=${userId}::uuid AND target_type='approval_request'`;
+      await sql`DELETE FROM approvals.requests WHERE approver_user_id=${userId}::uuid`;
+      await cleanupFixture({ userId, conversationIds: [chat.id] });
+    }
   });
   test("a metadata-renamed title survives the first message while create-time placeholders get the snapshot", async () => {
     const userId = await insertUser();

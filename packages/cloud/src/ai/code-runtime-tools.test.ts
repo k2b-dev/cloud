@@ -19,20 +19,23 @@ test("two managed approvals retain their Nessi action IDs across two suspended a
   ];
   const decisions: string[] = [];
   const tool = defineTool({ name: "code_run", description: "Run", inputSchema: z.object({}) }).server(async (_input, context) =>
-    waitForManagedCodeCall(async ({ decision }) => {
-      if (decision) {
-        const approval = approvals.find((item) => item.id === decision.id)!;
-        expect(approval.decision).toBeNull();
-        approval.decision = decision.approved;
-        decisions.push(decision.id);
-      }
-      const done = approvals.every((item) => item.decision !== null);
-      return {
-        status: done ? "done" : "running",
-        result: done ? { executed: 1 } : undefined,
-        approvals: approvals.slice(0, approvals[0]!.decision === null ? 1 : 2).map((item) => ({ ...item })),
-      };
-    }, context),
+    waitForManagedCodeCall(
+      async ({ decision }) => {
+        if (decision) {
+          const approval = approvals.find((item) => item.id === decision.id)!;
+          expect(approval.decision).toBeNull();
+          approval.decision = decision.approved;
+          decisions.push(decision.id);
+        }
+        const done = approvals.every((item) => item.decision !== null);
+        return {
+          status: done ? "done" : "running",
+          result: done ? { executed: 1 } : undefined,
+          approvals: approvals.slice(0, approvals[0]!.decision === null ? 1 : 2).map((item) => ({ ...item })),
+        };
+      },
+      { ...context, requestRelayedApproval: context.requestApproval },
+    ),
   );
   let requests = 0;
   const provider: Provider = {
@@ -131,6 +134,9 @@ test("managed code rejects incomplete background authority before contacting a h
             conversationId: "chat",
             turnId: "turn",
             signal: AbortSignal.timeout(1000),
+            requestRelayedApproval: async () => {
+              throw new Error("Unexpected relayed approval");
+            },
             requestApproval: async () => {
               throw new Error("Unexpected approval");
             },
@@ -156,7 +162,10 @@ test("a failed code call reaches the model as a tool error, while a failed run s
     description: "Run",
     inputSchema: z.object({ case: z.enum(["failed", "snapshot"]) }),
   }).server(async (input, context) =>
-    waitForManagedCodeCall(async () => ({ status: "done", result: results[input.case], approvals: [] }), context),
+    waitForManagedCodeCall(async () => ({ status: "done", result: results[input.case], approvals: [] }), {
+      ...context,
+      requestRelayedApproval: context.requestApproval,
+    }),
   );
   let requests = 0;
   const provider: Provider = {
@@ -428,6 +437,9 @@ test("an approved call still reaches the host when the next issuance times out o
           callId: "run-test",
           signal: new AbortController().signal,
           requestApproval: async () => {
+            throw new Error("Expected a relayed approval");
+          },
+          requestRelayedApproval: async () => {
             // The user answers once both tokens need a new issuance, and that issuance stalls once.
             setSystemTime(new Date(start.getTime() + 25_000));
             stall(1);
@@ -485,7 +497,8 @@ test("a code call stops retrying a stalled issuance after one refresh window and
 
 test("a code approval names the website or Action it asks for, and receipts are reported page by page whatever the outcome", async () => {
   const website = { toolName: "website:read", approvalScope: "https://query1.finance.yahoo.com", always: false };
-  const asked: Array<{ message: string; target?: unknown }> = [];
+  const approvalId = crypto.randomUUID();
+  const asked: Array<{ message: string; target?: unknown; approvalId?: string }> = [];
   const reported: unknown[] = [];
   const receipts = [
     { method: "GET", url: "https://query1.finance.yahoo.com/v8/finance/chart/NVDA?range=1d" },
@@ -495,12 +508,15 @@ test("a code approval names the website or Action it asks for, and receipts are 
   let decided = false;
   const context = {
     signal: AbortSignal.timeout(5000),
-    requestApproval: async (message: string) => {
-      asked.push({ message });
-      return true;
+    requestApproval: async () => {
+      throw new Error("Expected a relayed approval");
     },
-    requestApprovalFor: async (message: string, target: unknown) => {
-      asked.push({ message, target });
+    requestRelayedApproval: async (message: string, options: { target?: unknown; approvalId?: string }) => {
+      asked.push({
+        message,
+        ...(options.target ? { target: options.target } : {}),
+        ...(options.approvalId ? { approvalId: options.approvalId } : {}),
+      });
       return true;
     },
     reportWebsiteReceipts: async (page: unknown[]) => {
@@ -520,7 +536,7 @@ test("a code approval names the website or Action it asks for, and receipts are 
             ...(moreReceipts ? {} : { result }),
             approvals: [
               { id: "11111111-1111-4111-8111-111111111111", message: "GET other", decision: true, remember: website },
-              { id: "22222222-2222-4222-8222-222222222222", message: "POST", decision: true },
+              { id: "22222222-2222-4222-8222-222222222222", approvalId, message: "POST", decision: true },
             ],
             receipts: page,
             moreReceipts,
@@ -531,7 +547,10 @@ test("a code approval names the website or Action it asks for, and receipts are 
           };
     };
   const result = await waitForManagedCodeCall(host({ status: "ok", output: "1" }), context);
-  expect(asked).toEqual([{ message: "GET other", target: website }, { message: "POST" }]);
+  expect(asked).toEqual([
+    { message: "GET other", target: website },
+    { message: "POST", approvalId },
+  ]);
   // The model gets the result alone; the chat gets each receipt once, in order, with its index.
   expect(result).toEqual({ status: "ok", output: "1" });
   expect(reported).toEqual(receipts.map((receipt, index) => ({ index, ...receipt })));

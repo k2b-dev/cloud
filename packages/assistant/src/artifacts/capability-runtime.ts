@@ -9,8 +9,16 @@ import {
   transferCapabilityStream,
 } from "@k2b/cloud/capabilities/server";
 import { CapabilityActionReviewSchema, CapabilityStreamSchema } from "@k2b/cloud/contracts";
-import { sql } from "bun";
+import {
+  APPROVAL_MAX_WAIT_MS,
+  approvalAssurance,
+  approvalDecisionChannel,
+  approvalReviewDigest,
+  approvals,
+} from "@k2b/cloud/services/approvals";
+import { type SQL, sql } from "bun";
 import { z } from "zod";
+import { codeApprovalMessage } from "./code-approval-message";
 import { LIMITS } from "./contracts";
 import { CHECK_UNAVAILABLE } from "./html/check-contracts";
 import { CloudError } from "./runtime/errors";
@@ -44,7 +52,15 @@ const Prepared = z.object({
   locale: z.string().optional(),
 });
 type Request = z.infer<typeof RuntimeCapabilityRequest>;
-type Row = { id: string; request: unknown; prepared: unknown; status: string; result: unknown };
+type Row = {
+  approval_id: string | null;
+  id: string;
+  request: unknown;
+  prepared: unknown;
+  status: string;
+  result: unknown;
+  created_at: Date;
+};
 const decoded = (value: unknown): unknown => (typeof value === "string" ? JSON.parse(value) : value);
 
 // Nested Assistant capabilities retain the authorized script's chat context.
@@ -164,33 +180,16 @@ export const runtimeCapabilities = {
       locale: caller.locale ?? undefined,
       ...(untrusted ? { resource: { id: resource.id, title: resource.title } } : {}),
     });
-    await sql.begin(async (db) => {
-      await db`SELECT pg_advisory_xact_lock(hashtext(${"assistant-capabilities:" + actor.id}))`;
-      await db`UPDATE assistant.capability_calls SET status='abandoned' WHERE user_id=${actor.id}::uuid
-        AND status IN ('pending','running') AND created_at < now()-interval '1 day'`;
-      const [pending] = await db<
-        { count: number }[]
-      >`SELECT count(*)::int AS count FROM assistant.capability_calls WHERE user_id=${actor.id}::uuid AND status IN ('pending','running')`;
-      if (pending!.count >= LIMITS.pendingRequests) throw new ArtifactError("TOO_MANY_REQUESTS");
-      await db`INSERT INTO assistant.capability_calls(id,user_id,artifact_id,conversation_id,request,prepared)
-        VALUES(${request.id}::uuid,${actor.id}::uuid,(SELECT id FROM assistant.artifacts WHERE short_id=${request.artifactId ?? null}),${request.conversationId ?? null},(${JSON.stringify(request)}::text)::jsonb,(${JSON.stringify(prepared)}::text)::jsonb)`;
-      // Only recent completed transport results are needed; canonical execution
-      // history remains in the platform's capabilities.executions table.
-      await db`DELETE FROM assistant.capability_calls WHERE id IN (SELECT id FROM assistant.capability_calls
-        WHERE user_id=${actor.id}::uuid AND status IN ('completed','denied','abandoned') ORDER BY created_at DESC OFFSET ${LIMITS.logs})`;
-    });
-    // Only the managed host sets taskScoped. Core checks the persisted mandate on every dispatch.
-    if (taskScoped) return runtimeCapabilities.resolve(request.id, { approved: true }, identity, caller);
     const remembered =
+      !taskScoped &&
       !untrusted &&
       scope !== null &&
-      // An approval remembered for this chat counts like one remembered everywhere.
       (await hasRememberedAiToolApproval({ actorUserId: actor.id }, { toolName: request.name, approvalScope: scope, conversationId }));
-    if (!untrusted && (!target.action || target.action.approval === "none" || remembered))
-      return runtimeCapabilities.resolve(request.id, { approved: true }, identity, caller);
-    // The card words this call like the same Action called from a chat: the app's sentences and labelled fields.
-    const wording = target.action ? await getCapabilityActionWording(target.appId, target.localId, caller.locale ?? undefined) : null;
-    return {
+    // Only the managed host sets taskScoped; Core checks its persisted mandate on every dispatch.
+    const automatic = taskScoped || (!untrusted && (!target.action || target.action.approval === "none" || remembered));
+    const wording =
+      !automatic && target.action ? await getCapabilityActionWording(target.appId, target.localId, caller.locale ?? undefined) : null;
+    const response = {
       status: "approval" as const,
       id: request.id,
       name: request.name,
@@ -201,66 +200,201 @@ export const runtimeCapabilities = {
       ...(wording?.sentences ? { sentences: wording.sentences } : {}),
       ...(wording?.fields?.length ? { fields: [...wording.fields] } : {}),
     };
+    await sql.begin(async (db) => {
+      await db`SELECT pg_advisory_xact_lock(hashtext(${"assistant-capabilities:" + actor.id}))`;
+      const abandoned = await db<{ approval_id: string | null }[]>`UPDATE assistant.capability_calls SET status='abandoned'
+        WHERE user_id=${actor.id}::uuid AND status IN ('pending','running') AND created_at < now()-interval '1 day'
+        RETURNING approval_id`;
+      await approvals.cancel(
+        abandoned.flatMap((call) => (call.approval_id ? [call.approval_id] : [])),
+        db,
+      );
+      const [pending] = await db<
+        { count: number }[]
+      >`SELECT count(*)::int AS count FROM assistant.capability_calls WHERE user_id=${actor.id}::uuid AND status IN ('pending','running')`;
+      if (pending!.count >= LIMITS.pendingRequests) throw new ArtifactError("TOO_MANY_REQUESTS");
+      await db`INSERT INTO assistant.capability_calls(id,user_id,artifact_id,conversation_id,request,prepared)
+        VALUES(${request.id}::uuid,${actor.id}::uuid,(SELECT id FROM assistant.artifacts WHERE short_id=${request.artifactId ?? null}),${request.conversationId ?? null},(${JSON.stringify(request)}::text)::jsonb,(${JSON.stringify(prepared)}::text)::jsonb)`;
+      if (!automatic) {
+        const approval = await requestApprovalRecord(request, prepared, actor.id, db, {
+          sentence: codeApprovalMessage(response, caller.locale ?? "en"),
+          title: resource?.title ?? null,
+          expiresInMs: APPROVAL_MAX_WAIT_MS,
+        });
+        // An approval request already holds this call ID, so the ID is reused; it never inherits that decision.
+        if (!approval.ok) throw new ArtifactError("CONFLICT");
+        await db`UPDATE assistant.capability_calls SET approval_id=${approval.id}::uuid WHERE id=${request.id}::uuid`;
+      }
+      // Only recent completed transport results are needed; canonical execution
+      // history remains in the platform's capabilities.executions table.
+      await db`DELETE FROM assistant.capability_calls WHERE id IN (SELECT id FROM assistant.capability_calls
+        WHERE user_id=${actor.id}::uuid AND status IN ('completed','denied','abandoned') ORDER BY created_at DESC OFFSET ${LIMITS.logs})`;
+    });
+    if (automatic) return resolveCapability(request.id, { approved: true }, identity, caller, true);
+    return response;
   },
   async resolve(id: string, decision: { approved: boolean; remember?: "always" }, identity: ArtifactIdentity, caller: CapabilityCaller) {
-    z.uuid().parse(id);
-    const actor = user(identity);
-    const [row] = await sql<Row[]>`SELECT * FROM assistant.capability_calls WHERE id=${id}::uuid AND user_id=${actor.id}::uuid`;
-    if (!row) throw new ArtifactError("NOT_FOUND");
-    // Declining has no effect to authorize or review. It must still work when
-    // access was revoked or the target application is temporarily unavailable.
-    if (!decision.approved && row.status === "pending") {
-      const denied = await sql`UPDATE assistant.capability_calls SET status='denied'
-        WHERE id=${id}::uuid AND user_id=${actor.id}::uuid AND status='pending' RETURNING id`;
-      if (!denied.length) throw new ArtifactError("CONFLICT");
-      return { status: "denied" as const };
-    }
-    const request = RuntimeCapabilityRequest.parse(decoded(row.request)),
-      prepared = Prepared.parse(decoded(row.prepared));
-    const resource = await authorize(request, identity);
-    if (resource && resource.permission !== "admin" && !prepared.resource) throw new ArtifactError("CONFLICT");
-    if (row.status === "completed") return { status: "completed" as const, result: decoded(row.result) };
-    if (row.status !== "pending") throw new ArtifactError("CONFLICT");
-    const target = await operation(request.name, caller.locale);
-    if (
-      target.operation.schemaHash !== prepared.schemaHash ||
-      target.kind !== prepared.kind ||
-      (target.action?.approval ?? null) !== prepared.approval
-    )
-      throw new ArtifactError("CONFLICT");
-    // Approval applies to the reviewed consequence, not a changed action.
-    if (decision.approved) {
-      let currentReview: z.infer<typeof CapabilityActionReviewSchema> | null = null;
-      if (target.action?.review) {
-        const response = await reviewCapabilityAction(
-          { appId: target.appId, capabilityId: target.localId, input: request.input, signal: caller.signal },
-          { ...caller, locale: prepared.locale ?? caller.locale },
-        );
-        if (!response.ok) throw new Error(response.error.message);
-        currentReview = CapabilityActionReviewSchema.parse(response.data);
-      }
-      if (JSON.stringify(currentReview) !== JSON.stringify(prepared.review)) throw new ArtifactError("CONFLICT");
-    }
-    if (decision.remember && (!prepared.allowAlways || (resource && resource.permission !== "admin")))
-      throw new ArtifactError("INVALID_INPUT");
-    const updated = await sql`UPDATE assistant.capability_calls SET status=${decision.approved ? "running" : "denied"}
-      WHERE id=${id}::uuid AND user_id=${actor.id}::uuid AND status='pending' RETURNING id`;
-    if (!updated.length) throw new ArtifactError("CONFLICT");
-    if (!decision.approved) return { status: "denied" as const };
-    if (decision.remember && prepared.scope)
-      await rememberAiToolApproval({ actorUserId: actor.id }, { toolName: request.name, approvalScope: prepared.scope });
-    const result = await invokeCapability(
-      {
-        appId: prepared.appId,
-        capabilityId: prepared.localId,
-        kind: prepared.kind,
-        input: request.input,
-        ...(target.action?.idempotency === "required" ? { idempotencyKey: `code-${id}` } : {}),
-        signal: caller.signal,
-      },
-      { ...caller, requestId: id },
-    );
-    await sql`UPDATE assistant.capability_calls SET status='completed',result=(${JSON.stringify(result)}::text)::jsonb WHERE id=${id}::uuid`;
-    return { status: "completed" as const, result };
+    return resolveCapability(id, decision, identity, caller);
   },
 };
+
+async function resolveCapability(
+  id: string,
+  decision: { approved: boolean; remember?: "always" },
+  identity: ArtifactIdentity,
+  caller: CapabilityCaller,
+  automatic = false,
+) {
+  z.uuid().parse(id);
+  const actor = user(identity);
+  const [row] = await sql<Row[]>`SELECT * FROM assistant.capability_calls WHERE id=${id}::uuid AND user_id=${actor.id}::uuid`;
+  if (!row) throw new ArtifactError("NOT_FOUND");
+  // Declining has no effect to authorize or review. It must still work when
+  // access was revoked or the target application is temporarily unavailable.
+  if (!decision.approved && row.status === "pending") {
+    const denied = await claimExecution(row, decision, identity, null, false);
+    if (!denied) throw new ArtifactError("CONFLICT");
+    return { status: "denied" as const };
+  }
+  const request = RuntimeCapabilityRequest.parse(decoded(row.request)),
+    prepared = Prepared.parse(decoded(row.prepared));
+  const resource = await authorize(request, identity);
+  if (resource && resource.permission !== "admin" && !prepared.resource) throw new ArtifactError("CONFLICT");
+  if (row.status === "completed") return { status: "completed" as const, result: decoded(row.result) };
+  if (row.status !== "pending") throw new ArtifactError("CONFLICT");
+  const target = await operation(request.name, caller.locale);
+  if (
+    target.operation.schemaHash !== prepared.schemaHash ||
+    target.kind !== prepared.kind ||
+    (target.action?.approval ?? null) !== prepared.approval
+  )
+    throw new ArtifactError("CONFLICT");
+  // Approval applies to the reviewed consequence, not a changed action.
+  let currentReview: z.infer<typeof CapabilityActionReviewSchema> | null = null;
+  if (target.action?.review) {
+    const response = await reviewCapabilityAction(
+      { appId: target.appId, capabilityId: target.localId, input: request.input, signal: caller.signal },
+      { ...caller, locale: prepared.locale ?? caller.locale },
+    );
+    if (!response.ok) throw new Error(response.error.message);
+    currentReview = CapabilityActionReviewSchema.parse(response.data);
+  }
+  if (approvalReviewDigest(currentReview) !== approvalReviewDigest(prepared.review)) throw new ArtifactError("CONFLICT");
+  if (decision.remember && (!prepared.allowAlways || (resource && resource.permission !== "admin")))
+    throw new ArtifactError("INVALID_INPUT");
+  const updated = await claimExecution(row, decision, identity, currentReview, automatic);
+  if (!updated) throw new ArtifactError("CONFLICT");
+  if (!decision.approved) return { status: "denied" as const };
+  if (decision.remember && prepared.scope)
+    await rememberAiToolApproval({ actorUserId: actor.id }, { toolName: request.name, approvalScope: prepared.scope });
+  const result = await invokeCapability(
+    {
+      appId: prepared.appId,
+      capabilityId: prepared.localId,
+      kind: prepared.kind,
+      input: request.input,
+      ...(target.action?.idempotency === "required" ? { idempotencyKey: `code-${id}` } : {}),
+      signal: caller.signal,
+    },
+    { ...caller, requestId: id },
+  );
+  await sql`UPDATE assistant.capability_calls SET status='completed',result=(${JSON.stringify(result)}::text)::jsonb WHERE id=${id}::uuid`;
+  return { status: "completed" as const, result };
+}
+
+async function requestApprovalRecord(
+  request: Request,
+  prepared: z.infer<typeof Prepared>,
+  userId: string,
+  db: SQL,
+  options: { expiresInMs: number; sentence?: string; title?: string | null },
+) {
+  return approvals.request(
+    {
+      appId: prepared.appId,
+      action: prepared.localId,
+      approvalScope: prepared.scope,
+      requester: {
+        kind: "studio_app",
+        ref: request.id,
+        appId: "assistant",
+        title: options.title ?? prepared.resource?.title ?? null,
+      },
+      subjectId: userId,
+      approverUserId: userId,
+      // Like a chat, a rememberable Action whose review leaves out the scope for these arguments asks as `confirm`.
+      assurance: approvalAssurance(prepared.scope !== null),
+      // Legacy calls retain only the app ID and local title; declining must work without the catalog.
+      sentence:
+        options.sentence ??
+        codeApprovalMessage(
+          {
+            status: "approval",
+            id: request.id,
+            name: request.name,
+            input: request.input,
+            appName: prepared.appId,
+            appIcon: "",
+            ...prepared,
+          },
+          prepared.locale ?? "en",
+        ),
+      review: prepared.review,
+      input: request.input,
+      expiresInMs: options.expiresInMs,
+    },
+    db,
+  );
+}
+
+async function claimExecution(
+  row: Row,
+  decision: { approved: boolean },
+  identity: ArtifactIdentity,
+  review: z.infer<typeof CapabilityActionReviewSchema> | null,
+  automatic: boolean,
+): Promise<boolean> {
+  const actor = user(identity);
+  return sql.begin(async (db) => {
+    const [current] = await db<Row[]>`SELECT * FROM assistant.capability_calls
+      WHERE id=${row.id}::uuid AND user_id=${actor.id}::uuid FOR UPDATE`;
+    if (!current || current.status !== "pending") return false;
+    if (!automatic) {
+      let approvalId = current.approval_id;
+      if (!approvalId) {
+        const approval = await requestApprovalRecord(
+          RuntimeCapabilityRequest.parse(decoded(current.request)),
+          Prepared.parse(decoded(current.prepared)),
+          actor.id,
+          db,
+          // A call from before the upgrade keeps the day it had to wait; an older one can only be declined.
+          { expiresInMs: current.created_at.getTime() + APPROVAL_MAX_WAIT_MS - Date.now() },
+        );
+        if (!approval.ok) return false;
+        approvalId = approval.id;
+        await db`UPDATE assistant.capability_calls SET approval_id=${approvalId}::uuid WHERE id=${row.id}::uuid AND approval_id IS NULL`;
+      }
+      const via = approvalDecisionChannel({ credentialKind: identity.credentialKind, actor: identity.actor });
+      // A relay may reject, but only the person can approve a pending request in the chat.
+      if (decision.approved && via === "invocation" && (await approvals.get(approvalId, db))?.status === "pending") return false;
+      const decided = await approvals.decide(approvalId, decision, { userId: actor.id, via }, db);
+      if (
+        !decided.ok &&
+        !(!decision.approved && (decided.code === "EXPIRED" || (decided.code === "ALREADY_DECIDED" && decided.status === "expired")))
+      )
+        return false;
+      if (decision.approved) {
+        const request = RuntimeCapabilityRequest.parse(decoded(current.request));
+        const consumed = await approvals.consume(
+          approvalId,
+          { input: request.input, review, requester: { kind: "studio_app", ref: row.id } },
+          db,
+        );
+        if (!consumed.ok) return false;
+      }
+    }
+    const updated = await db`UPDATE assistant.capability_calls SET status=${decision.approved ? "running" : "denied"}
+      WHERE id=${row.id}::uuid AND user_id=${actor.id}::uuid AND status='pending' RETURNING id`;
+    return updated.length > 0;
+  });
+}
