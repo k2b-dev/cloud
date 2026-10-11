@@ -39,19 +39,21 @@ describe("Mermaid editor widget", () => {
     const dom = createDomTestHarness();
     delegateEvents(["click", "keydown", "pointerdown", "pointermove", "pointerup"], dom.document);
     const { EditorState } = await import("@codemirror/state");
-    const { ensureSyntaxTree } = await import("@codemirror/language");
+    const { forceParsing } = await import("@codemirror/language");
     const { EditorView } = await import("@codemirror/view");
     const { markdownExtension } = await import("./markdown");
     const { mermaidExtension } = await import("./mermaid");
-    const state = EditorState.create({
-      doc: doc.replace("flowchart LR\n  A-->B", code),
-      selection: { anchor: 0 },
-      extensions: [markdownExtension(), mermaidExtension()],
+    const view = new EditorView({
+      parent: dom.root,
+      state: EditorState.create({
+        doc: doc.replace("flowchart LR\n  A-->B", code),
+        selection: { anchor: 0 },
+        extensions: [markdownExtension(), mermaidExtension()],
+      }),
     });
-    // The first parse has a ~20 ms budget and stops early on a busy machine, before the fenced block.
-    // Finish it so the widget exists when the view first draws.
-    if (!ensureSyntaxTree(state, state.doc.length, 10_000)) throw new Error("Markdown did not finish parsing");
-    const view = new EditorView({ parent: dom.root, state });
+    // The first parse has a ~20 ms budget and can stop before the fenced block on a busy machine.
+    // forceParsing finishes it and dispatches the tree, so the widget exists before any assertion.
+    if (!forceParsing(view, view.state.doc.length, 5000)) throw new Error("Markdown did not finish parsing");
     return { dom, view };
   };
 
