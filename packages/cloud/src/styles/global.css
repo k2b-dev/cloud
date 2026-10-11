@@ -335,8 +335,8 @@ solid-island {
     background: var(--k2b-surface);
   }
   .cloud-app-canvas[data-layout-authenticated] .layout-content-main .k2b-app-workspace:not(.k2b-app-workspace *) {
+    --k2b-workspace-radius: 0px;
     border: 0;
-    border-radius: 0;
     box-shadow: none;
   }
   .cloud-app-canvas[data-layout-authenticated] > .layout-shell-content > :not(.layout-content-main) .k2b-notice-card {

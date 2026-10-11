@@ -16,6 +16,7 @@ type Props = {
   tableKind: "stored" | "federated";
   baseId: string;
   tableId: string;
+  tableName: string;
   recordCountText: string;
   /** Records are loading or reconciling; the search icon turns into a spinner without changing the row. */
   busy: boolean;
@@ -45,11 +46,12 @@ export default function RecordsPrimaryToolbar(props: Props) {
   const locale = useLocale();
   const t = () => recordsViewMessages.resolve([locale()]).t;
   return (
-    <div class="flex flex-wrap items-center gap-2 shrink-0 pr-[var(--k2b-detail-space,0px)]">
+    <div class="flex flex-wrap items-center gap-2 shrink-0">
       {/* The search keeps at least 24rem on the row; below that, the count and actions move to their own line together. */}
       <Show when={props.searchableFields.length > 0}>
         <div class="min-w-0 flex-[1_1_24rem]">
           <SearchBar
+            tableName={props.tableName}
             fields={props.searchableFields}
             initialQ={props.search.q}
             initialQFields={props.search.fieldIds}

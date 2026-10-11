@@ -38,6 +38,7 @@ const mount = async (searchableFields: PublicField[]) => {
         trashMode: false,
         canReadTable: true,
         tableKind: "stored",
+        tableName: "Devices",
         baseId: "BASE01",
         tableId: "TABLE1",
         recordCountText: "3 records",

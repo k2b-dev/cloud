@@ -611,13 +611,13 @@ function AppWorkspaceDetail(props: AppWorkspaceDetailProps): JSX.Element {
     "--k2b-workspace-panel-min": `${minWidth()}px`,
     "--k2b-workspace-panel-max": `${maxWidth()}px`,
   });
-  // The panel floats over the content area, and `Main` beside it makes room
-  // in CSS alone, so a server-rendered page arrives in its final geometry. A
-  // sibling cannot read the panel's own variables, so this rule hands the
-  // open panel's size to the content area around it.
-  const contentRule = () => {
+  // An open panel takes a column at the workspace's end, sized in CSS alone,
+  // so a server-rendered page arrives in its final geometry. The workspace
+  // cannot read the panel's own variables, so this rule hands the open
+  // panel's size to its workspace.
+  const workspaceRule = () => {
     const open = `#${domId()}:not([hidden])`;
-    return `.k2b-app-workspace__content:has(> ${open}, > :is(solid-island, solid-client) > ${open}){--k2b-detail-size:${size()};--k2b-detail-min:${minWidth()}px;--k2b-detail-max:${maxWidth()}px}`;
+    return `.k2b-app-workspace:has(> .k2b-app-workspace__content > ${open}, > .k2b-app-workspace__content > :is(solid-island, solid-client) > ${open}){--k2b-detail-size:${size()};--k2b-detail-min:${minWidth()}px;--k2b-detail-max:${maxWidth()}px}`;
   };
   let aside: HTMLElement | undefined;
   onMount(() => {
@@ -635,7 +635,7 @@ function AppWorkspaceDetail(props: AppWorkspaceDetailProps): JSX.Element {
   });
   return (
     <>
-      <style innerHTML={contentRule()} />
+      <style innerHTML={workspaceRule()} />
       <Show when={resizable()}>
         <ResizeHandle
           kind="detail"
@@ -1691,11 +1691,13 @@ type AppWorkspaceComponent = ((props: AppWorkspaceProps) => JSX.Element) & {
 
 /**
  * The row above the work area. From 48 to 64 rem it holds the button that
- * opens the overlay sidebar. On a page with a page above it, at every width,
- * it shows the host's page title with the way up (see `PageTitle`); the
- * page's own `PageTitle` takes its place. It is one fixed height and draws no
- * line; CSS decides when it shows, so the server-rendered page already has
- * its final geometry.
+ * opens the overlay sidebar. On a page with a page above it, it shows the
+ * host's page title as the page's heading, with the way up (see
+ * `PageTitle`); the page's own `PageTitle` takes its place. From 64 rem a
+ * sidebar that marks the current page names it already, and the head keeps
+ * only the heading for assistive technology. It is one fixed height and
+ * draws no line; CSS decides when it shows, so the server-rendered page
+ * already has its final geometry.
  */
 function AppWorkspaceHead(props: { sidebarId: () => string; nested: boolean }): JSX.Element {
   const messages = useWorkspaceMessages();
@@ -1712,7 +1714,7 @@ function AppWorkspaceHead(props: { sidebarId: () => string; nested: boolean }): 
       >
         <i class="ti ti-layout-sidebar" aria-hidden="true" />
       </IconButton>
-      <Show when={trail()}>{(current) => <PageTitle trail={current()} as="p" fallback />}</Show>
+      <Show when={trail()}>{(current) => <PageTitle trail={current()} fallback />}</Show>
     </div>
   );
 }

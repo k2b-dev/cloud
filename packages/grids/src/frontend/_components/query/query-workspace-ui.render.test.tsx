@@ -109,6 +109,7 @@ describe("query workspace UI contracts", () => {
   test("separates search scope labels from field types", () => {
     const html = renderToString(() =>
       createComponent(SearchBar, {
+        tableName: "Devices",
         fields: [field],
         initialQ: "",
         initialQFields: [],
@@ -118,5 +119,19 @@ describe("query workspace UI contracts", () => {
 
     expect(html).toContain('<strong class="truncate">Name</strong>');
     expect(html).toContain('<small class="shrink-0 text-dimmed">text</small>');
+  });
+
+  test("names the table in the search placeholder", () => {
+    const html = renderToString(() =>
+      createComponent(SearchBar, {
+        tableName: "Devices",
+        fields: [field],
+        initialQ: "",
+        initialQFields: [],
+        onSearchChange: () => undefined,
+      }),
+    );
+
+    expect(html).toContain('placeholder="Search Devices…"');
   });
 });

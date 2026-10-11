@@ -6,6 +6,8 @@ import { fieldChoiceGroupsFor, fieldTypeGroups } from "../fields/field-type-meta
 import { toolbarMessages } from "./messages";
 
 type Props = {
+  /** The table's name for the placeholder: beside a sidebar that marks the table, the page shows no title row. */
+  tableName: string;
   /** Fields the server-side search compiler can search. */
   fields: Field[];
   /** Current search text from the URL (`?q=...`). */
@@ -77,7 +79,7 @@ export default function SearchBar(props: Props) {
           aria-label={t().searchRecords}
           aria-busy={props.busy ? "true" : undefined}
           icon={props.busy ? "ti ti-loader-2 k2b-spin" : "ti ti-search"}
-          placeholder={t().searchRecordsPlaceholder}
+          placeholder={t().searchTablePlaceholder({ table: props.tableName })}
           value={q}
           onValueChange={onInput}
           clearable
