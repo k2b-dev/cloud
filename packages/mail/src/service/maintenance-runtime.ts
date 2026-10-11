@@ -12,6 +12,7 @@ import { resolveMailExecution } from "./execution";
 import { withLeaseHeartbeat } from "./lease-heartbeat";
 import { executeOperatorAction, OPERATOR_MAINTENANCE_KINDS } from "./operator-actions";
 import { providerBusyRetryAfterMs } from "./provider-operation-lock";
+import { executeQueuedSenderVerification } from "./sender-verification";
 import {
   enqueueFolderSync,
   enqueueMailboxHydration,
@@ -31,7 +32,6 @@ const SYNC_CHECK_INTERVAL_MS = 1_000;
 const maintenanceTasks = createRuntimeTaskTracker();
 
 type JsonRecord = Record<string, unknown>;
-type MaintenanceKind = MaintenanceCommandInput["kind"];
 type DbMaintenanceCommand = StoredCommandAuthorization & {
   id: string;
   kind: MaintenanceKind;
@@ -41,7 +41,10 @@ type DbMaintenanceCommand = StoredCommandAuthorization & {
   attempt: number;
 };
 
-const MAINTENANCE_KINDS: MaintenanceKind[] = [...OPERATOR_MAINTENANCE_KINDS];
+type MaintenanceKind = MaintenanceCommandInput["kind"] | "verify_sender_identity";
+// A sender verification that waits behind provider work runs here too: it is mailbox
+// administration work that takes its turn at the provider lease like the operator actions.
+const MAINTENANCE_KINDS: MaintenanceKind[] = [...OPERATOR_MAINTENANCE_KINDS, "verify_sender_identity"];
 
 const parseRecord = (value: JsonRecord | string): JsonRecord => (typeof value === "string" ? (JSON.parse(value) as JsonRecord) : value);
 
@@ -243,6 +246,7 @@ const executeMaintenanceWork = async (
   if (!(await commandStillAuthorized(command, "admin"))) {
     throw Object.assign(new Error("Mailbox administration access was revoked before execution"), { code: "ACCESS_REVOKED" });
   }
+  if (command.kind === "verify_sender_identity") return executeQueuedSenderVerification(command);
   const target = parseRecord(command.target);
   if (command.kind === "sync_mailbox" || command.kind === "sync_folder") {
     const folderId = syncTargetFolderId(command);

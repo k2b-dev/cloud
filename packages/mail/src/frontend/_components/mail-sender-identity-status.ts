@@ -13,6 +13,9 @@ export const mailSenderIdentityStatusMessages = i18n.define({
       providerRejectedHint: "The provider refused the test message. Check the From address and delivery settings, then verify again.",
       verificationRequired: "Not verified",
       verificationRequiredHint: "Send a test message to confirm that the provider accepts this sender.",
+      verificationPending: "Verification waiting",
+      verificationPendingHint:
+        "Mail is synchronizing this mailbox and sends the test message automatically as soon as it can. If that takes longer than 10 minutes, verify the identity again.",
       cannotSend: "This mailbox cannot send yet",
       identityReason: ({ label, reason }: { label: string; reason: string }) => `${label}: ${reason}.`,
       noIdentity: "It has no sender identity. Add one and verify it.",
@@ -29,6 +32,9 @@ export const mailSenderIdentityStatusMessages = i18n.define({
         "Der Anbieter hat die Testnachricht abgelehnt. Prüfe die Absenderadresse und die Versandeinstellungen und bestätige die Absenderidentität erneut.",
       verificationRequired: "Nicht bestätigt",
       verificationRequiredHint: "Sende eine Testnachricht, um zu bestätigen, dass der Anbieter diesen Absender akzeptiert.",
+      verificationPending: "Bestätigung wartet",
+      verificationPendingHint:
+        "Mail synchronisiert dieses Postfach und sendet die Testnachricht automatisch, sobald es möglich ist. Dauert das länger als 10 Minuten, bestätige die Absenderidentität erneut.",
       cannotSend: "Aus diesem Postfach kann noch nicht gesendet werden",
       identityReason: ({ label, reason }) => `${label}: ${reason}.`,
       noIdentity: "Es hat keine Absenderidentität. Füge eine hinzu und bestätige sie.",
@@ -44,6 +50,7 @@ export const senderIdentityReasonCopy = (reason: SenderIdentityStatusReason, loc
   const t = mailSenderIdentityStatusMessages.resolve([locale]).t;
   if (reason === "sent_folder_missing") return { label: t.sentFolderMissing, hint: t.sentFolderMissingHint };
   if (reason === "provider_rejected") return { label: t.providerRejected, hint: t.providerRejectedHint };
+  if (reason === "verification_pending") return { label: t.verificationPending, hint: t.verificationPendingHint };
   return { label: t.verificationRequired, hint: t.verificationRequiredHint };
 };
 

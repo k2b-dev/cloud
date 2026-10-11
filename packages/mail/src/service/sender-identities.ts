@@ -1,5 +1,5 @@
 import { audit } from "@k2b/cloud/services";
-import { err, fail, i18n, isServiceError, ok, type Result } from "@k2b/stdlib";
+import { err, fail, isServiceError, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { z } from "zod";
 import {
@@ -16,31 +16,14 @@ import {
   smtpTransportCapabilitiesSchema,
   type UpdateSenderIdentityInput,
 } from "../contracts";
-import { requireMailboxAccess } from "./access";
-
-const verificationMessages = i18n.define({
-  baseLocale: "en",
-  messages: {
-    en: {
-      subject: "Cloud Mail sender identity verification",
-      body: ({ address }: { address: string }) => `Cloud Mail verified that ${address} can be submitted through this provider binding.`,
-    },
-    de: {
-      subject: "Bestätigung der Absenderidentität in Cloud Mail",
-      body: ({ address }) => `Cloud Mail hat bestätigt, dass ${address} über diese Anbieterverbindung versendet werden kann.`,
-    },
-  },
-});
-
 import { withShortIdDb } from "../lib/short-id";
-import { requireMailboxPermission } from "./access";
+import { requireMailboxAccess, requireMailboxPermission } from "./access";
 import { normalizeEmailAddress } from "./address-normalization";
 import { auditActorFromRequest, type MailRequestContext } from "./auth";
-import { imapSmtpConnector } from "./connectors";
+import { queueSenderVerification } from "./commands";
 import { resolveRoleFolder } from "./folders";
 import { validateDestructiveIncomingAutomationsForMailbox } from "./incoming-automations";
-import { loadProviderConnectionRuntimeSnapshot } from "./provider-connections";
-import { providerBusy, withMailboxProviderOperationBarrier } from "./provider-operation-lock";
+import { attemptSenderVerification } from "./sender-verification";
 
 const internalCreateSenderIdentityInputSchema = createSenderIdentityInputSchema.extend({
   defaultSignatureTemplateId: z.string().uuid().nullable().optional(),
@@ -70,6 +53,7 @@ type DbIdentity = {
   is_default: boolean;
   status: SenderIdentity["status"];
   status_reason: SenderIdentity["statusReason"];
+  pending_verification_command_id: string | null;
   transport_host: string | null;
   transport_port: number | null;
   transport_tls_mode: "implicit" | "starttls" | null;
@@ -88,13 +72,15 @@ type DbIdentity = {
 
 type SqlClient = typeof sql;
 
-type DbSenderVerification = DbIdentity & {
-  connection_id: string;
-  connection_username: string;
-  secret_revision: number;
-  authenticated_principal: string | null;
-  remote_resource_id: string;
-};
+/** The verification commands of `si` that wait behind provider work or run now. */
+const pendingVerification = (columns: Bun.SQL.Query<unknown>) => sql`
+  ${columns}
+  FROM mail.commands verification
+  WHERE verification.mailbox_id = si.mailbox_id
+    AND verification.kind = 'verify_sender_identity'
+    AND verification.state IN ('queued', 'executing')
+    AND verification.target ->> 'senderIdentityId' = si.id::text
+`;
 
 const identityColumns = sql`
   si.id,
@@ -125,6 +111,7 @@ const identityColumns = sql`
   si.status,
   CASE
     WHEN si.status IN ('verified', 'disabled') THEN NULL
+    WHEN EXISTS (${pendingVerification(sql`SELECT 1`)}) THEN 'verification_pending'
     WHEN si.status = 'rejected' THEN 'provider_rejected'
     WHEN si.sent_folder_id IS NULL AND NOT EXISTS (
       SELECT 1
@@ -133,6 +120,8 @@ const identityColumns = sql`
     ) THEN 'sent_folder_missing'
     ELSE 'verification_required'
   END AS status_reason,
+  (${pendingVerification(sql`SELECT verification.id`)} ORDER BY verification.created_at DESC, verification.id DESC LIMIT 1)
+    AS pending_verification_command_id,
   (SELECT transport.host FROM mail.sender_identity_transports transport WHERE transport.sender_identity_id = si.id) AS transport_host,
   (SELECT transport.port FROM mail.sender_identity_transports transport WHERE transport.sender_identity_id = si.id) AS transport_port,
   (SELECT transport.tls_mode FROM mail.sender_identity_transports transport WHERE transport.sender_identity_id = si.id) AS transport_tls_mode,
@@ -228,6 +217,7 @@ const mapIdentity = (row: DbIdentity): SenderIdentity => ({
   isDefault: row.is_default,
   status: row.status,
   statusReason: row.status_reason,
+  pendingVerificationCommandId: row.pending_verification_command_id,
   createdAt: (row.created_at instanceof Date ? row.created_at : new Date(row.created_at)).toISOString(),
   updatedAt: (row.updated_at instanceof Date ? row.updated_at : new Date(row.updated_at)).toISOString(),
 });
@@ -293,45 +283,6 @@ const setMailboxDefaultSignature = async (params: {
       updated_at = now()
   `;
   return ok();
-};
-
-const loadSenderVerification = async (params: {
-  mailboxId: string;
-  senderIdentityId: string;
-  bindingId: string;
-  db?: typeof sql;
-  lock?: boolean;
-}): Promise<DbSenderVerification | null> => {
-  const db = params.db ?? sql;
-  const lockClause = params.lock ? sql`FOR UPDATE OF si, rr, pb, pc` : sql``;
-  const [record] = await db<DbSenderVerification[]>`
-    SELECT
-      ${identityColumns},
-      pb.connection_id,
-      pc.username AS connection_username,
-      pc.secret_revision,
-      pb.authenticated_principal,
-      rr.id AS remote_resource_id
-    FROM mail.sender_identities si
-    JOIN mail.remote_resources rr ON rr.mailbox_id = si.mailbox_id
-    JOIN mail.mailboxes mailbox ON mailbox.id = si.mailbox_id
-    JOIN mail.provider_bindings pb ON pb.remote_resource_id = rr.id
-    JOIN mail.provider_connections pc ON pc.id = pb.connection_id
-    WHERE si.id = ${params.senderIdentityId}::uuid
-      AND si.mailbox_id = ${params.mailboxId}::uuid
-      AND pb.id = ${params.bindingId}::uuid
-      AND pb.state = 'active'
-      AND pb.verified_scope_fingerprint = rr.scope_fingerprint
-      AND pb.verified_secret_revision = pc.secret_revision
-      AND pc.status = 'active'
-      AND pc.encrypted_secret IS NOT NULL
-      AND pc.owner_mailbox_id = ${params.mailboxId}::uuid
-      AND rr.status = 'active'
-      AND mailbox.deleted_at IS NULL
-      AND si.status <> 'disabled'
-    ${lockClause}
-  `;
-  return record ?? null;
 };
 
 const foldersBelongToMailbox = async (mailboxId: string, folderIds: Array<string | null | undefined>, db: typeof sql): Promise<boolean> => {
@@ -821,6 +772,22 @@ export const setupDefaultSender = async (params: {
   });
 };
 
+const loadIdentity = async (mailboxId: string, senderIdentityId: string): Promise<Result<SenderIdentity>> => {
+  const [row] = await sql<DbIdentity[]>`
+    SELECT ${identityColumns}
+    FROM mail.sender_identities si
+    WHERE si.id = ${senderIdentityId}::uuid AND si.mailbox_id = ${mailboxId}::uuid
+  `;
+  return row ? ok(mapIdentity(row)) : fail(err.notFound("Sender identity"));
+};
+
+/**
+ * Sends a verification message through the binding and marks the identity verified when the
+ * provider accepts it. When provider work such as a folder sync holds the mailbox, the
+ * verification is not refused: it waits as a durable `verify_sender_identity` command in the
+ * mailbox's provider lease line, and the identity names it in `pendingVerificationCommandId`
+ * until it ran; an identity that is not verified yet also reports `verification_pending`.
+ */
 export const verifySenderIdentity = async (params: {
   context: MailRequestContext;
   mailboxId: string;
@@ -834,131 +801,32 @@ export const verifySenderIdentity = async (params: {
   if (!/^.+@.+\..+$/.test(recipient) || recipient.length > 320) return fail(err.badInput("Invalid verification recipient"));
   const allowed = await requireMailboxPermission(params.context, params.mailboxId, "admin");
   if (!allowed.ok) return allowed;
-  const record = await loadSenderVerification(params);
-  if (!record) return fail(err.notFound("Sender identity or provider binding"));
-  try {
-    const barrier = await withMailboxProviderOperationBarrier(params.mailboxId, [record.remote_resource_id], async (assertLeaseActive) =>
-      sql.begin(async (tx) => {
-        const permission = await requireLockedMailboxAdmin(params.context, params.mailboxId, tx);
-        if (!permission.ok) return permission;
-        const current = await loadSenderVerification({ ...params, db: tx, lock: true });
-        if (!current || current.remote_resource_id !== record.remote_resource_id) {
-          return fail(err.badInput("Sender identity or provider binding changed before verification"));
-        }
-        // An identity created before Sent folders were preset, or whose folder was cleared, takes the mailbox's.
-        // It is stored only with a successful verification, so a failed one leaves the identity unchanged.
-        let filledSentFolderId: string | null = null;
-        if (!params.savesSentAutomatically) {
-          if (!current.sent_folder_id) {
-            filledSentFolderId = await roleFolderId(params.mailboxId, "sent", tx);
-            if (!filledSentFolderId) return fail(err.badInput("A Sent folder is required when the provider does not save sent mail"));
-          }
-          const [sentRef] = await tx<{ allowed: boolean }[]>`
-            SELECT 'insert' = ANY(effective_rights) AS allowed
-            FROM mail.binding_folder_refs
-            WHERE binding_id = ${params.bindingId}::uuid AND folder_id = ${current.sent_folder_id ?? filledSentFolderId}::uuid
-          `;
-          if (!sentRef?.allowed) return fail(err.badInput("The selected binding cannot append to the configured Sent folder"));
-        }
-
-        const messageId = `<cloud-sender-verification-${crypto.randomUUID()}@${current.from_address.split("@")[1] ?? "mail.invalid"}>`;
-        const snapshot = await loadProviderConnectionRuntimeSnapshot(current.connection_id);
-        if (snapshot.secretRevision !== current.secret_revision) {
-          return fail(err.conflict("Provider credentials changed before sender verification"));
-        }
-        try {
-          const t = verificationMessages.resolve([params.locale ?? "en"]).t;
-          await assertLeaseActive();
-          const result = await imapSmtpConnector.send(snapshot.runtime, {
-            from: { name: current.display_name, address: current.from_address },
-            replyTo: current.reply_to,
-            envelopeFrom: current.envelope_sender,
-            to: [{ address: recipient }],
-            subject: t.subject,
-            text: t.body({ address: current.from_address }),
-            messageId,
-          });
-          await assertLeaseActive();
-          if (result.accepted.length === 0 || result.rejected.includes(recipient)) {
-            await tx`
-              UPDATE mail.sender_identities
-              SET status = 'rejected', last_provider_rejection = 'Provider rejected sender identity verification'
-              WHERE id = ${current.id}::uuid
-            `;
-            return fail(err.badInput("The provider did not accept the sender identity verification message"));
-          }
-        } catch (error) {
-          if ((error as { code?: unknown } | null)?.code === "MAIL_PROVIDER_OPERATION_LEASE_LOST") throw error;
-          await tx`
-            UPDATE mail.sender_identities
-            SET status = 'rejected', last_provider_rejection = 'Provider rejected sender identity verification'
-            WHERE id = ${current.id}::uuid
-          `;
-          return fail(err.badInput("The provider rejected sender identity verification"));
-        }
-
-        await tx`
-        INSERT INTO mail.sender_identity_bindings (
-          sender_identity_id,
-          binding_id,
-          provider_principal,
-          verified_at,
-          verified_secret_revision,
-          saves_sent_automatically,
-          revoked_at,
-          last_error_code
-        )
-        VALUES (
-          ${current.id}::uuid,
-          ${params.bindingId}::uuid,
-          ${current.authenticated_principal ?? current.connection_username},
-          now(),
-          ${current.secret_revision},
-          ${params.savesSentAutomatically},
-          NULL,
-          NULL
-        )
-        ON CONFLICT (sender_identity_id, binding_id) DO UPDATE SET
-          provider_principal = EXCLUDED.provider_principal,
-          verified_at = now(),
-          verified_secret_revision = EXCLUDED.verified_secret_revision,
-          saves_sent_automatically = EXCLUDED.saves_sent_automatically,
-          revoked_at = NULL,
-          last_error_code = NULL
-        `;
-        const [updated] = await tx<DbIdentity[]>`
-        UPDATE mail.sender_identities si
-        SET status = 'verified', last_provider_rejection = NULL, sent_folder_id = COALESCE(si.sent_folder_id, ${filledSentFolderId}::uuid)
-        WHERE si.id = ${current.id}::uuid
-          AND si.mailbox_id = ${params.mailboxId}::uuid
-          AND si.status <> 'disabled'
-        RETURNING ${identityColumns}
-        `;
-        if (!updated)
-          throw Object.assign(new Error("Sender identity disappeared during verification"), { code: "SENDER_IDENTITY_MISSING" });
-        await audit.record(
-          {
-            action: "mail.sender_identity.verify",
-            outcome: "allowed",
-            actor: auditActorFromRequest(params.context),
-            target: { type: "sender_identity", id: updated.id, label: updated.from_address },
-            requestId: params.context.requestId,
-            metadata: {
-              bindingId: params.bindingId,
-              savesSentAutomatically: params.savesSentAutomatically,
-              ...(filledSentFolderId ? { sentFolderId: filledSentFolderId } : {}),
-            },
-          },
-          tx,
-        );
-        await assertLeaseActive();
-        return ok(mapIdentity(updated));
-      }),
-    );
-    return barrier.acquired ? barrier.value : fail(providerBusy("Provider work is still running; retry sender verification shortly"));
-  } catch (error) {
-    return (error as { code?: unknown } | null)?.code === "MAIL_PROVIDER_OPERATION_LEASE_LOST"
-      ? fail(err.conflict("Provider state changed during sender verification; retry the operation"))
-      : fail(err.internal("Failed to verify sender identity"));
+  const request = {
+    mailboxId: params.mailboxId,
+    senderIdentityId: params.senderIdentityId,
+    bindingId: params.bindingId,
+    verificationRecipient: recipient,
+    savesSentAutomatically: params.savesSentAutomatically,
+    locale: params.locale ?? null,
+  };
+  // The identity names the queued command even when it ended before this read, so the client
+  // still follows its outcome instead of taking the identity's state for the verification's.
+  const queue = async (): Promise<Result<SenderIdentity>> => {
+    const queued = await queueSenderVerification({ context: params.context, request });
+    if (!queued.ok) return queued;
+    const identity = await loadIdentity(params.mailboxId, params.senderIdentityId);
+    return identity.ok ? ok({ ...identity.data, pendingVerificationCommandId: queued.data.id }) : identity;
+  };
+  const current = await loadIdentity(params.mailboxId, params.senderIdentityId);
+  // A verification already waiting goes first; the same request joins it.
+  if (current.ok && current.data.pendingVerificationCommandId) return queue();
+  const attempt = await attemptSenderVerification(request, {
+    authorize: (db) => requireMailboxPermission(params.context, params.mailboxId, "admin", db),
+    auditActor: auditActorFromRequest(params.context),
+    requestId: params.context.requestId ?? null,
+  });
+  if (attempt.acquired) {
+    return attempt.value.ok ? loadIdentity(params.mailboxId, attempt.value.data.senderIdentityId) : attempt.value;
   }
+  return queue();
 };

@@ -31,6 +31,7 @@ describe("default sender setup presentation", () => {
       fromAddress: "user@example.com",
       isDefault: true,
       status: "verified" as const,
+      pendingVerificationCommandId: null,
     };
     expect(deriveDefaultSenderSetupState(connection, binding, [identity])).toEqual({ kind: "ready", identity });
   });
@@ -41,11 +42,23 @@ describe("default sender setup presentation", () => {
       fromAddress: "user@example.com",
       isDefault: true,
       status: "rejected" as const,
+      pendingVerificationCommandId: null,
     };
     expect(deriveDefaultSenderSetupState(connection, binding, [identity])).toEqual({
       kind: "needs-verification",
       identity,
     });
+  });
+
+  test("shows a default identity whose verification waits behind synchronization as pending, not as failed", () => {
+    const identity = {
+      id: "66666666-6666-4666-8666-666666666666",
+      fromAddress: "user@example.com",
+      isDefault: true,
+      status: "unverified" as const,
+      pendingVerificationCommandId: "77777777-7777-4777-8777-777777777777",
+    };
+    expect(deriveDefaultSenderSetupState(connection, binding, [identity])).toEqual({ kind: "verification-pending", identity });
   });
 
   test("does not treat identities from another address as configured", () => {
@@ -56,6 +69,7 @@ describe("default sender setup presentation", () => {
           fromAddress: "other@example.com",
           isDefault: true,
           status: "verified",
+          pendingVerificationCommandId: null,
         },
       ]),
     ).toEqual({ kind: "optional" });

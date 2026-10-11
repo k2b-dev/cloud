@@ -114,7 +114,12 @@ describe("Mailbox settings composition", () => {
   });
 
   test("names why each sending identity cannot send and offers the fix", () => {
-    const identity = (id: string, status: SenderIdentity["status"], statusReason: SenderIdentity["statusReason"]): SenderIdentity => ({
+    const identity = (
+      id: string,
+      status: SenderIdentity["status"],
+      statusReason: SenderIdentity["statusReason"],
+      pendingVerificationCommandId: string | null = null,
+    ): SenderIdentity => ({
       id,
       mailboxId,
       label: id,
@@ -149,6 +154,7 @@ describe("Mailbox settings composition", () => {
       isDefault: false,
       status,
       statusReason,
+      pendingVerificationCommandId,
       createdAt: now,
       updatedAt: now,
     });
@@ -157,14 +163,17 @@ describe("Mailbox settings composition", () => {
         identity("Missing", "unverified", "sent_folder_missing"),
         identity("Refused", "rejected", "provider_rejected"),
         identity("Ready", "verified", null),
+        identity("Waiting", "unverified", "verification_pending", "11111111-1111-4111-8111-111111111111"),
       ],
     });
 
     expect(html).toContain("Sent folder missing");
     expect(html).toContain("Choose Sent folder");
     expect(html).toContain("Rejected by the provider");
-    // Verify stays next to Choose Sent folder for a provider that saves sent mail itself.
-    expect(html.match(/>Verify</g)).toHaveLength(2);
+    // Verify stays next to Choose Sent folder for a provider that saves sent mail itself. A
+    // verification that waits behind synchronization keeps its button in place, disabled.
+    expect(html.match(/>Verify</g)).toHaveLength(3);
+    expect(html).toContain("Verification waiting");
     expect(html).toContain(">Ready<");
   });
 

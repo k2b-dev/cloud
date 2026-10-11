@@ -18,7 +18,14 @@ import {
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
-import type { ComposeTemplate, MailComposeFormat, MailPriority, SenderIdentity, SenderIdentityTransport } from "../../contracts";
+import {
+  type ComposeTemplate,
+  MAX_COMMAND_OUTCOME_IDS,
+  type MailComposeFormat,
+  type MailPriority,
+  type SenderIdentity,
+  type SenderIdentityTransport,
+} from "../../contracts";
 import { mailFolderPaths } from "../../folder-tree";
 import { readApiError } from "./api-response";
 import MailRecipientInput from "./MailRecipientInput";
@@ -30,7 +37,13 @@ import { mailSettingsMessages } from "./mail-settings-messages";
 
 type IdentityEditor = { kind: "create" } | { kind: "edit"; identity: SenderIdentity } | { kind: "verify"; identity: SenderIdentity };
 
-const identityStatusTone = (status: SenderIdentity["status"]): StatusTone => {
+// How often the settings ask whether a verification that waits behind provider work ended.
+const PENDING_VERIFICATION_POLL_MS = 2_000;
+
+// A verified identity that is verified again stays ready while its verification waits.
+const identityStatusTone = (identity: SenderIdentity): StatusTone => {
+  if (identity.statusReason === "verification_pending") return "running";
+  const status = identity.status;
   if (status === "verified") return "ok";
   if (status === "unverified") return "warning";
   if (status === "rejected") return "error";
@@ -418,13 +431,67 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
     },
     onSuccess: (identity) => {
       replaceIdentity(identity);
-      toast.success(messages().identityVerified);
+      if (identity.pendingVerificationCommandId) toast(messages().verificationQueued);
+      else if (identity.status === "verified") toast.success(messages().identityVerified);
       setEditor(null);
       setEditorBaseline("");
       props.onWorkspaceChange();
       void props.onReload();
     },
     onError: (error) => prompts.error(error.message),
+  });
+  // A verification that waits behind provider work ends on its own; ask for its outcome and reload
+  // the identities once it ended, so the list leaves the pending state without a manual reload.
+  // Asking goes on until the reloaded identities no longer name the command, so a reload that
+  // fails is tried again; the server ends every verification within its wait.
+  const pendingVerificationIds = createMemo(
+    () => identities().flatMap((identity) => (identity.pendingVerificationCommandId ? [identity.pendingVerificationCommandId] : [])),
+    [],
+    { equals: (previous, next) => previous.join() === next.join() },
+  );
+  createEffect(() => {
+    // One request's worth; the rest follow once these ended and the reload dropped them.
+    const commandIds = pendingVerificationIds().slice(0, MAX_COMMAND_OUTCOME_IDS);
+    if (commandIds.length === 0) return;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const announced = new Set<string>();
+    const check = async () => {
+      const response = await apiClient.mailboxes[":mailboxId"].commands.outcomes
+        .$post({ param: { mailboxId: props.mailbox.id }, json: { commandIds } })
+        .catch(() => null);
+      const outcomes = response?.ok ? await response.json().catch(() => null) : null;
+      if (stopped) return;
+      // A failed request tells nothing; a command the server no longer reports has ended.
+      const byId = new Map((outcomes ?? []).map((outcome) => [outcome.id, outcome]));
+      const ended = outcomes
+        ? commandIds.filter((id) => {
+            const state = byId.get(id)?.state;
+            return state !== "queued" && state !== "executing";
+          })
+        : [];
+      for (const id of ended) {
+        if (announced.has(id)) continue;
+        announced.add(id);
+        const outcome = byId.get(id);
+        if (outcome?.state === "confirmed") toast.success(messages().identityVerified);
+        else if (outcome)
+          prompts.error(
+            outcome.code === "SENDER_VERIFICATION_TIMEOUT" ? messages().verificationTimedOut : messages().senderVerificationFailed,
+          );
+      }
+      if (ended.length > 0) {
+        props.onWorkspaceChange();
+        await props.onReload().catch(() => undefined);
+        if (stopped) return;
+      }
+      timer = setTimeout(() => void check(), PENDING_VERIFICATION_POLL_MS);
+    };
+    timer = setTimeout(() => void check(), PENDING_VERIFICATION_POLL_MS);
+    onCleanup(() => {
+      stopped = true;
+      clearTimeout(timer);
+    });
   });
   onCleanup(() => {
     createIdentity.abort();
@@ -461,7 +528,7 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
                     <StatusBadge tone="neutral" label={messages().default} icon={null} />
                   </Show>
                   <StatusBadge
-                    tone={identityStatusTone(identity.status)}
+                    tone={identityStatusTone(identity)}
                     label={identity.statusReason ? senderIdentityReasonCopy(identity.statusReason, locale()).label : messages().ready}
                   />
                   <Show when={identity.authenticationPolicy.automation === "mailbox"}>
@@ -486,7 +553,7 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
                       variant="secondary"
                       size="sm"
                       type="button"
-                      disabled={activeBindings().length === 0 || props.reloading}
+                      disabled={activeBindings().length === 0 || props.reloading || Boolean(identity.pendingVerificationCommandId)}
                       onClick={() => openVerify(identity)}
                     >
                       {messages().verify}
@@ -564,7 +631,7 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
                 >
                   {(reason) => (
                     <NoticeCard
-                      tone={identity().status === "rejected" ? "danger" : "warning"}
+                      tone={reason() === "verification_pending" ? "info" : identity().status === "rejected" ? "danger" : "warning"}
                       role="status"
                       title={senderIdentityReasonCopy(reason(), locale()).label}
                       detail={senderIdentityReasonCopy(reason(), locale()).hint}
@@ -579,7 +646,7 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
                           variant="secondary"
                           size="sm"
                           type="button"
-                          disabled={activeBindings().length === 0 || props.reloading}
+                          disabled={activeBindings().length === 0 || props.reloading || Boolean(identity().pendingVerificationCommandId)}
                           onClick={() => openVerify(identity())}
                         >
                           {messages().verifyIdentity}

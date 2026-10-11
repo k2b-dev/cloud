@@ -4138,7 +4138,7 @@ export const enqueueMailCommand = async (commandId: string, kind: MailCommand["k
     if (command) await submitMailboxCommandsJob(command.mailbox_id);
     return;
   }
-  if (isOperatorMaintenanceKind(kind)) {
+  if (isOperatorMaintenanceKind(kind) || kind === "verify_sender_identity") {
     await enqueueMaintenanceCommand(commandId);
   }
 };

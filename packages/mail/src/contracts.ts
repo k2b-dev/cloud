@@ -1137,6 +1137,7 @@ export const commandKindSchema = z.enum([
   "reconcile_effect",
   "retry_command",
   "cancel_command",
+  "verify_sender_identity",
 ]);
 export type CommandKind = z.infer<typeof commandKindSchema>;
 
@@ -2971,9 +2972,23 @@ export type SenderIdentityTransport = z.infer<typeof senderIdentityTransportSche
  * `sent_folder_missing`: no Sent folder is set and the provider was not verified as saving sent mail itself.
  * `provider_rejected`: the provider refused the last verification message.
  * `verification_required`: the identity is configured and waits for a verification message.
+ * `verification_pending`: a verification waits until provider work on the mailbox, such as a sync, lets it run.
+ * A verified identity that is verified again keeps `null`; `pendingVerificationCommandId` names its waiting verification.
  */
-export const senderIdentityStatusReasonSchema = z.enum(["sent_folder_missing", "provider_rejected", "verification_required"]);
+export const senderIdentityStatusReasonSchema = z.enum([
+  "sent_folder_missing",
+  "provider_rejected",
+  "verification_required",
+  "verification_pending",
+]);
 export type SenderIdentityStatusReason = z.infer<typeof senderIdentityStatusReasonSchema>;
+
+/**
+ * How long a sender verification may wait behind provider work before it fails with
+ * `SENDER_VERIFICATION_TIMEOUT`: as long as a requested folder sync counts, which outlasts a long
+ * sync batch and a few retries. Clients that wait for a queued verification wait as long.
+ */
+export const SENDER_VERIFICATION_WAIT_MS = 10 * 60_000;
 
 export const senderIdentitySchema = z.object({
   id: ResourceShortIdSchema,
@@ -2998,6 +3013,8 @@ export const senderIdentitySchema = z.object({
   isDefault: z.boolean(),
   status: z.enum(["unverified", "verified", "rejected", "disabled"]),
   statusReason: senderIdentityStatusReasonSchema.nullable(),
+  /** The `verify_sender_identity` command that waits behind provider work for this identity, or `null`. */
+  pendingVerificationCommandId: z.string().uuid().nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });

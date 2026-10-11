@@ -141,6 +141,7 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
     $$
   `.simple();
   await addCommandQueuePosition(tx);
+  await addSenderVerificationCommands(tx);
   await addConversationAssignees(tx);
   await addAssignedOnlyMailboxAccess(tx);
   await writeLiveUpdatesToPlatformOutbox(tx);
@@ -305,6 +306,29 @@ const addCommandQueuePosition = async (tx: SqlClient): Promise<void> => {
   await tx`ALTER TABLE mail.commands ADD COLUMN queue_position bigint NOT NULL DEFAULT 0`.simple();
   await tx`ALTER SEQUENCE mail.commands_queue_position_seq OWNED BY mail.commands.queue_position`.simple();
   await tx`ALTER TABLE mail.commands ALTER COLUMN queue_position SET DEFAULT nextval('mail.commands_queue_position_seq')`.simple();
+};
+
+/**
+ * A sender verification that finds provider work running waits as a `verify_sender_identity`
+ * command. The kind check is replaced only on the first start after the update. Every stored
+ * command passed the previous, narrower check, so the new one skips reading the table.
+ */
+const addSenderVerificationCommands = async (tx: SqlClient): Promise<void> => {
+  const [current] = await tx<{ allows: boolean }[]>`
+    SELECT pg_get_constraintdef(oid) LIKE '%verify_sender_identity%' AS allows
+    FROM pg_constraint
+    WHERE conrelid = 'mail.commands'::regclass AND conname = 'commands_kind_check'
+  `;
+  if (current?.allows) return;
+  await tx`ALTER TABLE mail.commands DROP CONSTRAINT IF EXISTS commands_kind_check`.simple();
+  await tx`
+    ALTER TABLE mail.commands ADD CONSTRAINT commands_kind_check CHECK (kind = ANY (ARRAY[
+      'set_flags', 'change_message_state', 'move', 'copy', 'delete', 'create_folder', 'rename_folder', 'delete_folder',
+      'set_folder_subscription', 'send', 'sync_mailbox', 'sync_folder', 'discover_folders', 'verify_binding', 'rebuild_folder',
+      'hydrate_missing', 'rebuild_search', 'rebuild_threads', 'reconcile_effect', 'retry_command', 'cancel_command',
+      'verify_sender_identity'
+    ])) NOT VALID
+  `.simple();
 };
 
 /** The SQLSTATE of a database error: Bun reports it as `errno`, other drivers as `code`. */

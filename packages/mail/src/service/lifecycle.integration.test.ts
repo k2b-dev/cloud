@@ -39,7 +39,12 @@ import {
 import { getMailboxOperations, getPlatformMailOperations } from "./operations";
 import { executeOperatorAction } from "./operator-actions";
 import { createProviderConnection } from "./provider-connections";
-import { acquireProviderLease, MAIL_PROVIDER_OPERATION_LEASE_MS, mailProviderOperationMutex } from "./provider-operation-lock";
+import {
+  acquireProviderLease,
+  MAIL_PROVIDER_OPERATION_LEASE_MS,
+  mailProviderOperationMutex,
+  withMailboxProviderOperationTurn,
+} from "./provider-operation-lock";
 import {
   createSenderIdentity,
   disableSenderIdentity,
@@ -932,6 +937,158 @@ suite("mail lifecycle control plane", () => {
         statusReason: "provider_rejected",
       });
     }
+  });
+
+  test("sender verification waits behind running provider work as a durable command instead of failing", async () => {
+    const createIdentity = async (name: string) => {
+      const identity = await createSenderIdentity({
+        context: adminContext,
+        mailboxId,
+        input: {
+          label: name,
+          displayName: name,
+          fromAddress: `${name}-${suffix}@example.com`,
+          defaultCc: [],
+          authenticationPolicy: { automation: "disabled" },
+          isDefault: false,
+        },
+      });
+      if (!identity.ok) throw new Error(identity.error.message);
+      return identity.data;
+    };
+    const verify = (senderIdentityId: string, recipient = `queued-${suffix}@example.com`) =>
+      verifySenderIdentity({
+        context: adminContext,
+        mailboxId,
+        senderIdentityId,
+        bindingId,
+        verificationRecipient: recipient,
+        savesSentAutomatically: true,
+      });
+    const commandRow = async (commandId: string) =>
+      (
+        await sql<{ kind: string; state: string; last_error_code: string | null }[]>`
+          SELECT kind, state, last_error_code FROM mail.commands WHERE id = ${commandId}::uuid
+        `
+      )[0];
+    const send = spyOn(imapSmtpConnector, "send").mockImplementation(async (_connection, request) => ({
+      accepted: request.to.map((recipient) => recipient.address),
+      rejected: [],
+      response: "250 accepted",
+      messageId: request.messageId,
+    }));
+    // A folder sync holds the provider lease, as it does almost all the time on a large mailbox.
+    const holdSync = async () => {
+      const turn = await acquireProviderLease({
+        resource: remoteResourceId,
+        waiter: "fixture-sync",
+        priority: "sync",
+        ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS,
+      });
+      if (!turn.lock) throw new Error("The fixture sync did not get the provider lease");
+      return turn.lock;
+    };
+    let sync = await holdSync();
+    try {
+      const identity = await createIdentity("queued");
+      const queued = await verify(identity.id);
+      expect(queued.ok).toBe(true);
+      if (!queued.ok) return;
+      expect(queued.data).toMatchObject({ status: "unverified", statusReason: "verification_pending" });
+      const commandId = queued.data.pendingVerificationCommandId;
+      if (!commandId) throw new Error("The verification was not queued");
+      expect(await commandRow(commandId)).toEqual({ kind: "verify_sender_identity", state: "queued", last_error_code: null });
+      expect(send).not.toHaveBeenCalled();
+      // Every reader of the mailbox's commands sees the payload, so it holds only what the verification needs.
+      const [stored] = await sql<{ payload: Record<string, unknown> }[]>`SELECT payload FROM mail.commands WHERE id = ${commandId}::uuid`;
+      expect(stored?.payload).toEqual({
+        verificationRecipient: `queued-${suffix}@example.com`,
+        savesSentAutomatically: true,
+        locale: null,
+      });
+
+      // The same request joins the waiting verification; a different one does not replace it.
+      expect(await verify(identity.id)).toMatchObject({ ok: true, data: { pendingVerificationCommandId: commandId } });
+      expect(await verify(identity.id, `other-${suffix}@example.com`)).toMatchObject({ ok: false, error: { code: "CONFLICT" } });
+
+      // While the sync keeps the lease, the command waits in line instead of failing.
+      expect(await executeMaintenanceCommand(commandId)).toBe("queued");
+      expect(await commandRow(commandId)).toMatchObject({ state: "queued", last_error_code: "SYNC_BUSY" });
+      expect(send).not.toHaveBeenCalled();
+
+      await mailProviderOperationMutex().release(sync);
+      expect(await executeMaintenanceCommand(commandId)).toBe("confirmed");
+      expect(send).toHaveBeenCalledTimes(1);
+      const listed = await listSenderIdentities(adminContext, mailboxId);
+      expect(listed.ok && listed.data.find((item) => item.id === identity.id)).toMatchObject({
+        status: "verified",
+        statusReason: null,
+        pendingVerificationCommandId: null,
+      });
+      // The audit names the person who asked, from the command's stored actor.
+      const requester = adminContext.actor.kind === "user" ? adminContext.actor.user : null;
+      const [auditEvent] = await sql<{ actor_user_id: string; actor_uid: string | null; request_id: string | null }[]>`
+        SELECT actor_user_id, actor_uid, request_id
+        FROM audit.events
+        WHERE action = 'mail.sender_identity.verify' AND metadata ->> 'commandId' = ${commandId}
+      `;
+      expect(auditEvent).toEqual({ actor_user_id: requester?.id ?? "", actor_uid: requester?.uid ?? null, request_id: null });
+
+      // A Mail process that stopped after the verification but before it recorded the command
+      // leaves it to recovery; once requeued, even after the wait ran out, it is confirmed without
+      // a second test message.
+      await sql`
+        UPDATE mail.commands
+        SET state = 'queued', created_at = now() - interval '11 minutes', finished_at = NULL
+        WHERE id = ${commandId}::uuid
+      `;
+      expect(await executeMaintenanceCommand(commandId)).toBe("confirmed");
+      expect(send).toHaveBeenCalledTimes(1);
+
+      // A verification that could not start within the wait the sync contract allows fails and
+      // leaves the identity as it was.
+      sync = await holdSync();
+      const late = await createIdentity("late");
+      const lateQueued = await verify(late.id);
+      const lateCommandId = lateQueued.ok ? lateQueued.data.pendingVerificationCommandId : null;
+      if (!lateCommandId) throw new Error("The late verification was not queued");
+      await sql`UPDATE mail.commands SET created_at = now() - interval '11 minutes' WHERE id = ${lateCommandId}::uuid`;
+      expect(await executeMaintenanceCommand(lateCommandId)).toBe("failed");
+      expect(await commandRow(lateCommandId)).toMatchObject({ state: "failed", last_error_code: "SENDER_VERIFICATION_TIMEOUT" });
+      expect(send).toHaveBeenCalledTimes(1);
+      const lateListed = await listSenderIdentities(adminContext, mailboxId);
+      expect(lateListed.ok && lateListed.data.find((item) => item.id === late.id)).toMatchObject({
+        status: "unverified",
+        // The reason it had before the request: this mailbox has no Sent folder.
+        statusReason: "sent_folder_missing",
+        pendingVerificationCommandId: null,
+      });
+    } finally {
+      await mailProviderOperationMutex()
+        .release(sync)
+        .catch(() => false);
+      send.mockRestore();
+    }
+  }, 30_000);
+
+  test("a sender verification keeps its place in the lease line while a lifecycle change holds the mailbox", async () => {
+    const waiter = `fixture-verification-${suffix}`;
+    const place = async () =>
+      redis.send("ZSCORE", [`mail:provider-lease-line:{${remoteResourceId}}:places`, waiter]) as Promise<string | null>;
+    const lifecycle = await mailProviderOperationMutex().acquire({ resource: `mailbox:${mailboxId}`, ttlMs: 60_000 });
+    if (!lifecycle) throw new Error("The fixture lifecycle change did not get the mailbox key");
+    try {
+      const busy = await withMailboxProviderOperationTurn({ mailboxId, remoteResourceId, waiter }, async () => "ran");
+      expect(busy).toMatchObject({ acquired: false });
+      expect(await place()).not.toBeNull();
+    } finally {
+      await mailProviderOperationMutex().release(lifecycle);
+    }
+    expect(await withMailboxProviderOperationTurn({ mailboxId, remoteResourceId, waiter }, async () => "ran")).toEqual({
+      acquired: true,
+      value: "ran",
+    });
+    expect(await place()).toBeNull();
   });
 
   test("rediscovery projects ACL rights and conservatively reconciles rename and removal", async () => {
