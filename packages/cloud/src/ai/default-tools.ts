@@ -18,6 +18,7 @@ import { runManagedCodeTool } from "./code-runtime-tools";
 import { CODE_SOURCE_TOOLS } from "./code-source-contracts";
 import { createCodeSourceTools } from "./code-source-tools";
 import {
+  CLOUD_AI_GROUP_MAX_CHARTS,
   CloudAiCardInputSchema,
   CloudAiCardOutputSchema,
   CloudAiChartInputSchema,
@@ -82,8 +83,7 @@ export const createCloudAiCardTool = () =>
 export const createCloudAiChartTool = () =>
   defineAiTool({
     name: "chart",
-    description:
-      "Show one chart in the chat from a few values you already have that did not come from a code run, such as figures from the conversation, a web page or a small capability result: bar, line (area: true fills it), scatter, pie, donut, histogram, gauge or sparkline. Cloud draws it with the renderer of cloud.chart() and gives the reader a data table and Copy data; no code, sandbox or app check is involved. Values computed in code_run never go here: the script shows them itself with cloud.view.chart or cloud.view.table, and you present the returned path. Aggregate first. Say what the chart shows in title and put the unit, period or source in subtitle. The chart has no state, filters or actions: for interaction show an app in the chat with code_present, and build a saved Studio App only when data must be kept or the app reused. After the chart, state the finding instead of repeating its values.",
+    description: `Show one chart in the chat from a few values you already have that did not come from a code run, such as figures from the conversation, a web page or a small capability result: bar, line (area: true fills it), scatter, pie, donut, histogram, gauge, sparkline, boxplot, heatmap, barGauge or stat. Several related measures go into one call as a group of small charts (charts, at most ${CLOUD_AI_GROUP_MAX_CHARTS}); linkX shares the x cursor between line charts with the same kind of x. There is no second y axis: compare measures with different units as a group. Cloud draws it with the renderer of cloud.chart() and gives the reader a data table and Copy data; no code, sandbox or app check is involved. Values computed in code_run never go here: the script shows them itself with cloud.view.chart, cloud.view.group or cloud.view.table, and you present the returned path. Aggregate first. Say what the chart shows in title and put the unit, period or source in subtitle; formats are data ({ style: "percent" } takes fractions). The chart has no state, filters or actions: for interaction show an app in the chat with code_present, and build a saved Studio App only when data must be kept or the app reused. After the chart, state the finding instead of repeating its values.`,
     inputSchema: CloudAiChartInputSchema,
     outputSchema: CloudAiChartOutputSchema,
     approval: "never",

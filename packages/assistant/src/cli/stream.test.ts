@@ -641,3 +641,65 @@ test("a presented chart uses the same table as the chart tool", async () => {
     },
   ]);
 });
+
+test.each(["chart", "present"] as const)("a %s group prints titles and every chart table once with the existing row cap", async (name) => {
+  const charts = [
+    {
+      kind: "bar",
+      title: "Counts",
+      subtitle: "First measure",
+      data: Array.from({ length: 101 }, (_, i) => ({ label: `C${i}`, value: i })),
+    },
+    { kind: "stat", title: "Rate", value: 0.21, format: { style: "percent" } },
+  ];
+  const path = "/views/group-12345678.view.json";
+  const args = { title: "Measures", subtitle: "Source", charts };
+  const view = { ...args, view: "group" };
+  const block: AiTurnBlock = {
+    id: "group",
+    kind: "tool",
+    callId: "group",
+    name,
+    status: "completed",
+    args: name === "chart" ? args : { path },
+    result:
+      name === "chart"
+        ? { displayed: true }
+        : {
+            path,
+            view: {
+              view: "group",
+              title: "Measures",
+              subtitle: "Source",
+              linkX: false,
+              layout: "stack",
+              charts: [
+                { kind: "bar", title: "Counts", subtitle: "First measure" },
+                { kind: "stat", title: "Rate" },
+              ],
+            },
+          },
+  };
+  const output = await run(
+    [[{ ...wire(), type: "block_set", block }, { ...wire(), type: "block_set", block }, finished([])]],
+    "text",
+    undefined,
+    undefined,
+    "en",
+    Response.json(view, { headers: { "X-Cloud-Ai-File-Origin": "assistant" } }),
+  );
+  expect(output.tables).toHaveLength(2);
+  expect(output.tables[0]?.rows).toHaveLength(100);
+  expect(output.tables[1]?.rows).toEqual([{ value: "21%" }]);
+  expect(output.printed.filter(Boolean)).toEqual([
+    "Measures",
+    "Source",
+    "Counts",
+    "First measure",
+    name === "present"
+      ? "Showing 100 of 101 rows; Copy data in the web chat copies all of them."
+      : "Showing 100 of 101 values; the web chat shows all of them.",
+    "Rate",
+  ]);
+  expect(output.ordered.filter((entry) => entry === "table")).toHaveLength(2);
+});

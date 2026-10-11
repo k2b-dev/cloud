@@ -591,8 +591,10 @@ throw. Disposal aborts work; refresh after disposal does not load.
 | `sort`, `onSortChange` | Optional controlled `DataTableSort \| null`. Otherwise `defaultSort` initializes local sort; default `null`. |
 | `renderDetails` | Optional row renderer replacing the DescriptionList inside the selection Paper. `false` hides the whole local detail area, for a parent-owned shared Paper. |
 | `description`, `class` | Optional JSX below the heading and extra root class. |
+| `headingLevel` | Level of the title heading, `2`–`6`; default `3`. Use one level below the surrounding heading, for example `4` for charts under a group's `h3`. |
 | `cursor` | Optional shared `ChartCursor` for a line snapshot. Same matching and lifecycle as `Chart.cursor`; table mode does not participate. |
 | `height` | CSS viewport height; default `"18rem"`, shared by chart and scrollable table. |
+| `legend` | Optional `ChartLegendEntry[]` (`{ label, color, style?, reference? }`, `color` is the palette index 0–7). Shows the series names as a wrapping list below the chart, inside the same viewport height, and only in chart view. The chart keeps at least 60% of the height; a longer legend scrolls in the rest. Prepare the snapshot with `legend: false` and pass the names here: the renderer's legend is one SVG row and runs out of a stretched phone-width chart. `style` `"dashed"` or `"dotted"` shows a line swatch; `reference` shows a hollow swatch like the comparison marks. |
 | `empty` | Optional JSX shown in the viewport without rows, such as loading or unavailable text; default **No data**. The header and height stay in place. |
 
 ```ts
@@ -671,7 +673,9 @@ A horizontal guide follows the pointer only in the active plot. Pointer movement
 is restricted to the plot, excluding axes and legends. Arrow keys also share the
 inspected X value; Escape or leaving the active chart dismisses inspection.
 Existing click/tap selection and tooltip pinning remain separate from transient
-hover. Updating or unmounting the active chart clears the shared cursor; updating
+hover. On touch screens a tap pins the inspected X and moves every linked chart to
+it; a drag scrolls the page instead of scrubbing, so a group of charts never traps
+the scroll. Updating or unmounting the active chart clears the shared cursor; updating
 a follower rechecks the current X against its new data. Hover never changes
 selection, reference, sorting, filters, or URL state.
 

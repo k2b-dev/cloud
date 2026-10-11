@@ -1,6 +1,14 @@
 import { z } from "zod";
-import { type CloudAiChartRow, type CloudAiChartTable, chartDateTime, chartDrawingIssue } from "./chart-block";
-import { CLOUD_AI_CHART_MAX_SERIES, CLOUD_AI_CHART_MAX_VALUES, cloudAiChartSchema } from "./default-tool-contracts";
+import { type CloudAiChartRow, type CloudAiChartTable, chartDateTime, chartDrawingIssue, cloudAiNumberFormatters } from "./chart-block";
+import {
+  CLOUD_AI_CHART_MAX_SERIES,
+  CLOUD_AI_CHART_MAX_VALUES,
+  CLOUD_AI_GROUP_MAX_CHARTS,
+  cloudAiChartKindSchema,
+  cloudAiChartSchema,
+  cloudAiGroupSchema,
+  cloudAiNumberFormatSchema,
+} from "./default-tool-contracts";
 
 // Views have their own namespace so model write tools cannot replace computed results.
 export const CLOUD_AI_VIEW_DIRECTORY = "/views";
@@ -15,21 +23,6 @@ export const CLOUD_AI_TABLE_MAX_COLUMNS = 100;
 
 const chartViewSchema = () => z.object({ view: z.literal("chart") }).and(cloudAiChartSchema());
 const tableViewSchema = () => {
-  const format = z
-    .strictObject({
-      style: z.enum(["number", "percent", "currency"]).optional(),
-      currency: z
-        .string()
-        .regex(/^[A-Z]{3}$/)
-        .optional(),
-      unit: z.string().trim().min(1).max(12).optional(),
-      decimals: z.number().int().min(0).max(10).optional(),
-      compact: z.boolean().optional(),
-    })
-    .superRefine((value, ctx) => {
-      if ((value.style === "currency") !== (value.currency !== undefined))
-        ctx.addIssue({ code: "custom", path: ["currency"], message: "Currency is required exactly when style is currency." });
-    });
   const cell = z.union([z.string(), z.number(), z.null()]);
   // z.record drops __proto__; column ids must survive validation without changing the object's prototype.
   const row = z.unknown().transform((value, ctx) => {
@@ -57,7 +50,7 @@ const tableViewSchema = () => {
             id: z.string().trim().min(1).max(80),
             label: z.string().min(1).max(80).optional(),
             type: z.enum(["text", "number", "date", "datetime"]),
-            format: format.optional(),
+            format: cloudAiNumberFormatSchema().optional(),
           }),
         )
         .min(1)
@@ -96,19 +89,33 @@ const tableViewSchema = () => {
         ctx.addIssue({ code: "custom", path: ["sort", "column"], message: "Unknown column id." });
     });
 };
+const groupViewSchema = () => cloudAiGroupSchema().safeExtend({ view: z.literal("group") });
+const GroupViewSchema = /* @__PURE__ */ groupViewSchema();
 const ChartViewSchema = /* @__PURE__ */ chartViewSchema();
 const TableViewSchema = /* @__PURE__ */ tableViewSchema();
 export type CloudAiChartView = z.output<typeof ChartViewSchema>;
 export type CloudAiTableView = z.output<typeof TableViewSchema>;
-export type CloudAiView = CloudAiChartView | CloudAiTableView;
+export type CloudAiGroupView = z.output<typeof GroupViewSchema>;
+export type CloudAiView = CloudAiChartView | CloudAiTableView | CloudAiGroupView;
 
 const summarySchema = () =>
   z.discriminatedUnion("view", [
     z.object({
       view: z.literal("chart"),
-      kind: z.enum(["bar", "line", "scatter", "pie", "donut", "histogram", "gauge", "sparkline"]),
+      kind: cloudAiChartKindSchema(),
       title: z.string(),
       subtitle: z.string().optional(),
+    }),
+    z.object({
+      view: z.literal("group"),
+      title: z.string(),
+      subtitle: z.string().optional(),
+      linkX: z.boolean(),
+      layout: z.enum(["stack", "grid"]),
+      charts: z
+        .array(z.object({ kind: cloudAiChartKindSchema(), title: z.string(), subtitle: z.string().optional() }))
+        .min(2)
+        .max(CLOUD_AI_GROUP_MAX_CHARTS),
     }),
     z.object({
       view: z.literal("table"),
@@ -125,6 +132,7 @@ export type CloudAiViewSummary = z.output<typeof CloudAiViewSummarySchema>;
 
 const parse = (value: unknown) => {
   if (typeof value === "object" && value !== null && "view" in value && value.view === "chart") return ChartViewSchema.safeParse(value);
+  if (typeof value === "object" && value !== null && "view" in value && value.view === "group") return GroupViewSchema.safeParse(value);
   return TableViewSchema.safeParse(value);
 };
 export const parseCloudAiView = (value: unknown): CloudAiView | undefined => {
@@ -147,13 +155,46 @@ export const checkCloudAiView = (value: unknown): { view: CloudAiView } | { issu
     const issue = chartDrawingIssue(parsed.data);
     if (issue) return { issues: [`chart: ${issue}`] };
   }
+  if (parsed.data.view === "group") {
+    const issues = parsed.data.charts.flatMap((chart, index) => {
+      const issue = chartDrawingIssue(chart);
+      return issue ? [`charts[${index}]: ${issue}`] : [];
+    });
+    if (issues.length) return { issues };
+  }
   return { view: parsed.data };
 };
 export const cloudAiViewSummary = (view: CloudAiView): CloudAiViewSummary => {
   const common = { title: view.title, ...(view.subtitle ? { subtitle: view.subtitle } : {}) };
+  if (view.view === "group")
+    return {
+      view: "group",
+      ...common,
+      linkX: view.linkX ?? false,
+      layout: view.layout ?? "stack",
+      charts: view.charts.map((chart) => ({
+        kind: chart.kind,
+        title: chart.title,
+        ...(chart.subtitle ? { subtitle: chart.subtitle } : {}),
+      })),
+    };
   return view.view === "chart"
     ? { view: "chart", kind: view.kind, ...common }
     : { view: "table", rows: view.rows.length, columns: view.columns.length, footer: view.footer !== undefined, ...common };
+};
+/** Tool arguments become the same canonical views as saved code-run files, without drawing on revalidation. */
+export const parseCloudAiChartToolView = (args: unknown): CloudAiChartView | CloudAiGroupView | undefined => {
+  if (!args || typeof args !== "object" || Array.isArray(args)) return undefined;
+  const value = Object.fromEntries(Object.entries(args));
+  if ((value.kind !== undefined) === (value.charts !== undefined)) return undefined;
+  if (value.charts !== undefined) {
+    const { title, subtitle, charts, linkX, layout } = value;
+    const parsed = GroupViewSchema.safeParse({ title, subtitle, charts, linkX, layout, view: "group" });
+    return parsed.success ? parsed.data : undefined;
+  }
+  if (value.linkX !== undefined || value.layout !== undefined) return undefined;
+  const parsed = ChartViewSchema.safeParse({ ...value, view: "chart" });
+  return parsed.success ? parsed.data : undefined;
 };
 export const isAiViewPath = (path: string) => path === CLOUD_AI_VIEW_DIRECTORY || path.startsWith(`${CLOUD_AI_VIEW_DIRECTORY}/`);
 export const isAiViewFile = (file: { path: string; origin: string }) =>
@@ -167,24 +208,14 @@ export function cloudAiViewTable(view: CloudAiTableView, locale: string): CloudA
     view.columns
       .filter((column) => column.type === "number")
       .map((column) => {
-        const format = column.format;
-        const options: Intl.NumberFormatOptions = format
-          ? {
-              style: format.style === "number" ? "decimal" : format.style,
-              currency: format.currency,
-              ...(format.decimals === undefined ? {} : { minimumFractionDigits: format.decimals, maximumFractionDigits: format.decimals }),
-              ...(format.compact ? { notation: "compact" } : {}),
-            }
-          : { maximumSignificantDigits: 15 };
-        return [column.id, new Intl.NumberFormat(locale, options)];
+        return [column.id, cloudAiNumberFormatters(column.format, locale).value] as const;
       }),
   );
   let dateFormat: Intl.DateTimeFormat | undefined;
   let shortTimeFormat: Intl.DateTimeFormat | undefined;
   let mediumTimeFormat: Intl.DateTimeFormat | undefined;
   const formatCell = (column: CloudAiTableView["columns"][number], cell: string | number): string => {
-    if (column.type === "number" && typeof cell === "number")
-      return `${numberFormats.get(column.id)!.format(cell)}${column.format?.unit ? ` ${column.format.unit}` : ""}`;
+    if (column.type === "number" && typeof cell === "number") return numberFormats.get(column.id)!(cell);
     if ((column.type === "date" || column.type === "datetime") && typeof cell === "string") {
       const options = { timeZone: "UTC", dateStyle: "medium" } as const;
       if (column.type === "date") {

@@ -247,6 +247,19 @@ the memory occupied by files loaded for analysis. View files are ordinary chat
 files under `/views` and count toward the per-chat file budget; they need no
 configuration or migration.
 
+Assistant's `cloud.chart()` draws Studio app, chat app, script and PDF charts
+through the same options mapping as chat charts. Existing charts keep drawing:
+the chat's limits on series, points, labels and phone-width fit do not apply to
+apps, and empty, one-point or partly missing data still draws. Visible changes
+are a default logical width of 480 instead of 640 (height 280; sparkline remains
+160 × 40, and apps without explicit width redraw at their measured width), date
+axes in the viewer's wall-clock time, and stdlib-only options outside the chart
+contract, such as `padding`, being ignored. Renderer errors, such as a fixed
+domain that does not contain every value, now throw `invalid` instead of a plain
+error, and x strings must be ISO dates as documented. Chart groups and the
+additional chart kinds need no configuration or data migration. See
+[Code Mode charts](/en/docs/ai/chat-interface#check-an-html-app-before-showing-it).
+
 ### Assistant Chromium isolation
 
 Assistant runs headless Chromium in its own container as the unprivileged
