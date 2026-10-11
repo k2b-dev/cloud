@@ -494,6 +494,23 @@ const renderComposeTemplateSegments = (
   return ok(output.join(""));
 };
 
+const inlineMailHtml = (fragment: string, elementCount: number, css: string): Result<string> => {
+  if (sourceBytes(fragment) + Math.max(elementCount, 1) * sourceBytes(css) > MAX_INLINE_WORK_BYTES) {
+    return fail(composeRenderFailure("tooComplex"));
+  }
+  const inlined = juice.inlineContent(`<div class="${MAIL_CONTENT_CLASS}">${fragment}</div>`, css, {
+    applyStyleTags: false,
+    removeStyleTags: true,
+    preserveMediaQueries: false,
+    preserveFontFaces: false,
+    preserveKeyFrames: false,
+  });
+  if (sourceBytes(inlined) > MAX_RENDERED_SOURCE_BYTES) return fail(composeRenderFailure("tooLarge"));
+  const html = sanitizeHtml(inlined, INLINED_EMAIL_SANITIZE_OPTIONS);
+  if (sourceBytes(html) > MAX_RENDERED_SOURCE_BYTES) return fail(composeRenderFailure("tooLarge"));
+  return ok(html);
+};
+
 export const renderComposeContent = (params: {
   body: string;
   format: "plain" | "markdown";
@@ -532,23 +549,18 @@ export const renderComposeContent = (params: {
     if (elementCount > MAX_EMAIL_HTML_ELEMENTS) {
       return fail(composeRenderFailure("tooComplex"));
     }
-    const css = storedComposeCss(params.customCss);
-    const effectiveCss = `${DEFAULT_MAIL_CSS}\n${css.css}`;
-    if (sourceBytes(fragment) + Math.max(elementCount, 1) * sourceBytes(effectiveCss) > MAX_INLINE_WORK_BYTES) {
-      return fail(composeRenderFailure("tooComplex"));
+    const stored = storedComposeCss(params.customCss);
+    let inlined = inlineMailHtml(fragment, elementCount, stored.css ? `${DEFAULT_MAIL_CSS}\n${stored.css}` : DEFAULT_MAIL_CSS);
+    let formattingWarnings = stored.formattingWarnings;
+    // A mailbox design never stops a message that renders with the built-in design alone.
+    if (!inlined.ok && stored.css) {
+      inlined = inlineMailHtml(fragment, elementCount, DEFAULT_MAIL_CSS);
+      formattingWarnings = [{ code: "ignored_mailbox_css" }];
     }
-    const inlined = juice.inlineContent(`<div class="${MAIL_CONTENT_CLASS}">${fragment}</div>`, effectiveCss, {
-      applyStyleTags: false,
-      removeStyleTags: true,
-      preserveMediaQueries: false,
-      preserveFontFaces: false,
-      preserveKeyFrames: false,
-    });
-    if (sourceBytes(inlined) > MAX_RENDERED_SOURCE_BYTES) return fail(composeRenderFailure("tooLarge"));
-    const html = sanitizeHtml(inlined, INLINED_EMAIL_SANITIZE_OPTIONS);
-    if (sourceBytes(html) > MAX_RENDERED_SOURCE_BYTES) return fail(composeRenderFailure("tooLarge"));
+    if (!inlined.ok) return inlined;
+    const html = inlined.data;
     return ok({
-      formattingWarnings: css.formattingWarnings,
+      formattingWarnings,
       html,
       text: convert(html, {
         wordwrap: false,

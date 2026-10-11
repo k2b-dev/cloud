@@ -108,7 +108,7 @@ describe("MailComposerEditor", () => {
     const english = renderEditor("markdown", panes("preview", "preview"), false, preview);
     expect(english).toContain("Email leaves out some formatting of this message.");
     expect(english).toContain("The mailbox email design sets font-family to a value email no longer accepts. Mail ignores it.");
-    expect(english).toContain("Email no longer accepts the mailbox email design, so Mail uses the built-in design.");
+    expect(english).toContain("Mail uses the built-in design because the mailbox email design cannot be applied.");
     expect(english).toContain("&lt;small> is not supported and was removed. Its text stays.");
     expect(english).toContain("Inline styles on &lt;div> were removed.");
     expect(english).toContain("The class attribute was removed from &lt;span>.");
@@ -118,7 +118,7 @@ describe("MailComposerEditor", () => {
     const german = renderEditor("markdown", panes("preview", "preview"), false, preview, { locale: "de" });
     expect(german).toContain("Ein Teil der Formatierung dieser Nachricht wird in der E-Mail weggelassen.");
     expect(german).toContain("Das E-Mail-Design des Postfachs setzt font-family auf einen Wert, den E-Mails nicht mehr zulassen.");
-    expect(german).toContain("E-Mails lassen das E-Mail-Design des Postfachs nicht mehr zu, darum verwendet Mail das integrierte Design.");
+    expect(german).toContain("Mail verwendet das integrierte Design, weil sich das E-Mail-Design des Postfachs nicht anwenden lässt.");
     expect(german).toContain("Das Attribut class wurde von &lt;span> entfernt.");
   });
 

@@ -109,7 +109,7 @@ Markdown bodies may contain simple HTML. Email keeps `a`, `br`, `code`, `div`, `
 }
 ```
 
-`compose preview` and `compose style get` also report `ignored_mailbox_css` when email ignores parts of the stored mailbox design. Its optional `property` names the CSS property, such as `font-family`, or an at-rule, such as `@media`. Without `property`, Mail ignores the whole custom design and uses the built-in design. Preview lists design warnings before body warnings. Messages still send.
+`compose preview` and `compose style get` also report `ignored_mailbox_css` when email ignores parts of the stored mailbox design. Its optional `property` names the CSS property, such as `font-family`, or an at-rule, such as `@media`. Without `property`, Mail ignores the whole custom design and uses the built-in design. This happens when Mail cannot read the stored design or when the design would make this message too complex to render. Preview lists design warnings before body warnings. Messages still send.
 
 The list holds at most 20 distinct entries. The write still succeeds; rewrite the body in plain Markdown or move styling to the mailbox CSS. Without `--json`, the CLI prints the same list on stderr.
 

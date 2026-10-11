@@ -25,6 +25,12 @@ const context: ComposeRenderContext = {
   message: { subject: "Hello", to: ["reader@example.test"], cc: [] },
 };
 
+const longBody = Array.from({ length: 900 }, (_, i) => `Paragraph ${i}`).join("\n\n");
+const largeMailboxCss = Array.from(
+  { length: 40 },
+  (_, i) => `${i % 2 ? "p" : ".mail-content"} { color: #991abc; font-family: "Mailbox991${i}${"a".repeat(480)}"; }`,
+).join("\n");
+
 const MARKDOWN_SYNTAX_VALUES = [
   "**Admin** _team_ `code` ~sub~ ^sup^ ==mark== $x$ a|b",
   "<b>Bold</b> <img src=x onerror=alert(1)>",
@@ -694,23 +700,88 @@ h1 { background: image-set("https://example.test/a.png" 1x); font-size: 30px; }`
     expect(rendered).toEqual({ ok: true, data: { html: null, text: "Hello", formattingWarnings: [] } });
   });
 
-  test("rejects CSS work that would expand excessively during inlining", () => {
-    const customCss = Array.from(
-      { length: 20 },
-      (_, index) => `.mail-content p { font-family: "${String(index).padStart(2, "0")}${"a".repeat(480)}"; }`,
-    ).join("\n");
-    const rendered = renderComposeContent({
-      body: Array.from({ length: 1_000 }, (_, index) => `Paragraph ${index}`).join("\n\n"),
-      format: "markdown",
-      customCss,
-      context,
-      renderLiquid: true,
-    });
+  test("uses the built-in design when valid mailbox CSS exceeds the inline-work budget (#991)", () => {
+    expect(validateComposeCss(largeMailboxCss).ok).toBe(true);
+    const params = { body: longBody, format: "markdown", context, renderLiquid: false } as const;
+    const baseline = renderComposeContent({ ...params, customCss: "" });
+    const rendered = renderComposeContent({ ...params, customCss: largeMailboxCss });
+    expect(baseline.ok).toBe(true);
+    expect(rendered).toMatchObject({ ok: true });
+    if (!rendered.ok || !baseline.ok) return;
+    expect(rendered.data.formattingWarnings).toEqual([{ code: "ignored_mailbox_css" }]);
+    expect(rendered.data.html).toContain("font-family:Arial");
+    for (const value of ["#991abc", "Mailbox991"]) expect(rendered.data.html).not.toContain(value);
+    expect(rendered.data.html).toBe(baseline.data.html);
+    expect(rendered.data.text).toBe(baseline.data.text);
+  });
 
-    expect(rendered).toMatchObject({
-      ok: false,
-      error: { status: 400, composeRender: { reason: "tooComplex" } },
+  test("keeps the signature when the mailbox design exceeds the inline-work budget", () => {
+    const params = { body: longBody, signature: "Regards **Ada**", format: "markdown", context, renderLiquid: false } as const;
+    const baseline = renderComposeContent({ ...params, customCss: "" });
+    const rendered = renderComposeContent({ ...params, customCss: largeMailboxCss });
+    expect(rendered).toMatchObject({ ok: true });
+    expect(baseline.ok).toBe(true);
+    if (!rendered.ok || !baseline.ok) return;
+    expect(rendered.data.html).toContain('class="mail-signature"');
+    expect(rendered.data.html).toContain("Regards <strong>Ada</strong>");
+    expect(rendered.data.formattingWarnings).toEqual([{ code: "ignored_mailbox_css" }]);
+    expect(rendered.data.html).toBe(baseline.data.html);
+    expect(rendered.data.text).toBe(baseline.data.text);
+  });
+
+  test("uses the built-in design when inlined mailbox CSS makes the HTML too large", () => {
+    const color = `rgb(0.${"1".repeat(470)}% 0% 0%)`;
+    const customCss = `p {
+      ${[
+        "color",
+        "background-color",
+        "border-top-color",
+        "border-right-color",
+        "border-bottom-color",
+        "border-left-color",
+        "text-decoration-color",
+      ]
+        .map((property) => `${property}: ${color};`)
+        .join("\n")}
+      font-family: "${"Mailbox991".repeat(48)}";
+      text-shadow: ${Array.from({ length: 20 }, () => "1px 2px 3px #abcdef").join(", ")};
+    }`;
+    expect(validateComposeCss(customCss).ok).toBe(true);
+    const params = { body: longBody, format: "markdown", context, renderLiquid: false } as const;
+    const baseline = renderComposeContent({ ...params, customCss: "" });
+    const rendered = renderComposeContent({ ...params, customCss });
+    expect(rendered).toMatchObject({ ok: true });
+    expect(baseline.ok).toBe(true);
+    if (!rendered.ok || !baseline.ok) return;
+    expect(rendered.data.formattingWarnings).toEqual([{ code: "ignored_mailbox_css" }]);
+    expect(rendered.data.html).toContain("font-family:Arial");
+    for (const value of [color, "Mailbox991", "#abcdef"]) expect(rendered.data.html).not.toContain(value);
+    expect(rendered.data.html).toBe(baseline.data.html);
+    expect(rendered.data.text).toBe(baseline.data.text);
+  });
+
+  test("drops property warnings when none of the mailbox design can be applied", () => {
+    const rendered = renderComposeContent({
+      body: longBody,
+      format: "markdown",
+      customCss: `${largeMailboxCss}\np { position: fixed; }`,
+      context,
+      renderLiquid: false,
     });
+    expect(rendered).toMatchObject({ ok: true });
+    if (!rendered.ok) return;
+    expect(rendered.data.formattingWarnings).toEqual([{ code: "ignored_mailbox_css" }]);
+  });
+
+  test("still rejects bodies that exceed the built-in design's rendering limits", () => {
+    for (const customCss of ["", largeMailboxCss]) {
+      expect(
+        renderComposeContent({ body: "x".repeat(3 * 1024 * 1024), format: "markdown", customCss, context, renderLiquid: false }),
+      ).toMatchObject({ ok: false, error: { composeRender: { reason: "tooLarge" } } });
+      expect(
+        renderComposeContent({ body: "<span>x</span>".repeat(1_001), format: "markdown", customCss, context, renderLiquid: false }),
+      ).toMatchObject({ ok: false, error: { composeRender: { reason: "tooComplex" } } });
+    }
   });
 
   test("keeps the built-in stylesheet valid", () => {

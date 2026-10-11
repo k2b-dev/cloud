@@ -107,7 +107,7 @@ describe("Mailbox settings composition", () => {
       "This design contains values that email no longer accepts: font-family, background. Messages still send without them.",
     );
     expect(renderSettings("admin", "writing", { styleWarnings: [{ code: "ignored_mailbox_css" }] })).toContain(
-      "Email no longer accepts the mailbox email design, so Mail uses the built-in design.",
+      "Mail uses the built-in design because the mailbox email design cannot be applied.",
     );
   });
 
