@@ -142,3 +142,33 @@ test("parallel views reserve distinct indexes and share the output budget with d
     await fixture.cleanup();
   }
 });
+
+test("run snapshots retain stats and details summaries without their values", async () => {
+  const { checkCloudAiView, cloudAiViewSummary } = await import("@k2b/cloud/ai/browser");
+  const { ViewRefSchema } = await import("./views");
+  const fixture = session({
+    view: async (spec, index) => {
+      const checked = checkCloudAiView(spec);
+      if ("issues" in checked) throw new Error(checked.issues.join("; "));
+      return { path: `/views/w1-${index}.view.json`, ...cloudAiViewSummary(checked.view) };
+    },
+  });
+  try {
+    const stats = await fixture.request("view.save", [
+      { view: "stats", title: "Overview", items: [{ label: "Count", value: 12, delta: 0, sub: "Month", sparkline: [10, 12] }] },
+    ]);
+    const details = await fixture.request("view.save", [
+      { view: "details", title: "Record", items: [{ label: "Amount", type: "number", value: 12 }] },
+    ]);
+    expect(fixture.run.snapshot().views).toEqual([ViewRefSchema.parse(stats), ViewRefSchema.parse(details)]);
+    expect(stats).toEqual({
+      path: "/views/w1-0.view.json",
+      view: "stats",
+      title: "Overview",
+      items: [{ label: "Count", sparkline: true, sub: true, delta: true }],
+    });
+    expect(details).toEqual({ path: "/views/w1-1.view.json", view: "details", title: "Record", items: 1 });
+  } finally {
+    await fixture.cleanup();
+  }
+});

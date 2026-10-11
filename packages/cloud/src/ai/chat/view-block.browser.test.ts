@@ -173,7 +173,63 @@ const named = {
     data: days(10 + index, index + 1),
   })),
 };
+// Key figures: a sparkline, a better and a worse change, and a text state, so tiles of one row differ in height.
+const stats = {
+  view: "stats",
+  title: "Offers at a glance",
+  subtitle: "January to September 2026",
+  items: [
+    { label: "Offers", value: 1284, sub: "Jan–Sep 2026", sparkline: [120, 132, 128, 141, 150, 146, 155, 160, 152] },
+    { label: "Median price", value: 4950, format: { style: "currency", currency: "EUR" } },
+    { label: "Acceptance", value: 0.31, format: { style: "percent" }, delta: 0.04, better: "up", sparkline: [0.24, 0.26, 0.29, 0.31] },
+    { label: "Open volume", value: 612000, format: { style: "currency", currency: "EUR", compact: true }, delta: -48000, better: "up" },
+    { label: "Import", value: "OK", sub: "37 rows without a price skipped" },
+  ],
+};
+const statsSummary = {
+  view: "stats",
+  title: stats.title,
+  subtitle: stats.subtitle,
+  items: stats.items.map((item) => ({ label: item.label, sparkline: "sparkline" in item, sub: "sub" in item, delta: "delta" in item })),
+};
+const invoice = {
+  view: "details",
+  title: "Invoice RE-2026-0412",
+  subtitle: "Checked against the order",
+  items: [
+    { label: "Supplier", type: "text", value: "Müller Bürobedarf GmbH" },
+    { label: "Order", type: "ref", value: { type: "spaces.item", id: "item-42", title: "Office chairs for the second floor" } },
+    { label: "Net", type: "number", value: 1840.5, format: { style: "currency", currency: "EUR" } },
+    { label: "VAT", type: "number", value: 349.7, format: { style: "currency", currency: "EUR" } },
+    { label: "Gross", type: "number", value: 2190.2, format: { style: "currency", currency: "EUR" } },
+    { label: "Due", type: "date", value: "2026-10-30" },
+    { label: "Routing ID", type: "text", value: null },
+    { label: "Bank account", type: "text", value: "DE89 3704 0044 0532 0130 00 · COBADEFFXXX · Commerzbank Köln" },
+  ],
+};
+const tasks = {
+  view: "table",
+  title: "Overdue tasks without an assignee",
+  subtitle: "All spaces",
+  columns: [
+    { id: "task", label: "Task", type: "ref" },
+    { id: "space", label: "Space", type: "text" },
+    { id: "due", label: "Due", type: "date" },
+    { id: "late", label: "Days late", type: "number" },
+  ],
+  rows: [
+    { task: { type: "spaces.item", id: "item-7", title: "Renew the domain" }, space: "Operations", due: "2026-10-02", late: 9 },
+    { task: { type: "spaces.item", id: "item-9", title: "Send the offer to Becker" }, space: "Sales", due: "2026-10-06", late: 5 },
+    { task: { type: "spaces.item", id: "item-3" }, space: "Sales", due: "2026-10-09", late: 2 },
+  ],
+  sort: { column: "late", direction: "desc" },
+};
 const files: Record<string, unknown> = {
+  "/views/offers-at-a-glance-0a1b2c3d.view.json": stats,
+  "/views/invoice-re-2026-0412-4d5e6f7a.view.json": invoice,
+  "/views/overdue-tasks-8b9c0d1e.view.json": tasks,
+  // Edited after `present`: a tile lost the sparkline its summary reserved.
+  "/views/flattened-2f3a4b5c.view.json": { ...stats, items: stats.items.map(({ sparkline: _sparkline, ...item }) => item) },
   // Edited after `present`: the cursor is no longer linked, and a chart gained a subtitle its summary did not reserve.
   "/views/unlinked-4e5f6a7b.view.json": { ...linked, linkX: false },
   "/views/subtitled-8c9d0e1f.view.json": chart,
@@ -265,6 +321,26 @@ const blocks = [
   present("/views/deleted-9c0d1e2f.view.json", { view: "table", title: "Deleted view", rows: 3, columns: 2, footer: false }),
 ];
 
+// Chrome opens at most six connections per host, and views that queue behind them fail in some test hosts, so the
+// stats, details and reference views load on their own page.
+const widgets = [
+  present("/views/offers-at-a-glance-0a1b2c3d.view.json", statsSummary),
+  present("/views/invoice-re-2026-0412-4d5e6f7a.view.json", {
+    view: "details",
+    title: invoice.title,
+    subtitle: invoice.subtitle,
+    items: invoice.items.length,
+  }),
+  present("/views/overdue-tasks-8b9c0d1e.view.json", {
+    view: "table",
+    title: tasks.title,
+    subtitle: tasks.subtitle,
+    rows: tasks.rows.length,
+    columns: tasks.columns.length,
+    footer: false,
+  }),
+];
+
 const boxes = (page: Page) =>
   page.evaluate(() =>
     Array.from(document.querySelectorAll("[data-view-path]")).map((node) => {
@@ -315,6 +391,64 @@ for (const view of [
         expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
         if (process.env.VIEW_SHOTS)
           await page.screenshot({ path: `${process.env.VIEW_SHOTS}/views-${view.name}-${theme}.png`, fullPage: true });
+      } finally {
+        await context.close();
+      }
+    });
+
+for (const view of [
+  { name: "desktop", width: 1280, height: 900, touch: false },
+  { name: "phone", width: 390, height: 844, touch: true },
+] as const)
+  for (const theme of ["light", "dark"] as const)
+    test(`stats, a record and references keep their size while their files load (${view.name}, ${theme})`, async () => {
+      const context = await browser.newContext({
+        viewport: { width: view.width, height: view.height },
+        isMobile: view.touch,
+        hasTouch: view.touch,
+        reducedMotion: "reduce",
+      });
+      try {
+        const page = await context.newPage();
+        await page.goto(`http://127.0.0.1:${server.port}/?lang=${theme === "dark" ? "de" : "en"}&theme=${theme}`);
+        await page.evaluate((value) => (window as unknown as { show: (blocks: ToolBlock[]) => void }).show(value), widgets);
+        await page.waitForSelector("[data-view-path]");
+        const loading = await boxes(page);
+        await page.waitForFunction(() => document.querySelectorAll("[data-view-path] .k2b-stat-cell").length === 5);
+        await page.waitForFunction(() => document.querySelectorAll("[data-view-path] dt").length === 8);
+        await page.waitForFunction(() => document.querySelectorAll("[data-view-path] table").length === 1);
+        expect(await page.locator('[data-view-path] [role="status"]').count()).toBe(0);
+        expect(await boxes(page)).toEqual(loading);
+        // Five tiles leave no empty slot in any column count: the last one reaches the grid's end.
+        const gap = await page.evaluate(() => {
+          const body = document.querySelector("[data-view-path] .k2b-stat-grid__body")!;
+          return Math.abs(body.lastElementChild!.getBoundingClientRect().right - body.getBoundingClientRect().right);
+        });
+        expect(gap).toBeLessThan(1);
+        // Reference pills keep compact rows, so three rows fit the reserved viewport without scrolling.
+        const references = await page.evaluate(() => {
+          const wrap = document.querySelector('[data-view-path*="overdue-tasks"] .k2b-table-wrap')!;
+          return { scroll: wrap.scrollHeight, client: wrap.clientHeight };
+        });
+        expect(references.scroll).toBeLessThanOrEqual(references.client);
+        // A record of eight fields shows them all without scrolling; only the long bank line may wrap on a phone.
+        const record = await page.evaluate(() => {
+          const viewport = document.querySelector('[data-view-path*="invoice"] dl')!.parentElement!;
+          return { scroll: viewport.scrollHeight, client: viewport.clientHeight };
+        });
+        if (view.name === "desktop") expect(record.scroll).toBeLessThanOrEqual(record.client);
+        // The host colors a change by whether it is better, and the tile names it with a sign.
+        const changes = await page.evaluate(() =>
+          Array.from(document.querySelectorAll("[data-view-path] .k2b-stat-cell__accent")).map((node) => [
+            node.getAttribute("data-tone"),
+            node.textContent,
+          ]),
+        );
+        expect(changes.map(([tone]) => tone)).toEqual(["emerald", "red"]);
+        expect(changes[0]![1]).toStartWith("+");
+        expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
+        if (process.env.VIEW_SHOTS)
+          await page.screenshot({ path: `${process.env.VIEW_SHOTS}/widgets-${view.name}-${theme}.png`, fullPage: true });
       } finally {
         await context.close();
       }
@@ -389,6 +523,24 @@ test("a long legend never squeezes its chart on a phone", async () => {
   }
 });
 
+test("a reference in a table or a record opens through the host with its title and no URL", async () => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: "reduce" });
+  try {
+    const page = await context.newPage();
+    await page.goto(`http://127.0.0.1:${server.port}/`);
+    await page.evaluate((value) => (window as unknown as { show: (blocks: ToolBlock[]) => void }).show(value), widgets.slice(1));
+    await page.getByRole("button", { name: "Office chairs for the second floor" }).click();
+    // Without a title the reference shows its id.
+    await page.getByRole("button", { name: "item-3" }).click();
+    expect(await page.evaluate(() => (window as unknown as { opened: unknown[] }).opened)).toEqual([
+      { title: "Office chairs for the second floor", ref: { type: "spaces.item", id: "item-42" } },
+      { title: "item-3", ref: { type: "spaces.item", id: "item-3" } },
+    ]);
+  } finally {
+    await context.close();
+  }
+});
+
 test("a view file edited after present shows unavailable instead of what its summary did not reserve", async () => {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: "reduce" });
   try {
@@ -399,12 +551,13 @@ test("a view file edited after present shows unavailable instead of what its sum
       [
         present("/views/unlinked-4e5f6a7b.view.json", groupSummary(linked)),
         present("/views/subtitled-8c9d0e1f.view.json", { view: "chart", kind: "bar", title: chart.title }),
+        present("/views/flattened-2f3a4b5c.view.json", statsSummary),
       ],
     );
-    // Both charts of the group and the single chart.
+    // Both charts of the group, the single chart and the stats.
     await page.waitForFunction(() => {
       const statuses = Array.from(document.querySelectorAll('[data-view-path] [role="status"]'));
-      return statuses.length === 3 && statuses.every((node) => node.textContent?.startsWith("This view is no longer available"));
+      return statuses.length === 4 && statuses.every((node) => node.textContent?.startsWith("This view is no longer available"));
     });
     expect(await page.locator('[data-view-path] [data-interactive="true"]').count()).toBe(0);
   } finally {

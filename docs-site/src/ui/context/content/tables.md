@@ -41,6 +41,12 @@ Pass `getRowId` when selection or stable row identity matters. Use `selectedRowI
 
 The default cell renderer displays missing values as an em dash, dates with the current locale, and booleans as Yes or No.
 
+Assistant view tables may declare a `ref` column whose cells are Cloud
+references or null. The cell shows `title ?? id`; sorting and Copy data use
+that visible text. References contain only `{type, id, title?}`, with no URL,
+and open after a confirmation through the owning app's reader with the viewer's
+access. Original row-index keys let the host recover the reference after sorting.
+
 ## Add a header and controls
 
 The basic `DataTable` stays valid on its own. The compound panel adds only

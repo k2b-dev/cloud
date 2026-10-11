@@ -290,16 +290,30 @@ order:
    and one column on phones. With `linkX`, line charts of the same x type share
    a cursor on hover, arrow keys and tap. A phone tap pins it; dragging scrolls
    the page. Each chart keeps its own y axis.
-   A presented `/views/*.view.json` file renders inline as a chart, group or
-   table. The finished `present` summary reserves its height while loading;
+   A card shows one stat tile, the same look as stats views; its `tone` is
+   not shown, and its trend stays neutral because a card does not say whether
+   up is better. A presented `/views/*.view.json` file renders inline
+   as a chart, group, table, stats or details. Stats show 1..6 comparable key
+   figures above charts, with optional scope text, sparkline and change;
+   use them instead of several cards or stat charts for computed figures.
+   Details show one record's 1..100 exact fields, such as a checked invoice,
+   as read-only rows. Table ref columns and details ref fields show Cloud
+   objects found by a script instead of Markdown links. They carry only
+   `{type, id, title?}`, never a URL; on click, a confirmation precedes opening
+   through the owning app's reader with the viewer's current access. The finished
+   `present` summary reserves its height while loading;
    group summaries list each chart's kind and title, so every frame reserves
-   its own height. While the call runs, the work line names the step and the
-   place stays empty. Table header labels stay on one line and the table
+   its own height. Stats summaries carry per-item booleans for sparkline, sub
+   and delta to reserve the exact tile height; details summaries carry the
+   field count. These summaries contain no values. While the call runs, the work
+   line names the step and the place stays empty. Table header labels stay on one line and the table
    scrolls sideways, so up to eight rows fit the reserved height on a phone.
    Readers validate the file again; missing or invalid data shows unavailable
    in that frame. A group chart that cannot be drawn shows unavailable in its
    own frame. The CLI fetches and validates views and prints their tables
    (first 100 rows per table, plus a table footer), or `View unavailable: <path>`.
+   Stats and details use Field/Value tables; reference text includes `(type:id)`.
+   [Tools and approvals](/en/docs/ai/tools-and-approvals) defines these contracts.
 3. **Newest text.** While the turn runs this is a status: a new text replaces
    the previous one in the same element once its first sentence has streamed,
    and the place keeps its height until the turn ends. A text that ends the

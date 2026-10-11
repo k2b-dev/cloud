@@ -1,77 +1,61 @@
 import { mutation } from "@k2b/stdlib/solid";
-import { Button, MarkdownEditor, prompts, Slider, useLocale } from "@k2b/ui";
+import { Button, MarkdownEditor, prompts, Slider, StatCell, type StatCellAccent, StatGrid, useLocale } from "@k2b/ui";
 import { createSignal, createUniqueId, For, Show } from "solid-js";
 import { CLOUD_AI_TEXT_EDITOR_FEEDBACK_MAX_CHARS, CLOUD_AI_TEXT_EDITOR_MAX_CHARS } from "../default-tool-contracts";
 import { isRecord, jsonPreview } from "./message-utils";
 import { aiChatMessages } from "./messages";
 import { useAiToolDisclosure } from "./tool-disclosure";
 
-const toneClass = (tone: unknown) => {
-  if (tone === "blue") return "border-blue-200 bg-blue-50/65 text-blue-950 dark:border-blue-900/70 dark:bg-blue-950/25 dark:text-blue-100";
-  if (tone === "green")
-    return "border-emerald-200 bg-emerald-50/65 text-emerald-950 dark:border-emerald-900/70 dark:bg-emerald-950/25 dark:text-emerald-100";
-  if (tone === "amber")
-    return "border-amber-200 bg-amber-50/70 text-amber-950 dark:border-amber-900/70 dark:bg-amber-950/25 dark:text-amber-100";
-  if (tone === "red") return "border-red-200 bg-red-50/70 text-red-950 dark:border-red-900/70 dark:bg-red-950/25 dark:text-red-100";
-  if (tone === "teal") return "border-cyan-200 bg-teal-50/70 text-cyan-950 dark:border-cyan-900/70 dark:bg-cyan-950/25 dark:text-cyan-100";
-  return "border-zinc-200 bg-white text-primary dark:border-zinc-800 dark:bg-zinc-900";
-};
-
+/**
+ * One `card` tool call as a single stat tile, the same look as key figures in views. Its arguments stay as they
+ * were; the card has no better or worse direction, so a trend stays neutral and `tone` no longer colors anything.
+ */
 export function CloudCardBlock(props: { args: unknown }) {
   const card = () => (isRecord(props.args) ? props.args : null);
   const emoji = () => (typeof card()?.emoji === "string" ? String(card()?.emoji).trim() : "");
   const title = () => String(card()?.title ?? "Card");
   const value = () => String(card()?.value ?? "");
   const caption = () => (typeof card()?.caption === "string" ? String(card()!.caption) : "");
-  const legacyTrend = () => (isRecord(card()?.trend) ? (card()!.trend as Record<string, unknown>) : null);
+  const legacyTrend = () => {
+    const trend = card()?.trend;
+    return isRecord(trend) ? trend : null;
+  };
   const trendValue = () => (typeof card()?.trendValue === "string" ? String(card()!.trendValue) : String(legacyTrend()?.value ?? ""));
   const trendLabel = () => (typeof card()?.trendLabel === "string" ? String(card()!.trendLabel) : String(legacyTrend()?.label ?? ""));
   const trendDirection = () => {
     const direction = card()?.trendDirection ?? legacyTrend()?.direction;
     return direction === "up" || direction === "down" || direction === "flat" ? direction : "flat";
   };
-  const hasTrend = () => Boolean(trendValue() || trendLabel());
+  const accent = (): StatCellAccent | undefined => {
+    const text = [trendValue(), trendLabel()].filter(Boolean).join(" ");
+    if (!text) return undefined;
+    const direction = trendDirection();
+    return {
+      tone: "zinc",
+      icon: direction === "up" ? "ti ti-trending-up" : direction === "down" ? "ti ti-trending-down" : "ti ti-minus",
+      text,
+    };
+  };
 
   return (
-    <div class={`max-w-xl rounded-md border p-2.5 ${toneClass(card()?.tone)}`}>
-      <Show
-        when={card()}
-        fallback={
-          <pre class="max-h-52 overflow-auto rounded-md bg-zinc-950/5 p-2 text-xs text-primary dark:bg-white/5">
-            {jsonPreview(props.args)}
-          </pre>
-        }
-      >
-        <div class="flex items-start gap-2">
-          <Show when={emoji()}>
-            <span class="shrink-0 text-2xl leading-7" aria-hidden="true">
-              {emoji()}
-            </span>
-          </Show>
-          <div class="min-w-0 flex-1">
-            <p class="text-sm font-semibold">{title()}</p>
-            <p class="mt-2 text-3xl font-semibold tracking-normal">{value()}</p>
-            <Show when={hasTrend()}>
-              <p class="mt-1 inline-flex items-center gap-1 rounded-md bg-white/55 px-1.5 py-0.5 text-xs dark:bg-white/10">
-                <i
-                  class={`ti ${
-                    trendDirection() === "up" ? "ti-trending-up" : trendDirection() === "down" ? "ti-trending-down" : "ti-minus"
-                  } text-sm`}
-                  aria-hidden="true"
-                />
-                <Show when={trendValue()}>{trendValue()}</Show>
-                <Show when={trendLabel()}>
-                  <span class="opacity-70">{trendLabel()}</span>
-                </Show>
-              </p>
-            </Show>
-            <Show when={caption()}>
-              <p class="mt-2 text-xs opacity-70">{caption()}</p>
-            </Show>
-          </div>
-        </div>
-      </Show>
-    </div>
+    <Show
+      when={card()}
+      fallback={
+        <pre class="max-h-52 overflow-auto rounded-md bg-zinc-950/5 p-2 text-xs text-primary dark:bg-white/5">
+          {jsonPreview(props.args)}
+        </pre>
+      }
+    >
+      <StatGrid columns={1} class="max-w-sm">
+        <StatCell
+          label={emoji() ? `${emoji()} ${title()}` : title()}
+          value={value()}
+          title={value()}
+          sub={caption() || undefined}
+          accent={accent()}
+        />
+      </StatGrid>
+    </Show>
   );
 }
 

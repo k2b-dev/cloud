@@ -1,9 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import { CLOUD_AI_GROUP_MAX_CHARTS, CLOUD_AI_VIEW_MAX_MARKS, type CloudAiChartInput } from "./default-tool-contracts";
 import {
+  CLOUD_AI_STATS_MAX_ITEMS,
   CLOUD_AI_TABLE_MAX_ROWS,
   type CloudAiTableView,
+  type CloudAiViewSummary,
+  CloudAiViewSummarySchema,
   checkCloudAiView,
+  cloudAiDetailsRows,
+  cloudAiStatsTiles,
   cloudAiTableTsv,
   cloudAiViewSummary,
   cloudAiViewTable,
@@ -364,4 +369,239 @@ test("parse-only chart views enforce label-fit checks before drawing", () => {
     { kind: "heatmap", data: Array.from({ length: 24 }, (_, y) => ({ x: "Mon", y: `${y}:00`, value: 1 })) },
   ])
     expect(parseCloudAiView({ view: "chart", title: "Labels", ...input })).toBeUndefined();
+});
+
+const ref = { type: "spaces.item", id: "task-1", title: "Check invoice" };
+
+describe("stats views", () => {
+  const item = { label: "Count", value: 12 };
+  const stats = { view: "stats", title: "Overview", items: [item] };
+  test("trims text and summarizes tile heights without values", () => {
+    const view = parseCloudAiView({
+      ...stats,
+      title: " Overview ",
+      subtitle: " Source ",
+      items: [
+        { label: " Count ", value: 12, sub: " Month ", delta: 0, better: "up", sparkline: [1, 2] },
+        { label: "State", value: " OK " },
+      ],
+    });
+    if (!view || view.view !== "stats") throw new Error("Missing stats");
+    expect(view.items[1]?.value).toBe("OK");
+    const summary: CloudAiViewSummary = {
+      view: "stats",
+      title: "Overview",
+      subtitle: "Source",
+      items: [
+        { label: "Count", sparkline: true, sub: true, delta: true },
+        { label: "State", sparkline: false, sub: false, delta: false },
+      ],
+    };
+    expect(cloudAiViewSummary(view)).toEqual(summary);
+    expect(CloudAiViewSummarySchema.parse(summary)).toEqual(summary);
+    expect(checkCloudAiView(view)).toEqual({ view });
+    expect(
+      parseCloudAiView({
+        ...stats,
+        items: Array.from({ length: CLOUD_AI_STATS_MAX_ITEMS }, () => ({ ...item, sparkline: Array(480).fill(1) })),
+      }),
+    ).toBeDefined();
+  });
+  test.each([
+    [{ items: [] }, "items"],
+    [{ items: Array(7).fill(item) }, "6"],
+    [{ items: [{ ...item, value: "OK", format: {} }] }, "items[0].format"],
+    [{ items: [{ ...item, value: "OK", delta: 1 }] }, "items[0].delta"],
+    [{ items: [{ ...item, better: "up" }] }, "items[0].better"],
+    [{ items: [{ ...item, sparkline: [1] }] }, "items[0].sparkline"],
+    [{ items: [{ ...item, sparkline: Array(481).fill(1) }] }, "480"],
+    [{ items: [{ ...item, value: Infinity }] }, "items[0].value"],
+    [{ items: [{ ...item, value: NaN }] }, "items[0].value"],
+    [{ items: [{ ...item, delta: -Infinity }] }, "items[0].delta"],
+    [{ items: [{ ...item, sparkline: [1, NaN] }] }, "items[0].sparkline[1]"],
+    [{ items: [{ ...item, value: " " }] }, "items[0].value"],
+    [{ items: [{ ...item, value: "x".repeat(81) }] }, "80"],
+    [{ items: [{ ...item, sub: " " }] }, "items[0].sub"],
+    [{ title: " " }, "title"],
+    [{ subtitle: "x".repeat(301) }, "subtitle"],
+  ])("rejects stats rules: %j", (change, path) => {
+    expect(issues({ ...stats, ...change })).toContain(path);
+    expect(parseCloudAiView({ ...stats, ...change })).toBeUndefined();
+  });
+  test("formats signed deltas and determines improvement without model colors", () => {
+    const view = parseCloudAiView({
+      ...stats,
+      items: [
+        {
+          label: "Revenue",
+          value: 12.5,
+          format: { style: "currency", currency: "EUR", decimals: 2 },
+          delta: 2.5,
+          better: "up",
+          sub: "Month",
+          sparkline: [10, 12.5],
+        },
+        { ...item, delta: -2, better: "down" },
+        { ...item, delta: 2, better: "down" },
+        { ...item, delta: -2, better: "up" },
+        { ...item, delta: 2 },
+        { ...item, delta: 0, better: "up" },
+      ],
+    });
+    if (!view || view.view !== "stats") throw new Error("Missing stats");
+    const tiles = cloudAiStatsTiles(view, "en-US");
+    expect(tiles[0]).toEqual({
+      label: "Revenue",
+      value: "€12.50",
+      sub: "Month",
+      sparkline: [10, 12.5],
+      delta: { text: "+€2.50", direction: "up", tone: "better" },
+    });
+    expect(tiles.slice(1).map((tile) => tile.delta)).toEqual([
+      { text: "-2", direction: "down", tone: "better" },
+      { text: "+2", direction: "up", tone: "worse" },
+      { text: "-2", direction: "down", tone: "worse" },
+      { text: "+2", direction: "up", tone: "neutral" },
+      { text: "0", direction: "flat", tone: "neutral" },
+    ]);
+    expect(
+      cloudAiStatsTiles(
+        {
+          ...view,
+          items: [
+            { label: "State", value: "OK" },
+            { ...item, delta: -0 },
+          ],
+        },
+        "de-DE",
+      ),
+    ).toEqual([
+      { label: "State", value: "OK" },
+      { label: "Count", value: "12", delta: { text: "0", direction: "flat", tone: "neutral" } },
+    ]);
+    expect(cloudAiStatsTiles(view, "de-DE")[0]?.delta?.text).toBe("+2,50 €");
+  });
+});
+
+describe("details views and reference cells", () => {
+  const details = { view: "details", title: "Record", subtitle: "Checked", items: [{ label: "Name", type: "text", value: "A" }] };
+  test("allows duplicate labels and null for every type; summaries reserve field count", () => {
+    const view = parseCloudAiView({
+      ...details,
+      items: ["text", "number", "date", "datetime", "ref"].map((type) => ({ label: " Field ", type, value: null })),
+    });
+    if (!view || view.view !== "details") throw new Error("Missing details");
+    expect(checkCloudAiView(view)).toEqual({ view });
+    const summary: CloudAiViewSummary = { view: "details", title: "Record", subtitle: "Checked", items: 5 };
+    expect(cloudAiViewSummary(view)).toEqual(summary);
+    expect(CloudAiViewSummarySchema.parse(summary)).toEqual(summary);
+    expect(cloudAiDetailsRows(view, "en-US")).toEqual(Array(5).fill({ label: "Field", text: "" }));
+    expect(parseCloudAiView({ ...details, items: Array(100).fill(details.items[0]) })).toBeDefined();
+    expect(issues({ ...details, items: [] })).toContain("items");
+    expect(issues({ ...details, items: Array(101).fill(details.items[0]) })).toContain("100");
+    expect(issues({ ...details, items: [{ label: "Name", value: "A" }] })).toContain("items[0].type");
+  });
+  test.each([
+    ["text", ref],
+    ["number", "12"],
+    ["number", ref],
+    ["number", Infinity],
+    ["date", "2026-02-30"],
+    ["date", "2026-01-02T12:30"],
+    ["date", 1],
+    ["date", ref],
+    ["datetime", "2026-01-02"],
+    ["datetime", "2026-01-02T25:00"],
+    ["datetime", "2026-01-02T12:30Z"],
+    ["datetime", ref],
+    ["ref", "task-1"],
+    ["ref", 1],
+    ["ref", { ...ref, href: "/spaces/task-1" }],
+    ["ref", { ...ref, type: "item" }],
+    ["ref", { ...ref, id: "" }],
+    ["ref", { ...ref, id: "x".repeat(513) }],
+    ["ref", { ...ref, title: "" }],
+    ["ref", { ...ref, title: "x".repeat(501) }],
+  ])("rejects details type/value mismatch %s %j", (type, value) => {
+    expect(issues({ ...details, items: [{ label: "Field", type, value }] })).toContain("items[0].value");
+  });
+  test("a number in a text field or text column stays as written", () => {
+    const view = parseCloudAiView({ ...details, items: [{ label: "Customer no.", type: "text", value: 12345 }] });
+    if (view?.view !== "details") throw new Error("Expected details");
+    expect(cloudAiDetailsRows(view, "en-US")).toEqual([{ label: "Customer no.", text: "12345" }]);
+    expect(
+      checkCloudAiView({ view: "table", title: "Ids", columns: [{ id: "id", type: "text" }], rows: [{ id: 12345 }, { id: "A-7" }] }),
+    ).toHaveProperty("view");
+  });
+  test("formats only numeric fields; dates share the table formatters", () => {
+    for (const type of ["text", "date", "datetime", "ref"])
+      expect(issues({ ...details, items: [{ label: "Field", type, value: null, format: {} }] })).toContain("Only number fields");
+    const view = parseCloudAiView({
+      ...details,
+      items: [
+        { label: "Amount", type: "number", value: 1234.5, format: { style: "currency", currency: "EUR", decimals: 2 } },
+        { label: "Rate", type: "number", value: 0.31, format: { style: "percent", decimals: 0 } },
+        { label: "Day", type: "date", value: "2026-01-02" },
+        { label: "Time", type: "datetime", value: "2026-01-02T12:30" },
+        { label: "Seconds", type: "datetime", value: "2026-01-02T12:30:45" },
+        { label: "Task", type: "ref", value: ref },
+        { label: "Id", type: "ref", value: { type: ref.type, id: ref.id } },
+        { label: "Empty", type: "text", value: null },
+        { label: "Text", type: "text", value: "Exact" },
+      ],
+    });
+    if (!view || view.view !== "details") throw new Error("Missing details");
+    expect(cloudAiDetailsRows(view, "en-US")).toEqual([
+      { label: "Amount", text: "€1,234.50" },
+      { label: "Rate", text: "31%" },
+      { label: "Day", text: "Jan 2, 2026" },
+      { label: "Time", text: "Jan 2, 2026, 12:30 PM" },
+      { label: "Seconds", text: "Jan 2, 2026, 12:30:45 PM" },
+      { label: "Task", text: ref.title, ref },
+      { label: "Id", text: ref.id, ref: { type: ref.type, id: ref.id } },
+      { label: "Empty", text: "" },
+      { label: "Text", text: "Exact" },
+    ]);
+    expect(cloudAiDetailsRows(view, "de-DE")[0]?.text).toBe("1.234,50 €");
+  });
+  test("table refs sort and copy by visible title; original row keys still resolve references", () => {
+    const input = {
+      view: "table",
+      title: "Tasks",
+      columns: [{ id: "task", type: "ref" }],
+      rows: [
+        { task: { ...ref, title: "Zebra" } },
+        { task: null },
+        { task: { ...ref, id: "task-2", title: "Alpha" } },
+        { task: { type: ref.type, id: "task-3" } },
+      ],
+      footer: { task: ref },
+      sort: { column: "task", direction: "asc" },
+    };
+    const view = parseCloudAiView(input);
+    if (!view || view.view !== "table") throw new Error("Missing table");
+    const formatted = cloudAiViewTable(view, "en-US");
+    expect(formatted.rows.map((row) => row.key)).toEqual(["2", "3", "0", "1"]);
+    expect(formatted.rows.map((row) => row.cells.task)).toEqual(["Alpha", "task-3", "Zebra", ""]);
+    expect(formatted.rows.map((row) => row.values.task)).toEqual(["Alpha", "task-3", "Zebra", undefined]);
+    expect(formatted.footer?.cells.task).toBe(ref.title);
+    expect(formatted.footer?.values.task).toBe(ref.title);
+    expect(cloudAiTableTsv(formatted)).toBe("task\nAlpha\ntask-3\nZebra\n\nCheck invoice");
+    expect(issues({ ...input, columns: [{ id: "task", type: "text" }] })).toContain("rows[0].task: Expected text, a number or null.");
+    expect(issues({ ...input, rows: [{ task: { ...ref, href: "/task" } }] })).toContain("rows[0].task");
+    expect(issues({ ...input, columns: [{ id: "task", type: "ref", format: {} }] })).toContain("Only number columns");
+  });
+  test("unknown kinds give the allowed kinds without falling through to table validation", () => {
+    for (const view of ["unknown", undefined, null]) {
+      expect(issues({ view, title: "Unknown" })).toBe("view: Expected one of chart, group, table, stats, details.");
+      expect(parseCloudAiView({ view })).toBeUndefined();
+    }
+    for (const summary of [
+      { view: "stats", title: "T", items: [] },
+      { view: "stats", title: "T", items: Array(7).fill({ label: "N", sparkline: false, sub: false, delta: false }) },
+      { view: "details", title: "T", items: 0 },
+      { view: "details", title: "T", items: 101 },
+    ])
+      expect(CloudAiViewSummarySchema.safeParse(summary).success).toBe(false);
+  });
 });

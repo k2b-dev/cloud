@@ -9,6 +9,11 @@ value may contain one compact control such as a status or assignee picker when
 that control has its own accessible name. Use a normal form layout for broader
 editing, and do not use the component for arbitrary card layouts.
 
+Assistant details views use `DescriptionList` with `layout="rows"` for one
+record's 1..100 exact fields. These rows are read-only; number and date text
+uses the viewer's locale. A Cloud reference carries no URL and opens through
+the owning app's reader with the viewer's access after a confirmation.
+
 ## Property rows
 
 A property row shows a value that people edit in place: label left, value as

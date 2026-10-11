@@ -350,7 +350,9 @@ test.each([true, {}, [], Infinity, NaN])("table rejects unsupported cells with c
   const { view } = fixture();
   await expect(view.table({ title: "Rows", rows: [{ price: cell }] })).rejects.toMatchObject({
     code: "invalid",
-    message: expect.stringContaining("rows[0].price: Unsupported cell; convert it to text or a number."),
+    message: expect.stringContaining(
+      "rows[0].price: Unsupported cell; convert it to text or a number, or use a Cloud reference {type, id, title?}.",
+    ),
   });
 });
 test("conversion errors name chart row and column, gauge cannot use rows", async () => {
@@ -373,7 +375,7 @@ test("HTML app createCloud rejects every view method before RPC", async () => {
     },
     { locale: "en", timeZone: "UTC", user: null },
   );
-  for (const method of [cloud.view.chart, cloud.view.table, cloud.view.group])
+  for (const method of [cloud.view.chart, cloud.view.table, cloud.view.group, cloud.view.stats, cloud.view.details])
     await expect(method({})).rejects.toMatchObject({
       code: "unavailable",
       message: "cloud.view.* works in code_run scripts; an app draws charts with cloud.chart().",
@@ -621,3 +623,107 @@ test("app mode converts Date and ISO offset variants for points and references",
     references: values.map(() => ({ axis: "x", value: "2026-01-02T05:00:00" })),
   });
 });
+
+test("stats retain numbers and return height summaries through ViewRefSchema", async () => {
+  const { view, specs } = fixture();
+  const items = [
+    {
+      label: "Revenue",
+      value: 1234.5,
+      format: { style: "currency", currency: "EUR" },
+      sub: "Month",
+      delta: 12,
+      better: "up",
+      sparkline: [1200, 1234.5],
+    },
+    { label: "State", value: "OK" },
+  ];
+  const result = await view.stats({ title: "Overview", items });
+  expect(specs[0]).toEqual({ view: "stats", title: "Overview", items });
+  expect(result).toEqual({
+    path: "/views/test-12345678.view.json",
+    view: "stats",
+    title: "Overview",
+    items: [
+      { label: "Revenue", sparkline: true, sub: true, delta: true },
+      { label: "State", sparkline: false, sub: false, delta: false },
+    ],
+  });
+  await expect(view.stats({ title: "Date", items: [{ label: "Date", value: new Date() }] })).rejects.toMatchObject({
+    code: "invalid",
+    message: "items[0].value: A stats value cannot be a Date; format it as text or use cloud.view.details.",
+  });
+  expect(specs).toHaveLength(1);
+});
+
+test("details infer every type, normalize dates in the run time zone and strip reference metadata", async () => {
+  const { view, specs } = fixture("Europe/Berlin");
+  const result = await view.details({
+    title: "Record",
+    items: [
+      { label: "Amount", value: 12, format: { decimals: 2 } },
+      { label: "Text", value: "2026-01-02" },
+      { label: "Time", value: new Date("2026-01-01T23:30:00Z") },
+      { label: "Day", type: "date", value: new Date("2026-01-01T23:30:00Z") },
+      {
+        label: "Object",
+        value: {
+          type: "spaces.item",
+          id: "task-1",
+          title: "Task",
+          href: "/task",
+          links: [{ href: "/task" }],
+          preview: "Preview",
+          icon: "task",
+        },
+      },
+      { label: "Null", value: null },
+      { label: "Missing" },
+      { label: "Id", type: "ref", value: { type: "spaces.item", id: "task-2", title: 12 } },
+    ],
+  });
+  expect(specs[0]).toEqual({
+    view: "details",
+    title: "Record",
+    items: [
+      { label: "Amount", type: "number", value: 12, format: { decimals: 2 } },
+      { label: "Text", type: "text", value: "2026-01-02" },
+      { label: "Time", type: "datetime", value: "2026-01-02T00:30:00" },
+      { label: "Day", type: "date", value: "2026-01-02" },
+      { label: "Object", type: "ref", value: { type: "spaces.item", id: "task-1", title: "Task" } },
+      { label: "Null", type: "text", value: null },
+      { label: "Missing", type: "text", value: null },
+      { label: "Id", type: "ref", value: { type: "spaces.item", id: "task-2" } },
+    ],
+  });
+  expect(result).toEqual({ path: "/views/test-12345678.view.json", view: "details", title: "Record", items: 8 });
+});
+
+test("table infers ref including footer and accepts explicit ref while stripping URLs", async () => {
+  const { view, specs } = fixture();
+  const value = { type: "spaces.item", id: "task-1", title: "Task", href: "/task", links: [{ href: "/task" }] };
+  for (const columns of [["task"], [{ id: "task", type: "ref" }]]) {
+    await view.table({ title: "Tasks", columns, rows: [{ task: value }, { task: null }], footer: { task: value } });
+  }
+  await view.table({ title: "Footer", columns: ["task"], rows: [{}], footer: { task: value } });
+  for (const spec of specs)
+    expect(spec).toMatchObject({
+      columns: [{ id: "task", type: "ref" }],
+      footer: { task: { type: "spaces.item", id: "task-1", title: "Task" } },
+    });
+  expect(specs[0]).toMatchObject({ rows: [{ task: { type: "spaces.item", id: "task-1", title: "Task" } }, { task: null }] });
+  await expect(view.table({ title: "Mixed", rows: [{ task: value }, { task: "text" }] })).rejects.toThrow(
+    "Expected text, a number or null.",
+  );
+});
+
+test.each([{}, [], true, Infinity, NaN, Object.create({ type: "spaces.item", id: "task" })])(
+  "details reject unsupported cells: %j",
+  async (value) => {
+    const { view } = fixture();
+    await expect(view.details({ title: "Record", items: [{ label: "Value", value }] })).rejects.toMatchObject({
+      code: "invalid",
+      message: "items[0].value: Unsupported cell; convert it to text or a number, or use a Cloud reference {type, id, title?}.",
+    });
+  },
+);

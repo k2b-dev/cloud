@@ -593,6 +593,8 @@
 .k2b-ui .k2b-stat-grid[data-columns="5"] .k2b-stat-grid__body,
 .k2b-ui .k2b-stat-grid[data-columns="6"] .k2b-stat-grid__body { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .k2b-ui .k2b-stat-grid[data-columns="3"] .k2b-stat-grid__body { grid-template-columns: minmax(0, 1fr); }
+/* Five cells leave one empty slot in two and in three columns; the last cell takes it instead of the hairline fill. */
+.k2b-ui .k2b-stat-grid[data-columns="5"] .k2b-stat-grid__body > :last-child { grid-column: span 2; }
 @media (min-width: 40rem) {
   .k2b-ui .k2b-stat-grid[data-columns="3"] .k2b-stat-grid__body,
   .k2b-ui .k2b-stat-grid[data-columns="5"] .k2b-stat-grid__body,
@@ -601,6 +603,7 @@
 @media (min-width: 48rem) {
   .k2b-ui .k2b-stat-grid[data-columns="4"] .k2b-stat-grid__body { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .k2b-ui .k2b-stat-grid[data-columns="5"] .k2b-stat-grid__body { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .k2b-ui .k2b-stat-grid[data-columns="5"] .k2b-stat-grid__body > :last-child { grid-column: auto; }
   .k2b-ui .k2b-stat-grid[data-columns="6"] .k2b-stat-grid__body { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 }
 
