@@ -1711,6 +1711,7 @@ export const createWorkflowDraftInTransaction = async (params: {
     : fail(err.conflict("Workflow draft id is in use"));
 };
 
+// A body from before drafts stored their signature may still hold it as a segment; only then are templates read.
 const legacySignature = async (db: typeof sql, context: MailRequestContext, mailboxId: string, body: string) =>
   body.includes("\u2063") ? moveSignatureSegment(body, await selectableSignatures(db, context, mailboxId)) : null;
 

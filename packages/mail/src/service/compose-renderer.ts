@@ -255,15 +255,20 @@ export const validateComposeTemplateSource = (source: string): Result<void> => {
   return ok();
 };
 
+/**
+ * Splits a body before the history that mail clients keep below a signature: a forwarded message from its
+ * separator line on, or a quote that ends the body together with its "... wrote:" line. A quote followed by
+ * the writer's own text is part of the reply, so the signature then goes to the end.
+ */
 export const splitQuotedHistory = (body: string): { reply: string; history: string } => {
   const lines = body.split("\n");
   let start = lines.findIndex((line) => /^-{5,} .+ -{5,}$/.test(line));
   if (start < 0) {
     let last = lines.length - 1;
-    while (last >= 0 && !lines[last]!.trim()) last -= 1;
-    if (last >= 0 && lines[last]!.startsWith(">")) {
+    while (last >= 0 && !lines[last]?.trim()) last -= 1;
+    if (lines[last]?.startsWith(">")) {
       start = last;
-      while (start > 0 && lines[start - 1]!.startsWith(">")) start -= 1;
+      while (start > 0 && lines[start - 1]?.startsWith(">")) start -= 1;
       const attribution = lines[start - 1];
       if (attribution?.trim() && !attribution.startsWith(">") && attribution.trimEnd().endsWith(":")) start -= 1;
     }
@@ -278,6 +283,10 @@ export const splitQuotedHistory = (body: string): { reply: string; history: stri
   };
 };
 
+/**
+ * Moves a signature that an older draft keeps as a marked segment out of its body, with the blank line that
+ * separated it, when the segment is still exactly one of the given signatures. Other segments stay in the body.
+ */
 export const moveSignatureSegment = (
   body: string,
   signatures: Array<{ id: string; body: string }>,
