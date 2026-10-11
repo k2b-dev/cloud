@@ -311,7 +311,12 @@ export type AppWorkspaceSidebarItemProps = {
   scroll?: NavigationScrollMode;
   onNavigate?: (event: LinkNavigateEvent) => void | Promise<void>;
   onClick?: (event: MouseEvent) => void;
-  active?: boolean;
+  /**
+   * Marks the current page (`aria-current="page"`). On a page deeper than the
+   * sidebar lists, pass `"ancestor"` for the item that contains it: it keeps
+   * the highlight, and the page keeps its back link.
+   */
+  active?: boolean | "ancestor";
   activeClass?: string;
   disabled?: boolean;
   icon?: string;
@@ -971,7 +976,7 @@ type AppWorkspaceSidebarRowProps = {
   scroll?: NavigationScrollMode;
   onNavigate?: (event: LinkNavigateEvent) => void | Promise<void>;
   onClick?: (event: MouseEvent) => void;
-  active?: boolean;
+  active?: boolean | "ancestor";
   activeClass?: string;
   disabled?: boolean;
   tone?: AppWorkspaceSidebarItemTone;
@@ -1003,7 +1008,7 @@ function AppWorkspaceSidebarRow(props: AppWorkspaceSidebarRowProps): JSX.Element
     },
     ...data(),
   });
-  const current = () => (props.active ? ("page" as const) : undefined);
+  const current = (): "page" | "true" | undefined => (props.active === "ancestor" ? "true" : props.active ? "page" : undefined);
 
   const Control = (control: { grouped: boolean }) => {
     const attrs = () => (control.grouped ? { class: "k2b-app-workspace__sidebar-item-main" } : common());

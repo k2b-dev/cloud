@@ -163,10 +163,11 @@ draws no line; only its place separates it from the content. It shows:
   48 rem `‹ Parent` or a path above the title, below 48 rem a back arrow left
   of it. The title is the page's `h1`. From 64 rem, a visible, non-collapsed
   sidebar with `[aria-current="page"]` hides the title row and its back link;
-  the `h1` remains visually hidden for assistive technology. Mark only the
-  exact current page with `SidebarItem active`, never an ancestor of a deeper
-  page. Deeper pages and compact layouts keep the way up. A host's Alt+Up
-  shortcut still reads the trail.
+  the `h1` remains visually hidden for assistive technology. Mark the exact
+  current page with `SidebarItem active`; on a page deeper than the sidebar
+  lists, mark the containing item with `active="ancestor"` so it stays
+  highlighted and the page keeps its back link. Compact layouts keep the way
+  up. A host's Alt+Up shortcut still reads the trail.
 
 The title comes from the host's page trail: a host renders
 `PageTrailProvider` around the page during server rendering and calls
@@ -289,6 +290,10 @@ Active rows use the workspace accent color and a stronger text weight without
 a persistent fill. Hover retains its quiet background, and keyboard focus keeps
 the shared focus ring. Standalone themes can override
 `--k2b-app-workspace-active`; Cloud maps it to the current application accent.
+
+Mark the exact current page with `active`; on a page deeper than the sidebar
+lists, use `active="ancestor"` on the containing item to keep its highlight and
+the page's back link.
 
 ```tsx
 <AppWorkspace.SidebarSection
@@ -542,7 +547,7 @@ type AppWorkspaceSidebarItemProps = {
   description?: JSX.Element; preview?: { label: string; content: JSX.Element | ((close: () => void) => JSX.Element); trigger?: "action" | "row"; align?: "center" | "end"; viewportSize?: "compact"; onOpenChange?: (open: boolean) => void };
   children: JSX.Element; href?: string; navigation?: "enhanced" | "document"; replace?: boolean;
   scroll?: NavigationScrollMode; onNavigate?: (event: LinkNavigateEvent) => void | Promise<void>;
-  onClick?: (event: MouseEvent) => void; active?: boolean; activeClass?: string; disabled?: boolean;
+  onClick?: (event: MouseEvent) => void; active?: boolean | "ancestor"; activeClass?: string; disabled?: boolean;
   icon?: string; meta?: JSX.Element; metaVisibility?: AppWorkspaceSidebarAccessoryVisibility;
   actions?: JSX.Element; tone?: AppWorkspaceSidebarItemTone; title?: string; viewTransitionName?: string;
   class?: string; depth?: number; actionIcon?: string; actionLabel?: string;

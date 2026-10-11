@@ -264,11 +264,12 @@ describe("floating workspace detail", () => {
         opened.columns.forEach((column, index) => expect(column).toBeCloseTo(before.columns[index]!, 0));
         expect(opened.scroll).toBeGreaterThan(opened.client);
         const clipping = await page.locator(".k2b-app-workspace__detail").evaluate((panel) => {
+          if (!(panel instanceof HTMLElement)) throw new Error("Expected an HTML detail panel.");
           const rect = panel.getBoundingClientRect();
           const failures: string[] = [];
           // Only the containing block and its ancestors can clip an absolutely positioned panel.
           if (!panel.offsetParent?.matches(".k2b-app-workspace")) failures.push("the workspace is not the containing block");
-          for (let ancestor = panel.offsetParent as HTMLElement | null; ancestor; ancestor = ancestor.parentElement) {
+          for (let ancestor = panel.offsetParent; ancestor; ancestor = ancestor.parentElement) {
             const style = getComputedStyle(ancestor),
               box = ancestor.getBoundingClientRect();
             const viewport =

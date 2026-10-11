@@ -181,8 +181,9 @@ from 768 to 1023 px and phones. Alt+Up still goes to the parent.
 
 Name the page in its content: Grids names the table in its search field with
 text such as "Search Devices…"; a note in Notebooks has its own first heading.
-The sidebar also names the page. Mark only the exact current page with
-`active`, never an ancestor of a deeper page, which would hide that page's way up.
+The sidebar also names the page. Mark the exact current page with `active`; on
+a page deeper than the sidebar lists, mark the containing item with
+`active="ancestor"` so it stays highlighted and the page keeps its back link.
 
 The links keep the parent's `href` from the title array, so a new tab, a
 copied link, and a reload lead to the page itself. A plain click returns to

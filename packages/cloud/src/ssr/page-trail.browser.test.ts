@@ -591,10 +591,13 @@ describe("workspace title beside exact-current navigation", () => {
       }
     });
   }
-  test("a deeper unmarked page keeps its desktop back link", async () => {
+  test("a deeper page with an active ancestor keeps its desktop back link", async () => {
     const { context, page } = await open(laptop, "/app/accounts/teams/engineering");
     try {
       expect(await page.locator('.k2b-app-workspace__sidebar [aria-current="page"]').count()).toBe(0);
+      const ancestor = page.locator('.k2b-app-workspace__sidebar [aria-current="true"]');
+      expect(await ancestor.getAttribute("href")).toBe("/app/accounts/teams");
+      expect(await ancestor.evaluate((element) => element.classList.contains("is-active"))).toBe(true);
       const back = page.locator(".k2b-app-workspace__head .k2b-page-title__up");
       expect(await back.isVisible()).toBe(true);
       expect(await back.getAttribute("href")).toBe("/app/accounts/teams");

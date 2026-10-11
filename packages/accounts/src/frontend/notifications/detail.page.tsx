@@ -189,6 +189,7 @@ export default ssr<AuthContext>(async (c) => {
     >
       <AccountsWorkspace
         active="notifications"
+        ancestor
         isAdmin
         pendingRequests={pendingRequestsPage.total}
         scrollPreserveKey="accounts-notification-detail"

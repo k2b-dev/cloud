@@ -27,6 +27,14 @@ const { default: AppWorkspace } = await import("./AppWorkspace");
 const { PageTrailProvider } = await import("./PageTitle");
 
 describe("@k2b/ui complete advanced layout migrations", () => {
+  for (const active of [true, "ancestor"] as const) {
+    test(`renders a sidebar item marked ${active} with the current-page semantics`, () => {
+      const html = renderToString(() => createComponent(AppWorkspace.SidebarItem, { href: "/devices", active, children: "Devices" }));
+      expect(html).toMatch(/class="[^"]*\bis-active\b/);
+      expect(html).toContain(`aria-current="${active === "ancestor" ? "true" : "page"}"`);
+    });
+  }
+
   test("renders the page heading and exact-current navigation before hydration", () => {
     const html = renderToString(() =>
       createComponent(PageTrailProvider, {

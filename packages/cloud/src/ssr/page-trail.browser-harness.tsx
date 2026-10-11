@@ -170,7 +170,9 @@ export const server = new Hono()
         <AppWorkspace mobileSurface="flush" class="min-h-0 flex-1">
           <AppWorkspace.Sidebar label="Directory">
             <AppWorkspace.SidebarDesktop>
-              <AppWorkspace.SidebarItem href="/app/accounts/teams">Teams</AppWorkspace.SidebarItem>
+              <AppWorkspace.SidebarItem href="/app/accounts/teams" active="ancestor">
+                Teams
+              </AppWorkspace.SidebarItem>
             </AppWorkspace.SidebarDesktop>
           </AppWorkspace.Sidebar>
           <AppWorkspace.Content>

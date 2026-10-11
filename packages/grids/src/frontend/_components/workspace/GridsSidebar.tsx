@@ -69,7 +69,7 @@ export default function GridsSidebar(props: { state: PublicOkWorkspaceState }) {
   );
   const renderQueryItem = () =>
     state.canUseQueryWorkspace ? (
-      <SidebarLink href={`/app/grids/${state.base.id}/query`} active={route.kind === "query"}>
+      <SidebarLink href={`/app/grids/${state.base.id}/query`} active={route.kind === "query" && (route.currentSource ? "ancestor" : true)}>
         <AppWorkspace.SidebarItemIcon icon="ti ti-code" />
         <AppWorkspace.SidebarItemLabel>{t.query}</AppWorkspace.SidebarItemLabel>
       </SidebarLink>

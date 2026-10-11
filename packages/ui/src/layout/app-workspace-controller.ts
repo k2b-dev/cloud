@@ -473,6 +473,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   const touchMoveAsides = new Set<HTMLElement>();
   const titleTabIndices = new Set<HTMLElement>();
   const motionFrames = new Map<HTMLElement, number>();
+  const pendingAnchors = new Map<HTMLElement, () => void>();
   const motionRoots = new Set<HTMLElement>();
   const revealFrames = new Map<HTMLElement, number>();
   const openDetails = (root: HTMLElement) => rootElements(root, detailSelector).filter((aside) => !aside.hidden);
@@ -616,6 +617,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     const root = aside.closest<HTMLElement>(ROOT_SELECTOR);
     detailHidden.set(aside, Boolean(aside.hidden));
     if (!root || !observedRoots.has(root) || Boolean(aside.hidden) === wasHidden) return;
+    pendingAnchors.get(root)?.();
     touchedDetails.add(aside);
     const pending = revealFrames.get(root);
     if (pending !== undefined) cancelAnimationFrame(pending);
@@ -625,7 +627,24 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     if (snapshot) snapshot.fresh = false;
     if (aside.hidden) {
       if (pendingTitle?.aside === aside) cancelTitle();
-      anchorItem(root, aside, snapshot);
+      if (root.hasAttribute("data-workspace-motion") && !reducedMotion?.matches && wide?.matches) {
+        // Closing holds the detail column until the slide ends; anchor after Main widens.
+        const cancel = () => {
+          root.removeEventListener("transitionend", onTransitionEnd);
+          clearTimeout(timer);
+          pendingAnchors.delete(root);
+        };
+        const finish = () => {
+          cancel();
+          if (aside.hidden && aside.isConnected) anchorItem(root, aside, snapshot);
+        };
+        const onTransitionEnd = (event: TransitionEvent) => {
+          if (event.target === root && event.propertyName === "--k2b-workspace-detail-track") finish();
+        };
+        const timer = setTimeout(finish, 300);
+        root.addEventListener("transitionend", onTransitionEnd);
+        pendingAnchors.set(root, cancel);
+      } else anchorItem(root, aside, snapshot);
       const focused = ownerDocument.activeElement;
       if (
         snapshot?.item.isConnected &&
@@ -1197,6 +1216,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     const next = new Set(allRoots());
     observedRoots.forEach((root) => {
       if (!next.has(root)) {
+        pendingAnchors.get(root)?.();
         resizeObserver?.unobserve(root);
         const frame = motionFrames.get(root);
         if (frame !== undefined) cancelAnimationFrame(frame);
@@ -1303,6 +1323,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   scheduleReconcile();
   return () => {
     cancelTitle();
+    pendingAnchors.forEach((cancel) => cancel());
     stopScrollFades();
     finishDetailDrag(true);
     if (suppressedClickTimer !== null) clearTimeout(suppressedClickTimer);

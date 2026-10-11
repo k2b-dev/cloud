@@ -266,7 +266,13 @@ export default ssr<AuthContext>(async (c) => {
         { title: user.uid },
       ]}
     >
-      <AccountsWorkspace active="users" isAdmin={true} pendingRequests={pendingRequestsPage.total} scrollPreserveKey="accounts-user-detail">
+      <AccountsWorkspace
+        active="users"
+        ancestor
+        isAdmin={true}
+        pendingRequests={pendingRequestsPage.total}
+        scrollPreserveKey="accounts-user-detail"
+      >
         <div class="flex flex-col gap-3">
           <div class="flex flex-wrap items-start justify-between gap-3 py-2" style="view-transition-name: accounts-user-title">
             <div class="flex min-w-0 flex-1 items-start gap-3">
