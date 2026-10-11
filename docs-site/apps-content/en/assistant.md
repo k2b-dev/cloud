@@ -606,11 +606,12 @@ call that the app did not handle also shows a notice outside the app. Cloud
 words every message outside the app itself, from the failure's code; text from
 the app appears only in the console.
 
-`code_write` reports static problems in an app's JavaScript and CSS, and
-`code_present` refuses an app with errors such as CDN scripts, missing imports
-or inline handlers. Apps do not run in `code_run`. Before an agent opens,
-presents or publishes an app, `code_check` renders it on desktop and phone,
-replays its main flow on throwaway data and returns screenshots and findings.
+`code_write` saves one file per call and reports static problems in an app's
+JavaScript and CSS, and `code_present` refuses an app with errors such as CDN
+scripts, missing imports or inline handlers. Apps do not run in `code_run`.
+Before an agent opens, presents or publishes an app, `code_check` renders it on
+desktop and phone, replays its main flow on throwaway data and returns
+screenshots and findings.
 
 ### Store data and combine Cloud actions
 
@@ -909,10 +910,10 @@ overwrite newer data.
 
 Use `assistant code files`, `assistant code file-stat`, and
 `assistant code file-copy --yes` with JSON input files for the same CLI flow.
-`code_write` also accepts `{path,fromFile:reference}` for reviewed UTF-8 source
-imports. This replaces the former chat-only `fromChatFile` input. Imported data
-becomes source and can be published; ordinary runtime data belongs in shared
-files or the database instead.
+`code_import` copies `files: [{path,fromFile:reference}]` as UTF-8 source after
+one review for the whole batch. Imported data becomes source and can be
+published; ordinary runtime data belongs in shared files or the database
+instead.
 
 ### Reusable action examples
 
@@ -931,6 +932,7 @@ suite runs their published handlers in the isolated Studio runtime.
 | Find Apps, inspect source and revisions | `code_list`, `code_read`, `code_history` |
 | Change working title, description or icon; make a private copy | `code_update`, `code_fork` |
 | Create, edit or remove source files | `code_create`, `code_write`, `code_remove` |
+| Import exact files as source | Reviewed `code_import` |
 | Run scripts and actions, inspect, export results or stop | `code_run`, `code_action`, `code_inspect`, `code_export`, `code_stop` |
 | Open an app, show it in chat, publish, withdraw or restore a publication | `code_open`, `code_present`, `code_publish`, `code_unpublish`, `code_restore` |
 | Read and change grants | `code_access_read`, reviewed `code_access_change` |

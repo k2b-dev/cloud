@@ -285,6 +285,7 @@ export async function evaluateStudioCase(evalCase: StudioEvalCase, context: Code
     ),
     source("code_create", CODE_SOURCE_TOOLS.code_create.input, artifactCodeHandlers.code_create),
     source("code_write", CODE_SOURCE_TOOLS.code_write.input, artifactCodeHandlers.code_write),
+    source("code_import", CODE_SOURCE_TOOLS.code_import.input, artifactCodeHandlers.code_import),
     source("code_read", CODE_SOURCE_TOOLS.code_read.input, artifactCodeHandlers.code_read),
     source("code_remove", CODE_SOURCE_TOOLS.code_remove.input, artifactCodeHandlers.code_remove),
     source("code_database", CODE_SOURCE_TOOLS.code_database.input, artifactCodeHandlers.code_database),

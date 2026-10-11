@@ -36,7 +36,7 @@ path to an App and assume it can read it. Action handlers see only their explici
 input and authorized App data. Use [App actions](app-actions.md) for discovery.
 
 For small UTF-8 files that should become App source, use
-`code_write({id,expectedRevision,files:[{path:"data.json",fromFile:reference}]})`.
+`code_import({id,expectedRevision,files:[{path:"data.json",fromFile:reference}]})`.
 This is a reviewed import with the same source references, not a chat-only
 special case. Source file/bundle limits still apply; keep larger or private
 runtime data in shared files or the database instead of embedding it in source.

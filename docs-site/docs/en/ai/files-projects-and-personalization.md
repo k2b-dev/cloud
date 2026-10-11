@@ -647,10 +647,12 @@ metadata is captured in that transaction. Project writes accept an optional
 file mutations. Existing UI callers retain their existing write behavior.
 
 Studio owns App file storage and its transfer adapter. File imports into App
-source use `fromFile` with the same reference schema and require fresh review,
-since imported private bytes may become shared or published source. Keep binary
-bytes out of tool responses and never treat access to one chat as permission to
-mount all of its files into an App.
+source use `code_import` with `fromFile` references in the same schema. One fresh
+review covers the whole batch, since imported private bytes may become shared
+or published source. Write source text with `code_write` using top-level `path`
+and `content`, one file per call. Keep binary bytes out of tool responses and
+never treat access to one chat as permission to mount all of its files into an
+App.
 
 ### Visual inspection of PDF pages
 
