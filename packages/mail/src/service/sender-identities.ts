@@ -69,6 +69,7 @@ type DbIdentity = {
   drafts_folder_id: string | null;
   is_default: boolean;
   status: SenderIdentity["status"];
+  status_reason: SenderIdentity["statusReason"];
   transport_host: string | null;
   transport_port: number | null;
   transport_tls_mode: "implicit" | "starttls" | null;
@@ -122,6 +123,16 @@ const identityColumns = sql`
   si.drafts_folder_id,
   si.is_default,
   si.status,
+  CASE
+    WHEN si.status IN ('verified', 'disabled') THEN NULL
+    WHEN si.status = 'rejected' THEN 'provider_rejected'
+    WHEN si.sent_folder_id IS NULL AND NOT EXISTS (
+      SELECT 1
+      FROM mail.sender_identity_bindings identity_binding
+      WHERE identity_binding.sender_identity_id = si.id AND identity_binding.saves_sent_automatically
+    ) THEN 'sent_folder_missing'
+    ELSE 'verification_required'
+  END AS status_reason,
   (SELECT transport.host FROM mail.sender_identity_transports transport WHERE transport.sender_identity_id = si.id) AS transport_host,
   (SELECT transport.port FROM mail.sender_identity_transports transport WHERE transport.sender_identity_id = si.id) AS transport_port,
   (SELECT transport.tls_mode FROM mail.sender_identity_transports transport WHERE transport.sender_identity_id = si.id) AS transport_tls_mode,
@@ -216,6 +227,7 @@ const mapIdentity = (row: DbIdentity): SenderIdentity => ({
   draftsFolderId: row.drafts_folder_id,
   isDefault: row.is_default,
   status: row.status,
+  statusReason: row.status_reason,
   createdAt: (row.created_at instanceof Date ? row.created_at : new Date(row.created_at)).toISOString(),
   updatedAt: (row.updated_at instanceof Date ? row.updated_at : new Date(row.updated_at)).toISOString(),
 });
@@ -335,6 +347,12 @@ const foldersBelongToMailbox = async (mailboxId: string, folderIds: Array<string
   return row?.count === new Set(ids).size;
 };
 
+/** The mailbox's Sent or Drafts folder, or `null` when discovery found none or several without a configured choice. */
+const roleFolderId = async (mailboxId: string, role: "sent" | "drafts", db: SqlClient): Promise<string | null> => {
+  const folder = await resolveRoleFolder(mailboxId, role, db);
+  return folder.ok ? folder.data.id : null;
+};
+
 const requireLockedMailboxAdmin = async (context: MailRequestContext, mailboxId: string, db: SqlClient) => {
   const [mailbox] = await db<{ id: string }[]>`
     SELECT id
@@ -357,11 +375,11 @@ export const createSenderIdentity = async (params: {
     return await sql.begin(async (tx) => {
       const allowed = await requireLockedMailboxAdmin(params.context, params.mailboxId, tx);
       if (!allowed.ok) return allowed;
-      const sentFolderId = parsed.data.sentFolderId ? parsed.data.sentFolderId : null;
-      const draftsFolderId = parsed.data.draftsFolderId ? parsed.data.draftsFolderId : null;
-      if ((parsed.data.sentFolderId && !sentFolderId) || (parsed.data.draftsFolderId && !draftsFolderId)) {
-        return fail(err.badInput("Sender identity folder mapping does not belong to this mailbox"));
-      }
+      // A folder left out takes the mailbox's discovered role folder; an explicit choice, `null` included, stays.
+      const sentFolderId =
+        parsed.data.sentFolderId === undefined ? await roleFolderId(params.mailboxId, "sent", tx) : parsed.data.sentFolderId;
+      const draftsFolderId =
+        parsed.data.draftsFolderId === undefined ? await roleFolderId(params.mailboxId, "drafts", tx) : parsed.data.draftsFolderId;
       const fromAddress = normalizeEmailAddress(parsed.data.fromAddress) ?? parsed.data.fromAddress.trim().toLowerCase();
       const existingIdentities = await tx<{ from_address: string }[]>`
         SELECT from_address
@@ -827,12 +845,18 @@ export const verifySenderIdentity = async (params: {
         if (!current || current.remote_resource_id !== record.remote_resource_id) {
           return fail(err.badInput("Sender identity or provider binding changed before verification"));
         }
+        // An identity created before Sent folders were preset, or whose folder was cleared, takes the mailbox's.
+        // It is stored only with a successful verification, so a failed one leaves the identity unchanged.
+        let filledSentFolderId: string | null = null;
         if (!params.savesSentAutomatically) {
-          if (!current.sent_folder_id) return fail(err.badInput("A Sent folder is required when the provider does not save sent mail"));
+          if (!current.sent_folder_id) {
+            filledSentFolderId = await roleFolderId(params.mailboxId, "sent", tx);
+            if (!filledSentFolderId) return fail(err.badInput("A Sent folder is required when the provider does not save sent mail"));
+          }
           const [sentRef] = await tx<{ allowed: boolean }[]>`
             SELECT 'insert' = ANY(effective_rights) AS allowed
             FROM mail.binding_folder_refs
-            WHERE binding_id = ${params.bindingId}::uuid AND folder_id = ${current.sent_folder_id}::uuid
+            WHERE binding_id = ${params.bindingId}::uuid AND folder_id = ${current.sent_folder_id ?? filledSentFolderId}::uuid
           `;
           if (!sentRef?.allowed) return fail(err.badInput("The selected binding cannot append to the configured Sent folder"));
         }
@@ -904,7 +928,7 @@ export const verifySenderIdentity = async (params: {
         `;
         const [updated] = await tx<DbIdentity[]>`
         UPDATE mail.sender_identities si
-        SET status = 'verified', last_provider_rejection = NULL
+        SET status = 'verified', last_provider_rejection = NULL, sent_folder_id = COALESCE(si.sent_folder_id, ${filledSentFolderId}::uuid)
         WHERE si.id = ${current.id}::uuid
           AND si.mailbox_id = ${params.mailboxId}::uuid
           AND si.status <> 'disabled'
@@ -919,7 +943,11 @@ export const verifySenderIdentity = async (params: {
             actor: auditActorFromRequest(params.context),
             target: { type: "sender_identity", id: updated.id, label: updated.from_address },
             requestId: params.context.requestId,
-            metadata: { bindingId: params.bindingId, savesSentAutomatically: params.savesSentAutomatically },
+            metadata: {
+              bindingId: params.bindingId,
+              savesSentAutomatically: params.savesSentAutomatically,
+              ...(filledSentFolderId ? { sentFolderId: filledSentFolderId } : {}),
+            },
           },
           tx,
         );

@@ -69,10 +69,10 @@ const page = (apps: RuntimeAppMeta[]) =>
     );
 
 describe("profile menu App item", () => {
-  test("appears in the header and rail menus and the mobile launcher data while the mobile app runs", async () => {
+  test("appears in the rail menu and the mobile launcher data while the mobile app runs", async () => {
     const html = await (await page([shell]).request("/", { headers: { "Accept-Language": "de" } })).text();
-    // The no-JS panels of both placements link it.
-    expect(html.match(/<a href="\/me\/app" class="menu-item">/g)).toHaveLength(2);
+    // The no-JS panel of the rail avatar links it; the header has no avatar.
+    expect(html.match(/<a href="\/me\/app" class="menu-item">/g)).toHaveLength(1);
     expect(html).toContain("ti ti-device-mobile");
     // The mobile launcher reads the profile from embedded data.
     const data = html.match(/<script id="cloud-app-launchpad-data" type="application\/json">(.*?)<\/script>/)?.[1] ?? "";

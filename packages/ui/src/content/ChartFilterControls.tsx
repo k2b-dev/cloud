@@ -4,6 +4,7 @@ import { FilterChip } from "../actions/FilterChip";
 import { Slider } from "../inputs/ChoiceInputs";
 import { useUiMessages } from "../intl/messages";
 import type { ChartExplorerRequest } from "./chart-explorer";
+import { useChartMessages } from "./chart-messages";
 
 export type ChartFilterControlsProps = {
   request: ChartExplorerRequest;
@@ -29,6 +30,7 @@ export function ChartFilterControls(props: ChartFilterControlsProps) {
   validateOptions();
   createEffect(validateOptions);
   const messages = useUiMessages();
+  const chartMessages = useChartMessages();
   const id = `k2b-chart-controls-${createUniqueId()}`;
   const [keyboardSteps, setKeyboardSteps] = createSignal(false);
   let pointerFocus = false;
@@ -87,7 +89,7 @@ export function ChartFilterControls(props: ChartFilterControlsProps) {
       <div class="k2b-chart-explorer__legend">
         <Show when={props.series?.length}>
           <FilterChip
-            label={messages().chartSeries}
+            label={chartMessages().chartSeries}
             icon="ti ti-chart-dots"
             disabled={props.disabled}
             value={props.request.visibleKeys ?? props.series?.map((item) => item.key) ?? []}
@@ -107,7 +109,7 @@ export function ChartFilterControls(props: ChartFilterControlsProps) {
             </Button>
           </Show>
           <Show when={props.failed}>
-            · {messages().chartPreviousData}
+            · {chartMessages().chartPreviousData}
             <Show when={props.steps?.length}>: {stepLabel(props.displayedRequest.step)}</Show>
           </Show>
         </div>

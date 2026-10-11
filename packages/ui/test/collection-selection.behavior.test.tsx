@@ -186,6 +186,11 @@ test("a single checklist toggles with a click, moves focus with arrows, keeps di
   key(cells(manyGrid!)[1]!, { key: "ArrowDown" });
   expect(dom.document.activeElement).toBe(cells(manyGrid!)[2]!);
   expect([...many.selected()]).toEqual(["a"]);
+  // Alt combinations belong to the host, such as Alt+↑ for the page above: the grid neither moves nor claims them.
+  const alt = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "ArrowUp", altKey: true });
+  cells(manyGrid!)[2]!.dispatchEvent(alt);
+  expect(alt.defaultPrevented).toBe(false);
+  expect(dom.document.activeElement).toBe(cells(manyGrid!)[2]!);
   key(cells(manyGrid!)[2]!, { key: " " });
   expect([...many.selected()]).toEqual(["a", "c"]);
   many.clear();

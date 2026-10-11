@@ -1,8 +1,8 @@
 import { createEffect, createUniqueId, type JSX, onCleanup, onMount } from "solid-js";
 import { isServer } from "solid-js/web";
-import { useUiMessages } from "../intl/messages";
 import type { ChartCursor } from "./chart-cursor";
 import { createChartInspection, sameChartDatum } from "./chart-inspection";
+import { useChartMessages } from "./chart-messages";
 import type { ChartSnapshot } from "./chart-snapshot";
 import { selectedChartSvg } from "./chart-svg";
 
@@ -14,7 +14,7 @@ export function ChartSnapshotView(props: {
   onSelect: (key: string) => void;
   style?: JSX.CSSProperties;
 }) {
-  const messages = useUiMessages();
+  const chartMessages = useChartMessages();
   let container: HTMLDivElement | undefined;
   let tooltip: HTMLSpanElement | undefined;
   let anchor: HTMLSpanElement | undefined;
@@ -57,7 +57,7 @@ export function ChartSnapshotView(props: {
       data-interactive="true"
       style={props.style}
       role="group"
-      aria-label={messages().interactiveChart}
+      aria-label={chartMessages().interactiveChart}
       tabIndex={0}
       onPointerDown={inspection.down}
       onPointerMove={inspection.move}

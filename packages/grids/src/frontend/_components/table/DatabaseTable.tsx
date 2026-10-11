@@ -74,6 +74,7 @@ type Props = {
   loadingMore?: boolean;
   onLoadMore?: () => void;
   scrollPreserveKey?: string;
+  scrollClass?: string;
   dateConfig?: DateContext;
   class?: string;
   adminMode?: boolean;
@@ -208,7 +209,8 @@ export default function DatabaseTable(props: Props) {
           value: (record) => record.id,
           class: "w-10 min-w-10 max-w-10",
           headerClass: "w-10 min-w-10 max-w-10",
-          cellClass: "w-10 min-w-10 max-w-10",
+          // The checkbox's touch area reaches past the small cell; the cell lets it, instead of scrolling it.
+          cellClass: "w-10 min-w-10 max-w-10 [&>div]:overflow-visible",
         }
       : null;
 
@@ -297,6 +299,7 @@ export default function DatabaseTable(props: Props) {
         columns={columns()}
         class={shellClass()}
         scrollPreserveKey={props.scrollPreserveKey}
+        scrollClass={props.scrollClass}
         getRowId={(record) => record.id}
         selectedRowId={props.selectedId}
         onRowClick={props.onRecordClick}

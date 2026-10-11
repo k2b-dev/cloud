@@ -2214,6 +2214,72 @@
   background: var(--k2b-action-solid);
 }
 
+/* An open box previews ticking: a faint check shows under the pointer, with
+   keyboard focus, and while a finger presses it. Touch screens have no hover,
+   so there the preview lasts only as long as the press and never sticks.
+   Ticking fills the box and the check pops into place. Only colours and the
+   check's scale change, so nothing around the box moves. */
+.k2b-ui .k2b-check__control {
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.k2b-ui .k2b-check__control > i {
+  transform: scale(0.8);
+  transition: transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.k2b-ui .k2b-check > input:checked + .k2b-check__control > i,
+.k2b-ui .k2b-check[data-indeterminate="true"] .k2b-check__control > i {
+  transform: none;
+}
+
+.k2b-ui .k2b-check:not([data-indeterminate="true"]):active > input:not(:checked, :disabled) + .k2b-check__control,
+.k2b-ui .k2b-check:not([data-indeterminate="true"]) > input:not(:checked, :disabled):focus-visible + .k2b-check__control {
+  border-color: var(--k2b-action);
+  color: color-mix(in srgb, var(--k2b-action) 45%, transparent);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .k2b-ui .k2b-check:not([data-indeterminate="true"]):hover > input:not(:checked, :disabled) + .k2b-check__control {
+    border-color: var(--k2b-action);
+    color: color-mix(in srgb, var(--k2b-action) 45%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .k2b-ui .k2b-check__control,
+  .k2b-ui .k2b-check__control > i {
+    transition: none;
+  }
+}
+
+/* Touch targets: a Checkbox without visible label text is only its 1rem box,
+   so on a coarse pointer the box gets the same invisible hit area of at least
+   2.75rem (44 px) as a button, centred on it, while the box stays the same. A
+   labelled Checkbox needs none: its whole label takes the tap. As with
+   buttons, a box that follows anything in its row does not reach back over
+   it, and a later element that is positioned paints over the hit area and
+   keeps its own taps. A disabled box takes no taps. */
+@media (any-pointer: coarse) {
+  .k2b-ui .k2b-check > input:not(:disabled) + .k2b-check__control:last-child {
+    position: relative;
+  }
+
+  .k2b-ui .k2b-check > input:not(:disabled) + .k2b-check__control:last-child::after {
+    content: "";
+    position: absolute;
+    inset-block: min(0px, calc((100% - 2.75rem) / 2));
+    inset-inline: min(0px, calc((100% - 2.75rem) / 2));
+  }
+
+  .k2b-ui .k2b-check-field:not(:first-child) > .k2b-check > input:not(:disabled) + .k2b-check__control:last-child::after {
+    inset-inline-start: 0;
+  }
+}
+
 .k2b-ui .k2b-check > input:focus-visible + .k2b-check__control,
 .k2b-ui .k2b-switch > input:focus-visible + .k2b-switch__track {
   outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
@@ -4607,39 +4673,52 @@
   background: var(--k2b-hover);
 }
 
-.k2b-ui .k2b-app-workspace[data-sidebar-collapsed="true"] [data-sidebar-mode="expanded"],
+/* The collapsed rail exists only beside the work area from 64 rem. Narrower,
+   the sidebar opens as an overlay or hides, and shows its expanded content. */
 .k2b-ui .k2b-app-workspace:not([data-sidebar-collapsed="true"]) [data-sidebar-mode="collapsed"] {
   display: none;
 }
 
-.k2b-ui
-  .k2b-app-workspace[data-sidebar-collapsed="true"]
-  .k2b-app-workspace__sidebar[data-workspace-collapsible="true"]
-  :is(
-    .k2b-app-workspace__sidebar-section-header,
-    .k2b-app-workspace__sidebar-icon-grid-wrap > h2,
-    .k2b-app-workspace__sidebar-item-label,
-    .k2b-app-workspace__sidebar-item-meta,
-    .k2b-app-workspace__sidebar-item-action,
-    .k2b-app-workspace__sidebar-item-actions,
-    .k2b-app-workspace__nav-tree-toggle
-  ):not(.k2b-app-workspace__sidebar-preview *) {
-  display: none !important;
+@media not all and (min-width: 64rem) {
+  .k2b-ui .k2b-app-workspace [data-sidebar-mode="collapsed"] {
+    display: none;
+  }
 }
 
-.k2b-ui
-  .k2b-app-workspace[data-sidebar-collapsed="true"]
-  .k2b-app-workspace__sidebar[data-workspace-collapsible="true"]
-  :is(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main):not(.k2b-app-workspace__sidebar-preview *) {
-  justify-content: center;
-  padding-inline: 0;
-}
+@media (min-width: 64rem) {
+  .k2b-ui .k2b-app-workspace[data-sidebar-collapsed="true"] [data-sidebar-mode="expanded"] {
+    display: none;
+  }
 
-.k2b-ui
-  .k2b-app-workspace[data-sidebar-collapsed="true"]
-  .k2b-app-workspace__sidebar[data-workspace-collapsible="true"]
-  .k2b-app-workspace__sidebar-icon-grid {
-  grid-template-columns: minmax(0, 1fr);
+  .k2b-ui
+    .k2b-app-workspace[data-sidebar-collapsed="true"]
+    .k2b-app-workspace__sidebar[data-workspace-collapsible="true"]
+    :is(
+      .k2b-app-workspace__sidebar-section-header,
+      .k2b-app-workspace__sidebar-icon-grid-wrap > h2,
+      .k2b-app-workspace__sidebar-item-label,
+      .k2b-app-workspace__sidebar-item-meta,
+      .k2b-app-workspace__sidebar-item-action,
+      .k2b-app-workspace__sidebar-item-actions,
+      .k2b-app-workspace__nav-tree-toggle
+    ):not(.k2b-app-workspace__sidebar-preview *) {
+    display: none !important;
+  }
+
+  .k2b-ui
+    .k2b-app-workspace[data-sidebar-collapsed="true"]
+    .k2b-app-workspace__sidebar[data-workspace-collapsible="true"]
+    :is(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main):not(.k2b-app-workspace__sidebar-preview *) {
+    justify-content: center;
+    padding-inline: 0;
+  }
+
+  .k2b-ui
+    .k2b-app-workspace[data-sidebar-collapsed="true"]
+    .k2b-app-workspace__sidebar[data-workspace-collapsible="true"]
+    .k2b-app-workspace__sidebar-icon-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .k2b-ui .k2b-floating-window > header > i {
@@ -4735,7 +4814,7 @@
   height: 0.75rem;
 }
 
-@media (min-width: 64rem) {
+@media (min-width: 48rem) {
   .k2b-ui .k2b-app-workspace__content > .k2b-app-workspace__resize,
   .k2b-ui .k2b-app-workspace__content > :is(solid-island, solid-client) > .k2b-app-workspace__resize {
     flex: 0 0 0.25rem;
@@ -10925,8 +11004,6 @@
   .k2b-ui .k2b-chart-explorer__dimension:has(> .k2b-field:hover) .k2b-chart-explorer__steps { visibility: visible; }
 }
 
-.k2b-ui .k2b-chart-explorer__sort-icon { display: inline-block; width: 1em; text-align: center; flex-shrink: 0; }
-
 .k2b-ui .k2b-chart-group-controls { display: grid; gap: .75rem; padding: 1rem; }
 .k2b-ui .k2b-chart [data-chart-reference="true"] > :is(rect, circle, path) { fill: none !important; pointer-events: all; stroke: var(--k2b-chart-reference-color); stroke-width: 1.5px; vector-effect: non-scaling-stroke; }
 
@@ -11023,7 +11100,7 @@
   padding: 1rem;
 }
 
-@media (min-width: 768px) {
+@media (min-width: 64rem) {
   .k2b-ui .k2b-app-workspace[data-sidebar-collapsed="true"] .k2b-app-workspace__sidebar-item-copy:not(.k2b-app-workspace__sidebar-preview *) { display: none; }
 }
 
@@ -11328,7 +11405,7 @@
 .k2b-ui .k2b-navigation__heading { padding: .75rem .75rem .25rem; color: var(--k2b-text-muted); font-size: .8125rem; font-weight: 500; line-height: 1.25rem; }
 .k2b-ui .k2b-navigation__section > .k2b-navigation__list { padding-inline-start: 0; }
 
-@media (max-width: 1023px) {
+@media (max-width: 47.999rem) {
   .k2b-ui .k2b-app-workspace[data-mobile-surface="flush"] {
     border: 0; border-radius: 0; box-shadow: none; background: transparent;
   }

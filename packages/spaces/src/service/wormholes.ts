@@ -15,6 +15,7 @@ import { withShortId } from "../lib/short-id";
 import { buildSpacePrincipalCondition, getSpacePermission } from "./access";
 import type { SpaceActivityIdentity } from "./activity";
 import * as columns from "./columns";
+import { publishDependentsChange } from "./item-dependencies";
 import { get as getItem } from "./items";
 import { publishSpaceChange, spacesLive } from "./live";
 import { rank } from "./rank";
@@ -438,6 +439,7 @@ export const transfer = async (params: {
       WHERE item_id = ${params.itemId}::uuid
         AND user_id <> ALL(${toPgUuidArray(validAssigneeIds)}::uuid[])
     `;
+    await publishDependentsChange(tx, { spaceId: params.sourceSpaceId, blockerItemId: params.itemId });
     const removedDependencies = await tx`
       DELETE FROM spaces.item_dependencies
       WHERE item_id = ${params.itemId}::uuid

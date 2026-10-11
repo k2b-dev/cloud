@@ -18,21 +18,89 @@ cld assistant "Summarize my open work"
 cld assistant --chat <chat-id>
 ```
 
-The startup line shows the effective model. New chats print their stable resume command, and the CLI repeats it when the session ends. Blue `Info:` messages confirm non-error state changes. The interactive commands are deliberately small: `/help`, `/exit`, `/attach`, `/files`, and `/model`. Run `/model` without an argument to choose from the visible options by number. A selected model remains active for the session.
+The startup lines show the effective model and local tools mode. In the default
+`ask` mode, the local tools line reads:
 
-Enable local computer access explicitly:
-
-```bash
-cld assistant --allow-bash
+```text
+Info: Local tools: ask · <cwd> · Bash runs as your OS user after you confirm each command; commands and output go to this chat and the model. Change with /permissions.
 ```
 
-This adds the predefined `local_bash` client tool only to turns from that
-interactive session. The CLI prints the exact command and startup directory and
-requires `Y/n` before every execution. It runs `/bin/bash` as the current OS
-user with closed stdin, a fixed timeout, and bounded stdout/stderr. Tool calls
-and results are stored in Cloud and remain visible in web chat history. The web
-app cannot execute them. Do not use this mode for untrusted prompts without
-reviewing each command carefully.
+In `off` mode it reads `Info: Local tools: off · Change with /permissions.`
+Starting in your home folder, `/`, or an ancestor of home adds a notice that
+every `@file` asks first. New chats print their resume command, and the CLI
+repeats it when the session ends. Blue `Info:` messages confirm state changes.
+
+| Command | Use |
+| --- | --- |
+| `/help` | Show the command list |
+| `/new` | Forget the open chat; the next message starts one, keeping the model, Project, tools mode, and queued local files |
+| `/resume [chat-id]` | Choose a recent chat or open its ID; attach to an active turn |
+| `/project [project-id\|none]` | Choose an accessible Project, or remove it from the open chat |
+| `/model [id\|default]` | Choose a model for this session |
+| `/retry [retry\|details\|concise]` | Answer the last user message again, more fully, or more briefly |
+| `/attach <path>` | Queue a local file for the next message |
+| `/files` | List files stored in this chat |
+| `/web` | Print the Assistant URL and open it when a browser is available |
+| `/status` | Show the profile, chat, model, Project, tools mode, and start folder |
+| `/usage` | Show usage percentages, reset dates, and models with no limit |
+| `/permissions [ask\|off]` | Change local tools mode; the picker can also save the profile default |
+| `/approvals [approval-id]` | List remembered Cloud approvals and revoke one by number or ID |
+| `/exit` | End the session |
+
+Choice commands accept the value directly or show a numbered list. Enter
+cancels, `0` selects the neutral value where available, and `[current]` marks
+the current choice. `/attach` requires a path. An unknown command prints a
+hint and is not sent to the model. An absolute path such as `/etc/hosts is
+broken` remains an ordinary message.
+
+Interactive sessions offer local tools by default in `ask` mode. Today the
+only local tool is `local_bash`. Use `--no-bash` for `off` in this session,
+`--allow-bash` for `ask` even when the profile default is `off`, or
+`/permissions` to change the mode for the next turn. The flags cannot be
+combined. `/permissions ask|off` changes only the session; the numbered picker
+can save your choice for the current profile. Only `off` is stored in
+`assistant.localTools`; saving `ask` removes the key. A saved default can only
+restrict local access. `/retry` answers again with the local tools of the
+original turn, not the current mode; in `off` mode a Bash call is still denied.
+
+Before each Bash command, the CLI shows the exact command and start folder,
+then asks `Run? [y/N]`: `y` or `yes` runs it; Enter, `n`, or `no` denies it.
+Other answers ask again. Bash runs as your OS user with closed stdin, a fixed
+timeout, and bounded output. It receives no `CLD_*` environment variables;
+other environment variables stay available. Commands and output are stored
+in this chat in Cloud and sent to the model. The web app shows the history but
+cannot execute local Bash. Bash approval is never remembered and is never
+available non-interactively. In `off` mode, a pending Bash call from an older
+turn is denied and the turn continues.
+
+Cloud approvals use numbered choices: **Approve once**, **Approve for this
+chat**, and **Always approve**, where the action permits them. Enter rejects.
+When only one-time approval is available, the prompt is `Approve? [y/N]`.
+Websites are never remembered from cld; website approvals saved in the web can
+still be listed and revoked with `/approvals`.
+
+A pasted block is one multi-line message; Enter sends it. A `\` at the end of
+a typed line continues the message on the next line. Input typed while a turn
+runs or while an editor is open is ignored, so it never answers the next
+question. Pasted input never answers an approval, a numbered choice, or a
+confirmation; survey answers accept pasted text.
+
+At the prompt, Ctrl+C clears typed input and ends the session when the prompt
+is empty. During a turn, Ctrl+C stops the turn, also while it waits for your
+answer or runs Bash. At other questions, such as a numbered list, Ctrl+C
+cancels the question and keeps the session open.
+
+Mention `@path` to attach a local file like `/attach`; its bytes are stored as a
+chat file in Cloud, and the message text stays unchanged. Each `@` file that
+is attached prints an `Info: Attached:` line. Write a space in an `@` path as
+`\ `, for example `@Rechnung\ März.pdf`; Tab completion inserts it this way.
+Paths inside the start folder attach without a question, except protected
+files such as `.env`, keys, and `.git/`, also when such a name is a link to
+another file. Files outside that folder ask first. Starting in your home folder
+or above asks for every file. cld's own configuration is refused. `--attach`
+paths follow the same rules when the session starts. Tab completes slash
+commands and `@` paths. Relative Cloud links in answers print as absolute links
+to the selected server.
 
 Use `--print` or `-p` to stream one response and exit:
 
@@ -51,20 +119,21 @@ reference IDs are scoped to their Project.
 
 Studio app and saved-script commands use the resource UUID returned by
 `assistant code list` or `assistant code create`. These are separate from the
-short chat and Project IDs above.
+short chat and Project IDs above. Remembered approval IDs are also UUIDs;
+use the exact ID from `assistant approvals list` when revoking one.
 
 Useful options:
 
 - `--title <title>` names a newly created chat and preserves that title through the first message and automatic enrichment. `chats create --title <title>` does the same. The CLI trims the title and checks the 1 to 120 character limit before creating anything. The exact title `New chat` matches the default placeholder and keeps automatic naming.
 - `--model <profile-id>` selects a model from `cld assistant models`.
 - `--project <project-id>` creates the new chat in an accessible Project.
-- Repeat `--attach <local-file>` for local images or documents. This flag does not accept a Cloud resource ID.
+- Repeat `--attach <local-file>` for local images or documents. This flag does not accept a Cloud resource ID and refuses cld's own configuration.
 - `--detach` submits the turn and returns its ID without waiting in print mode.
 - Repeat `--approve <exact-tool-name>` in print mode to approve only those tools for that turn. There is deliberately no approve-all flag.
 
-Print mode writes assistant text and capability result tables to stdout and tool progress to stderr. Separate non-blank text blocks have a blank line between them, including in the final JSON result. Reconnects and interactive approvals continue with only new text and do not repeat unchanged tool progress; `turns watch` behaves the same way. Tool progress and `--approve` use canonical capability IDs such as `spaces.task.create`. JSONL `text_delta` events carry each block's new text once under the block ID that first carried it, without separators. `turn_finished` carries the complete text, also when the turn ended during a reconnect. Tables show up to 100 returned rows, shorten long cells for display, and include supplied result links. A notice identifies additional rows or pages. Use `--json` for complete returned cell values: it waits and prints one final aggregate without terminal tables. `--jsonl` emits versioned stream events such as text deltas, tool state changes, attention requests, provider retries, and turn completion. While a model call waits for its retry, print mode writes `model: reconnecting` to stderr. Each file the assistant delivers is named there with its chat path, such as `present: completed /sales-report.pdf`; download it with `cld assistant files download`. Structured output, detached submission, and piped input require `--print`.
-`--allow-bash` is deliberately rejected with `--print`, structured output, and
-detached execution.
+Print mode writes assistant text and capability result tables to stdout and tool progress to stderr. Text output shows control and bidirectional formatting characters escaped, such as `\u001b`, so model text cannot restyle or hide later output; `--json` and `--jsonl` keep the text unchanged. Separate non-blank text blocks have a blank line between them, including in the final JSON result. Reconnects and interactive approvals continue with only new text and do not repeat unchanged tool progress; `turns watch` behaves the same way. Tool progress and `--approve` use canonical capability IDs such as `spaces.task.create`. JSONL `text_delta` events carry each block's new text once under the block ID that first carried it, without separators. `turn_finished` carries the complete text, also when the turn ended during a reconnect. Tables show up to 100 returned rows, shorten long cells for display, and include supplied result links. A notice identifies additional rows or pages. Use `--json` for complete returned cell values: it waits and prints one final aggregate without terminal tables. `--jsonl` emits versioned stream events such as text deltas, tool state changes, attention requests, provider retries, and turn completion. While a model call waits for its retry, print mode writes `model: reconnecting` to stderr. Each file the assistant delivers is named there with its chat path, such as `present: completed /sales-report.pdf`; download it with `cld assistant files download`. Structured output, detached submission, and piped input require `--print`.
+`--allow-bash` and `--no-bash` are rejected with `--print`, including structured
+output and detached execution. These modes offer no local tools.
 
 The web composer and CLI share one durable conversation draft. Before a CLI turn in an existing chat, the CLI refuses to replace a non-empty unsent web draft. Send or clear that draft in Assistant, then retry the CLI command. This prevents a terminal turn from silently overwriting text, files, or Cloud resources prepared in another tab.
 
@@ -77,6 +146,18 @@ cld assistant actions reject <chat-id> <turn-id> <call-id>
 cld assistant actions submit <chat-id> <turn-id> <call-id> --result-file result.json
 cld assistant turns watch <chat-id> <turn-id>
 ```
+
+List and revoke remembered Cloud approvals without a REPL:
+
+```bash
+cld assistant approvals list
+cld assistant approvals list --chat <chat-id>
+cld assistant approvals revoke <approval-id>
+```
+
+Without `--chat`, the list contains approvals that apply everywhere; with it,
+only approvals limited to that chat. Lists support `--json` and `--jsonl`.
+Revoking needs no `--yes`: the Assistant asks again on the next matching call.
 
 ## Code Mode and Studio
 
@@ -93,8 +174,10 @@ Use `assistant code storage-clear ID --area files|kv|all --scope shared|user --y
 These commands share the Studio Advanced menu's permission-aware services.
 Personal JSON uses scope:"user" and always belongs to the signed-in viewer across devices.
 
-Code Mode runs in an isolated browser worker hosted by the CLI. It does not need
-an open Assistant browser tab. The served plugin includes Playwright and its browser metadata. Install Playwright Chromium, or set
+In an Assistant chat, Cloud runs Code Mode on the server; of its tools, only
+`code_open` and `code_secret` still wait for the CLI. `code run` and
+`code action` run in an isolated browser worker hosted by the CLI. It does not
+need an open Assistant browser tab. The served plugin includes Playwright and its browser metadata. Install Playwright Chromium, or set
 `CLOUD_CLI_CHROMIUM` to an existing Chromium executable. A host that does not
 start within 45 seconds fails without running code, and the error names the
 startup step that stalled.
@@ -102,7 +185,7 @@ Streaming reconnects after transport interruptions and periodically reconciles
 the saved turn state. This keeps a missed completion event from leaving the CLI
 waiting indefinitely; it does not restart completed tool calls.
 Code has no Node/Bun environment, shell access, credentials, or unrestricted
-network access. This is separate from `--allow-bash`.
+network access. This is separate from local tools in `ask` mode.
 
 ```bash
 cld assistant code list --json
@@ -177,8 +260,10 @@ read/run/storage/database commands and copying published source. A Project chat
 is not required; editing and management rights remain separate.
 
 Normal capability approvals also apply inside scripts. Interactive Assistant
-sessions show the review and eligible Remember option. For a direct run or
-print-mode turn, repeat `--approve <exact-capability-name>` only for operations
+sessions show the review and numbered approval choices when approval can be
+remembered; one-time approvals ask `Approve? [y/N]`. An HTTP request from Code
+Mode shows its method, URL, headers, and body preview in that review. For a
+direct run or print-mode turn, repeat `--approve <exact-capability-name>` only for operations
 the user authorized. There is no approve-all option.
 
 Sharing and publication are separate. First publication uses `Initial release`;

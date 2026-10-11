@@ -1,6 +1,6 @@
 import { fileIcons } from "@k2b/stdlib";
 import type { Token, Tokens } from "marked";
-import { resolveUiMessages, type UiMessages } from "../intl/messages";
+import { type MarkdownReferenceMessages, resolveMarkdownReferenceMessages } from "./markdown-reference-messages";
 
 /** What a reference points to inside the host application. */
 export type MarkdownReferenceKind = "file" | "note" | "heading" | "task" | "page";
@@ -106,7 +106,7 @@ const TYPE_ICONS: Record<Exclude<MarkdownReferenceType, "file">, string> = {
 export const markdownReferenceIcon = (type: MarkdownReferenceType, fileName = ""): string =>
   type === "file" ? (fileIcons.getFileIcon({ name: fileName, type: "file" }).split(/\s+/)[0] ?? "ti-file") : TYPE_ICONS[type];
 
-const TYPE_LABELS: Record<MarkdownReferenceType, keyof UiMessages> = {
+const TYPE_LABELS: Record<MarkdownReferenceType, keyof MarkdownReferenceMessages> = {
   pdf: "referencePdf",
   image: "referenceImage",
   design: "referenceDesign",
@@ -119,7 +119,7 @@ const TYPE_LABELS: Record<MarkdownReferenceType, keyof UiMessages> = {
 
 /** The localized name of a reference type, such as "PDF" or "Überschrift". */
 export const markdownReferenceTypeLabel = (type: MarkdownReferenceType, locale?: string): string =>
-  String(resolveUiMessages(locale)[TYPE_LABELS[type]]);
+  String(resolveMarkdownReferenceMessages(locale)[TYPE_LABELS[type]]);
 
 /**
  * The text of rendered inline HTML, still as HTML: tags go, character references such as `&copy;` stay. One pass,

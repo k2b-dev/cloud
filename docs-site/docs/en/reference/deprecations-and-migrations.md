@@ -10,6 +10,22 @@ updated: 2026-10-10
 
 # Deprecations and migrations
 
+## Studio source writes save one file per call
+
+`code_write` no longer accepts a `files` array. Use
+`code_write({id, expectedRevision, path, content, entry?})` for each source file,
+one call at a time, passing the returned revision as the next `expectedRevision`.
+A stale revision still returns `CONFLICT` without saving. Results add `lines`
+beside `length` for every file; check that the line count matches what you
+wrote.
+
+Move `fromFile` imports to
+`code_import({id, expectedRevision, files: [{path, fromFile}], entry?})`.
+Imports remain atomic and require one fresh review for the batch. Ordinary
+source writes require no approval. Stored source and recorded chat arguments
+are unchanged. Operators must update Core and Assistant together; see
+[Update Studio source writes](/en/docs/operations/deployment-requirements#update-studio-source-writes).
+
 ## The dashboard becomes one board of widgets in three sizes
 
 The dashboard no longer has the focus, overview, and side zones, widget

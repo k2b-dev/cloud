@@ -44,6 +44,7 @@ const announcements = async (document: Document) => {
 
 let completionAnswers: Response[] = [];
 const completions: unknown[] = [];
+const moves: unknown[] = [];
 let createAnswers: Response[] = [];
 const creations: Array<{ spaceId: string; title: unknown }> = [];
 const commentAnswer = () => Response.json({ message: "Comments are closed for this item" }, { status: 409 });
@@ -69,7 +70,13 @@ describe("Spaces feedback channels", () => {
             completed: {
               $post: async ({ json }: { json: unknown }) => {
                 completions.push(json);
-                return completionAnswers.shift() ?? Response.json({ ok: true });
+                return completionAnswers.shift() ?? Response.json({ ...item, completedAt: now });
+              },
+            },
+            move: {
+              $post: async ({ json }: { json: unknown }) => {
+                moves.push(json);
+                return Response.json(item);
               },
             },
             comments: { $post: async () => commentAnswer() },
@@ -94,6 +101,7 @@ describe("Spaces feedback channels", () => {
     });
     const { default: ItemRow } = await import("../src/frontend/[id]/_components/list/ItemRow");
     const { createRetryToasts } = await import("../src/frontend/lib/feedback");
+    const { createLeavingItems } = await import("../src/frontend/[id]/_components/shared/leaving");
     const dispose = render(
       () =>
         createComponent(ItemRow, {
@@ -106,11 +114,13 @@ describe("Spaces feedback channels", () => {
           canWrite: true,
           currentUserId: "33333333-3333-4333-8333-333333333333",
           isListed: () => true,
+          leaving: createLeavingItems<SpaceItem>(),
+          list: () => dom.root,
           retryToast: createRetryToasts(),
         }),
       dom.root,
     );
-    const tick = () => dom.root.querySelector<HTMLButtonElement>('button[aria-label="Mark complete"]')!;
+    const tick = () => dom.root.querySelector<HTMLInputElement>('input[aria-label="Mark complete: Book the venue"]')!;
 
     completions.length = 0;
     completionAnswers = [Response.json({ message: "Spaces is unavailable" }, { status: 503 })];
@@ -127,8 +137,7 @@ describe("Spaces feedback channels", () => {
     expect(notices[0]!.dismissed).toBe(true);
     expect(completions).toEqual([{ completed: true }, { completed: true }]);
     expect(notices).toHaveLength(1);
-    // The row stays in the list and shows its new state; only a screen reader is told, because the refresh
-    // renders the row again and its focus is lost.
+    // The row stays in the list and shows its new state; only a screen reader is told, because the row may move.
     expect(successes).not.toHaveBeenCalled();
     expect(await announcements(dom.document)).toEqual(["Item completed"]);
 
@@ -147,6 +156,7 @@ describe("Spaces feedback channels", () => {
     });
     const { default: ItemRow } = await import("../src/frontend/[id]/_components/list/ItemRow");
     const { createRetryToasts } = await import("../src/frontend/lib/feedback");
+    const { createLeavingItems } = await import("../src/frontend/[id]/_components/shared/leaving");
     const dispose = render(
       () =>
         createComponent(ItemRow, {
@@ -160,13 +170,15 @@ describe("Spaces feedback channels", () => {
           currentUserId: "33333333-3333-4333-8333-333333333333",
           // The list shows only active items, so the completed row is gone after the refresh.
           isListed: () => false,
+          leaving: createLeavingItems<SpaceItem>(),
+          list: () => dom.root,
           retryToast: createRetryToasts(),
         }),
       dom.root,
     );
 
     completions.length = 0;
-    dom.root.querySelector<HTMLButtonElement>('button[aria-label="Mark complete"]')!.click();
+    dom.root.querySelector<HTMLInputElement>('input[aria-label="Mark complete: Book the venue"]')!.click();
     await flush();
     expect(successes.map((notice) => notice.message)).toEqual(["Item completed"]);
     const undo = successes[0]!.options?.action;
@@ -174,10 +186,12 @@ describe("Spaces feedback channels", () => {
     if (!undo || !("onClick" in undo)) throw new Error("The success toast has no Undo callback");
 
     dispose();
-    // Undo still works once the row is gone, because it names the item itself.
+    // Undo still works once the row is gone, because it names the item itself, and puts it back in its status and place.
+    moves.length = 0;
     undo.onClick();
     await flush();
-    expect(completions).toEqual([{ completed: true }, { completed: false }]);
+    expect(completions).toEqual([{ completed: true }]);
+    expect(moves).toEqual([{ columnId: item.columnId, rank: "1024", completed: false }]);
 
     success.mockRestore();
   });

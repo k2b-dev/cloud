@@ -10,6 +10,7 @@ import {
 } from "@k2b/cloud/ai/browser";
 import { type CloudCliContext, printStructured } from "@k2b/cloud/cli";
 import type { CapabilityDecision, CodeApproval } from "../artifacts/runtime/capabilities";
+import { classifyLocalPath } from "./local-paths";
 import { AI_API, jsonRequest, printValue, readApi } from "./shared";
 import { type AssistantTurnOutput, type AssistantTurnStreamResult, streamAssistantTurn } from "./stream";
 
@@ -32,6 +33,9 @@ export const validateLocalAttachments = async (paths: readonly string[]): Promis
   }
   let imageBytes = 0;
   for (const path of paths) {
+    if (classifyLocalPath(path, { workspace: process.cwd() }).access === "blocked") {
+      throw new Error(`Not attached: ${path} is cld's configuration.`);
+    }
     const file = Bun.file(path);
     if (!(await file.exists())) throw new Error(`Attachment not found: ${path}`);
     const mediaType = file.type || guessAiMediaType(path);

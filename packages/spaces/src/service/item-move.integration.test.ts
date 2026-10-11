@@ -259,6 +259,24 @@ suite("Spaces item moves", () => {
     expect((await columnState(column.Source!)).titles).toEqual(["X"]);
   });
 
+  test("records a move that completes or reopens a task as that change, and other moves as a move", async () => {
+    const { column, item } = await createBoard({ Open: [["T", 1024]], Done: [] });
+    await sql`UPDATE spaces.columns SET is_done = true WHERE id = ${column.Done!}::uuid`;
+    // A drag into a done status completes the task; Undo puts it back where it was, open; then it only moves.
+    expect(await move({ id: item.T!, columnId: column.Done! })).toMatchObject({ ok: true });
+    expect(await move({ id: item.T!, columnId: column.Open!, rank: "1024", completed: false })).toMatchObject({ ok: true });
+    expect(await move({ id: item.T!, columnId: column.Open!, rank: "2048" })).toMatchObject({ ok: true });
+    const events = await sql<{ action: string; bucketed: boolean }[]>`
+      SELECT action, bucket_started_at IS NOT NULL AS bucketed FROM spaces.activity_events
+      WHERE item_id = ${item.T!}::uuid ORDER BY id
+    `;
+    expect(events.map((event) => ({ ...event }))).toEqual([
+      { action: "task.completed", bucketed: false },
+      { action: "task.reopened", bucketed: false },
+      { action: "item.moved", bucketed: true },
+    ]);
+  });
+
   test("serializes concurrent moves into one exhausted gap without ties", async () => {
     const movers = Array.from({ length: 8 }, (_, index) => `M${index + 1}`);
     const { column, item } = await createBoard({

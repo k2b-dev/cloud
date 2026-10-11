@@ -35,7 +35,8 @@ or tools are needed merely to call an existing action.
 ## Publish an action
 
 Read [Source workflow](source-workflow.md) for source editing. Save
-`app.actions.json` alongside the handler modules in one `code_write` revision:
+`app.actions.json` and the handler modules with one `code_write` per file; a
+diagnostic about a handler you have not written yet disappears once you save it:
 
 ```json
 {

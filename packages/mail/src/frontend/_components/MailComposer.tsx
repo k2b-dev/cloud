@@ -51,6 +51,7 @@ import MailComposerLifecycleNotice from "./MailComposerLifecycleNotice";
 import { mailDraftCollaborationCopy, openMailDraftCollaborationDialog } from "./MailDraftCollaborationDialog";
 import MailRecipientInput from "./MailRecipientInput";
 import { chooseScheduledSendTime } from "./MailScheduleDialog";
+import MailSenderUnavailableNotice from "./MailSenderUnavailableNotice";
 import { readMailUserPreferences, writeMailComposerPanes } from "./MailSettingsStore";
 import { mailConversationHref, mailDraftHref, mailDraftSeedHref } from "./mail-compose-route";
 import { createMailComposerAttachmentManager, type UnfinishedDraftUpload } from "./mail-composer-attachment-manager";
@@ -89,6 +90,9 @@ export default function MailComposer(props: {
   dateConfig: DateContext;
   canShareAttachments?: boolean;
   calendarIntegrationAvailable?: boolean;
+  /** Lets the composer open the mailbox's sender settings when no verified sender can send. */
+  canManageMailbox?: boolean;
+  currentUserEmail?: string | null;
 }) {
   const locale = useLocale();
   const t = () => mailComposerMessages.resolve([locale()]).t;
@@ -1074,6 +1078,26 @@ export default function MailComposer(props: {
   };
   const handleReadonlyAction = () => (leaseConflict() ? void presentLeaseConflict() : void resumeCurrentLease());
 
+  const [senderSettingsOpening, setSenderSettingsOpening] = createSignal(false);
+  const openSenderSettings = async () => {
+    if (senderSettingsOpening()) return;
+    setSenderSettingsOpening(true);
+    try {
+      const settings = await importOnDemand(() => import("./MailboxSettingsDialog"));
+      if (!settings || disposed) return;
+      const result = await settings.openMailboxSettingsDialog({
+        mailboxId: props.mailboxId,
+        currentUserEmail: props.currentUserEmail ?? null,
+        contactDirectory,
+        initialTab: "delivery",
+      });
+      // The page renders its senders on the server; a fixed sender shows after a reload.
+      if (result.workspaceChanged && !disposed) window.location.reload();
+    } finally {
+      if (!disposed) setSenderSettingsOpening(false);
+    }
+  };
+
   const composerIntent = () => draft()?.intent ?? initial.intent;
   const retryPreview = () => void previewQuery.refresh();
   const IdentitySwitcher = () => {
@@ -1246,6 +1270,15 @@ export default function MailComposer(props: {
             onOpenMessage={openLifecycleMessage}
           />
         )}
+      </Show>
+
+      <Show when={verifiedIdentities().length === 0}>
+        <MailSenderUnavailableNotice
+          class="mx-3 mt-3"
+          identities={props.identities}
+          onOpenSettings={props.canManageMailbox ? () => void openSenderSettings() : undefined}
+          opening={senderSettingsOpening()}
+        />
       </Show>
 
       <div class="flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto px-3">

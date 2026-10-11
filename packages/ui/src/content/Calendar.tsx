@@ -403,7 +403,7 @@ const EventChip = (props: {
   leadingTime?: string;
   onMovePointerDown?: (event: PointerEvent, onActivate: () => void) => void;
 }): JSX.Element => {
-  const messages = useUiMessages();
+  const calendarMessages = useCalendarMessages();
   const dateConfig = createMemo(() => ownerDateConfig(props.owner));
   const color = () => props.event.color ?? "blue";
   const selected = () => Boolean(props.owner.selectedEventId) && props.owner.selectedEventId === props.event.id;
@@ -421,7 +421,7 @@ const EventChip = (props: {
       ? props.label
       : props.event.allDay
         ? props.event.title
-        : messages().calendarEventTime({
+        : calendarMessages().calendarEventTime({
             title: props.event.title,
             start: formatTime(props.event.startDate, dateConfig()),
             end: formatTime(props.event.endDate, dateConfig()),
@@ -682,7 +682,7 @@ const CalendarViewLinks = <V extends string>(props: {
   /** The day selected in the month view: the other views open at it. */
   focusDay?: Date | null;
 }): JSX.Element => {
-  const messages = useUiMessages();
+  const calendarMessages = useCalendarMessages();
   const refs: HTMLAnchorElement[] = [];
   const selectRelative = (currentIndex: number, direction: -1 | 1) => {
     if (props.options.length === 0) return;
@@ -704,7 +704,7 @@ const CalendarViewLinks = <V extends string>(props: {
   return (
     <div
       role="radiogroup"
-      aria-label={messages().calendarView}
+      aria-label={calendarMessages().calendarView}
       aria-orientation="horizontal"
       class="k2b-segmented-control k2b-calendar-view-switcher"
     >
@@ -780,7 +780,7 @@ const CalendarHeader = <V extends string>(props: {
   owner: CalendarProps<V>;
   focusDay?: Date | null;
 }): JSX.Element => {
-  const messages = useUiMessages();
+  const calendarMessages = useCalendarMessages();
   const dateConfig = () => ownerDateConfig(props.owner);
   const previous = () => adjacentCalendarDate(props.date, props.view, -1, dateConfig());
   const next = () => adjacentCalendarDate(props.date, props.view, 1, dateConfig());
@@ -936,7 +936,7 @@ const CalendarHeader = <V extends string>(props: {
             <SegmentedControl
               value={() => (props.view === "mobile-month" ? "month" : props.view)}
               onValueChange={goView}
-              ariaLabel={messages().calendarView}
+              ariaLabel={calendarMessages().calendarView}
               options={viewOptions()}
             />
           }
@@ -961,7 +961,6 @@ const MonthPickerView = (props: {
   labels: Required<CalendarLabels>;
   compact?: boolean;
 }): JSX.Element => {
-  const messages = useUiMessages();
   const calendarMessages = useCalendarMessages();
   const dateConfig = createMemo(() => ownerDateConfig(props.owner));
   const [movePreview, setMovePreview] = createSignal<CalendarPreview | null>(null);
@@ -1021,7 +1020,7 @@ const MonthPickerView = (props: {
     >
       <div class="k2b-calendar-month__weekdays" data-week-numbers={props.owner.withWeekNumbers ? "true" : undefined}>
         <Show when={props.owner.withWeekNumbers}>
-          <div class="k2b-calendar-month__weekday">{messages().weekShort}</div>
+          <div class="k2b-calendar-month__weekday">{calendarMessages().weekShort}</div>
         </Show>
         <For each={weekdays()}>{(day) => <div class="k2b-calendar-month__weekday">{day}</div>}</For>
       </div>
@@ -1076,7 +1075,7 @@ const MonthPickerView = (props: {
                               href={dayHref()}
                               anchorProps={{
                                 class: "k2b-calendar-month__day-target",
-                                "aria-label": messages().openDate({ label: dayLabel }),
+                                "aria-label": calendarMessages().openDate({ label: dayLabel }),
                               }}
                             />
                           )}
@@ -1087,7 +1086,7 @@ const MonthPickerView = (props: {
                         type="button"
                         class="k2b-calendar-month__day-target"
                         data-interactive="true"
-                        aria-label={messages().createEventOn({ label: dayLabel })}
+                        aria-label={calendarMessages().createEventOn({ label: dayLabel })}
                         {...slotInteractionProps(
                           props.owner,
                           () => {
@@ -1120,7 +1119,7 @@ const MonthPickerView = (props: {
                               class: "k2b-calendar-month__day-number",
                               "data-today": isToday ? "true" : undefined,
                               "data-outside": !sameMonth ? "true" : undefined,
-                              "aria-label": messages().openDate({ label: dayLabel }),
+                              "aria-label": calendarMessages().openDate({ label: dayLabel }),
                             }}
                           >
                             {calendar.formatDayNumber(day, dateConfig())}
@@ -1139,7 +1138,7 @@ const MonthPickerView = (props: {
                     <div class="k2b-calendar-month__events">
                       <Show when={eventStack().preview}>
                         <div class="k2b-calendar-preview">
-                          {props.events.find((event) => event.id === eventStack().preview!.id)?.title ?? messages().moveEvent}
+                          {props.events.find((event) => event.id === eventStack().preview!.id)?.title ?? calendarMessages().moveEvent}
                         </div>
                       </Show>
                       <For each={eventStack().visibleEvents}>
@@ -1299,7 +1298,6 @@ const MonthView = (props: {
   /** The first selected day, for the view switcher; `null` without a selection. */
   onFocusDay?: (date: Date | null) => void;
 }): JSX.Element => {
-  const messages = useUiMessages();
   const calendarMessages = useCalendarMessages();
   const dateConfig = createMemo(() => ownerDateConfig(props.owner));
   // The shown month and its grid change only with the month, so a refresh of the same month keeps every cell and its
@@ -1434,7 +1432,7 @@ const MonthView = (props: {
   const itemLabel = (item: MonthItem): string | undefined => {
     if (item.firstKey === item.lastKey) return undefined;
     const allDay = Boolean(item.event.allDay);
-    return messages().calendarEventTime({
+    return calendarMessages().calendarEventTime({
       title: item.event.title,
       start: monthDayLabel(allDay ? parseKey(item.firstKey) : item.event.sourceStartDate, !allDay),
       end: monthDayLabel(allDay ? parseKey(item.lastKey) : item.event.sourceEndDate, !allDay),
@@ -1851,7 +1849,7 @@ const MonthView = (props: {
       <div class="k2b-calendar-month__weekdays" role="row" data-week-numbers={props.owner.withWeekNumbers ? "true" : undefined}>
         <Show when={props.owner.withWeekNumbers}>
           <div class="k2b-calendar-month__weekday" role="columnheader">
-            {messages().weekShort}
+            {calendarMessages().weekShort}
           </div>
         </Show>
         <For each={weekdays()}>
@@ -2198,7 +2196,7 @@ const TimeGridView = (props: {
   labels: Required<CalendarLabels>;
   days: Date[];
 }): JSX.Element => {
-  const messages = useUiMessages();
+  const calendarMessages = useCalendarMessages();
   const dateConfig = createMemo(() => ownerDateConfig(props.owner));
   const gridStartHour = () => props.owner.visibleStartHour ?? 0;
   const gridEndHour = () => props.owner.visibleEndHour ?? 23;
@@ -2619,7 +2617,7 @@ const TimeGridView = (props: {
                             <Show when={props.owner.onEventResize}>
                               <button
                                 type="button"
-                                aria-label={messages().resizeEvent}
+                                aria-label={calendarMessages().resizeEvent}
                                 draggable={false}
                                 class="k2b-calendar-time-grid__resize"
                                 onPointerDown={resizeStart}
@@ -2646,7 +2644,7 @@ const TimeGridView = (props: {
                             class="k2b-calendar-time-grid__overflow"
                             style={{ top: `${layout.top}%`, height: `${layout.height}%` }}
                             title={hiddenTitle()}
-                            aria-label={messages().hiddenOverlappingEvents({ count: overflow.hiddenEvents.length })}
+                            aria-label={calendarMessages().hiddenOverlappingEvents({ count: overflow.hiddenEvents.length })}
                             onClick={(event) => {
                               event.stopPropagation();
                               setExpandedOverflow(expandedOverflow() === key ? "" : key);
@@ -2801,6 +2799,7 @@ const CalendarBody = (props: { children: JSX.Element }): JSX.Element => <div cla
 
 const CalendarRoot = <V extends string = never>(props: CalendarProps<V>): JSX.Element => {
   const messages = useUiMessages();
+  const calendarMessages = useCalendarMessages();
   // Subviews derive their date config from the owner props, so the inherited
   // render locale is merged here once; an explicit dateConfig.locale wins.
   const localizedConfig = useDateConfigLocale(() => props.dateConfig);
@@ -2829,7 +2828,7 @@ const CalendarRoot = <V extends string = never>(props: CalendarProps<V>): JSX.El
     month: messages().month,
     year: messages().year,
     allDay: messages().allDay,
-    noEvents: messages().noEvents,
+    noEvents: calendarMessages().noEvents,
     previous: messages().previous,
     next: messages().next,
     ...props.labels,

@@ -737,6 +737,11 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
     );
   };
 
+  const closeSource = () => {
+    setSelectedSourceId("");
+    navigateWorkspace({ view: "sources" });
+  };
+
   const renderSourcesView = () => (
     <SourcesView
       search={sourceSearch}
@@ -754,10 +759,7 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
       copySetupText={copySetupText}
       addSource={addSource}
       selectSource={selectSource}
-      closeSource={() => {
-        setSelectedSourceId("");
-        navigateWorkspace({ view: "sources" });
-      }}
+      closeSource={closeSource}
       openSourceResources={openSourceResources}
       editSource={editSource}
       toggleSource={toggleSource}
@@ -785,10 +787,7 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
       copySetupText={copySetupText}
       addSource={addSource}
       selectSource={selectSource}
-      closeSource={() => {
-        setSelectedSourceId("");
-        navigateWorkspace({ view: "sources" });
-      }}
+      closeSource={closeSource}
       openSourceResources={openSourceResources}
       editSource={editSource}
       toggleSource={toggleSource}
@@ -1038,6 +1037,12 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
     return false;
   };
 
+  const closeWorkspaceDetail = () => {
+    if (activeView() === "sources") closeSource();
+    else if (activeView() === "resource-detail") resourceDetailSelection.close();
+    else closeFocusedSignalDetail();
+  };
+
   const renderWorkspaceDetail = () => {
     if (activeView() === "sources") return renderSourcesDetail();
     if (activeView() === "resource-detail") return renderResourceSignalDetail();
@@ -1150,7 +1155,13 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
                         : renderSignalCatalogView()}
         </AppWorkspace.Main>
 
-        <AppWorkspace.Detail id="pulse-detail-panel" open={workspaceDetailOpen()} width="lg" viewTransitionName="pulse-detail-panel-shell">
+        <AppWorkspace.Detail
+          id="pulse-detail-panel"
+          open={workspaceDetailOpen()}
+          onClose={closeWorkspaceDetail}
+          width="lg"
+          viewTransitionName="pulse-detail-panel-shell"
+        >
           {renderWorkspaceDetail()}
         </AppWorkspace.Detail>
       </AppWorkspace.Content>

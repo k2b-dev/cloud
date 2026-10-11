@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { selectNumberedChoice, terminalInfo, terminalSafeText } from "./terminal";
+import { selectNumberedChoice, terminalInfo, terminalSafeModelText, terminalSafeText } from "./terminal";
 
 const createOutput = () => {
   const printed: string[] = [];
@@ -17,6 +17,10 @@ const createOutput = () => {
 describe("Assistant terminal helpers", () => {
   test("escapes terminal control and bidirectional text before display", () => {
     expect(terminalSafeText("safe\u001b[2J\rhidden\u202Etxt")).toBe("safe\\u001b[2J\\u000dhidden\\u202etxt");
+  });
+
+  test("keeps line breaks and tabs in model text and escapes every other control character", () => {
+    expect(terminalSafeModelText("a\n\tb\r\u001b[8m\u2066c")).toBe("a\n\tb\\u000d\\u001b[8m\\u2066c");
   });
 
   test("renders a blue info label without coloring or trusting its message", () => {

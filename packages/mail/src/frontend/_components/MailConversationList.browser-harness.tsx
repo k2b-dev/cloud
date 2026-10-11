@@ -227,6 +227,7 @@ window.mountMailList = (options) => {
                     canAdmin={false}
                     mailboxWide
                     identities={[]}
+                    onOpenDeliverySettings={noop}
                     selectionKey={detail.selectedConversationId}
                     selectedConversationId={detail.selectedConversationId}
                     selectedMessageId={null}

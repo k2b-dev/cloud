@@ -419,7 +419,7 @@ export default function NotebookDetailPanel(props: Props) {
   });
 
   return (
-    <AppWorkspace.Detail id="notebook-detail" open={open()}>
+    <AppWorkspace.Detail id="notebook-detail" open={open()} onClose={closePanel}>
       <DetailPanel>
         <DetailPanel.Header
           class="notebook-detail-panel-header"

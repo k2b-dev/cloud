@@ -4,19 +4,58 @@ navTitle: Layout and navigation
 section: Frontend
 order: 820
 description: Place application pages in the shared Cloud layout and navigation.
-tags: [layout, navigation, breadcrumbs]
-updated: 2026-10-09
+tags: [layout, navigation, breadcrumbs, page trail, back link]
+updated: 2026-10-10
 ---
 
 # Layout and navigation
 
 Wrap a Cloud application page in `Layout`, `AdminLayout`, or `MinimalLayout`.
 
-The shared layout provides the header, breadcrumbs, app navigation, mobile
-navigation, global search, profile preferences, and footer.
+The shared layout provides the app bar, the phone header, app navigation,
+mobile navigation, global search, help, profile preferences, and, on anonymous
+pages, breadcrumbs and a footer.
 
 Layout owns Cloud chrome; an [application shell](/en/docs/frontend/application-shells)
 owns the geometry inside it.
+
+## Know the shell at each width
+
+The shell has three forms. They are CSS on the same server-rendered markup, so
+a page arrives in its final form and nothing moves when it hydrates or when
+people navigate.
+
+| Width | Signed-in pages | Anonymous pages |
+| --- | --- | --- |
+| Below 768 px (phones) | Header with Home, the app name, help, search, and the app menu; no app bar | Flat header with Home, the app name, help, search, the app grid on app pages, theme and language, and sign-in |
+| 768 to 1023 px (tablets) | No header. The app bar runs down the left edge, and the app area meets the window's top, right, and bottom edges without spacing, radius, shadow, or border | The same header controls; header, content, and footer as cards on the app background |
+| 1024 to 1535 px (laptops) | Same as above | Header with breadcrumbs, theme and language, and sign-in; cards on the app background |
+| From 1536 px | No header. The app area is a card with 8 px spacing on the app background | Same as above |
+
+From 768 px the app bar holds Home, the apps, the app grid, search, help, and
+the profile avatar. Between the app bar and the app area there is no line:
+the app bar shows the app background, and the app area is one opaque surface.
+Global announcements and account notices stay above the app as a strip across
+the app area; from 768 to 1535 px it has no radius or border.
+
+Applications need no changes for any of this. `AppWorkspace` adds its compact
+navigation between 768 and 1023 px on its own; see
+[Application shells](/en/docs/frontend/application-shells#supply-mobile-navigation).
+Signed-in pages show the way up to the pages above them instead of a
+breadcrumb header; see [Show the way up](#show-the-way-up).
+A regular page, without `fullWidth` or `fullPage`, owns its inset: from 768 px
+no header sits above a signed-in page, so give the content its own padding, as
+`AppOverview` does.
+
+`AppWorkspace.Detail` floats inside the application content. Below 768 px it
+is a half or full sheet at the window’s bottom edge; from 768 px Main makes
+room for it. A closable panel on a coarse pointer from 768 to 1023 px overlays
+Main as a drawer. Pass its existing close action as `onClose` in a hydrated
+component, or mark a server-rendered panel’s close control with
+`data-workspace-detail-close`. For boards, wide tables, and week calendars,
+mark the horizontal scroller with `k2b-detail-trail` and add
+`var(--k2b-detail-space, 0px)` to fixed rows’ trailing padding. See
+[Add contextual detail](/en/docs/frontend/application-shells#add-contextual-detail).
 
 ## Render the application layout
 
@@ -32,8 +71,11 @@ owns the geometry inside it.
 </Layout>
 ```
 
-The final breadcrumb has no link. A plain string is valid for a one-level
-title.
+The last entry is the page title: it names the browser tab and the page in
+the shell. The entries above it are the pages above this one; on signed-in
+pages the shell turns them into the way up (see below). Anonymous pages show
+the entries as breadcrumbs in their header from 1024 px; the final breadcrumb
+has no link. A plain string is valid for a one-level title.
 
 Use `fullWidth` for a multi-column workspace. Use `fullPage` for a fill-height
 surface without the footer. Full-page and focus-mode surfaces contain viewport
@@ -41,8 +83,8 @@ overscroll: their inner content, including embedded editors, owns scrolling
 without moving the outer Cloud shell or triggering pull-to-refresh.
 
 The shell measures the visible window with the dynamic viewport (`dvh`), not
-`vh`. From `lg`, and for full-page surfaces at every width, it is exactly as
-tall as the window and its content scrolls inside it. Below `lg`, a regular
+`vh`. From 768 px, and for full-page surfaces at every width, it is exactly as
+tall as the window and its content scrolls inside it. Below 768 px, a regular
 page is at least as tall as the window and grows with its content. `vh` follows
 the larger viewport of a browser whose toolbar can collapse, such as Safari on
 iPad, so a page sized with it would scroll by that difference although its
@@ -51,8 +93,8 @@ without the shell, such as a pop-out window or an unattended display, takes its
 height from `dvh` too, with `h-dvh` or `min-h-dvh`.
 
 The layout reserves a stable scrollbar gutter on every page scroller it owns:
-the content area of regular pages from `lg` and, below `lg`, the document of
-every page except full-page and focus-mode surfaces. Switching between short
+the content area of regular pages from 768 px and, below 768 px, the document
+of every page except full-page and focus-mode surfaces. Switching between short
 and long pages or tabs therefore does not shift the content sideways where
 scrollbars take layout space.
 
@@ -76,6 +118,108 @@ return 404, and the page shows the fallback font until Plex loads. Update
 `@k2b/cloud` to Core's release to preload the right files again.
 
 Do not reproduce Cloud chrome inside application content.
+
+## Show the way up
+
+Give every page its title array and nothing else: on signed-in pages the shell
+derives the way up from it by one rule, the same for built-in and third-party
+apps.
+
+1. The last entry is the page. Above it, Start (`href: "/"`), the app's own
+   root (an `href` equal to the app's route prefix, such as `/app/accounts`),
+   entries without an `href`, and an entry that links to the page itself are
+   dropped. The app bar already leads to Start and the app. Admin is the root
+   of its area in the same way: an `AdminLayout` page shows its title alone,
+   whether Core or an application owns it.
+2. What remains are the levels below the app root. Their number alone decides
+   the form:
+
+| Levels | Form |
+| --- | --- |
+| 1 | The title only. |
+| 2 | `‹ Parent` above the title. |
+| 3 or more | A path row with every level above, each a link, above the title. When the row does not fit, its middle collapses into `…`, a menu of the hidden levels; the first level and the parent stay. |
+
+The row above the title is 12 px text and the title 14 px, stacked in one
+46 px row, so the height never changes between depths and a list beside a
+detail keeps the same height. Below 768 px a back arrow left of the title
+replaces the row; its accessible name names the parent, for example "Back to
+Users". Depth decides rather than the app, so the same depth looks the same
+in every app, and an app cannot pick a form that breaks on a narrow screen.
+Anonymous pages, which keep their breadcrumb header, and focus-mode surfaces
+such as pop-out editors show the title alone.
+
+The way up appears where the page's title belongs:
+
+- In an `AppWorkspace`, its head above the work area shows it. On a one-level
+  page the head stays away from 1024 px, because the app's own heading or its
+  sidebar names the page and the app bar marks the app; from 768 to 1023 px
+  the head also holds the navigation button and then shows the title alone.
+  So a one-level page without a heading of its own shows no title from
+  1024 px; render a heading or `PageTrail` when the page should name itself.
+- A page without a workspace gets a row from the shell above its content, only
+  when there is a level above.
+- An app that draws its own header places `PageTrail` there, from
+  `@k2b/cloud/ssr/islands`. It shows the same title and way up from the same
+  title array, as a heading, and the head and the shell's row step back while
+  it is on the page:
+
+```tsx
+import { PageTrail } from "@k2b/cloud/ssr/islands";
+
+<header class="flex min-h-[2.875rem] items-center gap-2 px-2">
+  <PageTrail subtitle={formatDuration(entry.minutes)} />
+  <TimerButton />
+</header>
+```
+
+The links keep the parent's `href` from the title array, so a new tab, a
+copied link, and a reload lead to the page itself. A plain click returns to
+the page as this tab left it: Cloud remembers each page's last URL and scroll
+position per tab, so filters, search, and position survive the way down and
+back up, and the row that led down is marked. A page below the parent, such as
+a document whose address carries its folder's query, never counts as the
+parent. Put a list's filters into the parent's `href` when a page knows them,
+as Accounts does for its user list.
+
+**One level up** (`Alt+↑`, `⌥↑` on a Mac) goes to the parent the same way.
+It is a context command: help, the command palette, and the shortcut list show
+it, with the parent's name, only on a page with a level above. It does nothing
+while the focus is in a text field, and a focused widget that uses the keys
+itself keeps them, such as a tree item that moves up or an open list.
+
+After an in-page navigation, call `layout.update()` from the island with the
+new title array; the way up, the head, and `PageTrail` follow, also a
+`PageTrail` rendered on the server. The array follows the same rule as on the
+server. Cloud finds a link to the page itself by the address at the end of the
+current task, so change the address in the same task, before or after the
+call. `title` alone renames the page and keeps the levels above it:
+
+```ts
+import { layout } from "@k2b/cloud/ssr/layout-runtime";
+
+layout.update({ breadcrumbs: [{ title: "Files", href: "/app/files" }, ...folders, { title: folder.name }] });
+layout.update({ title: note.title });
+```
+
+An island that navigates in place, such as a file browser with running
+uploads, takes the way up itself: `layout.handleUp()` gets the destination,
+the parent as this tab left it, and returns `true` when the island goes there
+in place. Otherwise the page loads. The destination is always a path on this
+origin. A level whose link leads elsewhere, or to a path that starts with `//`
+and would read as another host, stays a plain link.
+
+```ts
+const stop = layout.handleUp((href) => {
+  if (new URL(href, location.origin).pathname !== "/app/files") return false;
+  void openFolder(href);
+  return true;
+});
+onCleanup(stop);
+```
+
+Do not add a back button of your own for a page the title array already
+leads up to. Keep buttons that do something else, such as leaving an editor.
 
 ## Render anonymous application pages
 
@@ -177,26 +321,26 @@ The Core sign-in, password, and consent pages use the same class.
 
 ## Use the responsive profile menu
 
-Authenticated users change the theme or language from the profile control and
+Authenticated users change the theme or language from the profile menu and
 can open `/me` for the remaining profile settings. While the installation runs
 the mobile app (the `pwa` application), the menu also shows **App**, which
-leads to `/me/app`, where people pair and remove phones. The item appears in
-the header, rail, and mobile menus; applications do not add their own link to
-it. Anonymous `Layout` pages
-expose the same preferences in the header without profile actions, and
-`MinimalLayout` pages show them in their footer. Applications must not add a
-second theme or language control to their own content.
+leads to `/me/app`, where people pair and remove phones. The menu ends with
+**Sign out**. Applications do not add their own link to any of these.
+Anonymous `Layout` pages expose the same preferences in the header without
+profile actions, and `MinimalLayout` pages show them in their footer.
+Applications must not add a second theme or language control to their own
+content.
 
-The shared layout chooses the placement with CSS:
+The layout places the profile menu with CSS:
 
-- On mobile, clicking the profile avatar opens the menu in the header;
-- On desktop viewports up to `1536px` wide, the header and breadcrumbs are
-  removed and the profile avatar moves to the bottom of the app rail;
-- On wider desktop viewports, the profile avatar stays in the header.
+- Below 768 px, the app menu in the header holds the profile actions; the
+  header has no avatar.
+- From 768 px, the avatar is the last control of the app bar, below search and
+  help. Its menu opens beside the app bar and grows upward from the avatar.
 
-On pointer devices, clicking the avatar opens `/me`; hovering or focusing it
-opens the adjacent preference menu. Touch and coarse-pointer devices use the
-clickable dropdown.
+With a mouse or trackpad, pointing at or focusing the avatar opens the menu.
+On touch screens and other coarse pointers, tapping the avatar opens the same
+menu as a dropdown.
 
 ## Register navigation
 
@@ -398,7 +542,9 @@ managed shortcuts add at most 16 KiB to the page's personal rail snapshot.
 </AdminLayout>
 ```
 
-`AdminLayout.title` sets breadcrumbs. The page renders its own heading.
+`AdminLayout.title` names the page. Admin is the root of its area, so every
+admin page is one level deep and shows no way up, whichever app owns it; the
+admin sidebar leads between the pages. The page renders its own heading.
 The admin shell stays within the viewport, with independent sidebar and content
 scrolling. For a bounded child such as `SettingsPage`, pass `scroll={false}` to
 `AdminLayout`: the child then owns content scrolling and its fixed save footer.
@@ -420,9 +566,9 @@ See [URL state and navigation](/en/docs/frontend/url-state-and-navigation).
 
 ## Mobile workspace menu
 
-Below 1024 px, the header launcher hosts the current application's navigation
-and an **All apps** switch. Desktop navigation starts at 1024 px. The mobile
-workspace uses the full canvas without a second application title or exterior
-frame. See [Application shells](/en/docs/frontend/application-shells#supply-mobile-navigation)
+Below 768 px, the header launcher hosts the current application's navigation
+and an **All apps** switch. From 768 px the app bar and the workspace's own
+navigation take over. The mobile workspace uses the full canvas without a
+second application title or exterior frame. See [Application shells](/en/docs/frontend/application-shells#supply-mobile-navigation)
 for the SSR snapshot and island-owned action APIs. `@k2b/ui` remains independent
 of Cloud; Cloud owns registration, the launcher, and menu history.

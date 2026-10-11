@@ -2,8 +2,8 @@ import { documentNavigate, Link } from "@k2b/ssr/nav";
 import { createSignal, createUniqueId, For, Show } from "solid-js";
 import { IconButton } from "../actions/Button";
 import { Dropdown } from "../actions/Dropdown";
-import { useUiMessages } from "../intl/messages";
 import type { NavigationController, NavigationItem } from "./navigation-model";
+import { useWorkspaceMessages } from "./workspace-messages";
 
 export type NavigationProps = {
   navigation: NavigationController;
@@ -16,7 +16,7 @@ export type NavigationProps = {
 const iconAccessibility = (label: string | undefined) => (label ? { role: "img" as const, "aria-label": label } : { "aria-hidden": true });
 
 export default function Navigation(props: NavigationProps) {
-  const messages = useUiMessages();
+  const workspaceMessages = useWorkspaceMessages();
   const [expanded, setExpanded] = createSignal<Record<string, boolean>>({});
   const ready = async () => (await props.beforeSelect?.()) !== false;
   const activate = async (id: string) => {
@@ -167,7 +167,7 @@ export default function Navigation(props: NavigationProps) {
                           },
                         }))}
                       >
-                        <Dropdown.Trigger iconOnly label={`${item().label}: ${messages().rowAction}`} variant="ghost">
+                        <Dropdown.Trigger iconOnly label={`${item().label}: ${workspaceMessages().rowAction}`} variant="ghost">
                           <i class="ti ti-dots" aria-hidden="true" />
                         </Dropdown.Trigger>
                       </Dropdown.Root>

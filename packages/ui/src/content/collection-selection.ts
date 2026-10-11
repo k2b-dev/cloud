@@ -75,6 +75,8 @@ export function createCollectionSelection(options: {
     elements.get(id)?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
   };
   const keyDown = (event: KeyboardEvent, id: string, columns = 1) => {
+    // Alt combinations belong to the host, for example Alt+↑ to the page above.
+    if (event.altKey) return false;
     const ids = options.ids();
     const index = ids.indexOf(id);
     let next: number | undefined;

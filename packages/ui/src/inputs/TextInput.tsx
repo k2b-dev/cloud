@@ -4,6 +4,7 @@ import { useUiMessages } from "../intl/messages";
 import type { Completion } from "./completion";
 import type { ValueFieldProps } from "./field-contract";
 import { commitFieldValue, resolveMaybeAccessor } from "./field-contract";
+import { useInputMessages } from "./input-messages";
 import { MarkdownEditor } from "./markdown/MarkdownEditor";
 
 export type TextInputProps = Omit<
@@ -34,6 +35,7 @@ export type TextInputProps = Omit<
 
 export function TextInput(props: TextInputProps): JSX.Element {
   const messages = useUiMessages();
+  const inputMessages = useInputMessages();
   const [local, rest] = splitProps(props, [
     "activeIcon",
     "aria-describedby",
@@ -183,7 +185,7 @@ export function TextInput(props: TextInputProps): JSX.Element {
               <button
                 type="button"
                 class="k2b-input-shell__clear"
-                aria-label={passwordVisible() ? messages().hidePassword : messages().showPassword}
+                aria-label={passwordVisible() ? inputMessages().hidePassword : inputMessages().showPassword}
                 aria-pressed={passwordVisible()}
                 disabled={rest.disabled}
                 onClick={() => setPasswordVisible((visible) => !visible)}

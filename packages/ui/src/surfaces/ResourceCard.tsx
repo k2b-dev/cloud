@@ -1,5 +1,6 @@
 import { type JSX, Match, Show, Switch } from "solid-js";
 import { useUiMessages } from "../intl/messages";
+import { useResourceMessages } from "./resource-messages";
 
 /**
  * What a card can show of the element it stands for: the element itself, a placeholder while it is being looked up, or
@@ -47,9 +48,10 @@ const linkUrl = (href: string | undefined): string | undefined => {
  */
 export function ResourceCard(props: ResourceCardProps): JSX.Element {
   const messages = useUiMessages();
+  const resourceMessages = useResourceMessages();
   const state = () => props.state ?? "ok";
   const ok = () => state() === "ok";
-  const title = () => (props.title?.trim() ? props.title : messages().resourceUntitled);
+  const title = () => (props.title?.trim() ? props.title : resourceMessages().resourceUntitled);
   const meta = () => [props.source, props.location].filter((part) => part?.trim()).join(" · ");
   /** Why the element cannot be shown, outside `"ok"` and `"loading"`. */
   const reason = (): Exclude<ResourceCardState, "ok" | "loading"> | undefined => {
@@ -91,10 +93,10 @@ export function ResourceCard(props: ResourceCardProps): JSX.Element {
             <span class="k2b-resource-card__copy">
               <span class="k2b-resource-card__label">
                 {reason() === "no_access"
-                  ? messages().resourceNoAccess
+                  ? resourceMessages().resourceNoAccess
                   : reason() === "deleted"
-                    ? messages().resourceDeleted
-                    : messages().resourceUnavailable}
+                    ? resourceMessages().resourceDeleted
+                    : resourceMessages().resourceUnavailable}
               </span>
             </span>
           </>

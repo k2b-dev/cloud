@@ -102,7 +102,7 @@ const runCli = async (server: string, args: string[], input?: string) => {
   const proc = Bun.spawn({
     cmd: [process.execPath, "run", "../cloud-cli/src/index.ts", "--server", server, "--token", "test-token", ...args],
     cwd: new URL("..", import.meta.url).pathname,
-    env: { ...process.env, XDG_CONFIG_HOME: cliHome },
+    env: { ...process.env, CLD_LOCALE: "en", XDG_CONFIG_HOME: cliHome },
     stdin: input === undefined ? "ignore" : "pipe",
     stdout: "pipe",
     stderr: "pipe",
@@ -5034,6 +5034,7 @@ test("automatic reply commands cover list, create, and revision-checked update",
 
 test("sender commands cover preview and durable existing-message backfills", async () => {
   const operationId = crypto.randomUUID();
+  let retryStatus: "limited" | "completed" | undefined;
   const automation = {
     id: INCOMING_AUTOMATION_ID,
     mailboxId: MAILBOX_ID,
@@ -5067,6 +5068,7 @@ test("sender commands cover preview and durable existing-message backfills", asy
       requests.push({ method: request.method, path: url.pathname, body });
       return api({
         operationId: body.operationId,
+        retryFailed: body.retryFailed === true,
         automationId: INCOMING_AUTOMATION_ID,
         workflowVersionId: automation.workflowVersionId,
         state: "queued",
@@ -5086,11 +5088,12 @@ test("sender commands cover preview and durable existing-message backfills", asy
         operationId,
         automationId: INCOMING_AUTOMATION_ID,
         workflowVersionId: automation.workflowVersionId,
-        state: "running",
+        state: retryStatus ?? "running",
+        retryFailed: retryStatus !== undefined,
         candidateCount: 6,
-        alreadyAcceptedCount: 2,
-        newlyAcceptedCount: 3,
-        remainingCount: 1,
+        alreadyAcceptedCount: retryStatus ? 0 : 2,
+        newlyAcceptedCount: retryStatus === "completed" ? 6 : 3,
+        remainingCount: retryStatus === "completed" ? 0 : 1,
         failureCount: 0,
         lastError: null,
         createdAt: "2026-07-28T00:00:00.000Z",
@@ -5104,6 +5107,7 @@ test("sender commands cover preview and durable existing-message backfills", asy
         automationId: INCOMING_AUTOMATION_ID,
         workflowVersionId: automation.workflowVersionId,
         state: "canceled",
+        retryFailed: false,
         candidateCount: 6,
         alreadyAcceptedCount: 2,
         newlyAcceptedCount: 3,
@@ -5197,6 +5201,7 @@ test("sender commands cover preview and durable existing-message backfills", asy
     path: `/api/mail/mailboxes/${MAILBOX_ID}/incoming-automations/${INCOMING_AUTOMATION_ID}/backfills`,
     body: { expectedRevision: 3, operationId: expect.any(String) },
   });
+  expect(requests[1]?.body).not.toHaveProperty("retryFailed");
   expect(requests[2]).toEqual({
     method: "GET",
     path: `/api/mail/mailboxes/${MAILBOX_ID}/incoming-automations/${INCOMING_AUTOMATION_ID}/backfills/${operationId}`,
@@ -5205,6 +5210,42 @@ test("sender commands cover preview and durable existing-message backfills", asy
     method: "DELETE",
     path: `/api/mail/mailboxes/${MAILBOX_ID}/incoming-automations/${INCOMING_AUTOMATION_ID}/backfills/${operationId}`,
   });
+  const retried = await runCli(origin, [
+    "mail",
+    "automation",
+    "backfill",
+    "start",
+    INCOMING_AUTOMATION_ID,
+    "--mailbox",
+    MAILBOX_ID,
+    "--revision",
+    "3",
+    "--retry-failed",
+    "--yes",
+  ]);
+  expect(retried.exitCode).toBe(0);
+  expect(requests[4]?.body).toEqual({ expectedRevision: 3, operationId: expect.any(String), retryFailed: true });
+  expect(retried.stdout).toContain("Started retry backfill ");
+  expect(retried.stdout).toContain("for 6 messages whose last run failed or was canceled.");
+  for (const state of ["limited", "completed"] as const) {
+    retryStatus = state;
+    const retry = await runCli(origin, [
+      "mail",
+      "automation",
+      "backfill",
+      "status",
+      INCOMING_AUTOMATION_ID,
+      operationId,
+      "--mailbox",
+      MAILBOX_ID,
+    ]);
+    expect(retry.exitCode).toBe(0);
+    expect(retry.stdout.trim()).toBe(
+      state === "limited"
+        ? "limited: 3/6 re-run, 1 remaining; run another retry backfill to continue"
+        : "completed: 6/6 re-run, 0 remaining",
+    );
+  }
 }, 20_000);
 
 test("incoming automation create names every invalid field before calling the API", async () => {

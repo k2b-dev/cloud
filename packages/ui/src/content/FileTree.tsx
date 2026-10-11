@@ -10,6 +10,7 @@ import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import ContextMenu from "../actions/ContextMenu";
 import Dropdown, { type DropdownItem } from "../actions/Dropdown";
 import { useUiMessages } from "../intl/messages";
+import { useFileBrowserMessages } from "./file-browser-messages";
 import { allFolderPaths, buildTree, type FileTreeEntry, flattenVisible, parentOf, type TreeNode } from "./file-tree";
 
 export type { FileTreeEntry } from "./file-tree";
@@ -54,6 +55,7 @@ export type FileTreeProps = {
 
 export default function FileTree(props: FileTreeProps) {
   const messages = useUiMessages();
+  const fileBrowserMessages = useFileBrowserMessages();
   let previousTree: TreeNode[] = [];
   const tree = createMemo(() => (previousTree = buildTree(props.entries, previousTree)));
 
@@ -153,24 +155,28 @@ export default function FileTree(props: FileTreeProps) {
     tree();
     const items: DropdownItem[] = [...(props.contextMenu?.(node.entry) ?? [])];
     if (node.isFolder && props.actions?.createFile) {
-      items.push({ icon: "ti ti-file-plus", label: messages().newFile, action: () => void props.actions?.createFile?.(node.entry.path) });
+      items.push({
+        icon: "ti ti-file-plus",
+        label: fileBrowserMessages().newFile,
+        action: () => void props.actions?.createFile?.(node.entry.path),
+      });
     }
     if (node.isFolder && props.actions?.createFolder) {
       items.push({
         icon: "ti ti-folder-plus",
-        label: messages().newFolder,
+        label: fileBrowserMessages().newFolder,
         action: () => void props.actions?.createFolder?.(node.entry.path),
       });
     }
     if (props.actions?.download) {
       items.push({
         icon: node.isFolder ? "ti ti-file-zip" : "ti ti-download",
-        label: node.isFolder ? messages().downloadAsZip : messages().download,
+        label: node.isFolder ? fileBrowserMessages().downloadAsZip : messages().download,
         action: () => void props.actions?.download?.(node.entry.path, node.isFolder),
       });
     }
     if (!node.isFolder && props.actions?.rename) {
-      items.push({ icon: "ti ti-cursor-text", label: messages().rename, action: () => beginRename(node) });
+      items.push({ icon: "ti ti-cursor-text", label: fileBrowserMessages().rename, action: () => beginRename(node) });
     }
     if (props.actions?.remove) {
       items.push({
@@ -236,7 +242,7 @@ export default function FileTree(props: FileTreeProps) {
     <ContextMenu
       class="k2b-content-file-tree__context-host"
       tabIndex={-1}
-      label={contextNode() ? messages().actionsFor({ name: contextNode()!.name }) : messages().fileActions}
+      label={contextNode() ? fileBrowserMessages().actionsFor({ name: contextNode()!.name }) : fileBrowserMessages().fileActions}
       items={contextItems()}
       disabled={contextItems().length === 0}
       onOpen={() => setContextMenuOpen(true)}
@@ -250,7 +256,7 @@ export default function FileTree(props: FileTreeProps) {
         class={`k2b-content-file-tree ${props.class ?? ""}`}
         data-drop-root={dropTarget() === "/" ? "true" : undefined}
         role="tree"
-        aria-label={props.label ?? messages().files}
+        aria-label={props.label ?? fileBrowserMessages().files}
         onDragOver={(event) => {
           if (!canDrop(event)) return;
           event.preventDefault();

@@ -1756,7 +1756,7 @@ describe("Studio check steps", () => {
   });
 
   test("names every Studio step in the reader's language", () => {
-    const blocks: AiTurnBlock[] = ["code_write", "code_check", "code_present"].map((name) => ({
+    const blocks: AiTurnBlock[] = ["code_write", "code_import", "code_check", "code_present"].map((name) => ({
       id: `tool-${name}`,
       kind: "tool",
       callId: name,
@@ -1766,7 +1766,8 @@ describe("Studio check steps", () => {
       result: {},
     }));
     const german = renderExpanded([...blocks, viewed("/checks/abc/desktop.png")], { locale: "de", open: ["group:tool-code_write"] });
-    for (const label of ["App-Dateien speichern", "App-Prüfung", "App im Chat zeigen", "Bild ansehen"]) expect(german).toContain(label);
+    for (const label of ["App-Datei speichern", "App-Dateien importieren", "App-Prüfung", "App im Chat zeigen", "Bild ansehen"])
+      expect(german).toContain(label);
     expect(german).not.toMatch(/Code write|Code check|Code present|View image/);
   });
 

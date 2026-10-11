@@ -1,7 +1,7 @@
 import { timed } from "@k2b/stdlib/solid";
 import type QrScannerEngine from "qr-scanner";
 import { createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
-import { useUiMessages } from "../intl/messages";
+import { useQrMessages } from "./qr-messages";
 
 /**
  * Why the scanner could not start, as far as the browser tells: `"denied"` when camera access is off, `"no-camera"`
@@ -83,7 +83,7 @@ const stopStream = (stream: MediaStream) => {
  * Decoded content is never logged.
  */
 export function QrScanner(props: QrScannerProps): JSX.Element {
-  const messages = useUiMessages();
+  const qrMessages = useQrMessages();
   const [starting, setStarting] = createSignal(true);
   const [invalid, setInvalid] = createSignal(false);
   let lastRejected: string | undefined;
@@ -187,11 +187,11 @@ export function QrScanner(props: QrScannerProps): JSX.Element {
     <div class={props.class ? `k2b-qr-scanner ${props.class}` : "k2b-qr-scanner"}>
       <div class="k2b-qr-scanner__preview" data-invalid={invalid() || undefined}>
         {/* Live camera preview contains no prerecorded speech or audio. */}
-        <video ref={video} muted playsinline aria-label={messages().qrCameraPreview} />
+        <video ref={video} muted playsinline aria-label={qrMessages().qrCameraPreview} />
       </div>
-      <p role="status">{starting() ? messages().qrCameraStarting : (props.instructions ?? messages().qrCameraInstructions)}</p>
+      <p role="status">{starting() ? qrMessages().qrCameraStarting : (props.instructions ?? qrMessages().qrCameraInstructions)}</p>
       <Show when={!starting()}>
-        <p class="k2b-qr-scanner__note">{messages().qrCameraPrivacy}</p>
+        <p class="k2b-qr-scanner__note">{qrMessages().qrCameraPrivacy}</p>
       </Show>
     </div>
   );

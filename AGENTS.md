@@ -100,9 +100,10 @@ further questions:
   ```
 
 - `dev:*` and `dev:cld` belong to this checkout; Compose mounts its sources.
-  In a worktree, verify with `bun run check`, `bun run test`,
-  `bun run test --integration` against the local infrastructure, and
-  `docker build`. Browser-level checks wait for this checkout or for CI.
+  In a worktree, run the local checks from "Verify the seam you changed",
+  browser and integration tests included, and `docker build` when the image
+  changed. Checks against the running development stack wait for this
+  checkout or for CI.
 - Commit as you go, following the rules below; commits need no approval.
   Pushing, opening the pull request, and enabling auto-merge are one block
   that needs one approval: `gh pr create --fill`, then
@@ -295,10 +296,20 @@ fixing them when practical, run focused tests at the highest public seam, then
 widen to the owning package's typecheck, build, documentation checks, or root
 checks only when the boundary requires it.
 
-The `gate` check runs `bun run check`, `bun run test`, the integration suites
-with `CLOUD_TEST_*`, Grids certification, and an image boot smoke for
-`packages/cloud` or `Dockerfile` changes. Run the same locally before opening a
-pull request.
+The `gate` check runs `bun run check`, `bun run test`, and the integration
+suites with `CLOUD_TEST_*`, plus path-filtered jobs such as Grids
+certification, WebKit browser tests, documentation checks, and an image boot
+smoke when their inputs changed. It runs on the pull request and again in the
+merge queue, and its result is authoritative.
+
+Locally, run `bun run --cwd packages/<package> typecheck` and
+`bun run test --filter packages/<package>` for each package you touched; the
+focused run includes the package's behavior and Chromium browser tests. Add
+`bun run test --integration --filter packages/<package>` against the local
+test infrastructure when server code changed. Run the full `bun run check` and
+`bun run test` only when a change touches the repository checks, the build or
+test system, or many packages. Testing owns this rule; see
+[What CI runs](docs-site/docs/en/contributing/testing.md#what-ci-runs).
 
 Review only the owned diff and run `git diff --check`. A finished handoff says
 what behavior changed, which boundaries were checked, what ran, what passed,

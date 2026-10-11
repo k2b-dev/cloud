@@ -45,7 +45,7 @@ export default function RecordsPrimaryToolbar(props: Props) {
   const locale = useLocale();
   const t = () => recordsViewMessages.resolve([locale()]).t;
   return (
-    <div class="flex flex-wrap items-center gap-2 shrink-0">
+    <div class="flex flex-wrap items-center gap-2 shrink-0 pr-[var(--k2b-detail-space,0px)]">
       {/* The search keeps at least 24rem on the row; below that, the count and actions move to their own line together. */}
       <Show when={props.searchableFields.length > 0}>
         <div class="min-w-0 flex-[1_1_24rem]">

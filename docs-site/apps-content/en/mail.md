@@ -268,6 +268,40 @@ Spaces actions, or enabling it again, requires the original author. If Cloud
 denies that change, ask the author to authorize it rather than bypassing the
 check. Cosmetic edits do not restore paused or revoked access.
 
+## Re-run failed incoming automations
+
+A backfill skips every message that an earlier backfill already handed to the
+same automation version, even when that run failed or was canceled. To run such
+messages once more, a mailbox administrator starts a retry backfill:
+
+```bash
+cld --json mail automation backfill start <automation-id> --revision <revision> --retry-failed --yes
+cld --json mail automation backfill status <automation-id> <operation-id>
+```
+
+A retry backfill takes only messages whose latest run of the current automation
+version ended `failed` or `canceled` before the retry started, whether that run
+came from new mail or from an earlier backfill. It never repeats a run that
+succeeded, needs attention, or is still running. Like a normal backfill, it
+hands over at most 100 messages: while the status says `limited`, start another
+retry backfill. Each message runs at most once per retry operation.
+
+A retry runs the whole flow again, including the steps that succeeded before
+the failure. Steps that set a state, such as moves, flags, assignment, status,
+tags, the summary, or a Spaces link, set the same state again. Steps that
+create something on every run would create it a second time, so Cloud refuses
+a retry backfill for flows that add internal comments, create reply drafts, or
+create Spaces events. A run that moved its message before it failed is not
+retried, because the message is no longer where that run found it.
+
+To repair failed runs, use retry backfills alone. A normal backfill is for
+messages that arrived before the automation was active: it hands over every
+matching message that no earlier backfill of this version handed over,
+including messages the automation already processed on arrival, so their steps
+run again. After a retry backfill, the automation menu in Mail settings offers
+**Retry failed messages** to continue with another retry. **Automations >
+Activity** shows how the new runs ended.
+
 ## How Mail fits Cloud
 
 Mail owns mailbox synchronization, conversations, drafts, sending, and mailbox

@@ -261,19 +261,13 @@ export default ssr<AuthContext>(async (c) => {
       title={[
         { title: t.start, href: "/" },
         { title: t.accounts, href: "/app/accounts" },
-        { title: t.users, href: "/app/accounts/users" },
+        // The way up keeps the list's filters this detail was opened from.
+        { title: t.users, href: buildUsersUrl(listState) },
         { title: user.uid },
       ]}
     >
       <AccountsWorkspace active="users" isAdmin={true} pendingRequests={pendingRequestsPage.total} scrollPreserveKey="accounts-user-detail">
         <div class="flex flex-col gap-3">
-          <div>
-            <ButtonLink href={buildUsersUrl(listState)} size="sm" variant="secondary">
-              <i class="ti ti-arrow-left" />
-              Back to Users
-            </ButtonLink>
-          </div>
-
           <div class="flex flex-wrap items-start justify-between gap-3 py-2" style="view-transition-name: accounts-user-title">
             <div class="flex min-w-0 flex-1 items-start gap-3">
               <AccountAvatar name={displayTitle} userId={user.id} avatarHash={user.avatarHash} size="md" />

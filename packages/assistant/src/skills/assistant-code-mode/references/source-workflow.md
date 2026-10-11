@@ -27,7 +27,8 @@ small input schema; there is no app prefix or capability name to translate.
 | --- | --- | --- |
 | `code_create` | `title`, optional `description`, `icon` | Create one private resource; returns `id`, `entry`, and files |
 | `code_read` | `id`, optional `path`, `offset`, `revision` | Current directory without path; file content with path |
-| `code_write` | `id`, `expectedRevision`, `files: [{path, content}]`, optional `entry` | Atomically save a batch and return the new revision plus diagnostics |
+| `code_write` | `id`, `expectedRevision`, `path`, `content`, optional `entry` | Save one file and return the new revision, lines and length per file, and diagnostics |
+| `code_import` | `id`, `expectedRevision`, `files: [{path, fromFile}]`, optional `entry` | Import exact UTF-8 files atomically with one review for the batch |
 | `code_remove` | `id`, `path` | Remove a source file, preserving history and the app |
 | `code_list` | optional `page`, `q` | Find accessible Apps; follow `hasNext` |
 | `code_history` | `id`, optional `page` | List old saved versions for recovery |
@@ -52,20 +53,29 @@ Creation does not start code or share the app.
 {
   "id": "ID returned by code_create",
   "expectedRevision": 1,
-  "files": [
-    { "path": "index.html", "content": "<main><h1>Tips</h1><output id=\"tip\"></output></main>" },
-    { "path": "app.js", "content": "document.querySelector('#tip').textContent = cloud.money.format(cloud.money.fromDecimal('4.20', { currency: 'EUR' }));" }
-  ]
+  "path": "index.html",
+  "content": "<main>\n  <h1>Tips</h1>\n  <output id=\"tip\"></output>\n</main>\n"
 }
 ```
+
+Then write `app.js` the same way, with the revision this call returned. Send
+one `code_write` at a time and wait for its result: calls sent together in one
+response carry the same `expectedRevision`, so every call after the first
+returns `CONFLICT`.
 
 Source tools return `{ok:true,data,...}` or `{ok:false,error}`. Read IDs,
 `revision`, file windows and diagnostics from `data`. A successful write returns
 `data.saved: true`. Diagnostics describe problems in the saved source: compiler
 messages for scripts and actions, and for an HTML app the static findings in its
-JavaScript and CSS. They do not mean the file was rejected. Save related files in one batch. Missing imports
-or syntax errors prevent execution, not intermediate saves. Invalid paths,
+JavaScript and CSS. They do not mean the file was rejected. Missing imports or
+syntax errors prevent execution, not intermediate saves, so an import of a file
+you have not written yet is reported until you save it. Invalid paths,
 permissions, or storage limits still reject the write.
+
+Each file in the result lists `lines` and `length` (UTF-16 units). Check that
+`lines` matches the file you wrote; a trailing newline adds no extra line. If
+the count is lower, the content was cut on the way: read the file and write it
+again before you continue.
 
 Other files stay unchanged. Read the current `revision` before writing and pass
 it as `expectedRevision`; use the returned revision for the next edit. A stale
@@ -120,21 +130,26 @@ Publish creates a release from saved changes.
 If a person edits at the same time, read the latest source before your next
 write; do not overwrite changes you have not inspected.
 
-## Atomic edits and data imports
+## Source edits and file imports
 
-Read the current revision, then save related modules together:
+Write source text with one `code_write` per file. To copy exact file bytes, read
+the current revision and import references together with `code_import`:
 
 ```js
-code_write({ id, expectedRevision: 3, files: [
-  { path: "data.json", fromFile: reference }, // exact reference returned by code_file_stat
-  { path: "main.ts", content: 'import rows from "./data.json"; export default () => ({rows: rows.length});' }
+code_import({ id, expectedRevision: 3, files: [
+  { path: "data.json", fromFile: reference } // exact reference returned by code_file_stat
 ] });
+// Use the returned revision for the next file.
+code_write({ id, expectedRevision: 4, path: "main.ts",
+  content: 'import rows from "./data.json"; export default () => ({rows: rows.length});'
+});
 ```
 
-`fromFile` copies one explicit chat, Project, or App file reference as UTF-8 source.
+`code_import` copies explicit chat, Project, or App `fromFile` references as UTF-8 source.
 Read [File transfers](files.md) to obtain the exact reference with `code_file_stat`.
-Imports receive fresh review because the bytes become source that can be shared
-or published. Export validated data with `code_export`, then inspect it, and avoid
+One fresh review covers the whole import batch because the bytes become source
+that can be shared or published. Imports carry references only, never source
+text. Export validated data with `code_export`, then inspect it, and avoid
 printing/retyping large datasets. A stale revision or file version fails without
 saving any files; re-read before reconciling. Script imports support `.json`
 objects and `.csv`, `.tsv`, `.txt` strings; pass CSV strings to `cloud.sheet.parseCsv`.

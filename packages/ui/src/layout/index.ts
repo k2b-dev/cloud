@@ -109,6 +109,8 @@ export {
   type NavigationOptions,
   type NavigationStatus,
 } from "./navigation-model";
+export type { PageTitleProps, PageTrailLink, PageTrailState } from "./PageTitle";
+export { followPageTrail, PAGE_TRAIL_EVENT, PageTitle, PageTrailProvider, readPageTrail, setPageTrail, usePageTrail } from "./PageTitle";
 export type {
   PanelDialogBodyProps,
   PanelDialogFooterProps,
@@ -137,6 +139,7 @@ export type { PanesItem, PanesProps } from "./Panes";
 export { default as Panes } from "./Panes";
 export type { PullToRefreshProps, PullToRefreshState } from "./PullToRefresh";
 export { default as PullToRefresh } from "./PullToRefresh";
+export { installPageTitleController } from "./page-title-controller";
 export type {
   AddPanesItemOptions,
   PanesDirection,

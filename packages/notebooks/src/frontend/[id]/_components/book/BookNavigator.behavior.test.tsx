@@ -370,7 +370,10 @@ describe("Book view with the notebook navigation hidden", () => {
     );
     const toggle = () => collectContextAwareCommands().find((command) => command.id === "notebooks.navigation.toggle")!;
     const run = () => (toggle().action as () => void)();
-    const showControl = () => dom.document.querySelector<HTMLButtonElement>('.k2b-icon-button[aria-controls="notebook-navigation"]');
+    const showControl = () =>
+      dom.document.querySelector<HTMLButtonElement>(
+        '.k2b-icon-button[aria-controls="notebook-navigation"]:not([data-app-workspace-sidebar-toggle])',
+      );
     try {
       expect(toggle().title).toBe("Hide notebook navigation");
       expect(toggle().shortcut).toBe("mod+alt+s");

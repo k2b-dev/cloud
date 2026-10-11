@@ -1,7 +1,8 @@
 import { children, createMemo, createUniqueId, type JSX, Show } from "solid-js";
 import { Button, type ButtonVariant } from "../actions/Button";
+import { usePromptMessages } from "../feedback/prompt-messages";
 import type { MaybeAccessor } from "../inputs/field-contract";
-import { useUiMessages } from "../intl/messages";
+import { useSettingsMessages } from "./settings-messages";
 
 const read = <T,>(value: MaybeAccessor<T>): T => (typeof value === "function" ? (value as () => T)() : value);
 
@@ -163,7 +164,7 @@ export type SettingsFieldControlProps = {
 };
 
 export function SettingsField(props: SettingsFieldProps): JSX.Element {
-  const messages = useUiMessages();
+  const settingsMessages = useSettingsMessages();
   const id = createUniqueId();
   const descriptionId = `k2b-settings-field-${id}-description`;
   const errorId = `k2b-settings-field-${id}-error`;
@@ -178,7 +179,7 @@ export function SettingsField(props: SettingsFieldProps): JSX.Element {
         <div class="k2b-settings-field__heading">
           <strong>{props.label}</strong>
           <Show when={props.changed !== undefined && read(props.changed)}>
-            <span>{messages().unsaved}</span>
+            <span>{settingsMessages().unsaved}</span>
           </Show>
         </div>
         <p id={descriptionId}>{props.description}</p>
@@ -211,7 +212,8 @@ const SettingsActions = (
     disableWithoutChanges?: boolean;
   },
 ): JSX.Element => {
-  const messages = useUiMessages();
+  const promptMessages = usePromptMessages();
+  const settingsMessages = useSettingsMessages();
   const changeCount = () => read(props.changeCount);
   const loading = () => read(props.loading);
   const disabled = () => loading() || Boolean(props.disableWithoutChanges && changeCount() === 0);
@@ -219,30 +221,30 @@ const SettingsActions = (
   return (
     <div class="k2b-settings-actions">
       <Button variant="secondary" disabled={disabled()} onClick={props.onDiscard}>
-        {messages().discard}
+        {promptMessages().discard}
       </Button>
       <Button
         variant={props.saveVariant ?? "primary"}
         loading={loading()}
-        loadingLabel={messages().saving}
+        loadingLabel={settingsMessages().saving}
         disabled={saveDisabled()}
         onClick={props.onSave}
       >
         <i class="ti ti-device-floppy" aria-hidden="true" />
-        {props.saveLabel ?? messages().saveChanges}
+        {props.saveLabel ?? settingsMessages().saveChanges}
       </Button>
     </div>
   );
 };
 
 export function SettingsSaveBar(props: SettingsSaveBarProps): JSX.Element {
-  const messages = useUiMessages();
+  const settingsMessages = useSettingsMessages();
   const changeCount = () => read(props.changeCount);
   return (
     <Show when={changeCount() > 0}>
       <div class={`k2b-settings-save-bar ${props.class ?? ""}`}>
         <p role="status" aria-live="polite">
-          <strong>{changeCount()}</strong> {messages().unsavedChangeLabel({ count: changeCount() })}
+          <strong>{changeCount()}</strong> {settingsMessages().unsavedChangeLabel({ count: changeCount() })}
         </p>
         <SettingsActions {...props} />
       </div>
@@ -253,13 +255,13 @@ export function SettingsSaveBar(props: SettingsSaveBarProps): JSX.Element {
 export type SettingsPanelFooterProps = SettingsSaveBarProps;
 
 export function SettingsPanelFooter(props: SettingsPanelFooterProps): JSX.Element {
-  const messages = useUiMessages();
+  const settingsMessages = useSettingsMessages();
   const changeCount = () => read(props.changeCount);
   return (
     <>
       <p class="k2b-settings-panel-footer__status" role="status" aria-live="polite">
-        <Show when={changeCount() > 0} fallback={messages().noUnsavedChanges}>
-          <strong>{changeCount()}</strong> {messages().unsavedChangeLabel({ count: changeCount() })}
+        <Show when={changeCount() > 0} fallback={settingsMessages().noUnsavedChanges}>
+          <strong>{changeCount()}</strong> {settingsMessages().unsavedChangeLabel({ count: changeCount() })}
         </Show>
       </p>
       <SettingsActions {...props} disableWithoutChanges />

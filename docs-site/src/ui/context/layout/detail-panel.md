@@ -18,7 +18,9 @@ import { DescriptionList, DetailPanel, NumberInput } from "@k2b/ui";
 
 Place it inside `AppWorkspace.Detail` for persistent selection context, or in
 another host when the same inspector content is reused. The host owns opening,
-closing, sizing, and persistence. The application owns data, permissions,
+closing, sizing, and persistence. AppWorkspace.Detail is a raised floating
+surface. Its sections and groups have no boxes of their own. The application
+owns data, permissions,
 mutations, and which sections are present.
 
 `DetailPanel.Header` keeps identity and actions in one compact region. Pass
@@ -45,10 +47,9 @@ scrollbars keeps the panel at the trailing edge. Do not add a second
 full-height scroller inside it.
 
 Use `DetailPanel.Summary` once, directly below the header, when the selected
-item has a primary set of facts or controls. Summary and grouped sections share
-the same normal surface, while their structure still distinguishes the
-primary overview from related context. Do not repeat the summary for every
-group.
+item has a primary set of facts or controls. In other hosts, the summary keeps
+its own surface. Inside the floating workspace, it shares the panel surface
+and aligns with the header title. Do not repeat the summary for every group.
 
 The panel uses `--k2b-detail-panel-accent` for restrained identity and action
 accents, with the portable UI accent as its fallback. Text actions in section
@@ -83,13 +84,14 @@ The content owns its layout: wrap form controls in a column with a gap.
 
 Use `DetailPanel.Group` when one or more sections form one stable context, such
 as a company and its contacts or a document and its derived metadata. Merge
-adjacent sections when they belong to that same context. The group owns the
-same quiet surface as the summary, without a border or lines between its
-sections: spacing and the section headings separate them. Pass `label` when the
+adjacent sections when they belong to that same context. Outside a floating
+workspace, the group owns the same quiet surface as the
+summary. Inside it, the group is transparent. Spacing and section headings
+separate its sections without borders or lines. Pass `label` when the
 shared context benefits from an accessible group name.
 
-Every section in the body has one flat frame. A section placed directly in
-`DetailPanel.Body` is a group of one: it gets the group surface and inset, so
+A section placed directly in `DetailPanel.Body` is a group of one. It follows
+the group’s surface and inset in its host, so
 its icon, title, count, and content start in the same columns as every grouped
 section. A [`Discussion`](/en/ui/layout/discussion) inside the panel does the
 same. Do not wrap a standalone section in a group only to frame it, and do not
@@ -271,14 +273,14 @@ state and remain mounted when the section closes.
 ## Example
 
 ```tsx
-<AppWorkspace.Detail id="item" open={selectedId() !== null} width="md">
+<AppWorkspace.Detail id="item" open={selectedId() !== null} onClose={closeDetails} width="md">
   <DetailPanel>
     <DetailPanel.Header
       icon="ti ti-building-warehouse"
       title="Studio shelf"
       subtitle="Locations · version 2"
       primaryActions={<Toolbar label="Location actions"><Button size="xs">Edit</Button></Toolbar>}
-      actions={<IconButton label="Close details"><i class="ti ti-x" aria-hidden="true" /></IconButton>}
+      actions={<IconButton label="Close details" onClick={closeDetails}><i class="ti ti-x" aria-hidden="true" /></IconButton>}
     />
     <DetailPanel.Body scrollPreserveKey="location-detail">
       <DetailPanel.Summary title="Overview">

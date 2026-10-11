@@ -14,6 +14,26 @@ describe("local Assistant Bash tool", () => {
     });
   });
 
+  test("removes every CLD_ variable and preserves other environment values", async () => {
+    const previous = process.env.CLD_ASSISTANT_TEST;
+    const previousOther = process.env.ASSISTANT_BASH_TEST;
+    process.env.CLD_ASSISTANT_TEST = "private";
+    process.env.ASSISTANT_BASH_TEST = "kept";
+    try {
+      const result = await runLocalBash('compgen -e; printf "value:%s" "$ASSISTANT_BASH_TEST"', { timeoutMs: 5_000 });
+      expect(result.status).toBe("completed");
+      expect(result.stdout.split("\n").some((key) => key.startsWith("CLD_"))).toBeFalse();
+      expect(result.stdout).toContain("ASSISTANT_BASH_TEST");
+      expect(result.stdout).toContain("value:kept");
+      expect(process.env.CLD_ASSISTANT_TEST).toBe("private");
+    } finally {
+      if (previous === undefined) delete process.env.CLD_ASSISTANT_TEST;
+      else process.env.CLD_ASSISTANT_TEST = previous;
+      if (previousOther === undefined) delete process.env.ASSISTANT_BASH_TEST;
+      else process.env.ASSISTANT_BASH_TEST = previousOther;
+    }
+  });
+
   test("bounds captured output without changing command completion", async () => {
     const result = await runLocalBash("printf '123456'; printf 'abcdef' >&2", {
       timeoutMs: 5_000,

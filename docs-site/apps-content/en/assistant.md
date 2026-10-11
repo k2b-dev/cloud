@@ -379,16 +379,24 @@ messages confirm non-error state changes such as attachments, model selection,
 and stopped turns. Run `/model` without an argument to select an available
 model by number. The model remains active for the session.
 
-Use `cld assistant --allow-bash` when the Assistant must work on the computer
-running the CLI. This exposes a local Bash tool only for that interactive
-session. Every requested command is shown and requires a fresh `Y/n`
-confirmation. Commands run with the current OS user's permissions in the CLI's
-startup directory, and their bounded output is stored in the chat and sent to
-the model. The web app can display these calls later but cannot run them.
+Interactive `cld assistant` offers local tools by default in `ask` mode.
+Use `--no-bash` or `/permissions off` to stop offering them; `--allow-bash`
+selects `ask` for this session even when the profile default is `off`.
+`/permissions` can save the profile default: only `off` is stored, and saving
+`ask` removes it. Every local Bash command is shown and needs a fresh `y`;
+Enter denies. Bash runs as your OS user in the start folder without `CLD_*`
+environment variables. Other variables stay available. Commands and output go
+to this chat and the model. The web app shows the history but cannot run Bash.
+Local Bash is never approved non-interactively and is never remembered.
 
-The interactive CLI offers `a` for **Always approve** only when the pending
-Capability Action supports remembered approval. Print mode never creates a
-remembered approval, and local Bash always requires a fresh confirmation.
+Cloud approvals use numbered **Approve once**, **Approve for this chat**, and
+**Always approve** choices where allowed; Enter rejects. When only one-time
+approval is possible, `Approve? [y/N]` accepts `y` or `yes` and rejects Enter,
+`n`, or `no`. Typed-ahead or pasted input never answers an approval. Websites
+cannot be remembered from cld. Use `/approvals` or `cld assistant approvals
+list|revoke` to review and revoke remembered Cloud approvals, including
+websites saved in the web. `list --chat <chat-id>` lists only that chat's
+approvals. Print mode never creates a remembered approval.
 
 Start with these read-only checks before choosing a model or continuing a chat:
 
@@ -598,11 +606,12 @@ call that the app did not handle also shows a notice outside the app. Cloud
 words every message outside the app itself, from the failure's code; text from
 the app appears only in the console.
 
-`code_write` reports static problems in an app's JavaScript and CSS, and
-`code_present` refuses an app with errors such as CDN scripts, missing imports
-or inline handlers. Apps do not run in `code_run`. Before an agent opens,
-presents or publishes an app, `code_check` renders it on desktop and phone,
-replays its main flow on throwaway data and returns screenshots and findings.
+`code_write` saves one file per call and reports static problems in an app's
+JavaScript and CSS, and `code_present` refuses an app with errors such as CDN
+scripts, missing imports or inline handlers. Apps do not run in `code_run`.
+Before an agent opens, presents or publishes an app, `code_check` renders it on
+desktop and phone, replays its main flow on throwaway data and returns
+screenshots and findings.
 
 ### Store data and combine Cloud actions
 
@@ -901,10 +910,10 @@ overwrite newer data.
 
 Use `assistant code files`, `assistant code file-stat`, and
 `assistant code file-copy --yes` with JSON input files for the same CLI flow.
-`code_write` also accepts `{path,fromFile:reference}` for reviewed UTF-8 source
-imports. This replaces the former chat-only `fromChatFile` input. Imported data
-becomes source and can be published; ordinary runtime data belongs in shared
-files or the database instead.
+`code_import` copies `files: [{path,fromFile:reference}]` as UTF-8 source after
+one review for the whole batch. Imported data becomes source and can be
+published; ordinary runtime data belongs in shared files or the database
+instead.
 
 ### Reusable action examples
 
@@ -923,6 +932,7 @@ suite runs their published handlers in the isolated Studio runtime.
 | Find Apps, inspect source and revisions | `code_list`, `code_read`, `code_history` |
 | Change working title, description or icon; make a private copy | `code_update`, `code_fork` |
 | Create, edit or remove source files | `code_create`, `code_write`, `code_remove` |
+| Import exact files as source | Reviewed `code_import` |
 | Run scripts and actions, inspect, export results or stop | `code_run`, `code_action`, `code_inspect`, `code_export`, `code_stop` |
 | Open an app, show it in chat, publish, withdraw or restore a publication | `code_open`, `code_present`, `code_publish`, `code_unpublish`, `code_restore` |
 | Read and change grants | `code_access_read`, reviewed `code_access_change` |

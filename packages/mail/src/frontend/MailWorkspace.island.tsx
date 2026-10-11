@@ -1746,6 +1746,7 @@ function MailWorkspaceView(props: {
                   canAdmin={canAdmin()}
                   mailboxWide={!assignedOnly()}
                   identities={data.identities}
+                  onOpenDeliverySettings={() => void openSettings("delivery")}
                   selectionKey={data.selectedMessageId ?? data.selectedConversationId}
                   selectedConversationId={data.selectedConversationId}
                   selectedMessageId={data.selectedMessageId}
@@ -1832,7 +1833,13 @@ function MailWorkspaceView(props: {
             </Show>
           </Show>
         </AppWorkspace.Main>
-        <AppWorkspace.Detail id="mail-context" open={detailsOpen() && canShowDetails()} width="lg" maxWidth={520}>
+        <AppWorkspace.Detail
+          id="mail-context"
+          open={detailsOpen() && canShowDetails()}
+          onClose={() => setDetailsVisible(false)}
+          width="lg"
+          maxWidth={520}
+        >
           <Show
             when={data.selectedConversationId && data.collaborationState && data.conversationLocalTags}
             fallback={

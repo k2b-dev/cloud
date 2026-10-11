@@ -5,7 +5,7 @@ section: Frontend
 order: 810
 description: Render application pages on the server and map them to explicit routes.
 tags: [ssr, routing, solidjs]
-updated: 2026-10-04
+updated: 2026-10-10
 ---
 
 # SSR pages and routing
@@ -39,6 +39,14 @@ export default ssr<AuthContext>(async (c) => {
 ```
 
 Load data, redirect, and set metadata before the returned function.
+
+A page deeper in the application passes the pages above it as a title array,
+for example `title={[{ title: "Users", href: "/app/accounts/users" }, { title: user.uid }]}`.
+That is all an application provides: the shell derives the back link, the
+path, and **One level up** from it, and returns to the page above as the tab
+left it. An application that draws its own page header places `PageTrail`
+from `@k2b/cloud/ssr/islands` in it. See
+[Show the way up](/en/docs/frontend/layout-and-navigation#show-the-way-up).
 
 Every rendered page is sent with `Cache-Control: private, no-store`, so the
 browser does not show a signed-in page from its HTTP cache on Back. A page that

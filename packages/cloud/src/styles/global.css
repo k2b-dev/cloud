@@ -281,8 +281,12 @@ solid-island {
   }
 }
 
-/* Cloud has exactly two shell modes: mobile below lg, desktop from lg. */
-@media (max-width: 1023px) {
+/* Cloud has three shell modes. Phones, below md, get the header and no rail.
+   From md, signed-in people get the rail instead of the header: up to 2xl the
+   app area meets the window's top, right and bottom edges, and from 2xl it is
+   a card with the shell spacing. Anonymous pages keep the header and the card
+   from md. */
+@media (max-width: 767px) {
   .cloud-app-canvas {
     padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
   }
@@ -307,6 +311,35 @@ solid-island {
     --k2b-toast-offset-top: 2.875rem;
   }
 
+}
+
+/* Flush: the app area is one opaque surface from the rail to the window's
+   edges, without padding, radius, shadow, or border. The rail keeps the app
+   canvas, so the change of surface alone separates the two; no line does. The
+   outermost workspace and the notices above it lose their frame, so nothing
+   draws a box inside the app area. */
+@media (min-width: 768px) and (max-width: 1535px) {
+  .cloud-app-canvas[data-layout-authenticated] {
+    padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+  }
+  .cloud-app-canvas[data-layout-authenticated] > .layout-rail {
+    width: 3rem;
+    margin-inline-start: 0;
+    padding-bottom: var(--ui-space-shell);
+  }
+  .cloud-app-canvas[data-layout-authenticated] > .layout-shell-content {
+    gap: 0;
+    background: var(--k2b-surface);
+  }
+  .cloud-app-canvas[data-layout-authenticated] .layout-content-main .k2b-app-workspace:not(.k2b-app-workspace *) {
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .cloud-app-canvas[data-layout-authenticated] > .layout-shell-content > :not(.layout-content-main) .k2b-notice-card {
+    border: 0;
+    border-radius: 0;
+  }
 }
 
 .cloud-mobile-menu .k2b-panel-dialog__header {

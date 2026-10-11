@@ -22,12 +22,12 @@ afterAll(async () => {
 // Spaces' appearance, written onto the canvas as the shell does for its routes.
 const canvasStyle = appAppearanceStyle({ accent: "#4d7c0f", background: { from: "#65a30d", to: "#84cc16", angle: 135 } });
 
-const canvasBackground = async (theme: "light" | "dark", width: number) => {
+const canvasBackground = async (theme: "light" | "dark", width: number, authenticated: boolean) => {
   const page = await browser.newPage({ viewport: { width, height: 800 } });
   try {
     await page.setContent(
       `<html class="${theme === "dark" ? "dark" : ""}"><head><style>${css}</style></head><body>` +
-        `<div class="cloud-app-canvas" style="${canvasStyle}"><span style="color: var(--ui-surface)"></span></div></body></html>`,
+        `<div class="cloud-app-canvas" ${authenticated ? 'data-layout-authenticated="true"' : ""} style="${canvasStyle}"><span style="color: var(--ui-surface)"></span></div></body></html>`,
     );
     return await page.evaluate(() => {
       const canvas = document.querySelector(".cloud-app-canvas")!;
@@ -42,15 +42,21 @@ const canvasBackground = async (theme: "light" | "dark", width: number) => {
   }
 };
 
-test("phones get the flat surface in both themes and the app gradient starts at lg", async () => {
-  const widths = [390, 1023, 1024, 1440];
+// Signed in, the gradient shows behind the app bar from md; anonymous pages show it around their cards.
+test("phones get the flat surface in both themes and the app gradient starts at md", async () => {
+  const widths = [390, 767, 768, 1440, 1536];
   const actual = [];
-  for (const theme of ["light", "dark"] as const) {
-    for (const width of widths) actual.push({ theme, width, background: await canvasBackground(theme, width) });
+  for (const authenticated of [false, true]) {
+    for (const theme of ["light", "dark"] as const) {
+      for (const width of widths)
+        actual.push({ authenticated, theme, width, background: await canvasBackground(theme, width, authenticated) });
+    }
   }
   expect(actual).toEqual(
-    (["light", "dark"] as const).flatMap((theme) =>
-      widths.map((width) => ({ theme, width, background: width < 1024 ? "surface" : "gradient" })),
+    [false, true].flatMap((authenticated) =>
+      (["light", "dark"] as const).flatMap((theme) =>
+        widths.map((width) => ({ authenticated, theme, width, background: width < 768 ? "surface" : "gradient" })),
+      ),
     ),
   );
-}, 30_000);
+}, 60_000);

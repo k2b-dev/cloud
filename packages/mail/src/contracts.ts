@@ -2660,6 +2660,7 @@ export const startIncomingAutomationBackfillInputSchema = z
   .object({
     operationId: z.string().uuid(),
     expectedRevision: z.number().int().positive(),
+    retryFailed: z.boolean().optional(),
   })
   .strict();
 export type StartIncomingAutomationBackfillInput = z.infer<typeof startIncomingAutomationBackfillInputSchema>;
@@ -2669,11 +2670,20 @@ export const incomingAutomationBackfillSchema = z
     operationId: z.string().uuid(),
     automationId: ResourceShortIdSchema,
     workflowVersionId: z.string().uuid(),
+    retryFailed: z.boolean(),
     /** `limited`: the run applied its per-run limit and `remainingCount` candidates still need another backfill. */
     state: z.enum(["queued", "running", "waiting", "completed", "limited", "failed", "canceled"]),
+    /**
+     * Frozen at start: matching messages up to the cutoff. Retry candidates are messages whose latest
+     * run of this version ended failed or canceled before the backfill started; runs that fail later
+     * are left for the next retry backfill.
+     */
     candidateCount: z.number().int().nonnegative(),
+    /** Candidates already handed over at start; frozen and always zero in retry mode. */
     alreadyAcceptedCount: z.number().int().nonnegative(),
+    /** Messages this operation handed over (re-ran in retry mode); never decreases. */
     newlyAcceptedCount: z.number().int().nonnegative(),
+    /** Candidates this operation has not handed over yet. */
     remainingCount: z.number().int().nonnegative(),
     failureCount: z.number().int().nonnegative(),
     lastError: z.string().nullable(),
@@ -2922,6 +2932,15 @@ export const senderIdentityTransportSchema = z.object({
 });
 export type SenderIdentityTransport = z.infer<typeof senderIdentityTransportSchema>;
 
+/**
+ * Why a sender identity cannot send yet, as a stable code that clients translate; `null` once it is verified.
+ * `sent_folder_missing`: no Sent folder is set and the provider was not verified as saving sent mail itself.
+ * `provider_rejected`: the provider refused the last verification message.
+ * `verification_required`: the identity is configured and waits for a verification message.
+ */
+export const senderIdentityStatusReasonSchema = z.enum(["sent_folder_missing", "provider_rejected", "verification_required"]);
+export type SenderIdentityStatusReason = z.infer<typeof senderIdentityStatusReasonSchema>;
+
 export const senderIdentitySchema = z.object({
   id: ResourceShortIdSchema,
   mailboxId: ResourceShortIdSchema,
@@ -2944,6 +2963,7 @@ export const senderIdentitySchema = z.object({
   draftsFolderId: ResourceShortIdSchema.nullable(),
   isDefault: z.boolean(),
   status: z.enum(["unverified", "verified", "rejected", "disabled"]),
+  statusReason: senderIdentityStatusReasonSchema.nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });

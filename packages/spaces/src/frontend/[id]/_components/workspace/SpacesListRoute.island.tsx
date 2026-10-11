@@ -1,12 +1,13 @@
 import type { DateContext } from "@k2b/stdlib";
 import { Button, Pagination, Placeholder, ScrollArea } from "@k2b/ui";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
-import type { ItemListResult, SpaceColumn, SpaceItemTemplate, SpaceTag } from "@/contracts";
+import type { ItemListResult, SpaceColumn, SpaceItem, SpaceItemTemplate, SpaceTag } from "@/contracts";
 import { subscribeToDetailSelection } from "../../../lib/detail";
 import { useSpaceMessages } from "../../messages";
 import FilterBar from "../filter/FilterBar";
 import { buildFilterUrl, defaultFilter, type FilterState, hasActiveFilters } from "../filter/types";
 import ItemsList from "../list";
+import { createLeavingItems } from "../shared/leaving";
 import CreateItemButton from "../sidebar/CreateItemButton";
 import ItemsTable from "../table/ItemsTable";
 import { useSpacesRouteQuery } from "./route-query";
@@ -39,6 +40,8 @@ export default function SpacesListRoute(props: Props) {
     domains: ["view"],
   });
   const itemsResult = () => view.current().itemsResult;
+  /** Rows a tick just took out of the list stay a moment, so the list does not empty under the pointer. */
+  const leaving = createLeavingItems<SpaceItem>();
   const baseUrl = () => view.current().source;
   const paginationBaseUrl = () => {
     const url = new URL(baseUrl(), "http://spaces.local");
@@ -79,7 +82,7 @@ export default function SpacesListRoute(props: Props) {
       />
       <Show when={view.error()}>
         {(error) => (
-          <div class="flex items-center justify-between gap-2 py-1 text-xs text-red-600" role="alert">
+          <div class="flex items-center justify-between gap-2 py-1 pr-[var(--k2b-detail-space,0px)] text-xs text-red-600" role="alert">
             <span>{error().message}</span>
             <Button type="button" variant="ghost" size="xs" disabled={view.busy()} onClick={() => void view.refresh()}>
               {t.retry}
@@ -90,7 +93,7 @@ export default function SpacesListRoute(props: Props) {
       <div class="h-2" />
 
       <ScrollArea class="flex-1" scrollPreserveKey={`spaces-main-${props.spaceId}`}>
-        {itemsResult().items.length === 0 ? (
+        {itemsResult().items.length === 0 && leaving.held().size === 0 ? (
           !hasActiveFilters(view.filter()) ? (
             <Placeholder
               icon="ti ti-checkbox"
@@ -148,11 +151,12 @@ export default function SpacesListRoute(props: Props) {
             dateConfig={props.dateConfig}
             canWrite={props.canWrite}
             currentUserId={props.currentUserId}
+            leaving={leaving}
           />
         )}
 
         {itemsResult().totalPages > 1 && (
-          <div class="py-2">
+          <div class="py-2 pr-[var(--k2b-detail-space,0px)]">
             <Pagination currentPage={itemsResult().page} totalPages={itemsResult().totalPages} baseUrl={paginationBaseUrl()} />
           </div>
         )}

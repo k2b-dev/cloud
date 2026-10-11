@@ -158,6 +158,12 @@ const portableSections = [
         "ti ti-arrow-bar-to-down",
         "Touch pull, mouse drag, or wheel overscroll at the top of a list that runs one refresh.",
       ),
+      page(
+        "page-title",
+        "PageTitle",
+        "ti ti-chevron-left",
+        "A page title with its way up: a back link, or a path whose middle collapses only when it does not fit.",
+      ),
       page("panes", "Panes", "ti ti-columns", "Controlled serializable tabs and nested split layouts."),
       page("overview", "AppOverview", "ti ti-home", "Application landing page with primary and supporting panels."),
       page("settings-modal", "Settings", "ti ti-settings", "Accessible settings tabs, fields, and save state."),
@@ -353,7 +359,7 @@ const cloudEntries = cloudPages.map((page, pageIndex) => entry("cloud", "Cloud c
 export const uiCatalogEntries: UiCatalogEntry[] = [...portableEntries, ...cloudEntries];
 
 /** Runtime component exports from @k2b/ui. Kept honest by check-ui-catalog.ts. */
-export const portableUiComponentCount = 133;
+export const portableUiComponentCount = 135;
 
 export const uiCatalogSections: UiCatalogSection[] = [
   ...portableSections.map((section) => ({
@@ -474,4 +480,11 @@ export const documentedOnlyUiCatalogExports = {
   shouldCollapseAppWorkspaceSidebar: "Documented AppWorkspace responsive-state helper.",
   suppressTextSelection: "Documented AppWorkspace helper that keeps a custom pointer drag from selecting page text.",
   syncThemeColor: "Documented MobileShell status-bar helper that changes the live document.",
+  PAGE_TRAIL_EVENT: "Documented PageTitle window event that follows each published page trail.",
+  PageTrailProvider: "Documented PageTitle host provider; the catalog shows titles with fixed trails instead.",
+  followPageTrail: "Documented PageTitle helper that keeps server-rendered titles in step with a new trail.",
+  installPageTitleController: "Documented PageTitle path-collapse controller for titles that never hydrate.",
+  readPageTrail: "Documented PageTitle reader of the trail a host published.",
+  setPageTrail: "Documented PageTitle publisher for a new trail after an in-page navigation.",
+  usePageTrail: "Documented PageTitle accessor for the host's trail.",
 } as const satisfies Record<string, string>;

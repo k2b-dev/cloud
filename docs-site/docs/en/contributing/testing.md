@@ -14,7 +14,7 @@ Cloud has two kinds of tests. Unit, render, and behavior tests run anywhere.
 Integration tests need real infrastructure and run only when you point them at
 it explicitly.
 
-## Run the fast checks
+## Run every check
 
 ```bash
 bun run check
@@ -36,7 +36,8 @@ Both commands are heavy: one machine runs only one of them at a time. A second
 `bun run check` or `bun run test`, for example in another worktree, waits for
 the first and says so. Package typechecks use two checker threads each, and the
 typecheck rule runs as many of them in parallel as the machine's memory allows
-(about 8 GiB per package). CI runs without the lock.
+(about 8 GiB per package). CI runs without the lock. Before a pull request,
+the focused checks in [What CI runs](#what-ci-runs) are usually enough.
 
 The localization check also rejects hard-coded prose in frontends whose text
 comes only from message catalogs, currently Mail: JSX text and expressions,
@@ -50,13 +51,6 @@ built-in application passes to `app.start()` and requires a German title and
 description for every Type, Query, Action, Command, and Universal Search tag.
 The Assistant, approvals, search, and the capability catalog show these
 texts to German readers.
-
-For one package:
-
-```bash
-bun run --cwd packages/grids typecheck
-bun run test --filter packages/grids
-```
 
 ## Write behavior tests
 
@@ -481,11 +475,33 @@ through their own runner with disposable containers. See
 
 ## What CI runs
 
-The pull request `gate` runs `bun run check`, `bun run test`, the integration
-suites against PostgreSQL 17, NATS JetStream, Valkey, and Gotenberg, the Grids
-certification, and an image boot smoke when `packages/cloud` or the
-`Dockerfile` changed.
-Run the same commands locally before opening a pull request.
+The pull request `gate` runs `bun run check`, `bun run test`, and the
+integration suites against PostgreSQL 17, NATS JetStream, Valkey, and
+Gotenberg. Path-filtered jobs, such as the Grids certification, the WebKit
+browser tests, the documentation checks, and the image boot smoke, run when
+their inputs changed. The gate runs on the pull request and again in the merge
+queue, and its result is authoritative.
+
+Locally, run the typecheck and the focused tests of each package you touched,
+for example:
+
+```bash
+bun run --cwd packages/grids typecheck
+bun run test --filter packages/grids
+```
+
+The focused run includes the package's behavior tests and its browser tests in
+Chromium, so it also covers a UI change. When you changed server code, add
+`bun run test --integration --filter packages/grids` with the `CLOUD_TEST_*`
+targets from [Run integration tests](#run-integration-tests). A documentation
+change runs the checks in
+[Document Cloud core changes](/en/docs/contributing/document-cloud-core-changes#run-the-relevant-checks).
+Run the full `bun run check` and `bun run test` only when you change the
+repository checks, the build or test system, or many packages.
+
+The Grids jobs run Gotenberg at debug log level, so the service log at the end
+of a failed job contains LibreOffice's own error message for a failed PDF/A
+conversion.
 
 An integration suite that starts its own container needs only Docker and its
 `CLOUD_TEST_*` targets, so it runs in the gate as well; the Files

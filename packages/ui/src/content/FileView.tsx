@@ -1,3 +1,6 @@
+import { useMarkdownEditorMessages } from "../inputs/markdown/editor-messages";
+import { useDataTableMessages } from "./data-table-messages";
+import { useFileViewMessages } from "./file-view-messages";
 /**
  * FileView — renders one file through a small renderer registry keyed by
  * media type / path. Editing is enabled purely by the presence of `save`;
@@ -224,13 +227,13 @@ function EditorToolButton(props: { icon: string; title: string; onClick: () => v
 // ── Built-in renderers ──────────────────────────────────────────────────────
 
 function MoreLines(props: { count: number; onClick?: () => void }) {
-  const messages = useUiMessages();
+  const fileViewMessages = useFileViewMessages();
   return (
     <Show when={props.count > 0}>
       <div class="k2b-content-file-view__truncated">
-        <Show when={props.onClick} fallback={<span>{messages().previewMoreLines(props.count)}</span>}>
+        <Show when={props.onClick} fallback={<span>{fileViewMessages().previewMoreLines(props.count)}</span>}>
           <Button size="sm" variant="ghost" onClick={props.onClick}>
-            {messages().previewMoreLines(props.count)}
+            {fileViewMessages().previewMoreLines(props.count)}
           </Button>
         </Show>
       </div>
@@ -316,6 +319,8 @@ function MarkdownRenderer(props: FileViewRendererProps) {
 
 function TextRenderer(props: FileViewRendererProps) {
   const messages = useUiMessages();
+  const fileViewMessages = useFileViewMessages();
+  const markdownEditorMessages = useMarkdownEditorMessages();
   return (
     <Show
       when={props.editor}
@@ -333,7 +338,7 @@ function TextRenderer(props: FileViewRendererProps) {
             class="k2b-markdown-editor"
             data-fill="true"
             role="group"
-            aria-label={messages().textEditor}
+            aria-label={fileViewMessages().textEditor}
             onKeyDown={(event) => {
               if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
                 event.preventDefault();
@@ -358,7 +363,7 @@ function TextRenderer(props: FileViewRendererProps) {
                 </Show>
                 <EditorToolButton
                   icon={editor().saving() ? "ti ti-loader-2 k2b-spin" : "ti ti-device-floppy"}
-                  title={messages().saveShortcut}
+                  title={markdownEditorMessages().saveShortcut}
                   disabled={!editor().dirty() || editor().saving()}
                   onClick={() => void editor().save()}
                 />
@@ -410,6 +415,8 @@ function JsonRenderer(props: FileViewRendererProps) {
 
 function DelimitedTextRenderer(props: FileViewRendererProps) {
   const messages = useUiMessages();
+  const fileViewMessages = useFileViewMessages();
+  const dataTableMessages = useDataTableMessages();
   const [preferences, setPreferences] = createSignal<DelimitedPreferences>({ encoding: "utf-8", delimiter: "auto", view: "table" });
   onMount(() => {
     if (!props.previewPreferencesKey) return;
@@ -451,7 +458,7 @@ function DelimitedTextRenderer(props: FileViewRendererProps) {
       () => (
         <div class="k2b-content-file-view__settings">
           <Select
-            label={messages().csvEncoding}
+            label={fileViewMessages().csvEncoding}
             value={preferences().encoding}
             disabled={props.content.encoding !== "base64"}
             options={["utf-8", "windows-1252", "utf-16le", "utf-16be"]}
@@ -460,13 +467,13 @@ function DelimitedTextRenderer(props: FileViewRendererProps) {
             }}
           />
           <Select
-            label={messages().csvSeparator}
+            label={fileViewMessages().csvSeparator}
             value={preferences().delimiter}
             options={[
-              { value: "auto", label: messages().csvDefaultSeparator },
-              { value: ",", label: messages().csvComma },
-              { value: ";", label: messages().csvSemicolon },
-              { value: "\t", label: messages().csvTab },
+              { value: "auto", label: fileViewMessages().csvDefaultSeparator },
+              { value: ",", label: fileViewMessages().csvComma },
+              { value: ";", label: fileViewMessages().csvSemicolon },
+              { value: "\t", label: fileViewMessages().csvTab },
               { value: "|", label: "|" },
             ]}
             onValueChange={(value) => {
@@ -474,11 +481,11 @@ function DelimitedTextRenderer(props: FileViewRendererProps) {
             }}
           />
           <Select
-            label={messages().csvView}
+            label={fileViewMessages().csvView}
             value={preferences().view}
             options={[
-              { value: "table", label: messages().dataTable },
-              { value: "raw", label: messages().csvRaw },
+              { value: "table", label: dataTableMessages().dataTable },
+              { value: "raw", label: fileViewMessages().csvRaw },
             ]}
             onValueChange={(value) => {
               if (value === "table" || value === "raw") update({ view: value });
@@ -486,7 +493,7 @@ function DelimitedTextRenderer(props: FileViewRendererProps) {
           />
         </div>
       ),
-      { title: messages().csvSettings },
+      { title: fileViewMessages().csvSettings },
     );
   const headers = createMemo(() => preview().rows[0] ?? []);
   const rows = createMemo(() => preview().rows.slice(1));
@@ -495,7 +502,7 @@ function DelimitedTextRenderer(props: FileViewRendererProps) {
     <OverlayPanel
       actions={
         <>
-          <OverlayAction icon="ti-adjustments-horizontal" title={messages().csvSettings} onClick={() => void settings()} />
+          <OverlayAction icon="ti-adjustments-horizontal" title={fileViewMessages().csvSettings} onClick={() => void settings()} />
           <DownloadAction {...props} />
         </>
       }
@@ -503,7 +510,9 @@ function DelimitedTextRenderer(props: FileViewRendererProps) {
       <Show when={preferences().view === "table"} fallback={<TextExcerpt renderer={props} text={text()} />}>
         <Show
           when={headers().length > 0}
-          fallback={<Placeholder icon="ti ti-table" title={messages().emptyFile} description={messages().delimitedFileEmpty} />}
+          fallback={
+            <Placeholder icon="ti ti-table" title={fileViewMessages().emptyFile} description={fileViewMessages().delimitedFileEmpty} />
+          }
         >
           <div class="k2b-content-file-view__sheet">
             <table class="k2b-content-file-view__table">
@@ -512,7 +521,7 @@ function DelimitedTextRenderer(props: FileViewRendererProps) {
                   <For each={headers()}>
                     {(header, index) => (
                       <th scope="col">
-                        <span>{header || messages().column({ number: index() + 1 })}</span>
+                        <span>{header || fileViewMessages().column({ number: index() + 1 })}</span>
                       </th>
                     )}
                   </For>
@@ -529,7 +538,7 @@ function DelimitedTextRenderer(props: FileViewRendererProps) {
               </tbody>
             </table>
             <Show when={preview().columnsTruncated}>
-              <div class="k2b-content-file-view__truncated">{messages().previewColumnsLimited}</div>
+              <div class="k2b-content-file-view__truncated">{fileViewMessages().previewColumnsLimited}</div>
             </Show>
             <Show
               when={props.previewLines !== undefined}
@@ -590,7 +599,7 @@ const pdfBlob = (content: FileViewContent): Blob => {
  * would leave a native viewer empty.
  */
 function PdfRenderer(props: FileViewRendererProps) {
-  const messages = useUiMessages();
+  const fileViewMessages = useFileViewMessages();
   // A new Blob remounts the preview, so changed bytes show the new file. A revision refetch
   // often returns the same bytes (the Assistant refetches on every tool step); keeping the
   // Blob then keeps the reader's page instead of reloading the viewer.
@@ -605,7 +614,7 @@ function PdfRenderer(props: FileViewRendererProps) {
         <Show
           keyed
           when={blob()}
-          fallback={<Placeholder icon="ti ti-file-type-pdf" title="PDF" description={messages().noInlinePreview} />}
+          fallback={<Placeholder icon="ti ti-file-type-pdf" title="PDF" description={fileViewMessages().noInlinePreview} />}
         >
           {(pdf) => (
             // Composed without the standalone heading: the host already names the file, and the frame keeps the
@@ -628,7 +637,7 @@ function PdfRenderer(props: FileViewRendererProps) {
 }
 
 function AudioRenderer(props: FileViewRendererProps) {
-  const messages = useUiMessages();
+  const fileViewMessages = useFileViewMessages();
   return (
     <OverlayPanel actions={<DownloadAction {...props} />}>
       <div class="k2b-content-file-view__media" data-kind="audio">
@@ -640,7 +649,7 @@ function AudioRenderer(props: FileViewRendererProps) {
           src={mediaSource(props)}
           aria-label={props.file.path}
         >
-          {messages().audioUnsupported}
+          {fileViewMessages().audioUnsupported}
         </audio>
       </div>
     </OverlayPanel>
@@ -676,11 +685,12 @@ function VideoRenderer(props: FileViewRendererProps) {
 
 function BinaryRenderer(props: FileViewRendererProps) {
   const messages = useUiMessages();
+  const fileViewMessages = useFileViewMessages();
   return (
     <Placeholder
       icon="ti ti-file-unknown"
-      title={messages().noPreview}
-      description={props.content.mediaType || messages().binaryFile}
+      title={fileViewMessages().noPreview}
+      description={props.content.mediaType || fileViewMessages().binaryFile}
       action={
         <Show when={props.downloadHref}>
           {(href) => (
@@ -742,6 +752,7 @@ export const formatFileViewSize = (bytes: number): string => {
 
 export default function FileView(props: FileViewProps) {
   const messages = useUiMessages();
+  const fileViewMessages = useFileViewMessages();
   const [draft, setDraft] = createSignal("");
   const [savedDraft, setSavedDraft] = createSignal("");
   const [nativeRevision, setNativeRevision] = createSignal(0);
@@ -754,7 +765,7 @@ export default function FileView(props: FileViewProps) {
     },
     onSuccess: (saved) => {
       if (props.file.path === saved.path) setSavedDraft(saved.content);
-      toast.success(messages().fileSaved);
+      toast.success(fileViewMessages().fileSaved);
     },
     onError: (error) => toast.error(error.message),
   });
@@ -862,7 +873,11 @@ export default function FileView(props: FileViewProps) {
             <Placeholder icon="ti ti-loader-2" title={messages().loading} />
           </Match>
           <Match when={content.error}>
-            <Placeholder icon="ti ti-alert-circle" title={messages().failedLoadFile} description={String(content.error?.message ?? "")} />
+            <Placeholder
+              icon="ti ti-alert-circle"
+              title={fileViewMessages().failedLoadFile}
+              description={String(content.error?.message ?? "")}
+            />
           </Match>
           <Match when={resolvedContent() && renderer()}>
             {(active) => {

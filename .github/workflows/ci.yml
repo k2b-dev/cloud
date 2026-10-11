@@ -308,6 +308,12 @@ jobs:
       gotenberg:
         image: *gotenberg-image
         ports: ["3001:3000"]
+        # Gotenberg logs LibreOffice's own error (unoconverter stderr) only at
+        # debug level; without it a failed PDF/A conversion is just "exit
+        # status 1" (#926). A shard sends fewer than ten requests, so the
+        # service log printed at the end of the job stays small.
+        env:
+          LOG_LEVEL: debug
     env:
       CLOUD_TEST_DATABASE_URL: postgres://grids_test:grids_test@127.0.0.1:5432/grids_test
       CLOUD_TEST_NATS_SERVERS: nats://127.0.0.1:4222

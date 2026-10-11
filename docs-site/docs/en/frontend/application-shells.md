@@ -5,7 +5,7 @@ section: Frontend
 order: 830
 description: Choose the shared shell that matches an application's information structure.
 tags: [shells, workspace, ui]
-updated: 2026-10-07
+updated: 2026-10-10
 ---
 
 # Application shells
@@ -82,11 +82,39 @@ Selection belongs in the URL. The server must be able to render the same
 detail after reload. See
 [URL state and navigation](/en/docs/frontend/url-state-and-navigation).
 
-`AppWorkspace.Content` is the required flex row for `Main` and `Detail`.
+`AppWorkspace.Content` hosts Main and floating Detail. Detail must be a direct
+child, possibly through a Solid island wrapper.
 Keep geometry IDs stable. Do not add another grid or resize handle.
 
-Authenticated desktop layouts expose Help and Search through the application
-rail. Their header controls are compact-layout fallbacks and stay mobile-only.
+From 768 px, signed-in layouts expose Help and Search through the app bar.
+Their header controls exist only on phones.
+
+## Add contextual detail
+
+Below 768 px, Detail is a sheet over the lower 55% of the window, also on pages
+without `fullPage` that grow with their content. Main’s rows scroll above it;
+the grabber switches to full height. From 768 px, it floats 8 px inside
+Content and Main makes room while keeping at least 320 px. On coarse pointers
+from 768 to 1023 px, a closable detail overlays Main as a drawer. The host’s
+app card from 1536 px surrounds this same workspace geometry.
+
+In a hydrated component, pass `onClose` the panel’s existing close or deselect
+action. Escape and dismissal gestures then use that action too. A detail that
+the page renders on the server only cannot pass a function; mark the panel’s
+own close button or link with `data-workspace-detail-close`, and Escape and
+the gestures click it. Omit both for permanent context. The application still
+owns `open` and URL selection. The panel’s Escape, J, K, and F6 run after the
+page’s own keyboard handlers, so a handler that uses one of these keys for
+local state calls `preventDefault()`.
+
+Add `k2b-detail-trail` to the horizontal scroll container of a board, wide
+table, or week calendar that should continue under the panel. For DataTable,
+pass `scrollClass="k2b-detail-trail"`. Main keeps its width and the scroller
+adds space at its end. Add `var(--k2b-detail-space, 0px)` to the trailing
+padding of every fixed row in Main, such as toolbars, filters, error rows, and
+pagination. The variable is zero when Main reflows. See
+[AppWorkspace](/en/ui/layout/workspace#floating-detail) for focus, keyboard
+shortcuts, gestures, motion, and sizing.
 
 ## Choose a dialog
 
@@ -107,7 +135,7 @@ Inspect current examples in the [UI catalog](/ui).
 
 ## Supply mobile navigation
 
-Cloud owns one mobile menu below 1024 px. The header launcher opens the current
+Cloud owns one mobile menu below 768 px. The header launcher opens the current
 workspace menu by default; **All apps** switches to the application grid.
 The sheet header combines the workspace name and **All apps** in one segmented
 control. An application without its own navigation gets no header row: the
@@ -115,8 +143,14 @@ sheet shows only the application grid, and the handle, backdrop, Escape, and
 Back dismiss it. All apps uses a three-column grid and a local search over app
 names and descriptions. Signed-in users also find their profile, theme, language, and
 sign-out actions there; the mobile header has no separate profile menu.
-At 1024 px and above, the existing desktop rail and workspace sidebar apply.
-There is no intermediate tablet menu.
+From 768 px the app bar replaces the header, and `AppWorkspace` shows its own
+navigation. Between 768 and 1023 px, a tablet range, the workspace keeps its
+list panes side by side, and its sidebar is an overlay: the head at the
+top of the workspace holds the button that opens it and the page title.
+The overlay closes with Escape, a tap beside it, or a choice in the
+navigation, and focus returns to the button. A `mobile="stacked"` overview
+list stays above the content instead. From 1024 px the sidebar sits beside the
+work area. Applications need no code for the tablet range.
 
 For SSR link navigation, render the public island once alongside the outer
 sidebar:

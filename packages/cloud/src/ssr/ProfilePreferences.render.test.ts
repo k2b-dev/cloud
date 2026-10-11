@@ -66,7 +66,7 @@ const server = new Hono()
   );
 
 describe("ProfilePreferences SSR", () => {
-  test("renders both responsive placements without browser globals", async () => {
+  test("renders the avatar once, in the rail, without browser globals", async () => {
     const response = await server.request("/", {
       headers: { Cookie: "theme=dark", "Accept-Language": "de-CH" },
     });
@@ -74,8 +74,8 @@ describe("ProfilePreferences SSR", () => {
 
     expect(response.status).toBe(200);
     expect(html).toContain('data-layout-authenticated="true"');
-    expect(html).toContain('data-placement="header"');
-    expect(html).toContain('data-placement="rail"');
+    // The header has no avatar: from md the rail holds it, and phones reach the profile through the app menu.
+    expect(html.split('class="layout-profile-preferences"').length - 1).toBe(1);
     expect(html).toContain('href="/me"');
     expect(html).toContain("Heller Modus");
     expect(html).toContain("English");
@@ -84,7 +84,6 @@ describe("ProfilePreferences SSR", () => {
     expect(html).toContain('<button type="button" class="layout-profile-preferences__link"');
     expect(html).not.toContain('<a href="/me" class="layout-profile-preferences__link"');
     expect(html.indexOf("Abmelden")).toBeGreaterThan(html.indexOf("Profileinstellungen"));
-    expect(html).toContain('data-position="bottom-left"');
     expect(html).toContain('data-position="right-start"');
     expect(html).not.toContain(user.mail ?? "");
     expect(html).not.toContain("undefined");

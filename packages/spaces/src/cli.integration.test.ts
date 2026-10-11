@@ -47,7 +47,7 @@ if (process.env.SPACES_CLI_CHILD !== "1") {
   const cld = async (args: string[]) => {
     const proc = Bun.spawn({
       cmd: [process.execPath, "run", cliEntry, "--server", serverUrl, "--token", "cli-test", ...args],
-      env: { ...process.env, XDG_CONFIG_HOME: cliHome, TZ: "Europe/Berlin" },
+      env: { ...process.env, CLD_LOCALE: "en", XDG_CONFIG_HOME: cliHome, TZ: "Europe/Berlin" },
       stdin: "ignore",
       stdout: "pipe",
       stderr: "pipe",

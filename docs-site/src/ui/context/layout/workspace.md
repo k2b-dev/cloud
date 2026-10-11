@@ -5,7 +5,8 @@
 The application owns the content and which regions are open.
 
 The frame owns its surface hierarchy: `Main` uses the base surface, while the
-navigation, contextual details, and bottom drawer use the subtle surface.
+navigation and bottom drawer use the subtle surface. Detail is a raised floating
+surface.
 Applications should keep region wrappers transparent and add cards or panels
 only where the content needs another visual level.
 
@@ -28,9 +29,10 @@ import {
 ## Compose the regions
 
 `AppWorkspace.Content` is required. Put `Main` first and each `Detail` after it
-inside `Content`. Put `BottomDrawer` at the workspace root.
+as direct children of `Content`, possibly through a Solid island wrapper. The
+floating geometry depends on that placement. Put `BottomDrawer` at the workspace root.
 
-`Main` adds no padding. Pass an application class through `class` when the workspace needs an inset. Omit it for edge-to-edge tables, editors, canvases, or `Panes`. Set `width="content"` on an overview or reading page: each direct child then becomes one centered column with the shared 72 rem page width on large screens and full width below, while the detail panel keeps its own track. `Main` is the default scroll owner and reserves a stable scrollbar gutter. Pass `scrollPreserveKey` when enhanced navigation should restore its position.
+`Main` adds no padding. Pass an application class through `class` when the workspace needs an inset. Omit it for edge-to-edge tables, editors, canvases, or `Panes`. Set `width="content"` on an overview or reading page: each direct child then becomes one centered column with the shared 72 rem page width on large screens and full width below, while the detail panel floats inside the content area. `Main` is the default scroll owner and reserves a stable scrollbar gutter. Pass `scrollPreserveKey` when enhanced navigation should restore its position.
 
 `Main` and `MainPane` show subtle 16 px overflow hints by default when they
 own scrolling. Set `scrollFade={false}` to opt out. A split `Main` wrapper
@@ -52,17 +54,125 @@ An open `MainPane` keeps its content mounted when layout state, mobile selection
 `Detail` and `BottomDrawer` remain mounted while closed. Their `open` property
 controls visibility, so local state and SSR DOM identity remain stable.
 
+## Floating detail
+
+Pass `onClose` when the application can close or deselect the detail. Escape,
+a downward phone drag, and a rightward touch-tablet swipe call the same action
+as the panel’s close button. A panel rendered on the server only cannot pass a
+function: mark its own close button or link with `data-workspace-detail-close`
+instead, and the same gestures click it. Without either, the panel stays open
+and reflows Main on touch tablets too. `onStep` receives `1` for J and `-1`
+for K; the application chooses the next selection. Neither callback owns the
+`open` state.
+
+Below 48 rem, the half sheet covers the lower 55% of the window, on pages that
+grow with their content as well as on full pages. A frame that embeds a
+workspace in a longer page, such as a demo, sets `contain: layout` to keep the
+sheet inside the frame. Main ends with the same
+height of space, so its last row scrolls above the sheet, and opening scrolls
+the selected row above it. A Main with a height of its own keeps the 240 px
+the main area reserves. Tap the grabber to switch between half and full
+height. Drag the grabber or header up to expand, or down to return to half
+height; pulling down from half closes a closable sheet. Pull downward from
+content at the top of its scrollport to lower the sheet. A drag or swipe never
+starts on a field, slider, editable text, canvas, draggable element, or an
+element whose `touch-action` keeps that direction for itself. An open panel
+adds that space to Main even when the application hides it with its own CSS,
+so keep `open` false while the panel should not show.
+
+For a board, wide table, or week calendar, add `k2b-detail-trail` to its
+horizontal scroll container inside Main. Main then keeps its full width, and
+the scroller gains trailing space beside the panel. Use
+`scrollClass="k2b-detail-trail"` on DataTable; a table that fits keeps its
+width and the space follows it. Pad fixed rows in Main, such as toolbars,
+filters, error rows, and pagination, with
+`padding-inline-end: var(--k2b-detail-space, 0px)`, adding any existing inset.
+The variable is zero when Main reflows. Closing retains only trailing space
+still in view and releases it as the person scrolls back.
+
+Escape closes a closable panel. J and K step a steppable panel. F6 switches
+focus between Main’s remembered item and the panel title, with or without
+Shift. These shortcuts leave text entry, menus, dialogs, popovers, and popup
+buttons to their own keyboard behavior. They run after the page’s own
+keyboard handlers: a handler that uses one of these keys for local state, such
+as cancelling a crop, calls `preventDefault()` and the panel stays open. An
+overlay sidebar handles Escape first.
+
+Opening from Enter or Space moves focus to the title, also when the title
+appears only after the content loads. Enter or Space on another item while the
+panel is open moves focus to the new title. A phone sheet also focuses its
+title after a pointer selection; wider pointer opens keep focus on the item.
+Focus stays where it is when the person moves it first. The controller keeps
+the selected row at its vertical position through reflow and reveals a freshly
+selected item beside a trail panel. Closing returns focus to the remembered
+item when focus was in the panel.
+
+The first server-rendered or newly inserted panel appears without motion.
+After two animation frames, later opens and closes use the shared transitions.
+Reduced motion disables them and makes item reveal immediate. Dragging tracks
+the pointer without easing.
+
 ## Navigation
 
-`Sidebar` with `SidebarDesktop` supplies the persistent desktop navigation at
-1024 px and above. Below 1024 px, the host renders its mobile navigation using
+`Sidebar` with `SidebarDesktop` supplies the workspace navigation. Its form
+follows the viewport width:
+
+| Width | Navigation | Work area |
+| --- | --- | --- |
+| Below 48 rem (768 px) | Hidden; the host renders its mobile navigation | One pane at a time; Detail is a sheet over the lower 55% of the window, and Main scrolls its rows above it; full height covers Main |
+| 48 to 64 rem (768 to 1023 px) | An overlay that a button in the head opens; a `mobile="stacked"` sidebar stays above the content | Panes side by side; Detail floats with reflow, or overlays Main as a closable drawer on coarse pointers |
+| From 64 rem (1024 px) | A column beside the work area | Panes side by side; Detail floats 8 px inside Content and Main makes room |
+| From 96 rem (1536 px) | Same navigation | Same workspace geometry inside the host’s app card |
+
+Below 48 rem the host renders its mobile navigation using
 [createNavigation and Navigation](/en/ui/layout/navigation), usually inside a
-[BottomSheet](/en/ui/layout/bottom-sheet). AppWorkspace adds no mobile launcher,
-second application title, or tablet menu. Sidebar items with an `href` remain real links.
+[BottomSheet](/en/ui/layout/bottom-sheet). AppWorkspace adds no mobile
+launcher or second application title there. Sidebar items with an `href`
+remain real links.
+
+Between 48 and 64 rem the workspace shows its head above the content: a
+button labeled **Show navigation** and, if the host provides a page trail, the
+page title. The button opens the sidebar over the work area, and over the head, as a
+raised surface with a scrim beside it; the work area keeps its geometry and the
+sidebar takes no width from a `Detail`. While it is open, the rest of the
+workspace is inert, regions the application made inert stay inert after it
+closes, and Tab moves only between the sidebar's tab stops. Focus starts on the
+current item, or on the tree item around it in a `NavTree`. Escape, a click on
+the scrim, choosing a link or an item, hiding the sidebar, or widening the
+window past 64 rem closes it; Escape and the scrim return focus to the button.
+A tree folder that only expands, a row that opens its preview, a section
+toggle, and an item's own actions keep it open. The head, the overlay, and the
+scrim draw no border lines. A sidebar collapsed to its rail on a wide screen
+opens expanded. The shared controller binds the button, so a server-rendered
+workspace gets the overlay without hydrating; the button does nothing before a
+controller runs. In a nested workspace, its own button opens its own overlay.
+
+### Head
+
+The head is one 46 px row above the work area, beside the sidebar column. It
+draws no line; only its place separates it from the content. It shows:
+
+- from 48 to 64 rem, whenever the workspace has an overlay sidebar, with the
+  navigation button;
+- at every width, when the host's page trail has a page above the current one.
+  It then holds a [PageTitle](/en/ui/layout/page-title) with the way up: from
+  48 rem `‹ Parent` or a path above the title, below 48 rem a back arrow left
+  of it.
+
+The title comes from the host's page trail: a host renders
+`PageTrailProvider` around the page during server rendering and calls
+`setPageTrail()` after an in-page navigation (see
+[PageTitle](/en/ui/layout/page-title)). Without a trail, the head holds only the
+button. When the page renders its own `PageTitle`, for example in an
+application header, the head's title steps back and the head stays only for
+the button. A nested workspace's head never shows the title. CSS decides all
+of this on the server-rendered markup, so the head arrives in its final place
+and nothing moves when a controller attaches. A server-rendered head follows a
+new trail once the host runs `followPageTrail()`; Cloud's `Layout` does.
 
 Set `mobileSurface="flush"` on an outer workspace when the host supplies the
-mobile chrome. This removes its exterior border, radius, shadow, and background
-on mobile. Embedded workspaces keep the default contained surface.
+phone chrome. This removes its exterior border, radius, shadow, and background
+below 48 rem. Embedded workspaces keep the default contained surface.
 
 Sidebar links use document navigation by default. Set `navigation="enhanced"`
 only inside an island that loads and applies the target state before committing
@@ -78,8 +188,10 @@ Set `hidden` on `Sidebar` to hide the desktop navigation completely, for
 focused work or when others can see the screen. A hidden sidebar renders none
 of its children and no resize handle, so its labels are neither visible nor
 reachable, and main panes with `surface="navigation"` hide with it. The work
-area takes the full width. Below 1024 px the host's mobile navigation menu
-stays available; a `mobile="stacked"` sidebar hides there as well. Pass
+area takes the full width. Below 48 rem the host's mobile navigation menu
+stays available; a `mobile="stacked"` sidebar hides there as well. Between 48
+and 64 rem the head of a hidden sidebar has no button, so the application's control
+that shows it again is the only way back. Pass
 `onHiddenChange` as well to make a drag of the resize handle below half the
 minimum width hide the sidebar; the shared controller dims the sidebar at its
 minimum width as a preview during the drag, requests `true` on release, and
@@ -367,6 +479,7 @@ type AppWorkspaceMainPaneProps = {
 type AppWorkspaceDetailProps = {
   children: JSX.Element; open: boolean; id: string; class?: string; width?: AppWorkspaceDetailWidth;
   viewTransitionName?: string; resizable?: boolean; minWidth?: number; maxWidth?: number;
+  onClose?: () => void; onStep?: (direction: 1 | -1) => void;
 };
 
 type AppWorkspaceBottomDrawerProps = {
@@ -502,10 +615,10 @@ The prop names map to compound members (`AppWorkspaceMainPaneProps` → `AppWork
 | --- | --- | --- | --- |
 | Sidebar | 208 | 176 | 360 |
 | MainPane | 320 | 240 | 640 |
-| Detail | 384 | 288 | 640 |
+| Detail | 416 | 320 | 640 |
 | BottomDrawer | 240 | 160 | 560 |
 
-The main area reserves 320px width / 240px height; the available container may reduce maxima. Collapsed sidebar width is 64px; the collapse threshold is 128px. A sidebar with `onHiddenChange` hides below half its minimum width. Detail widths `sm/md/lg/xl` are 288/384/480/544px (default md); Drawer heights `sm/md/lg` are 192/240/320px (default md). Restored geometry takes precedence. `resizable` defaults on; `collapsible` is opt-in. `Main.scroll` and `MainPane.scroll` default on.
+The main area reserves 320px width / 240px height; the available container may reduce maxima. Collapsed sidebar width is 64px; the collapse threshold is 128px. A sidebar with `onHiddenChange` hides below half its minimum width. Detail widths `sm/md/lg/xl` are 320/416/480/544px (default md); Drawer heights `sm/md/lg` are 192/240/320px (default md). Restored geometry takes precedence. `resizable` defaults on; `collapsible` is opt-in. `Main.scroll` and `MainPane.scroll` default on.
 
 `LinkNavigateEvent` and `NavigationScrollMode` use [navigation conventions](/en/ui/getting-started#icons-tones-and-navigation). `navigation` defaults to `"document"`. Event callbacks do not load data automatically.
 
@@ -664,6 +777,7 @@ The package exports parse, normalize, serialize, and style helpers for layout st
     <AppWorkspace.Detail
       id="item"
       open={selectedId() !== null}
+      onClose={closeDetails}
       width="lg"
     >
       <ItemDetail id={selectedId()} />
@@ -679,8 +793,15 @@ The package exports parse, normalize, serialize, and style helpers for layout st
 </AppWorkspace>
 ```
 
-Main-pane borders separate adjacent desktop regions. The last visible pane has
-no outer border, and single-pane mobile layouts do not retain split borders.
+Main-pane borders separate adjacent regions from 48 rem. The last visible pane
+has no outer border, and single-pane phone layouts do not retain split borders.
+A side pane keeps its size while the main region keeps 320 px and gives way
+down to its minimum; the stylesheet applies the same fit as the controller, so
+a server-rendered split arrives at its final widths. Detail floats within
+Content. Its width fits while Main keeps 320 px and the two 8 px gaps. If both
+minimum widths cannot fit, the panel overlaps Main.
+Double-click the detail resize handle to clear its saved width and return to
+its preset.
 
 ### Live rows and detail previews
 
@@ -820,7 +941,7 @@ one. Object rows truncate their title instead of scrolling it.
 
 Set `mobile="stacked"` on `Sidebar` when the sidebar is the primary object
 list of an overview and the host's mobile navigation does not carry it. Below
-1024 px the sidebar then stays visible as a block above the content, capped at
+64 rem the sidebar then stays visible as a block above the content, capped at
 half the viewport height with its own scrolling body, and the footer wraps
-its items into a row. Leave the default `"hidden"` for workspaces whose
+its items into a row; the head shows no button for it. Leave the default `"hidden"` for workspaces whose
 sidebar is view navigation inside one resource.

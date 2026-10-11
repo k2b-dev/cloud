@@ -144,7 +144,7 @@ const stepPhrase = (block: AiTurnBlock | null, t: Messages, withTargets: boolean
   if (name === "code_present") return withTarget(t.stepPreparingView);
   if (isCardToolName(name)) return t.stepPreparingCard;
   if (isChartToolName(name)) return t.stepPreparingChart;
-  if (["code_write", "code_create", "code_update", "code_fork", "code_remove", "code_restore"].includes(name))
+  if (["code_write", "code_import", "code_create", "code_update", "code_fork", "code_remove", "code_restore"].includes(name))
     return withTarget(t.stepWritingCode);
   if (["code_run", "code_action", "code_sql"].includes(name)) return withTarget(t.stepRunningCode);
   if (name === "code_check") return t.stepCheckingApp;
@@ -236,6 +236,7 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
       tone={working() ? "ai" : "neutral"}
       busy={working()}
       trailing={trailing()}
+      bodyInset={false}
       renderBody={() => <AiWorkSteps blocks={layout().work} active={working()} />}
     />
   );
@@ -275,7 +276,27 @@ function WorkEntryRow(props: { entry: AiWorkEntry; busy: boolean }) {
   );
 }
 
-/** Housekeeping folded into one row at step level. It opens in place: its steps follow at the same indent. */
+/** The steps of an opened group, keyed by block id, so a row keeps its element and focus when its block is replaced. */
+function WorkEntries(props: { entries: AiWorkEntry[]; active: boolean }) {
+  const entries = createMemo(() => new Map(props.entries.map((entry) => [entry.id, entry])));
+  const ids = createMemo(() => [...entries().keys()]);
+  return (
+    <div class="ai-turn-steps">
+      <For each={ids()}>
+        {(id, index) => (
+          <Show when={entries().get(id)}>
+            {(entry) => <WorkEntryRow entry={entry()} busy={props.active && index() === ids().length - 1} />}
+          </Show>
+        )}
+      </For>
+    </div>
+  );
+}
+
+/**
+ * Housekeeping folded into one row at step level, with its count at the end like the work line's. It opens in place:
+ * its steps follow at the same indent.
+ */
 function HousekeepingGroup(props: { id: string; entries: AiWorkEntry[]; active: boolean }) {
   const locale = useLocale();
   const last = () => props.entries.at(-1)!;
@@ -283,17 +304,33 @@ function HousekeepingGroup(props: { id: string; entries: AiWorkEntry[]; active: 
     <AiToolActivity
       blockId={`group:${props.id}`}
       label={aiChatMessages(locale()).groupLoad}
-      description={countWorkSteps(props.entries, locale())}
+      trailing={<span class="ai-turn-work__meta">{countWorkSteps(props.entries, locale())}</span>}
       icon="ti ti-stack-2"
       bodyInset={false}
       busy={props.active && last().kind === "tool" && (last() as ToolBlock).status === "running"}
-      renderBody={() => (
-        <div class="ai-turn-steps">
-          <For each={props.entries}>
-            {(entry, index) => <WorkEntryRow entry={entry} busy={props.active && index() === props.entries.length - 1} />}
-          </For>
-        </div>
-      )}
+      renderBody={() => <WorkEntries entries={props.entries} active={props.active} />}
+    />
+  );
+}
+
+/**
+ * Consecutive instances of one call apart from paging, such as reading one file in parts, folded into one row that
+ * opens in place. Its count sits at the end like the work line's, so a narrow screen cuts the target short, never the count.
+ */
+function RepeatedSteps(props: { id: string; target: string; entries: AiWorkEntry[]; active: boolean }) {
+  const locale = useLocale();
+  const tools = () => props.entries.filter((entry): entry is ToolBlock => entry.kind === "tool");
+  const first = () => tools()[0]!;
+  return (
+    <AiToolActivity
+      blockId={`repeat:${props.id}`}
+      label={first().presentation?.title ?? displayToolName(first().name, locale())}
+      description={props.target}
+      trailing={<span class="ai-turn-work__meta">{aiChatMessages(locale()).repeatCount({ count: tools().length })}</span>}
+      icon={aiToolIcon(first().name, first().presentation?.appIcon)}
+      bodyInset={false}
+      busy={props.active && tools().at(-1)?.status === "running"}
+      renderBody={() => <WorkEntries entries={props.entries} active={props.active} />}
     />
   );
 }
@@ -311,13 +348,19 @@ function WorkText(props: { text: string }) {
 }
 
 const workItemKey = (item: AiWorkItem): string =>
-  item.kind === "text" ? `text:${item.block.id}` : item.kind === "step" ? `step:${item.entry.id}` : `group:${item.id}`;
+  item.kind === "text"
+    ? `text:${item.block.id}`
+    : item.kind === "step"
+      ? `step:${item.entry.id}`
+      : item.kind === "repeat"
+        ? `repeat:${item.id}`
+        : `group:${item.id}`;
 
 /**
- * Expanded work, one indent below the work line and one size: intermediate texts as quiet paragraphs, the steps between
- * them directly, and housekeeping folded at step level. A row shown while this list is open never folds away under the
- * reader, also when reasoning or arguments that would fold it arrive later; the next time it opens, it folds like in
- * history.
+ * Expanded work, at the work line's indent and one size: intermediate texts as quiet paragraphs, the steps between
+ * them directly, and housekeeping or repeated steps folded at step level. A row shown while this list is open never
+ * folds away under the reader, also when reasoning or arguments that would fold it arrive later; the next time it
+ * opens, it folds like in history.
  */
 function AiWorkSteps(props: { blocks: AiTurnBlock[]; active: boolean }) {
   const shown = new Set<string>();
@@ -344,12 +387,19 @@ function AiWorkSteps(props: { blocks: AiTurnBlock[]; active: boolean }) {
             const value = item();
             return value?.kind === "housekeeping" ? value : undefined;
           };
+          const repeat = () => {
+            const value = item();
+            return value?.kind === "repeat" ? value : undefined;
+          };
           const active = () => props.active && index() === keys().length - 1;
           return (
             <Switch>
               <Match when={text()}>{(value) => <WorkText text={value()} />}</Match>
               <Match when={step()}>{(entry) => <WorkEntryRow entry={entry()} busy={active()} />}</Match>
               <Match when={group()}>{(value) => <HousekeepingGroup id={value().id} entries={value().entries} active={active()} />}</Match>
+              <Match when={repeat()}>
+                {(value) => <RepeatedSteps id={value().id} target={value().target} entries={value().entries} active={active()} />}
+              </Match>
             </Switch>
           );
         }}
@@ -641,14 +691,18 @@ function AiTurnErrorNotice(props: { error: AiTurnError; continuable: boolean }) 
 }
 
 /**
- * Place 3. Live it is a status that switches in this same element; it keeps its height until the turn ends. A status
- * is not read token by token: screen readers hear each status once it is complete, and that the answer is ready.
+ * Place 3. Live it is a status that switches in this same element; it keeps its height until the turn ends. Once a step
+ * started after it, it reads quietly like the texts in the expanded work; a trailing text may still be the answer and
+ * keeps answer typography. A status is not read token by token: screen readers hear each status once it is complete,
+ * and that the answer is ready.
  */
 function AiTurnText(props: {
   blocks: Accessor<Extract<AiTurnBlock, { kind: "text" }>[]>;
   live: Accessor<boolean>;
   /** The turn has work steps, so its live text is a status rather than the answer itself. */
   folding: Accessor<boolean>;
+  /** A step started after the text, so it can no longer be the answer: it reads quietly. */
+  quiet: Accessor<boolean>;
   /** An earlier segment of a split turn: it stops being live while the turn goes on. */
   earlier: Accessor<boolean>;
 }) {
@@ -662,6 +716,7 @@ function AiTurnText(props: {
   );
   const html = createMemo(() => markdown.renderSync(source(), { locale: locale() }));
   const shownId = createMemo(() => props.blocks()[0]?.id);
+  const quiet = createMemo(() => props.quiet());
   const [minHeight, setMinHeight] = createSignal<number | null>(null);
   let element!: HTMLDivElement;
   let lastHeight = 0;
@@ -673,14 +728,21 @@ function AiTurnText(props: {
     observer.observe(element);
     onCleanup(() => observer.disconnect());
   });
+  /** The quiet text's height in answer typography, measured in place before the browser paints. */
+  const answerHeight = () => {
+    element.classList.remove("ai-turn__text--status");
+    const height = element.offsetHeight;
+    element.classList.add("ai-turn__text--status");
+    return height;
+  };
+  // A new status keeps the height of the one before it. A quiet status keeps the height it has as the answer, also when
+  // it first shows quietly after a reload, so nothing below moves when it is replaced or becomes the answer again.
   createEffect(
-    on(
-      shownId,
-      () => {
-        if (props.live() && lastHeight > 0) setMinHeight((current) => Math.max(current ?? 0, lastHeight));
-      },
-      { defer: true },
-    ),
+    on([shownId, quiet], ([id, isQuiet], previous) => {
+      if (!props.live()) return;
+      const height = Math.max(previous && previous[0] !== id ? lastHeight : 0, isQuiet ? answerHeight() : 0);
+      if (height > 0) setMinHeight((current) => Math.max(current ?? 0, height));
+    }),
   );
   createEffect(() => {
     if (!props.live()) setMinHeight(null);
@@ -701,6 +763,7 @@ function AiTurnText(props: {
     <div
       ref={element}
       class="ai-turn__text"
+      classList={{ "ai-turn__text--status": quiet() }}
       aria-live={status() ? "off" : undefined}
       style={minHeight() ? { "min-height": `${minHeight()}px` } : undefined}
     >
@@ -757,7 +820,13 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
         </Show>
         <For each={resultIds()}>{(id) => <AiTurnResultView result={() => results().get(id)} receipt={() => actions().has(id)} />}</For>
         <Show when={layout().text.length > 0}>
-          <AiTurnText blocks={() => layout().text} live={live} folding={() => layout().steps > 0} earlier={() => props.segment().earlier} />
+          <AiTurnText
+            blocks={() => layout().text}
+            live={live}
+            folding={() => layout().steps > 0}
+            quiet={() => layout().textIsStatus}
+            earlier={() => props.segment().earlier}
+          />
         </Show>
         <For each={actionIds()}>
           {(id) => <AiTurnActionView action={() => actions().get(id)} turnId={props.segment().turnId} phase={props.segment().phase} />}

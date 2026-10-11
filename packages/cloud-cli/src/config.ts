@@ -9,7 +9,10 @@
  *                         to `~/.config/cloud/cld/config.json`.
  *   CLD_SERVER            Cloud server URL used when no `--server` flag is given.
  *   CLD_TOKEN             Bearer token used when no `--token` flag is given.
- *   CLD_LOCALE            Output locale used when no `--locale` flag is given.
+ *   CLD_LOCALE            Human text and request locale used when no `--locale` flag is given.
+ *   LC_ALL / LC_MESSAGES / LANG
+ *                         Read only: first non-empty POSIX locale when CLD_LOCALE is unset.
+ *                         Unusable values leave requests to the Cloud default; CLI text uses English.
  *   CLD_RELEASE_BASE      Base URL for release assets (`cld update`).
  *   CLD_RELEASE_API_BASE  Base URL of the release metadata API (`cld update`).
  *   SSH_CONNECTION / SSH_TTY
@@ -40,6 +43,20 @@ export const configPath = (): string => read("CLD_CONFIG") ?? join(userConfigDir
 export const envServer = (): string | undefined => read("CLD_SERVER");
 export const envToken = (): string | undefined => read("CLD_TOKEN");
 export const envLocale = (): string | undefined => read("CLD_LOCALE");
+
+/** Canonicalize the first non-empty POSIX locale; an unusable override still wins. */
+export const posixLocale = (env: Readonly<Record<string, string | undefined>> = process.env): string | undefined => {
+  const raw = env.LC_ALL || env.LC_MESSAGES || env.LANG;
+  if (!raw) return undefined;
+  const tag = (raw.split(/[.@]/, 1)[0] ?? "").replaceAll("_", "-");
+  if (tag === "C" || tag === "POSIX") return undefined;
+  try {
+    return Intl.getCanonicalLocales(tag)[0];
+  } catch {
+    return undefined;
+  }
+};
+
 export const envReleaseBase = (): string | undefined => read("CLD_RELEASE_BASE");
 export const envReleaseApiBase = (): string | undefined => read("CLD_RELEASE_API_BASE");
 /** Whether this terminal probably cannot open a local browser: an SSH session, or Linux without a display. */

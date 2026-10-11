@@ -225,18 +225,30 @@ order:
    it reads "Worked 3 min" with the step count, and "Worked 1 min · stopped"
    after a stop. A failed turn reads "Worked 4 min" too and says why in a
    notice at its end; a failed turn from an earlier release, which recorded no
-   reason, reads "Worked 4 min · interrupted". Expanding it shows, one level below the line, intermediate texts as quiet
-   paragraphs and the steps between them directly, each with its input and
-   output on demand in place. Only housekeeping, loading tools, skills, and
-   knowledge and reading a loaded skill's files, folds into one row such as
+   reason, reads "Worked 4 min · interrupted". Expanding it shows work at the
+   same left edge as the line: intermediate texts as quiet paragraphs and the
+   steps between them directly, each with its input and output on demand in
+   place. Housekeeping, loading tools, skills, and knowledge and reading a
+   loaded skill's files, folds into one row such as
    "Loaded tools and guidance · 4 steps" at step level, with the reasoning
    between those steps; it opens in place without a second indent. A run of
    housekeeping that would hold all but one of the work's steps shows its
-   steps directly, so the line never opens to a summary of itself. A row a
-   reader sees while the line is open never folds away under them, also when
-   reasoning after it or a call's arguments arrive later and would make it
-   housekeeping; the next time the line opens, it folds like in history. The
-   line opens on a click, Enter, or Space in every state, live or finished,
+   steps directly, so the line never opens to a summary of itself. Consecutive
+   calls that differ only in paging, their `offset`, `length`, `limit`,
+   `cursor`, `after`, `page`, or `pageSize`, such as reading one file in
+   parts, also fold into one row such as "Read file · /products.csv · 3 times"
+   that opens in place to the individual calls, provided at least two other
+   steps remain outside it. Calls with any other differing argument, such as
+   another storage, address book, filter, or written content, stay separate
+   rows; so does a failed or rejected call, and text between the calls ends
+   the run. A folded row shows its count at its end, like the line's step
+   count, so a narrow screen shortens the target but never the count. Its
+   steps keep their place, open state, and focus while they finish and when
+   the turn becomes history. A row a reader sees while the line is open
+   never folds away under them, also when reasoning after it or a call's
+   arguments arrive later and would make it part of a group; the next time
+   the line opens, it folds like in history. The line opens on a click, Enter,
+   or Space in every state, live or finished,
    also while its clock ticks, and stays open while new steps stream in. Opening
    or closing it never scrolls the conversation; afterwards the conversation
    follows new steps only while its end is still in view.
@@ -272,9 +284,18 @@ order:
    card's title and value instead.
 3. **Newest text.** While the turn runs this is a status: a new text replaces
    the previous one in the same element once its first sentence has streamed,
-   and the place keeps its height until the turn ends. Finished, it is the final
-   message: the turn's last text, even if a tool call followed it. A stopped or
-   failed turn has no final message; its texts stay in the work line.
+   and the place keeps its height until the turn ends. A text that ends the
+   turn so far may still be the answer and keeps answer typography. As soon as
+   a step starts after it, it reads quietly in the muted, smaller style of the
+   intermediate texts in the expanded work line, also while an approval or
+   survey waits for the user; its card says what is asked. It changes together
+   with the work line's new step and keeps its line height. The place keeps the
+   height the text has as the answer, also when the chat opens while a step
+   runs, so nothing moves when the text turns quiet, is replaced, or becomes
+   the final message.
+   Finished, it is the final message in answer typography: the turn's last
+   text, even if a tool call followed it. A stopped or failed turn has no final
+   message; its texts stay in the work line.
 4. **Actions.** Open approvals, surveys, editors, and secret prompts, and
    receipts for capability actions and for every approval the user decided.
    A pending approval is a calm card with a warning tint and no border: its
@@ -582,8 +603,9 @@ forwards only IDs that have a handler. The client-run tools are `code_open` and
 `code_secret`, which need a client with a code host: the web app, or
 `cld assistant` while it watches the turn. Entering a secret through
 `code_secret` still needs the web app; in the CLI the call fails with that
-hint. `local_bash` needs `cld assistant --allow-bash`. Detached CLI turns, API
-clients without a code host, and scheduled tasks never get `code_open` or
+hint. `local_bash` needs interactive `cld assistant` in local tools mode `ask`
+(the default); use `--no-bash` or `/permissions off` to disable it. Detached CLI
+turns, API clients without a code host, and scheduled tasks never get `code_open` or
 `code_secret`. The other code tool names are still accepted in `clientToolIds`
 and have no effect. Unknown names are ignored so older clients keep working
 after a tool is retired. Turn and draft submissions accept at most 64 distinct
@@ -745,23 +767,36 @@ include each local path alongside its chat path. Existing local files are not
 overwritten.
 
 Assistant exposes direct server tools: `code_create`, `code_read`, `code_write`,
-`code_remove`, `code_list`, `code_history`, `code_update`, `code_fork`,
-`code_publish`, `code_versions`, `code_restore`, and `code_sql`. These are
-deferred built-ins with flat inputs, not application capabilities.
+`code_import`, `code_remove`, `code_list`, `code_history`, `code_update`,
+`code_fork`, `code_publish`, `code_versions`, `code_restore`, and `code_sql`.
+These are deferred built-ins with flat inputs, not application capabilities.
 `CODE_SOURCE_TOOLS` from `@k2b/cloud/ai` supplies their shared input contracts.
 Core forwards each operation to Assistant using an operation-bound invocation.
 The server derives the chat context and checks current user, conversation,
 Project and resource permissions. GUI and CLI use the same resource services.
 Writes reuse the platform replay guard; uncertain calls are not repeated.
 `cloud.capabilities.run` remains available for other applications, not these tools.
-`code_write` saves one atomic batch against `expectedRevision`, preserves sibling
-files and reports compilation diagnostics without rejecting incomplete source.
-Conflicting revisions and duplicate paths reject the whole batch. A file can
-use `{path,content}` or `{path,fromChatFile:{path,version}}`; the latter copies
-validated data bytes on the server without printing/retyping them through the
-model. `code_export` returns the required chat path and version. Relative JSON
-imports expose data; CSV/TSV/TXT imports expose text. Execution requires a
-compilable entry exporting one function.
+`code_write` saves one complete file per call with top-level `path` and `content`.
+Source text travels only in top-level strings because some providers corrupt
+strings nested in array arguments. Other files stay unchanged. Pass the revision
+from `code_read`, `code_create` or the previous write as `expectedRevision`, then
+chain each returned revision into the next call. A stale revision returns
+`CONFLICT` without saving. Re-read and reconcile before retrying. The tool
+description tells the model to send one write at a time: calls sent together in
+one model response share a revision, so every call after the first conflicts.
+Results list `lines` and `length` (UTF-16 units) for every file, so a model
+can see when content arrived cut, plus compiler diagnostics for the saved state.
+A trailing newline adds no extra line. Diagnostics do not reject incomplete
+source: a missing import remains a finding until its file is saved. A normal
+multi-file build is one call per file with no approval.
+
+`code_import` atomically copies exact chat, Project or App `fromFile` references
+as UTF-8 source without printing their bytes. Use `code_file_stat` first. Imports
+carry references only and receive one fresh review for the whole batch, because
+source may be shared or published. Source file and bundle byte limits apply;
+stale destination revisions, source versions or duplicate paths reject the batch.
+Relative JSON imports expose data; CSV/TSV/TXT imports expose text. Execution
+requires a compilable entry exporting one function.
 
 The host owns isolation, artifact permissions, input file authorization,
 cancellation, and execution deduplication. Assistant persists call ownership
@@ -924,11 +959,13 @@ Visible running sessions check for updates every 30 seconds and on window focus,
 with at most one background check in flight. Updates offer a restart instead of
 discarding current inputs. Historical selections stay on their selected version.
 
-Code source edits use `code_write({id, expectedRevision, files, entry?})` to
-commit related files in one revision. Each file supplies `content` or
-`fromChatFile: {path, version}`; the latter copies authorized UTF-8 chat data
-without a model-output round trip. JSON and CSV/TSV/text imports are supported.
-Stale destination revisions or source versions fail before saving any files.
+Code source edits use `code_write({id, expectedRevision, path, content, entry?})`
+to save one file per revision. File imports use
+`code_import({id, expectedRevision, files: [{path, fromFile}], entry?})` with exact
+versioned references from `code_file_stat`. One review covers the import batch.
+JSON and CSV/TSV/text imports are supported. Stale destination revisions or source
+versions fail before saving any files. Both tools return `lines` and `length` for
+every file, the new revision, and diagnostics.
 CSV previews expose encoding, delimiter and raw-text choices; Assistant remembers
 those choices in browser-local preferences, without modifying uploaded files.
 

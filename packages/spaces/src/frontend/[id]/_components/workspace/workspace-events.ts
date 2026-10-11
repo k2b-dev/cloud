@@ -83,7 +83,8 @@ export const subscribeToSpacesDataInvalidation = (
     // snapshot, a detail that closed) no longer shows data, so its rejection
     // leaves nothing uncovered.
     detail.cover(
-      invalidate({ cursor: detail.cursor, itemId: detail.itemId }).catch((error: unknown) => {
+      // Preserve event identity so subscribers can share work for this invalidation.
+      invalidate(detail).catch((error: unknown) => {
         if (subscribed) throw error;
       }),
     );

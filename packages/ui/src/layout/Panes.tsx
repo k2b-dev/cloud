@@ -20,6 +20,7 @@ import {
   resizePanesSplit,
   samePanesIntent,
 } from "./panes-layout";
+import { usePanesMessages } from "./panes-messages";
 import { assertUniqueStableUiIds } from "./stable-id";
 
 export type PanesItem = {
@@ -189,7 +190,7 @@ const requireItem = (items: Map<string, PanesItem>, id: string): PanesItem => {
 };
 
 export default function Panes(props: PanesProps): JSX.Element {
-  const messages = useUiMessages();
+  const panesMessages = usePanesMessages();
   const instanceId = `k2b-panes-${createUniqueId()}`;
   const items = createMemo(() => createItemMap(props.items));
   const layout = createMemo(() => {
@@ -244,15 +245,15 @@ export default function Panes(props: PanesProps): JSX.Element {
   const requestAdd = (targetItemId: string | null) => props.onAddItem?.(targetItemId);
 
   return (
-    <div class={`k2b-panes ${props.class ?? ""}`} data-k2b-panes role="group" aria-label={props.ariaLabel ?? messages().paneWorkspace}>
+    <div class={`k2b-panes ${props.class ?? ""}`} data-k2b-panes role="group" aria-label={props.ariaLabel ?? panesMessages().paneWorkspace}>
       <Show
         when={layout().root}
         fallback={
           <div class="k2b-panes__empty">
             <Show when={props.onAddItem !== undefined}>
-              <button type="button" class="k2b-panes__add" onClick={() => requestAdd(null)} aria-label={messages().addPane}>
+              <button type="button" class="k2b-panes__add" onClick={() => requestAdd(null)} aria-label={panesMessages().addPane}>
                 <i class="ti ti-plus" aria-hidden="true" />
-                <span>{messages().addPane}</span>
+                <span>{panesMessages().addPane}</span>
               </button>
             </Show>
           </div>
@@ -314,7 +315,7 @@ function PanesNodeRenderer(props: RendererProps): JSX.Element {
 }
 
 function PanesSplitRenderer(props: Omit<RendererProps, "node"> & { node: () => PanesSplit }): JSX.Element {
-  const messages = useUiMessages();
+  const panesMessages = usePanesMessages();
   let container: HTMLDivElement | undefined;
   let separatorElement: HTMLButtonElement | undefined;
   let stopResize: (() => void) | undefined;
@@ -465,7 +466,7 @@ function PanesSplitRenderer(props: Omit<RendererProps, "node"> & { node: () => P
         tabIndex={props.canResize() ? 0 : -1}
         class="k2b-panes__separator"
         data-direction={props.node().direction}
-        aria-label={messages().resizePanes}
+        aria-label={panesMessages().resizePanes}
         onPointerDown={startResize}
         onKeyDown={onResizeKeyDown}
       >
@@ -484,6 +485,7 @@ function ActivePane(props: { itemId: string; itemById: () => Map<string, PanesIt
 
 function PanesGroupRenderer(props: Omit<RendererProps, "node"> & { node: () => PanesGroup }): JSX.Element {
   const messages = useUiMessages();
+  const panesMessages = usePanesMessages();
   let tabsElement: HTMLDivElement | undefined;
   let scrollbarDragOffset = 0;
   let stopTabPress: (() => void) | undefined;
@@ -617,14 +619,14 @@ function PanesGroupRenderer(props: Omit<RendererProps, "node"> & { node: () => P
   };
   const targetLabel = (target: PanesDropTarget): string => {
     const targetItem = requireItem(props.itemById(), target.targetItemId);
-    if (target.kind === "group") return messages().addToNamed({ name: targetItem.title });
+    if (target.kind === "group") return panesMessages().addToNamed({ name: targetItem.title });
     if (target.kind === "tab") {
       const before = target.beforeItemId ? requireItem(props.itemById(), target.beforeItemId) : null;
-      return before ? messages().insertBeforeNamed({ name: before.title }) : messages().insertAtEnd;
+      return before ? panesMessages().insertBeforeNamed({ name: before.title }) : panesMessages().insertAtEnd;
     }
     return target.side
-      ? messages().addPaneSide({ side: target.side, name: targetItem.title })
-      : messages().addToNamed({ name: targetItem.title });
+      ? panesMessages().addPaneSide({ side: target.side, name: targetItem.title })
+      : panesMessages().addToNamed({ name: targetItem.title });
   };
   return (
     <section class="k2b-panes__group">
@@ -632,7 +634,7 @@ function PanesGroupRenderer(props: Omit<RendererProps, "node"> & { node: () => P
         ref={tabsElement}
         class="k2b-panes__tabs"
         role="tablist"
-        aria-label={messages().paneTabs}
+        aria-label={panesMessages().paneTabs}
         aria-orientation="horizontal"
         onScroll={syncScrollbar}
       >
@@ -719,8 +721,8 @@ function PanesGroupRenderer(props: Omit<RendererProps, "node"> & { node: () => P
           <Tooltip.Trigger
             type="button"
             class="k2b-panes__add k2b-panes__add--tab"
-            aria-label={messages().addPane}
-            content={messages().addPane}
+            aria-label={panesMessages().addPane}
+            content={panesMessages().addPane}
             onClick={() => props.addItem(props.node().active)}
           >
             <i class="ti ti-plus" aria-hidden="true" />

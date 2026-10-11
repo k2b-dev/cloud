@@ -114,9 +114,12 @@ type SyncFolderJobInput = { folderId: string; backfill?: boolean };
 /**
  * Runs one `mail:sync-folder` job the way its worker does: a resubmitted job runs again after its
  * delay, until it finishes, or with `oneBatch` until one batch got the provider lease. Returns
- * how long that took.
+ * how long that took, recording each attempt's times and outcome when `turns` is passed.
  */
-const runFolderSyncJob = async (folderId: string, options: { input?: SyncFolderJobInput; oneBatch?: boolean } = {}): Promise<number> => {
+const runFolderSyncJob = async (
+  folderId: string,
+  options: { input?: SyncFolderJobInput; oneBatch?: boolean; turns?: string[] } = {},
+): Promise<number> => {
   const startedAt = performance.now();
   let input: SyncFolderJobInput = options.input ?? { folderId };
   for (let run = 0; run < 200; run += 1) {
@@ -129,7 +132,13 @@ const runFolderSyncJob = async (folderId: string, options: { input?: SyncFolderJ
         if (resubmit?.input) input = resubmit.input;
       },
     };
+    const start = Math.round(performance.now() - startedAt);
     await runSyncFolderJob(ctx);
+    if (options.turns) {
+      const end = Math.round(performance.now() - startedAt);
+      const outcome = next === null ? "done" : next === 0 ? "batch" : `busy, again in ${next} ms`;
+      options.turns.push(`${start}-${end} ms ${outcome}`);
+    }
     // A batch that ran continues at once; one that found the provider lease busy waits for its turn.
     if (next === null || (options.oneBatch && next === 0)) return performance.now() - startedAt;
     await Bun.sleep(next);
@@ -250,7 +259,7 @@ suite("mail provider lease fairness", () => {
   // Every CHANGEDSINCE flag window, by mailbox label.
   const flagWindows: string[] = [];
   // Every UID MOVE, by mailbox label, with the number of messages it carried.
-  const moveSets: Array<{ label: string; uids: number }> = [];
+  const moveSets: Array<{ label: string; uids: number; at: number }> = [];
   // Messages the server refuses to move, by Message-ID, and messages another client deletes while a
   // move runs, by Message-ID or, for one of two messages that share it, by subject.
   const refusedMoves = new Set<string>();
@@ -609,6 +618,11 @@ suite("mail provider lease fairness", () => {
         if (hook) await hook(config.username, path);
         return status;
       }),
+      // The fixture's folders hold no provider drafts.
+      spyOn(imapSmtpConnector, "countDraftMessages").mockImplementation(async () => {
+        await Bun.sleep(ROUND_TRIP_MS);
+        return 0;
+      }),
       spyOn(imapSmtpConnector, "fetchEnvelopeBatch").mockImplementation(async (config, request) => {
         // Archive holds a large backlog of old mail, and each batch of it takes a while.
         await Bun.sleep(request.folderPath === ARCHIVE ? 20 * ROUND_TRIP_MS : ROUND_TRIP_MS);
@@ -661,7 +675,7 @@ suite("mail provider lease fairness", () => {
         const account = accounts.get(config.username)!;
         // Like a server that moves message after message.
         await Bun.sleep(ROUND_TRIP_MS + messages.uids.length * MOVE_MS_PER_MESSAGE);
-        moveSets.push({ label: account.label, uids: messages.uids.length });
+        moveSets.push({ label: account.label, uids: messages.uids.length, at: performance.now() });
         const source = folderOf(config.username, messages.folderPath);
         const destinationUids = new Map<number, number>();
         let connectionDrops = false;
@@ -777,9 +791,19 @@ suite("mail provider lease fairness", () => {
     for (let round = 0; round < 3; round += 1) {
       const [newMail] = deliver(busy, 1, `new-mail-${round}`);
       const windowsBefore = flagWindows.filter((label) => label === "busy").length;
-      const syncMs = await runFolderSyncJob(busy.folderId(INBOX));
+      const turns: string[] = [];
+      const roundStartedAt = performance.now();
+      const syncMs = await runFolderSyncJob(busy.folderId(INBOX), { turns });
       expect(await imported(busy, newMail!)).toBe(true);
       expect(flagWindows.filter((label) => label === "busy").length - windowsBefore).toBeGreaterThanOrEqual(5);
+      // The turns show whether the sync waited for its own retries, for move sets taken while it was
+      // in line, or for something else holding the lease, so a CI failure shows which path happened (#913).
+      if (syncMs >= 5_000) {
+        const uidMoves = moveSets
+          .filter((entry) => entry.label === "busy" && entry.at >= roundStartedAt)
+          .map((entry) => `${Math.round(entry.at - roundStartedAt)} ms ${entry.uids} UIDs`);
+        console.error(`Round ${round}: sync took ${Math.round(syncMs)} ms; turns: ${turns.join(", ")}; UID MOVEs: ${uidMoves.join(", ")}`);
+      }
       expect(syncMs).toBeLessThan(5_000);
       // The first sync waited for at most the set of moves in progress, not for the backlog.
       if (round === 0) expect(await pending(moves)).toBeGreaterThan(0);
@@ -1402,6 +1426,94 @@ suite("mail provider lease fairness", () => {
       await stopMaintenanceRuntime();
     }
   }, 60_000);
+
+  test("a folder sync keeps its turn between its batches, so a command that asks in between waits for it", async () => {
+    // On a CONDSTORE server with this UID history, new mail also brings five flag windows to check,
+    // one batch each.
+    const mailbox = await connect("sync-turn", { condstore: true, firstInboxUid: 20_001 });
+    const folderId = mailbox.folderId(INBOX);
+    const [newMail] = deliver(mailbox, 1, "sync-turn");
+    let batch = await syncFolderBatch(folderId, async () => undefined);
+    expect(batch.hasMore).toBe(true);
+
+    // The mailbox's command job asks between two batches of the sync, while nobody holds the lease.
+    const takeCommandTurn = () =>
+      acquireProviderLease({
+        resource: mailbox.remoteResourceId,
+        waiter: `commands:${mailbox.mailboxId}`,
+        priority: "command",
+        ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS,
+      });
+    let command = await takeCommandTurn();
+    if (command.lock) await releaseProviderLease(command.lock);
+    expect(command.lock).toBeNull();
+
+    // Each next batch gets the lease at once; a batch that found it busy would throw SYNC_BUSY.
+    for (let turn = 0; batch.hasMore && turn < 20; turn += 1) {
+      batch = await syncFolderBatch(folderId, async () => undefined, batch.syncPending ? "sync" : "background");
+    }
+    expect(batch.hasMore).toBe(false);
+    expect(await imported(mailbox, newMail!)).toBe(true);
+
+    // Then the command takes its turn.
+    for (let turn = 0; !command.lock && turn < 10; turn += 1) {
+      await Bun.sleep(command.retryAfterMs);
+      command = await takeCommandTurn();
+    }
+    expect(command.lock).not.toBeNull();
+    if (command.lock) await releaseProviderLease(command.lock);
+  });
+
+  test("a sync requested while a folder's last batch runs keeps the turn for its own batch, so a command that asks in between waits for it", async () => {
+    await ensureHydrationRuntime();
+    const mailbox = await connect("request-turn");
+    const inbox = mailbox.folderId(INBOX);
+    let lateId = "";
+    // The request arrives after the running batch checked the folder, so it needs its own batch.
+    afterStatus = async (account, path) => {
+      if (account !== mailbox.account || path !== INBOX) return;
+      afterStatus = null;
+      lateId = deliver(mailbox, 1, "request-turn")[0]!;
+      await enqueueFolderSync(inbox);
+    };
+    let continuation: { delayMs: number; input: SyncFolderJobInput } | null;
+    try {
+      continuation = await syncFolderTurn(inbox);
+    } finally {
+      afterStatus = null;
+    }
+    expect(continuation).toEqual({ delayMs: 0, input: { folderId: inbox } });
+
+    const takeCommandTurn = () =>
+      acquireProviderLease({
+        resource: mailbox.remoteResourceId,
+        waiter: `commands:${mailbox.mailboxId}`,
+        priority: "command",
+        ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS,
+      });
+    let command = await takeCommandTurn();
+    if (command.lock) await releaseProviderLease(command.lock);
+    expect(command.lock).toBeNull();
+
+    // Run the continuation once: finding the lease busy would resubmit with a delay.
+    const turnResult: { next: { delayMs: number; input: SyncFolderJobInput } | null } = { next: null };
+    await runSyncFolderJob({
+      input: continuation!.input,
+      heartbeat: async () => undefined,
+      resubmit: (resubmit) => {
+        turnResult.next = { delayMs: resubmit?.delayMs ?? 0, input: resubmit?.input ?? continuation!.input };
+      },
+    });
+    expect(turnResult.next).toBeNull();
+    expect(await imported(mailbox, lateId)).toBe(true);
+
+    for (let turn = 0; !command.lock && turn < 10; turn += 1) {
+      await Bun.sleep(command.retryAfterMs);
+      command = await takeCommandTurn();
+    }
+    expect(command.lock).not.toBeNull();
+    if (command.lock) await releaseProviderLease(command.lock);
+  });
 
   test("a waiter that comes back late does not keep a free provider lease from the others and keeps its place", async () => {
     const resource = crypto.randomUUID();
