@@ -95,6 +95,37 @@ databaseSuite()("platform approvals", () => {
       status: "approved",
     });
   });
+  test("ACP confirm approve retries report the existing decision or expiry", async () => {
+    const approved = await ask({ ...input(), assurance: "confirm" });
+    await approve(approved.id);
+    expect(await approvals.decide(approved.id, { approved: true }, { userId, via: "acp_bridge" })).toEqual({
+      ok: true,
+      status: "approved",
+      replay: true,
+    });
+    expect(await sql`SELECT id FROM audit.events WHERE target_type='approval_request' AND target_id=${approved.id}`).toHaveLength(1);
+    await consume(approved);
+    expect(await approvals.decide(approved.id, { approved: true }, { userId, via: "acp_bridge" })).toEqual({
+      ok: true,
+      status: "consumed",
+      replay: true,
+    });
+    const rejected = await ask({ ...input(), assurance: "confirm" });
+    await approve(rejected.id, false);
+    expect(await approvals.decide(rejected.id, { approved: true }, { userId, via: "acp_bridge" })).toEqual({
+      ok: false,
+      code: "ALREADY_DECIDED",
+      status: "rejected",
+    });
+    const expired = await ask({ ...input(), assurance: "confirm" });
+    await sql`UPDATE approvals.requests SET expires_at=now()-interval '1 second' WHERE id=${expired.id}::uuid`;
+    expect(await approvals.decide(expired.id, { approved: true }, { userId, via: "acp_bridge" })).toEqual({
+      ok: false,
+      code: "EXPIRED",
+    });
+    expect(await approvals.get(expired.id)).toMatchObject({ status: "expired" });
+    expect(await sql`SELECT id FROM audit.events WHERE target_type='approval_request' AND target_id=${expired.id}`).toHaveLength(0);
+  });
   test("asking again keeps the first snapshot, so a changed review asks again instead of rebinding the decision", async () => {
     const record = await ask();
     const before = await approvals.get(record.id);

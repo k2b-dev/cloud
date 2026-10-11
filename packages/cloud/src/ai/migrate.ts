@@ -662,6 +662,12 @@ export const migrateCloudAi = async (): Promise<void> => {
   `.simple();
 
   await sql`
+    CREATE INDEX IF NOT EXISTS idx_ai_pending_actions_approval
+    ON ai.pending_actions(approval_id)
+    WHERE approval_id IS NOT NULL
+  `.simple();
+
+  await sql`
     DO $$
     BEGIN
       IF EXISTS (

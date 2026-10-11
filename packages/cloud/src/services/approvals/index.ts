@@ -140,9 +140,11 @@ export const decide = async (
     const [row] = await tx<ApprovalRequest[]>`SELECT ${columns()} FROM approvals.requests
       WHERE id=${id}::uuid AND approver_user_id=${actor.userId}::uuid FOR UPDATE`;
     if (!row) return { ok: false, code: "NOT_FOUND" };
-    if (decision.approved && row.assurance === "confirm" && actor.via === "acp_bridge") return { ok: false, code: "REJECT_ONLY" };
+    const rejectOnly = decision.approved && row.assurance === "confirm" && actor.via === "acp_bridge";
     const status = decision.approved ? "approved" : "rejected";
-    const [won] = await tx<ApprovalRequest[]>`
+    const [won] = rejectOnly
+      ? []
+      : await tx<ApprovalRequest[]>`
       UPDATE approvals.requests SET status=${status}, decided_via=${actor.via}, decided_at=now()
       WHERE id=${id}::uuid AND approver_user_id=${actor.userId}::uuid AND status='pending' AND expires_at > now()
       RETURNING ${columns()}
@@ -168,8 +170,9 @@ export const decide = async (
       return { ok: true, status, replay: false };
     }
     if (row.status === "pending") {
-      await tx`UPDATE approvals.requests SET status='expired' WHERE id=${id}::uuid AND status='pending' AND expires_at <= now()`;
-      return { ok: false, code: "EXPIRED" };
+      const [expired] = await tx<{ id: string }[]>`UPDATE approvals.requests SET status='expired'
+        WHERE id=${id}::uuid AND status='pending' AND expires_at <= now() RETURNING id`;
+      return { ok: false, code: expired || !rejectOnly ? "EXPIRED" : "REJECT_ONLY" };
     }
     if (
       (decision.approved && (row.status === "approved" || row.status === "consumed")) ||

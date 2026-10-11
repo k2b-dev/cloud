@@ -31,8 +31,19 @@ const routes = new Hono<{ Variables: { runtime: { apps: RuntimeAppMeta[] } } }>(
   })
   .route("/", approvalRoutes);
 
-suiteFor("database", "nats")("Core pending approvals API", () => {
+suiteFor(
+  "database",
+  "nats",
+  "valkey",
+)("Core pending approvals API", () => {
   beforeAll(migrateCloudAi);
+  test("indexes approval lookups for pending and resolved actions", async () => {
+    const [index] = await sql<{ indexdef: string }[]>`SELECT indexdef FROM pg_indexes
+      WHERE schemaname='ai' AND tablename='pending_actions' AND indexname='idx_ai_pending_actions_approval'`;
+    expect(index?.indexdef).toContain("(approval_id)");
+    expect(index?.indexdef).toContain("WHERE (approval_id IS NOT NULL)");
+    expect(index?.indexdef).not.toContain("status");
+  });
   test("lists localized requests and counts, decides through chat, and keeps retries and channel rules", async () => {
     const users: string[] = [];
     const serviceAccountIds: string[] = [];
@@ -108,6 +119,7 @@ suiteFor("database", "nats")("Core pending approvals API", () => {
       });
       const counts = await routes.request("/counts", { headers: owner.headers });
       expect(counts.status).toBe(200);
+      expect(counts.headers.get("X-RateLimit-Limit")).toMatch(/^\d+$/);
       expect(await counts.json()).toEqual({ total: 1, apps: { mail: 1, assistant: 1 } });
       expect((await decide(foreign.id, true)).status).toBe(404);
       expect((await decide(confirm.id, true, undefined, "always")).status).toBe(400);
@@ -129,6 +141,9 @@ suiteFor("database", "nats")("Core pending approvals API", () => {
         await aiConversations.getPendingTurnAction({ conversationId: owner.chat.id, turnId: owner.turn.id, callId: confirm.callId }),
       ).toMatchObject({ status: "resolved", resolvedEvent: { type: "approval_response", callId: confirm.callId, approved: true } });
       expect((await decide(confirm.id, true)).status).toBe(200);
+      const replay = await decide(confirm.id, true, APPROVAL_ACP_CLIENT);
+      expect(replay.status).toBe(200);
+      expect(await replay.json()).toEqual({ status: "approved" });
       expect((await decide(confirm.id, false)).status).toBe(409);
       const standard = await owner.ask("standard");
       expect((await decide(standard.id, true, APPROVAL_ACP_CLIENT, "chat")).status).toBe(200);

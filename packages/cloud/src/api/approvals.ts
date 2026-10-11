@@ -15,6 +15,7 @@ import {
   ApprovalPageSchema,
 } from "../contracts/approvals";
 import { ErrorResponseSchema } from "../contracts/shared";
+import { rateLimit } from "../server";
 import { respond } from "../server/api";
 import { type AuthContext, auth } from "../server/middleware/auth";
 import { jsonResponse, requiresAuth } from "../server/middleware/openapi";
@@ -25,6 +26,7 @@ import { decodeApprovalCursor } from "../services/approvals/cursor";
 import { loadPendingApprovals } from "./approvals-loader";
 
 export const approvalRoutes = new Hono<AuthContext>()
+  .use(rateLimit())
   .use(auth.requireRole("authenticated"))
   .get(
     "/",
