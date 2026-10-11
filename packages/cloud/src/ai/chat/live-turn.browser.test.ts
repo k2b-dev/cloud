@@ -83,6 +83,19 @@ afterAll(async () => {
 
 const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
 const frames = (page: Page) => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+/**
+ * Waits until no transition runs in a subtree. Reduced motion shortens every transition to 0.01 ms rather than removing
+ * it, so a typography switch still runs as one, and WebKit can hold its start or a mixed value for more than two frames.
+ */
+const settled = (page: Page, selector: string) =>
+  page.waitForFunction(
+    (query) =>
+      document
+        .querySelector(query)!
+        .getAnimations({ subtree: true })
+        .every((animation) => animation.playState !== "running"),
+    selector,
+  );
 const emit = async (page: Page, event: AiWireEvent) => {
   await page.evaluate((value) => (window as unknown as { emit: (event: AiWireEvent) => void }).emit(value), event);
   await frames(page);
@@ -842,11 +855,13 @@ for (const view of [
       const status = "Good news: the chart API also returns the totals per month. Now I write the app files for the dashboard.";
       const place = ".ai-turn__text";
       const receipt = ".ai-turn__action .ai-turn-receipt";
-      const style = (selector: string) =>
-        page.$eval(`${selector} .assistant-markdown-block`, (node) => {
+      const style = async (selector: string) => {
+        await settled(page, selector);
+        return page.$eval(`${selector} .assistant-markdown-block`, (node) => {
           const computed = getComputedStyle(node);
           return { color: computed.color, fontSize: computed.fontSize, lineHeight: computed.lineHeight };
         });
+      };
       await emit(page, { ...base, seq: 1, type: "turn_started", modelProfileId: "m", providerModel: "m", blocks: [] });
       await emit(page, {
         ...base,
@@ -892,7 +907,10 @@ for (const view of [
       // text that replaces it line up instead of jumping by a few pixels at every switch.
       await page.locator(".ai-turn-work > summary").click();
       await page.locator(".ai-turn-steps__text").first().waitFor();
-      expect(await style(".ai-turn-steps__text")).toEqual({ ...statusStyle, lineHeight: "18.6px" });
+      const stepStyle = await style(".ai-turn-steps__text");
+      expect([stepStyle.color, stepStyle.fontSize]).toEqual([statusStyle.color, statusStyle.fontSize]);
+      // 12 px at line height 1.55; WebKit reports it as 18.599998px.
+      expect(Number.parseFloat(stepStyle.lineHeight)).toBeCloseTo(18.6, 2);
       expect(statusStyle.lineHeight).toBe(answerStyle.lineHeight);
     } finally {
       await context.close();
@@ -949,6 +967,7 @@ for (const view of [
       const request = storedMessage(10, "turn", { role: "user", content: [{ type: "text", text: "Summarize the chart for Jana" }] });
       await emit(page, { ...base, seq: 2, type: "message_saved", message: request });
       expect(await page.locator(`${place}.ai-turn__text--status`).count()).toBe(1);
+      await settled(page, place);
       const before = { text: await viewportBox(page, place), receipt: await viewportBox(page, receipt) };
 
       // The turn ends without another text: the status becomes the final message in answer typography within the height
@@ -994,6 +1013,7 @@ for (const view of [
         ],
       });
       expect(await page.locator(`${place}.ai-turn__text--status`).count()).toBe(0);
+      await settled(page, place);
       expect(await page.$eval(`${place} .assistant-markdown-block`, (node) => getComputedStyle(node).fontSize)).toBe("14px");
       expect(await page.locator(receipt).innerText()).toBe(sent);
       expect(await viewportBox(page, place)).toEqual(before.text);
