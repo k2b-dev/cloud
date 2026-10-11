@@ -306,11 +306,21 @@ export default defineCliCommands({
           "/api-keys",
           jsonRequest("POST", { name: args.name, expiresAt: parseExpiry(flags.expires), access: flags.access }),
         );
+        const modelsOnly = isModelsOnlyApiKey(result.credential);
+        if (flags.access === "models" && !modelsOnly) {
+          try {
+            await readApi<{ message: string }>(ctx, `/api-keys/${encodeURIComponent(result.credential.id)}`, jsonRequest("DELETE"));
+          } catch {
+            throw new Error(
+              `The key was created with full access and could not be revoked automatically. Run: cld account api-keys revoke ${result.credential.id} --yes`,
+            );
+          }
+          throw new Error("This Cloud does not support models-only API keys. The full-access key it created was revoked.");
+        }
         if (ctx.options.output === "json") ctx.json(result);
         else {
           ctx.print(`Token: ${result.token}\nPrefix: ${result.credential.tokenPrefix}\nStore this token now. It cannot be shown again.`);
-          if (flags.access === "models")
-            ctx.print("This key works only with the OpenAI-compatible API at /api/ai/openai/v1 on this Cloud.");
+          if (modelsOnly) ctx.print("This key works only with the OpenAI-compatible API at /api/ai/openai/v1 on this Cloud.");
         }
       },
     }),
