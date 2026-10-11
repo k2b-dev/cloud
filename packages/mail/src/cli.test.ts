@@ -925,6 +925,51 @@ test("compose template and style commands preserve exact source input", async ()
   ]);
 });
 
+test.each(["signature", "snippet"] as const)("compose template create prints the %s shortcut appropriately", async (kind) => {
+  const server = withMailbox((request) => {
+    if (new URL(request.url).pathname === `/api/mail/mailboxes/${MAILBOX_ID}/compose-templates` && request.method === "POST") {
+      return api({
+        id: COMPOSE_TEMPLATE_ID,
+        mailboxId: MAILBOX_ID,
+        kind,
+        scope: "mailbox",
+        ownerUserId: null,
+        name: "Team",
+        shortcut: "team",
+        body: "Hello",
+        revision: 1,
+        archivedAt: null,
+        createdAt: "2026-07-17T00:00:00.000Z",
+        updatedAt: "2026-07-17T00:00:00.000Z",
+      });
+    }
+    return api({ message: "unexpected" }, { status: 500 });
+  });
+  servers.push(server);
+
+  const result = await runCli(`http://127.0.0.1:${server.port}`, [
+    "mail",
+    "compose",
+    "template",
+    "create",
+    "--mailbox",
+    MAILBOX_ID,
+    "--kind",
+    kind,
+    "--scope",
+    "mailbox",
+    "--name",
+    "Team",
+    "--shortcut",
+    "team",
+    "--body",
+    "Hello",
+  ]);
+
+  expect(result.exitCode).toBe(0);
+  expect(result.stdout).toContain(`Created ${kind} Team as ${kind === "snippet" ? "/" : ""}team (${COMPOSE_TEMPLATE_ID}).`);
+});
+
 test("compose preview prints what email leaves out on stderr and keeps it in JSON", async () => {
   const formattingWarnings = [
     { code: "unsupported_element", element: "small" },

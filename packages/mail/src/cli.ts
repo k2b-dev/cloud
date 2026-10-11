@@ -3236,7 +3236,7 @@ const specialistCommands = {
         shortcut: flag.string({
           required: true,
           description:
-            "Slash command that inserts the template in the composer, for example sig for /sig; lowercase letters, digits and underscores, starting with a letter, at most 40 characters",
+            "Slash command for a snippet, for example meeting for /meeting, or a short unique name for a signature; lowercase letters, digits and underscores, starting with a letter, at most 40 characters",
         }),
         body: flag.input({
           required: true,
@@ -3263,7 +3263,9 @@ const specialistCommands = {
           }),
         );
         if (printStructured(ctx, template)) return;
-        ctx.print(`Created ${template.kind} ${template.name} as /${template.shortcut} (${template.id}).`);
+        ctx.print(
+          `Created ${template.kind} ${template.name} as ${template.kind === "snippet" ? "/" : ""}${template.shortcut} (${template.id}).`,
+        );
         printFormattingWarnings(ctx, template.formattingWarnings);
       },
     }),
