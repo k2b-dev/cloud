@@ -337,4 +337,29 @@ describe("MailComposer signature choice", () => {
     await waitFor(() => saves.length > 0);
     expect(saves.at(-1)).toMatchObject({ signatureTemplateId: null, body: "Recovered" });
   });
+
+  test("local recovery preserves an inline signature from a journal without a signature choice", async () => {
+    localStorage.setItem(
+      "cloud:mail:draft:Box001:Draft1",
+      JSON.stringify({
+        revision: 1,
+        content: {
+          senderIdentityId: "Send01",
+          to: initialDraft.to,
+          cc: [],
+          bcc: [],
+          subject: "Offer",
+          body: "Recovered\n\n\u2063Best regards\u2064",
+          format: "markdown",
+          priority: "normal",
+          requestDeliveryReceipt: false,
+          requestReadReceipt: false,
+        },
+      }),
+    );
+    await mount();
+    await waitFor(() => Boolean(trigger().textContent?.includes("No signature")));
+    await waitFor(() => saves.length > 0);
+    expect(saves.at(-1)).toMatchObject({ signatureTemplateId: null, body: "Recovered\n\n\u2063Best regards\u2064" });
+  });
 });

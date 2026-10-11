@@ -8,6 +8,7 @@ import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { type ConnectorVerification, type RemoteFolder, unavailableProviderLimitSnapshot } from "../contracts";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
+import { grantMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import { rediscoverProviderBinding } from "./bindings";
 import { sha256Json } from "./canonical";
@@ -25,7 +26,7 @@ import {
   submitDueDraftProjectionWork,
 } from "./draft-provider-projection";
 import { appendDraftAttachmentUpload, createDraftAttachmentUpload, finalizeDraftAttachmentUpload } from "./draft-uploads";
-import { createDraft, discardDraft, updateDraft } from "./drafts";
+import { createDraft, discardDraft, materializeDraftSeed, prepareDraftSeed, updateDraft } from "./drafts";
 import { setFolderRole } from "./folders";
 import { pauseDeletedMailboxExecution } from "./mailbox-lifecycle";
 import { createMailbox } from "./mailboxes";
@@ -1117,6 +1118,99 @@ suite("mail sent message projection", () => {
     `;
     return outbox!;
   };
+
+  test("derived seeds keep selectable signatures and reject another user's private signature", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const sourceDraft = await newDraft(mailbox, "Derived signature source");
+      const sent = await send(mailbox, sourceDraft.id, sourceDraft.revision, "derived-signature-source");
+      const chosen = await createComposeTemplate({
+        context,
+        mailboxId: mailbox.mailboxId,
+        input: {
+          kind: "signature",
+          scope: "mailbox",
+          name: "Derived choice",
+          shortcut: "derivedchoice",
+          body: "Derived {{ actor.display_name }}",
+        },
+      });
+      const privateSignature = await createComposeTemplate({
+        context,
+        mailboxId: mailbox.mailboxId,
+        input: {
+          kind: "signature",
+          scope: "private",
+          name: "Private choice",
+          shortcut: "derivedprivate",
+          body: "Private {{ actor.display_name }}",
+        },
+      });
+      if (!chosen.ok) throw new Error(chosen.error.message);
+      if (!privateSignature.ok) throw new Error(privateSignature.error.message);
+      const [user] = await sql<{ id: string }[]>`
+        INSERT INTO auth.users (uid, provider, profile, display_name)
+        VALUES (${`derived-collaborator-${suffix}`}, 'local', 'user', 'Derived collaborator') RETURNING id
+      `;
+      if (!user || context.actor.kind !== "user") throw new Error("Missing derived collaborator");
+      userIds.push(user.id);
+      const collaborator: MailRequestContext = {
+        ...context,
+        actor: { kind: "user", user: { ...context.actor.user, id: user.id, uid: `derived-collaborator-${suffix}`, roles: ["user"] } },
+        accessSubject: { type: "user", userId: user.id },
+      };
+      const grant = await grantMailboxAccess({
+        context,
+        mailboxId: mailbox.mailboxId,
+        principal: { type: "user", userId: user.id },
+        permission: "write",
+      });
+      if (!grant.ok) throw new Error(grant.error.message);
+      for (const kind of ["edit_as_new", "resend"] as const) {
+        const origin = {
+          kind: "derive" as const,
+          messageId: sent.message_id,
+          input: { kind, senderIdentityId: mailbox.identityId, includeAttachments: false },
+        };
+        const seed = await prepareDraftSeed({ context: collaborator, mailboxId: mailbox.mailboxId, origin });
+        if (!seed.ok) throw new Error(seed.error.message);
+        const created = await materializeDraftSeed({
+          context: collaborator,
+          mailboxId: mailbox.mailboxId,
+          input: {
+            origin,
+            idempotencyKey: crypto.randomUUID(),
+            draft: {
+              ...seed.data.content,
+              signatureTemplateId: chosen.data.id,
+              body: `Answer\n\n${markComposeTemplateSegment(chosen.data.body)}`,
+            },
+          },
+        });
+        expect(created).toMatchObject({ ok: true, data: { body: "Answer", signatureTemplateId: chosen.data.id } });
+        if (!created.ok) throw new Error(created.error.message);
+        const [stored] = await sql<{ body: string; signature: string | null }[]>`
+          SELECT body_markdown AS body, signature_template_id AS signature FROM mail.drafts WHERE id = ${created.data.id}::uuid
+        `;
+        expect(stored).toEqual({ body: "Answer", signature: chosen.data.id });
+        const key = crypto.randomUUID();
+        expect(
+          await materializeDraftSeed({
+            context: collaborator,
+            mailboxId: mailbox.mailboxId,
+            input: { origin, idempotencyKey: key, draft: { ...seed.data.content, signatureTemplateId: privateSignature.data.id } },
+          }),
+        ).toMatchObject({ ok: false, error: { status: 400, message: "The selected signature is not available" } });
+        const [rejected] = await sql<{ count: number }[]>`
+          SELECT COUNT(*)::int AS count FROM mail.drafts WHERE mailbox_id = ${mailbox.mailboxId}::uuid AND derivation_key = ${key}
+        `;
+        expect(rejected?.count).toBe(0);
+      }
+    } finally {
+      provider.restore();
+    }
+  });
 
   test("send snapshots put the selected signature between body and reply or forwarded history", async () => {
     const provider = createProvider("imap");

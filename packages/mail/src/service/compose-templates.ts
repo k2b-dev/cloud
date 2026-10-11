@@ -39,6 +39,7 @@ import {
   renderComposeTemplateSource,
   validateComposeCss,
   validateComposeTemplateSource,
+  withoutSignatureSegments,
 } from "./compose-renderer";
 
 type SqlClient = typeof sql;
@@ -755,7 +756,7 @@ export const renderComposeDraft = async (params: {
     : [];
   return renderComposeContent({
     signature: signature?.body_template ?? null,
-    body: parsed.data.body,
+    body: signature ? withoutSignatureSegments(parsed.data.body, signature.body_template) : parsed.data.body,
     format: parsed.data.format,
     customCss: await mailboxStyleSource(db, params.mailboxId),
     context: context.data,

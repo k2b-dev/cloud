@@ -303,6 +303,17 @@ export const moveSignatureSegment = (
   return null;
 };
 
+/** Removes every marked copy of the given signature, which Mail adds after the body anyway. */
+export const withoutSignatureSegments = (body: string, signatureSource: string): string => {
+  const signatures = [{ id: "signature", body: signatureSource }];
+  let moved = moveSignatureSegment(body, signatures);
+  while (moved) {
+    body = moved.body;
+    moved = moveSignatureSegment(body, signatures);
+  }
+  return body;
+};
+
 const TEMPLATE_SYNTAX = /\{\{|\{%/;
 
 type ComposeBodyPart = { template: boolean; text: string };

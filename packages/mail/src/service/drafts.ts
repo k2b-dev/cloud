@@ -44,7 +44,12 @@ import {
 import { attachmentMimeOrder } from "./attachment-order";
 import { actorRefFromRequest, type MailRequestContext } from "./auth";
 import { sha256Json } from "./canonical";
-import { composeFormattingWarnings, moveSignatureSegment, removeOrphanComposeSegmentMarks } from "./compose-renderer";
+import {
+  composeFormattingWarnings,
+  moveSignatureSegment,
+  removeOrphanComposeSegmentMarks,
+  withoutSignatureSegments,
+} from "./compose-renderer";
 import { requireSelectableSignature, resolveDefaultSignatureTemplateId, selectableSignatures } from "./compose-templates";
 import { applyConversationReferenceToReplySubjectInTransaction } from "./conversation-reference";
 import { requireDraftLeaseAvailable, withOwnedDraftLease } from "./draft-leases";
@@ -994,7 +999,7 @@ const insertDerivedDraftInTransaction = async (params: {
     INSERT INTO mail.drafts AS d (
       short_id, mailbox_id, conversation_id, intent, source_message_id,
       derived_from_message_id, derivation_kind, derivation_key, derivation_request_hash,
-      sender_identity_id,
+      sender_identity_id, signature_template_id,
       author_kind, author_id, last_editor_kind, last_editor_id,
       to_addresses, cc_addresses, bcc_addresses, subject, body_markdown, body_format,
       priority, request_delivery_receipt, request_read_receipt
@@ -1002,7 +1007,7 @@ const insertDerivedDraftInTransaction = async (params: {
       ${shortId},
       ${params.mailboxId}::uuid, NULL, 'new', NULL,
       ${params.prepared.messageId}::uuid, ${params.prepared.kind}, ${params.idempotencyKey}, ${params.requestHash},
-      ${params.content.senderIdentityId}::uuid,
+      ${params.content.senderIdentityId}::uuid, ${params.content.signatureTemplateId ?? null}::uuid,
       ${params.actor.kind}, ${actorId(params.actor)}::uuid, ${params.actor.kind}, ${actorId(params.actor)}::uuid,
       ${params.content.to}::jsonb, ${params.content.cc}::jsonb, ${params.content.bcc}::jsonb,
       ${params.content.subject}, ${params.content.body}, ${params.content.format},
@@ -1224,6 +1229,16 @@ export const materializeDraftSeed = async (params: {
         origin: validationOrigin,
       });
       if (!preparedSeed.ok) return preparedSeed;
+      const signature = await resolveDraftSignature({
+        db: tx,
+        context: params.context,
+        mailboxId: params.mailboxId,
+        stored: { body: "", signatureTemplateId: preparedSeed.data.content.signatureTemplateId ?? null },
+        body: parsed.data.draft.body,
+        requested: parsed.data.draft.signatureTemplateId,
+      });
+      if (!signature.ok) return signature;
+      const content = { ...parsed.data.draft, ...signature.data };
       if (parsed.data.origin.kind === "derive") {
         const prepared: PreparedDerivedDraft = {
           messageId: preparedSeed.data.derivedFromMessageId!,
@@ -1236,18 +1251,10 @@ export const materializeDraftSeed = async (params: {
           mailboxId: params.mailboxId,
           actor,
           prepared,
-          content: parsed.data.draft,
+          content,
           idempotencyKey: parsed.data.idempotencyKey,
           requestHash,
         });
-      }
-      const signatureTemplateId =
-        parsed.data.draft.signatureTemplateId === undefined
-          ? (preparedSeed.data.content.signatureTemplateId ?? null)
-          : parsed.data.draft.signatureTemplateId;
-      if (signatureTemplateId !== null && signatureTemplateId !== preparedSeed.data.content.signatureTemplateId) {
-        const signature = await requireSelectableSignature(tx, params.context, params.mailboxId, signatureTemplateId);
-        if (!signature.ok) return signature;
       }
       const prepared: PreparedComposeDraft = {
         conversationId: preparedSeed.data.conversationId,
@@ -1261,7 +1268,7 @@ export const materializeDraftSeed = async (params: {
         mailboxId: params.mailboxId,
         actor,
         prepared,
-        content: { ...parsed.data.draft, signatureTemplateId },
+        content,
         materializationKey: parsed.data.idempotencyKey,
         materializationRequestHash: requestHash,
       });
@@ -1715,6 +1722,44 @@ export const createWorkflowDraftInTransaction = async (params: {
 const legacySignature = async (db: typeof sql, context: MailRequestContext, mailboxId: string, body: string) =>
   body.includes("\u2063") ? moveSignatureSegment(body, await selectableSignatures(db, context, mailboxId)) : null;
 
+/**
+ * The signature a draft write stores, and its body without that signature's legacy segments. An omitted choice
+ * keeps the stored one or takes the first recognized segment of a legacy draft, stored body first, because the
+ * draft view already moved that segment out. Other segments and the body of an explicit choice stay as sent,
+ * so preview and send keep rendering them where the writer saw them.
+ */
+const resolveDraftSignature = async (params: {
+  db: typeof sql;
+  context: MailRequestContext;
+  mailboxId: string;
+  stored: { body: string; signatureTemplateId: string | null };
+  body: string;
+  requested: string | null | undefined;
+}): Promise<Result<{ body: string; signatureTemplateId: string | null }>> => {
+  const { db, context, mailboxId, stored, requested } = params;
+  const signatureTemplateId =
+    requested === undefined
+      ? (stored.signatureTemplateId ??
+        (await legacySignature(db, context, mailboxId, stored.body))?.signatureTemplateId ??
+        (await legacySignature(db, context, mailboxId, params.body))?.signatureTemplateId ??
+        null)
+      : requested;
+  if (requested !== undefined && signatureTemplateId !== null && signatureTemplateId !== stored.signatureTemplateId) {
+    const selectable = await requireSelectableSignature(db, context, mailboxId, signatureTemplateId);
+    if (!selectable.ok) return selectable;
+  }
+  let body = params.body;
+  if (signatureTemplateId !== null && body.includes("\u2063")) {
+    const [signature] = await db<{ body_template: string }[]>`
+      SELECT body_template FROM mail.compose_templates
+      WHERE id = ${signatureTemplateId}::uuid AND mailbox_id = ${mailboxId}::uuid
+        AND kind = 'signature' AND archived_at IS NULL
+    `;
+    if (signature) body = withoutSignatureSegments(body, signature.body_template);
+  }
+  return ok({ body, signatureTemplateId });
+};
+
 export const updateDraft = async (params: {
   context: MailRequestContext;
   mailboxId: string;
@@ -1756,21 +1801,15 @@ export const updateDraft = async (params: {
         await storeRecoveryCopy({ db: tx, draftId, baseRevision: params.expectedRevision, content: parsed.data, actor });
         return conflict("Sender identity is no longer available; the submitted content was saved as a recovery copy");
       }
-      const currentLegacy =
-        current.signature_template_id === null ? await legacySignature(tx, params.context, params.mailboxId, current.body_markdown) : null;
-      const incomingLegacy = await legacySignature(tx, params.context, params.mailboxId, parsed.data.body);
-      const signatureTemplateId =
-        parsed.data.signatureTemplateId === undefined
-          ? (incomingLegacy?.signatureTemplateId ?? current.signature_template_id ?? currentLegacy?.signatureTemplateId ?? null)
-          : parsed.data.signatureTemplateId;
-      if (
-        parsed.data.signatureTemplateId !== undefined &&
-        signatureTemplateId !== null &&
-        signatureTemplateId !== current.signature_template_id
-      ) {
-        const signature = await requireSelectableSignature(tx, params.context, params.mailboxId, signatureTemplateId);
-        if (!signature.ok) return signature;
-      }
+      const signature = await resolveDraftSignature({
+        db: tx,
+        context: params.context,
+        mailboxId: params.mailboxId,
+        stored: { body: current.body_markdown, signatureTemplateId: current.signature_template_id },
+        body: parsed.data.body,
+        requested: parsed.data.signatureTemplateId,
+      });
+      if (!signature.ok) return signature;
       const [row] = await tx<DbDraft[]>`
         UPDATE mail.drafts d
         SET
@@ -1779,8 +1818,8 @@ export const updateDraft = async (params: {
           cc_addresses = ${parsed.data.cc}::jsonb,
           bcc_addresses = ${parsed.data.bcc}::jsonb,
           subject = ${parsed.data.subject},
-          body_markdown = ${incomingLegacy?.body ?? parsed.data.body},
-          signature_template_id = ${signatureTemplateId}::uuid,
+          body_markdown = ${signature.data.body},
+          signature_template_id = ${signature.data.signatureTemplateId}::uuid,
           body_format = ${parsed.data.format},
           priority = ${parsed.data.priority},
           request_delivery_receipt = ${parsed.data.requestDeliveryReceipt},
@@ -2046,8 +2085,10 @@ export const restoreDraftRecoveryCopy = async (params: {
         sql.begin(async (tx) => {
           const allowed = await requireDraftAccess(params.context, params.mailboxId, params.draftId, "write", tx);
           if (!allowed.ok) return allowed;
-          const [draft] = await tx<{ revision: string | number; state: string }[]>`
-        SELECT revision, state
+          const [draft] = await tx<
+            { revision: string | number; state: string; body_markdown: string; signature_template_id: string | null }[]
+          >`
+        SELECT revision, state, body_markdown, signature_template_id
         FROM mail.drafts
         WHERE id = ${draftId}::uuid AND mailbox_id = ${params.mailboxId}::uuid AND origin = 'user'
         FOR UPDATE
@@ -2069,6 +2110,15 @@ export const restoreDraftRecoveryCopy = async (params: {
           if (!content.success) return fail(err.internal("Draft recovery copy is invalid"));
           const identity = await validateIdentity({ mailboxId: params.mailboxId, senderIdentityId: content.data.senderIdentityId, db: tx });
           if (!identity.ok) return identity;
+          const signature = await resolveDraftSignature({
+            db: tx,
+            context: params.context,
+            mailboxId: params.mailboxId,
+            stored: { body: draft.body_markdown, signatureTemplateId: draft.signature_template_id },
+            body: content.data.body,
+            requested: content.data.signatureTemplateId,
+          });
+          if (!signature.ok) return signature;
           const recoveryAttachments = copy.has_attachment_snapshot
             ? await tx<
                 {
@@ -2122,9 +2172,8 @@ export const restoreDraftRecoveryCopy = async (params: {
           cc_addresses = ${content.data.cc}::jsonb,
           bcc_addresses = ${content.data.bcc}::jsonb,
           subject = ${content.data.subject},
-          body_markdown = ${content.data.body},
-          signature_template_id = CASE WHEN ${content.data.signatureTemplateId !== undefined}
-            THEN ${content.data.signatureTemplateId ?? null}::uuid ELSE d.signature_template_id END,
+          body_markdown = ${signature.data.body},
+          signature_template_id = ${signature.data.signatureTemplateId}::uuid,
           body_format = ${content.data.format},
           priority = ${content.data.priority},
           request_delivery_receipt = ${content.data.requestDeliveryReceipt},

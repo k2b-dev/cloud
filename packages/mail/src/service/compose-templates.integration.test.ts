@@ -904,7 +904,11 @@ suite("mail compose templates", () => {
       expectedRevision: saved.data.revision,
       input: { ...content(saved.data), body, signatureTemplateId: null },
     });
-    expect(cleared).toMatchObject({ ok: true, data: { body: "Answer", signatureTemplateId: null } });
+    expect(cleared).toMatchObject({ ok: true, data: { body, signatureTemplateId: null } });
+    const [storedCleared] = await sql<{ body: string; signature: string | null }[]>`
+      SELECT body_markdown AS body, signature_template_id AS signature FROM mail.drafts WHERE id = ${saved.data.id}::uuid
+    `;
+    expect(storedCleared).toEqual({ body, signature: null });
     // A client that already removed the segment but omits the new field keeps the stored body's choice.
     const old = await createDraft({ context: owner, mailboxId, input: { ...newContent(), body, signatureTemplateId: null } });
     if (!old.ok) throw new Error(old.error.message);
@@ -973,5 +977,172 @@ suite("mail compose templates", () => {
     } finally {
       await releaseDraftLease({ context: owner, mailboxId, draftId: created.data.id, token: lease.data.token });
     }
+  });
+
+  test("saving two legacy segments keeps the first choice and the other segment", async () => {
+    const first = await signature("legacyfirst");
+    const second = await signature("legacysecond");
+    const body = `Answer\n\n${markComposeTemplateSegment(first.body)}\n\n${markComposeTemplateSegment(second.body)}`;
+    const expectedBody = `Answer\n\n${markComposeTemplateSegment(second.body)}`;
+    for (const omitChoice of [false, true]) {
+      const created = await createDraft({ context: owner, mailboxId, input: { ...newContent(), body, signatureTemplateId: null } });
+      if (!created.ok) throw new Error(created.error.message);
+      const view = await getDraft(owner, mailboxId, created.data.id);
+      if (!view.ok) throw new Error(view.error.message);
+      expect(view.data).toMatchObject({ body: expectedBody, signatureTemplateId: first.id });
+      const { signatureTemplateId: _, ...withoutChoice } = content(view.data);
+      const saved = await updateDraft({
+        context: owner,
+        mailboxId,
+        draftId: view.data.id,
+        expectedRevision: view.data.revision,
+        input: omitChoice ? withoutChoice : content(view.data),
+      });
+      expect(saved).toMatchObject({ ok: true, data: { body: expectedBody, signatureTemplateId: first.id } });
+      const [stored] = await sql<{ body: string; signature: string | null }[]>`
+        SELECT body_markdown AS body, signature_template_id AS signature FROM mail.drafts WHERE id = ${view.data.id}::uuid
+      `;
+      expect(stored).toEqual({ body: expectedBody, signature: first.id });
+    }
+  });
+
+  test("recovery rejects another user's private signature saved by a stale collaborator", async () => {
+    const chosen = await signature("restorechosen");
+    const privateSignature = await signature("restoreprivate", "private");
+    const created = await createDraft({ context: owner, mailboxId, input: { ...newContent(), signatureTemplateId: chosen.id } });
+    if (!created.ok) throw new Error(created.error.message);
+    const current = await updateDraft({
+      context: owner,
+      mailboxId,
+      draftId: created.data.id,
+      expectedRevision: created.data.revision,
+      input: content(created.data),
+    });
+    if (!current.ok) throw new Error(current.error.message);
+    expect(
+      await updateDraft({
+        context: collaborator,
+        mailboxId,
+        draftId: current.data.id,
+        expectedRevision: created.data.revision,
+        input: { ...content(current.data), signatureTemplateId: privateSignature.id },
+      }),
+    ).toMatchObject({ ok: false, error: { status: 409 } });
+    const copies = await listDraftRecoveryCopies({ context: collaborator, mailboxId, draftId: current.data.id });
+    if (!copies.ok) throw new Error(copies.error.message);
+    const copy = copies.data[0];
+    if (!copy) throw new Error("Missing private signature recovery copy");
+    expect(copy.content.signatureTemplateId).toBe(privateSignature.id);
+    const lease = await acquireDraftLease({ context: collaborator, mailboxId, draftId: current.data.id });
+    if (!lease.ok) throw new Error(lease.error.message);
+    try {
+      expect(
+        await restoreDraftRecoveryCopy({
+          context: collaborator,
+          mailboxId,
+          draftId: current.data.id,
+          recoveryCopyId: copy.id,
+          expectedRevision: current.data.revision,
+          leaseToken: lease.data.token,
+        }),
+      ).toMatchObject({ ok: false, error: { status: 400, message: "The selected signature is not available" } });
+      const [stored] = await sql<{ signature: string | null; restored_at: Date | null }[]>`
+        SELECT d.signature_template_id AS signature, recovery.restored_at
+        FROM mail.drafts d JOIN mail.draft_recovery_copies recovery ON recovery.draft_id = d.id
+        WHERE recovery.id = ${copy.id}::uuid
+      `;
+      expect(stored).toEqual({ signature: chosen.id, restored_at: null });
+    } finally {
+      await releaseDraftLease({ context: collaborator, mailboxId, draftId: current.data.id, token: lease.data.token });
+    }
+  });
+
+  test("restoring an old recovery body removes only the stored signature's segment", async () => {
+    const chosen = await signature("restorelegacy");
+    const other = await signature("restoreother");
+    const created = await createDraft({ context: owner, mailboxId, input: { ...newContent(), signatureTemplateId: chosen.id } });
+    if (!created.ok) throw new Error(created.error.message);
+    const current = await updateDraft({
+      context: owner,
+      mailboxId,
+      draftId: created.data.id,
+      expectedRevision: created.data.revision,
+      input: content(created.data),
+    });
+    if (!current.ok) throw new Error(current.error.message);
+    const { signatureTemplateId: _, ...oldContent } = content(current.data);
+    const expectedBody = `Recovered answer\n\n${markComposeTemplateSegment(other.body)}`;
+    expect(
+      await updateDraft({
+        context: owner,
+        mailboxId,
+        draftId: current.data.id,
+        expectedRevision: created.data.revision,
+        input: { ...oldContent, body: `${expectedBody}\n\n${markComposeTemplateSegment(chosen.body)}` },
+      }),
+    ).toMatchObject({ ok: false, error: { status: 409 } });
+    const copies = await listDraftRecoveryCopies({ context: owner, mailboxId, draftId: current.data.id });
+    if (!copies.ok) throw new Error(copies.error.message);
+    const copy = copies.data[0];
+    if (!copy) throw new Error("Missing legacy recovery copy");
+    expect(Object.hasOwn(copy.content, "signatureTemplateId")).toBeFalse();
+    const lease = await acquireDraftLease({ context: owner, mailboxId, draftId: current.data.id });
+    if (!lease.ok) throw new Error(lease.error.message);
+    try {
+      expect(
+        await restoreDraftRecoveryCopy({
+          context: owner,
+          mailboxId,
+          draftId: current.data.id,
+          recoveryCopyId: copy.id,
+          expectedRevision: current.data.revision,
+          leaseToken: lease.data.token,
+        }),
+      ).toMatchObject({ ok: true, data: { body: expectedBody, signatureTemplateId: chosen.id } });
+      const [stored] = await sql<{ body: string; signature: string | null }[]>`
+        SELECT body_markdown AS body, signature_template_id AS signature FROM mail.drafts WHERE id = ${current.data.id}::uuid
+      `;
+      expect(stored).toEqual({ body: expectedBody, signature: chosen.id });
+    } finally {
+      await releaseDraftLease({ context: owner, mailboxId, draftId: current.data.id, token: lease.data.token });
+    }
+  });
+
+  test("materializing an old compose seed removes the default signature's segment", async () => {
+    const origin = { kind: "compose" as const, input: newContent() };
+    const seed = await prepareDraftSeed({ context: owner, mailboxId, origin });
+    if (!seed.ok) throw new Error(seed.error.message);
+    const templates = await listComposeTemplates(owner, mailboxId);
+    if (!templates.ok) throw new Error(templates.error.message);
+    const chosen = templates.data.find((template) => template.id === seed.data.content.signatureTemplateId);
+    if (!chosen) throw new Error("Missing default signature");
+    const { signatureTemplateId: _, ...oldContent } = seed.data.content;
+    const draft = await materializeDraftSeed({
+      context: owner,
+      mailboxId,
+      input: {
+        origin,
+        idempotencyKey: crypto.randomUUID(),
+        draft: { ...oldContent, body: `Answer\n\n${markComposeTemplateSegment(chosen.body)}` },
+      },
+    });
+    expect(draft).toMatchObject({ ok: true, data: { body: "Answer", signatureTemplateId: chosen.id } });
+    if (!draft.ok) throw new Error(draft.error.message);
+    const [stored] = await sql<{ body: string; signature: string | null }[]>`
+      SELECT body_markdown AS body, signature_template_id AS signature FROM mail.drafts WHERE id = ${draft.data.id}::uuid
+    `;
+    expect(stored).toEqual({ body: "Answer", signature: chosen.id });
+  });
+
+  test("preview renders a selected signature only once when its segment remains in the body", async () => {
+    const chosen = await signature("previewlegacy");
+    const preview = await previewComposeDraft({
+      context: owner,
+      mailboxId,
+      input: { draft: { ...newContent(), signatureTemplateId: chosen.id, body: `Answer\n\n${markComposeTemplateSegment(chosen.body)}` } },
+    });
+    if (!preview.ok) throw new Error(preview.error.message);
+    expect(preview.data.text).toBe("Answer\n\nRegards previewlegacy Ada Owner");
+    expect(preview.data.html.match(/Regards previewlegacy/g)).toHaveLength(1);
   });
 });

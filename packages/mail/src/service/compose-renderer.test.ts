@@ -12,6 +12,7 @@ import {
   splitQuotedHistory,
   validateComposeCss,
   validateComposeTemplateSource,
+  withoutSignatureSegments,
 } from "./compose-renderer";
 
 const markComposeTemplateSegment = (source: string): string => `\u2063${source}\u2064`;
@@ -810,5 +811,22 @@ describe("separate draft signatures", () => {
       body: "\u2064Answer\u2063",
       signatureTemplateId: "sig",
     });
+  });
+
+  test("removes every exact signature segment and its separator", () => {
+    const source = "Regards {{ actor.display_name }}";
+    const segment = markComposeTemplateSegment(source);
+    expect(withoutSignatureSegments(`Answer\n\n${segment}\n\n${segment}\n\n> Old`, source)).toBe("Answer\n\n> Old");
+  });
+
+  test("keeps segments with a different source", () => {
+    const source = "Regards {{ actor.display_name }}";
+    const other = markComposeTemplateSegment(`${source} `);
+    expect(withoutSignatureSegments(`Answer\n\n${other}\n\n${markComposeTemplateSegment(source)}`, source)).toBe(`Answer\n\n${other}`);
+  });
+
+  test("leaves a body without segment marks unchanged", () => {
+    const body = "Regards {{ actor.display_name }}  \n\n";
+    expect(withoutSignatureSegments(body, "Regards {{ actor.display_name }}")).toBe(body);
   });
 });
