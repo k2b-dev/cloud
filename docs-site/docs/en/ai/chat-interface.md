@@ -287,7 +287,7 @@ order:
    inline as its chart or table, reserving its height while loading. The height
    comes from the summary of the finished `present` call; while the call runs,
    the work line names the step and the place stays empty, so no one-line
-   placeholder grows into the view. Table header labels stay on one line, and
+   activity grows into the view. Table header labels stay on one line, and
    the table scrolls sideways instead, so up to eight rows fit the reserved
    height on a phone too. Readers validate the file again; missing or invalid
    data shows unavailable in that frame. The CLI fetches and validates a view
