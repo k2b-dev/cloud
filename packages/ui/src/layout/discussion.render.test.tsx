@@ -102,14 +102,14 @@ describe("Discussion", () => {
     expect(css).toContain('.k2b-discussion[data-surface="bare"] .k2b-discussion__header :is(h2, h3)');
   });
 
-  test("keeps item actions visible on touch and progressive on fine pointers", async () => {
+  test("keeps item actions visible on touch and progressive on hovering pointers", async () => {
     const css = await Bun.file(resolve(import.meta.dir, "../styles/index.css")).text();
     const actionRule = css.match(/\.k2b-ui \.k2b-discussion__item-actions \{([^}]*)\}/)?.[1];
     const discussionRule = css.match(/\.k2b-ui \.k2b-discussion \{([^}]*)\}/)?.[1];
     const summaryRule = css.match(/\.k2b-ui \.k2b-detail-panel__summary \{([^}]*)\}/)?.[1];
 
     expect(actionRule).toContain("opacity: 1");
-    expect(css).toContain("@media (hover: hover) and (pointer: fine)");
+    expect(css).toContain("@media (any-hover: hover)");
     expect(css).toContain('.k2b-discussion__item-actions[data-visibility="progressive"]');
     expect(css).toContain(".k2b-discussion__item:focus-within");
     expect(discussionRule).toContain("background: var(--k2b-surface)");

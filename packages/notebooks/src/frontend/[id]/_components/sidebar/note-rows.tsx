@@ -17,7 +17,7 @@ export function NoteRowLabel(props: { note: NoteTreeNode }) {
   );
 }
 
-/** The ⋯ button of a sidebar note row; it shows on hover and focus with a fine pointer and always on touch. */
+/** The ⋯ button of a sidebar note row; with a mouse it shows on hover, focus, and the open note, and always on touch. */
 export function NoteRowMenu(props: { note: NoteTreeNode; items: DropdownItem[] }) {
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;

@@ -266,13 +266,13 @@ describe("@k2b/ui complete advanced layout migrations", () => {
   test("reveals hover sidebar and section actions for pointer and keyboard users without hiding them on touch", async () => {
     const css = await Bun.file(resolve(import.meta.dir, "../styles/index.css")).text();
 
-    expect(css).toContain("@media (hover: hover) and (pointer: fine)");
+    expect(css).toContain("@media (any-hover: hover)");
     expect(css).toContain(".k2b-app-workspace__sidebar-section-actions");
     expect(css).toContain(':has(.k2b-dropdown__trigger[aria-expanded="true"])');
     expect(css).toContain('.k2b-app-workspace__sidebar-item-action[data-visibility="hover"]');
     expect(css).toContain('.k2b-app-workspace__sidebar-item-meta[data-visibility="hover"]');
     expect(css).toContain('.k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]');
-    expect(css).toContain(":is(:hover, :focus-within)");
+    expect(css).toContain(':is(:hover, :focus-within, .is-active, :has(> [aria-current="page"]))');
     expect(css).toContain("gap: 0");
     expect(css).toContain("pointer-events: none");
     expect(css).toContain("pointer-events: auto");
@@ -280,16 +280,16 @@ describe("@k2b/ui complete advanced layout migrations", () => {
 
   test("overlays revealed object-row actions on the trailing counts instead of shifting them", async () => {
     const css = await Bun.file(resolve(import.meta.dir, "../styles/index.css")).text();
-    const finePointer = css.slice(
-      css.indexOf("@media (hover: hover) and (pointer: fine) {\n  .k2b-ui .k2b-app-workspace__sidebar-section-actions"),
-    );
-    const block = finePointer.slice(0, finePointer.indexOf("\n}\n"));
+    const hoverPointer = css.slice(css.indexOf("@media (any-hover: hover) {\n  .k2b-ui .k2b-app-workspace__sidebar-section-actions"));
+    const block = hoverPointer.slice(0, hoverPointer.indexOf("\n}\n"));
     const overlay = block.match(
       /\[data-variant="object"\]:has\(\.k2b-app-workspace__sidebar-item-meta\)\s*> \.k2b-app-workspace__sidebar-item-actions\[data-visibility="hover"\] \{([^}]*)\}/,
     )?.[1];
     expect(overlay).toContain("position: absolute");
     expect(overlay).toContain("inset-inline-end: 0");
-    const hiddenMeta = block.match(/\):is\(:hover, :focus-within\)\s*\.k2b-app-workspace__sidebar-item-meta \{([^}]*)\}/)?.[1];
+    const hiddenMeta = block.match(
+      /\):is\(:hover, :focus-within, \.is-active, :has\(> \[aria-current="page"\]\)\)\s*\.k2b-app-workspace__sidebar-item-meta \{([^}]*)\}/,
+    )?.[1];
     // Opacity keeps the counts' visually hidden text in the accessibility tree.
     expect(hiddenMeta).toContain("opacity: 0");
     expect(hiddenMeta).not.toContain("visibility");

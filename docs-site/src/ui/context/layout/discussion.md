@@ -21,7 +21,7 @@ The composer field is a recessed well like the other inputs in a panel, not a bo
 
 `Discussion.List` renders compact initial-loading and error rows. Render entries chronologically from oldest to newest and prepend each earlier page. With `hasMore` and `onLoadMore`, the list automatically loads earlier entries when its upper sentinel becomes visible. Return `false` when no page was applied; every other result tells the list to preserve the visible position after the prepend. It guards duplicate requests, and the small load action remains as an accessible fallback.
 
-Each `Discussion.Item` receives `author` and body content plus optional `avatar`, `timestamp`, `meta`, `replyContext`, and `actions`. Item actions are progressive on fine pointers by default; use `actionVisibility="always"` only when they must remain persistently visible.
+Each `Discussion.Item` receives `author` and body content plus optional `avatar`, `timestamp`, `meta`, `replyContext`, and `actions`. Item actions are progressive with a mouse or trackpad, including a tablet with a mouse, by default; use `actionVisibility="always"` only when they must remain persistently visible.
 
 Do not add a second scroll container to the list. A surrounding `DetailPanel.Body` or page remains the single scroll owner. An empty list renders no placeholder; the numeric `0` in the discussion header and an available composer are sufficient.
 
@@ -96,7 +96,7 @@ These props map to `Discussion`, `.Composer`, `.List`, and `.Item`. JSX slots re
 
 ## Accessibility
 
-The root is a labelled `section`, the entries are an ordered list, and the composer is a native form. Loading and failures use status semantics, retry remains keyboard accessible, and automatic history loading has a manual fallback. Supply real `<time dateTime>` markup for timestamps and accessible names for every icon-only action. Progressive item actions remain discoverable through keyboard focus and are never hidden on touch devices.
+The root is a labelled `section`, the entries are an ordered list, and the composer is a native form. Loading and failures use status semantics, retry remains keyboard accessible, and automatic history loading has a manual fallback. Supply real `<time dateTime>` markup for timestamps and accessible names for every icon-only action. With any pointer that can hover, progressive item actions stay hidden until their row is hovered, keyboard-focused, or has its menu open. Touch-only screens always show them.
 
 ## Runtime
 

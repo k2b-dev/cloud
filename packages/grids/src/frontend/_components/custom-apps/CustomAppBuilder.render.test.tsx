@@ -886,7 +886,7 @@ describe("CustomAppBuilder", () => {
     );
     expect(css).not.toContain("data-show-block-outlines");
     expect(css).toMatch(/\.custom-app-block:hover\s*>\s*\.custom-app-block-control\s*\{[^}]*opacity:\s*1/);
-    expect(css).toMatch(/@media \(hover: none\)[\s\S]*?\.custom-app-block\s*>\s*\.custom-app-block-control\s*\{[^}]*opacity:\s*1/);
+    expect(css).toMatch(/@media \(any-hover: none\)[\s\S]*?\.custom-app-block\s*>\s*\.custom-app-block-control\s*\{[^}]*opacity:\s*1/);
     expect(css).not.toContain('.custom-app-block[data-selected="true"] > .custom-app-block-control');
     expect(css).toMatch(/\.custom-app-block\[data-selected="true"\]\s*\{[^}]*outline:\s*1px solid var\(--grids-edit-accent\)/);
     expect(css).toMatch(

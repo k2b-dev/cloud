@@ -101,7 +101,7 @@
     transform 120ms ease;
 }
 
-@media (hover: hover) and (pointer: fine) {
+@media (any-hover: hover) {
   .tools-image-converter-card__selection,
   .tools-image-converter-card__actions {
     opacity: 0;
