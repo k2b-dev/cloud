@@ -48,6 +48,7 @@ const identity = (id: string, label: string, signature: string): SenderIdentity 
   isDefault: id === "Send01",
   status: "verified",
   statusReason: null,
+  pendingVerificationCommandId: null,
   createdAt: now,
   updatedAt: now,
 });
