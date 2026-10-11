@@ -2193,7 +2193,56 @@ test("status reads the aggregate operational health endpoint", async () => {
 
   const text = await runCli(`http://127.0.0.1:${server.port}`, ["mail", "status", "--mailbox", MAILBOX_ID]);
   expect(text.exitCode, text.stderr).toBe(0);
-  expect(text.stdout).toContain("Sync: never completed, 0 running, 0 failed");
+  expect(text.stdout).toContain("Sync: never completed, 0 running, 0 failed in the last 24 hours");
+});
+
+test("sync runs lists failed runs with their folder and error code and pages with the cursor", async () => {
+  const queries: string[] = [];
+  const server = withMailbox((request) => {
+    const url = new URL(request.url);
+    if (url.pathname !== `/api/mail/mailboxes/${MAILBOX_ID}/sync-runs`) return api({ message: "unexpected" }, { status: 500 });
+    queries.push(url.search);
+    return api({
+      items: [
+        {
+          kind: "incremental",
+          state: "failed",
+          folderId: FOLDER_ID,
+          folderPath: "Projects / Archive",
+          errorCode: "CONNECT_TIMEOUT",
+          startedAt: "2026-10-11T08:00:00.000Z",
+          finishedAt: "2026-10-11T08:00:15.000Z",
+        },
+      ],
+      nextCursor: "next-page",
+    });
+  });
+  servers.push(server);
+
+  const text = await runCli(`http://127.0.0.1:${server.port}`, ["mail", "sync", "runs", "--mailbox", MAILBOX_ID, "--state", "failed"]);
+  expect(text.exitCode, text.stderr).toBe(0);
+  expect(text.stdout).toMatch(/2026-10-11T08:00:00\.000Z\s+failed\s+Projects \/ Archive\s+CONNECT_TIMEOUT/);
+  expect(text.stdout).toContain("Next cursor: next-page");
+
+  const json = await runCli(`http://127.0.0.1:${server.port}`, [
+    "--json",
+    "mail",
+    "sync",
+    "runs",
+    "--mailbox",
+    MAILBOX_ID,
+    "--limit",
+    "100",
+    "--cursor",
+    "next-page",
+  ]);
+  expect(json.exitCode, json.stderr).toBe(0);
+  expect(JSON.parse(json.stdout)).toMatchObject({ items: [{ errorCode: "CONNECT_TIMEOUT" }], nextCursor: "next-page" });
+  expect(queries).toEqual(["?limit=50&state=failed", "?limit=100&cursor=next-page"]);
+
+  const invalid = await runCli(`http://127.0.0.1:${server.port}`, ["mail", "sync", "runs", "--mailbox", MAILBOX_ID, "--state", "broken"]);
+  expect(invalid.exitCode).not.toBe(0);
+  expect(queries).toHaveLength(2);
 });
 
 test("sync folder separates a finished sync from a missing prerequisite before or during the wait", async () => {

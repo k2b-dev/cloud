@@ -488,6 +488,22 @@ must be true before using that response for a complete `draft.update` replacemen
 Both mutations require the current revision; sending still requires the existing
 send-safety review and approval.
 
+## Check failed synchronization
+
+`cld mail status` counts the sync runs that failed in the last 24 hours. Each
+attempt to sync a batch of one folder is a run, so a failure that a retry
+completed still counts. List the runs behind that number, newest first, with
+their folder and error code:
+
+```bash
+cld mail sync runs --state failed
+```
+
+Mail keeps finished sync runs for 30 days and returns up to 100 per page; the
+command needs read access to the whole mailbox. See
+`cld mail reference operations.md` for the states and how to tell retries from
+a lasting problem.
+
 ## Search in large mailboxes
 
 Search reads a bounded amount of mail in each mailbox, so a word that appears
