@@ -236,20 +236,16 @@ describe.each(Object.entries(devices))("Markdown list structure in the note edit
     try {
       await loadDocument(
         page,
-        "1. a\n1. b\n1. c\n\nParagraph separates lists.\n\n3. start\n7. next\n   1. alpha\n      1. roman\n         1. decimal\n      1. roman again\n   1. alpha again",
+        "1. a\n1. b\n1. c\n\nParagraph separates lists.\n\n3. start\n7. next\n   1. alpha\n      1. roman\n         1. decimal\n      1. roman again\n   1. alpha again" +
+          "\n\nParagraph separates lists.\n\n3. [ ] First\n7. Second",
       );
-      expect((await measureLists(page)).lines.map(({ label }) => label)).toEqual([
-        "1.",
-        "2.",
-        "3.",
-        "3.",
-        "4.",
-        "a.",
-        "i.",
-        "1.",
-        "ii.",
-        "b.",
-      ]);
+      const { lines } = await measureLists(page);
+      expect(lines.map(({ label }) => label)).toEqual(["1.", "2.", "3.", "3.", "4.", "a.", "i.", "1.", "ii.", "b.", "3.", "4."]);
+      // A numbered checklist item shows its number and then its box, as Book does, and its text follows both.
+      const [first, second] = lines.slice(-2);
+      expect(first!.checkbox).toBe(true);
+      expect(second!.checkbox).toBe(false);
+      closeTo(first!.textX, second!.textX + (name === "desktop" ? 26 : 22));
     } finally {
       await page.context().close();
     }

@@ -1,8 +1,17 @@
-import type { EditorState, Extension, Range } from "@codemirror/state";
+import type { EditorState, Extension, Range, Transaction } from "@codemirror/state";
 import { StateField } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, ViewPlugin, WidgetType } from "@codemirror/view";
 import { treeOrDocChanged } from "./_lib/cursor-zone-field";
-import { type ListItem, type ListItemKind, type ListStructure, listItemAtLine, listStructure, orderedLabel } from "./_lib/list-structure";
+import {
+  type ExcludedSpan,
+  excludedSpans,
+  type ListItem,
+  type ListItemKind,
+  type ListStructure,
+  listItemAtLine,
+  listStructure,
+  orderedLabel,
+} from "./_lib/list-structure";
 
 class ListGutterWidget extends WidgetType {
   constructor(
@@ -34,8 +43,8 @@ class ListGutterWidget extends WidgetType {
       guide.style.setProperty("--list-level", String(level));
       gutter.append(guide);
     }
-    const marker = document.createElement("span");
-    marker.className = `custom-list-marker custom-list-marker-${this.kind}`;
+    // As in Book, a numbered checklist item shows its number and then its box.
+    if (this.label) gutter.append(this.marker("ordered", this.label));
     if (this.kind === "task") {
       const input = document.createElement("input");
       input.type = "checkbox";
@@ -43,15 +52,20 @@ class ListGutterWidget extends WidgetType {
       input.tabIndex = -1;
       input.setAttribute("aria-hidden", "true");
       input.checked = this.checked;
-      marker.append(input);
-    } else if (this.kind === "ordered") marker.textContent = this.label;
-    else {
+      gutter.append(this.marker("task", input));
+    } else if (!this.label) {
       const dot = document.createElement("span");
       dot.className = `custom-list-dot custom-list-dot-${this.depth % 3}`;
-      marker.append(dot);
+      gutter.append(this.marker("bullet", dot));
     }
-    gutter.append(marker);
     return gutter;
+  }
+
+  private marker(kind: ListItemKind, content: string | Node) {
+    const marker = document.createElement("span");
+    marker.className = `custom-list-marker custom-list-marker-${kind}`;
+    marker.append(content);
+    return marker;
   }
 
   override ignoreEvent(event: Event) {
@@ -82,6 +96,7 @@ const activeGuides = (state: EditorState, structure: ListStructure, parent: numb
 };
 
 type ListState = {
+  excluded: readonly ExcludedSpan[] | undefined;
   structure: ListStructure;
   decorations: DecorationSet;
   atomicRanges: DecorationSet;
@@ -89,8 +104,10 @@ type ListState = {
   parent: number;
 };
 
-const build = (state: EditorState): ListState => {
-  const structure = listStructure(state);
+const build = (state: EditorState, cached?: readonly ExcludedSpan[]): ListState => {
+  let excluded = cached;
+  // Notebook blocks are outside Markdown's grammar. Read their source only when lists exist.
+  const structure = listStructure(state, () => (excluded ??= excludedSpans(state)));
   const ranges: Range<Decoration>[] = [];
   const atomic: Range<Decoration>[] = [];
   for (const item of structure.items) {
@@ -99,7 +116,7 @@ const build = (state: EditorState): ListState => {
       Decoration.line({
         attributes: {
           class: `custom-list custom-list-${item.kind}${item.checked ? " custom-list-task-checked" : ""}`,
-          style: `--list-depth: ${item.depth}`,
+          style: `--list-depth: ${item.depth}${item.ordered && item.kind === "task" ? "; --list-markers: 2" : ""}`,
         },
       }).range(item.from),
     );
@@ -113,6 +130,7 @@ const build = (state: EditorState): ListState => {
   }
   const parent = selectionParent(state, structure);
   return {
+    excluded,
     structure,
     decorations: Decoration.set(ranges, true),
     atomicRanges: Decoration.set(atomic, true),
@@ -121,12 +139,47 @@ const build = (state: EditorState): ListState => {
   };
 };
 
+const linePrefix = (line: string) => line.match(/^\s*(?:(?:[-+*]|\d+[.)]|#{1,6})(?:\s+|$))*(?:[=*_~-]+\s*$)?/)?.[0] ?? "";
+
+const exclusionSyntax = (line: string) => /:::|`{3}|~{3}|[@#<>|\r]/.test(line) || /^\s*(?:[-*_]\s*){3,}$/.test(line);
+
+const exclusionsChanged = (tr: Transaction): boolean => {
+  let changed = false;
+  tr.changes.iterChangedRanges((fromA, toA, fromB, toB) => {
+    if (changed) return;
+    const before = tr.startState.doc.lineAt(fromA);
+    const after = tr.newDoc.lineAt(fromB);
+    // Splitting/joining lines changes container boundaries and named-block lookahead.
+    if (tr.startState.doc.lineAt(toA).number !== before.number || tr.newDoc.lineAt(toB).number !== after.number) {
+      changed = true;
+      return;
+    }
+    // literalMarkdownLines also consumes lists, quotes, HTML and indented code.
+    // Their boundaries can change even when an edit is far from a directive.
+    const beforePrefix = linePrefix(before.text);
+    const afterPrefix = linePrefix(after.text);
+    changed =
+      exclusionSyntax(before.text) ||
+      exclusionSyntax(after.text) ||
+      beforePrefix !== afterPrefix ||
+      (before.text.slice(beforePrefix.length).trim().length === 0) !== (after.text.slice(afterPrefix.length).trim().length === 0);
+  });
+  return changed;
+};
+
 export const listStateField = StateField.define<ListState>({
   create: build,
   update(value, tr) {
-    // Selection-only transactions must not walk the tree. Rescan a newer tree too:
-    // the parser reaches lists near the end of a long note after it opened.
-    if (treeOrDocChanged(tr)) return build(tr.state);
+    if (tr.docChanged) {
+      // Include inserted text at either edge, including EOF of an unclosed directive.
+      const excluded = value.excluded?.map((span) => ({
+        from: tr.changes.mapPos(span.from, -1),
+        to: tr.changes.mapPos(span.to, 1),
+      }));
+      return build(tr.state, exclusionsChanged(tr) ? undefined : excluded);
+    }
+    // Parser progress changes the list tree, but not the source-scanned spans.
+    if (treeOrDocChanged(tr)) return build(tr.state, value.excluded);
     const parent = selectionParent(tr.state, value.structure);
     return {
       ...value,
@@ -166,8 +219,8 @@ const listTheme = EditorView.theme({
   ".custom-list": {
     "--list-step": "1.625rem",
     position: "relative",
-    paddingLeft: "calc(var(--list-step) * (var(--list-depth) + 1)) !important",
-    textIndent: "calc(var(--list-step) * (var(--list-depth) + 1) * -1)",
+    paddingLeft: "calc(var(--list-step) * (var(--list-depth) + var(--list-markers, 1))) !important",
+    textIndent: "calc(var(--list-step) * (var(--list-depth) + var(--list-markers, 1)) * -1)",
   },
   "@media (max-width: 640px)": { ".custom-list": { "--list-step": "1.375rem" } },
   ".custom-list *": { textIndent: "0" },
@@ -176,7 +229,7 @@ const listTheme = EditorView.theme({
     justifyContent: "flex-end",
     verticalAlign: "top",
     height: "1lh",
-    width: "calc(var(--list-step) * (var(--list-depth) + 1))",
+    width: "calc(var(--list-step) * (var(--list-depth) + var(--list-markers, 1)))",
     userSelect: "none",
   },
   ".custom-list-guide": {
@@ -212,9 +265,9 @@ const listTheme = EditorView.theme({
   ".custom-list-dot-2": { width: "0.35rem", height: "0.35rem", borderRadius: "1px" },
   ".custom-list-task-marker": { width: "1rem", height: "1rem", margin: "0", accentColor: "var(--k2b-action-solid)" },
   ".custom-list-task-checked": {
-    color: "var(--k2b-text-muted)",
+    color: "var(--k2b-placeholder-color)",
     textDecoration: "line-through",
-    textDecorationColor: "var(--k2b-placeholder-color)",
+    textDecorationColor: "color-mix(in srgb, currentColor 60%, transparent)",
   },
 });
 

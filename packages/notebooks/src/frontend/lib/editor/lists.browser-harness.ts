@@ -165,6 +165,7 @@ const measureLists = () => ({
         return { x: rect.left + rect.width / 2, opacity: Number(getComputedStyle(guide).opacity) };
       }),
       label: line.querySelector(".custom-list-marker-ordered")?.textContent ?? null,
+      checkbox: line.querySelector(".custom-list-task-marker") !== null,
     };
   }),
 });

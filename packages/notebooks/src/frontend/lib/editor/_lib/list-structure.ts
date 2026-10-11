@@ -32,13 +32,22 @@ export type ListItem = {
   subtreeEnd: number;
 };
 export type ListStructure = { items: readonly ListItem[] };
+export type ExcludedSpan = { from: number; to: number };
 
-/** Every list item outside quotes, data blocks and directives, in document order. */
-export const listStructure = (state: EditorState): ListStructure => {
+/** Full source scan; callers cache these spans independently of parser progress. */
+export const excludedSpans = (state: EditorState): ExcludedSpan[] => {
+  const markdown = state.doc.toString();
+  return [
+    ...extractDataBlocks(markdown).map((block) => ({ from: block.blockStart, to: block.blockEnd })),
+    ...extractNotebookDirectiveRanges(markdown).map(({ from, to }) => ({ from, to })),
+  ];
+};
+
+/** Every list item outside quotes, data blocks and directives, in document order. Reads the excluded spans only when a list exists. */
+export const listStructure = (state: EditorState, excludedSpans: () => readonly ExcludedSpan[]): ListStructure => {
   const items: ListItem[] = [];
   const parents: Array<{ from: number; index: number }> = [];
   const lists: Array<{ ordered: boolean; start: number | null; index: number }> = [];
-  let excluded: Array<{ from: number; to: number }> | undefined;
   syntaxTree(state).iterate({
     enter(ref) {
       if (ref.name === "Blockquote") return false;
@@ -54,16 +63,8 @@ export const listStructure = (state: EditorState): ListStructure => {
       if (!list || !mark) return false;
       const ordinal = list.start === null ? null : list.start + list.index;
       list.index++;
-      // Notebook blocks are outside Markdown's grammar. Read their source only when lists exist.
-      if (!excluded) {
-        const markdown = state.doc.toString();
-        excluded = [
-          ...extractDataBlocks(markdown).map((block) => ({ from: block.blockStart, to: block.blockEnd })),
-          ...extractNotebookDirectiveRanges(markdown),
-        ];
-      }
       const line = state.doc.lineAt(mark.from);
-      if (items.at(-1)?.line === line.number || excluded.some((span) => mark.from >= span.from && mark.from < span.to)) return false;
+      if (items.at(-1)?.line === line.number || excludedSpans().some((span) => mark.from >= span.from && mark.from < span.to)) return false;
       const task = node.getChild("Task")?.getChild("TaskMarker");
       let contentFrom = task?.to ?? mark.to;
       while (contentFrom < line.to && /[ \t]/.test(state.sliceDoc(contentFrom, contentFrom + 1))) contentFrom++;
@@ -132,12 +133,13 @@ const romanDigits: readonly (readonly [number, string])[] = [
   [1, "i"],
 ];
 
-/** The label Book's CSS shows: 1., a. or i. by ordered nesting, cycling every three levels, and decimal where CSS falls back. */
+/** Labels cycle through 1., a., i. for six ordered levels; deeper levels keep roman like Book and the PDF, with CSS's decimal fallback. */
 export const orderedLabel = (ordinal: number, orderedDepth: number): string => {
+  const style = Math.min(orderedDepth, 5) % 3;
   let label = "";
-  if (orderedDepth % 3 === 1 && ordinal >= 1) {
+  if (style === 1 && ordinal >= 1) {
     for (let n = ordinal; n > 0; n = Math.floor((n - 1) / 26)) label = String.fromCharCode(97 + ((n - 1) % 26)) + label;
-  } else if (orderedDepth % 3 === 2 && ordinal >= 1 && ordinal <= 3999) {
+  } else if (style === 2 && ordinal >= 1 && ordinal <= 3999) {
     let n = ordinal;
     for (const [value, digit] of romanDigits) {
       while (n >= value) {

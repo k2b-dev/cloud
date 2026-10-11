@@ -86,9 +86,12 @@ describe("editor checklist boxes", () => {
       expect(dot).not.toBeNull();
       expect(guide).not.toBeNull();
       const tree = syntaxTree(view.state);
+      const excluded = view.state.field(listStateField).excluded;
+      expect(excluded).toBeDefined();
       forceParsing(view, doc.length, 5000);
       // The newer tree rebuilt the list decorations, but the unchanged widgets keep their elements.
       expect(syntaxTree(view.state)).not.toBe(tree);
+      expect(view.state.field(listStateField).excluded).toBe(excluded);
       expect(view.dom.querySelector(".custom-list-dot") === dot).toBe(true);
       expect(view.dom.querySelector(".custom-list-guide") === guide).toBe(true);
     } finally {
