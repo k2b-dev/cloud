@@ -82,6 +82,7 @@ export {
   CloudAiTextEditorInputSchema,
   type CloudAiTextEditorOutput,
   CloudAiTextEditorOutputSchema,
+  cloudAiAppChartSchema,
   cloudAiChartSchema,
   cloudAiFormatSchema,
   cloudAiNumberFormatSchema,

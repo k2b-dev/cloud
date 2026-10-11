@@ -767,8 +767,8 @@ margins and text. Visible values such as `NaN`, `undefined`, `Invalid Date` or
 `[object Object]` warn in the page and in PDFs.
 
 `cloud.chart(options)` returns chart markup for apps, scripts and PDFs without
-needing a DOM. It validates with the same contract and maps options through the
-same path as chat charts: bar, line, scatter, pie, donut, histogram, gauge,
+needing a DOM. It takes the same kinds and options as chat charts and maps them
+through the same path: bar, line, scatter, pie, donut, histogram, gauge,
 sparkline, boxplot, heatmap, barGauge and stat. See
 [Tools and approvals](/en/docs/ai/tools-and-approvals#tool-contracts) for data,
 axes, declarative formats, references, thresholds, series style/role and limits.
@@ -779,14 +779,20 @@ Function `format(value)` is also accepted on axes and values. `width` and
 `height` set the logical size: 480 × 280 by default, or 160 × 40 for sparkline.
 Apps redraw stretched charts at their measured width when `width` is omitted;
 pie, donut and gauge keep their aspect ratio. Date and ISO-with-offset x values
-become the viewer's wall-clock time. Converted x values that are all at midnight
-use `YYYY-MM-DD`; Date references become wall-clock date-time strings.
-Category labels remain complete; some are skipped when they do not fit.
+become the viewer's wall-clock time; ISO strings without an offset, including
+`YYYY-MM` and date-times with a space or fractions, stay as written. When every
+x is at midnight, the axis shows days. Date references become wall-clock
+date-time strings. Labels may be numbers. Category labels remain complete; some
+are skipped when they do not fit.
 
-Contract violations throw `invalid`: field errors name paths such as
-`series[0].data`, while chart-wide checks explain the reason. More than 480
-points in a series, mixed x types or an undrawable chart fail validation.
-Options supported only by stdlib and outside this contract are ignored.
+An app redraws with whatever its data or filters leave, so `cloud.chart()`
+does not apply the chat's size and fit limits: empty data, a one-point line,
+more than 8 series or 480 points, empty titles and long labels draw, and
+missing or non-finite values are left out. It throws `invalid` with a path such
+as `series[0].data[2].x` for unknown kinds and wrong option types, and for
+input the renderer cannot draw: a fixed domain that does not contain every
+value, or values too close for their size to label an axis. Options supported
+only by stdlib and outside this contract are ignored.
 Pie and donut slices show shares, so a value `format` only changes the values
 in chat tooltips and tables. A scatter comparison series (`role: "reference"`)
 draws hollow points in chat; `cloud.chart()` draws them filled.

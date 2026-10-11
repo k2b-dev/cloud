@@ -67,7 +67,8 @@ function ChartFrame(props: {
   chart: DrawnChart | null;
   empty?: JSX.Element;
   cursor?: ReturnType<typeof createChartCursor>;
-  class?: string;
+  /** A chart of a titled group: its title sits one heading level and one size below the group's. */
+  nested?: boolean;
 }) {
   const locale = useLocale();
   const columns = () =>
@@ -86,6 +87,7 @@ function ChartFrame(props: {
   return (
     <ChartExplorer
       title={props.title}
+      headingLevel={props.nested ? 4 : 3}
       description={props.subtitle ? <span class="text-sm text-secondary">{props.subtitle}</span> : undefined}
       height={chartHeight(props.kind)}
       data={props.chart ? { chart: props.chart.snapshot, rows: props.chart.table.rows } : { chart: emptySnapshot(props.kind), rows: [] }}
@@ -94,7 +96,7 @@ function ChartFrame(props: {
       cursor={props.cursor}
       empty={props.empty}
       renderDetails={false}
-      class={props.class}
+      class={props.nested ? "[&_h4]:text-sm!" : undefined}
     />
   );
 }
@@ -153,8 +155,7 @@ function ChartGroupFrame(props: { summary: GroupSummary; group: CloudAiGroupView
               kind={chart().kind}
               chart={drawn()[index] ?? null}
               cursor={props.summary.linkX ? cursor : undefined}
-              // The group heading leads; chart titles step down one size.
-              class="[&_h3]:text-sm!"
+              nested
               empty={props.empty ?? <span role="status">{t().chartUnavailable}</span>}
             />
           )}

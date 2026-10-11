@@ -68,6 +68,10 @@ const CHAR = 6.7;
 const NARROW = 480 / 296;
 /** The renderer's tick count when an axis sets none. */
 const TICKS = 5;
+/** Heatmap labels are 11px high; 13 units per row leave readable space at the 18rem frame height. */
+const HEATMAP_ROW_HEIGHT = 13;
+/** The mapping sets only left padding, so the renderer supplies 16 top and 32 bottom units. */
+const HEATMAP_MAX_ROWS = Math.floor((HEIGHT - 16 - 32) / HEATMAP_ROW_HEIGHT);
 /** Below this radius, about 30px on a 320px phone, a pie no longer reads as one. */
 const MIN_PIE_RADIUS = 48;
 
@@ -134,8 +138,11 @@ const referencedAxis = (input: CloudAiChartInput, name: "x" | "y"): ChartAxisInp
   if (!entry) return undefined;
   const refs = referencesOf(input, name);
   if (!refs.length || entry.axis?.domain) return entry.axis;
-  const values = [...entry.values, ...refs, ...(entry.zero && entry.axis?.scale !== "log" ? [0] : [])];
-  if (entry.axis?.scale === "log") return { ...entry.axis, domain: niceLogTicks(Math.min(...values), Math.max(...values)).domain };
+  const values = [...entry.values, ...refs, ...(entry.zero && entry.axis?.scale !== "log" ? [0] : [])].filter(Number.isFinite);
+  if (entry.axis?.scale === "log") {
+    const positive = values.filter((value) => value > 0);
+    return { ...entry.axis, domain: positive.length ? niceLogTicks(Math.min(...positive), Math.max(...positive)).domain : [1, 10] };
+  }
   const [min, max] = computeDomain(values);
   return { ...entry.axis, domain: extendDomainToNice(min, max, niceStep(max - min, entry.axis?.ticks ?? TICKS)).domain };
 };
@@ -159,7 +166,7 @@ const steppable = (values: number[], ticks = TICKS) => {
 const tickCandidates = (values: number[], value?: ChartAxisInput): number[] => {
   const domain = bounds(value?.domain);
   if (value?.scale === "log") {
-    const positive = values.filter((entry) => entry > 0);
+    const positive = values.filter((entry) => Number.isFinite(entry) && entry > 0);
     const [min, max] = domain ?? (positive.length ? [Math.min(...positive), Math.max(...positive)] : [1, 10]);
     return [min, max, 10 ** Math.floor(Math.log10(min)), 10 ** Math.ceil(Math.log10(max))];
   }
@@ -278,9 +285,20 @@ export const cloudAiChartReferenceMark = (input: CloudAiChartInput, datum: Chart
 export function cloudAiChartRenderOptions(
   input: CloudAiChartInput,
   locale: string,
-  options: { width?: number; legend?: "svg" | "outside" } = {},
+  options: {
+    width?: number;
+    legend?: "svg" | "outside";
+    formats?: { x?: (v: number) => string; y?: (v: number) => string; value?: (v: number) => string };
+  } = {},
 ): RenderOptions {
-  const format = formats(input, locale);
+  const defaults = formats(input, locale);
+  // Function formats must be measured with the same text the renderer will print.
+  const format = {
+    ...defaults,
+    tick: options.formats?.y ?? defaults.tick,
+    value: options.formats?.value ?? defaults.value,
+    x: { ...defaults.x, tick: options.formats?.x ?? defaults.x.tick },
+  };
   const factor = options.width === undefined ? NARROW : 1;
   const width = options.width ?? WIDTH;
   const references = renderReferences(input);
@@ -290,7 +308,7 @@ export function cloudAiChartRenderOptions(
       const values = input.kind === "bar" ? input.data.map((item) => item.value) : input.data.flatMap((item) => item.values);
       const yAxis = referencedAxis(input, "y");
       // The renderer prints bar values with the axis format, so printed values take the value precision for both.
-      const yFormat = input.kind === "bar" && input.showValues ? format.value : format.tick;
+      const yFormat = options.formats?.y ?? (input.kind === "bar" && input.showValues ? format.value : format.tick);
       const left = leftPadding(
         [...values, ...referencesOf(input, "y"), ...(input.kind === "bar" && input.yAxis?.scale !== "log" ? [0] : [])],
         yAxis,
@@ -327,7 +345,8 @@ export function cloudAiChartRenderOptions(
       const points = series.flatMap((entry) => entry.data);
       const xAxis = referencedAxis(input, "x");
       const yAxis = referencedAxis(input, "y");
-      const lastTick = Math.max(...tickCandidates([...points.map((point) => point.x), ...referencesOf(input, "x")], xAxis));
+      const candidates = tickCandidates([...points.map((point) => point.x), ...referencesOf(input, "x")], xAxis).filter(Number.isFinite);
+      const lastTick = candidates.length ? Math.max(...candidates) : 0;
       const common = {
         series,
         xAxis: axis(xAxis, format.x.tick),
@@ -349,20 +368,28 @@ export function cloudAiChartRenderOptions(
         data: input.data,
         legend: input.legend ?? !input.showLabels,
         showLabels: input.showLabels,
+        ...(options.formats?.value ? { format: options.formats.value } : {}),
       };
-    case "histogram":
+    case "histogram": {
+      const xAxis = referencedAxis(input, "x");
+      const xFormat = options.formats?.x ?? defaults.tick;
+      const xLabels = options.formats?.x
+        ? tickCandidates([...input.data, ...referencesOf(input, "x")], xAxis).map((value) => xFormat(value).length)
+        : undefined;
       return {
         kind: "histogram",
         data: input.data,
         bins: input.bins,
         references,
-        xAxis: axis(referencedAxis(input, "x"), format.tick),
+        xAxis: axis(xAxis, xFormat),
         yAxis: axis(referencedAxis(input, "y"), format.tick),
         // No bin counts more than every observation.
         padding: {
           left: leftPadding([0, input.data.length, ...referencesOf(input, "y")], referencedAxis(input, "y"), format.tick, factor),
+          ...(xLabels ? { right: Math.max(16, Math.ceil(((Math.max(...xLabels) * CHAR) / 2 + 4) * factor)) } : {}),
         },
       };
+    }
     case "gauge":
       return {
         kind: "gauge",
@@ -392,7 +419,7 @@ export function cloudAiChartRenderOptions(
         max: input.max,
         format: format.value,
         showValues: input.showValues,
-        padding: { left: Math.max(40, Math.ceil((Math.max(...input.data.map((item) => item.y.length)) * CHAR + 8) * factor)) },
+        padding: { left: Math.max(40, Math.ceil((Math.max(0, ...input.data.map((item) => item.y.length)) * CHAR + 8) * factor)) },
       };
     case "stat":
       return {
@@ -401,9 +428,14 @@ export function cloudAiChartRenderOptions(
         value: input.value,
         unit: input.unit,
         format: format.value,
-        delta: input.delta,
+        delta: Number.isFinite(input.delta) ? input.delta : undefined,
         deltaFormat: format.value,
-        trend: !input.better || !input.delta ? "neutral" : input.delta > 0 === (input.better === "up") ? "up" : "down",
+        trend:
+          !input.better || !input.delta || !Number.isFinite(input.delta)
+            ? "neutral"
+            : input.delta > 0 === (input.better === "up")
+              ? "up"
+              : "down",
         sparkline: input.sparkline,
       };
     case "sparkline":
@@ -573,6 +605,26 @@ export const cloudAiChartMarks = (input: CloudAiChartInput): number => {
   }
 };
 
+/** Rejects only precision ranges that would make the renderer count ticks forever. */
+export function chartSteppingIssue(input: CloudAiChartInput): string | undefined {
+  // Check raw observations before autoBin computes histogram edges.
+  if (input.kind === "histogram" && !steppable(input.data))
+    return "The values differ too little for their size to label an axis; subtract a common offset first.";
+  for (const { values: data, axis, zero, name } of valueAxes(input)) {
+    const values = [...data, ...referencesOf(input, name)];
+    if (axis?.scale !== "log" && !axis?.domain && !steppable(zero ? [...values, 0] : values, axis?.ticks))
+      return "The values differ too little for their size to label an axis; subtract a common offset first.";
+  }
+  return undefined;
+}
+
+/** Both dimensions must fit before suggesting a heatmap orientation change. */
+const heatmapLabelFit = (columns: string[], rows: string[]) => {
+  const left = Math.max(40, Math.ceil((Math.max(0, ...rows.map((label) => label.length)) * CHAR + 8) * NARROW));
+  const characters = Math.floor((WIDTH - left - 16) / NARROW / columns.length / CHAR) - 1;
+  return { characters, columns: columns.every((label) => label.length <= characters), rows: rows.length <= HEATMAP_MAX_ROWS };
+};
+
 /** Why chart options would not draw, found without drawing them; undefined when nothing is wrong. */
 export function chartDataIssue(input: CloudAiChartInput): string | undefined {
   const points = seriesOf(input).flatMap((series) => series.data);
@@ -587,10 +639,9 @@ export function chartDataIssue(input: CloudAiChartInput): string | undefined {
       const type = name === "x" && points.length ? typeof points[0]!.x : "number";
       if (typeof ref.value !== type) return `Use ${type === "string" ? "dates" : "numbers"} for ${name} references, like the axis values.`;
     }
-  // Keep the original histogram precision check before binning, which would otherwise try to allocate extreme bins.
-  if (input.kind === "histogram" && !steppable(input.data))
-    return "The values differ too little for their size to label an axis; subtract a common offset first.";
-  for (const { values: data, axis, zero, name } of valueAxes(input)) {
+  const stepping = chartSteppingIssue(input);
+  if (stepping) return stepping;
+  for (const { values: data, axis, name } of valueAxes(input)) {
     const values = [...data, ...referencesOf(input, name)];
     const dates = name === "x" && typeof points[0]?.x === "string";
     const dateFormat = axis?.format && "date" in axis.format;
@@ -601,14 +652,30 @@ export function chartDataIssue(input: CloudAiChartInput): string | undefined {
     if (axis?.scale === "log") {
       if (values.some((value) => value <= 0))
         return "A log axis shows only values above zero; use a linear axis or leave out the values at or below zero.";
-    } else if (!axis?.domain && !steppable(zero ? [...values, 0] : values, axis?.ticks))
-      return "The values differ too little for their size to label an axis; subtract a common offset first.";
+    }
   }
   if (input.kind === "heatmap") {
     if (new Set(input.data.map((cell) => JSON.stringify([cell.x, cell.y]))).size !== input.data.length)
       return "Use each heatmap x/y pair once.";
     if (input.min !== undefined && input.max !== undefined && input.min >= input.max) return "Set heatmap min below max.";
   }
+  // These renderers key or place labels by their text, so labels cannot be thinned like bars.
+  if (input.kind === "heatmap") {
+    const columns = [...new Set(input.data.map((item) => item.x))];
+    const rows = [...new Set(input.data.map((item) => item.y))];
+    const fit = heatmapLabelFit(columns, rows);
+    const swapped = heatmapLabelFit(rows, columns);
+    const swap = swapped.columns && swapped.rows;
+    if (!fit.columns)
+      return fit.characters < 1
+        ? `${columns.length} columns do not fit a phone-wide chart; ${swap ? "swap x and y or use fewer columns." : "use fewer columns or shorter labels."}`
+        : `Use column labels of at most ${fit.characters} characters for ${columns.length} columns, ${swap ? "or swap x and y." : "or use fewer columns."}`;
+    if (!fit.rows) return `Use at most ${HEATMAP_MAX_ROWS} heatmap rows; ${swap ? "swap x and y or use fewer rows." : "use fewer rows."}`;
+  }
+  // A bar gauge label sits in a 140-unit column that starts 12 units in.
+  const gaugeLabel = Math.floor((140 - 12) / NARROW / CHAR) - 1;
+  if (input.kind === "barGauge" && input.data.some((item) => item.label.length > gaugeLabel))
+    return `Use bar gauge labels of at most ${gaugeLabel} characters, or a bar chart for longer names.`;
   if (input.kind === "gauge" || input.kind === "barGauge") {
     const ranges =
       input.kind === "gauge"
@@ -630,20 +697,6 @@ export function chartDataIssue(input: CloudAiChartInput): string | undefined {
 /** Why chart options that pass the data checks still would not draw well; draws them once. */
 export function chartDrawingIssue(input: CloudAiChartInput): string | undefined {
   try {
-    // Both kinds key or place labels by their text, so they cannot thin labels like bars: too long labels overlap.
-    if (input.kind === "heatmap") {
-      const columns = new Set(input.data.map((item) => item.x)).size;
-      const left = Math.max(40, Math.ceil((Math.max(...input.data.map((item) => item.y.length)) * CHAR + 8) * NARROW));
-      const fit = Math.floor((WIDTH - left - 16) / NARROW / columns / CHAR) - 1;
-      if (input.data.some((item) => item.x.length > fit))
-        return fit < 1
-          ? `${columns} columns do not fit a phone-wide chart; swap x and y or use fewer columns.`
-          : `Use column labels of at most ${fit} characters for ${columns} columns, or swap x and y.`;
-    }
-    // A bar gauge label sits in a 140-unit column that starts 12 units in.
-    const gaugeLabel = Math.floor((140 - 12) / NARROW / CHAR) - 1;
-    if (input.kind === "barGauge" && input.data.some((item) => item.label.length > gaugeLabel))
-      return `Use bar gauge labels of at most ${gaugeLabel} characters, or a bar chart for longer names.`;
     const svg = draw(cloudAiChartRenderOptions(input, "en"));
     if (marks(svg).length === 0) return "None of the values can be drawn.";
     if ((input.kind === "pie" || input.kind === "donut") && pieRadius(svg) < MIN_PIE_RADIUS)

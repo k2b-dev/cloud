@@ -5,9 +5,8 @@ import {
   type CloudAiChartInput,
   type CloudAiFormat,
   type CloudAiNumberFormat,
-  chartDrawingIssue,
+  cloudAiAppChartSchema,
   cloudAiChartRenderOptions,
-  cloudAiChartSchema,
 } from "@k2b/cloud/ai/browser";
 import { charts, money } from "@k2b/stdlib";
 import { CloudError } from "./errors";
@@ -48,7 +47,7 @@ type StoredChart = {
   xFormat?: (value: number) => string;
   yFormat?: (value: number) => string;
 };
-const ChartSchema = /* @__PURE__ */ cloudAiChartSchema();
+const ChartSchema = /* @__PURE__ */ cloudAiAppChartSchema();
 
 function responsive(svg: string): string {
   return svg.replace("<svg ", '<svg preserveAspectRatio="none" ').replace(/<text\b[^>]*>/g, (tag) => {
@@ -63,56 +62,57 @@ function responsive(svg: string): string {
 
 /** SVG at the measured size; initial markup and redraws use the same mapping and function formats. */
 export function chartSvg(options: StoredChart, locale: string, width: number, height: number): string {
-  const mapped = cloudAiChartRenderOptions(options.input, locale, { width });
-  const common = { width, height, title: options.title, subtitle: options.input.subtitle };
-  const value = { ...(options.format ? { format: options.format } : {}) };
-  const yAxis = (axis: Parameters<typeof charts.bar>[0]["yAxis"]) => ({ ...axis, ...(options.yFormat ? { format: options.yFormat } : {}) });
-  const xAxis = (axis: Parameters<typeof charts.line>[0]["xAxis"]) => ({
-    ...axis,
-    ...(options.xFormat ? { format: options.xFormat } : {}),
-  });
-  let svg: string;
-  switch (mapped.kind) {
-    case "bar":
-      svg = charts.bar({ ...mapped, ...common, yAxis: yAxis(mapped.yAxis) });
-      break;
-    case "line":
-      svg = charts.line({ ...mapped, ...common, xAxis: xAxis(mapped.xAxis), yAxis: yAxis(mapped.yAxis) });
-      break;
-    case "scatter":
-      svg = charts.scatter({ ...mapped, ...common, xAxis: xAxis(mapped.xAxis), yAxis: yAxis(mapped.yAxis) });
-      break;
-    case "histogram":
-      svg = charts.histogram({ ...mapped, ...common, xAxis: xAxis(mapped.xAxis), yAxis: yAxis(mapped.yAxis) });
-      break;
-    case "boxplot":
-      svg = charts.boxplot({ ...mapped, ...common, yAxis: yAxis(mapped.yAxis) });
-      break;
-    case "pie":
-      svg = charts.pie({ ...mapped, ...common, ...value });
-      break;
-    case "donut":
-      svg = charts.donut({ ...mapped, ...common, ...value });
-      break;
-    case "gauge":
-      svg = charts.gauge({ ...mapped, ...common, ...value });
-      break;
-    case "barGauge":
-      svg = charts.barGauge({ ...mapped, ...common, ...value });
-      break;
-    case "stat":
-      svg = charts.stat({ ...mapped, ...common, ...value, ...(options.format ? { deltaFormat: options.format } : {}) });
-      break;
-    case "heatmap":
-      svg = charts.heatmap({ ...mapped, ...common, ...value });
-      break;
-    case "sparkline":
-      svg = charts.sparkline({ ...mapped, ...common });
-      break;
+  try {
+    const mapped = cloudAiChartRenderOptions(options.input, locale, {
+      width,
+      formats: { x: options.xFormat, y: options.yFormat, value: options.format },
+    });
+    const common = { width, height, title: options.title, subtitle: options.input.subtitle };
+    let svg: string;
+    switch (mapped.kind) {
+      case "bar":
+        svg = charts.bar({ ...mapped, ...common });
+        break;
+      case "line":
+        svg = charts.line({ ...mapped, ...common });
+        break;
+      case "scatter":
+        svg = charts.scatter({ ...mapped, ...common });
+        break;
+      case "histogram":
+        svg = charts.histogram({ ...mapped, ...common });
+        break;
+      case "boxplot":
+        svg = charts.boxplot({ ...mapped, ...common });
+        break;
+      case "pie":
+        svg = charts.pie({ ...mapped, ...common });
+        break;
+      case "donut":
+        svg = charts.donut({ ...mapped, ...common });
+        break;
+      case "gauge":
+        svg = charts.gauge({ ...mapped, ...common });
+        break;
+      case "barGauge":
+        svg = charts.barGauge({ ...mapped, ...common });
+        break;
+      case "stat":
+        svg = charts.stat({ ...mapped, ...common, label: options.title ?? "" });
+        break;
+      case "heatmap":
+        svg = charts.heatmap({ ...mapped, ...common });
+        break;
+      case "sparkline":
+        svg = charts.sparkline({ ...mapped, ...common });
+        break;
+    }
+    // stdlib embeds an unlayered <style> with fixed colors; the base stylesheet owns those rules instead.
+    svg = svg.replace(/<style>[\s\S]*?<\/style>/, "");
+    return KEEP_ASPECT.has(mapped.kind) ? svg : responsive(svg);
+  } catch (error) {
+    throw new CloudError("invalid", `cloud.chart: ${error instanceof Error ? error.message : String(error)}`);
   }
-  // stdlib embeds an unlayered <style> with fixed colors; the base stylesheet owns those rules instead.
-  svg = svg.replace(/<style>[\s\S]*?<\/style>/, "");
-  return KEEP_ASPECT.has(mapped.kind) ? svg : responsive(svg);
 }
 
 /** Options of recent stretched charts by id, so an app frame can redraw them at their measured width (bounded). */
@@ -153,8 +153,6 @@ export function chart(options: ChartOptions, locale: string, timeZone = "UTC"): 
         : `cloud.chart: ${path ? `${path}: ` : ""}${issue.message}`,
     );
   }
-  const issue = chartDrawingIssue(parsed.data);
-  if (issue) throw new CloudError("invalid", `cloud.chart: ${issue}`);
   const input = parsed.data;
   // A sparkline is an inline word-sized graphic; other charts use the shared 480 × 280 drawing.
   const width = Number(logicalWidth) || (input.kind === "sparkline" ? 160 : 480);

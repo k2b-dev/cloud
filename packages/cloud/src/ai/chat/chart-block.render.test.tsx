@@ -88,6 +88,9 @@ describe("chart chat block", () => {
       ],
     });
     expect(html).toContain("Revenue and margin");
+    // Screen-reader heading navigation nests the charts under the group.
+    expect(html.match(/<h3\b/g)).toHaveLength(1);
+    expect(html.match(/<h4\b[^>]*>Revenue<\/h4>|<h4\b[^>]*>Margin<\/h4>/g)).toHaveLength(2);
     expect(html).toContain("@2xl:grid-cols-2");
     expect(html.match(/data-chart-kind="line"/g)).toHaveLength(2);
     expect(html).toContain('aria-label="Legend"');

@@ -52,6 +52,19 @@ describe("SSR chart exploration", () => {
     expect(html).toContain('aria-label="Copy data"');
     expect(html).toContain("data-selected");
     expect(html).toContain("--k2b-chart-selection-color:");
+    expect(html).toMatch(/<h3 [^>]*class="k2b-chart-explorer__title ?"[^>]*>Queues<\/h3>/);
+  });
+  test("a chart below another heading takes the next heading level", () => {
+    const html = renderToString(() =>
+      createComponent(ChartExplorer, {
+        title: "Queues",
+        headingLevel: 4 as const,
+        data: { chart: chart(), rows },
+        columns: [{ id: "label", label: "Queue", value: (row: (typeof rows)[number]) => row.label }],
+      }),
+    );
+    expect(html).toMatch(/<h4 [^>]*class="k2b-chart-explorer__title ?"[^>]*>Queues<\/h4>/);
+    expect(html).not.toContain("<h3");
   });
 });
 

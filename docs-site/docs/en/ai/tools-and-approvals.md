@@ -170,7 +170,7 @@ optional `subtitle` (unit, period or source).
 | `gauge` | `value`; `min`, `max`, `label`, `unit`, `format`, `thresholds` |
 | `sparkline` | `data: number[]`; `area` |
 | `boxplot` | `data: [{label, values: number[]}]`; `yAxis`, `references` |
-| `heatmap` | `data: [{x, y, value}]`, with text categories and each x/y pair once; `min`, `max`, `showValues`, `format` |
+| `heatmap` | `data: [{x, y, value}]`, with text categories and each x/y pair once; at most 17 rows (y categories), and column labels that fit a phone-wide chart; `min`, `max`, `showValues`, `format` |
 | `barGauge` | 1..8 `data` items `{label, value, min?, max?}`; labels at most 10 characters. Optional shared `min`, `max`, `unit`, `format`, `thresholds`. |
 | `stat` | `value`; `format`, `unit`, `delta` (change in the value's units), `better: "up" | "down"`, `sparkline: number[]` |
 

@@ -41,9 +41,12 @@ Compute the numbers first: run a script with `code_run` over the chat files and
 check the totals. A one-off app carries its data in its own files, so keep it to
 the aggregates the app needs. Let the script write the finished module, for
 example ``cloud.download("data.js", `export const rows = ${JSON.stringify(rows)};`)``,
-`code_export` it, read it and pass its text unchanged as `data.js`. Never
-rebuild app data from run output, logs or memory. Data too large to pass this
-way, or data that must stay, belongs in a Studio App with `code_file_copy`.
+`code_export` it, read it and pass its text unchanged as `data.js`.
+`code_present` takes files only as text, so this is the one place where run
+values pass through your own output: copy the exported text exactly, never
+shorten, round or retype it, and never rebuild app data from run output, logs or
+memory. Data too large to pass this way, or data that must stay, belongs in a
+Studio App with `code_file_copy`.
 
 Before showing an app, run `code_check` on exactly the files you will present,
 including `steps.json` (see [HTML apps](apps.md)). `code_present` refuses an app

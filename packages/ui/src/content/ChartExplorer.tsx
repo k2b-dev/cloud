@@ -1,4 +1,5 @@
 import { createEffect, createMemo, createSignal, createUniqueId, For, type JSX, Show } from "solid-js";
+import { Dynamic } from "solid-js/web";
 import { Button, IconButton } from "../actions/Button";
 import { CopyButton } from "../actions/CopyButton";
 import { SelectChip } from "../inputs/SelectChip";
@@ -34,6 +35,8 @@ export type ChartLegendEntry = {
 export type ChartExplorerProps<T extends ChartExplorerRow> = {
   cursor?: ChartCursor;
   title: string;
+  /** Level of the title heading. Defaults to 3; a chart inside a titled group of charts sits one level below it. */
+  headingLevel?: 2 | 3 | 4 | 5 | 6;
   description?: JSX.Element;
   data: ChartExplorerData<T>;
   columns: readonly ChartExplorerColumn<T>[];
@@ -126,7 +129,9 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
     <section class={`k2b-chart-explorer ${props.class ?? ""}`} aria-labelledby={id}>
       <header class="k2b-chart-explorer__header">
         <div>
-          <h3 id={id}>{props.title}</h3>
+          <Dynamic component={`h${props.headingLevel ?? 3}`} id={id} class="k2b-chart-explorer__title">
+            {props.title}
+          </Dynamic>
           <Show when={props.description}>
             <div>{props.description}</div>
           </Show>

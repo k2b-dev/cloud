@@ -356,3 +356,12 @@ describe("chart groups", () => {
     expect(parseCloudAiView(JSON.parse(JSON.stringify(table)))).toEqual(table);
   });
 });
+
+test("parse-only chart views enforce label-fit checks before drawing", () => {
+  for (const input of [
+    { kind: "barGauge", data: [{ label: "A".repeat(30), value: 1 }] },
+    { kind: "heatmap", data: ["North region", "South region", "East region", "West region"].map((x) => ({ x, y: "B", value: 1 })) },
+    { kind: "heatmap", data: Array.from({ length: 24 }, (_, y) => ({ x: "Mon", y: `${y}:00`, value: 1 })) },
+  ])
+    expect(parseCloudAiView({ view: "chart", title: "Labels", ...input })).toBeUndefined();
+});

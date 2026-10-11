@@ -7,6 +7,7 @@ import {
   type CloudAiView,
   type CloudAiViewSummary,
   cloudAiTableTsv,
+  cloudAiViewSummary,
   cloudAiViewTable,
   isAiViewFile,
   parseCloudAiView,
@@ -131,16 +132,26 @@ function CloudTableView(props: { summary: TableSummary; input: CloudAiTableView 
   );
 }
 
-/** Whether a loaded file still has the shape its summary reserved; a changed file shows unavailable instead of moving. */
+type Heading = { title: string; subtitle?: string };
+const sameHeading = (a: Heading, b: Heading | undefined) => a.title === b?.title && a.subtitle === b.subtitle;
+
+/**
+ * Whether a loaded file still has everything its summary reserved: kinds, headings, layout and the linked cursor. A
+ * changed file shows unavailable instead of moving or linking charts its summary did not.
+ */
 const matches = (view: CloudAiView, summary: CloudAiViewSummary) => {
-  if (view.view === "chart") return summary.view === "chart" && view.kind === summary.kind;
-  if (view.view === "group")
-    return (
-      summary.view === "group" &&
-      view.charts.length === summary.charts.length &&
-      view.charts.every((chart, index) => chart.kind === summary.charts[index]?.kind)
-    );
-  return summary.view === "table";
+  if (view.view === "table") return summary.view === "table";
+  const loaded = cloudAiViewSummary(view);
+  if (loaded.view === "chart") return summary.view === "chart" && loaded.kind === summary.kind && sameHeading(loaded, summary);
+  return (
+    loaded.view === "group" &&
+    summary.view === "group" &&
+    sameHeading(loaded, summary) &&
+    loaded.linkX === summary.linkX &&
+    loaded.layout === summary.layout &&
+    loaded.charts.length === summary.charts.length &&
+    loaded.charts.every((chart, index) => chart.kind === summary.charts[index]?.kind && sameHeading(chart, summary.charts[index]))
+  );
 };
 
 /**

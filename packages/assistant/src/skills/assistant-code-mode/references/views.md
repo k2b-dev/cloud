@@ -3,7 +3,8 @@
 Numbers computed in `code_run` stay in the run. Call `await cloud.view.chart(spec)`,
 `await cloud.view.group(spec)` or `await cloud.view.table(spec)` there, then call
 the **tool** `present({path})` for each returned view the person should see. Never retype run values into
-`chart` arguments, `data.js` or Markdown. Return only the key figures mentioned
+`chart` arguments, `data.js` or Markdown; a chat app's `data.js` is the module
+the run wrote, copied unchanged ([Chat apps](chat.md)). Return only the key figures mentioned
 in the answer. If a view is missing, rerun the script with `cloud.view.*`.
 A few values that did not come from a run use the `chart` tool.
 
@@ -18,7 +19,7 @@ source). Without `rows`, use these payloads:
 | `line`, `scatter` | `series: [{label?, data: [{x, y}], role?}]` |
 | `histogram`, `sparkline` | `data: number[]` |
 | `boxplot` | `data: [{label, values: number[]}]` |
-| `heatmap` | `data: [{x, y, value}]`, text categories, each pair once |
+| `heatmap` | `data: [{x, y, value}]`, text categories, each pair once; at most 17 rows (y), column labels that fit a phone |
 | `barGauge` | 1..8 `data` items `{label, value, min?, max?}`; labels at most 10 characters |
 | `gauge`, `stat` | `value` |
 

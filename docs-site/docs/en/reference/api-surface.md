@@ -200,8 +200,11 @@ plus the view directory, suffix, byte and table limits. Both entry points expose
 `CLOUD_AI_GROUP_MAX_CHARTS` (6), `CLOUD_AI_VIEW_MAX_MARKS` (3,840),
 `CLOUD_AI_CHART_MAX_SERIES` (8), `CLOUD_AI_CHART_MAX_VALUES` (480),
 `CloudAiChartInput`, `CloudAiChartInputSchema`, `parseCloudAiChartInput`,
-`cloudAiChartSchema`, `cloudAiNumberFormatSchema`, `cloudAiFormatSchema` and
-`CloudAiNumberFormat`, `CloudAiDateFormat`, `CloudAiFormat`.
+`cloudAiChartSchema`, `cloudAiAppChartSchema`, `cloudAiNumberFormatSchema`,
+`cloudAiFormatSchema` and `CloudAiNumberFormat`, `CloudAiDateFormat`,
+`CloudAiFormat`. `cloudAiAppChartSchema` reads the same chart input for apps
+without the chat's size and fit limits; missing or non-finite data values
+become `NaN`, which the renderer leaves out.
 Server integrations save run results with `createAiConversationView` and receive
 `AiViewInvalidError` for invalid specs. See
 [Tools and approvals](/en/docs/ai/tools-and-approvals) for validation and groups.
@@ -214,7 +217,7 @@ Custom chart hosts use browser exports `cloudAiChartRenderOptions`,
 rendering, legend, comparison marks and locale-formatted rows. `ChartExplorer`
 from `@k2b/ui` accepts `legend` entries typed as `ChartLegendEntry`
 (`{label, color, style?, reference?}`) for a wrapping legend inside its fixed
-height; see [Chart Explorer](/en/ui/content/charts#chart-explorer).
+height; see [Chart presentation and controls](/en/ui/content/charts#chart-presentation-and-controls).
 
 `@k2b/cloud/ai` exposes `AiTaskRequestSchema`, `AiTaskRequest`,
 `AiTaskRequestInput`, and `executeAiTask` for bounded text generation,

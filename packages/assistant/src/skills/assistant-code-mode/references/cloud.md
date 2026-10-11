@@ -228,11 +228,14 @@ type ChartOptions =
   | (ChartBase & { kind: "histogram"; data: number[]; bins?: number; xAxis?: AxisOptions; yAxis?: AxisOptions })
   | (ChartBase & { kind: "gauge"; value: number; min?: number; max?: number; label?: string; unit?: string })
   | (ChartBase & { kind: "sparkline"; data: number[]; area?: boolean });
+// boxplot, heatmap, barGauge, stat, declarative formats, references and thresholds: charts.md.
 
 // ---------------------------------------------------------------- views (script runs only)
 
+type ChartKind = "bar" | "line" | "scatter" | "pie" | "donut" | "histogram" | "gauge" | "sparkline" | "boxplot" | "heatmap" | "barGauge" | "stat";
 type ViewRef = { path: string; title: string; subtitle?: string } & (
-  | { view: "chart"; kind: "bar" | "line" | "scatter" | "pie" | "donut" | "histogram" | "gauge" | "sparkline" }
+  | { view: "chart"; kind: ChartKind }
+  | { view: "group"; linkX: boolean; layout: "stack" | "grid"; charts: { kind: ChartKind; title: string; subtitle?: string }[] }
   | { view: "table"; rows: number; columns: number; footer: boolean }
 );
 type ViewBase = { title: string; subtitle?: string };
@@ -254,6 +257,8 @@ type ViewChartSpec =
   | (ViewSparkline & ({ data: number[] } | { rows: ViewRows; y: string }))
   | (ViewHistogram & ({ data: number[] } | { rows: ViewRows; value: string }))
   | (ViewBase & { kind: "gauge"; value: number; min?: number; max?: number; label?: string; unit?: string });
+// boxplot, heatmap, barGauge, stat, formats, references, thresholds and series style/role: views.md.
+type ViewGroupSpec = ViewBase & { charts: ViewChartSpec[]; linkX?: boolean; layout?: "stack" | "grid" };
 type ViewFormat = { unit?: string; decimals?: number; compact?: boolean } & (
   | { style: "currency"; currency: string }
   | { style?: "number" | "percent"; currency?: never }
@@ -268,6 +273,8 @@ type ViewTableSpec = ViewBase & {
 /** Script runs only; HTML apps draw with cloud.chart(). Server validates every saved spec. */
 interface CloudView {
   chart(spec: ViewChartSpec): Promise<ViewRef>;
+  /** 2..6 related charts under one heading. */
+  group(spec: ViewGroupSpec): Promise<ViewRef>;
   table(spec: ViewTableSpec): Promise<ViewRef>;
 }
 

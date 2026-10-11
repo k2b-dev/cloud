@@ -20,6 +20,8 @@ import {
   CLOUD_AI_VIEW_MAX_MARKS,
   type CloudAiChartInput,
   CloudAiChartInputSchema,
+  cloudAiAppChartSchema,
+  cloudAiChartSchema,
   parseCloudAiChartInput,
 } from "./default-tool-contracts";
 
@@ -669,4 +671,100 @@ describe("richer chart contracts", () => {
     if (heat.kind !== "heatmap") throw new Error("Expected heatmap");
     expect(typeof heat.padding === "object" && heat.padding.left).toBeGreaterThan(100);
   });
+});
+
+test("app and chat schemas share the output type but preserve separate limits", () => {
+  const app = cloudAiAppChartSchema();
+  const chat = cloudAiChartSchema();
+  const series = Array.from({ length: 9 }, () => ({
+    data: [
+      { x: 1, y: 1 },
+      { x: 2, y: 2 },
+    ],
+  }));
+  for (const input of [
+    { kind: "bar", title: "Empty", data: [] },
+    { kind: "line", title: "Many", series },
+    { kind: "bar", title: "Growing", data: Array.from({ length: 481 }, () => ({ label: "A", value: 1 })) },
+    { kind: "line", title: "Single", series: [{ data: [{ x: 1, y: 1 }] }] },
+  ]) {
+    expect(app.safeParse(input).success).toBe(true);
+    expect(chat.safeParse(input).success).toBe(false);
+  }
+  const parsed: CloudAiChartInput = app.parse({ kind: "bar", title: "  ", subtitle: "", data: [{ label: 2024, value: null }] });
+  expect(parsed.title).toBe("  ");
+  if (parsed.kind !== "bar") throw new Error("Expected bar");
+  expect(parsed.data[0]?.label).toBe("2024");
+  expect(Number.isNaN(parsed.data[0]?.value)).toBe(true);
+});
+
+test("app schemas remove list bounds while retaining finite structural configuration", () => {
+  const schema = cloudAiAppChartSchema();
+  const many = Array.from({ length: 1000 }, (_, value) => value);
+  for (const input of [
+    { kind: "gauge", value: 1, thresholds: [] },
+    { kind: "gauge", value: 1, thresholds: many.map((value) => ({ value, label: value })), label: 2024, unit: "" },
+    { kind: "barGauge", data: many.map((value) => ({ label: value, value })) },
+    { kind: "heatmap", data: many.map((value) => ({ x: value, y: 1, value })) },
+    { kind: "bar", data: [], references: many.map((value) => ({ value, label: value })) },
+    { kind: "boxplot", data: [{ label: "A", values: many }] },
+    { kind: "stat", value: 1, sparkline: many },
+    { kind: "boxplot", data: [{ label: "A", values: Array.from({ length: CLOUD_AI_VIEW_MAX_MARKS + 1 }, () => 1) }] },
+  ])
+    expect(schema.safeParse({ title: "", ...input }).success).toBe(true);
+  for (const input of [
+    { kind: "bar", data: [], yAxis: { domain: [0] } },
+    { kind: "bar", data: [], yAxis: { domain: [0, Infinity] } },
+    { kind: "bar", data: [], yAxis: { ticks: 1 } },
+    { kind: "bar", data: [], references: [{ value: NaN }] },
+    { kind: "histogram", data: [], bins: [1] },
+    { kind: "histogram", data: [], bins: 0 },
+    { kind: "gauge", value: 1, min: Infinity },
+    { kind: "gauge", value: 1, thresholds: [{ value: Infinity }] },
+    { kind: "gauge", value: 1, label: Infinity },
+  ])
+    expect(schema.safeParse({ title: "", ...input }).success).toBe(false);
+});
+
+test("parse-only charts reject overlapping labels and suggest only fitting orientations", () => {
+  const heatmap = (x: string[], y: string[]) => ({
+    kind: "heatmap",
+    title: "H",
+    data: x.flatMap((x) => y.map((y) => ({ x, y, value: 1 }))),
+  });
+  const weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const hours = Array.from({ length: 24 }, (_, hour) => `${hour}:00`);
+  const columns = heatmap(hours, weekdays);
+  const rows = heatmap(weekdays, hours);
+  expect(parseCloudAiChartInput(columns)).toBeUndefined();
+  expect(issues(columns)[0]).toContain("24 columns");
+  expect(issues(columns)[0]).not.toContain("swap");
+  expect(parseCloudAiChartInput(rows)).toBeUndefined();
+  expect(issues(rows)[0]).toContain("at most 17 heatmap rows");
+  expect(issues(rows)[0]).not.toContain("swap");
+  const small = heatmap(["North region", "South region", "East region", "West region"], ["B"]);
+  expect(parseCloudAiChartInput(small)).toBeUndefined();
+  expect(issues(small)[0]).toContain("swap x and y");
+  expect(parseCloudAiChartInput({ kind: "barGauge", title: "G", data: [{ label: "A".repeat(30), value: 1 }] })).toBeUndefined();
+});
+
+test("function formats replace their own axes before measuring the padding", () => {
+  const histogram = parse({ kind: "histogram", title: "H", data: [1, 2, 3] });
+  const plain = cloudAiChartRenderOptions(histogram, "en", { width: 480 });
+  const y = (value: number) => `Long y label ${value}`;
+  const x = (value: number) => `Long x label ${value}`;
+  const yOnly = cloudAiChartRenderOptions(histogram, "en", { width: 480, formats: { y } });
+  const both = cloudAiChartRenderOptions(histogram, "en", { width: 480, formats: { x, y } });
+  if (plain.kind !== "histogram" || yOnly.kind !== "histogram" || both.kind !== "histogram") throw new Error("Expected histogram");
+  expect(yOnly.xAxis?.format?.(1)).toBe(plain.xAxis?.format?.(1));
+  expect(yOnly.yAxis?.format).toBe(y);
+  expect(both.xAxis?.format).toBe(x);
+  expect(both.yAxis?.format).toBe(y);
+  if (typeof plain.padding !== "object" || typeof both.padding !== "object") throw new Error("Expected padding");
+  expect(both.padding.left!).toBeGreaterThan(plain.padding.left!);
+  expect(both.padding.right!).toBeGreaterThan(16);
+  const stat = cloudAiChartRenderOptions(parse({ kind: "stat", title: "S", value: 1, delta: 2 }), "en", { formats: { value: y } });
+  if (stat.kind !== "stat") throw new Error("Expected stat");
+  expect(stat.format).toBe(y);
+  expect(stat.deltaFormat).toBe(y);
 });

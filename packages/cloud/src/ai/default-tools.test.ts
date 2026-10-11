@@ -156,6 +156,27 @@ describe("flat chart tool schema", () => {
     ])
       expect(CloudAiChartInputSchema.safeParse(args).success).toBe(false);
   });
+  test("accepted tool roots render after stripping unknown keys", () => {
+    const line = {
+      kind: "line",
+      title: "L",
+      series: [
+        {
+          data: [
+            { x: 1, y: 1 },
+            { x: 2, y: 2 },
+          ],
+        },
+      ],
+    };
+    const group = { title: "G", charts: [line, line], linkX: true };
+    for (const args of [group, { ...group, note: "x" }, { ...line, note: "x" }]) {
+      expect(CloudAiChartInputSchema.safeParse(args).success).toBe(true);
+      expect(parseCloudAiChartToolView(args)).toBeDefined();
+      expect(parseCloudAiChartToolView(args)).not.toHaveProperty("note");
+    }
+    expect(parseCloudAiChartToolView({ ...group, charts: [{ ...line, title: "" }, line] })).toBeUndefined();
+  });
   test("overlapping item shapes keep per-item bounds, box values and heatmap axes", () => {
     for (const input of [
       { kind: "barGauge", title: "G", data: [{ label: "A", value: 3, min: 1, max: 5 }] },

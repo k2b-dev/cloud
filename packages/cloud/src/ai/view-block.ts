@@ -188,7 +188,8 @@ export const parseCloudAiChartToolView = (args: unknown): CloudAiChartView | Clo
   const value = Object.fromEntries(Object.entries(args));
   if ((value.kind !== undefined) === (value.charts !== undefined)) return undefined;
   if (value.charts !== undefined) {
-    const parsed = GroupViewSchema.safeParse({ ...value, view: "group" });
+    const { title, subtitle, charts, linkX, layout } = value;
+    const parsed = GroupViewSchema.safeParse({ title, subtitle, charts, linkX, layout, view: "group" });
     return parsed.success ? parsed.data : undefined;
   }
   if (value.linkX !== undefined || value.layout !== undefined) return undefined;

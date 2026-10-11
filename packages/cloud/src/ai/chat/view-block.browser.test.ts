@@ -155,7 +155,30 @@ const kinds = {
     },
   ],
 };
+// Legends the contract allows: one entry per bar, and eight series with names up to 80 characters.
+const crowded = {
+  view: "chart",
+  kind: "bar",
+  title: "Offers by office",
+  data: Array.from({ length: 40 }, (_, index) => ({ label: `Office ${index + 1}`, value: 10 + ((index * 7) % 23) })),
+  colorByBar: true,
+  legend: true,
+};
+const named = {
+  view: "chart",
+  kind: "line",
+  title: "Offers by sales channel",
+  series: Array.from({ length: 8 }, (_, index) => ({
+    label: `Sales channel ${index + 1} with a long descriptive name for the regional partner network`.slice(0, 80),
+    data: days(10 + index, index + 1),
+  })),
+};
 const files: Record<string, unknown> = {
+  // Edited after `present`: the cursor is no longer linked, and a chart gained a subtitle its summary did not reserve.
+  "/views/unlinked-4e5f6a7b.view.json": { ...linked, linkX: false },
+  "/views/subtitled-8c9d0e1f.view.json": chart,
+  "/views/offers-by-office-2d3e4f5a.view.json": crowded,
+  "/views/offers-by-sales-channel-6b7c8d9e.view.json": named,
   "/views/offers-and-acceptance-7a8b9c0d.view.json": linked,
   "/views/prices-and-capacity-1b2c3d4e.view.json": kinds,
   "/views/offers-by-status-1a2b3c4d.view.json": chart,
@@ -319,6 +342,71 @@ test("a tap on one chart of a linked group moves the cursor in every chart of th
     );
     // The shared tooltip names the day once, in the reader's format.
     expect(await page.locator(".k2b-chart__tooltip:popover-open").first().textContent()).toContain("Sep");
+  } finally {
+    await context.close();
+  }
+});
+
+test("a long legend never squeezes its chart on a phone", async () => {
+  const context = await browser.newContext({
+    viewport: { width: 360, height: 800 },
+    isMobile: true,
+    hasTouch: true,
+    reducedMotion: "reduce",
+  });
+  try {
+    const page = await context.newPage();
+    await page.goto(`http://127.0.0.1:${server.port}/`);
+    await page.evaluate(
+      (value) => (window as unknown as { show: (blocks: ToolBlock[]) => void }).show(value),
+      [
+        present("/views/offers-by-office-2d3e4f5a.view.json", { view: "chart", kind: "bar", title: crowded.title }),
+        present("/views/offers-by-sales-channel-6b7c8d9e.view.json", { view: "chart", kind: "line", title: named.title }),
+      ],
+    );
+    await page.waitForFunction(() => document.querySelectorAll(".k2b-chart-legend").length === 2);
+    const frames = await page.evaluate(() =>
+      Array.from(document.querySelectorAll<HTMLElement>(".k2b-chart-explorer__viewport[data-legend]")).map((viewport) => {
+        const frame = viewport.getBoundingClientRect();
+        const chart = viewport.querySelector(":scope > .k2b-chart")!.getBoundingClientRect();
+        const legend = viewport.querySelector<HTMLElement>(":scope > .k2b-chart-legend")!;
+        return {
+          chart: chart.height / frame.height,
+          // The legend scrolls inside the frame; the frame itself never grows or scrolls.
+          inside: legend.getBoundingClientRect().bottom <= frame.bottom + 0.5,
+          scrolls: legend.scrollHeight > legend.clientHeight,
+          frame: viewport.scrollHeight <= viewport.clientHeight + 1,
+        };
+      }),
+    );
+    expect(frames).toHaveLength(2);
+    for (const frame of frames) {
+      expect(frame.chart).toBeGreaterThanOrEqual(0.6 - 0.01);
+      expect(frame).toMatchObject({ inside: true, scrolls: true, frame: true });
+    }
+  } finally {
+    await context.close();
+  }
+});
+
+test("a view file edited after present shows unavailable instead of what its summary did not reserve", async () => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: "reduce" });
+  try {
+    const page = await context.newPage();
+    await page.goto(`http://127.0.0.1:${server.port}/`);
+    await page.evaluate(
+      (value) => (window as unknown as { show: (blocks: ToolBlock[]) => void }).show(value),
+      [
+        present("/views/unlinked-4e5f6a7b.view.json", groupSummary(linked)),
+        present("/views/subtitled-8c9d0e1f.view.json", { view: "chart", kind: "bar", title: chart.title }),
+      ],
+    );
+    // Both charts of the group and the single chart.
+    await page.waitForFunction(() => {
+      const statuses = Array.from(document.querySelectorAll('[data-view-path] [role="status"]'));
+      return statuses.length === 3 && statuses.every((node) => node.textContent?.startsWith("This view is no longer available"));
+    });
+    expect(await page.locator('[data-view-path] [data-interactive="true"]').count()).toBe(0);
   } finally {
     await context.close();
   }

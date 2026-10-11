@@ -44,6 +44,7 @@ export {
   type CloudAiNumberFormat,
   CloudAiSurveyInputSchema,
   CloudAiTextEditorInputSchema,
+  cloudAiAppChartSchema,
   cloudAiChartSchema,
   cloudAiFormatSchema,
   cloudAiNumberFormatSchema,

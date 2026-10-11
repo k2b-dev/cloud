@@ -109,7 +109,8 @@ Choose by where the values came from:
 2. Numbers from code (files, CSV, Cloud data or capability results read with
    `cloud.capabilities.run`) → `cloud.view.chart`, `cloud.view.group` or
    `cloud.view.table` in the run, then `present({path})` per view. Never retype run values into tool
-   arguments, `data.js` or Markdown. If a view is missing, rerun with
+   arguments, `data.js` or Markdown; a chat app's `data.js` is the module the run
+   wrote, copied unchanged. If a view is missing, rerun with
    `cloud.view.*`. Return only key figures the answer text mentions.
 3. Exact values beyond a small table → `cloud.view.table`.
 4. Interaction a view cannot express (inputs, what-if, own layout, forms) →

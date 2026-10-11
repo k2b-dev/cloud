@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { checkCloudAiView, cloudAiViewSummary } from "@k2b/cloud/ai/browser";
 import { createCloud } from "./cloud";
-import { createViews } from "./views";
+import { createViews, normalizeChartDates } from "./views";
 
 function fixture(timeZone = "UTC") {
   const specs: unknown[] = [];
@@ -561,3 +561,63 @@ test.each(["line", "scatter"])(
     });
   },
 );
+
+for (const timeZone of ["UTC", "America/New_York", "Asia/Tokyo"])
+  test(`only app mode normalizes written ISO dates in ${timeZone}`, () => {
+    const values = [
+      "2026",
+      "2026-01",
+      "2026-01-02",
+      "2026-01-02T10:00",
+      "2026-01-02T10:00:00.123456",
+      "2026-01-02 10:00:00",
+      "2026-01-02T00:00:00.123",
+      "not a date",
+      "2026-01-02T10:00.123",
+    ];
+    const expected = [
+      "2026-01-01",
+      "2026-01-01",
+      "2026-01-02",
+      "2026-01-02T10:00",
+      "2026-01-02T10:00:00",
+      "2026-01-02T10:00:00",
+      "2026-01-02T00:00:00",
+      "not a date",
+      "2026-01-02T10:00.123",
+    ];
+    const spec = {
+      kind: "line",
+      series: [{ data: values.map((x) => ({ x, y: 1 })) }],
+      references: values.map((value) => ({ axis: "x", value })),
+    };
+    expect(normalizeChartDates(spec, timeZone, "", true)).toEqual({
+      ...spec,
+      series: [{ data: expected.map((x) => ({ x, y: 1 })) }],
+      references: expected.map((value) => ({ axis: "x", value })),
+    });
+    expect(normalizeChartDates(spec, timeZone)).toEqual(spec);
+  });
+
+test("app mode converts Date and ISO offset variants for points and references", () => {
+  const values = [
+    new Date("2026-01-02T10:00:00Z"),
+    "2026-01-02T10:00:00.123Z",
+    "2026-01-02 11:00:00.123+01",
+    "2026-01-02T11:00:00+0100",
+    "2026-01-02 11:00:00+01:00",
+    "2026-01-02T09:00:00-01",
+    "2026-01-02 09:00:00.123-0100",
+    "2026-01-02T09:00:00-01:00",
+  ];
+  const spec = {
+    kind: "line",
+    series: [{ data: values.map((x) => ({ x, y: 1 })) }],
+    references: values.map((value) => ({ axis: "x", value })),
+  };
+  expect(normalizeChartDates(spec, "America/New_York", "", true)).toEqual({
+    ...spec,
+    series: [{ data: values.map(() => ({ x: "2026-01-02T05:00:00", y: 1 })) }],
+    references: values.map(() => ({ axis: "x", value: "2026-01-02T05:00:00" })),
+  });
+});

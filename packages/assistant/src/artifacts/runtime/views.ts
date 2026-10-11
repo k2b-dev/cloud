@@ -43,12 +43,24 @@ const wallClock = (value: Date, timeZone: string, path: string): string => {
   return `${part("year")}-${part("month")}-${part("day")}T${part("hour")}:${part("minute")}:${part("second")}`;
 };
 
+const MIDNIGHT = /T00:00(?::00)?$/;
+
 /** Dates become wall-clock chart strings; apps also accept ISO instants with an offset. */
 export function normalizeChartDates(spec: Row, timeZone: string, prefix = "", instants = false): Row {
+  const instantDate = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)(Z|[+-]\d{2}(?::?\d{2})?)$/;
   const date = (value: unknown, path: string) => {
     if (value instanceof Date) return wallClock(value, timeZone, path);
-    if (instants && typeof value === "string" && /^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:?\d{2})$/.test(value))
-      return wallClock(new Date(value), timeZone, path);
+    if (instants && typeof value === "string") {
+      const instant = instantDate.exec(value);
+      if (instant) {
+        const offset = instant[3]!;
+        const normalized = offset === "Z" ? offset : offset.length === 3 ? `${offset}:00` : offset.replace(/^([+-]\d{2})(\d{2})$/, "$1:$2");
+        return wallClock(new Date(`${instant[1]}T${instant[2]}${normalized}`), timeZone, path);
+      }
+      const written = /^(\d{4})(?:-(\d{2})(?:-(\d{2})(?:[T ](\d{2}:\d{2})(?::(\d{2})(?:\.\d+)?)?)?)?)?$/.exec(value);
+      if (written)
+        return `${written[1]}-${written[2] ?? "01"}-${written[3] ?? "01"}${written[4] ? `T${written[4]}${written[5] ? `:${written[5]}` : ""}` : ""}`;
+    }
     return value;
   };
   const record = (value: unknown): Row | undefined =>
@@ -69,16 +81,18 @@ export function normalizeChartDates(spec: Row, timeZone: string, prefix = "", in
               if (!point) return raw;
               const x = date(point.x, `${prefix}series[${i}].data[${j}].x`);
               const normalized = { ...point, x };
-              if (x !== point.x) {
+              // Apps show calendar days when every date is at midnight, as their date axes always did; views keep
+              // what the run wrote and only shorten the Dates they converted.
+              if (instants ? typeof x === "string" : x !== point.x) {
                 converted.add(normalized);
-                if (typeof x === "string" && !x.endsWith("T00:00:00")) midnight = false;
+                if (typeof x === "string" && x.length > 10 && !MIDNIGHT.test(x)) midnight = false;
               }
               return normalized;
             }),
           };
         })
       : undefined;
-  const day = (x: unknown) => (midnight && typeof x === "string" && x.endsWith("T00:00:00") ? x.slice(0, 10) : x);
+  const day = (x: unknown) => (midnight && typeof x === "string" && MIDNIGHT.test(x) ? x.slice(0, 10) : x);
   return {
     ...spec,
     ...(series

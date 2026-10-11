@@ -19,8 +19,8 @@ draw([{ label: "North", value: 12 }, { label: "South", value: 8 }]);
 document.querySelector("#refresh").addEventListener("click", () => draw([{ label: "North", value: 16 }, { label: "South", value: 10 }]));
 ```
 
-`cloud.chart()` validates with the same chart contract and uses the same options
-mapping as chat charts. The canonical payloads and options are:
+`cloud.chart()` takes the same kinds and options as chat charts and draws them the
+same way:
 
 | Kind | Required options | Optional options |
 | --- | --- | --- |
@@ -31,8 +31,8 @@ mapping as chat charts. The canonical payloads and options are:
 | `gauge` | `value` | `min`, `max`, `label`, `unit`, `format`, `thresholds` |
 | `sparkline` | `data: number[]` | `area` |
 | `boxplot` | `data: [{label, values: number[]}]` | `yAxis`, `references` |
-| `heatmap` | `data: [{x, y, value}]`, text categories, each pair once | `min`, `max`, `showValues`, `format` |
-| `barGauge` | 1..8 `data` items `{label, value, min?, max?}`; labels at most 10 characters | shared `min`, `max`, `unit`, `format`, `thresholds` |
+| `heatmap` | `data: [{x, y, value}]`, each pair once | `min`, `max`, `showValues`, `format` |
+| `barGauge` | `data: [{label, value, min?, max?}]` | shared `min`, `max`, `unit`, `format`, `thresholds` |
 | `stat` | `value` | `unit`, `format`, `delta`, `better: "up" | "down"`, `sparkline` |
 
 All kinds accept `title` and `subtitle`; together they name the chart for screen
@@ -46,9 +46,11 @@ still works on axes and values. Without a format, values use the viewer's locale
 With `showValues` on bars, y ticks use the value format. Pie and donut slices
 show shares; a value format does not change them.
 
-x may be a number, `Date` or ISO date string. Dates and ISO instants with an offset
-become the viewer's wall-clock time; converted x values all at midnight become
-`YYYY-MM-DD`. Date references become wall-clock date-time strings.
+x may be a number, `Date` or ISO date string. `YYYY`, `YYYY-MM`, `YYYY-MM-DD` and
+date-times without an offset (`T` or a space, fractions dropped) stay the
+wall-clock time as written. Dates and strings with an offset become the viewer's
+wall-clock time. When every date is at midnight, the axis shows days. Labels
+may be numbers. Date references become wall-clock date-time strings.
 For references, thresholds and series `style`/`role`, read
 [Views in the chat](views.md#chart-options). Line reference series default to
 dashed unless style is set. Scatter reference points are hollow in chat;
@@ -61,13 +63,16 @@ is omitted; pie, donut and gauge keep their aspect ratio. Long category names
 remain complete; every n-th label shows when they do not fit. Add a table in
 `<details>` below the chart when readers need exact values.
 
-Values must be finite. The chart data limits match
-[views](views.md#references-limits-and-errors): 8 series, 480 points per series
-or ordinary list, 480 boxplot groups and 3,840 total input marks (or heatmap cells). Contract violations throw
-`error.code === "invalid"`: field errors name paths such as
-`series[0].data`, chart-wide checks explain the reason. More than 480 points
-per series, mixed x types, out-of-domain values or undrawable charts fail.
-Aggregate before drawing. Stdlib-only options outside the contract are ignored.
+An app redraws with whatever its filters leave, so the data never makes
+`cloud.chart()` throw by its size: empty data draws an empty chart, a one-point
+line a single point, and `null`, `undefined` or non-finite values are left out.
+The chat's limits on series, points, labels and phone-width fit apply only to
+views and the `chart` tool. Still aggregate before drawing; thousands of points
+make a slow and unreadable chart. Unknown kinds, wrong option types, a fixed
+`domain` that does not contain every value, and values too close for their size
+to label an axis (such as `1e17` and `1e17 + 16`) throw `error.code === "invalid"`
+with a path such as `series[0].data[2].x`. Stdlib-only options outside the
+contract are ignored.
 There is no second y axis, group renderer, or grouped/stacked bar mode
 ([upstream issue](https://github.com/k2b-dev/stdlib/issues/5)); use
 `cloud.view.group` for related computed measures in chat.
