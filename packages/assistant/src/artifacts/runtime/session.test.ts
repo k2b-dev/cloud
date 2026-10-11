@@ -2,9 +2,9 @@ import { expect, spyOn, test } from "bun:test";
 import { createDomTestHarness } from "../../../../ui/test/dom";
 import { LIMITS } from "../contracts";
 import * as host from "./host";
-import { createArtifactSession } from "./session";
+import { createArtifactSession, type SessionOptions } from "./session";
 
-function session() {
+function session(options: Partial<SessionOptions> = {}) {
   const dom = createDomTestHarness();
   let hooks: host.RuntimeHooks | undefined;
   const start = spyOn(host, "startArtifactRun").mockImplementation((_container, _source, value) => {
@@ -16,6 +16,7 @@ function session() {
     dom.root,
     { runtime: "", code: "" },
     {
+      ...options,
       changed() {},
       inputFiles: [{ name: "missing.csv", size: 1, type: "text/csv" }],
       readInput: async () => {
@@ -90,5 +91,54 @@ test("session host reports a manifest input whose bytes are missing as not_found
     await run.stop();
     start.mockRestore();
     dom.cleanup();
+  }
+});
+
+test("views require a chat service and start empty", async () => {
+  const fixture = session();
+  try {
+    expect(fixture.run.snapshot().views).toEqual([]);
+    await expect(fixture.request("view.save", [{}])).rejects.toMatchObject({
+      code: "unavailable",
+      message: "Views need a code_run in a chat.",
+    });
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
+test("parallel views reserve distinct indexes and share the output budget with downloads", async () => {
+  const indexes: number[] = [];
+  const pending: (() => void)[] = [];
+  const fixture = session({
+    view: async (_spec, index) => {
+      indexes.push(index);
+      await new Promise<void>((resolve) => pending.push(resolve));
+      return { path: `/views/table-${index}.view.json`, view: "table", title: "Rows", rows: 0, columns: 1, footer: false };
+    },
+  });
+  try {
+    for (let i = 0; i < 62; i++) await fixture.request("file.save", ["small", `${i}.txt`]);
+    const first = fixture.request("view.save", [{}]),
+      second = fixture.request("view.save", [{}]);
+    expect(indexes).toEqual([0, 1]);
+    expect(fixture.run.snapshot().inputPending).toBe(true);
+    await expect(fixture.request("view.save", [{}])).rejects.toMatchObject({
+      code: "limit",
+      message: "A run keeps at most 64 output files and views.",
+    });
+    await expect(fixture.request("file.save", ["small", "overflow.txt"])).rejects.toMatchObject({
+      code: "limit",
+      message: "A run keeps at most 64 output files and views.",
+    });
+    await fixture.request("file.save", ["replacement", "0.txt"]);
+    pending[1]!();
+    await second;
+    pending[0]!();
+    await first;
+    expect(fixture.run.snapshot().views.map((view) => view.path)).toEqual(["/views/table-1.view.json", "/views/table-0.view.json"]);
+    expect(fixture.run.snapshot().inputPending).toBe(false);
+  } finally {
+    await fixture.cleanup();
   }
 });

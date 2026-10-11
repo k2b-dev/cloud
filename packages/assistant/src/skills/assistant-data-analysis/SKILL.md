@@ -1,15 +1,17 @@
 ---
 name: assistant-data-analysis
-description: Analyze source data, explain metrics and comparisons, and build evidence-backed reports or HTML dashboards in Assistant Code Mode. Use for multi-step analysis, data exploration, and dashboards; a simple chart only needs the chart tool.
+description: Analyze source data, explain metrics and comparisons, and build evidence-backed reports or HTML dashboards in Assistant Code Mode. Use for multi-step analysis, data exploration, and dashboards; computed charts and tables use cloud.view.* in the run, while a few non-run values use the chart tool.
 ---
 
 # Analyze data and deliver an inspectable result
 
 Start with the question the reader needs to answer. Choose a direct answer, a
 chart, an app shown in this chat, an exported file, or a reusable Studio app
-accordingly. Just data → `chart` tool; interaction → chat app (`code_present`);
-persistence or reuse → saved Studio App. A chart of reviewed numbers goes to the
-`chart` tool, which draws it in the chat with a data table and needs no app.
+accordingly. Computed values use `cloud.view.chart` or `cloud.view.table` in
+`code_run`, then `present({path})` for each view. A few values that did not come
+from a run use the `chart` tool. Never retype run values into tool arguments,
+`data.js` or Markdown; return only key figures the answer mentions. If a view is
+missing, rerun with `cloud.view.*`. These results need no app.
 Filters and buttons for a one-time analysis belong in a chat app; only data
 that must be kept or an app that is used again needs a saved Studio App. Load
 `assistant-code-mode` for execution and read its
@@ -51,13 +53,14 @@ retrieval timestamp, without credentials or credential-bearing URLs.
 
 Derive charts, metrics, and tables from the same reviewed data. Aggregate large
 inputs in a script before they reach an app; an app shows aggregates, not raw
-exports. Give exact values a table, for example in a `<details>` element under
-the chart.
+exports. Give exact chat values a `cloud.view.table`; inside an app, a
+`<details>` table under the chart is appropriate.
 
 Choose the simplest chart that answers the question. Use tables for exact
 records, bars for category comparisons, lines for ordered trends, and distributions
-for spread. State units, comparison windows, and whether a percent is a fraction
-or an already scaled number. Do not imply causation from correlation.
+for spread. A distribution uses the histogram rows form over all observations,
+rather than a sample. State units, comparison windows, and whether a percent is
+a fraction or an already scaled number. Do not imply causation from correlation.
 
 Lead reports with the finding, then supporting evidence and limitations.
 Lead dashboards with the important measurements, then trends and diagnostic
@@ -77,9 +80,9 @@ aggregation logic of an app into a module the script can import too
 (`lib/totals.js`), and test it there with filters, empty results and failed
 loads. Reconcile the values the app will show with the reviewed totals and check
 that filters describe the data actually displayed. A successful schema
-validation does not establish analytical correctness. Apps are not rendered in
-a test yet; read the static findings of `code_write` and `code_present`, and say
-what the person should check.
+validation does not establish analytical correctness. `code_check` renders apps
+on desktop and phone; look at every screenshot, fix visible defects and check
+again.
 
 Validate the logic the app actually uses, rather than pasting its formulas into a
 second test script. Keep an independent expectation from the input data: row
@@ -106,10 +109,11 @@ from external loading; an Apply button can avoid a request for every slider move
 
 ## Save, share, and hand off
 
-For chat apps, test the numbers with `code_run`, then deliver with
-`code_present({title, files})`. A successful run alone is not visible to the
-user. Retain source identity, reviewed input data and their real retrieval
-timestamp. Put writes and external reloads behind explicit buttons; opening an
+Deliver computed charts and tables as views first, with `cloud.view.*` and
+`present({path})`. Use a chat app only for interaction; test its numbers with
+`code_run`, render it with `code_check`, inspect the screenshots, then deliver
+with `code_present({title, files})`. A successful run alone is not visible.
+Retain source identity, reviewed input data and their real retrieval timestamp. Put writes and external reloads behind explicit buttons; opening an
 old result must not repeat earlier actions. The user can download the current
 view as PDF or static HTML.
 
@@ -125,8 +129,8 @@ output file. A live app must implement its loader and display the retrieval time
 loading once is not continuous monitoring. No background refresh exists unless
 implemented through an appropriate supported workflow.
 
-Present the chat app, resource link or exported file, the data timestamp, and material
-coverage limitations. Say whether it is a snapshot or reloads from its sources.
+Present the views, chat app, resource link or exported file, the data
+timestamp, and material coverage limitations. Say whether it is a snapshot or reloads from its sources.
 If publication fails, retain the tested resource and report the failed stage;
 do not claim success or create a different public destination. Sites-specific
 hosting, access policies, and editor storage are not part of this Cloud workflow.

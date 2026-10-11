@@ -9,7 +9,7 @@ is unavailable, report that state rather than claiming the code ran.
 | Tool | Input | Result |
 | --- | --- | --- |
 | `code_run` | `id` or `code`, optional `inputPaths`, `version`; one-off `code` may bind `resourceId` | Starts a saved script or a one-off entry; returns `runId` and a snapshot |
-| `code_inspect` | `runId`, optional `waitMs` | Status, progress, logs, errors, output and captured files |
+| `code_inspect` | `runId`, optional `waitMs` | Status, progress, logs, errors, output, captured files and view references |
 | `code_stop` | `runId` | Stops and releases a run |
 | `code_export` | `runId`, `name` | Copies a captured output file into the chat; returns its path and version |
 | `code_present` | `files` and `title`, or a saved app `id` | Shows an HTML app as a card in the chat after its static checks |
@@ -37,6 +37,9 @@ while starting, the card shows a short notice without the error text, and you do
 not see it. Catch failures in the app and show `error.message` in the page.
 Console lines past a per-second budget are dropped, and a blocked resource is
 reported once per kind and origin.
+
+The snapshot includes `views`: paths and summaries without computed values.
+Use `present({path})` for each view the person should see.
 
 Run already includes a compact snapshot; inspect only when you need more
 detail. Logs include the latest 20 entries; long text and output previews are

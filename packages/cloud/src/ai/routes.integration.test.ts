@@ -204,6 +204,12 @@ suite("global AI conversation boundaries", () => {
       expect(missing.status).toBe(404);
       expect(await missing.json()).toMatchObject({ message: "File not found" });
 
+      const readable = await aiRoutes.request(`/conversations/${chat.shortId}/files/content?${new URLSearchParams({ path: file.path })}`, {
+        headers: { Authorization: `Bearer ${owner}` },
+      });
+      expect(readable.status).toBe(200);
+      expect(readable.headers.get("X-Cloud-Ai-File-Origin")).toBe("user");
+
       const deleted = await remove(chat.shortId, file.path, owner);
       expect(deleted.status).toBe(200);
       expect(await deleted.json()).toEqual({ deleted: true });

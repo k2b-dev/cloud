@@ -71,3 +71,8 @@ test("a table-scoped mandate allows only the mapped insert on that table", async
   expect(allows("invoices")).toBe(true);
   expect(allows("other")).toBe(false);
 });
+
+test("background runs can save chat views but cannot mutate the view endpoint otherwise", () => {
+  expect(backgroundCodeRouteAllowed("/runtime/views", "POST")).toBe(true);
+  for (const method of ["GET", "PUT", "DELETE"]) expect(backgroundCodeRouteAllowed("/runtime/views", method)).toBe(false);
+});

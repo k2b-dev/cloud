@@ -4,7 +4,13 @@ import { tinyJpeg, withCameraMetadata } from "../../../../scripts/fixtures/image
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { aiFileContentVersion } from "./file-content-version";
 import { createCloudAiReadFileTool } from "./file-tools";
-import { aiFileStore, normalizeAiFilePath, writeAiConversationFile } from "./files-store";
+import {
+  aiFileStore,
+  createAiConversationView,
+  createAiConversationArtifact,
+  normalizeAiFilePath,
+  writeAiConversationFile,
+} from "./files-store";
 import { migrateCloudAi } from "./migrate";
 import { aiConversations } from "./store";
 
@@ -26,6 +32,67 @@ const bytes = (text: string) => new TextEncoder().encode(text);
 suite("aiFileStore integration", () => {
   beforeAll(async () => {
     await migrateCloudAi();
+  });
+  test("run views are validated, deterministic, idempotent and protected from model writes", async () => {
+    const ownerUserId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId });
+    const input = {
+      conversationId: conversation.id,
+      ownerUserId,
+      turnId: "turn",
+      runId: "run",
+      index: 0,
+      view: { view: "table", title: "München Prices!", columns: [{ id: "price", type: "number" }], rows: [{ price: 12 }] },
+    };
+    try {
+      const first = await createAiConversationView(input);
+      expect(first.path).toMatch(/^\/views\/munchen-prices-[a-f0-9]{8}\.view\.json$/);
+      expect(first).toEqual(await createAiConversationView(input));
+      expect((await aiFileStore.stat({ conversationId: conversation.id, path: first.path }))?.version).toBe(1);
+      await expect(createAiConversationView({ ...input, view: { ...input.view, rows: [{ price: "bad" }] } })).rejects.toMatchObject({
+        name: "AiViewInvalidError",
+        issues: expect.arrayContaining([expect.stringContaining("rows[0].price")]),
+      });
+      await expect(
+        createAiConversationArtifact({
+          conversationId: conversation.id,
+          ownerUserId,
+          path: first.path,
+          bytes: bytes("{}"),
+          mediaType: "application/json",
+          producerCallKey: "foreign",
+        }),
+      ).rejects.toThrow("The /views folder");
+      await expect(
+        writeAiConversationFile({
+          conversationId: conversation.id,
+          ownerUserId,
+          path: first.path,
+          bytes: bytes("{}"),
+          mediaType: "application/json",
+          expectedVersion: null,
+        }),
+      ).rejects.toThrow("The /views folder");
+      await expect(
+        createAiConversationView({
+          ...input,
+          index: 2,
+          view: { view: "table", title: "Oversized", columns: [{ id: "text", type: "text" }], rows: [{ text: "x".repeat(1024 * 1024) }] },
+        }),
+      ).rejects.toMatchObject({ name: "AiViewInvalidError", message: expect.stringContaining("1048576") });
+      const key = "turn:run:1";
+      const digest = new Bun.CryptoHasher("sha256").update(key).digest("hex").slice(0, 8);
+      await aiFileStore.createUserUpload({
+        conversationId: conversation.id,
+        path: `/views/munchen-prices-${digest}.view.json`,
+        bytes: bytes("foreign"),
+        mediaType: "application/json",
+      });
+      await expect(createAiConversationView({ ...input, index: 1 })).rejects.toMatchObject({ code: "CONFLICT" });
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id=${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${ownerUserId}::uuid`;
+    }
   });
   test("complete image uploads and overwrites strip metadata and use the stored size", async () => {
     const userId = await insertUser();

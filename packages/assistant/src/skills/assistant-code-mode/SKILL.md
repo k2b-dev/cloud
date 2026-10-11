@@ -1,6 +1,6 @@
 ---
 name: assistant-code-mode
-description: Inspect and transform unfamiliar data, analyze files, compare results across Cloud apps, or build and improve HTML and agent-only Apps in Assistant Studio. Use for quick code experiments, data analysis, file generation, resource SQL queries, interactive charts and small apps shown in chat, and combining discovered Cloud capabilities. For plain arithmetic or date offsets, use calculate. To only show data as a chart, use the chart tool.
+description: Inspect and transform unfamiliar data, analyze files, compare results across Cloud apps, or build and improve HTML and agent-only Apps in Assistant Studio. Use for quick code experiments, data analysis, file generation, resource SQL queries, interactive charts and small apps shown in chat, and combining discovered Cloud capabilities. For plain arithmetic or date offsets, use calculate. A few values that did not come from code use the chart tool; computed results use cloud.view.*.
 ---
 # Assistant code mode
 
@@ -31,9 +31,10 @@ code. Discover other Cloud operations before using `cloud.capabilities.run`.
 
 Read [cloud contract](references/cloud.md) first: it is the complete runtime contract.
 One frozen global `cloud` supplies storage, data, AI, HTTP, files, document
-helpers, money, and charts, the same in scripts and apps. Only relative source
-imports are supported, and there is no native networking. Discover external
-capability and HTTP contracts separately.
+helpers, money, and charts, the same in scripts and apps; only `cloud.view`
+works in script runs alone. Only relative source imports are supported, and
+there is no native networking. Discover external capability and HTTP contracts
+separately.
 
 Inspect supplied data before joining, filtering or calculating: column names,
 types, units, date ranges and missing values. Ask only for decisions or inputs
@@ -77,6 +78,7 @@ supported surface; links within references add related workflows when needed.
 | Calculate, create or read electronic invoices/XML/PDF attachments | [Electronic invoices](references/einvoice.md) |
 | Interfaces: files, styles without CSS, sandbox rules, dialogs | [HTML apps](references/apps.md) |
 | Show an interactive app in this chat | [Chat apps](references/chat.md) |
+| Computed charts and tables | [Views in the chat](references/views.md) |
 | Chart types, series and axes | [Charts](references/charts.md) |
 | Long processing, progress, cancellation | [Script context](references/runtime.md) |
 | Persist personal/shared JSON or shared files | [Storage](references/storage.md) |
@@ -100,25 +102,28 @@ dashboards, also load `assistant-data-analysis` for metrics and source validatio
 
 ## Choose the delivery
 
-Just data → `chart` tool; interaction → chat app (`code_present`); persistence
-or reuse → saved Studio App. When the person only needs to see numbers as a
-chart, compute them (with `code_run` if needed) and pass them to the `chart`
-tool: Cloud draws it in the chat with a data table, no app files or
-`code_check`. It takes the options of `cloud.chart()` as plain data.
+Choose by where the values came from:
 
-For a calculator, a filterable chart, a report or small dashboard in this
-conversation, compute and check the numbers with `code_run`, then show an HTML
-app with `code_present({title, files})`. Read [Chat apps](references/chat.md).
-A successful run is visible to the agent only; present it before saying the
-user can see it. No saved App or chat file is necessary.
+1. A few values already in the conversation, a web page or a small capability
+   result, without a run → `chart` tool.
+2. Numbers from code (files, CSV, Cloud data or capability results read with
+   `cloud.capabilities.run`) → `cloud.view.chart` or `cloud.view.table` in the
+   run, then `present({path})` per view. Never retype run values into tool
+   arguments, `data.js` or Markdown. If a view is missing, rerun with
+   `cloud.view.*`. Return only key figures the answer text mentions.
+3. Exact values beyond a small table → `cloud.view.table`.
+4. Interaction a view cannot express (inputs, what-if, own layout, forms) →
+   chat app `code_present`. Read [Chat apps](references/chat.md).
+5. Kept data, live loading, reuse, sharing or actions → Studio App.
+6. A file as the result → `cloud.download`, `code_export`, `present`.
 
-Use a Studio App when the user needs an independently accessible, reusable
-application: `code_create`, one `code_write` per file, then `code_open` beside
-the chat or `code_present({id})` in it. Send the writes one at a time, pass each
-returned revision as the next `expectedRevision`, and check that each file's
-`lines` matches what you wrote.
-Use `cloud.download`, `code_export`, and `present` when the requested result is
-a file. These are separate delivery choices.
+A successful run is visible to the agent only; present its views or files
+before saying the person can see them. Read [Views in the chat](references/views.md).
+
+For a Studio App: `code_create`, one `code_write` per file, then `code_open`
+beside the chat or `code_present({id})` in it. Send the writes one at a time,
+pass each returned revision as the next `expectedRevision`, and check that each
+file's `lines` matches what you wrote.
 
 ## Verify and deliver
 

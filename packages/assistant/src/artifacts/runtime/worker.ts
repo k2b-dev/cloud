@@ -77,7 +77,7 @@ Object.defineProperty(globalThis, "__artifactInit", {
     booted = true;
     Object.assign(runtimeContext, context);
     inputFiles = files;
-    Object.defineProperty(globalThis, "cloud", { value: createCloud(rpc, runtimeContext), writable: false, configurable: false });
+    Object.defineProperty(globalThis, "cloud", { value: createCloud(rpc, runtimeContext, true), writable: false, configurable: false });
   },
 });
 let started = false;

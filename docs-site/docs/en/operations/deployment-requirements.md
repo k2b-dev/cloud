@@ -243,7 +243,9 @@ publishing these ports. Binary bodies preserve backpressure across this hop.
 Eight simultaneous host requests per process are admitted; excess requests
 receive `operation_busy`. Size memory for the existing 50 MiB per-file and
 250 MiB per-run code budgets plus Chromium; streaming transport does not remove
-the memory occupied by files loaded for analysis.
+the memory occupied by files loaded for analysis. View files are ordinary chat
+files under `/views` and count toward the per-chat file budget; they need no
+configuration or migration.
 
 ### Assistant Chromium isolation
 

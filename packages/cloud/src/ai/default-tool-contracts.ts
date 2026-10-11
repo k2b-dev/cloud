@@ -136,12 +136,12 @@ const chartKinds = () => {
 /** Checks run on complete input only, so out-of-range input fails on its bounds before anything is computed or drawn. */
 const whenValid = { when: (payload: { issues: readonly unknown[] }) => payload.issues.length === 0 };
 
-const chartSchema = () =>
+export const cloudAiChartSchema = () =>
   chartKinds().superRefine((chart, context) => {
     const issue = chartDataIssue(chart);
     if (issue) context.addIssue({ code: "custom", message: issue });
   }, whenValid);
-const ChartSchema = /* @__PURE__ */ chartSchema();
+const ChartSchema = /* @__PURE__ */ cloudAiChartSchema();
 
 /** One chart as the renderers read it: a `cloud.chart()` kind with its options. */
 export type CloudAiChartInput = z.output<ReturnType<typeof chartKinds>>;

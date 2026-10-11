@@ -104,9 +104,9 @@ export const streamAssistantTurn = async (input: {
     if (printCapabilityTable(ctx, result)) renderedTables.add(callId);
   };
   // Cards and charts draw in the web chat; every text client prints what they show instead.
-  const emitDelivered = (block: Extract<AiTurnBlock, { kind: "tool" }>) => {
+  const emitDelivered = async (block: Extract<AiTurnBlock, { kind: "tool" }>) => {
     if (ctx.options.output !== "text" || renderedTables.has(block.callId)) return;
-    if (printDeliveredBlock(ctx, block)) renderedTables.add(block.callId);
+    if (await printDeliveredBlock(ctx, block, conversationId)) renderedTables.add(block.callId);
   };
 
   const emitJsonLine = (value: Record<string, unknown>) => {
@@ -173,11 +173,15 @@ export const streamAssistantTurn = async (input: {
   };
   const reconcileBlocks = (baseline: AiTurnBlock[]) =>
     reconcile(baseline.filter((block) => block.kind === "text").filter((block) => block.text.trim()));
-  const finish = (result: AssistantTurnStreamResult): AssistantTurnStreamResult => {
+  const finish = async (result: AssistantTurnStreamResult): Promise<AssistantTurnStreamResult> => {
     flushLinks();
     for (const stored of result.messages) {
       if (stored.message.role !== "tool_result") continue;
       emitTable(stored.message.callId, stored.message.result);
+      if (!stored.message.isError && !renderedTables.has(stored.message.callId) && ctx.options.output === "text") {
+        if (await printDeliveredBlock(ctx, { name: stored.message.name, result: stored.message.result }, conversationId))
+          renderedTables.add(stored.message.callId);
+      }
       const path = stored.message.isError ? null : presentedPath(stored.message.name, stored.message.result);
       if (path && ctx.options.output === "text" && !namedFiles.has(stored.message.callId)) {
         namedFiles.add(stored.message.callId);
@@ -204,7 +208,7 @@ export const streamAssistantTurn = async (input: {
     if (changed && ctx.options.output === "text") flushLinks();
     if (block.status === "completed") {
       emitTable(block.callId, block.result);
-      emitDelivered(block);
+      await emitDelivered(block);
     }
     if (changed) {
       toolStatuses.set(block.callId, block.status);

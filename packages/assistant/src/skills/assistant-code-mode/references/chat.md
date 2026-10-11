@@ -1,9 +1,9 @@
 # Chat apps
 
-Just data → `chart` tool; interaction → chat app (`code_present`); persistence
-or reuse → saved Studio App. A chart of numbers you already have needs no app:
-pass `cloud.chart()` options as plain data to the `chart` tool, and Cloud draws
-it in the chat with a data table.
+Computed charts and tables use `cloud.view.*` in the run, then `present({path})`;
+read [Views in the chat](views.md). A few non-run values use the `chart` tool.
+A chart or table of computed data needs no app at all. Use a chat app for
+interaction a view cannot express; kept data or reuse belongs in a Studio App.
 
 Use `code_present` to show an HTML app as a card in this chat when the person
 works with it: a calculator, a chart with filters, a small dashboard or report
@@ -38,8 +38,8 @@ draw();
 ```
 
 Compute the numbers first: run a script with `code_run` over the chat files,
-check the totals, and write the result into `data.js`. Never retype truncated
-tool output into a data file; export it with `cloud.download` and `code_export`
+check the totals, and export the exact app data. Never retype run
+values into `data.js`; export it with `cloud.download` and `code_export`
 and read the exported file.
 
 Before showing an app, run `code_check` on exactly the files you will present,

@@ -229,6 +229,48 @@ type ChartOptions =
   | (ChartBase & { kind: "gauge"; value: number; min?: number; max?: number; label?: string; unit?: string })
   | (ChartBase & { kind: "sparkline"; data: number[]; area?: boolean });
 
+// ---------------------------------------------------------------- views (script runs only)
+
+type ViewRef = { path: string; title: string; subtitle?: string } & (
+  | { view: "chart"; kind: "bar" | "line" | "scatter" | "pie" | "donut" | "histogram" | "gauge" | "sparkline" }
+  | { view: "table"; rows: number; columns: number; footer: boolean }
+);
+type ViewBase = { title: string; subtitle?: string };
+type ViewAxis = { label?: string; domain?: [number, number]; ticks?: number; scale?: "linear" | "log" };
+type ViewPoint = { x: number | string; y: number };
+type ViewRows = Record<string, unknown>[];
+type ViewBar = ViewBase & { kind: "bar"; yAxis?: ViewAxis; colorByBar?: boolean; showValues?: boolean; legend?: boolean };
+type ViewSlices = ViewBase & { kind: "pie" | "donut"; legend?: boolean; showLabels?: boolean };
+type ViewLines = ViewBase & { kind: "line"; xAxis?: ViewAxis; yAxis?: ViewAxis; legend?: boolean; area?: boolean; smooth?: boolean };
+type ViewScatter = ViewBase & { kind: "scatter"; xAxis?: ViewAxis; yAxis?: ViewAxis; legend?: boolean };
+type ViewSparkline = ViewBase & { kind: "sparkline"; area?: boolean };
+type ViewHistogram = ViewBase & { kind: "histogram"; bins?: number | number[] };
+type ViewChartSpec =
+  | ((ViewBar | ViewSlices) & ({ data: ChartItem[] } | { rows: ViewRows; x: string; y: string }))
+  | ((ViewLines | ViewScatter) & (
+      | { series: { label?: string; data: ViewPoint[] }[] }
+      | { rows: ViewRows; x: string; y: string | string[]; series?: string }
+    ))
+  | (ViewSparkline & ({ data: number[] } | { rows: ViewRows; y: string }))
+  | (ViewHistogram & ({ data: number[] } | { rows: ViewRows; value: string }))
+  | (ViewBase & { kind: "gauge"; value: number; min?: number; max?: number; label?: string; unit?: string });
+type ViewFormat = { unit?: string; decimals?: number; compact?: boolean } & (
+  | { style: "currency"; currency: string }
+  | { style?: "number" | "percent"; currency?: never }
+);
+type ViewColumn = { id: string; label?: string; type?: "text" | "number" | "date" | "datetime"; format?: ViewFormat };
+type ViewTableSpec = ViewBase & {
+  rows: ViewRows;
+  columns?: (string | ViewColumn)[];
+  footer?: Record<string, unknown>;
+  sort?: { column: string; direction: "asc" | "desc" };
+};
+/** Script runs only; HTML apps draw with cloud.chart(). Server validates every saved spec. */
+interface CloudView {
+  chart(spec: ViewChartSpec): Promise<ViewRef>;
+  table(spec: ViewTableSpec): Promise<ViewRef>;
+}
+
 // ---------------------------------------------------------------- money
 
 /** Exact money: `amount` in minor units (cents). Decimal inputs are strings, e.g. "1234.50". */
@@ -373,6 +415,8 @@ interface Cloud {
   html(strings: TemplateStringsArray, ...values: unknown[]): Html;
   /** Chart markup in Cloud colors for innerHTML, cloud.html or PDF HTML. */
   chart(options: ChartOptions): Html;
+  /** Script runs only: validated, file-backed charts and tables shown with present({path}). */
+  view: CloudView;
   money: CloudMoney;
   pdf: CloudPdf;
   sheet: CloudSheet;
@@ -389,7 +433,7 @@ type RunFile = { path: string; size: number; type: string; file(): Promise<File>
 /**
  * Script mode (one-off scripts and app actions): a JS module whose default
  * export receives the JSON input and returns JSON. Logs come from `console.*`,
- * files from `cloud.download`.
+ * files from `cloud.download`, view references from `cloud.view.*`.
  */
 type Script = (
   input: Json | null,

@@ -88,6 +88,7 @@ const run = async (
   approveTools?: string[],
   turnOutput?: AssistantTurnOutput,
   locale?: string,
+  viewFile?: Response,
 ) => {
   const chunks: string[] = [],
     errors: string[] = [],
@@ -106,6 +107,7 @@ const run = async (
       throw new Error("Unused");
     },
     fetch: async (path, init) => {
+      if (path.includes("/files/content?")) return viewFile?.clone() ?? new Response(null, { status: 404 });
       if (init?.method === "POST") {
         requests.push({ path, body: JSON.parse(String(init.body)) });
         return Response.json({});
@@ -534,4 +536,108 @@ test("held text delimiters print before a completed capability table", async () 
   const reply = await run([[delta("text", text), { ...wire(), type: "block_set", block }, finished([text])]]);
   expect(reply.tables).toHaveLength(1);
   expect(reply.ordered).toEqual(["write:I will create the task [Belege prüfen", "write:]", "print:", "table", "print:", "write:\n"]);
+});
+
+test("a presented view prints its validated table and footer once in stream order", async () => {
+  const path = "/views/monthly-12345678.view.json";
+  const block: AiTurnBlock = {
+    id: "tool-view",
+    kind: "tool",
+    callId: "view",
+    name: "present",
+    args: { path },
+    status: "completed",
+    result: {
+      path,
+      size: 100,
+      mediaType: "application/json",
+      view: { view: "table", title: "Monthly", rows: 101, columns: 2, footer: false },
+    },
+  };
+  const view = {
+    view: "table",
+    title: "Monthly",
+    subtitle: "EUR",
+    columns: [
+      { id: "name", label: "Month", type: "text" },
+      { id: "n", type: "number" },
+    ],
+    rows: Array.from({ length: 101 }, (_, i) => ({ name: i === 0 ? "January\x1b[31m" : String(i), n: i })),
+    footer: { name: "Total", n: 5050 },
+  };
+  const output = await run(
+    [[{ ...wire(), type: "block_set", block }, { ...wire(), type: "block_set", block }, delta("final", "Done."), finished(["Done."])]],
+    "text",
+    undefined,
+    undefined,
+    "en-US",
+    Response.json(view, { headers: { "X-Cloud-Ai-File-Origin": "assistant" } }),
+  );
+  expect(output.tables).toHaveLength(1);
+  expect(output.tables[0]?.rows).toHaveLength(101);
+  expect(JSON.stringify(output.tables[0]?.rows)).toContain("January");
+  expect(JSON.stringify(output.tables[0]?.rows)).not.toContain("\x1b");
+  expect(output.printed).toContain("Monthly");
+  expect(output.printed).toContain("EUR");
+  expect(output.printed).toContain("Showing 100 of 101 rows; Copy data in the web chat copies all of them.");
+  expect(JSON.stringify(output.tables)).toContain("Total");
+  expect(output.chunks.join("")).toContain("Done.");
+});
+
+test("invalid and missing presented views print the unavailable line", async () => {
+  const path = "/views/missing-12345678.view.json";
+  const block: AiTurnBlock = {
+    id: "tool-view",
+    kind: "tool",
+    callId: "view",
+    name: "present",
+    args: { path },
+    status: "completed",
+    result: { path, view: { view: "table", title: "Missing", rows: 0, columns: 1, footer: false } },
+  };
+  for (const response of [
+    new Response(null, { status: 404 }),
+    Response.json({ view: "table", title: "Bad", columns: [], rows: [] }, { headers: { "X-Cloud-Ai-File-Origin": "assistant" } }),
+    Response.json(
+      { view: "table", title: "User file", columns: [{ id: "n", type: "number" }], rows: [] },
+      { headers: { "X-Cloud-Ai-File-Origin": "user" } },
+    ),
+  ]) {
+    const output = await run([[{ ...wire(), type: "block_set", block }, finished([])]], "text", undefined, undefined, "en-US", response);
+    expect(output.printed).toContain(`View unavailable: ${path}`);
+    expect(output.tables).toHaveLength(0);
+  }
+});
+
+test("a presented chart uses the same table as the chart tool", async () => {
+  const path = "/views/sales-12345678.view.json";
+  const block: AiTurnBlock = {
+    id: "tool-view",
+    kind: "tool",
+    callId: "view",
+    name: "present",
+    args: { path },
+    status: "completed",
+    result: { path, view: { view: "chart", kind: "bar", title: "Sales" } },
+  };
+  const output = await run(
+    [[{ ...wire(), type: "block_set", block }, finished([])]],
+    "text",
+    undefined,
+    undefined,
+    "en-US",
+    Response.json(
+      { view: "chart", kind: "bar", title: "Sales", data: [{ label: "North", value: 12 }] },
+      { headers: { "X-Cloud-Ai-File-Origin": "assistant" } },
+    ),
+  );
+  expect(output.tables).toEqual([
+    {
+      rows: [{ label: "North", value: "12" }],
+      columns: [
+        { key: "label", label: "Category" },
+        { key: "value", label: "Value" },
+      ],
+    },
+  ]);
 });

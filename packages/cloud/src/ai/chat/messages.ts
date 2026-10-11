@@ -10,6 +10,11 @@ const messages = i18n.define({
       tableOpen: "Open",
       tableEmpty: "No matching rows.",
       chartUnavailable: "This chart cannot be shown.",
+      viewLoading: "Loading…",
+      viewUnavailable: "This view is no longer available. Its file was changed or deleted.",
+      viewCopyData: "Copy data",
+      viewRowsCapped: ({ shown, total }: { shown: string; total: string }) =>
+        `Showing ${shown} of ${total} rows. Sort to see others; Copy data copies all of them.`,
       tableCapped: "Showing the first 100 returned rows. The full tool result remains available in details.",
       tableMore: "More rows are available. Ask for the next page or open the result in the application.",
       assistantTurns: "Assistant turns",
@@ -303,6 +308,11 @@ const messages = i18n.define({
       tableOpen: "Öffnen",
       tableEmpty: "Keine passenden Zeilen.",
       chartUnavailable: "Dieses Diagramm kann nicht angezeigt werden.",
+      viewLoading: "Wird geladen …",
+      viewUnavailable: "Diese Ansicht ist nicht mehr verfügbar. Ihre Datei wurde geändert oder gelöscht.",
+      viewCopyData: "Daten kopieren",
+      viewRowsCapped: ({ shown, total }: { shown: string; total: string }) =>
+        `${shown} von ${total} Zeilen werden angezeigt. Sortiere, um andere zu sehen; „Daten kopieren“ kopiert alle.`,
       tableCapped:
         "Die ersten 100 zurückgegebenen Zeilen werden angezeigt. Das vollständige Werkzeugergebnis bleibt in den Details verfügbar.",
       tableMore: "Weitere Zeilen sind verfügbar. Frage nach der nächsten Seite oder öffne das Ergebnis in der Anwendung.",

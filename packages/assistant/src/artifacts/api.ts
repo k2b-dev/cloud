@@ -1,4 +1,14 @@
-import { AiFileWriteError, AiQuotaError, AiTaskRequestSchema, CODE_SOURCE_TOOLS, isAiSettingsError } from "@k2b/cloud/ai";
+import {
+  AiFileWriteError,
+  AiQuotaError,
+  AiTaskRequestSchema,
+  AiViewInvalidError,
+  CODE_SOURCE_TOOLS,
+  aiConversations,
+  aiProjects,
+  createAiConversationView,
+  isAiSettingsError,
+} from "@k2b/cloud/ai";
 import { CodeActionInput, CodeCheckInput, CodeResourceId } from "@k2b/cloud/ai/browser";
 import type { CapabilityCaller } from "@k2b/cloud/capabilities/server";
 import { type AuthContext, auth, getLocale, respond, v } from "@k2b/cloud/server";
@@ -103,6 +113,7 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
       await next();
     })
     .onError((error, c) => {
+      if (error instanceof AiViewInvalidError) return respond(c, { ok: false, code: "INVALID_INPUT", status: 400, error: error.message });
       if (error instanceof ImageMetadataError) return respond(c, { ok: false, code: error.code, status: 422, error: error.message });
       if (error instanceof AiQuotaError) return respond(c, { ok: false, code: error.code, status: 429, error: error.message });
       if (isAiSettingsError(error)) return respond(c, { ok: false, code: error.aiError.code, status: 403, error: error.aiError.message });
@@ -179,6 +190,36 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
       if (code === "REQUEST_FAILED") console.error("Assistant artifact request failed", error);
       return respond(c, { ok: false, code, status, error: artifactMessages.resolve([getLocale(c)]).t[code] });
     })
+    .post(
+      "/runtime/views",
+      v(
+        "json",
+        z.strictObject({
+          conversationId: z.union([z.uuid(), CodeResourceId]),
+          turnId: z.string().min(1).max(80),
+          runId: z.string().min(1).max(180),
+          index: z.number().int().min(0).max(63),
+          view: z.json(),
+        }),
+      ),
+      async (c) => {
+        const input = c.req.valid("json");
+        const viewer = identity(c);
+        if (viewer.actor.kind !== "user") throw new ArtifactError("ACCESS_DENIED");
+        const ownerUserId = viewer.actor.user.id;
+        const chat = z.uuid().safeParse(input.conversationId).success
+          ? await aiConversations.getConversation({ conversationId: input.conversationId, ownerUserId })
+          : await aiConversations.getConversationByShortId({ shortId: input.conversationId, ownerUserId });
+        if (
+          !chat ||
+          chat.archivedAt ||
+          (chat.allowedTools && !chat.allowedTools.includes("code_run")) ||
+          (chat.projectId && !(await aiProjects.get(chat.projectId, viewer.accessSubject, "read")))
+        )
+          throw new ArtifactError("ACCESS_DENIED");
+        return respond(c, ok(await createAiConversationView({ ...input, conversationId: chat.id, ownerUserId })));
+      },
+    )
     .post("/runtime/check/start", v("json", z.object({ input: CodeCheckInput, conversationId: z.uuid() }).strict()), async (c) => {
       const input = c.req.valid("json");
       const assets = await checkFrameAssets();

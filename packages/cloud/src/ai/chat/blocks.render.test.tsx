@@ -1834,3 +1834,50 @@ describe("Studio check steps", () => {
     expect(renderExpanded([failed], { open: [failed.id] })).not.toContain("ai-step-image");
   });
 });
+
+test("presented views reserve inline frames and escape summary text", () => {
+  for (const view of [
+    { view: "chart", kind: "bar", title: '<img src=x onerror="bad()">', subtitle: "Orders" },
+    { view: "table", title: '<img src=x onerror="bad()">', rows: 12, columns: 2, footer: false },
+  ]) {
+    const path = "/views/result-12345678.view.json";
+    const block: AiTurnBlock = {
+      id: "view",
+      kind: "tool",
+      name: "present",
+      callId: "view",
+      args: { path },
+      status: "completed",
+      result: { path, view },
+    };
+    const html = renderToString(() => createComponent(AiTurnBlockView, { block, turnId: "turn" }));
+    expect(html).toContain('data-view-path="/views/result-12345678.view.json"');
+    expect(html).toContain("Loading");
+    expect(html).toContain("&lt;img");
+    expect(html).not.toContain("<img src=x");
+    expect(html).not.toContain("Download");
+    expect(html).toContain("height:");
+  }
+});
+
+test("present without a valid view reference stays a file chip", () => {
+  for (const result of [
+    { path: "/views/result.view.json", size: 10 },
+    { path: "/views/result.json", view: { view: "table", title: "Rows", rows: 0, columns: 1, footer: false } },
+    { path: "/elsewhere/result.view.json", view: { view: "table", title: "Rows", rows: 0, columns: 1, footer: false } },
+    { path: "/views/result.view.json", view: { view: "table", title: "Rows", rows: 0, columns: 0, footer: false } },
+  ]) {
+    const block: AiTurnBlock = {
+      id: "file",
+      kind: "tool",
+      name: "present",
+      callId: "file",
+      args: { path: result.path },
+      status: "completed",
+      result,
+    };
+    const html = renderToString(() => createComponent(AiTurnBlockView, { block, turnId: "turn" }));
+    expect(html).not.toContain("data-view-path");
+    expect(html).toContain(result.path);
+  }
+});

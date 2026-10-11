@@ -5,9 +5,10 @@
 no DOM, so it works the same in apps, scripts and PDFs. In an app, cartesian
 charts redraw at their real width, so axes and labels fit phones.
 
-To only show a chart in the chat, pass the same options as plain data to the
-`chart` tool instead of writing an app: no `width`, `height` or `format`
-functions, at most 8 series and 480 values per list.
+For computed values in the chat, call `cloud.view.chart` or `cloud.view.table`
+in the run, then `present({path})`; read [Views in the chat](views.md). The
+`chart` tool is for a few values that did not come from a run. Neither choice
+needs an app. Views use plain data, without drawing functions.
 
 ```js
 const chart = document.querySelector("#chart");

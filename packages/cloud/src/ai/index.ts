@@ -100,6 +100,8 @@ export {
   type AiConversationWorkingGroup,
   type AiFileStat,
   createAiConversationArtifact,
+  createAiConversationView,
+  AiViewInvalidError,
   guessAiMediaType,
   isAiWorkingFilePath,
   listAiConversationFiles,
@@ -377,3 +379,24 @@ export {
   type CloudAiViewImageOutput,
   CloudAiViewImageOutputSchema,
 } from "./vision-tool";
+
+export {
+  CLOUD_AI_VIEW_DIRECTORY,
+  CLOUD_AI_VIEW_SUFFIX,
+  CLOUD_AI_VIEW_MAX_BYTES,
+  CLOUD_AI_TABLE_MAX_ROWS,
+  CLOUD_AI_TABLE_MAX_COLUMNS,
+  type CloudAiView,
+  type CloudAiChartView,
+  type CloudAiTableView,
+  type CloudAiViewSummary,
+  type CloudAiViewTable,
+  CloudAiViewSummarySchema,
+  parseCloudAiView,
+  checkCloudAiView,
+  cloudAiViewSummary,
+  isAiViewFile,
+  isAiViewPath,
+  cloudAiViewTable,
+  cloudAiTableTsv,
+} from "./view-block";

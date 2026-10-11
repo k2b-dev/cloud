@@ -25,6 +25,7 @@ export const WorkerMessage = z.discriminatedUnion("type", [
     method: z.enum([
       "file.read",
       "file.save",
+      "view.save",
       "capabilities.run",
       "capabilities.stream",
       "http.fetch",
