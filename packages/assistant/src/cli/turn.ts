@@ -79,8 +79,18 @@ export const uploadAttachment = async (
   const file = Bun.file(localPath);
   if (!(await file.exists())) throw new Error(`Attachment not found: ${localPath}`);
   const mediaType = file.type || guessAiMediaType(localPath);
+  return uploadAttachmentFile(ctx, conversationId, new File([file], basename(localPath), { type: mediaType }), directory, signal);
+};
+
+export const uploadAttachmentFile = async (
+  ctx: CloudCliContext,
+  conversationId: string,
+  file: File,
+  directory?: string,
+  signal?: AbortSignal,
+): Promise<Extract<AiTurnContentPart, { type: "attachment" }> & { version: number }> => {
   const form = new FormData();
-  form.set("file", new File([file], basename(localPath), { type: mediaType }));
+  form.set("file", file);
   if (directory !== undefined) form.set("directory", directory);
   const uploaded = await ctx.readJson<{ file: AiFileStat }>(
     await ctx.fetch(`${AI_API}${conversationPath(conversationId, "/files")}`, { method: "POST", body: form, signal }),
@@ -153,11 +163,15 @@ export const submitAssistantTurn = async (input: {
   path: string;
   body: unknown;
   watch: boolean;
+  codeHost?: boolean;
   approveTools?: readonly string[];
   onCapabilityApproval?: (request: CodeApproval) => Promise<CapabilityDecision>;
   signal?: AbortSignal;
   output?: AssistantTurnOutput;
   clientTools?: AssistantClientTools;
+  onToolBlock?: Parameters<typeof streamAssistantTurn>[0]["onToolBlock"];
+  onThinkingDelta?: (delta: string) => void;
+  waitingApprovals?: ReadonlySet<string>;
   onSubmitted?: (submitted: TurnSubmission) => void;
 }): Promise<{ submitted: TurnSubmission; result?: AssistantTurnStreamResult }> => {
   const streamResponse = input.watch
@@ -170,7 +184,7 @@ export const submitAssistantTurn = async (input: {
   let submitted: TurnSubmission;
   try {
     const body = input.path.endsWith("/turns")
-      ? await submitDraftBody(input.ctx, input.conversationId, input.body, input.watch)
+      ? await submitDraftBody(input.ctx, input.conversationId, input.body, input.codeHost ?? input.watch)
       : input.body;
     submitted = await readApi<TurnSubmission>(input.ctx, input.path, jsonRequest("POST", body));
   } catch (error) {
@@ -191,6 +205,9 @@ export const submitAssistantTurn = async (input: {
       signal: input.signal,
       output: input.output,
       clientTools: input.clientTools,
+      onToolBlock: input.onToolBlock,
+      onThinkingDelta: input.onThinkingDelta,
+      waitingApprovals: input.waitingApprovals,
     }),
   };
 };

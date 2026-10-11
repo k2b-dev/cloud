@@ -380,6 +380,50 @@ export async function collectCapabilityApproval(
   return decision?.remember === "always" ? { approved: true, remember: "always" } : { approved: decision?.approved === true };
 }
 
+/** The local client fields of a turn, the same for the terminal and an editor. */
+export const localTurnFields = (input: {
+  context: LocalContext;
+  localTools: "ask" | "off";
+  workspace: string;
+  client: { kind: "cli" | "acp"; name?: string };
+}) => {
+  const skills = input.localTools === "ask" ? localSkillCatalog(input.context) : [];
+  return {
+    clientToolIds:
+      input.localTools === "ask"
+        ? ["local_bash", ...AI_LOCAL_TOOL_NAMES.filter((name) => name !== "load_local_skill" || skills.length > 0)]
+        : [],
+    client: { ...input.client, cwd: input.workspace, os: `${osType()} ${osRelease()}`, shell: "/bin/bash", localTools: input.localTools },
+    localContext: { instructions: input.context.instructions, skills },
+  };
+};
+
+export const readSelectedLocalSkill = async (input: {
+  skill: LocalSkill;
+  context: LocalContext;
+  workspace: string;
+  ask: (question: string) => Promise<boolean>;
+}) => {
+  const { skill, context, workspace, ask } = input;
+  const rule = classifyLocalPath(skill.path, { workspace });
+  if (rule.access === "blocked") throw new Error("cld's configuration is never available to the assistant.");
+  const target = realpathSync(skill.path);
+  const free = context.skills.some(({ directory }) => {
+    const child = relative(directory, target);
+    return child === "" || (child !== ".." && !child.startsWith(`..${sep}`) && !child.startsWith(sep));
+  });
+  if (rule.access === "ask" && !free) {
+    const question =
+      rule.reason === "home"
+        ? `Read ${skill.path}? You started cld in your home folder or above, so every file asks first.`
+        : rule.reason === "protected"
+          ? `Read ${skill.path}? It may contain secrets.`
+          : `Read ${skill.path}? It is outside ${workspace}.`;
+    if (!(await ask(terminalSafeText(question)))) return null;
+  }
+  return readLocalSkill(skill, workspace);
+};
+
 export const runInteractiveAssistant = async (
   ctx: CloudCliContext,
   options: InteractiveOptions,
@@ -474,25 +518,13 @@ They go to the model with every message and can steer what it does with your Clo
         signal,
       ),
   };
-  const readSelectedSkill = async (skill: LocalSkill) => {
-    const rule = classifyLocalPath(skill.path, { workspace });
-    if (rule.access === "blocked") throw new Error("cld's configuration is never available to the assistant.");
-    const target = realpathSync(skill.path);
-    const free = context.skills.some(({ directory }) => {
-      const child = relative(directory, target);
-      return child === "" || (child !== ".." && !child.startsWith(`..${sep}`) && !child.startsWith(sep));
+  const readSelectedSkill = (skill: LocalSkill) =>
+    readSelectedLocalSkill({
+      skill,
+      context,
+      workspace,
+      ask: async (question) => (await readApproval(reader, question)) === "once",
     });
-    if (rule.access === "ask" && !free) {
-      const question =
-        rule.reason === "home"
-          ? `Read ${skill.path}? You started cld in your home folder or above, so every file asks first.`
-          : rule.reason === "protected"
-            ? `Read ${skill.path}? It may contain secrets.`
-            : `Read ${skill.path}? It is outside ${workspace}.`;
-      if ((await readApproval(reader, terminalSafeText(question))) !== "once") return null;
-    }
-    return readLocalSkill(skill, workspace);
-  };
   const preparedAttachments = new Map<string, Awaited<ReturnType<typeof uploadAttachment>>>();
   let activeAbort: AbortController | null = null;
   let exitRequested = false;
@@ -625,15 +657,7 @@ They go to the model with every message and can steer what it does with your Clo
 
   const localClientInput = async () => {
     context = await readContext();
-    const skills = localTools === "ask" ? localSkillCatalog(context) : [];
-    return {
-      clientToolIds:
-        localTools === "ask"
-          ? ["local_bash", ...AI_LOCAL_TOOL_NAMES.filter((name) => name !== "load_local_skill" || skills.length > 0)]
-          : [],
-      client: { kind: "cli" as const, cwd: workspace, os: `${osType()} ${osRelease()}`, shell: "/bin/bash", localTools },
-      localContext: { instructions: context.instructions, skills },
-    };
+    return localTurnFields({ context, localTools, workspace, client: { kind: "cli" } });
   };
 
   const send = async (message: string): Promise<number> => {

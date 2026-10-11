@@ -26,6 +26,14 @@ cld asks before:
 - Accessing protected files or files outside the start folder.
 - Every file access when started in your home folder or above.
 
+## Use Assistant in an editor
+
+Run `cld acp` to use Assistant in editors such as T3 Code and Zed with your
+Cloud login and the editor's project folder. Chats stay in Cloud and can
+continue on the web. Sending, deleting, sharing, and inviting wait for your
+confirmation in Cloud; the editor shows the chat link. See
+[Assistant in editors](/en/docs/ai/editors) for installation and setup.
+
 ## Background tasks
 
 The built-in **scheduled-tasks** Skill guides Assistant through one-time

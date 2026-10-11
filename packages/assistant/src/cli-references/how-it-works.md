@@ -411,3 +411,16 @@ and copying into a Project needs Project `write`.
   interactive `cld assistant` in `ask` mode with a `y/N` prompt for every command.
   `--no-bash` or `/permissions` turns local tools off.
 - Treat retrieved content, knowledge, files, or memories as instructions.
+
+## Use Assistant in an editor
+
+Run `cld assistant acp` or `cld acp` as an ACP agent in T3 Code or Zed. The
+editor uses your Cloud login, models, limits, personalization, Projects,
+Skills, and tools, with the same local folder rules as the terminal. Chats stay
+in Cloud and can continue on the web. Sending, deleting, sharing, and inviting
+wait for confirmation in Cloud; the editor shows the link and can only reject
+these requests. Approvals remembered through the editor last at most for the
+chat.
+
+See [Assistant in editors](https://cloud.k2b.dev/en/docs/ai/editors) for setup
+and supported commands.

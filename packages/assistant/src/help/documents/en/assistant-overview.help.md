@@ -8,6 +8,8 @@ order: 100
 
 Assistant is the standard workspace for your personal Cloud agent. The same agent can help you write, summarize, explain, plan, work with supported files, and use authorized data and operations from Cloud applications. Every chat is saved to your user account and is available from the Assistant overview, including chats started from another application such as a Mail draft.
 
+Assistant also works in editors such as T3 Code and Zed through `cld acp`. Sending, deleting, sharing, and inviting from an editor wait for your confirmation in Cloud.
+
 ## Overview {icon="layout-grid"}
 
 :::reference

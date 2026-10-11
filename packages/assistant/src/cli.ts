@@ -1,4 +1,5 @@
 import { type CloudCliModule, defineCliCommands } from "@k2b/cloud/cli";
+import { assistantAcpCommand } from "./cli/acp";
 import { assistantApprovalCommands } from "./cli/approvals";
 import { assistantChatCommands, assistantManagementCommands } from "./cli/chat";
 import { assistantCodeCommands } from "./cli/code";
@@ -11,6 +12,7 @@ import { assistantTaskCommands } from "./cli/tasks";
 const commands = defineCliCommands({
   name: "assistant",
   alias: "ai",
+  shortcuts: { acp: "acp" },
   summary: "Chat with the Cloud Assistant and manage chats, scheduled tasks, files, personalization, and Projects.",
   groupSummaries: {
     code: "Build and manage Studio Apps and actions",
@@ -34,6 +36,7 @@ const commands = defineCliCommands({
   },
   commands: [
     assistantRootCommand,
+    assistantAcpCommand,
     ...assistantApprovalCommands,
     ...assistantCodeCommands,
     ...assistantChatCommands,
