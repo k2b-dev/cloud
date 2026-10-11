@@ -7,9 +7,11 @@ import {
   createUniqueId,
   For,
   type JSX,
+  Match,
   onCleanup,
   onMount,
   Show,
+  Switch,
   useContext,
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
@@ -352,12 +354,10 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
    * URL. Client tables pass onSortChange instead. Clicking the active column
    * flips its direction.
    */
-  const sortLinkFor = (col: DataTableColumn<T>): { next: DataTableSort; active: boolean } | null => {
-    const key = sortKeyOf(col);
-    if (!key || (!props.sortHref && !props.onSortChange)) return null;
-    const active = props.sort?.key === key;
-    return { next: { key, direction: active && props.sort?.direction === "desc" ? "asc" : "desc" }, active };
-  };
+  const nextSortFor = (key: string): DataTableSort => ({
+    key,
+    direction: props.sort?.key === key && props.sort?.direction === "desc" ? "asc" : "desc",
+  });
 
   /** Only a sortable column carries a sort state; the rest carry none at all. */
   const ariaSortFor = (col: DataTableColumn<T>): "ascending" | "descending" | "none" | undefined => {
@@ -368,8 +368,12 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
   };
 
   const renderHeaderDefault = (col: DataTableColumn<T>): JSX.Element => {
-    const sort = sortLinkFor(col);
-    const title = (
+    const key = sortKeyOf(col);
+    // Only how a column sorts decides the element. The order lives in its attributes, so a header button keeps
+    // keyboard focus when a click sorts the table and the reader can press it again to reverse the order.
+    const mode = createMemo(() => (!key ? null : props.sortHref ? "link" : props.onSortChange ? "button" : null));
+    const active = () => key !== null && props.sort?.key === key;
+    const title = () => (
       <>
         <span class="k2b-data-table__header-title">{renderColumnPart(col.header, col)}</span>
         <Show when={col.subtitle !== undefined}>
@@ -377,39 +381,46 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
         </Show>
       </>
     );
-
-    if (!sort)
-      return (
-        <div class="k2b-data-table__header-content" data-align={alignAttr(col)}>
-          {title}
-        </div>
-      );
-
-    const line = (
+    const line = () => (
       <span class="k2b-data-table__header-line">
-        {title}
+        {title()}
         {/* Inactive columns keep a dimmed marker so the row reads as sortable. */}
         <i
-          class={`k2b-data-table__sort-icon ti ${props.sort?.direction === "asc" && sort.active ? "ti-arrow-up" : "ti-arrow-down"}`}
-          data-active={sort.active ? "true" : undefined}
+          class={`k2b-data-table__sort-icon ti ${active() && props.sort?.direction === "asc" ? "ti-arrow-up" : "ti-arrow-down"}`}
+          data-active={active() ? "true" : undefined}
           aria-hidden="true"
         />
       </span>
     );
-    const { sortHref, onSortChange } = props;
-    return sortHref ? (
-      <a href={sortHref(sort.next)} class="k2b-data-table__header-content k2b-data-table__sort" data-align={alignAttr(col)}>
-        {line}
-      </a>
-    ) : (
-      <button
-        type="button"
-        class="k2b-data-table__header-content k2b-data-table__sort"
-        data-align={alignAttr(col)}
-        onClick={() => onSortChange?.(sort.next)}
+
+    return (
+      <Switch
+        fallback={
+          <div class="k2b-data-table__header-content" data-align={alignAttr(col)}>
+            {title()}
+          </div>
+        }
       >
-        {line}
-      </button>
+        <Match when={mode() === "link"}>
+          <a
+            href={key ? props.sortHref?.(nextSortFor(key)) : undefined}
+            class="k2b-data-table__header-content k2b-data-table__sort"
+            data-align={alignAttr(col)}
+          >
+            {line()}
+          </a>
+        </Match>
+        <Match when={mode() === "button"}>
+          <button
+            type="button"
+            class="k2b-data-table__header-content k2b-data-table__sort"
+            data-align={alignAttr(col)}
+            onClick={() => key && props.onSortChange?.(nextSortFor(key))}
+          >
+            {line()}
+          </button>
+        </Match>
+      </Switch>
     );
   };
 

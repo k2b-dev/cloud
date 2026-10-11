@@ -96,7 +96,9 @@ Sorting is link-based so it works on a cold server render and survives reload, s
 
 For a complete local dataset, pass `onSortChange` instead of `sortHref`: sortable
 headers become buttons. The caller sorts the rows and passes the updated `sort`.
-If both are supplied, `sortHref` takes precedence.
+If both are supplied, `sortHref` takes precedence. A sort changes only the
+header's `aria-sort` and arrow, never the button itself, so keyboard focus stays
+on it and pressing it again reverses the order.
 
 Do not filter or sort a paginated result in the browser. The client does not own the complete dataset.
 
