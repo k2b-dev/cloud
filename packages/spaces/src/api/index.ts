@@ -113,6 +113,7 @@ import {
   projectCalendarItems,
   projectColumns,
   projectComments,
+  projectItemListResult,
   projectItems,
   projectOverlapItems,
   projectSpaceDetail,
@@ -2303,8 +2304,11 @@ const app = new Hono<AuthContext>()
         currentUserId: user?.id,
         dateConfig,
       });
-      const items = await projectItems(result.items);
-      return respond(c, ok({ ...result, items: items.map((item) => ({ ...item, overdue: isTaskOverdue(item, dateConfig) })) }));
+      const publicResult = await projectItemListResult(result, filter.groupBy);
+      return respond(
+        c,
+        ok({ ...publicResult, items: publicResult.items.map((item) => ({ ...item, overdue: isTaskOverdue(item, dateConfig) })) }),
+      );
     },
   )
 

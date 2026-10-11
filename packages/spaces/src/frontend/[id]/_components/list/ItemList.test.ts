@@ -75,3 +75,40 @@ describe("Spaces overview schedule", () => {
     expect(grouped.groups.map((group) => group.label)).toEqual(["Overdue", "Past events", "Today", "Tomorrow", "No date"]);
   });
 });
+
+test("schedule groups stay chronological when priority sort puts later days first", () => {
+  const dateConfig = { timeZone: "America/Los_Angeles", locale: "en" };
+  const today = dates.today(dateConfig);
+  const yesterday = dates.addDays(today, -1, dateConfig).toISOString();
+  const firstDay = dates.addDays(today, 1, dateConfig).toISOString();
+  const laterDay = dates.addDays(today, 2, dateConfig).toISOString();
+  // Arrival order is priority order; ordering groups must preserve that order within each day.
+  const urgentLater = item({ title: "Urgent later", deadline: laterDay, priority: "urgent" });
+  const highSoon = item({ title: "High soon", deadline: firstDay, priority: "high" });
+  const lowLater = item({ title: "Low later", deadline: laterDay, priority: "low" });
+  const grouped = groupItems(
+    [
+      urgentLater,
+      item({ title: "No date", priority: "urgent" }),
+      highSoon,
+      lowLater,
+      item({ deadline: yesterday, completedAt: today.toISOString() }),
+      item({ startsAt: yesterday, endsAt: yesterday }),
+      item({ deadline: yesterday }),
+    ],
+    "deadline",
+    [],
+    [],
+    dateConfig,
+  );
+
+  expect(grouped.groups.map((group) => group.key)).toEqual([
+    "overdue",
+    "past-events",
+    `date:${dates.formatDateKey(yesterday, dateConfig)}`,
+    `date:${dates.formatDateKey(firstDay, dateConfig)}`,
+    `date:${dates.formatDateKey(laterDay, dateConfig)}`,
+    "none",
+  ]);
+  expect(grouped.itemsByGroup[`date:${dates.formatDateKey(laterDay, dateConfig)}`]).toEqual([urgentLater, lowLater]);
+});

@@ -136,6 +136,16 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
           columnId: COLUMN_SHORT_ID,
           recurringEventId: value.recurringEventId ? ITEM_SHORT_ID : null,
         })),
+      projectItemListResult: async (result: { items: SpaceItem[] }) => ({
+        ...result,
+        items: result.items.map((value) => ({
+          ...value,
+          id: value.id === OVERRIDE_ID ? OVERRIDE_SHORT_ID : ITEM_SHORT_ID,
+          spaceId: SPACE_SHORT_ID,
+          columnId: COLUMN_SHORT_ID,
+          recurringEventId: value.recurringEventId ? ITEM_SHORT_ID : null,
+        })),
+      }),
       projectComments: async (items: Array<{ id: string; itemId: string }>) =>
         items.map((value) => ({ ...value, id: COMMENT_SHORT_ID, itemId: ITEM_SHORT_ID })),
       projectTaskDependencies: async (items: unknown[]) => items,
@@ -275,6 +285,14 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
       expect(listedFilter).toMatchObject({ tagIds: [TAG_ID], columnIds: [COLUMN_ID] });
       expect(snapshot.kind).toBe("list");
       if (snapshot.kind === "list") expect(snapshot.itemsResult.items[0]?.id).toBe(ITEM_SHORT_ID);
+    });
+
+    test("groups only the list; the table keeps the selected sort across pages", async () => {
+      const request = { user: { id: USER_ID, roles: ["user" as const] }, spaceId: SPACE_ID, spaceShortId: SPACE_SHORT_ID };
+      await loadSpacesViewSnapshot({ ...request, href: `/app/spaces/${SPACE_SHORT_ID}?view=list&groupBy=tag&sort=title` });
+      await loadSpacesViewSnapshot({ ...request, href: `/app/spaces/${SPACE_SHORT_ID}?view=table&groupBy=tag&sort=title` });
+
+      expect(listedFilters.map((filter) => filter.groupBy)).toEqual(["tag", "none"]);
     });
 
     test("narrows every Kanban column by the board filter and reports what the filter hides", async () => {

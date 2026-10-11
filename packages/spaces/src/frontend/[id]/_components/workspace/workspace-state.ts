@@ -3,6 +3,7 @@ import { dates as calendar, type DateContext } from "@k2b/stdlib";
 import { orderBoardColumns } from "@/board-columns";
 import {
   type CalendarItem,
+  type ItemFilter,
   type ItemListResult,
   ResourceShortIdSchema,
   type SpaceDetail,
@@ -106,11 +107,6 @@ const resolvePermissions = async (params: { spaceId: string; user: AuthUser }) =
 
 const nonEmpty = <T>(values: T[]) => (values.length > 0 ? values : undefined);
 
-const projectItemResult = async (result: ItemListResult): Promise<ItemListResult> => ({
-  ...result,
-  items: await spacesPublicResources.projectItems(result.items),
-});
-
 const projectItemDetail = async (
   detail: Omit<SpaceItemDetail, "references" | "links" | "attachments" | "checklist" | "blockedBy" | "blocks"> & {
     references?: SpaceItemDetail["references"];
@@ -162,7 +158,7 @@ const projectKanbanBuckets = async (buckets: KanbanBucketInitial[], columnIds: M
   });
 };
 
-const toListFilter = (filter: FilterState) => ({
+const toListFilter = (filter: FilterState): ItemFilter => ({
   type: filter.type,
   status: filter.status,
   activity: filter.activity,
@@ -174,7 +170,7 @@ const toListFilter = (filter: FilterState) => ({
   search: filter.search || undefined,
   sort: filter.sort,
   sortDesc: filter.sortDesc,
-  groupBy: filter.groupBy,
+  groupBy: "none",
   page: filter.page,
   pageSize: LIST_PAGE_SIZE,
 });
@@ -192,7 +188,8 @@ const loadListItems = async (params: {
 
   return spacesService.item.listFiltered({
     spaceId: params.spaceId,
-    filter: toListFilter(params.filter),
+    // The table shows flat rows, so only the list orders and counts by group.
+    filter: { ...toListFilter(params.filter), groupBy: params.currentView === "list" ? params.filter.groupBy : "none" },
     currentUserId: params.userId,
     dateConfig: params.dateConfig,
   });
@@ -710,7 +707,11 @@ const toViewSnapshot = async (params: {
   columnIds: Map<string, string>;
 }): Promise<SpacesViewSnapshot> => {
   if (params.route.currentView === "list" || params.route.currentView === "table") {
-    return { kind: "list", currentView: params.route.currentView, itemsResult: await projectItemResult(params.itemsResult) };
+    return {
+      kind: "list",
+      currentView: params.route.currentView,
+      itemsResult: await spacesPublicResources.projectItemListResult(params.itemsResult, params.route.filter.groupBy),
+    };
   }
   if (params.route.currentView === "kanban") {
     const [buckets, wormholes] = await Promise.all([
@@ -885,7 +886,7 @@ export const loadSpacesWorkspaceState = async (params: WorkspaceRequest): Promis
     authorizationHeader: params.authorizationHeader,
   });
   const [publicItemsResult, publicKanbanBuckets, publicCalendarItems, publicCalendarTray, publicWormholes] = await Promise.all([
-    projectItemResult(itemsResult),
+    spacesPublicResources.projectItemListResult(itemsResult, route.filter.groupBy),
     projectKanbanBuckets(kanbanBuckets, columnIds),
     spacesPublicResources.projectCalendarItems(calendarState.calendarItems),
     projectCalendarTray(calendarState.calendarTray),

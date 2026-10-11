@@ -9,6 +9,7 @@ import { groupItems, type ItemListGroup } from "./item-list-groups";
 
 type ItemListProps = {
   items: SpaceItem[];
+  groupCounts?: Record<string, number>;
   columns: SpaceColumn[];
   tags: SpaceTag[];
   spaceId: string;
@@ -126,7 +127,11 @@ export default function ItemList(props: ItemListProps) {
                 >
                   <div class={`min-h-0 ${collapsing() ? "overflow-hidden" : ""}`}>
                     <section aria-labelledby={headingId} class="rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-1.5">
-                      <GroupHeader config={group() ?? { key, label: "" }} count={items().length} id={headingId} />
+                      <GroupHeader
+                        config={group() ?? { key, label: "" }}
+                        count={props.groupCounts?.[key] ?? items().length}
+                        id={headingId}
+                      />
                       <div class="flex flex-col">
                         <Rows items={items()} />
                       </div>
