@@ -5,7 +5,7 @@ section: Frontend
 order: 820
 description: Place application pages in the shared Cloud layout and navigation.
 tags: [layout, navigation, breadcrumbs, page trail, back link]
-updated: 2026-10-10
+updated: 2026-10-11
 ---
 
 # Layout and navigation
@@ -22,8 +22,8 @@ owns the geometry inside it.
 ## Know the shell at each width
 
 The shell has three forms. They are CSS on the same server-rendered markup, so
-a page arrives in its final form and nothing moves when it hydrates or when
-people navigate.
+a page arrives in its final form and nothing moves when its islands mount or
+when people navigate.
 
 | Width | Signed-in pages | Anonymous pages |
 | --- | --- | --- |
@@ -50,8 +50,8 @@ no header sits above a signed-in page, so give the content its own padding, as
 `AppWorkspace.Detail` floats inside the application content. Below 768 px it
 is a half or full sheet at the window’s bottom edge; from 768 px Main makes
 room for it. A closable panel on a coarse pointer from 768 to 1023 px overlays
-Main as a drawer. Pass its existing close action as `onClose` in a hydrated
-component, or mark a server-rendered panel’s close control with
+Main as a drawer. Pass its existing close action as `onClose` in an island or
+client component, or mark a server-rendered panel’s close control with
 `data-workspace-detail-close`. For boards, wide tables, and week calendars,
 mark the horizontal scroller with `k2b-detail-trail` and add
 `var(--k2b-detail-space, 0px)` to fixed rows’ trailing padding. See
@@ -559,7 +559,7 @@ still enforce their own permissions. Omit `section` for an independent group.
 ## Use anchors for navigation
 
 Navigation controls start as anchors with an `href`. A link must work before
-hydration and support open-in-new-tab.
+the page's islands mount and support open-in-new-tab.
 
 Use enhanced navigation only inside an island that also updates its own state.
 See [URL state and navigation](/en/docs/frontend/url-state-and-navigation).

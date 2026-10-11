@@ -2,7 +2,7 @@
  * Core SSR module - exports createConfig() which provides:
  * - config: SSR configuration for adapters
  * - plugin: Bun plugin for build/dev that transforms islands
- * - html: Renders JSX to Response with hydration scripts
+ * - html: Renders JSX to Response with the island loader script
  */
 
 import type { BunPlugin } from "bun";
@@ -83,7 +83,7 @@ export type SsrResult<T extends object> = {
  * Creates SSR configuration, html renderer, and build plugin.
  *
  * Components follow naming conventions:
- * - `*.island.tsx` - SSR rendered + hydrated on client (interactive)
+ * - `*.island.tsx` - SSR rendered, then client re-rendered (interactive)
  * - `*.client.tsx` - Client-only rendered (not SSR)
  *
  * @example

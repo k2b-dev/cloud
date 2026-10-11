@@ -1,14 +1,14 @@
 ---
-title: Islands and hydration
-navTitle: Islands and hydration
+title: Islands
+navTitle: Islands
 section: Frontend
 order: 840
 description: Add browser interactivity to server-rendered pages without turning the whole page into a client application.
 tags: [islands, hydration, solidjs]
-updated: 2026-10-09
+updated: 2026-10-11
 ---
 
-# Islands and hydration
+# Islands
 
 Use an island for the smallest part of a server-rendered page that needs
 browser state.
@@ -18,13 +18,34 @@ browser state.
 | File | Behavior |
 | --- | --- |
 | `*.tsx` | Server-only component |
-| `*.island.tsx` | Server-rendered and hydrated in the browser |
+| `*.island.tsx` | Server-rendered, then rendered again in the browser |
 | `*.client.tsx` | Browser-only wrapper with no server body |
 
 An island or client component uses a default export. Import it by its full file
 path so the SSR plugin can discover the suffix.
 
 Do not re-export islands through a barrel.
+
+## Know how an island mounts
+
+The server renders each island's HTML into the page, so the first paint is
+complete. When the island's code has loaded, the browser removes that HTML and
+renders the component again from its serialized props. The browser does not
+hydrate the server HTML; it replaces it. A later release of the island runtime
+may hydrate islands instead.
+
+This has two consequences:
+
+- State that exists only in the server HTML inside an island is lost when the
+  island mounts: a value typed into an input, focus, a text selection, or a
+  scroll position. Keep islands small so that they mount soon after the page
+  appears, and keep state that must survive in props or the URL.
+- The server and the browser must render the same markup from the same props.
+  When they differ, the page moves as the island mounts. Do not read
+  browser-only values such as the window width, `localStorage`, or the
+  browser's clock during the first render. Pass the server's value as a prop,
+  for example the server's render time, or read the value in `onMount` and
+  reserve its space in the server markup.
 
 ## Cross the prop boundary
 
@@ -129,12 +150,13 @@ Render the initial answer on the server. The island starts from serialized
 state and enhances it.
 
 When the island must reload that answer, pass both the snapshot and its exact
-source through the query's `initial` option. A matching source avoids an
-unnecessary hydration request. See
+source through the query's `initial` option. A matching source avoids a
+second request for the same data when the island mounts. See
 [Server-backed state](/en/docs/frontend/server-backed-island-state).
 
-Do not hydrate the entire page to avoid designing the boundary. Large islands
-increase bundle size and make server and browser ownership unclear.
+Do not make the entire page one island to avoid designing the boundary.
+Large islands increase bundle size and make server and browser ownership
+unclear.
 
 Do not nest an island import inside another island or client component.
 

@@ -169,7 +169,7 @@ waits. It is a race, not a slowdown: in CI, the other tests of the suite ran
 at their usual speed around the one that hung. An island that discards a
 server-rendered `<video src>` when it mounts stops it this way, so media gets
 its source only in the browser, as
-[Islands and hydration](/en/docs/frontend/islands-and-hydration#load-media-only-in-the-browser)
+[Islands](/en/docs/frontend/islands-and-hydration#load-media-only-in-the-browser)
 describes. This deadlock made the Spaces item detail video test time out in
 CI.
 
@@ -183,7 +183,7 @@ When that fails, the error reports whether the page's main thread still
 answers a short probe, the status of each island module, page errors, failed
 requests, and how busy the host's CPUs were, how much time the hypervisor took
 from them, and how often a task waited for one. A main thread that answers
-while an island module is missing, answered with an error, or did not hydrate
+while an island module is missing, answered with an error, or did not mount
 points to a product or test bug. A main thread that does not answer is blocked
 by a script, a media deadlock, or, on saturated CPUs only, load. Its
 backtrace shows which. While the page hangs, print the main thread of every

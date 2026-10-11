@@ -4,13 +4,22 @@ Minimal SSR + islands framework for SolidJS on Bun.
 
 ## Overview
 
-This library renders Solid components on the server and hydrates only interactive islands on the client.
+This library renders Solid components on the server and renders only interactive islands again on the client.
 
 It uses file conventions:
 
-- `*.island.tsx`: SSR + hydrated on the client
+- `*.island.tsx`: SSR, then client re-rendered
 - `*.client.tsx`: client-only (no SSR HTML content)
 - `*.tsx`: server-only output
+
+Islands are not hydrated. When an island's code loads, the client clears the
+island's server HTML and renders the component again from its serialized props.
+Two consequences follow:
+
+- state that exists only in the server HTML inside an island, such as a typed
+  input value, focus, or a scroll position, is replaced on mount;
+- server and client must render the same markup from the same props, or the
+  page shifts when the island mounts.
 
 ## Size & Philosophy
 
@@ -30,7 +39,7 @@ The browser receives only:
 - your island bundles
 - Solid runtime from your app dependencies
 - `seroval` deserialize runtime
-- a tiny hydration import snippet
+- a tiny island loader snippet
 
 Framework overhead in the browser is intentionally small.
 
@@ -41,7 +50,7 @@ What is intentionally not included:
 - no CSS-in-JS abstraction
 - no build tool wrapper around Bun
 
-Use the libraries you already prefer. This package only handles SSR and islands hydration.
+Use the libraries you already prefer. This package only handles SSR and islands.
 The optional `@k2b/ssr/nav` subpath provides progressive anchor
 enhancement for islands, but it still does not add route matching, loaders, or
 SPA routing.
@@ -426,7 +435,7 @@ const docsApp = new Hono()
 export default new Hono().route("/docs", docsApp);
 ```
 
-With this setup, hydration chunks and dev endpoints are served from `/docs/_ssr/...`.
+With this setup, island chunks and dev endpoints are served from `/docs/_ssr/...`.
 
 ## Build for production
 
