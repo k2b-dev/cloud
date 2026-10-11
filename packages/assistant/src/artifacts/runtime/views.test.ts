@@ -375,7 +375,7 @@ test("HTML app createCloud rejects every view method before RPC", async () => {
     },
     { locale: "en", timeZone: "UTC", user: null },
   );
-  for (const method of [cloud.view.chart, cloud.view.table, cloud.view.group, cloud.view.stats, cloud.view.details])
+  for (const method of [cloud.view.chart, cloud.view.table, cloud.view.group, cloud.view.stats, cloud.view.details, cloud.view.explorer])
     await expect(method({})).rejects.toMatchObject({
       code: "unavailable",
       message: "cloud.view.* works in code_run scripts; an app draws charts with cloud.chart().",
@@ -743,3 +743,69 @@ test.each([{}, [], true, Infinity, NaN, Object.create({ type: "spaces.item", id:
     });
   },
 );
+test("explorer shares table conversion and returns its control summary", async () => {
+  const { view, specs } = fixture("Europe/Berlin");
+  const ref = await view.explorer({
+    title: "Stock",
+    rows: [
+      { product: "A", price: 2, at: new Date("2026-01-01T23:00:00Z") },
+      { product: "B", price: null, at: new Date("2026-01-02T23:00:00Z") },
+    ],
+    views: [{ id: "price", label: "Price", kind: "bar", x: "product", y: "price" }],
+    controls: { step: "at" },
+  });
+  expect(specs[0]).toMatchObject({
+    view: "explorer",
+    columns: [
+      { id: "product", type: "text" },
+      { id: "price", type: "number" },
+      { id: "at", type: "datetime" },
+    ],
+    rows: [
+      { product: "A", price: 2, at: "2026-01-02T00:00:00" },
+      { product: "B", price: null, at: "2026-01-03T00:00:00" },
+    ],
+  });
+  expect(ref).toMatchObject({
+    view: "explorer",
+    rows: 2,
+    columns: 3,
+    step: true,
+    filter: false,
+    compare: false,
+    views: [{ id: "price", label: "Price", kind: "bar" }],
+  });
+  await view.explorer({
+    title: "Days",
+    rows: [{ at: new Date("2026-01-01T23:30:00Z"), n: 2 }],
+    columns: [{ id: "at", type: "date" }, "n"],
+    views: [{ id: "day", label: "Day", kind: "scatter", x: "at", y: "n" }],
+  });
+  expect(specs[1]).toMatchObject({ rows: [{ at: "2026-01-02", n: 2 }] });
+});
+test.each([true, {}, [], Infinity, NaN])("explorer rejects unsupported cells: %j", async (cell) => {
+  const { view, specs } = fixture();
+  await expect(view.explorer({ title: "Cells", rows: [{ price: cell }], views: [] })).rejects.toMatchObject({
+    code: "invalid",
+    message: "rows[0].price: Unsupported cell; convert it to text or a number, or use a Cloud reference {type, id, title?}.",
+  });
+  expect(specs).toEqual([]);
+});
+
+test("explorer infers and preserves reference columns shared with table conversion", async () => {
+  const { view, specs } = fixture();
+  const item = { type: "spaces.item", id: "item-1", title: "Product", href: "/discard" };
+  await view.explorer({
+    title: "References",
+    rows: [{ item, name: "Product", stock: 2 }],
+    views: [{ id: "stock", label: "Stock", kind: "bar", x: "name", y: "stock" }],
+  });
+  expect(specs[0]).toMatchObject({
+    columns: [
+      { id: "item", type: "ref" },
+      { id: "name", type: "text" },
+      { id: "stock", type: "number" },
+    ],
+    rows: [{ item: { type: "spaces.item", id: "item-1", title: "Product" }, name: "Product", stock: 2 }],
+  });
+});

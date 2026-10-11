@@ -11,7 +11,7 @@ export const mergeAiSkillCatalog = (
   local: readonly AiSkillCatalogEntry[],
 ): AiSkillCatalogEntry[] => {
   const localNames = new Set(local.map((skill) => skill.name));
-  return [...cloud.filter((skill) => !localNames.has(skill.name)), ...local.filter((skill) => !skill.manualOnly)];
+  return [...cloud.filter((skill) => !skill.manualOnly && !localNames.has(skill.name)), ...local.filter((skill) => !skill.manualOnly)];
 };
 
 const catalogLine = (skill: AiSkillCatalogEntry): string =>

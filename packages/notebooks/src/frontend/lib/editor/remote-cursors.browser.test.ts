@@ -1,17 +1,17 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import type { Browser, Page } from "playwright";
 import { launchBrowser } from "../../../../../ui/test/browser";
-import { REMOTE_CARET_IDLE_CLASS, REMOTE_CARET_LABEL_IDLE_MS } from "./remote-caret-labels";
+import { REMOTE_CARET_IDLE_CLASS, REMOTE_CARET_LABEL_IDLE_MS } from "./remote-cursors";
 
 // Fading, hover, and reduced motion are computed styles, so this runs the editor theme in a real browser.
-type Harness = { moveTo: (index: number) => void };
+import type {} from "./remote-cursors.browser-harness";
 
 let browser: Browser;
 let server: ReturnType<typeof Bun.serve>;
 
 beforeAll(async () => {
   const build = await Bun.build({
-    entrypoints: [new URL("./remote-caret-labels.browser-harness.ts", import.meta.url).pathname],
+    entrypoints: [new URL("./remote-cursors.browser-harness.ts", import.meta.url).pathname],
     target: "browser",
     conditions: ["browser"],
     format: "iife",
@@ -44,48 +44,53 @@ afterAll(async () => {
 const open = async (reducedMotion: "reduce" | "no-preference" = "no-preference") => {
   const page = await browser.newPage({ viewport: { width: 480, height: 240 }, reducedMotion });
   await page.goto(server.url.href);
-  await page.waitForSelector(".cm-ySelectionCaret");
+  await page.waitForSelector(".cm-remoteCaret");
   return page;
 };
 
 const label = (page: Page) =>
-  page.$eval(".cm-ySelectionCaret", (caret) => {
-    const info = caret.querySelector(".cm-ySelectionInfo")!;
+  page.$eval(".cm-remoteCaret", (caret) => {
+    const info = caret.querySelector(".cm-remoteCaretLabel")!;
     const style = getComputedStyle(info);
     const box = caret.getBoundingClientRect();
     return { opacity: style.opacity, transitionDuration: style.transitionDuration, caret: [box.left, box.top, box.width, box.height] };
   });
 
+// An invisible dot must not take presses meant for the text under it.
+const dotPointerEvents = (page: Page) => page.$eval(".cm-remoteCaretDot", (dot) => getComputedStyle(dot).pointerEvents);
+
 const waitForIdle = (page: Page) =>
-  page.waitForSelector(`.cm-ySelectionCaret.${REMOTE_CARET_IDLE_CLASS}`, { timeout: REMOTE_CARET_LABEL_IDLE_MS + 2_000 });
+  page.waitForSelector(`.cm-remoteCaret.${REMOTE_CARET_IDLE_CLASS}`, { timeout: REMOTE_CARET_LABEL_IDLE_MS + 2_000 });
 
 describe("remote caret labels", () => {
   test("an idle name fades without moving the caret, and shows at once on hover and on movement", async () => {
     const page = await open();
     try {
       // Start the activity window now rather than at page load, so a slow launch cannot make the caret idle first.
-      await page.evaluate(() => (window as unknown as { harness: Harness }).harness.moveTo(31));
+      await page.evaluate(() => window.remoteCursorHarness.moveTo(31));
       const active = await label(page);
       expect(active.opacity).toBe("1");
       expect(active.transitionDuration).toBe("0s");
+      expect(await dotPointerEvents(page)).toBe("none");
 
       await waitForIdle(page);
-      await page.waitForFunction(() => getComputedStyle(document.querySelector(".cm-ySelectionInfo")!).opacity === "0");
+      expect(await dotPointerEvents(page)).toBe("auto");
+      await page.waitForFunction(() => getComputedStyle(document.querySelector(".cm-remoteCaretLabel")!).opacity === "0");
       const idle = await label(page);
       expect(idle.transitionDuration).toBe("0.3s");
       expect(idle.caret).toEqual(active.caret);
 
       // Point at the dot like a person does. WebKit can hit-test the dot's center to the caret around it,
       // which Playwright's hover() rejects, while :hover on that caret is what shows the name.
-      const dot = (await page.locator(".cm-ySelectionCaretDot").boundingBox())!;
+      const dot = (await page.locator(".cm-remoteCaretDot").boundingBox())!;
       await page.mouse.move(dot.x + dot.width / 2, dot.y + dot.height / 2);
       expect((await label(page)).opacity).toBe("1");
       await page.mouse.move(400, 200);
 
-      await page.evaluate(() => (window as unknown as { harness: Harness }).harness.moveTo(12));
-      expect(
-        await page.$eval(".cm-ySelectionCaret", (caret, idleClass) => caret.classList.contains(idleClass), REMOTE_CARET_IDLE_CLASS),
-      ).toBe(false);
+      await page.evaluate(() => window.remoteCursorHarness.moveTo(12));
+      expect(await page.$eval(".cm-remoteCaret", (caret, idleClass) => caret.classList.contains(idleClass), REMOTE_CARET_IDLE_CLASS)).toBe(
+        false,
+      );
       expect((await label(page)).opacity).toBe("1");
     } finally {
       await page.close();

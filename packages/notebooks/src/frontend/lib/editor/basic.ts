@@ -9,8 +9,6 @@ import {
   drawSelection,
   dropCursor,
   EditorView,
-  highlightActiveLine,
-  highlightActiveLineGutter,
   highlightSpecialChars,
   keymap,
   rectangularSelection,
@@ -21,7 +19,6 @@ import {
  * @see https://github.com/codemirror/basic-setup/blob/main/src/codemirror.ts
  */
 export const basicExtensions: () => Extension = () => [
-  highlightActiveLineGutter(),
   highlightSpecialChars(),
   drawSelection(),
   dropCursor(),
@@ -34,7 +31,6 @@ export const basicExtensions: () => Extension = () => [
   closeBrackets(),
   rectangularSelection(),
   crosshairCursor(),
-  highlightActiveLine(),
   highlightSelectionMatches(),
   keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...searchKeymap, ...foldKeymap, ...completionKeymap, ...lintKeymap]),
 ];

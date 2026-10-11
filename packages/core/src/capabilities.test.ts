@@ -128,6 +128,7 @@ const skill: AiSkill = {
   permission: "admin",
   enabled: true,
   revision: 1,
+  manualOnly: false,
   referenceCount: 1,
   createdAt: chat.createdAt,
   updatedAt: chat.updatedAt,

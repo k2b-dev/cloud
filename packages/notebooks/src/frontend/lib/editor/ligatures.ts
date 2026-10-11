@@ -11,12 +11,12 @@
  * visible candidate needs it.
  */
 import { syntaxTree } from "@codemirror/language";
-import { type Text as DocText, type EditorState, type Extension, Prec, type Range } from "@codemirror/state";
+import { type Text as DocText, type EditorSelection, type Extension, Prec, type Range } from "@codemirror/state";
 import { Decoration, type DecorationSet, type EditorView, ViewPlugin, type ViewUpdate, WidgetType } from "@codemirror/view";
 import { findLigatures, frontMatterLength, type LigatureMatch } from "../../../lib/ligatures";
 import { extractDataBlocks } from "../../../lib/named-blocks";
 import { extractNotebookDirectiveRanges } from "../../../lib/query-blocks";
-import { refreshMarkdownDecorationsEffect } from "./_lib/cursor-zone-field";
+import { holdsDecorations, pointerSelectionHeld, refreshMarkdownDecorationsEffect } from "./_lib/cursor-zone-field";
 import { blockMathPattern, inlineMathPattern } from "./_lib/math-syntax";
 
 type Span = { from: number; to: number };
@@ -103,11 +103,11 @@ const findVisibleLigatures = (view: EditorView): LigatureMatch[] => {
 };
 
 /** Same rule as hidden Markdown marks: a selection that touches the sequence reveals it. */
-const touched = (state: EditorState, match: LigatureMatch): boolean =>
-  state.selection.ranges.some((range) => range.from <= match.to && range.to >= match.from);
+const touched = (selection: EditorSelection, match: LigatureMatch): boolean =>
+  selection.ranges.some((range) => range.from <= match.to && range.to >= match.from);
 
-const touchedKey = (state: EditorState, matches: readonly LigatureMatch[]): string =>
-  matches.flatMap((match, index) => (touched(state, match) ? [index] : [])).join(",");
+const touchedKey = (selection: EditorSelection, matches: readonly LigatureMatch[]): string =>
+  matches.flatMap((match, index) => (touched(selection, match) ? [index] : [])).join(",");
 
 class LigatureWidget extends WidgetType {
   constructor(private readonly symbol: string) {
@@ -141,10 +141,10 @@ const ligatureDecoration = (symbol: string): Decoration => {
   return decoration;
 };
 
-const decorate = (state: EditorState, matches: readonly LigatureMatch[]): DecorationSet => {
+const decorate = (selection: EditorSelection, matches: readonly LigatureMatch[]): DecorationSet => {
   const ranges: Range<Decoration>[] = [];
   for (const match of matches) {
-    if (!touched(state, match)) ranges.push(ligatureDecoration(match.symbol).range(match.from, match.to));
+    if (!touched(selection, match)) ranges.push(ligatureDecoration(match.symbol).range(match.from, match.to));
   }
   return Decoration.set(ranges, true);
 };
@@ -155,27 +155,37 @@ export const ligaturesExtension = (): Extension =>
     ViewPlugin.fromClass(
       class {
         matches: LigatureMatch[];
+        selection: EditorSelection;
         key: string;
         decorations: DecorationSet;
 
         constructor(view: EditorView) {
           this.matches = findVisibleLigatures(view);
-          this.key = touchedKey(view.state, this.matches);
-          this.decorations = decorate(view.state, this.matches);
+          this.selection = view.state.selection;
+          this.key = touchedKey(this.selection, this.matches);
+          this.decorations = decorate(this.selection, this.matches);
         }
 
         update(update: ViewUpdate) {
+          const refresh = update.transactions.some((tr) => tr.effects.some((effect) => effect.is(refreshMarkdownDecorationsEffect)));
+          // While the button is down only pointer selections wait for the release; scrolling and edits keep the press-time selection.
+          const held =
+            update.state.field(pointerSelectionHeld, false) === true &&
+            !refresh &&
+            update.transactions.every((tr) => !tr.selection || holdsDecorations(tr));
+          if (held) {
+            if (update.docChanged) this.selection = this.selection.map(update.changes);
+          } else {
+            this.selection = update.state.selection;
+          }
           const rescan =
-            update.docChanged ||
-            update.viewportChanged ||
-            syntaxTree(update.startState) !== syntaxTree(update.state) ||
-            update.transactions.some((tr) => tr.effects.some((effect) => effect.is(refreshMarkdownDecorationsEffect)));
+            update.docChanged || update.viewportChanged || syntaxTree(update.startState) !== syntaxTree(update.state) || refresh;
           if (rescan) this.matches = findVisibleLigatures(update.view);
-          else if (!update.selectionSet) return;
-          const key = touchedKey(update.state, this.matches);
+          else if (!update.selectionSet || update.transactions.every(holdsDecorations)) return;
+          const key = touchedKey(this.selection, this.matches);
           if (!rescan && key === this.key) return;
           this.key = key;
-          this.decorations = decorate(update.state, this.matches);
+          this.decorations = decorate(this.selection, this.matches);
         }
       },
       { decorations: (plugin) => plugin.decorations },

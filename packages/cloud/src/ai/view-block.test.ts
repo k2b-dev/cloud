@@ -5,6 +5,7 @@ import {
   CLOUD_AI_DETAILS_VIEWPORT_ITEMS,
   CLOUD_AI_STATS_MAX_ITEMS,
   CLOUD_AI_TABLE_MAX_ROWS,
+  type CloudAiExplorerView,
   type CloudAiTableView,
   type CloudAiViewSummary,
   CloudAiViewSummarySchema,
@@ -601,7 +602,7 @@ describe("details views and reference cells", () => {
   });
   test("unknown kinds give the allowed kinds without falling through to table validation", () => {
     for (const view of ["unknown", undefined, null]) {
-      expect(issues({ view, title: "Unknown" })).toBe("view: Expected one of chart, group, table, stats, details.");
+      expect(issues({ view, title: "Unknown" })).toBe("view: Expected one of chart, group, table, stats, details, explorer.");
       expect(parseCloudAiView({ view })).toBeUndefined();
     }
     const field = { label: "N", ref: false, chars: 1 };
@@ -641,5 +642,280 @@ describe("details views and reference cells", () => {
       { label: "Note", ref: false, chars: CLOUD_AI_DETAILS_MAX_CHARS },
     ]);
     expect(CloudAiViewSummarySchema.parse(summary)).toEqual(summary);
+  });
+});
+
+describe("explorer views", () => {
+  const explorer: CloudAiExplorerView = {
+    view: "explorer",
+    title: "Products",
+    subtitle: "Snapshot",
+    columns: [
+      { id: "name", type: "text" },
+      { id: "x", type: "number" },
+      { id: "y", type: "number" },
+      { id: "step", type: "text" },
+      { id: "series", type: "text" },
+      { id: "day", type: "date" },
+    ],
+    rows: [
+      { name: "A", x: 1, y: 2, step: "2025", series: "open", day: "2026-01-01" },
+      { name: "B", x: 2, y: 3, step: "2026", series: "paid", day: "2026-01-02" },
+    ],
+    views: [{ id: "points", label: "Price and stock", kind: "scatter", x: "x", y: "y", series: "series" }],
+    controls: { step: "step", filter: "series", compare: true },
+  };
+  const referenceExplorer: CloudAiExplorerView = {
+    ...explorer,
+    columns: [...explorer.columns, { id: "item", type: "ref" }],
+    rows: explorer.rows.map((row, index) => ({ ...row, item: { type: "spaces.item", id: String(index), title: index === 0 ? "A" : "B" } })),
+  };
+  test("reference columns validate and keep their title text in the explorer table", () => {
+    expect(checkCloudAiView(referenceExplorer)).toEqual({ view: referenceExplorer });
+    expect(cloudAiViewTable(referenceExplorer, "en").rows.map((row) => row.cells.item)).toEqual(["A", "B"]);
+  });
+  test.each([
+    [{ views: [{ id: "bar", label: "Bar", kind: "bar", x: "item", y: "y" }], controls: undefined }, "views[0].x"],
+    [{ views: [{ id: "scatter", label: "Scatter", kind: "scatter", x: "x", y: "item" }] }, "views[0].y"],
+    [{ views: [{ id: "scatter", label: "Scatter", kind: "scatter", x: "x", y: ["y", "item"] }] }, "views[0].y[1]"],
+    [{ views: [{ id: "scatter", label: "Scatter", kind: "scatter", x: "x", y: "y", series: "item" }] }, "views[0].series"],
+    [
+      { views: [{ id: "heatmap", label: "Heatmap", kind: "heatmap", x: "name", y: "item", value: "y" }], controls: undefined },
+      "views[0].y",
+    ],
+    [
+      { views: [{ id: "heatmap", label: "Heatmap", kind: "heatmap", x: "name", y: "series", value: "item" }], controls: undefined },
+      "views[0].value",
+    ],
+    [{ controls: { filter: "item" } }, "controls.filter"],
+    [{ controls: { step: "item" } }, "controls.step"],
+  ])("rejects reference encodings at their path: %j", (change, path) => {
+    expect(issues({ ...referenceExplorer, ...change })).toContain(
+      `${path}: Reference columns show only in the table; choose a text, number or date column.`,
+    );
+  });
+  test("round trips plain data and summarizes frames and controls without cells", () => {
+    const parsed = parseCloudAiView(JSON.parse(JSON.stringify(explorer)));
+    expect(parsed).toEqual(explorer);
+    if (!parsed) throw new Error("Missing explorer");
+    expect(checkCloudAiView(parsed)).toEqual({ view: parsed });
+    expect(cloudAiViewSummary(parsed)).toEqual({
+      view: "explorer",
+      title: "Products",
+      subtitle: "Snapshot",
+      rows: 2,
+      columns: 6,
+      views: [{ id: "points", label: "Price and stock", kind: "scatter" }],
+      step: true,
+      filter: true,
+      compare: true,
+    });
+    const minimal = parseCloudAiView({ ...explorer, controls: undefined });
+    if (!minimal) throw new Error("Missing explorer");
+    expect(cloudAiViewSummary(minimal)).toMatchObject({ step: false, filter: false, compare: false });
+  });
+  test.each([
+    [{ views: [] }, "views"],
+    [{ views: Array.from({ length: 7 }, (_, i) => ({ id: String(i), label: "P", kind: "scatter", x: "x", y: "y" })) }, "views"],
+    [{ columns: [] }, "columns"],
+    [{ columns: Array.from({ length: 101 }, (_, i) => ({ id: String(i), type: "text" })) }, "columns"],
+    [{ rows: Array.from({ length: 3841 }, () => ({})) }, "rows"],
+    [{ title: "" }, "title"],
+    [{ subtitle: "x".repeat(301) }, "subtitle"],
+    [
+      {
+        columns: [
+          { id: "x", type: "number" },
+          { id: "x", type: "text" },
+        ],
+      },
+      "columns[1].id",
+    ],
+    [{ columns: [{ id: "name", type: "text", format: {} }] }, "columns[0].format"],
+    [{ rows: [{ y: "wrong" }] }, "rows[0].y"],
+    [{ rows: [{ unknown: 1 }] }, "rows[0].unknown"],
+    [{ rows: [{ day: "2026-02-30" }] }, "rows[0].day"],
+    [{ controls: { filter: "missing" } }, "controls.filter"],
+    [{ controls: { step: "missing" } }, "controls.step"],
+    [{ controls: { compare: true } }, "controls.compare"],
+    [{ controls: { step: "step" }, rows: [{ step: null }] }, "controls.step"],
+    [{ controls: { filter: "series" }, rows: [{}] }, "controls.filter"],
+    [{ controls: { step: "step" }, rows: Array.from({ length: 481 }, (_, i) => ({ step: String(i) })) }, "controls.step"],
+    [{ controls: { filter: "series" }, rows: Array.from({ length: 9 }, (_, i) => ({ series: String(i) })) }, "controls.filter"],
+    [{ controls: { step: "step", markup: "<b>" } }, "controls"],
+    [{ html: "<script>" }, "view"],
+    [{ view: "unknown" }, "view"],
+  ])("rejects explorer dataset and control rules: %j", (change, path) => expect(issues({ ...explorer, ...change })).toContain(path));
+  test.each([
+    [{ id: "" }, "views[0].id"],
+    [{ id: "x".repeat(41) }, "views[0].id"],
+    [{ label: "" }, "views[0].label"],
+    [{ label: "x".repeat(81) }, "views[0].label"],
+    [{ x: "missing" }, "views[0].x"],
+    [{ y: "missing" }, "views[0].y"],
+    [{ x: "name" }, "views[0].x"],
+    [{ y: "name" }, "views[0].y"],
+    [{ y: [] }, "views[0].y"],
+    [{ y: Array.from({ length: 9 }, () => "y") }, "views[0].y"],
+    [{ y: ["y", "y"] }, "views[0].y[1]"],
+    [{ y: ["y", "name"] }, "views[0].y[1]"],
+    [{ y: ["y", "missing"] }, "views[0].y[1]"],
+    [{ y: ["y"] }, "views[0].series"],
+    [{ series: "missing" }, "views[0].series"],
+    [{ kind: "bar", y: "name", series: undefined }, "views[0].y"],
+    [{ kind: "bar", series: undefined }, "views[0]"],
+    [{ kind: "heatmap", value: "missing", series: undefined }, "views[0].value"],
+    [{ kind: "heatmap", value: "name", series: undefined }, "views[0].value"],
+    [{ markup: "<b>" }, "views[0]"],
+  ])("rejects explorer chart rules: %j", (change, path) => {
+    const chart = Object.fromEntries(Object.entries({ ...explorer.views[0], ...change }).filter(([, value]) => value !== undefined));
+    expect(issues({ ...explorer, views: [chart] })).toContain(path);
+  });
+  test("rejects duplicate view ids, series nulls, cardinality and per-view mark budgets", () => {
+    expect(issues({ ...explorer, views: [explorer.views[0], explorer.views[0]] })).toContain("views[1].id");
+    expect(issues({ ...explorer, controls: undefined, rows: [{}] })).toContain("views[0].series");
+    expect(issues({ ...explorer, controls: undefined, rows: Array.from({ length: 9 }, (_, i) => ({ series: String(i) })) })).toContain(
+      "views[0].series",
+    );
+    expect(
+      issues({
+        ...explorer,
+        controls: undefined,
+        views: [{ id: "m", label: "M", kind: "line", x: "x", y: ["x", "y"] }],
+        rows: Array.from({ length: 1921 }, () => ({ x: 1, y: 2 })),
+      }),
+    ).toContain("views[0]: The view has 3842 marks");
+  });
+  test("bars obey the value bound per step, counting only numeric y cells", () => {
+    const value: CloudAiExplorerView = {
+      ...explorer,
+      controls: undefined,
+      views: [{ id: "bars", label: "Products", kind: "bar", x: "name", y: "y" }],
+      rows: Array.from({ length: 481 }, (_, i) => ({ name: `Product ${i}`, y: i, step: String(i % 2) })),
+    };
+    expect(issues(value)).toBe(
+      "views[0]: The view draws 481 bars in total; the limit is 480. Aggregate the rows, keep the top ones, or add a step column.",
+    );
+    expect(parseCloudAiView(value)).toBeUndefined();
+    const stepped = { ...value, controls: { step: "step" } };
+    expect(checkCloudAiView(stepped)).toEqual({ view: stepped });
+    const sparse = { ...value, rows: value.rows.map((row, i) => (i === 480 ? { ...row, y: null } : row)) };
+    expect(checkCloudAiView(sparse)).toEqual({ view: sparse });
+    expect(issues({ ...stepped, rows: value.rows.map((row) => ({ ...row, step: "one" })) })).toBe(
+      "views[0]: The view draws 481 bars in one step; the limit is 480. Aggregate the rows, keep the top ones, or add a step column.",
+    );
+  });
+  test.each(["line", "scatter"] as const)("%s bounds each series within a step and allows one-point series", (kind) => {
+    const value: CloudAiExplorerView = {
+      ...explorer,
+      views: [{ id: "points", label: "Points", kind, x: "x", y: "y", series: "series" }],
+      rows: Array.from({ length: 481 }, (_, i) => ({ x: i, y: i, step: "one", series: "open" })),
+    };
+    expect(issues(value)).toBe(
+      "views[0]: The view draws 481 points in one series in one step; the limit is 480. Aggregate the rows, keep the top ones, or add a step column.",
+    );
+    const stepped = { ...value, rows: value.rows.map((row, i) => ({ ...row, step: i === 480 ? "two" : "one" })) };
+    expect(checkCloudAiView(stepped)).toEqual({ view: stepped });
+    const grouped = { ...value, rows: value.rows.map((row, i) => ({ ...row, series: i === 480 ? "paid" : "open" })) };
+    expect(checkCloudAiView(grouped)).toEqual({ view: grouped });
+    const sparse = { ...value, rows: value.rows.map((row, i) => (i === 480 ? { ...row, x: null } : row)) };
+    expect(checkCloudAiView(sparse)).toEqual({ view: sparse });
+    expect(issues({ ...value, controls: undefined })).toContain("481 points in one series in total; the limit is 480.");
+  });
+  test("each y column is a separate bounded series", () => {
+    const value: CloudAiExplorerView = {
+      ...explorer,
+      controls: undefined,
+      views: [{ id: "points", label: "Points", kind: "scatter", x: "x", y: ["x", "y"] }],
+      rows: Array.from({ length: 480 }, (_, i) => ({ x: i, y: i })),
+    };
+    expect(checkCloudAiView(value)).toEqual({ view: value });
+    expect(issues({ ...value, rows: [...value.rows, { x: 480, y: null }] })).toContain(
+      "views[0]: The view draws 481 points in one series in total; the limit is 480.",
+    );
+  });
+  test.each(["bar", "heatmap"])("%s labels must be unique within each step by displayed text", (kind) => {
+    const chart =
+      kind === "bar" ? { id: "v", label: "V", kind, x: "name", y: "y" } : { id: "v", label: "V", kind, x: "name", y: "series", value: "y" };
+    const value = {
+      ...explorer,
+      controls: { step: "step" },
+      views: [chart],
+      rows: [
+        { name: "A", series: "open", y: 1, step: "1" },
+        { name: "A", series: "open", y: 2, step: "2" },
+      ],
+    };
+    expect(parseCloudAiView(value)).toBeDefined();
+    expect(issues({ ...value, controls: undefined })).toContain("views[0]: Use one row per displayed");
+    expect(parseCloudAiView({ ...value, controls: undefined, rows: [value.rows[0], { ...value.rows[0], y: null }] })).toBeDefined();
+    const rounded = {
+      ...value,
+      columns: [
+        { id: "x", type: "number", format: { decimals: 0 } },
+        { id: "y", type: "number" },
+        { id: "series", type: "text" },
+      ],
+      controls: undefined,
+      views: [{ ...chart, x: "x" }],
+      rows: [
+        { x: 1.1, series: "open", y: 1 },
+        { x: 1.2, series: "open", y: 2 },
+      ],
+    };
+    expect(issues(rounded)).toContain("views[0]: Use one row per displayed");
+  });
+  test("checks whole-dataset numeric precision, per-step dates and union heatmap label fit", () => {
+    expect(issues({ ...explorer, rows: explorer.rows.map((row, i) => ({ ...row, x: 1e17 + i * 16 })) })).toContain(
+      "views[0]: The values differ too little",
+    );
+    const date = {
+      ...explorer,
+      columns: [...explorer.columns.filter((col) => col.id !== "day"), { id: "day", type: "datetime" }],
+      views: [{ id: "v", label: "V", kind: "line", x: "day", y: "y" }],
+      rows: [
+        { day: "2026-01-01T00:00:00", y: 1, step: "1", series: "open" },
+        { day: "2026-01-01T00:00:01", y: 2, step: "1", series: "open" },
+        { day: "2026-02-01T00:00:00", y: 3, step: "2", series: "open" },
+      ],
+    };
+    expect(parseCloudAiView(date)).toBeDefined();
+    const heatmap = {
+      ...explorer,
+      controls: { step: "step" },
+      views: [{ id: "h", label: "H", kind: "heatmap", x: "name", y: "series", value: "y" }],
+      rows: ["North region", "South region", "East region", "West region"].map((name, i) => ({ name, series: "A", y: 1, step: String(i) })),
+    };
+    expect(issues(heatmap)).toContain("views[0]: Use column labels");
+    expect(issues({ ...heatmap, rows: heatmap.rows.map((row) => ({ ...row, y: null })) })).toContain("views[0]: Use column labels");
+    for (const values of [
+      [-1e308, 1e308],
+      [1e17, 1e17 + 16],
+    ])
+      expect(issues({ ...explorer, controls: undefined, rows: values.map((x) => ({ x, y: null, series: "open" })) })).toContain(
+        "views[0]: The values",
+      );
+  });
+  test("prototype-named columns and view ids keep own cells and skip missing values", () => {
+    const value: CloudAiExplorerView = {
+      view: "explorer",
+      title: "Own cells",
+      columns: [
+        { id: "constructor", type: "number" },
+        { id: "__proto__", type: "text" },
+      ],
+      rows: [
+        Object.fromEntries<string | number | null>([
+          ["constructor", 1],
+          ["__proto__", "A"],
+        ]),
+        {},
+      ],
+      views: [{ id: "constructor", label: "Own", kind: "bar", x: "__proto__", y: "constructor" }],
+    };
+    const parsed = parseCloudAiView(value);
+    expect(parsed).toEqual(value);
+    if (!parsed || parsed.view !== "explorer") throw new Error("Missing explorer");
+    expect(cloudAiViewTable(parsed, "en").rows[1]?.cells).toEqual({ constructor: "", ["__proto__"]: "" });
   });
 });

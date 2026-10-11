@@ -8,7 +8,7 @@ import {
   evaluateAiDate,
   evaluateAiMath,
 } from "./file-tools";
-import { aiFileStore } from "./files-store";
+import { type AiFileStat, aiFileStore } from "./files-store";
 import { createCloudAiViewImageTool } from "./vision-tool";
 
 const bytes = (value: string): Uint8Array => new TextEncoder().encode(value);
@@ -422,5 +422,47 @@ test("missing chat paths guide local clients to upload before read_file and view
   } finally {
     stat.mockRestore();
     read.mockRestore();
+  }
+});
+
+test("present revalidates explorer files and returns control flags without dataset values", async () => {
+  const present = createCloudAiPresentTool();
+  if (present.location !== "server") throw new Error("Expected server tool");
+  const path = "/views/inventory-12345678.view.json";
+  const view = {
+    view: "explorer",
+    title: "Inventory",
+    columns: [
+      { id: "product", type: "text" },
+      { id: "stock", type: "number" },
+    ],
+    rows: [{ product: "A", stock: 42 }],
+    views: [{ id: "stock", label: "Stock", kind: "bar", x: "product", y: "stock" }],
+    controls: { filter: "product" },
+  };
+  const stat: AiFileStat = { path, origin: "assistant", size: 500, mediaType: "application/json", version: 1, updatedAt: "" };
+  const statSpy = spyOn(aiFileStore, "stat").mockResolvedValue(stat);
+  const readSpy = spyOn(aiFileStore, "read");
+  try {
+    readSpy.mockResolvedValue({ ...stat, bytes: bytes(JSON.stringify(view)) });
+    const result = await present.run({ path }, toolContext);
+    expect(result).toMatchObject({
+      view: {
+        view: "explorer",
+        title: "Inventory",
+        rows: 1,
+        columns: 2,
+        views: [{ id: "stock", label: "Stock", kind: "bar" }],
+        step: false,
+        filter: true,
+        compare: false,
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain("42");
+    readSpy.mockResolvedValue({ ...stat, bytes: bytes(JSON.stringify({ ...view, controls: { filter: "missing" } })) });
+    expect(await present.run({ path }, toolContext)).not.toHaveProperty("view");
+  } finally {
+    statSpy.mockRestore();
+    readSpy.mockRestore();
   }
 });

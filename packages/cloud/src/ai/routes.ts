@@ -417,7 +417,7 @@ export const aiRoutes = (() => {
         const toolsSupported = Boolean(previewProfile?.capabilities.includes("tools"));
         const availableSkills = toolsSupported ? (await aiSkills.list(c.get("accessSubject"))).filter((skill) => skill.enabled) : [];
         const skillCatalog = selectAiSkillCatalog(
-          availableSkills.map(({ name, description }) => ({ name, description })),
+          availableSkills.filter((skill) => !skill.manualOnly).map(({ name, description }) => ({ name, description })),
           previewProfile?.contextWindow ?? 0,
           "",
         );
@@ -453,7 +453,7 @@ export const aiRoutes = (() => {
           memory: memory?.text,
           timeZone,
           locale: promptLocale,
-          skillCreatorAvailable: availableSkills.some((skill) => skill.name === "skill-creator"),
+          skillCreatorAvailable: availableSkills.some((skill) => skill.name === "skill-creator" && !skill.manualOnly),
         });
         return respond(c, ok({ prompt, renderedAt: new Date().toISOString() }));
       })

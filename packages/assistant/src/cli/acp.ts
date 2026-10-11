@@ -399,7 +399,9 @@ export const createAcpAgent = (host: CloudCliContext) => {
           (skill) =>
             `- ${skill.name} · ${skill.scope} · ${preview(skill.description)}${skill.manualOnly ? ` (only with /${skill.name})` : ""}`,
         ),
-        ...visible.map((skill) => `- ${skill.name} · Cloud · ${preview(skill.description)}`),
+        ...visible.map(
+          (skill) => `- ${skill.name} · Cloud · ${preview(skill.description)}${skill.manualOnly ? ` (only with /${skill.name})` : ""}`,
+        ),
       ];
       const hidden = [
         ...(s.context?.hidden ?? []),

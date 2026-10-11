@@ -1,4 +1,5 @@
 import { parseDocument, stringify } from "yaml";
+import { AI_SKILL_FILE_MOUNT } from "./file-mount";
 
 export const AI_SKILL_NAME_MAX_CHARS = 64;
 export const AI_SKILL_DESCRIPTION_MAX_CHARS = 1024;
@@ -26,7 +27,11 @@ export type AiSkillDocument = {
   extraFrontmatter: AiSkillExtraFrontmatter;
 };
 
-const OPTIONAL_FRONTMATTER_FIELDS = new Set(["license", "compatibility", "metadata", "allowed-tools"]);
+export const isAiSkillManualOnly = (extraFrontmatter: AiSkillExtraFrontmatter): boolean =>
+  extraFrontmatter["disable-model-invocation"] === true;
+
+export const mountAiSkillInstructionLinks = (name: string, instructions: string): string =>
+  instructions.replace(/\]\((references\/[a-z0-9][a-z0-9._-]*\.md)\)/g, (_, path: string) => `](${AI_SKILL_FILE_MOUNT}/${name}/${path})`);
 
 const assertJsonValue = (value: unknown, path: string): void => {
   if (value === null || typeof value === "string" || typeof value === "boolean") return;
@@ -35,7 +40,7 @@ const assertJsonValue = (value: unknown, path: string): void => {
     value.forEach((item, index) => assertJsonValue(item, `${path}[${index}]`));
     return;
   }
-  if (typeof value === "object") {
+  if (typeof value === "object" && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null)) {
     for (const [key, child] of Object.entries(value)) assertJsonValue(child, `${path}.${key}`);
     return;
   }
@@ -73,8 +78,8 @@ export const validateAiSkillInstructions = (value: string): string => {
 
 export const validateAiSkillExtraFrontmatter = (value: AiSkillExtraFrontmatter = {}): AiSkillExtraFrontmatter => {
   for (const key of Object.keys(value)) {
-    if (!OPTIONAL_FRONTMATTER_FIELDS.has(key)) {
-      throw new Error(`Unsupported SKILL.md frontmatter field "${key}".`);
+    if (key === "name" || key === "description") {
+      throw new Error(`SKILL.md frontmatter field "${key}" must not appear in extraFrontmatter; it would collide on export.`);
     }
   }
   assertJsonValue(value, "Skill frontmatter");

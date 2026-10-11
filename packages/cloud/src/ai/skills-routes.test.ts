@@ -32,6 +32,7 @@ const skill = (permission: AiSkill["permission"] = "admin"): AiSkill => ({
   referenceCount: 1,
   permission,
   enabled: true,
+  manualOnly: false,
   revision: 3,
   createdAt: "2026-08-20T10:00:00.000Z",
   updatedAt: "2026-08-20T11:00:00.000Z",
@@ -79,14 +80,29 @@ describe("AI Skill routes", () => {
     expect((await routes.request("/project-links/proj12?page=0")).status).toBe(400);
   });
 
-  test("search query uses the shared enabled Skill search and rejects oversized queries", async () => {
-    const search = spyOn(aiSkills, "search").mockResolvedValue({ skills: [skill()], more: false });
+  test("slash-menu search includes manual-only Skills and rejects oversized queries", async () => {
+    const search = spyOn(aiSkills, "search").mockResolvedValue({ skills: [{ ...skill(), manualOnly: true }], more: false });
     const routes = __buildAiSkillsRoutesForTest({ limit: pass, authenticate });
     const response = await routes.request("/?q=reciepts");
     expect(response.status).toBe(200);
     expect(search).toHaveBeenCalledWith(subject, "reciepts");
-    expect((await response.json()).skills[0].id).toBe(skillShortId);
+    expect((await response.json()).skills[0]).toMatchObject({ id: skillShortId, manualOnly: true });
     expect((await routes.request("/?q=" + "x".repeat(201))).status).toBe(400);
+  });
+
+  test("exact name lookup lists disabled Skills and rejects combining name with search", async () => {
+    const list = spyOn(aiSkills, "list").mockResolvedValue([{ ...skill(), enabled: false }]);
+    const search = spyOn(aiSkills, "search");
+    const routes = __buildAiSkillsRoutesForTest({ limit: pass, authenticate });
+    const response = await routes.request("/?name=%20weekly-status%20");
+    expect(response.status).toBe(200);
+    expect(list).toHaveBeenCalledWith(subject, { name: "weekly-status" });
+    expect((await response.json()).skills[0]).toMatchObject({ id: skillShortId, enabled: false });
+    list.mockClear();
+    expect((await routes.request("/?q=a&name=b")).status).toBe(400);
+    expect((await routes.request("/?name=" + "x".repeat(65))).status).toBe(400);
+    expect(list).not.toHaveBeenCalled();
+    expect(search).not.toHaveBeenCalled();
   });
 
   test("removed template route stays absent", async () => {
@@ -210,7 +226,7 @@ describe("AI Skill routes", () => {
     const list = spyOn(aiSkills, "list");
     const get = spyOn(aiSkills, "getByShortId");
     const routes = __buildAiSkillsRoutesForTest({ limit: pass });
-    for (const path of ["/", "/?q=test", `/${skillShortId}`, "/templates/skill-creator"]) {
+    for (const path of ["/", "/?q=test", "/?name=test", `/${skillShortId}`, "/templates/skill-creator"]) {
       expect((await routes.request(path)).status).toBe(401);
     }
     expect(

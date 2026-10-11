@@ -3,7 +3,7 @@ import { EditorView } from "@codemirror/view";
 import { yCollab } from "y-codemirror.next";
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from "y-protocols/awareness";
 import * as Y from "yjs";
-import { remoteCaretLabels } from "./remote-caret-labels";
+import { remoteCursors } from "./remote-cursors";
 import { customDarkInit, customLightInit } from "./theme";
 
 // The note editor's collaboration setup with one other person whose caret sits in the text.
@@ -21,19 +21,30 @@ const remoteText = remoteDoc.getText("codemirror");
 const remote = new Awareness(remoteDoc);
 remote.setLocalStateField("user", { name: "Ada Lovelace", color: "#7c3aed" });
 
-const moveTo = (index: number) => {
+const frame = () => new Promise((resolve) => requestAnimationFrame(resolve));
+
+/** Moves the other person's caret and resolves once the editor has drawn it, a frame after the update. */
+const moveTo = async (index: number) => {
   const at = Y.createRelativePositionFromTypeIndex(remoteText, index);
   remote.setLocalStateField("cursor", { anchor: at, head: at });
   applyAwarenessUpdate(awareness, encodeAwarenessUpdate(remote, [remoteDoc.clientID]), "remote");
+  await frame();
+  await frame();
 };
 
 new EditorView({
   parent: document.getElementById("root")!,
   state: EditorState.create({
     doc: ytext.toString(),
-    extensions: [yCollab(ytext, awareness), remoteCaretLabels(ytext, awareness), dark ? customDarkInit() : customLightInit()],
+    extensions: [yCollab(ytext, null), remoteCursors(ytext, awareness), dark ? customDarkInit() : customLightInit()],
   }),
 });
-moveTo(30);
+void moveTo(30);
 
-Object.assign(window, { harness: { moveTo } });
+export type RemoteCursorHarness = { moveTo: typeof moveTo };
+declare global {
+  interface Window {
+    remoteCursorHarness: RemoteCursorHarness;
+  }
+}
+window.remoteCursorHarness = { moveTo };

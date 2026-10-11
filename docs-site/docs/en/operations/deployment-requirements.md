@@ -664,6 +664,19 @@ Rolling back leaves the widened constraint and new columns in place. Older
 Core ignores the columns and keeps the widened constraint. Existing sign-in
 commands and pairing keys remain valid.
 
+### Reuse Agent Skills folders
+
+Update Core and Assistant together for portable Skill frontmatter, relative
+reference links, and manual-only invocation. No schema migration or new
+configuration is required. Skills with `disable-model-invocation: true` stay
+available for explicit selection but disappear from model discovery; loading
+by name is refused. Stored and exported links stay relative and are mounted
+when a Skill loads. Existing absolute links keep working.
+
+Update installed CLI plugins with `cld plugins update` to get
+`cld assistant skills list`, `push`, and `pull`. See
+[Reuse shared Skills](/en/docs/ai/files-projects-and-personalization#reuse-shared-skills).
+
 ### Run Assistant in editors
 
 The Assistant `cld` plugin adds `cld assistant acp` (shortcut `cld acp`), an

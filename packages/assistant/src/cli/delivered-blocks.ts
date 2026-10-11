@@ -7,6 +7,8 @@ import {
   type CloudAiViewTable,
   cloudAiChartTable,
   cloudAiDetailsRows,
+  cloudAiExplorerControls,
+  cloudAiExplorerState,
   cloudAiStatsTiles,
   cloudAiViewTable,
   isAiViewFile,
@@ -120,8 +122,13 @@ async function printView(ctx: CloudCliContext, result: unknown, conversationId: 
         );
       } else {
         const table = cloudAiViewTable(view, locale);
+        // An explorer prints the rows of its initial state, as the chat first shows it.
+        if (view.view === "explorer") {
+          const rows = new Set(cloudAiExplorerState(view, cloudAiExplorerControls(view, locale).initial, locale).rows);
+          table.rows = table.rows.filter((row) => rows.has(Number(row.key)));
+        }
         for (const row of [...table.rows, ...(table.footer ? [table.footer] : [])]) {
-          const cells = row.key === "footer" ? view.footer : view.rows[Number(row.key)];
+          const cells = row.key === "footer" ? ("footer" in view ? view.footer : undefined) : view.rows[Number(row.key)];
           for (const column of view.columns) {
             const ref = cells && Object.hasOwn(cells, column.id) ? cells[column.id] : undefined;
             if (column.type === "ref" && ref && typeof ref === "object")

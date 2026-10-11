@@ -213,11 +213,13 @@ documents all process variables; that larger list is not the shape of `env`.
 
 View readers and types are exported from `@k2b/cloud/ai/browser` and
 `@k2b/cloud/ai`: `CloudAiChartView`, `CloudAiGroupView`, `CloudAiTableView`,
+`CloudAiExplorerView`, `CloudAiExplorerRequest`,
 `CloudAiStatsView`, `CloudAiDetailsView`, `CloudAiViewReference`,
 `CloudAiView`, `CloudAiViewSummary`, `CloudAiViewSummarySchema`,
 `parseCloudAiView`, `checkCloudAiView`, `cloudAiViewSummary`, `cloudAiViewTable`,
 `cloudAiStatsTiles`, `cloudAiDetailsRows`,
-`cloudAiTableTsv`, `isAiViewFile`, `isAiViewPath` and `parseCloudAiChartToolView`,
+`cloudAiTableTsv`, `isAiViewFile`, `isAiViewPath`, `parseCloudAiChartToolView`,
+`cloudAiExplorerControls` and `cloudAiExplorerState`,
 plus the view directory, suffix, byte and table limits. Both entry points expose
 `CLOUD_AI_STATS_MAX_ITEMS` (6), `CLOUD_AI_GROUP_MAX_CHARTS` (6), `CLOUD_AI_VIEW_MAX_MARKS` (3,840),
 `CLOUD_AI_CHART_MAX_SERIES` (8), `CLOUD_AI_CHART_MAX_VALUES` (480),

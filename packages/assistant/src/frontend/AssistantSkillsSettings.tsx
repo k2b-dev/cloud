@@ -1,5 +1,6 @@
 import { PermissionEditor } from "@k2b/cloud/access/ui";
 import type { AiSkill, AiSkillExtraFrontmatter, AiSkillReferenceInput, AiSkillSummary } from "@k2b/cloud/ai";
+import { isAiSkillManualOnly } from "@k2b/cloud/ai/browser";
 import { files as browserFiles } from "@k2b/stdlib/browser";
 import {
   Button,
@@ -15,6 +16,7 @@ import {
   prompts,
   SettingsCollection,
   StatusBadge,
+  Switch,
   TextInput,
   toast,
 } from "@k2b/ui";
@@ -48,6 +50,13 @@ const fieldsFromImport = (skill: AiSkillImport): SkillFields => ({
   extraFrontmatter: skill.extraFrontmatter,
   references: skill.references.map((reference) => ({ ...reference })),
 });
+
+// Agent Skills spec field: the Skill starts only when a person selects it.
+const MANUAL_ONLY_FIELD = "disable-model-invocation";
+const withManualOnly = (extraFrontmatter: AiSkillExtraFrontmatter, manualOnly: boolean): AiSkillExtraFrontmatter => {
+  const { [MANUAL_ONLY_FIELD]: _, ...rest } = extraFrontmatter;
+  return manualOnly ? { ...rest, [MANUAL_ONLY_FIELD]: true } : rest;
+};
 
 const skillFieldsEqual = (left: SkillFields, right: SkillFields): boolean => JSON.stringify(left) === JSON.stringify(right);
 const referenceName = (path: string): string => path.replace(/^references\//, "").replace(/\.md$/i, "");
@@ -246,10 +255,13 @@ export function AssistantSkillsSettings(props: { refreshKey: number; onOpenEdito
                 description={`${skill.description}${skill.referenceCount ? ` · ${copy().referenceCount({ count: skill.referenceCount })}` : ""}`}
                 icon={<i class="ti ti-sparkles" aria-hidden="true" />}
               >
-                <Show when={skill.source || !skill.enabled}>
+                <Show when={skill.source || !skill.enabled || skill.manualOnly}>
                   <SettingsCollection.Item.Status>
                     <Show when={skill.source}>
                       {(source) => <StatusBadge tone="neutral" icon={null} label={copy().fromApp({ app: source().appName })} />}
+                    </Show>
+                    <Show when={skill.manualOnly}>
+                      <StatusBadge tone="neutral" icon={null} label={text("Only when selected")} />
                     </Show>
                     <Show when={!skill.enabled}>
                       <StatusBadge tone="neutral" icon={null} label={text("Disabled")} />
@@ -617,13 +629,24 @@ export function AssistantSkillEditor(props: {
                   <Show
                     when={detail()?.source}
                     fallback={
-                      <NoticeCard
-                        tone="info"
-                        title={text("Description controls when this Skill loads")}
-                        detail={text(
-                          "Assistant sees the name and description before deciding to load a Skill. Say what to do and when to use it.",
-                        )}
-                      />
+                      <Show
+                        when={imported?.skipped.length}
+                        fallback={
+                          <NoticeCard
+                            tone="info"
+                            title={text("Description controls when this Skill loads")}
+                            detail={text(
+                              "Assistant sees the name and description before deciding to load a Skill. Say what to do and when to use it.",
+                            )}
+                          />
+                        }
+                      >
+                        <NoticeCard
+                          tone="info"
+                          title={text("Some files are not imported")}
+                          detail={copy().skippedSkillFiles({ paths: imported!.skipped.join(", ") })}
+                        />
+                      </Show>
                     }
                   >
                     {(source) => (
@@ -678,6 +701,15 @@ export function AssistantSkillEditor(props: {
                   lines={3}
                   required
                   readOnly={readOnly()}
+                />
+                <Switch
+                  label={text("Start only when selected")}
+                  description={text("Assistant does not choose this Skill on its own. Select it with / in a message.")}
+                  value={() => isAiSkillManualOnly(fields().extraFrontmatter)}
+                  onValueChange={(manualOnly) =>
+                    setFields((current) => ({ ...current, extraFrontmatter: withManualOnly(current.extraFrontmatter, manualOnly) }))
+                  }
+                  disabled={readOnly() || saving()}
                 />
               </div>
 

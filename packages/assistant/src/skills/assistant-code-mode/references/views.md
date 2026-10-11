@@ -2,7 +2,8 @@
 
 Numbers computed in `code_run` stay in the run. Call `await cloud.view.chart(spec)`,
 `await cloud.view.group(spec)`, `await cloud.view.table(spec)`,
-`await cloud.view.stats(spec)` or `await cloud.view.details(spec)` there, then call
+`await cloud.view.stats(spec)`, `await cloud.view.details(spec)` or
+`await cloud.view.explorer(spec)` there, then call
 the **tool** `present({path})` for each returned view the person should see. Never retype run values into
 `chart` arguments, `data.js` or Markdown; a chat app's `data.js` is the module
 the run wrote, copied unchanged ([Chat apps](chat.md)). Return only the key figures mentioned
@@ -247,6 +248,60 @@ export default async () => {
 };
 ```
 
+## Explorer
+
+Use `await cloud.view.explorer({title, subtitle?, rows, columns?, views, controls?})`
+for one computed dataset the reader should filter, step through or compare.
+For categorical CSV or spreadsheet analyses where the reader will compare or
+filter (status per category, price against stock), return `cloud.view.stats`
+key figures and an explorer over the rows. A single answer stays a stats or
+chart view.
+Do not default to isolated distributions or an offer to build a filter app.
+
+Columns and cell conversion follow Tables above, without footer or initial sort.
+The stored file has `view: "explorer"`, typed columns and data rows. Each of
+1..6 views has a unique `id` (1..40 characters), a switcher `label` (1..80),
+and one of these mappings:
+
+| Kind | Mapping |
+| --- | --- |
+| `bar` | `x: "labelColumn", y: "numberColumn"` |
+| `line`, `scatter` | `x: "numberOrDateColumn", y: "numberColumn"` or `y: ["a", "b"]`; optional `series: "groupColumn"` with a single y |
+| `heatmap` | `x: "columnCategory", y: "rowCategory", value: "numberColumn"` |
+
+Every mapping names an existing column. Line/scatter x needs a number, date
+or datetime column; y is one number column or 1..8 unique number columns.
+Ref columns are allowed, but appear only in the table. They cannot be used for
+x, y, series, heatmap value, filter or step. Bar x and heatmap x/y accept any
+other column type. Labels use the table's localized cell text. Keep years and codes as text so they are not shown as 2,025.
+
+`controls: {filter?: "column", step?: "column", compare?: boolean}` applies to
+the whole dataset. Filter and series columns need a non-null cell in every row
+and at most 8 distinct values. Step needs non-null cells and at most 480 distinct
+values, in first-seen order; the last step opens initially. Comparison requires
+a step and only line/scatter views. Use the comparison pin to keep the current step, then move the slider. The
+pinned step adds dashed lines or hollow scatter points in the same colors. Hidden series keep their palette slots.
+
+Bars need one row per displayed x label per step; heatmaps need one row per
+displayed x/y pair per step. Without a step, this applies to the whole dataset.
+Aggregate in the script to the grain you want to compare. Null y/value cells
+produce no marks; line/scatter also skip null x cells. Numeric axes and heatmap
+color bounds cover the whole dataset, so filtering and stepping never rescale
+them. Date x axes follow the shown points. Validation rejects unsafe axis
+precision and heatmap labels that cannot fit a phone, across all steps.
+
+Limits are 3,840 rows, 100 unique columns, 6 views and 3,840 marks per view
+(rows × y columns), within the 1 MiB file limit. Each view draws at most 480
+bars per step (in total without a step) and 480 points per series per step;
+aggregate, keep the top rows or add a step beyond that. Titles use 1..160
+characters, subtitles 1..300, column ids and labels 1..80. Number formats belong only to
+number columns. No extra keys, markup options or functions belong in the spec.
+
+Filtering, steps, comparison, row selection and sorting happen locally and reset
+on reload. The table shows the rows of the current state, including the pinned
+step when comparing; **Copy data** copies those rows. The CLI prints the initial
+state's table. Use a chat app only for interaction an explorer cannot express.
+
 ## Choose and label
 
 Sort bars of counts or totals by value unless the categories have their own
@@ -260,52 +315,66 @@ caveats, not the values the view shows.
 
 Select the CSV path with `code_run.inputPaths` and read it in the script;
 `read_file` shows at most its first block to learn the columns. This script
-groups status counts with a histogram over every price, compares prices by
-category with a boxplot, and keeps monthly sums in a table with a footer:
+returns key figures in `cloud.view.stats`, an explorer of price against stock
+and stock value per product with one status filter, and a histogram of every
+price:
 
 ```js
 export default async (_input, { files }) => {
   const [input] = files;
-  if (!input) throw new Error("Select a CSV with status, price, category and date columns.");
-  const rows = await cloud.sheet.parseCsv(await input.file());
-  const statuses = new Map();
-  const months = new Map();
-  let total = 0;
-  for (const row of rows) {
-    if (typeof row.price !== "number" || !Number.isFinite(row.price))
-      throw new Error("Every price must be a finite number.");
-    if (typeof row.status !== "string" || typeof row.category !== "string" ||
-        typeof row.date !== "string") throw new Error("Check status, category and date columns.");
-    const status = row.status;
-    const month = String(row.date).slice(0, 7);
-    statuses.set(status, (statuses.get(status) ?? 0) + 1);
-    months.set(month, (months.get(month) ?? 0) + row.price);
-    total += row.price;
-  }
-  await cloud.view.group({
-    title: "Orders and prices", subtitle: "Selected CSV", layout: "grid",
-    charts: [
-      { kind: "bar", title: "Orders by status", subtitle: "Number of orders",
-        rows: [...statuses].map(([status, count]) => ({ status, count })).sort((a, b) => b.count - a.count),
-        x: "status", y: "count" },
-      { kind: "histogram", title: "Price distribution", subtitle: "EUR · all rows",
-        rows, value: "price" },
+  if (!input) throw new Error("Select a CSV with product, category, status, price and stock columns.");
+  const source = await cloud.sheet.parseCsv(await input.file());
+  const rows = source.map((row) => {
+    if (typeof row.product !== "string" || typeof row.category !== "string" ||
+        typeof row.status !== "string") throw new Error("Check product, category and status columns.");
+    if (typeof row.price !== "number" || !Number.isFinite(row.price) ||
+        typeof row.stock !== "number" || !Number.isFinite(row.stock))
+      throw new Error("Every price and stock must be a finite number.");
+    return { product: row.product, category: row.category, status: row.status,
+      price: row.price, stock: row.stock, stockValue: row.price * row.stock };
+  }).sort((a, b) => b.stockValue - a.stockValue); // the bar view reads as a ranking
+  if (new Set(rows.map((row) => row.product)).size !== rows.length)
+    throw new Error("Use one row per product; aggregate repeated products first.");
+  const stock = rows.reduce((sum, row) => sum + row.stock, 0);
+  const stockValue = rows.reduce((sum, row) => sum + row.stockValue, 0);
+  await cloud.view.stats({
+    title: "Inventory overview", subtitle: "Selected CSV · stock value = price × stock",
+    items: [
+      { label: "Products", value: rows.length },
+      { label: "Stock", value: stock, sub: "Units" },
+      { label: "Stock value", value: stockValue,
+        format: { style: "currency", currency: "EUR", decimals: 2 } },
     ],
   });
+  await cloud.view.explorer({
+    title: "Inventory", subtitle: "Selected CSV · stock value = price × stock",
+    rows,
+    columns: ["product", "category", "status",
+      { id: "price", label: "Price", format: { style: "currency", currency: "EUR" } },
+      { id: "stock", label: "Stock" },
+      { id: "stockValue", label: "Stock value", format: { style: "currency", currency: "EUR" } }],
+    views: [
+      { id: "price-stock", label: "Price and stock", kind: "scatter", x: "price", y: "stock", series: "status" },
+      // Keep the per-product bars within the chart limit.
+      ...(rows.length <= 480 ? [{ id: "stock-value", label: "Stock value", kind: "bar", x: "product", y: "stockValue" }] : []),
+    ],
+    controls: { filter: "status" },
+  });
   await cloud.view.chart({
-    kind: "boxplot", title: "Price by category", subtitle: "EUR · all rows",
-    rows, x: "category", y: "price", yAxis: { format: { style: "currency", currency: "EUR" } },
+    kind: "histogram", title: "Price distribution", subtitle: "EUR · all rows",
+    rows, value: "price",
   });
-  await cloud.view.table({
-    title: "Monthly totals", subtitle: "Sum of price · selected CSV · EUR",
-    columns: ["month", { id: "amount", label: "Sum of prices", type: "number",
-      format: { style: "currency", currency: "EUR", decimals: 2 } }],
-    rows: [...months].map(([month, amount]) => ({ month, amount })),
-    footer: { month: "Total", amount: total }, sort: { column: "month", direction: "asc" },
-  });
-  return { orders: rows.length, total };
+  return { products: rows.length, stock, stockValue };
 };
 ```
+
+With more than 480 products the example leaves out the bar view; show a top-N
+ranking as a `cloud.view.chart` instead. The scatter still allows at most 480
+products per status; aggregate or add a step column beyond that.
+
+Present all three returned view paths. State the key findings and any missing-data
+limits in the answer. A distribution over all rows (histogram, boxplot) stays a
+`cloud.view.chart` next to the explorer; explorer views draw one mark per row.
 
 ## References, limits and errors
 
@@ -318,14 +387,19 @@ Each call returns a `ViewRef`:
   where rows/columns are counts and footer is a boolean;
 - stats: `{path, view: "stats", title, subtitle?, items}`, where each item is
   `{label, sparkline, sub, delta}` with booleans reserving the tile's height;
-- details: `{path, view: "details", title, subtitle?, items}`, where items is
-  the field count.
+- details: `{path, view: "details", title, subtitle?, items, fields}`, where items
+  is the field count and `fields` reserves the first twelve fields' labels,
+  reference flags and text lengths;
+- explorer: `{path, view: "explorer", title, subtitle?, rows, columns, views, step, filter, compare}`,
+  where `views` lists `{id, label, kind}` without data and control flags are booleans.
 
 The run snapshot's `views` contains these references, **no values**. Present each
 path directly; there is no export step. Summaries reserve every chart's frame
 while loading: ordinary charts 18rem, sparkline 8rem, stat 10rem, barGauge 12rem.
 Series legends wrap below the chart inside that height. One undrawable chart
-shows unavailable in its own group frame. The CLI prints one table per chart.
+shows unavailable in its own group frame. Explorer summaries reserve the slider
+and filter/pin rows. The CLI prints one table per chart or the explorer's
+initial-state table.
 
 Limits: 8 series, 480 points per series or ordinary data list, 480 boxplot
 groups, 3,840 heatmap cells, and 2..6 charts per group. Every chart and group
@@ -336,7 +410,8 @@ rows form bins all observations before storage. Tables allow 3,840 rows and
 allow 1..100 fields. Each view is at most 1 MiB. Views and captured downloads share
 64 outputs per run. Aggregate first when a bound is exceeded. Server rejection
 uses `error.code === "invalid"`; field errors name their path, chart-wide
-checks explain the issue, and group chart errors identify `charts[i]`.
+checks explain the issue; chart errors identify `charts[i]` in groups and
+`views[i]` in explorers.
 Fix the script using that message.
 
 Files live under `/views/<title-slug>-<hash8>.view.json`, appear in the chat's

@@ -11039,15 +11039,29 @@
 .k2b-ui .k2b-tabs[data-orientation="vertical"] .k2b-tabs__bar { flex-direction:column; }
 
 /* Optional chart exploration surface; the viewport never changes size on load. */
-.k2b-ui .k2b-chart-explorer { display: grid; gap: 0.75rem; min-width: 0; }
+.k2b-ui .k2b-chart-explorer { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.75rem; min-width: 0; }
 .k2b-ui .k2b-chart-explorer__header,
 .k2b-ui .k2b-chart-explorer__legend,
 .k2b-ui .k2b-chart-explorer__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
 .k2b-ui .k2b-chart-explorer__header { justify-content: space-between; }
 .k2b-ui .k2b-chart-explorer__title { margin: 0; font-size: 1rem; font-weight: 600; }
+.k2b-ui .k2b-chart-explorer__legend:has(> .k2b-chart-explorer__pin) { flex-wrap: nowrap; }
+/* Labels come from data: the series filter keeps one line and truncates, and next to the pin it takes at most half
+   the row. FilterChip renders its chip inside a dropdown wrapper. */
+.k2b-ui .k2b-chart-explorer__legend > .k2b-dropdown { flex: none; min-width: 0; max-width: 100%; }
+.k2b-ui .k2b-chart-explorer__legend:has(> .k2b-chart-explorer__pin) > .k2b-dropdown { max-width: 50%; }
+.k2b-ui .k2b-chart-explorer__legend .k2b-filter-chip { min-width: 0; max-width: 100%; }
+.k2b-ui .k2b-chart-explorer__legend .k2b-filter-chip > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The pin stands as tall as the series chip next to it, so the row looks like one set of controls. */
+.k2b-ui .k2b-chart-explorer__pin { min-width: 0; min-height: 2.25rem; flex: 0 1 auto; }
+.k2b-ui .k2b-chart-explorer__pin span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .k2b-ui .k2b-chart-explorer__status { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; font-size: .8rem; }
 .k2b-ui .k2b-chart-explorer__viewport { min-width: 0; overflow: auto; }
 .k2b-ui .k2b-chart-explorer__viewport > .k2b-table-shell { height: 100%; }
+/* A capped table keeps its note inside the viewport, so switching views never changes the block's height. */
+.k2b-ui .k2b-chart-explorer__viewport[data-capped] { display: flex; flex-direction: column; gap: .5rem; }
+.k2b-ui .k2b-chart-explorer__viewport[data-capped] > .k2b-table-shell { flex: 1 1 0; min-height: 0; height: auto; }
+.k2b-ui .k2b-chart-explorer__note { flex: none; margin: 0; color: var(--k2b-text-muted); font-size: .75rem; line-height: 1rem; }
 /* A legend takes its rows from the chart, never from the page: the viewport keeps its height. The chart keeps most of
    it however many names there are; a longer legend scrolls in the rest. */
 .k2b-ui .k2b-chart-explorer__viewport[data-legend] { display: flex; flex-direction: column; gap: .5rem; }
@@ -11080,9 +11094,15 @@
 .k2b-ui .k2b-chart [data-selected] > .stdlib-chart-series-7 { --k2b-chart-selection-fallback-color: color-mix(in srgb, var(--stdlib-chart-c8) 72%, var(--k2b-chart-highlight-mix)); }
 
 /* Reveal the full dimension scale without moving the chart or filter controls. */
-.k2b-ui .k2b-chart-explorer__dimension { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) max-content; gap: .75rem; align-items: end; }
+/* Step names and the step label come from data: each keeps one line and truncates, so neither changes the row's
+   height, and the step name keeps the width of the longest one, so the slider never resizes while stepping. */
+.k2b-ui .k2b-chart-explorer__dimension { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) fit-content(min(40%, 10rem)); gap: .75rem; align-items: end; }
+.k2b-ui .k2b-chart-explorer__dimension > .k2b-field { min-width: 0; }
+.k2b-ui .k2b-chart-explorer__dimension .k2b-field__label { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .k2b-ui .k2b-chart-explorer__dimension .k2b-slider { min-height: 1.125rem; }
-.k2b-ui .k2b-chart-explorer__dimension-value { min-width: 3.5rem; color: var(--k2b-text-muted); font-family: var(--k2b-font-mono); font-size: .75rem; text-align: right; }
+.k2b-ui .k2b-chart-explorer__dimension-value { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 3.5rem; overflow: hidden; color: var(--k2b-text-muted); font-family: var(--k2b-font-mono); font-size: .75rem; text-align: right; }
+.k2b-ui .k2b-chart-explorer__dimension-value > span { grid-area: 1 / 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.k2b-ui .k2b-chart-explorer__dimension-value > [aria-hidden] { visibility: hidden; }
 .k2b-ui .k2b-chart-explorer__steps { position: absolute; grid-column: 1 / 2; inset: 100% 0 auto; z-index: 30; display: flex; flex-wrap: wrap; justify-content: space-between; gap: .125rem; padding: .25rem; border: 1px solid color-mix(in srgb, var(--k2b-border) 70%, transparent); border-radius: .375rem; background: var(--k2b-surface-canvas); color: var(--k2b-text-muted); box-shadow: 0 2px 6px #00000008; visibility: hidden; pointer-events: none; font-size: .625rem; }
 .k2b-ui .k2b-chart-explorer__steps span { padding: .0625rem .1875rem; white-space: nowrap; }
 .k2b-ui .k2b-chart-explorer__steps [data-current="true"] { background: var(--k2b-surface-muted); color: var(--k2b-text); border-radius: .1875rem; font-weight: 500; }

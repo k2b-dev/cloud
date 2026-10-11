@@ -56,10 +56,11 @@ Skills und Projekte erfordern eine Anmeldung. Teile sie mit Nutzern, Gruppen, Di
 5. **Mit realistischen Anfragen testen:** Prüfe, ob der Assistent den Skill bei passenden Anfragen lädt und ihn andernfalls ignoriert. Präzisiere die Beschreibung, wenn der Skill zu oft oder zu selten ausgewählt wird.
 :::
 
-- Importiere eine einzelne `SKILL.md` oder verwende eine ZIP-Datei, wenn der Skill Referenzen enthält. Skripte und Assets werden nicht unterstützt.
+- Importiere eine einzelne `SKILL.md` oder verwende eine ZIP-Datei, wenn der Skill Referenzen enthält. Beim ZIP-Import bleiben `SKILL.md` und unterstützte Markdown-Dateien direkt in `references/` erhalten. Übersprungene Dateien wie Skripte und Assets werden aufgelistet. Cloud führt keine Skripte aus.
 - Teile einen Skill über die Cloud-Zugriffsverwaltung. Personen mit Lesezugriff können ihn verwenden und exportieren, Personen mit Schreibzugriff können ihn bearbeiten und Personen mit Administratorrechten können außerdem den Zugriff verwalten oder den Skill löschen.
 - Skills, die du lesen kannst, sind zunächst für dich aktiviert. Deaktiviere **Für mich aktiviert**, wenn der Assistent einen geteilten Skill nicht verwenden soll. Das ändert den Zugriff anderer Personen nicht.
-- Der Assistent sieht Namen und Beschreibungen deiner aktivierten Skills. Er lädt einen passenden Skill, bevor er dessen Anweisungen anwendet, und liest Referenzen nur bei Bedarf.
+- Setze `disable-model-invocation: true` in `SKILL.md` oder aktiviere **Nur bei Auswahl starten** im Editor, damit der Skill nur startet, wenn jemand ihn mit `/` auswählt.
+- Der Assistent sieht Namen und Beschreibungen deiner aktivierten Skills, die automatisch starten können. Er lädt einen passenden Skill, bevor er dessen Anweisungen anwendet, und liest Referenzen nur bei Bedarf.
 - Ein für eine laufende Anfrage geladener Skill bleibt bei seiner aktuellen Revision. Neue Anfragen verwenden spätere Änderungen. Ein widerrufener Zugriff gilt sofort.
 
 :::warning Folgenreiche Ergebnisse prüfen
