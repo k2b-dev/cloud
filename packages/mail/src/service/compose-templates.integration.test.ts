@@ -1,17 +1,24 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
-import type { DraftEditableContent, MailDraft } from "../contracts";
+import {
+  type ComposeFormattingWarning,
+  type DraftEditableContent,
+  type DraftEditableContentInput,
+  MAX_COMPOSE_FORMATTING_WARNINGS,
+  type MailDraft,
+} from "../contracts";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
 import { grantMailboxAccess, updateMailboxAccess } from "./access";
-import type { MailRequestContext } from "./auth";
+import { actorRefFromRequest, type MailRequestContext } from "./auth";
 import {
   archiveComposeTemplate,
   createComposeTemplate,
   getMailboxComposeStyle,
   listComposeTemplates,
   previewComposeDraft,
+  renderComposeDraft,
   renderComposeSnippet,
   renderComposeSuggestions,
   setComposeSignatureDefault,
@@ -619,6 +626,69 @@ suite("mail compose templates", () => {
     expect(preview.data.formattingWarnings).toEqual([{ code: "unsupported_attribute", element: "span", attribute: "class" }]);
   });
 
+  test("keeps rendering stored designs safe and available while saving stays strict", async () => {
+    const customCss = String.raw`.mail-content { color: #123456; font-family: "\5FAE\8F6F\96C5\9ED1", sans-serif; }
+h1 { background: image-set("https://example.test/a.png" 1x); font-size: 30px; }`;
+    await sql`UPDATE mail.compose_styles SET custom_css = ${customCss} WHERE mailbox_id = ${mailboxId}::uuid`;
+    const designWarnings: ComposeFormattingWarning[] = [
+      { code: "ignored_mailbox_css", property: "font-family" },
+      { code: "ignored_mailbox_css", property: "background" },
+    ];
+    const draft: DraftEditableContentInput = {
+      senderIdentityId,
+      to: [{ name: null, address: "reader@example.test" }],
+      cc: [],
+      bcc: [],
+      subject: "Old design",
+      body: "# Hello\n\n<small>Fine print</small>",
+      format: "markdown",
+    };
+    const preview = await previewComposeDraft({ context: owner, mailboxId, input: { draft, conversationId: null } });
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) return;
+    expect(preview.data.html).toContain("color:#123456");
+    expect(preview.data.html).toContain("font-size:30px");
+    for (const removed of ["\\", "5FAE", "image-set", "example.test"]) expect(preview.data.html).not.toContain(removed);
+    expect(preview.data.formattingWarnings).toEqual([...designWarnings, { code: "unsupported_element", element: "small" }]);
+    for (const renderLiquid of [true, false]) {
+      const rendered = await renderComposeDraft({ mailboxId, draft, actor: actorRefFromRequest(owner), renderLiquid });
+      expect(rendered).toEqual({
+        ok: true,
+        data: { html: preview.data.html, text: preview.data.text, formattingWarnings: designWarnings },
+      });
+    }
+    const capped = await previewComposeDraft({
+      context: owner,
+      mailboxId,
+      input: {
+        draft: { ...draft, body: Array.from({ length: 25 }, (_, i) => `<bad${i}>Text</bad${i}>`).join("\n") },
+        conversationId: null,
+      },
+    });
+    expect(capped.ok).toBe(true);
+    if (!capped.ok) return;
+    expect(capped.data.formattingWarnings).toHaveLength(MAX_COMPOSE_FORMATTING_WARNINGS);
+    expect(capped.data.formattingWarnings.slice(0, 2)).toEqual(designWarnings);
+
+    const style = await getMailboxComposeStyle(owner, mailboxId);
+    expect(style.ok).toBe(true);
+    if (!style.ok) return;
+    expect(style.data.customCss).toBe(customCss);
+    expect(style.data.formattingWarnings).toEqual(designWarnings);
+    const rejected = await updateMailboxComposeStyle({
+      context: owner,
+      mailboxId,
+      input: { expectedRevision: style.data.revision, customCss },
+    });
+    expect(rejected).toMatchObject({ ok: false, error: { status: 400, message: 'CSS value for "font-family" is not allowed' } });
+    const fixed = await updateMailboxComposeStyle({
+      context: owner,
+      mailboxId,
+      input: { expectedRevision: style.data.revision, customCss: ".mail-content { color: #123456; } h1 { font-size: 30px; }" },
+    });
+    expect(fixed).toMatchObject({ ok: true, data: { formattingWarnings: [] } });
+  });
+
   const newContent = () => ({ senderIdentityId, to: [], cc: [], bcc: [], subject: "", body: "" });
 
   const content = (draft: MailDraft): DraftEditableContent => ({
@@ -650,6 +720,43 @@ suite("mail compose templates", () => {
     if (!result.ok) throw new Error(result.error.message);
     return result.data;
   };
+
+  test("a saved design with a rejected value in a .mail-signature rule still previews and sends with the signature", async () => {
+    const chosen = await signature("storeddesign");
+    const [previous] = await sql<{ custom_css: string }[]>`
+      SELECT custom_css FROM mail.compose_styles WHERE mailbox_id = ${mailboxId}::uuid
+    `;
+    if (!previous) throw new Error("Compose style is missing");
+    try {
+      const customCss = String.raw`.mail-signature { color: #52525b; font-family: "\5FAE", sans-serif; }`;
+      await sql`UPDATE mail.compose_styles SET custom_css = ${customCss} WHERE mailbox_id = ${mailboxId}::uuid`;
+      const draft = {
+        ...newContent(),
+        to: [{ name: null, address: "reader@example.test" }],
+        body: "Answer",
+        signatureTemplateId: chosen.id,
+      };
+      const preview = await previewComposeDraft({ context: owner, mailboxId, input: { draft } });
+      expect(preview.ok).toBe(true);
+      if (!preview.ok) return;
+      expect(preview.data.html).toContain('class="mail-signature"');
+      expect(preview.data.html).toContain("Regards storeddesign Ada Owner");
+      expect(preview.data.html).toMatch(/<div class="mail-signature" style="[^"]*color:#52525b/);
+      expect(preview.data.html).not.toContain("5FAE");
+      expect(preview.data.formattingWarnings[0]).toEqual({ code: "ignored_mailbox_css", property: "font-family" });
+      const rendered = await renderComposeDraft({ mailboxId, draft, actor: actorRefFromRequest(owner), renderLiquid: true });
+      expect(rendered).toEqual({
+        ok: true,
+        data: {
+          html: preview.data.html,
+          text: preview.data.text,
+          formattingWarnings: [{ code: "ignored_mailbox_css", property: "font-family" }],
+        },
+      });
+    } finally {
+      await sql`UPDATE mail.compose_styles SET custom_css = ${previous.custom_css} WHERE mailbox_id = ${mailboxId}::uuid`;
+    }
+  });
 
   test("explicit none and signature switching keep the body unchanged", async () => {
     const first = await signature("choicefirst");

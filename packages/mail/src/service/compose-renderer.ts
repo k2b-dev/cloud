@@ -60,7 +60,10 @@ const INLINED_EMAIL_SANITIZE_OPTIONS = {
   textFilter: (text) => text.replace(COMPOSE_SEGMENT_MARKS, ""),
 } satisfies sanitizeHtml.IOptions;
 // A backslash starts a CSS escape, which can spell any function name, such as `u\72l(`.
-const UNSAFE_CSS_VALUE = /(?:url|expression|var|attr)\s*\(|[{}@\\]|[\u0000-\u0008\u000b\u000c\u000e-\u001f]/i;
+// juice decodes character references after this check, so `&` could spell quotes or backslashes.
+const UNSAFE_CSS_VALUE = /(?:url|expression|var|attr)\s*\(|[{}@\\&]|[\u0000-\u0008\u000b\u000c\u000e-\u001f]/i;
+// juice inlines every double quote as a single quote, so a quoted string must not contain the other kind of quote.
+const INLINE_SAFE_CSS_QUOTES = /^(?:[^"']|"[^"']*"|'[^"']*')*$/;
 
 /**
  * The built-in design, inlined before the mailbox CSS. It styles only the message, so its element rules need
@@ -111,6 +114,33 @@ const validateSelector = (selector: string): string | null => {
   }
 };
 
+// Names reach terminals through the CLI: keep printable ASCII only.
+const name = (value: string) => value.replace(/[^\x21-\x7e]/g, "").slice(0, 64) || "?";
+
+const composeCssNodeError = (node: postcss.ChildNode): string | null => {
+  if (node.type === "atrule") return "At-rules are not allowed in email CSS";
+  if (node.type === "rule") {
+    for (const selector of node.selectors) {
+      const error = validateSelector(selector);
+      if (error) return error;
+    }
+    return null;
+  }
+  if (node.type !== "decl") return null;
+  const property = node.prop.toLowerCase();
+  if (!EMAIL_INLINE_STYLE_PROPERTY_SET.has(property)) return `CSS property "${property}" is not allowed`;
+  if (node.important) return "!important is not allowed in email CSS";
+  if (sourceBytes(node.value) > MAX_CSS_VALUE_BYTES) return `CSS value for "${property}" is too long`;
+  if (
+    UNSAFE_CSS_VALUE.test(node.value) ||
+    !INLINE_SAFE_CSS_QUOTES.test(node.value) ||
+    !allowedEmailInlineStyleValue(property, node.value)
+  ) {
+    return `CSS value for "${property}" is not allowed`;
+  }
+  return null;
+};
+
 export const validateComposeCss = (source: string): Result<string> => {
   const css = source.trim();
   if (!css) return ok("");
@@ -129,36 +159,9 @@ export const validateComposeCss = (source: string): Result<string> => {
   let validationError: string | null = null;
   root.walk((node) => {
     if (validationError) return;
-    if (node.type === "atrule") {
-      validationError = "At-rules are not allowed in email CSS";
-      return;
-    }
-    if (node.type === "rule") {
-      ruleCount += 1;
-      for (const selector of node.selectors) {
-        validationError = validateSelector(selector);
-        if (validationError) return;
-      }
-      return;
-    }
-    if (node.type !== "decl") return;
-    declarationCount += 1;
-    const property = node.prop.toLowerCase();
-    if (!EMAIL_INLINE_STYLE_PROPERTY_SET.has(property)) {
-      validationError = `CSS property "${property}" is not allowed`;
-      return;
-    }
-    if (node.important) {
-      validationError = "!important is not allowed in email CSS";
-      return;
-    }
-    if (sourceBytes(node.value) > MAX_CSS_VALUE_BYTES) {
-      validationError = `CSS value for "${property}" is too long`;
-      return;
-    }
-    if (UNSAFE_CSS_VALUE.test(node.value) || !allowedEmailInlineStyleValue(property, node.value)) {
-      validationError = `CSS value for "${property}" is not allowed`;
-    }
+    if (node.type === "rule") ruleCount += 1;
+    if (node.type === "decl") declarationCount += 1;
+    validationError = composeCssNodeError(node);
   });
 
   if (validationError) return fail(err.badInput(validationError));
@@ -167,6 +170,42 @@ export const validateComposeCss = (source: string): Result<string> => {
     return fail(err.badInput(`Email CSS may contain at most ${MAX_CSS_DECLARATIONS} declarations`));
   }
   return ok(root.toString());
+};
+
+/** Keeps safe parts of a stored design so stricter CSS rules never stop a mailbox from sending. */
+export const storedComposeCss = (source: string): { css: string; formattingWarnings: ComposeFormattingWarning[] } => {
+  const css = source.trim();
+  if (!css) return { css: "", formattingWarnings: [] };
+  const ignored = (): { css: string; formattingWarnings: ComposeFormattingWarning[] } => ({
+    css: "",
+    formattingWarnings: [{ code: "ignored_mailbox_css" }],
+  });
+  if (sourceBytes(css) > MAX_CUSTOM_CSS_BYTES) return ignored();
+  try {
+    const root = postcss.parse(css, { from: undefined });
+    const warnings = new Map<string, ComposeFormattingWarning>();
+    const add = (property: string) => {
+      const key = name(property);
+      if (warnings.size < MAX_COMPOSE_FORMATTING_WARNINGS && !warnings.has(key)) {
+        warnings.set(key, { code: "ignored_mailbox_css", property: key });
+      }
+    };
+    root.walk((node) => {
+      if (!composeCssNodeError(node)) return;
+      if (node.type === "decl") add(node.prop.toLowerCase());
+      else if (node.type === "rule") {
+        node.walkDecls((declaration) => {
+          add(declaration.prop.toLowerCase());
+        });
+      } else if (node.type === "atrule") add(`@${node.name}`);
+      node.remove();
+    });
+    const validated = validateComposeCss(root.toString());
+    if (!validated.ok) return ignored();
+    return { css: validated.data, formattingWarnings: [...warnings.values()] };
+  } catch {
+    return ignored();
+  }
 };
 
 export type ComposeRenderContext = {
@@ -191,6 +230,7 @@ export type ComposeRenderContext = {
 };
 
 export type RenderedComposeContent = {
+  formattingWarnings: ComposeFormattingWarning[];
   html: string | null;
   text: string;
 };
@@ -462,9 +502,6 @@ export const renderComposeContent = (params: {
   renderLiquid: boolean;
   signature?: string | null;
 }): Result<RenderedComposeContent> => {
-  const css = validateComposeCss(params.customCss);
-  if (!css.ok) return fail(composeRenderFailure("mailboxStyle"));
-
   const budget = { remainingMs: MAX_COMPOSE_RENDER_MS };
   const renderedSource = params.renderLiquid
     ? renderComposeTemplateSegments(params.body, params.context, params.format, budget)
@@ -483,7 +520,7 @@ export const renderComposeContent = (params: {
     source = [parts.reply, parts.signature, parts.history].filter(Boolean).join("\n\n");
   }
   if (sourceBytes(source) > MAX_RENDERED_SOURCE_BYTES) return fail(composeRenderFailure("tooLarge"));
-  if (params.format === "plain") return ok({ html: null, text: source });
+  if (params.format === "plain") return ok({ html: null, text: source, formattingWarnings: [] });
   const complexity = validateMarkdownSourceComplexity(source);
   if (!complexity.ok) return complexity;
 
@@ -495,7 +532,8 @@ export const renderComposeContent = (params: {
     if (elementCount > MAX_EMAIL_HTML_ELEMENTS) {
       return fail(composeRenderFailure("tooComplex"));
     }
-    const effectiveCss = `${DEFAULT_MAIL_CSS}\n${css.data}`;
+    const css = storedComposeCss(params.customCss);
+    const effectiveCss = `${DEFAULT_MAIL_CSS}\n${css.css}`;
     if (sourceBytes(fragment) + Math.max(elementCount, 1) * sourceBytes(effectiveCss) > MAX_INLINE_WORK_BYTES) {
       return fail(composeRenderFailure("tooComplex"));
     }
@@ -510,6 +548,7 @@ export const renderComposeContent = (params: {
     const html = sanitizeHtml(inlined, INLINED_EMAIL_SANITIZE_OPTIONS);
     if (sourceBytes(html) > MAX_RENDERED_SOURCE_BYTES) return fail(composeRenderFailure("tooLarge"));
     return ok({
+      formattingWarnings: css.formattingWarnings,
       html,
       text: convert(html, {
         wordwrap: false,
@@ -598,12 +637,10 @@ const formattingWarnings = (body: string): ComposeFormattingWarning[] => {
   if (sourceBytes(source) > MAX_RENDERED_SOURCE_BYTES || !validateMarkdownSourceComplexity(source).ok) return [];
 
   const warnings = new Map<string, ComposeFormattingWarning>();
-  const add = (warning: ComposeFormattingWarning) => {
+  const add = (warning: Exclude<ComposeFormattingWarning, { code: "ignored_mailbox_css" }>) => {
     const key = `${warning.code}:${warning.element}:${warning.attribute ?? ""}`;
     if (warnings.size < MAX_COMPOSE_FORMATTING_WARNINGS && !warnings.has(key)) warnings.set(key, warning);
   };
-  // Names come from the body as written and reach terminals through the CLI: keep printable ASCII only.
-  const name = (value: string) => value.replace(/[^\x21-\x7e]/g, "").slice(0, 64) || "?";
 
   const authored: HtmlElement[] = [];
   markdown.marked.walkTokens(markdown.marked.lexer(source), (token) => {

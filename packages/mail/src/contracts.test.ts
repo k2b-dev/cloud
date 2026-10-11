@@ -1,11 +1,16 @@
 import { describe, expect, test } from "bun:test";
+import { z } from "zod";
+import { DraftMutationDataSchema } from "./capability-contracts";
 import {
   activateWorkflowInputSchema,
   actorCommandInputSchema,
   addConversationLocalTagsSchema,
   assignConversationsSchema,
   automaticReplyPreviewInputSchema,
+  type ComposeFormattingWarning,
   cancelScheduledSendInputSchema,
+  composeFormattingWarningSchema,
+  composePreviewSchema,
   conversationTriageInputSchema,
   createAutomaticReplyConfigurationSchema,
   createAutomaticReplySetupSchema,
@@ -21,6 +26,7 @@ import {
   draftContentInputSchema,
   draftEditableContentInputSchema,
   MAIL_CONVERSATION_ASSIGNEE_LIMIT,
+  mailboxComposeStyleSchema,
   mailSearchExpressionSchema,
   mergeConversationsInputSchema,
   messageStateChangeSchema,
@@ -870,4 +876,40 @@ test("assignment schemas bound sets and require users for add and remove", () =>
     assignConversationsSchema.safeParse({ conversationIds: ["Conv01"], assigneeUserIds: [], mode: "replace", assigneeUserId: null })
       .success,
   ).toBeFalse();
+});
+
+describe("compose formatting contracts", () => {
+  test("keeps HTML warnings and adds strict stored-design warnings", () => {
+    const warnings: ComposeFormattingWarning[] = [
+      { code: "unsupported_element", element: "small" },
+      { code: "unsupported_attribute", element: "span", attribute: "class" },
+      { code: "unsupported_link", element: "a" },
+      { code: "ignored_mailbox_css", property: "font-family" },
+      { code: "ignored_mailbox_css", property: "@media" },
+      { code: "ignored_mailbox_css" },
+    ];
+    for (const warning of warnings) expect(composeFormattingWarningSchema.parse(warning)).toEqual(warning);
+    for (const warning of [
+      { code: "ignored_mailbox_css", element: "p" },
+      { code: "ignored_mailbox_css", property: "x".repeat(65) },
+      { code: "unsupported_element", element: "p", property: "color" },
+      { code: "unsupported_element" },
+    ])
+      expect(composeFormattingWarningSchema.safeParse(warning).success).toBe(false);
+  });
+
+  test("requires design warnings on style reads and serializes preview and capability contracts", () => {
+    const style = { mailboxId: "Mail01", customCss: "", revision: 1, updatedAt: "2026-07-17T00:00:00.000Z" };
+    expect(mailboxComposeStyleSchema.safeParse(style).success).toBe(false);
+    expect(mailboxComposeStyleSchema.parse({ ...style, formattingWarnings: [] }).formattingWarnings).toEqual([]);
+    const formattingWarnings: ComposeFormattingWarning[] = [{ code: "ignored_mailbox_css", property: "font-family" }];
+    expect(composePreviewSchema.parse({ html: "<p>Hello</p>", text: "Hello", formattingWarnings }).formattingWarnings).toEqual(
+      formattingWarnings,
+    );
+    for (const schema of [mailboxComposeStyleSchema, composePreviewSchema, DraftMutationDataSchema]) {
+      const serialized = JSON.stringify(z.toJSONSchema(schema));
+      expect(serialized).toContain("ignored_mailbox_css");
+      expect(JSON.parse(serialized)).toBeDefined();
+    }
+  });
 });

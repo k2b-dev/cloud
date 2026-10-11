@@ -92,11 +92,13 @@ describe("MailComposerEditor", () => {
     expect(html).not.toContain("Email leaves out");
   });
 
-  test("lists the HTML that email leaves out below the preview, in English and German", () => {
+  test("lists the formatting that email leaves out below the preview, in English and German", () => {
     const preview: ComposePreview = {
       html: "<p>Preview body</p>",
       text: "Preview body",
       formattingWarnings: [
+        { code: "ignored_mailbox_css", property: "font-family" },
+        { code: "ignored_mailbox_css" },
         { code: "unsupported_element", element: "small" },
         { code: "unsupported_attribute", element: "div", attribute: "style" },
         { code: "unsupported_attribute", element: "span", attribute: "class" },
@@ -104,7 +106,9 @@ describe("MailComposerEditor", () => {
       ],
     };
     const english = renderEditor("markdown", panes("preview", "preview"), false, preview);
-    expect(english).toContain("Email leaves out some of the HTML in this message.");
+    expect(english).toContain("Email leaves out some formatting of this message.");
+    expect(english).toContain("The mailbox email design sets font-family to a value email no longer accepts. Mail ignores it.");
+    expect(english).toContain("Email no longer accepts the mailbox email design, so Mail uses the built-in design.");
     expect(english).toContain("&lt;small> is not supported and was removed. Its text stays.");
     expect(english).toContain("Inline styles on &lt;div> were removed.");
     expect(english).toContain("The class attribute was removed from &lt;span>.");
@@ -112,7 +116,9 @@ describe("MailComposerEditor", () => {
     expect(english.indexOf("<iframe")).toBeLessThan(english.indexOf("Email leaves out"));
 
     const german = renderEditor("markdown", panes("preview", "preview"), false, preview, { locale: "de" });
-    expect(german).toContain("Ein Teil des HTML dieser Nachricht wird in der E-Mail weggelassen.");
+    expect(german).toContain("Ein Teil der Formatierung dieser Nachricht wird in der E-Mail weggelassen.");
+    expect(german).toContain("Das E-Mail-Design des Postfachs setzt font-family auf einen Wert, den E-Mails nicht mehr zulassen.");
+    expect(german).toContain("E-Mails lassen das E-Mail-Design des Postfachs nicht mehr zu, darum verwendet Mail das integrierte Design.");
     expect(german).toContain("Das Attribut class wurde von &lt;span> entfernt.");
   });
 

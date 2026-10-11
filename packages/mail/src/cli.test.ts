@@ -844,12 +844,13 @@ test("compose template and style commands preserve exact source input", async ()
       return api([signatureDefault]);
     }
     if (url.pathname === `/api/mail/mailboxes/${MAILBOX_ID}/compose-style` && request.method === "GET") {
-      return api({ mailboxId: MAILBOX_ID, customCss: "", revision: 1, updatedAt: "2026-07-17T00:00:00.000Z" });
+      return api({ mailboxId: MAILBOX_ID, customCss: "", formattingWarnings: [], revision: 1, updatedAt: "2026-07-17T00:00:00.000Z" });
     }
     if (url.pathname === `/api/mail/mailboxes/${MAILBOX_ID}/compose-style` && request.method === "PUT") {
       return api({
         mailboxId: MAILBOX_ID,
         customCss: ".mail-content { color: #123456; }",
+        formattingWarnings: [],
         revision: 2,
         updatedAt: "2026-07-17T00:00:01.000Z",
       });
@@ -998,7 +999,7 @@ test("compose preview prints what email leaves out on stderr and keeps it in JSO
   expect(human.stdout).toBe("<p>Draft body</p>\n");
   expect(human.stderr).toBe(
     [
-      "Email leaves out some of the HTML in this message.",
+      "Email leaves out some formatting of this message.",
       "  - <small> is not supported and was removed. Its text stays.",
       "  - The class attribute was removed from <span>.",
       "",
@@ -1009,6 +1010,35 @@ test("compose preview prints what email leaves out on stderr and keeps it in JSO
   expect(json.exitCode, json.stderr).toBe(0);
   expect(json.stderr).toBe("");
   expect(JSON.parse(json.stdout).formattingWarnings).toEqual(formattingWarnings);
+});
+
+test("compose style get tells on stderr which design values email ignores and keeps them in JSON", async () => {
+  const style = {
+    mailboxId: MAILBOX_ID,
+    customCss: "p { margin: 0 !important; }",
+    formattingWarnings: [{ code: "ignored_mailbox_css", property: "margin" }],
+    revision: 1,
+    updatedAt: "2026-07-17T00:00:00.000Z",
+  };
+  const server = withMailbox(async (request) => {
+    if (new URL(request.url).pathname.endsWith("/compose-style")) return api(style);
+    return api({ message: "unexpected" }, { status: 500 });
+  });
+  servers.push(server);
+  const origin = `http://127.0.0.1:${server.port}`;
+  const human = await runCli(origin, ["mail", "compose", "style", "get", "--mailbox", MAILBOX_ID]);
+  expect(human.exitCode, human.stderr).toBe(0);
+  expect(human.stdout).toBe(`${style.customCss}\n`);
+  expect(human.stderr).toBe(
+    "This design contains values that email no longer accepts: margin. Messages still send without them. Remove or replace them and save the design.\n",
+  );
+  const german = await runCli(origin, ["--locale", "de", "mail", "compose", "style", "get", "--mailbox", MAILBOX_ID]);
+  expect(german.exitCode, german.stderr).toBe(0);
+  expect(german.stderr).toContain("Dieses Design enthält Werte, die E-Mails nicht mehr zulassen: margin.");
+  const json = await runCli(origin, ["--json", "mail", "compose", "style", "get", "--mailbox", MAILBOX_ID]);
+  expect(json.exitCode, json.stderr).toBe(0);
+  expect(json.stderr).toBe("");
+  expect(JSON.parse(json.stdout)).toEqual(style);
 });
 
 test("compose rendering commands send one validated draft context", async () => {

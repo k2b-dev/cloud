@@ -4,6 +4,7 @@ import {
   confirmDiscardIfDirty,
   dialogCore,
   IconButton,
+  InlineGuidance,
   MarkdownEditor,
   PanelDialog,
   panelDialogFixedOptions,
@@ -18,7 +19,9 @@ import {
 } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
+import { describeIgnoredMailboxCss } from "../../compose-formatting-messages";
 import {
+  type ComposeFormattingWarning,
   type ComposeSignatureDefault,
   type ComposeTemplate,
   type ComposeTemplateKind,
@@ -28,9 +31,25 @@ import {
   type SenderIdentity,
 } from "../../contracts";
 import { readApiError } from "./api-response";
+import { emailDesignPreviewDocument } from "./email-design-preview-document";
 import { mailSettingsMessages } from "./mail-settings-messages";
 
 const TEMPLATE_VARIABLES = Object.keys(composeTemplateVariables);
+
+/** One notice about the saved design; it stays the same while the CSS is edited, so nothing moves. */
+function IgnoredDesignNotice(props: { warnings: ComposeFormattingWarning[] }) {
+  const locale = useLocale();
+  return (
+    <Show when={describeIgnoredMailboxCss(props.warnings, locale())}>
+      {(notice) => (
+        <InlineGuidance tone="warning" icon="ti ti-alert-triangle">
+          {notice()}
+        </InlineGuidance>
+      )}
+    </Show>
+  );
+}
+
 const templateEditorDialogOptions = { ...panelDialogOptions, cancelBehavior: "ignore" as const };
 const emailDesignDialogOptions = { ...panelDialogFixedOptions, cancelBehavior: "ignore" as const };
 
@@ -280,6 +299,7 @@ function EmailDesignEditor(props: {
       />
       <PanelDialog.Body>
         <PanelDialog.Section title={messages().cssAndPreview} subtitle={messages().cssAndPreviewDescription} icon="ti ti-code">
+          <IgnoredDesignNotice warnings={props.style.formattingWarnings} />
           <div class="grid min-w-0 grid-cols-1 gap-3 lg:grid-cols-2">
             <TextInput
               label={messages().mailboxCss}
@@ -298,22 +318,14 @@ function EmailDesignEditor(props: {
                 title={messages().mailboxEmailDesignPreview}
                 sandbox=""
                 class="paper min-h-[22rem] w-full flex-1 bg-white"
-                srcdoc={`<!doctype html><html><head><meta charset="utf-8"><style>
-                  body { margin: 0; padding: 24px; color: #18181b; background: #fff; font: 15px/1.55 system-ui, sans-serif; }
-                  .mail-content { max-width: 640px; margin: 0 auto; }
-                  .mail-signature { margin-top: 16px; }
-                  h1 { margin: 0 0 16px; font-size: 22px; }
-                  p { margin: 0 0 14px; }
-                  a { color: #0f766e; }
-                  blockquote { margin: 16px 0; padding-left: 14px; border-left: 3px solid #d4d4d8; color: #52525b; }
-                  ${customCss().replaceAll("<", "\\3C ")}
-                </style></head><body><main class="mail-content">
-                  <h1>${messages().previewHeading}</h1>
-                  <p>${messages().previewGreeting}</p>
-                  <p>${messages().previewBody}</p>
-                  <blockquote>${messages().previewQuote}</blockquote>
-                  <div class="mail-signature">${messages().previewClosing}<br>${messages().previewTeam}</div>
-                </main></body></html>`}
+                srcdoc={emailDesignPreviewDocument(customCss(), {
+                  heading: messages().previewHeading,
+                  greeting: messages().previewGreeting,
+                  body: messages().previewBody,
+                  quote: messages().previewQuote,
+                  closing: messages().previewClosing,
+                  team: messages().previewTeam,
+                })}
               />
             </div>
           </div>
@@ -562,6 +574,7 @@ export default function MailComposeSettings(props: {
               {messages().editDesign}
             </Button>
           </SettingsGroup.Action>
+          <IgnoredDesignNotice warnings={style().formattingWarnings} />
         </SettingsGroup>
       </Show>
     </div>

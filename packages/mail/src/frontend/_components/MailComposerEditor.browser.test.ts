@@ -104,6 +104,7 @@ const messageStart = async (page: Page) => {
 };
 
 const warnings: ComposeFormattingWarning[] = [
+  { code: "ignored_mailbox_css", property: "font-family" },
   { code: "unsupported_element", element: "small" },
   { code: "unsupported_attribute", element: "span", attribute: "class" },
 ];
@@ -160,8 +161,8 @@ describe("Mail composer preview", () => {
           await page.evaluate((list) => window.setFormattingWarnings(list), warnings);
           const title =
             locale === "de"
-              ? "Ein Teil des HTML dieser Nachricht wird in der E-Mail weggelassen."
-              : "Email leaves out some of the HTML in this message.";
+              ? "Ein Teil der Formatierung dieser Nachricht wird in der E-Mail weggelassen."
+              : "Email leaves out some formatting of this message.";
           const hint = page.locator(".k2b-inline-guidance", { hasText: title });
           await hint.waitFor();
 
@@ -173,7 +174,7 @@ describe("Mail composer preview", () => {
           expect(hintBox.y).toBeGreaterThanOrEqual(shown.y + shown.height - 0.5);
           expect(hintBox.y + hintBox.height).toBeLessThanOrEqual((context.viewport?.height ?? 0) + 0.5);
           expect(hintBox.x + hintBox.width).toBeLessThanOrEqual((context.viewport?.width ?? 0) + 0.5);
-          expect(await hint.locator("li").count()).toBe(2);
+          expect(await hint.locator("li").count()).toBe(3);
 
           // A long list scrolls inside a bounded hint instead of pushing the message away.
           await page.evaluate((list) => window.setFormattingWarnings(list), manyWarnings);

@@ -17,6 +17,7 @@ import {
   type DraftEditableContent,
   type DraftEditableContentInput,
   draftEditableContentInputSchema,
+  MAX_COMPOSE_FORMATTING_WARNINGS,
   type MailboxComposeStyle,
   type RenderComposeSnippetInput,
   renderComposeSnippetInputSchema,
@@ -37,6 +38,7 @@ import {
   type RenderedComposeContent,
   renderComposeContent,
   renderComposeTemplateSource,
+  storedComposeCss,
   validateComposeCss,
   validateComposeTemplateSource,
   withoutSignatureSegments,
@@ -143,6 +145,7 @@ const mapDefault = (row: DbDefault, ids: { mailboxId: string; senderIdentityId: 
 const mapStyle = (row: DbStyle, mailboxId: string): MailboxComposeStyle => ({
   mailboxId,
   customCss: row.custom_css,
+  formattingWarnings: storedComposeCss(row.custom_css).formattingWarnings,
   revision: Number(row.revision),
   updatedAt: toIso(row.updated_at),
 });
@@ -798,7 +801,10 @@ export const previewComposeDraft = async (params: {
   return ok({
     html: rendered.data.html ?? `<pre>${escapeHtml(rendered.data.text)}</pre>`,
     text: rendered.data.text,
-    formattingWarnings: composeFormattingWarnings(params.input.draft.body ?? "", params.input.draft.format ?? "markdown"),
+    formattingWarnings: [
+      ...rendered.data.formattingWarnings,
+      ...composeFormattingWarnings(params.input.draft.body ?? "", params.input.draft.format ?? "markdown"),
+    ].slice(0, MAX_COMPOSE_FORMATTING_WARNINGS),
   });
 };
 

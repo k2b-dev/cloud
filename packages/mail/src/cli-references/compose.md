@@ -109,6 +109,8 @@ Markdown bodies may contain simple HTML. Email keeps `a`, `br`, `code`, `div`, `
 }
 ```
 
+`compose preview` and `compose style get` also report `ignored_mailbox_css` when email ignores parts of the stored mailbox design. Its optional `property` names the CSS property, such as `font-family`, or an at-rule, such as `@media`. Without `property`, Mail ignores the whole custom design and uses the built-in design. Preview lists design warnings before body warnings. Messages still send.
+
 The list holds at most 20 distinct entries. The write still succeeds; rewrite the body in plain Markdown or move styling to the mailbox CSS. Without `--json`, the CLI prints the same list on stderr.
 
 Set or clear a personal default signature for an identity and manage the validated mailbox CSS:
@@ -121,7 +123,9 @@ cld --json mail compose style get
 cld --json mail compose style set --css-file mail.css
 ```
 
-Mailbox CSS rules apply after the built-in design and win for the elements they select: `a { color: #262626; }` restyles every link, and `.mail-content { font-size: 16px; }` styles the whole message. Use `.mail-signature { color: #52525b; }` to style the signature. Selectors may use the elements that email keeps and the `.mail-content` and `.mail-signature` classes; other classes, IDs, pseudo-classes, at-rules, and `!important` are rejected, and so are values that load an image, such as `url()` or `image-set()`, and backslash escapes.
+Mailbox CSS rules apply after the built-in design and win for the elements they select: `a { color: #262626; }` restyles every link, and `.mail-content { font-size: 16px; }` styles the whole message. Use `.mail-signature { color: #52525b; }` to style the signature. Selectors may use the elements that email keeps and the `.mail-content` and `.mail-signature` classes; other classes, IDs, pseudo-classes, at-rules, and `!important` are rejected, and so are values that load an image, such as `url()` or `image-set()`, backslash escapes, `&`, and quoted values that span lines or contain the other kind of quote.
+
+Saving CSS with `compose style set` stays strict. Remove or replace rejected values before saving. A stored design that no longer passes the check keeps its safe parts when rendering, in `.mail-content` and `.mail-signature` rules alike.
 
 Mailbox administrators assign the mailbox default with `cld mail identity add --default-signature <template-id>` or `cld mail identity configure <identity-id> --default-signature <template-id>`. Clear it with `--clear-default-signature`. A personal default takes precedence.
 

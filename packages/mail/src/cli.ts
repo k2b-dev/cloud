@@ -23,7 +23,7 @@ import type { AccessEntry, PermissionLevel, Principal } from "@k2b/cloud/contrac
 import { text } from "@k2b/stdlib";
 import { z } from "zod";
 import type { CalendarInvitationImportResult, CalendarInvitationPreview, SpacesMailDestinationContext } from "./app-integration-contracts";
-import { composeFormattingMessages, describeComposeFormattingWarning } from "./compose-formatting-messages";
+import { composeFormattingMessages, describeComposeFormattingWarning, describeIgnoredMailboxCss } from "./compose-formatting-messages";
 import {
   MAIL_CONTACT_DIRECTORY_DEFAULTS,
   type MailContactDirectoryConfig,
@@ -915,7 +915,7 @@ const readComposeDraftInput = async (input: Parameters<typeof readCliInput>[0]) 
 const createDraft = async (ctx: CloudCliContext, mailboxId: string, flags: Parameters<typeof readDraftContent>[0]): Promise<MailDraft> =>
   readApi(ctx, `/mailboxes/${mailboxId}/drafts`, jsonRequest("POST", await readDraftContent(flags)));
 
-/** Tells what email leaves out of the HTML in a Markdown body. JSON output carries the same list as `formattingWarnings`. */
+/** Tells what formatting email leaves out of a message. JSON output carries the same list as `formattingWarnings`. */
 const printFormattingWarnings = (ctx: CloudCliContext, warnings: ComposeFormattingWarning[] | undefined) => {
   if (!warnings?.length) return;
   ctx.error(composeFormattingMessages.resolve([ctx.options.locale ?? "en"]).t.title);
@@ -3485,6 +3485,8 @@ const specialistCommands = {
         const style = await readApi<MailboxComposeStyle>(ctx, `/mailboxes/${mailbox.id}/compose-style`);
         if (printStructured(ctx, style)) return;
         ctx.print(style.customCss);
+        const ignored = describeIgnoredMailboxCss(style.formattingWarnings, ctx.options.locale);
+        if (ignored) ctx.error(ignored);
       },
     }),
     command("compose style set", {

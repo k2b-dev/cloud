@@ -10,6 +10,7 @@ import {
   renderComposeContent,
   renderComposeTemplateSource,
   splitQuotedHistory,
+  storedComposeCss,
   validateComposeCss,
   validateComposeTemplateSource,
   withoutSignatureSegments,
@@ -250,7 +251,7 @@ describe("compose renderer", () => {
       renderLiquid: true,
     });
 
-    expect(rendered).toEqual({ ok: true, data: { html: null, text: "O'Reilly & Partners" } });
+    expect(rendered).toEqual({ ok: true, data: { html: null, text: "O'Reilly & Partners", formattingWarnings: [] } });
   });
 
   test("accepts known Liquid variables and logic but rejects unknown variables", () => {
@@ -321,12 +322,12 @@ describe("compose renderer", () => {
       context,
       renderLiquid: true,
     });
-    expect(allowed).toEqual({ ok: true, data: { html: null, text: "Ada Lovelace".repeat(100) } });
+    expect(allowed).toEqual({ ok: true, data: { html: null, text: "Ada Lovelace".repeat(100), formattingWarnings: [] } });
 
     // Leftover marks do not count as signatures, however many a hand edit leaves.
     for (const body of [`${"\u2063".repeat(10_000)}text`, `text${"\u2064".repeat(10_000)}`]) {
       const leftovers = renderComposeContent({ body, format: "plain", customCss: "", context, renderLiquid: true });
-      expect(leftovers).toEqual({ ok: true, data: { html: null, text: "text" } });
+      expect(leftovers).toEqual({ ok: true, data: { html: null, text: "text", formattingWarnings: [] } });
     }
   });
 
@@ -436,7 +437,7 @@ describe("compose renderer", () => {
         context: { ...context, actor: { ...context.actor, display_name: "Ada\u2064\u2063 Lovelace" } },
         renderLiquid: true,
       });
-      expect(rendered).toEqual({ ok: true, data: { html: null, text: "Ada Lovelace" } });
+      expect(rendered).toEqual({ ok: true, data: { html: null, text: "Ada Lovelace", formattingWarnings: [] } });
     });
   });
 
@@ -490,6 +491,209 @@ describe("compose renderer", () => {
     expect(validateComposeCss(`.mail-content { color: red; }\n/*${"a".repeat(33 * 1024)}*/`).ok).toBe(false);
   });
 
+  test("rejects raw line breaks inside CSS strings and drops only the unsafe stored declaration", () => {
+    for (const lineBreak of ["\n", "\r"]) {
+      const value = `"a${lineBreak};display:none;position:fixed;inset:0;${lineBreak}"`;
+      const customCss = `p {\n  font-family: ${value};\n}`;
+      expect(validateComposeCss(customCss).ok).toBe(false);
+      const stored = storedComposeCss(`p {\n  color: blue;\n  font-family: ${value};\n}`);
+      expect(stored.css).toContain("color: blue");
+      expect(stored.css).not.toContain("font-family");
+      expect(stored.formattingWarnings).toEqual([{ code: "ignored_mailbox_css", property: "font-family" }]);
+      const rendered = renderComposeContent({ body: "hello", format: "markdown", customCss, context, renderLiquid: false });
+      expect(rendered.ok).toBe(true);
+      if (!rendered.ok) continue;
+      for (const removed of ["display:none", "position", "inset"]) expect(rendered.data.html).not.toContain(removed);
+    }
+  });
+
+  test("rejects mixed quotes inside CSS strings before inlining", () => {
+    for (const customCss of [
+      `p { font-family: "a'; color:red !important; x:'"; }`,
+      `p { font-family: 'a"; color:red !important; x:"'; }`,
+    ]) {
+      expect(validateComposeCss(customCss)).toMatchObject({
+        ok: false,
+        error: { message: 'CSS value for "font-family" is not allowed' },
+      });
+      const stored = storedComposeCss(customCss);
+      expect(stored.css).not.toContain("font-family");
+      expect(stored.formattingWarnings).toEqual([{ code: "ignored_mailbox_css", property: "font-family" }]);
+      const rendered = renderComposeContent({ body: "hello", format: "markdown", customCss, context, renderLiquid: false });
+      expect(rendered.ok).toBe(true);
+      if (!rendered.ok) continue;
+      for (const removed of ["!important", "color:red"]) expect(rendered.data.html).not.toContain(removed);
+    }
+  });
+
+  test("rejects HTML entities in CSS strings before inlining and ignores unsafe stored declarations", () => {
+    for (const selector of [".mail-content", ".mail-signature"]) {
+      for (const value of [
+        `"&apos;;background:u&#92;72l(https://example.test/pixel);x:&apos;"`,
+        `'&quot;;background:u&#x5c;72l(https://example.test/pixel);x:&quot;'`,
+      ]) {
+        const customCss = `${selector} { font-family: ${value}; }`;
+        expect(validateComposeCss(customCss)).toMatchObject({
+          ok: false,
+          error: { message: 'CSS value for "font-family" is not allowed' },
+        });
+        const stored = storedComposeCss(customCss);
+        expect(stored.css).not.toContain("font-family");
+        expect(stored.formattingWarnings).toEqual([{ code: "ignored_mailbox_css", property: "font-family" }]);
+        const rendered = renderComposeContent({
+          body: "Hello",
+          signature: selector === ".mail-signature" ? "Regards" : undefined,
+          format: "markdown",
+          customCss,
+          context,
+          renderLiquid: false,
+        });
+        expect(rendered.ok).toBe(true);
+        if (!rendered.ok) continue;
+        for (const removed of ["example.test", "background"]) expect(rendered.data.html).not.toContain(removed);
+      }
+    }
+  });
+
+  test("allows line breaks outside CSS strings and separate strings with different quotes", () => {
+    for (const css of ["p { font-family: Arial,\n  sans-serif; }", `p { font-family: "Segoe UI", 'Arial', sans-serif; }`]) {
+      expect(validateComposeCss(css).ok).toBe(true);
+    }
+  });
+
+  test("renders old mailbox designs without unsafe values while saving stays strict", () => {
+    const customCss = String.raw`.mail-content { color: #123456; font-family: "\5FAE\8F6F\96C5\9ED1", sans-serif; }
+h1 { background: image-set("https://example.test/a.png" 1x); font-size: 30px; }`;
+    const warnings: ComposeFormattingWarning[] = [
+      { code: "ignored_mailbox_css", property: "font-family" },
+      { code: "ignored_mailbox_css", property: "background" },
+    ];
+    expect(validateComposeCss(customCss)).toMatchObject({
+      ok: false,
+      error: { message: 'CSS value for "font-family" is not allowed' },
+    });
+    const stored = storedComposeCss(customCss);
+    expect(stored.formattingWarnings).toEqual(warnings);
+    expect(validateComposeCss(stored.css).ok).toBe(true);
+    const rendered = renderComposeContent({ body: "# Hello", format: "markdown", customCss, context, renderLiquid: true });
+    expect(rendered.ok).toBe(true);
+    if (!rendered.ok) return;
+    expect(rendered.data.html).toContain("color:#123456");
+    expect(rendered.data.html).toContain("font-size:30px");
+    for (const removed of ["\\", "5FAE", "image-set", "example.test"]) expect(rendered.data.html).not.toContain(removed);
+    expect(rendered.data.formattingWarnings).toEqual(warnings);
+  });
+
+  test("renders signatures with safe stored design values while saving stays strict", () => {
+    const customCss = String.raw`.mail-signature { color: #52525b; font-family: "\5FAE", sans-serif; }`;
+    const rendered = renderComposeContent({
+      body: "Answer",
+      signature: "Regards **Ada**",
+      format: "markdown",
+      customCss,
+      context,
+      renderLiquid: false,
+    });
+    expect(rendered.ok).toBe(true);
+    if (!rendered.ok) return;
+    expect(rendered.data.html).toContain('class="mail-signature"');
+    expect(rendered.data.html).toContain("Regards <strong>Ada</strong>");
+    expect(rendered.data.html).toMatch(/<div class="mail-signature" style="[^"]*color:#52525b/);
+    for (const removed of ["\\", "5FAE"]) expect(rendered.data.html).not.toContain(removed);
+    expect(rendered.data.formattingWarnings).toEqual([{ code: "ignored_mailbox_css", property: "font-family" }]);
+    expect(validateComposeCss(customCss).ok).toBe(false);
+  });
+
+  test("removes consecutive and final bad declarations without losing safe siblings", () => {
+    const stored = storedComposeCss(String.raw`p {
+      color: #123456;
+      background: url(https://example.test/a.png);
+      font-family: u\72l(https://example.test/b.png);
+      position: fixed;
+      font-size: 30px;
+      margin: 0 !important;
+    }`);
+    expect(stored.formattingWarnings).toEqual(
+      ["background", "font-family", "position", "margin"].map((property) => ({ code: "ignored_mailbox_css", property })),
+    );
+    expect(stored.css).toContain("color: #123456");
+    expect(stored.css).toContain("font-size: 30px");
+    for (const removed of ["url", "\\", "position", "!important"]) expect(stored.css).not.toContain(removed);
+    expect(validateComposeCss(stored.css).ok).toBe(true);
+  });
+
+  test("removes at-rules and entire rules with any disallowed selector", () => {
+    const stored = storedComposeCss(`@import "https://example.test/a.css";
+      @media screen { p { color: red; } }
+      #id { color: red; font-size: 20px; }
+      p, a:hover { color: blue; padding: 2px; }
+      .other { margin: 0; }
+      h1 { font-size: 30px; }`);
+    expect(stored.formattingWarnings).toEqual(
+      ["@import", "@media", "color", "font-size", "padding", "margin"].map((property) => ({ code: "ignored_mailbox_css", property })),
+    );
+    expect(stored.css.trim()).toBe("h1 { font-size: 30px; }");
+    expect(validateComposeCss(stored.css).ok).toBe(true);
+  });
+
+  test("shares value limits and selector checks with strict saves", () => {
+    for (const customCss of [
+      `p { font-family: "${"a".repeat(513)}"; color: red; }`,
+      `p${" ".repeat(201)}a { font-family: Arial; } p { color: red; }`,
+      "p { background: var(--color); color: red; }",
+      "p { background: expression(alert(1)); color: red; }",
+      "p { background: attr(data-color); color: red; }",
+    ]) {
+      expect(validateComposeCss(customCss).ok).toBe(false);
+      const stored = storedComposeCss(customCss);
+      expect(stored.formattingWarnings).toHaveLength(1);
+      expect(stored.css).toContain("color: red");
+      expect(validateComposeCss(stored.css).ok).toBe(true);
+    }
+  });
+
+  test("ignores the whole design on parse or size and complexity failures", () => {
+    for (const customCss of [
+      "p { color:",
+      `p { color: red; } /*${"a".repeat(33 * 1024)}*/`,
+      "p { color: red; }".repeat(201),
+      `p { ${"color: red;".repeat(1_001)} }`,
+    ]) {
+      expect(validateComposeCss(customCss).ok).toBe(false);
+      const stored = storedComposeCss(customCss);
+      expect(stored).toEqual({ css: "", formattingWarnings: [{ code: "ignored_mailbox_css" }] });
+      expect(validateComposeCss(stored.css).ok).toBe(true);
+      const rendered = renderComposeContent({ body: "# Hello", format: "markdown", customCss, context, renderLiquid: false });
+      expect(rendered.ok).toBe(true);
+      if (!rendered.ok) continue;
+      expect(rendered.data.html).toContain("font-size:24px");
+      expect(rendered.data.formattingWarnings).toEqual(stored.formattingWarnings);
+    }
+  });
+
+  test("bounds and deduplicates terminal-safe design warning properties", () => {
+    const properties = [
+      "position",
+      "position",
+      "bad\u001bname",
+      "ümlaut",
+      "x".repeat(100),
+      ...Array.from({ length: 30 }, (_, i) => `bad${i}`),
+    ];
+    const stored = storedComposeCss(`p { ${properties.map((property) => `${property}: red;`).join(" ")} }`);
+    expect(validateComposeCss(stored.css).ok).toBe(true);
+    expect(stored.formattingWarnings).toHaveLength(MAX_COMPOSE_FORMATTING_WARNINGS);
+    expect(stored.formattingWarnings.slice(0, 4)).toEqual(
+      ["position", "badname", "mlaut", "x".repeat(64)].map((property) => ({ code: "ignored_mailbox_css", property })),
+    );
+    expect(storedComposeCss(" \n\t ")).toEqual({ css: "", formattingWarnings: [] });
+  });
+
+  test("plain text ignores even unparseable stored CSS without warnings", () => {
+    const rendered = renderComposeContent({ body: "Hello", format: "plain", customCss: "p { color:", context, renderLiquid: false });
+    expect(rendered).toEqual({ ok: true, data: { html: null, text: "Hello", formattingWarnings: [] } });
+  });
+
   test("rejects CSS work that would expand excessively during inlining", () => {
     const customCss = Array.from(
       { length: 20 },
@@ -523,7 +727,7 @@ describe("compose renderer", () => {
       renderLiquid: true,
     });
 
-    expect(rendered).toEqual({ ok: true, data: { html: null, text: "Hello Ada Lovelace" } });
+    expect(rendered).toEqual({ ok: true, data: { html: null, text: "Hello Ada Lovelace", formattingWarnings: [] } });
   });
 
   test("keeps phone links and drops a tel: link that holds no phone number", () => {
@@ -636,7 +840,9 @@ describe("compose renderer", () => {
     ]);
     const many = Array.from({ length: 50 }, (_, index) => `<x-tag${index}>t</x-tag${index}>`).join(" ");
     expect(composeFormattingWarnings(many, "markdown")).toHaveLength(MAX_COMPOSE_FORMATTING_WARNINGS);
-    expect(composeFormattingWarnings(`<${"x".repeat(200)}>t`, "markdown")[0]?.element).toHaveLength(64);
+    const warning = composeFormattingWarnings(`<${"x".repeat(200)}>t`, "markdown")[0];
+    expect(warning?.code).toBe("unsupported_element");
+    if (warning && warning.code !== "ignored_mailbox_css") expect(warning.element).toHaveLength(64);
   });
 });
 
@@ -696,7 +902,7 @@ describe("separate draft signatures", () => {
     const params = { signature: "Regards {{ sender.email }}", format: "plain" as const, customCss: "", context, renderLiquid: false };
     expect(renderComposeContent({ ...params, body: "Answer\n\nAda wrote:\n> Original" })).toEqual({
       ok: true,
-      data: { html: null, text: "Answer\n\nRegards support@example.test\n\nAda wrote:\n> Original" },
+      data: { html: null, text: "Answer\n\nRegards support@example.test\n\nAda wrote:\n> Original", formattingWarnings: [] },
     });
     expect(renderComposeContent({ ...params, body: "> Original\n\nAnswer" })).toMatchObject({
       ok: true,
