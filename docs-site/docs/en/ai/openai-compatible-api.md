@@ -120,10 +120,13 @@ lines.
 
 Quota rejection and provider failure before the first text arrive as HTTP JSON
 errors. A provider failure after text arrives as one `data: {"error": {...}}`
-event; the stream then closes without `[DONE]`. With and without streaming, a
-provider that sends nothing for 60 seconds before or during its answer fails
-the request with `upstream_error`. Client disconnection cancels the provider
-call. Missing usage after cancellation is booked as an estimate through the
+event; the stream then closes without `[DONE]`. Cloud keeps the request open
+while the provider makes progress. With and without streaming, a provider that
+sends nothing for 60 seconds before or during its answer fails the request with
+`upstream_error`. The gateway waits at most 5 minutes for response headers, so
+a non-streaming answer must be complete within that time. Use `stream: true`
+for longer answers. Client disconnection cancels the provider call. Missing
+usage after cancellation is booked as an estimate through the
 normal inference accounting.
 
 ## Limits and usage

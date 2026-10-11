@@ -6,15 +6,20 @@ import { streamSSE } from "hono/streaming";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { type AuthContext, getLocale, rateLimit } from "../server";
+import { REQUEST_IDLE_TIMEOUT_SECONDS, setRequestTimeout } from "../server/request-timeout";
 import { authenticateModelsOnlyCredential } from "../services/identity/models-only-auth";
 import { coreSettings } from "../services/settings/api";
 import { listAssistantAiModels } from "./assistant-models";
 import { type OpenAiErrorCode, openAiApiMessages } from "./openai-api-messages";
 import { acquire } from "./openai-api-slots";
 import { personalAiModelPolicy } from "./personal-agent";
+import { PROVIDER_TIMEOUTS } from "./provider";
 import { inferenceProvider } from "./quota-provider";
 import { AiQuotaError } from "./quotas";
 import { resolveAiModel } from "./settings";
+
+// Leave time for the provider's silence timeout to reach the client as a 502 JSON error.
+const PROVIDER_WAIT_SECONDS = Math.ceil(Math.max(PROVIDER_TIMEOUTS.firstByteMs, PROVIDER_TIMEOUTS.idleMs) / 1000) + 10;
 
 type ErrorType =
   | "invalid_request_error"
@@ -246,6 +251,7 @@ export const createAiOpenAiRoutes = (dependencies: Dependencies = {}) => {
           if (!data.stream) {
             try {
               request.signal?.throwIfAborted();
+              setRequestTimeout(c, PROVIDER_WAIT_SECONDS);
               events = provider.stream(request)[Symbol.asyncIterator]();
               try {
                 const text: string[] = [];
@@ -253,6 +259,7 @@ export const createAiOpenAiRoutes = (dependencies: Dependencies = {}) => {
                   request.signal?.throwIfAborted();
                   const step = await events.next();
                   if (step.done) break;
+                  setRequestTimeout(c, PROVIDER_WAIT_SECONDS);
                   const delta = readEvent(step.value);
                   if (delta !== undefined) text.push(delta);
                 }
@@ -285,6 +292,7 @@ export const createAiOpenAiRoutes = (dependencies: Dependencies = {}) => {
           let ended = false;
           try {
             request.signal?.throwIfAborted();
+            setRequestTimeout(c, PROVIDER_WAIT_SECONDS);
             events = provider.stream(request)[Symbol.asyncIterator]();
             // Admission and failures before text still get an HTTP JSON error, before SSE commits headers.
             while (first === undefined) {
@@ -293,6 +301,7 @@ export const createAiOpenAiRoutes = (dependencies: Dependencies = {}) => {
                 ended = true;
                 break;
               }
+              setRequestTimeout(c, PROVIDER_WAIT_SECONDS);
               first = readEvent(step.value);
             }
           } catch (error) {
@@ -354,6 +363,7 @@ export const createAiOpenAiRoutes = (dependencies: Dependencies = {}) => {
             }
           });
         } finally {
+          setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
           if (ownsSlot) await slot.release();
         }
       },

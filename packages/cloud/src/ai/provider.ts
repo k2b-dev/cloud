@@ -3,7 +3,7 @@ import { anthropic, gemini, mistral, ollama, openAICompatible, openai, openroute
 import type { AiModelProfile } from "./types";
 
 /** Bound provider stalls while allowing long-context requests up to 60s to begin streaming. */
-const PROVIDER_TIMEOUTS = { firstByteMs: 60_000, idleMs: 60_000 } as const;
+export const PROVIDER_TIMEOUTS = { firstByteMs: 60_000, idleMs: 60_000 } as const;
 
 /**
  * Reasoning for structured tasks and compaction: the requests every provider accepted before Nessi 0.17. A global

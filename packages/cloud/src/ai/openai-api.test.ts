@@ -1,10 +1,12 @@
 import { afterAll, afterEach, describe, expect, spyOn, test } from "bun:test";
 import type { Provider } from "@k2b/nessi";
 import { type GenerateRequest, openAICompatible, type StreamEvent } from "@k2b/nessi/ai";
+import { REQUEST_IDLE_TIMEOUT_SECONDS } from "../server/request-timeout";
 import { buildProjectedUser } from "../services/session/user";
 import { coreSettings } from "../services/settings/api";
 import { createAiOpenAiRoutes } from "./openai-api";
 import { checkOpenAiApiMessages } from "./openai-api-messages";
+import { PROVIDER_TIMEOUTS } from "./provider";
 import { inferenceProvider } from "./quota-provider";
 import { AiQuotaError } from "./quotas";
 import type { AiModelProfile } from "./types";
@@ -141,6 +143,88 @@ function fixture(
 }
 
 describe("models-only OpenAI-compatible API", () => {
+  test("slow first provider events reach both JSON and SSE clients over Bun HTTP", async () => {
+    const f = fixture({
+      stream: async function* () {
+        await Bun.sleep(13_000);
+        yield* textEvents;
+      },
+    });
+    const server = Bun.serve({ port: 0, fetch: f.app.fetch });
+    try {
+      const [json, sse] = await Promise.all(
+        [false, true].map(async (stream) => {
+          const response = await fetch(new URL("/chat/completions", server.url), {
+            method: "POST",
+            signal: AbortSignal.timeout(25_000),
+            headers: { authorization: "Bearer models-key", "content-type": "application/json" },
+            body: JSON.stringify({ model: profile.id, messages: [{ role: "user", content: "Hi" }], stream }),
+          });
+          expect(response.status).toBe(200);
+          return response.text();
+        }),
+      );
+      expect(JSON.parse(json ?? "").choices[0].message.content).toBe("Hello!");
+      expect(sse).toContain('"object":"chat.completion.chunk"');
+      expect(sse).toContain('"content":"Hello"');
+      expect(sse).toContain('"content":"!"');
+      expect(sse).toEndWith("data: [DONE]\n\n");
+      expect(f.releases()).toBe(2);
+    } finally {
+      await server.stop(true);
+    }
+  }, 30_000);
+
+  test.each([false, true])("restarts the provider wait only before answering (stream: %s)", async (stream) => {
+    const f = fixture();
+    const seconds: number[] = [];
+    const wait = Math.ceil(Math.max(PROVIDER_TIMEOUTS.firstByteMs, PROVIDER_TIMEOUTS.idleMs) / 1000) + 10;
+    expect(wait).toBe(70);
+    const response = await f.app.request(
+      "/chat/completions",
+      {
+        method: "POST",
+        headers: { authorization: "Bearer models-key", "content-type": "application/json" },
+        body: JSON.stringify({ model: profile.id, messages: [{ role: "user", content: "Hi" }], stream }),
+      },
+      { timeout: (_req: Request, value: number) => seconds.push(value) },
+    );
+    expect(response.status).toBe(200);
+    await response.text();
+    // Streaming commits after the sixth event (the first text); later SSE events use keepalives.
+    expect(seconds).toEqual([...Array.from({ length: 1 + (stream ? 6 : textEvents.length) }, () => wait), REQUEST_IDLE_TIMEOUT_SECONDS]);
+  });
+
+  test("body validation never raises the request timeout", async () => {
+    const f = fixture();
+    const seconds: number[] = [];
+    const response = await f.app.request(
+      "/chat/completions",
+      { method: "POST", headers: { authorization: "Bearer models-key", "content-type": "application/json" }, body: "{}" },
+      { timeout: (_req: Request, value: number) => seconds.push(value) },
+    );
+    expect(response.status).toBe(400);
+    expect(seconds).toEqual([REQUEST_IDLE_TIMEOUT_SECONDS]);
+    expect(f.requests).toHaveLength(0);
+  });
+
+  test.each([false, true])("restores the request timeout after a provider error (stream: %s)", async (stream) => {
+    const f = fixture({ events: [issue] });
+    const seconds: number[] = [];
+    const response = await f.app.request(
+      "/chat/completions",
+      {
+        method: "POST",
+        headers: { authorization: "Bearer models-key", "content-type": "application/json" },
+        body: JSON.stringify({ model: profile.id, messages: [{ role: "user", content: "Hi" }], stream }),
+      },
+      { timeout: (_req: Request, value: number) => seconds.push(value) },
+    );
+    expect(response.status).toBe(502);
+    expect(seconds).toEqual([70, 70, REQUEST_IDLE_TIMEOUT_SECONDS]);
+    expect(f.releases()).toBe(1);
+  });
+
   test("translation catalog covers both languages", () => expect(checkOpenAiApiMessages()).toEqual([]));
   test("checks the operator switch on every request before authentication", async () => {
     const f = fixture({ enabled: false });
