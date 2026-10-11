@@ -31,6 +31,7 @@ import {
   type SenderIdentity,
 } from "../../contracts";
 import { readApiError } from "./api-response";
+import { emailDesignPreviewDocument } from "./email-design-preview-document";
 import { mailSettingsMessages } from "./mail-settings-messages";
 
 const TEMPLATE_VARIABLES = Object.keys(composeTemplateVariables);
@@ -313,21 +314,14 @@ function EmailDesignEditor(props: {
                 title={messages().mailboxEmailDesignPreview}
                 sandbox=""
                 class="paper min-h-[22rem] w-full flex-1 bg-white"
-                srcdoc={`<!doctype html><html><head><meta charset="utf-8"><style>
-                  body { margin: 0; padding: 24px; color: #18181b; background: #fff; font: 15px/1.55 system-ui, sans-serif; }
-                  .mail-content { max-width: 640px; margin: 0 auto; }
-                  h1 { margin: 0 0 16px; font-size: 22px; }
-                  p { margin: 0 0 14px; }
-                  a { color: #0f766e; }
-                  blockquote { margin: 16px 0; padding-left: 14px; border-left: 3px solid #d4d4d8; color: #52525b; }
-                  ${customCss().replaceAll("<", "\\3C ")}
-                </style></head><body><main class="mail-content">
-                  <h1>${messages().previewHeading}</h1>
-                  <p>${messages().previewGreeting}</p>
-                  <p>${messages().previewBody}</p>
-                  <blockquote>${messages().previewQuote}</blockquote>
-                  <p>${messages().previewClosing}<br>${messages().previewTeam}</p>
-                </main></body></html>`}
+                srcdoc={emailDesignPreviewDocument(customCss(), {
+                  heading: messages().previewHeading,
+                  greeting: messages().previewGreeting,
+                  body: messages().previewBody,
+                  quote: messages().previewQuote,
+                  closing: messages().previewClosing,
+                  team: messages().previewTeam,
+                })}
               />
             </div>
           </div>
