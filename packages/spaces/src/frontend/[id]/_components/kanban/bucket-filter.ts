@@ -44,7 +44,7 @@ export const kanbanBucketFilter = (params: {
     search: filter.search || undefined,
     sort: "column",
     sortDesc: false,
-    groupBy: "column",
+    groupBy: "none",
     page: params.page,
     pageSize: params.pageSize,
   };

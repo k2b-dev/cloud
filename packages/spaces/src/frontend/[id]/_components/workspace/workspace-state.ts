@@ -3,6 +3,7 @@ import { dates as calendar, type DateContext } from "@k2b/stdlib";
 import { orderBoardColumns } from "@/board-columns";
 import {
   type CalendarItem,
+  type ItemFilter,
   type ItemListResult,
   ResourceShortIdSchema,
   type SpaceDetail,
@@ -157,7 +158,7 @@ const projectKanbanBuckets = async (buckets: KanbanBucketInitial[], columnIds: M
   });
 };
 
-const toListFilter = (filter: FilterState) => ({
+const toListFilter = (filter: FilterState): ItemFilter => ({
   type: filter.type,
   status: filter.status,
   activity: filter.activity,
@@ -169,7 +170,7 @@ const toListFilter = (filter: FilterState) => ({
   search: filter.search || undefined,
   sort: filter.sort,
   sortDesc: filter.sortDesc,
-  groupBy: filter.groupBy,
+  groupBy: "none",
   page: filter.page,
   pageSize: LIST_PAGE_SIZE,
 });
@@ -187,7 +188,8 @@ const loadListItems = async (params: {
 
   return spacesService.item.listFiltered({
     spaceId: params.spaceId,
-    filter: toListFilter(params.filter),
+    // The table shows flat rows, so only the list orders and counts by group.
+    filter: { ...toListFilter(params.filter), groupBy: params.currentView === "list" ? params.filter.groupBy : "none" },
     currentUserId: params.userId,
     dateConfig: params.dateConfig,
   });

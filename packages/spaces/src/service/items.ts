@@ -1065,6 +1065,7 @@ export const listFiltered = async (params: {
 
   // Group before pagination, then apply the selected sort within each group.
   // These keys match the list's groups; resource IDs remain internal until projection.
+  const sortClause = orderClause;
   let groupKey = sql`COALESCE(i.priority, 'none')`;
   switch (groupBy) {
     case "priority":
@@ -1075,7 +1076,8 @@ export const listFiltered = async (params: {
       orderClause = sql`c.rank ASC, ${orderClause}`;
       break;
     case "tag":
-      // Space tags are ordered by name. Multi-tag items use their first tag for pagination.
+      // Space tags are ordered by name. Pages follow each item's first tag; the rows of a page come back in the
+      // selected sort, because an item with several tags also shows in its other tag groups.
       orderClause = sql`(SELECT MIN(t.name) FROM spaces.item_tags it JOIN spaces.tags t ON t.id = it.tag_id WHERE it.item_id = i.id) ASC NULLS LAST, ${orderClause}`;
       break;
     case "deadline": {
@@ -1134,9 +1136,14 @@ export const listFiltered = async (params: {
            i.created_by, i.created_at, i.updated_at
     FROM spaces.items i
     LEFT JOIN spaces.columns c ON i.column_id = c.id
-    WHERE ${conditions}
-    ORDER BY ${orderClause}
-    LIMIT ${pageSize} OFFSET ${offset}
+    WHERE i.id IN (
+      SELECT i.id FROM spaces.items i
+      LEFT JOIN spaces.columns c ON i.column_id = c.id
+      WHERE ${conditions}
+      ORDER BY ${orderClause}
+      LIMIT ${pageSize} OFFSET ${offset}
+    )
+    ORDER BY ${groupBy === "tag" ? sortClause : orderClause}
   `;
 
   const items = await hydrateRelations(rows.map(mapToItem));

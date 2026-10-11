@@ -287,6 +287,14 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
       if (snapshot.kind === "list") expect(snapshot.itemsResult.items[0]?.id).toBe(ITEM_SHORT_ID);
     });
 
+    test("groups only the list; the table keeps the selected sort across pages", async () => {
+      const request = { user: { id: USER_ID, roles: ["user" as const] }, spaceId: SPACE_ID, spaceShortId: SPACE_SHORT_ID };
+      await loadSpacesViewSnapshot({ ...request, href: `/app/spaces/${SPACE_SHORT_ID}?view=list&groupBy=tag&sort=title` });
+      await loadSpacesViewSnapshot({ ...request, href: `/app/spaces/${SPACE_SHORT_ID}?view=table&groupBy=tag&sort=title` });
+
+      expect(listedFilters.map((filter) => filter.groupBy)).toEqual(["tag", "none"]);
+    });
+
     test("narrows every Kanban column by the board filter and reports what the filter hides", async () => {
       const snapshot = await loadSpacesViewSnapshot({
         user: { id: USER_ID, roles: ["user"] },

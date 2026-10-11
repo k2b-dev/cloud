@@ -219,10 +219,13 @@ suite("Spaces grouped pagination", () => {
       const tagFilter = {
         groupBy: "tag",
         sort: "title",
-        sortDesc: true,
         itemIds: [inserted[0]!.short_id, inserted[3]!.short_id, inserted[4]!.short_id],
       } satisfies Partial<ItemFilter>;
-      expect((await list(tagFilter)).items.map((item) => item.title)).toEqual(["Soon low", "Later urgent", "Overdue"]);
+      // Pages follow the first tag (Alpha, Beta, no tag), but a page keeps the title sort: Beta lists
+      // "Later urgent" before the multi-tag "Soon low".
+      const tagTitles = async (filter: Partial<ItemFilter>) => (await list({ ...tagFilter, ...filter })).items.map((item) => item.title);
+      expect(await tagTitles({})).toEqual(["Later urgent", "Overdue", "Soon low"]);
+      expect([...(await tagTitles({ pageSize: 1 })), ...(await tagTitles({ pageSize: 1, page: 2 }))]).toEqual(["Soon low", "Later urgent"]);
       const tagPage = await list({ ...tagFilter, pageSize: 1 });
       const publicTags = await projectItemListResult(tagPage, "tag");
       expect(publicTags.groupCounts).toEqual({ [tags[0]!.short_id]: 2, [tags[1]!.short_id]: 1, none: 1 });
