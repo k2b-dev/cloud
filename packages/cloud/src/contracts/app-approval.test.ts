@@ -1,10 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import {
   APP_APPROVAL_PROTOCOL,
+  type AppActionView,
+  AppActionViewSchema,
   type AppDeviceProof,
   AppDevicePublicKeySchema,
   AppDeviceRequestSchema,
   AppPairingClaimSchema,
+  appActionDigest,
+  appActionDigestMessage,
   appDeviceProofMessage,
   appPairingLink,
   appPairingProofMessage,
@@ -114,4 +118,75 @@ describe("app approval wire encoding", () => {
     expect(AppPairingClaimSchema.parse(claim).name).toBe("Phone");
     expect(AppPairingClaimSchema.safeParse({ ...claim, name: "a".repeat(81) }).success).toBe(false);
   });
+});
+
+const actionView: AppActionView = {
+  actionId: id,
+  app: { id: "mail", name: "Mail" },
+  requester: { app: { id: "assistant", name: "Assistant" }, title: "A letter" },
+  assurance: "confirm",
+  sentence: "Send draft",
+  message: "Send this letter?",
+  details: [{ label: "When", value: "2026-10-11", format: "date" }],
+  truncated: false,
+  createdAt: "2026-10-11T10:00:00.000Z",
+  expiresAt: "2026-10-12T10:00:00.000Z",
+  argsDigest: "stored-args-digest",
+  digest: coordinate,
+};
+
+test("Action proof appendices bind the id, view digest and decision", () => {
+  const base = [APP_APPROVAL_PROTOCOL, "device", proof.issuer, id, id, 100, 160];
+  expect(JSON.parse(appDeviceProofMessage({ ...proof, command: { operation: "action", actionId: id } }))).toEqual([...base, "action", id]);
+  expect(
+    JSON.parse(appDeviceProofMessage({ ...proof, command: { operation: "act", actionId: id, digest: coordinate, decision: "deny" } })),
+  ).toEqual([...base, "act", id, coordinate, "deny"]);
+});
+
+test("the Action digest binds every shown field and the stored input", async () => {
+  expect(JSON.parse(appActionDigestMessage(proof.issuer, actionView))).toEqual([
+    "cloud-action-v1",
+    proof.issuer,
+    id,
+    "mail",
+    "Mail",
+    "assistant",
+    "Assistant",
+    "A letter",
+    "confirm",
+    "Send draft",
+    "Send this letter?",
+    [["When", "2026-10-11", "date"]],
+    false,
+    actionView.createdAt,
+    actionView.expiresAt,
+    "stored-args-digest",
+  ]);
+  const digest = await appActionDigest(proof.issuer, actionView);
+  const changes: Partial<AppActionView>[] = [
+    { sentence: "Delete draft" },
+    { message: "Changed" },
+    { app: { ...actionView.app, name: "Post" } },
+    { requester: { ...actionView.requester, title: "Other chat" } },
+    { details: [{ label: "When", value: "2026-10-12", format: "date" }] },
+    { details: [{ label: "When", value: "2026-10-11" }] },
+    { truncated: true },
+    { expiresAt: "2026-10-13T10:00:00.000Z" },
+    { argsDigest: "changed-input" },
+  ];
+  for (const change of changes) expect(await appActionDigest(proof.issuer, { ...actionView, ...change })).not.toBe(digest);
+  expect(await appActionDigest("https://other.example", actionView)).not.toBe(digest);
+});
+
+test("Action views reject bidi overrides and newlines in every shown text field", () => {
+  for (const unsafe of ["unsafe\u202e", "unsafe\ntext"]) {
+    for (const change of [
+      { sentence: unsafe },
+      { message: unsafe },
+      { app: { ...actionView.app, name: unsafe } },
+      { requester: { ...actionView.requester, title: unsafe } },
+      { details: [{ label: "Text", value: unsafe }] },
+    ])
+      expect(AppActionViewSchema.safeParse({ ...actionView, ...change }).success).toBe(false);
+  }
 });

@@ -706,6 +706,149 @@ test.each(["chart", "present"] as const)("a %s group prints titles and every cha
   expect(output.ordered.filter((entry) => entry === "table")).toHaveLength(2);
 });
 
+test("presented stats, details and reference tables print shared text in stream order", async () => {
+  const { cloudAiViewSummary } = await import("@k2b/cloud/ai/browser");
+  const ref = { type: "spaces.item", id: "task-1", title: "Check invoice" };
+  const views = [
+    {
+      view: "stats",
+      title: "Overview",
+      subtitle: "This month",
+      items: [
+        {
+          label: "Amount\x1b[31m",
+          value: 12.5,
+          format: { style: "currency", currency: "EUR", decimals: 2 },
+          delta: 2.5,
+          better: "up",
+          sub: "Month",
+          sparkline: [10, 12.5],
+        },
+        { label: "State", value: "OK" },
+      ],
+    },
+    {
+      view: "details",
+      title: "Record",
+      subtitle: "Checked",
+      items: [
+        { label: "Task", type: "ref", value: ref },
+        { label: "Id", type: "ref", value: { type: ref.type, id: "task-2" } },
+        { label: "Amount", type: "number", value: 12.5 },
+        { label: "Empty", type: "text", value: null },
+      ],
+    },
+    {
+      view: "table",
+      title: "Tasks",
+      columns: [{ id: "task", label: "Task", type: "ref" }],
+      rows: [{ task: ref }, { task: { type: ref.type, id: "task-2" } }, { task: null }],
+      footer: { task: ref },
+      sort: { column: "task", direction: "asc" },
+    },
+  ] satisfies import("@k2b/cloud/ai/browser").CloudAiView[];
+  const expected = [
+    {
+      rows: [
+        { label: "Amount\\u001b[31m", value: "€12.50 (+€2.50) · Month" },
+        { label: "State", value: "OK" },
+      ],
+      columns: [
+        { key: "label", label: "Field" },
+        { key: "value", label: "Value" },
+      ],
+    },
+    {
+      rows: [
+        { label: "Task", value: "Check invoice (spaces.item:task-1)" },
+        { label: "Id", value: "task-2 (spaces.item:task-2)" },
+        { label: "Amount", value: "12.5" },
+        { label: "Empty", value: "" },
+      ],
+      columns: [
+        { key: "label", label: "Field" },
+        { key: "value", label: "Value" },
+      ],
+    },
+    {
+      rows: [
+        { task: "Check invoice (spaces.item:task-1)" },
+        { task: "task-2 (spaces.item:task-2)" },
+        { task: "" },
+        { task: "Check invoice (spaces.item:task-1)" },
+      ],
+      columns: [{ key: "task", label: "Task" }],
+    },
+  ];
+  for (const [index, view] of views.entries()) {
+    const path = `/views/w1-${index}.view.json`;
+    const block: AiTurnBlock = {
+      id: "w1",
+      kind: "tool",
+      name: "present",
+      callId: "w1",
+      args: { path },
+      status: "completed",
+      result: { path, view: cloudAiViewSummary(view) },
+    };
+    const output = await run(
+      [[{ ...wire(), type: "block_set", block }, { ...wire(), type: "block_set", block }, finished([])]],
+      "text",
+      undefined,
+      undefined,
+      "en-US",
+      Response.json(view, { headers: { "X-Cloud-Ai-File-Origin": "assistant" } }),
+    );
+    const table = expected[index];
+    if (!table) throw new Error("Missing expected table");
+    expect(output.tables).toEqual([table]);
+    expect(output.printed).toContain(view.title);
+    if (view.subtitle) expect(output.printed).toContain(view.subtitle);
+    expect(output.ordered.indexOf(`print:${view.title}`)).toBeLessThan(output.ordered.indexOf("table"));
+    expect(JSON.stringify(output.tables)).not.toContain("\x1b");
+  }
+});
+
+test("stats and details summaries reject a different saved view kind", async () => {
+  const { cloudAiViewSummary } = await import("@k2b/cloud/ai/browser");
+  const stats = {
+    view: "stats",
+    title: "Stats",
+    items: [{ label: "Count", value: 12 }],
+  } satisfies import("@k2b/cloud/ai/browser").CloudAiStatsView;
+  const details = {
+    view: "details",
+    title: "Details",
+    items: [{ label: "Count", type: "number", value: 12 }],
+  } satisfies import("@k2b/cloud/ai/browser").CloudAiDetailsView;
+  for (const [summary, view] of [
+    [stats, details],
+    [details, stats],
+  ]) {
+    if (!summary || !view) throw new Error("Missing test view");
+    const path = "/views/mismatch-w1.view.json";
+    const block: AiTurnBlock = {
+      id: "w1",
+      kind: "tool",
+      callId: "w1",
+      name: "present",
+      args: { path },
+      status: "completed",
+      result: { path, view: cloudAiViewSummary(summary) },
+    };
+    const output = await run(
+      [[{ ...wire(), type: "block_set", block }, finished([])]],
+      "text",
+      undefined,
+      undefined,
+      "en-US",
+      Response.json(view, { headers: { "X-Cloud-Ai-File-Origin": "assistant" } }),
+    );
+    expect(output.tables).toHaveLength(0);
+    expect(output.printed).toContain(`View unavailable: ${path}`);
+  }
+});
+
 test("inline local tools run once across duplicate state snapshots and finish on the same stream", async () => {
   let count = 0;
   const tool: Extract<AiTurnBlock, { kind: "tool" }> = {

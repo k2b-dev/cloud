@@ -51,24 +51,21 @@ mock.module("./vault-storage", () => ({
   },
 }));
 const { createAuthenticator } = await import("./authenticator");
+const { appActionDigest } = await import("../../../packages/cloud/src/contracts/app-approval");
 const { bindingId, storage } = await import("./storage");
 
 const issuer = "https://cloud.example.org";
 const account = { uid: "vkolb", displayName: "Valentin Kolb", mail: "valentin@example.org" };
 const pairedAt = "2026-09-01T10:00:00.000Z";
 const operations: string[] = [];
+let supportsActions = false;
+let actStatus = 200;
+let dropAct = false;
 const vault: Vault = {
   header: () => undefined,
-  protectedByPin: () => false,
   status: () => "open",
-  lock: () => {},
   unlock: async () => {},
   setup: async () => {},
-  verify: async () => {
-    throw new Error("not used");
-  },
-  change: async () => {},
-  addPin: async () => {},
   reset: async () => {},
   cancelPending: () => {},
   retryAfter: () => 0,
@@ -83,6 +80,9 @@ beforeEach(() => {
   tables.clear();
   operations.length = 0;
   otherTab = undefined;
+  supportsActions = false;
+  actStatus = 200;
+  dropAct = false;
   // The Cloud: discovery, then signed device commands. Signatures are the SDK's concern and are not checked here.
   globalThis.fetch = Object.assign(
     async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -95,10 +95,19 @@ beforeEach(() => {
           appOrigin: location.origin,
           algorithm: "ES256",
           limits: appApproval.limits,
+          ...(supportsActions ? { features: ["actions"] } : {}),
         });
       const command: { operation: string; decision?: string } = JSON.parse(String(init?.body)).proof.command;
       operations.push(command.operation);
       if (command.operation === "account") return Response.json({ account, device: { name: "iPhone", createdAt: pairedAt } });
+      if (command.operation === "inbox")
+        return Response.json({ logins: [], actions: [actionSummary()], moreActions: 2, pollAfterSeconds: 5 });
+      if (command.operation === "action") return Response.json(actionView());
+      if (command.operation === "act") {
+        if (dropAct) throw new Error("lost response");
+        if (actStatus !== 200) return new Response(null, { status: actStatus });
+        return Response.json({ state: command.decision === "approve" ? "approved" : "denied" });
+      }
       if (command.operation === "decide") return Response.json({ state: command.decision === "approve" ? "approved" : "denied" });
       return Response.json({ requests: [], pollAfterSeconds: 5 });
     },
@@ -168,4 +177,93 @@ test("a Cloud another tab disconnected or renamed meanwhile is not written back"
   await auth.decide(binding, login(), "approve");
   expect(await saved()).toMatchObject({ label: "Renamed in another tab" });
   expect((await saved())?.approvedAt).toBeUndefined();
+});
+
+const actionView = () => ({
+  actionId: "11111111-1111-4111-8111-111111111111",
+  app: { id: "files", name: "Files" },
+  requester: { app: { id: "assistant", name: "Assistant" }, title: "A chat" },
+  assurance: "confirm" as const,
+  sentence: "Remove the file",
+  message: null,
+  details: [],
+  truncated: false,
+  argsDigest: "input",
+  digest: "A".repeat(43),
+  createdAt: pairedAt,
+  expiresAt: new Date(Date.now() + 60_000).toISOString(),
+});
+
+const actionSummary = () => {
+  const { message, details, truncated, argsDigest, digest, ...summary } = actionView();
+  return summary;
+};
+
+for (const actions of [false, true]) {
+  test(`polling uses ${actions ? "inbox" : "pending"} according to discovery`, async () => {
+    supportsActions = actions;
+    const { auth, binding } = await paired();
+    for (let i = 0; i < 100 && !auth.states()[binding.id]; i++) await Bun.sleep(10);
+    expect(operations).toContain(actions ? "inbox" : "pending");
+    expect(operations).not.toContain(actions ? "pending" : "inbox");
+    expect(auth.states()[binding.id]).toMatchObject({ requests: [], moreActions: actions ? 2 : 0 });
+    expect(auth.states()[binding.id]?.actions).toHaveLength(actions ? 1 : 0);
+  });
+}
+
+for (const status of [200, 409, 403, 500]) {
+  test(`act handles HTTP ${status} and reserves the Action across models before sending`, async () => {
+    supportsActions = true;
+    actStatus = status;
+    const { auth, binding } = await paired();
+    for (let i = 0; i < 100 && !auth.states()[binding.id]; i++) await Bun.sleep(10);
+    expect(auth.states()[binding.id]?.actions).toHaveLength(1);
+    const view = actionView();
+    view.digest = await appActionDigest(issuer, view);
+    if (status === 200) await auth.act(binding, view, "approve");
+    else await expect(auth.act(binding, view, "approve")).rejects.toThrow(status === 409 ? "stale" : "uncertain");
+    await expect(auth.act(binding, view, "deny")).rejects.toThrow("uncertain");
+    const other = createRoot((stop) => {
+      const firstDispose = dispose;
+      dispose = () => {
+        firstDispose();
+        stop();
+      };
+      return createAuthenticator(vault);
+    });
+    await expect(other.act(binding, view, "approve")).rejects.toThrow("uncertain");
+    expect(operations.filter((operation) => operation === "act")).toHaveLength(1);
+    // Applied or no longer offered (409): the row leaves at once. An unknown outcome keeps it.
+    expect(auth.states()[binding.id]?.actions).toHaveLength(status === 200 || status === 409 ? 0 : 1);
+  });
+}
+
+test("a lost Action response stays uncertain and never sends twice", async () => {
+  supportsActions = true;
+  dropAct = true;
+  const { auth, binding } = await paired();
+  const view = actionView();
+  view.digest = await appActionDigest(issuer, view);
+  await expect(auth.act(binding, view, "deny")).rejects.toThrow("uncertain");
+  await expect(auth.act(binding, view, "deny")).rejects.toThrow("uncertain");
+  expect(operations.filter((operation) => operation === "act")).toHaveLength(1);
+});
+
+test("action reads are fresh, digest checked, and belong to the vault session", async () => {
+  const { auth, binding } = await paired();
+  // The fake Cloud's view has an incorrect digest: the SDK must reject it before the UI sees it.
+  await expect(auth.action(binding, actionView().actionId)).rejects.toThrow("INVALID_RESPONSE");
+  await expect(auth.action(binding, actionView().actionId)).rejects.toThrow("INVALID_RESPONSE");
+  expect(operations.filter((operation) => operation === "action")).toHaveLength(2);
+});
+
+test("expired, hidden and offline Actions are refused before sending", async () => {
+  const { auth, binding } = await paired();
+  await expect(auth.act(binding, { ...actionView(), expiresAt: pairedAt }, "approve")).rejects.toThrow("stale");
+  Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+  await expect(auth.act(binding, actionView(), "approve")).rejects.toThrow("stale");
+  Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+  Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
+  await expect(auth.act(binding, actionView(), "approve")).rejects.toThrow("stale");
+  expect(operations).not.toContain("act");
 });

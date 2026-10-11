@@ -380,6 +380,7 @@ test("model writes cannot overwrite or append to the views namespace", async () 
 
 test("present adds only summaries of valid assistant view files", async () => {
   const present = createCloudAiPresentTool();
+  expect(present.def.description).toContain("shows inline as its chart, group, table, stats or details view");
   if (present.location !== "server") throw new Error("Expected server tool");
   const valid = { view: "table", title: "Rows", columns: [{ id: "n", type: "number" }], rows: [{ n: 42 }] };
   for (const [path, origin, content, size, summary] of [

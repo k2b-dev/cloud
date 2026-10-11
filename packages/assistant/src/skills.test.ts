@@ -20,6 +20,9 @@ test("Assistant skills retain workflow and capability guidance", async () => {
   for (const skill of [codeMode, inputs.find((candidate) => candidate.name === "assistant-data-analysis")]) {
     expect(skill?.instructions).toContain("cloud.view.");
     expect(skill?.instructions).toContain("present({path})");
+    expect(skill?.instructions).toContain("cloud.view.stats");
+    expect(skill?.instructions).toContain("cloud.view.details");
+    expect(skill?.instructions).toContain("ref`");
     expect(skill?.instructions).toContain("Never retype run values");
   }
   // The platform prompt requires calculate for derived numbers; the catalog must not suggest answering directly.

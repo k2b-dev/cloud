@@ -12,7 +12,7 @@ export { migrateApprovals } from "./migrate";
 
 // Derived from chat's AI_ACTION_BUDGET_MS and Studio's one-day abandonment of pending calls.
 export const APPROVAL_MAX_WAIT_MS = 24 * 60 * 60_000;
-export type ApprovalDecisionChannel = "web_session" | "app_session" | "oauth" | "api_key" | "invocation" | "acp_bridge";
+export type ApprovalDecisionChannel = "web_session" | "app_session" | "oauth" | "api_key" | "invocation" | "acp_bridge" | "cloud_login";
 export type ApprovalRequesterKind = "assistant_turn" | "studio_app";
 export type ApprovalStatus = "pending" | "approved" | "rejected" | "expired" | "cancelled" | "consumed";
 export type ApprovalAssurance = "standard" | "confirm";
@@ -133,10 +133,16 @@ export type ApprovalDecisionResult =
 export const decide = async (
   id: string,
   decision: { approved: boolean },
-  actor: { userId: string; via: ApprovalDecisionChannel },
+  actor: { userId: string; via: ApprovalDecisionChannel; deviceId?: string },
   db?: SQL,
 ): Promise<ApprovalDecisionResult> => {
   const result = await transaction(db, async (tx): Promise<ApprovalDecisionResult> => {
+    // Lock the device before the request so revocation and the decision serialize.
+    if (actor.deviceId !== undefined) {
+      const [device] = await tx`SELECT 1 FROM auth.app_devices
+        WHERE id=${actor.deviceId}::uuid AND user_id=${actor.userId}::uuid AND revoked_at IS NULL FOR SHARE`;
+      if (!device) return { ok: false, code: "NOT_FOUND" };
+    }
     const [row] = await tx<ApprovalRequest[]>`SELECT ${columns()} FROM approvals.requests
       WHERE id=${id}::uuid AND approver_user_id=${actor.userId}::uuid FOR UPDATE`;
     if (!row) return { ok: false, code: "NOT_FOUND" };
@@ -161,6 +167,7 @@ export const decide = async (
             action: won.action,
             assurance: won.assurance,
             decidedVia: actor.via,
+            ...(actor.deviceId !== undefined ? { deviceId: actor.deviceId } : {}),
             requesterKind: won.requesterKind,
             requesterAppId: won.requesterAppId,
           },

@@ -237,6 +237,8 @@ type ViewRef = { path: string; title: string; subtitle?: string } & (
   | { view: "chart"; kind: ChartKind }
   | { view: "group"; linkX: boolean; layout: "stack" | "grid"; charts: { kind: ChartKind; title: string; subtitle?: string }[] }
   | { view: "table"; rows: number; columns: number; footer: boolean }
+  | { view: "stats"; items: { label: string; sparkline: boolean; sub: boolean; delta: boolean }[] }
+  | { view: "details"; items: number; fields: { label: string; ref: boolean; chars: number }[] }
 );
 type ViewBase = { title: string; subtitle?: string };
 type ViewAxis = { label?: string; domain?: [number, number]; ticks?: number; scale?: "linear" | "log" };
@@ -263,19 +265,30 @@ type ViewFormat = { unit?: string; decimals?: number; compact?: boolean } & (
   | { style: "currency"; currency: string }
   | { style?: "number" | "percent"; currency?: never }
 );
-type ViewColumn = { id: string; label?: string; type?: "text" | "number" | "date" | "datetime"; format?: ViewFormat };
+type ViewColumn = { id: string; label?: string; type?: "text" | "number" | "date" | "datetime" | "ref"; format?: ViewFormat };
 type ViewTableSpec = ViewBase & {
   rows: ViewRows;
   columns?: (string | ViewColumn)[];
   footer?: Record<string, unknown>;
   sort?: { column: string; direction: "asc" | "desc" };
 };
+type ViewReference = { type: string; id: string; title?: string };
+type ViewStatsSpec = ViewBase & { items: {
+  label: string; value: number | string; format?: ViewFormat; sub?: string;
+  delta?: number; better?: "up" | "down"; sparkline?: number[];
+}[] };
+type ViewDetailsSpec = ViewBase & { items: {
+  label: string; value?: string | number | Date | null | ViewReference;
+  type?: "text" | "number" | "date" | "datetime" | "ref"; format?: ViewFormat;
+}[] };
 /** Script runs only; HTML apps draw with cloud.chart(). Server validates every saved spec. */
 interface CloudView {
   chart(spec: ViewChartSpec): Promise<ViewRef>;
   /** 2..6 related charts under one heading. */
   group(spec: ViewGroupSpec): Promise<ViewRef>;
   table(spec: ViewTableSpec): Promise<ViewRef>;
+  stats(spec: ViewStatsSpec): Promise<ViewRef>;
+  details(spec: ViewDetailsSpec): Promise<ViewRef>;
 }
 
 // ---------------------------------------------------------------- money

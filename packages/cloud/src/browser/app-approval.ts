@@ -4,9 +4,12 @@ export { type AppVaultBlob, type AppVaultConfig, AppVaultError, type AppVaultMet
 
 import { z } from "zod";
 import {
+  APP_ACTION_LIMITS,
   APP_APPROVAL_LIMITS,
   APP_APPROVAL_PATH,
   APP_APPROVAL_PROTOCOL,
+  type AppActionView,
+  AppActionViewSchema,
   AppDeviceCommandSchema,
   AppDeviceProofSchema,
   type AppDevicePublicKey,
@@ -19,6 +22,7 @@ import {
   AppPairingResultSchema,
   type AppPendingLogin,
   AppPendingLoginSchema,
+  appActionDigest,
   appDeviceProofMessage,
   appPairingLink,
   appPairingProofMessage,
@@ -84,6 +88,8 @@ const InfoSchema = z.object({
   appOrigin: z.string(),
   algorithm: z.literal("ES256"),
   limits: z.object(Object.fromEntries(Object.entries(APP_APPROVAL_LIMITS).map(([key, value]) => [key, z.literal(value)]))),
+  /** Absent on Clouds that serve only the first version's commands. */
+  features: z.array(z.string().max(40)).max(16).optional(),
 });
 
 /** Call only after the user explicitly trusts the issuer from a pairing link.
@@ -215,6 +221,31 @@ const connect = async (options: {
         throw new AppApprovalClientError("INVALID_RESPONSE");
       return result;
     },
+    /** Whether this Cloud serves `inbox`, `action` and `act`. Older Clouds answer those commands with HTTP 400. */
+    actions: info.features?.includes("actions") === true,
+    /** Pending sign-ins and the newest open Action approvals in one call; use it instead of `pending` where `actions` is true. */
+    inbox: async (device: AppApprovalDevice, signal?: AbortSignal) => {
+      const result = await command(device, { operation: "inbox" }, signal);
+      if (!("actions" in result)) throw new AppApprovalClientError("INVALID_RESPONSE");
+      return result;
+    },
+    /** One open Action approval. The digest is recomputed here, so a view that does not match it is never returned. */
+    action: async (device: AppApprovalDevice, actionId: string, signal?: AbortSignal): Promise<AppActionView> => {
+      const result = await command(device, { operation: "action", actionId }, signal);
+      if (!("digest" in result) || result.actionId !== actionId || (await appActionDigest(issuer, result)) !== result.digest)
+        throw new AppApprovalClientError("INVALID_RESPONSE");
+      return result;
+    },
+    /** Signs the decision over the view's digest. Only call it on an explicit choice of the person. */
+    act: async (device: AppApprovalDevice, view: AppActionView, decision: "approve" | "deny", signal?: AbortSignal) => {
+      view = AppActionViewSchema.parse(view);
+      if (Date.parse(view.expiresAt) <= Date.now() || (await appActionDigest(issuer, view)) !== view.digest)
+        throw new AppApprovalClientError("INVALID_INPUT");
+      const result = await command(device, { operation: "act", actionId: view.actionId, digest: view.digest, decision }, signal);
+      if (!("state" in result) || result.state !== (decision === "approve" ? "approved" : "denied"))
+        throw new AppApprovalClientError("INVALID_RESPONSE");
+      return result;
+    },
     /** Reads the account this device signs in and the device's own record. Older Clouds answer HTTP 400. */
     account: async (device: AppApprovalDevice, signal?: AbortSignal) => {
       const result = await command(device, { operation: "account" }, signal);
@@ -243,4 +274,5 @@ export const appApproval = {
   createKey,
   connect,
   limits: APP_APPROVAL_LIMITS,
+  actionLimits: APP_ACTION_LIMITS,
 };

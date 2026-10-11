@@ -330,7 +330,7 @@ export const submitAiTurnAction = async (input: {
   turnId: string;
   callId: string;
   action: AiTurnActionInput;
-  decidedBy: { userId: string; via: ApprovalDecisionChannel };
+  decidedBy: { userId: string; via: ApprovalDecisionChannel; deviceId?: string };
   toolApprovalContext?: AiToolApprovalContext;
   /** Whether a person decides in a signed-in browser session; only such a decision may remember a website. */
   signedInSession?: boolean;

@@ -192,7 +192,7 @@ test("the CSV view example converts through the real runtime and validates every
   const { checkCloudAiView, cloudAiViewSummary } = await import("@k2b/cloud/ai/browser");
   const { parseCsv } = await import("./runtime/sheet-lib");
   const examples = await blocks("views.md");
-  expect(examples).toHaveLength(1);
+  expect(examples).toHaveLength(3);
   const specs: unknown[] = [];
   const view = createViews(
     async (method, args) => {
@@ -206,7 +206,9 @@ test("the CSV view example converts through the real runtime and validates every
     { locale: "en-US", timeZone: "UTC" },
     true,
   );
-  const run = new Function("cloud", examples[0]!.code.replace("export default", "return"));
+  const example = examples.find(({ code }) => code.includes("Orders and prices"));
+  if (!example) throw new Error("Missing CSV example");
+  const run = new Function("cloud", example.code.replace("export default", "return"));
   const csv = "status,price,category,date\npaid,10,A,2026-01-02\nopen,20,B,2026-01-03\npaid,30,A,2026-02-01";
   expect(
     await run({ view, sheet: { parseCsv: (file: Blob) => parseCsv(file, {}, "en-US") } })(null, {
@@ -245,4 +247,94 @@ test("the CSV view example converts through the real runtime and validates every
     ],
   });
   expect(specs[2]).toMatchObject({ footer: { month: "Total", amount: 60 } });
+});
+
+test("W1 view examples compile, preserve CSV numbers and page the actual task capability contract", async () => {
+  const { createViews } = await import("./runtime/views");
+  const { checkCloudAiView, cloudAiViewSummary } = await import("@k2b/cloud/ai/browser");
+  const { capabilityResultSchema } = await import("@k2b/cloud/contracts");
+  const { TaskFocusInputSchema, TaskFocusDataSchema } = await import("../../../spaces/src/capability-work-contracts");
+  const { parseCsv } = await import("./runtime/sheet-lib");
+  const examples = (await blocks("views.md")).filter(({ code }) => code.includes("Offers overview") || code.includes("spaces.task.focus"));
+  expect(examples).toHaveLength(2);
+  const specs: import("@k2b/cloud/ai/browser").CloudAiView[] = [];
+  const view = createViews(
+    async (_method, args) => {
+      const checked = checkCloudAiView(args[0]);
+      if ("issues" in checked) throw new Error(checked.issues.join("; "));
+      specs.push(checked.view);
+      return { path: `/views/w1-${specs.length}.view.json`, ...cloudAiViewSummary(checked.view) };
+    },
+    { locale: "en-US", timeZone: "UTC" },
+    true,
+  );
+  const item = {
+    ref: { type: "spaces.item", id: "TaskA1" },
+    title: "Check invoice",
+    spaceId: "Space1",
+    spaceName: "Office",
+    columnId: "Colum1",
+    columnName: "To do",
+    deadline: "2026-01-02T15:00:00Z",
+    overdue: true,
+    priority: null,
+    activeBlockerCount: 0,
+    href: "/spaces/Space1/item/TaskA1",
+  };
+  const pageSchema = capabilityResultSchema(TaskFocusDataSchema);
+  const pages = [
+    { data: [item], page: { hasMore: true, nextCursor: "page-2" } },
+    { data: [], page: { hasMore: true, nextCursor: "page-3" } },
+    { data: [{ ...item, ref: { ...item.ref, id: "TaskB2" }, title: "Send reminder" }], page: { hasMore: false } },
+  ].map((page) => pageSchema.parse(page));
+  const calls: unknown[] = [];
+  const csv = "status,price,date\nopen,10,2026-01-02\npaid,20,2026-01-03\nopen,30,2026-02-01";
+  const cloud = {
+    view,
+    sheet: { parseCsv: (file: Blob) => parseCsv(file, {}, "en-US") },
+    capabilities: {
+      run: async (name: string, input: unknown) => {
+        expect(name).toBe("spaces.task.focus");
+        const parsed = TaskFocusInputSchema.parse(input);
+        expect(parsed.assignedTo).toBe("unassigned");
+        expect(parsed.deadlineFilter).toBe("overdue");
+        calls.push(input);
+        const result = pages[calls.length - 1];
+        if (!result) throw new Error("Unexpected page");
+        return result;
+      },
+    },
+  };
+  for (const { code } of examples) {
+    expect((await compileArtifact({ entry: "main.js", files: [{ path: "main.js", content: code }] })).code).toContain("__artifactStart");
+    await new Function("cloud", code.replace("export default", "return"))(cloud)(null, {
+      files: [{ file: async () => new File([csv], "offers.csv") }],
+    });
+  }
+  expect(specs[0]).toMatchObject({
+    view: "stats",
+    items: [
+      { label: "Offers", value: 3 },
+      { label: "Sum of prices", value: 60 },
+      { label: "Offers in latest month", value: 1, delta: -1, better: "up", sparkline: [2, 1] },
+    ],
+  });
+  expect(calls).toEqual([
+    { assignedTo: "unassigned", deadlineFilter: "overdue", limit: 100 },
+    { assignedTo: "unassigned", deadlineFilter: "overdue", limit: 100, cursor: "page-2" },
+    { assignedTo: "unassigned", deadlineFilter: "overdue", limit: 100, cursor: "page-3" },
+  ]);
+  expect(specs[1]).toMatchObject({
+    view: "table",
+    columns: [
+      { id: "task", type: "ref" },
+      { id: "space", type: "text" },
+      { id: "deadline", type: "date" },
+    ],
+    rows: [
+      { task: { type: "spaces.item", id: "TaskA1", title: "Check invoice" }, deadline: "2026-01-02" },
+      { task: { type: "spaces.item", id: "TaskB2", title: "Send reminder" } },
+    ],
+  });
+  expect(JSON.stringify(specs)).not.toContain("href");
 });
