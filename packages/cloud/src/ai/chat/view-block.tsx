@@ -86,7 +86,7 @@ function CloudTableView(props: { summary: TableSummary; input: CloudAiTableView 
         <Show
           when={table()}
           fallback={
-            <div role="status" class="flex h-full items-center justify-center text-xs text-dimmed">
+            <div role="status" class="flex h-full items-center justify-center text-center text-xs text-dimmed">
               {props.input === undefined ? t().viewLoading : t().viewUnavailable}
             </div>
           }
