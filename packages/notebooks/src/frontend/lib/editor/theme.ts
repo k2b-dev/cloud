@@ -78,9 +78,20 @@ const baseEditorCSS = EditorView.theme({
     zIndex: "1000",
     pointerEvents: "none",
     opacity: "1",
-    transitionDelay: "0s",
+    transition: "none",
     whiteSpace: "nowrap",
     boxShadow: "0 1px 2px rgb(0 0 0 / 0.16)",
+  },
+  // The dot is the hover target for an idle caret's name, so it stays still.
+  ".cm-ySelectionCaret:hover > .cm-ySelectionCaretDot": { transform: "none" },
+  // `remoteCaretLabels` marks idle carets: their name fades so it uncovers the
+  // text, and shows at once on activity or while the caret is hovered.
+  ".cm-ySelectionCaret.cm-ySelectionCaretIdle:not(:hover) > .cm-ySelectionInfo": {
+    opacity: "0",
+    transition: "opacity 300ms ease-out",
+  },
+  "@media (prefers-reduced-motion: reduce)": {
+    ".cm-ySelectionCaret.cm-ySelectionCaretIdle:not(:hover) > .cm-ySelectionInfo": { transition: "none" },
   },
 });
 
