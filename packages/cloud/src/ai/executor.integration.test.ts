@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, mock, spyOn, test } from "bun:test";
 import type { InboundEvent, Message, OutboundEvent, Provider } from "@k2b/nessi";
+import { openAICompatible } from "@k2b/nessi/ai";
 import { ok } from "@k2b/stdlib";
 import { sql } from "bun";
 import { z } from "zod";
@@ -15,11 +16,14 @@ import { coreSettings } from "../services";
 import { approvals } from "../services/approvals";
 import { type CapabilityGrant, mandates } from "../services/mandates";
 import { createTestSession } from "../services/session/session.test-fixture";
+import { normalizeLocale } from "../shared/locale";
 import { reconcileAppSkills } from "./app-skill-store";
 import { type AppSkillDefinition, skill as appSkill, appSkillManifestHash, registerAppSkills } from "./app-skills";
 import { AI_WEBSITE_APPROVAL_TOOL, aiTurnAllowsRememberedApprovals, rememberAiToolApproval } from "./approvals";
 import * as capabilityExecution from "./capability-execution";
+import { aiChatMessages } from "./chat/messages";
 import { aiChatTasks } from "./chat-tasks";
+import { DEFAULT_COMPACTION_PROMPT } from "./compaction";
 import { __aiExecutorTest, AiTurnExecutor } from "./executor";
 import { aiFileStore } from "./files-store";
 import { isMalformedToolCallId } from "./malformed-tool-call-repair";
@@ -29,7 +33,7 @@ import { aiModelAccess } from "./model-access";
 import { visionPdfFixture } from "./pdf-render.fixture";
 import { aiProjects } from "./projects";
 import { type AiTurnBlock, type AiWireEvent, buildBlocksFromMessages } from "./protocol";
-import { createAiProvider } from "./provider";
+import { completeThroughStream, createAiProvider } from "./provider";
 import { AiQuotaError } from "./quotas";
 import { listPendingAiTurnActions } from "./runtime";
 import * as settings from "./settings";
@@ -58,6 +62,7 @@ const MODEL_ID = "mock-exec";
 let mockServer: ReturnType<typeof Bun.serve> | null = null;
 /** The SSE chunks the mock returns for the next /chat/completions call. */
 let nextCompletion: string[] = [];
+/** The JSON text the mock streams for structured calls (view_image) while set; it takes precedence over the chat completions. */
 let nextJsonCompletion: string | null = null;
 let completionQueue: string[][] = [];
 /** HTTP failures answered before the next queued completions. */
@@ -281,7 +286,17 @@ beforeAll(() => {
             usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 },
           });
         }
-        const chunks = completionQueue.shift() ?? nextCompletion;
+        const chunks =
+          nextJsonCompletion !== null
+            ? [
+                sseChunk({ choices: [{ delta: { role: "assistant", content: nextJsonCompletion } }] }),
+                sseChunk({
+                  choices: [{ delta: {}, finish_reason: "stop" }],
+                  usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 },
+                }),
+                "data: [DONE]\n\n",
+              ]
+            : (completionQueue.shift() ?? nextCompletion);
         const body = new ReadableStream<Uint8Array>({
           start(controller) {
             const encoder = new TextEncoder();
@@ -2476,6 +2491,114 @@ suite("AI executor integration", () => {
     }
   });
 
+  test.each([
+    { label: "manual compaction fails promptly without changing history", manual: true },
+    { label: "forced automatic compaction fails promptly and the chat answer still completes", manual: false },
+  ])("when the summarizing model stalls, $label", async ({ manual }) => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+    let compactionRequests = 0;
+    const server = Bun.serve({
+      port: 0,
+      idleTimeout: 0,
+      async fetch(req) {
+        const { messages } = z.object({ messages: z.array(z.object({ role: z.string(), content: z.unknown() })) }).parse(await req.json());
+        if (
+          messages.some(
+            (message) =>
+              message.role === "system" &&
+              typeof message.content === "string" &&
+              message.content.includes(DEFAULT_COMPACTION_PROMPT.split("\n")[0]!),
+          )
+        ) {
+          compactionRequests++;
+          return new Promise<Response>(() => {});
+        }
+        return new Response(textCompletion("The chat answer").join(""), { headers: { "Content-Type": "text/event-stream" } });
+      },
+    });
+    try {
+      for (let index = 0; index < 2; index++) {
+        const input = `Earlier request ${index}`;
+        const { turn } = await aiConversations.submitChatTurn({
+          conversationId: conversation.id,
+          modelProfileId: MODEL_ID,
+          runConfig: { kind: "chat", input, toolSource: { kind: "none" } },
+          userMessage: userMessage(input),
+        });
+        await aiConversations.createSessionStore({ conversationId: conversation.id, turnId: turn.id }).append({
+          role: "assistant",
+          content: [{ type: "text", text: "Earlier answer with context. ".repeat(500) }],
+          stopReason: "stop",
+        });
+        expect(await aiConversations.completeTurn({ conversationId: conversation.id, turnId: turn.id, status: "completed" })).toBe(
+          "completed",
+        );
+      }
+      const turn = manual
+        ? await aiConversations.createCompactionTurn({
+            conversationId: conversation.id,
+            modelProfileId: MODEL_ID,
+            runConfig: { kind: "compact" },
+          })
+        : (
+            await aiConversations.submitChatTurn({
+              conversationId: conversation.id,
+              modelProfileId: MODEL_ID,
+              runConfig: { kind: "chat", input: "Continue", locale: "en", toolSource: { kind: "none" } },
+              userMessage: userMessage("Continue"),
+            })
+          ).turn;
+      const before = await aiConversations.listMessages({ conversationId: conversation.id });
+      const provider = completeThroughStream(
+        openAICompatible({
+          name: "stalled-compaction",
+          model: "mock",
+          baseURL: `http://localhost:${server.port}/v1`,
+          // The prior answers far exceed this window, so nessi forces automatic compaction.
+          contextWindow: 1_000,
+          timeouts: { firstByteMs: 200, idleMs: 200 },
+        }),
+      );
+      const claim = await aiConversations.claimTurn({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        leaseOwner: "compaction-timeout-exec",
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+      if (!claim) throw new Error("Expected turn claim");
+      const startedAt = Date.now();
+      await createExecutor("compaction-timeout-exec", undefined, fakeValidateWithProvider(provider)).run({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        claim,
+        signal: new AbortController().signal,
+      });
+      expect(Date.now() - startedAt).toBeLessThan(3_000);
+      expect(compactionRequests).toBeGreaterThan(0);
+      const finalTurn = await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id });
+      const messages = await aiConversations.listMessages({ conversationId: conversation.id });
+      expect(messages.some((message) => message.compactedAt !== null || message.kind === "summary")).toBe(false);
+      expect(messages.slice(0, before.length)).toEqual(before);
+      if (manual) {
+        const locale = normalizeLocale(await coreSettings.get<string>("app.locale"));
+        expect(finalTurn).toMatchObject({ status: "failed", error: aiChatMessages(locale).turnErrorReason({ code: "model_unavailable" }) });
+        expect(messages).toEqual(before);
+      } else {
+        expect(finalTurn).toMatchObject({ status: "completed", error: null });
+        expect(messages).toHaveLength(before.length + 1);
+        expect(messages.at(-1)?.message).toMatchObject({ role: "assistant", content: [{ type: "text", text: "The chat answer" }] });
+      }
+    } finally {
+      server.stop(true);
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
   test("a provider first-byte timeout keeps its text on the call and stores a reason a person can act on for the turn", async () => {
     const userId = await insertUser();
     const conversation = await aiConversations.createConversation({ ownerUserId: userId });
@@ -3035,6 +3158,99 @@ suite("AI executor integration", () => {
       });
       expect(failed).toMatchObject({ status: "failed", isError: true, result: result.result });
     } finally {
+      completionQueue = [];
+      onCompletionRequest = null;
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
+  test.each([
+    { label: "two malformed responses are repaired before the answer completes", rounds: 2, status: "completed" },
+    { label: "a third malformed response fails with Cloud's reason", rounds: 3, status: "failed" },
+  ])("Cloud alone owns live repair: $label", async ({ rounds, status }) => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+    const requests: z.infer<typeof toolRepairRequestSchema>[] = [];
+    const loggedError = status === "failed" ? spyOn(console, "error").mockImplementation(() => {}) : undefined;
+    try {
+      completionQueue = Array.from({ length: rounds }, () => malformedToolCallCompletion());
+      if (status === "completed") completionQueue.push(textCompletion("Done"));
+      onCompletionRequest = (body) => {
+        requests.push(toolRepairRequestSchema.loose().parse(body));
+      };
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelProfileId: MODEL_ID,
+        runConfig: {
+          kind: "chat",
+          input: "Summarize the report",
+          locale: "en",
+          actor: { kind: "user", user: actorUser(userId) },
+          toolSource: { kind: "default" },
+        },
+        userMessage: userMessage("Summarize the report"),
+      });
+      const collecting = collectWire(conversation.id, (event) => event.type === "turn_finished");
+      const claim = await aiConversations.claimTurn({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        leaseOwner: "live-repair-exec",
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+      if (!claim) throw new Error("Expected turn claim");
+      await createExecutor("live-repair-exec", undefined, fakeValidateToolTurn).run({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        claim,
+        signal: new AbortController().signal,
+      });
+      const events = await collecting;
+      expect(events.find((event) => event.type === "turn_finished")).toMatchObject({ status });
+      const finalTurn = await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id });
+      expect(finalTurn?.status).toBe(status);
+      expect(requests).toHaveLength(3);
+      for (let index = 1; index <= 2; index++) {
+        const repairs = requests[index]!.messages.filter(
+          (message) => message.role === "tool" && typeof message.tool_call_id === "string" && isMalformedToolCallId(message.tool_call_id),
+        );
+        expect(repairs).toHaveLength(index);
+        for (const repair of repairs) {
+          expect(typeof repair.content).toBe("string");
+          expect(repair.content).toContain("Re-send the call");
+        }
+      }
+      for (const request of requests) {
+        expect(request.messages.filter((message) => message.role === "user")).toEqual([
+          expect.objectContaining({ content: "Summarize the report" }),
+        ]);
+        expect(JSON.stringify(request)).not.toMatch(/could not execute/i);
+      }
+      const messages = await aiConversations.listMessages({ conversationId: conversation.id });
+      expect(messages.filter(({ message }) => message.role === "user")).toHaveLength(1);
+      const allStored = await sql<{ message: unknown }[]>`SELECT message FROM ai.messages WHERE conversation_id = ${conversation.id}::uuid`;
+      expect(JSON.stringify(allStored)).not.toMatch(/could not execute/i);
+      expect(
+        events.some(
+          (event) => event.type === "block_set" && (event.block.kind === "steer_message" || event.block.kind === "steer_applied"),
+        ),
+      ).toBe(false);
+      if (status === "failed") {
+        expect(loggedError).toHaveBeenCalledWith(
+          "[ai:executor]",
+          "AI turn failed",
+          expect.objectContaining({ code: "failed", error: expect.stringMatching(/^The tool call to search_tools could not be used: /) }),
+        );
+        expect(messages.at(-1)?.meta?.turnError).toEqual({ code: "failed" });
+        expect(finalTurn?.error).toBe("Something went wrong. The results so far are kept. Send a new message to continue.");
+      } else {
+        expect(messages.at(-1)?.message).toMatchObject({ role: "assistant", content: [{ type: "text", text: "Done" }] });
+      }
+    } finally {
+      loggedError?.mockRestore();
       completionQueue = [];
       onCompletionRequest = null;
       await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;

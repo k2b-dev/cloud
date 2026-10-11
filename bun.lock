@@ -159,7 +159,7 @@
       "version": "0.31.0",
       "dependencies": {
         "@firecrawl/anydoc": "0.2.4",
-        "@k2b/nessi": "0.17.0",
+        "@k2b/nessi": "0.17.1",
         "@k2b/ssr": "0.15.0",
         "@k2b/stdlib": "0.28.0",
         "@k2b/sync": "7.0.0",
@@ -792,7 +792,7 @@
     "@codemirror/state": "6.7.1",
     "@codemirror/view": "6.43.7",
     "@firecrawl/anydoc": "0.2.4",
-    "@k2b/nessi": "0.17.0",
+    "@k2b/nessi": "0.17.1",
     "@k2b/stdlib": "0.28.0",
     "@k2b/sync": "7.0.0",
     "@nats-io/jetstream": "3.4.0",
@@ -1071,7 +1071,7 @@
 
     "@k2b/filegate": ["@k2b/filegate@7.0.0", "", {}, "sha512-Y3b0C5DQFbuz+HDRhEp01bdsj5Pc6w/4osewGT3jwK369Jfgow0PsEaQzJq2tUhoe/hoZzsXg02gPbFYQ6eeWA=="],
 
-    "@k2b/nessi": ["@k2b/nessi@0.17.0", "", { "dependencies": { "zod": "^4.3.0" } }, "sha512-s7/9FhXvAt7MzM3e3NSM+VdD+mNmW6oLKztqzNCmqEWyXVoIJl44Ryg4OvwQnu1ZOyzCRaUkkpFtt7VD2QEjmg=="],
+    "@k2b/nessi": ["@k2b/nessi@0.17.1", "", { "dependencies": { "zod": "^4.3.0" } }, "sha512-hTWYx/NTIYpD//urAZ4XzR9cXvCKpJS/+v3voexxSCcfkgL20KciRg+igtJK7GyTmxJRjmhirXsSm6MO1SpzhA=="],
 
     "@k2b/pwa-auth": ["@k2b/pwa-auth@workspace:pwas/pwa-auth"],
 

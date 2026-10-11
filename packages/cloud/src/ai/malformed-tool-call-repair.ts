@@ -35,6 +35,10 @@ export const countMalformedToolCallRepairs = (messages: readonly Pick<AiStoredMe
       message.role === "assistant" && message.content.some((block) => block.type === "tool_call" && isMalformedToolCallId(block.id)),
   ).length;
 
+// Since 0.17.1, nessi also repairs malformed calls with its own user message and counter. Cloud's session store
+// drops user messages nessi appends, and applying Cloud's repair through steering resets nessi's counter.
+// Only Cloud's repair reaches the model and user. Executor unit tests pin Cloud's exhaustion; live integration tests
+// pin the repair results sent to the model, absence of nessi's message in storage and requests, and Cloud's logged failure.
 export const createMalformedToolCallRepair = (previousAttempts: number) => {
   let attempts = previousAttempts;
   let lastIssue: ToolStreamIssue | undefined;

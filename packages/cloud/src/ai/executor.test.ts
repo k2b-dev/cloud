@@ -368,7 +368,9 @@ describe("malformed tool call steering", () => {
     expect((await run(2)).outcome).toMatchObject({ kind: "finished", status: "completed" });
     const result = await run(3);
     expect(result.requests).toHaveLength(3);
-    expect(result.steeringReads).toBe(5);
+    // Since nessi 0.17.1 continues after a malformed response itself, steering is read only before each provider turn,
+    // no longer again after the response; the exhausted repair then fails before the fourth read.
+    expect(result.steeringReads).toBe(3);
     expect(result.outcome).toMatchObject({
       kind: "finished",
       status: "failed",

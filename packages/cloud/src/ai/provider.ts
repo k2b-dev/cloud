@@ -1,9 +1,16 @@
 import type { Provider, ReasoningEffort } from "@k2b/nessi/ai";
-import { anthropic, gemini, mistral, ollama, openAICompatible, openai, openrouter } from "@k2b/nessi/ai";
+import { anthropic, completeFromStream, gemini, mistral, ollama, openAICompatible, openai, openrouter } from "@k2b/nessi/ai";
 import type { AiModelProfile } from "./types";
 
-/** Bound provider stalls while allowing long-context requests up to 60s to begin streaming. */
+/** Bound the first token and every gap between chunks to 60s, for chat and complete() calls. */
 export const PROVIDER_TIMEOUTS = { firstByteMs: 60_000, idleMs: 60_000 } as const;
+
+// Non-streaming calls receive headers only after the whole answer, so a first-byte timeout would cap total generation.
+// Streaming makes the timeouts bound the first token and gaps between chunks, as for chat.
+export const completeThroughStream = (provider: Provider): Provider => ({
+  ...provider,
+  complete: (request) => completeFromStream(provider, request),
+});
 
 /**
  * Reasoning for structured tasks and compaction: the requests every provider accepted before Nessi 0.17. A global
@@ -31,6 +38,10 @@ const commonOptions = (profile: AiModelProfile, apiKey?: string) => ({
 
 export const createAiProvider = (profile: AiModelProfile, apiKey?: string, headers?: Record<string, string>): Provider => {
   if (profile.capabilities.includes("transcription")) throw new Error("Transcription profiles cannot be used for chat generation.");
+  return completeThroughStream(createAdapter(profile, apiKey, headers));
+};
+
+const createAdapter = (profile: AiModelProfile, apiKey?: string, headers?: Record<string, string>): Provider => {
   switch (profile.provider) {
     case "openai":
       return openai(profile.model, commonOptions(profile, apiKey));

@@ -265,6 +265,15 @@ inside that first loop. The newest two model rounds stay intact, and a tool call
 is never archived separately from its pending result. Archived messages remain
 available in the conversation history.
 
+Compaction streams the summary from the model provider, so the provider's
+first-byte and idle timeouts of 60 seconds each apply: the model must start
+answering within 60 seconds and must not pause for longer than 60 seconds. A
+slow model that keeps answering is not cut off. A timed-out `/compact` fails
+with reason `model_unavailable` and leaves the context as it was. When the
+automatic compaction before a model call times out, the turn continues with the
+full context. When the provider already rejected the context as too large, a
+failed compaction ends the turn.
+
 For a compact diagnostic of one owned chat, including its ordered tool calls,
 arguments, results, model profiles, errors, usage, and timing without the
 duplicated loop transcript, run:
