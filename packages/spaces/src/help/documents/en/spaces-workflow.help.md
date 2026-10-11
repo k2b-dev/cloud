@@ -76,7 +76,7 @@ Under **Blocked by**, every blocking task shows its title and state: a lock for 
 ## Work through the day {icon="route"}
 
 :::steps
-1. **Open the right view:** Start from **Overview**, **Table**, **Kanban**, **Calendar**, or the filter state that fits the current work.
+1. **Open the right view:** Start from **List**, **Table**, **Kanban**, **Calendar**, or the filter state that fits the current work.
 2. **Update the status first:** The status tells everyone what changed before they open the item.
 3. **Check blockers:** When prerequisite work changes, finish or remove the active blockers. Completed blockers stay visible for context.
 4. **Add context:** Use comments for discussion. Use notes for current instructions or lasting context.

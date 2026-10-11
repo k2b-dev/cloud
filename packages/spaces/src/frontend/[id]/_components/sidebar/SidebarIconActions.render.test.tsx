@@ -15,8 +15,31 @@ const { default: CreateItemButton } = await import("./CreateItemButton");
 const { default: CopyICalButton } = await import("./CopyICalButton");
 const { default: SearchButton } = await import("../search/SearchButton");
 const { default: ViewLinks } = await import("./ViewLinks");
+const { LocaleProvider } = await import("@k2b/ui");
 
 describe("Spaces sidebar icon actions", () => {
+  for (const variant of ["desktop", "collapsed"] as const) {
+    test.each([
+      ["en", "List"],
+      ["de", "Liste"],
+    ])(`names the list view with a list icon in the ${variant} sidebar (%s)`, (locale, label) => {
+      const html = renderToString(() =>
+        createComponent(LocaleProvider, {
+          locale,
+          get children() {
+            return createComponent(ViewLinks, { spaceId: "Space1", query: "view=list", currentView: "list", variant });
+          },
+        }),
+      );
+      const link = html.match(/<a\b[^>]*href="[^"]*view=list[^"]*"[^>]*>[\s\S]*?<\/a>/)?.[0];
+
+      expect(link).toBeDefined();
+      expect(link).toContain("ti-layout-list");
+      expect(link).toContain(variant === "collapsed" ? `aria-label="${label}"` : `>${label}<`);
+      expect(link).not.toContain("ti-home");
+    });
+  }
+
   test.each(["desktop", "collapsed"] as const)("renders %s view links with SSR search state", (variant) => {
     const html = renderToString(() =>
       createComponent(ViewLinks, { spaceId: "Space1", query: "view=list&q=initial&status=all", currentView: "list", variant }),

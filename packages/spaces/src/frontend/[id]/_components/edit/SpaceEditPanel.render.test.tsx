@@ -16,6 +16,7 @@ const { default: SpaceEditPanel } = await import("./SpaceEditPanel.tsx");
 const { StatusesSection } = await import("./StatusesSection.tsx");
 const { TemplatesSection } = await import("./TemplatesSection.tsx");
 const { PermissionsSection } = await import("./AccessSection.tsx");
+const { DefaultsSection } = await import("./DefaultsSection.tsx");
 const { spaceMessages } = await import("../../messages.ts");
 const { LocaleProvider } = await import("@k2b/ui");
 
@@ -77,6 +78,31 @@ describe("Spaces settings", () => {
     expect(spaceMessages.check()).toEqual([]);
     expect(spaceMessages.resolve(["de-CH"]).locale).toBe("de");
     expect(spaceMessages.resolve(["de-CH"]).t.spaceSettings).toBe("Space-Einstellungen");
+  });
+
+  test.each([
+    ["en", "Move item to Planning, Ready"],
+    ["de", "Eintrag nach Planning, Ready verschieben"],
+  ])("localizes the wormhole drop label in %s", (locale, label) => {
+    const { t } = spaceMessages.resolve([locale]);
+    expect(t.moveItemTo({ spaceName: "Planning", columnName: "Ready" })).toBe(label);
+  });
+
+  test.each([
+    ["en", "List"],
+    ["de", "Liste"],
+  ])("names the default list view with a list icon in %s", (locale, label) => {
+    const html = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale,
+        get children() {
+          return createComponent(DefaultsSection, { spaceId, initialSettings: { view: "list", hideSettings: false } });
+        },
+      }),
+    );
+    expect(html).toContain(`>${label}<`);
+    expect(html).toContain("ti-layout-list");
+    expect(html).not.toContain("ti-home");
   });
 
   test("renders grouped admin navigation and the shared save footer", () => {

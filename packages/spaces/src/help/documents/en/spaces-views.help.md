@@ -2,7 +2,7 @@
 id: spaces-views
 title: Use views and filters
 icon: ti ti-filter
-description: Choose between the Overview, Table, Kanban, and Calendar views, filter the items, and plan in the day and month views.
+description: Choose between the List, Table, Kanban, and Calendar views, filter the items, and plan in the day and month views.
 order: 110
 ---
 
@@ -11,13 +11,13 @@ Views show the same items in the shape that fits the current job. A good view re
 ## Choose a view {icon="layout-list"}
 
 :::reference
-- **Overview:** Best for quick triage, personal work queues, and short operational lists.
+- **List:** Best for quick triage, personal work queues, and short operational lists.
 - **Table:** Best when people compare assignees, deadlines, status, priority, and tags across many items.
 - **Kanban:** Best when the status flow matters and people need to see work move from left to right.
 - **Calendar:** Best for events, deadlines, planning windows, and work that is mainly time-based.
 :::
 
-## Check tasks off in the Overview {icon="checkbox"}
+## Check tasks off in the List {icon="checkbox"}
 
 :::reference
 - **Tick a task:** Select the box in front of the task. Under the pointer or with keyboard focus, an open box shows a faint check first. When you tick it, the box fills at once and the title is struck through.
@@ -30,7 +30,7 @@ Views show the same items in the shape that fits the current job. A good view re
 ## Work with overdue and undated tasks in the day view {icon="calendar-due"}
 
 :::reference
-- **What it shows:** In the **Day** view of the calendar, a row below the day shows two kinds of open tasks. First, tasks whose deadline passed before today, most recent first. Second, tasks assigned to you without a deadline, most urgent first. Each part shows up to five tasks. **Show all** opens the **Overview** view with all of them.
+- **What it shows:** In the **Day** view of the calendar, a row below the day shows two kinds of open tasks. First, tasks whose deadline passed before today, most recent first. Second, tasks assigned to you without a deadline, most urgent first. Each part shows up to five tasks. **Show all** opens the **List** view with all of them.
 - **Work with it:** Select a task to open it. If you can edit the Space, you can also check the task off. It stays in the row for a moment, then the row closes the gap. The confirmation offers **Undo**. A task that open tasks still block shows a lock instead of a checkbox.
 - **Layout:** The row keeps its place and size whatever it holds, so the day above never moves. While another day or filter loads, the row stays empty until its tasks are in. When more tasks exist than fit, the row scrolls sideways. A screen reader and **Tab** reach the row right after the day, as on screen. When you check a task off with the keyboard, focus moves to the next task in the row.
 - **Filters:** The scope, priority, status, and tag filters of the calendar apply to the row. When a filter leaves the row empty, the row says so. While the scope shows only events, the row is hidden.

@@ -17,7 +17,7 @@ Spaces bündelt gemeinsame Arbeit mit Aufgaben, Terminen, Listen, zuständigen P
 - **Eintrag:** Die grundlegende Arbeitseinheit. Ein Eintrag ist entweder eine Aufgabe mit Fälligkeitsdatum oder ein Termin mit festgelegter Zeit.
 - **Aufgabe:** Arbeit mit Status, Priorität, zuständigen Personen, Fälligkeitsdatum, geschätzter Dauer, Abhängigkeiten, einer einfachen Checkliste, Tags, Beschreibung und Kommentaren.
 - **Termin:** Ein zeitlich geplanter Eintrag. Termine erscheinen in Kalenderansichten und in optionalen Kalenderexporten.
-- **Ansicht:** Die aktuelle Darstellung derselben Einträge: **Übersicht**, **Tabelle**, **Kanban** oder **Kalender**.
+- **Ansicht:** Die aktuelle Darstellung derselben Einträge: **Liste**, **Tabelle**, **Kanban** oder **Kalender**.
 - **Tags:** Kurze Kennzeichnungen, die Arbeit unabhängig von Zuständigkeiten, Fälligkeitsdaten, Terminen und Ansichten gruppieren.
 :::
 
@@ -26,7 +26,7 @@ Spaces bündelt gemeinsame Arbeit mit Aufgaben, Terminen, Listen, zuständigen P
 :::steps
 1. **Space erstellen:** Benenne ihn nach dem gemeinsamen Arbeitsbereich, nicht nach einer einzelnen Aufgabe. Beispiele: Produktstart, Büroumzug, Wochenplanung.
 2. **Echte Einträge hinzufügen:** Erstelle einige Aufgaben oder Termine, bevor du Ansichten anpasst. Echte Arbeit zeigt, welche Status, Tags und zuständigen Personen wichtig sind.
-3. **Ansichten wählen:** Nutze **Übersicht** oder **Tabelle**, um Einträge zu überfliegen, **Kanban** für den Statusverlauf und **Kalender** für geplante Arbeit.
+3. **Ansichten wählen:** Nutze **Liste** oder **Tabelle**, um Einträge zu überfliegen, **Kanban** für den Statusverlauf und **Kalender** für geplante Arbeit.
 4. **Space teilen:** Lade Personen und Gruppen ein, sobald die Struktur klar ist. Dann arbeiten sie ohne zusätzliche Erklärung mit.
 :::
 
