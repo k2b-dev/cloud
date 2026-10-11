@@ -7,7 +7,12 @@ import { type Accessor, createEffect, createMemo, createSignal, onCleanup } from
 import { render } from "solid-js/web";
 import { extractNotebookDirectiveRanges } from "../../../lib/query-blocks";
 import { WORKSPACE_EVENT, type WorkspaceEventDetail } from "../../[id]/_components/sidebar/workspace-events";
-import { blockWidgetLineNavigationExtension, refreshMarkdownDecorationsEffect, selectionIntersectsRange } from "./_lib/cursor-zone-field";
+import {
+  blockWidgetLineNavigationExtension,
+  holdsDecorations,
+  refreshMarkdownDecorationsEffect,
+  selectionIntersectsRange,
+} from "./_lib/cursor-zone-field";
 import { queryBlockMessages } from "./query-block-messages";
 
 export type BlockPreviewResult = {
@@ -202,6 +207,7 @@ export function createQueryBlockPreviews(options: {
       const effect = tr.effects.find((effect) => effect.is(previewEffect));
       if (effect?.is(previewEffect)) return build(tr.state, effect.value);
       if (tr.docChanged || tr.effects.some((effect) => effect.is(refreshMarkdownDecorationsEffect))) return build(tr.state, value.snapshot);
+      if (holdsDecorations(tr)) return value;
       if (
         tr.selection &&
         value.ranges.some(

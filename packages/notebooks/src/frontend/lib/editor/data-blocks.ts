@@ -1,7 +1,7 @@
 import { type EditorState, type Extension, Prec, type Range, RangeSet, StateField } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, keymap, WidgetType } from "@codemirror/view";
 import { type DataBlock, extractDataBlocks, namedBlockBody, renderDataBlockHtml } from "../../../lib/named-blocks";
-import { refreshMarkdownDecorationsEffect, selectionIntersectsRange } from "./_lib/cursor-zone-field";
+import { holdsDecorations, refreshMarkdownDecorationsEffect, selectionIntersectsRange } from "./_lib/cursor-zone-field";
 
 type DataBlockRange = {
   from: number;
@@ -66,6 +66,7 @@ export const dataBlocksExtension = (): Extension => {
     update(value, tr) {
       if (tr.effects.some((effect) => effect.is(refreshMarkdownDecorationsEffect))) return scanDataBlocks(tr.state);
       if (tr.docChanged) return scanDataBlocks(tr.state);
+      if (holdsDecorations(tr)) return value;
       if (!tr.selection) return value;
       const oldKey = cursorDataBlockKey(tr.startState, value.ranges);
       const newKey = cursorDataBlockKey(tr.state, value.ranges);

@@ -59,7 +59,7 @@ import { type EvalContext, evaluateFormula, isFormula } from "@k2b/cloud/shared"
 import { clipboard } from "@k2b/stdlib/browser";
 import { isNamedBlockHandle } from "../../../lib/named-blocks";
 import { formatFormulaError, formatFormulaValue, renderPrettyTableHtml } from "../pretty-table";
-import { refreshMarkdownDecorationsEffect, selectionIntersectsRange, treeOrDocChanged } from "./_lib/cursor-zone-field";
+import { holdsDecorations, refreshMarkdownDecorationsEffect, selectionIntersectsRange, treeOrDocChanged } from "./_lib/cursor-zone-field";
 import { splitTableLineCells, tableCellText } from "./_lib/table-cell";
 import { applyLigatures } from "./ligatures";
 
@@ -451,6 +451,7 @@ export const tablesExtension = (notebookId: string): Extension => {
       if (treeOrDocChanged(tr)) {
         return scanTables(tr.state, notebookId);
       }
+      if (holdsDecorations(tr)) return value;
       // Selection unchanged AND doc unchanged → nothing to do.
       if (!tr.selection) {
         return value;

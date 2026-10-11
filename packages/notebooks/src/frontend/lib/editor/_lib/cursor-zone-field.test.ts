@@ -4,7 +4,16 @@ import { ensureSyntaxTree, syntaxTree } from "@codemirror/language";
 import { EditorSelection, EditorState } from "@codemirror/state";
 import { Decoration } from "@codemirror/view";
 import type { Tree } from "@lezer/common";
-import { cursorZoneStateField, isPointerSelectionTransaction, selectionIntersectsRange, treeOrDocChanged } from "./cursor-zone-field";
+import {
+  cursorZoneStateField,
+  holdsDecorations,
+  isPointerSelectionTransaction,
+  pointerSelectionHeld,
+  pointerSelectionHoldEffect,
+  refreshMarkdownDecorationsEffect,
+  selectionIntersectsRange,
+  treeOrDocChanged,
+} from "./cursor-zone-field";
 
 describe("selectionIntersectsRange", () => {
   test("keeps empty cursor containment semantics", () => {
@@ -85,5 +94,56 @@ describe("cursorZoneStateField in incremental mode", () => {
     } finally {
       now.mockRestore();
     }
+  });
+});
+
+describe("held pointer selection", () => {
+  test("keeps decorations until release refresh rebuilds them", () => {
+    const field = cursorZoneStateField((state) => ({
+      decorations:
+        state.selection.main.from < 8 && state.selection.main.to > 3
+          ? Decoration.none
+          : Decoration.set([Decoration.replace({}).range(3, 8)]),
+      ranges: [{ from: 3, to: 8 }],
+    }));
+    const initial = EditorState.create({ doc: "a **bold** word", extensions: [pointerSelectionHeld, field] });
+    const held = initial.update({ effects: pointerSelectionHoldEffect.of(true) }).state;
+    const drag = held.update({ selection: { anchor: 0, head: 6 }, userEvent: "select.pointer" });
+    expect(holdsDecorations(drag)).toBe(true);
+    expect(drag.state.field(field)).toBe(initial.field(field));
+    const released = drag.state.update({ effects: refreshMarkdownDecorationsEffect.of() }).state;
+    expect(released.field(pointerSelectionHeld)).toBe(false);
+    expect(released.field(field).decorations).toBe(Decoration.none);
+  });
+
+  test("still rebuilds for document changes while held", () => {
+    let builds = 0;
+    const field = cursorZoneStateField(() => {
+      builds += 1;
+      return { decorations: Decoration.none, ranges: [] };
+    });
+    const state = EditorState.create({ doc: "text", extensions: [pointerSelectionHeld, field] }).update({
+      effects: pointerSelectionHoldEffect.of(true),
+    }).state;
+    const edit = state.update({ changes: { from: 0, insert: "!" }, userEvent: "select.pointer" });
+    expect(holdsDecorations(edit)).toBe(false);
+    expect(builds).toBe(2);
+  });
+
+  test("still rebuilds when the parser delivers a newer tree while held", () => {
+    const doc = Array.from({ length: 400 }, (_, index) => `Paragraph ${index}.`).join("\n\n");
+    let builds = 0;
+    const field = cursorZoneStateField(() => {
+      builds += 1;
+      return { decorations: Decoration.none, ranges: [] };
+    });
+    const state = EditorState.create({ doc, extensions: [markdown(), pointerSelectionHeld, field] }).update({
+      effects: pointerSelectionHoldEffect.of(true),
+    }).state;
+    expect(syntaxTree(state).length).toBeLessThan(doc.length);
+    ensureSyntaxTree(state, doc.length, 5000);
+    const parsed = state.update({}).state;
+    expect(parsed.field(pointerSelectionHeld)).toBe(true);
+    expect(builds).toBe(2);
   });
 });

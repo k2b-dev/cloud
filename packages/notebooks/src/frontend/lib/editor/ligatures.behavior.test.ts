@@ -7,7 +7,7 @@ import { createDomTestHarness } from "../../../../../ui/test/dom";
 
 // The notebook parsers share the info block grammar of @k2b/ui; its browser build needs the DOM globals before it loads.
 const loading = createDomTestHarness();
-const { refreshMarkdownDecorationsEffect } = await import("./_lib/cursor-zone-field");
+const { pointerSelectionHeld, pointerSelectionHoldEffect, refreshMarkdownDecorationsEffect } = await import("./_lib/cursor-zone-field");
 const { applyLigatures, ligaturesExtension } = await import("./ligatures");
 const { markdownExtension } = await import("./markdown");
 const { customLightInit } = await import("./theme");
@@ -17,7 +17,11 @@ const mount = (doc: string, anchor = doc.length) => {
   const dom = createDomTestHarness();
   const view = new EditorView({
     parent: dom.root,
-    state: EditorState.create({ doc, selection: { anchor }, extensions: [markdownExtension(), ligaturesExtension()] }),
+    state: EditorState.create({
+      doc,
+      selection: { anchor },
+      extensions: [markdownExtension(), pointerSelectionHeld, ligaturesExtension()],
+    }),
   });
   // Exclusions follow the syntax tree; finish the parse like the editor does after mount.
   forceParsing(view, doc.length, 5000);
@@ -77,6 +81,20 @@ describe("editor display ligatures", () => {
     expect(editor.symbols()).toEqual(["→", "⇒"]);
     editor.view.dispatch({ selection: { anchor: 0, head: doc.length } });
     expect(editor.symbols()).toEqual([]);
+  });
+
+  test("rescanning during a pointer selection keeps ligatures until the release refresh", () => {
+    const doc = "a -> b\n";
+    using editor = mount(doc);
+    expect(editor.symbols()).toEqual(["→"]);
+    editor.view.dispatch({ effects: pointerSelectionHoldEffect.of(true) });
+    editor.view.dispatch({ selection: { anchor: doc.indexOf("->"), head: doc.indexOf("->") + 2 }, userEvent: "select.pointer" });
+    expect(editor.symbols()).toEqual(["→"]);
+    editor.view.dispatch({ changes: { from: doc.length, insert: "x" } });
+    expect(editor.symbols()).toEqual(["→"]);
+    editor.view.dispatch({ effects: refreshMarkdownDecorationsEffect.of() });
+    expect(editor.symbols()).toEqual([]);
+    expect(editor.view.contentDOM.textContent).toContain("a -> b");
   });
 
   test("code, math, links, HTML, front matter, notebook blocks and table rules stay literal", () => {
