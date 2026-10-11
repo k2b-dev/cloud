@@ -42,7 +42,7 @@
 import { forceParsing, syntaxTree } from "@codemirror/language";
 import type { EditorState, Extension, SelectionRange, Transaction } from "@codemirror/state";
 import { Prec, StateEffect, StateField } from "@codemirror/state";
-import type { DecorationSet, ViewUpdate } from "@codemirror/view";
+import type { DecorationSet } from "@codemirror/view";
 import { Decoration, EditorView, keymap, ViewPlugin } from "@codemirror/view";
 
 export type CursorZoneRange = { from: number; to: number };
@@ -91,6 +91,26 @@ export const treeOrDocChanged = (tr: Transaction): boolean => tr.docChanged || s
 
 export const refreshMarkdownDecorationsEffect = StateEffect.define<void>();
 
+export const pointerSelectionHoldEffect = StateEffect.define<boolean>();
+
+/** True while a mouse or pen button is down in the editor. Revealing Markdown then would move the text under the
+ *  pointer mid-drag, so selection-driven decorations wait for the refresh after release. */
+export const pointerSelectionHeld = StateField.define<boolean>({
+  create: () => false,
+  update(value, tr) {
+    for (const effect of tr.effects) {
+      if (effect.is(refreshMarkdownDecorationsEffect)) return false;
+      if (effect.is(pointerSelectionHoldEffect)) value = effect.value;
+    }
+    return value;
+  },
+});
+
+export const holdsDecorations = (tr: Transaction): boolean =>
+  tr.startState.field(pointerSelectionHeld, false) === true &&
+  tr.state.field(pointerSelectionHeld, false) === true &&
+  isPointerSelectionTransaction(tr);
+
 export const initialMarkdownDecorationRefreshExtension = (): Extension =>
   ViewPlugin.fromClass(
     class {
@@ -120,40 +140,43 @@ export const initialMarkdownDecorationRefreshExtension = (): Extension =>
     },
   );
 
-export const pointerSelectionMarkdownRefreshExtension = (): Extension =>
+export const pointerSelectionMarkdownRefreshExtension = (): Extension => [
+  pointerSelectionHeld,
   ViewPlugin.fromClass(
     class {
-      private pending = false;
       private timeout: number | null = null;
 
       constructor(private view: EditorView) {
+        view.contentDOM.addEventListener("pointerdown", this.onPointerDown);
         document.addEventListener("pointerup", this.onPointerDone);
-        document.addEventListener("mouseup", this.onPointerDone);
+        document.addEventListener("pointercancel", this.onPointerDone);
       }
 
-      update(update: ViewUpdate) {
-        if (update.transactions.some(isPointerSelectionTransaction)) {
-          this.pending = true;
-        }
-      }
-
-      destroy() {
-        document.removeEventListener("pointerup", this.onPointerDone);
-        document.removeEventListener("mouseup", this.onPointerDone);
+      private onPointerDown = (event: PointerEvent) => {
+        // Native touch selection must keep working on phones, without a hold.
+        if (event.pointerType === "touch" || event.button !== 0) return;
         if (this.timeout !== null) window.clearTimeout(this.timeout);
-      }
+        this.timeout = null;
+        this.view.dispatch({ effects: pointerSelectionHoldEffect.of(true) });
+      };
 
       private onPointerDone = () => {
-        if (!this.pending || this.timeout !== null) return;
+        if (!this.view.state.field(pointerSelectionHeld) || this.timeout !== null) return;
         this.timeout = window.setTimeout(() => {
           this.timeout = null;
-          if (!this.pending) return;
-          this.pending = false;
           this.view.dispatch({ effects: refreshMarkdownDecorationsEffect.of() });
         }, 0);
       };
+
+      destroy() {
+        this.view.contentDOM.removeEventListener("pointerdown", this.onPointerDown);
+        document.removeEventListener("pointerup", this.onPointerDone);
+        document.removeEventListener("pointercancel", this.onPointerDone);
+        if (this.timeout !== null) window.clearTimeout(this.timeout);
+      }
     },
-  );
+  ),
+];
 
 export const blockWidgetLineNavigationExtension = <T>(
   field: StateField<T>,
@@ -298,6 +321,7 @@ export const cursorZoneStateField = (
         return build(tr.state);
       }
       if (treeOrDocChanged(tr)) return build(tr.state);
+      if (holdsDecorations(tr)) return value;
       if (!tr.selection) return value;
       const oldKey = cursorKey(tr.startState, value.ranges);
       const newKey = cursorKey(tr.state, value.ranges);

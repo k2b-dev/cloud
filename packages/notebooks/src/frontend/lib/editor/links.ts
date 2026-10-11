@@ -85,9 +85,8 @@ class LinkWidget extends WidgetType {
     }
 
     // Web and mail links read like rendered ones: prose text with a thin
-    // accent underline. Clicking a web link's text positions the cursor for
-    // editing and its small ↗ opens it in a new tab; a mail link has no arrow,
-    // so its text opens it.
+    // accent underline. CodeMirror handles caret placement and selection on
+    // web link text; the ↗ opens it. Mail link text opens the link.
     const container = document.createElement("span");
     container.className = "cm-link-widget";
     const open = () => window.open(url, "_blank", "noopener,noreferrer");
@@ -186,20 +185,9 @@ export const linksExtension = (notebookId: string): Extension => {
   });
 
   const eventHandlers = EditorView.domEventHandlers({
-    mousedown(event, view) {
-      const target = event.target as HTMLElement;
-      // Pills, mail labels and the ↗ act through their own handlers. Bail out
-      // so CodeMirror doesn't reposition the cursor.
-      if (target.closest(".cm-link-open")) return true;
-      if (target.closest(".cm-link-label")) {
-        const pos = view.posAtDOM(target);
-        if (pos !== null) {
-          view.dispatch({ selection: { anchor: pos } });
-          return true;
-        }
-      }
-      return false;
-    },
+    // Pills, mail labels and the ↗ act through their own handlers. Bail out
+    // so CodeMirror doesn't reposition the cursor.
+    mousedown: (event) => event.target instanceof Element && event.target.closest(".cm-link-open") !== null,
   });
 
   return [stateField, theme, eventHandlers];

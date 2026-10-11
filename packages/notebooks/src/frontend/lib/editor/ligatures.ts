@@ -16,7 +16,7 @@ import { Decoration, type DecorationSet, type EditorView, ViewPlugin, type ViewU
 import { findLigatures, frontMatterLength, type LigatureMatch } from "../../../lib/ligatures";
 import { extractDataBlocks } from "../../../lib/named-blocks";
 import { extractNotebookDirectiveRanges } from "../../../lib/query-blocks";
-import { refreshMarkdownDecorationsEffect } from "./_lib/cursor-zone-field";
+import { holdsDecorations, refreshMarkdownDecorationsEffect } from "./_lib/cursor-zone-field";
 import { blockMathPattern, inlineMathPattern } from "./_lib/math-syntax";
 
 type Span = { from: number; to: number };
@@ -171,7 +171,7 @@ export const ligaturesExtension = (): Extension =>
             syntaxTree(update.startState) !== syntaxTree(update.state) ||
             update.transactions.some((tr) => tr.effects.some((effect) => effect.is(refreshMarkdownDecorationsEffect)));
           if (rescan) this.matches = findVisibleLigatures(update.view);
-          else if (!update.selectionSet) return;
+          else if (!update.selectionSet || update.transactions.every(holdsDecorations)) return;
           const key = touchedKey(update.state, this.matches);
           if (!rescan && key === this.key) return;
           this.key = key;

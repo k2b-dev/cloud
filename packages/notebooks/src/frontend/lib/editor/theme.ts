@@ -55,43 +55,11 @@ const baseEditorCSS = EditorView.theme({
     paddingLeft: "8px",
   },
   ".cm-foldPlaceholder": { backgroundColor: "transparent", border: "none" },
-  "&:not(.cm-focused) .cm-activeLine": { backgroundColor: "transparent" },
   "&:not(.cm-focused) .cm-activeLineGutter": { backgroundColor: "transparent" },
   ".cm-cursor": { borderLeftWidth: "2px" },
   ".cm-cursor-primary": {
     borderLeftWidth: "2px",
     borderLeftColor: "oklch(62.3% 0.214 259.815)",
-  },
-  // Yjs remote cursor label
-  ".cm-ySelectionCaret": {
-    overflow: "visible",
-    zIndex: "1000",
-  },
-  ".cm-ySelectionCaret > .cm-ySelectionInfo": {
-    top: "0.15em",
-    left: "0.25rem",
-    borderRadius: "var(--radius-md)",
-    padding: "1px 4px",
-    fontSize: "11px",
-    fontFamily: "var(--font-sans) !important",
-    color: "#fff",
-    zIndex: "1000",
-    pointerEvents: "none",
-    opacity: "1",
-    transition: "none",
-    whiteSpace: "nowrap",
-    boxShadow: "0 1px 2px rgb(0 0 0 / 0.16)",
-  },
-  // The dot is the hover target for an idle caret's name, so it stays still.
-  ".cm-ySelectionCaret:hover > .cm-ySelectionCaretDot": { transform: "none" },
-  // `remoteCaretLabels` marks idle carets: their name fades so it uncovers the
-  // text, and shows at once on activity or while the caret is hovered.
-  ".cm-ySelectionCaret.cm-ySelectionCaretIdle:not(:hover) > .cm-ySelectionInfo": {
-    opacity: "0",
-    transition: "opacity 300ms ease-out",
-  },
-  "@media (prefers-reduced-motion: reduce)": {
-    ".cm-ySelectionCaret.cm-ySelectionCaretIdle:not(:hover) > .cm-ySelectionInfo": { transition: "none" },
   },
 });
 
@@ -185,7 +153,7 @@ export const customLightInit = (options?: Partial<CreateThemeOptions>) => {
         background: "transparent",
         foreground: "#24292e",
         selection: "#BBDFFF",
-        selectionMatch: "#BBDFFF",
+        selectionMatch: "#e4e4e7",
         gutterBackground: "transparent",
         gutterForeground: "#6e7781",
         ...settings,
@@ -207,7 +175,7 @@ export const customDarkInit = (options?: Partial<CreateThemeOptions>) => {
         foreground: "#c9d1d9",
         caret: "#c9d1d9",
         selection: "#003d73",
-        selectionMatch: "#003d73",
+        selectionMatch: "#3f3f46",
         gutterBackground: "transparent",
         lineHighlight: "#36334280",
         ...settings,
@@ -227,7 +195,7 @@ export const rawLightInit = () => [
       background: "transparent",
       foreground: "#24292e",
       selection: "#BBDFFF",
-      selectionMatch: "#BBDFFF",
+      selectionMatch: "#e4e4e7",
       gutterBackground: "transparent",
       gutterForeground: "#6e7781",
     },
@@ -245,7 +213,7 @@ export const rawDarkInit = () => [
       foreground: "#c9d1d9",
       caret: "#c9d1d9",
       selection: "#003d73",
-      selectionMatch: "#003d73",
+      selectionMatch: "#3f3f46",
       gutterBackground: "transparent",
       lineHighlight: "#36334280",
     },
