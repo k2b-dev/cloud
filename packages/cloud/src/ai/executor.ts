@@ -26,8 +26,14 @@ import { aiChatMessages } from "./chat/messages";
 import { aiTurnErrorText } from "./chat/turn-error";
 import { AiChatTaskAuthorityError, aiChatTasks } from "./chat-tasks";
 import { createCloudCompactFn } from "./compaction";
-import { createCloudAiCodeTools, createCloudAiLocalBashTool, createConfiguredDefaultCloudAiTools } from "./default-tools";
+import {
+  createCloudAiCodeTools,
+  createCloudAiLocalBashTool,
+  createCloudAiLocalTools,
+  createConfiguredDefaultCloudAiTools,
+} from "./default-tools";
 import { aiFileStore } from "./files-store";
+import { AI_LOCAL_TOOL_NAMES } from "./local-tool-contracts";
 import {
   countMalformedToolCallRepairs,
   createMalformedToolCallRepair,
@@ -62,7 +68,7 @@ import { assistantQuotaProvider, inferenceProvider } from "./quota-provider";
 import { collectConversationResourceObservations } from "./resource-refs";
 import { AiRunTimeout } from "./run-timeout";
 import { isAiVisionModelConfigured, type resolveAiModel } from "./settings";
-import { selectAiSkillCatalog } from "./skill-catalog";
+import { mergeAiSkillCatalog, selectAiSkillCatalog } from "./skill-catalog";
 import { createCloudAiLoadSkillTool, createCloudAiSearchSkillsTool, loadSelectedAiSkills } from "./skill-tool";
 import { aiSkills } from "./skills";
 import { aiConversations, recordAiWebsiteReceipts } from "./store";
@@ -673,7 +679,7 @@ const materializeChatConfig = async (config: AiChatTurnRunConfig, signal: AbortS
               allowedDataBoundaries: config.modelPolicy?.allowedDataBoundaries,
             })),
             // Cloud runs the code tools itself; only tools a client must run wait for that client to declare them.
-            ...[createCloudAiLocalBashTool(), ...createCloudAiCodeTools()].filter(
+            ...[createCloudAiLocalBashTool(), ...createCloudAiLocalTools(), ...createCloudAiCodeTools()].filter(
               (tool) => tool.location === "server" || config.clientToolIds?.some((name) => name === tool.def.name),
             ),
           ]
@@ -925,7 +931,22 @@ export class AiTurnExecutor {
     const skillSubject =
       defaultToolSource && resolved.profile.capabilities.includes("tools") ? accessSubjectForActor(material.actor) : null;
     const availableSkills = skillSubject ? (await aiSkills.list(skillSubject)).filter((skill) => skill.enabled) : [];
-    const skillCatalog = selectAiSkillCatalog(availableSkills, resolved.provider.contextWindow ?? 0, query);
+    const localClient = !config.background && !config.mandate ? config.client : undefined;
+    const localContext = localClient ? config.localContext : undefined;
+    const localSkills = (localContext?.skills ?? []).map((skill) => ({
+      name: skill.name,
+      description: skill.description,
+      manualOnly: skill.manualOnly,
+      source: "local" as const,
+    }));
+    const skillCatalog = selectAiSkillCatalog(
+      mergeAiSkillCatalog(
+        availableSkills.map(({ name, description }) => ({ name, description })),
+        localSkills,
+      ),
+      resolved.provider.contextWindow ?? 0,
+      query,
+    );
     const projectFiles =
       project && resolvedProjectId && projectSubject
         ? {
@@ -954,7 +975,7 @@ export class AiTurnExecutor {
       ...material.tools,
       ...(memoryActive ? [createCloudAiMemoryTool(query)] : []),
       ...(skillSubject && availableSkills.length ? [createCloudAiLoadSkillTool(skillSubject)] : []),
-      ...(skillSubject && skillCatalog.omitted > 0 ? [createCloudAiSearchSkillsTool(skillSubject)] : []),
+      ...(skillCatalog.omitted > 0 ? [createCloudAiSearchSkillsTool(skillSubject, localSkills)] : []),
       ...(config.project && resolvedProjectId && projectSubject
         ? [
             createCloudAiSearchProjectTool(resolvedProjectId, projectSubject),
@@ -987,7 +1008,13 @@ export class AiTurnExecutor {
     // Built-ins that exist but this turn does not offer: client tools without their client, tools a
     // task cannot use, and tools outside the conversation's fixed scope. load_tools explains each one.
     const unofferedTools = [
-      ...new Set([...sourceToolNames, ...runtimeTools.map((tool) => tool.def.name), ...CODE_RUNTIME_TOOL_NAMES, "local_bash"]),
+      ...new Set([
+        ...sourceToolNames,
+        ...runtimeTools.map((tool) => tool.def.name),
+        ...CODE_RUNTIME_TOOL_NAMES,
+        "local_bash",
+        ...AI_LOCAL_TOOL_NAMES,
+      ]),
     ].filter((name) => !offeredToolNames.has(name));
     const memoryToolEnabled = activeTools.some((tool) => tool.def.name === "memory");
     const projectToolEnabled = activeTools.some((tool) => tool.def.name === "search_project");
@@ -1007,6 +1034,7 @@ export class AiTurnExecutor {
       turnId,
       reportToolProgress: (callId: string, message: string) => pipeline.reportToolProgress(callId, message),
       reportWebsiteReceipts: (callId: string, receipts: AiWebsiteReceipt[]) => pipeline.reportWebsiteReceipts(callId, receipts),
+      localToolsEnabled: activeTools.some((tool) => tool.def.name === "local_upload"),
       attachedFilePaths: new Set(config.files?.attached.map((file) => file.path) ?? []),
       allowedDataBoundaries: material.modelPolicy?.allowedDataBoundaries,
       projectFiles,
@@ -1286,7 +1314,7 @@ export class AiTurnExecutor {
     );
     const chat = await aiConversations.getConversation({ conversationId });
     const workingPlan = chat?.todoPlan;
-    const skillCatalogOffered = activeTools.some((tool) => tool.def.name === "load_skill");
+    const skillCatalogOffered = activeTools.some((tool) => ["load_skill", "load_local_skill"].includes(tool.def.name));
     const skillCreatorAvailable = availableSkills.some((skill) => skill.name === "skill-creator");
     // Offer hints and the recent-work summary only guide a fresh turn a person follows; a resumed
     // attempt after an approval or a scheduled run gets neither.
@@ -1316,7 +1344,16 @@ export class AiTurnExecutor {
     }
     const systemPrompt = composeAiSystemPrompt({
       globalInstructions: settings.globalInstructions,
-      loadedSkills,
+      loadedSkills: [...loadedSkills, ...(localContext?.selectedSkills ?? []).map((skill) => ({ ...skill, source: "local" as const }))],
+      localClient: localClient
+        ? {
+            client: localClient,
+            cloudUrl: (await coreSettings.get<string>("app.url")) || "",
+            instructions: settings.localClientInstructions,
+          }
+        : undefined,
+      workspaceInstructions: localContext?.instructions,
+      localSkillsAvailable: skillCatalogOffered && localSkills.some((skill) => !skill.manualOnly),
       turnInstructions: [
         material.systemPrompt,
         audioUnavailableInstruction,
@@ -1596,6 +1633,7 @@ export class AiTurnExecutor {
             linkedApprovals: input.linkedApprovals,
             freshApprovalRequired: input.freshApprovalRequired,
             onBackgroundBlocked: input.onBackgroundBlocked,
+            signal: abortController.signal,
           });
           if (suspended) {
             abortController.abort();
@@ -1702,6 +1740,7 @@ export class AiTurnExecutor {
     linkedApprovals: ReadonlyMap<string, string>;
     freshApprovalRequired?: ReadonlySet<string>;
     onBackgroundBlocked?: (message: string) => void;
+    signal: AbortSignal;
   }): Promise<boolean> {
     const {
       event,
@@ -1854,6 +1893,32 @@ export class AiTurnExecutor {
     }
 
     await pipeline.apply(presented);
+    if (
+      event.kind === "client_tool" &&
+      frontendMode === "client" &&
+      (toolName === "local_bash" || AI_LOCAL_TOOL_NAMES.some((name) => name === toolName))
+    ) {
+      await pipeline.flush();
+      // One wait stays inside a heartbeat interval, keeping lease renewal and abort detection on their cadence.
+      const deadline = performance.now() + this.config.heartbeatMs / 2;
+      while (!input.signal.aborted && performance.now() < deadline) {
+        const action = await aiConversations.getPendingTurnAction({ conversationId, turnId, callId: event.callId });
+        if (action?.status === "resolved" && action.resolvedEvent) {
+          await aiConversations.markPendingTurnActionConsumedInline({ conversationId, turnId, callId: event.callId });
+          loop.push(action.resolvedEvent);
+          return false;
+        }
+        await new Promise<void>((resolve) => {
+          const done = () => {
+            clearTimeout(timer);
+            input.signal.removeEventListener("abort", done);
+            resolve();
+          };
+          const timer = setTimeout(done, 10);
+          input.signal.addEventListener("abort", done, { once: true });
+        });
+      }
+    }
     const suspended = await aiConversations.suspendTurn({
       conversationId,
       turnId,

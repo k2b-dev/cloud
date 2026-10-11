@@ -110,6 +110,37 @@ describe("load_skill", () => {
 });
 
 describe("search_skills", () => {
+  test("finds Cloud matches beyond names shadowed by manual-only local Skills", async () => {
+    const subject = { type: "user" as const, userId: "user" };
+    const skills = Array.from({ length: 21 }, (_, index) => ({
+      source: null,
+      id: `invoice-${index}`,
+      shortId: `In${index.toString().padStart(4, "0")}`,
+      name: `invoice-${index}`,
+      description: "Invoice workflow.",
+      permission: "read" as const,
+      enabled: true,
+      revision: 1,
+      referenceCount: 0,
+      createdAt: "2026-10-11",
+      updatedAt: "2026-10-11",
+    }));
+    const search = spyOn(aiSkills, "search").mockImplementation(async (_subject, _query, limit = 30) => ({
+      skills: skills.slice(0, limit),
+      more: skills.length > limit,
+    }));
+    const tool = createCloudAiSearchSkillsTool(
+      subject,
+      skills.slice(0, 20).map(({ name, description }) => ({ name, description, source: "local", manualOnly: true })),
+    );
+    if (tool.location !== "server") throw new Error("Expected server tool");
+    expect(await tool.run({ query: "invoice", limit: 10 }, {} as never)).toEqual({
+      skills: [{ name: "invoice-20", description: "Invoice workflow." }],
+      more: false,
+    });
+    expect(search).toHaveBeenCalledWith(subject, "invoice", 30);
+  });
+
   test("rechecks access and returns only enabled matching Skills", async () => {
     const subject = { type: "user" as const, userId: "11111111-1111-4111-8111-111111111111" };
     spyOn(aiSkills, "search").mockResolvedValue({
@@ -126,5 +157,75 @@ describe("search_skills", () => {
       } as never),
     ).toEqual({ skills: [{ name: "cloud-mail", description: "Email and inbox workflows." }], more: false });
     expect(aiSkills.search).toHaveBeenCalledWith(subject, "email", 10);
+  });
+});
+
+test.each([false, true])("search_skills respects local precedence with manualOnly=%s", async (manualOnly) => {
+  const subject = { type: "user" as const, userId: "user" };
+  spyOn(aiSkills, "search").mockResolvedValue({
+    skills: [
+      {
+        source: null,
+        id: "invoice",
+        shortId: "In2345",
+        name: "invoice",
+        description: "Cloud invoices.",
+        permission: "read",
+        enabled: true,
+        revision: 1,
+        referenceCount: 0,
+        createdAt: "2026-10-11",
+        updatedAt: "2026-10-11",
+      },
+    ],
+    more: false,
+  });
+  const ctx = {
+    actor: {
+      kind: "user" as const,
+      user: {
+        id: subject.userId,
+        uid: "test",
+        roles: [],
+        provider: "local" as const,
+        profile: "user" as const,
+        givenname: "Test",
+        sn: "User",
+        displayName: "Test User",
+        mail: null,
+        avatarHash: null,
+        ipa: null,
+        accountExpires: null,
+        lastLoginLocal: null,
+        memberofGroup: [],
+        memberofGroupIds: [],
+        manages: [],
+        managesGroupIds: [],
+      },
+    },
+    signal: new AbortController().signal,
+    requestApproval: async () => {
+      throw new Error("Unexpected approval");
+    },
+    requestClientTool: async () => {
+      throw new Error("Unexpected client tool");
+    },
+  };
+  const tool = createCloudAiSearchSkillsTool(subject, [
+    { name: "invoice", description: "Local invoice workflow.", source: "local", ...(manualOnly ? { manualOnly: true } : {}) },
+    { name: "notes", description: "Meeting minutes.", source: "local" },
+  ]);
+  if (tool.location !== "server") throw new Error("Expected server tool");
+  expect(await tool.run({ query: "invoice", limit: 10 }, ctx)).toEqual({
+    skills: manualOnly ? [] : [{ name: "invoice", description: "Local invoice workflow.", source: "local" }],
+    more: false,
+  });
+  // The local name shadows Cloud even when only the Cloud description matches.
+  expect(await tool.run({ query: "invoices", limit: 10 }, ctx)).toEqual({ skills: [], more: false });
+  const localOnly = createCloudAiSearchSkillsTool(null, [{ name: "notes", description: "Meeting minutes.", source: "local" }]);
+  if (localOnly.location !== "server") throw new Error("Expected server tool");
+  expect(await localOnly.run({ query: "meeting", limit: 1 }, ctx)).toEqual({
+    skills: [{ name: "notes", description: "Meeting minutes.", source: "local" }],
+    more: false,
   });
 });

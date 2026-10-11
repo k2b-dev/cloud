@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { AccessSubject } from "../server";
 import { AI_SKILL_FILE_MOUNT } from "./file-mount";
 import { AI_SHORT_ID_PATTERN } from "./short-id";
+import { type AiSkillCatalogEntry, mergeAiSkillCatalog, rankAiSkillCatalog, searchAiSkillCatalog } from "./skill-catalog";
 import { AI_SKILL_NAME_MAX_CHARS, AI_SKILL_NAME_PATTERN } from "./skill-format";
 import { aiSkills } from "./skills";
 import { defineAiTool } from "./tools";
@@ -79,19 +80,26 @@ export const CloudAiSearchSkillsInputSchema = z.object({
 });
 
 export const CloudAiSearchSkillsOutputSchema = z.object({
-  skills: z.array(z.object({ name: z.string(), description: z.string() })),
+  skills: z.array(z.object({ name: z.string(), description: z.string(), source: z.literal("local").optional() })),
   more: z.boolean(),
 });
 
-export const createCloudAiSearchSkillsTool = (subject: AccessSubject) =>
+export const createCloudAiSearchSkillsTool = (subject: AccessSubject | null, localSkills: readonly AiSkillCatalogEntry[] = []) =>
   defineAiTool({
     name: "search_skills",
     description:
-      "Search enabled Assistant Skills omitted from the bounded system-prompt catalog. Search names and descriptions with short domain or workflow terms; minor typos are tolerated. Then load_skill with an exact returned name.",
+      "Search enabled Assistant Skills omitted from the bounded system-prompt catalog. Search names and descriptions with short domain or workflow terms; minor typos are tolerated. Then load_skill with an exact returned Cloud name, or load_local_skill for a result with source local.",
     inputSchema: CloudAiSearchSkillsInputSchema,
     outputSchema: CloudAiSearchSkillsOutputSchema,
     approval: "never",
   }).server(async (input) => {
-    const result = await aiSkills.search(subject, input.query, input.limit);
-    return { skills: result.skills.map(({ name, description }) => ({ name, description })), more: result.more };
+    const result = subject ? await aiSkills.search(subject, input.query, input.limit + localSkills.length) : { skills: [], more: false };
+    const cloud = result.skills.map(({ name, description }) => ({ name, description }));
+    if (!localSkills.length) return { skills: cloud, more: result.more };
+    const localMatches = new Set(searchAiSkillCatalog(localSkills, input.query).map((skill) => skill.name));
+    const matches = rankAiSkillCatalog(
+      mergeAiSkillCatalog(cloud, localSkills).filter((skill) => skill.source !== "local" || localMatches.has(skill.name)),
+      input.query,
+    );
+    return { skills: matches.slice(0, input.limit), more: result.more || matches.length > input.limit };
   });

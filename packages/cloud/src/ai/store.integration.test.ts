@@ -1346,6 +1346,112 @@ suite("AI conversation store integration", () => {
     }
   });
 
+  test.each(["running", "waiting_for_action"] as const)("inline results do not raise the %s turn recovery allowance", async (status) => {
+    const userId = await insertUser();
+    const conversationIds: string[] = [];
+    try {
+      const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+      conversationIds.push(conversation.id);
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelProfileId: "test-model",
+        runConfig,
+        userMessage: userMessage("List local files"),
+      });
+      const claim = await aiConversations.claimTurn({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        leaseOwner: "worker-inline",
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 1,
+        runBudgetMs: 600_000,
+      });
+      expect(claim?.turn.attempt).toBe(1);
+      await aiConversations.savePendingTurnAction({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        callId: "inline-list",
+        kind: "client_tool",
+        status: "pending",
+        name: "local_list",
+        args: { path: "." },
+        approvalScope: "local_list",
+        allowAlways: false,
+        frontendMode: "client",
+        resolvedEvent: null,
+      });
+      await aiConversations.resolvePendingTurnAction({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        callId: "inline-list",
+        event: { type: "tool_result", callId: "inline-list", result: { status: "completed", path: ".", entries: [], nextAfter: null } },
+      });
+      await aiConversations.markPendingTurnActionConsumedInline({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        callId: "inline-list",
+      });
+      // Inline consumption must retain the durable result for replay after a crash.
+      expect(await aiConversations.listResolvedPendingActions({ conversationId: conversation.id, turnId: turn.id })).toMatchObject([
+        { callId: "inline-list", status: "resolved", resolvedEvent: { type: "tool_result" } },
+      ]);
+      if (status === "waiting_for_action") {
+        // A later client action suspends normally and needs one continuation claim.
+        await aiConversations.savePendingTurnAction({
+          conversationId: conversation.id,
+          turnId: turn.id,
+          callId: "code-open",
+          kind: "client_tool",
+          status: "pending",
+          name: "code_open",
+          args: {},
+          approvalScope: "code_open",
+          allowAlways: false,
+          frontendMode: "client",
+          resolvedEvent: null,
+        });
+        expect(
+          await aiConversations.suspendTurn({
+            conversationId: conversation.id,
+            turnId: turn.id,
+            leaseOwner: "worker-inline",
+            blocks: [{ id: "code-open", kind: "tool", callId: "code-open", name: "code_open", status: "awaiting_client" }],
+            seq: 1,
+            waitingBudgetMs: 600_000,
+          }),
+        ).toBe(true);
+        await aiConversations.resolvePendingTurnAction({
+          conversationId: conversation.id,
+          turnId: turn.id,
+          callId: "code-open",
+          event: { type: "tool_result", callId: "code-open", result: { failed: true, error: "Cancelled" } },
+        });
+        // One real attempt plus one normal action continuation exhausts maxAttempts=1.
+        await sql`UPDATE ai.turns SET attempt = 2 WHERE id = ${turn.id}`;
+      } else {
+        await sql`UPDATE ai.turns SET lease_expires_at = now() - interval '1 second' WHERE id = ${turn.id}`;
+      }
+      expect(
+        await aiConversations.claimTurn({
+          conversationId: conversation.id,
+          turnId: turn.id,
+          leaseOwner: "worker-recovery",
+          leaseMs: 30_000,
+          from: status === "running" ? "queue" : "waiting",
+          maxAttempts: 1,
+          runBudgetMs: 600_000,
+        }),
+      ).toBeNull();
+      const sweep = await aiConversations.sweepTurns({ maxAttempts: 1 });
+      expect(sweep.failed.some((entry) => entry.turnId === turn.id)).toBe(true);
+      expect(sweep.requeued.some((entry) => entry.turnId === turn.id)).toBe(false);
+      expect(await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id })).toMatchObject({ status: "failed" });
+    } finally {
+      await cleanupFixture({ userId, conversationIds });
+    }
+  });
+
   test("durable steering is ordered, idempotent, and atomically persisted before completion", async () => {
     const userId = await insertUser();
     const conversationIds: string[] = [];

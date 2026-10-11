@@ -184,6 +184,7 @@ describe("AI HTTP input helpers", () => {
   for (const { name, schema, input } of [
     { name: "turn", schema: AiTurnInputSchema, input: { message: "Test the app" } },
     { name: "draft submission", schema: AiSubmitConversationDraftInputSchema, input: { draftRevision: 1 } },
+    { name: "message retry", schema: AiMessageRetryInputSchema, input: {} },
   ]) {
     describe(`${name} client tools`, () => {
       test("ignores retired tools and keeps a typed list of known tools", () => {
@@ -272,5 +273,34 @@ describe("AI HTTP input helpers", () => {
     });
     expect(() => AiSteerInputSchema.parse({ message: "", clientRequestId: "request-1" })).toThrow();
     expect(() => AiSteerInputSchema.parse({ message: "Change course" })).toThrow();
+  });
+});
+
+test("draft submit requires a client for workspace context and accepts local facts", () => {
+  const input = { draftRevision: 1, localContext: { instructions: [{ path: "/work/AGENTS.md", content: "Rules." }] } };
+  expect(AiSubmitConversationDraftInputSchema.safeParse(input).success).toBeFalse();
+  expect(
+    AiSubmitConversationDraftInputSchema.parse({
+      ...input,
+      client: { kind: "cli", cwd: "/work", os: "Linux", shell: "bash", localTools: "ask" },
+      clientToolIds: ["local_list", "load_local_skill"],
+    }),
+  ).toMatchObject({ localContext: { instructions: input.localContext.instructions }, clientToolIds: ["local_list", "load_local_skill"] });
+});
+
+test("message retry requires a client for workspace context and omits explicit local Skill selections", () => {
+  const localContext = { instructions: [{ path: "/current/AGENTS.md", content: "Current rules." }] };
+  expect(() => AiMessageRetryInputSchema.parse({ localContext })).toThrow("Local context requires a local client.");
+  expect(
+    AiMessageRetryInputSchema.parse({
+      client: { kind: "cli", cwd: "/current", os: "Linux", shell: "bash", localTools: "ask" },
+      clientToolIds: ["local_list", "load_local_skill"],
+      localContext: { ...localContext, selectedSkills: [{ name: "other", directory: "/other", instructions: "Other rules." }] },
+    }),
+  ).toEqual({
+    mode: "retry",
+    client: { kind: "cli", cwd: "/current", os: "Linux", shell: "bash", localTools: "ask" },
+    clientToolIds: ["local_list", "load_local_skill"],
+    localContext: { ...localContext, skills: [] },
   });
 });

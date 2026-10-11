@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { completeInteractiveLine, INTERACTIVE_COMMANDS } from "./interactive";
-import { classifyLocalPath, completeLocalPath, extractMessageAttachments } from "./local-paths";
+import { classifyLocalPath, completeLocalPath, extractMessageAttachments, isProtectedLocalPath } from "./local-paths";
 
 let root: string;
 let workspace: string;
@@ -85,6 +85,13 @@ describe("local path completion", () => {
 });
 
 describe("local access classification", () => {
+  test.each(["KEY.PEM", ".ENV", "ID_RSA", "CERT.P12", ".GIT/hooks/x", ".SSH/x", ".GNUPG/x", ".AWS/x"])(
+    "protects uppercase secret path %s",
+    (path) => {
+      expect(isProtectedLocalPath(join(workspace, path))).toBeTrue();
+      expect(classifyLocalPath(path, { workspace, home })).toEqual({ access: "ask", reason: "protected" });
+    },
+  );
   test("checks workspace boundaries and symlink targets, including future files", () => {
     const outside = file(join(root, "outside"));
     symlinkSync(outside, join(workspace, "linked"));

@@ -28,7 +28,8 @@ import { AI_AUDIO_MAX_BYTES } from "./audio-format";
 import { buildAiCapabilityCatalog } from "./capabilities";
 import { aiChatMessages } from "./chat/messages";
 import { getAiChatQuotas } from "./chat-quotas";
-import { createConfiguredDefaultCloudAiTools } from "./default-tools";
+import { AI_CLIENT_TOOL_ACTION_MAX_BYTES, aiClientToolOutputSchemas } from "./client-tool-results";
+import { createCloudAiLocalBashTool, createCloudAiLocalTools, createConfiguredDefaultCloudAiTools } from "./default-tools";
 import { enqueueAiDictation } from "./dictation-runtime";
 import { AiDictationConflict, AiDictationListSchema, AiDictationStartSchema, aiDictations } from "./dictations";
 import { aiProjectFilePathFromMount } from "./file-mount";
@@ -48,6 +49,7 @@ import {
   toAiActionFailureResponse,
   toAiErrorResponse,
 } from "./http";
+import { AI_LOCAL_TOOL_NAMES, AiLocalClientSchema } from "./local-tool-contracts";
 import { aiMaintenanceJobs } from "./maintenance";
 import { AI_MEMORY_CONTENT_MAX_CHARS, aiMemories } from "./memories";
 import { aiMemoryLearningRuns } from "./memory-learning-runs";
@@ -384,6 +386,21 @@ export const aiRoutes = (() => {
         const user = aiActorUser(ctx.actor);
         if (!user) return respond(c, fail(err.forbidden("AI preferences require a user context.")));
 
+        const clientKind = c.req.query("clientKind");
+        const parsedClient =
+          clientKind === undefined
+            ? undefined
+            : AiLocalClientSchema.safeParse({
+                kind: clientKind,
+                name: c.req.query("clientName"),
+                cwd: c.req.query("cwd"),
+                os: c.req.query("os"),
+                shell: c.req.query("shell"),
+                localTools: c.req.query("localTools"),
+              });
+        if (parsedClient && !parsedClient.success)
+          return respond(c, fail(err.badInput(`Invalid local client: ${parsedClient.error.issues[0]?.message}`)));
+        const client = parsedClient?.success ? parsedClient.data : undefined;
         const prefs = await aiUserPrefs.get(user.id);
         const memoryEnabled = Boolean(prefs?.memoryEnabled);
         const memory = memoryEnabled ? await aiMemories.selectHot(user.id, "") : null;
@@ -399,13 +416,18 @@ export const aiRoutes = (() => {
         }
         const toolsSupported = Boolean(previewProfile?.capabilities.includes("tools"));
         const availableSkills = toolsSupported ? (await aiSkills.list(c.get("accessSubject"))).filter((skill) => skill.enabled) : [];
-        const skillCatalog = selectAiSkillCatalog(availableSkills, previewProfile?.contextWindow ?? 0, "");
+        const skillCatalog = selectAiSkillCatalog(
+          availableSkills.map(({ name, description }) => ({ name, description })),
+          previewProfile?.contextWindow ?? 0,
+          "",
+        );
         const tools = toolsSupported
           ? [
               ...(await createConfiguredDefaultCloudAiTools({
                 accessSubject: c.get("accessSubject"),
                 allowedDataBoundaries: ctx.modelPolicy.allowedDataBoundaries,
               })),
+              ...(client?.localTools === "ask" ? [createCloudAiLocalBashTool(), ...createCloudAiLocalTools()] : []),
               ...(memoryEnabled ? [createCloudAiMemoryTool()] : []),
               ...(availableSkills.length ? [createCloudAiLoadSkillTool(c.get("accessSubject"))] : []),
               ...(skillCatalog.omitted > 0 ? [createCloudAiSearchSkillsTool(c.get("accessSubject"))] : []),
@@ -416,6 +438,9 @@ export const aiRoutes = (() => {
         const promptLocale = getLocale(c);
         const prompt = composeAiSystemPrompt({
           globalInstructions: state.globalInstructions,
+          localClient: client
+            ? { client, cloudUrl: (await coreSettings.get<string>("app.url")) || "", instructions: state.localClientInstructions }
+            : undefined,
           user,
           memoryEnabled,
           memoryToolEnabled,
@@ -885,6 +910,8 @@ export const aiRoutes = (() => {
             modelPolicy: ctx.modelPolicy,
             project: project ?? undefined,
             clientToolIds: body.clientToolIds,
+            client: body.client,
+            localContext: body.localContext,
             toolSource: { kind: "default" as const, appTools: true },
             toolApprovalContext: ctx.toolApprovalContext,
             expectedDraftRevision: body.draftRevision,
@@ -1000,7 +1027,20 @@ export const aiRoutes = (() => {
             truncateFromSeq: target.seq,
             fileSnapshot: originalRunConfig?.kind !== "compact" ? originalRunConfig?.files : undefined,
             retrySourceTurnId: target.loopId ?? undefined,
-            clientToolIds: originalRunConfig?.kind !== "compact" ? originalRunConfig?.clientToolIds : undefined,
+            // Local context and tools belong to the retrying client, not the original workspace.
+            clientToolIds:
+              body.clientToolIds ??
+              (originalRunConfig?.kind !== "compact"
+                ? originalRunConfig?.clientToolIds?.filter((id) => id !== "local_bash" && !AI_LOCAL_TOOL_NAMES.some((name) => name === id))
+                : undefined),
+            client: body.client,
+            localContext: body.client
+              ? {
+                  instructions: body.localContext?.instructions ?? [],
+                  skills: body.localContext?.skills ?? [],
+                  selectedSkills: originalRunConfig?.kind !== "compact" ? (originalRunConfig?.localContext?.selectedSkills ?? []) : [],
+                }
+              : undefined,
           });
           rememberLastUsedModel(ctx.actor, result.turn.modelProfileId);
           return respond(
@@ -1092,33 +1132,49 @@ export const aiRoutes = (() => {
         await abortAiTurn({ conversationId: conversation.id, turnId: turn.id });
         return respond(c, ok({ ok: true }));
       })
-      .post("/conversations/:conversationId/turns/:turnId/actions/:callId", v("json", AiTurnActionSchema), async (c) => {
-        const ctx = await resolveContext(c);
-        if (ctx instanceof Response) return ctx;
-        const conversation = await loadConversation(c, ctx);
-        if (!conversation) return notFound(c);
-        const turn = await loadTurn(conversation, c.req.param("turnId"));
-        const callId = c.req.param("callId");
-        if (!turn || !callId) return notFound(c);
-        const result = await submitAiTurnAction({
-          conversationId: conversation.id,
-          turnId: turn.id,
-          callId,
-          action: c.req.valid("json"),
-          decidedBy: {
-            userId: ctx.ownerUserId,
-            via: approvalDecisionChannel({
-              credentialKind: c.get("credentialKind"),
-              actor: ctx.actor,
-              client: c.req.header(APPROVAL_CLIENT_HEADER),
-            }),
-          },
-          toolApprovalContext: ctx.toolApprovalContext,
-          signedInSession: ctx.signedInSession,
-        });
-        if (!result.ok) return toAiActionFailureResponse(c, result);
-        return respond(c, ok({ ok: true }));
-      })
+      .post(
+        "/conversations/:conversationId/turns/:turnId/actions/:callId",
+        bodyLimit({ maxSize: AI_CLIENT_TOOL_ACTION_MAX_BYTES }),
+        v("json", AiTurnActionSchema),
+        async (c) => {
+          const ctx = await resolveContext(c);
+          if (ctx instanceof Response) return ctx;
+          const conversation = await loadConversation(c, ctx);
+          if (!conversation) return notFound(c);
+          const turn = await loadTurn(conversation, c.req.param("turnId"));
+          const callId = c.req.param("callId");
+          if (!turn || !callId) return notFound(c);
+          const action = c.req.valid("json");
+          if (action.type === "tool_result") {
+            const pending = await aiConversations.getPendingTurnAction({ conversationId: conversation.id, turnId: turn.id, callId });
+            const schema = pending?.kind === "client_tool" ? aiClientToolOutputSchemas.get(pending.name) : undefined;
+            if (schema) {
+              const parsed = schema.safeParse(action.result);
+              if (!parsed.success)
+                return respond(c, fail(err.badInput(`Invalid ${pending?.name} result: ${parsed.error.issues[0]?.message}`)));
+              action.result = parsed.data;
+            }
+          }
+          const result = await submitAiTurnAction({
+            conversationId: conversation.id,
+            turnId: turn.id,
+            callId,
+            action,
+            decidedBy: {
+              userId: ctx.ownerUserId,
+              via: approvalDecisionChannel({
+                credentialKind: c.get("credentialKind"),
+                actor: ctx.actor,
+                client: c.req.header(APPROVAL_CLIENT_HEADER),
+              }),
+            },
+            toolApprovalContext: ctx.toolApprovalContext,
+            signedInSession: ctx.signedInSession,
+          });
+          if (!result.ok) return toAiActionFailureResponse(c, result);
+          return respond(c, ok({ ok: true }));
+        },
+      )
       .get("/conversations/:conversationId/pending-actions/:turnId", async (c) => {
         const ctx = await resolveContext(c);
         if (ctx instanceof Response) return ctx;

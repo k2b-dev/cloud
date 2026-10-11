@@ -31,9 +31,10 @@ import {
 import { type AiTurnBlock, buildBlocksFromMessages, messageBlockId, streamBlockId, toolBlockId } from "./protocol";
 import { aiConversations } from "./store";
 import * as stream from "./stream";
+import { aiToolAudit } from "./tool-audit";
 import { prepareAiTools } from "./tools";
 import * as turnTiming from "./turn-timing";
-import type { AiStoredMessage, AiTurnSteer } from "./types";
+import type { AiPendingTurnActionRecord, AiStoredMessage, AiTurnSteer } from "./types";
 
 const { createEventMapper, rebuildAttemptBaseline, rebuildBlocksFromMessages } = __aiExecutorTest;
 
@@ -1386,3 +1387,130 @@ for (const stopReason of ["tool_use", "error", "interrupted", "aborted"] as cons
     await executor["driveChatLoop"](input);
     expect(rounds).toBe(0);
   });
+
+test.each(["fast", "late", "interaction", "code_open", "abort"] as const)("%s client result uses the correct lease path", async (mode) => {
+  const signal = new AbortController();
+  const name = mode === "interaction" ? "survey" : mode === "code_open" ? "code_open" : "local_list";
+  const event: Extract<OutboundEvent, { type: "tool_action_request" }> = {
+    ...turn,
+    type: "tool_action_request",
+    kind: "client_tool",
+    callId: "local-1",
+    name,
+    args: { path: "." },
+  };
+  const pending: AiPendingTurnActionRecord = {
+    conversationId: "chat-1",
+    turnId: "turn-1",
+    callId: "local-1",
+    kind: "client_tool",
+    status: "pending",
+    name,
+    args: event.args,
+    approvalScope: name,
+    allowAlways: false,
+    allowChat: false,
+    frontendMode: mode === "interaction" ? "client_interaction" : "client",
+    resolvedEvent: null,
+  };
+  const resolved: AiPendingTurnActionRecord = {
+    ...pending,
+    status: "resolved",
+    resolvedEvent: { type: "tool_result", callId: "local-1", result: { status: "completed", path: "/work", entries: [], nextAfter: null } },
+  };
+  const config = spyOn(aiConversations, "getTurnRunConfig").mockResolvedValue({ kind: "chat", input: "List files" });
+  const save = spyOn(aiConversations, "savePendingTurnAction").mockResolvedValue(undefined);
+  const get = spyOn(aiConversations, "getPendingTurnAction").mockResolvedValue(mode === "fast" ? resolved : pending);
+  const markInline = spyOn(aiConversations, "markPendingTurnActionConsumedInline").mockResolvedValue(undefined);
+  const suspend = spyOn(aiConversations, "suspendTurn").mockResolvedValue(true);
+  const audit = spyOn(aiToolAudit, "noteToolCall").mockResolvedValue(undefined);
+  const pipeline = new __aiExecutorTest.StreamPipeline({
+    conversationId: "chat-1",
+    turnId: "turn-1",
+    attempt: 1,
+    startSeq: 0,
+    leaseOwner: "test",
+    seedBlocks: [],
+    allowRememberedApprovals: false,
+  });
+  const apply = spyOn(pipeline, "apply").mockResolvedValue(undefined);
+  const flush = spyOn(pipeline, "flush").mockResolvedValue(undefined);
+  const loop = nessi({
+    provider: {
+      name: "mock",
+      family: "openai-compatible",
+      model: "mock",
+      contextWindow: 8000,
+      capabilities: { streaming: true, tools: true, images: false, thinking: false, usage: false },
+      stream: async function* () {
+        throw new Error("Model must not run in this test");
+      },
+      complete: async () => {
+        throw new Error("Model must not run in this test");
+      },
+    },
+    store: memoryStore(),
+    tools: [],
+    input: "List files",
+    systemPrompt: "test",
+  });
+  const push = spyOn(loop, "push");
+  const heartbeatMs = mode === "abort" ? 2000 : 40;
+  const executor = new AiTurnExecutor({ leaseOwner: "test", heartbeatMs, enqueueContinuation: async () => {} });
+  const timer = mode === "abort" ? setTimeout(() => signal.abort(), 5) : undefined;
+  const started = performance.now();
+  try {
+    expect(
+      await executor["handleActionRequest"]({
+        event,
+        loop,
+        pipeline,
+        conversationId: "chat-1",
+        turnId: "turn-1",
+        prepared: {
+          tools: [],
+          canonicalNames: new Map(),
+          approvalPolicies: new Map([[name, "never"]]),
+          frontendModes: new Map([[name, mode === "interaction" ? "client_interaction" : "client"]]),
+        },
+        allowRememberedApprovals: false,
+        rememberableCapabilityApprovals: new Map(),
+        capabilityActionReviews: new Map(),
+        approvalTargets: new Map(),
+        linkedApprovals: new Map(),
+        signal: signal.signal,
+      }),
+    ).toBe(mode !== "fast");
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(apply).toHaveBeenCalledWith(event);
+    if (mode === "fast") {
+      expect(flush).toHaveBeenCalledTimes(1);
+      expect(get).toHaveBeenCalledTimes(1);
+      expect(push).toHaveBeenCalledWith(resolved.resolvedEvent!);
+      expect(markInline).toHaveBeenCalledTimes(1);
+      expect(markInline).toHaveBeenCalledWith({ conversationId: "chat-1", turnId: "turn-1", callId: event.callId });
+      expect(push.mock.invocationCallOrder[0]).toBeGreaterThan(markInline.mock.invocationCallOrder[0]!);
+      expect(suspend).not.toHaveBeenCalled();
+      expect(get.mock.invocationCallOrder[0]).toBeGreaterThan(flush.mock.invocationCallOrder[0]!);
+    } else {
+      expect(suspend).toHaveBeenCalledTimes(1);
+      expect(push).not.toHaveBeenCalled();
+      expect(markInline).not.toHaveBeenCalled();
+      if (mode === "interaction" || mode === "code_open") expect(get).not.toHaveBeenCalled();
+      if (mode === "late") expect(get).toHaveBeenCalled();
+      if (mode === "abort") expect(performance.now() - started).toBeLessThan(heartbeatMs / 2);
+    }
+  } finally {
+    clearTimeout(timer);
+    loop.abort();
+    config.mockRestore();
+    save.mockRestore();
+    get.mockRestore();
+    markInline.mockRestore();
+    suspend.mockRestore();
+    audit.mockRestore();
+    apply.mockRestore();
+    flush.mockRestore();
+    push.mockRestore();
+  }
+});

@@ -62,7 +62,7 @@ grant domain permission.
 | Builder | Execution |
 | --- | --- |
 | `.server(run)` | Cloud runs the implementation |
-| `.client()` | Browser handles the call |
+| `.client()` | A connected client handles the call |
 | `.clientView()` | Cloud answers the call itself; the chat only shows it |
 | `.clientInteraction()` | Browser handles an interactive action |
 
@@ -75,22 +75,32 @@ the action requires browser state or direct user interaction.
 
 ### Run an optional tool in a local CLI
 
-Interactive `cld assistant` offers the predefined `local_bash` client tool
-by default in `ask` mode. `--no-bash` selects `off`; `--allow-bash` selects
-`ask` even when the profile default is `off`. `/permissions` changes the mode
-for the next turn and can save the profile default. Only `off` is stored;
-saving `ask` removes it, so a saved default can only restrict access.
+Local clients such as interactive `cld assistant` declare the tools they can
+run through `clientToolIds`. Cloud declares their input and output schemas,
+persists requests and results, and validates each result before continuing.
+The client executes them, enforces workspace path rules, and asks the user
+when a path or operation requires a decision. Cloud never reads the local
+filesystem or executes a local command itself.
 
-AI Core persists calls and results but never executes a command. The CLI shows
-the exact command and asks `Run? [y/N]` before starting Bash as your OS user
-in the startup directory. Enter denies. Bash receives no `CLD_*` environment
-variables; other variables stay available. Commands and output are stored in
-the chat and sent to the model. There is no remembered or non-interactive Bash
-approval. A pending Bash call continued in `off` mode is denied.
+| Tool | Purpose |
+| --- | --- |
+| `local_list` | List local files and folders, optionally by glob, in pages; unreadable subfolders are skipped and named |
+| `local_read` | Read local text with line numbers; upload documents and images for Cloud tools |
+| `local_upload` | Upload local files into this chat and return chat paths |
+| `local_download` | Save a chat file to a new or replaced local file |
+| `local_write` | Create, append to, or replace a local text file |
+| `local_move` | Move or rename local files and folders without overwriting |
+| `load_local_skill` | Load a local Skill's instructions, directory and file list |
+| `local_bash` | Run a command as the user's OS account in the workspace |
 
-The web app shows persisted local Bash history but neither advertises nor
-executes it. Retrieved mail, webpages, files, and tool output remain untrusted;
-review every command before approving it.
+Local tool decisions are never remembered as Cloud approvals. The client
+controls its questions; a completed call does not prove the user saw it.
+Calls and results become chat history and are sent to the model. Retrieved
+files and ordinary tool output remain untrusted data. Upload local files with
+`local_upload` before using a chat path with `read_file`, `view_image`, or Code
+Mode. The web app displays local tool history but does not offer or execute
+these tools. See [cld assistant](/en/apps/cld/assistant) for local tools modes,
+path rules and terminal questions.
 
 Cloud approvals in cld use numbered **Approve once**, **Approve for this
 chat**, and **Always approve** choices where allowed; Enter rejects. When only

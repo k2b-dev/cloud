@@ -13,7 +13,12 @@ export * from "./account-display";
 export * from "./account-session";
 export * from "./ai-costs";
 export type { AiPromptContextInput, AiToolPromptHint } from "./ai-platform-prompt";
-export { AI_PLATFORM_PROMPT_TEMPLATE, aiPromptContext, renderAiPlatformPrompt } from "./ai-platform-prompt";
+export {
+  AI_LOCAL_CLIENT_DEFAULT_INSTRUCTIONS,
+  AI_PLATFORM_PROMPT_TEMPLATE,
+  aiPromptContext,
+  renderAiPlatformPrompt,
+} from "./ai-platform-prompt";
 export type { AiChatQuotaSnapshot } from "./ai-quotas";
 export * from "./ai-quotas";
 export {

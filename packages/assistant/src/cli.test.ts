@@ -1,8 +1,9 @@
 import { describe, expect, spyOn, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, realpath, rm } from "node:fs/promises";
+import * as os from "node:os";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import { CODE_RUNTIME_TOOL_NAMES } from "@k2b/cloud/ai/browser";
+import { AI_LOCAL_TOOL_NAMES } from "@k2b/cloud/ai/browser";
 import type { CloudCliContext } from "@k2b/cloud/cli";
 import { z } from "zod";
 import { CheckReport } from "./artifacts/html/check-contracts";
@@ -155,6 +156,32 @@ const createContext = (
   };
   return { ctx, stdout, stderr };
 };
+
+/** What interactive cld offers in ask mode without local Skills: Bash, the file tools, and the two code tools it runs. */
+const LOCAL_CLIENT_TOOL_IDS = [
+  "local_bash",
+  ...AI_LOCAL_TOOL_NAMES.filter((name) => name !== "load_local_skill"),
+  "code_open",
+  "code_secret",
+];
+
+/** Interactive sessions read AGENTS.md and Skills from the working and home folders; run them where both are empty. */
+const inEmptyFolders = async <T>(run: () => Promise<T>): Promise<T> => {
+  const folder = await realpath(await mkdtemp(join(tmpdir(), "assistant-cli-")));
+  const cwd = process.cwd();
+  const home = spyOn(os, "homedir").mockReturnValue(folder);
+  process.chdir(folder);
+  try {
+    return await run();
+  } finally {
+    process.chdir(cwd);
+    home.mockRestore();
+    await rm(folder, { recursive: true, force: true });
+  }
+};
+
+const localClient = expect.objectContaining({ kind: "cli", shell: "/bin/bash", localTools: "ask" });
+const noLocalContext = { instructions: [], skills: [], selectedSkills: [] };
 
 describe("assistant CLI", () => {
   const tableResult = {
@@ -798,7 +825,7 @@ describe("assistant CLI", () => {
       onInterrupt: () => () => undefined,
     };
 
-    expect(await runInteractiveAssistant(ctx, {}, reader)).toBe(0);
+    expect(await inEmptyFolders(() => runInteractiveAssistant(ctx, {}, reader))).toBe(0);
     const output = stdout.join("");
     expect(output).toContain("\u001b[34mInfo:\u001b[0m New chat created. Resume this chat later with:\n      cld assistant --chat chat-1");
     expect(output).toContain("\u001b[34mInfo:\u001b[0m Resume this chat later with:\n      cld assistant --chat chat-1");
@@ -863,10 +890,22 @@ describe("assistant CLI", () => {
       onInterrupt: () => () => undefined,
     };
 
-    expect(await runInteractiveAssistant(ctx, {}, reader)).toBe(0);
+    expect(await inEmptyFolders(() => runInteractiveAssistant(ctx, {}, reader))).toBe(0);
     expect(turnBodies).toEqual([
-      { draftRevision: 1, modelProfileId: "model-2", clientToolIds: ["local_bash", ...CODE_RUNTIME_TOOL_NAMES] },
-      { draftRevision: 2, modelProfileId: "model-2", clientToolIds: ["local_bash", ...CODE_RUNTIME_TOOL_NAMES] },
+      {
+        draftRevision: 1,
+        modelProfileId: "model-2",
+        clientToolIds: LOCAL_CLIENT_TOOL_IDS,
+        client: localClient,
+        localContext: noLocalContext,
+      },
+      {
+        draftRevision: 2,
+        modelProfileId: "model-2",
+        clientToolIds: LOCAL_CLIENT_TOOL_IDS,
+        client: localClient,
+        localContext: noLocalContext,
+      },
     ]);
     const output = stdout.join("");
     expect(output).toContain("Assistant · Model One · /help for commands");
@@ -993,7 +1032,7 @@ describe("assistant CLI", () => {
       onInterrupt: () => () => undefined,
     };
 
-    expect(await runInteractiveAssistant(ctx, {}, reader)).toBe(0);
+    expect(await inEmptyFolders(() => runInteractiveAssistant(ctx, {}, reader))).toBe(0);
     expect(approvalBody).toEqual({ type: "approval_response", approved: true, remember: "always" });
     expect(prompts.filter((prompt) => prompt.startsWith("Choice"))).toEqual(["Choice [Enter to reject]: ", "Choice [Enter to reject]: "]);
     const printed = stdout.join("");
@@ -1119,8 +1158,8 @@ describe("assistant CLI", () => {
       onInterrupt: () => () => undefined,
     };
 
-    expect(await runInteractiveAssistant(ctx, { allowBash: true }, reader)).toBe(0);
-    expect(turnBody?.clientToolIds).toEqual(["local_bash", ...CODE_RUNTIME_TOOL_NAMES]);
+    expect(await inEmptyFolders(() => runInteractiveAssistant(ctx, { allowBash: true }, reader))).toBe(0);
+    expect(turnBody?.clientToolIds).toEqual(LOCAL_CLIENT_TOOL_IDS);
     expect(actionBody).toEqual({
       type: "tool_result",
       result: {
@@ -1221,7 +1260,7 @@ describe("assistant CLI", () => {
       onInterrupt: () => () => undefined,
     };
 
-    expect(await runInteractiveAssistant(ctx, { conversationId: "chat-1", allowBash: true }, reader)).toBe(0);
+    expect(await inEmptyFolders(() => runInteractiveAssistant(ctx, { conversationId: "chat-1", allowBash: true }, reader))).toBe(0);
     expect(submittedTurns).toBe(0);
     expect(actionBody).toMatchObject({ type: "tool_result", result: { status: "denied" } });
     expect(stdout.join("")).toContain("Still safe.");

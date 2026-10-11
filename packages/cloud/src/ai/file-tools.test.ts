@@ -9,6 +9,7 @@ import {
   evaluateAiMath,
 } from "./file-tools";
 import { aiFileStore } from "./files-store";
+import { createCloudAiViewImageTool } from "./vision-tool";
 
 const bytes = (value: string): Uint8Array => new TextEncoder().encode(value);
 
@@ -403,5 +404,23 @@ test("present adds only summaries of valid assistant view files", async () => {
       statSpy.mockRestore();
       readSpy.mockRestore();
     }
+  }
+});
+
+test("missing chat paths guide local clients to upload before read_file and view_image", async () => {
+  const stat = spyOn(aiFileStore, "readSliceWithStat").mockResolvedValue(null);
+  const read = spyOn(aiFileStore, "read").mockResolvedValue(null);
+  try {
+    for (const tool of [createCloudAiReadFileTool(), createCloudAiViewImageTool()]) {
+      if (tool.location !== "server") throw new Error("Expected server tool");
+      const input = { path: "/local.txt", offset: 0, length: 1024 };
+      await expect(tool.run(input, { ...toolContext, localToolsEnabled: true })).rejects.toThrow(
+        "No such file: /local.txt This is a chat path. Upload local files with local_upload first.",
+      );
+      await expect(tool.run(input, toolContext)).rejects.toThrow(/^No such file: \/local.txt$/);
+    }
+  } finally {
+    stat.mockRestore();
+    read.mockRestore();
   }
 });

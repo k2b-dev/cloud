@@ -43,6 +43,8 @@ integration(
         runConfig: {
           kind: "chat",
           input: text,
+          client: { kind: "cli", cwd: "/work", os: "Linux", shell: "bash", localTools: "ask" },
+          localContext: { instructions: [{ path: "/work/AGENTS.md", content: "Rules." }], skills: [], selectedSkills: [] },
           toolSource: { kind: "none" },
           files: {
             attached: [
@@ -91,6 +93,10 @@ integration(
       };
       await Promise.all([drainQueuedMessages(push, chat.id), drainQueuedMessages(push, chat.id)]);
       expect(jobs).toHaveLength(1);
+      expect(await aiConversations.getTurnRunConfig({ conversationId: chat.id, turnId: jobs[0]!.turnId })).toMatchObject({
+        client: { cwd: "/work" },
+        localContext: { instructions: [{ path: "/work/AGENTS.md", content: "Rules." }] },
+      });
       expect((await aiConversations.getConversation({ conversationId: chat.id }))?.lastUsedAt).toBe(before!.lastUsedAt);
       const [snapshot] = await sql<
         { bytes: Uint8Array }[]

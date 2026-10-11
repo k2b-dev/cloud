@@ -238,3 +238,20 @@ test("a failed or interrupted message never describes itself as Completed", () =
     expect(describeResponseEnd({ loopDoneReason: "error", stopReason: "error" }, locale!)).toBe(failed!);
   }
 });
+
+test("local file tool labels and icons match their user-visible actions", () => {
+  const tools = [
+    ["local_list", "List local files", "Lokale Dateien auflisten", "ti ti-folder"],
+    ["local_read", "Read local file", "Lokale Datei lesen", "ti ti-file-text"],
+    ["local_upload", "Upload local files", "Lokale Dateien hochladen", "ti ti-upload"],
+    ["local_download", "Save to local folder", "In lokalen Ordner speichern", "ti ti-download"],
+    ["local_write", "Write local file", "Lokale Datei schreiben", "ti ti-file-pencil"],
+    ["local_move", "Move local files", "Lokale Dateien verschieben", "ti ti-arrows-move"],
+    ["load_local_skill", "Load local Skill", "Lokalen Skill laden", "ti ti-book"],
+  ] as const;
+  for (const [name, en, de, icon] of tools) {
+    expect(displayToolName(name, "en")).toBe(en);
+    expect(displayToolName(name, "de")).toBe(de);
+    expect(aiToolIcon(name)).toBe(icon);
+  }
+});
