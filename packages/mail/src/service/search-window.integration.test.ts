@@ -30,6 +30,7 @@ const uniqueShortIds = (count: number): string[] => {
 };
 
 suite("mail search over a word in every message", () => {
+  const analyzedTables = ["message_contents", "message_addresses", "message_placements", "message_search_chunks"];
   const suffix = crypto.randomUUID().slice(0, 8);
   let context: MailRequestContext;
   let mailboxId = "";
@@ -172,16 +173,15 @@ suite("mail search over a word in every message", () => {
       SELECT id, folder_id, message_id, ARRAY['\\Seen']::text[], ARRAY[]::text[]
       FROM mail.remote_message_refs WHERE folder_id = ${projectsFolderId}::uuid
     `;
-    await sql`ANALYZE mail.message_contents`;
-    await sql`ANALYZE mail.message_addresses`;
-    await sql`ANALYZE mail.message_placements`;
-    await sql`ANALYZE mail.message_search_chunks`;
+    for (const table of analyzedTables) await sql.unsafe(`ANALYZE mail.${table}`);
   }, 120_000);
 
   afterAll(async () => {
     if (mailboxId) {
       await sql`DELETE FROM mail.message_contents WHERE mailbox_id = ${mailboxId}::uuid`;
       await sql`DELETE FROM mail.mailboxes WHERE id = ${mailboxId}::uuid`;
+      // Leave statistics that match the emptied tables; later files would otherwise plan with those of the bulk load.
+      for (const table of analyzedTables) await sql.unsafe(`ANALYZE mail.${table}`);
     }
   }, 120_000);
 

@@ -93,6 +93,14 @@ const expectedMailboxCounts = () => {
 };
 
 suite("mail focus across large mailboxes", () => {
+  const analyzedTables = [
+    "message_contents",
+    "remote_message_refs",
+    "message_placements",
+    "conversations",
+    "conversation_messages",
+    "conversation_assignees",
+  ];
   const suffix = crypto.randomUUID().slice(0, 8);
   const userIds: string[] = [];
   const mailboxIds: string[] = [];
@@ -245,14 +253,7 @@ suite("mail focus across large mailboxes", () => {
 
     // Bulk-loaded tables keep the statistics of the empty tables until autovacuum sees them, and the
     // plan must not depend on when that happens.
-    for (const table of [
-      "message_contents",
-      "remote_message_refs",
-      "message_placements",
-      "conversations",
-      "conversation_messages",
-      "conversation_assignees",
-    ]) {
+    for (const table of analyzedTables) {
       await sql.unsafe(`ANALYZE mail.${table}`);
     }
   }, 300_000);
@@ -275,6 +276,10 @@ suite("mail focus across large mailboxes", () => {
     }
     if (userIds.length > 0) {
       await sql`DELETE FROM auth.users WHERE id IN (SELECT value::uuid FROM jsonb_array_elements_text(${userIds}::jsonb))`;
+    }
+    if (mailboxIds.length > 0) {
+      // Leave statistics that match the emptied tables; later files would otherwise plan with those of the bulk load.
+      for (const table of analyzedTables) await sql.unsafe(`ANALYZE mail.${table}`);
     }
   }, 600_000);
 

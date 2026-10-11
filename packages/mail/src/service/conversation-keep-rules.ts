@@ -1,3 +1,4 @@
+import { toPgUuidArray } from "@k2b/cloud/services";
 import { fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 
@@ -47,24 +48,26 @@ export const isKeepProtectedDestination = (folderId: SqlFragment): SqlFragment =
 /**
  * Restore one last placement after the server disappears; run after hiding in the same transaction. With `folderId`,
  * the restored copy shows in that folder, such as the destination of a move whose new copy no sync has seen yet.
+ * Commands call it once per moved or deleted message under the mailbox's provider lease. The candidates and the
+ * updated rows are limited to the given references, so no plan repeats its work for every placement of the
+ * installation; with current statistics, it reads the given rows by index.
  */
 export const keepLastKeptPlacements = async (db: SqlClient, remoteRefIds: readonly string[], folderId?: string): Promise<void> => {
   if (!remoteRefIds.length) return;
+  const ids = toPgUuidArray([...remoteRefIds]);
   await db`UPDATE mail.message_placements placement
     SET deleted_at = NULL, folder_id = COALESCE(${folderId ?? null}::uuid, placement.folder_id)
     FROM (
       SELECT DISTINCT ON (candidate.message_id) candidate.remote_message_ref_id
       FROM mail.message_placements candidate
       JOIN mail.remote_message_refs candidate_ref ON candidate_ref.id = candidate.remote_message_ref_id
-      WHERE candidate.remote_message_ref_id IN (SELECT value::uuid FROM jsonb_array_elements_text(${remoteRefIds}::jsonb))
+      WHERE candidate.remote_message_ref_id = ANY(${ids}::uuid[]) AND candidate_ref.id = ANY(${ids}::uuid[])
         AND candidate_ref.stale_at IS NOT NULL AND ${isKeptMessage(sql`candidate.message_id`)}
-        AND NOT EXISTS (SELECT 1 FROM mail.message_placements live
-          JOIN mail.remote_message_refs live_ref ON live_ref.id = live.remote_message_ref_id
-          WHERE live.message_id = candidate.message_id AND live.deleted_at IS NULL AND live_ref.stale_at IS NULL)
-        AND NOT EXISTS (SELECT 1 FROM mail.message_placements kept_copy
-          WHERE kept_copy.message_id = candidate.message_id AND kept_copy.deleted_at IS NULL)
+        AND NOT EXISTS (SELECT 1 FROM mail.message_placements visible
+          WHERE visible.message_id = candidate.message_id AND visible.deleted_at IS NULL)
       ORDER BY candidate.message_id, candidate.updated_at DESC, candidate.remote_message_ref_id DESC
-    ) restored WHERE placement.remote_message_ref_id = restored.remote_message_ref_id`;
+    ) restored
+    WHERE placement.remote_message_ref_id = ANY(${ids}::uuid[]) AND placement.remote_message_ref_id = restored.remote_message_ref_id`;
 };
 export const retireKeptCopyPlacements = async (db: SqlClient, messageId: string, remoteRefId: string): Promise<void> => {
   await db`UPDATE mail.message_placements placement SET deleted_at = now(), updated_at = now()
