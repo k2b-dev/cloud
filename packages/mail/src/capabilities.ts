@@ -30,6 +30,7 @@ import {
   collaboration,
   commands,
   composeSafety,
+  composeTemplates,
   conversationAssignments,
   conversationContext,
   conversationKeeps,
@@ -2752,6 +2753,12 @@ const actionDefinitions = {
       ]);
       if (!draft.ok) return draft;
       if (!safety.ok) return safety;
+      let signature = t.none;
+      if (draft.data.signatureTemplateId) {
+        const templates = await composeTemplates.listComposeTemplates(requestContext(context), scope.data.mailbox.id);
+        if (!templates.ok) return templates;
+        signature = templates.data.find((template) => template.id === draft.data.signatureTemplateId)?.name ?? t.otherPersonSignature;
+      }
       return ok({
         message: t.sendDraftReview({ subject: reviewSubject(draft.data.subject, context), scheduled: Boolean(input.scheduledAt) }),
         details: [
@@ -2761,6 +2768,7 @@ const actionDefinitions = {
             ? { label: t.delivery, value: input.scheduledAt, format: "date-time" as const }
             : { label: t.delivery, value: t.undoWindow({ seconds: input.undoSeconds }) },
           ...safety.data.warnings.map((warning) => ({ label: warning.title, value: warning.description })),
+          { label: t.signature, value: signature },
           ...bodyReviewDetails({
             body: draft.data.body,
             label: t.body,

@@ -37,6 +37,7 @@ import {
   collaboration,
   commands,
   composeSafety,
+  composeTemplates,
   conversationAssignments,
   conversationContext,
   conversationKeeps,
@@ -929,6 +930,56 @@ describe("mail capabilities", () => {
       value: "Hello Ada,\n\nThe release is ready.",
       display: "block",
     });
+  });
+
+  test.each([
+    { signatureTemplateId: technicalTargetId, visible: true, expected: "Team signature" },
+    { signatureTemplateId: null, visible: false, expected: "None" },
+    { signatureTemplateId: technicalTargetId, visible: false, expected: "Signature of another person" },
+  ])("shows $expected immediately before the body in send approval", async ({ signatureTemplateId, visible, expected }) => {
+    spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue({ ok: true, data: "write" });
+    spyOn(drafts, "getDraft").mockResolvedValue({ ok: true, data: { ...mutableDraftFixture, signatureTemplateId } });
+    spyOn(composeSafety, "reviewDraftComposeSafety").mockResolvedValue({ ok: true, data: { warnings: [] } } as never);
+    const templates = spyOn(composeTemplates, "listComposeTemplates").mockResolvedValue({
+      ok: true,
+      data: visible
+        ? [
+            {
+              id: technicalTargetId,
+              mailboxId: internalMailboxId,
+              kind: "signature",
+              scope: "mailbox",
+              ownerUserId: null,
+              name: "Team signature",
+              shortcut: "team",
+              body: "Best regards",
+              revision: 1,
+              archivedAt: null,
+              createdAt: timestamp,
+              updatedAt: timestamp,
+            },
+          ]
+        : [],
+    });
+
+    const review = await mailCapabilities.actions["draft.send"].review(
+      DraftSendInputSchema.parse({ mailboxId, draftId, senderIdentityId, expectedRevision: 2 }),
+      context,
+    );
+
+    if (!review.ok) throw new Error("Expected a send review");
+    const details = CapabilityActionReviewSchema.parse(review.data).details;
+    const bodyIndex = details?.findIndex((detail) => detail.label === "Body") ?? -1;
+    expect(bodyIndex).toBeGreaterThan(0);
+    expect(details?.[bodyIndex - 1]).toEqual({ label: "Signature", value: expected });
+    if (signatureTemplateId) {
+      expect(templates).toHaveBeenCalledWith(
+        { actor: context.actor, accessSubject: context.accessSubject, requestId: context.requestId },
+        internalMailboxId,
+      );
+    } else {
+      expect(templates).not.toHaveBeenCalled();
+    }
   });
 
   test("keeps remote conversation subjects inside the review envelope", async () => {
