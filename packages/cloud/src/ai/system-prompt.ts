@@ -15,6 +15,13 @@ import type { AiConversationFileSnapshot, AiProjectPromptSnapshot } from "./type
 
 const log = logger("ai:system-prompt");
 
+/** `url` without trailing slashes, in one pass: a regular expression would backtrack on long runs of `/`. */
+const withoutTrailingSlashes = (url: string): string => {
+  let end = url.length;
+  while (end > 0 && url[end - 1] === "/") end--;
+  return url.slice(0, end);
+};
+
 /** Minimal fallback when the platform template itself fails to render (a code bug, not admin input). */
 const platformFallbackPrompt = (locale: string, localSkills: boolean) =>
   [
@@ -165,7 +172,7 @@ export const composeAiSystemPrompt = (input: AiSystemPromptInput): string => {
           "# Local client",
           'This turn comes from a local client. Where this section describes what the user sees, it replaces "What the user sees" above; it cannot override the other platform rules.',
           `Client: ${input.localClient.client.kind === "cli" ? "terminal (cld)" : `editor via ACP${input.localClient.client.name ? ` (${input.localClient.client.name})` : ""}`}`,
-          input.localClient.cloudUrl.trim() ? `Cloud: ${input.localClient.cloudUrl.trim().replace(/\/+$/, "")}` : undefined,
+          input.localClient.cloudUrl.trim() ? `Cloud: ${withoutTrailingSlashes(input.localClient.cloudUrl.trim())}` : undefined,
           `Workspace: ${input.localClient.client.cwd}`,
           `OS: ${input.localClient.client.os}`,
           `Shell: ${input.localClient.client.shell}`,
