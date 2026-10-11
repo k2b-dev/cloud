@@ -400,5 +400,5 @@ test("pull then push is unchanged", async () => {
   expect(session.values).toEqual([
     { action: "unchanged", skill: { id: "Sk2345", name: cloud.name, revision: 3 }, skipped: [], removedReferences: [] },
   ]);
-  expect(await readdir(`.agents/skills/${cloud.name}`)).toEqual(["SKILL.md", "references"]);
+  expect((await readdir(`.agents/skills/${cloud.name}`)).toSorted()).toEqual(["SKILL.md", "references"]);
 });
