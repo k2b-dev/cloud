@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, expect, mock, test } from "bun:test";
-import { createComponent } from "solid-js";
+import { createComponent, createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../packages/ui/test/dom";
-import type { Authenticator } from "./authenticator";
+import type { ActionView, Authenticator } from "./authenticator";
 import type { Installation } from "./install";
 import type { Preferences } from "./preferences";
 import type { Binding } from "./storage";
@@ -10,35 +10,57 @@ import type { Vault } from "./vault";
 
 let dom: DomTestHarness;
 let clouds = 0;
+let vaultStatus: ReturnType<Vault["status"]> = "open";
+let setups = 0;
+let failSetup = false;
+let waitingAction = false;
+const actionReads: string[] = [];
+const actionView: ActionView = {
+  actionId: "action-id",
+  app: { id: "files", name: "Files" },
+  requester: { app: { id: "assistant", name: "Assistant" }, title: null },
+  sentence: "Remove file",
+  assurance: "standard",
+  createdAt: new Date().toISOString(),
+  expiresAt: new Date(Date.now() + 60_000).toISOString(),
+  message: null,
+  details: [],
+  truncated: false,
+  argsDigest: "input",
+  digest: "unused",
+};
 const keys = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, false, ["sign", "verify"]);
 
 beforeEach(() => {
   dom = createDomTestHarness();
+  failSetup = false;
+  waitingAction = false;
+  actionReads.length = 0;
   Object.defineProperty(globalThis, "localStorage", { configurable: true, value: dom.window.localStorage });
 });
 afterEach(() => dom.cleanup());
 
 // The shell is under test, not key storage or the network: an open vault with `clouds` paired Clouds.
 mock.module("./vault", () => ({
-  createVault: (): Vault => ({
-    header: () => undefined,
-    protectedByPin: () => false,
-    status: () => "open",
-    lock: () => {},
-    unlock: async () => {},
-    setup: async () => {},
-    verify: async () => {
-      throw new Error("not used");
-    },
-    change: async () => {},
-    addPin: async () => {},
-    reset: async () => {},
-    cancelPending: () => {},
-    retryAfter: () => 0,
-    session: () => {
-      throw new Error("not used");
-    },
-  }),
+  createVault: (): Vault => {
+    const [status, setStatus] = createSignal(vaultStatus);
+    return {
+      header: () => undefined,
+      status,
+      unlock: async () => {},
+      setup: async () => {
+        setups++;
+        if (failSetup) throw new Error("storage");
+        setStatus("open");
+      },
+      reset: async () => {},
+      cancelPending: () => {},
+      retryAfter: () => 0,
+      session: () => {
+        throw new Error("not used");
+      },
+    };
+  },
 }));
 mock.module("./authenticator", () => ({
   consumePairingLocation: () => undefined,
@@ -58,7 +80,10 @@ mock.module("./authenticator", () => ({
     const noop = async () => {};
     return {
       bindings: () => bindings,
-      states: () => Object.fromEntries(bindings.map((binding) => [binding.id, { requests: [] }])),
+      states: () =>
+        Object.fromEntries(
+          bindings.map((binding) => [binding.id, { requests: [], actions: waitingAction ? [actionView] : [], moreActions: 0 }]),
+        ),
       now: Date.now,
       online: () => true,
       storageError: () => false,
@@ -70,6 +95,11 @@ mock.module("./authenticator", () => ({
       account: async () => {
         throw new Error("No network in this test");
       },
+      action: async (_binding, actionId) => {
+        actionReads.push(actionId);
+        return actionView;
+      },
+      act: noop,
       decide: noop,
       revoke: noop,
       syncPush: noop,
@@ -173,3 +203,71 @@ test.each([
   expect(computed(".auth-footer").display).toBe(pinned ? "block" : "none");
   dispose();
 });
+
+test("pairing from an empty vault opens Add Cloud directly without PIN setup", async () => {
+  vaultStatus = "empty";
+  setups = 0;
+  const dispose = await renderApp(0);
+  try {
+    [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Add Cloud")!.click();
+    await Bun.sleep(30);
+    expect(setups).toBe(1);
+    expect(document.querySelector("dialog")?.textContent).toContain("Pairing link");
+    expect(document.querySelector("dialog")?.textContent).not.toContain("PIN");
+    expect(document.querySelector(".k2b-pin-input")).toBeNull();
+  } finally {
+    const { closeDialogs } = await import("./dialog");
+    closeDialogs();
+    await Bun.sleep(20);
+    dispose();
+    vaultStatus = "open";
+  }
+});
+
+test("failed local vault setup reports storage failure without opening pairing", async () => {
+  vaultStatus = "empty";
+  failSetup = true;
+  const dispose = await renderApp(0);
+  try {
+    [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Add Cloud")!.click();
+    await Bun.sleep(30);
+    expect(dom.root.querySelector('[role="alert"]')?.textContent).toContain("Device keys could not be saved or read.");
+    expect(document.querySelector("dialog[open]")).toBeNull();
+  } finally {
+    dispose();
+    vaultStatus = "open";
+  }
+});
+
+for (const source of ["url", "worker"] as const) {
+  test(`an Action notification from ${source} focuses its Action once`, async () => {
+    waitingAction = true;
+    const worker = new dom.window.EventTarget();
+    Object.defineProperty(navigator, "serviceWorker", { configurable: true, value: worker });
+    if (source === "url") history.replaceState(null, "", "/?action=action-id");
+    const dispose = await renderApp(1);
+    try {
+      if (source === "worker") {
+        expect(document.querySelector("dialog[open]")).toBeNull();
+        const { OPEN_REQUEST_MESSAGE } = await import("./push-worker");
+        worker.dispatchEvent(
+          new dom.window.MessageEvent("message", { data: { type: OPEN_REQUEST_MESSAGE, ref: "action-id", kind: "action" } }),
+        );
+      }
+      await Bun.sleep(30);
+      expect(actionReads).toEqual(["action-id"]);
+      expect(document.querySelector("dialog[open] blockquote")?.textContent).toBe("Remove file");
+      expect(location.search).toBe("");
+      const { closeDialogs } = await import("./dialog");
+      closeDialogs();
+      await Bun.sleep(30);
+      expect(document.querySelector("dialog[open]")).toBeNull();
+      expect(actionReads).toEqual(["action-id"]);
+    } finally {
+      const { closeDialogs } = await import("./dialog");
+      closeDialogs();
+      await Bun.sleep(20);
+      dispose();
+    }
+  });
+}

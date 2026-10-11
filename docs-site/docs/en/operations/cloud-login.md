@@ -151,10 +151,16 @@ All bodies are JSON with no extra fields. Responses use `Cache-Control: no-store
 | `GET /push/config` | `{publicKey}` for `PushManager.subscribe`. |
 | `POST /push/subscriptions` with a `PushSubscription` JSON | 201 `{token}`. The token is a random 256-bit capability. Subscribing the same endpoint again replaces its previous token. Push endpoints must be public HTTPS URLs. |
 | `DELETE /push/subscriptions/:token` | 204, also for unknown tokens. |
-| `POST /push/notify` with `{token, cloudOrigin, requestRef}` | 202 queued, or 410 when the token is unknown or its subscription expired. `requestRef` has 1–64 URL-safe characters. |
+| `POST /push/notify` with `{token, cloudOrigin, requestRef, kind?}` | 202 queued, or 410 when the token is unknown or its subscription expired. `requestRef` has 1–64 URL-safe characters. `kind` is `"login"` or `"action"`; omitted means `"login"`. Unknown kinds answer 400. |
 | `POST /push/test` with `{token}` | 202 or 410; sends a test notification. |
 
-Anyone holding a push token can make that phone show a sign-in notification,
+The encrypted wake-up is `{v:1, type:"login" | "action", cloud, ref}`.
+Delivery deduplicates by subscription, type, Cloud, and request reference.
+Actions use a separate Web Push topic, so an Action wake-up cannot replace an
+undelivered sign-in wake-up. Bodies without `kind` keep the original sign-in
+message and topic.
+
+Anyone holding a push token can make that phone show a sign-in or Action notification,
 up to its rate limit, but cannot read or approve anything. The app hands its
 token only to the Clouds it is paired with, through each Cloud's signed device
 channel, and again whenever the token changes. Revoking a device in Cloud or
@@ -164,43 +170,25 @@ revoke it there.
 
 ## Protect the app
 
-The first **Add Cloud** action offers PIN setup before pairing starts. Choose
-**Continue without PIN** or enter a six-digit PIN twice; leading zeroes count.
-The choice is saved, so adding another Cloud does not ask again. Without a PIN,
-the app opens directly and does not lock automatically or offer **Lock app**.
-Anyone who can open the app can approve sign-ins; its stored vault key has no
-PIN protection.
+Cloud Login opens directly and never asks you to set an app PIN. Anyone who
+can open it on an unlocked phone can approve sign-ins and Actions. Protect the
+phone with its own screen lock.
 
-One PIN protects every connected Cloud on this device. Entering the sixth digit
-in the unlock dialog starts unlocking automatically. Wrong PINs leave the app locked and impose a local
-delay rising from one to thirty seconds.
+Device credentials are encrypted in browser storage, but the key is stored
+alongside them. Copied browser data is a full credential. After suspected
+compromise, revoke the devices in each Cloud and pair again; removing a PIN
+or resetting the app does not secure copies an attacker already obtained.
 
-A six-digit PIN has at most one million combinations. Argon2id makes guessing
-more expensive but cannot prevent offline guessing against copied app data.
-The retry delay survives reloads, but clearing or changing browser data can
-bypass it; it is not a hardware guess limit.
+An existing install that still has a PIN starts with **Remove app PIN**.
+Enter the PIN one last time to keep all connected Clouds. Cloud Login then
+removes the PIN and opens directly on later launches. Wrong PINs keep it locked
+with the existing retry delay of one to thirty seconds, including after reload.
 
-With a PIN, the unlock dialog opens on startup or return to the locked app.
-The app starts locked after a reload and locks after one minute in the background, on page
-exit, after five minutes without interaction, or through **Lock app**. Locking
-hides account details, closes sensitive dialogs, and stops polling. Other open
-tabs receive the lock as well.
-
-**App security** lets you add a PIN later without pairing again. If a PIN is
-already set, it asks for the current PIN before setting a new one. The new PIN
-must successfully unlock before it is saved. Cloud pairings remain unchanged.
-If the stored protection method is unsupported, the app offers an explicit
-reset and re-pairing path. Nothing is deleted automatically.
-
-Changing app protection does not secure copies of browser data that an attacker
-already obtained. After suspected compromise, revoke the devices in Cloud and
-pair again.
-
-If no configured method works, **Reset Cloud Login** removes local pairings
-and protection after confirmation. It does not revoke devices in the Clouds.
-Use another Cloud sign-in method to revoke old devices and pair again.
-If the app asks you to reset unsupported stored data, review and revoke its old
-devices in Cloud before pairing again.
+If you forgot the PIN, or the stored protection method is unsupported, use
+**Reset Cloud Login**. After confirmation, this removes local pairings and
+protection. It does not revoke devices or sessions in your Clouds. Sign in
+there another way, revoke the old devices and pair again. Nothing is deleted
+automatically.
 
 ## Connect a Cloud
 
@@ -227,10 +215,9 @@ device and a device name, compare the code in both windows, and confirm in the
 original Cloud session. Once Cloud confirms, choose **Both codes match** in
 Cloud Login to finish pairing. The local label is user-chosen, not verified account metadata.
 
-A switch to the Cloud window keeps Cloud Login unlocked for up to one minute.
-After a longer absence, it locks and closes the pairing dialog.
-Unlock and paste the same unexpired link again to reuse the stored key. Pairing links expire
-after five minutes. If the link expires, start again in Cloud and revoke any
+If the pairing dialog closes while you switch to the Cloud window, paste the
+same unexpired link again to reuse the stored key. Pairing links expire after
+five minutes. If the link expires, start again in Cloud and revoke any
 previously confirmed device you can no longer use.
 
 ## Manage connected accounts
@@ -254,8 +241,8 @@ after the next approval.
 
 ## Approve and recover
 
-Cloud Login checks for pending sign-ins while visible and online. New requests
-open a bottom sheet once the app is unlocked and no other dialog is open.
+Cloud Login checks for waiting requests while visible and online. New sign-in
+requests open a bottom sheet when no other dialog is open.
 Requests from all connected Clouds are shown in order. Dismissing the sheet
 does not deny a request; open it again from its Cloud card. Compare its code
 with the waiting browser, and explicitly approve or deny it.
@@ -263,14 +250,35 @@ A failing Cloud does not block the others. After an uncertain response, check
 the original browser and start a new sign-in if needed; Cloud Login does not
 silently resend the decision.
 
+Actions appear below the sign-ins in each Cloud card, with the app's name,
+its sentence, the chat title when available, and the request time. They stay
+in the list until you choose **Review**; arriving Actions never open a sheet
+on their own. If more are waiting, the card shows how many to review in Cloud.
+Older Clouds continue to show sign-ins only.
+
+The review sheet identifies the app and Cloud host in Cloud Login's own frame,
+then names the requesting app. The quoted sentence, message, chat title and
+details are the application's text; they are displayed as text, without HTML
+or links. Read them before choosing **Approve** or **Deny**. Shortened requests
+carry a note to see everything under **My account → Approvals** in Cloud.
+**Asks every time** marks an Action that always needs confirmation. The sheet
+shows its remaining lifetime; an expired request cannot be approved or denied.
+Both buttons become available half a second after the checked view appears.
+
+The same sheet shows **Approved** and that the app continues in Cloud, or
+**Denied** and that nothing happens. Choose **Done** to close it. **Not applied**
+means the request was already decided, expired or changed (Cloud answered
+HTTP 409); check it in Cloud. If loading or checking fails, review the request
+in Cloud. If the decision's result is uncertain, the buttons stay disabled
+and Cloud Login never sends the decision again. Check its status in Cloud.
+
 **Disconnect Cloud** offers device revocation and explicit local removal.
 Local removal does not revoke the device in Cloud. Existing browser sessions
 must be revoked separately.
 
-Cloud Login stores device credentials encrypted in this browser. The app lock
-does not protect against malicious code running on the authenticator website
-or a compromised device. Deleted
-browser data has no automatic recovery: sign in with another supported method,
+Cloud Login stores device credentials encrypted in this browser. Malicious
+code running on the authenticator website or a compromised device can use them.
+Deleted browser data has no automatic recovery: sign in with another supported method,
 revoke the old device and pair again. Without another method, an administrator
 [revokes the device](./app-approval.md#revoke-a-device-for-someone-else) and
 can help pair a new one. Do not assume that browser tabs, installed
@@ -306,11 +314,16 @@ card on first launch. The permission prompt appears only after a tap on
 | Not supported | The browser or this Cloud Login server offers no push. |
 
 After notifications are on, the app sends its push token to every paired
-Cloud the next time it is unlocked, and to newly paired Clouds right after
+Cloud the next time it is open, and to newly paired Clouds right after
 pairing. Clouds without push support keep working without notifications.
 Tapping a notification opens Cloud Login, or focuses it, and shows that
-request first once the app is unlocked. Notifications are not guaranteed:
+request first once it appears in the Cloud's inbox. Notifications are not guaranteed:
 the phone, its battery saver or the push service may delay or drop them.
+
+Action notifications say **Approval requested on cloud.example.org** and
+**Open Cloud Login to review it.** They name only the Cloud host, without app
+names, sentences, chat titles or account details. Tapping one opens its review
+sheet; you still read the request and explicitly approve or deny it.
 
 For troubleshooting, open **Settings** and note the version shown below the
 appearance control. Release images show their tag and source revision; local

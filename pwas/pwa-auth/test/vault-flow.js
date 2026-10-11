@@ -1,120 +1,89 @@
 async function _run(page) {
-  const fillAppPin = async (target, value) => {
-    await target.waitForFunction(() => !document.querySelector("dialog input:disabled, dialog input[readonly]"));
-    const digits = target.getByRole("group", { name: "App PIN", exact: true }).locator("input");
-    if (await digits.count()) {
-      for (let i = 0; i < value.length; i++) await digits.nth(i).fill(value[i]);
-    } else await target.getByLabel("App PIN", { exact: true }).fill(value);
-  };
-
+  const sdk = await (await import("node:fs/promises")).readFile("/tmp/cloud-login-test-sdk.js", "utf8");
   const context = await page
     .context()
     .browser()
     .newContext({ locale: "en", viewport: { width: 390, height: 844 } });
-  await context.addInitScript(() => {
-    navigator.credentials.create = navigator.credentials.get = async () => {
-      throw new Error("Unexpected credential-manager request");
-    };
-  });
   const p = await context.newPage();
-  const errors = [];
-  p.on("pageerror", (e) => errors.push(e.message));
+  await p.route("**/fixture-sdk.js", (route) => route.fulfill({ contentType: "text/javascript", body: sdk }));
+  await p.route("https://migration.example/**", (route) => route.fulfill({ status: 503, body: "" }));
   const button = (name) => p.getByRole("button", { name, exact: true });
-  const menu = async (name) => {
-    await button("Menu").click();
-    await p.getByRole("menuitem", { name, exact: true }).click();
+  const ready = () => p.waitForFunction(() => !history.state?.k2bDialog);
+  const pin = async (value) => {
+    await p.waitForFunction(() => !!document.querySelector("dialog .k2b-pin-input") && !document.querySelector("dialog input[readonly]"));
+    const digits = p.getByRole("group", { name: "App PIN", exact: true }).locator("input");
+    for (let i = 0; i < value.length; i++) await digits.nth(i).fill(value[i]);
   };
-  const pin = async (value) => fillAppPin(p, value);
-  const ready = async () => p.waitForFunction(() => !history.state?.k2bDialog);
-  try {
-    await p.goto("http://127.0.0.1:4178/");
-    await button("Continue in browser").click();
-    await ready();
-    await button("Add Cloud").click();
-    await p.getByRole("heading", { name: "Set app PIN" }).waitFor();
-    await p.waitForFunction(() => document.activeElement === document.querySelector("dialog input"));
-    await pin("012345");
-    await p.getByLabel("Repeat PIN", { exact: true }).fill("012346");
-    if (!(await button("Save protection").isDisabled())) throw new Error("Mismatched PIN accepted");
-    await p.getByLabel("Repeat PIN", { exact: true }).fill("012345");
-    await button("Save protection").click();
-    await p.getByRole("heading", { name: "Add Cloud", exact: true }).waitFor();
-    await button("Close").click();
-    await ready();
-    const stored = await p.evaluate(async () => {
+  const readHeader = () =>
+    p.evaluate(async () => {
       const db = await new Promise((resolve, reject) => {
-        const r = indexedDB.open("cloud-login", 2);
-        r.onsuccess = () => resolve(r.result);
-        r.onerror = () => reject(r.error);
+        const request = indexedDB.open("cloud-login", 2);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
       });
       const value = await new Promise((resolve) => {
-        const r = db.transaction("vault").objectStore("vault").get("header");
-        r.onsuccess = () => resolve(r.result);
+        const request = db.transaction("vault").objectStore("vault").get("header");
+        request.onsuccess = () => resolve(request.result);
       });
       db.close();
       return value;
     });
-    if (JSON.stringify(stored).includes("012345") || stored.config.methods[0].kdf !== "argon2id-64m-t3-p1")
-      throw new Error("Unsafe PIN storage");
+  try {
+    await p.goto("http://127.0.0.1:4178/");
+    await button("Continue in browser").click();
+    await ready();
+    // Seed an old install with a real SDK PIN method and an encrypted connected Cloud.
+    await p.evaluate(async () => {
+      const { appApproval } = await import("/fixture-sdk.js");
+      const session = await appApproval.vault.create();
+      const method = await session.pin("012345");
+      const issuer = "https://migration.example";
+      const deviceId = crypto.randomUUID();
+      const id = JSON.stringify([issuer, deviceId]);
+      const blob = await session.sealRecord(
+        { id, issuer, deviceId, label: "Kept Cloud", name: "Phone", key: await session.createKey() },
+        JSON.stringify(["bindings", id]),
+      );
+      const db = await new Promise((resolve, reject) => {
+        const request = indexedDB.open("cloud-login", 2);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(["vault", "bindings"], "readwrite");
+        tx.objectStore("vault").put({ revision: crypto.randomUUID(), config: { version: 1, id: session.id, methods: [method] } }, "header");
+        tx.objectStore("bindings").put({ id, vault: session.id, blob }, id);
+        tx.oncomplete = resolve;
+        tx.onabort = () => reject(tx.error);
+      });
+      db.close();
+      session.lock();
+    });
     await p.reload();
-    if (!(await p.getByRole("dialog").count())) await button("Unlock").click();
-    await p.waitForFunction(() => document.activeElement === document.querySelector("dialog .k2b-pin-input input"));
-    if (await p.getByRole("dialog").getByRole("button", { name: "Unlock", exact: true }).count())
-      throw new Error("Redundant unlock button");
+    await p.getByRole("heading", { name: "Remove app PIN", exact: true }).last().waitFor();
+    await p
+      .getByText("Cloud Login no longer uses an app PIN. Enter your PIN one last time to keep your connected Clouds.")
+      .last()
+      .waitFor();
+    const before = await readHeader();
     await pin("111111");
     await p.getByRole("alert").waitFor();
-    await p.waitForFunction(() => document.activeElement === document.querySelector("dialog .k2b-pin-input input"));
-    await p.waitForFunction(() => !document.querySelector("dialog input[readonly]"));
-    if (!(await p.evaluate(() => document.activeElement === document.querySelector("dialog .k2b-pin-input input"))))
-      throw new Error("PIN lost focus after retry delay");
-    for (const wrong of ["222222", "333333"]) {
-      await pin(wrong);
-      await p.getByRole("alert").waitFor();
-    }
-    const deadline = await p.evaluate(() => JSON.parse(localStorage.getItem("pwa-auth.pin-retry")).retryAt);
-    await p.reload();
-    if (!(await p.getByRole("dialog").count())) await button("Unlock").click();
+    if (JSON.stringify(before) !== JSON.stringify(await readHeader())) throw new Error("Wrong PIN changed vault");
     if (
       !(await p
-        .locator("dialog .k2b-pin-input input")
+        .locator("dialog input")
         .first()
         .evaluate((input) => input.readOnly))
     )
-      throw new Error("Reload bypassed PIN delay");
-    const restored = await p.evaluate(() => JSON.parse(localStorage.getItem("pwa-auth.pin-retry")));
-    if (restored.retryAt !== deadline || restored.attempts !== 3) throw new Error("Reload reset retry state");
+      throw new Error("Wrong PIN has no retry delay");
     await pin("012345");
-    await p.getByRole("status", { name: "Unlocked", exact: true }).waitFor();
-    const successWidth = await p.getByRole("dialog").evaluate((dialog) => dialog.getBoundingClientRect().width);
-    if (successWidth > 200) throw new Error("Success dialog did not shrink");
     await ready();
-    const cleared = await p.evaluate(() => JSON.parse(localStorage.getItem("pwa-auth.pin-retry")));
-    if (cleared.attempts || cleared.retryAt) throw new Error("Successful unlock did not reset delay");
-    await button("Add Cloud").waitFor();
-    await menu("App security");
-    await pin("012345");
-    await p.getByLabel("Repeat PIN", { exact: true }).waitFor();
-    await pin("654321");
-    await p.getByLabel("Repeat PIN", { exact: true }).fill("654321");
-    await button("Save protection").click();
-    await ready();
-    await menu("Lock app");
-    if (!(await p.getByRole("dialog").count())) await button("Unlock").click();
-    await pin("012345");
-    await p.getByRole("alert").waitFor();
-    await pin("654321");
-    await ready();
-    const other = await context.newPage();
-    await other.goto("http://127.0.0.1:4178/");
-    if (!(await other.getByRole("dialog").count())) await other.getByRole("button", { name: "Unlock", exact: true }).click();
-    await fillAppPin(other, "654321");
-    await other.waitForFunction(() => !history.state?.k2bDialog);
-    await menu("Lock app");
-    await other.getByRole("button", { name: "Unlock", exact: true }).waitFor();
-    await other.close();
-    await p.screenshot({ path: "output/playwright/pwa-vault-locked.png" });
-    if (errors.length) throw new Error(errors.join("\n"));
-    return { setup: true, pinChange: true, wrongPin: true, reload: true, crossTabLock: true, errors };
+    await p.getByRole("heading", { name: "Kept Cloud", exact: true }).waitFor();
+    if ((await readHeader()).config.methods.map((method) => method.type).join() !== "local") throw new Error("PIN was not removed");
+    await p.reload();
+    await p.getByRole("heading", { name: "Kept Cloud", exact: true }).waitFor();
+    if (await p.locator(".k2b-pin-input").count()) throw new Error("Reload asked for PIN again");
+    return { wrongPinLocked: true, retryDelay: true, connectedCloudKept: true, pinRemoved: true, reloadOpens: true };
   } finally {
     await context.close();
   }

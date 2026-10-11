@@ -43,7 +43,7 @@ function fakeAuth(options: { online?: boolean; stored?: Binding; account?: () =>
   const noop = async () => {};
   const auth: Authenticator = {
     bindings: () => [binding],
-    states: () => ({ fixture: { requests: [] } }),
+    states: () => ({ fixture: { requests: [], actions: [], moreActions: 0 } }),
     now: Date.now,
     online: () => options.online ?? true,
     storageError: () => false,
@@ -56,6 +56,10 @@ function fakeAuth(options: { online?: boolean; stored?: Binding; account?: () =>
       calls.push(value.id);
       return (options.account ?? (async () => details))();
     },
+    action: async () => {
+      throw new Error("No action in this test");
+    },
+    act: noop,
     decide: noop,
     revoke: noop,
     syncPush: noop,

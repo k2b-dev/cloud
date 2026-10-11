@@ -1,3 +1,4 @@
+import { dates } from "@k2b/stdlib";
 import {
   BottomSheet,
   Button,
@@ -11,6 +12,7 @@ import {
   useLocale,
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { ActionSheet } from "./ActionSheet";
 import type { Authenticator, Login } from "./authenticator";
 import { openDetails } from "./Details";
 import { openDialog } from "./dialog";
@@ -125,7 +127,14 @@ function Disconnect(props: { auth: Authenticator; binding: Binding; close: () =>
     </PanelDialog>
   );
 }
-export function Clouds(props: { auth: Authenticator; preferences: Preferences; focus?: () => string | undefined; focused?: () => void }) {
+export function Clouds(props: {
+  auth: Authenticator;
+  preferences: Preferences;
+  focus?: () => string | undefined;
+  focused?: () => void;
+  focusAction?: () => string | undefined;
+  actionFocused?: () => void;
+}) {
   const locale = useLocale();
   const t = createMemo(() => authMessages.resolve([locale()]).t);
   const [sheetOpen, setSheetOpen] = createSignal(false);
@@ -173,11 +182,42 @@ export function Clouds(props: { auth: Authenticator; preferences: Preferences; f
       if (!disposed) setSheetOpen(false);
     }
   };
+  const openAction = async (binding: Binding, actionId: string) => {
+    if (disposed || sheetOpen() || document.visibilityState !== "visible" || document.querySelector("dialog[open]")) return;
+    setSheetOpen(true);
+    if (props.focusAction?.() === actionId) props.actionFocused?.();
+    try {
+      await openDialog(
+        (close, context) => (
+          <LocaleProvider locale={props.preferences.locale()}>
+            <ActionSheet auth={props.auth} binding={binding} actionId={actionId} dismiss={context.requestDismiss} close={() => close()} />
+          </LocaleProvider>
+        ),
+        bottomSheetOptions,
+      );
+    } finally {
+      if (!disposed) setSheetOpen(false);
+    }
+  };
   createEffect(() => {
     const queue = pending();
     const keys = new Set(queue.map((item) => item.key));
     for (const key of seen) if (!keys.has(key)) seen.delete(key);
     if (sheetOpen() || !props.auth.online()) return;
+    const actionId = props.focusAction?.();
+    const actionBinding = actionId
+      ? props.auth
+          .bindings()
+          .find((binding) =>
+            props.auth
+              .states()
+              [binding.id]?.actions.some((action) => action.actionId === actionId && Date.parse(action.expiresAt) > props.auth.now()),
+          )
+      : undefined;
+    if (actionBinding && actionId) {
+      void openAction(actionBinding, actionId);
+      return;
+    }
     // A tapped notification reopens its request even after the sheet was dismissed.
     const focus = props.focus?.();
     const focused = focus ? queue.find((item) => item.request.requestId === focus) : undefined;
@@ -193,6 +233,7 @@ export function Clouds(props: { auth: Authenticator; preferences: Preferences; f
           const [logoFailed, setLogoFailed] = createSignal(false);
           const state = () => props.auth.states()[binding.id];
           const requests = () => (state()?.requests ?? []).filter((r) => Date.parse(r.expiresAt) > props.auth.now());
+          const actions = () => (state()?.actions ?? []).filter((action) => Date.parse(action.expiresAt) > props.auth.now());
           return (
             <Paper as="section" class="auth-cloud">
               <header>
@@ -231,7 +272,7 @@ export function Clouds(props: { auth: Authenticator; preferences: Preferences; f
                 </IconButton>
               </header>
               <Show when={state()?.error}>{(error) => <p role="status">{t()[error()]}</p>}</Show>
-              <Show when={state() && !state()?.error && requests().length === 0}>
+              <Show when={state() && !state()?.error && requests().length === 0 && actions().length === 0 && !state()?.moreActions}>
                 <p class="auth-quiet">{t().noRequests}</p>
               </Show>
               <Show when={!state()}>
@@ -249,6 +290,35 @@ export function Clouds(props: { auth: Authenticator; preferences: Preferences; f
                   />
                 )}
               </For>
+              <For each={actions()}>
+                {(action) => (
+                  <div class="auth-action-row">
+                    <div class="auth-action-row__copy">
+                      <p class="auth-action-row__title">
+                        <strong>{action.app.name}</strong> · {action.sentence}
+                      </p>
+                      <p class="auth-action-row__origin">
+                        {/* A long chat title gives way; the time always stays visible. */}
+                        <Show when={action.requester.title}>
+                          {(title) => (
+                            <>
+                              <span>{t().actionChatTitle({ title: title() })}</span>
+                              <span aria-hidden="true"> · </span>
+                            </>
+                          )}
+                        </Show>
+                        <time dateTime={action.createdAt}>{dates.formatDateTimeRelative(action.createdAt, { locale: locale() })}</time>
+                      </p>
+                    </div>
+                    <Button variant="secondary" onClick={() => void openAction(binding, action.actionId)}>
+                      {t().actionReview}
+                    </Button>
+                  </div>
+                )}
+              </For>
+              <Show when={(state()?.moreActions ?? 0) > 0}>
+                <p class="auth-quiet">{t().moreActions({ count: state()?.moreActions ?? 0 })}</p>
+              </Show>
             </Paper>
           );
         }}

@@ -8,7 +8,7 @@ import { authMessages } from "./i18n";
 export const PREFERENCES_CACHE = "cloud-login-preferences";
 export const OPEN_REQUEST_MESSAGE = "cloud-login-open-request";
 
-type Message = { type: "login"; cloud: string; ref: string } | { type: "test" } | { type: "unknown" };
+type Message = { type: "login" | "action"; cloud: string; ref: string } | { type: "test" } | { type: "unknown" };
 type WindowLike = { url: string; focus(): Promise<unknown>; postMessage(message: unknown): void };
 type Waitable = { waitUntil(promise: Promise<unknown>): void };
 type PushEventLike = Waitable & { data?: { text(): string } | null };
@@ -32,7 +32,7 @@ export const parsePushMessage = (text: string | undefined): Message => {
     if (!value || typeof value !== "object" || !("v" in value) || value.v !== 1 || !("type" in value)) return { type: "unknown" };
     if (value.type === "test") return { type: "test" };
     if (
-      value.type === "login" &&
+      (value.type === "login" || value.type === "action") &&
       "cloud" in value &&
       typeof value.cloud === "string" &&
       "ref" in value &&
@@ -40,7 +40,7 @@ export const parsePushMessage = (text: string | undefined): Message => {
       /^[A-Za-z0-9_-]{1,64}$/.test(value.ref)
     ) {
       const url = new URL(value.cloud);
-      if (url.origin === value.cloud) return { type: "login", cloud: value.cloud, ref: value.ref };
+      if (url.origin === value.cloud) return { type: value.type, cloud: value.cloud, ref: value.ref };
     }
   } catch {
     // Fall through: iOS removes the subscription if a push shows nothing.
@@ -55,6 +55,11 @@ export const notificationFor = (message: Message, languages: readonly string[]) 
     return {
       title: t.pushLoginTitle({ cloud: new URL(message.cloud).host }),
       options: { ...base, body: t.pushLoginBody, tag: `login:${message.cloud}`, data: { url: `/?request=${message.ref}` } },
+    };
+  if (message.type === "action")
+    return {
+      title: t.pushActionTitle({ cloud: new URL(message.cloud).host }),
+      options: { ...base, body: t.pushActionBody, tag: `action:${message.cloud}`, data: { url: `/?action=${message.ref}` } },
     };
   if (message.type === "test") return { title: t.appName, options: { ...base, body: t.pushTestBody, tag: "test", data: { url: "/" } } };
   return { title: t.appName, options: { ...base, body: t.pushGenericBody, tag: "login", data: { url: "/" } } };
@@ -85,11 +90,13 @@ export function installPushHandlers(scope: PushScope) {
         const path = data && typeof data === "object" && "url" in data && typeof data.url === "string" ? data.url : "/";
         const target = new URL(path, scope.location.origin);
         const url = target.origin === scope.location.origin ? target.href : `${scope.location.origin}/`;
-        const ref = new URL(url).searchParams.get("request");
+        const query = new URL(url).searchParams;
+        const kind = query.has("action") ? "action" : "login";
+        const ref = query.get(kind === "action" ? "action" : "request");
         const windows = await scope.clients.matchAll({ type: "window", includeUncontrolled: true });
         const open = windows.find((client) => new URL(client.url).origin === scope.location.origin);
         if (!open) return scope.clients.openWindow(url);
-        if (ref) open.postMessage({ type: OPEN_REQUEST_MESSAGE, ref });
+        if (ref) open.postMessage({ type: OPEN_REQUEST_MESSAGE, ref, kind });
         return open.focus();
       })(),
     );

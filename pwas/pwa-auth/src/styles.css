@@ -392,3 +392,170 @@ body {
   font-size: 0.875rem;
   line-height: 1.5;
 }
+
+.auth-action-body {
+  min-height: 18rem;
+  display: grid;
+  align-content: start;
+  gap: 1rem;
+  overflow-wrap: anywhere;
+}
+.auth-action-body p,
+.auth-action-body blockquote,
+.auth-action-body dl {
+  margin: 0;
+}
+.auth-action-body > [role="status"],
+.auth-action-body > [role="alert"] {
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+.auth-action-frame {
+  display: grid;
+  gap: 0.125rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+.auth-action-frame b {
+  color: var(--k2b-text);
+  font-weight: 600;
+}
+.auth-action-quote {
+  padding-inline-start: 0.875rem;
+  box-shadow: inset 3px 0 0 var(--k2b-border-strong);
+  font-size: 1.0625rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.auth-action-message {
+  color: var(--k2b-text-secondary);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+.auth-action-details {
+  display: grid;
+  grid-template-columns: fit-content(40%) minmax(0, 1fr);
+  gap: 0.375rem 1rem;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+.auth-action-details dt {
+  color: var(--k2b-text-muted);
+}
+.auth-action-details dd {
+  margin: 0;
+  color: var(--k2b-text-secondary);
+}
+.auth-action-note,
+.auth-action-meta {
+  display: flex;
+  gap: 0.375rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+.auth-action-note .ti {
+  flex: none;
+  margin-top: 0.125rem;
+}
+.auth-action-meta {
+  justify-content: space-between;
+  gap: 1rem;
+}
+.auth-action-body [role="alert"] {
+  color: var(--k2b-danger-text);
+}
+.auth-action-result {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 0.75rem;
+  min-height: inherit;
+  padding-block: 1rem;
+  text-align: center;
+}
+.auth-action-result__icon {
+  display: grid;
+  place-items: center;
+  width: 4rem;
+  height: 4rem;
+  margin-bottom: 0.25rem;
+  border-radius: 50%;
+  background: var(--k2b-surface-muted);
+  color: var(--k2b-text-muted);
+  font-size: 2rem;
+}
+.auth-action-result[data-outcome="approve"] .auth-action-result__icon {
+  background: var(--k2b-success-surface);
+  color: var(--k2b-success-text);
+}
+.auth-action-result h3 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+.auth-action-result p {
+  max-width: 20rem;
+  color: var(--k2b-text-secondary);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+.auth-action-result .auth-action-result__meta {
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+}
+.auth-action-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+  width: 100%;
+}
+.auth-action-actions--one {
+  grid-template-columns: 1fr;
+}
+.auth-action-actions .k2b-button {
+  min-height: 44px;
+}
+
+/* One row per waiting Action: what it does, then where it came from. */
+.auth-action-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.auth-action-row__copy {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 0.125rem;
+}
+.auth-action-row__title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: 0.875rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.auth-action-row__title strong {
+  font-weight: 600;
+}
+.auth-action-row__origin {
+  display: flex;
+  min-width: 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  line-height: 1.4;
+  white-space: pre;
+}
+.auth-action-row__origin > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.auth-action-row__origin > :not(:first-child) {
+  flex: none;
+}
+.auth-action-row > .k2b-button {
+  flex: none;
+}

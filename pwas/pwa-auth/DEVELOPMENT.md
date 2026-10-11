@@ -44,9 +44,20 @@ desktop browsers still needs device acceptance with a deployed HTTPS origin.
 
 Use public `@k2b/ui` controls and tokens. English and German messages live in
 `src/i18n.ts`, using Cloud's `i18n.define()` pattern and the inherited UI locale.
-The menu groups account management, settings, security, and installation.
-Pending requests open a bottom sheet; approving always requires an explicit
-choice after comparing the code. Language and theme preferences are local.
+The menu groups account management, settings, notifications, and installation.
+Sign-ins open a bottom sheet and require an explicit choice after comparing
+the code. Actions appear per Cloud and open a review sheet only on a tap or a
+tapped notification. The sheet loads a fresh SDK-checked view, renders app text
+without HTML or links, and arms approve/deny after 500 ms. It keeps the result
+in the same sheet. HTTP 409 shows **Not applied**; uncertain results disable
+both buttons and cannot be sent again, including from another tab. Language
+and theme preferences are local.
+
+New vaults use one local method without a PIN prompt. Legacy PIN installs
+verify their PIN with the existing backoff, then atomically replace all
+protection methods with one checked local method. Their encrypted records
+remain intact. Passkey-only installs stay unsupported and offer explicit reset.
+There are no app-lock timers or PIN setup/change controls.
 
 ## Browser verification
 
@@ -80,6 +91,32 @@ stop, page hiding and page exit. It never opens a physical camera.
 
 Physical camera scanning, installed iOS/Safari and Android same-device handoff still
 need device acceptance. Desktop browser tests do not establish those guarantees.
+
+`test/auto-unlock.js` checks pairing without PIN setup and direct opening after
+reload or window activation. `test/vault-errors.js` checks explicit legacy and
+corrupt-data reset, failed setup, and staying open after background/inactivity.
+Account, UI, native and real-service browser flows use local vaults directly.
+
+`test/vault-flow.js` seeds a real PIN-protected SDK vault with an encrypted
+connected Cloud. It checks wrong-PIN rejection and backoff, one-time migration,
+preserved connections, and reopening after reload without a PIN. Before running
+it through Playwright CLI, bundle the test-only SDK entry:
+
+```sh
+bun build pwas/pwa-auth/test/vault-sdk.ts --target browser --outfile /tmp/cloud-login-test-sdk.js
+```
+
+The flow intercepts a fixture-only URL to load that bundle; it is never shipped
+with Cloud Login. Its Cloud requests are intercepted too, so it needs only the
+isolated PWA origin. The real-service browser flow still needs the dedicated
+fixture stack above.
+
+Run behavior tests separately with the repository's browser conditions and
+Solid DOM preload, for example:
+
+```sh
+bun test --conditions=browser --preload ./packages/ui/test/solid-dom-preload.ts pwas/pwa-auth/src/Clouds.behavior.test.tsx
+```
 
 `test/native-flow.js` checks mobile target sizes, Back/Close behavior and theme
 initialization while the app module is blocked. Manifest screenshots are real
