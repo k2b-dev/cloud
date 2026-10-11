@@ -392,6 +392,10 @@ databaseSuite()("aiSkills (integration)", () => {
       expect((await aiSkills.list(member)).find((entry) => entry.id === skill.id)?.enabled).toBe(true);
       expect(await aiSkills.setEnabled(skill.id, member, false)).toBe(false);
       expect((await aiSkills.list(member)).find((entry) => entry.id === skill.id)?.enabled).toBe(false);
+      const name = updated!.name;
+      expect(await aiSkills.list(member, { name })).toEqual([expect.objectContaining({ id: skill.id, name, enabled: false })]);
+      expect(await aiSkills.list(member, { name: `${name}-missing` })).toEqual([]);
+      expect((await aiSkills.search(member, name)).skills.some((entry) => entry.id === skill.id)).toBe(false);
       expect(await aiSkills.loadForTurn(turn!.id, { id: skill.shortId }, member)).toBeNull();
       expect(await aiSkills.listTurnFiles(turn!.id, member)).toEqual([]);
       expect(await aiSkills.readTurnFile(turn!.id, `${skill.name}/SKILL.md`, member)).toBeNull();

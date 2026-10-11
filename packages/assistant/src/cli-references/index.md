@@ -14,17 +14,21 @@ authorized, and when to use instructions, Skills, memories, or knowledge.
 
 ```bash
 cld assistant skills list [--search <text>]
-cld assistant skills push <dir>
+cld assistant skills push <dir> [--force]
 cld assistant skills pull <name-or-id> [dir] [--force]
 ```
 
-Push creates or updates the Cloud Skill with the folder's exact name. Unchanged
-content sends no update. Read-only Skills cannot be changed; removed references
-are reported. Symlinked Skill folders work too.
+Push creates or updates the Cloud Skill with the folder's exact name, even when
+it is disabled for you. Unchanged content sends no update. If the Cloud Skill
+differs, push lists what would change and refuses to overwrite it. Pull first
+to keep Cloud changes, or use `--force` to replace it with the folder's content.
+Read-only Skills cannot be changed; removed references are reported.
+Symlinked Skill folders work too; links inside them must stay within the folder.
 
-Cloud keeps `SKILL.md`, all extra frontmatter, and supported Markdown files
-directly in `references/`. Push lists skipped scripts, assets, agent settings,
-and other files. Cloud does not run scripts.
+Cloud keeps `SKILL.md`, all extra frontmatter, and Markdown files directly in
+`references/` with lowercase names (`a-z`, `0-9`, `.`, `_`, `-`). Push lists
+skipped scripts, assets, agent settings, and other files. Cloud does not run
+scripts.
 
 Pull defaults to `.agents/skills/<name>` in the current folder. Existing files
 cause an error before anything is written. Use `--force` to replace `SKILL.md`

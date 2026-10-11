@@ -241,14 +241,17 @@ not run scripts. Unsafe paths still fail. A Skill without references can also
 be imported or downloaded as one bare `SKILL.md`.
 
 Use `cld assistant skills list`, `push <dir>`, and `pull <name-or-id> [dir]`
-to move Skills between Cloud and Agent Skills folders. Pull defaults to
-`.agents/skills/<name>` in the current folder. `cld assistant reference`
-explains skipped files and `--force`.
+to move Skills between Cloud and Agent Skills folders. Push refuses to overwrite
+a differing Cloud Skill; pull first to keep Cloud changes, or use `push <dir> --force`
+to replace it. Pull defaults to `.agents/skills/<name>` in the current folder.
+`cld assistant reference` explains skipped files and `--force`.
 
 With `disable-model-invocation: true`, a Skill starts only when a person
 selects it with `/`. It stays out of the model catalog and `search_skills`,
 while remaining available in the slash menu. Later turns can reload a selected
 Skill by its attached `core.ai.skill` ID; model-chosen name loads are refused.
+This setting controls discovery, not access; a Skill ID from another source,
+such as the `ai.skills.list` capability, still loads.
 
 At the start of a tool-capable Assistant turn, the model sees a bounded catalog
 of enabled, model-invocable Skills it can currently read. Catalog entries are
@@ -264,8 +267,9 @@ not searched or loaded during discovery. Server callers use
 to include manual-only Skills for explicit selection.
 `GET /api/ai/skills?q=…` uses this search
 (up to 30 results, query length up to 200 characters); omit `q` to keep the ordinary
-Skill management list, including disabled entries. PostgreSQL's standard `pg_trgm`
-extension supplies fuzzy matching. Optional `pg_textsearch` adds BM25 ranking;
+Skill management list, including disabled entries. `?name=<exact name>` returns
+that one Skill, including when it is disabled for the caller.
+PostgreSQL's standard `pg_trgm` extension supplies fuzzy matching. Optional `pg_textsearch` adds BM25 ranking;
 without it, native PostgreSQL relevance remains available. See
 [Optional BM25 search ranking](/en/docs/operations/deployment-requirements#optional-bm25-search-ranking)
 for setup and the preload it requires. A normal small

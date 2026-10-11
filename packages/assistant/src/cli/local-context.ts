@@ -35,7 +35,7 @@ export type LocalContext = {
 };
 
 // Four bytes per character cover UTF-8; the allowance covers delimiters and field labels.
-const maxSkillBytes =
+export const maxSkillBytes =
   4 * (AI_SKILL_NAME_MAX_CHARS + AI_SKILL_DESCRIPTION_MAX_CHARS + AI_SKILL_EXTRA_FRONTMATTER_MAX_CHARS + AI_SKILL_INSTRUCTIONS_MAX_CHARS) +
   128;
 const skillSizeError = "SKILL.md is larger than a Skill can be; not loaded";

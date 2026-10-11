@@ -587,7 +587,7 @@ const copy = i18n.define({
       invalidMarkdown: ({ path }: { path: string }) => `${path} is not valid UTF-8 Markdown.`,
       unsafeArchivePath: ({ path }: { path: string }) => `Skill archive contains an unsafe path: ${path}`,
       skippedSkillFiles: ({ paths }: { paths: string }) =>
-        `${paths}. Cloud keeps SKILL.md and Markdown files in references/ and does not run scripts.`,
+        `${paths}. Cloud keeps SKILL.md and Markdown files directly in references/ with lowercase names (a-z, 0-9, ., _, -), and does not run scripts.`,
       deleteScheduledTask: ({ prompt }: { prompt: string }) => `Delete scheduled task “${prompt}”?`,
       editNamed: ({ name }: { name: string }) => `Edit ${name}`,
       deleteFileNamed: ({ name }: { name: string }) => `Delete ${name}`,
@@ -618,7 +618,7 @@ const copy = i18n.define({
       invalidMarkdown: ({ path }: { path: string }) => `${path} ist kein gültiges UTF-8-Markdown.`,
       unsafeArchivePath: ({ path }: { path: string }) => `Das Skill-Archiv enthält einen unsicheren Pfad: ${path}`,
       skippedSkillFiles: ({ paths }: { paths: string }) =>
-        `${paths}. Cloud übernimmt SKILL.md und Markdown-Dateien in references/ und führt keine Skripte aus.`,
+        `${paths}. Cloud übernimmt SKILL.md und Markdown-Dateien direkt in references/ mit kleingeschriebenen Namen (a-z, 0-9, ., _, -) und führt keine Skripte aus.`,
       deleteScheduledTask: ({ prompt }: { prompt: string }) => `Geplante Aufgabe „${prompt}“ löschen?`,
       editNamed: ({ name }: { name: string }) => `${name} bearbeiten`,
       deleteFileNamed: ({ name }: { name: string }) => `${name} löschen`,

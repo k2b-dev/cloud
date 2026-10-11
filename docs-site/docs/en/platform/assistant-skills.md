@@ -140,7 +140,8 @@ Skill it may use in each turn. One app cannot fill that catalog on its own.
 Set `disable-model-invocation: true` in the frontmatter to keep a Skill out of
 the model catalog and `search_skills`. People can still select it with `/`.
 Assistant can reload a selected Skill by its attached ID in later turns;
-loading it by name is refused.
+loading it by name is refused. This setting controls discovery, not access;
+a Skill ID from another source, such as the `ai.skills.list` capability, still loads.
 
 ## Updates follow the content
 

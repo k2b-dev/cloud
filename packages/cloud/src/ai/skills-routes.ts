@@ -70,12 +70,26 @@ const buildAiSkillsRoutes = (dependencies: AiSkillsRouteDependencies = {}) =>
     })
     .use(dependencies.limit ?? rateLimit())
     .use("*", dependencies.authenticate ?? auth.requireRole("authenticated"))
-    .get("/", v("query", z.object({ q: z.string().trim().max(200).optional() })), async (c) => {
-      const subject = c.get("accessSubject") ?? null;
-      const { q } = c.req.valid("query");
-      const skills = q === undefined ? await aiSkills.list(subject) : (await aiSkills.search(subject, q)).skills;
-      return respond(c, ok({ skills: skills.map(publicSummary(c)) }));
-    })
+    .get(
+      "/",
+      v(
+        "query",
+        z
+          .object({ q: z.string().trim().max(200).optional(), name: z.string().trim().max(64).optional() })
+          .refine(({ q, name }) => q === undefined || name === undefined, "Use either q or name, not both."),
+      ),
+      async (c) => {
+        const subject = c.get("accessSubject") ?? null;
+        const { q, name } = c.req.valid("query");
+        const skills =
+          name !== undefined
+            ? await aiSkills.list(subject, { name })
+            : q === undefined
+              ? await aiSkills.list(subject)
+              : (await aiSkills.search(subject, q)).skills;
+        return respond(c, ok({ skills: skills.map(publicSummary(c)) }));
+      },
+    )
     .get(
       "/project-links/:projectId",
       v(

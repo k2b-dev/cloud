@@ -51,7 +51,9 @@ test("an imported Skill lists skipped files and saves the manual-only switch nex
   try {
     await tick();
     expect(dom.root.textContent).toContain("Some files are not imported");
-    expect(dom.root.textContent).toContain("LICENSE.txt, scripts/. Cloud keeps SKILL.md and Markdown files in references/");
+    expect(dom.root.textContent).toContain(
+      "LICENSE.txt, scripts/. Cloud keeps SKILL.md and Markdown files directly in references/ with lowercase names",
+    );
     const manualOnly = dom.document.querySelector<HTMLInputElement>('input[role="switch"]')!;
     expect(manualOnly.checked).toBe(false);
     manualOnly.click();

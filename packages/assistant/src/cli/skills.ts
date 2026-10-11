@@ -1,8 +1,11 @@
 import { lstat, mkdir, readdir, realpath, stat, writeFile } from "node:fs/promises";
-import { dirname, join, relative } from "node:path";
+import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import type { AiSkill, AiSkillSummary } from "@k2b/cloud/ai";
 import {
+  AI_SKILL_REFERENCE_MAX_CHARS,
+  AI_SKILL_REFERENCE_MAX_ITEMS,
   AI_SKILL_REFERENCE_PATH_PATTERN,
+  AI_SKILL_REFERENCES_MAX_CHARS,
   type AiSkillDocument,
   type AiSkillReferenceInput,
   parseAiSkillMarkdown,
@@ -10,6 +13,7 @@ import {
   validateAiSkillReferences,
 } from "@k2b/cloud/ai/browser";
 import { arg, type CloudCliContext, command, flag } from "@k2b/cloud/cli";
+import { maxSkillBytes } from "./local-context";
 import { resolveLocalPath } from "./local-paths";
 import { jsonRequest, printRows, printValue, queryString, readApi } from "./shared";
 
@@ -17,7 +21,7 @@ const listSkills = (ctx: CloudCliContext, search?: string): Promise<{ skills: Ai
   readApi(ctx, `/skills${queryString({ q: search })}`);
 
 const findSkill = async (ctx: CloudCliContext, name: string): Promise<AiSkillSummary | undefined> =>
-  (await listSkills(ctx, name)).skills.find((skill) => skill.name === name);
+  (await readApi<{ skills: AiSkillSummary[] }>(ctx, `/skills${queryString({ name })}`)).skills.find((skill) => skill.name === name);
 
 // Names come first; anything else is tried as a Skill ID so the API answers with its own not-found error.
 const getSkill = async (ctx: CloudCliContext, reference: string): Promise<AiSkill> => {
@@ -34,24 +38,66 @@ const readFolder = async (directory: string) => {
     if (error instanceof Error && "code" in error && error.code === "ENOENT") throw new Error(`No SKILL.md in ${directory}.`);
     throw error;
   }
-  const markdown = Bun.file(join(dir, "SKILL.md"));
-  if (!(await markdown.exists())) throw new Error(`No SKILL.md in ${directory}.`);
-  const document = parseAiSkillMarkdown(await markdown.text());
-  const references: AiSkillReferenceInput[] = [];
   const skipped: string[] = [];
+  const inspect = async (path: string) => {
+    let target = join(dir, path);
+    let info = await lstat(target).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return null;
+      throw error;
+    });
+    if (!info) {
+      skipped.push(path);
+      return null;
+    }
+    if (info.isSymbolicLink()) {
+      const real = await realpath(target).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return null;
+        throw error;
+      });
+      if (!real) {
+        skipped.push(path);
+        return null;
+      }
+      const fromRoot = relative(dir, real);
+      if (fromRoot === ".." || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) {
+        if (path === "SKILL.md") throw new Error(`SKILL.md in ${directory} links outside the folder.`);
+        skipped.push(`${path} (links outside the folder)`);
+        return null;
+      }
+      target = real;
+      info = await stat(target);
+    }
+    return { target, info };
+  };
+  const markdown = await inspect("SKILL.md");
+  if (!markdown) throw new Error(`No SKILL.md in ${directory}.`);
+  if (markdown.info.size > maxSkillBytes) throw new Error(`SKILL.md in ${directory} is too large (maximum ${maxSkillBytes} bytes).`);
+  const document = parseAiSkillMarkdown(await Bun.file(markdown.target).text());
+  const references: AiSkillReferenceInput[] = [];
+  let referenceChars = 0;
   for (const entry of await readdir(dir, { withFileTypes: true })) {
     if (entry.name.startsWith(".") || entry.name === "SKILL.md") continue;
-    const info = await stat(join(dir, entry.name));
-    if (entry.name === "references" && info.isDirectory()) {
-      for (const ref of await readdir(join(dir, entry.name), { withFileTypes: true })) {
+    const inspected = await inspect(entry.name);
+    if (!inspected) continue;
+    if (entry.name === "references" && inspected.info.isDirectory()) {
+      for (const ref of await readdir(inspected.target, { withFileTypes: true })) {
         if (ref.name.startsWith(".")) continue;
         const path = `references/${ref.name}`;
-        const refInfo = await stat(join(dir, path));
-        if (refInfo.isFile() && AI_SKILL_REFERENCE_PATH_PATTERN.test(path))
-          references.push({ path, content: await Bun.file(join(dir, path)).text() });
-        else skipped.push(`${path}${refInfo.isDirectory() ? "/" : ""}`);
+        const reference = await inspect(path);
+        if (!reference) continue;
+        if (reference.info.isFile() && AI_SKILL_REFERENCE_PATH_PATTERN.test(path)) {
+          if (references.length >= AI_SKILL_REFERENCE_MAX_ITEMS)
+            throw new Error(`Too many Skill references (maximum ${AI_SKILL_REFERENCE_MAX_ITEMS}).`);
+          const maxBytes = 4 * AI_SKILL_REFERENCE_MAX_CHARS;
+          if (reference.info.size > maxBytes) throw new Error(`${path} is too large (maximum ${maxBytes} bytes).`);
+          const content = await Bun.file(reference.target).text();
+          referenceChars += content.length;
+          if (referenceChars > AI_SKILL_REFERENCES_MAX_CHARS)
+            throw new Error(`Skill references exceed ${AI_SKILL_REFERENCES_MAX_CHARS} characters at ${path}.`);
+          references.push({ path, content });
+        } else skipped.push(`${path}${reference.info.isDirectory() ? "/" : ""}`);
       }
-    } else skipped.push(`${entry.name}${info.isDirectory() ? "/" : ""}`);
+    } else skipped.push(`${entry.name}${inspected.info.isDirectory() ? "/" : ""}`);
   }
   return { ...document, references: validateAiSkillReferences(references), skipped: skipped.sort() };
 };
@@ -89,7 +135,7 @@ const writeSkillFiles = async (dir: string, files: { path: string; content: stri
 export const assistantSkillCommands = [
   command("skills list", {
     summary: "List accessible Cloud Skills",
-    flags: { search: flag.string({ description: "Search Skill names and descriptions" }) },
+    flags: { search: flag.string({ description: "Search enabled Skills by name and description" }) },
     async run({ ctx, flags }) {
       const result = await listSkills(ctx, flags.search);
       printRows(
@@ -110,7 +156,8 @@ export const assistantSkillCommands = [
   command("skills push", {
     summary: "Create or update a Cloud Skill from an Agent Skills folder",
     args: { dir: arg.required({ valueLabel: "dir" }) },
-    async run({ ctx, args }) {
+    flags: { force: flag.boolean({ description: "Replace a Cloud Skill that differs from the folder" }) },
+    async run({ ctx, args, flags }) {
       const folder = await readFolder(args.dir);
       const fields = content(folder);
       const summary = await findSkill(ctx, folder.name);
@@ -129,6 +176,27 @@ export const assistantSkillCommands = [
             .filter((ref) => !folder.references.some((next) => next.path === ref.path))
             .map((ref) => ref.path)
             .sort();
+          if (!flags.force) {
+            const changes: string[] = [];
+            if (skill.description !== fields.description) changes.push("changes description");
+            if (skill.instructions !== fields.instructions) changes.push("changes instructions");
+            if (!Bun.deepEquals(skill.extraFrontmatter, fields.extraFrontmatter)) changes.push("changes frontmatter");
+            const current = new Map(skill.references.map((ref) => [ref.path, ref.content]));
+            const added = fields.references
+              .filter((ref) => !current.has(ref.path))
+              .map((ref) => ref.path)
+              .sort();
+            const replaced = fields.references
+              .filter((ref) => current.has(ref.path) && current.get(ref.path) !== ref.content)
+              .map((ref) => ref.path)
+              .sort();
+            if (added.length) changes.push(`adds ${added.join(", ")}`);
+            if (replaced.length) changes.push(`replaces ${replaced.join(", ")}`);
+            if (removedReferences.length) changes.push(`removes ${removedReferences.join(", ")}`);
+            throw new Error(
+              `Cloud Skill ${skill.name} (revision ${skill.revision}) differs from this folder: ${changes.join("; ")}. Pull it first to keep Cloud changes, or use --force to replace it.`,
+            );
+          }
           skill = (
             await readApi<{ skill: AiSkill }>(
               ctx,
@@ -146,7 +214,7 @@ export const assistantSkillCommands = [
         text = `Created Cloud Skill ${skill.name}.`;
       }
       if (folder.skipped.length)
-        text += `\nNot pushed: ${folder.skipped.join(", ")}. Cloud keeps SKILL.md and Markdown files in references/ and does not run scripts.`;
+        text += `\nNot pushed: ${folder.skipped.join(", ")}. Cloud keeps SKILL.md and Markdown files directly in references/ with lowercase names (a-z, 0-9, ., _, -), and does not run scripts.`;
       printValue(
         ctx,
         { action, skill: { id: skill.id, name: skill.name, revision: skill.revision }, skipped: folder.skipped, removedReferences },

@@ -32,6 +32,19 @@ describe("Assistant Skill import", () => {
     expect(imported.references).toEqual([{ path: "references/style.md", content: "# Style\n\nBe concise." }]);
   });
 
+  test("imports a Skill below hidden directories and silently ignores relative hidden entries", async () => {
+    const archive = await createZip([
+      { filename: ".agents/skills/demo/SKILL.md", source },
+      { filename: ".agents/skills/demo/references/style.md", source: "Be concise." },
+      { filename: ".agents/skills/demo/.secret", source: "Secret" },
+      { filename: ".agents/skills/demo/references/.hidden.md", source: "Hidden reference" },
+      { filename: ".outside/file.txt", source: "Outside hidden" },
+    ]);
+    const imported = await parseAiSkillArchive(archive);
+    expect(imported.references).toEqual([{ path: "references/style.md", content: "Be concise." }]);
+    expect(imported.skipped).toEqual([]);
+  });
+
   test("imports the repository cloud-cli folder shape and skips agent configuration", async () => {
     const archive = await createZip([
       { filename: "cloud-cli/SKILL.md", source: await Bun.file("skills/cloud-cli/SKILL.md").text() },

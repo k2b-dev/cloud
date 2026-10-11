@@ -16,7 +16,7 @@ export type AiSkillImport = AiSkillDocument & { references: AiSkillReferenceInpu
 
 const decoder = new TextDecoder("utf-8", { fatal: true });
 // Archivers add these on their own; they are not part of the Skill and not worth reporting.
-const archiveNoise = (path: string): boolean => path.startsWith("__MACOSX/") || path.split("/").some((part) => part.startsWith("."));
+const archiveNoise = (path: string): boolean => path.startsWith("__MACOSX/") || path.split("/").at(-1) === ".DS_Store";
 
 const decodeMarkdown = (bytes: Uint8Array, path: string): string => {
   try {
@@ -55,10 +55,11 @@ export const parseAiSkillArchive = async (bytes: Uint8Array): Promise<AiSkillImp
   const references = entries.flatMap((entry) => {
     if (entry === skillFile) return [];
     if (!entry.path.startsWith(root)) {
-      skipped.add(entry.path);
+      if (!entry.path.split("/").some((part) => part.startsWith("."))) skipped.add(entry.path);
       return [];
     }
     const path = entry.path.slice(root.length);
+    if (path.split("/").some((part) => part.startsWith("."))) return [];
     if (!AI_SKILL_REFERENCE_PATH_PATTERN.test(path)) {
       const parts = path.split("/");
       let skippedPath = path;

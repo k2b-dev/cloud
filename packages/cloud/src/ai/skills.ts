@@ -522,7 +522,7 @@ const skillSnapshotFiles = (skill: AiSkill): { path: string; content: string }[]
   ...skill.references.map((reference) => ({ path: `${skill.name}/${reference.path}`, content: reference.content })),
 ];
 
-type SkillListOptions = { query?: string; enabledOnly?: boolean; modelInvocableOnly?: boolean; limit?: number };
+type SkillListOptions = { name?: string; query?: string; enabledOnly?: boolean; modelInvocableOnly?: boolean; limit?: number };
 async function listSkillSummaries(
   subject: AccessSubject | null,
   options: SkillListOptions & {
@@ -550,6 +550,7 @@ async function listSkillSummaries(
     LEFT JOIN ai.skill_user_disabled disabled
       ON disabled.skill_id = skill.id AND disabled.user_id = ${userId}::uuid
     WHERE access.permission <> 'none'
+      AND ${options.name === undefined ? sql`true` : sql`skill.name = ${options.name}`}
       AND (${!options.manageOnly} OR access.permission='admin')
       AND ${options.project ? sql`EXISTS(SELECT 1 FROM ai.project_skills link WHERE link.skill_id=skill.id AND link.project_id=${options.project.id}::uuid) = ${options.project.linked}` : sql`true`}
       AND (${!options.modelInvocableOnly} OR NOT manual_only)
@@ -1068,7 +1069,10 @@ export const aiSkills = {
       `;
       const skill = await requireSkill(row ?? null, subject, "read", tx, roles);
       if (!skill?.enabled) return null;
-      if (name !== null && skill.manualOnly) throw new AiSkillInputError(`Skill "${skill.name}" starts only when the user selects it.`);
+      if (name !== null && skill.manualOnly)
+        throw new AiSkillInputError(
+          `Skill "${skill.name}" starts only when the user selects it. If the user selected it, load it by the ID of its attached core.ai.skill resource.`,
+        );
       const files = skillSnapshotFiles(skill);
       await tx`
         INSERT INTO ai.turn_skill_snapshots (turn_id, skill_id, skill_name, description, revision, instructions, files)
