@@ -380,7 +380,7 @@ export const createCloudAiPresentTool = () =>
   defineAiTool({
     name: "present",
     description:
-      "Present a conversation file to the user as an openable and downloadable chat attachment. The returned path is a conversation-local file identifier, not a website URL. Refer to the delivered attachment by title; do not turn its path into a Markdown link. A view file from cloud.view.* (/views/…view.json) shows inline as its chart or table, so present every view the person should see.",
+      "Present a conversation file to the user as an openable and downloadable chat attachment. The returned path is a conversation-local file identifier, not a website URL. Refer to the delivered attachment by title; do not turn its path into a Markdown link. A view file from cloud.view.* (/views/…view.json) shows inline as its chart, group, table, stats or details view, so present every view the person should see.",
     inputSchema: CloudAiPresentInputSchema,
     outputSchema: CloudAiPresentOutputSchema,
     approval: "never",

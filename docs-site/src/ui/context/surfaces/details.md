@@ -12,7 +12,11 @@ editing, and do not use the component for arbitrary card layouts.
 Assistant details views use `DescriptionList` with `layout="rows"` for one
 record's 1..100 exact fields. These rows are read-only; number and date text
 uses the viewer's locale. A Cloud reference carries no URL and opens through
-the owning app's reader with the viewer's access after a confirmation.
+the owning app's reader with the viewer's access after a confirmation; its pill
+keeps the neutral page icon, because a reference names an app object rather
+than a kind the chat knows. A hidden copy with stand-in text of each value's
+length reserves the rows, including lines that wrap on a phone, up to twelve
+one-line rows; more scrolls inside the record.
 
 ## Property rows
 

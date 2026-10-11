@@ -14,7 +14,7 @@ Assistant stats views compose a read-only `StatGrid` of 1..6 `StatCell`s for
 comparable figures above charts. Shared formatters supply values, scope text,
 sparklines and deltas; the host maps better/worse/neutral tones to colors.
 The Assistant's card tool shows one figure as a single-cell grid with a
-neutral trend accent.
+neutral trend accent and `wrap`, so a long value or caption stays whole.
 
 ## Import
 
@@ -60,6 +60,11 @@ stays empty. One- and two-column grids remain fixed.
 | `title` | `string` | Adds a native title to a truncated value. |
 | `trend` | `readonly number[]` | Adds a compact sparkline from oldest to newest. |
 | `size` | `"md" \| "sm"` | Overrides the inherited size for one cell. |
+| `wrap` | `boolean` | Wraps label, value, `sub` and accent instead of truncating them; the accent moves below `sub` when both do not fit. |
+
+Cells in a row keep one line each and truncate, so comparable cells keep one
+height. Use `wrap` only for a cell whose height nothing else reserves, such as
+one figure on its own.
 
 An accent has a `tone`, Tabler `icon`, and optional `text`. Text creates a pill. Without text, only the icon is shown. Use the cell `href` when the measurement needs a link.
 

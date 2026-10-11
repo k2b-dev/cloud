@@ -13,6 +13,7 @@ import {
 import { createMemo, createSignal, createUniqueId, Index, type JSX, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import type { CloudAiChartRow } from "../chart-block";
 import {
+  CLOUD_AI_DETAILS_VIEWPORT_ITEMS,
   CLOUD_AI_VIEW_MAX_BYTES,
   type CloudAiDetailsView,
   type CloudAiStatsView,
@@ -71,8 +72,11 @@ function ViewHeading(props: { id: string; title: string; subtitle?: string; acti
 /**
  * A Cloud object a view names. It carries no URL: the host resolves it on click with the viewer's access and confirms
  * before it opens. It looks like a reference to Cloud content in Markdown, a calm pill, and stays text without a host.
+ * A Cloud reference names an object of the owning app, not a kind the chat knows, such as a task or an event, so the
+ * pill keeps the neutral page icon that relative links in chat Markdown also show. Without a reference it only takes
+ * the pill's room, for a hidden copy that reserves it.
  */
-function ReferenceText(props: { text: string; reference: CloudAiViewReference }) {
+function ReferenceText(props: { text: string; reference?: CloudAiViewReference }) {
   const actions = useAiChatActions();
   return (
     <Show when={actions.onOpenReference} fallback={props.text}>
@@ -82,7 +86,10 @@ function ReferenceText(props: { text: string; reference: CloudAiViewReference })
           // The pill's fill reaches past the text without making a compact table row taller than the one reserved.
           class="k2b-reference -my-[0.125em] cursor-pointer text-left"
           data-reference="page"
-          onClick={() => open()(props.text, { type: props.reference.type, id: props.reference.id })}
+          onClick={() => {
+            const reference = props.reference;
+            if (reference) open()(props.text, { type: reference.type, id: reference.id });
+          }}
         >
           <i class={`k2b-reference__icon ti ${markdownReferenceIcon("page")}`} aria-hidden="true" />
           {props.text}
@@ -158,7 +165,8 @@ function CloudTableView(props: { summary: TableSummary; input: CloudAiTableView 
               }))}
               renderCell={({ row, col, value: text, render }) => {
                 // Row keys are row indexes, so a reference cell finds its object in the loaded view.
-                const cell = refColumns().has(col.id) ? props.input?.rows[Number(row.key)]?.[col.id] : undefined;
+                const cells = props.input?.rows[Number(row.key)];
+                const cell = refColumns().has(col.id) && cells && Object.hasOwn(cells, col.id) ? cells[col.id] : undefined;
                 return cell && typeof cell === "object" ? <ReferenceText text={String(text)} reference={cell} /> : render(text);
               }}
               getRowId={(row) => row.key}
@@ -166,7 +174,15 @@ function CloudTableView(props: { summary: TableSummary; input: CloudAiTableView 
               onSortChange={setSort}
               footer={
                 value().footer
-                  ? { values: value().footer?.cells, renderCell: ({ value }) => (typeof value === "string" ? value : "") }
+                  ? {
+                      values: value().footer?.cells,
+                      renderCell: ({ col, value }) => {
+                        const text = typeof value === "string" ? value : "";
+                        const cells = props.input?.footer;
+                        const cell = refColumns().has(col.id) && cells && Object.hasOwn(cells, col.id) ? cells[col.id] : undefined;
+                        return cell && typeof cell === "object" ? <ReferenceText text={text} reference={cell} /> : text;
+                      },
+                    }
                   : undefined
               }
               ariaLabelledBy={id}
@@ -274,14 +290,25 @@ function CloudStatsView(props: { summary: StatsSummary; input: CloudAiStatsView 
   );
 }
 
-/** Fields a record shows before its viewport scrolls; it reserves their height from the first frame. */
-const DETAILS_VIEWPORT_ITEMS = 12;
-/** One description row: its minimum height in the `rows` layout. */
-const DETAILS_ROW_REM = 2.25;
+/** The height of the twelve one-line rows the viewport shows at most before it scrolls. */
+const DETAILS_MAX_REM = CLOUD_AI_DETAILS_VIEWPORT_ITEMS * 2.25;
 
 /**
- * One record as label and value rows. The viewport takes the height of its field count, up to twelve rows, from the
- * summary; more fields, or values that wrap, scroll inside it instead of moving the chat.
+ * Stand-in text of a value's length. Words of five digits wrap about as early as real words, and a digit is a little
+ * wider than an average letter, so the stand-in usually takes the lines of the value it stands for or one more: a row
+ * may keep a little room below it rather than hide its last line behind a scroll.
+ */
+const placeholder = (chars: number) =>
+  "00000 "
+    .repeat(Math.ceil(chars / 6))
+    .slice(0, chars)
+    .trimEnd();
+
+/**
+ * One record as label and value rows. A hidden copy of the first twelve fields, with each label and a stand-in of each
+ * value's length from the summary, sizes the viewport, up to twelve one-line rows, so a value that wraps on a phone
+ * keeps its room in the first frame. More fields, or a value longer than its stand-in, scroll inside the viewport
+ * instead of moving the chat.
  */
 function CloudDetailsView(props: { summary: DetailsSummary; input: CloudAiDetailsView | null | undefined }) {
   const locale = useLocale();
@@ -294,25 +321,33 @@ function CloudDetailsView(props: { summary: DetailsSummary; input: CloudAiDetail
         title={props.input?.title ?? props.summary.title}
         subtitle={props.input ? props.input.subtitle : props.summary.subtitle}
       />
-      <div
-        class="min-w-0 overflow-y-auto"
-        style={{ height: `${Math.min(props.summary.items, DETAILS_VIEWPORT_ITEMS) * DETAILS_ROW_REM}rem` }}
-      >
-        <Show when={rows()} fallback={<ViewStatus loading={props.input === undefined} />}>
-          {(value) => (
-            <DescriptionList
-              layout="rows"
-              items={value().map((row) => ({
-                term: row.label,
-                description: row.ref ? (
-                  <ReferenceText text={row.text} reference={row.ref} />
-                ) : (
-                  row.text || <span class="text-dimmed">—</span>
-                ),
-              }))}
-            />
-          )}
-        </Show>
+      <div class="relative min-w-0 overflow-hidden" style={{ "max-height": `${DETAILS_MAX_REM}rem` }}>
+        <div class="invisible" aria-hidden="true">
+          <DescriptionList
+            layout="rows"
+            items={props.summary.fields.map((field) => ({
+              term: field.label,
+              description: !field.chars ? "—" : field.ref ? <ReferenceText text={placeholder(field.chars)} /> : placeholder(field.chars),
+            }))}
+          />
+        </div>
+        <div class="absolute inset-0 overflow-y-auto">
+          <Show when={rows()} fallback={<ViewStatus loading={props.input === undefined} />}>
+            {(value) => (
+              <DescriptionList
+                layout="rows"
+                items={value().map((row) => ({
+                  term: row.label,
+                  description: row.ref ? (
+                    <ReferenceText text={row.text} reference={row.ref} />
+                  ) : (
+                    row.text || <span class="text-dimmed">—</span>
+                  ),
+                }))}
+              />
+            )}
+          </Show>
+        </div>
       </div>
     </section>
   );
@@ -323,14 +358,22 @@ const sameHeading = (a: Heading, b: Heading | undefined) => a.title === b?.title
 
 /**
  * Whether a loaded file still has everything its summary reserved: kinds, headings, layout and the linked cursor. A
- * changed file shows unavailable instead of moving or linking charts its summary did not.
+ * changed file shows unavailable instead of moving views or linking charts its summary did not.
  */
 const matches = (view: CloudAiView, summary: CloudAiViewSummary) => {
-  if (view.view === "table") return summary.view === "table";
-  if (view.view === "details") return summary.view === "details" && view.items.length === summary.items;
+  if (view.view === "table") return summary.view === "table" && sameHeading(view, summary);
   const loaded = cloudAiViewSummary(view);
+  // A record must keep the field count and the labels and value lengths that sized its viewport.
+  if (loaded.view === "details")
+    return (
+      summary.view === "details" &&
+      sameHeading(loaded, summary) &&
+      loaded.items === summary.items &&
+      JSON.stringify(loaded.fields) === JSON.stringify(summary.fields)
+    );
   // A stats file must keep every tile's label and parts, which set the tile heights its summary reserved.
-  if (loaded.view === "stats") return summary.view === "stats" && JSON.stringify(loaded.items) === JSON.stringify(summary.items);
+  if (loaded.view === "stats")
+    return summary.view === "stats" && sameHeading(loaded, summary) && JSON.stringify(loaded.items) === JSON.stringify(summary.items);
   if (loaded.view === "chart") return summary.view === "chart" && loaded.kind === summary.kind && sameHeading(loaded, summary);
   return (
     loaded.view === "group" &&

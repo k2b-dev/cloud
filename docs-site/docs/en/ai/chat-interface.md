@@ -305,7 +305,9 @@ order:
    group summaries list each chart's kind and title, so every frame reserves
    its own height. Stats summaries carry per-item booleans for sparkline, sub
    and delta to reserve the exact tile height; details summaries carry the
-   field count. These summaries contain no values. While the call runs, the work
+   field count and the label, reference flag and text length of the first
+   twelve fields, so wrapped values keep their room on a phone. These
+   summaries contain no values. A card's text wraps instead of being cut off. While the call runs, the work
    line names the step and the place stays empty. Table header labels stay on one line and the table
    scrolls sideways, so up to eight rows fit the reserved height on a phone.
    Readers validate the file again; missing or invalid data shows unavailable

@@ -647,6 +647,8 @@ describe("capability tool presentation", () => {
     expect(html).toMatch(/k2b-stat-cell__accent"[^>]*data-tone="zinc"/);
     expect(html).toContain("ti-trending-up");
     expect(html).not.toMatch(/bg-red-|border-red-/);
+    // A card stands alone, so its text wraps instead of hiding behind an ellipsis.
+    expect(html).toMatch(/class="k2b-stat-cell"[^>]*data-wrap="true"/);
   });
 
   test("folds intermediate text and tools into one work line while results and the final text stay visible", () => {

@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { CLOUD_AI_GROUP_MAX_CHARTS, CLOUD_AI_VIEW_MAX_MARKS, type CloudAiChartInput } from "./default-tool-contracts";
 import {
+  CLOUD_AI_DETAILS_MAX_CHARS,
+  CLOUD_AI_DETAILS_VIEWPORT_ITEMS,
   CLOUD_AI_STATS_MAX_ITEMS,
   CLOUD_AI_TABLE_MAX_ROWS,
   type CloudAiTableView,
@@ -485,14 +487,20 @@ describe("stats views", () => {
 
 describe("details views and reference cells", () => {
   const details = { view: "details", title: "Record", subtitle: "Checked", items: [{ label: "Name", type: "text", value: "A" }] };
-  test("allows duplicate labels and null for every type; summaries reserve field count", () => {
+  test("allows duplicate labels and null for every type; summaries reserve field count and sizes", () => {
     const view = parseCloudAiView({
       ...details,
       items: ["text", "number", "date", "datetime", "ref"].map((type) => ({ label: " Field ", type, value: null })),
     });
     if (!view || view.view !== "details") throw new Error("Missing details");
     expect(checkCloudAiView(view)).toEqual({ view });
-    const summary: CloudAiViewSummary = { view: "details", title: "Record", subtitle: "Checked", items: 5 };
+    const summary: CloudAiViewSummary = {
+      view: "details",
+      title: "Record",
+      subtitle: "Checked",
+      items: 5,
+      fields: Array(5).fill({ label: "Field", ref: false, chars: 0 }),
+    };
     expect(cloudAiViewSummary(view)).toEqual(summary);
     expect(CloudAiViewSummarySchema.parse(summary)).toEqual(summary);
     expect(cloudAiDetailsRows(view, "en-US")).toEqual(Array(5).fill({ label: "Field", text: "" }));
@@ -596,12 +604,42 @@ describe("details views and reference cells", () => {
       expect(issues({ view, title: "Unknown" })).toBe("view: Expected one of chart, group, table, stats, details.");
       expect(parseCloudAiView({ view })).toBeUndefined();
     }
+    const field = { label: "N", ref: false, chars: 1 };
     for (const summary of [
       { view: "stats", title: "T", items: [] },
       { view: "stats", title: "T", items: Array(7).fill({ label: "N", sparkline: false, sub: false, delta: false }) },
-      { view: "details", title: "T", items: 0 },
-      { view: "details", title: "T", items: 101 },
+      { view: "details", title: "T", items: 0, fields: [field] },
+      { view: "details", title: "T", items: 101, fields: [field] },
+      { view: "details", title: "T", items: 1 },
+      { view: "details", title: "T", items: 13, fields: Array(13).fill(field) },
+      { view: "details", title: "T", items: 1, fields: [{ ...field, chars: CLOUD_AI_DETAILS_MAX_CHARS + 1 }] },
     ])
       expect(CloudAiViewSummarySchema.safeParse(summary).success).toBe(false);
+  });
+
+  test("a details summary sizes the first twelve fields by label, reference and text length", () => {
+    const view = parseCloudAiView({
+      view: "details",
+      title: "Record",
+      items: [
+        { label: "Order", type: "ref", value: { type: "spaces.item", id: "item-1", title: "Chairs" } },
+        { label: "Unnamed", type: "ref", value: { type: "spaces.item", id: "item-2" } },
+        { label: "Net", type: "number", value: 1840.5, format: { style: "currency", currency: "EUR" } },
+        { label: "Note", type: "text", value: "x".repeat(CLOUD_AI_DETAILS_MAX_CHARS + 10) },
+        ...Array.from({ length: 10 }, (_, index) => ({ label: `Field ${index}`, type: "text", value: "A" })),
+      ],
+    });
+    if (!view || view.view !== "details") throw new Error("Missing details");
+    const summary = cloudAiViewSummary(view);
+    if (summary.view !== "details") throw new Error("Missing details summary");
+    expect(summary.items).toBe(14);
+    expect(summary.fields).toHaveLength(CLOUD_AI_DETAILS_VIEWPORT_ITEMS);
+    expect(summary.fields.slice(0, 4)).toEqual([
+      { label: "Order", ref: true, chars: "Chairs".length },
+      { label: "Unnamed", ref: true, chars: "item-2".length },
+      { label: "Net", ref: false, chars: "€1,840.50".length },
+      { label: "Note", ref: false, chars: CLOUD_AI_DETAILS_MAX_CHARS },
+    ]);
+    expect(CloudAiViewSummarySchema.parse(summary)).toEqual(summary);
   });
 });

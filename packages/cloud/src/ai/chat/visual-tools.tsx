@@ -9,6 +9,7 @@ import { useAiToolDisclosure } from "./tool-disclosure";
 /**
  * One `card` tool call as a single stat tile, the same look as key figures in views. Its arguments stay as they
  * were; the card has no better or worse direction, so a trend stays neutral and `tone` no longer colors anything.
+ * Nothing compares the tile with a neighbor, so its text wraps: older cards with a long value or caption stay whole.
  */
 export function CloudCardBlock(props: { args: unknown }) {
   const card = () => (isRecord(props.args) ? props.args : null);
@@ -47,13 +48,7 @@ export function CloudCardBlock(props: { args: unknown }) {
       }
     >
       <StatGrid columns={1} class="max-w-sm">
-        <StatCell
-          label={emoji() ? `${emoji()} ${title()}` : title()}
-          value={value()}
-          title={value()}
-          sub={caption() || undefined}
-          accent={accent()}
-        />
+        <StatCell label={emoji() ? `${emoji()} ${title()}` : title()} value={value()} sub={caption() || undefined} accent={accent()} wrap />
       </StatGrid>
     </Show>
   );

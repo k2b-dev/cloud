@@ -167,7 +167,13 @@ test("run snapshots retain stats and details summaries without their values", as
       title: "Overview",
       items: [{ label: "Count", sparkline: true, sub: true, delta: true }],
     });
-    expect(details).toEqual({ path: "/views/w1-1.view.json", view: "details", title: "Record", items: 1 });
+    expect(details).toEqual({
+      path: "/views/w1-1.view.json",
+      view: "details",
+      title: "Record",
+      items: 1,
+      fields: [{ label: "Amount", ref: false, chars: 2 }],
+    });
   } finally {
     await fixture.cleanup();
   }

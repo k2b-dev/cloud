@@ -238,7 +238,7 @@ type ViewRef = { path: string; title: string; subtitle?: string } & (
   | { view: "group"; linkX: boolean; layout: "stack" | "grid"; charts: { kind: ChartKind; title: string; subtitle?: string }[] }
   | { view: "table"; rows: number; columns: number; footer: boolean }
   | { view: "stats"; items: { label: string; sparkline: boolean; sub: boolean; delta: boolean }[] }
-  | { view: "details"; items: number }
+  | { view: "details"; items: number; fields: { label: string; ref: boolean; chars: number }[] }
 );
 type ViewBase = { title: string; subtitle?: string };
 type ViewAxis = { label?: string; domain?: [number, number]; ticks?: number; scale?: "linear" | "log" };

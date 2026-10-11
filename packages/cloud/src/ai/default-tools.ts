@@ -73,7 +73,7 @@ export const createCloudAiCardTool = () =>
   defineAiTool({
     name: "card",
     description:
-      "Show one highlight figure you already have, such as a status, metric or short result, as a stat tile in the chat. Several figures computed in code_run go through cloud.view.stats in the run, not several card calls; tables, lists and longer explanations stay Markdown. Keep all fields flat; do not pass arrays or nested objects.",
+      "Show one highlight figure you already have, such as a status, metric or short result, as a stat tile in the chat. Keep the value to a short figure or status and the caption to one line. Several figures computed in code_run go through cloud.view.stats in the run, not several card calls; tables, lists and longer explanations stay Markdown. Keep all fields flat; do not pass arrays or nested objects.",
     inputSchema: CloudAiCardInputSchema,
     outputSchema: CloudAiCardOutputSchema,
     approval: "never",

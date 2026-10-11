@@ -24,6 +24,11 @@ export const CLOUD_AI_TABLE_MAX_COLUMNS = 100;
 
 // StatGrid supports at most six columns.
 export const CLOUD_AI_STATS_MAX_ITEMS = 6;
+// A record shows this many fields before its viewport scrolls; its summary sizes only these.
+export const CLOUD_AI_DETAILS_VIEWPORT_ITEMS = 12;
+// Twelve rows hold about 22 lines; at the widest chat column a line holds about 110 characters, so a longer value fills
+// the viewport at any width and its length counts no further.
+export const CLOUD_AI_DETAILS_MAX_CHARS = 4096;
 
 const referenceSchema = () => CloudResourceReferenceSchema.pick({ type: true, id: true, title: true });
 const ReferenceSchema = /* @__PURE__ */ referenceSchema();
@@ -213,6 +218,12 @@ const summarySchema = () =>
       title: z.string(),
       subtitle: z.string().optional(),
       items: z.number().int().min(1).max(CLOUD_AI_TABLE_MAX_COLUMNS),
+      // The fields the viewport shows before it scrolls: label, whether the value is a reference pill, and the length
+      // of its text, so the block reserves their wrapped height without their values.
+      fields: z
+        .array(z.object({ label: z.string(), ref: z.boolean(), chars: z.number().int().nonnegative().max(CLOUD_AI_DETAILS_MAX_CHARS) }))
+        .min(1)
+        .max(CLOUD_AI_DETAILS_VIEWPORT_ITEMS),
     }),
   ]);
 export const CloudAiViewSummarySchema = /* @__PURE__ */ summarySchema();
@@ -295,7 +306,18 @@ export const cloudAiViewSummary = (view: CloudAiView): CloudAiViewSummary => {
         delta: item.delta !== undefined,
       })),
     };
-  if (view.view === "details") return { view: "details", ...common, items: view.items.length };
+  if (view.view === "details")
+    return {
+      view: "details",
+      ...common,
+      items: view.items.length,
+      // English text has about the length of the viewer's: dates and amounts differ by a character or two.
+      fields: cloudAiDetailsRows({ ...view, items: view.items.slice(0, CLOUD_AI_DETAILS_VIEWPORT_ITEMS) }, "en-US").map((row) => ({
+        label: row.label,
+        ref: row.ref !== undefined,
+        chars: Math.min(row.text.length, CLOUD_AI_DETAILS_MAX_CHARS),
+      })),
+    };
   return view.view === "chart"
     ? { view: "chart", kind: view.kind, ...common }
     : { view: "table", rows: view.rows.length, columns: view.columns.length, footer: view.footer !== undefined, ...common };

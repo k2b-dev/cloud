@@ -696,7 +696,23 @@ test("details infer every type, normalize dates in the run time zone and strip r
       { label: "Id", type: "ref", value: { type: "spaces.item", id: "task-2" } },
     ],
   });
-  expect(result).toEqual({ path: "/views/test-12345678.view.json", view: "details", title: "Record", items: 8 });
+  // The summary sizes the record by label and text length, in English, without its values.
+  expect(result).toEqual({
+    path: "/views/test-12345678.view.json",
+    view: "details",
+    title: "Record",
+    items: 8,
+    fields: [
+      { label: "Amount", ref: false, chars: "12.00".length },
+      { label: "Text", ref: false, chars: "2026-01-02".length },
+      { label: "Time", ref: false, chars: "Jan 2, 2026, 12:30:00\u202fAM".length },
+      { label: "Day", ref: false, chars: "Jan 2, 2026".length },
+      { label: "Object", ref: true, chars: "Task".length },
+      { label: "Null", ref: false, chars: 0 },
+      { label: "Missing", ref: false, chars: 0 },
+      { label: "Id", ref: true, chars: "task-2".length },
+    ],
+  });
 });
 
 test("table infers ref including footer and accepts explicit ref while stripping URLs", async () => {

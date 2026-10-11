@@ -4,6 +4,7 @@ import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { launchBrowser } from "../../../../ui/test/browser";
 import type { AiTurnBlock } from "../protocol";
+import { cloudAiViewSummary, parseCloudAiView } from "../view-block";
 
 // Whether a presented view moves anything when its file arrives depends on real layout, fonts and themes, so this
 // measures the blocks in a browser.
@@ -207,6 +208,26 @@ const invoice = {
     { label: "Bank account", type: "text", value: "DE89 3704 0044 0532 0130 00 · COBADEFFXXX · Commerzbank Köln" },
   ],
 };
+const note = {
+  view: "details",
+  title: "Delivery LS-2026-118",
+  items: [
+    { label: "Recipient", type: "text", value: "Kolb Antik, Lager Süd" },
+    { label: "Delivery address for freight forwarders arriving outside opening hours", type: "text", value: "Hof 2, Tor B" },
+    {
+      label: "Note",
+      type: "text",
+      value:
+        "Two pallets, the second one with fragile glass: unload it by hand, keep it upright and store it in the dry area next to the loading ramp until the inventory check on Monday morning has counted every piece.",
+    },
+    {
+      label: "Order",
+      type: "ref",
+      value: { type: "spaces.item", id: "item-77", title: "Display cabinets for the new showroom on the ground floor" },
+    },
+    { label: "Weight", type: "number", value: 412.5 },
+  ],
+};
 const tasks = {
   view: "table",
   title: "Overdue tasks without an assignee",
@@ -228,8 +249,27 @@ const files: Record<string, unknown> = {
   "/views/offers-at-a-glance-0a1b2c3d.view.json": stats,
   "/views/invoice-re-2026-0412-4d5e6f7a.view.json": invoice,
   "/views/overdue-tasks-8b9c0d1e.view.json": tasks,
+  "/views/footer-reference-5a6b7c8d.view.json": {
+    view: "table",
+    title: "Task references",
+    columns: [
+      { id: "task", label: "Task", type: "ref" },
+      { id: "__proto__", label: "Missing reference", type: "ref" },
+    ],
+    rows: [{ task: tasks.rows[0]!.task }],
+    footer: { task: { type: "spaces.item", id: "item-42", title: "All tasks" } },
+  },
   // Edited after `present`: a tile lost the sparkline its summary reserved.
   "/views/flattened-2f3a4b5c.view.json": { ...stats, items: stats.items.map(({ sparkline: _sparkline, ...item }) => item) },
+  // A record whose values wrap over several lines on a phone, and its file after the note grew.
+  "/views/delivery-note-1c2d3e4f.view.json": note,
+  "/views/delivery-note-grown-2d3e4f5a.view.json": {
+    ...note,
+    items: note.items.map((item) => (item.label === "Note" ? { ...item, value: `${item.value} Call ahead.` } : item)),
+  },
+  // Edited after `present`: the stats title and table subtitle changed.
+  "/views/retitled-stats-6a7b8c9d.view.json": { ...stats, title: "Updated offers at a glance" },
+  "/views/resubtitled-table-7b8c9d0e.view.json": { ...table, subtitle: "Updated median price in EUR" },
   // Edited after `present`: the cursor is no longer linked, and a chart gained a subtitle its summary did not reserve.
   "/views/unlinked-4e5f6a7b.view.json": { ...linked, linkX: false },
   "/views/subtitled-8c9d0e1f.view.json": chart,
@@ -321,16 +361,12 @@ const blocks = [
   present("/views/deleted-9c0d1e2f.view.json", { view: "table", title: "Deleted view", rows: 3, columns: 2, footer: false }),
 ];
 
-// Chrome opens at most six connections per host, and views that queue behind them fail in some test hosts, so the
-// stats, details and reference views load on their own page.
+// The stats, details and reference views load on their own page, so each page's counts check one set of views. A
+// load that fails with ERR_NETWORK_CHANGED is a host fault: Chromium aborts every request in flight, also to
+// 127.0.0.1, when a network interface comes or goes, such as a Docker container's while it restarts.
 const widgets = [
   present("/views/offers-at-a-glance-0a1b2c3d.view.json", statsSummary),
-  present("/views/invoice-re-2026-0412-4d5e6f7a.view.json", {
-    view: "details",
-    title: invoice.title,
-    subtitle: invoice.subtitle,
-    items: invoice.items.length,
-  }),
+  present("/views/invoice-re-2026-0412-4d5e6f7a.view.json", cloudAiViewSummary(parseCloudAiView(invoice)!)),
   present("/views/overdue-tasks-8b9c0d1e.view.json", {
     view: "table",
     title: tasks.title,
@@ -415,7 +451,8 @@ for (const view of [
         await page.waitForSelector("[data-view-path]");
         const loading = await boxes(page);
         await page.waitForFunction(() => document.querySelectorAll("[data-view-path] .k2b-stat-cell").length === 5);
-        await page.waitForFunction(() => document.querySelectorAll("[data-view-path] dt").length === 8);
+        // The hidden copy that sizes the record keeps its eight rows beside the eight loaded ones.
+        await page.waitForFunction(() => document.querySelectorAll("[data-view-path] dt").length === 16);
         await page.waitForFunction(() => document.querySelectorAll("[data-view-path] table").length === 1);
         expect(await page.locator('[data-view-path] [role="status"]').count()).toBe(0);
         expect(await boxes(page)).toEqual(loading);
@@ -431,12 +468,12 @@ for (const view of [
           return { scroll: wrap.scrollHeight, client: wrap.clientHeight };
         });
         expect(references.scroll).toBeLessThanOrEqual(references.client);
-        // A record of eight fields shows them all without scrolling; only the long bank line may wrap on a phone.
+        // A record of eight fields shows them all without scrolling, also where the bank line and the order wrap on a phone.
         const record = await page.evaluate(() => {
-          const viewport = document.querySelector('[data-view-path*="invoice"] dl')!.parentElement!;
+          const viewport = Array.from(document.querySelectorAll('[data-view-path*="invoice"] dl')).at(-1)!.parentElement!;
           return { scroll: viewport.scrollHeight, client: viewport.clientHeight };
         });
-        if (view.name === "desktop") expect(record.scroll).toBeLessThanOrEqual(record.client);
+        expect(record.scroll).toBeLessThanOrEqual(record.client);
         // The host colors a change by whether it is better, and the tile names it with a sign.
         const changes = await page.evaluate(() =>
           Array.from(document.querySelectorAll("[data-view-path] .k2b-stat-cell__accent")).map((node) => [
@@ -453,6 +490,90 @@ for (const view of [
         await context.close();
       }
     });
+
+test("a record reserves the lines of values and labels that wrap on a phone", async () => {
+  const context = await browser.newContext({
+    viewport: { width: 360, height: 800 },
+    isMobile: true,
+    hasTouch: true,
+    reducedMotion: "reduce",
+  });
+  try {
+    const page = await context.newPage();
+    await page.goto(`http://127.0.0.1:${server.port}/`);
+    await page.evaluate(
+      (value) => (window as unknown as { show: (blocks: ToolBlock[]) => void }).show(value),
+      [present("/views/delivery-note-1c2d3e4f.view.json", cloudAiViewSummary(parseCloudAiView(note)!))],
+    );
+    await page.waitForSelector("[data-view-path]");
+    const loading = await boxes(page);
+    await page.waitForFunction(() => document.querySelectorAll("[data-view-path] dt").length === 10);
+    expect(await boxes(page)).toEqual(loading);
+    const record = await page.evaluate(() => {
+      const [copy, list] = Array.from(document.querySelectorAll("[data-view-path] dl"));
+      const heights = (dl: Element) => Array.from(dl.children).map((row) => row.getBoundingClientRect().height);
+      return {
+        scroll: list!.parentElement!.scrollHeight,
+        client: list!.parentElement!.clientHeight,
+        copy: heights(copy!),
+        list: heights(list!),
+      };
+    });
+    // Every field shows without scrolling; a row's stand-in takes the lines of its value or one more.
+    expect(record.scroll).toBeLessThanOrEqual(record.client);
+    expect(record.copy).toHaveLength(5);
+    record.copy.forEach((height, index) => {
+      expect(height).toBeGreaterThanOrEqual(record.list[index]!);
+      expect(height).toBeLessThanOrEqual(record.list[index]! + 20);
+    });
+  } finally {
+    await context.close();
+  }
+});
+
+test("a card shows all of its text on a phone, also a long value, caption and trend", async () => {
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    isMobile: true,
+    hasTouch: true,
+    reducedMotion: "reduce",
+  });
+  try {
+    const page = await context.newPage();
+    await page.goto(`http://127.0.0.1:${server.port}/`);
+    await page.evaluate(
+      (value) => (window as unknown as { showCards: (cards: unknown[]) => void }).showCards(value),
+      [
+        {
+          title: "Deploy checks for the production cluster in Frankfurt",
+          value: "All 12 deploy checks passed",
+          caption: "Compared with the same quarter last year, driven mostly by the new enterprise contracts in the DACH region",
+          trendValue: "+12%",
+          trendLabel: "versus the same quarter of the previous fiscal year",
+          trendDirection: "up",
+        },
+      ],
+    );
+    await page.waitForSelector(".k2b-stat-cell");
+    const parts = await page.evaluate(() => {
+      const cell = document.querySelector(".k2b-stat-cell")!.getBoundingClientRect();
+      return Array.from(
+        document.querySelectorAll(".k2b-stat-cell__label, .k2b-stat-cell__value, .k2b-stat-cell__sub, .k2b-stat-cell__accent"),
+      ).map((node) => {
+        const box = node.getBoundingClientRect();
+        return {
+          name: node.className,
+          whole: node.scrollWidth <= node.clientWidth && box.width > 0 && box.right <= cell.right + 0.5,
+        };
+      });
+    });
+    expect(parts).toHaveLength(4);
+    for (const part of parts) expect(part).toEqual({ name: part.name, whole: true });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
+  } finally {
+    await context.close();
+  }
+});
 
 test("a tap on one chart of a linked group moves the cursor in every chart of the group (phone)", async () => {
   const context = await browser.newContext({
@@ -541,6 +662,37 @@ test("a reference in a table or a record opens through the host with its title a
   }
 });
 
+test("a table omits inherited reference cells and opens footer references through the host", async () => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: "reduce" });
+  try {
+    const page = await context.newPage();
+    await page.goto(`http://127.0.0.1:${server.port}/`);
+    await page.evaluate(
+      (value) => (window as unknown as { show: (blocks: ToolBlock[]) => void }).show(value),
+      [
+        present("/views/footer-reference-5a6b7c8d.view.json", {
+          view: "table",
+          title: "Task references",
+          rows: 1,
+          columns: 2,
+          footer: true,
+        }),
+      ],
+    );
+    await page.waitForSelector("[data-view-path] table");
+    // A missing cell shows the table's empty mark, not a reference to Object.prototype.
+    const missing = page.locator("tbody td").last();
+    expect(await missing.textContent()).toBe("—");
+    expect(await missing.getByRole("button").count()).toBe(0);
+    await page.locator("tfoot").getByRole("button", { name: "All tasks" }).click();
+    expect(await page.evaluate(() => (window as unknown as { opened: unknown[] }).opened)).toEqual([
+      { title: "All tasks", ref: { type: "spaces.item", id: "item-42" } },
+    ]);
+  } finally {
+    await context.close();
+  }
+});
+
 test("a view file edited after present shows unavailable instead of what its summary did not reserve", async () => {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: "reduce" });
   try {
@@ -552,12 +704,22 @@ test("a view file edited after present shows unavailable instead of what its sum
         present("/views/unlinked-4e5f6a7b.view.json", groupSummary(linked)),
         present("/views/subtitled-8c9d0e1f.view.json", { view: "chart", kind: "bar", title: chart.title }),
         present("/views/flattened-2f3a4b5c.view.json", statsSummary),
+        present("/views/retitled-stats-6a7b8c9d.view.json", statsSummary),
+        present("/views/delivery-note-grown-2d3e4f5a.view.json", cloudAiViewSummary(parseCloudAiView(note)!)),
+        present("/views/resubtitled-table-7b8c9d0e.view.json", {
+          view: "table",
+          title: table.title,
+          subtitle: table.subtitle,
+          rows: table.rows.length,
+          columns: table.columns.length,
+          footer: true,
+        }),
       ],
     );
-    // Both charts of the group, the single chart and the stats.
+    // Both charts of the group, the single chart, both stats views, the record and the table.
     await page.waitForFunction(() => {
       const statuses = Array.from(document.querySelectorAll('[data-view-path] [role="status"]'));
-      return statuses.length === 4 && statuses.every((node) => node.textContent?.startsWith("This view is no longer available"));
+      return statuses.length === 7 && statuses.every((node) => node.textContent?.startsWith("This view is no longer available"));
     });
     expect(await page.locator('[data-view-path] [data-interactive="true"]').count()).toBe(0);
   } finally {

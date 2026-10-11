@@ -158,6 +158,8 @@ does not replace either.
 The built-in `card` tool shows one highlight figure the model already has as
 one stat tile, the same look as a stats view. `tone` is accepted but not shown,
 and the trend stays neutral because a card does not say whether up is better.
+Its title, value, caption and trend wrap instead of being cut off; the tool
+asks for a short value of about 20 characters and a one-line caption.
 Several figures computed in `code_run` belong in `cloud.view.stats` in that
 run, followed by `present({path})`.
 
@@ -287,8 +289,13 @@ CLI, using the same locale formatting as the web host.
 inline. A group summary lists each chart's kind and title to reserve its frame
 while loading. Stats summaries include each label and booleans for sparkline,
 sub and delta, so the host reserves the exact tile height without values.
-Details summaries carry the field count. Every reader validates the current
-file; invalid or missing files show unavailable. Only assistant files below `/views/` ending in `.view.json`
+Details summaries carry the field count and, for the first twelve fields, each
+label, whether the value is a reference, and the length of its English display
+text. The host sizes the record from a hidden copy of these fields with stand-in
+text, so values that wrap on a phone keep their room; it shows at most twelve
+one-line rows before the record scrolls. Every reader validates the current
+file; a file whose headings, stats parts or details sizes no longer match its
+summary, and invalid or missing files, show unavailable. Only assistant files below `/views/` ending in `.view.json`
 qualify. HTML apps cannot save views; they draw with `cloud.chart()`.
 
 The pure readers in `@k2b/cloud/ai/browser` are `parseCloudAiView`,
