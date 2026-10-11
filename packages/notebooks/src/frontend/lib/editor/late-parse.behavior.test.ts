@@ -7,10 +7,14 @@ import { isServer } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../ui/test/dom";
 import { cursorZoneStateField, initialMarkdownDecorationRefreshExtension } from "./_lib/cursor-zone-field";
 import { codeFontExtension } from "./code-font";
-import { listsExtension } from "./lists";
 import { markdownExtension } from "./markdown";
 import { markupExtension } from "./markup";
 import { tagPillExtension } from "./tag-pill";
+
+// Notebook block scanners load the UI browser export after its DOM globals exist.
+const loading = createDomTestHarness();
+const { listsExtension } = await import("./lists");
+loading.cleanup();
 
 // CodeMirror parses a long note in steps: the first state holds a syntax tree for
 // only the first few thousand characters, and the parser later delivers the rest in

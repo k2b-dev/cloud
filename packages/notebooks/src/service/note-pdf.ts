@@ -39,6 +39,12 @@ const NOTE_PRINT_CSS = `
 .md-data-row:not(:last-child) > * { border-bottom: 1px solid #e2e8f0; }
 .md-data-key { background: #f8fafc; font-weight: 600; }
 .md-data-chip { display: inline-block; padding: 0 .35em; border-radius: 3px; background: #eff6ff; color: #1d4ed8; }
+/* The editor and Book use the same ordered-list label cycle. */
+ol ol { list-style-type: lower-alpha; }
+ol ol ol { list-style-type: lower-roman; }
+ol ol ol ol { list-style-type: decimal; }
+ol ol ol ol ol { list-style-type: lower-alpha; }
+ol ol ol ol ol ol { list-style-type: lower-roman; }
 .notebook-book-toc ol { padding-left: 0; list-style: none; }
 .notebook-book-toc li[data-depth="2"] { padding-left: 1.2em; }
 .notebook-book-toc li[data-depth="3"] { padding-left: 2.4em; }

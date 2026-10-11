@@ -4,9 +4,13 @@ import { EditorState, type Transaction } from "@codemirror/state";
 import { type DecorationSet, EditorView } from "@codemirror/view";
 import { isServer } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../ui/test/dom";
-import { listsExtension } from "./lists";
 import { markdownExtension } from "./markdown";
 import { pressMissedEditor } from "./surface-press";
+
+// Notebook block scanners load the UI browser export after its DOM globals exist.
+const loading = createDomTestHarness();
+const { listStateField, listsExtension } = await import("./lists");
+loading.cleanup();
 
 describe("editor checklist boxes", () => {
   if (isServer) {
@@ -54,7 +58,7 @@ describe("editor checklist boxes", () => {
       const set: DecorationSet = typeof source === "function" ? source(view) : source;
       let found = false;
       set.between(position, position, (from, _to, decoration) => {
-        if (from === position && decoration.spec.widget?.constructor.name === "TaskWidget") found = true;
+        if (from === position && decoration.spec.widget?.constructor.name === "ListGutterWidget") found = true;
       });
       return found;
     });
@@ -77,16 +81,49 @@ describe("editor checklist boxes", () => {
     const doc = `- Groceries\n  - Milk\n${"Some prose that fills the note.\n".repeat(40_000)}`;
     const { view, cleanup } = mount(doc, 0);
     try {
-      const dot = view.dom.querySelector(".custom-list-marker");
-      const guide = view.dom.querySelector(".custom-list-indent");
+      const dot = view.dom.querySelector(".custom-list-dot");
+      const guide = view.dom.querySelector(".custom-list-guide");
       expect(dot).not.toBeNull();
       expect(guide).not.toBeNull();
       const tree = syntaxTree(view.state);
       forceParsing(view, doc.length, 5000);
       // The newer tree rebuilt the list decorations, but the unchanged widgets keep their elements.
       expect(syntaxTree(view.state)).not.toBe(tree);
-      expect(view.dom.querySelector(".custom-list-marker") === dot).toBe(true);
-      expect(view.dom.querySelector(".custom-list-indent") === guide).toBe(true);
+      expect(view.dom.querySelector(".custom-list-dot") === dot).toBe(true);
+      expect(view.dom.querySelector(".custom-list-guide") === guide).toBe(true);
+    } finally {
+      cleanup();
+    }
+  });
+
+  test("selection moves reuse the structure and activate only the parent's subtree", () => {
+    const { view, cleanup } = mount("- root\n  - child\n    - grandchild\n  - sibling\n- outside\n  - other", 2);
+    try {
+      const before = view.state.field(listStateField);
+      view.dispatch({ selection: { anchor: view.state.doc.line(2).to } });
+      const after = view.state.field(listStateField);
+      expect(after.structure.items).toBe(before.structure.items);
+      const activeLines: Array<[number, string]> = [];
+      after.active.between(0, view.state.doc.length, (from, _to, decoration) => {
+        activeLines.push([view.state.doc.lineAt(from).number, decoration.spec.attributes.style]);
+      });
+      expect(activeLines).toEqual([
+        [2, "--list-active-level: 0"],
+        [3, "--list-active-level: 0"],
+        [4, "--list-active-level: 0"],
+      ]);
+      view.dispatch({ selection: { anchor: view.state.doc.line(4).to } });
+      expect(view.state.field(listStateField).active).toBe(after.active);
+      view.dispatch({ selection: { anchor: view.state.doc.line(3).to } });
+      const deeper = view.state.field(listStateField);
+      expect(deeper.structure.items).toBe(before.structure.items);
+      const levels: string[] = [];
+      deeper.active.between(0, view.state.doc.length, (_from, _to, decoration) => {
+        levels.push(decoration.spec.attributes.style);
+      });
+      expect(levels).toEqual(["--list-active-level: 1"]);
+      view.dispatch({ selection: { anchor: view.state.doc.line(5).to } });
+      expect(view.state.field(listStateField).active.size).toBe(0);
     } finally {
       cleanup();
     }
@@ -116,6 +153,23 @@ describe("editor checklist boxes", () => {
         expect(transaction.selection).toBeUndefined();
       }
       expect(view.state.selection.main.head).toBe(2);
+    } finally {
+      cleanup();
+    }
+  });
+
+  test("uppercase tasks in ordered lists toggle only their task marker", () => {
+    const { view, transactions, press, cleanup } = mount("3) [X] Done\n7) [ ] Next", 0);
+    try {
+      press("Done");
+      press("Next");
+      expect(view.state.doc.toString()).toBe("3) [ ] Done\n7) [x] Next");
+      expect(view.state.selection.main.head).toBe(0);
+      expect(transactions).toHaveLength(2);
+      for (const transaction of transactions) {
+        expect(transaction.selection).toBeUndefined();
+        expect(transaction.scrollIntoView).toBe(false);
+      }
     } finally {
       cleanup();
     }

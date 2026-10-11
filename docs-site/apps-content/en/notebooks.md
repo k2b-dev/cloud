@@ -80,6 +80,10 @@ a server-rendered preview; move the cursor into the block or choose **Show
 source** to edit it. Invalid settings are marked at their source lines. Previewing
 a draft does not save it or change the notes returned by the query.
 
+Rich mode indents list items by their Markdown nesting. Numbered lists count
+from their starting number. Nested numbered lists show a., b., then i., ii.,
+then decimal numbers again in the editor, Book view, and PDF.
+
 In the editor, Tab indents: it nests list items together with their sub-items,
 moves between table cells, accepts an open suggestion, and otherwise inserts two
 spaces. Press Esc, then Tab to move focus out of the editor. Each person can
