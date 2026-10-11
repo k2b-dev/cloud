@@ -3,10 +3,16 @@ import { type Server, sql } from "bun";
 import { Hono } from "hono";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
+import { migrateCloudAi } from "../ai/migrate";
+import { aiConversations } from "../ai/store";
 import { createAppApprovalRoutes } from "../api/app-approval";
+import { createDeviceActions } from "../api/app-approval-actions";
 import {
+  APP_APPROVAL_LIMITS,
   APP_APPROVAL_PATH,
+  AppActionViewSchema,
   AppDeviceAccountSchema,
+  AppDeviceInboxSchema,
   type AppDeviceProof,
   AppDevicePublicKeySchema,
   type AppDeviceRequest,
@@ -17,6 +23,7 @@ import {
   AppPairingClaimResultSchema,
   AppPairingPayloadSchema,
   AppPairingResultSchema,
+  appActionDigest,
   appDeviceProofMessage,
   appPairingProofMessage,
 } from "../contracts/app-approval";
@@ -28,11 +35,14 @@ import {
   createAppApprovalService,
   readAppApprovalConfig,
 } from "./app-approval";
+import { approvals } from "./approvals";
 import { createIdentityPublicRoutes } from "./identity";
 import { invalidateIdentityRuntimeConfig } from "./identity/runtime-config";
 import { session } from "./session";
 import { createTestSession } from "./session/session.test-fixture";
 import * as settings from "./settings";
+
+const deviceActions = createDeviceActions((id) => id);
 
 // Never migrate or mutate the development installation.
 const suite = suiteFor("database");
@@ -124,12 +134,13 @@ suite("isolated app approval protocol", () => {
     target = service,
     decision: "approve" | "deny" = "approve",
   ) => {
-    const pending = AppDeviceResponseSchema.parse(await target.deviceCommand(await proof(device, { operation: "pending" })));
+    const pending = AppDeviceResponseSchema.parse(await target.deviceCommand(await proof(device, { operation: "pending" }), deviceActions));
     if (!("requests" in pending)) throw new Error("Pending response missing");
     const request = pending.requests?.find((item) => item.requestId === requestId);
     if (!request) throw new Error("Pending request missing");
     return target.deviceCommand(
       await proof(device, { operation: "decide", requestId, challenge: request.challenge, comparison: request.comparison, decision }),
+      deviceActions,
     );
   };
   beforeAll(async () => {
@@ -211,7 +222,7 @@ suite("isolated app approval protocol", () => {
     await expect(service.claimPairing({ ...signed, name: "Tampered" })).rejects.toMatchObject({ code: "FORBIDDEN" });
     const result = await service.claimPairing(signed);
     await expect(
-      service.deviceCommand(await proof({ ...key, id: result.deviceId, issuer: cfg.issuer }, { operation: "pending" })),
+      service.deviceCommand(await proof({ ...key, id: result.deviceId, issuer: cfg.issuer }, { operation: "pending" }), deviceActions),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
     expect((await service.pairingResult(pairing.pairingId, pairing.secret, key.publicKey)).comparison).toBe(result.comparison);
     await expect(service.pairingResult(pairing.pairingId, pairing.secret, (await keys()).publicKey)).rejects.toMatchObject({
@@ -299,10 +310,10 @@ suite("isolated app approval protocol", () => {
     const second = await enroll(owner);
     const stranger = await enroll(other);
     const token = "P".repeat(43);
-    expect(await service.deviceCommand(await proof(device, { operation: "push", token }))).toEqual({ state: "updated" });
+    expect(await service.deviceCommand(await proof(device, { operation: "push", token }), deviceActions)).toEqual({ state: "updated" });
     // The same phone paired twice holds one token: one wake-up, not two.
-    await service.deviceCommand(await proof(second, { operation: "push", token }));
-    await service.deviceCommand(await proof(stranger, { operation: "push", token: "S".repeat(43) }));
+    await service.deviceCommand(await proof(second, { operation: "push", token }), deviceActions);
+    await service.deviceCommand(await proof(stranger, { operation: "push", token: "S".repeat(43) }), deviceActions);
     const until = async (check: () => boolean | Promise<boolean>) => {
       for (let i = 0; i < 100 && !(await check()); i++) await Bun.sleep(20);
     };
@@ -335,11 +346,12 @@ suite("isolated app approval protocol", () => {
     await service.startLogin(owner.uid, "login");
     await Bun.sleep(100);
     expect(pushes).toEqual([]);
+    pushStatus = 202;
 
     // Push tokens are strict, signed parameters.
     const tampered = await proof(device, { operation: "push", token });
     tampered.proof.command = { operation: "push", token: "Q".repeat(43) };
-    await expect(service.deviceCommand(tampered)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(service.deviceCommand(tampered, deviceActions)).rejects.toMatchObject({ code: "FORBIDDEN" });
     const invalid = await proof(device, { operation: "push", token });
     const body = { ...invalid, proof: { ...invalid.proof, command: { operation: "push", token: "short" } } };
     expect((await post("/device", body, undefined, cfg.appOrigin)).status).toBe(400);
@@ -363,26 +375,34 @@ suite("isolated app approval protocol", () => {
       account: { uid: owner.uid, displayName: "Ada Lovelace", mail: owner.mail },
       device: { name: "Test device", createdAt: row!.created_at.toISOString() },
     });
-    expect(await service.deviceCommand(await proof(stranger, { operation: "account" }))).toEqual({
+    expect(await service.deviceCommand(await proof(stranger, { operation: "account" }), deviceActions)).toEqual({
       account: { uid: other.uid, displayName: "", mail: null },
       device: { name: "Test device", createdAt: expect.any(String) },
     });
-    expect(await cloudB.deviceCommand(await proof(elsewhere, { operation: "account" }))).toMatchObject({ account: { uid: owner.uid } });
+    expect(await cloudB.deviceCommand(await proof(elsewhere, { operation: "account" }), deviceActions)).toMatchObject({
+      account: { uid: owner.uid },
+    });
     // Another device's key, another Cloud, a replayed or tampered proof, and a revoked device learn nothing.
-    await expect(service.deviceCommand(await proof(stranger, { operation: "account" }, { deviceId: device.id }))).rejects.toMatchObject({
+    await expect(
+      service.deviceCommand(await proof(stranger, { operation: "account" }, { deviceId: device.id }), deviceActions),
+    ).rejects.toMatchObject({
       code: "FORBIDDEN",
     });
-    await expect(cloudB.deviceCommand(await proof(device, { operation: "account" }))).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(cloudB.deviceCommand(await proof(device, { operation: "account" }), deviceActions)).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
     const replay = await proof(device, { operation: "account" });
-    await service.deviceCommand(replay);
-    await expect(service.deviceCommand(replay)).rejects.toMatchObject({ code: "CONFLICT" });
+    await service.deviceCommand(replay, deviceActions);
+    await expect(service.deviceCommand(replay, deviceActions)).rejects.toMatchObject({ code: "CONFLICT" });
     const tampered = await proof(device, { operation: "pending" });
     await expect(
-      service.deviceCommand({ ...tampered, proof: { ...tampered.proof, command: { operation: "account" } } }),
+      service.deviceCommand({ ...tampered, proof: { ...tampered.proof, command: { operation: "account" } } }, deviceActions),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
     expect((await post("/device", await proof(device, { operation: "account" }), undefined, "https://evil.example.test")).status).toBe(403);
     await service.mutateDevice(owner.actor, device.id);
-    await expect(service.deviceCommand(await proof(device, { operation: "account" }))).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(service.deviceCommand(await proof(device, { operation: "account" }), deviceActions)).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
   });
 
   test("two Clouds and two accounts cannot reuse keys, requests, or signatures", async () => {
@@ -393,12 +413,14 @@ suite("isolated app approval protocol", () => {
       stranger = await enroll(other);
     const started = await service.startLogin(owner.mail, "login");
     const request = await proof(a, { operation: "pending" });
-    await expect(cloudB.deviceCommand(request)).rejects.toMatchObject({ code: "FORBIDDEN" });
-    await expect(service.deviceCommand(await proof(stranger, { operation: "pending" }, { deviceId: a.id }))).rejects.toMatchObject({
+    await expect(cloudB.deviceCommand(request, deviceActions)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(
+      service.deviceCommand(await proof(stranger, { operation: "pending" }, { deviceId: a.id }), deviceActions),
+    ).rejects.toMatchObject({
       code: "FORBIDDEN",
     });
-    expect(await cloudB.deviceCommand(await proof(b, { operation: "pending" }))).toMatchObject({ requests: [] });
-    expect(await service.deviceCommand(await proof(stranger, { operation: "pending" }))).toMatchObject({ requests: [] });
+    expect(await cloudB.deviceCommand(await proof(b, { operation: "pending" }), deviceActions)).toMatchObject({ requests: [] });
+    expect(await service.deviceCommand(await proof(stranger, { operation: "pending" }), deviceActions)).toMatchObject({ requests: [] });
     await approve(a, started.requestId);
     await expect(cloudB.consumeLogin(started.requestId, started.browserSecret)).rejects.toMatchObject({ code: "CONFLICT" });
     expect(await service.consumeLogin(started.requestId, started.browserSecret)).toBe(owner.id);
@@ -408,13 +430,13 @@ suite("isolated app approval protocol", () => {
     const owner = await account(),
       device = await enroll(owner);
     const request = await proof(device, { operation: "pending" });
-    await service.deviceCommand(request);
-    await expect(service.deviceCommand(request)).rejects.toMatchObject({ code: "CONFLICT" });
+    await service.deviceCommand(request, deviceActions);
+    await expect(service.deviceCommand(request, deviceActions)).rejects.toMatchObject({ code: "CONFLICT" });
     await expect(
-      service.deviceCommand({ ...request, proof: { ...request.proof, command: { operation: "revoke" } } }),
+      service.deviceCommand({ ...request, proof: { ...request.proof, command: { operation: "revoke" } } }, deviceActions),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(
-      service.deviceCommand(await proof(device, { operation: "pending" }, { issuedAt: 1, expiresAt: 61 })),
+      service.deviceCommand(await proof(device, { operation: "pending" }, { issuedAt: 1, expiresAt: 61 }), deviceActions),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
     const started = await service.startLogin(owner.uid, "login");
     await expect(
@@ -426,6 +448,7 @@ suite("isolated app approval protocol", () => {
           comparison: started.comparison,
           decision: "approve",
         }),
+        deviceActions,
       ),
     ).rejects.toMatchObject({ code: "CONFLICT" });
     await approve(device, started.requestId, service, "deny");
@@ -476,7 +499,9 @@ suite("isolated app approval protocol", () => {
 
     // The revoked device can neither poll, approve, nor complete the approval it already gave.
     await expect(service.consumeLogin(started.requestId, started.browserSecret)).rejects.toMatchObject({ code: "FORBIDDEN" });
-    await expect(service.deviceCommand(await proof(device, { operation: "pending" }))).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(service.deviceCommand(await proof(device, { operation: "pending" }), deviceActions)).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
     const next = await service.startLogin(owner.uid, "login");
     const [login] = await sql<{ challenge: string }[]>`SELECT challenge FROM auth.app_logins WHERE id=${next.requestId}::uuid`;
     await expect(
@@ -488,6 +513,7 @@ suite("isolated app approval protocol", () => {
           comparison: next.comparison,
           decision: "approve",
         }),
+        deviceActions,
       ),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
     // Other devices keep working, and the owner's own list still shows the revocation.
@@ -495,7 +521,7 @@ suite("isolated app approval protocol", () => {
     expect(await service.consumeLogin(next.requestId, next.browserSecret)).toBe(owner.id);
     expect((await service.listUserDevices(admin.actor, owner.id)).map((item) => item.id)).toEqual([spare.id]);
     expect((await service.listDevices(owner.actor)).items.find((item) => item.id === device.id)?.revokedAt).not.toBeNull();
-    expect(await service.deviceCommand(await proof(unrelated, { operation: "pending" }))).toMatchObject({ requests: [] });
+    expect(await service.deviceCommand(await proof(unrelated, { operation: "pending" }), deviceActions)).toMatchObject({ requests: [] });
 
     const events = await sql<
       { actor_user_id: string; target_type: string; metadata: { targetUserId?: string } }[]
@@ -522,8 +548,12 @@ suite("isolated app approval protocol", () => {
     await session.revokeAllForUser(owner.id);
 
     await expect(service.consumeLogin(started.requestId, started.browserSecret)).rejects.toMatchObject({ code: "FORBIDDEN" });
-    await expect(service.deviceCommand(await proof(device, { operation: "pending" }))).rejects.toMatchObject({ code: "FORBIDDEN" });
-    await expect(cloudB.deviceCommand(await proof(elsewhere, { operation: "pending" }))).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(service.deviceCommand(await proof(device, { operation: "pending" }), deviceActions)).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    await expect(cloudB.deviceCommand(await proof(elsewhere, { operation: "pending" }), deviceActions)).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
     // A pairing started from the revoked session cannot add a device afterwards.
     await expect(service.confirmPairing(owner.actor, pairing.pairingId, claimed.comparison)).rejects.toMatchObject({
       code: "REAUTHENTICATE",
@@ -533,7 +563,7 @@ suite("isolated app approval protocol", () => {
     >`SELECT id, revoked_at FROM auth.app_devices WHERE user_id=${owner.id}::uuid`;
     expect(rows.map((row) => row.id).sort()).toEqual([device.id, elsewhere.id].sort());
     expect(rows.every((row) => row.revoked_at)).toBe(true);
-    expect(await service.deviceCommand(await proof(unrelated, { operation: "pending" }))).toMatchObject({ requests: [] });
+    expect(await service.deviceCommand(await proof(unrelated, { operation: "pending" }), deviceActions)).toMatchObject({ requests: [] });
     // Each device revocation is audited as a system consequence of the sign-out.
     const events = await sql<
       { target_id: string; actor_user_id: string | null; metadata: Record<string, unknown> }[]
@@ -657,12 +687,14 @@ suite("isolated app approval protocol", () => {
       expect(await authenticate(owner.token)).not.toBeNull();
       await sql`UPDATE auth.users SET account_expires=now()-interval '1 minute' WHERE id=${owner.id}::uuid`;
       expect(await authenticate(owner.token)).toBeNull();
-      await expect(service.deviceCommand(await proof(device, { operation: "pending" }))).rejects.toMatchObject({ code: "FORBIDDEN" });
+      await expect(service.deviceCommand(await proof(device, { operation: "pending" }), deviceActions)).rejects.toMatchObject({
+        code: "FORBIDDEN",
+      });
 
       await sql`UPDATE auth.users SET account_expires=NULL WHERE id=${owner.id}::uuid`;
       // The expired request ended the session; the device works again without re-pairing.
       expect(await authenticate(owner.token)).toBeNull();
-      expect(await service.deviceCommand(await proof(device, { operation: "pending" }))).toMatchObject({ requests: [] });
+      expect(await service.deviceCommand(await proof(device, { operation: "pending" }), deviceActions)).toMatchObject({ requests: [] });
     }
   });
 
@@ -674,9 +706,13 @@ suite("isolated app approval protocol", () => {
     await sql`UPDATE auth.users SET auth_epoch=auth_epoch+1 WHERE id=${owner.id}::uuid`;
     await expect(service.consumeLogin(started.requestId, started.browserSecret)).rejects.toMatchObject({ code: "CONFLICT" });
     await sql`UPDATE auth.users SET account_expires=now()-interval '1 minute' WHERE id=${owner.id}::uuid`;
-    await expect(service.deviceCommand(await proof(device, { operation: "pending" }))).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(service.deviceCommand(await proof(device, { operation: "pending" }), deviceActions)).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
     await sql`DELETE FROM auth.users WHERE id=${owner.id}::uuid`;
-    await expect(service.deviceCommand(await proof(device, { operation: "pending" }))).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(service.deviceCommand(await proof(device, { operation: "pending" }), deviceActions)).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
   });
 
   test("unknown and disabled accounts have the same public pending shape", async () => {
@@ -787,7 +823,7 @@ suite("isolated app approval protocol", () => {
     });
     await expect(service.confirmPairing(owner.actor, pairing.pairingId, claimed.comparison)).rejects.toMatchObject({ code: "CONFLICT" });
     for (let i = 0; i < 7; i++) await service.startLogin(owner.uid, "login");
-    const result = await service.deviceCommand(await proof(device, { operation: "pending" }));
+    const result = await service.deviceCommand(await proof(device, { operation: "pending" }), deviceActions);
     expect("requests" in result && result.requests?.length).toBe(5);
     const [row] = await sql`SELECT jsonb_typeof(public_key) AS kind FROM auth.app_devices WHERE id=${device.id}::uuid`;
     expect(row.kind).toBe("object");
@@ -812,5 +848,227 @@ suite("isolated app approval protocol", () => {
     const pairing = await response.json();
     await sql`UPDATE auth.users SET admin=false WHERE id=${owner.id}::uuid`;
     expect((await post("/manage/pairings/status", { pairingId: pairing.pairingId }, owner.token)).status).toBe(403);
+  });
+  suiteFor(
+    "database",
+    "nats",
+    "valkey",
+  )("Cloud Login Actions", () => {
+    beforeAll(migrateCloudAi, 30_000);
+    const askAction = async (
+      owner: Awaited<ReturnType<typeof account>>,
+      options: { assurance?: "standard" | "confirm"; signedInSession?: true } = {},
+    ) => {
+      const chat = await aiConversations.createConversation({ ownerUserId: owner.id, title: "Send a letter" });
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: chat.id,
+        modelProfileId: "mock",
+        runConfig: {
+          kind: "chat",
+          input: "Send",
+          ...(options.signedInSession === undefined ? {} : { signedInSession: options.signedInSession }),
+        },
+        userMessage: { role: "user", content: [{ type: "text", text: "Send" }] },
+      });
+      const callId = crypto.randomUUID();
+      const request = await approvals.request({
+        appId: "mail",
+        action: "draft.send",
+        requester: { kind: "assistant_turn", appId: "assistant", ref: `${turn.id}/${callId}`, title: chat.title },
+        subjectId: owner.id,
+        approverUserId: owner.id,
+        assurance: options.assurance ?? "confirm",
+        sentence: "mail: Send draft",
+        review: { message: "Send this letter", details: [{ label: "To", value: "Ada" }] },
+        input: { revision: 1 },
+        expiresInMs: 600_000,
+      });
+      if (!request.ok) throw new Error("Missing approval");
+      await aiConversations.savePendingTurnAction({
+        approvalId: request.id,
+        conversationId: chat.id,
+        turnId: turn.id,
+        callId,
+        kind: "approval",
+        status: "pending",
+        name: "mail.draft.send",
+        args: { revision: 1 },
+        allowAlways: false,
+        allowChat: false,
+        approvalScope: "draft",
+        resolvedEvent: null,
+      });
+      return { id: request.id, conversationId: chat.id, turnId: turn.id, callId };
+    };
+    const devicePost = async (device: Awaited<ReturnType<typeof enroll>>, command: AppDeviceProof["command"]) =>
+      post("/device", await proof(device, command), undefined, cfg.appOrigin);
+
+    test("signed inbox and view belong to the device's account; a digest-bound decision resolves the chat and audits its device", async () => {
+      const owner = await account(),
+        stranger = await account();
+      const device = await enroll(owner);
+      const waiting = await askAction(owner, { assurance: "standard" });
+      const foreign = await askAction(stranger);
+      const login = await service.startLogin(owner.uid, "login");
+      const discovery = await routes.request("/info");
+      expect(discovery.status).toBe(200);
+      expect(await discovery.json()).toMatchObject({ features: ["actions"], limits: APP_APPROVAL_LIMITS });
+      const inboxResponse = await devicePost(device, { operation: "inbox" });
+      expect(inboxResponse.status).toBe(200);
+      const inbox = AppDeviceInboxSchema.parse(await inboxResponse.json());
+      expect(inbox.logins.map((entry) => entry.requestId)).toEqual([login.requestId]);
+      expect(inbox.actions.map((entry) => entry.actionId)).toEqual([waiting.id]);
+      expect(inbox.moreActions).toBe(0);
+      const [record] = await sql<{ actions_at: Date | null }[]>`SELECT actions_at FROM auth.app_devices WHERE id=${device.id}::uuid`;
+      expect(record?.actions_at).toBeInstanceOf(Date);
+      expect((await devicePost(device, { operation: "action", actionId: foreign.id })).status).toBe(409);
+      const response = await devicePost(device, { operation: "action", actionId: waiting.id });
+      expect(response.status).toBe(200);
+      const view = AppActionViewSchema.parse(await response.json());
+      expect(view.digest).toBe(await appActionDigest(cfg.issuer, view));
+      expect(view.requester.title).toBe("Send a letter");
+      const command = { operation: "act", actionId: waiting.id, digest: view.digest, decision: "approve" } as const;
+      expect((await devicePost(device, { ...command, digest: "A".repeat(43) })).status).toBe(409);
+      expect(await approvals.get(waiting.id)).toMatchObject({ status: "pending" });
+      const decided = await devicePost(device, command);
+      expect(decided.status).toBe(200);
+      expect(await decided.json()).toEqual({ state: "approved" });
+      expect(await approvals.get(waiting.id)).toMatchObject({ status: "approved", decidedVia: "cloud_login" });
+      expect(await aiConversations.getPendingTurnAction(waiting)).toMatchObject({ status: "resolved", resolvedEvent: { approved: true } });
+      const [audit] = await sql<
+        { metadata: unknown }[]
+      >`SELECT metadata FROM audit.events WHERE target_type='approval_request' AND target_id=${waiting.id}`;
+      expect(audit?.metadata).toMatchObject({ decidedVia: "cloud_login", deviceId: device.id });
+      expect((await devicePost(device, command)).status).toBe(409);
+      expect((await devicePost(device, { operation: "action", actionId: waiting.id })).status).toBe(409);
+      for (const decision of ["approve", "deny"] as const) {
+        const confirm = await askAction(owner);
+        const view = AppActionViewSchema.parse(await (await devicePost(device, { operation: "action", actionId: confirm.id })).json());
+        expect((await devicePost(device, { operation: "act", actionId: confirm.id, digest: view.digest, decision })).status).toBe(200);
+        expect(await approvals.get(confirm.id)).toMatchObject({
+          status: decision === "approve" ? "approved" : "rejected",
+          decidedVia: "cloud_login",
+        });
+      }
+    });
+
+    test("all Action commands verify signatures first, and changed, expired or resolved views cannot be decided", async () => {
+      const owner = await account();
+      const device = await enroll(owner);
+      const waiting = await askAction(owner);
+      const view = await deviceActions.view({ userId: owner.id, issuer: cfg.issuer, actionId: waiting.id });
+      if (!view) throw new Error("Missing view");
+      for (const command of [
+        { operation: "inbox" },
+        { operation: "action", actionId: waiting.id },
+        { operation: "act", actionId: waiting.id, digest: view.digest, decision: "approve" },
+      ] satisfies AppDeviceProof["command"][]) {
+        const signed = await proof(device, command);
+        const tampered = { ...signed, proof: { ...signed.proof, jti: crypto.randomUUID() } };
+        expect((await post("/device", tampered, undefined, cfg.appOrigin)).status).toBe(403);
+      }
+      const [deviceRow] = await sql<{ actions_at: Date | null }[]>`SELECT actions_at FROM auth.app_devices WHERE id=${device.id}::uuid`;
+      expect(deviceRow?.actions_at).toBeNull();
+      await sql`UPDATE approvals.requests SET requester_title='Changed chat' WHERE id=${waiting.id}::uuid`;
+      expect((await devicePost(device, { operation: "act", actionId: waiting.id, digest: view.digest, decision: "approve" })).status).toBe(
+        409,
+      );
+      expect(await approvals.get(waiting.id)).toMatchObject({ status: "pending" });
+      const latest = await deviceActions.view({ userId: owner.id, issuer: cfg.issuer, actionId: waiting.id });
+      if (!latest) throw new Error("Missing view");
+      await approvals.decide(waiting.id, { approved: true }, { userId: owner.id, via: "web_session" });
+      expect(
+        (await devicePost(device, { operation: "act", actionId: waiting.id, digest: latest.digest, decision: "approve" })).status,
+      ).toBe(409);
+      const expired = await askAction(owner);
+      await sql`UPDATE approvals.requests SET expires_at=now()-interval '1 second' WHERE id=${expired.id}::uuid`;
+      expect((await devicePost(device, { operation: "action", actionId: expired.id })).status).toBe(409);
+      const orphan = await askAction(owner);
+      await sql`UPDATE ai.pending_actions SET status='resolved' WHERE approval_id=${orphan.id}::uuid`;
+      expect((await devicePost(device, { operation: "action", actionId: orphan.id })).status).toBe(409);
+      for (let i = 0; i < 6; i++) await askAction(owner);
+      const inbox = AppDeviceInboxSchema.parse(await (await devicePost(device, { operation: "inbox" })).json());
+      expect(inbox.actions).toHaveLength(5);
+      expect(inbox.moreActions).toBe(1);
+    });
+
+    test("multibyte summaries share the response byte budget with logins and omitted Actions stay counted", async () => {
+      const owner = await account();
+      const device = await enroll(owner);
+      for (let i = 0; i < 5; i++) {
+        const action = await askAction(owner);
+        await sql`UPDATE approvals.requests SET sentence=${"😀".repeat(280)} WHERE id=${action.id}::uuid`;
+        await sql`UPDATE approvals.requests SET requester_title=${"😀".repeat(80)} WHERE id=${action.id}::uuid`;
+        await service.startLogin(owner.uid, "login");
+      }
+      const largeNames = createAppApprovalRoutes(service, () => createDeviceActions(() => "😀".repeat(60)));
+      const response = await largeNames.request("/device", {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: cfg.appOrigin },
+        body: JSON.stringify(await proof(device, { operation: "inbox" })),
+      });
+      expect(response.status).toBe(200);
+      const body = await response.text();
+      expect(new TextEncoder().encode(body).length).toBeLessThanOrEqual(APP_APPROVAL_LIMITS.bodyBytes);
+      const inbox = AppDeviceInboxSchema.parse(JSON.parse(body));
+      expect(inbox.logins).toHaveLength(5);
+      expect(inbox.actions.length).toBeLessThan(5);
+      expect(inbox.actions.length + inbox.moreActions).toBe(5);
+    });
+
+    test("Action push claims devices atomically, requires inbox support, and skips Cloud page requests", async () => {
+      const owner = await account();
+      const phone = await enroll(owner),
+        samePhone = await enroll(owner),
+        oldPhone = await enroll(owner),
+        revoked = await enroll(owner);
+      const token = "U".repeat(43);
+      for (const device of [phone, samePhone, oldPhone, revoked])
+        await service.deviceCommand(
+          await proof(device, { operation: "push", token: device === oldPhone ? "V".repeat(43) : token }),
+          deviceActions,
+        );
+      for (const device of [phone, samePhone, revoked])
+        await service.deviceCommand(await proof(device, { operation: "inbox" }), deviceActions);
+      await service.mutateDevice(owner.actor, revoked.id);
+      const waiting = await askAction(owner);
+      const start = pushes.length;
+      await Promise.all([service.wakeForAction(waiting.id), service.wakeForAction(waiting.id)]);
+      expect(pushes.slice(start).map((push) => push.body)).toEqual([
+        { token, cloudOrigin: cfg.issuer, requestRef: waiting.id, kind: "action" },
+      ]);
+      const [old] = await sql<{ action_wake_at: Date | null }[]>`SELECT action_wake_at FROM auth.app_devices WHERE id=${oldPhone.id}::uuid`;
+      expect(old?.action_wake_at).toBeNull();
+      const second = await askAction(owner);
+      await service.wakeForAction(second.id);
+      expect(pushes).toHaveLength(start + 1);
+      await sql`UPDATE auth.app_devices SET action_wake_at=now()-interval '31 seconds' WHERE user_id=${owner.id}::uuid`;
+      const page = await askAction(owner, { signedInSession: true });
+      await service.wakeForAction(page.id);
+      expect(pushes).toHaveLength(start + 1);
+      await sql`UPDATE approvals.requests SET expires_at=now()-interval '1 second' WHERE id=${second.id}::uuid`;
+      await service.wakeForAction(second.id);
+      expect(pushes).toHaveLength(start + 1);
+      cfg.enabled = false;
+      await service.wakeForAction(waiting.id);
+      cfg.enabled = true;
+      expect(pushes).toHaveLength(start + 1);
+      pushStatus = 400;
+      try {
+        await service.wakeForAction(waiting.id);
+        expect(pushes).toHaveLength(start + 2);
+        const [deviceRow] = await sql<{ push_token: string }[]>`SELECT push_token FROM auth.app_devices WHERE id=${phone.id}::uuid`;
+        expect(deviceRow?.push_token).toBe(token);
+        await sql`UPDATE auth.app_devices SET action_wake_at=now()-interval '31 seconds' WHERE user_id=${owner.id}::uuid`;
+        pushStatus = 410;
+        await service.wakeForAction(waiting.id);
+        const rows = await sql<
+          { push_token: string | null }[]
+        >`SELECT push_token FROM auth.app_devices WHERE id IN (${phone.id}::uuid,${samePhone.id}::uuid)`;
+        expect(rows.every((row) => row.push_token === null)).toBe(true);
+      } finally {
+        pushStatus = 202;
+      }
+    });
   });
 });

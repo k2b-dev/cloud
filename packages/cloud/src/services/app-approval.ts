@@ -3,8 +3,11 @@ import { lazySync } from "../_internal/process-sync";
 import { env } from "../config/env";
 import { type AccountCategory, accountCategory } from "../contracts/account-categories";
 import {
+  APP_APPROVAL_FEATURES,
   APP_APPROVAL_PATH,
   APP_APPROVAL_PROTOCOL,
+  type AppActionSummary,
+  type AppActionView,
   type AppDevicePublicKey,
   AppDevicePublicKeySchema,
   type AppDeviceRequest,
@@ -147,8 +150,28 @@ export type AppLoginDecisionHints = {
   /** Settles on the first hint for this request, or when `signal` aborts. */
   wait(requestId: string, signal: AbortSignal): Promise<void>;
 };
+/** Open Action approvals of a device's account, as the device shows and decides them. */
+export type AppDeviceActions = {
+  inbox(input: { userId: string; issuer: string }): Promise<{ actions: AppActionSummary[]; moreActions: number }>;
+  view(input: { userId: string; issuer: string; actionId: string }): Promise<AppActionView | null>;
+  /** True when this decision applied; false when the request is gone, decided, expired, or its view changed. */
+  decide(input: {
+    userId: string;
+    deviceId: string;
+    issuer: string;
+    actionId: string;
+    digest: string;
+    approved: boolean;
+  }): Promise<boolean>;
+};
+// Cloud Login allows 30 wake-ups per token in five minutes. One Action wake-up per device
+// in 30 seconds uses at most ten, leaving twenty for sign-ins.
+const ACTION_WAKE_SECONDS = 30;
 /** Best-effort sign-in wake-ups through the trusted authenticator; returns the HTTP status. */
-export type AppLoginPushSender = (appOrigin: string, body: { token: string; cloudOrigin: string; requestRef: string }) => Promise<number>;
+export type AppLoginPushSender = (
+  appOrigin: string,
+  body: { token: string; cloudOrigin: string; requestRef: string; kind?: "action" },
+) => Promise<number>;
 export const fetchPushSender: AppLoginPushSender = async (appOrigin, body) => {
   const response = await fetch(`${appOrigin}/push/notify`, {
     method: "POST",
@@ -265,6 +288,34 @@ export const createAppApprovalService = (
   return {
     config,
     cleanup,
+    wakeForAction: async (approvalId: string): Promise<void> => {
+      try {
+        const cfg = await config(false);
+        if (!cfg.enabled || !cfg.appOrigin) return;
+        const rows = await db<{ push_token: string; user_id: string }[]>`
+          UPDATE auth.app_devices d SET action_wake_at=now()
+          WHERE d.id IN (
+            SELECT device.id FROM auth.app_devices device JOIN approvals.requests r ON r.approver_user_id=device.user_id
+            WHERE r.id=${approvalId}::uuid AND r.status='pending' AND r.expires_at > now()
+              AND EXISTS (SELECT 1 FROM ai.pending_actions p JOIN ai.turns t ON t.id=p.turn_id
+                WHERE p.approval_id=r.id AND p.status='pending' AND t.run_config->>'signedInSession' IS NULL)
+              AND device.issuer=${cfg.issuer} AND device.revoked_at IS NULL AND device.push_token IS NOT NULL
+              AND device.actions_at IS NOT NULL
+            LIMIT ${limits.devicesPerAccount}
+          ) AND (d.action_wake_at IS NULL OR d.action_wake_at < now() - ${ACTION_WAKE_SECONDS} * interval '1 second')
+          RETURNING d.push_token,d.user_id`;
+        const tokens = new Map(rows.map((row) => [row.push_token, row.user_id]));
+        await Promise.all(
+          Array.from(tokens, async ([token, userId]) => {
+            const status = await push(cfg.appOrigin, { token, cloudOrigin: cfg.issuer, requestRef: approvalId, kind: "action" });
+            if (status === 410)
+              await db`UPDATE auth.app_devices SET push_token=NULL WHERE issuer=${cfg.issuer} AND user_id=${userId}::uuid AND push_token=${token}`;
+          }),
+        );
+      } catch (error) {
+        log.warn("App action push wake-up failed", { error: error instanceof Error ? error.name : "UnknownError" });
+      }
+    },
     maintain: async (notify: (notice: AppDeviceEnrollmentNotice) => Promise<unknown>, signal?: AbortSignal) => {
       await cleanup();
       const rows = await db<(DeviceRow & { has_email: boolean })[]>`
@@ -289,6 +340,7 @@ export const createAppApprovalService = (
         api: cfg.issuer + APP_APPROVAL_PATH,
         appOrigin: cfg.appOrigin,
         algorithm: "ES256",
+        features: [...APP_APPROVAL_FEATURES],
         limits,
       };
     },
@@ -478,7 +530,7 @@ export const createAppApprovalService = (
       if (owner) void wake(cfg, owner, id);
       return { requestId: id, browserSecret, comparison: code, expiresAt: iso(expiresAt), pollAfterSeconds: limits.pollSeconds };
     },
-    deviceCommand: async (request: AppDeviceRequest) => {
+    deviceCommand: async (request: AppDeviceRequest, actions: AppDeviceActions) => {
       const cfg = await config();
       const { proof, signature } = request;
       const now = Math.floor(Date.now() / 1000);
@@ -521,23 +573,27 @@ export const createAppApprovalService = (
           await record(tx, "device.revoke", device.user_id, device.id);
           return { state: "revoked" as const };
         }
-        if (command.operation === "pending") {
+        if (command.operation === "action" || command.operation === "act")
+          return { operation: command.operation, userId: device.user_id, deviceId: device.id };
+        if (command.operation === "pending" || command.operation === "inbox") {
           const user = await eligible(tx, device.user_id);
           const rows = await tx<
             LoginRow[]
           >`SELECT * FROM auth.app_logins WHERE issuer=${cfg.issuer} AND user_id=${device.user_id}::uuid AND state='pending' AND expires_at>now() AND auth_epoch=${user.auth_epoch} AND category=${accountCategory(user)} ORDER BY created_at LIMIT ${limits.pendingPerAccount}`;
-          return {
-            requests: rows.map(
-              (row): AppPendingLogin => ({
-                requestId: row.id,
-                challenge: row.challenge,
-                comparison: row.comparison,
-                createdAt: iso(row.created_at),
-                expiresAt: iso(row.expires_at),
-              }),
-            ),
-            pollAfterSeconds: limits.pollSeconds,
-          };
+          const requests = rows.map(
+            (row): AppPendingLogin => ({
+              requestId: row.id,
+              challenge: row.challenge,
+              comparison: row.comparison,
+              createdAt: iso(row.created_at),
+              expiresAt: iso(row.expires_at),
+            }),
+          );
+          if (command.operation === "inbox") {
+            await tx`UPDATE auth.app_devices SET actions_at=now() WHERE id=${device.id}::uuid`;
+            return { operation: "inbox" as const, userId: device.user_id, logins: requests };
+          }
+          return { requests, pollAfterSeconds: limits.pollSeconds };
         }
         const [row] = await tx<
           LoginRow[]
@@ -558,6 +614,36 @@ export const createAppApprovalService = (
         await record(tx, `login.${command.decision}`, device.user_id, device.id, { requestId: row.id });
         return { state };
       });
+      if (outcome.operation !== undefined) {
+        const command = proof.command;
+        const input = { userId: outcome.userId, issuer: cfg.issuer };
+        if (outcome.operation === "inbox") {
+          const inbox = { logins: outcome.logins, ...(await actions.inbox(input)), pollAfterSeconds: limits.pollSeconds };
+          // Multibyte summaries share the unchanged response budget with pending sign-ins.
+          while (inbox.actions.length && new TextEncoder().encode(JSON.stringify(inbox)).length > limits.bodyBytes) {
+            inbox.actions.pop();
+            inbox.moreActions++;
+          }
+          return inbox;
+        }
+        if (command.operation === "action") {
+          const view = await actions.view({ ...input, actionId: command.actionId });
+          return view ?? reject("CONFLICT", 409);
+        }
+        if (command.operation === "act") {
+          const approved = command.decision === "approve";
+          const applied = await actions.decide({
+            ...input,
+            deviceId: outcome.deviceId,
+            actionId: command.actionId,
+            digest: command.digest,
+            approved,
+          });
+          if (!applied) return reject("CONFLICT", 409);
+          return { state: approved ? ("approved" as const) : ("denied" as const) };
+        }
+        return reject("INVALID_REQUEST", 400);
+      }
       // Only after commit: the waiting browser re-reads Postgres, so a hint never grants anything.
       if (proof.command.operation === "decide") hints.publish(proof.command.requestId);
       return outcome;

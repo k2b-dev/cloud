@@ -37,7 +37,7 @@ credential, such as `cld capabilities action` or a request to
 | Sentence and review | What the person read, as a snapshot in their language |
 | Input and review digests | SHA-256 over the canonical Action input and over the review snapshot |
 | Status | `pending`, then `approved`, `rejected`, `expired`, or `cancelled`; `approved` becomes `consumed` when the Action runs |
-| Decided via | The decision channel: `web_session`, `app_session`, `oauth`, `api_key`, `invocation`, or `acp_bridge` |
+| Decided via | The decision channel: `web_session`, `app_session`, `oauth`, `api_key`, `invocation`, `acp_bridge`, or `cloud_login` |
 | Expiry | When an undecided request stops accepting a decision |
 
 The level follows what the call offers. An Action with
@@ -59,6 +59,8 @@ A person can decide the same request in these places:
   Its navigation row sits above **Studio** while a request waits.
   The row appears or disappears only on navigation. It stays while the view
   is open. If its count reaches zero before navigation, it shows a muted `0`.
+- [Cloud Login](/en/docs/operations/cloud-login), on a paired phone.
+  It shows the request, then asks for an explicit approve or reject choice.
 - **My account → Approvals** at `/me/approvals`, for all apps.
   Use `/me/approvals?app=mail` to filter by app.
 
@@ -76,6 +78,7 @@ The rail and app grid add each app's open approvals to its icon count.
 | --- | --- | --- | --- |
 | Web or app session | Yes | Yes | Yes |
 | The person's `cld`, OAuth, or API key | Yes | Yes | Yes |
+| Cloud Login (`cloud_login`) | Yes | Yes | Yes |
 | Editor bridge (`acp_bridge`) | Yes | No | Yes |
 
 Without the ACP header, personal credentials decide both levels as before.
@@ -130,6 +133,11 @@ The notification opens `/me/approvals`. It has no decision buttons.
 Browser delivery is recommended. Users can change delivery in their
 notification settings.
 
+Cloud also wakes paired Cloud Login phones for open requests asked outside
+Cloud's pages. Only devices that have read the Action inbox receive these
+pushes, at most once per device in 30 seconds. A push is a hint; the phone
+reads the signed request before the person decides.
+
 ## Use an approval once, for what was shown
 
 An approval is used directly before the Action runs, not when the person
@@ -170,8 +178,11 @@ Every decision writes an audit event `auth.action.approve` or
 `auth.action.deny`. Its target is the approval request, labelled
 `<appId>.<action>`, and its metadata names the level, the requester, and the
 `decidedVia` channel: `web_session`, `app_session`, `oauth`, `api_key`,
-`invocation`, or `acp_bridge`. Assistant tool calls also keep the channel next
-to their approval state.
+`invocation`, `acp_bridge`, or `cloud_login`. Assistant tool calls also keep
+the channel next to their approval state. Cloud Login decisions also record
+`deviceId` in the audit metadata. The device signs the digest of the view the
+person saw; a changed view, expired request, or decision elsewhere returns
+`409`.
 
 Approval requests are deleted with the capability execution records, 90 days
 after they expired.

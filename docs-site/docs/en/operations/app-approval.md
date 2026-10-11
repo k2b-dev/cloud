@@ -22,8 +22,8 @@ The [Cloud Login authenticator](./cloud-login.md) is deployed separately. Existi
 password and passkey sign-ins remain available; enabling app approval does not
 remove them or grant Linux access.
 
-Cloud Login approves sign-ins and device actions only.
-Decide [Action approvals](/en/docs/identity/approvals) in Cloud.
+Cloud Login approves sign-ins and [Action approvals](/en/docs/identity/approvals)
+over the same signed device channel.
 
 ## Choose the trusted website
 
@@ -297,6 +297,93 @@ after the previous one started. Once approved, call
 HttpOnly Cloud session cookie, never a token in JSON. Completion is atomic and
 one-use. A lost response or failed session issuance requires a new login.
 
+## Approve an Action
+
+Check `/info` for `features: ["actions"]` before using these commands.
+The feature extends `cloud-app-approval-v1`; it does not change `limits`.
+Older Clouds omit the feature and answer the new commands with `400`.
+Existing authenticators can keep using `pending` and `decide` for sign-ins.
+
+Send the following signed commands to `POST /device`:
+
+| Command | Result |
+| --- | --- |
+| `{operation:"inbox"}` | `{logins, actions, moreActions, pollAfterSeconds}`. `logins` has the same fields as the `pending` list. `actions` contains up to five newest open Action summaries of the device's account. `moreActions` counts other open requests. |
+| `{operation:"action", actionId}` | The full device view of one open request. |
+| `{operation:"act", actionId, digest, decision:"approve"}` | `{state:"approved"}`. With `decision:"deny"`, returns `{state:"denied"}`. |
+
+`inbox` has no signature appendix. For `action`, append `[actionId]` to the
+device proof array. For `act`, append `[actionId, digest, decision]`.
+Use a fresh `jti` for every command.
+
+The view contains `actionId`, `app: {id, name}`,
+`requester: {app: {id, name}, title}`, `assurance`, `sentence`, `message`,
+`details`, `truncated`, `argsDigest`, `createdAt`, `expiresAt`, and `digest`.
+App names come from Cloud's registry, localized for the phone's
+`Accept-Language`. The chat title is `null` when empty.
+`message` is plain text or `null`. Each detail has `{label, value}` and may
+carry `format: "date" | "date-time"`. Those values retain their raw date
+encoding; show them in the phone's locale and time zone. Markdown details
+arrive as plain text with no markdown format. Dates are ISO dates or RFC 3339;
+creation and expiry times are UTC ISO timestamps.
+
+A summary contains the view's `actionId`, `app`, `requester`, `assurance`,
+shortened `sentence`, `createdAt`, and `expiresAt`.
+The inbox may return fewer summaries to keep the whole response, including
+logins, within 8 KiB. Omitted requests count in `moreActions`.
+Read the full view before offering a decision. Cloud Login can approve or
+reject both `standard` and `confirm`. It decides only this request and never
+remembers an approval.
+
+`APP_ACTION_LIMITS` bounds the device text by Unicode code points:
+
+| Field | Limit |
+| --- | --- |
+| Inbox Actions (`inboxActions`) | 5 |
+| App IDs and names (`nameChars`) | 60 |
+| Chat title (`titleChars`) | 80 |
+| Summary sentence (`summaryChars`) | 120 |
+| Full sentence (`sentenceChars`) | 280 |
+| Message (`messageChars`) | 500 |
+| Details (`details`) | 8 |
+| Detail label (`labelChars`) | 40 |
+| Detail value (`valueChars`) | 300 |
+
+Cloud replaces control characters and line or paragraph separators with a
+space, removes format characters (including bidi overrides), collapses
+whitespace, and trims every text. It removes a leading registry app name
+from the first sentence line when text follows it. A valid review supplies
+its message and ordered details. Without a review, later `Label: value`
+lines become details and the other lines become the message.
+Cuts end in `…` within the field limit and set `truncated: true`.
+If the full JSON still exceeds 8 KiB in UTF-8, Cloud drops details from the
+end, then shortens the message. Show that the request was shortened and that
+the complete request is available in Cloud.
+
+The digest is unpadded base64url of SHA-256 over UTF-8 of this exact JSON
+array, without extra whitespace:
+
+```text
+["cloud-action-v1",issuer,actionId,app.id,app.name,requester.app.id,requester.app.name,requester.title,assurance,sentence,message,details.map(d => [d.label,d.value,d.format ?? null]),truncated,createdAt,expiresAt,argsDigest]
+```
+
+Use `appActionDigestMessage` and `appActionDigest` from
+`@k2b/cloud/contracts`. Recompute the digest before showing an
+approval choice. Refuse to offer approval if it differs from `digest`.
+The browser SDK's `action()` checks it before returning the view; `act()`
+checks it again before signing. `argsDigest` binds the stored input, which
+the authenticator cannot inspect, to the decision.
+
+Never decide automatically. Build your own frame from registry app names
+and the Cloud host. Render the app's sentence, message, and details only as
+plain text below that frame. Show the chat title as content, never as your
+own frame. Do not interpret app text as HTML, links, instructions, or a
+reason to approve. Require the person's explicit choice for every decision.
+
+A `409` means the request was decided elsewhere, expired, or its view changed.
+Remove the old choice and reload the inbox. Do not retry the old decision
+against a new view.
+
 ### Wake the paired phone
 
 A device that sent a push token gets a wake-up for each sign-in request of its
@@ -319,7 +406,18 @@ retries delivery itself. An answer of 410 means the phone's subscription is
 gone, so Core clears that token from the account's devices. Revoked devices
 are never woken.
 
-Push is only a hint. The authenticator still loads requests with a signed
+For an Action approval asked outside Cloud's pages, Core sends the same body
+with `kind: "action"` and the approval ID as `requestRef`. It wakes only active
+devices that called `inbox` and registered a push token. Each device gets at
+most one Action wake-up in 30 seconds, leaving push capacity for sign-ins.
+Requests from signed-in browser turns do not trigger an Action wake-up.
+A `400` from an older Cloud Login server leaves the token unchanged.
+Sign-in wake-ups keep their original body without `kind`. Cloud Login uses
+separate Web Push topics for Actions and sign-ins, so one does not replace the
+other while delivery waits.
+
+Push is only a hint. For Actions, load the signed `inbox` and `action` before
+offering a decision. The authenticator still loads sign-in requests with a signed
 `pending` command and needs the usual comparison and approval. Each Cloud
 needs outbound HTTPS to the authenticator origin. See
 [Send push notifications](./cloud-login.md#send-push-notifications) for the
@@ -348,10 +446,13 @@ every call, including polls. Times are Unix seconds. Sign:
 
 For `decide`, append `requestId, challenge, comparison, decision` to the array.
 For `push`, append `token`.
+For `action`, append `actionId`; for `act`, append `actionId, digest, decision`.
+`inbox` has no appendix.
 All operation parameters are covered. Public `@k2b/cloud/contracts`
 exports include `appDeviceProofMessage`, `appPairingProofMessage`, request/response schemas
-and `APP_APPROVAL_PROTOCOL`, `APP_APPROVAL_PATH`, `APP_APPROVAL_LIMITS`. These
-helpers hold no credentials and make no network calls.
+and `APP_APPROVAL_PROTOCOL`, `APP_APPROVAL_PATH`, `APP_APPROVAL_LIMITS`,
+`APP_APPROVAL_FEATURES`, `APP_ACTION_LIMITS`, and the Action schemas and
+digest helpers. These helpers hold no credentials and make no network calls.
 
 The compile-checked signing example is
 `docs-site/examples/cloud-docs/app-approval.ts` in the Cloud checkout.
@@ -363,7 +464,9 @@ instead of blindly retrying with a new nonce.
 
 ## Transport, errors and limits
 
-`GET /info` returns `{protocol, issuer, api, appOrigin, algorithm, limits}`.
+`GET /info` returns `{protocol, issuer, api, appOrigin, algorithm, limits, features}`.
+`features` is optional on older Clouds. `limits` remains exactly the original
+version 1 object; Action limits live in `APP_ACTION_LIMITS`.
 Require the expected protocol, exact issuer and `ES256`. Discover only from an
 explicitly trusted pairing issuer. PWA requests use `credentials:"omit"`.
 
@@ -375,8 +478,10 @@ still need the appropriate proof or session.
 
 Version 1 budgets are five-minute pairing/login lifetimes, five outstanding
 pairings and five outstanding logins per account/Cloud, twenty active devices,
-twenty device records per page and 8 KiB request bodies. These bound storage,
-cryptographic work and response sizes. Poll at most once every five seconds
+twenty device records per page and 8 KiB request and response bodies.
+Action inboxes contain at most five summaries; full views contain at most eight
+details. See [Approve an Action](#approve-an-action) for their text limits.
+These bound storage, cryptographic work and response sizes. Poll at most once every five seconds
 while foregrounded, stop on terminal states, and back off on errors. Background
 PWA execution is not guaranteed, and push wake-ups are best effort.
 
