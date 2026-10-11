@@ -142,6 +142,10 @@ Ollama, vLLM, and OpenAI-compatible endpoints.
 Hosted providers require a credential. Ollama, vLLM, and OpenAI-compatible
 profiles can run against private infrastructure.
 
+Mistral accepts only tool-call ids of nine letters and digits. Cloud maps every
+tool-call id in a Mistral request to such an id, so a chat that started with
+another provider or holds a failed tool step also works with a Mistral profile.
+
 An OpenAI-compatible profile must set `baseURL`. Reasoning models behind such
 endpoints stream their thinking as `reasoning`, `reasoning_content`, or
 `reasoning_details`; Cloud shows all three as thinking blocks, so a long

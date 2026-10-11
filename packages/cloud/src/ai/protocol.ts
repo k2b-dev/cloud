@@ -195,7 +195,7 @@ export const reconcileResolvedTurnActions = (
 };
 
 /** Decode complete provider names; hashes and ambiguous separators have no exact inverse. */
-const canonicalToolName = (name: string, presentation?: AiToolPresentation): string => {
+export const canonicalToolName = (name: string, presentation?: AiToolPresentation): string => {
   if (name.length === 64 && /__[0-9a-f]{12}$/.test(name)) return name;
   const decode = (value: string): string | undefined => {
     const tokens = /[a-zA-Z0-9-]|__|_dot_|_u([0-9a-f]+)_/gy;
