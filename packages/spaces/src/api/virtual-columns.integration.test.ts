@@ -47,11 +47,12 @@ suite("Spaces automatic Kanban columns", () => {
       const review = await column("Review", 2048);
       const done = await column("Done", 3072, true);
       const yesterday = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
-      const item = async (columnId: string, title: string, extra: { deadline?: string; completed?: boolean } = {}) => {
+      const item = async (columnId: string, title: string, extra: { deadline?: string; completed?: boolean; event?: boolean } = {}) => {
         const [row] = await sql<{ id: string; short_id: string }[]>`
-          INSERT INTO spaces.items (short_id, space_id, column_id, title, deadline, completed_at)
+          INSERT INTO spaces.items (short_id, space_id, column_id, title, deadline, completed_at, starts_at, ends_at)
           VALUES (${newShortId()}, ${space!.id}::uuid, ${columnId}::uuid, ${title}, ${extra.deadline ?? null}::timestamptz,
-            ${extra.completed ? new Date().toISOString() : null}::timestamptz)
+            ${extra.completed ? new Date().toISOString() : null}::timestamptz,
+            ${extra.event ? yesterday : null}::timestamptz, ${extra.event ? yesterday : null}::timestamptz + interval '1 hour')
           RETURNING id, short_id`;
         return row!;
       };
@@ -61,6 +62,8 @@ suite("Spaces automatic Kanban columns", () => {
       const both = await item(review.id, "Print the flyer", { deadline: yesterday });
       const plain = await item(open.id, "Ask the bakery");
       const finished = await item(done.id, "Book the square", { deadline: yesterday, completed: true });
+      // An event is never overdue, even with a past deadline set through the API.
+      const meeting = await item(open.id, "Meet the band", { deadline: yesterday, event: true });
       for (const waiting of [blocked, both]) {
         await sql`INSERT INTO spaces.item_dependencies (item_id, blocker_item_id) VALUES (${waiting.id}::uuid, ${blocker.id}::uuid)`;
       }
@@ -148,11 +151,13 @@ suite("Spaces automatic Kanban columns", () => {
       expect(allItems.find((entry) => entry.id === overdue.short_id)?.overdue).toBeTrue();
       expect(allItems.find((entry) => entry.id === finished.short_id)?.overdue).toBeFalse();
       expect(allItems.find((entry) => entry.id === plain.short_id)?.overdue).toBeFalse();
+      expect(allItems.find((entry) => entry.id === meeting.short_id)?.overdue).toBeFalse();
       const overdueResponse = await member(`${base}/items/filter`, { method: "POST", body: { status: "all", deadlineFilter: "overdue" } });
       expect(overdueResponse.status).toBe(200);
       const overdueItems = ItemFilterResponseSchema.parse(await overdueResponse.json()).items;
       expect(overdueItems.find((entry) => entry.id === finished.short_id)?.overdue).toBeFalse();
       expect(overdueItems.find((entry) => entry.id === overdue.short_id)?.overdue).toBeTrue();
+      expect(overdueItems.map((entry) => entry.id)).not.toContain(meeting.short_id);
       const listed = async (filter: Record<string, unknown>) => {
         const response = await member(`${base}/items/filter`, { method: "POST", body: { sort: "title", ...filter } });
         expect(response.status).toBe(200);
@@ -160,7 +165,10 @@ suite("Spaces automatic Kanban columns", () => {
       };
       expect(await listed({ status: "active", blocked: true })).toEqual([blocked.short_id, both.short_id]);
       expect(await listed({ status: "active", overdue: true, blocked: false })).toEqual([overdue.short_id]);
-      expect(await listed({ status: "active", columnIds: [open.short_id], blocked: false, overdue: false })).toEqual([plain.short_id]);
+      expect(await listed({ status: "active", columnIds: [open.short_id], blocked: false, overdue: false })).toEqual([
+        plain.short_id,
+        meeting.short_id,
+      ]);
       expect(await listed({ status: "active", columnIds: [review.short_id], blocked: false, overdue: false })).toEqual([blocker.short_id]);
       expect(await listed({ status: "completed", columnIds: [done.short_id] })).toEqual([finished.short_id]);
 
@@ -173,7 +181,7 @@ suite("Spaces automatic Kanban columns", () => {
       expect(buckets.map((bucket) => [bucket.key, bucket.kind, bucket.total])).toEqual([
         ["virtual:blocked", "blocked", 2],
         [`column:${review.short_id}`, "column", 1],
-        [`column:${open.short_id}`, "column", 1],
+        [`column:${open.short_id}`, "column", 2],
         ["virtual:overdue", "overdue", 1],
         [`column:${done.short_id}`, "column", 1],
       ]);

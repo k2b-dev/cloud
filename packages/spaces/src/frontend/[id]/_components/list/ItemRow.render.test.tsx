@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, setSystemTime, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -52,6 +52,7 @@ const renderRow = (item: SpaceItem, canWrite = true) =>
       tags: [],
       isSelected: false,
       baseUrl: "/app/spaces/Space1",
+      dateConfig: { timeZone: "Europe/Berlin" },
       canWrite,
       currentUserId: "33333333-3333-4333-8333-333333333333",
       isListed: () => true,
@@ -74,4 +75,18 @@ test("names a read-only task's checkbox by the task alone, so an open task is no
 
   expect(html).toMatch(/<input[^>]*type="checkbox"[^>]*disabled[^>]*aria-label="Confirm room booking"/);
   expect(html).not.toContain("Completed:");
+});
+
+test.each([
+  ["earlier today at 09:00", "2026-10-09T07:00:00Z", false],
+  ["today in Berlin but yesterday in UTC", "2026-10-08T22:30:00Z", false],
+  ["yesterday", "2026-10-08T07:00:00Z", true],
+])("only marks a past-day deadline red: %s", (_label, deadline, overdue) => {
+  setSystemTime(new Date("2026-10-09T12:00:00Z"));
+  try {
+    const html = renderRow(task({ deadline }));
+    expect(html.includes("text-red-500")).toBe(overdue);
+  } finally {
+    setSystemTime();
+  }
 });

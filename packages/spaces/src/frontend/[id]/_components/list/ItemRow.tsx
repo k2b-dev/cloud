@@ -3,6 +3,7 @@ import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Checkbox, Tag } from "@k2b/ui";
 import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { INACTIVE_ITEM_DAYS, type SpaceColumn, type SpaceItem, type SpaceTag } from "@/contracts";
+import { isTaskOverdue } from "@/task-overdue";
 import { shouldHandleDetailClick, subscribeToDetailSelection } from "../../../lib/detail";
 import type { RetryToast } from "../../../lib/feedback";
 import { useSpaceMessages } from "../../messages";
@@ -145,7 +146,7 @@ export default function ItemRow(props: ItemRowProps) {
   const isEvent = () => !!(props.item.startsAt && props.item.endsAt);
   const priority = () => (props.item.priority ? PRIORITY_STYLES[props.item.priority] : null);
   const status = () => props.columns.find((column) => column.id === props.item.columnId) ?? null;
-  const isOverdue = () => props.item.deadline && new Date(props.item.deadline) < new Date() && !isCompleted();
+  const isOverdue = (): boolean => !isCompleted() && isTaskOverdue(props.item, props.dateConfig);
   const schedule = () => (isEvent() ? props.item.startsAt : props.item.deadline) ?? null;
   const eventTime = () => {
     if (!isEvent()) return null;

@@ -6,6 +6,7 @@ import { createSignal, For, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { OverviewView, OverviewWork } from "@/overview-contracts";
 import { spacesMessages } from "@/service/messages";
+import { isTaskOverdue } from "@/task-overdue";
 import { isOwnClaim } from "../frontend/[id]/_components/shared/claim/claim";
 import { createRetryToasts } from "../frontend/lib/feedback";
 import { readResponseError } from "../frontend/lib/response";
@@ -244,7 +245,8 @@ export default function MyTasks(props: Props) {
         : dates.formatDateRelative(deadline, props.dateConfig),
       datetime: item.deadline,
       icon: "ti ti-calendar-due",
-      overdue: deadline.getTime() < Date.now(),
+      // The overview contains only open items and omits completedAt.
+      overdue: isTaskOverdue({ ...item, completedAt: null }, props.dateConfig),
     };
   };
 

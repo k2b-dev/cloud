@@ -23,6 +23,7 @@ import {
   type WormholeTransferResult,
 } from "@/contracts";
 import { descriptionPreview } from "@/presentation/description-preview";
+import { isTaskOverdue } from "@/task-overdue";
 import { spaceCommandMessages } from "../../../../commands";
 import { getDetailItemFromUrl, shouldHandleDetailClick, subscribeToDetailSelection } from "../../../lib/detail";
 import { createRetryToasts } from "../../../lib/feedback";
@@ -584,14 +585,11 @@ export default function KanbanBoard(props: Props) {
         ?.focus({ preventScroll: true }),
     );
 
-  /** Overdue as the board counts it: an open task whose deadline lies before today. */
-  const isOverdue = (item: SpaceItem) =>
-    !item.completedAt && item.deadline !== null && new Date(item.deadline) < dates.today(props.dateConfig);
   /** The automatic column that shows an item on this board, by the server's rule: Blocked first, then Overdue. */
   const gatheringKind = (item: SpaceItem): SpaceVirtualColumnKind | null => {
     if (item.completedAt) return null;
     if (virtualKinds.has("blocked") && item.activeBlockerCount > 0) return "blocked";
-    return virtualKinds.has("overdue") && isOverdue(item) ? "overdue" : null;
+    return virtualKinds.has("overdue") && isTaskOverdue(item, props.dateConfig) ? "overdue" : null;
   };
   /** Where a card with this status joins an automatic column, which lists its tasks in status order. */
   const gatheredIndex = (bucket: KanbanBucketInitial, columnId: string) => {
@@ -1419,7 +1417,7 @@ export default function KanbanBoard(props: Props) {
                                             </span>
                                           )}
                                         </Show>
-                                        <Show when={virtual === "blocked" && isOverdue(item)}>
+                                        <Show when={virtual === "blocked" && isTaskOverdue(item, props.dateConfig)}>
                                           <span
                                             data-spaces-kanban-card-overdue
                                             class="inline-flex items-center gap-1 text-[11px] text-red-600 dark:text-red-400"
