@@ -82,6 +82,7 @@ export const CloudAiLocalListOutputSchema = z.discriminatedUnion("status", [
       )
       .max(AI_LOCAL_LIST_MAX_LIMIT),
     nextAfter: LocalPath.nullable(),
+    unreadable: z.array(LocalPath).max(AI_LOCAL_LIST_MAX_LIMIT).optional(),
   }),
   LocalToolProblem,
 ]);

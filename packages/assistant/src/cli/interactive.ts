@@ -623,8 +623,21 @@ They go to the model with every message and can steer what it does with your Clo
     return detail.activeTurn ? runTurn({ turnId: detail.activeTurn.turnId }) : 0;
   };
 
-  const send = async (message: string): Promise<number> => {
+  const localClientInput = async () => {
     context = await readContext();
+    const skills = localTools === "ask" ? localSkillCatalog(context) : [];
+    return {
+      clientToolIds:
+        localTools === "ask"
+          ? ["local_bash", ...AI_LOCAL_TOOL_NAMES.filter((name) => name !== "load_local_skill" || skills.length > 0)]
+          : [],
+      client: { kind: "cli" as const, cwd: workspace, os: `${osType()} ${osRelease()}`, shell: "/bin/bash", localTools },
+      localContext: { instructions: context.instructions, skills },
+    };
+  };
+
+  const send = async (message: string): Promise<number> => {
+    const clientInput = await localClientInput();
     for (const path of extractMessageAttachments(message, workspace)) {
       const count = attachments.length;
       await attachLocalFile(path);
@@ -657,14 +670,9 @@ They go to the model with every message and can steer what it does with your Clo
         message,
         ...(content.length > 0 ? { content } : {}),
         ...(model ? { modelProfileId: model } : {}),
-        clientToolIds:
-          localTools === "ask"
-            ? ["local_bash", ...AI_LOCAL_TOOL_NAMES.filter((name) => name !== "load_local_skill" || localSkillCatalog(context).length > 0)]
-            : [],
-        client: { kind: "cli", cwd: workspace, os: `${osType()} ${osRelease()}`, shell: "/bin/bash", localTools },
+        ...clientInput,
         localContext: {
-          instructions: context.instructions,
-          skills: localTools === "ask" ? localSkillCatalog(context) : [],
+          ...clientInput.localContext,
           selectedSkills,
         },
       },
@@ -819,11 +827,18 @@ They go to the model with every message and can steer what it does with your Clo
               { value: "concise", label: "More concise" },
             ],
           }));
-        if (mode)
+        if (mode) {
+          const clientInput = await localClientInput();
           return runTurn({
             path: conversationPath(conversationId, `/messages/${encodeURIComponent(message.id)}/retry`),
-            body: { mode, ...(model ? { modelProfileId: model } : {}) },
+            body: {
+              mode,
+              ...(model ? { modelProfileId: model } : {}),
+              ...clientInput,
+              clientToolIds: [...clientInput.clientToolIds, "code_open", "code_secret"],
+            },
           });
+        }
         break;
       }
       case "/files": {

@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdir, mkdtemp, open, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, open, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  AI_LOCAL_INSTRUCTIONS_MAX_BYTES,
   AI_SKILL_DESCRIPTION_MAX_CHARS,
   AI_SKILL_EXTRA_FRONTMATTER_MAX_CHARS,
   AI_SKILL_INSTRUCTIONS_MAX_CHARS,
@@ -67,6 +68,47 @@ test("32 KiB budget favors the closest file and truncates UTF-8 within the share
   await writeFile(join(project, "AGENTS.md"), "ä".repeat(32_768));
   await writeFile(join(workspace, "AGENTS.md"), "closest");
   const context = await discoverLocalContext(workspace, home);
+  expect(context.shortened).toBeTrue();
+  expect(context.instructions[0]?.content.endsWith("\n[shortened by cld: 32 KiB limit]")).toBeTrue();
+  expect(context.instructions[1]?.content).toBe("closest");
+  expect(AiLocalContextSchema.safeParse({ instructions: context.instructions }).success).toBeTrue();
+});
+
+test.skipIf(process.getuid?.() === 0)("context discovery traverses an ancestor that cannot be listed", async () => {
+  const ancestor = join(project, "ancestor");
+  const start = join(ancestor, "start");
+  await mkdir(start, { recursive: true });
+  await chmod(ancestor, 0o311);
+  try {
+    expect((await discoverLocalContext(start, home)).root).toBe(project);
+  } finally {
+    await chmod(ancestor, 0o700);
+  }
+});
+
+test.skipIf(process.getuid?.() === 0)("unreadable Skill folders do not prevent context discovery", async () => {
+  const directory = join(workspace, ".agents/skills");
+  await mkdir(directory, { recursive: true });
+  await chmod(directory, 0o000);
+  try {
+    expect((await discoverLocalContext(workspace, home)).skills).toEqual([]);
+  } finally {
+    await chmod(directory, 0o700);
+  }
+});
+
+test("a non-directory Skill path does not prevent context discovery", async () => {
+  await writeFile(join(workspace, ".agents"), "not a directory");
+  expect((await discoverLocalContext(workspace, home)).skills).toEqual([]);
+});
+
+test("32 KiB budget counts decoded Latin-1 instructions", async () => {
+  await writeFile(join(project, "AGENTS.md"), Buffer.alloc(30 * 1024, 0xe4));
+  await writeFile(join(workspace, "AGENTS.md"), "closest");
+  const context = await discoverLocalContext(workspace, home);
+  expect(context.instructions.reduce((total, instruction) => total + Buffer.byteLength(instruction.content), 0)).toBeLessThanOrEqual(
+    AI_LOCAL_INSTRUCTIONS_MAX_BYTES,
+  );
   expect(context.shortened).toBeTrue();
   expect(context.instructions[0]?.content.endsWith("\n[shortened by cld: 32 KiB limit]")).toBeTrue();
   expect(context.instructions[1]?.content).toBe("closest");

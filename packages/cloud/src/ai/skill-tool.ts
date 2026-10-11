@@ -93,9 +93,7 @@ export const createCloudAiSearchSkillsTool = (subject: AccessSubject | null, loc
     outputSchema: CloudAiSearchSkillsOutputSchema,
     approval: "never",
   }).server(async (input) => {
-    const result = subject
-      ? await aiSkills.search(subject, input.query, localSkills.length ? 20 : input.limit)
-      : { skills: [], more: false };
+    const result = subject ? await aiSkills.search(subject, input.query, input.limit + localSkills.length) : { skills: [], more: false };
     const cloud = result.skills.map(({ name, description }) => ({ name, description }));
     if (!localSkills.length) return { skills: cloud, more: result.more };
     const localMatches = new Set(searchAiSkillCatalog(localSkills, input.query).map((skill) => skill.name));

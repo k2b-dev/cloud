@@ -49,7 +49,7 @@ import {
   toAiActionFailureResponse,
   toAiErrorResponse,
 } from "./http";
-import { AiLocalClientSchema } from "./local-tool-contracts";
+import { AI_LOCAL_TOOL_NAMES, AiLocalClientSchema } from "./local-tool-contracts";
 import { aiMaintenanceJobs } from "./maintenance";
 import { AI_MEMORY_CONTENT_MAX_CHARS, aiMemories } from "./memories";
 import { aiMemoryLearningRuns } from "./memory-learning-runs";
@@ -1027,9 +1027,20 @@ export const aiRoutes = (() => {
             truncateFromSeq: target.seq,
             fileSnapshot: originalRunConfig?.kind !== "compact" ? originalRunConfig?.files : undefined,
             retrySourceTurnId: target.loopId ?? undefined,
-            clientToolIds: originalRunConfig?.kind !== "compact" ? originalRunConfig?.clientToolIds : undefined,
-            client: originalRunConfig?.kind !== "compact" ? originalRunConfig?.client : undefined,
-            localContext: originalRunConfig?.kind !== "compact" ? originalRunConfig?.localContext : undefined,
+            // Local context and tools belong to the retrying client, not the original workspace.
+            clientToolIds:
+              body.clientToolIds ??
+              (originalRunConfig?.kind !== "compact"
+                ? originalRunConfig?.clientToolIds?.filter((id) => id !== "local_bash" && !AI_LOCAL_TOOL_NAMES.some((name) => name === id))
+                : undefined),
+            client: body.client,
+            localContext: body.client
+              ? {
+                  instructions: body.localContext?.instructions ?? [],
+                  skills: body.localContext?.skills ?? [],
+                  selectedSkills: originalRunConfig?.kind !== "compact" ? (originalRunConfig?.localContext?.selectedSkills ?? []) : [],
+                }
+              : undefined,
           });
           rememberLastUsedModel(ctx.actor, result.turn.modelProfileId);
           return respond(

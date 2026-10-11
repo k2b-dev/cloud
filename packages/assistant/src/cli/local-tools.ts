@@ -3,6 +3,7 @@ import { chmod, copyFile, link, lstat, mkdir, mkdtemp, open, opendir, readdir, r
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, relative, sep } from "node:path";
 import {
+  AI_LOCAL_LIST_MAX_LIMIT,
   AI_PROJECT_FILE_MOUNT,
   AI_SKILL_FILE_MOUNT,
   CloudAiLoadLocalSkillInputSchema,
@@ -16,7 +17,7 @@ import {
 import type { CloudCliContext } from "@k2b/cloud/cli";
 import { deniedLocalBashResult, parseLocalBashInput, runLocalBash } from "./local-bash";
 import { type LocalSkill, readLocalSkill } from "./local-context";
-import { classifyLocalPath, type LocalPathAccess, resolveLocalPath } from "./local-paths";
+import { classifyLocalPath, getLocalConfigPaths, isProtectedLocalPath, type LocalPathAccess, resolveLocalPath } from "./local-paths";
 import { AI_API } from "./shared";
 import { conversationPath, uploadAttachment } from "./turn";
 
@@ -120,8 +121,10 @@ export const runLocalTool = async (
   const access = async (path: string, readOnly = false): Promise<LocalPathAccess> => {
     const rule = classifyLocalPath(path, { workspace });
     // Skill and session folders free reads elsewhere, never of files that may hold secrets.
-    if (rule.access === "blocked" || (rule.access === "ask" && rule.reason === "protected") || !readOnly) return rule;
+    if (rule.access === "blocked") return rule;
     const target = await realTarget(path);
+    if (isProtectedLocalPath(path) || isProtectedLocalPath(target)) return { access: "ask", reason: "protected" };
+    if (!readOnly) return rule;
     const roots = [...options.freeReadRoots, ...(await options.sessionFolder.roots())];
     return roots.some((root) => inside(root, target)) ? { access: "free" } : rule;
   };
@@ -227,29 +230,46 @@ export const runLocalTool = async (
         const pattern = input.pattern ? new Bun.Glob(input.pattern.toLowerCase()) : null;
         const recursive = input.recursive || !!input.pattern?.includes("/") || !!input.pattern?.includes("**");
         const entries: Array<{ path: string; type: "file" | "directory" | "other"; size: number; modifiedAt: string }> = [];
+        const unreadable: string[] = [];
         let visited = 0;
         const walk = async (folder: string): Promise<void> => {
-          for await (const entry of await opendir(folder)) {
-            signal.throwIfAborted();
-            if (++visited > 100_000) throw new Error("Too many entries; list a smaller folder or use a narrower pattern.");
-            const target = join(folder, entry.name);
-            const relativePath = relative(path, target).split(sep).join("/");
-            if (!pattern || pattern.match(relativePath.toLowerCase())) {
-              const info = await lstat(target);
-              entries.push({
-                path: display(target),
-                type: entry.isDirectory() ? "directory" : entry.isFile() ? "file" : "other",
-                size: info.size,
-                modifiedAt: info.mtime.toISOString(),
-              });
+          try {
+            for await (const entry of await opendir(folder)) {
+              signal.throwIfAborted();
+              if (++visited > 100_000) throw new Error("Too many entries; list a smaller folder or use a narrower pattern.");
+              const target = join(folder, entry.name);
+              const relativePath = relative(path, target).split(sep).join("/");
+              if (!pattern || pattern.match(relativePath.toLowerCase())) {
+                const info = await lstat(target);
+                entries.push({
+                  path: display(target),
+                  type: entry.isDirectory() ? "directory" : entry.isFile() ? "file" : "other",
+                  size: info.size,
+                  modifiedAt: info.mtime.toISOString(),
+                });
+              }
+              if (
+                recursive &&
+                entry.isDirectory() &&
+                ![".git", ".ssh", ".gnupg", ".aws"].includes(entry.name.toLowerCase()) &&
+                (await access(target, true)).access !== "blocked"
+              )
+                await walk(target);
             }
+          } catch (error) {
+            // Bun can defer the directory-open error until iteration; keep other failures fatal.
             if (
-              recursive &&
-              entry.isDirectory() &&
-              ![".git", ".ssh", ".gnupg", ".aws"].includes(entry.name) &&
-              (await access(target, true)).access !== "blocked"
-            )
-              await walk(target);
+              folder !== path &&
+              error instanceof Error &&
+              "path" in error &&
+              error.path === folder &&
+              "code" in error &&
+              (error.code === "EACCES" || error.code === "EPERM")
+            ) {
+              if (unreadable.length < AI_LOCAL_LIST_MAX_LIMIT) unreadable.push(display(folder));
+              return;
+            }
+            throw error;
           }
         };
         await walk(path);
@@ -261,6 +281,7 @@ export const runLocalTool = async (
           path: display(path),
           entries: page,
           nextAfter: remaining.length > page.length ? page.at(-1)!.path : null,
+          ...(unreadable.length ? { unreadable } : {}),
         };
       }
       case "local_read": {
@@ -458,16 +479,16 @@ export const runLocalTool = async (
             error: "cld was started in your home folder or above; start it in the folder you want to organize.",
           };
         const moves = [];
+        const { configDirectory, configFile } = getLocalConfigPaths();
         for (const move of input.moves) {
           const from = resolveLocalPath(move.from, workspace);
           const givenTo = resolveLocalPath(move.to, workspace);
           if ([from, givenTo].some((path) => classifyLocalPath(path, { workspace }).access === "blocked"))
             return { ...blocked, moved, conflicts };
-          if (
-            !inside(workspace, await realTarget(from)) ||
-            !inside(workspace, await realTarget(dirname(givenTo))) ||
-            !inside(workspace, givenTo)
-          )
+          const realFrom = await realTarget(from);
+          if (inside(realFrom, configDirectory) || (configFile !== undefined && inside(realFrom, configFile)))
+            return { ...blocked, moved, conflicts };
+          if (!inside(workspace, realFrom) || !inside(workspace, await realTarget(dirname(givenTo))) || !inside(workspace, givenTo))
             return { status: "denied", moved, conflicts, error: `Moves stay inside ${workspace}.` };
           const source = await lstat(from);
           const to = join(await realTarget(dirname(givenTo)), basename(givenTo));
@@ -479,25 +500,37 @@ export const runLocalTool = async (
             from.toLowerCase() === to.toLowerCase() &&
             sameInode &&
             !(names.includes(basename(from)) && names.includes(basename(to)));
-          moves.push({ from, to, source, target, caseOnly, instructions: await becomesInstructions(move.to) });
+          moves.push({
+            from,
+            realFrom,
+            to,
+            source,
+            target,
+            caseOnly,
+            protected: [from, realFrom, givenTo, to].some(isProtectedLocalPath),
+            instructions: await becomesInstructions(move.to),
+          });
         }
+        const sources = new Set<string>();
         const targets = new Set<string>();
         for (const move of moves) {
-          if (move.target && !move.caseOnly) conflicts.push({ to: display(move.to), reason: "Target exists." });
+          if (sources.has(move.realFrom)) conflicts.push({ to: display(move.to), reason: "Duplicate source." });
+          else if (move.target && !move.caseOnly) conflicts.push({ to: display(move.to), reason: "Target exists." });
           else if (targets.has(move.to)) conflicts.push({ to: display(move.to), reason: "Duplicate target." });
           else if (moves.some((other) => other !== move && other.from === move.to))
             conflicts.push({ to: display(move.to), reason: "Target is another move's source." });
           targets.add(move.to);
+          sources.add(move.realFrom);
         }
         if (conflicts.length) return { status: "failed", moved, conflicts };
         const width = Math.max(...moves.map((move) => display(move.from).length));
         const folders = moves.some((move) => move.source.isDirectory());
-        const unit = folders ? "items" : moves.length === 1 ? "file" : "files";
+        const unit = folders ? (moves.length === 1 ? "item" : "items") : moves.length === 1 ? "file" : "files";
         const lines = [
           `Move in ${workspace} (${moves.length} ${unit}):`,
           ...moves.map(
             (move) =>
-              `  ${display(move.from).padEnd(width)} → ${display(move.to)}${move.instructions ? " (becomes instructions for the assistant)" : ""}`,
+              `  ${display(move.from).padEnd(width)} → ${display(move.to)}${move.protected ? " (may contain secrets)" : ""}${move.instructions ? " (becomes instructions for the assistant)" : ""}`,
           ),
         ];
         if (!(await ask(lines, "Move?"))) return { status: "denied", moved, conflicts, error: declined.error };

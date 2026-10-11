@@ -200,6 +200,13 @@ export const AiMessageRetryInputSchema = z
       .max(AI_TURN_ATTACHMENT_MAX_ITEMS * 2 + 1)
       .optional(),
     modelProfileId: z.string().trim().min(1).optional(),
+    clientToolIds: AiClientToolIdsSchema.optional(),
+    client: AiLocalClientSchema.optional(),
+    localContext: AiLocalContextSchema.omit({ selectedSkills: true }).optional(),
+  })
+  .refine((input) => !input.localContext || Boolean(input.client), {
+    message: "Local context requires a local client.",
+    path: ["localContext"],
   })
   .refine(
     (input) =>

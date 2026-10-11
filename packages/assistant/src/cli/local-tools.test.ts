@@ -3,6 +3,7 @@ import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, writeFile 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  AI_LOCAL_LIST_MAX_LIMIT,
   CloudAiLocalDownloadOutputSchema,
   CloudAiLocalListOutputSchema,
   CloudAiLocalMoveOutputSchema,
@@ -135,6 +136,82 @@ test("move review marks instruction targets", async () => {
   expect(questions[0]?.lines).toContain("  a.md → sub/AGENTS.md (becomes instructions for the assistant)");
 });
 
+test.each([
+  { from: ".env", to: "notes.txt" },
+  { from: "hook.sh", to: ".git/hooks/pre-commit" },
+  { from: ".env", to: "AGENTS.md" },
+  { from: "alias", to: "notes.txt", target: "server.pem" },
+])("move review marks protected paths in $from → $to", async ({ from, to, target }) => {
+  if (target) {
+    await writeFile(join(workspace, target), "secret");
+    await symlink(join(workspace, target), join(workspace, from));
+  } else await writeFile(join(workspace, from), "secret");
+  approve = false;
+  expect(await run("local_move", { moves: [{ from, to }] })).toMatchObject({ status: "denied" });
+  expect(questions[0]?.lines[1]).toContain(`${from} → ${to}`);
+  expect(questions[0]?.lines[1]).toContain("(may contain secrets)");
+  if (to === "AGENTS.md") expect(questions[0]?.lines[1]).toContain("(becomes instructions for the assistant)");
+});
+
+test("moving one folder uses the singular item in review", async () => {
+  await mkdir(join(workspace, "folder"));
+  approve = false;
+  expect(await run("local_move", { moves: [{ from: "folder", to: "notes" }] })).toMatchObject({ status: "denied" });
+  expect(questions[0]?.lines[0]).toBe(`Move in ${workspace} (1 item):`);
+});
+
+test.each([false, true])("duplicate real move sources fail before review (alias: %s)", async (alias) => {
+  await writeFile(join(workspace, "a.txt"), "original");
+  if (alias) await symlink(join(workspace, "a.txt"), join(workspace, "alias.txt"));
+  expect(
+    CloudAiLocalMoveOutputSchema.parse(
+      await run("local_move", {
+        moves: [
+          { from: "a.txt", to: "x.txt" },
+          { from: alias ? "alias.txt" : "a.txt", to: "y.txt" },
+        ],
+      }),
+    ),
+  ).toEqual({ status: "failed", moved: [], conflicts: [{ to: "y.txt", reason: "Duplicate source." }] });
+  expect(questions).toEqual([]);
+  expect(await readFile(join(workspace, "a.txt"), "utf8")).toBe("original");
+  expect(await Bun.file(join(workspace, "x.txt")).exists()).toBeFalse();
+});
+
+test("moves cannot relocate an ancestor of the explicit cld config", async () => {
+  process.env.CLD_CONFIG = join(workspace, ".local/cld/config.json");
+  await mkdir(join(workspace, ".local/cld"), { recursive: true });
+  await writeFile(process.env.CLD_CONFIG, "secret");
+  expect(await run("local_move", { moves: [{ from: ".local", to: "notes" }] })).toEqual({
+    status: "denied",
+    moved: [],
+    conflicts: [],
+    error: "cld's configuration is never available to the assistant.",
+  });
+  expect(questions).toEqual([]);
+  expect(await readFile(process.env.CLD_CONFIG, "utf8")).toBe("secret");
+});
+
+test("moves cannot relocate an ancestor of the real cld config directory", async () => {
+  const previousXdg = process.env.XDG_CONFIG_HOME;
+  const directory = join(workspace, "config");
+  await mkdir(join(directory, "cloud/cld"), { recursive: true });
+  await symlink(directory, join(workspace, "alias"));
+  process.env.XDG_CONFIG_HOME = join(workspace, "alias");
+  try {
+    expect(await run("local_move", { moves: [{ from: "config", to: "notes" }] })).toEqual({
+      status: "denied",
+      moved: [],
+      conflicts: [],
+      error: "cld's configuration is never available to the assistant.",
+    });
+    expect(questions).toEqual([]);
+  } finally {
+    if (previousXdg === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = previousXdg;
+  }
+});
+
 test("instruction segments in the given path still ask after normalization", async () => {
   approve = false;
   expect(await run("local_write", { path: "sub/.agents/../notes.md", content: "instructions" })).toMatchObject({ status: "denied" });
@@ -216,6 +293,61 @@ test("lists case-insensitive nested globs, pages in order, and never walks prote
   expect(questions).toEqual([]);
 });
 
+test.skipIf(process.getuid?.() === 0)(
+  "recursive listing reports unreadable subfolders but fails for an unreadable top folder",
+  async () => {
+    const unreadable = join(workspace, "unreadable");
+    await mkdir(unreadable);
+    await writeFile(join(workspace, "visible.txt"), "visible");
+    await writeFile(join(unreadable, "hidden.txt"), "hidden");
+    await chmod(unreadable, 0o000);
+    try {
+      const result = CloudAiLocalListOutputSchema.parse(await run("local_list", { recursive: true }));
+      expect(result).toMatchObject({
+        status: "completed",
+        entries: [
+          { path: "unreadable", type: "directory" },
+          { path: "visible.txt", type: "file" },
+        ],
+        unreadable: ["unreadable"],
+        nextAfter: null,
+      });
+      expect(await run("local_list", { path: "unreadable", recursive: true })).toMatchObject({ status: "failed" });
+    } finally {
+      await chmod(unreadable, 0o700);
+    }
+  },
+);
+
+test("recursive listing skips uppercase protected folders and omits empty unreadable results", async () => {
+  for (const folder of [".GIT", ".SSH", ".GNUPG", ".AWS"]) {
+    await mkdir(join(workspace, folder));
+    await writeFile(join(workspace, folder, "secret.txt"), "secret");
+  }
+  const result = CloudAiLocalListOutputSchema.parse(await run("local_list", { recursive: true }));
+  expect(result).toMatchObject({ entries: [{ path: ".AWS" }, { path: ".GIT" }, { path: ".GNUPG" }, { path: ".SSH" }] });
+  expect(result).not.toHaveProperty("unreadable");
+  expect(questions).toEqual([]);
+});
+
+test.skipIf(process.getuid?.() === 0)("recursive listing bounds unreadable folders to the shared limit", async () => {
+  const folders: string[] = [];
+  try {
+    for (let index = 0; index <= AI_LOCAL_LIST_MAX_LIMIT; index++) {
+      const folder = join(workspace, `unreadable-${index}`);
+      await mkdir(folder);
+      folders.push(folder);
+      await chmod(folder, 0o000);
+    }
+    const result = CloudAiLocalListOutputSchema.parse(await run("local_list", { recursive: true, limit: 1 }));
+    if (result.status !== "completed") throw new Error("Expected completed listing");
+    expect(result.entries).toHaveLength(1);
+    expect(result.unreadable).toHaveLength(AI_LOCAL_LIST_MAX_LIMIT);
+  } finally {
+    for (const folder of folders) await chmod(folder, 0o700);
+  }
+});
+
 test("streams line pages, byte budgets, offsets, and oversized lines", async () => {
   await writeFile(join(workspace, "notes.md"), "one\ntwo\nthree\n");
   expect(CloudAiLocalReadOutputSchema.parse(await run("local_read", { path: "notes.md", maxBytes: 8 }))).toEqual({
@@ -257,6 +389,30 @@ test("a free read root never frees a file that may hold secrets", async () => {
   approve = false;
   expect(await run("local_read", { path: join(outside, ".env") }, [outside])).toEqual({ status: "denied", error: "The user declined." });
   expect(questions).toEqual([{ lines: [], question: `Read ${join(outside, ".env")}? It may contain secrets.` }]);
+});
+
+test.each(["KEY.PEM", ".ENV"])("reading uppercase protected %s asks about secrets", async (path) => {
+  await writeFile(join(workspace, path), "secret");
+  approve = false;
+  expect(await run("local_read", { path })).toEqual({ status: "denied", error: "The user declined." });
+  expect(questions).toEqual([{ lines: [], question: `Read ${path}? It may contain secrets.` }]);
+});
+
+test.each(["skill", "session"])("home-ancestor workspaces keep protected %s-root reads behind a question", async (kind) => {
+  const directory = kind === "session" ? await session.get() : join(root, "skill");
+  if (kind === "skill") await mkdir(directory);
+  const freeReadRoots = kind === "skill" ? [directory] : [];
+  workspace = "/";
+  approve = false;
+  for (const name of [".env", "server.pem"]) {
+    const path = join(directory, name);
+    await writeFile(path, "secret");
+    expect(await run("local_read", { path }, freeReadRoots)).toEqual({ status: "denied", error: "The user declined." });
+  }
+  expect(questions.map(({ question }) => question)).toEqual([
+    expect.stringContaining("may contain secrets"),
+    expect.stringContaining("may contain secrets"),
+  ]);
 });
 
 test("a protected alias still asks; declining reads returns denied", async () => {

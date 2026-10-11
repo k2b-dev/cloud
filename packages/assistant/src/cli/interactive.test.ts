@@ -2,7 +2,7 @@ import { expect, spyOn, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AI_TURN_ATTACHMENT_MAX_ITEMS } from "@k2b/cloud/ai/browser";
+import { AI_LOCAL_TOOL_NAMES, AI_TURN_ATTACHMENT_MAX_ITEMS } from "@k2b/cloud/ai/browser";
 import type { CloudCliContext } from "@k2b/cloud/cli";
 import {
   collectActionApproval,
@@ -842,9 +842,59 @@ test.each(["retry", "details", "concise"])("/retry %s posts to the last stored u
   expect(session.requests.find((request) => request.path.endsWith("/retry"))).toMatchObject({
     path: "/api/ai/conversations/old/messages/last/retry",
     method: "POST",
-    body: { mode, modelProfileId: "model" },
+    body: {
+      mode,
+      modelProfileId: "model",
+      client: { kind: "cli", cwd: process.cwd(), localTools: "ask" },
+      clientToolIds: expect.arrayContaining(["local_bash", "local_list", "code_open", "code_secret"]),
+      localContext: { instructions: expect.any(Array), skills: expect.any(Array) },
+    },
   });
+  expect(session.requests.find((request) => request.path.endsWith("/retry"))?.body).not.toHaveProperty("localContext.selectedSkills");
   expect(session.requests.some((request) => request.path.endsWith("/draft"))).toBeFalse();
+});
+
+test.each(["ask", "off"] as const)("/retry after /resume refreshes workspace context with local tools %s", async (mode) => {
+  const previous = process.cwd();
+  const directory = mkdtempSync(join(tmpdir(), "cld-retry-interactive-"));
+  try {
+    writeFileSync(join(directory, ".git"), "gitdir: fixture");
+    const instructionsPath = join(directory, "AGENTS.md");
+    writeFileSync(instructionsPath, "Initial rules.");
+    const skillFolder = join(directory, ".agents/skills/invoice");
+    mkdirSync(skillFolder, { recursive: true });
+    writeFileSync(join(skillFolder, "SKILL.md"), "---\nname: invoice\ndescription: Invoices\n---\nInvoice rules.");
+    process.chdir(directory);
+    const messages = ["/resume resumed", "/retry concise", "/exit"];
+    const session = interactiveSession(messages, [], { noBash: mode === "off" }, undefined, (path) => {
+      if (path === "/api/ai/conversations/resumed")
+        return Response.json({
+          conversation: chat("resumed"),
+          activeTurn: null,
+          messages: [{ id: "last", kind: "message", message: { role: "user" } }],
+        });
+    });
+    session.reader.readMessage = async () => {
+      const message = messages.shift() ?? null;
+      if (message?.startsWith("/retry")) writeFileSync(instructionsPath, "Current rules.");
+      return message;
+    };
+    expect(await session.run()).toBe(0);
+    const body = session.requests.find((request) => request.path.endsWith("/retry"))?.body;
+    expect(body).toMatchObject({
+      mode: "concise",
+      client: { kind: "cli", cwd: directory, localTools: mode },
+      clientToolIds: mode === "ask" ? ["local_bash", ...AI_LOCAL_TOOL_NAMES, "code_open", "code_secret"] : ["code_open", "code_secret"],
+      localContext: {
+        instructions: [{ path: instructionsPath, content: "Current rules." }],
+        skills: mode === "ask" ? expect.arrayContaining([expect.objectContaining({ name: "invoice", scope: "project" })]) : [],
+      },
+    });
+    expect(body).not.toHaveProperty("localContext.selectedSkills");
+  } finally {
+    process.chdir(previous);
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test("/retry searches older history for the last user message", async () => {
@@ -895,7 +945,7 @@ test("/retry picker uses the web actions and reports missing user messages", asy
   expect(picker.printed).toContain("  1. Try again");
   expect(picker.printed).toContain("  2. More detailed");
   expect(picker.printed).toContain("  3. More concise");
-  expect(picker.requests.find((request) => request.path.endsWith("/retry"))?.body).toEqual({ mode: "details" });
+  expect(picker.requests.find((request) => request.path.endsWith("/retry"))?.body).toMatchObject({ mode: "details" });
 });
 
 test("/web prints the URL before opening it and works without a host opener", async () => {

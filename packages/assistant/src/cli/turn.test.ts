@@ -1,6 +1,42 @@
 import { expect, test } from "bun:test";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { CloudCliContext } from "@k2b/cloud/cli";
-import { submitAssistantTurn } from "./turn";
+import { submitAssistantTurn, uploadAttachment, validateLocalAttachments } from "./turn";
+
+test("chat file uploads accept images larger than the turn attachment limit", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "cld-upload-test-"));
+  const path = join(directory, "photo.png");
+  const size = 11 * 1024 * 1024;
+  try {
+    await writeFile(path, Buffer.alloc(size));
+    const { ctx } = setup();
+    let fetched = false;
+    ctx.fetch = async (url, init) => {
+      fetched = true;
+      expect(url).toEndWith("/conversations/chat/files");
+      expect(init?.body).toBeInstanceOf(FormData);
+      if (!(init?.body instanceof FormData)) throw new Error("Expected upload form");
+      const file = init.body.get("file");
+      expect(file).toBeInstanceOf(File);
+      if (!(file instanceof File)) throw new Error("Expected uploaded file");
+      expect(file.size).toBe(size);
+      return Response.json({ file: { path: "/photo.png", mediaType: "image/png", size, version: 1 } });
+    };
+    expect(await uploadAttachment(ctx, "chat", path)).toEqual({
+      type: "attachment",
+      path: "/photo.png",
+      mediaType: "image/png",
+      size,
+      version: 1,
+    });
+    expect(fetched).toBeTrue();
+    await expect(validateLocalAttachments([path])).rejects.toThrow("Image attachment exceeds the 10 MB limit");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 const setup = () => {
   const requests: Array<{ path: string; body: unknown }> = [];

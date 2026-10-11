@@ -79,9 +79,6 @@ export const uploadAttachment = async (
   const file = Bun.file(localPath);
   if (!(await file.exists())) throw new Error(`Attachment not found: ${localPath}`);
   const mediaType = file.type || guessAiMediaType(localPath);
-  if (isAiImageMediaType(mediaType) && file.size > AI_IMAGE_INPUT_MAX_BYTES) {
-    throw new Error(`Image attachment exceeds the ${AI_IMAGE_INPUT_MAX_BYTES / (1024 * 1024)} MB limit: ${localPath}`);
-  }
   const form = new FormData();
   form.set("file", new File([file], basename(localPath), { type: mediaType }));
   if (directory !== undefined) form.set("directory", directory);

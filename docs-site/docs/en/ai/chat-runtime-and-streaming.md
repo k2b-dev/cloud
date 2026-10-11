@@ -127,7 +127,11 @@ optional name, workspace `cwd`, OS, shell and local tools mode) and
 `localContext` (AGENTS.md instructions, local Skill catalog and explicitly
 selected local Skills). `localContext` without `client` returns HTTP 400.
 Both are stored in `run_config`, alongside `clientToolIds`, and preserved by
-queued messages and message retries. Background and mandate runs do not
+queued messages. A message retry uses only the `client`, `localContext` and
+`clientToolIds` its request carries, so a retry from the web gets no local
+client context or local tools; it keeps the original non-local `clientToolIds`
+when the request sends none, and the original selected local Skills when a
+local client retries. Background and mandate runs do not
 receive local client context. The transaction consumes and clears exactly that revision, so
 text and attachments cannot drift between save and send.
 

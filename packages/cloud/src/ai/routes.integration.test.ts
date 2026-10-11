@@ -15,7 +15,9 @@ import { createTestSession } from "../services/session/session.test-fixture";
 import * as platformSettings from "../services/settings";
 import { createAiApprovalPreferenceRoutes } from "./approval-routes";
 import { AI_WEBSITE_APPROVAL_TOOL, findRememberedAiToolApproval, hasRememberedAiToolApproval } from "./approvals";
+import * as assistantModels from "./assistant-models";
 import { aiFileStore } from "./files-store";
+import { AI_LOCAL_TOOL_NAMES } from "./local-tool-contracts";
 import { migrateCloudAi } from "./migrate";
 import { aiProjects } from "./projects";
 import type { AiStreamEvent } from "./protocol";
@@ -121,6 +123,70 @@ suite("global AI conversation boundaries", () => {
       expect(submissions[0]?.localContext?.instructions).toEqual([{ path: "/work/AGENTS.md", content: "Rules." }]);
     } finally {
       submit.mockRestore();
+      await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  });
+
+  test.each([false, true])("message retry uses the retrying client's local context: local=%p", async (local) => {
+    const userId = await insertUser();
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    const model = spyOn(assistantModels, "selectAssistantAiModelId").mockResolvedValue("test-model");
+    const submit = spyOn(aiRuntime, "submitAiChatTurn").mockImplementation(async (submission) =>
+      aiConversations.submitChatTurn({
+        conversationId: submission.conversationId,
+        modelProfileId: "test-model",
+        userMessage: submission.userMessage,
+        truncateFromSeq: submission.truncateFromSeq,
+        runConfig: {
+          kind: "chat",
+          input: submission.input,
+          toolSource: submission.toolSource ?? { kind: "none" },
+          clientToolIds: submission.clientToolIds,
+          client: submission.client,
+          localContext: submission.localContext,
+        },
+      }),
+    );
+    const selectedSkills = [{ name: "invoice", directory: "/original/.agents/skills/invoice", instructions: "Original selection." }];
+    const client = { kind: "cli" as const, cwd: "/current", os: "Linux", shell: "bash", localTools: "ask" as const };
+    const localContext = {
+      instructions: [{ path: "/current/AGENTS.md", content: "Current rules." }],
+      skills: [{ name: "current", description: "Current Skill.", scope: "project" as const }],
+    };
+    try {
+      const first = await aiConversations.submitChatTurn({
+        conversationId: chat.id,
+        modelProfileId: "test-model",
+        userMessage: { role: "user", content: [{ type: "text", text: "Retry me" }] },
+        runConfig: {
+          kind: "chat",
+          input: "Retry me",
+          toolSource: { kind: "default" },
+          clientToolIds: ["local_bash", ...AI_LOCAL_TOOL_NAMES, "code_open"],
+          client: { ...client, cwd: "/original" },
+          localContext: { instructions: [{ path: "/original/AGENTS.md", content: "Old rules." }], skills: [], selectedSkills },
+        },
+      });
+      await sql`UPDATE ai.turns SET status='completed' WHERE id=${first.turn.id}::uuid`;
+      const response = await aiRoutes.request(`/conversations/${chat.shortId}/messages/${first.message.shortId}/retry`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${await createTestSession(userId)}`, "Content-Type": "application/json" },
+        body: JSON.stringify(local ? { client, localContext, clientToolIds: ["local_read", "code_secret"] } : {}),
+      });
+      expect(response.status).toBe(201);
+      expect(submit).toHaveBeenCalledTimes(1);
+      const active = await aiConversations.getActiveTurn({ conversationId: chat.id });
+      expect(active).not.toBeNull();
+      if (!active) throw new Error("Missing retry turn");
+      const config = await aiConversations.getTurnRunConfig({ conversationId: chat.id, turnId: active.turn.id });
+      if (!config || config.kind !== "chat") throw new Error("Missing retry run config");
+      expect(config.clientToolIds).toEqual(local ? ["local_read", "code_secret"] : ["code_open"]);
+      expect(config.client).toEqual(local ? client : undefined);
+      expect(config.localContext).toEqual(local ? { ...localContext, selectedSkills } : undefined);
+    } finally {
+      submit.mockRestore();
+      model.mockRestore();
       await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
       await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
     }

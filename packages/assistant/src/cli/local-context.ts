@@ -44,7 +44,7 @@ const entries = async (directory: string) => {
   try {
     return await readdir(directory, { withFileTypes: true });
   } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") return [];
+    if (error instanceof Error && "code" in error && ["ENOENT", "EACCES", "EPERM", "ENOTDIR"].includes(String(error.code))) return [];
     throw error;
   }
 };
@@ -106,20 +106,21 @@ export const discoverLocalContext = async (workspace: string, home = homedir(), 
       context.shortened = true;
       break;
     }
-    const file = Bun.file(path);
-    const size = file.size;
-    let content: string;
-    if (size > remaining) {
+    // Decoding never shrinks text (an invalid byte becomes a 3-byte U+FFFD), so one byte past the budget is enough to read.
+    let content = await Bun.file(path)
+      .slice(0, remaining + 1)
+      .text();
+    if (Buffer.byteLength(content) > remaining) {
       const suffix = "\n[shortened by cld: 32 KiB limit]";
       if (remaining < Buffer.byteLength(suffix)) {
         context.shortened = true;
         break;
       }
-      const bytes = Buffer.from(await file.slice(0, remaining - Buffer.byteLength(suffix)).arrayBuffer());
+      const bytes = Buffer.from(content).subarray(0, remaining - Buffer.byteLength(suffix));
       // Do not split a UTF-8 character at the budget boundary.
-      content = bytes.toString("utf8").replace(/\uFFFD$/, "") + suffix;
+      content = new TextDecoder().decode(bytes, { stream: true }) + suffix;
       context.shortened = true;
-    } else content = await file.text();
+    }
     context.instructions.unshift({ path, content });
     remaining -= Buffer.byteLength(content);
     if (context.shortened) break;

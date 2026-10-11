@@ -84,10 +84,10 @@ filesystem or executes a local command itself.
 
 | Tool | Purpose |
 | --- | --- |
-| `local_list` | List local files and folders, optionally by glob, in pages |
+| `local_list` | List local files and folders, optionally by glob, in pages; unreadable subfolders are skipped and named |
 | `local_read` | Read local text with line numbers; upload documents and images for Cloud tools |
 | `local_upload` | Upload local files into this chat and return chat paths |
-| `local_download` | Save a chat file to a local file or folder |
+| `local_download` | Save a chat file to a new or replaced local file |
 | `local_write` | Create, append to, or replace a local text file |
 | `local_move` | Move or rename local files and folders without overwriting |
 | `load_local_skill` | Load a local Skill's instructions, directory and file list |
