@@ -51,6 +51,15 @@ const notificationMessages = i18n.define({
 });
 const text = (locale: string) => notificationMessages.resolve([locale]).t;
 
+const absoluteUrl = async (path: string): Promise<string> => {
+  const configured = String((await coreSettings.get<string>("app.url")) || "").trim();
+  if (!configured) return path;
+  let baseUrl = /^https?:\/\//.test(configured) ? configured : `https://${configured}`;
+  // A loop, because /\/+$/ backtracks polynomially on a value with many slashes inside.
+  while (baseUrl.endsWith("/")) baseUrl = baseUrl.slice(0, -1);
+  return `${baseUrl}${path}`;
+};
+
 export const AI_NOTIFICATIONS = {
   approvalWaiting: notification({
     recipient: "user",
@@ -68,16 +77,10 @@ export const AI_NOTIFICATIONS = {
       body: text(locale).approvalBody,
       targetHref: APPROVALS_PAGE_PATH,
     }),
-    email: async ({ count }, { locale }) => {
-      const configuredUrl = String((await coreSettings.get<string>("app.url")) || "").trim();
-      const baseUrl = /^https?:\/\//.test(configuredUrl) ? configuredUrl : configuredUrl ? `https://${configuredUrl}` : "";
-      return {
-        subject: text(locale).approvalWaiting({ count }),
-        content: text(locale).approvalEmail({
-          target: baseUrl ? `${baseUrl.replace(/\/+$/, "")}${APPROVALS_PAGE_PATH}` : APPROVALS_PAGE_PATH,
-        }),
-      };
-    },
+    email: async ({ count }, { locale }) => ({
+      subject: text(locale).approvalWaiting({ count }),
+      content: text(locale).approvalEmail({ target: await absoluteUrl(APPROVALS_PAGE_PATH) }),
+    }),
   }),
   backgroundCosts: notification({
     recipient: "user",
@@ -108,15 +111,12 @@ export const AI_NOTIFICATIONS = {
       body: text(locale).responseFinished,
       targetHref: `/app/assistant?conversation=${encodeURIComponent(conversationId)}`,
     }),
-    email: async ({ conversationId }, { locale }) => {
-      const configuredUrl = String((await coreSettings.get<string>("app.url")) || "").trim();
-      const baseUrl = /^https?:\/\//.test(configuredUrl) ? configuredUrl : configuredUrl ? `https://${configuredUrl}` : "";
-      const target = `/app/assistant?conversation=${encodeURIComponent(conversationId)}`;
-      return {
-        subject: text(locale).responseReady,
-        content: text(locale).responseEmail({ target: baseUrl ? `${baseUrl.replace(/\/+$/, "")}${target}` : target }),
-      };
-    },
+    email: async ({ conversationId }, { locale }) => ({
+      subject: text(locale).responseReady,
+      content: text(locale).responseEmail({
+        target: await absoluteUrl(`/app/assistant?conversation=${encodeURIComponent(conversationId)}`),
+      }),
+    }),
   }),
   taskNeedsAttention: notification({
     recipient: "user",

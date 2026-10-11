@@ -67,6 +67,8 @@ test("pending approval notifications are browser-recommended, localized, and ope
     const email = await notice.email!({ count: 2 }, { locale: "de" });
     expect(email.subject).toBe("2 Freigaben warten");
     expect(email.content).toContain("https://cloud.example.test/me/approvals");
+    url.mockResolvedValue("cloud.example.test///");
+    expect((await notice.email!({ count: 2 }, { locale: "en" })).content).toContain("https://cloud.example.test/me/approvals");
   } finally {
     url.mockRestore();
   }
