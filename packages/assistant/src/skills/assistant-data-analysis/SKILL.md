@@ -14,10 +14,12 @@ from a run use the `chart` tool. Never retype run values into tool arguments,
 missing, rerun with `cloud.view.*`. These results need no app.
 Filters and buttons for a one-time analysis belong in a chat app; only data
 that must be kept or an app that is used again needs a saved Studio App. Load
-`assistant-code-mode` for execution and read its
-`/skills/assistant-code-mode/references/apps.md` and
-`/skills/assistant-code-mode/references/charts.md` for interfaces and charts.
-Loading this skill does not install a library or grant access.
+`assistant-code-mode` with `load_skill` (skills are not tools for
+`load_tools`) and read its `/skills/assistant-code-mode/references/views.md`
+for computed charts and tables,
+`/skills/assistant-code-mode/references/charts.md` for chart options and
+`/skills/assistant-code-mode/references/apps.md` for interfaces. Loading this
+skill does not install a library or grant access.
 
 ## Keep a working plan
 
@@ -36,7 +38,10 @@ that its numbers are correct. Keep blocked source work open and explain why.
 
 Identify the actual source, unit of observation, time window, timezone, and
 latest complete period. Read files or discover the relevant Cloud capabilities
-before selecting fields. External APIs use `cloud.http.fetch`; credentials are entered
+before selecting fields. For a CSV, TSV or spreadsheet, `read_file` at most its
+first block to see the columns; then select the file with `code_run`
+`inputPaths` and get its structure, counts and figures in the script. Paging
+through a whole table with `read_file` only fills the context. External APIs use `cloud.http.fetch`; credentials are entered
 only through the trusted `code_secret` dialog.
 
 Inspect a bounded sample, missing values, duplicate keys, types, and coverage.
@@ -58,9 +63,21 @@ exports. Give exact chat values a `cloud.view.table`; inside an app, a
 
 Choose the simplest chart that answers the question. Use tables for exact
 records, bars for category comparisons, lines for ordered trends, and distributions
-for spread. A distribution uses the histogram rows form over all observations,
-rather than a sample. State units, comparison windows, and whether a percent is
-a fraction or an already scaled number. Do not imply causation from correlation.
+for spread. Sort bars of counts or totals by value unless the categories have
+their own order. A pie or donut fits only two to four shares of one whole; six
+status counts read better as sorted bars. A distribution uses the histogram rows
+form over all observations, rather than a sample. Color must mean something
+(series, threshold, highlight): use `colorByBar` only to highlight one bar.
+State units, comparison windows, and whether a percent is a fraction or an
+already scaled number. Do not imply causation from correlation.
+
+Name the measure as it was computed in the title or subtitle, such as
+"Sum of price × stock" or "Number of products", and check that the formula
+matches the name before you use a business term like stock value. A sum of unit
+prices is not a stock value. An analysis compares or breaks down where the
+question allows it (status per category, price against stock) instead of
+showing only single distributions, and puts rows the person may check into a
+`cloud.view.table`.
 
 Lead reports with the finding, then supporting evidence and limitations.
 Lead dashboards with the important measurements, then trends and diagnostic
@@ -130,7 +147,9 @@ loading once is not continuous monitoring. No background refresh exists unless
 implemented through an appropriate supported workflow.
 
 Present the views, chat app, resource link or exported file, the data
-timestamp, and material coverage limitations. Say whether it is a snapshot or reloads from its sources.
+timestamp, and material coverage limitations. The answer text carries findings,
+caveats and decisions, such as "only a fifth is in stock", not the values the
+views already show. Say whether it is a snapshot or reloads from its sources.
 If publication fails, retain the tested resource and report the failed stage;
 do not claim success or create a different public destination. Sites-specific
 hosting, access policies, and editor storage are not part of this Cloud workflow.

@@ -37,10 +37,13 @@ select.addEventListener("change", draw);
 draw();
 ```
 
-Compute the numbers first: run a script with `code_run` over the chat files,
-check the totals, and export the exact app data. Never retype run
-values into `data.js`; export it with `cloud.download` and `code_export`
-and read the exported file.
+Compute the numbers first: run a script with `code_run` over the chat files and
+check the totals. A one-off app carries its data in its own files, so keep it to
+the aggregates the app needs. Let the script write the finished module, for
+example ``cloud.download("data.js", `export const rows = ${JSON.stringify(rows)};`)``,
+`code_export` it, read it and pass its text unchanged as `data.js`. Never
+rebuild app data from run output, logs or memory. Data too large to pass this
+way, or data that must stay, belongs in a Studio App with `code_file_copy`.
 
 Before showing an app, run `code_check` on exactly the files you will present,
 including `steps.json` (see [HTML apps](apps.md)). `code_present` refuses an app

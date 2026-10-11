@@ -84,12 +84,13 @@ export type AiRememberableCapabilityApprovals = ReadonlyMap<string, string>;
 
 /**
  * Why `load_tools` could not make a requested name callable:
+ * - `skill`: the name is an Assistant Skill; load_skill loads it, not load_tools;
  * - `unknown`: no tool has this exact name;
  * - `not_offered_in_turn`: the tool exists, but this turn's client or task does not provide it;
  * - `not_allowed`: the conversation's fixed tool scope or task grants exclude it;
  * - `app_offline`: the app operation is not in the live registry now.
  */
-export const AI_TOOL_UNAVAILABLE_REASONS = ["unknown", "not_offered_in_turn", "not_allowed", "app_offline"] as const;
+export const AI_TOOL_UNAVAILABLE_REASONS = ["unknown", "skill", "not_offered_in_turn", "not_allowed", "app_offline"] as const;
 export type AiToolUnavailableReason = (typeof AI_TOOL_UNAVAILABLE_REASONS)[number];
 
 const DEFAULT_SEARCH_LIMIT = 10;
@@ -585,7 +586,7 @@ export const createAiToolMetaTools = (input: {
   const load = defineAiTool({
     name: "load_tools",
     description:
-      "Load stable capability ids such as mail.conversation.list, or exact built-in names returned by search_tools, as ordinary tools for the next model turn. Skills may name capability ids directly, so load them without searching first. Call each loaded tool by the `call` name returned for it. `unavailable` gives a reason per name: unknown means no tool has this exact name, so look it up once with search_tools instead of guessing; not_offered_in_turn means this client or task does not provide the tool; not_allowed means this chat's fixed tool scope or task grants exclude it; app_offline means its app is not reachable now. For the last three, do not search or load the name again in this turn.",
+      "Load stable capability ids such as mail.conversation.list, or exact built-in names returned by search_tools, as ordinary tools for the next model turn. Skills may name capability ids directly, so load them without searching first. Call each loaded tool by the `call` name returned for it. `unavailable` gives a reason per name: unknown means no tool has this exact name, so look it up once with search_tools instead of guessing; not_offered_in_turn means this client or task does not provide the tool; not_allowed means this chat's fixed tool scope or task grants exclude it; app_offline means its app is not reachable now; skill means the name is an Assistant Skill: call load_skill with it instead. For not_offered_in_turn, not_allowed and app_offline, do not search or load the name again in this turn.",
     inputSchema: z.object({ names: z.array(z.string().trim().min(1)).min(1).max(25) }).strict(),
     outputSchema: z
       .object({
@@ -749,6 +750,8 @@ export const createAiToolResolver =
     mandatePolicy?: MandatePolicyV1 | null;
     /** Built-in tools that exist but that this turn does not offer, such as client tools its client did not declare or tools outside `allowedTools`. */
     unofferedTools?: readonly string[];
+    /** Assistant Skills this turn can load with load_skill. */
+    skillNames?: readonly string[];
     runtimeContext?: Omit<AiToolPreparationContext, "actor" | "conversationId">;
     store: Pick<AiConversationService, "getLoadedTools" | "loadTools">;
     listRegistry?: () => Promise<CapabilityRegistryEntry[]>;
@@ -823,6 +826,7 @@ export const createAiToolResolver =
     );
     // App operation IDs always contain a dot; built-in names never do.
     const unavailableReason = (requested: string): AiToolUnavailableReason => {
+      if (input.skillNames?.includes(requested)) return "skill";
       const name = loadedByProviderName.get(requested) ?? requested;
       if (mandateExcluded.has(name)) return "not_allowed";
       if (allowed && outOfScope.has(name) && !allowed.has(name)) return "not_allowed";

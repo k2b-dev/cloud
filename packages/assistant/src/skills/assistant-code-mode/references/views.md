@@ -18,10 +18,14 @@ No markup, functions, `width` or `height` belong in a view.
 
 With `rows` (objects keyed by column name):
 
-- `bar`, `pie`, `donut`: `x: "labelColumn", y: "valueColumn"`.
+- `bar`, `pie`, `donut`: `x: "labelColumn", y: "valueColumn"`. A label is
+  text, a finite number or a `Date`; a `Date` becomes its wall-clock date in
+  the run's time zone (`YYYY-MM-DD`, or `YYYY-MM-DDTHH:mm:ss` when it has a
+  time). A missing label is an error.
 - `line`, `scatter`: `x: "xColumn", y: "valueColumn"` or `y: ["a", "b"]`.
   Each y column becomes a named series. For long format use one y column and
-  `series: "groupColumn"`; groups keep first-seen order. x may be a number,
+  `series: "groupColumn"`; groups keep first-seen order, and every group cell
+  needs a label like a bar's. x may be a number,
   an ISO date string, or a `Date`, converted to the run's time zone.
 - `sparkline`: `y: "valueColumn"`.
 - `histogram`: `value: "valueColumn"`, optionally `bins` (1..480 or ascending
@@ -40,7 +44,8 @@ A gauge cannot take rows; give it the computed value directly.
 `table({title, subtitle?, rows, columns?, footer?, sort?})` keeps the listed
 columns. A column is a name or `{id, label?, type?, format?}`. Without columns,
 keys appear in first-seen order. An omitted type becomes `number` when all
-non-null cells are numbers, `datetime` when all are Dates, otherwise `text`.
+non-null cells, footer included, are numbers, `datetime` when all are Dates,
+otherwise `text`; a column without any value is `text`.
 Explicit types are `text`, `number`, `date` and `datetime`. Dates are
 `YYYY-MM-DD`; datetimes are `YYYY-MM-DDTHH:mm` or `YYYY-MM-DDTHH:mm:ss`, without
 an offset. Dates supplied as `Date` become wall-clock strings in `cloud.timeZone`.
@@ -56,10 +61,21 @@ three-letter code exactly when style is currency. Percent takes a fraction
 numbers, and unit is a plain suffix of at most 12 characters. Otherwise numbers
 retain up to 15 significant digits. Labels and text render as text nodes.
 
+## Choose and label
+
+Sort bars of counts or totals by value unless the categories have their own
+order; a pie or donut fits only two to four shares of one whole. Use a histogram
+for continuous values, and give color a meaning: `colorByBar` highlights one
+bar. Name the measure as computed in the title or subtitle, such as "Sum of
+price × stock" or "Number of orders". The answer text gives findings and
+caveats, not the values the view shows.
+
 ## CSV result
 
-Select the CSV path with `code_run.inputPaths`. This script creates a status
-chart, a distribution over every price, and monthly totals with a footer:
+Select the CSV path with `code_run.inputPaths` and read it in the script;
+`read_file` shows at most its first block to learn the columns. This script
+creates a status chart, a distribution over every price, and monthly totals
+with a footer:
 
 ```js
 export default async (_input, { files }) => {
@@ -79,15 +95,16 @@ export default async (_input, { files }) => {
     total += row.price;
   }
   await cloud.view.chart({
-    kind: "bar", title: "Orders by status", subtitle: "Selected CSV · orders",
-    rows: [...statuses].map(([status, count]) => ({ status, count })), x: "status", y: "count",
+    kind: "bar", title: "Orders by status", subtitle: "Number of orders · selected CSV",
+    rows: [...statuses].map(([status, count]) => ({ status, count })).sort((a, b) => b.count - a.count),
+    x: "status", y: "count",
   });
   await cloud.view.chart({
     kind: "histogram", title: "Price distribution", subtitle: "Selected CSV · EUR · all rows",
     rows, value: "price",
   });
   await cloud.view.table({
-    title: "Monthly totals", subtitle: "Selected CSV · EUR",
+    title: "Monthly totals", subtitle: "Sum of price · selected CSV · EUR",
     columns: ["month", { id: "amount", label: "Revenue", type: "number",
       format: { style: "currency", currency: "EUR", decimals: 2 } }],
     rows: [...months].map(([month, amount]) => ({ month, amount })),

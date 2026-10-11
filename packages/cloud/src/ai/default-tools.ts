@@ -146,16 +146,17 @@ export const createCloudAiCodeTools = () => [
   defineAiTool({
     name: "code_run",
     promptHint:
-      "For file analysis, data transformations or combining Cloud data, run a short one-off script with code_run. Load assistant-code-mode for its runtime APIs; no saved app is required.",
+      "For file analysis, data transformations or combining Cloud data, run a short one-off script with code_run; its charts and tables come from cloud.view.* in the script and present. Load assistant-code-mode for its runtime APIs; no saved app is required.",
     description:
-      "Run one-off script code OR a saved script resource in the isolated worker. Optional resourceId binds one-off code to existing app data (Manage required), without editing its source. Includes cloud.capabilities.run(name,input) to chain Cloud capabilities in JavaScript; load assistant-code-mode for its runtime APIs. Scripts read explicit chat inputPaths. Returns output, logs and captured files for agent inspection only. Apps with an index.html interface do not run here: show them with code_open or code_present. Runs use real shared and personal data; database writes and capability effects keep normal permissions and approvals.",
+      "Run one-off script code OR a saved script resource in the isolated worker. Optional resourceId binds one-off code to existing app data (Manage required), without editing its source. Includes cloud.capabilities.run(name,input) to chain Cloud capabilities in JavaScript; load assistant-code-mode for its runtime APIs. Scripts read explicit chat inputPaths. Returns output, logs, captured files and view references for agent inspection only. Show computed charts and tables with cloud.view.chart or cloud.view.table in the script, then present({path}) each returned view; never retype run values into chart arguments, files or Markdown. Apps with an index.html interface do not run here: show them with code_open or code_present. Runs use real shared and personal data; database writes and capability effects keep normal permissions and approvals.",
     inputSchema: CodeRunInput,
     outputSchema: z.json(),
     approval: "never",
   }).server(runManagedCodeTool("code_run")),
   defineAiTool({
     name: "code_inspect",
-    description: "Inspect a script run: status, progress, errors, logs, output and captured files. Use waitMs to wait for background work.",
+    description:
+      "Inspect a script run: status, progress, errors, logs, output, captured files and view references. Use waitMs to wait for background work.",
     inputSchema: CodeInspectInput,
     outputSchema: z.json(),
     approval: "never",

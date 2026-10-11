@@ -294,12 +294,14 @@ Tool-capable personal chats keep three bounded discovery tools available:
   | Reason | Meaning |
   | --- | --- |
   | `unknown` | No tool has this exact name, or it names an optional built-in that is off, such as `memory` while memory is disabled |
+  | `skill` | The name is an Assistant Skill this turn can load; `load_skill` loads it, not `load_tools` |
   | `not_offered_in_turn` | The tool exists, but this turn's client or task does not provide it, or the turn offers no app operations |
   | `not_allowed` | The conversation's fixed tool scope or task grants exclude it |
   | `app_offline` | The operation was loaded earlier, or the registry cannot be read, and its app is not in the live registry now |
 
-  The model looks up an unknown name once with `search_tools` and does not
-  search for or retry the other three in the same turn;
+  The model looks up an unknown name once with `search_tools`, loads a skill
+  with `load_skill`, and does not search for or retry the other three in the
+  same turn;
 - `list_apps` returns a bounded map of exact app IDs to their live descriptions
   when the owning app is unclear.
 

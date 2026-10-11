@@ -161,13 +161,15 @@ function LoadToolsView(props: { block: ToolBlock }) {
   };
   const t = useMessages();
   const unavailableLabel = (reason: unknown) =>
-    reason === "not_offered_in_turn"
-      ? t().toolNotOffered
-      : reason === "not_allowed"
-        ? t().toolNotAllowed
-        : reason === "app_offline"
-          ? t().toolAppOffline
-          : t().toolUnknown;
+    reason === "skill"
+      ? t().toolIsSkill
+      : reason === "not_offered_in_turn"
+        ? t().toolNotOffered
+        : reason === "not_allowed"
+          ? t().toolNotAllowed
+          : reason === "app_offline"
+            ? t().toolAppOffline
+            : t().toolUnknown;
   const rows = () => [
     ...toolNames(result().loaded).map((name) => ({ name, label: t().toolsLoaded })),
     ...toolNames(result().alreadyLoaded).map((name) => ({ name, label: t().toolsAlreadyLoaded })),

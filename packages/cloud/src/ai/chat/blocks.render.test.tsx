@@ -450,12 +450,13 @@ describe("capability tool presentation", () => {
       kind: "tool",
       callId: "load-1",
       name: "load_tools",
-      args: { names: ["code_run", "code_open", "spaces.create", "mail.old", "made_up"] },
+      args: { names: ["code_run", "code_open", "spaces.create", "mail.old", "made_up", "assistant-data-analysis"] },
       status: "completed",
       result: {
         loaded: [{ name: "code_run", call: "code_run" }],
         alreadyLoaded: [],
         unavailable: [
+          { name: "assistant-data-analysis", reason: "skill" },
           { name: "code_open", reason: "not_offered_in_turn" },
           { name: "spaces.create", reason: "not_allowed" },
           { name: "mail.old", reason: "app_offline" },
@@ -475,8 +476,18 @@ describe("capability tool presentation", () => {
       }),
     );
 
+    const english = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "en",
+        get children() {
+          return createComponent(AiTurnBlockView, { block: completed, turnId: "turn-1" });
+        },
+      }),
+    );
+    expect(english).toContain("A skill, not a tool");
+
     expect(html).toContain("1 geladen");
-    for (const label of ["Hier nicht verfügbar", "Nicht erlaubt", "App nicht erreichbar", "Nicht gefunden"]) {
+    for (const label of ["Ein Skill, kein Werkzeug", "Hier nicht verfügbar", "Nicht erlaubt", "App nicht erreichbar", "Nicht gefunden"]) {
       expect(html).toContain(label);
     }
   });
