@@ -310,8 +310,8 @@ Signatures keep their variables until preview and send.
 
 | Variable | Value |
 | --- | --- |
-| `actor.display_name` | Name of the person writing the message; for automations, the service account name or "Mailbox automation" |
-| `actor.email` | Email address of the person writing the message; empty when there is none |
+| `actor.display_name` | Name of the person who previews or sends the message, or inserts the snippet; a user-bound service account uses the name of its user, another service account its own name, other automations "Mailbox automation" |
+| `actor.email` | Email address of the person in actor.display_name; empty when there is none |
 | `sender.display_name` | Display name of the sender identity, or its address when it has no name |
 | `sender.email` | From address of the sender identity |
 | `sender.reply_to` | Reply-To address of the sender identity; empty when not set |

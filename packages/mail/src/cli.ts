@@ -762,7 +762,7 @@ const composeDraftExample = {
 const composeDraftHelpDescription = [
   "Draft JSON:",
   "  senderIdentityId is required: a verified sender identity ID from cld mail identity list.",
-  '  to, cc, and bcc are arrays of { "name": string|null, "address": string } objects, not plain strings; default [].',
+  '  to, cc, and bcc are arrays of { "address": string, "name"?: string|null } objects, not plain strings; name is optional; default [].',
   '  subject and body are strings; default "".',
   "  format is markdown or plain; default markdown.",
   "  priority (low, normal, or high), requestDeliveryReceipt, and requestReadReceipt are optional; defaults: normal, false, false.",

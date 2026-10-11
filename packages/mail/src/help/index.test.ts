@@ -146,6 +146,9 @@ describe("mailHelp", () => {
       const help = await renderMailCliHelp(command.split(" "));
       expect(help).toContain("senderIdentityId is required");
       expect(help).toContain("cld mail identity list");
+      expect(help).toContain(
+        '  to, cc, and bcc are arrays of { "address": string, "name"?: string|null } objects, not plain strings; name is optional; default [].',
+      );
       expect(help).toContain("--draft-file draft.json");
       expect(help).toContain("Example draft.json:");
       const example = help.match(/^  \{\n[\s\S]*?^  \}/m)?.[0];
@@ -174,7 +177,21 @@ describe("mailHelp", () => {
     "../../../../docs-site/apps-content/en/mail.md",
   ])("%s documents every compose template variable", async (file) => {
     const document = await Bun.file(new URL(file, import.meta.url)).text();
-    for (const name of Object.keys(composeTemplateVariables)) expect(document).toContain(`| \`${name}\` |`);
+    const lines = document.split("\n");
+    const headers = lines.filter((line) => line.startsWith("| Variable |"));
+    if (headers.length === 0) throw new Error(`Compose variable table header is missing in ${file}`);
+    expect(headers).toHaveLength(1);
+    const headerIndex = lines.findIndex((line) => line.startsWith("| Variable |"));
+    const rows: [string, string][] = [];
+    for (const line of lines.slice(headerIndex + 2)) {
+      if (!line.startsWith("|")) break;
+      const match = line.match(/^\| `([^`]+)` \| (.*) \|$/);
+      if (!match) throw new Error(`Invalid compose variable table row in ${file}: ${line}`);
+      rows.push([match[1]!, match[2]!]);
+    }
+    const names = rows.map(([name]) => name);
+    expect(names).toEqual(Object.keys(composeTemplateVariables));
+    if (file !== "./documents/de/mail-compose.help.md") expect(Object.fromEntries(rows)).toEqual(composeTemplateVariables);
   });
 
   test("owns the task-oriented Mail help collection", () => {

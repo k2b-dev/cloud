@@ -111,14 +111,12 @@ export const validateMailLiquidTemplate = (
               `Mail template variable "${unsupported}" is not available here. Available: ${options.allowedVariables.join(", ")}.`,
             ),
           );
-      } else {
+      } else if (options.allowedRoots) {
         const allowed = new Set(options.allowedRoots);
         const unsupported = variables.find((variable) => !allowed.has(variable.split(".", 1)[0] ?? ""));
         if (unsupported)
           return fail(
-            err.badInput(
-              `Mail template variable "${unsupported}" is not available here. Available: ${[...allowed].map((root) => `${root}.*`).join(", ")}.`,
-            ),
+            err.badInput(`Mail template variable "${unsupported}" is not available here. Available: ${options.allowedRoots.join(", ")}.`),
           );
       }
     } catch (error) {

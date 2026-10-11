@@ -258,16 +258,17 @@ describe("CLI command builder", () => {
     expect(output).toContain("cld admin logs list");
     expect(output).toContain("--search <value>, -q");
     for (const [name, description] of [
-      ["name", "Log name Required."],
-      ["kind", "Log kind Required. Default: live. Values: live, archived."],
-      ["count", "Log count Required."],
-      ["body", "Log body Required."],
+      ["name", "Log name. Required."],
+      ["kind", "Log kind. Default: live. Values: live, archived."],
+      ["count", "Log count. Required."],
+      ["body", "Log body. Required."],
     ]) {
       const line = output.split("\n").find((line) => line.trimStart().startsWith(`--${name} `));
       expect(line).toContain(description);
+      if (name === "kind") expect(line).not.toContain("Required.");
     }
     const optionalLine = output.split("\n").find((line) => line.trimStart().startsWith("--search "));
-    expect(optionalLine).toContain("Free-text search");
+    expect(optionalLine?.trim().replace(/^--search <value>, -q\s+/, "")).toBe("Free-text search");
     expect(optionalLine).not.toContain("Required.");
     expect(output).toContain("cld admin logs list --search timeout");
   });

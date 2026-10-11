@@ -79,7 +79,7 @@ describe("Mail Liquid templates", () => {
   test("rejects unknown roots and invalid filters", () => {
     expect(validateMailLiquidTemplate("{{ actor.email }}", { allowedRoots: ["mailbox", "sender"] })).toMatchObject({
       ok: false,
-      error: { message: 'Mail template variable "actor.email" is not available here. Available: mailbox.*, sender.*.' },
+      error: { message: 'Mail template variable "actor.email" is not available here. Available: mailbox, sender.' },
     });
     expect(validateMailLiquidTemplate("{{ actor.email | missing_filter }}")).toMatchObject({ ok: false });
   });

@@ -32,8 +32,8 @@ Template bodies use Markdown and Liquid. Presets are application behavior, not p
 
 | Variable | Value |
 | --- | --- |
-| `actor.display_name` | Name of the person writing the message; for automations, the service account name or "Mailbox automation" |
-| `actor.email` | Email address of the person writing the message; empty when there is none |
+| `actor.display_name` | Name of the person who previews or sends the message, or inserts the snippet; a user-bound service account uses the name of its user, another service account its own name, other automations "Mailbox automation" |
+| `actor.email` | Email address of the person in actor.display_name; empty when there is none |
 | `sender.display_name` | Display name of the sender identity, or its address when it has no name |
 | `sender.email` | From address of the sender identity |
 | `sender.reply_to` | Reply-To address of the sender identity; empty when not set |
@@ -66,7 +66,7 @@ Compose rendering needs the same editable draft context as the Mail composer.
 `cld mail identity list`. The other fields are optional: `to`, `cc`, and `bcc`
 default to empty arrays; `subject` and `body` default to empty strings; `format`
 defaults to `markdown` and also accepts `plain`. Recipient arrays hold objects
-with `name` (a string or null) and `address` (a string).
+with `address` (a string) and an optional `name` (a string or null).
 `priority` defaults to `normal` and also accepts `low` and `high`.
 `requestDeliveryReceipt` and `requestReadReceipt` default to `false`.
 Store the draft as JSON:
