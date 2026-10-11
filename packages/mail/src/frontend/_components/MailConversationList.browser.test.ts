@@ -1059,11 +1059,14 @@ describe("Mail row actions", () => {
       }, 30_000);
 
       test("keeps a row's actions while its menu is open", async () => {
-        await page.click(`${row("Cv0002")} .k2b-progressive-action button[aria-haspopup]`);
+        const trigger = `${row("Cv0002")} .k2b-progressive-action button[aria-haspopup]`;
+        await page.click(trigger);
         await away(page);
         await blur(page);
         await expectRows("Cv0002");
         await page.keyboard.press("Escape");
+        // With focus on the body, the browser closes the popover and reports it in a later toggle event.
+        await page.waitForFunction((selector) => document.querySelector(selector)?.getAttribute("aria-expanded") !== "true", trigger);
         await blur(page);
         await expectRows(null);
         expect(page.errors).toEqual([]);
