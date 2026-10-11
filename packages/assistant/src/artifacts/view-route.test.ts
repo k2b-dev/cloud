@@ -1,10 +1,10 @@
 import { expect, spyOn, test } from "bun:test";
-import * as ai from "@k2b/cloud/ai";
 import type { AiConversation, AiTurn } from "@k2b/cloud/ai";
-import { Hono } from "hono";
+import * as ai from "@k2b/cloud/ai";
 import type { AuthContext } from "@k2b/cloud/server";
-import { createArtifactServiceRoutes } from "./api";
+import { Hono } from "hono";
 import { hostFetch } from "./agent-host";
+import { createArtifactServiceRoutes } from "./api";
 import { testIdentity } from "./test-identity";
 
 const identity = testIdentity("00000000-0000-4000-8000-000000000001");

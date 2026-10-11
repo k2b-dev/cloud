@@ -14,7 +14,7 @@ import {
   mountAiProjectFilePath,
   mountAiSkillFilePath,
 } from "./file-mount";
-import { assertAiModelWritablePath, aiFileStore, guessAiMediaType, isAiWorkingFilePath, normalizeAiFilePath } from "./files-store";
+import { aiFileStore, assertAiModelWritablePath, guessAiMediaType, isAiWorkingFilePath, normalizeAiFilePath } from "./files-store";
 import { defineAiTool } from "./tools";
 import { CLOUD_AI_VIEW_MAX_BYTES, CloudAiViewSummarySchema, cloudAiViewSummary, isAiViewFile, parseCloudAiView } from "./view-block";
 

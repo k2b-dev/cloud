@@ -9,8 +9,8 @@ import {
   cloudAiTableTsv,
   cloudAiViewTable,
   isAiViewFile,
-  sortCloudAiViewRows,
   parseCloudAiView,
+  sortCloudAiViewRows,
 } from "../view-block";
 import { CloudChartView } from "./chart-block";
 import { useAiChatActions } from "./message-actions";
