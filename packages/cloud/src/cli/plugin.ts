@@ -67,6 +67,27 @@ export const cloudCliPluginDigest = (files: readonly Pick<CloudCliPluginFile, "p
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
 
+/** Whether an alias is a valid extra name for this module. */
+export const isCloudCliAlias = (value: unknown, name: string): value is string =>
+  typeof value === "string" && CLOUD_CLI_MODULE_NAME.test(value) && value !== name;
+
+/** Validate short names and command-path syntax without loading a module's command tree. */
+export const isCloudCliShortcuts = (value: unknown, name: string, alias?: string): value is Record<string, string> =>
+  isRecord(value) &&
+  (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null) &&
+  Object.entries(value).every(
+    ([key, target]) =>
+      CLOUD_CLI_MODULE_NAME.test(key) &&
+      key !== name &&
+      key !== alias &&
+      typeof target === "string" &&
+      target.trim() !== "" &&
+      target
+        .trim()
+        .split(/\s+/)
+        .every((segment) => !segment.startsWith("-")),
+  );
+
 /** Validate a served manifest, including its digest. Throws an `Error` naming the first problem. */
 export const parseCloudCliPluginManifest = (value: unknown): CloudCliPluginManifest => {
   if (!isRecord(value)) throw new Error("plugin manifest is not an object");
@@ -110,6 +131,15 @@ export const validateCloudCliModule = (value: unknown): CloudCliModule => {
   if (!isRecord(value)) throw new Error("default export is not a CLI module");
   if (typeof value.name !== "string" || !CLOUD_CLI_MODULE_NAME.test(value.name)) {
     throw new Error("default export needs a lowercase kebab-case name");
+  }
+  if (value.alias !== undefined && !isCloudCliAlias(value.alias, value.name)) {
+    throw new Error("alias must be a lowercase kebab-case name different from the module name");
+  }
+  if (
+    value.shortcuts !== undefined &&
+    !isCloudCliShortcuts(value.shortcuts, value.name, typeof value.alias === "string" ? value.alias : undefined)
+  ) {
+    throw new Error("shortcuts must be a plain object with unique kebab-case names and non-empty command paths without flags");
   }
   if (typeof value.summary !== "string") throw new Error("default export needs a string summary");
   if (typeof value.run !== "function") throw new Error("default export needs a run function");

@@ -122,7 +122,8 @@ const readInstallSource = async (directory: string): Promise<string> => {
   }
 };
 
-const pluginIds = async (root: string): Promise<string[]> => {
+/** List package plugin IDs without importing their code. */
+export const pluginIds = async (root = pluginsDirectory()): Promise<string[]> => {
   const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
   return entries
     .filter((entry) => entry.isDirectory() && !entry.name.startsWith(".") && entry.name !== STORE_DIRECTORY)

@@ -2,6 +2,8 @@
 
 Use `cld assistant` for interactive access to the user's personal Cloud agent and for chat automation. Assistant is the CLI and GUI surface for personal conversations stored by Cloud AI Core; chats started from Mail or another application appear in the same history. The root command starts or continues a chat, while named management commands inspect chat state and files, resolve pending actions, manage personalization, and manage Projects.
 
+`cld ai` is a short form of `cld assistant` for people typing in a terminal; agents keep using `cld assistant`.
+
 Before you configure the Assistant for someone, read
 [How the Assistant works](how-it-works.md) (`cld assistant reference how-it-works.md`).
 It explains whose permissions the Assistant uses, what Projects share and

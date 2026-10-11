@@ -10,6 +10,7 @@ import { assistantTaskCommands } from "./cli/tasks";
 
 const commands = defineCliCommands({
   name: "assistant",
+  alias: "ai",
   summary: "Chat with the Cloud Assistant and manage chats, scheduled tasks, files, personalization, and Projects.",
   groupSummaries: {
     code: "Build and manage Studio Apps and actions",

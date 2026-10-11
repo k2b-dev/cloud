@@ -35,6 +35,47 @@ const createContext = (args: string[], flags: CloudCliFlags = {}) => {
 };
 
 describe("CLI command builder", () => {
+  test("preserves aliases and normalizes exact shortcut command paths", () => {
+    const mod = defineCliCommands({
+      name: "inventory",
+      summary: "Inventory",
+      alias: "inv",
+      shortcuts: { stock: "  items   list\t" },
+      commands: [command("items list", { summary: "List", run: () => 0 })],
+    });
+    expect(mod.alias).toBe("inv");
+    expect(mod.shortcuts).toEqual({ stock: "items list" });
+    const plain = defineCliCommands({ name: "inventory", summary: "Inventory", commands: [] });
+    expect(Object.hasOwn(plain, "alias")).toBe(false);
+    expect(Object.hasOwn(plain, "shortcuts")).toBe(false);
+  });
+
+  test("allows a shortcut to a group only when the group has its own command", () => {
+    const mod = defineCliCommands({
+      name: "inventory",
+      summary: "Inventory",
+      shortcuts: { stock: "items" },
+      commands: [command("items", { summary: "Items", run: () => 0 }), command("items list", { summary: "List", run: () => 0 })],
+    });
+    expect(mod.shortcuts).toEqual({ stock: "items" });
+  });
+
+  test("rejects invalid or repeated short names and non-command targets", () => {
+    const config = { name: "inventory", summary: "Inventory", commands: [command("items list", { summary: "List", run: () => 0 })] };
+    for (const alias of ["", "Inv", "1inv", "inv_name", "inventory"]) {
+      expect(() => defineCliCommands({ ...config, alias })).toThrow("CLI alias");
+    }
+    for (const name of ["", "Stock", "1stock", "stock_name", "inventory", "inv"]) {
+      expect(() => defineCliCommands({ ...config, alias: "inv", shortcuts: { [name]: "items list" } })).toThrow("CLI shortcuts");
+    }
+    for (const target of ["", "  ", "items list --json", "-h"]) {
+      expect(() => defineCliCommands({ ...config, shortcuts: { stock: target } })).toThrow("CLI shortcuts");
+    }
+    for (const target of ["items", "unknown", "items list extra"]) {
+      expect(() => defineCliCommands({ ...config, shortcuts: { stock: target } })).toThrow("Unknown CLI shortcut command path");
+    }
+  });
+
   test("lets one command in a Cloud-backed module run offline", () => {
     const mod = defineCliCommands({
       name: "inventory",
