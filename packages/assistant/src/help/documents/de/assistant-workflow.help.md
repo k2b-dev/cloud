@@ -3,6 +3,7 @@ id: assistant-workflow
 title: Chats und Aktionen
 icon: ti ti-messages
 description: Chats finden, Metadaten verwalten, Anfragen wiederholen, in neuen Chats fortsetzen, Kontext kürzen, Antworten beenden und Aktionen bearbeiten.
+updated: 2026-10-11
 order: 110
 ---
 
@@ -47,6 +48,8 @@ Nach sieben Tagen ohne Nutzung erscheinen Chats automatisch unter **Fertig**. Al
 :::
 
 :::info Freigaben und Client-Aktionen
+Entscheide über eine Freigabe in der Karte im Chat oder öffne **Freigaben** oberhalb von **Studio**, um alle wartenden Anfragen zu sehen. Du findest sie auch unter **Mein Konto → Freigaben**. Für Anfragen, die außerhalb einer angemeldeten Browsersitzung gestartet wurden, öffnet die Benachrichtigung **Wartende Freigaben** diese Kontoliste.
+
 Manche Anfragen benötigen eine Freigabe oder das Ergebnis eines Frontend-Tools. Beantworte diese Aufforderungen in der Nachrichtenliste, damit die Anfrage fortgesetzt werden kann. Eine Freigabe gilt einmal und nur für das, was die Aufforderung zeigt. Ändert sich das, bevor die Aktion ausgeführt wird, etwa weil ein Entwurf einen anderen Empfänger hat, fragt der Assistent erneut. Begrenzte, wiederholbare Aktionen bieten im Menü der Freigabeschaltfläche **Für diesen Chat freigeben** und **Immer freigeben** an; eine Chat-Freigabe endet, wenn du den Chat löschst. Löschen, Senden, Teilen und andere folgenreiche Aktionen erfordern weiterhin jedes Mal eine Freigabe. Wenn Code eine Website liest, bietet das Menü **Diese Website für diesen Chat erlauben** an: Weitere Abrufe genau dieser Website fragen dann nicht mehr, und jeder zeigt seine vollständige Adresse mit **Entziehen**. Solche Freigaben stehen unter **Secrets & Freigaben** im Kontext des Chats.
 :::
 

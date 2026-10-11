@@ -5,7 +5,7 @@ section: Reference
 order: 1205
 description: Choose a supported Cloud import and check its runtime and stability.
 tags: [api, imports, boundaries, compatibility]
-updated: 2026-10-10
+updated: 2026-10-11
 ---
 
 # API surface
@@ -95,7 +95,21 @@ A dashboard widget handler reads the size the board asks for with
 `getWidgetRequest(c)` from the same barrel; see
 [Dashboard widgets](/en/docs/platform/dashboard-widgets).
 
+`loadPendingApprovals(c, query)` loads an approval page during SSR from this
+entry point. Pass it as `initial` to the shared `Approvals` component.
+See [Show approvals in your app](/en/docs/identity/approvals#show-approvals-in-your-app).
+
 See [Server APIs](/en/docs/server) for the request path.
+
+### Core approval routes
+
+| Route | Use | Guide |
+| --- | --- | --- |
+| `GET /api/approvals` | List the person's waiting requests; filter by `app` and `link`; paginate with `cursor` | [Approval routes](/en/docs/identity/approvals#approval-routes) |
+| `GET /api/approvals/counts` | Read total and per-app open counts | [Approval routes](/en/docs/identity/approvals#approval-routes) |
+| `POST /api/approvals/:id/decision` | Approve or reject a request and continue its chat | [Approval routes](/en/docs/identity/approvals#approval-routes) |
+
+These routes require a user-backed actor.
 
 ## Use platform services
 
@@ -215,6 +229,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/ai/runtime` | Platform-owned, server-only | Core-owned conversation runtime and turn submission | [Chat and streaming](/en/docs/ai/chat-runtime-and-streaming) |
 | `@k2b/cloud/ai/admin` | Platform-owned, server-only | AI usage accounting, model access, and masked request-header names for administration | [Models and providers](/en/docs/ai/models-and-providers), [Observability](/en/docs/operations/observability) |
 | `@k2b/cloud/account/ui` | Supported, SolidJS | Cloud account selectors and avatars | [Building blocks](/en/docs/building-blocks) |
+| `@k2b/cloud/approvals/ui` | Supported, SolidJS | `Approvals`, `ApprovalsNavStatus`, and `approvalNavCount` for open Action requests | [Action approvals](/en/docs/identity/approvals#show-approvals-in-your-app) |
 | `@k2b/cloud/access/ui` | Supported, SolidJS | Cloud permission and resource-key controls | [Resource API keys](/en/docs/identity/resource-api-keys) |
 | `@k2b/cloud/browser/live` | Supported, browser | `liveConnection` for an application's live channels; `createLiveWebSocket` transport for other sockets | [Realtime UI](/en/docs/frontend/realtime-ui) |
 | `@k2b/cloud/events` | Supported, server-only | `defineLive`: live updates written in the transaction that makes the change; `routes(channels)` serves them over one socket per application with access checked at delivery | [Live updates](/en/docs/automation/live-updates) |
@@ -284,7 +299,7 @@ exports behind it are `Preview`. Their guides say so at the top.
 | --- | --- | --- |
 | `@k2b/cloud/api` | Platform-owned | Builds the Core platform router |
 | `@k2b/cloud/services/help` | Platform-owned | Core Help migration and shared publication/read service |
-| `@k2b/cloud/services/approvals` | Platform-owned | The approval record that Core and Assistant request, decide, and consume; see [Action approvals](/en/docs/identity/approvals) |
+| `@k2b/cloud/services/approvals` | Platform-owned | Platform requests, decisions, consumption, lists, and counts; see [Action approvals](/en/docs/identity/approvals) |
 | `@k2b/cloud/ssr/help` | Supported, server-only | Request-scoped Help metadata for specialized embedded readers |
 | Registry, heartbeat, and runtime helpers from `@k2b/cloud` | Platform-owned | Gateway, Core, and platform composition |
 | `@k2b/cloud/services/*` | Advanced | Deep service exports; prefer the barrel |

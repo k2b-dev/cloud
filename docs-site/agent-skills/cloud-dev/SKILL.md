@@ -157,6 +157,7 @@ capability call on every surface; an application writes `context.requestId` into
 join without sharing payloads. Actions may word themselves with optional, translated `presentation.sentences`
 (`approval`, `done`, `rejected`, `notRun`; `{input.path}`, `{data.path}` in `done`); consumers never special-case an app.
 Cloud records every approval as one platform request and repeats the Action's review right before the approved call runs; a changed review asks again, so keep reviews deterministic and carry a revision in the input of Actions on changeable state.
+Apps show and decide their open approvals only through the shared `Approvals` component and `/api/approvals` route, with no app-owned approval routes or tables; an editor bridge can only reject `confirm` requests.
 For a shared cross-app contract, read `/en/docs/platform/contact-directory` or `/en/docs/platform/file-providers`.
 
 For deployment questions, read **Deployment requirements** in the Docs

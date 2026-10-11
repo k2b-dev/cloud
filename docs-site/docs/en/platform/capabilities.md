@@ -5,7 +5,7 @@ section: Platform services
 order: 555
 description: Publish a small, versioned RPC surface for cross-app calls, agents, CLI, and MCP.
 tags: [capabilities, rpc, agents, mcp]
-updated: 2026-10-10
+updated: 2026-10-11
 ---
 
 # App capabilities
@@ -690,6 +690,9 @@ folder, a Spaces task with assignees, or a Mail move to Trash.
 Cloud rejects this policy on `openWorld` Actions, on `destructive` Actions, and
 on Actions without a `review`. It does not weaken app-side authorization, input validation, audit,
 or concurrency checks, all of which still run for every invocation.
+
+People decide [Action approvals](/en/docs/identity/approvals) in the chat,
+an app, or Cloud's approval lists.
 
 Use remembered approval only for bounded, repeatable changes where future
 calls of the same Action are an understandable extension of the user's choice,

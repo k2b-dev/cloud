@@ -5,7 +5,7 @@ section: AI
 order: 1040
 description: Let models request application actions while keeping authorization and approval explicit.
 tags: [ai, tools, approvals]
-updated: 2026-10-10
+updated: 2026-10-11
 ---
 
 # Tools and approvals
@@ -425,6 +425,14 @@ revision required by an Action remains part of the Action input and is enforced
 again by the owning app.
 
 ## Handle approval in the UI
+
+The Assistant's **Approvals** row above **Studio** opens a view of waiting
+requests. **My account → Approvals** lists requests across apps.
+A **Pending approvals** notification opens that list for requests from turns
+started outside a signed-in browser session.
+An ACP editor bridge can reject `confirm` requests but cannot approve them.
+See [Action approvals](/en/docs/identity/approvals) for the lists, notification
+rules, and decision channels.
 
 The stream exposes pending actions. The shared controller provides:
 

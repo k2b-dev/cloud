@@ -58,7 +58,7 @@ for the page cannot approve it. Remember options (**Approve for this chat**,
 **Always approve**) appear only on `standard` requests that offer them.
 
 The band shows each request as one tinted row with its title, the chat, and
-the decision; it renders nothing when no request waits.
+the decision. It renders nothing when the loaded page has no requests.
 
 The empty list says "Nothing is waiting for you." When `app` or `link` is set
 and other apps have open requests, a line links to the Core page.
@@ -90,3 +90,21 @@ the person is the approver, that the request is still open, and the channel
 rules of the request's level; then it continues the chat that asked, exactly as
 a decision in the chat card does. After a decision the component refreshes the
 rail counts.
+
+## Example
+
+Load the first page in the authenticated SSR handler:
+
+```ts
+const page = await loadPendingApprovals(c, { app: "mail", link: draftHref });
+```
+
+Pass it to the island that shows the draft:
+
+```tsx
+<Approvals app="mail" link={draftHref} initial={page} layout="band" />;
+```
+
+Use the same `draftHref` in the Action review's `links`.
+See [Action approvals](/en/docs/identity/approvals#show-approvals-in-your-app)
+for the server and island imports.
