@@ -58,21 +58,19 @@ describe("NotebookSettingsStore", () => {
 
   test("preserves preferences for other notebooks and when changing the last notebook", () => {
     writeSettings("first", { richMode: "source" });
-    writeSettings("second", { lastNoteId: "note-2", navigatorSort: "title", treeSort: "created" });
+    writeSettings("second", { lastNoteId: "note-2", treeSort: "created" });
     setLastNotebookId("second");
 
     expect(parseSettings(cookieHeader(), "first").richMode).toBe("source");
     expect(parseSettings(cookieHeader(), "second").lastNoteId).toBe("note-2");
-    expect(parseSettings(cookieHeader(), "second").navigatorSort).toBe("title");
     expect(parseSettings(cookieHeader(), "second").treeSort).toBe("created");
-    expect(parseSettings(cookieHeader(), "first").navigatorSort).toBe("updated");
     expect(parseSettings(cookieHeader(), "first").treeSort).toBe("title");
   });
 
   test("keeps the personal Tab key preference across other notebook preferences", () => {
     expect(readTabMovesFocus()).toBe(false);
     setTabMovesFocus(true);
-    writeSettings("first", { richMode: "source", sidebarMode: "navigator" });
+    writeSettings("first", { richMode: "source" });
     setDetailPanelOpen(true);
     expect(readTabMovesFocus()).toBe(true);
 
@@ -100,11 +98,11 @@ describe("NotebookSettingsStore", () => {
   test("keeps the hidden navigation for every notebook and for server rendering", () => {
     expect(parseNavigationHidden(cookieHeader())).toBe(false);
     writeNavigationHidden(true);
-    writeSettings("first", { lastNoteId: "note01", sidebarMode: "navigator" });
+    writeSettings("first", { lastNoteId: "note01" });
 
     expect(readNavigationHidden()).toBe(true);
     expect(parseNavigationHidden(cookieHeader())).toBe(true);
-    expect(parseSettings(cookieHeader(), "first").sidebarMode).toBe("navigator");
+    expect(parseSettings(cookieHeader(), "first").lastNoteId).toBe("note01");
 
     writeNavigationHidden(false);
     expect(parseNavigationHidden(cookieHeader())).toBe(false);
@@ -120,16 +118,41 @@ describe("NotebookSettingsStore", () => {
       }),
     )}`;
 
-    expect(readSettings("first")).toEqual({
-      lastNoteId: null,
-      richMode: "rich",
-      sidebarMode: "simple",
-      navigatorSort: "updated",
-      treeSort: "title",
-    });
+    expect(readSettings("first")).toEqual({ lastNoteId: null, richMode: "rich", treeSort: "title" });
     expect(parseDetailPanelOpen(cookieHeader())).toBe(false);
     expect(parseNavigationHidden(cookieHeader())).toBe(false);
     expect(parsePinnedNotebookIds(cookieHeader())).toEqual([]);
+  });
+
+  test("a cookie from the Navigator layout keeps every other preference and drops the removed ones on the next write", () => {
+    cookie = `${COOKIE_NAME}=${encodeURIComponent(
+      JSON.stringify({
+        lastNotebookId: "Book01",
+        pinnedNotebookIds: ["Book02"],
+        sidebarMode: "navigator",
+        detailPanelOpen: true,
+        navigationHidden: true,
+        tabMovesFocus: true,
+        notebooks: {
+          Book01: { lastNoteId: "note01", richMode: "source", navigatorSort: "title", treeSort: "created" },
+          Book02: { navigatorSort: "created" },
+        },
+      }),
+    )}`;
+
+    expect(parseSettings(cookieHeader(), "Book01")).toEqual({ lastNoteId: "note01", richMode: "source", treeSort: "created" });
+    expect(parseSettings(cookieHeader(), "Book02")).toEqual({ lastNoteId: null, richMode: "rich", treeSort: "title" });
+
+    setLastNotebookId("Book02");
+
+    expect(JSON.parse(decodeURIComponent(cookie.slice(COOKIE_NAME.length + 1)))).toEqual({
+      lastNotebookId: "Book02",
+      pinnedNotebookIds: ["Book02"],
+      detailPanelOpen: true,
+      navigationHidden: true,
+      tabMovesFocus: true,
+      notebooks: { Book01: { lastNoteId: "note01", richMode: "source", treeSort: "created" } },
+    });
   });
 
   test("bounds notebook-specific preferences", () => {

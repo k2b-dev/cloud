@@ -65,13 +65,28 @@ Schreibe kurze Absätze. Behandle in jedem Abschnitt nur ein Thema.
 - **Tab für den Fokus behalten:** Öffne **Einstellungen → Notizbuch → Ansicht und Verhalten** und schalte **Tab-Taste bewegt den Fokus statt einzurücken** ein. Dieser Browser speichert die Wahl, und sie gilt sofort.
 :::
 
+## Notizen in der Seitenleiste finden {icon="layout-sidebar"}
+
+Die Seitenleiste zeigt die Notizen des Notizbuchs als Baum, mit der Startseite zuerst. Filter machen daraus eine Liste.
+
+:::reference
+- **Name des Notizbuchs:** Wähle den Namen oben, um zu einem anderen Notizbuch zu wechseln oder **Alle Notizbücher** zu öffnen.
+- **Suche und neue Notizen:** Wähle **Notizen durchsuchen** oder drücke **Cmd/Strg+Umschalt+K**. Mit Zugriff **Bearbeiten** oder **Verwalten** erstellst du mit dem Stift neben dem Namen oder mit **Cmd/Strg+Alt+N** eine Notiz.
+- **Favoriten, Zuletzt und Tags:** Diese Filter zeigen statt des Baums eine Liste, die zuletzt geänderte Notiz zuerst. **Zuletzt** zeigt die 12 zuletzt geänderten Notizen. Jede Notiz zeigt, wann sie sich geändert hat, und ihre ersten zwei Tags. Wähle den Filter erneut oder **×** über der Liste, um wieder den Baum zu sehen.
+- **Die Liste bleibt ruhig:** Solange die Liste offen ist, verschieben Änderungen von dir oder anderen ihre Notizen nicht. Eine Notiz, die neu zum Filter passt, kommt ans Ende. Um die Liste neu zu sortieren, wähle den Filter zweimal.
+- **Deine Favoriten:** Wähle im Menü einer Notiz **Zu Favoriten hinzufügen**. Nur du siehst deine Favoriten.
+- **Menü einer Notiz:** Wähle **⋯** neben der Notiz, öffne ihr Kontextmenü mit der rechten Maustaste oder wähle sie aus und drücke **Umschalt+F10**.
+- **Der Filter bleibt:** Er bleibt, wenn du eine Notiz aus der Liste öffnest und wenn du die Seite neu lädst. Öffnest du eine andere Notiz über einen Link in einer Notiz, über die Suche oder als neue Notiz, zeigt sich wieder der Baum.
+- **Smartphones:** Das Menü bietet dieselben Filter und zeigt die Liste sofort. Öffne eine Notiz aus der Liste, um den Filter zu behalten. Schließt du das Menü, ohne eine Notiz zu öffnen, zeigt es wieder, was es vorher gezeigt hat.
+:::
+
 ## Navigation ausblenden {icon="layout-sidebar-left-collapse"}
 
 Blende die Navigation aus, um mit der ganzen Breite zu schreiben. Blende sie auch aus, wenn andere deinen Bildschirm sehen und deine Notizen und Ordner nicht sehen dürfen.
 
 :::reference
 - **Ausblenden:** Wähle ganz links in der Werkzeugleiste des Editors **Navigation ausblenden**. Du kannst auch **Cmd/Strg+Alt+S** drücken oder in der Cloud-Suche `>` tippen und **Notizbuch-Navigation ausblenden** ausführen. Oder ziehe den Rand der Navigation fast ganz nach links.
-- **Was verschwindet:** Die Navigation verschwindet in beiden Layouts und in der Buchansicht vollständig. Das gilt auch für die Notizliste des Navigators und die Seitenliste der Buchansicht.
+- **Was verschwindet:** Die Seitenleiste verschwindet vollständig, ebenso die Seitenliste der Buchansicht.
 - **Einblenden:** Wähle an derselben Stelle **Navigation einblenden** oder drücke erneut **Cmd/Strg+Alt+S**. Du kannst auch in der Cloud-Suche `>` tippen und **Notizbuch-Navigation einblenden** ausführen.
 - **Ohne Werkzeugleiste:** Manche Stellen zeigen keine Werkzeugleiste des Editors: die Buchansicht, ein leeres Notizbuch, **Schreibgeschützt**, der Graph und die Anhänge. Dort steht die Schaltfläche unten links.
 - **Bleibt ausgeblendet:** Dieser Browser speichert die Wahl. Sie gilt für alle Notizbücher, auch nach dem Neuladen und in anderen offenen Tabs. Ein Notizbuch mit ausgeblendeter Navigation öffnet ohne sie, Notiztitel erscheinen also auch beim Laden nicht.

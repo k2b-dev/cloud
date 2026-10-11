@@ -19,8 +19,9 @@ export default function Navigation(props: NavigationProps) {
   const workspaceMessages = useWorkspaceMessages();
   const [expanded, setExpanded] = createSignal<Record<string, boolean>>({});
   const ready = async () => (await props.beforeSelect?.()) !== false;
-  const activate = async (id: string) => {
-    if (await ready()) await props.navigation.activate(id);
+  /** `keepOpen` changes only what the menu shows, so the host does not dismiss it first. */
+  const activate = async (id: string, keepOpen = false) => {
+    if (keepOpen || (await ready())) await props.navigation.activate(id);
   };
   const Rows = (rows: { items: readonly NavigationItem[]; disabled?: boolean; labelledBy?: string }) => (
     <ul class="k2b-navigation__list" aria-labelledby={rows.labelledBy}>
@@ -81,7 +82,7 @@ export default function Navigation(props: NavigationProps) {
                           class="k2b-navigation__control"
                           disabled={disabled()}
                           aria-expanded={!item().action ? open() : undefined}
-                          onClick={() => (item().action ? void activate(id) : toggle())}
+                          onClick={() => (item().action ? void activate(id, item().keepOpen) : toggle())}
                         >
                           {content()}
                           <Show when={!item().action && item().children?.length}>

@@ -104,8 +104,8 @@ const select = async (html: string, selector: string) => {
 
 test("an empty notebook shows its sidebar placeholder as one line directly below the notes heading", async () => {
   const html = await renderEmptyNotebook("write");
-  // The note tree is the section's only child; its first child is where the first note row would be.
-  const [placeholder, ...others] = await select(html, ".k2b-app-workspace__sidebar-section-content > div > .k2b-placeholder:first-child");
+  // The placeholder is the section's first child, where the first note row would be.
+  const [placeholder, ...others] = await select(html, ".k2b-app-workspace__sidebar-section-content > .k2b-placeholder:first-child");
 
   expect(others).toEqual([]);
   expect(placeholder?.attributes["data-variant"]).toBe("inline");
@@ -335,7 +335,8 @@ const renderNotebookWithNotes = async (preferences: Record<string, unknown>) => 
   return response.text();
 };
 
-test("a hidden navigation is server-rendered without the note tree or the navigator's note list", async () => {
+test("a hidden navigation is server-rendered without the note tree", async () => {
+  // A cookie from the former Navigator layout renders the one sidebar.
   const html = await renderNotebookWithNotes({ sidebarMode: "navigator", navigationHidden: true });
   const [sidebar, ...others] = await select(html, "aside.k2b-app-workspace__sidebar");
 
@@ -345,25 +346,24 @@ test("a hidden navigation is server-rendered without the note tree or the naviga
   expect(sidebar?.text).toBe("");
   expect(await select(html, "aside.k2b-app-workspace__sidebar *")).toEqual([]);
   expect(await select(html, '[data-app-workspace-resize="sidebar"]')).toEqual([]);
-  // The navigator's note list pane hides with the sidebar and renders no rows while hidden.
-  const [pane] = await select(html, '[data-workspace-main-region="notebook-notes"]');
-  expect(pane?.attributes["data-surface"]).toBe("navigation");
-  expect((await select(html, '[data-workspace-main-region="notebook-notes"] *')).filter((element) => element.text.trim())).toEqual([]);
-  expect(await select(html, '[data-workspace-main-region="notebook-notes"] a')).toEqual([]);
+  expect(await select(html, "[data-workspace-main-region=notebook-notes]")).toEqual([]);
   // The graph has no editor toolbar, so the sidebar offers its own show control.
   expect((await select(html, 'button[aria-controls="notebook-navigation"]')).map((button) => button.attributes["aria-label"])).toEqual([
     "Navigation einblenden",
   ]);
 });
 
-test("a visible navigation is server-rendered with its note tree and the navigator's note list", async () => {
-  const simple = await renderNotebookWithNotes({ sidebarMode: "simple" });
-  const [sidebar] = await select(simple, "aside.k2b-app-workspace__sidebar");
-  expect(sidebar?.attributes.hidden).toBeUndefined();
-  expect(sidebar?.text).toContain("Private folder");
-  expect(await select(simple, '[data-app-workspace-resize="sidebar"]')).toHaveLength(1);
-
-  const navigator = await renderNotebookWithNotes({ sidebarMode: "navigator" });
-  const rows = await select(navigator, '[data-workspace-main-region="notebook-notes"] a');
-  expect(rows.map((row) => row.text).join(" ")).toContain("Private folder");
+test("a visible navigation is server-rendered with its one sidebar and note tree, also for a former Navigator layout", async () => {
+  for (const preferences of [{}, { sidebarMode: "navigator" }]) {
+    const html = await renderNotebookWithNotes(preferences);
+    const [sidebar] = await select(html, "aside.k2b-app-workspace__sidebar");
+    expect(sidebar?.attributes.hidden).toBeUndefined();
+    expect(sidebar?.text).toContain("Private folder");
+    expect(sidebar?.text).toContain("Notizen durchsuchen");
+    expect(sidebar?.text).toContain("Favoriten");
+    expect(sidebar?.text).toContain("Zuletzt");
+    expect(await select(html, '[data-app-workspace-resize="sidebar"]')).toHaveLength(1);
+    // No second column lists the notes again.
+    expect(await select(html, "[data-workspace-main-region=notebook-notes]")).toEqual([]);
+  }
 });

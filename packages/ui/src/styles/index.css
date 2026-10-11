@@ -4415,34 +4415,94 @@
     pointer-events: auto;
   }
 
-  .k2b-ui .k2b-app-workspace__sidebar-item-meta[data-visibility="hover"],
-  .k2b-ui .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"] {
+  .k2b-ui .k2b-app-workspace__sidebar-item-meta[data-visibility="hover"] {
     display: none;
   }
 
-  .k2b-ui
-    .k2b-app-workspace__sidebar-item:is(:hover, :focus-within)
-    :is(.k2b-app-workspace__sidebar-item-meta[data-visibility="hover"], .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]) {
+  /* Hidden hover actions keep their box, so revealing them moves nothing, and
+     stay out of the tab order and the accessibility tree until they show. */
+  .k2b-ui .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"] {
+    visibility: hidden;
+  }
+
+  .k2b-ui .k2b-app-workspace__sidebar-item:is(:hover, :focus-within) .k2b-app-workspace__sidebar-item-meta[data-visibility="hover"] {
     display: inline-flex;
+  }
+
+  .k2b-ui .k2b-app-workspace__sidebar-item:is(:hover, :focus-within) .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"] {
+    visibility: visible;
   }
 
   /* Roving focus rests on the tree node, which also contains its children's
      rows: the node reveals only its own row, and not while focus is in a
-     child. Focus within, rather than on, the node keeps the actions rendered
+     child. Focus within, rather than on, the node keeps the actions shown
      while Tab moves from the node into them; the browser drops focus aimed at
      a trigger hidden at that moment. */
   .k2b-ui
     .k2b-app-workspace__nav-tree-node:focus-within:not(:has(> .k2b-app-workspace__nav-tree-group:focus-within))
     > .k2b-app-workspace__nav-tree-row
-    :is(.k2b-app-workspace__sidebar-item-meta[data-visibility="hover"], .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]) {
+    .k2b-app-workspace__sidebar-item-meta[data-visibility="hover"] {
     display: inline-flex;
+  }
+
+  .k2b-ui
+    .k2b-app-workspace__nav-tree-node:focus-within:not(:has(> .k2b-app-workspace__nav-tree-group:focus-within))
+    > .k2b-app-workspace__nav-tree-row
+    .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"] {
+    visibility: visible;
   }
 
   /* A menu opened from hover actions renders in the top layer, outside the
      row's hover and focus. Its trigger stays until the menu closes; hiding it
      would stop rendering the menu while the pointer travels into it. */
   .k2b-ui .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]:has([aria-haspopup][aria-expanded="true"]) {
-    display: inline-flex;
+    visibility: visible;
+  }
+
+  /* Hover actions that end the row overlay its trailing edge, before a tree
+     row's chevron: they take no width from the label, and while they show,
+     the text under them fades as it does under a single hover action. */
+  .k2b-ui .k2b-app-workspace__sidebar-item:has(> .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]:last-child) {
+    position: relative;
+  }
+
+  .k2b-ui .k2b-app-workspace__sidebar-item > .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]:last-child {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-end: 0;
+  }
+
+  /* The chevron is 1.5rem wide and the row ends 0.125rem after it. */
+  .k2b-ui
+    .k2b-app-workspace__sidebar-item:has(> .k2b-app-workspace__sidebar-item-main > .k2b-app-workspace__nav-tree-toggle)
+    > .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]:last-child {
+    inset-inline-end: 1.625rem;
+  }
+
+  .k2b-ui
+    :is(
+      .k2b-app-workspace__sidebar-item:is(:hover, :focus-within),
+      .k2b-app-workspace__nav-tree-node:focus-within:not(:has(> .k2b-app-workspace__nav-tree-group:focus-within))
+        > .k2b-app-workspace__nav-tree-row,
+      .k2b-app-workspace__sidebar-item:has(> .k2b-app-workspace__sidebar-item-actions [aria-haspopup][aria-expanded="true"])
+    ):not([data-variant="object"]:has(.k2b-app-workspace__sidebar-item-meta)):has(
+      > .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]:last-child
+    )
+    > .k2b-app-workspace__sidebar-item-main {
+    --k2b-sidebar-item-fade-inset: 2.5rem;
+  }
+
+  .k2b-ui
+    :is(
+      .k2b-app-workspace__sidebar-item:is(:hover, :focus-within),
+      .k2b-app-workspace__nav-tree-node:focus-within:not(:has(> .k2b-app-workspace__nav-tree-group:focus-within))
+        > .k2b-app-workspace__nav-tree-row,
+      .k2b-app-workspace__sidebar-item:has(> .k2b-app-workspace__sidebar-item-actions [aria-haspopup][aria-expanded="true"])
+    ):not([data-variant="object"]:has(.k2b-app-workspace__sidebar-item-meta)):has(
+      > .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]:last-child > :nth-child(2)
+    )
+    > .k2b-app-workspace__sidebar-item-main {
+    --k2b-sidebar-item-fade-inset: 4.25rem;
   }
 
   /* Hover actions and the row chevron overlay the row's trailing edge:
@@ -4562,7 +4622,9 @@
   /* The fading end is padding, which the label text runs into but the
      marquee measures without, so the text ends where it is fully visible. */
   .k2b-ui
-    .k2b-app-workspace__sidebar-item:has(> .k2b-app-workspace__sidebar-item-action[data-visibility="hover"])
+    .k2b-app-workspace__sidebar-item:has(
+      > :is(.k2b-app-workspace__sidebar-item-action, .k2b-app-workspace__sidebar-item-actions:last-child)[data-visibility="hover"]
+    )
     .k2b-app-workspace__sidebar-item-label[data-marquee="true"] {
     padding-inline-end: var(--k2b-sidebar-item-fade-inset, 0px);
   }

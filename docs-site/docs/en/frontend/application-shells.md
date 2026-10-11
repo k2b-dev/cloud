@@ -190,8 +190,13 @@ inspectors, reference windows, or builder previews as the Cloud workspace.
 They keep local content controls.
 
 Cloud closes its menu and removes its temporary history entry before running a
-selection. Back, Escape, backdrop, the close button, and a handle drag dismiss
-the menu. Changing to desktop also closes it. The menu renders its rows anew
+selection. An action with `keepOpen: true` runs while the menu stays open; use
+it for a filter or a sort order that changes only the menu's own rows. An
+address change it makes with `history.replaceState` belongs to the menu's
+temporary entry: keep `history.state` as it is, and expect the earlier address
+to return when the menu closes without a selection. Back, Escape, backdrop, the
+close button, and a handle drag dismiss the menu. Changing to desktop also
+closes it. The menu renders its rows anew
 each time it opens; keep folds between openings with `expanded` items and an
 `onExpandedChange` handler on the controller. App-to-app navigation replaces
 the registered owner; an old island cannot unregister the new owner's menu.

@@ -249,7 +249,9 @@ The sidebar compound members cover these jobs:
   `SidebarItemStatus`, `SidebarItemAction`, and `SidebarItemActions` compose a
   navigation row;
 - `NavTree` and `NavTree.Item` compose nested folder, mailbox, category, or tag
-  navigation with automatic indentation and keyboard interaction;
+  navigation with automatic indentation and keyboard interaction. A flat
+  `NavTree` also serves a filtered list with the same rows and keys; an item's
+  `description` adds a passive second line, such as a date and tags;
 - `SidebarIconGrid` and `SidebarIconAction` provide compact icon-only actions.
 
 Desktop sidebars are action-first: begin with primary actions or navigation,
@@ -303,8 +305,11 @@ appears, so the label keeps its width and the text or metadata under the
 button fades out. A long label that scrolls on hover stops before the faded
 end. In a row that also shows an always-visible action or a
 `SidebarItemActions` group, the hover action keeps its own slot after them
-instead. Hidden metadata and `SidebarItemActions` take no space until
-revealed. Everything remains visible on touch devices. Actions also stay
+instead. A hover `SidebarItemActions` group that ends the row overlays its end
+the same way, before the chevron of a `NavTree` row, so revealing it moves
+nothing in the row; the fade covers one or two controls. Hidden metadata takes
+no space until revealed. Hidden actions are out of the tab order until their
+row shows them. Everything remains visible on touch devices. Actions also stay
 visible while a menu or other popup they opened is open, so the pointer can
 leave the row to reach it. Keep errors, unread counts, and other important
 state visible with the default `"always"` value.
@@ -569,7 +574,8 @@ type AppWorkspaceNavTreeProps = {
 type AppWorkspaceNavTreeMove = { id: string; parentId: string | null; beforeId: string | null; afterId: string | null };
 
 type AppWorkspaceNavTreeItemProps = {
-  id: string; label: JSX.Element; children?: JSX.Element; href?: string; navigation?: "enhanced" | "document";
+  id: string; label: JSX.Element; description?: JSX.Element; children?: JSX.Element; href?: string;
+  navigation?: "enhanced" | "document";
   replace?: boolean; scroll?: NavigationScrollMode;
   onNavigate?: (event: LinkNavigateEvent) => void | Promise<void>; onSelect?: (event: MouseEvent) => void;
   disabled?: boolean; icon?: string; iconLabel?: string; expandedIcon?: string; meta?: JSX.Element;

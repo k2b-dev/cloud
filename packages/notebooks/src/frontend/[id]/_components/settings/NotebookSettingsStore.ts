@@ -13,35 +13,31 @@ const MAX_PINNED_NOTEBOOKS = 200;
 export type NotebookSettings = {
   lastNoteId: string | null;
   richMode: "rich" | "source";
-  sidebarMode: "simple" | "navigator";
-  navigatorSort: "updated" | "created" | "title";
   treeSort: "updated" | "created" | "title";
 };
 
 type AllNotebookSettings = {
   lastNotebookId: string | null;
   pinnedNotebookIds: string[];
-  sidebarMode: NotebookSettings["sidebarMode"];
   detailPanelOpen: boolean;
   /** Hides the desktop navigation in every notebook, for focused or private writing. */
   navigationHidden: boolean;
   /** Personal editor preference: Tab moves focus instead of indenting. */
   tabMovesFocus: boolean;
-  notebooks: Record<string, Partial<Pick<NotebookSettings, "lastNoteId" | "richMode" | "navigatorSort" | "treeSort">>>;
+  notebooks: Record<string, StoredNotebookSettings>;
 };
+
+type StoredNotebookSettings = Partial<Pick<NotebookSettings, "lastNoteId" | "richMode" | "treeSort">>;
 
 const DEFAULT_SETTINGS: NotebookSettings = {
   lastNoteId: null,
   richMode: "rich",
-  sidebarMode: "simple",
-  navigatorSort: "updated",
   treeSort: "title",
 };
 
 const DEFAULT_ALL: AllNotebookSettings = {
   lastNotebookId: null,
   pinnedNotebookIds: [],
-  sidebarMode: "simple",
   detailPanelOpen: false,
   navigationHidden: false,
   tabMovesFocus: false,
@@ -52,10 +48,6 @@ const DEFAULT_ALL: AllNotebookSettings = {
 
 const writeCookie = (data: AllNotebookSettings) => cookies.writeJsonCookie(COOKIE_NAME, data);
 
-const isSidebarMode = (value: unknown): value is NotebookSettings["sidebarMode"] => value === "simple" || value === "navigator";
-
-const isNavigatorSort = (value: unknown): value is NotebookSettings["navigatorSort"] =>
-  value === "updated" || value === "created" || value === "title";
 const isTreeSort = (value: unknown): value is NotebookSettings["treeSort"] =>
   value === "updated" || value === "created" || value === "title";
 
@@ -64,6 +56,28 @@ const isPublicNotebookId = (value: unknown): value is string => typeof value ===
 const normalizePinnedNotebookIds = (value: unknown): string[] =>
   Array.isArray(value) ? [...new Set(value.filter(isPublicNotebookId))].slice(0, MAX_PINNED_NOTEBOOKS) : [];
 
+const compactNotebookSettings = (settings: Partial<NotebookSettings>): StoredNotebookSettings => {
+  const compact: StoredNotebookSettings = {};
+  if (typeof settings.lastNoteId === "string" && settings.lastNoteId.length > 0) compact.lastNoteId = settings.lastNoteId;
+  if (settings.richMode && settings.richMode !== DEFAULT_SETTINGS.richMode) compact.richMode = settings.richMode;
+  if (isTreeSort(settings.treeSort) && settings.treeSort !== DEFAULT_SETTINGS.treeSort) compact.treeSort = settings.treeSort;
+  return compact;
+};
+
+/**
+ * Keeps the valid, known values of one notebook's stored settings. Values of removed features, such as the sort of
+ * the former Navigator, are dropped, so the next write leaves them out of the cookie.
+ */
+const readNotebookEntry = (value: unknown): StoredNotebookSettings => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const entry = value as Record<string, unknown>;
+  return compactNotebookSettings({
+    lastNoteId: typeof entry.lastNoteId === "string" ? entry.lastNoteId : undefined,
+    richMode: entry.richMode === "source" || entry.richMode === "rich" ? entry.richMode : undefined,
+    treeSort: isTreeSort(entry.treeSort) ? entry.treeSort : undefined,
+  });
+};
+
 const normalizeSettings = (value: unknown): AllNotebookSettings => {
   if (!value || typeof value !== "object" || Array.isArray(value)) return DEFAULT_ALL;
   const parsed = value as Partial<AllNotebookSettings>;
@@ -71,8 +85,9 @@ const normalizeSettings = (value: unknown): AllNotebookSettings => {
   const notebooks =
     rawNotebooks && typeof rawNotebooks === "object" && !Array.isArray(rawNotebooks)
       ? Object.fromEntries(
-          Object.entries(rawNotebooks)
-            .filter(([id, entry]) => id.length > 0 && entry && typeof entry === "object" && !Array.isArray(entry))
+          Object.entries(rawNotebooks as Record<string, unknown>)
+            .map(([id, entry]) => [id, readNotebookEntry(entry)] as const)
+            .filter(([id, entry]) => id.length > 0 && Object.keys(entry).length > 0)
             .slice(-MAX_NOTEBOOK_SETTINGS),
         )
       : {};
@@ -80,7 +95,6 @@ const normalizeSettings = (value: unknown): AllNotebookSettings => {
   return {
     lastNotebookId: typeof parsed.lastNotebookId === "string" ? parsed.lastNotebookId : null,
     pinnedNotebookIds: normalizePinnedNotebookIds(parsed.pinnedNotebookIds),
-    sidebarMode: isSidebarMode(parsed.sidebarMode) ? parsed.sidebarMode : DEFAULT_ALL.sidebarMode,
     detailPanelOpen: parsed.detailPanelOpen === true,
     navigationHidden: parsed.navigationHidden === true,
     tabMovesFocus: parsed.tabMovesFocus === true,
@@ -101,29 +115,7 @@ const parseCookieHeader = (cookieHeader: string | undefined): AllNotebookSetting
   }
 };
 
-const compactNotebookSettings = (
-  settings: Partial<NotebookSettings>,
-): Partial<Pick<NotebookSettings, "lastNoteId" | "richMode" | "navigatorSort" | "treeSort">> => {
-  const compact: Partial<Pick<NotebookSettings, "lastNoteId" | "richMode" | "navigatorSort" | "treeSort">> = {};
-  if (typeof settings.lastNoteId === "string" && settings.lastNoteId.length > 0) compact.lastNoteId = settings.lastNoteId;
-  if (settings.richMode && settings.richMode !== DEFAULT_SETTINGS.richMode) compact.richMode = settings.richMode;
-  if (isNavigatorSort(settings.navigatorSort) && settings.navigatorSort !== DEFAULT_SETTINGS.navigatorSort) {
-    compact.navigatorSort = settings.navigatorSort;
-  }
-  if (isTreeSort(settings.treeSort) && settings.treeSort !== DEFAULT_SETTINGS.treeSort) compact.treeSort = settings.treeSort;
-  return compact;
-};
-
-const notebookSettingsFor = (all: AllNotebookSettings, notebookId: string): Partial<NotebookSettings> => {
-  const value = all.notebooks[notebookId];
-  if (!value || typeof value !== "object") return {};
-  const result: Partial<NotebookSettings> = {};
-  if (typeof value.lastNoteId === "string") result.lastNoteId = value.lastNoteId;
-  if (value.richMode === "source" || value.richMode === "rich") result.richMode = value.richMode;
-  if (isNavigatorSort(value.navigatorSort)) result.navigatorSort = value.navigatorSort;
-  if (isTreeSort(value.treeSort)) result.treeSort = value.treeSort;
-  return result;
-};
+const notebookSettingsFor = (all: AllNotebookSettings, notebookId: string): StoredNotebookSettings => all.notebooks[notebookId] ?? {};
 
 // --- Client-side ---
 
@@ -136,8 +128,6 @@ export const readSettings = (notebookId: string): NotebookSettings => {
   return {
     ...DEFAULT_SETTINGS,
     ...notebook,
-    sidebarMode: isSidebarMode(all.sidebarMode) ? all.sidebarMode : DEFAULT_SETTINGS.sidebarMode,
-    navigatorSort: isNavigatorSort(notebook.navigatorSort) ? notebook.navigatorSort : DEFAULT_SETTINGS.navigatorSort,
     treeSort: isTreeSort(notebook.treeSort) ? notebook.treeSort : DEFAULT_SETTINGS.treeSort,
   };
 };
@@ -146,8 +136,7 @@ export const readSettings = (notebookId: string): NotebookSettings => {
  * Merges and writes notebook-specific UI settings for the current notebook id.
  */
 export const writeSettings = (notebookId: string, patch: Partial<NotebookSettings>) => {
-  const hasCookieBackedPatch =
-    "lastNoteId" in patch || "richMode" in patch || "sidebarMode" in patch || "navigatorSort" in patch || "treeSort" in patch;
+  const hasCookieBackedPatch = "lastNoteId" in patch || "richMode" in patch || "treeSort" in patch;
   if (!hasCookieBackedPatch) return;
   const all = readCookie();
   const current = readSettings(notebookId);
@@ -161,7 +150,6 @@ export const writeSettings = (notebookId: string, patch: Partial<NotebookSetting
 
   writeCookie({
     ...all,
-    sidebarMode: next.sidebarMode,
     notebooks: boundedNotebooks,
   });
 };
@@ -226,8 +214,6 @@ export const parseSettings = (cookieHeader: string | undefined, notebookId: stri
   return {
     ...DEFAULT_SETTINGS,
     ...notebook,
-    sidebarMode: isSidebarMode(all.sidebarMode) ? all.sidebarMode : DEFAULT_SETTINGS.sidebarMode,
-    navigatorSort: isNavigatorSort(notebook.navigatorSort) ? notebook.navigatorSort : DEFAULT_SETTINGS.navigatorSort,
     treeSort: isTreeSort(notebook.treeSort) ? notebook.treeSort : DEFAULT_SETTINGS.treeSort,
   };
 };

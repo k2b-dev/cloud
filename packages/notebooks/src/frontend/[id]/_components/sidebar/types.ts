@@ -1,7 +1,7 @@
 import type { DateContext } from "@k2b/stdlib";
-import type { NavigatorQuery } from "../../../../lib/navigator-url";
 import type { NoteDeletePermission } from "../../../../lib/note-delete-permission";
 import type { PresentationMode } from "../../../../lib/presentation-mode";
+import type { SidebarFilter } from "../../../../lib/sidebar-filter";
 import type { NotebookSettings } from "../settings/NotebookSettingsStore";
 
 /** Notebook metadata (matches backend NotebookSchema) */
@@ -55,12 +55,13 @@ export type NotebookContext = {
   attachmentCount: number;
   /** Current user's favorite public note IDs for this notebook. */
   favoriteNoteIds: string[];
-  /** Tag summaries for the navigator sidebar. */
+  /** Tag summaries for the sidebar's tag filter. */
   tags: TagSummary[];
   /** Workspace event cursor captured before the SSR snapshot was loaded. */
   workspaceCursor: string | null;
   dateConfig: DateContext;
-  navigatorQuery: NavigatorQuery;
+  /** The sidebar's list filter from the address; empty shows the note tree. */
+  sidebarFilter: SidebarFilter;
   /** Explicit URL choice, preserved across workspace note navigation. */
   presentationMode?: PresentationMode;
 };

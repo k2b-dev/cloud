@@ -41,9 +41,9 @@ const target = (noteShortId: string, hash = ""): NoteNavigationTarget => ({
   hash,
 });
 
-const setup = () => {
+const setup = (initialHref = target("note-a").canonicalHref) => {
   let currentNote = "note-a";
-  let currentHref = target(currentNote).canonicalHref;
+  let currentHref = initialHref;
   const sources: string[] = [];
   const order: string[] = [];
   const coordinator = createNoteNavigationCoordinator({
@@ -124,6 +124,15 @@ describe("note navigation coordinator", () => {
     expect(await state.coordinator.navigate(target("note-a"), false)).toEqual({ kind: "applied", href: target("note-a").canonicalHref });
     expect(state.sources).toEqual([]);
     expect(state.order).toEqual([`history:${href}`, "heading:note-a#heading-restore", "heading:note-a#heading-restore"]);
+  });
+
+  test("a link to a heading of the open note keeps the sidebar filter of the address", async () => {
+    const state = setup("/app/notebooks/book/notes/note-a?view=favorites");
+    const href = `${target("note-a").canonicalHref}?view=favorites#heading-restore`;
+
+    // A note link, unlike `#heading-…`, names no filter; the list on screen stays all the same.
+    expect(await state.coordinator.navigate(target("note-a", "#heading-restore"), true)).toEqual({ kind: "applied", href });
+    expect(state.order).toEqual([`history:${href}`, "heading:note-a#heading-restore"]);
   });
 
   test("switches to another note in place and opens its heading after the note applies", async () => {

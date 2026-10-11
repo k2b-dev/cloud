@@ -414,6 +414,8 @@ export type AppWorkspaceNavTreeMove = {
 export type AppWorkspaceNavTreeItemProps = {
   id: string;
   label: JSX.Element;
+  /** Passive second line under the label, such as a date; keep controls in actions. */
+  description?: JSX.Element;
   children?: JSX.Element;
   href?: string;
   /** Document navigation by default; opt into enhanced navigation only when the owning island applies the target state. */
@@ -1428,9 +1430,21 @@ const AppWorkspaceNavTree = ((props: AppWorkspaceNavTreeProps) => {
                 <i class={iconClass(rowIcon())} />
               </span>
             </Show>
-            <span class="k2b-app-workspace__sidebar-item-label">
-              <span class="k2b-app-workspace__sidebar-item-label-text">{item.label}</span>
-            </span>
+            <Show
+              when={item.description !== undefined}
+              fallback={
+                <span class="k2b-app-workspace__sidebar-item-label">
+                  <span class="k2b-app-workspace__sidebar-item-label-text">{item.label}</span>
+                </span>
+              }
+            >
+              <span class="k2b-app-workspace__sidebar-item-copy">
+                <span class="k2b-app-workspace__sidebar-item-label">
+                  <span class="k2b-app-workspace__sidebar-item-label-text">{item.label}</span>
+                </span>
+                <span class="k2b-app-workspace__sidebar-item-description">{item.description}</span>
+              </span>
+            </Show>
             <Show when={item.meta !== undefined}>
               <span
                 class={`k2b-app-workspace__sidebar-item-meta ${hasChildren() ? "" : "k2b-app-workspace__nav-tree-leaf-meta"}`}

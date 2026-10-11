@@ -166,7 +166,7 @@ const WorkspaceDemo = () => {
                   />
                   <AppWorkspace.NavTree.Item id="maintenance" label="Maintenance" icon="ti ti-tool" meta={4} />
                 </AppWorkspace.NavTree.Item>
-                <AppWorkspace.NavTree.Item id="activity" label="Activity" icon="ti ti-history" />
+                <AppWorkspace.NavTree.Item id="activity" label="Activity" description="Updated 2 min ago" icon="ti ti-history" />
                 <AppWorkspace.NavTree.Item id="tags" label="Tags" icon="ti ti-tags">
                   <For each={tags()}>
                     {(tag) => <AppWorkspace.NavTree.Item id={tag.id} label={tag.label} icon="ti ti-tag" meta={tag.meta} movable />}
@@ -259,7 +259,7 @@ const [navigationHidden, setNavigationHidden] = createSignal(false);
           <AppWorkspace.NavTree.Item id="available" label="Available" meta={8} />
           <AppWorkspace.NavTree.Item id="maintenance" label="Maintenance" meta={4} />
         </AppWorkspace.NavTree.Item>
-        <AppWorkspace.NavTree.Item id="activity" label="Activity" icon="ti ti-history" />
+        <AppWorkspace.NavTree.Item id="activity" label="Activity" description="Updated 2 min ago" icon="ti ti-history" />
       </AppWorkspace.NavTree>
     </AppWorkspace.SidebarSection>
   </AppWorkspace.Sidebar>

@@ -37,13 +37,32 @@ type NavigationEntry = {
 /** Serializable presentation. Functions stay with the controller's owning island. */
 export type NavigationItem = NavigationEntry &
   (
-    | { href: string; action?: string; navigation?: "document" | "enhanced"; scroll?: NavigationScrollMode; section?: never }
-    | { action: string; href?: never; navigation?: never; scroll?: never; section?: never }
+    | {
+        href: string;
+        action?: string;
+        navigation?: "document" | "enhanced";
+        scroll?: NavigationScrollMode;
+        section?: never;
+        keepOpen?: never;
+      }
+    | {
+        action: string;
+        href?: never;
+        navigation?: never;
+        scroll?: never;
+        section?: never;
+        /**
+         * Runs the action while the host's menu stays open, without `beforeSelect`. Only for an action that changes
+         * what the menu shows, such as a filter or a sort order; an action that opens something lets the menu close.
+         */
+        keepOpen?: boolean;
+      }
     | {
         href?: never;
         action?: never;
         navigation?: never;
         scroll?: never;
+        keepOpen?: never;
         children: readonly NavigationItem[];
         /** Shows the group as a plain heading over its rows, always open and not indented, instead of a disclosure. */
         section?: boolean;

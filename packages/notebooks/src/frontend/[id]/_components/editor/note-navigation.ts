@@ -1,6 +1,6 @@
 import { anchorHash, parseNoteLink } from "../../../../lib/heading-anchors";
-import { hasOnlyNavigatorQuery } from "../../../../lib/navigator-url";
 import { inheritPresentationMode, requestedPresentationMode } from "../../../../lib/presentation-url";
+import { hasOnlySidebarFilterQuery, parseSidebarFilter, withSidebarFilter } from "../../../../lib/sidebar-filter";
 import type { SoftNavigationResult } from "../../../lib/soft-navigation";
 
 export type NoteNavigationTarget = {
@@ -23,7 +23,7 @@ export const resolveSameNotebookNoteTarget = (href: string, currentHref: string,
     const params = new URLSearchParams(url.searchParams);
     if (requestedPresentationMode(params)) params.delete("mode");
     // The editor opens a heading of a note itself; any other fragment is left to the browser.
-    if (url.origin !== current.origin || (url.hash && !headingFromHash(url.hash)) || !hasOnlyNavigatorQuery(params)) return null;
+    if (url.origin !== current.origin || (url.hash && !headingFromHash(url.hash)) || !hasOnlySidebarFilterQuery(params)) return null;
     const match = url.pathname.match(/^\/app\/notebooks\/([^/]+)\/notes\/([^/]+)$/);
     if (!match || decodeURIComponent(match[1]!) !== notebookId) return null;
     const noteShortId = decodeURIComponent(match[2]!);
@@ -63,7 +63,9 @@ export const createNoteNavigationCoordinator = (options: Options) => {
         pending = undefined;
         options.setSource(committedSource);
       }
-      const href = `${target.canonicalHref}${target.hash}`;
+      // The open note stays, so the sidebar keeps its list: only another note leaves the filter to its link.
+      const current = parseSidebarFilter(new URL(options.currentHref(), "https://notebooks.invalid").searchParams);
+      const href = `${withSidebarFilter(target.canonicalHref, current)}${target.hash}`;
       if (push && options.currentHref() !== href) options.pushHistory(href);
       // Every link to a heading of the open note moves there, also when the address already names it.
       options.showHeading(target.noteShortId, headingFromHash(target.hash));

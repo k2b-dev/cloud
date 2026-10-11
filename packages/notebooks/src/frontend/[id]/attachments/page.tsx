@@ -17,6 +17,7 @@ import { toPublicAttachment } from "@/api/public-resources";
 import { notebooksService } from "@/service";
 import { ssr } from "../../../config";
 import { requestedPresentationMode, withPresentationMode } from "../../../lib/presentation-url";
+import { parseSidebarFilter } from "../../../lib/sidebar-filter";
 import { buildAttachmentsUrl } from "../../params";
 import AttachmentsOverview from "../_components/attachments-overview/AttachmentsOverview.island";
 import RememberNotebook from "../_components/RememberNotebook.island";
@@ -106,7 +107,7 @@ export default ssr<AuthContext>(async (c) => {
     tags,
     workspaceCursor,
     dateConfig: getDateConfig(c),
-    navigatorQuery: {},
+    sidebarFilter: parseSidebarFilter(new URL(c.req.url).searchParams),
     presentationMode,
   };
 
@@ -122,7 +123,7 @@ export default ssr<AuthContext>(async (c) => {
       ]}
     >
       <RememberNotebook notebookId={notebook.shortId} />
-      <AppWorkspace mobileSurface="flush" class="flex-1 min-h-0">
+      <AppWorkspace mobileSurface="flush" class="notebooks-workspace flex-1 min-h-0">
         <WorkspaceEventBridge notebookId={notebook.shortId} appUrl={appUrl} initialCursor={workspaceCursor} />
         <NotebookSidebar ctx={ctx} />
         <AppWorkspace.Content>

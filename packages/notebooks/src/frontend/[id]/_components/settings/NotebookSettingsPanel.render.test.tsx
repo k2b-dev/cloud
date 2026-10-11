@@ -38,9 +38,14 @@ describe("Notebook settings", () => {
   test("view preferences no longer offer executable scripting", () => {
     const html = renderToString(() => <FeaturesSection notebook={notebook} isAdmin onNotebookChange={() => undefined} />);
     expect(html).toContain("Default view");
-    expect(html).toContain("Your view");
     expect(html).not.toContain("Enable script blocks");
     expect(html).not.toContain("Enable scripting");
+  });
+  test("no longer offers a choice of sidebar layout", () => {
+    const html = renderToString(() => <FeaturesSection notebook={notebook} isAdmin onNotebookChange={() => undefined} />);
+    expect(html).not.toContain("Sidebar mode");
+    expect(html).not.toContain("Navigator");
+    expect(html).not.toContain('role="radiogroup"');
   });
   test("offers the personal Tab key preference, off by default, with the keyboard escape", () => {
     const html = renderToString(() => <FeaturesSection notebook={notebook} isAdmin={false} onNotebookChange={() => undefined} />);

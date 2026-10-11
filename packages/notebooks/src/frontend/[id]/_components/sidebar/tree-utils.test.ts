@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { homepageFirst, type NoteTreeSort, sortNoteTree } from "./tree-utils";
+import { filterNotes, homepageFirst, type NoteTreeSort, RECENT_NOTE_LIMIT, sortNoteTree } from "./tree-utils";
 import type { NoteTreeNode } from "./types";
 
 const note = (
@@ -88,5 +88,60 @@ describe("homepageFirst", () => {
 
   test("keeps the tree as it is without a homepage", () => {
     expect(homepageFirst(source, null)).toBe(source);
+  });
+});
+
+describe("filterNotes", () => {
+  const tagged = (node: NoteTreeNode, contentMd: string): NoteTreeNode => ({ ...node, contentMd });
+  const tree = [
+    tagged(note("Old001", "Old", "2026-01-01T00:00:00.000Z", "2026-01-02T00:00:00.000Z"), "#garden notes"),
+    note("Branch", "Branch", "2026-01-01T00:00:00.000Z", "2026-01-03T00:00:00.000Z", [
+      tagged(note("Child1", "Child", "2026-01-01T00:00:00.000Z", "2026-01-05T00:00:00.000Z"), "Plant #Garden/roses soon"),
+      tagged(note("Code01", "Code", "2026-01-01T00:00:00.000Z", "2026-01-04T00:00:00.000Z"), "`#garden` is only an example"),
+    ]),
+  ];
+
+  test("lists the most recently changed notes first for the recent list, sub-notes included", () => {
+    expect(ids(filterNotes(tree, { view: "recents" }, new Set()))).toEqual(["Child1", "Code01", "Branch", "Old001"]);
+  });
+
+  test("lists only favorites, newest first", () => {
+    expect(ids(filterNotes(tree, { view: "favorites" }, new Set(["Old001", "Child1"])))).toEqual(["Child1", "Old001"]);
+  });
+
+  test("matches tags as the tag index does: case-insensitive, nested tags apart, and nothing inside code", () => {
+    expect(ids(filterNotes(tree, { view: "tag", tag: "garden" }, new Set()))).toEqual(["Old001"]);
+    expect(ids(filterNotes(tree, { view: "tag", tag: "garden/roses" }, new Set()))).toEqual(["Child1"]);
+  });
+
+  test("lists nothing without a filter, because the sidebar shows the tree", () => {
+    expect(filterNotes(tree, {}, new Set(["Old001"]))).toEqual([]);
+  });
+
+  test("keeps the rows on screen in place: a changed note stays, a new match joins at the end, a lost one leaves", () => {
+    const favorites = new Set(["Old001", "Child1", "Code01"]);
+    const shown = ids(filterNotes(tree, { view: "favorites" }, favorites));
+    expect(shown).toEqual(["Child1", "Code01", "Old001"]);
+    // Someone saves Old001; Branch becomes a favorite; Code01 stops being one.
+    const saved = [{ ...tree[0]!, updatedAt: "2026-02-01T00:00:00.000Z" }, tree[1]!];
+    const next = new Set(["Old001", "Child1", "Branch"]);
+    expect(ids(filterNotes(saved, { view: "favorites" }, next, shown))).toEqual(["Child1", "Old001", "Branch"]);
+    // Without the list on screen, as when the filter opens again, the newest comes first.
+    expect(ids(filterNotes(saved, { view: "favorites" }, next))).toEqual(["Old001", "Child1", "Branch"]);
+  });
+
+  test("Recent lists the twelve most recently changed notes and keeps them while it stays open", () => {
+    const many = Array.from({ length: 14 }, (_, index) => {
+      const day = String(index + 1).padStart(2, "0");
+      return note(`Note${day}`, `Note ${day}`, "2026-01-01T00:00:00.000Z", `2026-02-${day}T00:00:00.000Z`);
+    });
+    const shown = ids(filterNotes(many, { view: "recents" }, new Set()));
+    expect(shown).toHaveLength(RECENT_NOTE_LIMIT);
+    expect(shown.slice(0, 2)).toEqual(["Note14", "Note13"]);
+    expect(shown.at(-1)).toBe("Note03");
+    // Note01 changes now: the open list keeps its notes in their places.
+    const changed = many.map((item) => (item.id === "Note01" ? { ...item, updatedAt: "2026-03-01T00:00:00.000Z" } : item));
+    expect(ids(filterNotes(changed, { view: "recents" }, new Set(), shown))).toEqual(shown);
+    expect(ids(filterNotes(changed, { view: "recents" }, new Set()))[0]).toBe("Note01");
   });
 });

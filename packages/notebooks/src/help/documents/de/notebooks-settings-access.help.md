@@ -71,7 +71,7 @@ Für diese Personen bleiben **Löschen** und **Notiz sperren** im Notizmenü sic
 
 :::reference
 - **Notizbuch → Allgemein:** Name, Symbol, Beschreibung, Startseite und die Liquid-Vorlage für die H1 neuer leerer Notizen. Prüfe die Fußleiste und speichere oder verwirf dann deine Änderungen.
-- **Notizbuch → Ansicht und Verhalten:** Personen mit Zugriff **Verwalten** wählen die gemeinsame Standardansicht. Dieser Browser speichert dein Layout der Seitenleiste und deine Wahl für die Tab-Taste, und beides gilt sofort.
+- **Notizbuch → Ansicht und Verhalten:** Personen mit Zugriff **Verwalten** wählen die gemeinsame Standardansicht. Dieser Browser speichert deine Wahl für die Tab-Taste, und sie gilt sofort.
 - **Freigabe → Zugriff:** Braucht Zugriff **Verwalten**. Ändere, wer Zugriff hat, und lege fest, wer Notizen löschen und sperren darf. Änderungen werden sofort gespeichert.
 - **Freigabe → API-Schlüssel:** Braucht Zugriff **Verwalten**. API-Schlüssel für Integrationen, die nur mit diesem Notizbuch arbeiten. Änderungen werden sofort gespeichert, und Notebooks zeigt einen neuen Schlüssel nur einmal.
 - **Daten → Export und Snapshots:** Braucht Zugriff **Verwalten**. Übertragbare ZIP-Exporte, die Einrichtung von S3-Snapshots, manuelle Uploads und die letzten Snapshot-Läufe. Speichere die Snapshot-Einrichtung über die Fußleiste.

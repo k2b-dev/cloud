@@ -76,6 +76,7 @@ describe("@k2b/ui complete advanced layout migrations", () => {
                                     return createComponent(AppWorkspace.NavTree.Item, {
                                       id: "available",
                                       label: "Available",
+                                      description: "Updated today",
                                       meta: "8",
                                       metaVisibility: "hover",
                                       get actions() {
@@ -127,6 +128,10 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     );
 
     expect(html).toContain("data-k2b-app-workspace");
+    // A tree item's description is a second line under its label.
+    expect(html).toMatch(
+      /k2b-app-workspace__sidebar-item-copy"><span class="k2b-app-workspace__sidebar-item-label"><span class="k2b-app-workspace__sidebar-item-label-text">Available<\/span><\/span><span class="k2b-app-workspace__sidebar-item-description">Updated today<\/span>/,
+    );
     expect(html).not.toContain("k2b-app-workspace__sidebar-mobile");
     expect(html).not.toContain('data-mobile="stacked"');
     expect(html).toContain("Inventory");

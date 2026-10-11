@@ -99,6 +99,15 @@ action or following a link. Returning `false` cancels selection. Cloud uses it
 to complete the temporary menu history entry before committing navigation.
 Standalone hosts can compose this renderer with [BottomSheet](/en/ui/layout/bottom-sheet).
 
+Set `keepOpen: true` on an action that changes only what the menu shows, such
+as a filter or a sort order. It runs without `beforeSelect`, so the menu stays
+open and shows the result. Leave it off for an action that opens something,
+such as a dialog or a new item, and for every link.
+
+```tsx
+{ id: "favorites", label: "Favorites", action: "filter:favorites", keepOpen: true, active: showsFavorites() }
+```
+
 `createNavigation({ items, onAction?, onNavigate?, onExpandedChange? })` returns
 `items`, `onNavigate`, `onExpandedChange`, and `activate(id)`. `activate`
 resolves the latest enabled item before calling its action.

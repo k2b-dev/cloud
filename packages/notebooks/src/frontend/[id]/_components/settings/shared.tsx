@@ -2,13 +2,6 @@ import { useLocale } from "@k2b/ui";
 import { Match, Switch } from "solid-js";
 import { notebookSettingsMessages } from "./messages";
 
-export const settingsChoiceClass = (active: boolean) =>
-  `relative rounded-[var(--ui-radius-surface)] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-4 text-left shadow-[var(--ui-shadow-surface)] transition-[background-color,box-shadow,color] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 ${
-    active
-      ? "text-blue-700 dark:text-blue-300 before:absolute before:left-2 before:top-4 before:h-3.5 before:w-0.5 before:rounded-full before:bg-blue-500 dark:before:bg-blue-400"
-      : "text-secondary"
-  }`;
-
 export function SaveStatus(props: { loading: boolean; saved: boolean; error?: string | null; label?: string }) {
   const locale = useLocale();
   const t = () => notebookSettingsMessages.resolve([locale()]).t;

@@ -1,5 +1,5 @@
 import type { DateContext } from "@k2b/stdlib";
-import { AppWorkspace, useLocale } from "@k2b/ui";
+import { IconButton, useLocale } from "@k2b/ui";
 import { notebookWorkspaceMessages } from "../../messages";
 import type { Notebook, NoteTreeNode } from "../sidebar/types";
 import { openNotebookSettingsDialog } from "./NotebookSettingsPanel";
@@ -8,7 +8,6 @@ type Props = {
   notebook: Notebook;
   tree: NoteTreeNode[];
   permission: string;
-  viewTransitionName?: string;
   dateConfig: DateContext;
 };
 
@@ -29,13 +28,8 @@ export default function NotebookSettingsButton(props: Props) {
   };
 
   return (
-    <AppWorkspace.SidebarItem
-      icon="ti ti-settings"
-      onClick={() => void open()}
-      title={t().settings}
-      viewTransitionName={props.viewTransitionName}
-    >
-      {t().settings}
-    </AppWorkspace.SidebarItem>
+    <IconButton label={t().notebookSettings} tooltip={t().settings} onClick={() => void open()}>
+      <i class="ti ti-settings" />
+    </IconButton>
   );
 }
