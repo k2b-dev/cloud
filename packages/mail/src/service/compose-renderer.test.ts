@@ -487,6 +487,47 @@ describe("compose renderer", () => {
     expect(validateComposeCss(`.mail-content { color: red; }\n/*${"a".repeat(33 * 1024)}*/`).ok).toBe(false);
   });
 
+  test("rejects raw line breaks inside CSS strings and drops only the unsafe stored declaration", () => {
+    for (const lineBreak of ["\n", "\r"]) {
+      const value = `"a${lineBreak};display:none;position:fixed;inset:0;${lineBreak}"`;
+      const customCss = `p {\n  font-family: ${value};\n}`;
+      expect(validateComposeCss(customCss).ok).toBe(false);
+      const stored = storedComposeCss(`p {\n  color: blue;\n  font-family: ${value};\n}`);
+      expect(stored.css).toContain("color: blue");
+      expect(stored.css).not.toContain("font-family");
+      expect(stored.formattingWarnings).toEqual([{ code: "ignored_mailbox_css", property: "font-family" }]);
+      const rendered = renderComposeContent({ body: "hello", format: "markdown", customCss, context, renderLiquid: false });
+      expect(rendered.ok).toBe(true);
+      if (!rendered.ok) continue;
+      for (const removed of ["display:none", "position", "inset"]) expect(rendered.data.html).not.toContain(removed);
+    }
+  });
+
+  test("rejects mixed quotes inside CSS strings before inlining", () => {
+    for (const customCss of [
+      `p { font-family: "a'; color:red !important; x:'"; }`,
+      `p { font-family: 'a"; color:red !important; x:"'; }`,
+    ]) {
+      expect(validateComposeCss(customCss)).toMatchObject({
+        ok: false,
+        error: { message: 'CSS value for "font-family" is not allowed' },
+      });
+      const stored = storedComposeCss(customCss);
+      expect(stored.css).not.toContain("font-family");
+      expect(stored.formattingWarnings).toEqual([{ code: "ignored_mailbox_css", property: "font-family" }]);
+      const rendered = renderComposeContent({ body: "hello", format: "markdown", customCss, context, renderLiquid: false });
+      expect(rendered.ok).toBe(true);
+      if (!rendered.ok) continue;
+      for (const removed of ["!important", "color:red"]) expect(rendered.data.html).not.toContain(removed);
+    }
+  });
+
+  test("allows line breaks outside CSS strings and separate strings with different quotes", () => {
+    for (const css of ["p { font-family: Arial,\n  sans-serif; }", `p { font-family: "Segoe UI", 'Arial', sans-serif; }`]) {
+      expect(validateComposeCss(css).ok).toBe(true);
+    }
+  });
+
   test("renders old mailbox designs without unsafe values while saving stays strict", () => {
     const customCss = String.raw`.mail-content { color: #123456; font-family: "\5FAE\8F6F\96C5\9ED1", sans-serif; }
 h1 { background: image-set("https://example.test/a.png" 1x); font-size: 30px; }`;

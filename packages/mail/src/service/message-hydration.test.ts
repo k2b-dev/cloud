@@ -26,6 +26,31 @@ describe("incoming mail HTML", () => {
     }
   });
 
+  test("drops CSS strings with encoded or raw line breaks before they can introduce declarations", () => {
+    for (const lineBreak of ["&#10;", "\n", "\r"]) {
+      for (const fontFamily of [
+        `'a${lineBreak};display:none;position:fixed;inset:0;${lineBreak}'`,
+        `'x\\'${lineBreak};display:none;position:fixed;inset:0;${lineBreak}\\''`,
+      ]) {
+        const sanitized = sanitizeIncomingMailHtmlWithRemoteImages(`<p style="font-family:${fontFamily}">x</p>`);
+        for (const removed of ["display:none", "position", "inset"]) expect(sanitized.html).not.toContain(removed);
+      }
+    }
+    const trailingEscape = sanitizeIncomingMailHtmlWithRemoteImages('<p style="font-family:Arial\\">x</p>');
+    expect(trailingEscape.html).not.toContain("font-family");
+  });
+
+  test("keeps mixed quotes inside incoming CSS strings and line breaks outside strings", () => {
+    const quoted = sanitizeIncomingMailHtmlWithRemoteImages(`<p style="font-family:&quot;Grandma's Font&quot;, serif">x</p>`);
+    expect(quoted.html).toContain("font-family:&quot;Grandma's Font&quot;, serif");
+    const multiline = sanitizeIncomingMailHtmlWithRemoteImages('<p style="font-family:Arial,\n sans-serif">x</p>');
+    expect(multiline.html).toContain("font-family:Arial,\n sans-serif");
+    const escapedQuote = sanitizeIncomingMailHtmlWithRemoteImages(`<p style="font-family:'O\\'Reilly Sans', serif">x</p>`);
+    expect(escapedQuote.html).toContain("font-family:'O\\'Reilly Sans', serif");
+    const escapedFont = sanitizeIncomingMailHtmlWithRemoteImages('<p style="font-family:\\5FAE\\8F6F, sans-serif">x</p>');
+    expect(escapedFont.html).toContain("font-family:\\5FAE\\8F6F, sans-serif");
+  });
+
   test("keeps inline-block buttons so their padding shows, but never hides content", () => {
     const sanitized = sanitizeIncomingMailHtml(
       '<a href="https://example.com" style="display: inline-block; padding: 14px 36px; color: white;">Sign in</a><div style="display:none">hidden</div>',

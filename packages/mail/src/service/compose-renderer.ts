@@ -55,6 +55,8 @@ const INLINED_EMAIL_SANITIZE_OPTIONS = {
 } satisfies sanitizeHtml.IOptions;
 // A backslash starts a CSS escape, which can spell any function name, such as `u\72l(`.
 const UNSAFE_CSS_VALUE = /(?:url|expression|var|attr)\s*\(|[{}@\\]|[\u0000-\u0008\u000b\u000c\u000e-\u001f]/i;
+// juice inlines every double quote as a single quote, so a quoted string must not contain the other kind of quote.
+const INLINE_SAFE_CSS_QUOTES = /^(?:[^"']|"[^"']*"|'[^"']*')*$/;
 
 /**
  * The built-in design, inlined before the mailbox CSS. It styles only the message, so its element rules need
@@ -120,7 +122,11 @@ const composeCssNodeError = (node: postcss.ChildNode): string | null => {
   if (!EMAIL_INLINE_STYLE_PROPERTY_SET.has(property)) return `CSS property "${property}" is not allowed`;
   if (node.important) return "!important is not allowed in email CSS";
   if (sourceBytes(node.value) > MAX_CSS_VALUE_BYTES) return `CSS value for "${property}" is too long`;
-  if (UNSAFE_CSS_VALUE.test(node.value) || !allowedEmailInlineStyleValue(property, node.value)) {
+  if (
+    UNSAFE_CSS_VALUE.test(node.value) ||
+    !INLINE_SAFE_CSS_QUOTES.test(node.value) ||
+    !allowedEmailInlineStyleValue(property, node.value)
+  ) {
     return `CSS value for "${property}" is not allowed`;
   }
   return null;
