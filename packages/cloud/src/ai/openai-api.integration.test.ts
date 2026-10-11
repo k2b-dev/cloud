@@ -4,6 +4,7 @@ import { sql } from "bun";
 import { Hono } from "hono";
 import { websocket } from "hono/bun";
 import { z } from "zod";
+import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
 import { createCoreApiRouter } from "../api";
@@ -43,6 +44,8 @@ const provider: Provider = {
   },
   async *stream() {},
 };
+// Bun's WebSocket takes handshake headers, which the DOM type does not declare.
+const BunWebSocket = WebSocket as unknown as new (url: string, options: Bun.WebSocketOptions) => WebSocket;
 const unusedNotification = async () => {
   throw new Error("No notifications in this fixture");
 };
@@ -102,18 +105,11 @@ suite("models-only API identity and inference boundaries", () => {
       );
 
       // Live uses a protocol refusal after upgrade, rather than an HTTP authentication error.
-      const server = Bun.serve({
-        hostname: "127.0.0.1",
-        port: 0,
-        websocket,
-        fetch: (request, server) => {
-          const liveHeaders = new Headers(request.headers);
-          liveHeaders.set("Authorization", headers.authorization);
-          return router.fetch(new Request(request, { headers: liveHeaders }), server);
-        },
-      });
+      const server = Bun.serve({ hostname: "127.0.0.1", port: 0, websocket, fetch: router.fetch });
       try {
-        const socket = new WebSocket(`ws://127.0.0.1:${server.port}/api/ai/live`);
+        const socket = new BunWebSocket(`ws://127.0.0.1:${server.port}/api/ai/live`, {
+          headers: { authorization: headers.authorization, "x-forwarded-for": uniqueCallerAddress() },
+        });
         const refusal = await new Promise<{ frame: unknown; code: number }>((resolve, reject) => {
           let frame: unknown;
           const timeout = setTimeout(() => {
