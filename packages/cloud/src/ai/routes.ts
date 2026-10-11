@@ -1353,6 +1353,7 @@ export const aiRoutes = (() => {
           "Content-Type": stored.mediaType || "application/octet-stream",
           "Content-Disposition": `attachment; filename="${filename}"`,
           "Content-Length": String(stored.size),
+          "X-Cloud-Ai-File-Origin": stored.origin,
           "Cache-Control": "private, no-store",
         });
       })

@@ -8,8 +8,10 @@ import { hasInterface, LIMITS } from "./contracts";
 import { lintApp } from "./html/compose";
 import { type HttpHost, runHttp } from "./http-host";
 import { type ApproveCapability, runCapability } from "./runtime/capabilities";
+import { CloudError, cloudError } from "./runtime/errors";
 import { type ArtifactSession, createArtifactSession } from "./runtime/session";
 import { sharedStorage } from "./runtime/shared-storage";
+import { ViewRefSchema } from "./runtime/views";
 import { appTab, type WorkspaceTab } from "./workspace-state";
 
 const Claim = z.discriminatedUnion("status", [
@@ -49,7 +51,8 @@ function inspect(runId: string, entry: Entry) {
   const output = state.output === undefined ? null : JSON.stringify(state.output);
   return {
     userVisible: false,
-    delivery: "Return the result, use code_export then present for files, or show an HTML app with code_present or code_open.",
+    delivery:
+      "Show views from cloud.view.* with present({path}); never retype their values. Return key figures, use code_export then present for files, or show an HTML app with code_present or code_open.",
     runId,
     id: entry.artifactId,
     revision: entry.artifactId ? entry.revision : undefined,
@@ -65,6 +68,7 @@ function inspect(runId: string, entry: Entry) {
     output: output === null ? null : text(output, 16000),
     outputTruncated: output !== null && output.length > 16000,
     files: state.files,
+    views: state.views,
   };
 }
 
@@ -152,13 +156,14 @@ export function createArtifactAgentRuntime(
     input: CodeRuntimeInput,
     conversationId: string,
     callId: string,
+    turnId: string,
     signal: AbortSignal,
     invocation?: Awaited<ReturnType<typeof artifactClient.action>>,
   ): Promise<unknown> {
     if (input.operation === "action") {
       const { operation, ...request } = input;
       const prepared = await artifactClient.action(request, conversationId, signal);
-      return execute({ operation: "run", id: input.id, inputPaths: [] }, conversationId, callId, signal, prepared);
+      return execute({ operation: "run", id: input.id, inputPaths: [] }, conversationId, callId, turnId, signal, prepared);
     }
     if (input.operation === "secret") {
       if (!httpHost?.secret)
@@ -188,6 +193,7 @@ export function createArtifactAgentRuntime(
             state.pendingRequests ||
             state.approvalPending ||
             state.files.length ||
+            state.views.length ||
             state.work?.status === "running"
           )
             continue;
@@ -243,6 +249,36 @@ export function createArtifactAgentRuntime(
       let session: ArtifactSession;
       try {
         session = createArtifactSession(container, compiled, {
+          ...(invocation
+            ? {}
+            : {
+                view: async (spec: unknown, index: number, signal: AbortSignal) => {
+                  try {
+                    const response = await fetch("/api/assistant/artifacts/runtime/views", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      signal,
+                      body: JSON.stringify({ conversationId, turnId, runId: callId, index, view: spec }),
+                    });
+                    const result: unknown = await response.json();
+                    if (!response.ok) {
+                      // The route's code (INVALID_INPUT, STORAGE_FULL, CONFLICT) keeps its meaning for the script.
+                      const body = z.object({ code: z.string().optional(), message: z.string().optional() }).catch({}).parse(result);
+                      throw cloudError({
+                        code: body.code,
+                        status: response.status,
+                        message: body.message ?? `View could not be saved (HTTP ${response.status}).`,
+                      });
+                    }
+                    const parsed = ViewRefSchema.safeParse(result);
+                    if (!parsed.success) throw new CloudError("unavailable", "The view service returned an invalid reference.");
+                    return parsed.data;
+                  } catch (error) {
+                    if (error instanceof CloudError) throw error;
+                    throw new CloudError("unavailable", "The view could not be saved.");
+                  }
+                },
+              }),
           ai: (request, signal) => artifactClient.ai(request, { resourceId: dataId, conversationId }, signal),
           pdf: (request, signal) => artifactClient.pdf(request, { resourceId: dataId, conversationId }, signal),
           http: (request, signal) => {
@@ -378,7 +414,7 @@ export function createArtifactAgentRuntime(
     let operationDeadline = Date.now() + 45000;
     try {
       result = await Promise.race([
-        execute(input, conversationId, callId, signal),
+        execute(input, conversationId, callId, turnId, signal),
         new Promise((_, reject) => {
           timer = setInterval(() => {
             const entry = runs.get(["run", "action"].includes(input.operation) ? callId : "runId" in input ? input.runId : "");

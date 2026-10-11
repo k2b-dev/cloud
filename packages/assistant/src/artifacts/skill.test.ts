@@ -186,3 +186,40 @@ test("database setup examples use the Manage tool and expose write rules without
   ).toBe(false);
   expect(CODE_SOURCE_TOOLS.code_storage_list.input.safeParse({ id: "AbC234", scope: "user", area: "files" }).success).toBe(false);
 });
+
+test("the CSV view example converts through the real runtime and validates every stored spec", async () => {
+  const { createViews } = await import("./runtime/views");
+  const { checkCloudAiView, cloudAiViewSummary } = await import("@k2b/cloud/ai/browser");
+  const { parseCsv } = await import("./runtime/sheet-lib");
+  const examples = await blocks("views.md");
+  expect(examples).toHaveLength(1);
+  const specs: unknown[] = [];
+  const view = createViews(
+    async (method, args) => {
+      expect(method).toBe("view.save");
+      const checked = checkCloudAiView(args[0]);
+      expect(checked).not.toHaveProperty("issues");
+      if ("issues" in checked) throw new Error(checked.issues.join("; "));
+      specs.push(checked.view);
+      return { path: `/views/example-${specs.length}.view.json`, ...cloudAiViewSummary(checked.view) };
+    },
+    { locale: "en-US", timeZone: "UTC" },
+    true,
+  );
+  const run = new Function("cloud", examples[0]!.code.replace("export default", "return"));
+  const csv = "status,price,date\npaid,10,2026-01-02\nopen,20,2026-01-03\npaid,30,2026-02-01";
+  expect(
+    await run({ view, sheet: { parseCsv: (file: Blob) => parseCsv(file, {}, "en-US") } })(null, {
+      files: [{ file: async () => new File([csv], "orders.csv") }],
+    }),
+  ).toEqual({ orders: 3, total: 60 });
+  expect(specs).toHaveLength(3);
+  expect(specs[0]).toMatchObject({
+    kind: "bar",
+    data: [
+      { label: "paid", value: 2 },
+      { label: "open", value: 1 },
+    ],
+  });
+  expect(specs[2]).toMatchObject({ footer: { month: "Total", amount: 60 } });
+});

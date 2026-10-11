@@ -1,4 +1,5 @@
 import type { AiChatTaskOccurrenceView, AiChatTaskView, AiStoredMessage } from "@k2b/cloud/ai";
+import { conversationFileSource } from "@k2b/cloud/ai/solid";
 import { AiChatActionsProvider, createAiChatTimeline } from "@k2b/cloud/ai/ui";
 import { navigateTo } from "@k2b/ssr/nav";
 import { dates } from "@k2b/stdlib";
@@ -82,7 +83,8 @@ function AssistantTaskRun(props: { taskId: string; occurrenceId: string; transcr
             <Show
               when={!props.transcript}
               fallback={
-                <AiChatActionsProvider actions={{}}>
+                // Presented views and files load from the task's chat with the viewer's access, as in the chat itself.
+                <AiChatActionsProvider actions={{ fileUrl: conversationFileSource("/api/ai", value().task.chatId).downloadHref }}>
                   <RunTranscript messages={value().messages} />
                 </AiChatActionsProvider>
               }

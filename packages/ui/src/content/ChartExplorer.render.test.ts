@@ -5,6 +5,8 @@ import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import type { ChartExplorerProps } from "./ChartExplorer";
+import type { DataTableProps } from "./DataTable";
 
 const root = mkdtempSync(resolve(tmpdir(), "cloud-chart-explorer-tests-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -132,4 +134,37 @@ test("sortable table headers use the DataTable markers and accessible sort state
   expect(headers[1]).toContain('class="k2b-data-table__sort-icon ti ti-arrow-down"');
   expect(headers[1]).not.toContain("data-active");
   expect(html).not.toMatch(/[↑↓↕]/);
+});
+
+test("empty explorers retain the header and height with caller-owned feedback", () => {
+  const html = renderToString(() =>
+    createComponent(ChartExplorer, {
+      title: "Loading results",
+      height: "18rem",
+      empty: "View unavailable",
+      data: { chart: { kind: "bar", svg: "", width: 480, height: 280, marks: [], stretch: true }, rows: [] },
+      columns: [{ id: "n", label: "Count", value: () => "" }],
+    } satisfies ChartExplorerProps<{ key: string }>),
+  );
+  expect(html).toContain("Loading results");
+  expect(html).toContain("View unavailable");
+  expect(html).toContain("height:18rem");
+});
+
+test("DataTable renders keyboard-accessible client sort buttons and retains server sort links", async () => {
+  const { default: DataTable } = await import("./DataTable");
+  const table = (links: boolean) =>
+    renderToString(() =>
+      createComponent(DataTable, {
+        rows: [{ id: "1", n: 1 }],
+        columns: [{ id: "n", header: "Count", value: "n", sortable: true }],
+        sort: { key: "n", direction: "asc" },
+        onSortChange: () => {},
+        ...(links ? { sortHref: () => "?sort=n" } : {}),
+      } satisfies DataTableProps<{ id: string; n: number }>),
+    );
+  expect(table(false)).toContain('<button type="button" class="k2b-data-table__header-content k2b-data-table__sort"');
+  expect(table(false)).toContain('aria-sort="ascending"');
+  expect(table(true)).toContain('<a href="?sort=n"');
+  expect(table(true)).not.toContain('<button type="button" class="k2b-data-table__header-content');
 });

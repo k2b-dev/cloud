@@ -4,6 +4,7 @@ import {
   CodeDisplay,
   DataTable,
   type DataTableColumn,
+  type DataTableSort,
   DocCode,
   DocConceptGrid,
   DocLead,
@@ -74,41 +75,49 @@ const columns: DataTableColumn<Row>[] = [
   { id: "owner", header: "Owner", value: "owner" },
   { id: "requests", header: "Requests", value: "requests", align: "right" },
 ];
-const TableDemo = () => (
-  <DemoCard
-    id="tables"
-    chip={[
-      { kind: "component", name: "DataTable", from: "@k2b/ui" },
-      { kind: "component", name: "Pagination", from: "@k2b/ui" },
-    ]}
-    description="The basic form renders exact typed records. Sorting, selection, totals, and pagination stay application-owned."
-    code={`<DataTable
-  rows={rows}
+const TableDemo = () => {
+  const locale = useLocale();
+  const [sort, setSort] = createSignal<DataTableSort>({ key: "name", direction: "asc" });
+  const ordered = createMemo(() => {
+    const collator = new Intl.Collator(locale());
+    return [...rows].sort((a, b) => (sort().direction === "asc" ? 1 : -1) * collator.compare(a.name, b.name));
+  });
+  return (
+    <DemoCard
+      id="tables"
+      chip={[
+        { kind: "component", name: "DataTable", from: "@k2b/ui" },
+        { kind: "component", name: "Pagination", from: "@k2b/ui" },
+      ]}
+      description="The basic form renders exact typed records. Sorting, selection, totals, and pagination stay application-owned."
+      code={`<DataTable
+  rows={ordered()}
   columns={columns}
   getRowId={(row) => row.id}
   selectedRowId="api"
-  sort={{ key: "name", direction: "asc" }}
+  sort={sort()}
   renderCell={({ col, value, render }) => col.id === "name" ? <strong>{value}</strong> : render(value)}
-  sortHref={(sort) => \`?sort=\${sort.key}&direction=\${sort.direction}\`}
+  onSortChange={setSort}
   footer={{ values: { name: "Total", requests: 21_766 } }}
 />
 <Pagination currentPage={2} totalPages={6} baseUrl="?page=" />`}
-  >
-    <DataTable
-      rows={rows}
-      columns={columns}
-      getRowId={(row) => row.id}
-      selectedRowId="api"
-      sort={{ key: "name", direction: "asc" }}
-      sortHref={(sort) => `?sort=${sort.key}&direction=${sort.direction}`}
-      renderHeader={({ render }) => render()}
-      renderCell={({ col, value, render }) => (col.id === "name" ? <strong>{String(value)}</strong> : render(value))}
-      footer={{ values: { name: "Total", requests: 21766 } }}
-      scrollPreserveKey="content-demo-table"
-    />
-    <Pagination currentPage={2} totalPages={6} baseUrl="?page=" />
-  </DemoCard>
-);
+    >
+      <DataTable
+        rows={ordered()}
+        columns={columns}
+        getRowId={(row) => row.id}
+        selectedRowId="api"
+        sort={sort()}
+        onSortChange={setSort}
+        renderHeader={({ render }) => render()}
+        renderCell={({ col, value, render }) => (col.id === "name" ? <strong>{String(value)}</strong> : render(value))}
+        footer={{ values: { name: "Total", requests: 21766 } }}
+        scrollPreserveKey="content-demo-table"
+      />
+      <Pagination currentPage={2} totalPages={6} baseUrl="?page=" />
+    </DemoCard>
+  );
+};
 
 type OrderRow = {
   id: string;

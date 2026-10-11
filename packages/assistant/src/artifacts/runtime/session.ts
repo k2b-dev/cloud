@@ -3,6 +3,7 @@ import type { RuntimeContext } from "./cloud";
 import { CloudError } from "./errors";
 import { startArtifactRun, timeLimitMessage } from "./host";
 import { APPROVAL_METHODS, createServiceCalls, type RuntimeServices } from "./services";
+import { type ViewRef, ViewRefSchema } from "./views";
 import type { WorkState } from "./work";
 
 export type RunLog = { time: string; level: string; text: string };
@@ -15,9 +16,11 @@ export type RunSnapshot = {
   logs: RunLog[];
   output?: unknown;
   error?: string;
+  views: ViewRef[];
   files: { name: string; size: number; type: string }[];
 };
 export type SessionOptions = RuntimeServices & {
+  view?: (spec: unknown, index: number, signal: AbortSignal) => Promise<ViewRef>;
   context?: RuntimeContext;
   changed: (snapshot: RunSnapshot) => void;
   inputs?: File[];
@@ -31,7 +34,7 @@ export function createArtifactSession(
   source: { runtime: string; code: string; context?: RuntimeContext },
   options: SessionOptions,
 ) {
-  let state: RunSnapshot = { status: "starting", logs: [], files: [] };
+  let state: RunSnapshot = { status: "starting", logs: [], files: [], views: [] };
   const inputs = options.inputs ?? [];
   const inputFiles =
     options.inputFiles ?? inputs.map((file) => ({ name: file.webkitRelativePath || file.name, size: file.size, type: file.type }));
@@ -44,6 +47,7 @@ export function createArtifactSession(
   if (new Set(inputFiles.map((file) => file.name)).size !== inputFiles.length) throw new Error("Input paths must be unique");
   const outputFiles = new Map<string, File>();
   const call = createServiceCalls(options);
+  const viewIndexes = new Set<number>();
   let approvals = 0;
   let waits = 0;
   let watchdog: ReturnType<typeof setTimeout> | undefined;
@@ -109,6 +113,24 @@ export function createArtifactSession(
         if (!file) throw new CloudError("not_found", "Input file not found");
         return { file, path: file.webkitRelativePath || file.name };
       }
+      if (method === "view.save") {
+        const saveView = options.view;
+        if (!saveView) throw new CloudError("unavailable", "Views need a code_run in a chat.");
+        if (outputFiles.size + viewIndexes.size >= LIMITS.files)
+          throw new CloudError("limit", "A run keeps at most 64 output files and views.");
+        let index = 0;
+        while (viewIndexes.has(index)) index++;
+        viewIndexes.add(index);
+        try {
+          const ref = await waiting(false, () => saveView(args[0], index, signal));
+          const view = ViewRefSchema.parse(ref);
+          emit({ views: [...state.views, view] });
+          return view;
+        } catch (error) {
+          viewIndexes.delete(index);
+          throw error;
+        }
+      }
       if (method === "file.save") {
         const [data, name] = args;
         if (
@@ -121,8 +143,10 @@ export function createArtifactSession(
           throw new CloudError("invalid", "Download names must have 1-180 characters and contain no /, backslash, or NUL.");
         const file = new File([data], name, { type: data instanceof Blob ? data.type : "text/plain" });
         const total = [...outputFiles.values()].reduce((size, item) => size + (item.name === name ? 0 : item.size), file.size);
-        if (file.size > LIMITS.inputFileBytes || total > LIMITS.inputBytes || (!outputFiles.has(name) && outputFiles.size >= LIMITS.files))
+        if (file.size > LIMITS.inputFileBytes || total > LIMITS.inputBytes)
           throw new CloudError("limit", "Output files exceed the run budget");
+        if (!outputFiles.has(name) && outputFiles.size + viewIndexes.size >= LIMITS.files)
+          throw new CloudError("limit", "A run keeps at most 64 output files and views.");
         outputFiles.set(name, file);
         emit({ files: [...outputFiles.values()].map((file) => ({ name: file.name, size: file.size, type: file.type })) });
         return null;

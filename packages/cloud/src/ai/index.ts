@@ -99,7 +99,9 @@ export {
   type AiConversationFileOverview,
   type AiConversationWorkingGroup,
   type AiFileStat,
+  AiViewInvalidError,
   createAiConversationArtifact,
+  createAiConversationView,
   guessAiMediaType,
   isAiWorkingFilePath,
   listAiConversationFiles,
@@ -371,6 +373,27 @@ export type {
 } from "./types";
 export { AI_MESSAGE_FEEDBACK_REASONS, isAiImageMediaType } from "./types";
 export { isAiSettingsError } from "./validate";
+export {
+  CLOUD_AI_TABLE_MAX_COLUMNS,
+  CLOUD_AI_TABLE_MAX_ROWS,
+  CLOUD_AI_VIEW_DIRECTORY,
+  CLOUD_AI_VIEW_MAX_BYTES,
+  CLOUD_AI_VIEW_SUFFIX,
+  type CloudAiChartView,
+  type CloudAiTableView,
+  type CloudAiView,
+  type CloudAiViewSummary,
+  CloudAiViewSummarySchema,
+  type CloudAiViewTable,
+  checkCloudAiView,
+  cloudAiTableTsv,
+  cloudAiViewSummary,
+  cloudAiViewTable,
+  isAiViewFile,
+  isAiViewPath,
+  parseCloudAiView,
+  sortCloudAiViewRows,
+} from "./view-block";
 export {
   type CloudAiViewImageInput,
   CloudAiViewImageInputSchema,

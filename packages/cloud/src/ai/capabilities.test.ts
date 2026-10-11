@@ -1228,6 +1228,32 @@ describe("AI capability catalog", () => {
     });
   });
 
+  test.each([true, false])("load_tools identifies Assistant Skills only when offered: %s", async (offered) => {
+    const tools = await createAiToolResolver({
+      conversationId: "conversation-1",
+      actor,
+      staticTools: [],
+      ...(offered ? { skillNames: ["assistant-data-analysis"] } : {}),
+      store: {
+        getLoadedTools: async () => [],
+        loadTools: async ({ names }) => ({ loaded: names, alreadyLoaded: [], evicted: [] }),
+      },
+    })();
+    const load = tools.find((tool) => tool.def.name === "load_tools");
+    if (!load || load.kind !== "server") throw new Error("load_tools missing");
+    expect(
+      await load.execute(
+        { names: ["assistant-data-analysis", "Assistant-data-analysis"] },
+        { signal: AbortSignal.timeout(1_000), requestApproval: async () => true, requestClientTool: async <T>() => undefined as T },
+      ),
+    ).toMatchObject({
+      unavailable: [
+        { name: "assistant-data-analysis", reason: offered ? "skill" : "unknown" },
+        { name: "Assistant-data-analysis", reason: "unknown" },
+      ],
+    });
+  });
+
   test("says which tools exist but are not offered in this turn", async () => {
     const resolver = createAiToolResolver({
       conversationId: "conversation-1",

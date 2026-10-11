@@ -450,12 +450,13 @@ describe("capability tool presentation", () => {
       kind: "tool",
       callId: "load-1",
       name: "load_tools",
-      args: { names: ["code_run", "code_open", "spaces.create", "mail.old", "made_up"] },
+      args: { names: ["code_run", "code_open", "spaces.create", "mail.old", "made_up", "assistant-data-analysis"] },
       status: "completed",
       result: {
         loaded: [{ name: "code_run", call: "code_run" }],
         alreadyLoaded: [],
         unavailable: [
+          { name: "assistant-data-analysis", reason: "skill" },
           { name: "code_open", reason: "not_offered_in_turn" },
           { name: "spaces.create", reason: "not_allowed" },
           { name: "mail.old", reason: "app_offline" },
@@ -475,8 +476,18 @@ describe("capability tool presentation", () => {
       }),
     );
 
+    const english = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "en",
+        get children() {
+          return createComponent(AiTurnBlockView, { block: completed, turnId: "turn-1" });
+        },
+      }),
+    );
+    expect(english).toContain("A skill, not a tool");
+
     expect(html).toContain("1 geladen");
-    for (const label of ["Hier nicht verfügbar", "Nicht erlaubt", "App nicht erreichbar", "Nicht gefunden"]) {
+    for (const label of ["Ein Skill, kein Werkzeug", "Hier nicht verfügbar", "Nicht erlaubt", "App nicht erreichbar", "Nicht gefunden"]) {
       expect(html).toContain(label);
     }
   });
@@ -1833,4 +1844,70 @@ describe("Studio check steps", () => {
     const failed = viewed("/checks/abc/desktop.png", "image/png", "failed");
     expect(renderExpanded([failed], { open: [failed.id] })).not.toContain("ai-step-image");
   });
+});
+
+test("presented views reserve inline frames and escape summary text", () => {
+  for (const view of [
+    { view: "chart", kind: "bar", title: '<img src=x onerror="bad()">', subtitle: "Orders" },
+    { view: "table", title: '<img src=x onerror="bad()">', rows: 12, columns: 2, footer: false },
+  ]) {
+    const path = "/views/result-12345678.view.json";
+    const block: AiTurnBlock = {
+      id: "view",
+      kind: "tool",
+      name: "present",
+      callId: "view",
+      args: { path },
+      status: "completed",
+      result: { path, view },
+    };
+    const html = renderToString(() => createComponent(AiTurnBlockView, { block, turnId: "turn" }));
+    expect(html).toContain('data-view-path="/views/result-12345678.view.json"');
+    expect(html).toContain("Loading");
+    expect(html).toContain("&lt;img");
+    expect(html).not.toContain("<img src=x");
+    expect(html).not.toContain("Download");
+    expect(html).toContain("height:");
+  }
+});
+
+test("present without a valid view reference stays a file chip", () => {
+  for (const result of [
+    { path: "/views/result.view.json", size: 10 },
+    { path: "/views/result.json", view: { view: "table", title: "Rows", rows: 0, columns: 1, footer: false } },
+    { path: "/elsewhere/result.view.json", view: { view: "table", title: "Rows", rows: 0, columns: 1, footer: false } },
+    { path: "/views/result.view.json", view: { view: "table", title: "Rows", rows: 0, columns: 0, footer: false } },
+  ]) {
+    const block: AiTurnBlock = {
+      id: "file",
+      kind: "tool",
+      name: "present",
+      callId: "file",
+      args: { path: result.path },
+      status: "completed",
+      result,
+    };
+    const html = renderToString(() => createComponent(AiTurnBlockView, { block, turnId: "turn" }));
+    expect(html).not.toContain("data-view-path");
+    expect(html).toContain(result.path);
+  }
+});
+
+test("a running view present leaves the result slot empty until its summary sizes the view", () => {
+  const running = (path: string): AiTurnBlock => ({
+    id: path,
+    kind: "tool",
+    name: "present",
+    callId: path,
+    args: { path },
+    status: "running",
+  });
+  const view = renderToString(() =>
+    createComponent(AiTurnBlockView, { block: running("/views/result-12345678.view.json"), turnId: "turn" }),
+  );
+  expect(view).not.toContain("Preparing file");
+  expect(view).not.toContain("data-view-path");
+  // Ordinary files keep their one-line activity, which the file chip replaces at the same height.
+  const file = renderToString(() => createComponent(AiTurnBlockView, { block: running("/report.pdf"), turnId: "turn" }));
+  expect(file).toContain("Preparing file");
 });

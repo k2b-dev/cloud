@@ -593,6 +593,7 @@ throw. Disposal aborts work; refresh after disposal does not load.
 | `description`, `class` | Optional JSX below the heading and extra root class. |
 | `cursor` | Optional shared `ChartCursor` for a line snapshot. Same matching and lifecycle as `Chart.cursor`; table mode does not participate. |
 | `height` | CSS viewport height; default `"18rem"`, shared by chart and scrollable table. |
+| `empty` | Optional JSX shown in the viewport without rows, such as loading or unavailable text; default **No data**. The header and height stay in place. |
 
 ```ts
 type ChartExplorerColumn<T> = {

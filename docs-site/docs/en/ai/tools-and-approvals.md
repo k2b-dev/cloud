@@ -156,7 +156,7 @@ operation details and arguments in the tool description and schema; the hint
 does not replace either.
 
 The built-in `chart` tool is a `clientView()` that shows one chart in the chat
-from data the model already has. Its input is the plain-data form of
+from a few values the model already has that did not come from a code run. Its input is the plain-data form of
 `cloud.chart()` in Studio code: `bar`, `line` (with `area` to fill it),
 `scatter`, `pie`, `donut`, `histogram`, `gauge`, or `sparkline`, with `title`
 and an optional `subtitle`, but without `width`, `height`, or `format`
@@ -187,6 +187,39 @@ shows and copies every value as given, and axis labels show fractional values
 exactly. When a chart needs filters or buttons, Assistant shows an app in the
 chat with `code_present` instead; data that must be kept or an app that is used
 again becomes a saved Studio App.
+
+Computed results stay in `code_run`: the script calls `cloud.view.chart` or
+`cloud.view.table`, then the model calls `present({path})` for every view the
+person should see. It never retypes run values into chart arguments, app data
+or Markdown. A missing view requires another run with `cloud.view.*`.
+
+Views are declarative JSON chat files under `/views/*.view.json`, validated on
+the server on every write. Charts use the same kinds and rules as the chart
+tool. Tables have unique typed columns, rows, an optional footer and initial
+sort; numeric formats support currency, fractions as percent, decimals, compact
+notation and a plain unit suffix. Views contain no markup or functions, and
+labels and cells render as text. Limits are 3,840 table rows, 100 columns and
+1 MiB per view; views and captured downloads share 64 outputs per run. Model
+write tools reject `/views` paths. Users retain normal file editing, download,
+rename and deletion rights.
+
+`present` returns a summary without values and renders an assistant-owned view
+inline. Every reader validates the current file again; invalid or missing files
+show unavailable. Only assistant files below `/views/` ending in `.view.json`
+qualify. HTML apps cannot save views; they draw with `cloud.chart()`.
+
+The pure readers in `@k2b/cloud/ai/browser` are `parseCloudAiView`,
+`checkCloudAiView`, `cloudAiViewSummary`, `cloudAiViewTable`, `cloudAiTableTsv`
+and `isAiViewFile` (with `isAiViewPath` for namespace checks). Parsing checks the
+schema and data without drawing; checking also verifies chart drawing for
+writes. Table formatting uses the reader's locale; TSV quotes cells and guards
+text against spreadsheet formulas. The view types and these helpers are also
+exported from `@k2b/cloud/ai`, alongside `createAiConversationView` and
+`AiViewInvalidError`. The writer checks conversation ownership and archival,
+uses a title slug and a deterministic run/index hash, and preserves artifact
+retry and conflict semantics. Rejections name the issue path and limit.
+`CLOUD_AI_VIEW_DIRECTORY`, `CLOUD_AI_VIEW_SUFFIX`, `CLOUD_AI_VIEW_MAX_BYTES`,
+`CLOUD_AI_TABLE_MAX_ROWS` and `CLOUD_AI_TABLE_MAX_COLUMNS` export the bounds.
 
 The built-in `text_editor` is a `clientInteraction()` for one complete
 plain-text or Markdown draft of at most 20,000 characters. It is appropriate
@@ -261,12 +294,14 @@ Tool-capable personal chats keep three bounded discovery tools available:
   | Reason | Meaning |
   | --- | --- |
   | `unknown` | No tool has this exact name, or it names an optional built-in that is off, such as `memory` while memory is disabled |
+  | `skill` | The name is an Assistant Skill this turn can load; `load_skill` loads it, not `load_tools` |
   | `not_offered_in_turn` | The tool exists, but this turn's client or task does not provide it, or the turn offers no app operations |
   | `not_allowed` | The conversation's fixed tool scope or task grants exclude it |
   | `app_offline` | The operation was loaded earlier, or the registry cannot be read, and its app is not in the live registry now |
 
-  The model looks up an unknown name once with `search_tools` and does not
-  search for or retry the other three in the same turn;
+  The model looks up an unknown name once with `search_tools`, loads a skill
+  with `load_skill`, and does not search for or retry the other three in the
+  same turn;
 - `list_apps` returns a bounded map of exact app IDs to their live descriptions
   when the owning app is unclear.
 

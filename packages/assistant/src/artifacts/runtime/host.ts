@@ -21,7 +21,17 @@ export type RuntimeHooks = {
 };
 
 /** Host calls that wait on Cloud or a person; running work is not timed out meanwhile. */
-const HOST_WAITS = new Set(["ai", "pdf", "http.fetch", "database", "storage", "file.read", "capabilities.run", "capabilities.stream"]);
+const HOST_WAITS = new Set([
+  "ai",
+  "pdf",
+  "http.fetch",
+  "database",
+  "storage",
+  "file.read",
+  "view.save",
+  "capabilities.run",
+  "capabilities.stream",
+]);
 
 /** Runs one script in a terminable worker inside a hidden sandbox frame. */
 export function startArtifactRun(container: HTMLElement, source: { runtime: string; code: string }, hooks: RuntimeHooks) {

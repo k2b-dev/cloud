@@ -1,10 +1,12 @@
 import { fileIcons } from "@k2b/stdlib";
 import { Chat } from "@k2b/ui";
-import { Show } from "solid-js";
+import { createMemo, Show } from "solid-js";
 import { formatAiFileSize } from "../attachments";
 import type { AiTurnBlock } from "../protocol";
+import { CloudAiViewSummarySchema, isAiViewFile } from "../view-block";
 import { useAiChatActions } from "./message-actions";
 import { aiToolIcon, isRecord } from "./message-utils";
+import { CloudViewBlock } from "./view-block";
 
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
 type PresentResult = { path: string; size: number; mediaType: string };
@@ -20,7 +22,44 @@ const presentResult = (block: ToolBlock): PresentResult | null => {
   return null;
 };
 
+/** The summary `present` returns for a view file; Cloud gives it only for assistant files below /views. */
+const presentedView = (block: ToolBlock) => {
+  if (block.status !== "completed" || block.isError || !isRecord(block.result) || typeof block.result.path !== "string") return null;
+  const summary = CloudAiViewSummarySchema.safeParse(block.result.view);
+  return summary.success && isAiViewFile({ path: block.result.path, origin: "assistant" })
+    ? { path: block.result.path, summary: summary.data }
+    : null;
+};
+
+/**
+ * A view's size comes with the finished call's summary. Until then the work line names the step and the result slot
+ * stays empty, so no one-line placeholder grows into the chart or table.
+ */
+const preparingView = (block: ToolBlock) =>
+  block.status === "running" && isRecord(block.args) && typeof block.args.path === "string"
+    ? isAiViewFile({ path: block.args.path.trim(), origin: "assistant" })
+    : false;
+
+/** A presented file: a view file shows as its chart or table, every other file as a chip to open and download. */
 export function PresentToolBlock(props: { block: ToolBlock }) {
+  // Live updates replace the block with an equal result; only a different view loads again.
+  const view = createMemo(() => presentedView(props.block), null, { equals: (a, b) => JSON.stringify(a) === JSON.stringify(b) });
+  return (
+    <Show
+      when={view()}
+      keyed
+      fallback={
+        <Show when={!preparingView(props.block)}>
+          <PresentedFile block={props.block} />
+        </Show>
+      }
+    >
+      {(view) => <CloudViewBlock path={view.path} summary={view.summary} />}
+    </Show>
+  );
+}
+
+function PresentedFile(props: { block: ToolBlock }) {
   const actions = useAiChatActions();
   const file = () => presentResult(props.block);
   const title = () => (isRecord(props.block.args) && typeof props.block.args.title === "string" ? props.block.args.title : null);

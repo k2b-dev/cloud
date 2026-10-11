@@ -54,13 +54,36 @@ test("global task dialogs provide live context through activity, run detail and 
     meta: null,
     createdAt: "2026-09-20T09:00:00Z",
   };
+  // The run presented a table view; its transcript loads the file from the task's chat.
+  const viewPath = "/views/morning-totals-1a2b3c4d.view.json";
+  const stored = (seq: number, content: AiStoredMessage["message"]): AiStoredMessage => ({
+    ...message,
+    id: `message-${seq}`,
+    shortId: `msg00${seq}`,
+    seq,
+    message: content,
+  });
+  const delivering = stored(2, {
+    role: "assistant",
+    content: [{ type: "tool_call", id: "present-view", name: "present", args: { path: viewPath } }],
+  });
+  const delivered = stored(3, {
+    role: "tool_result",
+    callId: "present-view",
+    name: "present",
+    result: { path: viewPath, view: { view: "table", title: "Morning totals", rows: 1, columns: 1, footer: false } },
+    isError: false,
+  });
+  const view = { view: "table", title: "Morning totals", columns: [{ id: "item", type: "text" }], rows: [{ item: "Coffee beans" }] };
   const requests: string[] = [];
   const fetchMock = spyOn(globalThis, "fetch").mockImplementation(
     Object.assign(
       async (input: Parameters<typeof fetch>[0]) => {
         const url = String(input);
         requests.push(url);
-        if (url.includes("/occurrences/")) return Response.json({ task, occurrence, messages: [message] });
+        if (url.includes("/occurrences/")) return Response.json({ task, occurrence, messages: [message, delivering, delivered] });
+        if (url.startsWith(`/api/ai/conversations/${task.chatId}/files/content?`))
+          return Response.json(view, { headers: { "X-Cloud-Ai-File-Origin": "assistant" } });
         if (url.includes("/activities?"))
           return Response.json({ items: [{ task, occurrence, chatTitle: task.chatTitle, unread: true }], hasMore: false });
         if (url.endsWith("/tasks/status")) return Response.json({ timezone: "UTC" });
@@ -84,6 +107,9 @@ test("global task dialogs provide live context through activity, run detail and 
     await tick();
     expect(dom.document.querySelector(".assistant-activity-transcript")).not.toBeNull();
     expect(dom.document.body.textContent).not.toContain('"role":');
+    await tick();
+    expect(requests).toContain(`/api/ai/conversations/${task.chatId}/files/content?path=${encodeURIComponent(viewPath)}`);
+    expect(dom.document.querySelector(`[data-view-path="${viewPath}"]`)?.textContent).toContain("Coffee beans");
     dialogCore.close();
     await tick();
     dialogCore.close();

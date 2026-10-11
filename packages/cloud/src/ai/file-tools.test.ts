@@ -1,7 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import {
   CloudAiReadFileOutputSchema,
   createCloudAiListFilesTool,
+  createCloudAiPresentTool,
   createCloudAiReadFileTool,
   createCloudAiWriteFileTool,
   evaluateAiDate,
@@ -33,7 +34,34 @@ const projectFiles = {
 };
 
 const toolContext = {
-  actor: { kind: "user" as const, user: { id: "user-1" } },
+  actor: {
+    kind: "user" as const,
+    user: {
+      id: "user-1",
+      uid: "test",
+      roles: [],
+      provider: "local" as const,
+      profile: "user" as const,
+      givenname: "Test",
+      sn: "User",
+      displayName: "Test User",
+      mail: null,
+      avatarHash: null,
+      ipa: null,
+      accountExpires: null,
+      lastLoginLocal: null,
+      memberofGroup: [],
+      memberofGroupIds: [],
+      manages: [],
+      managesGroupIds: [],
+    },
+  },
+  requestApproval: async () => {
+    throw new Error("Unexpected approval");
+  },
+  requestClientTool: async () => {
+    throw new Error("Unexpected client tool");
+  },
   conversationId: "conversation-1",
   projectFiles,
   signal: new AbortController().signal,
@@ -336,4 +364,43 @@ describe("AI calculate tool", () => {
     expect(evaluateAiDate("today", "Europe/Copenhagen", new Date("2026-03-01T01:00:00Z"))).toBe("2026-03-01");
     expect(() => evaluateAiDate("03/01/2026 + 1 day")).toThrow("ISO date");
   });
+});
+
+test("model writes cannot overwrite or append to the views namespace", async () => {
+  const write = createCloudAiWriteFileTool();
+  if (write.location !== "server") throw new Error("Expected server tool");
+  for (const mode of ["overwrite", "append"] as const)
+    for (const path of ["/views", "/views/result.view.json", "views/result.txt"]) {
+      await expect(write.run({ path, mode, content: "{}" }, toolContext)).rejects.toThrow(
+        "The /views folder holds views that code runs create with cloud.view.*; choose another path.",
+      );
+    }
+});
+
+test("present adds only summaries of valid assistant view files", async () => {
+  const present = createCloudAiPresentTool();
+  if (present.location !== "server") throw new Error("Expected server tool");
+  const valid = { view: "table", title: "Rows", columns: [{ id: "n", type: "number" }], rows: [{ n: 42 }] };
+  for (const [path, origin, content, size, summary] of [
+    ["/views/a.view.json", "assistant", JSON.stringify(valid), 100, true],
+    ["/views/a.view.json", "user", JSON.stringify(valid), 100, false],
+    ["/other/a.view.json", "assistant", JSON.stringify(valid), 100, false],
+    ["/views/a.json", "assistant", JSON.stringify(valid), 100, false],
+    ["/views/a.view.json", "assistant", "{", 1, false],
+    ["/views/a.view.json", "assistant", JSON.stringify({ ...valid, rows: [{ n: "bad" }] }), 100, false],
+    ["/views/a.view.json", "assistant", JSON.stringify(valid), 1024 * 1024 + 1, false],
+  ] as const) {
+    const stat = { path, origin, size, mediaType: "application/json", version: 1, updatedAt: "" };
+    const statSpy = spyOn(aiFileStore, "stat").mockResolvedValue(stat);
+    const readSpy = spyOn(aiFileStore, "read").mockResolvedValue({ ...stat, bytes: bytes(content) });
+    try {
+      const result = await present.run({ path }, toolContext);
+      if (summary) expect(result).toMatchObject({ view: { view: "table", title: "Rows", rows: 1, columns: 1, footer: false } });
+      else expect(result).not.toHaveProperty("view");
+      expect(JSON.stringify(result)).not.toContain("42");
+    } finally {
+      statSpy.mockRestore();
+      readSpy.mockRestore();
+    }
+  }
 });

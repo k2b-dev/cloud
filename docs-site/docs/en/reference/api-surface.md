@@ -191,6 +191,13 @@ documents all process variables; that larger list is not the shape of `env`.
 
 ## Specialized entry points
 
+View readers and types are exported from `@k2b/cloud/ai/browser` and
+`@k2b/cloud/ai`: `parseCloudAiView`, `checkCloudAiView`, `cloudAiViewSummary`,
+`cloudAiViewTable`, `cloudAiTableTsv`, `isAiViewFile` and `isAiViewPath`, plus the
+view directory, suffix, byte and table limits. Server integrations save run
+results with `createAiConversationView` and receive `AiViewInvalidError` for
+invalid specs. See [Tools and approvals](/en/docs/ai/tools-and-approvals).
+
 `@k2b/cloud/ai` exposes `AiTaskRequestSchema`, `AiTaskRequest`,
 `AiTaskRequestInput`, and `executeAiTask` for bounded text generation,
 classification, and extraction. The schema and types are also available from

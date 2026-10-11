@@ -1118,6 +1118,7 @@ export class AiTurnExecutor {
           conversationId,
           actor: capabilityAuthority?.actor ?? toolActor,
           staticTools: activeTools,
+          ...(activeTools.some((tool) => tool.def.name === "load_skill") ? { skillNames: availableSkills.map((skill) => skill.name) } : {}),
           allowedTools,
           mandatePolicy,
           unofferedTools,

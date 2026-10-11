@@ -49,6 +49,15 @@ The conversation owner can delete one file with
 `cld assistant files delete` and Assistant's file list. Reading or deleting a
 path that does not exist in the chat returns `404` with `File not found`.
 
+Code runs save validated chart and table views under `/views/*.view.json`.
+These are ordinary files: visible in the chat's file list, downloadable and
+counted toward its storage budget. Model write tools cannot write or append
+under `/views`; only `cloud.view.*` creates views. The owner can still edit,
+rename or delete them. `present({path})` renders valid assistant-owned views
+inline, and readers revalidate the current file before rendering.
+The file-content response carries `X-Cloud-Ai-File-Origin` so readers can check
+that the current file still has assistant origin.
+
 ### Separate results from working files
 
 The assistant keeps intermediate steps below `/temp/` in the chat, one folder

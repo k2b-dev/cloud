@@ -112,3 +112,25 @@ export const launchAssistant = async (input: LaunchAssistantInput): Promise<Assi
     href: `/app/assistant?conversation=${encodeURIComponent(conversation.id)}`,
   };
 };
+
+export {
+  CLOUD_AI_TABLE_MAX_COLUMNS,
+  CLOUD_AI_TABLE_MAX_ROWS,
+  CLOUD_AI_VIEW_DIRECTORY,
+  CLOUD_AI_VIEW_MAX_BYTES,
+  CLOUD_AI_VIEW_SUFFIX,
+  type CloudAiChartView,
+  type CloudAiTableView,
+  type CloudAiView,
+  type CloudAiViewSummary,
+  CloudAiViewSummarySchema,
+  type CloudAiViewTable,
+  checkCloudAiView,
+  cloudAiTableTsv,
+  cloudAiViewSummary,
+  cloudAiViewTable,
+  isAiViewFile,
+  isAiViewPath,
+  parseCloudAiView,
+  sortCloudAiViewRows,
+} from "./view-block";

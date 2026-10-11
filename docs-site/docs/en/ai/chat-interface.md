@@ -266,9 +266,11 @@ order:
    above it moves when the result arrives. Its alt text is the start of what
    the step saw, the image description or the answer to its prompt. With the
    host's `onOpenFile`, the thumbnail is a button that opens the file larger;
-   its name is that action, and the alt text describes it. Without `fileUrl`,
-   such as in a background run transcript, the step shows no thumbnail.
-2. **Results.** Presented files, `code_present` apps, charts, cards, and
+   its name is that action, and the alt text describes it. Without `fileUrl`
+   the step shows no thumbnail. The run history of a scheduled task passes the
+   file route of the task's chat, so its thumbnails, files and views load with
+   the viewer's access as in the chat.
+2. **Results.** Presented files and code views, `code_present` apps, charts, cards, and
    capability tables in the order they were made. A later result with the same
    target, the same file path for `present` or the same title for
    `code_present`, replaces the earlier one at its place. A running delivery
@@ -281,7 +283,16 @@ order:
    finished call nor the switch moves anything. While the model still writes a
    chart's arguments, the work line says it prepares a chart. Text output of
    `cld assistant`, interactive or not, prints a chart's data table and a
-   card's title and value instead.
+   card's title and value instead. A presented `/views/*.view.json` file renders
+   inline as its chart or table, reserving its height while loading. The height
+   comes from the summary of the finished `present` call; while the call runs,
+   the work line names the step and the place stays empty, so no one-line
+   activity grows into the view. Table header labels stay on one line, and
+   the table scrolls sideways instead, so up to eight rows fit the reserved
+   height on a phone too. Readers validate the file again; missing or invalid
+   data shows unavailable in that frame. The CLI fetches and validates a view
+   and prints its table (first 100 rows, plus a table footer), or
+   `View unavailable: <path>`.
 3. **Newest text.** While the turn runs this is a status: a new text replaces
    the previous one in the same element once its first sentence has streamed,
    and the place keeps its height until the turn ends. A text that ends the
@@ -633,6 +644,8 @@ code tools report it to the model as a tool error.
 `inputPaths`, takes a fixed snapshot of current source, and returns a run ID and
 compact state. There is no required source revision. An app whose interface is
 `index.html` does not run there; `code_open` and `code_present` show it.
+`code_run` and `code_inspect` also return `views`: paths and chart/table summaries
+without values. Present each view with `present({path})`.
 `code_inspect` returns status, progress, logs, output and captured files, and can
 wait for background work with `waitMs`.
 Inspection also reports the tested source revision. `code_open` never starts the visible
