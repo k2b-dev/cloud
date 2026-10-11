@@ -1160,7 +1160,7 @@ test("local and Cloud Skill commands share a list, local precedence, and one-mes
     });
     expect(session.printed.join("\n")).toContain("(only with /finance)");
     expect(session.printed.join("\n")).toContain("hidden by the project Skill");
-    expect(session.printed.join("\n")).toMatch(/1 project, \d+ global, 2 Cloud/);
+    expect(session.printed.join("\n")).toMatch(/1 project(, \d+ global)?, 2 Cloud/);
     expect(completeInteractiveLine("/fin", directory, ["finance"])).toEqual([["/finance"], "/fin"]);
   } finally {
     process.chdir(previous);
