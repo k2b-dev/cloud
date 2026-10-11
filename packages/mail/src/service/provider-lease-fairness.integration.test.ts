@@ -1440,6 +1440,57 @@ suite("mail provider lease fairness", () => {
     if (command.lock) await releaseProviderLease(command.lock);
   });
 
+  test("a sync requested while a folder's last batch runs keeps the turn for its own batch, so a command that asks in between waits for it", async () => {
+    await ensureHydrationRuntime();
+    const mailbox = await connect("request-turn");
+    const inbox = mailbox.folderId(INBOX);
+    let lateId = "";
+    // The request arrives after the running batch checked the folder, so it needs its own batch.
+    afterStatus = async (account, path) => {
+      if (account !== mailbox.account || path !== INBOX) return;
+      afterStatus = null;
+      lateId = deliver(mailbox, 1, "request-turn")[0]!;
+      await enqueueFolderSync(inbox);
+    };
+    let continuation: { delayMs: number; input: SyncFolderJobInput } | null;
+    try {
+      continuation = await syncFolderTurn(inbox);
+    } finally {
+      afterStatus = null;
+    }
+    expect(continuation).toEqual({ delayMs: 0, input: { folderId: inbox } });
+
+    const takeCommandTurn = () =>
+      acquireProviderLease({
+        resource: mailbox.remoteResourceId,
+        waiter: `commands:${mailbox.mailboxId}`,
+        priority: "command",
+        ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS,
+      });
+    let command = await takeCommandTurn();
+    if (command.lock) await releaseProviderLease(command.lock);
+    expect(command.lock).toBeNull();
+
+    // Run the continuation once: finding the lease busy would resubmit with a delay.
+    const turnResult: { next: { delayMs: number; input: SyncFolderJobInput } | null } = { next: null };
+    await runSyncFolderJob({
+      input: continuation!.input,
+      heartbeat: async () => undefined,
+      resubmit: (resubmit) => {
+        turnResult.next = { delayMs: resubmit?.delayMs ?? 0, input: resubmit?.input ?? continuation!.input };
+      },
+    });
+    expect(turnResult.next).toBeNull();
+    expect(await imported(mailbox, lateId)).toBe(true);
+
+    for (let turn = 0; !command.lock && turn < 10; turn += 1) {
+      await Bun.sleep(command.retryAfterMs);
+      command = await takeCommandTurn();
+    }
+    expect(command.lock).not.toBeNull();
+    if (command.lock) await releaseProviderLease(command.lock);
+  });
+
   test("a waiter that comes back late does not keep a free provider lease from the others and keeps its place", async () => {
     const resource = crypto.randomUUID();
     const take = (waiter: string, priority: "sync" | "command") =>

@@ -2289,7 +2289,12 @@ export const syncFolderBatch = async (
         };
       },
     });
-    if (batch.hasMore) next = { waiter: `sync-folder:${folderId}`, priority: batch.syncPending ? "sync" : "background" };
+    // Reserve the turn for the continuation runSyncFolderJob resubmits for a request made while
+    // this batch ran.
+    const requested =
+      !(batch.hasMore && batch.syncPending) && Number(await redis.send("EXISTS", [syncRequestKey(folderId)]).catch(() => 0)) > 0;
+    if (batch.hasMore || requested)
+      next = { waiter: `sync-folder:${folderId}`, priority: batch.syncPending || requested ? "sync" : "background" };
   } catch (error) {
     await recordProviderFailure(folder.remote_resource_id, error);
     const code = normalizeSyncErrorCode(error);
