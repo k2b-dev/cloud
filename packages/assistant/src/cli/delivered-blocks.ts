@@ -1,12 +1,14 @@
 import {
   CLOUD_AI_VIEW_MAX_BYTES,
   CloudAiCardInputSchema,
+  type CloudAiChartView,
+  type CloudAiGroupView,
   CloudAiViewSummarySchema,
   type CloudAiViewTable,
   cloudAiChartTable,
   cloudAiViewTable,
   isAiViewFile,
-  parseCloudAiChartInput,
+  parseCloudAiChartToolView,
   parseCloudAiView,
 } from "@k2b/cloud/ai/browser";
 import type { CloudCliContext } from "@k2b/cloud/cli";
@@ -20,22 +22,39 @@ const printCard = (ctx: CloudCliContext, args: unknown): boolean => {
   return true;
 };
 
-/** A terminal cannot draw the chart; it prints the chart's data table, the same rows the web table shows. */
-const printChart = (ctx: CloudCliContext, args: unknown): boolean => {
-  const chart = parseCloudAiChartInput(args);
-  if (!chart) return false;
-  const table = cloudAiChartTable(chart, ctx.options.locale ?? "en");
-  ctx.print();
-  ctx.print(terminalSafeText(chart.title));
-  if (chart.subtitle) ctx.print(terminalSafeText(chart.subtitle));
+const printTable = (ctx: CloudCliContext, table: CloudAiViewTable, presented: boolean) => {
   ctx.table(
-    table.rows
-      .slice(0, 100)
-      .map((row) => Object.fromEntries(table.columns.map((column) => [column.id, terminalSafeText(row.cells[column.id] ?? "")]))),
-    table.columns.map((column) => ({ key: column.id, label: column.label })),
+    [...table.rows.slice(0, 100), ...(table.footer ? [table.footer] : [])].map((row) =>
+      Object.fromEntries(table.columns.map((column) => [column.id, terminalSafeText(row.cells[column.id] ?? "")])),
+    ),
+    table.columns.map((column) => ({ key: column.id, label: terminalSafeText(column.label) })),
   );
-  if (table.rows.length > 100) ctx.print(`Showing 100 of ${table.rows.length} values; the web chat shows all of them.`);
+  if (table.rows.length > 100)
+    ctx.print(
+      presented
+        ? `Showing 100 of ${table.rows.length} rows; Copy data in the web chat copies all of them.`
+        : `Showing 100 of ${table.rows.length} values; the web chat shows all of them.`,
+    );
+};
+const printChartView = (ctx: CloudCliContext, view: CloudAiChartView | CloudAiGroupView, presented = false) => {
   ctx.print();
+  ctx.print(terminalSafeText(view.title));
+  if (view.subtitle) ctx.print(terminalSafeText(view.subtitle));
+  if (view.view === "group") {
+    for (const chart of view.charts) {
+      ctx.print(terminalSafeText(chart.title));
+      if (chart.subtitle) ctx.print(terminalSafeText(chart.subtitle));
+      printTable(ctx, cloudAiChartTable(chart, ctx.options.locale ?? "en"), presented);
+    }
+  } else printTable(ctx, cloudAiChartTable(view, ctx.options.locale ?? "en"), presented);
+  ctx.print();
+};
+
+/** A terminal prints each chart's data table, the same rows the web table shows. */
+const printChart = (ctx: CloudCliContext, args: unknown): boolean => {
+  const view = parseCloudAiChartToolView(args);
+  if (!view) return false;
+  printChartView(ctx, view);
   return true;
 };
 
@@ -73,20 +92,14 @@ async function printView(ctx: CloudCliContext, result: unknown, conversationId: 
       (view.view === "chart" && summary.data.view === "chart" && view.kind !== summary.data.kind)
     )
       throw new Error("Invalid view");
-    const table: CloudAiViewTable =
-      view.view === "chart" ? cloudAiChartTable(view, ctx.options.locale ?? "en") : cloudAiViewTable(view, ctx.options.locale ?? "en");
-    const footer = table.footer ? [table.footer] : [];
-    ctx.print();
-    ctx.print(terminalSafeText(view.title));
-    if (view.subtitle) ctx.print(terminalSafeText(view.subtitle));
-    ctx.table(
-      [...table.rows.slice(0, 100), ...footer].map((row) =>
-        Object.fromEntries(table.columns.map((column) => [column.id, terminalSafeText(row.cells[column.id] ?? "")])),
-      ),
-      table.columns.map((column) => ({ key: column.id, label: terminalSafeText(column.label) })),
-    );
-    if (table.rows.length > 100) ctx.print(`Showing 100 of ${table.rows.length} rows; Copy data in the web chat copies all of them.`);
-    ctx.print();
+    if (view.view === "chart" || view.view === "group") printChartView(ctx, view, true);
+    else {
+      ctx.print();
+      ctx.print(terminalSafeText(view.title));
+      if (view.subtitle) ctx.print(terminalSafeText(view.subtitle));
+      printTable(ctx, cloudAiViewTable(view, ctx.options.locale ?? "en"), true);
+      ctx.print();
+    }
   } catch {
     ctx.print(`View unavailable: ${terminalSafeText(path)}`);
   }

@@ -5,7 +5,7 @@ section: Identity and access
 order: 357
 description: How Cloud records, decides, and uses one approval for exactly the Action a person saw.
 tags: [identity, approvals, capabilities, audit]
-updated: 2026-10-10
+updated: 2026-10-11
 ---
 
 # Action approvals
@@ -37,7 +37,7 @@ credential, such as `cld capabilities action` or a request to
 | Sentence and review | What the person read, as a snapshot in their language |
 | Input and review digests | SHA-256 over the canonical Action input and over the review snapshot |
 | Status | `pending`, then `approved`, `rejected`, `expired`, or `cancelled`; `approved` becomes `consumed` when the Action runs |
-| Decided via | The credential the decision came with: `web_session`, `app_session`, `oauth`, `api_key`, or `invocation` |
+| Decided via | The decision channel: `web_session`, `app_session`, `oauth`, `api_key`, `invocation`, or `acp_bridge` |
 | Expiry | When an undecided request stops accepting a decision |
 
 The level follows what the call offers. An Action with
@@ -46,8 +46,48 @@ arguments, a tool whose policy allows remembering, and a website request are
 `standard`. Every other approval is `confirm`: an Action without `approval`,
 which includes every destructive and open-world Action, and a call of a
 rememberable Action whose review leaves out the scope, because that call asks
-every time. Cloud records the level; every place where the person can decide
-today accepts both levels.
+every time. Cloud records the level and checks the decision channel.
+
+## Where to decide
+
+A person can decide the same request in these places:
+
+- The approval card in the chat that waits for it.
+- The owning app's list or band, rendered with the shared `Approvals` component.
+  Mail shows a band on the draft that the Assistant wants to send.
+- The Assistant's **Approvals** view at `/app/assistant?approvals=1`.
+  Its navigation row sits above **Studio** while a request waits.
+  The row appears or disappears only on navigation. It stays while the view
+  is open. If its count reaches zero before navigation, it shows a muted `0`.
+- **My account → Approvals** at `/me/approvals`, for all apps.
+  Use `/me/approvals?app=mail` to filter by app.
+
+The lists contain only open, unexpired requests that a chat still waits for.
+They include Assistant chats and Studio code that asked through a chat.
+A Studio request answered in an open Studio page is not listed.
+Each page holds up to 20 requests, newest first. An app filter includes
+requests whose effect belongs to that app or that the app asked for.
+
+The rail and app grid add each app's open approvals to its icon count.
+
+## Decision channels
+
+| Channel | Approve `standard` | Approve `confirm` | Reject either level |
+| --- | --- | --- | --- |
+| Web or app session | Yes | Yes | Yes |
+| The person's `cld`, OAuth, or API key | Yes | Yes | Yes |
+| Editor bridge (`acp_bridge`) | Yes | No | Yes |
+
+Without the ACP header, personal credentials decide both levels as before.
+A client that sends `x-cloud-client: acp` declares itself as an editor bridge.
+Cloud records its decisions as `acp_bridge`. Approving an open `confirm`
+request through that channel returns `403`. The request stays open so the
+person can approve it in Cloud. A request that is already decided or has
+expired answers the bridge as it answers every other channel.
+
+Cloud cannot verify this header. It is the bridge's own declaration.
+It protects against the editor that drives the bridge. It does not protect
+against a client that holds the person's `cld` token and leaves the header out.
 
 ## Decide once
 
@@ -70,6 +110,25 @@ today accepts both levels.
 
 Rejecting is always possible while the request is open, also when the owning
 application is unavailable.
+
+## Pending approvals notification
+
+Core sends **Pending approvals** when a request waits from a turn that did
+not start in a signed-in browser session, such as `cld` or an editor bridge.
+A person gets at most one notice every 15 minutes. One notice covers all
+their waiting requests. A request that arrives within 15 minutes of the last
+notice is included in a later notice, which Core sends once the 15 minutes
+have passed. Core sends no notice for a request that an earlier notice
+already included. It also sends none when the person has decided another
+request since the newest waiting request arrived, because they are already
+deciding in Cloud. Requests created before Core first registered this
+notification are not notified.
+
+The title is **Approval waiting** for one request or **N approvals waiting**
+for several. The count includes all waiting requests from eligible turns.
+The notification opens `/me/approvals`. It has no decision buttons.
+Browser delivery is recommended. Users can change delivery in their
+notification settings.
 
 ## Use an approval once, for what was shown
 
@@ -110,8 +169,9 @@ in the Action.
 Every decision writes an audit event `auth.action.approve` or
 `auth.action.deny`. Its target is the approval request, labelled
 `<appId>.<action>`, and its metadata names the level, the requester, and the
-`decidedVia` channel. Assistant tool calls also keep the channel next to their
-approval state.
+`decidedVia` channel: `web_session`, `app_session`, `oauth`, `api_key`,
+`invocation`, or `acp_bridge`. Assistant tool calls also keep the channel next
+to their approval state.
 
 Approval requests are deleted with the capability execution records, 90 days
 after they expired.
@@ -124,20 +184,112 @@ request. Only a person in a signed-in browser session can remember a website.
 Scheduled tasks and mandates never ask and never use a remembered approval;
 see [Background mandates](/en/docs/identity/background-mandates).
 
+## Show approvals in your app
+
+Mount `Approvals` from `@k2b/cloud/approvals/ui` with your app ID in `app`.
+For one resource, also pass `link`. Use the same href that the Action's review
+uses in `links`. Load the first page during SSR with
+`loadPendingApprovals(c, query)` from `@k2b/cloud/server`.
+Pass that page as `initial` for the same query.
+
+In server code:
+
+```ts
+import { type AuthContext, loadPendingApprovals } from "@k2b/cloud/server";
+import type { Context } from "hono";
+
+export const loadInventoryApprovals = (c: Context<AuthContext>) =>
+  loadPendingApprovals(c, { app: "inventory" });
+```
+
+Call this loader in your authenticated SSR handler.
+Pass its result to your island:
+
+```tsx
+import { Approvals } from "@k2b/cloud/approvals/ui";
+import type { ApprovalPage } from "@k2b/cloud/contracts/approvals";
+
+export const InventoryApprovals = (props: { initial: ApprovalPage }) =>
+  <Approvals app="inventory" initial={props.initial} />;
+```
+
+Use `layout="band"` above a resource. The band shows nothing when the loaded
+page has no requests. Decided rows stay as receipts until the next load.
+The default `list` layout includes an empty state.
+Without `initial`, the component loads in the browser.
+
+An optional navigation row can use `ApprovalsNavStatus` and `approvalNavCount`
+from the same UI entry point. Pass the app ID and the initial page's `count`.
+`ApprovalsNavStatus` renders the count. `approvalNavCount(app, initial)` reads
+its current value. Keep row visibility stable until navigation.
+
+No app-owned approval route, table, or opt-in is needed.
+See [Cloud approvals](/en/ui/cloud/approvals) for the component properties,
+navigation example, and decision states.
+
+## Approval routes
+
+Core serves these routes for authenticated, user-backed actors only.
+Each route reads or decides that person's own requests.
+An actor without a user gets `403`. An unauthenticated caller gets `401`.
+
+| Route | Input | Success response |
+| --- | --- | --- |
+| `GET /api/approvals` | Optional query fields `app`, `link`, and `cursor` | `{ items, nextCursor, count, elsewhere }` |
+| `GET /api/approvals/counts` | None | `{ total, apps }` |
+| `POST /api/approvals/:id/decision` | UUID `id` and JSON `{ approved, remember? }` | `{ status: "approved" }` or `{ status: "rejected" }` |
+
+`app` matches the effect owner or requester app. `link` matches an exact review
+link href that starts with `/`. Both filters apply when both are present.
+Pass `nextCursor` as `cursor` for the next page. It is `null` at the end.
+`count` includes matching requests across all pages. `elsewhere` counts the
+person's other open requests. It is zero without an app or link filter.
+Invalid query fields or cursors return `400`.
+
+Each item contains `id`, `app` (`id`, localized `name`, nullable `icon`),
+`action`, `assurance`, `sentence`, nullable `review`, `requester`
+(`kind: "chat"`, `appId`, nullable `title`, `href`), `remember`
+(`chat`, `always`, `website` booleans), `createdAt`, and `expiresAt`.
+The timestamps use ISO strings. `apps` maps app IDs to positive open counts.
+An approval can count for both its effect owner and requester app.
+`total` counts each request once.
+
+`approved` is a boolean. `remember` is optional and accepts `"chat"` or
+`"always"` only where the request allows it. Website remembering requires
+`"chat"` and a signed-in browser session.
+A successful decision continues the waiting chat, like its approval card.
+
+| Decision status | Meaning |
+| --- | --- |
+| `200` | Decision accepted, or the same decision repeated |
+| `400` | Invalid ID or body, or a choice that cannot be remembered |
+| `403` | No user-backed actor, or the ACP bridge tried to approve an open `confirm` request |
+| `404` | No request for this person, an expired request, or the chat no longer waits |
+| `409` | The request already has a different decision |
+| `429` | Too many requests from this person; retry after `Retry-After` seconds |
+
+The decision body is limited to 1 KiB. A larger body returns `413`.
+All three routes use Cloud's per-person API rate limit, like `/api/ai`.
+
 ## Platform-owned service
 
-`@k2b/cloud/services/approvals` holds the table, its migration, and the
-`request`, `decide`, and `consume` functions that Core and Assistant use. It is
-platform-owned, not an application API: applications receive approvals through
-their Capability Actions.
+`@k2b/cloud/services/approvals` owns the table, migration, and the `request`,
+`decide`, and `consume` functions. It also provides `listPending`,
+`countPending`, and `presentPendingApproval` for platform consumers.
+These functions are platform-owned. Applications show and decide requests
+through the shared component and Core route. They load initial data through
+`loadPendingApprovals` from `@k2b/cloud/server`.
 
 ## Upgrade
 
-Core creates the `approvals.requests` table on start and gives every chat
+For the initial platform-request upgrade, Core creates `approvals.requests`
+on start and gives every chat
 approval that is still open a request, with the same digests the running
 Assistant computes. A Studio capability call that was waiting during the
 upgrade receives its request when the person decides, and keeps the one day it
-had to wait. People see no change, except that a chat Action whose review
-changed since the question asks again instead of running. See
+had to wait. A chat Action whose review changed since the question asks
+again instead of running. See
 [Deployment requirements](/en/docs/operations/deployment-requirements#record-approvals-as-platform-requests)
-for the upgrade order.
+for the initial upgrade order. See
+[Decide pending approvals in Cloud](/en/docs/operations/deployment-requirements#decide-pending-approvals-in-cloud)
+for the list routes and ACP channel upgrade.

@@ -113,7 +113,7 @@ export function createCloud(rpc: Rpc, context: RuntimeContext, script = false) {
     download: createDownload(rpc),
     view: createViews(rpc, context, script),
     html,
-    chart: (options: Parameters<typeof chart>[0]) => chart(options, context.locale),
+    chart: (options: Parameters<typeof chart>[0]) => chart(options, context.locale, context.timeZone),
     money: boundMoney(context.locale),
     pdf: { ...createPdf(rpc), read: async (file: Blob) => (await load("pdf-read")).read(file) },
     sheet: {

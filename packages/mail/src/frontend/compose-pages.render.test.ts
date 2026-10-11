@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CloudRuntime, User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
+import * as server from "@k2b/cloud/server";
 import * as services from "@k2b/cloud/services";
 import * as rail from "@k2b/cloud/services/rail-snapshot";
 import { createConfig } from "@k2b/ssr";
@@ -132,6 +133,19 @@ const request = (path: string) => {
   app.get("/app/mail/:mailboxId/compose/:draftId", ...draftPage);
   return app.request(`https://cloud.example.test/app/mail/${mailboxShortId}/compose/${path}`);
 };
+let pendingApprovals: ReturnType<typeof spyOn<typeof server, "loadPendingApprovals">>;
+beforeEach(() => {
+  pendingApprovals = spyOn(server, "loadPendingApprovals").mockResolvedValue({ items: [], nextCursor: null, count: 0, elsewhere: 0 });
+  spies.push(pendingApprovals);
+});
+
+test("a draft page asks for the approvals whose review links to this draft", async () => {
+  spies.push(spyOn(access, "requireMailboxAccess").mockResolvedValue(ok({ scope: "assigned", permission: "write", userId: user.id })));
+
+  expect((await request("Drf001")).status).toBe(200);
+  expect(pendingApprovals).toHaveBeenCalledWith(expect.anything(), { app: "mail", link: `/app/mail/${mailboxShortId}/compose/Drf001` });
+});
+
 const pages = [
   { path: "local/seed-1", island: "MailDraftSeedComposerPage" },
   { path: "Drf001", island: "MailComposerPage" },

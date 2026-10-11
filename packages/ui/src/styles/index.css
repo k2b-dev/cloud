@@ -1151,6 +1151,12 @@
   background: var(--k2b-action-solid);
 }
 
+/* A waiting count that dropped to zero stays in place, muted, until the row goes away on the next navigation. */
+.k2b-ui .k2b-app-workspace__sidebar-status[data-waiting="zero"] .k2b-app-workspace__sidebar-status-count {
+  color: var(--k2b-text-muted);
+  background: color-mix(in srgb, var(--k2b-text) 5%, transparent);
+}
+
 .k2b-ui .k2b-app-workspace__sidebar-status-dot {
   width: 0.5rem;
   height: 0.5rem;
@@ -11038,10 +11044,20 @@
 .k2b-ui .k2b-chart-explorer__legend,
 .k2b-ui .k2b-chart-explorer__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
 .k2b-ui .k2b-chart-explorer__header { justify-content: space-between; }
-.k2b-ui .k2b-chart-explorer__header h3 { margin: 0; font-size: 1rem; font-weight: 600; }
+.k2b-ui .k2b-chart-explorer__title { margin: 0; font-size: 1rem; font-weight: 600; }
 .k2b-ui .k2b-chart-explorer__status { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; font-size: .8rem; }
 .k2b-ui .k2b-chart-explorer__viewport { min-width: 0; overflow: auto; }
 .k2b-ui .k2b-chart-explorer__viewport > .k2b-table-shell { height: 100%; }
+/* A legend takes its rows from the chart, never from the page: the viewport keeps its height. The chart keeps most of
+   it however many names there are; a longer legend scrolls in the rest. */
+.k2b-ui .k2b-chart-explorer__viewport[data-legend] { display: flex; flex-direction: column; gap: .5rem; }
+.k2b-ui .k2b-chart-explorer__viewport[data-legend] > .k2b-chart { flex: 1 1 0; min-height: 60%; }
+.k2b-ui .k2b-chart-legend { display: flex; flex: 0 1 auto; flex-wrap: wrap; align-content: flex-start; gap: .25rem .875rem; min-height: 0; overflow-y: auto; margin: 0; padding: 0; list-style: none; color: var(--k2b-text-muted); font-size: .75rem; line-height: 1rem; }
+.k2b-ui .k2b-chart-legend li { display: inline-flex; align-items: center; gap: .375rem; min-width: 0; overflow-wrap: anywhere; }
+.k2b-ui .k2b-chart-legend__swatch { flex: none; width: .625rem; height: .625rem; border-radius: 2px; background: var(--k2b-chart-legend-color); }
+.k2b-ui .k2b-chart-legend__swatch[data-style] { width: 1rem; height: 0; border-radius: 0; background: none; border-top: 2px var(--k2b-chart-legend-style, dashed) var(--k2b-chart-legend-color); }
+.k2b-ui .k2b-chart-legend__swatch[data-style="dotted"] { --k2b-chart-legend-style: dotted; }
+.k2b-ui .k2b-chart-legend__swatch[data-reference]:not([data-style]) { background: none; box-shadow: inset 0 0 0 1.5px var(--k2b-chart-legend-color); }
 .k2b-ui .k2b-chart-explorer__details:empty { display: none; }
 .k2b-ui .k2b-chart-explorer__detail-paper { padding: .75rem 1rem; }
 .k2b-ui .k2b-chart-explorer__detail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: .5rem; color: var(--k2b-text-muted); font-size: .75rem; }

@@ -134,6 +134,9 @@ export const startCoreServices = async (
     await browserNotifications.start();
     await aiNotifications.start();
     stopCloudAiRuntime = startAiRuntime({
+      onApprovalRequested: async ({ approvalId }) => {
+        await aiNotifications.notifyApprovalWaiting(approvalId);
+      },
       onTurnFinalized: async ({ turnId, status, kind }) => {
         const task = await aiChatTasks.finalizeTurn({ turnId, status }).catch(() => null);
         await Promise.allSettled([

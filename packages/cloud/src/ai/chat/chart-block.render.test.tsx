@@ -68,4 +68,48 @@ describe("chart chat block", () => {
   test("a sparkline keeps a low frame", () => {
     expect(render({ kind: "sparkline", title: "Trend", data: [1, 3, 2] })).toMatch(/k2b-chart-explorer__viewport[^>]*height:\s*8rem/);
   });
+  test("a group draws every chart under one heading, and named series get an HTML legend instead of the SVG row", () => {
+    const days = (offset: number) => Array.from({ length: 5 }, (_, i) => ({ x: `2026-01-0${i + 1}`, y: offset + i }));
+    const html = render({
+      title: "Revenue and margin",
+      subtitle: "Daily, January 2026",
+      linkX: true,
+      layout: "grid",
+      charts: [
+        {
+          kind: "line",
+          title: "Revenue",
+          series: [
+            { label: "2026", data: days(10) },
+            { label: "2025", data: days(8), role: "reference" },
+          ],
+        },
+        { kind: "line", title: "Margin", series: [{ data: days(0.2) }], yAxis: { format: { style: "percent" } } },
+      ],
+    });
+    expect(html).toContain("Revenue and margin");
+    // Screen-reader heading navigation nests the charts under the group.
+    expect(html.match(/<h3\b/g)).toHaveLength(1);
+    expect(html.match(/<h4\b[^>]*>Revenue<\/h4>|<h4\b[^>]*>Margin<\/h4>/g)).toHaveLength(2);
+    expect(html).toContain("@2xl:grid-cols-2");
+    expect(html.match(/data-chart-kind="line"/g)).toHaveLength(2);
+    expect(html).toContain('aria-label="Legend"');
+    expect(html).not.toContain('class="stdlib-chart-legend');
+    // The comparison series is dashed in the chart and its legend; a line draws no hollow marks.
+    expect(html).toContain('data-style="dashed"');
+    expect(html).toContain('stroke-dasharray="6 4"');
+    expect(html).not.toContain('data-chart-reference="true"');
+    expect(html).toContain("20%");
+  });
+
+  test("new kinds draw in the chat frame", () => {
+    for (const args of [
+      { kind: "boxplot", title: "Prices", data: [{ label: "North", values: [1, 2, 3, 9] }] },
+      { kind: "heatmap", title: "Load", data: [{ x: "Mon", y: "AM", value: 3 }] },
+      { kind: "barGauge", title: "Quota", data: [{ label: "Disk", value: 40 }], thresholds: [{ value: 80 }] },
+      { kind: "stat", title: "Orders", value: 1284, delta: 12, better: "up", sparkline: [1, 3, 2] },
+    ])
+      expect(render(args)).toContain(`data-chart-kind="${args.kind}"`);
+    expect(render({ kind: "stat", title: "Orders", value: 1 })).toMatch(/k2b-chart-explorer__viewport[^>]*height:\s*10rem/);
+  });
 });

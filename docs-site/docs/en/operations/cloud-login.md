@@ -5,7 +5,7 @@ section: Accounts & sign-in
 order: 1090
 description: Build and host the standalone authenticator for multiple Cloud installations.
 tags: [authentication, pwa, deployment]
-updated: 2026-10-06
+updated: 2026-10-11
 ---
 
 # Run Cloud Login
@@ -18,6 +18,9 @@ optionally send push notifications that wake the app for new sign-in requests.
 The project deployment address is [cloud-login.pwa.k2b.dev](https://cloud-login.pwa.k2b.dev).
 For installation and everyday use, see [Cloud Login](/en/apps/cloud-login).
 You can also host it at your own stable HTTPS origin.
+
+Cloud Login approves sign-ins and device actions only.
+Decide [Action approvals](/en/docs/identity/approvals) in Cloud.
 
 ## Run the container
 

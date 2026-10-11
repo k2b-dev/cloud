@@ -987,6 +987,7 @@ export type AiConversationService = {
   savePendingTurnAction(input: AiPendingTurnActionRecord): Promise<void>;
   listPendingTurnActions(input: { conversationId: string; turnId: string }): Promise<AiPendingTurnAction[]>;
   getPendingTurnAction(input: { conversationId: string; turnId: string; callId: string }): Promise<AiPendingTurnActionRecord | null>;
+  findPendingTurnActionByApproval(input: { approvalId: string; ownerUserId: string }): Promise<AiPendingTurnActionRecord | null>;
   listPendingActionRecords(input: { conversationId: string; turnId: string }): Promise<AiPendingTurnActionRecord[]>;
   listResolvedPendingActions(input: { conversationId: string; turnId: string }): Promise<AiPendingTurnActionRecord[]>;
   resolvePendingTurnAction(input: {

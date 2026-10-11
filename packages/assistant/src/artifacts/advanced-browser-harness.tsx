@@ -41,6 +41,7 @@ render(
         conversations={[]}
         doneCount={0}
         projects={[]}
+        pendingApprovals={0}
         initialApp={{ ...item, source, sourceRevision: 1 }}
         view={view}
         databaseStatus={{ configured: true, connected: true, overview: null, unavailable: null, generation: null, dataRevision: null }}

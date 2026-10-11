@@ -1,11 +1,12 @@
 import type { User } from "@k2b/cloud/contracts";
 import { accountCategoryLabel } from "@k2b/cloud/contracts";
+import { APPROVALS_PAGE_PATH } from "@k2b/cloud/contracts/approvals";
 import { Avatar, Paper, useLocale } from "@k2b/ui";
 import { createUniqueId, type JSXElement } from "solid-js";
 import { accountMessages } from "./messages";
 import ProfileActions from "./ProfileActions.island";
 
-export type AccountSection = "profile" | "security" | "access" | "notifications" | "developer" | "app";
+export type AccountSection = "profile" | "security" | "access" | "notifications" | "approvals" | "developer" | "app";
 
 export const notificationViews = (locale: string) => {
   const { t } = accountMessages.resolve([locale]);
@@ -79,6 +80,7 @@ export default function AccountHub(props: {
             { id: "security", href: "/me/security", label: t().security, icon: "ti ti-shield-lock" },
             { id: "access", href: "/me/access", label: t().access, icon: "ti ti-users-group" },
             { id: "notifications", href: "/me/notifications", label: t().notifications, icon: "ti ti-bell" },
+            { id: "approvals", href: APPROVALS_PAGE_PATH, label: t().approvals, icon: "ti ti-shield-check" },
             { id: "developer", href: "/me/developer", label: t().developer, icon: "ti ti-terminal-2" },
             ...(props.appTab ? [{ id: "app" as const, href: "/me/app", label: t().pwaTab, icon: "ti ti-device-mobile" }] : []),
           ] satisfies { id: AccountSection; href: string; label: string; icon: string }[]

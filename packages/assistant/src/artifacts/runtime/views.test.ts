@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { checkCloudAiView, cloudAiViewSummary } from "@k2b/cloud/ai/browser";
 import { createCloud } from "./cloud";
-import { createViews } from "./views";
+import { createViews, normalizeChartDates } from "./views";
 
 function fixture(timeZone = "UTC") {
   const specs: unknown[] = [];
@@ -365,7 +365,7 @@ test("conversion errors name chart row and column, gauge cannot use rows", async
     message: "y: Choose one value column.",
   });
 });
-test("HTML app createCloud rejects both view methods before RPC", async () => {
+test("HTML app createCloud rejects every view method before RPC", async () => {
   let calls = 0;
   const cloud = createCloud(
     async () => {
@@ -373,7 +373,7 @@ test("HTML app createCloud rejects both view methods before RPC", async () => {
     },
     { locale: "en", timeZone: "UTC", user: null },
   );
-  for (const method of [cloud.view.chart, cloud.view.table])
+  for (const method of [cloud.view.chart, cloud.view.table, cloud.view.group])
     await expect(method({})).rejects.toMatchObject({
       code: "unavailable",
       message: "cloud.view.* works in code_run scripts; an app draws charts with cloud.chart().",
@@ -392,5 +392,232 @@ test("a Date in a date column keeps the calendar day of the run's time zone", as
   expect(specs[0]).toMatchObject({
     rows: [{ day: "2026-01-02", at: "2026-01-02T00:30:00" }],
     footer: { day: "2026-01-02" },
+  });
+});
+
+test("groups combine canonical and convenience charts in one save with summary defaults", async () => {
+  const { view, specs } = fixture();
+  const ref = await view.group({
+    title: "Measures",
+    subtitle: "Source",
+    layout: "grid",
+    charts: [
+      { kind: "bar", title: "Count", rows: [{ label: "A", n: 1 }], x: "label", y: "n" },
+      { kind: "stat", title: "Total", value: 42 },
+    ],
+  });
+  expect(specs).toEqual([
+    {
+      view: "group",
+      title: "Measures",
+      subtitle: "Source",
+      layout: "grid",
+      charts: [
+        { kind: "bar", title: "Count", data: [{ label: "A", value: 1 }] },
+        { kind: "stat", title: "Total", value: 42 },
+      ],
+    },
+  ]);
+  expect(ref).toMatchObject({
+    view: "group",
+    linkX: false,
+    layout: "grid",
+    charts: [
+      { kind: "bar", title: "Count" },
+      { kind: "stat", title: "Total" },
+    ],
+  });
+  expect(ref).not.toHaveProperty("value");
+});
+
+test("new convenience forms preserve first-seen labels and skip null observations", async () => {
+  const { view, specs } = fixture();
+  await view.chart({
+    kind: "boxplot",
+    title: "Boxes",
+    rows: [{ name: "B", n: 2 }, { name: "A", n: 1 }, { name: "B", n: 3 }, { n: null }],
+    x: "name",
+    y: "n",
+  });
+  expect(specs[0]).toMatchObject({
+    data: [
+      { label: "B", values: [2, 3] },
+      { label: "A", values: [1] },
+    ],
+  });
+  await view.chart({
+    kind: "heatmap",
+    title: "Cells",
+    rows: [{ col: "A", row: "B", n: 0.21 }, { n: null }],
+    x: "col",
+    y: "row",
+    value: "n",
+  });
+  expect(specs[1]).toMatchObject({ data: [{ x: "A", y: "B", value: 0.21 }] });
+  await view.chart({ kind: "barGauge", title: "Levels", rows: [{ name: "A", n: 12 }, { n: null }], x: "name", y: "n", max: 20 });
+  expect(specs[2]).toMatchObject({ data: [{ label: "A", value: 12 }], max: 20 });
+  await expect(view.chart({ kind: "stat", title: "Total", rows: [] })).rejects.toMatchObject({
+    code: "invalid",
+    message: "rows: A stat takes a value, not rows.",
+  });
+});
+
+test("groups name nested conversion and canonical validation paths", async () => {
+  const { view, specs } = fixture();
+  const first = { kind: "stat", title: "Total", value: 1 };
+  await expect(
+    view.group({
+      title: "G",
+      charts: [
+        first,
+        {
+          kind: "bar",
+          title: "B",
+          rows: [
+            { name: "A", price: 1 },
+            { name: "B", price: "bad" },
+          ],
+          x: "name",
+          y: "price",
+        },
+      ],
+    }),
+  ).rejects.toMatchObject({
+    code: "invalid",
+    message: "charts[1].rows[1].price: Expected a finite number; convert it to text or a number.",
+  });
+  expect(specs).toEqual([]);
+  // Canonical charts pass through unchanged; the server (this fixture) validates them and names their path.
+  await expect(view.group({ title: "G", charts: [first, { kind: "stat", title: "S", value: "bad" }] })).rejects.toThrow("charts[1].value:");
+  expect(specs).toEqual([{ view: "group", title: "G", charts: [first, { kind: "stat", title: "S", value: "bad" }] }]);
+});
+
+test.each(["line", "scatter"])(
+  "%s midnight Dates use calendar days across the whole chart, references use wall-clock time",
+  async (kind) => {
+    const { view, specs } = fixture("Europe/Berlin");
+    const dates = [new Date("2025-12-31T23:00:00Z"), new Date("2026-01-01T23:00:00Z")];
+    await view.chart({
+      kind,
+      title: "Days",
+      rows: dates.map((day, n) => ({ day, n })),
+      x: "day",
+      y: "n",
+      references: [{ axis: "x", value: new Date("2026-01-03T11:30:00Z") }],
+    });
+    expect(specs[0]).toMatchObject({
+      series: [
+        {
+          data: [
+            { x: "2026-01-01", y: 0 },
+            { x: "2026-01-02", y: 1 },
+          ],
+        },
+      ],
+      references: [{ axis: "x", value: "2026-01-03T12:30:00" }],
+    });
+    await view.group({
+      title: "G",
+      linkX: true,
+      charts: [
+        { kind: "line", title: "Dates", series: [{ data: dates.map((x, y) => ({ x, y })) }] },
+        {
+          kind: "line",
+          title: "Times",
+          series: [
+            {
+              data: [
+                { x: dates[0], y: 0 },
+                { x: new Date("2026-01-01T23:15:00Z"), y: 1 },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    expect(specs[1]).toMatchObject({
+      charts: [
+        {
+          series: [
+            {
+              data: [
+                { x: "2026-01-01", y: 0 },
+                { x: "2026-01-02", y: 1 },
+              ],
+            },
+          ],
+        },
+        {
+          series: [
+            {
+              data: [
+                { x: "2026-01-01T00:00:00", y: 0 },
+                { x: "2026-01-02T00:15:00", y: 1 },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+  },
+);
+
+for (const timeZone of ["UTC", "America/New_York", "Asia/Tokyo"])
+  test(`only app mode normalizes written ISO dates in ${timeZone}`, () => {
+    const values = [
+      "2026",
+      "2026-01",
+      "2026-01-02",
+      "2026-01-02T10:00",
+      "2026-01-02T10:00:00.123456",
+      "2026-01-02 10:00:00",
+      "2026-01-02T00:00:00.123",
+      "not a date",
+      "2026-01-02T10:00.123",
+    ];
+    const expected = [
+      "2026-01-01",
+      "2026-01-01",
+      "2026-01-02",
+      "2026-01-02T10:00",
+      "2026-01-02T10:00:00",
+      "2026-01-02T10:00:00",
+      "2026-01-02T00:00:00",
+      "not a date",
+      "2026-01-02T10:00.123",
+    ];
+    const spec = {
+      kind: "line",
+      series: [{ data: values.map((x) => ({ x, y: 1 })) }],
+      references: values.map((value) => ({ axis: "x", value })),
+    };
+    expect(normalizeChartDates(spec, timeZone, "", true)).toEqual({
+      ...spec,
+      series: [{ data: expected.map((x) => ({ x, y: 1 })) }],
+      references: expected.map((value) => ({ axis: "x", value })),
+    });
+    expect(normalizeChartDates(spec, timeZone)).toEqual(spec);
+  });
+
+test("app mode converts Date and ISO offset variants for points and references", () => {
+  const values = [
+    new Date("2026-01-02T10:00:00Z"),
+    "2026-01-02T10:00:00.123Z",
+    "2026-01-02 11:00:00.123+01",
+    "2026-01-02T11:00:00+0100",
+    "2026-01-02 11:00:00+01:00",
+    "2026-01-02T09:00:00-01",
+    "2026-01-02 09:00:00.123-0100",
+    "2026-01-02T09:00:00-01:00",
+  ];
+  const spec = {
+    kind: "line",
+    series: [{ data: values.map((x) => ({ x, y: 1 })) }],
+    references: values.map((value) => ({ axis: "x", value })),
+  };
+  expect(normalizeChartDates(spec, "America/New_York", "", true)).toEqual({
+    ...spec,
+    series: [{ data: values.map(() => ({ x: "2026-01-02T05:00:00", y: 1 })) }],
+    references: values.map(() => ({ axis: "x", value: "2026-01-02T05:00:00" })),
   });
 });

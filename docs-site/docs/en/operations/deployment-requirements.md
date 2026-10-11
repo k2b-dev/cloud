@@ -247,6 +247,19 @@ the memory occupied by files loaded for analysis. View files are ordinary chat
 files under `/views` and count toward the per-chat file budget; they need no
 configuration or migration.
 
+Assistant's `cloud.chart()` draws Studio app, chat app, script and PDF charts
+through the same options mapping as chat charts. Existing charts keep drawing:
+the chat's limits on series, points, labels and phone-width fit do not apply to
+apps, and empty, one-point or partly missing data still draws. Visible changes
+are a default logical width of 480 instead of 640 (height 280; sparkline remains
+160 × 40, and apps without explicit width redraw at their measured width), date
+axes in the viewer's wall-clock time, and stdlib-only options outside the chart
+contract, such as `padding`, being ignored. Renderer errors, such as a fixed
+domain that does not contain every value, now throw `invalid` instead of a plain
+error, and x strings must be ISO dates as documented. Chart groups and the
+additional chart kinds need no configuration or data migration. See
+[Code Mode charts](/en/docs/ai/chat-interface#check-an-html-app-before-showing-it).
+
 ### Assistant Chromium isolation
 
 Assistant runs headless Chromium in its own container as the unprivileged
@@ -580,6 +593,34 @@ SELECT action FROM audit.events WHERE target_type = 'approval_request' ORDER BY 
 
 The request shows `consumed` and `web_session`, and the event
 `auth.action.approve`.
+
+### Decide pending approvals in Cloud
+
+This release adds [approval lists and decision channels](/en/docs/identity/approvals).
+Core upgrades the `decided_via` CHECK constraint of `approvals.requests` on
+start. The migration is idempotent. It replaces the existing constraint only
+when it lacks `acp_bridge`. No configuration change is required.
+
+Core serves the new `/api/approvals` list, counts, and decision routes.
+They fall under Core's registered catch-all `/` prefix. Core does not declare
+a separate `/api/approvals` prefix.
+
+Update Core before Assistant and Mail. Both read the approvals list during
+SSR through the platform service. Core must migrate the approvals schema
+before they serve those pages.
+Core also registers **Pending approvals** as a user notification.
+Browser delivery is recommended. Users can change delivery in their settings.
+
+Rolling back keeps the expanded constraint. The older release ignores the
+new channel value. It does not apply the ACP restriction or serve the new
+approval lists.
+
+After the rollout, ask Assistant to send a Mail draft. Open
+**My account → Approvals**, the Assistant's **Approvals** view, and the draft.
+Check that each shows the waiting request.
+Try to approve a `confirm` request through a client that sends
+`x-cloud-client: acp`. It must return `403` and leave the request open.
+Approve it in Cloud and check the decision in the audit log.
 
 ### Update browser notifications for grouping and badges
 

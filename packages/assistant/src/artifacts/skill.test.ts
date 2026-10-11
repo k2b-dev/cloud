@@ -207,7 +207,7 @@ test("the CSV view example converts through the real runtime and validates every
     true,
   );
   const run = new Function("cloud", examples[0]!.code.replace("export default", "return"));
-  const csv = "status,price,date\npaid,10,2026-01-02\nopen,20,2026-01-03\npaid,30,2026-02-01";
+  const csv = "status,price,category,date\npaid,10,A,2026-01-02\nopen,20,B,2026-01-03\npaid,30,A,2026-02-01";
   expect(
     await run({ view, sheet: { parseCsv: (file: Blob) => parseCsv(file, {}, "en-US") } })(null, {
       files: [{ file: async () => new File([csv], "orders.csv") }],
@@ -215,10 +215,33 @@ test("the CSV view example converts through the real runtime and validates every
   ).toEqual({ orders: 3, total: 60 });
   expect(specs).toHaveLength(3);
   expect(specs[0]).toMatchObject({
-    kind: "bar",
+    view: "group",
+    layout: "grid",
+    charts: [
+      {
+        kind: "bar",
+        data: [
+          { label: "paid", value: 2 },
+          { label: "open", value: 1 },
+        ],
+      },
+      {
+        // The histogram rows form stores all observations as bin counts.
+        kind: "bar",
+        data: [
+          { label: "10–15", value: 1 },
+          { label: "15–20", value: 0 },
+          { label: "20–25", value: 1 },
+          { label: "25–30", value: 1 },
+        ],
+      },
+    ],
+  });
+  expect(specs[1]).toMatchObject({
+    kind: "boxplot",
     data: [
-      { label: "paid", value: 2 },
-      { label: "open", value: 1 },
+      { label: "A", values: [10, 30] },
+      { label: "B", values: [20] },
     ],
   });
   expect(specs[2]).toMatchObject({ footer: { month: "Total", amount: 60 } });

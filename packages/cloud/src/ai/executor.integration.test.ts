@@ -7,12 +7,14 @@ import { databaseSuite, testInfra } from "../../../../scripts/fixtures/test-infr
 import "../../../../scripts/fixtures/authorization-preload";
 import { compileCapabilities } from "../_internal/capabilities";
 import * as registry from "../_internal/registry";
+import { approvalRoutes } from "../api/approvals";
 import type { User } from "../contracts";
 import { defineCapabilities } from "../contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
 import { coreSettings } from "../services";
 import { approvals } from "../services/approvals";
 import { type CapabilityGrant, mandates } from "../services/mandates";
+import { createTestSession } from "../services/session/session.test-fixture";
 import { reconcileAppSkills } from "./app-skill-store";
 import { type AppSkillDefinition, skill as appSkill, appSkillManifestHash, registerAppSkills } from "./app-skills";
 import { AI_WEBSITE_APPROVAL_TOOL, aiTurnAllowsRememberedApprovals, rememberAiToolApproval } from "./approvals";
@@ -329,6 +331,7 @@ const createExecutor = (
   leaseOwner: string,
   onTurnFinalized?: (event: AiTurnFinalizedEvent) => Promise<void>,
   validateTurn: typeof validateAiTurnRequest = fakeValidateTurn,
+  onApprovalRequested?: (event: { approvalId: string }) => Promise<void>,
 ) =>
   new AiTurnExecutor({
     leaseOwner,
@@ -336,6 +339,7 @@ const createExecutor = (
     enqueueContinuation: async () => {},
     validateTurn,
     onTurnFinalized,
+    onApprovalRequested,
     // Transient provider failures retry at once.
     providerRetryDelaysMs: [1, 1],
   });
@@ -389,6 +393,13 @@ suite("AI executor integration", () => {
         },
         userMessage: userMessage("Write item"),
       });
+      const approvalEvents: string[] = [];
+      const onApprovalRequested = async ({ approvalId }: { approvalId: string }) => {
+        expect((await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id }))?.status).toBe("waiting_for_action");
+        expect(await approvals.get(approvalId)).toMatchObject({ status: "pending" });
+        approvalEvents.push(approvalId);
+        if (mode === "unchanged") throw new Error("Notification unavailable");
+      };
       const run = async (from: "queue" | "waiting") => {
         const claim = await aiConversations.claimTurn({
           conversationId: conversation.id,
@@ -400,7 +411,7 @@ suite("AI executor integration", () => {
           runBudgetMs: 60_000,
         });
         if (!claim) throw new Error("Expected claimed turn");
-        await createExecutor("approval-binding-exec", undefined, fakeValidateToolTurn).run({
+        await createExecutor("approval-binding-exec", undefined, fakeValidateToolTurn, onApprovalRequested).run({
           conversationId: conversation.id,
           turnId: turn.id,
           claim,
@@ -411,13 +422,23 @@ suite("AI executor integration", () => {
       const first = (await aiConversations.listPendingActionRecords({ conversationId: conversation.id, turnId: turn.id }))[0];
       expect(first).toMatchObject({ callId: "write-1-approval-0", review: { message: "Original effect" } });
       if (!first?.approvalId) throw new Error("Expected platform approval");
-      await approvals.decide(first.approvalId, { approved: true }, { userId, via: "web_session" });
-      await aiConversations.resolvePendingTurnAction({
-        conversationId: conversation.id,
-        turnId: turn.id,
-        callId: first.callId,
-        event: { type: "approval_response", callId: first.callId, approved: true },
-      });
+      expect(approvalEvents).toEqual([first.approvalId]);
+      if (mode === "unchanged") {
+        const response = await approvalRoutes.request(`/${first.approvalId}/decision`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${await createTestSession(userId)}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ approved: true }),
+        });
+        expect(response.status).toBe(200);
+      } else {
+        await approvals.decide(first.approvalId, { approved: true }, { userId, via: "web_session" });
+        await aiConversations.resolvePendingTurnAction({
+          conversationId: conversation.id,
+          turnId: turn.id,
+          callId: first.callId,
+          event: { type: "approval_response", callId: first.callId, approved: true },
+        });
+      }
       if (mode === "changed") {
         // Remembering the original scope cannot bypass the new question after stale consumption fails.
         await rememberAiToolApproval({ actorUserId: userId }, { toolName: "demo.write", approvalScope: "one" });

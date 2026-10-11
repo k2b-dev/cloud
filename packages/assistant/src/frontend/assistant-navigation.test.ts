@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
+  ASSISTANT_APPROVALS_HREF,
+  assistantApprovalsOpenFromHref,
   assistantArtifactHref,
   assistantArtifactPathFromHref,
   assistantConversationHref,
@@ -21,6 +23,13 @@ describe("Assistant conversation navigation", () => {
     expect(assistantConversationHref("/app/assistant?conversation=old&mode=compact#latest", null)).toBe(
       "/app/assistant?mode=compact#latest",
     );
+  });
+
+  test("leaves the approvals view for a chat or a Project", () => {
+    expect(assistantApprovalsOpenFromHref(ASSISTANT_APPROVALS_HREF)).toBe(true);
+    expect(assistantApprovalsOpenFromHref("/app/assistant?approvals=0")).toBe(false);
+    expect(assistantConversationHref(ASSISTANT_APPROVALS_HREF, "chat-1")).toBe("/app/assistant?conversation=chat-1");
+    expect(assistantProjectHref(ASSISTANT_APPROVALS_HREF, "prj123")).toBe("/app/assistant?project=prj123");
   });
 
   test("reads conversation ids from absolute and relative hrefs", () => {

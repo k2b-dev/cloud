@@ -35,6 +35,8 @@ describe("personal app rail", () => {
     });
     const projected = projectRailNavigation(apps, settings, "de");
     expect(projected.shortcuts.map((x) => x.label)).toEqual(["Zoo", "Details"]);
+    expect(projected.shortcuts.map((x) => x.appId)).toEqual(["z", undefined]);
+    expect(projected.apps.map((x) => x.appId)).toEqual(["a"]);
     expect(projected.apps.map((x) => x.id)).toEqual(["a"]);
     expect(projectRailNavigation(apps, { ...settings, shortcuts: [] }, "de").apps.map((x) => x.id)).toEqual(["a", "z"]);
     expect(settings.shortcuts).toHaveLength(3);

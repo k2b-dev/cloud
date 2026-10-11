@@ -3,6 +3,7 @@ import { redis, sql } from "bun";
 import { tinyJpeg, withCameraMetadata } from "../../../../scripts/fixtures/image-metadata";
 import { databaseSuite, suiteFor } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
+import { APPROVAL_ACP_CLIENT, APPROVAL_CLIENT_HEADER } from "../contracts/approvals";
 import { accounts } from "../services/accounts";
 import { approvalScopeFromToolName, approvals } from "../services/approvals";
 import { serviceAccountCredentials } from "../services/service-account-credentials";
@@ -572,7 +573,11 @@ suiteFor("database", "nats")("chat and website approvals", () => {
         userMessage: { role: "user", content: [{ type: "text", text: "Read the quotes" }] },
       });
       const origin = "https://query1.finance.yahoo.com";
-      const ask = async (callId: string, extra: Partial<Parameters<typeof aiConversations.savePendingTurnAction>[0]> = {}) => {
+      const ask = async (
+        callId: string,
+        extra: Partial<Parameters<typeof aiConversations.savePendingTurnAction>[0]> = {},
+        assurance: "confirm" | "standard" = "standard",
+      ) => {
         const snapshot = {
           turnId: turn.id,
           conversationId: chat.id,
@@ -595,7 +600,7 @@ suiteFor("database", "nats")("chat and website approvals", () => {
           requester: { kind: "assistant_turn", ref: `${turn.id}/${callId}`, appId: "assistant", title: chat.title },
           subjectId: userId,
           approverUserId: userId,
-          assurance: "standard",
+          assurance,
           sentence: snapshot.message,
           input: snapshot.args,
           review: snapshot.review,
@@ -615,6 +620,23 @@ suiteFor("database", "nats")("chat and website approvals", () => {
         sql<{ conversation_id: string | null }[]>`SELECT conversation_id FROM ai.tool_approval_preferences
           WHERE actor_user_id=${userId}::uuid AND tool_name=${AI_WEBSITE_APPROVAL_TOOL}`;
 
+      const bridgeHeaders = { ...apiKey, [APPROVAL_CLIENT_HEADER]: APPROVAL_ACP_CLIENT };
+      const bridgeConfirm = await ask(
+        "bridge-confirm",
+        { allowAlways: false, allowChat: false, rememberToolName: "mail.draft.send" },
+        "confirm",
+      );
+      const bridgeDenied = await decide("bridge-confirm", bridgeHeaders);
+      expect(bridgeDenied.status).toBe(403);
+      expect(await bridgeDenied.json()).toMatchObject({
+        code: "FORBIDDEN",
+        message: "Approve this request in Cloud. An editor can only reject it.",
+      });
+      expect(await approvals.get(bridgeConfirm)).toMatchObject({ status: "pending" });
+      expect((await decide("bridge-confirm", session)).status).toBe(200);
+      const bridgeStandard = await ask("bridge-standard");
+      expect((await decide("bridge-standard", bridgeHeaders)).status).toBe(200);
+      expect(await approvals.get(bridgeStandard)).toMatchObject({ status: "approved", decidedVia: "acp_bridge" });
       const firstApproval = await ask("run-approval-0");
       // An API key, like `cld` or another delegated credential, may approve this one request, but never the next ones.
       expect((await decide("run-approval-0", apiKey, "chat")).status).toBe(400);

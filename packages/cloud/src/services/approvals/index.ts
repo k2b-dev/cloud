@@ -1,16 +1,18 @@
 import { type SQL, sql } from "bun";
 import { capabilityRequestHash } from "../../capabilities/claims";
+import { APPROVAL_ACP_CLIENT } from "../../contracts/approvals";
 import type { CapabilityActionReview } from "../../contracts/capabilities";
 import { isAppSessionActor } from "../../server/actor";
 import type { RequestActor, RequestCredentialKind } from "../../server/middleware/auth";
 import { audit } from "../audit";
 import { toPgTextArray } from "../postgres";
 
+export { countPending, listPending, presentPendingApproval } from "./list";
 export { migrateApprovals } from "./migrate";
 
 // Derived from chat's AI_ACTION_BUDGET_MS and Studio's one-day abandonment of pending calls.
 export const APPROVAL_MAX_WAIT_MS = 24 * 60 * 60_000;
-export type ApprovalDecisionChannel = "web_session" | "app_session" | "oauth" | "api_key" | "invocation";
+export type ApprovalDecisionChannel = "web_session" | "app_session" | "oauth" | "api_key" | "invocation" | "acp_bridge";
 export type ApprovalRequesterKind = "assistant_turn" | "studio_app";
 export type ApprovalStatus = "pending" | "approved" | "rejected" | "expired" | "cancelled" | "consumed";
 export type ApprovalAssurance = "standard" | "confirm";
@@ -25,12 +27,15 @@ export const approvalReviewDigest = (review: CapabilityActionReview | null | und
 export const approvalDecisionChannel = (input: {
   credentialKind?: RequestCredentialKind;
   actor?: RequestActor;
+  client?: string | null;
 }): ApprovalDecisionChannel =>
-  input.credentialKind === "session"
-    ? isAppSessionActor(input.actor)
-      ? "app_session"
-      : "web_session"
-    : (input.credentialKind ?? "invocation");
+  input.client === APPROVAL_ACP_CLIENT
+    ? "acp_bridge"
+    : input.credentialKind === "session"
+      ? isAppSessionActor(input.actor)
+        ? "app_session"
+        : "web_session"
+      : (input.credentialKind ?? "invocation");
 export const approvalScopeFromToolName = (name: string): { appId: string; action: string } => {
   const dot = name.indexOf(".");
   return dot < 0 ? { appId: "assistant", action: name } : { appId: name.slice(0, dot), action: name.slice(dot + 1) };
@@ -123,7 +128,7 @@ export const get = async (id: string, db?: SQL): Promise<ApprovalRequest | null>
 
 export type ApprovalDecisionResult =
   | { ok: true; status: ApprovalStatus; replay: boolean }
-  | { ok: false; code: "EXPIRED" | "NOT_FOUND" }
+  | { ok: false; code: "EXPIRED" | "NOT_FOUND" | "REJECT_ONLY" }
   | { ok: false; code: "ALREADY_DECIDED"; status: ApprovalStatus };
 export const decide = async (
   id: string,
@@ -135,8 +140,11 @@ export const decide = async (
     const [row] = await tx<ApprovalRequest[]>`SELECT ${columns()} FROM approvals.requests
       WHERE id=${id}::uuid AND approver_user_id=${actor.userId}::uuid FOR UPDATE`;
     if (!row) return { ok: false, code: "NOT_FOUND" };
+    const rejectOnly = decision.approved && row.assurance === "confirm" && actor.via === "acp_bridge";
     const status = decision.approved ? "approved" : "rejected";
-    const [won] = await tx<ApprovalRequest[]>`
+    const [won] = rejectOnly
+      ? []
+      : await tx<ApprovalRequest[]>`
       UPDATE approvals.requests SET status=${status}, decided_via=${actor.via}, decided_at=now()
       WHERE id=${id}::uuid AND approver_user_id=${actor.userId}::uuid AND status='pending' AND expires_at > now()
       RETURNING ${columns()}
@@ -162,8 +170,9 @@ export const decide = async (
       return { ok: true, status, replay: false };
     }
     if (row.status === "pending") {
-      await tx`UPDATE approvals.requests SET status='expired' WHERE id=${id}::uuid AND status='pending' AND expires_at <= now()`;
-      return { ok: false, code: "EXPIRED" };
+      const [expired] = await tx<{ id: string }[]>`UPDATE approvals.requests SET status='expired'
+        WHERE id=${id}::uuid AND status='pending' AND expires_at <= now() RETURNING id`;
+      return { ok: false, code: expired || !rejectOnly ? "EXPIRED" : "REJECT_ONLY" };
     }
     if (
       (decision.approved && (row.status === "approved" || row.status === "consumed")) ||

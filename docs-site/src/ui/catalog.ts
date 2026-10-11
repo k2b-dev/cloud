@@ -326,6 +326,12 @@ const cloudPages: UiCatalogPage[] = [
     icon: "ti ti-paperclip",
     summary: "Add files from this device or from any Cloud app that offers files, and save copies into apps such as Files.",
   },
+  {
+    slug: "approvals",
+    title: "Cloud approvals",
+    icon: "ti ti-shield-check",
+    summary: "List and decide the signed-in person's open Action approvals for one app, one resource, or all apps.",
+  },
 ];
 
 const entry = (

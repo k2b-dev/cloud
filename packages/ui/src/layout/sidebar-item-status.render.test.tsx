@@ -71,6 +71,20 @@ describe("AppWorkspace.SidebarItemStatus", () => {
     expect(html).toContain(", 2 unread, mentions you");
   });
 
+  test("shows waiting items with their own phrase and keeps a muted zero", () => {
+    const html = render({ waiting: { count: 3, label: "3 waiting" } });
+    expect(html).toContain('data-waiting="count"');
+    expect(html).not.toContain("data-unread=");
+    expect(text(html, "k2b-app-workspace__sidebar-status-count")).toBe("3");
+    expect(html).toContain(", 3 waiting");
+    expect(html).not.toContain(" unread");
+
+    const zero = render({ waiting: { count: 0, label: "Nothing waiting" } });
+    expect(zero).toContain('data-waiting="zero"');
+    expect(text(zero, "k2b-app-workspace__sidebar-status-count")).toBe("0");
+    expect(zero).toContain(", Nothing waiting");
+  });
+
   test("keeps the unread slot without unread items", () => {
     const html = render({ mention: true });
     expect(html).toContain('<span class="k2b-app-workspace__sidebar-status-unread" aria-hidden="true"></span>');

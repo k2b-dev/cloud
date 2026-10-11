@@ -5,7 +5,7 @@ section: Reference
 order: 1277
 description: Pair per-account device keys and approve browser-bound Cloud sign-ins from a separate, multi-cloud authenticator.
 tags: [authentication, accounts, security, api]
-updated: 2026-10-04
+updated: 2026-10-11
 ---
 
 # Integrate an authenticator website
@@ -21,6 +21,9 @@ Accounts detail page.
 The [Cloud Login authenticator](./cloud-login.md) is deployed separately. Existing email, FreeIPA
 password and passkey sign-ins remain available; enabling app approval does not
 remove them or grant Linux access.
+
+Cloud Login approves sign-ins and device actions only.
+Decide [Action approvals](/en/docs/identity/approvals) in Cloud.
 
 ## Choose the trusted website
 

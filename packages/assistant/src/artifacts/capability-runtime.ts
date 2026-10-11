@@ -374,7 +374,7 @@ async function claimExecution(
         approvalId = approval.id;
         await db`UPDATE assistant.capability_calls SET approval_id=${approvalId}::uuid WHERE id=${row.id}::uuid AND approval_id IS NULL`;
       }
-      const via = approvalDecisionChannel({ credentialKind: identity.credentialKind, actor: identity.actor });
+      const via = approvalDecisionChannel({ credentialKind: identity.credentialKind, actor: identity.actor, client: identity.client });
       // A relay may reject, but only the person can approve a pending request in the chat.
       if (decision.approved && via === "invocation" && (await approvals.get(approvalId, db))?.status === "pending") return false;
       const decided = await approvals.decide(approvalId, decision, { userId: actor.id, via }, db);

@@ -36,6 +36,7 @@ import { reloadOnce } from "@k2b/cloud/browser/reload";
 import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
 import { openCloudResourcePicker } from "@k2b/cloud/browser/resource-picker";
 import { openGlobalSearch, registerSearchNavigation } from "@k2b/cloud/browser/search";
+import type { ApprovalPage } from "@k2b/cloud/contracts/approvals";
 import { navigate, navigateTo } from "@k2b/ssr/nav";
 import { mutation, query } from "@k2b/stdlib/solid";
 import {
@@ -66,6 +67,7 @@ import { assistantCommandMessages, ChatComposeInputSchema } from "../commands";
 import type { AssistantProjectContextSnapshot } from "../project-context";
 import type { AssistantSidebarSnapshot } from "../sidebar";
 import { openAssistantTaskRun } from "./AssistantActivitiesDialog";
+import AssistantApprovalsView from "./AssistantApprovalsView";
 import {
   AssistantChatContextContent,
   assistantChatSidebarActions,
@@ -92,6 +94,8 @@ import {
   matchesAssistantInvalidation,
 } from "./assistant-live";
 import {
+  ASSISTANT_APPROVALS_HREF,
+  assistantApprovalsOpenFromHref,
   assistantArtifactHref,
   assistantArtifactPathFromHref,
   assistantConversationHref,
@@ -164,6 +168,8 @@ type Props = {
   initialProject: AiProject | null;
   initialProjectChats: AiConversationPage | null;
   initialProjectContext: AssistantProjectContextSnapshot | null;
+  /** The Assistant's open approvals at render time, and whether the page opened on the approvals view. */
+  approvals: { page: ApprovalPage; open: boolean };
 };
 
 type ProjectViewState = {
@@ -285,6 +291,18 @@ export default function AssistantWorkspace(props: Props) {
         }
       : null,
   );
+  // The approvals view replaces the chat like a Project does. Its first page comes from the server only while the page
+  // still shows what it rendered; opened later, the list loads its current state.
+  const [approvalsOpen, setApprovalsOpen] = createSignal(props.approvals.open);
+  const [approvalsRendered, setApprovalsRendered] = createSignal(props.approvals.open);
+  const openApprovals = () => {
+    if (approvalsOpen()) return;
+    navigationRequest++;
+    setProjectView(null);
+    setApprovalsRendered(false);
+    setApprovalsOpen(true);
+    navigate(ASSISTANT_APPROVALS_HREF, { scroll: "manual", viewTransition: false });
+  };
   const activeProject = () => {
     const projectId = projectView()?.projectId;
     return projectId ? (projects().find((project) => project.id === projectId) ?? null) : null;
@@ -554,6 +572,7 @@ export default function AssistantWorkspace(props: Props) {
       if (conversation && chat.activeConversationId() === conversation.id) {
         if (shouldNavigate) {
           setProjectView(null);
+          setApprovalsOpen(false);
           commitConversationUrl(conversation.id);
         }
         if (focus) focusComposer();
@@ -616,6 +635,13 @@ export default function AssistantWorkspace(props: Props) {
   };
   const createAndFocusConversation = async () => {
     if (!activeChatIsBlank()) return createConversation(true);
+    // The approvals view opens over the chat it came from; New chat returns to that empty chat instead of a new one.
+    const conversationId = chat.activeConversationId();
+    if (approvalsOpen() && conversationId) {
+      navigationRequest++;
+      setApprovalsOpen(false);
+      commitConversationUrl(conversationId);
+    }
     focusComposer();
     return chat.conversation();
   };
@@ -653,6 +679,7 @@ export default function AssistantWorkspace(props: Props) {
   const openAndFocusConversation = async (conversationId: string) => {
     const requestId = ++navigationRequest;
     setProjectView(null);
+    setApprovalsOpen(false);
     const result = await chat.openConversation(conversationId);
     if (result === "failed") throw new Error(t().openConversationFailed);
     if (result === "stale" || requestId !== navigationRequest) return false;
@@ -668,6 +695,7 @@ export default function AssistantWorkspace(props: Props) {
       assistantApi.loadProjectContext(projectId),
     ]);
     if (requestId !== navigationRequest) return false;
+    setApprovalsOpen(false);
     setProjectView({ projectId, page, context });
     return true;
   };
@@ -733,7 +761,7 @@ export default function AssistantWorkspace(props: Props) {
     window.addEventListener("beforeunload", guardUnsaved);
     onCleanup(() => window.removeEventListener("beforeunload", guardUnsaved));
     const initialConversationId = chat.activeConversationId();
-    if (initialConversationId) commitConversationUrl(initialConversationId, true);
+    if (initialConversationId && !approvalsOpen()) commitConversationUrl(initialConversationId, true);
     if (props.initialArtifactPath) requestAnimationFrame(() => void openFiles(props.initialArtifactPath!));
 
     const handlePopState = () => {
@@ -743,6 +771,13 @@ export default function AssistantWorkspace(props: Props) {
       const projectId = assistantProjectIdFromHref(window.location.href);
       const artifactPath = assistantArtifactPathFromHref(window.location.href);
       const messageSeq = assistantMessageSeqFromHref(window.location.href);
+      if (assistantApprovalsOpenFromHref(window.location.href)) {
+        setProjectView(null);
+        setApprovalsRendered(false);
+        setApprovalsOpen(true);
+        return;
+      }
+      setApprovalsOpen(false);
       if (projectId) {
         void openProject(projectId).catch(() => navigateTo("/app/assistant"));
         return;
@@ -1779,7 +1814,7 @@ export default function AssistantWorkspace(props: Props) {
           renderedAt={props.renderedAt}
           doneCount={sidebar.data()?.doneCount ?? props.initialDoneCount}
           activeConversationId={chat.activeConversationId}
-          activeView="chat"
+          activeView={approvalsOpen() ? "approvals" : "chat"}
           projects={projects()}
           activeProjectId={activeProject()?.id ?? null}
           creatingConversation={newConversation.loading}
@@ -1793,6 +1828,8 @@ export default function AssistantWorkspace(props: Props) {
           canArchiveConversation={(conversation) => conversation.id !== chat.activeConversationId() || !chat.activeTurn()}
           onConversationUpdated={updateConversation}
           onConversationArchived={archiveConversation}
+          pendingApprovals={props.approvals.page.count}
+          onOpenApprovals={openApprovals}
           live={liveHub}
         />
 
@@ -1800,154 +1837,160 @@ export default function AssistantWorkspace(props: Props) {
           <AppWorkspace.Main scroll={false} mobilePane={artifactWorkspace.mobile()}>
             <AppWorkspace.MainPane id="chat" label={artifactCopy().chat} scroll={false} class="assistant-chat-pane flex min-h-0 flex-col">
               <Show
-                keyed
-                when={projectView()}
-                fallback={
-                  <Chat class="assistant-chat-shell min-h-0 flex-1">
-                    <div
-                      ref={contextHost.layoutRef}
-                      class="assistant-chat-layout"
-                      data-context={contextHost.closed() ? "closed" : "auto"}
-                      data-drawer={contextHost.drawerOpen() ? "open" : undefined}
-                    >
-                      <div class="contents">
-                        <section class="assistant-chat-messages min-h-0 overflow-hidden" data-scroll-preserve="assistant-messages">
-                          <Show
-                            when={emptyChat()}
-                            fallback={
-                              <AiChatActionsProvider
-                                actions={{
-                                  renderCodePresentation: (result) => (
-                                    <ChatPresentation
-                                      result={result()}
-                                      conversationId={chat.activeConversationId()!}
-                                      httpHost={browserHttpHost}
-                                      openApp={(id, title) => artifactWorkspace.open(appTab(id, title, true))}
-                                    />
-                                  ),
-                                  actionDisabled: () => chat.runStatus() === "stopping",
-                                  onApproval: async (request, input) => {
-                                    if (!(await chat.respondToApproval(request, input))) throw new Error(t().submitApprovalFailed);
-                                  },
-                                  onRevokeWebsite: async (origin) => {
-                                    const conversationId = chat.activeConversationId();
-                                    if (conversationId) await revokeChatWebsite(conversationId, origin);
-                                  },
-                                  onFrontendToolResult: async (request, result) => {
-                                    if (!(await chat.submitFrontendToolResult(request, result))) throw new Error(t().submitToolFailed);
-                                  },
-                                  onForkMessage: async (entry, input) => {
-                                    const conversation = await chat.forkMessage(entry.id, input);
-                                    if (!conversation) throw new Error(t().forkFailed);
-                                    if (chat.activeConversationId() === conversation.id) commitConversationUrl(conversation.id);
-                                  },
-                                  onRetryMessage: async (entry, input) => {
-                                    const retried = await chat.retryUserMessage(entry.id, {
-                                      ...input,
-                                      modelProfileId: selectedModelId() || undefined,
-                                    });
-                                    if (!retried) throw new Error(chat.error() ?? t().retryMessageFailed);
-                                  },
-                                  onMessageFeedback: async (entry, feedback) => {
-                                    const saved = feedback
-                                      ? await chat.setMessageFeedback(entry.id, feedback)
-                                      : await chat.clearMessageFeedback(entry.id);
-                                    if (!saved) throw new Error(chat.error() ?? t().saveFeedbackFailed);
-                                  },
-                                  onRetrySteer: async (block) => {
-                                    if (!(await chat.retrySteer(block))) throw new Error(chat.error() ?? t().retrySteerFailed);
-                                  },
-                                  onContinueTurn: async (message) => {
-                                    const target = chat.activeConversationId();
-                                    if (!target) return;
-                                    // Sending replaces the saved draft; what the person was writing goes back into it.
-                                    await sendBesideComposer(session(target), {
-                                      send: () => send({ message }),
-                                      hasContent: () => Boolean(composerDraft(target).trim()) || composerAttachmentsFor(target).length > 0,
-                                      save: () => saveComposer(target, target),
-                                    });
-                                  },
-                                  onOpenScheduledTaskRun: (taskId, occurrenceId) =>
-                                    void openAssistantTaskRun(taskId, occurrenceId, liveHub),
-                                  onOpenFile: (path) => void openFiles(path),
-                                  resolveFileLink: (href) => {
-                                    const context = workspaceContext();
-                                    const conversationId = chat.activeConversationId();
-                                    return conversationId && context?.chatId === conversationId
-                                      ? resolveChatFileLink(href, window.location.href, conversationId, assistantChatFilePaths(context))
-                                      : null;
-                                  },
-                                  fileUrl: chat.fileContentUrl,
-                                }}
-                              >
-                                <ConversationTimeline />
-                              </AiChatActionsProvider>
-                            }
-                          >
-                            <AssistantEmptyChat
-                              composer={<AssistantComposer />}
-                              notices={<ComposerNotices />}
-                              projects={projects()}
-                              selectedProjectId={emptyProjectId()}
-                              choosingProject={choosingProject()}
-                              onChooseProject={() => void chooseEmptyChatProject()}
-                              onStarter={useStarter}
+                when={!approvalsOpen()}
+                fallback={<AssistantApprovalsView initial={approvalsRendered() ? props.approvals.page : undefined} />}
+              >
+                <Show
+                  keyed
+                  when={projectView()}
+                  fallback={
+                    <Chat class="assistant-chat-shell min-h-0 flex-1">
+                      <div
+                        ref={contextHost.layoutRef}
+                        class="assistant-chat-layout"
+                        data-context={contextHost.closed() ? "closed" : "auto"}
+                        data-drawer={contextHost.drawerOpen() ? "open" : undefined}
+                      >
+                        <div class="contents">
+                          <section class="assistant-chat-messages min-h-0 overflow-hidden" data-scroll-preserve="assistant-messages">
+                            <Show
+                              when={emptyChat()}
+                              fallback={
+                                <AiChatActionsProvider
+                                  actions={{
+                                    renderCodePresentation: (result) => (
+                                      <ChatPresentation
+                                        result={result()}
+                                        conversationId={chat.activeConversationId()!}
+                                        httpHost={browserHttpHost}
+                                        openApp={(id, title) => artifactWorkspace.open(appTab(id, title, true))}
+                                      />
+                                    ),
+                                    actionDisabled: () => chat.runStatus() === "stopping",
+                                    onApproval: async (request, input) => {
+                                      if (!(await chat.respondToApproval(request, input))) throw new Error(t().submitApprovalFailed);
+                                    },
+                                    onRevokeWebsite: async (origin) => {
+                                      const conversationId = chat.activeConversationId();
+                                      if (conversationId) await revokeChatWebsite(conversationId, origin);
+                                    },
+                                    onFrontendToolResult: async (request, result) => {
+                                      if (!(await chat.submitFrontendToolResult(request, result))) throw new Error(t().submitToolFailed);
+                                    },
+                                    onForkMessage: async (entry, input) => {
+                                      const conversation = await chat.forkMessage(entry.id, input);
+                                      if (!conversation) throw new Error(t().forkFailed);
+                                      if (chat.activeConversationId() === conversation.id) commitConversationUrl(conversation.id);
+                                    },
+                                    onRetryMessage: async (entry, input) => {
+                                      const retried = await chat.retryUserMessage(entry.id, {
+                                        ...input,
+                                        modelProfileId: selectedModelId() || undefined,
+                                      });
+                                      if (!retried) throw new Error(chat.error() ?? t().retryMessageFailed);
+                                    },
+                                    onMessageFeedback: async (entry, feedback) => {
+                                      const saved = feedback
+                                        ? await chat.setMessageFeedback(entry.id, feedback)
+                                        : await chat.clearMessageFeedback(entry.id);
+                                      if (!saved) throw new Error(chat.error() ?? t().saveFeedbackFailed);
+                                    },
+                                    onRetrySteer: async (block) => {
+                                      if (!(await chat.retrySteer(block))) throw new Error(chat.error() ?? t().retrySteerFailed);
+                                    },
+                                    onContinueTurn: async (message) => {
+                                      const target = chat.activeConversationId();
+                                      if (!target) return;
+                                      // Sending replaces the saved draft; what the person was writing goes back into it.
+                                      await sendBesideComposer(session(target), {
+                                        send: () => send({ message }),
+                                        hasContent: () =>
+                                          Boolean(composerDraft(target).trim()) || composerAttachmentsFor(target).length > 0,
+                                        save: () => saveComposer(target, target),
+                                      });
+                                    },
+                                    onOpenScheduledTaskRun: (taskId, occurrenceId) =>
+                                      void openAssistantTaskRun(taskId, occurrenceId, liveHub),
+                                    onOpenFile: (path) => void openFiles(path),
+                                    resolveFileLink: (href) => {
+                                      const context = workspaceContext();
+                                      const conversationId = chat.activeConversationId();
+                                      return conversationId && context?.chatId === conversationId
+                                        ? resolveChatFileLink(href, window.location.href, conversationId, assistantChatFilePaths(context))
+                                        : null;
+                                    },
+                                    fileUrl: chat.fileContentUrl,
+                                  }}
+                                >
+                                  <ConversationTimeline />
+                                </AiChatActionsProvider>
+                              }
+                            >
+                              <AssistantEmptyChat
+                                composer={<AssistantComposer />}
+                                notices={<ComposerNotices />}
+                                projects={projects()}
+                                selectedProjectId={emptyProjectId()}
+                                choosingProject={choosingProject()}
+                                onChooseProject={() => void chooseEmptyChatProject()}
+                                onStarter={useStarter}
+                              />
+                            </Show>
+                            <codeApprovals.View
+                              conversationTitle={(id) => conversations().find((c) => c.id === id || c.shortId === id)?.title}
                             />
-                          </Show>
-                          <codeApprovals.View
-                            conversationTitle={(id) => conversations().find((c) => c.id === id || c.shortId === id)?.title}
-                          />
-                        </section>
+                          </section>
 
-                        <Show when={!emptyChat()}>
-                          <div class="assistant-chat-composer shrink-0 px-[var(--ui-space-section)] pb-[var(--ui-space-section)] pt-2">
-                            <div class="mx-auto flex max-w-3xl flex-col gap-2">
-                              <ComposerNotices />
-                              <AssistantComposer />
+                          <Show when={!emptyChat()}>
+                            <div class="assistant-chat-composer shrink-0 px-[var(--ui-space-section)] pb-[var(--ui-space-section)] pt-2">
+                              <div class="mx-auto flex max-w-3xl flex-col gap-2">
+                                <ComposerNotices />
+                                <AssistantComposer />
+                              </div>
                             </div>
-                          </div>
+                          </Show>
+                        </div>
+                        <Show when={activeConversation() && !emptyChat()}>
+                          <IconButton
+                            ref={contextHost.toggleRef}
+                            class="assistant-context-toggle"
+                            size="sm"
+                            variant="ghost"
+                            label={sidebarCopy().show}
+                            aria-expanded="false"
+                            aria-controls="assistant-chat-context"
+                            onClick={contextHost.open}
+                          >
+                            <i class="ti ti-layout-sidebar-right-expand" aria-hidden="true" />
+                          </IconButton>
+                          <AssistantChatSidebarPanel
+                            id="assistant-chat-context"
+                            state={contextState}
+                            actions={sidebarActions()}
+                            project={activeConversationProject()}
+                            runCount={contextState.snapshot()?.runCount}
+                            onClose={contextHost.close}
+                            headingRef={contextHost.headingRef}
+                          />
                         </Show>
                       </div>
-                      <Show when={activeConversation() && !emptyChat()}>
-                        <IconButton
-                          ref={contextHost.toggleRef}
-                          class="assistant-context-toggle"
-                          size="sm"
-                          variant="ghost"
-                          label={sidebarCopy().show}
-                          aria-expanded="false"
-                          aria-controls="assistant-chat-context"
-                          onClick={contextHost.open}
-                        >
-                          <i class="ti ti-layout-sidebar-right-expand" aria-hidden="true" />
-                        </IconButton>
-                        <AssistantChatSidebarPanel
-                          id="assistant-chat-context"
-                          state={contextState}
-                          actions={sidebarActions()}
-                          project={activeConversationProject()}
-                          runCount={contextState.snapshot()?.runCount}
-                          onClose={contextHost.close}
-                          headingRef={contextHost.headingRef}
+                    </Chat>
+                  }
+                >
+                  {(view) => (
+                    <Show when={projects().find((project) => project.id === view.projectId)}>
+                      {(project) => (
+                        <AssistantProjectView
+                          project={project()}
+                          initialPage={view.page}
+                          initialContext={view.context}
+                          composer={<AssistantComposer projectId={project().id} projectName={project().name} />}
+                          onOpenConversation={openAndFocusConversation}
                         />
-                      </Show>
-                    </div>
-                  </Chat>
-                }
-              >
-                {(view) => (
-                  <Show when={projects().find((project) => project.id === view.projectId)}>
-                    {(project) => (
-                      <AssistantProjectView
-                        project={project()}
-                        initialPage={view.page}
-                        initialContext={view.context}
-                        composer={<AssistantComposer projectId={project().id} projectName={project().name} />}
-                        onOpenConversation={openAndFocusConversation}
-                      />
-                    )}
-                  </Show>
-                )}
+                      )}
+                    </Show>
+                  )}
+                </Show>
               </Show>
             </AppWorkspace.MainPane>
             <AppWorkspace.MainPane

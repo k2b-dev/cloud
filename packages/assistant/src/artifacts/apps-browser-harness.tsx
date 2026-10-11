@@ -23,6 +23,7 @@ render(
       conversations={[]}
       doneCount={0}
       projects={[]}
+      pendingApprovals={0}
       initialApp={{
         ...item,
         sourceRevision: 2,
