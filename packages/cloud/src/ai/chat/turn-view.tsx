@@ -1,3 +1,4 @@
+import { dates } from "@k2b/stdlib";
 import { announce, Button, ButtonLink, Chat, NoticeCard, useLocale } from "@k2b/ui";
 import {
   type Accessor,
@@ -536,7 +537,7 @@ function AiReceipt(props: { block: ToolBlock; state: ReceiptState; stopped: bool
   };
   const capabilityAction = () => block().presentation?.kind === "capability";
   const links = () => (props.state === "done" ? resultLinks(block()) : []);
-  const label = () => {
+  const outcomeLabel = () => {
     const state = props.state;
     if (state === "running") return t().receiptRunning({ title: subject() });
     if (state === "done") {
@@ -552,6 +553,10 @@ function AiReceipt(props: { block: ToolBlock; state: ReceiptState; stopped: bool
       : t().receiptNotRun({ title: subject(), stopped: props.stopped });
   };
   const declined = () => props.state === "rejected" || props.state === "not_run";
+  const label = () => {
+    const at = block().at;
+    return at && props.state !== "running" ? `${outcomeLabel()} · ${dates.formatTime(at, { locale: locale() })}` : outcomeLabel();
+  };
   return (
     <Chat.Activity
       class="ai-turn-receipt"

@@ -320,8 +320,9 @@ order:
    its button rather than pushing the card wider, while the title above shows
    it in full. When code asks for approval again, each new request is a new
    card in the same place.
-   A receipt is one line in the reader's language, never the raw tool name. A
-   Cloud action reads as the sentence its app declares for the outcome, such
+   A receipt is one line in the reader's language, never the raw tool name.
+   When available, a finished receipt also shows the outcome time in the reader's time zone.
+   A Cloud action reads as the sentence its app declares for the outcome, such
    as "Sent email to jana@example.com", else as the action's own summary with its
    links. Without either, it names the call with the app's approval sentence
    or with its title and up to two labelled fields, such as "Done: Send email ·

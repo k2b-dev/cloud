@@ -45,7 +45,7 @@ describe("AI message timeline", () => {
     const timeline = buildAiMessageTimeline([
       stored({ id: "user-1", seq: 1, message: { role: "user", content: [{ type: "text", text: "test" }] } }),
       stored({ id: "assistant-1", seq: 2, message: firstAssistant, loopId: "loop-1" }),
-      stored({ id: "tool-1", seq: 3, message: toolResult, loopId: "loop-1" }),
+      stored({ id: "tool-1", seq: 3, message: toolResult, loopId: "loop-1", createdAt: "2026-10-07T10:23:45.000Z" }),
       stored({ id: "assistant-2", seq: 4, message: finalAssistant, loopId: "loop-1" }),
     ]);
 
@@ -59,7 +59,7 @@ describe("AI message timeline", () => {
     // Blocks: text, tool (completed via tool_result), text.
     expect(group.blocks.map((block) => block.kind)).toEqual(["text", "tool", "text"]);
     const toolBlock = group.blocks.find((block) => block.kind === "tool");
-    expect(toolBlock).toMatchObject({ kind: "tool", callId: "call-card", status: "completed" });
+    expect(toolBlock).toMatchObject({ kind: "tool", callId: "call-card", status: "completed", at: "2026-10-07T10:23:45.000Z" });
     expect(group.actionEntry?.id).toBe("assistant-2");
   });
 

@@ -465,6 +465,7 @@ const createEventMapper = (attempt: number, seedBlocks: AiTurnBlock[], allowReme
       name,
       args: "args" in patch ? patch.args : existing?.args,
       status: patch.status ?? existing?.status ?? "running",
+      at: patch.at ?? existing?.at,
       result: "result" in patch ? patch.result : existing?.result,
       isError: "isError" in patch ? patch.isError : existing?.isError,
       approval: approval && !allowRememberedApprovals ? { ...approval, allowAlways: false, allowChat: false } : approval,
@@ -548,6 +549,7 @@ const createEventMapper = (attempt: number, seedBlocks: AiTurnBlock[], allowReme
           setTool(event.callId, {
             name: event.name,
             status: rejectedCallIds.has(event.callId) ? "rejected" : event.isError ? "failed" : "completed",
+            at: new Date().toISOString(),
             result: event.result,
             isError: Boolean(event.isError),
             clearApproval: true,
@@ -559,7 +561,15 @@ const createEventMapper = (attempt: number, seedBlocks: AiTurnBlock[], allowReme
         if (callId && toolBlocks.has(callId)) {
           const existing = toolBlocks.get(callId);
           if (existing && existing.status !== "completed" && existing.status !== "failed") {
-            return [setTool(callId, { status: "failed", result: event.issue.message, isError: true, clearApproval: true })];
+            return [
+              setTool(callId, {
+                status: "failed",
+                at: new Date().toISOString(),
+                result: event.issue.message,
+                isError: true,
+                clearApproval: true,
+              }),
+            ];
           }
         }
         return [];

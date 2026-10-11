@@ -1580,6 +1580,22 @@ describe("turn places in the reader's language", () => {
     links: [{ rel: "open", href: "/app/grids/query?id=q1" }],
   });
 
+  test.each(["en", "de"])("receipt outcome times stay on one line in %s, absent while running or unavailable", (locale) => {
+    const at = "2026-10-07T10:23:45.000Z";
+    const date = new Date(at);
+    const localTime = `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+    const receipt = mail({ summary: "Sent email" });
+    for (const status of ["completed", "failed", "rejected"] as const) {
+      const html = renderPlaces([{ ...receipt, status, approved: true, at }], { locale });
+      expect(html).toContain(` · ${localTime}</strong>`);
+      expect(html.match(/class="[^"]*ai-turn-receipt[^"]*"/g)).toHaveLength(1);
+    }
+    expect(renderPlaces([receipt], { locale })).not.toContain(` · ${localTime}`);
+    const running = renderPlaces([{ ...receipt, status: "running", approved: true, at }], { locale, phase: "running" });
+    expect(running).toContain(locale === "de" ? "Wird ausgeführt" : "Running");
+    expect(running).not.toContain(` · ${localTime}`);
+  });
+
   test("labels receipt links without a title in the reader's language", () => {
     const result = {
       summary: "E-Mail an Jana Berger gesendet",
