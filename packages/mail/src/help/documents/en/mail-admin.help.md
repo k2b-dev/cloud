@@ -253,6 +253,8 @@ In **Settings → Writing**, create private or mailbox signatures and snippets. 
 
 Markdown messages always get the built-in readable email design. **Email design** adds checked mailbox CSS for company branding. It does not replace the safe base design. Check the result in the **Preview** of the composer before you rely on a CSS change.
 
+The mailbox CSS comes after the built-in design. Each of its rules wins over the built-in design for the elements it selects. For example, `a { color: #262626; }` changes the color of every link. Use `.mail-content` for the whole message, for example `.mail-content { font-size: 16px; }`. Selectors can use the elements that email keeps and the `.mail-content` class. Other classes, IDs, pseudo-classes such as `:hover`, `@` rules, and `!important` are not accepted. Values cannot load images, for example with `url()` or `image-set()`, and cannot contain backslash escapes.
+
 ## Configure automatic responses and references {icon="settings"}
 
 Open **Mailbox tools → Automations**:

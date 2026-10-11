@@ -925,6 +925,47 @@ test("compose template and style commands preserve exact source input", async ()
   ]);
 });
 
+test("compose preview prints what email leaves out on stderr and keeps it in JSON", async () => {
+  const formattingWarnings = [
+    { code: "unsupported_element", element: "small" },
+    { code: "unsupported_attribute", element: "span", attribute: "class" },
+  ];
+  const server = withMailbox(async (request) => {
+    if (new URL(request.url).pathname.endsWith("/compose-preview")) {
+      return api({ html: "<p>Draft body</p>", text: "Draft body", formattingWarnings });
+    }
+    return api({ message: "unexpected" }, { status: 500 });
+  });
+  servers.push(server);
+  const origin = `http://127.0.0.1:${server.port}`;
+  const input = JSON.stringify({
+    senderIdentityId: IDENTITY_ID,
+    to: [],
+    cc: [],
+    bcc: [],
+    subject: "Hello",
+    body: '<small>b</small> <span class="x">c</span>',
+    format: "markdown",
+  });
+
+  const human = await runCli(origin, ["mail", "compose", "preview", "--mailbox", MAILBOX_ID, "--draft-stdin"], input);
+  expect(human.exitCode, human.stderr).toBe(0);
+  expect(human.stdout).toBe("<p>Draft body</p>\n");
+  expect(human.stderr).toBe(
+    [
+      "Email leaves out some of the HTML in this message.",
+      "  - <small> is not supported and was removed. Its text stays.",
+      "  - The class attribute was removed from <span>.",
+      "",
+    ].join("\n"),
+  );
+
+  const json = await runCli(origin, ["--json", "mail", "compose", "preview", "--mailbox", MAILBOX_ID, "--draft-stdin"], input);
+  expect(json.exitCode, json.stderr).toBe(0);
+  expect(json.stderr).toBe("");
+  expect(JSON.parse(json.stdout).formattingWarnings).toEqual(formattingWarnings);
+});
+
 test("compose rendering commands send one validated draft context", async () => {
   const requests: Array<{ path: string; body: unknown }> = [];
   const draft = {
@@ -958,7 +999,7 @@ test("compose rendering commands send one validated draft context", async () => 
         },
       ]);
     }
-    if (url.pathname.endsWith("/compose-preview")) return api({ html: "<p>Draft body</p>", text: "Draft body" });
+    if (url.pathname.endsWith("/compose-preview")) return api({ html: "<p>Draft body</p>", text: "Draft body", formattingWarnings: [] });
     return api({ message: "unexpected" }, { status: 500 });
   });
   servers.push(server);
@@ -1010,7 +1051,7 @@ test("compose rendering commands send one validated draft context", async () => 
   ]);
   expect(JSON.parse(snippet.stdout)).toEqual({ markdown: "Rendered snippet" });
   expect(JSON.parse(suggestions.stdout)[0]).toMatchObject({ shortcut: "hello", markdown: "Rendered greeting" });
-  expect(JSON.parse(preview.stdout)).toEqual({ html: "<p>Draft body</p>", text: "Draft body" });
+  expect(JSON.parse(preview.stdout)).toEqual({ html: "<p>Draft body</p>", text: "Draft body", formattingWarnings: [] });
 });
 
 test("local tag CLI creates catalog entries and fences conversation assignments", async () => {

@@ -540,6 +540,7 @@ const mapDraftMutation = (draft: MailDraft, ids: DraftPublicIds) => ({
   attachmentsTruncated: draft.attachments.length > 50,
   revision: draft.revision,
   state: draft.state,
+  ...(draft.formattingWarnings ? { formattingWarnings: draft.formattingWarnings } : {}),
 });
 
 /** A folder of one mailbox by its public ID, with its full path for review and summaries. */
@@ -2453,6 +2454,8 @@ const actionDefinitions = {
         input: { idempotencyKey: stableUuid(key.data), origin, draft: draftContent },
       });
       if (!result.ok) return result;
+      // Attachment uploads return the draft again, without the warnings about its body.
+      const { formattingWarnings } = result.data;
       for (const attachment of input.attachments) {
         const bytes = Buffer.from(attachment.base64, "base64");
         const hash = createHash("sha256").update(bytes).digest("hex");
@@ -2473,7 +2476,7 @@ const actionDefinitions = {
       }
       const ids = await draftPublicIds([result.data]);
       const publicDraftId = requirePublicId(ids.drafts, result.data.id);
-      const data = mapDraftMutation(result.data, ids);
+      const data = mapDraftMutation({ ...result.data, formattingWarnings }, ids);
       return ok({
         data,
         summary: capabilitySummary(t.createdDraft({ subject: reviewSubject(result.data.subject, context) })),

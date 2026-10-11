@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import { type ComposeFormattingWarning, MAX_COMPOSE_FORMATTING_WARNINGS } from "../contracts";
 import {
   type ComposeRenderContext,
+  composeFormattingWarnings,
   DEFAULT_MAIL_CSS,
   hasUnrenderedTemplateSyntax,
   markComposeTemplateSegment,
@@ -399,6 +401,22 @@ describe("compose renderer", () => {
       expect(rendered.ok && `${rendered.data.html}${rendered.data.text}`).not.toMatch(/[\u2063\u2064]|&#(?:8291|8292|x206[34]);/i);
     });
 
+    test("marks inside a link address never hide its scheme from the sanitizer", () => {
+      for (const body of [
+        '<a href="java&#8291;script:alert(1)">click</a>',
+        "[click](java&#8291;script:alert(1))",
+        '<a href="te&#8291;l:*123#">click</a>',
+        "[click](te&#x2064;l:*123#)",
+      ]) {
+        const rendered = render(body);
+        expect(rendered.ok).toBe(true);
+        if (!rendered.ok) continue;
+        expect(rendered.data.html).toContain(">click</a>");
+        expect(rendered.data.html).not.toContain("href");
+        expect(composeFormattingWarnings(body, "markdown")).toEqual([{ code: "unsupported_link", element: "a" }]);
+      }
+    });
+
     test("leftover marks in filled-in values never reach the message", () => {
       const rendered = renderComposeContent({
         body: markComposeTemplateSegment("{{ actor.display_name }}"),
@@ -446,6 +464,14 @@ describe("compose renderer", () => {
       ".mail-content a:hover { color: red; }",
       ".mail-content { background-image: url(https://example.test/x); }",
       ".mail-content { position: fixed; }",
+      // Other functions that load an image, CSS escapes that spell one, and a function after a line break.
+      "a { background: image-set('https://example.test/p.png' 1x); }",
+      "a { background: -webkit-image-set(url(https://example.test/p.png) 1x); }",
+      "a { background: cross-fade(50% 'https://example.test/p.png', red); }",
+      "a { background: -moz-element(#x); }",
+      "p { background: u\\72l(https://example.test/p); }",
+      "p { background: \\75\\72\\6c(https://example.test/p); }",
+      "p { background: #fff\n  image-set('https://example.test/p.png' 1x); }",
     ]) {
       expect(validateComposeCss(css).ok).toBe(false);
     }
@@ -473,7 +499,8 @@ describe("compose renderer", () => {
   });
 
   test("keeps the built-in stylesheet valid", () => {
-    expect(validateComposeCss(DEFAULT_MAIL_CSS).ok).toBe(true);
+    // Mailbox CSS may not use pseudo-classes; the built-in design uses `:where()` only to lower its specificity.
+    expect(validateComposeCss(DEFAULT_MAIL_CSS.replace(":where(.mail-content)", ".mail-content")).ok).toBe(true);
   });
 
   test("keeps plain text plain while resolving Liquid", () => {
@@ -486,5 +513,118 @@ describe("compose renderer", () => {
     });
 
     expect(rendered).toEqual({ ok: true, data: { html: null, text: "Hello Ada Lovelace" } });
+  });
+
+  test("keeps phone links and drops a tel: link that holds no phone number", () => {
+    const rendered = renderComposeContent({
+      body: '[+49 731 000000](tel:+49731000000), <a href="tel:+49 (731) 000-000;ext=12">desk</a> and [not a number](tel:call-me)',
+      format: "markdown",
+      customCss: "",
+      context,
+      renderLiquid: true,
+    });
+
+    expect(rendered.ok).toBe(true);
+    if (!rendered.ok) return;
+    expect(rendered.data.html).toContain('href="tel:+49731000000"');
+    expect(rendered.data.html).toContain('href="tel:+49 (731) 000-000;ext=12"');
+    expect(rendered.data.html).not.toContain("call-me");
+    expect(rendered.data.html).toContain("not a number</a>");
+  });
+
+  test("lets every mailbox CSS rule win over the built-in design for the same element", () => {
+    const render = (customCss: string) => {
+      const rendered = renderComposeContent({
+        body: "Read [the offer](https://example.test/offer).",
+        format: "markdown",
+        customCss,
+        context,
+        renderLiquid: true,
+      });
+      if (!rendered.ok) throw new Error(rendered.error.message);
+      return rendered.data.html ?? "";
+    };
+
+    expect(render("")).toContain("color:#0f766e");
+    for (const css of ["a { color: #262626; }", "p a { color: #262626; }", ".mail-content a { color: #262626; }"]) {
+      const html = render(css);
+      expect(html).toContain("color:#262626");
+      expect(html).not.toContain("#0f766e");
+    }
+    expect(render("p { margin: 0; }")).toContain('<p style="margin:0">');
+    expect(render(".mail-content { color: #123456; }")).toMatch(/^<div style="[^"]*color:#123456/);
+    // The message wrapper is a `div` too.
+    const wrapper = render("div { color: #ff0000; font-size: 18px; }").match(/^<div style="([^"]*)"/)?.[1] ?? "";
+    expect(wrapper).toContain("color:#ff0000");
+    expect(wrapper).toContain("font-size:18px");
+    expect(wrapper).not.toContain("#18181b");
+    expect(wrapper).not.toContain("15px");
+  });
+
+  test("reports removed elements, attributes and links instead of dropping them silently", () => {
+    expect(
+      composeFormattingWarnings(
+        'Text\n\n<div style="color:#999">a</div> <small>b</small> <span class="x">c</span>\n\n[j](javascript:alert(1)) [t](tel:nope)',
+        "markdown",
+      ),
+    ).toEqual([
+      { code: "unsupported_element", element: "small" },
+      { code: "unsupported_attribute", element: "div", attribute: "style" },
+      { code: "unsupported_attribute", element: "span", attribute: "class" },
+      { code: "unsupported_link", element: "a" },
+    ]);
+  });
+
+  test("reports raw HTML links whose address email removes, like Markdown links", () => {
+    for (const href of ["sms:+49", "javascript:alert(1)", "data:text/html,x", "note:abc"]) {
+      expect(composeFormattingWarnings(`<a href="${href}">x</a>`, "markdown")).toEqual([{ code: "unsupported_link", element: "a" }]);
+      expect(composeFormattingWarnings(`[x](${href})`, "markdown")).toEqual([{ code: "unsupported_link", element: "a" }]);
+    }
+  });
+
+  test("reports HTML after a closing tag or a comment in the same block", () => {
+    const expected: ComposeFormattingWarning[] = [
+      { code: "unsupported_element", element: "small" },
+      { code: "unsupported_attribute", element: "span", attribute: "class" },
+    ];
+    expect(composeFormattingWarnings('<div>\n\ntext\n\n</div>\n<small>Bye</small> <span class="x">y</span>', "markdown")).toEqual(expected);
+    expect(composeFormattingWarnings('<!-- note --><small>Bye</small> <span class="x">y</span>', "markdown")).toEqual(expected);
+  });
+
+  test("reports Markdown images like <img>, because email leaves both out", () => {
+    const image: ComposeFormattingWarning[] = [{ code: "unsupported_element", element: "img" }];
+    expect(composeFormattingWarnings("![logo](https://example.test/l.png)", "markdown")).toEqual(image);
+    expect(composeFormattingWarnings('<img src="https://example.test/l.png" alt="logo">', "markdown")).toEqual(image);
+  });
+
+  test("reports names as printable text only", () => {
+    const [element] = composeFormattingWarnings("<div>\n<x\u001b]0;pwn\u0007 class=y>hi</x>\n</div>", "markdown");
+    expect(element).toEqual({ code: "unsupported_element", element: "x]0;pwn" });
+    const [attribute] = composeFormattingWarnings('<div>\n<span \u001b[2j="1">hi</span>\n</div>', "markdown");
+    expect(attribute).toEqual({ code: "unsupported_attribute", element: "span", attribute: "[2j" });
+  });
+
+  test("reports nothing for supported Markdown, supported HTML, and plain text", () => {
+    const supported = [
+      "**Bold**, _em_, `code`, [web](https://example.test), [mail](mailto:a@example.test), [phone](tel:+49731000000)",
+      '<strong>Bold</strong> <a href="https://example.test" target="_blank">link</a><br>',
+      "| a | b |\n| --- | --- |\n| 1 | 2 |",
+      "> A quote keeps its text",
+      markComposeTemplateSegment("Regards\n{{ sender.display_name }}"),
+    ];
+    for (const body of supported) expect(composeFormattingWarnings(body, "markdown")).toEqual([]);
+    expect(composeFormattingWarnings('<span class="x">plain</span>', "plain")).toEqual([]);
+  });
+
+  test("keeps the report short and stable for repeated and many removals", () => {
+    expect(
+      composeFormattingWarnings('<span class="a">1</span> <span class="b">2</span> <small>3</small> <small>4</small>', "markdown"),
+    ).toEqual([
+      { code: "unsupported_element", element: "small" },
+      { code: "unsupported_attribute", element: "span", attribute: "class" },
+    ]);
+    const many = Array.from({ length: 50 }, (_, index) => `<x-tag${index}>t</x-tag${index}>`).join(" ");
+    expect(composeFormattingWarnings(many, "markdown")).toHaveLength(MAX_COMPOSE_FORMATTING_WARNINGS);
+    expect(composeFormattingWarnings(`<${"x".repeat(200)}>t`, "markdown")[0]?.element).toHaveLength(64);
   });
 });

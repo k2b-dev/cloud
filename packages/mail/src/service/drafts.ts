@@ -44,7 +44,7 @@ import {
 import { attachmentMimeOrder } from "./attachment-order";
 import { actorRefFromRequest, type MailRequestContext } from "./auth";
 import { sha256Json } from "./canonical";
-import { removeOrphanComposeSegmentMarks } from "./compose-renderer";
+import { composeFormattingWarnings, removeOrphanComposeSegmentMarks } from "./compose-renderer";
 import { resolveDefaultSignatureSource } from "./compose-templates";
 import { applyConversationReferenceToReplySubjectInTransaction } from "./conversation-reference";
 import { requireDraftLeaseAvailable, withOwnedDraftLease } from "./draft-leases";
@@ -89,6 +89,10 @@ const internalMaterializeDraftSeedInputSchema = z
 type DraftActor = Extract<ActorRef, { kind: "user" | "service_account" | "workflow" | "system" }>;
 type MutableActor = Extract<DraftActor, { kind: "user" | "service_account" }>;
 const log = logger("mail:drafts");
+
+/** Writes that take content from a person or agent report what the email renderer removes from the body. */
+const withFormattingWarnings = (result: Result<MailDraft>): Result<MailDraft> =>
+  result.ok ? ok({ ...result.data, formattingWarnings: composeFormattingWarnings(result.data.body, result.data.format) }) : result;
 
 export const wakeDraftProjection = async <T extends { id: string }>(result: Result<T>): Promise<Result<T>> => {
   if (!result.ok) return result;
@@ -869,7 +873,7 @@ export const createDraft = async (params: {
         content: prepared.data.content,
       });
     });
-    return wakeDraftProjection(result);
+    return withFormattingWarnings(await wakeDraftProjection(result));
   } catch (error) {
     log.error("Failed to create draft", { mailboxId: params.mailboxId, error });
     return fail(err.internal("Failed to create draft"));
@@ -1262,7 +1266,7 @@ export const materializeDraftSeed = async (params: {
         materializationRequestHash: requestHash,
       });
     });
-    return wakeDraftProjection(result);
+    return withFormattingWarnings(await wakeDraftProjection(result));
   } catch (error) {
     log.error("Failed to materialize draft seed", {
       mailboxId: params.mailboxId,
@@ -1768,7 +1772,7 @@ export const updateDraft = async (params: {
       if (row) await queueDraftProjectionInTransaction({ db: tx, draftId: row.id });
       return row ? ok(mapDraft(row)) : fail(err.internal("Draft update returned no row"));
     });
-    return wakeDraftProjection(result);
+    return withFormattingWarnings(await wakeDraftProjection(result));
   } catch {
     return fail(err.internal("Failed to update draft"));
   }

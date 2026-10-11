@@ -8,6 +8,7 @@ import type { MailRequestContext } from "./auth";
 import { markComposeTemplateSegment } from "./compose-renderer";
 import {
   createComposeTemplate,
+  getMailboxComposeStyle,
   listComposeTemplates,
   previewComposeDraft,
   renderComposeSnippet,
@@ -16,7 +17,7 @@ import {
   updateComposeTemplate,
   updateMailboxComposeStyle,
 } from "./compose-templates";
-import { createDraft, prepareDraftSeed } from "./drafts";
+import { createDraft, prepareDraftSeed, updateDraft } from "./drafts";
 import { createMailbox } from "./mailboxes";
 import { updateSenderIdentity } from "./sender-identities";
 
@@ -540,5 +541,71 @@ suite("mail compose templates", () => {
     ]);
     expect(results.filter((result) => result.ok)).toHaveLength(1);
     expect(results.filter((result) => !result.ok && result.error.status === 409)).toHaveLength(1);
+  });
+
+  test("reports what email leaves out, keeps phone links, and lets mailbox CSS element rules win", async () => {
+    const template = await createComposeTemplate({
+      context: owner,
+      mailboxId,
+      input: { kind: "snippet", scope: "private", name: "Fine print", shortcut: "fineprint", body: "Note <small>fine print</small>" },
+    });
+    expect(template).toMatchObject({ ok: true, data: { formattingWarnings: [{ code: "unsupported_element", element: "small" }] } });
+    if (!template.ok) return;
+    const updatedTemplate = await updateComposeTemplate({
+      context: owner,
+      mailboxId,
+      templateId: template.data.id,
+      input: { expectedRevision: template.data.revision, body: "Plain **Markdown**" },
+    });
+    expect(updatedTemplate).toMatchObject({ ok: true, data: { formattingWarnings: [] } });
+    const listed = await listComposeTemplates(owner, mailboxId);
+    expect(listed.ok && listed.data.every((entry) => entry.formattingWarnings === undefined)).toBe(true);
+
+    const content = {
+      senderIdentityId,
+      to: [{ name: null, address: "reader@example.test" }],
+      cc: [],
+      bcc: [],
+      subject: "Formatting",
+      body: 'Call [+49 731 000000](tel:+49731000000) or <span class="muted">write</span>.',
+      format: "markdown" as const,
+    };
+    const draft = await createDraft({
+      context: owner,
+      mailboxId,
+      input: { ...content, conversationId: null, intent: "new", sourceMessageId: null },
+    });
+    expect(draft).toMatchObject({
+      ok: true,
+      data: { formattingWarnings: [{ code: "unsupported_attribute", element: "span", attribute: "class" }] },
+    });
+    if (!draft.ok) return;
+    const updatedDraft = await updateDraft({
+      context: owner,
+      mailboxId,
+      draftId: draft.data.id,
+      expectedRevision: draft.data.revision,
+      input: { ...content, body: '<div style="color: #999">Quiet</div>' },
+    });
+    expect(updatedDraft).toMatchObject({
+      ok: true,
+      data: { formattingWarnings: [{ code: "unsupported_attribute", element: "div", attribute: "style" }] },
+    });
+
+    const style = await getMailboxComposeStyle(owner, mailboxId);
+    if (!style.ok) throw new Error(style.error.message);
+    const css = await updateMailboxComposeStyle({
+      context: owner,
+      mailboxId,
+      input: { expectedRevision: style.data.revision, customCss: "a { color: #262626; }" },
+    });
+    expect(css.ok).toBe(true);
+    const preview = await previewComposeDraft({ context: owner, mailboxId, input: { draft: content, conversationId: null } });
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) return;
+    expect(preview.data.html).toContain('href="tel:+49731000000"');
+    expect(preview.data.html).toContain("color:#262626");
+    expect(preview.data.html).not.toContain("#0f766e");
+    expect(preview.data.formattingWarnings).toEqual([{ code: "unsupported_attribute", element: "span", attribute: "class" }]);
   });
 });

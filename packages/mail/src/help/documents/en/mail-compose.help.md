@@ -55,6 +55,8 @@ Open **Message options** and choose the format for the current draft:
 
 Mail sends Markdown as readable HTML with the mailbox email design and a text alternative. Plain text sends no HTML alternative. If the Preview cannot show the message, for example because it is too long, it says why and offers **Retry**. You can arrange the available panes. Mail keeps the layout compatible when another draft offers a different set of panes.
 
+Markdown can also contain simple HTML. Email keeps the elements `a`, `br`, `code`, `div`, `em`, `h1` to `h3`, `li`, `ol`, `p`, `span`, `strong`, `ul`, and the table elements. It removes other elements, such as `small`, but keeps their text. It also removes `class`, inline `style`, and most other attributes. Links can open web pages, email addresses (`mailto:`), and phone numbers, for example `[+49 731 000000](tel:+49731000000)`. Email does not show images, horizontal lines, or the quote marker of Markdown quotes. Quoted text stays, but it looks like the rest of the message. Code blocks lose their line breaks. When Mail removes HTML or an image, the Preview lists it below the message. To change the look of every message, a mailbox manager edits the mailbox email design. Inline styles cannot do this.
+
 History loads only when you open it. Mail first expands the newest message. You can expand or collapse several messages independently, and Mail loads earlier summaries page by page. Mail loads a complete message only when you expand it. Links and attachments have the same security protection as in the conversation reader.
 
 Your default format is in **Settings → Writing → Compose format**. Changing the default does not change existing drafts.

@@ -81,14 +81,43 @@ describe("MailComposerEditor", () => {
   });
 
   test("removes the browser body margin from the HTML preview", () => {
-    const html = renderEditor("markdown", panes("preview", "preview"), false, { html: "<p>Preview body</p>", text: "Preview body" });
+    const html = renderEditor("markdown", panes("preview", "preview"), false, {
+      html: "<p>Preview body</p>",
+      text: "Preview body",
+      formattingWarnings: [],
+    });
 
     expect(html).toContain("body{margin:0}");
     expect(html).toContain("Preview body");
+    expect(html).not.toContain("Email leaves out");
+  });
+
+  test("lists the HTML that email leaves out below the preview, in English and German", () => {
+    const preview: ComposePreview = {
+      html: "<p>Preview body</p>",
+      text: "Preview body",
+      formattingWarnings: [
+        { code: "unsupported_element", element: "small" },
+        { code: "unsupported_attribute", element: "div", attribute: "style" },
+        { code: "unsupported_attribute", element: "span", attribute: "class" },
+        { code: "unsupported_link", element: "a" },
+      ],
+    };
+    const english = renderEditor("markdown", panes("preview", "preview"), false, preview);
+    expect(english).toContain("Email leaves out some of the HTML in this message.");
+    expect(english).toContain("&lt;small> is not supported and was removed. Its text stays.");
+    expect(english).toContain("Inline styles on &lt;div> were removed.");
+    expect(english).toContain("The class attribute was removed from &lt;span>.");
+    expect(english).toContain("A link address that email does not support was removed.");
+    expect(english.indexOf("<iframe")).toBeLessThan(english.indexOf("Email leaves out"));
+
+    const german = renderEditor("markdown", panes("preview", "preview"), false, preview, { locale: "de" });
+    expect(german).toContain("Ein Teil des HTML dieser Nachricht wird in der E-Mail weggelassen.");
+    expect(german).toContain("Das Attribut class wurde von &lt;span> entfernt.");
   });
 
   test("shows a failed preview in place of the outdated one, with its reason and a retry, in English and German", () => {
-    const outdated = { html: "<p>Outdated preview</p>", text: "Outdated preview" };
+    const outdated = { html: "<p>Outdated preview</p>", text: "Outdated preview", formattingWarnings: [] };
     const english = renderEditor("markdown", panes("preview", "preview"), false, outdated, {
       previewError: "This message is too complex to render safely. Shorten it or simplify its formatting.",
     });

@@ -22,6 +22,7 @@ Use these defaults unless the user asks otherwise or a more specific loaded Skil
 - Choose a verified sender with `mail.mailbox.identity.list`. For ambiguous recipient addresses, consider Contacts and its Skill rather than guessing an address.
 - For reply, Reply all or forward, read the exact source message; let Mail derive reply recipients and threading. Pass its returned conversation and message IDs and the chosen intent to `mail.draft.create`.
 - For an existing draft prefer `mail.draft.patch`: omitted fields stay unchanged. A supplied recipient array replaces that array; read and preserve its existing members when adding one recipient.
+- Write Markdown bodies in plain Markdown. If a draft result lists `formattingWarnings`, email removed that HTML or image, such as `class`, `style`, `<small>` or `<img>`; rewrite those parts in Markdown and link to images instead of embedding them.
 - `mail.draft.update` replaces the complete editable draft. Never build that replacement from a truncated body or recipient list. Use a focused patch instead; if the requested replacement requires unavailable content, stop and explain the limitation.
 - Before sending, inspect the current `mail.draft.read` result, check recipients and content, run `mail.draft.send.review`, address warnings, then pass the exact current revision and safety approval to `mail.draft.send`. Do not send an incompletely inspected draft. Review approval never authorizes unrelated work.
 - Return the draft link unless the user also requested sending. Never retry an uncertain mutation blindly.

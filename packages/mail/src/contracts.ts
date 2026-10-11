@@ -2770,6 +2770,23 @@ export const conversationPresenceLeaveSchema = z.object({ peerId: z.string().uui
 
 export const draftLeaseTokenSchema = z.object({ token: z.string().uuid() }).strict();
 
+/** At most this many distinct removals are reported; a longer list adds nothing for the author. */
+export const MAX_COMPOSE_FORMATTING_WARNINGS = 20;
+
+/**
+ * Something the email renderer removes from HTML written into a Markdown message: an element it does not
+ * support (its text stays), an attribute such as `class` or `style`, or a link address it does not allow.
+ */
+export const composeFormattingWarningSchema = z
+  .object({
+    code: z.enum(["unsupported_element", "unsupported_attribute", "unsupported_link"]),
+    element: z.string().max(64).describe("HTML element name, such as small or span."),
+    attribute: z.string().max(64).optional().describe("Removed attribute, such as class or style, for unsupported_attribute."),
+  })
+  .strict();
+export type ComposeFormattingWarning = z.infer<typeof composeFormattingWarningSchema>;
+export const composeFormattingWarningsSchema = z.array(composeFormattingWarningSchema).max(MAX_COMPOSE_FORMATTING_WARNINGS);
+
 export const composeTemplateKindSchema = z.enum(["signature", "snippet"]);
 export type ComposeTemplateKind = z.infer<typeof composeTemplateKindSchema>;
 
@@ -2796,6 +2813,8 @@ export const composeTemplateSchema = z.object({
   archivedAt: z.string().datetime().nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
+  /** Returned by create and update only. */
+  formattingWarnings: composeFormattingWarningsSchema.optional(),
 });
 export type ComposeTemplate = z.infer<typeof composeTemplateSchema>;
 
@@ -3084,6 +3103,8 @@ export const draftSchema = z.object({
   state: z.enum(["draft", "scheduled", "sending", "sent", "discarded"]),
   deliveryClass: draftDeliveryClassSchema,
   initialSignatureSource: z.string().nullable().optional(),
+  /** Returned by create and update only. */
+  formattingWarnings: composeFormattingWarningsSchema.optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
@@ -3291,6 +3312,7 @@ export type ComposePreviewInput = z.input<typeof composePreviewInputSchema>;
 export const composePreviewSchema = z.object({
   html: z.string(),
   text: z.string(),
+  formattingWarnings: composeFormattingWarningsSchema,
 });
 export type ComposePreview = z.infer<typeof composePreviewSchema>;
 
