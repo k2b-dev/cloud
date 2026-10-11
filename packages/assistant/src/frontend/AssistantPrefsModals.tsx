@@ -1,7 +1,9 @@
-import type { AiApprovalPreferenceView, AiMemory, AiMemoryKind, AiUserPrefs } from "@k2b/cloud/ai";
+import type { AiApprovalPreferenceView, AiMemory, AiMemoryKind, AiPublicModelProfile, AiUserPrefs } from "@k2b/cloud/ai";
 import { coreClient } from "@k2b/cloud/clients/core";
 import {
   Button,
+  ButtonLink,
+  CopyButton,
   confirmDiscardIfDirty,
   Dropdown,
   IconButton,
@@ -29,7 +31,10 @@ import { assistantBrowserText, useAssistantCopy, useAssistantText } from "./ui-c
 // Kept in sync with the server limits; browser code does not import server-only constants.
 const MEMORY_MAX_CHARS = 500;
 
-type AssistantPrefsTab = "personalization" | "skills" | "system-prompt" | "approvals";
+type AssistantPrefsTab = "personalization" | "skills" | "system-prompt" | "approvals" | "api-access";
+
+/** Present only while the operator offers the OpenAI-compatible API. */
+type OpenAiApiAccess = { baseUrl: string; models: AiPublicModelProfile[] };
 
 const readApiError = async (response: Pick<Response, "json">, fallback: string): Promise<string> => {
   const body = (await response.json().catch(() => null)) as { message?: unknown } | null;
@@ -113,6 +118,74 @@ function ApprovalPreferences() {
           </For>
         </SettingsCollection>
       </Show>
+    </div>
+  );
+}
+
+/** The tab shows where to connect; keys stay in the profile, so there is one place to review and revoke them. */
+const loadOpenAiApiAccess = async (): Promise<OpenAiApiAccess | null> => {
+  const response = await coreClient.ai.status.$get();
+  if (!response.ok) return null;
+  const status = await response.json();
+  if (!status.openaiApi.enabled) return null;
+  return {
+    baseUrl: `${globalThis.location.origin}/api/ai/openai/v1`,
+    models: status.models.filter((model) => !model.capabilities.includes("transcription")),
+  };
+};
+
+function ApiAccessPanel(props: { access: OpenAiApiAccess }) {
+  const text = useAssistantText();
+  return (
+    <div class="flex flex-col gap-6">
+      <SettingsGroup
+        title={text("Connection")}
+        description={text(
+          "Apps with an OpenAI-compatible provider, such as a dictation app, need this address, an API key, and a model ID. They get the models only: no chats, files, or personalization.",
+        )}
+      >
+        <div class="flex flex-col gap-1.5">
+          <span class="text-sm font-medium text-primary">{text("Base URL")}</span>
+          <div class="flex items-center gap-2">
+            <code class="min-w-0 flex-1 break-all rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] px-3 py-2 font-mono text-xs text-secondary">
+              {props.access.baseUrl}
+            </code>
+            <CopyButton text={props.access.baseUrl} label={text("Copy base URL")} iconOnly size="sm" />
+          </div>
+        </div>
+        <div class="flex flex-wrap items-center justify-between gap-3 rounded-md bg-[var(--ui-surface-subtle)] px-3 py-2">
+          <div class="min-w-0 flex-1">
+            <p class="text-sm font-medium text-primary">{text("API key")}</p>
+            <p class="text-xs text-dimmed">{text("In your profile, create a key with the access “AI models only”.")}</p>
+          </div>
+          <ButtonLink href="/me/developer" size="sm" variant="secondary" class="shrink-0">
+            <i class="ti ti-key" aria-hidden="true" /> {text("Create API key")}
+          </ButtonLink>
+        </div>
+      </SettingsGroup>
+
+      <SettingsCollection
+        title={text("Models")}
+        description={text("Use one of these model IDs. Requests count toward your Assistant usage limits.")}
+        empty={text("No AI model is available to you. An administrator can grant model access in the AI settings.")}
+      >
+        <For each={props.access.models}>
+          {(model) => (
+            <SettingsCollection.Item
+              title={model.label}
+              description={<code class="break-all font-mono text-xs">{model.id}</code>}
+              icon={<i class={model.dataBoundary === "private" ? "ti ti-lock" : "ti ti-cloud"} aria-hidden="true" />}
+            >
+              <SettingsCollection.Item.Status>
+                <StatusBadge tone="neutral" icon={null} label={text(model.dataBoundary === "private" ? "Private" : "Hosted")} />
+              </SettingsCollection.Item.Status>
+              <SettingsCollection.Item.Actions>
+                <CopyButton text={model.id} label={text("Copy model ID")} iconOnly size="sm" />
+              </SettingsCollection.Item.Actions>
+            </SettingsCollection.Item>
+          )}
+        </For>
+      </SettingsCollection>
     </div>
   );
 }
@@ -518,7 +591,12 @@ function MemorySettings(props: { prefs: AiUserPrefs; onDirtyChange: (dirty: bool
   );
 }
 
-function PrefsDialog(props: { prefs: AiUserPrefs; initialTab: AssistantPrefsTab; close: () => void }) {
+function PrefsDialog(props: {
+  prefs: AiUserPrefs;
+  openAiApiAccess: OpenAiApiAccess | null;
+  initialTab: AssistantPrefsTab;
+  close: () => void;
+}) {
   const text = useAssistantText();
   const [activeTab, setActiveTab] = createSignal<AssistantPrefsTab>(props.initialTab);
   const [personalizationDirty, setPersonalizationDirty] = createSignal(false);
@@ -578,6 +656,19 @@ function PrefsDialog(props: { prefs: AiUserPrefs; initialTab: AssistantPrefsTab;
             >
               <ApprovalPreferences />
             </SettingsModal.Tab>
+
+            <Show when={props.openAiApiAccess}>
+              {(access) => (
+                <SettingsModal.Tab
+                  id="api-access"
+                  title={text("API access")}
+                  icon="ti ti-api"
+                  description={text("Use your Assistant models in other apps through an OpenAI-compatible API.")}
+                >
+                  <ApiAccessPanel access={access()} />
+                </SettingsModal.Tab>
+              )}
+            </Show>
           </SettingsModal>
         }
       >
@@ -601,15 +692,20 @@ function PrefsDialog(props: { prefs: AiUserPrefs; initialTab: AssistantPrefsTab;
 
 export const openAssistantPrefsModal = async (initialTab: AssistantPrefsTab = "personalization"): Promise<void> => {
   let prefs: AiUserPrefs;
+  let openAiApiAccess: OpenAiApiAccess | null;
   try {
-    prefs = await assistantApi.getPrefs();
+    // The optional tab is known before the dialog opens, so the tab list never shifts; a failed lookup only hides it.
+    [prefs, openAiApiAccess] = await Promise.all([assistantApi.getPrefs(), loadOpenAiApiAccess().catch(() => null)]);
   } catch (error) {
     await prompts.error(error instanceof Error ? error.message : assistantBrowserText("Failed to load AI preferences"));
     return;
   }
-  await prompts.dialog<void>((close) => <PrefsDialog prefs={prefs} initialTab={initialTab} close={() => close()} />, {
-    surface: "bare",
-    header: false,
-    size: "wide",
-  });
+  await prompts.dialog<void>(
+    (close) => <PrefsDialog prefs={prefs} openAiApiAccess={openAiApiAccess} initialTab={initialTab} close={() => close()} />,
+    {
+      surface: "bare",
+      header: false,
+      size: "wide",
+    },
+  );
 };

@@ -108,7 +108,15 @@ beforeEach(() => {
     spyOn(services, "readAccountCategoryPolicy").mockResolvedValue(DEFAULT_ACCOUNT_CATEGORY_POLICY),
     spyOn(services.coreSettings, "get").mockImplementation(
       async (key) =>
-        (key === "app.name" ? "Cloud" : key === "app.url" ? origin : key === "freeipa.enable" ? freeIpaEnabled : undefined) as never,
+        (key === "app.name"
+          ? "Cloud"
+          : key === "app.url"
+            ? origin
+            : key === "freeipa.enable"
+              ? freeIpaEnabled
+              : key === "ai.openai_api_enabled"
+                ? true
+                : undefined) as never,
     ),
     spyOn(services.accountsAppService.accountRequest, "getPendingForUser").mockResolvedValue(null as never),
     spyOn(services.accountsAppService.accountRequest, "isEnabled").mockImplementation(async () => requestsEnabled),
@@ -123,6 +131,21 @@ beforeEach(() => {
         scopes: [],
         expiresAt: "2026-12-31T00:00:00.000Z",
         lastUsedAt: now,
+        createdBy: null,
+        createdAt: now,
+        revokedAt: null,
+        revokedBy: null,
+      },
+      {
+        id: "00000000-0000-4000-8000-000000000103",
+        serviceAccountId: "00000000-0000-4000-8000-000000000102",
+        name: "Dictation app",
+        kind: "api_token",
+        status: "active",
+        tokenPrefix: "cld_9b2c",
+        scopes: ["ai:inference"],
+        expiresAt: null,
+        lastUsedAt: null,
         createdBy: null,
         createdAt: now,
         revokedAt: null,
