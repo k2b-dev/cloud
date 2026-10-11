@@ -39,6 +39,8 @@ export type AiTurnBlock =
       name: string;
       args?: unknown;
       status: AiToolBlockStatus;
+      /** ISO time the call reached its outcome. */
+      at?: string;
       /** Localized transient host status, without tool payload data. */
       progress?: string;
       result?: unknown;
@@ -241,6 +243,7 @@ export const orderedWebsiteReceipts = (
 export const buildBlocksFromMessages = (
   messages: {
     seq: number;
+    createdAt?: string;
     message: Message;
     meta?: {
       steerId?: string;
@@ -253,7 +256,7 @@ export const buildBlocksFromMessages = (
   const blocks: AiTurnBlock[] = [];
   const toolIndex = new Map<string, number>();
 
-  for (const { seq, message, meta } of messages) {
+  for (const { seq, message, meta, createdAt } of messages) {
     if (message.role === "assistant") {
       message.content.forEach((block, index) => {
         if (block.type === "text") {
@@ -298,6 +301,7 @@ export const buildBlocksFromMessages = (
           status: outcome === "rejected" ? "rejected" : message.isError ? "failed" : "completed",
           result: message.result,
           isError: message.isError,
+          ...(createdAt ? { at: createdAt } : {}),
           ...(outcome === "approved" ? { approved: true } : {}),
         };
       }

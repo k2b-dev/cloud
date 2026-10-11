@@ -125,7 +125,9 @@ export const buildAiMessageTimeline = (messages: AiStoredMessage[]): AiMessageTi
 
     const blocks = [
       ...steerBlocks,
-      ...buildBlocksFromMessages(entries.map((stored) => ({ seq: stored.seq, message: stored.message, meta: stored.meta }))),
+      ...buildBlocksFromMessages(
+        entries.map((stored) => ({ seq: stored.seq, message: stored.message, meta: stored.meta, createdAt: stored.createdAt })),
+      ),
     ];
     items.push({
       type: "assistant",

@@ -47,6 +47,32 @@ test("remembered approvals reject mandate-backed chats even when kind is omitted
 });
 
 describe("nessi block event mapping", () => {
+  test.each(["completed", "failed", "rejected"] as const)("timestamps the %s outcome, not running or waiting", (status) => {
+    const mapper = createEventMapper(1, []);
+    const tool = { ...turn, callId: "call-time", name: "send", args: {} };
+    const started = mapper.translate({ ...tool, type: "tool_execution_start" });
+    expect(started[0]).toMatchObject({ block: { status: "running", at: undefined } });
+    const waiting = mapper.translate({ ...tool, type: "tool_action_request", kind: "approval", message: "Send?" });
+    expect(waiting[0]).toMatchObject({ block: { status: "awaiting_approval", at: undefined } });
+    if (status === "rejected") mapper.setRejectedCallIds(new Set([tool.callId]));
+    const before = Date.now();
+    const [done] = mapper.translate({ ...tool, type: "tool_execution_end", result: {}, isError: status !== "completed" });
+    if (done?.type !== "block_set" || done.block.kind !== "tool") throw new Error("Expected tool block");
+    expect(done.block.status).toBe(status);
+    const outcomeTime = Date.parse(done.block.at ?? "");
+    expect(outcomeTime).toBeGreaterThanOrEqual(before);
+    expect(outcomeTime).toBeLessThanOrEqual(Date.now());
+    // A later patch without an outcome keeps the recorded time.
+    const resumed = mapper.translate({
+      ...tool,
+      type: "block_end",
+      blockId: "block-time",
+      index: 0,
+      block: { type: "tool_call", id: tool.callId, name: tool.name, args: {} },
+    });
+    expect(resumed[0]).toMatchObject({ block: { at: done.block.at } });
+  });
+
   test("text blocks map to attempt+turn scoped ids across start, delta, end", () => {
     const mapper = createEventMapper(2, []);
     const id = streamBlockId(2, 0, "block-0");
@@ -403,7 +429,11 @@ describe("nessi block event mapping", () => {
             content: [{ type: "tool_call", id: "editor", name: "text_editor", args: { content: "Draft" } }],
           },
         },
-        { seq: 2, message: { role: "tool_result", callId: "editor", name: "text_editor", result: persistedResult } },
+        {
+          seq: 2,
+          createdAt: "2026-10-07T10:23:45.000Z",
+          message: { role: "tool_result", callId: "editor", name: "text_editor", result: persistedResult },
+        },
       ] as never,
       pendingRecords: [],
       resolvedRecords: [
@@ -417,7 +447,13 @@ describe("nessi block event mapping", () => {
       turnSteers: [],
     });
 
-    expect(blocks[0]).toMatchObject({ kind: "tool", callId: "editor", status: "completed", result: persistedResult });
+    expect(blocks[0]).toMatchObject({
+      kind: "tool",
+      callId: "editor",
+      status: "completed",
+      result: persistedResult,
+      at: "2026-10-07T10:23:45.000Z",
+    });
   });
 
   test("capability presentation follows a live call through completion", () => {
@@ -491,7 +527,10 @@ describe("nessi block event mapping", () => {
       type: "issue",
       issue: { kind: "timeout", scope: "tool", message: "Tool timed out", retryable: false, callId: "call-2", name: "web_extract" },
     } as OutboundEvent);
-    expect(ops[0]).toMatchObject({ type: "block_set", block: { id: toolBlockId("call-2"), status: "failed", isError: true } });
+    expect(ops[0]).toMatchObject({
+      type: "block_set",
+      block: { id: toolBlockId("call-2"), status: "failed", isError: true, at: expect.any(String) },
+    });
 
     // Issues for completed tools or without callId are ignored.
     const ignored = mapper.translate({

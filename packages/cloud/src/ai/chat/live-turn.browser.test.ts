@@ -653,6 +653,7 @@ for (const view of [
         isMobile: view.touch,
         hasTouch: view.touch,
         reducedMotion: "reduce",
+        timezoneId: "Europe/Berlin",
       });
       try {
         const page = await context.newPage();
@@ -756,15 +757,17 @@ for (const view of [
         expect(await page.locator(receipt).innerText()).toBe(de ? "Wird ausgeführt: E-Mail senden" : "Running: Send email");
 
         // The turn reports the decision and the outcome: only the receipt's words change.
+        const at = "2026-10-07T10:23:45.000Z";
         const sent = de ? "E-Mail an Jana Berger gesendet" : "Email to Jana Berger sent";
-        await emit(page, { ...base, seq: 6, type: "block_set", block: { ...send, status: "running", approved: true } });
+        await emit(page, { ...base, seq: 6, type: "block_set", block: { ...send, status: "running", approved: true, at } });
+        expect(await page.locator(receipt).innerText()).toBe(de ? "Wird ausgeführt: E-Mail senden" : "Running: Send email");
         await emit(page, {
           ...base,
           seq: 7,
           type: "block_set",
-          block: { ...send, status: "completed", approved: true, result: { summary: sent } },
+          block: { ...send, status: "completed", approved: true, result: { summary: sent }, at },
         });
-        expect(await page.locator(receipt).innerText()).toBe(sent);
+        expect(await page.locator(receipt).innerText()).toBe(`${sent} · 12:23`);
         expect(await viewportBox(page, receipt)).toEqual(receiptBox);
         await emit(page, {
           ...base,
@@ -807,7 +810,7 @@ for (const view of [
               13,
               "turn",
               { role: "tool_result", callId: "send", name: "mail__action__send", result: { summary: sent }, isError: false },
-              { meta: { toolOutcomes: { send: "approved" } } },
+              { meta: { toolOutcomes: { send: "approved" } }, createdAt: at },
             ),
             storedMessage(
               14,
@@ -818,7 +821,7 @@ for (const view of [
           ],
         });
         await frames(page);
-        expect(await page.locator(receipt).innerText()).toBe(sent);
+        expect(await page.locator(receipt).innerText()).toBe(`${sent} · 12:23`);
         expect(await viewportBox(page, ".ai-turn-work")).toEqual(settled.work);
         expect(await viewportBox(page, ".ai-turn__text")).toEqual(settled.text);
         expect(await viewportBox(page, receipt)).toEqual(settled.receipt);
@@ -1015,7 +1018,7 @@ for (const view of [
       expect(await page.locator(`${place}.ai-turn__text--status`).count()).toBe(0);
       await settled(page, place);
       expect(await page.$eval(`${place} .assistant-markdown-block`, (node) => getComputedStyle(node).fontSize)).toBe("14px");
-      expect(await page.locator(receipt).innerText()).toBe(sent);
+      expect(await page.locator(receipt).innerText()).toBe(`${sent} · 10:00`);
       expect(await viewportBox(page, place)).toEqual(before.text);
       expect(await viewportBox(page, receipt)).toEqual(before.receipt);
     } finally {
