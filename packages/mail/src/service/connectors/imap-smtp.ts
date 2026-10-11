@@ -1161,12 +1161,13 @@ type SourceDownloadClient = SelectedMailboxClient & {
 /**
  * Streams the requested sources of the selected folder in order. A UID the provider answers
  * without a source yields nothing, so the caller decides what the missing message means instead
- * of losing the rest of the batch.
+ * of losing the rest of the batch. A consumer that resolves "stop" leaves the remaining sources
+ * unfetched.
  */
 export const downloadSelectedSources = async (
   client: SourceDownloadClient,
   requests: SourceDownloadRequest[],
-  consume: (source: SourceDownload) => Promise<void>,
+  consume: (source: SourceDownload) => Promise<void | "stop">,
 ): Promise<void> => {
   for (const request of requests) {
     const download = await client.download(request.uid, undefined, { uid: true });
@@ -1175,12 +1176,9 @@ export const downloadSelectedSources = async (
       assertSelectedMailbox(client, request.uidValidity);
       continue;
     }
+    const source = { ...request, expectedSize: download.meta.expectedSize ?? null, stream: download.content };
     try {
-      await consume({
-        ...request,
-        expectedSize: download.meta.expectedSize ?? null,
-        stream: download.content,
-      });
+      if ((await consume(source)) === "stop") break;
     } finally {
       if (!download.content.destroyed) download.content.destroy();
     }
@@ -1191,7 +1189,7 @@ const downloadSourceBatch = async (
   config: ProviderConnectionInput,
   folderPath: string,
   requests: SourceDownloadRequest[],
-  consume: (source: SourceDownload) => Promise<void>,
+  consume: (source: SourceDownload) => Promise<void | "stop">,
   signal?: AbortSignal,
 ): Promise<void> =>
   withImapClient(

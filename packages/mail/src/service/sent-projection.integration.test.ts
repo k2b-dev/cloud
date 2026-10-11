@@ -224,7 +224,8 @@ const createProvider = (kind: ProviderKind) => {
       for (const request of requests) {
         const message = folder(path).entries.get(request.uid);
         if (!message) continue;
-        await consume({ ...request, expectedSize: message.source.byteLength, stream: Readable.from([message.source]) });
+        const stream = Readable.from([message.source]);
+        if ((await consume({ ...request, expectedSize: message.source.byteLength, stream })) === "stop") break;
       }
     }),
     spyOn(imapSmtpConnector, "sendSource").mockImplementation(async (_config, request) => {

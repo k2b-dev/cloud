@@ -48,6 +48,7 @@ import {
   mailProviderOperationMutex,
   type ProviderLeasePriority,
   providerBusyRetryAfterMs,
+  providerLeaseWaitedFor,
   recordProviderFailure,
   recordProviderReachable,
   releaseProviderLease,
@@ -2609,13 +2610,15 @@ export const hydrateMessageBatch = async (
       if (!message) return { hydrated: false };
       // A mailbox's pending bodies wait for its folder syncs and commands. A body someone waits
       // for, such as one a workflow step needs, ranks with commands.
-      const { lock, retryAfterMs: busyRetryAfterMs } = await acquireProviderLease({
+      const turn = await acquireProviderLease({
         resource: message.remote_resource_id,
         waiter: `hydrate:${hydrationJobKey(ctx.input)}`,
         priority: "messageId" in ctx.input ? "command" : "background",
         ttlMs: SYNC_LEASE_MS,
       });
-      if (!lock) throw Object.assign(new Error("Mail remote resource is busy"), { code: "SYNC_BUSY", retryAfterMs: busyRetryAfterMs });
+      if (!turn.lock)
+        throw Object.assign(new Error("Mail remote resource is busy"), { code: "SYNC_BUSY", retryAfterMs: turn.retryAfterMs });
+      const { lock } = turn;
       let batch: HydrationBatch;
       try {
         batch = await withLeaseHeartbeat<HydrationBatch>({
@@ -2671,6 +2674,7 @@ export const hydrateMessageBatch = async (
             let targetError: unknown = null;
             const settled = new Set<string>();
             const delivered = new Set<string>();
+            let stoppedAfter: string | null = null;
             let missing: typeof candidates = [];
             await assertProviderLeaseActive();
             await assertMailboxTransportFence(transportFence);
@@ -2703,8 +2707,6 @@ export const hydrateMessageBatch = async (
                     hydrated ||= available;
                     await assertProviderLeaseActive();
                     await assertMailboxTransportFence(transportFence);
-                    await assertProviderLeaseActive();
-                    await assertMailboxTransportFence(transportFence);
                   } catch (error) {
                     const code = normalizeSyncErrorCode(error);
                     if (code === "SYNC_LEASE_LOST" || code === "MAILBOX_TRANSPORT_CHANGED") throw error;
@@ -2716,6 +2718,12 @@ export const hydrateMessageBatch = async (
                   } finally {
                     activeClaim = null;
                   }
+                  // A folder sync or command ahead of this batch's place waits for this body,
+                  // instead of waiting for the rest of the batch.
+                  if (await providerLeaseWaitedFor(turn)) {
+                    stoppedAfter = source.key;
+                    return "stop";
+                  }
                 },
                 signal,
               );
@@ -2723,7 +2731,12 @@ export const hydrateMessageBatch = async (
               await recordProviderReachable(message.remote_resource_id);
               // The live connection returned no source for these UIDs. Each such fetch uses one
               // attempt, so a message the provider keeps listing without a source ends as failed.
-              missing = candidates.filter((candidate) => !delivered.has(candidate.id));
+              // Sources arrive in request order, so only candidates through the last source were requested.
+              const requested =
+                stoppedAfter === null
+                  ? candidates
+                  : candidates.slice(0, candidates.findIndex((candidate) => candidate.id === stoppedAfter) + 1);
+              missing = requested.filter((candidate) => !delivered.has(candidate.id));
               if (missing.length > 0) {
                 await assertProviderLeaseActive();
                 const recorded = await recordMissingMessageSources(

@@ -3881,11 +3881,8 @@ suite("mail lifecycle control plane", () => {
         for (const request of requests) {
           const fixture = sources.get(request.key);
           if (!fixture) continue;
-          await consume({
-            ...request,
-            expectedSize: Buffer.byteLength(fixture.source),
-            stream: Readable.from(fixture.body ? [fixture.source] : []),
-          });
+          const stream = Readable.from(fixture.body ? [fixture.source] : []);
+          if ((await consume({ ...request, expectedSize: Buffer.byteLength(fixture.source), stream })) === "stop") break;
         }
       },
     );

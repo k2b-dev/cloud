@@ -21,6 +21,7 @@ import {
   MAIL_PROVIDER_JOB_CONCURRENCY,
   MAIL_PROVIDER_OPERATION_LEASE_MS,
   mailProviderOperationMutex,
+  providerLeaseWaitedFor,
   recordProviderFailure,
   recordProviderReachable,
   releaseProviderLease,
@@ -255,6 +256,10 @@ suite("mail provider lease fairness", () => {
   const spies: Array<{ mockRestore(): void }> = [];
   // Every source download in call order, by mailbox label.
   const downloads: string[] = [];
+  // How many bodies each source batch handed over before it ended, by mailbox label.
+  const consumedPerBatch: Array<{ label: string; count: number }> = [];
+  // Each body of a source batch takes this long to download, like large messages.
+  let bodyDownloadMs = 0;
   const sends: string[] = [];
   // Every CHANGEDSINCE flag window, by mailbox label.
   const flagWindows: string[] = [];
@@ -697,15 +702,20 @@ suite("mail provider lease fairness", () => {
         return { completed, destinationUidValidity: folderOf(config.username, destinationPath).uidValidity, destinationUids };
       }),
       spyOn(imapSmtpConnector, "downloadSourceBatch").mockImplementation(async (config, path, requests, consume) => {
-        downloads.push(accounts.get(config.username)?.label ?? config.username);
+        const label = accounts.get(config.username)?.label ?? config.username;
+        downloads.push(label);
+        let count = 0;
         // A batch of bodies takes a while, like a large download.
         await Bun.sleep(20 * ROUND_TRIP_MS);
         for (const request of requests) {
           const message = folderOf(config.username, path).entries.get(request.uid);
           if (!message) continue;
           const source = sourceOf(message);
-          await consume({ ...request, expectedSize: Buffer.byteLength(source), stream: Readable.from([source]) });
+          if (bodyDownloadMs > 0) await Bun.sleep(bodyDownloadMs);
+          count += 1;
+          if ((await consume({ ...request, expectedSize: Buffer.byteLength(source), stream: Readable.from([source]) })) === "stop") break;
         }
+        consumedPerBatch.push({ label, count });
       }),
       spyOn(imapSmtpConnector, "sendSource").mockImplementation(async (config, request) => {
         await Bun.sleep(ROUND_TRIP_MS);
@@ -1002,26 +1012,36 @@ suite("mail provider lease fairness", () => {
   }, 120_000);
 
   test("a mailbox's body hydration cannot keep its folder sync from bringing in new mail", async () => {
-    const mailbox = await connect("hydrating");
-    // 200 bodies are ten hydration batches; each batch takes a while.
-    await deliverAndSync(mailbox, 200, "bodies");
-    downloads.length = 0;
-    await ensureHydrationRuntime();
-    await enqueueMailboxHydration(mailbox.mailboxId);
-    await waitFor(async () => downloads.length >= 2, "hydration to start");
+    bodyDownloadMs = 300;
+    try {
+      const mailbox = await connect("hydrating");
+      // 200 bodies are ten hydration batches; each batch takes longer than the sync's budget.
+      await deliverAndSync(mailbox, 200, "bodies");
+      downloads.length = 0;
+      await ensureHydrationRuntime();
+      await enqueueMailboxHydration(mailbox.mailboxId);
+      await waitFor(async () => downloads.filter((label) => label === "hydrating").length >= 2, "hydration to start");
 
-    const [newMail] = deliver(mailbox, 1, "during-hydration");
-    const syncMs = await runFolderSyncJob(mailbox.folderId(INBOX));
-    expect(await imported(mailbox, newMail!)).toBe(true);
-    expect(syncMs).toBeLessThan(5_000);
-    const [unhydrated] = await sql<{ count: number }[]>`
-      SELECT count(*)::int AS count FROM mail.message_contents
-      WHERE mailbox_id = ${mailbox.mailboxId}::uuid AND hydration_status <> 'complete'
-    `;
-    expect(unhydrated?.count).toBeGreaterThan(20);
-    // Hydration takes its turns again once the sync is done.
-    const before = downloads.length;
-    await waitFor(async () => downloads.length > before, "hydration to continue");
+      const batchesBeforeSync = consumedPerBatch.length;
+      const [newMail] = deliver(mailbox, 1, "during-hydration");
+      const syncMs = await runFolderSyncJob(mailbox.folderId(INBOX));
+      expect(await imported(mailbox, newMail!)).toBe(true);
+      expect(syncMs).toBeLessThan(5_000);
+      const [unhydrated] = await sql<{ count: number }[]>`
+        SELECT count(*)::int AS count FROM mail.message_contents
+        WHERE mailbox_id = ${mailbox.mailboxId}::uuid AND hydration_status <> 'complete'
+      `;
+      expect(unhydrated?.count).toBeGreaterThan(20);
+      // The batch the sync arrived during ended early.
+      expect(
+        consumedPerBatch.slice(batchesBeforeSync).some((batch) => batch.label === "hydrating" && batch.count > 0 && batch.count < 20),
+      ).toBe(true);
+      // Hydration takes its turns again once the sync is done.
+      const before = downloads.length;
+      await waitFor(async () => downloads.length > before, "hydration to continue");
+    } finally {
+      bodyDownloadMs = 0;
+    }
   }, 120_000);
 
   test("a sync requested for a folder that backfills old mail goes before the mailbox's commands", async () => {
@@ -1513,6 +1533,47 @@ suite("mail provider lease fairness", () => {
     }
     expect(command.lock).not.toBeNull();
     if (command.lock) await releaseProviderLease(command.lock);
+  });
+
+  test("a body batch ends its turn for a folder sync or command that starts waiting, not for background work of its rank", async () => {
+    for (const priority of ["sync", "command"] as const) {
+      const resource = crypto.randomUUID();
+      const turn = await acquireProviderLease({
+        resource,
+        waiter: "body-batch",
+        priority: "background",
+        ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS,
+      });
+      expect(turn.lock).not.toBeNull();
+      if (!turn.lock) throw new Error("The body batch did not take the provider lease");
+      try {
+        expect(await providerLeaseWaitedFor(turn)).toBe(false);
+        if (priority === "sync") {
+          // A later background waiter has no head start over the body batch.
+          const background = await acquireProviderLease({
+            resource,
+            waiter: "backfill",
+            priority: "background",
+            ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS,
+          });
+          try {
+            expect(background.lock).toBeNull();
+            expect(await providerLeaseWaitedFor(turn)).toBe(false);
+          } finally {
+            if (background.lock) await releaseProviderLease(background.lock);
+          }
+        }
+        const waiter = await acquireProviderLease({ resource, waiter: priority, priority, ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS });
+        try {
+          expect(waiter.lock).toBeNull();
+          expect(await providerLeaseWaitedFor(turn)).toBe(true);
+        } finally {
+          if (waiter.lock) await releaseProviderLease(waiter.lock);
+        }
+      } finally {
+        await releaseProviderLease(turn.lock);
+      }
+    }
   });
 
   test("a waiter that comes back late does not keep a free provider lease from the others and keeps its place", async () => {

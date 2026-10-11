@@ -86,8 +86,8 @@ const BREAKER_PROBE = 2;
 // KEYS: the waiters' places, until when each counts as present, and the mailbox's breaker. ARGV:
 // waiter, head start, retry step, retry maximum, jitter, presence grace, place TTL, breaker
 // memory. Registers the waiter, keeping the better of its place from an earlier try and the new
-// one, and returns its position among the present waiters, when it should retry, and whether the
-// breaker is open, remembers a window that ended, or neither.
+// one, and returns its position among the present waiters, when it should retry, whether the
+// breaker is open, remembers a window that ended, or neither, and its place.
 const enterLeaseLineScript = `
   local time = redis.call("TIME")
   local now = (tonumber(time[1]) * 1000) + math.floor(tonumber(time[2]) / 1000)
@@ -117,7 +117,7 @@ const enterLeaseLineScript = `
   redis.call("ZADD", KEYS[2], now + retryAfter + tonumber(ARGV[6]), ARGV[1])
   redis.call("PEXPIRE", KEYS[1], placeTtl)
   redis.call("PEXPIRE", KEYS[2], placeTtl)
-  return { position, retryAfter, breaker }
+  return { position, retryAfter, breaker, redis.call("ZSCORE", KEYS[1], ARGV[1]) }
 `;
 
 // KEYS: the mailbox's breaker. ARGV: first window, longest window, jitter fraction. Doubles the
@@ -162,7 +162,7 @@ const leaveLeaseLine = async (resource: string, waiter: string): Promise<void> =
   await Promise.all([redis.send("ZREM", [places, waiter]), redis.send("ZREM", [present, waiter])]);
 };
 
-export type ProviderLeaseTurn = { lock: Lock; retryAfterMs: null } | { lock: null; retryAfterMs: number };
+export type ProviderLeaseTurn = { lock: Lock; place: number; retryAfterMs: null } | { lock: null; retryAfterMs: number };
 
 // The lease with which this process probes a provider that timed out, or "taking" while it asks
 // for one, and until when it counts: a holder that never released it does not block probes past
@@ -213,7 +213,33 @@ export const acquireProviderLease = async (params: {
   } finally {
     if (probe) probeLease = lock;
   }
-  return lock ? { lock, retryAfterMs: null } : busy;
+  return lock ? { lock, place: Number(reply[3]), retryAfterMs: null } : busy;
+};
+
+// KEYS: the waiters' places and until when each counts as present. ARGV: the holder's place.
+// Reports whether a present waiter goes ahead of the holder, without changing the line.
+const providerLeaseWaitedForScript = `
+  local time = redis.call("TIME")
+  local now = (tonumber(time[1]) * 1000) + math.floor(tonumber(time[2]) / 1000)
+  for _, waiter in ipairs(redis.call("ZRANGEBYSCORE", KEYS[1], "-inf", "(" .. ARGV[1])) do
+    local presentUntil = redis.call("ZSCORE", KEYS[2], waiter)
+    if presentUntil and tonumber(presentUntil) >= now then return 1 end
+  end
+  return 0
+`;
+
+/**
+ * Answers whether a present waiter goes ahead of this lease's place in line. Work that holds
+ * the lease in units, such as body downloads, ends its turn after the current unit, so the
+ * waiter waits for one unit instead of a whole batch. Valkey errors let the turn run on:
+ * losing the line only loses the order.
+ */
+export const providerLeaseWaitedFor = async (turn: { lock: Lock; place: number }): Promise<boolean> => {
+  const [places, present] = leaseLineKeys(turn.lock.resource);
+  return redis
+    .send("EVAL", [providerLeaseWaitedForScript, "2", places, present, String(turn.place)])
+    .then((reply) => Number(reply) === 1)
+    .catch(() => false);
 };
 
 /**
