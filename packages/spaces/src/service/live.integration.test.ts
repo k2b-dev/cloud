@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
 import { databaseSuite, testInfra } from "../../../../scripts/fixtures/test-infra";
+import * as itemDependencies from "./item-dependencies";
 import * as items from "./items";
 import * as spaces from "./spaces";
 import * as wormholes from "./wormholes";
@@ -70,6 +71,52 @@ suite("Spaces live updates", () => {
       { type: "item.created", itemId },
       { type: "item.completed", itemId },
       { type: "item.deleted", itemId },
+    ]);
+  });
+
+  test("completing, reopening, deleting, or transferring a blocker also announces the tasks it blocks", async () => {
+    const board = await space("Live blockers");
+    const target = await space("Live blockers target");
+    const actor = { subject: { type: "user" as const, userId }, resourceBoundSpaceId: null };
+    const wormhole = await wormholes.create({
+      sourceSpaceId: board.id,
+      data: { targetColumnId: target.columnId, color: "#6366f1" },
+      actor,
+    });
+    if (!wormhole.ok) throw new Error(wormhole.error);
+    const [wormholeRow] = await sql<{ id: string }[]>`SELECT id FROM spaces.wormholes WHERE source_space_id = ${board.id}::uuid`;
+    const task = async (title: string) => {
+      const created = await items.create({ spaceId: board.id, data: { columnId: board.columnId, title }, createdBy: userId });
+      if (!created.ok) throw new Error(created.error);
+      return { id: created.data.id, shortId: await shortIdOf(created.data.id) };
+    };
+    const blocker = await task("Book the venue");
+    const dependent = await task("Send the invitations");
+    const transferred = await task("Order the catering");
+    expect((await itemDependencies.add({ spaceId: board.id, itemId: dependent.id, blockerItemId: blocker.id })).ok).toBe(true);
+    expect((await itemDependencies.add({ spaceId: board.id, itemId: dependent.id, blockerItemId: transferred.id })).ok).toBe(true);
+    const before = (await pendingFor(board.id)).length;
+
+    expect((await items.setCompleted({ id: blocker.id, completed: true })).ok).toBe(true);
+    // Repeating the state changes no dependent.
+    expect((await items.setCompleted({ id: blocker.id, completed: true })).ok).toBe(true);
+    expect((await items.move({ id: blocker.id, columnId: board.columnId })).ok).toBe(true);
+    expect((await items.remove({ id: blocker.id })).ok).toBe(true);
+    expect((await wormholes.transfer({ sourceSpaceId: board.id, itemId: transferred.id, wormholeId: wormholeRow!.id, actor })).ok).toBe(
+      true,
+    );
+
+    const changed = { type: "item.updated", itemId: dependent.shortId };
+    expect((await pendingFor(board.id)).slice(before)).toEqual([
+      { type: "item.completed", itemId: blocker.shortId },
+      changed,
+      { type: "item.completed", itemId: blocker.shortId },
+      { type: "item.completed", itemId: blocker.shortId },
+      changed,
+      { type: "item.deleted", itemId: blocker.shortId },
+      changed,
+      changed,
+      { type: "item.transferred", itemId: transferred.shortId },
     ]);
   });
 
