@@ -265,6 +265,12 @@ inside that first loop. The newest two model rounds stay intact, and a tool call
 is never archived separately from its pending result. Archived messages remain
 available in the conversation history.
 
+Compaction waits for the model no longer than a chat answer does: the model
+provider's first-byte and idle timeouts of 60 seconds each apply. A timed-out
+`/compact` fails with reason `model_unavailable` and leaves the context as it
+was. A timed-out optional automatic compaction is skipped, and the turn
+continues with the full context.
+
 For a compact diagnostic of one owned chat, including its ordered tool calls,
 arguments, results, model profiles, errors, usage, and timing without the
 duplicated loop transcript, run:
