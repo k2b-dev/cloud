@@ -828,3 +828,17 @@ test("completed todo_write prints one escaped checklist, omitting cancelled item
   const output = await run([[state([tool]), state([tool]), finished([])]]);
   expect(output.errors).toEqual(["Plan", "  [x] Done", "  [>] Working\\u001b", "  [ ] Next", "todo_write: completed"]);
 });
+
+test("a resumed attempt that replays a finished call as running prints its status once", async () => {
+  const tool = (status: "running" | "completed"): AiTurnBlock => ({
+    id: "move",
+    kind: "tool",
+    callId: "move",
+    name: "local_move",
+    args: { moves: [] },
+    status,
+    ...(status === "completed" ? { result: { status: "completed", moved: [], conflicts: [] } } : {}),
+  });
+  const output = await run([[state([tool("completed")]), state([tool("running")]), state([tool("completed")]), finished([])]]);
+  expect(output.errors).toEqual(["local_move: completed"]);
+});

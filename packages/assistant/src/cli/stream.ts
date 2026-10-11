@@ -239,7 +239,10 @@ export const streamAssistantTurn = async (input: {
   };
 
   const handleToolBlock = async (block: Extract<AiTurnBlock, { kind: "tool" }>): Promise<AssistantTurnStreamResult | null> => {
-    const changed = toolStatuses.get(block.callId) !== block.status;
+    const previous = toolStatuses.get(block.callId);
+    // A resumed attempt replays finished calls as running first; a settled call never goes back.
+    if ((previous === "completed" || previous === "failed" || previous === "rejected") && block.status === "running") return null;
+    const changed = previous !== block.status;
     if (changed && ctx.options.output === "text") flushLinks();
     const inline = input.clientTools?.names.has(block.name) === true;
     if (
