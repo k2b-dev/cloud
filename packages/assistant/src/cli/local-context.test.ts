@@ -1,8 +1,14 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, open, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AiLocalContextSchema } from "@k2b/cloud/ai/browser";
+import {
+  AI_SKILL_DESCRIPTION_MAX_CHARS,
+  AI_SKILL_EXTRA_FRONTMATTER_MAX_CHARS,
+  AI_SKILL_INSTRUCTIONS_MAX_CHARS,
+  AI_SKILL_NAME_MAX_CHARS,
+  AiLocalContextSchema,
+} from "@k2b/cloud/ai/browser";
 import { createLocalContextReader, discoverLocalContext, localSkillCatalog, readLocalSkill } from "./local-context";
 
 let root: string;
@@ -67,7 +73,7 @@ test("32 KiB budget favors the closest file and truncates UTF-8 within the share
   expect(AiLocalContextSchema.safeParse({ instructions: context.instructions }).success).toBeTrue();
 });
 
-test("Skill discovery is lenient, respects precedence and aliases, and hides manual invocation from the catalog", async () => {
+test("Skill discovery respects precedence and aliases, and marks manual-only catalog entries", async () => {
   await skill(workspace, "finance", "description: Closest\nunknown-field: fine\nallowed-tools: [ignored]");
   await skill(project, "finance", "description: Parent");
   await skill(home, "finance", "description: Global");
@@ -78,7 +84,9 @@ test("Skill discovery is lenient, respects precedence and aliases, and hides man
   await skill(project, "broken", "description: [invalid");
   const context = await discoverLocalContext(workspace, home);
   expect(context.skills.map((item) => item.name)).toEqual(["finance", "manual", "shared"]);
-  expect(localSkillCatalog(context).map((item) => item.name)).toEqual(["finance", "shared"]);
+  expect(localSkillCatalog(context).map((item) => item.name)).toEqual(["finance", "manual", "shared"]);
+  expect(localSkillCatalog(context)[1]).toEqual({ name: "manual", description: "Manual only", scope: "global", manualOnly: true });
+  expect(AiLocalContextSchema.parse({ skills: localSkillCatalog(context) }).skills[1]?.manualOnly).toBeTrue();
   expect(context.hidden).toEqual(
     expect.arrayContaining([
       { name: "finance", scope: "project", reason: "hidden by the project Skill" },
@@ -183,7 +191,7 @@ test("project context appearing later asks once; global Skills alone never ask",
 });
 
 test("catalog is bounded to 64 while explicit selections return only the Skill body", async () => {
-  for (let i = 0; i < 65; i++) await skill(home, `skill-${i}`);
+  for (let i = 0; i < 65; i++) await skill(home, `skill-${i}`, `description: Useful\ndisable-model-invocation: ${i % 2 === 0}`);
   const read = createLocalContextReader({
     workspace,
     home,
@@ -193,7 +201,57 @@ test("catalog is bounded to 64 while explicit selections return only the Skill b
   const context = await read();
   expect(localSkillCatalog(context)).toHaveLength(64);
   expect(context.problems).toHaveLength(1);
+  expect(context.problems[0]?.path).toBe(context.skills[64]?.path);
   expect(await readLocalSkill(context.skills[0]!)).toMatchObject({ instructions: "Use this Skill." });
+});
+
+test.each(["outside", "secrets/.env", ".ssh/key", "missing"])(
+  "AGENTS.md symlink to %s is skipped and reported without project context",
+  async (destination) => {
+    const target = destination === "outside" ? join(root, "outside.md") : join(project, destination);
+    await mkdir(join(target, ".."), { recursive: true });
+    if (destination !== "missing") await writeFile(target, "must not be instructions");
+    const path = join(workspace, "AGENTS.md");
+    await symlink(target, path);
+    const context = await discoverLocalContext(workspace, home);
+    expect(context.instructions).toEqual([]);
+    expect(context.instructionPaths).toEqual([]);
+    expect(context.hasProjectContext).toBeFalse();
+    expect(context.problems).toEqual([{ path, error: "AGENTS.md points outside the project or to a protected file; not loaded" }]);
+  },
+);
+
+test("AGENTS.md symlink to an ordinary file inside the real project root loads", async () => {
+  await writeFile(join(project, "rules.md"), "project instructions");
+  const path = join(workspace, "AGENTS.md");
+  await symlink(join(project, "rules.md"), path);
+  const context = await discoverLocalContext(workspace, home);
+  expect(context.instructions).toEqual([{ path, content: "project instructions" }]);
+  expect(context.hasProjectContext).toBeTrue();
+  expect(context.problems).toEqual([]);
+});
+
+test("oversized sparse SKILL.md is rejected before discovery or selection reads", async () => {
+  const directory = await skill(home, "large");
+  const context = await discoverLocalContext(workspace, home);
+  const path = join(directory, "SKILL.md");
+  const file = await open(path, "r+");
+  try {
+    await file.truncate(
+      4 *
+        (AI_SKILL_NAME_MAX_CHARS +
+          AI_SKILL_DESCRIPTION_MAX_CHARS +
+          AI_SKILL_EXTRA_FRONTMATTER_MAX_CHARS +
+          AI_SKILL_INSTRUCTIONS_MAX_CHARS) +
+        129,
+    );
+  } finally {
+    await file.close();
+  }
+  const oversized = await discoverLocalContext(workspace, home);
+  expect(oversized.skills).toEqual([]);
+  expect(oversized.problems).toEqual([{ path, error: "SKILL.md is larger than a Skill can be; not loaded" }]);
+  await expect(readLocalSkill(context.skills[0]!, workspace)).rejects.toThrow("SKILL.md is larger than a Skill can be; not loaded");
 });
 
 test("a tiny remaining instruction budget drops farther files without sending empty instructions", async () => {

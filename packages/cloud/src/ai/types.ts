@@ -1002,6 +1002,7 @@ export type AiConversationService = {
     callId: string;
     event: InboundEvent;
   }): Promise<AiPendingTurnActionRecord | null>;
+  markPendingTurnActionConsumedInline(input: { conversationId: string; turnId: string; callId: string }): Promise<void>;
   clearPendingTurnActions(input: { conversationId: string; turnId: string }): Promise<void>;
   enqueueTurnSteer(input: {
     conversationId: string;

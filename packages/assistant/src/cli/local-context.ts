@@ -1,10 +1,18 @@
 import { readdir, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
 import type { AiLocalContext } from "@k2b/cloud/ai";
-import { AI_LOCAL_INSTRUCTIONS_MAX_BYTES, AI_LOCAL_SKILLS_MAX_ITEMS, splitAiSkillMarkdown } from "@k2b/cloud/ai/browser";
+import {
+  AI_LOCAL_INSTRUCTIONS_MAX_BYTES,
+  AI_LOCAL_SKILLS_MAX_ITEMS,
+  AI_SKILL_DESCRIPTION_MAX_CHARS,
+  AI_SKILL_EXTRA_FRONTMATTER_MAX_CHARS,
+  AI_SKILL_INSTRUCTIONS_MAX_CHARS,
+  AI_SKILL_NAME_MAX_CHARS,
+  splitAiSkillMarkdown,
+} from "@k2b/cloud/ai/browser";
 import type { CloudCliContext } from "@k2b/cloud/cli";
-import { classifyLocalPath } from "./local-paths";
+import { classifyLocalPath, isProtectedLocalPath } from "./local-paths";
 
 export type LocalSkill = {
   name: string;
@@ -25,6 +33,12 @@ export type LocalContext = {
   hasProjectContext: boolean;
   trusted: boolean;
 };
+
+// Four bytes per character cover UTF-8; the allowance covers delimiters and field labels.
+const maxSkillBytes =
+  4 * (AI_SKILL_NAME_MAX_CHARS + AI_SKILL_DESCRIPTION_MAX_CHARS + AI_SKILL_EXTRA_FRONTMATTER_MAX_CHARS + AI_SKILL_INSTRUCTIONS_MAX_CHARS) +
+  128;
+const skillSizeError = "SKILL.md is larger than a Skill can be; not loaded";
 
 const entries = async (directory: string) => {
   try {
@@ -67,7 +81,21 @@ export const discoverLocalContext = async (workspace: string, home = homedir(), 
   for (const folder of folders) {
     if (!(await entries(folder)).some((entry) => entry.name === "AGENTS.md")) continue;
     const path = join(folder, "AGENTS.md");
-    if (classifyLocalPath(path, { workspace, home }).access === "blocked") continue;
+    // A dangling link has no target to load; it is reported like a link that leaves the project.
+    const target = await realpath(path).catch(() => undefined);
+    const child = target === undefined ? ".." : relative(context.root, target);
+    if (
+      target === undefined ||
+      child === ".." ||
+      child.startsWith(`..${sep}`) ||
+      child.startsWith(sep) ||
+      isProtectedLocalPath(path) ||
+      isProtectedLocalPath(target) ||
+      classifyLocalPath(path, { workspace, home }).access === "blocked"
+    ) {
+      context.problems.push({ path, error: "AGENTS.md points outside the project or to a protected file; not loaded" });
+      continue;
+    }
     if (!(await stat(path)).isFile()) continue;
     context.instructionPaths.push(path);
   }
@@ -119,6 +147,10 @@ export const discoverLocalContext = async (workspace: string, home = homedir(), 
         const skillDirectory = await realpath(join(directory, entry.name));
         if (seenDirectories.has(skillDirectory)) continue;
         seenDirectories.add(skillDirectory);
+        if ((await stat(path)).size > maxSkillBytes) {
+          context.problems.push({ path, error: skillSizeError });
+          continue;
+        }
         const { fields } = splitAiSkillMarkdown(await Bun.file(path).text());
         if (fields.name !== undefined && typeof fields.name !== "string") throw new Error("invalid Skill name");
         const name = typeof fields.name === "string" ? fields.name.trim() : entry.name;
@@ -154,9 +186,8 @@ export const discoverLocalContext = async (workspace: string, home = homedir(), 
 
 export const localSkillCatalog = (context: LocalContext): AiLocalContext["skills"] =>
   context.skills
-    .filter((skill) => !skill.manualOnly)
     .slice(0, AI_LOCAL_SKILLS_MAX_ITEMS)
-    .map(({ name, description, scope }) => ({ name, description, scope }));
+    .map(({ name, description, scope, manualOnly }) => ({ name, description, scope, ...(manualOnly ? { manualOnly: true } : {}) }));
 
 /** Trust belongs to the profile on this device; a session decision survives rereads. */
 export const createLocalContextReader = (input: {
@@ -193,8 +224,7 @@ export const createLocalContextReader = (input: {
     }
     let count = 0;
     for (const skill of context.skills) {
-      if (!skill.manualOnly && ++count > AI_LOCAL_SKILLS_MAX_ITEMS)
-        context.problems.push({ path: skill.path, error: "more than 64 Skills; not listed" });
+      if (++count > AI_LOCAL_SKILLS_MAX_ITEMS) context.problems.push({ path: skill.path, error: "more than 64 Skills; not listed" });
     }
     return context;
   };
@@ -203,6 +233,7 @@ export const createLocalContextReader = (input: {
 export const readLocalSkill = async (skill: LocalSkill, workspace = process.cwd()): Promise<AiLocalContext["selectedSkills"][number]> => {
   if (classifyLocalPath(skill.path, { workspace }).access === "blocked")
     throw new Error("cld's configuration is never available to the assistant.");
+  if ((await stat(skill.path)).size > maxSkillBytes) throw new Error(skillSizeError);
   const { body } = splitAiSkillMarkdown(await Bun.file(skill.path).text());
   if (!body.trim()) throw new Error(`Skill ${skill.name} has no instructions.`);
   if (body.length > 100_000) throw new Error("Skill instructions exceed 100000 characters.");

@@ -44,21 +44,28 @@ It works with two kinds of tools:
 Start `cld ai` in the folder you want to read or organize. The default `ask`
 mode lists, reads, uploads, and creates ordinary files there without questions.
 Appending, replacing, moving, Bash commands, protected paths, and other folders
-ask first. **Enter = No**; only typed `y` or `yes` approves. Local approvals
-are never remembered. `/permissions off` refuses every local tool, including
-pending calls from resumed turns. Print mode sends no local context.
+ask first. Writing, downloading, or moving to `AGENTS.md` or anything under a
+`.agents` folder also asks, even for a new file, because it becomes
+instructions for the assistant; reading these files stays free. **Enter =
+No**; only typed `y` or `yes` approves. Local approvals are never remembered.
+`/permissions off` refuses every local tool, including pending calls from
+resumed turns. Print mode sends no local context.
 
 `local_list` finds files with case-insensitive globs and paginated results.
 `local_read` returns numbered text pages; PDFs, images, office documents, and
 spreadsheets are uploaded so Cloud tools can read them. `local_upload` copies
 selected files into the chat, retaining local parent folders by default.
+A local folder named `project` or `skills` lands below `/local/`, because
+Cloud reserves those chat folders: `project/Rechnung.pdf` goes to
+`/local/project/`.
 Uploads remain there until the chat is deleted. `local_download` saves a chat
 file, and `local_write` creates, appends, or replaces text. Creating never
 replaces a file that appears meanwhile. Replacement reviews the current size
 and modification time, then writes a temporary file before replacing the old
 one. `local_move` reviews the whole batch, stays inside the start folder, and
 reports conflicts and partial progress. No tool deletes local files; Bash can
-delete them only after its command is approved.
+delete them only after its command is approved. Every local tool except Bash
+stops after 120 seconds of work; time spent on a question does not count.
 
 Paths are checked by real target, including symlinks; new files are checked by
 their parent. Starting in home or above asks for every file access and refuses
@@ -70,8 +77,10 @@ symlinked folders.
 
 cld rereads AGENTS.md between the nearest Git root and the start folder on
 every send. Without Git, only the start folder is used. The exact uppercase
-filename matters. Instructions go root first, closest last; the 32 KiB budget
-favors the closest files and marks shortened content. Project Skills are found
+filename matters. AGENTS.md files whose real targets leave the project root,
+or whose given paths or targets are protected, are skipped and reported even
+after trust. Instructions go root first, closest last; the 32 KiB budget favors
+the closest files and marks shortened content. Project Skills are found
 in `.agents/skills/<name>/SKILL.md` along that path; global Skills come from
 `~/.agents/skills`. Closer project Skills win, then global, then Cloud.
 
@@ -86,6 +95,9 @@ assistant does with your Cloud data, so review them before trusting a folder.
 one for your next message; `/<skill> <text>` sends it immediately. Up to four
 local Skills can be selected; selections clear after sending. A Skill marked
 `disable-model-invocation: true` starts only through its slash command.
+Manual-only entries count toward the 64 local Skills sent to Cloud and hide
+same-named Cloud Skills, but never appear in the model's catalog. SKILL.md files
+larger than the public Skill limits allow are skipped before reading.
 `load_local_skill` loads an invocable Skill's body and lists supporting paths.
 Trusted Skill folders and cld's session folder are free read roots. The Skill
 `cloud-cli` is hidden because cld reaches Cloud through its own tools.

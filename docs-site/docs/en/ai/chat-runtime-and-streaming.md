@@ -383,19 +383,22 @@ metadata, Sources, files, scheduled tasks, Project context, or access changes
 into turn events. Those are durable server projections and refresh through
 [Realtime UI](/en/docs/frontend/realtime-ui).
 
-For a client tool in mode `client`, the executor publishes and flushes the
-request immediately, then polls for a result every 10 ms for up to half a
-heartbeat interval (1.5 seconds in production). A result within that window
-continues in the same lease, without another claim or rebuilding the turn.
-Otherwise the turn suspends and enqueues a continuation as before, including
-when the result arrives as the wait ends. Human interactions such as `survey`
-and `text_editor`, and all approvals, suspend immediately.
+For the local client tools (`local_bash`, `local_list`, `local_read`,
+`local_upload`, `local_download`, `local_write`, `local_move`, and
+`load_local_skill`), the executor publishes and flushes the request
+immediately, then polls for a result every 10 ms for up to half a heartbeat
+interval (1.5 seconds in production). A result within that window continues in
+the same lease, without another claim or rebuilding the turn, and does not
+count as a resumed attempt. Otherwise the turn suspends and enqueues a
+continuation as before, including when the result arrives as the wait ends.
+Other client tools such as `code_open` and `code_secret`, human interactions
+such as `survey` and `text_editor`, and all approvals suspend immediately.
 
-`POST /conversations/:id/turns/:turnId/actions/:callId` validates built-in
-client tool results against their declared output schema. Invalid output
+`POST /conversations/:id/turns/:turnId/actions/:callId` validates results of
+the local client tools against their declared output schema. Invalid output
 returns HTTP 400 naming the tool and first issue; the action remains pending.
 The route limits the JSON body to two fully escaped 512 KiB Bash streams plus
-a 64 KiB envelope. Custom client tools retain their existing result contract.
+a 64 KiB envelope. Other client tools keep their existing result contract.
 
 Action responses are idempotent. Retrying the same response is safe and
 re-enqueues its continuation; a conflicting response for an already resolved

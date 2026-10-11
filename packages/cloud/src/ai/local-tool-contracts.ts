@@ -37,7 +37,7 @@ export const AI_LOCAL_SELECTED_SKILLS_MAX_ITEMS = 4;
 /** Files a loaded local Skill lists, like Cloud Skill references. */
 export const AI_LOCAL_SKILL_FILES_MAX_ITEMS = 50;
 
-const LocalPath = z.string().trim().min(1).max(AI_LOCAL_PATH_MAX_CHARS);
+const LocalPath = z.string().min(1).max(AI_LOCAL_PATH_MAX_CHARS);
 const ChatPath = z.string().trim().min(1).max(500);
 const SkillName = z.string().regex(AI_SKILL_NAME_PATTERN).max(64);
 /** One line of client-reported text: control characters and line breaks never reach the prompt. */
@@ -207,6 +207,7 @@ export const AiLocalContextSchema = z.object({
         name: SkillName,
         description: z.string().trim().min(1).max(AI_SKILL_DESCRIPTION_MAX_CHARS),
         scope: z.enum(["project", "global"]),
+        manualOnly: z.boolean().optional(),
       }),
     )
     .max(AI_LOCAL_SKILLS_MAX_ITEMS)

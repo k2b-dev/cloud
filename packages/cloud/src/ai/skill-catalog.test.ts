@@ -45,3 +45,15 @@ test("local Skills hide Cloud names and share the catalog budget including marke
   expect(aiSkillCatalogChars(selected.skills)).toBeLessThanOrEqual(16_000 * 0.02 * 4);
   expect(aiSkillCatalogChars([{ name: "invoice", description: "Read", source: "local" }])).toBe("- invoice [local]: Read".length);
 });
+
+test("manual-only local Skills shadow Cloud names without entering the model catalog", () => {
+  const local = { name: "notes", description: "Local notes.", source: "local" as const };
+  const cloud = { name: "cloud-mail", description: "Email." };
+  expect(
+    mergeAiSkillCatalog(
+      [{ name: "invoice", description: "Cloud invoices." }, cloud],
+      [{ name: "invoice", description: "Manual invoice workflow.", source: "local", manualOnly: true }, local],
+    ),
+  ).toEqual([cloud, local]);
+  expect(mergeAiSkillCatalog([], [{ name: "manual", description: "Manual workflow.", source: "local", manualOnly: true }])).toEqual([]);
+});

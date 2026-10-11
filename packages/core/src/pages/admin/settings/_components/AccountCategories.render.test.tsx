@@ -209,9 +209,9 @@ test("AI settings show local client instructions and the shipped text in English
     expect(html).toContain(label);
     expect(html).toContain(locale === "en" ? "Show built-in text" : "Mitgelieferten Text anzeigen");
     expect(html).toContain(locale === "en" ? "your text replaces it completely" : "dein Text ersetzt ihn vollständig");
-    expect(html.indexOf(label)).toBeGreaterThan(
-      html.indexOf(locale === "en" ? "Show the built-in platform prompt" : "Mitgelieferten Plattform-Prompt anzeigen"),
-    );
+    const platformPrompt = html.indexOf(locale === "en" ? "Show the built-in platform prompt" : "Integrierten Plattform-Prompt anzeigen");
+    expect(platformPrompt).toBeGreaterThan(-1);
+    expect(html.indexOf(label)).toBeGreaterThan(platformPrompt);
     expect(CORE_SETTINGS["ai.local_client_instructions"].kind).toBe("text");
     expect(CORE_SETTINGS["ai.local_client_instructions"].default).toBe("");
   }

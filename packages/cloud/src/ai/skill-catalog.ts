@@ -4,14 +4,14 @@ import type { AiSkillSummary } from "./skills";
 export const AI_SKILL_CATALOG_MAX_CHARS = 8_000;
 const AI_SKILL_CATALOG_MIN_CHARS = AI_SKILL_NAME_MAX_CHARS + AI_SKILL_DESCRIPTION_MAX_CHARS + 8;
 
-export type AiSkillCatalogEntry = Pick<AiSkillSummary, "name" | "description"> & { source?: "local" };
+export type AiSkillCatalogEntry = Pick<AiSkillSummary, "name" | "description"> & { source?: "local"; manualOnly?: boolean };
 
 export const mergeAiSkillCatalog = (
   cloud: readonly AiSkillCatalogEntry[],
   local: readonly AiSkillCatalogEntry[],
 ): AiSkillCatalogEntry[] => {
   const localNames = new Set(local.map((skill) => skill.name));
-  return [...cloud.filter((skill) => !localNames.has(skill.name)), ...local];
+  return [...cloud.filter((skill) => !localNames.has(skill.name)), ...local.filter((skill) => !skill.manualOnly)];
 };
 
 const catalogLine = (skill: AiSkillCatalogEntry): string =>

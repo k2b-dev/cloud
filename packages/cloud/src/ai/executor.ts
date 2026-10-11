@@ -33,6 +33,7 @@ import {
   createConfiguredDefaultCloudAiTools,
 } from "./default-tools";
 import { aiFileStore } from "./files-store";
+import { AI_LOCAL_TOOL_NAMES } from "./local-tool-contracts";
 import {
   countMalformedToolCallRepairs,
   createMalformedToolCallRepair,
@@ -40,7 +41,6 @@ import {
   withMalformedToolCallRepair,
   withMalformedToolCallResults,
 } from "./malformed-tool-call-repair";
-import { AI_LOCAL_TOOL_NAMES } from "./local-tool-contracts";
 import { aiMemories } from "./memories";
 import { createCloudAiMemoryTool } from "./memory-tool";
 import { recordAiMemoryWorkflowEvidence } from "./memory-workflow-evidence";
@@ -936,6 +936,7 @@ export class AiTurnExecutor {
     const localSkills = (localContext?.skills ?? []).map((skill) => ({
       name: skill.name,
       description: skill.description,
+      manualOnly: skill.manualOnly,
       source: "local" as const,
     }));
     const skillCatalog = selectAiSkillCatalog(
@@ -1352,7 +1353,7 @@ export class AiTurnExecutor {
           }
         : undefined,
       workspaceInstructions: localContext?.instructions,
-      localSkillsAvailable: skillCatalogOffered && localSkills.length > 0,
+      localSkillsAvailable: skillCatalogOffered && localSkills.some((skill) => !skill.manualOnly),
       turnInstructions: [
         material.systemPrompt,
         audioUnavailableInstruction,
@@ -1892,13 +1893,18 @@ export class AiTurnExecutor {
     }
 
     await pipeline.apply(presented);
-    if (event.kind === "client_tool" && frontendMode === "client") {
+    if (
+      event.kind === "client_tool" &&
+      frontendMode === "client" &&
+      (toolName === "local_bash" || AI_LOCAL_TOOL_NAMES.some((name) => name === toolName))
+    ) {
       await pipeline.flush();
       // One wait stays inside a heartbeat interval, keeping lease renewal and abort detection on their cadence.
       const deadline = performance.now() + this.config.heartbeatMs / 2;
       while (!input.signal.aborted && performance.now() < deadline) {
         const action = await aiConversations.getPendingTurnAction({ conversationId, turnId, callId: event.callId });
         if (action?.status === "resolved" && action.resolvedEvent) {
+          await aiConversations.markPendingTurnActionConsumedInline({ conversationId, turnId, callId: event.callId });
           loop.push(action.resolvedEvent);
           return false;
         }

@@ -764,6 +764,47 @@ suite("local client actions and preview", () => {
       await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
     }
   });
+  test("a pending code_secret action accepts a CodeToolFailure result", async () => {
+    const userId = await insertUser();
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    const token = await createTestSession(userId);
+    try {
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: chat.id,
+        modelProfileId: "mock",
+        runConfig: { kind: "chat", input: "Store a secret" },
+        userMessage: { role: "user", content: ["Store a secret"] },
+      });
+      await aiConversations.savePendingTurnAction({
+        conversationId: chat.id,
+        turnId: turn.id,
+        callId: "secret-1",
+        name: "code_secret",
+        kind: "client_tool",
+        frontendMode: "client",
+        status: "pending",
+        args: { name: "API_TOKEN" },
+        approvalScope: "code_secret",
+        allowAlways: false,
+        allowChat: false,
+        resolvedEvent: null,
+      });
+      const result = { failed: true, error: "The secret prompt was cancelled." };
+      const response = await aiRoutes.request(`/conversations/${chat.shortId}/turns/${turn.shortId}/actions/secret-1`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "tool_result", result }),
+      });
+      expect(response.status).toBe(200);
+      expect(await aiConversations.getPendingTurnAction({ conversationId: chat.id, turnId: turn.id, callId: "secret-1" })).toMatchObject({
+        status: "resolved",
+        resolvedEvent: { type: "tool_result", callId: "secret-1", result },
+      });
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  });
   test("preview validates local facts and uses the same local section as a turn", async () => {
     const userId = await insertUser();
     const token = await createTestSession(userId);

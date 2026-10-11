@@ -1388,9 +1388,9 @@ for (const stopReason of ["tool_use", "error", "interrupted", "aborted"] as cons
     expect(rounds).toBe(0);
   });
 
-test.each(["fast", "late", "interaction", "abort"] as const)("%s client result uses the correct lease path", async (mode) => {
+test.each(["fast", "late", "interaction", "code_open", "abort"] as const)("%s client result uses the correct lease path", async (mode) => {
   const signal = new AbortController();
-  const name = mode === "interaction" ? "survey" : "local_list";
+  const name = mode === "interaction" ? "survey" : mode === "code_open" ? "code_open" : "local_list";
   const event: Extract<OutboundEvent, { type: "tool_action_request" }> = {
     ...turn,
     type: "tool_action_request",
@@ -1421,6 +1421,7 @@ test.each(["fast", "late", "interaction", "abort"] as const)("%s client result u
   const config = spyOn(aiConversations, "getTurnRunConfig").mockResolvedValue({ kind: "chat", input: "List files" });
   const save = spyOn(aiConversations, "savePendingTurnAction").mockResolvedValue(undefined);
   const get = spyOn(aiConversations, "getPendingTurnAction").mockResolvedValue(mode === "fast" ? resolved : pending);
+  const markInline = spyOn(aiConversations, "markPendingTurnActionConsumedInline").mockResolvedValue(undefined);
   const suspend = spyOn(aiConversations, "suspendTurn").mockResolvedValue(true);
   const audit = spyOn(aiToolAudit, "noteToolCall").mockResolvedValue(undefined);
   const pipeline = new __aiExecutorTest.StreamPipeline({
@@ -1486,12 +1487,16 @@ test.each(["fast", "late", "interaction", "abort"] as const)("%s client result u
       expect(flush).toHaveBeenCalledTimes(1);
       expect(get).toHaveBeenCalledTimes(1);
       expect(push).toHaveBeenCalledWith(resolved.resolvedEvent!);
+      expect(markInline).toHaveBeenCalledTimes(1);
+      expect(markInline).toHaveBeenCalledWith({ conversationId: "chat-1", turnId: "turn-1", callId: event.callId });
+      expect(push.mock.invocationCallOrder[0]).toBeGreaterThan(markInline.mock.invocationCallOrder[0]!);
       expect(suspend).not.toHaveBeenCalled();
       expect(get.mock.invocationCallOrder[0]).toBeGreaterThan(flush.mock.invocationCallOrder[0]!);
     } else {
       expect(suspend).toHaveBeenCalledTimes(1);
       expect(push).not.toHaveBeenCalled();
-      if (mode === "interaction") expect(get).not.toHaveBeenCalled();
+      expect(markInline).not.toHaveBeenCalled();
+      if (mode === "interaction" || mode === "code_open") expect(get).not.toHaveBeenCalled();
       if (mode === "late") expect(get).toHaveBeenCalled();
       if (mode === "abort") expect(performance.now() - started).toBeLessThan(heartbeatMs / 2);
     }
@@ -1501,6 +1506,7 @@ test.each(["fast", "late", "interaction", "abort"] as const)("%s client result u
     config.mockRestore();
     save.mockRestore();
     get.mockRestore();
+    markInline.mockRestore();
     suspend.mockRestore();
     audit.mockRestore();
     apply.mockRestore();

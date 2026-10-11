@@ -3,6 +3,8 @@ import { chmod, copyFile, link, lstat, mkdir, mkdtemp, open, opendir, readdir, r
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, relative, sep } from "node:path";
 import {
+  AI_PROJECT_FILE_MOUNT,
+  AI_SKILL_FILE_MOUNT,
   CloudAiLoadLocalSkillInputSchema,
   CloudAiLocalDownloadInputSchema,
   CloudAiLocalListInputSchema,
@@ -10,7 +12,6 @@ import {
   CloudAiLocalReadInputSchema,
   CloudAiLocalUploadInputSchema,
   CloudAiLocalWriteInputSchema,
-  guessAiMediaType,
 } from "@k2b/cloud/ai/browser";
 import type { CloudCliContext } from "@k2b/cloud/cli";
 import { deniedLocalBashResult, parseLocalBashInput, runLocalBash } from "./local-bash";
@@ -84,6 +85,7 @@ export const runLocalTool = async (
   call: { name: string; args: unknown; callId: string },
   options: LocalToolsOptions,
   externalSignal: AbortSignal,
+  deadlineMs = 120_000,
 ): Promise<unknown> => {
   if (options.mode === "off")
     return call.name === "local_bash"
@@ -91,8 +93,29 @@ export const runLocalTool = async (
       : call.name === "local_move"
         ? { status: "denied", moved: [], conflicts: [], error: "Local tools are off in this session." }
         : { status: "denied", error: "Local tools are off in this session." };
-  const signal = call.name === "local_bash" ? externalSignal : AbortSignal.any([externalSignal, AbortSignal.timeout(120_000)]);
   const workspace = await realpath(options.workspace);
+  const deadline = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const restartDeadline = () => {
+    if (call.name !== "local_bash")
+      timer = setTimeout(() => deadline.abort(new DOMException("The operation timed out.", "TimeoutError")), deadlineMs);
+  };
+  restartDeadline();
+  const signal = call.name === "local_bash" ? externalSignal : AbortSignal.any([externalSignal, deadline.signal]);
+  const ask = async (lines: string[], question: string) => {
+    signal.throwIfAborted();
+    clearTimeout(timer);
+    try {
+      return await options.ask(lines, question);
+    } finally {
+      restartDeadline();
+    }
+  };
+  const becomesInstructions = async (path: string) =>
+    [path, resolveLocalPath(path, workspace), await realTarget(resolveLocalPath(path, workspace))].some(
+      (target) =>
+        basename(target).toLowerCase() === "agents.md" || target.split(sep).some((segment) => segment.toLowerCase() === ".agents"),
+    );
   const display = (path: string) => (inside(workspace, path) ? relative(workspace, path) || "." : path);
   const access = async (path: string, readOnly = false): Promise<LocalPathAccess> => {
     const rule = classifyLocalPath(path, { workspace });
@@ -106,19 +129,25 @@ export const runLocalTool = async (
     rule.reason === "home" ? "home folder" : rule.reason === "protected" ? "may contain secrets" : `outside ${workspace}`;
   const authorize = async (path: string, verb: string, readOnly = false, review?: string) => {
     signal.throwIfAborted();
-    const rule = await access(path, readOnly);
+    const given = resolveLocalPath(path, workspace);
+    const rule = await access(given, readOnly);
     if (rule.access === "blocked") return blocked;
-    if (rule.access === "free" && !review) return null;
+    const instructions = !readOnly && (await becomesInstructions(path));
+    if (rule.access === "free" && !review && !instructions) return null;
     const question =
       review ??
-      `${verb} ${display(path)}? ${
-        rule.access === "ask" && rule.reason === "home"
-          ? "You started cld in your home folder or above, so every file asks first."
-          : rule.access === "ask" && rule.reason === "protected"
-            ? "It may contain secrets."
-            : `It is outside ${workspace}.`
+      `${verb} ${display(given)}? ${
+        instructions
+          ? "It becomes instructions for the assistant."
+          : rule.access === "ask" && rule.reason === "home"
+            ? "You started cld in your home folder or above, so every file asks first."
+            : rule.access === "ask" && rule.reason === "protected"
+              ? "It may contain secrets."
+              : `It is outside ${workspace}.`
       }`;
-    const allowed = await options.ask(review && rule.access === "ask" ? [`${display(path)}: ${reason(rule)}`] : [], question);
+    const lines = review && rule.access === "ask" ? [`${display(given)}: ${reason(rule)}`] : [];
+    if (review && instructions) lines.push(`${display(given)}: becomes instructions for the assistant`);
+    const allowed = await ask(lines, question);
     signal.throwIfAborted();
     return allowed ? null : declined;
   };
@@ -129,7 +158,9 @@ export const runLocalTool = async (
     signal.throwIfAborted();
     const target = await realTarget(path);
     const parent = inside(workspace, target) ? relative(workspace, dirname(target)).split(sep).join("/") : "";
-    const result = await uploadAttachment(options.ctx, options.conversationId, path, directory ?? `/${parent}`, signal);
+    const firstSegment = `/${parent.split("/")[0]}`;
+    const derivedDirectory = [AI_PROJECT_FILE_MOUNT, AI_SKILL_FILE_MOUNT].includes(firstSegment) ? `/local/${parent}` : `/${parent}`;
+    const result = await uploadAttachment(options.ctx, options.conversationId, path, directory ?? derivedDirectory, signal);
     if (result.type !== "attachment") throw new Error("Upload returned no chat file.");
     return { path: display(path), chatPath: result.path, mediaType: result.mediaType, size: result.size };
   };
@@ -165,8 +196,7 @@ export const runLocalTool = async (
       case "local_bash": {
         const input = parseLocalBashInput(call.args);
         if (!input) return { status: "failed", exitCode: null, stdout: "", stderr: "Invalid local Bash arguments.", truncated: false };
-        if (!(await options.ask([`Bash wants to run in ${workspace}:`, "", `  ${input.command}`, ""], "Run?")))
-          return deniedLocalBashResult();
+        if (!(await ask([`Bash wants to run in ${workspace}:`, "", `  ${input.command}`, ""], "Run?"))) return deniedLocalBashResult();
         signal.throwIfAborted();
         const result = await runLocalBash(input.command, { cwd: workspace, signal });
         signal.throwIfAborted();
@@ -240,19 +270,13 @@ export const runLocalTool = async (
         if (denial) return denial;
         const info = await stat(path);
         if (!info.isFile()) throw new Error(`${display(path)} is a folder; list it and read its files.`);
-        const mediaType = Bun.file(path).type || guessAiMediaType(path);
         if (
           ["pdf", "png", "jpg", "jpeg", "webp", "gif", "heic", "docx", "doc", "odt", "rtf", "xlsx", "xls", "ods", "pptx", "odp"].includes(
             extname(path).slice(1).toLowerCase(),
           )
         )
           return { status: "completed", kind: "uploaded", ...(await upload(path)) };
-        const knownText = mediaType.startsWith("text/") || /(?:json|xml|yaml|csv|markdown)/i.test(mediaType);
-        if (
-          !knownText &&
-          ((mediaType !== "application/octet-stream" && mediaType !== "") ||
-            new Uint8Array(await Bun.file(path).slice(0, 8192).arrayBuffer()).includes(0))
-        )
+        if (new Uint8Array(await Bun.file(path).slice(0, 8192).arrayBuffer()).includes(0))
           throw new Error("Binary file. Upload it with local_upload if a Cloud tool can read it.");
         let line = 0;
         let used = 0;
@@ -312,19 +336,23 @@ export const runLocalTool = async (
         const asking = candidates.filter((item) => item.rule.access === "ask");
         const approved =
           !asking.length ||
-          (await options.ask(
+          (await ask(
             asking.map(({ path, rule }) => `  ${display(path)} (${rule.access === "ask" ? reason(rule) : ""})`),
             "Upload these files?",
           ));
-        for (const { path, rule } of candidates) {
-          signal.throwIfAborted();
-          if (rule.access === "ask" && !approved) {
-            failed.push({ path: display(path), error: declined.error });
-            continue;
-          }
+        for (const [index, { path, rule }] of candidates.entries()) {
           try {
+            signal.throwIfAborted();
+            if (rule.access === "ask" && !approved) {
+              failed.push({ path: display(path), error: declined.error });
+              continue;
+            }
             files.push(await upload(path, input.directory));
           } catch (error) {
+            if (signal.aborted) {
+              failed.push(...candidates.slice(index).map(({ path }) => ({ path: display(path), error: message(signal.reason) })));
+              break;
+            }
             failed.push({ path: display(path), error: message(error) });
           }
         }
@@ -349,7 +377,7 @@ export const runLocalTool = async (
         try {
           const length = response.headers.get("content-length");
           const denial = await authorize(
-            resolveLocalPath(input.to, workspace),
+            input.to,
             "Save",
             false,
             old ? `Replace ${display(path)} (${changed(old)}) with ${length ? size(Number(length)) : "the chat file"}?` : undefined,
@@ -392,7 +420,7 @@ export const runLocalTool = async (
             : `Replace ${display(path)} (${changed(old)}) with ${size(bytes)}?`
           : undefined;
         const denial = await authorize(
-          given,
+          input.path,
           input.mode === "append" ? "Append to" : input.mode === "replace" ? "Replace" : "Write",
           false,
           review,
@@ -451,7 +479,7 @@ export const runLocalTool = async (
             from.toLowerCase() === to.toLowerCase() &&
             sameInode &&
             !(names.includes(basename(from)) && names.includes(basename(to)));
-          moves.push({ from, to, source, target, caseOnly });
+          moves.push({ from, to, source, target, caseOnly, instructions: await becomesInstructions(move.to) });
         }
         const targets = new Set<string>();
         for (const move of moves) {
@@ -467,9 +495,12 @@ export const runLocalTool = async (
         const unit = folders ? "items" : moves.length === 1 ? "file" : "files";
         const lines = [
           `Move in ${workspace} (${moves.length} ${unit}):`,
-          ...moves.map((move) => `  ${display(move.from).padEnd(width)} → ${display(move.to)}`),
+          ...moves.map(
+            (move) =>
+              `  ${display(move.from).padEnd(width)} → ${display(move.to)}${move.instructions ? " (becomes instructions for the assistant)" : ""}`,
+          ),
         ];
-        if (!(await options.ask(lines, "Move?"))) return { status: "denied", moved, conflicts, error: declined.error };
+        if (!(await ask(lines, "Move?"))) return { status: "denied", moved, conflicts, error: declined.error };
         for (const move of moves) {
           try {
             signal.throwIfAborted();
@@ -541,6 +572,8 @@ export const runLocalTool = async (
     if (call.name === "local_bash") return { status: "failed", exitCode: null, stdout: "", stderr: message(error), truncated: false };
     if (call.name === "local_move") return { status: "failed", moved: [], conflicts: [], error: message(error) };
     return { status: "failed", error: message(error) };
+  } finally {
+    clearTimeout(timer);
   }
 };
 

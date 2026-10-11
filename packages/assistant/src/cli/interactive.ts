@@ -429,7 +429,12 @@ They go to the model with every message and can steer what it does with your Clo
   });
   const refreshSkills = async () => {
     context = await readContext();
-    cloudSkills = (await readApi<{ skills: AiSkillSummary[] }>(ctx, "/skills")).skills.filter((skill) => skill.enabled);
+    try {
+      cloudSkills = (await readApi<{ skills: AiSkillSummary[] }>(ctx, "/skills")).skills.filter((skill) => skill.enabled);
+    } catch {
+      cloudSkills = [];
+    }
+    return context;
   };
   const skillCounts = () => {
     const project = context.skills.filter((skill) => skill.scope === "project").length;
@@ -1006,12 +1011,7 @@ They go to the model with every message and can steer what it does with your Clo
         break;
       }
       default: {
-        context = await readContext();
-        try {
-          cloudSkills = (await readApi<{ skills: AiSkillSummary[] }>(ctx, "/skills")).skills.filter((skill) => skill.enabled);
-        } catch {
-          cloudSkills = [];
-        }
+        await refreshSkills();
         const skillName = name.slice(1);
         const local = context.skills.find((skill) => skill.name === skillName);
         const cloud = cloudSkills.find((skill) => skill.name === skillName);
@@ -1042,12 +1042,7 @@ They go to the model with every message and can steer what it does with your Clo
 
   try {
     ctx.print(terminalSafeText(`Assistant · ${await readInitialModelLabel(ctx, model)} · /help for commands`));
-    context = await readContext();
-    try {
-      cloudSkills = (await readApi<{ skills: AiSkillSummary[] }>(ctx, "/skills")).skills.filter((skill) => skill.enabled);
-    } catch {
-      cloudSkills = [];
-    }
+    context = await refreshSkills();
     const workspaceAccess = classifyLocalPath(workspace, { workspace });
     const instructions = context.instructionPaths.length ? ` · AGENTS.md: ${instructionsSummary()}` : "";
     const skills = context.skills.length ? ` · Skills: ${skillCounts()}` : "";

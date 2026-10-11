@@ -84,11 +84,18 @@ A retry retains its original tool set, but the current session still enforces
 
 Inside the start folder, listing, reading, uploading, and creating ordinary
 files never ask. Appending, replacing, moving, and every Bash command ask.
+Writing, downloading, or moving to `AGENTS.md` or anything under a `.agents`
+folder also asks, even for a new file, because it becomes instructions for the
+assistant. The check ignores case and follows symlinks; reading these files
+stays free.
 File questions explain when a path is outside the folder, may contain secrets,
 or is subject to the home-folder rule. Uploads ask once for the files that
 need permission; free files can still upload if you decline that subset.
 Moves ask once with aligned source and destination names. Conflicts stop the
 batch before the question; an error during execution reports what already moved.
+Every local tool except Bash stops after 120 seconds of work; time spent on a
+question does not count. An upload batch that runs out of time still reports
+the files it uploaded.
 
 Questions appear in the terminal with `[y/N]`. **Enter = No**; only typed `y`
 or `yes` approves. Pasted or typed-ahead text cannot approve. Replacing a file
@@ -107,7 +114,9 @@ Trusted Skill folders and the session folder can be read freely; they grant no
 free write or upload access outside the workspace.
 
 Uploaded files stay as chat files until the chat is deleted. Outside files go
-to the chat root by default. Use the returned chat path: Cloud may change a
+to the chat root by default. A local folder named `project` or `skills` lands
+below `/local/`, because Cloud reserves those chat folders: `project/Rechnung.pdf`
+uploads to `/local/project/`. Use the returned chat path: Cloud may change a
 filename to avoid a collision. CSV remains text; other binary files need
 `local_upload` when a Cloud tool can read them.
 
@@ -125,6 +134,8 @@ output files 0600); it is removed when the interactive session ends.
 cld finds the nearest Git root above the start folder: a `.git` file, or a
 `.git` folder with `HEAD`. Without one, the start folder is the root. It reads exact-name `AGENTS.md` files from
 that root down to the start folder, root first and closest last, on every send.
+AGENTS.md targets outside the real project root or on protected paths are
+skipped and reported under **Problems**, even in a trusted folder.
 The 32 KiB budget favors the closest instructions; shortened text is marked
 and farther files are dropped.
 
@@ -133,9 +144,10 @@ global Skills live in `~/.agents/skills/<name>/SKILL.md`. Closer project Skills
 win over farther ones, then global Skills, then Cloud Skills of the same name.
 Aliases to the same real Skill folder are listed once. Unknown frontmatter is
 accepted; `allowed-tools` grants nothing. Invalid Skills and shortened
-descriptions appear under **Problems**. At most 64 local Skills are listed to
-the model per turn. `cloud-cli` is hidden because cld already reaches Cloud
-through its own tools.
+descriptions appear under **Problems**. SKILL.md files larger than the public
+Skill limits allow are skipped before reading. At most 64 local Skills,
+including manual-only entries, are sent to Cloud per turn. `cloud-cli` is hidden
+because cld already reaches Cloud through its own tools.
 
 Before loading project AGENTS.md or Skills, cld asks you to trust the folder:
 **Trust this folder** saves the root's real path in `assistant.trustedFolders`,
@@ -150,7 +162,8 @@ and discovery problems. `/<name>` selects a Skill for your next message;
 `/<name> <message>` selects and sends immediately. Up to four local Skills can
 be selected together, and selections clear after sending. Built-in commands
 win over Skill names. `disable-model-invocation: true` Skills are selectable
-only through `/<name>`; they are excluded from the model's catalog. Local
+only through `/<name>`; they are excluded from the model's catalog. These
+entries still hide same-named Cloud Skills for the turn. Local
 Skills cannot be selected when local tools are off. Tab completes Skill names.
 
 When the assistant writes a working plan, text output prints a checklist on

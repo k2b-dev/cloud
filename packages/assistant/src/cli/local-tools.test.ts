@@ -19,6 +19,8 @@ let session: ReturnType<typeof createLocalSessionFolder>;
 let approve: boolean;
 let questions: Array<{ lines: string[]; question: string }>;
 let beforeAnswer: (() => Promise<void>) | undefined;
+let beforeUpload: ((signal?: AbortSignal | null) => Promise<void>) | undefined;
+let deadlineMs: number | undefined;
 let uploads: Array<{ name: string; directory: FormDataEntryValue | null }>;
 let response: () => Response;
 let mode: "ask" | "off";
@@ -36,6 +38,7 @@ const ctx: CloudCliContext = {
     if (init?.body instanceof FormData) {
       const file = init.body.get("file");
       if (!(file instanceof File)) throw new Error("Expected file");
+      await beforeUpload?.(init.signal);
       uploads.push({ name: file.name, directory: init.body.get("directory") });
       return Response.json({ file: { path: `/returned/${file.name}`, mediaType: file.type, size: file.size, version: 1 } });
     }
@@ -58,6 +61,8 @@ beforeEach(async () => {
   questions = [];
   uploads = [];
   beforeAnswer = undefined;
+  beforeUpload = undefined;
+  deadlineMs = undefined;
   mode = "ask";
   response = () => new Response("new content", { headers: { "content-length": "11" } });
   previousConfig = process.env.CLD_CONFIG;
@@ -88,7 +93,112 @@ const run = (name: string, args: unknown, freeReadRoots: string[] = [], signal =
       },
     },
     signal,
+    deadlineMs,
   );
+
+test.each(["subfolder/AGENTS.md", ".agents/skills/x/SKILL.md", "subfolder/agents.MD", ".AGENTS/skills/x/SKILL.md"])(
+  "creating instruction path %s asks once and can be declined",
+  async (path) => {
+    approve = false;
+    expect(await run("local_write", { path, mode: "create", content: "instructions" })).toEqual({
+      status: "denied",
+      error: "The user declined.",
+    });
+    expect(questions).toEqual([{ lines: [], question: `Write ${path}? It becomes instructions for the assistant.` }]);
+    expect(await Bun.file(join(workspace, path)).exists()).toBeFalse();
+  },
+);
+
+test("instruction aliases ask on write and download; reading and uploading instructions stay free", async () => {
+  await writeFile(join(workspace, "AGENTS.md"), "old");
+  await symlink(join(workspace, "AGENTS.md"), join(workspace, "alias.md"));
+  approve = false;
+  for (const path of ["AGENTS.md", "alias.md"])
+    expect(await run("local_write", { path, mode: "replace", content: "new" })).toMatchObject({ status: "denied" });
+  expect(questions.map((entry) => entry.lines)).toEqual([
+    ["AGENTS.md: becomes instructions for the assistant"],
+    ["alias.md: becomes instructions for the assistant"],
+  ]);
+  questions = [];
+  expect(await run("local_download", { path: "/chat.txt", to: "sub/AGENTS.md" })).toMatchObject({ status: "denied" });
+  expect(questions).toEqual([{ lines: [], question: "Save sub/AGENTS.md? It becomes instructions for the assistant." }]);
+  questions = [];
+  expect(await run("local_read", { path: "AGENTS.md" })).toMatchObject({ status: "completed", kind: "text" });
+  expect(await run("local_upload", { paths: ["AGENTS.md"] })).toMatchObject({ status: "completed", failed: [] });
+  expect(questions).toEqual([]);
+});
+
+test("move review marks instruction targets", async () => {
+  await writeFile(join(workspace, "a.md"), "instructions");
+  approve = false;
+  expect(await run("local_move", { moves: [{ from: "a.md", to: "sub/AGENTS.md" }] })).toMatchObject({ status: "denied" });
+  expect(questions[0]?.lines).toContain("  a.md → sub/AGENTS.md (becomes instructions for the assistant)");
+});
+
+test("instruction segments in the given path still ask after normalization", async () => {
+  approve = false;
+  expect(await run("local_write", { path: "sub/.agents/../notes.md", content: "instructions" })).toMatchObject({ status: "denied" });
+  expect(questions).toEqual([{ lines: [], question: "Write sub/notes.md? It becomes instructions for the assistant." }]);
+});
+
+test.each(["local_move", "local_write"])("%s gives work a fresh deadline after a slow approval", async (name) => {
+  await writeFile(join(workspace, "old.txt"), "old");
+  deadlineMs = 50;
+  beforeAnswer = () => Bun.sleep(100);
+  const args =
+    name === "local_move" ? { moves: [{ from: "old.txt", to: "new.txt" }] } : { path: "old.txt", mode: "replace", content: "new" };
+  expect(await run(name, args)).toMatchObject({ status: "completed" });
+  expect(questions).toHaveLength(1);
+  expect(await readFile(join(workspace, name === "local_move" ? "new.txt" : "old.txt"), "utf8")).toBe(
+    name === "local_move" ? "old" : "new",
+  );
+});
+
+test("upload deadline preserves completed files and reports the current and remaining files", async () => {
+  for (const path of ["a.txt", "b.txt", "c.txt"]) await writeFile(join(workspace, path), path);
+  deadlineMs = 50;
+  let count = 0;
+  beforeUpload = async (signal) => {
+    if (++count === 2) {
+      await Bun.sleep(100);
+      signal?.throwIfAborted();
+    }
+  };
+  expect(CloudAiLocalUploadOutputSchema.parse(await run("local_upload", { paths: ["a.txt", "b.txt", "c.txt"] }))).toMatchObject({
+    status: "completed",
+    files: [{ path: "a.txt", chatPath: "/returned/a.txt" }],
+    failed: [
+      { path: "b.txt", error: "The operation timed out." },
+      { path: "c.txt", error: "The operation timed out." },
+    ],
+  });
+  expect(count).toBe(2);
+});
+
+test("text reads use content for application MIME types and accept Latin-1", async () => {
+  for (const path of ["config.toml", "script.sh"]) {
+    await writeFile(join(workspace, path), "plain text");
+    expect(await run("local_read", { path })).toMatchObject({ status: "completed", kind: "text", content: "1\tplain text\n" });
+  }
+  await writeFile(join(workspace, "latin.csv"), Buffer.from([0xe4, 0x0a]));
+  expect(await run("local_read", { path: "latin.csv" })).toMatchObject({ status: "completed", kind: "text" });
+  await writeFile(join(workspace, "nul.toml"), "text\0binary");
+  expect(await run("local_read", { path: "nul.toml" })).toMatchObject({
+    status: "failed",
+    error: "Binary file. Upload it with local_upload if a Cloud tool can read it.",
+  });
+});
+
+test.each(["project", "skills"])("derived upload folders avoid the reserved %s mount", async (folder) => {
+  await mkdir(join(workspace, folder, "nested"), { recursive: true });
+  await writeFile(join(workspace, folder, "Scan.pdf"), "%PDF");
+  await writeFile(join(workspace, folder, "nested/notes.txt"), "notes");
+  expect(await run("local_read", { path: `${folder}/Scan.pdf` })).toMatchObject({ status: "completed", kind: "uploaded" });
+  await run("local_upload", { paths: [`${folder}/nested/notes.txt`] });
+  expect(uploads.map((file) => file.directory)).toEqual([`/local/${folder}`, `/local/${folder}/nested`]);
+  await run("local_upload", { paths: [`${folder}/Scan.pdf`], directory: "/receipts" });
+  expect(uploads.at(-1)?.directory).toBe("/receipts");
+});
 
 test("lists case-insensitive nested globs, pages in order, and never walks protected or symlink folders", async () => {
   await mkdir(join(workspace, "docs"));

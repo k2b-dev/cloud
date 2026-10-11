@@ -129,7 +129,7 @@ describe("search_skills", () => {
   });
 });
 
-test("search_skills searches local entries with catalog relevance and hides Cloud collisions", async () => {
+test.each([false, true])("search_skills respects local precedence with manualOnly=%s", async (manualOnly) => {
   const subject = { type: "user" as const, userId: "user" };
   spyOn(aiSkills, "search").mockResolvedValue({
     skills: [
@@ -181,14 +181,16 @@ test("search_skills searches local entries with catalog relevance and hides Clou
     },
   };
   const tool = createCloudAiSearchSkillsTool(subject, [
-    { name: "invoice", description: "Local invoice workflow.", source: "local" },
+    { name: "invoice", description: "Local invoice workflow.", source: "local", ...(manualOnly ? { manualOnly: true } : {}) },
     { name: "notes", description: "Meeting minutes.", source: "local" },
   ]);
   if (tool.location !== "server") throw new Error("Expected server tool");
   expect(await tool.run({ query: "invoice", limit: 10 }, ctx)).toEqual({
-    skills: [{ name: "invoice", description: "Local invoice workflow.", source: "local" }],
+    skills: manualOnly ? [] : [{ name: "invoice", description: "Local invoice workflow.", source: "local" }],
     more: false,
   });
+  // The local name shadows Cloud even when only the Cloud description matches.
+  expect(await tool.run({ query: "invoices", limit: 10 }, ctx)).toEqual({ skills: [], more: false });
   const localOnly = createCloudAiSearchSkillsTool(null, [{ name: "notes", description: "Meeting minutes.", source: "local" }]);
   if (localOnly.location !== "server") throw new Error("Expected server tool");
   expect(await localOnly.run({ query: "meeting", limit: 1 }, ctx)).toEqual({

@@ -27,7 +27,7 @@ const contains = (directory: string, path: string): boolean => {
   return child === "" || (child !== ".." && !child.startsWith(`..${sep}`) && !child.startsWith(sep));
 };
 
-const protectedPath = (path: string): boolean =>
+export const isProtectedLocalPath = (path: string): boolean =>
   /^(?:\.env(?:\..*)?|.*\.(?:pem|key|p12)|id_rsa.*|id_ed25519.*|\.npmrc|\.netrc|\.git-credentials)$/.test(basename(path)) ||
   path.split(sep).some((segment) => [".ssh", ".gnupg", ".aws", ".git"].includes(segment));
 
@@ -42,7 +42,7 @@ export const classifyLocalPath = (path: string, options: { workspace: string; ho
   const configFile = process.env.CLD_CONFIG ? realPath(resolveLocalPath(process.env.CLD_CONFIG, process.cwd(), home)) : undefined;
   if (contains(configDirectory, target) || target === configFile) return { access: "blocked", reason: "cld-config" };
   if (contains(workspace, home)) return { access: "ask", reason: "home" };
-  if (protectedPath(given) || protectedPath(target)) return { access: "ask", reason: "protected" };
+  if (isProtectedLocalPath(given) || isProtectedLocalPath(target)) return { access: "ask", reason: "protected" };
   if (!contains(workspace, target)) return { access: "ask", reason: "outside" };
   return { access: "free" };
 };

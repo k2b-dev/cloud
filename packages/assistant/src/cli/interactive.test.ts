@@ -1,5 +1,5 @@
 import { expect, spyOn, test } from "bun:test";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AI_TURN_ATTACHMENT_MAX_ITEMS } from "@k2b/cloud/ai/browser";
@@ -14,6 +14,7 @@ import {
 } from "./interactive";
 import type { LineReader } from "./line-reader";
 import * as localBash from "./local-bash";
+import { discoverLocalContext } from "./local-context";
 import { validateLocalAttachments } from "./turn";
 
 test("cld describes an HTTP request in the same words as the approval card", async () => {
@@ -22,7 +23,8 @@ test("cld describes an HTTP request in the same words as the approval card", asy
     args: [],
     flags: {},
     options: { profile: "test", server: "http://example.test", token: "test", output: "json" },
-    getDefault: async (key) => (key === "assistant.trustedFolders" ? JSON.stringify([realpathSync(process.cwd())]) : undefined),
+    getDefault: async (key) =>
+      key === "assistant.trustedFolders" ? JSON.stringify([(await discoverLocalContext(process.cwd())).root]) : undefined,
     setDefault: async () => {},
     createApiClient: () => {
       throw new Error("Unused");
@@ -68,7 +70,8 @@ const approvalTest = (answers: Array<string | null>) => {
     args: [],
     flags: {},
     options: { profile: "test", server: "http://example.test", token: "test", output: "text" },
-    getDefault: async (key) => (key === "assistant.trustedFolders" ? JSON.stringify([realpathSync(process.cwd())]) : undefined),
+    getDefault: async (key) =>
+      key === "assistant.trustedFolders" ? JSON.stringify([(await discoverLocalContext(process.cwd())).root]) : undefined,
     setDefault: async () => {},
     createApiClient: () => {
       throw new Error("Unused");
@@ -451,7 +454,8 @@ const interactiveSession = (
   let turns = 0;
   let creations = 0;
   session.ctx.options.locale = "en-GB";
-  session.ctx.getDefault = async (key) => (key === "assistant.trustedFolders" ? JSON.stringify([realpathSync(process.cwd())]) : saved);
+  session.ctx.getDefault = async (key) =>
+    key === "assistant.trustedFolders" ? JSON.stringify([(await discoverLocalContext(process.cwd())).root]) : saved;
   session.ctx.setDefault = async (key, value) => {
     defaults.push({ key, value });
   };
@@ -1022,6 +1026,17 @@ test("/status aligns escaped values and falls back to inaccessible Project ids",
   expect(session.printed).toContain("Project      missing-project (missing-project)");
 });
 
+test.each([403, 503])("/status prints its rows when Cloud Skills returns %s", async (status) => {
+  const session = interactiveSession(["/status", "/skills", "/exit"], [], {}, undefined, (path) => {
+    if (path === "/api/ai/skills") return Response.json({ message: "Skills unavailable" }, { status });
+  });
+  expect(await session.run()).toBe(0);
+  expect(session.printed).toContain("Profile      test · http://example.test");
+  expect(session.printed).toContain("Chat         none yet · the next message starts one");
+  expect(session.printed.some((line) => line.startsWith("Local tools  ask"))).toBeTrue();
+  expect(session.errors).toEqual([]);
+});
+
 test("turn runner keeps failed and stopped turns interactive", async () => {
   for (const status of ["failed", "aborted"]) {
     const session = interactiveSession(["/resume resumed", "/exit"], [], {}, undefined, (path) => {
@@ -1081,7 +1096,7 @@ test("local and Cloud Skill commands share a list, local precedence, and one-mes
       client: { kind: "cli", cwd: directory, localTools: "ask" },
       localContext: {
         instructions: [{ path: join(directory, "AGENTS.md"), content: "Work with receipts." }],
-        skills: expect.not.arrayContaining([expect.objectContaining({ name: "finance" })]),
+        skills: expect.arrayContaining([expect.objectContaining({ name: "finance", manualOnly: true })]),
         selectedSkills: [{ name: "finance", directory: skillFolder, instructions: "Reconcile every receipt." }],
       },
     });

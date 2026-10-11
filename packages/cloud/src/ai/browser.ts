@@ -51,6 +51,7 @@ export {
   parseCloudAiChartInput,
 } from "./default-tool-contracts";
 export { guessAiMediaType } from "./file-media-type";
+export { AI_PROJECT_FILE_MOUNT, AI_SKILL_FILE_MOUNT } from "./file-mount";
 export { AI_IMAGE_INPUT_MAX_BYTES, AI_TURN_ATTACHMENT_MAX_ITEMS, AI_TURN_IMAGE_MAX_TOTAL_BYTES } from "./limits";
 export {
   AI_LOCAL_BATCH_MAX_ITEMS,
@@ -97,6 +98,10 @@ export {
   CloudAiLocalWriteOutputSchema,
 } from "./local-tool-contracts";
 export {
+  AI_SKILL_DESCRIPTION_MAX_CHARS,
+  AI_SKILL_EXTRA_FRONTMATTER_MAX_CHARS,
+  AI_SKILL_INSTRUCTIONS_MAX_CHARS,
+  AI_SKILL_NAME_MAX_CHARS,
   AI_SKILL_REFERENCE_MAX_ITEMS,
   AI_SKILL_REFERENCES_MAX_CHARS,
   type AiSkillDocument,
