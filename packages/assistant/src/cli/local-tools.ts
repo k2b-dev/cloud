@@ -69,7 +69,7 @@ export const createLocalSessionFolder = () => {
   };
 };
 
-export type LocalQuestionKind = "bash" | "append" | "replace" | "move" | "access";
+export type LocalQuestionKind = "bash" | "append" | "replace" | "move" | "access" | "instructions";
 
 type LocalToolsOptions = {
   ctx: CloudCliContext;
@@ -152,7 +152,7 @@ export const runLocalTool = async (
       }`;
     const lines = review && rule.access === "ask" ? [`${display(given)}: ${reason(rule)}`] : [];
     if (review && instructions) lines.push(`${display(given)}: becomes instructions for the assistant`);
-    const allowed = await ask(lines, question, kind);
+    const allowed = await ask(lines, question, instructions ? "instructions" : kind);
     signal.throwIfAborted();
     return allowed ? null : declined;
   };
@@ -539,7 +539,8 @@ export const runLocalTool = async (
               `  ${display(move.from).padEnd(width)} → ${display(move.to)}${move.protected ? " (may contain secrets)" : ""}${move.instructions ? " (becomes instructions for the assistant)" : ""}`,
           ),
         ];
-        if (!(await ask(lines, "Move?", "move"))) return { status: "denied", moved, conflicts, error: declined.error };
+        if (!(await ask(lines, "Move?", moves.some((move) => move.instructions) ? "instructions" : "move")))
+          return { status: "denied", moved, conflicts, error: declined.error };
         for (const move of moves) {
           try {
             signal.throwIfAborted();

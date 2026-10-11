@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { CloudAiSurveyInput } from "@k2b/cloud/ai";
+import { CLOUD_AI_TEXT_EDITOR_MAX_CHARS } from "@k2b/cloud/ai/browser";
 import {
   type ApprovalAction,
   approvalOptions,
@@ -83,6 +84,7 @@ describe("ACP mappings", () => {
       "/work",
     );
     expect(mapped).toMatchObject({
+      toolCallId: "b",
       title: "local_move 1 move",
       status: "pending",
       kind: "move",
@@ -212,7 +214,7 @@ describe("ACP mappings", () => {
     expect(textEditorForm(input)).toEqual({
       type: "object",
       required: ["content"],
-      properties: { content: { type: "string", title: "Text", default: "original" } },
+      properties: { content: { type: "string", title: "Text", default: "original", maxLength: CLOUD_AI_TEXT_EDITOR_MAX_CHARS } },
     });
     expect(textEditorResult(input, { action: "accept", content: { content: "edited" } })).toEqual({
       submitted: true,
@@ -228,8 +230,19 @@ describe("ACP mappings", () => {
       feedback: "This client cannot show drafts. Put the draft in your reply and ask the user there.",
     });
   });
+  test("text editor declines oversized accepted drafts without throwing", () => {
+    const input = { title: "Draft", content: "original", format: "markdown" as const, submitLabel: "Continue" };
+    expect(textEditorResult(input, { action: "accept", content: { content: "x".repeat(CLOUD_AI_TEXT_EDITOR_MAX_CHARS + 1) } })).toEqual({
+      submitted: false,
+      feedback: "The edited draft is longer than 20,000 characters, so it was not sent. Ask in the chat what to shorten.",
+    });
+    expect(textEditorResult(input, { action: "accept", content: { content: "x".repeat(CLOUD_AI_TEXT_EDITOR_MAX_CHARS) } })).toMatchObject({
+      submitted: true,
+    });
+  });
   test("local questions distinguish appending from replacement", () => {
     expect(localQuestion("append").kind).toBe("edit");
+    expect(localQuestion("instructions")).toEqual({ name: "Allow", kind: "other", reject: "Reject" });
     expect(localQuestion("replace").kind).toBe("other");
     expect(localQuestion("bash").kind).toBe("execute");
   });

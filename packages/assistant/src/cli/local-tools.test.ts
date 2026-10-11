@@ -105,10 +105,21 @@ test.each(["subfolder/AGENTS.md", ".agents/skills/x/SKILL.md", "subfolder/agents
       status: "denied",
       error: "The user declined.",
     });
-    expect(questions).toEqual([{ lines: [], question: `Write ${path}? It becomes instructions for the assistant.`, kind: "access" }]);
+    expect(questions).toEqual([{ lines: [], question: `Write ${path}? It becomes instructions for the assistant.`, kind: "instructions" }]);
     expect(await Bun.file(join(workspace, path)).exists()).toBeFalse();
   },
 );
+
+test("appending instructions and moving into .agents ask with the instructions kind", async () => {
+  await writeFile(join(workspace, "AGENTS.md"), "old");
+  await writeFile(join(workspace, "draft.md"), "skill");
+  approve = false;
+  expect(await run("local_write", { path: "AGENTS.md", mode: "append", content: "more" })).toMatchObject({ status: "denied" });
+  expect(await run("local_move", { moves: [{ from: "draft.md", to: ".agents/skills/x/SKILL.md" }] })).toMatchObject({ status: "denied" });
+  expect(questions.map((q) => q.kind)).toEqual(["instructions", "instructions"]);
+  expect(await readFile(join(workspace, "AGENTS.md"), "utf8")).toBe("old");
+  expect(await readFile(join(workspace, "draft.md"), "utf8")).toBe("skill");
+});
 
 test("instruction aliases ask on write and download; reading and uploading instructions stay free", async () => {
   await writeFile(join(workspace, "AGENTS.md"), "old");
@@ -122,7 +133,9 @@ test("instruction aliases ask on write and download; reading and uploading instr
   ]);
   questions = [];
   expect(await run("local_download", { path: "/chat.txt", to: "sub/AGENTS.md" })).toMatchObject({ status: "denied" });
-  expect(questions).toEqual([{ lines: [], question: "Save sub/AGENTS.md? It becomes instructions for the assistant.", kind: "access" }]);
+  expect(questions).toEqual([
+    { lines: [], question: "Save sub/AGENTS.md? It becomes instructions for the assistant.", kind: "instructions" },
+  ]);
   questions = [];
   expect(await run("local_read", { path: "AGENTS.md" })).toMatchObject({ status: "completed", kind: "text" });
   expect(await run("local_upload", { paths: ["AGENTS.md"] })).toMatchObject({ status: "completed", failed: [] });
@@ -215,7 +228,9 @@ test("moves cannot relocate an ancestor of the real cld config directory", async
 test("instruction segments in the given path still ask after normalization", async () => {
   approve = false;
   expect(await run("local_write", { path: "sub/.agents/../notes.md", content: "instructions" })).toMatchObject({ status: "denied" });
-  expect(questions).toEqual([{ lines: [], question: "Write sub/notes.md? It becomes instructions for the assistant.", kind: "access" }]);
+  expect(questions).toEqual([
+    { lines: [], question: "Write sub/notes.md? It becomes instructions for the assistant.", kind: "instructions" },
+  ]);
 });
 
 test.each(["local_move", "local_write"])("%s gives work a fresh deadline after a slow approval", async (name) => {

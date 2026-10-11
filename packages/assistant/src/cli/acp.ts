@@ -15,7 +15,7 @@ import {
   type ToolCall,
 } from "@agentclientprotocol/sdk";
 import type {
-  AiConversation,
+  AiConversationPage,
   AiDraftContentPart,
   AiLocalContext,
   AiPendingTurnAction,
@@ -39,7 +39,6 @@ import {
 import { type CloudCliContext, command } from "@k2b/cloud/cli";
 import { APPROVAL_ACP_CLIENT, APPROVAL_CLIENT_HEADER } from "@k2b/cloud/contracts/approvals";
 import type { AiChatQuotaSnapshot } from "@k2b/cloud/shared";
-import { z } from "zod";
 import { version } from "../../package.json";
 import {
   approvalOptions,
@@ -67,7 +66,6 @@ import { type AssistantTurnStreamResult, createAssistantTurnOutput, streamAssist
 import { terminalSafeText } from "./terminal";
 import { conversationPath, readConversationDetail, resolveConversation, submitAssistantTurn, uploadAttachmentFile } from "./turn";
 
-const sessionMappingsSchema = z.array(z.object({ session: z.string(), chat: z.string() }));
 const builtins: AvailableCommand[] = [
   { name: "web", description: "Open this chat in Cloud" },
   { name: "usage", description: "Show usage shares and reset dates" },
@@ -139,13 +137,6 @@ export const createAcpAgent = (host: CloudCliContext) => {
       return host.fetch(path, { ...init, headers });
     },
   });
-  const mappings = async () => {
-    try {
-      return sessionMappingsSchema.parse(JSON.parse((await host.getDefault("assistant.acpSessions")) ?? "[]"));
-    } catch {
-      return [];
-    }
-  };
   const models = async () => {
     if (!host.options.token)
       throw RequestError.authRequired(undefined, "Sign in first: run `cld login` in a terminal, then start a new thread.");
@@ -206,7 +197,7 @@ export const createAcpAgent = (host: CloudCliContext) => {
     if (synthetic) await update(s, { sessionUpdate: "tool_call", ...call });
     let allowed = false;
     try {
-      if (forms && (kind === "bash" || kind === "replace")) {
+      if (forms && (kind === "bash" || kind === "replace" || kind === "instructions")) {
         const response = await form(s, callId, text, {
           type: "object",
           required: ["decision"],
@@ -319,11 +310,12 @@ export const createAcpAgent = (host: CloudCliContext) => {
       await update(s, { sessionUpdate: "available_commands_update", availableCommands });
     }
   };
-  const afterResponse = (s: Session, title?: string) => {
+  const afterResponse = (s: Session, title?: string, notice?: string) => {
     setImmediate(() => {
       void (async () => {
         if (s.disconnected) return;
         await commands(s);
+        if (notice !== undefined) await message(s, notice + "\n");
         if (title !== undefined) {
           s.title = title;
           await update(s, { sessionUpdate: "session_info_update", title: terminalSafeText(title) });
@@ -459,18 +451,21 @@ export const createAcpAgent = (host: CloudCliContext) => {
     let output = createAssistantTurnOutput();
     const waitingApprovals = new Set<string>();
     const calls = new Map<string, string>();
+    const rows = new Map<string, string>();
     const onToolBlock = (block: ToolBlock) => {
+      rows.set(block.callId, block.id);
       const call = toolCall(block, s.cwd);
       const serialized = JSON.stringify(block);
-      if (calls.get(block.callId) !== serialized) {
-        void update(s, calls.has(block.callId) ? { sessionUpdate: "tool_call_update", ...call } : { sessionUpdate: "tool_call", ...call });
-        calls.set(block.callId, serialized);
+      if (calls.get(block.id) !== serialized) {
+        void update(s, calls.has(block.id) ? { sessionUpdate: "tool_call_update", ...call } : { sessionUpdate: "tool_call", ...call });
+        calls.set(block.id, serialized);
         if (block.name === "todo_write") {
           const entries = planEntries(block.args);
           if (entries) void update(s, { sessionUpdate: "plan", entries });
         }
       }
-      if (block.status !== "awaiting_approval") waitingApprovals.delete(block.callId);
+      if (block.status !== "awaiting_approval")
+        for (const callId of waitingApprovals) if (rows.get(callId) === block.id) waitingApprovals.delete(callId);
       if (block.status === "awaiting_client" && CODE_RUNTIME_TOOL_NAMES.some((name) => name === block.name)) throw new WebChatRequired();
     };
     const clientTools = {
@@ -487,7 +482,7 @@ export const createAcpAgent = (host: CloudCliContext) => {
             skills: s.context?.skills ?? [],
             freeReadRoots: s.context?.skills.map((skill) => skill.directory) ?? [],
             sessionFolder: s.folder,
-            ask: (lines, question, kind) => ask(s, call.callId, lines, question, kind),
+            ask: (lines, question, kind) => ask(s, rows.get(call.callId) ?? call.callId, lines, question, kind),
             printBash: () => {},
           },
           signal,
@@ -511,7 +506,11 @@ export const createAcpAgent = (host: CloudCliContext) => {
       if (waitingApprovals.has(action.callId)) return;
       waitingApprovals.add(action.callId);
       const text = `Waiting for your confirmation in Cloud or Cloud Login: ${chatLink(s)}`;
-      await update(s, { sessionUpdate: "tool_call_update", toolCallId: action.callId, content: toolContent(text) });
+      await update(s, {
+        sessionUpdate: "tool_call_update",
+        toolCallId: rows.get(action.callId) ?? action.callId,
+        content: toolContent(text),
+      });
       await message(s, text + "\n");
     };
     const attention = async (result: AssistantTurnStreamResult): Promise<AssistantTurnStreamResult> => {
@@ -521,7 +520,7 @@ export const createAcpAgent = (host: CloudCliContext) => {
           ctx,
           conversationPath(s.chat!, `/pending-actions/${encodeURIComponent(turnId!)}`),
         );
-        const action = actions[0];
+        const action = actions.find((a) => !(a.type === "approval_request" && waitingApprovals.has(a.callId)));
         if (!action) {
           result = await streamAssistantTurn(streamOptions());
           continue;
@@ -531,7 +530,7 @@ export const createAcpAgent = (host: CloudCliContext) => {
           const choice = await permission(
             s,
             {
-              toolCallId: action.callId,
+              toolCallId: rows.get(action.callId) ?? action.callId,
               title: terminalSafeText(action.review?.message ?? action.message ?? action.name),
               kind: action.website ? "fetch" : "other",
               status: "pending",
@@ -647,13 +646,8 @@ export const createAcpAgent = (host: CloudCliContext) => {
       }
       if (!s.chat) {
         s.chat = (await resolveConversation(ctx, { projectId: s.project })).id;
-        const current = await mappings();
-        await host.setDefault(
-          "assistant.acpSessions",
-          JSON.stringify(
-            [{ session: s.id, chat: s.chat }, ...current.filter((m) => m.session !== s.id && m.chat !== s.chat)].slice(0, 200),
-          ),
-        );
+        await host.setDefault(`assistant.acpSession.${s.id}`, s.chat);
+        await host.setDefault(`assistant.acpChat.${s.chat}`, s.id);
       }
       const detail = await readConversationDetail(ctx, s.chat);
       if (detail.activeTurn) {
@@ -662,6 +656,7 @@ export const createAcpAgent = (host: CloudCliContext) => {
         turnId = undefined;
         output = createAssistantTurnOutput();
         calls.clear();
+        rows.clear();
         waitingApprovals.clear();
       }
       s.context = await s.contextReader();
@@ -794,21 +789,25 @@ export const createAcpAgent = (host: CloudCliContext) => {
       return { configOptions: config(s) };
     })
     .onRequest("session/list", async ({ params }) => {
-      const conversations = await readApi<AiConversation[]>(host, "/conversations?limit=50");
-      const saved = await mappings();
+      const page = params.cursor == null ? 1 : Number(params.cursor);
+      if (params.cursor != null && (!/^[1-9]\d*$/.test(params.cursor) || !Number.isSafeInteger(page)))
+        throw RequestError.invalidParams(undefined, "Unknown session list cursor.");
+      const conversations = await readApi<AiConversationPage>(host, `/conversations/page?page=${page}&perPage=50`);
       return {
-        sessions: conversations.map((chat) => ({
-          sessionId: saved.find((m) => m.chat === chat.id)?.session ?? chat.id,
-          cwd: params.cwd ?? process.cwd(),
-          title: terminalSafeText(chat.title),
-          updatedAt: chat.updatedAt,
-        })),
+        sessions: await Promise.all(
+          conversations.items.map(async (chat) => ({
+            sessionId: (await host.getDefault(`assistant.acpChat.${chat.id}`)) ?? chat.id,
+            cwd: params.cwd ?? process.cwd(),
+            title: terminalSafeText(chat.title),
+            updatedAt: chat.updatedAt,
+          })),
+        ),
+        ...(conversations.hasNext ? { nextCursor: String(page + 1) } : {}),
       };
     })
     .onRequest("session/resume", async ({ params, client }) => {
       const profiles = await models();
-      const saved = await mappings();
-      const chat = saved.find((m) => m.session === params.sessionId)?.chat ?? params.sessionId;
+      const chat = (await host.getDefault(`assistant.acpSession.${params.sessionId}`)) ?? params.sessionId;
       const response = await host.fetch(`${AI_API}${conversationPath(chat)}`);
       if (response.status === 404) throw RequestError.resourceNotFound(params.sessionId);
       const detail = await host.readJson<Awaited<ReturnType<typeof readConversationDetail>>>(response);
@@ -818,7 +817,13 @@ export const createAcpAgent = (host: CloudCliContext) => {
       const s = await createSession(params.sessionId, params.cwd, client, profiles);
       s.chat = detail.conversation.id;
       s.project = detail.conversation.projectId ?? undefined;
-      afterResponse(s, detail.conversation.title);
+      afterResponse(
+        s,
+        detail.conversation.title,
+        detail.activeTurn
+          ? `A turn in this chat is still running. Send a message to follow it here, or open it in Cloud: ${chatLink(s)}`
+          : undefined,
+      );
       return { configOptions: config(s) };
     })
     .onRequest("session/prompt", ({ params }) => prompt(getSession(params.sessionId), params.prompt))

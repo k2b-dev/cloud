@@ -73,6 +73,8 @@ const harness = async (
     forms?: boolean;
     streams?: AiStreamSseEvent[][];
     action?: AiPendingTurnAction;
+    actions?: AiPendingTurnAction[];
+    conversations?: AiConversation[];
     post403?: boolean;
     permission?: (request: RequestPermissionRequest) => Promise<RequestPermissionResponse> | RequestPermissionResponse;
     form?: (request: CreateElicitationRequest) => Promise<CreateElicitationResponse> | CreateElicitationResponse;
@@ -138,6 +140,19 @@ const harness = async (
       if (path.endsWith("/approval-preferences"))
         return Response.json({ approvals: [{ id: "everywhere", title: "Create tasks", conversationId: null, app: { name: "Spaces" } }] });
       if (path.endsWith("/quotas")) return Response.json({ enabled: false });
+      if (path.includes("/conversations/page?")) {
+        const query = new URL(path, "https://cloud.test").searchParams;
+        const page = Number(query.get("page"));
+        const perPage = Number(query.get("perPage"));
+        const conversations = options.conversations ?? (created ? [conversation] : []);
+        return Response.json({
+          items: conversations.slice((page - 1) * perPage, page * perPage),
+          total: conversations.length,
+          page,
+          perPage,
+          hasNext: page * perPage < conversations.length,
+        });
+      }
       if (path.includes("/conversations?")) return Response.json(created ? [conversation] : []);
       if (path.endsWith("/conversations") && method === "POST") {
         created = true;
@@ -174,7 +189,7 @@ const harness = async (
           [delta("Hello "), delta("thinking", true), delta("world"), done()].map((e) => `data: ${JSON.stringify(e)}\n\n`).join(""),
         );
       }
-      if (path.includes("/pending-actions/")) return Response.json(options.action ? [options.action] : []);
+      if (path.includes("/pending-actions/")) return Response.json(options.actions ?? (options.action ? [options.action] : []));
       if (path.includes("/actions/"))
         return options.post403 ? Response.json({ error: "Approve this request in Cloud." }, { status: 403 }) : Response.json({});
       if (path.endsWith("/abort")) return Response.json({});
@@ -314,7 +329,9 @@ describe("Assistant ACP", () => {
       update: { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "thinking" } },
     });
     expect(h.updates.some((u) => u.update.sessionUpdate === "session_info_update")).toBe(true);
-    expect(JSON.parse(h.defaults.get("assistant.acpSessions") ?? "[]")).toEqual([{ session: h.session.sessionId, chat: "chat" }]);
+    expect(h.defaults.get(`assistant.acpSession.${h.session.sessionId}`)).toBe("chat");
+    expect(h.defaults.get("assistant.acpChat.chat")).toBe(h.session.sessionId);
+    expect(h.defaults.has("assistant.acpSessions")).toBe(false);
   });
   test("standard approvals offer chat memory and carry the ACP header", async () => {
     const h = await harness({ action: approval(), permission: () => ({ outcome: { outcome: "selected", optionId: "chat" } }) });
@@ -324,6 +341,73 @@ describe("Assistant ACP", () => {
     const posted = h.requests.find((r) => r.path.includes("/actions/"));
     expect(posted?.body).toEqual({ type: "approval_response", approved: true, remember: "chat" });
     expect(posted?.headers.get("x-cloud-client")).toBe("acp");
+  });
+  test("a waiting confirm approval does not hide a later approval", async () => {
+    const h = await harness({
+      actions: [
+        { ...approval(true), callId: "a" },
+        { ...approval(), callId: "b" },
+      ],
+      permission: (request) => ({
+        outcome: { outcome: "selected", optionId: request.toolCall.toolCallId === "tool-a" ? "cloud" : "once" },
+      }),
+    });
+    const a = { ...tool("mail.send", "awaiting_approval"), id: "tool-a", callId: "a" };
+    const b = { ...tool("mail.send", "awaiting_approval"), id: "tool-b", callId: "b" };
+    h.streams.push(
+      [h.block(a)],
+      [h.block(a), h.block(b)],
+      [h.block({ ...a, status: "completed" }), h.block({ ...b, status: "completed" }), h.done()],
+    );
+    expect(await h.send("Send")).toEqual({ stopReason: "end_turn" });
+    expect(h.permissions.map((p) => p.toolCall.toolCallId)).toEqual(["tool-a", "tool-b"]);
+    expect(h.requests.filter((r) => r.method === "POST" && r.path.endsWith("/actions/b"))).toHaveLength(1);
+    expect(h.requests.filter((r) => r.path.endsWith("/actions/a"))).toHaveLength(0);
+    expect(h.updates).toContainEqual({
+      sessionId: h.session.sessionId,
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "tool-a",
+        content: [
+          {
+            type: "content",
+            content: {
+              type: "text",
+              text: "Waiting for your confirmation in Cloud or Cloud Login: https://cloud.test/app/assistant?conversation=chat",
+            },
+          },
+        ],
+      },
+    });
+  });
+  test("all waiting approvals keep streaming without asking again", async () => {
+    const h = await harness({ action: approval(true), permission: () => ({ outcome: { outcome: "selected", optionId: "cloud" } }) });
+    h.streams.push(
+      [h.block(tool("mail.send", "awaiting_approval"))],
+      [h.block(tool("mail.send", "awaiting_approval"))],
+      [h.block(tool("mail.send", "completed")), h.done()],
+    );
+    expect(await h.send("Send")).toEqual({ stopReason: "end_turn" });
+    expect(h.permissions).toHaveLength(1);
+    expect(h.requests.filter((r) => r.path.endsWith("/stream"))).toHaveLength(3);
+  });
+  test("nested approval updates its parent's display row", async () => {
+    const h = await harness({ action: { ...approval(), callId: "x-approval-0" } });
+    const parent = { ...tool("code_run", "running"), id: "tool-x", callId: "x" };
+    h.streams.push(
+      [h.block(parent), h.block({ ...parent, callId: "x-approval-0", status: "awaiting_approval" })],
+      [h.block({ ...parent, status: "completed" }), h.done()],
+    );
+    expect(await h.send("Run")).toEqual({ stopReason: "end_turn" });
+    const updates = h.updates.flatMap(({ update }) =>
+      update.sessionUpdate === "tool_call" || update.sessionUpdate === "tool_call_update" ? [update] : [],
+    );
+    expect(updates.filter((u) => u.sessionUpdate === "tool_call")).toHaveLength(1);
+    expect(updates.every((u) => u.toolCallId === "tool-x")).toBe(true);
+    expect(updates.at(-1)).toMatchObject({ toolCallId: "tool-x", status: "completed" });
+    expect(h.permissions).toHaveLength(1);
+    expect(h.permissions[0]?.toolCall.toolCallId).toBe("tool-x");
+    expect(h.requests.filter((r) => r.method === "POST" && r.path.endsWith("/actions/x-approval-0"))).toHaveLength(1);
   });
   for (const fallback of [false, true])
     test(fallback ? "403 falls back to waiting in Cloud" : "confirm allow waits for the person in Cloud", async () => {
@@ -424,6 +508,37 @@ describe("Assistant ACP", () => {
     });
     expect(await Bun.file(join(h.cwd, "notes.md")).text()).toBe("new");
   });
+  for (const forms of [false, true])
+    for (const move of [false, true])
+      test(`${move ? "moving into .agents" : "appending to AGENTS.md"} uses ${forms ? "a person-facing form" : "other permission"}`, async () => {
+        const h = await harness({ forms });
+        h.defaults.set("assistant.trustedFolders", JSON.stringify([h.cwd]));
+        await writeFile(join(h.cwd, move ? "draft.md" : "AGENTS.md"), "old");
+        const name = move ? "local_move" : "local_write";
+        const args = move
+          ? { moves: [{ from: "draft.md", to: ".agents/skills/x/SKILL.md" }] }
+          : { path: "AGENTS.md", mode: "append", content: "more" };
+        h.streams.push([h.block(tool(name, "awaiting_client", args)), h.done()]);
+        expect(await h.send("Write")).toEqual({ stopReason: "end_turn" });
+        expect(h.forms).toHaveLength(forms ? 1 : 0);
+        expect(h.permissions).toHaveLength(forms ? 0 : 1);
+        if (forms)
+          expect(h.forms[0]).toMatchObject({
+            toolCallId: "block",
+            requestedSchema: {
+              properties: {
+                decision: {
+                  oneOf: [
+                    { const: "yes", title: "Allow" },
+                    { const: "no", title: "Reject" },
+                  ],
+                },
+              },
+            },
+          });
+        else expect(h.permissions[0]?.toolCall).toMatchObject({ toolCallId: "block", kind: "other" });
+        expect(await Bun.file(join(h.cwd, move ? ".agents/skills/x/SKILL.md" : "AGENTS.md")).text()).toBe(move ? "old" : "oldmore");
+      });
   test("todo_write sends the editor plan", async () => {
     const h = await harness();
     h.streams.push([
@@ -478,6 +593,43 @@ describe("Assistant ACP", () => {
       code: -32002,
     });
   });
+  test("session list pages through all conversations", async () => {
+    const conversations = Array.from({ length: 53 }, (_, i) => ({ ...initialConversation(), id: `chat-${i}` }));
+    const h = await harness({ conversations });
+    h.defaults.set("assistant.acpChat.chat-52", "saved-session");
+    const first = await h.acp.request("session/list", { cwd: h.cwd });
+    expect(first.sessions.map((s) => s.sessionId)).toEqual(conversations.slice(0, 50).map((c) => c.id));
+    expect(first.nextCursor).toBe("2");
+    const second = await h.acp.request("session/list", { cwd: h.cwd, cursor: "2" });
+    expect(second.sessions.map((s) => s.sessionId)).toEqual(["chat-50", "chat-51", "saved-session"]);
+    expect(second).not.toHaveProperty("nextCursor");
+    expect(h.requests.filter((r) => r.path.includes("/conversations/page?")).map((r) => r.path)).toEqual([
+      "/api/ai/conversations/page?page=1&perPage=50",
+      "/api/ai/conversations/page?page=2&perPage=50",
+    ]);
+  });
+  test.each(["x", "0", "-1", "1.5", "", " 2", "1e2", "9007199254740992"])("session list rejects invalid cursor %s", async (cursor) => {
+    const h = await harness();
+    await expect(h.acp.request("session/list", { cursor })).rejects.toMatchObject({
+      code: -32602,
+      message: "Invalid params: Unknown session list cursor.",
+    });
+    expect(h.requests.some((r) => r.path.includes("/conversations/page?"))).toBe(false);
+  });
+  for (const activeTurn of [false, true])
+    test(`resume ${activeTurn ? "reports a running turn" : "does not report a running turn when idle"}`, async () => {
+      const h = await harness({ activeTurn });
+      await h.acp.request("session/resume", { sessionId: "chat", cwd: h.cwd, mcpServers: [] });
+      // The title follows the optional notice in the deferred updates.
+      while (!h.updates.some((u) => u.sessionId === "chat" && u.update.sessionUpdate === "session_info_update")) await Bun.sleep(5);
+      if (activeTurn)
+        expect(h.text()).toBe(
+          "A turn in this chat is still running. Send a message to follow it here, or open it in Cloud: https://cloud.test/app/assistant?conversation=chat\n",
+        );
+      else expect(h.text()).not.toContain("A turn in this chat is still running");
+      expect(h.requests.some((r) => r.path.endsWith("/stream"))).toBe(false);
+      expect(h.requests.some((r) => r.path.endsWith("/turns"))).toBe(false);
+    });
   test("cancel posts abort and returns cancelled", async () => {
     const h = await harness({ hold: true });
     const pending = h.send("Wait");

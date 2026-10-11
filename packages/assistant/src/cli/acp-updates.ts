@@ -9,7 +9,12 @@ import type {
   ToolKind,
 } from "@agentclientprotocol/sdk";
 import type { AiPendingTurnAction, AiTurnBlock, CloudAiSurveyInput, CloudAiTextEditorInput } from "@k2b/cloud/ai";
-import { CloudAiSurveyOutputSchema, CloudAiTextEditorOutputSchema, parseAiTodoPlan } from "@k2b/cloud/ai/browser";
+import {
+  CLOUD_AI_TEXT_EDITOR_MAX_CHARS,
+  CloudAiSurveyOutputSchema,
+  CloudAiTextEditorOutputSchema,
+  parseAiTodoPlan,
+} from "@k2b/cloud/ai/browser";
 import type { CloudCliTableColumn } from "@k2b/cloud/cli";
 import { resolveLocalPath } from "./local-paths";
 import { localToolTarget } from "./local-tool-target";
@@ -53,7 +58,7 @@ export const toolCall = (block: ToolBlock, cwd: string): ToolCall => {
   const result = block.result;
   const error = result && typeof result === "object" && "error" in result ? result.error : result;
   return {
-    toolCallId: block.callId,
+    toolCallId: block.id,
     title: terminalSafeText(block.presentation?.title ?? (target ? `${block.name} ${target}` : block.name)),
     kind: toolKind(block.name),
     status: block.status === "running" ? "in_progress" : block.status === "completed" ? "completed" : failed ? "failed" : "pending",
@@ -96,6 +101,7 @@ export const localQuestion = (kind: LocalQuestionKind): { name: string; kind: To
       append: { name: "Append", kind: "edit", reject: "Reject" },
       replace: { name: "Replace", kind: "other", reject: "Keep the current file" },
       move: { name: "Move", kind: "move", reject: "Reject" },
+      instructions: { name: "Allow", kind: "other", reject: "Reject" },
       access: { name: "Allow", kind: "other", reject: "Reject" },
     }) satisfies Record<LocalQuestionKind, { name: string; kind: ToolKind; reject: string }>
   )[kind];
@@ -133,11 +139,22 @@ export const surveyResult = (input: CloudAiSurveyInput, response?: CreateElicita
 };
 export const textEditorForm = (input: CloudAiTextEditorInput): ElicitationSchema => ({
   type: "object",
-  properties: { content: { type: "string", title: "Text", default: input.content } },
+  properties: { content: { type: "string", title: "Text", default: input.content, maxLength: CLOUD_AI_TEXT_EDITOR_MAX_CHARS } },
   required: ["content"],
 });
 export const textEditorResult = (input: CloudAiTextEditorInput, response?: CreateElicitationResponse) => {
   const content = response?.action === "accept" ? response.content : undefined;
+  if (
+    content &&
+    typeof content === "object" &&
+    "content" in content &&
+    typeof content.content === "string" &&
+    content.content.length > CLOUD_AI_TEXT_EDITOR_MAX_CHARS
+  )
+    return {
+      submitted: false,
+      feedback: `The edited draft is longer than ${CLOUD_AI_TEXT_EDITOR_MAX_CHARS.toLocaleString("en-US")} characters, so it was not sent. Ask in the chat what to shorten.`,
+    };
   return CloudAiTextEditorOutputSchema.parse(
     content && typeof content === "object" && "content" in content && typeof content.content === "string"
       ? { submitted: true, content: content.content, format: input.format }

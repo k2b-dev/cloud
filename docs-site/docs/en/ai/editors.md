@@ -82,7 +82,9 @@ Select Cloud for the thread and choose its model in the model picker.
 The editor's mode decides local questions and Cloud approvals that can be
 remembered. In T3 Code, **Full access** approves them without asking;
 **Supervised** asks; **Auto-accept edits** accepts appends and moves and asks
-for the rest.
+for the rest. Writing or moving a file that becomes instructions for the
+assistant, such as `AGENTS.md` or a file under `.agents`, is never sent as an
+edit, so this mode still asks for it.
 
 Actions that cannot be undone or reach other people, such as sending mail,
 deleting, sharing, or inviting, always wait for confirmation in Cloud. The
@@ -91,7 +93,8 @@ editor can only reject them, and shows the link to the web chat. Choosing
 request waiting until you confirm or reject it in Cloud, or on a phone paired
 with [Cloud Login](/en/apps/cloud-login).
 
-Local Bash commands and replacing a file ask through a form that reaches a
+Local Bash commands, replacing a file, and writing or moving a file that
+becomes instructions for the assistant ask through a form that reaches a
 person even in Full access when the editor supports forms. Without form
 support, these questions use the editor's permission prompt.
 
@@ -108,7 +111,7 @@ for Cloud's approval rules.
 | Working checklist | The editor's plan |
 | Cards and charts | Text and Markdown tables |
 | Studio apps, secrets, and file previews | A link to the web chat |
-| Surveys and drafts | Forms when supported; otherwise Assistant can ask or show the draft in chat |
+| Surveys and drafts | Forms when supported; otherwise Assistant can ask or show the draft in chat. An edited draft over 20,000 characters is not sent, and Assistant asks what to shorten |
 
 ## Use chat commands
 
@@ -128,8 +131,8 @@ the cld profile.
 
 A new editor thread creates its Cloud chat with the first message. The thread
 list can show Cloud chats too. Resuming a chat does not replay its history in
-the editor. If a turn is still running, Assistant follows it again before
-sending your next message.
+the editor. If a turn is still running, the editor says so, and Assistant
+follows it again before sending your next message.
 
 Closing the editor does not stop a Cloud turn. Open the web chat to continue
 or answer a pending request. Use the editor's Stop action to cancel a turn.
