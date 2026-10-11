@@ -64,7 +64,9 @@ describe("@k2b/ui complete advanced layout migrations", () => {
       }),
     );
     expect(html).toMatch(/class="k2b-app-workspace__head"[^>]*data-trail="up"/);
-    expect(html).toMatch(/<h1[^>]*class="k2b-page-title__title\s*"[^>]*>.*?Devices.*?<\/h1>/);
+    // The visible title is no heading; the head's heading stands in once the sidebar hides the row.
+    expect(html).toMatch(/<p[^>]*class="k2b-page-title__title\s*"[^>]*>.*?Devices.*?<\/p>/);
+    expect(html).toMatch(/<h1[^>]*class="k2b-app-workspace__head-heading"[^>]*data-k2b-server[^>]*>.*?Devices.*?<\/h1>/);
     expect(html).toMatch(/<a[^>]*href="\/devices"[^>]*aria-current="page"/);
     const source = readFileSync(resolve(import.meta.dir, "../styles/layout-parity.css"), "utf8");
     expect(source).toMatch(

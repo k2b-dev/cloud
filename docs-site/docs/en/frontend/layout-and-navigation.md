@@ -175,13 +175,15 @@ import { PageTrail } from "@k2b/cloud/ssr/islands";
 From 1024 px, when a visible, non-collapsed workspace sidebar marks the exact
 current page with `aria-current="page"`, the workspace shows no title row and
 no back link. `AppWorkspace.SidebarItem active` renders that attribute. The
-page title stays as a visually hidden `h1` and as the document title. Pages
+page title stays the document title, and a visually hidden `h1` on a page
+that has no `h1` of its own in Main. Pages
 deeper than the sidebar lists keep their back link, as do compact layouts
 from 768 to 1023 px and phones. Alt+Up still goes to the parent.
 
 Name the page in its content: Grids names the table in its search field with
-text such as "Search Devices…"; a note in Notebooks has its own first heading.
-The sidebar also names the page. Mark the exact current page with `active`; on
+text such as "Search Devices…"; Spaces names the space above its views in
+the sidebar; a note in Notebooks has its own first heading. The sidebar also
+names the page. Mark the exact current page with `active`; on
 a page deeper than the sidebar lists, mark the containing item with
 `active="ancestor"` so it stays highlighted and the page keeps its back link.
 

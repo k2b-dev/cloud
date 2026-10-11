@@ -1694,11 +1694,18 @@
   display: none;
 }
 
+/* The head's heading only stands in for a title row the sidebar makes
+   redundant (see below). */
+.k2b-ui .k2b-app-workspace__head-heading {
+  display: none;
+  margin: 0;
+}
+
 @media (min-width: 64rem) {
   /* A sidebar that marks the current page already names it, so the head
-     shows neither the title nor the way up beside it. The title stays the
-     page's heading for assistive technology; Alt+Up still goes up. A
-     collapsed sidebar shows no names and keeps the head. */
+     shows neither the title nor the way up beside it; Alt+Up still goes up.
+     On a page without its own `h1` the head's heading stays for assistive
+     technology. A collapsed sidebar shows no names and keeps the head. */
   .k2b-ui
     .k2b-app-workspace:not([data-sidebar-collapsed="true"]):has(
       > .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"],
@@ -1722,8 +1729,18 @@
       > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"]
     )
     > .k2b-app-workspace__head
-    .k2b-page-title__trail {
+    > .k2b-page-title {
     display: none;
+  }
+
+  .k2b-ui
+    .k2b-app-workspace:not([data-sidebar-collapsed="true"]):has(
+      > .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"],
+      > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"]
+    ):not(:has(.k2b-app-workspace__main h1))
+    > .k2b-app-workspace__head
+    > .k2b-app-workspace__head-heading {
+    display: block;
   }
 
   /* The workspace does not clip from here, so the detail panel's shadow shows

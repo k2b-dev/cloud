@@ -135,6 +135,7 @@ export const server = new Hono()
       return () => (
         <Page c={c} title={[start, accountsRoot, { title: "Users", href: "/app/accounts/users" }, { title: uid }]}>
           <AccountsWorkspace active={false}>
+            <h1 class="p-3">User Seven</h1>
             <p class="p-3">Profile of {uid}</p>
             <input aria-label="Note" class="m-3" />
           </AccountsWorkspace>

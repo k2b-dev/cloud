@@ -207,7 +207,9 @@ describe("the rule decides the form by depth", () => {
           expect(detail.head!.box.height).toBe(46);
           // Flush up to 1536 px; the card's own edge above it.
           expect(detail.head!.box.top).toBeLessThanOrEqual(device.width >= 1536 ? 9 : 0);
-          expect(detail).toMatchObject({ form: "back", title: { text: "user07", tag: "h1" }, arrow: null });
+          expect(detail).toMatchObject({ form: "back", title: { text: "user07", tag: "p" }, arrow: null });
+          // The page's own heading is its only one; the head's title is no second.
+          expect(await page.getByRole("heading", { level: 1 }).allTextContents()).toEqual(["User Seven"]);
           expect(detail.back).toMatchObject({ text: "Users", label: "Back to Users", href: "/app/accounts/users" });
           expect(detail.hairlines).toEqual([]);
 
@@ -386,6 +388,8 @@ describe("layout.update() keeps the trail current", () => {
         title: { text: "user09" },
         back: { text: "Users" },
       });
+      // The head's heading follows as well, for a sidebar that marks the page.
+      expect(await page.locator(".k2b-app-workspace__head-heading").textContent()).toBe("user09");
       expect(await page.title()).toBe("user09");
       // A title alone renames the page and keeps the way up.
       await update({ title: "user09 (renamed)" });
@@ -561,19 +565,20 @@ describe("going up returns to the page as this tab left it", () => {
 
 describe("workspace title beside exact-current navigation", () => {
   for (const device of [laptop, ipadPortrait, phone]) {
-    test(`${device.name}: the marked page keeps an accessible h1, stable main and working way up`, async () => {
+    test(`${device.name}: the marked page keeps one accessible title, stable main and working way up`, async () => {
       const { context, page } = await open(device, "/app/accounts/teams");
       try {
+        // Without the title row, the head's heading names the page; the visible title row is no heading.
         const heading = page.getByRole("heading", { level: 1, name: "Teams", exact: true });
-        expect(await heading.count()).toBe(1);
-        expect(await page.locator("h1").count()).toBe(1);
+        expect(await heading.count()).toBe(device.width >= 1024 ? 1 : 0);
+        expect(await page.getByRole("heading", { level: 1 }).count()).toBe(device.width >= 1024 ? 1 : 0);
         expect(await page.title()).toBe("Teams");
         const head = page.locator('.k2b-app-workspace__head[data-trail="up"]');
         if (device.width >= 1024) {
           const box = await head.boundingBox();
           expect(box!.width).toBeLessThanOrEqual(1);
           expect(box!.height).toBeLessThanOrEqual(1);
-          expect(await head.locator(".k2b-page-title__trail").evaluate((element) => getComputedStyle(element).display)).toBe("none");
+          expect(await head.locator(".k2b-page-title").evaluate((element) => getComputedStyle(element).display)).toBe("none");
           expect(await page.locator(".k2b-page-title__up:visible,.k2b-page-title__back:visible").count()).toBe(0);
         } else {
           expect(await head.locator(device.width < 768 ? ".k2b-page-title__back" : ".k2b-page-title__up").isVisible()).toBe(true);

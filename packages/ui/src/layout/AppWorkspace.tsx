@@ -14,6 +14,7 @@ import {
   Show,
   useContext,
 } from "solid-js";
+import { isServer } from "solid-js/web";
 import { IconButton } from "../actions/Button";
 import {
   APP_WORKSPACE_DETAIL_CLOSE_EVENT,
@@ -1697,11 +1698,12 @@ type AppWorkspaceComponent = ((props: AppWorkspaceProps) => JSX.Element) & {
 /**
  * The row above the work area. From 48 to 64 rem it holds the button that
  * opens the overlay sidebar. On a page with a page above it, it shows the
- * host's page title as the page's heading, with the way up (see
- * `PageTitle`); the page's own `PageTitle` takes its place. From 64 rem a
- * sidebar that marks the current page names it already, and the head keeps
- * only the heading for assistive technology. It is one fixed height and
- * draws no line; CSS decides when it shows, so the server-rendered page
+ * host's page title with the way up (see `PageTitle`); the page's own
+ * `PageTitle` takes its place. The visible title is no heading, because many
+ * pages render their own `h1`. From 64 rem a sidebar that marks the current
+ * page names it already: the row hides, and only on a page without its own
+ * `h1` its heading stays for assistive technology. It is one fixed height
+ * and draws no line; CSS decides when it shows, so the server-rendered page
  * already has its final geometry.
  */
 function AppWorkspaceHead(props: { sidebarId: () => string; nested: boolean }): JSX.Element {
@@ -1719,7 +1721,17 @@ function AppWorkspaceHead(props: { sidebarId: () => string; nested: boolean }): 
       >
         <i class="ti ti-layout-sidebar" aria-hidden="true" />
       </IconButton>
-      <Show when={trail()}>{(current) => <PageTitle trail={current()} fallback />}</Show>
+      <Show when={trail()}>
+        {(current) => (
+          <>
+            <PageTitle trail={current()} as="p" fallback />
+            {/* A head that never hydrates follows a new trail through `followPageTrail`. */}
+            <h1 class="k2b-app-workspace__head-heading" data-k2b-page-trail-title="" data-k2b-server={isServer ? "" : undefined}>
+              {current().title}
+            </h1>
+          </>
+        )}
+      </Show>
     </div>
   );
 }
