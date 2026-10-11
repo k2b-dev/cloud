@@ -48,6 +48,7 @@ import {
   mailProviderOperationMutex,
   type ProviderLeasePriority,
   providerBusyRetryAfterMs,
+  providerLeaseWaitedFor,
   recordProviderFailure,
   recordProviderReachable,
   releaseProviderLease,
@@ -2506,7 +2507,7 @@ type HydrationTarget = {
   remote_resource_id: string;
 };
 
-type HydrationBatch = { hydrated: boolean; settled: number; missingFromUid: number | null; targetError: unknown };
+type HydrationBatch = { hydrated: boolean; settled: number; stopped: boolean; missingFromUid: number | null; targetError: unknown };
 
 const requestedHydrationTarget = async (messageId: string): Promise<HydrationTarget | null> => {
   const [target] = await sql<HydrationTarget[]>`
@@ -2609,13 +2610,15 @@ export const hydrateMessageBatch = async (
       if (!message) return { hydrated: false };
       // A mailbox's pending bodies wait for its folder syncs and commands. A body someone waits
       // for, such as one a workflow step needs, ranks with commands.
-      const { lock, retryAfterMs: busyRetryAfterMs } = await acquireProviderLease({
+      const turn = await acquireProviderLease({
         resource: message.remote_resource_id,
         waiter: `hydrate:${hydrationJobKey(ctx.input)}`,
         priority: "messageId" in ctx.input ? "command" : "background",
         ttlMs: SYNC_LEASE_MS,
       });
-      if (!lock) throw Object.assign(new Error("Mail remote resource is busy"), { code: "SYNC_BUSY", retryAfterMs: busyRetryAfterMs });
+      if (!turn.lock)
+        throw Object.assign(new Error("Mail remote resource is busy"), { code: "SYNC_BUSY", retryAfterMs: turn.retryAfterMs });
+      const { lock } = turn;
       let batch: HydrationBatch;
       try {
         batch = await withLeaseHeartbeat<HydrationBatch>({
@@ -2663,7 +2666,7 @@ export const hydrateMessageBatch = async (
         ORDER BY (mc.id = ${message.id}::uuid) DESC, mc.hydration_attempt > 0, mc.internal_date DESC, mc.id DESC
         LIMIT ${HYDRATION_BATCH_SIZE}
       `;
-            if (candidates.length === 0) return { hydrated: false, settled: 0, missingFromUid: null, targetError: null };
+            if (candidates.length === 0) return { hydrated: false, settled: 0, stopped: false, missingFromUid: null, targetError: null };
 
             let hydrated = false;
             // Only a job for one requested message fails with its message and retries; a mailbox job
@@ -2671,6 +2674,7 @@ export const hydrateMessageBatch = async (
             let targetError: unknown = null;
             const settled = new Set<string>();
             const delivered = new Set<string>();
+            let stoppedAfter: string | null = null;
             let missing: typeof candidates = [];
             await assertProviderLeaseActive();
             await assertMailboxTransportFence(transportFence);
@@ -2703,8 +2707,6 @@ export const hydrateMessageBatch = async (
                     hydrated ||= available;
                     await assertProviderLeaseActive();
                     await assertMailboxTransportFence(transportFence);
-                    await assertProviderLeaseActive();
-                    await assertMailboxTransportFence(transportFence);
                   } catch (error) {
                     const code = normalizeSyncErrorCode(error);
                     if (code === "SYNC_LEASE_LOST" || code === "MAILBOX_TRANSPORT_CHANGED") throw error;
@@ -2716,6 +2718,12 @@ export const hydrateMessageBatch = async (
                   } finally {
                     activeClaim = null;
                   }
+                  // A folder sync or command ahead of this batch's place waits for this body,
+                  // instead of waiting for the rest of the batch.
+                  if (await providerLeaseWaitedFor(turn)) {
+                    stoppedAfter = source.key;
+                    return "stop";
+                  }
                 },
                 signal,
               );
@@ -2723,7 +2731,12 @@ export const hydrateMessageBatch = async (
               await recordProviderReachable(message.remote_resource_id);
               // The live connection returned no source for these UIDs. Each such fetch uses one
               // attempt, so a message the provider keeps listing without a source ends as failed.
-              missing = candidates.filter((candidate) => !delivered.has(candidate.id));
+              // Sources arrive in request order, so only candidates through the last source were requested.
+              const requested =
+                stoppedAfter === null
+                  ? candidates
+                  : candidates.slice(0, candidates.findIndex((candidate) => candidate.id === stoppedAfter) + 1);
+              missing = requested.filter((candidate) => !delivered.has(candidate.id));
               if (missing.length > 0) {
                 await assertProviderLeaseActive();
                 const recorded = await recordMissingMessageSources(
@@ -2741,6 +2754,7 @@ export const hydrateMessageBatch = async (
             return {
               hydrated,
               settled: settled.size,
+              stopped: stoppedAfter !== null,
               missingFromUid: missingUids.length > 0 ? Math.min(...missingUids) : null,
               targetError,
             };
@@ -2755,9 +2769,10 @@ export const hydrateMessageBatch = async (
       // Folder reconciliation retires the references of messages the provider deleted.
       if (batch.missingFromUid !== null) await enqueueFolderReconciliation(message.folder_id, batch.missingFromUid);
       if (batch.targetError) throw batch.targetError;
-      // A batch that settled nothing must not requeue itself, and bodies that were already tried
+      // A batch that settled nothing and was not cut short must not requeue itself. A batch that
+      // ended early for a waiting folder sync or command requeues behind it. Bodies already tried
       // wait for the next `mail:sync-due` tick instead of being retried back to back.
-      if ("mailboxId" in ctx.input && batch.settled > 0 && (await newestPendingBody(ctx.input.mailboxId, false))) {
+      if ("mailboxId" in ctx.input && (batch.settled > 0 || batch.stopped) && (await newestPendingBody(ctx.input.mailboxId, false))) {
         ctx.resubmit({ delayMs: 0 });
       }
       return { hydrated: batch.hydrated };
