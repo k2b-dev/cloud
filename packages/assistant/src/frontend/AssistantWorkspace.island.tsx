@@ -635,6 +635,13 @@ export default function AssistantWorkspace(props: Props) {
   };
   const createAndFocusConversation = async () => {
     if (!activeChatIsBlank()) return createConversation(true);
+    // The approvals view opens over the chat it came from; New chat returns to that empty chat instead of a new one.
+    const conversationId = chat.activeConversationId();
+    if (approvalsOpen() && conversationId) {
+      navigationRequest++;
+      setApprovalsOpen(false);
+      commitConversationUrl(conversationId);
+    }
     focusComposer();
     return chat.conversation();
   };

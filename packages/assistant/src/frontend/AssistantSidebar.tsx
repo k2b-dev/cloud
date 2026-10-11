@@ -339,7 +339,17 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
   const [approvalsShown, setApprovalsShown] = createSignal(approvalsVisible());
   createEffect(on([activeView, activeConversationId, activeProjectId], () => setApprovalsShown(approvalsVisible()), { defer: true }));
   const openApprovals = (event: MouseEvent) => {
-    if (!props.onOpenApprovals) return;
+    // Like a chat row: modified and middle clicks keep the link's own behavior, such as opening a new tab.
+    if (
+      !props.onOpenApprovals ||
+      event.defaultPrevented ||
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey
+    )
+      return;
     event.preventDefault();
     props.onOpenApprovals();
   };
