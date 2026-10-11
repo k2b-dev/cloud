@@ -79,11 +79,13 @@ import {
   type MailStorageSummary,
   type MailSubscriptionPage,
   type MailSubscriptionSummary,
+  type MailSyncRunPage,
   type MailWorkflow,
   type MailWorkflowDetail,
   type MailWorkflowVersion,
   type MessageInspector,
   mailSearchExpressionSchema,
+  mailSyncRunStateSchema,
   type PlatformMailboxOperationSummary,
   type PlatformMailOperations,
   type ProviderBinding,
@@ -3526,7 +3528,7 @@ const specialistCommands = {
             `Folders: ${health.discovery.activeFolders} active, ${health.discovery.missingFolders} missing, ${health.discovery.ambiguousFolders} ambiguous`,
           );
           ctx.print(
-            `Sync: ${health.sync.lastAt ? `last completed ${health.sync.lastAt}` : "never completed"}, ${health.sync.runningRuns} running, ${health.sync.failedRuns} failed; hydration ${health.hydration.pending} pending/${health.hydration.failed} failed`,
+            `Sync: ${health.sync.lastAt ? `last completed ${health.sync.lastAt}` : "never completed"}, ${health.sync.runningRuns} running, ${health.sync.failedRuns} failed in the last 24 hours; hydration ${health.hydration.pending} pending/${health.hydration.failed} failed`,
           );
           ctx.print(`Commands: ${health.commands.maintenanceQueued} maintenance pending; search ${health.search.configuredBackend}`);
         }
@@ -4296,6 +4298,42 @@ const specialistCommands = {
         const result = flags.wait ? await waitForCommand(ctx, mailbox.id, command.id, flags.timeoutSeconds) : command;
         if (printStructured(ctx, result)) return;
         printSyncRequest(ctx, "Folder sync", result);
+      },
+    }),
+    command("sync runs", {
+      summary: "List recent sync runs with their folder and error code",
+      description:
+        "Lists the sync runs Mail keeps for 30 days, newest first. Each attempt to sync a folder batch is one run, also one that a retry completed afterwards.",
+      examples: ["cld mail sync runs --state failed", "cld --json mail sync runs --state failed --limit 100"],
+      flags: {
+        ...mailboxFlag,
+        state: flag.enum(mailSyncRunStateSchema.options, { description: "Only runs in this state" }),
+        limit: flag.int({ min: 1, max: 100, default: 50 }),
+        cursor: flag.string({ description: "Opaque cursor returned by a previous page" }),
+      },
+      run: async ({ ctx, flags }) => {
+        const mailbox = await resolveMailbox(ctx, flags.mailbox);
+        const query = new URLSearchParams({ limit: String(flags.limit ?? 50) });
+        if (flags.state) query.set("state", flags.state);
+        if (flags.cursor) query.set("cursor", flags.cursor);
+        const page = await readApi<MailSyncRunPage>(ctx, `/mailboxes/${mailbox.id}/sync-runs?${query}`);
+        printTable(
+          ctx,
+          page,
+          page.items.map((run) => ({
+            started: run.startedAt,
+            state: run.state,
+            folder: run.folderPath ?? "-",
+            error: run.errorCode ?? "-",
+          })),
+          [
+            { key: "started", label: "STARTED" },
+            { key: "state", label: "STATE" },
+            { key: "folder", label: "FOLDER" },
+            { key: "error", label: "ERROR" },
+          ],
+        );
+        if (ctx.options.output === "text" && page.nextCursor) ctx.print(`Next cursor: ${page.nextCursor}`);
       },
     }),
     command("rediscover", {

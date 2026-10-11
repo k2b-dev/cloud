@@ -592,6 +592,31 @@ export const mailboxOperationalHealthSchema = z.object({
 });
 export type MailboxOperationalHealth = z.infer<typeof mailboxOperationalHealthSchema>;
 
+export const mailSyncRunStateSchema = z.enum(["running", "completed", "failed", "cancelled", "stale_fence"]);
+export type MailSyncRunState = z.infer<typeof mailSyncRunStateSchema>;
+
+/** One attempt to synchronize a folder batch, as an operator needs it to tell retries from a real problem. */
+export const mailSyncRunSchema = z
+  .object({
+    kind: z.string(),
+    state: mailSyncRunStateSchema,
+    folderId: ResourceShortIdSchema.nullable(),
+    folderPath: z.string().nullable(),
+    errorCode: z.string().nullable(),
+    startedAt: z.string().datetime(),
+    finishedAt: z.string().datetime().nullable(),
+  })
+  .strict();
+export type MailSyncRun = z.infer<typeof mailSyncRunSchema>;
+
+export const mailSyncRunPageSchema = z
+  .object({
+    items: z.array(mailSyncRunSchema),
+    nextCursor: z.string().nullable(),
+  })
+  .strict();
+export type MailSyncRunPage = z.infer<typeof mailSyncRunPageSchema>;
+
 export const attachmentLinkSchema = z.object({
   id: z.string().uuid(),
   mailboxId: ResourceShortIdSchema,

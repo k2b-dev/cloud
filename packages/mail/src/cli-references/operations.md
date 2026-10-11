@@ -13,6 +13,15 @@ cld --json mail mailbox wait --health active --timeout-seconds 300
 
 `mailbox wait` stops early when the mailbox enters an incompatible failure health. A healthy command result does not replace checking the relevant durable command or sync run. `mail status` reports `degraded` with the failed count while any message hydration has failed, even when the provider transport itself is active.
 
+Each attempt to sync a batch of one folder is a sync run, and a failed attempt stays failed when a retry completes the folder afterwards. `mail status` therefore counts the failed runs that started in the last 24 hours (`sync.failedRuns` under `--json`), and `mail operator status` counts completed, failed, cancelled, and superseded (`stale_fence`) runs of the same 24 hours in `sync.states`; both also count the runs that are still running. List the runs behind that number, newest first, with their folder and error code:
+
+```bash
+cld mail sync runs --state failed
+cld --json mail sync runs --state failed --limit 100 --cursor <next-cursor>
+```
+
+`--state` takes `running`, `completed`, `failed`, `cancelled`, or `stale_fence`; without it the list shows every state. A page holds up to 100 runs, 50 by default; pass the printed `nextCursor` for the next page. Mail keeps finished runs for 30 days, so the list reaches back that far. It needs read access to the whole mailbox, like `mail status`. Failures that a later run of the same folder follows with `completed`, such as a dropped connection, were retried; the same folder failing with the same code run after run, or the mailbox staying `degraded`, needs attention.
+
 Mailbox admins can inspect the redacted operator view:
 
 ```bash
@@ -399,7 +408,7 @@ Do not automatically delete provider mail after the run. The marker keeps test m
 
 | Area | Commands |
 | --- | --- |
-| Health | `status`, `mailbox wait`, `operator status`, `admin operations` |
+| Health | `status`, `sync runs`, `mailbox wait`, `operator status`, `admin operations` |
 | Access recovery | `admin mailbox list|get`, `admin mailbox access list|search-principals|grant|set|revoke` |
 | Providers | `provider discover|list|add|replace|revoke`, `binding list|attach|verify`, `identity list|add|setup-default|configure|verify|disable`, `identity transport set|remove` |
 | Maintenance | `sync`, `sync folder`, `rediscover`, `repair folder|hydration`, `operator run` |
