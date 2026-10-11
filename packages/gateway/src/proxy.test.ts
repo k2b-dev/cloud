@@ -40,9 +40,10 @@ describe("public share telemetry", () => {
       );
       expect(response.status).toBe(502);
       expect(entries).toHaveLength(1);
+      expect(entries[0]?.message).toBe("Upstream unavailable");
       expect(entries[0]?.metadata?.path).toBe("/share/demo/:token");
       expect(telemetry).toHaveBeenCalledWith(
-        expect.objectContaining({ pathTemplate: entries[0]?.metadata?.path, errorKind: "upstream_unavailable" }),
+        expect.objectContaining({ pathTemplate: entries[0]?.metadata?.path, status: 502, errorKind: "upstream_unavailable" }),
       );
       expect(JSON.stringify(entries)).not.toContain(token);
       expect(JSON.stringify(entries)).not.toContain("query-secret");
@@ -178,6 +179,122 @@ describe("bearer-token fallback telemetry", () => {
       telemetry.mockRestore();
     }
   });
+});
+
+describe("client cancellation", () => {
+  test("a disconnect before headers aborts upstream work without recording an upstream failure", async () => {
+    const telemetry = spyOn(services, "publishRequestTelemetry").mockImplementation(() => {});
+    const started = Promise.withResolvers<AbortSignal>();
+    const aborted = Promise.withResolvers<void>();
+    const finished = Promise.withResolvers<Response>();
+    const timeout = Promise.withResolvers<never>();
+    const timer = setTimeout(() => timeout.reject(new Error("Upstream cancellation did not finish within 5s")), 5_000);
+    const controller = new AbortController();
+    const stats = createProxyStats();
+    const entries: string[] = [];
+    const token = "abcdefghijklmnopqrstuvwxyzABCDEF";
+    const upstream = Bun.serve({
+      port: 0,
+      fetch: async (req) => {
+        req.signal.addEventListener("abort", () => aborted.resolve(), { once: true });
+        started.resolve(req.signal);
+        await Promise.race([aborted.promise, timeout.promise]);
+        return new Response(null, { status: 499 });
+      },
+    });
+    const table = buildRouteTable([{ prefix: "/share/demo", appId: "cancelled", baseUrl: `http://127.0.0.1:${upstream.port}` }]);
+    const gateway = Bun.serve({
+      port: 0,
+      fetch: async (req) => {
+        const response = await proxyRequest(req, table, stats, (message) => entries.push(message));
+        finished.resolve(response);
+        return response;
+      },
+    });
+    try {
+      const client = fetch(`http://127.0.0.1:${gateway.port}/share/demo/${token}?secret=query-secret`, {
+        signal: controller.signal,
+      }).then(
+        () => {
+          throw new Error("Disconnected client unexpectedly received a response");
+        },
+        (error: unknown) => error,
+      );
+      const signal = await Promise.race([started.promise, timeout.promise]);
+      controller.abort();
+      expect(await Promise.race([client, timeout.promise])).toMatchObject({ name: "AbortError" });
+      const [, response] = await Promise.race([Promise.all([aborted.promise, finished.promise]), timeout.promise]);
+      expect(signal.aborted).toBe(true);
+      expect(response.status).toBe(499);
+      expect(entries).toEqual([]);
+      expect(telemetry).toHaveBeenCalledTimes(1);
+      expect(telemetry).toHaveBeenCalledWith(
+        expect.objectContaining({
+          appId: "cancelled",
+          routePrefix: "/share/demo",
+          pathTemplate: "/share/demo/:token",
+          status: 499,
+          errorKind: null,
+        }),
+      );
+      expect(JSON.stringify(telemetry.mock.calls)).not.toContain(token);
+      expect(JSON.stringify(telemetry.mock.calls)).not.toContain("query-secret");
+      expect(stats.byApp.get("cancelled")?.errors).toBe(0);
+      expect(stats.byApp.get("cancelled")?.totalMs).toBeGreaterThan(0);
+      expect(stats.byRoute.get("/share/demo")).toMatchObject({ count: 1, errors: 0 });
+    } finally {
+      clearTimeout(timer);
+      controller.abort();
+      await gateway.stop(true);
+      await upstream.stop(true);
+      telemetry.mockRestore();
+    }
+  }, 10_000);
+
+  test("a normal streamed response completes without aborting the upstream signal", async () => {
+    const telemetry = spyOn(services, "publishRequestTelemetry").mockImplementation(() => {});
+    const started = Promise.withResolvers<AbortSignal>();
+    const finish = Promise.withResolvers<void>();
+    const encoder = new TextEncoder();
+    const upstream = Bun.serve({
+      port: 0,
+      fetch: (req) => {
+        started.resolve(req.signal);
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start: (controller) => controller.enqueue(encoder.encode("first chunk\n")),
+            pull: async (controller) => {
+              await finish.promise;
+              controller.enqueue(encoder.encode("last chunk\n"));
+              controller.close();
+            },
+          }),
+        );
+      },
+    });
+    const table = buildRouteTable([{ prefix: "/", appId: "streamed", baseUrl: `http://127.0.0.1:${upstream.port}` }]);
+    const stats = createProxyStats();
+    const entries: string[] = [];
+    const gateway = Bun.serve({ port: 0, fetch: (req) => proxyRequest(req, table, stats, (message) => entries.push(message)) });
+    try {
+      const response = await fetch(`http://127.0.0.1:${gateway.port}/stream`, { signal: AbortSignal.timeout(5_000) });
+      const signal = await started.promise;
+      expect(signal.aborted).toBe(false);
+      finish.resolve();
+      expect(response.status).toBe(200);
+      expect(await response.text()).toBe("first chunk\nlast chunk\n");
+      expect(signal.aborted).toBe(false);
+      expect(entries).toEqual([]);
+      expect(telemetry).toHaveBeenCalledWith(expect.objectContaining({ status: 200, errorKind: null }));
+      expect(stats.byApp.get("streamed")?.errors).toBe(0);
+      expect(stats.byRoute.get("/")?.errors).toBe(0);
+    } finally {
+      finish.resolve();
+      await gateway.stop(true);
+      await upstream.stop(true);
+      telemetry.mockRestore();
+    }
+  }, 10_000);
 });
 
 describe("client address headers", () => {

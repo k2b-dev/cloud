@@ -165,6 +165,8 @@ export const proxyRequest = async (
       method: req.method,
       headers: fwdHeaders,
       body: req.body,
+      // A client disconnect cancels the upstream request, so the app's request signal aborts too.
+      signal: req.signal,
       // Bun fetch decompresses upstream responses by default while preserving
       // Content-Encoding headers. A reverse proxy must forward the wire body
       // unchanged so precompressed static assets stay valid and small.
@@ -208,8 +210,11 @@ export const proxyRequest = async (
   } catch (err) {
     const ms = performance.now() - start;
     appStats.totalMs += ms;
-    appStats.errors++;
-    trackRoute(stats, match.matchedPrefix, true);
+    const disconnected = req.signal.aborted;
+    if (!disconnected) {
+      appStats.errors++;
+      trackRoute(stats, match.matchedPrefix, true);
+    }
     const pathTemplate = fallbackPathTemplate(match.appId, url.pathname);
     publishRequestTelemetry({
       appId: match.appId,
@@ -217,10 +222,12 @@ export const proxyRequest = async (
       // No response to read a template off — the request died in flight.
       pathTemplate,
       method: req.method,
-      status: 502,
+      status: disconnected ? 499 : 502,
       durationMs: ms,
-      errorKind: "upstream_unavailable",
+      errorKind: disconnected ? null : "upstream_unavailable",
     });
+
+    if (disconnected) return new Response(null, { status: 499 });
 
     // Throttled logging — at most once per 5s per app
     if (shouldLogError(match.appId)) {
