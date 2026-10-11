@@ -80,9 +80,10 @@ The rail and app grid add each app's open approvals to its icon count.
 
 Without the ACP header, personal credentials decide both levels as before.
 A client that sends `x-cloud-client: acp` declares itself as an editor bridge.
-Cloud records its decisions as `acp_bridge`. Approving a `confirm` request
-through that channel returns `403`. The request stays open so the person can
-approve it in Cloud.
+Cloud records its decisions as `acp_bridge`. Approving an open `confirm`
+request through that channel returns `403`. The request stays open so the
+person can approve it in Cloud. A request that is already decided or has
+expired answers the bridge as it answers every other channel.
 
 Cloud cannot verify this header. It is the bridge's own declaration.
 It protects against the editor that drives the bridge. It does not protect
@@ -114,13 +115,17 @@ application is unavailable.
 
 Core sends **Pending approvals** when a request waits from a turn that did
 not start in a signed-in browser session, such as `cld` or an editor bridge.
-It sends one notice per run of waiting requests. It does not send another
-notice if the person has decided another request since the waiting request
-was created. Requests created before Core first registered this notification
-are not notified.
+A person gets at most one notice every 15 minutes. One notice covers all
+their waiting requests. A request that arrives within 15 minutes of the last
+notice is included in a later notice, which Core sends once the 15 minutes
+have passed. Core sends no notice for a request that an earlier notice
+already included. It also sends none when the person has decided another
+request since the newest waiting request arrived, because they are already
+deciding in Cloud. Requests created before Core first registered this
+notification are not notified.
 
 The title is **Approval waiting** for one request or **N approvals waiting**
-for several. The count includes waiting requests from eligible turns.
+for several. The count includes all waiting requests from eligible turns.
 The notification opens `/me/approvals`. It has no decision buttons.
 Browser delivery is recommended. Users can change delivery in their
 notification settings.
@@ -258,11 +263,13 @@ A successful decision continues the waiting chat, like its approval card.
 | --- | --- |
 | `200` | Decision accepted, or the same decision repeated |
 | `400` | Invalid ID or body, or a choice that cannot be remembered |
-| `403` | No user-backed actor, or the ACP bridge tried to approve `confirm` |
+| `403` | No user-backed actor, or the ACP bridge tried to approve an open `confirm` request |
 | `404` | No request for this person, an expired request, or the chat no longer waits |
 | `409` | The request already has a different decision |
+| `429` | Too many requests from this person; retry after `Retry-After` seconds |
 
 The decision body is limited to 1 KiB. A larger body returns `413`.
+All three routes use Cloud's per-person API rate limit, like `/api/ai`.
 
 ## Platform-owned service
 
