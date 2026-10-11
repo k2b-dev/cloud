@@ -286,11 +286,13 @@ the request locale through exact tag, ancestors, and base fallback. See
 ### Command-line interfaces
 
 Resolve one locale per CLI invocation and carry it through the command
-context. `cld` uses an explicit `--locale` option, then `CLD_LOCALE`, then the
-deterministic `en` default. It forwards the resolved tag as `Accept-Language`
-so application-owned API messages keep the same meaning as browser and direct
-API calls. Keep commands, flags, codes, enum values, JSON, and JSONL unchanged;
-localize only final human text with explicit catalog keys. See
+context. `cld` uses `--locale`, then `CLD_LOCALE`, then the first non-empty
+POSIX variable `LC_ALL`, `LC_MESSAGES`, or `LANG`, and forwards the resolved
+tag as `Accept-Language`. Without a usable locale, it omits that header so the
+operator default `app.locale` applies; `ctx.options.locale` is undefined and
+CLI text falls back to English. Keep commands, flags, codes, enum values,
+JSON, and JSONL unchanged; localize only final human text with explicit catalog
+keys. See
 [Application CLI modules](/en/docs/platform/cli-modules).
 
 ### Notifications, email, and long-running work

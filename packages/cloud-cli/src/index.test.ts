@@ -17,7 +17,7 @@ type MockServerState = {
   appsCalls?: number;
   appsSearch?: string | null;
   capabilityCatalog?: unknown;
-  acceptLanguages?: string[];
+  acceptLanguages?: Array<string | null>;
   cookies?: Array<string | null>;
 };
 
@@ -73,7 +73,7 @@ const startMockServer = (state: MockServerState) =>
     fetch: async (request) => {
       const url = new URL(request.url);
       state.acceptLanguages ??= [];
-      state.acceptLanguages.push(request.headers.get("accept-language") ?? "");
+      state.acceptLanguages.push(request.headers.get("accept-language"));
       state.cookies ??= [];
       state.cookies.push(request.headers.get("cookie"));
       if (url.pathname === "/oauth/token") {
@@ -163,7 +163,16 @@ const startCli = (configPath: string, args: string[], extraEnv: Record<string, s
   Bun.spawn({
     cmd: [process.execPath, "run", "packages/cloud-cli/src/index.ts", ...args],
     cwd: process.cwd(),
-    env: { ...process.env, ...extraEnv, CLD_CONFIG: configPath, XDG_CONFIG_HOME: dirname(configPath) },
+    env: {
+      ...process.env,
+      CLD_LOCALE: "",
+      LC_ALL: "",
+      LC_MESSAGES: "",
+      LANG: "C",
+      ...extraEnv,
+      CLD_CONFIG: configPath,
+      XDG_CONFIG_HOME: dirname(configPath),
+    },
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -220,6 +229,33 @@ describe("cloud CLI OAuth session handling", () => {
 
     expect(fromEnvironment.stdout).toContain("Verwendung:");
     expect(explicit.stdout).toContain("Usage:");
+  });
+
+  test("uses the POSIX locale for help unless explicitly overridden", async () => {
+    const dir = await createTempDir();
+    const configPath = join(dir, "config.json");
+    const env = { LANG: "de_DE.UTF-8" };
+    const [german, explicit, cldOverride, posixOverride] = await Promise.all([
+      runCli(configPath, ["help"], env),
+      runCli(configPath, ["--locale", "en", "help"], env),
+      runCli(configPath, ["help"], { ...env, CLD_LOCALE: "en" }),
+      runCli(configPath, ["help"], { ...env, LC_ALL: "C" }),
+    ]);
+    for (const result of [german, explicit, cldOverride, posixOverride]) expect(result.exitCode, result.stderr).toBe(0);
+    expect(german.stdout).toContain("Verwendung:");
+    for (const result of [explicit, cldOverride, posixOverride]) expect(result.stdout).toContain("Usage:");
+  });
+
+  test("rejects invalid explicit locales rather than using the POSIX locale", async () => {
+    const dir = await createTempDir();
+    const configPath = join(dir, "config.json");
+    for (const result of await Promise.all([
+      runCli(configPath, ["--locale", "not_a_locale", "help"], { LANG: "de_DE.UTF-8" }),
+      runCli(configPath, ["help"], { CLD_LOCALE: "not_a_locale", LANG: "de_DE.UTF-8" }),
+    ])) {
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain('Invalid locale "not_a_locale"');
+    }
   });
 
   test("prints its version without requiring a configured server", async () => {
@@ -1113,7 +1149,7 @@ describe("cloud CLI OAuth session handling", () => {
       expect(result.exitCode).toBe(0);
       expect(state.meCalls).toBe(2);
       expect(state.refreshCalls).toBe(1);
-      expect(state.acceptLanguages).toContain("en");
+      expect(state.acceptLanguages?.every((locale) => locale === null)).toBe(true);
       expect(result.stdout).toContain("tester");
     } finally {
       server.stop(true);
@@ -1143,6 +1179,94 @@ describe("cloud CLI OAuth session handling", () => {
       expect(state.acceptLanguages).toContain("de-CH");
     } finally {
       server.stop(true);
+    }
+  });
+
+  test("forwards the POSIX locale and omits Accept-Language when it is unusable", async () => {
+    const state: MockServerState = { refreshCalls: 0, revokeCalls: 0, meCalls: 0 };
+    const server = startMockServer(state);
+    const dir = await createTempDir();
+    const configPath = join(dir, "config.json");
+    const args = ["--server", server.url.origin, "--token", "test-token", "account", "whoami", "--json"];
+    try {
+      for (const [env, expected] of [
+        [{ LANG: "de_DE.UTF-8" }, "de-DE"],
+        [{ LANG: "C" }, null],
+        [{ LANG: "de_DE.UTF-8", LC_ALL: "C" }, null],
+      ] satisfies Array<[Record<string, string>, string | null]>) {
+        const result = await runCli(configPath, args, env);
+        expect(result.exitCode, result.stderr).toBe(0);
+        expect(JSON.parse(result.stdout).uid).toBe("tester");
+        expect(state.acceptLanguages?.at(-1)).toBe(expected);
+      }
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test.skipIf(process.platform === "win32")("openUrl validates links, checks the host, and silently reports opener results", async () => {
+    const dir = await createTempDir();
+    const configPath = join(dir, "config.json");
+    const pluginDir = join(dir, "cloud", "cld", "plugins", "browser");
+    const binDir = join(dir, "bin");
+    const logPath = join(dir, "browser.log");
+    await mkdir(join(pluginDir, "dist"), { recursive: true });
+    await mkdir(binDir);
+    await writeFile(
+      join(pluginDir, "package.json"),
+      JSON.stringify({ name: "browser", version: "1.0.0", cld: { apiVersion: 1, entry: "dist/cli.js" } }),
+    );
+    await writeFile(
+      join(pluginDir, "dist", "cli.js"),
+      `export default { name: "browser", summary: "Open a link", requiresCloud: false, run: async (ctx) => {
+        ctx.json({ opened: await ctx.openUrl(ctx.args[0]), locale: ctx.options.locale ?? null });
+        return 0;
+      } };`,
+    );
+    await writeFile(
+      join(binDir, process.platform === "darwin" ? "open" : "xdg-open"),
+      `#!/bin/sh
+printf '%s\n' "$#" "$@" > "$BROWSER_LOG"
+printf 'opener stdout\n'
+printf 'opener stderr\n' >&2
+exit "$BROWSER_EXIT"
+`,
+      { mode: 0o700 },
+    );
+    const desktop = {
+      PATH: binDir,
+      BROWSER_LOG: logPath,
+      BROWSER_EXIT: "0",
+      SSH_CONNECTION: "",
+      SSH_TTY: "",
+      DISPLAY: ":0",
+      WAYLAND_DISPLAY: "",
+    };
+    for (const url of ["file:///tmp/file", "javascript:alert(1)", "mailto:user@example.test", "ftp://example.test", "not a URL"]) {
+      const result = await runCli(configPath, ["plugins", "run", "browser", url], desktop);
+      expect(result.exitCode, result.stderr).toBe(0);
+      expect(JSON.parse(result.stdout)).toEqual({ opened: false, locale: null });
+      expect(result.stderr).toBe("");
+    }
+    const url = "https://example.test/path?text=hello world&value=$(echo nope)";
+    const unavailableHosts: Array<Record<string, string>> = [{ SSH_CONNECTION: "ssh session" }, { SSH_TTY: "/dev/pts/1" }];
+    if (process.platform === "linux") unavailableHosts.push({ DISPLAY: "" });
+    for (const env of unavailableHosts) {
+      const result = await runCli(configPath, ["plugins", "run", "browser", url], { ...desktop, ...env });
+      expect(result.exitCode, result.stderr).toBe(0);
+      expect(JSON.parse(result.stdout)).toEqual({ opened: false, locale: null });
+      expect(result.stderr).toBe("");
+    }
+    expect(await Bun.file(logPath).exists()).toBe(false);
+    for (const [link, exit, opened] of [
+      [url, "0", true],
+      ["http://example.test", "1", false],
+    ] satisfies Array<[string, string, boolean]>) {
+      const result = await runCli(configPath, ["plugins", "run", "browser", link], { ...desktop, BROWSER_EXIT: exit });
+      expect(result.exitCode, result.stderr).toBe(0);
+      expect(JSON.parse(result.stdout)).toEqual({ opened, locale: null });
+      expect(result.stderr).toBe("");
+      expect(await readFile(logPath, "utf8")).toBe(`1\n${link}\n`);
     }
   });
 

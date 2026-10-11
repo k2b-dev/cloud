@@ -85,7 +85,7 @@ test("standalone CLI starts and runs offline without Cloud server configuration"
       const echoed = await run(["--server", echoServer.url.origin, "--token", "plugin-token", "--json", "echo", "whoami"]);
       expect(echoed.exitCode, echoed.stderr).toBe(0);
       expect(echoed.stderr).toBe("");
-      expect(JSON.parse(echoed.stdout)).toEqual({ authorization: "Bearer plugin-token", locale: "en", profile: "default", output: "json" });
+      expect(JSON.parse(echoed.stdout)).toEqual({ authorization: "Bearer plugin-token", locale: null, profile: "default", output: "json" });
       const viaRun = await run([
         "--server",
         echoServer.url.origin,

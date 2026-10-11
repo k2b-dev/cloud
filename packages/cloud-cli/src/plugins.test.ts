@@ -200,7 +200,15 @@ describe("cld plugins command", () => {
   const runCli = async (args: string[], configHome: string) => {
     const child = Bun.spawn([process.execPath, "run", "packages/cloud-cli/src/index.ts", ...args], {
       cwd: join(import.meta.dir, "../../.."),
-      env: { ...process.env, XDG_CONFIG_HOME: configHome, CLD_CONFIG: join(configHome, "config.json") },
+      env: {
+        ...process.env,
+        CLD_LOCALE: "",
+        LC_ALL: "",
+        LC_MESSAGES: "",
+        LANG: "C",
+        XDG_CONFIG_HOME: configHome,
+        CLD_CONFIG: join(configHome, "config.json"),
+      },
       stdin: "ignore",
       stdout: "pipe",
       stderr: "pipe",

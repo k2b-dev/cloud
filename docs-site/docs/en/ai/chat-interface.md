@@ -603,8 +603,9 @@ forwards only IDs that have a handler. The client-run tools are `code_open` and
 `code_secret`, which need a client with a code host: the web app, or
 `cld assistant` while it watches the turn. Entering a secret through
 `code_secret` still needs the web app; in the CLI the call fails with that
-hint. `local_bash` needs `cld assistant --allow-bash`. Detached CLI turns, API
-clients without a code host, and scheduled tasks never get `code_open` or
+hint. `local_bash` needs interactive `cld assistant` in local tools mode `ask`
+(the default); use `--no-bash` or `/permissions off` to disable it. Detached CLI
+turns, API clients without a code host, and scheduled tasks never get `code_open` or
 `code_secret`. The other code tool names are still accepted in `clientToolIds`
 and have no effect. Unknown names are ignored so older clients keep working
 after a tool is retired. Turn and draft submissions accept at most 64 distinct
