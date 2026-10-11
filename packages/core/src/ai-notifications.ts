@@ -11,6 +11,8 @@ import { z } from "zod";
 const RECOVERY_SCHEDULER_ID = "core-ai-notifications";
 const RECOVERY_SCHEDULE_ID = "core:ai-notifications:recover";
 const RECOVERY_BATCH_SIZE = 100;
+// The approvals concept allows one bundled notice per person in this window.
+const APPROVAL_NOTICE_WINDOW = "15 minutes";
 
 const log = logger("core:ai-notifications");
 const presentation = (label: string, description: string) => ({ baseLocale: "en", translations: { de: { label, description } } });
@@ -297,6 +299,9 @@ export const createAiNotificationService = (definitions: AiNotificationDefinitio
   };
 
   const recoverApprovalWaiting = async (input: { approvalId?: string; limit?: number } = {}): Promise<AiNotificationRecoverySummary> => {
+    // One notice per person and window counts all their waiting requests and names the newest, so it never repeats.
+    // A request that arrives inside the window waits for the scheduled run after it. A decision made since the newest
+    // request was asked means the person is deciding in Cloud already; requests from before registration stay silent.
     const candidates = await sql<{ id: string; user_id: string; count: number }[]>`
       WITH eligible AS MATERIALIZED (
         SELECT r.id,r.approver_user_id,r.created_at FROM approvals.requests r
@@ -306,17 +311,17 @@ export const createAiNotificationService = (definitions: AiNotificationDefinitio
           AND EXISTS (SELECT 1 FROM ai.pending_actions p JOIN ai.turns t ON t.id=p.turn_id
             WHERE p.approval_id=r.id AND p.status='pending' AND t.run_config->>'signedInSession' IS NULL)
       ), ranked AS (
-        SELECT *,row_number() OVER (PARTITION BY approver_user_id ORDER BY created_at,id) AS position,
+        SELECT *,row_number() OVER (PARTITION BY approver_user_id ORDER BY created_at DESC,id DESC) AS position,
           count(*) OVER (PARTITION BY approver_user_id)::int AS count FROM eligible
       )
       SELECT r.id,r.approver_user_id AS user_id,r.count FROM ranked r
       JOIN notifications.definitions d ON d.id=${definitions.approvalWaiting.id}
       WHERE r.position=1 AND r.created_at > d.first_seen_at
-        AND (${input.approvalId ?? null}::uuid IS NULL OR r.id=${input.approvalId ?? null}::uuid)
         AND NOT EXISTS (SELECT 1 FROM notifications.events e
-          WHERE e.definition_id=d.id AND e.idempotency_key='approval:'||r.id::text)
-        -- Whoever decided another request since this one was asked is deciding in Cloud already; the newest of a run
-        -- then waits in their list instead of sending a second notice after the oldest closed.
+          WHERE e.definition_id=d.id AND e.recipient_user_id=r.approver_user_id AND e.idempotency_key='approval:'||r.id::text)
+        AND NOT EXISTS (SELECT 1 FROM notifications.events e
+          WHERE e.definition_id=d.id AND e.recipient_user_id=r.approver_user_id
+            AND e.created_at > now() - ${APPROVAL_NOTICE_WINDOW}::interval)
         AND NOT EXISTS (SELECT 1 FROM approvals.requests seen
           WHERE seen.approver_user_id=r.approver_user_id AND seen.decided_at > r.created_at)
       ORDER BY r.created_at,r.id LIMIT ${input.limit ?? RECOVERY_BATCH_SIZE}`;

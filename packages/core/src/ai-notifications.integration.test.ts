@@ -113,7 +113,7 @@ suite("Core AI completion notifications", () => {
     }
   });
 
-  test("approval notifications exclude browser turns, bundle open external requests, and restart after all close", async () => {
+  test("approval notifications bundle new external requests at most every 15 minutes", async () => {
     const uid = `approval-notify-${crypto.randomUUID()}`;
     const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid,provider,profile,mail)
       VALUES(${uid},'local','user',${`${uid}@example.test`}) RETURNING id`;
@@ -181,19 +181,32 @@ suite("Core AI completion notifications", () => {
       expect(await events()).toMatchObject([
         { title: "Approval waiting", target_href: APPROVALS_PAGE_PATH, idempotency_key: `approval:${first}` },
       ]);
-      await approvals.decide(first, { approved: false }, { userId, via: "api_key" });
-      await approvals.decide(second, { approved: false }, { userId, via: "api_key" });
-      const third = await ask();
-      const fourth = await ask();
-      expect(await service.notifyApprovalWaiting(fourth)).toEqual({ scanned: 0, sent: 0, failed: 0 });
-      expect((await service.notifyApprovalWaiting(third)).failed).toBe(0);
+      const ageNotices = () => sql`UPDATE notifications.events SET created_at=created_at-interval '16 minutes'
+        WHERE definition_id=${app.notifications.approvalWaiting.id} AND recipient_user_id=${userId}::uuid`;
+      await ageNotices();
+      expect((await service.notifyApprovalWaiting(second)).failed).toBe(0);
       expect(await events()).toMatchObject([
         { idempotency_key: `approval:${first}` },
-        { title: "2 approvals waiting", idempotency_key: `approval:${third}` },
+        { title: "2 approvals waiting", idempotency_key: `approval:${second}` },
       ]);
-      // Deciding the oldest in Cloud shows the person the rest; the next one in the run sends no second notice.
-      await approvals.decide(third, { approved: false }, { userId, via: "web_session" });
-      expect(await service.notifyApprovalWaiting(fourth)).toEqual({ scanned: 0, sent: 0, failed: 0 });
+      expect(await service.notifyApprovalWaiting(second)).toEqual({ scanned: 0, sent: 0, failed: 0 });
+      await ageNotices();
+      expect(await service.notifyApprovalWaiting(second)).toEqual({ scanned: 0, sent: 0, failed: 0 });
+      expect(await events()).toHaveLength(2);
+      const third = await ask();
+      await approvals.decide(first, { approved: false }, { userId, via: "web_session" });
+      await ageNotices();
+      expect(await service.notifyApprovalWaiting(third)).toEqual({ scanned: 0, sent: 0, failed: 0 });
+      expect(await events()).toHaveLength(2);
+      const fourth = await ask();
+      await ageNotices();
+      // An older request's trigger still checks the newest request for this person.
+      expect((await service.notifyApprovalWaiting(second)).failed).toBe(0);
+      expect(await events()).toMatchObject([
+        { idempotency_key: `approval:${first}` },
+        { idempotency_key: `approval:${second}` },
+        { title: "3 approvals waiting", target_href: APPROVALS_PAGE_PATH, idempotency_key: `approval:${fourth}` },
+      ]);
     } finally {
       await sql`DELETE FROM audit.events WHERE actor_user_id=${userId}::uuid AND target_type='approval_request'`;
       await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
