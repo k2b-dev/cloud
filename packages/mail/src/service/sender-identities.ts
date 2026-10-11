@@ -786,7 +786,7 @@ const loadIdentity = async (mailboxId: string, senderIdentityId: string): Promis
  * provider accepts it. When provider work such as a folder sync holds the mailbox, the
  * verification is not refused: it waits as a durable `verify_sender_identity` command in the
  * mailbox's provider lease line, and the identity names it in `pendingVerificationCommandId`
- * with the status reason `verification_pending` until it ran.
+ * until it ran; an identity that is not verified yet also reports `verification_pending`.
  */
 export const verifySenderIdentity = async (params: {
   context: MailRequestContext;
@@ -809,12 +809,17 @@ export const verifySenderIdentity = async (params: {
     savesSentAutomatically: params.savesSentAutomatically,
     locale: params.locale ?? null,
   };
+  // The identity names the queued command even when it ended before this read, so the client
+  // still follows its outcome instead of taking the identity's state for the verification's.
+  const queue = async (): Promise<Result<SenderIdentity>> => {
+    const queued = await queueSenderVerification({ context: params.context, request });
+    if (!queued.ok) return queued;
+    const identity = await loadIdentity(params.mailboxId, params.senderIdentityId);
+    return identity.ok ? ok({ ...identity.data, pendingVerificationCommandId: queued.data.id }) : identity;
+  };
   const current = await loadIdentity(params.mailboxId, params.senderIdentityId);
   // A verification already waiting goes first; the same request joins it.
-  if (current.ok && current.data.pendingVerificationCommandId) {
-    const queued = await queueSenderVerification({ context: params.context, request });
-    return queued.ok ? loadIdentity(params.mailboxId, params.senderIdentityId) : queued;
-  }
+  if (current.ok && current.data.pendingVerificationCommandId) return queue();
   const attempt = await attemptSenderVerification(request, {
     authorize: (db) => requireMailboxPermission(params.context, params.mailboxId, "admin", db),
     auditActor: auditActorFromRequest(params.context),
@@ -823,6 +828,5 @@ export const verifySenderIdentity = async (params: {
   if (attempt.acquired) {
     return attempt.value.ok ? loadIdentity(params.mailboxId, attempt.value.data.senderIdentityId) : attempt.value;
   }
-  const queued = await queueSenderVerification({ context: params.context, request });
-  return queued.ok ? loadIdentity(params.mailboxId, params.senderIdentityId) : queued;
+  return queue();
 };

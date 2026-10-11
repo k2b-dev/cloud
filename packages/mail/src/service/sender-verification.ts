@@ -1,27 +1,22 @@
-import { RoleSchema, UserProviderSchema } from "@k2b/cloud/contracts";
-import { audit } from "@k2b/cloud/services";
+import { accounts, audit } from "@k2b/cloud/services";
 import { err, fail, i18n, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { z } from "zod";
+import { SENDER_VERIFICATION_WAIT_MS } from "../contracts";
 import type { auditActorFromRequest } from "./auth";
 import { commandStillAuthorized, type StoredCommandAuthorization } from "./command-authorization";
 import { imapSmtpConnector } from "./connectors";
 import { resolveRoleFolder } from "./folders";
 import { loadProviderConnectionRuntimeSnapshot } from "./provider-connections";
 import { type ProviderOperationTurn, withMailboxProviderOperationTurn } from "./provider-operation-lock";
-import { FOLDER_SYNC_REQUEST_MS } from "./sync-runtime";
 
 type SqlClient = typeof sql;
 type JsonRecord = Record<string, unknown>;
 type AuditActor = ReturnType<typeof auditActorFromRequest>;
 
-/**
- * How long a verification may wait behind provider work before it gives up: as long as a requested
- * folder sync counts, which outlasts a long sync batch and a few retries. Mail's lease line lets a
- * waiting command go before later syncs, so a verification that cannot start within it finds a
- * provider that does not answer rather than a busy mailbox.
- */
-export const SENDER_VERIFICATION_WAIT_MS = FOLDER_SYNC_REQUEST_MS;
+// A verification waits behind provider work for `SENDER_VERIFICATION_WAIT_MS`. Mail's lease line
+// lets a waiting command go before later syncs, so a verification that cannot start within it finds
+// a provider that does not answer rather than a busy mailbox.
 
 const verificationMessages = i18n.define({
   baseLocale: "en",
@@ -47,11 +42,15 @@ export type SenderVerificationRequest = {
   locale: string | null;
 };
 
-/** Who asks for a verification: their permission is checked again under the mailbox lock, and the audit names them. */
+/**
+ * Who asks for a verification: their permission is checked again under the mailbox lock, and the
+ * audit names them, with the request or, for a queued verification, its command.
+ */
 export type SenderVerificationAuthority = {
   authorize: (db: SqlClient) => Promise<Result<unknown>>;
   auditActor: AuditActor;
   requestId: string | null;
+  commandId?: string;
 };
 
 type DbSenderVerification = {
@@ -231,6 +230,7 @@ const performSenderVerification = (
           bindingId: request.bindingId,
           savesSentAutomatically: request.savesSentAutomatically,
           ...(filledSentFolderId ? { sentFolderId: filledSentFolderId } : {}),
+          ...(authority.commandId ? { commandId: authority.commandId } : {}),
         },
       },
       tx,
@@ -274,22 +274,25 @@ export const attemptSenderVerification = async (
 };
 
 export const queuedSenderVerificationTargetSchema = z.object({ senderIdentityId: z.string().uuid(), bindingId: z.string().uuid() });
+/**
+ * What a queued verification needs to run. Every reader of the mailbox's commands sees it, so it
+ * holds no audit identity: the audit names the command's stored actor.
+ */
 export const queuedSenderVerificationPayloadSchema = z.object({
   verificationRecipient: z.string().min(3).max(320),
   savesSentAutomatically: z.boolean(),
   locale: z.string().max(35).nullable(),
-  auditActor: z.object({
-    userId: z.string().nullable(),
-    uid: z.string().nullable(),
-    provider: UserProviderSchema.nullable(),
-    roles: z.array(RoleSchema),
-  }),
-  requestId: z.string().nullable(),
 });
 
 const parseRecord = (value: JsonRecord | string): JsonRecord => (typeof value === "string" ? (JSON.parse(value) as JsonRecord) : value);
 
 const codedError = (code: string, message: string, extra: JsonRecord = {}): Error => Object.assign(new Error(message), { code, ...extra });
+
+/** The person behind a stored command, as the audit names them: its user, or the user a service account acts for. */
+const commandAuditActor = async (userId: string | null): Promise<AuditActor> => {
+  const user = userId ? await accounts.users.get({ id: userId }).catch(() => null) : null;
+  return { userId, uid: user?.uid ?? null, provider: user?.provider ?? null, roles: user?.roles ?? [] };
+};
 
 /**
  * Runs a queued `verify_sender_identity` command for the maintenance runtime: its result, or an
@@ -300,19 +303,40 @@ const codedError = (code: string, message: string, extra: JsonRecord = {}): Erro
 export const executeQueuedSenderVerification = async (
   command: StoredCommandAuthorization & { id: string; payload: JsonRecord | string },
 ): Promise<JsonRecord> => {
-  const [age] = await sql<{ expired: boolean }[]>`
-    SELECT created_at < now() - (${SENDER_VERIFICATION_WAIT_MS}::int * interval '1 millisecond') AS expired
-    FROM mail.commands
-    WHERE id = ${command.id}::uuid
+  const target = queuedSenderVerificationTargetSchema.parse(parseRecord(command.target));
+  const payload = queuedSenderVerificationPayloadSchema.parse(parseRecord(command.payload));
+  // A verification through the same binding since the request already did what it asks: one of
+  // this command whose process stopped before it recorded the result, or another request that got
+  // the lease first. It is confirmed without a second test message, also after the wait ran out.
+  const [state] = await sql<{ expired: boolean; already_verified: boolean; delegated_user_id: string | null }[]>`
+    SELECT
+      c.created_at < now() - (${SENDER_VERIFICATION_WAIT_MS}::int * interval '1 millisecond') AS expired,
+      c.delegated_user_id,
+      EXISTS (
+        SELECT 1
+        FROM mail.sender_identities si
+        JOIN mail.sender_identity_bindings identity_binding ON identity_binding.sender_identity_id = si.id
+        JOIN mail.provider_bindings binding ON binding.id = identity_binding.binding_id
+        JOIN mail.provider_connections connection ON connection.id = binding.connection_id
+        WHERE si.id = ${target.senderIdentityId}::uuid
+          AND si.mailbox_id = c.mailbox_id
+          AND si.status = 'verified'
+          AND identity_binding.binding_id = ${target.bindingId}::uuid
+          AND identity_binding.revoked_at IS NULL
+          AND identity_binding.verified_at >= c.created_at
+          AND identity_binding.verified_secret_revision = connection.secret_revision
+          AND identity_binding.saves_sent_automatically = ${payload.savesSentAutomatically}
+      ) AS already_verified
+    FROM mail.commands c
+    WHERE c.id = ${command.id}::uuid
   `;
-  if (age?.expired) {
+  if (state?.already_verified) return { senderIdentityId: target.senderIdentityId, verified: true };
+  if (state?.expired) {
     throw codedError(
       "SENDER_VERIFICATION_TIMEOUT",
       `Provider work kept the mailbox busy for ${SENDER_VERIFICATION_WAIT_MS / 60_000} minutes; verify the sender identity again`,
     );
   }
-  const target = queuedSenderVerificationTargetSchema.parse(parseRecord(command.target));
-  const payload = queuedSenderVerificationPayloadSchema.parse(parseRecord(command.payload));
   const outcome = await attemptSenderVerification(
     {
       mailboxId: command.mailbox_id,
@@ -327,8 +351,9 @@ export const executeQueuedSenderVerification = async (
         (await commandStillAuthorized(command, "admin", db))
           ? ok(undefined)
           : fail(err.forbidden("Mailbox administration access was revoked before sender verification")),
-      auditActor: payload.auditActor,
-      requestId: payload.requestId,
+      auditActor: await commandAuditActor(command.actor_kind === "user" ? command.actor_id : (state?.delegated_user_id ?? null)),
+      requestId: null,
+      commandId: command.id,
     },
   );
   if (!outcome.acquired) throw codedError("SYNC_BUSY", "Mail remote resource is busy", { retryAfterMs: outcome.retryAfterMs });

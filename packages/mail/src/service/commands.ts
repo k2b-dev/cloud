@@ -1283,8 +1283,6 @@ export const queueSenderVerification = async (params: {
     verificationRecipient: request.verificationRecipient,
     savesSentAutomatically: request.savesSentAutomatically,
     locale: request.locale,
-    auditActor: auditActorFromRequest(params.context),
-    requestId: params.context.requestId ?? null,
   });
   const requestHash = sha256Json({
     kind: "verify_sender_identity",

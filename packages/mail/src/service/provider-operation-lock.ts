@@ -180,13 +180,16 @@ let probeLeaseUntil = 0;
  * line takes it once no other mailbox's probe holds this process's probe. Release the lease with
  * `releaseProviderLease`, passing `next` when the job continues with another turn so it lines up
  * before letting go. The line and the breaker are ephemeral Valkey state: losing them only
- * loses the order and the pause, never the lease.
+ * loses the order and the pause, never the lease. With `keepPlace`, the waiter stays in line with
+ * its lease, for a caller in this module that needs another lock before it can use the lease and
+ * leaves the line once it holds both.
  */
 export const acquireProviderLease = async (params: {
   resource: string;
   waiter: string;
   priority: ProviderLeasePriority;
   ttlMs: number;
+  keepPlace?: boolean;
 }): Promise<ProviderLeaseTurn> => {
   const reply = await enterLeaseLine(params.resource, params.waiter, params.priority);
   if (!Array.isArray(reply)) throw new Error("The provider lease line returned no position");
@@ -202,7 +205,7 @@ export const acquireProviderLease = async (params: {
   let lock: Lock | null = null;
   try {
     lock = await mailProviderOperationMutex().acquire({ resource: params.resource, ttlMs: params.ttlMs });
-    if (lock) await leaveLeaseLine(params.resource, params.waiter);
+    if (lock && !params.keepPlace) await leaveLeaseLine(params.resource, params.waiter);
   } catch (error) {
     if (lock) await releaseProviderLease(lock);
     lock = null;
@@ -377,7 +380,8 @@ export type ProviderOperationTurn<T> = { acquired: false; retryAfterMs: number }
  * polling past it: folder syncs that keep a large mailbox busy cannot pass it forever. Returns
  * when to try again while it is not `waiter`'s turn; `waiter` must stay the same across tries to
  * keep its place. The mailbox-wide key, held only by short lifecycle changes, is taken without
- * waiting once the lease is held.
+ * waiting once the lease is held; `waiter` leaves the line only once it holds both, so a short
+ * lifecycle change does not cost it its place.
  */
 export const withMailboxProviderOperationTurn = async <T>(
   params: { mailboxId: string; remoteResourceId: string; waiter: string },
@@ -388,6 +392,7 @@ export const withMailboxProviderOperationTurn = async <T>(
     waiter: params.waiter,
     priority: "command",
     ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS,
+    keepPlace: true,
   });
   if (!turn.lock) return { acquired: false, retryAfterMs: turn.retryAfterMs };
   const lease = turn.lock;
@@ -398,6 +403,7 @@ export const withMailboxProviderOperationTurn = async <T>(
     });
     if (!mailboxLock) return { acquired: false, retryAfterMs: LEASE_RETRY_STEP_MS };
     try {
+      await leaveLeaseLine(params.remoteResourceId, params.waiter);
       return { acquired: true, value: await withHeldProviderLocks([lease, mailboxLock], work) };
     } finally {
       await mailProviderOperationMutex()

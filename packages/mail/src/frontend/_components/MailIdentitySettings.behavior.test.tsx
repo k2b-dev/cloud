@@ -90,6 +90,15 @@ const identity = (pendingVerificationCommandId: string | null, status: SenderIde
   updatedAt: now,
 });
 
+// The settings ask every two seconds; a condition gets a generous deadline for a loaded runner.
+const waitFor = async (condition: () => boolean, description: string) => {
+  const deadline = Date.now() + 12_000;
+  while (!condition()) {
+    if (Date.now() > deadline) throw new Error(`Timed out waiting for ${description}`);
+    await Bun.sleep(50);
+  }
+};
+
 const admin = (identities: SenderIdentity[]): MailboxAdminSettingsContext => ({
   accessEntries: [],
   bindings: [binding],
@@ -109,8 +118,7 @@ describe("Mail identity settings with a verification that waits behind synchroni
     globalThis.fetch = originalFetch;
   });
 
-  test("shows the pending verification, follows its command, and shows the verified identity once it ran", async () => {
-    const outcomes = [[{ id: commandId, state: "queued", code: null }], [{ id: commandId, state: "confirmed", code: null }]];
+  const renderSettings = (outcomes: unknown[][], onReload: (verified: () => void) => Promise<void>) => {
     const requests: Array<{ url: string; body: unknown }> = [];
     globalThis.fetch = Object.assign(
       async (url: unknown, init?: RequestInit) => {
@@ -122,7 +130,6 @@ describe("Mail identity settings with a verification that waits behind synchroni
     const dom = createDomTestHarness();
     const { MailIdentitySettings, LocaleProvider } = modules!;
     const [current, setCurrent] = createSignal(admin([identity(commandId, "unverified")]));
-    let reloads = 0;
     const dispose = render(
       () =>
         createComponent(LocaleProvider, {
@@ -136,37 +143,64 @@ describe("Mail identity settings with a verification that waits behind synchroni
               mailboxSignatures: [],
               currentUserEmail: "person@example.test",
               reloading: false,
-              onReload: async () => {
-                reloads += 1;
-                setCurrent(admin([identity(null, "verified")]));
-              },
+              onReload: () => onReload(() => setCurrent(admin([identity(null, "verified")]))),
               onWorkspaceChange: () => undefined,
             });
           },
         }),
       dom.root,
     );
+    return {
+      requests,
+      text: () => dom.document.body.textContent ?? "",
+      buttons: () => Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button")),
+      cleanup: () => {
+        dispose();
+        dom.cleanup();
+      },
+    };
+  };
+
+  test("shows the pending verification, follows its command, and shows the verified identity once it ran", async () => {
+    let reloads = 0;
+    const { requests, text, buttons, cleanup } = renderSettings(
+      [[{ id: commandId, state: "queued", code: null }], [{ id: commandId, state: "confirmed", code: null }]],
+      async (verified) => {
+        reloads += 1;
+        verified();
+      },
+    );
     try {
-      const text = () => dom.document.body.textContent ?? "";
       expect(text()).toContain("Bestätigung wartet");
-      const verify = Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button")).find(
-        (button) => button.textContent?.trim() === "Bestätigen",
-      );
+      const verify = buttons().find((button) => button.textContent?.trim() === "Bestätigen");
       // The button keeps its place while the verification waits, so the row does not shift.
       expect(verify?.disabled).toBe(true);
 
-      await Bun.sleep(4_600);
+      await waitFor(() => reloads === 1 && text().includes("Bereit"), "the reload after the confirmed verification");
       expect(requests).toHaveLength(2);
       for (const request of requests) {
         expect(request.url).toEndWith("/mailboxes/Mbx123/commands/outcomes");
         expect(request.body).toEqual({ commandIds: [commandId] });
       }
-      expect(reloads).toBe(1);
       expect(text()).not.toContain("Bestätigung wartet");
-      expect(text()).toContain("Bereit");
     } finally {
-      dispose();
-      dom.cleanup();
+      cleanup();
+    }
+  }, 15_000);
+
+  test("keeps following a verification whose reload failed, and counts a command the server no longer reports as ended", async () => {
+    let reloads = 0;
+    const { requests, text, cleanup } = renderSettings([], async (verified) => {
+      reloads += 1;
+      if (reloads === 1) throw new Error("Network error");
+      verified();
+    });
+    try {
+      await waitFor(() => reloads === 2 && text().includes("Bereit"), "the second reload");
+      expect(requests).toHaveLength(2);
+      expect(text()).not.toContain("Bestätigung wartet");
+    } finally {
+      cleanup();
     }
   }, 15_000);
 });

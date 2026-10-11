@@ -90,6 +90,7 @@ import {
   type RelatedMailPage,
   type SavedConversationViewFilter,
   type ScheduledSendPage,
+  SENDER_VERIFICATION_WAIT_MS,
   type SenderIdentity,
   type SenderIdentityStatusReason,
   savedConversationViewFilterSchema,
@@ -225,6 +226,19 @@ const waitFlags = {
     min: 1,
     max: 3_600,
     default: DEFAULT_WAIT_TIMEOUT_SECONDS,
+    description: "Maximum wait time in seconds",
+  }),
+};
+
+// A queued sender verification may wait this long on the server, plus a minute for the test
+// message it sends at the end, so `--wait` does not give up while the server still waits.
+const senderVerificationWaitFlags = {
+  wait: flag.boolean({ description: "Wait for a verification that waits behind running provider work" }),
+  timeoutSeconds: flag.int({
+    name: "timeout-seconds",
+    min: 1,
+    max: 3_600,
+    default: SENDER_VERIFICATION_WAIT_MS / 1_000 + 60,
     description: "Maximum wait time in seconds",
   }),
 };
@@ -5992,8 +6006,7 @@ const specialistCommands = {
           name: "provider-saves-sent",
           description: "Provider automatically stores submitted messages in Sent",
         }),
-        wait: flag.boolean({ description: "Wait for a verification that waits behind running provider work" }),
-        ...waitFlags,
+        ...senderVerificationWaitFlags,
       },
       run: async ({ ctx, args, flags }) => {
         const mailbox = await resolveMailbox(ctx, flags.mailbox);
@@ -6229,8 +6242,7 @@ const specialistCommands = {
           name: "provider-saves-sent",
           description: "Provider automatically stores submitted mail in Sent",
         }),
-        wait: flag.boolean({ description: "Wait for a verification that waits behind running provider work" }),
-        ...waitFlags,
+        ...senderVerificationWaitFlags,
       },
       run: async ({ ctx, args, flags }) => {
         const mailbox = await resolveMailbox(ctx, flags.mailbox);
@@ -6247,7 +6259,8 @@ const specialistCommands = {
         if (printStructured(ctx, identity)) return;
         if (identity.pendingVerificationCommandId)
           ctx.print(pendingSenderVerificationText(identity, identity.pendingVerificationCommandId));
-        else ctx.print(`Verified ${identity.fromAddress}.`);
+        else if (identity.status === "verified") ctx.print(`Verified ${identity.fromAddress}.`);
+        else ctx.print(`${identity.fromAddress} is ${senderIdentityStatusText(identity)}.`);
       },
     }),
     command("draft list", {
