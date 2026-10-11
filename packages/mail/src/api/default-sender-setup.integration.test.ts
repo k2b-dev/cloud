@@ -195,26 +195,36 @@ suite("Mail default sender setup through the API", () => {
   });
 
   test(
-    "reports running synchronization as a retryable provider-busy state",
+    "queues sender verification behind running synchronization and keeps credential replacement retryable",
     async () => {
       const held = await mailProviderOperationMutex().acquire({ resource: remoteResourceId, ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS });
       if (!held) throw new Error("Could not hold the provider operation lease");
       const verify = spyOn(imapSmtpConnector, "verify").mockResolvedValue(fixtureVerification());
+      const send = spyOn(imapSmtpConnector, "send").mockRejectedValue(new Error("verification ran next to the sync"));
+      let pendingCommandId: string | null = null;
       try {
         const sending = await setupSending("owner", "de");
-        expect(sending.status).toBe(409);
-        expect(await sending.json()).toEqual({
-          code: "PROVIDER_BUSY",
-          message: "Die Synchronisierung läuft gerade. Versuche es in einem Moment erneut.",
+        expect(sending.status).toBe(200);
+        const identity = (await sending.json()) as { pendingVerificationCommandId: string | null };
+        expect(identity).toMatchObject({ status: "unverified", statusReason: "verification_pending" });
+        pendingCommandId = identity.pendingVerificationCommandId;
+        expect(pendingCommandId).toEqual(expect.any(String));
+        const command = await app.request(`/mailboxes/${mailboxShortId}/commands/${pendingCommandId}`, {
+          headers: { authorization: "Bearer owner", "x-forwarded-for": uniqueCallerAddress() },
         });
+        expect(await command.json()).toMatchObject({ kind: "verify_sender_identity", state: "queued" });
+        expect(send).not.toHaveBeenCalled();
 
         const replaced = await request("owner", `/connections/${connectionId}`, { method: "PUT", body: connectionInput });
         expect(replaced.status).toBe(409);
         expect(await replaced.json()).toMatchObject({ code: "PROVIDER_BUSY" });
         expect(verify).not.toHaveBeenCalled();
       } finally {
+        send.mockRestore();
         verify.mockRestore();
         await mailProviderOperationMutex().release(held);
+        // The queued verification runs in the maintenance runtime; the next test verifies again on its own.
+        if (pendingCommandId) await sql`UPDATE mail.commands SET state = 'cancelled' WHERE id = ${pendingCommandId}::uuid`;
       }
       const [binding] = await sql<{ state: string }[]>`SELECT state FROM mail.provider_bindings WHERE id = ${bindingId}::uuid`;
       expect(binding?.state).toBe("active");
