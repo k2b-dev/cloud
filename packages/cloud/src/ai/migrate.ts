@@ -15,7 +15,6 @@ const backfillAiShortIds = async (
 };
 
 export const migrateCloudAi = async (): Promise<void> => {
-  await migrateApprovals();
   // AI writes its live updates to Core's platform outbox, in the transaction of every
   // AI write: without events.enqueue(), every one of them would fail.
   const [outbox] = await sql<{ ready: boolean }[]>`
@@ -24,6 +23,8 @@ export const migrateCloudAi = async (): Promise<void> => {
   if (!outbox?.ready) {
     throw new Error("AI live updates write to events.outbox, which does not exist. Run Core's events migration before the AI migration.");
   }
+  // Approval requests reference auth.users, so they follow the check that Core's own migrations ran.
+  await migrateApprovals();
   await sql`CREATE SCHEMA IF NOT EXISTS ai`.simple();
   console.log("  ✓ ai schema");
 
