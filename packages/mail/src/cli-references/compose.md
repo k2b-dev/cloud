@@ -125,7 +125,7 @@ Mailbox CSS rules apply after the built-in design and win for the elements they 
 
 Mailbox administrators assign the mailbox default with `cld mail identity add --default-signature <template-id>` or `cld mail identity configure <identity-id> --default-signature <template-id>`. Clear it with `--clear-default-signature`. A personal default takes precedence.
 
-The signature stays outside the editable body. Preview and delivery show it after the body and before quoted or forwarded history, with Liquid values filled in for the current context. Changing identity configuration later never rewrites an edited draft.
+The signature stays outside the editable body. Preview and delivery show it after the body, with Liquid values filled in for the current context. When the body ends with a quoted reply under an attribution line such as `… Ada wrote:`, or contains a forwarded message, the signature goes before that history. Changing identity configuration later never rewrites an edited draft.
 
 ## Create and update shared drafts
 

@@ -310,10 +310,12 @@ default takes precedence over the mailbox default. Choose another signature or
 **No signature**. Switching the sender switches to that sender's default.
 
 Signatures stay separate from the editable text. Preview and the sent message
-show the signature after your text and before the quoted or forwarded message.
-Opening an older draft moves a recognized signature out of the text into the
-signature choice. Mail still warns before sending about placeholders left in
-the text.
+show the signature after your text. When you write above a quoted reply or a
+forwarded message, the signature goes between your text and that message. The
+copy in the provider's Drafts folder contains only your text, so add a
+signature yourself if you send the draft from another mail program. Opening an
+older draft moves a recognized signature out of the text into the signature
+choice. Mail still warns before sending about placeholders left in the text.
 
 Use Markdown and Liquid in signatures and snippets. Type `/` to insert snippets
 only. Mail fills in snippet values when you insert them; signatures keep their

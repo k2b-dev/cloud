@@ -107,7 +107,7 @@ Plant, sendet oder verwirft eine andere Sitzung den Entwurf, lädt jeder geöffn
 
 Unter deinem Text zeigt der Editor **Signatur**, wenn eine Signatur verfügbar ist. Neue Nachrichten, Antworten und Weiterleitungen beginnen mit der Standardsignatur der Absenderidentität. Ein persönlicher Standard hat Vorrang vor dem Standard des Postfachs für diese Absenderidentität. Wähle eine andere Signatur oder **Keine Signatur**. Wechselst du die Absenderidentität, wechselt die Signatur zu deren Standard.
 
-Signaturen bleiben vom bearbeitbaren Text getrennt. Die Vorschau und die gesendete Nachricht zeigen die Signatur nach deinem Text und vor der zitierten oder weitergeleiteten Nachricht. Öffnest du einen älteren Entwurf, dessen Signatur noch im Text steht, verschiebt Mail die Signatur in die Signaturauswahl.
+Signaturen bleiben vom bearbeitbaren Text getrennt. Die Vorschau und die gesendete Nachricht zeigen die Signatur nach deinem Text. Schreibst du über einer zitierten Antwort oder einer weitergeleiteten Nachricht, steht die Signatur zwischen deinem Text und dieser Nachricht. Die Kopie im Entwürfe-Ordner des Anbieters enthält nur deinen Text. Sendest du den Entwurf aus einem anderen E-Mail-Programm, füge die Signatur dort selbst hinzu. Öffnest du einen älteren Entwurf, dessen Signatur noch im Text steht, verschiebt Mail die Signatur in die Signaturauswahl.
 
 Tippe im Text `/`, um ausschließlich Textbausteine zu suchen. Mail fügt den gewählten Textbaustein in den Text ein, wo du ihn bearbeiten oder entfernen kannst.
 
