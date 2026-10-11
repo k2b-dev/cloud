@@ -90,10 +90,12 @@ describe("Approvals", () => {
       // Decision buttons arm after a short delay, so a click meant for the page cannot approve a row that just appeared.
       await Bun.sleep(550);
       view.button("Approve", rows()[0]!)!.click();
-      await waitFor(() => rows()[0]?.dataset.decided === "true", "the receipt");
+      await waitFor(() => rows()[0]?.dataset.decided === "approved", "the receipt");
       expect(view.requests.at(-1)).toEqual({ url: "/api/approvals/a1/decision", body: { approved: true } });
       expect(rows()).toHaveLength(2);
       expect(rows()[0]?.textContent).toContain("Approved");
+      expect(rows()[0]?.textContent).toContain("Just now, decided here");
+      expect(rows()[0]?.querySelector(".cloud-approval__icon i")?.className).toBe("ti ti-check");
       expect(view.button("Approve", rows()[0]!)).toBeUndefined();
       expect(view.button("Approve", rows()[1]!)).toBeDefined();
       expect(view.dom.root.textContent).toContain("1 open");
@@ -102,24 +104,64 @@ describe("Approvals", () => {
     }
   });
 
-  test("a request decided elsewhere or gone becomes a receipt; other failures keep the buttons", async () => {
+  test("a request decided elsewhere or gone becomes a neutral receipt; other failures keep the buttons", async () => {
     const statuses = new Map([
       ["/api/approvals/a1/decision", 409],
       ["/api/approvals/a2/decision", 404],
       ["/api/approvals/a3/decision", 500],
+      ["/api/approvals/a4/decision", 200],
     ]);
-    const view = await mount({ initial: page([item("a1"), item("a2"), item("a3")]) }, (url) =>
-      Response.json({ message: "no" }, { status: statuses.get(url) ?? 500 }),
+    const view = await mount({ initial: page([item("a1"), item("a2"), item("a3"), item("a4")]) }, (url) =>
+      Response.json(statuses.get(url) === 200 ? { status: "rejected" } : { message: "no" }, { status: statuses.get(url) ?? 500 }),
     );
     try {
       const rows = () => Array.from(view.dom.root.querySelectorAll<HTMLElement>("article.cloud-approval"));
+      const icon = (row: HTMLElement | undefined) => row?.querySelector(".cloud-approval__icon i")?.className;
       await Bun.sleep(550);
       for (const row of rows()) view.button("Reject", row)!.click();
       await waitFor(() => rows()[2]?.textContent?.includes("The decision was not saved") === true, "the failure");
+      await waitFor(() => rows()[3]?.dataset.decided === "rejected", "the rejection");
+      // A 409 or 404 changed nothing: the row says so and keeps a neutral icon, never the success check.
+      expect(rows()[0]?.dataset.decided).toBe("elsewhere");
       expect(rows()[0]?.textContent).toContain("Already decided elsewhere");
+      expect(rows()[0]?.textContent).toContain("Your decision was not applied");
+      expect(rows()[0]?.textContent).not.toContain("decided here");
+      expect(icon(rows()[0])).toBe("ti ti-info-circle");
+      expect(rows()[1]?.dataset.decided).toBe("gone");
       expect(rows()[1]?.textContent).toContain("Expired or withdrawn");
+      expect(rows()[1]?.textContent).toContain("Your decision was not applied");
+      expect(icon(rows()[1])).toBe("ti ti-info-circle");
       expect(rows()[2]?.dataset.decided).toBeUndefined();
       expect(view.button("Reject", rows()[2]!)).toBeDefined();
+      expect(rows()[3]?.textContent).toContain("Rejected");
+      expect(rows()[3]?.textContent).toContain("Just now, decided here");
+      expect(icon(rows()[3])).toBe("ti ti-x");
+    } finally {
+      view.cleanup();
+    }
+  });
+
+  test("a failed next page keeps the rows and offers a retry next to the button", async () => {
+    let failNext = true;
+    const view = await mount({ initial: page([item("a1")], { nextCursor: "next", count: 2 }) }, (url) => {
+      if (!url.startsWith("/api/approvals?")) return Response.json({ message: "no" }, { status: 500 });
+      if (failNext) return Response.json({ message: "unavailable" }, { status: 503 });
+      // The browser parses fetched pages strictly, so this row needs a real request id.
+      return Response.json(page([item("00000000-0000-4000-8000-0000000000a2")], { count: 2 }));
+    });
+    try {
+      const rows = () => Array.from(view.dom.root.querySelectorAll<HTMLElement>("article.cloud-approval"));
+      view.button("Show more")!.click();
+      await waitFor(() => view.dom.root.querySelector('.cloud-approvals__more [role="alert"]') !== null, "the inline error");
+      expect(view.dom.root.querySelector(".cloud-approvals__more")?.textContent).toContain("More approvals could not be loaded.");
+      expect(rows()).toHaveLength(1);
+      expect(view.button("Show more")).toBeUndefined();
+      failNext = false;
+      view.button("Try again")!.click();
+      await waitFor(() => rows().length === 2, "the next page");
+      expect(view.requests.filter((request) => request.url.startsWith("/api/approvals?"))).toHaveLength(2);
+      expect(view.dom.root.querySelector('.cloud-approvals__more [role="alert"]')).toBeNull();
+      expect(view.dom.root.querySelector(".cloud-approvals__more")).toBeNull();
     } finally {
       view.cleanup();
     }
@@ -170,8 +212,9 @@ describe("Approvals", () => {
       expect(row.textContent).toContain("Send “Offer 1”");
       await Bun.sleep(550);
       band.button("Reject", row)!.click();
-      await waitFor(() => row.dataset.decided === "true", "the band receipt");
+      await waitFor(() => row.dataset.decided === "rejected", "the band receipt");
       expect(row.textContent).toContain("Rejected");
+      expect(row.querySelector(":scope > i")?.className).toBe("ti ti-circle-x");
     } finally {
       band.cleanup();
     }

@@ -237,10 +237,12 @@ describe("Approvals in a browser", () => {
       }
     });
 
-    test(`${width} px: Details shows the whole review and decides from the panel`, async () => {
+    test(`${width} px: Details shows the whole review and decides from the panel; a rejection keeps the row height`, async () => {
       const decided: string[] = [];
       const { tab, close } = await live(width, page.items, decided);
       try {
+        await tab.locator("article.cloud-approval").first().waitFor();
+        const before = await rowHeights(tab);
         await tab.locator("article.cloud-approval").nth(1).getByRole("button", { name: "Details" }).click();
         const panel = tab.getByRole("dialog");
         await panel.waitFor();
@@ -252,6 +254,8 @@ describe("Approvals in a browser", () => {
         expect(decided).toEqual([page.items[1]!.id]);
         expect(await tab.getByRole("dialog").count()).toBe(0);
         expect(await tab.locator("article.cloud-approval").nth(1).textContent()).toContain("Rejected");
+        expect(await tab.locator("article.cloud-approval").nth(1).getAttribute("data-decided")).toBe("rejected");
+        expect(await rowHeights(tab)).toEqual(before);
       } finally {
         await close();
       }

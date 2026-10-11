@@ -28,6 +28,19 @@ import { approvalMessages } from "./messages";
 
 /** How a decided request ends in this list. It stays in place as a receipt until the next load. */
 type Outcome = "approved" | "rejected" | "elsewhere" | "gone";
+/** Approved and rejected are this person's decision; the other two mean the click changed nothing. */
+const decidedHere = (outcome: Outcome) => outcome === "approved" || outcome === "rejected";
+/** One icon per outcome, so a rejection or a decision made elsewhere never looks like a success. */
+const outcomeIcon = (outcome: Outcome, band = false) =>
+  outcome === "approved"
+    ? band
+      ? "ti ti-circle-check"
+      : "ti ti-check"
+    : outcome === "rejected"
+      ? band
+        ? "ti ti-circle-x"
+        : "ti ti-x"
+      : "ti ti-info-circle";
 type ReviewDetail = NonNullable<CapabilityActionReview["details"]>[number];
 
 export type ApprovalsProps = {
@@ -149,13 +162,21 @@ function Note(props: { item: PendingApproval; outcome?: Outcome; failed?: boolea
   const t = useMessages();
   const locale = useLocale();
   const text = () => {
-    if (props.outcome) return t().decidedHere;
+    if (props.outcome) return decidedHere(props.outcome) ? t().decidedHere : t().notApplied;
     if (props.failed) return t().decisionFailed;
     const expires = t().expiresIn({ time: dates.formatTimeSpan(props.item.expiresAt, { locale: locale() }) });
     return props.item.assurance === "confirm" ? `${t().asksEveryTime} · ${expires}` : expires;
   };
   const icon = () =>
-    props.outcome ? "ti ti-clock" : props.failed ? "ti ti-alert-circle" : props.item.assurance === "confirm" ? "ti ti-lock" : "ti ti-clock";
+    props.outcome
+      ? decidedHere(props.outcome)
+        ? "ti ti-clock"
+        : "ti ti-info-circle"
+      : props.failed
+        ? "ti ti-alert-circle"
+        : props.item.assurance === "confirm"
+          ? "ti ti-lock"
+          : "ti ti-clock";
   return (
     <span
       class="cloud-approval__note"
@@ -173,10 +194,7 @@ function Receipt(props: { outcome: Outcome }) {
   const label = () => ({ approved: t().approved, rejected: t().rejected, elsewhere: t().decidedElsewhere, gone: t().gone })[props.outcome];
   return (
     <span class="cloud-approval__receipt" data-outcome={props.outcome}>
-      <i
-        class={props.outcome === "approved" ? "ti ti-check" : props.outcome === "rejected" ? "ti ti-x" : "ti ti-info-circle"}
-        aria-hidden="true"
-      />
+      <i class={outcomeIcon(props.outcome)} aria-hidden="true" />
       {label()}
     </span>
   );
@@ -363,13 +381,9 @@ function Row(props: {
     <Show
       when={props.layout === "band"}
       fallback={
-        <article
-          class="cloud-approval"
-          data-decided={props.outcome ? "true" : undefined}
-          aria-label={t().approvalFor({ title: approvalTitle(props.item) })}
-        >
+        <article class="cloud-approval" data-decided={props.outcome} aria-label={t().approvalFor({ title: approvalTitle(props.item) })}>
           <span class="cloud-approval__icon" aria-hidden="true">
-            <i class={props.outcome ? "ti ti-check" : (props.item.app.icon ?? "ti ti-shield-check")} />
+            <i class={props.outcome ? outcomeIcon(props.outcome) : (props.item.app.icon ?? "ti ti-shield-check")} />
           </span>
           <div class="cloud-approval__main">
             <div class="cloud-approval__content">
@@ -384,12 +398,8 @@ function Row(props: {
         </article>
       }
     >
-      <article
-        class="cloud-approval-band"
-        data-decided={props.outcome ? "true" : undefined}
-        aria-label={t().approvalFor({ title: approvalTitle(props.item) })}
-      >
-        <i class={props.outcome ? "ti ti-circle-check" : "ti ti-alert-triangle"} aria-hidden="true" />
+      <article class="cloud-approval-band" data-decided={props.outcome} aria-label={t().approvalFor({ title: approvalTitle(props.item) })}>
+        <i class={props.outcome ? outcomeIcon(props.outcome, true) : "ti ti-alert-triangle"} aria-hidden="true" />
         <div class="cloud-approval-band__text">
           <strong>{approvalTitle(props.item)}</strong>
           <Origin item={props.item} withApp={false} />
@@ -419,6 +429,8 @@ export default function Approvals(props: ApprovalsProps) {
   const [failed, setFailed] = createSignal<ReadonlySet<string>>(new Set());
   const [loadError, setLoadError] = createSignal(false);
   const [loadingMore, setLoadingMore] = createSignal(false);
+  // A failed next page keeps the rows already shown; the error sits next to the button that retries it.
+  const [moreError, setMoreError] = createSignal(false);
 
   const fetchPage = async (cursor?: string): Promise<ApprovalPage> => {
     const response = await coreClient.approvals.$get({ query: query(cursor) });
@@ -440,13 +452,14 @@ export default function Approvals(props: ApprovalsProps) {
     const cursor = page()?.nextCursor;
     if (!cursor || loadingMore()) return;
     setLoadingMore(true);
+    setMoreError(false);
     try {
       const next = await fetchPage(cursor);
       const known = new Set(items().map((item) => item.id));
       setItems([...items(), ...next.items.filter((item) => !known.has(item.id))]);
       setPage({ ...next, count: page()?.count ?? next.count });
     } catch {
-      setLoadError(true);
+      setMoreError(true);
     } finally {
       setLoadingMore(false);
     }
@@ -567,8 +580,14 @@ export default function Approvals(props: ApprovalsProps) {
             </Show>
             <Show when={page()?.nextCursor}>
               <div class="cloud-approvals__more">
+                <Show when={moreError()}>
+                  <p class="cloud-approvals__more-error" role="alert">
+                    <i class="ti ti-alert-circle" aria-hidden="true" />
+                    {t().loadMoreFailed}
+                  </p>
+                </Show>
                 <Button size="sm" variant="secondary" loading={loadingMore()} onClick={() => void loadMore()}>
-                  {t().showMore}
+                  {moreError() ? t().retry : t().showMore}
                 </Button>
               </div>
             </Show>

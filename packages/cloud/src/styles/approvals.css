@@ -44,7 +44,19 @@
 
 .k2b-ui .cloud-approvals__more {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.k2b-ui .cloud-approvals__more-error {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin: 0;
+  color: var(--k2b-danger-text);
+  font-size: 0.75rem;
 }
 
 .k2b-ui .cloud-approvals__elsewhere {
@@ -84,7 +96,8 @@
   font-size: 1rem;
 }
 
-.k2b-ui .cloud-approval[data-decided] .cloud-approval__icon {
+/* Only an approval is a success; a rejection or a decision that did not apply keeps the neutral icon tile. */
+.k2b-ui .cloud-approval[data-decided="approved"] .cloud-approval__icon {
   color: var(--k2b-success-text);
   background: var(--k2b-success-surface);
 }
@@ -334,6 +347,10 @@
 }
 
 .k2b-ui .cloud-approval-band[data-decided] > i {
+  color: var(--k2b-text-muted);
+}
+
+.k2b-ui .cloud-approval-band[data-decided="approved"] > i {
   color: var(--k2b-success-text);
 }
 

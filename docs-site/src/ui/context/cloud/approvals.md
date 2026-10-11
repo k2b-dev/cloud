@@ -47,11 +47,18 @@ names the level ("Asks every time" for `confirm`) and the expiry, then
 whole review, its links, and the same decision.
 
 Rows are set apart by space, not by lines or boxes. A decided row stays in
-place at its height: its content dims, the icon turns into a check, and the
-buttons turn into a receipt such as **Approved** or **Already decided
-elsewhere**. The list changes only when it loads again. With more than one
-open request, **Reject all** asks once and rejects them one after another.
+place at its height: its content dims and the buttons turn into a receipt.
+Only an approval turns the icon into a green check. A rejection shows a
+neutral cross. When another tab or channel decided first, or the request
+expired or was withdrawn, the row shows an info icon, the receipt **Already
+decided elsewhere** or **Expired or withdrawn**, and the note "Your decision
+was not applied". The list changes only when it loads again. With more than
+one open request, **Reject all** asks once and rejects them one after another.
 There is no "approve all".
+
+**Show more** loads the next 20 requests below the rows already shown. If
+that fails, the rows stay, an error appears next to the button, and the
+button becomes **Try again**.
 
 The approve buttons arm half a second after a row appears, so a click meant
 for the page cannot approve it. Remember options (**Approve for this chat**,
@@ -79,7 +86,8 @@ count. An app does not need a `nav.badge` route for that.
 
 Each row is an `article` named after its title. Receipts and errors replace
 the buttons in the same place, and a failed decision says so in the row's foot
-as an alert. The navigation count tells screen readers how many requests wait,
+as an alert. A failed **Show more** is announced as an alert, and focus stays
+on the button that retries it. The navigation count tells screen readers how many requests wait,
 in the inherited locale.
 
 ## Runtime
