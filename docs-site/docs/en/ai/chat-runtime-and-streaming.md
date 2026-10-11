@@ -645,6 +645,19 @@ finish, without rendering a second copy of the active response.
 
 ### Failed turns
 
+When a model sends a tool call that Cloud cannot use, for example arguments
+that are not valid JSON, the chat keeps it as a failed tool step. Its error
+result asks the model to re-send the call with its exact tool name and complete,
+valid, properly escaped JSON arguments. The step appears when Cloud saves the
+response, after the other steps of that response, and stays in the same place
+after reload and in history. A response that is never saved, for example after
+a provider failure, shows no such step. Cloud never runs a malformed call, also
+when a run stopped before it saved the error result. Cloud allows at most two
+repairs per turn, also across approvals, resumes, and compaction. If the model
+sends another malformed call, the turn fails with reason `failed` and keeps the
+completed steps. Repairs do not count as tool rounds, do not acknowledge user
+steering, and do not reset its loop checks.
+
 Truncated streams and provider failures end with `loop_end` reason `error`.
 A provider that stops an answer itself ends the turn as failed with
 `provider_stopped`: a gateway error, malformed call, content filter or refusal

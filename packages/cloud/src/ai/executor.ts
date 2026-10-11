@@ -1,4 +1,4 @@
-import type { AssistantMessage, CompactEvent, LoopAggregate, NessiLoop, OutboundEvent } from "@k2b/nessi";
+import type { AssistantMessage, CompactEvent, LoopAggregate, Message, NessiLoop, OutboundEvent } from "@k2b/nessi";
 import { compact, nessi } from "@k2b/nessi";
 import { listCapabilities } from "../_internal/registry";
 import type { CapabilityActionReview } from "../contracts/capabilities";
@@ -28,6 +28,13 @@ import { AiChatTaskAuthorityError, aiChatTasks } from "./chat-tasks";
 import { createCloudCompactFn } from "./compaction";
 import { createCloudAiCodeTools, createCloudAiLocalBashTool, createConfiguredDefaultCloudAiTools } from "./default-tools";
 import { aiFileStore } from "./files-store";
+import {
+  countMalformedToolCallRepairs,
+  createMalformedToolCallRepair,
+  isMalformedToolCallId,
+  withMalformedToolCallRepair,
+  withMalformedToolCallResults,
+} from "./malformed-tool-call-repair";
 import { aiMemories } from "./memories";
 import { createCloudAiMemoryTool } from "./memory-tool";
 import { recordAiMemoryWorkflowEvidence } from "./memory-workflow-evidence";
@@ -100,17 +107,18 @@ const AI_COALESCE_MAX_CHARS = 512;
 const AI_ACTION_BUDGET_MS = 24 * 60 * 60_000;
 
 // Failed generation can contain calls that nessi deliberately never executes or resumes.
+// Cloud's repair calls are skipped too: the live run never counts them.
 const isToolRound = (message: AssistantMessage): boolean =>
   message.stopReason !== "error" &&
   message.stopReason !== "interrupted" &&
   message.stopReason !== "aborted" &&
-  message.content.some((block) => block.type === "tool_call");
+  message.content.some((block) => block.type === "tool_call" && !isMalformedToolCallId(block.id));
 
 const toolRoundState = (messages: AiStoredMessage[]): { issued: number; completed: number } => {
   const completedCallIds = new Set(messages.flatMap(({ message }) => (message.role === "tool_result" ? [message.callId] : [])));
   const rounds = messages.flatMap(({ message }) => {
     if (message.role !== "assistant" || !isToolRound(message)) return [];
-    const callIds = message.content.flatMap((block) => (block.type === "tool_call" ? [block.id] : []));
+    const callIds = message.content.flatMap((block) => (block.type === "tool_call" && !isMalformedToolCallId(block.id) ? [block.id] : []));
     return callIds.length > 0 ? [callIds] : [];
   });
   return {
@@ -278,6 +286,29 @@ export type ExecutorConfig = {
 
 type ResolvedModel = Awaited<ReturnType<typeof resolveAiModel>>;
 type ValidatedTurn = { settings: Awaited<ReturnType<typeof validateAiTurnRequest>>["settings"]; resolved: ResolvedModel };
+
+// One entry per steering text returned to nessi, including repairs that have no user steer to acknowledge.
+const createChatSteering =
+  (input: {
+    repair: ReturnType<typeof createMalformedToolCallRepair>;
+    appliedSteers: (AiTurnSteer | null)[];
+    takePendingSteers: () => Promise<AiTurnSteer[]>;
+    noteSteering: () => void;
+  }) =>
+  async ({ signal }: { signal: AbortSignal }) => {
+    if (signal.aborted) return undefined;
+    // Exhaustion fails before consuming any pending user input.
+    const repairText = input.repair.takeSteering();
+    const steers = await input.takePendingSteers();
+    input.appliedSteers.push(...steers);
+    if (steers.length > 0) input.noteSteering();
+    const texts = steers.map((steer) => steer.text);
+    if (repairText) {
+      texts.push(repairText);
+      input.appliedSteers.push(null);
+    }
+    return texts.length > 0 ? texts : undefined;
+  };
 
 // ---------------------------------------------------------------------------
 // Baseline rebuild — reconstruct the full active-turn view from persisted rounds
@@ -584,8 +615,23 @@ const createEventMapper = (attempt: number, seedBlocks: AiTurnBlock[], allowReme
     }
   };
 
+  const storedMessage = (message: Message): BlockOp[] =>
+    message.role === "tool_result" && isMalformedToolCallId(message.callId)
+      ? [
+          setTool(message.callId, {
+            name: message.name,
+            args: {},
+            status: "failed",
+            result: message.result,
+            isError: true,
+            clearApproval: true,
+          }),
+        ]
+      : [];
+
   return {
     translate,
+    storedMessage,
     compaction,
     setFrontendModes,
     setPresentations,
@@ -1075,7 +1121,7 @@ export class AiTurnExecutor {
       await pipeline.emitBaseline();
     }
 
-    const appliedSteers: AiTurnSteer[] = [];
+    const appliedSteers: (AiTurnSteer | null)[] = [];
 
     let mandatePolicy: MandatePolicyV1 | null | undefined;
     if (config.background && config.mandate) {
@@ -1304,8 +1350,9 @@ export class AiTurnExecutor {
       skillCreatorAvailable,
       recentWork: guidance.recentWork,
     });
-    // The turn policy counts the whole turn, including rounds that compaction archived.
+    // The turn policy and repair budget count the whole turn, including rounds that compaction archived.
     const turnMessages = await aiConversations.listTurnMessages({ conversationId, loopId: turnId, includeCompacted: true });
+    const malformedToolCallRepair = createMalformedToolCallRepair(countMalformedToolCallRepairs(turnMessages));
     const turnBlocks = buildBlocksFromMessages(turnMessages);
     const providerNamesByCallId = new Map(
       turnMessages.flatMap(({ message }) =>
@@ -1348,7 +1395,11 @@ export class AiTurnExecutor {
       runBudgetMs: claim.turn.runBudgetMs ?? null,
       finishedToolCalls: turnBlocks
         .slice(turnBlocks.findLastIndex((block) => block.kind === "steer_applied") + 1)
-        .flatMap((block) => (block.kind === "tool" ? [{ ...block, name: providerNamesByCallId.get(block.callId) ?? block.name }] : [])),
+        .flatMap((block) =>
+          block.kind === "tool" && !isMalformedToolCallId(block.callId)
+            ? [{ ...block, name: providerNamesByCallId.get(block.callId) ?? block.name }]
+            : [],
+        ),
       onDecision: (decision) =>
         decision.kind === "hint"
           ? log.warn("AI turn got a loop hint", { conversationId, turnId, hints: decision.hints })
@@ -1358,21 +1409,20 @@ export class AiTurnExecutor {
       agentId: "cloud",
       loopId: turnId,
       ...(isFresh ? { input: turnInput } : {}),
-      provider: turnPolicy.provider,
+      provider: withMalformedToolCallRepair(turnPolicy.provider, malformedToolCallRepair),
       systemPrompt,
-      store,
-      steering: async ({ signal: steeringSignal }) => {
-        if (steeringSignal.aborted) return undefined;
-        const steers = await aiConversations.takePendingTurnSteers({
-          conversationId,
-          turnId,
-          leaseOwner: this.config.leaseOwner,
-        });
-        appliedSteers.push(...steers);
-        if (steers.length === 0) return undefined;
-        turnPolicy.noteSteering();
-        return steers.map((steer) => steer.text);
-      },
+      store: withMalformedToolCallResults(store, malformedToolCallRepair),
+      steering: createChatSteering({
+        repair: malformedToolCallRepair,
+        appliedSteers,
+        takePendingSteers: () =>
+          aiConversations.takePendingTurnSteers({
+            conversationId,
+            turnId,
+            leaseOwner: this.config.leaseOwner,
+          }),
+        noteSteering: turnPolicy.noteSteering,
+      }),
       tools: async () => {
         try {
           return await turnPolicy.tools();
@@ -1494,7 +1544,7 @@ export class AiTurnExecutor {
     approvalTargets: ReadonlyMap<string, AiApprovalTarget>;
     linkedApprovals: ReadonlyMap<string, string>;
     freshApprovalRequired?: ReadonlySet<string>;
-    appliedSteers: AiTurnSteer[];
+    appliedSteers: (AiTurnSteer | null)[];
     noteToolRound: () => void;
     noteToolCall: (call: AiTurnPolicyToolCall) => void;
     /**
@@ -2077,6 +2127,8 @@ class StreamPipeline {
   }
 
   async emitMessage(message: AiStoredMessage): Promise<void> {
+    // A malformed call shows once its error result is saved, at the end of its response as in history.
+    for (const op of this.mapper.storedMessage(message.message)) await this.emitOp(op);
     const seq = this.nextSeq();
     await this.publish(this.envelope({ type: "message_saved" as const, seq, message }));
     await this.maybeSnapshot();
@@ -2218,6 +2270,7 @@ class StreamPipeline {
 }
 
 export const __aiExecutorTest = {
+  createChatSteering,
   indexConversationToolSource,
   StreamPipeline,
   createEventMapper,
