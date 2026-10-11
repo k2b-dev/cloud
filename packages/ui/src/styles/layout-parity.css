@@ -1770,6 +1770,13 @@
     overflow: visible;
   }
 
+  /* While the detail panel slides in or out, the workspace's end edge clips
+     it, so it never crosses a framed workspace's edge; its other shadows
+     stay. */
+  .k2b-ui .k2b-app-workspace[data-workspace-detail-sliding] {
+    clip-path: inset(-4rem 0 -4rem -4rem);
+  }
+
   .k2b-ui
     .k2b-app-workspace:has(
       > .k2b-app-workspace__sidebar:not([hidden]),

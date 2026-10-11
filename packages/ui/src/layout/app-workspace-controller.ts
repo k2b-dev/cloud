@@ -475,6 +475,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   const titleTabIndices = new Set<HTMLElement>();
   const motionFrames = new Map<HTMLElement, number>();
   const pendingAnchors = new Map<HTMLElement, () => void>();
+  const slides = new Map<HTMLElement, () => void>();
   const motionRoots = new Set<HTMLElement>();
   const revealFrames = new Map<HTMLElement, number>();
   const openDetails = (root: HTMLElement) => rootElements(root, detailSelector).filter((aside) => !aside.hidden);
@@ -617,11 +618,41 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     if (scroller?.isConnected && scroller.scrollTop === snapshot.scrollTop)
       scroller.scrollTop += snapshot.item.getBoundingClientRect().top - snapshot.top;
   };
+  // From 64 rem the workspace does not clip, so the panel's shadow shows on
+  // every edge. A panel sliding in or out would cross a framed workspace's
+  // edge, so the workspace clips while the panel moves (see the stylesheet).
+  const slide = (root: HTMLElement, aside: HTMLElement) => {
+    slides.get(root)?.();
+    if (!root.hasAttribute("data-workspace-motion") || reducedMotion?.matches || !wide?.matches) return;
+    const end = () => {
+      aside.removeEventListener("transitionend", onEnd);
+      aside.removeEventListener("transitioncancel", onEnd);
+      cancelAnimationFrame(frame);
+      slides.delete(root);
+      delete root.dataset.workspaceDetailSliding;
+    };
+    const onEnd = (event: TransitionEvent) => {
+      if (event.target === aside && event.propertyName === "transform") end();
+    };
+    aside.addEventListener("transitionend", onEnd);
+    aside.addEventListener("transitioncancel", onEnd);
+    // A slow first frame must not end the clip early, so only a panel that
+    // does not slide at all ends it in that frame.
+    const frame = requestAnimationFrame(() => {
+      const sliding = aside
+        .getAnimations?.()
+        .some((animation) => "transitionProperty" in animation && animation.transitionProperty === "transform");
+      if (!sliding) end();
+    });
+    slides.set(root, end);
+    root.dataset.workspaceDetailSliding = "";
+  };
   const detailTransition = (aside: HTMLElement, wasHidden: boolean) => {
     const root = aside.closest<HTMLElement>(ROOT_SELECTOR);
     detailHidden.set(aside, Boolean(aside.hidden));
     if (!root || !observedRoots.has(root) || Boolean(aside.hidden) === wasHidden) return;
     pendingAnchors.get(root)?.();
+    slide(root, aside);
     touchedDetails.add(aside);
     const pending = revealFrames.get(root);
     if (pending !== undefined) cancelAnimationFrame(pending);
@@ -1225,6 +1256,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     observedRoots.forEach((root) => {
       if (!next.has(root)) {
         pendingAnchors.get(root)?.();
+        slides.get(root)?.();
         resizeObserver?.unobserve(root);
         const frame = motionFrames.get(root);
         if (frame !== undefined) cancelAnimationFrame(frame);
@@ -1332,6 +1364,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   return () => {
     cancelTitle();
     pendingAnchors.forEach((cancel) => cancel());
+    slides.forEach((end) => end());
     stopScrollFades();
     finishDetailDrag(true);
     if (suppressedClickTimer !== null) clearTimeout(suppressedClickTimer);

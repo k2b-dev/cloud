@@ -418,6 +418,35 @@ describe("floating workspace detail", () => {
       }
     });
   }
+  test("1920×1080 framed: the workspace clips its end edge only while the panel slides", async () => {
+    const page = await load(1920, 1080, "table=1&card=1", { reducedMotion: "no-preference" });
+    try {
+      await page.waitForSelector("[data-workspace-motion]");
+      const clipAfter = (id: string) =>
+        page.evaluate(async (id) => {
+          const root = document.querySelector<HTMLElement>(".k2b-app-workspace")!;
+          document.getElementById(id)!.click();
+          // The controller marks the slide as soon as the panel's visibility changes, before any frame.
+          await Promise.resolve();
+          return getComputedStyle(root).clipPath;
+        }, id);
+      const rest = () =>
+        page.locator(".k2b-app-workspace").evaluate((root) => ({
+          sliding: root.hasAttribute("data-workspace-detail-sliding"),
+          clip: getComputedStyle(root).clipPath,
+        }));
+      expect(await clipAfter("row-0")).toContain("inset");
+      await settlePanel(page);
+      await page.waitForFunction(() => !document.querySelector("[data-workspace-detail-sliding]"));
+      expect(await rest()).toEqual({ sliding: false, clip: "none" });
+      expect(await clipAfter("close")).toContain("inset");
+      await page.waitForFunction(() => getComputedStyle(document.querySelector(".k2b-app-workspace__detail")!).display === "none");
+      await page.waitForFunction(() => !document.querySelector("[data-workspace-detail-sliding]"));
+      expect(await rest()).toEqual({ sliding: false, clip: "none" });
+    } finally {
+      await page.close();
+    }
+  });
   for (const fixed of [false, true]) {
     test(`820×1180 touch tablet ${fixed ? "reflows a permanent panel" : "overlays a closable drawer"}`, async () => {
       const page = await load(820, 1180, fixed ? "fixed=1" : "", { hasTouch: true });
