@@ -912,6 +912,7 @@ export const listFiltered = async (params: {
     search,
     sort,
     sortDesc,
+    groupBy,
     page,
     pageSize,
   } = filter;
@@ -1062,6 +1063,56 @@ export const listFiltered = async (params: {
       break;
   }
 
+  // Group before pagination, then apply the selected sort within each group.
+  // These keys match the list's groups; resource IDs remain internal until projection.
+  let groupKey = sql`COALESCE(i.priority, 'none')`;
+  switch (groupBy) {
+    case "priority":
+      orderClause = sql`CASE i.priority WHEN 'urgent' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 ELSE 5 END ASC, ${orderClause}`;
+      break;
+    case "column":
+      groupKey = sql`i.column_id::text`;
+      orderClause = sql`c.rank ASC, ${orderClause}`;
+      break;
+    case "tag":
+      // Space tags are ordered by name. Multi-tag items use their first tag for pagination.
+      orderClause = sql`(SELECT MIN(t.name) FROM spaces.item_tags it JOIN spaces.tags t ON t.id = it.tag_id WHERE it.item_id = i.id) ASC NULLS LAST, ${orderClause}`;
+      break;
+    case "deadline": {
+      const timeZone = params.dateConfig?.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const todayKey = dates.formatDateKey(dates.today(params.dateConfig), params.dateConfig);
+      const schedule = sql`CASE WHEN i.starts_at IS NOT NULL AND i.ends_at IS NOT NULL THEN i.starts_at ELSE i.deadline END`;
+      const dayKey = sql`to_char(${schedule} AT TIME ZONE ${timeZone}, 'YYYY-MM-DD')`;
+      groupKey = sql`CASE
+        WHEN ${schedule} IS NULL THEN 'none'
+        WHEN ${dayKey} < ${todayKey} AND i.completed_at IS NULL THEN
+          CASE WHEN i.starts_at IS NOT NULL AND i.ends_at IS NOT NULL THEN 'past-events' ELSE 'overdue' END
+        ELSE 'date:' || ${dayKey}
+      END`;
+      orderClause = sql`CASE ${groupKey} WHEN 'overdue' THEN 0 WHEN 'past-events' THEN 1 WHEN 'none' THEN 3 ELSE 2 END ASC, ${groupKey} ASC, ${orderClause}`;
+      break;
+    }
+  }
+
+  let groupCounts: Record<string, number> | undefined;
+  if (groupBy !== "none") {
+    const counts =
+      groupBy === "tag"
+        ? await sql<{ key: string; count: string }[]>`
+          SELECT COALESCE(it.tag_id::text, 'none') AS key, COUNT(*) AS count
+          FROM spaces.items i LEFT JOIN spaces.item_tags it ON it.item_id = i.id
+          WHERE ${conditions}
+          GROUP BY 1
+        `
+        : await sql<{ key: string; count: string }[]>`
+          SELECT ${groupKey} AS key, COUNT(*) AS count
+          FROM spaces.items i
+          WHERE ${conditions}
+          GROUP BY 1
+        `;
+    groupCounts = Object.fromEntries(counts.map(({ key, count }) => [key, Number(count)]));
+  }
+
   // Get total count
   const [countResult] = await sql<{ count: string }[]>`
     SELECT COUNT(*) as count
@@ -1096,6 +1147,7 @@ export const listFiltered = async (params: {
     page,
     pageSize,
     totalPages,
+    ...(groupCounts ? { groupCounts } : {}),
   };
 };
 

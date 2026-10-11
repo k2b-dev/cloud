@@ -141,6 +141,7 @@ export default function SpacesListRoute(props: Props) {
         ) : (
           <ItemsList
             items={itemsResult().items}
+            groupCounts={itemsResult().groupCounts}
             columns={props.columns}
             tags={props.tags}
             spaceId={props.spaceId}

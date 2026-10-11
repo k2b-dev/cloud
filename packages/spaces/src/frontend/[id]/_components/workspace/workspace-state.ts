@@ -106,11 +106,6 @@ const resolvePermissions = async (params: { spaceId: string; user: AuthUser }) =
 
 const nonEmpty = <T>(values: T[]) => (values.length > 0 ? values : undefined);
 
-const projectItemResult = async (result: ItemListResult): Promise<ItemListResult> => ({
-  ...result,
-  items: await spacesPublicResources.projectItems(result.items),
-});
-
 const projectItemDetail = async (
   detail: Omit<SpaceItemDetail, "references" | "links" | "attachments" | "checklist" | "blockedBy" | "blocks"> & {
     references?: SpaceItemDetail["references"];
@@ -710,7 +705,11 @@ const toViewSnapshot = async (params: {
   columnIds: Map<string, string>;
 }): Promise<SpacesViewSnapshot> => {
   if (params.route.currentView === "list" || params.route.currentView === "table") {
-    return { kind: "list", currentView: params.route.currentView, itemsResult: await projectItemResult(params.itemsResult) };
+    return {
+      kind: "list",
+      currentView: params.route.currentView,
+      itemsResult: await spacesPublicResources.projectItemListResult(params.itemsResult, params.route.filter.groupBy),
+    };
   }
   if (params.route.currentView === "kanban") {
     const [buckets, wormholes] = await Promise.all([
@@ -885,7 +884,7 @@ export const loadSpacesWorkspaceState = async (params: WorkspaceRequest): Promis
     authorizationHeader: params.authorizationHeader,
   });
   const [publicItemsResult, publicKanbanBuckets, publicCalendarItems, publicCalendarTray, publicWormholes] = await Promise.all([
-    projectItemResult(itemsResult),
+    spacesPublicResources.projectItemListResult(itemsResult, route.filter.groupBy),
     projectKanbanBuckets(kanbanBuckets, columnIds),
     spacesPublicResources.projectCalendarItems(calendarState.calendarItems),
     projectCalendarTray(calendarState.calendarTray),

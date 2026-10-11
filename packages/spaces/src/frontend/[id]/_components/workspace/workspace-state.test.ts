@@ -136,6 +136,16 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
           columnId: COLUMN_SHORT_ID,
           recurringEventId: value.recurringEventId ? ITEM_SHORT_ID : null,
         })),
+      projectItemListResult: async (result: { items: SpaceItem[] }) => ({
+        ...result,
+        items: result.items.map((value) => ({
+          ...value,
+          id: value.id === OVERRIDE_ID ? OVERRIDE_SHORT_ID : ITEM_SHORT_ID,
+          spaceId: SPACE_SHORT_ID,
+          columnId: COLUMN_SHORT_ID,
+          recurringEventId: value.recurringEventId ? ITEM_SHORT_ID : null,
+        })),
+      }),
       projectComments: async (items: Array<{ id: string; itemId: string }>) =>
         items.map((value) => ({ ...value, id: COMMENT_SHORT_ID, itemId: ITEM_SHORT_ID })),
       projectTaskDependencies: async (items: unknown[]) => items,
