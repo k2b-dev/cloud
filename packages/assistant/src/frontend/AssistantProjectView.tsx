@@ -375,7 +375,7 @@ export default function AssistantProjectView(props: Props) {
           </header>
 
           <div class="mx-auto mt-auto flex w-full max-w-4xl flex-col gap-3 pt-16">
-            <section class="flex min-h-0 flex-col gap-2" aria-labelledby="project-chats-heading">
+            <section class="assistant-project-chats flex min-h-0 flex-col gap-2" aria-labelledby="project-chats-heading">
               <header class="flex min-h-8 items-center justify-between gap-3 px-1">
                 <div class="flex min-w-0 items-baseline gap-2">
                   <h2 id="project-chats-heading" class="text-xs font-medium text-dimmed">
