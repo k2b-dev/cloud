@@ -672,6 +672,10 @@ const deadlineWindow = (dateConfig?: DateContext) => {
   };
 };
 
+/** isTaskOverdue in SQL, without the completion check that the status filter owns: a task, not an event, due before today. */
+const overdueMatch = (todayStart: string) =>
+  sql`((i.starts_at IS NULL OR i.ends_at IS NULL) AND i.deadline IS NOT NULL AND i.deadline < ${todayStart}::timestamptz)`;
+
 /**
  * Dashboard widget query: today's events and the next deadlines, across
  * every space the user can reach (direct user grant, group grant,
@@ -940,8 +944,8 @@ export const listFiltered = async (params: {
   if (filter.overdue !== undefined) {
     const { todayStart } = deadlineWindow(params.dateConfig);
     conditions = filter.overdue
-      ? sql`${conditions} AND i.deadline IS NOT NULL AND i.deadline < ${todayStart}::timestamptz`
-      : sql`${conditions} AND (i.deadline IS NULL OR i.deadline >= ${todayStart}::timestamptz)`;
+      ? sql`${conditions} AND ${overdueMatch(todayStart)}`
+      : sql`${conditions} AND NOT ${overdueMatch(todayStart)}`;
   }
 
   // Status filter
@@ -977,7 +981,7 @@ export const listFiltered = async (params: {
   // Deadline filter
   if (deadlineFilter === "overdue") {
     const { todayStart } = deadlineWindow(params.dateConfig);
-    conditions = sql`${conditions} AND i.deadline IS NOT NULL AND i.deadline < ${todayStart}::timestamptz`;
+    conditions = sql`${conditions} AND ${overdueMatch(todayStart)}`;
   } else if (deadlineFilter === "today") {
     const { todayStart, tomorrowStart } = deadlineWindow(params.dateConfig);
     conditions = sql`${conditions} AND i.deadline IS NOT NULL AND i.deadline >= ${todayStart}::timestamptz AND i.deadline < ${tomorrowStart}::timestamptz`;
@@ -1268,7 +1272,7 @@ export const searchAcross = async (params: {
   const window = deadlineWindow(params.dateConfig);
   const deadlineMatch =
     params.deadlineFilter === "overdue"
-      ? sql`i.deadline < ${window.todayStart}::timestamptz`
+      ? overdueMatch(window.todayStart)
       : params.deadlineFilter === "today"
         ? sql`i.deadline >= ${window.todayStart}::timestamptz AND i.deadline < ${window.tomorrowStart}::timestamptz`
         : params.deadlineFilter === "week"
