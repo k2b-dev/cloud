@@ -88,45 +88,47 @@ export default function PulseQueryReferenceWindow(props: Props) {
   );
 
   return (
-    <AppWorkspace class="h-screen">
-      <div class="p-3 lg:hidden">
-        <Select
-          label={t().pulseReference}
-          options={referenceTabs(props.includeDashboardDsl, {
-            overview: t().overview,
-            query: t().queryDsl,
-            dashboard: t().dashboardDsl,
-            inventory: t().inventory,
-          }).map((tab) => ({ id: tab.value, label: tab.label }))}
-          value={activeTab}
-          onValueChange={(value) => {
-            if (value && isAvailableReferenceTab(value, props.includeDashboardDsl)) switchTab(value);
-          }}
-        />
-      </div>
-      <AppWorkspace.Sidebar>
-        <AppWorkspace.SidebarDesktop>
-          <AppWorkspace.SidebarBody scrollPreserveKey="pulse-reference-sidebar">{renderReferenceNav()}</AppWorkspace.SidebarBody>
-        </AppWorkspace.SidebarDesktop>
-      </AppWorkspace.Sidebar>
+    <div class="h-dvh">
+      <AppWorkspace>
+        <div class="p-3 lg:hidden">
+          <Select
+            label={t().pulseReference}
+            options={referenceTabs(props.includeDashboardDsl, {
+              overview: t().overview,
+              query: t().queryDsl,
+              dashboard: t().dashboardDsl,
+              inventory: t().inventory,
+            }).map((tab) => ({ id: tab.value, label: tab.label }))}
+            value={activeTab}
+            onValueChange={(value) => {
+              if (value && isAvailableReferenceTab(value, props.includeDashboardDsl)) switchTab(value);
+            }}
+          />
+        </div>
+        <AppWorkspace.Sidebar>
+          <AppWorkspace.SidebarDesktop>
+            <AppWorkspace.SidebarBody scrollPreserveKey="pulse-reference-sidebar">{renderReferenceNav()}</AppWorkspace.SidebarBody>
+          </AppWorkspace.SidebarDesktop>
+        </AppWorkspace.Sidebar>
 
-      <AppWorkspace.Content>
-        <AppWorkspace.Main class="overflow-y-auto">
-          <Show
-            when={activeHelpTopic()}
-            fallback={<div class="mx-auto flex w-full max-w-7xl flex-col gap-5 p-[var(--ui-space-shell)]">{renderInventory()}</div>}
-          >
-            {(topic) => (
-              <Layout.HelpPage
-                documents={props.documents.filter((document) => document.id === topic())}
-                initialTopic={topic()}
-                includeShortcuts={false}
-                embedded
-              />
-            )}
-          </Show>
-        </AppWorkspace.Main>
-      </AppWorkspace.Content>
-    </AppWorkspace>
+        <AppWorkspace.Content>
+          <AppWorkspace.Main class="overflow-y-auto">
+            <Show
+              when={activeHelpTopic()}
+              fallback={<div class="mx-auto flex w-full max-w-7xl flex-col gap-5 p-[var(--ui-space-shell)]">{renderInventory()}</div>}
+            >
+              {(topic) => (
+                <Layout.HelpPage
+                  documents={props.documents.filter((document) => document.id === topic())}
+                  initialTopic={topic()}
+                  includeShortcuts={false}
+                  embedded
+                />
+              )}
+            </Show>
+          </AppWorkspace.Main>
+        </AppWorkspace.Content>
+      </AppWorkspace>
+    </div>
   );
 }

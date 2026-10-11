@@ -18,7 +18,7 @@ export default ssr<AuthContext>(async (c) => {
     c.status(snapshot.error.status);
     c.header("Cache-Control", "private, no-store");
     return () => (
-      <main class="flex min-h-screen items-center justify-center bg-zinc-50 p-6 text-zinc-950 dark:bg-zinc-950 dark:text-zinc-50">
+      <main class="flex min-h-dvh items-center justify-center bg-zinc-50 p-6 text-zinc-950 dark:bg-zinc-950 dark:text-zinc-50">
         <section class="paper max-w-md p-6 text-center">
           <h1 class="text-xl font-semibold">{t.dashboardNotFound}</h1>
           <p class="mt-2 text-sm text-dimmed">{snapshot.error.message}</p>
