@@ -70,6 +70,31 @@ describe("turn layout", () => {
     expect(hasCompleteSentence("Line one\nline two")).toBe(true);
   });
 
+  test("a live text is a quiet status once a step started after it; a trailing text may still be the answer", () => {
+    const trailing: AiTurnBlock[] = [tool("read", "read_file"), text("t1", "Now I write the app files.")];
+    const followed: AiTurnBlock[] = [...trailing, tool("write", "write_file", { status: "running" })];
+    expect(layoutAiTurn(trailing, { phase: "running" }).textIsStatus).toBe(false);
+    expect(layoutAiTurn(followed, { phase: "running" }).textIsStatus).toBe(true);
+    expect(
+      layoutAiTurn([...followed.slice(0, 2), tool("send", "send", { status: "awaiting_approval" })], { phase: "waiting" }).textIsStatus,
+    ).toBe(true);
+    // While the next text has no complete sentence, the previous status stays and stays quiet.
+    const next = [...followed, text("t2", "The app")];
+    expect(ids(layoutAiTurn(next, { phase: "running" }).text)).toEqual(["t1"]);
+    expect(layoutAiTurn(next, { phase: "running" }).textIsStatus).toBe(true);
+    next[3] = text("t2", "The app is ready.");
+    expect(layoutAiTurn(next, { phase: "running" }).textIsStatus).toBe(false);
+    // Finished, the shown text is the final message, also when a step followed it; stopped and failed turns show none.
+    expect(layoutAiTurn(followed, { phase: "completed" }).textIsStatus).toBe(false);
+    for (const phase of ["stopped", "failed"] as const) {
+      const layout = layoutAiTurn(followed, { phase });
+      expect(layout.text).toEqual([]);
+      expect(layout.textIsStatus).toBe(false);
+    }
+    // A plain answer has no steps and is never a status.
+    expect(layoutAiTurn([text("t1", "Hello.")], { phase: "running" }).textIsStatus).toBe(false);
+  });
+
   test("the last text before a late tool call stays the final message", () => {
     const layout = layoutAiTurn([tool("read", "read_file"), text("t1", "Here is the summary."), tool("memory", "memory")], {
       phase: "completed",

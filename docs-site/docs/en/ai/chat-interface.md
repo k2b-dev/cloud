@@ -284,9 +284,18 @@ order:
    card's title and value instead.
 3. **Newest text.** While the turn runs this is a status: a new text replaces
    the previous one in the same element once its first sentence has streamed,
-   and the place keeps its height until the turn ends. Finished, it is the final
-   message: the turn's last text, even if a tool call followed it. A stopped or
-   failed turn has no final message; its texts stay in the work line.
+   and the place keeps its height until the turn ends. A text that ends the
+   turn so far may still be the answer and keeps answer typography. As soon as
+   a step starts after it, it reads quietly in the muted, smaller style of the
+   intermediate texts in the expanded work line, also while an approval or
+   survey waits for the user; its card says what is asked. It changes together
+   with the work line's new step and keeps its line height. The place keeps the
+   height the text has as the answer, also when the chat opens while a step
+   runs, so nothing moves when the text turns quiet, is replaced, or becomes
+   the final message.
+   Finished, it is the final message in answer typography: the turn's last
+   text, even if a tool call followed it. A stopped or failed turn has no final
+   message; its texts stay in the work line.
 4. **Actions.** Open approvals, surveys, editors, and secret prompts, and
    receipts for capability actions and for every approval the user decided.
    A pending approval is a calm card with a warning tint and no border: its
