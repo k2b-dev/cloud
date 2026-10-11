@@ -13,7 +13,7 @@ cld --json mail mailbox wait --health active --timeout-seconds 300
 
 `mailbox wait` stops early when the mailbox enters an incompatible failure health. A healthy command result does not replace checking the relevant durable command or sync run. `mail status` reports `degraded` with the failed count while any message hydration has failed, even when the provider transport itself is active.
 
-Each attempt to sync a batch of one folder is a sync run, and a failed attempt stays failed when a retry completes the folder afterwards. `mail status` therefore counts the failed runs that started in the last 24 hours (`sync.failedRuns` under `--json`), and `mail operator status` counts completed, failed, cancelled, and superseded (`stale_fence`) runs of the same 24 hours in `sync.states`; both also count the runs that are still running. List the runs behind that number, newest first, with their folder and error code:
+Each attempt to sync a batch of one folder is a sync run, and a failed attempt stays failed when a retry completes the folder afterwards. `mail status` therefore counts the failed runs that started in the last 24 hours (`sync.failedRuns` under `--json`), and `mail operator status` counts completed, failed, cancelled, and superseded (`stale_fence`) runs of the same 24 hours in `sync.states`; both also count the runs that are still running. List the retained runs, newest first, with their folder and error code; the ones that started in the last 24 hours make up those counts:
 
 ```bash
 cld mail sync runs --state failed

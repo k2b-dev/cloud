@@ -216,6 +216,12 @@ suite("mail sync runs", () => {
 
     const all = await listMailboxSyncRuns({ context: ownerContext, mailboxId });
     expect(all.ok && all.data.items.map((run) => run.state)).toEqual(["failed", "failed", "failed", "completed", "failed"]);
+    const completed = await listMailboxSyncRuns({ context: ownerContext, mailboxId, state: "completed" });
+    expect(completed.ok && completed.data.items.map(({ state, folderPath }) => ({ state, folderPath }))).toEqual([
+      { state: "completed", folderPath: "Projects" },
+    ]);
+    const cancelled = await listMailboxSyncRuns({ context: ownerContext, mailboxId, state: "cancelled" });
+    expect(cancelled.ok && cancelled.data).toEqual({ items: [], nextCursor: null });
 
     const badCursor = await listMailboxSyncRuns({ context: ownerContext, mailboxId, cursor: "not-a-cursor" });
     expect(!badCursor.ok && badCursor.error.code).toBe("BAD_INPUT");

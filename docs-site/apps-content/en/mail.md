@@ -492,8 +492,9 @@ send-safety review and approval.
 
 `cld mail status` counts the sync runs that failed in the last 24 hours. Each
 attempt to sync a batch of one folder is a run, so a failure that a retry
-completed still counts. List the runs behind that number, newest first, with
-their folder and error code:
+completed still counts. List the failed runs of the last 30 days, newest first,
+with their folder and error code; the ones that started in the last 24 hours
+make up that number:
 
 ```bash
 cld mail sync runs --state failed

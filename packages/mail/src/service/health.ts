@@ -295,6 +295,16 @@ export const listMailboxSyncRuns = async (params: {
   const cursor = decodeSyncRunCursor(params.cursor);
   if (!cursor.ok) return cursor;
   const limit = Math.min(Math.max(Math.floor(params.limit ?? 50), 1), 100);
+  // Completed runs fill a page within minutes of history. Every other state is rare and is read
+  // through sync_runs_resource_not_completed_idx, whose predicate the literal comparison proves.
+  const stateFilter = !params.state
+    ? sql``
+    : params.state === "completed"
+      ? sql`AND run.state = 'completed'`
+      : sql`AND run.state <> 'completed' AND run.state = ${params.state}`;
+  const cursorFilter = cursor.data
+    ? sql`AND (run.started_at, run.id) < (${cursor.data.startedAt}::timestamptz, ${cursor.data.id}::uuid)`
+    : sql``;
   try {
     const rows = await sql<
       {
@@ -320,11 +330,8 @@ export const listMailboxSyncRuns = async (params: {
       FROM mail.sync_runs run
       -- One remote resource per mailbox; comparing its id lets the newest-first index order the page.
       WHERE run.remote_resource_id = (SELECT id FROM mail.remote_resources WHERE mailbox_id = ${params.mailboxId}::uuid)
-        AND (${params.state ?? null}::text IS NULL OR run.state = ${params.state ?? null}::text)
-        AND (
-          ${cursor.data?.startedAt ?? null}::timestamptz IS NULL
-          OR (run.started_at, run.id) < (${cursor.data?.startedAt ?? null}::timestamptz, ${cursor.data?.id ?? null}::uuid)
-        )
+        ${stateFilter}
+        ${cursorFilter}
       ORDER BY run.started_at DESC, run.id DESC
       LIMIT ${limit + 1}
     `;
