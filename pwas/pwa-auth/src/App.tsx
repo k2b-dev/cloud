@@ -1,7 +1,7 @@
 import { Button, Dropdown, type DropdownItem, LocaleProvider, MobileShell, Placeholder, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { consumePairingLocation, createAuthenticator } from "./authenticator";
-import { Clouds, openManageAccounts } from "./Clouds";
+import { type ActionFocus, Clouds, openManageAccounts } from "./Clouds";
 import { openDialog } from "./dialog";
 import { openInstallDialog } from "./InstallDialog";
 import { authMessages } from "./i18n";
@@ -22,8 +22,10 @@ export function App(props: { preferences: Preferences }) {
   const vault = createVault();
   const auth = createAuthenticator(vault);
   const push = createPush(installation);
-  // A tapped notification names the sign-in request to show first.
+  // A tapped notification names the request to show first.
+  const [setupFailed, setSetupFailed] = createSignal(false);
   const [focusRequest, setFocusRequest] = createSignal<string>();
+  const [focusAction, setFocusAction] = createSignal<ActionFocus>();
   createEffect(() => rememberLocale(props.preferences.locale()));
   // Each paired Cloud learns this phone's push token over its signed device channel.
   createEffect(() => {
@@ -35,7 +37,6 @@ export function App(props: { preferences: Preferences }) {
   const showUnlock = async () => {
     if (
       vault.status() !== "locked" ||
-      !vault.protectedByPin() ||
       document.visibilityState !== "visible" ||
       unlockOpen ||
       pairingOpen ||
@@ -56,9 +57,15 @@ export function App(props: { preferences: Preferences }) {
     try {
       if (vault.status() === "loading" || vault.status() === "legacy" || vault.status() === "error" || vault.status() === "unsupported")
         return;
-      if (vault.status() !== "open") {
-        if (!(await openSecurity(vault, props.preferences, vault.status() === "empty" ? "setup" : "unlock"))) return;
-      }
+      if (vault.status() === "empty") {
+        setSetupFailed(false);
+        try {
+          await vault.setup();
+        } catch {
+          setSetupFailed(true);
+          return;
+        }
+      } else if (vault.status() !== "open" && !(await openSecurity(vault, props.preferences, "unlock"))) return;
       if (vault.status() !== "open") return;
       await openDialog(
         (close) => (
@@ -98,9 +105,12 @@ export function App(props: { preferences: Preferences }) {
     }
   });
   onMount(() => {
-    const requested = new URLSearchParams(location.search).get("request");
-    if (requested) {
-      setFocusRequest(requested);
+    const query = new URLSearchParams(location.search);
+    const requested = query.get("request");
+    const action = query.get("action");
+    if (requested || action) {
+      if (action) setFocusAction({ actionId: action, cloud: query.get("cloud") ?? undefined });
+      else if (requested) setFocusRequest(requested);
       history.replaceState(history.state, "", location.pathname + location.hash);
     }
     const opened = (event: MessageEvent) => {
@@ -112,8 +122,11 @@ export function App(props: { preferences: Preferences }) {
         data.type === OPEN_REQUEST_MESSAGE &&
         "ref" in data &&
         typeof data.ref === "string"
-      )
-        setFocusRequest(data.ref);
+      ) {
+        if ("kind" in data && data.kind === "action")
+          setFocusAction({ actionId: data.ref, cloud: "cloud" in data && typeof data.cloud === "string" ? data.cloud : undefined });
+        else setFocusRequest(data.ref);
+      }
     };
     navigator.serviceWorker?.addEventListener("message", opened);
     onCleanup(() => navigator.serviceWorker?.removeEventListener("message", opened));
@@ -169,23 +182,6 @@ export function App(props: { preferences: Preferences }) {
         },
       ],
     },
-    ...(vault.status() === "open"
-      ? [
-          {
-            sectionLabel: t().securitySection,
-            items: [
-              {
-                label: t().security,
-                icon: "ti ti-shield-lock",
-                action: () => {
-                  void openSecurity(vault, props.preferences, "manage");
-                },
-              },
-              ...(vault.protectedByPin() ? [{ label: t().lockApp, icon: "ti ti-lock", action: () => vault.lock() }] : []),
-            ],
-          },
-        ]
-      : []),
     ...(["locked", "legacy", "unsupported", "error"].includes(vault.status())
       ? [
           {
@@ -242,7 +238,7 @@ export function App(props: { preferences: Preferences }) {
         </Show>
       }
     >
-      <Show when={auth.storageError()}>
+      <Show when={auth.storageError() || setupFailed()}>
         <p role="alert">{t().storage}</p>
       </Show>
       <Show when={!auth.online()}>
@@ -293,7 +289,14 @@ export function App(props: { preferences: Preferences }) {
             </section>
           }
         >
-          <Clouds auth={auth} preferences={props.preferences} focus={focusRequest} focused={() => setFocusRequest(undefined)} />
+          <Clouds
+            auth={auth}
+            preferences={props.preferences}
+            focus={focusRequest}
+            focused={() => setFocusRequest(undefined)}
+            focusAction={focusAction}
+            actionFocused={() => setFocusAction(undefined)}
+          />
         </Show>
       </Show>
     </MobileShell>

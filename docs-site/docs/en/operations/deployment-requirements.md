@@ -636,6 +636,34 @@ Try to approve a `confirm` request through a client that sends
 `x-cloud-client: acp`. It must return `403` and leave the request open.
 Approve it in Cloud and check the decision in the audit log.
 
+### Approve Actions in Cloud Login
+
+Deploy the updated platform package and Core together. On start, Core adds
+`cloud_login` to the `decided_via` constraint of `approvals.requests` and adds
+two nullable timestamps, `actions_at` and `action_wake_at`, to
+`auth.app_devices`. These migrations are idempotent. No configuration change
+is required.
+
+Update the Cloud Login image too. A newer Cloud still works with an older
+Cloud Login server: that server answers Action wake-ups with `400`, which
+Cloud ignores. Existing paired phones keep signing in. They show Actions
+after the authenticator app updates, without pairing again.
+
+The updated Cloud Login app no longer uses an app PIN. On a phone that still
+has one, the app asks for it one last time and then opens without it. Its
+connected Clouds stay paired. If someone forgot the PIN, **Reset Cloud Login**
+works as before; they then revoke the old device in Cloud and pair again. Tell
+users that the phone's own screen lock now protects their approvals.
+
+After the rollout, ask for an Action through `cld` or an editor bridge. Check
+that a paired phone shows the request and that its decision continues the
+waiting chat. See [Approve an Action](./app-approval.md#approve-an-action)
+for the signed protocol and push rules.
+
+Rolling back leaves the widened constraint and new columns in place. Older
+Core ignores the columns and keeps the widened constraint. Existing sign-in
+commands and pairing keys remain valid.
+
 ### Update browser notifications for grouping and badges
 
 Deploy the updated platform package and Core together to enable

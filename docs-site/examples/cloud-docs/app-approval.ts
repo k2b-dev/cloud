@@ -1,4 +1,5 @@
 import { type AppApprovalDevice, appApproval } from "@k2b/cloud/browser/app-approval";
+import type { AppActionView } from "@k2b/cloud/contracts";
 
 /** Call only after showing the parsed issuer and obtaining consent. */
 export const connectTrustedPairing = async (link: string, authenticatorOrigin: string, signal?: AbortSignal) => {
@@ -36,3 +37,27 @@ export const createProtectedPairing = async (link: string, pin: string) => {
     throw error;
   }
 };
+
+/** Discovery gates the additive commands; older Clouds keep serving pending sign-ins. */
+export const readDeviceInbox = (
+  client: Awaited<ReturnType<typeof appApproval.connect>>,
+  device: AppApprovalDevice,
+  signal?: AbortSignal,
+) => (client.actions ? client.inbox(device, signal) : client.pending(device, signal));
+
+/** Load before presenting the choice: action() refuses a view whose digest does not match. */
+export const readAction = (
+  client: Awaited<ReturnType<typeof appApproval.connect>>,
+  device: AppApprovalDevice,
+  actionId: string,
+  signal?: AbortSignal,
+) => client.action(device, actionId, signal);
+
+/** Call only after the person chooses; act() signs the digest of this exact view. */
+export const decideAction = (
+  client: Awaited<ReturnType<typeof appApproval.connect>>,
+  device: AppApprovalDevice,
+  view: AppActionView,
+  decision: "approve" | "deny",
+  signal?: AbortSignal,
+) => client.act(device, view, decision, signal);

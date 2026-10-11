@@ -31,6 +31,10 @@ const auth: Authenticator = {
   account: async () => {
     throw new Error("No account in this test");
   },
+  action: async () => {
+    throw new Error("No action in this test");
+  },
+  act: noop,
   decide: noop,
   revoke: noop,
   syncPush: noop,

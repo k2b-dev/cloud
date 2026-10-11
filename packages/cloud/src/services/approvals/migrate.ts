@@ -20,7 +20,7 @@ export const migrateApprovals = async (): Promise<void> => {
       args_digest TEXT NOT NULL,
       review_digest TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected','expired','cancelled','consumed')),
-      decided_via TEXT CHECK (decided_via IS NULL OR decided_via IN ('web_session','app_session','oauth','api_key','invocation','acp_bridge')),
+      decided_via TEXT CHECK (decided_via IS NULL OR decided_via IN ('web_session','app_session','oauth','api_key','invocation','acp_bridge','cloud_login')),
       decided_at TIMESTAMPTZ,
       consumed_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -30,10 +30,10 @@ export const migrateApprovals = async (): Promise<void> => {
   `.simple();
   await sql`DO $$ BEGIN
     IF EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='approvals.requests'::regclass
-      AND conname='requests_decided_via_check' AND position('acp_bridge' in pg_get_constraintdef(oid))=0) THEN
+      AND conname='requests_decided_via_check' AND position('cloud_login' in pg_get_constraintdef(oid))=0) THEN
       ALTER TABLE approvals.requests DROP CONSTRAINT requests_decided_via_check;
       ALTER TABLE approvals.requests ADD CONSTRAINT requests_decided_via_check
-        CHECK (decided_via IS NULL OR decided_via IN ('web_session','app_session','oauth','api_key','invocation','acp_bridge'));
+        CHECK (decided_via IS NULL OR decided_via IN ('web_session','app_session','oauth','api_key','invocation','acp_bridge','cloud_login'));
     END IF;
   END $$`.simple();
   await sql`CREATE INDEX IF NOT EXISTS approvals_requests_pending ON approvals.requests(approver_user_id, created_at) WHERE status='pending'`.simple();

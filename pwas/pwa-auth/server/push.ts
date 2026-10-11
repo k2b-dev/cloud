@@ -14,6 +14,8 @@ export const PUSH_LIMITS = {
   windowSeconds: 300,
   /** Five pending sign-ins per account and Cloud, for six accounts on one phone. */
   notificationsPerToken: 30,
+  /** A separate budget equal to sign-ins, so Actions can never use up sign-in wake-ups. */
+  actionNotificationsPerToken: 30,
   /** About ten wake-ups per second from one Cloud or NAT address. */
   requestsPerCaller: 3_000,
   subscriptionsPerCaller: 30,
@@ -35,13 +37,18 @@ export const CloudOriginSchema = z
     }
   }, "must be an http(s) origin");
 export const NotifySchema = z
-  .object({ token: PushTokenSchema, cloudOrigin: CloudOriginSchema, requestRef: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/) })
+  .object({
+    token: PushTokenSchema,
+    cloudOrigin: CloudOriginSchema,
+    requestRef: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
+    kind: z.enum(["login", "action"]).optional(),
+  })
   .strict();
 export const TestSchema = z.object({ token: PushTokenSchema }).strict();
 export const SubscriptionSchema = BrowserPushSubscriptionSchema.strict();
 
 /** The encrypted message the service worker receives. It is a wake-up, never an instruction. */
-export type PushMessage = { v: 1; type: "login"; cloud: string; ref: string } | { v: 1; type: "test" };
+export type PushMessage = { v: 1; type: "login" | "action"; cloud: string; ref: string } | { v: 1; type: "test" };
 type Delivery = { subscriptionId: string; message: PushMessage };
 type Row = { id: string; endpoint: string; p256dh: string; auth: string; expires_at: Date | null };
 export type Vapid = { subject: string; publicKey: string; privateKey: string };
@@ -126,12 +133,15 @@ export const createPushService = (options: {
   const enqueue = async (token: string, message: PushMessage): Promise<"queued" | "gone" | RateLimited> => {
     const row = await find(token);
     if (!row) return "gone";
-    const limited = await hit(`token:${row.id}`, limits.notificationsPerToken);
+    const limited =
+      message.type === "action"
+        ? await hit(`action:${row.id}`, limits.actionNotificationsPerToken)
+        : await hit(`token:${row.id}`, limits.notificationsPerToken);
     if (limited) return limited;
     await queue.send({
       data: { subscriptionId: row.id, message },
-      // The same sign-in request wakes a phone once, however often a Cloud retries.
-      idempotencyKey: message.type === "login" ? hash(JSON.stringify([row.id, message.cloud, message.ref])) : undefined,
+      // One wake-up per kind and request, however often a Cloud retries.
+      idempotencyKey: message.type !== "test" ? hash(JSON.stringify([row.id, message.type, message.cloud, message.ref])) : undefined,
       ttlMs: limits.windowSeconds * 1000,
     });
     return "queued";
@@ -141,7 +151,7 @@ export const createPushService = (options: {
     if (Date.now() - publishedAt.getTime() > limits.windowSeconds * 1000) return;
     const [row] = await db<Row[]>`SELECT * FROM cloud_login.push_subscriptions WHERE id = ${data.subscriptionId}::uuid`;
     if (!row) return;
-    const cloud = data.message.type === "login" ? data.message.cloud : "test";
+    const cloud = data.message.type === "test" ? "test" : `${data.message.type === "action" ? "action:" : ""}${data.message.cloud}`;
     try {
       await send(
         { endpoint: row.endpoint, expirationTime: null, keys: { p256dh: row.p256dh, auth: row.auth } },
@@ -149,7 +159,7 @@ export const createPushService = (options: {
         {
           TTL: limits.windowSeconds,
           urgency: "high",
-          // A newer wake-up for the same Cloud replaces an undelivered older one.
+          // Sign-ins and Actions replace only older wake-ups of their own kind.
           topic: createHash("sha256").update(cloud).digest("base64url").slice(0, 32),
           vapidDetails: options.vapid,
         },
@@ -189,7 +199,7 @@ export const createPushService = (options: {
       await db`DELETE FROM cloud_login.push_subscriptions WHERE token_hash = ${hash(token)}`;
     },
     notify: (input: z.infer<typeof NotifySchema>) =>
-      enqueue(input.token, { v: 1, type: "login", cloud: input.cloudOrigin, ref: input.requestRef }),
+      enqueue(input.token, { v: 1, type: input.kind ?? "login", cloud: input.cloudOrigin, ref: input.requestRef }),
     test: (token: string) => enqueue(token, { v: 1, type: "test" }),
     deliver,
     /** Bounded maintenance: expired windows only, a batch at a time. */

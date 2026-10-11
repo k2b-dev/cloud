@@ -161,8 +161,10 @@ and `accountCategoryLabel`. See
 
 The contracts barrel also exports the versioned app-approval input schemas,
 signing-message helpers and protocol limits for independent authenticator
-clients. `appApproval` in the services barrel is a Core-owned maintainer service,
-not general application authentication. Use the
+clients. Action approval schemas, `APP_ACTION_LIMITS`, and the Action digest
+helpers support the signed `inbox`, `action`, and `act` commands.
+`appApproval` in the services barrel is a Core-owned maintainer service, not
+general application authentication. Use the
 [app approval HTTP contract](/en/docs/operations/app-approval) for external clients.
 
 ## Share types with the browser

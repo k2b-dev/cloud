@@ -11,7 +11,10 @@ export type PendingApprovalRow = {
   id: string;
   appId: string;
   action: string;
+  argsDigest: string;
   requesterAppId: string;
+  /** The chat title when Cloud asked; unlike `conversationTitle`, a later rename does not change it. */
+  requesterTitle: string | null;
   assurance: ApprovalAssurance;
   sentence: string;
   details: unknown;
@@ -28,8 +31,9 @@ export type PendingApprovalRow = {
 };
 
 // Start with this person's indexed pending rows; a Studio page alone cannot continue a chat.
-const openRequests = (approverUserId: string) => sql`SELECT r.* FROM approvals.requests r
+const openRequests = (approverUserId: string, id?: string) => sql`SELECT r.* FROM approvals.requests r
   WHERE r.approver_user_id=${approverUserId}::uuid AND r.status='pending' AND r.expires_at > now()
+    AND (${id ?? null}::uuid IS NULL OR r.id=${id ?? null}::uuid)
     AND EXISTS (SELECT 1 FROM ai.pending_actions p WHERE p.approval_id=r.id AND p.status='pending')`;
 const matches = (appId?: string, link?: string) => sql`
   (${appId ?? null}::text IS NULL OR r.app_id=${appId ?? null} OR r.requester_app_id=${appId ?? null})
@@ -37,6 +41,7 @@ const matches = (appId?: string, link?: string) => sql`
 
 export const listPending = async (input: {
   approverUserId: string;
+  id?: string;
   appId?: string;
   link?: string;
   cursor?: string;
@@ -46,11 +51,11 @@ export const listPending = async (input: {
   if (!Number.isInteger(limit) || limit < 1 || limit > APPROVALS_PAGE_SIZE) throw new RangeError("Invalid approval page size.");
   const cursor = input.cursor ? decodeApprovalCursor(input.cursor) : null;
   if (input.cursor && !cursor) throw new RangeError("Invalid approval cursor.");
-  const [counts] = await sql<{ count: number; elsewhere: number }[]>`WITH open AS (${openRequests(input.approverUserId)})
+  const [counts] = await sql<{ count: number; elsewhere: number }[]>`WITH open AS (${openRequests(input.approverUserId, input.id)})
     SELECT count(*) FILTER (WHERE ${matches(input.appId, input.link)})::int AS count,
       count(*) FILTER (WHERE NOT (${matches(input.appId, input.link)}))::int AS elsewhere FROM open r`;
-  const rows = await sql<PendingApprovalRow[]>`WITH open AS (${openRequests(input.approverUserId)})
-    SELECT r.id, r.app_id AS "appId", r.action, r.requester_app_id AS "requesterAppId", r.assurance, r.sentence, r.details,
+  const rows = await sql<PendingApprovalRow[]>`WITH open AS (${openRequests(input.approverUserId, input.id)})
+    SELECT r.id, r.app_id AS "appId", r.action, r.requester_app_id AS "requesterAppId", r.requester_title AS "requesterTitle", r.assurance, r.sentence, r.details, r.args_digest AS "argsDigest",
       r.created_at AS "createdAt", r.expires_at AS "expiresAt",
       to_char(r.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "cursorCreatedAt",
       question.short_id AS "conversationShortId", question.title AS "conversationTitle",
