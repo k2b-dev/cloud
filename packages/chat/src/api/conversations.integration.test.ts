@@ -232,6 +232,80 @@ suite("chat conversations and direct members", () => {
     expect(archived).toMatchObject({ outcome: "existing", matches: [{ id: duplicate.id, archived: true }] });
   });
 
+  test("a deleted account cannot hide an existing chat from the duplicate check", async () => {
+    const owner = await user();
+    const b = await user();
+    const c = await user();
+    const headers = await cookie(owner);
+    const chat = await create(headers, [b, c]);
+    await sql`DELETE FROM auth.users WHERE id = ${c}::uuid`;
+    const response = await request(headers, "", "POST", { members: [b] });
+    const result = CreateOutcomeSchema.parse(await response.json());
+    if (result.outcome === "created") conversations.push(result.conversation.id);
+    expect(response.status).toBe(200);
+    if (result.outcome !== "existing") throw new Error("Expected the existing chat after account deletion");
+    expect(result.matches.map((match) => match.id)).toEqual([chat.id]);
+  });
+
+  test("parallel creates with the same people make one chat", async () => {
+    const owner = await user();
+    const other = await user();
+    const headers = await cookie(owner);
+    const blocker = await sql.reserve();
+    const pending: Promise<{ status: number; result: ReturnType<typeof CreateOutcomeSchema.parse> }>[] = [];
+    try {
+      await blocker`BEGIN`;
+      await blocker`SELECT id FROM auth.users WHERE id = ${owner}::uuid FOR UPDATE`;
+      const [connection] = await blocker<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+      if (!connection) throw new Error("Expected the blocker backend");
+      for (let i = 0; i < 4; i++)
+        pending.push(
+          Promise.resolve(request(headers, "", "POST", { members: [other] })).then(async (response) => {
+            const result = CreateOutcomeSchema.parse(await response.json());
+            if (result.outcome === "created") conversations.push(result.conversation.id);
+            return { status: response.status, result };
+          }),
+        );
+      const deadline = Date.now() + 5_000;
+      while (true) {
+        const [waiting] = await sql<{ count: number }[]>`SELECT COUNT(*)::int AS count FROM pg_stat_activity
+          WHERE wait_event_type = 'Lock' AND query LIKE '%auth.users%'
+            AND ${connection.pid} = ANY(pg_blocking_pids(pid))`;
+        if (waiting && waiting.count >= 4) break;
+        if (Date.now() >= deadline) throw new Error("Timed out waiting for all four chat creates to block on the owner row");
+        await Bun.sleep(25);
+      }
+      await blocker`COMMIT`;
+      const responses = await Promise.all(pending);
+      const created = responses.filter((response) => response.result.outcome === "created");
+      expect(created).toHaveLength(1);
+      const first = created[0];
+      if (!first || first.result.outcome !== "created") throw new Error("Expected exactly one new chat");
+      expect(first.status).toBe(201);
+      const existing = responses.filter((response) => response.result.outcome === "existing");
+      expect(existing).toHaveLength(3);
+      for (const response of existing) {
+        expect(response.status).toBe(200);
+        if (response.result.outcome !== "existing") throw new Error("Expected the existing chat");
+        expect(response.result.matches.map((match) => match.id)).toEqual([first.result.conversation.id]);
+      }
+      const rows = await sql<{ short_id: string; members: string[] }[]>`SELECT c.short_id,
+        array_agg(a.user_id::text ORDER BY a.user_id) AS members
+        FROM chat.conversations c JOIN chat.conversation_access ca ON ca.conversation_id = c.id
+        JOIN auth.access a ON a.id = ca.access_id
+        WHERE c.created_by_type = 'user' AND c.created_by_id = ${owner}::uuid AND ca.role = 'member'
+        GROUP BY c.id`;
+      expect(rows).toEqual([{ short_id: first.result.conversation.id, members: [owner, other].sort() }]);
+    } finally {
+      try {
+        await blocker`ROLLBACK`;
+      } finally {
+        blocker.release();
+        await Promise.allSettled(pending);
+      }
+    }
+  });
+
   test("keeps the last manager and transfers management atomically on leave", async () => {
     const owner = await user();
     const other = await user();

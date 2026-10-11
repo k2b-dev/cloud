@@ -210,14 +210,16 @@ const create = async (input: ChatContext & { input: unknown }): Promise<Result<C
       if (caller.profile === "guest" && members.length) return fail(err.badInput(t.guestCreate));
       const valid = await validateMembers(members, input, db);
       if (!valid.ok) return valid;
+      // One lock per member set: a waiting create sees the committed chat, so only allowDuplicate adds another.
+      // A hash collision only serializes two unrelated creations.
+      await db`SELECT pg_advisory_xact_lock(hashtextextended(${"chat.conversation.create:" + [...new Set(allIds)].sort().join(",")}, 0))`;
       if (!data.allowDuplicate) {
         const matches = await db<(ConversationRow & { archived: boolean })[]>`
         SELECT c.*, EXISTS(SELECT 1 FROM chat.participants p WHERE p.conversation_id = c.id AND p.principal_type = 'user'
           AND p.principal_id = ${callerId}::uuid AND p.archived_at IS NOT NULL) AS archived
         FROM chat.conversations c
-        WHERE c.member_count = ${allIds.length}
-          AND EXISTS(SELECT 1 FROM chat.conversation_access ca JOIN auth.access a ON a.id = ca.access_id
-            WHERE ca.conversation_id = c.id AND ca.role = 'member' AND a.user_id = ${callerId}::uuid AND a.permission IN ('read', 'write', 'admin'))
+        WHERE c.id IN (SELECT ca.conversation_id FROM chat.conversation_access ca JOIN auth.access a ON a.id = ca.access_id
+            WHERE ca.role = 'member' AND a.user_id = ${callerId}::uuid AND a.permission IN ('read', 'write', 'admin'))
           AND NOT EXISTS(SELECT 1 FROM chat.conversation_access ca WHERE ca.conversation_id = c.id AND ca.role = 'discoverable')
           AND (SELECT COUNT(*) FROM chat.conversation_access ca JOIN auth.access a ON a.id = ca.access_id
             WHERE ca.conversation_id = c.id AND ca.role = 'member' AND (a.user_id IS NOT NULL OR a.service_account_id IS NOT NULL)) = ${allIds.length}
