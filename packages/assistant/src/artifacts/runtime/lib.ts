@@ -8,7 +8,8 @@ import {
   cloudAiAppChartSchema,
   cloudAiChartRenderOptions,
 } from "@k2b/cloud/ai/browser";
-import { charts, money } from "@k2b/stdlib";
+// Named renderers, not the `charts` namespace, so app frames leave out the map and state timeline renderers.
+import { bar, barGauge, boxplot, donut, gauge, heatmap, histogram, line, money, pie, scatter, sparkline, stat } from "@k2b/stdlib";
 import { CloudError } from "./errors";
 import { normalizeChartDates } from "./views";
 
@@ -71,40 +72,40 @@ export function chartSvg(options: StoredChart, locale: string, width: number, he
     let svg: string;
     switch (mapped.kind) {
       case "bar":
-        svg = charts.bar({ ...mapped, ...common });
+        svg = bar({ ...mapped, ...common });
         break;
       case "line":
-        svg = charts.line({ ...mapped, ...common });
+        svg = line({ ...mapped, ...common });
         break;
       case "scatter":
-        svg = charts.scatter({ ...mapped, ...common });
+        svg = scatter({ ...mapped, ...common });
         break;
       case "histogram":
-        svg = charts.histogram({ ...mapped, ...common });
+        svg = histogram({ ...mapped, ...common });
         break;
       case "boxplot":
-        svg = charts.boxplot({ ...mapped, ...common });
+        svg = boxplot({ ...mapped, ...common });
         break;
       case "pie":
-        svg = charts.pie({ ...mapped, ...common });
+        svg = pie({ ...mapped, ...common });
         break;
       case "donut":
-        svg = charts.donut({ ...mapped, ...common });
+        svg = donut({ ...mapped, ...common });
         break;
       case "gauge":
-        svg = charts.gauge({ ...mapped, ...common });
+        svg = gauge({ ...mapped, ...common });
         break;
       case "barGauge":
-        svg = charts.barGauge({ ...mapped, ...common });
+        svg = barGauge({ ...mapped, ...common });
         break;
       case "stat":
-        svg = charts.stat({ ...mapped, ...common, label: options.title ?? "" });
+        svg = stat({ ...mapped, ...common, label: options.title ?? "" });
         break;
       case "heatmap":
-        svg = charts.heatmap({ ...mapped, ...common });
+        svg = heatmap({ ...mapped, ...common });
         break;
       case "sparkline":
-        svg = charts.sparkline({ ...mapped, ...common });
+        svg = sparkline({ ...mapped, ...common });
         break;
     }
     // stdlib embeds an unlayered <style> with fixed colors; the base stylesheet owns those rules instead.

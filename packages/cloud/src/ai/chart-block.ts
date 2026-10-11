@@ -1,4 +1,26 @@
-import { autoBin, type ChartDatum, charts, computeDomain, extendDomainToNice, i18n, niceLogTicks, niceStep } from "@k2b/stdlib";
+// Named renderers, not the `charts` namespace, so bundles leave out the map and state timeline renderers.
+import {
+  autoBin,
+  bar,
+  barGauge,
+  boxplot,
+  type ChartDatum,
+  type charts,
+  computeDomain,
+  donut,
+  extendDomainToNice,
+  gauge,
+  heatmap,
+  histogram,
+  i18n,
+  line,
+  niceLogTicks,
+  niceStep,
+  pie,
+  scatter,
+  sparkline,
+  stat,
+} from "@k2b/stdlib";
 import { z } from "zod";
 import type { CloudAiChartInput, CloudAiFormat, CloudAiNumberFormat } from "./default-tool-contracts";
 
@@ -456,29 +478,29 @@ const draw = (options: RenderOptions): string => {
   const common = { width: WIDTH, height: HEIGHT, inspect: true };
   switch (options.kind) {
     case "bar":
-      return charts.bar({ ...options, ...common });
+      return bar({ ...options, ...common });
     case "line":
-      return charts.line({ ...options, ...common });
+      return line({ ...options, ...common });
     case "scatter":
-      return charts.scatter({ ...options, ...common });
+      return scatter({ ...options, ...common });
     case "pie":
-      return charts.pie({ ...options, ...common });
+      return pie({ ...options, ...common });
     case "donut":
-      return charts.donut({ ...options, ...common });
+      return donut({ ...options, ...common });
     case "histogram":
-      return charts.histogram({ ...options, ...common });
+      return histogram({ ...options, ...common });
     case "boxplot":
-      return charts.boxplot({ ...options, ...common });
+      return boxplot({ ...options, ...common });
     case "gauge":
-      return charts.gauge({ ...options, ...common });
+      return gauge({ ...options, ...common });
     case "barGauge":
-      return charts.barGauge({ ...options, ...common });
+      return barGauge({ ...options, ...common });
     case "stat":
-      return charts.stat({ ...options, ...common });
+      return stat({ ...options, ...common });
     case "heatmap":
-      return charts.heatmap({ ...options, ...common });
+      return heatmap({ ...options, ...common });
     case "sparkline":
-      return charts.sparkline({ ...options, ...common });
+      return sparkline({ ...options, ...common });
   }
 };
 const datumSchema = () =>

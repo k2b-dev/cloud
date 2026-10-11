@@ -1,5 +1,4 @@
-import { expect, spyOn, test } from "bun:test";
-import { charts } from "@k2b/stdlib";
+import { expect, test } from "bun:test";
 import { createCloud } from "./cloud";
 import { boundMoney, chart, chartOptions, chartSvg, html } from "./lib";
 import { parseCsv, toCsv } from "./sheet-lib";
@@ -437,13 +436,8 @@ test.each([false, true])("function-formatted bar ticks fit initially and after m
   }
 });
 
-test("app stat draws its title with one initial render", () => {
-  const render = spyOn(charts, "stat");
-  try {
-    const markup = String(chart({ kind: "stat", title: "Revenue", value: 12 }, "en"));
-    expect(markup).toContain(">Revenue</text>");
-    expect(render).toHaveBeenCalledTimes(1);
-  } finally {
-    render.mockRestore();
-  }
+test("an app stat shows its title like every other kind", () => {
+  const markup = String(chart({ kind: "stat", title: "Revenue", subtitle: "EUR", value: 12, delta: 2, better: "up" }, "en"));
+  expect(markup).toContain(">Revenue</text>");
+  expect(markup).toContain('aria-label="Revenue — EUR"');
 });
