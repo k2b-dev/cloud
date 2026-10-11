@@ -22,6 +22,7 @@ import { extractAttachmentIds } from "../../../lib/editor/attachment-url";
 import { fadeScrollMarginsExtension, fadeScrollPadding } from "../../../lib/editor/fade-scroll-margins";
 import { queryBlockMessages } from "../../../lib/editor/query-block-messages";
 import { createQueryBlockPreviews } from "../../../lib/editor/query-blocks";
+import { remoteCaretLabels } from "../../../lib/editor/remote-caret-labels";
 import { pressMissedEditor } from "../../../lib/editor/surface-press";
 import { consumeInitialTitleSelection, handleSoftNoteNavigationRequests, type SoftNavigationResult } from "../../../lib/soft-navigation";
 import { getNotebookPresenceColor, yjs } from "../../../lib/yjs";
@@ -371,6 +372,7 @@ function EditorInstance(props: EditorInstanceProps & { linkedHeading: Accessor<L
   const undoManager = props.readOnly ? null : new Y.UndoManager(ytext);
   if (!props.readOnly && undoManager) {
     addExtension(() => yCollab(ytext, awareness, { undoManager }));
+    addExtension(() => remoteCaretLabels(ytext, awareness));
     addExtension(() => keymap.of(yUndoManagerKeymap));
   }
 
