@@ -3,6 +3,7 @@ id: mail-compose
 title: Write and send messages
 icon: ti ti-pencil
 description: Compose, recover drafts, use templates, attach files, and control delivery.
+updated: 2026-10-11
 order: 30
 ---
 
@@ -21,6 +22,8 @@ Choose **Write with AI** to save the current Mail draft and open it in a new Ass
 For recipients without doubt, Mail can also attach the matching contacts that you can read in the contact directory, which is Contacts by default. A missing or unavailable contact directory does not block the chat.
 
 The Assistant chat does not copy the message into a separate Mail draft and does not gain additional mailbox access. Mail checks your current access each time Assistant reads or changes the draft. Assistant shows updating or sending mail as an Action review. Sending still requires your explicit approval and the normal final check of Mail. To review the current composer state directly, return to Mail through the draft link.
+
+When the Assistant asks to send this draft, a band above the draft shows the waiting request. Review the request there. You can approve or reject it without returning to the chat.
 
 ## Use Cloud Mail for email links {icon="link"}
 

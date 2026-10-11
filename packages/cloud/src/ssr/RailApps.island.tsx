@@ -10,7 +10,7 @@ import { projectRailNavigation, type RailApp, type RailLink, railLinkActive } fr
 function RailIcon(props: { link: RailLink; currentPath: string }) {
   let target: HTMLAnchorElement | undefined;
   const active = () => railLinkActive(props.link, props.currentPath);
-  const badge = useAppBadgeDescription(() => props.link.badge);
+  const badge = useAppBadgeDescription(() => ({ endpoint: props.link.badge, appId: props.link.appId }));
   return (
     <>
       <a
@@ -23,7 +23,7 @@ function RailIcon(props: { link: RailLink; currentPath: string }) {
       >
         <i class={`${props.link.iconClass} text-base`} aria-hidden="true" />
         <span class="sr-only">{props.link.label}</span>
-        <AppBadge endpoint={props.link.badge} />
+        <AppBadge endpoint={props.link.badge} appId={props.link.appId} />
       </a>
       <Tooltip target={() => target} content={props.link.label} placement="right" delay={0} />
     </>

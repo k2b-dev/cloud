@@ -465,6 +465,14 @@ again by the owning app.
 
 ## Handle approval in the UI
 
+The Assistant's **Approvals** row above **Studio** opens a view of waiting
+requests. **My account → Approvals** lists requests across apps.
+A **Pending approvals** notification opens that list for requests from turns
+started outside a signed-in browser session.
+An ACP editor bridge can reject `confirm` requests but cannot approve them.
+See [Action approvals](/en/docs/identity/approvals) for the lists, notification
+rules, and decision channels.
+
 The stream exposes pending actions. The shared controller provides:
 
 - `respondToApproval({ turnId, callId }, { approved, remember })`;

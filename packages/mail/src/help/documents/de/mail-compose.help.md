@@ -3,6 +3,7 @@ id: mail-compose
 title: E-Mails verfassen und senden
 icon: ti ti-pencil
 description: Nachrichten verfassen, Entwürfe wiederherstellen, Vorlagen nutzen, Dateien anhängen und die Zustellung steuern.
+updated: 2026-10-11
 order: 30
 ---
 
@@ -21,6 +22,8 @@ Wähle **Mit KI schreiben**, um den aktuellen Mail-Entwurf zu speichern und in e
 Für eindeutige Empfänger kann Mail auch die passenden Kontakte anhängen, die du im Kontaktverzeichnis lesen kannst. Standardmäßig ist das Contacts. Ein fehlendes oder nicht verfügbares Kontaktverzeichnis blockiert den Chat nicht.
 
 Der Assistant-Chat kopiert die Nachricht nicht in einen separaten Mail-Entwurf und erhält keinen zusätzlichen Zugriff auf das Postfach. Mail prüft deinen aktuellen Zugriff jedes Mal, wenn Assistant den Entwurf liest oder ändert. Assistant zeigt das Ändern oder Senden von E-Mails als Aktionsprüfung. Das Senden braucht weiterhin deine ausdrückliche Zustimmung und die normale letzte Prüfung von Mail. Um den aktuellen Stand im Editor direkt zu prüfen, kehre über den Entwurfslink zu Mail zurück.
+
+Wenn der Assistent diesen Entwurf senden möchte, zeigt eine Leiste über dem Entwurf die wartende Anfrage. Prüfe die Anfrage dort. Du kannst sie freigeben oder ablehnen, ohne zum Chat zurückzukehren.
 
 ## Cloud Mail für E-Mail-Links verwenden {icon="link"}
 

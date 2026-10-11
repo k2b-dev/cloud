@@ -25,6 +25,7 @@ import { resolveHomePath } from "./home";
 import { makeLegalPage } from "./legal/page-handler";
 import accessPage from "./me/access.page";
 import appPage from "./me/app.page";
+import approvalsPage from "./me/approvals.page";
 import developerPage from "./me/developer.page";
 import notificationHistoryPage from "./me/notification-history.page";
 import notificationsPage from "./me/notifications.page";
@@ -80,6 +81,7 @@ export const createPagesRouter = (options?: { brandingPublicDir?: string }): Hon
       auth.requireUser(ssr.access),
       ...notificationHistoryPage,
     )
+    .get("/me/approvals", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...approvalsPage)
     .get("/me/developer", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...developerPage)
     .get("/me/app", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...appPage)
     // Admin pages (admin only)

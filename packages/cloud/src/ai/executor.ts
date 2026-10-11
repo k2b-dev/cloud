@@ -271,6 +271,7 @@ export type ExecutorConfig = {
   validateTurn?: typeof validateAiTurnRequest;
   /** Runs after the durable turn state and final wire event are flushed. */
   onTurnFinalized?: (event: AiTurnFinalizedEvent) => Promise<void>;
+  onApprovalRequested?: (event: { approvalId: string }) => Promise<void>;
   /** Waits before retrying a transient provider failure without Retry-After; tests shorten them. */
   providerRetryDelaysMs?: readonly number[];
 };
@@ -1810,6 +1811,16 @@ export class AiTurnExecutor {
       waitingBudgetMs: AI_ACTION_BUDGET_MS,
     });
     await pipeline.flush().catch(() => undefined);
+    if (suspended && approvalId && this.config.onApprovalRequested) {
+      await this.config.onApprovalRequested({ approvalId }).catch((error) => {
+        log.warn("AI approval requested hook failed", {
+          conversationId,
+          turnId,
+          approvalId,
+          error: error instanceof Error ? error.message : "AI approval requested hook failed",
+        });
+      });
+    }
     return suspended;
   }
 

@@ -3,7 +3,8 @@ import { createComponent } from "solid-js";
 import { render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../ui/test/dom";
 import { refreshAppBadges } from "../browser/app-badges";
-import { APP_BADGE_INTERVAL_MS } from "./app-badges";
+import { APPROVAL_COUNTS_PATH } from "../contracts/approvals";
+import { APP_BADGE_INTERVAL_MS, appBadgeCount, approvalCount, watchAppBadges } from "./app-badges";
 import type { RailApp } from "./rail-navigation";
 
 const apps: RailApp[] = [
@@ -54,6 +55,7 @@ beforeEach(() => {
   visibility = "visible";
   Object.defineProperty(dom.window.document, "visibilityState", { configurable: true, get: () => visibility });
   responses = {
+    [APPROVAL_COUNTS_PATH]: () => Response.json({ total: 0, apps: {} }),
     "/api/chat/badge": () => Response.json({ count: 3 }),
     "/api/notes/badge": () => new Response("unavailable", { status: 503 }),
   };
@@ -86,7 +88,7 @@ test("the rail reads each declared badge once after hydration and shows only pos
   try {
     expect(badgeText(railLink("Chat"))).toBeNull();
     await settle();
-    expect(requested().sort()).toEqual(["/api/chat/badge", "/api/notes/badge"]);
+    expect(requested().sort()).toEqual([APPROVAL_COUNTS_PATH, "/api/chat/badge", "/api/notes/badge"]);
     expect(fetchSpy.mock.calls[0]?.[1]).toMatchObject({ credentials: "same-origin" });
     expect(badgeText(railLink("Chat"))).toBe("3");
     expect(railLink("Chat").getAttribute("aria-label")).toBe("Chat, 3 new");
@@ -145,7 +147,7 @@ test("a hidden tab sends nothing and reads again only when it is visible and the
     hide(true);
     hide(false);
     await settle();
-    expect(requested().sort()).toEqual(["/api/chat/badge", "/api/notes/badge"]);
+    expect(requested().sort()).toEqual([APPROVAL_COUNTS_PATH, "/api/chat/badge", "/api/notes/badge"]);
   } finally {
     dispose();
   }
@@ -167,7 +169,7 @@ test("a refresh in a hidden tab keeps the scheduled read for when the tab is vis
 
     jest.advanceTimersByTime(APP_BADGE_INTERVAL_MS - 20_000);
     await flush();
-    expect(requested().sort()).toEqual(["/api/chat/badge", "/api/notes/badge"]);
+    expect(requested().sort()).toEqual([APPROVAL_COUNTS_PATH, "/api/chat/badge", "/api/notes/badge"]);
   } finally {
     dispose();
   }
@@ -262,5 +264,59 @@ test("the app grid shows the same count on the icon and on a pinned app, and tel
   } finally {
     disposeGrid();
     disposeRail();
+  }
+});
+
+test("approval counts reach catalog apps and app shortcuts, while link shortcuts stay unchanged", async () => {
+  responses[APPROVAL_COUNTS_PATH] = () => Response.json({ total: 5, apps: { chat: 2, mail: 3 } });
+  const { default: RailApps } = await import("./RailApps.island");
+  const dispose = render(
+    () =>
+      createComponent(RailApps, {
+        apps,
+        settings: {
+          ...settings,
+          shortcuts: [
+            { id: "pinned-chat", kind: "app", appId: "chat" },
+            { id: "link-chat", kind: "link", href: "/app/chat?view=other", title: "Chat link", icon: "ti ti-link" },
+          ],
+        },
+        currentPath: "/app/mail",
+      }),
+    dom.root,
+  );
+  try {
+    await settle();
+    expect(badgeText(railLink("Chat"))).toBe("5");
+    expect(badgeText(railLink("Mail"))).toBe("3");
+    expect(badgeText(dom.root.querySelector('a[href="/app/chat?view=other"]')!)).toBeNull();
+    expect(approvalCount()).toBe(5);
+    expect(approvalCount("chat")).toBe(2);
+    expect(approvalCount("constructor")).toBe(0);
+    expect(appBadgeCount({ endpoint: "/api/chat/badge", appId: "chat" })).toBe(5);
+    responses[APPROVAL_COUNTS_PATH] = () => Response.json({ total: 4, apps: { chat: -1 } });
+    refreshAppBadges();
+    await settle();
+    expect(approvalCount()).toBe(0);
+    expect(badgeText(railLink("Chat"))).toBe("3");
+    expect(badgeText(railLink("Mail"))).toBeNull();
+  } finally {
+    dispose();
+  }
+});
+
+test("approval counts refresh even without an app badge endpoint", async () => {
+  responses[APPROVAL_COUNTS_PATH] = () => Response.json({ total: 1, apps: { mail: 1 } });
+  const stop = watchAppBadges([]);
+  try {
+    await settle();
+    expect(requested()).toEqual([APPROVAL_COUNTS_PATH]);
+    expect(approvalCount("mail")).toBe(1);
+    responses[APPROVAL_COUNTS_PATH] = () => new Response("unavailable", { status: 503 });
+    refreshAppBadges();
+    await settle();
+    expect(approvalCount()).toBe(0);
+  } finally {
+    stop();
   }
 });

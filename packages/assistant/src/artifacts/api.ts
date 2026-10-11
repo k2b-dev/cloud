@@ -11,6 +11,7 @@ import {
 } from "@k2b/cloud/ai";
 import { CodeActionInput, CodeCheckInput, CodeResourceId } from "@k2b/cloud/ai/browser";
 import type { CapabilityCaller } from "@k2b/cloud/capabilities/server";
+import { APPROVAL_CLIENT_HEADER } from "@k2b/cloud/contracts/approvals";
 import { type AuthContext, auth, getLocale, respond, v } from "@k2b/cloud/server";
 import { GotenbergRenderError } from "@k2b/cloud/services";
 import { ImageMetadataError } from "@k2b/cloud/services/image-metadata";
@@ -60,6 +61,7 @@ const capabilityCaller = (c: Context<AuthContext>) => ({
 });
 const identity = (c: Context<AuthContext>) => ({
   credentialKind: c.get("credentialKind"),
+  client: c.req.header(APPROVAL_CLIENT_HEADER),
   actor: c.get("actor"),
   accessSubject: c.get("accessSubject"),
   conversationId: c.req.query("conversationId"),

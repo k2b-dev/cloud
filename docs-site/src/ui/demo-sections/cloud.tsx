@@ -203,6 +203,27 @@ if (selected) {
   </DemoCard>
 );
 
+const ApprovalsReference = () => (
+  <DemoCard
+    id="cloud-approvals"
+    chip={[
+      { kind: "component", name: "Approvals", from: "@k2b/cloud/approvals/ui" },
+      { kind: "component", name: "ApprovalsNavStatus", from: "@k2b/cloud/approvals/ui" },
+    ]}
+    description="Backend-required list of the signed-in person's open Action approvals, decided through the Core approvals route."
+    code={`// SSR: the first page renders with the page, so the list never pushes content down.
+const page = await loadPendingApprovals(c, { app: "mail", link: draftHref });
+
+<Approvals app="mail" link={draftHref} initial={page} layout="band" />;
+<Approvals app="mail" initial={page} />;`}
+  >
+    <BackendRequiredNote title="Real approval requests required">
+      Rows come from Cloud's platform approval requests, and a decision continues the chat that asked. The catalog shows the contract
+      without inventing requests that a click could not decide.
+    </BackendRequiredNote>
+  </DemoCard>
+);
+
 const DashboardWidgetsDemo = () => (
   <DemoCard
     id="dashboard-widget-composition"
@@ -278,6 +299,11 @@ const demos: DemoSection = {
   "file-chooser": () => (
     <DemoGrid columns="one">
       <FileChooserReference />
+    </DemoGrid>
+  ),
+  approvals: () => (
+    <DemoGrid columns="one">
+      <ApprovalsReference />
     </DemoGrid>
   ),
 };

@@ -1,5 +1,5 @@
 import { CodeResourceId } from "@k2b/cloud/ai/browser";
-import { type AuthContext, expectUserBackedActor, getLocale, getTimeZone } from "@k2b/cloud/server";
+import { type AuthContext, expectUserBackedActor, getLocale, getTimeZone, loadPendingApprovals } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../config";
 import { loadAssistantSidebarSnapshot } from "../sidebar";
@@ -19,7 +19,7 @@ export default ssr<AuthContext>(async (c) => {
     const app = await artifacts.get(id.data, identity);
     if (app.permission !== "admin" && !c.req.path.endsWith("/edit") && !c.req.path.endsWith("/database"))
       return c.redirect(`/app/assistant/apps/${app.id}/run`);
-    const sidebar = await loadAssistantSidebarSnapshot(user.id);
+    const [sidebar, approvals] = await Promise.all([loadAssistantSidebarSnapshot(user.id), loadPendingApprovals(c, { app: "assistant" })]);
     const view = c.req.path.endsWith("/edit") ? "edit" : c.req.path.endsWith("/database") ? "database" : "app";
     if (view !== "app" && app?.permission !== "admin") return ssr.error(c, 403);
     const databaseStatus = view === "database" && app ? await artifactDatabase.status(app.id, identity, c.req.raw.signal) : undefined;
@@ -33,6 +33,7 @@ export default ssr<AuthContext>(async (c) => {
           conversations={sidebar.conversations}
           doneCount={sidebar.doneCount}
           projects={sidebar.projects}
+          pendingApprovals={approvals.count}
           initialApp={app}
           view={view}
           databaseStatus={databaseStatus}

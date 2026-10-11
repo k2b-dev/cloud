@@ -23,6 +23,8 @@ type Props = {
   doneCount: number;
   conversations: AiConversation[];
   projects: AiProject[];
+  /** Open approvals the page rendered with, for the sidebar's Approvals row. */
+  pendingApprovals: number;
   initialApp: ArtifactBundle;
   view?: "app" | "edit" | "database";
   selectedFile?: string;
@@ -59,6 +61,7 @@ export default function Apps(props: Props) {
           onConversationArchived={() => void reloadSidebar()}
           activeView="apps"
           activeAppId={app()?.id}
+          pendingApprovals={props.pendingApprovals}
           live={live}
           creatingConversation={busy}
           onNewConversation={() =>

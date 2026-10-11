@@ -594,6 +594,34 @@ SELECT action FROM audit.events WHERE target_type = 'approval_request' ORDER BY 
 The request shows `consumed` and `web_session`, and the event
 `auth.action.approve`.
 
+### Decide pending approvals in Cloud
+
+This release adds [approval lists and decision channels](/en/docs/identity/approvals).
+Core upgrades the `decided_via` CHECK constraint of `approvals.requests` on
+start. The migration is idempotent. It replaces the existing constraint only
+when it lacks `acp_bridge`. No configuration change is required.
+
+Core serves the new `/api/approvals` list, counts, and decision routes.
+They fall under Core's registered catch-all `/` prefix. Core does not declare
+a separate `/api/approvals` prefix.
+
+Update Core before Assistant and Mail. Both read the approvals list during
+SSR through the platform service. Core must migrate the approvals schema
+before they serve those pages.
+Core also registers **Pending approvals** as a user notification.
+Browser delivery is recommended. Users can change delivery in their settings.
+
+Rolling back keeps the expanded constraint. The older release ignores the
+new channel value. It does not apply the ACP restriction or serve the new
+approval lists.
+
+After the rollout, ask Assistant to send a Mail draft. Open
+**My account → Approvals**, the Assistant's **Approvals** view, and the draft.
+Check that each shows the waiting request.
+Try to approve a `confirm` request through a client that sends
+`x-cloud-client: acp`. It must return `403` and leave the request open.
+Approve it in Cloud and check the decision in the audit log.
+
 ### Update browser notifications for grouping and badges
 
 Deploy the updated platform package and Core together to enable
