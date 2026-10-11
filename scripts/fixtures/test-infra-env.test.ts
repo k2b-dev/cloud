@@ -62,6 +62,14 @@ describe("checkout test database", () => {
     expect(() => expandTestDatabaseUrl(`postgres://localhost/${"x".repeat(58)}{checkout}_test`, root)).toThrow("63-byte");
   });
 
+  test("keeps percent-encoded characters in the database name encoded", () => {
+    expect(expandTestDatabaseUrl("postgres://localhost/cloud_%25_{checkout}_test", "/repos/branch")).toBe(
+      "postgres://localhost/cloud_%25_branch_test",
+    );
+    const expanded = expandTestDatabaseUrl("postgres://localhost/cloud_%2520_{checkout}_test", "/repos/branch");
+    expect(decodeURIComponent(new URL(expanded).pathname.slice(1))).toBe("cloud_%20_branch_test");
+  });
+
   test("does not expand placeholders in credentials or query parameters", () => {
     const target = "postgres://{checkout}:pass@localhost/cloud_test?application_name={checkout}";
     expect(expandTestDatabaseUrl(target, "/repos/branch")).toBe(target);

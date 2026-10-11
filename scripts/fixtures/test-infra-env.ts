@@ -48,7 +48,8 @@ export const expandTestDatabaseUrl = (url: string, checkoutRoot = join(import.me
   )
     .slice(0, limit)
     .replace(/_+$/, "");
-  parsed.pathname = `/${parts.join(slug)}`;
+  // The pathname setter leaves `%` as is, so re-encode the decoded name.
+  parsed.pathname = `/${encodeURIComponent(parts.join(slug))}`;
   return parsed.toString();
 };
 
