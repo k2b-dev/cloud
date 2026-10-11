@@ -137,6 +137,12 @@ export const decide = async (
   db?: SQL,
 ): Promise<ApprovalDecisionResult> => {
   const result = await transaction(db, async (tx): Promise<ApprovalDecisionResult> => {
+    // Lock the device before the request so revocation and the decision serialize.
+    if (actor.deviceId !== undefined) {
+      const [device] = await tx`SELECT 1 FROM auth.app_devices
+        WHERE id=${actor.deviceId}::uuid AND user_id=${actor.userId}::uuid AND revoked_at IS NULL FOR SHARE`;
+      if (!device) return { ok: false, code: "NOT_FOUND" };
+    }
     const [row] = await tx<ApprovalRequest[]>`SELECT ${columns()} FROM approvals.requests
       WHERE id=${id}::uuid AND approver_user_id=${actor.userId}::uuid FOR UPDATE`;
     if (!row) return { ok: false, code: "NOT_FOUND" };

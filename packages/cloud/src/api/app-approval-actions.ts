@@ -5,7 +5,7 @@ import type { AppDeviceActions } from "../services/app-approval";
 import { listPending } from "../services/approvals";
 import { appActionSummary, appActionView } from "../services/approvals/device";
 
-export const createDeviceActions = (appName: (appId: string) => string): AppDeviceActions => {
+export const createDeviceActions = (appName: (appId: string, locale: string) => string): AppDeviceActions => {
   const view: AppDeviceActions["view"] = async ({ userId, issuer, actionId }) => {
     const { items } = await listPending({ approverUserId: userId, id: actionId, limit: 1 });
     return items[0] ? appActionView(items[0], { issuer, appName }) : null;

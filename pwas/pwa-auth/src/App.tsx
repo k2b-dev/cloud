@@ -1,7 +1,7 @@
 import { Button, Dropdown, type DropdownItem, LocaleProvider, MobileShell, Placeholder, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { consumePairingLocation, createAuthenticator } from "./authenticator";
-import { Clouds, openManageAccounts } from "./Clouds";
+import { type ActionFocus, Clouds, openManageAccounts } from "./Clouds";
 import { openDialog } from "./dialog";
 import { openInstallDialog } from "./InstallDialog";
 import { authMessages } from "./i18n";
@@ -25,7 +25,7 @@ export function App(props: { preferences: Preferences }) {
   // A tapped notification names the request to show first.
   const [setupFailed, setSetupFailed] = createSignal(false);
   const [focusRequest, setFocusRequest] = createSignal<string>();
-  const [focusAction, setFocusAction] = createSignal<string>();
+  const [focusAction, setFocusAction] = createSignal<ActionFocus>();
   createEffect(() => rememberLocale(props.preferences.locale()));
   // Each paired Cloud learns this phone's push token over its signed device channel.
   createEffect(() => {
@@ -109,7 +109,7 @@ export function App(props: { preferences: Preferences }) {
     const requested = query.get("request");
     const action = query.get("action");
     if (requested || action) {
-      if (action) setFocusAction(action);
+      if (action) setFocusAction({ actionId: action, cloud: query.get("cloud") ?? undefined });
       else if (requested) setFocusRequest(requested);
       history.replaceState(history.state, "", location.pathname + location.hash);
     }
@@ -123,7 +123,8 @@ export function App(props: { preferences: Preferences }) {
         "ref" in data &&
         typeof data.ref === "string"
       ) {
-        if ("kind" in data && data.kind === "action") setFocusAction(data.ref);
+        if ("kind" in data && data.kind === "action")
+          setFocusAction({ actionId: data.ref, cloud: "cloud" in data && typeof data.cloud === "string" ? data.cloud : undefined });
         else setFocusRequest(data.ref);
       }
     };

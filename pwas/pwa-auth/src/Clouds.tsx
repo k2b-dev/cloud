@@ -13,7 +13,7 @@ import {
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { ActionSheet } from "./ActionSheet";
-import type { Authenticator, Login } from "./authenticator";
+import type { ActionView, Authenticator, Login } from "./authenticator";
 import { openDetails } from "./Details";
 import { openDialog } from "./dialog";
 import { authMessages } from "./i18n";
@@ -127,21 +127,28 @@ function Disconnect(props: { auth: Authenticator; binding: Binding; close: () =>
     </PanelDialog>
   );
 }
+/** A tapped Action notification: the request and, from newer notifications, the Cloud that asked. */
+export type ActionFocus = { actionId: string; cloud?: string };
 export function Clouds(props: {
   auth: Authenticator;
   preferences: Preferences;
   focus?: () => string | undefined;
   focused?: () => void;
-  focusAction?: () => string | undefined;
+  focusAction?: () => ActionFocus | undefined;
   actionFocused?: () => void;
 }) {
   const locale = useLocale();
   const t = createMemo(() => authMessages.resolve([locale()]).t);
   const [sheetOpen, setSheetOpen] = createSignal(false);
+  // The Action whose view is loading, and the last one that could not load, as `binding:action`.
+  const [loadingAction, setLoadingAction] = createSignal<string>();
+  const [failedAction, setFailedAction] = createSignal<string>();
   const seen = new Set<string>();
+  const loads = new AbortController();
   let disposed = false;
   onCleanup(() => {
     disposed = true;
+    loads.abort();
   });
   const pending = () =>
     props.auth
@@ -182,15 +189,31 @@ export function Clouds(props: {
       if (!disposed) setSheetOpen(false);
     }
   };
-  const openAction = async (binding: Binding, actionId: string) => {
-    if (disposed || sheetOpen() || document.visibilityState !== "visible" || document.querySelector("dialog[open]")) return;
+  const blocked = () => disposed || sheetOpen() || document.visibilityState !== "visible" || !!document.querySelector("dialog[open]");
+  // The view loads before the sheet opens, so the sheet never grows after its first frame.
+  const openAction = async (candidates: Binding[], actionId: string) => {
+    if (blocked() || candidates.length === 0) return;
     setSheetOpen(true);
-    if (props.focusAction?.() === actionId) props.actionFocused?.();
     try {
+      let loaded: { binding: Binding; view: ActionView } | undefined;
+      for (const binding of candidates) {
+        const key = `${binding.id}:${actionId}`;
+        setLoadingAction(key);
+        try {
+          loaded = { binding, view: await props.auth.action(binding, actionId, loads.signal) };
+          if (failedAction() === key) setFailedAction(undefined);
+          break;
+        } catch {
+          if (!disposed) setFailedAction(key);
+        }
+      }
+      if (!disposed) setLoadingAction(undefined);
+      if (!loaded || disposed || document.visibilityState !== "visible" || document.querySelector("dialog[open]")) return;
+      const { binding, view } = loaded;
       await openDialog(
         (close, context) => (
           <LocaleProvider locale={props.preferences.locale()}>
-            <ActionSheet auth={props.auth} binding={binding} actionId={actionId} dismiss={context.requestDismiss} close={() => close()} />
+            <ActionSheet auth={props.auth} binding={binding} view={view} dismiss={context.requestDismiss} close={() => close()} />
           </LocaleProvider>
         ),
         bottomSheetOptions,
@@ -204,19 +227,20 @@ export function Clouds(props: {
     const keys = new Set(queue.map((item) => item.key));
     for (const key of seen) if (!keys.has(key)) seen.delete(key);
     if (sheetOpen() || !props.auth.online()) return;
-    const actionId = props.focusAction?.();
-    const actionBinding = actionId
-      ? props.auth
-          .bindings()
-          .find((binding) =>
-            props.auth
-              .states()
-              [binding.id]?.actions.some((action) => action.actionId === actionId && Date.parse(action.expiresAt) > props.auth.now()),
-          )
-      : undefined;
-    if (actionBinding && actionId) {
-      void openAction(actionBinding, actionId);
-      return;
+    // A tapped Action loads directly, also when the inbox omitted it; the account that listed it goes first.
+    const focusAction = props.focusAction?.();
+    if (focusAction && !blocked()) {
+      const bindings = props.auth.bindings();
+      const listed = bindings.filter((binding) =>
+        props.auth.states()[binding.id]?.actions.some((action) => action.actionId === focusAction.actionId),
+      );
+      const candidates = [...listed, ...bindings.filter((binding) => binding.issuer === focusAction.cloud && !listed.includes(binding))];
+      // Without a Cloud, wait until every account has listed its inbox once.
+      if (candidates.length || (bindings.length > 0 && bindings.every((binding) => props.auth.states()[binding.id]))) {
+        props.actionFocused?.();
+        void openAction(candidates, focusAction.actionId);
+        return;
+      }
     }
     // A tapped notification reopens its request even after the sheet was dismissed.
     const focus = props.focus?.();
@@ -291,30 +315,47 @@ export function Clouds(props: {
                 )}
               </For>
               <For each={actions()}>
-                {(action) => (
-                  <div class="auth-action-row">
-                    <div class="auth-action-row__copy">
-                      <p class="auth-action-row__title">
-                        <strong>{action.app.name}</strong> · {action.sentence}
-                      </p>
-                      <p class="auth-action-row__origin">
-                        {/* A long chat title gives way; the time always stays visible. */}
-                        <Show when={action.requester.title}>
-                          {(title) => (
-                            <>
-                              <span>{t().actionChatTitle({ title: title() })}</span>
-                              <span aria-hidden="true"> · </span>
-                            </>
-                          )}
+                {(action) => {
+                  const key = `${binding.id}:${action.actionId}`;
+                  return (
+                    <div class="auth-action-row">
+                      <div class="auth-action-row__copy">
+                        <p class="auth-action-row__title">
+                          <strong>{action.app.name}</strong> · {action.sentence}
+                        </p>
+                        {/* A load failure takes the origin line's place, so the row keeps its height. */}
+                        <Show
+                          when={failedAction() !== key}
+                          fallback={
+                            <p class="auth-action-row__origin auth-action-row__origin--failed" role="alert">
+                              <span>{t().actionLoadFailed}</span>
+                            </p>
+                          }
+                        >
+                          <p class="auth-action-row__origin">
+                            {/* A long chat title gives way; the time always stays visible. */}
+                            <Show when={action.requester.title}>
+                              {(title) => (
+                                <>
+                                  <span>{t().actionChatTitle({ title: title() })}</span>
+                                  <span aria-hidden="true"> · </span>
+                                </>
+                              )}
+                            </Show>
+                            <time dateTime={action.createdAt}>{dates.formatDateTimeRelative(action.createdAt, { locale: locale() })}</time>
+                          </p>
                         </Show>
-                        <time dateTime={action.createdAt}>{dates.formatDateTimeRelative(action.createdAt, { locale: locale() })}</time>
-                      </p>
+                      </div>
+                      <Button
+                        variant="secondary"
+                        loading={loadingAction() === key}
+                        onClick={() => void openAction([binding], action.actionId)}
+                      >
+                        {t().actionReview}
+                      </Button>
                     </div>
-                    <Button variant="secondary" onClick={() => void openAction(binding, action.actionId)}>
-                      {t().actionReview}
-                    </Button>
-                  </div>
-                )}
+                  );
+                }}
               </For>
               <Show when={(state()?.moreActions ?? 0) > 0}>
                 <p class="auth-quiet">{t().moreActions({ count: state()?.moreActions ?? 0 })}</p>

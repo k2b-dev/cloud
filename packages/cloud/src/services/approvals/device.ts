@@ -6,6 +6,7 @@ import {
   APP_ACTION_LIMITS as limits,
 } from "../../contracts/app-approval";
 import { CapabilityActionReviewSchema } from "../../contracts/capabilities";
+import { DEFAULT_LOCALE } from "../../server/locale";
 import type { PendingApprovalRow } from "./list";
 
 const plain = (value: string): string =>
@@ -23,7 +24,7 @@ const cut = (value: string, limit: number): string => {
 /** A deterministic, plain-text snapshot; the digest binds the device's choice to everything it shows. */
 export const appActionView = async (
   row: PendingApprovalRow,
-  options: { issuer: string; appName: (appId: string) => string },
+  options: { issuer: string; appName: (appId: string, locale: string) => string },
 ): Promise<AppActionView> => {
   let truncated = false;
   const text = (value: string, limit: number) => {
@@ -32,10 +33,11 @@ export const appActionView = async (
     if (result !== cleaned) truncated = true;
     return result;
   };
-  const appName = plain(options.appName(row.appId));
+  const locale = row.runConfig?.kind === "compact" ? DEFAULT_LOCALE : (row.runConfig?.locale ?? DEFAULT_LOCALE);
+  const appName = plain(options.appName(row.appId, locale));
   const app = { id: text(row.appId, limits.nameChars), name: text(appName, limits.nameChars) };
   const requester = {
-    app: { id: text(row.requesterAppId, limits.nameChars), name: text(options.appName(row.requesterAppId), limits.nameChars) },
+    app: { id: text(row.requesterAppId, limits.nameChars), name: text(options.appName(row.requesterAppId, locale), limits.nameChars) },
     // The snapshot, so renaming the chat does not change what the device signs.
     title: text(row.requesterTitle ?? "", limits.titleChars) || null,
   };
@@ -55,20 +57,23 @@ export const appActionView = async (
     if (!cleanedLabel) return;
     details.push({ label: cleanedLabel, value: text(value, limits.valueChars), ...(format ? { format } : {}) });
   };
+  const messages: string[] = [];
+  const reviewLines = new Set<string>();
   if (review.success) {
     const cleaned = plain(review.data.message);
-    message = cleaned === sentence ? null : text(cleaned, limits.messageChars) || null;
+    if (cleaned !== sentence) messages.push(cleaned);
+    reviewLines.add(cleaned);
+    for (const line of review.data.message.split(/\r?\n/)) reviewLines.add(plain(line));
     for (const field of review.data.details ?? [])
       detail(field.label, field.value, field.format === "date" || field.format === "date-time" ? field.format : undefined);
-  } else {
-    const messages: string[] = [];
-    for (const line of lines.slice(1)) {
-      const match = /^([^:]{1,40}):\s+(.+)$/.exec(line);
-      if (match) detail(match[1]!, match[2]!);
-      else messages.push(line);
-    }
-    message = text(messages.join(" "), limits.messageChars) || null;
   }
+  for (const line of lines.slice(1)) {
+    if (reviewLines.has(line)) continue;
+    const match = /^([^:]{1,40}):\s+(.+)$/.exec(line);
+    if (match) detail(match[1]!, match[2]!);
+    else messages.push(line);
+  }
+  message = text(messages.join(" "), limits.messageChars) || null;
   const boundedSentence = text(sentence, limits.sentenceChars);
   const view: AppActionView = {
     actionId: row.id,

@@ -132,7 +132,7 @@ phone once, however often a Cloud retries.
 
 | Limit | Value |
 | --- | --- |
-| Wake-ups per push token | 30 per five minutes |
+| Wake-ups per push token | 30 sign-in or test wake-ups and, separately, 30 Action wake-ups per five minutes |
 | Requests per caller address | 3,000 per five minutes for `/push/notify` and `/push/test` |
 | New subscriptions per caller address | 30 per five minutes |
 | Request body | 1 KiB for notifications, 4 KiB for subscriptions |
@@ -181,7 +181,8 @@ or resetting the app does not secure copies an attacker already obtained.
 
 An existing install that still has a PIN starts with **Remove app PIN**.
 Enter the PIN one last time to keep all connected Clouds. Cloud Login then
-removes the PIN and opens directly on later launches. Wrong PINs keep it locked
+removes the PIN, confirms with **App PIN removed**, and opens directly on later
+launches. Wrong PINs keep it locked
 with the existing retry delay of one to thirty seconds, including after reload.
 
 If you forgot the PIN, or the stored protection method is unsupported, use
@@ -256,21 +257,26 @@ in the list until you choose **Review**; arriving Actions never open a sheet
 on their own. If more are waiting, the card shows how many to review in Cloud.
 Older Clouds continue to show sign-ins only.
 
+**Review** loads and checks the request before the sheet opens, so the sheet
+appears complete. If loading or checking fails, the row says so in place of
+its chat title and time; review the request in Cloud.
+
 The review sheet identifies the app and Cloud host in Cloud Login's own frame,
 then names the requesting app. The quoted sentence, message, chat title and
 details are the application's text; they are displayed as text, without HTML
 or links. Read them before choosing **Approve** or **Deny**. Shortened requests
 carry a note to see everything under **My account → Approvals** in Cloud.
 **Asks every time** marks an Action that always needs confirmation. The sheet
-shows its remaining lifetime; an expired request cannot be approved or denied.
-Both buttons become available half a second after the checked view appears.
+shows its remaining lifetime. Both buttons become available half a second
+after the sheet opens.
 
-The same sheet shows **Approved** and that the app continues in Cloud, or
-**Denied** and that nothing happens. Choose **Done** to close it. **Not applied**
-means the request was already decided, expired or changed (Cloud answered
-HTTP 409); check it in Cloud. If loading or checking fails, review the request
-in Cloud. If the decision's result is uncertain, the buttons stay disabled
-and Cloud Login never sends the decision again. Check its status in Cloud.
+The result replaces the request in the same sheet, at the same height:
+**Approved** and that the requesting app continues in Cloud, or **Denied** and
+that nothing happens. **Not applied** means the request was already decided,
+expired or changed (Cloud answered HTTP 409); it leaves the list, check it in
+Cloud. **Not confirmed** means the result is uncertain; Cloud Login never sends
+the decision again, so check its status in Cloud. **Expired** appears when the
+request runs out while the sheet is open. Choose **Done** to close the sheet.
 
 **Disconnect Cloud** offers device revocation and explicit local removal.
 Local removal does not revoke the device in Cloud. Existing browser sessions
@@ -323,7 +329,8 @@ the phone, its battery saver or the push service may delay or drop them.
 Action notifications say **Approval requested on cloud.example.org** and
 **Open Cloud Login to review it.** They name only the Cloud host, without app
 names, sentences, chat titles or account details. Tapping one opens its review
-sheet; you still read the request and explicitly approve or deny it.
+sheet, also when the Cloud card does not list that request; you still read the
+request and explicitly approve or deny it.
 
 For troubleshooting, open **Settings** and note the version shown below the
 appearance control. Release images show their tag and source revision; local

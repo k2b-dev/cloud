@@ -42,7 +42,7 @@ import { session } from "./session";
 import { createTestSession } from "./session/session.test-fixture";
 import * as settings from "./settings";
 
-const deviceActions = createDeviceActions((id) => id);
+const deviceActions = createDeviceActions((id, _locale) => id);
 
 // Never migrate or mutate the development installation.
 const suite = suiteFor("database");
@@ -992,6 +992,56 @@ suite("isolated app approval protocol", () => {
       expect(inbox.moreActions).toBe(1);
     });
 
+    test("revocation after device verification but before the Action decision returns 409 and leaves it pending", async () => {
+      const owner = await account();
+      const device = await enroll(owner);
+      const waiting = await askAction(owner);
+      const view = AppActionViewSchema.parse(await (await devicePost(device, { operation: "action", actionId: waiting.id })).json());
+      const racingRoutes = createAppApprovalRoutes(service, (appName) => {
+        const actions = createDeviceActions(appName);
+        return {
+          ...actions,
+          decide: async (input) => {
+            // deviceCommand has committed its device verification before invoking decide.
+            await service.mutateDevice(owner.actor, device.id);
+            return actions.decide(input);
+          },
+        };
+      });
+      const response = await racingRoutes.request("/device", {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: cfg.appOrigin },
+        body: JSON.stringify(await proof(device, { operation: "act", actionId: waiting.id, digest: view.digest, decision: "approve" })),
+      });
+      expect(response.status).toBe(409);
+      expect(await approvals.get(waiting.id)).toMatchObject({ status: "pending" });
+      expect(await aiConversations.getPendingTurnAction(waiting)).toMatchObject({ status: "pending" });
+      expect(await sql`SELECT 1 FROM audit.events WHERE target_type='approval_request' AND target_id=${waiting.id}`).toHaveLength(0);
+    });
+
+    test("a new Action wakes once inside 30 seconds after the previously woken request closes", async () => {
+      for (const status of ["approved", "rejected", "cancelled", "expired"] as const) {
+        const owner = await account();
+        const phone = await enroll(owner);
+        await service.deviceCommand(await proof(phone, { operation: "push", token: "W".repeat(43) }), deviceActions);
+        await service.deviceCommand(await proof(phone, { operation: "inbox" }), deviceActions);
+        const first = await askAction(owner);
+        const start = pushes.length;
+        await service.wakeForAction(first.id);
+        const second = await askAction(owner);
+        await service.wakeForAction(second.id);
+        expect(pushes).toHaveLength(start + 1);
+        if (status === "expired") await sql`UPDATE approvals.requests SET expires_at=now()-interval '1 second' WHERE id=${first.id}::uuid`;
+        else await sql`UPDATE approvals.requests SET status=${status} WHERE id=${first.id}::uuid`;
+        await Promise.all([service.wakeForAction(second.id), service.wakeForAction(second.id)]);
+        expect(pushes).toHaveLength(start + 2);
+        expect(pushes.at(-1)?.body.requestRef).toBe(second.id);
+        const [claim] = await sql<{ action_wake_ref: string; recent: boolean }[]>`SELECT action_wake_ref,
+          action_wake_at > now()-interval '30 seconds' AS recent FROM auth.app_devices WHERE id=${phone.id}::uuid`;
+        expect(claim).toMatchObject({ action_wake_ref: second.id, recent: true });
+      }
+    });
+
     test("multibyte summaries share the response byte budget with logins and omitted Actions stay counted", async () => {
       const owner = await account();
       const device = await enroll(owner);
@@ -1001,7 +1051,7 @@ suite("isolated app approval protocol", () => {
         await sql`UPDATE approvals.requests SET requester_title=${"😀".repeat(80)} WHERE id=${action.id}::uuid`;
         await service.startLogin(owner.uid, "login");
       }
-      const largeNames = createAppApprovalRoutes(service, () => createDeviceActions(() => "😀".repeat(60)));
+      const largeNames = createAppApprovalRoutes(service, () => createDeviceActions((_id, _locale) => "😀".repeat(60)));
       const response = await largeNames.request("/device", {
         method: "POST",
         headers: { "content-type": "application/json", origin: cfg.appOrigin },

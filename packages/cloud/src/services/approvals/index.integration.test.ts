@@ -86,7 +86,20 @@ databaseSuite()("platform approvals", () => {
     expect(first[0]?.definition).toContain("cloud_login");
     await migrateApprovals();
     expect(await constraint()).toEqual(first);
-    const deviceId = crypto.randomUUID();
+    // The decision locks the active device, so a revoked device cannot decide.
+    const device = async (revoked: boolean) => {
+      const id = crypto.randomUUID();
+      await sql`INSERT INTO auth.app_devices(id,issuer,user_id,name,public_key,assisted,revoked_at)
+        VALUES (${id}::uuid,'https://cloud.example.test',${userId}::uuid,'Phone',${JSON.stringify({ id })}::text::jsonb,false,${revoked ? new Date() : null})`;
+      return id;
+    };
+    const revoked = await ask({ ...input(), assurance: "confirm" });
+    expect(await approvals.decide(revoked.id, { approved: true }, { userId, via: "cloud_login", deviceId: await device(true) })).toEqual({
+      ok: false,
+      code: "NOT_FOUND",
+    });
+    expect(await approvals.get(revoked.id)).toMatchObject({ status: "pending" });
+    const deviceId = await device(false);
     for (const assurance of ["standard", "confirm"] as const) {
       const record = await ask({ ...input(), assurance });
       expect(await approvals.decide(record.id, { approved: true }, { userId, via: "cloud_login", deviceId })).toMatchObject({

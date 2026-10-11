@@ -59,7 +59,12 @@ export const notificationFor = (message: Message, languages: readonly string[]) 
   if (message.type === "action")
     return {
       title: t.pushActionTitle({ cloud: new URL(message.cloud).host }),
-      options: { ...base, body: t.pushActionBody, tag: `action:${message.cloud}`, data: { url: `/?action=${message.ref}` } },
+      options: {
+        ...base,
+        body: t.pushActionBody,
+        tag: `action:${message.cloud}`,
+        data: { url: `/?action=${message.ref}&cloud=${encodeURIComponent(message.cloud)}` },
+      },
     };
   if (message.type === "test") return { title: t.appName, options: { ...base, body: t.pushTestBody, tag: "test", data: { url: "/" } } };
   return { title: t.appName, options: { ...base, body: t.pushGenericBody, tag: "login", data: { url: "/" } } };
@@ -93,10 +98,12 @@ export function installPushHandlers(scope: PushScope) {
         const query = new URL(url).searchParams;
         const kind = query.has("action") ? "action" : "login";
         const ref = query.get(kind === "action" ? "action" : "request");
+        // The Cloud lets the app load an Action that is not among its inbox summaries.
+        const cloud = kind === "action" ? query.get("cloud") : null;
         const windows = await scope.clients.matchAll({ type: "window", includeUncontrolled: true });
         const open = windows.find((client) => new URL(client.url).origin === scope.location.origin);
         if (!open) return scope.clients.openWindow(url);
-        if (ref) open.postMessage({ type: OPEN_REQUEST_MESSAGE, ref, kind });
+        if (ref) open.postMessage({ type: OPEN_REQUEST_MESSAGE, ref, kind, ...(cloud ? { cloud } : {}) });
         return open.focus();
       })(),
     );

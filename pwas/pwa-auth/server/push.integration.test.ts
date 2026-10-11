@@ -230,6 +230,39 @@ suite("Cloud Login push service", () => {
     expect(Number(seen[4]!.headers.get("retry-after"))).toBeGreaterThan(0);
   });
 
+  test("30 Action wake-ups across Clouds leave the sign-in and test budget intact; the 31st Action is limited", async () => {
+    const phone = await subscribe();
+    for (let i = 0; i < 30; i++) {
+      expect(
+        (
+          await notify(
+            { token: phone.token, cloudOrigin: `https://cloud-${i}.example.test`, requestRef: crypto.randomUUID(), kind: "action" },
+            `192.0.2.${100 + i}`,
+          )
+        ).status,
+      ).toBe(202);
+    }
+    expect(
+      (
+        await notify(
+          { token: phone.token, cloudOrigin: "https://cloud.example.test", requestRef: crypto.randomUUID(), kind: "action" },
+          "192.0.2.130",
+        )
+      ).status,
+    ).toBe(429);
+    expect(
+      (await notify({ token: phone.token, cloudOrigin: "https://cloud.example.test", requestRef: crypto.randomUUID() }, "192.0.2.131"))
+        .status,
+    ).toBe(202);
+    expect((await routes().request("/push/test", { method: "POST", body: JSON.stringify({ token: phone.token }) })).status).toBe(202);
+    expect(
+      (await notify({ token: phone.token, cloudOrigin: "https://cloud.example.test", requestRef: crypto.randomUUID() }, "192.0.2.132"))
+        .status,
+    ).toBe(202);
+    // This suite lowers the shared sign-in/test budget to three; Actions used none of it.
+    expect((await routes().request("/push/test", { method: "POST", body: JSON.stringify({ token: phone.token }) })).status).toBe(429);
+  });
+
   test("rejects oversized, malformed and unknown requests", async () => {
     expect((await notify("x".repeat(2_000), "198.51.100.10")).status).toBe(413);
     expect((await notify({ token: "short", cloudOrigin: "https://cloud.example.test", requestRef: "r" }, "198.51.100.11")).status).toBe(

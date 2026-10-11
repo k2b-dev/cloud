@@ -215,6 +215,19 @@ export function createAuthenticator(vault: import("./vault").Vault) {
     owner.check();
     return result;
   };
+  // A decided Action, or one the Cloud no longer offers, leaves the list in every tab right away.
+  const dropAction = (binding: Binding, actionId: string) => {
+    setStates((s) => ({
+      ...s,
+      [binding.id]: {
+        requests: [],
+        moreActions: 0,
+        ...s[binding.id],
+        actions: (s[binding.id]?.actions ?? []).filter((item) => item.actionId !== actionId),
+      },
+    }));
+    channel.postMessage({ type: "pending", id: binding.id, ...states()[binding.id] });
+  };
   const act = async (binding: Binding, view: ActionView, decision: "approve" | "deny") => {
     if (!navigator.onLine || document.visibilityState !== "visible" || Date.parse(view.expiresAt) <= Date.now()) throw new Error("stale");
     const abort = new AbortController();
@@ -231,22 +244,16 @@ export function createAuthenticator(vault: import("./vault").Vault) {
       await api.act(binding, view, decision, abort.signal);
       owner.check();
     } catch (error) {
-      if ((error instanceof AppApprovalClientError && error.status === 409) || (error instanceof Error && error.message === "stale"))
+      if (error instanceof AppApprovalClientError && error.status === 409) {
+        dropAction(binding, view.actionId);
         throw new Error("stale");
+      }
+      if (error instanceof Error && error.message === "stale") throw error;
       throw new Error("uncertain");
     } finally {
       mutations.delete(abort);
     }
-    setStates((s) => ({
-      ...s,
-      [binding.id]: {
-        requests: [],
-        moreActions: 0,
-        ...s[binding.id],
-        actions: (s[binding.id]?.actions ?? []).filter((item) => item.actionId !== view.actionId),
-      },
-    }));
-    channel.postMessage({ type: "pending", id: binding.id, ...states()[binding.id] });
+    dropAction(binding, view.actionId);
     if (decision === "approve") await remember(binding, { approvedAt: new Date().toISOString() });
   };
   // One attempt per Cloud and token per app session; older Clouds reject the command.

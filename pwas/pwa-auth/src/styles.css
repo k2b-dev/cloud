@@ -405,11 +405,6 @@ body {
 .auth-action-body dl {
   margin: 0;
 }
-.auth-action-body > [role="status"],
-.auth-action-body > [role="alert"] {
-  font-size: 0.875rem;
-  line-height: 1.5;
-}
 .auth-action-frame {
   display: grid;
   gap: 0.125rem;
@@ -462,9 +457,6 @@ body {
 .auth-action-meta {
   justify-content: space-between;
   gap: 1rem;
-}
-.auth-action-body [role="alert"] {
-  color: var(--k2b-danger-text);
 }
 .auth-action-result {
   display: grid;
@@ -548,6 +540,9 @@ body {
   font-size: 0.75rem;
   line-height: 1.4;
   white-space: pre;
+}
+.auth-action-row__origin--failed {
+  color: var(--k2b-danger-text);
 }
 .auth-action-row__origin > span:first-child {
   overflow: hidden;

@@ -244,14 +244,16 @@ for (const source of ["url", "worker"] as const) {
     waitingAction = true;
     const worker = new dom.window.EventTarget();
     Object.defineProperty(navigator, "serviceWorker", { configurable: true, value: worker });
-    if (source === "url") history.replaceState(null, "", "/?action=action-id");
+    if (source === "url") history.replaceState(null, "", "/?action=action-id&cloud=http%3A%2F%2Fcloud-0.localhost");
     const dispose = await renderApp(1);
     try {
       if (source === "worker") {
         expect(document.querySelector("dialog[open]")).toBeNull();
         const { OPEN_REQUEST_MESSAGE } = await import("./push-worker");
         worker.dispatchEvent(
-          new dom.window.MessageEvent("message", { data: { type: OPEN_REQUEST_MESSAGE, ref: "action-id", kind: "action" } }),
+          new dom.window.MessageEvent("message", {
+            data: { type: OPEN_REQUEST_MESSAGE, ref: "action-id", kind: "action", cloud: "http://cloud-0.localhost" },
+          }),
         );
       }
       await Bun.sleep(30);

@@ -6,6 +6,7 @@ import {
   AppActionViewSchema,
   appActionDigest,
 } from "../../contracts/app-approval";
+import { appNameIn } from "../../ssr/runtime";
 import { appActionSummary, appActionView } from "./device";
 import type { PendingApprovalRow } from "./list";
 
@@ -52,7 +53,7 @@ test("cleans every text, removes the registry prefix, and separates later senten
   expect((await appActionView({ ...row, sentence: "Mail:" }, options)).sentence).toBe("Mail:");
 });
 
-test("a valid review owns the message and details, preserving date formats and treating markdown as text", async () => {
+test("a valid review preserves its message, date formats and markdown text before later sentence details", async () => {
   const view = await appActionView(
     {
       ...row,
@@ -73,6 +74,7 @@ test("a valid review owns the message and details, preserving date formats and t
     { label: "Date", value: "2026-10-11", format: "date" },
     { label: "Time", value: "2026-10-11T10:00:00+02:00", format: "date-time" },
     { label: "Body", value: "**Hello** [link](https://example.test)" },
+    { label: "Ignored", value: "field" },
   ]);
   expect((await appActionView({ ...row, details: { message: " Explain\nwhy\u202e " } }, options)).message).toBe("Explain why");
 });
@@ -118,4 +120,78 @@ test("the byte guard bounds huge multibyte reviews including the digest and keep
   expect(AppActionViewSchema.parse(view)).toEqual(view);
   expect(view.digest).toBe(await appActionDigest(options.issuer, view));
   expect(await appActionView(input, names)).toEqual(view);
+});
+
+test("a review keeps the model reason after its details without duplicating its multiline message", async () => {
+  const message = "Review: Read this letter\nCheck the recipient";
+  const input = {
+    ...row,
+    sentence: `Mail: Send draft\n${message}\nWhy: The user asked\nSend it today`,
+    details: { message, details: [{ label: "To", value: "Ada" }] },
+  };
+  const view = await appActionView(input, options);
+  expect(view.message).toBe("Review: Read this letter Check the recipient Send it today");
+  expect(view.details).toEqual([
+    { label: "To", value: "Ada" },
+    { label: "Why", value: "The user asked" },
+  ]);
+  expect(view.truncated).toBe(false);
+  // Also exclude a single sentence line containing the whole plain review message.
+  expect(
+    (
+      await appActionView(
+        { ...input, sentence: "Mail: Send draft\nReview: Read this letter Check the recipient\nWhy: The user asked" },
+        options,
+      )
+    ).message,
+  ).toBe("Review: Read this letter Check the recipient");
+  const full = await appActionView(
+    {
+      ...input,
+      details: { message, details: Array.from({ length: APP_ACTION_LIMITS.details }, (_, i) => ({ label: `Field ${i}`, value: "value" })) },
+    },
+    options,
+  );
+  expect(full.details).toHaveLength(APP_ACTION_LIMITS.details);
+  expect(full.details.at(-1)?.label).toBe("Field 7");
+  expect(full.truncated).toBe(true);
+});
+
+test("recorded German app names strip the sentence prefix and keep the digest independent of the phone locale", async () => {
+  const runtime = {
+    apps: [
+      { id: "files", name: "Files", description: "Files", presentation: { baseLocale: "en", translations: { de: { name: "Dateien" } } } },
+      {
+        id: "assistant",
+        name: "Assistant",
+        description: "Assistant",
+        presentation: { baseLocale: "en", translations: { de: { name: "Assistent" } } },
+      },
+    ],
+  };
+  const input = {
+    ...row,
+    appId: "files",
+    sentence: "Dateien: Datei löschen",
+    runConfig: { kind: "chat" as const, input: "Löschen", locale: "de" },
+  };
+  const views = [];
+  for (const phoneLocale of ["en", "de"]) {
+    const carrier = {
+      get: (key: string) => (key === "runtime" ? runtime : undefined),
+      req: { raw: { headers: new Headers({ "Accept-Language": phoneLocale }) } },
+    };
+    const appName = (id: string, locale: string) => appNameIn(carrier, id, locale, id);
+    views.push(await appActionView(input, { issuer: options.issuer, appName }));
+    const fallback = await appActionView(
+      { ...input, runConfig: null, sentence: "Files: Delete file" },
+      { issuer: options.issuer, appName },
+    );
+    expect(fallback.app.name).toBe("Files");
+    expect(fallback.sentence).toBe("Delete file");
+  }
+  expect(views[0]?.app.name).toBe("Dateien");
+  expect(views[0]?.requester.app.name).toBe("Assistent");
+  expect(views[0]?.sentence).toBe("Datei löschen");
+  expect(views[0]).toEqual(views[1]);
 });

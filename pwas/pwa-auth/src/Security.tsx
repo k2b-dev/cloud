@@ -103,13 +103,13 @@ export function Security(props: { vault: Vault; mode: "unlock" | "reset"; close:
               </IconButton>
             </Show>
           }
-          title={success() ? t().unlocked : props.mode === "unlock" ? t().unlockApp : t().resetApp}
+          title={success() ? t().pinRemoved : props.mode === "unlock" ? t().unlockApp : t().resetApp}
         />
         <PanelDialog.Body>
           <Show
             when={!success()}
             fallback={
-              <div class="auth-unlock-success" role="status" aria-label={t().unlocked}>
+              <div class="auth-unlock-success" role="status" aria-label={t().pinRemoved}>
                 <i class="ti ti-circle-check" aria-hidden="true" />
               </div>
             }

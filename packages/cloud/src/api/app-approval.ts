@@ -16,7 +16,7 @@ import {
 } from "../contracts/app-approval";
 import { type AuthContext, auth, rateLimit, v } from "../server";
 import { type AppApprovalActor, AppApprovalError, appApproval, type createAppApprovalService } from "../services/app-approval";
-import { localizedAppName } from "../ssr/runtime";
+import { appNameIn } from "../ssr/runtime";
 import { createDeviceActions } from "./app-approval-actions";
 
 const PairingIdSchema = z.object({ pairingId: z.string().uuid() }).strict();
@@ -110,7 +110,7 @@ export const createAppApprovalRoutes = (service: Service = appApproval, actions 
         c.json(
           await service.deviceCommand(
             c.req.valid("json"),
-            actions((appId) => localizedAppName(c, appId, appId)),
+            actions((appId, locale) => appNameIn(c, appId, locale, appId)),
           ),
         ),
     )

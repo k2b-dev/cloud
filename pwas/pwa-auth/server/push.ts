@@ -14,6 +14,8 @@ export const PUSH_LIMITS = {
   windowSeconds: 300,
   /** Five pending sign-ins per account and Cloud, for six accounts on one phone. */
   notificationsPerToken: 30,
+  /** A separate budget equal to sign-ins, so Actions can never use up sign-in wake-ups. */
+  actionNotificationsPerToken: 30,
   /** About ten wake-ups per second from one Cloud or NAT address. */
   requestsPerCaller: 3_000,
   subscriptionsPerCaller: 30,
@@ -131,7 +133,10 @@ export const createPushService = (options: {
   const enqueue = async (token: string, message: PushMessage): Promise<"queued" | "gone" | RateLimited> => {
     const row = await find(token);
     if (!row) return "gone";
-    const limited = await hit(`token:${row.id}`, limits.notificationsPerToken);
+    const limited =
+      message.type === "action"
+        ? await hit(`action:${row.id}`, limits.actionNotificationsPerToken)
+        : await hit(`token:${row.id}`, limits.notificationsPerToken);
     if (limited) return limited;
     await queue.send({
       data: { subscriptionId: row.id, message },

@@ -47,11 +47,16 @@ Use public `@k2b/ui` controls and tokens. English and German messages live in
 The menu groups account management, settings, notifications, and installation.
 Sign-ins open a bottom sheet and require an explicit choice after comparing
 the code. Actions appear per Cloud and open a review sheet only on a tap or a
-tapped notification. The sheet loads a fresh SDK-checked view, renders app text
-without HTML or links, and arms approve/deny after 500 ms. It keeps the result
-in the same sheet. HTTP 409 shows **Not applied**; uncertain results disable
-both buttons and cannot be sent again, including from another tab. Language
-and theme preferences are local.
+tapped notification. The row's **Review** button loads a fresh SDK-checked view
+first and opens the sheet only with it, so the sheet never grows after its
+first frame; a load failure replaces the row's origin line. A tapped
+notification names its Cloud and loads the Action directly, also when the
+inbox left it out. The sheet renders app text without HTML or links and arms
+approve/deny after 500 ms. Every ending (approved, denied, **Not applied** for
+HTTP 409, **Not confirmed** for an uncertain result, **Expired**) replaces the
+request at the same height. A 409 also removes the row. An uncertain result
+is never sent again, including from another tab. Language and theme
+preferences are local.
 
 New vaults use one local method without a PIN prompt. Legacy PIN installs
 verify their PIN with the existing backoff, then atomically replace all

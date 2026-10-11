@@ -164,8 +164,8 @@ export type AppDeviceActions = {
     approved: boolean;
   }): Promise<boolean>;
 };
-// Cloud Login allows 30 wake-ups per token in five minutes. One Action wake-up per device
-// in 30 seconds uses at most ten, leaving twenty for sign-ins.
+// Bundle Action wake-ups for 30 seconds while the previously woken request is still open.
+// Cloud Login gives Actions a separate 30-per-token budget in five minutes, preserving the full sign-in budget.
 const ACTION_WAKE_SECONDS = 30;
 /** Best-effort sign-in wake-ups through the trusted authenticator; returns the HTTP status. */
 export type AppLoginPushSender = (
@@ -293,7 +293,7 @@ export const createAppApprovalService = (
         const cfg = await config(false);
         if (!cfg.enabled || !cfg.appOrigin) return;
         const rows = await db<{ push_token: string; user_id: string }[]>`
-          UPDATE auth.app_devices d SET action_wake_at=now()
+          UPDATE auth.app_devices d SET action_wake_at=now(), action_wake_ref=${approvalId}::uuid
           WHERE d.id IN (
             SELECT device.id FROM auth.app_devices device JOIN approvals.requests r ON r.approver_user_id=device.user_id
             WHERE r.id=${approvalId}::uuid AND r.status='pending' AND r.expires_at > now()
@@ -302,7 +302,9 @@ export const createAppApprovalService = (
               AND device.issuer=${cfg.issuer} AND device.revoked_at IS NULL AND device.push_token IS NOT NULL
               AND device.actions_at IS NOT NULL
             LIMIT ${limits.devicesPerAccount}
-          ) AND (d.action_wake_at IS NULL OR d.action_wake_at < now() - ${ACTION_WAKE_SECONDS} * interval '1 second')
+          ) AND (d.action_wake_at IS NULL OR d.action_wake_at <= now() - ${ACTION_WAKE_SECONDS} * interval '1 second'
+            OR NOT EXISTS (SELECT 1 FROM approvals.requests w
+              WHERE w.id=d.action_wake_ref AND w.status='pending' AND w.expires_at > now()))
           RETURNING d.push_token,d.user_id`;
         const tokens = new Map(rows.map((row) => [row.push_token, row.user_id]));
         await Promise.all(

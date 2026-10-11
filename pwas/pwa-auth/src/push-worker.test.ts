@@ -99,7 +99,10 @@ test("Action wake-ups name only the Cloud host in English and German", async () 
   ]) {
     const sw = worker({ locale });
     await sw.push(JSON.stringify({ v: 1, type: "action", cloud: "https://cloud.example.org", ref: "abc" }));
-    expect(sw.shown[0]).toMatchObject({ title, options: { body, tag: "action:https://cloud.example.org", data: { url: "/?action=abc" } } });
+    expect(sw.shown[0]).toMatchObject({
+      title,
+      options: { body, tag: "action:https://cloud.example.org", data: { url: "/?action=abc&cloud=https%3A%2F%2Fcloud.example.org" } },
+    });
   }
 });
 
@@ -109,8 +112,13 @@ test("an Action notification opens its URL or forwards the Action kind to an ope
   expect(closed.opened).toEqual(["https://login.example.test/?action=abc"]);
   const running = worker({ windows: [{ url: "https://login.example.test/" }] });
   await running.click({ url: "/?action=abc" });
-  expect(running.messages).toEqual([{ type: OPEN_REQUEST_MESSAGE, ref: "abc", kind: "action" }]);
-  expect(running.focused).toEqual(["https://login.example.test/"]);
+  await running.click({ url: "/?action=abc&cloud=https%3A%2F%2Fcloud.example.org" });
+  // The Cloud lets the app load an Action its inbox summaries left out.
+  expect(running.messages).toEqual([
+    { type: OPEN_REQUEST_MESSAGE, ref: "abc", kind: "action" },
+    { type: OPEN_REQUEST_MESSAGE, ref: "abc", kind: "action", cloud: "https://cloud.example.org" },
+  ]);
+  expect(running.focused).toEqual(["https://login.example.test/", "https://login.example.test/"]);
   await running.push(JSON.stringify({ v: 1, type: "action", cloud: "https://cloud.example.org/path", ref: "abc" }));
   await running.push(JSON.stringify({ v: 1, type: "action", cloud: "https://cloud.example.org", ref: "../bad" }));
   expect(running.shown.every((item) => item.options.body === "Open Cloud Login to check waiting requests.")).toBe(true);

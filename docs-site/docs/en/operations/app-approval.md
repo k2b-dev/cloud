@@ -319,8 +319,8 @@ Use a fresh `jti` for every command.
 The view contains `actionId`, `app: {id, name}`,
 `requester: {app: {id, name}, title}`, `assurance`, `sentence`, `message`,
 `details`, `truncated`, `argsDigest`, `createdAt`, `expiresAt`, and `digest`.
-App names come from Cloud's registry, localized for the phone's
-`Accept-Language`. The chat title is `null` when empty.
+App names come from Cloud's registry in the language Cloud used when it asked.
+The chat title is `null` when empty.
 `message` is plain text or `null`. Each detail has `{label, value}` and may
 carry `format: "date" | "date-time"`. Those values retain their raw date
 encoding; show them in the phone's locale and time zone. Markdown details
@@ -409,7 +409,8 @@ are never woken.
 For an Action approval asked outside Cloud's pages, Core sends the same body
 with `kind: "action"` and the approval ID as `requestRef`. It wakes only active
 devices that called `inbox` and registered a push token. Each device gets at
-most one Action wake-up in 30 seconds, leaving push capacity for sign-ins.
+most one Action wake-up in 30 seconds while the previously woken request is still
+open. Cloud Login counts Action wake-ups separately from sign-ins.
 Requests from signed-in browser turns do not trigger an Action wake-up.
 A `400` from an older Cloud Login server leaves the token unchanged.
 Sign-in wake-ups keep their original body without `kind`. Cloud Login uses

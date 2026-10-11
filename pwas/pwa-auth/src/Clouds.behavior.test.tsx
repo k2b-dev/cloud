@@ -89,7 +89,7 @@ test("login requests use the shared sheet and dismiss without approving", async 
   }
 });
 
-for (const scenario of ["approve", "deny", "stale", "uncertain", "load", "digest", "focus"] as const) {
+for (const scenario of ["approve", "deny", "stale", "uncertain", "expired", "load", "digest", "focus", "focus-unknown"] as const) {
   test(`Action review: ${scenario}`, async () => {
     const dom = createDomTestHarness();
     const { Clouds } = await import("./Clouds");
@@ -122,13 +122,17 @@ for (const scenario of ["approve", "deny", "stale", "uncertain", "load", "digest
     };
     const decisions: string[] = [];
     const reads: string[] = [];
-    const [actions, setActions] = createSignal(scenario === "focus" ? [] : [view]);
-    const [focus, setFocus] = createSignal<string | undefined>(scenario === "focus" ? "action" : undefined);
+    const focusing = scenario === "focus" || scenario === "focus-unknown";
+    const [actions, setActions] = createSignal(focusing ? [] : [view]);
+    const [now, setNow] = createSignal(Date.now());
+    const [focus, setFocus] = createSignal<import("./Clouds").ActionFocus | undefined>(
+      focusing ? { actionId: "action", cloud: scenario === "focus" ? binding.issuer : undefined } : undefined,
+    );
     const noop = async () => {};
     const auth: Authenticator = {
       bindings: () => [binding],
       states: () => ({ fixture: { requests: [], actions: actions(), moreActions: 2 } }),
-      now: Date.now,
+      now,
       online: () => true,
       storageError: () => false,
       changed: noop,
@@ -142,6 +146,7 @@ for (const scenario of ["approve", "deny", "stale", "uncertain", "load", "digest
       decide: noop,
       action: async (_binding, actionId) => {
         reads.push(actionId);
+        await Bun.sleep(5);
         if (scenario === "load") throw new Error("load failure");
         if (scenario === "digest") throw new AppApprovalClientError("INVALID_RESPONSE");
         return view;
@@ -170,23 +175,37 @@ for (const scenario of ["approve", "deny", "stale", "uncertain", "load", "digest
     const buttons = () => [...document.querySelectorAll<HTMLButtonElement>("dialog button")];
     const button = (label: string) => buttons().find((item) => item.textContent?.trim() === label)!;
     try {
-      await Bun.sleep(30);
-      expect(document.querySelector("dialog[open]")).toBeNull();
-      expect(dom.root.textContent).toContain("2 more waiting in Cloud");
-      if (scenario === "focus") setActions([view]);
-      else {
+      if (!focusing) {
+        await Bun.sleep(30);
+        expect(document.querySelector("dialog[open]")).toBeNull();
+        expect(dom.root.textContent).toContain("2 more waiting in Cloud");
         expect(dom.root.querySelector(".auth-action-row")?.textContent).toContain("Files · <a href=");
         dom.root.querySelector<HTMLButtonElement>(".auth-action-row button")!.click();
+        // The view loads on the row's button; no sheet opens before it is there.
+        await Bun.sleep(0);
+        expect(dom.root.querySelector(".auth-action-row button")?.getAttribute("aria-busy")).toBe("true");
+        expect(document.querySelector("dialog[open]")).toBeNull();
       }
-      await Bun.sleep(30);
-      expect(reads).toEqual(["action"]);
-      const dialog = document.querySelector("dialog[open]")!;
-      if (scenario === "load" || scenario === "digest") {
-        expect(dialog.textContent).toContain("This request could not be loaded or checked. Review it in Cloud.");
-        expect(buttons().some((item) => item.textContent === "Approve")).toBe(false);
-        expect(button("Close")).toBeDefined();
+      await Bun.sleep(40);
+      expect(focus()).toBeUndefined();
+      if (scenario === "focus-unknown") {
+        // Not listed and no Cloud named: nothing to load, and the focus does not linger.
+        expect(reads).toEqual([]);
+        expect(document.querySelector("dialog[open]")).toBeNull();
         return;
       }
+      expect(reads).toEqual(["action"]);
+      if (scenario === "load" || scenario === "digest") {
+        expect(document.querySelector("dialog[open]")).toBeNull();
+        const failed = dom.root.querySelector('.auth-action-row [role="alert"]');
+        expect(failed?.textContent).toBe("Could not load. Check it in Cloud.");
+        expect(dom.root.querySelector(".auth-action-row time")).toBeNull();
+        expect(dom.root.querySelector(".auth-action-row button")?.hasAttribute("aria-busy")).toBe(false);
+        return;
+      }
+      const dialog = document.querySelector("dialog[open]")!;
+      // The first frame already shows the whole request.
+      expect(dialog.textContent).not.toContain("Loading");
       expect(dialog.querySelector(".auth-action-frame")?.textContent).toContain("Files on cloud.example.org wants to:");
       expect(dialog.textContent).toContain("Requested by Assistant");
       expect(dialog.querySelector("blockquote")?.textContent).toBe(view.sentence);
@@ -198,9 +217,18 @@ for (const scenario of ["approve", "deny", "stale", "uncertain", "load", "digest
       expect(dialog.textContent).toContain("Asks every time");
       expect(dialog.querySelector(".auth-action-body a, .auth-action-body img, .auth-action-body script")).toBeNull();
       expect(dialog.querySelector(".auth-action-actions")?.hasAttribute("inert")).toBe(true);
+      if (scenario === "expired") {
+        setNow(Date.parse(view.expiresAt));
+        await Bun.sleep(10);
+        expect(dialog.querySelector("h3")?.textContent).toBe("Expired");
+        expect(dialog.textContent).toContain("This request has expired. Nothing happens.");
+        expect(dialog.querySelector("blockquote")).toBeNull();
+        expect(decisions).toEqual([]);
+        return;
+      }
       button("Approve").click();
       expect(decisions).toEqual([]);
-      await Bun.sleep(250);
+      await Bun.sleep(200);
       expect(dialog.querySelector(".auth-action-actions")?.hasAttribute("inert")).toBe(true);
       await Bun.sleep(300);
       expect(dialog.querySelector(".auth-action-actions")?.hasAttribute("inert")).toBe(false);
@@ -209,26 +237,20 @@ for (const scenario of ["approve", "deny", "stale", "uncertain", "load", "digest
       button(choice)?.click();
       await Bun.sleep(20);
       expect(decisions).toEqual([scenario === "deny" ? "deny" : "approve"]);
-      if (scenario === "uncertain") {
-        expect(dialog.querySelector('[role="alert"]')?.textContent).toContain("This request will not be sent again.");
-        expect(button("Approve").disabled).toBe(true);
-        expect(button("Deny").disabled).toBe(true);
-      } else {
-        expect(dialog.querySelector("h3")?.textContent).toBe(
-          scenario === "stale" ? "Not applied" : scenario === "deny" ? "Denied" : "Approved",
-        );
-        expect(dialog.textContent).toContain(
-          scenario === "stale"
-            ? "This request was already decided, has expired or changed. Check it in Cloud."
-            : scenario === "deny"
-              ? "Nothing happens."
-              : "Files continues in Cloud.",
-        );
-        button("Done").click();
-        await Bun.sleep(30);
-        expect(document.querySelector("dialog[open]")).toBeNull();
-        expect(focus()).toBeUndefined();
-      }
+      const titles = { approve: "Approved", focus: "Approved", deny: "Denied", stale: "Not applied", uncertain: "Not confirmed" };
+      const texts = {
+        approve: "Assistant continues in Cloud.",
+        focus: "Assistant continues in Cloud.",
+        deny: "Nothing happens.",
+        stale: "This request was already decided, has expired or changed. Check it in Cloud.",
+        uncertain: "The result could not be confirmed. This request will not be sent again. Check it in Cloud.",
+      };
+      expect(dialog.querySelector("h3")?.textContent).toBe(titles[scenario]);
+      expect(dialog.textContent).toContain(texts[scenario]);
+      expect(dialog.querySelector(".auth-action-result")?.getAttribute("role")).toBe(scenario === "uncertain" ? "alert" : "status");
+      button("Done").click();
+      await Bun.sleep(30);
+      expect(document.querySelector("dialog[open]")).toBeNull();
     } finally {
       closeDialogs();
       await Bun.sleep(20);

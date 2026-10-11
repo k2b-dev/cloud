@@ -216,6 +216,8 @@ for (const status of [200, 409, 403, 500]) {
     supportsActions = true;
     actStatus = status;
     const { auth, binding } = await paired();
+    for (let i = 0; i < 100 && !auth.states()[binding.id]; i++) await Bun.sleep(10);
+    expect(auth.states()[binding.id]?.actions).toHaveLength(1);
     const view = actionView();
     view.digest = await appActionDigest(issuer, view);
     if (status === 200) await auth.act(binding, view, "approve");
@@ -231,7 +233,8 @@ for (const status of [200, 409, 403, 500]) {
     });
     await expect(other.act(binding, view, "approve")).rejects.toThrow("uncertain");
     expect(operations.filter((operation) => operation === "act")).toHaveLength(1);
-    if (status === 200) expect(auth.states()[binding.id]?.actions).toEqual([]);
+    // Applied or no longer offered (409): the row leaves at once. An unknown outcome keeps it.
+    expect(auth.states()[binding.id]?.actions).toHaveLength(status === 200 || status === 409 ? 0 : 1);
   });
 }
 
