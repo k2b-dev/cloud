@@ -293,6 +293,15 @@ export const incomingAutomationHasAi = (steps: MailAutomationStep[]): boolean =>
   return result;
 };
 
+/** Each new run creates another comment, reply draft, or Spaces event for these steps. */
+export const incomingAutomationHasNonRepeatableSteps = (steps: MailAutomationStep[]): boolean => {
+  let result = false;
+  visitSteps(steps, (step) => {
+    if (step.kind === "add_comment" || step.kind === "create_reply_draft" || step.kind === "create_space_event") result = true;
+  });
+  return result;
+};
+
 export const incomingAutomationHasSpaces = (steps: MailAutomationStep[]): boolean => {
   let result = false;
   visitSteps(steps, (step) => {

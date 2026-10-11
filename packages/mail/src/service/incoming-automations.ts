@@ -43,6 +43,7 @@ import {
   incomingAutomationActions,
   incomingAutomationBudget,
   incomingAutomationHasAi,
+  incomingAutomationHasNonRepeatableSteps,
   incomingAutomationHasSpaces,
   resolveIncomingAutomationReferences,
 } from "./incoming-automation-definition";
@@ -219,6 +220,8 @@ type IncomingAutomationBackfillInput = {
   workflowVersionId: string;
   scope: MailAutomationScope;
   cutoffAt: string;
+  /** Re-run only messages whose latest run of this version failed or was canceled, once per operation. */
+  retryFailed?: boolean;
   /** Candidate and already-accepted counts frozen at start, so reported progress stays monotonic. */
   startCounts?: { candidates: number; accepted: number };
 };
@@ -729,6 +732,60 @@ const backfillMutationMutex = lazySync((sync) =>
   sync.mutex({ id: "mail:incoming-automation-start", ttlMs: 30_000, retry: { maxAttempts: 1 } }),
 );
 
+const incomingAutomationBackfillDedupeKey = (input: IncomingAutomationBackfillInput, targetKey: string): string =>
+  `${incomingAutomationExistingDedupeKey(input.automationId, input.workflowVersionId, targetKey)}${
+    input.retryFailed === true ? `:retry:${input.operationId}` : ""
+  }`;
+
+const incomingAutomationBackfillAcceptedSql = (input: IncomingAutomationBackfillInput) => sql`
+  EXISTS (
+    SELECT 1
+    FROM workflows.event existing_event
+    WHERE existing_event.app_id = ${MAIL_WORKFLOW_APP_ID}
+      AND existing_event.scope_id = ${input.mailboxId}
+      AND existing_event.type = ${MAIL_WORKFLOW_EVENT.messageReceived}
+      AND existing_event.dedupe_key =
+        ${incomingAutomationExistingDedupePrefix(input.automationId, input.workflowVersionId)} || remote_ref.id::text ||
+        ${input.retryFailed === true ? `:retry:${input.operationId}` : ""}
+  )
+`;
+
+const incomingAutomationBackfillCandidateSql = (input: IncomingAutomationBackfillInput) => sql`
+  resource.mailbox_id = ${input.mailboxId}::uuid
+  AND remote_ref.stale_at IS NULL
+  AND remote_ref.first_seen_at <= ${input.cutoffAt}
+  AND ${inboundIncomingAutomationTarget}
+  AND ${incomingAutomationCandidateSql(input.scope)}
+  ${
+    input.retryFailed === true
+      ? sql`
+    AND (
+      remote_ref.id::text IN (
+        SELECT latest.remote_message_ref_id FROM (
+          SELECT DISTINCT ON (event.context #>> '{preconditions,message,remoteMessageRefId}')
+            event.context #>> '{preconditions,message,remoteMessageRefId}' AS remote_message_ref_id,
+            run.state,
+            run.finished_at
+          FROM workflows.event_delivery delivery
+          JOIN workflows.event event ON event.id = delivery.event_id
+          LEFT JOIN workflows.run run
+            ON run.event_id = event.id AND run.workflow_id = delivery.workflow_id AND run.parent_run_id IS NULL
+          WHERE delivery.workflow_id = ${input.workflowId}::uuid
+            AND delivery.workflow_version_id = ${input.workflowVersionId}::uuid
+            AND event.app_id = ${MAIL_WORKFLOW_APP_ID}
+            AND event.scope_id = ${input.mailboxId}
+            AND event.type = ${MAIL_WORKFLOW_EVENT.messageReceived}
+          ORDER BY event.context #>> '{preconditions,message,remoteMessageRefId}', event.created_at DESC, event.id DESC
+        ) latest
+        WHERE latest.state IN ('failed', 'canceled') AND latest.finished_at <= ${input.cutoffAt}
+      )
+      OR ${incomingAutomationBackfillAcceptedSql(input)}
+    )
+  `
+      : sql``
+  }
+`;
+
 const BACKFILL_PUMP_ID = "mail:incoming-automation-backfill";
 const getIncomingAutomationBackfillPump = lazySync((sync) =>
   sync.pump<IncomingAutomationBackfillInput, never, IncomingAutomationBackfillItem>({
@@ -744,20 +801,8 @@ const getIncomingAutomationBackfillPump = lazySync((sync) =>
       const rows = await sql<{ remote_message_ref_id: string }[]>`
         SELECT DISTINCT remote_ref.id AS remote_message_ref_id, message.internal_date
         ${incomingAutomationTargetFrom}
-        WHERE resource.mailbox_id = ${input.mailboxId}::uuid
-          AND remote_ref.stale_at IS NULL
-          AND remote_ref.first_seen_at <= ${input.cutoffAt}
-          AND ${inboundIncomingAutomationTarget}
-          AND ${incomingAutomationCandidateSql(input.scope)}
-          AND NOT EXISTS (
-            SELECT 1
-            FROM workflows.event existing_event
-            WHERE existing_event.app_id = ${MAIL_WORKFLOW_APP_ID}
-              AND existing_event.scope_id = ${input.mailboxId}
-              AND existing_event.type = ${MAIL_WORKFLOW_EVENT.messageReceived}
-              AND existing_event.dedupe_key =
-                ${incomingAutomationExistingDedupePrefix(input.automationId, input.workflowVersionId)} || remote_ref.id::text
-          )
+        WHERE ${incomingAutomationBackfillCandidateSql(input)}
+          AND NOT ${incomingAutomationBackfillAcceptedSql(input)}
         ORDER BY message.internal_date DESC, remote_ref.id DESC
         LIMIT ${Math.min(limit, EXISTING_MESSAGE_APPLICATION_LIMIT)}
       `;
@@ -786,7 +831,7 @@ const getIncomingAutomationBackfillPump = lazySync((sync) =>
               conversation: snapshot.source.conversation as unknown as WorkflowJsonValue,
             },
             context: mailWorkflowEventContext(snapshot),
-            dedupeKey: incomingAutomationExistingDedupeKey(automation.id, automation.workflowVersionId, snapshot.targetKey),
+            dedupeKey: incomingAutomationBackfillDedupeKey(input, snapshot.targetKey),
             occurredAt: new Date(snapshot.internalDate),
           },
           { db: tx },
@@ -814,22 +859,10 @@ const loadIncomingAutomationBackfillCounts = async (
     SELECT
       COUNT(DISTINCT remote_ref.id)::bigint AS candidates,
       COUNT(DISTINCT remote_ref.id) FILTER (
-        WHERE EXISTS (
-          SELECT 1
-          FROM workflows.event existing_event
-          WHERE existing_event.app_id = ${MAIL_WORKFLOW_APP_ID}
-            AND existing_event.scope_id = ${input.mailboxId}
-            AND existing_event.type = ${MAIL_WORKFLOW_EVENT.messageReceived}
-            AND existing_event.dedupe_key =
-              ${incomingAutomationExistingDedupePrefix(input.automationId, input.workflowVersionId)} || remote_ref.id::text
-        )
+        WHERE ${incomingAutomationBackfillAcceptedSql(input)}
       )::bigint AS accepted
     ${incomingAutomationTargetFrom}
-    WHERE resource.mailbox_id = ${input.mailboxId}::uuid
-      AND remote_ref.stale_at IS NULL
-      AND remote_ref.first_seen_at <= ${input.cutoffAt}
-      AND ${inboundIncomingAutomationTarget}
-      AND ${incomingAutomationCandidateSql(input.scope)}
+    WHERE ${incomingAutomationBackfillCandidateSql(input)}
   `;
   return { candidates: Number(row?.candidates ?? 0), accepted: Number(row?.accepted ?? 0) };
 };
@@ -837,10 +870,14 @@ const loadIncomingAutomationBackfillCounts = async (
 /**
  * Backfill progress for one operation:
  *
- * - `candidateCount` and `alreadyAcceptedCount` are frozen when the operation starts.
+ * - `candidateCount` and `alreadyAcceptedCount` are frozen when the operation starts. Retry
+ *   candidates are messages whose latest run of this version ended failed or canceled before
+ *   the backfill started. Runs that fail later are left for the next retry backfill;
+ *   already accepted is zero.
  * - `newlyAcceptedCount` is the pump's durable dispatch counter, so it never decreases, even
  *   when executed actions move accepted messages out of the candidate set.
- * - `remainingCount` counts cutoff candidates that still have no accepted event for this version.
+ * - `remainingCount` counts candidates with no accepted event for this operation's mode.
+ *   Retry acceptance is scoped to the operation and keeps re-run messages in its candidate set.
  * - The pump reports `completed` after its single bounded batch. If candidates remain, that
  *   batch hit the per-run application limit and the operation reports `limited` instead.
  */
@@ -854,6 +891,7 @@ const mapIncomingAutomationBackfill = async (
     operationId: state.input.operationId,
     automationId: state.input.automationId,
     workflowVersionId: state.input.workflowVersionId,
+    retryFailed: state.input.retryFailed === true,
     state: state.status === "completed" && remainingCount > 0 ? "limited" : state.status,
     candidateCount: start.candidates,
     alreadyAcceptedCount: start.accepted,
@@ -925,6 +963,15 @@ export const startIncomingAutomationBackfill = async (params: {
             if (incomingAutomationHasAi(current.steps)) {
               unwrap(fail(err.badInput("Flows with AI run only for future incoming mail")));
             }
+            if (parsed.data.retryFailed === true && incomingAutomationHasNonRepeatableSteps(current.steps)) {
+              unwrap(
+                fail(
+                  err.badInput(
+                    "A retry backfill cannot run flows that add comments, create reply drafts, or create Spaces events, because a second run would create them again",
+                  ),
+                ),
+              );
+            }
             unwrap(await rejectActiveBackfillMutation(current, parsed.data.operationId));
             unwrap(
               await protectMailboxSenders({
@@ -944,7 +991,8 @@ export const startIncomingAutomationBackfill = async (params: {
             (existing.input.mailboxId !== params.mailboxId ||
               existing.input.automationId !== automation.id ||
               existing.input.operationId !== parsed.data.operationId ||
-              existing.input.workflowVersionId !== automation.workflowVersionId)
+              existing.input.workflowVersionId !== automation.workflowVersionId ||
+              (existing.input.retryFailed === true) !== (parsed.data.retryFailed === true))
           ) {
             return fail(err.conflict("Backfill operation id is already in use"));
           }
@@ -981,6 +1029,7 @@ export const startIncomingAutomationBackfill = async (params: {
                 "mail.workflow.id": automation.workflowId,
                 "mail.workflow.version_id": automation.workflowVersionId,
                 "mail.backfill.operation_id": parsed.data.operationId,
+                "mail.backfill.retry_failed": parsed.data.retryFailed === true,
               },
             });
             try {
@@ -993,6 +1042,7 @@ export const startIncomingAutomationBackfill = async (params: {
                 workflowVersionId: automation.workflowVersionId,
                 scope: automation.scope,
                 cutoffAt: new Date().toISOString(),
+                retryFailed: parsed.data.retryFailed === true,
               };
               await pump.start({
                 key: incomingAutomationBackfillKey(automation.id, parsed.data.operationId),
@@ -1021,6 +1071,7 @@ export const startIncomingAutomationBackfill = async (params: {
               workflowId: automation.workflowId,
               workflowVersionId: automation.workflowVersionId,
               operationId: parsed.data.operationId,
+              retryFailed: parsed.data.retryFailed === true,
             },
             result,
           });
