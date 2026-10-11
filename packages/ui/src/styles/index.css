@@ -11390,12 +11390,10 @@
 .k2b-ui .k2b-app-workspace__sidebar-desktop > .k2b-app-workspace__sidebar-body::-webkit-scrollbar {
   width: 0.5rem;
 }
-/* Browsers that ignore that width draw an overlay scrollbar of no width or a
-   wider native one, so the body's content stops at the sidebar's own content
-   edge: rows end the same inset from the right as they start from the left. */
-.k2b-ui .k2b-app-workspace__sidebar-desktop {
-  container-type: inline-size;
-}
+/* Browsers that ignore that width and draw an overlay scrollbar of no width
+   would let rows run into the right inset, so the body's content stops at the
+   sidebar's own content edge (its container, see layout-parity.css): rows end
+   the same inset from the right as they start from the left. */
 .k2b-ui .k2b-app-workspace__sidebar-desktop > .k2b-app-workspace__sidebar-body > *,
 .k2b-ui .k2b-app-workspace__sidebar-desktop > .k2b-app-workspace__sidebar-body > :is(solid-island, solid-client) > * {
   max-width: 100cqi;

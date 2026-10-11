@@ -242,7 +242,9 @@ does not change. Touch, coarse-pointer, and forced-color environments retain
 their normal visible scrollbar treatment. Rows keep the same inset on the
 right as on the left: the narrow scrollbar track sits in the sidebar's right
 inset, and a browser with overlay scrollbars draws its scrollbar over that
-inset.
+inset. A browser that ignores the narrow track width and draws a wider classic
+scrollbar, such as Firefox on Windows, leaves a right inset as wide as its
+scrollbar.
 
 The sidebar compound members cover these jobs:
 
