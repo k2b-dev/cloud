@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { type ComposeFormattingWarning, MAX_COMPOSE_FORMATTING_WARNINGS } from "../contracts";
 import {
   type ComposeRenderContext,
@@ -772,32 +772,39 @@ describe("separate draft signatures", () => {
   });
 
   test("the selected signature shares the Liquid budget with legacy segments", () => {
+    // Each read advances a fake clock by 1 ms, so the budget runs out at the same read on a busy machine too.
+    let clock = 0;
     let reads = 0;
+    const now = spyOn(performance, "now").mockImplementation(() => clock);
     const slowContext: ComposeRenderContext = {
       ...context,
       actor: {
         ...context.actor,
         get display_name() {
           reads += 1;
-          const start = performance.now();
-          while (performance.now() - start < 1) {}
+          clock += 1;
           return "";
         },
       },
     };
     const segment = markComposeTemplateSegment("{% for i in (1..100) %}{{ actor.display_name }}{% endfor %}");
     const signature = "{% for i in (1..600) %}{{ actor.display_name }}{% endfor %}";
-    const result = renderComposeContent({
-      body: segment.repeat(6),
-      signature,
-      format: "markdown",
-      customCss: "",
-      context: slowContext,
-      renderLiquid: true,
-    });
-    expect(result).toMatchObject({ ok: false, error: { composeRender: { reason: "signatureFailed" } } });
-    expect(reads).toBeGreaterThan(600);
-    expect(reads).toBeLessThan(1_200);
+    try {
+      const result = renderComposeContent({
+        body: segment.repeat(6),
+        signature,
+        format: "markdown",
+        customCss: "",
+        context: slowContext,
+        renderLiquid: true,
+      });
+      // The segments use 600 of the 1,000 ms, so the signature fails although it alone would need only 600.
+      expect(result).toMatchObject({ ok: false, error: { composeRender: { reason: "signatureFailed" } } });
+      expect(reads).toBeGreaterThan(600);
+      expect(reads).toBeLessThan(1_200);
+    } finally {
+      now.mockRestore();
+    }
   });
 
   test("null signature preserves rendering byte for byte", () => {
