@@ -39,17 +39,19 @@ describe("Mermaid editor widget", () => {
     const dom = createDomTestHarness();
     delegateEvents(["click", "keydown", "pointerdown", "pointermove", "pointerup"], dom.document);
     const { EditorState } = await import("@codemirror/state");
+    const { ensureSyntaxTree } = await import("@codemirror/language");
     const { EditorView } = await import("@codemirror/view");
     const { markdownExtension } = await import("./markdown");
     const { mermaidExtension } = await import("./mermaid");
-    const view = new EditorView({
-      parent: dom.root,
-      state: EditorState.create({
-        doc: doc.replace("flowchart LR\n  A-->B", code),
-        selection: { anchor: 0 },
-        extensions: [markdownExtension(), mermaidExtension()],
-      }),
+    const state = EditorState.create({
+      doc: doc.replace("flowchart LR\n  A-->B", code),
+      selection: { anchor: 0 },
+      extensions: [markdownExtension(), mermaidExtension()],
     });
+    // The first parse has a ~20 ms budget and stops early on a busy machine, before the fenced block.
+    // Finish it so the widget exists when the view first draws.
+    if (!ensureSyntaxTree(state, state.doc.length, 10_000)) throw new Error("Markdown did not finish parsing");
+    const view = new EditorView({ parent: dom.root, state });
     return { dom, view };
   };
 
