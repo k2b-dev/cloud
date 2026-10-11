@@ -14,9 +14,10 @@ updated: 2026-10-10
 
 `code_write` no longer accepts a `files` array. Use
 `code_write({id, expectedRevision, path, content, entry?})` for each source file,
-passing the returned revision as the next `expectedRevision`. A stale revision
-still returns `CONFLICT` without saving. Results add `lines` beside `length`
-for every file; check that the line count matches what you wrote.
+one call at a time, passing the returned revision as the next `expectedRevision`.
+A stale revision still returns `CONFLICT` without saving. Results add `lines`
+beside `length` for every file; check that the line count matches what you
+wrote.
 
 Move `fromFile` imports to
 `code_import({id, expectedRevision, files: [{path, fromFile}], entry?})`.

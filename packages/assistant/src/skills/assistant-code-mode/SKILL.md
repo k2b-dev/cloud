@@ -114,8 +114,9 @@ user can see it. No saved App or chat file is necessary.
 
 Use a Studio App when the user needs an independently accessible, reusable
 application: `code_create`, one `code_write` per file, then `code_open` beside
-the chat or `code_present({id})` in it. Pass each returned revision as the next
-`expectedRevision` and check that each file's `lines` matches what you wrote.
+the chat or `code_present({id})` in it. Send the writes one at a time, pass each
+returned revision as the next `expectedRevision`, and check that each file's
+`lines` matches what you wrote.
 Use `cloud.download`, `code_export`, and `present` when the requested result is
 a file. These are separate delivery choices.
 

@@ -291,7 +291,7 @@ export const CODE_SOURCE_TOOLS = {
   // Imports carry only references, so they keep an array and one review per batch.
   code_write: {
     description:
-      "Save one complete source file against expectedRevision from code_read, code_create or the previous write. Other files stay unchanged. Write a multi-file app with one call per file, passing each returned revision as the next expectedRevision. Returns revision, the lines and length of every file, and compiler diagnostics for the saved state; an import of a file not yet written is reported as missing until it is saved. Never runs. Copy exact chat, Project or App files with code_import.",
+      "Save one complete source file against expectedRevision from code_read, code_create or the previous write. Other files stay unchanged. Write a multi-file app with one call per file and wait for each result, passing its returned revision as the next expectedRevision; calls sent together in one response share a stale revision, so all but the first fail with CONFLICT. Returns revision, the lines and length of every file, and compiler diagnostics for the saved state; an import of a file not yet written is reported as missing until it is saved. Never runs. Copy exact chat, Project or App files with code_import.",
     input: Id.extend({
       expectedRevision: z.number().int().positive().describe("Revision from code_read, code_create or the previous write."),
       path: ArtifactPath.describe("Relative path of the file to save."),

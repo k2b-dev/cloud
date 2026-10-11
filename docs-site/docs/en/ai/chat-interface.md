@@ -781,7 +781,9 @@ Source text travels only in top-level strings because some providers corrupt
 strings nested in array arguments. Other files stay unchanged. Pass the revision
 from `code_read`, `code_create` or the previous write as `expectedRevision`, then
 chain each returned revision into the next call. A stale revision returns
-`CONFLICT` without saving. Re-read and reconcile before retrying.
+`CONFLICT` without saving. Re-read and reconcile before retrying. The tool
+description tells the model to send one write at a time: calls sent together in
+one model response share a revision, so every call after the first conflicts.
 Results list `lines` and `length` (UTF-16 units) for every file, so a model
 can see when content arrived cut, plus compiler diagnostics for the saved state.
 A trailing newline adds no extra line. Diagnostics do not reject incomplete

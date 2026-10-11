@@ -198,6 +198,12 @@ test("code_write rejects array arguments and accepts only top-level source text"
   );
 });
 
+test("code_write tells the model to wait for each revision instead of sending writes together", () => {
+  // nessi runs one response's calls in order, so parallel writes with one revision conflict after the first.
+  expect(CODE_SOURCE_TOOLS.code_write.description).toContain("one call per file and wait for each result");
+  expect(CODE_SOURCE_TOOLS.code_write.description).toContain("all but the first fail with CONFLICT");
+});
+
 for (const name of ["code_sql", "code_database_read", "code_database_export", "code_database_clear", "code_database_reset"] as const) {
   test(`${name} cannot bypass revoked background authority`, async () => {
     const actor = { kind: "user" as const, user };

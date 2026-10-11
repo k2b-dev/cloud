@@ -6,7 +6,7 @@ They need no package imports. The integration suite executes their published
 handlers in the real isolated runtime against disposable storage.
 
 To install an example, create a private App and save each of the folder's files
-with one `code_write` call, passing each returned revision as the next
+with one `code_write` call at a time, passing each returned revision as the next
 `expectedRevision`. Only the dashboard has an `index.html` interface; for the
 other Apps, which deliberately have none, set `entry:"main.js"`.
 For the importer and invoice matcher, `setup.json` contains `code_database`

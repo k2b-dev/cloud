@@ -518,6 +518,11 @@ Rollback is replacing both images; nothing needs undoing in the database. A turn
 running during the rollout may get one invalid-input error and then follows the
 new tool description.
 
+An app build now takes one tool round per source file instead of one round for
+all files. If a model profile sets a positive `maxToolRounds`, check that it
+still covers a typical multi-file build; otherwise the turn stops using tools
+earlier and answers with the files it saved so far.
+
 After rollout, ask Assistant to build a small app with `index.html` and `app.js`.
 The turn should show one `code_write` per file, no approval, and each result
 should list line counts that match the files.

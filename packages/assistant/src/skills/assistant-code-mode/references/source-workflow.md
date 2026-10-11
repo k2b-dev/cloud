@@ -58,7 +58,10 @@ Creation does not start code or share the app.
 }
 ```
 
-Then write `app.js` the same way, with the revision this call returned.
+Then write `app.js` the same way, with the revision this call returned. Send
+one `code_write` at a time and wait for its result: calls sent together in one
+response carry the same `expectedRevision`, so every call after the first
+returns `CONFLICT`.
 
 Source tools return `{ok:true,data,...}` or `{ok:false,error}`. Read IDs,
 `revision`, file windows and diagnostics from `data`. A successful write returns
