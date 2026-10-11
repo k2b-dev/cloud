@@ -11,6 +11,7 @@ import {
   useLocale,
 } from "@k2b/ui";
 import { createContext, createSignal, For, type JSX, Show, useContext } from "solid-js";
+import type { CloudResourceRef } from "../../contracts/capabilities";
 import type { AiTurnBlock } from "../protocol";
 import type { AiMessageFeedback, AiMessageFeedbackReason, AiStoredMessage } from "../types";
 import {
@@ -62,6 +63,11 @@ export type AiChatActions = {
   resolveFileLink?: (href: string) => { path: string; href: string } | null;
   /** Download URL for a conversation VFS file (present blocks, attachment chips). */
   fileUrl?: (path: string) => string | null;
+  /**
+   * Open a Cloud object a view references. The host resolves it through the owning app's reader with the viewer's
+   * access and confirms before it opens; without this action, references show as text.
+   */
+  onOpenReference?: (title: string, ref: CloudResourceRef) => void;
 };
 
 const assistantBlocks = (message: Message): Extract<Message, { role: "assistant" }>["content"] =>

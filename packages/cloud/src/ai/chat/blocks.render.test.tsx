@@ -630,6 +630,27 @@ describe("capability tool presentation", () => {
     expect(html).not.toMatch(/<a[^>]*hover:underline/);
   });
 
+  test("a card is one stat tile; its tone colors nothing and its trend stays neutral", () => {
+    const block: AiTurnBlock = {
+      id: "card",
+      kind: "tool",
+      callId: "card-1",
+      name: "card",
+      args: { title: "Uptime", value: "99.98 %", caption: "Last 30 days", tone: "red", trendValue: "+0.4 %", trendDirection: "up" },
+      status: "completed",
+      result: { displayed: true },
+    };
+    const html = renderToString(() => createComponent(AiTurnBlockView, { block, turnId: "turn-1" }));
+    expect(html).toContain("k2b-stat-cell");
+    expect(html).toContain("99.98 %");
+    expect(html).toContain("Last 30 days");
+    expect(html).toMatch(/k2b-stat-cell__accent"[^>]*data-tone="zinc"/);
+    expect(html).toContain("ti-trending-up");
+    expect(html).not.toMatch(/bg-red-|border-red-/);
+    // A card stands alone, so its text wraps instead of hiding behind an ellipsis.
+    expect(html).toMatch(/class="k2b-stat-cell"[^>]*data-wrap="true"/);
+  });
+
   test("folds intermediate text and tools into one work line while results and the final text stay visible", () => {
     const blocks: AiTurnBlock[] = [
       { id: "text-before", kind: "text", text: "Before tool." },

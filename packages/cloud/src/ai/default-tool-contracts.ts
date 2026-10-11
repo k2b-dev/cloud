@@ -5,9 +5,9 @@ const ToneSchema = z.enum(["neutral", "blue", "teal", "green", "amber", "red"]);
 
 export const CloudAiCardInputSchema = z.object({
   title: z.string().min(1),
-  value: z.string().min(1),
+  value: z.string().min(1).describe("The figure or status itself, short enough to read at a glance: about 20 characters."),
   emoji: z.string().max(8).optional().describe("Optional single emoji shown next to the card content. Omit when none fits."),
-  caption: z.string().optional(),
+  caption: z.string().optional().describe("Optional scope or time range of the value in one short line."),
   tone: ToneSchema.default("teal"),
   trendLabel: z.string().min(1).optional(),
   trendValue: z.string().min(1).optional(),

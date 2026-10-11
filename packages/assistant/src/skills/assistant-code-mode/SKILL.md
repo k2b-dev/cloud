@@ -107,12 +107,16 @@ Choose by where the values came from:
 1. A few values already in the conversation, a web page or a small capability
    result, without a run → `chart` tool.
 2. Numbers from code (files, CSV, Cloud data or capability results read with
-   `cloud.capabilities.run`) → `cloud.view.chart`, `cloud.view.group` or
-   `cloud.view.table` in the run, then `present({path})` per view. Never retype run values into tool
+   `cloud.capabilities.run`) → `cloud.view.chart`, `cloud.view.group`,
+   `cloud.view.table`, `cloud.view.stats` or `cloud.view.details` in the run, then
+   `present({path})` per view. Never retype run values into tool
    arguments, `data.js` or Markdown; a chat app's `data.js` is the module the run
    wrote, copied unchanged. If a view is missing, rerun with
    `cloud.view.*`. Return only key figures the answer text mentions.
-3. Exact values beyond a small table → `cloud.view.table`.
+3. 1..6 comparable key figures → `cloud.view.stats` above charts, instead of
+   several cards or stat charts. One record with exact fields, such as a checked
+   invoice → `cloud.view.details`. Cloud objects found by a script → table `ref`
+   columns instead of Markdown links. More records → `cloud.view.table`.
 4. Interaction a view cannot express (inputs, what-if, own layout, forms) →
    chat app `code_present`. Read [Chat apps](references/chat.md).
 5. Kept data, live loading, reuse, sharing or actions → Studio App.

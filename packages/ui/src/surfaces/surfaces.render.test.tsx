@@ -399,6 +399,22 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     expect(parityCss).toContain('.k2b-ui .k2b-stat-cell[data-size="sm"] .k2b-stat-cell__sub');
   });
 
+  test("lets a stat cell on its own wrap its text instead of truncating it", () => {
+    const cell = (wrap?: boolean) =>
+      renderToString(() =>
+        createComponent(StatGrid, {
+          columns: 1,
+          get children() {
+            return createComponent(StatCell, { label: "Deploys", value: "All checks passed", sub: "Compared with last week", wrap });
+          },
+        }),
+      );
+
+    expect(cell(true)).toContain('class="k2b-stat-cell" data-size="md" data-surface="white" data-wrap="true"');
+    expect(cell()).not.toContain("data-wrap");
+    expect(parityCss).toContain(".k2b-ui .k2b-stat-cell[data-wrap] .k2b-stat-cell__support { flex-wrap: wrap; }");
+  });
+
   test("ships focus, responsive, dark, and reduced-motion parity hooks", () => {
     expect(parityCss).toContain(":focus-visible");
     expect(parityCss).toContain("@media (min-width: 48rem)");

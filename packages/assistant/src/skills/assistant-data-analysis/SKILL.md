@@ -8,7 +8,8 @@ description: Analyze source data, explain metrics and comparisons, and build evi
 Start with the question the reader needs to answer. Load `assistant-code-mode`
 with `load_skill`, not `load_tools`, for execution, delivery and approval rules.
 Read its `/skills/assistant-code-mode/references/views.md` for computed charts,
-groups and tables, `/skills/assistant-code-mode/references/charts.md` for
+groups, tables, key figures and record details,
+`/skills/assistant-code-mode/references/charts.md` for
 `cloud.chart()` in apps/PDFs, and `/skills/assistant-code-mode/references/apps.md`
 for interfaces. Loading a skill installs no library and grants no access.
 
@@ -53,7 +54,10 @@ upstream completeness; keep it stable when rerendering a snapshot.
 Derive charts, metrics and tables from the same reviewed data. Aggregate large
 inputs in a script; apps show aggregates rather than raw exports. Use a
 `cloud.view.table` for inspectable chat records, or a `<details>` table in an app.
-Choose the chart by the question:
+Use `cloud.view.stats` for 1..6 comparable key figures above charts instead of
+several cards or stat charts. Use `cloud.view.details` for one record with exact
+fields, such as a checked invoice. Use table `ref` columns for Cloud objects
+found by a script instead of Markdown links. Choose the chart by the question:
 
 | Question | Chart |
 | --- | --- |

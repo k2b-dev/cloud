@@ -1,7 +1,8 @@
 # Views in the chat
 
 Numbers computed in `code_run` stay in the run. Call `await cloud.view.chart(spec)`,
-`await cloud.view.group(spec)` or `await cloud.view.table(spec)` there, then call
+`await cloud.view.group(spec)`, `await cloud.view.table(spec)`,
+`await cloud.view.stats(spec)` or `await cloud.view.details(spec)` there, then call
 the **tool** `present({path})` for each returned view the person should see. Never retype run values into
 `chart` arguments, `data.js` or Markdown; a chat app's `data.js` is the module
 the run wrote, copied unchanged ([Chat apps](chat.md)). Return only the key figures mentioned
@@ -109,12 +110,12 @@ Grouped and stacked bars are unsupported
 columns. A column is a name or `{id, label?, type?, format?}`. Without columns,
 keys appear in first-seen order. An omitted type becomes `number` when all
 non-null cells, footer included, are numbers, `datetime` when all are Dates,
-otherwise `text`; a column without any value is `text`.
-Explicit types are `text`, `number`, `date` and `datetime`. Dates are
+`ref` when all are Cloud references, otherwise `text`; a column without any value is `text`.
+Explicit types are `text`, `number`, `date`, `datetime` and `ref`. Dates are
 `YYYY-MM-DD`; datetimes are `YYYY-MM-DDTHH:mm` or `YYYY-MM-DDTHH:mm:ss`, without
 an offset. Dates supplied as `Date` become wall-clock strings in `cloud.timeZone`.
-Missing and undefined cells become null; objects, booleans and non-finite
-numbers must be converted to text or numbers. The optional footer uses the
+Missing and undefined cells become null; objects other than Cloud references,
+booleans and non-finite numbers must be converted to text or numbers. The optional footer uses the
 same columns. `sort: {column: "id", direction: "asc" | "desc"}` sets the initial
 order; the reader can sort again.
 
@@ -124,6 +125,127 @@ three-letter code exactly when style is currency. Percent takes a fraction
 (0.31 → 31 %). Decimals (0..10) fixes fraction digits, compact shortens large
 numbers, and unit is a plain suffix of at most 12 characters. Otherwise numbers
 retain up to 15 significant digits. Labels and text render as text nodes.
+
+## Key figures
+
+`await cloud.view.stats({title, subtitle?, items})` saves 1..6 comparable tiles.
+Put the overview above charts instead of calling several cards or stat charts.
+Each item has `label` (1..80 trimmed characters) and a finite numeric `value`.
+Use short text values (1..80 trimmed characters) only for states such as `"OK"`.
+Keep numbers numeric; a Date value is an error. Format it as text or use details.
+Tiles are narrow (up to six share a chat column) and cut long values: prefer
+`compact` or whole-number formats for large amounts.
+
+Numeric values may have the number `format` described under Tables and a finite
+`delta` in the value's units. Set `better: "up" | "down"` only with a delta and
+only when improvement has a defined direction. The host chooses better/worse
+colors; missing direction or zero change stays neutral. `sub` (1..80 trimmed
+characters) qualifies scope, period or unit. Optional `sparkline` contains
+2..480 finite numbers, oldest first. Every view needs a trimmed title (1..160)
+and may have a trimmed subtitle (1..300); omit absent optional text.
+
+### Offers CSV overview
+
+Use a CSV with `price`, `status` and `date` columns and at least two listed
+months. Here more offers is the desired direction; the comparison uses the
+latest listed month, without claiming that either month is complete.
+
+```js
+export default async (_input, { files }) => {
+  const [input] = files;
+  if (!input) throw new Error("Select an offers CSV.");
+  const rows = await cloud.sheet.parseCsv(await input.file());
+  const months = new Map();
+  let total = 0;
+  for (const row of rows) {
+    if (typeof row.price !== "number" || !Number.isFinite(row.price) ||
+        typeof row.status !== "string" || typeof row.date !== "string" ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(row.date)) throw new Error("Check price, status and date columns.");
+    const month = row.date.slice(0, 7);
+    months.set(month, (months.get(month) ?? 0) + 1);
+    total += row.price;
+  }
+  const ordered = [...months].sort(([a], [b]) => a.localeCompare(b));
+  if (ordered.length < 2) throw new Error("Select at least two months for the comparison.");
+  const counts = ordered.map(([, count]) => count);
+  const latest = counts.at(-1);
+  await cloud.view.stats({
+    title: "Offers overview", subtitle: "Selected CSV · listed months",
+    items: [
+      { label: "Offers", value: rows.length, sub: "All rows" },
+      { label: "Sum of prices", value: total, format: { style: "currency", currency: "EUR", decimals: 2 } },
+      { label: "Offers in latest month", value: latest, sub: ordered.at(-1)[0],
+        delta: latest - counts.at(-2), better: "up", sparkline: counts.slice(-480) },
+    ],
+  });
+  return { offers: rows.length };
+};
+```
+
+## Record details
+
+`await cloud.view.details({title, subtitle?, items})` shows one record with
+1..100 exact fields, such as a checked invoice. Each item is
+`{label, value, type?, format?}`; labels are trimmed, 1..80 characters, and may
+repeat. A saved file always has a type. Omitted script types become `number`
+for finite numbers, `datetime` for Dates, `ref` for Cloud references, otherwise
+`text` for strings or null/undefined (stored as null).
+
+Explicit types and formats follow Tables: text takes a string or number, number a
+finite number, date a valid `YYYY-MM-DD`, datetime a valid wall-clock string,
+and ref a Cloud reference. Null is allowed for every type; other objects and
+booleans are errors. A Date becomes wall-clock text in the run's time zone;
+explicit `type: "date"` keeps that zone's calendar day. Only number fields may
+have a format. Details are read-only rows, not a form.
+
+## Cloud objects in tables
+
+Use a `ref` column for Cloud objects found by a script, instead of Markdown
+links. A reference is `{type, id, title?}`: `type` is a namespaced capability
+resource type such as `spaces.item`, `id` is 1..512 characters, and optional
+`title` is 1..500. Copy `{...item.ref, title: item.title}` from a capability
+result. Never build links. References carry no URL; the runtime drops every
+other key, including `href`, `links`, preview and icon. Saved references with
+extra keys are rejected. Only ref cells and details fields accept references.
+
+The host shows `title ?? id`, sorts and copies that visible text, and opens a
+reference on click after a confirmation through the owning app's reader with
+the viewer's current access. A saved view grants no access. The CLI includes
+`(type:id)` after the visible title.
+
+### Overdue unassigned tasks
+
+Discover `spaces.task.focus` and inspect its contract first. Keep filters
+unchanged across pages; use `page.hasMore` and `page.nextCursor` from the
+capability envelope, not a guessed result path. This query searches readable
+Spaces and filters overdue unassigned open tasks on the server.
+
+```js
+export default async () => {
+  const rows = [];
+  let cursor;
+  do {
+    const result = await cloud.capabilities.run("spaces.task.focus", {
+      assignedTo: "unassigned", deadlineFilter: "overdue", limit: 100,
+      ...(cursor ? { cursor } : {}),
+    });
+    for (const item of result.data) rows.push({
+      task: { ...item.ref, title: item.title }, space: item.spaceName,
+      // Deadlines are instants; a Date in a date column keeps the run's calendar day.
+      deadline: item.deadline ? new Date(item.deadline) : null,
+    });
+    if (rows.length > 3840) throw new Error("Too many tasks for one view; narrow the query before rerunning.");
+    cursor = result.page?.hasMore ? result.page.nextCursor : undefined;
+  } while (cursor);
+  await cloud.view.table({
+    title: "Overdue unassigned tasks", subtitle: "Readable Spaces · current snapshot",
+    columns: [{ id: "task", label: "Task", type: "ref" }, "space",
+      { id: "deadline", label: "Deadline", type: "date" }],
+    rows, sort: { column: "deadline", direction: "asc" },
+  });
+  return { tasks: rows.length };
+};
+```
 
 ## Choose and label
 
@@ -193,7 +315,11 @@ Each call returns a `ViewRef`:
 - group: `{path, view: "group", title, subtitle?, linkX, layout, charts}`,
   where `charts` lists `{kind, title, subtitle?}`, without data;
 - table: `{path, view: "table", title, subtitle?, rows, columns, footer}`,
-  where rows/columns are counts and footer is a boolean.
+  where rows/columns are counts and footer is a boolean;
+- stats: `{path, view: "stats", title, subtitle?, items}`, where each item is
+  `{label, sparkline, sub, delta}` with booleans reserving the tile's height;
+- details: `{path, view: "details", title, subtitle?, items}`, where items is
+  the field count.
 
 The run snapshot's `views` contains these references, **no values**. Present each
 path directly; there is no export step. Summaries reserve every chart's frame
@@ -206,7 +332,8 @@ groups, 3,840 heatmap cells, and 2..6 charts per group. Every chart and group
 shares a 3,840-mark budget: input observations count for boxplots and canonical
 histograms, and a stat counts its value plus sparkline points. The histogram
 rows form bins all observations before storage. Tables allow 3,840 rows and
-100 columns; each view is at most 1 MiB. Views and captured downloads share
+100 columns; stats allow 1..6 tiles with 2..480 sparkline points, and details
+allow 1..100 fields. Each view is at most 1 MiB. Views and captured downloads share
 64 outputs per run. Aggregate first when a bound is exceeded. Server rejection
 uses `error.code === "invalid"`; field errors name their path, chart-wide
 checks explain the issue, and group chart errors identify `charts[i]`.

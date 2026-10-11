@@ -1,11 +1,28 @@
-import { CopyButton, DataTable, type DataTableSort, useLocale } from "@k2b/ui";
-import { createMemo, createSignal, createUniqueId, Match, onCleanup, onMount, Show, Switch } from "solid-js";
+import {
+  CopyButton,
+  DataTable,
+  type DataTableSort,
+  DescriptionList,
+  markdownReferenceIcon,
+  StatCell,
+  type StatCellAccent,
+  StatGrid,
+  type StatGridColumns,
+  useLocale,
+} from "@k2b/ui";
+import { createMemo, createSignal, createUniqueId, Index, type JSX, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import type { CloudAiChartRow } from "../chart-block";
 import {
+  CLOUD_AI_DETAILS_VIEWPORT_ITEMS,
   CLOUD_AI_VIEW_MAX_BYTES,
+  type CloudAiDetailsView,
+  type CloudAiStatsView,
   type CloudAiTableView,
   type CloudAiView,
+  type CloudAiViewReference,
   type CloudAiViewSummary,
+  cloudAiDetailsRows,
+  cloudAiStatsTiles,
   cloudAiTableTsv,
   cloudAiViewSummary,
   cloudAiViewTable,
@@ -35,6 +52,51 @@ async function loadView(url: string, path: string, signal: AbortSignal): Promise
   } catch {
     return null;
   }
+}
+
+/** A view's title and subtitle: the loaded file's once it is there, its summary's before. */
+function ViewHeading(props: { id: string; title: string; subtitle?: string; actions?: JSX.Element }) {
+  return (
+    <header class="flex flex-wrap items-center justify-between gap-2">
+      <div class="min-w-0">
+        <h3 id={props.id} class="m-0 text-base font-semibold">
+          {props.title}
+        </h3>
+        <Show when={props.subtitle}>{(subtitle) => <span class="text-sm text-secondary">{subtitle()}</span>}</Show>
+      </div>
+      {props.actions}
+    </header>
+  );
+}
+
+/**
+ * A Cloud object a view names. It carries no URL: the host resolves it on click with the viewer's access and confirms
+ * before it opens. It looks like a reference to Cloud content in Markdown, a calm pill, and stays text without a host.
+ * A Cloud reference names an object of the owning app, not a kind the chat knows, such as a task or an event, so the
+ * pill keeps the neutral page icon that relative links in chat Markdown also show. Without a reference it only takes
+ * the pill's room, for a hidden copy that reserves it.
+ */
+function ReferenceText(props: { text: string; reference?: CloudAiViewReference }) {
+  const actions = useAiChatActions();
+  return (
+    <Show when={actions.onOpenReference} fallback={props.text}>
+      {(open) => (
+        <button
+          type="button"
+          // The pill's fill reaches past the text without making a compact table row taller than the one reserved.
+          class="k2b-reference -my-[0.125em] cursor-pointer text-left"
+          data-reference="page"
+          onClick={() => {
+            const reference = props.reference;
+            if (reference) open()(props.text, { type: reference.type, id: reference.id });
+          }}
+        >
+          <i class={`k2b-reference__icon ti ${markdownReferenceIcon("page")}`} aria-hidden="true" />
+          {props.text}
+        </button>
+      )}
+    </Show>
+  );
 }
 
 type TableSummary = Extract<CloudAiViewSummary, { view: "table" }>;
@@ -71,19 +133,15 @@ function CloudTableView(props: { summary: TableSummary; input: CloudAiTableView 
     return value ? cloudAiTableTsv({ ...value, rows: rows() }) : "";
   });
   const number = () => new Intl.NumberFormat(locale());
+  const refColumns = createMemo(() => new Set(props.input?.columns.flatMap((column) => (column.type === "ref" ? [column.id] : []))));
   return (
     <section class="grid min-w-0 gap-3" aria-labelledby={id}>
-      <header class="flex flex-wrap items-center justify-between gap-2">
-        <div class="min-w-0">
-          <h3 id={id} class="m-0 text-base font-semibold">
-            {props.input?.title ?? props.summary.title}
-          </h3>
-          <Show when={props.input ? props.input.subtitle : props.summary.subtitle}>
-            {(subtitle) => <span class="text-sm text-secondary">{subtitle()}</span>}
-          </Show>
-        </div>
-        <CopyButton text={copyText()} label={t().viewCopyData} iconOnly size="sm" variant="ghost" disabled={!table()} />
-      </header>
+      <ViewHeading
+        id={id}
+        title={props.input?.title ?? props.summary.title}
+        subtitle={props.input ? props.input.subtitle : props.summary.subtitle}
+        actions={<CopyButton text={copyText()} label={t().viewCopyData} iconOnly size="sm" variant="ghost" disabled={!table()} />}
+      />
       <div class="min-w-0" style={{ height: tableHeight(props.summary) }}>
         <Show
           when={table()}
@@ -105,12 +163,26 @@ function CloudTableView(props: { summary: TableSummary; input: CloudAiTableView 
                 align: column.numeric ? "right" : "left",
                 sortable: true,
               }))}
+              renderCell={({ row, col, value: text, render }) => {
+                // Row keys are row indexes, so a reference cell finds its object in the loaded view.
+                const cells = props.input?.rows[Number(row.key)];
+                const cell = refColumns().has(col.id) && cells && Object.hasOwn(cells, col.id) ? cells[col.id] : undefined;
+                return cell && typeof cell === "object" ? <ReferenceText text={String(text)} reference={cell} /> : render(text);
+              }}
               getRowId={(row) => row.key}
               sort={sort()}
               onSortChange={setSort}
               footer={
                 value().footer
-                  ? { values: value().footer?.cells, renderCell: ({ value }) => (typeof value === "string" ? value : "") }
+                  ? {
+                      values: value().footer?.cells,
+                      renderCell: ({ col, value }) => {
+                        const text = typeof value === "string" ? value : "";
+                        const cells = props.input?.footer;
+                        const cell = refColumns().has(col.id) && cells && Object.hasOwn(cells, col.id) ? cells[col.id] : undefined;
+                        return cell && typeof cell === "object" ? <ReferenceText text={text} reference={cell} /> : text;
+                      },
+                    }
                   : undefined
               }
               ariaLabelledBy={id}
@@ -132,16 +204,177 @@ function CloudTableView(props: { summary: TableSummary; input: CloudAiTableView 
   );
 }
 
+type StatsSummary = Extract<CloudAiViewSummary, { view: "stats" }>;
+type DetailsSummary = Extract<CloudAiViewSummary, { view: "details" }>;
+
+const DELTA_TONES = { better: "emerald", worse: "red", neutral: "zinc" } as const;
+const DELTA_ICONS = { up: "ti ti-trending-up", down: "ti ti-trending-down", flat: "ti ti-minus" } as const;
+/** One column per tile, up to the grid's six; its ladder narrows them on phones. */
+const STATS_COLUMNS: readonly StatGridColumns[] = [1, 2, 3, 4, 5, 6];
+
+/** The host picks the change's color from whether it is better; the model never chooses tones. */
+const deltaAccent = (delta: ReturnType<typeof cloudAiStatsTiles>[number]["delta"]): StatCellAccent | undefined =>
+  delta && { tone: DELTA_TONES[delta.tone], icon: DELTA_ICONS[delta.direction], text: delta.text };
+
+/** The loading or unavailable message, centered over the room the view reserved. */
+function ViewStatus(props: { loading: boolean }) {
+  const locale = useLocale();
+  const t = () => aiChatMessages(locale());
+  return (
+    <div role="status" class="flex h-full items-center justify-center text-center text-xs text-dimmed">
+      {props.loading ? t().viewLoading : t().viewUnavailable}
+    </div>
+  );
+}
+
+/**
+ * Key figures as stat tiles. The grid's column ladder decides the layout; every tile's height follows from whether it
+ * has a sparkline and a support line, which the summary records, so a hidden copy of the same grid reserves the exact
+ * room while the file loads or when it is unavailable.
+ */
+function CloudStatsView(props: { summary: StatsSummary; input: CloudAiStatsView | null | undefined }) {
+  const locale = useLocale();
+  const id = `cloud-view-${createUniqueId()}`;
+  const tiles = createMemo(() => (props.input ? cloudAiStatsTiles(props.input, locale()) : null));
+  const columns = () => STATS_COLUMNS[props.summary.items.length - 1];
+  return (
+    <section class="grid min-w-0 gap-3" aria-labelledby={id}>
+      <ViewHeading
+        id={id}
+        title={props.input?.title ?? props.summary.title}
+        subtitle={props.input ? props.input.subtitle : props.summary.subtitle}
+      />
+      <Show
+        when={tiles()}
+        fallback={
+          <div class="relative min-w-0">
+            <div class="invisible" aria-hidden="true">
+              <StatGrid columns={columns()}>
+                <Index each={props.summary.items}>
+                  {(item) => (
+                    <StatCell
+                      label={item().label}
+                      value="0"
+                      trend={item().sparkline ? [0, 1] : undefined}
+                      sub={item().sub ? "\u00a0" : undefined}
+                      accent={item().delta ? { tone: "zinc", icon: DELTA_ICONS.flat, text: "0" } : undefined}
+                    />
+                  )}
+                </Index>
+              </StatGrid>
+            </div>
+            <div class="absolute inset-0">
+              <ViewStatus loading={props.input === undefined} />
+            </div>
+          </div>
+        }
+      >
+        {(value) => (
+          <StatGrid columns={columns()}>
+            <Index each={value()}>
+              {(tile) => (
+                <StatCell
+                  label={tile().label}
+                  value={tile().value}
+                  title={tile().value}
+                  trend={tile().sparkline}
+                  sub={tile().sub}
+                  accent={deltaAccent(tile().delta)}
+                />
+              )}
+            </Index>
+          </StatGrid>
+        )}
+      </Show>
+    </section>
+  );
+}
+
+/** The height of the twelve one-line rows the viewport shows at most before it scrolls. */
+const DETAILS_MAX_REM = CLOUD_AI_DETAILS_VIEWPORT_ITEMS * 2.25;
+
+/**
+ * Stand-in text of a value's length. Words of four digits wrap about as early as real words, and a digit is a little
+ * wider than an average letter, so the stand-in usually takes the lines of the value it stands for or one more: a row
+ * may keep a little room below it rather than hide its last line behind a scroll. Five-digit words reserved up to three
+ * extra lines in fonts whose digits are much wider than their letters, as WebKit's fallback font.
+ */
+const placeholder = (chars: number) =>
+  "0000 "
+    .repeat(Math.ceil(chars / 5))
+    .slice(0, chars)
+    .trimEnd();
+
+/**
+ * One record as label and value rows. A hidden copy of the first twelve fields, with each label and a stand-in of each
+ * value's length from the summary, sizes the viewport, up to twelve one-line rows, so a value that wraps on a phone
+ * keeps its room in the first frame. More fields, or a value longer than its stand-in, scroll inside the viewport
+ * instead of moving the chat.
+ */
+function CloudDetailsView(props: { summary: DetailsSummary; input: CloudAiDetailsView | null | undefined }) {
+  const locale = useLocale();
+  const id = `cloud-view-${createUniqueId()}`;
+  const rows = createMemo(() => (props.input ? cloudAiDetailsRows(props.input, locale()) : null));
+  return (
+    <section class="grid min-w-0 gap-3" aria-labelledby={id}>
+      <ViewHeading
+        id={id}
+        title={props.input?.title ?? props.summary.title}
+        subtitle={props.input ? props.input.subtitle : props.summary.subtitle}
+      />
+      <div class="relative min-w-0 overflow-hidden" style={{ "max-height": `${DETAILS_MAX_REM}rem` }}>
+        <div class="invisible" aria-hidden="true">
+          <DescriptionList
+            layout="rows"
+            items={props.summary.fields.map((field) => ({
+              term: field.label,
+              description: !field.chars ? "—" : field.ref ? <ReferenceText text={placeholder(field.chars)} /> : placeholder(field.chars),
+            }))}
+          />
+        </div>
+        <div class="absolute inset-0 overflow-y-auto">
+          <Show when={rows()} fallback={<ViewStatus loading={props.input === undefined} />}>
+            {(value) => (
+              <DescriptionList
+                layout="rows"
+                items={value().map((row) => ({
+                  term: row.label,
+                  description: row.ref ? (
+                    <ReferenceText text={row.text} reference={row.ref} />
+                  ) : (
+                    row.text || <span class="text-dimmed">—</span>
+                  ),
+                }))}
+              />
+            )}
+          </Show>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 type Heading = { title: string; subtitle?: string };
 const sameHeading = (a: Heading, b: Heading | undefined) => a.title === b?.title && a.subtitle === b.subtitle;
 
 /**
  * Whether a loaded file still has everything its summary reserved: kinds, headings, layout and the linked cursor. A
- * changed file shows unavailable instead of moving or linking charts its summary did not.
+ * changed file shows unavailable instead of moving views or linking charts its summary did not.
  */
 const matches = (view: CloudAiView, summary: CloudAiViewSummary) => {
-  if (view.view === "table") return summary.view === "table";
+  if (view.view === "table") return summary.view === "table" && sameHeading(view, summary);
   const loaded = cloudAiViewSummary(view);
+  // A record must keep the field count and the labels and value lengths that sized its viewport.
+  if (loaded.view === "details")
+    return (
+      summary.view === "details" &&
+      sameHeading(loaded, summary) &&
+      loaded.items === summary.items &&
+      JSON.stringify(loaded.fields) === JSON.stringify(summary.fields)
+    );
+  // A stats file must keep every tile's label and parts, which set the tile heights its summary reserved.
+  if (loaded.view === "stats")
+    return summary.view === "stats" && sameHeading(loaded, summary) && JSON.stringify(loaded.items) === JSON.stringify(summary.items);
   if (loaded.view === "chart") return summary.view === "chart" && loaded.kind === summary.kind && sameHeading(loaded, summary);
   return (
     loaded.view === "group" &&
@@ -175,9 +408,13 @@ export function CloudViewBlock(props: { path: string; summary: CloudAiViewSummar
   const chartSummary = (): ChartSummary | undefined => (props.summary.view === "chart" ? props.summary : undefined);
   const tableSummary = (): TableSummary | undefined => (props.summary.view === "table" ? props.summary : undefined);
   const groupSummary = (): GroupSummary | undefined => (props.summary.view === "group" ? props.summary : undefined);
+  const statsSummary = (): StatsSummary | undefined => (props.summary.view === "stats" ? props.summary : undefined);
+  const detailsSummary = (): DetailsSummary | undefined => (props.summary.view === "details" ? props.summary : undefined);
   function loaded(kind: "chart"): Extract<CloudAiView, { view: "chart" }> | null | undefined;
   function loaded(kind: "table"): CloudAiTableView | null | undefined;
   function loaded(kind: "group"): Extract<CloudAiView, { view: "group" }> | null | undefined;
+  function loaded(kind: "stats"): CloudAiStatsView | null | undefined;
+  function loaded(kind: "details"): CloudAiDetailsView | null | undefined;
   function loaded(kind: CloudAiView["view"]) {
     const value = view();
     return value && value.view !== kind ? null : value;
@@ -188,6 +425,8 @@ export function CloudViewBlock(props: { path: string; summary: CloudAiViewSummar
         <Match when={chartSummary()}>{(summary) => <CloudChartView summary={summary()} input={loaded("chart")} />}</Match>
         <Match when={tableSummary()}>{(summary) => <CloudTableView summary={summary()} input={loaded("table")} />}</Match>
         <Match when={groupSummary()}>{(summary) => <CloudChartGroupView summary={summary()} group={loaded("group")} />}</Match>
+        <Match when={statsSummary()}>{(summary) => <CloudStatsView summary={summary()} input={loaded("stats")} />}</Match>
+        <Match when={detailsSummary()}>{(summary) => <CloudDetailsView summary={summary()} input={loaded("details")} />}</Match>
       </Switch>
     </div>
   );

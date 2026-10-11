@@ -19,6 +19,15 @@ const object = (value: unknown, path: string): Row => {
   if (!value || typeof value !== "object" || Array.isArray(value) || value instanceof Date) return invalid(path, "Expected an object.");
   return Object.fromEntries(Object.entries(value));
 };
+const reference = (value: unknown, path: string) => {
+  if (!value || typeof value !== "object" || Array.isArray(value) || value instanceof Date) return undefined;
+  const ref = object(value, path);
+  if (!Object.hasOwn(ref, "type") || !Object.hasOwn(ref, "id") || typeof ref.type !== "string" || typeof ref.id !== "string")
+    return undefined;
+  // Capability results may carry an empty title; the host then shows the id.
+  const title = Object.hasOwn(ref, "title") && typeof ref.title === "string" && ref.title.trim() ? ref.title : undefined;
+  return { type: ref.type, id: ref.id, ...(title ? { title } : {}) };
+};
 const rowsOf = (value: unknown, path = "rows"): Row[] => {
   if (!Array.isArray(value)) return invalid(path, "Expected an array of objects.");
   return value.map((row, index) => object(row, `${path}[${index}]`));
@@ -303,6 +312,37 @@ export function createViews(
       if (!Array.isArray(spec.charts)) return invalid("charts", "Expected an array of charts.");
       return save({ ...spec, view: "group", charts: spec.charts.map((chart, index) => convertChart(chart, `charts[${index}].`)) });
     },
+    async stats(raw: unknown): Promise<ViewRef> {
+      available();
+      const spec = object(raw, "stats");
+      const items = rowsOf(spec.items, "items");
+      items.forEach((item, index) => {
+        if (item.value instanceof Date)
+          invalid(`items[${index}].value`, "A stats value cannot be a Date; format it as text or use cloud.view.details.");
+      });
+      return save({ ...spec, view: "stats", items });
+    },
+    async details(raw: unknown): Promise<ViewRef> {
+      available();
+      const spec = object(raw, "details");
+      const items = rowsOf(spec.items, "items").map((item, index) => {
+        const path = `items[${index}].value`;
+        const value = item.value;
+        const ref = reference(value, path);
+        const type =
+          item.type ??
+          (typeof value === "number" && Number.isFinite(value) ? "number" : value instanceof Date ? "datetime" : ref ? "ref" : "text");
+        if (value == null) return { ...item, type, value: null };
+        if (value instanceof Date) {
+          const time = wallClock(value, context.timeZone, path);
+          return { ...item, type, value: type === "date" ? time.slice(0, 10) : time };
+        }
+        if (ref) return { ...item, type, value: ref };
+        if (typeof value === "string" || (typeof value === "number" && Number.isFinite(value))) return { ...item, type, value };
+        return invalid(path, "Unsupported cell; convert it to text or a number, or use a Cloud reference {type, id, title?}.");
+      });
+      return save({ ...spec, view: "details", items });
+    },
     async table(raw: unknown): Promise<ViewRef> {
       available();
       const spec = object(raw, "table");
@@ -322,7 +362,9 @@ export function createViews(
               ? "number"
               : cells.every((cell) => cell instanceof Date)
                 ? "datetime"
-                : "text");
+                : cells.every((cell) => reference(cell, `columns[${index}].${id}`) !== undefined)
+                  ? "ref"
+                  : "text");
         return { ...column, id, type };
       });
       const normalize = (row: Row, path: string) =>
@@ -336,7 +378,12 @@ export function createViews(
               return [id, type === "date" ? time.slice(0, 10) : time];
             }
             if (typeof cell === "string" || (typeof cell === "number" && Number.isFinite(cell))) return [id, cell];
-            return invalid(`${path}.${id}`, "Unsupported cell; convert it to text or a number.");
+            const ref = reference(cell, `${path}.${id}`);
+            if (ref) return [id, ref];
+            return invalid(
+              `${path}.${id}`,
+              "Unsupported cell; convert it to text or a number, or use a Cloud reference {type, id, title?}.",
+            );
           }),
         );
       return save({

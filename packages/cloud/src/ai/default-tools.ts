@@ -73,17 +73,17 @@ export const createCloudAiCardTool = () =>
   defineAiTool({
     name: "card",
     description:
-      "Render one compact visual highlight card in the chat. Use it only for a single status, metric, KPI, or short result. Use normal markdown for tables, lists, comparisons, and longer explanations. Keep all fields flat; do not pass arrays or nested objects.",
+      "Show one highlight figure you already have, such as a status, metric or short result, as a stat tile in the chat. Keep the value to a short figure or status and the caption to one line. Several figures computed in code_run go through cloud.view.stats in the run, not several card calls; tables, lists and longer explanations stay Markdown. Keep all fields flat; do not pass arrays or nested objects.",
     inputSchema: CloudAiCardInputSchema,
     outputSchema: CloudAiCardOutputSchema,
     approval: "never",
-    promptHint: "show one compact highlight card (metric, KPI, status) — not for tables, lists, or long text.",
+    promptHint: "show one highlight figure already known; several computed figures use cloud.view.stats in code_run.",
   }).clientView();
 
 export const createCloudAiChartTool = () =>
   defineAiTool({
     name: "chart",
-    description: `Show one chart in the chat from a few values you already have that did not come from a code run, such as figures from the conversation, a web page or a small capability result: bar, line (area: true fills it), scatter, pie, donut, histogram, gauge, sparkline, boxplot, heatmap, barGauge or stat. Several related measures go into one call as a group of small charts (charts, at most ${CLOUD_AI_GROUP_MAX_CHARTS}); linkX shares the x cursor between line charts with the same kind of x. There is no second y axis: compare measures with different units as a group. Cloud draws it with the renderer of cloud.chart() and gives the reader a data table and Copy data; no code, sandbox or app check is involved. Values computed in code_run never go here: the script shows them itself with cloud.view.chart, cloud.view.group or cloud.view.table, and you present the returned path. Aggregate first. Say what the chart shows in title and put the unit, period or source in subtitle; formats are data ({ style: "percent" } takes fractions). The chart has no state, filters or actions: for interaction show an app in the chat with code_present, and build a saved Studio App only when data must be kept or the app reused. After the chart, state the finding instead of repeating its values.`,
+    description: `Show one chart in the chat from a few values you already have that did not come from a code run, such as figures from the conversation, a web page or a small capability result: bar, line (area: true fills it), scatter, pie, donut, histogram, gauge, sparkline, boxplot, heatmap, barGauge or stat. Several related measures go into one call as a group of small charts (charts, at most ${CLOUD_AI_GROUP_MAX_CHARTS}); linkX shares the x cursor between line charts with the same kind of x. There is no second y axis: compare measures with different units as a group. Cloud draws it with the renderer of cloud.chart() and gives the reader a data table and Copy data; no code, sandbox or app check is involved. Values computed in code_run never go here: the script shows them itself with cloud.view.chart, cloud.view.group, cloud.view.table, cloud.view.stats or cloud.view.details, and you present the returned path. Aggregate first. Say what the chart shows in title and put the unit, period or source in subtitle; formats are data ({ style: "percent" } takes fractions). The chart has no state, filters or actions: for interaction show an app in the chat with code_present, and build a saved Studio App only when data must be kept or the app reused. After the chart, state the finding instead of repeating its values.`,
     inputSchema: CloudAiChartInputSchema,
     outputSchema: CloudAiChartOutputSchema,
     approval: "never",
@@ -146,9 +146,9 @@ export const createCloudAiCodeTools = () => [
   defineAiTool({
     name: "code_run",
     promptHint:
-      "For file analysis, data transformations or combining Cloud data, run a short one-off script with code_run; its charts and tables come from cloud.view.* in the script and present. Load assistant-code-mode for its runtime APIs; no saved app is required.",
+      "For file analysis, data transformations or combining Cloud data, run a short one-off script with code_run; its computed views come from cloud.view.* in the script and present. Load assistant-code-mode for its runtime APIs; no saved app is required.",
     description:
-      "Run one-off script code OR a saved script resource in the isolated worker. Optional resourceId binds one-off code to existing app data (Manage required), without editing its source. Includes cloud.capabilities.run(name,input) to chain Cloud capabilities in JavaScript; load assistant-code-mode for its runtime APIs. Scripts read explicit chat inputPaths. Returns output, logs, captured files and view references for agent inspection only. Show computed charts and tables with cloud.view.chart or cloud.view.table in the script, then present({path}) each returned view; never retype run values into chart arguments, files or Markdown. Apps with an index.html interface do not run here: show them with code_open or code_present. Runs use real shared and personal data; database writes and capability effects keep normal permissions and approvals.",
+      "Run one-off script code OR a saved script resource in the isolated worker. Optional resourceId binds one-off code to existing app data (Manage required), without editing its source. Includes cloud.capabilities.run(name,input) to chain Cloud capabilities in JavaScript; load assistant-code-mode for its runtime APIs. Scripts read explicit chat inputPaths. Returns output, logs, captured files and view references for agent inspection only. Show computed views with cloud.view.chart, cloud.view.group, cloud.view.table, cloud.view.stats or cloud.view.details in the script, then present({path}) each returned view; never retype run values into chart arguments, files or Markdown. Apps with an index.html interface do not run here: show them with code_open or code_present. Runs use real shared and personal data; database writes and capability effects keep normal permissions and approvals.",
     inputSchema: CodeRunInput,
     outputSchema: z.json(),
     approval: "never",

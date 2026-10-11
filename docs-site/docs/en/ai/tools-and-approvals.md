@@ -155,6 +155,14 @@ as with surveys, the long-form text editor, charts, or presented files. Keep
 operation details and arguments in the tool description and schema; the hint
 does not replace either.
 
+The built-in `card` tool shows one highlight figure the model already has as
+one stat tile, the same look as a stats view. `tone` is accepted but not shown,
+and the trend stays neutral because a card does not say whether up is better.
+Its title, value, caption and trend wrap instead of being cut off; the tool
+asks for a short value of about 20 characters and a one-line caption.
+Several figures computed in `code_run` belong in `cloud.view.stats` in that
+run, followed by `present({path})`.
+
 The built-in `chart` tool is a `clientView()` for a few values the model already
 has that did not come from a code run. It shares the chart contract of
 `cloud.chart()` in Studio code, without `width`, `height`, or format functions.
@@ -223,7 +231,8 @@ data table and use Copy data. Filters or buttons belong in a chat app delivered
 with `code_present`; kept data or a reused app belongs in a saved Studio App.
 
 Computed results stay in `code_run`: the script calls `cloud.view.chart`,
-`cloud.view.group` or `cloud.view.table`, then the model calls `present({path})`
+`cloud.view.group`, `cloud.view.table`, `cloud.view.stats` or
+`cloud.view.details`, then the model calls `present({path})`
 for each view the person should see. It never retypes run values into chart
 arguments, app data or Markdown. A missing view requires another run with
 `cloud.view.*`.
@@ -233,32 +242,82 @@ every server write. Chart views use the contract above; group views are
 `{view: "group", title, subtitle?, charts, linkX?, layout?}`. Code runs may use
 rows convenience forms for chart specs, including each chart in a group.
 Tables have unique typed columns, rows, an optional footer and initial sort;
-number columns use the same number formats. Views contain no markup or functions;
+number columns use the same number formats. A `ref` column holds Cloud
+references or null; every other column requires its declared scalar type.
+Stats show 1..6 comparable key figures above charts, instead of several card
+calls or stat charts. Details show 1..100 exact fields of one record, such as a
+checked invoice, as read-only rows. Views contain no markup or functions;
 labels and cells render as text. Limits are 3,840 table rows, 100 columns and
 1 MiB per view; views and downloads share 64 outputs per run. Model write tools
 reject `/views` paths. Users retain file editing, download, rename and deletion
 rights.
 
+A saved stats view is `{view: "stats", title, subtitle?, items}`. Each item has
+`label` and `value` (a finite number, or short text for a state such as `"OK"`),
+optional number `format`, `sub`, finite `delta`, `better: "up" | "down"`, and
+`sparkline` (2..480 finite numbers, oldest first). Format and delta require a
+numeric value; better requires delta. Delta is in the value's units. The host
+chooses improvement colors from better; no direction or zero stays neutral.
+Titles are trimmed to 1..160 characters, subtitles to 1..300, and item labels,
+text values and sub to 1..80. Stats do not convert Dates.
+
+A saved details view is `{view: "details", title, subtitle?, items}`. Each field
+has `{label, type, value, format?}`; labels may repeat. Types are `text`,
+`number`, `date`, `datetime` and `ref`, exactly as for table cells. Null is
+always allowed; format belongs only to number fields. In scripts, an omitted
+type becomes number for a finite number, datetime for a Date, ref for a Cloud
+reference, or text for a string or null/undefined. Dates become wall-clock text
+in the run's time zone; explicit date keeps that zone's calendar day. Saved
+files require types. Labels, title and subtitle use the same bounds as stats.
+
+Reference cells and details fields contain only `{type, id, title?}`, derived
+from the platform resource reference contract: a namespaced capability type,
+an ID of 1..512 characters, and an optional title of 1..500. Copy
+`{...item.ref, title: item.title}` from a capability result; never build links.
+The runtime strips every other key, including URLs, while saved references
+with extra keys fail validation. Tables infer ref when every non-null cell,
+footer included, is reference-like; explicit ref also works. Other objects
+remain errors. Views never carry an href or URL for opening a reference.
+
+The host displays `title ?? id` and opens the reference on click after a
+confirmation, through the owning app's reader with the viewer's current access.
+A view grants no access. Table sorting and Copy data use that visible text;
+the CLI adds `(type:id)`. Stats and details print a Field/Value table in the
+CLI, using the same locale formatting as the web host.
+
 `present` returns a summary without values and renders an assistant-owned view
 inline. A group summary lists each chart's kind and title to reserve its frame
-while loading. Every reader validates the current file; invalid or missing files
-show unavailable. Only assistant files below `/views/` ending in `.view.json`
+while loading. Stats summaries include each label and booleans for sparkline,
+sub and delta, so the host reserves the exact tile height without values.
+Details summaries carry the field count and, for the first twelve fields, each
+label, whether the value is a reference, and the length of its English display
+text. The host sizes the record from a hidden copy of these fields with stand-in
+text, so values that wrap on a phone keep their room; it shows at most twelve
+one-line rows before the record scrolls. Every reader validates the current
+file; a file whose headings, stats parts or details sizes no longer match its
+summary, and invalid or missing files, show unavailable. Only assistant files below `/views/` ending in `.view.json`
 qualify. HTML apps cannot save views; they draw with `cloud.chart()`.
 
 The pure readers in `@k2b/cloud/ai/browser` are `parseCloudAiView`,
-`checkCloudAiView`, `cloudAiViewSummary`, `cloudAiViewTable`, `cloudAiTableTsv`,
+`checkCloudAiView`, `cloudAiViewSummary`, `cloudAiViewTable`, `cloudAiStatsTiles`,
+`cloudAiDetailsRows`, `cloudAiTableTsv`,
 `isAiViewFile`, `isAiViewPath` and `parseCloudAiChartToolView`. Parsing checks
 schema and data without drawing; checking also verifies chart drawing for
 writes. Table formatting uses the reader's locale; TSV quotes cells and guards
-text against spreadsheet formulas. The view types, including `CloudAiGroupView`,
+text against spreadsheet formulas. Table row keys are original row indices even
+after sorting; hosts obtain a ref from `view.rows[Number(row.key)][column.id]`.
+`cloudAiStatsTiles` returns formatted values and signed delta text, direction
+and better/worse/neutral tone. `cloudAiDetailsRows` returns formatted text and
+optional refs, with empty text for null. The view types, including
+`CloudAiGroupView`, `CloudAiStatsView`, `CloudAiDetailsView` and `CloudAiViewReference`,
 and these helpers are also exported from `@k2b/cloud/ai`, alongside
 `createAiConversationView` and `AiViewInvalidError`. The writer checks conversation
 ownership and archival, uses a title slug and deterministic run/index hash, and
 preserves artifact retry and conflict semantics. Validation reports the issue;
 field errors include paths, and group chart errors identify `charts[i]`.
 `CLOUD_AI_VIEW_DIRECTORY`, `CLOUD_AI_VIEW_SUFFIX`, `CLOUD_AI_VIEW_MAX_BYTES`,
-`CLOUD_AI_TABLE_MAX_ROWS`, `CLOUD_AI_TABLE_MAX_COLUMNS`, `CLOUD_AI_VIEW_MAX_MARKS`
-and `CLOUD_AI_GROUP_MAX_CHARTS` export the bounds.
+`CLOUD_AI_TABLE_MAX_ROWS`, `CLOUD_AI_TABLE_MAX_COLUMNS`, `CLOUD_AI_VIEW_MAX_MARKS`,
+`CLOUD_AI_GROUP_MAX_CHARTS` and `CLOUD_AI_STATS_MAX_ITEMS` export the bounds.
 
 The built-in `text_editor` is a `clientInteraction()` for one complete
 plain-text or Markdown draft of at most 20,000 characters. It is appropriate
