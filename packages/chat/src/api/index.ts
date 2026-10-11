@@ -66,7 +66,11 @@ const app = new Hono<AuthContext>()
       responses: {
         200: jsonResponse(CreateOutcomeSchema, "Existing chats"),
         201: jsonResponse(CreateOutcomeSchema, "Created chat"),
-        429: jsonResponse(z.object({ code: z.literal("RATE_LIMITED"), message: z.string() }), "New-chat rate limit reached"),
+        // The request limiter answers without a code; only the new-chat limit sends RATE_LIMITED.
+        429: jsonResponse(
+          z.object({ code: z.literal("RATE_LIMITED").optional(), message: z.string() }),
+          "Request or new-chat rate limit reached",
+        ),
       },
     }),
     validator("json", CreateConversationSchema, invalidInput),

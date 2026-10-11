@@ -33,3 +33,12 @@ test("publishes every conversation operation with typed request and response sch
     if (path.includes("{conversation}")) expect(operation?.parameters?.length).toBeGreaterThanOrEqual(1);
   }
 });
+
+test("documents the request limiter's 429 body, which carries no code, on chat creation", async () => {
+  const app = new Hono<AuthContext>().route("/api/chat", chatApi);
+  const spec = await generateSpecs(app);
+  const body = z
+    .object({ content: z.object({ "application/json": z.object({ schema: z.object({ required: z.array(z.string()) }) }) }) })
+    .parse(SpecSchema.parse(spec).paths["/api/chat/conversations"]?.post?.responses["429"]);
+  expect(body.content["application/json"].schema.required).toEqual(["message"]);
+});
