@@ -3159,7 +3159,7 @@ export const draftSchema = z.object({
   revision: z.number().int().positive(),
   state: z.enum(["draft", "scheduled", "sending", "sent", "discarded"]),
   deliveryClass: draftDeliveryClassSchema,
-  initialSignatureSource: z.string().nullable().optional(),
+  signatureTemplateId: ResourceShortIdSchema.nullable(),
   /** Returned by create and update only. */
   formattingWarnings: composeFormattingWarningsSchema.optional(),
   createdAt: z.string().datetime(),
@@ -3231,6 +3231,11 @@ export type CancelScheduledSendResult = z.infer<typeof cancelScheduledSendResult
 export const draftEditableContentInputSchema = z
   .object({
     senderIdentityId: ResourceShortIdSchema.describe("Verified sender-identity ID."),
+    signatureTemplateId: ResourceShortIdSchema.nullable()
+      .optional()
+      .describe(
+        "Signature template shown after the body, or null for none. On create, omit it to use the sender's default signature; on update, omit it to keep the current choice.",
+      ),
     to: z.array(mailAddressSchema).max(200).default([]).describe("Primary recipients."),
     cc: z.array(mailAddressSchema).max(200).default([]).describe("Carbon-copy recipients."),
     bcc: z.array(mailAddressSchema).max(200).default([]).describe("Blind-carbon-copy recipients."),
@@ -3320,7 +3325,6 @@ export const mailDraftSeedSchema = z
     derivationKind: draftDerivationKindSchema.nullable(),
     content: draftEditableContentInputSchema,
     attachments: z.array(draftAttachmentSchema),
-    initialSignatureSource: z.string().nullable(),
     origin: draftSeedOriginSchema,
     createdAt: z.string().datetime(),
   })

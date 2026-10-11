@@ -17,7 +17,7 @@ const MAX_CSS_VALUE_BYTES = 512;
 const MAX_CUSTOM_CSS_BYTES = 32 * 1024;
 const MAX_EMAIL_HTML_ELEMENTS = 1_000;
 const MAX_COMPOSE_TEMPLATE_SEGMENTS = 100;
-// All signature segments of one body share the single-render Liquid time budget.
+// Legacy segments and the selected signature share one Liquid time budget.
 const MAX_COMPOSE_RENDER_MS = 1_000;
 const MAX_INLINE_WORK_BYTES = 8 * 1024 * 1024;
 const MAX_MARKDOWN_BLOCKS = 1_000;
@@ -25,6 +25,7 @@ const MAX_MARKDOWN_LINES = 5_000;
 const MAX_MARKDOWN_SYNTAX_MARKERS = 12_000;
 const MAX_RENDERED_SOURCE_BYTES = 3 * 1024 * 1024;
 const MAIL_CONTENT_CLASS = "mail-content";
+const SIGNATURE_CLASS = "mail-signature";
 // Invisible marks around an inserted signature: the text between a matching pair stays a template until preview and send.
 const COMPOSE_SEGMENT_START = "\u2063";
 const COMPOSE_SEGMENT_END = "\u2064";
@@ -44,8 +45,13 @@ const withoutSegmentMarks = (attribs: sanitizeHtml.Attributes): sanitizeHtml.Att
 const INLINED_EMAIL_SANITIZE_OPTIONS = {
   ...EMAIL_HTML_SANITIZE_OPTIONS,
   allowedAttributes: Object.fromEntries(
-    [...EMAIL_HTML_TAGS].map((tag) => [tag, [...new Set([...(EMAIL_HTML_ALLOWED_ATTRIBUTES[tag] ?? []), "style"])]]),
+    [...EMAIL_HTML_TAGS].map((tag) => [
+      tag,
+      [...new Set([...(EMAIL_HTML_ALLOWED_ATTRIBUTES[tag] ?? []), "style", ...(tag === "div" ? ["class"] : [])])],
+    ]),
   ),
+  // The signature block keeps its class, as mail clients mark signatures, so a reader can tell it from the text.
+  allowedClasses: { div: [SIGNATURE_CLASS] },
   allowedStyles: allowedEmailInlineStyles(EMAIL_HTML_TAGS),
   transformTags: {
     a: (tagName, attribs) => EMAIL_HTML_SANITIZE_OPTIONS.transformTags.a(tagName, withoutSegmentMarks(attribs)),
@@ -59,7 +65,7 @@ const UNSAFE_CSS_VALUE = /(?:url|expression|var|attr)\s*\(|[{}@\\]|[\u0000-\u000
 /**
  * The built-in design, inlined before the mailbox CSS. It styles only the message, so its element rules need
  * no `.mail-content` scope, and `:where()` gives the wrapper rule no specificity: with the lowest specificity,
- * every rule of the mailbox CSS for the same element wins, `div` on the wrapper included.
+ * every rule of the mailbox CSS for the same element wins, including the signature wrapper.
  */
 export const DEFAULT_MAIL_CSS = `
 :where(.mail-content) {
@@ -69,6 +75,7 @@ export const DEFAULT_MAIL_CSS = `
   line-height: 1.55;
   max-width: 720px;
 }
+:where(.mail-signature) { margin-top: 16px; }
 p { margin: 0 0 12px; }
 h1 { font-size: 24px; line-height: 1.25; margin: 24px 0 12px; }
 h2 { font-size: 20px; line-height: 1.3; margin: 20px 0 10px; }
@@ -86,7 +93,8 @@ const validateSelector = (selector: string): string | null => {
     selectorParser((root) => {
       root.walk((node) => {
         if (node.type === "class") {
-          if (node.value !== MAIL_CONTENT_CLASS) throw new Error(`Only .${MAIL_CONTENT_CLASS} class selectors are allowed`);
+          if (node.value !== MAIL_CONTENT_CLASS && node.value !== SIGNATURE_CLASS)
+            throw new Error(`Only .${MAIL_CONTENT_CLASS} and .${SIGNATURE_CLASS} class selectors are allowed`);
           return;
         }
         if (node.type === "tag") {
@@ -247,7 +255,81 @@ export const validateComposeTemplateSource = (source: string): Result<void> => {
   return ok();
 };
 
-export const markComposeTemplateSegment = (source: string): string => `${COMPOSE_SEGMENT_START}${source}${COMPOSE_SEGMENT_END}`;
+// The separator line that forwardMessageBody writes, in each composer locale.
+const FORWARD_SEPARATOR = /^-{10} (?:Forwarded message|Weitergeleitete Nachricht) -{10}$/u;
+// The line that quoteReplyBody writes above a quote: "… Ada wrote:" or "Am … schrieb Ada:".
+const REPLY_ATTRIBUTION = /\b(?:wrote|schrieb)\b.*:$/iu;
+const CODE_FENCE = /^ {0,3}(`{3,}|~{3,})/u;
+
+/**
+ * Splits a body before the history that Mail writes into forwards and replies: a forwarded message from its
+ * separator line on, or a quote that ends the body together with its "… wrote:" line. Every other quote,
+ * separator-like line or fenced code is the writer's own text, so the signature then goes to the end.
+ */
+export const splitQuotedHistory = (body: string): { reply: string; history: string } => {
+  const lines = body.split("\n");
+  // Lines inside fenced code are null: they belong to the writer's text and never start history.
+  const text: Array<string | null> = [];
+  let fence: string | null = null;
+  for (const line of lines.map((value) => value.trimEnd())) {
+    const marker = CODE_FENCE.exec(line)?.[1];
+    if (fence) {
+      text.push(null);
+      if (marker && marker[0] === fence[0] && marker.length >= fence.length && line.trim() === marker) fence = null;
+    } else {
+      text.push(marker ? null : line);
+      if (marker) fence = marker;
+    }
+  }
+  let start = text.findIndex((line) => line !== null && FORWARD_SEPARATOR.test(line));
+  if (start < 0) {
+    let last = text.length - 1;
+    while (last >= 0 && text[last] === "") last -= 1;
+    let attribution = last;
+    while (attribution >= 0 && text[attribution]?.startsWith(">")) attribution -= 1;
+    const line = text[attribution];
+    if (attribution < last && line && REPLY_ATTRIBUTION.test(line)) start = attribution;
+  }
+  if (start < 0) return { reply: body.trimEnd(), history: "" };
+  return {
+    reply: lines.slice(0, start).join("\n").trimEnd(),
+    history: lines
+      .slice(start)
+      .join("\n")
+      .replace(/^(?:[ \t]*\r?\n)+/, ""),
+  };
+};
+
+/**
+ * Moves a signature that an older draft keeps as a marked segment out of its body, with the blank line that
+ * separated it, when the segment is still exactly one of the given signatures. Other segments stay in the body.
+ */
+export const moveSignatureSegment = (
+  body: string,
+  signatures: Array<{ id: string; body: string }>,
+): { body: string; signatureTemplateId: string } | null => {
+  for (const match of body.matchAll(COMPOSE_SEGMENT)) {
+    const signature = signatures.find((entry) => entry.body === match[1]);
+    if (!signature) continue;
+    let start = match.index;
+    let end = start + match[0].length;
+    if (body.slice(Math.max(0, start - 2), start) === "\n\n") start -= 2;
+    else if (body.slice(end, end + 2) === "\n\n") end += 2;
+    return { body: body.slice(0, start) + body.slice(end), signatureTemplateId: signature.id };
+  }
+  return null;
+};
+
+/** Removes every marked copy of the given signature, which Mail adds after the body anyway. */
+export const withoutSignatureSegments = (body: string, signatureSource: string): string => {
+  const signatures = [{ id: "signature", body: signatureSource }];
+  let moved = moveSignatureSegment(body, signatures);
+  while (moved) {
+    body = moved.body;
+    moved = moveSignatureSegment(body, signatures);
+  }
+  return body;
+};
 
 const TEMPLATE_SYNTAX = /\{\{|\{%/;
 
@@ -340,10 +422,14 @@ export const renderComposeTemplateSource = (
   return fillComposeTemplate(source, context, format === "markdown" ? "editable_markdown" : "plain");
 };
 
-const renderComposeTemplateSegments = (source: string, context: ComposeRenderContext, format: "plain" | "markdown"): Result<string> => {
+const renderComposeTemplateSegments = (
+  source: string,
+  context: ComposeRenderContext,
+  format: "plain" | "markdown",
+  budget: { remainingMs: number },
+): Result<string> => {
   let outputBytes = 0;
   let segmentCount = 0;
-  let remainingRenderMs = MAX_COMPOSE_RENDER_MS;
   const output: string[] = [];
   for (const part of composeBodyParts(source)) {
     let value = part.text;
@@ -354,8 +440,8 @@ const renderComposeTemplateSegments = (source: string, context: ComposeRenderCon
       }
       if (isSignatureTemplate(part.text)) {
         const renderStart = performance.now();
-        const rendered = fillComposeTemplate(part.text, context, format, Math.max(0, remainingRenderMs));
-        remainingRenderMs -= performance.now() - renderStart;
+        const rendered = fillComposeTemplate(part.text, context, format, Math.max(0, budget.remainingMs));
+        budget.remainingMs -= performance.now() - renderStart;
         if (!rendered.ok) return "composeRender" in rendered.error ? rendered : fail(composeRenderFailure("signatureFailed"));
         // A filled-in value may itself contain a mark; it must not reach the message.
         value = rendered.data.replace(COMPOSE_SEGMENT_MARKS, "");
@@ -374,22 +460,37 @@ export const renderComposeContent = (params: {
   customCss: string;
   context: ComposeRenderContext;
   renderLiquid: boolean;
+  signature?: string | null;
 }): Result<RenderedComposeContent> => {
   const css = validateComposeCss(params.customCss);
   if (!css.ok) return fail(composeRenderFailure("mailboxStyle"));
 
+  const budget = { remainingMs: MAX_COMPOSE_RENDER_MS };
   const renderedSource = params.renderLiquid
-    ? renderComposeTemplateSegments(params.body, params.context, params.format)
+    ? renderComposeTemplateSegments(params.body, params.context, params.format, budget)
     : ok(params.body.replace(COMPOSE_SEGMENT_MARKS, ""));
   if (!renderedSource.ok) return renderedSource;
-  const source = renderedSource.data;
+  let source = renderedSource.data;
+  let parts: { reply: string; signature: string; history: string } | null = null;
+  if (params.signature !== null && params.signature !== undefined) {
+    const valid = validateComposeTemplateSource(params.signature);
+    if (!valid.ok) return fail(composeRenderFailure("signatureFailed"));
+    const start = performance.now();
+    const signature = fillComposeTemplate(params.signature, params.context, params.format, Math.max(0, budget.remainingMs));
+    budget.remainingMs -= performance.now() - start;
+    if (!signature.ok) return "composeRender" in signature.error ? signature : fail(composeRenderFailure("signatureFailed"));
+    parts = { ...splitQuotedHistory(source), signature: signature.data.replace(COMPOSE_SEGMENT_MARKS, "") };
+    source = [parts.reply, parts.signature, parts.history].filter(Boolean).join("\n\n");
+  }
   if (sourceBytes(source) > MAX_RENDERED_SOURCE_BYTES) return fail(composeRenderFailure("tooLarge"));
   if (params.format === "plain") return ok({ html: null, text: source });
   const complexity = validateMarkdownSourceComplexity(source);
   if (!complexity.ok) return complexity;
 
   try {
-    const fragment = emailHtmlFragment(source);
+    const fragment = parts
+      ? `${emailHtmlFragment(parts.reply)}<div class="${SIGNATURE_CLASS}">${emailHtmlFragment(parts.signature)}</div>${emailHtmlFragment(parts.history)}`
+      : emailHtmlFragment(source);
     const elementCount = fragment.match(/<[a-z][^>]*>/gi)?.length ?? 0;
     if (elementCount > MAX_EMAIL_HTML_ELEMENTS) {
       return fail(composeRenderFailure("tooComplex"));

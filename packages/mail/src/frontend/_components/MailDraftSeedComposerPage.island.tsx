@@ -6,6 +6,7 @@ import type { MailContactDirectory } from "../../contact-directory-settings";
 import type { MailDraftSeed, SenderIdentity } from "../../contracts";
 import MailComposerPage from "./MailComposerPage.island";
 import { mailComposerMessages } from "./mail-composer-messages";
+import type { MailComposerSignatures } from "./mail-composer-signature";
 import { readMailDraftSeed } from "./mail-draft-seed-store";
 
 export default function MailDraftSeedComposerPage(props: {
@@ -13,6 +14,7 @@ export default function MailDraftSeedComposerPage(props: {
   currentActor: { kind: "user" | "service_account"; id: string };
   seedId: string;
   identities: SenderIdentity[];
+  signatures: MailComposerSignatures;
   initialPanes: PanesLayout;
   returnHref: string;
   popout?: boolean;
@@ -56,6 +58,7 @@ export default function MailDraftSeedComposerPage(props: {
             mailboxId={props.mailboxId}
             currentActor={props.currentActor}
             identities={props.identities}
+            signatures={props.signatures}
             initialSeed={value()}
             initialPanes={props.initialPanes}
             returnHref={props.returnHref}

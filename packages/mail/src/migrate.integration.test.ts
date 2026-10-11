@@ -61,6 +61,7 @@ suite("mail baseline schema", () => {
     await sql`DROP INDEX mail.sync_runs_resource_not_completed_idx`;
     await sql`ALTER TABLE mail.outbox_submissions DROP COLUMN sent_copy_pending`;
     await sql`ALTER TABLE mail.message_contents DROP COLUMN receipt_pending`;
+    await sql`ALTER TABLE mail.drafts DROP COLUMN signature_template_id`;
     await migrate();
     const [shape] = await sql<
       {
@@ -70,6 +71,8 @@ suite("mail baseline schema", () => {
         sent_copy_index_exists: boolean;
         sent_copy_pending: string | null;
         receipt_pending: string | null;
+        signature_template_id: boolean;
+        signature_template_fk: boolean;
         versions: number;
       }[]
     >`
@@ -90,6 +93,13 @@ suite("mail baseline schema", () => {
           JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
           WHERE a.attrelid = 'mail.message_contents'::regclass AND a.attname = 'receipt_pending' AND a.attnotnull
         ) AS receipt_pending,
+        EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'mail.drafts'::regclass
+          AND attname = 'signature_template_id' AND NOT attisdropped AND NOT attnotnull
+          AND atttypid = 'uuid'::regtype) AS signature_template_id,
+        EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'mail.drafts'::regclass
+          AND confrelid = 'mail.compose_templates'::regclass AND confdeltype = 'n'
+          AND conkey = ARRAY[(SELECT attnum FROM pg_attribute WHERE attrelid = 'mail.drafts'::regclass
+            AND attname = 'signature_template_id' AND NOT attisdropped)]) AS signature_template_fk,
         (SELECT count(*)::int FROM mail.schema_migrations) AS versions
     `;
     // No version is recorded, so an older Mail image still starts on the upgraded database.
@@ -100,6 +110,8 @@ suite("mail baseline schema", () => {
       sent_copy_index_exists: true,
       sent_copy_pending: "false",
       receipt_pending: "false",
+      signature_template_id: true,
+      signature_template_fk: true,
       versions: 1,
     });
   });

@@ -5,13 +5,20 @@ const SEED_PREFIX = "cloud:mail:draft-seed:";
 
 export const mailDraftSeedKey = (mailboxId: string, seedId: string): string => `cloud:mail:draft-seed:${mailboxId}:${seedId}`;
 
+const parseStoredSeed = (raw: string) => {
+  const value: unknown = JSON.parse(raw);
+  // Seeds stored before signatures left the body carry this key; remove this drop once those seeds expire.
+  if (value && typeof value === "object" && "initialSignatureSource" in value) delete value.initialSignatureSource;
+  return mailDraftSeedSchema.safeParse(value);
+};
+
 export const storeMailDraftSeed = (storage: Storage, seed: MailDraftSeed): void => {
   for (let index = storage.length - 1; index >= 0; index -= 1) {
     const key = storage.key(index);
     if (!key?.startsWith(SEED_PREFIX)) continue;
     const raw = storage.getItem(key);
     try {
-      const parsed = raw ? mailDraftSeedSchema.safeParse(JSON.parse(raw)) : null;
+      const parsed = raw ? parseStoredSeed(raw) : null;
       if (!parsed?.success || Date.now() - new Date(parsed.data.createdAt).getTime() > SEED_TTL_MS) {
         storage.removeItem(key);
       }
@@ -27,7 +34,7 @@ export const readMailDraftSeed = (storage: Storage, mailboxId: string, seedId: s
   const raw = storage.getItem(key);
   if (!raw) return null;
   try {
-    const parsed = mailDraftSeedSchema.safeParse(JSON.parse(raw));
+    const parsed = parseStoredSeed(raw);
     if (
       !parsed.success ||
       parsed.data.mailboxId !== mailboxId ||

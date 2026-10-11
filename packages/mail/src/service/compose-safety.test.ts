@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { markComposeTemplateSegment } from "./compose-renderer";
 import type { ComposeSafetySource } from "./compose-safety";
 import { evaluateComposeSafety } from "./compose-safety";
+
+const markComposeTemplateSegment = (source: string): string => `\u2063${source}\u2064`;
 
 const source = (overrides: Partial<ComposeSafetySource> = {}): ComposeSafetySource => ({
   draftId: "00000000-0000-4000-8000-000000000001",

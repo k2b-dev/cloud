@@ -2,7 +2,14 @@ import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../../../../config";
 import { requestContactDirectory } from "../../../../../contact-directory-settings";
-import { calendarInvitations, type MailRequestContext, mailboxAccess, mailboxes, senderIdentities } from "../../../../../service";
+import {
+  calendarInvitations,
+  composeTemplates,
+  type MailRequestContext,
+  mailboxAccess,
+  mailboxes,
+  senderIdentities,
+} from "../../../../../service";
 import MailDraftSeedComposerPage from "../../../../_components/MailDraftSeedComposerPage.island";
 import { mailDraftReturnHref } from "../../../../_components/mail-compose-route";
 import { readMailComposerPanesFromCookieHeader } from "../../../../_components/mail-composer-panes";
@@ -25,16 +32,29 @@ export default ssr<AuthContext>(async (c) => {
     context.actor.kind === "user"
       ? { kind: "user" as const, id: context.actor.user.id }
       : { kind: "service_account" as const, id: context.actor.serviceAccount.id };
-  const [mailbox, access, identities, calendarIntegrationAvailable] = await Promise.all([
+  const [mailbox, access, identities, calendarIntegrationAvailable, signatures, signatureDefaults] = await Promise.all([
     mailboxes.getMailbox(context, mailboxId),
     // Assigned-only writers reply here too; the draft and seed services refuse anything they cannot see.
     mailboxAccess.requireMailboxAccess(context, mailboxId, "write"),
     senderIdentities.listSenderIdentities(context, mailboxId),
     calendarInvitations.composerIntegrationAvailable(),
+    composeTemplates.listComposeTemplates(context, mailboxId),
+    composeTemplates.listComposeSignatureDefaults(context, mailboxId),
   ]);
   if (!mailbox.ok) return ssr.error(c, mailbox.error.status);
   if (!access.ok) return ssr.error(c, 403);
-  const publicData = await projectComposeData({ mailbox: mailbox.data, identities: identities.ok ? identities.data : [] });
+  const publicData = await projectComposeData({
+    mailbox: mailbox.data,
+    identities: identities.ok ? identities.data : [],
+    signatures: signatures.ok
+      ? signatures.data.filter((template) => template.kind === "signature").map(({ id, name }) => ({ id, name }))
+      : [],
+    personalSignatureDefaults: signatureDefaults.ok
+      ? signatureDefaults.data
+          .filter((entry) => entry.userId !== null)
+          .map(({ senderIdentityId, templateId }) => ({ senderIdentityId, templateId }))
+      : [],
+  });
   const returnHref = mailDraftReturnHref(c.req.query("return") ?? "", mailboxShortId);
   const popout = c.req.query("window") === "1";
   const initialPanes = readMailComposerPanesFromCookieHeader(c.req.header("cookie"));
@@ -45,6 +65,7 @@ export default ssr<AuthContext>(async (c) => {
         currentActor={currentActor}
         seedId={seedId}
         identities={publicData.identities}
+        signatures={{ templates: publicData.signatures, personalDefaults: publicData.personalSignatureDefaults }}
         initialPanes={initialPanes}
         returnHref={returnHref}
         popout={popout}

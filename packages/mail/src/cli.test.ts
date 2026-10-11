@@ -925,6 +925,51 @@ test("compose template and style commands preserve exact source input", async ()
   ]);
 });
 
+test.each(["signature", "snippet"] as const)("compose template create prints the %s shortcut appropriately", async (kind) => {
+  const server = withMailbox((request) => {
+    if (new URL(request.url).pathname === `/api/mail/mailboxes/${MAILBOX_ID}/compose-templates` && request.method === "POST") {
+      return api({
+        id: COMPOSE_TEMPLATE_ID,
+        mailboxId: MAILBOX_ID,
+        kind,
+        scope: "mailbox",
+        ownerUserId: null,
+        name: "Team",
+        shortcut: "team",
+        body: "Hello",
+        revision: 1,
+        archivedAt: null,
+        createdAt: "2026-07-17T00:00:00.000Z",
+        updatedAt: "2026-07-17T00:00:00.000Z",
+      });
+    }
+    return api({ message: "unexpected" }, { status: 500 });
+  });
+  servers.push(server);
+
+  const result = await runCli(`http://127.0.0.1:${server.port}`, [
+    "mail",
+    "compose",
+    "template",
+    "create",
+    "--mailbox",
+    MAILBOX_ID,
+    "--kind",
+    kind,
+    "--scope",
+    "mailbox",
+    "--name",
+    "Team",
+    "--shortcut",
+    "team",
+    "--body",
+    "Hello",
+  ]);
+
+  expect(result.exitCode).toBe(0);
+  expect(result.stdout).toContain(`Created ${kind} Team as ${kind === "snippet" ? "/" : ""}team (${COMPOSE_TEMPLATE_ID}).`);
+});
+
 test("compose preview prints what email leaves out on stderr and keeps it in JSON", async () => {
   const formattingWarnings = [
     { code: "unsupported_element", element: "small" },
@@ -5562,4 +5607,75 @@ test("mail ls displays assigned access scope", async () => {
   expect(result.exitCode).toBe(0);
   expect(result.stdout).toContain("SCOPE");
   expect(result.stdout).toContain("assigned");
+});
+
+test("draft create and update pass signature choices and reject conflicting flags", async () => {
+  const requests: Array<{ method: string; body: unknown }> = [];
+  const server = withMailbox(async (request) => {
+    const path = new URL(request.url).pathname;
+    if ([`/api/mail/mailboxes/${MAILBOX_ID}/drafts`, `/api/mail/mailboxes/${MAILBOX_ID}/drafts/${DRAFT_ID}`].includes(path)) {
+      if (request.method !== "GET") requests.push({ method: request.method, body: await request.json() });
+      return api(draftFixture({ signatureTemplateId: "Sign01" }));
+    }
+    return api({ message: "unexpected" }, { status: 500 });
+  });
+  servers.push(server);
+  const origin = `http://127.0.0.1:${server.port}`;
+  for (const command of [["create"], ["update", DRAFT_ID, "--revision", "1"]]) {
+    const base = ["--json", "mail", "draft", ...command, "--mailbox", MAILBOX_ID, "--identity", IDENTITY_ID, "--body", "Body only"];
+    for (const choice of [[], ["--signature", "Sign01"], ["--no-signature"]]) {
+      const result = await runCli(origin, [...base, ...choice]);
+      expect(result.exitCode, result.stderr).toBe(0);
+    }
+    const conflict = await runCli(origin, [...base, "--signature", "Sign01", "--no-signature"]);
+    expect(conflict.exitCode).toBe(1);
+    expect(conflict.stderr).toContain("Use either --signature or --no-signature.");
+  }
+  expect(requests).toHaveLength(6);
+  for (const index of [0, 3]) {
+    const choiceAt = (offset: number) => {
+      const value = requests[index + offset]!.body;
+      if (!value || typeof value !== "object") throw new Error("Expected request object");
+      return "draft" in value ? value.draft : value;
+    };
+    expect(choiceAt(0)).not.toHaveProperty("signatureTemplateId");
+    expect(choiceAt(1)).toMatchObject({ signatureTemplateId: "Sign01", body: "Body only" });
+    expect(choiceAt(2)).toMatchObject({ signatureTemplateId: null });
+  }
+  const get = await runCli(origin, ["mail", "draft", "get", DRAFT_ID, "--mailbox", MAILBOX_ID]);
+  expect(get.exitCode, get.stderr).toBe(0);
+  expect(get.stdout).toContain("Signature: Sign01");
+});
+
+test("reply and forward pass per-draft signature choices", async () => {
+  const requests: Array<{ path: string; body: unknown }> = [];
+  const server = composeServer(requests);
+  servers.push(server);
+  const origin = `http://127.0.0.1:${server.port}`;
+  for (const command of ["reply", "forward"]) {
+    const base = [
+      "--json",
+      "mail",
+      command,
+      CONVERSATION_ID,
+      "--mailbox",
+      MAILBOX_ID,
+      "--body",
+      "Answer",
+      ...(command === "forward" ? ["--to", "reader@example.test"] : []),
+    ];
+    for (const choice of [["--signature", "Sign01"], ["--no-signature"]]) {
+      const result = await runCli(origin, [...base, ...choice]);
+      expect(result.exitCode, result.stderr).toBe(0);
+    }
+    const conflict = await runCli(origin, [...base, "--signature", "Sign01", "--no-signature"]);
+    expect(conflict.exitCode).toBe(1);
+    expect(conflict.stderr).toContain("Use either --signature or --no-signature.");
+  }
+  expect(requests.map((request) => request.body)).toEqual([
+    expect.objectContaining({ signatureTemplateId: "Sign01", intent: "reply" }),
+    expect.objectContaining({ signatureTemplateId: null, intent: "reply" }),
+    expect.objectContaining({ signatureTemplateId: "Sign01", intent: "forward" }),
+    expect.objectContaining({ signatureTemplateId: null, intent: "forward" }),
+  ]);
 });

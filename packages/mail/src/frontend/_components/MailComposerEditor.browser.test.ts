@@ -115,6 +115,37 @@ const manyWarnings: ComposeFormattingWarning[] = Array.from({ length: 20 }, (_, 
 describe("Mail composer preview", () => {
   for (const [label, context] of [
     ["desktop", desktop],
+    ["phone", { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }],
+  ] as const) {
+    test(`shows the signature row below the editor without horizontal overflow on ${label}`, async () => {
+      const page = await load({ context, theme: "light", locale: "en" });
+      try {
+        await page.waitForSelector(".mail-composer-signature");
+        const row = await box(page, ".mail-composer-signature");
+        const editor = await box(page, ".k2b-panes");
+        expect(row.y).toBeGreaterThanOrEqual(editor.y + editor.height - 0.5);
+        expect(row.x).toBeGreaterThanOrEqual(0);
+        expect(row.x + row.width).toBeLessThanOrEqual(context.viewport!.width + 0.5);
+        expect(row.y + row.height).toBeLessThanOrEqual(context.viewport!.height + 0.5);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+        await page.getByRole("button", { name: "Signature: Support signature", exact: true }).click();
+        const none = page.getByRole("menuitemradio", { name: "No signature", exact: true });
+        await none.waitFor({ state: "visible" });
+        const menu = await none.boundingBox();
+        expect(menu).not.toBeNull();
+        expect(menu!.x).toBeGreaterThanOrEqual(0);
+        expect(menu!.x + menu!.width).toBeLessThanOrEqual(context.viewport!.width + 0.5);
+        await none.click();
+        expect(await page.getByRole("button", { name: "Signature: No signature", exact: true }).count()).toBe(1);
+        expect(page.errors).toEqual([]);
+      } finally {
+        await page.context().close();
+      }
+    }, 30_000);
+  }
+
+  for (const [label, context] of [
+    ["desktop", desktop],
     ["phone", phone],
   ] as const) {
     for (const theme of ["light", "dark"] as const) {

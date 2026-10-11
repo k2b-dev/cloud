@@ -35,6 +35,7 @@ const draft: MailDraft = {
   revision: 3,
   state: "draft",
   deliveryClass: "normal",
+  signatureTemplateId: null,
   createdAt: now,
   updatedAt: now,
 };
