@@ -1085,7 +1085,12 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       const readsBeforeDecline = catalog.mock.calls.length;
       expect(await runtimeCapabilities.resolve(denied.id, { approved: false }, owner, caller)).toEqual({ status: "denied" });
       expect(catalog.mock.calls.length).toBe(readsBeforeDecline);
-      expect(await approvalFor(denied.id)).toMatchObject({ status: "rejected", decidedVia: "web_session", requesterTitle: applet.title });
+      expect(await approvalFor(denied.id)).toMatchObject({
+        status: "rejected",
+        decidedVia: "web_session",
+        requesterTitle: applet.title,
+        assurance: "standard",
+      });
       expect(execute).not.toHaveBeenCalled();
       const expired = request();
       await runtimeCapabilities.prepare(expired, owner, caller);
@@ -1153,6 +1158,31 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       expect(await approvalFor(legacyApproved.id)).toMatchObject({ status: "consumed", decidedVia: "web_session" });
       expect(execute).toHaveBeenCalledTimes(1);
       execute.mockClear();
+      // A call from before the upgrade keeps the day it had to wait: an older one can only be declined.
+      const overdue = request();
+      await runtimeCapabilities.prepare(overdue, owner, caller);
+      await sql`DELETE FROM approvals.requests WHERE id=${(await approvalFor(overdue.id)).id}::uuid`;
+      await sql`UPDATE assistant.capability_calls SET approval_id=NULL,created_at=now()-interval '2 days' WHERE id=${overdue.id}::uuid`;
+      await expect(runtimeCapabilities.resolve(overdue.id, { approved: true }, owner, caller)).rejects.toMatchObject({
+        code: "CONFLICT",
+      });
+      expect(await approvalFor(overdue.id)).toMatchObject({ status: "expired" });
+      expect(await runtimeCapabilities.resolve(overdue.id, { approved: false }, owner, caller)).toEqual({ status: "denied" });
+      // A call that waited past a day is abandoned with its open approval when the next call is prepared.
+      const stale = request();
+      await runtimeCapabilities.prepare(stale, owner, caller);
+      await sql`UPDATE assistant.capability_calls SET created_at=now()-interval '2 days' WHERE id=${stale.id}::uuid`;
+      // A rememberable Action whose review leaves out the scope asks as `confirm`, as in a chat.
+      review.mockResolvedValueOnce({ ok: true, data: { message: "Write item into another base?" } });
+      const scopeless = request();
+      await runtimeCapabilities.prepare(scopeless, owner, caller);
+      expect(await approvalFor(stale.id)).toMatchObject({ status: "cancelled" });
+      expect(await approvalFor(scopeless.id)).toMatchObject({ assurance: "confirm" });
+      expect(await runtimeCapabilities.resolve(scopeless.id, { approved: false }, owner, caller)).toEqual({ status: "denied" });
+      // A call ID an earlier approval request still holds never inherits that request or its decision.
+      await sql`DELETE FROM assistant.capability_calls WHERE id=${scopeless.id}::uuid`;
+      await expect(runtimeCapabilities.prepare(scopeless, owner, caller)).rejects.toMatchObject({ code: "CONFLICT" });
+      expect(execute).not.toHaveBeenCalled();
       const approved = request();
       await runtimeCapabilities.prepare(approved, owner, caller);
       await runtimeCapabilities.resolve(approved.id, { approved: true, remember: "always" }, owner, caller);

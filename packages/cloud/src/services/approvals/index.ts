@@ -15,6 +15,11 @@ export type ApprovalRequesterKind = "assistant_turn" | "studio_app";
 export type ApprovalStatus = "pending" | "approved" | "rejected" | "expired" | "cancelled" | "consumed";
 export type ApprovalAssurance = "standard" | "confirm";
 
+/**
+ * `standard` when the person may remember the approval of this call: an Action with `approval: "rememberable"` whose
+ * review names a scope for these arguments, a tool whose policy allows remembering, or a website. Otherwise `confirm`.
+ */
+export const approvalAssurance = (rememberable: boolean): ApprovalAssurance => (rememberable ? "standard" : "confirm");
 export const approvalArgsDigest = (input: unknown): string => capabilityRequestHash(input);
 export const approvalReviewDigest = (review: CapabilityActionReview | null | undefined): string => capabilityRequestHash(review ?? null);
 export const approvalDecisionChannel = (input: {
@@ -78,11 +83,19 @@ const columns = () => sql`id, app_id AS "appId", action, approval_scope AS "appr
 
 const transaction = <T>(db: SQL | undefined, run: (tx: SQL) => Promise<T>): Promise<T> => (db && db !== sql ? run(db) : sql.begin(run));
 
-export const request = async (input: ApprovalRequestInput, db?: SQL): Promise<{ id: string }> => {
+export type ApprovalRequestResult = { ok: true; id: string } | { ok: false; code: "CONFLICT" };
+/**
+ * Records the question once per requester reference. Asking again, for example after a worker restart, returns the
+ * open request unchanged: its snapshot is what the person may already see, so a changed effect fails `consume` and
+ * asks again instead of rebinding that decision. A reference whose request is decided, expired, or another person's
+ * is a conflict.
+ */
+export const request = async (input: ApprovalRequestInput, db?: SQL): Promise<ApprovalRequestResult> => {
+  // Zero or less records a request that is already expired, such as a call that waited too long before the upgrade.
   const expiresInMs = Number.isNaN(input.expiresInMs)
     ? APPROVAL_MAX_WAIT_MS
-    : Math.max(1, Math.min(input.expiresInMs, APPROVAL_MAX_WAIT_MS));
-  return transaction(db, async (tx) => {
+    : Math.max(0, Math.min(input.expiresInMs, APPROVAL_MAX_WAIT_MS));
+  return transaction(db, async (tx): Promise<ApprovalRequestResult> => {
     const [row] = await tx<{ id: string }[]>`
       INSERT INTO approvals.requests (app_id, action, approval_scope, requester_kind, requester_ref, requester_app_id,
         requester_title, subject_id, approver_user_id, assurance, sentence, details, args_digest, review_digest, expires_at)
@@ -90,18 +103,15 @@ export const request = async (input: ApprovalRequestInput, db?: SQL): Promise<{ 
         ${input.requester.appId}, ${input.requester.title ?? null}, ${input.subjectId}::uuid, ${input.approverUserId}::uuid,
         ${input.assurance}, ${input.sentence}, ${JSON.stringify(input.review ?? null)}::text::jsonb,
         ${approvalArgsDigest(input.input)}, ${approvalReviewDigest(input.review)}, now() + (${expiresInMs} * interval '1 millisecond'))
-      ON CONFLICT (requester_kind, requester_ref) DO UPDATE SET
-        approval_scope = EXCLUDED.approval_scope, sentence = EXCLUDED.sentence, details = EXCLUDED.details,
-        args_digest = EXCLUDED.args_digest, review_digest = EXCLUDED.review_digest,
-        requester_title = EXCLUDED.requester_title, expires_at = EXCLUDED.expires_at
-      WHERE requests.status='pending'
+      ON CONFLICT (requester_kind, requester_ref) DO NOTHING
       RETURNING id
     `;
-    if (row) return row;
-    const [existing] = await tx<{ id: string }[]>`SELECT id FROM approvals.requests
-      WHERE requester_kind=${input.requester.kind} AND requester_ref=${input.requester.ref}`;
-    if (!existing) throw new Error("Approval request was not stored");
-    return existing;
+    if (row) return { ok: true, id: row.id };
+    const [open] = await tx<{ id: string }[]>`SELECT id FROM approvals.requests
+      WHERE requester_kind=${input.requester.kind} AND requester_ref=${input.requester.ref}
+        AND status='pending' AND expires_at > now() AND subject_id=${input.subjectId}::uuid
+        AND approver_user_id=${input.approverUserId}::uuid AND app_id=${input.appId} AND action=${input.action}`;
+    return open ? { ok: true, id: open.id } : { ok: false, code: "CONFLICT" };
   });
 };
 

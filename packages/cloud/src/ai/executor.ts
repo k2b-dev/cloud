@@ -3,7 +3,7 @@ import { compact, nessi } from "@k2b/nessi";
 import { listCapabilities } from "../_internal/registry";
 import type { CapabilityActionReview } from "../contracts/capabilities";
 import type { AccessSubject, RequestActor } from "../server";
-import { approvalScopeFromToolName, approvals } from "../services/approvals";
+import { approvalAssurance, approvalScopeFromToolName, approvals } from "../services/approvals";
 import { createHelpReader } from "../services/help";
 import { logger } from "../services/logging";
 import { getMandate } from "../services/mandates";
@@ -63,7 +63,7 @@ import { composeAiSystemPrompt } from "./system-prompt";
 import { aiToolAudit } from "./tool-audit";
 import { acceptCanonicalToolNames } from "./tool-call-names";
 import { resolveAiToolResultMaxChars } from "./tool-result-budget";
-import { aiToolPromptHints, type PreparedAiTools, prepareAiTools } from "./tools";
+import { type AiApprovalUse, aiApprovalAskedLater, aiToolPromptHints, type PreparedAiTools, prepareAiTools } from "./tools";
 import { AiTranscriptionError } from "./transcription";
 import {
   AiTurnFailure,
@@ -958,16 +958,30 @@ export class AiTurnExecutor {
       linkApproval: (approvalCallId: string, approvalId: string) => {
         linkedApprovals.set(approvalCallId, approvalId);
       },
-      consumeApproval: async (approvalCallId: string, input: unknown): Promise<boolean> => {
+      consumeApproval: async (approvalCallId: string, input: unknown): Promise<AiApprovalUse> => {
         const pending = await aiConversations.getPendingTurnAction({ conversationId, turnId, callId: approvalCallId });
-        if (!pending?.approvalId) return true;
+        if (!pending?.approvalId) return "approved";
         const result = await approvals.consume(pending.approvalId, {
           input,
           review: approvalReviewForCallId(capabilityActionReviews, approvalCallId) ?? null,
           requester: { kind: "assistant_turn", ref: `${turnId}/${approvalCallId}` },
         });
-        if (!result.ok) freshApprovalRequired.add(customApprovalParentCallId(approvalCallId) ?? approvalCallId);
-        return result.ok;
+        if (result.ok) return "approved";
+        if (result.code === "ALREADY_CONSUMED") {
+          // A later question of the same call proves this run resumes after it, not after a crash during the effect.
+          const [open, resolved] = await Promise.all([
+            aiConversations.listPendingActionRecords({ conversationId, turnId }),
+            aiConversations.listResolvedPendingActions({ conversationId, turnId }),
+          ]);
+          return aiApprovalAskedLater(
+            approvalCallId,
+            [...open, ...resolved].map((action) => action.callId),
+          )
+            ? "approved"
+            : "used";
+        }
+        freshApprovalRequired.add(customApprovalParentCallId(approvalCallId) ?? approvalCallId);
+        return "changed";
       },
       describeApproval: (approvalCallId: string, target: AiApprovalTarget) => approvalTargets.set(approvalCallId, target),
     };
@@ -1709,6 +1723,7 @@ export class AiTurnExecutor {
 
     const review = event.kind === "custom_approval" ? approvalReviewForCallId(capabilityActionReviews, event.callId) : undefined;
     let approvalId: string | undefined;
+    let presented = event;
     if (event.kind !== "client_tool") {
       const conversation = await aiConversations.getConversation({ conversationId });
       const owner = conversation?.createdByUserId;
@@ -1716,8 +1731,11 @@ export class AiTurnExecutor {
       const linked = input.linkedApprovals.get(event.callId);
       if (linked) {
         const record = await approvals.get(linked);
-        if (!record || record.approverUserId !== owner) throw new Error("Approval does not belong to the conversation owner");
+        if (!record || record.status !== "pending" || record.requesterKind !== "studio_app" || record.approverUserId !== owner)
+          throw new Error("Approval does not belong to an open Studio request of the conversation owner");
         approvalId = linked;
+        // The card shows the question the effect's own record holds, never the text the relay sent.
+        presented = { ...event, message: record.sentence };
       } else {
         const record = await approvals.request({
           ...approvalScopeFromToolName(toolName),
@@ -1725,13 +1743,13 @@ export class AiTurnExecutor {
           requester: { kind: "assistant_turn", ref: `${turnId}/${event.callId}`, appId: "assistant", title: conversation.title },
           subjectId: owner,
           approverUserId: owner,
-          assurance:
-            target !== undefined || capabilityApprovalScope !== undefined || aiToolAllowsAlways(approvalPolicy) ? "standard" : "confirm",
+          assurance: approvalAssurance(target !== undefined || capabilityApprovalScope !== undefined || aiToolAllowsAlways(approvalPolicy)),
           sentence: event.message ?? toolName,
           review,
           input: event.args,
           expiresInMs: AI_ACTION_BUDGET_MS,
         });
+        if (!record.ok) throw new Error("This approval was already decided or has expired.");
         approvalId = record.id;
       }
     }
@@ -1744,7 +1762,7 @@ export class AiTurnExecutor {
       status: "pending",
       name: toolName,
       args: event.args,
-      message: event.message,
+      message: presented.message,
       review,
       approvalScope,
       allowAlways,
@@ -1771,7 +1789,7 @@ export class AiTurnExecutor {
         .catch(() => undefined);
     }
 
-    await pipeline.apply(event);
+    await pipeline.apply(presented);
     const suspended = await aiConversations.suspendTurn({
       conversationId,
       turnId,

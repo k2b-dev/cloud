@@ -359,7 +359,8 @@ Each question is one platform [approval request](/en/docs/identity/approvals)
 with the arguments and the review the person saw. Directly before the Action
 runs, AI Core reviews the call again and uses the approval once. When the
 review changed in the meantime, the turn asks again with the current review
-instead of running the Action. An approval never runs a call twice.
+instead of running the Action. When a restart interrupted the Action after its
+approval was used, the call ends with an error instead of running again.
 
 ### Show an optional Action review
 

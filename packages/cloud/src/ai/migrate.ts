@@ -1,6 +1,6 @@
 import { sql } from "bun";
 import { CapabilityActionReviewSchema } from "../contracts/capabilities";
-import { APPROVAL_MAX_WAIT_MS, approvalScopeFromToolName, approvals, migrateApprovals } from "../services/approvals";
+import { APPROVAL_MAX_WAIT_MS, approvalAssurance, approvalScopeFromToolName, approvals, migrateApprovals } from "../services/approvals";
 import { migrateAiMessageQueue } from "./message-queue";
 import { migrateAiModelAccess } from "./model-access-migrate";
 import { migrateAiQuotas } from "./quotas-migrate";
@@ -2603,6 +2603,9 @@ const backfillApprovalRequests = async (): Promise<void> => {
         FROM ai.pending_actions a JOIN ai.turns t ON t.id=a.turn_id JOIN ai.conversations c ON c.id=a.conversation_id
         WHERE a.status='pending' AND a.kind IN ('approval','custom_approval') AND a.approval_id IS NULL
           AND c.created_by_user_id IS NOT NULL AND t.status='waiting_for_action'
+          -- A running Assistant may already have asked again for this action; keep the request it saw.
+          AND NOT EXISTS (SELECT 1 FROM approvals.requests r
+            WHERE r.requester_kind='assistant_turn' AND r.requester_ref=a.turn_id::text || '/' || a.call_id)
         ORDER BY a.created_at, a.id LIMIT 200 FOR UPDATE OF a SKIP LOCKED`;
       for (const row of rows) {
         const review = CapabilityActionReviewSchema.safeParse(row.review == null ? null : decoded(row.review));
@@ -2614,7 +2617,8 @@ const backfillApprovalRequests = async (): Promise<void> => {
             requester: { kind: "assistant_turn", ref: `${row.turn_id}/${row.call_id}`, appId: "assistant", title: row.title },
             subjectId: row.owner,
             approverUserId: row.owner,
-            assurance: row.allow_always || row.allow_chat ? "standard" : "confirm",
+            // Every turn that can ask allows remembering, so these flags hold what the call offers.
+            assurance: approvalAssurance(row.allow_always || row.allow_chat),
             sentence: row.message ?? row.tool_name,
             review: review.success ? review.data : null,
             input: decoded(row.args),
@@ -2622,6 +2626,7 @@ const backfillApprovalRequests = async (): Promise<void> => {
           },
           db,
         );
+        if (!record.ok) continue;
         await db`UPDATE approvals.requests SET expires_at=${row.expiry},
           status=CASE WHEN ${row.expiry} <= now() THEN 'expired' ELSE status END
           WHERE id=${record.id}::uuid AND status='pending'`;

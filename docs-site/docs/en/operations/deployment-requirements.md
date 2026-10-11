@@ -504,6 +504,37 @@ JSON URL twice. The first request asks and offers
 **Allow this website for this chat**. After you choose it, the second request
 runs without asking and shows its full URL with **Revoke**.
 
+### Record approvals as platform requests
+
+This release records every approval that Assistant asks for as one
+[platform approval request](/en/docs/identity/approvals). It needs no
+configuration change. The first Core start creates the schema `approvals` with
+the table `approvals.requests`, adds `approval_id` to `ai.pending_actions` and
+`approval_decided_via` to `ai.tool_calls`, and gives every chat approval that
+is still open a request. Assistant adds `approval_id` to
+`assistant.capability_calls`. Core deletes a request 90 days after it expired.
+
+Update Core before Assistant. Until Core has created the table, Studio code
+that calls an Action which asks for approval fails. One behavior changes for
+people: when an Action's review changes between the question and the run, for
+example because a draft got another recipient, the chat asks again instead of
+running the Action.
+
+Rolling back keeps the new table and columns, and the previous release ignores
+them. After the next update, Core gives the chat approvals that are open then a
+request.
+
+After the rollout, approve one Action in a chat, then check that its request
+was used and that the decision is in the audit log:
+
+```sql
+SELECT app_id, action, status, decided_via FROM approvals.requests ORDER BY created_at DESC LIMIT 1;
+SELECT action FROM audit.events WHERE target_type = 'approval_request' ORDER BY created_at DESC LIMIT 1;
+```
+
+The request shows `consumed` and `web_session`, and the event
+`auth.action.approve`.
+
 ### Update browser notifications for grouping and badges
 
 Deploy the updated platform package and Core together to enable

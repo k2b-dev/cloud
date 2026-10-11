@@ -39,8 +39,9 @@ databaseSuite()("platform approvals", () => {
   });
   const ask = async (snapshot = input()) => {
     const record = await approvals.request(snapshot);
+    if (!record.ok) throw new Error("Expected a new approval request");
     ids.push(record.id);
-    return { ...record, snapshot };
+    return { id: record.id, snapshot };
   };
   const approve = (id: string, approved = true) => approvals.decide(id, { approved }, { userId, via: "web_session" });
   const consume = (record: Awaited<ReturnType<typeof ask>>) =>
@@ -49,16 +50,47 @@ databaseSuite()("platform approvals", () => {
       review: record.snapshot.review ?? null,
       requester: record.snapshot.requester,
     });
-  test("refreshes pending snapshots but preserves decided requests", async () => {
+  test("asking again keeps the first snapshot, so a changed review asks again instead of rebinding the decision", async () => {
     const record = await ask();
-    const refreshed = { ...record.snapshot, sentence: "Updated?", input: { value: "two" }, expiresInMs: APPROVAL_MAX_WAIT_MS * 2 };
-    expect(await approvals.request(refreshed)).toEqual({ id: record.id });
-    expect(await approvals.get(record.id)).toMatchObject({ sentence: "Updated?", status: "pending" });
-    const row = await approvals.get(record.id);
-    expect(row!.expiresAt.getTime() - row!.createdAt.getTime()).toBeLessThanOrEqual(APPROVAL_MAX_WAIT_MS + 1000);
+    const before = await approvals.get(record.id);
+    // A worker that restarted before suspending asks again for the same action with what changed meanwhile.
+    const changed = {
+      ...record.snapshot,
+      sentence: "Send to mallory?",
+      review: { message: "Send to mallory?" },
+      expiresInMs: APPROVAL_MAX_WAIT_MS * 2,
+    };
+    expect(await approvals.request(changed)).toEqual({ ok: true, id: record.id });
+    expect(await approvals.get(record.id)).toEqual(before);
+    // The person approves the card they saw first; the changed effect cannot use that decision.
     await approve(record.id);
-    await approvals.request({ ...refreshed, sentence: "Must stay unchanged" });
-    expect(await approvals.get(record.id)).toMatchObject({ sentence: "Updated?", status: "approved" });
+    expect(await approvals.consume(record.id, { input: changed.input, review: changed.review, requester: changed.requester })).toEqual({
+      ok: false,
+      code: "REVIEW_CHANGED",
+    });
+    expect(await approvals.get(record.id)).toMatchObject({ sentence: "Write item?", status: "cancelled" });
+  });
+  test("refuses a requester reference whose request is decided, expired, or another person's", async () => {
+    const decided = await ask();
+    await approve(decided.id);
+    expect(await approvals.request(decided.snapshot)).toEqual({ ok: false, code: "CONFLICT" });
+    const expired = await ask();
+    await sql`UPDATE approvals.requests SET expires_at=now()-interval '1 second' WHERE id=${expired.id}::uuid`;
+    expect(await approvals.request(expired.snapshot)).toEqual({ ok: false, code: "CONFLICT" });
+    const foreign = await ask();
+    expect(await approvals.request({ ...foreign.snapshot, approverUserId: strangerId, subjectId: strangerId })).toEqual({
+      ok: false,
+      code: "CONFLICT",
+    });
+    expect(await approvals.get(decided.id)).toMatchObject({ status: "approved", approverUserId: userId });
+  });
+  test("caps the wait and records an overdue request as already expired", async () => {
+    const capped = await ask({ ...input(), expiresInMs: APPROVAL_MAX_WAIT_MS * 2 });
+    const row = await approvals.get(capped.id);
+    expect(row!.expiresAt.getTime() - row!.createdAt.getTime()).toBeLessThanOrEqual(APPROVAL_MAX_WAIT_MS + 1000);
+    const overdue = await ask({ ...input(), expiresInMs: -60_000 });
+    expect(await approve(overdue.id)).toEqual({ ok: false, code: "EXPIRED" });
+    expect(await approve(overdue.id, false)).toEqual({ ok: false, code: "ALREADY_DECIDED", status: "expired" });
   });
   test("changed arguments or review cancel the approved request permanently", async () => {
     for (const changed of ["input", "review"] as const) {

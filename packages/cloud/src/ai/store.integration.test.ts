@@ -114,6 +114,69 @@ suite("AI conversation store integration", () => {
       await cleanupFixture({ userId, conversationIds: [chat.id] });
     }
   });
+  test("ending a turn cancels its open and unused approvals but keeps used ones and a linked Studio decision", async () => {
+    const userId = await insertUser();
+    const chat = await aiConversations.createConversation({ ownerUserId: userId, title: "Approvals" });
+    try {
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: chat.id,
+        modelProfileId: "mock",
+        runConfig,
+        userMessage: userMessage("Run"),
+      });
+      const ask = async (callId: string, requester: { kind: "assistant_turn" | "studio_app"; ref: string }, decided: boolean) => {
+        const record = await approvals.request({
+          appId: "demo",
+          action: "write",
+          requester: { ...requester, appId: "assistant" },
+          subjectId: userId,
+          approverUserId: userId,
+          assurance: "confirm",
+          sentence: "Write?",
+          input: { callId },
+          expiresInMs: 60_000,
+        });
+        if (!record.ok) throw new Error("Expected a new approval request");
+        if (decided) await approvals.decide(record.id, { approved: true }, { userId, via: "web_session" });
+        await aiConversations.savePendingTurnAction({
+          approvalId: record.id,
+          conversationId: chat.id,
+          turnId: turn.id,
+          callId,
+          kind: "custom_approval",
+          status: decided ? "resolved" : "pending",
+          name: "demo.write",
+          args: { callId },
+          approvalScope: "demo.write",
+          allowAlways: false,
+          resolvedEvent: decided ? { type: "approval_response", callId, approved: true } : null,
+        });
+        return record.id;
+      };
+      const open = await ask("open", { kind: "assistant_turn", ref: `${turn.id}/open` }, false);
+      const unused = await ask("unused", { kind: "assistant_turn", ref: `${turn.id}/unused` }, true);
+      const used = await ask("used", { kind: "assistant_turn", ref: `${turn.id}/used` }, true);
+      expect(
+        await approvals.consume(used, {
+          input: { callId: "used" },
+          review: null,
+          requester: { kind: "assistant_turn", ref: `${turn.id}/used` },
+        }),
+      ).toEqual({ ok: true });
+      const linked = await ask("linked", { kind: "studio_app", ref: crypto.randomUUID() }, true);
+      expect(await aiConversations.completeTurn({ conversationId: chat.id, turnId: turn.id, status: "aborted" })).not.toBe("lost");
+      expect(await Promise.all([open, unused, used, linked].map(async (id) => (await approvals.get(id))?.status))).toEqual([
+        "cancelled",
+        "cancelled",
+        "consumed",
+        "approved",
+      ]);
+    } finally {
+      await sql`DELETE FROM audit.events WHERE actor_user_id=${userId}::uuid AND target_type='approval_request'`;
+      await sql`DELETE FROM approvals.requests WHERE approver_user_id=${userId}::uuid`;
+      await cleanupFixture({ userId, conversationIds: [chat.id] });
+    }
+  });
   test("a metadata-renamed title survives the first message while create-time placeholders get the snapshot", async () => {
     const userId = await insertUser();
     const defaultChat = await aiConversations.createConversation({ ownerUserId: userId, title: "Neuer Chat" });

@@ -795,6 +795,18 @@ const messageSearchText = (message: Message): string => {
 };
 
 /**
+ * An ended turn uses no further approval: cancel its open questions and the turn's own approvals that no call used.
+ * A Studio request linked from the turn stays as decided, because the code run uses it when the call runs there.
+ */
+const cancelTurnApprovals = async (db: typeof sql, turnId: string): Promise<void> => {
+  await db`
+    UPDATE approvals.requests SET status = 'cancelled'
+    WHERE id IN (SELECT approval_id FROM ai.pending_actions WHERE turn_id = ${turnId} AND approval_id IS NOT NULL)
+      AND (status = 'pending' OR (status = 'approved' AND requester_kind = 'assistant_turn'))
+  `;
+};
+
+/**
  * Record how a turn ended on its messages when its loop could not record it: a stop while an approval waits, a run
  * time limit, or a turn the sweep finalizes. History reads the ending from the last assistant message, so such a turn
  * never looks finished. A failure replaces the `aborted` that a loop cut off by its run time limit recorded, so the
@@ -3051,14 +3063,12 @@ export const aiConversations: AiConversationService = {
         `;
       }
       await tx`
-        WITH aborted AS (UPDATE ai.pending_actions
+        UPDATE ai.pending_actions
         SET status = 'aborted', resolved_at = COALESCE(resolved_at, now())
         WHERE turn_id = ${input.turnId}
           AND status = 'pending'
-        RETURNING approval_id)
-      UPDATE approvals.requests SET status='cancelled'
-      WHERE id IN (SELECT approval_id FROM aborted WHERE approval_id IS NOT NULL) AND status='pending'
       `;
+      await cancelTurnApprovals(tx, input.turnId);
       if (input.status !== "completed") {
         await recordTurnEnd(tx, {
           conversationId: input.conversationId,
@@ -3210,14 +3220,12 @@ export const aiConversations: AiConversationService = {
         turnError: stop ? null : (turnErrors.get(finalized.turnId) ?? { code: "wait_expired" }),
       });
       await sql`
-        WITH aborted AS (UPDATE ai.pending_actions
+        UPDATE ai.pending_actions
         SET status = 'aborted', resolved_at = COALESCE(resolved_at, now())
         WHERE turn_id = ${finalized.turnId}
           AND status = 'pending'
-        RETURNING approval_id)
-      UPDATE approvals.requests SET status='cancelled'
-      WHERE id IN (SELECT approval_id FROM aborted WHERE approval_id IS NOT NULL) AND status='pending'
       `;
+      await cancelTurnApprovals(sql, finalized.turnId);
       await sql`
         UPDATE ai.turn_steers
         SET status = 'discarded', consumed_at = COALESCE(consumed_at, now())

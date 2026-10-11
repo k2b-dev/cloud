@@ -341,7 +341,7 @@ const createExecutor = (
   });
 
 suite("AI executor integration", () => {
-  test.each([false, true])("resumed capability approval binds the live review (changed=%s)", async (changed) => {
+  test.each(["unchanged", "changed", "used"] as const)("resumed capability approval binds the live review (%s)", async (mode) => {
     const userId = await insertUser();
     const conversation = await aiConversations.createConversation({ ownerUserId: userId, preloadTools: ["demo.write"] });
     const compiled = compileCapabilities(
@@ -418,13 +418,32 @@ suite("AI executor integration", () => {
         callId: first.callId,
         event: { type: "approval_response", callId: first.callId, approved: true },
       });
-      if (changed) {
+      if (mode === "changed") {
         // Remembering the original scope cannot bypass the new question after stale consumption fails.
         await rememberAiToolApproval({ actorUserId: userId }, { toolName: "demo.write", approvalScope: "one" });
         review.mockResolvedValue({ message: "Changed effect", approvalScope: "one" });
       }
+      if (mode === "used") {
+        // An earlier run used the approval and stopped during the Action, before the call asked anything else.
+        expect(
+          await approvals.consume(first.approvalId, {
+            input: first.args,
+            review: first.review ?? null,
+            requester: { kind: "assistant_turn", ref: `${turn.id}/${first.callId}` },
+          }),
+        ).toEqual({ ok: true });
+      }
       await run("waiting");
-      if (changed) {
+      if (mode === "used") {
+        expect(execute).not.toHaveBeenCalled();
+        expect(await approvals.get(first.approvalId)).toMatchObject({ status: "consumed" });
+        expect(await aiConversations.listPendingActionRecords({ conversationId: conversation.id, turnId: turn.id })).toEqual([]);
+        const messages = await aiConversations.listTurnMessages({ conversationId: conversation.id, loopId: turn.id });
+        expect(JSON.stringify(messages.filter((message) => message.message.role === "tool_result"))).toContain(
+          "This approval was already used",
+        );
+        expect((await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id }))?.status).toBe("completed");
+      } else if (mode === "changed") {
         expect(execute).not.toHaveBeenCalled();
         expect(await approvals.get(first.approvalId)).toMatchObject({ status: "cancelled" });
         const next = (await aiConversations.listPendingActionRecords({ conversationId: conversation.id, turnId: turn.id })).find(
@@ -1080,6 +1099,106 @@ suite("AI executor integration", () => {
     }
   });
 
+  test("a linked Studio approval asks with its own record's question and only while that request is open", async () => {
+    const userId = await insertUser();
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    try {
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: chat.id,
+        modelProfileId: MODEL_ID,
+        runConfig: { kind: "chat", input: "Run", signedInSession: true },
+        userMessage: userMessage("Run"),
+      });
+      const claim = await aiConversations.claimTurn({
+        conversationId: chat.id,
+        turnId: turn.id,
+        leaseOwner: "linked-approval-test",
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+      if (!claim) throw new Error("Expected claimed approval turn");
+      const pipeline = new __aiExecutorTest.StreamPipeline({
+        conversationId: chat.id,
+        turnId: turn.id,
+        attempt: claim.turn.attempt,
+        startSeq: claim.liveSeq,
+        leaseOwner: "linked-approval-test",
+        seedBlocks: [],
+        allowRememberedApprovals: true,
+      });
+      const prepared: PreparedAiTools = {
+        tools: [],
+        canonicalNames: new Map(),
+        approvalPolicies: new Map([["code_run", "never"]]),
+        frontendModes: new Map(),
+      };
+      const studio = async (kind: "studio_app" | "assistant_turn") => {
+        const record = await approvals.request({
+          appId: "demo",
+          action: "write",
+          requester: { kind, ref: kind === "studio_app" ? crypto.randomUUID() : `${turn.id}/other`, appId: "assistant" },
+          subjectId: userId,
+          approverUserId: userId,
+          assurance: "standard",
+          sentence: "Demo: Write item\nWrite one?",
+          input: { value: "one" },
+          expiresInMs: 60_000,
+        });
+        if (!record.ok) throw new Error("Expected a new approval request");
+        return record.id;
+      };
+      const ask = (callId: string, approvalId: string) =>
+        createExecutor("linked-approval-test")["handleActionRequest"]({
+          event: {
+            type: "tool_action_request",
+            kind: "custom_approval",
+            callId,
+            name: "code_run",
+            args: {},
+            message: "Demo: Write item\nWrite something else?",
+            agentId: "cloud",
+            loopId: turn.id,
+            turnId: `${turn.id}:turn:0`,
+            turnIndex: 0,
+          } as Extract<OutboundEvent, { type: "tool_action_request" }>,
+          loop: { push: () => undefined } as never,
+          pipeline,
+          conversationId: chat.id,
+          turnId: turn.id,
+          prepared,
+          approvalContext: { actorUserId: userId },
+          allowRememberedApprovals: true,
+          rememberableCapabilityApprovals: new Map(),
+          capabilityActionReviews: new Map(),
+          approvalTargets: new Map(),
+          linkedApprovals: new Map([[callId, approvalId]]),
+        });
+      const linked = await studio("studio_app");
+      await ask("run-approval-0", linked);
+      expect(
+        await aiConversations.getPendingTurnAction({ conversationId: chat.id, turnId: turn.id, callId: "run-approval-0" }),
+      ).toMatchObject({
+        approvalId: linked,
+        message: "Demo: Write item\nWrite one?",
+      });
+      const decided = await studio("studio_app");
+      await approvals.decide(decided, { approved: false }, { userId, via: "web_session" });
+      for (const [callId, approvalId] of [
+        ["run-approval-1", decided],
+        ["run-approval-2", await studio("assistant_turn")],
+      ] as const) {
+        await expect(ask(callId, approvalId)).rejects.toThrow("open Studio request");
+        expect(await aiConversations.getPendingTurnAction({ conversationId: chat.id, turnId: turn.id, callId })).toBeNull();
+      }
+    } finally {
+      await sql`DELETE FROM audit.events WHERE actor_user_id=${userId}::uuid AND target_type='approval_request'`;
+      await sql`DELETE FROM approvals.requests WHERE approver_user_id=${userId}::uuid`;
+      await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  });
   test("an approval remembered for one chat resolves there only, and a code run's target is never looked up here", async () => {
     const userId = await insertUser();
     const approvalContext = { actorUserId: userId };

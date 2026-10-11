@@ -9,7 +9,13 @@ import {
   transferCapabilityStream,
 } from "@k2b/cloud/capabilities/server";
 import { CapabilityActionReviewSchema, CapabilityStreamSchema } from "@k2b/cloud/contracts";
-import { APPROVAL_MAX_WAIT_MS, approvalDecisionChannel, approvalReviewDigest, approvals } from "@k2b/cloud/services/approvals";
+import {
+  APPROVAL_MAX_WAIT_MS,
+  approvalAssurance,
+  approvalDecisionChannel,
+  approvalReviewDigest,
+  approvals,
+} from "@k2b/cloud/services/approvals";
 import { type SQL, sql } from "bun";
 import { z } from "zod";
 import { codeApprovalMessage } from "./code-approval-message";
@@ -46,7 +52,15 @@ const Prepared = z.object({
   locale: z.string().optional(),
 });
 type Request = z.infer<typeof RuntimeCapabilityRequest>;
-type Row = { approval_id: string | null; id: string; request: unknown; prepared: unknown; status: string; result: unknown };
+type Row = {
+  approval_id: string | null;
+  id: string;
+  request: unknown;
+  prepared: unknown;
+  status: string;
+  result: unknown;
+  created_at: Date;
+};
 const decoded = (value: unknown): unknown => (typeof value === "string" ? JSON.parse(value) : value);
 
 // Nested Assistant capabilities retain the authorized script's chat context.
@@ -188,8 +202,13 @@ export const runtimeCapabilities = {
     };
     await sql.begin(async (db) => {
       await db`SELECT pg_advisory_xact_lock(hashtext(${"assistant-capabilities:" + actor.id}))`;
-      await db`UPDATE assistant.capability_calls SET status='abandoned' WHERE user_id=${actor.id}::uuid
-        AND status IN ('pending','running') AND created_at < now()-interval '1 day'`;
+      const abandoned = await db<{ approval_id: string | null }[]>`UPDATE assistant.capability_calls SET status='abandoned'
+        WHERE user_id=${actor.id}::uuid AND status IN ('pending','running') AND created_at < now()-interval '1 day'
+        RETURNING approval_id`;
+      await approvals.cancel(
+        abandoned.flatMap((call) => (call.approval_id ? [call.approval_id] : [])),
+        db,
+      );
       const [pending] = await db<
         { count: number }[]
       >`SELECT count(*)::int AS count FROM assistant.capability_calls WHERE user_id=${actor.id}::uuid AND status IN ('pending','running')`;
@@ -200,7 +219,10 @@ export const runtimeCapabilities = {
         const approval = await requestApprovalRecord(request, prepared, actor.id, db, {
           sentence: codeApprovalMessage(response, caller.locale ?? "en"),
           title: resource?.title ?? null,
+          expiresInMs: APPROVAL_MAX_WAIT_MS,
         });
+        // An approval request already holds this call ID, so the ID is reused; it never inherits that decision.
+        if (!approval.ok) throw new ArtifactError("CONFLICT");
         await db`UPDATE assistant.capability_calls SET approval_id=${approval.id}::uuid WHERE id=${request.id}::uuid`;
       }
       // Only recent completed transport results are needed; canonical execution
@@ -285,7 +307,7 @@ async function requestApprovalRecord(
   prepared: z.infer<typeof Prepared>,
   userId: string,
   db: SQL,
-  presentation?: { sentence: string; title: string | null },
+  options: { expiresInMs: number; sentence?: string; title?: string | null },
 ) {
   return approvals.request(
     {
@@ -296,14 +318,15 @@ async function requestApprovalRecord(
         kind: "studio_app",
         ref: request.id,
         appId: "assistant",
-        title: presentation?.title ?? prepared.resource?.title ?? null,
+        title: options.title ?? prepared.resource?.title ?? null,
       },
       subjectId: userId,
       approverUserId: userId,
-      assurance: prepared.approval === "rememberable" ? "standard" : "confirm",
+      // Like a chat, a rememberable Action whose review leaves out the scope for these arguments asks as `confirm`.
+      assurance: approvalAssurance(prepared.scope !== null),
       // Legacy calls retain only the app ID and local title; declining must work without the catalog.
       sentence:
-        presentation?.sentence ??
+        options.sentence ??
         codeApprovalMessage(
           {
             status: "approval",
@@ -318,7 +341,7 @@ async function requestApprovalRecord(
         ),
       review: prepared.review,
       input: request.input,
-      expiresInMs: APPROVAL_MAX_WAIT_MS,
+      expiresInMs: options.expiresInMs,
     },
     db,
   );
@@ -344,7 +367,10 @@ async function claimExecution(
           Prepared.parse(decoded(current.prepared)),
           actor.id,
           db,
+          // A call from before the upgrade keeps the day it had to wait; an older one can only be declined.
+          { expiresInMs: current.created_at.getTime() + APPROVAL_MAX_WAIT_MS - Date.now() },
         );
+        if (!approval.ok) return false;
         approvalId = approval.id;
         await db`UPDATE assistant.capability_calls SET approval_id=${approvalId}::uuid WHERE id=${row.id}::uuid AND approval_id IS NULL`;
       }

@@ -595,6 +595,7 @@ suiteFor("database", "nats")("chat and website approvals", () => {
           review: snapshot.review,
           expiresInMs: 60_000,
         });
+        if (!record.ok) throw new Error("Expected a new approval request");
         await aiConversations.savePendingTurnAction({ ...snapshot, approvalId: record.id });
         return record.id;
       };
