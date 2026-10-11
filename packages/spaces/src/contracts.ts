@@ -886,8 +886,8 @@ export const ItemFilterSchema = z.object({
   sortDesc: z.boolean().default(false).describe("Sort descending"),
 
   // Grouping
-  groupBy: ItemGroupBySchema.default("deadline").describe(
-    "Order by group before pagination, then by the selected sort within groups. Tag pages follow each item's first tag by name and return their rows in the selected sort",
+  groupBy: ItemGroupBySchema.default("none").describe(
+    "Default none. Otherwise order by group before pagination, then by the selected sort within groups. Tag pages follow each item's first tag by name and return their rows in the selected sort",
   ),
 
   // Pagination
