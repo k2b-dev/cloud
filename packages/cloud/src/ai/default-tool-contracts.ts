@@ -258,7 +258,11 @@ const whenValid = { when: (payload: { issues: readonly unknown[] }) => payload.i
 
 export const cloudAiChartSchema = () =>
   chartKinds().superRefine((chart, context) => {
-    const issue = chartDataIssue(chart);
+    const total = cloudAiChartMarks(chart);
+    const issue =
+      total > CLOUD_AI_VIEW_MAX_MARKS
+        ? `The chart has ${total} marks; the limit is ${CLOUD_AI_VIEW_MAX_MARKS}. Aggregate or split into several views.`
+        : chartDataIssue(chart);
     if (issue) context.addIssue({ code: "custom", message: issue });
   }, whenValid);
 const ChartSchema = /* @__PURE__ */ cloudAiChartSchema();

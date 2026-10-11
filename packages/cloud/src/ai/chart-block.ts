@@ -1,6 +1,6 @@
 import { autoBin, type ChartDatum, charts, computeDomain, extendDomainToNice, i18n, niceLogTicks, niceStep } from "@k2b/stdlib";
 import { z } from "zod";
-import { CLOUD_AI_VIEW_MAX_MARKS, type CloudAiChartInput, type CloudAiFormat, type CloudAiNumberFormat } from "./default-tool-contracts";
+import type { CloudAiChartInput, CloudAiFormat, CloudAiNumberFormat } from "./default-tool-contracts";
 
 type RenderOptions = {
   [K in CloudAiChartInput["kind"]]: { kind: K } & Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">;
@@ -575,9 +575,6 @@ export const cloudAiChartMarks = (input: CloudAiChartInput): number => {
 
 /** Why chart options would not draw, found without drawing them; undefined when nothing is wrong. */
 export function chartDataIssue(input: CloudAiChartInput): string | undefined {
-  const total = cloudAiChartMarks(input);
-  if (total > CLOUD_AI_VIEW_MAX_MARKS)
-    return `The chart has ${total} marks; the limit is ${CLOUD_AI_VIEW_MAX_MARKS}. Aggregate or split into several views.`;
   const points = seriesOf(input).flatMap((series) => series.data);
   if (new Set(points.map((point) => typeof point.x)).size > 1) return "Use either numbers or dates for x in all series, not both.";
   if ((input.kind === "pie" || input.kind === "donut") && !input.data.some((slice) => slice.value > 0))
