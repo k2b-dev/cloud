@@ -19,6 +19,8 @@ import { type AiSkillContent, appSkillStatus, contentHash } from "./skill-conten
 import {
   type AiSkillExtraFrontmatter,
   type AiSkillReferenceInput,
+  isAiSkillManualOnly,
+  mountAiSkillInstructionLinks,
   serializeAiSkillMarkdown,
   validateAiSkillDescription,
   validateAiSkillExtraFrontmatter,
@@ -41,6 +43,7 @@ export type AiSkillSummary = {
   description: string;
   permission: AiSkillPermission;
   enabled: boolean;
+  manualOnly: boolean;
   revision: number;
   referenceCount: number;
   createdAt: string;
@@ -133,6 +136,7 @@ type SkillSummaryRow = Pick<SkillRow, "id" | "short_id" | "name" | "description"
   permission: AiSkillPermission;
   reference_count: number;
   enabled: boolean;
+  manual_only: boolean;
 };
 
 type AdminSkillRow = SkillRow & {
@@ -292,6 +296,7 @@ const toSkill = async (row: SkillRow, subject: AccessSubject | null, db: SQL, ro
   const permission = await permissionFor(row.id, subject, db, roles);
   if (permission === "none") return null;
   const references = await listReferences(row.id, db);
+  const extraFrontmatter = jsonObject(row.extra_frontmatter);
   const [source] = await db<
     { appId: string; appName: string }[]
   >`SELECT app_id AS "appId", app_name AS "appName" FROM ai.app_skills WHERE skill_id=${row.id}::uuid`;
@@ -302,7 +307,8 @@ const toSkill = async (row: SkillRow, subject: AccessSubject | null, db: SQL, ro
     name: row.name,
     description: row.description,
     instructions: row.instructions,
-    extraFrontmatter: jsonObject(row.extra_frontmatter),
+    extraFrontmatter,
+    manualOnly: isAiSkillManualOnly(extraFrontmatter),
     references,
     referenceCount: references.length,
     permission,
@@ -516,7 +522,7 @@ const skillSnapshotFiles = (skill: AiSkill): { path: string; content: string }[]
   ...skill.references.map((reference) => ({ path: `${skill.name}/${reference.path}`, content: reference.content })),
 ];
 
-type SkillListOptions = { query?: string; enabledOnly?: boolean; limit?: number };
+type SkillListOptions = { query?: string; enabledOnly?: boolean; modelInvocableOnly?: boolean; limit?: number };
 async function listSkillSummaries(
   subject: AccessSubject | null,
   options: SkillListOptions & {
@@ -535,8 +541,9 @@ async function listSkillSummaries(
     SELECT skill.id, skill.short_id, skill.name, skill.description, skill.revision, skill.created_at, skill.updated_at,
            app_skill.app_id, app_skill.app_name, access.permission,
            count(DISTINCT reference.path)::int AS reference_count,
-           (disabled.user_id IS NULL) AS enabled
+           (disabled.user_id IS NULL) AS enabled, manual_only
     FROM ai.skills skill
+    CROSS JOIN LATERAL (SELECT COALESCE(skill.extra_frontmatter -> 'disable-model-invocation' = 'true'::jsonb, false) AS manual_only) invocation
     LEFT JOIN ai.app_skills app_skill ON app_skill.skill_id=skill.id
     JOIN LATERAL (${effectivePermission(sql`skill.id`, subject, roles)}) access ON true
     LEFT JOIN ai.skill_references reference ON reference.skill_id = skill.id
@@ -545,8 +552,9 @@ async function listSkillSummaries(
     WHERE access.permission <> 'none'
       AND (${!options.manageOnly} OR access.permission='admin')
       AND ${options.project ? sql`EXISTS(SELECT 1 FROM ai.project_skills link WHERE link.skill_id=skill.id AND link.project_id=${options.project.id}::uuid) = ${options.project.linked}` : sql`true`}
+      AND (${!options.modelInvocableOnly} OR NOT manual_only)
       AND (${!options.enabledOnly} OR disabled.user_id IS NULL) AND ${search.matches}
-    GROUP BY skill.id, app_skill.key, disabled.user_id, access.permission
+    GROUP BY skill.id, app_skill.key, disabled.user_id, access.permission, manual_only
     ORDER BY ${search.rank} DESC, ${search.textRank} DESC, skill.name, skill.id
     LIMIT ${limit} OFFSET ${options.offset ?? 0}
   `;
@@ -561,6 +569,7 @@ async function listSkillSummaries(
     revision: Number(row.revision),
     referenceCount: Number(row.reference_count),
     enabled: row.enabled,
+    manualOnly: row.manual_only,
     createdAt: iso(row.created_at),
     updatedAt: iso(row.updated_at),
   }));
@@ -705,9 +714,14 @@ export const aiSkills = {
     return linkedSkillProjects(skillId, subject);
   },
 
-  async search(subject: AccessSubject | null, query: string, limit = 30): Promise<{ skills: AiSkillSummary[]; more: boolean }> {
+  async search(
+    subject: AccessSubject | null,
+    query: string,
+    limit = 30,
+    options: { modelInvocableOnly?: boolean } = {},
+  ): Promise<{ skills: AiSkillSummary[]; more: boolean }> {
     const size = Math.max(1, Math.min(200, limit));
-    const skills = await aiSkills.list(subject, { query, enabledOnly: true, limit: size + 1 });
+    const skills = await aiSkills.list(subject, { ...options, query, enabledOnly: true, limit: size + 1 });
     return { skills: skills.slice(0, size), more: skills.length > size };
   },
 
@@ -1054,6 +1068,7 @@ export const aiSkills = {
       `;
       const skill = await requireSkill(row ?? null, subject, "read", tx, roles);
       if (!skill?.enabled) return null;
+      if (name !== null && skill.manualOnly) throw new AiSkillInputError(`Skill "${skill.name}" starts only when the user selects it.`);
       const files = skillSnapshotFiles(skill);
       await tx`
         INSERT INTO ai.turn_skill_snapshots (turn_id, skill_id, skill_name, description, revision, instructions, files)
@@ -1073,7 +1088,7 @@ export const aiSkills = {
             name: snapshot.skill_name,
             description: snapshot.description,
             revision: Number(snapshot.revision),
-            instructions: snapshot.instructions,
+            instructions: mountAiSkillInstructionLinks(snapshot.skill_name, snapshot.instructions),
             files: snapshotFiles(snapshot.files).map((file) => ({ ...file, path: mountAiSkillFilePath(file.path) })),
             loadedAt: iso(snapshot.loaded_at),
           }

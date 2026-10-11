@@ -47,6 +47,38 @@ const cleanup = async (appIds: string[]) => {
 databaseSuite()("app skills (integration)", () => {
   beforeAll(migrateCloudAi);
 
+  test("app Skills keep relative links in storage and export and mount them on load", async () => {
+    const subject = await user();
+    const name = `links-${crypto.randomUUID()}`;
+    const source = skill({
+      markdown: `---\nname: ${name}\ndescription: Selected app workflow.\ndisable-model-invocation: true\n---\n\nRead [rules](references/rules.md).`,
+      references: { "references/rules.md": "Rules" },
+    });
+    let entry = app([source]);
+    const conversation = await aiConversations.createConversation({ ownerUserId: subject.userId });
+    const [turn] = await sql<{ id: string }[]>`INSERT INTO ai.turns(short_id,conversation_id,status)
+      VALUES(${`links-${crypto.randomUUID()}`},${conversation.id}::uuid,'queued') RETURNING id`;
+    try {
+      entry = await publish(entry, [source]);
+      const installed = (await aiSkills.getByName(name, subject))!;
+      expect(installed).toMatchObject({ manualOnly: true, instructions: source.instructions });
+      expect((await aiSkills.list(subject)).find((item) => item.id === installed.id)?.manualOnly).toBe(true);
+      expect((await aiSkills.search(subject, name, 30, { modelInvocableOnly: true })).skills).toEqual([]);
+      await expect(aiSkills.loadForTurn(turn!.id, name, subject)).rejects.toThrow("starts only when the user selects it");
+      const loaded = await aiSkills.loadForTurn(turn!.id, { id: installed.shortId }, subject);
+      expect(loaded?.instructions).toBe(`Read [rules](/skills/${name}/references/rules.md).`);
+      expect(loaded?.files[0]?.content).toContain("[rules](references/rules.md)");
+      const [stored] = await sql<
+        { instructions: string }[]
+      >`SELECT instructions FROM ai.turn_skill_snapshots WHERE turn_id=${turn!.id}::uuid`;
+      expect(stored?.instructions).toBe(source.instructions);
+    } finally {
+      await cleanup([entry.id]);
+      await sql`DELETE FROM ai.conversations WHERE id=${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${subject.userId}::uuid`;
+    }
+  });
+
   test("third-party catalog installs ordinary read-only Skills and updates unedited content exactly once", async () => {
     const subject = await user(),
       name = `count-${crypto.randomUUID()}`;

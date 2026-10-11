@@ -312,6 +312,8 @@ export {
   type AiSkillDocument,
   type AiSkillExtraFrontmatter,
   type AiSkillReferenceInput,
+  isAiSkillManualOnly,
+  mountAiSkillInstructionLinks,
   parseAiSkillMarkdown,
   serializeAiSkillMarkdown,
   validateAiSkillDescription,

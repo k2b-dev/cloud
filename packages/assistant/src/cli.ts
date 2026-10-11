@@ -7,6 +7,7 @@ import { CODE_HOST_COMMAND } from "./cli/code-host";
 import { assistantRootCommand } from "./cli/interactive";
 import { assistantPersonalizationCommands } from "./cli/personalization";
 import { assistantProjectCommands } from "./cli/projects";
+import { assistantSkillCommands } from "./cli/skills";
 import { assistantTaskCommands } from "./cli/tasks";
 
 const commands = defineCliCommands({
@@ -31,6 +32,7 @@ const commands = defineCliCommands({
     "projects knowledge": "Manage Project knowledge",
     "projects references": "Manage Project Cloud references",
     "projects skills": "Manage Skills linked to a Project",
+    skills: "List Cloud Skills and move them to and from Agent Skills folders",
     tasks: "Manage one-time and recurring chat tasks",
     turns: "Watch, steer, and stop Assistant turns",
   },
@@ -43,6 +45,7 @@ const commands = defineCliCommands({
     ...assistantManagementCommands,
     ...assistantPersonalizationCommands,
     ...assistantProjectCommands,
+    ...assistantSkillCommands,
     ...assistantTaskCommands,
   ],
 });

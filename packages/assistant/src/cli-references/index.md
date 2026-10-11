@@ -10,6 +10,30 @@ It explains whose permissions the Assistant uses, what Projects share and
 whether it is live, which Actions need approval, how scheduled tasks are
 authorized, and when to use instructions, Skills, memories, or knowledge.
 
+## Move Skills between Cloud and folders
+
+```bash
+cld assistant skills list [--search <text>]
+cld assistant skills push <dir>
+cld assistant skills pull <name-or-id> [dir] [--force]
+```
+
+Push creates or updates the Cloud Skill with the folder's exact name. Unchanged
+content sends no update. Read-only Skills cannot be changed; removed references
+are reported. Symlinked Skill folders work too.
+
+Cloud keeps `SKILL.md`, all extra frontmatter, and supported Markdown files
+directly in `references/`. Push lists skipped scripts, assets, agent settings,
+and other files. Cloud does not run scripts.
+
+Pull defaults to `.agents/skills/<name>` in the current folder. Existing files
+cause an error before anything is written. Use `--force` to replace `SKILL.md`
+and its references; other files, including scripts and old references, stay.
+
+A Cloud-only Skill such as `assistant-code-mode` teaches Cloud tools. Pulling
+it into a local folder gives other agents instructions for tools they may not
+have.
+
 ## Assistant in editors
 
 `cld assistant acp` (shortcut `cld acp`) runs Assistant as an ACP v1 agent over

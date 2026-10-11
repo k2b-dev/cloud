@@ -1134,7 +1134,7 @@ test("local and Cloud Skill commands share a list, local precedence, and one-mes
           return Response.json({
             skills: [
               { name: "finance", shortId: "fin123", description: "Cloud finance", enabled: true },
-              { name: "remote", shortId: "rem123", description: "Cloud only", enabled: true },
+              { name: "remote", shortId: "rem123", description: "Cloud only", enabled: true, manualOnly: true },
               { name: "disabled", shortId: "dis123", description: "Disabled", enabled: false },
             ],
           });
@@ -1159,6 +1159,7 @@ test("local and Cloud Skill commands share a list, local precedence, and one-mes
       ],
     });
     expect(session.printed.join("\n")).toContain("(only with /finance)");
+    expect(session.printed.join("\n")).toContain("(only with /remote)");
     expect(session.printed.join("\n")).toContain("hidden by the project Skill");
     expect(session.printed.join("\n")).toMatch(/1 project(, \d+ global)?, 2 Cloud/);
     expect(completeInteractiveLine("/fin", directory, ["finance"])).toEqual([["/finance"], "/fin"]);

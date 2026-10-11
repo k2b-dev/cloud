@@ -218,7 +218,9 @@ describe("Assistant frontend contracts", () => {
     expect(skills).toContain("<NoticeCard");
     expect(skills).toContain("Skills teach Assistant how to handle specific tasks");
     expect(skills).not.toContain('label="Enabled for me"');
-    expect(skills).not.toContain("<Switch");
+    // Enabling stays a row action; the editor's only switch is the portable manual-only field.
+    expect(skills.match(/<Switch/g)).toHaveLength(1);
+    expect(skills).toContain('label={text("Start only when selected")}');
     expect(skills).not.toContain("{skill.permission}</span>");
     expect(skills).toContain('<StatusBadge tone="neutral" icon={null} label={text("Disabled")} />');
     expect(skills).toContain('label: text(skill.enabled ? "Disable" : "Enable")');

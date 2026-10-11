@@ -32,6 +32,7 @@ const skill = (permission: AiSkill["permission"] = "admin"): AiSkill => ({
   referenceCount: 1,
   permission,
   enabled: true,
+  manualOnly: false,
   revision: 3,
   createdAt: "2026-08-20T10:00:00.000Z",
   updatedAt: "2026-08-20T11:00:00.000Z",
@@ -79,13 +80,13 @@ describe("AI Skill routes", () => {
     expect((await routes.request("/project-links/proj12?page=0")).status).toBe(400);
   });
 
-  test("search query uses the shared enabled Skill search and rejects oversized queries", async () => {
-    const search = spyOn(aiSkills, "search").mockResolvedValue({ skills: [skill()], more: false });
+  test("slash-menu search includes manual-only Skills and rejects oversized queries", async () => {
+    const search = spyOn(aiSkills, "search").mockResolvedValue({ skills: [{ ...skill(), manualOnly: true }], more: false });
     const routes = __buildAiSkillsRoutesForTest({ limit: pass, authenticate });
     const response = await routes.request("/?q=reciepts");
     expect(response.status).toBe(200);
     expect(search).toHaveBeenCalledWith(subject, "reciepts");
-    expect((await response.json()).skills[0].id).toBe(skillShortId);
+    expect((await response.json()).skills[0]).toMatchObject({ id: skillShortId, manualOnly: true });
     expect((await routes.request("/?q=" + "x".repeat(201))).status).toBe(400);
   });
 

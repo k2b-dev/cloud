@@ -80,6 +80,7 @@ const harness = async (
     form?: (request: CreateElicitationRequest) => Promise<CreateElicitationResponse> | CreateElicitationResponse;
     hold?: boolean;
     activeTurn?: boolean;
+    manualSkill?: boolean;
   } = {},
 ) => {
   const cwd = await mkdtemp(join(tmpdir(), "cld-acp-test-"));
@@ -132,7 +133,12 @@ const harness = async (
       const body: unknown = typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
       requests.push({ path, method, body, headers: new Headers(init?.headers) });
       if (path.endsWith("/models")) return Response.json([profile]);
-      if (path.endsWith("/skills")) return Response.json({ skills: [] });
+      if (path.endsWith("/skills"))
+        return Response.json({
+          skills: options.manualSkill
+            ? [{ id: "Sk2345", shortId: "Sk2345", name: "remote", description: "Cloud selected workflow", enabled: true, manualOnly: true }]
+            : [],
+        });
       if (path.endsWith("/projects")) return Response.json({ projects: [{ shortId: "project", name: "Project", description: "Work" }] });
       if (path.includes("/approval-preferences/")) return Response.json({});
       if (path.includes("/approval-preferences?"))
@@ -731,6 +737,7 @@ describe("Assistant ACP", () => {
   });
   test("local folder trust and selected Skills use the terminal contract", async () => {
     const h = await harness({
+      manualSkill: true,
       permission: (request) => ({
         outcome: { outcome: "selected", optionId: request.options.some((o) => o.optionId === "session") ? "session" : "once" },
       }),
@@ -740,6 +747,7 @@ describe("Assistant ACP", () => {
     await mkdir(join(h.cwd, ".agents/skills/work"), { recursive: true });
     await writeFile(join(h.cwd, ".agents/skills/work/SKILL.md"), "---\nname: work\ndescription: Work here\n---\nFollow this Skill.");
     await h.send("/skills");
+    expect(h.text()).toContain("remote · Cloud · Cloud selected workflow (only with /remote)");
     expect(h.permissions[0]?.options.map((o) => o.optionId)).toEqual(["session", "folder", "reject"]);
     await h.send("/work message");
     expect(h.requests.find((r) => r.path.endsWith("/turns"))?.body).toMatchObject({

@@ -232,23 +232,36 @@ same recovery surface can grant access to or permanently delete any Skill.
 
 `SKILL.md` is the portable source of truth. It starts with YAML frontmatter
 containing a lowercase, hyphenated `name` and a `description`, followed by the
-Markdown instructions. Cloud currently accepts optional `license`,
-`compatibility`, `metadata`, and `allowed-tools` frontmatter. A ZIP may wrap the
-files in one Skill folder and may contain Markdown files directly below
-`references/`. Scripts, assets, nested references, and other files are rejected.
-A Skill without references can also be imported or downloaded as one bare
-`SKILL.md`.
+Markdown instructions. Cloud keeps every other frontmatter field unchanged,
+including nested JSON-representable values, up to 20,000 characters in total.
+A ZIP may wrap the files in one Skill folder. Import keeps `SKILL.md` and
+supported Markdown files directly below `references/`; it lists skipped files
+such as scripts, assets, agent configuration, and nested references. Cloud does
+not run scripts. Unsafe paths still fail. A Skill without references can also
+be imported or downloaded as one bare `SKILL.md`.
+
+Use `cld assistant skills list`, `push <dir>`, and `pull <name-or-id> [dir]`
+to move Skills between Cloud and Agent Skills folders. Pull defaults to
+`.agents/skills/<name>` in the current folder. `cld assistant reference`
+explains skipped files and `--force`.
+
+With `disable-model-invocation: true`, a Skill starts only when a person
+selects it with `/`. It stays out of the model catalog and `search_skills`,
+while remaining available in the slash menu. Later turns can reload a selected
+Skill by its attached `core.ai.skill` ID; model-chosen name loads are refused.
 
 At the start of a tool-capable Assistant turn, the model sees a bounded catalog
-of enabled Skills it can currently read. Catalog entries are always complete;
-Cloud never cuts a description mid-entry. When the complete catalog does not
-fit its hard prompt budget, Cloud selects whole entries relevant to the current
+of enabled, model-invocable Skills it can currently read. Catalog entries are
+always complete; Cloud never cuts a description mid-entry. When the complete
+catalog does not fit its hard prompt budget, Cloud selects whole entries relevant to the current
 request and exposes the omitted entries through `search_skills`. The slash menu and
 `search_skills` share a permission-aware search over Skill names and descriptions.
 It supports partial words and minor typos, prioritizes name matches, and excludes
 disabled Skills before limiting results. Skill instructions and references are
 not searched or loaded during discovery. Server callers use
-`aiSkills.search(accessSubject, query, limit)` and receive `{ skills, more }`.
+`aiSkills.search(accessSubject, query, limit, { modelInvocableOnly })` and receive
+`{ skills, more }`. Set `modelInvocableOnly: true` for model discovery; omit it
+to include manual-only Skills for explicit selection.
 `GET /api/ai/skills?q=…` uses this search
 (up to 30 results, query length up to 200 characters); omit `q` to keep the ordinary
 Skill management list, including disabled entries. PostgreSQL's standard `pg_trgm`
@@ -263,7 +276,10 @@ revision for the turn. Attachment names and metadata are not trusted
 instructions. Loading returns the instructions and mounts that revision read-only at
 `/skills/<name>/SKILL.md`; references appear below
 `/skills/<name>/references/`. Assistant reads reference files with `read_file`
-only when the workflow needs them. References remain untrusted data.
+only when the workflow needs them. Relative Markdown links in loaded
+instructions become `/skills/<name>/references/<file>.md`; stored instructions,
+exports, and the mounted `SKILL.md` keep links as written. References remain
+untrusted data.
 
 A Skill names app operations by their stable qualified capability ID, such as
 `mail.conversation.list`. Assistant can pass that ID directly to `load_tools`;

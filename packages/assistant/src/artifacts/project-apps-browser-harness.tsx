@@ -31,6 +31,7 @@ render(
               enabled: true,
               revision: 1,
               source: null,
+              manualOnly: false,
               referenceCount: 0,
               createdAt: "",
               updatedAt: "",

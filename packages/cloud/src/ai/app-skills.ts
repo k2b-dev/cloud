@@ -23,13 +23,7 @@ const freezeJson = (value: unknown): void => {
 
 export const validateAppSkillContent = (input: AiSkillContent): AppSkillDefinition => {
   try {
-    const fields = validateSkillContent(input);
-    fields.instructions = fields.instructions.replace(
-      /\]\((references\/[a-z0-9][a-z0-9._-]*\.md)\)/g,
-      (_, path: string) => `](/skills/${fields.name}/${path})`,
-    );
-    // Link expansion must respect the same instruction size limits.
-    const validated = validateSkillContent(fields);
+    const validated = validateSkillContent(input);
     const paths = new Set(validated.references.map((ref) => ref.path));
     for (const match of validated.instructions.matchAll(/references\/[^\s\])`"'<>]+\.md/g)) {
       const path = match[0];

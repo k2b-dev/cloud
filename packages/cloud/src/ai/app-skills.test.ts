@@ -20,12 +20,12 @@ const markdown = (name = "inventory-counting", description = "Count a shelf.", i
   `---\nname: ${name}\ndescription: ${description}\n---\n\n${instructions}\n`;
 
 describe("App skill authoring", () => {
-  test("parses user-import format, rewrites relative links, sorts and deeply freezes content", () => {
+  test("parses user-import format, preserves relative links, sorts and deeply freezes content", () => {
     const definition = skill({
       markdown: markdown("inventory-counting", "Count", "Read [Z](references/z.md) and references/a.md."),
       references: { "references/z.md": "Z\r\n", "references/a.md": "A" },
     });
-    expect(definition.instructions).toBe("Read [Z](/skills/inventory-counting/references/z.md) and references/a.md.");
+    expect(definition.instructions).toBe("Read [Z](references/z.md) and references/a.md.");
     expect(definition.references).toEqual([
       { path: "references/a.md", content: "A" },
       { path: "references/z.md", content: "Z\n" },
@@ -53,7 +53,7 @@ describe("App skill authoring", () => {
     expect(() => skill({ markdown: markdown(), references: { "../unsafe.md": "No" } })).toThrow("inventory-counting");
     expect(() => skill({ markdown: "No frontmatter" })).toThrow("frontmatter");
   });
-  test("applies all content limits including after link expansion", () => {
+  test("applies all content limits without expanding links", () => {
     expect(() => skill({ markdown: markdown("count", "x".repeat(AI_SKILL_DESCRIPTION_MAX_CHARS + 1)) })).toThrow("description");
     expect(() => skill({ markdown: markdown("count", "Count", "x".repeat(AI_SKILL_INSTRUCTIONS_MAX_CHARS + 1)) })).toThrow("characters");
     expect(() => skill({ markdown: markdown("count", "Count", Array(501).fill("line").join("\n")) })).toThrow("500");
@@ -83,12 +83,12 @@ describe("App skill authoring", () => {
       }),
     ).toThrow("frontmatter exceeds");
     const link = "[Read](references/r.md)";
-    expect(() =>
+    expect(
       skill({
         markdown: markdown("count", "Count", "x".repeat(AI_SKILL_INSTRUCTIONS_MAX_CHARS - link.length) + link),
         references: { "references/r.md": "" },
-      }),
-    ).toThrow("characters");
+      }).instructions,
+    ).toHaveLength(AI_SKILL_INSTRUCTIONS_MAX_CHARS);
   });
   test("uses the unchanged canonical SHA256 algorithm and ignores JSON key/reference order", () => {
     const a = skill({

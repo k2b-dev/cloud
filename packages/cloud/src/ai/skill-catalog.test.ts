@@ -57,3 +57,16 @@ test("manual-only local Skills shadow Cloud names without entering the model cat
   ).toEqual([cloud, local]);
   expect(mergeAiSkillCatalog([], [{ name: "manual", description: "Manual workflow.", source: "local", manualOnly: true }])).toEqual([]);
 });
+
+test("manual-only Cloud and local Skills are hidden, and local names still shadow Cloud", () => {
+  expect(
+    mergeAiSkillCatalog(
+      [
+        { name: "cloud-only", description: "Cloud", manualOnly: true },
+        { name: "shared", description: "Cloud" },
+        { name: "automatic", description: "Automatic", manualOnly: false },
+      ],
+      [{ name: "shared", description: "Local", source: "local", manualOnly: true }],
+    ),
+  ).toEqual([{ name: "automatic", description: "Automatic", manualOnly: false }]);
+});

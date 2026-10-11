@@ -5,7 +5,7 @@ section: Platform services
 order: 585
 description: Ship app-owned Assistant Skills as Markdown files that Cloud installs, updates, and shows only to people who may open the app.
 tags: [ai, assistant, skills, markdown, agents]
-updated: 2026-10-10
+updated: 2026-10-11
 ---
 
 # Ship Assistant Skills
@@ -111,15 +111,15 @@ Find the location with `inventory.location.list` before counting. …
 For printed count sheets, read [Count sheets](references/count-sheets.md).
 ```
 
-The description is always visible to Assistant and decides when it loads the
-Skill. Say what the Skill is for and when to load it. Name app operations by
-their qualified capability ID, such as `inventory.location.list`, so Assistant
-can load them without searching.
+The description tells Assistant when to load the Skill. Say what the Skill is
+for and when to load it. Name app operations by their qualified capability ID,
+such as `inventory.location.list`, so Assistant can load them without searching.
 
 Link references relatively, as `references/<file>.md`. The links work in the
-checkout, and Cloud rewrites them to the path Assistant reads them from,
-`/skills/<name>/references/<file>.md`. Assistant reads a reference only when the
-instructions send it there.
+checkout. Cloud stores links as written and mounts them in loaded instructions
+as `/skills/<name>/references/<file>.md`. Stored and exported `SKILL.md` files
+keep relative links. Assistant reads a reference only when the instructions
+send it there.
 
 `skill()` validates the Skill when the app starts. A wrong Skill stops the
 start with an error that names it:
@@ -131,11 +131,16 @@ start with an error that names it:
 | Instructions | At most 100,000 characters and 500 lines |
 | References | Paths `references/<file>.md`; at most 50 files, 100,000 characters each, 1,000,000 together |
 | Mentioned references | Every `references/<file>.md` the instructions mention must be declared |
-| Optional frontmatter | `license`, `compatibility`, `metadata`, `allowed-tools`; at most 20,000 characters |
+| Optional frontmatter | Any other field is kept and exported unchanged; JSON-representable values, at most 20,000 characters |
 | All Skills of one app | Their catalog lines (`- name: description`) fit the 8,000-character Assistant catalog |
 
 The last rule exists because Assistant sees the name and description of every
 Skill it may use in each turn. One app cannot fill that catalog on its own.
+
+Set `disable-model-invocation: true` in the frontmatter to keep a Skill out of
+the model catalog and `search_skills`. People can still select it with `/`.
+Assistant can reload a selected Skill by its attached ID in later turns;
+loading it by name is refused.
 
 ## Updates follow the content
 

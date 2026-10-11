@@ -56,10 +56,11 @@ Skills and Projects require sign-in. Share them with users, groups, service acco
 5. **Try realistic requests:** Check that Assistant loads the Skill for relevant requests and ignores it otherwise. Refine the description when selection is too broad or too narrow.
 :::
 
-- Import a bare `SKILL.md`, or use a ZIP when the Skill has references. Scripts and assets are not supported.
+- Import a bare `SKILL.md`, or use a ZIP when the Skill has references. ZIP import keeps `SKILL.md` and supported Markdown files directly in `references/`, and lists skipped files such as scripts and assets. Cloud does not run scripts.
 - Use Cloud access to share a Skill. Readers can use and export it, writers can edit it, and admins can also manage access or delete it.
 - Skills you can read start enabled for you. Turn off **Enabled for me** when you do not want Assistant to use a shared Skill; this does not change anyone else's access.
-- Assistant sees the names and descriptions of your enabled Skills. It loads a relevant Skill before applying its instructions and reads references only when needed.
+- Set `disable-model-invocation: true` in `SKILL.md`, or turn on **Start only when selected** in the editor, to start a Skill only when someone selects it with `/`.
+- Assistant sees the names and descriptions of your enabled Skills that can start automatically. It loads a relevant Skill before applying its instructions and reads references only when needed.
 - A Skill loaded for an in-progress turn stays on that revision. New turns use later edits, while revoked access takes effect immediately.
 
 :::warning Review consequential output

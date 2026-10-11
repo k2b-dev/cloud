@@ -909,7 +909,11 @@ They go to the model with every message and can steer what it does with your Clo
             ),
           );
         for (const skill of visibleCloud)
-          ctx.print(terminalSafeText(`  ${skill.name.padEnd(width)}  Cloud    ${preview(skill.description)}`));
+          ctx.print(
+            terminalSafeText(
+              `  ${skill.name.padEnd(width)}  Cloud    ${preview(skill.description)}${skill.manualOnly ? ` (only with /${skill.name})` : ""}`,
+            ),
+          );
         const hidden = [
           ...context.hidden,
           ...cloudSkills
