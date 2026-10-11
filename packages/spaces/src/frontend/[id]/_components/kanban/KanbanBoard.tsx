@@ -1479,7 +1479,7 @@ export default function KanbanBoard(props: Props) {
                               class="focus-ui mx-1 mb-1 rounded-[var(--ui-radius-control)] px-2 py-1.5 text-left text-xs text-red-600"
                               onClick={() => void bucketQuery(bucket.key)?.refresh()}
                             >
-                              {error().message} Retry
+                              {error().message} {t.retry}
                             </button>
                           )}
                         </Show>
@@ -1522,7 +1522,7 @@ export default function KanbanBoard(props: Props) {
                     <Show when={wormhole.target} keyed>
                       {(target) => {
                         const active = () => isWormholeTargetActive(wormhole.id);
-                        const dropLabel = `Move item to ${target.spaceName}, ${target.columnName}`;
+                        const dropLabel = t.moveItemTo({ spaceName: target.spaceName, columnName: target.columnName });
 
                         return (
                           <div

@@ -3,6 +3,7 @@ import { Button, InlineGuidance } from "@k2b/ui";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { CalendarItem, SpaceColumn, SpaceItemTemplate, SpaceTag } from "@/contracts";
 import { subscribeToDetailSelection } from "../../../lib/detail";
+import { useSpaceMessages } from "../../messages";
 import Calendar from "../calendar";
 import type { CalendarFilter } from "../calendar/filter";
 import type { CalendarView, DayWeather } from "../calendar/types";
@@ -32,6 +33,7 @@ type Props = {
 };
 
 export default function SpacesCalendarRoute(props: Props) {
+  const t = useSpaceMessages();
   const [selectedItemId, setSelectedItemId] = createSignal(props.selectedItemId);
   const navigation = useSpacesCalendarQuery({
     spaceId: props.spaceId,
@@ -54,7 +56,7 @@ export default function SpacesCalendarRoute(props: Props) {
               {error().message}
             </InlineGuidance>
             <Button type="button" variant="ghost" size="xs" onClick={() => void navigation.refresh()}>
-              Retry
+              {t.retry}
             </Button>
           </div>
         )}

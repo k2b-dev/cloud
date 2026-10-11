@@ -249,7 +249,7 @@ export default function ItemRow(props: ItemRowProps) {
                   <Show when={props.item.activeBlockerCount > 0}>
                     <span class="inline-flex shrink-0 items-center gap-1 text-amber-700 dark:text-amber-300">
                       <i class="ti ti-lock" aria-hidden="true" />
-                      Blocked by {props.item.activeBlockerCount}
+                      {t.blockedByCount({ count: props.item.activeBlockerCount })}
                     </span>
                   </Show>
                   <Show when={isInactiveTask(props.item)}>

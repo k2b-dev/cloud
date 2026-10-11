@@ -17,7 +17,7 @@ When you open Spaces from the navigation, you return to the Space that you looke
 - **Item:** The basic unit of work. An item is either a task with a deadline or an event with a schedule.
 - **Task:** Work with status, priority, assignees, deadline, estimated duration, blockers, a simple checklist, tags, description, and comments.
 - **Event:** A scheduled item. Events appear in calendar views and in optional calendar exports.
-- **View:** The current way to see the same items: **Overview**, **Table**, **Kanban**, or **Calendar**.
+- **View:** The current way to see the same items: **List**, **Table**, **Kanban**, or **Calendar**.
 - **Tags:** Lightweight labels that group work across assignees, deadlines, schedules, and views.
 :::
 
@@ -26,7 +26,7 @@ When you open Spaces from the navigation, you return to the Space that you looke
 :::steps
 1. **Create a Space:** Name it after the shared work area, not after a single task. Examples: Product Launch, Office Move, Weekly Planning.
 2. **Add real items:** Create a few tasks or events before you adjust views. Real work shows which statuses, tags, and assignees matter.
-3. **Choose views:** Use **Overview** or **Table** to scan, **Kanban** for the status flow, and **Calendar** for scheduled work.
+3. **Choose views:** Use **List** or **Table** to scan, **Kanban** for the status flow, and **Calendar** for scheduled work.
 4. **Share the Space:** Invite people and groups when the structure is clear. They can then start without extra explanation.
 :::
 

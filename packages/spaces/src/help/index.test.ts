@@ -47,8 +47,10 @@ describe("spacesHelp", () => {
     for (const locale of ["en", "de"] as const) {
       const { t } = spaceMessages.resolve([locale]);
       const views = spacesHelp.getMarkdown("spaces-views", locale);
-      for (const label of [t.overview, t.table, t.kanban, t.calendar]) expect(views).toContain(`- **${label}:**`);
-      expect(spacesHelp.getMarkdown("spaces-troubleshooting", locale)).toContain(`**${t.overview}**`);
+      for (const label of [t.list, t.table, t.kanban, t.calendar]) expect(views).toContain(`- **${label}:**`);
+      for (const id of ["spaces-start", "spaces-workflow", "spaces-troubleshooting"]) {
+        expect(spacesHelp.getMarkdown(id, locale)).toContain(`**${t.list}**`);
+      }
     }
   });
 

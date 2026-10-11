@@ -25,7 +25,7 @@ order: 140
 
 :::steps
 1. Return to the Space from the Spaces overview.
-2. In the Space sidebar, choose **Overview**. It shows the items without Kanban columns or calendar periods.
+2. In the Space sidebar, choose **List**. It shows the items without Kanban columns or calendar periods.
 3. Clear the search and the filter chips.
 4. Open the missing item from another known view or from global search.
 5. Apply the filters again, one at a time.

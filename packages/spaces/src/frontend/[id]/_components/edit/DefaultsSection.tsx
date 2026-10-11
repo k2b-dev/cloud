@@ -16,7 +16,7 @@ function LocalSettingsForm(props: { spaceId: string; initialSettings: SpaceUserS
   const m = useSpaceMessages();
   const [settings, setSettings] = createSignal<SpaceUserSettings>(props.initialSettings);
   const viewOptions: { value: ViewType; label: string; icon: string }[] = [
-    { value: "list", label: m.overview, icon: "ti-home" },
+    { value: "list", label: m.list, icon: "ti-layout-list" },
     { value: "table", label: m.table, icon: "ti-table" },
     { value: "kanban", label: "Kanban", icon: "ti-layout-kanban" },
     { value: "calendar", label: m.calendar, icon: "ti-calendar" },
