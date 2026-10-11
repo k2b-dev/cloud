@@ -372,7 +372,8 @@ describe("floating workspace detail", () => {
                     display: style.display,
                     translate: style.transform === "none" ? 0 : new DOMMatrix(style.transform).m41,
                   });
-                  if ((action === "close" && style.display === "none") || (action === "open" && Math.abs(samples.at(-1)!.translate) < 0.1))
+                  // An ease-out slide comes close to its end long before it reaches it; the open sample stops only there.
+                  if ((action === "close" && style.display === "none") || (action === "open" && samples.at(-1)!.translate === 0))
                     resolve(samples);
                   else if (performance.now() - start > 300) resolve(samples);
                   else requestAnimationFrame(frame);
