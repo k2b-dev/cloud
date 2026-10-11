@@ -27,8 +27,8 @@ databaseSuite()("pending approval lists", () => {
     const { turn } = await aiConversations.submitChatTurn({
       conversationId: chat.id,
       modelProfileId: "mock",
-      runConfig: { kind: "chat", input: "Write" },
-      userMessage: { role: "user", content: [{ type: "text", text: "Write" }] },
+      runConfig: { kind: "chat", input: "Write a letter" },
+      userMessage: { role: "user", content: [{ type: "text", text: "Write a letter" }] },
     });
     const ask = async (extra: Partial<ApprovalRequestInput> = {}, linked = true) => {
       const callId = crypto.randomUUID();

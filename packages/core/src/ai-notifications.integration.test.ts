@@ -156,9 +156,11 @@ suite("Core AI completion notifications", () => {
         });
       return request.id;
     };
-    const events = () => sql<{ title: string; target_href: string; idempotency_key: string }[]>`
+    const events = async () => [
+      ...(await sql<{ title: string; target_href: string; idempotency_key: string }[]>`
       SELECT title,target_href,idempotency_key FROM notifications.events
-      WHERE definition_id=${app.notifications.approvalWaiting.id} AND recipient_user_id=${userId}::uuid ORDER BY created_at,id`;
+      WHERE definition_id=${app.notifications.approvalWaiting.id} AND recipient_user_id=${userId}::uuid ORDER BY created_at,id`),
+    ];
     try {
       const browser = await ask(true);
       expect(await service.notifyApprovalWaiting(browser)).toEqual({ scanned: 0, sent: 0, failed: 0 });

@@ -76,8 +76,9 @@ export const listPending = async (input: {
 
 export const countPending = async (input: { approverUserId: string }): Promise<ApprovalCounts> => {
   const [row] = await sql<ApprovalCounts[]>`WITH open AS MATERIALIZED (${openRequests(input.approverUserId)}),
-    app_requests AS (SELECT DISTINCT r.id, app.id FROM open r CROSS JOIN LATERAL unnest(ARRAY[r.app_id,r.requester_app_id]) app(id)),
-    app_counts AS (SELECT id,count(*)::int AS count FROM app_requests GROUP BY id)
+    app_requests AS (SELECT DISTINCT r.id AS request_id, app.id AS app_id FROM open r
+      CROSS JOIN LATERAL unnest(ARRAY[r.app_id,r.requester_app_id]) app(id)),
+    app_counts AS (SELECT app_id AS id,count(*)::int AS count FROM app_requests GROUP BY app_id)
     SELECT (SELECT count(*)::int FROM open) AS total,
       COALESCE((SELECT jsonb_object_agg(id,count) FROM app_counts),'{}'::jsonb) AS apps`;
   return row ?? { total: 0, apps: {} };
