@@ -334,6 +334,63 @@ suite("Mail conversation keeps", () => {
     await releaseConversationKeep(scope(id));
   });
 
+  test("restoring a kept message reads only its own rows, also while statistics lag behind a bulk import or cleanup", async () => {
+    const id = await conversation();
+    const importedItem = await message(id);
+    const refilledItem = await message(id);
+    const other = await message(await conversation());
+    expect((await keepConversation(scope(id))).ok).toBeTrue();
+    const rollback = new Error("Roll back the bulk import");
+    const checkShape = async (
+      shape: "imported after ANALYZE" | "emptied and refilled after ANALYZE",
+      item: Awaited<ReturnType<typeof message>>,
+    ) => {
+      let rowsRead = Infinity;
+      let visible = false;
+      const transaction = sql.begin(async (db) => {
+        const insertBulk = async (uidOffset: number) => {
+          await db`INSERT INTO mail.remote_message_refs (folder_id, message_id, uid_validity, uid)
+            SELECT ${folderId}::uuid, ${other.id}::uuid, 1, ${uidOffset} + item FROM generate_series(1, 25000) AS item`;
+          await db`INSERT INTO mail.message_placements (remote_message_ref_id, folder_id, message_id)
+            SELECT id, folder_id, message_id FROM mail.remote_message_refs WHERE folder_id = ${folderId}::uuid AND uid > ${uidOffset}`;
+        };
+        if (shape === "emptied and refilled after ANALYZE") {
+          await insertBulk(1000000);
+          await db`DELETE FROM mail.message_placements placement USING mail.remote_message_refs ref
+            WHERE placement.remote_message_ref_id = ref.id AND ref.folder_id = ${folderId}::uuid AND ref.uid > 1000000`;
+          await db`DELETE FROM mail.remote_message_refs WHERE folder_id = ${folderId}::uuid AND uid > 1000000`;
+        }
+        // Statistics taken before the import or after the emptying, as autovacuum leaves them until
+        // it gets to the table. It cannot see this transaction's rows, so they stay that way.
+        await db.unsafe("ANALYZE mail.remote_message_refs");
+        await db.unsafe("ANALYZE mail.message_placements");
+        await insertBulk(shape === "imported after ANALYZE" ? 1000000 : 2000000);
+        await db`UPDATE mail.remote_message_refs SET stale_at = now() WHERE id = ${item.refId}::uuid`;
+        await db`UPDATE mail.message_placements SET deleted_at = now() WHERE remote_message_ref_id = ${item.refId}::uuid`;
+        const reads = async () => {
+          const [row] = await db<{ rows: number }[]>`
+            SELECT sum(seq_tup_read + idx_tup_fetch)::int AS rows FROM pg_stat_xact_user_tables
+            WHERE schemaname = 'mail' AND relname IN ('message_placements', 'remote_message_refs')`;
+          return row!.rows;
+        };
+        const before = await reads();
+        await keepLastKeptPlacements(db, [item.refId]);
+        rowsRead = (await reads()) - before;
+        const [placement] = await db<{ visible: boolean }[]>`
+          SELECT deleted_at IS NULL AS visible FROM mail.message_placements WHERE remote_message_ref_id = ${item.refId}::uuid`;
+        visible = placement!.visible;
+        // Roll back so the run database keeps no bulk rows.
+        throw rollback;
+      });
+      await expect(transaction).rejects.toBe(rollback);
+      expect(rowsRead).toBeLessThan(100);
+      expect(visible).toBe(true);
+    };
+    await checkShape("imported after ANALYZE", importedItem);
+    await checkShape("emptied and refilled after ANALYZE", refilledItem);
+    await releaseConversationKeep(scope(id));
+  });
+
   test("split, merge and reassign carry the original keeper and timestamp", async () => {
     const source = await conversation();
     const first = await message(source);
