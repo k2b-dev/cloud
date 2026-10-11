@@ -266,8 +266,10 @@ order:
    above it moves when the result arrives. Its alt text is the start of what
    the step saw, the image description or the answer to its prompt. With the
    host's `onOpenFile`, the thumbnail is a button that opens the file larger;
-   its name is that action, and the alt text describes it. Without `fileUrl`,
-   such as in a background run transcript, the step shows no thumbnail.
+   its name is that action, and the alt text describes it. Without `fileUrl`
+   the step shows no thumbnail. The run history of a scheduled task passes the
+   file route of the task's chat, so its thumbnails, files and views load with
+   the viewer's access as in the chat.
 2. **Results.** Presented files and code views, `code_present` apps, charts, cards, and
    capability tables in the order they were made. A later result with the same
    target, the same file path for `present` or the same title for
