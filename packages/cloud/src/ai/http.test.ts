@@ -274,3 +274,15 @@ describe("AI HTTP input helpers", () => {
     expect(() => AiSteerInputSchema.parse({ message: "Change course" })).toThrow();
   });
 });
+
+test("draft submit requires a client for workspace context and accepts local facts", () => {
+  const input = { draftRevision: 1, localContext: { instructions: [{ path: "/work/AGENTS.md", content: "Rules." }] } };
+  expect(AiSubmitConversationDraftInputSchema.safeParse(input).success).toBeFalse();
+  expect(
+    AiSubmitConversationDraftInputSchema.parse({
+      ...input,
+      client: { kind: "cli", cwd: "/work", os: "Linux", shell: "bash", localTools: "ask" },
+      clientToolIds: ["local_list", "load_local_skill"],
+    }),
+  ).toMatchObject({ localContext: { instructions: input.localContext.instructions }, clientToolIds: ["local_list", "load_local_skill"] });
+});

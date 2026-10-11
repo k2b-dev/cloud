@@ -54,6 +54,7 @@ export const defineAiTool = <TInput extends z.ZodType, TOutput extends z.ZodType
           conversationId?: string;
           turnId?: string;
           attachedFilePaths?: ReadonlySet<string>;
+          localToolsEnabled?: boolean;
           allowedDataBoundaries?: AiDataBoundary[];
           projectFiles?: AiProjectFileToolSource;
           skillFiles?: AiSkillFileToolSource;
@@ -107,6 +108,7 @@ export type AiToolPreparationContext = {
   conversationId?: string;
   turnId?: string;
   attachedFilePaths?: ReadonlySet<string>;
+  localToolsEnabled?: boolean;
   allowedDataBoundaries?: AiDataBoundary[];
   projectFiles?: AiProjectFileToolSource;
   skillFiles?: AiSkillFileToolSource;
@@ -226,6 +228,7 @@ export const prepareAiTools = (input: AiToolPreparationContext & { tools?: AiRun
           conversationId: input.conversationId,
           turnId: input.turnId,
           attachedFilePaths: input.attachedFilePaths,
+          localToolsEnabled: input.localToolsEnabled,
           allowedDataBoundaries: input.allowedDataBoundaries,
           projectFiles: input.projectFiles,
           skillFiles: input.skillFiles,

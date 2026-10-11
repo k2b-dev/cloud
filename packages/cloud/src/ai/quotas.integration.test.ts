@@ -85,6 +85,7 @@ suite("Assistant quota PostgreSQL boundaries", () => {
       enabled: true,
       defaultModelId: "a",
       globalInstructions: "",
+      localClientInstructions: "",
       compactionInstructions: "",
       maxToolResultChars: 1000,
       firecrawlConfigured: false,

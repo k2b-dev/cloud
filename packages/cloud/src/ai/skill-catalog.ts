@@ -4,9 +4,18 @@ import type { AiSkillSummary } from "./skills";
 export const AI_SKILL_CATALOG_MAX_CHARS = 8_000;
 const AI_SKILL_CATALOG_MIN_CHARS = AI_SKILL_NAME_MAX_CHARS + AI_SKILL_DESCRIPTION_MAX_CHARS + 8;
 
-export type AiSkillCatalogEntry = Pick<AiSkillSummary, "name" | "description">;
+export type AiSkillCatalogEntry = Pick<AiSkillSummary, "name" | "description"> & { source?: "local" };
 
-const catalogLine = (skill: AiSkillCatalogEntry): string => `- ${skill.name}: ${skill.description.replace(/\s+/g, " ").trim()}`;
+export const mergeAiSkillCatalog = (
+  cloud: readonly AiSkillCatalogEntry[],
+  local: readonly AiSkillCatalogEntry[],
+): AiSkillCatalogEntry[] => {
+  const localNames = new Set(local.map((skill) => skill.name));
+  return [...cloud.filter((skill) => !localNames.has(skill.name)), ...local];
+};
+
+const catalogLine = (skill: AiSkillCatalogEntry): string =>
+  `- ${skill.name}${skill.source === "local" ? " [local]" : ""}: ${skill.description.replace(/\s+/g, " ").trim()}`;
 
 const terms = (value: string): string[] => [
   ...new Set(
@@ -30,7 +39,13 @@ const relevance = (skill: AiSkillCatalogEntry, query: string): number => {
   return score;
 };
 
-const ranked = (skills: readonly AiSkillCatalogEntry[], query: string): AiSkillCatalogEntry[] =>
+export const searchAiSkillCatalog = (skills: readonly AiSkillCatalogEntry[], query: string): AiSkillCatalogEntry[] =>
+  rankAiSkillCatalog(
+    skills.filter((skill) => relevance(skill, query) > 0),
+    query,
+  );
+
+export const rankAiSkillCatalog = (skills: readonly AiSkillCatalogEntry[], query: string): AiSkillCatalogEntry[] =>
   skills
     .map((skill, index) => ({ skill, index, score: relevance(skill, query) }))
     .sort((left, right) => right.score - left.score || left.index - right.index)
@@ -46,12 +61,12 @@ export const selectAiSkillCatalog = (
     AI_SKILL_CATALOG_MAX_CHARS,
     Math.max(AI_SKILL_CATALOG_MIN_CHARS, contextWindow > 0 ? Math.floor(contextWindow * 0.02 * 4) : AI_SKILL_CATALOG_MAX_CHARS),
   );
-  const normalized = skills.map((skill) => ({ name: skill.name, description: skill.description.replace(/\s+/g, " ").trim() }));
+  const normalized = skills.map((skill) => ({ ...skill, description: skill.description.replace(/\s+/g, " ").trim() }));
   if (normalized.map(catalogLine).join("\n").length <= budget) return { skills: normalized, omitted: 0 };
 
   const selected: AiSkillCatalogEntry[] = [];
   let used = 0;
-  for (const skill of ranked(normalized, query)) {
+  for (const skill of rankAiSkillCatalog(normalized, query)) {
     const size = catalogLine(skill).length + (selected.length ? 1 : 0);
     if (used + size > budget) continue;
     selected.push(skill);

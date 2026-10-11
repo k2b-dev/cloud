@@ -526,8 +526,10 @@ and `code_present`. Before, only turns whose client listed them
 in `clientToolIds` had them, so `cld assistant --detach`, API clients, and
 scheduled tasks could not run code. Scheduled tasks now run them with their
 task grants, as [Scheduled Code Mode](/en/docs/ai/chat-runtime-and-streaming#scheduled-code-mode)
-describes. Only `code_open`, `code_secret`, and `local_bash` still need a client
-that declares them. Clients that list the server-run names keep working; the
+describes. `code_open`, `code_secret`, and the local client tools
+(`local_bash`, `local_list`, `local_read`, `local_upload`, `local_download`,
+`local_write`, `local_move`, `load_local_skill`) need a client that declares
+and handles them. Clients that list the server-run names keep working; the
 names have no effect.
 
 The `load_tools` result changed. `loaded` and `alreadyLoaded` hold

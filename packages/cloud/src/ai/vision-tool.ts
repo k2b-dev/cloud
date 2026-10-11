@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import { aiMissingChatFileError } from "./file-error";
 import { aiProjectFilePathFromMount } from "./file-mount";
 import { aiFileStore, normalizeAiFilePath } from "./files-store";
 import { PdfPages, renderPdfPages } from "./pdf-render";
@@ -53,7 +54,7 @@ export const createCloudAiViewImageTool = (options: { resolveModel?: () => Promi
     if (snapshotRequired && !snapshot) throw new Error(`Attached image snapshot is unavailable: ${path}`);
     const stored =
       projectFile ?? snapshot ?? (projectPath === null ? await aiFileStore.read({ conversationId: ctx.conversationId, path }) : null);
-    if (!stored) throw new Error(`No such file: ${path}`);
+    if (!stored) throw aiMissingChatFileError(path, ctx.localToolsEnabled);
     const pdf = stored.mediaType === "application/pdf";
     if (!pdf && !isAiImageMediaType(stored.mediaType)) throw new Error(`${path} is not a supported image or PDF (${stored.mediaType}).`);
     if (!pdf && input.pages !== undefined) throw new Error("pages can only be used with a PDF.");

@@ -534,6 +534,8 @@ export const CloudAiLocalBashOutputSchema = z.object({
   stdout: z.string().max(512 * 1024),
   stderr: z.string().max(512 * 1024),
   truncated: z.boolean(),
+  /** Local file with the complete output when the client returned only its beginning and end. */
+  outputPath: z.string().max(4096).optional(),
 });
 
 export type CloudAiCardInput = z.infer<typeof CloudAiCardInputSchema>;

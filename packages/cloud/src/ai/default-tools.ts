@@ -40,6 +40,22 @@ import {
 } from "./file-tools";
 import { createCloudAiWebExtractTool, createCloudAiWebSearchTool, isCloudAiFirecrawlConfigured } from "./firecrawl-tools";
 import { createCloudAiHtmlToPdfTool } from "./html-pdf-tool";
+import {
+  CloudAiLoadLocalSkillInputSchema,
+  CloudAiLoadLocalSkillOutputSchema,
+  CloudAiLocalDownloadInputSchema,
+  CloudAiLocalDownloadOutputSchema,
+  CloudAiLocalListInputSchema,
+  CloudAiLocalListOutputSchema,
+  CloudAiLocalMoveInputSchema,
+  CloudAiLocalMoveOutputSchema,
+  CloudAiLocalReadInputSchema,
+  CloudAiLocalReadOutputSchema,
+  CloudAiLocalUploadInputSchema,
+  CloudAiLocalUploadOutputSchema,
+  CloudAiLocalWriteInputSchema,
+  CloudAiLocalWriteOutputSchema,
+} from "./local-tool-contracts";
 import { createCloudAiMarkdownToPdfTool } from "./markdown-pdf-tool";
 import { createAiTodoTool } from "./todo-tool";
 import { defineAiTool } from "./tools";
@@ -118,13 +134,72 @@ export const createCloudAiLocalBashTool = () =>
   defineAiTool({
     name: "local_bash",
     description:
-      "Run one Bash command on the user's local CLI computer after the CLI shows the exact command and the user confirms it. Use only when local computer interaction is necessary. The command runs from the CLI's startup directory as the current OS user. Inspect the returned status, exit code, stdout, and stderr before continuing.",
+      "Run one Bash command in the workspace folder on the user's computer, as the user's OS account. Use it only when no file or Cloud tool fits; the client may ask the user first, and a run does not prove that the user saw the command.",
     inputSchema: CloudAiLocalBashInputSchema,
     outputSchema: CloudAiLocalBashOutputSchema,
     approval: "never",
-    promptHint:
-      "use local_bash only when work on the user's local CLI computer is necessary; every command requires local confirmation and its result must be checked.",
+    promptHint: "use local_bash only when no local file tool or Cloud tool fits; check status, exit code, and output.",
   }).client();
+
+/** File tools a local client runs in the user's workspace folder; the client applies its path rules and questions. */
+export const createCloudAiLocalTools = () => [
+  defineAiTool({
+    name: "local_list",
+    description:
+      "List files and folders in the user's local workspace, optionally recursive or filtered by a case-insensitive glob such as **/*.pdf, in pages of up to 1000 entries with size and modification time. Folders outside the workspace ask the user first.",
+    inputSchema: CloudAiLocalListInputSchema,
+    outputSchema: CloudAiLocalListOutputSchema,
+    approval: "never",
+  }).client(),
+  defineAiTool({
+    name: "local_read",
+    description:
+      "Read a local text file with line numbers, 16 KiB by default and 64 KiB at most per call; continue with nextOffset. PDFs, images, and office or spreadsheet files are uploaded to this chat instead, and the result names the chat path for read_file or view_image.",
+    inputSchema: CloudAiLocalReadInputSchema,
+    outputSchema: CloudAiLocalReadOutputSchema,
+    approval: "never",
+  }).client(),
+  defineAiTool({
+    name: "local_upload",
+    description:
+      "Upload up to 64 local files to this chat and return their chat paths, so Cloud tools such as read_file, view_image, and code mode can use them. Uploads stay in the chat until it is deleted; each file can have up to 50 MB.",
+    inputSchema: CloudAiLocalUploadInputSchema,
+    outputSchema: CloudAiLocalUploadOutputSchema,
+    approval: "never",
+  }).client(),
+  defineAiTool({
+    name: "local_download",
+    description:
+      "Save a chat file, text or binary, into the local workspace and create missing folders. It never overwrites an existing file unless replace is true, which asks the user.",
+    inputSchema: CloudAiLocalDownloadInputSchema,
+    outputSchema: CloudAiLocalDownloadOutputSchema,
+    approval: "never",
+  }).client(),
+  defineAiTool({
+    name: "local_write",
+    description:
+      "Write a local text file of up to 100 KiB: create makes a new file and fails if one exists, append adds to an existing file, and replace overwrites one. Append and replace ask the user.",
+    inputSchema: CloudAiLocalWriteInputSchema,
+    outputSchema: CloudAiLocalWriteOutputSchema,
+    approval: "never",
+  }).client(),
+  defineAiTool({
+    name: "local_move",
+    description:
+      "Rename or move up to 64 files or folders inside the workspace in one batch, which the user confirms once as a list. It never overwrites: if a target exists, nothing moves and the result names the conflicts.",
+    inputSchema: CloudAiLocalMoveInputSchema,
+    outputSchema: CloudAiLocalMoveOutputSchema,
+    approval: "never",
+  }).client(),
+  defineAiTool({
+    name: "load_local_skill",
+    description:
+      "Load a Skill marked [local] in the Skills section by its exact name. Returns its instructions, folder, and file list; read referenced files with local_read.",
+    inputSchema: CloudAiLoadLocalSkillInputSchema,
+    outputSchema: CloudAiLoadLocalSkillOutputSchema,
+    approval: "never",
+  }).client(),
+];
 
 export const createCloudAiCodeTools = () => [
   defineAiTool({

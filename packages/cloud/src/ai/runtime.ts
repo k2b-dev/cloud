@@ -13,6 +13,7 @@ import { aiChatAccessSubject, selectAssistantAiModelId } from "./assistant-model
 import { startAiDictationRuntime } from "./dictation-runtime";
 import { AiTurnExecutor, type ExecutorConfig } from "./executor";
 import { canonicalizeAiConversationAttachments, snapshotAiConversationFiles } from "./file-context";
+import type { AiLocalClient, AiLocalContext } from "./local-tool-contracts";
 import { drainQueuedMessages } from "./message-queue";
 import { AI_TURN_LEASE_MS } from "./protocol";
 import { aiQuotas } from "./quotas";
@@ -105,6 +106,8 @@ export type SubmitAiChatTurnInput = {
   systemPrompt?: string;
   project?: AiChatTurnRunConfig["project"];
   clientToolIds?: AiClientToolId[];
+  client?: AiLocalClient;
+  localContext?: AiLocalContext;
   toolSource?: AiTurnToolSource;
   canInspectAttachedImages?: boolean;
   toolApprovalContext?: AiToolApprovalContext;
@@ -119,6 +122,7 @@ export type SubmitAiChatTurnInput = {
 };
 
 export const prepareAiChatTurn = async (input: SubmitAiChatTurnInput) => {
+  if (input.localContext && !input.client) throw new Error("Local context requires a local client.");
   if (input.clientToolIds?.length && input.toolSource?.kind !== "default") {
     throw new Error("Optional client tools require the default tool source.");
   }
@@ -170,6 +174,8 @@ export const prepareAiChatTurn = async (input: SubmitAiChatTurnInput) => {
     files,
     canInspectAttachedImages,
     clientToolIds: input.clientToolIds,
+    client: input.client,
+    localContext: input.localContext,
     toolSource: input.toolSource ?? { kind: "none" },
     toolApprovalContext: input.toolApprovalContext,
   };

@@ -296,6 +296,13 @@ export const CORE_SETTINGS = {
     placeholder: "Keep answers concise. The current user is {{ user.displayName }} and today is {{ today }}.",
     templateVars: ["user.displayName", "user.uid", "user.mail", "appId", "now", "today", "time"],
   },
+  "ai.local_client_instructions": {
+    kind: "text",
+    label: "Instructions for local clients",
+    default: "",
+    description:
+      "Added to turns from local clients such as cld after the organization instructions. Leave empty to use the built-in text, which improves with each release.",
+  },
   "ai.compaction_instructions": {
     kind: "text",
     label: "Additional Compaction Instructions",

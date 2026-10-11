@@ -315,6 +315,7 @@ export const resolveAiSettingsStateFromRaw = async (input: {
   visionModelId?: string;
   profilesJson: string;
   globalInstructions?: string;
+  localClientInstructions?: string;
   compactionInstructions?: string;
   maxToolResultChars?: unknown;
   firecrawlApiKey?: string;
@@ -327,6 +328,7 @@ export const resolveAiSettingsStateFromRaw = async (input: {
     defaultModelId: input.defaultModelId ?? "",
     visionModelId: input.visionModelId ?? "",
     globalInstructions: input.globalInstructions ?? "",
+    localClientInstructions: input.localClientInstructions ?? "",
     compactionInstructions: input.compactionInstructions ?? "",
     maxToolResultChars: normalizeMaxToolResultChars(input.maxToolResultChars),
     firecrawlConfigured: Boolean(input.firecrawlApiKey?.trim()),
@@ -417,6 +419,7 @@ const readAiSettingsSnapshot = async (): Promise<{ state: AiSettingsState; crede
     visionModelId,
     profilesJson,
     globalInstructions,
+    localClientInstructions,
     compactionInstructions,
     maxToolResultChars,
     firecrawlApiKey,
@@ -426,6 +429,7 @@ const readAiSettingsSnapshot = async (): Promise<{ state: AiSettingsState; crede
     coreSettings.get<string>("ai.vision_model_id"),
     coreSettings.get<string>("ai.model_profiles_json"),
     coreSettings.get<string>("ai.global_instructions"),
+    coreSettings.get<string>("ai.local_client_instructions"),
     coreSettings.get<string>("ai.compaction_instructions"),
     coreSettings.get<number>("ai.max_tool_result_chars"),
     coreSettings.get<string>(AI_FIRECRAWL_API_KEY_SETTING_KEY),
@@ -446,6 +450,7 @@ const readAiSettingsSnapshot = async (): Promise<{ state: AiSettingsState; crede
     visionModelId: visionModelId ?? "",
     profilesJson: profilesJson ?? "[]",
     globalInstructions: globalInstructions ?? "",
+    localClientInstructions: localClientInstructions ?? "",
     compactionInstructions: compactionInstructions ?? "",
     maxToolResultChars,
     firecrawlApiKey: firecrawlApiKey ?? "",

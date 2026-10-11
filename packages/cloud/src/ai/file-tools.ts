@@ -6,6 +6,7 @@ import {
 } from "@k2b/cloud/services/document-extraction";
 import { z } from "zod";
 import type { RequestActor } from "../server";
+import { aiMissingChatFileError } from "./file-error";
 import {
   AI_PROJECT_FILE_MOUNT,
   AI_SKILL_FILE_MOUNT,
@@ -235,7 +236,7 @@ export const createCloudAiReadFileTool = () => {
             length: input.length,
           })
         : null);
-    if (!stored) throw new Error(`No such file: ${path}`);
+    if (!stored) throw aiMissingChatFileError(path, ctx.localToolsEnabled);
     const extractAsDocument = shouldExtractDocument(path, stored.mediaType);
     if (isTextMediaType(stored.mediaType) && !extractAsDocument) {
       if (input.offset > stored.size) throw new Error(`Offset ${input.offset} is past the end of ${path} (${stored.size} bytes).`);
@@ -272,7 +273,7 @@ export const createCloudAiReadFileTool = () => {
           ? await aiFileStore.readTurnFile({ turnId: ctx.turnId, path })
           : await aiFileStore.read({ conversationId: conversationId(ctx.conversationId, "read_file"), path });
       if (!fullFile) {
-        throw new Error(snapshot ? `Attached file snapshot is unavailable: ${path}` : `No such file: ${path}`);
+        throw snapshot ? new Error(`Attached file snapshot is unavailable: ${path}`) : aiMissingChatFileError(path, ctx.localToolsEnabled);
       }
       try {
         extracted = await extractDocumentMarkdown({ bytes: fullFile.bytes, filename: path, signal: ctx.signal });
@@ -390,7 +391,7 @@ export const createCloudAiPresentTool = () =>
     const path = toolPath(input.path, "read");
     assertConversationFilePath(path, "presented");
     const stat = await aiFileStore.stat({ conversationId: id, path });
-    if (!stat) throw new Error(`No such file: ${path}`);
+    if (!stat) throw aiMissingChatFileError(path, ctx.localToolsEnabled);
     const view = isAiViewFile(stat) && stat.size <= CLOUD_AI_VIEW_MAX_BYTES ? await readView(id, path) : undefined;
     return { path: stat.path, size: stat.size, mediaType: stat.mediaType, ...(view ? { view: cloudAiViewSummary(view) } : {}) };
   });

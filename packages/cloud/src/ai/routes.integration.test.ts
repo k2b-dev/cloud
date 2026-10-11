@@ -1,7 +1,10 @@
 import { beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { redis, sql } from "bun";
+import { z } from "zod";
 import { tinyJpeg, withCameraMetadata } from "../../../../scripts/fixtures/image-metadata";
 import { databaseSuite, suiteFor } from "../../../../scripts/fixtures/test-infra";
+import * as aiSettings from "./settings";
+import { composeAiSystemPrompt } from "./system-prompt";
 import "../../../../scripts/fixtures/authorization-preload";
 import { APPROVAL_ACP_CLIENT, APPROVAL_CLIENT_HEADER } from "../contracts/approvals";
 import { accounts } from "../services/accounts";
@@ -104,11 +107,18 @@ suite("global AI conversation boundaries", () => {
           Authorization: `Bearer ${await createTestSession(userId)}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ draftRevision: saved.draft.revision, clientToolIds: ["code_interact", "code_run"] }),
+        body: JSON.stringify({
+          draftRevision: saved.draft.revision,
+          clientToolIds: ["code_interact", "code_run"],
+          client: { kind: "cli", cwd: "/work", os: "Linux", shell: "bash", localTools: "ask" },
+          localContext: { instructions: [{ path: "/work/AGENTS.md", content: "Rules." }], skills: [], selectedSkills: [] },
+        }),
       });
       expect(response.status).toBe(500);
       expect(submissions).toHaveLength(1);
       expect(submissions[0]?.clientToolIds).toEqual(["code_run"]);
+      expect(submissions[0]?.client?.cwd).toBe("/work");
+      expect(submissions[0]?.localContext?.instructions).toEqual([{ path: "/work/AGENTS.md", content: "Rules." }]);
     } finally {
       submit.mockRestore();
       await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
@@ -699,3 +709,104 @@ const aiApprovalList = async (headers: Record<string, string>, conversation?: st
   expect(response.status).toBe(200);
   return ((await response.json()) as { approvals: Array<{ toolName: string }> }).approvals;
 };
+
+suite("local client actions and preview", () => {
+  beforeAll(async () => {
+    await migrateCloudAi();
+  });
+  test("invalid local_list output returns 400 and leaves the action pending; valid output resolves it", async () => {
+    const userId = await insertUser();
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    const token = await createTestSession(userId);
+    try {
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: chat.id,
+        modelProfileId: "mock",
+        runConfig: { kind: "chat", input: "List files" },
+        userMessage: { role: "user", content: ["List files"] },
+      });
+      await aiConversations.savePendingTurnAction({
+        conversationId: chat.id,
+        turnId: turn.id,
+        callId: "list-1",
+        name: "local_list",
+        kind: "client_tool",
+        frontendMode: "client",
+        status: "pending",
+        args: { path: "." },
+        approvalScope: "local_list",
+        allowAlways: false,
+        allowChat: false,
+        resolvedEvent: null,
+      });
+      const respond = (result: unknown) =>
+        aiRoutes.request(`/conversations/${chat.shortId}/turns/${turn.shortId}/actions/list-1`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ type: "tool_result", result }),
+        });
+      const invalid = await respond({ status: "completed", entries: "not an array" });
+      expect(invalid.status).toBe(400);
+      expect(JSON.stringify(await invalid.json())).toContain("Invalid local_list result");
+      expect(await aiConversations.getPendingTurnAction({ conversationId: chat.id, turnId: turn.id, callId: "list-1" })).toMatchObject({
+        status: "pending",
+        resolvedEvent: null,
+      });
+      const result = { status: "completed", path: "/work", entries: [], nextAfter: null };
+      expect((await respond(result)).status).toBe(200);
+      expect(await aiConversations.getPendingTurnAction({ conversationId: chat.id, turnId: turn.id, callId: "list-1" })).toMatchObject({
+        status: "resolved",
+        resolvedEvent: { type: "tool_result", result },
+      });
+      expect((await respond(result)).status).toBe(200);
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  });
+  test("preview validates local facts and uses the same local section as a turn", async () => {
+    const userId = await insertUser();
+    const token = await createTestSession(userId);
+    const headers = { Authorization: `Bearer ${token}` };
+    const settings = spyOn(aiSettings, "readAiSettingsState").mockResolvedValue({
+      ok: true,
+      enabled: false,
+      defaultModelId: "",
+      globalInstructions: "",
+      localClientInstructions: "Literal {{ cwd }}.",
+      compactionInstructions: "",
+      maxToolResultChars: 2000,
+      firecrawlConfigured: false,
+      profiles: [],
+    });
+    try {
+      expect((await aiRoutes.request("/prefs/system-prompt?clientKind=unknown", { headers })).status).toBe(400);
+      const query = new URLSearchParams({
+        clientKind: "acp",
+        clientName: "Editor",
+        cwd: "/work",
+        os: "Linux",
+        shell: "bash",
+        localTools: "off",
+      });
+      const response = await aiRoutes.request(`/prefs/system-prompt?${query}`, { headers });
+      expect(response.status).toBe(200);
+      const data = z.object({ prompt: z.string() }).parse(await response.json());
+      const cloudUrl = (await platformSettings.get<string>("app.url")) || "";
+      const turnPrompt = composeAiSystemPrompt({
+        globalInstructions: "",
+        localClient: {
+          client: { kind: "acp", name: "Editor", cwd: "/work", os: "Linux", shell: "bash", localTools: "off" },
+          cloudUrl,
+          instructions: "Literal {{ cwd }}.",
+        },
+      });
+      const section = (prompt: string) => prompt.split("# Local client\n")[1]?.split("\n\n#")[0];
+      expect(section(data.prompt)).toBe(section(turnPrompt));
+      expect(data.prompt).not.toContain("# Workspace instructions");
+    } finally {
+      settings.mockRestore();
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  });
+});

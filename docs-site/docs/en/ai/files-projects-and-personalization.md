@@ -533,6 +533,36 @@ value, and typed Cloud resource where applicable. Failed and no-change runs
 remain visible; deleted source chats keep their title snapshot but no longer
 link to the chat.
 
+## Instructions for local clients
+
+**Administration > AI > Instructions for local clients** sets
+`ai.local_client_instructions`. It is plain text, without Liquid. The default
+is empty: Cloud uses its shipped local client instructions, which can improve
+with each release. Custom text replaces that default completely. **Show
+built-in text** lets an administrator copy it as a starting point.
+
+Interactive turns carrying `client` get a **Local client** section directly
+after organization instructions. It identifies the terminal or ACP editor,
+Cloud URL when configured, workspace, OS, shell and local tools mode, followed
+by the custom or shipped text. Its description of what the user sees replaces
+the web visibility guidance; other platform rules stay binding. Web and
+background turns get no local section.
+
+AGENTS.md files in `localContext.instructions` become **Workspace instructions**
+after Project instructions, in the supplied order. Each retains its path;
+closer files come later and win conflicts. They remain below platform,
+organization, Project and the current user message. They grant no approval
+and cannot authorize sending data outside the folder or Cloud.
+
+Local Skills join the Cloud catalog with a `[local]` marker. A local Skill
+hides a Cloud Skill with the same name, and both share the 8,000-character /
+2% context budget. `search_skills` also searches omitted local entries and
+returns `source: "local"`. Load marked Skills with `load_local_skill`, never
+`load_skill`. Explicitly selected local Skills appear alongside server-loaded
+Skills with their local directory and instructions; read their reference files
+with `local_read`. Only delegated Skill instructions are instruction-bearing;
+reference files remain untrusted data.
+
 ## Prompt order
 
 Cloud composes the system prompt in this order:
@@ -548,11 +578,12 @@ Cloud composes the system prompt in this order:
    the current chat, such as "like last time", goes to `core.ai.chats.search`
    first when the turn allows it. Turns a person follows also get the
    visibility and suggestion rules below;
-2. Organization instructions;
+2. Organization instructions, followed by the Local client section for
+   interactive local turns;
 3. Optional turn-specific instructions such as retry style or one offer
    hint;
 4. The bounded readable Skill catalog;
-5. Project instructions;
+5. Project instructions, followed by Workspace instructions for local turns;
 6. The Project context manifest as untrusted data;
 7. The bounded conversation file manifest as untrusted data;
 8. The Recent work summary as untrusted data, only when the user asks what

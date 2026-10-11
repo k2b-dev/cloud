@@ -15,6 +15,7 @@ import type { z } from "zod";
 import type { CapabilitySentenceField } from "../_internal/capability-sentences";
 import type { CapabilityActionReview, CapabilityActionSentences, CloudResourceRef } from "../contracts/capabilities";
 import type { RequestActor } from "../server";
+import type { AiLocalClient, AiLocalContext, AiLocalToolName } from "./local-tool-contracts";
 import type { AiTurnBlock } from "./protocol";
 
 export const AI_MODEL_CAPABILITIES = ["streaming", "tools", "vision", "transcription"] as const;
@@ -84,6 +85,7 @@ export type AiSettingsState =
       defaultModelId: string;
       visionModelId?: string;
       globalInstructions: string;
+      localClientInstructions: string;
       compactionInstructions: string;
       maxToolResultChars: number;
       firecrawlConfigured: boolean;
@@ -95,6 +97,7 @@ export type AiSettingsState =
       defaultModelId: string;
       visionModelId?: string;
       globalInstructions: string;
+      localClientInstructions: string;
       compactionInstructions: string;
       maxToolResultChars: number;
       firecrawlConfigured: boolean;
@@ -471,6 +474,7 @@ export type AiTurnToolSource = { kind: "none" } | { kind: "default"; appTools?: 
 
 export type AiClientToolId =
   | "local_bash"
+  | AiLocalToolName
   | "code_run"
   | "code_action"
   | "code_inspect"
@@ -642,6 +646,8 @@ export type AiChatTurnRunConfig = {
   /** Whether this turn's materialized tools can inspect referenced images. */
   canInspectAttachedImages?: boolean;
   clientToolIds?: AiClientToolId[];
+  client?: AiLocalClient;
+  localContext?: AiLocalContext;
   toolSource?: AiTurnToolSource;
   toolApprovalContext?: {
     actorUserId: string;
@@ -1097,6 +1103,7 @@ export type AiToolRuntime<TInput extends z.ZodType = z.ZodType, TOutput extends 
           conversationId?: string;
           turnId?: string;
           attachedFilePaths?: ReadonlySet<string>;
+          localToolsEnabled?: boolean;
           allowedDataBoundaries?: AiDataBoundary[];
           projectFiles?: AiProjectFileToolSource;
           skillFiles?: AiSkillFileToolSource;
