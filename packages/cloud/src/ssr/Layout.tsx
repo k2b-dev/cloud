@@ -1,5 +1,5 @@
 import type { DateContext } from "@k2b/stdlib";
-import { AppWorkspace, appWorkspaceLayoutStyle, LocaleProvider, NoticeCard } from "@k2b/ui";
+import { AppWorkspace, appWorkspaceLayoutStyle, LocaleProvider, NoticeCard, PageTrailProvider } from "@k2b/ui";
 import type { JSX } from "solid-js/jsx-runtime";
 import { readAppWorkspaceLayoutCookie, resolveAppWorkspaceLayoutForSidebar } from "../_internal/app-workspace-state";
 import { navigationSearchItems } from "../browser/navigation-search";
@@ -13,8 +13,8 @@ import { dates } from "../shared";
 import { readThemeFromCookieHeader } from "../shared/theme";
 import type { AppLaunchpadApp } from "./AppLaunchpad.island";
 import AppWorkspaceController from "./AppWorkspaceController.island";
-import { appAppearanceStyle, resolveCurrentApp } from "./app-appearance";
-import { visibleNavigationApps } from "./app-navigation";
+import { appAppearanceStyle } from "./app-appearance";
+import { resolveRuntimeRoute, visibleNavigationApps } from "./app-navigation";
 import BrowserPushRegistration from "./BrowserPushRegistration.island";
 import GlobalAnnouncements from "./GlobalAnnouncements.island";
 import type { GlobalSearchHelpApp } from "./GlobalSearchHelpDialog";
@@ -24,6 +24,9 @@ import LayoutHeader from "./LayoutHeader";
 import LayoutRail, { type LayoutAppLink } from "./LayoutRail";
 import type { LayoutContext } from "./layout-context";
 import type { LayoutBreadcrumb } from "./layout-runtime";
+import PageTrailRow from "./PageTrailRow.island";
+import PageTrailRuntime from "./PageTrailRuntime.island";
+import { derivePageTrail } from "./page-trail";
 import { platformMessages } from "./platform-messages";
 import RegisteredHelpDocuments from "./RegisteredHelpDocuments.island";
 import { sortRailApps } from "./rail-navigation";
@@ -153,7 +156,8 @@ export default function Layout(props: LayoutProps) {
   const t = platformMessages.resolve([lang]).t;
   const user = c.get("user");
   const pathname = new URL(c.req.raw.url).pathname;
-  const currentApp = resolveCurrentApp(runtime.apps, pathname);
+  const currentRoute = resolveRuntimeRoute(runtime.apps, pathname);
+  const currentApp = currentRoute?.app;
   const registeredHelp = getLayoutHelp(c);
   const workspaceLayout = resolveAppWorkspaceLayoutForSidebar(
     readAppWorkspaceLayoutCookie(cookie, currentApp?.id),
@@ -201,6 +205,13 @@ export default function Layout(props: LayoutProps) {
   const pageTitle = typeof title === "string" ? title : (title?.at(-1)?.title ?? appName);
   if (!page.title) page.title = pageTitle;
   const breadcrumbs: Breadcrumb[] = !title ? [{ title: appName }] : typeof title === "string" ? [{ title }] : title;
+  // The way up is derived from the title array by one rule (see `derivePageTrail`). Anonymous pages keep their
+  // header breadcrumbs, and focus surfaces such as pop-out editors have no way up; both show the title alone. The
+  // canvas carries this for `layout.update()`.
+  const titleOnly = !user || focusMode;
+  const pageTrail = titleOnly
+    ? { title: pageTitle, ancestors: [] }
+    : derivePageTrail(title ?? appName, currentRoute?.prefix, appName, `${pathname}${new URL(c.req.raw.url).search}`);
   const showRail = !!user;
   // The profile menu offers the mobile app only while the installation runs it.
   const appHref = user && isPwaShellAvailable(runtime.apps) ? "/me/app" : undefined;
@@ -209,9 +220,9 @@ export default function Layout(props: LayoutProps) {
     user?.avatarHash && user.id
       ? `/api/accounts/users/${encodeURIComponent(user.id)}/avatar?rev=${encodeURIComponent(user.avatarHash)}`
       : undefined;
-  // From lg, `main` is the page scroller of regular pages. Its stable gutter
+  // From md, `main` is the page scroller of regular pages. Its stable gutter
   // keeps short and long pages at the same width where scrollbars take space.
-  const mainLayoutClass = fullPage || fullWidth ? "flex flex-col" : "lg:overflow-auto lg:[scrollbar-gutter:stable]";
+  const mainLayoutClass = fullPage || fullWidth ? "flex flex-col" : "md:overflow-auto md:[scrollbar-gutter:stable]";
   const canvasStyle =
     [appAppearanceStyle(currentApp?.appearance), appWorkspaceLayoutStyle(workspaceLayout), focusMode && flushCanvas ? "padding:0" : ""]
       .filter(Boolean)
@@ -223,14 +234,19 @@ export default function Layout(props: LayoutProps) {
           class="cloud-app-canvas flex h-dvh w-full overflow-hidden"
           style={canvasStyle}
           data-app-id={currentApp?.id}
+          data-app-base={currentRoute?.prefix}
+          data-page-trail-title-only=""
           data-layout-full-page="true"
           data-workspace-sidebar-collapsed={workspaceLayout?.sidebarCollapsed ? "true" : undefined}
         >
           <TimezoneCookie />
           {registeredHelp && <RegisteredHelpDocuments documents={registeredHelp.documents} pageBase={registeredHelp.pageBase} />}
-          <main class="min-h-0 min-w-0 flex-1">
-            <AppWorkspace.LayoutStateProvider state={workspaceLayout}>{props.children}</AppWorkspace.LayoutStateProvider>
-          </main>
+          <PageTrailProvider trail={pageTrail}>
+            <PageTrailRuntime />
+            <main class="min-h-0 min-w-0 flex-1">
+              <AppWorkspace.LayoutStateProvider state={workspaceLayout}>{props.children}</AppWorkspace.LayoutStateProvider>
+            </main>
+          </PageTrailProvider>
         </div>
       </LocaleProvider>
     );
@@ -241,9 +257,11 @@ export default function Layout(props: LayoutProps) {
   return (
     <LocaleProvider locale={lang}>
       <div
-        class={`cloud-app-canvas relative flex w-full ${fullPage ? "h-dvh overflow-hidden" : "min-h-dvh lg:h-dvh lg:overflow-hidden"}`}
+        class={`cloud-app-canvas relative flex w-full ${fullPage ? "h-dvh overflow-hidden" : "min-h-dvh md:h-dvh md:overflow-hidden"}`}
         style={canvasStyle}
         data-app-id={currentApp?.id}
+        data-app-base={currentRoute?.prefix}
+        data-page-trail-title-only={titleOnly ? "" : undefined}
         data-layout-full-page={fullPage ? "true" : undefined}
         data-layout-authenticated={showRail ? "true" : undefined}
         data-workspace-sidebar-collapsed={workspaceLayout?.sidebarCollapsed ? "true" : undefined}
@@ -282,7 +300,6 @@ export default function Layout(props: LayoutProps) {
             launchpadApps={launchpadApps}
             legalLinks={legalLinks}
             openAppsLabel={t.openApps}
-            profileAvatarSrc={profileAvatarSrc}
             profileName={profileName}
             searchHelpApps={searchHelpApps}
             searchLinks={searchLinks}
@@ -299,9 +316,13 @@ export default function Layout(props: LayoutProps) {
           )}
           {user && <ProfileWarnings user={user} locale={lang} />}
           {user && <ExpiryWarnings user={user} dateConfig={dateConfig} locale={lang} />}
-          <main class={`layout-content-main min-h-0 min-w-0 flex-1 ${mainLayoutClass}`}>
-            <AppWorkspace.LayoutStateProvider state={workspaceLayout}>{props.children}</AppWorkspace.LayoutStateProvider>
-          </main>
+          <PageTrailProvider trail={pageTrail}>
+            <PageTrailRuntime />
+            <PageTrailRow />
+            <main class={`layout-content-main min-h-0 min-w-0 flex-1 ${mainLayoutClass}`}>
+              <AppWorkspace.LayoutStateProvider state={workspaceLayout}>{props.children}</AppWorkspace.LayoutStateProvider>
+            </main>
+          </PageTrailProvider>
           {!fullPage && !showRail && <LayoutFooter appName={settings?.app?.copyright || appName} legalLinks={legalLinks} />}
         </div>
       </div>

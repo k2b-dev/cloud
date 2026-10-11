@@ -496,6 +496,14 @@
   height: min(34rem, 70vh);
 }
 
+/* On a phone the detail sheet belongs to the window. The demo keeps it inside
+   its frame, so an open demo panel never covers the page being read. */
+@media (max-width: 47.999rem) {
+  .ui-workspace-demo {
+    contain: layout;
+  }
+}
+
 .ui-discussion-showcase {
   --k2b-detail-panel-accent: var(--c-accent-ink);
 
@@ -1361,4 +1369,20 @@
   .ui-panes-demo {
     height: 24rem;
   }
+}
+
+/* PageTitle: each depth in the 46 px row a workspace head gives it. */
+.ui-page-title-demo {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.ui-page-title-demo__row {
+  display: flex;
+  min-height: 2.875rem;
+  align-items: center;
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--k2b-radius-surface);
+  background: var(--k2b-surface);
 }

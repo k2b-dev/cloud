@@ -130,6 +130,7 @@ export default function RecordsResultSurface(props: Props) {
       <Switch
         fallback={
           <DatabaseTable
+            scrollClass="k2b-detail-trail"
             result={{ items: props.items, fields: props.fields, nextCursor: null }}
             baseId={props.baseId}
             fieldsByTable={fieldsByTable()}

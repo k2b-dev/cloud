@@ -17,7 +17,8 @@ export default ssr<AuthContext>(async (c) => {
 
   return () => (
     <Layout c={c} title={[{ title: t.start, href: "/" }, { title: "FAQ" }]}>
-      <div class="max-w-2xl mx-auto flex flex-col gap-4">
+      {/* From md no header sits above a signed-in page, so the page keeps its own top and bottom inset. */}
+      <div class="max-w-2xl mx-auto flex flex-col gap-4 md:py-6">
         <h1 class="text-xl font-bold text-primary" style="view-transition-name: page-header">
           FAQ
         </h1>

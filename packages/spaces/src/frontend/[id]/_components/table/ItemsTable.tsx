@@ -95,6 +95,7 @@ export default function ItemsTable(props: Props) {
         selectedRowId={props.selectedItemId}
         hoverRows
         class="overflow-x-auto"
+        scrollClass="k2b-detail-trail"
         tableClass="min-w-[72rem] w-full text-xs"
         scrollPreserveKey={props.scrollPreserveKey}
         renderCell={({ row: item, col }) => {

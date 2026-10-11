@@ -19,6 +19,7 @@ import { useFilesMessages } from "./messages";
 import { openShareDialog } from "./ShareDialog";
 import SharesOverview from "./SharesOverview";
 import TrashView from "./TrashView";
+import { snapshotTitle } from "./trail";
 import { UploadSurface } from "./UploadPanel";
 import { editorUrl, filesUrl } from "./urls";
 import { createWorkspaceState, type WorkspaceSnapshot } from "./workspace-state";
@@ -221,6 +222,18 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
             () => commitHistory(previous, { replace: true, scroll: "manual", viewTransition: false }),
           )
           .then(() => resetCursor(target));
+      }),
+    ),
+  );
+  // The way up (the path above the title, or Alt+↑) moves between folders in place like every other link here,
+  // so uploads keep running and an open editor can ask about unsaved changes first.
+  onMount(() =>
+    onCleanup(
+      layout.handleUp((href) => {
+        const url = new URL(href, window.location.origin);
+        if (url.pathname !== "/app/filesv2") return false;
+        void go(`${url.pathname}${url.search}`);
+        return true;
       }),
     ),
   );
@@ -487,16 +500,13 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
   );
   const editorBack = (launch: NonNullable<WorkspaceSnapshot["editor"]>) =>
     filesUrl(launch.base.id, launch.entry.path.split("/").slice(0, -1).join("/"), null, launch.entry.path);
-  // The shell's title follows the open document; the app name returns once the editor is left.
+  // The shell shows the folder path, or the open document below its folder, and follows every in-page navigation.
   createEffect(
     on(
-      () => (currentView() === "edit" ? (snapshot().editor?.entry.path ?? "") : null),
-      (path) => {
-        const launch = snapshot().editor;
-        layout.update({
-          breadcrumbs:
-            path && launch ? [{ title: t().files, href: editorBack(launch) }, { title: launch.entry.name }] : [{ title: t().files }],
-        });
+      () => snapshotTitle(snapshot(), t().files, b(), locale()),
+      (breadcrumbs, previous) => {
+        if (previous && JSON.stringify(previous) === JSON.stringify(breadcrumbs)) return;
+        layout.update({ breadcrumbs });
       },
       { defer: true },
     ),

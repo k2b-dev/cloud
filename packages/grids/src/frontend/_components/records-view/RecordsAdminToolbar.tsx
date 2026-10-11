@@ -26,7 +26,7 @@ export function RecordsAdminToolbar(props: {
   };
 
   return (
-    <div class="flex flex-wrap items-center gap-2 shrink-0">
+    <div class="flex flex-wrap items-center gap-2 shrink-0 pr-[var(--k2b-detail-space,0px)]">
       <Show
         when={props.savedView}
         fallback={

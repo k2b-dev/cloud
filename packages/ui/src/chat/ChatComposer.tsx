@@ -26,11 +26,14 @@ import {
 import { FileDropTarget } from "../inputs/FileDropTarget";
 import { toggleBulletList, toggleInlineMarker } from "../inputs/markdown/actions";
 import { openCodeFence } from "../inputs/markdown/code-zone";
+import { type MarkdownToolbarMessages, useMarkdownToolbarMessages } from "../inputs/markdown/toolbar-messages";
 import { SelectChip } from "../inputs/SelectChip";
+import { useSelectMessages } from "../inputs/select-messages";
 import { useLocale } from "../intl/locale";
-import { type UiMessages, useUiMessages } from "../intl/messages";
+import { useUiMessages } from "../intl/messages";
 import { ChatContextUsage as ContextUsage } from "./ChatPrimitives";
 import { conversationEnterAction, executeChatAction, nextChatCommandIndex, reportChatFailure, runChatSubmission } from "./chat-behavior";
+import { useChatMessages } from "./chat-messages";
 import { chatCommandQuery, chatMentionSegments, reconcileChatMentions } from "./composer-document";
 import type {
   ChatAction,
@@ -153,7 +156,7 @@ export type ChatComposerProps = {
 type FormatTool = {
   id: string;
   icon: string;
-  label: (messages: UiMessages) => string;
+  label: (messages: MarkdownToolbarMessages) => string;
   run: (textarea: HTMLTextAreaElement) => void;
   /** Ctrl/⌘ plus this `event.key`. */
   key?: string;
@@ -190,6 +193,9 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   const hasAccessory = () => hasContent(accessory.toArray());
   const hint = children(() => props.hint);
   const messages = useUiMessages();
+  const markdownToolbarMessages = useMarkdownToolbarMessages();
+  const chatMessages = useChatMessages();
+  const selectMessages = useSelectMessages();
   const commandListId = `k2b-chat-commands-${createUniqueId().replace(/[^A-Za-z0-9_-]/g, "-")}`;
   const formatGroupId = `${commandListId}-format`;
   const [selectedCommandIndex, setSelectedCommandIndex] = createSignal(0);
@@ -372,7 +378,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     if (props.fileSelection) {
       items.push({
         icon: addingFiles() ? "ti ti-loader-2 k2b-spin" : "ti ti-paperclip",
-        label: props.fileSelection.label ?? messages().attachFiles,
+        label: props.fileSelection.label ?? chatMessages().attachFiles,
         disabled: !canSelectFiles(),
         action: () => chooseFiles(),
       });
@@ -721,13 +727,13 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     const items: DropdownItemData[] = [];
     if (microphone?.onDictate) {
       const dictate = microphone.onDictate;
-      items.push({ icon: "ti ti-microphone", label: messages().dictate, action: () => reportChatFailure(dictate, props.onError) });
+      items.push({ icon: "ti ti-microphone", label: chatMessages().dictate, action: () => reportChatFailure(dictate, props.onError) });
     }
     if (microphone?.onVoiceMessage) {
       const record = microphone.onVoiceMessage;
       items.push({
         icon: "ti ti-player-record",
-        label: messages().recordVoiceMessage,
+        label: chatMessages().recordVoiceMessage,
         action: () => reportChatFailure(record, props.onError),
       });
     }
@@ -736,15 +742,15 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   const dictationStatus = (): { icon: string; text: string } | null => {
     switch (dictation()) {
       case "listening":
-        return { icon: "ti ti-microphone", text: messages().dictationListening };
+        return { icon: "ti ti-microphone", text: chatMessages().dictationListening };
       case "refining":
-        return { icon: "ti ti-loader-2 k2b-spin", text: messages().dictationRefining };
+        return { icon: "ti ti-loader-2 k2b-spin", text: chatMessages().dictationRefining };
       case "refined":
-        return { icon: "ti ti-sparkles", text: messages().dictationRefined };
+        return { icon: "ti ti-sparkles", text: chatMessages().dictationRefined };
       case "unrefined":
-        return { icon: "ti ti-microphone", text: messages().dictationUnrefined };
+        return { icon: "ti ti-microphone", text: chatMessages().dictationUnrefined };
       case "interrupted":
-        return { icon: "ti ti-alert-triangle", text: messages().dictationInterrupted };
+        return { icon: "ti ti-alert-triangle", text: chatMessages().dictationInterrupted };
       default:
         return null;
     }
@@ -768,12 +774,12 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   );
 
   const addMenu = (icon: string, extraClass = "") => (
-    <Dropdown.Root position="top-right" label={messages().addToChat} items={menuItems()} disabled={blocked()}>
+    <Dropdown.Root position="top-right" label={chatMessages().addToChat} items={menuItems()} disabled={blocked()}>
       <Dropdown.Trigger
         appearance="plain"
         class={`k2b-chat-composer__icon-action${extraClass}`}
-        label={messages().addToChat}
-        tooltip={messages().addToChat}
+        label={chatMessages().addToChat}
+        tooltip={chatMessages().addToChat}
       >
         <i class={icon} aria-hidden="true" />
       </Dropdown.Trigger>
@@ -790,8 +796,8 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
             <Tooltip.Trigger
               type="button"
               class="k2b-chat-composer__icon-action k2b-chat-composer__attach"
-              aria-label={selection().label ?? messages().attachFiles}
-              content={selection().label ?? messages().attachFiles}
+              aria-label={selection().label ?? chatMessages().attachFiles}
+              content={selection().label ?? chatMessages().attachFiles}
               disabled={!canSelectFiles()}
               onClick={chooseFiles}
             >
@@ -810,10 +816,10 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       <Tooltip.Trigger
         type="button"
         class="k2b-chat-composer__icon-action k2b-chat-composer__format-toggle"
-        aria-label={messages().composerFormatting}
+        aria-label={chatMessages().composerFormatting}
         aria-pressed={formattingOpen()}
         aria-controls={formattingOpen() ? formatGroupId : undefined}
-        content={messages().composerFormatting}
+        content={chatMessages().composerFormatting}
         onMouseDown={keepFieldFocus}
         onClick={() => setFormattingOpen((open) => !open)}
       >
@@ -825,14 +831,14 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   /** One row of fixed height. It shows every button at once, also on a phone, so nothing hides behind a scroll. */
   const formatRow = () => (
     <Show when={props.formatting && formattingOpen()}>
-      <div id={formatGroupId} class="k2b-chat-composer__format" role="group" aria-label={messages().composerFormatting}>
+      <div id={formatGroupId} class="k2b-chat-composer__format" role="group" aria-label={chatMessages().composerFormatting}>
         <For each={formatTools}>
           {(tool) => (
             <Tooltip.Trigger
               type="button"
               class="k2b-chat-composer__icon-action"
-              aria-label={tool.label(messages())}
-              content={tool.label(messages())}
+              aria-label={tool.label(markdownToolbarMessages())}
+              content={tool.label(markdownToolbarMessages())}
               disabled={editBlocked()}
               onMouseDown={keepFieldFocus}
               onClick={() => {
@@ -853,8 +859,8 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         <Tooltip.Trigger
           type="button"
           class="k2b-chat-composer__icon-action k2b-chat-composer__emoji"
-          aria-label={messages().insertEmoji}
-          content={messages().insertEmoji}
+          aria-label={chatMessages().insertEmoji}
+          content={chatMessages().insertEmoji}
           disabled={editBlocked()}
           onMouseDown={keepFieldFocus}
           onClick={(event) => {
@@ -881,15 +887,15 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
             aria-haspopup={microphone().onDictate ? undefined : "menu"}
             aria-expanded={microphone().onDictate ? undefined : microphoneMenuOpen()}
             // A toggle keeps its name; the pressed state says that dictation runs.
-            aria-label={microphone().onDictate ? messages().dictate : messages().recordVoiceMessage}
+            aria-label={microphone().onDictate ? chatMessages().dictate : chatMessages().recordVoiceMessage}
             content={
               dictation() === "listening"
-                ? messages().stopDictation
+                ? chatMessages().stopDictation
                 : microphone().onDictate
                   ? microphone().onVoiceMessage
-                    ? messages().dictateOrHold
-                    : messages().dictate
-                  : messages().recordVoiceMessage
+                    ? chatMessages().dictateOrHold
+                    : chatMessages().dictate
+                  : chatMessages().recordVoiceMessage
             }
             onMouseDown={keepFieldFocus}
             onContextMenu={(event) => event.preventDefault()}
@@ -941,7 +947,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
           <Show when={microphone().onVoiceMessage}>
             <Dropdown.Root
               position="top-left"
-              label={messages().microphoneOptions}
+              label={chatMessages().microphoneOptions}
               items={microphoneItems()}
               disabled={microphoneDisabled()}
               open={microphoneMenuOpen()}
@@ -950,8 +956,8 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
               <Dropdown.Trigger
                 appearance="plain"
                 class="k2b-chat-composer__icon-action k2b-chat-composer__microphone-menu"
-                label={messages().microphoneOptions}
-                tooltip={messages().microphoneOptions}
+                label={chatMessages().microphoneOptions}
+                tooltip={chatMessages().microphoneOptions}
               >
                 <i class="ti ti-chevron-up" aria-hidden="true" />
               </Dropdown.Trigger>
@@ -977,17 +983,21 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
             submitting()
               ? running()
                 ? runningSubmitIntent() === "queue"
-                  ? messages().queueing
-                  : messages().steering
-                : messages().sending
+                  ? chatMessages().queueing
+                  : chatMessages().steering
+                : chatMessages().sending
               : running()
                 ? runningSubmitIntent() === "queue"
-                  ? messages().queueMessage
-                  : messages().steerResponse
-                : messages().sendMessage
+                  ? chatMessages().queueMessage
+                  : chatMessages().steerResponse
+                : chatMessages().sendMessage
           }
           content={
-            running() ? (runningSubmitIntent() === "queue" ? messages().queueMessage : messages().steerResponse) : messages().sendMessage
+            running()
+              ? runningSubmitIntent() === "queue"
+                ? chatMessages().queueMessage
+                : chatMessages().steerResponse
+              : chatMessages().sendMessage
           }
           onClick={() => void submit()}
         >
@@ -999,8 +1009,8 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         type="button"
         class="k2b-chat-composer__stop"
         disabled={stopping()}
-        aria-label={stopping() ? messages().stopping : messages().stopResponse}
-        content={messages().stopResponse}
+        aria-label={stopping() ? chatMessages().stopping : chatMessages().stopResponse}
+        content={chatMessages().stopResponse}
         onClick={() => reportChatFailure(() => props.onStop?.(), props.onError)}
       >
         <i class={stopping() ? "ti ti-loader-2 k2b-spin" : "ti ti-player-stop"} aria-hidden="true" />
@@ -1009,7 +1019,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   );
 
   const field = () => (
-    <div class="k2b-chat-composer__input" role="group" aria-label={messages().messageInput}>
+    <div class="k2b-chat-composer__input" role="group" aria-label={chatMessages().messageInput}>
       <Show when={mentions().length > 0}>
         <div ref={highlightRef} class="k2b-chat-composer__highlight" aria-hidden="true">
           <For each={chatMentionSegments(props.value, mentions())}>
@@ -1028,7 +1038,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         enterkeyhint={conversation() ? "enter" : undefined}
         placeholder={
           props.placeholder ??
-          (running() ? messages().addGuidance : conversation() ? messages().writeConversationMessage : messages().writeMessage)
+          (running() ? chatMessages().addGuidance : conversation() ? chatMessages().writeConversationMessage : chatMessages().writeMessage)
         }
         aria-label={props.inputLabel ?? messages().message}
         role={suggestionsOpen() ? "combobox" : undefined}
@@ -1100,7 +1110,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                 id={commandListId}
                 class="k2b-chat-composer__commands"
                 role="listbox"
-                aria-label={messages().emojiSuggestions}
+                aria-label={chatMessages().emojiSuggestions}
               >
                 <For each={emojiMatches()}>
                   {(entry, index) => (
@@ -1133,7 +1143,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                 id={commandListId}
                 class="k2b-chat-composer__commands"
                 role="listbox"
-                aria-label={messages().commands}
+                aria-label={chatMessages().commands}
               >
                 <For each={commandMatches()}>
                   {(command, index) => (
@@ -1179,7 +1189,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         data-running={running() ? "true" : undefined}
         data-variant={conversation() ? "conversation" : undefined}
         role="group"
-        aria-label={props.label ?? messages().messageComposer}
+        aria-label={props.label ?? chatMessages().messageComposer}
       >
         <Show when={showHint()}>
           <div class="k2b-chat-composer__hint" aria-live="polite">
@@ -1199,7 +1209,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                         onMouseDown={keepFieldFocus}
                         onClick={() => reportChatFailure(restore(), props.onError)}
                       >
-                        {messages().restoreOriginal}
+                        {chatMessages().restoreOriginal}
                       </button>
                     )}
                   </Show>
@@ -1209,7 +1219,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
           </div>
         </Show>
         <Show when={attachments().length > 0}>
-          <div class="k2b-chat-composer__attachments" role="list" aria-label={messages().attachments} tabIndex={0}>
+          <div class="k2b-chat-composer__attachments" role="list" aria-label={chatMessages().attachments} tabIndex={0}>
             <For each={attachments()}>
               {(attachment) => (
                 <div class="k2b-chat-composer__attachment" role="listitem">
@@ -1237,7 +1247,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                           href={href()}
                           target="_blank"
                           rel="noopener noreferrer"
-                          aria-label={messages().openInNewTab({ name: attachment.name })}
+                          aria-label={chatMessages().openInNewTab({ name: attachment.name })}
                         >
                           <Show
                             when={attachment.kind === "image" && attachment.previewUrl}
@@ -1267,7 +1277,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                     <button
                       type="button"
                       class="k2b-chat-composer__attachment-remove"
-                      aria-label={messages().removeNamed({ name: attachment.name })}
+                      aria-label={selectMessages().removeNamed({ name: attachment.name })}
                       disabled={blocked()}
                       onClick={() => setAttachments(attachments().filter((candidate) => candidate.id !== attachment.id))}
                     >
@@ -1308,11 +1318,11 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                         {emojiButton()}
                         <Show when={(props.models?.length ?? 0) > 0}>
                           <SelectChip
-                            aria-label={messages().chooseModel}
+                            aria-label={chatMessages().chooseModel}
                             position="top-right"
                             class="k2b-chat-composer__model"
                             menuWidth="15rem"
-                            placeholder={messages().model}
+                            placeholder={chatMessages().model}
                             value={() => props.selectedModelId ?? ""}
                             options={(props.models ?? []).map((model) => ({
                               value: model.id,
@@ -1390,7 +1400,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         <Show when={props.fileSelection}>
           {(selection) => (
             <FileDropTarget
-              label={messages().dropFilesToAttach}
+              label={chatMessages().dropFilesToAttach}
               accept={selection().accept}
               multiple={selection().multiple}
               disabled={!canSelectFiles()}

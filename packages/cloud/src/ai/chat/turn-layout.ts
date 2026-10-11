@@ -35,6 +35,11 @@ export type AiTurnLayout = {
   results: AiTurnResult[];
   /** Place 3: the newest text. Live it is a status; finished it is the final message. */
   text: TextBlock[];
+  /**
+   * Place 3 is only a status: the turn runs and a step started after its text. A trailing text may still be the answer
+   * and keeps answer typography; it turns quiet when the next step starts, together with the work line's new label.
+   */
+  textIsStatus: boolean;
   /** Place 4: effects in Cloud and decisions, open as a card or finished as a receipt. */
   actions: AiTurnAction[];
   /** The newest block, which names the current step of a live turn. */
@@ -124,6 +129,8 @@ export function layoutAiTurn(input: readonly AiTurnBlock[], options: { phase: Ai
     }
   }
   const visible = new Set(text);
+  const lastStep = blocks.findLastIndex((block) => block.kind === "tool" || block.kind === "compaction");
+  const shownAt = text.length > 0 ? blocks.indexOf(text.at(-1)!) : -1;
   const work = blocks.filter((block) => !visible.has(block as TextBlock));
 
   const waits = tools.filter(waitsForUser);
@@ -135,6 +142,7 @@ export function layoutAiTurn(input: readonly AiTurnBlock[], options: { phase: Ai
     showWork: steps > 0 || ((options.phase === "stopped" || options.phase === "failed") && work.length > 0),
     results,
     text,
+    textIsStatus: live(options.phase) && shownAt >= 0 && shownAt < lastStep,
     actions,
     current: blocks.at(-1) ?? null,
     waitingFor,

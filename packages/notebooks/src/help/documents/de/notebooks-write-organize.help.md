@@ -91,7 +91,7 @@ Blende die Navigation aus, um mit der ganzen Breite zu schreiben. Blende sie auc
 - **Ohne Werkzeugleiste:** Manche Stellen zeigen keine Werkzeugleiste des Editors: die Buchansicht, ein leeres Notizbuch, **Schreibgeschützt**, der Graph und die Anhänge. Dort steht die Schaltfläche unten links.
 - **Bleibt ausgeblendet:** Dieser Browser speichert die Wahl. Sie gilt für alle Notizbücher, auch nach dem Neuladen und in anderen offenen Tabs. Ein Notizbuch mit ausgeblendeter Navigation öffnet ohne sie, Notiztitel erscheinen also auch beim Laden nicht.
 - **Deine Stelle in der Notiz:** Beim Aus- und Einblenden bleibt der Cursor, wo er ist. Der Text oben im Editor oder in der Buchansicht bleibt an seiner Stelle.
-- **Smartphones:** Auf kleinen Bildschirmen bleibt die Navigation im Menü. Die Schaltfläche erscheint auf breiteren Bildschirmen, wo die Navigation neben der Notiz steht.
+- **Smartphones und Tablets:** Auf kleinen Bildschirmen bleibt die Navigation im Menü. Auf einem Tablet öffnet die Schaltfläche oben links die Navigation über der Notiz. Ist sie ausgeblendet, zeigt die Schaltfläche unten links sie wieder an. Auf größeren Bildschirmen steht die Navigation neben der Notiz.
 :::
 
 ## Notizen anordnen {icon="arrows-sort"}

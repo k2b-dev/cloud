@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { type SQL, sql } from "bun";
 import { MAX_ITEM_DEPENDENCIES, type MutationResult, type SpaceTaskDependency, type SpaceTaskDependent } from "@/contracts";
 import { publishSpaceChange, spacesLive } from "./live";
 
@@ -171,6 +171,20 @@ export const add = async (params: {
   if (!result.ok) return result;
   spacesLive.wake();
   return { ok: true, data: mapDependency(result.data) };
+};
+
+/**
+ * Tasks an item blocks show its completion, and the Blocked column gathers them by it, so completing,
+ * reopening, deleting, or transferring a blocker changes each of them too. Call it in `tx` while the
+ * dependencies still exist.
+ */
+export const publishDependentsChange = async (tx: SQL, params: { spaceId: string; blockerItemId: string }): Promise<void> => {
+  const dependents = await tx<{ item_id: string }[]>`
+    SELECT item_id FROM spaces.item_dependencies WHERE blocker_item_id = ${params.blockerItemId}::uuid
+  `;
+  for (const dependent of dependents) {
+    await publishSpaceChange(tx, { type: "item.updated", spaceId: params.spaceId, itemId: dependent.item_id });
+  }
 };
 
 export const remove = async (params: { itemId: string; blockerItemId: string; spaceId: string }): Promise<MutationResult<void>> => {

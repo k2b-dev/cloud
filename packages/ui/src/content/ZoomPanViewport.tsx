@@ -4,7 +4,8 @@ import { dialogCore } from "../feedback/dialog-core";
 import { DialogHeader } from "../feedback/prompts";
 import { suppressTextSelection } from "../internal/text-selection";
 import { LocaleProvider, useLocale } from "../intl/locale";
-import { useUiMessages } from "../intl/messages";
+import { useViewportMessages } from "./viewport-messages";
+
 import {
   clampZoomPan,
   panZoomPan,
@@ -88,7 +89,7 @@ const ActionButton = (props: { action: ZoomPanAction }): JSX.Element => {
  * stays crisp and is never re-rendered. The view always starts at fit.
  */
 export function ZoomPanViewport(props: ZoomPanViewportProps): JSX.Element {
-  const messages = useUiMessages();
+  const viewportMessages = useViewportMessages();
   const locale = useLocale();
   const [transform, setTransform] = createSignal<ZoomPanTransform>(ZOOM_PAN_FIT);
   const [smooth, setSmooth] = createSignal(false);
@@ -293,7 +294,7 @@ export function ZoomPanViewport(props: ZoomPanViewportProps): JSX.Element {
       style={props.style}
       role="group"
       aria-label={props.label}
-      aria-description={messages().zoomPanKeys}
+      aria-description={viewportMessages().zoomPanKeys}
       tabIndex={0}
       data-controls={props.controls ?? "visible"}
       data-zoomed={zoomed() ? "true" : undefined}
@@ -314,10 +315,10 @@ export function ZoomPanViewport(props: ZoomPanViewportProps): JSX.Element {
         {props.children}
       </div>
       <div class="k2b-zoom-pan__controls">
-        {control(messages().zoomIn, "+", "ti-plus", () => zoomBy(ZOOM_PAN_STEP))}
-        {control(messages().zoomOut, "-", "ti-minus", () => zoomBy(1 / ZOOM_PAN_STEP))}
-        {control(messages().resetZoom, "0", "ti-focus-centered", reset)}
-        <Show when={props.fullscreen}>{control(messages().openFullscreen, "F", "ti-maximize", openFullscreen)}</Show>
+        {control(viewportMessages().zoomIn, "+", "ti-plus", () => zoomBy(ZOOM_PAN_STEP))}
+        {control(viewportMessages().zoomOut, "-", "ti-minus", () => zoomBy(1 / ZOOM_PAN_STEP))}
+        {control(viewportMessages().resetZoom, "0", "ti-focus-centered", reset)}
+        <Show when={props.fullscreen}>{control(viewportMessages().openFullscreen, "F", "ti-maximize", openFullscreen)}</Show>
       </div>
     </div>
   );

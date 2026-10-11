@@ -1034,9 +1034,10 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
             </div>
           </div>
         </AppWorkspace.Main>
-        {/* From 1024 px the detail sits next to the calendar; below, CSS hides it and a bottom sheet shows the same detail. */}
+        {/* From 1024 px the detail floats beside the calendar; below, CSS hides it and a bottom sheet shows the same detail. */}
         <AppWorkspace.Detail
           id="venue-shift-detail"
+          onClose={clearSelection}
           open={selection() !== null && wide()}
           width="md"
           resizable={false}

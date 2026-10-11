@@ -207,8 +207,10 @@ when their containing object is present.
 strength so application identity remains visible without overpowering the
 shared dark surface hierarchy.
 
-The background appears at 1024 px and above. Narrower screens use the flat work
-surface in both light and dark mode.
+Signed-in people see the background behind the app bar from 768 px and, from
+1536 px, also around the app area. Anonymous pages show it around the header
+and content from 768 px. Narrower screens use the flat work surface in both
+light and dark mode.
 
 ## Declare platform integrations
 

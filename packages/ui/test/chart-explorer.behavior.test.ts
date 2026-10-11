@@ -127,7 +127,7 @@ describe("chart explorer presentation", () => {
         .click();
       await tick();
       expect(dom.root.querySelectorAll("tbody .k2b-data-table__row")).toHaveLength(2);
-      button("Jobs ↕").click();
+      button("Jobs").click();
       await tick();
       expect(dom.root.querySelector("tbody tr")?.textContent).toContain("Exports");
       expect(dom.root.querySelector('tr[data-selected="true"]')?.textContent).toContain("Imports");
@@ -165,7 +165,7 @@ describe("chart explorer presentation", () => {
     );
     try {
       expect(dom.root.querySelector("table")).not.toBeNull();
-      button("Jobs ↕").click();
+      button("Jobs").click();
       await tick();
       expect(changes).toHaveLength(1);
       expect(dom.root.querySelector("tbody tr")?.textContent).toContain("Imports");

@@ -25,7 +25,10 @@ if (!isServer) {
 const load = async () => {
   const dom = createDomTestHarness();
   try {
-    return { Workspace: (await import("../src/frontend/Workspace.island")).default };
+    return {
+      Workspace: (await import("../src/frontend/Workspace.island")).default,
+      PAGE_UP_EVENT: (await import("@k2b/cloud/ssr/layout-runtime")).PAGE_UP_EVENT,
+    };
   } finally {
     dom.cleanup();
   }
@@ -700,6 +703,58 @@ describe("Filesv2 progressive navigation", () => {
     apiRequests[before + 2]!.resolve(Response.json(directory));
     await flush();
     expect(apiRequests).toHaveLength(before + 3);
+  });
+
+  test("the way up moves between folders in place, so uploads and the editor guard keep working", async () => {
+    const dom = createDomTestHarness();
+    const source = "/app/filesv2?base=home&path=Documents%2FReports";
+    dom.window.history.replaceState(null, "", source);
+    const base = {
+      id: "home",
+      name: "Home",
+      area: "cloud" as const,
+      kind: "users" as const,
+      status: "existing" as const,
+      reason: null,
+      indexEnabled: false,
+      versioningEnabled: false,
+    };
+    const bases = { items: [base], issues: [], editor: null };
+    const directory = (path: string) => ({ base, path, items: [], next: null });
+    const { Workspace, PAGE_UP_EVENT } = modules!;
+    const dispose = render(
+      () =>
+        createComponent(Workspace, {
+          initial: { ...initial, source, bases, selectedId: base.id, directory: directory("Documents/Reports") },
+          cloudUrl: "https://cloud.test",
+        }),
+      dom.root,
+    );
+    cleanup = () => {
+      dispose();
+      dom.cleanup();
+    };
+    // Every read answers with its own folder, as the server would.
+    const serve = async () => {
+      for (let round = 0; round < 5; round++) {
+        await flush();
+        for (const request of apiRequests.splice(0)) {
+          const path = (request.input as { query?: { path?: string } } | undefined)?.query?.path ?? "";
+          request.resolve(Response.json(request.kind === "bases" ? bases : directory(path)));
+        }
+      }
+    };
+    await serve();
+    const up = (href: string) => {
+      const event = new dom.window.CustomEvent(PAGE_UP_EVENT, { cancelable: true, detail: { href } });
+      dom.window.dispatchEvent(event);
+      return event;
+    };
+    // Another app's page is no folder: Cloud loads it.
+    expect(up("/app/mail").defaultPrevented).toBe(false);
+    expect(up("/app/filesv2?base=home&path=Documents").defaultPrevented).toBe(true);
+    await serve();
+    expect(dom.window.location.search).toBe("?base=home&path=Documents");
   });
 
   test("expired listing cursors restart once with the exact global query and visible feedback", async () => {

@@ -3,10 +3,11 @@ import { CODE_RUNTIME_TOOL_NAMES, type CodeToolFailure, parseAiSse } from "@k2b/
 import type { CloudCliContext } from "@k2b/cloud/cli";
 import type { CapabilityDecision, CodeApproval } from "../artifacts/runtime/capabilities";
 import { printCapabilityTable } from "./capability-table";
+import { createCloudLinkRewriter } from "./cloud-links";
 import { cliCodeHost, closeCliCodeHost } from "./code-host";
 import { printDeliveredBlock } from "./delivered-blocks";
 import { AI_API, jsonRequest } from "./shared";
-import { terminalSafeText } from "./terminal";
+import { terminalSafeModelText, terminalSafeText } from "./terminal";
 
 export type AssistantTurnStreamResult = {
   conversationId: string;
@@ -24,6 +25,7 @@ export type AssistantTurnOutput = {
   blocks: PrintedBlock[];
   ids: Map<string, PrintedBlock>;
   closed: boolean;
+  links?: ReturnType<typeof createCloudLinkRewriter>;
   toolStatuses: Map<string, Extract<AiTurnBlock, { kind: "tool" }>["status"]>;
   renderedTables: Set<string>;
   namedFiles: Set<string>;
@@ -88,6 +90,15 @@ export const streamAssistantTurn = async (input: {
   const output = input.output ?? createAssistantTurnOutput();
   const { blocks: printedBlocks, ids, toolStatuses, renderedTables, namedFiles } = output;
   const blocks = new Map<string, AiTurnBlock>();
+  const writeText = (text: string) => {
+    output.links ??= createCloudLinkRewriter(ctx.options.server);
+    const rewritten = output.links.push(text);
+    if (rewritten) ctx.write(terminalSafeModelText(rewritten));
+  };
+  const flushLinks = () => {
+    const held = output.links?.flush();
+    if (held) ctx.write(terminalSafeModelText(held));
+  };
   const emitTable = (callId: string, result: unknown) => {
     if (ctx.options.output !== "text" || renderedTables.has(callId)) return;
     if (printCapabilityTable(ctx, result)) renderedTables.add(callId);
@@ -109,7 +120,7 @@ export const streamAssistantTurn = async (input: {
     printedBlocks.push(block);
     if (id !== undefined) ids.set(id, block);
     emittedText += separator + text;
-    if (ctx.options.output === "text") ctx.write(separator + text);
+    if (ctx.options.output === "text") writeText(separator + text);
     if (id !== undefined && jsonlDeltas) emitJsonLine({ type: "text_delta", blockId: id, delta: text });
   };
   const extend = (block: PrintedBlock, text: string, jsonlDeltas = true) => {
@@ -119,7 +130,7 @@ export const streamAssistantTurn = async (input: {
     const suffix = current.slice(previous.length);
     block.text = text;
     emittedText += suffix;
-    if (ctx.options.output === "text") ctx.write(suffix);
+    if (ctx.options.output === "text") writeText(suffix);
     if (block.id !== undefined && jsonlDeltas) emitJsonLine({ type: "text_delta", blockId: block.id, delta: suffix });
   };
   const emitLiveText = (id: string, text: string) => {
@@ -163,6 +174,7 @@ export const streamAssistantTurn = async (input: {
   const reconcileBlocks = (baseline: AiTurnBlock[]) =>
     reconcile(baseline.filter((block) => block.kind === "text").filter((block) => block.text.trim()));
   const finish = (result: AssistantTurnStreamResult): AssistantTurnStreamResult => {
+    flushLinks();
     for (const stored of result.messages) {
       if (stored.message.role !== "tool_result") continue;
       emitTable(stored.message.callId, stored.message.result);
@@ -176,19 +188,25 @@ export const streamAssistantTurn = async (input: {
       assistantTextParts(result.messages).map((text) => ({ text })),
       false,
     );
-    if (ctx.options.output === "text" && (result.text || emittedText)) {
-      ctx.write("\n");
-      output.closed = true;
+    if (ctx.options.output === "text") {
+      const tail = output.links?.flush() ?? "";
+      if (tail) ctx.write(terminalSafeModelText(tail));
+      if (result.text || emittedText || tail) {
+        ctx.write("\n");
+        output.closed = true;
+      }
     }
     return result;
   };
 
   const handleToolBlock = async (block: Extract<AiTurnBlock, { kind: "tool" }>): Promise<AssistantTurnStreamResult | null> => {
+    const changed = toolStatuses.get(block.callId) !== block.status;
+    if (changed && ctx.options.output === "text") flushLinks();
     if (block.status === "completed") {
       emitTable(block.callId, block.result);
       emitDelivered(block);
     }
-    if (toolStatuses.get(block.callId) !== block.status) {
+    if (changed) {
       toolStatuses.set(block.callId, block.status);
       emitJsonLine({ type: "tool", callId: block.callId, name: block.name, status: block.status });
       if (ctx.options.output === "text") {

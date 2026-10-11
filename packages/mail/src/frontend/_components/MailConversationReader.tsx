@@ -58,6 +58,7 @@ import { storeMailDraftSeed } from "./mail-draft-seed-store";
 import { createRetryToasts } from "./mail-feedback";
 import { messageDeliveryAllowsResponses } from "./mail-message-presentation";
 import { buildMailListHref, mailRouteUrl } from "./mail-navigation";
+import { mailSenderIdentityStatusMessages, senderUnavailableDetail } from "./mail-sender-identity-status";
 import type { MailReadingFormat } from "./mail-user-preferences";
 import { captureMailWorkspaceRefreshError } from "./mail-workspace-refresh";
 
@@ -88,6 +89,8 @@ export default function MailConversationReader(props: {
   /** False for a person who sees only the conversations assigned to them: no merging or splitting. */
   mailboxWide: boolean;
   identities: SenderIdentity[];
+  /** Opens the mailbox's sender settings for a person who can administer it. */
+  onOpenDeliverySettings: () => void;
   selectionKey: string | null;
   selectedConversationId: string | null;
   selectedMessageId: string | null;
@@ -443,12 +446,21 @@ export default function MailConversationReader(props: {
     onError: (error) => prompts.error(error.message, { title: t().startMessageFailed }),
   });
 
+  /** Names why no verified sender can send, and lets a mailbox admin open the setting that fixes it. */
+  const explainSenderUnavailable = async () => {
+    const status = mailSenderIdentityStatusMessages.resolve([locale()]).t;
+    const detail = senderUnavailableDetail(props.identities, locale());
+    if (!props.canAdmin) return void (await prompts.error(`${detail} ${status.askAdmin}`, { title: status.cannotSend }));
+    const open = await prompts.confirm(detail, { title: status.cannotSend, confirmText: status.openSenderSettings });
+    if (open) props.onOpenDeliverySettings();
+  };
+
   const chooseReplyIdentity = async (lookup: DraftLookup): Promise<string | null> => {
     const identities = props.identities.filter((identity) => identity.status === "verified");
     const derived = deriveReplyIdentityId(lookup.request.message, identities);
     if (derived) return derived;
     if (identities.length === 0) {
-      await prompts.error(t().verifiedSenderRequired);
+      await explainSenderUnavailable();
       return null;
     }
     const selected = await prompts.dialog<string | null>(
@@ -545,7 +557,7 @@ export default function MailConversationReader(props: {
     const selectionKey = props.selectionKey;
     const identities = props.identities.filter((identity) => identity.status === "verified");
     const defaultIdentity = identities.find((identity) => identity.isDefault) ?? identities[0];
-    if (!defaultIdentity) return prompts.error(t().verifiedSenderReuseRequired);
+    if (!defaultIdentity) return explainSenderUnavailable();
     const choice = await prompts.dialog<Omit<DeriveDraftFromMessageInput, "idempotencyKey">>(
       (close) => {
         const [senderIdentityId, setSenderIdentityId] = createSignal(defaultIdentity.id);

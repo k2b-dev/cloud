@@ -83,6 +83,19 @@ afterAll(async () => {
 
 const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
 const frames = (page: Page) => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+/**
+ * Waits until no transition runs in a subtree. Reduced motion shortens every transition to 0.01 ms rather than removing
+ * it, so a typography switch still runs as one, and WebKit can hold its start or a mixed value for more than two frames.
+ */
+const settled = (page: Page, selector: string) =>
+  page.waitForFunction(
+    (query) =>
+      document
+        .querySelector(query)!
+        .getAnimations({ subtree: true })
+        .every((animation) => animation.playState !== "running"),
+    selector,
+  );
 const emit = async (page: Page, event: AiWireEvent) => {
   await page.evaluate((value) => (window as unknown as { emit: (event: AiWireEvent) => void }).emit(value), event);
   await frames(page);
@@ -814,6 +827,230 @@ for (const view of [
       }
     }, 60_000);
 
+for (const view of [
+  { name: "desktop", width: 1280, height: 800, touch: false },
+  { name: "phone", width: 390, height: 844, touch: true },
+] as const)
+  test(`a live text turns quiet in place when a step starts after it, and nothing moves (${view.name})`, async () => {
+    const context = await browser.newContext({
+      viewport: { width: view.width, height: view.height },
+      isMobile: view.touch,
+      hasTouch: view.touch,
+      reducedMotion: "reduce",
+    });
+    try {
+      const page = await context.newPage();
+      await page.clock.setFixedTime(new Date("2026-10-07T10:00:00Z"));
+      await page.goto(`http://127.0.0.1:${server.port}/?lang=en&theme=light`);
+      const presentation = {
+        kind: "capability" as const,
+        appId: "mail",
+        appName: "Mail",
+        appIcon: "ti ti-mail",
+        title: "Send email",
+        capabilityKind: "action" as const,
+      };
+      const send = { id: "tool-send", kind: "tool" as const, callId: "send", name: "mail__action__send", args: {}, presentation };
+      const write = { id: "tool-write", kind: "tool" as const, callId: "write", name: "write_file", args: { path: "/app.js" } };
+      const status = "Good news: the chart API also returns the totals per month. Now I write the app files for the dashboard.";
+      const place = ".ai-turn__text";
+      const receipt = ".ai-turn__action .ai-turn-receipt";
+      const style = async (selector: string) => {
+        await settled(page, selector);
+        return page.$eval(`${selector} .assistant-markdown-block`, (node) => {
+          const computed = getComputedStyle(node);
+          return { color: computed.color, fontSize: computed.fontSize, lineHeight: computed.lineHeight };
+        });
+      };
+      await emit(page, { ...base, seq: 1, type: "turn_started", modelProfileId: "m", providerModel: "m", blocks: [] });
+      await emit(page, {
+        ...base,
+        seq: 2,
+        type: "block_delta",
+        blockId: "text-1",
+        blockKind: "text",
+        delta: "I check the chart API first.",
+      });
+      await emit(page, {
+        ...base,
+        seq: 3,
+        type: "block_set",
+        block: { ...send, status: "completed", approved: true, result: { summary: "Email to Jana Berger sent" } },
+      });
+      await emit(page, { ...base, seq: 4, type: "block_delta", blockId: "text-2", blockKind: "text", delta: status });
+
+      // Trailing, the text may be the answer: answer typography, above the receipt in place 4.
+      const answerStyle = await style(place);
+      expect(await page.locator(place).innerText()).toBe(status);
+      expect(answerStyle.fontSize).toBe("14px");
+      const before = {
+        work: await viewportBox(page, ".ai-turn-work"),
+        text: await viewportBox(page, place),
+        receipt: await viewportBox(page, receipt),
+      };
+
+      // A step starts after it: the same element reads as a status, together with the work line's new step, and keeps its
+      // place, so the receipt below does not move.
+      await emit(page, { ...base, seq: 5, type: "block_set", block: { ...write, status: "running" } });
+      expect(await page.locator(".ai-turn-work > summary").innerText()).toContain("app.js");
+      expect(await page.locator(place).innerText()).toBe(status);
+      expect(await page.locator(`${place}.ai-turn__text--status`).count()).toBe(1);
+      const statusStyle = await style(place);
+      expect(statusStyle.fontSize).toBe("12px");
+      expect(statusStyle.color).not.toBe(answerStyle.color);
+      expect(await viewportBox(page, ".ai-turn-work")).toEqual(before.work);
+      expect(await viewportBox(page, place)).toEqual(before.text);
+      expect(await viewportBox(page, receipt)).toEqual(before.receipt);
+      expect((await layout(page)).overflowX).toBeLessThanOrEqual(0);
+
+      // It looks like the intermediate texts in the expanded work, but keeps the answer's line height, so a status and the
+      // text that replaces it line up instead of jumping by a few pixels at every switch.
+      await page.locator(".ai-turn-work > summary").click();
+      await page.locator(".ai-turn-steps__text").first().waitFor();
+      const stepStyle = await style(".ai-turn-steps__text");
+      expect([stepStyle.color, stepStyle.fontSize]).toEqual([statusStyle.color, statusStyle.fontSize]);
+      // 12 px at line height 1.55; WebKit reports it as 18.599998px.
+      expect(Number.parseFloat(stepStyle.lineHeight)).toBeCloseTo(18.6, 2);
+      expect(statusStyle.lineHeight).toBe(answerStyle.lineHeight);
+    } finally {
+      await context.close();
+    }
+  }, 30_000);
+
+for (const view of [
+  { name: "desktop", width: 1280, height: 800, touch: false },
+  { name: "phone", width: 390, height: 844, touch: true },
+] as const)
+  test(`a status that first shows quietly after a reload keeps its height as the answer, so the turn's end moves nothing (${view.name})`, async () => {
+    const context = await browser.newContext({
+      viewport: { width: view.width, height: view.height },
+      isMobile: view.touch,
+      hasTouch: view.touch,
+      reducedMotion: "reduce",
+    });
+    try {
+      const page = await context.newPage();
+      await page.clock.setFixedTime(new Date("2026-10-07T10:00:00Z"));
+      await page.goto(`http://127.0.0.1:${server.port}/?lang=en&theme=light`);
+      const presentation = {
+        kind: "capability" as const,
+        appId: "mail",
+        appName: "Mail",
+        appIcon: "ti ti-mail",
+        title: "Send email",
+        capabilityKind: "action" as const,
+      };
+      const read = { id: "tool-read", kind: "tool" as const, callId: "read", name: "read_file", args: { path: "/chart.json" } };
+      const send = { id: "tool-send", kind: "tool" as const, callId: "send", name: "mail__action__send", args: {}, presentation };
+      const text = [
+        "## Monthly totals",
+        "The chart API returns the totals per month, so the dashboard needs no second request for the summary row.",
+        "- January and February are complete.\n- March still misses the last week.",
+        "I send the summary to Jana Berger now, so she has it before the planning meeting.",
+      ].join("\n\n");
+      const sent = "Email to Jana Berger sent";
+      const place = ".ai-turn__text";
+      const receipt = ".ai-turn__action .ai-turn-receipt";
+      // The chat opens while the action after the text runs: the text never showed as the answer before it is quiet.
+      await emit(page, {
+        ...base,
+        seq: 1,
+        type: "turn_started",
+        modelProfileId: "m",
+        providerModel: "m",
+        blocks: [
+          { ...read, status: "completed", result: "{}" },
+          { id: "text-1", kind: "text", text },
+          { ...send, status: "running", approved: true },
+        ],
+      });
+      const request = storedMessage(10, "turn", { role: "user", content: [{ type: "text", text: "Summarize the chart for Jana" }] });
+      await emit(page, { ...base, seq: 2, type: "message_saved", message: request });
+      expect(await page.locator(`${place}.ai-turn__text--status`).count()).toBe(1);
+      await settled(page, place);
+      const before = { text: await viewportBox(page, place), receipt: await viewportBox(page, receipt) };
+
+      // The turn ends without another text: the status becomes the final message in answer typography within the height
+      // its place already kept, so the receipt below stays where it is.
+      await emit(page, {
+        ...base,
+        seq: 3,
+        type: "block_set",
+        block: { ...send, status: "completed", approved: true, result: { summary: sent } },
+      });
+      expect(await viewportBox(page, receipt)).toEqual(before.receipt);
+      await emit(page, {
+        ...base,
+        seq: 4,
+        type: "turn_finished",
+        status: "completed",
+        error: null,
+        messages: [
+          request,
+          storedMessage(11, "turn", {
+            role: "assistant",
+            content: [{ type: "tool_call", id: "read", name: "read_file", args: read.args }],
+          }),
+          storedMessage(12, "turn", { role: "tool_result", callId: "read", name: "read_file", result: "{}", isError: false }),
+          storedMessage(
+            13,
+            "turn",
+            {
+              role: "assistant",
+              content: [
+                { type: "text", text },
+                { type: "tool_call", id: "send", name: "mail__action__send", args: {} },
+              ],
+            },
+            { meta: { toolPresentations: { send: presentation } } },
+          ),
+          storedMessage(
+            14,
+            "turn",
+            { role: "tool_result", callId: "send", name: "mail__action__send", result: { summary: sent }, isError: false },
+            { meta: { toolOutcomes: { send: "approved" } }, loopDoneReason: "stop", createdAt: "2026-10-07T10:00:00.000Z" },
+          ),
+        ],
+      });
+      expect(await page.locator(`${place}.ai-turn__text--status`).count()).toBe(0);
+      await settled(page, place);
+      expect(await page.$eval(`${place} .assistant-markdown-block`, (node) => getComputedStyle(node).fontSize)).toBe("14px");
+      expect(await page.locator(receipt).innerText()).toBe(sent);
+      expect(await viewportBox(page, place)).toEqual(before.text);
+      expect(await viewportBox(page, receipt)).toEqual(before.receipt);
+    } finally {
+      await context.close();
+    }
+  }, 30_000);
+
+test("a streaming answer without steps reserves no height, so it reflows live when its Markdown settles", async () => {
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    isMobile: true,
+    hasTouch: true,
+    reducedMotion: "reduce",
+  });
+  try {
+    const page = await context.newPage();
+    await page.goto(`http://127.0.0.1:${server.port}/?lang=en&theme=light`);
+    await emit(page, { ...base, seq: 1, type: "turn_started", modelProfileId: "m", providerModel: "m", blocks: [] });
+    const words = "The quarterly numbers grew in every region, and the strongest month was March.".split(" ");
+    for (const [index, word] of words.entries()) {
+      await emit(page, {
+        ...base,
+        seq: index + 2,
+        type: "block_delta",
+        blockId: "text-1",
+        blockKind: "text",
+        delta: `${index ? " " : ""}${word}`,
+      });
+      expect(await page.locator(".ai-turn__text").evaluate((node: HTMLElement) => node.style.minHeight)).toBe("");
+    }
+  } finally {
+    await context.close();
+  }
+}, 30_000);
+
 for (const width of [390, 320])
   test(`a long action title shortens the approve button on a phone instead of pushing it out of the card (${width} px)`, async () => {
     const context = await browser.newContext({ viewport: { width, height: 844 }, isMobile: true, hasTouch: true, reducedMotion: "reduce" });
@@ -1048,3 +1285,196 @@ for (const view of [
       await context.close();
     }
   }, 60_000);
+
+for (const view of [
+  { name: "desktop", width: 1280, height: 800, touch: false },
+  { name: "phone", width: 390, height: 844, touch: true },
+] as const)
+  for (const theme of ["light", "dark"] as const)
+    test(`the expanded work sits flush with the work line and folds one file read in parts into one row (${view.name}, ${theme})`, async () => {
+      const context = await browser.newContext({
+        viewport: { width: view.width, height: view.height },
+        isMobile: view.touch,
+        hasTouch: view.touch,
+        reducedMotion: "reduce",
+      });
+      try {
+        const page = await context.newPage();
+        await page.clock.setFixedTime(new Date("2026-10-07T10:00:00Z"));
+        const de = theme === "dark";
+        await page.goto(`http://127.0.0.1:${server.port}/?lang=${de ? "de" : "en"}&theme=${theme}`);
+        // A Project file path, long enough that a phone cuts it short.
+        const path = "/project/reports/2026/quarterly-products-export-final.csv";
+        const calls = [
+          { callId: "tools", name: "load_tools", args: { names: ["files"] }, result: { loaded: ["files"] } },
+          { callId: "skill", name: "load_skill", args: { name: "reports" }, result: { loaded: true } },
+          ...[0, 16_384, 32_768].map((offset, part) => ({
+            callId: `read-${part}`,
+            name: "read_file",
+            args: { path, offset, length: 16_384 },
+            result: { content: "id,name", nextOffset: offset + 16_384 },
+          })),
+          { callId: "search", name: "web_search", args: { query: "product price index" }, result: { results: [] } },
+          { callId: "write", name: "write_file", args: { path: "/report.md", content: "# Report" }, result: { path: "/report.md" } },
+        ];
+        const request = storedMessage(10, "turn", { role: "user", content: [{ type: "text", text: "Summarize the products" }] });
+        await emit(page, { ...base, seq: 1, type: "turn_started", modelProfileId: "m", providerModel: "m", blocks: [] });
+        await emit(page, { ...base, seq: 2, type: "message_saved", message: request });
+        let seq = 3;
+        for (const [index, call] of calls.entries()) {
+          if (index === 2)
+            await emit(page, {
+              ...base,
+              seq: seq++,
+              type: "block_delta",
+              blockId: "text-1",
+              blockKind: "text",
+              delta: "I read the file in parts.",
+            });
+          await emit(page, {
+            ...base,
+            seq: seq++,
+            type: "block_set",
+            block: {
+              id: `tool-${call.callId}`,
+              kind: "tool",
+              callId: call.callId,
+              name: call.name,
+              args: call.args,
+              status: "completed",
+              result: call.result,
+            },
+          });
+        }
+        await emit(page, { ...base, seq: seq++, type: "block_delta", blockId: "text-2", blockKind: "text", delta: "Here is the report." });
+
+        /** Left edges of the work line and of every row and paragraph it shows when open, relative to the timeline content. */
+        const rows = () =>
+          page.evaluate(() => {
+            const content = document.querySelector(".k2b-chat-timeline__content")!.getBoundingClientRect();
+            const viewport = document.querySelector(".k2b-chat-timeline__viewport")!;
+            const left = (node: Element) => Math.round(node.getBoundingClientRect().left - content.left);
+            const work = document.querySelector(".ai-turn-work")!;
+            return {
+              overflowX: viewport.scrollWidth - viewport.clientWidth,
+              line: left(work.querySelector(":scope > summary .k2b-chat-activity__leading")!),
+              rows: Array.from(work.querySelectorAll(".ai-turn-steps > :is(details, div)")).map((node) => {
+                const leading = node.querySelector(
+                  ":scope > summary .k2b-chat-activity__leading, :scope > .k2b-chat-activity__row .k2b-chat-activity__leading",
+                );
+                const box = node.getBoundingClientRect();
+                return {
+                  text: (node.querySelector(":scope > summary") ?? node).textContent?.trim() ?? "",
+                  left: leading ? left(leading) : left(node),
+                  box: [box.left - content.left, box.top - content.top, box.width, box.height].map(Math.round),
+                };
+              }),
+            };
+          });
+        const workBefore = await viewportBox(page, ".ai-turn-work > summary");
+        await page.locator(".ai-turn-work > summary").click();
+        await frames(page);
+        expect(await viewportBox(page, ".ai-turn-work > summary")).toEqual(workBefore);
+        const live = await rows();
+        // Housekeeping, the intermediate text, the three reads as one row, the search, and the write.
+        expect(live.rows).toHaveLength(5);
+        expect(live.rows.map(({ left }) => left)).toEqual(live.rows.map(() => live.line));
+        expect(live.overflowX).toBeLessThanOrEqual(0);
+        const repeat = live.rows[2]!.text;
+        expect(repeat).toContain(de ? "Datei lesen" : "Read file");
+        expect(repeat).toContain(de ? "3-mal" : "3 times");
+        // The counts of the folded rows are never cut, also where a phone cuts the target short.
+        const counts = await page.evaluate(() =>
+          Array.from(document.querySelectorAll(".ai-turn-work .ai-turn-steps > details > summary")).flatMap((summary) => {
+            const count = summary.querySelector(".k2b-chat-activity__trailing");
+            const target = summary.querySelector(".k2b-chat-activity__copy small");
+            if (!count) return [];
+            const row = summary.getBoundingClientRect();
+            const box = count.getBoundingClientRect();
+            return [
+              {
+                text: count.textContent?.trim() ?? "",
+                inside: box.left >= row.left && box.right <= row.right,
+                cut: count.scrollWidth > count.clientWidth,
+                targetCut: target ? target.scrollWidth > target.clientWidth : false,
+              },
+            ];
+          }),
+        );
+        expect(counts.map(({ text, inside, cut }) => ({ text, inside, cut }))).toEqual([
+          { text: de ? "2 Schritte" : "2 steps", inside: true, cut: false },
+          { text: de ? "3-mal" : "3 times", inside: true, cut: false },
+        ]);
+        if (view.name === "phone") expect(counts[1]!.targetCut).toBe(true);
+        await page.screenshot({ path: `/tmp/ai-work-flush-${view.name}-${theme}.png` });
+
+        // The row opens in place to its three reads at the same left edge; nothing above it moves, and closing it restores the list.
+        const repeatSummary = page.locator(".ai-turn-work .ai-turn-steps > details").nth(1).locator(":scope > summary");
+        await repeatSummary.click();
+        await frames(page);
+        const opened = await rows();
+        // The row grows downwards only: its own top, left, and width and every row above it stay.
+        const top = (rows: typeof live.rows) => rows.slice(0, 3).map(({ box }) => box.slice(0, 3));
+        expect(top(opened.rows)).toEqual(top(live.rows));
+        const parts = opened.rows.filter(({ text }) => text.includes(path)).slice(1);
+        expect(parts).toHaveLength(3);
+        expect(parts.map(({ left }) => left)).toEqual([live.line, live.line, live.line]);
+        expect(opened.overflowX).toBeLessThanOrEqual(0);
+        await page.screenshot({ path: `/tmp/ai-work-repeat-open-${view.name}-${theme}.png` });
+        await repeatSummary.click();
+        await frames(page);
+        expect((await rows()).rows).toEqual(live.rows);
+
+        // The turn ends: its history shows the same rows in the same places.
+        await emit(page, {
+          ...base,
+          seq: seq++,
+          type: "turn_finished",
+          status: "completed",
+          error: null,
+          messages: [
+            request,
+            storedMessage(11, "turn", {
+              role: "assistant",
+              content: calls.slice(0, 2).map((call) => ({ type: "tool_call" as const, id: call.callId, name: call.name, args: call.args })),
+            }),
+            ...calls.slice(0, 2).map((call, index) =>
+              storedMessage(12 + index, "turn", {
+                role: "tool_result",
+                callId: call.callId,
+                name: call.name,
+                result: call.result,
+                isError: false,
+              }),
+            ),
+            storedMessage(14, "turn", {
+              role: "assistant",
+              content: [
+                { type: "text", text: "I read the file in parts." },
+                ...calls.slice(2).map((call) => ({ type: "tool_call" as const, id: call.callId, name: call.name, args: call.args })),
+              ],
+            }),
+            ...calls.slice(2).map((call, index) =>
+              storedMessage(15 + index, "turn", {
+                role: "tool_result",
+                callId: call.callId,
+                name: call.name,
+                result: call.result,
+                isError: false,
+              }),
+            ),
+            storedMessage(
+              20,
+              "turn",
+              { role: "assistant", content: [{ type: "text", text: "Here is the report." }] },
+              { loopDoneReason: "stop", createdAt: "2026-10-07T10:00:00.000Z" },
+            ),
+          ],
+        });
+        await frames(page);
+        const history = await rows();
+        expect(history.rows.map(({ text, left }) => ({ text, left }))).toEqual(live.rows.map(({ text, left }) => ({ text, left })));
+      } finally {
+        await context.close();
+      }
+    }, 60_000);

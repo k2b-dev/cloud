@@ -26,6 +26,10 @@ export async function sourceDiagnostics(source: ArtifactSource) {
   return diagnostics;
 }
 
+export function lineCount(content: string) {
+  return content === "" ? 0 : content.split("\n").length - (content.endsWith("\n") ? 1 : 0);
+}
+
 export function sourceManifest(bundle: ArtifactBundle) {
   return {
     kind: bundle.kind,
@@ -37,6 +41,6 @@ export function sourceManifest(bundle: ArtifactBundle) {
     description: bundle.description,
     permission: bundle.permission,
     entry: bundle.source.entry,
-    files: bundle.source.files.map((file) => ({ path: file.path, length: file.content.length })),
+    files: bundle.source.files.map((file) => ({ path: file.path, lines: lineCount(file.content), length: file.content.length })),
   };
 }

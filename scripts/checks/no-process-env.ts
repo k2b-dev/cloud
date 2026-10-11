@@ -27,6 +27,8 @@ const allowed: RegExp[] = [
   // Whole-environment passthrough to child processes and OS conventions (PATH, EDITOR, VISUAL).
   /^packages\/assistant\/src\/cli\/local-bash\.ts$/,
   /^packages\/assistant\/src\/cli\/text-editor\.ts$/,
+  // Locates cld's own configuration (XDG_CONFIG_HOME, CLD_CONFIG) so local file access can refuse it.
+  /^packages\/assistant\/src\/cli\/local-paths\.ts$/,
   /^packages\/cloud\/src\/_internal\/postgres-application-name\.ts$/,
   /^packages\/cloud\/src\/_internal\/canvas-worker\.ts$/,
   // Evaluation harness invoked by scripts, not application runtime.

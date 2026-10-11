@@ -91,6 +91,48 @@ test("registered modified shortcuts run before conflicting editor bindings", () 
   }
 });
 
+test("a widget that moves with arrow keys keeps them; elsewhere an arrow shortcut runs", () => {
+  const dom = createDomTestHarness();
+  const calls: string[] = [];
+  const moves: string[] = [];
+  const stops = [
+    registerContextAwareCommand(command("page-up", "alt+arrowup")),
+    attachCommandShortcuts((command) => calls.push(command.id)),
+  ];
+  // The test DOM reports AltGraph for every Alt key; a browser does not.
+  const altUp = (target: EventTarget) => {
+    const event = new KeyboardEvent("keydown", { key: "ArrowUp", altKey: true, bubbles: true, cancelable: true });
+    Object.defineProperty(event, "getModifierState", { value: () => false });
+    target.dispatchEvent(event);
+    return event;
+  };
+  try {
+    // A movable tree item reorders on Alt+↑ and claims the key; the page-up command waits for it.
+    const item = document.createElement("div");
+    item.setAttribute("role", "treeitem");
+    item.addEventListener("keydown", (event) => {
+      if (!event.altKey || event.key !== "ArrowUp") return;
+      event.preventDefault();
+      moves.push("up");
+    });
+    const link = document.createElement("a");
+    link.href = "/elsewhere";
+    dom.root.append(item, link);
+    const kept = altUp(item);
+    expect(moves).toEqual(["up"]);
+    expect(calls).toEqual([]);
+    expect(kept.defaultPrevented).toBe(true);
+    // An element that does nothing with the key leaves it to the shortcut.
+    expect(altUp(link).defaultPrevented).toBe(true);
+    expect(altUp(window).defaultPrevented).toBe(true);
+    expect(calls).toEqual(["page-up", "page-up"]);
+    expect(shortcutLabel("alt+arrowup")).toBe("Alt+↑");
+  } finally {
+    stops.reverse().forEach((stop) => stop());
+    dom.cleanup();
+  }
+});
+
 test("AltGraph text input never becomes a Ctrl+Alt command", () => {
   const dom = createDomTestHarness();
   let calls = 0;

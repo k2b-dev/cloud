@@ -2,6 +2,7 @@ import { expect, spyOn, test } from "bun:test";
 import { type ComponentProps, createComponent, createSignal } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
+import type { SenderIdentity } from "../../contracts";
 import type { MessageDetail } from "../../service/messages";
 import type MailConversationReaderComponent from "./MailConversationReader";
 
@@ -64,6 +65,7 @@ const readerProps: ComponentProps<typeof MailConversationReaderComponent> = {
   canAdmin: false,
   mailboxWide: true,
   identities: [],
+  onOpenDeliverySettings: () => undefined,
   selectionKey: "Conv01",
   selectedConversationId: "Conv01",
   selectedMessageId: null,
@@ -373,6 +375,96 @@ test.skipIf(isServer)("the reader follows every switch to another conversation a
     }
   } finally {
     dispose();
+    dom.cleanup();
+  }
+});
+
+test.skipIf(isServer)("a reply without a verified sender names the reason and leads admins to the sender settings", async () => {
+  const dom = createDomTestHarness();
+  const { collectContextAwareCommands } = await import("@k2b/cloud/browser/testing");
+  const { prompts } = await import("@k2b/ui");
+  const confirm = spyOn(prompts, "confirm").mockResolvedValue(true);
+  const error = spyOn(prompts, "error").mockResolvedValue(undefined);
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = Object.assign(async () => Response.json([]), { preconnect: originalFetch.preconnect });
+  const identity: SenderIdentity = {
+    id: "Send01",
+    mailboxId: "Box001",
+    label: "Support",
+    displayName: "Support",
+    fromAddress: "support@example.com",
+    replyTo: null,
+    defaultCc: [],
+    defaultBcc: [],
+    defaultFormat: "markdown",
+    defaultPriority: "normal",
+    defaultDeliveryReceipt: false,
+    defaultReadReceipt: false,
+    vcard: null,
+    envelopeSender: null,
+    defaultSignatureTemplateId: null,
+    transport: {
+      mode: "mailbox",
+      host: null,
+      port: null,
+      tlsMode: null,
+      username: null,
+      secret: { kind: null, isSet: false },
+      revision: 0,
+      status: "active",
+      capabilities: { dsn: false, size: false, maxMessageBytes: null },
+      lastVerifiedAt: null,
+      lastError: null,
+    },
+    authenticationPolicy: { automation: "mailbox" },
+    sentFolderId: null,
+    draftsFolderId: null,
+    isDefault: true,
+    status: "unverified",
+    statusReason: "sent_folder_missing",
+    createdAt: now,
+    updatedAt: now,
+  };
+  const { MailConversationReader } = modules!;
+  let opened = 0;
+  const [canAdmin, setCanAdmin] = createSignal(true);
+  const dispose = render(
+    () =>
+      createComponent(MailConversationReader, {
+        ...readerProps,
+        identities: [identity],
+        get canAdmin() {
+          return canAdmin();
+        },
+        onOpenDeliverySettings: () => {
+          opened += 1;
+        },
+      }),
+    dom.root,
+  );
+  try {
+    const reply = async () => {
+      const action = collectContextAwareCommands().find((command) => command.id.endsWith(".reply"))?.action;
+      if (typeof action !== "function") throw new Error("The reader registers no Reply command");
+      await action();
+    };
+    await waitFor(() => collectContextAwareCommands().some((command) => command.id.endsWith(".reply")));
+    await reply();
+    await waitFor(() => opened === 1);
+    expect(String(confirm.mock.calls[0]?.[0])).toContain("Support: Sent folder missing.");
+    expect(confirm.mock.calls[0]?.[1]).toMatchObject({ title: "This mailbox cannot send yet", confirmText: "Open sender settings" });
+
+    setCanAdmin(false);
+    await reply();
+    await waitFor(() => error.mock.calls.length === 1);
+    expect(String(error.mock.calls[0]?.[0])).toContain("Sent folder missing");
+    expect(String(error.mock.calls[0]?.[0])).toContain("Manage access");
+    expect(opened).toBe(1);
+  } finally {
+    dispose();
+    globalThis.fetch = originalFetch;
+    confirm.mockRestore();
+    error.mockRestore();
     dom.cleanup();
   }
 });

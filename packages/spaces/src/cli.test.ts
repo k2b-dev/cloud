@@ -267,7 +267,7 @@ const cld = async (args: string[], stdin?: string) => {
     cmd: [process.execPath, "run", "../cloud-cli/src/index.ts", "--server", base, "--token", "test-token", ...args],
     cwd: new URL("..", import.meta.url).pathname,
     // Date-only input is read in the CLI user's timezone; pin one with a DST change.
-    env: { ...process.env, XDG_CONFIG_HOME: cliHome, TZ: "Europe/Berlin" },
+    env: { ...process.env, CLD_LOCALE: "en", XDG_CONFIG_HOME: cliHome, TZ: "Europe/Berlin" },
     stdin: stdin === undefined ? "ignore" : new Blob([stdin]),
     stdout: "pipe",
     stderr: "pipe",

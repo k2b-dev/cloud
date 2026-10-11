@@ -246,6 +246,7 @@ export default function GridsRoute(props: { state: PublicOkWorkspaceState; cloud
       </AppWorkspace.Main>
       <AppWorkspace.Detail
         id="workflow-run"
+        onClose={() => updateWorkflowRun(null)}
         open={Boolean(selectedWorkflowRunId())}
         width="lg"
         viewTransitionName="grids-workflow-run-detail"

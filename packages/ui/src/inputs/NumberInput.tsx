@@ -4,6 +4,7 @@ import { decimalSeparator, useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
 import type { ValueFieldProps } from "./field-contract";
 import { resolveMaybeAccessor } from "./field-contract";
+import { useInputMessages } from "./input-messages";
 import type { ChoiceAppearance } from "./Select";
 
 export type NumberInputProps = Omit<
@@ -95,6 +96,7 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
   const error = () => resolveMaybeAccessor(local.error);
   const contextLocale = useLocale();
   const messages = useUiMessages();
+  const inputMessages = useInputMessages();
   const separator = createMemo(() => decimalSeparator(local.locale ?? contextLocale()));
   // The visible text keeps the canonical number, only the decimal separator
   // follows the effective locale; grouping is never rendered while editing.
@@ -260,7 +262,7 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
           <button
             type="button"
             class="k2b-number-input__step"
-            aria-label={local.decreaseLabel ?? messages().decreaseValue}
+            aria-label={local.decreaseLabel ?? inputMessages().decreaseValue}
             disabled={rest.disabled || local.disableSteppers || (value() !== null && value() !== undefined && value()! <= min())}
             onClick={() => stepBy(-1)}
           >
@@ -307,7 +309,7 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
           <button
             type="button"
             class="k2b-number-input__step"
-            aria-label={local.increaseLabel ?? messages().increaseValue}
+            aria-label={local.increaseLabel ?? inputMessages().increaseValue}
             disabled={rest.disabled || local.disableSteppers || (value() !== null && value() !== undefined && value()! >= max())}
             onClick={() => stepBy(1)}
           >

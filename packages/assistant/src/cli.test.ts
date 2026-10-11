@@ -9,7 +9,7 @@ import { CheckReport } from "./artifacts/html/check-contracts";
 import assistantCli from "./cli";
 import { printCapabilityTable } from "./cli/capability-table";
 import * as codeHost from "./cli/code-host";
-import { collectSurveyResult, collectTextEditorResult, runInteractiveAssistant } from "./cli/interactive";
+import { collectCapabilityApproval, collectSurveyResult, collectTextEditorResult, runInteractiveAssistant } from "./cli/interactive";
 import { streamAssistantTurn } from "./cli/stream";
 
 const json = (value: unknown, status = 200) => Response.json(value, { status });
@@ -786,6 +786,10 @@ describe("assistant CLI", () => {
     const lines = ["hello", "again", "/exit"];
     const prompts: string[] = [];
     const reader = {
+      readMessage: async (prompt: string) => {
+        prompts.push(prompt);
+        return lines.shift() ?? null;
+      },
       read: async (prompt: string) => {
         prompts.push(prompt);
         return lines.shift() ?? null;
@@ -853,6 +857,7 @@ describe("assistant CLI", () => {
     });
     const lines = ["/model", "2", "Summarize this", "Continue", "/exit"];
     const reader = {
+      readMessage: async () => lines.shift() ?? null,
       read: async () => lines.shift() ?? null,
       close: () => undefined,
       onInterrupt: () => () => undefined,
@@ -860,8 +865,8 @@ describe("assistant CLI", () => {
 
     expect(await runInteractiveAssistant(ctx, {}, reader)).toBe(0);
     expect(turnBodies).toEqual([
-      { draftRevision: 1, modelProfileId: "model-2", clientToolIds: [...CODE_RUNTIME_TOOL_NAMES] },
-      { draftRevision: 2, modelProfileId: "model-2", clientToolIds: [...CODE_RUNTIME_TOOL_NAMES] },
+      { draftRevision: 1, modelProfileId: "model-2", clientToolIds: ["local_bash", ...CODE_RUNTIME_TOOL_NAMES] },
+      { draftRevision: 2, modelProfileId: "model-2", clientToolIds: ["local_bash", ...CODE_RUNTIME_TOOL_NAMES] },
     ]);
     const output = stdout.join("");
     expect(output).toContain("Assistant · Model One · /help for commands");
@@ -961,8 +966,8 @@ describe("assistant CLI", () => {
             turnId: "turn-1",
             callId: "call-1",
             name: "mail.createDraft",
-            args: { subject: "Hello" },
-            message: "Create draft",
+            args: { subject: "Hello\u009b2J\u202e", body: "x".repeat(20_000) },
+            message: "Create draft\u001b]8;;https://evil.example\u0007",
             allowAlways: true,
           },
         ]);
@@ -973,19 +978,65 @@ describe("assistant CLI", () => {
       }
       return json({ message: "Not found" }, 404);
     });
-    const lines = ["hello", "a", "/exit"];
+    const lines = ["hello", "maybe", "2", "/exit"];
+    const prompts: string[] = [];
     const reader = {
-      read: async () => lines.shift() ?? null,
+      readMessage: async (prompt: string) => {
+        prompts.push(prompt);
+        return lines.shift() ?? null;
+      },
+      read: async (prompt: string) => {
+        prompts.push(prompt);
+        return lines.shift() ?? null;
+      },
       close: () => undefined,
       onInterrupt: () => () => undefined,
     };
 
     expect(await runInteractiveAssistant(ctx, {}, reader)).toBe(0);
     expect(approvalBody).toEqual({ type: "approval_response", approved: true, remember: "always" });
-    expect(stdout.join("")).toContain("Done\n");
+    expect(prompts.filter((prompt) => prompt.startsWith("Choice"))).toEqual(["Choice [Enter to reject]: ", "Choice [Enter to reject]: "]);
+    const printed = stdout.join("");
+    expect(printed).toContain("Approval required: Create draft\\u001b]8;;https://evil.example\\u0007");
+    expect(printed).toContain('"subject": "Hello\\u009b2J\\u202e"');
+    expect(printed).toContain("[Input preview is incomplete; deny if you need to see the rest.]");
+    expect(printed).not.toContain("x".repeat(16_000));
+    expect(printed.slice(printed.indexOf("Approval required"), printed.indexOf("Done"))).not.toMatch(/[\u0007\u001b\u009b\u202e]/u);
+    expect(printed).toContain("Done\n");
   });
 
-  test("offers local Bash only for opted-in turns and persists a denial", async () => {
+  test("asks code host approvals in the same shape and never approves a stray answer", async () => {
+    const { ctx } = createContext([], async () => json({ message: "Not found" }, 404));
+    const answers = ["always", "x", ""];
+    const prompts: string[] = [];
+    const reader = {
+      read: async (prompt: string) => {
+        prompts.push(prompt);
+        return answers.shift() ?? null;
+      },
+      close: () => undefined,
+      onInterrupt: () => () => undefined,
+    };
+    const request = {
+      type: "http" as const,
+      name: "http.fetch:https://api.example",
+      id: crypto.randomUUID(),
+      url: "https://api.example/orders",
+      method: "POST",
+      bodyBytes: 2,
+      headers: {},
+      bodyPreview: "{}",
+      bodyTruncated: false,
+    };
+
+    expect(await collectCapabilityApproval(ctx, reader, request)).toEqual({ approved: false });
+    expect(prompts).toEqual(["Send request? [y/N]: ", "Send request? [y/N]: ", "Send request? [y/N]: "]);
+
+    answers.push("y");
+    expect(await collectCapabilityApproval(ctx, reader, request)).toEqual({ approved: true });
+  });
+
+  test("offers local Bash in ask mode and persists a denial", async () => {
     let streamIndex = 0;
     let turnBody: Record<string, unknown> | undefined;
     let actionBody: unknown;
@@ -1062,6 +1113,7 @@ describe("assistant CLI", () => {
     });
     const lines = ["inspect this checkout", "", "/exit"];
     const reader = {
+      readMessage: async () => lines.shift() ?? null,
       read: async () => lines.shift() ?? null,
       close: () => undefined,
       onInterrupt: () => () => undefined,
@@ -1163,6 +1215,7 @@ describe("assistant CLI", () => {
     });
     const lines = ["n", "/exit"];
     const reader = {
+      readMessage: async () => lines.shift() ?? null,
       read: async () => lines.shift() ?? null,
       close: () => undefined,
       onInterrupt: () => () => undefined,
@@ -1270,6 +1323,53 @@ describe("assistant CLI", () => {
     );
 
     expect(result).toBeNull();
+  });
+
+  test("shows survey and text editor wording escaped before asking", async () => {
+    const { ctx, stdout } = createContext([], async () => json({}));
+    const answers = ["1", "", "y"];
+    const prompts: string[] = [];
+    const reader = {
+      read: async (prompt: string) => {
+        prompts.push(prompt);
+        return answers.shift() ?? null;
+      },
+      close: () => undefined,
+      onInterrupt: () => () => undefined,
+    };
+
+    await collectSurveyResult(ctx, reader, {
+      title: "Review\u001b[8m",
+      description: "Pick one\u202e",
+      questions: [
+        {
+          type: "single",
+          id: "choice",
+          label: "Choice\u009b2J",
+          required: true,
+          options: [
+            { value: "a", label: "A\u0007" },
+            { value: "b", label: "B" },
+          ],
+        },
+        { type: "text", id: "note", label: "Note\u001b[8m" },
+      ],
+    });
+    await collectTextEditorResult(ctx, reader, { title: "Mail\u001b[8m", description: "Check\u202e", content: "Hello" });
+
+    const shown = stdout.join("") + prompts.join("");
+    expect(shown).not.toMatch(/[\u0007\u001b\u009b\u202e]/u);
+    for (const escaped of [
+      "Review\\u001b[8m",
+      "Pick one\\u202e",
+      "Choice\\u009b2J",
+      "1. A\\u0007",
+      "Note\\u001b[8m: ",
+      "Mail\\u001b[8m",
+      "Check\\u202e",
+    ]) {
+      expect(shown).toContain(escaped);
+    }
   });
 
   test("creates a Project", async () => {

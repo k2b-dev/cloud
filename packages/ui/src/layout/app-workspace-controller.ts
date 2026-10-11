@@ -1,5 +1,6 @@
 import { suppressTextSelection } from "../internal/text-selection";
 import {
+  APP_WORKSPACE_DETAIL_DEFAULT,
   APP_WORKSPACE_DETAIL_MAX,
   APP_WORKSPACE_DETAIL_MIN,
   APP_WORKSPACE_DRAWER_MAX,
@@ -53,6 +54,20 @@ const LAYOUT_REGION_SELECTOR = [
   ".k2b-app-workspace__drawer",
   HANDLE_SELECTOR,
 ].join(",");
+const TOGGLE_SELECTOR = "[data-app-workspace-sidebar-toggle]";
+/** The width range in which the sidebar is an overlay; it matches the compact media query in the stylesheet. */
+const COMPACT_QUERY = "(min-width: 48rem) and (max-width: 63.999rem)";
+const FOCUSABLE_SELECTOR = [
+  "a[href]",
+  "button:not([disabled])",
+  "input:not([disabled]):not([type='hidden'])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  "[tabindex]:not([tabindex='-1'])",
+].join(",");
+/** Text entry, menus, dialogs, and open popups keep their own keys. */
+const KEY_OWNER_SELECTOR =
+  "input, textarea, select, [contenteditable]:not([contenteditable='false']), [role='textbox'], [role='combobox'], [role='searchbox'], [role='spinbutton'], [role='menu'], [role='listbox'], [role='dialog'], dialog, [aria-haspopup]:not([aria-haspopup='false'])[aria-expanded='true']";
 const LABEL_SELECTOR = ".k2b-app-workspace__sidebar-item-label[data-marquee='true']";
 const LABEL_TEXT_SELECTOR = ".k2b-app-workspace__sidebar-item-label-text";
 const ITEM_SELECTOR = ".k2b-app-workspace__sidebar-item";
@@ -78,6 +93,10 @@ const sidebarHideable = (root: HTMLElement) => sidebarElement(root)?.dataset.wor
  * stays application state, so the controller only requests the change.
  */
 export const APP_WORKSPACE_SIDEBAR_HIDE_EVENT = "k2b-app-workspace-sidebar-hide";
+/** Asks the owning `AppWorkspace.Detail` to close; its `onClose` decides. */
+export const APP_WORKSPACE_DETAIL_CLOSE_EVENT = "k2b-app-workspace-detail-close";
+/** Asks the owning `AppWorkspace.Detail` for the previous or next item, as `detail.direction` of `-1` or `1`. */
+export const APP_WORKSPACE_DETAIL_STEP_EVENT = "k2b-app-workspace-detail-step";
 const previewSidebarHidden = (root: HTMLElement, hidden: boolean) => {
   const sidebar = sidebarElement(root);
   if (!sidebar) return;
@@ -113,9 +132,10 @@ const sizeLimits = (root: HTMLElement, handle: HTMLElement, kind: AppWorkspaceRe
         (pane) => pane.closest(".k2b-app-workspace__main") === main && !pane.classList.contains("is-primary") && isVisible(pane),
       )
     : [];
-  const details = rootElements(root, ".k2b-app-workspace__detail").filter(isVisible);
-  const sidebarWidth = elementSize(sidebarElement(root), "sidebar");
-  const otherDetailWidth = details.reduce((total, detail) => total + (detail === controlled ? 0 : elementSize(detail, "detail")), 0);
+  // A detail shares the content area with the main region, as the stylesheet
+  // fits it. The area already leaves out a sidebar in its own column; as the
+  // compact overlay or stacked above the content, the sidebar takes none of it.
+  const content = kind === "detail" ? controlled?.closest<HTMLElement>(".k2b-app-workspace__content") : null;
   const defaultMin =
     kind === "sidebar"
       ? APP_WORKSPACE_SIDEBAR_MIN
@@ -139,15 +159,13 @@ const sizeLimits = (root: HTMLElement, handle: HTMLElement, kind: AppWorkspaceRe
         ? root.getBoundingClientRect().height
         : kind === "pane" && main
           ? main.getBoundingClientRect().width
-          : root.getBoundingClientRect().width,
+          : (content ?? root).getBoundingClientRect().width,
     reservedSize:
-      kind === "sidebar"
-        ? otherDetailWidth
+      kind === "detail"
+        ? 16
         : kind === "pane"
           ? panes.reduce((total, pane) => total + (pane === controlled ? 0 : elementSize(pane, "pane")), 0)
-          : kind === "detail"
-            ? sidebarWidth + otherDetailWidth
-            : 0,
+          : 0,
     min: numberData(handle, "workspaceMinSize", defaultMin),
     max: numberData(handle, "workspaceMaxSize", defaultMax),
     sidebarCollapsible: kind === "sidebar" && sidebarCollapsible(root),
@@ -275,8 +293,692 @@ const measureLabel = (label: HTMLElement) => {
   else delete label.dataset.overflow;
 };
 
+type OverlaySidebar = { root: HTMLElement; sidebar: HTMLElement; toggle: HTMLElement };
+/** An open overlay remembers the regions it made inert, so it leaves the application's own `inert` alone. */
+type OpenOverlay = OverlaySidebar & { inerted: HTMLElement[] };
+
+/**
+ * The elements Tab stops at, in order. A roving tab index, as in a tree, keeps
+ * links and buttons at `tabindex="-1"`; they take focus but are no stops.
+ */
+const tabStopsIn = (container: HTMLElement) =>
+  Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
+    (element) =>
+      element.tabIndex >= 0 &&
+      element.getClientRects().length > 0 &&
+      !element.closest("[inert]") &&
+      getComputedStyle(element).visibility !== "hidden",
+  );
+/** Several controllers can see one click on a nested workspace's button; the innermost one, which sees it first, owns it. */
+const claimedToggleClicks = new WeakSet<Event>();
+const claimedDetailGestures = new WeakSet<Event>();
+
+/**
+ * The compact overlay: from 48 to 64 rem the sidebar opens over the work area
+ * from the button in the workspace's head. While it is open the rest of
+ * the workspace is inert, Tab stays in the sidebar, and Escape, the scrim,
+ * choosing an item, hiding the sidebar, or leaving the width range close it
+ * again. The state is one attribute on the workspace root, so server-rendered
+ * and hydrated workspaces behave the same.
+ */
+const overlayTarget = (toggle: HTMLElement): OverlaySidebar | null => {
+  const root = workspaceRoot(toggle);
+  // The button belongs to its workspace's own sidebar. A sidebar rendered apart
+  // from the head, for example in an island, can carry another id than the one
+  // the head named, so the button learns the real one here.
+  const sidebar = root ? sidebarElement(root) : null;
+  if (!root || !sidebar || sidebar.hidden || sidebar.dataset.mobile === "stacked") return null;
+  if (sidebar.id) toggle.setAttribute("aria-controls", sidebar.id);
+  return { root, sidebar, toggle };
+};
+const overlayRegions = (root: HTMLElement, sidebar: HTMLElement) =>
+  Array.from(root.children)
+    .flatMap((child) =>
+      child instanceof HTMLElement && (child.localName === "solid-island" || child.localName === "solid-client")
+        ? Array.from(child.children)
+        : [child],
+    )
+    .filter((child): child is HTMLElement => child instanceof HTMLElement && child !== sidebar && !child.contains(sidebar));
+
 export const installAppWorkspaceController = (options: AppWorkspaceControllerOptions = {}): (() => void) => {
   const eventRoot = options.root ?? document;
+  // A document has no owner document; an element root listens on its own.
+  const ownerDocument = eventRoot.ownerDocument ?? document;
+  const ownerWindow = ownerDocument.defaultView ?? window;
+  let overlay: OpenOverlay | null = null;
+  const compact = typeof window.matchMedia === "function" ? window.matchMedia(COMPACT_QUERY) : null;
+  // A server-rendered head names the sidebar before the sidebar renders; the button learns its real id now.
+  for (const toggle of eventRoot.querySelectorAll<HTMLElement>(TOGGLE_SELECTOR)) overlayTarget(toggle);
+  const openOverlay = (target: OverlaySidebar) => {
+    if (overlay) closeOverlay("none");
+    const inerted = overlayRegions(target.root, target.sidebar).filter((region) => !region.hasAttribute("inert"));
+    overlay = { ...target, inerted };
+    target.root.dataset.sidebarOverlay = "open";
+    target.toggle.setAttribute("aria-expanded", "true");
+    inerted.forEach((region) => region.setAttribute("inert", ""));
+    // Focus starts on the current destination, so the reader knows where they
+    // are: on its own tab stop, or on the tree item around it.
+    const current = target.sidebar.querySelector<HTMLElement>("[aria-current='page'], .is-active");
+    const stops = tabStopsIn(target.sidebar);
+    const first =
+      (current && (stops.find((element) => current.contains(element)) ?? stops.findLast((element) => element.contains(current)))) ??
+      stops[0];
+    if (first) first.focus();
+    else {
+      target.sidebar.tabIndex = -1;
+      target.sidebar.focus();
+    }
+  };
+  /**
+   * `"button"` returns focus to the button. `"kept"` leaves it where it moved,
+   * for example into a dialog an item opened, and only rescues focus that the
+   * closing sidebar would hide. `"none"` moves nothing, for cleanup.
+   */
+  const closeOverlay = (focus: "button" | "kept" | "none") => {
+    const closing = overlay;
+    if (!closing) return;
+    overlay = null;
+    delete closing.root.dataset.sidebarOverlay;
+    closing.toggle.setAttribute("aria-expanded", "false");
+    closing.inerted.forEach((region) => region.removeAttribute("inert"));
+    if (focus === "none") return;
+    const active = document.activeElement;
+    if (focus === "button" || !active || active === document.body || closing.sidebar.contains(active)) closing.toggle.focus();
+  };
+  const onClick = (event: MouseEvent) => {
+    const target = eventElement(event);
+    const toggle = target?.closest<HTMLElement>(TOGGLE_SELECTOR);
+    if (toggle) {
+      const next = overlayTarget(toggle);
+      if (!next || claimedToggleClicks.has(event)) return;
+      claimedToggleClicks.add(event);
+      if (overlay?.sidebar === next.sidebar) closeOverlay("button");
+      else if (compact?.matches) openOverlay(next);
+      return;
+    }
+    if (!overlay || !target) return;
+    // The scrim is the workspace root's own pseudo-element.
+    if (target === overlay.root) {
+      closeOverlay("button");
+      return;
+    }
+    // Choosing a destination closes the overlay: a link, or the button of a
+    // row. A tree folder that only expands, a control that opens a popup or
+    // expands something, such as a row's preview, and an item's own actions
+    // keep it open.
+    const control = target.closest<HTMLElement>("a[href], button");
+    if (!control || !overlay.sidebar.contains(control)) return;
+    if (
+      target.closest("[data-k2b-nav-tree-toggle]") ||
+      control.closest(
+        "[data-k2b-nav-tree-disclosure], .k2b-app-workspace__sidebar-item-action, .k2b-app-workspace__sidebar-item-actions",
+      ) ||
+      control.matches("[aria-haspopup], [aria-expanded]")
+    )
+      return;
+    if (control.matches("a[href]") || control.closest(ITEM_SELECTOR)) closeOverlay("kept");
+  };
+  const onOverlayKeyDown = (event: KeyboardEvent) => {
+    if (!overlay || event.defaultPrevented) return;
+    const target = eventElement(event);
+    if (!target) return;
+    // Escape also closes it when a click left focus on nothing, so on the body.
+    if (event.key === "Escape" && (overlay.sidebar.contains(target) || target === ownerDocument.body)) {
+      event.preventDefault();
+      closeOverlay("button");
+      return;
+    }
+    if (event.key !== "Tab" || !overlay.sidebar.contains(target)) return;
+    const stops = tabStopsIn(overlay.sidebar);
+    const first = stops[0];
+    const last = stops.at(-1);
+    if (!first || !last) {
+      event.preventDefault();
+      return;
+    }
+    if (event.shiftKey && (document.activeElement === first || document.activeElement === overlay.sidebar)) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+  const onCompactChange = () => {
+    if (!compact?.matches) closeOverlay("none");
+  };
+  const phone = typeof window.matchMedia === "function" ? window.matchMedia("(max-width: 47.999rem)") : null;
+  const wide = typeof window.matchMedia === "function" ? window.matchMedia("(min-width: 48rem)") : null;
+  const touchDrawer = typeof window.matchMedia === "function" ? window.matchMedia(`${COMPACT_QUERY} and (pointer: coarse)`) : null;
+  const reducedMotion = typeof window.matchMedia === "function" ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
+  const detailSelector = ".k2b-app-workspace__detail";
+  const grabberSelector = ".k2b-app-workspace__detail-grabber";
+  const trailSelector = ".k2b-detail-trail";
+  type RememberedItem = {
+    item: HTMLElement;
+    interaction: "pointer" | "keyboard";
+    scroller: HTMLElement | null;
+    scrollTop: number;
+    top: number;
+    fresh: boolean;
+  };
+  const detailHidden = new WeakMap<HTMLElement, boolean>();
+  const remembered = new WeakMap<HTMLElement, RememberedItem>();
+  const lastFocus = new WeakMap<HTMLElement, Element>();
+  const trailPadding = new WeakMap<HTMLElement, number>();
+  const heldTrails = new Set<HTMLElement>();
+  const touchedDetails = new Set<HTMLElement>();
+  // Only a panel blocks scrolling for its touch gestures; a document-wide
+  // non-passive listener would make every scroll on the page wait for script.
+  const touchMoveAsides = new Set<HTMLElement>();
+  const titleTabIndices = new Set<HTMLElement>();
+  const motionFrames = new Map<HTMLElement, number>();
+  const motionRoots = new Set<HTMLElement>();
+  const revealFrames = new Map<HTMLElement, number>();
+  const openDetails = (root: HTMLElement) => rootElements(root, detailSelector).filter((aside) => !aside.hidden);
+  const closeControl = (aside: HTMLElement) =>
+    Array.from(aside.querySelectorAll<HTMLElement>("[data-workspace-detail-close]")).find(
+      (control) => control.closest(detailSelector) === aside,
+    );
+  const closable = (aside: HTMLElement) => aside.hasAttribute("data-workspace-detail-closable") || Boolean(closeControl(aside));
+  const requestClose = (aside: HTMLElement) => {
+    if (aside.hasAttribute("data-workspace-detail-closable")) aside.dispatchEvent(new CustomEvent(APP_WORKSPACE_DETAIL_CLOSE_EVENT));
+    else closeControl(aside)?.click();
+  };
+  const verticalScroller = (target: Element, boundary: HTMLElement) => {
+    for (let element: Element | null = target; element && boundary.contains(element); element = element.parentElement) {
+      if (
+        element instanceof HTMLElement &&
+        /^(auto|scroll)$/.test(getComputedStyle(element).overflowY) &&
+        element.scrollHeight > element.clientHeight
+      )
+        return element;
+      if (element === boundary) break;
+    }
+    return null;
+  };
+  const refreshItem = (snapshot: RememberedItem) => {
+    snapshot.top = snapshot.item.getBoundingClientRect().top;
+    snapshot.scrollTop = snapshot.scroller?.scrollTop ?? 0;
+  };
+  const rememberInteraction = (event: Event) => {
+    const target = eventElement(event);
+    const root = target?.closest<HTMLElement>(ROOT_SELECTOR);
+    if (!target || !root || !observedRoots.has(root)) return;
+    const previous = remembered.get(root);
+    if (previous && openDetails(root).length) refreshItem(previous);
+    const main = mainElement(root);
+    const item = target.closest<HTMLElement>(FOCUSABLE_SELECTOR);
+    if (!main || !item || !main.contains(item) || item.closest(ROOT_SELECTOR) !== root) return;
+    if (event instanceof KeyboardEvent && event.key !== "Enter" && event.key !== " ") return;
+    const snapshot: RememberedItem = {
+      item,
+      interaction: event instanceof KeyboardEvent ? "keyboard" : "pointer",
+      scroller: verticalScroller(item, main),
+      scrollTop: 0,
+      top: 0,
+      fresh: true,
+    };
+    refreshItem(snapshot);
+    remembered.set(root, snapshot);
+    // Enter in an editor or a field types; only an item that chooses something moves on to its title.
+    if (event instanceof KeyboardEvent && !target.closest(KEY_OWNER_SELECTOR)) {
+      const aside = openDetails(root).find(isVisible);
+      if (aside) requestTitle(aside, true);
+    }
+  };
+  const onDetailFocusIn = (event: Event) => {
+    const target = eventElement(event);
+    const root = target?.closest<HTMLElement>(ROOT_SELECTOR);
+    if (!target || !root || !observedRoots.has(root)) return;
+    lastFocus.set(root, target);
+    const previous = remembered.get(root);
+    // Pointer focus follows pointerdown; keeping that snapshot also keeps the
+    // interaction that opened the panel rather than treating focus as a new one.
+    if (previous?.item.contains(target)) {
+      const main = mainElement(root);
+      if (target !== previous.item && target instanceof HTMLElement && main) {
+        previous.item = target;
+        previous.scroller = verticalScroller(target, main);
+        refreshItem(previous);
+      }
+      return;
+    }
+    rememberInteraction(event);
+  };
+  const titleIn = (aside: HTMLElement) => aside.querySelector<HTMLElement>("h1, h2, h3, [role='heading']");
+  let focusingTitle: HTMLElement | null = null;
+  const focusTitle = (aside: HTMLElement) => {
+    const title = titleIn(aside);
+    if (!title) return false;
+    if (!title.matches(FOCUSABLE_SELECTOR) && !title.hasAttribute("tabindex")) {
+      title.tabIndex = -1;
+      titleTabIndices.add(title);
+    }
+    focusingTitle = title;
+    try {
+      title.focus({ preventScroll: true });
+    } finally {
+      focusingTitle = null;
+    }
+    return true;
+  };
+  let pendingTitle: { aside: HTMLElement; observer: MutationObserver } | null = null;
+  const cancelTitle = () => {
+    pendingTitle?.observer.disconnect();
+    pendingTitle = null;
+  };
+  const cancelTitleOnInteraction = (event: Event) => {
+    if (event.type !== "focusin" || event.target !== focusingTitle) cancelTitle();
+  };
+  const requestTitle = (aside: HTMLElement, waitForChange = false) => {
+    cancelTitle();
+    if (aside.hidden || !aside.isConnected) return;
+    if (!waitForChange && focusTitle(aside)) return;
+    const previousTitle = titleIn(aside);
+    const previousText = previousTitle?.textContent;
+    // Loading fallbacks and selection changes can produce their heading after
+    // the opening interaction. A later user action always takes precedence.
+    const observer = new MutationObserver(() => {
+      if (aside.hidden || !aside.isConnected) {
+        cancelTitle();
+        return;
+      }
+      const title = titleIn(aside);
+      if (!title || (waitForChange && title === previousTitle && title.textContent === previousText)) return;
+      cancelTitle();
+      focusTitle(aside);
+    });
+    pendingTitle = { aside, observer };
+    observer.observe(aside, { childList: true, subtree: true, characterData: true });
+    // An element-scoped controller cannot see its own root leave the document.
+    observer.observe(ownerDocument, { childList: true, subtree: true });
+  };
+  const setDetent = (aside: HTMLElement, full: boolean) => {
+    touchedDetails.add(aside);
+    if (full) aside.dataset.workspaceDetailSheet = "full";
+    else delete aside.dataset.workspaceDetailSheet;
+    aside.querySelector(grabberSelector)?.setAttribute("aria-pressed", String(full));
+  };
+  const clearDrag = (aside: HTMLElement) => {
+    aside.style.removeProperty("--k2b-workspace-detail-sheet-height");
+    aside.style.removeProperty("transform");
+    delete aside.dataset.workspaceDetailDragging;
+  };
+  const trailsIn = (root: HTMLElement) => {
+    const main = mainElement(root);
+    return main ? rootElements(root, trailSelector).filter((trail) => main.contains(trail)) : [];
+  };
+  const clearHolds = (root: HTMLElement) => {
+    for (const trail of trailsIn(root)) {
+      trail.style.removeProperty("--k2b-detail-trail-hold");
+      heldTrails.delete(trail);
+    }
+  };
+  const rememberTrailPadding = (root: HTMLElement) => {
+    if (!openDetails(root).some(isVisible)) return;
+    for (const trail of trailsIn(root)) trailPadding.set(trail, Number.parseFloat(getComputedStyle(trail).paddingInlineEnd) || 0);
+  };
+  const shrinkHold = (trail: HTMLElement) => {
+    const hold = Number.parseFloat(trail.style.getPropertyValue("--k2b-detail-trail-hold")) || 0;
+    const visible =
+      trail.scrollWidth <= trail.clientWidth || trail.scrollLeft < 1
+        ? 0
+        : Math.min(hold, Math.max(0, Math.ceil(trail.scrollLeft + trail.clientWidth - (trail.scrollWidth - hold))));
+    if (visible > 0) trail.style.setProperty("--k2b-detail-trail-hold", `${visible}px`);
+    else {
+      trail.style.removeProperty("--k2b-detail-trail-hold");
+      heldTrails.delete(trail);
+    }
+  };
+  const onTrailScroll = (event: Event) => {
+    const target = eventElement(event);
+    if (target instanceof HTMLElement && heldTrails.has(target)) shrinkHold(target);
+  };
+  const anchorItem = (root: HTMLElement, aside: HTMLElement, snapshot: RememberedItem | undefined) => {
+    if (!wide?.matches || (touchDrawer?.matches && closable(aside)) || trailsIn(root).length || !snapshot?.item.isConnected) return;
+    if (!mainElement(root)?.contains(snapshot.item) || snapshot.item.closest(ROOT_SELECTOR) !== root) return;
+    const scroller = snapshot.scroller;
+    if (scroller?.isConnected && scroller.scrollTop === snapshot.scrollTop)
+      scroller.scrollTop += snapshot.item.getBoundingClientRect().top - snapshot.top;
+  };
+  const detailTransition = (aside: HTMLElement, wasHidden: boolean) => {
+    const root = aside.closest<HTMLElement>(ROOT_SELECTOR);
+    detailHidden.set(aside, Boolean(aside.hidden));
+    if (!root || !observedRoots.has(root) || Boolean(aside.hidden) === wasHidden) return;
+    touchedDetails.add(aside);
+    const pending = revealFrames.get(root);
+    if (pending !== undefined) cancelAnimationFrame(pending);
+    revealFrames.delete(root);
+    const snapshot = remembered.get(root);
+    const followedInteraction = snapshot?.fresh ?? false;
+    if (snapshot) snapshot.fresh = false;
+    if (aside.hidden) {
+      if (pendingTitle?.aside === aside) cancelTitle();
+      const trails = trailsIn(root);
+      // Restore all padding before the first layout read, or the browser can
+      // clamp scrollLeft as soon as the open panel's trailing space disappears.
+      for (const trail of trails) {
+        const hold = trailPadding.get(trail) ?? 0;
+        if (hold > 0) {
+          trail.style.setProperty("--k2b-detail-trail-hold", `${hold}px`);
+          heldTrails.add(trail);
+        }
+      }
+      trails.forEach(shrinkHold);
+      anchorItem(root, aside, snapshot);
+      const focused = ownerDocument.activeElement;
+      if (
+        snapshot?.item.isConnected &&
+        (aside.contains(lastFocus.get(root) ?? null) || aside.contains(focused) || focused === ownerDocument.body)
+      )
+        snapshot.item.focus({ preventScroll: true });
+      clearDrag(aside);
+      if (detailDrag?.aside === aside) finishDetailDrag(true);
+      return;
+    }
+    clearHolds(root);
+    anchorItem(root, aside, snapshot);
+    if (phone?.matches) setDetent(aside, false);
+    rememberTrailPadding(root);
+    if (followedInteraction && snapshot) {
+      revealFrames.set(
+        root,
+        requestAnimationFrame(() => {
+          revealFrames.delete(root);
+          if (
+            !aside.hidden &&
+            aside.isConnected &&
+            snapshot.item.isConnected &&
+            mainElement(root)?.contains(snapshot.item) &&
+            snapshot.item.closest(ROOT_SELECTOR) === root
+          ) {
+            const behavior = reducedMotion?.matches ? "auto" : "smooth";
+            if (phone?.matches) {
+              const sheetTop = ownerWindow.innerHeight - aside.offsetHeight;
+              const overlap = snapshot.item.getBoundingClientRect().bottom - sheetTop + 8;
+              const main = mainElement(root);
+              if (overlap > 0 && main)
+                (verticalScroller(snapshot.item, main) ?? ownerDocument.scrollingElement)?.scrollBy({ top: overlap, behavior });
+            } else snapshot.item.scrollIntoView({ block: "nearest", inline: "nearest", behavior });
+          }
+        }),
+      );
+      if (snapshot.interaction === "keyboard" || phone?.matches) requestTitle(aside);
+    }
+  };
+  const onDetailKeyDown = (event: KeyboardEvent) => {
+    if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
+    const target = eventElement(event);
+    if (!target || target.closest(KEY_OWNER_SELECTOR)) return;
+    if (ownerDocument.querySelector("dialog[open], [aria-modal='true']")) return;
+    try {
+      if (ownerDocument.querySelector(":popover-open")) return;
+    } catch {
+      // Older engines have no popover selector; the other popup guards still apply.
+    }
+    const root = target.closest<HTMLElement>(ROOT_SELECTOR);
+    let aside = target.closest<HTMLElement>(detailSelector);
+    if (aside?.hidden || (aside && (!eventRoot.contains(aside) || aside.closest(ROOT_SELECTOR) !== root))) aside = null;
+    if (!aside && root && observedRoots.has(root) && mainElement(root)?.contains(target)) aside = openDetails(root)[0] ?? null;
+    if (!aside && target === ownerDocument.body) {
+      const open = allRoots().flatMap(openDetails);
+      if (open.length === 1) aside = open[0]!;
+    }
+    const owningRoot = aside?.closest<HTMLElement>(ROOT_SELECTOR);
+    if (!aside || !owningRoot) return;
+    if (event.key === "Escape" && closable(aside)) requestClose(aside);
+    else if ((event.key.toLowerCase() === "j" || event.key.toLowerCase() === "k") && aside.hasAttribute("data-workspace-detail-steppable"))
+      aside.dispatchEvent(
+        new CustomEvent(APP_WORKSPACE_DETAIL_STEP_EVENT, { detail: { direction: event.key.toLowerCase() === "j" ? 1 : -1 } }),
+      );
+    else if (event.key === "F6") {
+      if (aside.contains(target)) {
+        const item = remembered.get(owningRoot)?.item;
+        const main = mainElement(owningRoot);
+        (item?.isConnected ? item : main ? tabStopsIn(main)[0] : null)?.focus({ preventScroll: true });
+      } else focusTitle(aside);
+    } else return;
+    event.preventDefault();
+  };
+
+  type DetailDrag = {
+    aside: HTMLElement;
+    source: "pointer" | "sheet" | "drawer";
+    target: Element;
+    pointerId: number;
+    startX: number;
+    startY: number;
+    startHeight: number;
+    full: boolean;
+    dx: number;
+    dy: number;
+    time: number;
+    velocity: number;
+    moved: boolean;
+    releaseTextSelection?: () => void;
+  };
+  let detailDrag: DetailDrag | null = null;
+  let detailDragFrame: number | null = null;
+  let suppressedClick: HTMLElement | null = null;
+  let suppressedClickTimer: ReturnType<typeof setTimeout> | null = null;
+  const paintDetailDrag = () => {
+    detailDragFrame = null;
+    const drag = detailDrag;
+    if (!drag?.moved) return;
+    drag.aside.dataset.workspaceDetailDragging = "true";
+    touchedDetails.add(drag.aside);
+    if (drag.source === "drawer") drag.aside.style.transform = `translateX(${Math.max(0, drag.dx)}px)`;
+    else {
+      const height = ownerWindow.innerHeight;
+      drag.aside.style.setProperty(
+        "--k2b-workspace-detail-sheet-height",
+        `${clamp(drag.startHeight - drag.dy, 0, Math.max(0, height - 8))}px`,
+      );
+    }
+  };
+  const scheduleDetailDrag = () => {
+    if (detailDragFrame === null) detailDragFrame = requestAnimationFrame(paintDetailDrag);
+  };
+  const finishDetailDrag = (cancelled: boolean) => {
+    const drag = detailDrag;
+    if (!drag) return;
+    detailDrag = null;
+    if (detailDragFrame !== null) cancelAnimationFrame(detailDragFrame);
+    detailDragFrame = null;
+    drag.releaseTextSelection?.();
+    if (drag.source === "pointer") {
+      if (drag.target instanceof HTMLElement && drag.target.hasPointerCapture?.(drag.pointerId))
+        drag.target.releasePointerCapture(drag.pointerId);
+      if (drag.moved) {
+        suppressedClick = drag.aside;
+        if (suppressedClickTimer !== null) clearTimeout(suppressedClickTimer);
+        suppressedClickTimer = setTimeout(() => {
+          suppressedClick = null;
+          suppressedClickTimer = null;
+        }, 0);
+      }
+    }
+    clearDrag(drag.aside);
+    if (cancelled || !drag.moved) return;
+    if (drag.source === "drawer") {
+      if (drag.dx > 80 || (drag.dx > 30 && drag.velocity > 0.5)) requestClose(drag.aside);
+    } else if (drag.dy > 60) {
+      setDetent(drag.aside, false);
+      if (!drag.full && closable(drag.aside)) requestClose(drag.aside);
+    } else if (drag.dy < -60) setDetent(drag.aside, true);
+  };
+  const beginDetailDrag = (aside: HTMLElement, target: Element, source: DetailDrag["source"], x: number, y: number, pointerId: number) => {
+    detailDrag = {
+      aside,
+      target,
+      source,
+      pointerId,
+      startX: x,
+      startY: y,
+      startHeight: aside.getBoundingClientRect().height,
+      full: aside.dataset.workspaceDetailSheet === "full",
+      dx: 0,
+      dy: 0,
+      time: performance.now(),
+      velocity: 0,
+      moved: false,
+    };
+    return detailDrag;
+  };
+  const onSheetPointerDown = (event: Event) => {
+    if (!(event instanceof PointerEvent) || !phone?.matches || event.button !== 0 || !event.isPrimary || claimedDetailGestures.has(event))
+      return;
+    const target = eventElement(event);
+    const aside = target?.closest<HTMLElement>(detailSelector);
+    const root = aside?.closest<HTMLElement>(ROOT_SELECTOR);
+    if (!target || !aside || !root || aside.hidden || !observedRoots.has(root) || target.closest(ROOT_SELECTOR) !== root) return;
+    const grabber = target.closest<HTMLElement>(grabberSelector);
+    if (
+      !grabber &&
+      (!target.closest(".k2b-detail-panel__header") ||
+        target.closest("a, button, input, select, textarea, [role='button'], [contenteditable]:not([contenteditable='false'])"))
+    )
+      return;
+    claimedDetailGestures.add(event);
+    if (detailDrag) finishDetailDrag(true);
+    const drag = beginDetailDrag(aside, grabber ?? target, "pointer", event.clientX, event.clientY, event.pointerId);
+    drag.releaseTextSelection = suppressTextSelection(event.pointerId);
+    if (drag.target instanceof HTMLElement) drag.target.setPointerCapture?.(event.pointerId);
+    aside.dataset.workspaceDetailDragging = "true";
+    touchedDetails.add(aside);
+  };
+  const onSheetPointerMove = (event: PointerEvent) => {
+    const drag = detailDrag;
+    if (!drag || drag.source !== "pointer" || drag.pointerId !== event.pointerId) return;
+    drag.dy = event.clientY - drag.startY;
+    drag.moved ||= Math.abs(drag.dy) > 4;
+    if (drag.moved) scheduleDetailDrag();
+  };
+  const onSheetPointerEnd = (event: Event) => {
+    if (!(event instanceof PointerEvent)) return;
+    if (detailDrag?.source === "pointer" && detailDrag.pointerId === event.pointerId) finishDetailDrag(event.type !== "pointerup");
+  };
+  const onGrabberClick = (event: Event) => {
+    const target = eventElement(event);
+    const grabber = target?.closest(grabberSelector);
+    const aside = grabber?.closest<HTMLElement>(detailSelector);
+    if (!aside || aside.hidden || !phone?.matches || claimedToggleClicks.has(event)) return;
+    claimedToggleClicks.add(event);
+    if (suppressedClick === aside && event instanceof MouseEvent && event.detail !== 0) {
+      event.preventDefault();
+      suppressedClick = null;
+      return;
+    }
+    setDetent(aside, aside.dataset.workspaceDetailSheet !== "full");
+  };
+  const ownsTouchGesture = (target: Element, aside: HTMLElement, source: "sheet" | "drawer") => {
+    for (let element: Element | null = target; element && element !== aside; element = element.parentElement) {
+      if (
+        element.matches(
+          "input, textarea, select, [contenteditable]:not([contenteditable='false']), [role='slider'], [draggable='true'], canvas",
+        )
+      )
+        return true;
+      const action = getComputedStyle(element).getPropertyValue("touch-action");
+      const horizontal = /\bpan-(x|left|right)\b/.test(action);
+      const vertical = /\bpan-(y|up|down)\b/.test(action);
+      if (action.trim() === "none" || (source === "drawer" ? vertical && !horizontal : horizontal && !vertical)) return true;
+    }
+    return false;
+  };
+  const onDetailTouchStart = (event: Event) => {
+    if (!(event instanceof TouchEvent) || event.touches.length !== 1) {
+      if (detailDrag && detailDrag.source !== "pointer") finishDetailDrag(true);
+      return;
+    }
+    if (detailDrag || claimedDetailGestures.has(event)) return;
+    const target = eventElement(event);
+    const aside = target?.closest<HTMLElement>(detailSelector);
+    const touch = event.touches[0];
+    const root = aside?.closest<HTMLElement>(ROOT_SELECTOR);
+    if (!target || !aside || !root || aside.hidden || !touch || !observedRoots.has(root) || target.closest(ROOT_SELECTOR) !== root) return;
+    if (phone?.matches && (verticalScroller(target, aside) ?? aside).scrollTop <= 0) {
+      if (!ownsTouchGesture(target, aside, "sheet"))
+        beginDetailDrag(aside, target, "sheet", touch.clientX, touch.clientY, touch.identifier);
+    } else if (touchDrawer?.matches && closable(aside)) {
+      if (!ownsTouchGesture(target, aside, "drawer"))
+        beginDetailDrag(aside, target, "drawer", touch.clientX, touch.clientY, touch.identifier);
+    }
+    if (detailDrag) claimedDetailGestures.add(event);
+  };
+  const onDetailTouchMove = (event: Event) => {
+    const drag = detailDrag;
+    if (!(event instanceof TouchEvent) || !drag || drag.source === "pointer") return;
+    const touch = Array.from(event.touches).find((touch) => touch.identifier === drag.pointerId);
+    if (!touch || event.touches.length !== 1) {
+      finishDetailDrag(true);
+      return;
+    }
+    const dx = touch.clientX - drag.startX;
+    const dy = touch.clientY - drag.startY;
+    const now = performance.now();
+    drag.velocity = (dx - drag.dx) / Math.max(1, now - drag.time);
+    drag.time = now;
+    drag.dx = dx;
+    drag.dy = dy;
+    if (!drag.moved) {
+      if (drag.source === "sheet") {
+        if (dy < 0 || (verticalScroller(drag.target, drag.aside) ?? drag.aside).scrollTop > 0) {
+          finishDetailDrag(true);
+          return;
+        }
+        if (dy <= 4) return;
+      } else {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) <= 8) return;
+        if (dx <= Math.abs(dy)) {
+          finishDetailDrag(true);
+          return;
+        }
+        for (let element: Element | null = drag.target; element && drag.aside.contains(element); element = element.parentElement) {
+          if (
+            element instanceof HTMLElement &&
+            /^(auto|scroll)$/.test(getComputedStyle(element).overflowX) &&
+            element.scrollWidth > element.clientWidth &&
+            element.scrollLeft > 0
+          ) {
+            finishDetailDrag(true);
+            return;
+          }
+          if (element === drag.aside) break;
+        }
+      }
+      drag.moved = true;
+    }
+    event.preventDefault();
+    scheduleDetailDrag();
+  };
+  const onDetailTouchEnd = (event: Event) => {
+    if (detailDrag && detailDrag.source !== "pointer") finishDetailDrag(event.type === "touchcancel");
+  };
+  const onDetailDoubleClick = (event: Event) => {
+    const handle = resizeHandle(event);
+    const root = handle?.closest<HTMLElement>(ROOT_SELECTOR);
+    if (
+      !handle ||
+      !root ||
+      resizeKind(handle) !== "detail" ||
+      !workspaceResizable(root) ||
+      !controlsResizableRegion(root, handle, "detail")
+    )
+      return;
+    const widths = { ...layoutState.detailWidths };
+    delete widths[panelId(handle)];
+    layoutState = { ...layoutState, detailWidths: widths };
+    const variable = appWorkspacePanelVariable("detail", panelId(handle));
+    root.style.removeProperty(variable);
+    if (getComputedStyle(root).getPropertyValue(variable).trim())
+      root.style.setProperty(variable, `${numberData(handle, "workspaceDefaultSize", APP_WORKSPACE_DETAIL_DEFAULT)}px`);
+    updateHandleValue(root, handle, "detail", currentSize(root, handle, "detail"));
+    rememberTrailPadding(root);
+    options.writeState?.(layoutState);
+  };
+
   const stopScrollFades = installScrollFades(eventRoot);
   let layoutState = normalizeAppWorkspaceLayoutState(options.readState?.()) ?? { version: 2 as const };
   let active: ActiveResize | null = null;
@@ -351,6 +1053,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
         finished.kind === "pane" ? finished.liveSize : applySize(finished.root, finished.handle, finished.kind, finished.liveSize);
       persistSize(finished.handle, finished.kind, size);
       if (finished.kind !== "drawer") reconcilePanes(finished.root, layoutState);
+      if (finished.kind === "detail") rememberTrailPadding(finished.root);
     }
     if (finished.handle.hasPointerCapture?.(finished.pointerId)) finished.handle.releasePointerCapture(finished.pointerId);
     finished.releaseTextSelection();
@@ -422,6 +1125,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     event.preventDefault();
     persistSize(handle, kind, applySize(root, handle, kind, requested));
     if (kind === "sidebar" || kind === "detail") reconcilePanes(root, layoutState);
+    if (kind === "detail") rememberTrailPadding(root);
   };
 
   const allRoots = () => {
@@ -435,6 +1139,15 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     return allRoots().filter((root) => getComputedStyle(root).display !== "none" && root.getBoundingClientRect().width > 0);
   };
   const reconcile = () => {
+    if (detailDrag && (detailDrag.source === "drawer" ? !touchDrawer?.matches : !phone?.matches)) finishDetailDrag(true);
+    allRoots().forEach((root) => {
+      if (!phone?.matches) {
+        for (const aside of rootElements(root, detailSelector)) {
+          if (aside.dataset.workspaceDetailSheet === "full") setDetent(aside, false);
+        }
+      }
+      rememberTrailPadding(root);
+    });
     roots().forEach((root) => {
       // `data-workspace-resizable="false"` already refuses pointer and keyboard
       // resizing; without this the same workspace still had persisted sizes
@@ -466,6 +1179,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
         });
       reconcilePanes(root, layoutState, active?.root === root ? active : null);
     });
+    heldTrails.forEach(shrinkHold);
   };
   /**
    * A handle's limits move whenever anything around it does — opening a detail
@@ -523,18 +1237,52 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
           scheduleReconcile(true);
         });
   const syncObservedRoots = () => {
-    if (!resizeObserver) return;
+    for (const elements of [touchedDetails, titleTabIndices, motionRoots]) {
+      elements.forEach((element) => {
+        if (!element.isConnected) elements.delete(element);
+      });
+    }
     const next = new Set(allRoots());
     observedRoots.forEach((root) => {
       if (!next.has(root)) {
-        resizeObserver.unobserve(root);
+        resizeObserver?.unobserve(root);
+        const frame = motionFrames.get(root);
+        if (frame !== undefined) cancelAnimationFrame(frame);
+        motionFrames.delete(root);
         observedRoots.delete(root);
       }
     });
+    touchMoveAsides.forEach((aside) => {
+      if (aside.isConnected) return;
+      aside.removeEventListener("touchmove", onDetailTouchMove);
+      touchMoveAsides.delete(aside);
+    });
     next.forEach((root) => {
+      rootElements(root, detailSelector).forEach((aside) => {
+        if (!detailHidden.has(aside)) detailHidden.set(aside, Boolean(aside.hidden));
+        if (touchMoveAsides.has(aside)) return;
+        aside.addEventListener("touchmove", onDetailTouchMove, { passive: false });
+        touchMoveAsides.add(aside);
+      });
       if (observedRoots.has(root)) return;
       observedRoots.add(root);
-      resizeObserver.observe(root);
+      resizeObserver?.observe(root);
+      if (!root.hasAttribute("data-workspace-motion")) {
+        motionRoots.add(root);
+        motionFrames.set(
+          root,
+          requestAnimationFrame(() => {
+            motionFrames.set(
+              root,
+              requestAnimationFrame(() => {
+                motionFrames.delete(root);
+                if (observedRoots.has(root)) root.dataset.workspaceMotion = "true";
+              }),
+            );
+          }),
+        );
+      }
+      rememberTrailPadding(root);
     });
   };
   const layoutNode = (node: Node) =>
@@ -543,6 +1291,21 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     typeof MutationObserver === "undefined"
       ? null
       : new MutationObserver((records) => {
+          if (pendingTitle && (pendingTitle.aside.hidden || !pendingTitle.aside.isConnected)) cancelTitle();
+          // Hiding or removing the sidebar, or its button, ends the overlay.
+          if (overlay && (overlay.sidebar.hidden || !overlay.sidebar.isConnected || !overlay.toggle.isConnected)) closeOverlay("kept");
+          const details = new Set<HTMLElement>();
+          for (const record of records) {
+            if (
+              record.type === "attributes" &&
+              record.target instanceof HTMLElement &&
+              record.target.matches(detailSelector) &&
+              !details.has(record.target)
+            ) {
+              details.add(record.target);
+              detailTransition(record.target, detailHidden.get(record.target) ?? record.oldValue !== null);
+            }
+          }
           const changed = records.some((record) =>
             record.type === "attributes"
               ? record.target instanceof Element && record.target.matches(LAYOUT_REGION_SELECTOR)
@@ -554,6 +1317,27 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
         });
 
   eventRoot.addEventListener("pointerdown", onPointerDown as EventListener);
+  eventRoot.addEventListener("click", onClick as EventListener);
+  ownerDocument.addEventListener("keydown", onOverlayKeyDown);
+  ownerWindow.addEventListener("keydown", onDetailKeyDown);
+  ownerDocument.addEventListener("focusin", cancelTitleOnInteraction, true);
+  ownerDocument.addEventListener("pointerdown", cancelTitleOnInteraction, true);
+  ownerDocument.addEventListener("keydown", cancelTitleOnInteraction, true);
+  eventRoot.addEventListener("pointerdown", rememberInteraction, true);
+  eventRoot.addEventListener("keydown", rememberInteraction, true);
+  eventRoot.addEventListener("focusin", onDetailFocusIn);
+  eventRoot.addEventListener("scroll", onTrailScroll, { passive: true, capture: true });
+  eventRoot.addEventListener("pointerdown", onSheetPointerDown);
+  eventRoot.addEventListener("click", onGrabberClick);
+  eventRoot.addEventListener("dblclick", onDetailDoubleClick);
+  window.addEventListener("pointermove", onSheetPointerMove);
+  window.addEventListener("pointerup", onSheetPointerEnd);
+  window.addEventListener("pointercancel", onSheetPointerEnd);
+  eventRoot.addEventListener("lostpointercapture", onSheetPointerEnd);
+  eventRoot.addEventListener("touchstart", onDetailTouchStart, { passive: true });
+  eventRoot.addEventListener("touchend", onDetailTouchEnd);
+  eventRoot.addEventListener("touchcancel", onDetailTouchEnd);
+  compact?.addEventListener("change", onCompactChange);
   eventRoot.addEventListener("keydown", onKeyDown as EventListener);
   eventRoot.addEventListener("focusin", onFocusIn as EventListener);
   eventRoot.addEventListener("pointerover", onPointerOver as EventListener);
@@ -561,13 +1345,46 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   syncObservedRoots();
   mutationObserver?.observe(eventRoot, {
     attributes: true,
+    attributeOldValue: true,
     attributeFilter: ["hidden"],
     childList: true,
     subtree: true,
   });
   scheduleReconcile();
   return () => {
+    cancelTitle();
     stopScrollFades();
+    finishDetailDrag(true);
+    if (suppressedClickTimer !== null) clearTimeout(suppressedClickTimer);
+    motionFrames.forEach(cancelAnimationFrame);
+    revealFrames.forEach(cancelAnimationFrame);
+    motionRoots.forEach((root) => delete root.dataset.workspaceMotion);
+    heldTrails.forEach((trail) => trail.style.removeProperty("--k2b-detail-trail-hold"));
+    touchedDetails.forEach((aside) => {
+      clearDrag(aside);
+      delete aside.dataset.workspaceDetailSheet;
+      aside.querySelector(grabberSelector)?.setAttribute("aria-pressed", "false");
+    });
+    titleTabIndices.forEach((title) => title.removeAttribute("tabindex"));
+    ownerWindow.removeEventListener("keydown", onDetailKeyDown);
+    ownerDocument.removeEventListener("focusin", cancelTitleOnInteraction, true);
+    ownerDocument.removeEventListener("pointerdown", cancelTitleOnInteraction, true);
+    ownerDocument.removeEventListener("keydown", cancelTitleOnInteraction, true);
+    eventRoot.removeEventListener("pointerdown", rememberInteraction, true);
+    eventRoot.removeEventListener("keydown", rememberInteraction, true);
+    eventRoot.removeEventListener("focusin", onDetailFocusIn);
+    eventRoot.removeEventListener("scroll", onTrailScroll, true);
+    eventRoot.removeEventListener("pointerdown", onSheetPointerDown);
+    eventRoot.removeEventListener("click", onGrabberClick);
+    eventRoot.removeEventListener("dblclick", onDetailDoubleClick);
+    window.removeEventListener("pointermove", onSheetPointerMove);
+    window.removeEventListener("pointerup", onSheetPointerEnd);
+    window.removeEventListener("pointercancel", onSheetPointerEnd);
+    eventRoot.removeEventListener("lostpointercapture", onSheetPointerEnd);
+    eventRoot.removeEventListener("touchstart", onDetailTouchStart);
+    touchMoveAsides.forEach((aside) => aside.removeEventListener("touchmove", onDetailTouchMove));
+    eventRoot.removeEventListener("touchend", onDetailTouchEnd);
+    eventRoot.removeEventListener("touchcancel", onDetailTouchEnd);
     // Flush the latest coalesced pointer sample before listeners and frames are
     // torn down, so unmounting during a drag cannot lose the final size.
     stopResize();
@@ -575,7 +1392,11 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     mutationObserver?.disconnect();
     resizeObserver?.disconnect();
     observedRoots.clear();
+    closeOverlay("none");
     eventRoot.removeEventListener("pointerdown", onPointerDown as EventListener);
+    eventRoot.removeEventListener("click", onClick as EventListener);
+    ownerDocument.removeEventListener("keydown", onOverlayKeyDown);
+    compact?.removeEventListener("change", onCompactChange);
     eventRoot.removeEventListener("keydown", onKeyDown as EventListener);
     eventRoot.removeEventListener("focusin", onFocusIn as EventListener);
     eventRoot.removeEventListener("pointerover", onPointerOver as EventListener);

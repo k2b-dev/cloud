@@ -1,6 +1,6 @@
 # Dev containers — run with:
-#   bun run dev          (core set, 7 containers)
-#   bun run dev:full     (core + extras, 25 containers; --profile extra)
+#   bun run dev          (core set)
+#   bun run dev:full     (core + extras; --profile extra)
 #   bun run dev:start FOO    (ad-hoc: start a single extra app in the running stack)
 #   bun run dev:restart FOO  (reload mounted source without rebuilding the image)
 #

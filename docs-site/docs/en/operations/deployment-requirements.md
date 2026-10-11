@@ -14,11 +14,13 @@ Use this reference before deploying a fresh Cloud installation or adding an
 application. Choose the apps **and the features** you intend to use: a ready
 container does not prove that its mail, AI, storage, or PDF integration works.
 
-This page covers the gateway and all 23 built-in applications in the current
-development Compose configuration. Production Compose includes the gateway and
-23 applications, including **Pulse**. A standalone application can have
-additional requirements declared by its author. Check the documentation and
-configuration shipped with the exact release you deploy.
+This page covers the gateway and every built-in application that a plain
+`docker compose up` of production Compose starts, including **Pulse**. An
+application behind the `unreleased` Compose profile has no row until its
+release; see [Add a built-in application](/en/docs/operations/monorepo-development#add-a-built-in-application).
+A standalone application can have additional requirements declared by its
+author. Check the documentation and configuration shipped with the exact
+release you deploy.
 
 In the supplied Compose files, an app ID such as `mail` maps to service
 `app-mail`; the routing service is named `gateway`. The shared library, UI
@@ -501,6 +503,29 @@ After the rollout, ask Assistant in a chat to run code that reads one public
 JSON URL twice. The first request asks and offers
 **Allow this website for this chat**. After you choose it, the second request
 runs without asking and shows its full URL with **Revoke**.
+
+### Update Studio source writes
+
+`code_write` now saves one file per call with top-level `path` and `content`.
+File imports moved to the new `code_import` tool. Results report `lines` next to
+`length`. No configuration change or database migration is required. Stored
+source, revisions and chats are unchanged; older chat blocks keep their recorded
+arguments.
+
+Roll Core and Assistant over together. A mixed version rejects the other side's
+`code_write` input as invalid, and an older Assistant has no `code_import` route.
+Rollback is replacing both images; nothing needs undoing in the database. A turn
+running during the rollout may get one invalid-input error and then follows the
+new tool description.
+
+An app build now takes one tool round per source file instead of one round for
+all files. If a model profile sets a positive `maxToolRounds`, check that it
+still covers a typical multi-file build; otherwise the turn stops using tools
+earlier and answers with the files it saved so far.
+
+After rollout, ask Assistant to build a small app with `index.html` and `app.js`.
+The turn should show one `code_write` per file, no approval, and each result
+should list line counts that match the files.
 
 ### Update browser notifications for grouping and badges
 

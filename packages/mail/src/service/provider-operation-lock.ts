@@ -141,6 +141,22 @@ const leaseLineKeys = (resource: string): [string, string, string] => [
   `mail:provider-lease-line:{${resource}}:breaker`,
 ];
 
+/** Lines `waiter` up for the provider lease of `resource` with the script above and returns its reply. */
+const enterLeaseLine = (resource: string, waiter: string, priority: ProviderLeasePriority): Promise<unknown> =>
+  redis.send("EVAL", [
+    enterLeaseLineScript,
+    "3",
+    ...leaseLineKeys(resource),
+    waiter,
+    String(LEASE_HEAD_START_MS[priority]),
+    String(LEASE_RETRY_STEP_MS),
+    String(LEASE_RETRY_MAX_MS),
+    String(Math.floor(Math.random() * LEASE_RETRY_JITTER_MS)),
+    String(LEASE_PRESENCE_GRACE_MS),
+    String(LEASE_PLACE_TTL_MS),
+    String(BREAKER_MAX_WINDOW_MS),
+  ]);
+
 const leaveLeaseLine = async (resource: string, waiter: string): Promise<void> => {
   const [places, present] = leaseLineKeys(resource);
   await Promise.all([redis.send("ZREM", [places, waiter]), redis.send("ZREM", [present, waiter])]);
@@ -162,7 +178,8 @@ let probeLeaseUntil = 0;
  * waiter that comes back late is passed over until it returns, without losing its place. While
  * the mailbox's provider breaker is open, nobody takes the lease; after it, the waiter next in
  * line takes it once no other mailbox's probe holds this process's probe. Release the lease with
- * `releaseProviderLease`. The line and the breaker are ephemeral Valkey state: losing them only
+ * `releaseProviderLease`, passing `next` when the job continues with another turn so it lines up
+ * before letting go. The line and the breaker are ephemeral Valkey state: losing them only
  * loses the order and the pause, never the lease.
  */
 export const acquireProviderLease = async (params: {
@@ -171,19 +188,7 @@ export const acquireProviderLease = async (params: {
   priority: ProviderLeasePriority;
   ttlMs: number;
 }): Promise<ProviderLeaseTurn> => {
-  const reply: unknown = await redis.send("EVAL", [
-    enterLeaseLineScript,
-    "3",
-    ...leaseLineKeys(params.resource),
-    params.waiter,
-    String(LEASE_HEAD_START_MS[params.priority]),
-    String(LEASE_RETRY_STEP_MS),
-    String(LEASE_RETRY_MAX_MS),
-    String(Math.floor(Math.random() * LEASE_RETRY_JITTER_MS)),
-    String(LEASE_PRESENCE_GRACE_MS),
-    String(LEASE_PLACE_TTL_MS),
-    String(BREAKER_MAX_WINDOW_MS),
-  ]);
+  const reply = await enterLeaseLine(params.resource, params.waiter, params.priority);
   if (!Array.isArray(reply)) throw new Error("The provider lease line returned no position");
   const busy: ProviderLeaseTurn = { lock: null, retryAfterMs: Number(reply[1]) };
   const breaker = Number(reply[2]);
@@ -208,8 +213,15 @@ export const acquireProviderLease = async (params: {
   return lock ? { lock, retryAfterMs: null } : busy;
 };
 
-/** Releases a lease from `acquireProviderLease`. A release that fails leaves the lease to expire. */
-export const releaseProviderLease = async (lock: Lock): Promise<void> => {
+/**
+ * Releases a lease from `acquireProviderLease`. A job that continues passes `next` to line up
+ * before letting go, so a job that asks between its turns does not take the lease just because
+ * the holder was briefly out of line. It lines up anew: a command that waited longer than the
+ * head-start difference still goes first. Valkey errors lose only the order, never the release;
+ * a release that fails leaves the lease to expire.
+ */
+export const releaseProviderLease = async (lock: Lock, next?: { waiter: string; priority: ProviderLeasePriority }): Promise<void> => {
+  if (next) await enterLeaseLine(lock.resource, next.waiter, next.priority).catch(() => undefined);
   if (probeLease === lock) probeLease = null;
   await mailProviderOperationMutex()
     .release(lock)

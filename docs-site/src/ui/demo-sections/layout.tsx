@@ -15,6 +15,7 @@ import {
   MarkdownView,
   MultiSelectInput,
   NoticeCard,
+  PageTitle,
   Pagination,
   PanelDialog,
   PanelHeader,
@@ -214,7 +215,7 @@ const WorkspaceDemo = () => {
             <div class="ui-demo-pane">Main 2</div>
           </AppWorkspace.MainPane>
         </AppWorkspace.Main>
-        <AppWorkspace.Detail id="record" open={detailOpen()} width="sm">
+        <AppWorkspace.Detail id="record" open={detailOpen()} onClose={() => setDetailOpen(false)} width="sm">
           <div class="ui-demo-pane">Selected item</div>
         </AppWorkspace.Detail>
       </AppWorkspace.Content>
@@ -267,7 +268,7 @@ const [navigationHidden, setNavigationHidden] = createSignal(false);
       <AppWorkspace.MainPane id="main-2" label="Main 2" open={paneOpen()}>…</AppWorkspace.MainPane>
       …
     </AppWorkspace.Main>
-    <AppWorkspace.Detail id="record" open={detailOpen()} width="sm">…</AppWorkspace.Detail>
+    <AppWorkspace.Detail id="record" open={detailOpen()} onClose={() => setDetailOpen(false)} width="sm">…</AppWorkspace.Detail>
   </AppWorkspace.Content>
   <AppWorkspace.BottomDrawer id="events" open={drawerOpen()} height="sm">…</AppWorkspace.BottomDrawer>
 </AppWorkspace>`}
@@ -1389,6 +1390,38 @@ const scrollAreaEvents = [
   ["09:27", "Transferred to carrier"],
 ] as const;
 
+const pageTitleLevels = [
+  { title: "Projects", href: "#projects" },
+  { title: "2026", href: "#projects-2026" },
+  { title: "Quotes from all invited suppliers", href: "#quotes" },
+  { title: "Supplier A", href: "#supplier-a" },
+];
+
+const PageTitleDemo = () => (
+  <DemoCard
+    id="page-title"
+    chip={{ kind: "component", name: "PageTitle", from: "@k2b/ui" }}
+    description="The number of pages above decides the form: the title alone, a back link above it, or a path above it. Every form is one 46 px row. The narrow row collapses the path's middle into a menu; below 768 px a back arrow replaces the row."
+    code={`<PageTitle trail={{ title: "jdoe", ancestors: [{ title: "Users", href: "/app/accounts/users" }] }} />
+<PageTitle trail={{ title: "Supplier A", ancestors: folders }} subtitle="6 items" />`}
+  >
+    <div class="ui-page-title-demo">
+      <div class="ui-page-title-demo__row">
+        <PageTitle as="p" trail={{ title: "Users", ancestors: [] }} subtitle="214" />
+      </div>
+      <div class="ui-page-title-demo__row">
+        <PageTitle as="p" trail={{ title: "jdoe", ancestors: [{ title: "Users", href: "#users" }] }} />
+      </div>
+      <div class="ui-page-title-demo__row">
+        <PageTitle as="p" trail={{ title: "Lieferant A", ancestors: pageTitleLevels.slice(0, 3) }} subtitle="6 items" />
+      </div>
+      <div class="ui-page-title-demo__row" style={{ "max-width": "20rem" }}>
+        <PageTitle as="p" trail={{ title: "Questions about the foundation", ancestors: pageTitleLevels }} />
+      </div>
+    </div>
+  </DemoCard>
+);
+
 const ScrollAreaDemo = () => (
   <DemoCard
     id="scroll-area"
@@ -1680,6 +1713,11 @@ const demos: DemoSection = {
   discussion: () => (
     <DemoGrid columns="one">
       <DiscussionDemo />
+    </DemoGrid>
+  ),
+  "page-title": () => (
+    <DemoGrid columns="one">
+      <PageTitleDemo />
     </DemoGrid>
   ),
   "pull-to-refresh": () => <PullToRefreshDemo />,

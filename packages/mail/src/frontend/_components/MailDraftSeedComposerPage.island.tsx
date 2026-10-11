@@ -18,6 +18,8 @@ export default function MailDraftSeedComposerPage(props: {
   popout?: boolean;
   dateConfig: DateContext;
   canShareAttachments: boolean;
+  canManageMailbox: boolean;
+  currentUserEmail: string | null;
   calendarIntegrationAvailable: boolean;
   contactDirectory: MailContactDirectory;
 }) {
@@ -60,6 +62,8 @@ export default function MailDraftSeedComposerPage(props: {
             popout={props.popout}
             dateConfig={props.dateConfig}
             canShareAttachments={props.canShareAttachments}
+            canManageMailbox={props.canManageMailbox}
+            currentUserEmail={props.currentUserEmail}
             contactDirectory={props.contactDirectory}
             calendarIntegrationAvailable={props.calendarIntegrationAvailable}
           />

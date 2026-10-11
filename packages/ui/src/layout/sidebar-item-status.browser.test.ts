@@ -227,7 +227,8 @@ const load = async (theme: "light" | "dark", viewport: keyof typeof viewports = 
     route.fulfill({ path: resolve(ui, "dist", new URL(route.request().url()).pathname.slice(1)) }),
   );
   await page.setContent(
-    `<!doctype html><html lang="en"><head><style>${css}</style><style>${fonts}</style>` +
+    // The phone context honours the viewport tag; without it the page lays out 980 px wide, a tablet.
+    `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style><style>${fonts}</style>` +
       "<style>*,*::before,*::after{transition:none!important;animation:none!important}</style></head>" +
       `<body class="k2b-ui${theme === "dark" ? " k2b-dark" : ""}" style="margin:0"><div id="app" style="height:56rem"></div></body></html>`,
   );

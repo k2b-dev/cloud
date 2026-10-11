@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { getProcessSync } from "@k2b/cloud";
-import { mandates, toPgUuidArray } from "@k2b/cloud/services";
+import { mandates, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { parsePgJsonRecord } from "@k2b/cloud/services/postgres";
 import {
   createWorkflowRun,
@@ -1105,6 +1105,304 @@ suite("incoming automations", () => {
       });
     }
   });
+
+  test("re-runs only failed or canceled incoming automation attempts with an opt-in backfill", async () => {
+    const [archive] = await sql<{ short_id: string }[]>`
+      SELECT short_id FROM mail.folders WHERE id = ${archiveFolderId}::uuid
+    `;
+    if (!archive) throw new Error("Failed to load the archive folder public id");
+    const sender = `retry-backfill-${suffix}@external.test`;
+    const automation = await createIncomingAutomation({
+      context: ownerContext,
+      mailboxId,
+      input: {
+        name: `Retry backfill ${suffix}`,
+        enabled: true,
+        scope: {
+          mode: "matching",
+          conditions: { mode: "all", items: [{ field: "sender_address", operator: "is", value: sender }] },
+        },
+        steps: [{ id: crypto.randomUUID(), kind: "mail_action", action: { kind: "move_to_folder", folderId: archive.short_id } }],
+      },
+    });
+    if (!automation.ok) throw new Error(automation.error.message);
+    const messages: Array<{ ref: string; messageId: string; uid: number; state: string }> = [];
+    let operationId = "";
+    let nonRepeatableAutomation: { id: string; revision: number } | undefined;
+    const requestFor = (retryFailed = false) => {
+      operationId = crypto.randomUUID();
+      return {
+        context: ownerContext,
+        mailboxId,
+        automationId: automation.data.id,
+        input: { operationId, expectedRevision: automation.data.revision, retryFailed },
+      };
+    };
+    const events = () => sql<{ dedupe_key: string; ref: string }[]>`
+      SELECT dedupe_key, context #>> '{preconditions,message,remoteMessageRefId}' AS ref
+      FROM workflows.event
+      WHERE app_id = 'mail' AND scope_id = ${mailboxId}
+        AND dedupe_key LIKE ${`incoming-automation-existing:${automation.data.id}:%`}
+      ORDER BY dedupe_key
+    `;
+    const ingest = async (index: number, capture: boolean) => {
+      const uid = 30_000 + index;
+      const messageId = await ingestEnvelope({
+        db: sql,
+        mailboxId,
+        remoteResourceId,
+        folderId: inboxFolderId,
+        message: {
+          remoteRef: { folderStableKey: `incoming-automation-inbox-${suffix}`, uidValidity: "1", uid: String(uid), modseq: String(uid) },
+          providerMessageId: `retry-backfill-${suffix}-${index}`,
+          providerThreadId: null,
+          messageId: `<retry-backfill-${suffix}-${index}@external.test>`,
+          inReplyTo: null,
+          references: [],
+          subject: `Retry backfill ${index}`,
+          sentAt: new Date(),
+          internalDate: new Date(),
+          sizeBytes: 128,
+          flags: [],
+          labels: [],
+          addresses: {
+            from: [{ name: "Sender", address: sender }],
+            replyTo: [],
+            to: [{ name: "Support", address: "automation@example.test" }],
+            cc: [],
+            bcc: [],
+          },
+          mimeStructure: {},
+        },
+        captureWorkflowTriggers: capture,
+      });
+      const [reference] = await sql<{ id: string }[]>`
+        SELECT id FROM mail.remote_message_refs
+        WHERE folder_id = ${inboxFolderId}::uuid AND uid = ${uid} AND uid_validity = 1
+      `;
+      if (!reference) throw new Error("Missing retry backfill message reference");
+      return { ref: reference.id, messageId, uid };
+    };
+    await startIncomingAutomationBackfillRuntime();
+    try {
+      for (const [index, state] of ["failed", "canceled", "succeeded"].entries()) {
+        messages.push({ ...(await ingest(index, false)), state });
+      }
+      expect(await runBackfillUntilSettled(requestFor(), 10_000)).toMatchObject({
+        retryFailed: false,
+        candidateCount: 3,
+        newlyAcceptedCount: 3,
+        remainingCount: 0,
+        state: "completed",
+      });
+      await dispatchPendingWorkflowEvents(100, { appId: "mail", scopeId: mailboxId });
+      for (const message of messages) {
+        // Simulate #876's terminal outcomes without executing the original move runs.
+        const runs = await sql<{ id: string }[]>`
+          UPDATE workflows.run run SET state = ${message.state}, finished_at = now()
+          FROM workflows.event event
+          WHERE run.event_id = event.id AND run.workflow_id = ${automation.data.workflowId}::uuid
+            AND run.parent_run_id IS NULL
+            AND event.context #>> '{preconditions,message,remoteMessageRefId}' = ${message.ref}
+          RETURNING run.id
+        `;
+        expect(runs).toHaveLength(1);
+      }
+      const originalEvents = await events();
+      expect(originalEvents).toHaveLength(3);
+      expect(await runBackfillUntilSettled(requestFor(), 10_000)).toMatchObject({
+        retryFailed: false,
+        newlyAcceptedCount: 0,
+        remainingCount: 0,
+        state: "completed",
+      });
+      expect(await events()).toEqual(originalEvents);
+
+      // Normal backfills also re-run live messages: acceptance matches incoming-automation-existing: keys, not message: keys.
+      for (const [index, state] of [
+        [3, "failed"],
+        [4, "running"],
+      ] as const) {
+        messages.push({ ...(await ingest(index, true)), state });
+      }
+      await dispatchPendingWorkflowEvents(100, { appId: "mail", scopeId: mailboxId });
+      for (const message of messages.filter((message) => message.uid >= 30_003)) {
+        const runs = await sql<{ id: string }[]>`
+          UPDATE workflows.run run
+          SET state = ${message.state}, finished_at = ${message.state === "failed" ? sql`now()` : sql`NULL`}
+          FROM workflows.event event
+          WHERE run.event_id = event.id AND run.workflow_id = ${automation.data.workflowId}::uuid
+            AND run.parent_run_id IS NULL
+            AND event.dedupe_key = ${`message:${message.ref}:${automation.data.workflowId}`}
+          RETURNING run.id
+        `;
+        expect(runs).toHaveLength(1);
+      }
+
+      const retryRequest = requestFor(true);
+      const retry = await runBackfillUntilSettled(retryRequest, 10_000);
+      expect(retry).toMatchObject({
+        retryFailed: true,
+        candidateCount: 3,
+        alreadyAcceptedCount: 0,
+        newlyAcceptedCount: 3,
+        remainingCount: 0,
+        state: "completed",
+      });
+      const retriedEvents = (await events()).filter((event) => event.dedupe_key.endsWith(`:retry:${retryRequest.input.operationId}`));
+      expect(retriedEvents).toHaveLength(3);
+      for (const message of messages) {
+        expect(retriedEvents.filter((event) => event.ref === message.ref)).toEqual(
+          message.state === "succeeded" || message.state === "running"
+            ? []
+            : [
+                {
+                  ref: message.ref,
+                  dedupe_key: `incoming-automation-existing:${automation.data.id}:v${automation.data.workflowVersionId}:${message.ref}:retry:${retryRequest.input.operationId}`,
+                },
+              ],
+        );
+      }
+      const repeated = await startIncomingAutomationBackfill(retryRequest);
+      expect(repeated.ok && repeated.data).toEqual(retry);
+      expect(await events()).toHaveLength(6);
+      const conflicting = await startIncomingAutomationBackfill({ ...retryRequest, input: { ...retryRequest.input, retryFailed: false } });
+      expect(conflicting.ok).toBe(false);
+      if (!conflicting.ok) expect(conflicting.error.code).toBe("CONFLICT");
+
+      await dispatchPendingWorkflowEvents(100, { appId: "mail", scopeId: mailboxId });
+      const retriedRuns = await sql<{ id: string; ref: string }[]>`
+        SELECT run.id, event.context #>> '{preconditions,message,remoteMessageRefId}' AS ref
+        FROM workflows.run run JOIN workflows.event event ON event.id = run.event_id
+        WHERE run.workflow_id = ${automation.data.workflowId}::uuid AND run.parent_run_id IS NULL
+          AND event.dedupe_key = ANY(${toPgTextArray(retriedEvents.map((event) => event.dedupe_key))}::text[])
+      `;
+      expect(retriedRuns).toHaveLength(3);
+      for (const run of retriedRuns) {
+        expect((await runMailWorkflow(run.id)).state).toBe("finished");
+        const [move] = await sql<{ id: string; ref: string }[]>`
+          SELECT id, target ->> 'remoteMessageRefId' AS ref FROM mail.commands
+          WHERE correlation_id = ${run.id} AND kind = 'move' AND state = 'queued'
+        `;
+        if (!move) throw new Error("Retry did not create a move command");
+        expect(move.ref).toBe(run.ref);
+        const message = messages.find((message) => message.ref === run.ref);
+        if (!message) throw new Error("Retry run did not match an ingested message");
+        // Record the provider move as the command runtime does, then resume the real workflow.
+        const [archived] = await sql<{ id: string }[]>`
+          WITH source AS (
+            UPDATE mail.remote_message_refs SET stale_at = now() WHERE id = ${move.ref}::uuid RETURNING message_id
+          ), placement AS (
+            UPDATE mail.message_placements SET deleted_at = now() WHERE remote_message_ref_id = ${move.ref}::uuid
+          )
+          INSERT INTO mail.remote_message_refs (folder_id, message_id, uid_validity, uid)
+          SELECT ${archiveFolderId}::uuid, message_id, 1, ${message.uid} FROM source RETURNING id
+        `;
+        if (!archived) throw new Error("Failed to record the retried move");
+        await sql`
+          INSERT INTO mail.message_placements (remote_message_ref_id, folder_id, message_id)
+          SELECT id, folder_id, message_id FROM mail.remote_message_refs WHERE id = ${archived.id}::uuid
+        `;
+        await sql`UPDATE mail.commands SET state = 'confirmed', finished_at = now() WHERE id = ${move.id}::uuid`;
+        expect(await wakeWorkflowRunsWaitingOn({ appId: "mail", kind: "mail.command", key: move.id })).toContain(run.id);
+        expect((await runMailWorkflow(run.id)).state).toBe("finished");
+        const [finished] = await sql<{ state: string }[]>`SELECT state FROM workflows.run WHERE id = ${run.id}::uuid`;
+        expect(finished?.state).toBe("succeeded");
+      }
+      const stillRunning = messages.find((message) => message.uid === 30_004);
+      if (!stillRunning) throw new Error("Missing still-running live message");
+      const lateFailures = await sql<{ id: string }[]>`
+        UPDATE workflows.run run SET state = 'failed', finished_at = now()
+        FROM workflows.event event
+        WHERE run.event_id = event.id AND run.workflow_id = ${automation.data.workflowId}::uuid
+          AND run.parent_run_id IS NULL
+          AND event.dedupe_key = ${`message:${stillRunning.ref}:${automation.data.workflowId}`}
+        RETURNING run.id
+      `;
+      expect(lateFailures).toHaveLength(1);
+      const frozen = await getIncomingAutomationBackfill({
+        context: ownerContext,
+        mailboxId,
+        automationId: automation.data.id,
+        operationId: retryRequest.input.operationId,
+      });
+      expect(frozen.ok && frozen.data).toMatchObject({ state: "completed", candidateCount: 3, remainingCount: 0 });
+
+      const finalRetryRequest = requestFor(true);
+      expect(await runBackfillUntilSettled(finalRetryRequest, 10_000)).toMatchObject({
+        retryFailed: true,
+        candidateCount: 1,
+        newlyAcceptedCount: 1,
+        remainingCount: 0,
+        state: "completed",
+      });
+      for (const message of messages) {
+        const placements = await sql<{ folder_id: string }[]>`
+          SELECT folder_id FROM mail.message_placements WHERE message_id = ${message.messageId}::uuid AND deleted_at IS NULL
+        `;
+        expect(placements).toEqual([
+          { folder_id: message.state === "succeeded" || message.uid === 30_004 ? inboxFolderId : archiveFolderId },
+        ]);
+      }
+
+      const nonRepeatable = await createIncomingAutomation({
+        context: ownerContext,
+        mailboxId,
+        input: {
+          name: `Non-repeatable retry backfill ${suffix}`,
+          enabled: true,
+          scope: {
+            mode: "matching",
+            conditions: {
+              mode: "all",
+              items: [{ field: "sender_address", operator: "is", value: `non-repeatable-${suffix}@external.test` }],
+            },
+          },
+          steps: [
+            { id: crypto.randomUUID(), kind: "add_comment", body: { kind: "custom", value: "Filed by rule" } },
+            { id: crypto.randomUUID(), kind: "mail_action", action: { kind: "move_to_folder", folderId: archive.short_id } },
+          ],
+        },
+      });
+      if (!nonRepeatable.ok) throw new Error(nonRepeatable.error.message);
+      nonRepeatableAutomation = nonRepeatable.data;
+      const rejected = await startIncomingAutomationBackfill({
+        context: ownerContext,
+        mailboxId,
+        automationId: nonRepeatable.data.id,
+        input: { operationId: crypto.randomUUID(), expectedRevision: nonRepeatable.data.revision, retryFailed: true },
+      });
+      expect(rejected.ok).toBe(false);
+      if (!rejected.ok) expect(rejected.error.code).toBe("BAD_INPUT");
+
+      const denied = await startIncomingAutomationBackfill({ ...finalRetryRequest, context: writerContext });
+      expect(denied.ok).toBe(false);
+      if (!denied.ok) expect(denied.error.code).toBe("FORBIDDEN");
+    } finally {
+      if (nonRepeatableAutomation) {
+        await deleteIncomingAutomation({
+          context: ownerContext,
+          mailboxId,
+          automationId: nonRepeatableAutomation.id,
+          input: { expectedRevision: nonRepeatableAutomation.revision },
+        });
+      }
+      if (operationId)
+        await cancelIncomingAutomationBackfill({ context: ownerContext, mailboxId, automationId: automation.data.id, operationId });
+      await stopIncomingAutomationBackfillRuntime();
+      await deleteIncomingAutomation({
+        context: ownerContext,
+        mailboxId,
+        automationId: automation.data.id,
+        input: { expectedRevision: automation.data.revision },
+      });
+      await sql`
+        DELETE FROM workflows.event
+        WHERE app_id = 'mail' AND scope_id = ${mailboxId}
+          AND dedupe_key LIKE ${`incoming-automation-existing:${automation.data.id}:%`}
+      `;
+    }
+  }, 30_000);
 
   test("keeps a move whose provider command outlasts the dependency recheck and reports it applied", async () => {
     const [archive] = await sql<{ short_id: string }[]>`

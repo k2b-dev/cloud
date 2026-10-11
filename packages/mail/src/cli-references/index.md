@@ -343,6 +343,16 @@ cld --json mail identity list
 cld --json mail identity disable <identity-id> --yes
 ```
 
+A new identity takes the Sent and Drafts folders that discovery found for the mailbox, unless `--sent-folder` names another one. When verification needs a Sent folder and the identity has none, Mail takes the mailbox's Sent folder too. Neither replaces a folder that is already set. `identity setup-default` differs: it sets the identity of the provider address to the mailbox's current Sent and Drafts folders.
+
+`identity list` shows in `REASON` why an identity cannot send yet. With `--json`, `statusReason` carries the same reason as a stable code, and is `null` for a verified identity:
+
+| `statusReason` | Meaning | Fix |
+| --- | --- | --- |
+| `sent_folder_missing` | No Sent folder is set, and the provider was not verified as saving sent mail itself. | `identity configure <identity-id> --sent-folder <folder-id>`, or verify with `--provider-saves-sent`. |
+| `provider_rejected` | The provider refused the last verification message. | Check the From address and delivery settings, then verify again. |
+| `verification_required` | The identity is configured and waits for verification. | `identity verify <identity-id> <binding-id> --recipient <address>` |
+
 The identity label is internal. Recipients see the display name and From address. Multiple identities may use the same From address while keeping separate Reply-to, default Cc/Bcc, format, priority, receipt requests, contact card, signature, transport, folder mappings, and verification. Recipient defaults apply only when a person creates a draft; workflows and automatic replies keep their recipients explicit. `--clear-vcard`, `--clear-default-bcc`, and the other `--clear-*` flags remove optional defaults.
 
 An identity normally uses the mailbox SMTP connection. Configure a separate verified SMTP server only when that identity must submit through another account:

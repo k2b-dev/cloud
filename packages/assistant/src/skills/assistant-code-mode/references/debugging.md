@@ -17,6 +17,10 @@ is unavailable, report that state rather than claiming the code ran.
 
 ## Test the result
 
+Before running, check that each saved file's `lines` in the `code_write`
+result matches what you wrote. A lower count means the content was cut; read the
+file and write it again.
+
 Write source, run it, and inspect the returned snapshot. For calculations,
 verify the returned values with representative inputs and inspect output files.
 Fix source and start another run when needed. Check the returned `revision`

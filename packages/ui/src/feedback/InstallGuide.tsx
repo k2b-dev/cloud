@@ -1,9 +1,9 @@
 import { clipboard } from "@k2b/stdlib/solid";
 import { createMemo, For, type JSX, Match, Show, Switch } from "solid-js";
 import { Button, ButtonLink } from "../actions/Button";
-import { useUiMessages } from "../intl/messages";
 import { NoticeCard } from "../surfaces/NoticeCard";
 import type { InstallPrompt } from "./install";
+import { useInstallMessages } from "./install-messages";
 
 export type InstallGuideProps = {
   /** The name people see on their Home Screen, used in the guidance text. */
@@ -47,20 +47,20 @@ const chromeIntent = (url: string) => {
  * the app package it builds. The host owns the surrounding surface, its heading, and dismissal.
  */
 export function InstallGuide(props: InstallGuideProps): JSX.Element {
-  const messages = useUiMessages();
+  const installMessages = useInstallMessages();
   // The host may hand over another state after mount, such as the browser's own in place of the server's view.
   const state = () => props.install;
   const copy = clipboard.createWriter({ write: (url: string) => navigator.clipboard.writeText(url) });
   const embedded = () => state().platform === "in-app" || state().platform === "apple-in-app";
   /** A browser that installs, but less reliably than the platform's own. */
   const hint = createMemo(() => {
-    const t = messages();
+    const t = installMessages();
     if (state().platform === "apple-browser") return { title: t.installAppleBrowserTitle, detail: t.installAppleBrowserDetail };
     if (state().platform === "android-browser") return { title: t.installAndroidBrowserTitle, detail: t.installAndroidBrowserDetail };
     return undefined;
   });
   const steps = createMemo(() => {
-    const t = messages();
+    const t = installMessages();
     if (state().platform === "apple-mobile" || state().platform === "apple-browser")
       return [
         {
@@ -88,7 +88,7 @@ export function InstallGuide(props: InstallGuideProps): JSX.Element {
   return (
     <div class={props.class ? `k2b-install-guide ${props.class}` : "k2b-install-guide"} data-platform={state().platform}>
       <Show when={state().failed()}>
-        <p role="alert">{messages().installFailed}</p>
+        <p role="alert">{installMessages().installFailed}</p>
       </Show>
       <Switch
         fallback={
@@ -110,31 +110,31 @@ export function InstallGuide(props: InstallGuideProps): JSX.Element {
               </For>
             </ol>
             <Show when={state().platform === "apple-mobile"}>
-              <p>{messages().installSafariFallback}</p>
+              <p>{installMessages().installSafariFallback}</p>
             </Show>
             <Show when={props.note}>
               <p>{props.note}</p>
             </Show>
             <Show when={state().platform === "generic"}>
-              <p>{messages().installUnavailable}</p>
+              <p>{installMessages().installUnavailable}</p>
             </Show>
           </>
         }
       >
         <Match when={state().requested()}>
-          <p role="status">{messages().installRequested}</p>
+          <p role="status">{installMessages().installRequested}</p>
         </Match>
         <Match when={state().platform === "android-samsung"}>
           <NoticeCard
             tone="info"
-            title={messages().installSamsungTitle}
-            detail={messages().installSamsungDetail({ appName: props.appName })}
+            title={installMessages().installSamsungTitle}
+            detail={installMessages().installSamsungDetail({ appName: props.appName })}
           />
           <Show when={chromeIntent(props.url)}>
             {(href) => (
               <ButtonLink href={href()}>
                 <i class="ti ti-brand-chrome" aria-hidden="true" />
-                {messages().installOpenChrome}
+                {installMessages().installOpenChrome}
               </ButtonLink>
             )}
           </Show>
@@ -143,27 +143,27 @@ export function InstallGuide(props: InstallGuideProps): JSX.Element {
           </Show>
         </Match>
         <Match when={state().canPrompt() || state().busy()}>
-          <p>{messages().installNative({ appName: props.appName })}</p>
+          <p>{installMessages().installNative({ appName: props.appName })}</p>
           <Button loading={state().busy()} onClick={() => void state().install()}>
-            {messages().installApp}
+            {installMessages().installApp}
           </Button>
         </Match>
         <Match when={embedded()}>
           <NoticeCard
             tone="warning"
-            title={state().platform === "apple-in-app" ? messages().installAppleInAppTitle : messages().installInAppTitle}
+            title={state().platform === "apple-in-app" ? installMessages().installAppleInAppTitle : installMessages().installInAppTitle}
             detail={
               state().platform === "apple-in-app"
-                ? messages().installAppleInAppDetail({ appName: props.appName })
-                : messages().installInAppDetail({ appName: props.appName })
+                ? installMessages().installAppleInAppDetail({ appName: props.appName })
+                : installMessages().installInAppDetail({ appName: props.appName })
             }
           />
           <Button variant="secondary" onClick={() => void copy.copy(props.url)}>
             <i class={copy.wasCopied() ? "ti ti-check" : "ti ti-copy"} aria-hidden="true" />
-            {copy.wasCopied() ? messages().installLinkCopied : messages().installCopyLink}
+            {copy.wasCopied() ? installMessages().installLinkCopied : installMessages().installCopyLink}
           </Button>
           <Show when={copy.error()}>
-            <p role="alert">{messages().installCopyFailed}</p>
+            <p role="alert">{installMessages().installCopyFailed}</p>
             <code>{props.url}</code>
           </Show>
           <Show when={props.note}>

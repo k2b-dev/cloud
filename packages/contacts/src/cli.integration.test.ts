@@ -66,7 +66,7 @@ if (process.env.CONTACTS_CLI_CHILD !== "1") {
         ...args,
       ],
       cwd: home,
-      env: { ...process.env, HOME: home, XDG_CONFIG_HOME: cliHome },
+      env: { ...process.env, CLD_LOCALE: "en", HOME: home, XDG_CONFIG_HOME: cliHome },
       stdin: options.stdin === undefined ? "ignore" : new Blob([options.stdin]),
       stdout: "pipe",
       stderr: "pipe",

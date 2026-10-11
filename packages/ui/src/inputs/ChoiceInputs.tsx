@@ -1,8 +1,8 @@
 import { For, type JSX, Show, splitProps } from "solid-js";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
-import { useUiMessages } from "../intl/messages";
 import type { FieldProps, MaybeAccessor, ValueFieldProps } from "./field-contract";
 import { commitFieldValue, resolveMaybeAccessor } from "./field-contract";
+import { useInputMessages } from "./input-messages";
 
 export type PinInputProps = ValueFieldProps<string> & {
   length?: number;
@@ -14,7 +14,7 @@ export type PinInputProps = ValueFieldProps<string> & {
 };
 
 export function PinInput(props: PinInputProps): JSX.Element {
-  const messages = useUiMessages();
+  const inputMessages = useInputMessages();
   const meta = createFieldMeta(props.id);
   const length = () => Math.max(1, props.length ?? 6);
   let inputs: HTMLInputElement[] = [];
@@ -109,7 +109,7 @@ export function PinInput(props: PinInputProps): JSX.Element {
               required={props.required}
               disabled={props.disabled}
               readOnly={props.readOnly}
-              aria-label={messages().pinDigit({ index: index() + 1, total: length() })}
+              aria-label={inputMessages().pinDigit({ index: index() + 1, total: length() })}
               onInput={(event) => updateDigit(index(), event.currentTarget.value)}
               onKeyDown={(event) => handleKeyDown(index(), event)}
               onFocus={(event) => event.currentTarget.select()}
@@ -212,7 +212,7 @@ export type ColorInputProps = ValueFieldProps<string> & {
 };
 
 export function ColorInput(props: ColorInputProps): JSX.Element {
-  const messages = useUiMessages();
+  const inputMessages = useInputMessages();
   const meta = createFieldMeta(props.id);
   const currentColor = () => resolveMaybeAccessor(props.value) || "#3b82f6";
   const isTransparent = () => resolveMaybeAccessor(props.transparentValue) ?? false;
@@ -267,7 +267,7 @@ export function ColorInput(props: ColorInputProps): JSX.Element {
           <button
             type="button"
             class="k2b-color-input__transparent"
-            aria-label={isTransparent() ? messages().useColor : messages().useTransparent}
+            aria-label={isTransparent() ? inputMessages().useColor : inputMessages().useTransparent}
             aria-pressed={isTransparent()}
             disabled={props.disabled}
             onClick={() => props.onTransparentValueChange?.(!isTransparent())}

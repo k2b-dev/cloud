@@ -3,7 +3,7 @@ import { checkMimeType } from "@k2b/stdlib/browser";
 import { type Accessor, createSignal } from "solid-js";
 import { announce } from "../feedback/announce";
 import { toast } from "../feedback/toast";
-import type { UiMessages } from "../intl/messages";
+import type { FileDropMessages } from "./file-drop-messages";
 
 export type FileDropRejection = {
   file: File;
@@ -39,7 +39,7 @@ export type FileDropOptions = {
 
 export type FileDropTargetEntry = {
   options: FileDropOptions;
-  messages: () => UiMessages;
+  messages: () => FileDropMessages;
   locale: () => string;
   /** Set for regions: the area the overlay covers. Specific targets are keyed by their element. */
   region?: () => Element | undefined;
@@ -144,7 +144,7 @@ const invalidDrag = (event: DragEvent, options: FileDropOptions) =>
   );
 
 const MAX_NAMES = 3;
-const nameList = (files: readonly File[], messages: UiMessages) => {
+const nameList = (files: readonly File[], messages: FileDropMessages) => {
   const names = files.slice(0, MAX_NAMES).map((file) => file.name);
   return files.length > MAX_NAMES ? `${names.join(", ")} ${messages.fileDropMore({ count: files.length - MAX_NAMES })}` : names.join(", ");
 };
@@ -152,7 +152,7 @@ const nameList = (files: readonly File[], messages: UiMessages) => {
 export const fileDropRejectionMessage = (
   rejected: readonly FileDropRejection[],
   options: Pick<FileDropOptions, "multiple" | "maxFiles" | "maxSize">,
-  messages: UiMessages,
+  messages: FileDropMessages,
   locale: string,
 ): string => {
   const lines: string[] = [];

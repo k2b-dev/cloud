@@ -18,6 +18,8 @@ export default function MailComposerPage(props: {
   popout?: boolean;
   dateConfig: DateContext;
   canShareAttachments: boolean;
+  canManageMailbox: boolean;
+  currentUserEmail: string | null;
   calendarIntegrationAvailable: boolean;
   contactDirectory: MailContactDirectory;
 }) {
@@ -37,6 +39,8 @@ export default function MailComposerPage(props: {
             returnHref={props.returnHref}
             dateConfig={props.dateConfig}
             canShareAttachments={props.canShareAttachments}
+            canManageMailbox={props.canManageMailbox}
+            currentUserEmail={props.currentUserEmail}
             calendarIntegrationAvailable={props.calendarIntegrationAvailable}
           />
         </MailContactDirectoryProvider>
