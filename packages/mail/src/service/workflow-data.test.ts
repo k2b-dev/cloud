@@ -1,8 +1,26 @@
 import { describe, expect, test } from "bun:test";
 import type { MailWorkflowTargetSnapshot } from "./workflow-data";
-import { mailWorkflowEventContext } from "./workflow-data";
+import { mailWorkflowEventContext, normalizeWorkflowKeywords } from "./workflow-data";
+import { mailWorkflowMessagePrecondition } from "./workflow-message-preconditions";
 
 describe("Mail workflow event context", () => {
+  test("freezes only keywords the remote precondition can express", () => {
+    const target = { messageId: "message", remoteMessageRefId: "remote", folderId: "folder" };
+    const keywords = normalizeWorkflowKeywords(["\\Inbox", "\\Important", " review ", "needs action", "", "zebra", "a".repeat(101)]);
+    expect(keywords).toEqual(["review", "zebra"]);
+    expect(
+      mailWorkflowMessagePrecondition(
+        {
+          preconditions: {
+            message: { id: target.messageId, remoteMessageRefId: target.remoteMessageRefId, folderId: target.folderId },
+            remoteState: { modseq: "42", flags: ["seen"], keywords },
+          },
+        },
+        target,
+      ),
+    ).toEqual({ modseq: "42", flags: ["seen"], keywords: ["review", "zebra"] });
+  });
+
   test("freezes source data and receipt-time preconditions into the kernel event", () => {
     const snapshot = {
       targetKey: "remote-message",

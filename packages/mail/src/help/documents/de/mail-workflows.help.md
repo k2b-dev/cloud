@@ -68,7 +68,7 @@ Mail akzeptiert höchstens 20 Eingaben, 500 Schritte, 20 verschachtelte Schritte
 
 ### `messageReceived`
 
-`messageReceived` startet einmal für eine stabile, neu importierte Nachricht. Für E-Mails, die der Anbieter direkt in den Papierkorb oder in Spam zustellt, startet er nicht. Verschiebt oder kopiert ein anderes E-Mail-Programm eine Nachricht in einen anderen Ordner, startet er nicht erneut. Auch für eine Kopie einer Nachricht, die das Postfach schon enthält, startet er nicht. Der Trigger stellt Folgendes bereit:
+`messageReceived` startet einmal für eine stabile, neu importierte Nachricht. Für E-Mails, die der Anbieter direkt in den Papierkorb oder in Spam zustellt, startet er nicht. Bei Gmail startet er für die Kopie im Posteingang oder in einem anderen Ordner, nicht für die Kopie in **All Mail**. Verschiebt oder kopiert ein anderes E-Mail-Programm eine Nachricht in einen anderen Ordner, startet er nicht erneut. Auch für eine Kopie einer Nachricht, die das Postfach schon enthält, startet er nicht. Der Trigger stellt Folgendes bereit:
 
 - `trigger.message`
 - `trigger.conversation`

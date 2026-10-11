@@ -68,7 +68,7 @@ Mail accepts at most 20 inputs, 500 steps, 20 nested step levels, 500 conditions
 
 ### `messageReceived`
 
-`messageReceived` starts once for a stable newly imported message. It does not start for mail that the provider delivers straight to Trash or Junk. It does not start again when another email client moves or copies a message to another folder. It also does not start for a copy of a message that the mailbox already holds. It exposes:
+`messageReceived` starts once for a stable newly imported message. It does not start for mail that the provider delivers straight to Trash or Junk. At Gmail, it starts for the copy in the Inbox or in another folder, not for the copy in **All Mail**. It does not start again when another email client moves or copies a message to another folder. It also does not start for a copy of a message that the mailbox already holds. It exposes:
 
 - `trigger.message`
 - `trigger.conversation`

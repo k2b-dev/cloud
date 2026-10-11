@@ -374,6 +374,48 @@ suite("mail command runtime provider safety", () => {
     await sql`INSERT INTO mail.conversation_messages (conversation_id, message_id, position) VALUES (${conversation!.id}::uuid, ${messageId}::uuid, 0)`;
     return conversation!.id;
   };
+
+  test.each(["review", "changed"])("compares expressible precondition keywords against live %s labels", async (keyword) => {
+    const message = await inboxMessage(`keyword-precondition-${keyword}`, keyword === "review" ? 424290 : 424291);
+    const command = await createActorCommand({
+      context: adminContext,
+      mailboxId,
+      enqueue: false,
+      input: {
+        kind: "delete",
+        messageId: message.id,
+        folderId: inboxFolderId,
+        expectedRemoteState: { modseq: "1", flags: [], keywords: ["review"] },
+        idempotencyKey: `keyword-precondition-${keyword}-${suffix}`,
+      },
+    });
+    if (!command.ok) throw new Error(command.error.message);
+    let deleted = false;
+    const state = spyOn(imapSmtpConnector, "getMessageState").mockImplementation(async () => ({
+      exists: !deleted,
+      flags: [],
+      keywords: ["\\Inbox", "\\Important", keyword],
+      messageId: message.rfcMessageId,
+      modseq: "1",
+    }));
+    const remove = spyOn(imapSmtpConnector, "delete").mockImplementation(async () => {
+      deleted = true;
+    });
+    try {
+      expect(await executeMutationCommand(command.data.id)).toBe(keyword === "review" ? "confirmed" : "failed");
+      expect(remove).toHaveBeenCalledTimes(keyword === "review" ? 1 : 0);
+      if (keyword === "changed") {
+        const [row] = await sql<{ last_error_code: string }[]>`
+          SELECT last_error_code FROM mail.commands WHERE id = ${command.data.id}::uuid
+        `;
+        expect(row?.last_error_code).toBe("REMOTE_STATE_CHANGED");
+      }
+    } finally {
+      remove.mockRestore();
+      state.mockRestore();
+    }
+  });
+
   test("kept conversation commands refuse deletion, deleted flags and effective trash/junk roles while allowing normal moves and copies", async () => {
     const message = await inboxMessage("keep-command", 424280);
     const conversationId = await threadMessage(message.id);

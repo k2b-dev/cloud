@@ -30,7 +30,7 @@ import {
 } from "./draft-provider-projection";
 import { deleteAbandonedDraftAttachmentUploads } from "./draft-uploads";
 import { resolveMailExecution } from "./execution";
-import { isInboxFolder, isSentFolder, isTrashOrJunkFolder } from "./follow-up-scope";
+import { isAllMailFolder, isInboxFolder, isSentFolder, isTrashOrJunkFolder } from "./follow-up-scope";
 import { withLeaseHeartbeat } from "./lease-heartbeat";
 import { enqueueMailInvalidation, mailLive } from "./live";
 import { mailScheduler } from "./mail-scheduler";
@@ -929,12 +929,95 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
 
   await retireKeptCopyPlacements(params.db, messageContentId, remoteRef.id);
 
+  const emitMessageReceived = async (): Promise<void> => {
+    const deliveryKey = `message:${remoteRef.id}`;
+    const snapshot = await getWorkflowSnapshot({
+      mailboxId: params.mailboxId,
+      remoteMessageRefId: remoteRef.id,
+      db: params.db,
+    });
+    if (!snapshot) throw new Error("Received message workflow snapshot could not be loaded");
+    const occurredAt = params.message.internalDate.toISOString();
+    const workflowIds = await params.db<{ workflow_id: string }[]>`
+      SELECT workflow.id::text AS workflow_id
+      FROM mail.workflow_profile profile
+      JOIN workflows.workflow workflow ON workflow.id = profile.id
+      WHERE profile.mailbox_id = ${params.mailboxId}::uuid
+        AND profile.enabled
+        AND workflow.active_version_id IS NOT NULL
+      ORDER BY profile.priority, workflow.id
+    `;
+    const activations =
+      workflowIds.length === 0
+        ? []
+        : await params.db<{ workflow_id: string; trigger_config: Record<string, WorkflowJsonValue> | string }[]>`
+      SELECT
+        activation.workflow_id::text,
+        activation.config AS trigger_config
+      FROM workflows.activation activation
+      JOIN workflows.workflow workflow
+        ON workflow.id = activation.workflow_id
+       AND workflow.active_version_id = activation.workflow_version_id
+      JOIN mail.workflow_profile profile
+        ON profile.id = workflow.id
+       AND profile.enabled
+      WHERE activation.workflow_id = ANY(${toPgUuidArray(workflowIds.map((row) => row.workflow_id))}::uuid[])
+        AND profile.mailbox_id = ${params.mailboxId}::uuid
+        AND activation.event_type = ${MAIL_WORKFLOW_EVENT.messageReceived}
+        AND activation.enabled
+      ORDER BY
+        array_position(${toPgUuidArray(workflowIds.map((row) => row.workflow_id))}::uuid[], activation.workflow_id),
+        activation.id
+    `;
+    const triggerValues = {
+      message: snapshot.source.message,
+      conversation: snapshot.source.conversation,
+      occurredAt,
+    };
+    for (const activation of activations) {
+      const config = typeof activation.trigger_config === "string" ? JSON.parse(activation.trigger_config) : activation.trigger_config;
+      const withValues =
+        config.with !== null && typeof config.with === "object" && !Array.isArray(config.with)
+          ? (config.with as Record<string, WorkflowJsonValue>)
+          : {};
+      await emitWorkflowEvent(
+        {
+          appId: MAIL_WORKFLOW_APP_ID,
+          scopeId: params.mailboxId,
+          type: MAIL_WORKFLOW_EVENT.messageReceived,
+          targetWorkflowId: activation.workflow_id,
+          data: evaluateWorkflowTriggerInputs(triggerValues, withValues, occurredAt),
+          context: mailWorkflowEventContext(snapshot),
+          dedupeKey: `${deliveryKey}:${activation.workflow_id}`,
+          occurredAt: new Date(occurredAt),
+        },
+        { db: params.db },
+      );
+    }
+  };
+  // An incoming message whose first copy is in All Mail waits for its first copy in another folder:
+  // automations act on that copy, as an All Mail copy carries Gmail's labels instead of keywords.
+  // That copy receives the message once, so a later move or new label does not receive it again.
+  const receivePendingMessage = async (): Promise<void> => {
+    const [pending] = await params.db<{ id: string }[]>`
+      UPDATE mail.message_contents
+      SET receipt_pending = false
+      WHERE id = ${messageContentId}::uuid AND receipt_pending AND NOT ${isAllMailFolder(sql`${params.folderId}::uuid`)}
+      RETURNING id
+    `;
+    if (pending && params.captureWorkflowTriggers && !(await isTrashOrJunkPlacement(params.db, params.folderId)))
+      await emitMessageReceived();
+  };
+
   const [existingConversation] = await params.db<{ conversation_id: string }[]>`
     SELECT conversation_id
     FROM mail.conversation_messages
     WHERE message_id = ${messageContentId}::uuid
   `;
-  if (existingConversation) return messageContentId;
+  if (existingConversation) {
+    await receivePendingMessage();
+    return messageContentId;
+  }
 
   const ownAddresses = await params.db<{ address: string; sender_identity: boolean }[]>`
     SELECT from_address AS address, true AS sender_identity
@@ -1029,72 +1112,18 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
     ON CONFLICT (message_id) DO NOTHING
     RETURNING message_id
   `;
-  if (!linked) return messageContentId;
-  if (params.captureWorkflowTriggers && !isOutbound && !(await isTrashOrJunkPlacement(params.db, params.folderId))) {
-    const deliveryKey = `message:${remoteRef.id}`;
-    const snapshot = await getWorkflowSnapshot({
-      mailboxId: params.mailboxId,
-      remoteMessageRefId: remoteRef.id,
-      db: params.db,
-    });
-    if (!snapshot) throw new Error("Received message workflow snapshot could not be loaded");
-    const occurredAt = params.message.internalDate.toISOString();
-    const workflowIds = await params.db<{ workflow_id: string }[]>`
-      SELECT workflow.id::text AS workflow_id
-      FROM mail.workflow_profile profile
-      JOIN workflows.workflow workflow ON workflow.id = profile.id
-      WHERE profile.mailbox_id = ${params.mailboxId}::uuid
-        AND profile.enabled
-        AND workflow.active_version_id IS NOT NULL
-      ORDER BY profile.priority, workflow.id
+  if (!linked) {
+    await receivePendingMessage();
+    return messageContentId;
+  }
+  if (params.captureWorkflowTriggers && !isOutbound) {
+    const [pending] = await params.db<{ id: string }[]>`
+      UPDATE mail.message_contents
+      SET receipt_pending = true
+      WHERE id = ${messageContentId}::uuid AND ${isAllMailFolder(sql`${params.folderId}::uuid`)}
+      RETURNING id
     `;
-    const activations =
-      workflowIds.length === 0
-        ? []
-        : await params.db<{ workflow_id: string; trigger_config: Record<string, WorkflowJsonValue> | string }[]>`
-      SELECT
-        activation.workflow_id::text,
-        activation.config AS trigger_config
-      FROM workflows.activation activation
-      JOIN workflows.workflow workflow
-        ON workflow.id = activation.workflow_id
-       AND workflow.active_version_id = activation.workflow_version_id
-      JOIN mail.workflow_profile profile
-        ON profile.id = workflow.id
-       AND profile.enabled
-      WHERE activation.workflow_id = ANY(${toPgUuidArray(workflowIds.map((row) => row.workflow_id))}::uuid[])
-        AND profile.mailbox_id = ${params.mailboxId}::uuid
-        AND activation.event_type = ${MAIL_WORKFLOW_EVENT.messageReceived}
-        AND activation.enabled
-      ORDER BY
-        array_position(${toPgUuidArray(workflowIds.map((row) => row.workflow_id))}::uuid[], activation.workflow_id),
-        activation.id
-    `;
-    const triggerValues = {
-      message: snapshot.source.message,
-      conversation: snapshot.source.conversation,
-      occurredAt,
-    };
-    for (const activation of activations) {
-      const config = typeof activation.trigger_config === "string" ? JSON.parse(activation.trigger_config) : activation.trigger_config;
-      const withValues =
-        config.with !== null && typeof config.with === "object" && !Array.isArray(config.with)
-          ? (config.with as Record<string, WorkflowJsonValue>)
-          : {};
-      await emitWorkflowEvent(
-        {
-          appId: MAIL_WORKFLOW_APP_ID,
-          scopeId: params.mailboxId,
-          type: MAIL_WORKFLOW_EVENT.messageReceived,
-          targetWorkflowId: activation.workflow_id,
-          data: evaluateWorkflowTriggerInputs(triggerValues, withValues, occurredAt),
-          context: mailWorkflowEventContext(snapshot),
-          dedupeKey: `${deliveryKey}:${activation.workflow_id}`,
-          occurredAt: new Date(occurredAt),
-        },
-        { db: params.db },
-      );
-    }
+    if (!pending && !(await isTrashOrJunkPlacement(params.db, params.folderId))) await emitMessageReceived();
   }
   return messageContentId;
 };

@@ -51,6 +51,7 @@ import { waitForMailProviderSlot } from "./provider-pacer";
 import { notifySendWaitingForLogin } from "./send-login-notifications";
 import { loadSenderIdentityTransportRuntimeById } from "./sender-identity-transports";
 import { enqueueFolderSync } from "./sync-runtime";
+import { normalizeWorkflowKeywords } from "./workflow-data";
 import { publishMailWorkflowDependency } from "./workflow-dependencies";
 
 const log = logger("mail:commands");
@@ -797,7 +798,8 @@ const normalizedStandardFlags = (flags: readonly string[]): string[] => {
   return [...new Set(flags.map((flag) => standard[flag.toLowerCase()]).filter((flag): flag is string => Boolean(flag)))].sort();
 };
 
-const normalizedKeywords = (keywords: readonly string[]): string[] => [...new Set(keywords.map((keyword) => keyword.toLowerCase()))].sort();
+const normalizedKeywords = (keywords: readonly string[]): string[] =>
+  [...new Set(normalizeWorkflowKeywords(keywords).map((keyword) => keyword.toLowerCase()))].sort();
 
 const assertRemoteMessagePrecondition = (current: RemoteMessageState, expected?: RemoteMessagePrecondition): void => {
   if (!expected) return;

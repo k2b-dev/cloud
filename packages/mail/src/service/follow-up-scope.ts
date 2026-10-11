@@ -27,6 +27,9 @@ export const isSentFolder = (folderId: SqlFragment): SqlFragment => hasFolderRol
 /** Whether a folder is the mailbox's Inbox. */
 export const isInboxFolder = (folderId: SqlFragment): SqlFragment => hasFolderRole(folderId, ["inbox"]);
 
+/** Whether a folder is the provider's All Mail collection. */
+export const isAllMailFolder = (folderId: SqlFragment): SqlFragment => hasFolderRole(folderId, ["all"]);
+
 /**
  * Whether one message, joined with one of its live placements or with none (`placement` is null),
  * puts its conversation in the follow-up views: the copy is filed outside Trash and Junk, or the

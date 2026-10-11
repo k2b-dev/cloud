@@ -59,6 +59,7 @@ suite("mail baseline schema", () => {
     await sql`DROP TABLE mail.personal_mailbox_preferences`;
     await sql`DROP INDEX mail.message_contents_hydration_claim_idx`;
     await sql`ALTER TABLE mail.outbox_submissions DROP COLUMN sent_copy_pending`;
+    await sql`ALTER TABLE mail.message_contents DROP COLUMN receipt_pending`;
     await migrate();
     const [shape] = await sql<
       {
@@ -66,6 +67,7 @@ suite("mail baseline schema", () => {
         claim_index_exists: boolean;
         sent_copy_index_exists: boolean;
         sent_copy_pending: string | null;
+        receipt_pending: string | null;
         versions: number;
       }[]
     >`
@@ -79,6 +81,12 @@ suite("mail baseline schema", () => {
           JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
           WHERE a.attrelid = 'mail.outbox_submissions'::regclass AND a.attname = 'sent_copy_pending' AND a.attnotnull
         ) AS sent_copy_pending,
+        (
+          SELECT pg_get_expr(d.adbin, d.adrelid)
+          FROM pg_attribute a
+          JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+          WHERE a.attrelid = 'mail.message_contents'::regclass AND a.attname = 'receipt_pending' AND a.attnotnull
+        ) AS receipt_pending,
         (SELECT count(*)::int FROM mail.schema_migrations) AS versions
     `;
     // No version is recorded, so an older Mail image still starts on the upgraded database.
@@ -87,6 +95,7 @@ suite("mail baseline schema", () => {
       claim_index_exists: true,
       sent_copy_index_exists: true,
       sent_copy_pending: "false",
+      receipt_pending: "false",
       versions: 1,
     });
   });
