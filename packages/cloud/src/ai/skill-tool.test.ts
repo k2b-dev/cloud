@@ -120,6 +120,7 @@ describe("search_skills", () => {
       description: "Invoice workflow.",
       permission: "read" as const,
       enabled: true,
+      manualOnly: false,
       revision: 1,
       referenceCount: 0,
       createdAt: "2026-10-11",
@@ -138,7 +139,7 @@ describe("search_skills", () => {
       skills: [{ name: "invoice-20", description: "Invoice workflow." }],
       more: false,
     });
-    expect(search).toHaveBeenCalledWith(subject, "invoice", 30);
+    expect(search).toHaveBeenCalledWith(subject, "invoice", 30, { modelInvocableOnly: true });
   });
 
   test("rechecks access and returns only enabled matching Skills", async () => {
@@ -156,7 +157,7 @@ describe("search_skills", () => {
         signal: new AbortController().signal,
       } as never),
     ).toEqual({ skills: [{ name: "cloud-mail", description: "Email and inbox workflows." }], more: false });
-    expect(aiSkills.search).toHaveBeenCalledWith(subject, "email", 10);
+    expect(aiSkills.search).toHaveBeenCalledWith(subject, "email", 10, { modelInvocableOnly: true });
   });
 });
 
@@ -172,6 +173,7 @@ test.each([false, true])("search_skills respects local precedence with manualOnl
         description: "Cloud invoices.",
         permission: "read",
         enabled: true,
+        manualOnly: false,
         revision: 1,
         referenceCount: 0,
         createdAt: "2026-10-11",

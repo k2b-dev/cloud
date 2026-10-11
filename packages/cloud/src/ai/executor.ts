@@ -941,7 +941,7 @@ export class AiTurnExecutor {
     }));
     const skillCatalog = selectAiSkillCatalog(
       mergeAiSkillCatalog(
-        availableSkills.map(({ name, description }) => ({ name, description })),
+        availableSkills.map(({ name, description, manualOnly }) => ({ name, description, manualOnly })),
         localSkills,
       ),
       resolved.provider.contextWindow ?? 0,
@@ -1315,7 +1315,7 @@ export class AiTurnExecutor {
     const chat = await aiConversations.getConversation({ conversationId });
     const workingPlan = chat?.todoPlan;
     const skillCatalogOffered = activeTools.some((tool) => ["load_skill", "load_local_skill"].includes(tool.def.name));
-    const skillCreatorAvailable = availableSkills.some((skill) => skill.name === "skill-creator");
+    const skillCreatorAvailable = availableSkills.some((skill) => skill.name === "skill-creator" && !skill.manualOnly);
     // Offer hints and the recent-work summary only guide a fresh turn a person follows; a resumed
     // attempt after an approval or a scheduled run gets neither.
     let guidance: AiTurnGuidance = {};

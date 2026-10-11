@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { mountAiSkillInstructionLinks } from "@k2b/cloud/ai";
 import { SKILLS } from "./skills";
 
 test("ships its Skills with every reference linked from the instructions", () => {
@@ -9,8 +10,7 @@ test("ships its Skills with every reference linked from the instructions", () =>
     "scheduled-tasks",
     "skill-creator",
   ]);
-  for (const skill of SKILLS)
-    for (const reference of skill.references) expect(skill.instructions).toContain(`/skills/${skill.name}/${reference.path}`);
+  for (const skill of SKILLS) for (const reference of skill.references) expect(skill.instructions).toContain(`](${reference.path})`);
 });
 
 test("Assistant skills retain workflow and capability guidance", async () => {
@@ -99,11 +99,13 @@ test("Assistant skills retain workflow and capability guidance", async () => {
   }
 });
 
-test("code mode rewrites links and retains its Cloud type reference", () => {
+test("code mode mounts its links when loaded and retains its Cloud type reference", () => {
   const ASSISTANT_CODE_MODE_SKILL = SKILLS.find((skill) => skill.name === "assistant-code-mode")!;
   const contract = ASSISTANT_CODE_MODE_SKILL.references.find((reference) => reference.path === "references/cloud.md");
   expect(contract).toBeDefined();
   expect(contract!.content.match(/```ts\n/g)).toHaveLength(1);
   expect(contract!.content.match(/```/g)).toHaveLength(2);
-  expect(ASSISTANT_CODE_MODE_SKILL.instructions).toContain("/skills/assistant-code-mode/references/cloud.md");
+  expect(mountAiSkillInstructionLinks(ASSISTANT_CODE_MODE_SKILL.name, ASSISTANT_CODE_MODE_SKILL.instructions)).toContain(
+    "](/skills/assistant-code-mode/references/cloud.md)",
+  );
 });

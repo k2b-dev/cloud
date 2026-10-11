@@ -4,7 +4,7 @@ import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { accessRevision } from "../server/services/access-revision";
 import { migrateCloudAi } from "./migrate";
 import { aiProjects } from "./projects";
-import { AiSkillRevisionConflictError, aiSkills } from "./skills";
+import { AiSkillInputError, AiSkillRevisionConflictError, aiSkills } from "./skills";
 import { aiConversations } from "./store";
 
 const insertUser = async (label: string): Promise<string> => {
@@ -21,6 +21,64 @@ databaseSuite()("aiSkills (integration)", () => {
   beforeAll(async () => {
     await migrateCloudAi();
   });
+  test("manual-only discovery and loading preserve portable content and pin mounted instructions", async () => {
+    const userId = await insertUser("manual-only");
+    const subject = { type: "user" as const, userId };
+    const name = `manual-${crypto.randomUUID()}`;
+    const instructions = "Read [Rules](references/rules.md).";
+    const skill = await aiSkills.create({
+      subject,
+      name,
+      description: "Manual workflow.",
+      instructions,
+      extraFrontmatter: { "disable-model-invocation": true, vendor: { nested: [1, false] } },
+      references: [{ path: "references/rules.md", content: "Rules" }],
+    });
+    const automatic = await aiSkills.create({
+      subject,
+      name: `auto-${crypto.randomUUID()}`,
+      description: "Automatic workflow.",
+      instructions: "Do work.",
+      extraFrontmatter: { "disable-model-invocation": "true" },
+    });
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+    const [turn] = await sql<{ id: string }[]>`INSERT INTO ai.turns(short_id,conversation_id,status)
+      VALUES(${`manual-${crypto.randomUUID()}`},${conversation.id}::uuid,'queued') RETURNING id`;
+    try {
+      expect(skill.manualOnly).toBe(true);
+      expect((await aiSkills.list(subject)).find((entry) => entry.id === skill.id)?.manualOnly).toBe(true);
+      expect((await aiSkills.list(subject)).find((entry) => entry.id === automatic.id)?.manualOnly).toBe(false);
+      const invocableIds = (await aiSkills.list(subject, { modelInvocableOnly: true })).map((entry) => entry.id);
+      expect(invocableIds).toContain(automatic.id);
+      expect(invocableIds).not.toContain(skill.id);
+      expect((await aiSkills.search(subject, name)).skills.map((entry) => entry.id)).toContain(skill.id);
+      expect((await aiSkills.search(subject, name, 30, { modelInvocableOnly: true })).skills.map((entry) => entry.id)).not.toContain(
+        skill.id,
+      );
+      await expect(aiSkills.loadForTurn(turn!.id, name, subject)).rejects.toBeInstanceOf(AiSkillInputError);
+      await expect(aiSkills.loadForTurn(turn!.id, name, subject)).rejects.toThrow(`Skill "${name}" starts only when the user selects it.`);
+      expect(await sql`SELECT * FROM ai.turn_skill_snapshots WHERE turn_id=${turn!.id}::uuid`).toHaveLength(0);
+      const loaded = await aiSkills.loadForTurn(turn!.id, { id: skill.shortId }, subject);
+      expect(loaded?.instructions).toBe(`Read [Rules](/skills/${name}/references/rules.md).`);
+      expect((await aiSkills.get(skill.id, subject))?.instructions).toBe(instructions);
+      const [stored] = await sql<
+        { instructions: string }[]
+      >`SELECT instructions FROM ai.turn_skill_snapshots WHERE turn_id=${turn!.id}::uuid`;
+      expect(stored?.instructions).toBe(instructions);
+      expect(loaded?.files.find((file) => file.path.endsWith("/SKILL.md"))?.content).toContain("[Rules](references/rules.md)");
+      expect((await aiSkills.readTurnFile(turn!.id, `${name}/SKILL.md`, subject))?.bytes).toEqual(
+        new TextEncoder().encode(loaded!.files[0]!.content),
+      );
+      await expect(aiSkills.loadForTurn(turn!.id, name, subject)).rejects.toThrow("starts only when the user selects it");
+      expect(await aiSkills.loadForTurn(turn!.id, { id: skill.shortId }, subject)).toEqual(loaded);
+    } finally {
+      await aiSkills.admin.delete(skill.id);
+      await aiSkills.admin.delete(automatic.id);
+      await sql`DELETE FROM ai.conversations WHERE id=${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  });
+
   test("blocks anonymous legacy grants and converts only Skill/Project grants to authenticated access", async () => {
     const userId = await insertUser("authenticated-only");
     const owner = { type: "user" as const, userId };
@@ -334,6 +392,10 @@ databaseSuite()("aiSkills (integration)", () => {
       expect((await aiSkills.list(member)).find((entry) => entry.id === skill.id)?.enabled).toBe(true);
       expect(await aiSkills.setEnabled(skill.id, member, false)).toBe(false);
       expect((await aiSkills.list(member)).find((entry) => entry.id === skill.id)?.enabled).toBe(false);
+      const name = updated!.name;
+      expect(await aiSkills.list(member, { name })).toEqual([expect.objectContaining({ id: skill.id, name, enabled: false })]);
+      expect(await aiSkills.list(member, { name: `${name}-missing` })).toEqual([]);
+      expect((await aiSkills.search(member, name)).skills.some((entry) => entry.id === skill.id)).toBe(false);
       expect(await aiSkills.loadForTurn(turn!.id, { id: skill.shortId }, member)).toBeNull();
       expect(await aiSkills.listTurnFiles(turn!.id, member)).toEqual([]);
       expect(await aiSkills.readTurnFile(turn!.id, `${skill.name}/SKILL.md`, member)).toBeNull();
