@@ -5,7 +5,7 @@ section: Platform services
 order: 560
 description: Project focused application Queries into the shared Cloud search.
 tags: [search, capabilities, authorization]
-updated: 2026-10-05
+updated: 2026-10-11
 ---
 
 # Universal search
@@ -340,7 +340,7 @@ and tag filters while preserving the search text. Labels and icons are display
 metadata, never authorization. Concrete scopes are not listed in filter
 discovery. Reopening an existing dialog updates its context and focuses the
 input. Pass `query` to replace the text too; omit it to preserve the current text.
-Calls made before layout hydration wait for the host; only the latest
+Calls made before the layout's islands mount wait for the host; only the latest
 request is retained, with a bounded wait and visible failure if it cannot open.
 On public pages, signed-out users can search the navigation links visible to
 them, such as Tools. The layout does not call the authenticated resource-search

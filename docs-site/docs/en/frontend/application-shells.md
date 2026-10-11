@@ -5,7 +5,7 @@ section: Frontend
 order: 830
 description: Choose the shared shell that matches an application's information structure.
 tags: [shells, workspace, ui]
-updated: 2026-10-10
+updated: 2026-10-11
 ---
 
 # Application shells
@@ -98,8 +98,8 @@ Content and Main makes room while keeping at least 320 px. On coarse pointers
 from 768 to 1023 px, a closable detail overlays Main as a drawer. The host’s
 app card from 1536 px surrounds this same workspace geometry.
 
-In a hydrated component, pass `onClose` the panel’s existing close or deselect
-action. Escape and dismissal gestures then use that action too. A detail that
+In an island or client component, pass `onClose` the panel’s existing close or
+deselect action. Escape and dismissal gestures then use that action too. A detail that
 the page renders on the server only cannot pass a function; mark the panel’s
 own close button or link with `data-workspace-detail-close`, and Escape and
 the gestures click it. Omit both for permanent context. The application still

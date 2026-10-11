@@ -198,4 +198,5 @@ Do not return an async render function. The render function is called by `render
 - using `nav.push()` without reconciling `popstate` leaves island state stale after Back/Forward; use `listenPopState()`
 - importing server-only modules into islands or client components can break browser bundling
 - named exports for islands/clients are not supported
+- islands are re-rendered, not hydrated: mounting replaces the server HTML inside an island, so typed input, focus, and scroll there are lost, and markup that differs between server and client shifts the page
 - calling `reset()` inside an `ssr:island-error` listener retries immediately, so a component that keeps failing loops; keep `reset` for a user action or a bounded, delayed retry
