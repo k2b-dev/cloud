@@ -824,7 +824,7 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
                 focusInput();
               }}
             >
-              ← {t().back}
+              <i class="ti ti-arrow-left" aria-hidden="true" /> {t().back}
             </Button>
             <div class="cloud-resource-search__preview-app">
               <i class={item().icon ?? item().appIcon} aria-hidden="true" />

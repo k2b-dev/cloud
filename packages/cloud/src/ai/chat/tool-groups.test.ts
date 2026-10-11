@@ -12,7 +12,11 @@ const tool = (id: string, name = "read_file"): Extract<AiTurnBlock, { kind: "too
 
 const rows = (blocks: AiTurnBlock[], shown?: ReadonlySet<string>) =>
   groupWorkBlocks(blocks, shown).map((item) =>
-    item.kind === "housekeeping" ? item.entries.map((entry) => entry.id) : item.kind === "text" ? `text ${item.block.id}` : item.entry.id,
+    item.kind === "housekeeping" || item.kind === "repeat"
+      ? item.entries.map((entry) => entry.id)
+      : item.kind === "text"
+        ? `text ${item.block.id}`
+        : item.entry.id,
   );
 
 test("steps show directly at one level; intermediate texts stay in order", () => {
@@ -107,4 +111,201 @@ test("a completed code tool reporting a runtime error counts as failed work", ()
       "en",
     ),
   ).toBe("1 step · 1 failed");
+});
+
+const read = (id: string, offset = 0) => ({ ...tool(id), args: { path: "/products-100.csv", offset, length: 100 } });
+const otherSteps = [tool("run", "code_run"), tool("check", "code_check")];
+
+test("repeated reads fold by trimmed target with intervening reasoning and the first tool's id", () => {
+  const thought: AiTurnBlock = { id: "between", kind: "thinking", text: "Next chunk" };
+  const after: AiTurnBlock = { id: "after", kind: "thinking", text: "Now check" };
+  const blocks = [
+    read("a"),
+    thought,
+    { ...read("b", 100), args: { path: " /products-100.csv ", offset: 100 } },
+    read("c", 200),
+    after,
+    ...otherSteps,
+  ];
+  expect(groupWorkBlocks(blocks)[0]).toEqual({
+    kind: "repeat",
+    id: "a",
+    target: "/products-100.csv",
+    entries: blocks.slice(0, 4),
+  });
+  expect(rows(blocks)).toEqual([["a", "between", "b", "c"], "after", "run", "check"]);
+});
+
+test("failed, rejected and waiting calls break repeats and stay visible", () => {
+  const decisions: Extract<AiTurnBlock, { kind: "tool" }>[] = [
+    { ...read("middle"), isError: true },
+    { ...read("middle"), status: "failed" },
+    { ...read("middle"), status: "rejected" },
+    { ...read("middle"), status: "awaiting_approval" },
+    { ...read("middle"), status: "awaiting_client" },
+  ];
+  for (const decision of decisions) {
+    expect(rows([read("a"), read("b"), decision, read("c"), read("d"), ...otherSteps])).toEqual([
+      ["a", "b"],
+      "middle",
+      ["c", "d"],
+      "run",
+      "check",
+    ]);
+  }
+  expect(
+    rows([
+      { ...tool("a", "code_run"), args: { path: "/script" } },
+      { ...tool("bad", "code_run"), args: { path: "/script" }, result: { status: "error" } },
+      { ...tool("b", "code_run"), args: { path: "/script" } },
+      ...otherSteps,
+    ]),
+  ).toEqual(["a", "bad", "b", "run", "check"]);
+});
+
+test("intermediate text, compaction and steering break repeat runs", () => {
+  const breaks: AiTurnBlock[] = [
+    { id: "middle", kind: "text", text: "Checking" },
+    { id: "middle", kind: "compaction", status: "completed" },
+    { id: "middle", kind: "steer_applied", steerId: "steer" },
+  ];
+  for (const entry of breaks) {
+    expect(rows([read("a"), entry, read("b"), ...otherSteps])).toEqual([
+      "a",
+      entry.kind === "text" ? "text middle" : "middle",
+      "b",
+      "run",
+      "check",
+    ]);
+  }
+});
+
+test("different paths or tool names do not fold", () => {
+  expect(rows([read("a"), { ...read("b"), args: { path: "/other.csv" } }, ...otherSteps])).toEqual(["a", "b", "run", "check"]);
+  expect(rows([read("a"), { ...read("b"), name: "write_file" }, ...otherSteps])).toEqual(["a", "b", "run", "check"]);
+});
+
+test("different scope ids, filters and append content do not fold on the same target", () => {
+  for (const [name, first, second] of [
+    ["contacts__list", { bookId: "B1", query: "Mueller" }, { bookId: "B2", query: "Mueller" }],
+    ["fs__browse", { baseId: "A", path: "/Docs" }, { baseId: "B", path: "/Docs" }],
+    ["fs__browse", { path: "/Docs", query: "first" }, { path: "/Docs", query: "second" }],
+    ["write_file", { path: "/r.md", content: "1", mode: "append" }, { path: "/r.md", content: "2", mode: "append" }],
+  ] as const) {
+    expect(rows([{ ...tool("a", name), args: first }, { ...tool("b", name), args: second }, ...otherSteps])).toEqual([
+      "a",
+      "b",
+      "run",
+      "check",
+    ]);
+  }
+});
+
+test("only top-level paging arguments may differ or be omitted in a repeat", () => {
+  for (const key of ["offset", "length", "limit", "cursor", "after", "page", "pageSize"]) {
+    expect(
+      rows([
+        { ...tool("a"), args: { path: "/Docs", [key]: 1 } },
+        { ...tool("b"), args: { path: "/Docs", [key]: 2 } },
+        { ...tool("c"), args: { path: "/Docs" } },
+        ...otherSteps,
+      ]),
+    ).toEqual([["a", "b", "c"], "run", "check"]);
+    expect(
+      rows([
+        { ...tool("a"), args: { path: "/Docs", filter: { [key]: 1 } } },
+        { ...tool("b"), args: { path: "/Docs", filter: { [key]: 2 } } },
+        ...otherSteps,
+      ]),
+    ).toEqual(["a", "b", "run", "check"]);
+  }
+});
+
+test("argument key order and surrounding whitespace do not prevent repeats", () => {
+  expect(
+    rows([
+      { ...tool("a", "fs__browse"), args: { baseId: "A", path: "/Docs", after: "x" } },
+      { ...tool("b", "fs__browse"), args: { path: " /Docs ", baseId: " A " } },
+      ...otherSteps,
+    ]),
+  ).toEqual([["a", "b"], "run", "check"]);
+});
+
+test("nested objects and arrays compare by value with trimmed strings", () => {
+  const first = { path: "/Docs", filter: { tags: ["a", { name: "b", enabled: true }], count: 2 } };
+  const equal = { filter: { count: 2, tags: [" a ", { enabled: true, name: " b " }] }, path: "/Docs" };
+  expect(rows([{ ...tool("a"), args: first }, { ...tool("b"), args: equal }, ...otherSteps])).toEqual([["a", "b"], "run", "check"]);
+  for (const filter of [
+    { tags: ["a", { name: "b", enabled: false }], count: 2 },
+    { tags: [{ name: "b", enabled: true }, "a"], count: 2 },
+  ]) {
+    expect(rows([{ ...tool("a"), args: first }, { ...tool("b"), args: { path: "/Docs", filter } }, ...otherSteps])).toEqual([
+      "a",
+      "b",
+      "run",
+      "check",
+    ]);
+  }
+});
+
+test("repeat folds leave at least two other steps", () => {
+  const reads = [read("a"), read("b"), read("c")];
+  expect(rows(reads)).toEqual(["a", "b", "c"]);
+  expect(rows([...reads, otherSteps[0]!])).toEqual(["a", "b", "c", "run"]);
+  expect(rows([...reads, ...otherSteps])).toEqual([["a", "b", "c"], "run", "check"]);
+});
+
+test("watched reads and reasoning never join a repeat", () => {
+  const reads = [read("a"), read("b"), read("c"), ...otherSteps];
+  expect(rows(reads, new Set(["b"]))).toEqual(["a", "b", "c", "run", "check"]);
+  const thought: AiTurnBlock = { id: "t", kind: "thinking", text: "Next" };
+  expect(rows([read("a"), thought, read("b"), ...otherSteps], new Set(["t"]))).toEqual(["a", "t", "b", "run", "check"]);
+});
+
+test("URL and query targets fold; path then URL then query take precedence", () => {
+  for (const [name, args, target] of [
+    ["web_fetch", { url: " https://example.com " }, "https://example.com"],
+    ["web_search", { query: " products " }, "products"],
+    ["web_fetch", { path: " ", url: " https://example.com ", query: "other" }, "https://example.com"],
+    ["web_search", { path: 42, url: "", query: " products " }, "products"],
+    ["read_file", { path: "/products-100.csv", url: "other", query: "other" }, "/products-100.csv"],
+  ] as const) {
+    const calls = [
+      { ...tool("a", name), args },
+      { ...tool("b", name), args },
+    ];
+    expect(groupWorkBlocks([...calls, ...otherSteps])[0]).toEqual({ kind: "repeat", id: "a", target, entries: calls });
+  }
+  for (const args of [undefined, null, [], { path: " ", url: "", query: 42 }]) {
+    expect(rows([{ ...tool("a"), args }, { ...tool("b"), args }, ...otherSteps])).toEqual(["a", "b", "run", "check"]);
+  }
+  expect(
+    groupWorkBlocks([
+      { ...tool("a", "search_help"), args: { query: "products" } },
+      { ...tool("b", "search_help"), args: { query: "products" } },
+      ...otherSteps,
+    ])[0]?.kind,
+  ).toBe("housekeeping");
+  expect(
+    groupWorkBlocks([
+      { ...read("a"), args: { path: "/skills/report/SKILL.md" } },
+      { ...read("b"), args: { path: "/skills/report/SKILL.md" } },
+      ...otherSteps,
+    ])[0]?.kind,
+  ).toBe("housekeeping");
+});
+
+test("running and completed repeat runs have the same kinds and keys", () => {
+  const history = [read("a"), read("b"), read("c"), ...otherSteps];
+  const live = [read("a"), read("b"), { ...read("c"), status: "running" as const }, ...otherSteps];
+  const keys = (blocks: AiTurnBlock[]) =>
+    groupWorkBlocks(blocks).map((item) =>
+      item.kind === "text" ? [item.kind, item.block.id] : item.kind === "step" ? [item.kind, item.entry.id] : [item.kind, item.id],
+    );
+  expect(keys(live)).toEqual(keys(history));
+  expect(keys(live)).toEqual([
+    ["repeat", "a"],
+    ["step", "run"],
+    ["step", "check"],
+  ]);
 });

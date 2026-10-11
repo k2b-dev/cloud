@@ -99,3 +99,37 @@ test("bar gauge snapshots include every row beyond the default chart height", ()
   expect(snapshot.marks).toHaveLength(12);
   expect(snapshot.marks.every((mark) => mark.datum.anchor[1] < snapshot.height)).toBe(true);
 });
+
+test("sortable table headers use the DataTable markers and accessible sort state", () => {
+  const html = renderToString(() =>
+    createComponent(ChartExplorer<(typeof rows)[number]>, {
+      title: "Queues",
+      data: { chart: chart(), rows },
+      defaultView: "table",
+      defaultSort: { key: "label", direction: "asc" },
+      columns: [
+        {
+          id: "label",
+          label: "Queue",
+          value: (row: (typeof rows)[number]) => row.label,
+          sortValue: (row: (typeof rows)[number]) => row.label,
+        },
+        {
+          id: "value",
+          label: "Value",
+          value: (row: (typeof rows)[number]) => String(row.value),
+          sortValue: (row: (typeof rows)[number]) => row.value,
+        },
+      ],
+    }),
+  );
+  const headers = html.match(/<th\b[^>]*>[\s\S]*?<\/th>/g) ?? [];
+  expect(headers).toHaveLength(2);
+  expect(headers[0]).toContain('aria-sort="ascending"');
+  expect(headers[0]).toContain('class="k2b-data-table__sort-icon ti ti-arrow-up"');
+  expect(headers[0]).toContain('data-active="true"');
+  expect(headers[1]).toContain('aria-sort="none"');
+  expect(headers[1]).toContain('class="k2b-data-table__sort-icon ti ti-arrow-down"');
+  expect(headers[1]).not.toContain("data-active");
+  expect(html).not.toMatch(/[↑↓↕]/);
+});
