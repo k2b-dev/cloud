@@ -1,7 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { crypto, err, fail, ok, type PageParams, type Paginated, type Result } from "@k2b/stdlib";
 import { type SQL, sql } from "bun";
-import type { User } from "../contracts/shared";
+import { AI_INFERENCE_SCOPE, type User } from "../contracts/shared";
 import { accounts } from "./accounts";
 import { audit } from "./audit";
 import { isUniqueViolation, toPgTextArray } from "./postgres";
@@ -199,12 +199,16 @@ const generateTokenParts = (): { tokenPrefix: string; secret: string; token: str
 };
 
 // API token secrets carry 256 bits of entropy, so a fast digest is sufficient and avoids password-KDF cost per request.
-const hashApiTokenSecret = (secret: string): string => `sha256:${createHash("sha256").update(secret).digest("hex")}`;
+// Domain-separate models-only keys so older platforms fail verification instead of granting full authority.
+const hashApiTokenSecret = (secret: string, scopes: readonly string[]): string =>
+  `sha256:${createHash("sha256")
+    .update(scopes.includes(AI_INFERENCE_SCOPE) ? `${AI_INFERENCE_SCOPE}:${secret}` : secret)
+    .digest("hex")}`;
 
-const verifyApiTokenSecret = async (secret: string, storedHash: string): Promise<boolean> => {
+const verifyApiTokenSecret = async (secret: string, storedHash: string, scopes: readonly string[]): Promise<boolean> => {
   const match = storedHash.match(SECRET_HASH_PATTERN);
   if (match) {
-    const actual = Buffer.from(hashApiTokenSecret(secret).slice("sha256:".length), "hex");
+    const actual = Buffer.from(hashApiTokenSecret(secret, scopes).slice("sha256:".length), "hex");
     const expected = Buffer.from(match[1]!, "hex");
     return timingSafeEqual(actual, expected);
   }
@@ -338,7 +342,7 @@ const insertApiToken = async (
   }
 
   const parts = await generateUniqueTokenParts();
-  const secretHash = hashApiTokenSecret(parts.secret);
+  const secretHash = hashApiTokenSecret(parts.secret, params.scopes ?? []);
 
   try {
     const [row] = await db<DbCredentialRow[]>`
@@ -371,16 +375,20 @@ const insertApiToken = async (
   }
 };
 
-export const createApiToken = (params: {
+export const createApiToken = async (params: {
   serviceAccountId: string;
   name: string;
   createdBy?: string | null;
   expiresAt?: string | null;
   scopes?: string[];
-}): Promise<Result<{ credential: ServiceAccountCredential; token: string }>> => insertApiToken(sql, params);
+}): Promise<Result<{ credential: ServiceAccountCredential; token: string }>> => {
+  if (params.scopes?.includes(AI_INFERENCE_SCOPE)) return fail(err.badInput("ai:inference is reserved for models-only personal API keys"));
+  return insertApiToken(sql, params);
+};
 
 export const createUserApiToken = async (params: {
   user: User;
+  access?: "full" | "models";
   name: string;
   expiresAt?: string | null;
 }): Promise<Result<{ credential: ServiceAccountCredential; token: string }>> => {
@@ -396,6 +404,7 @@ export const createUserApiToken = async (params: {
       name: params.name,
       expiresAt: params.expiresAt,
       createdBy: params.user.id,
+      scopes: params.access === "models" ? [AI_INFERENCE_SCOPE] : [],
     });
 
     return audit.recordResult({
@@ -404,6 +413,7 @@ export const createUserApiToken = async (params: {
       target: { type: "service_account_credential", id: result.ok ? result.data.credential.id : null, label: params.name },
       metadata: {
         serviceAccountId: serviceAccountResult.data.id,
+        access: params.access ?? "full",
         kind: "api_token",
         expiresAt: params.expiresAt ?? null,
       },
@@ -420,6 +430,7 @@ export const createResourceApiToken = async (params: {
   expiresAt?: string | null;
   scopes?: string[];
 }): Promise<Result<{ credential: ServiceAccountCredential; token: string }>> => {
+  if (params.scopes?.includes(AI_INFERENCE_SCOPE)) return fail(err.badInput("ai:inference is reserved for models-only personal API keys"));
   const serviceAccount = await serviceAccounts.get({ id: params.serviceAccountId });
   if (!serviceAccount || serviceAccount.kind !== "resource_bound") return fail(err.notFound("Resource service account"));
   if (serviceAccount.status !== "active") return fail(err.badInput("Resource service account is disabled"));
@@ -460,6 +471,7 @@ export const createStandaloneApiToken = async (params: {
   expiresAt?: string | null;
   scopes?: string[];
 }): Promise<Result<{ credential: ServiceAccountCredential; token: string }>> => {
+  if (params.scopes?.includes(AI_INFERENCE_SCOPE)) return fail(err.badInput("ai:inference is reserved for models-only personal API keys"));
   const serviceAccount = await serviceAccounts.get({ id: params.serviceAccountId });
   if (!serviceAccount || !isStandaloneServiceAccountKind(serviceAccount.kind)) return fail(err.notFound("Service account"));
   if (serviceAccount.status !== "active") return fail(err.badInput("Service account is disabled"));
@@ -780,7 +792,7 @@ const recordSuccessfulAuthentication = async (params: {
   serviceAccount: ServiceAccount;
   delegatedUser: User | null;
 }): Promise<void> => {
-  const upgradedSecretHash = SECRET_HASH_PATTERN.test(params.row.secret_hash) ? null : hashApiTokenSecret(params.secret);
+  const upgradedSecretHash = SECRET_HASH_PATTERN.test(params.row.secret_hash) ? null : hashApiTokenSecret(params.secret, params.row.scopes);
   if (!upgradedSecretHash && !params.row.activity_due) return;
 
   if (upgradedSecretHash) {
@@ -836,10 +848,10 @@ const recordSuccessfulAuthentication = async (params: {
 const pendingSecretVerifications = new Map<string, Promise<boolean>>();
 
 const verifyApiTokenSecretOnce = async (secret: string, row: DbCredentialWithSecretRow): Promise<boolean> => {
-  const key = `${row.id}:${row.secret_hash}:${hashApiTokenSecret(secret)}`;
+  const key = `${row.id}:${row.secret_hash}:${hashApiTokenSecret(secret, row.scopes)}`;
   let pending = pendingSecretVerifications.get(key);
   if (!pending) {
-    pending = verifyApiTokenSecret(secret, row.secret_hash);
+    pending = verifyApiTokenSecret(secret, row.secret_hash, row.scopes);
     pendingSecretVerifications.set(key, pending);
   }
   try {

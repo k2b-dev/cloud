@@ -6,7 +6,7 @@
  */
 
 import { aiLive, aiLiveChannels } from "@k2b/cloud/ai/live";
-import { createCoreApiRouter, createMcpProtectedResourceRoutes, createPwaPhoneRoutes } from "@k2b/cloud/api";
+import { createAiOpenAiRoutes, createCoreApiRouter, createMcpProtectedResourceRoutes, createPwaPhoneRoutes } from "@k2b/cloud/api";
 import { type AppContext, type AuthContext, middleware } from "@k2b/cloud/server";
 import { createIdentityPublicRoutes } from "@k2b/cloud/services/identity";
 import { Hono } from "hono";
@@ -34,7 +34,8 @@ const pages = createPagesRouter();
 const mcpProtectedResource = createMcpProtectedResourceRoutes();
 const identityPublicRoutes = createIdentityPublicRoutes();
 
-const coreApi = new Hono().route("/ai", aiChatTaskRoutes).route("/", api);
+// AI task and chat routers use("*") on /api/ai/* and would reject models-only keys before this endpoint.
+const coreApi = new Hono().route("/ai/openai/v1", createAiOpenAiRoutes()).route("/ai", aiChatTaskRoutes).route("/", api);
 
 const router = new Hono<AuthContext>()
   .use("*", middleware.runtime())

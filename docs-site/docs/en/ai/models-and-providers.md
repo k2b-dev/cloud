@@ -5,7 +5,7 @@ section: AI
 order: 1020
 description: Configure models and providers without exposing credentials to application clients.
 tags: [ai, models, providers]
-updated: 2026-10-08
+updated: 2026-10-11
 ---
 
 # Models and providers
@@ -128,11 +128,16 @@ New interactive turns check access again when execution starts or resumes.
 Revoking a grant can therefore stop a queued or suspended turn. Already running
 provider calls are not canceled by a permission change.
 
-These grants apply only to interactive Assistant chat, including its chat API
-and CLI. Background jobs, scheduled chat tasks, workflows, enrichment,
+These grants apply to interactive Assistant chat, including its chat API
+and CLI, and the models-only OpenAI-compatible API. Background jobs, scheduled
+chat tasks, workflows, enrichment,
 background messages between chats, Vision inspection, and compaction keep their
 existing model policies. The restriction does not configure budgets or cost
 limits.
+
+External text clients can use the same permitted models through the
+[OpenAI-compatible API](/en/docs/ai/openai-compatible-api) with a models-only
+personal key. Unpriced models have no usage limit there either.
 
 ## Supported providers
 
@@ -333,8 +338,9 @@ Optional [Assistant limits](/en/docs/ai/usage-and-feedback#set-assistant-budgets
 are configured separately from model access, and are disabled by default.
 A quota never grants access to a model. All-model **Unlimited** overrides
 model-specific quotas, while finite all-model and model-specific allowances
-both apply. Only direct interactive chat calls count; helper inference such
-as image inspection, transcription and compaction remains outside the quota.
+both apply. Direct interactive chat and OpenAI-compatible API calls count;
+helper inference such as image inspection, transcription and compaction remains
+outside the quota.
 
 
 ## Reference prices

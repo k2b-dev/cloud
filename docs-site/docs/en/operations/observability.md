@@ -5,7 +5,7 @@ section: Operations
 order: 1160
 description: Use logs, traces, metrics, and health data to operate Cloud applications.
 tags: [observability, health, logs]
-updated: 2026-09-15
+updated: 2026-10-11
 ---
 
 # Observability
@@ -160,6 +160,11 @@ The `Upstream unavailable` log carries the same redacted template without the
 200-template limit, the error type, and a transport error code such as
 `ConnectionRefused` or `ENOTFOUND`. It never includes the error message or the
 query.
+
+When a client disconnects before the application answers, the gateway cancels
+the upstream request and records status 499 with the derived template. Such a
+request counts toward the HTTP error percentage (status 400 or higher), but not
+as a server error or an upstream failure, and it writes no log.
 
 Sort by error rate to find unhealthy routes. Sort by requests to find the
 highest traffic.

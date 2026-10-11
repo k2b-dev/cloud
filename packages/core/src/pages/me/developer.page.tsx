@@ -14,11 +14,12 @@ export default ssr<AuthContext>(async (c) => {
   const user = c.get("user");
   const categoryPolicy = await readAccountCategoryPolicy();
   const { t } = accountMessages.resolve([getLocale(c)]);
-  const [rawAppName, rawAppUrl, freeIpaEnabledRaw, apiKeys] = await Promise.all([
+  const [rawAppName, rawAppUrl, freeIpaEnabledRaw, apiKeys, openAiApiEnabled] = await Promise.all([
     coreSettings.get<string>("app.name"),
     coreSettings.get<string>("app.url"),
     coreSettings.get<boolean>("freeipa.enable"),
     serviceAccountCredentials.listForDelegatedUser({ userId: user.id }),
+    coreSettings.get<boolean>("ai.openai_api_enabled"),
   ]);
   const appName = rawAppName || "Cloud";
   const freeIpaEnabled = Boolean(freeIpaEnabledRaw);
@@ -49,7 +50,7 @@ export default ssr<AuthContext>(async (c) => {
             </div>
           </SettingsSection>
 
-          <ApiKeysSettings initialKeys={apiKeys} />
+          <ApiKeysSettings initialKeys={apiKeys} openAiBaseUrl={openAiApiEnabled ? `${cloudUrl}/api/ai/openai/v1` : null} />
 
           <SettingsSection title="Cloud CLI" subtitle={t.cloudCliDescription}>
             <code class="block overflow-x-auto rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] px-3 py-2 font-mono text-xs text-secondary">

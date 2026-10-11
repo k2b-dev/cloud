@@ -22,6 +22,6 @@ Der Kontobereich bündelt lokale Cloud-Daten, optionale FreeIPA-Daten und die Ak
 ## Anmeldung und Automatisierung schützen {icon="shield-lock"}
 
 :::reference
-- **Entwicklung → API-Schlüssel:** Persönliche Schlüssel für Automatisierung. Ein Schlüssel hat denselben Zugriff wie dein Konto. Cloud zeigt den vollständigen Schlüssel nur einmal, direkt nach dem Erstellen.
+- **Entwicklung → API-Schlüssel:** Persönliche Schlüssel für Automatisierung. Ein Schlüssel mit **Vollzugriff** hat denselben Zugriff wie dein Konto. Wenn deine Administration die OpenAI-kompatible API anbietet, kannst du stattdessen **Nur KI-Modelle** wählen: So ein Schlüssel kann nur die KI-Modelle aufrufen, die du im Assistenten nutzen darfst, zum Beispiel aus einer Diktier-App. Cloud zeigt den vollständigen Schlüssel nur einmal, direkt nach dem Erstellen.
 - **Anmeldung → Passkeys:** WebAuthn-Passkeys für die Anmeldung an deinem Konto. Nachdem du einen Passkey entfernt hast, kann sich niemand mehr damit anmelden.
 :::

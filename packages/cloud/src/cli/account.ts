@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { isModelsOnlyApiKey } from "../contracts/shared";
 import { arg, type CliInputFlagValue, type CloudCliContext, command, confirmFlag, defineCliCommands, flag, readCliInput } from "./index";
 
 type User = {
@@ -31,6 +32,7 @@ type User = {
 };
 
 type ApiKey = {
+  scopes: string[];
   id: string;
   name: string;
   status: "active" | "revoked";
@@ -121,6 +123,7 @@ const apiKeyRows = (keys: ApiKey[]) =>
     id: key.id,
     name: key.name,
     prefix: key.tokenPrefix,
+    access: isModelsOnlyApiKey(key) ? "models" : "full",
     expires: key.expiresAt ?? "never",
     lastUsed: key.lastUsedAt ?? "never",
     created: key.createdAt,
@@ -283,6 +286,7 @@ export default defineCliCommands({
         printJsonOrTable(ctx, result, apiKeyRows(result.items), [
           { key: "name" },
           { key: "prefix" },
+          { key: "access" },
           { key: "expires" },
           { key: "lastUsed" },
           { key: "id" },
@@ -294,15 +298,30 @@ export default defineCliCommands({
       args: { name: arg.required({ valueLabel: "name", description: "API key name" }) },
       flags: {
         expires: flag.string({ description: "ISO timestamp or duration like 90d" }),
+        access: flag.enum(["full", "models"], { default: "full", description: "Full access or models-only inference access" }),
       },
       run: async ({ ctx, args, flags }) => {
         const result = await readApi<{ credential: ApiKey; token: string }>(
           ctx,
           "/api-keys",
-          jsonRequest("POST", { name: args.name, expiresAt: parseExpiry(flags.expires) }),
+          jsonRequest("POST", { name: args.name, expiresAt: parseExpiry(flags.expires), access: flags.access }),
         );
+        const modelsOnly = isModelsOnlyApiKey(result.credential);
+        if (flags.access === "models" && !modelsOnly) {
+          try {
+            await readApi<{ message: string }>(ctx, `/api-keys/${encodeURIComponent(result.credential.id)}`, jsonRequest("DELETE"));
+          } catch {
+            throw new Error(
+              `The key was created with full access and could not be revoked automatically. Run: cld account api-keys revoke ${result.credential.id} --yes`,
+            );
+          }
+          throw new Error("This Cloud does not support models-only API keys. The full-access key it created was revoked.");
+        }
         if (ctx.options.output === "json") ctx.json(result);
-        else ctx.print(`Token: ${result.token}\nPrefix: ${result.credential.tokenPrefix}\nStore this token now. It cannot be shown again.`);
+        else {
+          ctx.print(`Token: ${result.token}\nPrefix: ${result.credential.tokenPrefix}\nStore this token now. It cannot be shown again.`);
+          if (modelsOnly) ctx.print("This key works only with the OpenAI-compatible API at /api/ai/openai/v1 on this Cloud.");
+        }
       },
     }),
     command("api-keys revoke", {

@@ -99,6 +99,10 @@ A dashboard widget handler reads the size the board asks for with
 entry point. Pass it as `initial` to the shared `Approvals` component.
 See [Show approvals in your app](/en/docs/identity/approvals#show-approvals-in-your-app).
 
+For a slow handler, `setRequestTimeout`, `REQUEST_IDLE_TIMEOUT_SECONDS`, and
+`REQUEST_IDLE_TIMEOUT_MAX_SECONDS` control the bounded request idle timer;
+see [Answer slow requests](/en/docs/server/http#answer-slow-requests).
+
 See [Server APIs](/en/docs/server) for the request path.
 
 ### Core approval routes
@@ -318,7 +322,7 @@ exports behind it are `Preview`. Their guides say so at the top.
 
 | Entry point | Status | Meaning |
 | --- | --- | --- |
-| `@k2b/cloud/api` | Platform-owned | Builds the Core platform router |
+| `@k2b/cloud/api` | Platform-owned | Builds the Core platform router, including `createAiOpenAiRoutes` for Core’s models-only [OpenAI-compatible API](/en/docs/ai/openai-compatible-api) |
 | `@k2b/cloud/services/help` | Platform-owned | Core Help migration and shared publication/read service |
 | `@k2b/cloud/services/approvals` | Platform-owned | Platform requests, decisions, consumption, lists, and counts; see [Action approvals](/en/docs/identity/approvals) |
 | `@k2b/cloud/ssr/help` | Supported, server-only | Request-scoped Help metadata for specialized embedded readers |

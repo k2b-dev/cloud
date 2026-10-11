@@ -5,7 +5,7 @@ section: Identity and access
 order: 310
 description: Resolve Cloud credentials into the actor and access subject used by an application.
 tags: [identity, authentication, sessions, middleware]
-updated: 2026-10-06
+updated: 2026-10-11
 ---
 
 # Request identity
@@ -272,6 +272,12 @@ Send API keys and OAuth access tokens in the standard header:
 ```http
 Authorization: Bearer <token>
 ```
+
+A personal API key can have models-only access (`access: "models"`). Such a
+key fails authentication on every route except the
+[OpenAI-compatible endpoint](/en/docs/ai/openai-compatible-api); it cannot
+reach Cloud tools or account self-service. Applications on an older
+`@k2b/cloud` version reject such a key as invalid.
 
 An API key is stored as a hash. The raw value is returned only when the key is
 created.

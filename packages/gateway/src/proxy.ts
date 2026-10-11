@@ -1,10 +1,15 @@
 import { PWA_SHELL_APP_ID } from "@k2b/cloud/contracts";
+import { REQUEST_IDLE_TIMEOUT_MAX_SECONDS, REQUEST_IDLE_TIMEOUT_SECONDS } from "@k2b/cloud/server/request-timeout.ts";
 import { publishRequestTelemetry, ROUTE_TEMPLATE_HEADER } from "@k2b/cloud/services";
 import type { ClientAddress } from "./client-address";
 import { boundTemplateCardinality, derivePathTemplate } from "./path-template";
 import { isInternalPath, upstreamUrl } from "./request-boundary";
 import type { RouteTable } from "./trie";
 import { matchRoute } from "./trie";
+
+// Bun's largest idle timeout keeps the client socket open until the upstream timeout
+// (REQUEST_IDLE_TIMEOUT_MAX_SECONDS, ~8 s timer granularity) has answered 502.
+const CLIENT_WAIT_SECONDS = 255;
 
 // ─── Proxy statistics ────────────────────────────────────────────────────────
 
@@ -99,7 +104,8 @@ export const proxyRequest = async (
   table: RouteTable,
   stats: ProxyStats,
   log: (msg: string, meta?: Record<string, unknown>) => void,
-  client: ClientAddress | null = null,
+  client: ClientAddress | null,
+  timeout: (req: Request, seconds: number) => void,
 ): Promise<Response> => {
   const url = new URL(req.url);
   if (isInternalPath(url.pathname)) return new Response("Not found", { status: 404 });
@@ -161,18 +167,34 @@ export const proxyRequest = async (
       fwdHeaders.delete("X-Real-IP");
     }
 
-    const proxyRes = await fetch(targetUrl.href, {
-      method: req.method,
-      headers: fwdHeaders,
-      body: req.body,
-      // Bun fetch decompresses upstream responses by default while preserving
-      // Content-Encoding headers. A reverse proxy must forward the wire body
-      // unchanged so precompressed static assets stay valid and small.
-      decompress: false,
-      // @ts-ignore - Bun supports duplex for streaming request bodies
-      duplex: req.body ? "half" : undefined,
-      redirect: "manual",
-    } as RequestInit & { decompress: false });
+    // Bun parses headers before calling fetch, so slow headers keep the default timeout.
+    let waitingForHeaders = true;
+    const raiseTimeout = () => {
+      if (waitingForHeaders) timeout(req, CLIENT_WAIT_SECONDS);
+    };
+    const body = req.body?.pipeThrough(new TransformStream({ flush: raiseTimeout }));
+    let proxyRes: Response;
+    try {
+      const init: BunFetchRequestInit & { duplex?: "half" } = {
+        method: req.method,
+        headers: fwdHeaders,
+        body,
+        timeout: REQUEST_IDLE_TIMEOUT_MAX_SECONDS * 1000,
+        // A client disconnect cancels the upstream request, so the app's request signal aborts too.
+        signal: req.signal,
+        // Bun fetch decompresses upstream responses by default while preserving
+        // Content-Encoding headers. A reverse proxy must forward the wire body
+        // unchanged so precompressed static assets stay valid and small.
+        decompress: false,
+        duplex: req.body ? "half" : undefined,
+        redirect: "manual",
+      };
+      if (!req.body) raiseTimeout();
+      proxyRes = await fetch(targetUrl.href, init);
+    } finally {
+      waitingForHeaders = false;
+      timeout(req, REQUEST_IDLE_TIMEOUT_SECONDS);
+    }
 
     const ms = performance.now() - start;
     appStats.totalMs += ms;
@@ -208,8 +230,11 @@ export const proxyRequest = async (
   } catch (err) {
     const ms = performance.now() - start;
     appStats.totalMs += ms;
-    appStats.errors++;
-    trackRoute(stats, match.matchedPrefix, true);
+    const disconnected = req.signal.aborted;
+    if (!disconnected) {
+      appStats.errors++;
+      trackRoute(stats, match.matchedPrefix, true);
+    }
     const pathTemplate = fallbackPathTemplate(match.appId, url.pathname);
     publishRequestTelemetry({
       appId: match.appId,
@@ -217,10 +242,12 @@ export const proxyRequest = async (
       // No response to read a template off — the request died in flight.
       pathTemplate,
       method: req.method,
-      status: 502,
+      status: disconnected ? 499 : 502,
       durationMs: ms,
-      errorKind: "upstream_unavailable",
+      errorKind: disconnected ? null : "upstream_unavailable",
     });
+
+    if (disconnected) return new Response(null, { status: 499 });
 
     // Throttled logging — at most once per 5s per app
     if (shouldLogError(match.appId)) {

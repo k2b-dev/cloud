@@ -5,7 +5,7 @@ section: Operations
 order: 1140
 description: Configure application containers, platform connections, and environment-specific values.
 tags: [configuration, environment, settings]
-updated: 2026-09-29
+updated: 2026-10-11
 ---
 
 # Runtime configuration
@@ -231,6 +231,25 @@ Change it under **Administration › Settings › Command line**. The setting on
 protects the plugin code; the server still authorizes every command a plugin
 sends. Users install the plugins with `cld plugins install <name>` or accept the
 offer after `cld login`; `cld` verifies every file against the served manifest. See [Application CLI modules](/en/docs/platform/cli-modules#serve-a-module-from-the-application).
+
+## Offer the OpenAI-compatible API
+
+In AI settings, enable `ai.openai_api_enabled` (**OpenAI-compatible API**) to
+let people create models-only personal API keys and use their allowed Assistant
+chat models from external clients. It is off by default. Every request checks
+the switch, so turning it off stops new requests with existing keys too;
+provider calls already running continue.
+
+`ai.openai_api_max_concurrent_requests` defaults to **4** simultaneous requests
+per person across all instances (integer, 1–64). Typical clients need one or two;
+four leaves room for a second client without one script crowding out others.
+Raise it when provider capacity supports more simultaneous requests.
+
+Models without reference prices have **no usage limit** here, as in Assistant.
+Chat budgets do not protect them; only the IP rate limit and per-person
+concurrency limit apply. Review model prices before enabling this surface.
+See the [client reference](/en/docs/ai/openai-compatible-api) for authentication,
+supported fields and errors.
 
 ## Validate a deployment
 

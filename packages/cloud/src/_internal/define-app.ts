@@ -54,6 +54,7 @@ import { matchedRouteTemplate, routeTemplate } from "../server/middleware/route-
 import { runtime as runtimeMiddleware } from "../server/middleware/runtime";
 import { preloadLayoutAnnouncements, settings as settingsMiddleware } from "../server/middleware/settings";
 import { validationErrorResponse } from "../server/middleware/validator";
+import { REQUEST_IDLE_TIMEOUT_SECONDS } from "../server/request-timeout";
 import { setWidgetRequest } from "../server/widget-request";
 import {
   capabilityInvocationOperation,
@@ -304,6 +305,7 @@ export type StartResult = {
   hostname: "0.0.0.0";
   port: number;
   development: boolean;
+  idleTimeout: number;
   fetch: Hono["fetch"];
 };
 
@@ -972,7 +974,7 @@ export const defineApp = <
       process.on("SIGTERM", () => void shutdown().then(() => process.exit(0)));
       process.on("SIGINT", () => void shutdown().then(() => process.exit(0)));
 
-      return { hostname: "0.0.0.0", port, development: isDevelopment, fetch: server.fetch };
+      return { hostname: "0.0.0.0", port, development: isDevelopment, idleTimeout: REQUEST_IDLE_TIMEOUT_SECONDS, fetch: server.fetch };
     } catch (error) {
       await stopStartedResources();
       throw error;
