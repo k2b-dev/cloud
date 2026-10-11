@@ -22,6 +22,8 @@ describe("@k2b/ui stylesheet hygiene", () => {
       [".k2b-ui .k2b-detail-panel__action-menu-trigger", "opacity", "0"],
       ['.k2b-ui .k2b-discussion__item-actions[data-visibility="progressive"]', "opacity", "0"],
       ['.k2b-ui .k2b-description-list[data-action-visibility="progressive"] .k2b-description-list__action', "opacity", "0"],
+      [".k2b-ui .k2b-tabs__list .k2b-tabs__close", "opacity", "0"],
+      [".k2b-ui .k2b-progressive-action", "opacity", "0"],
     ] as const) {
       const rule = rules.find((candidate) => candidate.selector === selector && candidate.context === hoverPointer);
       expect(rule, selector).toBeDefined();
@@ -29,11 +31,14 @@ describe("@k2b/ui stylesheet hygiene", () => {
     }
 
     const rowAction =
-      /sidebar-section-actions|sidebar-item-actions|sidebar-item-action\[|detail-panel__action-secondary|detail-panel__action-menu-trigger|discussion__item-actions|description-list__action/;
-    const primaryPointer = /\((?:hover:\s*(?:hover|none)|pointer:\s*fine)\)/;
+      /sidebar-section-actions|sidebar-item-actions|sidebar-item-action\[|detail-panel__action-secondary|detail-panel__action-menu-trigger|discussion__item-actions|description-list__action|tabs__close|progressive-action/;
+    // A primary-pointer query misses a tablet with a mouse, whether it hides or shows the actions.
+    const primaryPointer = /\((?:hover:\s*(?:hover|none)|pointer:\s*(?:fine|coarse))\)/;
+    expect(rules.filter((rule) => rowAction.test(rule.selector) && primaryPointer.test(rule.context))).toEqual([]);
+    // Hiding anywhere else would hide the actions on touch-only screens too.
     expect(
       rules.filter((rule) => {
-        if (!rowAction.test(rule.selector) || !primaryPointer.test(rule.context)) return false;
+        if (!rowAction.test(rule.selector) || rule.context.startsWith(hoverPointer)) return false;
         const declarations = cssDeclarations(rule.body);
         return declarations.get("opacity")?.includes("0") || declarations.get("visibility")?.includes("hidden");
       }),

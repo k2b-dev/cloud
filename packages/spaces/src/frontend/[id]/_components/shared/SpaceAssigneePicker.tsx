@@ -78,7 +78,7 @@ export default function SpaceAssigneePicker(props: SpaceAssigneePickerProps) {
         label={t.removeAssignee({ name: assignee.displayName })}
         size="xs"
         onClick={() => remove(assignee.id)}
-        class="text-zinc-400 opacity-0 transition-opacity hover:text-red-500 focus:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
+        class="k2b-progressive-action text-zinc-400 hover:text-red-500"
         title={t.removeAssignee({ name: assignee.displayName })}
       >
         <i class="ti ti-x text-sm" />
@@ -117,7 +117,7 @@ export default function SpaceAssigneePicker(props: SpaceAssigneePickerProps) {
           <div class="flex flex-col gap-1">
             <Show when={claim()}>
               {(holder) => (
-                <div class="group flex items-center gap-2" data-spaces-claim-holder>
+                <div class="k2b-progressive-row flex items-center gap-2" data-spaces-claim-holder>
                   <ClaimAvatar claim={holder()} currentUserId={props.currentUserId ?? ""} />
                   <div class="min-w-0 flex-1">
                     {/* The label says in words what the ring shows, so it does not depend on seeing color. */}
@@ -143,7 +143,7 @@ export default function SpaceAssigneePicker(props: SpaceAssigneePickerProps) {
             </Show>
             <For each={others()}>
               {(assignee) => (
-                <div class="group flex items-center gap-2">
+                <div class="k2b-progressive-row flex items-center gap-2">
                   <Avatar name={assignee.displayName} src={avatarSrc(assignee)} size="xs" />
                   <div class="min-w-0 flex-1">
                     <span class="block truncate text-sm">{assignee.displayName}</span>

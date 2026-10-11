@@ -291,10 +291,15 @@ loading, error, and dark treatments.
   [Focus rings](/en/ui/focus).
 - With a mouse or trackpad, including a tablet with a mouse, keep progressive
   actions hidden until their row is hovered, keyboard-focused, or has its menu
-  open. AppWorkspace sidebar actions also appear on the current row. Touch-only
-  screens always show them. In your own CSS, hide them under
-  `@media (any-hover: hover)`, not `(hover: hover) and (pointer: fine)`: a
-  tablet's primary pointer stays the finger when a mouse is attached.
+  open. AppWorkspace sidebar actions also appear on the current row, and a
+  tab's close control on the selected tab. Touch-only screens always show
+  them. In your own rows, add `k2b-progressive-row` to the row and
+  `k2b-progressive-action` to the action instead of writing the rule; see
+  [Getting started](/en/ui/getting-started). Custom CSS hides them under
+  `@media (any-hover: hover)`, never `(hover: hover)`, `(hover: none)`, or
+  `(pointer: fine)`, and not with Tailwind's `hover:` or `group-hover:`
+  variants, which carry `(hover: hover)`: a tablet's primary pointer stays the
+  finger when a mouse is attached.
 - Use `InlineGuidance` for a short local hint, action error, or loading message
   while the affected content remains visible. Use its `loading` prop for inline
   progress rather than assembling a spinner and text.

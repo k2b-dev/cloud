@@ -11028,13 +11028,25 @@
   font-weight: 500;
 }
 
+/* Progressive actions in an application's own rows, cards, and list items: a
+   `k2b-progressive-action` inside a `k2b-progressive-row` follows the same rule
+   as the row actions of the components. Do not nest progressive rows. */
+@media (any-hover: hover) {
+  .k2b-ui .k2b-progressive-action { opacity:0; transition:opacity 120ms ease-out; }
+  .k2b-ui .k2b-progressive-row:is(:hover, :focus-within) .k2b-progressive-action,
+  .k2b-ui .k2b-progressive-action:is(:focus-within, :has([aria-expanded="true"])) { opacity:1; }
+}
+
 /* Tab controls keep overflow separate from fixed actions. */
 .k2b-ui .k2b-tabs__bar { display:flex; min-width:0; align-items:center; gap:.25rem; }
 .k2b-ui .k2b-tabs__item { display:flex; flex:none; align-items:center; min-width:0; }
 .k2b-ui .k2b-tabs__trailing { flex:none; }
-.k2b-ui .k2b-tabs__list .k2b-tabs__close { padding:.25rem; min-height:1.5rem; border:0; margin:0; opacity:0; }
-.k2b-ui .k2b-tabs__item:hover .k2b-tabs__close, .k2b-ui .k2b-tabs__item:focus-within .k2b-tabs__close { opacity:1; }
-@media (hover:none) { .k2b-ui .k2b-tabs__list .k2b-tabs__close { opacity:1; } }
+.k2b-ui .k2b-tabs__list .k2b-tabs__close { padding:.25rem; min-height:1.5rem; border:0; margin:0; }
+/* Like row actions: hidden only once any pointer can hover, and the selected tab keeps its close button for a finger. */
+@media (any-hover: hover) {
+  .k2b-ui .k2b-tabs__list .k2b-tabs__close { opacity:0; }
+  .k2b-ui .k2b-tabs__item:is(:hover, :focus-within, :has(> [aria-selected="true"])) .k2b-tabs__close { opacity:1; }
+}
 .k2b-ui .k2b-tabs[data-variant="pill"] .k2b-tabs__list { padding-bottom:0; border:0; box-shadow:none; }
 .k2b-ui .k2b-tabs[data-variant="pill"] .k2b-tabs__item { border-radius:.75rem; padding-right:.25rem; background:var(--k2b-surface-canvas); }
 .k2b-ui .k2b-tabs[data-variant="pill"] .k2b-tabs__item:hover,

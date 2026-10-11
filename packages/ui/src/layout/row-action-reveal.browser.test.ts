@@ -29,8 +29,8 @@ const pointerCss = (source: string, environment: Environment) =>
 
 const entry = resolve(import.meta.dir, "row-action-reveal.fixture.ts");
 const fixture = `
-import { createComponent as c, render } from "solid-js/web";
-import { AppWorkspace, DetailPanel, Discussion, DescriptionList, Dropdown } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { createComponent as c, Dynamic, render } from "solid-js/web";
+import { AppWorkspace, DetailPanel, Discussion, DescriptionList, Dropdown, Tabs } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 
 const items = [{ label: "Rename", action() {} }, { label: "Duplicate", action() {} }];
 const menu = (title) => c(Dropdown.Root, {
@@ -69,6 +69,20 @@ const details = () => [
     layout: "rows", actionVisibility: "progressive",
     get items() { return [{ term: "Owner", description: "Valentin", get action() { return menu("Owner"); } }]; },
   }),
+  // An application's own row with the public progressive-action classes.
+  c(Dynamic, {
+    component: "div", class: "k2b-progressive-row", style: { display: "flex", gap: "0.5rem" },
+    get children() { return [
+      c(Dynamic, { component: "a", href: "#custom", children: "Custom" }),
+      c(Dynamic, { component: "span", class: "k2b-progressive-action", get children() { return menu("Custom"); } }),
+    ]; },
+  }),
+  c(Tabs, {
+    ariaLabel: "Documents", value: "overview", onValueChange() {},
+    options: ["Overview", "Report"].map((title) => ({
+      value: title.toLowerCase(), label: title, onClose() {}, closeLabel: "Close " + title + " tab",
+    })),
+  }),
 ];
 render(() => c(AppWorkspace, {
   resizable: false,
@@ -102,10 +116,12 @@ const rowSelector = [
   ".k2b-detail-panel__action-row",
   ".k2b-discussion__item",
   ".k2b-description-list__item",
+  ".k2b-tabs__item",
+  ".k2b-progressive-row",
 ].join(", ");
-const titles = ["Archive", "Draft", "Notes", "Inbox", "Projects", "Shared", "Attachment", "Comment", "Owner"];
-const names = [...titles.map((title) => `Actions for ${title}`), "Delete Attachment"];
-const current = ["Actions for Notes", "Actions for Projects"];
+const titles = ["Archive", "Draft", "Notes", "Inbox", "Projects", "Shared", "Attachment", "Comment", "Owner", "Custom"];
+const names = [...titles.map((title) => `Actions for ${title}`), "Delete Attachment", "Close Overview tab", "Close Report tab"];
+const current = ["Actions for Notes", "Actions for Projects", "Close Overview tab"];
 const inspect = (page: Page) =>
   page.evaluate(
     ({ names, rowSelector }) => {
@@ -154,78 +170,96 @@ const expectVisibility = (state: Snapshot, visible: string[]) => {
   }
 };
 
+/** The row to reveal, what keyboard focus lands on before Tab moves it to the action, and whether the action opens a menu. */
 const targets = [
-  { title: "Draft", focus: '[data-k2b-nav-tree-id="draft"]', tabs: 1 },
-  { title: "Inbox", focus: 'a[href="#Inbox"]', tabs: 1 },
-  { title: "Attachment", focus: 'a[href="#attachment"]', tabs: 2 },
-  { title: "Comment", focus: 'button[aria-label="Actions for Comment"]', tabs: 0 },
-  { title: "Owner", focus: 'button[aria-label="Actions for Owner"]', tabs: 0 },
+  { name: "Actions for Draft", focus: '[data-k2b-nav-tree-id="draft"]', tabs: 1, menu: true },
+  { name: "Actions for Inbox", focus: 'a[href="#Inbox"]', tabs: 1, menu: true },
+  { name: "Actions for Attachment", focus: 'a[href="#attachment"]', tabs: 2, menu: true },
+  { name: "Actions for Comment", focus: 'button[aria-label="Actions for Comment"]', tabs: 0, menu: true },
+  { name: "Actions for Owner", focus: 'button[aria-label="Actions for Owner"]', tabs: 0, menu: true },
+  { name: "Actions for Custom", focus: 'a[href="#custom"]', tabs: 1, menu: true },
+  { name: "Close Report tab", focus: 'button[role="tab"]:not([aria-selected="true"])', tabs: 1, menu: false },
 ];
+// The Attachment row reveals its delete button together with its menu.
+const revealed = (name: string) => [name, ...(name === "Actions for Attachment" ? ["Delete Attachment"] : [])];
 
 describe("@k2b/ui row action reveal", () => {
   for (const environment of environments) {
-    test(`${environment.name}: row actions reveal without layout shifts`, async () => {
-      const stylesheet = pointerCss(css, environment);
-      expect(stylesheet).not.toMatch(/\((?:any-)?(?:hover|pointer)\s*:/);
-      expect(stylesheet).not.toBe(css);
-      // Desktop rows disappear below 1024px; media rewriting isolates input from viewport size.
-      const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-      try {
+    describe(environment.name, () => {
+      const idle = environment["any-hover"] === "hover" ? current : names;
+      let page: Page;
+      let rest: Snapshot;
+      const park = async () => {
+        await page.mouse.move(1400, 850);
+        await page.evaluate(() => {
+          if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+        });
+      };
+
+      // One page per environment: WebKit takes about half a second per mouse move over this stylesheet.
+      beforeAll(async () => {
+        const stylesheet = pointerCss(css, environment);
+        expect(stylesheet).not.toMatch(/\((?:any-)?(?:hover|pointer)\s*:/);
+        expect(stylesheet).not.toBe(css);
+        // Desktop rows disappear below 1024px; media rewriting isolates input from viewport size.
+        page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
         await page.setContent(`<!doctype html><html lang="en"><head><style>${stylesheet}</style>
           <style>*,*::before,*::after{transition:none!important;animation:none!important}</style></head>
           <body class="k2b-ui" style="margin:0"><div id="app" style="height:40rem"></div></body></html>`);
         await page.addScriptTag({ content: script });
         await page.getByRole("tree", { name: "Notes" }).waitFor();
-        const park = async () => {
-          await page.mouse.move(1400, 850);
-          await page.evaluate(() => {
-            if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
-          });
-        };
         await park();
-        const rest = await inspect(page);
-        const idle = environment["any-hover"] === "hover" ? current : names;
-        expectVisibility(rest, idle);
+        rest = await inspect(page);
+      }, 30_000);
+      afterAll(async () => {
+        await page?.close();
+      });
 
-        for (const target of targets) {
-          const name = `Actions for ${target.title}`;
-          const trigger = page.locator(`button[aria-label="${name}"]`);
-          const index = names.indexOf(name);
+      test(environment["any-hover"] === "hover" ? "shows only the current rows' actions at rest" : "shows every row's actions", () => {
+        expectVisibility(rest, idle);
+      });
+
+      for (const target of targets) {
+        test(`${target.name} reveals on hover, focus${target.menu ? ", and an open menu" : ""} without layout shifts`, async () => {
+          await park();
+          const index = names.indexOf(target.name);
           const box = rest[index]!.rowBox;
           await page.mouse.move(box[0]! + box[2]! / 2, box[1]! + box[3]! / 2);
           const hovered = await inspect(page);
           expectGeometry(hovered, rest);
-          expectVisibility(hovered, [...idle, name, ...(target.title === "Attachment" ? ["Delete Attachment"] : [])]);
+          expectVisibility(hovered, [...idle, ...revealed(target.name)]);
 
           await park();
           await page.locator(target.focus).focus();
           for (let tab = 0; tab < target.tabs; tab += 1) await page.keyboard.press("Tab");
           const focused = await inspect(page);
           expectGeometry(focused, rest);
-          expect(focused[index]!.focused, name).toBe(true);
-          expect(focused[index]!.shown, name).toBe(true);
+          expect(focused[index]!.focused, target.name).toBe(true);
+          expect(focused[index]!.shown, target.name).toBe(true);
 
-          await trigger.click();
-          await page.mouse.move(1400, 850);
-          const opened = await inspect(page);
-          expectGeometry(opened, rest);
-          expect(opened[index]!.expanded, name).toBe("true");
-          expect(opened[index]!.shown, name).toBe(true);
-          expectVisibility(
-            opened.filter((action) => action.name !== "Delete Attachment"),
-            [...idle, name],
-          );
-
-          await page.keyboard.press("Escape");
-          // Escape restores trigger focus; move focus away to test the resting state.
-          await park();
-          const closed = await inspect(page);
-          expectGeometry(closed, rest);
-          expect(closed[index]!.expanded, name).toBe("false");
-          expectVisibility(closed, idle);
-        }
-      } finally {
-        await page.close();
+          if (target.menu) {
+            await page.locator(`button[aria-label="${target.name}"]`).click();
+            await page.mouse.move(1400, 850);
+            const opened = await inspect(page);
+            expectGeometry(opened, rest);
+            expect(opened[index]!.expanded, target.name).toBe("true");
+            expect(opened[index]!.shown, target.name).toBe(true);
+            expectVisibility(
+              opened.filter((action) => action.name !== "Delete Attachment"),
+              [...idle, target.name],
+            );
+            await page.keyboard.press("Escape");
+            // Escape restores trigger focus; move focus away to test the resting state.
+            await park();
+            const closed = await inspect(page);
+            expectGeometry(closed, rest);
+            expect(closed[index]!.expanded, target.name).toBe("false");
+            expectVisibility(closed, idle);
+          } else {
+            await park();
+            expectVisibility(await inspect(page), idle);
+          }
+        }, 30_000);
       }
     });
   }

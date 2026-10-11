@@ -104,7 +104,7 @@ const AttachmentsOverview = (props: Props) => {
       <ul class="grid grid-cols-4 gap-2 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 xl:grid-cols-12 2xl:grid-cols-16">
         <For each={items()}>
           {(att) => (
-            <li class="group relative flex flex-col overflow-hidden rounded-[var(--ui-radius-surface)] border border-[var(--ui-border)] bg-[var(--ui-surface)] shadow-[var(--ui-shadow-surface)]">
+            <li class="k2b-progressive-row relative flex flex-col overflow-hidden rounded-[var(--ui-radius-surface)] border border-[var(--ui-border)] bg-[var(--ui-surface)] shadow-[var(--ui-shadow-surface)]">
               {/* Preview area — fixed square box. Thumbnail / icon sits
                     absolutely inside it so portrait/landscape images can
                     never push the tile out of square (otherwise
@@ -145,7 +145,7 @@ const AttachmentsOverview = (props: Props) => {
 
                 {/* Hover overlay: download / copy / delete. Sits on the
                       preview so meta row stays clean (filename + size). */}
-                <div class="absolute right-1 top-1 flex items-center gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 [@media(hover:none)]:opacity-100">
+                <div class="k2b-progressive-action absolute right-1 top-1 flex items-center gap-1">
                   <Tooltip.Anchor content={t().downloadAttachment}>
                     <IconButton
                       label={t().downloadNamedAttachment({ filename: att.filename })}

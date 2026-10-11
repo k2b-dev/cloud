@@ -316,7 +316,9 @@ instead. A hover `SidebarItemActions` group that ends the row overlays its end
 the same way, before the chevron of a `NavTree` row, so revealing it moves
 nothing in the row; the fade covers one or two controls. Hidden metadata takes
 no space until revealed. Hidden actions are out of the tab order until their
-row shows them. Touch-only screens always show them. Actions also stay
+row shows them. The current row always shows its actions, so they stay in
+the tab order, also in a `NavTree` while focus is on another item. Touch-only
+screens always show them. Actions also stay
 visible while a menu or other popup they opened is open, so the pointer can
 leave the row to reach it. Keep errors, unread counts, and other important
 state visible with the default `"always"` value.

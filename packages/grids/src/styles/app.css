@@ -161,7 +161,7 @@
   transform: translateY(0);
 }
 
-@media (any-hover: none) {
+@media (hover: none) {
   .custom-app-block > .custom-app-block-control {
     opacity: 1;
     pointer-events: auto;
