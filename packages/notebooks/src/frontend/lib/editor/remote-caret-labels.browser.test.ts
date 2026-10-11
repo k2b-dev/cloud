@@ -75,7 +75,10 @@ describe("remote caret labels", () => {
       expect(idle.transitionDuration).toBe("0.3s");
       expect(idle.caret).toEqual(active.caret);
 
-      await page.hover(".cm-ySelectionCaretDot");
+      // Point at the dot like a person does. WebKit can hit-test the dot's center to the caret around it,
+      // which Playwright's hover() rejects, while :hover on that caret is what shows the name.
+      const dot = (await page.locator(".cm-ySelectionCaretDot").boundingBox())!;
+      await page.mouse.move(dot.x + dot.width / 2, dot.y + dot.height / 2);
       expect((await label(page)).opacity).toBe("1");
       await page.mouse.move(400, 200);
 
