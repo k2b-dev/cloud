@@ -123,7 +123,7 @@ errors. A provider failure after text arrives as one `data: {"error": {...}}`
 event; the stream then closes without `[DONE]`. Cloud keeps the request open
 while the provider makes progress. With and without streaming, a provider that
 sends nothing for 60 seconds before or during its answer fails the request with
-`upstream_error`. The gateway waits at most 5 minutes for response headers, so
+`upstream_error`. The gateway waits at most 4 minutes for response headers, so
 a non-streaming answer must be complete within that time. Use `stream: true`
 for longer answers. Client disconnection cancels the provider call. Missing
 usage after cancellation is booked as an estimate through the
@@ -154,6 +154,9 @@ A request takes its slot after authentication, before Cloud reads the request
 body, and holds it until the response ends; a request that is then rejected
 releases it at once. Slots refresh every 30 seconds and expire after two
 minutes if a process crashes. A concurrency refusal returns `Retry-After: 1`.
+The limit relies on Valkey: if Valkey is unreachable for more than two minutes,
+running requests lose their slots but continue, so the limit is best-effort
+until they end.
 
 **Models without reference prices have no usage limit.** As in Assistant, chat
 allowances do not cover them. Only rate and concurrency limits protect their
@@ -177,13 +180,21 @@ stable. `param` names the offending field when applicable.
 | 502 | `api_error` | `upstream_error`, `missing_provider_credential` |
 | 500 | `api_error` | `internal_error` |
 
+A request for a model you cannot use returns `404 model_not_found`. This
+covers unknown models, models without your grant, models whose provider has no
+credential, and AI turned off. `ai_disabled`, `model_access_denied` and
+`missing_provider_credential` appear only when an administrator changes these
+settings during the request.
+
 ## Key isolation and revocation
 
 Models-only keys are personal API keys with the reserved `ai:inference` scope.
 Only personal key creation with `access: "models"` can issue that scope.
 Central authentication rejects it on every other Cloud surface; only this
 endpoint authenticates it directly. Other scopes alongside it do not bypass
-the rejection.
+the rejection. Its secret is stored with a separate hash, so applications on
+an older `@k2b/cloud` version, which do not know the scope, reject the key
+instead of granting full access.
 
 Revoke the key like any personal key in your profile or with
 `cld account api-keys revoke <id-or-prefix-or-name> --yes`.

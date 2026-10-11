@@ -242,7 +242,9 @@ export const createAiOpenAiRoutes = (dependencies: Dependencies = {}) => {
             if (event.type === "issue" && (event.issue.kind === "provider_error" || event.issue.kind === "timeout"))
               throw new Error("Upstream stream failed");
             if (event.type === "usage") {
-              usage = event.usage;
+              const { input, output } = event.usage;
+              if (Number.isSafeInteger(input) && Number.isSafeInteger(output) && input >= 0 && output >= 0 && input + output > 0)
+                usage = event.usage;
               reason = event.finishReason;
               if (failedFinish(reason)) throw new Error("Upstream stream failed");
             }
@@ -325,9 +327,18 @@ export const createAiOpenAiRoutes = (dependencies: Dependencies = {}) => {
               model: resolved.profile.id,
               choices: [{ index: 0, delta, finish_reason: finish, logprobs: null }],
             });
-            const send = (value: unknown) => stream.write(`data: ${JSON.stringify(value)}\n\n`);
+            let pendingWrites = 0;
+            const write = async (value: string) => {
+              pendingWrites++;
+              try {
+                await stream.write(value);
+              } finally {
+                pendingWrites--;
+              }
+            };
+            const send = (value: unknown) => write(`data: ${JSON.stringify(value)}\n\n`);
             const keepalive = setInterval(() => {
-              void stream.write(": keepalive\n\n").catch(() => undefined);
+              if (pendingWrites === 0) void write(": keepalive\n\n").catch(() => undefined);
             }, dependencies.keepaliveMs ?? 5_000);
             try {
               await send(chunk({ role: "assistant", content: "" }));
@@ -349,7 +360,7 @@ export const createAiOpenAiRoutes = (dependencies: Dependencies = {}) => {
                   choices: [],
                   usage: usageBody(usage),
                 });
-              await stream.write("data: [DONE]\n\n");
+              await write("data: [DONE]\n\n");
             } catch {
               if (!request.signal?.aborted) await send(errorBody(c, "upstream_error", "api_error"));
             } finally {

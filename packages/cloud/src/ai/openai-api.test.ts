@@ -438,6 +438,24 @@ describe("models-only OpenAI-compatible API", () => {
     const f = fixture({ events: textEvents.slice(0, -1) });
     expect(await (await f.call()).json()).not.toHaveProperty("usage");
   });
+  test.each([false, true])("omits all-zero adapter usage and preserves the finish reason (stream: %s)", async (stream) => {
+    const f = fixture({
+      events: [...textEvents.slice(0, -1), { type: "usage", usage: { input: 0, output: 0, total: 0 }, finishReason: "max_tokens" }],
+    });
+    const response = await f.call({ stream, stream_options: { include_usage: true } });
+    expect(response.status).toBe(200);
+    if (stream) {
+      const text = await response.text();
+      expect(text).not.toContain('"usage"');
+      expect(text).toContain('"finish_reason":"length"');
+      expect(text).toEndWith("data: [DONE]\n\n");
+    } else {
+      const body = await response.json();
+      expect(body).not.toHaveProperty("usage");
+      expect(body.choices[0].finish_reason).toBe("length");
+    }
+    expect(f.releases()).toBe(1);
+  });
   for (const reason of ["error", "aborted", "interrupted"] as const) {
     test(`maps failed completion ${reason} to 502 and releases the slot`, async () => {
       const f = fixture({
@@ -570,6 +588,67 @@ describe("models-only OpenAI-compatible API", () => {
     expect(text).toContain('"finish_reason":"length"');
     expect(text.endsWith("data: [DONE]\n\n")).toBe(true);
     expect(f.releases()).toBe(1);
+  });
+  test("SSE keepalives stay bounded while the client does not read", async () => {
+    const paused = Promise.withResolvers<void>();
+    const waiting = Promise.withResolvers<void>();
+    const f = fixture({
+      keepaliveMs: 5,
+      stream: async function* () {
+        yield* textEvents.slice(0, 6);
+        waiting.resolve();
+        await paused.promise;
+        yield* textEvents.slice(6);
+      },
+    });
+    const interval = spyOn(globalThis, "setInterval");
+    let response: Response | undefined;
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+    try {
+      response = await f.call({ stream: true });
+      expect(interval).toHaveBeenCalledTimes(1);
+      const [tick, ms] = interval.mock.calls[0] ?? [];
+      expect(ms).toBe(5);
+      if (typeof tick !== "function") throw new Error("Missing interval callback");
+      interval.mockRestore();
+      // Fire many ticks deterministically while the initial data writes face backpressure.
+      for (let i = 0; i < 20; i++) {
+        tick();
+        await Promise.resolve();
+      }
+      reader = response.body?.getReader();
+      if (!reader) throw new Error("Missing stream");
+      const decoder = new TextDecoder();
+      let text = "";
+      // Consume role and first text, then pause again with the provider stalled.
+      for (let i = 0; i < 2; i++) {
+        const step = await reader.read();
+        text += decoder.decode(step.value, { stream: true });
+      }
+      await waiting.promise;
+      for (let i = 0; i < 20; i++) {
+        tick();
+        await Promise.resolve();
+      }
+      paused.resolve();
+      for (;;) {
+        const step = await reader.read();
+        if (step.done) break;
+        text += decoder.decode(step.value, { stream: true });
+      }
+      const keepalives = text.split(": keepalive\n\n").length - 1;
+      expect(keepalives).toBeGreaterThan(0);
+      expect(keepalives).toBeLessThanOrEqual(2);
+      expect(text).toContain('"content":"Hello"');
+      expect(text).toEndWith("data: [DONE]\n\n");
+      expect(f.releases()).toBe(1);
+    } finally {
+      interval.mockRestore();
+      paused.resolve();
+      if (reader) await reader.cancel();
+      else if (response && !response.bodyUsed) await response.body?.cancel();
+      if (response) await f.released;
+    }
   });
   for (const stream of [false, true]) {
     test(`quota errors return German HTTP 429 before output (stream=${stream})`, async () => {
