@@ -1,5 +1,5 @@
 import type { AiStoredMessage, AiStreamSseEvent, AiTurnBlock } from "@k2b/cloud/ai";
-import { CODE_RUNTIME_TOOL_NAMES, type CodeToolFailure, parseAiSse } from "@k2b/cloud/ai/browser";
+import { CODE_RUNTIME_TOOL_NAMES, type CodeToolFailure, parseAiSse, parseAiTodoPlan } from "@k2b/cloud/ai/browser";
 import type { CloudCliContext } from "@k2b/cloud/cli";
 import type { CapabilityDecision, CodeApproval } from "../artifacts/runtime/capabilities";
 import { printCapabilityTable } from "./capability-table";
@@ -19,6 +19,34 @@ export type AssistantTurnStreamResult = {
   pending?: { type: "approval" | "client_tool"; callId: string; name: string };
 };
 
+export type AssistantClientTools = {
+  names: ReadonlySet<string>;
+  run: (call: { name: string; args: unknown; callId: string }, signal: AbortSignal) => Promise<unknown>;
+};
+
+const localToolTarget = (name: string, args: unknown): string => {
+  if (!args || typeof args !== "object") return "";
+  const count = (items: unknown[], unit: string) => `${items.length} ${unit}${items.length === 1 ? "" : "s"}`;
+  if (name === "local_upload" && "paths" in args && Array.isArray(args.paths)) return count(args.paths, "file");
+  if (name === "local_move" && "moves" in args && Array.isArray(args.moves)) return count(args.moves, "move");
+  const value =
+    name === "local_download"
+      ? "to" in args
+        ? args.to
+        : undefined
+      : name === "load_local_skill"
+        ? "name" in args
+          ? args.name
+          : undefined
+        : "path" in args
+          ? args.path
+          : undefined;
+  const folder = typeof value === "string" && value !== "." ? `${value.replace(/\/+$/, "")}/` : "";
+  const target = name === "local_list" && "pattern" in args && typeof args.pattern === "string" ? folder + args.pattern : value;
+  const mode = name === "local_write" && "mode" in args && typeof args.mode === "string" ? ` (${args.mode})` : "";
+  return typeof target === "string" ? target + mode : name === "local_list" ? "." : "";
+};
+
 type PrintedBlock = { id?: string; text: string };
 
 export type AssistantTurnOutput = {
@@ -29,6 +57,8 @@ export type AssistantTurnOutput = {
   toolStatuses: Map<string, Extract<AiTurnBlock, { kind: "tool" }>["status"]>;
   renderedTables: Set<string>;
   namedFiles: Set<string>;
+  printedPlans: Set<string>;
+  executedClientCalls: Set<string>;
 };
 
 export const createAssistantTurnOutput = (): AssistantTurnOutput => ({
@@ -38,6 +68,8 @@ export const createAssistantTurnOutput = (): AssistantTurnOutput => ({
   toolStatuses: new Map(),
   renderedTables: new Set(),
   namedFiles: new Set(),
+  printedPlans: new Set(),
+  executedClientCalls: new Set(),
 });
 
 const norm = (text: string): string => text.trimStart();
@@ -72,6 +104,7 @@ export const streamAssistantTurn = async (input: {
   onCapabilityApproval?: (request: CodeApproval) => Promise<CapabilityDecision>;
   signal?: AbortSignal;
   output?: AssistantTurnOutput;
+  clientTools?: AssistantClientTools;
 }): Promise<AssistantTurnStreamResult> => {
   const { ctx, conversationId } = input;
   const approvedTools = new Set(input.approveTools ?? []);
@@ -80,8 +113,10 @@ export const streamAssistantTurn = async (input: {
   const abort = new AbortController();
   const onInterrupt = () => abort.abort();
   const onExternalAbort = () => abort.abort(input.signal?.reason);
-  if (input.signal) input.signal.addEventListener("abort", onExternalAbort, { once: true });
-  else process.once("SIGINT", onInterrupt);
+  if (input.signal) {
+    if (input.signal.aborted) onExternalAbort();
+    else input.signal.addEventListener("abort", onExternalAbort, { once: true });
+  } else process.once("SIGINT", onInterrupt);
 
   let targetTurnId = input.turnId ?? null;
   let initialResponse = input.initialResponse;
@@ -206,6 +241,25 @@ export const streamAssistantTurn = async (input: {
   const handleToolBlock = async (block: Extract<AiTurnBlock, { kind: "tool" }>): Promise<AssistantTurnStreamResult | null> => {
     const changed = toolStatuses.get(block.callId) !== block.status;
     if (changed && ctx.options.output === "text") flushLinks();
+    const inline = input.clientTools?.names.has(block.name) === true;
+    if (
+      block.status === "completed" &&
+      block.name === "todo_write" &&
+      ctx.options.output === "text" &&
+      !output.printedPlans.has(block.callId)
+    ) {
+      const plan = parseAiTodoPlan(block.args);
+      if (plan) {
+        output.printedPlans.add(block.callId);
+        ctx.error("Plan");
+        for (const item of plan.todos) {
+          if (item.status === "cancelled") continue;
+          ctx.error(
+            `  [${item.status === "completed" ? "x" : item.status === "in_progress" ? ">" : " "}] ${terminalSafeText(item.content)}`,
+          );
+        }
+      }
+    }
     if (block.status === "completed") {
       emitTable(block.callId, block.result);
       await emitDelivered(block);
@@ -213,10 +267,13 @@ export const streamAssistantTurn = async (input: {
     if (changed) {
       toolStatuses.set(block.callId, block.status);
       emitJsonLine({ type: "tool", callId: block.callId, name: block.name, status: block.status });
-      if (ctx.options.output === "text") {
+      // A local call runs when it awaits this client; only then are its arguments complete enough to name a target.
+      if (ctx.options.output === "text" && !(inline && block.status === "running")) {
         const path = block.status === "completed" ? presentedPath(block.name, block.result) : null;
         if (path) namedFiles.add(block.callId);
-        ctx.error(`${block.name}: ${block.status.replaceAll("_", " ")}${path ? ` ${terminalSafeText(path)}` : ""}`);
+        const target = inline && block.status === "awaiting_client" ? localToolTarget(block.name, block.args) : "";
+        const status = inline && block.status === "awaiting_client" ? "running" : block.status.replaceAll("_", " ");
+        ctx.error(terminalSafeText(`${block.name}: ${status}${path ? ` ${path}` : target ? ` ${target}` : ""}`));
       }
     }
     if (block.status === "awaiting_approval") {
@@ -240,6 +297,38 @@ export const streamAssistantTurn = async (input: {
         messages: [],
         pending: { type: "approval", callId: block.callId, name: block.name },
       };
+    }
+    if (block.status === "awaiting_client" && inline && input.clientTools) {
+      if (output.executedClientCalls.has(block.callId)) return null;
+      output.executedClientCalls.add(block.callId);
+      let result: unknown;
+      try {
+        result = await input.clientTools.run({ name: block.name, args: block.args, callId: block.callId }, abort.signal);
+      } catch (error) {
+        const errorText = (error instanceof Error ? error.message : String(error)).slice(0, 2000);
+        result =
+          block.name === "local_bash"
+            ? { status: "failed", exitCode: null, stdout: "", stderr: errorText, truncated: false }
+            : block.name === "local_move"
+              ? { status: "failed", moved: [], conflicts: [], error: errorText }
+              : { status: "failed", error: errorText };
+      }
+      if (abort.signal.aborted)
+        return {
+          conversationId,
+          turnId: targetTurnId,
+          status: "aborted",
+          error: "Streaming interrupted.",
+          text: emittedText,
+          messages: [],
+        };
+      await ctx.readJson(
+        await ctx.fetch(
+          `${AI_API}/conversations/${encodeURIComponent(conversationId)}/turns/${encodeURIComponent(targetTurnId!)}/actions/${encodeURIComponent(block.callId)}`,
+          jsonRequest("POST", { type: "tool_result", result }),
+        ),
+      );
+      return null;
     }
     if (block.status === "awaiting_client" && CODE_RUNTIME_TOOL_NAMES.some((name) => name === block.name)) {
       if (executedCalls.has(block.callId)) return null;
@@ -326,6 +415,12 @@ export const streamAssistantTurn = async (input: {
         blocks.clear();
         for (const block of event.blocks) blocks.set(block.id, block);
         reconcileBlocks(event.blocks);
+        for (const block of event.blocks) {
+          if (block.kind === "tool") {
+            const result = await handleToolBlock(block);
+            if (result) return result;
+          }
+        }
       }
       emitJsonLine({ type: "turn_started", modelProfileId: event.modelProfileId, providerModel: event.providerModel });
       return null;

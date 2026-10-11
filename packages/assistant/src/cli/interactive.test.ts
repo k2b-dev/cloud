@@ -1,5 +1,5 @@
 import { expect, spyOn, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AI_TURN_ATTACHMENT_MAX_ITEMS } from "@k2b/cloud/ai/browser";
@@ -9,6 +9,7 @@ import {
   collectCapabilityApproval,
   collectSurveyResult,
   collectTextEditorResult,
+  completeInteractiveLine,
   runInteractiveAssistant,
 } from "./interactive";
 import type { LineReader } from "./line-reader";
@@ -21,7 +22,7 @@ test("cld describes an HTTP request in the same words as the approval card", asy
     args: [],
     flags: {},
     options: { profile: "test", server: "http://example.test", token: "test", output: "json" },
-    getDefault: async () => undefined,
+    getDefault: async (key) => (key === "assistant.trustedFolders" ? JSON.stringify([realpathSync(process.cwd())]) : undefined),
     setDefault: async () => {},
     createApiClient: () => {
       throw new Error("Unused");
@@ -67,7 +68,7 @@ const approvalTest = (answers: Array<string | null>) => {
     args: [],
     flags: {},
     options: { profile: "test", server: "http://example.test", token: "test", output: "text" },
-    getDefault: async () => undefined,
+    getDefault: async (key) => (key === "assistant.trustedFolders" ? JSON.stringify([realpathSync(process.cwd())]) : undefined),
     setDefault: async () => {},
     createApiClient: () => {
       throw new Error("Unused");
@@ -186,6 +187,7 @@ const attachmentSession = async (messages: string[], answers: Array<string | nul
   const conversation = { id: "chat", draft: { content: [], revision: 0 } };
   session.reader.readMessage = async () => messages.shift() ?? null;
   session.ctx.fetch = async (path, init) => {
+    if (path === "/api/ai/skills") return Response.json({ skills: [] });
     if (path === "/api/ai/status") return Response.json({});
     if (path === "/api/ai/conversations") return Response.json(conversation);
     if (path === "/api/ai/conversations/chat") return Response.json({ conversation, activeTurn: null });
@@ -347,7 +349,7 @@ test("a missing --attach file fails before opening the chat or reading messages"
     const session = interactiveSession(messages, [], { conversationId: "old", attachments: [path] });
     await expect(session.run()).rejects.toThrow(`Attachment not found: ${path}`);
     expect(messages).toEqual(["/exit"]);
-    expect(session.requests.map((request) => request.path)).toEqual(["/api/ai/status"]);
+    expect(session.requests.map((request) => request.path)).toEqual(["/api/ai/status", "/api/ai/skills"]);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -449,7 +451,7 @@ const interactiveSession = (
   let turns = 0;
   let creations = 0;
   session.ctx.options.locale = "en-GB";
-  session.ctx.getDefault = async () => saved;
+  session.ctx.getDefault = async (key) => (key === "assistant.trustedFolders" ? JSON.stringify([realpathSync(process.cwd())]) : saved);
   session.ctx.setDefault = async (key, value) => {
     defaults.push({ key, value });
   };
@@ -458,6 +460,7 @@ const interactiveSession = (
     requests.push({ path, method: init?.method ?? "GET", body: typeof init?.body === "string" ? JSON.parse(init.body) : init?.body });
     const response = route?.(path, init);
     if (response) return response;
+    if (path === "/api/ai/skills") return Response.json({ skills: [] });
     if (path === "/api/ai/status") return Response.json({});
     if (path === "/api/ai/models") return Response.json([{ id: "model", label: "Test model", provider: "test", model: "test" }]);
     if (path === "/api/ai/projects")
@@ -590,7 +593,7 @@ test.each(["stream", "pending-actions"])("an interrupt during %s prevents pendin
       return Response.json({ conversation: chat("old"), activeTurn: { turnId: "turn-1", status: "waiting_for_action" } });
     if (path.endsWith("/stream")) {
       if (stage === "stream") interrupt(false);
-      return pendingStream("old");
+      return pendingStream("old", "survey");
     }
     if (path.endsWith("/pending-actions/turn-1")) {
       interrupt(false);
@@ -676,7 +679,7 @@ test("/permissions skips saving the current default, cancels on Enter, and point
   expect(session.defaults).toEqual([]);
   expect(session.errors).toContain("Use /permissions, /permissions ask, or /permissions off.");
   expect(session.printed.filter((line) => line === "Cloud approvals: /approvals")).toHaveLength(3);
-  expect(session.requests.map((request) => request.path)).toEqual(["/api/ai/status"]);
+  expect(session.requests.map((request) => request.path)).toEqual(["/api/ai/status", "/api/ai/skills"]);
 });
 
 test("/resume switches chats, adopts the Project, and denies pending Bash while off", async () => {
@@ -998,7 +1001,7 @@ test("home or above asks factually for every file and explains it at startup", a
         options: { typedOnly: true },
       },
     ]);
-    expect(session.printed.join("\n")).toContain(" · / is your home folder or above, so every @file asks first");
+    expect(session.printed.join("\n")).toContain("/ is your home folder or above, so every file access asks first.");
     expect(session.printed.join("\n")).toContain("ask (default) · /");
   } finally {
     cwd.mockRestore();
@@ -1041,4 +1044,86 @@ test("turn runner keeps failed and stopped turns interactive", async () => {
   );
   expect(await submitted.run()).toBe(0);
   expect(submitted.requests.find((request) => request.path.endsWith("/abort"))).toMatchObject({ method: "POST" });
+});
+
+test("local and Cloud Skill commands share a list, local precedence, and one-message selections", async () => {
+  const previous = process.cwd();
+  const directory = mkdtempSync(join(tmpdir(), "cld-skills-interactive-"));
+  try {
+    writeFileSync(join(directory, ".git"), "gitdir: fixture");
+    writeFileSync(join(directory, "AGENTS.md"), "Work with receipts.");
+    const skillFolder = join(directory, ".agents/skills/finance");
+    mkdirSync(skillFolder, { recursive: true });
+    writeFileSync(
+      join(skillFolder, "SKILL.md"),
+      "---\nname: finance\ndescription: Monthly bookkeeping\ndisable-model-invocation: true\n---\nReconcile every receipt.",
+    );
+    process.chdir(directory);
+    const session = interactiveSession(
+      ["/skills", "/finance", "First message", "Second message", "/remote Immediate", "/status", "/exit"],
+      [],
+      {},
+      undefined,
+      (path) => {
+        if (path === "/api/ai/skills")
+          return Response.json({
+            skills: [
+              { name: "finance", shortId: "fin123", description: "Cloud finance", enabled: true },
+              { name: "remote", shortId: "rem123", description: "Cloud only", enabled: true },
+              { name: "disabled", shortId: "dis123", description: "Disabled", enabled: false },
+            ],
+          });
+      },
+    );
+    expect(await session.run()).toBe(0);
+    const turns = submissions(session);
+    expect(turns[0]?.body).toMatchObject({
+      client: { kind: "cli", cwd: directory, localTools: "ask" },
+      localContext: {
+        instructions: [{ path: join(directory, "AGENTS.md"), content: "Work with receipts." }],
+        skills: expect.not.arrayContaining([expect.objectContaining({ name: "finance" })]),
+        selectedSkills: [{ name: "finance", directory: skillFolder, instructions: "Reconcile every receipt." }],
+      },
+    });
+    expect(turns[1]?.body).toMatchObject({ localContext: { selectedSkills: [] } });
+    const drafts = session.requests.filter((request) => request.path.endsWith("/draft"));
+    expect(drafts[2]?.body).toMatchObject({
+      content: [
+        { type: "text", text: "Immediate" },
+        { type: "resource", ref: { type: "core.ai.skill", id: "rem123" }, title: "remote" },
+      ],
+    });
+    expect(session.printed.join("\n")).toContain("(only with /finance)");
+    expect(session.printed.join("\n")).toContain("hidden by the project Skill");
+    expect(session.printed.join("\n")).toMatch(/1 project, \d+ global, 2 Cloud/);
+    expect(completeInteractiveLine("/fin", directory, ["finance"])).toEqual([["/finance"], "/fin"]);
+  } finally {
+    process.chdir(previous);
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("trust decline keeps project context out for the session, while off still sends client facts", async () => {
+  const previous = process.cwd();
+  const directory = mkdtempSync(join(tmpdir(), "cld-trust-interactive-"));
+  try {
+    writeFileSync(join(directory, ".git"), "gitdir: fixture");
+    writeFileSync(join(directory, "AGENTS.md"), "Do this.");
+    process.chdir(directory);
+    const session = interactiveSession(["hello", "again", "/exit"], [""], { noBash: true });
+    session.ctx.getDefault = async () => undefined;
+    expect(await session.run()).toBe(0);
+    expect(session.prompts).toEqual([{ prompt: "Choice [Enter = do not load]: ", options: { typedOnly: true } }]);
+    expect(session.defaults).toEqual([]);
+    for (const turn of submissions(session))
+      expect(turn.body).toMatchObject({
+        client: { kind: "cli", localTools: "off" },
+        localContext: { instructions: [], skills: [], selectedSkills: [] },
+      });
+    expect(session.printed.join("\n")).toContain("Local tools: off · AGENTS.md: not loaded · /permissions to change.");
+    expect(session.errors.join("\n")).toContain("can steer what it does with your Cloud data");
+  } finally {
+    process.chdir(previous);
+    rmSync(directory, { recursive: true, force: true });
+  }
 });

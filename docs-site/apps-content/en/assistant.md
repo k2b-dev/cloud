@@ -5,10 +5,26 @@ section: Work
 order: 100
 description: A personal AI workspace for conversations, files, Projects, and reusable preferences.
 tags: [assistant, ai, chats]
-updated: 2026-10-09
+updated: 2026-10-11
 ---
 
 # Assistant
+
+## Work with a local folder in cld
+
+Start `cld ai` in the folder you want to work with: Assistant can list, read,
+upload, and create ordinary files there freely. Use `/permissions off` to stop
+local tools; Enter means No at approval questions. AGENTS.md and project Skills
+load after you trust the folder; `/skills` lists local and Cloud Skills, and
+`/<skill>` selects one for your next message. Local results and uploaded files
+go to this Cloud chat and can be sent to the model.
+
+cld asks before:
+
+- Running a Bash command.
+- Appending, replacing, or moving files.
+- Accessing protected files or files outside the start folder.
+- Every file access when started in your home folder or above.
 
 ## Background tasks
 

@@ -1,16 +1,25 @@
 import { realpathSync, statSync } from "node:fs";
-import { basename } from "node:path";
+import { release as osRelease, type as osType } from "node:os";
+import { basename, relative, sep } from "node:path";
 import type {
   AiConversation,
+  AiDraftContentPart,
   AiFileStat,
   AiPendingTurnAction,
   AiProject,
   AiPublicModelProfile,
+  AiSkillSummary,
   AiStoredMessage,
   CloudAiSurveyInput,
   CloudAiTextEditorInput,
 } from "@k2b/cloud/ai";
-import { AI_TURN_ATTACHMENT_MAX_ITEMS, CloudAiSurveyInputSchema, CloudAiTextEditorInputSchema } from "@k2b/cloud/ai/browser";
+import {
+  AI_LOCAL_SELECTED_SKILLS_MAX_ITEMS,
+  AI_LOCAL_TOOL_NAMES,
+  AI_TURN_ATTACHMENT_MAX_ITEMS,
+  CloudAiSurveyInputSchema,
+  CloudAiTextEditorInputSchema,
+} from "@k2b/cloud/ai/browser";
 import { arg, type CloudCliContext, command, flag } from "@k2b/cloud/cli";
 import type { AiChatQuotaSnapshot } from "@k2b/cloud/shared";
 import { httpApprovalNotice } from "../artifacts/code-approval-message";
@@ -18,10 +27,17 @@ import type { CapabilityDecision, CodeApproval } from "../artifacts/runtime/capa
 import { readApprovalPreferences, revokeApprovalPreference } from "./approvals";
 import { closeCliCodeHost } from "./code-host";
 import { createLineReader, type LineReader } from "./line-reader";
-import { deniedLocalBashResult, parseLocalBashInput, runLocalBash } from "./local-bash";
+import { createLocalContextReader, type LocalContext, type LocalSkill, localSkillCatalog, readLocalSkill } from "./local-context";
 import { classifyLocalPath, completeLocalPath, extractMessageAttachments, lastMentionToken, resolveLocalPath } from "./local-paths";
+import { createLocalSessionFolder, runLocalTool } from "./local-tools";
 import { jsonRequest, readApi, readProjectsApi } from "./shared";
-import { type AssistantTurnOutput, type AssistantTurnStreamResult, createAssistantTurnOutput, streamAssistantTurn } from "./stream";
+import {
+  type AssistantClientTools,
+  type AssistantTurnOutput,
+  type AssistantTurnStreamResult,
+  createAssistantTurnOutput,
+  streamAssistantTurn,
+} from "./stream";
 import { selectNumberedChoice, terminalInfo, terminalSafeText } from "./terminal";
 import { editTextWithExternalEditor } from "./text-editor";
 import {
@@ -55,6 +71,7 @@ export const INTERACTIVE_COMMANDS: ReadonlyArray<{ name: string; usage: string; 
   { name: "/model", usage: "/model [id|default]", summary: "Choose interactively or set the session model" },
   { name: "/retry", usage: "/retry [retry|details|concise]", summary: "Answer the last user message again" },
   { name: "/attach", usage: "/attach <path>", summary: "Attach a local file to the next message" },
+  { name: "/skills", usage: "/skills", summary: "List local and Cloud Skills" },
   { name: "/files", usage: "/files", summary: "List files in this chat" },
   { name: "/web", usage: "/web", summary: "Open this chat in your browser" },
   { name: "/status", usage: "/status", summary: "Show this session's settings" },
@@ -67,9 +84,14 @@ export const INTERACTIVE_COMMANDS: ReadonlyArray<{ name: string; usage: string; 
 type LocalToolsMode = "ask" | "off";
 
 /** Complete session commands or the local path at the cursor. */
-export const completeInteractiveLine = (line: string, cwd: string): [string[], string] => {
+export const completeInteractiveLine = (line: string, cwd: string, skillNames: readonly string[] = []): [string[], string] => {
   if (line.startsWith("/") && !/\s/.test(line)) {
-    return [INTERACTIVE_COMMANDS.map((command) => command.name).filter((name) => name.startsWith(line)), line];
+    return [
+      [...new Set([...INTERACTIVE_COMMANDS.map((command) => command.name), ...skillNames.map((name) => `/${name}`)])].filter((name) =>
+        name.startsWith(line),
+      ),
+      line,
+    ];
   }
   const token = line.startsWith("/attach ") ? line.slice(8) : lastMentionToken(line);
   return [line.startsWith("/attach ") || token.startsWith("@") ? completeLocalPath(token, cwd) : [], token];
@@ -78,6 +100,7 @@ export const completeInteractiveLine = (line: string, cwd: string): [string[], s
 const printInteractiveHelp = (ctx: CloudCliContext): void => {
   const width = Math.max(...INTERACTIVE_COMMANDS.map((command) => command.usage.length)) + 3;
   for (const command of INTERACTIVE_COMMANDS) ctx.print(`${command.usage.padEnd(width)}${command.summary}`);
+  ctx.print(`${"/<skill>".padEnd(width)}Select a Skill for your next message (/skills lists them)`);
 };
 
 const readInitialModelLabel = async (ctx: CloudCliContext, requestedModelId?: string): Promise<string> => {
@@ -276,8 +299,7 @@ const resolveAttention = async (input: {
   conversationId: string;
   turnId: string;
   signal: AbortSignal;
-  localTools: LocalToolsMode;
-  workspace: string;
+  clientTools: AssistantClientTools;
   output: AssistantTurnOutput;
 }): Promise<AssistantTurnStreamResult | null> => {
   let result = { status: "needs_attention" as const, turnId: input.turnId };
@@ -297,27 +319,6 @@ const resolveAttention = async (input: {
       const decision = await collectActionApproval(input.ctx, input.reader, action);
       if (decision === null) return null;
       await submitAction(input.ctx, action, { type: "approval_response", ...decision });
-    } else if (action.name === "local_bash" && input.localTools === "off") {
-      await submitAction(input.ctx, action, { type: "tool_result", result: deniedLocalBashResult("Local tools are off in this session.") });
-    } else if (action.name === "local_bash") {
-      const bash = parseLocalBashInput(action.args);
-      if (!bash) {
-        input.ctx.error("The local Bash request has invalid arguments and was left pending.");
-        return null;
-      }
-      input.ctx.error(`Bash wants to run in ${input.workspace}:`);
-      input.ctx.error("");
-      input.ctx.error(`  ${terminalSafeText(bash.command)}`);
-      input.ctx.error("");
-      const answer = await readApproval(input.reader, "Run?");
-      if (answer === null) return null;
-      const bashResult =
-        answer === "once" ? await runLocalBash(bash.command, { cwd: input.workspace, signal: input.signal }) : deniedLocalBashResult();
-      if (input.signal.aborted) return null;
-      if (bashResult.stdout) input.ctx.error(terminalSafeText(bashResult.stdout.trimEnd()));
-      if (bashResult.stderr) input.ctx.error(terminalSafeText(bashResult.stderr.trimEnd()));
-      if (bashResult.truncated) input.ctx.error("[Local Bash output truncated]");
-      await submitAction(input.ctx, action, { type: "tool_result", result: bashResult });
     } else if (action.name === "survey" || action.name === "cloud_survey") {
       const surveyResult = await collectSurveyResult(input.ctx, input.reader, action.args);
       if (surveyResult === null) {
@@ -333,7 +334,7 @@ const resolveAttention = async (input: {
       }
       await submitAction(input.ctx, action, { type: "tool_result", result: editorResult });
     } else {
-      input.ctx.error(`Frontend tool ${action.name} needs a result.`);
+      input.ctx.error(terminalSafeText(`Frontend tool ${action.name} needs a result.`));
       input.ctx.error(
         `Run \`cld assistant actions submit ${input.conversationId} ${input.turnId} ${action.callId} --result-file <file>\`.`,
       );
@@ -345,6 +346,7 @@ const resolveAttention = async (input: {
       conversationId: input.conversationId,
       turnId: input.turnId,
       output: input.output,
+      clientTools: input.clientTools,
       signal: input.signal,
       onCapabilityApproval: (request) => collectCapabilityApproval(input.ctx, input.reader, request),
     });
@@ -385,7 +387,11 @@ export const runInteractiveAssistant = async (
 ): Promise<number> => {
   if (options.allowBash && options.noBash) throw new Error("Pass either --allow-bash or --no-bash.");
   const workspace = process.cwd();
-  const reader = suppliedReader ?? createLineReader({ cwd: workspace, completer: (line) => completeInteractiveLine(line, workspace) });
+  let context: LocalContext;
+  let cloudSkills: AiSkillSummary[] = [];
+  const skillNames = () => [...(context?.skills.map((skill) => skill.name) ?? []), ...cloudSkills.map((skill) => skill.name)];
+  const reader =
+    suppliedReader ?? createLineReader({ cwd: workspace, completer: (line) => completeInteractiveLine(line, workspace, skillNames()) });
   const choiceReader = { read: (prompt: string) => reader.read(prompt, { typedOnly: true }) };
   let conversationId = options.conversationId;
   let activeConversation: AiConversation | undefined;
@@ -395,6 +401,93 @@ export const runInteractiveAssistant = async (
   let localTools: LocalToolsMode = options.noBash ? "off" : options.allowBash ? "ask" : savedMode;
   let modeSource = options.noBash || options.allowBash ? "this session" : savedMode === "off" ? "profile default" : "default";
   let attachments: string[] = [];
+  let selectedLocal: LocalSkill[] = [];
+  let selectedCloud: AiDraftContentPart[] = [];
+  const sessionFolder = createLocalSessionFolder();
+  const readContext = createLocalContextReader({
+    ctx,
+    workspace,
+    askTrust: async (found) => {
+      const parts: string[] = [];
+      if (found.instructionPaths.length)
+        parts.push(`AGENTS.md (${found.instructionPaths.length} ${found.instructionPaths.length === 1 ? "file" : "files"})`);
+      const count = found.skills.filter((skill) => skill.scope === "project").length;
+      if (count) parts.push(`${count} Skills in .agents/skills`);
+      else if (found.hasProjectContext && !parts.length) parts.push("Skills in .agents/skills");
+      return selectNumberedChoice({
+        output: { print: (line = "") => ctx.error(line), error: (line) => ctx.error(line) },
+        reader: choiceReader,
+        title: terminalSafeText(`This folder has instructions for the assistant: ${parts.join(", ")}.
+They go to the model with every message and can steer what it does with your Cloud data.`),
+        prompt: "Choice [Enter = do not load]: ",
+        choices: [
+          { value: "folder" as const, label: "Trust this folder" },
+          { value: "session" as const, label: "Only this session" },
+        ],
+      });
+    },
+  });
+  const refreshSkills = async () => {
+    context = await readContext();
+    cloudSkills = (await readApi<{ skills: AiSkillSummary[] }>(ctx, "/skills")).skills.filter((skill) => skill.enabled);
+  };
+  const skillCounts = () => {
+    const project = context.skills.filter((skill) => skill.scope === "project").length;
+    const global = context.skills.length - project;
+    return [project ? `${project} project` : "", global ? `${global} global` : ""].filter(Boolean).join(", ");
+  };
+  const instructionsSummary = () =>
+    !context.instructionPaths.length
+      ? "none"
+      : !context.trusted
+        ? "not loaded"
+        : `${context.instructions.length} ${context.instructions.length === 1 ? "file" : "files"}${context.shortened ? ", shortened" : ""}`;
+  const clientTools: AssistantClientTools = {
+    names: new Set(["local_bash", ...AI_LOCAL_TOOL_NAMES]),
+    run: async (call, signal) =>
+      runLocalTool(
+        call,
+        {
+          ctx,
+          workspace,
+          conversationId: conversationId!,
+          mode: localTools,
+          skills: context.skills,
+          freeReadRoots: context.skills.map((skill) => skill.directory),
+          sessionFolder,
+          ask: async (lines, question) => {
+            if (signal.aborted) return false;
+            for (const line of lines) ctx.error(terminalSafeText(line));
+            return (await readApproval(reader, terminalSafeText(question))) === "once" && !signal.aborted;
+          },
+          printBash: (stdout, stderr, truncated) => {
+            if (stdout) ctx.error(terminalSafeText(stdout.trimEnd()));
+            if (stderr) ctx.error(terminalSafeText(stderr.trimEnd()));
+            if (truncated) ctx.error("[Local Bash output truncated]");
+          },
+        },
+        signal,
+      ),
+  };
+  const readSelectedSkill = async (skill: LocalSkill) => {
+    const rule = classifyLocalPath(skill.path, { workspace });
+    if (rule.access === "blocked") throw new Error("cld's configuration is never available to the assistant.");
+    const target = realpathSync(skill.path);
+    const free = context.skills.some(({ directory }) => {
+      const child = relative(directory, target);
+      return child === "" || (child !== ".." && !child.startsWith(`..${sep}`) && !child.startsWith(sep));
+    });
+    if (rule.access === "ask" && !free) {
+      const question =
+        rule.reason === "home"
+          ? `Read ${skill.path}? You started cld in your home folder or above, so every file asks first.`
+          : rule.reason === "protected"
+            ? `Read ${skill.path}? It may contain secrets.`
+            : `Read ${skill.path}? It is outside ${workspace}.`;
+      if ((await readApproval(reader, terminalSafeText(question))) !== "once") return null;
+    }
+    return readLocalSkill(skill, workspace);
+  };
   const preparedAttachments = new Map<string, Awaited<ReturnType<typeof uploadAttachment>>>();
   let activeAbort: AbortController | null = null;
   let exitRequested = false;
@@ -453,6 +546,7 @@ export const runInteractiveAssistant = async (
           conversationId: chatId,
           turnId,
           output,
+          clientTools,
           signal: abort.signal,
           onCapabilityApproval: (request) => collectCapabilityApproval(ctx, reader, request),
         });
@@ -463,16 +557,22 @@ export const runInteractiveAssistant = async (
           path: input.path,
           body: input.body,
           watch: true,
+          onSubmitted: (submitted) => {
+            turnId = submitted.turn.id;
+            if (input.path.endsWith("/turns")) {
+              attachments = [];
+              preparedAttachments.clear();
+              selectedLocal = [];
+              selectedCloud = [];
+            }
+          },
           output,
+          clientTools,
           signal: abort.signal,
           onCapabilityApproval: (request) => collectCapabilityApproval(ctx, reader, request),
         });
         turnId = submission.submitted.turn.id;
         result = submission.result;
-        if (input.path.endsWith("/turns")) {
-          attachments = [];
-          preparedAttachments.clear();
-        }
       }
       if (result?.status === "needs_attention" && result.turnId) {
         result =
@@ -483,8 +583,7 @@ export const runInteractiveAssistant = async (
             turnId: result.turnId,
             output,
             signal: abort.signal,
-            localTools,
-            workspace,
+            clientTools,
           })) ?? undefined;
         if (!result && !abort.signal.aborted) return 2;
       }
@@ -493,7 +592,7 @@ export const runInteractiveAssistant = async (
         printInfo(ctx, "Turn stopped.");
         return resuming ? 130 : 0;
       }
-      if (result?.status === "failed") ctx.error(result.error || "Assistant turn failed.");
+      if (result?.status === "failed") ctx.error(terminalSafeText(result.error || "Assistant turn failed."));
       return 0;
     } catch (error) {
       if (abort.signal.aborted || (error instanceof Error && error.name === "AbortError")) {
@@ -502,7 +601,7 @@ export const runInteractiveAssistant = async (
         return resuming ? 130 : 0;
       }
       if (resuming) throw error;
-      ctx.error(error instanceof Error ? error.message : String(error));
+      ctx.error(terminalSafeText(error instanceof Error ? error.message : String(error)));
       return 0;
     } finally {
       activeAbort = null;
@@ -520,6 +619,7 @@ export const runInteractiveAssistant = async (
   };
 
   const send = async (message: string): Promise<number> => {
+    context = await readContext();
     for (const path of extractMessageAttachments(message, workspace)) {
       const count = attachments.length;
       await attachLocalFile(path);
@@ -535,14 +635,33 @@ export const runInteractiveAssistant = async (
     for (const path of attachments) {
       if (!preparedAttachments.has(path)) preparedAttachments.set(path, await uploadAttachment(ctx, conversation.id, path));
     }
-    const content = attachments.map((path) => preparedAttachments.get(path)!);
+    const content = [...attachments.map((path) => preparedAttachments.get(path)!), ...selectedCloud];
+    const selectedSkills = [];
+    if (localTools === "ask") {
+      for (const selected of selectedLocal) {
+        const skill = context.skills.find((skill) => skill.name === selected.name && skill.directory === selected.directory);
+        if (skill) {
+          const loaded = await readSelectedSkill(skill);
+          if (loaded) selectedSkills.push(loaded);
+        }
+      }
+    }
     return runTurn({
       path: conversationPath(conversation.id, "/turns"),
       body: {
         message,
         ...(content.length > 0 ? { content } : {}),
         ...(model ? { modelProfileId: model } : {}),
-        ...(localTools === "ask" ? { clientToolIds: ["local_bash"] } : {}),
+        clientToolIds:
+          localTools === "ask"
+            ? ["local_bash", ...AI_LOCAL_TOOL_NAMES.filter((name) => name !== "load_local_skill" || localSkillCatalog(context).length > 0)]
+            : [],
+        client: { kind: "cli", cwd: workspace, os: `${osType()} ${osRelease()}`, shell: "/bin/bash", localTools },
+        localContext: {
+          instructions: context.instructions,
+          skills: localTools === "ask" ? localSkillCatalog(context) : [],
+          selectedSkills,
+        },
       },
     });
   };
@@ -725,7 +844,47 @@ export const runInteractiveAssistant = async (
         if (await ctx.openUrl?.(url.href)) printInfo(ctx, "Opened in your browser.");
         break;
       }
+      case "/skills": {
+        await refreshSkills();
+        const localNames = new Map(context.skills.map((skill) => [skill.name, skill]));
+        const visibleCloud = cloudSkills.filter((skill) => !localNames.has(skill.name));
+        if (!context.skills.length && !visibleCloud.length && !context.hidden.length && !context.problems.length) {
+          ctx.print("No Skills found. Local Skills live in .agents/skills or ~/.agents/skills.");
+          break;
+        }
+        ctx.print("Skills · /<name> selects one for your next message");
+        const preview = (description: string) => {
+          const line = description.replaceAll(/\s+/g, " ").trim();
+          return line.length > 72 ? `${line.slice(0, 71)}…` : line;
+        };
+        const width = Math.max(1, ...skillNames().map((name) => name.length));
+        for (const skill of context.skills)
+          ctx.print(
+            terminalSafeText(
+              `  ${skill.name.padEnd(width)}  ${skill.scope.padEnd(7)}  ${preview(skill.description)}${skill.manualOnly ? ` (only with /${skill.name})` : ""}`,
+            ),
+          );
+        for (const skill of visibleCloud)
+          ctx.print(terminalSafeText(`  ${skill.name.padEnd(width)}  Cloud    ${preview(skill.description)}`));
+        const hidden = [
+          ...context.hidden,
+          ...cloudSkills
+            .filter((skill) => localNames.has(skill.name))
+            .map((skill) => ({ name: skill.name, scope: "Cloud", reason: `hidden by the ${localNames.get(skill.name)!.scope} Skill` })),
+        ];
+        if (hidden.length) {
+          ctx.print("Hidden");
+          for (const skill of hidden)
+            ctx.print(terminalSafeText(`  ${skill.name.padEnd(width)}  ${skill.scope.padEnd(7)}  ${skill.reason}`));
+        }
+        if (context.problems.length) {
+          ctx.print("Problems");
+          for (const problem of context.problems) ctx.print(terminalSafeText(`  ${problem.path}  ${problem.error}`));
+        }
+        break;
+      }
       case "/status": {
+        await refreshSkills();
         const selectedProject = activeConversation ? activeConversation.projectId : projectId;
         const projects = selectedProject ? (await readProjectsApi<{ projects: AiProject[] }>(ctx, "/")).projects : [];
         const project = projects.find((project) => project.shortId === selectedProject);
@@ -740,6 +899,15 @@ export const runInteractiveAssistant = async (
           ["Model", await readInitialModelLabel(ctx, model)],
           ["Project", selectedProject ? `${project?.name ?? selectedProject} (${selectedProject})` : "none"],
           ["Local tools", `${localTools} (${modeSource}) · ${workspace}`],
+          [
+            "AGENTS.md",
+            !context.instructionPaths.length
+              ? "none"
+              : context.trusted
+                ? context.instructions.map((file) => file.path).join(", ")
+                : "not loaded (folder not trusted)",
+          ],
+          ["Skills", `${[skillCounts(), `${cloudSkills.length} Cloud`].filter(Boolean).join(", ")} · /skills lists them`],
         ];
         for (const [label, value] of rows) ctx.print(`${label.padEnd(13)}${terminalSafeText(value)}`);
         break;
@@ -781,7 +949,8 @@ export const runInteractiveAssistant = async (
                     {
                       value: "ask",
                       label: "ask",
-                      description: "offer local Bash; ask before every command",
+                      description:
+                        "list, read, upload, and create files here freely; ask before commands, changing or moving files, and other folders",
                       current: localTools === "ask",
                     },
                     { value: "off", label: "off", description: "do not offer local tools to the model", current: localTools === "off" },
@@ -805,7 +974,7 @@ export const runInteractiveAssistant = async (
             }
           }
         } catch (error) {
-          ctx.error(error instanceof Error ? error.message : String(error));
+          ctx.error(terminalSafeText(error instanceof Error ? error.message : String(error)));
         } finally {
           ctx.print("Cloud approvals: /approvals");
         }
@@ -836,25 +1005,65 @@ export const runInteractiveAssistant = async (
         }
         break;
       }
-      default:
-        ctx.error(`Unknown command ${name}. Type /help for the list.`);
+      default: {
+        context = await readContext();
+        try {
+          cloudSkills = (await readApi<{ skills: AiSkillSummary[] }>(ctx, "/skills")).skills.filter((skill) => skill.enabled);
+        } catch {
+          cloudSkills = [];
+        }
+        const skillName = name.slice(1);
+        const local = context.skills.find((skill) => skill.name === skillName);
+        const cloud = cloudSkills.find((skill) => skill.name === skillName);
+        if (local) {
+          if (localTools === "off") {
+            ctx.error("Local tools are off in this session.");
+            break;
+          }
+          if (!selectedLocal.some((skill) => skill.name === local.name)) {
+            if (selectedLocal.length >= AI_LOCAL_SELECTED_SKILLS_MAX_ITEMS)
+              throw new Error("At most 4 local Skills can be selected for one message.");
+            selectedLocal.push(local);
+          }
+        } else if (cloud) {
+          if (!selectedCloud.some((part) => part.type === "resource" && part.ref.id === cloud.shortId))
+            selectedCloud.push({ type: "resource", ref: { type: "core.ai.skill", id: cloud.shortId }, title: cloud.name });
+        } else {
+          ctx.error(`Unknown command ${terminalSafeText(name)}. Type /help for the list.`);
+          break;
+        }
+        if (value) return send(value);
+        printInfo(ctx, `Skill ${skillName} is selected for your next message.`);
+        break;
+      }
     }
     return 0;
   };
 
   try {
     ctx.print(terminalSafeText(`Assistant · ${await readInitialModelLabel(ctx, model)} · /help for commands`));
+    context = await readContext();
+    try {
+      cloudSkills = (await readApi<{ skills: AiSkillSummary[] }>(ctx, "/skills")).skills.filter((skill) => skill.enabled);
+    } catch {
+      cloudSkills = [];
+    }
     const workspaceAccess = classifyLocalPath(workspace, { workspace });
-    const homeNotice =
-      workspaceAccess.access === "ask" && workspaceAccess.reason === "home"
-        ? ` · ${workspace} is your home folder or above, so every @file asks first`
-        : "";
+    const instructions = context.instructionPaths.length ? ` · AGENTS.md: ${instructionsSummary()}` : "";
+    const skills = context.skills.length ? ` · Skills: ${skillCounts()}` : "";
     printInfo(
       ctx,
       localTools === "ask"
-        ? `Local tools: ask · ${workspace} · Bash runs as your OS user after you confirm each command; commands and output go to this chat and the model. Change with /permissions.${homeNotice}`
-        : "Local tools: off · Change with /permissions.",
+        ? `Local tools: ask · ${workspace}${instructions}${skills}`
+        : `Local tools: off${instructions} · /permissions to change.`,
     );
+    if (localTools === "ask")
+      printInfo(
+        ctx,
+        workspaceAccess.access === "ask" && workspaceAccess.reason === "home"
+          ? `${workspace} is your home folder or above, so every file access asks first. /permissions to change.`
+          : "Reads and creates files here freely; asks before commands, changing or moving files, and other folders. What it reads is stored in this chat and sent to the model. /permissions to change.",
+      );
     for (const path of options.attachments ?? []) await attachLocalFile(path);
     if (conversationId) {
       const code = await openChat(conversationId);
@@ -865,7 +1074,7 @@ export const runInteractiveAssistant = async (
         const code = await send(options.initialPrompt.trim());
         if (code !== 0) return code;
       } catch (error) {
-        ctx.error(error instanceof Error ? error.message : String(error));
+        ctx.error(terminalSafeText(error instanceof Error ? error.message : String(error)));
       }
     }
     while (!exitRequested) {
@@ -880,15 +1089,22 @@ export const runInteractiveAssistant = async (
           : await send(trimmed);
         if (code !== 0) return code;
       } catch (error) {
-        ctx.error(error instanceof Error ? error.message : String(error));
+        ctx.error(terminalSafeText(error instanceof Error ? error.message : String(error)));
       }
     }
     return 0;
   } finally {
-    await closeCliCodeHost(ctx);
-    if (activeConversation) printResumeHint(ctx, activeConversation.id);
-    removeInterrupt();
-    reader.close();
+    try {
+      await closeCliCodeHost(ctx);
+    } finally {
+      try {
+        await sessionFolder.close();
+      } finally {
+        if (activeConversation) printResumeHint(ctx, activeConversation.id);
+        removeInterrupt();
+        reader.close();
+      }
+    }
   }
 };
 
