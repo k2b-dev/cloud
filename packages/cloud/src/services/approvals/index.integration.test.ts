@@ -50,6 +50,51 @@ databaseSuite()("platform approvals", () => {
       review: record.snapshot.review ?? null,
       requester: record.snapshot.requester,
     });
+  test("upgrades the phase-one CHECK once and accepts the ACP channel", async () => {
+    const [original] = await sql<{ conname: string }[]>`SELECT conname FROM pg_constraint
+      WHERE conrelid='approvals.requests'::regclass AND conname='requests_decided_via_check'`;
+    expect(original?.conname).toBe("requests_decided_via_check");
+    await sql`ALTER TABLE approvals.requests DROP CONSTRAINT requests_decided_via_check`.simple();
+    await sql`ALTER TABLE approvals.requests ADD CHECK (decided_via IS NULL OR decided_via IN ('web_session','app_session','oauth','api_key','invocation')) NOT VALID`.simple();
+    await migrateApprovals();
+    const constraint = () => sql<
+      { oid: number; definition: string; convalidated: boolean }[]
+    >`SELECT oid,pg_get_constraintdef(oid) AS definition,convalidated FROM pg_constraint
+      WHERE conrelid='approvals.requests'::regclass AND conname='requests_decided_via_check'`;
+    const first = await constraint();
+    expect(first[0]?.definition).toContain("acp_bridge");
+    expect(first[0]?.convalidated).toBe(true);
+    await migrateApprovals();
+    expect(await constraint()).toEqual(first);
+    const record = await ask();
+    expect(await approvals.decide(record.id, { approved: true }, { userId, via: "acp_bridge" })).toMatchObject({
+      ok: true,
+      status: "approved",
+    });
+  });
+  test("ACP can reject every assurance and approve standard, but confirm stays pending without an audit", async () => {
+    const record = await ask({ ...input(), assurance: "confirm" });
+    const before = await approvals.get(record.id);
+    expect(await approvals.decide(record.id, { approved: true }, { userId, via: "acp_bridge" })).toEqual({
+      ok: false,
+      code: "REJECT_ONLY",
+    });
+    expect(await approvals.get(record.id)).toEqual(before);
+    expect(await sql`SELECT id FROM audit.events WHERE target_type='approval_request' AND target_id=${record.id}`).toHaveLength(0);
+    expect(await approve(record.id)).toMatchObject({ ok: true, status: "approved" });
+    for (const assurance of ["confirm", "standard"] as const) {
+      const rejected = await ask({ ...input(), assurance });
+      expect(await approvals.decide(rejected.id, { approved: false }, { userId, via: "acp_bridge" })).toMatchObject({
+        ok: true,
+        status: "rejected",
+      });
+    }
+    const standard = await ask();
+    expect(await approvals.decide(standard.id, { approved: true }, { userId, via: "acp_bridge" })).toMatchObject({
+      ok: true,
+      status: "approved",
+    });
+  });
   test("asking again keeps the first snapshot, so a changed review asks again instead of rebinding the decision", async () => {
     const record = await ask();
     const before = await approvals.get(record.id);

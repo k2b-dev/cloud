@@ -3391,6 +3391,17 @@ export const aiConversations: AiConversationService = {
     return rows[0] ? rowToPendingActionRecord(rows[0]) : null;
   },
 
+  findPendingTurnActionByApproval: async (input) => {
+    // Keep resolved questions reachable so the same response can replay through submitAiTurnAction.
+    const [row] = await sql<PendingActionRow[]>`SELECT p.* FROM ai.pending_actions p
+      JOIN ai.conversations c ON c.id=p.conversation_id JOIN approvals.requests r ON r.id=p.approval_id
+      WHERE p.approval_id=${input.approvalId}::uuid AND c.created_by_user_id=${input.ownerUserId}::uuid
+        AND r.approver_user_id=${input.ownerUserId}::uuid AND p.status IN ('pending','resolved')
+        AND r.status IN ('pending','approved','rejected','consumed') AND (r.status <> 'pending' OR r.expires_at > now())
+      ORDER BY p.created_at DESC,p.id DESC LIMIT 1`;
+    return row ? rowToPendingActionRecord(row) : null;
+  },
+
   listPendingActionRecords: async (input) => {
     const rows = await sql<PendingActionRow[]>`
       SELECT *

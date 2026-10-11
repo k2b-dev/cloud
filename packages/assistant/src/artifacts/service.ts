@@ -47,6 +47,7 @@ import { STORAGE_FILE_MAX_BYTES, StorageRequest } from "./storage-contracts";
 
 export type ArtifactIdentity = {
   credentialKind?: RequestCredentialKind;
+  client?: string | null;
   actor: AuthContext["Variables"]["actor"];
   accessSubject: AccessSubject;
   conversationId?: string;

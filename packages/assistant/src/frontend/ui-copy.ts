@@ -40,6 +40,8 @@ const germanText: Record<string, string> = {
   "Open run": "Lauf öffnen",
   "No background activity yet": "Noch keine Hintergrundaktivitäten",
   "Background activity": "Hintergrundaktivitäten",
+  "What the Assistant wants to do for you. Nothing of it happens until you approve it here or in its chat.":
+    "Was der Assistent für dich tun möchte. Nichts davon passiert, bevor du hier oder im Chat zustimmst.",
   "Background run": "Hintergrundlauf",
   "Manage task": "Aufgabe verwalten",
   "Run history": "Laufverlauf",

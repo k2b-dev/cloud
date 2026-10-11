@@ -272,13 +272,18 @@ export const toAiErrorResponse = (c: Context<AuthContext>, error: unknown) => {
   return respond(c, fail(err.internal(message)));
 };
 
-export const toAiActionFailureResponse = (c: Context<AuthContext>, result: { ok: false; status: 400 | 404 | 409; message: string }) => {
+export const toAiActionFailureResponse = (
+  c: Context<AuthContext>,
+  result: { ok: false; status: 400 | 403 | 404 | 409; message: string },
+) => {
   const failure =
     result.status === 400
       ? err.badInput(result.message)
-      : result.status === 404
-        ? // err.notFound appends " not found" to its subject — the runtime message is already complete.
-          { code: "NOT_FOUND" as const, message: result.message, status: 404 as const }
-        : conflict(result.message);
+      : result.status === 403
+        ? err.forbidden(result.message)
+        : result.status === 404
+          ? // err.notFound appends " not found" to its subject — the runtime message is already complete.
+            { code: "NOT_FOUND" as const, message: result.message, status: 404 as const }
+          : conflict(result.message);
   return respond(c, fail(failure));
 };

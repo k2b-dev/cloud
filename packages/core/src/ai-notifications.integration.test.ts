@@ -1,5 +1,7 @@
 import { beforeAll, expect, test } from "bun:test";
 import { aiChatTasks, aiConversations, createAiShortId, migrateCloudAi } from "@k2b/cloud/ai";
+import { APPROVALS_PAGE_PATH } from "@k2b/cloud/contracts/approvals";
+import { approvals, migrateApprovals } from "@k2b/cloud/services/approvals";
 import { registerNotificationDefinitions } from "@k2b/cloud/services/notifications/catalog";
 import { sql } from "bun";
 import { databaseSuite } from "../../../scripts/fixtures/test-infra";
@@ -13,6 +15,7 @@ const suite = databaseSuite();
 suite("Core AI completion notifications", () => {
   beforeAll(async () => {
     await migrateCloudAi();
+    await migrateApprovals();
     await registerNotificationDefinitions(app.meta.id, app.notifications);
   });
   test("recovers each completed personal chat once and skips non-chat runs", async () => {
@@ -107,6 +110,91 @@ suite("Core AI completion notifications", () => {
       }
     } finally {
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
+  test("approval notifications exclude browser turns, bundle open external requests, and restart after all close", async () => {
+    const uid = `approval-notify-${crypto.randomUUID()}`;
+    const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid,provider,profile,mail)
+      VALUES(${uid},'local','user',${`${uid}@example.test`}) RETURNING id`;
+    if (!user) throw new Error("Missing fixture user");
+    const userId = user.id;
+    const service = createAiNotificationService(app.notifications);
+    const ask = async (signedInSession = false, linked = true) => {
+      const chat = await aiConversations.createConversation({ ownerUserId: userId });
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: chat.id,
+        modelProfileId: "mock",
+        runConfig: { kind: "chat", input: "Send", ...(signedInSession ? { signedInSession: true } : {}) },
+        userMessage: { role: "user", content: [{ type: "text", text: "Send" }] },
+      });
+      const request = await approvals.request({
+        appId: "mail",
+        action: "draft.send",
+        requester: { kind: "assistant_turn", appId: "assistant", ref: `${turn.id}/send` },
+        subjectId: userId,
+        approverUserId: userId,
+        assurance: "confirm",
+        sentence: "Mail: Send draft",
+        input: {},
+        expiresInMs: 600_000,
+      });
+      if (!request.ok) throw new Error("Missing approval");
+      if (linked)
+        await aiConversations.savePendingTurnAction({
+          approvalId: request.id,
+          conversationId: chat.id,
+          turnId: turn.id,
+          callId: "send",
+          kind: "approval",
+          status: "pending",
+          name: "mail.draft.send",
+          args: {},
+          allowAlways: false,
+          approvalScope: "draft",
+          resolvedEvent: null,
+        });
+      return request.id;
+    };
+    const events = () => sql<{ title: string; target_href: string; idempotency_key: string }[]>`
+      SELECT title,target_href,idempotency_key FROM notifications.events
+      WHERE definition_id=${app.notifications.approvalWaiting.id} AND recipient_user_id=${userId}::uuid ORDER BY created_at,id`;
+    try {
+      const browser = await ask(true);
+      expect(await service.notifyApprovalWaiting(browser)).toEqual({ scanned: 0, sent: 0, failed: 0 });
+      const unlinked = await ask(false, false);
+      expect(await service.notifyApprovalWaiting(unlinked)).toEqual({ scanned: 0, sent: 0, failed: 0 });
+      const expired = await ask();
+      await sql`UPDATE approvals.requests SET expires_at=now()-interval '1 second' WHERE id=${expired}::uuid`;
+      expect(await service.notifyApprovalWaiting(expired)).toEqual({ scanned: 0, sent: 0, failed: 0 });
+      const old = await ask();
+      await sql`UPDATE approvals.requests SET created_at=(SELECT first_seen_at-interval '1 second' FROM notifications.definitions WHERE id=${app.notifications.approvalWaiting.id}) WHERE id=${old}::uuid`;
+      expect(await service.notifyApprovalWaiting(old)).toEqual({ scanned: 0, sent: 0, failed: 0 });
+      await approvals.cancel([old]);
+      const first = await ask();
+      expect((await service.notifyApprovalWaiting(first)).failed).toBe(0);
+      expect(await service.notifyApprovalWaiting(first)).toEqual({ scanned: 0, sent: 0, failed: 0 });
+      const second = await ask();
+      expect(await service.notifyApprovalWaiting(second)).toEqual({ scanned: 0, sent: 0, failed: 0 });
+      expect(await events()).toMatchObject([
+        { title: "Approval waiting", target_href: APPROVALS_PAGE_PATH, idempotency_key: `approval:${first}` },
+      ]);
+      await approvals.decide(first, { approved: false }, { userId, via: "api_key" });
+      await approvals.decide(second, { approved: false }, { userId, via: "api_key" });
+      const third = await ask();
+      const fourth = await ask();
+      expect(await service.notifyApprovalWaiting(fourth)).toEqual({ scanned: 0, sent: 0, failed: 0 });
+      expect((await service.notifyApprovalWaiting(third)).failed).toBe(0);
+      expect(await events()).toMatchObject([
+        { idempotency_key: `approval:${first}` },
+        { title: "2 approvals waiting", idempotency_key: `approval:${third}` },
+      ]);
+      // Deciding the oldest in Cloud shows the person the rest; the next one in the run sends no second notice.
+      await approvals.decide(third, { approved: false }, { userId, via: "web_session" });
+      expect(await service.notifyApprovalWaiting(fourth)).toEqual({ scanned: 0, sent: 0, failed: 0 });
+    } finally {
+      await sql`DELETE FROM audit.events WHERE actor_user_id=${userId}::uuid AND target_type='approval_request'`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
     }
   });
 

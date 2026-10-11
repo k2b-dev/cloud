@@ -11,7 +11,7 @@ import { coreSettings } from "../services/settings/api";
 import { AI_WEBSITE_APPROVAL_TOOL, type AiToolApprovalContext, aiTurnAllowsRememberedApprovals, rememberAiToolApproval } from "./approvals";
 import { aiChatAccessSubject, selectAssistantAiModelId } from "./assistant-models";
 import { startAiDictationRuntime } from "./dictation-runtime";
-import { AiTurnExecutor } from "./executor";
+import { AiTurnExecutor, type ExecutorConfig } from "./executor";
 import { canonicalizeAiConversationAttachments, snapshotAiConversationFiles } from "./file-context";
 import { drainQueuedMessages } from "./message-queue";
 import { AI_TURN_LEASE_MS } from "./protocol";
@@ -328,7 +328,7 @@ export const submitAiTurnAction = async (input: {
   toolApprovalContext?: AiToolApprovalContext;
   /** Whether a person decides in a signed-in browser session; only such a decision may remember a website. */
   signedInSession?: boolean;
-}): Promise<{ ok: true } | { ok: false; status: 400 | 404 | 409; message: string }> => {
+}): Promise<{ ok: true } | { ok: false; status: 400 | 403 | 404 | 409; message: string }> => {
   const pending = await aiConversations.getPendingTurnAction(input);
   if (!pending) return { ok: false, status: 404, message: "This request has expired — the assistant already moved on." };
   if (pending.status === "resolved") {
@@ -365,9 +365,11 @@ export const submitAiTurnAction = async (input: {
     if (pending.approvalId) {
       const decision = await approvals.decide(pending.approvalId, { approved: input.action.approved }, input.decidedBy);
       if (!decision.ok)
-        return decision.code === "ALREADY_DECIDED"
-          ? { ok: false, status: 409, message: "AI action was already resolved with a different response." }
-          : { ok: false, status: 404, message: "This request has expired — the assistant already moved on." };
+        return decision.code === "REJECT_ONLY"
+          ? { ok: false, status: 403, message: "Approve this request in Cloud. An editor can only reject it." }
+          : decision.code === "ALREADY_DECIDED"
+            ? { ok: false, status: 409, message: "AI action was already resolved with a different response." }
+            : { ok: false, status: 404, message: "This request has expired — the assistant already moved on." };
     }
     if (remember && input.toolApprovalContext) {
       const toolName = pending.rememberToolName ?? pending.name;
@@ -425,11 +427,14 @@ export const submitAiTurnAction = async (input: {
 // Worker + sweep lifecycle
 // ---------------------------------------------------------------------------
 
+type ApprovalRequestedListener = NonNullable<ExecutorConfig["onApprovalRequested"]>;
+
 const runClaimedTurn = async (
   job: AiTurnJob,
   signal: AbortSignal,
   leaseOwner: string,
   onTurnFinalized?: (event: AiTurnFinalizedEvent) => Promise<void>,
+  onApprovalRequested?: ApprovalRequestedListener,
 ): Promise<void> => {
   const timeoutMinutes = await coreSettings.get<number>("ai.turn_timeout_minutes");
   const runBudgetMs = Math.max(0, Number(timeoutMinutes ?? 30)) * 60_000;
@@ -458,6 +463,7 @@ const runClaimedTurn = async (
     heartbeatMs: AI_TURN_HEARTBEAT_MS,
     enqueueContinuation: (input) => enqueueAiTurn(input).then(() => undefined),
     onTurnFinalized,
+    onApprovalRequested,
   });
   await executor.run({ conversationId: job.conversationId, turnId: job.turnId, claim, signal });
 };
@@ -466,6 +472,7 @@ const processMessage = async (
   message: Pick<QueueMessage<AiTurnJob>, "messageId" | "data" | "heartbeat">,
   signal: AbortSignal,
   onTurnFinalized?: (event: AiTurnFinalizedEvent) => Promise<void>,
+  onApprovalRequested?: ApprovalRequestedListener,
 ): Promise<void> => {
   const leaseOwner = `${AI_WORKER_ID}:${message.messageId}:${crypto.randomUUID()}`;
   let heartbeatFailed = false;
@@ -488,7 +495,7 @@ const processMessage = async (
   }, AI_TURN_HEARTBEAT_MS);
   if (typeof touch === "object" && "unref" in touch) touch.unref();
   try {
-    await runClaimedTurn(message.data, signal, leaseOwner, onTurnFinalized);
+    await runClaimedTurn(message.data, signal, leaseOwner, onTurnFinalized, onApprovalRequested);
   } catch (error) {
     log.error("AI turn worker error", {
       conversationId: message.data.conversationId,
@@ -550,6 +557,7 @@ export const sweepAiRuntime = async (onTurnFinalized?: (event: AiTurnFinalizedEv
 
 type AiRuntimeState = {
   listeners: Set<(event: AiTurnFinalizedEvent) => Promise<void>>;
+  approvalListeners: Set<ApprovalRequestedListener>;
   stop: () => void;
 };
 
@@ -557,19 +565,29 @@ let running: AiRuntimeState | null = null;
 let refCount = 0;
 
 export const startAiRuntime = (
-  input: { concurrency?: number; onTurnFinalized?: (event: AiTurnFinalizedEvent) => Promise<void> } = {},
+  input: {
+    concurrency?: number;
+    onTurnFinalized?: (event: AiTurnFinalizedEvent) => Promise<void>;
+    onApprovalRequested?: ApprovalRequestedListener;
+  } = {},
 ): (() => void) => {
   const listener = input.onTurnFinalized ? (event: AiTurnFinalizedEvent) => input.onTurnFinalized!(event) : null;
+  const approvalListener: ApprovalRequestedListener | null = input.onApprovalRequested
+    ? (event) => input.onApprovalRequested!(event)
+    : null;
   if (running) {
     refCount += 1;
     if (listener) running.listeners.add(listener);
-    return releaseAiRuntime(listener);
+    if (approvalListener) running.approvalListeners.add(approvalListener);
+    return releaseAiRuntime(listener, approvalListener);
   }
 
   const concurrency = Math.min(Math.max(Math.floor(input.concurrency ?? AI_TURN_WORKER_CONCURRENCY), 1), 64);
   const controller = new AbortController();
   const listeners = new Set<(event: AiTurnFinalizedEvent) => Promise<void>>();
   if (listener) listeners.add(listener);
+  const approvalListeners = new Set<ApprovalRequestedListener>();
+  if (approvalListener) approvalListeners.add(approvalListener);
   refCount = 1;
   const dispatchTurnFinalized = async (event: AiTurnFinalizedEvent): Promise<void> => {
     const results = await Promise.allSettled([...listeners].map((notify) => notify(event)));
@@ -577,12 +595,18 @@ export const startAiRuntime = (
     if (errors.length > 0) throw new AggregateError(errors, `${errors.length} AI turn finalized listener(s) failed`);
   };
 
+  const dispatchApprovalRequested: ApprovalRequestedListener = async (event) => {
+    const results = await Promise.allSettled([...approvalListeners].map((notify) => notify(event)));
+    const errors = results.filter((result): result is PromiseRejectedResult => result.status === "rejected").map((result) => result.reason);
+    if (errors.length) throw new AggregateError(errors, `${errors.length} AI approval requested listener(s) failed`);
+  };
+
   void superviseRuntimeTask({
     name: "AI turn worker",
     signal: controller.signal,
     run: async (signal) => {
       const worker = await aiTurnQueue().process({ concurrency, signal }, (message) =>
-        processMessage(message, message.signal, dispatchTurnFinalized),
+        processMessage(message, message.signal, dispatchTurnFinalized, dispatchApprovalRequested),
       );
       try {
         await new Promise<void>((resolve) => {
@@ -612,22 +636,27 @@ export const startAiRuntime = (
   const stopDictations = startAiDictationRuntime();
   const state: AiRuntimeState = {
     listeners,
+    approvalListeners,
     stop: () => {
       if (running !== state) return;
       controller.abort();
       stopDictations();
       clearInterval(sweepTimer);
       listeners.clear();
+      approvalListeners.clear();
       running = null;
       refCount = 0;
     },
   };
   running = state;
   log.info("AI runtime started", { workerId: AI_WORKER_ID, concurrency });
-  return releaseAiRuntime(listener);
+  return releaseAiRuntime(listener, approvalListener);
 };
 
-const releaseAiRuntime = (listener: ((event: AiTurnFinalizedEvent) => Promise<void>) | null): (() => void) => {
+const releaseAiRuntime = (
+  listener: ((event: AiTurnFinalizedEvent) => Promise<void>) | null,
+  approvalListener: ApprovalRequestedListener | null,
+): (() => void) => {
   let released = false;
   return () => {
     if (released) return;
@@ -635,6 +664,7 @@ const releaseAiRuntime = (listener: ((event: AiTurnFinalizedEvent) => Promise<vo
     const state = running;
     if (!state) return;
     if (listener) state.listeners.delete(listener);
+    if (approvalListener) state.approvalListeners.delete(approvalListener);
     refCount = Math.max(0, refCount - 1);
     if (refCount === 0) state.stop();
   };

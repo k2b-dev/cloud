@@ -1,4 +1,5 @@
 import type { AiConversation, AiProject } from "@k2b/cloud/ai";
+import { ApprovalsNavStatus, approvalNavCount } from "@k2b/cloud/approvals/ui";
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { openGlobalSearch } from "@k2b/cloud/browser/search";
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
@@ -17,7 +18,7 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { type Accessor, createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { type Accessor, createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import { artifactMessages } from "../artifacts/messages";
 import { openStudioDialog, StudioSidebarItem } from "../artifacts/StudioSidebarItem";
@@ -27,7 +28,7 @@ import { openAssistantAllChatsDialog } from "./AssistantAllChatsDialog";
 import { openAssistantConversationEditor } from "./AssistantConversationEditor";
 import { openAssistantPrefsModal } from "./AssistantPrefsModals";
 import type { AssistantLiveHub } from "./assistant-live";
-import { assistantConversationHref, assistantProjectHref } from "./assistant-navigation";
+import { ASSISTANT_APPROVALS_HREF, assistantConversationHref, assistantProjectHref } from "./assistant-navigation";
 import { assistantProjectSearchOptions, assistantProjectsSearchOptions, assistantSearchOptions } from "./assistant-search";
 import { ConversationSidebarPreview } from "./ConversationSidebarPreview";
 import {
@@ -56,7 +57,7 @@ type AssistantSidebarProps = {
   renderedAt: string;
   doneCount?: number;
   activeConversationId?: Accessor<string | null>;
-  activeView?: "chat" | "all" | "apps";
+  activeView?: "chat" | "all" | "apps" | "approvals";
   activeAppId?: string;
   projects?: AiProject[];
   activeProjectId?: string | null;
@@ -68,6 +69,10 @@ type AssistantSidebarProps = {
   canArchiveConversation?: (conversation: AiConversation) => boolean;
   onConversationUpdated?: (conversation: AiConversation) => void;
   onConversationArchived?: (conversation: AiConversation) => void;
+  /** Open approvals the page rendered with; the Approvals row shows while this or the live count is above zero. */
+  pendingApprovals?: number;
+  /** Opens the approvals view in place; without it, the row is a link to the view. */
+  onOpenApprovals?: () => void;
   live: AssistantLiveHub;
 };
 
@@ -327,6 +332,31 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
     }
   };
   const openProjectSearch = () => openGlobalSearch(assistantProjectsSearchOptions(locale()));
+  // The Approvals row appears or leaves only when the person navigates, never while they point at the footer: a row
+  // that pushed Studio away under the pointer would make the next click land on something else.
+  const approvalsActive = () => activeView() === "approvals";
+  const approvalsVisible = () => approvalNavCount("assistant", props.pendingApprovals ?? 0) > 0 || approvalsActive();
+  const [approvalsShown, setApprovalsShown] = createSignal(approvalsVisible());
+  createEffect(on([activeView, activeConversationId, activeProjectId], () => setApprovalsShown(approvalsVisible()), { defer: true }));
+  const openApprovals = (event: MouseEvent) => {
+    if (!props.onOpenApprovals) return;
+    event.preventDefault();
+    props.onOpenApprovals();
+  };
+  const ApprovalsItem = () => (
+    <Show when={approvalsShown()}>
+      <AppWorkspace.SidebarItem
+        icon="ti ti-shield-check"
+        title={text("Approvals")}
+        href={ASSISTANT_APPROVALS_HREF}
+        active={approvalsActive()}
+        onClick={openApprovals}
+        meta={<ApprovalsNavStatus app="assistant" initial={props.pendingApprovals ?? 0} />}
+      >
+        {text("Approvals")}
+      </AppWorkspace.SidebarItem>
+    </Show>
+  );
   const ProjectsItem = () => (
     <AppWorkspace.SidebarItem
       icon="ti ti-folders"
@@ -536,6 +566,19 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
         badge: props.doneCount ?? doneConversations().length,
         children: [...doneConversations().map(chatItem), { id: "all", action: "all", label: t().allChats, icon: "ti ti-eye" }],
       },
+      ...(approvalsShown()
+        ? [
+            {
+              id: "approvals",
+              action: "approvals",
+              href: ASSISTANT_APPROVALS_HREF,
+              label: text("Approvals"),
+              icon: "ti ti-shield-check",
+              badge: approvalNavCount("assistant", props.pendingApprovals ?? 0),
+              active: approvalsActive(),
+            },
+          ]
+        : []),
       {
         id: "apps",
         action: "apps",
@@ -576,6 +619,11 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
       }
       if (action === "apps") {
         void openStudio();
+        return;
+      }
+      if (action === "approvals") {
+        if (props.onOpenApprovals) props.onOpenApprovals();
+        else navigateTo(ASSISTANT_APPROVALS_HREF);
         return;
       }
       if (action === "search-projects") {
@@ -712,6 +760,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
             <DoneSection />
           </AppWorkspace.SidebarBody>
           <AppWorkspace.SidebarFooter sidebarMode="expanded">
+            <ApprovalsItem />
             <StudioSidebarItem active={activeView() === "apps"} activeAppId={props.activeAppId} />
             <ProjectsItem />
             <AppWorkspace.SidebarItem
@@ -729,6 +778,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
             <AppWorkspace.SidebarItem icon="ti ti-check" title={text("Done")} onClick={() => openAllChats(true)}>
               {text("Done")}
             </AppWorkspace.SidebarItem>
+            <ApprovalsItem />
             <StudioSidebarItem active={activeView() === "apps"} activeAppId={props.activeAppId} />
             <ProjectsItem />
             <AppWorkspace.SidebarItem

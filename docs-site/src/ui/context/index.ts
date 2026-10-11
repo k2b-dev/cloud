@@ -9,6 +9,7 @@ import actionTabs from "./actions/tabs.md" with { type: "text" };
 import actionToolbar from "./actions/toolbar.md" with { type: "text" };
 import aiChat from "./ai/chat.md" with { type: "text" };
 import aiContextUsage from "./ai/context-usage.md" with { type: "text" };
+import cloudApprovals from "./cloud/approvals.md" with { type: "text" };
 import cloudAssistantChat from "./cloud/assistant-chat.md" with { type: "text" };
 import cloudDashboardWidgets from "./cloud/dashboard-widgets.md" with { type: "text" };
 import cloudFileChooser from "./cloud/file-chooser.md" with { type: "text" };
@@ -176,6 +177,7 @@ const catalogContextSources = {
   "cloud/dashboard-widgets": { file: "cloud/dashboard-widgets.md", content: cloudDashboardWidgets },
   "cloud/resource-picker": { file: "cloud/resource-picker.md", content: cloudResourcePicker },
   "cloud/file-chooser": { file: "cloud/file-chooser.md", content: cloudFileChooser },
+  "cloud/approvals": { file: "cloud/approvals.md", content: cloudApprovals },
 } as const satisfies Record<string, { file: string; content: string }>;
 
 type CatalogContextId = keyof typeof catalogContextSources;

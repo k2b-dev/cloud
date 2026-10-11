@@ -1,4 +1,4 @@
-import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
+import { type AuthContext, getDateConfig, getLocale, loadPendingApprovals } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../../../config";
 import { requestContactDirectory } from "../../../../contact-directory-settings";
@@ -35,7 +35,9 @@ export default ssr<AuthContext>(async (c) => {
     context.actor.kind === "user"
       ? { kind: "user" as const, id: context.actor.user.id }
       : { kind: "service_account" as const, id: context.actor.serviceAccount.id };
-  const [mailbox, access, identities, draft, uploads, calendarIntegrationAvailable] = await Promise.all([
+  // The same href the draft's send review links to, so the page shows the approvals that would send this draft.
+  const draftLink = `/app/mail/${encodeURIComponent(mailboxShortId)}/compose/${encodeURIComponent(draftShortId)}`;
+  const [mailbox, access, identities, draft, uploads, calendarIntegrationAvailable, approvals] = await Promise.all([
     mailboxes.getMailbox(context, mailboxId),
     // Assigned-only writers reply here too; the draft and seed services refuse anything they cannot see.
     mailboxAccess.requireMailboxAccess(context, mailboxId, "write"),
@@ -43,6 +45,7 @@ export default ssr<AuthContext>(async (c) => {
     drafts.getDraft(context, mailboxId, draftId),
     draftUploads.listUnfinishedDraftAttachmentUploads({ context, mailboxId, draftId }),
     calendarInvitations.composerIntegrationAvailable(),
+    loadPendingApprovals(c, { app: "mail", link: draftLink }),
   ]);
   if (!mailbox.ok) return ssr.error(c, mailbox.error.status);
   if (!draft.ok) return ssr.error(c, draft.error.status);
@@ -87,6 +90,7 @@ export default ssr<AuthContext>(async (c) => {
         currentUserEmail={currentUserEmail}
         calendarIntegrationAvailable={calendarIntegrationAvailable}
         contactDirectory={requestContactDirectory(c)}
+        approvals={{ link: draftLink, page: approvals }}
       />
     </Layout>
   );

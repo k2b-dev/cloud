@@ -12,7 +12,7 @@ export type RailApp = {
   /** The app's `nav.badge` endpoint. */
   badge?: string;
 };
-export type RailLink = Omit<RailApp, "defaultVisible"> & { exact?: boolean };
+export type RailLink = Omit<RailApp, "defaultVisible"> & { appId?: string; exact?: boolean };
 
 export const isRailAppVisible = (app: RailApp, settings: RailPreferences): boolean =>
   Object.hasOwn(settings.visibility, app.id) ? (settings.visibility[app.id] ?? app.defaultVisible) : app.defaultVisible;
@@ -32,7 +32,7 @@ export const projectRailNavigation = (apps: readonly RailApp[], settings: RailSn
       const app = catalog.get(shortcut.appId);
       if (!app || pinned.has(app.id)) continue;
       pinned.add(app.id);
-      shortcuts.push({ ...app, id: shortcut.id });
+      shortcuts.push({ ...app, id: shortcut.id, appId: app.id });
     } else {
       shortcuts.push({
         id: shortcut.id,
@@ -46,7 +46,9 @@ export const projectRailNavigation = (apps: readonly RailApp[], settings: RailSn
   }
   return {
     shortcuts,
-    apps: sortRailApps(apps, locale).filter((app) => !pinned.has(app.id) && isRailAppVisible(app, settings)),
+    apps: sortRailApps(apps, locale)
+      .filter((app) => !pinned.has(app.id) && isRailAppVisible(app, settings))
+      .map((app) => ({ ...app, appId: app.id })),
   };
 };
 

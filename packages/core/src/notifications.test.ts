@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
+import { coreSettings } from "@k2b/cloud/services";
 import { app } from "./config";
 
 describe("Core notification definitions", () => {
@@ -39,5 +40,34 @@ test("AI cost notifications format reference amounts in the recipient locale", a
   ]) {
     expect((await notice.render(data, { locale: locale! })).body).toContain(`${amount} Credits`);
     expect((await notice.email!(data, { locale: locale! })).content).toContain(`${amount} Credits`);
+  }
+});
+
+test("pending approval notifications are browser-recommended, localized, and open the review page", async () => {
+  const notice = app.notifications.approvalWaiting;
+  expect(notice.id).toBe("core.approvalWaiting");
+  expect(notice.recipient).toBe("user");
+  expect(notice.delivery?.recommended).toEqual(["browser"]);
+  expect(notice.data.safeParse({ count: 0 }).success).toBe(false);
+  expect(notice.data.safeParse({ count: 1.5 }).success).toBe(false);
+  expect(await notice.render({ count: 1 }, { locale: "en" })).toEqual({
+    title: "Approval waiting",
+    body: "An Action waits for your approval. Nothing happens until you decide.",
+    targetHref: "/me/approvals",
+  });
+  expect((await notice.render({ count: 2 }, { locale: "en" })).title).toBe("2 approvals waiting");
+  expect(await notice.render({ count: 1 }, { locale: "de" })).toEqual({
+    title: "Freigabe wartet",
+    body: "Eine Aktion wartet auf deine Freigabe. Bis du entscheidest, passiert nichts.",
+    targetHref: "/me/approvals",
+  });
+  expect((await notice.render({ count: 2 }, { locale: "de" })).title).toBe("2 Freigaben warten");
+  const url = spyOn(coreSettings, "get").mockResolvedValue("https://cloud.example.test/");
+  try {
+    const email = await notice.email!({ count: 2 }, { locale: "de" });
+    expect(email.subject).toBe("2 Freigaben warten");
+    expect(email.content).toContain("https://cloud.example.test/me/approvals");
+  } finally {
+    url.mockRestore();
   }
 });

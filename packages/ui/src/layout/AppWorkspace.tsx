@@ -382,6 +382,12 @@ export type AppWorkspaceSidebarItemStatusProps = {
   mention?: boolean;
   /** Shows a muted bell. */
   muted?: boolean;
+  /**
+   * Items that wait for the person, such as requests to approve, in the unread slot instead of `unread`. `label` is
+   * the phrase a screen reader hears, for example "3 waiting". `0` stays as a muted count, for a count that dropped
+   * to zero while the row is still shown; leave the prop out when nothing waits.
+   */
+  waiting?: { count: number; label: string };
 };
 export type AppWorkspaceNavTreeProps = {
   children: JSX.Element;
@@ -895,19 +901,22 @@ const AppWorkspaceSidebarItemActions = (props: AppWorkspaceSidebarItemActionsPro
 );
 const AppWorkspaceSidebarItemStatus = (props: AppWorkspaceSidebarItemStatusProps): JSX.Element => {
   const workspaceMessages = useWorkspaceMessages();
-  const count = () => (typeof props.unread === "number" && props.unread >= 1 ? Math.floor(props.unread) : 0);
-  const dot = () => props.unread === true;
+  const waiting = () => (props.waiting && Number.isFinite(props.waiting.count) ? Math.max(0, Math.floor(props.waiting.count)) : null);
+  const count = () => waiting() ?? (typeof props.unread === "number" && props.unread >= 1 ? Math.floor(props.unread) : 0);
+  const dot = () => waiting() === null && props.unread === true;
   // The marks are decorative; the row's accessible name gets one phrase instead,
   // which says no more than the "99+" a capped count shows.
   const description = () =>
     [
-      count() > 99
-        ? workspaceMessages().sidebarUnreadMany
-        : count()
-          ? workspaceMessages().sidebarUnread({ count: count() })
-          : dot()
-            ? workspaceMessages().sidebarNewActivity
-            : "",
+      waiting() !== null
+        ? (props.waiting?.label ?? "")
+        : count() > 99
+          ? workspaceMessages().sidebarUnreadMany
+          : count()
+            ? workspaceMessages().sidebarUnread({ count: count() })
+            : dot()
+              ? workspaceMessages().sidebarNewActivity
+              : "",
       props.mention ? workspaceMessages().sidebarMentioned : "",
       props.muted ? workspaceMessages().sidebarMuted : "",
     ]
@@ -917,7 +926,11 @@ const AppWorkspaceSidebarItemStatus = (props: AppWorkspaceSidebarItemStatusProps
   // often sit outermost, so new activity or a mention never moves another mark.
   return (
     <Show when={description()}>
-      <span class="k2b-app-workspace__sidebar-status" data-unread={count() ? "count" : dot() ? "dot" : undefined}>
+      <span
+        class="k2b-app-workspace__sidebar-status"
+        data-unread={waiting() !== null ? undefined : count() ? "count" : dot() ? "dot" : undefined}
+        data-waiting={waiting() === null ? undefined : waiting() ? "count" : "zero"}
+      >
         <Show when={props.mention}>
           <span class="k2b-app-workspace__sidebar-status-mention" aria-hidden="true">
             @
@@ -930,7 +943,7 @@ const AppWorkspaceSidebarItemStatus = (props: AppWorkspaceSidebarItemStatusProps
         </Show>
         <span class="k2b-app-workspace__sidebar-status-unread" aria-hidden="true">
           <Show
-            when={count()}
+            when={count() || waiting() === 0}
             fallback={
               <Show when={dot()}>
                 <span class="k2b-app-workspace__sidebar-status-dot" />

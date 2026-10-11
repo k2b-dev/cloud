@@ -10,6 +10,7 @@ export const accountMessages = i18n.define({
       security: "Sign-in",
       access: "Groups",
       notifications: "Notifications",
+      approvals: "Approvals",
       developer: "Developer",
       preferences: "Preferences",
       deliveryHistory: "Delivery history",
@@ -342,6 +343,8 @@ export const accountMessages = i18n.define({
       waiting: "Waiting",
       all: "All",
       notificationsDescription: "Choose how this device and individual Cloud apps may notify you.",
+      approvalsDescription:
+        "Actions in every app that wait for your approval. Nothing of it happens until you approve it here, in the app, or in the chat it comes from.",
       deliveryHistoryDescription: "Review notification outcomes without exposing message contents.",
       recentDeliveries: "Recent deliveries",
       deliveryMetadataOnly: "Metadata only; notification contents are not shown here.",
@@ -441,6 +444,7 @@ export const accountMessages = i18n.define({
       security: "Anmeldung",
       access: "Gruppen",
       notifications: "Benachrichtigungen",
+      approvals: "Freigaben",
       developer: "Entwicklung",
       preferences: "Einstellungen",
       deliveryHistory: "Zustellverlauf",
@@ -781,6 +785,8 @@ export const accountMessages = i18n.define({
       waiting: "Wartet",
       all: "Alle",
       notificationsDescription: "Lege fest, wie dich dieses Gerät und einzelne Cloud-Apps benachrichtigen dürfen.",
+      approvalsDescription:
+        "Aktionen aus allen Apps, die auf deine Freigabe warten. Nichts davon passiert, bevor du hier, in der App oder im Chat, aus dem sie kommen, zustimmst.",
       deliveryHistoryDescription: "Prüfe den Ausgang von Benachrichtigungen, ohne deren Inhalt offenzulegen.",
       recentDeliveries: "Aktuelle Zustellungen",
       deliveryMetadataOnly: "Hier werden nur Metadaten angezeigt, nicht der Inhalt der Benachrichtigungen.",

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import * as ai from "@k2b/cloud/ai";
 import * as live from "@k2b/cloud/ai/live";
 import type { CloudRuntime, User } from "@k2b/cloud/contracts";
+import * as server from "@k2b/cloud/server";
 import type { AuthContext } from "@k2b/cloud/server";
 import * as services from "@k2b/cloud/services";
 import * as rail from "@k2b/cloud/services/rail-snapshot";
@@ -72,6 +73,7 @@ beforeEach(() => {
     }),
   );
   spies.push(spyOn(ai, "listAssistantAiModels").mockResolvedValue([]));
+  spies.push(spyOn(server, "loadPendingApprovals").mockResolvedValue({ items: [], nextCursor: null, count: 0, elsewhere: 0 }));
   spies.push(
     spyOn(ai.aiUserPrefs, "get").mockResolvedValue({
       userId: user.id,

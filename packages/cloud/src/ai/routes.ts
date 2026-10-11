@@ -2,9 +2,9 @@ import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import { listCapabilities } from "../_internal/registry";
+import { APPROVAL_CLIENT_HEADER } from "../contracts/approvals";
 import {
   type AccessSubject,
-  type ApiErrorResponse,
   type AuthContext,
   auth,
   err,
@@ -23,7 +23,6 @@ import { ImageMetadataError } from "../services/image-metadata";
 import { logger } from "../services/logging";
 import { coreSettings } from "../services/settings/api";
 import { readThemeFromCookieHeader } from "../shared/theme";
-import type { AiToolApprovalContext } from "./approvals";
 import { assistantAiSettingsState, listAssistantAiModels, resolveAssistantAudioModel, selectAssistantAiModelId } from "./assistant-models";
 import { AI_AUDIO_MAX_BYTES } from "./audio-format";
 import { buildAiCapabilityCatalog } from "./capabilities";
@@ -61,10 +60,10 @@ import {
   queuedMessageAccepted,
   updateQueuedMessage,
 } from "./message-queue";
-import { personalAiModelPolicy } from "./personal-agent";
 import { aiActorUser, aiPrefsUserId, aiUserPrefs } from "./prefs";
 import { aiProjects } from "./projects";
 import { projectPublicAiStoredMessages, publicAiStoredMessages } from "./public-projection";
+import { type AiChatRequestContext, resolveAiChatRequestContext as resolveContext } from "./request-context";
 import { aiResourceMarker } from "./resource-markers";
 import { isConversationResourceCursor } from "./resource-refs";
 import {
@@ -86,32 +85,7 @@ import { aiConversations } from "./store";
 import { createAiConversationStreamResponse, loadAiStreamState } from "./stream";
 import { composeAiSystemPrompt } from "./system-prompt";
 import { aiToolPromptHints } from "./tools";
-import type { AiConversation, AiModelPolicy, AiTurn } from "./types";
-
-/** Everything a resolved, authorized request needs to run against the shared runtime. */
-type AiChatRequestContext = {
-  actor: RequestActor;
-  ownerUserId: string;
-  modelPolicy: AiModelPolicy;
-  toolApprovalContext: AiToolApprovalContext;
-  /** A person in a signed-in browser session, not `cld`, an API key, or another delegated credential. */
-  signedInSession: boolean;
-};
-
-const actorUser = (actor: RequestActor) => (actor.kind === "user" ? actor.user : actor.delegatedUser);
-
-const resolveContext = async (c: Context<AuthContext>): Promise<AiChatRequestContext | ApiErrorResponse> => {
-  const actor = c.get("actor");
-  const user = actorUser(actor);
-  if (!user) return respond(c, fail(err.forbidden("AI conversations require a user-backed actor.")));
-  return {
-    actor,
-    ownerUserId: user.id,
-    modelPolicy: personalAiModelPolicy,
-    toolApprovalContext: { actorUserId: user.id },
-    signedInSession: actor.kind === "user" && !actor.delegation && c.get("credentialKind") === "session",
-  };
-};
+import type { AiConversation, AiTurn } from "./types";
 
 const retryInstruction = (mode: "retry" | "details" | "concise"): string | null => {
   if (mode === "details") return "Answer the user's request again with more detail and specificity.";
@@ -1129,7 +1103,11 @@ export const aiRoutes = (() => {
           action: c.req.valid("json"),
           decidedBy: {
             userId: ctx.ownerUserId,
-            via: approvalDecisionChannel({ credentialKind: c.get("credentialKind"), actor: ctx.actor }),
+            via: approvalDecisionChannel({
+              credentialKind: c.get("credentialKind"),
+              actor: ctx.actor,
+              client: c.req.header(APPROVAL_CLIENT_HEADER),
+            }),
           },
           toolApprovalContext: ctx.toolApprovalContext,
           signedInSession: ctx.signedInSession,

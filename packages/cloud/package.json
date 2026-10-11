@@ -70,6 +70,7 @@
     "./ai/ui": "./src/ai/ui.tsx",
     "./account/ui": "./src/account/ui.ts",
     "./access/ui": "./src/access/ui.ts",
+    "./approvals/ui": "./src/approvals/ui.ts",
     "./ssr": "./src/ssr/index.ts",
     "./ssr/islands": "./src/ssr/islands/index.ts",
     "./ssr/WorkspaceNavigation.island": "./src/ssr/WorkspaceNavigation.island.tsx",
