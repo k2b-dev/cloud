@@ -617,6 +617,7 @@ const renderFlagUsage = (key: string, spec: CliFlagSpec): string => {
 
 const renderFlagDescription = (spec: CliFlagSpec): string => {
   const parts = [spec.description];
+  if ("required" in spec && spec.required) parts.push("Required.");
   if ("default" in spec && spec.default !== undefined)
     parts.push(`Default: ${Array.isArray(spec.default) ? spec.default.join(",") : spec.default}.`);
   if (spec.kind === "enum") parts.push(`Values: ${spec.values.join(", ")}.`);
