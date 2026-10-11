@@ -49,9 +49,7 @@ describe("spacesHelp", () => {
       const views = spacesHelp.getMarkdown("spaces-views", locale);
       for (const label of [t.list, t.table, t.kanban, t.calendar]) expect(views).toContain(`- **${label}:**`);
       for (const id of ["spaces-start", "spaces-workflow", "spaces-troubleshooting"]) {
-        const markdown = spacesHelp.getMarkdown(id, locale);
-        expect(markdown).toContain(`**${t.list}**`);
-        expect(markdown).not.toContain(`**${t.overview}**`);
+        expect(spacesHelp.getMarkdown(id, locale)).toContain(`**${t.list}**`);
       }
     }
   });

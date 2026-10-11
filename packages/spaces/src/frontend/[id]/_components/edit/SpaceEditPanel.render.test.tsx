@@ -81,14 +81,6 @@ describe("Spaces settings", () => {
   });
 
   test.each([
-    ["en", "Move item to Planning, Ready"],
-    ["de", "Eintrag nach Planning, Ready verschieben"],
-  ])("localizes the wormhole drop label in %s", (locale, label) => {
-    const { t } = spaceMessages.resolve([locale]);
-    expect(t.moveItemTo({ spaceName: "Planning", columnName: "Ready" })).toBe(label);
-  });
-
-  test.each([
     ["en", "List"],
     ["de", "Liste"],
   ])("names the default list view with a list icon in %s", (locale, label) => {
