@@ -187,6 +187,11 @@ describe("@k2b/ui choice and date browser behavior", () => {
 
     input?.focus();
     await Bun.sleep(0);
+    expect(activeListeners).toEqual({ pointerdown: 0, resize: 0, scroll: 0 });
+    expect(input?.getAttribute("aria-expanded")).toBe("false");
+
+    input?.click();
+    await Bun.sleep(0);
     expect(activeListeners).toEqual({ pointerdown: 1, resize: 1, scroll: 1 });
 
     input?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
@@ -232,7 +237,7 @@ describe("@k2b/ui choice and date browser behavior", () => {
       dom.root,
     );
 
-    dom.root.querySelector<HTMLInputElement>('[role="combobox"]')?.focus();
+    dom.root.querySelector<HTMLInputElement>('[role="combobox"]')?.click();
     await Bun.sleep(0);
 
     expect(queries).toEqual(["platform"]);
@@ -264,7 +269,7 @@ describe("@k2b/ui choice and date browser behavior", () => {
       dom.root,
     );
 
-    dom.root.querySelector<HTMLInputElement>('[role="combobox"]')?.focus();
+    dom.root.querySelector<HTMLInputElement>('[role="combobox"]')?.click();
     await Bun.sleep(0);
     expect(Array.from(dom.root.querySelectorAll('[role="option"] i'), (icon) => icon.className)).toEqual(["ti ti-server", "ti ti-palette"]);
     dom.root.querySelector<HTMLButtonElement>('[role="option"]')?.click();
