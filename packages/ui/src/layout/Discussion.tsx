@@ -1,5 +1,6 @@
 import { createEffect, createSignal, createUniqueId, type JSX, onCleanup, onMount, Show, splitProps } from "solid-js";
 import { Button, IconButton } from "../actions/Button";
+import { useChatMessages } from "../chat/chat-messages";
 import { MarkdownEditor } from "../inputs/markdown/MarkdownEditor";
 import { useUiMessages } from "../intl/messages";
 
@@ -95,6 +96,7 @@ const DiscussionRoot = (props: DiscussionProps): JSX.Element => {
 
 const DiscussionComposer = (props: DiscussionComposerProps): JSX.Element => {
   const messages = useUiMessages();
+  const chatMessages = useChatMessages();
   const [local, formProps] = splitProps(props, [
     "label",
     "onSubmit",
@@ -119,7 +121,7 @@ const DiscussionComposer = (props: DiscussionComposerProps): JSX.Element => {
       const accepted = await local.onSubmit(normalized);
       if (accepted !== false) setMessage("");
     } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : messages().couldNotPostMessage);
+      setSubmitError(error instanceof Error ? error.message : chatMessages().couldNotPostMessage);
     } finally {
       setSubmitting(false);
     }
@@ -154,7 +156,7 @@ const DiscussionComposer = (props: DiscussionComposerProps): JSX.Element => {
         <div class="k2b-discussion__composer-inset-action">
           <IconButton
             type="submit"
-            label={local.submitLabel ?? messages().postMessage}
+            label={local.submitLabel ?? chatMessages().postMessage}
             size="sm"
             variant="primary"
             loading={submitting()}
@@ -197,6 +199,7 @@ const scrollOwner = (element: HTMLElement): HTMLElement | null => {
 
 const DiscussionList = (props: DiscussionListProps): JSX.Element => {
   const messages = useUiMessages();
+  const chatMessages = useChatMessages();
   const [loadingMoreInternally, setLoadingMoreInternally] = createSignal(false);
   const [loadMoreError, setLoadMoreError] = createSignal<string | null>(null);
   const [sentinelVisible, setSentinelVisible] = createSignal(false);
@@ -221,7 +224,7 @@ const DiscussionList = (props: DiscussionListProps): JSX.Element => {
     try {
       loaded = (await props.onLoadMore()) !== false;
     } catch (error) {
-      if (active) setLoadMoreError(error instanceof Error ? error.message : messages().couldNotLoadEarlierMessages);
+      if (active) setLoadMoreError(error instanceof Error ? error.message : chatMessages().couldNotLoadEarlierMessages);
     } finally {
       if (active) setLoadingMoreInternally(false);
     }
@@ -268,7 +271,7 @@ const DiscussionList = (props: DiscussionListProps): JSX.Element => {
       <div ref={sentinelRef} class="k2b-discussion__sentinel" aria-hidden="true" />
       <Show when={props.loading}>
         <p class="k2b-discussion__status" role="status">
-          <i class="ti ti-loader-2 k2b-spin" aria-hidden="true" /> {props.loadingLabel ?? messages().loadingMessages}
+          <i class="ti ti-loader-2 k2b-spin" aria-hidden="true" /> {props.loadingLabel ?? chatMessages().loadingMessages}
         </p>
       </Show>
       <Show when={props.error}>
@@ -296,7 +299,7 @@ const DiscussionList = (props: DiscussionListProps): JSX.Element => {
       <Show when={!props.loading && !props.error && !loadMoreError() && (canLoadMore() || loadingMore())}>
         <button type="button" class="k2b-discussion__load-more" disabled={loadingMore()} onClick={() => void loadMore()}>
           <i class={`ti ${loadingMore() ? "ti-loader-2 k2b-spin" : "ti-history"}`} aria-hidden="true" />
-          {loadingMore() ? (props.loadingLabel ?? messages().loadingMessages) : (props.loadMoreLabel ?? messages().loadEarlier)}
+          {loadingMore() ? (props.loadingLabel ?? chatMessages().loadingMessages) : (props.loadMoreLabel ?? chatMessages().loadEarlier)}
         </button>
       </Show>
       <ol ref={listRef} class="k2b-discussion__list">

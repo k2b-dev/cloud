@@ -6,6 +6,7 @@ import { type ChoiceOption, createChoiceLoader, createChoicePopover, nextEnabled
 import type { ValueFieldProps } from "./field-contract";
 import { commitFieldValue, resolveMaybeAccessor } from "./field-contract";
 import type { SelectGroup } from "./Select";
+import { useSelectMessages } from "./select-messages";
 
 export type AutocompleteSelectOption = ChoiceOption<string>;
 
@@ -44,6 +45,7 @@ const errorMessage = (error: unknown, fallback: string): string => (error instan
 
 export function AutocompleteSelect(props: AutocompleteSelectProps): JSX.Element {
   const messages = useUiMessages();
+  const selectMessages = useSelectMessages();
   const meta = createFieldMeta(props.id);
   const listboxId = `${meta.controlId}-listbox`;
   const [cache, setCache] = createSignal<Record<string, AutocompleteSelectOption>>({});
@@ -131,7 +133,7 @@ export function AutocompleteSelect(props: AutocompleteSelectProps): JSX.Element 
     setEditing(false);
   };
 
-  const invalidate = (message = props.noMatchText ?? messages().noMatchingOption) => {
+  const invalidate = (message = props.noMatchText ?? selectMessages().noMatchingOption) => {
     pendingCommitQuery = undefined;
     setInternalError(message);
     popover.hide();
@@ -145,7 +147,7 @@ export function AutocompleteSelect(props: AutocompleteSelectProps): JSX.Element 
       } catch (reason) {
         if (!signal.aborted) {
           setResolvedQuery(typed);
-          if (pendingCommitQuery === typed) invalidate(errorMessage(reason, messages().optionsCouldNotLoad));
+          if (pendingCommitQuery === typed) invalidate(errorMessage(reason, selectMessages().optionsCouldNotLoad));
         }
         throw reason;
       }
@@ -258,7 +260,7 @@ export function AutocompleteSelect(props: AutocompleteSelectProps): JSX.Element 
   createEffect(() => {
     if (!inputRef) return;
     const message = internalError();
-    inputRef.setCustomValidity(message ?? (editing() ? messages().selectMatchingOption : ""));
+    inputRef.setCustomValidity(message ?? (editing() ? selectMessages().selectMatchingOption : ""));
   });
 
   const onKeyDown = (event: KeyboardEvent) => {
@@ -307,7 +309,7 @@ export function AutocompleteSelect(props: AutocompleteSelectProps): JSX.Element 
             id={meta.controlId}
             type="text"
             value={display()}
-            placeholder={props.placeholder ?? messages().typeToSearch}
+            placeholder={props.placeholder ?? selectMessages().typeToSearch}
             disabled={props.disabled}
             required={props.required}
             autofocus={props.autofocus}
@@ -391,7 +393,7 @@ export function AutocompleteSelect(props: AutocompleteSelectProps): JSX.Element 
         <Show when={props.name}>{(name) => <input type="hidden" name={name()} value={value() ?? ""} />}</Show>
         <span class="k2b-sr-only" role="status" aria-live="polite" aria-atomic="true">
           {loader.loading()
-            ? (props.checkingText ?? messages().checkingOptions)
+            ? (props.checkingText ?? selectMessages().checkingOptions)
             : match()
               ? `Match: ${formatValue(match())}`
               : (internalError() ?? "")}
@@ -427,7 +429,7 @@ export function AutocompleteSelect(props: AutocompleteSelectProps): JSX.Element 
                 choices={groupChoices()}
                 value={activeGroup()}
                 onValueChange={chooseGroup}
-                ariaLabel={props.groupsAriaLabel ?? messages().filterOptions}
+                ariaLabel={props.groupsAriaLabel ?? selectMessages().filterOptions}
                 controls={listboxId}
               />
             </div>
@@ -453,14 +455,14 @@ export function AutocompleteSelect(props: AutocompleteSelectProps): JSX.Element 
             <Show when={loader.loading() && options().length === 0}>
               <div class="k2b-choice-status">
                 <i class="ti ti-loader-2 k2b-spin" aria-hidden="true" />
-                <span>{props.checkingText ?? messages().checkingOptionsLoading}</span>
+                <span>{props.checkingText ?? selectMessages().checkingOptionsLoading}</span>
               </div>
             </Show>
             <For
               each={loadError() ? [] : options()}
               fallback={
                 <Show when={!loader.loading() && !loadError()}>
-                  <div class="k2b-choice-status">{props.noOptionsText ?? messages().noOptionsFound}</div>
+                  <div class="k2b-choice-status">{props.noOptionsText ?? selectMessages().noOptionsFound}</div>
                 </Show>
               }
             >

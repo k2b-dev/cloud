@@ -15,7 +15,6 @@ import {
   useContext,
 } from "solid-js";
 import { IconButton } from "../actions/Button";
-import { useUiMessages } from "../intl/messages";
 import {
   APP_WORKSPACE_DETAIL_CLOSE_EVENT,
   APP_WORKSPACE_DETAIL_STEP_EVENT,
@@ -45,6 +44,7 @@ import type { ScrollAreaProps } from "./ScrollArea";
 import { SidebarItemPreview } from "./SidebarItemPreview";
 import { createScrollFade } from "./scroll-fade";
 import { assertStableUiId, assertUniqueStableUiIds } from "./stable-id";
+import { useWorkspaceMessages } from "./workspace-messages";
 
 const ResizeContext = createContext(true);
 /** The enclosing workspace: its head names the sidebar, and a nested workspace leaves the page title to it. */
@@ -107,7 +107,7 @@ type ResizeHandleProps = {
 };
 
 function ResizeHandle(props: ResizeHandleProps): JSX.Element {
-  const messages = useUiMessages();
+  const workspaceMessages = useWorkspaceMessages();
   return (
     <button
       type="button"
@@ -116,12 +116,12 @@ function ResizeHandle(props: ResizeHandleProps): JSX.Element {
       aria-label={
         props.label ??
         (props.kind === "sidebar"
-          ? messages().resizeNavigation
+          ? workspaceMessages().resizeNavigation
           : props.kind === "pane"
-            ? messages().resizeWorkspacePane
+            ? workspaceMessages().resizeWorkspacePane
             : props.kind === "detail"
-              ? messages().resizeDetailPanel
-              : messages().resizeBottomDrawer)
+              ? workspaceMessages().resizeDetailPanel
+              : workspaceMessages().resizeBottomDrawer)
       }
       aria-controls={props.controls}
       aria-orientation={props.kind === "drawer" ? "horizontal" : "vertical"}
@@ -585,7 +585,7 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
 }
 
 function AppWorkspaceDetail(props: AppWorkspaceDetailProps): JSX.Element {
-  const messages = useUiMessages();
+  const workspaceMessages = useWorkspaceMessages();
   const rootResizable = useContext(ResizeContext);
   const panelId = () => assertStableUiId(props.id, "AppWorkspace.Detail id");
   const domId = () => `k2b-workspace-detail-${panelId()}`;
@@ -653,7 +653,12 @@ function AppWorkspaceDetail(props: AppWorkspaceDetailProps): JSX.Element {
         style={{ ...sizeStyle(), "view-transition-name": props.viewTransitionName }}
       >
         {/* Only the phone sheet shows the grabber: a tap switches between half and full height. */}
-        <button type="button" class="k2b-app-workspace__detail-grabber" aria-label={messages().detailFullHeight} aria-pressed="false">
+        <button
+          type="button"
+          class="k2b-app-workspace__detail-grabber"
+          aria-label={workspaceMessages().detailFullHeight}
+          aria-pressed="false"
+        >
           <span aria-hidden="true" />
         </button>
         {props.children}
@@ -887,7 +892,7 @@ const AppWorkspaceSidebarItemActions = (props: AppWorkspaceSidebarItemActionsPro
   </div>
 );
 const AppWorkspaceSidebarItemStatus = (props: AppWorkspaceSidebarItemStatusProps): JSX.Element => {
-  const messages = useUiMessages();
+  const workspaceMessages = useWorkspaceMessages();
   const count = () => (typeof props.unread === "number" && props.unread >= 1 ? Math.floor(props.unread) : 0);
   const dot = () => props.unread === true;
   // The marks are decorative; the row's accessible name gets one phrase instead,
@@ -895,14 +900,14 @@ const AppWorkspaceSidebarItemStatus = (props: AppWorkspaceSidebarItemStatusProps
   const description = () =>
     [
       count() > 99
-        ? messages().sidebarUnreadMany
+        ? workspaceMessages().sidebarUnreadMany
         : count()
-          ? messages().sidebarUnread({ count: count() })
+          ? workspaceMessages().sidebarUnread({ count: count() })
           : dot()
-            ? messages().sidebarNewActivity
+            ? workspaceMessages().sidebarNewActivity
             : "",
-      props.mention ? messages().sidebarMentioned : "",
-      props.muted ? messages().sidebarMuted : "",
+      props.mention ? workspaceMessages().sidebarMentioned : "",
+      props.muted ? workspaceMessages().sidebarMuted : "",
     ]
       .filter(Boolean)
       .join(", ");
@@ -1031,7 +1036,7 @@ function AppWorkspaceSidebarRow(props: AppWorkspaceSidebarRowProps): JSX.Element
 }
 
 function AppWorkspaceSidebarItem(props: AppWorkspaceSidebarItemProps): JSX.Element {
-  const messages = useUiMessages();
+  const workspaceMessages = useWorkspaceMessages();
   const resolved = children(() => props.children);
   const resolvedActions = children(() => props.actions);
   const values = createMemo(() => flatten(resolved()));
@@ -1113,7 +1118,7 @@ function AppWorkspaceSidebarItem(props: AppWorkspaceSidebarItemProps): JSX.Eleme
     </>
   );
   const singleAction = () => {
-    const label = () => actionSlot()?.label ?? props.actionLabel ?? messages().rowAction;
+    const label = () => actionSlot()?.label ?? props.actionLabel ?? workspaceMessages().rowAction;
     const select = (event: MouseEvent) => {
       event.stopPropagation();
       if (actionSlot()?.disabled) {
@@ -1666,7 +1671,7 @@ type AppWorkspaceComponent = ((props: AppWorkspaceProps) => JSX.Element) & {
  * its final geometry.
  */
 function AppWorkspaceHead(props: { sidebarId: () => string; nested: boolean }): JSX.Element {
-  const messages = useUiMessages();
+  const messages = useWorkspaceMessages();
   // A nested workspace is part of a page that already shows its title.
   const trail = props.nested ? () => undefined : usePageTrail();
   return (

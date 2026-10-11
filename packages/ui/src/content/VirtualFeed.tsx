@@ -1,5 +1,6 @@
 import { type Accessor, createEffect, createRoot, createSignal, getOwner, type JSX, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import { useUiMessages } from "../intl/messages";
+import { useFeedMessages } from "./feed-messages";
 
 /**
  * The tallest loaded window in px. Firefox renders an element taller than about 17.9 M px with a height of 0, so the
@@ -128,6 +129,7 @@ const leadOf = (node: HTMLElement) => {
  */
 export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
   const messages = useUiMessages();
+  const feedMessages = useFeedMessages();
   let viewport!: HTMLDivElement;
   let feed!: HTMLDivElement;
   let log!: HTMLDivElement;
@@ -349,7 +351,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
           </Show>
           <Show when={props.markerKey === key}>
             <div class="k2b-virtual-feed__marker">
-              <span>{props.markerLabel ?? messages().feedNewMarker}</span>
+              <span>{props.markerLabel ?? feedMessages().feedNewMarker}</span>
             </div>
           </Show>
           {content}
@@ -663,7 +665,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
       announceTimer = undefined;
       const batch = pendingAnnouncement;
       pendingAnnouncement = [];
-      const text = props.announce ? props.announce(batch) : messages().feedNewItems({ count: batch.length });
+      const text = props.announce ? props.announce(batch) : feedMessages().feedNewItems({ count: batch.length });
       if (!text) return;
       const line = document.createElement("p");
       line.textContent = text;
@@ -1055,7 +1057,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
         <button
           type="button"
           class="k2b-virtual-feed__end"
-          aria-label={shownCount() > 0 ? messages().feedJumpToLatestCount({ count: shownCount() }) : undefined}
+          aria-label={shownCount() > 0 ? feedMessages().feedJumpToLatestCount({ count: shownCount() }) : undefined}
           onClick={() => {
             scrollToEnd();
             // The button disappears at the end; keep focus in the feed instead of the document.
@@ -1064,7 +1066,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
           }}
         >
           <i class={loadingNewer() ? "ti ti-loader-2 k2b-spin" : "ti ti-arrow-down"} aria-hidden="true" />
-          {messages().feedJumpToLatest}
+          {feedMessages().feedJumpToLatest}
           <Show when={shownCount() > 0}>
             <span class="k2b-virtual-feed__count" aria-hidden="true">
               {shownCount()}

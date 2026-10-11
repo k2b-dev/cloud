@@ -26,7 +26,8 @@ In short:
 The Assistant is each user's personal Cloud agent. Every chat belongs to one
 user. Chats in a Project stay private to the person who started them. The agent
 runs in Cloud, not on your machine; local shell access exists only in an
-interactive `cld assistant --allow-bash` session.
+interactive `cld assistant` session in local tools mode `ask`, the default.
+Use `--no-bash` or `/permissions off` to stop offering local tools.
 
 It works with two kinds of tools:
 
@@ -169,7 +170,12 @@ an explicit invocation and never asks.
 | `web_extract` or `fetch_file` for an address the chat did not supply | Asks, like an HTTP request; an address from the user, a search result, or a read page's links never asks |
 | Studio App sharing, unpublishing, deletion, data clearing, and file copies, including into a Project | Asks for every call with a fresh review |
 | Capability calls from a shared Studio App the user does not manage | Asks for every call, reads included |
-| `local_bash` in `cld assistant --allow-bash` | The terminal asks `Run? [y/N]` for every command; Enter denies |
+| `local_bash` in interactive `cld assistant` mode `ask` | The terminal asks `Run? [y/N]` for every command; Enter denies |
+
+Interactive cld offers numbered **Approve once**, **Approve for this chat**,
+and **Always approve** choices where allowed; Enter rejects. A one-time-only
+approval uses `y/N`. Typed-ahead or pasted input never answers an approval.
+Local Bash approval is never remembered and is never available in print mode.
 
 Read `approval` and `destructive` for each Action in
 `cld capabilities catalog --json`; a missing `approval` field means it asks
@@ -181,8 +187,10 @@ A remembered approval applies to the same user, Action, and app-owned scope,
 and a chat approval only in its chat until the chat is deleted. Users review
 and revoke approvals that apply everywhere under **Assistant settings >
 Approvals**, and those of one chat under **Secrets & approvals** in the chat.
-There is no `cld` command to list or revoke them. Approval confirms intent; the
-app still checks permissions afterward.
+In cld, use `/approvals` or `cld assistant approvals list|revoke`; `list --chat
+<chat-id>` lists only that chat's approvals. These lists also include website
+approvals saved in the web. Approval confirms intent; the app still checks
+permissions afterward.
 
 A website allowed for a chat lets Code Mode read that exact origin with GET or
 HEAD, without a body and with at most the harmless headers listed above,
@@ -314,5 +322,6 @@ and copying into a Project needs Project `write`.
 - Use apps that publish no capabilities, or Actions an app does not offer.
 - Approve its own Actions. Scheduled runs cannot ask for approval at all.
 - Run a shell or reach your machine, except through
-  `cld assistant --allow-bash` with a `y/N` prompt for every command.
+  interactive `cld assistant` in `ask` mode with a `y/N` prompt for every command.
+  `--no-bash` or `/permissions` turns local tools off.
 - Treat retrieved content, knowledge, files, or memories as instructions.

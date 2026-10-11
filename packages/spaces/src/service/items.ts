@@ -29,6 +29,7 @@ import { CompletionInputSchema, type TaskWork } from "../work-contracts";
 import { buildSpacePrincipalCondition, mayReadAcrossSpaces } from "./access";
 import type { SpaceActivityIdentity } from "./activity";
 import * as activity from "./activity";
+import { publishDependentsChange } from "./item-dependencies";
 import { insertMany as insertItemResourceReferences } from "./item-resource-references";
 import { publishSpaceChange, spacesLive } from "./live";
 import { rank } from "./rank";
@@ -893,6 +894,7 @@ export const listFiltered = async (params: {
 }): Promise<ItemListResult> => {
   const { spaceId, filter, currentUserId } = params;
   const {
+    itemIds,
     type,
     status,
     activity: activityFilter,
@@ -913,6 +915,13 @@ export const listFiltered = async (params: {
   // Build WHERE conditions as SQL fragments (safe from injection)
   // Base condition - always filter by space
   let conditions = sql`i.space_id = ${spaceId}`;
+
+  // Resolve public item IDs in the query so deleted or unknown items simply do not match.
+  if (itemIds !== undefined) {
+    conditions = sql`${conditions} AND i.id IN (
+      SELECT id FROM spaces.items WHERE space_id = ${spaceId}::uuid AND short_id = ANY(${toPgTextArray(itemIds)}::text[])
+    )`;
+  }
 
   // Type filter (task vs event)
   if (type === "task") {
@@ -1935,6 +1944,7 @@ export const remove = async (params: { id: string; actor?: SpaceActivityIdentity
       tx,
     );
     await publishSpaceChange(tx, { type: "item.deleted", spaceId: existing.space_id, itemId: params.id });
+    await publishDependentsChange(tx, { spaceId: existing.space_id, blockerItemId: params.id });
     await tx`DELETE FROM spaces.items WHERE id = ${params.id}`;
     return { ok: true, data: undefined };
   });
@@ -2150,6 +2160,7 @@ export const move = async (params: {
       tx,
     );
     await publishSpaceChange(tx, { type: completes ? "item.completed" : "item.moved", spaceId: existing.space_id, itemId: id });
+    if (completes) await publishDependentsChange(tx, { spaceId: existing.space_id, blockerItemId: id });
     return { ok: true, data: row };
   });
   if (!result.ok) return result;
@@ -2281,6 +2292,7 @@ export const setCompleted = async (params: {
       tx,
     );
     await publishSpaceChange(tx, { type: "item.completed", spaceId: current.space_id, itemId: id });
+    if (completed !== (current.completed_at !== null)) await publishDependentsChange(tx, { spaceId: current.space_id, blockerItemId: id });
     return { ok: true, data: row };
   });
   if (!result.ok) return result;

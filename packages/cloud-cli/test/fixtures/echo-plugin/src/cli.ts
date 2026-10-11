@@ -8,7 +8,7 @@ export default defineCliCommands({
     command("whoami", {
       summary: "Show what the server received",
       async run({ ctx }) {
-        const received = await ctx.readJson<{ authorization: string; locale: string }>(await ctx.fetch("/api/echo"));
+        const received = await ctx.readJson<{ authorization: string; locale: string | null }>(await ctx.fetch("/api/echo"));
         const result = { ...received, profile: ctx.options.profile, output: ctx.options.output };
         if (printStructured(ctx, result)) return;
         ctx.print(`echo ${result.authorization} ${result.locale}`);

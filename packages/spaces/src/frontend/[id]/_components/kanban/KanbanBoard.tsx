@@ -38,6 +38,7 @@ import CreateItemButton from "../sidebar/CreateItemButton";
 import { invalidateSpacesData, requestSpacesRouteNavigation, subscribeToSpacesDataInvalidation } from "../workspace/workspace-events";
 import { canTransferThroughWormhole, showWormholeTransferToast, transferThroughWormhole } from "../wormhole-transfer";
 import { boardVirtualKinds, kanbanBucketFilter } from "./bucket-filter";
+import { shouldReloadKanbanColumn } from "./live-scope";
 import type { KanbanBucketInitial } from "./types";
 
 type Props = {
@@ -152,7 +153,33 @@ export default function KanbanBoard(props: Props) {
   const filter = props.filter;
   const filtered = hasActiveFilters(filter);
   const virtualKinds = boardVirtualKinds(props.initialBuckets);
-  const bucketQueries = props.initialBuckets.map((initialBucket) => {
+  // All subscribers receive the same invalidation object; each event gets one parallel probe per column.
+  const liveProbes = new WeakMap<object, Promise<(boolean | null)[]>>();
+  const probeColumns = (invalidation: object, itemId: string) => {
+    let probes = liveProbes.get(invalidation);
+    if (!probes) {
+      probes = Promise.all(
+        props.initialBuckets.map(async (bucket) => {
+          try {
+            const res = await apiClient[":id"].items.filter.$post({
+              param: { id: props.spaceId },
+              json: {
+                ...kanbanBucketFilter({ bucket, virtualKinds, filter: defaultFilter, page: 1, pageSize: 1 }),
+                itemIds: [itemId],
+              },
+            });
+            if (!res.ok) return null;
+            return (await res.json()).total > 0;
+          } catch {
+            return null;
+          }
+        }),
+      );
+      liveProbes.set(invalidation, probes);
+    }
+    return probes;
+  };
+  const bucketQueries = props.initialBuckets.map((initialBucket, bucketIndex) => {
     const source = `${props.spaceId}:${initialBucket.key}`;
     const initialPage: KanbanPage = {
       items: initialBucket.items,
@@ -188,7 +215,15 @@ export default function KanbanBoard(props: Props) {
         return { ...result, unfilteredTotal: unfiltered.total };
       },
       getNextCursor: (page) => (page.page < page.totalPages ? page.page + 1 : null),
-      subscribe: ({ invalidate }) => subscribeToSpacesDataInvalidation(["view"], invalidate),
+      subscribe: ({ invalidate }) =>
+        subscribeToSpacesDataInvalidation(["view"], async (invalidation) => {
+          if (invalidation.itemId === null) return invalidate(invalidation);
+          const loadedPages = pages.pages();
+          const probes = await probeColumns(invalidation, invalidation.itemId);
+          if (shouldReloadKanbanColumn({ itemId: invalidation.itemId, pages: loadedPages, probe: probes[bucketIndex] ?? null })) {
+            await invalidate(invalidation);
+          }
+        }),
     });
     return { initialBucket, pages };
   });

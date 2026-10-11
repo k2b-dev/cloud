@@ -331,7 +331,7 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     const handles = source.match(/class="k2b-floating-window__resize"/g) ?? [];
 
     expect(handles).toHaveLength(2);
-    expect(source.match(/aria-label=\{messages\(\)\.resizeWindow\}/g) ?? []).toHaveLength(1);
+    expect(source.match(/aria-label=\{floatingWindowMessages\(\)\.resizeWindow\}/g) ?? []).toHaveLength(1);
     expect(source).toContain('edge === "bottom-right" ? (');
     expect(source).toContain('aria-hidden="true"');
   });

@@ -9,6 +9,7 @@ import { Paper } from "../surfaces/Paper";
 import { ChartSnapshotView } from "./ChartSnapshotView";
 import type { ChartCursor } from "./chart-cursor";
 import { type ChartExplorerData, type ChartExplorerRow, validateChartExplorerData } from "./chart-explorer";
+import { useChartMessages } from "./chart-messages";
 import DataTable, { type DataTableSort } from "./DataTable";
 
 export type ChartExplorerColumn<T> = {
@@ -45,6 +46,7 @@ const tsvCell = (value: string) => (/[\t\r\n"]/.test(value) ? `"${value.replaceA
 
 export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerProps<T>) {
   const messages = useUiMessages();
+  const chartMessages = useChartMessages();
   const locale = useLocale();
   const id = `k2b-chart-explorer-${createUniqueId()}`;
   const data = () => props.data;
@@ -116,7 +118,7 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
         <div class="k2b-chart-explorer__actions">
           <CopyButton
             text={copyText()}
-            label={messages().chartCopyData}
+            label={chartMessages().chartCopyData}
             iconOnly
             size="sm"
             variant="ghost"
@@ -127,16 +129,16 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
           <SelectChip<"chart" | "table">
             value={view()}
             onValueChange={setView}
-            aria-label={messages().chartView}
+            aria-label={chartMessages().chartView}
             options={[
-              { value: "chart", label: messages().chartDiagram },
-              { value: "table", label: messages().chartData },
+              { value: "chart", label: chartMessages().chartDiagram },
+              { value: "table", label: chartMessages().chartData },
             ]}
           />
         </div>
       </header>
       <Show when={copyFailed()}>
-        <span role="alert">{messages().chartCopyFailed}</span>
+        <span role="alert">{chartMessages().chartCopyFailed}</span>
       </Show>
       <div class="k2b-chart-explorer__viewport" style={{ height: props.height ?? "18rem" }}>
         <Show when={data().rows.length > 0} fallback={<div class="k2b-chart__empty">{messages().noData}</div>}>
@@ -213,7 +215,7 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
             {(row) => (
               <Paper class="k2b-chart-explorer__detail-paper">
                 <div class="k2b-chart-explorer__detail-header">
-                  <span>{messages().chartSelectedDatum}</span>
+                  <span>{chartMessages().chartSelectedDatum}</span>
                   <IconButton variant="text" size="sm" label={messages().clearSelection} onClick={() => select(null)}>
                     <i class="ti ti-x" aria-hidden="true" />
                   </IconButton>

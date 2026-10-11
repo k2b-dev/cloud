@@ -17,7 +17,7 @@ import type {
 import { CLOUD_CLI_MODULE_NAME, localizeCloudCliText, resolveCloudCliLocale } from "@k2b/cloud/cli";
 import type { Hono } from "hono";
 import { hc } from "hono/client";
-import { configPath, envLacksLocalBrowser, envLocale, envServer, envToken } from "./config";
+import { configPath, envLacksLocalBrowser, envLocale, envServer, envToken, posixLocale } from "./config";
 import {
   collectPluginGarbage,
   downloadPlugin,
@@ -126,7 +126,10 @@ type GlobalArgs = {
   fd0?: string;
   fd0Scope?: string;
   output: "text" | "json" | "jsonl";
+  /** Locale for human text; English when nothing was requested. */
   locale: string;
+  /** Locale sent as `Accept-Language`; absent when neither a flag, `CLD_LOCALE`, nor the POSIX environment names one. */
+  requestLocale?: string;
   /** `--help` or `-h` before the command: print its help instead of running it. */
   help: boolean;
   rest: string[];
@@ -286,9 +289,9 @@ const parseGlobalArgs = (argv: string[]): GlobalArgs => {
 
   const parsed = parseArgs(global);
   const requestedLocale = takeStringFlag(parsed.flags, "locale") ?? envLocale();
-  let locale: string;
+  let requestLocale: string | undefined;
   try {
-    locale = resolveCloudCliLocale(requestedLocale);
+    requestLocale = requestedLocale === undefined ? posixLocale() : resolveCloudCliLocale(requestedLocale);
   } catch {
     throw new CliError(
       `Invalid locale "${requestedLocale}". Pass a BCP 47 language tag such as en or de-CH.`,
@@ -305,7 +308,8 @@ const parseGlobalArgs = (argv: string[]): GlobalArgs => {
     fd0: takeStringFlag(parsed.flags, "fd0"),
     fd0Scope: takeStringFlag(parsed.flags, "fd0-scope"),
     output: takeBooleanFlag(parsed.flags, "jsonl") ? "jsonl" : takeBooleanFlag(parsed.flags, "json") ? "json" : "text",
-    locale,
+    locale: requestLocale ?? "en",
+    requestLocale,
     help: takeBooleanFlag(parsed.flags, "help", "h"),
     rest,
   };
@@ -830,7 +834,7 @@ const resolveOptions = async (global: GlobalArgs, { profileOnly = false } = {}):
     token: auth.token,
     refresh: auth.refresh,
     output: global.output,
-    locale: global.locale,
+    locale: global.requestLocale,
   };
 };
 
@@ -844,7 +848,7 @@ const resolveOfflineOptions = async (global: GlobalArgs): Promise<ResolvedCliOpt
     server: server ? normalizeServer(server) : "",
     token: global.token ?? envToken() ?? profile.token ?? "",
     output: global.output,
-    locale: global.locale,
+    locale: global.requestLocale,
   };
 };
 
@@ -907,7 +911,7 @@ const createContext = (args: string[], flags: CloudCliFlags, options: ResolvedCl
     const headers = new Headers(pathOrUrl instanceof Request ? pathOrUrl.headers : undefined);
     new Headers(init.headers).forEach((value, name) => headers.set(name, value));
     headers.set("authorization", `Bearer ${bearerToken}`);
-    headers.set("accept-language", options.locale ?? "en");
+    if (options.locale) headers.set("accept-language", options.locale);
     const cookie = headers.get("cookie");
     headers.set("cookie", cookie ? `${cookie}; ${timeZoneCookie}` : timeZoneCookie);
     const response = await fetch(url, {
@@ -980,6 +984,15 @@ const createContext = (args: string[], flags: CloudCliFlags, options: ResolvedCl
       if (rendered) printLine(rendered);
     },
     profiles: { saveClientCredentials: saveClientCredentialsProfile },
+    openUrl: async (url) => {
+      try {
+        if (!["http:", "https:"].includes(new URL(url).protocol)) return false;
+      } catch {
+        return false;
+      }
+      if (envLacksLocalBrowser()) return false;
+      return launchBrowser(url);
+    },
   };
 };
 
@@ -1019,7 +1032,7 @@ Global options:
   --fd0 <name>            Read bearer token via fd0 get <name> --raw
   --fd0-scope <scope>     fd0 scope
   --token-command <cmd>   Read bearer token from command stdout
-  --locale <tag>          Human text locale (default: CLD_LOCALE or en)
+  --locale <tag>          Human text and request locale (default: CLD_LOCALE, then LC_ALL/LC_MESSAGES/LANG, else the Cloud default)
   --json                  Print JSON where supported
   --jsonl                 Stream one JSON event per line where supported
   -h, --help              Print the command's help instead of running it
@@ -1056,7 +1069,7 @@ Globale Optionen:
   --fd0 <Name>            Bearer-Token über fd0 get <Name> --raw lesen
   --fd0-scope <Scope>     fd0-Scope
   --token-command <Befehl> Bearer-Token aus stdout eines Befehls lesen
-  --locale <Tag>          Sprache für menschenlesbaren Text (Standard: CLD_LOCALE oder en)
+  --locale <Tag>          Sprache für Text und Anfragen (Standard: CLD_LOCALE, dann LC_ALL/LC_MESSAGES/LANG, sonst der Cloud-Standard)
   --json                  JSON ausgeben, sofern unterstützt
   --jsonl                 Ein kompaktes JSON-Ereignis pro Zeile ausgeben
   -h, --help              Hilfe des Befehls ausgeben, statt ihn auszuführen
@@ -1360,7 +1373,7 @@ const spawnSkillSync = async (executable: string, yes: boolean): Promise<string[
 /** Run one installed module with the shared context. */
 const runModule = async (module: CloudCliModule, moduleArgs: string[], global: GlobalArgs): Promise<number> => {
   if (moduleArgs[0] === "help" || moduleArgs[0] === "--help" || moduleArgs[0] === "-h") {
-    printLine(module.help?.(global.locale) ?? `${module.name}: ${module.summary}`);
+    printLine(module.help?.(global.requestLocale) ?? `${module.name}: ${module.summary}`);
     return 0;
   }
 
@@ -2351,7 +2364,7 @@ const pkceChallenge = async (verifier: string): Promise<string> => {
   return base64UrlEncode(new Uint8Array(hash));
 };
 
-const openBrowser = async (url: string, locale: string): Promise<void> => {
+const launchBrowser = async (url: string): Promise<boolean> => {
   const opener =
     process.platform === "darwin"
       ? { command: "open", args: [url] }
@@ -2361,7 +2374,14 @@ const openBrowser = async (url: string, locale: string): Promise<void> => {
 
   try {
     await execFileAsync(opener.command, opener.args, { timeout: 5_000 });
+    return true;
   } catch {
+    return false;
+  }
+};
+
+const openBrowser = async (url: string, locale: string): Promise<void> => {
+  if (!(await launchBrowser(url))) {
     printLine(text(locale, `Open this URL in your browser:\n${url}`, `Öffne diese URL im Browser:\n${url}`));
   }
 };
@@ -2564,10 +2584,13 @@ const oauthErrorCode = async (response: Response): Promise<{ error: string; desc
 };
 
 /** RFC 8628: show a code, then poll until the person approves it in any browser. */
-const signInWithDeviceCode = async (server: string, scope: string, locale: string): Promise<OAuthTokenResponse> => {
+const signInWithDeviceCode = async (server: string, scope: string, requestLocale?: string): Promise<OAuthTokenResponse> => {
+  const locale = requestLocale ?? "en";
+  const headers = new Headers({ "content-type": "application/x-www-form-urlencoded" });
+  if (requestLocale) headers.set("accept-language", requestLocale);
   const started = await fetchOAuth(joinUrl(server, "/oauth/device_authorization"), {
     method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded", "accept-language": locale },
+    headers,
     body: new URLSearchParams({ client_id: OAUTH_CLIENT_ID, scope }),
   });
   if (started.status === 404) {
@@ -2784,7 +2807,7 @@ const runLoginCommand = async (args: string[], global: GlobalArgs): Promise<numb
   const device = takeBooleanFlag(parsed.flags, "device");
 
   const token = device
-    ? await signInWithDeviceCode(normalizedServer, scope, global.locale)
+    ? await signInWithDeviceCode(normalizedServer, scope, global.requestLocale)
     : await signInWithBrowser(normalizedServer, scope, !takeBooleanFlag(parsed.flags, "no-open"), global.locale);
   const refreshToken = token.refresh_token;
   if (!refreshToken) throw new CliError("OAuth server did not issue a refresh token. Check the offline_access scope.");

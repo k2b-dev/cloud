@@ -1,9 +1,9 @@
 import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, onMount, Show, untrack } from "solid-js";
-import { useUiMessages } from "../intl/messages";
 import { createScrollFade } from "../layout/scroll-fade";
 import Placeholder from "../surfaces/Placeholder";
 import { ChatActivity, ChatMessage } from "./ChatPrimitives";
 import { isChatNearBottom, restoredChatScrollTop } from "./chat-behavior";
+import { useChatMessages } from "./chat-messages";
 import type { ChatAction, ChatActivityTone, ChatAttachment, ChatMessageStatus, ChatRole } from "./types";
 
 export type ChatMessageItem = {
@@ -64,7 +64,7 @@ export type ChatTimelineProps = {
 };
 
 export function ChatTimeline(props: ChatTimelineProps): JSX.Element {
-  const messages = useUiMessages();
+  const chatMessages = useChatMessages();
   const [pinned, setPinned] = createSignal(true);
   const [loadingOlderInternally, setLoadingOlderInternally] = createSignal(false);
   const [historyError, setHistoryError] = createSignal<string | null>(null);
@@ -147,7 +147,7 @@ export function ChatTimeline(props: ChatTimelineProps): JSX.Element {
     try {
       prepended = (await props.onLoadOlder()) !== false;
     } catch (error) {
-      setHistoryError(error instanceof Error ? error.message : messages().couldNotLoadOlderMessages);
+      setHistoryError(error instanceof Error ? error.message : chatMessages().couldNotLoadOlderMessages);
     } finally {
       setLoadingOlderInternally(false);
     }
@@ -233,7 +233,7 @@ export function ChatTimeline(props: ChatTimelineProps): JSX.Element {
   });
 
   return (
-    <section class={`k2b-chat-timeline ${props.class ?? ""}`} aria-label={props.label ?? messages().conversation}>
+    <section class={`k2b-chat-timeline ${props.class ?? ""}`} aria-label={props.label ?? chatMessages().conversation}>
       <div
         ref={(element) => {
           viewportRef = element;
@@ -243,7 +243,7 @@ export function ChatTimeline(props: ChatTimelineProps): JSX.Element {
         data-scroll-fade-mode={props.scrollFade !== false ? "bottom" : undefined}
         data-initializing=""
         role="region"
-        aria-label={messages().conversationMessages({ label: props.label ?? messages().conversation })}
+        aria-label={chatMessages().conversationMessages({ label: props.label ?? chatMessages().conversation })}
         tabIndex={0}
         onWheel={(event) => {
           if (event.deltaY < 0) noteUserScrollAway();
@@ -289,12 +289,12 @@ export function ChatTimeline(props: ChatTimelineProps): JSX.Element {
               <Show when={canLoadOlder()}>
                 <button type="button" class="k2b-chat-timeline__older" onClick={() => void loadOlder()}>
                   <i class="ti ti-history" aria-hidden="true" />
-                  {messages().loadOlderMessages}
+                  {chatMessages().loadOlderMessages}
                 </button>
               </Show>
               <Show when={loadingOlder()}>
                 <ChatActivity
-                  label={messages().loadingOlderMessages}
+                  label={chatMessages().loadingOlderMessages}
                   icon="ti ti-history"
                   trailing={<i class="ti ti-loader-2 k2b-spin" aria-hidden="true" />}
                 />
@@ -302,7 +302,7 @@ export function ChatTimeline(props: ChatTimelineProps): JSX.Element {
               <Show when={historyError()}>
                 {(message) => (
                   <ChatActivity
-                    label={messages().couldNotLoadOlderMessages}
+                    label={chatMessages().couldNotLoadOlderMessages}
                     description={message()}
                     icon="ti ti-alert-circle"
                     tone="danger"
@@ -310,7 +310,7 @@ export function ChatTimeline(props: ChatTimelineProps): JSX.Element {
                       <button
                         type="button"
                         class="k2b-chat-timeline__retry"
-                        aria-label={messages().retryOlderMessages}
+                        aria-label={chatMessages().retryOlderMessages}
                         onClick={() => void loadOlder()}
                       >
                         <i class="ti ti-refresh" aria-hidden="true" />
@@ -328,7 +328,7 @@ export function ChatTimeline(props: ChatTimelineProps): JSX.Element {
                 class="k2b-chat-timeline__placeholder"
                 state={props.loading ? "loading" : "empty"}
                 icon={props.loading ? undefined : "ti ti-sparkles"}
-                title={props.loading ? messages().loadingConversation : (props.emptyTitle ?? messages().startConversation)}
+                title={props.loading ? chatMessages().loadingConversation : (props.emptyTitle ?? chatMessages().startConversation)}
                 description={!props.loading ? props.emptyDescription : undefined}
               />
             }
@@ -393,7 +393,7 @@ export function ChatTimeline(props: ChatTimelineProps): JSX.Element {
       <Show when={!pinned() && hasContent()}>
         <button type="button" class="k2b-chat-timeline__latest" onClick={scrollToLatest}>
           <i class="ti ti-arrow-down" aria-hidden="true" />
-          {messages().jumpToLatest}
+          {chatMessages().jumpToLatest}
         </button>
       </Show>
     </section>

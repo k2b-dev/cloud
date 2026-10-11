@@ -20,6 +20,7 @@ import { PanelHeader } from "../layout/PanelHeader";
 import { Paper } from "../surfaces/Paper";
 import Placeholder from "../surfaces/Placeholder";
 import type { CollectionSelection } from "./collection-selection";
+import { useDataTableMessages } from "./data-table-messages";
 
 export type DataTableColumn<T> = {
   id: string;
@@ -188,6 +189,7 @@ const scrollbarMetrics = (viewportSize: number, contentSize: number, scrollOffse
 
 function DataTableRoot<T>(props: DataTableProps<T>) {
   const messages = useUiMessages();
+  const dataTableMessages = useDataTableMessages();
   const locale = useLocale();
   const [hoveredColumn, setHoveredColumn] = createSignal<number | null>(null);
   const [scrollbars, setScrollbars] = createSignal<Record<DataTableScrollbarAxis, DataTableScrollbarMetrics>>({
@@ -461,7 +463,7 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
   });
 
   return (
-    <Show when={props.columns.length > 0} fallback={<Placeholder surface="paper" description={<>{messages().noColumns}</>} />}>
+    <Show when={props.columns.length > 0} fallback={<Placeholder surface="paper" description={<>{dataTableMessages().noColumns}</>} />}>
       <Dynamic
         component={surface() === "paper" ? Paper : "div"}
         class={`k2b-table-shell ${props.class ?? ""}`}
@@ -476,7 +478,7 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
         <div
           ref={scrollRef}
           role="region"
-          aria-label={labelledBy() ? undefined : (props.ariaLabel ?? messages().dataTable)}
+          aria-label={labelledBy() ? undefined : (props.ariaLabel ?? dataTableMessages().dataTable)}
           aria-labelledby={labelledBy()}
           tabIndex={0}
           class={`k2b-table-wrap${props.scrollClass ? ` ${props.scrollClass}` : ""}`}
@@ -511,7 +513,7 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
                 fallback={
                   <tr>
                     <td class="k2b-data-table__empty" colspan={props.columns.length}>
-                      <Placeholder description={<>{props.empty ?? messages().noRecords}</>} />
+                      <Placeholder description={<>{props.empty ?? dataTableMessages().noRecords}</>} />
                     </td>
                   </tr>
                 }

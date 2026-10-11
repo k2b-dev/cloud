@@ -5,6 +5,7 @@ import { ChoiceGroups } from "./ChoiceGroups";
 import { type ChoiceOption, createChoiceLoader, createChoicePopover, filterChoiceOptions, nextEnabledChoiceIndex } from "./choice";
 import type { ValueFieldProps } from "./field-contract";
 import { commitFieldValue, resolveMaybeAccessor } from "./field-contract";
+import { useSelectMessages } from "./select-messages";
 
 export type SelectOption = ChoiceOption<string>;
 export type SelectGroup = {
@@ -79,6 +80,7 @@ const normalize = (option: SelectSourceOption): NormalizedOption =>
 
 export function Select(props: SelectProps): JSX.Element {
   const messages = useUiMessages();
+  const selectMessages = useSelectMessages();
   const meta = createFieldMeta(props.id);
   const listboxId = `${meta.controlId}-listbox`;
   const [query, setQuery] = createSignal("");
@@ -150,7 +152,7 @@ export function Select(props: SelectProps): JSX.Element {
   });
   const hasClearAction = () => Boolean(props.clearable && selected() && !props.disabled && !plain());
   const accessibleLabel = () =>
-    props["aria-label"] ?? (typeof props.label === "string" ? undefined : (props.placeholder ?? messages().selectOption));
+    props["aria-label"] ?? (typeof props.label === "string" ? undefined : (props.placeholder ?? selectMessages().selectOption));
   const popover = createChoicePopover(() => Boolean(props.disabled));
   const focusedOption = () => listOptions()[focusedIndex()];
   const focus = (index: number) => {
@@ -301,7 +303,7 @@ export function Select(props: SelectProps): JSX.Element {
                 type="search"
                 value={query()}
                 placeholder={props.searchPlaceholder ?? messages().search}
-                aria-label={props.searchPlaceholder ?? messages().searchOptions}
+                aria-label={props.searchPlaceholder ?? selectMessages().searchOptions}
                 aria-controls={listboxId}
                 aria-activedescendant={focusedOption() ? `${listboxId}-${focusedIndex()}` : undefined}
                 onInput={(event) => {
@@ -319,7 +321,7 @@ export function Select(props: SelectProps): JSX.Element {
                   choices={groupChoices()}
                   value={activeGroup()}
                   onValueChange={chooseGroup}
-                  ariaLabel={props.groupsAriaLabel ?? messages().filterOptions}
+                  ariaLabel={props.groupsAriaLabel ?? selectMessages().filterOptions}
                   controls={listboxId}
                 />
               </Show>
@@ -327,7 +329,7 @@ export function Select(props: SelectProps): JSX.Element {
                 <button
                   type="button"
                   class="k2b-choice-view-toggle"
-                  aria-label={activeView() === "list" ? messages().showGridView : messages().showListView}
+                  aria-label={activeView() === "list" ? selectMessages().showGridView : selectMessages().showListView}
                   aria-controls={listboxId}
                   onClick={() => setSelectedView(activeView() === "list" ? "grid" : "list")}
                 >
@@ -363,7 +365,7 @@ export function Select(props: SelectProps): JSX.Element {
               each={loader.error() ? [] : listOptions()}
               fallback={
                 <Show when={!loader.loading() && !loader.error()}>
-                  <div class="k2b-choice-status">{isSearchable() ? messages().noResults : messages().noOptions}</div>
+                  <div class="k2b-choice-status">{isSearchable() ? messages().noResults : selectMessages().noOptions}</div>
                 </Show>
               }
             >

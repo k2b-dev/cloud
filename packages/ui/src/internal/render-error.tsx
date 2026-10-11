@@ -2,6 +2,7 @@ import { ErrorBoundary, type JSX, untrack } from "solid-js";
 import { Button } from "../actions/Button";
 import { useUiMessages } from "../intl/messages";
 import Placeholder from "../surfaces/Placeholder";
+import { useRenderErrorMessages } from "./render-error-messages";
 
 /**
  * Guards a Solid root that @k2b/ui creates itself, such as a dialog or a floating window. These roots are mostly
@@ -26,10 +27,11 @@ export function RenderErrorBoundary(props: { content: () => JSX.Element; onClose
 
 function RenderErrorNotice(props: { onClose?: () => void }): JSX.Element {
   const messages = useUiMessages();
+  const renderErrorMessages = useRenderErrorMessages();
   return (
     <Placeholder
       state="error"
-      title={messages().couldNotDisplayContent}
+      title={renderErrorMessages().couldNotDisplayContent}
       action={
         props.onClose ? (
           <Button variant="secondary" onClick={() => props.onClose?.()}>

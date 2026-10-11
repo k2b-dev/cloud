@@ -1,5 +1,6 @@
 import { For } from "solid-js";
 import { useUiMessages } from "../intl/messages";
+import { useRangePickerMessages } from "./range-picker-messages";
 
 /**
  * RangePicker — the time window every observability surface needs.
@@ -33,7 +34,8 @@ export type RangePickerProps<T extends string> = {
 
 export default function RangePicker<T extends string>(props: RangePickerProps<T>) {
   const messages = useUiMessages();
-  const caption = () => (props.label === null ? null : (props.label ?? messages().window));
+  const rangePickerMessages = useRangePickerMessages();
+  const caption = () => (props.label === null ? null : (props.label ?? rangePickerMessages().window));
   return (
     <nav class={`k2b-range-picker ${props.class ?? ""}`} aria-label={props.ariaLabel ?? caption() ?? messages().range}>
       {caption() ? <span class="k2b-range-picker__caption">{caption()}</span> : null}

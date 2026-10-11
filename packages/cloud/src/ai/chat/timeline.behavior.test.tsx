@@ -865,3 +865,151 @@ const renderFailedTurnTimeline = async (
     dom.cleanup();
   }
 });
+
+(isServer ? test.skip : test)(
+  "a live text turns into a quiet status when a step starts after it; only the answer keeps answer style",
+  async () => {
+    const dom = createDomTestHarness();
+    const { Chat } = await import("@k2b/ui");
+    const { createAiChatTimeline, AiChatActionsProvider } = await import("./presentation");
+    const [state, setState] = createStore(emptyProjection());
+    const emit = (event: AiStreamEvent) => setState(reconcile(reduceProjection(unwrap(state), event), { key: "id", merge: true }));
+    const dispose = render(
+      () => (
+        <AiChatActionsProvider actions={{}}>
+          {(() => {
+            const items = createAiChatTimeline({ messages: createMemo(() => visibleMessages(state)), activeTurn: () => state.activeTurn });
+            return <Chat.Timeline items={items()} />;
+          })()}
+        </AiChatActionsProvider>
+      ),
+      dom.root,
+    );
+    const stored = (
+      turnId: string,
+      seq: number,
+      message: AiStoredMessage["message"],
+      patch: Partial<AiStoredMessage> = {},
+    ): AiStoredMessage => ({
+      id: `${turnId}-m${seq}`,
+      shortId: `${turnId}-m${seq}`,
+      conversationId: "chat",
+      seq,
+      kind: "message",
+      message,
+      loopId: turnId,
+      modelProfileId: null,
+      providerModel: null,
+      usage: null,
+      stopReason: null,
+      loopAggregate: null,
+      loopDoneReason: null,
+      compactedAt: null,
+      meta: null,
+      createdAt: "2026-10-06T10:00:00.000Z",
+      ...patch,
+    });
+    const read = { id: "tool-read", kind: "tool" as const, callId: "read", name: "read_file", args: { path: "/chart.json" } };
+    const write = { id: "tool-write", kind: "tool" as const, callId: "write", name: "write_file", args: { path: "/app.js" } };
+    const status = "Good news: the chart API returns the data. Now I write the app files.";
+    const answer = "The app is ready.";
+    const place = () => dom.root.querySelector<HTMLElement>(".ai-turn__text");
+    const quiet = () => place()?.classList.contains("ai-turn__text--status");
+    const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+    const history = (turnId: string, loopDoneReason: "stop" | "aborted", final: boolean, at = turnId === "turn" ? 0 : 10) => [
+      stored(turnId, at + 10, { role: "user", content: [{ type: "text", text: "Build the chart app" }] }),
+      stored(turnId, at + 11, { role: "assistant", content: [{ type: "tool_call", id: "read", name: "read_file", args: read.args }] }),
+      stored(turnId, at + 12, { role: "tool_result", callId: "read", name: "read_file", result: "{}", isError: false }),
+      stored(
+        turnId,
+        at + 13,
+        {
+          role: "assistant",
+          content: [
+            { type: "text", text: status },
+            { type: "tool_call", id: "write", name: "write_file", args: write.args },
+          ],
+        },
+        final ? {} : { loopDoneReason },
+      ),
+      ...(final
+        ? [
+            stored(turnId, at + 14, { role: "tool_result", callId: "write", name: "write_file", result: "ok", isError: false }),
+            stored(turnId, at + 15, { role: "assistant", content: [{ type: "text", text: answer }] }, { loopDoneReason }),
+          ]
+        : []),
+    ];
+    const live = (turnId: string) => {
+      const base = { v: 1 as const, conversationId: "chat", turnId, attempt: 1 };
+      let seq = 0;
+      emit({ ...base, seq: ++seq, type: "turn_started", modelProfileId: "model", providerModel: "model", blocks: [] });
+      emit({ ...base, seq: ++seq, type: "block_set", block: { ...read, status: "completed", result: "{}" } });
+      emit({ ...base, seq: ++seq, type: "block_delta", blockId: `${turnId}-t1`, blockKind: "text", delta: status });
+      return { base, next: () => ++seq };
+    };
+    try {
+      // Live, the trailing text may be the answer: it keeps answer style.
+      const first = live("turn");
+      await tick();
+      expect(place()?.textContent).toContain(status);
+      expect(quiet()).toBe(false);
+      // A step starts after it: the same element turns quiet together with the work line's new step.
+      emit({ ...first.base, seq: first.next(), type: "block_set", block: { ...write, status: "running" } });
+      await tick();
+      const element = place();
+      expect(element?.textContent).toContain(status);
+      expect(quiet()).toBe(true);
+      expect(element?.getAttribute("aria-live")).toBe("off");
+      // The next text replaces the status once its first sentence is complete, and may be the answer again.
+      emit({ ...first.base, seq: first.next(), type: "block_set", block: { ...write, status: "completed", result: "ok" } });
+      emit({ ...first.base, seq: first.next(), type: "block_delta", blockId: "turn-t2", blockKind: "text", delta: "The app" });
+      await tick();
+      expect(quiet()).toBe(true);
+      emit({ ...first.base, seq: first.next(), type: "block_delta", blockId: "turn-t2", blockKind: "text", delta: " is ready." });
+      await tick();
+      expect(place()).toBe(element);
+      expect(place()?.textContent).toContain(answer);
+      expect(quiet()).toBe(false);
+      // Completed: the final message keeps its element and answer style.
+      emit({
+        ...first.base,
+        seq: first.next(),
+        type: "turn_finished",
+        status: "completed",
+        error: null,
+        messages: history("turn", "stop", true),
+      });
+      await tick();
+      expect(state.activeTurn).toBeNull();
+      expect(place()).toBe(element);
+      expect(quiet()).toBe(false);
+
+      // Stopped while a step ran after the status: the stopped turn has no final message; its texts stay in the work line.
+      const second = live("turn2");
+      emit({
+        ...second.base,
+        seq: second.next(),
+        type: "block_set",
+        block: { ...write, id: "tool-write-2", callId: "write2", status: "running" },
+      });
+      await tick();
+      const turns = () => dom.root.querySelectorAll(".ai-turn");
+      expect(turns()).toHaveLength(2);
+      expect(turns()[1]?.querySelector(".ai-turn__text--status")?.textContent).toContain(status);
+      emit({
+        ...second.base,
+        seq: second.next(),
+        type: "turn_finished",
+        status: "aborted",
+        error: null,
+        messages: history("turn2", "aborted", false),
+      });
+      await tick();
+      expect(turns()).toHaveLength(2);
+      expect(turns()[1]?.querySelector(".ai-turn__text")).toBeNull();
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  },
+);

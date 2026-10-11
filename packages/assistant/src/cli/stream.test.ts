@@ -95,6 +95,7 @@ const run = async (
     requests: unknown[] = [],
     printed: string[] = [],
     tables: { rows: unknown; columns: unknown }[] = [];
+  const ordered: string[] = [];
   const ctx: CloudCliContext = {
     args: [],
     flags: {},
@@ -115,9 +116,11 @@ const run = async (
     },
     readJson: (response) => response.json(),
     print: (value) => {
+      ordered.push(`print:${value ?? ""}`);
       printed.push(value ?? "");
     },
     write: async (value) => {
+      ordered.push(`write:${value}`);
       chunks.push(value);
     },
     error: (value) => {
@@ -128,6 +131,7 @@ const run = async (
       lines.push(value);
     },
     table: (rows, columns) => {
+      ordered.push("table");
       tables.push({ rows, columns });
     },
   };
@@ -139,7 +143,7 @@ const run = async (
     output: turnOutput,
     signal: AbortSignal.timeout(4000),
   });
-  return { text: chunks.join(""), chunks, errors, lines, requests, printed, tables, result };
+  return { text: chunks.join(""), chunks, errors, lines, requests, printed, tables, ordered, result };
 };
 
 describe("Assistant CLI stream", () => {
@@ -470,4 +474,64 @@ describe("Assistant CLI stream", () => {
       { path: "/api/ai/conversations/chat/turns/turn/actions/call", body: { type: "approval_response", approved: true } },
     ]);
   });
+});
+
+test("streamed Cloud links are rewritten across deltas and reconnects only in text output", async () => {
+  const text = "[Mail](/app/mail/x) [Other](//external.test/x)";
+  const events = () => [
+    [delta("link", "[Mail]"), delta("link", "(")],
+    [
+      state([{ id: "saved", kind: "text", text: "[Mail](" }]),
+      delta("saved", "/"),
+      delta("saved", "app/mail/x) [Other](//external.test/x)"),
+      finished([text]),
+    ],
+  ];
+  const reply = await run(events());
+  expect(reply.text).toBe("[Mail](http://example.test/app/mail/x) [Other](//external.test/x)\n");
+  expect(reply.result.text).toBe(text);
+  expect((await run(events(), "json")).text).toBe("");
+  const jsonl = await run(events(), "jsonl");
+  expect(textDeltas(jsonl.lines).join("")).not.toContain("http://example.test");
+  expect(jsonl.result.text).toBe(text);
+});
+
+test("stream finish flushes incomplete link delimiters", async () => {
+  expect((await run([[delta("link", "[Mail]("), finished(["[Mail]("])]])).text).toBe("[Mail](\n");
+});
+
+test("link delimiters flush before approval pauses the turn", async () => {
+  const output = createAssistantTurnOutput();
+  const approval: AiTurnBlock = { id: "tool", kind: "tool", callId: "call", name: "mail.draft.send", status: "awaiting_approval" };
+  const first = await run([[delta("link", "[Mail]("), { ...wire(), type: "block_set", block: approval }]], "text", undefined, output);
+  const second = await run([[state([{ id: "saved", kind: "text", text: "[Mail](" }]), finished([])]], "text", undefined, output);
+  expect(first.text).toBe("[Mail](\n");
+  expect(second.text).toBe("");
+});
+
+test("finishing without new text has no delimiter left after approval", async () => {
+  const output = createAssistantTurnOutput();
+  const approval: AiTurnBlock = { id: "tool", kind: "tool", callId: "call", name: "mail.draft.send", status: "awaiting_approval" };
+  const first = await run([[delta("link", "[Mail]"), { ...wire(), type: "block_set", block: approval }]], "text", undefined, output);
+  const second = await run([[finished([])]], "text", undefined, output);
+  expect(first.text).toBe("[Mail]\n");
+  expect(second.text).toBe("");
+});
+
+test("held text delimiters print before a completed capability table", async () => {
+  const text = "I will create the task [Belege prüfen]";
+  const block: AiTurnBlock = {
+    id: "tool",
+    kind: "tool",
+    callId: "call",
+    name: "spaces.task.create",
+    status: "completed",
+    result: {
+      data: [{ title: "Belege prüfen" }],
+      presentation: { kind: "table", rowsPath: [], columns: [{ path: ["title"], label: "Title" }] },
+    },
+  };
+  const reply = await run([[delta("text", text), { ...wire(), type: "block_set", block }, finished([text])]]);
+  expect(reply.tables).toHaveLength(1);
+  expect(reply.ordered).toEqual(["write:I will create the task [Belege prüfen", "write:]", "print:", "table", "print:", "write:\n"]);
 });

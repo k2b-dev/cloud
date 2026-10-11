@@ -3,6 +3,7 @@ import CopyButton from "../actions/CopyButton";
 import { useUiMessages } from "../intl/messages";
 import type { CodeDisplayLanguage } from "./CodeDisplay";
 import { highlightCodeDisplayLines } from "./code-highlight";
+import { useDocsMessages } from "./docs-messages";
 
 export type DocCodeHighlighter = (code: string) => string;
 
@@ -52,6 +53,7 @@ export const DocInlineCode = (props: { children: JSX.Element }) => <code class="
 
 export const DocCode = (props: DocCodeProps) => {
   const messages = useUiMessages();
+  const docsMessages = useDocsMessages();
   const code = () => props.format?.(props.code) ?? props.code;
   const lineNumbers = () => props.lineNumbers ?? false;
   const hasHeader = () => Boolean(props.title || props.copy);
@@ -76,7 +78,7 @@ export const DocCode = (props: DocCodeProps) => {
         data-header={hasHeader() ? "true" : undefined}
         tabIndex={0}
         role="region"
-        aria-label={props.title ? messages().codeLabel({ title: props.title }) : messages().code}
+        aria-label={props.title ? docsMessages().codeLabel({ title: props.title }) : messages().code}
       >
         <div class="k2b-content-doc-code__lines">
           <For each={lines()}>

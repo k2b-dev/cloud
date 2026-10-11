@@ -1,4 +1,5 @@
 import { type CloudCliModule, defineCliCommands } from "@k2b/cloud/cli";
+import { assistantApprovalCommands } from "./cli/approvals";
 import { assistantChatCommands, assistantManagementCommands } from "./cli/chat";
 import { assistantCodeCommands } from "./cli/code";
 import { CODE_HOST_COMMAND } from "./cli/code-host";
@@ -13,6 +14,7 @@ const commands = defineCliCommands({
   groupSummaries: {
     code: "Build and manage Studio Apps and actions",
     "studio-admin": "Administer Studio resources, data and database settings",
+    approvals: "List and revoke remembered Cloud approvals",
     actions: "Review and resolve pending turn actions",
     chats: "Create, inspect, and manage Assistant chats",
     files: "Manage files in Assistant chats",
@@ -31,6 +33,7 @@ const commands = defineCliCommands({
   },
   commands: [
     assistantRootCommand,
+    ...assistantApprovalCommands,
     ...assistantCodeCommands,
     ...assistantChatCommands,
     ...assistantManagementCommands,

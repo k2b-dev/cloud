@@ -25,15 +25,23 @@ named `help`.
 
 ## Select a locale
 
-`cld` resolves one locale per invocation. Pass `--locale <BCP-47-tag>` before
-the module name, or set `CLD_LOCALE`; the explicit flag wins and the
-deterministic default is `en`. Regional tags use normal ancestor fallback, so
-`de-CH` uses German CLI text when no Swiss German message exists.
+`cld` resolves one locale per invocation: `--locale <BCP-47-tag>` wins over
+`CLD_LOCALE`, then the first non-empty POSIX variable `LC_ALL`, `LC_MESSAGES`,
+or `LANG`. POSIX values such as `de_DE.UTF-8` become `de-DE`; charset and
+modifier suffixes are dropped. `C`, `C.*`, `POSIX`, and invalid POSIX tags
+provide no usable locale, even when a lower-priority variable has one.
+Invalid explicit tags still produce an error. Regional tags use normal
+ancestor fallback, so `de-CH` uses German CLI text when no Swiss German
+message exists.
 
 The resolved tag is available as `ctx.options.locale` and is sent as
-`Accept-Language` with every authenticated application request. This keeps
-server-owned API messages aligned with the CLI without process-global locale
-state. The same requests carry the machine's IANA timezone (`TZ` overrides it)
+`Accept-Language` with every authenticated application request. Without a
+usable locale, `ctx.options.locale` is undefined and CLI text falls back to
+English; requests omit `Accept-Language`, so the operator default `app.locale`
+applies. This keeps server-owned API messages aligned with the request locale
+without process-global locale state.
+
+The same requests carry the machine's IANA timezone (`TZ` overrides it)
 in the `cloud.timezone` cookie that browsers send, so `getTimeZone(c)` and
 day-based filters such as "due today" use the local day. A machine without a
 configured timezone, such as most containers and CI runners, sends `UTC`
@@ -306,6 +314,7 @@ cld inventory items list --jsonl
 | `jsonLine()` | One compact JSON value |
 | `table()` | Text table |
 | `getDefault()` / `setDefault()` | Profile-scoped application defaults |
+| `openUrl?()` | Open an http(s) link in the user's browser; resolves false when the host cannot, so print the link too; absent in hosts without a browser |
 | `profiles?.saveClientCredentials()` | Store an OAuth client ID and secret as a client-credentials profile; absent in hosts without profiles |
 
 `readJson()` accepts native fetch responses and typed Hono client responses.
@@ -315,6 +324,9 @@ It requires `json()`, `text()`, `ok`, `status`, and `statusText`.
 as `cld admin agents create`, hands the secret to `saveClientCredentials()`
 and never prints it; the host stores it with the same protection as a refresh
 token. Fail before any remote call when the capability is missing.
+
+`openUrl` is optional; always print the link so it remains usable when the
+capability is absent or returns false.
 
 Use this context. Do not read CLI token or profile files from an application
 module.

@@ -7,6 +7,7 @@ type PollAnswer = "authorization_pending" | "slow_down" | "access_denied" | "exp
 
 type DeviceServerState = {
   starts: URLSearchParams[];
+  locales: Array<string | null>;
   polls: { at: number; body: URLSearchParams }[];
 };
 
@@ -27,13 +28,14 @@ const idToken = `${base64url({ alg: "none" })}.${base64url({ sub: "user-id", nam
 
 /** A Cloud stand-in that answers device polls from a script. */
 const startDeviceServer = (answers: PollAnswer[], options: { supportsDevice?: boolean } = {}) => {
-  const state: DeviceServerState = { starts: [], polls: [] };
+  const state: DeviceServerState = { starts: [], locales: [], polls: [] };
   const server = Bun.serve({
     port: 0,
     fetch: async (request) => {
       const url = new URL(request.url);
       if (url.pathname === "/oauth/device_authorization" && options.supportsDevice !== false) {
         state.starts.push(new URLSearchParams(await request.text()));
+        state.locales.push(request.headers.get("accept-language"));
         return Response.json({
           device_code: "device-code-secret",
           user_code: "WDJB-MJHT",
@@ -70,7 +72,7 @@ const runCli = async (config: string, args: string[], env: Record<string, string
   const proc = Bun.spawn({
     cmd: [process.execPath, "run", "packages/cloud-cli/src/index.ts", ...args],
     cwd: process.cwd(),
-    env: { ...process.env, ...env, CLD_CONFIG: config },
+    env: { ...process.env, CLD_LOCALE: "", LC_ALL: "", LC_MESSAGES: "", LANG: "C", ...env, CLD_CONFIG: config },
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -103,6 +105,7 @@ describe("cld login --device", () => {
       );
 
       expect(state.starts).toHaveLength(1);
+      expect(state.locales).toEqual([null]);
       expect(state.starts[0]?.get("client_id")).toBe("cloud-cli");
       expect(state.starts[0]?.get("scope")).toBe("openid profile email offline_access read write");
       expect(state.polls).toHaveLength(3);
@@ -123,11 +126,12 @@ describe("cld login --device", () => {
   });
 
   test("follows the CLI locale", async () => {
-    const { server, origin } = startDeviceServer(["approve"]);
+    const { server, state, origin } = startDeviceServer(["approve"]);
     const config = await configPath();
     try {
       const result = await runCli(config, ["--locale", "de", "login", "--server", origin, "--device"]);
       expect(result.exitCode).toBe(0);
+      expect(state.locales).toEqual(["de"]);
       expect(result.stdout).toContain(`Öffne ${origin}/oauth/device und gib den Code ein: WDJB-MJHT`);
       expect(result.stdout).toContain(`(oder öffne ${origin}/oauth/device?user_code=WDJB-MJHT)`);
       expect(result.stdout).toContain("Warte auf Bestätigung…");
@@ -202,7 +206,7 @@ describe("cld login without --device", () => {
     const proc = Bun.spawn({
       cmd: [process.execPath, "run", "packages/cloud-cli/src/index.ts", "login", "--server", "http://127.0.0.1:9", ...args],
       cwd: process.cwd(),
-      env: { ...process.env, ...env, CLD_CONFIG: config },
+      env: { ...process.env, CLD_LOCALE: "", LC_ALL: "", LC_MESSAGES: "", LANG: "C", ...env, CLD_CONFIG: config },
       stdin: "ignore",
       stdout: "pipe",
       stderr: "pipe",

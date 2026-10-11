@@ -55,7 +55,7 @@ if (process.env.MAIL_CLI_CHILD !== "1") {
     const proc = Bun.spawn({
       cmd: [process.execPath, "run", cliEntry, "--server", serverUrl, "--token", "cli-test", ...args],
       cwd: home,
-      env: { ...process.env, HOME: home, XDG_CONFIG_HOME: cliHome },
+      env: { ...process.env, CLD_LOCALE: "en", HOME: home, XDG_CONFIG_HOME: cliHome },
       stdin: "ignore",
       stdout: "pipe",
       stderr: "pipe",
