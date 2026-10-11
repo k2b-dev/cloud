@@ -649,10 +649,22 @@ describe("separate draft signatures", () => {
     ["Hello\n\nAda wrote:\n> Old\n> text", "Hello", "Ada wrote:\n> Old\n> text"],
     ["Hallo\n\nAm Montag schrieb Ada:\n> Alt", "Hallo", "Am Montag schrieb Ada:\n> Alt"],
     ["> Old\n\nMy answer", "> Old\n\nMy answer", ""],
-    ["Hello\n\n> Old\n\n \n", "Hello", "> Old\n\n \n"],
-    ["Hello\n\nNot attribution\n> Old", "Hello\n\nNot attribution", "> Old"],
-    ["\n\n> Old", "", "> Old"],
-    ["Hello\n> First\n\n> Last", "Hello\n> First", "> Last"],
+    ["Hello\n\nAda wrote:\n> Old\n\n \n", "Hello", "Ada wrote:\n> Old\n\n \n"],
+    ["\n\nAda wrote:\n> Old", "", "Ada wrote:\n> Old"],
+    ["Hello\r\n\r\n---------- Forwarded message ----------\r\nOld", "Hello", "---------- Forwarded message ----------\r\nOld"],
+    // A quote or a separator-like line that Mail did not write as history is the writer's own text.
+    ["Hello\n\nNot attribution\n> Old", "Hello\n\nNot attribution\n> Old", ""],
+    ["Here is what the docs say:\n\n> Quoted passage", "Here is what the docs say:\n\n> Quoted passage", ""],
+    ["Here is what the docs say:\n> Quoted passage", "Here is what the docs say:\n> Quoted passage", ""],
+    ["> Question\nAnswer\n\n> Open question", "> Question\nAnswer\n\n> Open question", ""],
+    ["Agenda\n------ Part one ------\nText", "Agenda\n------ Part one ------\nText", ""],
+    [
+      "Example:\n```\n---------- Forwarded message ----------\n```\nAfter",
+      "Example:\n```\n---------- Forwarded message ----------\n```\nAfter",
+      "",
+    ],
+    ["Example:\n~~~~\nAda wrote:\n> Old\n~~~", "Example:\n~~~~\nAda wrote:\n> Old\n~~~", ""],
+    ["Example:\n```md\nx\n```\n\nAda wrote:\n> Old", "Example:\n```md\nx\n```", "Ada wrote:\n> Old"],
   ])("splits quoted history in %j", (body, reply, history) => {
     expect(splitQuotedHistory(body)).toEqual({ reply, history });
   });

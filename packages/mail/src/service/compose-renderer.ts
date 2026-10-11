@@ -255,23 +255,40 @@ export const validateComposeTemplateSource = (source: string): Result<void> => {
   return ok();
 };
 
+// The separator line that forwardMessageBody writes, in each composer locale.
+const FORWARD_SEPARATOR = /^-{10} (?:Forwarded message|Weitergeleitete Nachricht) -{10}$/u;
+// The line that quoteReplyBody writes above a quote: "… Ada wrote:" or "Am … schrieb Ada:".
+const REPLY_ATTRIBUTION = /\b(?:wrote|schrieb)\b.*:$/iu;
+const CODE_FENCE = /^ {0,3}(`{3,}|~{3,})/u;
+
 /**
- * Splits a body before the history that mail clients keep below a signature: a forwarded message from its
- * separator line on, or a quote that ends the body together with its "... wrote:" line. A quote followed by
- * the writer's own text is part of the reply, so the signature then goes to the end.
+ * Splits a body before the history that Mail writes into forwards and replies: a forwarded message from its
+ * separator line on, or a quote that ends the body together with its "… wrote:" line. Every other quote,
+ * separator-like line or fenced code is the writer's own text, so the signature then goes to the end.
  */
 export const splitQuotedHistory = (body: string): { reply: string; history: string } => {
   const lines = body.split("\n");
-  let start = lines.findIndex((line) => /^-{5,} .+ -{5,}$/.test(line));
-  if (start < 0) {
-    let last = lines.length - 1;
-    while (last >= 0 && !lines[last]?.trim()) last -= 1;
-    if (lines[last]?.startsWith(">")) {
-      start = last;
-      while (start > 0 && lines[start - 1]?.startsWith(">")) start -= 1;
-      const attribution = lines[start - 1];
-      if (attribution?.trim() && !attribution.startsWith(">") && attribution.trimEnd().endsWith(":")) start -= 1;
+  // Lines inside fenced code are null: they belong to the writer's text and never start history.
+  const text: Array<string | null> = [];
+  let fence: string | null = null;
+  for (const line of lines.map((value) => value.trimEnd())) {
+    const marker = CODE_FENCE.exec(line)?.[1];
+    if (fence) {
+      text.push(null);
+      if (marker && marker[0] === fence[0] && marker.length >= fence.length && line.trim() === marker) fence = null;
+    } else {
+      text.push(marker ? null : line);
+      if (marker) fence = marker;
     }
+  }
+  let start = text.findIndex((line) => line !== null && FORWARD_SEPARATOR.test(line));
+  if (start < 0) {
+    let last = text.length - 1;
+    while (last >= 0 && text[last] === "") last -= 1;
+    let attribution = last;
+    while (attribution >= 0 && text[attribution]?.startsWith(">")) attribution -= 1;
+    const line = text[attribution];
+    if (attribution < last && line && REPLY_ATTRIBUTION.test(line)) start = attribution;
   }
   if (start < 0) return { reply: body.trimEnd(), history: "" };
   return {
