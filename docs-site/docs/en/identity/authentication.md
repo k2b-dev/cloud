@@ -276,7 +276,8 @@ Authorization: Bearer <token>
 A personal API key can have models-only access (`access: "models"`). Such a
 key fails authentication on every route except the
 [OpenAI-compatible endpoint](/en/docs/ai/openai-compatible-api); it cannot
-reach Cloud tools or account self-service.
+reach Cloud tools or account self-service. Applications on an older
+`@k2b/cloud` version reject such a key as invalid.
 
 An API key is stored as a hash. The raw value is returned only when the key is
 created.

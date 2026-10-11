@@ -199,12 +199,16 @@ const generateTokenParts = (): { tokenPrefix: string; secret: string; token: str
 };
 
 // API token secrets carry 256 bits of entropy, so a fast digest is sufficient and avoids password-KDF cost per request.
-const hashApiTokenSecret = (secret: string): string => `sha256:${createHash("sha256").update(secret).digest("hex")}`;
+// Domain-separate models-only keys so older platforms fail verification instead of granting full authority.
+const hashApiTokenSecret = (secret: string, scopes: readonly string[]): string =>
+  `sha256:${createHash("sha256")
+    .update(scopes.includes(AI_INFERENCE_SCOPE) ? `${AI_INFERENCE_SCOPE}:${secret}` : secret)
+    .digest("hex")}`;
 
-const verifyApiTokenSecret = async (secret: string, storedHash: string): Promise<boolean> => {
+const verifyApiTokenSecret = async (secret: string, storedHash: string, scopes: readonly string[]): Promise<boolean> => {
   const match = storedHash.match(SECRET_HASH_PATTERN);
   if (match) {
-    const actual = Buffer.from(hashApiTokenSecret(secret).slice("sha256:".length), "hex");
+    const actual = Buffer.from(hashApiTokenSecret(secret, scopes).slice("sha256:".length), "hex");
     const expected = Buffer.from(match[1]!, "hex");
     return timingSafeEqual(actual, expected);
   }
@@ -338,7 +342,7 @@ const insertApiToken = async (
   }
 
   const parts = await generateUniqueTokenParts();
-  const secretHash = hashApiTokenSecret(parts.secret);
+  const secretHash = hashApiTokenSecret(parts.secret, params.scopes ?? []);
 
   try {
     const [row] = await db<DbCredentialRow[]>`
@@ -788,7 +792,7 @@ const recordSuccessfulAuthentication = async (params: {
   serviceAccount: ServiceAccount;
   delegatedUser: User | null;
 }): Promise<void> => {
-  const upgradedSecretHash = SECRET_HASH_PATTERN.test(params.row.secret_hash) ? null : hashApiTokenSecret(params.secret);
+  const upgradedSecretHash = SECRET_HASH_PATTERN.test(params.row.secret_hash) ? null : hashApiTokenSecret(params.secret, params.row.scopes);
   if (!upgradedSecretHash && !params.row.activity_due) return;
 
   if (upgradedSecretHash) {
@@ -844,10 +848,10 @@ const recordSuccessfulAuthentication = async (params: {
 const pendingSecretVerifications = new Map<string, Promise<boolean>>();
 
 const verifyApiTokenSecretOnce = async (secret: string, row: DbCredentialWithSecretRow): Promise<boolean> => {
-  const key = `${row.id}:${row.secret_hash}:${hashApiTokenSecret(secret)}`;
+  const key = `${row.id}:${row.secret_hash}:${hashApiTokenSecret(secret, row.scopes)}`;
   let pending = pendingSecretVerifications.get(key);
   if (!pending) {
-    pending = verifyApiTokenSecret(secret, row.secret_hash);
+    pending = verifyApiTokenSecret(secret, row.secret_hash, row.scopes);
     pendingSecretVerifications.set(key, pending);
   }
   try {

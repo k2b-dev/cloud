@@ -1,4 +1,5 @@
 import { beforeAll, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import type { Provider } from "@k2b/nessi";
 import { sql } from "bun";
 import { Hono } from "hono";
@@ -68,6 +69,20 @@ suite("models-only API identity and inference boundaries", () => {
       if (!models.ok || !full.ok) throw new Error("Key fixtures failed");
       expect(models.data.credential.scopes).toEqual(["ai:inference"]);
       expect(full.data.credential.scopes).toEqual([]);
+      for (const key of [models.data, full.data]) {
+        const secret = key.token.split("_")[2];
+        if (!secret) throw new Error("Key secret missing");
+        const [stored] = await sql<{ secret_hash: string }[]>`
+          SELECT secret_hash FROM auth.service_account_credentials WHERE id = ${key.credential.id}::uuid`;
+        if (!stored) throw new Error("Stored credential missing");
+        const oldPlatformHash = `sha256:${createHash("sha256").update(secret).digest("hex")}`;
+        expect(stored.secret_hash).toMatch(/^sha256:[0-9a-f]{64}$/);
+        if (key === models.data) {
+          expect(stored.secret_hash).not.toBe(oldPlatformHash);
+          expect(stored.secret_hash).toBe(`sha256:${createHash("sha256").update(`ai:inference:${secret}`).digest("hex")}`);
+        } else expect(stored.secret_hash).toBe(oldPlatformHash);
+        expect((await serviceAccountCredentials.authenticateApiToken(key.token))?.credential.id).toBe(key.credential.id);
+      }
       const auditRows = await sql<{ access: string }[]>`
         SELECT metadata->>'access' AS access FROM audit.events
         WHERE action='service_account_credential.create' AND target_id=${models.data.credential.id}`;
