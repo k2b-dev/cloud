@@ -361,6 +361,10 @@ Download failures appear as a short category such as **File not found**,
 explanation; the activity disclosure retains the requested URL and full tool
 response for diagnosis.
 
+Clients that collect surveys or drafts can validate their results with
+`CloudAiSurveyOutputSchema` and `CloudAiTextEditorOutputSchema` from
+`@k2b/cloud/ai/browser` before submitting them.
+
 ## Search product Help
 
 A user-backed personal chat on a tool-capable model resolves `search_help` and
@@ -531,6 +535,15 @@ A review does not alter arguments, grant permission, record consent, or replace
 an app-owned safety workflow. For example, a domain fingerprint or optimistic
 revision required by an Action remains part of the Action input and is enforced
 again by the owning app.
+
+### Approvals from an editor
+
+[Assistant in editors](/en/docs/ai/editors) offers approval once or for the
+current chat for requests that can be remembered. An editor may approve these
+automatically. Actions that cannot be undone or reach other people, such as
+sending mail, deleting, sharing, or inviting, wait for confirmation in Cloud;
+the editor shows the link and can only reject them. Use `/approvals` in the
+editor to revoke remembered choices.
 
 ## Handle approval in the UI
 

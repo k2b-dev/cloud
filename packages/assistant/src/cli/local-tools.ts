@@ -69,6 +69,8 @@ export const createLocalSessionFolder = () => {
   };
 };
 
+export type LocalQuestionKind = "bash" | "append" | "replace" | "move" | "access";
+
 type LocalToolsOptions = {
   ctx: CloudCliContext;
   workspace: string;
@@ -76,7 +78,7 @@ type LocalToolsOptions = {
   freeReadRoots: readonly string[];
   skills: readonly LocalSkill[];
   mode: "ask" | "off";
-  ask: (lines: string[], question: string) => Promise<boolean>;
+  ask: (lines: string[], question: string, kind: LocalQuestionKind) => Promise<boolean>;
   sessionFolder: ReturnType<typeof createLocalSessionFolder>;
   printBash: (stdout: string, stderr: string, truncated: boolean) => void;
 };
@@ -103,11 +105,11 @@ export const runLocalTool = async (
   };
   restartDeadline();
   const signal = call.name === "local_bash" ? externalSignal : AbortSignal.any([externalSignal, deadline.signal]);
-  const ask = async (lines: string[], question: string) => {
+  const ask = async (lines: string[], question: string, kind: LocalQuestionKind) => {
     signal.throwIfAborted();
     clearTimeout(timer);
     try {
-      return await options.ask(lines, question);
+      return await options.ask(lines, question, kind);
     } finally {
       restartDeadline();
     }
@@ -130,7 +132,7 @@ export const runLocalTool = async (
   };
   const reason = (rule: Extract<LocalPathAccess, { access: "ask" }>) =>
     rule.reason === "home" ? "home folder" : rule.reason === "protected" ? "may contain secrets" : `outside ${workspace}`;
-  const authorize = async (path: string, verb: string, readOnly = false, review?: string) => {
+  const authorize = async (path: string, verb: string, readOnly = false, review?: string, kind: LocalQuestionKind = "access") => {
     signal.throwIfAborted();
     const given = resolveLocalPath(path, workspace);
     const rule = await access(given, readOnly);
@@ -150,7 +152,7 @@ export const runLocalTool = async (
       }`;
     const lines = review && rule.access === "ask" ? [`${display(given)}: ${reason(rule)}`] : [];
     if (review && instructions) lines.push(`${display(given)}: becomes instructions for the assistant`);
-    const allowed = await ask(lines, question);
+    const allowed = await ask(lines, question, kind);
     signal.throwIfAborted();
     return allowed ? null : declined;
   };
@@ -199,7 +201,8 @@ export const runLocalTool = async (
       case "local_bash": {
         const input = parseLocalBashInput(call.args);
         if (!input) return { status: "failed", exitCode: null, stdout: "", stderr: "Invalid local Bash arguments.", truncated: false };
-        if (!(await ask([`Bash wants to run in ${workspace}:`, "", `  ${input.command}`, ""], "Run?"))) return deniedLocalBashResult();
+        if (!(await ask([`Bash wants to run in ${workspace}:`, "", `  ${input.command}`, ""], "Run?", "bash")))
+          return deniedLocalBashResult();
         signal.throwIfAborted();
         const result = await runLocalBash(input.command, { cwd: workspace, signal });
         signal.throwIfAborted();
@@ -360,6 +363,7 @@ export const runLocalTool = async (
           (await ask(
             asking.map(({ path, rule }) => `  ${display(path)} (${rule.access === "ask" ? reason(rule) : ""})`),
             "Upload these files?",
+            "access",
           ));
         for (const [index, { path, rule }] of candidates.entries()) {
           try {
@@ -402,6 +406,7 @@ export const runLocalTool = async (
             "Save",
             false,
             old ? `Replace ${display(path)} (${changed(old)}) with ${length ? size(Number(length)) : "the chat file"}?` : undefined,
+            old ? "replace" : "access",
           );
           if (denial) return denial;
           let written = 0;
@@ -445,6 +450,7 @@ export const runLocalTool = async (
           input.mode === "append" ? "Append to" : input.mode === "replace" ? "Replace" : "Write",
           false,
           review,
+          input.mode === "create" ? "access" : input.mode,
         );
         if (denial) return denial;
         if (input.mode === "append") {
@@ -533,7 +539,7 @@ export const runLocalTool = async (
               `  ${display(move.from).padEnd(width)} → ${display(move.to)}${move.protected ? " (may contain secrets)" : ""}${move.instructions ? " (becomes instructions for the assistant)" : ""}`,
           ),
         ];
-        if (!(await ask(lines, "Move?"))) return { status: "denied", moved, conflicts, error: declined.error };
+        if (!(await ask(lines, "Move?", "move"))) return { status: "denied", moved, conflicts, error: declined.error };
         for (const move of moves) {
           try {
             signal.throwIfAborted();

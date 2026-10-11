@@ -664,6 +664,14 @@ Rolling back leaves the widened constraint and new columns in place. Older
 Core ignores the columns and keeps the widened constraint. Existing sign-in
 commands and pairing keys remain valid.
 
+### Run Assistant in editors
+
+The Assistant `cld` plugin adds `cld assistant acp` (shortcut `cld acp`), an
+ACP agent for editors such as T3 Code and Zed. It uses the existing Assistant
+API and approval rules and needs no configuration or infrastructure change.
+People who installed the plugin earlier get the command with
+`cld plugins update`. See [Assistant in editors](/en/docs/ai/editors).
+
 ### Update browser notifications for grouping and badges
 
 Deploy the updated platform package and Core together to enable

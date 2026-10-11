@@ -477,6 +477,8 @@ test("local client facts and raw instructions follow organization instructions",
   expect(acp).toContain("Client: editor via ACP (Editor)");
   expect(acp).not.toContain("Cloud:");
   expect(acp).toContain(AI_LOCAL_CLIENT_DEFAULT_INSTRUCTIONS);
+  expect(acp).toContain("An editor can approve requests automatically, so an approval there does not prove that the user saw the action.");
+  expect(acp).toContain("Do not ask for the same confirmation in the chat first.");
   expect(
     composeAiSystemPrompt({ globalInstructions: "", localClient: { client: { ...client, kind: "acp" }, cloudUrl: "", instructions: "" } }),
   ).toContain("Client: editor via ACP\n");

@@ -38,6 +38,7 @@ knows which domain data may be disclosed and which operation is allowed now.
 | A reusable application query or action | [Capabilities](/en/docs/platform/capabilities) |
 | A local runtime-only model tool | [`defineAiTool()`](/en/docs/ai/tools-and-approvals) |
 | Conversation files, Projects, Skills, or user memory | [Files, Projects, Skills, and personalization](/en/docs/ai/files-projects-and-personalization) |
+| Use Assistant in an editor | [Assistant in editors](/en/docs/ai/editors) |
 | Shared chat components | [Chat interface](/en/docs/ai/chat-interface) |
 
 Do not create a chat when one structured call is enough. Do not create a custom

@@ -18,7 +18,7 @@ let root: string;
 let workspace: string;
 let session: ReturnType<typeof createLocalSessionFolder>;
 let approve: boolean;
-let questions: Array<{ lines: string[]; question: string }>;
+let questions: Array<{ lines: string[]; question: string; kind: string }>;
 let beforeAnswer: (() => Promise<void>) | undefined;
 let beforeUpload: ((signal?: AbortSignal | null) => Promise<void>) | undefined;
 let deadlineMs: number | undefined;
@@ -87,8 +87,8 @@ const run = (name: string, args: unknown, freeReadRoots: string[] = [], signal =
       mode,
       sessionFolder: session,
       printBash: () => {},
-      ask: async (lines, question) => {
-        questions.push({ lines, question });
+      ask: async (lines, question, kind) => {
+        questions.push({ lines, question, kind });
         await beforeAnswer?.();
         return approve;
       },
@@ -105,7 +105,7 @@ test.each(["subfolder/AGENTS.md", ".agents/skills/x/SKILL.md", "subfolder/agents
       status: "denied",
       error: "The user declined.",
     });
-    expect(questions).toEqual([{ lines: [], question: `Write ${path}? It becomes instructions for the assistant.` }]);
+    expect(questions).toEqual([{ lines: [], question: `Write ${path}? It becomes instructions for the assistant.`, kind: "access" }]);
     expect(await Bun.file(join(workspace, path)).exists()).toBeFalse();
   },
 );
@@ -122,7 +122,7 @@ test("instruction aliases ask on write and download; reading and uploading instr
   ]);
   questions = [];
   expect(await run("local_download", { path: "/chat.txt", to: "sub/AGENTS.md" })).toMatchObject({ status: "denied" });
-  expect(questions).toEqual([{ lines: [], question: "Save sub/AGENTS.md? It becomes instructions for the assistant." }]);
+  expect(questions).toEqual([{ lines: [], question: "Save sub/AGENTS.md? It becomes instructions for the assistant.", kind: "access" }]);
   questions = [];
   expect(await run("local_read", { path: "AGENTS.md" })).toMatchObject({ status: "completed", kind: "text" });
   expect(await run("local_upload", { paths: ["AGENTS.md"] })).toMatchObject({ status: "completed", failed: [] });
@@ -215,7 +215,7 @@ test("moves cannot relocate an ancestor of the real cld config directory", async
 test("instruction segments in the given path still ask after normalization", async () => {
   approve = false;
   expect(await run("local_write", { path: "sub/.agents/../notes.md", content: "instructions" })).toMatchObject({ status: "denied" });
-  expect(questions).toEqual([{ lines: [], question: "Write sub/notes.md? It becomes instructions for the assistant." }]);
+  expect(questions).toEqual([{ lines: [], question: "Write sub/notes.md? It becomes instructions for the assistant.", kind: "access" }]);
 });
 
 test.each(["local_move", "local_write"])("%s gives work a fresh deadline after a slow approval", async (name) => {
@@ -388,14 +388,14 @@ test("a free read root never frees a file that may hold secrets", async () => {
   await writeFile(join(outside, ".env"), "TOKEN=1");
   approve = false;
   expect(await run("local_read", { path: join(outside, ".env") }, [outside])).toEqual({ status: "denied", error: "The user declined." });
-  expect(questions).toEqual([{ lines: [], question: `Read ${join(outside, ".env")}? It may contain secrets.` }]);
+  expect(questions).toEqual([{ lines: [], kind: "access", question: `Read ${join(outside, ".env")}? It may contain secrets.` }]);
 });
 
 test.each(["KEY.PEM", ".ENV"])("reading uppercase protected %s asks about secrets", async (path) => {
   await writeFile(join(workspace, path), "secret");
   approve = false;
   expect(await run("local_read", { path })).toEqual({ status: "denied", error: "The user declined." });
-  expect(questions).toEqual([{ lines: [], question: `Read ${path}? It may contain secrets.` }]);
+  expect(questions).toEqual([{ lines: [], question: `Read ${path}? It may contain secrets.`, kind: "access" }]);
 });
 
 test.each(["skill", "session"])("home-ancestor workspaces keep protected %s-root reads behind a question", async (kind) => {
@@ -420,7 +420,7 @@ test("a protected alias still asks; declining reads returns denied", async () =>
   await symlink(join(workspace, "ordinary"), join(workspace, ".env"));
   approve = false;
   expect(await run("local_read", { path: ".env" })).toEqual({ status: "denied", error: "The user declined." });
-  expect(questions).toEqual([{ lines: [], question: "Read .env? It may contain secrets." }]);
+  expect(questions).toEqual([{ lines: [], kind: "access", question: "Read .env? It may contain secrets." }]);
 });
 
 test("document reads upload and binary reads fail without uploading", async () => {
@@ -456,6 +456,7 @@ test("uploads ask once for the risky subset and preserve free files on denial", 
   expect(questions).toHaveLength(1);
   expect(questions[0]).toEqual({
     lines: ["  .env (may contain secrets)", `  ${outside} (outside ${workspace})`],
+    kind: "access",
     question: "Upload these files?",
   });
   expect(uploads).toHaveLength(1);
@@ -596,7 +597,9 @@ test("moves ask once with aligned arrows and create target folders", async () =>
     ],
     conflicts: [],
   });
-  expect(questions).toEqual([{ lines: [`Move in ${workspace} (2 files):`, "  a    → sorted/a", "  long → sorted/b"], question: "Move?" }]);
+  expect(questions).toEqual([
+    { lines: [`Move in ${workspace} (2 files):`, "  a    → sorted/a", "  long → sorted/b"], kind: "move", question: "Move?" },
+  ]);
 });
 
 test("a target appearing after review stops a move batch with partial progress", async () => {

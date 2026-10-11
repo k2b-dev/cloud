@@ -10,6 +10,18 @@ It explains whose permissions the Assistant uses, what Projects share and
 whether it is live, which Actions need approval, how scheduled tasks are
 authorized, and when to use instructions, Skills, memories, or knowledge.
 
+## Assistant in editors
+
+`cld assistant acp` (shortcut `cld acp`) runs Assistant as an ACP v1 agent over
+stdin and stdout for editors such as T3 Code and Zed. It uses the signed-in
+Cloud profile and the editor's project folder. Chats stay in Cloud.
+Sending, deleting, sharing, and inviting wait for confirmation in Cloud; the
+editor shows the chat link and can only reject these requests. Remembered
+editor approvals last at most for the chat.
+
+See [Assistant in editors](https://cloud.k2b.dev/en/docs/ai/editors) for setup,
+commands, forms, and session behavior.
+
 ## Interactive and print modes
 
 Start a line-oriented terminal session:
