@@ -207,9 +207,11 @@ export type AppWorkspaceDetailProps = {
   maxWidth?: number;
   /**
    * Closes the panel: Escape, a swipe on a touch screen, and dragging the
-   * phone sheet down call it. Without it those gestures leave the panel open,
-   * and on a touch tablet in portrait the panel makes room beside `Main`
-   * instead of overlaying it as a drawer.
+   * phone sheet down call it. A panel rendered on the server only marks its
+   * own close button or link with `data-workspace-detail-close` instead, and
+   * those gestures click it. Without either, they leave the panel open, and on
+   * a touch tablet in portrait the panel makes room beside `Main` instead of
+   * overlaying it as a drawer.
    */
   onClose?: () => void;
   /** Shows the previous (`-1`) or next (`1`) item; J and K call it while the panel is open. */

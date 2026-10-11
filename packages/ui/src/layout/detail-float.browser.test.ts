@@ -28,6 +28,19 @@ const mainContent = () => {
   toolbar.id = "toolbar";
   toolbar.textContent = "Fixed toolbar";
   toolbar.style.cssText = "height:40px;flex-shrink:0;padding-inline-end:var(--k2b-detail-space,0px)";
+  if (params.has("table")) {
+    // A data table that fits its scroller, as a Grids table with few fields does.
+    const wrap = document.createElement("div");
+    wrap.id = "table";
+    wrap.className = "k2b-table-wrap k2b-detail-trail";
+    wrap.style.cssText = "flex:1;min-height:0;height:auto";
+    const table = document.createElement("table");
+    table.className = "k2b-data-table";
+    table.innerHTML = "<tbody>" + Array.from({length:6}, (_, row) => "<tr>" + Array.from({length:4}, (_, column) => "<td>Cell " + row + "." + column + "</td>").join("") + "</tr>").join("") + "</tbody>";
+    table.querySelector("td").replaceChildren(button(0));
+    wrap.append(table);
+    return [toolbar, wrap];
+  }
   if (!params.has("trail")) return [toolbar, ...Array.from({length:40}, (_, index) => button(index))];
   const trail = document.createElement("div");
   trail.id = "board";
@@ -39,12 +52,14 @@ const mainContent = () => {
   trail.append(cards);
   return [toolbar, trail];
 };
+// A documentation-style frame that contains layout, inside a longer page.
+if (params.has("frame")) document.getElementById("app").style.cssText = "height:480px;margin-top:100px;contain:layout";
 render(() => createComponent(AppWorkspace, {
   layoutState: () => ({version:2, sidebarWidth: Number(params.get("sidebar")) || 208, detailWidths: params.has("persisted") ? {record:Number(params.get("persisted"))} : undefined}),
   get children() { return [
     createComponent(AppWorkspace.Sidebar, { id:"navigation", maxSize:960, children:"Navigation" }),
     createComponent(AppWorkspace.Content, { get children() { return [
-      createComponent(AppWorkspace.Main, { scroll:!params.has("trail"), get children() { return mainContent(); } }),
+      createComponent(AppWorkspace.Main, { scroll:!params.has("trail") && !params.has("table"), get children() { return mainContent(); } }),
       createComponent(AppWorkspace.Detail, {
         id:"record", width:params.get("width") || "md", get open() { return open(); }, onClose:params.has("fixed") ? undefined : close,
         get children() { return createComponent(DetailPanel, { get children() { return [
@@ -53,6 +68,7 @@ render(() => createComponent(AppWorkspace, {
         ]; } }); },
       }),
     ]; } }),
+    createComponent(AppWorkspace.BottomDrawer, { id:"events", get open() { return params.has("drawer"); }, height:"sm", children:"Recent events" }),
   ]; },
 }), document.getElementById("app"));
 const workspace = document.querySelector("[data-k2b-app-workspace]");
@@ -218,6 +234,33 @@ describe("floating workspace detail", () => {
       await page.close();
     }
   });
+  test("a table that fits keeps its width under the panel, gets the space after it, and lets it go on close", async () => {
+    const page = await load(1920, 1080, "table=1");
+    try {
+      const table = () =>
+        page.locator("#table").evaluate((wrap) => ({
+          width: wrap.querySelector("table")!.getBoundingClientRect().width,
+          client: wrap.clientWidth,
+          scroll: wrap.scrollWidth,
+          hold: wrap.style.getPropertyValue("--k2b-detail-trail-hold"),
+        }));
+      const before = await table();
+      expect(before.width).toBeCloseTo(before.client, 0);
+      await openRow(page);
+      const opened = await table();
+      const shape = await geometry(page);
+      // Main keeps its width, the columns keep theirs, and the panel's space follows the table.
+      expect(shape.main.width).toBeCloseTo(shape.content.width, 1);
+      expect(opened.width).toBeCloseTo(before.width, 0);
+      expect(opened.scroll - opened.client).toBeCloseTo(shape.detail.width + 16, 0);
+      await page.locator("#close").click();
+      await settlePanel(page);
+      // At the start of the scroller, nothing can move, so the space goes at once.
+      expect(await table()).toEqual(before);
+    } finally {
+      await page.close();
+    }
+  });
   for (const fixed of [false, true]) {
     test(`820×1180 touch tablet ${fixed ? "reflows a permanent panel" : "overlays a closable drawer"}`, async () => {
       const page = await load(820, 1180, fixed ? "fixed=1" : "", { hasTouch: true });
@@ -231,25 +274,38 @@ describe("floating workspace detail", () => {
       }
     });
   }
-  test("390×844: half sheet leaves Main reachable and the grabber toggles detents", async () => {
+  test("390×844: the half sheet sits on the window's bottom edge, Main's last row scrolls above it, and the grabber toggles detents", async () => {
     const page = await load(390, 844);
     try {
-      await openRow(page);
+      await openRow(page, "row-30");
       expect(await page.evaluate(() => document.activeElement?.textContent)).toBe("Selected record");
       const half = await geometry(page);
-      expect(half.detail.height).toBeCloseTo(half.content.height * 0.55, 1);
-      expect(half.main.height).toBeCloseTo(half.content.height * 0.45, 1);
-      expect(half).toMatchObject({ full: null, maxHeight: "45%", pressed: "false" });
+      expect(half.detail.bottom).toBeCloseTo(844, 1);
+      expect(half.detail.height).toBeCloseTo(844 * 0.55, 1);
+      expect(half).toMatchObject({ full: null, pressed: "false" });
+      // Opening reveals the tapped row above the sheet.
+      await page.waitForFunction(
+        () =>
+          document.getElementById("row-30")!.getBoundingClientRect().bottom <=
+          document.querySelector(".k2b-app-workspace__detail")!.getBoundingClientRect().top,
+      );
+      const last = await page.evaluate(() => {
+        const main = document.querySelector(".k2b-app-workspace__main")!;
+        main.scrollTop = main.scrollHeight;
+        return document.getElementById("row-39")!.getBoundingClientRect().bottom;
+      });
+      expect(last).toBeLessThanOrEqual(half.detail.top);
       const grabber = page.locator(".k2b-app-workspace__detail-grabber");
       await grabber.click();
       await settlePanel(page);
       const full = await geometry(page);
       // At full height Main keeps its size under the sheet.
-      expect(full).toMatchObject({ full: "full", maxHeight: "none", pressed: "true" });
-      expect(full.detail.height).toBeCloseTo(full.content.height - 8, 1);
+      expect(full).toMatchObject({ full: "full", pressed: "true" });
+      expect(full.main.height).toBeCloseTo(half.main.height, 1);
+      expect(full.detail.height).toBeCloseTo(844 - 8, 1);
       await grabber.click();
       await settlePanel(page);
-      expect((await geometry(page)).maxHeight).toBe("45%");
+      expect((await geometry(page)).detail.height).toBeCloseTo(844 * 0.55, 1);
       const box = await grabber.boundingBox();
       await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
       await page.mouse.down();
@@ -259,6 +315,29 @@ describe("floating workspace detail", () => {
       await settlePanel(page);
       expect(await page.locator("body").getAttribute("data-closes")).toBe("1");
       expect(await page.locator(".k2b-app-workspace__detail").getAttribute("hidden")).not.toBeNull();
+    } finally {
+      await page.close();
+    }
+  });
+  test("390×844: a frame that contains layout keeps the sheet inside itself", async () => {
+    const page = await load(390, 844, "frame=1&initial=1");
+    try {
+      const frame = await page.locator("#app").evaluate((element) => element.getBoundingClientRect().toJSON() as DOMRect);
+      const sheet = (await geometry(page)).detail;
+      expect(sheet.bottom).toBeCloseTo(frame.bottom, 1);
+      expect(sheet.height).toBeCloseTo(480 * 0.55, 1);
+      await page.locator(".k2b-app-workspace__detail-grabber").click();
+      await settlePanel(page);
+      expect((await geometry(page)).detail.height).toBeCloseTo(480 - 8, 1);
+    } finally {
+      await page.close();
+    }
+  });
+  test("390×844: Main above an open bottom drawer in a small frame keeps its reserved height beside the sheet", async () => {
+    const page = await load(390, 844, "frame=1&trail=1&drawer=1&initial=1");
+    try {
+      const board = await page.locator("#board").evaluate((element) => element.getBoundingClientRect().height);
+      expect(board).toBeGreaterThan(100);
     } finally {
       await page.close();
     }
@@ -351,6 +430,17 @@ describe("floating workspace detail", () => {
         element.append(scroller);
         scroller.scrollLeft = 100;
       });
+      // A slider owns its horizontal drag.
+      await drawer.locator("#detail-text").evaluate((element) => {
+        const slider = document.createElement("input");
+        slider.id = "slider";
+        slider.type = "range";
+        element.append(slider);
+      });
+      await touch(drawer, "touchstart", 400, 100, "#slider");
+      await touch(drawer, "touchmove", 520, 100, "#slider");
+      await touch(drawer, "touchend", 520, 100, "#slider");
+      expect(await drawer.locator("body").getAttribute("data-closes")).toBeNull();
       await touch(drawer, "touchstart", 400, 100, "#horizontal-content");
       await touch(drawer, "touchmove", 500, 100, "#horizontal-content");
       await touch(drawer, "touchend", 500, 100, "#horizontal-content");

@@ -806,7 +806,9 @@ describe("@k2b/ui complete advanced layout migrations", () => {
       expect(rule(".k2b-app-workspace__main-pane[data-surface=navigation]")).toContain("background:var(--k2b-surface-muted)");
       expect(rule(".k2b-app-workspace__main-pane[data-surface=navigation]")).toContain("padding:.5rem");
       expect(rule(".k2b-app-workspace__detail")).toContain("background:var(--k2b-surface-elevated)");
-      expect(rule(".k2b-app-workspace__detail")).toContain("position:absolute");
+      // A phone sheet belongs to the window; from 48 rem the panel floats inside the content area.
+      expect(rule(".k2b-app-workspace__detail")).toContain("position:fixed");
+      expect(css).toContain(".k2b-ui .k2b-app-workspace__detail{position:absolute;");
       expect(rule(".k2b-app-workspace__drawer")).toContain("background:var(--k2b-surface-muted)");
     });
 

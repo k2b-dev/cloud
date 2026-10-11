@@ -58,37 +58,54 @@ controls visibility, so local state and SSR DOM identity remain stable.
 
 Pass `onClose` when the application can close or deselect the detail. Escape,
 a downward phone drag, and a rightward touch-tablet swipe call the same action
-as the panel’s close button. Without it, the panel stays open and reflows Main
-on touch tablets too. `onStep` receives `1` for J and `-1` for K; the application
-chooses the next selection. Neither callback owns the `open` state.
+as the panel’s close button. A panel rendered on the server only cannot pass a
+function: mark its own close button or link with `data-workspace-detail-close`
+instead, and the same gestures click it. Without either, the panel stays open
+and reflows Main on touch tablets too. `onStep` receives `1` for J and `-1`
+for K; the application chooses the next selection. Neither callback owns the
+`open` state.
 
-Below 48 rem, a displayed half sheet leaves Main reachable above it. Tap the
-grabber to switch between half and full height. Drag the grabber or header up
-to expand, or down to return to half height; pulling down from half closes a
-closable sheet. Pull downward from content at the top of its scrollport to
-lower the sheet. An open panel shares the height with Main even when the
-application hides it with its own CSS, so keep `open` false while the panel
-should not show.
+Below 48 rem, the half sheet covers the lower 55% of the window, on pages that
+grow with their content as well as on full pages. A frame that embeds a
+workspace in a longer page, such as a demo, sets `contain: layout` to keep the
+sheet inside the frame. Main ends with the same
+height of space, so its last row scrolls above the sheet, and opening scrolls
+the selected row above it. A Main with a height of its own keeps the 240 px
+the main area reserves. Tap the grabber to switch between half and full
+height. Drag the grabber or header up to expand, or down to return to half
+height; pulling down from half closes a closable sheet. Pull downward from
+content at the top of its scrollport to lower the sheet. A drag or swipe never
+starts on a field, slider, editable text, canvas, draggable element, or an
+element whose `touch-action` keeps that direction for itself. An open panel
+adds that space to Main even when the application hides it with its own CSS,
+so keep `open` false while the panel should not show.
 
 For a board, wide table, or week calendar, add `k2b-detail-trail` to its
 horizontal scroll container inside Main. Main then keeps its full width, and
 the scroller gains trailing space beside the panel. Use
-`scrollClass="k2b-detail-trail"` on DataTable. Pad fixed rows above the surface
-with `padding-inline-end: var(--k2b-detail-space, 0px)`, adding any existing
-inset. The variable is zero when Main reflows. Closing retains only trailing
-space still in view and releases it as the person scrolls back.
+`scrollClass="k2b-detail-trail"` on DataTable; a table that fits keeps its
+width and the space follows it. Pad fixed rows in Main, such as toolbars,
+filters, error rows, and pagination, with
+`padding-inline-end: var(--k2b-detail-space, 0px)`, adding any existing inset.
+The variable is zero when Main reflows. Closing retains only trailing space
+still in view and releases it as the person scrolls back.
 
 Escape closes a closable panel. J and K step a steppable panel. F6 switches
 focus between Main’s remembered item and the panel title, with or without
-Shift. These shortcuts leave text entry, menus, dialogs, popovers, and
-expanded controls to their own keyboard behavior. An overlay sidebar handles
-Escape first.
+Shift. These shortcuts leave text entry, menus, dialogs, popovers, and popup
+buttons to their own keyboard behavior. They run after the page’s own
+keyboard handlers: a handler that uses one of these keys for local state, such
+as cancelling a crop, calls `preventDefault()` and the panel stays open. An
+overlay sidebar handles Escape first.
 
-Opening from Enter or Space moves focus to the title. A phone sheet also
-focuses its title after a pointer selection; wider pointer opens keep focus
-on the item. The controller keeps the selected row at its vertical position
-through reflow and reveals a freshly selected item beside a trail panel.
-Closing returns focus to the remembered item when focus was in the panel.
+Opening from Enter or Space moves focus to the title, also when the title
+appears only after the content loads. Enter or Space on another item while the
+panel is open moves focus to the new title. A phone sheet also focuses its
+title after a pointer selection; wider pointer opens keep focus on the item.
+Focus stays where it is when the person moves it first. The controller keeps
+the selected row at its vertical position through reflow and reveals a freshly
+selected item beside a trail panel. Closing returns focus to the remembered
+item when focus was in the panel.
 
 The first server-rendered or newly inserted panel appears without motion.
 After two animation frames, later opens and closes use the shared transitions.
@@ -102,7 +119,7 @@ follows the viewport width:
 
 | Width | Navigation | Work area |
 | --- | --- | --- |
-| Below 48 rem (768 px) | Hidden; the host renders its mobile navigation | One pane at a time; Detail is a bottom sheet at 55% height, leaving Main at 45%; full height covers Main |
+| Below 48 rem (768 px) | Hidden; the host renders its mobile navigation | One pane at a time; Detail is a sheet over the lower 55% of the window, and Main scrolls its rows above it; full height covers Main |
 | 48 to 64 rem (768 to 1023 px) | An overlay that a button in the head opens; a `mobile="stacked"` sidebar stays above the content | Panes side by side; Detail floats with reflow, or overlays Main as a closable drawer on coarse pointers |
 | From 64 rem (1024 px) | A column beside the work area | Panes side by side; Detail floats 8 px inside Content and Main makes room |
 | From 96 rem (1536 px) | Same navigation | Same workspace geometry inside the host’s app card |

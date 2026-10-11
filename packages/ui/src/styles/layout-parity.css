@@ -1044,26 +1044,31 @@
 
 /* The detail floats over the content area instead of taking a track of its
    own, and it is never modal: no scrim, nothing inert. Below 48 rem it is a
-   sheet from the bottom edge. From 48 rem it floats 0.5 rem inside the
-   content area's top, right, and bottom edges, and `Main` makes room beside
-   it while it keeps 20 rem; a horizontal surface marked `k2b-detail-trail`
-   keeps running under it instead. On a touch screen between 48 and 64 rem, a
-   panel the person can close is a drawer over `Main`. Its width fits like a
-   pane's: the preferred width while `Main` keeps 20 rem and both gaps, down
-   to the minimum. */
+   sheet from the window's bottom edge: a page that is not `fullPage` grows
+   with its content on a phone, so the content area's own edge can lie far
+   below the window. From 48 rem it floats 0.5 rem inside the content area's
+   top, right, and bottom edges, and `Main` makes room beside it while it
+   keeps 20 rem; a horizontal surface marked `k2b-detail-trail` keeps running
+   under it instead. On a touch screen between 48 and 64 rem, a panel the
+   person can close is a drawer over `Main`. Its width fits like a pane's: the
+   preferred width while `Main` keeps 20 rem and both gaps, down to the
+   minimum. */
 .k2b-ui .k2b-app-workspace__detail {
   --k2b-detail-panel-scroll-inset: 1rem;
   --k2b-workspace-detail-fit: max(
     var(--k2b-workspace-panel-min),
     min(var(--k2b-workspace-panel-size), var(--k2b-workspace-panel-max), 100% - 21rem)
   );
-  position: absolute;
+  position: fixed;
   z-index: 20;
   right: 0;
   bottom: 0;
   left: 0;
   display: flex;
-  height: var(--k2b-workspace-detail-sheet-height, 55%);
+  /* The small viewport keeps the half sheet still while a phone browser's
+     toolbars collapse and expand during a scroll. A host frame that contains
+     layout, such as a documentation demo, keeps the sheet inside itself. */
+  height: var(--k2b-workspace-detail-sheet-height, min(55svh, 55%));
   min-width: 0;
   min-height: 0;
   flex-direction: column;
@@ -1084,7 +1089,7 @@
 }
 
 .k2b-ui .k2b-app-workspace__detail[data-workspace-detail-sheet="full"] {
-  height: var(--k2b-workspace-detail-sheet-height, calc(100% - 0.5rem));
+  height: var(--k2b-workspace-detail-sheet-height, min(100dvh - 0.5rem - env(safe-area-inset-top, 0px), 100% - 0.5rem));
 }
 
 /* A closing panel stays painted while it leaves, but takes no input. */
@@ -1150,34 +1155,57 @@
   scrollbar-width: thin;
 }
 
-/* While the sheet is at half height, `Main` ends where the sheet begins, so
-   the selected row and the rest of the list stay reachable above it. At full
-   height `Main` keeps its size under the sheet. */
 @media (max-width: 47.999rem) {
   /* The header drags the sheet, so the browser must not claim a pan first. */
   .k2b-ui .k2b-app-workspace__detail .k2b-detail-panel__header {
     touch-action: none;
   }
 
+  /* `Main` ends with the half sheet's height of space, so its last row
+     scrolls above the sheet, whether `Main` scrolls itself or the page grows
+     with it. Its inner scrollers end where the sheet begins. The space stays
+     at full height, so nothing under the sheet moves. A `Main` with a height
+     of its own, above an open bottom drawer or in a small frame, keeps the
+     240 px the main area always reserves. */
   .k2b-ui
     .k2b-app-workspace__content:has(
-      > .k2b-app-workspace__detail:not([hidden], [data-workspace-detail-sheet="full"]),
-      > :is(solid-island, solid-client) > .k2b-app-workspace__detail:not([hidden], [data-workspace-detail-sheet="full"])
+      > .k2b-app-workspace__detail:not([hidden]),
+      > :is(solid-island, solid-client) > .k2b-app-workspace__detail:not([hidden])
+    )
+    > .k2b-app-workspace__main::after,
+  .k2b-ui
+    .k2b-app-workspace__content:has(
+      > .k2b-app-workspace__detail:not([hidden]),
+      > :is(solid-island, solid-client) > .k2b-app-workspace__detail:not([hidden])
+    )
+    > :is(solid-island, solid-client)
+    > .k2b-app-workspace__main::after {
+    content: "";
+    height: 55svh;
+    max-height: calc(100% - 15rem);
+    flex: none;
+  }
+
+  .k2b-ui
+    .k2b-app-workspace__content:has(
+      > .k2b-app-workspace__detail:not([hidden]),
+      > :is(solid-island, solid-client) > .k2b-app-workspace__detail:not([hidden])
     )
     > .k2b-app-workspace__main,
   .k2b-ui
     .k2b-app-workspace__content:has(
-      > .k2b-app-workspace__detail:not([hidden], [data-workspace-detail-sheet="full"]),
-      > :is(solid-island, solid-client) > .k2b-app-workspace__detail:not([hidden], [data-workspace-detail-sheet="full"])
+      > .k2b-app-workspace__detail:not([hidden]),
+      > :is(solid-island, solid-client) > .k2b-app-workspace__detail:not([hidden])
     )
     > :is(solid-island, solid-client)
     > .k2b-app-workspace__main {
-    max-height: 45%;
+    scroll-padding-bottom: 55svh;
   }
 }
 
 @media (min-width: 48rem) {
   .k2b-ui .k2b-app-workspace__detail {
+    position: absolute;
     top: 0.5rem;
     right: 0.5rem;
     bottom: 0.5rem;
@@ -1261,18 +1289,24 @@
 
 /* A touch tablet in portrait: a panel the person can close is a drawer from
    the right over `Main`, which keeps its width. A board or table under it
-   still gets the space at its end. */
+   still gets the space at its end. A panel is closable with `onClose` or
+   with its own close control marked `data-workspace-detail-close`, which a
+   server-rendered panel carries from the first paint. */
 @media (min-width: 48rem) and (max-width: 63.999rem) and (pointer: coarse) {
   .k2b-ui
     .k2b-app-workspace__content:has(
       > .k2b-app-workspace__detail[data-workspace-detail-closable]:not([hidden]),
-      > :is(solid-island, solid-client) > .k2b-app-workspace__detail[data-workspace-detail-closable]:not([hidden])
+      > .k2b-app-workspace__detail:not([hidden]) [data-workspace-detail-close],
+      > :is(solid-island, solid-client) > .k2b-app-workspace__detail[data-workspace-detail-closable]:not([hidden]),
+      > :is(solid-island, solid-client) > .k2b-app-workspace__detail:not([hidden]) [data-workspace-detail-close]
     )
     > .k2b-app-workspace__main,
   .k2b-ui
     .k2b-app-workspace__content:has(
       > .k2b-app-workspace__detail[data-workspace-detail-closable]:not([hidden]),
-      > :is(solid-island, solid-client) > .k2b-app-workspace__detail[data-workspace-detail-closable]:not([hidden])
+      > .k2b-app-workspace__detail:not([hidden]) [data-workspace-detail-close],
+      > :is(solid-island, solid-client) > .k2b-app-workspace__detail[data-workspace-detail-closable]:not([hidden]),
+      > :is(solid-island, solid-client) > .k2b-app-workspace__detail:not([hidden]) [data-workspace-detail-close]
     )
     > :is(solid-island, solid-client)
     > .k2b-app-workspace__main {
@@ -1282,12 +1316,18 @@
   .k2b-ui
     .k2b-app-workspace__content:has(
       > .k2b-app-workspace__detail[data-workspace-detail-closable]:not([hidden]),
-      > :is(solid-island, solid-client) > .k2b-app-workspace__detail[data-workspace-detail-closable]:not([hidden])
+      > .k2b-app-workspace__detail:not([hidden]) [data-workspace-detail-close],
+      > :is(solid-island, solid-client) > .k2b-app-workspace__detail[data-workspace-detail-closable]:not([hidden]),
+      > :is(solid-island, solid-client) > .k2b-app-workspace__detail:not([hidden]) [data-workspace-detail-close]
     ) {
     --k2b-detail-space: calc(max(var(--k2b-detail-min), min(var(--k2b-detail-size), var(--k2b-detail-max))) + 1rem);
   }
 
-  .k2b-ui .k2b-app-workspace__resize[data-app-workspace-resize="detail"]:has(+ [data-workspace-detail-closable]) {
+  .k2b-ui
+    .k2b-app-workspace__resize[data-app-workspace-resize="detail"]:has(
+      + [data-workspace-detail-closable],
+      + .k2b-app-workspace__detail [data-workspace-detail-close]
+    ) {
     display: none;
   }
 }
@@ -1299,6 +1339,13 @@
 .k2b-ui .k2b-detail-trail {
   padding-inline-end: max(var(--k2b-detail-space, 0px), var(--k2b-detail-trail-hold, 0px));
   scroll-padding-inline-end: var(--k2b-detail-space, 0px);
+}
+
+/* A data table fills its scroller, and the padding would narrow it. It keeps
+   the width it has without the panel, so a table that fits keeps its
+   columns and the space follows it. */
+.k2b-ui .k2b-detail-trail > .k2b-data-table {
+  width: calc(100% + max(var(--k2b-detail-space, 0px), var(--k2b-detail-trail-hold, 0px)));
 }
 
 /* Motion: the panel slides in 0.75 rem and fades in 140 ms and leaves in
@@ -1351,13 +1398,17 @@
 }
 
 @media (min-width: 48rem) and (max-width: 63.999rem) and (pointer: coarse) and (prefers-reduced-motion: no-preference) {
-  .k2b-ui .k2b-app-workspace[data-workspace-motion] .k2b-app-workspace__detail[data-workspace-detail-closable][hidden] {
+  .k2b-ui
+    .k2b-app-workspace[data-workspace-motion]
+    .k2b-app-workspace__detail:is([data-workspace-detail-closable], :has([data-workspace-detail-close]))[hidden] {
     opacity: 1;
     transform: translateX(calc(100% + 0.5rem));
   }
 
   @starting-style {
-    .k2b-ui .k2b-app-workspace[data-workspace-motion] .k2b-app-workspace__detail[data-workspace-detail-closable]:not([hidden]) {
+    .k2b-ui
+      .k2b-app-workspace[data-workspace-motion]
+      .k2b-app-workspace__detail:is([data-workspace-detail-closable], :has([data-workspace-detail-close])):not([hidden]) {
       opacity: 1;
       transform: translateX(calc(100% + 0.5rem));
     }

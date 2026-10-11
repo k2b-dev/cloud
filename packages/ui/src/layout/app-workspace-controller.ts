@@ -1,5 +1,6 @@
 import { suppressTextSelection } from "../internal/text-selection";
 import {
+  APP_WORKSPACE_DETAIL_DEFAULT,
   APP_WORKSPACE_DETAIL_MAX,
   APP_WORKSPACE_DETAIL_MIN,
   APP_WORKSPACE_DRAWER_MAX,
@@ -64,6 +65,9 @@ const FOCUSABLE_SELECTOR = [
   "textarea:not([disabled])",
   "[tabindex]:not([tabindex='-1'])",
 ].join(",");
+/** Text entry, menus, dialogs, and open popups keep their own keys. */
+const KEY_OWNER_SELECTOR =
+  "input, textarea, select, [contenteditable]:not([contenteditable='false']), [role='textbox'], [role='combobox'], [role='searchbox'], [role='spinbutton'], [role='menu'], [role='listbox'], [role='dialog'], dialog, [aria-haspopup]:not([aria-haspopup='false'])[aria-expanded='true']";
 const LABEL_SELECTOR = ".k2b-app-workspace__sidebar-item-label[data-marquee='true']";
 const LABEL_TEXT_SELECTOR = ".k2b-app-workspace__sidebar-item-label-text";
 const ITEM_SELECTOR = ".k2b-app-workspace__sidebar-item";
@@ -340,6 +344,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   const eventRoot = options.root ?? document;
   // A document has no owner document; an element root listens on its own.
   const ownerDocument = eventRoot.ownerDocument ?? document;
+  const ownerWindow = ownerDocument.defaultView ?? window;
   let overlay: OpenOverlay | null = null;
   const compact = typeof window.matchMedia === "function" ? window.matchMedia(COMPACT_QUERY) : null;
   // A server-rendered head names the sidebar before the sidebar renders; the button learns its real id now.
@@ -470,10 +475,16 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   const motionFrames = new Map<HTMLElement, number>();
   const motionRoots = new Set<HTMLElement>();
   const revealFrames = new Map<HTMLElement, number>();
-  const contentElement = (aside: HTMLElement) => aside.closest<HTMLElement>(".k2b-app-workspace__content");
   const openDetails = (root: HTMLElement) => rootElements(root, detailSelector).filter((aside) => !aside.hidden);
-  const closable = (aside: HTMLElement) => aside.hasAttribute("data-workspace-detail-closable");
-  const requestClose = (aside: HTMLElement) => aside.dispatchEvent(new CustomEvent(APP_WORKSPACE_DETAIL_CLOSE_EVENT));
+  const closeControl = (aside: HTMLElement) =>
+    Array.from(aside.querySelectorAll<HTMLElement>("[data-workspace-detail-close]")).find(
+      (control) => control.closest(detailSelector) === aside,
+    );
+  const closable = (aside: HTMLElement) => aside.hasAttribute("data-workspace-detail-closable") || Boolean(closeControl(aside));
+  const requestClose = (aside: HTMLElement) => {
+    if (aside.hasAttribute("data-workspace-detail-closable")) aside.dispatchEvent(new CustomEvent(APP_WORKSPACE_DETAIL_CLOSE_EVENT));
+    else closeControl(aside)?.click();
+  };
   const verticalScroller = (target: Element, boundary: HTMLElement) => {
     for (let element: Element | null = target; element && boundary.contains(element); element = element.parentElement) {
       if (
@@ -510,6 +521,11 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     };
     refreshItem(snapshot);
     remembered.set(root, snapshot);
+    // Enter in an editor or a field types; only an item that chooses something moves on to its title.
+    if (event instanceof KeyboardEvent && !target.closest(KEY_OWNER_SELECTOR)) {
+      const aside = openDetails(root).find(isVisible);
+      if (aside) requestTitle(aside, true);
+    }
   };
   const onDetailFocusIn = (event: Event) => {
     const target = eventElement(event);
@@ -519,17 +535,64 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     const previous = remembered.get(root);
     // Pointer focus follows pointerdown; keeping that snapshot also keeps the
     // interaction that opened the panel rather than treating focus as a new one.
-    if (previous?.item.contains(target)) return;
+    if (previous?.item.contains(target)) {
+      const main = mainElement(root);
+      if (target !== previous.item && target instanceof HTMLElement && main) {
+        previous.item = target;
+        previous.scroller = verticalScroller(target, main);
+        refreshItem(previous);
+      }
+      return;
+    }
     rememberInteraction(event);
   };
+  const titleIn = (aside: HTMLElement) => aside.querySelector<HTMLElement>("h1, h2, h3, [role='heading']");
+  let focusingTitle: HTMLElement | null = null;
   const focusTitle = (aside: HTMLElement) => {
-    const title = aside.querySelector<HTMLElement>("h1, h2, h3, [role='heading']");
-    if (!title) return;
+    const title = titleIn(aside);
+    if (!title) return false;
     if (!title.matches(FOCUSABLE_SELECTOR) && !title.hasAttribute("tabindex")) {
       title.tabIndex = -1;
       titleTabIndices.add(title);
     }
-    title.focus({ preventScroll: true });
+    focusingTitle = title;
+    try {
+      title.focus({ preventScroll: true });
+    } finally {
+      focusingTitle = null;
+    }
+    return true;
+  };
+  let pendingTitle: { aside: HTMLElement; observer: MutationObserver } | null = null;
+  const cancelTitle = () => {
+    pendingTitle?.observer.disconnect();
+    pendingTitle = null;
+  };
+  const cancelTitleOnInteraction = (event: Event) => {
+    if (event.type !== "focusin" || event.target !== focusingTitle) cancelTitle();
+  };
+  const requestTitle = (aside: HTMLElement, waitForChange = false) => {
+    cancelTitle();
+    if (aside.hidden || !aside.isConnected) return;
+    if (!waitForChange && focusTitle(aside)) return;
+    const previousTitle = titleIn(aside);
+    const previousText = previousTitle?.textContent;
+    // Loading fallbacks and selection changes can produce their heading after
+    // the opening interaction. A later user action always takes precedence.
+    const observer = new MutationObserver(() => {
+      if (aside.hidden || !aside.isConnected) {
+        cancelTitle();
+        return;
+      }
+      const title = titleIn(aside);
+      if (!title || (waitForChange && title === previousTitle && title.textContent === previousText)) return;
+      cancelTitle();
+      focusTitle(aside);
+    });
+    pendingTitle = { aside, observer };
+    observer.observe(aside, { childList: true, subtree: true, characterData: true });
+    // An element-scoped controller cannot see its own root leave the document.
+    observer.observe(ownerDocument, { childList: true, subtree: true });
   };
   const setDetent = (aside: HTMLElement, full: boolean) => {
     touchedDetails.add(aside);
@@ -558,7 +621,10 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   };
   const shrinkHold = (trail: HTMLElement) => {
     const hold = Number.parseFloat(trail.style.getPropertyValue("--k2b-detail-trail-hold")) || 0;
-    const visible = Math.min(hold, Math.max(0, Math.ceil(trail.scrollLeft + trail.clientWidth - (trail.scrollWidth - hold))));
+    const visible =
+      trail.scrollWidth <= trail.clientWidth || trail.scrollLeft < 1
+        ? 0
+        : Math.min(hold, Math.max(0, Math.ceil(trail.scrollLeft + trail.clientWidth - (trail.scrollWidth - hold))));
     if (visible > 0) trail.style.setProperty("--k2b-detail-trail-hold", `${visible}px`);
     else {
       trail.style.removeProperty("--k2b-detail-trail-hold");
@@ -588,6 +654,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     const followedInteraction = snapshot?.fresh ?? false;
     if (snapshot) snapshot.fresh = false;
     if (aside.hidden) {
+      if (pendingTitle?.aside === aside) cancelTitle();
       const trails = trailsIn(root);
       // Restore all padding before the first layout read, or the browser can
       // clamp scrollLeft as soon as the open panel's trailing space disappears.
@@ -625,23 +692,25 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
             snapshot.item.isConnected &&
             mainElement(root)?.contains(snapshot.item) &&
             snapshot.item.closest(ROOT_SELECTOR) === root
-          )
-            snapshot.item.scrollIntoView({ block: "nearest", inline: "nearest", behavior: reducedMotion?.matches ? "auto" : "smooth" });
+          ) {
+            const behavior = reducedMotion?.matches ? "auto" : "smooth";
+            if (phone?.matches) {
+              const sheetTop = ownerWindow.innerHeight - aside.offsetHeight;
+              const overlap = snapshot.item.getBoundingClientRect().bottom - sheetTop + 8;
+              const main = mainElement(root);
+              if (overlap > 0 && main)
+                (verticalScroller(snapshot.item, main) ?? ownerDocument.scrollingElement)?.scrollBy({ top: overlap, behavior });
+            } else snapshot.item.scrollIntoView({ block: "nearest", inline: "nearest", behavior });
+          }
         }),
       );
-      if (snapshot.interaction === "keyboard" || phone?.matches) focusTitle(aside);
+      if (snapshot.interaction === "keyboard" || phone?.matches) requestTitle(aside);
     }
   };
   const onDetailKeyDown = (event: KeyboardEvent) => {
     if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
     const target = eventElement(event);
-    if (
-      !target ||
-      target.closest(
-        "input, textarea, select, [contenteditable]:not([contenteditable='false']), [role='textbox'], [role='combobox'], [role='searchbox'], [role='spinbutton'], [role='menu'], [role='listbox'], [role='dialog'], dialog, [aria-expanded='true']",
-      )
-    )
-      return;
+    if (!target || target.closest(KEY_OWNER_SELECTOR)) return;
     if (ownerDocument.querySelector("dialog[open], [aria-modal='true']")) return;
     try {
       if (ownerDocument.querySelector(":popover-open")) return;
@@ -701,7 +770,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     touchedDetails.add(drag.aside);
     if (drag.source === "drawer") drag.aside.style.transform = `translateX(${Math.max(0, drag.dx)}px)`;
     else {
-      const height = contentElement(drag.aside)?.getBoundingClientRect().height ?? 0;
+      const height = ownerWindow.innerHeight;
       drag.aside.style.setProperty(
         "--k2b-workspace-detail-sheet-height",
         `${clamp(drag.startHeight - drag.dy, 0, Math.max(0, height - 8))}px`,
@@ -803,6 +872,21 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     }
     setDetent(aside, aside.dataset.workspaceDetailSheet !== "full");
   };
+  const ownsTouchGesture = (target: Element, aside: HTMLElement, source: "sheet" | "drawer") => {
+    for (let element: Element | null = target; element && element !== aside; element = element.parentElement) {
+      if (
+        element.matches(
+          "input, textarea, select, [contenteditable]:not([contenteditable='false']), [role='slider'], [draggable='true'], canvas",
+        )
+      )
+        return true;
+      const action = getComputedStyle(element).getPropertyValue("touch-action");
+      const horizontal = /\bpan-(x|left|right)\b/.test(action);
+      const vertical = /\bpan-(y|up|down)\b/.test(action);
+      if (action.trim() === "none" || (source === "drawer" ? vertical && !horizontal : horizontal && !vertical)) return true;
+    }
+    return false;
+  };
   const onDetailTouchStart = (event: Event) => {
     if (!(event instanceof TouchEvent) || event.touches.length !== 1) {
       if (detailDrag && detailDrag.source !== "pointer") finishDetailDrag(true);
@@ -814,10 +898,13 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     const touch = event.touches[0];
     const root = aside?.closest<HTMLElement>(ROOT_SELECTOR);
     if (!target || !aside || !root || aside.hidden || !touch || !observedRoots.has(root) || target.closest(ROOT_SELECTOR) !== root) return;
-    if (phone?.matches && (verticalScroller(target, aside) ?? aside).scrollTop <= 0)
-      beginDetailDrag(aside, target, "sheet", touch.clientX, touch.clientY, touch.identifier);
-    else if (touchDrawer?.matches && closable(aside))
-      beginDetailDrag(aside, target, "drawer", touch.clientX, touch.clientY, touch.identifier);
+    if (phone?.matches && (verticalScroller(target, aside) ?? aside).scrollTop <= 0) {
+      if (!ownsTouchGesture(target, aside, "sheet"))
+        beginDetailDrag(aside, target, "sheet", touch.clientX, touch.clientY, touch.identifier);
+    } else if (touchDrawer?.matches && closable(aside)) {
+      if (!ownsTouchGesture(target, aside, "drawer"))
+        beginDetailDrag(aside, target, "drawer", touch.clientX, touch.clientY, touch.identifier);
+    }
     if (detailDrag) claimedDetailGestures.add(event);
   };
   const onDetailTouchMove = (event: Event) => {
@@ -883,8 +970,12 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     const widths = { ...layoutState.detailWidths };
     delete widths[panelId(handle)];
     layoutState = { ...layoutState, detailWidths: widths };
-    root.style.removeProperty(appWorkspacePanelVariable("detail", panelId(handle)));
+    const variable = appWorkspacePanelVariable("detail", panelId(handle));
+    root.style.removeProperty(variable);
+    if (getComputedStyle(root).getPropertyValue(variable).trim())
+      root.style.setProperty(variable, `${numberData(handle, "workspaceDefaultSize", APP_WORKSPACE_DETAIL_DEFAULT)}px`);
     updateHandleValue(root, handle, "detail", currentSize(root, handle, "detail"));
+    rememberTrailPadding(root);
     options.writeState?.(layoutState);
   };
 
@@ -962,6 +1053,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
         finished.kind === "pane" ? finished.liveSize : applySize(finished.root, finished.handle, finished.kind, finished.liveSize);
       persistSize(finished.handle, finished.kind, size);
       if (finished.kind !== "drawer") reconcilePanes(finished.root, layoutState);
+      if (finished.kind === "detail") rememberTrailPadding(finished.root);
     }
     if (finished.handle.hasPointerCapture?.(finished.pointerId)) finished.handle.releasePointerCapture(finished.pointerId);
     finished.releaseTextSelection();
@@ -1033,6 +1125,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     event.preventDefault();
     persistSize(handle, kind, applySize(root, handle, kind, requested));
     if (kind === "sidebar" || kind === "detail") reconcilePanes(root, layoutState);
+    if (kind === "detail") rememberTrailPadding(root);
   };
 
   const allRoots = () => {
@@ -1086,6 +1179,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
         });
       reconcilePanes(root, layoutState, active?.root === root ? active : null);
     });
+    heldTrails.forEach(shrinkHold);
   };
   /**
    * A handle's limits move whenever anything around it does — opening a detail
@@ -1143,6 +1237,11 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
           scheduleReconcile(true);
         });
   const syncObservedRoots = () => {
+    for (const elements of [touchedDetails, titleTabIndices, motionRoots]) {
+      elements.forEach((element) => {
+        if (!element.isConnected) elements.delete(element);
+      });
+    }
     const next = new Set(allRoots());
     observedRoots.forEach((root) => {
       if (!next.has(root)) {
@@ -1192,6 +1291,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     typeof MutationObserver === "undefined"
       ? null
       : new MutationObserver((records) => {
+          if (pendingTitle && (pendingTitle.aside.hidden || !pendingTitle.aside.isConnected)) cancelTitle();
           // Hiding or removing the sidebar, or its button, ends the overlay.
           if (overlay && (overlay.sidebar.hidden || !overlay.sidebar.isConnected || !overlay.toggle.isConnected)) closeOverlay("kept");
           const details = new Set<HTMLElement>();
@@ -1219,7 +1319,10 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   eventRoot.addEventListener("pointerdown", onPointerDown as EventListener);
   eventRoot.addEventListener("click", onClick as EventListener);
   ownerDocument.addEventListener("keydown", onOverlayKeyDown);
-  ownerDocument.addEventListener("keydown", onDetailKeyDown);
+  ownerWindow.addEventListener("keydown", onDetailKeyDown);
+  ownerDocument.addEventListener("focusin", cancelTitleOnInteraction, true);
+  ownerDocument.addEventListener("pointerdown", cancelTitleOnInteraction, true);
+  ownerDocument.addEventListener("keydown", cancelTitleOnInteraction, true);
   eventRoot.addEventListener("pointerdown", rememberInteraction, true);
   eventRoot.addEventListener("keydown", rememberInteraction, true);
   eventRoot.addEventListener("focusin", onDetailFocusIn);
@@ -1249,6 +1352,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   });
   scheduleReconcile();
   return () => {
+    cancelTitle();
     stopScrollFades();
     finishDetailDrag(true);
     if (suppressedClickTimer !== null) clearTimeout(suppressedClickTimer);
@@ -1262,7 +1366,10 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
       aside.querySelector(grabberSelector)?.setAttribute("aria-pressed", "false");
     });
     titleTabIndices.forEach((title) => title.removeAttribute("tabindex"));
-    ownerDocument.removeEventListener("keydown", onDetailKeyDown);
+    ownerWindow.removeEventListener("keydown", onDetailKeyDown);
+    ownerDocument.removeEventListener("focusin", cancelTitleOnInteraction, true);
+    ownerDocument.removeEventListener("pointerdown", cancelTitleOnInteraction, true);
+    ownerDocument.removeEventListener("keydown", cancelTitleOnInteraction, true);
     eventRoot.removeEventListener("pointerdown", rememberInteraction, true);
     eventRoot.removeEventListener("keydown", rememberInteraction, true);
     eventRoot.removeEventListener("focusin", onDetailFocusIn);

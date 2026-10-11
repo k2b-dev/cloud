@@ -459,7 +459,8 @@ export default function ContactDetailPanel(props: Props) {
                           <i class="ti ti-dots" aria-hidden="true" />
                         </Dropdown.Trigger>
                       </Dropdown.Root>
-                      <IconButton label={t().closeDetailPanel} onClick={() => clearSelectedContactInUrl()}>
+                      {/* The workspace renders its detail on the server, so Escape and swipes reach this button. */}
+                      <IconButton label={t().closeDetailPanel} data-workspace-detail-close onClick={() => clearSelectedContactInUrl()}>
                         <i class="ti ti-x" aria-hidden="true" />
                       </IconButton>
                     </>

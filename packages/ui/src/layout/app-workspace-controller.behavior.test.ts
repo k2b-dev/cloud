@@ -6,7 +6,7 @@ import {
   APP_WORKSPACE_SIDEBAR_HIDE_EVENT,
   installAppWorkspaceController,
 } from "./app-workspace-controller";
-import { APP_WORKSPACE_SIDEBAR_COLLAPSED } from "./app-workspace-state";
+import { APP_WORKSPACE_DETAIL_DEFAULT, APP_WORKSPACE_SIDEBAR_COLLAPSED } from "./app-workspace-state";
 
 type Frame = (time: number) => void;
 type Rect = { height: number; width: number };
@@ -710,6 +710,13 @@ const detailKey = (target: Element, key: string, prevented = false) => {
   return event;
 };
 const rememberPointer = (item: HTMLElement) => item.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));
+const detailTouch = (target: HTMLElement, type: string, x: number, y: number) => {
+  const event = new TouchEvent(type, { bubbles: true, cancelable: true });
+  // happy-dom supplies TouchEvent but not Touch; only these coordinates are consumed.
+  Object.defineProperty(event, "touches", { value: type === "touchend" ? [] : [{ identifier: 1, clientX: x, clientY: y }] });
+  target.dispatchEvent(event);
+  return event;
+};
 
 describe("floating detail controller", () => {
   test("enables motion after two frames, including inserted roots, and cancels it on disposal", async () => {
@@ -745,6 +752,53 @@ describe("floating detail controller", () => {
     dispose();
   });
 
+  test("document application handlers registered later can consume detail keys", () => {
+    const { root, item, closed, steps } = detailWorkspace({ steppable: true });
+    const dispose = installAppWorkspaceController({ root });
+    const consume = (event: KeyboardEvent) => event.preventDefault();
+    document.addEventListener("keydown", consume);
+    for (const key of ["Escape", "j", "k", "F6"]) detailKey(item, key);
+    expect(closed).toHaveLength(0);
+    expect(steps).toHaveLength(0);
+    document.removeEventListener("keydown", consume);
+    let applicationKeys = 0;
+    const observe = () => applicationKeys++;
+    document.addEventListener("keydown", observe);
+    detailKey(item, "Escape");
+    expect(applicationKeys).toBe(1);
+    expect(closed).toHaveLength(1);
+    dispose();
+    detailKey(item, "Escape");
+    expect(closed).toHaveLength(1);
+    document.removeEventListener("keydown", observe);
+  });
+
+  test("Escape clicks a declarative close button without an onClose contract", () => {
+    const { root, aside, close, closed } = detailWorkspace({ closable: false });
+    close.dataset.workspaceDetailClose = "";
+    let clicks = 0;
+    close.addEventListener("click", () => clicks++);
+    const dispose = installAppWorkspaceController({ root });
+    expect(detailKey(aside, "Escape").defaultPrevented).toBe(true);
+    expect(clicks).toBe(1);
+    expect(closed).toHaveLength(0);
+    dispose();
+  });
+
+  test("a nested detail's declarative control does not make the outer panel closable", () => {
+    const outer = detailWorkspace({ closable: false });
+    const inner = detailWorkspace({ closable: false });
+    inner.close.dataset.workspaceDetailClose = "";
+    let clicks = 0;
+    inner.close.addEventListener("click", () => clicks++);
+    outer.aside.append(inner.root);
+    const dispose = installAppWorkspaceController({ root: outer.root });
+    expect(detailKey(outer.item, "Escape").defaultPrevented).toBe(false);
+    expect(clicks).toBe(0);
+    expect(outer.closed).toHaveLength(0);
+    dispose();
+  });
+
   test("ignores typing, menus, dialogs, expanded controls, modifiers, and prevented keys", () => {
     const { root, aside, item, closed } = detailWorkspace();
     const dispose = installAppWorkspaceController({ root });
@@ -771,10 +825,22 @@ describe("floating detail controller", () => {
     detailKey(item, "Escape");
     modal.remove();
     item.setAttribute("aria-expanded", "true");
+    item.setAttribute("aria-haspopup", "menu");
     detailKey(item, "Escape");
     item.removeAttribute("aria-expanded");
+    item.removeAttribute("aria-haspopup");
     item.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", ctrlKey: true, bubbles: true }));
     expect(closed).toHaveLength(0);
+    dispose();
+  });
+
+  test("an expanded tree row without a popup still closes the detail with Escape", () => {
+    const { root, item, closed } = detailWorkspace();
+    item.setAttribute("role", "treeitem");
+    item.setAttribute("aria-expanded", "true");
+    const dispose = installAppWorkspaceController({ root });
+    expect(detailKey(item, "Escape").defaultPrevented).toBe(true);
+    expect(closed).toHaveLength(1);
     dispose();
   });
 
@@ -836,6 +902,120 @@ describe("floating detail controller", () => {
     dispose();
   });
 
+  test("a keyboard open waits for an asynchronously rendered title", async () => {
+    const { root, item, title, aside } = detailWorkspace({ open: false });
+    title.remove();
+    const dispose = installAppWorkspaceController({ root });
+    item.focus();
+    detailKey(item, "Enter");
+    aside.hidden = false;
+    await window.happyDOM.whenAsyncComplete();
+    expect(document.activeElement === item).toBe(true);
+    aside.append(title);
+    await window.happyDOM.whenAsyncComplete();
+    expect(document.activeElement === title).toBe(true);
+    dispose();
+    expect(title.hasAttribute("tabindex")).toBe(false);
+  });
+
+  for (const action of ["focus", "pointer", "key", "hide", "disconnect", "dispose"]) {
+    test(`a pending title request yields to ${action}`, async () => {
+      const { root, item, close, title, aside } = detailWorkspace({ open: false });
+      title.remove();
+      const dispose = installAppWorkspaceController({ root });
+      item.focus();
+      detailKey(item, "Enter");
+      aside.hidden = false;
+      await window.happyDOM.whenAsyncComplete();
+      if (action === "focus") close.focus();
+      else if (action === "pointer") rememberPointer(close);
+      else if (action === "key") detailKey(item, "ArrowDown");
+      else if (action === "hide") aside.hidden = true;
+      else if (action === "disconnect") root.remove();
+      else dispose();
+      await window.happyDOM.whenAsyncComplete();
+      if (action === "disconnect") document.body.append(root);
+      aside.append(title);
+      await window.happyDOM.whenAsyncComplete();
+      expect(title.hasAttribute("tabindex")).toBe(false);
+      if (action === "focus") expect(document.activeElement === close).toBe(true);
+      if (action !== "dispose") dispose();
+    });
+  }
+
+  for (const change of ["replacement", "text"]) {
+    test(`Enter on an open panel focuses a title after ${change}`, async () => {
+      const { root, item, title, aside } = detailWorkspace();
+      const dispose = installAppWorkspaceController({ root });
+      item.focus();
+      detailKey(item, "Enter");
+      const next = change === "replacement" ? document.createElement("h2") : title;
+      if (next === title) title.firstChild!.nodeValue = "Another record";
+      else {
+        next.textContent = title.textContent;
+        title.replaceWith(next);
+      }
+      await window.happyDOM.whenAsyncComplete();
+      expect(document.activeElement === next).toBe(true);
+      expect(aside.hidden).toBe(false);
+      dispose();
+    });
+  }
+
+  test("Enter in an editor in Main types and never moves focus to a changed title", async () => {
+    const { root, main, title } = detailWorkspace();
+    const editor = document.createElement("div");
+    editor.contentEditable = "true";
+    editor.tabIndex = 0;
+    main.append(editor);
+    const dispose = installAppWorkspaceController({ root });
+    editor.focus();
+    detailKey(editor, "Enter");
+    title.firstChild!.nodeValue = "Renamed while typing";
+    await window.happyDOM.whenAsyncComplete();
+    expect(document.activeElement === editor).toBe(true);
+    dispose();
+  });
+
+  for (const key of ["Enter", " "]) {
+    test(`${key === " " ? "Space" : key} on an unchanged open panel ignores unrelated mutations`, async () => {
+      const { root, item, aside, title } = detailWorkspace();
+      const dispose = installAppWorkspaceController({ root });
+      item.focus();
+      detailKey(item, key);
+      aside.append(document.createElement("span"));
+      await window.happyDOM.whenAsyncComplete();
+      expect(document.activeElement === item).toBe(true);
+      expect(title.hasAttribute("tabindex")).toBe(false);
+      dispose();
+    });
+  }
+
+  test("roving row focus replaces the remembered wrapper for F6 and close", async () => {
+    const { root, main, aside, title } = detailWorkspace({ open: false });
+    const wrap = document.createElement("div");
+    wrap.tabIndex = 0;
+    wrap.style.overflowY = "auto";
+    const row = document.createElement("div");
+    row.tabIndex = -1;
+    wrap.append(row);
+    main.append(wrap);
+    const dispose = installAppWorkspaceController({ root });
+    rememberPointer(row);
+    row.focus();
+    aside.hidden = false;
+    await window.happyDOM.whenAsyncComplete();
+    detailKey(row, "F6");
+    expect(document.activeElement === title).toBe(true);
+    detailKey(title, "F6");
+    expect(document.activeElement === row).toBe(true);
+    title.focus();
+    aside.hidden = true;
+    await window.happyDOM.whenAsyncComplete();
+    expect(document.activeElement === row).toBe(true);
+    dispose();
+  });
+
   test("double-click resets only the selected detail width and writes the remaining state", () => {
     const { root, handle } = detailWorkspace();
     const written: unknown[] = [];
@@ -850,6 +1030,37 @@ describe("floating detail controller", () => {
     expect(root.style.getPropertyValue("--k2b-workspace-detail-record-width")).toBe("");
     expect(handle.getAttribute("aria-valuenow")).toBe("416");
     expect(written.at(-1)).toMatchObject({ detailWidths: { other: 420 } });
+    dispose();
+  });
+
+  test("double-click overrides an inherited persisted width with the default", () => {
+    const { root, handle } = detailWorkspace();
+    const parent = document.createElement("div");
+    const variable = "--k2b-workspace-detail-record-width";
+    parent.style.setProperty(variable, "500px");
+    document.body.append(parent);
+    parent.append(root);
+    // happy-dom does not inherit custom properties in computed styles.
+    const readStyle = getComputedStyle;
+    globalThis.getComputedStyle = (element) => {
+      const style = readStyle(element);
+      if (element !== root) return style;
+      const readProperty = style.getPropertyValue.bind(style);
+      style.getPropertyValue = (name) =>
+        name === variable ? root.style.getPropertyValue(name) || parent.style.getPropertyValue(name) : readProperty(name);
+      return style;
+    };
+    const written: unknown[] = [];
+    const dispose = installAppWorkspaceController({
+      root,
+      readState: () => ({ version: 2, detailWidths: { record: 500, other: 420 } }),
+      writeState: (state) => written.push(state),
+    });
+    flushFrames();
+    handle.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    expect(root.style.getPropertyValue(variable)).toBe(`${APP_WORKSPACE_DETAIL_DEFAULT}px`);
+    expect(written.at(-1)).toMatchObject({ detailWidths: { other: 420 } });
+    expect(written.at(-1)).not.toMatchObject({ detailWidths: { record: 500 } });
     dispose();
   });
 
@@ -885,9 +1096,197 @@ describe("floating detail controller", () => {
     expect(trail.style.getPropertyValue("--k2b-detail-trail-hold")).toBe("");
     dispose();
   });
+
+  for (const condition of ["no overflow", "at start"]) {
+    test(`closing releases trailing space ${condition}`, async () => {
+      const { root, main, aside } = detailWorkspace();
+      const trail = document.createElement("div");
+      trail.className = "k2b-detail-trail";
+      trail.style.paddingInlineEnd = "432px";
+      Object.defineProperties(trail, {
+        clientWidth: { value: 1000 },
+        scrollWidth: { value: condition === "no overflow" ? 1000 : 1200 },
+        scrollLeft: { value: condition === "at start" ? 0 : 200 },
+      });
+      main.append(trail);
+      const dispose = installAppWorkspaceController({ root });
+      aside.hidden = true;
+      await window.happyDOM.whenAsyncComplete();
+      expect(trail.style.getPropertyValue("--k2b-detail-trail-hold")).toBe("");
+      dispose();
+    });
+  }
+
+  test("a resize reconciles held trailing space", async () => {
+    const { root, main, aside } = detailWorkspace();
+    const trail = document.createElement("div");
+    trail.className = "k2b-detail-trail";
+    trail.style.paddingInlineEnd = "432px";
+    let width = 1000;
+    Object.defineProperties(trail, {
+      clientWidth: { get: () => width },
+      scrollWidth: { value: 2032 },
+      scrollLeft: { value: 1032 },
+    });
+    main.append(trail);
+    const dispose = installAppWorkspaceController({ root });
+    aside.hidden = true;
+    await window.happyDOM.whenAsyncComplete();
+    expect(trail.style.getPropertyValue("--k2b-detail-trail-hold")).toBe("432px");
+    width = 2032;
+    window.dispatchEvent(new window.Event("resize"));
+    flushFrames();
+    expect(trail.style.getPropertyValue("--k2b-detail-trail-hold")).toBe("");
+    dispose();
+  });
+
+  for (const resize of ["keyboard", "pointer", "reset"]) {
+    test(`a detail ${resize} resize refreshes padding held on close`, async () => {
+      const { root, main, aside, handle } = detailWorkspace();
+      const trail = document.createElement("div");
+      trail.className = "k2b-detail-trail";
+      trail.style.paddingInlineEnd = "432px";
+      Object.defineProperties(trail, {
+        clientWidth: { value: 1000 },
+        scrollWidth: { value: 2200 },
+        scrollLeft: { value: 1200 },
+      });
+      main.append(trail);
+      const dispose = installAppWorkspaceController({ root });
+      flushFrames();
+      trail.style.paddingInlineEnd = "500px";
+      if (resize === "keyboard") detailKey(handle, "ArrowLeft");
+      else if (resize === "reset") handle.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+      else {
+        handle.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerId: 4, clientX: 500 }));
+        window.dispatchEvent(new window.PointerEvent("pointermove", { pointerId: 4, clientX: 480 }));
+        window.dispatchEvent(new window.PointerEvent("pointerup", { pointerId: 4 }));
+      }
+      aside.hidden = true;
+      await window.happyDOM.whenAsyncComplete();
+      expect(trail.style.getPropertyValue("--k2b-detail-trail-hold")).toBe("500px");
+      dispose();
+    });
+  }
+
+  test("sync prunes detached detail, title, and motion cleanup references", async () => {
+    const { root, aside, item, title } = detailWorkspace({ open: false });
+    const dispose = installAppWorkspaceController({ root: document });
+    item.focus();
+    detailKey(item, "Enter");
+    aside.hidden = false;
+    await window.happyDOM.whenAsyncComplete();
+    flushFrames();
+    flushFrames();
+    root.remove();
+    const inserted = detailWorkspace().root;
+    await window.happyDOM.whenAsyncComplete();
+    aside.style.setProperty("--k2b-workspace-detail-sheet-height", "123px");
+    expect(() => dispose()).not.toThrow();
+    expect(aside.style.getPropertyValue("--k2b-workspace-detail-sheet-height")).toBe("123px");
+    expect(title.getAttribute("tabindex")).toBe("-1");
+    expect(root.dataset.workspaceMotion).toBe("true");
+    expect(inserted.dataset.workspaceMotion).toBeUndefined();
+  });
 });
 
 describe("floating detail layout changes", () => {
+  for (const mode of ["sheet", "drawer"]) {
+    test(`${mode} touch drags leave controls and owned gestures alone`, () => {
+      Object.defineProperty(window, "matchMedia", {
+        value: (query: string) => ({
+          matches: mode === "sheet" ? query === "(max-width: 47.999rem)" : query.endsWith("(pointer: coarse)"),
+          addEventListener() {},
+          removeEventListener() {},
+        }),
+      });
+      const { root, aside, closed } = detailWorkspace();
+      const range = document.createElement("input");
+      range.type = "range";
+      const owned = document.createElement("div");
+      owned.style.setProperty("touch-action", "none");
+      const text = document.createElement("span");
+      text.textContent = "Gesture-owned text";
+      owned.append(text);
+      const otherAxis = document.createElement("div");
+      otherAxis.style.setProperty("touch-action", mode === "sheet" ? "pan-left pan-right" : "pan-up pan-down");
+      const plain = document.createElement("span");
+      plain.textContent = "Plain text";
+      aside.append(range, owned, otherAxis, plain);
+      const dispose = installAppWorkspaceController({ root });
+      const swipe = (target: HTMLElement) => {
+        detailTouch(target, "touchstart", 0, 0);
+        const move = detailTouch(target, "touchmove", mode === "drawer" ? 100 : 0, mode === "sheet" ? 100 : 0);
+        flushFrames();
+        detailTouch(target, "touchend", 100, 100);
+        return move;
+      };
+      for (const target of [range, text, otherAxis]) {
+        expect(swipe(target).defaultPrevented).toBe(false);
+        expect(closed).toHaveLength(0);
+      }
+      for (const action of ["auto", "manipulation", "pan-x pan-y"]) {
+        plain.style.setProperty("touch-action", action);
+        expect(swipe(plain).defaultPrevented).toBe(true);
+      }
+      expect(closed).toHaveLength(3);
+      dispose();
+    });
+  }
+
+  test("phone sheet drag height is bounded by the viewport instead of Content", () => {
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: 800 });
+    Object.defineProperty(window, "matchMedia", {
+      value: (query: string) => ({ matches: query === "(max-width: 47.999rem)", addEventListener() {}, removeEventListener() {} }),
+    });
+    const { root, content, aside } = detailWorkspace();
+    setRect(content, { height: 200, width: 390 });
+    setRect(aside, { height: 440, width: 390 });
+    const grabber = document.createElement("button");
+    grabber.className = "k2b-app-workspace__detail-grabber";
+    aside.prepend(grabber);
+    const dispose = installAppWorkspaceController({ root });
+    grabber.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, isPrimary: true, pointerId: 9, clientY: 600 }));
+    window.dispatchEvent(new window.PointerEvent("pointermove", { pointerId: 9, clientY: -500 }));
+    flushFrames();
+    expect(aside.style.getPropertyValue("--k2b-workspace-detail-sheet-height")).toBe("792px");
+    window.dispatchEvent(new window.PointerEvent("pointercancel", { pointerId: 9 }));
+    dispose();
+  });
+
+  for (const [scrollOwner, bottom] of [
+    ["document", 500],
+    ["document", 300],
+    ["Main", 500],
+  ] as const) {
+    test(`phone reveal scrolls ${scrollOwner} only for the overlap of an item ending at ${bottom}px`, async () => {
+      Object.defineProperty(window, "innerHeight", { configurable: true, value: 800 });
+      Object.defineProperty(window, "matchMedia", {
+        value: (query: string) => ({ matches: query === "(max-width: 47.999rem)", addEventListener() {}, removeEventListener() {} }),
+      });
+      const { root, main, aside, item } = detailWorkspace({ open: false });
+      Object.defineProperty(aside, "offsetHeight", { value: 440 });
+      setRect(item, { width: 100, height: bottom });
+      const scrolls: ScrollToOptions[] = [];
+      if (scrollOwner === "Main") {
+        main.style.overflowY = "auto";
+        Object.defineProperties(main, { scrollHeight: { value: 1200 }, clientHeight: { value: 800 } });
+      }
+      const scroller = scrollOwner === "Main" ? main : document.scrollingElement;
+      Object.defineProperty(scroller, "scrollBy", { value: (options: ScrollToOptions) => scrolls.push(options) });
+      let reveals = 0;
+      item.scrollIntoView = () => reveals++;
+      const dispose = installAppWorkspaceController({ root });
+      rememberPointer(item);
+      aside.hidden = false;
+      await window.happyDOM.whenAsyncComplete();
+      flushFrames();
+      expect(scrolls).toEqual(bottom === 500 ? [{ top: 148, behavior: "smooth" }] : []);
+      expect(reveals).toBe(0);
+      dispose();
+    });
+  }
+
   test("anchors a selected row through reflow only when its scroll position was untouched", async () => {
     Object.defineProperty(window, "matchMedia", {
       value: (query: string) => ({ matches: query === "(min-width: 48rem)", addEventListener() {}, removeEventListener() {} }),

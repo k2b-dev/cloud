@@ -91,23 +91,30 @@ Their header controls exist only on phones.
 
 ## Add contextual detail
 
-Below 768 px, Detail is a bottom sheet. Its half height leaves Main reachable
-above it; the grabber switches to full height. From 768 px, it floats 8 px
-inside Content and Main makes room while keeping at least 320 px. On coarse
-pointers from 768 to 1023 px, a closable detail overlays Main as a drawer.
-The host’s app card from 1536 px surrounds this same workspace geometry.
+Below 768 px, Detail is a sheet over the lower 55% of the window, also on pages
+without `fullPage` that grow with their content. Main’s rows scroll above it;
+the grabber switches to full height. From 768 px, it floats 8 px inside
+Content and Main makes room while keeping at least 320 px. On coarse pointers
+from 768 to 1023 px, a closable detail overlays Main as a drawer. The host’s
+app card from 1536 px surrounds this same workspace geometry.
 
 In a hydrated component, pass `onClose` the panel’s existing close or deselect
-action. Escape and dismissal gestures then use that action too. Omit it for
-permanent context. The application still owns `open` and URL selection.
+action. Escape and dismissal gestures then use that action too. A detail that
+the page renders on the server only cannot pass a function; mark the panel’s
+own close button or link with `data-workspace-detail-close`, and Escape and
+the gestures click it. Omit both for permanent context. The application still
+owns `open` and URL selection. The panel’s Escape, J, K, and F6 run after the
+page’s own keyboard handlers, so a handler that uses one of these keys for
+local state calls `preventDefault()`.
 
 Add `k2b-detail-trail` to the horizontal scroll container of a board, wide
 table, or week calendar that should continue under the panel. For DataTable,
 pass `scrollClass="k2b-detail-trail"`. Main keeps its width and the scroller
 adds space at its end. Add `var(--k2b-detail-space, 0px)` to the trailing
-padding of fixed toolbar or filter rows above it. The variable is zero when
-Main reflows. See [AppWorkspace](/en/ui/layout/workspace#floating-detail) for
-focus, keyboard shortcuts, gestures, motion, and sizing.
+padding of every fixed row in Main, such as toolbars, filters, error rows, and
+pagination. The variable is zero when Main reflows. See
+[AppWorkspace](/en/ui/layout/workspace#floating-detail) for focus, keyboard
+shortcuts, gestures, motion, and sizing.
 
 ## Choose a dialog
 
