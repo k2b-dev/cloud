@@ -25,8 +25,10 @@ suggestions return snippets only, and render-snippet refuses signatures.
 
 Existing drafts move recognized signatures out of the body when opened or
 saved. Drafts that have not yet been saved again still send correctly. No
-operator action is needed beyond deploying Mail: its migration adds one
-nullable column.
+configuration change is needed; Mail adds one nullable column on its next
+start. See
+[Mail draft signatures](/en/docs/operations/deployment-requirements#mail-draft-signatures)
+for the rollout.
 
 ## Studio source writes save one file per call
 

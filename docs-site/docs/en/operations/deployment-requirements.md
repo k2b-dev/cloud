@@ -455,6 +455,20 @@ it changes are lost when Mail is updated again. After the rollout, assign two
 people to a test conversation and check that
 `cld --json mail show <conversation-id>` lists both.
 
+### Mail draft signatures
+
+Mail adds the column `mail.drafts.signature_template_id` on its next start. No
+configuration change is needed. Drafts keep their signature in that column
+instead of in the editable text; see
+[Deprecations and migrations](/en/docs/reference/deprecations-and-migrations#mail-drafts-keep-the-signature-outside-the-body).
+
+Roll the Mail replicas over in one go. A replica of the previous version does
+not read the column, so a message it sends from a draft that the new version
+saved goes out without its signature. Rolling Mail back keeps the column and
+has the same effect for drafts saved after the update. After the rollout, open
+a new message in a mailbox with a default signature and check that the preview
+shows the signature below the text.
+
 ### Mail storage for kept conversations
 
 Mail adds the table `mail.conversation_keeps` and a trigger on
