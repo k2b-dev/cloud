@@ -52,7 +52,8 @@ export default function SpaceSidebar(props: Props) {
               />
             </AppWorkspace.SidebarIconGrid>
 
-            <AppWorkspace.SidebarSection sidebarMode="expanded">
+            {/* The space's name heads its views: beside a sidebar that marks the view, the page shows no title row. */}
+            <AppWorkspace.SidebarSection sidebarMode="expanded" title={props.ctx.space.name}>
               <ViewLinks spaceId={props.ctx.space.id} query={props.ctx.query} currentView={props.ctx.currentView} variant="desktop" />
             </AppWorkspace.SidebarSection>
           </div>
