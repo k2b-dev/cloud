@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.31.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.30.0...npm-cloud-v0.31.0) (2026-10-11)
+
+
+### Features
+
+* **ai:** ask once per website and per chat instead of for every request ([#861](https://github.com/k2b-dev/cloud/issues/861)) ([52fe800](https://github.com/k2b-dev/cloud/commit/52fe8003e1109c69b8f5e1c863da17145ae844a6))
+* **ai:** write Studio source as top-level text so providers cannot cut files to their first line ([#940](https://github.com/k2b-dev/cloud/issues/940)) ([9557a82](https://github.com/k2b-dev/cloud/commit/9557a8244f2d5817f00f0418e6659f0f5fda3be9)), closes [#884](https://github.com/k2b-dev/cloud/issues/884)
+* **assistant:** make cld assistant a comfortable line-based agent with permissions and more slash commands ([#938](https://github.com/k2b-dev/cloud/issues/938)) ([29b475d](https://github.com/k2b-dev/cloud/commit/29b475d6fbdcd1646cac063d634f24a24fb48a1b))
+* **cli:** let plugins declare short module aliases and command shortcuts ([#947](https://github.com/k2b-dev/cloud/issues/947)) ([75b2ce2](https://github.com/k2b-dev/cloud/commit/75b2ce2bf9621efca926b269a95a3b1bad957e11))
+* **cloud:** record every pending approval as one platform request with scope, binding and expiry ([#943](https://github.com/k2b-dev/cloud/issues/943)) ([e5d874c](https://github.com/k2b-dev/cloud/commit/e5d874c003144fd02116bbf2908f919e10915843))
+* **cloud:** use the whole window on tablets and laptops, and show the way up to the pages above ([#908](https://github.com/k2b-dev/cloud/issues/908)) ([677cf5d](https://github.com/k2b-dev/cloud/commit/677cf5dbde0dd7f66f2f91a7826f3aad9ae6ea52))
+* **dashboard:** one board of widgets in three sizes that people can arrange themselves ([#885](https://github.com/k2b-dev/cloud/issues/885)) ([0ff5872](https://github.com/k2b-dev/cloud/commit/0ff5872d5f558b41b27dfa43b50e7d3da6f4b67e))
+* **mail:** keep phone links, let mailbox CSS win, and report what email removes from a message ([#946](https://github.com/k2b-dev/cloud/issues/946)) ([82132c0](https://github.com/k2b-dev/cloud/commit/82132c09bd1c95335973ac393a1de6f86ba78c25))
+* **notebooks:** one sidebar instead of the Navigator and simple modes ([#916](https://github.com/k2b-dev/cloud/issues/916)) ([42df3f6](https://github.com/k2b-dev/cloud/commit/42df3f610df8daad48a0edaaec9984a6e7aa7cc0))
+* **ui:** float the workspace detail panel instead of docking it ([#934](https://github.com/k2b-dev/cloud/issues/934)) ([cf25e0b](https://github.com/k2b-dev/cloud/commit/cf25e0b06f009dda6a8c51321bdfd7ce31e9147f))
+* **ui:** keep drags from selecting page text on iPad ([#902](https://github.com/k2b-dev/cloud/issues/902)) ([d65a827](https://github.com/k2b-dev/cloud/commit/d65a827d24a8a7fa10589d07be52e8dc561a1ea4))
+
+
+### Bug Fixes
+
+* **ai:** align the expanded work flush left and fold repeated steps into one row ([#928](https://github.com/k2b-dev/cloud/issues/928)) ([ffa193b](https://github.com/k2b-dev/cloud/commit/ffa193be5202be3ae74908df3aa3897f701f929a))
+* **ai:** show the status text of a running turn quietly so it does not look like the answer ([#933](https://github.com/k2b-dev/cloud/issues/933)) ([b0832f1](https://github.com/k2b-dev/cloud/commit/b0832f1c74ce8c8379167742ba86dc3dd25c5a77))
+* **cloud:** keep Cloud pages within the window when vh is taller ([#880](https://github.com/k2b-dev/cloud/issues/880)) ([5fbe2dc](https://github.com/k2b-dev/cloud/commit/5fbe2dc414c38c48ea7ee7808b03fadf2199b036))
+* **cloud:** keep pop-out windows and public displays within the window when vh is taller ([#948](https://github.com/k2b-dev/cloud/issues/948)) ([8670aa2](https://github.com/k2b-dev/cloud/commit/8670aa252abc81f67b8fe64720722d12637b0266)), closes [#881](https://github.com/k2b-dev/cloud/issues/881)
+* **cloud:** only follow the way up to a URL on this origin ([#927](https://github.com/k2b-dev/cloud/issues/927)) ([8777efa](https://github.com/k2b-dev/cloud/commit/8777efa72de194e6958d16a514449280c43d4f59))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.21.0 to 0.22.0
+
 ## [0.30.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.29.1...npm-cloud-v0.30.0) (2026-10-10)
 
 

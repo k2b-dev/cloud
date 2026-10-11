@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.22.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.21.0...npm-ui-v0.22.0) (2026-10-11)
+
+
+### Features
+
+* **cloud:** use the whole window on tablets and laptops, and show the way up to the pages above ([#908](https://github.com/k2b-dev/cloud/issues/908)) ([677cf5d](https://github.com/k2b-dev/cloud/commit/677cf5dbde0dd7f66f2f91a7826f3aad9ae6ea52))
+* **dashboard:** one board of widgets in three sizes that people can arrange themselves ([#885](https://github.com/k2b-dev/cloud/issues/885)) ([0ff5872](https://github.com/k2b-dev/cloud/commit/0ff5872d5f558b41b27dfa43b50e7d3da6f4b67e))
+* **notebooks:** one sidebar instead of the Navigator and simple modes ([#916](https://github.com/k2b-dev/cloud/issues/916)) ([42df3f6](https://github.com/k2b-dev/cloud/commit/42df3f610df8daad48a0edaaec9984a6e7aa7cc0))
+* **spaces:** give ticking a task off hover feedback, a short animation, and Undo ([#906](https://github.com/k2b-dev/cloud/issues/906)) ([6e85414](https://github.com/k2b-dev/cloud/commit/6e85414594e375bdac11f2b9569edfacb343e279))
+* **ui:** float the workspace detail panel instead of docking it ([#934](https://github.com/k2b-dev/cloud/issues/934)) ([cf25e0b](https://github.com/k2b-dev/cloud/commit/cf25e0b06f009dda6a8c51321bdfd7ce31e9147f))
+* **ui:** keep drags from selecting page text on iPad ([#902](https://github.com/k2b-dev/cloud/issues/902)) ([d65a827](https://github.com/k2b-dev/cloud/commit/d65a827d24a8a7fa10589d07be52e8dc561a1ea4))
+
+
+### Bug Fixes
+
+* **ai:** align the expanded work flush left and fold repeated steps into one row ([#928](https://github.com/k2b-dev/cloud/issues/928)) ([ffa193b](https://github.com/k2b-dev/cloud/commit/ffa193be5202be3ae74908df3aa3897f701f929a))
+* **ui:** open hover previews only for the row still under the mouse ([#883](https://github.com/k2b-dev/cloud/issues/883)) ([d9718f7](https://github.com/k2b-dev/cloud/commit/d9718f7695d46b7aff46e33584f6533f619f5e9f))
+
+
+### Performance Improvements
+
+* **ui:** split the message catalog per component family so small imports stay small ([#936](https://github.com/k2b-dev/cloud/issues/936)) ([b8373dc](https://github.com/k2b-dev/cloud/commit/b8373dc432eea88a183ad652b3e09d90c722ba74)), closes [#841](https://github.com/k2b-dev/cloud/issues/841)
+
 ## [0.21.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.20.0...npm-ui-v0.21.0) (2026-10-10)
 
 

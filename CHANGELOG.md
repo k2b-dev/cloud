@@ -3,6 +3,53 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.38.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.37.0...cloud-v0.38.0) (2026-10-11)
+
+
+### Features
+
+* **ai:** ask once per website and per chat instead of for every request ([#861](https://github.com/k2b-dev/cloud/issues/861)) ([52fe800](https://github.com/k2b-dev/cloud/commit/52fe8003e1109c69b8f5e1c863da17145ae844a6))
+* **ai:** write Studio source as top-level text so providers cannot cut files to their first line ([#940](https://github.com/k2b-dev/cloud/issues/940)) ([9557a82](https://github.com/k2b-dev/cloud/commit/9557a8244f2d5817f00f0418e6659f0f5fda3be9)), closes [#884](https://github.com/k2b-dev/cloud/issues/884)
+* **assistant:** make cld assistant a comfortable line-based agent with permissions and more slash commands ([#938](https://github.com/k2b-dev/cloud/issues/938)) ([29b475d](https://github.com/k2b-dev/cloud/commit/29b475d6fbdcd1646cac063d634f24a24fb48a1b))
+* **cli:** let plugins declare short module aliases and command shortcuts ([#947](https://github.com/k2b-dev/cloud/issues/947)) ([75b2ce2](https://github.com/k2b-dev/cloud/commit/75b2ce2bf9621efca926b269a95a3b1bad957e11))
+* **cloud:** record every pending approval as one platform request with scope, binding and expiry ([#943](https://github.com/k2b-dev/cloud/issues/943)) ([e5d874c](https://github.com/k2b-dev/cloud/commit/e5d874c003144fd02116bbf2908f919e10915843))
+* **cloud:** use the whole window on tablets and laptops, and show the way up to the pages above ([#908](https://github.com/k2b-dev/cloud/issues/908)) ([677cf5d](https://github.com/k2b-dev/cloud/commit/677cf5dbde0dd7f66f2f91a7826f3aad9ae6ea52))
+* **dashboard:** one board of widgets in three sizes that people can arrange themselves ([#885](https://github.com/k2b-dev/cloud/issues/885)) ([0ff5872](https://github.com/k2b-dev/cloud/commit/0ff5872d5f558b41b27dfa43b50e7d3da6f4b67e))
+* **mail:** keep conversations that must not be deleted ([#795](https://github.com/k2b-dev/cloud/issues/795)) ([5bf51dd](https://github.com/k2b-dev/cloud/commit/5bf51dda16fa57f113b03533f0ec2580fa5ce5ac))
+* **mail:** keep phone links, let mailbox CSS win, and report what email removes from a message ([#946](https://github.com/k2b-dev/cloud/issues/946)) ([82132c0](https://github.com/k2b-dev/cloud/commit/82132c09bd1c95335973ac393a1de6f86ba78c25))
+* **mail:** re-run automations for messages whose earlier run failed ([#941](https://github.com/k2b-dev/cloud/issues/941)) ([3a62d00](https://github.com/k2b-dev/cloud/commit/3a62d00b84df4e7db6f30653a7b408d7cfda5eec)), closes [#914](https://github.com/k2b-dev/cloud/issues/914)
+* **notebooks:** one sidebar instead of the Navigator and simple modes ([#916](https://github.com/k2b-dev/cloud/issues/916)) ([42df3f6](https://github.com/k2b-dev/cloud/commit/42df3f610df8daad48a0edaaec9984a6e7aa7cc0))
+* **spaces:** give ticking a task off hover feedback, a short animation, and Undo ([#906](https://github.com/k2b-dev/cloud/issues/906)) ([6e85414](https://github.com/k2b-dev/cloud/commit/6e85414594e375bdac11f2b9569edfacb343e279))
+* **spaces:** let claimed tasks move between Kanban columns and let any writer take a claim over ([#835](https://github.com/k2b-dev/cloud/issues/835)) ([7875d2b](https://github.com/k2b-dev/cloud/commit/7875d2b596ccb56681999ec3cf1cbb9af1f2c0ee))
+* **ui:** float the workspace detail panel instead of docking it ([#934](https://github.com/k2b-dev/cloud/issues/934)) ([cf25e0b](https://github.com/k2b-dev/cloud/commit/cf25e0b06f009dda6a8c51321bdfd7ce31e9147f))
+* **ui:** keep drags from selecting page text on iPad ([#902](https://github.com/k2b-dev/cloud/issues/902)) ([d65a827](https://github.com/k2b-dev/cloud/commit/d65a827d24a8a7fa10589d07be52e8dc561a1ea4))
+
+
+### Bug Fixes
+
+* **ai:** align the expanded work flush left and fold repeated steps into one row ([#928](https://github.com/k2b-dev/cloud/issues/928)) ([ffa193b](https://github.com/k2b-dev/cloud/commit/ffa193be5202be3ae74908df3aa3897f701f929a))
+* **ai:** show the status text of a running turn quietly so it does not look like the answer ([#933](https://github.com/k2b-dev/cloud/issues/933)) ([b0832f1](https://github.com/k2b-dev/cloud/commit/b0832f1c74ce8c8379167742ba86dc3dd25c5a77))
+* **assistant:** keep cld approval prompts consistent and safe in the terminal ([#910](https://github.com/k2b-dev/cloud/issues/910)) ([064ba54](https://github.com/k2b-dev/cloud/commit/064ba542d5c93a88571a6042ffa00e8fedfaf538))
+* **assistant:** let one website approval cover a Studio app that reads with harmless headers ([#904](https://github.com/k2b-dev/cloud/issues/904)) ([407696c](https://github.com/k2b-dev/cloud/commit/407696cef84c2a60d39276153fc8b051807a92c7))
+* **cloud:** keep Cloud pages within the window when vh is taller ([#880](https://github.com/k2b-dev/cloud/issues/880)) ([5fbe2dc](https://github.com/k2b-dev/cloud/commit/5fbe2dc414c38c48ea7ee7808b03fadf2199b036))
+* **cloud:** keep pop-out windows and public displays within the window when vh is taller ([#948](https://github.com/k2b-dev/cloud/issues/948)) ([8670aa2](https://github.com/k2b-dev/cloud/commit/8670aa252abc81f67b8fe64720722d12637b0266)), closes [#881](https://github.com/k2b-dev/cloud/issues/881)
+* **cloud:** only follow the way up to a URL on this origin ([#927](https://github.com/k2b-dev/cloud/issues/927)) ([8777efa](https://github.com/k2b-dev/cloud/commit/8777efa72de194e6958d16a514449280c43d4f59))
+* **dev:** give the development Postgres 1 GB of shared memory ([#912](https://github.com/k2b-dev/cloud/issues/912)) ([159bfa8](https://github.com/k2b-dev/cloud/commit/159bfa832f87a0ac064952055aa86e4019b90a3e))
+* **mail:** let a folder sync keep its turn on the provider lease between its batches ([#942](https://github.com/k2b-dev/cloud/issues/942)) ([01164ea](https://github.com/k2b-dev/cloud/commit/01164ea1183ca715118508ed16807e3a2b5efd9f))
+* **mail:** let incoming automations move messages instead of cancelling their commands ([#899](https://github.com/k2b-dev/cloud/issues/899)) ([23ff84d](https://github.com/k2b-dev/cloud/commit/23ff84d044a19610e90abda051cec7ee60a69dcd)), closes [#876](https://github.com/k2b-dev/cloud/issues/876)
+* **mail:** never let a hand-edited signature break preview or sending ([#903](https://github.com/k2b-dev/cloud/issues/903)) ([1049363](https://github.com/k2b-dev/cloud/commit/10493630468086c8294b0d5e572153d5073fa3f1))
+* **mail:** open Focus views instantly and read them in about 100 ms in large mailboxes ([#909](https://github.com/k2b-dev/cloud/issues/909)) ([2852300](https://github.com/k2b-dev/cloud/commit/285230061e07c727c6cc2cf2ec708bbb594bd67a))
+* **mail:** preset the Sent and Drafts folders so sender identities can be verified ([#939](https://github.com/k2b-dev/cloud/issues/939)) ([64720c1](https://github.com/k2b-dev/cloud/commit/64720c1d423d0e05ea54665e886a10db3b8b881c)), closes [#878](https://github.com/k2b-dev/cloud/issues/878)
+* **notebooks:** keep the editor still when a checklist box is ticked with the mouse ([#900](https://github.com/k2b-dev/cloud/issues/900)) ([cb3b91b](https://github.com/k2b-dev/cloud/commit/cb3b91b7e03002bc74facfd3c227d44e7f7448c1))
+* **notebooks:** render headings, tables, links and other smart markers in long notes once the editor has parsed them ([#905](https://github.com/k2b-dev/cloud/issues/905)) ([b043383](https://github.com/k2b-dev/cloud/commit/b04338381182e17b5b20b7a25f735aeefafefb11))
+* **spaces:** reload only the Kanban columns a live change touches ([#937](https://github.com/k2b-dev/cloud/issues/937)) ([3dc2886](https://github.com/k2b-dev/cloud/commit/3dc2886be0ef1308e7bf627a106d3f8161bc4674)), closes [#822](https://github.com/k2b-dev/cloud/issues/822)
+* **ui:** open hover previews only for the row still under the mouse ([#883](https://github.com/k2b-dev/cloud/issues/883)) ([d9718f7](https://github.com/k2b-dev/cloud/commit/d9718f7695d46b7aff46e33584f6533f619f5e9f))
+
+
+### Performance Improvements
+
+* **ui:** split the message catalog per component family so small imports stay small ([#936](https://github.com/k2b-dev/cloud/issues/936)) ([b8373dc](https://github.com/k2b-dev/cloud/commit/b8373dc432eea88a183ad652b3e09d90c722ba74)), closes [#841](https://github.com/k2b-dev/cloud/issues/841)
+
 ## [0.37.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.36.0...cloud-v0.37.0) (2026-10-10)
 
 
