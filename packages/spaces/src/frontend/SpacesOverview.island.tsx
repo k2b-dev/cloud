@@ -538,7 +538,7 @@ export default function SpacesOverview(props: Props) {
   );
 
   return (
-    <AppWorkspace mobileSurface="flush" class="spaces-overview-workspace" resizable={false} layoutState={() => OVERVIEW_LAYOUT}>
+    <AppWorkspace mobileSurface="flush" flat class="spaces-overview-workspace" resizable={false} layoutState={() => OVERVIEW_LAYOUT}>
       <h1 class="sr-only">Spaces</h1>
       <AppWorkspace.Sidebar label="Spaces" mobile="stacked" resizable={false}>
         <AppWorkspace.SidebarDesktop>

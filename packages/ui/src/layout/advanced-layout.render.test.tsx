@@ -74,6 +74,16 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     );
   });
 
+  test("a flat workspace marks itself and its stylesheet drops the frame", () => {
+    const html = renderToString(() => createComponent(AppWorkspace, { flat: true, children: "Overview" }));
+    expect(html).toMatch(/class="k2b-app-workspace\s*"[^>]*data-flat="true"/);
+    expect(renderToString(() => createComponent(AppWorkspace, { children: "Workspace" }))).not.toContain("data-flat");
+    const source = readFileSync(resolve(import.meta.dir, "../styles/layout-parity.css"), "utf8");
+    expect(source).toMatch(
+      /\.k2b-app-workspace\[data-flat="true"\] \{\s*--k2b-workspace-radius: 0px;\s*border-color: transparent;\s*box-shadow: none;/,
+    );
+  });
+
   test("renders the complete workspace compound composition", () => {
     const html = renderToString(() =>
       createComponent(AppWorkspace, {

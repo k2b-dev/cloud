@@ -148,6 +148,8 @@ export type AppWorkspaceProps = {
   class?: string;
   /** A host with its own phone chrome can use the full canvas below 48rem (768 px). */
   mobileSurface?: "contained" | "flush";
+  /** Draws no frame: no border, corner radius, or shadow, for an overview that is the page itself. */
+  flat?: boolean;
   resizable?: boolean;
   /**
    * Restores a persisted layout when the workspace mounts. Persistence itself
@@ -1769,6 +1771,7 @@ const AppWorkspace = ((props: AppWorkspaceProps) => {
           class={`k2b-app-workspace ${props.class ?? ""}`}
           data-k2b-app-workspace
           data-mobile-surface={props.mobileSurface}
+          data-flat={props.flat ? "true" : undefined}
           data-sidebar-collapsed={
             initialLayoutState()?.sidebarCollapsed === undefined ? undefined : String(initialLayoutState()?.sidebarCollapsed)
           }

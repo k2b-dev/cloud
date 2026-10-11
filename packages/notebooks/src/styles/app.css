@@ -402,10 +402,7 @@
 }
 
 .k2b-ui .notebooks-overview-workspace {
-  --k2b-workspace-radius: 0px;
-  border-color: transparent;
   background: var(--ui-surface);
-  box-shadow: none;
 }
 
 .k2b-ui .notebooks-overview-main {

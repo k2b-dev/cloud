@@ -695,7 +695,7 @@ function MailOverviewView(props: {
   );
 
   return (
-    <AppWorkspace mobileSurface="flush" class="mail-focus-workspace" resizable={false} layoutState={() => OVERVIEW_LAYOUT}>
+    <AppWorkspace mobileSurface="flush" flat class="mail-focus-workspace" resizable={false} layoutState={() => OVERVIEW_LAYOUT}>
       <h1 class="sr-only">Mail</h1>
       <AppWorkspace.Sidebar label={messages().mailboxes} mobile="stacked" resizable={false}>
         <AppWorkspace.SidebarDesktop>

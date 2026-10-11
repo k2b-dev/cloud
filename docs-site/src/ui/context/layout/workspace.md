@@ -190,6 +190,10 @@ Set `mobileSurface="flush"` on an outer workspace when the host supplies the
 phone chrome. This removes its exterior border, radius, shadow, and background
 below 48 rem. Embedded workspaces keep the default contained surface.
 
+Set `flat` on a workspace that is the page itself, such as an app's overview.
+It draws no border, corner radius, or shadow at any width, and its sidebar and
+content keep square outer corners.
+
 Sidebar links use document navigation by default. Set `navigation="enhanced"`
 only inside an island that loads and applies the target state before committing
 history through `onNavigate`. The enhanced helper does not run server loaders
@@ -491,7 +495,7 @@ const [expanded, setExpanded] = createSignal<readonly string[]>(["mail"]);
 
 ```ts
 type AppWorkspaceProps = {
-  mobileSurface?: "contained" | "flush";
+  mobileSurface?: "contained" | "flush"; flat?: boolean;
   children: JSX.Element; class?: string; resizable?: boolean;
   layoutState?: () => AppWorkspaceLayoutState | null | undefined;
   onLayoutChange?: (state: AppWorkspaceLayoutState) => void; controller?: false;

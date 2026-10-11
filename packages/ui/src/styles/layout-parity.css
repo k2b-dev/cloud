@@ -836,6 +836,14 @@
   border-color: var(--k2b-border);
 }
 
+/* A flat workspace draws no frame. Its sidebar and content round their outer
+   corners with the radius token from 64 rem, so it sets the token. */
+.k2b-ui .k2b-app-workspace[data-flat="true"] {
+  --k2b-workspace-radius: 0px;
+  border-color: transparent;
+  box-shadow: none;
+}
+
 /* The content area is no containing block: the detail panel inside it is
    placed in the workspace's grid, beside the head and the content. */
 .k2b-ui .k2b-app-workspace__content {

@@ -96,6 +96,7 @@ describe("Mail overview", () => {
   test("renders the server-provided cross-mailbox focus queue and accessible view controls", () => {
     const html = renderOverview();
     expect(html).toContain('class="k2b-app-workspace mail-focus-workspace"');
+    expect(html).toMatch(/class="k2b-app-workspace mail-focus-workspace"[^>]*data-flat="true"/);
     // Objects live in a stacked-on-mobile sidebar, not in a mailbox-style tree.
     expect(html).toMatch(/<aside[^>]*aria-label="Mailboxes"[^>]*data-mobile="stacked"/);
     expect(html).not.toContain("k2b-app-workspace__nav-tree");
