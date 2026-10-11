@@ -77,7 +77,7 @@ export function SimpleDisplayView(props: DisplayProps) {
 
   return (
     <main
-      class="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-white p-6 text-zinc-900 dark:bg-zinc-950 dark:text-white"
+      class="relative flex min-h-dvh flex-col items-center justify-center overflow-hidden bg-white p-6 text-zinc-900 dark:bg-zinc-950 dark:text-white"
       {...refreshAttributes(props)}
     >
       <div class="flex max-w-full flex-col items-center text-center">
@@ -225,10 +225,7 @@ export function DetailDisplayView(props: DisplayProps) {
   const sizes = detailZoomClasses[props.zoom];
 
   return (
-    <main
-      class="flex h-screen flex-col overflow-hidden bg-white text-zinc-900 dark:bg-zinc-950 dark:text-white"
-      {...refreshAttributes(props)}
-    >
+    <main class="flex h-dvh flex-col overflow-hidden bg-white text-zinc-900 dark:bg-zinc-950 dark:text-white" {...refreshAttributes(props)}>
       <div class={`grid min-h-0 flex-1 grid-cols-2 ${sizes.gap} ${sizes.padding}`}>
         <div class={`flex min-h-0 flex-col ${sizes.gap}`}>
           <section class="flex flex-col items-center py-4 text-center" aria-label={t().currentWeather}>
@@ -343,7 +340,7 @@ export function DisplayUnavailable(props: { message: string; refreshSeconds: num
   const t = () => weatherMessages.resolve([locale()]).t;
   return (
     <main
-      class="flex min-h-screen items-center justify-center bg-white p-6 text-zinc-900 dark:bg-zinc-950 dark:text-white"
+      class="flex min-h-dvh items-center justify-center bg-white p-6 text-zinc-900 dark:bg-zinc-950 dark:text-white"
       {...refreshAttributes(props)}
     >
       <div class="max-w-md text-center" role="status">

@@ -9,7 +9,7 @@ import { parseDisplayCoordinate, parseDisplayRefreshSeconds } from "./runtime";
 function ConfigurationError(props: { locale: string }) {
   const { t } = weatherMessages.resolve([props.locale]);
   return (
-    <main class="flex min-h-screen items-center justify-center bg-white p-6 text-zinc-900 dark:bg-zinc-950 dark:text-white">
+    <main class="flex min-h-dvh items-center justify-center bg-white p-6 text-zinc-900 dark:bg-zinc-950 dark:text-white">
       <div class="max-w-md text-center" role="alert">
         <i class="ti ti-map-pin-off mb-3 block text-4xl text-zinc-300 dark:text-zinc-700" aria-hidden="true" />
         <h1 class="text-lg font-semibold">{t.displayLocationMissing}</h1>
