@@ -304,7 +304,11 @@ export const aiRoutes = (() => {
       .use(rateLimit())
       .use("*", auth.requireRole("authenticated"))
       .get("/status", async (c) => {
-        return respond(c, ok(await assistantAiSettingsState(c.get("accessSubject"))));
+        const [status, enabled] = await Promise.all([
+          assistantAiSettingsState(c.get("accessSubject")),
+          coreSettings.get<boolean>("ai.openai_api_enabled"),
+        ]);
+        return respond(c, ok({ ...status, openaiApi: { enabled } }));
       })
       .get("/quotas", async (c) => {
         c.header("Cache-Control", "no-store");

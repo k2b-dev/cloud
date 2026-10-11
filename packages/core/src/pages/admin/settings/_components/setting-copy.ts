@@ -20,6 +20,15 @@ const deOptions: Partial<Record<string, Record<string, string>>> = {
 };
 
 const de: Record<string, SettingCopy> = {
+  "ai.openai_api_enabled": {
+    label: "OpenAI-kompatible API",
+    description:
+      "Personen können API-Schlüssel mit dem Zugriff „Nur KI-Modelle“ erstellen und damit die Modelle aufrufen, die sie im Assistenten nutzen dürfen. Gilt bei jeder Anfrage: Ausschalten stoppt auch bestehende Schlüssel. Modelle ohne Referenzpreis haben kein Nutzungslimit; sie schützen nur das Anfragelimit und die Grenze für gleichzeitige Anfragen.",
+  },
+  "ai.openai_api_max_concurrent_requests": {
+    label: "Gleichzeitige Anfragen pro Person (OpenAI-API)",
+    description: "Höchstzahl gleichzeitiger Anfragen an die OpenAI-kompatible API pro Person, über alle Cloud-Instanzen hinweg.",
+  },
   "user.account_requests.enabled": {
     label: "Account-Anfragen erlauben",
     description:

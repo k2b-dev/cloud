@@ -1,7 +1,15 @@
 import type { Context } from "hono";
 import { createMiddleware } from "hono/factory";
 import { measureServerPhase } from "../../_internal/server-timing";
-import type { MessageResponse, Role, RoleOrSpecial, User, UserProfile, UserProvider } from "../../contracts/shared";
+import {
+  AI_INFERENCE_SCOPE,
+  type MessageResponse,
+  type Role,
+  type RoleOrSpecial,
+  type User,
+  type UserProfile,
+  type UserProvider,
+} from "../../contracts/shared";
 import { isAccountExpired } from "../../services/account-model";
 import { isReservedWorkloadApiCredential } from "../../services/identity/workload-auth";
 import { oauthTokens } from "../../services/oauth-tokens";
@@ -161,6 +169,8 @@ const loadAuthenticatedActorUncached = async (
     // App workload keys enter only through Core's dedicated broker/authority
     // handlers, which authenticate their exact app binding directly.
     if (isReservedWorkloadApiCredential(authResult)) return { token: null, user: null, actor: null };
+    // Restrict by rejection: a forgotten route check makes a models-only key work nowhere, never grants full access.
+    if (authResult.credential.scopes.includes(AI_INFERENCE_SCOPE)) return { token: null, user: null, actor: null };
     if (authResult.delegatedUser && isAccountExpired(authResult.delegatedUser.accountExpires)) {
       return { token: null, user: null, actor: null };
     }

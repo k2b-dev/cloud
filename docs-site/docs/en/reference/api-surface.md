@@ -318,7 +318,7 @@ exports behind it are `Preview`. Their guides say so at the top.
 
 | Entry point | Status | Meaning |
 | --- | --- | --- |
-| `@k2b/cloud/api` | Platform-owned | Builds the Core platform router |
+| `@k2b/cloud/api` | Platform-owned | Builds the Core platform router, including `createAiOpenAiRoutes` for Core’s models-only [OpenAI-compatible API](/en/docs/ai/openai-compatible-api) |
 | `@k2b/cloud/services/help` | Platform-owned | Core Help migration and shared publication/read service |
 | `@k2b/cloud/services/approvals` | Platform-owned | Platform requests, decisions, consumption, lists, and counts; see [Action approvals](/en/docs/identity/approvals) |
 | `@k2b/cloud/ssr/help` | Supported, server-only | Request-scoped Help metadata for specialized embedded readers |

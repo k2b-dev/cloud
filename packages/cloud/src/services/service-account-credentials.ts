@@ -1,7 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { crypto, err, fail, ok, type PageParams, type Paginated, type Result } from "@k2b/stdlib";
 import { type SQL, sql } from "bun";
-import type { User } from "../contracts/shared";
+import { AI_INFERENCE_SCOPE, type User } from "../contracts/shared";
 import { accounts } from "./accounts";
 import { audit } from "./audit";
 import { isUniqueViolation, toPgTextArray } from "./postgres";
@@ -371,16 +371,20 @@ const insertApiToken = async (
   }
 };
 
-export const createApiToken = (params: {
+export const createApiToken = async (params: {
   serviceAccountId: string;
   name: string;
   createdBy?: string | null;
   expiresAt?: string | null;
   scopes?: string[];
-}): Promise<Result<{ credential: ServiceAccountCredential; token: string }>> => insertApiToken(sql, params);
+}): Promise<Result<{ credential: ServiceAccountCredential; token: string }>> => {
+  if (params.scopes?.includes(AI_INFERENCE_SCOPE)) return fail(err.badInput("ai:inference is reserved for models-only personal API keys"));
+  return insertApiToken(sql, params);
+};
 
 export const createUserApiToken = async (params: {
   user: User;
+  access?: "full" | "models";
   name: string;
   expiresAt?: string | null;
 }): Promise<Result<{ credential: ServiceAccountCredential; token: string }>> => {
@@ -396,6 +400,7 @@ export const createUserApiToken = async (params: {
       name: params.name,
       expiresAt: params.expiresAt,
       createdBy: params.user.id,
+      scopes: params.access === "models" ? [AI_INFERENCE_SCOPE] : [],
     });
 
     return audit.recordResult({
@@ -404,6 +409,7 @@ export const createUserApiToken = async (params: {
       target: { type: "service_account_credential", id: result.ok ? result.data.credential.id : null, label: params.name },
       metadata: {
         serviceAccountId: serviceAccountResult.data.id,
+        access: params.access ?? "full",
         kind: "api_token",
         expiresAt: params.expiresAt ?? null,
       },
@@ -420,6 +426,7 @@ export const createResourceApiToken = async (params: {
   expiresAt?: string | null;
   scopes?: string[];
 }): Promise<Result<{ credential: ServiceAccountCredential; token: string }>> => {
+  if (params.scopes?.includes(AI_INFERENCE_SCOPE)) return fail(err.badInput("ai:inference is reserved for models-only personal API keys"));
   const serviceAccount = await serviceAccounts.get({ id: params.serviceAccountId });
   if (!serviceAccount || serviceAccount.kind !== "resource_bound") return fail(err.notFound("Resource service account"));
   if (serviceAccount.status !== "active") return fail(err.badInput("Resource service account is disabled"));
@@ -460,6 +467,7 @@ export const createStandaloneApiToken = async (params: {
   expiresAt?: string | null;
   scopes?: string[];
 }): Promise<Result<{ credential: ServiceAccountCredential; token: string }>> => {
+  if (params.scopes?.includes(AI_INFERENCE_SCOPE)) return fail(err.badInput("ai:inference is reserved for models-only personal API keys"));
   const serviceAccount = await serviceAccounts.get({ id: params.serviceAccountId });
   if (!serviceAccount || !isStandaloneServiceAccountKind(serviceAccount.kind)) return fail(err.notFound("Service account"));
   if (serviceAccount.status !== "active") return fail(err.badInput("Service account is disabled"));

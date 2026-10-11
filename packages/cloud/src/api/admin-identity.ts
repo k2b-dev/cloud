@@ -5,6 +5,7 @@ import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { listApps } from "../_internal/registry";
 import { CapabilityAppIdSchema } from "../contracts/capabilities";
+import { AI_INFERENCE_SCOPE } from "../contracts/shared";
 import { type AuthContext, auth, err, respond, v } from "../server";
 import { audit } from "../services/audit";
 import { getIdentitySigningKeyStatus, identityMetrics, revokeIdentitySigningKey, rewrapIdentitySigningKeys } from "../services/identity";
@@ -63,7 +64,11 @@ const ServiceAccountStatusInputSchema = z.object({ status: z.enum(["active", "di
 const ServiceAccountApiKeyInputSchema = z
   .object({
     name: z.string().trim().min(1).max(120),
-    scopes: z.array(z.string().trim().min(1).max(64)).max(20).default([]),
+    scopes: z
+      .array(z.string().trim().min(1).max(64))
+      .max(20)
+      .default([])
+      .refine((scopes) => !scopes.includes(AI_INFERENCE_SCOPE), "ai:inference is reserved for models-only personal API keys"),
     expiresAt: z.iso.datetime().nullable().optional(),
   })
   .strict();

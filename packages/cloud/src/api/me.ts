@@ -4,7 +4,7 @@
  * third-party management lives in the accounts admin app.
  */
 
-import { ok } from "@k2b/stdlib";
+import { err, fail, ok } from "@k2b/stdlib";
 import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { createMiddleware } from "hono/factory";
 import { describeRoute } from "hono-openapi";
@@ -51,6 +51,7 @@ import {
   webauthn,
 } from "../services";
 import { MandatePolicyV1Schema } from "../services/mandates";
+import { coreSettings } from "../services/settings/api";
 
 import { createMeRailRoutes } from "./me-rail";
 import { createMeWebVitalsRoutes } from "./me-web-vitals";
@@ -614,13 +615,14 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Me"],
       summary: "Create current user API key",
-      description: "Create a user-bound API key for the authenticated account. The raw token is returned once.",
+      description:
+        "Create a personal API key with full access (default) or models-only access to the OpenAI-compatible API when enabled. The raw token is returned once.",
       ...requiresAuth,
       responses: {
         201: jsonResponse(CreateUserApiKeyResponseSchema, "API key created"),
         400: jsonResponse(ErrorResponseSchema, "Failed to create API key"),
         401: jsonResponse(ErrorResponseSchema, "Authentication required"),
-        403: jsonResponse(ErrorResponseSchema, "Not permitted for API keys or other credentials"),
+        403: jsonResponse(ErrorResponseSchema, "Credential not permitted or models-only API turned off"),
       },
     }),
     v("json", CreateUserApiKeySchema),
@@ -630,7 +632,14 @@ const app = new Hono<AuthContext>()
         async () => {
           const user = c.get("user");
           const data = c.req.valid("json");
+          if (data.access === "models" && !(await coreSettings.get<boolean>("ai.openai_api_enabled")))
+            return fail(
+              err.forbidden(
+                "Models-only API keys are turned off. An administrator can turn on the OpenAI-compatible API in the AI settings.",
+              ),
+            );
           return serviceAccountCredentials.createUserApiToken({
+            access: data.access,
             user,
             name: data.name,
             expiresAt: data.expiresAt ?? null,
