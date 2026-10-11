@@ -39,7 +39,8 @@ This has two consequences:
 - State that exists only in the server HTML inside an island is lost when the
   island mounts: a value typed into an input, focus, a text selection, or a
   scroll position. Keep islands small so that they mount soon after the page
-  appears, and keep state that must survive in props or the URL.
+  appears. Do not rely on input made before mount; derive the island's initial
+  state from its props or the URL.
 - The server and the browser must render the same markup from the same props.
   When they differ, the page moves as the island mounts. Do not read
   browser-only values such as the window width, `localStorage`, or the
@@ -165,8 +166,8 @@ for typed calls and writes from an island.
 
 ## Load media only in the browser
 
-An island shows its server HTML until it mounts. Then it renders its own DOM
-in that place, so the server elements are discarded. A server-rendered
+An island discards its server HTML when it mounts (see
+[Know how an island mounts](#know-how-an-island-mounts)). A server-rendered
 `<video>` or `<audio>` with a `src` starts loading, is cut off when the island
 mounts, and loads again. In WebKit on Linux, which plays media through
 GStreamer, stopping a media element while it loads can freeze the page for
