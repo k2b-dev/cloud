@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import type { CloudCliContext, CloudCliFlagValue, CloudCliModule } from "./index";
+import { isCloudCliAlias, isCloudCliShortcuts } from "./plugin";
 
 type FlagKind = "string" | "boolean" | "int" | "enum" | "stringList" | "input";
 type ArgKind = "required" | "optional" | "rest";
@@ -155,6 +156,8 @@ type CommandNode = {
 type CliCommandsConfig = {
   name: string;
   summary: string;
+  alias?: string;
+  shortcuts?: Readonly<Record<string, string>>;
   requiresCloud?: boolean;
   groupSummaries?: Readonly<Record<string, string>>;
   commands: readonly CliCommandDefinition[];
@@ -241,10 +244,27 @@ export const readCliInput = async (input: CliInputFlagValue, options: ReadCliInp
 
 export const defineCliCommands = (config: CliCommandsConfig): CloudCliModule => {
   const root = buildCommandTree(config.commands, config.groupSummaries);
+  if (config.alias !== undefined && !isCloudCliAlias(config.alias, config.name)) {
+    throw new Error("CLI alias must be a lowercase kebab-case name different from the module name");
+  }
+  let shortcuts: Record<string, string> | undefined;
+  if (config.shortcuts !== undefined) {
+    if (!isCloudCliShortcuts(config.shortcuts, config.name, config.alias)) {
+      throw new Error("CLI shortcuts require unique kebab-case names and non-empty command paths without flags");
+    }
+    shortcuts = {};
+    for (const [name, target] of Object.entries(config.shortcuts)) {
+      const segments = target.trim().split(/\s+/);
+      if (!findNode(root, segments)?.command) throw new Error(`Unknown CLI shortcut command path: ${target}`);
+      shortcuts[name] = segments.join(" ");
+    }
+  }
 
   return {
     name: config.name,
     summary: config.summary,
+    ...(config.alias !== undefined ? { alias: config.alias } : {}),
+    ...(shortcuts !== undefined ? { shortcuts } : {}),
     requiresCloud: config.requiresCloud,
     requiresCloudFor: (args) => {
       const helpRequest = normalizeHelpRequest(args, {});

@@ -24,12 +24,14 @@ import {
   fetchAvailablePlugins,
   fetchPluginManifest,
   hasStoredPlugin,
+  type InactiveShortName,
   type LockedPlugin,
   loadStoredPlugin,
   type PluginLock,
   placePlugin,
   readPluginLock,
   readStoredReference,
+  resolveShortNames,
 } from "./plugin-store";
 import {
   commitPlugin,
@@ -38,6 +40,7 @@ import {
   loadPlugins,
   PluginError,
   type PluginInfo,
+  pluginIds,
   pluginsDirectory,
   removePlugin,
   stagePlugin,
@@ -103,6 +106,8 @@ type CloudCliProfile = TokenProviderConfig & {
   clientCredentials?: ClientCredentialsConfig;
   /** Plugins served by this profile's Cloud, locked to one stored version each. */
   plugins?: PluginLock;
+  /** Names the Cloud served at the last install or update; short names never shadow them. */
+  servedPlugins?: string[];
 };
 
 type CloudCliConfig = {
@@ -998,16 +1003,30 @@ const createContext = (args: string[], flags: CloudCliFlags, options: ResolvedCl
 
 type ModuleSummary = Pick<CloudCliModule, "name" | "summary">;
 
-const moduleList = (locale: string, modules: ModuleSummary[]): string =>
-  modules.length === 0
-    ? text(
-        locale,
-        "  (none installed; `cld login` offers your Cloud's modules, `cld plugins install --all` installs them)",
-        "  (keine installiert; `cld login` bietet die Module deiner Cloud an, `cld plugins install --all` installiert sie)",
-      )
-    : modules.map((module) => `  ${module.name.padEnd(12)} ${module.summary}`).join("\n");
+const moduleList = (locale: string, modules: ModuleSummary[], shortNames: ReturnType<typeof resolveShortNames>): string => {
+  const labels = modules.map((module) => {
+    const alias = [...shortNames.active.values()].find((claim) => claim.module === module.name && claim.path.length === 0);
+    return { label: alias ? `${module.name} (${alias.name})` : module.name, summary: module.summary };
+  });
+  const width = Math.max(12, ...labels.map(({ label }) => label.length));
+  const list =
+    modules.length === 0
+      ? text(
+          locale,
+          "  (none installed; `cld login` offers your Cloud's modules, `cld plugins install --all` installs them)",
+          "  (keine installiert; `cld login` bietet die Module deiner Cloud an, `cld plugins install --all` installiert sie)",
+        )
+      : labels.map(({ label, summary }) => `  ${label.padEnd(width)} ${summary}`).join("\n");
+  const shortcuts = [...shortNames.active.values()].filter((claim) => claim.path.length > 0);
+  return (
+    list +
+    (shortcuts.length === 0
+      ? ""
+      : `\n\n${text(locale, "Shortcuts:", "Kurzbefehle:")}\n${shortcuts.map((claim) => `  ${claim.name} → ${claim.module} ${claim.path.join(" ")}`).join("\n")}`)
+  );
+};
 
-const helpText = (locale: string, pluginModules: ModuleSummary[]): string =>
+const helpText = (locale: string, pluginModules: ModuleSummary[], shortNames: ReturnType<typeof resolveShortNames>): string =>
   text(
     locale,
     `cld
@@ -1038,7 +1057,7 @@ Global options:
   -h, --help              Print the command's help instead of running it
 
 Modules (installed for the current profile; every Cloud app serves its own):
-${moduleList(locale, pluginModules)}
+${moduleList(locale, pluginModules, shortNames)}
 
 Examples:
   cld login --server http://localhost:3000
@@ -1075,7 +1094,7 @@ Globale Optionen:
   -h, --help              Hilfe des Befehls ausgeben, statt ihn auszuführen
 
 Module (für das aktuelle Profil installiert; jede Cloud-App stellt ihr eigenes bereit):
-${moduleList(locale, pluginModules)}
+${moduleList(locale, pluginModules, shortNames)}
 
 Beispiele:
   cld login --server http://localhost:3000
@@ -1490,6 +1509,46 @@ const pluginFailure = (error: unknown, action: string, germanAction: string): ne
 
 const profileLock = (config: CloudCliConfig, profileName: string): PluginLock => readPluginLock(config.profiles?.[profileName]?.plugins);
 
+/** Build the profile table from metadata only, including names not installed yet. */
+const profileShortNames = async (config: CloudCliConfig, profileName: string) => {
+  const lock = profileLock(config, profileName);
+  return resolveShortNames(lock, {
+    builtIn: reservedNames,
+    modules: new Set([...Object.keys(lock), ...(await pluginIds()), ...(config.profiles?.[profileName]?.servedPlugins ?? [])]),
+  });
+};
+
+const warnInactiveShortNames = (inactive: InactiveShortName[], locale: string): void => {
+  for (const { name, claimedBy, reason } of inactive) {
+    const modules = claimedBy.join(", ");
+    printErrorLine(
+      reason === "ambiguous"
+        ? text(
+            locale,
+            `cld: "${name}" is ambiguous (${modules}); use the full module name.`,
+            `cld: "${name}" ist mehrdeutig (${modules}); nutze den vollen Modulnamen.`,
+          )
+        : reason === "built-in"
+          ? text(
+              locale,
+              `cld: "${name}" from ${modules} is inactive: a built-in command has that name.`,
+              `cld: "${name}" von ${modules} ist inaktiv: ein eingebauter Befehl heißt so.`,
+            )
+          : text(
+              locale,
+              `cld: "${name}" from ${modules} is inactive: a module has that name.`,
+              `cld: "${name}" von ${modules} ist inaktiv: ein Modul heißt so.`,
+            ),
+    );
+  }
+};
+
+const pluginMetadata = (module: CloudCliModule) => ({
+  summary: module.summary,
+  ...(module.alias !== undefined ? { alias: module.alias } : {}),
+  ...(module.shortcuts !== undefined ? { shortcuts: { ...module.shortcuts } } : {}),
+});
+
 /** Digests any profile still locks; everything else in the store may go. */
 const lockedDigests = (config: CloudCliConfig): Set<string> =>
   new Set(Object.keys(config.profiles ?? {}).flatMap((name) => Object.values(profileLock(config, name)).map((entry) => entry.digest)));
@@ -1507,7 +1566,8 @@ const loadInstalledModule = async (name: string, global: GlobalArgs): Promise<Cl
 /** The current profile's lock entry for `name`, if the profile installed it from its Cloud. */
 const lockedPlugin = async (name: string, global: GlobalArgs): Promise<LockedPlugin | undefined> => {
   const config = await loadConfig();
-  return profileLock(config, resolveProfileName(config, global.profile))[name];
+  const lock = profileLock(config, resolveProfileName(config, global.profile));
+  return Object.hasOwn(lock, name) ? lock[name] : undefined;
 };
 
 /** `cld <module> reference [file]`: print a served plugin's skill reference. */
@@ -1760,6 +1820,9 @@ const syncProfilePlugins = async (
   locale: string,
 ): Promise<PluginChange[]> => {
   const current = profileLock(await loadConfig(), cloud.profile);
+  const servedPlugins = await fetchAvailablePlugins(cloud.fetch)
+    .then((plugins) => plugins.map((plugin) => plugin.name).sort())
+    .catch(() => undefined);
   const changes: PluginChange[] = [];
   const staged: Array<{ name: string; locked: LockedPlugin; incoming: string | null }> = [];
   for (const name of names) {
@@ -1771,6 +1834,18 @@ const syncProfilePlugins = async (
       const manifest = await fetchPluginManifest(cloud.fetch, name);
       const previous = current[name];
       if (previous?.digest === manifest.digest && (await hasStoredPlugin(manifest.digest))) {
+        const metadata = pluginMetadata(await loadStoredPlugin(name, previous));
+        if (
+          previous.summary !== metadata.summary ||
+          previous.alias !== metadata.alias ||
+          JSON.stringify(previous.shortcuts) !== JSON.stringify(metadata.shortcuts)
+        ) {
+          staged.push({
+            name,
+            incoming: null,
+            locked: { app: previous.app, version: previous.version, digest: previous.digest, ...metadata },
+          });
+        }
         changes.push({ profile: cloud.profile, name, app: manifest.app, version: manifest.version, status: "unchanged" });
         continue;
       }
@@ -1780,7 +1855,7 @@ const syncProfilePlugins = async (
       staged.push({
         name,
         incoming: download.incoming,
-        locked: { app: manifest.app, version: manifest.version, digest: manifest.digest, summary: download.module.summary },
+        locked: { app: manifest.app, version: manifest.version, digest: manifest.digest, ...pluginMetadata(download.module) },
       });
       changes.push({
         profile: cloud.profile,
@@ -1803,7 +1878,6 @@ const syncProfilePlugins = async (
       });
     }
   }
-  if (staged.length === 0) return changes;
   await withConfigLock(async () => {
     const config = await loadConfig();
     config.profiles ??= {};
@@ -1813,11 +1887,20 @@ const syncProfilePlugins = async (
       if (incoming) await placePlugin(incoming, locked.digest);
       lock[name] = locked;
     }
-    config.profiles[cloud.profile] = { ...profile, plugins: lock };
+    const snapshotChanged = servedPlugins !== undefined && JSON.stringify(profile.servedPlugins) !== JSON.stringify(servedPlugins);
+    if (staged.length === 0 && !snapshotChanged) return;
+    config.profiles[cloud.profile] = {
+      ...profile,
+      ...(staged.length > 0 ? { plugins: lock } : {}),
+      ...(servedPlugins !== undefined ? { servedPlugins } : {}),
+    };
     await saveConfig(config);
-    await collectPluginGarbage(lockedDigests(config));
-    await syncSkills(config, locale);
+    if (staged.length > 0) {
+      await collectPluginGarbage(lockedDigests(config));
+      await syncSkills(config, locale);
+    }
   });
+  warnInactiveShortNames((await profileShortNames(await loadConfig(), cloud.profile)).inactive, locale);
   return changes;
 };
 
@@ -1847,6 +1930,9 @@ const printPluginChanges = (changes: PluginChange[], output: GlobalArgs["output"
 };
 
 type PluginRow = {
+  alias: string | null;
+  shortcuts: Record<string, string>;
+  inactive: string[];
   profile: string | null;
   name: string;
   app: string | null;
@@ -1857,7 +1943,9 @@ type PluginRow = {
 };
 
 const listProfilePlugins = async (global: GlobalArgs, profileName: string, current: boolean): Promise<PluginRow[]> => {
-  const lock = profileLock(await loadConfig(), profileName);
+  const config = await loadConfig();
+  const lock = profileLock(config, profileName);
+  const shortNames = await profileShortNames(config, profileName);
   let available: CloudCliPluginSummary[] | null = null;
   const digests = new Map<string, string>();
   try {
@@ -1891,6 +1979,9 @@ const listProfilePlugins = async (global: GlobalArgs, profileName: string, curre
     return {
       profile: profileName,
       name,
+      alias: locked?.alias ?? null,
+      shortcuts: locked?.shortcuts ?? {},
+      inactive: shortNames.inactive.filter((claim) => claim.claimedBy.includes(name)).map((claim) => claim.name),
       app: locked?.app ?? served?.app ?? null,
       installed: locked?.version ?? null,
       available: served?.version ?? null,
@@ -1942,6 +2033,9 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
       rows.push({
         profile: null,
         name: plugin.id,
+        alias: null,
+        shortcuts: {},
+        inactive: [],
         app: null,
         installed: plugin.version ?? null,
         available: null,
@@ -1964,6 +2058,14 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
         renderTable(rows, [
           { key: "profile", label: text(locale, "PROFILE", "PROFIL"), value: (row) => row.profile ?? "*" },
           { key: "name", label: "NAME" },
+          {
+            key: "alias",
+            label: text(locale, "SHORT NAMES", "KURZNAMEN"),
+            value: (row) =>
+              [...(row.alias ? [row.alias] : []), ...Object.keys(row.shortcuts)]
+                .map((name) => (row.inactive.includes(name) ? `${name} (${text(locale, "inactive", "inaktiv")})` : name))
+                .join(", ") || "-",
+          },
           { key: "app", label: "APP", value: (row) => row.app ?? "-" },
           { key: "installed", label: text(locale, "INSTALLED", "INSTALLIERT"), value: (row) => row.installed ?? "-" },
           { key: "available", label: text(locale, "AVAILABLE", "VERFÜGBAR"), value: (row) => row.available ?? "-" },
@@ -1973,6 +2075,7 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
       );
     }
     for (const plugin of plugins) if (plugin.status !== "ok") warnSkippedPlugin(plugin, locale);
+    for (const profileName of profileNames) warnInactiveShortNames((await profileShortNames(config, profileName)).inactive, locale);
     return 0;
   }
 
@@ -2044,6 +2147,7 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
           .filter((name) => !lock[name] && !reservedNames.has(name))
       : targets;
     if (names.length === 0) {
+      await syncProfilePlugins(cloud, names, "install", locale);
       if (output === "text") printLine(text(locale, "All plugins are installed.", "Alle Plugins sind installiert."));
       else printJson({ plugins: [] });
       return 0;
@@ -3048,13 +3152,17 @@ export const main = async (argv = Bun.argv.slice(2)): Promise<number> => {
     const { modules: pluginModules, plugins } = await loadPlugins(reservedNames);
     for (const plugin of plugins) if (plugin.status !== "ok") warnSkippedPlugin(plugin, global.locale);
     const config = await loadConfig();
-    const served = Object.entries(profileLock(config, resolveProfileName(config, global.profile)))
+    const profileName = resolveProfileName(config, global.profile);
+    const shortNames = await profileShortNames(config, profileName);
+    warnInactiveShortNames(shortNames.inactive, global.locale);
+    const served = Object.entries(profileLock(config, profileName))
       .filter(([name]) => !reservedNames.has(name))
       .map(([name, locked]) => ({ name, summary: locked.summary }));
     printLine(
       helpText(
         global.locale,
         [...served, ...pluginModules].sort((left, right) => left.name.localeCompare(right.name)),
+        shortNames,
       ),
     );
     return 0;
@@ -3073,6 +3181,28 @@ export const main = async (argv = Bun.argv.slice(2)): Promise<number> => {
   }
   const module = reservedNames.has(moduleName) ? undefined : await loadInstalledModule(moduleName, global);
   if (!module) {
+    const config = await loadConfig();
+    const profileName = resolveProfileName(config, global.profile);
+    const shortNames = await profileShortNames(config, profileName);
+    const shortName = shortNames.active.get(moduleName);
+    if (shortName) {
+      const args = [...shortName.path, ...moduleArgs];
+      const locked = profileLock(config, profileName)[shortName.module];
+      if (shortName.path.length === 0 && args[0] === "reference" && locked) {
+        return runReferenceCommand(shortName.module, locked, args.slice(1));
+      }
+      const target = await loadInstalledModule(shortName.module, global);
+      if (target) return runModule(target, args, global);
+    }
+    const ambiguous = shortNames.inactive.find((claim) => claim.name === moduleName && claim.reason === "ambiguous");
+    if (ambiguous) {
+      const names = ambiguous.claimedBy.join(", ");
+      throw new CliError(
+        `\`${moduleName}\` is ambiguous: ${names}. Use the full name.`,
+        1,
+        `\`${moduleName}\` ist mehrdeutig: ${names}. Nutze den vollen Namen.`,
+      );
+    }
     if (CLOUD_CLI_MODULE_NAME.test(moduleName)) {
       throw new CliError(
         `Unknown command "${moduleName}". If your Cloud serves it, run \`cld plugins install ${moduleName}\`; \`cld plugins list\` shows what it serves.`,

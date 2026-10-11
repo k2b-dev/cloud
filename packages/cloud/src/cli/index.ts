@@ -76,6 +76,16 @@ export type CloudCliClientCredentialsProfile = {
 export type CloudCliModule = {
   name: string;
   summary: string;
+  /**
+   * `cld <alias> …` runs `cld <name> …`. Names match CLOUD_CLI_MODULE_NAME;
+   * cld uses them only when exactly one installed module claims them and no built-in or module has that name.
+   */
+  alias?: string;
+  /**
+   * Top-level names mapped to space-separated command paths relative to this module, never preset flags or args.
+   * Names match CLOUD_CLI_MODULE_NAME; cld uses them only when exactly one installed module claims them and no built-in or module has that name.
+   */
+  shortcuts?: Readonly<Record<string, string>>;
   booleanFlags?: readonly string[];
   requiresCloud?: boolean;
   requiresCloudFor?: (args: string[], flags: CloudCliFlags) => boolean;

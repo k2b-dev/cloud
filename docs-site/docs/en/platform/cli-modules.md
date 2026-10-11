@@ -180,6 +180,45 @@ then skips profile and token requirements for that command while every other
 command in the module keeps its normal Cloud gate. An offline command must not
 call `ctx.fetch()`.
 
+### Declare short names
+
+A module may declare one `alias` for the whole module and `shortcuts` for
+individual command paths:
+
+```ts
+export default defineCliCommands({
+  name: "inventory",
+  alias: "inv",
+  shortcuts: { stock: "items list" },
+  summary: "Manage inventory items.",
+  commands: [
+    command("items list", { summary: "List inventory items", run: listItems }),
+  ],
+});
+```
+
+`cld inv items list` runs `cld inventory items list`. `cld stock` runs
+`cld inventory items list`; additional arguments and flags follow that path.
+
+Alias and shortcut names must match `CLOUD_CLI_MODULE_NAME`
+(`^[a-z][a-z0-9-]*$`). They must differ from the module name and from each
+other. Shortcut targets are non-empty, space-separated command paths relative
+to the module. `defineCliCommands()` normalizes whitespace and requires an
+exact command with its own handler. A generated group alone, an unknown path,
+preset flags, and preset arguments are invalid.
+
+Core commands take precedence, followed by modules with exactly the requested
+name, then short names. Names of package plugins and modules the Cloud served
+at the last install or update are reserved too, including modules the profile
+has not installed. Resolution uses saved metadata without contacting the Cloud.
+If more than one installed module claims a name, or the name collides with a
+core command or module, the short name is inactive for every claimant. The last
+installed plugin never wins a conflict. `cld help` and `cld plugins list`,
+`install`, and `update` warn about inactive names on stderr.
+
+Agents and scripts should use full module names: a short name may be inactive
+on another profile.
+
 ## Define arguments and flags
 
 Arguments are positional and read in declaration order.
@@ -735,6 +774,11 @@ sign-in succeeds. `--yes` installs them without asking, and `--no-plugins`
 skips the offer. A command whose plugin is not installed fails with a hint to
 run `cld plugins install <name>`. `cld help` lists the modules installed for
 the current profile.
+
+Short names come from the profile's plugin lock. They are available per profile
+after `cld plugins install` or `cld plugins update`. `cld help` shows active
+aliases beside module names and lists command shortcuts. Package plugins do
+not get short names.
 
 `cld <module> reference [file]` prints a served plugin's skill references:
 `index.md` by default, or one of the further files it links to. Agents read

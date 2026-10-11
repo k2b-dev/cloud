@@ -106,6 +106,9 @@ test("standalone CLI starts and runs offline without Cloud server configuration"
     expect(JSON.parse(listed.stdout).plugins).toContainEqual({
       profile: null,
       name: "echo",
+      alias: null,
+      shortcuts: {},
+      inactive: [],
       app: null,
       installed: "1.0.0",
       available: null,
