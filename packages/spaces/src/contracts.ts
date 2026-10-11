@@ -866,6 +866,7 @@ export type AssignedToFilter = z.infer<typeof AssignedToFilterSchema>;
 
 export const ItemFilterSchema = z.object({
   // Filter options
+  itemIds: z.array(ResourceShortIdSchema).max(100).optional().describe("Only these items"),
   blocked: z.boolean().optional().describe("Whether unfinished blocker tasks exist"),
   overdue: z.boolean().optional().describe("Whether the deadline lies before today, as the deadline filter overdue counts it"),
   type: ItemTypeSchema.default("all").describe("Filter by item type"),

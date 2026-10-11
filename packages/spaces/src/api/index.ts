@@ -2276,7 +2276,8 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Spaces"],
       summary: "List items with filters",
-      description: "List items with filtering, sorting, and pagination support.",
+      description:
+        "List items with filtering, sorting, and pagination support. itemIds restricts results to up to 100 public item IDs; unknown or deleted IDs do not match.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(ItemFilterResponseSchema, "Filtered items with pagination"),
