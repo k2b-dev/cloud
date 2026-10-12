@@ -348,6 +348,9 @@ jobs:
         with:
           name: ui-dist
           path: packages/ui/dist
+      # Certification runs every Grids test file, including the table layout test that launches Chromium.
+      - name: Install the Playwright browser used by the Grids browser tests
+        run: ./packages/grids/node_modules/.bin/playwright install chromium
       - run: bun run --cwd packages/grids test:all --shard ${{ matrix.shard }}/3
         env:
           GRIDS_VERIFY_REPORTS_DIR: ${{ runner.temp }}/grids-certification
