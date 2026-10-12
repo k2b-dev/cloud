@@ -41,6 +41,8 @@ describe("Mail workflow projected state", () => {
     const output = {
       nested: [{ message: structuredClone(message), conversation: structuredClone(conversation) }],
       other: { id: "other" },
+      // Built from the message id only: a separate value in the live run, so it stays one.
+      built: { id: "message", note: "kept" },
       scalar: null,
     };
     const ctx = { invocation: { context: { source: { message, conversation } } } } as unknown as WorkflowExecuteActionContext;
@@ -55,6 +57,8 @@ describe("Mail workflow projected state", () => {
         if (!nested || typeof nested !== "object" || Array.isArray(nested)) throw new Error("Expected nested aliases");
         expect(nested.message).toBe(message);
         expect(nested.conversation).toBe(conversation);
+        expect(value.built).not.toBe(message);
+        expect(value.built).toEqual({ id: "message", note: "kept" });
       },
     });
     await handler.restoreCompleted?.(

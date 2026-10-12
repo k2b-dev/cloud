@@ -25,6 +25,17 @@ const recordMessageStateTransition = (message: MailWorkflowProjectedObject, tran
 export const isMailWorkflowProjectedObject = (value: WorkflowJsonValue | undefined): value is MailWorkflowProjectedObject =>
   value !== null && typeof value === "object" && !Array.isArray(value);
 
+// A journaled snapshot of a projected object has its id and its fields. An object built from
+// the id alone was a separate value in the live run and stays one.
+const isSnapshotOf = (
+  value: MailWorkflowProjectedObject,
+  canonical: WorkflowJsonValue | undefined,
+): canonical is MailWorkflowProjectedObject => {
+  if (!isMailWorkflowProjectedObject(canonical) || typeof canonical.id !== "string" || value.id !== canonical.id) return false;
+  const keys = Object.keys(canonical);
+  return keys.length === Object.keys(value).length && keys.every((key) => Object.hasOwn(value, key));
+};
+
 /** Restore journaled aliases as canonical projections so later actions and conditions share state and provider history. */
 export const rebindMailWorkflowRestoredOutput = (handler: WorkflowExecuteActionHandler): WorkflowExecuteActionHandler => ({
   ...handler,
@@ -35,9 +46,8 @@ export const rebindMailWorkflowRestoredOutput = (handler: WorkflowExecuteActionH
     const rebind = (value: WorkflowJsonValue): WorkflowJsonValue => {
       if (Array.isArray(value)) return value.map(rebind);
       if (!isMailWorkflowProjectedObject(value) || Object.getPrototypeOf(value) !== Object.prototype) return value;
-      if (isMailWorkflowProjectedObject(message) && typeof message.id === "string" && value.id === message.id) return message;
-      if (isMailWorkflowProjectedObject(conversation) && typeof conversation.id === "string" && value.id === conversation.id)
-        return conversation;
+      if (isSnapshotOf(value, message)) return message;
+      if (isSnapshotOf(value, conversation)) return conversation;
       return Object.fromEntries(Object.entries(value).map(([key, nested]) => [key, rebind(nested)]));
     };
     return handler.restoreCompleted?.(ctx, step, {
