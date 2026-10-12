@@ -2,6 +2,8 @@ import { logger } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { z } from "zod";
 
+import { conversations } from "./conversations";
+
 const log = logger("chat:api");
 
 export const ChatHealthSchema = z.object({
@@ -36,5 +38,5 @@ const health = async (): Promise<ChatHealth> => {
   return { status, observedAt: new Date().toISOString(), database: { status, latencyMs } };
 };
 
-export const chatService = { health };
+export const chatService = { health, conversations };
 export type ChatService = typeof chatService;

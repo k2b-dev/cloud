@@ -1,22 +1,186 @@
-import { type AuthContext, auth, jsonResponse, rateLimit, requiresAdmin, respond } from "@k2b/cloud/server";
+import {
+  type AuthContext,
+  auth,
+  getLocale,
+  jsonResponse,
+  rateLimit,
+  requiresAdmin,
+  requiresAuth,
+  respond,
+  validator,
+} from "@k2b/cloud/server";
 import { ok } from "@k2b/stdlib";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { describeRoute } from "hono-openapi";
+import { z } from "zod";
+import { chatMessages } from "../messages";
 import { ChatHealthSchema, chatService } from "../service";
+import {
+  AddMembersSchema,
+  ChangeSchema,
+  ConversationPageSchema,
+  ConversationParamSchema,
+  ConversationQuerySchema,
+  ConversationSchema,
+  CreateConversationSchema,
+  CreateOutcomeSchema,
+  LeaveSchema,
+  MemberPageSchema,
+  MemberParamSchema,
+  MemberQuerySchema,
+  SuccessSchema,
+  UpdateConversationSchema,
+  UpdateMemberSchema,
+} from "../service/contracts";
 
-const app = new Hono<AuthContext>().use(rateLimit()).get(
-  "/admin/health",
-  auth.requireRole("admin"),
+const context = (c: Context<AuthContext>) => ({ actor: c.get("actor"), accessSubject: c.get("accessSubject"), locale: getLocale(c) });
+const invalidInput = (c: Context) => ({ code: "BAD_INPUT", message: chatMessages.resolve([getLocale(c)]).t.invalidInput });
+const description = (summary: string, schema: z.ZodType) =>
   describeRoute({
     tags: ["Chat"],
-    summary: "Read the chat app's operational health",
-    ...requiresAdmin,
-    responses: {
-      200: jsonResponse(ChatHealthSchema, "Health snapshot"),
+    summary,
+    ...requiresAuth,
+    responses: { 200: jsonResponse(schema, summary) },
+  });
+const app = new Hono<AuthContext>()
+  .use(rateLimit())
+  .get(
+    "/admin/health",
+    auth.requireRole("admin"),
+    describeRoute({
+      tags: ["Chat"],
+      summary: "Read the chat app's operational health",
+      ...requiresAdmin,
+      responses: { 200: jsonResponse(ChatHealthSchema, "Health snapshot") },
+    }),
+    async (c) => respond(c, ok(await chatService.health())),
+  )
+  .use("/conversations", auth.requireRole("authenticated"))
+  .use("/conversations/*", auth.requireRole("authenticated"))
+  .post(
+    "/conversations",
+    describeRoute({
+      tags: ["Chat"],
+      summary: "Create a chat or find chats with the same direct members",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(CreateOutcomeSchema, "Existing chats"),
+        201: jsonResponse(CreateOutcomeSchema, "Created chat"),
+        // The request limiter answers without a code; only the new-chat limit sends RATE_LIMITED.
+        429: jsonResponse(
+          z.object({ code: z.literal("RATE_LIMITED").optional(), message: z.string() }),
+          "Request or new-chat rate limit reached",
+        ),
+      },
+    }),
+    validator("json", CreateConversationSchema, invalidInput),
+    async (c) => {
+      const result = await chatService.conversations.create({ ...context(c), input: c.req.valid("json") });
+      return respond(c, result, result.ok && result.data.outcome === "created" ? 201 : 200);
     },
-  }),
-  async (c) => respond(c, ok(await chatService.health())),
-);
+  )
+  .get(
+    "/conversations",
+    description("List your chats", ConversationPageSchema),
+    validator("query", ConversationQuerySchema, invalidInput),
+    async (c) => {
+      // The transport validator decodes the cursor; the service validates its own public input.
+      const cursor = c.req.valid("query").cursor;
+      return respond(c, chatService.conversations.list({ ...context(c), query: cursor ? { cursor: JSON.stringify(cursor) } : {} }));
+    },
+  )
+  .get(
+    "/conversations/:conversation",
+    description("Read a chat", ConversationSchema),
+    validator("param", ConversationParamSchema, invalidInput),
+    async (c) => respond(c, chatService.conversations.get({ ...context(c), conversationId: c.req.valid("param").conversation })),
+  )
+  .patch(
+    "/conversations/:conversation",
+    description("Change chat details", ConversationSchema),
+    validator("param", ConversationParamSchema, invalidInput),
+    validator("json", UpdateConversationSchema, invalidInput),
+    async (c) =>
+      respond(
+        c,
+        chatService.conversations.update({
+          ...context(c),
+          conversationId: c.req.valid("param").conversation,
+          input: c.req.valid("json"),
+        }),
+      ),
+  )
+  .get(
+    "/conversations/:conversation/members",
+    description("Read direct chat members", MemberPageSchema),
+    validator("param", ConversationParamSchema, invalidInput),
+    validator("query", MemberQuerySchema, invalidInput),
+    async (c) =>
+      respond(
+        c,
+        chatService.conversations.members.list({
+          ...context(c),
+          conversationId: c.req.valid("param").conversation,
+          query: c.req.valid("query"),
+        }),
+      ),
+  )
+  .post(
+    "/conversations/:conversation/members",
+    description("Add people to a chat", ChangeSchema),
+    validator("param", ConversationParamSchema, invalidInput),
+    validator("json", AddMembersSchema, invalidInput),
+    async (c) =>
+      respond(
+        c,
+        chatService.conversations.members.add({
+          ...context(c),
+          conversationId: c.req.valid("param").conversation,
+          input: c.req.valid("json"),
+        }),
+      ),
+  )
+  .patch(
+    "/conversations/:conversation/members/:accessId",
+    description("Change a direct member's permission", SuccessSchema),
+    validator("param", MemberParamSchema, invalidInput),
+    validator("json", UpdateMemberSchema, invalidInput),
+    async (c) =>
+      respond(
+        c,
+        chatService.conversations.members.update({
+          ...context(c),
+          conversationId: c.req.valid("param").conversation,
+          accessId: c.req.valid("param").accessId,
+          input: c.req.valid("json"),
+        }),
+      ),
+  )
+  .delete(
+    "/conversations/:conversation/members/:accessId",
+    description("Remove a direct member", SuccessSchema),
+    validator("param", MemberParamSchema, invalidInput),
+    async (c) =>
+      respond(
+        c,
+        chatService.conversations.members.remove({
+          ...context(c),
+          conversationId: c.req.valid("param").conversation,
+          accessId: c.req.valid("param").accessId,
+        }),
+      ),
+  )
+  .post(
+    "/conversations/:conversation/leave",
+    description("Leave a chat, handing over management when needed", SuccessSchema),
+    validator("param", ConversationParamSchema, invalidInput),
+    validator("json", LeaveSchema, invalidInput),
+    async (c) =>
+      respond(
+        c,
+        chatService.conversations.leave({ ...context(c), conversationId: c.req.valid("param").conversation, input: c.req.valid("json") }),
+      ),
+  );
 
 export default app;
 export type ApiType = typeof app;
