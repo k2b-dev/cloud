@@ -135,12 +135,14 @@ suite("Chat live delivery on two replicas", () => {
     const ben = await f.person("Ben"),
       ana = await f.person("Ana");
     const chat = await f.create(ben, [ana]);
+    const control = await f.fixture(ben, [{ person: ana, permission: "read" }]);
     const a = await open(0, ana),
       b = await open(1, ben);
     a.sub("chat", "conversation", { conversation: chat.shortId });
+    a.sub("list", "list", {});
     a.sub("me", "me", {});
     b.sub("chat", "conversation", { conversation: chat.shortId });
-    await ready(a, ["chat", "me"]);
+    await ready(a, ["chat", "list", "me"]);
     await ready(b, ["chat"]);
     const members = MemberPageSchema.parse(await (await f.request(ben.headers, `/${chat.shortId}/members`)).json());
     const accessId = members.items.find((member) => member.principal.userId === ana.id)!.accessId;
@@ -163,6 +165,10 @@ suite("Chat live delivery on two replicas", () => {
         b.events("chat").some((event) => event.type === "message" && event.message.id === sent.id),
     );
     expect(a.events("chat").filter((event) => event.type === "message" && event.message.id === sent.id)).toEqual([]);
+    const after = await send(ben, control.shortId, "barrier");
+    await until(() => a.events("list").some((event) => event.type === "summary" && event.id === after.id));
+    expect(a.events("list").filter((event) => event.type === "summary" && event.id === sent.id)).toEqual([]);
+    expect(a.frames("list").some(({ frame }) => frame.t === "resync")).toBe(true);
     a.socket.close();
     b.socket.close();
   });
@@ -194,19 +200,20 @@ suite("Chat live delivery on two replicas", () => {
     await sql`DELETE FROM auth.user_groups_v2 WHERE user_id = ${ana.id}::uuid AND group_id = ${group.id}::uuid`;
     const removedAt = Date.now();
     let sends = 0,
-      lastCreatedAt = 0;
-    while (Date.now() - removedAt < 3_000) {
-      lastCreatedAt = Date.parse((await send(ben, chat.shortId, `directory message ${sends++}`)).createdAt);
-      await Bun.sleep(200);
-    }
+      expired = first;
+    do {
+      expired = await send(ben, chat.shortId, `directory message ${sends++}`);
+      await Bun.sleep(100);
+    } while (Date.parse(expired.createdAt) <= removedAt + LIVE_LIMITS.cacheMs);
     await until(() => a.frames("chat").some(({ frame }) => frame.t === "revoked"));
     const revoked = a.frames("chat").find(({ frame }) => frame.t === "revoked")!;
     expect(revoked.frame.code).toBe("access_denied");
-    expect(revoked.at - removedAt).toBeLessThanOrEqual(2_500);
-    expect(lastCreatedAt - removedAt).toBeGreaterThan(2_500);
-    for (const event of a.events("chat"))
-      if (event.type === "message") expect(Date.parse(event.message.createdAt) - removedAt).toBeLessThanOrEqual(2_500);
+    expect(
+      a.events("chat").filter((event) => event.type === "message" && Date.parse(event.message.createdAt) > removedAt + LIVE_LIMITS.cacheMs),
+    ).toEqual([]);
+    expect(a.events("chat").filter((event) => event.type === "message" && event.message.id === expired.id)).toEqual([]);
     await until(() => b.events("chat").filter((event) => event.type === "message").length === sends + 1);
+    expect(a.frames("chat").at(-1)?.frame).toEqual(revoked.frame);
     a.socket.close();
     b.socket.close();
   }, 15_000);

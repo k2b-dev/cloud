@@ -29,12 +29,20 @@ const message = (rev: number) =>
     createdAt: new Date(Date.UTC(2026, 9, 12) + rev).toISOString(),
   });
 const page = (rev: number) => ({ items: [{ ...message(rev), systemText: null }], rev, seqHead: rev });
-type Controls = { apply(data: unknown): Promise<void>; resync(): Promise<void>; revoked(): void; unavailable(): void; closed: boolean };
+type Controls = {
+  apply(data: unknown): Promise<void>;
+  applyBatch(data: unknown[]): Promise<void>;
+  resync(): Promise<void>;
+  revoked(): void;
+  unavailable(): void;
+  closed: boolean;
+};
 class ManualConnection implements LiveConnection {
   channels = new Map<string, Controls>();
   subscribe<T>(channel: string, _scope: unknown, handlers: LiveSubscriptionHandlers<T>) {
     const controls: Controls = {
       apply: async (data) => handlers.apply([{ data: handlers.parse(data), cursor: "cursor" }]),
+      applyBatch: async (data) => handlers.apply(data.map((event) => ({ data: handlers.parse(event), cursor: "cursor" }))),
       resync: handlers.resync,
       revoked: () => handlers.revoked?.("access_denied"),
       unavailable: handlers.unavailable,
@@ -68,6 +76,53 @@ const fixture = (overrides: Partial<ChatStoreApi> = {}) => {
   );
   return { api, connection, store };
 };
+
+test("resync after live text messages asks only for the gap", async () => {
+  const afters: number[] = [];
+  const { store, connection } = fixture({
+    changes: async (_id, after) => {
+      afters.push(after);
+      return { rev: 50, more: false, conversation: null, messages: [] };
+    },
+  });
+  for (let rev = 2; rev <= 50; rev++) await connection.get("conversation").apply({ type: "message", message: message(rev) });
+  await connection.get("conversation").resync();
+  expect(afters).toEqual([50]);
+  store.dispose();
+});
+
+test("a restore below the watermark after live text messages replaces the history", async () => {
+  const { store, connection } = fixture({
+    changes: async (_id, after) => (after > 5 ? "RESYNC_REQUIRED" : { rev: 5, more: false, conversation: null, messages: [] }),
+    messages: async () => page(5),
+    conversation: async () => ({ ...conversation, rev: 5 }),
+  });
+  for (let rev = 2; rev <= 100; rev++) await connection.get("conversation").apply({ type: "message", message: message(rev) });
+  await connection.get("conversation").resync();
+  expect(store.openConversation?.watermark).toBe(5);
+  expect(store.openConversation?.messages).toEqual([message(5)]);
+  const restored = { ...message(6), id: "restored06" };
+  await connection.get("conversation").apply({ type: "message", message: restored });
+  expect(store.openConversation?.messages).toContainEqual(restored);
+  store.dispose();
+});
+
+test("a batch with several system messages refreshes the details once", async () => {
+  let calls = 0;
+  const { store, connection } = fixture({
+    conversation: async () => {
+      calls++;
+      return { ...conversation, rev: 4 };
+    },
+  });
+  const systems = [2, 3, 4].map((rev) =>
+    MessageSchema.parse({ ...message(rev), kind: "system", body: null, system: { code: "conversation_created", params: {} } }),
+  );
+  await connection.get("conversation").applyBatch(systems.map((message) => ({ type: "message", message })));
+  expect(calls).toBe(1);
+  expect(store.openConversation?.messages).toEqual([message(1), ...systems]);
+  store.dispose();
+});
 
 test("resync follows delta pages and refreshes metadata without replacing loaded history", async () => {
   const afters: number[] = [];
@@ -313,12 +368,41 @@ test("a restore to an older revision replaces messages and details", async () =>
   store.dispose();
 });
 
+test("a terminal delta below the watermark is a restore", async () => {
+  let latest = 0;
+  const { store, connection } = storeAt(1, {
+    changes: async () => ({ rev: 5, more: false, conversation: null, messages: [] }),
+    messages: async () => {
+      latest++;
+      return page(5);
+    },
+    conversation: async () => ({ ...conversation, rev: 5 }),
+  });
+  store.open({ cursor: "before", conversation, page: page(10) });
+  await connection.get("conversation").resync();
+  expect(latest).toBe(1);
+  expect(store.openConversation?.watermark).toBe(5);
+  expect(store.openConversation?.messages).toEqual([message(5)]);
+  store.dispose();
+});
+
 test("a late event the snapshot already covers does not add history before the loaded page", async () => {
   const { store, connection } = storeAt(100, {});
   await connection.get("conversation").apply({ type: "message", message: message(1) });
   expect(store.openConversation?.messages).toEqual([message(100)]);
   await connection.get("conversation").apply({ type: "message", message: message(101) });
   expect(store.openConversation?.messages).toEqual([message(100), message(101)]);
+  store.dispose();
+});
+
+test("a known sidebar row stays in an incomplete prefix when its activity still sorts last", async () => {
+  const first = { ...conversation, id: "bbbbbb", lastActivityAt: message(30).createdAt };
+  const second = { ...conversation, id: "aaaaaa", lastActivityAt: message(10).createdAt };
+  const { store, connection } = storeAt(1, {}, { items: [first, second], nextCursor: "more" });
+  const summary = chatLiveUpdates(second.id, { ...message(20), conversationId: second.id }, null, [])[1]!.data;
+  await connection.get("list").apply(summary);
+  expect(store.sidebar.map((row) => row.id)).toEqual([first.id, second.id]);
+  expect(store.sidebar[1]).toMatchObject({ rev: 20, lastActivityAt: message(20).createdAt });
   store.dispose();
 });
 

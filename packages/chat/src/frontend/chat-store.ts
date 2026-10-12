@@ -1,6 +1,6 @@
 /**
  * SSR reads chatLive.cursor() BEFORE loading each snapshot. Replay may overlap
- * that snapshot; revisions make the overlap harmless. Slice 1.5 owns rendering.
+ * that snapshot; revisions make the overlap harmless. Slice 1.5 owns rendering and the retained message window.
  */
 import { createApiClient } from "@k2b/cloud/browser";
 import { type LiveConnection, type LiveSubscription, liveConnection } from "@k2b/cloud/browser/live";
@@ -84,7 +84,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
   let disposed = false;
   let sidebarWork = Promise.resolve();
   const subscriptions: LiveSubscription[] = [];
-  type Current = { view: OpenChat; messages: Map<string, Message>; subscription: LiveSubscription | null };
+  type Current = { view: OpenChat; metadataRev: number; messages: Map<string, Message>; subscription: LiveSubscription | null };
   let current: Current | null = null;
   const notify = () => {
     if (!disposed) for (const listener of listeners) listener();
@@ -104,7 +104,10 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     notify();
   };
   const metadata = (chat: Current, conversation: Conversation) => {
-    if (active(chat) && conversation.rev >= (chat.view.conversation?.rev ?? 0)) chat.view = { ...chat.view, conversation };
+    if (active(chat) && conversation.rev >= (chat.view.conversation?.rev ?? 0)) {
+      chat.view = { ...chat.view, conversation };
+      chat.metadataRev = Math.max(chat.metadataRev, conversation.rev);
+    }
   };
   // A message the watermark already covers is unknown only when it lies before the loaded history; skip it.
   const applyMessage = (chat: Current, message: Message) => {
@@ -134,21 +137,24 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     // A restored chat can move back in revisions, so the replacement wins over the guard.
     chat.messages = new Map(page.items.map((message) => [message.id, MessageSchema.parse(message)]));
     chat.view = { ...chat.view, conversation, watermark: page.rev };
+    chat.metadataRev = conversation.rev;
     publishMessages(chat);
   };
   const resyncConversation = async (chat: Current) => {
     let count = 0;
-    // Start at the older of messages and metadata: an SSR snapshot may have read them at different revisions.
-    let after = Math.min(chat.view.watermark, chat.view.conversation?.rev ?? 0);
+    // Start at the watermark unless SSR details are still older than its messages.
+    let after = Math.min(chat.view.watermark, chat.metadataRev);
     while (active(chat)) {
       const delta = await api.changes(chat.view.id, after);
       if (!active(chat)) return;
       if (delta === null) return noAccess(chat);
       if (delta === "RESYNC_REQUIRED" || count + delta.messages.length > MAX_CATCHUP_ROWS) return replaceMessages(chat);
+      if (!delta.more && delta.rev < chat.view.watermark) return replaceMessages(chat);
       count += delta.messages.length;
       if (delta.conversation) metadata(chat, delta.conversation);
       for (const message of delta.messages) applyMessage(chat, MessageSchema.parse(message));
       chat.view = { ...chat.view, watermark: Math.max(chat.view.watermark, delta.rev) };
+      chat.metadataRev = Math.max(chat.metadataRev, delta.rev);
       publishMessages(chat);
       if (!delta.more) return;
       if (delta.rev <= after) throw new Error("Chat changes did not advance the watermark");
@@ -166,6 +172,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
         watermark: next.page.rev,
         messages: next.page.items.map((message) => MessageSchema.parse(message)),
       },
+      metadataRev: next.conversation.rev,
       messages: new Map(next.page.items.map((message) => [message.id, MessageSchema.parse(message)])),
       subscription: null,
     };
@@ -177,12 +184,17 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
         cursor: next.cursor,
         parse: (data) => ChatLiveEventSchema.parse(data),
         apply: async (events) => {
+          let system = false,
+            highestRev = 0;
           for (const { data } of events) {
             if (!active(chat)) return;
             if (data.type !== "message" || data.message.conversationId !== chat.view.id) continue;
-            if (data.message.kind === "system") await refreshMetadata(chat);
             applyMessage(chat, data.message);
+            if (data.message.kind === "system") system = true;
+            highestRev = Math.max(highestRev, data.message.rev);
           }
+          if (system) await refreshMetadata(chat);
+          if (active(chat)) chat.metadataRev = Math.max(chat.metadataRev, highestRev);
           publishMessages(chat);
         },
         resync: () => resyncConversation(chat),
@@ -212,14 +224,14 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     complete = page.nextCursor === null;
     notify();
   };
-  // Server order is last activity, then ID, both descending. A row that sorts after the loaded prefix stays out.
+  // Server order is last activity, then ID, both descending. Only unknown rows past an incomplete prefix stay out.
   const place = (row: Conversation) => {
     const rest = rows.filter((other) => other.id !== row.id);
     const index = rest.findIndex(
       (other) => row.lastActivityAt > other.lastActivityAt || (row.lastActivityAt === other.lastActivityAt && row.id > other.id),
     );
     if (index >= 0) rest.splice(index, 0, row);
-    else if (complete) rest.push(row);
+    else if (complete || rest.length < rows.length) rest.push(row);
     rows = rest;
   };
   const applySummary = async (summary: Summary) => {
