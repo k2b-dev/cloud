@@ -153,6 +153,8 @@ Attachment extraction never blocks receiving, reading, or sending a message. Mai
 
 Open **Mailbox tools → Mailbox health → Advanced diagnostics and repairs**. Find the redacted command entry by its ID and error code.
 
+In the terminal, `cld mail command list --state failed` or `--state needs_attention` lists the affected commands with their error. When a page is full, Mail prints the `--before` value for the next page; keep the same `--state`. With **Manage** access, `cld mail operator run reconcile --command <id>` and `cld mail operator run retry --command <id>` follow the same rules as the buttons below. A failed move or send cannot be retried there.
+
 - **Reconcile effect** is safe for an unclear provider result, because it reads the provider state before it changes the command result.
 - **Retry work** appears only for failed maintenance that reads from the provider and where no provider effect started.
 - **Cancel work** appears only while suitable maintenance is queued or has failed.

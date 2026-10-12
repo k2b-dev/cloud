@@ -262,7 +262,7 @@ const mapIncomingAutomation = (row: IncomingAutomationRow): StoredIncomingAutoma
     },
   );
 
-const normalizeSenderMatch = (kind: SenderMatchKind, value: string): Result<string> => {
+export const normalizeSenderMatch = (kind: SenderMatchKind, value: string): Result<string> => {
   const normalized = kind === "sender" ? normalizeEmailAddress(value) : normalizeEmailDomain(value);
   if (!normalized) return fail(err.badInput(kind === "sender" ? "Enter a valid sender email address" : "Enter a valid sender domain"));
   if (kind === "domain" && !normalized.includes(".")) {
@@ -328,6 +328,12 @@ const incomingAutomationPreviewIsExact = (scope: MailAutomationScope): boolean =
   scope.mode === "all" ||
   scope.conditions.items.every((condition) => condition.field === "sender_address" || condition.field === "sender_domain");
 
+// Preview and backfill must use the first From address, like workflow snapshot execution.
+const firstFromAddress = sql`sender.position = (
+  SELECT min(first_sender.position) FROM mail.message_addresses first_sender
+  WHERE first_sender.message_id = message.id AND first_sender.role = 'from'
+)`;
+
 const incomingAutomationTargetFrom = sql`
   FROM mail.remote_message_refs remote_ref
   JOIN mail.message_placements placement
@@ -343,6 +349,7 @@ const incomingAutomationTargetFrom = sql`
   JOIN mail.message_addresses sender
     ON sender.message_id = message.id
    AND sender.role = 'from'
+   AND ${firstFromAddress}
   LEFT JOIN mail.conversation_messages conversation_message
     ON conversation_message.message_id = message.id
 `;
@@ -357,13 +364,22 @@ const inboundIncomingAutomationTarget = sql`
   )
 `;
 
+/** Sender predicate over the shared bulk selector's message and resource aliases. */
+export const senderMatchesSql = (kind: SenderMatchKind, value: string): SqlFragment => sql`EXISTS (
+  SELECT 1 FROM mail.message_addresses sender
+  WHERE sender.message_id = message.id AND sender.role = 'from'
+    AND ${firstFromAddress}
+    AND ${inboundIncomingAutomationTarget}
+    AND ${senderMatchSql(kind, value)}
+)`;
+
 const normalizePreviewScope = (input: PreviewIncomingAutomationMatchesInput): Result<MailAutomationScope> => {
   const parsed = previewIncomingAutomationMatchesInputSchema.safeParse(input);
   if (!parsed.success) return fail(err.badInput(parsed.error.issues[0]?.message ?? "Invalid automation scope"));
   return normalizeAutomationScope(parsed.data.scope);
 };
 
-const rejectOwnSenderTargets = async (params: {
+export const rejectOwnSenderTargets = async (params: {
   mailboxId: string;
   conditions: AutomationConditionSet;
   db: SqlClient;

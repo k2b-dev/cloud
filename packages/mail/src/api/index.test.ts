@@ -82,6 +82,10 @@ describe("Mail API composition", () => {
     );
   });
 
+  test("exposes mailbox-scoped sender disposition", () => {
+    expect(api.routes.some((route) => route.method === "POST" && route.path === "/mailboxes/:mailboxId/senders/disposition")).toBe(true);
+  });
+
   test("exposes unified incoming automation and durable deterministic backfill routes", () => {
     expect(
       api.routes.some((route) => route.method === "GET" && route.path === "/mailboxes/:mailboxId/incoming-automations/:automationId"),

@@ -205,6 +205,20 @@ export const mailingListDispositionInputSchema = z
   .strict();
 export type MailingListDispositionInput = z.infer<typeof mailingListDispositionInputSchema>;
 
+export const senderDispositionInputSchema = z
+  .object({
+    match: z.enum(["sender", "domain"]),
+    value: z.string().trim().min(1).max(320),
+    destination: z.enum(["archive", "trash"]).optional(),
+    folderId: ResourceShortIdSchema.optional(),
+    idempotencyKey: z.string().uuid(),
+  })
+  .strict()
+  .refine((input) => (input.destination !== undefined) !== (input.folderId !== undefined), {
+    message: "Choose exactly one destination or folderId",
+  });
+export type SenderDispositionInput = z.infer<typeof senderDispositionInputSchema>;
+
 export const mailingListDispositionResultSchema = z
   .object({
     commandCount: z.number().int().nonnegative(),

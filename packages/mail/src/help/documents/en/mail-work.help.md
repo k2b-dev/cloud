@@ -203,7 +203,7 @@ The request affects future delivery for this mailbox and can be hard to reverse.
 - **Unsubscribe** asks the list to stop sending mail. Mail uses a protected one-click request when the list supports it. Otherwise, Mail opens the unsubscribe page of the list or prepares the unsubscribe email that the list names.
 - **Write to list** opens the address that the list names for new messages.
 - **List archive** opens the archive advertised by the list.
-- After a one-click unsubscribe request, **Archive existing** or **Move existing to Trash** moves up to 500 already synchronized messages at a time. Repeat the action if Mail reports that more messages remain.
+- After a one-click unsubscribe request, **Archive existing** or **Move existing to Trash** moves up to 500 already synchronized messages at a time. Messages in Sent, Drafts, Trash, and Junk stay where they are, and kept conversations do not go to Trash. Repeat the action after these moves are done if Mail reports that more messages remain.
 
 Mail never opens an unsubscribe link only because you preview or read a message. Lists without standard list information do not appear in **Mailing lists**.
 
