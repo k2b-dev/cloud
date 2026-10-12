@@ -759,6 +759,35 @@ describe("Spaces Kanban board in a browser", () => {
     const page = await open(iPadLandscape, { locale: "en" });
     try {
       moves.splice(0);
+      // Both events run together so a protocol delay cannot turn the swipe into a hold.
+      const next = page.locator('[data-item-id="Item01"] p').first();
+      const start = await center(next);
+      await next.evaluate((element, start) => {
+        for (const type of ["pointerdown", "pointermove"]) {
+          element.dispatchEvent(
+            new PointerEvent(type, {
+              pointerType: "touch",
+              pointerId: 8,
+              isPrimary: true,
+              button: type === "pointermove" ? -1 : 0,
+              bubbles: true,
+              cancelable: true,
+              clientX: start.x + (type === "pointermove" ? 20 : 0),
+              clientY: start.y,
+            }),
+          );
+        }
+      }, start);
+      expect(await touchMovePrevented(next)).toBe(false);
+      await page.waitForTimeout(400);
+      expect(await liftedCards(page)).toEqual([]);
+      await touchPointer(next, "pointermove", 8, { x: start.x + 200, y: start.y });
+      await touchPointer(next, "pointerup", 8, { x: start.x + 200, y: start.y });
+      await page.waitForTimeout(100);
+      expect(moves).toEqual([]);
+      expect(await page.evaluate(() => document.getSelection()?.toString())).toBe("");
+
+      // The swipe runs first: the drop refreshes every column, and the refresh replaces the rows a later step would read.
       const title = page.locator('[data-item-id="Item02"] p').first();
       const from = await center(title);
       const to = await center(page.locator('[data-spaces-kanban-column="column:Col002"] article').first());
@@ -786,35 +815,6 @@ describe("Spaces Kanban board in a browser", () => {
       expect(moves).toContainEqual(expect.objectContaining({ columnId: "Col002" }));
       await page.waitForSelector('[data-spaces-kanban-column="column:Col002"] [data-item-id="Item02"]');
       expect(await liftedCards(page)).toEqual([]);
-
-      // Both events run together so a protocol delay cannot turn the swipe into a hold.
-      moves.splice(0);
-      const next = page.locator('[data-item-id="Item01"] p').first();
-      const start = await center(next);
-      await next.evaluate((element, start) => {
-        for (const type of ["pointerdown", "pointermove"]) {
-          element.dispatchEvent(
-            new PointerEvent(type, {
-              pointerType: "touch",
-              pointerId: 8,
-              isPrimary: true,
-              button: type === "pointermove" ? -1 : 0,
-              bubbles: true,
-              cancelable: true,
-              clientX: start.x + (type === "pointermove" ? 20 : 0),
-              clientY: start.y,
-            }),
-          );
-        }
-      }, start);
-      expect(await touchMovePrevented(next)).toBe(false);
-      await page.waitForTimeout(400);
-      expect(await liftedCards(page)).toEqual([]);
-      await touchPointer(next, "pointermove", 8, { x: start.x + 200, y: start.y });
-      await touchPointer(next, "pointerup", 8, { x: start.x + 200, y: start.y });
-      await page.waitForTimeout(100);
-      expect(moves).toEqual([]);
-      expect(await page.evaluate(() => document.getSelection()?.toString())).toBe("");
     } finally {
       await page.context().close();
     }
