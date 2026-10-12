@@ -2380,9 +2380,15 @@ const TimeGridView = (props: {
     return `4rem repeat(${props.days.length}, minmax(${dayMin}, 1fr))`;
   });
   // The hours scroll sideways themselves; the day and all-day rows follow, also when focus scrolls one of them.
+  // A row's scroll event from our own write arrives a frame late; echoing it back would undo a smooth scroll or fling.
+  const followed = new WeakMap<HTMLElement, number>();
   const followColumns = (source: HTMLElement) => {
+    if (followed.get(source) === source.scrollLeft) return;
+    followed.delete(source);
     for (const row of [scrollContainer, daysRow, allDayRow]) {
-      if (row && row !== source && row.scrollLeft !== source.scrollLeft) row.scrollLeft = source.scrollLeft;
+      if (!row || row === source || row.scrollLeft === source.scrollLeft) continue;
+      row.scrollLeft = source.scrollLeft;
+      followed.set(row, row.scrollLeft);
     }
   };
   const laneStyle = (layoutItem: TimedEventLayout) => {

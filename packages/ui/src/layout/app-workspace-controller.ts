@@ -678,11 +678,21 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
           const target = cell?.isConnected && main?.contains(cell) ? cell : snapshot.item;
           if (phone?.matches && main) {
             // The sheet covers Main's lower part, so the item ends 8px above it;
-            // a step can also land above Main's top or beside it, as in a board.
+            // the other edges include the scroller's scroll padding, like scrollIntoView.
             const page = ownerDocument.scrollingElement;
             const vertical = verticalScroller(target, main) ?? page;
             const horizontal = scrollerOn("x", target, main) ?? page;
-            const bounds = (scroller: Element | null) => (scroller && scroller !== page ? scroller.getBoundingClientRect() : null);
+            const bounds = (scroller: Element | null) => {
+              if (!scroller || scroller === page) return null;
+              const rect = scroller.getBoundingClientRect();
+              const style = ownerWindow.getComputedStyle(scroller);
+              const padding = (value: string) => Number.parseFloat(value) || 0;
+              return {
+                top: rect.top + padding(style.scrollPaddingTop),
+                left: rect.left + padding(style.scrollPaddingLeft),
+                right: rect.right - padding(style.scrollPaddingRight),
+              };
+            };
             const box = target.getBoundingClientRect();
             const top = Math.max(0, bounds(vertical)?.top ?? 0);
             const left = Math.max(0, bounds(horizontal)?.left ?? 0);

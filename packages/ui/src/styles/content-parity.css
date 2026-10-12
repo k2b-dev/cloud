@@ -1116,8 +1116,11 @@
   isolation: isolate;
 }
 
+/* The sticky hour gutter and the header's corner are 4 rem wide, so an item
+   revealed or focused at the start edge stops beside them, not under them. */
 .k2b-ui :is(.k2b-calendar-time-grid__days, .k2b-calendar-time-grid__all-day, .k2b-calendar-time-grid__scroll) {
   scrollbar-gutter: stable;
+  scroll-padding-inline-start: 4rem;
 }
 
 /* The hours are the `k2b-detail-trail` scroller. The day and all-day rows end
@@ -1416,10 +1419,12 @@
   writing-mode: vertical-rl;
 }
 
+/* The menu opens toward the day's start, so it can reach over the sticky hour
+   gutter; it stays above it. */
 .k2b-ui .k2b-calendar-time-grid__overflow-menu {
   position: absolute;
   right: 2.25rem;
-  z-index: 70;
+  z-index: 90;
   width: 14rem;
   padding: 0.5rem;
   border: 1px solid var(--k2b-border);
