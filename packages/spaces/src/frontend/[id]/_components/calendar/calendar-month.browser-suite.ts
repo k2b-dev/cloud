@@ -544,7 +544,9 @@ describe(`Spaces month view in ${browserName}`, () => {
       // The selection stays with the month: after the week view and back, New event creates on the shown date.
       expect(await selectedDays(page)).toEqual(["2026-10-21"]);
       await page.locator(".k2b-calendar-view-switcher").getByRole("radio", { name: "Week" }).click();
-      await page.waitForURL(/cv=week&cd=2026-10-21/);
+      // The week opens at the week of the selected day, and the URL follows the first day it shows a moment later,
+      // so the switch's own cd=2026-10-21 lasts only until then and is no state to wait for.
+      await page.waitForURL(/cv=week&cd=2026-10-19/);
       // The week view's arrows go from week start to week start; the URL follows the first day it shows.
       for (const date of ["2026-10-26", "2026-11-02"]) {
         await page.locator('.k2b-calendar-header__nav-button[aria-label="Next"]').click();
