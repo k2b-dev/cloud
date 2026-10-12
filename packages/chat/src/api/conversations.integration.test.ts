@@ -333,6 +333,41 @@ suite("chat conversations and direct members", () => {
     expect(counts).toEqual({ access_count: 1, participants: 1 });
   });
 
+  test("keeps an active manager when another member's account has expired", async () => {
+    const owner = await user();
+    const expired = await user("user", true);
+    const chat = await fixture(owner, [{ id: expired, permission: "write" }]);
+    const headers = await cookie(owner);
+    const path = `/${chat.shortId}`;
+    const unavailable = await request({ ...headers, "accept-language": "de-DE" }, `${path}/leave`, "POST", {
+      successor: chat.entries.get(expired),
+    });
+    expect(unavailable.status).toBe(400);
+    expect((await unavailable.json()).message).toBe("Ein ausgewähltes Konto existiert nicht oder ist nicht mehr aktiv.");
+    const members = MemberPageSchema.parse(await (await request(headers, `${path}/members`)).json());
+    expect(members.items.some((member) => member.accessId === chat.ownerAccess && member.permission === "admin")).toBeTrue();
+    expect((await request(headers, `${path}/members/${chat.entries.get(expired)}`, "PATCH", { permission: "admin" })).status).toBe(200);
+    for (const [method, body] of [
+      ["PATCH", { permission: "write" }],
+      ["DELETE", undefined],
+    ] as const) {
+      const response = await request(headers, `${path}/members/${chat.ownerAccess}`, method, body);
+      expect(response.status).toBe(409);
+      expect((await response.json()).code).toBe("LAST_MANAGER");
+    }
+    const leave = await request(headers, `${path}/leave`, "POST", {});
+    expect(leave.status).toBe(409);
+    expect((await leave.json()).message).toBe("Choose another direct member as successor before leaving as the last manager.");
+    const successor = await user();
+    expect((await request(headers, `${path}/members`, "POST", { members: [successor] })).status).toBe(200);
+    const updatedMembers = MemberPageSchema.parse(await (await request(headers, `${path}/members`)).json());
+    const successorEntry = updatedMembers.items.find((member) => member.principal.userId === successor);
+    if (!successorEntry) throw new Error("Expected the active successor's member entry");
+    expect((await request(headers, `${path}/leave`, "POST", { successor: successorEntry.accessId })).status).toBe(200);
+    const conversation = ConversationSchema.parse(await (await request(await cookie(successor), path)).json());
+    expect(conversation.permission).toBe("admin");
+  });
+
   test("rejects unknown, expired, guest, and group members with localized errors; guests create only for themselves", async () => {
     const owner = await user();
     const headers = await cookie(owner);

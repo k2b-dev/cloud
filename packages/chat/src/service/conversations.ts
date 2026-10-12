@@ -322,10 +322,11 @@ const update = async (input: ChatContext & { conversationId: string; input: unkn
   });
 };
 
-type MemberRow = { access_id: string; user_id: string; permission: Exclude<PermissionLevel, "none">; added_at: Date };
+type MemberRow = { access_id: string; user_id: string; permission: Exclude<PermissionLevel, "none">; added_at: Date; active: boolean };
 const directEntries = (db: typeof sql, conversationId: string) => db<MemberRow[]>`
-  SELECT ca.access_id, a.user_id, a.permission, ca.added_at
+  SELECT ca.access_id, a.user_id, a.permission, ca.added_at, (u.account_expires IS NULL OR u.account_expires > now()) AS active
   FROM chat.conversation_access ca JOIN auth.access a ON a.id = ca.access_id
+  JOIN auth.users u ON u.id = a.user_id
   WHERE ca.conversation_id = ${conversationId}::uuid AND ca.role = 'member' AND a.user_id IS NOT NULL ORDER BY ca.access_id
 `;
 const candidate = (row: MemberRow) => ({
@@ -334,7 +335,12 @@ const candidate = (row: MemberRow) => ({
   permission: row.permission,
 });
 const guardManagers = (before: MemberRow[], after: MemberRow[], input: ChatContext) => {
-  const result = ensureManagerRemains({ before: before.map(candidate), after: after.map(candidate), locale: input.locale });
+  // Expired accounts cannot sign in, so they cannot count as remaining managers.
+  const result = ensureManagerRemains({
+    before: before.filter((row) => row.active).map(candidate),
+    after: after.filter((row) => row.active).map(candidate),
+    locale: input.locale,
+  });
   return result.ok ? result : fail({ ...result.error, message: messages(input).lastManager });
 };
 const listMembers = async (input: ChatContext & { conversationId: string; query?: unknown }) => {
@@ -449,6 +455,7 @@ const leave = async (input: ChatContext & { conversationId: string; input: unkno
     if (!others.length) return conflict(t.cannotLeaveAlone);
     const successor = parsed.data.successor;
     if (successor && !others.some((row) => row.access_id === successor)) return fail(err.badInput(t.invalidSuccessor));
+    if (successor && !others.find((row) => row.access_id === successor)?.active) return fail(err.badInput(t.memberUnavailable));
     const needsSuccessor = !guardManagers(before, others, input).ok;
     if (needsSuccessor && !successor) return conflict(t.successorRequired);
     const after = others.map((row) => (needsSuccessor && row.access_id === successor ? { ...row, permission: "admin" as const } : row));
