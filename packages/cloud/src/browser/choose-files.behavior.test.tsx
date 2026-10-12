@@ -22,6 +22,46 @@ const cancelDeviceDialog = (document: Document) => {
   return input !== null;
 };
 
+domTest("aborting while the FileChooser chunk loads resolves immediately and never opens a late dialog", async () => {
+  const dom = createDomTestHarness();
+  const { dialogCore } = await import("@k2b/ui");
+  const reload = await import("./reload");
+  const { createFileChoosing } = await import("./choose-files");
+  const { createProviderList } = await import("./provider-list");
+  const pending = Promise.withResolvers<void>();
+  const loaded = Promise.withResolvers<void>();
+  const load = spyOn(reload, "importOnDemand").mockImplementation(async (loader) => {
+    await pending.promise;
+    const module = await loader();
+    loaded.resolve();
+    return module;
+  });
+  const open = spyOn(dialogCore, "open");
+  const controller = new AbortController();
+  const remove = spyOn(controller.signal, "removeEventListener");
+  try {
+    const result = createFileChoosing(createProviderList(async () => [drive]))({ signal: controller.signal });
+    expect(load).toHaveBeenCalledTimes(1);
+    controller.abort();
+    // The result must settle while the import is still blocked, within one event-loop turn.
+    expect(await Promise.race([result, settle().then(() => "still pending")])).toEqual([]);
+    expect(remove).toHaveBeenCalledWith("abort", expect.any(Function));
+    expect(open).not.toHaveBeenCalled();
+    pending.resolve();
+    await loaded.promise;
+    await settle();
+    expect(open).not.toHaveBeenCalled();
+    expect(dom.document.querySelector("dialog[open]")).toBeNull();
+  } finally {
+    controller.abort();
+    pending.resolve();
+    load.mockRestore();
+    open.mockRestore();
+    remove.mockRestore();
+    dom.cleanup();
+  }
+});
+
 domTest("a failed on-demand chooser load resolves no files without opening a dialog", async () => {
   const dom = createDomTestHarness();
   const { dialogCore } = await import("@k2b/ui");

@@ -2,7 +2,7 @@ import { expect, spyOn, test } from "bun:test";
 import { type ComponentProps, createComponent, createSignal } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
-import type { SenderIdentity } from "../../contracts";
+import type { MailDraftSeed, SenderIdentity } from "../../contracts";
 import type { MessageDetail } from "../../service/messages";
 import type MailConversationReaderComponent from "./MailConversationReader";
 
@@ -466,6 +466,143 @@ test.skipIf(isServer)("a reply without a verified sender names the reason and le
     globalThis.fetch = originalFetch;
     confirm.mockRestore();
     error.mockRestore();
+    dom.cleanup();
+  }
+});
+
+test.skipIf(isServer)("changing the conversation during the seed-store import drops the stale reply", async () => {
+  const dom = createDomTestHarness();
+  const originalStorage = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+  Object.defineProperty(globalThis, "localStorage", { configurable: true, value: dom.window.localStorage });
+  const { collectContextAwareCommands } = await import("@k2b/cloud/browser/testing");
+  const reload = await import("@k2b/cloud/browser/reload");
+  const nav = await import("@k2b/ssr/nav");
+  const store = await import("./mail-draft-seed-store");
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let imported = false;
+  const load = spyOn(reload, "importOnDemand").mockImplementation(async (loader) => {
+    await pending;
+    const module = await loader();
+    imported = true;
+    return module;
+  });
+  const navigate = spyOn(nav, "documentNavigate").mockImplementation(() => {});
+  const storing = spyOn(store, "storeMailDraftSeed").mockImplementation(() => {});
+  const identity: SenderIdentity = {
+    id: "Send01",
+    mailboxId: "Box001",
+    label: "Support",
+    displayName: "Support",
+    fromAddress: "support@example.com",
+    replyTo: null,
+    defaultCc: [],
+    defaultBcc: [],
+    defaultFormat: "markdown",
+    defaultPriority: "normal",
+    defaultDeliveryReceipt: false,
+    defaultReadReceipt: false,
+    vcard: null,
+    envelopeSender: null,
+    defaultSignatureTemplateId: null,
+    transport: {
+      mode: "mailbox",
+      host: null,
+      port: null,
+      tlsMode: null,
+      username: null,
+      secret: { kind: null, isSet: false },
+      revision: 0,
+      status: "active",
+      capabilities: { dsn: false, size: false, maxMessageBytes: null },
+      lastVerifiedAt: null,
+      lastError: null,
+    },
+    authenticationPolicy: { automation: "mailbox" },
+    sentFolderId: null,
+    draftsFolderId: null,
+    isDefault: true,
+    status: "verified",
+    statusReason: null,
+    pendingVerificationCommandId: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+  const seed: MailDraftSeed = {
+    id: "20000000-0000-4000-8000-000000000002",
+    mailboxId: "Box001",
+    conversationId: "Conv01",
+    intent: "reply",
+    sourceMessageId: "Msg001",
+    derivedFromMessageId: null,
+    derivationKind: null,
+    content: {
+      senderIdentityId: "Send01",
+      to: [],
+      cc: [],
+      bcc: [],
+      subject: "Re: Quarterly review",
+      body: "",
+      format: "markdown",
+      priority: "normal",
+      requestDeliveryReceipt: false,
+      requestReadReceipt: false,
+    },
+    attachments: [],
+    origin: { kind: "compose", input: { senderIdentityId: "Send01", to: [], cc: [], bcc: [], subject: "Re: Quarterly review", body: "" } },
+    createdAt: now,
+  };
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = Object.assign(
+    async (_input: RequestInfo | URL, init?: RequestInit) => Response.json(init?.method === "POST" ? seed : []),
+    { preconnect: originalFetch.preconnect },
+  );
+  const [conversationId, setConversationId] = createSignal("Conv01");
+  const { MailConversationReader } = modules!;
+  const dispose = render(
+    () =>
+      createComponent(MailConversationReader, {
+        ...readerProps,
+        identities: [identity],
+        get selectionKey() {
+          return conversationId();
+        },
+        get selectedConversationId() {
+          return conversationId();
+        },
+        get messages() {
+          return [
+            { ...envelopeOnly, id: conversationId() === "Conv01" ? "Msg001" : "Msg002", hydrationStatus: "complete", plainText: "Hello" },
+          ];
+        },
+      }),
+    dom.root,
+  );
+  try {
+    await waitFor(() => collectContextAwareCommands().some((command) => command.id.endsWith(".reply")));
+    const action = collectContextAwareCommands().find((command) => command.id.endsWith(".reply"))?.action;
+    if (typeof action !== "function") throw new Error("The reader registers no Reply command");
+    await action();
+    await waitFor(() => load.mock.calls.length === 1);
+    expect(storing).not.toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
+    setConversationId("Conv02");
+    release();
+    await waitFor(() => imported);
+    await Bun.sleep(0);
+    expect(storing).not.toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
+  } finally {
+    release();
+    dispose();
+    globalThis.fetch = originalFetch;
+    load.mockRestore();
+    navigate.mockRestore();
+    storing.mockRestore();
+    if (originalStorage) Object.defineProperty(globalThis, "localStorage", originalStorage);
+    else Reflect.deleteProperty(globalThis, "localStorage");
     dom.cleanup();
   }
 });

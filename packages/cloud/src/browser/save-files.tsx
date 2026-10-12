@@ -41,7 +41,15 @@ export const createFileSaving = (
     if (!known) load();
     const saved: SavedFile[] = [];
     const running = new Set<Promise<void>>();
-    const saver = await importOnDemand(() => import("./FileSaver"));
+    let abort = () => {};
+    const saver = await Promise.race([
+      importOnDemand(() => import("./FileSaver")),
+      new Promise<undefined>((resolve) => {
+        abort = () => resolve(undefined);
+        options.signal?.addEventListener("abort", abort, { once: true });
+        if (options.signal?.aborted) abort();
+      }),
+    ]).finally(() => options.signal?.removeEventListener("abort", abort));
     if (!saver) return [];
     await dialogCore.open<void>(
       (close) => (

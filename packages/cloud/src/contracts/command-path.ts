@@ -14,4 +14,4 @@ export const isCommandPathSyntax = (value: string): boolean => {
 };
 
 /** Whether `value` is a Cloud path that `CommandPathSchema` accepts; loads no validators. */
-export const isCommandPath = (value: string): boolean => value.length <= 2000 && isCommandPathSyntax(value);
+export const isCommandPath = (value: string): boolean => (value.length <= 2000 || [...value].length <= 2000) && isCommandPathSyntax(value);

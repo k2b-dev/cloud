@@ -305,9 +305,9 @@ export default function MailConversationReader(props: {
     documentNavigate(mailDraftHref(props.mailboxId, draftId, props.requestUrl));
   };
 
-  const openDraftSeed = async (seed: MailDraftSeed) => {
+  const openDraftSeed = async (seed: MailDraftSeed, stillCurrent: () => boolean) => {
     const store = await importOnDemand(() => import("./mail-draft-seed-store"));
-    if (!store || disposed) return;
+    if (!store || disposed || !stillCurrent()) return;
     try {
       store.storeMailDraftSeed(localStorage, seed);
     } catch {
@@ -443,7 +443,7 @@ export default function MailConversationReader(props: {
       return response.json();
     },
     onSuccess: (seed, lookup) => {
-      if (lookup && isCurrentLookup(lookup)) void openDraftSeed(seed);
+      if (lookup && isCurrentLookup(lookup)) void openDraftSeed(seed, () => isCurrentLookup(lookup));
     },
     onError: (error) => prompts.error(error.message, { title: t().startMessageFailed }),
   });
@@ -538,7 +538,7 @@ export default function MailConversationReader(props: {
     },
     onSuccess: (seed, context) => {
       if (context && props.messages.some((message) => message.id === context.message.id)) {
-        void openDraftSeed(seed);
+        void openDraftSeed(seed, () => props.messages.some((message) => message.id === context.message.id));
       }
     },
     onError: (error) => prompts.error(error.message),

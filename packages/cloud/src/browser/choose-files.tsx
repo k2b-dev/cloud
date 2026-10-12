@@ -41,7 +41,15 @@ export const createFileChoosing = (
     };
     if (!known) load();
     return (async () => {
-      const chooser = await importOnDemand(() => import("./FileChooser"));
+      let abort = () => {};
+      const chooser = await Promise.race([
+        importOnDemand(() => import("./FileChooser")),
+        new Promise<undefined>((resolve) => {
+          abort = () => resolve(undefined);
+          signal?.addEventListener("abort", abort, { once: true });
+          if (signal?.aborted) abort();
+        }),
+      ]).finally(() => signal?.removeEventListener("abort", abort));
       if (!chooser) return [];
       return dialogCore
         .open<File[]>(

@@ -29,10 +29,12 @@ export const openCommand = async (command: string, input: unknown = {}, options:
 
 /** Call after this page's handlers have mounted. Each entry is consumed, including invalid links. */
 export const consumeCommandLink = async (): Promise<void> => {
-  const url = new URL(window.location.href);
-  if (!url.searchParams.get("command")) return;
+  const command = new URL(window.location.href).searchParams.get("command");
+  if (!command) return;
   const contracts = await importOnDemand(() => import("../contracts/commands"));
   if (!contracts) return;
+  const url = new URL(window.location.href);
+  if (url.searchParams.get("command") !== command) return;
   const { clearCommand, readCommand } = contracts;
   const messages = resourceSearchMessages.resolve([document.documentElement.lang]).t;
   let target: ReturnType<typeof readCommand>;
