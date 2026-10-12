@@ -56,6 +56,24 @@ suite("chat view snapshots", () => {
     expect(after.rev).toBeGreaterThan(text.rev);
   });
 
+  test("conversation projections collapse long whitespace runs before truncating previews", async () => {
+    const owner = await f.person();
+    const chat = await f.create(owner, []);
+    // Exercise Postgres ARE escapes and every character in JavaScript's whitespace set.
+    const whitespace =
+      "\t\n\v\f\r \u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff";
+    for (const [index, run] of [" ", whitespace].entries()) {
+      const body = `Hello${run.repeat(700)}world`;
+      const response = await f.request(owner.headers, `/${chat.shortId}/messages`, "POST", { clientId: `whitespace-${index}`, body });
+      expect(response.status).toBe(201);
+      const sent = MessageViewSchema.parse(await response.json());
+      expect(messagePreview(body)).toBe("Hello world");
+      const expected = { id: sent.id, author: sent.author, preview: messagePreview(body), createdAt: sent.createdAt };
+      expect((await detail(owner, chat.shortId)).lastMessage).toEqual(expected);
+      expect((await sidebar(owner)).items.find((row) => row.id === chat.shortId)?.lastMessage).toEqual(expected);
+    }
+  });
+
   test("snapshot includes a live cursor, latest history, and the ascending middle-message window", async () => {
     const owner = await f.person();
     const chat = await f.fixture(owner);

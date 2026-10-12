@@ -190,7 +190,8 @@ const lastMessages = async (rows: ConversationRow[], db: typeof sql) => {
       >`
       SELECT c.id AS conversation_id, m.* FROM chat.conversations c
       CROSS JOIN LATERAL (
-        SELECT short_id, author_type, author_id, author_name, left(body_md, 600) AS body, created_at
+        SELECT short_id, author_type, author_id, author_name,
+          left(regexp_replace(body_md, ${"[\\t\\n\\v\\f\\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]+"}, ' ', 'g'), 600) AS body, created_at
         FROM chat.messages WHERE conversation_id = c.id AND kind = 'text' ORDER BY seq DESC LIMIT 1
       ) m WHERE c.id = ANY(${toPgUuidArray(rows.map((row) => row.id))}::uuid[])
     `
