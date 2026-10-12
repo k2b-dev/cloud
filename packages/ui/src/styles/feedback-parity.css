@@ -1187,7 +1187,7 @@ html:has(.k2b-mobile-shell):not(:has(dialog:modal)) .k2b-ui [data-k2b-toast-cont
 }
 
 .k2b-ui .k2b-inline-guidance__content > a:hover,
-.k2b-ui .k2b-inline-guidance .k2b-button[data-variant="text"]:not(:disabled):hover {
+.k2b-ui .k2b-inline-guidance .k2b-button[data-variant="text"]:not(:disabled, [aria-disabled="true"]):hover {
   color: inherit;
   text-decoration-thickness: 0.125rem;
 }

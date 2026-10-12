@@ -81,17 +81,6 @@
     outline-offset: -2px;
   }
 }
-/* Indent and Outdent outside a list: dimmed like a disabled button, but still focusable with their tooltip. No hover
-   tint and no press motion, since a press does nothing. */
-.k2b-ui .notebooks-editor-toolbar .k2b-button.k2b-icon-button[aria-disabled="true"] {
-  opacity: 0.4;
-  cursor: default;
-}
-.k2b-ui .notebooks-editor-toolbar .k2b-button.k2b-icon-button[aria-disabled="true"]:is(:hover, :active):not(:focus-visible) {
-  color: inherit;
-  background: transparent;
-  scale: none;
-}
 /* The notebook sidebar starts wider than the Cloud default, for the quick filters and, later, who is in a note. A
    width the person chose by resizing is set inline on the workspace and wins. */
 .k2b-ui .notebooks-workspace {

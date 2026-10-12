@@ -168,10 +168,10 @@ describe("@k2b/ui complete action migrations", () => {
     const warningRule = rule('.k2b-ui .k2b-button[data-variant="warning"]');
     expect(warningRule).toContain("color: #422006");
     expect(warningRule).toContain("background: var(--k2b-warning-500)");
-    expect(rule('.k2b-ui .k2b-button[data-variant="danger"]:not(:disabled):hover')).toContain(
+    expect(rule('.k2b-ui .k2b-button[data-variant="danger"]:not(:disabled, [aria-disabled="true"]):hover')).toContain(
       "background: color-mix(in srgb, var(--k2b-danger-600) 86%, #000000)",
     );
-    expect(rule('.k2b-ui .k2b-button[data-variant="success"]:not(:disabled):hover')).toContain(
+    expect(rule('.k2b-ui .k2b-button[data-variant="success"]:not(:disabled, [aria-disabled="true"]):hover')).toContain(
       "background: color-mix(in srgb, var(--k2b-success-600) 86%, #000000)",
     );
     const aiRule = rule('.k2b-ui .k2b-button[data-variant="ai"]');
@@ -266,7 +266,7 @@ describe("@k2b/ui complete action migrations", () => {
     expect(textRule).toContain("padding-inline: 0");
     expect(textRule).toContain("border-inline-width: 0");
     expect(textRule).toContain("background: transparent");
-    const hoverRule = rule('.k2b-ui .k2b-button[data-variant="text"]:not(:disabled):hover');
+    const hoverRule = rule('.k2b-ui .k2b-button[data-variant="text"]:not(:disabled, [aria-disabled="true"]):hover');
     expect(hoverRule).toContain("color: var(--k2b-text)");
     expect(hoverRule).toContain("background: transparent");
   });
@@ -915,11 +915,11 @@ describe("@k2b/ui action geometry parity", () => {
 
   test("buttons use flat, layout-stable press feedback", () => {
     const button = rule(".k2b-ui .k2b-button");
-    const active = rule(".k2b-ui .k2b-button:not(:disabled):active");
+    const active = rule('.k2b-ui .k2b-button:not(:disabled, [aria-disabled="true"]):active');
     const split = rule(".k2b-ui .k2b-dropdown.k2b-split-button");
-    const splitSegmentActive = rule(".k2b-ui .k2b-split-button > .k2b-button:not(:disabled):active");
+    const splitSegmentActive = rule('.k2b-ui .k2b-split-button > .k2b-button:not(:disabled, [aria-disabled="true"]):active');
     const splitPrimaryActive = rule(".k2b-ui .k2b-dropdown.k2b-split-button:has(> .k2b-split-button__primary:not(:disabled):active)");
-    const disabled = rule(".k2b-ui .k2b-button:disabled");
+    const disabled = rule('.k2b-ui .k2b-button:is(:disabled, [aria-disabled="true"])');
 
     expect(button).toContain("transition:");
     expect(button).toContain("user-select: none");
@@ -932,5 +932,9 @@ describe("@k2b/ui action geometry parity", () => {
     expect(actionsCss).not.toContain(".k2b-ui .k2b-dropdown.k2b-split-button:has(> .k2b-button:not(:disabled):active)");
     expect(actionsCss).toContain("@media (prefers-reduced-motion: reduce)");
     expect(disabled).toContain("opacity: 0.4");
+    // A focusable aria-disabled button looks disabled and gets no hover or press feedback.
+    for (const variant of ["", '[data-variant="ghost"]', '[data-variant="secondary"]'])
+      expect(actionsCss).toContain(`.k2b-ui .k2b-button${variant}:not(:disabled, [aria-disabled="true"]):hover {`);
+    expect(actionsCss).not.toMatch(/\.k2b-button[^{}\n]*:not\(:disabled\):(hover|active)/);
   });
 });

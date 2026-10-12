@@ -169,7 +169,14 @@ describe.each(Object.entries(devices))("editor toolbar list indentation (%s)", (
       const paragraph = await layout(page);
       for (const label of [indentLabel, outdentLabel]) {
         expect(await page.getByRole("button", { name: label, exact: true }).count()).toBe(1);
-        expect(await page.getByRole("button", { name: label, exact: true }).getAttribute("aria-disabled")).toBe("true");
+        const button = page.getByRole("button", { name: label, exact: true });
+        expect(await button.getAttribute("aria-disabled")).toBe("true");
+        // The shared @k2b/ui disabled look, with no hover tint, while the button stays focusable.
+        if (name === "desktop") await button.hover({ force: true });
+        expect(await button.evaluate((element) => [getComputedStyle(element).opacity, getComputedStyle(element).backgroundColor])).toEqual([
+          "0.4",
+          "rgba(0, 0, 0, 0)",
+        ]);
         await press(page, label, true);
         await expectEditor(page, doc, "Paragraph");
       }
@@ -192,52 +199,60 @@ describe.each(Object.entries(devices))("editor toolbar list indentation (%s)", (
   }, 30_000);
 });
 
-test("phone: Indent and Outdent fit inside the viewport and visible toolbar scrollport without scrolling", async () => {
-  const page = await open(phone);
-  try {
-    await load(page, original);
-    await caret(page, "Charger");
-    // Measure before any tap: Playwright must not reveal an off-screen button by scrolling to it.
-    const bounds = await page.locator(".notebooks-editor-toolbar").evaluate(
-      (toolbar, labels) => {
-        const scroll = toolbar.querySelector<HTMLElement>(".overflow-x-auto")!;
-        const rect = scroll.getBoundingClientRect();
-        const visible = {
-          left: rect.left + scroll.clientLeft,
-          top: rect.top + scroll.clientTop,
-          width: scroll.clientWidth,
-          height: scroll.clientHeight,
-        };
-        return {
-          viewport: { width: document.documentElement.clientWidth, height: window.innerHeight },
-          toolbar: toolbar.getBoundingClientRect().toJSON(),
-          visible,
-          scrollLeft: scroll.scrollLeft,
-          buttons: labels.map((label) => {
-            const button = Array.from(toolbar.querySelectorAll("button")).find((button) => button.getAttribute("aria-label") === label);
-            if (!button) throw new Error(`Missing toolbar button: ${label}`);
-            return { label, box: button.getBoundingClientRect().toJSON() };
-          }),
-        };
-      },
-      [outdentLabel, indentLabel],
-    );
-    expect(bounds.scrollLeft).toBe(0);
-    for (const { label, box } of bounds.buttons) {
-      expect(await page.getByRole("button", { name: label, exact: true }).isVisible()).toBe(true);
-      const diagnostic = `${label}: ${JSON.stringify(bounds)}`;
-      expect(box.width, diagnostic).toBeGreaterThan(0);
-      expect(box.height, diagnostic).toBeGreaterThan(0);
-      expect(box.left, diagnostic).toBeGreaterThanOrEqual(0);
-      expect(box.top, diagnostic).toBeGreaterThanOrEqual(0);
-      expect(box.right, diagnostic).toBeLessThanOrEqual(bounds.viewport.width);
-      expect(box.bottom, diagnostic).toBeLessThanOrEqual(bounds.viewport.height);
-      expect(box.left, diagnostic).toBeGreaterThanOrEqual(bounds.visible.left);
-      expect(box.top, diagnostic).toBeGreaterThanOrEqual(bounds.visible.top);
-      expect(box.right, diagnostic).toBeLessThanOrEqual(bounds.visible.left + bounds.visible.width);
-      expect(box.bottom, diagnostic).toBeLessThanOrEqual(bounds.visible.top + bounds.visible.height);
+// The device preset (393 or 412 px wide) and the 390 px phone width the layout targets.
+test.each([
+  ["preset", phone],
+  ["390px", { ...phone, viewport: { width: 390, height: 844 } }],
+] as const)(
+  "phone (%s): Indent and Outdent fit inside the viewport and visible toolbar scrollport without scrolling",
+  async (_, device) => {
+    const page = await open(device);
+    try {
+      await load(page, original);
+      await caret(page, "Charger");
+      // Measure before any tap: Playwright must not reveal an off-screen button by scrolling to it.
+      const bounds = await page.locator(".notebooks-editor-toolbar").evaluate(
+        (toolbar, labels) => {
+          const scroll = toolbar.querySelector<HTMLElement>(".overflow-x-auto")!;
+          const rect = scroll.getBoundingClientRect();
+          const visible = {
+            left: rect.left + scroll.clientLeft,
+            top: rect.top + scroll.clientTop,
+            width: scroll.clientWidth,
+            height: scroll.clientHeight,
+          };
+          return {
+            viewport: { width: document.documentElement.clientWidth, height: window.innerHeight },
+            toolbar: toolbar.getBoundingClientRect().toJSON(),
+            visible,
+            scrollLeft: scroll.scrollLeft,
+            buttons: labels.map((label) => {
+              const button = Array.from(toolbar.querySelectorAll("button")).find((button) => button.getAttribute("aria-label") === label);
+              if (!button) throw new Error(`Missing toolbar button: ${label}`);
+              return { label, box: button.getBoundingClientRect().toJSON() };
+            }),
+          };
+        },
+        [outdentLabel, indentLabel],
+      );
+      expect(bounds.scrollLeft).toBe(0);
+      for (const { label, box } of bounds.buttons) {
+        expect(await page.getByRole("button", { name: label, exact: true }).isVisible()).toBe(true);
+        const diagnostic = `${label}: ${JSON.stringify(bounds)}`;
+        expect(box.width, diagnostic).toBeGreaterThan(0);
+        expect(box.height, diagnostic).toBeGreaterThan(0);
+        expect(box.left, diagnostic).toBeGreaterThanOrEqual(0);
+        expect(box.top, diagnostic).toBeGreaterThanOrEqual(0);
+        expect(box.right, diagnostic).toBeLessThanOrEqual(bounds.viewport.width);
+        expect(box.bottom, diagnostic).toBeLessThanOrEqual(bounds.viewport.height);
+        expect(box.left, diagnostic).toBeGreaterThanOrEqual(bounds.visible.left);
+        expect(box.top, diagnostic).toBeGreaterThanOrEqual(bounds.visible.top);
+        expect(box.right, diagnostic).toBeLessThanOrEqual(bounds.visible.left + bounds.visible.width);
+        expect(box.bottom, diagnostic).toBeLessThanOrEqual(bounds.visible.top + bounds.visible.height);
+      }
+    } finally {
+      await page.context().close();
     }
-  } finally {
-    await page.context().close();
-  }
-}, 30_000);
+  },
+  30_000,
+);
