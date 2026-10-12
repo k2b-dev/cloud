@@ -10,8 +10,10 @@ export default function BookMermaid(props: { rootId: string }) {
   const locale = useLocale();
   onMount(() => {
     let currentController: AbortController | undefined;
+    let isDark = document.documentElement.classList.contains("dark");
     const render = async () => {
       currentController?.abort();
+      isDark = document.documentElement.classList.contains("dark");
       const controller = new AbortController();
       currentController = controller;
       const root = document.getElementById(props.rootId);
@@ -31,7 +33,7 @@ export default function BookMermaid(props: { rootId: string }) {
         return;
       }
       // SVG images cannot render HTML labels.
-      mermaid.initialize({ ...mermaidConfig({ dark: document.documentElement.classList.contains("dark") }), htmlLabels: false });
+      mermaid.initialize({ ...mermaidConfig({ dark: isDark }), htmlLabels: false });
       await enhanceBookMermaid(
         root,
         async (source, id) => {
@@ -55,7 +57,12 @@ export default function BookMermaid(props: { rootId: string }) {
     };
     void render();
     window.addEventListener(BOOK_CONTENT_EVENT, render);
+    const themeObserver = new MutationObserver(() => {
+      if (document.documentElement.classList.contains("dark") !== isDark) void render();
+    });
+    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
     onCleanup(() => {
+      themeObserver.disconnect();
       currentController?.abort();
       window.removeEventListener(BOOK_CONTENT_EVENT, render);
     });

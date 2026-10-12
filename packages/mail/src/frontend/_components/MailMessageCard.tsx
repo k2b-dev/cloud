@@ -37,7 +37,8 @@ type MailMessageCardContext = {
   identities: SenderIdentity[];
   dateConfig: DateContext;
   readingFormat: MailReadingFormat;
-  theme: CloudTheme;
+  /** `null` while the browser has not yet resolved Automatic for this island. */
+  theme: CloudTheme | null;
   calendarIntegrationAvailable: boolean;
   composerBusy: boolean;
 };
@@ -146,11 +147,23 @@ export default function MailMessageCard(props: {
     resolveMessageBodyFormat(
       props.context.readingFormat,
       bodyFormatOverride(),
-      props.context.theme,
+      props.context.theme ?? "light",
       Boolean(props.message.sanitizedHtml),
       Boolean(props.message.plainText),
     ),
   );
+  // Under Automatic only the browser knows the device scheme. Until the island
+  // has read it, both bodies render and the <html> class shows one, so the
+  // format never swaps after the first paint; then the hidden one is dropped.
+  const bodyFollowsScheme = () =>
+    props.context.theme === null &&
+    props.context.readingFormat === "automatic" &&
+    bodyFormatOverride() === null &&
+    Boolean(props.message.sanitizedHtml) &&
+    Boolean(props.message.plainText);
+  const bodyShown = (format: MessageBodyFormat) => bodyFollowsScheme() || bodyFormat() === format;
+  const bodyVisibility = (format: MessageBodyFormat) =>
+    bodyFollowsScheme() ? (format === "html" ? "contents dark:hidden" : "hidden dark:contents") : "contents";
   const responseActions = (): DropdownItem[] =>
     props.context.canWrite && props.context.selectedConversationId && !exceptionalDelivery()
       ? [
@@ -351,21 +364,23 @@ export default function MailMessageCard(props: {
           </Show>
           <div ref={messageBody} class="mail-message-body min-w-0 overflow-x-auto text-sm text-primary">
             {props.message.sanitizedHtml || props.message.plainText ? (
-              <Show keyed when={bodyFormat()}>
-                {(format) => (
-                  <MailMessageBody
-                    mailboxId={props.context.mailboxId}
-                    messageId={props.message.id}
-                    format={format}
-                    html={props.message.sanitizedHtml}
-                    plainText={props.message.plainText}
-                    attachments={props.message.attachments}
-                    remoteContent={props.message.remoteContent}
-                    linksDisabled={security().linksDisabled}
-                    onSelectionChange={(value) => props.actions.selectionChange(messageId, value)}
-                  />
-                )}
-              </Show>
+              (["html", "plain"] as const).map((format) => (
+                <Show when={bodyShown(format)}>
+                  <div class={bodyVisibility(format)} data-mail-body-format={format}>
+                    <MailMessageBody
+                      mailboxId={props.context.mailboxId}
+                      messageId={props.message.id}
+                      format={format}
+                      html={props.message.sanitizedHtml}
+                      plainText={props.message.plainText}
+                      attachments={props.message.attachments}
+                      remoteContent={props.message.remoteContent}
+                      linksDisabled={security().linksDisabled}
+                      onSelectionChange={(value) => props.actions.selectionChange(messageId, value)}
+                    />
+                  </div>
+                </Show>
+              ))
             ) : props.message.hydrationStatus === "body" || props.message.hydrationStatus === "complete" ? (
               <Placeholder state="empty" variant="compact" title={messages().noBody} />
             ) : props.message.hydrationStatus === "failed" ? (

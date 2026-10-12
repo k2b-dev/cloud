@@ -378,10 +378,17 @@ resolved `light` or `dark` before the first paint. Browser code reads that
 class and observes class changes to follow live updates.
 
 On the server, `readThemeFromCookieHeader()` from `@k2b/cloud/shared` returns
-the resolved theme. For Automatic, it uses the browser's last reported scheme
-as a hint. `readThemePreferenceFromCookieHeader()` returns the choice itself:
-`light`, `dark`, or `system`. Set `page.theme` to fix a public display to one
-theme. Never read `prefers-color-scheme` in application CSS.
+the resolved theme. For Automatic, it is only a best-effort hint: the head
+script reports the device's scheme in the `color-scheme` cookie on each page
+load and on each change, so the value can be stale when the device switched
+while no Cloud page was open, and it is `light` before the first report.
+`readThemePreferenceFromCookieHeader()` returns the choice itself: `light`,
+`dark`, or `system`. When server-rendered markup depends on the theme, read
+the preference: for `system`, render both variants and let the `<html>` class
+show one, or decide in the browser. When server work such as rendering a chart
+must match exactly, send the `<html>` class with the request. Set `page.theme`
+to fix a public display to one theme. Never read `prefers-color-scheme` in
+application CSS.
 
 ## Verify both themes and interaction modes
 

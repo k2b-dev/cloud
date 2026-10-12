@@ -6,6 +6,7 @@ import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
 import { PWA_CANVAS_COLORS } from "../contracts/pwa";
 import { themeBootstrapScript } from "../shared/theme";
+import type { RuntimeContext } from "../ssr/runtime";
 
 const root = mkdtempSync(resolve(tmpdir(), "cloud-pwa-head-tests-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -24,7 +25,7 @@ const app = defineApp({
   pwa: {},
 });
 
-const server = new Hono()
+const server = new Hono<{ Variables: { runtime: RuntimeContext } }>()
   .get(
     "/app/head-probe",
     ...app.ssr((c) => {
@@ -41,7 +42,11 @@ const server = new Hono()
       return () => "body";
     }),
   )
-  .get("/app/theme-probe", ...app.ssr(() => () => "body"));
+  .get("/app/theme-probe", ...app.ssr(() => () => "body"))
+  .get("/pwa/head-probe/forbidden", (c) => {
+    c.set("runtime", { apps: [] });
+    return app.ssr.error(c, 403, { layout: "pwa" });
+  });
 
 /** Cache-busting stamps change on every start. */
 const stable = (html: string) => html.replace(/\?v=\d+/g, "?v=*").replace(/\/_ssr\/\d+/g, "/_ssr/*");
@@ -131,6 +136,15 @@ describe("document head", () => {
       `<style data-cloud-canvas>html{background-color:${PWA_CANVAS_COLORS.light}}@media (prefers-color-scheme: dark){html{background-color:${PWA_CANVAS_COLORS.dark}}}</style>`,
     );
     expect(html.indexOf("data-cloud-canvas")).toBeLessThan(html.indexOf('rel="stylesheet"'));
+  });
+
+  test("PWA error pages preserve an explicit dark preference before SSR runs", async () => {
+    const response = await server.request("/pwa/head-probe/forbidden", { headers: { Cookie: "theme=dark" } });
+    expect(response.status).toBe(403);
+    const html = head(await response.text());
+    expect(html).toContain(`<html lang="en" class="dark" style="background-color:${PWA_CANVAS_COLORS.dark}">`);
+    expect(html).toContain(`<meta name="theme-color" content="${PWA_CANVAS_COLORS.dark}">`);
+    expect(html.match(/<meta name="theme-color"[^>]*>/g)).toEqual([`<meta name="theme-color" content="${PWA_CANVAS_COLORS.dark}">`]);
   });
 
   test("paints the app canvas in the colours of the @k2b/ui canvas token", () => {

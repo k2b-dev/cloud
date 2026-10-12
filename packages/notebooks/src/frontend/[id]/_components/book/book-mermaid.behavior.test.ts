@@ -1,6 +1,7 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import { files } from "@k2b/stdlib/browser";
-import { delegateEvents, isServer } from "solid-js/web";
+import { createComponent } from "solid-js";
+import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../../ui/test/dom";
 
 const figure =
@@ -31,6 +32,53 @@ describe("Book Mermaid enhancement", () => {
     test.skip("runs with browser export conditions", () => {});
     return;
   }
+
+  test("the island rerenders only on effective theme changes and stops observing on disposal", async () => {
+    const dom = harness();
+    const mermaid = (await import("mermaid")).default;
+    const initialize = spyOn(mermaid, "initialize").mockImplementation(() => undefined);
+    const renderSvg = spyOn(mermaid, "render").mockImplementation(async () => ({ svg: diagramSvg, diagramType: "flowchart" }));
+    let dispose: (() => void) | undefined;
+    try {
+      dom.root.innerHTML = `<article id="book-theme-probe">${figure}</article><div id="mermaid-island"></div>`;
+      const { default: BookMermaid } = await import("./BookMermaid.island");
+      dispose = render(() => createComponent(BookMermaid, { rootId: "book-theme-probe" }), dom.root.querySelector("#mermaid-island")!);
+      await settle();
+      expect(renderSvg).toHaveBeenCalledTimes(1);
+      expect(initialize.mock.calls.at(-1)?.[0]?.themeVariables?.darkMode).toBe(false);
+      dom.root.querySelector("img")!.dispatchEvent(new Event("load"));
+      expect(dom.root.querySelector("details code")).not.toBeNull();
+
+      dom.document.documentElement.classList.add("unrelated");
+      await settle();
+      expect(renderSvg).toHaveBeenCalledTimes(1);
+
+      dom.document.documentElement.classList.add("dark");
+      await settle();
+      expect(renderSvg).toHaveBeenCalledTimes(2);
+      expect(initialize.mock.calls.at(-1)?.[0]?.themeVariables?.darkMode).toBe(true);
+      expect(renderSvg.mock.calls.at(-1)?.[1]).toContain("A-->B");
+      expect(dom.root.querySelectorAll("img")).toHaveLength(1);
+
+      dom.document.documentElement.classList.remove("dark");
+      await settle();
+      expect(renderSvg).toHaveBeenCalledTimes(3);
+      expect(initialize.mock.calls.at(-1)?.[0]?.themeVariables?.darkMode).toBe(false);
+
+      dispose();
+      dispose = undefined;
+      expect(dom.root.querySelector("img")).toBeNull();
+      expect(dom.root.querySelector("pre code")?.textContent).toContain("A-->B");
+      dom.document.documentElement.classList.add("dark");
+      await settle();
+      expect(renderSvg).toHaveBeenCalledTimes(3);
+    } finally {
+      dispose?.();
+      renderSvg.mockRestore();
+      initialize.mockRestore();
+      dom.cleanup();
+    }
+  });
 
   test("uses an image sink, retains source and revokes URLs on disposal", async () => {
     const dom = harness();

@@ -606,3 +606,49 @@ test.skipIf(isServer)("changing the conversation during the seed-store import dr
     dom.cleanup();
   }
 });
+
+test.skipIf(isServer)("under Automatic both bodies render until the theme is known, and the shown one stays mounted", async () => {
+  const dom = createDomTestHarness();
+  const { MailConversationReader } = modules!;
+  const both: MessageDetail = {
+    ...envelopeOnly,
+    hydrationStatus: "complete",
+    contentType: "multipart/alternative",
+    plainText: "Plain numbers.",
+    sanitizedHtml: "<p>HTML numbers.</p>",
+  };
+  const [theme, setTheme] = createSignal<"light" | "dark" | null>(null);
+  const dispose = render(
+    () =>
+      createComponent(MailConversationReader, {
+        ...readerProps,
+        messages: [both],
+        get theme() {
+          return theme();
+        },
+      }),
+    dom.root,
+  );
+  try {
+    const variant = (format: "html" | "plain") =>
+      dom.root.querySelector<HTMLElement>(`[data-mail-message-id="Msg001"] [data-mail-body-format="${format}"]`);
+    await waitFor(() => variant("plain") !== null);
+    // The <html> class picks one before the first paint: light shows HTML, dark shows plain text.
+    expect(variant("html")?.className).toBe("contents dark:hidden");
+    expect(variant("plain")?.className).toBe("hidden dark:contents");
+
+    const plain = variant("plain");
+    setTheme("dark");
+    await waitFor(() => variant("html") === null);
+    expect(variant("plain")).toBe(plain);
+    expect(variant("plain")?.className).toBe("contents");
+
+    // A later live switch swaps the format as before.
+    setTheme("light");
+    await waitFor(() => variant("plain") === null);
+    expect(variant("html")?.className).toBe("contents");
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});

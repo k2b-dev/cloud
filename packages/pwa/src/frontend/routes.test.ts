@@ -2,7 +2,7 @@ import { afterAll, afterEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { RuntimeAppMeta, User } from "@k2b/cloud/contracts";
+import { PWA_CANVAS_COLORS, type RuntimeAppMeta, type User } from "@k2b/cloud/contracts";
 import { coreSettings, pwaDevices } from "@k2b/cloud/services";
 import { announcements } from "@k2b/cloud/services/announcements";
 import * as iconSource from "@k2b/cloud/services/branding/app-icon-source";
@@ -334,6 +334,32 @@ describe("service worker", () => {
 });
 
 describe("offline page", () => {
+  test("updates the status bar colour when the effective theme changes", async () => {
+    const { offlineHtml: html } = await loadWorker(async () => new Response("page"));
+    expect(html).toContain('window.addEventListener("cloud:theme-preference", updateThemeColor)');
+    const script = Array.from(html.matchAll(/<script>([\s\S]*?)<\/script>/g)).at(-1)![1]!;
+    const meta = { content: "" };
+    let dark = true;
+    const listeners = new Map<string, () => void>();
+    new Function("document", "navigator", "window", script)(
+      {
+        cookie: "",
+        documentElement: { classList: { contains: () => dark } },
+        querySelectorAll: () => [],
+        querySelector: () => meta,
+      },
+      { language: "en" },
+      { addEventListener: (type: string, listener: () => void) => listeners.set(type, listener) },
+    );
+    expect(meta.content).toBe(PWA_CANVAS_COLORS.dark);
+    dark = false;
+    listeners.get("cloud:theme-preference")!();
+    expect(meta.content).toBe(PWA_CANVAS_COLORS.light);
+    dark = true;
+    listeners.get("cloud:theme-preference")!();
+    expect(meta.content).toBe(PWA_CANVAS_COLORS.dark);
+  });
+
   test("is self-contained, carries both languages and the inline logo, and nothing about the account", async () => {
     signIn();
     const { offlineHtml: html } = await loadWorker(async () => new Response("page"));

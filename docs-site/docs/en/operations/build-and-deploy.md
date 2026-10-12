@@ -360,5 +360,9 @@ grants stay listed but open nothing.
 Rebuild application images to receive the Automatic theme preference and its
 head script. Existing `theme=light` and `theme=dark` cookies retain their
 meaning. People without a saved choice follow their device's appearance.
+Every Cloud page now also sets a functional `color-scheme` cookie (`light` or
+`dark`, path `/`, one year, `SameSite=Lax`, `Secure` on HTTPS). It tells the
+server the device's last appearance and holds no personal data. Add it to the
+cookie list in your privacy notice if you keep one.
 No data migration or configuration change is required. See
 [Follow the person's theme](/en/docs/frontend/styling-and-accessibility#follow-the-persons-theme).

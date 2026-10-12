@@ -205,7 +205,8 @@ inferring support from autocomplete.
 | `@k2b/cloud/cli` | APIs for application CLI modules | Built-in account, application, and admin modules are platform-owned |
 
 For theme-aware server work, `readThemeFromCookieHeader()` returns a resolved
-`CloudTheme` (`light` or `dark`), and `readThemePreferenceFromCookieHeader()`
+`CloudTheme` (`light` or `dark`); for Automatic it is a best-effort hint that
+can be stale. `readThemePreferenceFromCookieHeader()`
 returns a `CloudThemePreference` (`light`, `dark`, or `system`). Both readers
 and types come from `@k2b/cloud/shared`. See
 [Follow the person's theme](/en/docs/frontend/styling-and-accessibility#follow-the-persons-theme).

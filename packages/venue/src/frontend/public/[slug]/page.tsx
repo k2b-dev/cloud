@@ -39,7 +39,7 @@ export default ssr(async (c) => {
   );
 
   // The monitor hangs in the venue and always renders dark. The scrollable page follows the visitor's Cloud
-  // theme like every Cloud page; a visitor without one gets the light theme.
+  // theme like every Cloud page; a visitor without a saved choice follows the device appearance.
   if (displayHeight === "full") {
     c.get("page").theme = "dark";
     return () => <LocaleProvider locale={getLocale(c)}>{page()}</LocaleProvider>;

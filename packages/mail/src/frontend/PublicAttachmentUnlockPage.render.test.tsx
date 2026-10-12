@@ -32,7 +32,8 @@ describe("public attachment unlock page", () => {
       }),
     );
 
-    expect(page.theme).toBe("dark");
+    // The page follows the saved preference through the document template, never a fixed theme.
+    expect(page.theme).toBeUndefined();
     expect(html).toContain("<main");
     expect(html).toContain("<section");
     expect(html).toContain("<header");
