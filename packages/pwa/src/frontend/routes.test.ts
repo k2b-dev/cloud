@@ -337,7 +337,8 @@ describe("offline page", () => {
   test("updates the status bar colour when the effective theme changes", async () => {
     const { offlineHtml: html } = await loadWorker(async () => new Response("page"));
     expect(html).toContain('window.addEventListener("cloud:theme-preference", updateThemeColor)');
-    const script = Array.from(html.matchAll(/<script>([\s\S]*?)<\/script>/g)).at(-1)![1]!;
+    const scriptStart = html.lastIndexOf("<script>") + "<script>".length;
+    const script = html.slice(scriptStart, html.indexOf("</script>", scriptStart));
     const meta = { content: "" };
     let dark = true;
     const listeners = new Map<string, () => void>();
