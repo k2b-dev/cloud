@@ -2824,6 +2824,8 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         await sql`INSERT INTO ai.conversations(id,created_by_user_id) VALUES(${run.conversationId}::uuid,${run.identity.user.id}::uuid)`;
         await sql`INSERT INTO ai.turns(id,status,conversation_id) VALUES(${run.turnId}::uuid,'running',${run.conversationId}::uuid)`;
       }
+      // A finished case reads as a cancelled turn, so the host sweep releases its code host for the next case.
+      const finished = new Set<string>();
       const turnOf = (conversationId: string) => {
         const run = byConversation.get(conversationId);
         return run
@@ -2837,6 +2839,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
               createdAt: new Date().toISOString(),
               completedAt: null,
               error: null,
+              cancelRequestedAt: finished.has(conversationId) ? new Date().toISOString() : null,
             }
           : null;
       };
@@ -2870,7 +2873,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         // A failing case becomes its own unmeasured record, so the teardown waits for every other case.
         await Promise.all(
           Array.from({ length: Math.min(concurrency, queue.length) }, async () => {
-            for (let run = queue.shift(); run; run = queue.shift())
+            for (let run = queue.shift(); run; run = queue.shift()) {
               results.push(
                 await evaluateStudioCase(
                   run.evalCase,
@@ -2885,6 +2888,9 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
                   `${directory}/${run.evalCase.name}`,
                 ).catch((caught: unknown) => studioEvalFailure(run.evalCase.name, caught, run.evalCase)),
               );
+              finished.add(run.conversationId);
+              await agentHost.sweep();
+            }
           }),
         );
       } finally {

@@ -154,9 +154,8 @@ presented app. **First check passed** says only that the first version was not
 broken. **Presented without a correction round** says that the first checked
 version is the one the agent showed; it differs from the first number only
 when the agent changes a passing version before showing it, for example after
-looking at its screenshots. These metrics track `code_present`; an app opened
-only with `code_open` can match the route without counting as presented in
-these metrics. They remain unchanged for view cases. A `code_check` call that
+looking at its screenshots. A successful `code_present` or `code_open` counts
+as the presentation. The metrics remain unchanged for view cases. A `code_check` call that
 fails as a tool call, such as a lost host, checks no version and is listed
 separately.
 

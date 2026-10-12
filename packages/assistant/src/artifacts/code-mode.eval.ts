@@ -254,7 +254,11 @@ const studioEvalCounts = (calls: Call[], issues: NessiIssue[]): Counts => {
  * check of a version that had to change.
  */
 export function studioEvalMetrics(calls: Pick<Call, "name" | "isError" | "args" | "result">[]) {
-  const presentIndex = calls.findIndex((call) => call.name === "code_present" && PresentResult.safeParse(call.result).success);
+  // Opening a saved app beside the chat shows it as much as a card in the chat does.
+  const presentIndex = calls.findIndex(
+    (call) =>
+      (call.name === "code_present" && PresentResult.safeParse(call.result).success) || (call.name === "code_open" && !callFailed(call)),
+  );
   const presented = presentIndex >= 0;
   const target = presented ? appId(calls[presentIndex]!.args) : undefined;
   const checks = calls

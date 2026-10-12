@@ -84,6 +84,15 @@ test("only checks of the presented app count, and a failed check call checks no 
   expect(
     studioEvalMetrics([check("app", { error: "Invalid steps.json", failed: true }), check("app", passed("a")), present("app")]),
   ).toMatchObject({ failedCheckCalls: 0, firstCheckPassed: false, correctionRounds: 1 });
+  // Opening the app beside the chat presents it; a refused open does not.
+  const open = (id: string, result: unknown) => ({ name: "code_open", isError: false, args: { id }, result });
+  expect(studioEvalMetrics([check("app", passed("a")), open("app", { opened: "app", started: false })])).toMatchObject({
+    presented: true,
+    presentedWithoutCorrection: true,
+  });
+  expect(studioEvalMetrics([check("app", passed("a")), open("app", { failed: true, error: "Check required" })])).toMatchObject({
+    presented: false,
+  });
   expect(studioEvalMetrics([check("app", passed("a"))])).toMatchObject({
     presented: false,
     correctionRounds: null,
