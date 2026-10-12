@@ -74,7 +74,7 @@ Ansichten stellen dieselben Einträge passend zur aktuellen Aufgabe dar. Eine gu
 ## In der Tages- und Wochenansicht planen {icon="calendar-time"}
 
 :::reference
-- **Tagesbeginn:** Ein Tag läuft von 06:00 bis 06:00 am nächsten Tag. Die Nacht nach 22:00 gehört zum Vortag. Ein Termin von 23:00 bis 01:30 bleibt also bei seinem Abend.
+- **Tagesbeginn:** Ein Tag läuft von 06:00 bis 06:00 am nächsten Tag. Die Nacht nach 22:00 gehört zum Vortag. Ein Termin von 23:00 bis 01:30 bleibt also bei seinem Abend. Ein Termin von 05:30 bis 06:30 steht in beiden Tagen: am Ende der Nacht davor und oben in seinem Tag.
 - **Nächte:** Eine Nacht ohne Einträge ist eine schmale Zeile. Eine Nacht mit Eintrag ist offen und halb so hoch. In der Wochenansicht öffnen sich die Nächte aller Tage gemeinsam, wenn in einer davon ein Eintrag liegt. Wähle die Nachtleiste oder den Mond, um die Nacht ein- oder auszuklappen.
 - **Tagesansicht:** Die Tage laufen in einem Stück nach unten. Jeder Tag behält seine Überschrift oben, solange er zu sehen ist. Leere Tage fallen zu einer Zeile **Nichts geplant** zusammen. Wähle die Zeile, um die Tage zu zeigen. Die Ansicht bremst an jedem Tagesbeginn. Hältst du knapp davor an, rückt die Ansicht auf den Tagesbeginn. Beim Scrollen laden weitere Tage.
 - **Wochenansicht:** Die Tage laufen seitwärts in einem Streifen: sieben auf einem breiten Bildschirm, drei auf dem Handy. Scrolle seitwärts mit dem Trackpad, mit der **Umschalttaste** und dem Mausrad oder mit dem Finger. Der Streifen hält an einem Tagesbeginn. Die Pfeile springen um ganze Wochen. **Heute** kehrt zu dieser Woche zurück.
@@ -82,7 +82,7 @@ Ansichten stellen dieselben Einträge passend zur aktuellen Aufgabe dar. Eine gu
 - **Freie Zeit:** Eine Lücke ab einer Stunde zeigt ihre Länge, zum Beispiel **1 Std. frei**. Wähle eine Lücke, um dort einen Termin anzulegen. In der Wochenansicht erscheint freie Zeit, wenn du auf einen Tag zeigst oder ihn auswählst. Ziehe über leere Zeit, um einen Termin dieser Länge anzulegen.
 - **Aufgabe einplanen:** Ziehe eine Aufgabe aus der Zeile unter der Tagesansicht in freie Zeit. Die Lücke zeigt **passt** oder wie viel Zeit fehlt. Auf dem Handy hältst du die Aufgabe zuerst gedrückt. Die Aufgabe bekommt die Zeit, an der du sie ablegst, und verlässt die Zeile. Sie behält ihre Fälligkeit, auch wenn du sie später verschiebst.
 - **Heute:** Der Pfeil auf **Heute** zeigt zu heute. Ist heute zu sehen, steht dort stattdessen ein Punkt.
-- **Tastenkürzel:** **H** zeigt heute. **J** und **K** blättern vor und zurück, ebenso die Pfeiltasten nach rechts und links. **1** bis **4** wählen die Ansicht, **G** öffnet **Gehe zu**. **N** legt einen Termin an, **Umschalt+N** eine Aufgabe. Die Tastatur-Schaltfläche in der Werkzeugleiste listet die Kürzel, die Cloud-Hilfe ebenso. Im Monat beginnt ein Buchstabe, den du an einem ausgewählten Tag tippst, stattdessen den Titel eines neuen Eintrags.
+- **Tastenkürzel:** **H** zeigt heute. **J** und **K** blättern vor und zurück, ebenso die Pfeiltasten nach rechts und links. **1** bis **4** wählen die Ansicht, **G** öffnet **Gehe zu**. **Gehe zu** nimmt ein Datum, einen Wochentag wie **Freitag**, einen Monat oder eine Kalenderwoche. **N** legt einen Termin an, **Umschalt+N** eine Aufgabe. Die Tastatur-Schaltfläche in der Werkzeugleiste listet die Kürzel, die Cloud-Hilfe ebenso. Im Monat beginnt ein Buchstabe, den du an einem ausgewählten Tag tippst, stattdessen den Titel eines neuen Eintrags.
 - **Anzahl:** Die Zahl neben den Filtern zählt die Einträge der Tage, die du siehst.
 :::
 

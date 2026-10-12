@@ -210,7 +210,9 @@ through `getDateHref`, and colored dots stand for the day's events.
 `dayHours={[6, 22]}` gives the day and week views waking hours. A day then
 runs from 06:00 to 06:00 of the next day: the night after 22:00 belongs to
 the day before, so an event from 23:00 to 01:30 stays one band of its
-evening, and a deadline at 00:30 belongs to the evening too. Without
+evening, and a deadline at 00:30 belongs to the evening too. An event that
+crosses only the day start, such as 05:30 to 06:30, shows in both days: in
+the night of the day before and at the top of its own day. Without
 `dayHours` the views keep their midnight grid with `startHour`, `endHour`,
 and the visible hours.
 
@@ -218,7 +220,9 @@ and the visible hours.
   with an entry opens at half the height of a waking hour below a bar that
   names it, such as "Night · Fri 9 → Sat 10", and folds again with that bar
   or, in the week view, with the moon in the hour column. A folded night
-  lists its entries as chips with their time.
+  lists its entries as chips with their time; a to-do keeps its checkbox
+  there, and in the week view the arrow keys reach the chips after the
+  waking hours.
 - **The day view** is one scroll through the loaded days with each day's
   heading on top while the day is in view. Runs of empty days merge into one
   row, "Nothing planned", that opens them; today, the day of `date`, and a day
@@ -240,8 +244,8 @@ and the visible hours.
   they overlap, with their time; the running one fills up with the time that
   passed and says what is left, such as "27 min left". `display: "marker"`
   draws a deadline with a time as a dashed line with a pill. An all-day
-  event, a timed event over several days, and a date-only marker sit in the
-  all-day row; in the week view a long event is one bar per week with a torn
+  event, a timed event that runs past the start hour of a later date, and a
+  date-only marker sit in the all-day row; in the week view a long event is one bar per week with a torn
   edge and, where it has room, "from 20" and "until 27".
 - **Checkboxes.** An event with `checked` shows a checkbox before its title,
   drawn by the calendar; `onEventCheck(event, checked)` makes it a control,
@@ -264,7 +268,12 @@ and the visible hours.
   that pressed an entry outside the calendar, such as a task in a list below
   the day view: the entry follows the pointer, the free time under it says
   "fits" or how much is missing, and `onDrop` receives the time where it is
-  released. A mouse drags at once, a finger after a long press.
+  released. A mouse drags at once, a finger after a long press. Mark the
+  element the finger holds, such as the list row, with
+  `data-calendar-drag-source`: it lifts while it is held, and the stylesheet
+  turns off text selection and the system's long-press callout on it, so a
+  link preview cannot take the hold over. A hold that ends without a drop
+  leaves the page scrolling as before.
 - **Now** is a line across the day with the time beside it; the header of the
   day says what starts within the hour, such as "Planning in 12 min".
 
@@ -277,7 +286,11 @@ not move what the reader sees. `onVisibleDateChange(date, last)` reports the
 first and the last day on screen once the view opened and whenever scrolling
 changed them, for example to keep the first in the URL or to count what is in
 view; the header title, the view switcher, and the previous and next links
-follow the first too.
+follow the first too. A `date` outside `range` puts its day on screen as soon
+as `range` covers it, so a host may change `date` first and load the days
+after. A `date` that names the first day on screen keeps the reader's place,
+so a host that writes the reported day back into `date` does not move the
+view.
 `onSelectionChange` reports a selected hour or day of these views as it does
 the month's days.
 
@@ -293,10 +306,12 @@ keeps its place.
 `onCommandsChange(commands)` receives the calendar's commands for the host's
 shortcut dispatcher, command palette, and help: Today (H), Next (J),
 Previous (K), the views (1 to 4), and Go to (G), which reads a date such as
-"3/15", "15.3.", or "2027-03-15", or a week number such as "W 12". Pass the
-application's own in `commands`, such as New event (N); the calendar includes
-them. With `onCommandsChange` the header shows a keyboard button where a
-pointer can hover, which opens a dialog with the same list. `controller`
+"3/15", "15.3.", "March 15", or "2027-03-15", a weekday such as "Friday" or
+"next Fri", a month such as "March", or a week number such as "W 12", in
+English or German. Pass the application's own in `commands`, such as New
+event (N); the calendar includes them. With `onCommandsChange` the header
+shows a keyboard button where a pointer can hover, which opens a dialog with
+the same list and the arrow keys beside J and K. `controller`
 receives `quickCreate(create)`, which opens the quick create where a new
 entry fits (the selection, today at the next full hour while today shows, or
 09:00 of the first shown day), and `createTarget()`, which returns that

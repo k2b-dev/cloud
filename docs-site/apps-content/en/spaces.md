@@ -153,7 +153,8 @@ day view runs down through the days with runs of empty days folded into one
 row; the week view scrolls sideways through them, seven at a time or three on
 a phone, and its arrows move by whole weeks. Both load the week before and
 after while you scroll, and the URL follows the first day you see; an item
-opens there in place. The count next to the filters counts the days you see.
+opens there in place. Another filter keeps the days already loaded and the
+place you see, and **Back** after an item keeps the day you scrolled to. The count next to the filters counts the days you see.
 Deadlines show as dashed lines with a checkbox, or **Space**, to check the
 task off, and keep their time when you drag them. Free time creates an event
 where it lies, and a task dragged from the row below the day view into free
