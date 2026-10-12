@@ -9,6 +9,7 @@ import BookSurface from "./_components/book/BookSurface";
 import FloatingEditButton from "./_components/book/FloatingEditButton.island";
 import NotebookDetailPanel from "./_components/detail/NotebookDetailPanel.island";
 import NoteEditor from "./_components/editor/NoteEditor.client";
+import NotePreview from "./_components/editor/NotePreview";
 import NotebookGraph from "./_components/graph/NotebookGraph.island";
 import NotebookCommands from "./_components/NotebookCommands.island";
 import RememberNotebook from "./_components/RememberNotebook.island";
@@ -138,7 +139,7 @@ export default ssr<AuthContext>(async (c) => {
                   userId={user.id}
                   displayName={user.displayName}
                   initialSnapshot={selectedNote.yjsSnapshot}
-                  initialContent={selectedNote.contentMd}
+                  initialContent={readonlyMode && !selectedNote.yjsSnapshot ? selectedNote.contentMd : null}
                   initialPanelOpen={detailPanelOpen}
                   initialRichMode={ctx.settings.richMode}
                   readOnly={readonlyMode}
@@ -158,6 +159,11 @@ export default ssr<AuthContext>(async (c) => {
                     backlinks,
                     namedBlocks,
                   }}
+                />
+                <NotePreview
+                  text={selectedNote.yjsSnapshot || readonlyMode ? (selectedNote.contentMd ?? "") : ""}
+                  mode={ctx.settings.richMode}
+                  historyIncomplete={selectedNote.historyIncomplete}
                 />
               </div>
             ) : (

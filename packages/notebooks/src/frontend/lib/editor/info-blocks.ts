@@ -2,7 +2,7 @@ import type { EditorState, Extension, Range } from "@codemirror/state";
 import { RangeSet } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType } from "@codemirror/view";
 import { type MarkdownInfoBlockType, NOTICE_CARD_CLASSES, renderMarkdownInfoBlock, scanMarkdownInfoBlock } from "@k2b/ui";
-import { literalMarkdownLines } from "../../../lib/markdown-context";
+import { literalMarkdownLines, NOTEBOOK_DIRECTIVE_START } from "../../../lib/markdown-context";
 import {
   blockWidgetLineNavigationExtension,
   type CursorZoneState,
@@ -103,7 +103,7 @@ const findInfoBlocks = (state: EditorState, locale: string): CursorZoneState => 
 
   for (let number = 1; number <= state.doc.lines; number++) {
     const opener = state.doc.line(number);
-    if (!/^ {0,3}:::/.test(opener.text) || literal.has(number - 1)) continue;
+    if (!NOTEBOOK_DIRECTIVE_START.test(opener.text) || literal.has(number - 1)) continue;
     const notice = scanMarkdownInfoBlock(text.slice(opener.from));
     if (!notice?.closed) continue;
     const blockLines = text

@@ -3,6 +3,7 @@ import type { EditorState, Extension, Range, Transaction } from "@codemirror/sta
 import { RangeSet } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType } from "@codemirror/view";
 import katex from "katex";
+import { codeFenceLanguage } from "../../../lib/markdown-fences";
 import {
   blockWidgetLineNavigationExtension,
   type CursorZoneState,
@@ -191,11 +192,7 @@ const buildKatexDecorations = (state: EditorState): CursorZoneState => {
 
         const text = state.sliceDoc(node.from, node.to);
         const lines = text.split("\n");
-        const language =
-          lines[0]
-            ?.replace(/^(```|~~~)/, "")
-            .trim()
-            .toLowerCase() || "";
+        const language = codeFenceLanguage(lines[0] ?? "");
 
         if (language === "math") {
           hasSyntax = true;
