@@ -12,6 +12,7 @@ import {
   type CalendarRange,
   calendarBlock,
   calendarBlockDays,
+  calendarWindow,
   isBlockLoadingCalendarView,
   mergeCalendarItems,
 } from "../calendar/range";
@@ -183,7 +184,10 @@ export default function SpacesCalendarRoute(props: Props) {
     }
   };
 
-  /** A preview inside the loaded days keeps their range while its items load; other views use the snapshot. */
+  /**
+   * A preview inside the loaded days keeps their range and items while its own load; another view or date opens at the
+   * days of its own first window.
+   */
   const shown = () => {
     const current = stream();
     const snapshot = state();
@@ -191,9 +195,16 @@ export default function SpacesCalendarRoute(props: Props) {
       return { range: { from: current.from, to: current.to }, items: current.items };
     }
     const date = Date.parse(snapshot.date);
-    return current && current.view === snapshot.view && Date.parse(current.from) <= date && date < Date.parse(current.to)
-      ? { range: { from: current.from, to: current.to }, items: current.items }
-      : { range: snapshot.range, items: snapshot.items };
+    if (current && current.view === snapshot.view && Date.parse(current.from) <= date && date < Date.parse(current.to))
+      return { range: { from: current.from, to: current.to }, items: current.items };
+    // A view that scrolls opens at the days its own snapshot will cover, not at those of the view it replaces, so the
+    // month sets its first week on top at once and stays there when the items arrive.
+    return {
+      range: isBlockLoadingCalendarView(snapshot.view)
+        ? calendarWindow(snapshot.view, new Date(snapshot.date), props.dateConfig)
+        : snapshot.range,
+      items: snapshot.items,
+    };
   };
 
   onMount(() => {

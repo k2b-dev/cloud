@@ -810,40 +810,45 @@ const CalendarHeader = <V extends string>(props: {
     const href = props.owner.getViewHref?.(view);
     if (href) window.location.href = href;
   };
-  const navButton = (date: Date, icon: string, label: string, direction: -1 | 1) => {
-    const href = props.owner.getDateHref?.(date, props.view);
+  /**
+   * A previous or next button. Its element stays while its target changes, such as with each step through the months,
+   * so a repeated click or Enter lands on the same button and keeps its focus.
+   */
+  const navButton = (date: () => Date, icon: string, label: string, direction: -1 | 1) => {
+    const href = () => props.owner.getDateHref?.(date(), props.view);
     const step = () => scrollingView()?.step(direction) ?? false;
-    const title = props.nav.commands().length > 0 ? `${label} (${direction > 0 ? "J" : "K"})` : label;
-    return (props.owner.onNavigateHref || props.owner.onNavigate) && href ? (
+    const title = () => (props.nav.commands().length > 0 ? `${label} (${direction > 0 ? "J" : "K"})` : label);
+    const link = (target: () => string) => (
       <CalendarNavigationLink
         owner={props.owner}
-        href={href}
+        href={target()}
         intercept={step}
-        anchorProps={{ "aria-label": label, title, class: "k2b-calendar-header__nav-button" }}
+        anchorProps={{ "aria-label": label, title: title(), class: "k2b-calendar-header__nav-button" }}
       >
         <i class={`ti ${icon}`} />
       </CalendarNavigationLink>
-    ) : props.owner.onDateChange ? (
-      <button
-        type="button"
-        aria-label={label}
-        title={title}
-        class="k2b-calendar-header__nav-button"
-        onClick={() => {
-          if (!step()) goDate(date);
-        }}
+    );
+    return (
+      <Show
+        when={Boolean((props.owner.onNavigateHref || props.owner.onNavigate) && href())}
+        fallback={
+          <Show when={props.owner.onDateChange} fallback={link(() => href() ?? "#")}>
+            <button
+              type="button"
+              aria-label={label}
+              title={title()}
+              class="k2b-calendar-header__nav-button"
+              onClick={() => {
+                if (!step()) goDate(date());
+              }}
+            >
+              <i class={`ti ${icon}`} />
+            </button>
+          </Show>
+        }
       >
-        <i class={`ti ${icon}`} />
-      </button>
-    ) : (
-      <CalendarNavigationLink
-        owner={props.owner}
-        href={href ?? "#"}
-        intercept={step}
-        anchorProps={{ "aria-label": label, title, class: "k2b-calendar-header__nav-button" }}
-      >
-        <i class={`ti ${icon}`} />
-      </CalendarNavigationLink>
+        {link(() => href() ?? "#")}
+      </Show>
     );
   };
   /**
@@ -939,8 +944,8 @@ const CalendarHeader = <V extends string>(props: {
   return (
     <header class="k2b-calendar-header">
       <div class="k2b-calendar-header__navigation">
-        {navButton(previous(), "ti-chevron-left", props.labels.previous, -1)}
-        {navButton(next(), "ti-chevron-right", props.labels.next, 1)}
+        {navButton(previous, "ti-chevron-left", props.labels.previous, -1)}
+        {navButton(next, "ti-chevron-right", props.labels.next, 1)}
         <div class="k2b-calendar-header__title">
           <span>{title()}</span>
           {/* The widest title of the view reserves its width, so paging never moves what follows the title. */}
