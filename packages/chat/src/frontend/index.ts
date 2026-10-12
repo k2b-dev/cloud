@@ -4,6 +4,10 @@ import { ssr } from "../config";
 import adminPage from "./admin";
 import page from "./page";
 
-export default new Hono<AuthContext>().get("/", auth.requireRole("user", "guest", ssr.access), ...page);
+const reader = auth.requireRole("user", "guest", ssr.access);
+export default new Hono<AuthContext>()
+  .get("/", reader, ...page)
+  .get("/c/:chat", reader, ...page)
+  .get("/c/:chat/m/:message", reader, ...page);
 
 export const adminPages = new Hono<AuthContext>().get("/", auth.requireRole("admin", ssr.access), ...adminPage);

@@ -20,6 +20,7 @@ import {
   ChangeSchema,
   ChangesPageSchema,
   ChangesQuerySchema,
+  ChatSnapshotSchema,
   ConversationPageSchema,
   ConversationParamSchema,
   ConversationQuerySchema,
@@ -35,6 +36,7 @@ import {
   MessageQuerySchema,
   MessageViewSchema,
   SendMessageSchema,
+  SnapshotQuerySchema,
   SuccessSchema,
   UpdateConversationSchema,
   UpdateMemberSchema,
@@ -104,6 +106,29 @@ const app = new Hono<AuthContext>()
     description("Read a chat", ConversationSchema),
     validator("param", ConversationParamSchema, invalidInput),
     async (c) => respond(c, chatService.conversations.get({ ...context(c), conversationId: c.req.valid("param").conversation })),
+  )
+  .get(
+    "/conversations/:conversation/snapshot",
+    describeRoute({
+      tags: ["Chat"],
+      summary: "Open a chat: details, a page of history, and the live cursor",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(ChatSnapshotSchema, "Chat snapshot"),
+        404: jsonResponse(z.object({ code: z.literal("NOT_FOUND"), message: z.string() }), "Chat not found"),
+      },
+    }),
+    validator("param", ConversationParamSchema, invalidInput),
+    validator("query", SnapshotQuerySchema, invalidInput),
+    async (c) => {
+      const cursor = await chatLive.cursor();
+      const result = await chatService.messages.snapshot({
+        ...context(c),
+        conversationId: c.req.valid("param").conversation,
+        messageId: c.req.valid("query").message,
+      });
+      return respond(c, result.ok ? ok({ cursor, ...result.data }) : result);
+    },
   )
   .patch(
     "/conversations/:conversation",

@@ -3,6 +3,8 @@ import { ServiceAccountCredentialSchema, ServiceAccountSchema, UserSchema } from
 import * as platform from "@k2b/cloud/services";
 import { redis } from "bun";
 import { chatService } from "../service";
+import { ConversationSchema } from "../service/contracts";
+import { chatLive } from "../service/live";
 import chatApi from ".";
 
 const userId = "11111111-1111-4111-8111-111111111111";
@@ -108,6 +110,7 @@ test("maps creation and duplicate outcomes to 201 and 200", async () => {
         purpose: null,
         title: "You",
         memberCount: 1,
+        lastMessage: null,
         rev: 1,
         permission: "admin",
         createdAt: "2026-10-09T00:00:00Z",
@@ -198,4 +201,53 @@ test("rejects invalid message body and conflicting history cursors before the se
   expect(response.status).toBe(400);
   expect(send).not.toHaveBeenCalled();
   expect(list).not.toHaveBeenCalled();
+});
+
+test("snapshot reads the cursor before history and tolerates invalid message links", async () => {
+  authenticate(true);
+  const conversation = ConversationSchema.parse({
+    id: "abcdef",
+    name: null,
+    title: "You",
+    icon: null,
+    purpose: null,
+    memberCount: 1,
+    lastMessage: null,
+    rev: 1,
+    permission: "admin",
+    createdAt: textMessage.createdAt,
+    lastActivityAt: textMessage.createdAt,
+  });
+  const data = { conversation, page: { items: [textMessage], rev: 1, seqHead: 1 }, focus: null };
+  const order: string[] = [];
+  spyOn(chatLive, "cursor").mockImplementation(async () => {
+    order.push("cursor");
+    return "before-snapshot";
+  });
+  const snapshot = spyOn(chatService.messages, "snapshot").mockImplementation(async () => {
+    order.push("snapshot");
+    return { ok: true, data };
+  });
+  for (const message of ["bad!", "x".repeat(65)]) {
+    const response = await chatApi.request(`/conversations/abcdef/snapshot?message=${message}`, {
+      headers: { authorization: "Bearer test-key" },
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ cursor: "before-snapshot", ...data });
+  }
+  expect(order).toEqual(["cursor", "snapshot", "cursor", "snapshot"]);
+  expect(snapshot).toHaveBeenNthCalledWith(1, expect.objectContaining({ conversationId: "abcdef", messageId: "bad!" }));
+  expect(snapshot).toHaveBeenNthCalledWith(2, expect.objectContaining({ conversationId: "abcdef", messageId: undefined }));
+});
+
+test("snapshot maps inaccessible chats to the service's 404 body", async () => {
+  authenticate(true);
+  spyOn(chatLive, "cursor").mockResolvedValue("before-snapshot");
+  spyOn(chatService.messages, "snapshot").mockResolvedValue({
+    ok: false,
+    error: { code: "NOT_FOUND", status: 404, message: "Chat not found." },
+  });
+  const response = await chatApi.request("/conversations/abcdef/snapshot", { headers: { authorization: "Bearer test-key" } });
+  expect(response.status).toBe(404);
+  expect(await response.json()).toEqual({ code: "NOT_FOUND", message: "Chat not found." });
 });

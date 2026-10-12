@@ -173,7 +173,7 @@ jobs:
           bun test --timeout 30000 --preload ./scripts/fixtures/test-infra.ts packages/assistant/src/artifacts/**/*.browser.test.ts
 
   browser-smoke:
-    # The Grids and Mail smokes drive a running Cloud, so this job boots one from this commit's images.
+    # The Grids, Mail and Chat smokes drive a running Cloud, so this job boots one from this commit's images.
     # It is separate from the browser job so that an Assistant failure cannot hide whether the stack boots.
     runs-on: ubuntu-24.04
     timeout-minutes: 40
@@ -185,14 +185,22 @@ jobs:
       - run: bun ci
       - run: bun run --cwd packages/ui build
       - run: ./packages/grids/node_modules/.bin/playwright install chromium
-      - name: Build the Core, gateway, Grids and Mail images
+      # The Chat smoke's phone runs in WebKit, which the Playwright image serves as in ci.yml's webkit job.
+      - name: Start WebKit in the Playwright image
         run: |
           set -euo pipefail
-          for app in core gateway grids mail; do
+          version=$(jq -r '.workspaces.catalog.playwright' package.json)
+          "$GITHUB_WORKSPACE/.github/pull-images.sh" "mcr.microsoft.com/playwright:v$version-noble"
+          docker run --detach --name playwright --network host --init --ipc=host --user pwuser --workdir /home/pwuser \
+            "mcr.microsoft.com/playwright:v$version-noble" npx -y "playwright@$version" run-server --port 3333 --host 127.0.0.1
+      - name: Build the Core, gateway, Accounts, Grids, Mail and Chat images
+        run: |
+          set -euo pipefail
+          for app in core gateway accounts grids mail chat; do
             docker build --build-arg APP_ID="$app" --build-arg CLOUD_VERSION=0.0.0-nightly \
               --build-arg CLOUD_RELEASE="sha-$GITHUB_SHA" --tag "cloud-$app:nightly" .
           done
-      - name: Boot Core, gateway, Grids and Mail against fresh infrastructure
+      - name: Boot Core, gateway, Accounts, Grids, Mail and Chat against fresh infrastructure
         env:
           # Production refuses to issue sessions for a non-HTTPS public origin.
           APP_URL: https://cloud.nightly-smoke.test
@@ -201,7 +209,7 @@ jobs:
           set -euo pipefail
           "$GITHUB_WORKSPACE/.github/pull-images.sh" nats:2.14.3-alpine postgres:17-alpine valkey/valkey:8-alpine
           docker network create cloud-smoke
-          # The Mail smoke seeds its mailbox through the published Postgres port.
+          # Mail seeds its mailbox and Chat cleans up its chat through the published Postgres port.
           docker run --detach --name postgres --network cloud-smoke --publish 127.0.0.1:5432:5432 \
             --env POSTGRES_USER=ipa --env POSTGRES_PASSWORD=ipa --env POSTGRES_DB=ipa postgres:17-alpine
           docker run --detach --name nats --network cloud-smoke --volume "$GITHUB_WORKSPACE/.github/nats-ci.conf:/etc/nats.conf:ro" nats:2.14.3-alpine --config /etc/nats.conf
@@ -226,23 +234,25 @@ jobs:
             --env ADMIN_LOGIN_TOKEN=nightly-admin \
             cloud-core:nightly
           docker run --detach --name gateway "${common[@]}" --publish 127.0.0.1:3000:3000 cloud-gateway:nightly
+          docker run --detach --name app-accounts "${common[@]}" cloud-accounts:nightly
+          docker run --detach --name app-chat "${common[@]}" cloud-chat:nightly
           docker run --detach --name app-grids "${common[@]}" cloud-grids:nightly
           docker run --detach --name app-mail "${common[@]}" cloud-mail:nightly
           # Each app serves its OpenAPI document without a session once the gateway routes to it.
           for _attempt in {1..90}; do
             routed=0
-            for spec in /api/openapi.json /api/grids/openapi.json /api/mail/openapi.json; do
+            for spec in /api/openapi.json /api/accounts/openapi.json /api/chat/openapi.json /api/grids/openapi.json /api/mail/openapi.json; do
               curl --silent --fail --output /dev/null "http://127.0.0.1:3000$spec" && routed=$((routed + 1))
             done
-            if [[ "$routed" -eq 3 ]]; then exit 0; fi
+            if [[ "$routed" -eq 5 ]]; then exit 0; fi
             sleep 2
           done
-          echo "Core, Grids and Mail did not become routable through the gateway." >&2
+          echo "Core, Accounts, Grids, Mail and Chat did not become routable through the gateway." >&2
           exit 1
-      - name: Run the Grids and Mail browser smokes
+      - name: Run the Grids, Mail and Chat browser smokes
         env:
           APP_URL: https://cloud.nightly-smoke.test
-          # The Mail smoke seeds its fixture through the Mail persistence boundary.
+          # Mail seeds its fixture and Chat deletes its chat through their persistence boundaries.
           DATABASE_URL: postgresql://ipa:ipa@127.0.0.1:5432/ipa
         run: |
           set -euo pipefail
@@ -256,16 +266,21 @@ jobs:
             -H "authorization: Bearer $token" -H "origin: $APP_URL" -H 'content-type: application/json' \
             --data "{\"accepted\":true,\"version\":\"$version\"}"
           failed=()
-          for app in grids mail; do
+          for app in grids mail chat; do
             echo "::group::$app"
-            bun "packages/$app/scripts/browser-smoke.ts" --base-url http://127.0.0.1:3000 --admin-token-file "$RUNNER_TEMP/admin-token" || failed+=("$app")
+            extra=()
+            if [[ "$app" == chat ]]; then
+              timeout 120s bash -c 'until docker logs playwright 2>&1 | grep -q "Listening on"; do sleep 1; done'
+              extra=(--app-url "$APP_URL" --webkit-endpoint ws://127.0.0.1:3333/)
+            fi
+            bun "packages/$app/scripts/browser-smoke.ts" --base-url http://127.0.0.1:3000 --admin-token-file "$RUNNER_TEMP/admin-token" "${extra[@]}" || failed+=("$app")
             echo "::endgroup::"
           done
           [[ ${#failed[@]} -eq 0 ]] || { echo "::error::Browser smoke failed for: ${failed[*]}"; exit 1; }
       - if: failure()
-        run: for container in app-core gateway app-grids app-mail; do docker logs --tail 200 "$container" || true; done
+        run: for container in app-core gateway app-accounts app-chat app-grids app-mail playwright; do docker logs --tail 200 "$container" || true; done
       - if: always()
-        run: docker rm --force app-core gateway app-grids app-mail postgres nats valkey || true
+        run: docker rm --force app-core gateway app-accounts app-chat app-grids app-mail playwright postgres nats valkey || true
 
   runtime-recovery:
     runs-on: ubuntu-24.04

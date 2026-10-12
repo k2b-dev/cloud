@@ -70,6 +70,8 @@ export const ConversationQuerySchema = z.object({
     .optional(),
 });
 export const MemberQuerySchema = z.object({ cursor: z.uuid().optional() });
+export const MessageIdSchema = z.string().regex(/^[0-9A-Za-z]{10}$/);
+const AuthorSchema = z.object({ type: z.enum(["user", "service_account"]), id: z.uuid(), name: z.string() });
 export const ConversationSchema = z.object({
   id: ShortIdSchema,
   name: z.string().nullable(),
@@ -81,6 +83,7 @@ export const ConversationSchema = z.object({
   permission: PermissionSchema,
   createdAt: z.string(),
   lastActivityAt: z.string(),
+  lastMessage: z.object({ id: MessageIdSchema, author: AuthorSchema, preview: z.string(), createdAt: z.iso.datetime() }).nullable(),
 });
 export const ExistingMatchSchema = ConversationSchema.pick({ id: true, name: true, title: true, lastActivityAt: true }).extend({
   archived: z.boolean(),
@@ -101,7 +104,6 @@ export const MemberPageSchema = z.object({ items: z.array(MemberSchema), nextCur
 export const ChangeSchema = z.object({ added: z.number().int() });
 export const SuccessSchema = z.object({ success: z.literal(true) });
 
-export const MessageIdSchema = z.string().regex(/^[0-9A-Za-z]{10}$/);
 const personSnapshot = z.object({ id: z.uuid(), name: z.string() });
 export const SystemMessageSchema = z.discriminatedUnion("code", [
   z.object({ code: z.literal("conversation_created"), params: z.strictObject({}) }),
@@ -125,7 +127,7 @@ export const MessageSchema = z.object({
   seq: z.number().int().nonnegative(),
   rev: z.number().int().nonnegative(),
   kind: z.enum(["text", "system"]),
-  author: z.object({ type: z.enum(["user", "service_account"]), id: z.uuid(), name: z.string() }),
+  author: AuthorSchema,
   body: z.string().nullable(),
   system: SystemMessageSchema.nullable(),
   createdAt: z.iso.datetime(),
@@ -144,6 +146,15 @@ export const MessageQuerySchema = z
 export const MessageParamSchema = ConversationParamSchema.extend({ message: MessageIdSchema });
 export const ChangesQuerySchema = z.object({ afterRev: sequenceQuery(0) });
 export const MessagePageSchema = z.object({ items: z.array(MessageViewSchema), seqHead: z.number().int(), rev: z.number().int() });
+// A stale or mistyped deep link still opens the latest history.
+export const SnapshotQuerySchema = z.object({ message: z.string().max(64).optional().catch(undefined) });
+export const ChatSnapshotSchema = z.object({
+  cursor: z.string(),
+  conversation: ConversationSchema,
+  page: MessagePageSchema,
+  /** The requested message when it exists in this chat; the page is the window around it. */
+  focus: MessageIdSchema.nullable(),
+});
 export const ChangesPageSchema = z.object({
   rev: z.number().int(),
   more: z.boolean(),

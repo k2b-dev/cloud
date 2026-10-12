@@ -1,6 +1,6 @@
 /**
  * SSR reads chatLive.cursor() BEFORE loading each snapshot. Replay may overlap
- * that snapshot; revisions make the overlap harmless. Slice 1.5 owns rendering and the retained message window.
+ * that snapshot; revisions make the overlap harmless.
  */
 import { createApiClient } from "@k2b/cloud/browser";
 import { type LiveConnection, type LiveSubscription, liveConnection } from "@k2b/cloud/browser/live";
@@ -9,6 +9,7 @@ import type { ApiType } from "../api";
 import {
   ChangesPageSchema,
   ChatLiveEventSchema,
+  ChatSnapshotSchema,
   ConversationPageSchema,
   ConversationSchema,
   MessagePageSchema,
@@ -22,9 +23,10 @@ type MessagePage = z.infer<typeof MessagePageSchema>;
 type ChangesPage = z.infer<typeof ChangesPageSchema>;
 type Summary = Extract<z.infer<typeof ChatLiveEventSchema>, { type: "summary" }>;
 export type ChatStoreApi = {
-  conversations(): Promise<ConversationPage>;
+  conversations(cursor?: string): Promise<ConversationPage>;
   conversation(id: string): Promise<Conversation | null>;
-  messages(id: string): Promise<MessagePage | null>;
+  messages(id: string, query?: { before?: number; after?: number }): Promise<MessagePage | null>;
+  snapshot(id: string, message?: string): Promise<(OpenChatSnapshot & { focus: string | null }) | null>;
   changes(id: string, afterRev: number): Promise<ChangesPage | "RESYNC_REQUIRED" | null>;
 };
 export type OpenChatSnapshot = { cursor: string; conversation: Conversation; page: MessagePage };
@@ -35,6 +37,9 @@ export type OpenChat = {
   conversation: Conversation | null;
   messages: readonly Message[];
   watermark: number;
+  seqHead: number;
+  hasOlder: boolean;
+  hasNewer: boolean;
 };
 
 const parseResponse = async <T>(response: Pick<Response, "status" | "ok" | "json">, schema: z.ZodType<T>): Promise<T | null> => {
@@ -45,17 +50,25 @@ const parseResponse = async <T>(response: Pick<Response, "status" | "ok" | "json
 export const createChatStoreApi = (): ChatStoreApi => {
   const client = createApiClient<ApiType>({ baseUrl: "/api/chat" });
   return {
-    conversations: async () => {
-      const page = await parseResponse(await client.conversations.$get({ query: {} }), ConversationPageSchema);
+    conversations: async (cursor) => {
+      const page = await parseResponse(await client.conversations.$get({ query: { cursor } }), ConversationPageSchema);
       if (!page) throw new Error("Chat request failed (404)");
       return page;
     },
     conversation: async (id) =>
       parseResponse(await client.conversations[":conversation"].$get({ param: { conversation: id } }), ConversationSchema),
-    messages: async (id) =>
+    messages: async (id, query) =>
       parseResponse(
-        await client.conversations[":conversation"].messages.$get({ param: { conversation: id }, query: {} }),
+        await client.conversations[":conversation"].messages.$get({
+          param: { conversation: id },
+          query: { before: query?.before?.toString(), after: query?.after?.toString() },
+        }),
         MessagePageSchema,
+      ),
+    snapshot: async (id, message) =>
+      parseResponse(
+        await client.conversations[":conversation"].snapshot.$get({ param: { conversation: id }, query: { message } }),
+        ChatSnapshotSchema,
       ),
     changes: async (id, afterRev) => {
       const response = await client.conversations[":conversation"].changes.$get({
@@ -79,12 +92,26 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
   const listeners = new Set<() => void>();
   // Rows stay in server order: a contiguous prefix of the sidebar, the whole list when `complete`.
   let rows = [...snapshot.sidebar.items];
-  let complete = snapshot.sidebar.nextCursor === null;
+  let nextCursor = snapshot.sidebar.nextCursor;
+  let complete = nextCursor === null;
+  let moreSidebar: Promise<void> | null = null;
+  let opening = 0;
   let liveStatus: "live" | "stopped" = "live";
   let disposed = false;
   let sidebarWork = Promise.resolve();
   const subscriptions: LiveSubscription[] = [];
-  type Current = { view: OpenChat; metadataRev: number; messages: Map<string, Message>; subscription: LiveSubscription | null };
+  type Current = {
+    view: OpenChat;
+    metadataRev: number;
+    messages: Map<string, Message>;
+    subscription: LiveSubscription | null;
+    from: number | null;
+    to: number | null;
+    window: number;
+    older: Promise<boolean> | null;
+    newer: Promise<boolean> | null;
+    latest: Promise<void> | null;
+  };
   let current: Current | null = null;
   const notify = () => {
     if (!disposed) for (const listener of listeners) listener();
@@ -92,8 +119,10 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
   const active = (chat: Current) => !disposed && current === chat && chat.view.status === "live";
   const noAccess = (chat: Current) => {
     if (!active(chat)) return;
-    chat.view = { ...chat.view, status: "no-access", conversation: null, messages: [] };
+    chat.view = { ...chat.view, status: "no-access", conversation: null, messages: [], seqHead: 0, hasOlder: false, hasNewer: false };
     chat.messages.clear();
+    chat.from = chat.to = null;
+    chat.window++;
     chat.subscription?.close();
     chat.subscription = null;
     rows = rows.filter((row) => row.id !== chat.view.id);
@@ -109,16 +138,29 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
       chat.metadataRev = Math.max(chat.metadataRev, conversation.rev);
     }
   };
-  // A message the watermark already covers is unknown only when it lies before the loaded history; skip it.
+  const extendWindow = (chat: Current) => {
+    const sequences = new Set([...chat.messages.values()].map((message) => message.seq));
+    if (chat.to === null && sequences.has(1)) chat.from = chat.to = 1;
+    if (chat.to !== null) while (sequences.has(chat.to + 1)) chat.to++;
+  };
   const applyMessage = (chat: Current, message: Message) => {
     if (!active(chat) || message.conversationId !== chat.view.id) return;
     const known = chat.messages.get(message.id);
-    if (known ? message.rev > known.rev : message.rev > chat.view.watermark) chat.messages.set(message.id, message);
-    chat.view = { ...chat.view, watermark: Math.max(chat.view.watermark, message.rev) };
+    if ((chat.from === null || message.seq >= chat.from) && (known ? message.rev > known.rev : message.rev > chat.view.watermark))
+      chat.messages.set(message.id, message);
+    chat.view = { ...chat.view, watermark: Math.max(chat.view.watermark, message.rev), seqHead: Math.max(chat.view.seqHead, message.seq) };
+    extendWindow(chat);
   };
   const publishMessages = (chat: Current) => {
     if (!active(chat)) return;
-    chat.view = { ...chat.view, messages: [...chat.messages.values()].sort((a, b) => a.seq - b.seq) };
+    chat.view = {
+      ...chat.view,
+      messages: [...chat.messages.values()]
+        .filter((message) => chat.from !== null && chat.to !== null && message.seq >= chat.from && message.seq <= chat.to)
+        .sort((a, b) => a.seq - b.seq),
+      hasOlder: chat.from !== null && chat.from > 1,
+      hasNewer: chat.to !== null && chat.to < chat.view.seqHead,
+    };
     notify();
   };
   const refreshMetadata = async (chat: Current) => {
@@ -128,17 +170,66 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     else metadata(chat, row);
   };
   const replaceMessages = async (chat: Current) => {
+    const watermark = chat.view.watermark;
     const page = await api.messages(chat.view.id);
     if (!active(chat)) return;
     if (page === null) return noAccess(chat);
     const conversation = await api.conversation(chat.view.id);
     if (!active(chat)) return;
     if (conversation === null) return noAccess(chat);
+    // Retain arrivals during this read, unless its lower revision proves a restore.
+    const arrivals = page.rev >= watermark ? [...chat.messages.values()].filter((message) => message.rev > page.rev) : [];
+    const currentConversation = chat.view.conversation;
+    const keepMetadata = page.rev >= watermark && currentConversation !== null && currentConversation.rev > conversation.rev;
     // A restored chat can move back in revisions, so the replacement wins over the guard.
     chat.messages = new Map(page.items.map((message) => [message.id, MessageSchema.parse(message)]));
-    chat.view = { ...chat.view, conversation, watermark: page.rev };
-    chat.metadataRev = conversation.rev;
+    chat.window++;
+    chat.from = page.items[0]?.seq ?? null;
+    chat.to = page.items.at(-1)?.seq ?? null;
+    chat.view = {
+      ...chat.view,
+      conversation: keepMetadata ? currentConversation : conversation,
+      watermark: page.rev,
+      seqHead: page.seqHead,
+    };
+    chat.metadataRev = keepMetadata ? Math.max(chat.metadataRev, currentConversation.rev, conversation.rev) : conversation.rev;
+    for (const message of arrivals) applyMessage(chat, message);
     publishMessages(chat);
+  };
+  const loadPage = (chat: Current, direction: "older" | "newer"): Promise<boolean> => {
+    if (chat[direction]) return chat[direction];
+    const boundary = direction === "older" ? chat.from : chat.to;
+    if (!active(chat) || boundary === null || !(direction === "older" ? chat.view.hasOlder : chat.view.hasNewer))
+      return Promise.resolve(false);
+    const window = chat.window;
+    const work = (async () => {
+      const page = await api.messages(chat.view.id, direction === "older" ? { before: boundary } : { after: boundary });
+      if (!active(chat) || chat.window !== window) return false;
+      if (page === null) {
+        noAccess(chat);
+        return false;
+      }
+      for (const row of page.items) {
+        const message = MessageSchema.parse(row);
+        const known = chat.messages.get(message.id);
+        if (!known || message.rev > known.rev) chat.messages.set(message.id, message);
+      }
+      chat.view = { ...chat.view, seqHead: Math.max(chat.view.seqHead, page.seqHead, ...page.items.map((message) => message.seq)) };
+      if (direction === "older" && chat.from !== null) {
+        const sequences = new Set([...chat.messages.values()].map((message) => message.seq));
+        while (sequences.has(chat.from - 1)) chat.from--;
+      }
+      extendWindow(chat);
+      publishMessages(chat);
+      return direction === "older" ? chat.from !== boundary : chat.to !== boundary;
+    })();
+    chat[direction] = work;
+    void work
+      .finally(() => {
+        if (chat[direction] === work) chat[direction] = null;
+      })
+      .catch(() => {});
+    return work;
   };
   const resyncConversation = async (chat: Current) => {
     let count = 0;
@@ -162,6 +253,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     }
   };
   const open = (next: OpenChatSnapshot) => {
+    opening++;
     if (disposed) return;
     current?.subscription?.close();
     const chat: Current = {
@@ -170,8 +262,17 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
         status: "live",
         conversation: next.conversation,
         watermark: next.page.rev,
+        seqHead: Math.max(next.page.seqHead, ...next.page.items.map((message) => message.seq)),
+        hasOlder: (next.page.items[0]?.seq ?? 0) > 1,
+        hasNewer: next.page.items.length > 0 && next.page.items.at(-1)!.seq < next.page.seqHead,
         messages: next.page.items.map((message) => MessageSchema.parse(message)),
       },
+      from: next.page.items[0]?.seq ?? null,
+      to: next.page.items.at(-1)?.seq ?? null,
+      window: 0,
+      older: null,
+      newer: null,
+      latest: null,
       metadataRev: next.conversation.rev,
       messages: new Map(next.page.items.map((message) => [message.id, MessageSchema.parse(message)])),
       subscription: null,
@@ -221,7 +322,8 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     const page = await api.conversations();
     if (disposed) return;
     rows = [...page.items];
-    complete = page.nextCursor === null;
+    nextCursor = page.nextCursor;
+    complete = nextCursor === null;
     notify();
   };
   // Server order is last activity, then ID, both descending. Only unknown rows past an incomplete prefix stay out.
@@ -245,7 +347,13 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
         if (current?.view.id === summary.conversationId) noAccess(current);
       } else if (known && row.lastActivityAt === known.lastActivityAt) rows = rows.map((other) => (other.id === row.id ? row : other));
       else place(row);
-    } else place({ ...known, rev: summary.rev, lastActivityAt: summary.createdAt });
+    } else
+      place({
+        ...known,
+        rev: summary.rev,
+        lastActivityAt: summary.createdAt,
+        lastMessage: { id: summary.id, author: summary.author, preview: summary.preview ?? "", createdAt: summary.createdAt },
+      });
     notify();
   };
   subscriptions.push(
@@ -285,6 +393,80 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     get sidebar(): readonly Conversation[] {
       return rows;
     },
+    get hasMoreSidebar() {
+      return nextCursor !== null;
+    },
+    loadMoreSidebar: (): Promise<void> => {
+      if (moreSidebar) return moreSidebar;
+      if (disposed || nextCursor === null) return Promise.resolve();
+      const work = sidebar(async () => {
+        if (nextCursor === null) return;
+        const page = await api.conversations(nextCursor);
+        if (disposed) return;
+        const present = new Set(rows.map((row) => row.id));
+        const appended = [...rows];
+        for (const row of page.items)
+          if (!present.has(row.id)) {
+            appended.push(row);
+            present.add(row.id);
+          }
+        rows = appended;
+        nextCursor = page.nextCursor;
+        complete = nextCursor === null;
+        notify();
+      });
+      moreSidebar = work;
+      void work
+        .finally(() => {
+          if (moreSidebar === work) moreSidebar = null;
+        })
+        .catch(() => {});
+      return work;
+    },
+    loadOlder: () => (current ? loadPage(current, "older") : Promise.resolve(false)),
+    loadNewer: () => (current ? loadPage(current, "newer") : Promise.resolve(false)),
+    loadLatest: (): Promise<void> => {
+      const chat = current;
+      if (!chat || !active(chat) || !chat.view.hasNewer) return Promise.resolve();
+      if (chat.latest) return chat.latest;
+      const work = replaceMessages(chat);
+      chat.latest = work;
+      void work
+        .finally(() => {
+          if (chat.latest === work) chat.latest = null;
+        })
+        .catch(() => {});
+      return work;
+    },
+    openChat: async (
+      id: string,
+      message?: string,
+    ): Promise<{ status: "opened"; focus: string | null } | { status: "no-access" } | { status: "superseded" }> => {
+      const request = ++opening;
+      if (disposed) return { status: "superseded" };
+      const next = await api.snapshot(id, message);
+      if (disposed || request !== opening) return { status: "superseded" };
+      if (next) {
+        open(next);
+        return { status: "opened", focus: next.focus };
+      }
+      current?.subscription?.close();
+      const chat: Current = {
+        view: { id, status: "live", conversation: null, messages: [], watermark: 0, seqHead: 0, hasOlder: false, hasNewer: false },
+        metadataRev: 0,
+        messages: new Map(),
+        subscription: null,
+        from: null,
+        to: null,
+        window: 0,
+        older: null,
+        newer: null,
+        latest: null,
+      };
+      current = chat;
+      noAccess(chat);
+      return { status: "no-access" };
+    },
     get openConversation(): OpenChat | null {
       return current?.view ?? null;
     },
@@ -299,11 +481,13 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     },
     open,
     closeConversation: () => {
+      opening++;
       current?.subscription?.close();
       current = null;
       notify();
     },
     dispose: () => {
+      opening++;
       disposed = true;
       current?.subscription?.close();
       for (const subscription of subscriptions) subscription.close();

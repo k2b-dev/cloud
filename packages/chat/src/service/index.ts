@@ -40,3 +40,5 @@ const health = async (): Promise<ChatHealth> => {
 
 export const chatService = { health, conversations, messages };
 export type ChatService = typeof chatService;
+
+export { loadChatView } from "./snapshot";

@@ -16,6 +16,7 @@ import { audit, toPgUuidArray } from "@k2b/cloud/services";
 import { crypto } from "@k2b/stdlib";
 import { sql } from "bun";
 import { z } from "zod";
+import { messagePreview } from "../system-messages";
 import {
   actingPrincipal,
   auditActor,
@@ -174,10 +175,44 @@ const titles = async (rows: ConversationRow[], context: ChatContext, db: typeof 
     ]),
   );
 };
+const lastMessages = async (rows: ConversationRow[], db: typeof sql) => {
+  const found = rows.length
+    ? await db<
+        {
+          conversation_id: string;
+          short_id: string;
+          author_type: "user" | "service_account";
+          author_id: string;
+          author_name: string;
+          body: string;
+          created_at: Date;
+        }[]
+      >`
+      SELECT c.id AS conversation_id, m.* FROM chat.conversations c
+      CROSS JOIN LATERAL (
+        SELECT short_id, author_type, author_id, author_name,
+          left(regexp_replace(body_md, ${"[\\t\\n\\v\\f\\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]+"}, ' ', 'g'), 600) AS body, created_at
+        FROM chat.messages WHERE conversation_id = c.id AND kind = 'text' ORDER BY seq DESC LIMIT 1
+      ) m WHERE c.id = ANY(${toPgUuidArray(rows.map((row) => row.id))}::uuid[])
+    `
+    : [];
+  return new Map(
+    found.map((row) => [
+      row.conversation_id,
+      {
+        id: row.short_id,
+        author: { type: row.author_type, id: row.author_id, name: row.author_name },
+        preview: messagePreview(row.body),
+        createdAt: row.created_at.toISOString(),
+      },
+    ]),
+  );
+};
 const project = (
   row: ConversationRow,
   permission: Exclude<PermissionLevel, "none">,
   title: string,
+  lastMessage: z.infer<typeof ConversationSchema>["lastMessage"],
 ): z.infer<typeof ConversationSchema> => ({
   id: row.short_id,
   name: row.name,
@@ -187,6 +222,7 @@ const project = (
   rev: Number(row.rev),
   permission,
   title,
+  lastMessage,
   createdAt: row.created_at.toISOString(),
   lastActivityAt: row.last_activity_at.toISOString(),
 });
@@ -270,7 +306,11 @@ const create = async (input: ChatContext & { input: unknown }): Promise<Result<C
       );
       await record(db, input, row.short_id, "chat.conversation.create", { memberCount: allIds.length });
       const names = await titles([row], input, db);
-      return ok({ outcome: "created", conversation: project({ ...row, rev: createdMessage.rev }, "admin", names.get(row.id)!) });
+      const latest = await lastMessages([row], db);
+      return ok({
+        outcome: "created",
+        conversation: project({ ...row, rev: createdMessage.rev }, "admin", names.get(row.id)!, latest.get(row.id) ?? null),
+      });
     });
     if (result.ok) chatLive.wake();
     return result;
@@ -285,7 +325,8 @@ const get = async (input: ChatContext & { conversationId: string }, db: typeof s
   if (!result.ok) return result;
   const row = result.data;
   const names = await titles([row], input, db);
-  return ok(project(row, row.permission, names.get(row.id)!));
+  const latest = await lastMessages([row], db);
+  return ok(project(row, row.permission, names.get(row.id)!, latest.get(row.id) ?? null));
 };
 const list = async (input: ChatContext & { query?: unknown }) => {
   const parsed = parse(ConversationQuerySchema, input.query ?? {}, input);
@@ -304,11 +345,13 @@ const list = async (input: ChatContext & { query?: unknown }) => {
   `;
   const page = rows.slice(0, CONVERSATION_PAGE_SIZE);
   const names = await titles(page, input, sql);
+  const latest = await lastMessages(page, sql);
   const items = page.map((row) =>
     project(
       row,
       z.enum(["read", "write", "admin"]).parse(capPermission(permissionFromRank(row.permission_rank), input.actor)),
       names.get(row.id)!,
+      latest.get(row.id) ?? null,
     ),
   );
   const last = page.at(-1);
@@ -341,7 +384,8 @@ const update = async (input: ChatContext & { conversationId: string; input: unkn
     }
     await record(db, input, before.short_id, "chat.conversation.update", { fields: Object.keys(data) });
     const names = await titles([row], input, db);
-    return ok(project(row, before.permission, names.get(before.id)!));
+    const latest = await lastMessages([row], db);
+    return ok(project(row, before.permission, names.get(before.id)!, latest.get(row.id) ?? null));
   });
 };
 
