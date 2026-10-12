@@ -2740,7 +2740,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     }
   });
   test.skipIf(!process.env.ASSISTANT_EVAL_URL)(
-    "real model builds the Studio wow cases",
+    "real model handles the Assistant evaluation cases",
     async () => {
       const selected = (process.env.ASSISTANT_EVAL_CASES ?? "").split(",").filter(Boolean);
       const cases = STUDIO_EVAL_CASES.filter((item) => !selected.length || selected.includes(item.name));
@@ -2812,13 +2812,13 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
                   {
                     ...run.identity,
                     conversationId: run.conversationId,
-                    locale: "de",
+                    locale: run.evalCase.locale,
                     timeZone: "Europe/Berlin",
                     signal: AbortSignal.timeout(STUDIO_EVAL_CASE_MS),
                   },
                   run.turnId,
                   `${directory}/${run.evalCase.name}`,
-                ).catch((caught: unknown) => studioEvalFailure(run.evalCase.name, caught)),
+                ).catch((caught: unknown) => studioEvalFailure(run.evalCase.name, caught, run.evalCase)),
               );
           }),
         );

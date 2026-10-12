@@ -1,6 +1,12 @@
-// Studio app cases for scripts/eval-code-mode.ts: one fresh chat per German user request.
+// Assistant routing cases for scripts/eval-code-mode.ts: one fresh chat per user request.
 
-export type StudioEvalCase = { name: string; request: string; files?: { path: string; mediaType: string; bytes: () => Uint8Array }[] };
+export type StudioEvalCase = {
+  name: string;
+  locale: "de" | "en";
+  expect: "studio-app" | "view";
+  request: string;
+  files?: { path: string; mediaType: string; bytes: () => Uint8Array }[];
+};
 
 /** Upper bound for one case: model turns, checks and presentation. */
 export const STUDIO_EVAL_CASE_MS = 25 * 60_000;
@@ -8,32 +14,134 @@ const SHOW = "Zeig mir die App hier im Chat.";
 export const STUDIO_EVAL_CASES: StudioEvalCase[] = [
   {
     name: "todo",
+    locale: "de",
+    expect: "studio-app",
     request: `Ich brauche eine einfache Todo-Liste als App. Meine Aufgaben sollen gespeichert bleiben, ich will sie abhaken, löschen und nach offen und erledigt filtern können. ${SHOW}`,
   },
   {
     name: "csv-dashboard",
+    locale: "de",
+    expect: "studio-app",
     request: `Hier ist unser Bestellexport aus der Warenwirtschaft (bestellungen.csv). Bau mir daraus ein Dashboard als App: Umsatz pro Monat, die Top-Kunden und ein Filter nach Region. Die Datei soll in der App gespeichert sein, damit das Team sie ohne neuen Upload sieht. ${SHOW}`,
     files: [{ path: "/bestellungen.csv", mediaType: "text/csv", bytes: () => orderCsv() }],
   },
   {
     name: "travel-expenses",
+    locale: "de",
+    expect: "studio-app",
     request: `Ich brauche eine App für meine Reisekostenabrechnung: Belege mit Datum, Zweck, Kategorie und Betrag erfassen, die Summe sehen, Belege löschen und am Ende ein PDF zum Einreichen mit Unterschriftszeilen herunterladen. ${SHOW}`,
   },
   {
     name: "quote-pdf",
+    locale: "de",
+    expect: "studio-app",
     request: `Bau mir einen Angebotsgenerator als App: Kunde und Angebotsnummer eingeben, Positionen mit Menge und Einzelpreis hinzufügen, Netto, 19 % MwSt. und Brutto sehen und das Angebot als PDF herunterladen. ${SHOW}`,
   },
   {
     name: "contacts",
+    locale: "de",
+    expect: "studio-app",
     request: `Wir brauchen eine gemeinsame Kontaktliste fürs Team als App: Name, Firma, E-Mail, Telefon und Notiz; suchen, bearbeiten und löschen. Alle im Team sollen dieselben Kontakte sehen. ${SHOW}`,
   },
   {
     name: "time-tracking",
+    locale: "de",
+    expect: "studio-app",
     request: `Ich brauche eine Zeiterfassung als App: pro Projekt Zeiten eintragen (Datum, Projekt, Stunden, Notiz). Dazu eine Wochenübersicht mit einem Diagramm der Stunden pro Projekt und einen Export als CSV für die Buchhaltung. ${SHOW}`,
   },
   {
     name: "expense-approval",
+    locale: "de",
+    expect: "studio-app",
     request: `Baue mir eine Spesen-Freigabe für mein Team: Alle reichen Spesen ein (Betrag, Zweck, Datum). Ich sehe die offenen Anträge und kann sie genehmigen oder ablehnen. Die genehmigten Spesen will ich als PDF-Liste exportieren. ${SHOW}`,
+  },
+  {
+    name: "calculator-de",
+    locale: "de",
+    expect: "studio-app",
+    request: "Bau mir eine Taschenrechner-App",
+  },
+  {
+    name: "calculator-en",
+    locale: "en",
+    expect: "studio-app",
+    request: "Build me a calculator app",
+  },
+  {
+    name: "unit-converter-de",
+    locale: "de",
+    expect: "studio-app",
+    request: "Ich brauche einen Einheitenumrechner für Länge, Gewicht und Temperatur",
+  },
+  {
+    name: "unit-converter-en",
+    locale: "en",
+    expect: "studio-app",
+    request: "I need a unit converter for length, weight and temperature",
+  },
+  {
+    name: "tip-calculator-de",
+    locale: "de",
+    expect: "studio-app",
+    request: "Bau mir einen Trinkgeldrechner, der die Rechnung auf mehrere Personen aufteilt",
+  },
+  {
+    name: "tip-calculator-en",
+    locale: "en",
+    expect: "studio-app",
+    request: "Build me a tip calculator that splits the bill between several people",
+  },
+  {
+    name: "timer-de",
+    locale: "de",
+    expect: "studio-app",
+    request: "Mach mir einen Timer mit Start, Pause und Zurücksetzen",
+  },
+  {
+    name: "timer-en",
+    locale: "en",
+    expect: "studio-app",
+    request: "Make me a countdown timer with start, pause and reset",
+  },
+  {
+    name: "form-de",
+    locale: "de",
+    expect: "studio-app",
+    request: "Erstell mir ein einfaches Formular, in das mein Team Urlaubswünsche einträgt",
+  },
+  {
+    name: "form-en",
+    locale: "en",
+    expect: "studio-app",
+    request: "Create a simple form where my team enters vacation requests",
+  },
+  {
+    name: "sales-chart-de",
+    locale: "de",
+    expect: "view",
+    request: "Zeig mir eine Grafik der Umsätze",
+    files: [{ path: "/bestellungen.csv", mediaType: "text/csv", bytes: () => orderCsv() }],
+  },
+  {
+    name: "top-customers-de",
+    locale: "de",
+    expect: "view",
+    request: "Tabelle der Top 10 Kunden nach Umsatz",
+    files: [{ path: "/bestellungen.csv", mediaType: "text/csv", bytes: () => orderCsv() }],
+  },
+  {
+    name: "sales-chart-en",
+    locale: "en",
+    expect: "view",
+    request: "Show me a chart of the revenue",
+    files: [{ path: "/bestellungen.csv", mediaType: "text/csv", bytes: () => orderCsv() }],
+  },
+  {
+    name: "top-customers-en",
+    locale: "en",
+    expect: "view",
+    request: "Table of the top 10 customers by revenue",
+    files: [{ path: "/bestellungen.csv", mediaType: "text/csv", bytes: () => orderCsv() }],
   },
 ];
 

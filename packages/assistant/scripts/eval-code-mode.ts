@@ -20,8 +20,8 @@ const { values: options } = parseArgs({
 if (options.help) {
   console.log(`Usage: bun packages/assistant/scripts/eval-code-mode.ts [--case <name>]... [--out <dir>] [--concurrency <n>] [--profile <json>]
 
-Lets a real model build the Studio app cases in disposable chats and data services, and measures
-whether the first code_check passed and whether the first checked version was presented unchanged.
+Runs the real Assistant system prompt, Skill catalog and tool discovery in disposable chats.
+Reports the route and time per case, plus first-check and correction metrics for apps.
 
 Cases: ${STUDIO_EVAL_CASES.map((item) => item.name).join(", ")}
 
