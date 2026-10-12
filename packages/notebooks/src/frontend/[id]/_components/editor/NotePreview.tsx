@@ -36,6 +36,8 @@ export default function NotePreview(props: Props) {
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   const lines = notePreviewLines(props.text, props.mode);
+  // CodeMirror sizes the gutter with a hidden spacer for the note's last line number, which can lie past the preview.
+  const lastNumber = "9".repeat(String((props.text.match(/\r\n?|\n/g)?.length ?? 0) + 1).length);
   return (
     <div id={NOTE_PREVIEW_ID} data-mode={props.mode} class="relative flex-1 min-w-0 flex flex-col overflow-hidden">
       <div class="flex-1 min-w-0 flex flex-col overflow-hidden">
@@ -45,6 +47,14 @@ export default function NotePreview(props: Props) {
         <ScrollArea class="relative min-h-0 flex-1 cursor-text" style={{ "scroll-padding-block": fadeScrollPadding }}>
           <div class="notebook-note-preview__scroller">
             <div class="notebook-note-preview__content">
+              {props.mode === "source" && (
+                <>
+                  <div class="notebook-note-preview__number notebook-note-preview__spacer" aria-hidden="true">
+                    {lastNumber}
+                  </div>
+                  <div class="notebook-note-preview__spacer" />
+                </>
+              )}
               {lines.map((line, index) =>
                 props.mode === "source" ? (
                   <>

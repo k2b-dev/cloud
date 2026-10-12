@@ -53,57 +53,56 @@ const inside = (ranges: Range[], from: number, to: number) => {
 };
 
 /**
- * The lines the note editor shows when it mounts, with the caret at the start,
- * and the styles that size them. Rich mode reproduces headings, emphasis and
- * code and ends before the first line the editor draws otherwise (lists, links,
- * tags, ligatures, blocks and other widgets): those lines arrive with the
- * editor, below the preview, so no text moves. Source mode returns every line.
+ * At most what CodeMirror draws when it mounts: the viewport and up to 1000 px around it. On a screen 2160 px tall
+ * (4K at 100 %) that is 162 lines at the editor's smallest line height, 19.6 px in source mode. 16 KiB fills more than
+ * that in the reading column (16 KiB of prose: at least 5,900 px), so it bounds only long lines. Past the budget, a
+ * long note would add only HTML that a phone parses before the editor can start; those lines arrive with the editor,
+ * like lines past a cut.
  */
-export const notePreviewLines = (
-  markdown: string,
-  mode: "rich" | "source",
-  // The note's start parsed first; tests pass other sizes.
-  firstWindow = 16 * 1024,
-): NotePreviewLine[] => {
+export const NOTE_PREVIEW_BUDGET = { lines: Math.ceil((2160 + 1000) / 19.6), characters: 16 * 1024 };
+
+/**
+ * The lines the note editor shows when it mounts, with the caret at the start,
+ * and the styles that size them, within the budget. Rich mode reproduces
+ * headings, emphasis and code and ends before the first line the editor draws
+ * otherwise (lists, links, tags, ligatures, blocks and other widgets): those
+ * lines arrive with the editor, below the preview, so no text moves.
+ */
+export const notePreviewLines = (markdown: string, mode: "rich" | "source", budget = NOTE_PREVIEW_BUDGET): NotePreviewLine[] => {
   // EditorState normalizes every supported line separator to LF.
   const text = markdown.replace(/\r\n?/g, "\n");
   const lines = text.split("\n");
-  if (mode === "source") return lines.map((line) => ({ parts: line ? [line] : [] }));
+  let count = 0;
+  let end = 0;
+  while (count < Math.min(lines.length, budget.lines) && end + lines[count]!.length <= budget.characters) {
+    end += lines[count]!.length + 1;
+    count++;
+  }
+  if (mode === "source") return lines.slice(0, count).map((line) => ({ parts: line ? [line] : [] }));
 
-  let cut = frontMatterLength(text) ? 0 : text.length + 1;
+  let cut = frontMatterLength(text) ? 0 : count < lines.length ? end : text.length + 1;
   // These extensions currently scan code too; keep their existing behavior.
   for (const pattern of [MARK_REGEX, SUB_REGEX, SUP_REGEX]) {
     for (const match of text.matchAll(pattern)) cut = Math.min(cut, match.index);
   }
   let lineFrom = 0;
   for (const line of lines) {
-    if (line.search(SPECIAL_CHAR_REGEX) >= 0) {
-      cut = Math.min(cut, lineFrom);
-      break;
-    }
+    if (lineFrom >= cut) break;
+    if (line.search(SPECIAL_CHAR_REGEX) >= 0) cut = Math.min(cut, lineFrom);
     lineFrom += line.length + 1;
   }
-
   if (cut === 0) return [];
-  // Most previews end early, so parse the note's start first and all of it only when the preview runs past that.
-  // The window ends at a blank line, where block lookahead (setext, tables and paragraph inlines) stops.
-  // Code may extend past it; lists, quotes and HTML already cut at their start.
-  // Markdown counts only spaces and tabs as blank: a line of other white space continues a paragraph.
-  const blank = /\n[ \t]*\n/g;
-  blank.lastIndex = firstWindow;
-  const windowEnd = blank.exec(text)?.index ?? text.length;
-  const preview = richPreviewWindow(text, lines, windowEnd, cut);
-  if (preview.cut < preview.decided || windowEnd === text.length) return preview.result;
-  return richPreviewWindow(text, lines, text.length, cut).result;
-};
 
-const richPreviewWindow = (text: string, lines: string[], windowEnd: number, initialCut: number) => {
-  const tree = markdownLanguage.parser.parse(text.slice(0, windowEnd));
+  // Parse to the first blank line after the cut, where block lookahead (setext, tables and paragraph inlines) stops,
+  // so every line before the cut gets the nodes that a parse of the whole note gives it. Markdown counts only spaces
+  // and tabs as blank. Code may run on past that line; lists, quotes and HTML already cut at their start.
+  const blank = /\n[ \t]*\n/g;
+  blank.lastIndex = cut;
+  const tree = markdownLanguage.parser.parse(text.slice(0, blank.exec(text)?.index ?? text.length));
   const code: Range[] = [];
   const headerMarks: Range[] = [];
   const hidden: Range[] = [];
   const styled: StyledRange[] = [];
-  let cut = initialCut;
   tree.iterate({
     enter(node) {
       const { name, from, to } = node;
@@ -136,14 +135,10 @@ const richPreviewWindow = (text: string, lines: string[], windowEnd: number, ini
     const to = match.index + match[0].length;
     if (!inside(code, from, to) && !inside(headerMarks, from, to)) cut = Math.min(cut, from);
   }
-  // The window decides the lines before its end, and before block math that runs on past the end of code it cut short.
-  let decided = windowEnd;
   for (const pattern of [blockMathPattern(), inlineMathPattern()]) {
     for (const match of text.matchAll(pattern)) {
-      const end = match.index + match[0].length;
-      if (inside(code, match.index, end)) continue;
-      if (end > windowEnd && inside(code, match.index, windowEnd)) decided = Math.min(decided, match.index);
-      else cut = Math.min(cut, match.index);
+      // The code the parse ends in may run on in the note, so block math leaving it cuts there: only a shorter preview.
+      if (!inside(code, match.index, match.index + match[0].length)) cut = Math.min(cut, match.index);
     }
   }
   for (const match of findLigatures(text)) {
@@ -162,7 +157,7 @@ const richPreviewWindow = (text: string, lines: string[], windowEnd: number, ini
   for (const line of lines) {
     const to = from + line.length;
     if (!inside(code, from, to) && (NOTEBOOK_DIRECTIVE_START.test(line) || isNamedBlockHandle(line))) cut = Math.min(cut, from);
-    if (cut <= to || (to >= windowEnd && windowEnd < text.length)) break;
+    if (cut <= to) break;
     styledOnLine = styledOnLine.filter((range) => range.to > from);
     for (; nextStyled < styled.length && styled[nextStyled]!.from < to; nextStyled++) styledOnLine.push(styled[nextStyled]!);
     hiddenOnLine = hiddenOnLine.filter((range) => range.to > from);
@@ -170,7 +165,7 @@ const richPreviewWindow = (text: string, lines: string[], windowEnd: number, ini
     result.push({ parts: lineParts(text, from, to, styledOnLine, hiddenOnLine) });
     from = to + 1;
   }
-  return { result, cut, decided };
+  return result;
 };
 
 const lineParts = (text: string, from: number, to: number, styled: StyledRange[], hidden: Range[]): NotePreviewPart[] => {

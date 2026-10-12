@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { resolve } from "node:path";
 import { frontMatterLength, LIGATURES } from "../../../../lib/ligatures";
-import { type NotePreviewPart, notePreviewLines } from "./note-preview";
+import { NOTE_PREVIEW_BUDGET, type NotePreviewPart, notePreviewLines } from "./note-preview";
 
 const repositoryRoot = resolve(import.meta.dir, "../../../../../../..");
 
@@ -102,9 +102,21 @@ test("mark and sub/sup also cut inside code because those editor extensions scan
     expect(lines(`Safe\n\n\`literal ${syntax}\``)).toEqual(["Safe", ""]);
   }
 });
-test("parses the whole long note without truncating", () => {
+test("a long note ends at the line budget in both modes", () => {
+  expect(NOTE_PREVIEW_BUDGET).toEqual({ lines: 162, characters: 16 * 1024 });
   const markdown = Array.from({ length: 2000 }, (_, index) => `Paragraph ${index}`).join("\n\n");
-  expect(lines(markdown).at(-1)).toBe("Paragraph 1999");
+  for (const mode of ["rich", "source"] as const) {
+    const preview = lines(markdown, mode);
+    expect(preview).toHaveLength(162);
+    expect(preview.slice(-2)).toEqual(["Paragraph 80", ""]);
+  }
+});
+test("long lines end at the character budget, and a first line past it leaves no preview", () => {
+  const markdown = Array.from({ length: 40 }, (_, index) => `${index} ${"x".repeat(997)}`.slice(0, 1000)).join("\n");
+  // 16 lines end within 16 KiB (16 * 1001 - 1 = 16,015 characters); the 17th ends past it.
+  for (const mode of ["rich", "source"] as const) expect(lines(markdown, mode)).toHaveLength(16);
+  for (const mode of ["rich", "source"] as const) expect(lines("x".repeat(16 * 1024 + 1), mode)).toEqual([]);
+  expect(lines("x".repeat(16 * 1024), "source")).toEqual(["x".repeat(16 * 1024)]);
 });
 
 test.each([...LIGATURES])("cuts before display ligature $source", ({ source }) => {
@@ -141,38 +153,56 @@ const equivalenceFixtures = [
   "Prose " + "**bold** ".repeat(3),
   // A line of other white space is no blank line: the setext heading spans it.
   "Line A\nTitle #tag\n\u00a0\n===\n\nTail",
-  // Block math in code that a window cuts short.
+  // Block math in code that a budget cuts short.
   "```\n$$\n\na\n\n$$\n```\n\nTail",
 ];
 
-const expectEquivalent = (markdown: string) => {
-  const full = notePreviewLines(markdown, "rich", Number.POSITIVE_INFINITY);
-  for (const window of [1, 64, 1024]) expect(notePreviewLines(markdown, "rich", window)).toEqual(full);
-  expect(notePreviewLines(markdown, "rich")).toEqual(full);
+const unbounded = { lines: Number.POSITIVE_INFINITY, characters: Number.POSITIVE_INFINITY };
+/** A budget only ends the preview earlier: every line it keeps is the line a parse of the whole note gives. */
+const expectPrefix = (
+  markdown: string,
+  lineBudgets: readonly number[] = [1, 2, 5, 40, NOTE_PREVIEW_BUDGET.lines],
+  characterBudgets: readonly number[] = [1, 20, 300, NOTE_PREVIEW_BUDGET.characters],
+) => {
+  const full = notePreviewLines(markdown, "rich", unbounded);
+  for (const lineBudget of lineBudgets) {
+    for (const characterBudget of characterBudgets) {
+      const preview = notePreviewLines(markdown, "rich", { lines: lineBudget, characters: characterBudget });
+      expect(preview).toEqual(full.slice(0, preview.length));
+      expect(preview.length).toBeLessThanOrEqual(lineBudget);
+    }
+  }
 };
 
-test("equivalence of tiny and full parse windows for fixtures and block boundaries", () => {
-  for (const markdown of equivalenceFixtures) expectEquivalent(markdown);
+test("budgeted previews keep the whole parse's lines for fixtures and block boundaries", () => {
+  for (const markdown of equivalenceFixtures) expectPrefix(markdown);
+  // Block math that leaves code the parse ended in cuts there; a parse of the whole note keeps that code.
+  expect(notePreviewLines("```\n$$\n\na\n\n$$\n```\n\nTail", "rich", { lines: 2, characters: 1024 })).toHaveLength(1);
 });
 
-test("equivalence of tiny and full parse windows for every docs Markdown file and long prefixes", async () => {
+test("budgeted previews keep the whole parse's lines for every docs Markdown file and long prefixes", async () => {
   const paths = Array.from(new Bun.Glob("docs-site/docs/en/**/*.md").scanSync({ cwd: repositoryRoot })).sort();
   expect(paths.length).toBeGreaterThan(0);
   let longest = "";
+  // Fewer budgets than the fixtures get: these are many and long.
+  const budgets = [
+    [3, NOTE_PREVIEW_BUDGET.lines],
+    [300, NOTE_PREVIEW_BUDGET.characters],
+  ] as const;
   for (const path of paths) {
     const markdown = await Bun.file(resolve(repositoryRoot, path)).text();
-    expectEquivalent(markdown);
+    expectPrefix(markdown, ...budgets);
     const body = markdown.slice(frontMatterLength(markdown));
-    expectEquivalent(body);
+    expectPrefix(body, ...budgets);
     if (body.length > longest.length) longest = body;
   }
   expect(longest.length).toBeGreaterThan(16 * 1024);
   for (const end of [1, 100, 1024, 16 * 1024 - 1, 16 * 1024, 16 * 1024 + 1, Math.floor(longest.length / 2), longest.length - 1]) {
-    expectEquivalent(longest.slice(0, end));
+    expectPrefix(longest.slice(0, end), ...budgets);
   }
 });
 
-test("many styled spans stay within the SSR render budget and keep their parts", () => {
+test("many styled spans on one line render in linear time and keep their parts", () => {
   expect(notePreviewLines("Prose " + "**bold** ".repeat(3), "rich")).toEqual([
     {
       parts: [
@@ -186,9 +216,10 @@ test("many styled spans stay within the SSR render budget and keep their parts",
       ],
     },
   ]);
+  // Past any budget, so the time shows the cost per span: quadratic, this took about 10 s.
   const markdown = "Prose " + "**bold** ".repeat(16000);
   const start = performance.now();
-  const result = notePreviewLines(markdown, "rich");
+  const result = notePreviewLines(markdown, "rich", unbounded);
   const elapsed = performance.now() - start;
   expect(elapsed).toBeLessThan(1000);
   expect(result).toHaveLength(1);

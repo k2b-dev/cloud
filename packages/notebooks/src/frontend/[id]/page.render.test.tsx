@@ -472,7 +472,8 @@ test("source mode includes line numbers and the literal Markdown markers", async
   const rows = await select(html, "#notebook-note-preview .notebook-note-preview__line");
   expect(rows.map((row) => row.text)).toEqual(previewMarkdown.split("\n"));
   const numbers = await select(html, "#notebook-note-preview .notebook-note-preview__number");
-  expect(numbers.map((row) => row.text)).toEqual(["1", "2", "3", "4"]);
+  // The hidden spacer first, sized for the last line number like CodeMirror's gutter.
+  expect(numbers.map((row) => row.text)).toEqual(["9", "1", "2", "3", "4"]);
   expect(numbers.every((row) => row.attributes["aria-hidden"] === "true")).toBe(true);
 });
 
@@ -509,10 +510,17 @@ test("the preview shares the incomplete-history notice with the editor", async (
   expect(notice?.text).toContain("Einige Änderungen der Notiz konnten nicht wiederhergestellt werden");
 });
 
-test("a long pure-prose note renders its last paragraph on the server", async () => {
+test("a long note ends at the preview budget, and source mode keeps the gutter of its last line", async () => {
   const markdown = Array.from({ length: 2000 }, (_, index) => `Paragraph ${index} with ordinary prose.`).join("\n\n");
-  const [preview] = await select(await renderEditorPage({ markdown }), "#notebook-note-preview");
-  expect(preview?.text).toContain("Paragraph 1999 with ordinary prose.");
+  for (const richMode of ["rich", "source"] as const) {
+    const html = await renderEditorPage({ markdown, richMode });
+    const [preview] = await select(html, "#notebook-note-preview");
+    expect(preview?.text).toContain("Paragraph 80 with ordinary prose.");
+    expect(preview?.text).not.toContain("Paragraph 81 with ordinary prose.");
+    expect(await select(html, "#notebook-note-preview .notebook-note-preview__line")).toHaveLength(162);
+    const [spacer] = await select(html, "#notebook-note-preview .notebook-note-preview__spacer");
+    expect(spacer?.text).toBe(richMode === "source" ? "9999" : undefined);
+  }
 });
 
 test("null saved text keeps the editor's single empty line", async () => {

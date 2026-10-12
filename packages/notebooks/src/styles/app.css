@@ -302,6 +302,10 @@
   color: var(--color-gray-500);
   white-space: nowrap;
 }
+.notebook-note-preview__spacer {
+  height: 0;
+  visibility: hidden;
+}
 .notebook-book-content {
   --notebook-book-inset: clamp(1rem, 4vw, 3rem);
   width: 100%;

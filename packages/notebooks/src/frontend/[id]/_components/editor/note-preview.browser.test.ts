@@ -10,7 +10,7 @@ import { launchBrowser } from "../../../../../../ui/test/browser";
 import { notebooksYjs } from "../../../../lib/yjs";
 import type NoteEditor from "./NoteEditor.client";
 import "../detail/ssr-test-plugin";
-import { NOTE_PREVIEW_ID, notePreviewLines } from "./note-preview";
+import { NOTE_PREVIEW_BUDGET, NOTE_PREVIEW_ID, notePreviewLines } from "./note-preview";
 
 const { default: NotePreview } = await import("./NotePreview");
 
@@ -46,9 +46,14 @@ const longMarkdown = Array.from(
   { length: 120 },
   (_, index) => `Zeile ${index + 1}: Wir sammeln **wichtige** Gedanken für das Team und halten sie für alle fest.`,
 ).join("\n");
-const initialSnapshot = snapshot(markdown);
-const headingSnapshot = snapshot(headingMarkdown);
-const longSnapshot = snapshot(longMarkdown);
+// More lines than the preview holds: the editor's gutter has four digits, the preview's rows only three.
+const manyMarkdown = Array.from({ length: 1200 }, (_, index) => `Zeile ${index + 1}`).join("\n");
+const notes = {
+  markdown: { text: markdown, snapshot: snapshot(markdown) },
+  headings: { text: headingMarkdown, snapshot: snapshot(headingMarkdown) },
+  long: { text: longMarkdown, snapshot: snapshot(longMarkdown) },
+  many: { text: manyMarkdown, snapshot: snapshot(manyMarkdown) },
+};
 let browser: Browser;
 let server: ReturnType<typeof Bun.serve>;
 
@@ -99,7 +104,8 @@ beforeAll(async () => {
       if (url.pathname === "/editor.js") return new Response(bundle, { headers: { "content-type": "text/javascript" } });
       if (url.pathname === "/api/notebooks/ws" && server.upgrade(request, { data: undefined })) return;
       if (url.pathname.endsWith("/block-preview")) return Response.json({ markdown, blocks: [], diagnostics: [], headings: [] });
-      const note = url.searchParams.has("long") ? longMarkdown : url.searchParams.has("headings") ? headingMarkdown : markdown;
+      const { text: note, snapshot: initialSnapshot } =
+        notes[(["many", "long", "headings"] as const).find((name) => url.searchParams.has(name)) ?? "markdown"];
       const mode = url.searchParams.get("mode") === "source" ? "source" : "rich";
       const readOnly = url.searchParams.has("readonly");
       const historyIncomplete = url.searchParams.has("historyIncomplete");
@@ -114,7 +120,7 @@ beforeAll(async () => {
         appUrl: url.origin,
         userId: "writer",
         displayName: "Writer",
-        initialSnapshot: url.searchParams.has("long") ? longSnapshot : url.searchParams.has("headings") ? headingSnapshot : initialSnapshot,
+        initialSnapshot,
         initialContent: null,
         initialPanelOpen: false,
         initialRichMode: mode,
@@ -271,6 +277,44 @@ for (const fixture of [
     }
   }, 30_000);
 }
+
+test("a note longer than the preview keeps the editor's gutter and lines: source, 1280px", async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  let release: (() => void) | undefined;
+  const blocked = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/editor.js", async (route) => {
+    await blocked;
+    await route.continue();
+  });
+  try {
+    await page.goto(`${server.url}?many&mode=source`, { waitUntil: "commit" });
+    const preview = page.locator(`#${NOTE_PREVIEW_ID}`);
+    await preview.waitFor({ state: "visible" });
+    expect(await preview.locator(".notebook-note-preview__line").count()).toBe(NOTE_PREVIEW_BUDGET.lines);
+    await settle(page);
+    const before = await measure(page, ".notebook-note-preview__line", 20);
+    release?.();
+    await page.waitForSelector(".cm-content");
+    await preview.waitFor({ state: "detached" });
+    await settle(page);
+    const after = await measure(page, ".cm-line", 20);
+    expect(errors).toEqual([]);
+    expect(after).toHaveLength(before.length);
+    before.forEach((line, index) => {
+      for (const property of ["top", "left", "width", "height"] as const) {
+        closeTo(after[index]!.box[property], line.box[property], `Line ${index + 1}: ${property}`);
+        closeTo(after[index]!.glyph![property], line.glyph![property], `Glyph ${index + 1}: ${property}`);
+      }
+    });
+  } finally {
+    release?.();
+    await page.close();
+  }
+}, 30_000);
 
 /** The first line row at the scroll port's top edge, with its text and where it starts relative to that edge. */
 const topLine = (page: Page, line: string) =>
