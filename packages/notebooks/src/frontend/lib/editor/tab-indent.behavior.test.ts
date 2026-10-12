@@ -7,7 +7,11 @@ import { isServer } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../ui/test/dom";
 import { basicExtensions } from "./basic";
 import { markdownExtension } from "./markdown";
-import { tabIndentExtension } from "./tab-indent";
+
+// List commands load notebook block scanners after DOM globals exist.
+const loading = createDomTestHarness();
+const { tabIndentExtension } = await import("./tab-indent");
+loading.cleanup();
 
 type Mount = { selection: number | { anchor: number; head: number }; tabIndents?: boolean; extensions?: Extension[] };
 
@@ -93,7 +97,7 @@ describe("note editor Tab key", () => {
     const steps = "1. Pack\n2. ";
     using orderedEditor = mount(steps, { selection: steps.length });
     expect(orderedEditor.press("Tab")).toBe(true);
-    expect(orderedEditor.text()).toBe("1. Pack\n   2. ");
+    expect(orderedEditor.text()).toBe("1. Pack\n   1. ");
     expect(orderedEditor.view.state.selection.main.head).toBe(orderedEditor.text().length);
     expect(orderedEditor.press("Tab", true)).toBe(true);
     expect(orderedEditor.text()).toBe(steps);

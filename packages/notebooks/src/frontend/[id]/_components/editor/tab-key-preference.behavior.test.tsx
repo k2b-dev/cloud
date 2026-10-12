@@ -4,7 +4,11 @@ import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../../ui/test/dom";
 import { TAB_KEY_PREFERENCE_EVENT } from "../detail/events";
 import { setTabMovesFocus } from "../settings/NotebookSettingsStore";
-import { createTabKeyPreference } from "./tab-key-preference";
+
+// List commands load notebook block scanners after DOM globals exist.
+const loading = createDomTestHarness();
+const { createTabKeyPreference } = await import("./tab-key-preference");
+loading.cleanup();
 
 /** Mounts an editor the way the note editor wires the preference: one compartment for the Tab keys. */
 const mount = ({ readOnly = false, savedTabMovesFocus = false } = {}) => {

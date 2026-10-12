@@ -88,7 +88,15 @@ In the editor, Tab indents: it nests list items together with their sub-items,
 moves between table cells, accepts an open suggestion, and otherwise inserts two
 spaces. Press Esc, then Tab to move focus out of the editor. Each person can
 keep Tab for focus movement under **Settings → Notebook → View & behavior**; the
-choice is stored in that browser.
+choice is stored in that browser. **Ctrl/⌘+]** and **Ctrl/⌘+[** nest and lift list
+items even with that preference; **Indent** and **Outdent** in the editor toolbar
+provide the same controls on phones. **Alt+Up/Down** (Option on a Mac) moves an
+item with its sub-items within its list and stops at the edge; Windows and Linux
+also accept **Ctrl+Shift+Up/Down**, while ⌘+Shift+Up/Down on a Mac keeps
+selecting to the start or end of the note. A selection across several items
+moves those lines instead. After your own structural change, the numbered list
+you changed gets its Markdown numbers repaired, keeping its first number, in the
+same undo step; other lists keep theirs.
 
 Mermaid diagrams enhance their server-rendered source in the browser. Without
 JavaScript, or if a diagram cannot render, its source stays readable. On mobile,

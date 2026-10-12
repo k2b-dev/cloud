@@ -3,6 +3,7 @@ import type { EditorView } from "@codemirror/view";
 import { keymap } from "@codemirror/view";
 import { Dropdown, IconButton, IconButtonLink, Tooltip, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
+import { indentListItems, outdentListItems } from "../../../lib/editor/list-commands";
 import { buildNoteUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
 import { bookMessages } from "../book/messages";
@@ -21,6 +22,8 @@ type Props = {
    *  `DETAIL_PANEL_STATE_EVENT`. Used to seed the toggle button's icon so SSR
    *  output matches the eventual hydrated state (no flicker). */
   initialPanelOpen: boolean;
+  /** Whether Indent and Outdent would change the list item at the caret. */
+  listIndent: { indent: boolean; outdent: boolean };
 };
 
 /* ── Formatting keymap (Ctrl/Cmd shortcuts) ────────────── */
@@ -102,6 +105,8 @@ export default function EditorToolbar(props: Props) {
   const checkbox = withView((v) => insertLinePrefix(v, "- [ ] "));
   const callout = (type: string) => withView((v) => insertCallout(v, type));
   const table = withView((v) => void insertTable(v, undefined, locale()));
+  const indent = withView(indentListItems);
+  const outdent = withView(outdentListItems);
 
   const [panelOpen, setPanelOpen] = createSignal(props.initialPanelOpen);
   // The toolbar renders only in the browser, where the cookie holds the same state SSR used.
@@ -141,6 +146,26 @@ export default function EditorToolbar(props: Props) {
     </Tooltip.Anchor>
   );
 
+  /* Indent and Outdent keep their place outside lists, so nothing moves when the caret enters one. Disabled with
+     aria-disabled, they stay focusable and keep their tooltip; a press never takes focus or caret from the note. */
+  const ListBtn = (p: { icon: string; title: string; enabled: boolean; onClick: () => void }) => (
+    <Tooltip.Anchor content={p.title}>
+      <IconButton
+        label={p.title}
+        tooltip={false}
+        size="xs"
+        class="text-dimmed"
+        aria-disabled={p.enabled ? undefined : "true"}
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={() => {
+          if (p.enabled) p.onClick();
+        }}
+      >
+        <i class={`ti ${p.icon} text-sm`} aria-hidden="true" />
+      </IconButton>
+    </Tooltip.Anchor>
+  );
+
   return (
     <div class="notebooks-editor-toolbar mt-1 flex min-w-0 items-center gap-2 px-2 py-2 text-base text-dimmed">
       {/* The navigation sidebar exists from lg up; phones keep the header's menu. */}
@@ -169,6 +194,8 @@ export default function EditorToolbar(props: Props) {
         <Btn icon="ti-italic" title={t().italic} onClick={italic} />
         <Btn icon="ti-strikethrough" title={t().strikethrough} onClick={strikethrough} />
         <Btn icon="ti-heading" title={t().heading} onClick={heading} />
+        <ListBtn icon="ti-indent-decrease" title={t().outdentListItem} enabled={props.listIndent.outdent} onClick={outdent} />
+        <ListBtn icon="ti-indent-increase" title={t().indentListItem} enabled={props.listIndent.indent} onClick={indent} />
         <Btn icon="ti-link" title={t().link} onClick={link} />
         <Btn icon="ti-file-symlink" title={t().linkToNoteShortcut} onClick={linkToNote} />
         <Btn icon="ti-paperclip" title={t().attachFile} onClick={() => void openAttachmentPicker(props.notebookId, locale())} />

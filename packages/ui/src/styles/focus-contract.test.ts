@@ -210,7 +210,7 @@ describe("@k2b/ui focus and color contract", () => {
     expect(cursorFor(".k2b-ui .k2b-input-shell__clear")).toMatch(/cursor:\s*pointer/);
     expect(cursorFor(".k2b-ui .k2b-input-shell__clear:disabled")).toMatch(/cursor:\s*not-allowed/);
     expect(cursorFor(".k2b-ui .k2b-button")).toMatch(/cursor:\s*pointer/);
-    expect(cursorFor(".k2b-ui .k2b-button:disabled")).toMatch(/cursor:\s*not-allowed/);
+    expect(cursorFor('.k2b-ui .k2b-button:is(:disabled, [aria-disabled="true"])')).toMatch(/cursor:\s*not-allowed/);
   });
 
   test("keeps AI theme tokens inside AI and chat components", () => {

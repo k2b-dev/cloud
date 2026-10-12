@@ -78,6 +78,22 @@ announced, so report progress that needs attention and the result, such as a
 saved state or an error, where the page reports results, for example with a
 toast.
 
+### Disabled
+
+`disabled` removes the button from the tab order and hides its tooltip. When a
+control that is unavailable right now must stay reachable, for example a
+toolbar command whose tooltip says what it does, set `aria-disabled="true"`
+instead. Buttons and links with `aria-disabled="true"` look the same as
+disabled ones, with no hover or press feedback. They keep focus and the tooltip.
+The click handler still runs, so it must ignore the press or explain why the
+action is unavailable.
+
+```tsx
+<IconButton label="Indent" aria-disabled={canIndent() ? undefined : "true"} onClick={() => canIndent() && indent()}>
+  <i class="ti ti-indent-increase" aria-hidden="true" />
+</IconButton>
+```
+
 The `input` variant uses the same height, radius, muted surface, hover border, and inset focus treatment as form fields. Use it for a separate action immediately beside an input, not for actions embedded inside the field shell.
 
 Button labels stay on one line by default. Let the surrounding toolbar wrap whole

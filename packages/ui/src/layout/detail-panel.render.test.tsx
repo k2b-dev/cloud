@@ -246,11 +246,15 @@ describe("DetailPanel", () => {
     const actionRule = css.match(/\.k2b-ui \.k2b-button\.k2b-detail-panel__action \{([^}]*)\}/)?.[1] ?? "";
     expect(actionRule).toContain("color: var(--k2b-text-muted);");
     expect(actionRule).toContain("background: transparent;");
-    const actionHoverRule = css.match(/\.k2b-ui \.k2b-button\.k2b-detail-panel__action:not\(:disabled\):hover,[^{]+\{([^}]*)\}/)?.[1] ?? "";
+    const actionHoverRule =
+      css.match(/\.k2b-ui \.k2b-button\.k2b-detail-panel__action:not\(:disabled, \[aria-disabled="true"\]\):hover,[^{]+\{([^}]*)\}/)?.[1] ??
+      "";
     expect(actionHoverRule).toContain("color: var(--k2b-detail-panel-accent, var(--k2b-action));");
     expect(actionHoverRule).toContain("background: transparent;");
     const menuHoverRule =
-      css.match(/\.k2b-ui \.k2b-button\.k2b-detail-panel__action-menu-trigger:not\(:disabled\):hover,[^{]+\{([^}]*)\}/)?.[1] ?? "";
+      css.match(
+        /\.k2b-ui \.k2b-button\.k2b-detail-panel__action-menu-trigger:not\(:disabled, \[aria-disabled="true"\]\):hover,[^{]+\{([^}]*)\}/,
+      )?.[1] ?? "";
     expect(menuHoverRule).toContain("color: var(--k2b-detail-panel-accent, var(--k2b-action));");
     expect(menuHoverRule).toContain("background: transparent;");
     expect(css).toMatch(/@media \(any-hover: hover\)[\s\S]*\.k2b-detail-panel__action-menu-trigger \{[^}]*opacity: 0/);
@@ -265,7 +269,7 @@ describe("DetailPanel", () => {
     expect(css).not.toMatch(/\.k2b-detail-panel__action-secondary[^{]*\{[^}]*transform/);
     const dangerRule =
       css.match(
-        /\.k2b-ui \.k2b-button\.k2b-detail-panel__action-secondary\[data-tone="danger"\]:not\(:disabled\):hover,[^{]+\{([^}]*)\}/,
+        /\.k2b-ui \.k2b-button\.k2b-detail-panel__action-secondary\[data-tone="danger"\]:not\(:disabled, \[aria-disabled="true"\]\):hover,[^{]+\{([^}]*)\}/,
       )?.[1] ?? "";
     expect(dangerRule).toContain("color: var(--k2b-danger-text);");
     const leadingRule = css.match(/\.k2b-ui \.k2b-detail-panel__action-leading \{([^}]*)\}/)?.[1] ?? "";
