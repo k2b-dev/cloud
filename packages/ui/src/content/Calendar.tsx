@@ -2355,10 +2355,12 @@ const TimeGridView = (props: {
     }
     return [...groups.values()];
   };
+  // 12 rem per lane. The 40 rem grid is wider than one or two lanes, so only
+  // three or more make the day scroll, and one lane fits beside a tablet drawer.
   const dayColumnMinWidth = (layouts: TimedEventLayout[]) => {
     if (!isDayView()) return undefined;
     const lanes = Math.max(1, ...layouts.map((layout) => layout.lanes));
-    return `${Math.max(32, lanes * 12)}rem`;
+    return `${lanes * 12}rem`;
   };
   const laneStyle = (layoutItem: TimedEventLayout) => {
     if (isDayView()) {
@@ -2392,7 +2394,7 @@ const TimeGridView = (props: {
     });
   });
   return (
-    <div class="k2b-calendar-time-grid">
+    <div class="k2b-calendar-time-grid k2b-detail-trail" data-view={isDayView() ? "day" : "week"}>
       <div class="k2b-calendar-time-grid__days" style={{ "grid-template-columns": `4rem repeat(${props.days.length}, minmax(0, 1fr))` }}>
         <div />
         <For each={props.days}>

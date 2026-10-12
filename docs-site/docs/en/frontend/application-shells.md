@@ -121,6 +121,7 @@ without extra space. Mark a board's horizontal scroller with
 `k2b-detail-trail` as well: under the tablet drawer, the marked scroller gets
 the drawer's width as space at its end, so its last column scrolls out from
 under the drawer.
+The week and day views of `Calendar` mark themselves.
 See [AppWorkspace](/en/ui/layout/workspace#floating-detail) for focus, keyboard
 shortcuts, gestures, motion, and sizing.
 

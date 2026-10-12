@@ -1082,12 +1082,24 @@
   line-height: 1.15;
 }
 
+/* The grid is the `k2b-detail-trail` scroller of the week and day views.
+ * Under a tablet detail drawer, the week keeps its width and scrolls, so the
+ * selected day comes out beside the drawer; the day narrows into the space
+ * beside it, so its hours stay in view. */
 .k2b-ui .k2b-calendar-time-grid {
   display: flex;
   min-width: 40rem;
   min-height: 0;
   flex: 1;
   flex-direction: column;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.k2b-ui
+  .k2b-calendar-time-grid[data-view="week"]
+  > :is(.k2b-calendar-time-grid__days, .k2b-calendar-time-grid__all-day, .k2b-calendar-time-grid__scroll) {
+  width: calc(100% + var(--k2b-detail-space, 0px));
 }
 
 .k2b-ui .k2b-calendar-time-grid__days,
