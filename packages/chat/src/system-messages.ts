@@ -8,12 +8,13 @@ export const renderSystemMessage = (system: SystemMessage, authorName: string, l
   switch (system.code) {
     case "conversation_created":
       return t.systemCreated({ actor });
-    case "details_changed":
-      return system.params.name === undefined
-        ? t.systemDetails({ actor })
-        : system.params.name === null
-          ? t.systemNameRemoved({ actor })
-          : t.systemRenamed({ actor, name: system.params.name });
+    case "details_changed": {
+      const { name, icon, purpose } = system.params;
+      if (name === undefined) return t.systemDetails({ actor });
+      const details = icon !== undefined || purpose !== undefined;
+      if (name === null) return details ? t.systemNameRemovedWithDetails({ actor }) : t.systemNameRemoved({ actor });
+      return details ? t.systemRenamedWithDetails({ actor, name }) : t.systemRenamed({ actor, name });
+    }
     case "members_added": {
       const members = system.params.members;
       // A fourth name reads better than "and 1 others", so only five or more members are counted.

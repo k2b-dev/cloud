@@ -138,7 +138,7 @@ export const SendMessageSchema = z.strictObject({
 const sequenceQuery = (minimum: number) =>
   z.union([z.number(), z.string().regex(/^\d+$/).transform(Number)]).pipe(z.number().int().min(minimum).max(Number.MAX_SAFE_INTEGER));
 export const MessageQuerySchema = z
-  .object({ before: sequenceQuery(1).optional(), after: sequenceQuery(1).optional() })
+  .object({ before: sequenceQuery(1).optional(), after: sequenceQuery(0).optional() })
   .refine((query) => query.before === undefined || query.after === undefined);
 export const MessageParamSchema = ConversationParamSchema.extend({ message: MessageIdSchema });
 export const ChangesQuerySchema = z.object({ afterRev: sequenceQuery(0) });

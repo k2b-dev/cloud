@@ -65,12 +65,23 @@ suite("chat HTTP state machine against the trimmed V5 oracle", () => {
         expect(projected.map((m) => m.seq)).toEqual(Array.from({ length: model.seqHead }, (_, i) => i + 1));
         expect(new Set(projected.map((m) => m.rev)).size).toBe(projected.length);
         const [head] = await sql<
-          { seq_head: string; rev: string; changed_rev: string; member_count: number }[]
-        >`SELECT seq_head, rev, changed_rev, member_count FROM chat.conversations WHERE id = ${chat.id}::uuid`;
+          {
+            seq_head: string;
+            rev: string;
+            changed_rev: string;
+            member_count: number;
+            name: string | null;
+            icon: string | null;
+            purpose: string | null;
+          }[]
+        >`SELECT seq_head, rev, changed_rev, member_count, name, icon, purpose FROM chat.conversations WHERE id = ${chat.id}::uuid`;
         expect(Number(head!.rev)).toBe(model.rev);
         expect(Number(head!.seq_head)).toBe(model.seqHead);
         expect(Number(head!.changed_rev)).toBe(model.changedRev);
         expect(head!.member_count).toBe(model.members.size);
+        expect(head!.name).toBe(model.name);
+        expect(head!.icon).toBe(model.icon);
+        expect(head!.purpose).toBe(model.purpose);
         expect(projected.every((m) => m.rev <= Number(head!.rev))).toBeTrue();
         const parts = await sql<
           { principal_id: string; joined_seq: string; last_read_seq: null }[]

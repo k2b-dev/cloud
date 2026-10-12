@@ -47,7 +47,7 @@ export class ChatModel {
       body,
       system,
     };
-    if (system) this.changedRev = this.rev;
+    this.changedRev = this.rev;
     this.msgs.push(message);
     return message;
   }
@@ -75,7 +75,8 @@ export class ChatModel {
         if (permission === "read") return;
         const params: Extract<SystemMessage, { code: "details_changed" }>["params"] = {};
         for (const field of ["name", "icon", "purpose"] as const) {
-          const next = op.details[field];
+          const value = op.details[field];
+          const next = typeof value === "string" ? value.trim() || null : value;
           if (next !== undefined && next !== this[field]) {
             params[field] = next;
             this[field] = next;
@@ -146,7 +147,11 @@ export const randomOperation = (model: ChatModel, random: ReturnType<typeof rng>
       return {
         type: "details",
         actor,
-        details: { name: random.int(2) ? `Chat ${random.int(3)}` : null, purpose: `Purpose ${random.int(3)}` },
+        details: {
+          name: random.pick([` Chat ${random.int(3)} `, "", " \t ", null]),
+          icon: random.pick([" ti ti-message ", "ti ti-users", "", " \t ", null]),
+          purpose: random.pick([` Purpose ${random.int(3)} `, "", " \t ", null]),
+        },
       };
     case 4:
       return { type: "permission", actor: manager, member, permission: random.pick(["read", "write", "admin"] as const)! };

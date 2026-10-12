@@ -51,21 +51,20 @@ export const appendMessage = async (db: typeof sql, conversation: ConversationRo
   const author = subjectPrincipal(context.accessSubject);
   const [snapshot] = await personSnapshots(db, [author.id]);
   if (!snapshot) throw new Error("Chat message has no author");
-  const stateChange = message.kind === "system";
   const [head] = await db<{ seq_head: bigint | string; rev: bigint | string }[]>`UPDATE chat.conversations
-    SET seq_head = seq_head + 1, rev = rev + 1,
-      changed_rev = ${stateChange ? db`rev + 1` : db`changed_rev`},
-      last_activity_at = ${stateChange ? db`last_activity_at` : db`now()`}, updated_at = now()
+    SET seq_head = seq_head + 1, rev = rev + 1, changed_rev = rev + 1,
+      last_activity_at = ${message.kind === "text" ? db`GREATEST(last_activity_at, clock_timestamp())` : db`last_activity_at`}, updated_at = now()
     WHERE id = ${conversation.id}::uuid RETURNING seq_head, rev`;
   if (!head) throw new Error("Chat message has no conversation");
   let row: MessageRow | undefined;
   for (let attempt = 0; attempt < 10 && !row; attempt++) {
     [row] = await db<MessageRow[]>`INSERT INTO chat.messages
-      (short_id, conversation_id, seq, rev, kind, author_type, author_id, author_name, client_id, body_md, system_code, system_params)
+      (short_id, conversation_id, seq, rev, kind, author_type, author_id, author_name, client_id, body_md, system_code, system_params, created_at)
       VALUES (${crypto.common.readableId(10)}, ${conversation.id}::uuid, ${head.seq_head}, ${head.rev}, ${message.kind},
         ${author.type}, ${author.id}::uuid, ${snapshot.name}, ${message.kind === "text" ? message.clientId : null},
         ${message.kind === "text" ? message.body : null}, ${message.kind === "system" ? message.system.code : null},
-        ${message.kind === "system" ? JSON.stringify(message.system.params) : null}::text::jsonb)
+        ${message.kind === "system" ? JSON.stringify(message.system.params) : null}::text::jsonb,
+        ${message.kind === "text" ? db`(SELECT last_activity_at FROM chat.conversations WHERE id = ${conversation.id}::uuid)` : db`clock_timestamp()`})
       ON CONFLICT (short_id) DO NOTHING RETURNING *`;
   }
   if (!row) throw new Error("Chat message ID could not be allocated");

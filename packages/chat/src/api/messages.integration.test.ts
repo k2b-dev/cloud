@@ -166,6 +166,8 @@ suite("chat messages", () => {
     expect(latest.items.map((m) => m.seq)).toEqual(Array.from({ length: 50 }, (_, i) => 76 + i));
     const prior = await page(owner, chat.shortId, "?before=76");
     expect(prior.items.map((m) => m.seq)).toEqual(Array.from({ length: 50 }, (_, i) => 26 + i));
+    const oldest = await page(owner, chat.shortId, "?after=0");
+    expect(oldest.items.map((m) => m.seq)).toEqual(Array.from({ length: 50 }, (_, i) => i + 1));
     expect((await send(owner, chat.shortId, "new-arrival")).status).toBe(201);
     expect((await page(owner, chat.shortId, "?before=76")).items).toEqual(prior.items);
     const first = await page(owner, chat.shortId, "?before=26");
@@ -193,13 +195,13 @@ suite("chat messages", () => {
     const chat = await f.fixture(owner);
     await fill(owner, chat.shortId, 405);
     const first = await changes(owner, chat.shortId, 0);
-    expect(first).toMatchObject({ rev: 200, more: true, conversation: null });
+    expect(first).toMatchObject({ rev: 200, more: true, conversation: { id: chat.shortId } });
     expect(first.messages).toHaveLength(200);
     const second = await changes(owner, chat.shortId, first.rev);
-    expect(second).toMatchObject({ rev: 400, more: true, conversation: null });
+    expect(second).toMatchObject({ rev: 400, more: true, conversation: { id: chat.shortId } });
     expect(second.messages).toHaveLength(200);
     const third = await changes(owner, chat.shortId, second.rev);
-    expect(third).toMatchObject({ rev: 405, more: false, conversation: null });
+    expect(third).toMatchObject({ rev: 405, more: false, conversation: { id: chat.shortId } });
     expect([...first.messages, ...second.messages, ...third.messages].map((m) => m.seq)).toEqual(
       Array.from({ length: 405 }, (_, i) => i + 1),
     );
@@ -278,9 +280,13 @@ suite("chat messages", () => {
     const reader = await f.person("Lea");
     const chat = await f.fixture(owner, [{ person: reader, permission: "read" }]);
     await sql`UPDATE chat.conversations SET last_activity_at = '2020-01-01' WHERE id = ${chat.id}::uuid`;
+    const beforeRev = (await page(owner, chat.shortId)).rev;
     const response = await send(owner, chat.shortId, "live", "  Hello\n **world** 😀 ");
     expect(response.status).toBe(201);
     const message = MessageViewSchema.parse(await response.json());
+    const delta = await changes(owner, chat.shortId, beforeRev);
+    expect(delta.conversation).not.toBeNull();
+    expect(delta.conversation!.lastActivityAt).toBe(message.createdAt);
     const rows = await sql<MessageRow[]>`SELECT * FROM chat.messages WHERE conversation_id = ${chat.id}::uuid`;
     const shared = projectMessage(rows[0]!, chat.shortId);
     expect(await outbox(chat.shortId)).toEqual([
@@ -320,10 +326,29 @@ suite("chat messages", () => {
     const snapshot = await page(owner, chat.shortId);
     expect(snapshot.seqHead).toBe(1);
     const [head] = await sql<
-      { changed_rev: string; last_activity_at: Date }[]
-    >`SELECT changed_rev, last_activity_at FROM chat.conversations WHERE id = ${chat.id}::uuid`;
-    expect(Number(head!.changed_rev)).toBe(0);
+      { rev: string; changed_rev: string; last_activity_at: Date }[]
+    >`SELECT rev, changed_rev, last_activity_at FROM chat.conversations WHERE id = ${chat.id}::uuid`;
+    expect(Number(head!.changed_rev)).toBe(Number(head!.rev));
     expect(head!.last_activity_at.getUTCFullYear()).toBeGreaterThan(2020);
+  });
+
+  test("text timestamps match activity exactly and never decrease in sequence", async () => {
+    const owner = await f.person();
+    const chat = await f.fixture(owner);
+    for (let i = 0; i < 5; i++) {
+      if (i === 3)
+        await sql`UPDATE chat.conversations SET last_activity_at = clock_timestamp() + interval '1 hour' WHERE id = ${chat.id}::uuid`;
+      expect((await send(owner, chat.shortId, `timestamp-${i}`)).status).toBe(201);
+      const [row] = await sql<{ equal: boolean }[]>`SELECT m.created_at = c.last_activity_at AS equal
+        FROM chat.messages m JOIN chat.conversations c ON c.id = m.conversation_id
+        WHERE c.id = ${chat.id}::uuid AND m.seq = ${i + 1}`;
+      expect(row!.equal).toBeTrue();
+    }
+    const rows = await sql<{ seq: string; ordered: boolean | null }[]>`SELECT seq,
+      created_at >= lag(created_at) OVER (ORDER BY seq) AS ordered
+      FROM chat.messages WHERE conversation_id = ${chat.id}::uuid ORDER BY seq`;
+    expect(rows.map((row) => Number(row.seq))).toEqual([1, 2, 3, 4, 5]);
+    expect(rows.every((row) => row.ordered !== false)).toBeTrue();
   });
 
   test("membership changes publish access rows on both keys", async () => {

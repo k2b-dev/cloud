@@ -7,6 +7,20 @@ const cases: [SystemMessage, string, string][] = [
   [{ code: "conversation_created", params: {} }, "Alex created the chat.", "Alex hat den Chat erstellt."],
   [{ code: "details_changed", params: { name: "Plan" } }, "Alex renamed the chat to “Plan”.", "Alex hat den Chat in „Plan“ umbenannt."],
   [{ code: "details_changed", params: { name: null } }, "Alex removed the chat name.", "Alex hat den Chatnamen entfernt."],
+  ...[{ icon: null }, { purpose: "Work" }, { icon: "ti ti-message", purpose: null }].flatMap(
+    (details): [SystemMessage, string, string][] => [
+      [
+        { code: "details_changed", params: { name: "Plan", ...details } },
+        "Alex renamed the chat to “Plan” and changed the chat details.",
+        "Alex hat den Chat in „Plan“ umbenannt und die Chat-Angaben geändert.",
+      ],
+      [
+        { code: "details_changed", params: { name: null, ...details } },
+        "Alex removed the chat name and changed the chat details.",
+        "Alex hat den Chatnamen entfernt und die Chat-Angaben geändert.",
+      ],
+    ],
+  ),
   [
     { code: "details_changed", params: { icon: null, purpose: "Work" } },
     "Alex changed the chat details.",

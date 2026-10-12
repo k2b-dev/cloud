@@ -9,7 +9,7 @@ test("client IDs and Markdown are bounded without trimming content or splitting 
   expect(SendMessageSchema.parse({ clientId: "a".repeat(64), body }).body).toBe(body);
   expect(SendMessageSchema.parse({ clientId: "ok", body: " \n**hello**\n " }).body).toBe(" \n**hello**\n ");
 });
-test("history cursors are mutually exclusive positive safe integers; delta accepts zero", () => {
+test("history cursors are mutually exclusive safe integers; after and delta accept zero, before stays positive", () => {
   for (const query of [
     { before: 1, after: 2 },
     { before: 0 },
@@ -22,6 +22,7 @@ test("history cursors are mutually exclusive positive safe integers; delta accep
   ])
     expect(MessageQuerySchema.safeParse(query).success).toBeFalse();
   expect(MessageQuerySchema.parse({ before: "12" })).toEqual({ before: 12 });
+  expect(MessageQuerySchema.parse({ after: "0" })).toEqual({ after: 0 });
   expect(MessageQuerySchema.parse({})).toEqual({});
   expect(ChangesQuerySchema.parse({ afterRev: "0" })).toEqual({ afterRev: 0 });
   for (const afterRev of [-1, "", " ", 1.5, Number.MAX_SAFE_INTEGER + 1])

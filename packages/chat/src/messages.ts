@@ -9,7 +9,10 @@ export const chatMessages = i18n.define({
       resyncRequired: "Chat history has changed. Reload the chat.",
       systemCreated: ({ actor }: { actor: string }) => `${actor} created the chat.`,
       systemRenamed: ({ actor, name }: { actor: string; name: string }) => `${actor} renamed the chat to “${name}”.`,
+      systemRenamedWithDetails: ({ actor, name }: { actor: string; name: string }) =>
+        `${actor} renamed the chat to “${name}” and changed the chat details.`,
       systemNameRemoved: ({ actor }: { actor: string }) => `${actor} removed the chat name.`,
+      systemNameRemovedWithDetails: ({ actor }: { actor: string }) => `${actor} removed the chat name and changed the chat details.`,
       systemDetails: ({ actor }: { actor: string }) => `${actor} changed the chat details.`,
       systemAdded: ({ actor, names }: { actor: string; names: string }) => `${actor} added ${names}.`,
       systemRemoved: ({ actor, name }: { actor: string; name: string }) => `${actor} removed ${name}.`,
@@ -64,7 +67,10 @@ export const chatMessages = i18n.define({
       resyncRequired: "Der Chatverlauf hat sich geändert. Lade den Chat neu.",
       systemCreated: ({ actor }: { actor: string }) => `${actor} hat den Chat erstellt.`,
       systemRenamed: ({ actor, name }: { actor: string; name: string }) => `${actor} hat den Chat in „${name}“ umbenannt.`,
+      systemRenamedWithDetails: ({ actor, name }: { actor: string; name: string }) =>
+        `${actor} hat den Chat in „${name}“ umbenannt und die Chat-Angaben geändert.`,
       systemNameRemoved: ({ actor }: { actor: string }) => `${actor} hat den Chatnamen entfernt.`,
+      systemNameRemovedWithDetails: ({ actor }: { actor: string }) => `${actor} hat den Chatnamen entfernt und die Chat-Angaben geändert.`,
       systemDetails: ({ actor }: { actor: string }) => `${actor} hat die Chat-Angaben geändert.`,
       systemAdded: ({ actor, names }: { actor: string; names: string }) => `${actor} hat ${names} hinzugefügt.`,
       systemRemoved: ({ actor, name }: { actor: string; name: string }) => `${actor} hat ${name} entfernt.`,
