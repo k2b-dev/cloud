@@ -2,12 +2,12 @@ import type { Provider, ReasoningEffort } from "@k2b/nessi/ai";
 import { anthropic, completeFromStream, gemini, mistral, ollama, openAICompatible, openai, openrouter } from "@k2b/nessi/ai";
 import type { AiModelProfile } from "./types";
 
-/** Bound the first token and every gap between chunks to 60s, for chat and complete() calls. */
+/** Bound the first response chunk and every gap between chunks to 60s, for chat and complete() calls. */
 export const PROVIDER_TIMEOUTS = { firstByteMs: 60_000, idleMs: 60_000 } as const;
 
-// Native complete() receives headers only after the whole answer, so Nessi can bound it only by total time (totalMs),
-// which cuts off slow healthy answers or detects a stall late. Streaming bounds the first token and every gap between
-// chunks, as for chat.
+// Native complete() receives headers only after the whole answer, so until then Nessi can bound it only by total time
+// (totalMs), which cuts off slow healthy answers or detects a stall late. Streaming bounds the first response chunk and
+// every gap between chunks, as for chat. Any body chunk counts, including SSE keep-alive comments.
 export const completeThroughStream = (provider: Provider): Provider => ({
   ...provider,
   complete: (request) => completeFromStream(provider, request),
