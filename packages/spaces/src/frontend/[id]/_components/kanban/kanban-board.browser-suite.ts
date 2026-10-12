@@ -152,7 +152,24 @@ const wormhole: SpaceWormhole = {
 };
 const assignedToMe = () => bucketsFor((entry) => entry.assignees?.some((assignee) => assignee.id === me.id) ?? false);
 
+const workspaceColumns: SpaceColumn[] = Array.from({ length: 8 }, (_, index) => ({
+  ...columns[index % columns.length]!,
+  id: `Column${index}`,
+  name: `Project phase ${index + 1}`,
+  rank: String(index),
+}));
+const workspaceItems = Array.from({ length: 80 }, (_, index) =>
+  item(`WorkspaceItem${index}`, workspaceColumns[index % workspaceColumns.length]!.id, `Website relaunch task ${index + 1}`),
+);
+const workspaceBuckets: KanbanBucketInitial[] = workspaceColumns.map((column) =>
+  bucket(
+    { key: `column:${column.id}`, label: column.name, color: column.color, kind: "column", columnId: column.id, isDone: column.isDone },
+    workspaceItems.filter((entry) => entry.columnId === column.id),
+  ),
+);
+
 type Scenario = {
+  workspace?: "kanban" | "table";
   locale: "en" | "de";
   query?: string;
   folded?: string[];
@@ -166,10 +183,14 @@ const serverBody = (scenario: Scenario) =>
       locale: scenario.locale,
       spaceId: "Space1",
       baseUrl: `/app/spaces/Space1${scenario.query ?? ""}`,
-      columns,
+      columns: scenario.workspace ? workspaceColumns : columns,
+      workspace: scenario.workspace,
+      itemsResult: scenario.workspace
+        ? { items: workspaceItems, total: workspaceItems.length, page: 1, pageSize: 80, totalPages: 1, groupCounts: {} }
+        : undefined,
       tags: [{ id: "Tag001", spaceId: "Space1", name: "Logistics", color: "#0ea5e9" }],
       wormholes: scenario.wormholes ?? [],
-      initialBuckets: scenario.buckets ?? unfiltered(),
+      initialBuckets: scenario.workspace ? workspaceBuckets : (scenario.buckets ?? unfiltered()),
       foldedColumns: scenario.folded ?? [],
       selectedItemId: "",
       canWrite: scenario.canWrite ?? true,
@@ -253,7 +274,7 @@ const pageHtml = (scenario: Scenario, theme: "light" | "dark") =>
   `<link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><style>${css}</style>` +
   "<style>solid-client,solid-island{display:contents}</style></head>" +
   // The workspace main area: a padded flex column the route fills.
-  `<body class="k2b-ui" style="margin:0"><main style="display:flex;flex-direction:column;height:100dvh;box-sizing:border-box;padding:var(--ui-space-shell)">${serverBody(scenario)}</main>` +
+  `<body class="k2b-ui" style="margin:0"><main style="display:flex;flex-direction:column;height:100dvh;box-sizing:border-box;${scenario.workspace ? "" : "padding:var(--ui-space-shell)"}">${serverBody(scenario)}</main>` +
   `<script type="module">document.querySelectorAll('solid-island').forEach((e)=>import('/_ssr/'+e.dataset.id+'.js'))</script></body></html>`;
 
 let caseCounter = 0;
@@ -269,11 +290,16 @@ const open = async (view: View, scenario: Scenario, options: { javaScript?: bool
     isMobile: view.touch,
     hasTouch: view.touch,
     javaScriptEnabled: options.javaScript ?? true,
+    // The workspace scenarios measure the detail panel where it rests, not while it slides in.
+    reducedMotion: scenario.workspace ? "reduce" : "no-preference",
   });
   const page = await context.newPage();
   await page.goto(`${server.url}app/spaces/Space1?case=${id}${scenario.query ? `&${scenario.query.slice(1)}` : ""}`);
   await page.evaluate(() => window.document.fonts.ready);
-  if (options.javaScript ?? true) await rendered(page);
+  if (options.javaScript ?? true) {
+    if (scenario.workspace === "table") await page.waitForSelector('[data-scrollbar-enhanced="true"]');
+    else await rendered(page);
+  }
   return page;
 };
 /** The island has replaced the server markup: hydrated icon buttons drop their server-only native title. */
@@ -1103,4 +1129,68 @@ ${"Keep the stand calm and friendly. ".repeat(8)}`,
     },
     30_000,
   );
+});
+
+describe("wide Spaces surfaces beside Detail", () => {
+  for (const [width, height] of [
+    [1366, 900],
+    [1920, 1080],
+  ] as const) {
+    for (const workspace of ["kanban", "table"] as const) {
+      test(`${width}×${height} ${workspace}: one inset and rounded clipping corners`, async () => {
+        const page = await open({ width, height, touch: false }, { locale: "en", workspace, query: `?view=${workspace}` });
+        try {
+          const selector = workspace === "table" ? ".k2b-table-wrap.k2b-detail-trail" : ".k2b-detail-trail";
+          const shape = await page.locator(selector).evaluate((viewport) => {
+            const token = (name: string) => {
+              const probe = document.createElement("div");
+              probe.style.width = `var(${name})`;
+              viewport.append(probe);
+              const pixels = probe.getBoundingClientRect().width;
+              probe.remove();
+              return pixels;
+            };
+            const inset = token("--k2b-workspace-detail-inset");
+            const radius = token("--k2b-radius-surface");
+            const style = getComputedStyle(viewport);
+            return {
+              inset,
+              radius,
+              // The table's viewport sits inside its Paper frame's border; the frame is the surface's outer edge.
+              right: (viewport.closest(".k2b-paper") ?? viewport).getBoundingClientRect().right,
+              panelLeft: document.querySelector(".k2b-app-workspace__detail")!.getBoundingClientRect().left,
+              radii: [
+                style.borderTopLeftRadius,
+                style.borderTopRightRadius,
+                style.borderBottomLeftRadius,
+                style.borderBottomRightRadius,
+              ].map(Number.parseFloat),
+              scrollWidth: viewport.scrollWidth,
+              clientWidth: viewport.clientWidth,
+              scrollHeight: viewport.scrollHeight,
+              clientHeight: viewport.clientHeight,
+            };
+          });
+          expect(shape.scrollWidth).toBeGreaterThan(shape.clientWidth);
+          expect(shape.right).toBeCloseTo(shape.panelLeft - shape.inset, 1);
+          for (const radius of shape.radii) expect(radius).toBeCloseTo(shape.radius, 1);
+          if (workspace === "table") {
+            expect(shape.scrollHeight).toBeGreaterThan(shape.clientHeight);
+            await page.locator(selector).evaluate((viewport) => {
+              viewport.scrollTop = 300;
+            });
+            const sticky = await page.locator(selector).evaluate((viewport) => ({
+              scroll: viewport.scrollTop,
+              top: viewport.getBoundingClientRect().top,
+              header: viewport.querySelector("thead")!.getBoundingClientRect().top,
+            }));
+            expect(sticky.scroll).toBeGreaterThan(0);
+            expect(sticky.header).toBeCloseTo(sticky.top, 0);
+          }
+        } finally {
+          await page.context().close();
+        }
+      }, 30_000);
+    }
+  }
 });

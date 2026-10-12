@@ -390,6 +390,7 @@
         "@nats-io/transport-node": "catalog:",
         "@stackforge-eu/factur-x": "1.4.2",
         "@types/bun": "catalog:",
+        "bun-plugin-tailwind": "catalog:",
         "playwright": "catalog:",
         "typescript": "catalog:",
       },

@@ -37,6 +37,12 @@ import {
 
 Each column has a stable `id`, a `header`, and usually a `value` key or function. Numeric values align right by default. `renderCell` and `renderHeader` customize presentation without changing the underlying row model.
 
+Set a column's `nowrap: true` for dates, times, numbers, amounts, or short
+codes. Body and footer values stay on one line and set the column's minimum
+width; headers may wrap. The default uses the first non-empty value: numbers,
+including bigint, and `Date` values stay on one line; strings wrap. An explicit
+`nowrap: false` allows wrapping even for numeric or date values.
+
 Pass `getRowId` when selection or stable row identity matters. Use `selectedRowId` for a selected record, not the row index.
 
 The default cell renderer displays missing values as an em dash, dates with the current locale, and booleans as Yes or No.
@@ -132,7 +138,7 @@ type DataTableColumn<T> = {
   header: JSX.Element | ((ctx: { col: DataTableColumn<T> }) => JSX.Element);
   subtitle?: JSX.Element | ((ctx: { col: DataTableColumn<T> }) => JSX.Element);
   value?: keyof T | ((row: T) => unknown); class?: string; headerClass?: string; cellClass?: string;
-  align?: "left" | "center" | "right"; sortable?: boolean | string;
+  align?: "left" | "center" | "right"; nowrap?: boolean; sortable?: boolean | string;
 };
 
 type DataTableSort = { key: string; direction: "asc" | "desc" };

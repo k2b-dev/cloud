@@ -657,6 +657,38 @@ describe("@k2b/ui Cloud content contract", () => {
     expect(html.indexOf("<tbody")).toBeLessThan(html.indexOf("<tfoot"));
   });
 
+  test("keeps numeric and date values intact with explicit wrapping overrides, including footers", () => {
+    const html = renderToString(() =>
+      DataTable({
+        rows: [
+          { amount: null, date: null, code: null, count: null },
+          { amount: 12400, date: new Date("2026-11-14T12:00:00Z"), code: "ABC-123", count: 3n },
+        ],
+        columns: [
+          { id: "amount", header: "Amount", value: "amount" },
+          { id: "date", header: "Date", value: "date", align: "center" },
+          { id: "text", header: "Text", value: "code" },
+          { id: "code", header: "Code", value: "code", nowrap: true },
+          { id: "wrapped", header: "Wrapped", value: "amount", nowrap: false },
+          { id: "count", header: "Count", value: "count" },
+        ],
+        footer: { values: { amount: 12400, code: "ABC-123" } },
+      }),
+    );
+    const cells = (section: string) => [
+      ...html
+        .split(`<${section}`)[1]!
+        .split(`</${section}>`)[0]!
+        .matchAll(/<td\b[^>]*>/g),
+    ];
+    const expected = [true, true, false, true, false, true];
+    cells("tbody").forEach((cell, index) => expect(cell[0].includes('data-nowrap="true"')).toBe(expected[index % expected.length]!));
+    cells("tfoot").forEach((cell, index) => expect(cell[0].includes('data-nowrap="true"')).toBe(expected[index]!));
+    expect(cells("tbody")).toHaveLength(12);
+    expect(cells("tfoot")).toHaveLength(6);
+    expect(html.match(/<th\b[^>]*data-nowrap/g)).toBeNull();
+  });
+
   test("infers each DataTable column alignment once per row set", () => {
     const rows = Array.from({ length: 100 }, (_, index) => ({ value: index + 1 }));
     let reads = 0;

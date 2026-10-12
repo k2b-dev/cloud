@@ -1082,12 +1082,21 @@
   line-height: 1.15;
 }
 
+/* Days keep 40 rem between them. A narrower calendar, such as one beside the
+   detail panel, scrolls the day row, the all-day row, and the hours sideways
+   together inside its own rounded frame instead of cutting off the last days. */
 .k2b-ui .k2b-calendar-time-grid {
   display: flex;
-  min-width: 40rem;
+  min-width: 0;
   min-height: 0;
   flex: 1;
   flex-direction: column;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.k2b-ui .k2b-calendar-time-grid > * {
+  min-width: 40rem;
 }
 
 .k2b-ui .k2b-calendar-time-grid__days,

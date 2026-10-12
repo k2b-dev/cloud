@@ -1,5 +1,5 @@
 import type { DateContext } from "@k2b/stdlib";
-import { Button, IconButton, prompts, ScrollArea } from "@k2b/ui";
+import { Button, IconButton, prompts } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
 import type { SpaceColumn, SpaceItemTemplate, SpaceTag, SpaceWormhole } from "@/contracts";
 import { useSpaceMessages } from "../../messages";
@@ -133,7 +133,8 @@ export default function SpacesKanbanRoute(props: Props) {
         )}
       </Show>
       <div class="h-2" />
-      <ScrollArea class="flex-1" scrollPreserveKey={`spaces-main-${props.spaceId}`}>
+      {/* The board scrolls itself and ends in Main's content box; a scroller around it would reserve its gutter before the detail panel. */}
+      <div class="min-h-0 flex-1">
         <Show when={view.current()} keyed>
           {(current) => (
             <KanbanBoard
@@ -155,7 +156,7 @@ export default function SpacesKanbanRoute(props: Props) {
             />
           )}
         </Show>
-      </ScrollArea>
+      </div>
     </>
   );
 }

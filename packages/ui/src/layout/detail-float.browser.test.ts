@@ -31,10 +31,15 @@ const mainContent = () => {
   if (params.has("table")) {
     return [toolbar, createComponent(DataTable, {
       class:"fixture-table", surface:"paper", fillHeight:true, scrollClass:"k2b-detail-trail",
-      rows:Array.from({length:2}, (_, index) => ({index})),
+      rows:Array.from({length:2}, (_, index) => ({index, date:new Date("2026-11-14T12:00:00Z"), amount:"12400,00 EUR"})),
       onRowClick:() => setOpen(true),
-      columns:Array.from({length:8}, (_, index) => ({id:String(index), header:"Field " + index, value:row => "Cell " + row.index + "." + index})),
-      renderCell:({row,col,value}) => col.id === "0" ? button(row.index) : value,
+      columns:params.has("values") ? [
+        {id:"0",header:"Record",value:"index"},
+        {id:"date",header:"Date",value:"date",class:"fixture-date"},
+        {id:"amount",header:"Amount",value:"amount",nowrap:true},
+        ...Array.from({length:5}, (_, index) => ({id:String(index + 3),header:"Description " + index,value:() => "Free text that can wrap"})),
+      ] : Array.from({length:8}, (_, index) => ({id:String(index), header:"Field " + index, value:row => "Cell " + row.index + "." + index})),
+      renderCell:({row,col,value}) => col.id === "0" ? button(row.index) : col.id === "date" ? row.date.toISOString().slice(0,10) : value,
     })];
   }
   if (!params.has("trail")) return [toolbar, ...Array.from({length:40}, (_, index) => button(index))];
@@ -99,7 +104,7 @@ const load = async (width: number, height: number, params = "", options: Browser
       new URLSearchParams(params).has("card")
         ? "#app{box-sizing:border-box;padding:0.5rem}"
         : ".k2b-ui .k2b-app-workspace{border:0;--k2b-workspace-radius:0px}"
-    }.fixture-main{padding:0.5rem}${
+    }.fixture-main{padding:var(--k2b-workspace-detail-inset)}.fixture-date{width:1px}${
       new URLSearchParams(params).has("wide") ? ".fixture-table td,.fixture-table th{min-width:240px}" : ""
     }</style></head><body class="k2b-ui" style="margin:0"><div id="app" style="height:100vh"></div></body></html>`,
   );
@@ -180,6 +185,100 @@ describe("floating workspace detail", () => {
       });
     }
   }
+  for (const [width, height] of [
+    [1366, 900],
+    [1920, 1080],
+  ] as const) {
+    for (const frame of ["", "&card=1"]) {
+      for (const surface of ["trail", "table"]) {
+        test(`${width}×${height} ${surface}${frame}: the scroll viewport rounds the cut edge one inset before Detail`, async () => {
+          const page = await load(width, height, `${surface}=1&initial=1${frame}`);
+          try {
+            await settlePanel(page);
+            const shape = await page.locator(".k2b-detail-trail").evaluate((viewport) => {
+              const token = (name: string) => {
+                const probe = document.createElement("div");
+                probe.style.width = `var(${name})`;
+                viewport.append(probe);
+                const pixels = probe.getBoundingClientRect().width;
+                probe.remove();
+                return pixels;
+              };
+              const inset = token("--k2b-workspace-detail-inset");
+              const radius = token("--k2b-radius-surface");
+              viewport.scrollLeft = 130;
+              const rect = viewport.getBoundingClientRect();
+              // A table's viewport sits inside its Paper frame's border; the frame is the surface's outer edge.
+              const frame = (viewport.closest(".k2b-paper") ?? viewport).getBoundingClientRect();
+              const style = getComputedStyle(viewport);
+              const candidates = viewport.querySelectorAll("tbody tr:first-child td, #board button");
+              const cut = [...candidates].find((cell) => {
+                const box = cell.getBoundingClientRect();
+                return box.left < rect.right && box.right > rect.right;
+              });
+              return {
+                inset,
+                radius,
+                right: rect.right,
+                frameRight: frame.right,
+                panelLeft: document.querySelector(".k2b-app-workspace__detail")!.getBoundingClientRect().left,
+                radii: [
+                  style.borderTopLeftRadius,
+                  style.borderTopRightRadius,
+                  style.borderBottomLeftRadius,
+                  style.borderBottomRightRadius,
+                ].map(Number.parseFloat),
+                cutRight: cut?.getBoundingClientRect().right ?? 0,
+                scrollWidth: viewport.scrollWidth,
+                clientWidth: viewport.clientWidth,
+                overflow: style.overflowX,
+              };
+            });
+            expect(shape.scrollWidth).toBeGreaterThan(shape.clientWidth);
+            expect(shape.overflow).toBe("auto");
+            expect(shape.frameRight).toBeCloseTo(shape.panelLeft - shape.inset, 1);
+            for (const radius of shape.radii) expect(radius).toBeCloseTo(shape.radius, 1);
+            expect(shape.cutRight).toBeGreaterThan(shape.right);
+          } finally {
+            await page.close();
+          }
+        });
+      }
+    }
+  }
+
+  test("a narrow date column and amount keep their whole value on one line beside Detail", async () => {
+    const page = await load(1366, 900, "table=1&values=1&initial=1");
+    try {
+      await settlePanel(page);
+      for (const column of [2, 3]) {
+        const value = await page.locator(`tbody tr:first-child td:nth-child(${column})`).evaluate((cell) => {
+          const content = cell.querySelector<HTMLElement>(".k2b-data-table__cell-text")!;
+          const text = content.firstChild!;
+          const range = document.createRange();
+          range.selectNodeContents(text);
+          const bounds = range.getBoundingClientRect();
+          const box = content.getBoundingClientRect();
+          return {
+            lines: range.getClientRects().length,
+            left: bounds.left,
+            right: bounds.right,
+            contentLeft: box.left,
+            contentRight: box.right,
+            scroll: content.scrollWidth,
+            client: content.clientWidth,
+          };
+        });
+        expect(value.lines).toBe(1);
+        expect(value.scroll).toBeLessThanOrEqual(value.client);
+        expect(value.left).toBeGreaterThanOrEqual(value.contentLeft - 0.5);
+        expect(value.right).toBeLessThanOrEqual(value.contentRight + 0.5);
+      }
+    } finally {
+      await page.close();
+    }
+  });
+
   test("fits a preferred width while keeping Main at 320 px", async () => {
     const page = await load(1024, 900, "sidebar=208&persisted=640");
     try {

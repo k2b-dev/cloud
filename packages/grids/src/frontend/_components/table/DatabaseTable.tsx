@@ -94,6 +94,9 @@ const isComputedColumn = (column: ColumnSpec): column is Extract<ColumnSpec, { k
 
 const columnId = (column: ColumnSpec): string => (isComputedColumn(column) ? column.id : column.fieldId);
 
+// These display types are single values; prose and computed columns can wrap.
+const NOWRAP_FIELD_TYPES = new Set(["number", "decimal", "percent", "duration", "date", "id", "created_at", "updated_at"]);
+
 const BULK_SELECTION_COLUMN_ID = "__bulk_selection";
 
 const SelectionCheckbox = (props: { checked: boolean; indeterminate?: boolean; label: string; onChange: (checked: boolean) => void }) => {
@@ -223,6 +226,7 @@ export default function DatabaseTable(props: Props) {
         subtitle:
           props.showColumnSubtitles === false ? undefined : computed ? t().computed : fieldTypeLabel(field.type, locale()).toLowerCase(),
         value: (record) => record.data[field.id],
+        nowrap: !computed && NOWRAP_FIELD_TYPES.has(effectiveDisplayField(field, props.fieldsByTable).type),
         headerClass: computed ? "bg-[var(--ui-selected)]" : undefined,
       };
     });

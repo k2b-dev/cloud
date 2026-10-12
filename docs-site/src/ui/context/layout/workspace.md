@@ -83,20 +83,26 @@ so keep `open` false while the panel should not show.
 From 48 rem, Detail occupies a column at the workspace's end, beside the
 head and all panes, with a 0.5 rem inset on the top, right, and bottom. Main
 keeps at least 20 rem. Give Main 0.5 rem padding so its surfaces end one gap
-before the panel, with their own rounded right corners. From 64 rem the
-workspace allows the panel's shadow beyond its edges; sidebar, content, and
-bottom drawer round their own outer corners. On touch tablets from 48 to
-64 rem, a closable panel overlays Main as a drawer instead.
+(`--k2b-workspace-detail-inset`) before the panel. From 64 rem the workspace
+allows the panel's shadow beyond its edges; sidebar, content, and bottom
+drawer round their own outer corners. On touch tablets from 48 to 64 rem, a
+closable panel overlays Main as a drawer instead.
 
 Use `scrollClass="k2b-detail-trail"` on DataTable to keep the columns at their
 width without the panel. The scroller narrows beside Detail and scrolls the
 same table. Where Main is already at its 20 rem minimum, the panel's column
 narrows, and the table grows by the part of the panel's width the column does
-not get. Boards and calendars
-narrow with Main and keep their own scroll content. Mark a board's horizontal
-scroller with `k2b-detail-trail` too: under the tablet drawer, which leaves
-Main its width, a marked scroller gets the drawer's width as space at its end,
-so its last column scrolls out from under the drawer.
+not get. Boards and calendars narrow with Main and keep their own scroll
+content. Mark a board's horizontal scroller with `k2b-detail-trail` too:
+under the tablet drawer, which leaves Main its width, a marked scroller gets
+the drawer's width as space at its end, so its last column scrolls out from
+under the drawer.
+
+The trail is the scroll viewport that clips the surface beside the panel, and
+it carries `--k2b-radius-surface`: a column or table cut at the panel ends in
+the same rounded corner as the surface's other edges. Put the trail directly
+in Main's content box, with `scroll={false}` on Main and no vertical scroller
+around it. A reserved scrollbar gutter would widen the gap before the panel.
 
 Escape closes a closable panel. J and K step a steppable panel. F6 switches
 focus between Main’s remembered item and the panel title, with or without

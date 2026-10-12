@@ -75,6 +75,9 @@ off. Put state that the line shows only as an icon into `accessibleDetail`.
   Its weeks are compact rows at least 44 px (2.75rem) tall instead of the
   month view's full height, so the agenda follows close below the grid.
 
+A week view narrower than 40 rem scrolls the day headers and hour grid sideways
+together inside its rounded frame.
+
 Limit the switcher with `views`. `getDateHref`, `getViewHref`, and
 `getEventHref` keep navigation functional in the server response.
 `onNavigate` progressively enhances those links after hydration.

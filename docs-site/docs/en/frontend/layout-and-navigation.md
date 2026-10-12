@@ -55,7 +55,11 @@ client component, or mark a server-rendered panel’s close control with
 `data-workspace-detail-close`. Use `scrollClass="k2b-detail-trail"` on
 DataTable, and `k2b-detail-trail` on a board’s horizontal scroller: beside
 the panel the table keeps its column widths, and under a tablet drawer both
-get the drawer’s width as space at their end.
+get the drawer’s width as space at their end. The trail is the clipping scroll
+viewport and carries the surface radius. Put it directly in Main’s content box
+with `scroll={false}` on Main and no vertical scroller around it; a reserved
+scrollbar gutter would widen the gap before the panel beyond
+`--k2b-workspace-detail-inset`.
 See [Add contextual detail](/en/docs/frontend/application-shells#add-contextual-detail).
 
 ## Render the application layout

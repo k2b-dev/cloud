@@ -44,6 +44,7 @@
     "@nats-io/jetstream": "catalog:",
     "@types/bun": "catalog:",
     "playwright": "catalog:",
+    "bun-plugin-tailwind": "catalog:",
     "typescript": "catalog:",
     "@nats-io/transport-node": "catalog:"
   },
