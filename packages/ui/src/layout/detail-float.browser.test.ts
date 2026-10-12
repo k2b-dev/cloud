@@ -627,6 +627,41 @@ describe("floating workspace detail", () => {
       await page.close();
     }
   });
+  test("390×844: K reveals a previous row above Main's top", async () => {
+    const page = await load(390, 844);
+    try {
+      await openRow(page, "row-20");
+      // The opened row starts Main's scrollport, so the row before it is out of view above.
+      await page.locator("#row-20").evaluate((row) => row.scrollIntoView({ block: "start" }));
+      const visibleTop = () =>
+        page.evaluate(() => Math.max(0, document.querySelector(".k2b-app-workspace__main")!.getBoundingClientRect().top));
+      expect(await page.locator("#row-19").evaluate((row) => row.getBoundingClientRect().top)).toBeLessThan(await visibleTop());
+      await page.keyboard.press("k");
+      await page.waitForFunction(
+        () =>
+          document.getElementById("row-19")!.getBoundingClientRect().top >=
+          Math.max(0, document.querySelector(".k2b-app-workspace__main")!.getBoundingClientRect().top),
+      );
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("390×844: J reveals the next card of a board beside the screen", async () => {
+    const page = await load(390, 844, "trail=1");
+    try {
+      await openRow(page, "row-0");
+      expect(await page.locator("#row-1").evaluate((card) => card.getBoundingClientRect().right)).toBeGreaterThan(390);
+      await page.keyboard.press("j");
+      await page.waitForFunction(() => {
+        const card = document.getElementById("row-1")!.getBoundingClientRect();
+        return card.left >= 0 && card.right <= innerWidth;
+      });
+    } finally {
+      await page.close();
+    }
+  });
+
   test("J/K step selection and F6 switches focus between the item and detail title", async () => {
     const page = await load(1366, 900);
     try {

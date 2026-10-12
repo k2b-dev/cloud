@@ -938,6 +938,82 @@ describe("floating detail controller", () => {
     dispose();
   });
 
+  test("J inside the panel focuses a title the step swapped at once", () => {
+    const next = document.createElement("button");
+    const fresh = document.createElement("h2");
+    fresh.textContent = "Next record";
+    const { root, main, item, aside, close, title } = detailWorkspace({
+      steppable: true,
+      onStep: () => {
+        title.remove();
+        close.remove();
+        aside.append(fresh);
+        return next;
+      },
+    });
+    main.append(next);
+    const dispose = installAppWorkspaceController({ root });
+    item.focus();
+    close.focus();
+    detailKey(close, "j");
+    expect(document.activeElement === fresh).toBe(true);
+    dispose();
+  });
+
+  for (const second of ["another item", "nothing past the last item"]) {
+    test(`a second J from the body, after the first removed the focused title, returns focus to the title for ${second}`, async () => {
+      const items = [document.createElement("button"), document.createElement("button")];
+      let index = 0;
+      const { root, main, item, aside, title } = detailWorkspace({
+        steppable: true,
+        onStep: () => {
+          title.remove();
+          if (second === "nothing past the last item" && index === 1) return;
+          return items[index++];
+        },
+      });
+      main.append(...items);
+      const dispose = installAppWorkspaceController({ root });
+      item.focus();
+      title.tabIndex = -1;
+      title.focus();
+      detailKey(title, "j");
+      expect(document.activeElement === document.body).toBe(true);
+      detailKey(document.body, "j");
+      const fresh = document.createElement("h2");
+      fresh.textContent = "Third record";
+      aside.append(fresh);
+      await window.happyDOM.whenAsyncComplete();
+      expect(document.activeElement === fresh).toBe(true);
+      dispose();
+    });
+  }
+
+  test("a J from the body leaves focus alone once the person moved on from the panel", async () => {
+    const next = document.createElement("button");
+    const { root, main, item, aside, title } = detailWorkspace({
+      steppable: true,
+      onStep: () => {
+        title.remove();
+        return next;
+      },
+    });
+    main.append(next);
+    const dispose = installAppWorkspaceController({ root });
+    item.focus();
+    title.tabIndex = -1;
+    title.focus();
+    detailKey(title, "j");
+    rememberPointer(next);
+    detailKey(document.body, "j");
+    const fresh = document.createElement("h2");
+    fresh.textContent = "Next record";
+    aside.append(fresh);
+    await window.happyDOM.whenAsyncComplete();
+    expect(document.activeElement === document.body).toBe(true);
+    dispose();
+  });
+
   test("a step returning nothing keeps the previous item for F6", () => {
     const { root, item, title } = detailWorkspace({ steppable: true });
     const dispose = installAppWorkspaceController({ root });
@@ -1250,7 +1326,9 @@ describe("floating detail layout changes", () => {
       aside.hidden = false;
       await window.happyDOM.whenAsyncComplete();
       flushFrames();
-      expect(scrolls).toEqual(bottom === 500 ? [{ top: 148, behavior: "smooth" }] : []);
+      // A document that scrolls both ways gets one call; a zero left keeps it in place sideways.
+      expect(scrolls).toEqual(bottom === 500 ? [expect.objectContaining({ top: 148, behavior: "smooth" })] : []);
+      expect(scrolls.every((scroll) => !scroll.left)).toBe(true);
       expect(reveals).toBe(0);
       dispose();
     });
