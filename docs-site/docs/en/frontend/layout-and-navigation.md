@@ -48,14 +48,14 @@ no header sits above a signed-in page, so give the content its own padding, as
 `AppOverview` does.
 
 `AppWorkspace.Detail` occupies a full-height column beside the workspace head
-and panes from 768 px. Below 768 px it is a half or full sheet at the window's
+and panes from 768 px. Below 768 px it is a half or full sheet at the window’s
 bottom edge. A closable panel on a coarse pointer from 768 to 1023 px overlays
 Main as a drawer. Pass its existing close action as `onClose` in an island or
 client component, or mark a server-rendered panel’s close control with
 `data-workspace-detail-close`. Use `scrollClass="k2b-detail-trail"` on
-DataTable, and `k2b-detail-trail` on a board's horizontal scroller: beside
+DataTable, and `k2b-detail-trail` on a board’s horizontal scroller: beside
 the panel the table keeps its column widths, and under a tablet drawer both
-get the drawer's width as space at their end.
+get the drawer’s width as space at their end.
 See [Add contextual detail](/en/docs/frontend/application-shells#add-contextual-detail).
 
 ## Render the application layout
