@@ -20,7 +20,9 @@ export type ConversationRow = {
   icon: string | null;
   purpose: string | null;
   member_count: number;
-  seq_head: bigint;
+  seq_head: bigint | string;
+  rev: bigint | string;
+  changed_rev: bigint | string;
   created_at: Date;
   last_activity_at: Date;
 };
@@ -63,6 +65,18 @@ export const principalCondition = (subject: AccessSubject, db: typeof sql = sql)
     },
   });
 
+/** Shared binding and scope rules for HTTP reads and live delivery. */
+export const conversationPermission = (conversationId: string, granted: PermissionLevel, actor: RequestActor): PermissionLevel => {
+  const bound = boundConversation(actor);
+  return !bound.ok || (bound.data !== null && bound.data !== conversationId) ? "none" : capPermission(granted, actor);
+};
+
+/** The member-only sidebar filter, shared by list reads and the live collection. */
+export const readableMemberCondition = (subject: AccessSubject, bound: string | null, db: typeof sql = sql) => db`
+  ca.role = 'member' AND ${principalCondition(subject, db)} AND a.permission IN ('read', 'write', 'admin')
+  AND ${bound ? db`c.short_id = ${bound}` : db`true`}
+`;
+
 /** One SQL query resolves the resource and highest matching grant; credential checks precede it. */
 export const requireConversation = async (
   input: ChatContext & { conversationId: string; required: PermissionLevel },
@@ -79,7 +93,7 @@ export const requireConversation = async (
     ), 0)::int AS permission_rank
     FROM chat.conversations c WHERE c.short_id = ${input.conversationId}
   `;
-  const permission = capPermission(permissionFromRank(row?.permission_rank ?? 0), input.actor);
+  const permission = conversationPermission(input.conversationId, permissionFromRank(row?.permission_rank ?? 0), input.actor);
   if (!row || permission === "none") return fail({ code: "NOT_FOUND", message: t.notFound, status: 404 });
   if (!hasPermission(permission, input.required)) return fail(err.forbidden(t.forbidden));
   return ok({ ...row, permission });

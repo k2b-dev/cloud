@@ -227,7 +227,7 @@ Reference fields named `message`, `conversation`, or `draft` accept a raw value 
 
 `createDraft.to` is required. `cc` and `bcc` are optional. `createReplyDraft` takes recipients and subject from the source message. The `model` field accepts the ID of an enabled AI model profile, at most 120 characters. AI outputs, draft outputs, reference outputs, and variables are visible only to later steps in the same reachable scope.
 
-One reachable path cannot apply several provider changes to the same message. For example, Mail rejects a branch that adds a keyword and then moves the same message. When you need both, split them into separate workflows.
+On one reachable path, any number of `addFlag`, `removeFlag`, `addKeyword`, and `removeKeyword` changes can come before at most one `moveMessage`, `copyMessage`, `archiveMessage`, `trashMessage`, or `junkMessage` for the same message. No provider action can follow that move or copy; Mail rejects such a definition with `action.sequence`. The first provider action checks the message state from the start of the run. Later ones also expect this run's confirmed changes, so a flag the workflow set itself does not stop its move. Keep these changes in one workflow: when two workflows change the same message, one of them can fail.
 
 `createDraft` and `createReplyDraft` always produce `deliveryClass: normal`. `createReplyDraft` takes the recipient and subject from the source message, keeps reply threading, and stays attached to its conversation. Only `automaticReply` can create `deliveryClass: automatic_reply`. Normal workflow sends therefore get no automatic-reply headers and no null envelope sender. `scheduleDraftSend` accepts only a `mail.draft` result created earlier in the same reachable scope.
 

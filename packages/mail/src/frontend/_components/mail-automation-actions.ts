@@ -3,7 +3,13 @@ import type { MailWorkflowCatalogSnapshot } from "../../workflows/catalog";
 
 export type AutomationActionKind = MailAutomationAction["kind"];
 
-const PROVIDER_ACTION_KINDS = new Set<AutomationActionKind>(["junk", "trash", "mark_read", "add_keyword", "move_to_folder"]);
+/** Actions that move the message out of its folder; at most one per path, and nothing provider-side may follow it. */
+const PLACEMENT_ACTION_KINDS = new Set<AutomationActionKind>(["junk", "trash", "move_to_folder"]);
+/** Flag and keyword changes; they must happen before a placement on the same path. */
+const MESSAGE_STATE_ACTION_KINDS = new Set<AutomationActionKind>(["mark_read", "add_keyword"]);
+
+export const isMailAutomationPlacement = (kind: AutomationActionKind): boolean => PLACEMENT_ACTION_KINDS.has(kind);
+export const isMailAutomationMessageStateChange = (kind: AutomationActionKind): boolean => MESSAGE_STATE_ACTION_KINDS.has(kind);
 
 export const MAIL_AUTOMATION_STATUSES = ["needs_action", "waiting", "done"] as const;
 
@@ -32,10 +38,16 @@ export const mailAutomationActionKindsFor = (params: {
   actions: MailAutomationAction[];
   catalog: MailWorkflowCatalogSnapshot | null;
   index?: number;
+  /** Actions that run after this one on the same path; a step followed by a provider action cannot become a move. */
+  later?: MailAutomationAction[];
 }): AutomationActionKind[] => {
   const current = params.index === undefined ? null : params.actions[params.index];
   const others = params.actions.filter((_, candidateIndex) => candidateIndex !== params.index);
-  const providerTaken = others.some((action) => PROVIDER_ACTION_KINDS.has(action.kind));
+  // `others` are the actions that run before this one on the same path.
+  const placed = others.some((action) => PLACEMENT_ACTION_KINDS.has(action.kind));
+  const markedRead = others.some((action) => action.kind === "mark_read");
+  const later = params.later ?? [];
+  const providerLater = later.some((action) => PLACEMENT_ACTION_KINDS.has(action.kind) || MESSAGE_STATE_ACTION_KINDS.has(action.kind));
   const assigned = others.some((action) => action.kind === "assign_user");
   const statusSet = others.some((action) => action.kind === "set_status");
   const usedTagIds = new Set(others.flatMap((action) => (action.kind === "add_local_tag" ? [action.tagId] : [])));
@@ -45,7 +57,9 @@ export const mailAutomationActionKindsFor = (params: {
   if (current?.kind === "add_keyword") available.push("add_keyword");
   return available.filter((kind) => {
     if (kind === current?.kind) return true;
-    if (PROVIDER_ACTION_KINDS.has(kind) && providerTaken) return false;
+    if ((PLACEMENT_ACTION_KINDS.has(kind) || MESSAGE_STATE_ACTION_KINDS.has(kind)) && placed) return false;
+    if (PLACEMENT_ACTION_KINDS.has(kind) && providerLater) return false;
+    if (kind === "mark_read" && (markedRead || later.some((action) => action.kind === "mark_read"))) return false;
     if (kind === "move_to_folder" && mailAutomationDestinationFolders(catalog).length === 0) return false;
     if (kind === "add_local_tag" && !(catalog.localTags ?? []).some((tag) => !usedTagIds.has(tag.id))) return false;
     if (kind === "assign_user" && (assigned || catalog.assignableUsers.length === 0)) return false;

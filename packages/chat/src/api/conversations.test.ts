@@ -108,6 +108,7 @@ test("maps creation and duplicate outcomes to 201 and 200", async () => {
         purpose: null,
         title: "You",
         memberCount: 1,
+        rev: 1,
         permission: "admin",
         createdAt: "2026-10-09T00:00:00Z",
         lastActivityAt: "2026-10-09T00:00:00Z",
@@ -141,4 +142,60 @@ test("requires authentication for all conversation routes", async () => {
   const response = await chatApi.request("/conversations/abcdef");
   expect(response.status).toBe(401);
   expect(get).not.toHaveBeenCalled();
+});
+
+const textMessage = {
+  id: "0123456789",
+  conversationId: "abcdef",
+  seq: 1,
+  rev: 1,
+  kind: "text" as const,
+  author: { type: "user" as const, id: userId, name: "Lea Example" },
+  body: " **Hello** ",
+  system: null,
+  createdAt: "2026-10-12T00:00:00.000Z",
+  systemText: null,
+};
+test("message POST returns the shared view with 201 or 200 and forwards the delegated subject", async () => {
+  authenticate(true);
+  const send = spyOn(chatService.messages, "send");
+  send.mockResolvedValueOnce({ ok: true, data: { message: textMessage, created: true } });
+  const response = await post("/conversations/abcdef/messages", { clientId: "retry", body: textMessage.body }, "de");
+  expect(response.status).toBe(201);
+  expect(await response.json()).toEqual(textMessage);
+  expect(send).toHaveBeenCalledWith(
+    expect.objectContaining({
+      locale: "de",
+      accessSubject: { type: "user", userId },
+      input: { clientId: "retry", body: textMessage.body },
+    }),
+  );
+  send.mockResolvedValueOnce({ ok: true, data: { message: textMessage, created: false } });
+  expect((await post("/conversations/abcdef/messages", { clientId: "retry", body: "different" })).status).toBe(200);
+});
+test("message limits set the service's whole-second Retry-After header", async () => {
+  authenticate(true);
+  spyOn(chatService.messages, "send").mockResolvedValue({
+    ok: false,
+    error: "Try again later.",
+    status: 429,
+    code: "RATE_LIMITED",
+    retryAfter: 4,
+  });
+  const response = await post("/conversations/abcdef/messages", { clientId: "limited", body: "Hello" });
+  expect(response.status).toBe(429);
+  expect(response.headers.get("Retry-After")).toBe("4");
+  expect(await response.json()).toEqual({ code: "RATE_LIMITED", message: "Try again later." });
+});
+test("rejects invalid message body and conflicting history cursors before the service", async () => {
+  authenticate(true);
+  const send = spyOn(chatService.messages, "send");
+  const list = spyOn(chatService.messages, "list");
+  expect((await post("/conversations/abcdef/messages", { clientId: "bad id", body: "Hello" })).status).toBe(400);
+  const response = await chatApi.request("/conversations/abcdef/messages?before=1&after=2", {
+    headers: { authorization: "Bearer test-key" },
+  });
+  expect(response.status).toBe(400);
+  expect(send).not.toHaveBeenCalled();
+  expect(list).not.toHaveBeenCalled();
 });

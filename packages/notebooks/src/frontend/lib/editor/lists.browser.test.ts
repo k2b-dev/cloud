@@ -7,6 +7,8 @@ import type { ListMeasurements } from "./lists.browser-harness";
 type Measure = { scrollTop: number; windowScroll: number; lineTop: number; text: string; head: number };
 type Harness = {
   loadDocument: (markdown: string) => void;
+  placeCaret: (head: number) => void;
+  readEditor: () => { doc: string; head: number };
   measureLists: () => ListMeasurements;
   placeCaretOnLine: (line: number) => void;
   scrollToMiddle: (task: string) => void;
@@ -266,6 +268,51 @@ describe.each(Object.entries(devices))("Markdown list structure in the note edit
         line.guides.forEach((guide, level) => closeTo(guide.opacity, line.line >= 2 && line.line <= 4 && level === 0 ? 0.38 : 0.14, 0.01));
       }
       expect(after.lines.map(({ guides }) => guides.map(({ x }) => x))).toEqual(before.lines.map(({ guides }) => guides.map(({ x }) => x)));
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+});
+
+describe.each(Object.entries(devices))("list typing keys (%s)", (_name, device) => {
+  /** Presses a key and waits for its result: on iOS, CodeMirror lets Enter and Backspace reach the page first and
+   *  runs the key binding afterwards, up to 250 ms later when the press changed nothing in the page. */
+  const pressFor = async (page: Page, key: "Enter" | "Backspace", doc: string) => {
+    await page.keyboard.press(key);
+    await page.waitForFunction((doc) => window.harness.readEditor().doc === doc, doc, { timeout: 2_000 }).catch(() => {});
+    return page.evaluate(() => window.harness.readEditor());
+  };
+
+  test("Enter continues a tight list, then ends it on the empty item", async () => {
+    const page = await open(device);
+    try {
+      await loadDocument(page, "1. a");
+      await page.evaluate(() => window.harness.placeCaret(4));
+      expect(await pressFor(page, "Enter", "1. a\n2. ")).toEqual({ doc: "1. a\n2. ", head: 8 });
+      expect(await pressFor(page, "Enter", "1. a\n\n")).toEqual({ doc: "1. a\n\n", head: 6 });
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("Enter at an item's text start adds an empty item above and keeps the caret on the text", async () => {
+    const page = await open(device);
+    try {
+      await loadDocument(page, "- a\n- b");
+      await page.evaluate(() => window.harness.placeCaret(6));
+      expect(await pressFor(page, "Enter", "- a\n- \n- b")).toEqual({ doc: "- a\n- \n- b", head: 9 });
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("Backspace at an item's text start lifts a nested item, then makes it normal text", async () => {
+    const page = await open(device);
+    try {
+      await loadDocument(page, "- a\n  - b");
+      await page.evaluate(() => window.harness.placeCaret(8));
+      expect(await pressFor(page, "Backspace", "- a\n- b")).toEqual({ doc: "- a\n- b", head: 6 });
+      expect(await pressFor(page, "Backspace", "- a\n\nb")).toEqual({ doc: "- a\n\nb", head: 5 });
     } finally {
       await page.context().close();
     }

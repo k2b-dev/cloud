@@ -218,6 +218,28 @@ cld --json mail repair hydration --wait --timeout-seconds 300
 
 Maintenance commands require mailbox `admin`. A folder repair is not a routine refresh; use normal sync for ordinary new mail.
 
+## Find failed commands and page through history
+
+`command list` returns an array of commands. Filter by `--state failed` or `--state needs_attention`; text output includes the error and a next-page hint when the page is full:
+
+```bash
+cld mail command list --state failed --limit 100
+cld mail command list --state needs_attention --limit 100
+cld mail command list --state failed --limit 100 --before <last-command-id>
+cld --json mail command get <command-id>
+```
+
+Keep the same state filter while paging. `--before` is a command UUID visible to you in this mailbox. Pages run from newest to oldest, including commands created at the same instant. A missing or inaccessible anchor returns 404; an invalid UUID returns 400.
+
+With mailbox admin access, choose recovery from the command's kind and state:
+
+```bash
+cld --json mail operator run reconcile --command <command-id> --wait
+cld --json mail operator run retry --command <command-id> --wait
+```
+
+`reconcile` accepts only `ambiguous` or `needs_attention` provider effects: flag or message-state changes, moves, copies, deletes, folder creation, renaming, deletion or subscription changes, and sends. It reads provider evidence; do not blindly repeat an unclear action. `retry` accepts only `failed` provider-read maintenance (`sync_mailbox`, `sync_folder`, `discover_folders`, `verify_binding`, `rebuild_folder`, `hydrate_missing`) whose provider effect has not started. It cannot retry a failed move or send. An equivalent pending operator action makes either request ineligible.
+
 ## Run explicit operator actions
 
 `operator run` exposes bounded durable actions without bypassing normal permission or idempotency checks:

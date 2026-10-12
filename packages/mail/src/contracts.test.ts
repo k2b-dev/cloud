@@ -2,11 +2,13 @@ import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 import { DraftMutationDataSchema } from "./capability-contracts";
 import {
+  type AutomaticReplyPreview,
   activateWorkflowInputSchema,
   actorCommandInputSchema,
   addConversationLocalTagsSchema,
   assignConversationsSchema,
   automaticReplyPreviewInputSchema,
+  automaticReplyPreviewSchema,
   type ComposeFormattingWarning,
   cancelScheduledSendInputSchema,
   composeFormattingWarningSchema,
@@ -35,6 +37,7 @@ import {
   reassignConversationMessageInputSchema,
   restoreWorkflowVersionInputSchema,
   scheduledSendPageSchema,
+  senderDispositionInputSchema,
   splitConversationInputSchema,
   startIncomingAutomationBackfillInputSchema,
   updateAutomaticReplyConfigurationSchema,
@@ -283,6 +286,25 @@ describe("automatic reply configuration contracts", () => {
     ).toBe(false);
   });
 
+  test("accepts formatting warnings in automatic reply previews and rejects unknown fields", () => {
+    const preview: AutomaticReplyPreview = {
+      subject: "Re: Example request",
+      html: "<p>Fine print</p>",
+      text: "Fine print",
+      formattingWarnings: [
+        { code: "ignored_mailbox_css", property: "font-family" },
+        { code: "unsupported_element", element: "small" },
+      ],
+    };
+    expect(automaticReplyPreviewSchema.parse(preview)).toEqual(preview);
+    expect(automaticReplyPreviewSchema.safeParse({ ...preview, unknown: true }).success).toBe(false);
+    expect(automaticReplyPreviewSchema.safeParse({ ...preview, formattingWarnings: [] }).success).toBe(true);
+  });
+
+  test("requires formatting warnings in automatic reply previews", () => {
+    expect(automaticReplyPreviewSchema.safeParse({ subject: "Reply", html: "<p>Body</p>", text: "Body" }).success).toBe(false);
+  });
+
   test("requires the reference format for reference-enabled previews", () => {
     const preview = {
       senderIdentityId: "Send01",
@@ -498,7 +520,7 @@ describe("incoming automation contracts", () => {
     });
     expect(result.success).toBe(false);
     if (!result.success)
-      expect(result.error.issues.some((issue) => issue.message.includes("already changes the message on the provider"))).toBe(true);
+      expect(result.error.issues.some((issue) => issue.message.includes("one reachable path can move only once"))).toBe(true);
     expect(
       createIncomingAutomationSchema.safeParse({
         name: "Single-result multi routing",
@@ -912,4 +934,69 @@ describe("compose formatting contracts", () => {
       expect(JSON.parse(serialized)).toBeDefined();
     }
   });
+});
+
+describe("sender disposition contracts", () => {
+  const input = { match: "domain", value: " example.com ", idempotencyKey: crypto.randomUUID() };
+
+  test("sender disposition accepts exactly one role or public folder destination and trims values", () => {
+    expect(senderDispositionInputSchema.parse({ ...input, destination: "archive" }).value).toBe("example.com");
+    expect(senderDispositionInputSchema.safeParse({ ...input, folderId: "Foldr1" }).success).toBe(true);
+    for (const destination of [{}, { destination: "trash", folderId: "Foldr1" }]) {
+      const result = senderDispositionInputSchema.safeParse({ ...input, ...destination });
+      expect(result.success).toBe(false);
+      if (!result.success) expect(result.error.issues[0]?.message).toContain("exactly one");
+    }
+  });
+
+  test("sender disposition is strict, bounds values, and requires a UUID command key", () => {
+    const valid = { ...input, destination: "trash" };
+    for (const changes of [
+      { extra: true },
+      { idempotencyKey: "arbitrary-key" },
+      { value: " " },
+      { value: "a".repeat(321) },
+      { match: "list" },
+      { destination: "junk" },
+      { destination: undefined, folderId: crypto.randomUUID() },
+    ])
+      expect(senderDispositionInputSchema.safeParse({ ...valid, ...changes }).success).toBe(false);
+  });
+});
+
+test("guided rules allow flag and keyword changes before one placement", () => {
+  const read = { id: crypto.randomUUID(), kind: "mail_action", action: { kind: "mark_read" } };
+  const keyword = { id: crypto.randomUUID(), kind: "mail_action", action: { kind: "add_keyword", keyword: "review" } };
+  for (const kind of ["junk", "trash", "move_to_folder"]) {
+    const move = {
+      id: crypto.randomUUID(),
+      kind: "mail_action",
+      action: { kind, ...(kind === "move_to_folder" ? { folderId: "Arch01" } : {}) },
+    };
+    const definition = (steps: unknown[]) => ({ name: "Read and file", scope: { mode: "all" }, steps });
+    expect(createIncomingAutomationSchema.safeParse(definition([read, keyword, move])).success).toBe(true);
+    expect(createIncomingAutomationSchema.safeParse(definition([move, read])).success).toBe(false);
+    expect(createIncomingAutomationSchema.safeParse(definition([move, keyword])).success).toBe(false);
+    expect(createIncomingAutomationSchema.safeParse(definition([move, { ...move, id: crypto.randomUUID() }])).success).toBe(false);
+  }
+});
+
+test("guided negation keeps operators field-specific, bounded and strict", () => {
+  const definition = (field: string, operator: string, value: unknown, extra = {}) => ({
+    name: "Exclude sorted senders",
+    scope: { mode: "matching", conditions: { mode: "all", items: [{ field, operator, value, ...extra }] } },
+    steps: [{ id: crypto.randomUUID(), kind: "mail_action", action: { kind: "mark_read" } }],
+  });
+  for (const field of ["sender_address", "sender_domain", "subject", "body_text"]) {
+    const operator = field.startsWith("sender") ? "is_not" : "not_contains";
+    const value = field === "sender_address" ? "user@example.com" : "example.com";
+    expect(createIncomingAutomationSchema.safeParse(definition(field, operator, value)).success).toBe(true);
+    expect(createIncomingAutomationSchema.safeParse(definition(field, operator, "")).success).toBe(false);
+    expect(createIncomingAutomationSchema.safeParse(definition(field, operator, "x".repeat(1001))).success).toBe(false);
+    expect(createIncomingAutomationSchema.safeParse(definition(field, operator, value, { extra: true })).success).toBe(false);
+    expect(
+      createIncomingAutomationSchema.safeParse(definition(field, field.startsWith("sender") ? "not_contains" : "is_not", value)).success,
+    ).toBe(false);
+  }
+  expect(createIncomingAutomationSchema.safeParse(definition("attachment_presence", "is_not", false)).success).toBe(false);
 });

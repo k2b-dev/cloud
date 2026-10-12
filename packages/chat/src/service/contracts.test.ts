@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import {
   AddMembersSchema,
+  ChatLiveEventSchema,
   ConversationCursorSchema,
   ConversationQuerySchema,
+  ConversationSchema,
   CreateConversationSchema,
   LeaveSchema,
   UpdateConversationSchema,
@@ -74,4 +76,28 @@ describe("derived conversation titles", () => {
       ),
     ).toBe("P0, P1, P2, …");
   });
+});
+
+test("conversation revisions, summary timestamps and membership hints are part of the live contract", () => {
+  expect(ConversationSchema.shape.rev.safeParse(0).success).toBeTrue();
+  expect(ConversationSchema.shape.rev.safeParse(-1).success).toBeFalse();
+  expect(ChatLiveEventSchema.parse({ type: "membership", conversationId: "abcdef" })).toEqual({
+    type: "membership",
+    conversationId: "abcdef",
+  });
+  expect(ChatLiveEventSchema.safeParse({ type: "membership", conversationId: "missing-id" }).success).toBeFalse();
+  const summary = {
+    type: "summary",
+    conversationId: "abcdef",
+    id: "0123456789",
+    seq: 1,
+    rev: 1,
+    kind: "text",
+    author: { type: "user", id: "11111111-1111-4111-8111-111111111111", name: "Ana" },
+    preview: "Hello",
+    mention: false,
+  };
+  expect(ChatLiveEventSchema.safeParse(summary).success).toBeFalse();
+  expect(ChatLiveEventSchema.safeParse({ ...summary, createdAt: "not a date" }).success).toBeFalse();
+  expect(ChatLiveEventSchema.safeParse({ ...summary, createdAt: "2026-10-12T00:00:00.000Z" }).success).toBeTrue();
 });

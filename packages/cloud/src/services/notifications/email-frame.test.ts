@@ -37,6 +37,30 @@ test("HTML-only mail derives decoded text with sensible block spacing", async ()
   });
   expect(text).toBe("A & B café © 😀 next line <item> &lt;literal&gt;");
 });
+test("raw HTML pre blocks wrap by default and keep sender styles last", async () => {
+  const { html } = await prepareNotificationEmail({
+    rawHtml: '<pre><code>const value = 42;</code></pre><pre style="white-space:pre;overflow-wrap:normal;color:red;">styled</pre>',
+  });
+  expect(html).toContain('<pre style="white-space:pre-wrap;overflow-wrap:break-word"><code>const value = 42;</code></pre>');
+  expect(html).toContain(
+    '<pre style="white-space:pre-wrap;overflow-wrap:break-word;white-space:pre;overflow-wrap:normal;color:red">styled</pre>',
+  );
+});
+test("raw HTML pre blocks still strip scripts and event handlers", async () => {
+  const { html, text } = await prepareNotificationEmail({
+    rawHtml:
+      '<div onclick="bad()"><script>bad()</script><pre onclick="bad()"><code onclick="bad()">safe</code><script>bad()</script></pre></div>',
+  });
+  expect(html).toContain('<div><pre style="white-space:pre-wrap;overflow-wrap:break-word"><code>safe</code></pre></div>');
+  expect(html).not.toContain("<script");
+  expect(html).not.toContain("onclick");
+  expect(html).not.toContain("bad()");
+  expect(text).toBe("safe");
+});
+test.each(["pre", "blockquote"])("HTML-only mail separates %s from the following paragraph", async (tag) => {
+  const { text } = await prepareNotificationEmail({ rawHtml: `<${tag}>a</${tag}><p>b</p>` });
+  expect(text).toBe("a b");
+});
 test("empty mail still has a text part and an optional logo", async () => {
   logo.mockResolvedValue("");
   const { html, text } = await prepareNotificationEmail({});

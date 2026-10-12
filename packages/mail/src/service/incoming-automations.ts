@@ -262,7 +262,7 @@ const mapIncomingAutomation = (row: IncomingAutomationRow): StoredIncomingAutoma
     },
   );
 
-const normalizeSenderMatch = (kind: SenderMatchKind, value: string): Result<string> => {
+export const normalizeSenderMatch = (kind: SenderMatchKind, value: string): Result<string> => {
   const normalized = kind === "sender" ? normalizeEmailAddress(value) : normalizeEmailDomain(value);
   if (!normalized) return fail(err.badInput(kind === "sender" ? "Enter a valid sender email address" : "Enter a valid sender domain"));
   if (kind === "domain" && !normalized.includes(".")) {
@@ -272,7 +272,7 @@ const normalizeSenderMatch = (kind: SenderMatchKind, value: string): Result<stri
 };
 
 const senderMatchSql = (kind: SenderMatchKind, value: string) =>
-  kind === "sender" ? sql`sender.normalized_email = ${value}` : sql`split_part(sender.normalized_email, '@', 2) = ${value}`;
+  kind === "sender" ? sql`sender.normalized_email = ${value}` : sql`substring(sender.normalized_email from '@([^@]*)$') = ${value}`;
 type SqlFragment = ReturnType<typeof senderMatchSql>;
 
 export const normalizeMailAutomationConditions = (conditions: MailAutomationConditions): Result<MailAutomationConditions> => {
@@ -318,7 +318,9 @@ const incomingAutomationCandidateSql = (scope: MailAutomationScope) => {
   const conditions = scopeConditions(scope);
   const senderConditions = conditions.items.flatMap((condition) => {
     const sender = senderCondition(condition);
-    return sender ? [senderMatchSql(sender.kind, sender.value)] : [];
+    if (!sender) return [];
+    const match = senderMatchSql(sender.kind, sender.value);
+    return [condition.operator === "is_not" ? sql`NOT coalesce((${match}), false)` : match];
   });
   if (conditions.mode === "all") return combineSql(senderConditions, "AND");
   return senderConditions.length === conditions.items.length ? combineSql(senderConditions, "OR") : sql`TRUE`;
@@ -327,6 +329,12 @@ const incomingAutomationCandidateSql = (scope: MailAutomationScope) => {
 const incomingAutomationPreviewIsExact = (scope: MailAutomationScope): boolean =>
   scope.mode === "all" ||
   scope.conditions.items.every((condition) => condition.field === "sender_address" || condition.field === "sender_domain");
+
+// Preview and backfill must use the first From address, like workflow snapshot execution.
+const firstFromAddress = sql`sender.position = (
+  SELECT min(first_sender.position) FROM mail.message_addresses first_sender
+  WHERE first_sender.message_id = message.id AND first_sender.role = 'from'
+)`;
 
 const incomingAutomationTargetFrom = sql`
   FROM mail.remote_message_refs remote_ref
@@ -340,9 +348,10 @@ const incomingAutomationTargetFrom = sql`
     ON resource.id = folder.remote_resource_id
   JOIN mail.message_contents message
     ON message.id = remote_ref.message_id
-  JOIN mail.message_addresses sender
+  LEFT JOIN mail.message_addresses sender
     ON sender.message_id = message.id
    AND sender.role = 'from'
+   AND ${firstFromAddress}
   LEFT JOIN mail.conversation_messages conversation_message
     ON conversation_message.message_id = message.id
 `;
@@ -357,18 +366,30 @@ const inboundIncomingAutomationTarget = sql`
   )
 `;
 
+/** Sender predicate over the shared bulk selector's message and resource aliases. */
+export const senderMatchesSql = (kind: SenderMatchKind, value: string): SqlFragment => sql`EXISTS (
+  SELECT 1 FROM mail.message_addresses sender
+  WHERE sender.message_id = message.id AND sender.role = 'from'
+    AND ${firstFromAddress}
+    AND ${inboundIncomingAutomationTarget}
+    AND ${senderMatchSql(kind, value)}
+)`;
+
 const normalizePreviewScope = (input: PreviewIncomingAutomationMatchesInput): Result<MailAutomationScope> => {
   const parsed = previewIncomingAutomationMatchesInputSchema.safeParse(input);
   if (!parsed.success) return fail(err.badInput(parsed.error.issues[0]?.message ?? "Invalid automation scope"));
   return normalizeAutomationScope(parsed.data.scope);
 };
 
-const rejectOwnSenderTargets = async (params: {
+export const rejectOwnSenderTargets = async (params: {
   mailboxId: string;
   conditions: AutomationConditionSet;
   db: SqlClient;
+  message?: string;
 }): Promise<Result<void>> => {
-  const addresses = params.conditions.items.flatMap((condition) => (condition.field === "sender_address" ? [condition.value] : []));
+  const addresses = params.conditions.items.flatMap((condition) =>
+    condition.field === "sender_address" && condition.operator === "is" ? [condition.value] : [],
+  );
   if (addresses.length === 0) return ok();
   const [identity] = await params.db<{ id: string }[]>`
     SELECT id
@@ -378,7 +399,9 @@ const rejectOwnSenderTargets = async (params: {
       AND status <> 'disabled'
     LIMIT 1
   `;
-  return identity ? fail(err.badInput("Incoming automations apply only to incoming mail; remove the mailbox's own sender address")) : ok();
+  return identity
+    ? fail(err.badInput(params.message ?? "Incoming automations apply only to incoming mail; remove the mailbox's own sender address"))
+    : ok();
 };
 
 /**
@@ -475,7 +498,7 @@ const protectMailboxSenders = async (params: {
         );
   const scopes = params.conditions.items.flatMap((condition) => {
     const scope = senderCondition(condition);
-    return scope ? [scope] : [];
+    return scope && condition.operator === "is" ? [scope] : [];
   });
   const safelyScoped =
     params.conditions.mode === "all"
@@ -546,7 +569,7 @@ export const validateDestructiveIncomingAutomationsForMailbox = async (params: {
           );
     const scopes = conditions.items.flatMap((condition) => {
       const scope = senderCondition(condition);
-      return scope ? [scope] : [];
+      return scope && condition.operator === "is" ? [scope] : [];
     });
     return conditions.mode === "all"
       ? !scopes.some((scope) => !protectedScope(scope))

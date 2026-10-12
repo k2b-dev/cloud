@@ -1,4 +1,4 @@
-import type { EditorView } from "@codemirror/view";
+import { EditorView } from "@codemirror/view";
 
 const lineBox = (view: EditorView, from: number) => {
   const line = view.state.doc.lineAt(Math.min(from, view.state.doc.length));
@@ -39,4 +39,37 @@ export const keepReadingPosition = (view: EditorView, scroller: HTMLElement): ((
     const delta = after.top + within * after.height - scroller.getBoundingClientRect().top;
     if (Math.abs(delta) >= 1) scroller.scrollTop += delta;
   };
+};
+
+/** The line at a scroll port's top edge, from 1, and how far into that line the edge falls, in line heights. */
+export type ReadingPosition = { line: number; within: number };
+
+/**
+ * Where the reader scrolled the note's server preview, whose line rows match
+ * the editor's lines one to one; null while it shows the top of the note.
+ */
+export const previewReadingPosition = (preview: HTMLElement): ReadingPosition | null => {
+  const scroller = preview.querySelector<HTMLElement>(".k2b-scroll-area");
+  if (!scroller || scroller.scrollTop < 1) return null;
+  const portTop = scroller.getBoundingClientRect().top;
+  const rows = preview.querySelectorAll<HTMLElement>(".notebook-note-preview__line");
+  for (let index = 0; index < rows.length; index++) {
+    const box = rows[index]!.getBoundingClientRect();
+    if (box.bottom > portTop || index === rows.length - 1) {
+      return { line: index + 1, within: (portTop - box.top) / Math.max(1, box.height) };
+    }
+  }
+  return null;
+};
+
+/** Scrolls the editor so the given line sits at the port's top edge as it did in the preview, before the next paint. */
+export const scrollToReadingPosition = (view: EditorView, scroller: HTMLElement, position: ReadingPosition) => {
+  const from = view.state.doc.line(Math.min(position.line, view.state.doc.lines)).from;
+  view.dispatch({ effects: EditorView.scrollIntoView(from, { y: "start" }) });
+  // Reading a position runs that scroll's measure now, so the line has its real height and place.
+  view.coordsAtPos(from);
+  // The whole line box, as the preview row measured it, not only its text.
+  const block = view.lineBlockAt(from);
+  const delta = view.documentTop + block.top + position.within * block.height - scroller.getBoundingClientRect().top;
+  if (Math.abs(delta) >= 1) scroller.scrollTop += delta;
 };

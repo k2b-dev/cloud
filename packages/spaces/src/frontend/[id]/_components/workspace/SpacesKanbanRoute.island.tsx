@@ -36,6 +36,7 @@ function KeyboardShortcutsButton(props: { canWrite: boolean }) {
       ? [
           { keys: ["M"], label: t.kanbanShortcutAssign },
           { keys: ["D"], label: t.kanbanShortcutComplete },
+          { keys: [t.spaceKey, "←", "↑", "→", "↓", "Esc"], label: t.kanbanShortcutMove },
         ]
       : []),
   ];

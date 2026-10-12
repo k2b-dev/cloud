@@ -6,6 +6,7 @@ import {
   DEFAULT_MAIL_CSS,
   hasUnrenderedTemplateSyntax,
   moveSignatureSegment,
+  previewFormattingWarnings,
   removeOrphanComposeSegmentMarks,
   renderComposeContent,
   renderComposeTemplateSource,
@@ -57,6 +58,94 @@ const expectLiteralText = (rendered: ReturnType<typeof renderComposeContent>, va
 };
 
 describe("compose renderer", () => {
+  test("merges preview warnings design first and caps the combined list", () => {
+    const design = storedComposeCss(".mail-content { color: #123456; font-family: var(--font); }");
+    expect(design.formattingWarnings).toEqual([{ code: "ignored_mailbox_css", property: "font-family" }]);
+    expect(
+      previewFormattingWarnings(
+        design.formattingWarnings,
+        "<small>fine print</small>\n\n![logo](https://example.test/logo.png)",
+        "markdown",
+      ),
+    ).toEqual([
+      { code: "ignored_mailbox_css", property: "font-family" },
+      { code: "unsupported_element", element: "small" },
+      { code: "unsupported_element", element: "img" },
+    ]);
+    const body = Array.from({ length: MAX_COMPOSE_FORMATTING_WARNINGS }, (_, index) => `<bad${index}>text</bad${index}>`).join("\n");
+    const capped = previewFormattingWarnings(design.formattingWarnings, body, "markdown");
+    expect(capped).toHaveLength(MAX_COMPOSE_FORMATTING_WARNINGS);
+    expect(capped[0]).toEqual(design.formattingWarnings[0]);
+    expect(capped.at(-1)).toEqual({ code: "unsupported_element", element: `bad${MAX_COMPOSE_FORMATTING_WARNINGS - 2}` });
+    expect(previewFormattingWarnings([], body, "plain")).toEqual([]);
+  });
+
+  test("keeps Markdown quotes and code lines without a language label (#932)", () => {
+    const rendered = renderComposeContent({
+      body: "> quoted line\n> second\n\n```ts\nconst a = 1;\nconst b = 2;\n```",
+      format: "markdown",
+      customCss: "",
+      context,
+      renderLiquid: false,
+    });
+
+    expect(rendered.ok).toBe(true);
+    if (!rendered.ok) return;
+    expect(rendered.data.html).toMatch(
+      /<blockquote style="[^"]*border-left:3px solid #d4d4d8[^"]*">\s*<p[^>]*>quoted line<br \/>second<\/p>\s*<\/blockquote>/,
+    );
+    expect(rendered.data.html).toMatch(/<pre style="[^"]*white-space:pre-wrap[^"]*">const a = 1;\nconst b = 2;<\/pre>/);
+    expect(rendered.data.html).not.toContain("<span>ts</span>");
+    expect(rendered.data.html).not.toContain(">ts<");
+    expect(rendered.data.text).toContain("> quoted line\n> second");
+    expect(rendered.data.text).toContain("const a = 1;\nconst b = 2;");
+    expect(rendered.data.text).not.toContain("tsconst");
+  });
+
+  test("keeps nested Markdown quotes in HTML and text", () => {
+    const rendered = renderComposeContent({
+      body: "> outer\n> > inner",
+      format: "markdown",
+      customCss: "",
+      context,
+      renderLiquid: false,
+    });
+
+    expect(rendered.ok).toBe(true);
+    if (!rendered.ok) return;
+    expect(rendered.data.html).toMatch(
+      /<blockquote[^>]*>\s*<p[^>]*>outer<\/p>\s*<blockquote[^>]*>\s*<p[^>]*>inner<\/p>\s*<\/blockquote>\s*<\/blockquote>/,
+    );
+    expect(rendered.data.text).toContain("> > inner");
+  });
+
+  test("lets mailbox CSS style quotes and preformatted blocks", () => {
+    const customCss = "blockquote { color: #3f3f46; }";
+    expect(validateComposeCss(customCss).ok).toBe(true);
+    expect(validateComposeCss("pre { white-space: pre; }").ok).toBe(true);
+    const rendered = renderComposeContent({ body: "> quoted", format: "markdown", customCss, context, renderLiquid: false });
+
+    expect(rendered.ok).toBe(true);
+    if (!rendered.ok) return;
+    expect(rendered.data.html).toMatch(/<blockquote style="[^"]*color:#3f3f46/);
+    expect(rendered.data.html).not.toContain("#52525b");
+  });
+
+  test("renders a Mermaid fence as its source without loading text", () => {
+    const rendered = renderComposeContent({
+      body: "```mermaid\ngraph TD\nA-->B\n```",
+      format: "markdown",
+      customCss: "",
+      context,
+      renderLiquid: false,
+    });
+
+    expect(rendered.ok).toBe(true);
+    if (!rendered.ok) return;
+    expect(rendered.data.html).toMatch(/<pre[^>]*>graph TD\nA--&gt;B<\/pre>/);
+    expect(rendered.data.html).not.toContain("Loading diagram");
+  });
+
   test("shares one time budget across looping signature segments", () => {
     let reads = 0;
     const loopingContext: ComposeRenderContext = {
@@ -895,6 +984,15 @@ h1 { background: image-set("https://example.test/a.png" 1x); font-size: 30px; }`
     expect(composeFormattingWarnings('<img src="https://example.test/l.png" alt="logo">', "markdown")).toEqual(image);
   });
 
+  test("keeps authored quote and pre elements while still reporting images", () => {
+    const body = "<blockquote>x</blockquote>\n\n<pre>y</pre>";
+    const image: ComposeFormattingWarning[] = [{ code: "unsupported_element", element: "img" }];
+    expect(composeFormattingWarnings(body, "markdown")).toEqual([]);
+    expect(
+      composeFormattingWarnings(`${body}\n\n<img src="https://example.test/a.png">\n\n![a](https://example.test/b.png)`, "markdown"),
+    ).toEqual(image);
+  });
+
   test("reports names as printable text only", () => {
     const [element] = composeFormattingWarnings("<div>\n<x\u001b]0;pwn\u0007 class=y>hi</x>\n</div>", "markdown");
     expect(element).toEqual({ code: "unsupported_element", element: "x]0;pwn" });
@@ -930,6 +1028,28 @@ h1 { background: image-set("https://example.test/a.png" 1x); font-size: 30px; }`
 });
 
 describe("separate draft signatures", () => {
+  test("places a signature before the attribution and quoted reply history", () => {
+    const attribution = "On 1 Jan 2026, 10:00, Ada wrote:";
+    const rendered = renderComposeContent({
+      body: `Answer\n\n${attribution}\n> quoted line\n> second\n\n`,
+      signature: "Regards **{{ actor.display_name }}**",
+      format: "markdown",
+      customCss: "",
+      context,
+      renderLiquid: false,
+    });
+
+    expect(rendered.ok).toBe(true);
+    if (!rendered.ok) return;
+    const html = rendered.data.html ?? "";
+    expect(html).toContain('class="mail-signature"');
+    expect(html.indexOf("Answer")).toBeLessThan(html.indexOf('class="mail-signature"'));
+    expect(html.indexOf('class="mail-signature"')).toBeLessThan(html.indexOf(attribution));
+    expect(html.indexOf("Regards <strong>Ada Lovelace</strong>")).toBeLessThan(html.indexOf(attribution));
+    expect(html.indexOf(attribution)).toBeLessThan(html.indexOf("<blockquote"));
+    expect(html).toMatch(/<blockquote[^>]*>\s*<p[^>]*>quoted line<br \/>second<\/p>\s*<\/blockquote>/);
+  });
+
   test.each([
     ["Hello", "Hello", ""],
     ["Hello\n\n", "Hello", ""],
@@ -1024,7 +1144,7 @@ describe("separate draft signatures", () => {
     expect(result.ok).toBeTrue();
     if (!result.ok) throw new Error(result.error.message);
     expect(result.data.html).toMatch(/<div class="mail-signature"[^>]*><p[^>]*color:#52525b[^>]*>Regards<\/p>\s*<\/div>/);
-    expect(result.data.html?.match(/color:#52525b/g)).toHaveLength(1);
+    expect(result.data.html?.match(/<p[^>]*color:#52525b/g)).toHaveLength(1);
   });
 
   test("combined source and fragment limits include the signature", () => {

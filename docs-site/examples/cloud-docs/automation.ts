@@ -1,5 +1,6 @@
 import { lazySync } from "@k2b/cloud";
 import { defineLive, type LiveViewer } from "@k2b/cloud/events";
+import { createLiveEngine, createMemoryLiveTopic } from "@k2b/cloud/events/testing";
 import { ratelimit } from "@k2b/cloud/server";
 import { defineWorkflowModule, type WorkflowBoundPlan, workflowAction } from "@k2b/cloud/workflows";
 import { bindWorkflow, compileWorkflow } from "@k2b/cloud/workflows/language";
@@ -301,3 +302,22 @@ export const inventoryLiveRoutes = (
       authorize: readersOfWarehouse,
     },
   });
+
+/** Test channels through the same engine as the application's live route. */
+export const inventoryLiveTestFixture = async (viewer: LiveViewer) => {
+  const topic = createMemoryLiveTopic();
+  const channels = {
+    warehouse: {
+      scope: z.object({ warehouse: z.string() }).strict(),
+      keys: async ({ warehouse }: { warehouse: string }) => [warehouse],
+      authorize: async (_key: string, viewers: readonly LiveViewer[]) => new Set(viewers.map((reader) => reader.id)),
+    },
+  };
+  const engine = createLiveEngine({ appId: "inventory", topic: () => topic, channels });
+  const frames: string[] = [];
+  const socket = { send: (frame: string) => frames.push(frame), close: () => {}, getBufferedAmount: () => 0 };
+  const connection = engine.open(socket, viewer, async () => viewer);
+  connection.message(JSON.stringify({ t: "sub", id: "one", channel: "warehouse", scope: { warehouse: "one" }, after: await topic.head() }));
+  topic.publish({ v: 1, k: "one", d: { type: "item.changed", itemId: "item" } });
+  return { frames, topic, stop: () => engine.stop() };
+};

@@ -438,6 +438,7 @@ const updateMutationProjection = async (params: {
   destinationUid?: number | null;
   flags?: string[];
   keywords?: string[];
+  modseq?: string | null;
 }): Promise<boolean> => {
   return sql.begin(async (tx) => {
     const [active] = await tx<{ id: string }[]>`
@@ -461,6 +462,14 @@ const updateMutationProjection = async (params: {
         UPDATE mail.message_placements
         SET keywords = ${toPgTextArray(params.keywords)}::text[], updated_at = now()
         WHERE remote_message_ref_id = ${params.source.remote_message_ref_id}::uuid
+      `;
+    }
+    if (params.modseq != null) {
+      await tx`
+        UPDATE mail.remote_message_refs
+        SET modseq = ${params.modseq}::numeric
+        WHERE id = ${params.source.remote_message_ref_id}::uuid
+          AND (modseq IS NULL OR modseq < ${params.modseq}::numeric)
       `;
     }
     let destinationProjected = false;
@@ -837,7 +846,8 @@ const executeSetFlagsMutation = async (params: {
     throw Object.assign(new Error("Provider did not confirm the requested flags"), { code: "FLAG_RECONCILIATION_FAILED" });
   }
   await persistMutationOutcome(async () => {
-    if (!(await updateMutationProjection({ command: params.command, source: params.source, flags: expected }))) return;
+    if (!(await updateMutationProjection({ command: params.command, source: params.source, flags: expected, modseq: verified.modseq })))
+      return;
     await commandState(params.command, "confirmed");
   });
 };
@@ -862,7 +872,15 @@ const executeMessageStateMutation = async (params: {
     throw Object.assign(new Error("Provider did not confirm the requested message state"), { code: "STATE_RECONCILIATION_FAILED" });
   }
   await persistMutationOutcome(async () => {
-    if (!(await updateMutationProjection({ command: params.command, source: params.source, flags: state.flags, keywords: state.keywords })))
+    if (
+      !(await updateMutationProjection({
+        command: params.command,
+        source: params.source,
+        flags: state.flags,
+        keywords: state.keywords,
+        modseq: state.modseq,
+      }))
+    )
       return;
     await commandState(params.command, "confirmed");
   });
@@ -1235,7 +1253,8 @@ const reconcileSetFlagsMutation = async (params: {
   const state = await imapSmtpConnector.getMessageState(params.runtime, params.target);
   const matches = state.exists && JSON.stringify([...state.flags].sort()) === JSON.stringify([...payload.flags].sort());
   if (matches) {
-    if (!(await updateMutationProjection({ command: params.command, source: params.source, flags: payload.flags }))) return;
+    if (!(await updateMutationProjection({ command: params.command, source: params.source, flags: payload.flags, modseq: state.modseq })))
+      return;
     await commandState(params.command, "reconciled");
     return;
   }
@@ -1255,7 +1274,15 @@ const reconcileMessageStateMutation = async (params: {
   const change = remoteStateChange(messageStatePayloadSchema.parse(parseJsonRecord(params.command.payload)));
   const state = await imapSmtpConnector.getMessageState(params.runtime, params.target);
   if (stateChangeMatches(state, change)) {
-    if (!(await updateMutationProjection({ command: params.command, source: params.source, flags: state.flags, keywords: state.keywords })))
+    if (
+      !(await updateMutationProjection({
+        command: params.command,
+        source: params.source,
+        flags: state.flags,
+        keywords: state.keywords,
+        modseq: state.modseq,
+      }))
+    )
       return;
     await commandState(params.command, "reconciled");
     return;

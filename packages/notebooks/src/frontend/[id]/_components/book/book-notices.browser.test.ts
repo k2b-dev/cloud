@@ -43,7 +43,7 @@ test("a Book notice reads at the note's text size, as in the PDF export", async 
       };
       return { prose: type(".notebook-book-content > p"), notice: type(".k2b-notice-card__body p") };
     });
-    expect(sizes).toEqual({ prose: "16px/28px", notice: "16px/26px" });
+    expect(sizes).toEqual({ prose: "16px/25.6px", notice: "16px/26px" });
   } finally {
     await page.close();
   }

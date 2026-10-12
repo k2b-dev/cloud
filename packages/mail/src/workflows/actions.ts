@@ -39,12 +39,13 @@ import { renderMailWorkflowTemplate } from "../service/template-rendering";
 import { mailWorkflowActionFailure } from "../service/workflow-action-errors";
 import { withMailWorkflowCollaborationEvent } from "../service/workflow-collaboration-events";
 import { mailWorkflowDependencyDeadline } from "../service/workflow-dependencies";
-import { mailWorkflowMessagePrecondition } from "../service/workflow-message-preconditions";
+import { mailWorkflowMessagePrecondition, projectMailWorkflowMessagePrecondition } from "../service/workflow-message-preconditions";
 import {
   applyMailConversationTransition,
   applyMailMessageTransition,
   mailConversationTransitionChanges,
   mailMessageTransitionChanges,
+  mailWorkflowMessageStateTransitions,
 } from "../service/workflow-projected-state";
 import {
   type MailWorkflowAuthorizationSnapshot,
@@ -380,7 +381,10 @@ const messageAction = (
         `;
         if (!target) throw Object.assign(new Error("Message provider target is no longer available"), { code: "NOT_FOUND" });
         const remoteMessageRefId = target.remote_message_ref_id;
-        const expectedRemoteState = mailWorkflowMessagePrecondition(ctx.invocation.context, { messageId, remoteMessageRefId, folderId });
+        const expectedRemoteState = projectMailWorkflowMessagePrecondition(
+          mailWorkflowMessagePrecondition(ctx.invocation.context, { messageId, remoteMessageRefId, folderId }),
+          mailWorkflowMessageStateTransitions(message),
+        );
         if (!mailMessageTransitionChanges(message, kind, value)) {
           return { state: "succeeded", output: { action: kind, applied: false } };
         }

@@ -65,7 +65,8 @@ const workflowCondition = (condition: MailAutomationCondition): Record<string, u
           : condition.operator === "ends_with"
             ? "endsWith"
             : "contains";
-  return { [operator]: [reference, condition.value] };
+  const expression = { [operator]: [reference, condition.value] };
+  return condition.operator === "is_not" || condition.operator === "not_contains" ? { not: expression } : expression;
 };
 
 export const buildMailAutomationConditionExpression = (conditions: MailAutomationConditions): Record<string, unknown> => {

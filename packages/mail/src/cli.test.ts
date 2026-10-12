@@ -5709,3 +5709,99 @@ test("reply and forward pass per-draft signature choices", async () => {
     expect.objectContaining({ signatureTemplateId: null, intent: "forward" }),
   ]);
 });
+
+test("sender move supports role destinations and resolves folder names with bounded output", async () => {
+  const writes: Array<Record<string, unknown>> = [];
+  const server = withMailbox(async (request) => {
+    const path = new URL(request.url).pathname;
+    if (path === `/api/mail/mailboxes/${MAILBOX_ID}/folders`) return api([{ id: FOLDER_ID, name: "Projects" }]);
+    if (request.method === "POST" && path === `/api/mail/mailboxes/${MAILBOX_ID}/senders/disposition`) {
+      writes.push(await request.json());
+      return api({ commandCount: 500, truncated: true });
+    }
+    return api({ message: "unexpected" }, { status: 500 });
+  });
+  servers.push(server);
+  const address = `http://127.0.0.1:${server.port}`;
+  const args = ["mail", "sender", "move", "--mailbox", MAILBOX_ID, "--match", "domain", "--value", "example.com", "--yes"];
+  const result = await runCli(address, [...args, "--destination", "archive"]);
+  expect(result.exitCode, result.stderr).toBe(0);
+  expect(result.stdout).toContain("Queued 500 move command(s) for example.com.");
+  expect(result.stdout).toContain("Run the command again after these commands complete.");
+  expect(writes[0]).toEqual({ match: "domain", value: "example.com", destination: "archive", idempotencyKey: expect.any(String) });
+  const json = await runCli(address, ["--json", ...args, "--folder", "Projects"]);
+  expect(json.exitCode, json.stderr).toBe(0);
+  expect(JSON.parse(json.stdout)).toEqual({ commandCount: 500, truncated: true });
+  expect(writes[1]).toEqual({ match: "domain", value: "example.com", folderId: FOLDER_ID, idempotencyKey: expect.any(String) });
+  const jsonl = await runCli(address, ["--jsonl", ...args, "--folder", FOLDER_ID]);
+  expect(jsonl.exitCode, jsonl.stderr).toBe(0);
+  expect(JSON.parse(jsonl.stdout)).toEqual({ commandCount: 500, truncated: true });
+  expect(writes[2]).toEqual({ match: "domain", value: "example.com", folderId: FOLDER_ID, idempotencyKey: expect.any(String) });
+  const keys = writes.map((body) => body.idempotencyKey);
+  expect(new Set(keys).size).toBe(3);
+  for (const key of keys) expect(key).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+});
+
+test("sender move requires confirmation and exactly one destination before making requests", async () => {
+  let requests = 0;
+  const server = withMailbox(() => {
+    requests++;
+    return api({});
+  });
+  servers.push(server);
+  const address = `http://127.0.0.1:${server.port}`;
+  const args = ["mail", "sender", "move", "--mailbox", MAILBOX_ID, "--match", "sender", "--value", "news@example.com"];
+  for (const extra of [[], ["--destination", "trash"], ["--destination", "trash", "--folder", FOLDER_ID]]) {
+    const result = await runCli(address, [...args, ...extra]);
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("Pass --yes");
+  }
+  for (const extra of [[], ["--destination", "trash", "--folder", FOLDER_ID]]) {
+    const result = await runCli(address, [...args, "--yes", ...extra]);
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("Choose exactly one");
+  }
+  expect(requests).toBe(0);
+});
+
+test("command list sends state and cursor filters, shows errors and a text-only paging hint", async () => {
+  const queries: URLSearchParams[] = [];
+  const error = `Provider\n${"did not answer ".repeat(20)}`;
+  const commands = [{ ...mailCommand("failed"), lastError: error }];
+  const server = withMailbox((request) => {
+    const url = new URL(request.url);
+    if (url.pathname === `/api/mail/mailboxes/${MAILBOX_ID}/commands`) {
+      queries.push(url.searchParams);
+      return api(commands);
+    }
+    return api({ message: "unexpected" }, { status: 500 });
+  });
+  servers.push(server);
+  const address = `http://127.0.0.1:${server.port}`;
+  const args = ["mail", "command", "list", "--mailbox", MAILBOX_ID, "--state", "failed", "--before", COMMAND_ID, "--limit", "1"];
+  const result = await runCli(address, args);
+  expect(result.exitCode, result.stderr).toBe(0);
+  expect(result.stdout).toContain("ERROR");
+  expect(result.stdout).toContain("Provider did not answer");
+  expect(result.stdout).not.toContain(error);
+  expect(result.stdout).toContain(`Next page: --before ${COMMAND_ID} --state failed`);
+  const errorRow = result.stdout.split("\n").find((line) => line.includes("Provider did not answer"));
+  if (!errorRow) throw new Error("Missing error column value");
+  expect(errorRow.split(COMMAND_ID).at(-1)?.trim().length).toBeLessThanOrEqual(80);
+  const json = await runCli(address, ["--json", ...args]);
+  expect(json.exitCode, json.stderr).toBe(0);
+  expect(JSON.parse(json.stdout)).toEqual(commands);
+  const jsonl = await runCli(address, ["--jsonl", ...args]);
+  expect(jsonl.exitCode, jsonl.stderr).toBe(0);
+  expect(JSON.parse(jsonl.stdout)).toEqual(commands[0]);
+  for (const query of queries) {
+    expect(Object.fromEntries(query)).toEqual({ limit: "1", state: "failed", before: COMMAND_ID });
+  }
+  const unfiltered = await runCli(address, ["mail", "command", "list", "--mailbox", MAILBOX_ID, "--limit", "1"]);
+  expect(unfiltered.exitCode, unfiltered.stderr).toBe(0);
+  expect(unfiltered.stdout).toContain(`Next page: --before ${COMMAND_ID}`);
+  expect(unfiltered.stdout).not.toContain("--state");
+  const partial = await runCli(address, ["mail", "command", "list", "--mailbox", MAILBOX_ID, "--limit", "2", "--state", "needs_attention"]);
+  expect(partial.exitCode, partial.stderr).toBe(0);
+  expect(partial.stdout).not.toContain("Next page:");
+});

@@ -13,13 +13,14 @@ type TrayList = { items: { id: string; title: string }[]; total: number };
 type Snapshot = {
   kind: string;
   view: string;
+  range: { from: string; to: string };
   items: { id: string; activeBlockerCount: number }[];
   weather: object;
   tray: { overdue: TrayList; undated: TrayList } | null;
 };
 
 suite("Spaces calendar day view", () => {
-  test("carries each item's blocker count within the reader's access, and opens an old timeline link as the month", async () => {
+  test("carries each item's blocker count within the reader's access, loads days in ranges, and opens an old timeline link as the month", async () => {
     const suffix = crypto.randomUUID().slice(0, 8);
     const spaceIds: string[] = [];
     const userIds: string[] = [];
@@ -52,7 +53,7 @@ suite("Spaces calendar day view", () => {
       const planning = await item(team, "Planning", { startsAt: "2030-03-13T10:00:00Z", endsAt: "2030-03-13T11:30:00Z" });
       const invoice = await item(team, "Check invoice", { deadline: "2030-03-14T15:00:00Z" });
       await item(team, "Done already", { deadline: "2030-03-14T16:00:00Z", completed: true });
-      await item(team, "Retro", { deadline: "2030-03-25T12:00:00Z" });
+      const retro = await item(team, "Retro", { deadline: "2030-03-25T12:00:00Z" });
       await item(other, "Elsewhere", { startsAt: "2030-03-13T10:00:00Z", endsAt: "2030-03-13T11:00:00Z" });
       // An open task blocks the invoice, so the calendar says it cannot be completed yet.
       const receipts = await item(team, "Collect receipts", {});
@@ -82,9 +83,43 @@ suite("Spaces calendar day view", () => {
         return ((await response.json()) as Snapshot).items.map((entry) => [entry.id, entry.activeBlockerCount]);
       };
 
-      expect(await items(await member(`href=${href("day")}`))).toEqual([[invoice, 1]]);
-      expect(await items(await member(`href=${href("day", "2030-03-13")}`))).toEqual([[planning, 0]]);
+      // The day view loads a week before its day and three after, and names the days it loaded.
+      const day = await member(`href=${href("day")}`);
+      expect(new Set(await items(day.clone()))).toEqual(
+        new Set([
+          [planning, 0],
+          [invoice, 1],
+          [retro, 0],
+        ]),
+      );
+      expect(((await day.json()) as Snapshot).range).toEqual({ from: "2030-03-07T00:00:00.000Z", to: "2030-04-05T00:00:00.000Z" });
       expect((await outsider(`href=${href("day")}`)).status).toBe(403);
+
+      // While the reader scrolls, the day and week views load a chosen week, without the tray.
+      const block = (cv: string, from: string, to: string) =>
+        member(`href=${href(cv)}&from=${from}T00:00:00.000Z&to=${to}T00:00:00.000Z&includeTray=false`);
+      const week = await block("week", "2030-03-14", "2030-03-21");
+      const loaded = (await week.clone().json()) as Snapshot;
+      expect(loaded).toMatchObject({
+        view: "week",
+        range: { from: "2030-03-14T00:00:00.000Z", to: "2030-03-21T00:00:00.000Z" },
+        tray: null,
+      });
+      expect(await items(week)).toEqual([[invoice, 1]]);
+      // The night after the last day belongs to it: a range holds what lies there until 06:00.
+      const night = await item(team, "Night shift", { startsAt: "2030-03-21T03:00:00Z", endsAt: "2030-03-21T04:00:00Z" });
+      expect(await items(await block("day", "2030-03-14", "2030-03-21"))).toEqual([
+        [invoice, 1],
+        [night, 0],
+      ]);
+      expect(await items(await block("day", "2030-03-21", "2030-03-28"))).toEqual([
+        [night, 0],
+        [retro, 0],
+      ]);
+      // A range has both ends, runs forward, and spans at most 366 days.
+      expect((await member(`href=${href("day")}&from=2030-03-14T00:00:00.000Z`)).status).toBe(400);
+      expect((await block("day", "2030-03-21", "2030-03-14")).status).toBe(400);
+      expect((await block("day", "2030-01-01", "2031-01-03")).status).toBe(400);
 
       // The timeline view is gone: an old link, with the range the timeline used to send, opens the month of its day.
       const old = await member(`href=${href("timeline")}&from=2030-03-20T00:00:00.000Z&to=2030-03-27T00:00:00.000Z&includeTray=false`);
@@ -160,6 +195,10 @@ suite("Spaces calendar day view", () => {
       await item(team, "Theirs", { assignee: colleagueId });
       await item(team, "Nobody's", {});
       await item(team, "Mine but done", { assignee: memberId, completed: true });
+      // A task planned into a time slot shows in the calendar, so the tray leaves it out, late or without a deadline.
+      const slot = { startsAt: new Date(Date.now() + 3_600_000).toISOString(), endsAt: new Date(Date.now() + 7_200_000).toISOString() };
+      await item(team, "Late but planned", { deadline: daysAgo(4), ...slot });
+      await item(team, "Mine and planned", { assignee: memberId, ...slot });
 
       const loaded = await accounts.users.get({ id: memberId });
       if (!loaded) throw new Error("Missing fixture user");

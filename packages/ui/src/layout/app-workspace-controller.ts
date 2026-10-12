@@ -95,8 +95,13 @@ const sidebarHideable = (root: HTMLElement) => sidebarElement(root)?.dataset.wor
 export const APP_WORKSPACE_SIDEBAR_HIDE_EVENT = "k2b-app-workspace-sidebar-hide";
 /** Asks the owning `AppWorkspace.Detail` to close; its `onClose` decides. */
 export const APP_WORKSPACE_DETAIL_CLOSE_EVENT = "k2b-app-workspace-detail-close";
-/** Asks the owning `AppWorkspace.Detail` for the previous or next item, as `detail.direction` of `-1` or `1`. */
+/**
+ * Asks the owning Detail to step by `detail.direction` (`-1` or `1`). It writes
+ * the Main element showing the selection to `detail.item`, read synchronously
+ * by the controller after dispatch.
+ */
 export const APP_WORKSPACE_DETAIL_STEP_EVENT = "k2b-app-workspace-detail-step";
+export type AppWorkspaceDetailStep = { direction: 1 | -1; item?: HTMLElement };
 const previewSidebarHidden = (root: HTMLElement, hidden: boolean) => {
   const sidebar = sidebarElement(root);
   if (!sidebar) return;
@@ -488,18 +493,19 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     if (aside.hasAttribute("data-workspace-detail-closable")) aside.dispatchEvent(new CustomEvent(APP_WORKSPACE_DETAIL_CLOSE_EVENT));
     else closeControl(aside)?.click();
   };
-  const verticalScroller = (target: Element, boundary: HTMLElement) => {
+  const scrollerOn = (axis: "x" | "y", target: Element, boundary: HTMLElement) => {
     for (let element: Element | null = target; element && boundary.contains(element); element = element.parentElement) {
       if (
         element instanceof HTMLElement &&
-        /^(auto|scroll)$/.test(getComputedStyle(element).overflowY) &&
-        element.scrollHeight > element.clientHeight
+        /^(auto|scroll)$/.test(axis === "y" ? getComputedStyle(element).overflowY : getComputedStyle(element).overflowX) &&
+        (axis === "y" ? element.scrollHeight > element.clientHeight : element.scrollWidth > element.clientWidth)
       )
         return element;
       if (element === boundary) break;
     }
     return null;
   };
+  const verticalScroller = (target: Element, boundary: HTMLElement) => scrollerOn("y", target, boundary);
   const refreshItem = (snapshot: RememberedItem) => {
     snapshot.top = snapshot.item.getBoundingClientRect().top;
     snapshot.scrollTop = snapshot.scroller?.scrollTop ?? 0;
@@ -574,7 +580,12 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     pendingTitle?.observer.disconnect();
     pendingTitle = null;
   };
+  // A step from inside the panel can remove the focused element with the old
+  // content, so focus falls to the body. The panel keeps owning the steps until
+  // focus or a pointer goes elsewhere, so a quick second J still ends on the title.
+  let panelStep: HTMLElement | null = null;
   const cancelTitleOnInteraction = (event: Event) => {
+    if (event.type !== "keydown" && !(event.target instanceof Node && panelStep?.contains(event.target))) panelStep = null;
     if (event.type !== "focusin" || event.target !== focusingTitle) cancelTitle();
   };
   const requestTitle = (aside: HTMLElement, waitForChange = false) => {
@@ -647,6 +658,57 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     slides.set(root, end);
     root.dataset.workspaceDetailSliding = "";
   };
+  const revealItem = (root: HTMLElement, aside: HTMLElement, snapshot: RememberedItem) => {
+    const pending = revealFrames.get(root);
+    if (pending !== undefined) cancelAnimationFrame(pending);
+    revealFrames.set(
+      root,
+      requestAnimationFrame(() => {
+        revealFrames.delete(root);
+        if (
+          !aside.hidden &&
+          aside.isConnected &&
+          snapshot.item.isConnected &&
+          mainElement(root)?.contains(snapshot.item) &&
+          snapshot.item.closest(ROOT_SELECTOR) === root
+        ) {
+          const behavior = reducedMotion?.matches ? "auto" : "smooth";
+          const main = mainElement(root);
+          const cell = snapshot.cell;
+          const target = cell?.isConnected && main?.contains(cell) ? cell : snapshot.item;
+          if (phone?.matches && main) {
+            // The sheet covers Main's lower part, so the item ends 8px above it;
+            // a step can also land above Main's top or beside it, as in a board.
+            const page = ownerDocument.scrollingElement;
+            const vertical = verticalScroller(target, main) ?? page;
+            const horizontal = scrollerOn("x", target, main) ?? page;
+            const bounds = (scroller: Element | null) => (scroller && scroller !== page ? scroller.getBoundingClientRect() : null);
+            const box = target.getBoundingClientRect();
+            const top = Math.max(0, bounds(vertical)?.top ?? 0);
+            const left = Math.max(0, bounds(horizontal)?.left ?? 0);
+            const right = Math.min(ownerWindow.innerWidth, bounds(horizontal)?.right ?? Infinity);
+            const dy = box.top < top ? box.top - top - 8 : Math.max(0, box.bottom - (ownerWindow.innerHeight - aside.offsetHeight) + 8);
+            // As with scrollIntoView's "nearest", an item past both edges stays put
+            // and one wider than the view keeps its start in view.
+            const dx =
+              box.left < left && box.right > right
+                ? 0
+                : box.left < left
+                  ? box.left - left - 8
+                  : box.right > right
+                    ? Math.min(box.right - right + 8, Math.max(0, box.left - left - 8))
+                    : 0;
+            if (vertical && vertical === horizontal) {
+              if (dy || dx) vertical.scrollBy({ top: dy, left: dx, behavior });
+            } else {
+              if (dy) vertical?.scrollBy({ top: dy, behavior });
+              if (dx) horizontal?.scrollBy({ left: dx, behavior });
+            }
+          } else target.scrollIntoView({ block: "nearest", inline: "nearest", behavior });
+        }
+      }),
+    );
+  };
   const detailTransition = (aside: HTMLElement, wasHidden: boolean) => {
     const root = aside.closest<HTMLElement>(ROOT_SELECTOR);
     detailHidden.set(aside, Boolean(aside.hidden));
@@ -662,6 +724,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     if (snapshot) snapshot.fresh = false;
     if (aside.hidden) {
       if (pendingTitle?.aside === aside) cancelTitle();
+      if (panelStep === aside) panelStep = null;
       if (root.hasAttribute("data-workspace-motion") && !reducedMotion?.matches && wide?.matches) {
         // Closing holds the detail column until the slide ends; anchor after Main widens.
         const cancel = () => {
@@ -693,32 +756,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     anchorItem(root, aside, snapshot);
     if (phone?.matches) setDetent(aside, false);
     if (followedInteraction && snapshot) {
-      revealFrames.set(
-        root,
-        requestAnimationFrame(() => {
-          revealFrames.delete(root);
-          if (
-            !aside.hidden &&
-            aside.isConnected &&
-            snapshot.item.isConnected &&
-            mainElement(root)?.contains(snapshot.item) &&
-            snapshot.item.closest(ROOT_SELECTOR) === root
-          ) {
-            const behavior = reducedMotion?.matches ? "auto" : "smooth";
-            if (phone?.matches) {
-              const sheetTop = ownerWindow.innerHeight - aside.offsetHeight;
-              const overlap = snapshot.item.getBoundingClientRect().bottom - sheetTop + 8;
-              const main = mainElement(root);
-              if (overlap > 0 && main)
-                (verticalScroller(snapshot.item, main) ?? ownerDocument.scrollingElement)?.scrollBy({ top: overlap, behavior });
-            } else {
-              const cell = snapshot.cell;
-              const target = cell?.isConnected && mainElement(root)?.contains(cell) ? cell : snapshot.item;
-              target.scrollIntoView({ block: "nearest", inline: "nearest", behavior });
-            }
-          }
-        }),
-      );
+      revealItem(root, aside, snapshot);
       if (snapshot.interaction === "keyboard" || phone?.matches) requestTitle(aside);
     }
   };
@@ -743,11 +781,42 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     const owningRoot = aside?.closest<HTMLElement>(ROOT_SELECTOR);
     if (!aside || !owningRoot) return;
     if (event.key === "Escape" && closable(aside)) requestClose(aside);
-    else if ((event.key.toLowerCase() === "j" || event.key.toLowerCase() === "k") && aside.hasAttribute("data-workspace-detail-steppable"))
-      aside.dispatchEvent(
-        new CustomEvent(APP_WORKSPACE_DETAIL_STEP_EVENT, { detail: { direction: event.key.toLowerCase() === "j" ? 1 : -1 } }),
-      );
-    else if (event.key === "F6") {
+    else if (
+      (event.key.toLowerCase() === "j" || event.key.toLowerCase() === "k") &&
+      aside.hasAttribute("data-workspace-detail-steppable")
+    ) {
+      const main = mainElement(owningRoot);
+      const inMain = remembered.get(owningRoot)?.item.contains(target) || main?.contains(target);
+      const inPanel = aside.contains(target) || (target === ownerDocument.body && panelStep === aside);
+      panelStep = inPanel ? aside : null;
+      const previousTitle = inPanel ? titleIn(aside) : null;
+      const previousText = previousTitle?.textContent;
+      const detail: AppWorkspaceDetailStep = { direction: event.key.toLowerCase() === "j" ? 1 : -1 };
+      aside.dispatchEvent(new CustomEvent(APP_WORKSPACE_DETAIL_STEP_EVENT, { detail }));
+      const shown = detail.item;
+      const item = shown instanceof HTMLElement && main?.contains(shown) && shown.closest(ROOT_SELECTOR) === owningRoot ? shown : null;
+      if (item && main) {
+        const snapshot: RememberedItem = {
+          item,
+          cell: null,
+          interaction: "keyboard",
+          scroller: verticalScroller(item, main),
+          scrollTop: 0,
+          top: 0,
+          fresh: false,
+        };
+        refreshItem(snapshot);
+        remembered.set(owningRoot, snapshot);
+        revealItem(owningRoot, aside, snapshot);
+      }
+      const title = titleIn(aside);
+      if (item && inMain) item.focus({ preventScroll: true });
+      // A panel that swapped its title during the event has the new one now.
+      else if (item && inPanel && title && (title !== previousTitle || title.textContent !== previousText)) focusTitle(aside);
+      // This key's capture cancelled an earlier step's title request, so a
+      // step from the body, even past the last item, asks again.
+      else if (inPanel && (item || target === ownerDocument.body)) requestTitle(aside, Boolean(item));
+    } else if (event.key === "F6") {
       if (aside.contains(target)) {
         const item = remembered.get(owningRoot)?.item;
         const main = mainElement(owningRoot);

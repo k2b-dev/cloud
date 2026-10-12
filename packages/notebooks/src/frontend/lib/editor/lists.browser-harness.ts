@@ -8,6 +8,7 @@ import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { fadeScrollMarginsExtension, fadeScrollPadding } from "./fade-scroll-margins";
 import { editor } from "./index";
+import { listCommandsExtension } from "./list-commands";
 import { listStateField } from "./lists";
 import { pressMissedEditor } from "./surface-press";
 
@@ -55,10 +56,11 @@ const view = new EditorView({
       yCollab(ytext, new Awareness(ydoc), { undoManager: new Y.UndoManager(ytext) }),
       editor.basicExtensions(),
       editor.markdownExtension(),
+      listCommandsExtension(),
       editor.searchTheme(),
       fadeScrollMarginsExtension(() => port),
       editor.customLightInit(),
-      EditorView.theme({ ".cm-editor": { minHeight: "100%" }, ".cm-scroller": { width: "100%", minHeight: "100%", padding: "1rem" } }),
+      editor.noteScrollerTheme,
       editor.tablesExtension("n1"),
       editor.imageExtension("n1"),
       editor.listsExtension(),
@@ -175,6 +177,11 @@ export type ListMeasurements = ReturnType<typeof measureLists>;
 Object.assign(window, {
   harness: {
     loadDocument,
+    placeCaret: (head: number) => {
+      view.dispatch({ selection: { anchor: head } });
+      view.focus();
+    },
+    readEditor: () => ({ doc: view.state.doc.toString(), head: view.state.selection.main.head }),
     placeCaretOnLine,
     measureLists,
     scrollToMiddle,

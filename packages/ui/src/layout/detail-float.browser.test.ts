@@ -13,6 +13,7 @@ import { createComponent, render } from "solid-js/web";
 import { AppWorkspace, DetailPanel, DataTable, PageTrailProvider } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 const params = new URLSearchParams(document.body.dataset.params);
 const [open, setOpen] = createSignal(params.has("initial"));
+let selected = 0;
 const close = () => { document.body.dataset.closes = String(Number(document.body.dataset.closes || 0) + 1); setOpen(false); };
 const button = (index) => {
   const element = document.createElement("button");
@@ -20,7 +21,7 @@ const button = (index) => {
   element.textContent = "Row " + index;
   // Cards carry their own width, as a board's columns do: WebKit sizes a max-content row from its items' widths, not their flex bases.
   element.style.cssText = params.has("trail") ? "flex:none;width:260px;height:160px" : "display:block;width:100%;height:42px;text-align:left";
-  element.addEventListener("click", () => setOpen(true));
+  element.addEventListener("click", () => { selected = index; setOpen(true); });
   return element;
 };
 const mainContent = () => {
@@ -64,7 +65,12 @@ render(() => createComponent(PageTrailProvider, { trail:{title:"Devices",ancesto
     createComponent(AppWorkspace.Content, { get children() { return [
       createComponent(AppWorkspace.Main, { class:"fixture-main", scroll:!params.has("trail") && !params.has("table"), get children() { return mainContent(); } }),
       createComponent(AppWorkspace.Detail, {
-        id:"record", width:params.get("width") || "md", get open() { return open(); }, onClose:params.has("fixed") ? undefined : close, onStep:direction => {document.body.dataset.steps = String(Number(document.body.dataset.steps || 0) + direction);},
+        id:"record", width:params.get("width") || "md", get open() { return open(); }, onClose:params.has("fixed") ? undefined : close, onStep:direction => {
+          document.body.dataset.steps = String(Number(document.body.dataset.steps || 0) + direction);
+          const count = document.querySelectorAll('[id^="row-"]').length;
+          selected = Math.max(0, Math.min(count - 1, selected + direction));
+          return document.getElementById("row-" + selected);
+        },
         get children() { return createComponent(DetailPanel, { get children() { return [
           createComponent(DetailPanel.Header, { title:"Selected record", get actions() { const element = document.createElement("button"); element.id="close"; element.textContent="Close"; element.addEventListener("click", close); return element; } }),
           createComponent(DetailPanel.Body, { get children() { const text = document.createElement("p"); text.id="detail-text"; text.textContent="Text in the selected record"; return text; } }),
@@ -673,6 +679,93 @@ describe("floating workspace detail", () => {
       await page.close();
     }
   });
+  test("1280×800: J focuses and reveals the next row below Main's fold beside the panel", async () => {
+    const page = await load(1280, 800);
+    try {
+      // The first row that ends below Main's fold; the row before it is the last one fully in view.
+      const fold = await page.evaluate(() => {
+        const bottom = document.querySelector(".k2b-app-workspace__main")!.getBoundingClientRect().bottom;
+        return Array.from(document.querySelectorAll('[id^="row-"]')).findIndex((row) => row.getBoundingClientRect().bottom > bottom);
+      });
+      expect(fold).toBeGreaterThan(0);
+      await openRow(page, `row-${fold - 1}`);
+      const covered = await page.evaluate(
+        (id) =>
+          document.getElementById(id)!.getBoundingClientRect().bottom >
+          document.querySelector(".k2b-app-workspace__main")!.getBoundingClientRect().bottom,
+        `row-${fold}`,
+      );
+      expect(covered).toBe(true);
+      expect(await page.evaluate(() => document.activeElement?.id)).toBe(`row-${fold - 1}`);
+      await page.keyboard.press("j");
+      await page.waitForFunction((id) => {
+        const row = document.getElementById(id)!.getBoundingClientRect();
+        const main = document.querySelector(".k2b-app-workspace__main")!.getBoundingClientRect();
+        const detail = document.querySelector(".k2b-app-workspace__detail")!.getBoundingClientRect();
+        return row.top >= main.top && row.left >= main.left && row.bottom <= main.bottom && row.right <= detail.left;
+      }, `row-${fold}`);
+      expect(await page.evaluate(() => document.activeElement?.id)).toBe(`row-${fold}`);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("390×844: J reveals the next row above the phone sheet", async () => {
+    const page = await load(390, 844);
+    try {
+      await openRow(page, "row-20");
+      await page.waitForFunction(
+        () =>
+          document.getElementById("row-20")!.getBoundingClientRect().bottom <=
+          document.querySelector(".k2b-app-workspace__detail")!.getBoundingClientRect().top,
+      );
+      const shape = await geometry(page);
+      expect(await page.locator("#row-21").evaluate((element) => element.getBoundingClientRect().bottom)).toBeGreaterThan(shape.detail.top);
+      await page.keyboard.press("j");
+      await page.waitForFunction(
+        () =>
+          document.getElementById("row-21")!.getBoundingClientRect().bottom <=
+          document.querySelector(".k2b-app-workspace__detail")!.getBoundingClientRect().top,
+      );
+    } finally {
+      await page.close();
+    }
+  });
+  test("390×844: K reveals a previous row above Main's top", async () => {
+    const page = await load(390, 844);
+    try {
+      await openRow(page, "row-20");
+      // The opened row starts Main's scrollport, so the row before it is out of view above.
+      await page.locator("#row-20").evaluate((row) => row.scrollIntoView({ block: "start" }));
+      const visibleTop = () =>
+        page.evaluate(() => Math.max(0, document.querySelector(".k2b-app-workspace__main")!.getBoundingClientRect().top));
+      expect(await page.locator("#row-19").evaluate((row) => row.getBoundingClientRect().top)).toBeLessThan(await visibleTop());
+      await page.keyboard.press("k");
+      await page.waitForFunction(
+        () =>
+          document.getElementById("row-19")!.getBoundingClientRect().top >=
+          Math.max(0, document.querySelector(".k2b-app-workspace__main")!.getBoundingClientRect().top),
+      );
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("390×844: J reveals the next card of a board beside the screen", async () => {
+    const page = await load(390, 844, "trail=1");
+    try {
+      await openRow(page, "row-0");
+      expect(await page.locator("#row-1").evaluate((card) => card.getBoundingClientRect().right)).toBeGreaterThan(390);
+      await page.keyboard.press("j");
+      await page.waitForFunction(() => {
+        const card = document.getElementById("row-1")!.getBoundingClientRect();
+        return card.left >= 0 && card.right <= innerWidth;
+      });
+    } finally {
+      await page.close();
+    }
+  });
+
   test("J/K step selection and F6 switches focus between the item and detail title", async () => {
     const page = await load(1366, 900);
     try {

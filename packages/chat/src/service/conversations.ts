@@ -25,7 +25,7 @@ import {
   capPermission,
   messages,
   permissionFromRank,
-  principalCondition,
+  readableMemberCondition,
   requireConversation,
   subjectPrincipal,
 } from "./access";
@@ -46,6 +46,8 @@ import {
   UpdateConversationSchema,
   UpdateMemberSchema,
 } from "./contracts";
+import { chatLive } from "./live";
+import { appendMessage, personSnapshots } from "./message-store";
 import { deriveTitle, TITLE_NAME_LIMIT } from "./titles";
 
 const creationLimit = ratelimit({ id: "chat.conversation.create", limit: CREATE_LIMIT, windowSecs: CREATE_WINDOW_SECONDS });
@@ -61,7 +63,9 @@ const value = <T>(result: Result<T>): T => {
 };
 const transaction = async <T>(work: (db: typeof sql) => Promise<Result<T>>): Promise<Result<T>> => {
   try {
-    return await sql.begin(work);
+    const result = await sql.begin(work);
+    if (result.ok) chatLive.wake();
+    return result;
   } catch (error) {
     if (error instanceof TransactionFailure) return fail(error.error);
     throw error;
@@ -180,6 +184,7 @@ const project = (
   icon: row.icon,
   purpose: row.purpose,
   memberCount: row.member_count,
+  rev: Number(row.rev),
   permission,
   title,
   createdAt: row.created_at.toISOString(),
@@ -201,7 +206,7 @@ const create = async (input: ChatContext & { input: unknown }): Promise<Result<C
   const members = data.members.filter((id) => id !== callerId);
   const allIds = [callerId, ...members];
   try {
-    return await sql.begin(async (db): Promise<Result<CreateOutcome> | RateLimited> => {
+    const result = await sql.begin(async (db): Promise<Result<CreateOutcome> | RateLimited> => {
       const [caller] = await db<
         { profile: string; active: boolean }[]
       >`SELECT profile, (account_expires IS NULL OR account_expires > now()) AS active
@@ -256,21 +261,30 @@ const create = async (input: ChatContext & { input: unknown }): Promise<Result<C
       if (!row) throw new TransactionFailure(err.internal(t.createFailed));
       for (const id of allIds) await addDirectMember(db, row, id, id === callerId ? "admin" : "write", input);
       value(await requireConversation({ ...input, conversationId: row.short_id, required: "admin" }, db));
+      const createdMessage = await appendMessage(
+        db,
+        row,
+        input,
+        { kind: "system", system: { code: "conversation_created", params: {} } },
+        allIds,
+      );
       await record(db, input, row.short_id, "chat.conversation.create", { memberCount: allIds.length });
       const names = await titles([row], input, db);
-      return ok({ outcome: "created", conversation: project(row, "admin", names.get(row.id)!) });
+      return ok({ outcome: "created", conversation: project({ ...row, rev: createdMessage.rev }, "admin", names.get(row.id)!) });
     });
+    if (result.ok) chatLive.wake();
+    return result;
   } catch (error) {
     if (error instanceof TransactionFailure) return fail(error.error);
     throw error;
   }
 };
 
-const get = async (input: ChatContext & { conversationId: string }) => {
-  const result = await requireConversation({ ...input, required: "read" });
+const get = async (input: ChatContext & { conversationId: string }, db: typeof sql = sql) => {
+  const result = await requireConversation({ ...input, required: "read" }, db);
   if (!result.ok) return result;
   const row = result.data;
-  const names = await titles([row], input, sql);
+  const names = await titles([row], input, db);
   return ok(project(row, row.permission, names.get(row.id)!));
 };
 const list = async (input: ChatContext & { query?: unknown }) => {
@@ -284,8 +298,7 @@ const list = async (input: ChatContext & { query?: unknown }) => {
     SELECT c.*, MAX(CASE a.permission WHEN 'admin' THEN 3 WHEN 'write' THEN 2 WHEN 'read' THEN 1 ELSE 0 END)::int AS permission_rank,
       to_char(c.last_activity_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at
     FROM chat.conversations c JOIN chat.conversation_access ca ON ca.conversation_id = c.id JOIN auth.access a ON a.id = ca.access_id
-    WHERE ca.role = 'member' AND ${principalCondition(input.accessSubject)} AND a.permission IN ('read', 'write', 'admin')
-      AND ${bound.data ? sql`c.short_id = ${bound.data}` : sql`true`}
+    WHERE ${readableMemberCondition(input.accessSubject, bound.data)}
       AND ${cursor ? sql`(c.last_activity_at, c.short_id) < (${cursor.at}::timestamptz, ${cursor.id})` : sql`true`}
     GROUP BY c.id ORDER BY c.last_activity_at DESC, c.short_id DESC LIMIT ${CONVERSATION_PAGE_SIZE + 1}
   `;
@@ -313,12 +326,22 @@ const update = async (input: ChatContext & { conversationId: string; input: unkn
     if (!allowed.ok) return allowed;
     const data = parsed.data;
     const before = allowed.data;
-    const [row] = await db<ConversationRow[]>`UPDATE chat.conversations SET name = ${data.name === undefined ? before.name : data.name},
-      icon = ${data.icon === undefined ? before.icon : data.icon}, purpose = ${data.purpose === undefined ? before.purpose : data.purpose},
-      updated_at = now(), rev = rev + 1 WHERE id = ${before.id}::uuid RETURNING *`;
+    const changed = {
+      ...(data.name !== undefined && data.name !== before.name ? { name: data.name } : {}),
+      ...(data.icon !== undefined && data.icon !== before.icon ? { icon: data.icon } : {}),
+      ...(data.purpose !== undefined && data.purpose !== before.purpose ? { purpose: data.purpose } : {}),
+    };
+    let row = before;
+    if (Object.keys(changed).length) {
+      await db`UPDATE chat.conversations SET name = ${data.name === undefined ? before.name : data.name},
+        icon = ${data.icon === undefined ? before.icon : data.icon}, purpose = ${data.purpose === undefined ? before.purpose : data.purpose}
+        WHERE id = ${before.id}::uuid`;
+      await appendMessage(db, before, input, { kind: "system", system: { code: "details_changed", params: changed } });
+      row = value(await requireConversation({ ...input, required: "write" }, db));
+    }
     await record(db, input, before.short_id, "chat.conversation.update", { fields: Object.keys(data) });
-    const names = await titles([row!], input, db);
-    return ok(project(row!, before.permission, names.get(before.id)!));
+    const names = await titles([row], input, db);
+    return ok(project(row, before.permission, names.get(before.id)!));
   });
 };
 
@@ -387,8 +410,22 @@ const addMembers = async (input: ChatContext & { conversationId: string; input: 
     >`SELECT COUNT(*)::int AS count FROM chat.participants WHERE conversation_id = ${allowed.data.id}::uuid`;
     if ((count?.count ?? 0) + ids.length > MAX_PARTICIPANTS) return fail(err.badInput(messages(input).participantLimit));
     for (const id of ids) await addDirectMember(db, allowed.data, id, "write", input);
-    if (ids.length)
-      await db`UPDATE chat.conversations SET member_count = member_count + ${ids.length}, rev = rev + 1, updated_at = now() WHERE id = ${allowed.data.id}::uuid`;
+    if (ids.length) {
+      await db`UPDATE chat.conversations SET member_count = member_count + ${ids.length} WHERE id = ${allowed.data.id}::uuid`;
+      await appendMessage(
+        db,
+        allowed.data,
+        input,
+        {
+          kind: "system",
+          system: {
+            code: "members_added",
+            params: { members: await personSnapshots(db, ids) },
+          },
+        },
+        ids,
+      );
+    }
     await record(db, input, allowed.data.short_id, "chat.member.add", { count: ids.length });
     return ok({ added: ids.length });
   });
@@ -402,14 +439,30 @@ const updateMember = async (input: ChatContext & { conversationId: string; acces
     const allowed = await authorizeManagement(db, input, input.conversationId, "chat.member.update");
     if (!allowed.ok) return allowed;
     const before = await directEntries(db, allowed.data.id);
-    if (!before.some((row) => row.access_id === input.accessId.toLowerCase())) return notMember(input);
+    const member = before.find((row) => row.access_id === input.accessId.toLowerCase());
+    if (!member) return notMember(input);
     const after = before.map((row) =>
       row.access_id === input.accessId.toLowerCase() ? { ...row, permission: parsed.data.permission } : row,
     );
     const guarded = guardManagers(before, after, input);
     if (!guarded.ok) return guarded;
-    value(await updateAccess({ id: input.accessId, permission: parsed.data.permission }, db));
-    await db`UPDATE chat.conversations SET rev = rev + 1, updated_at = now() WHERE id = ${allowed.data.id}::uuid`;
+    if (member.permission !== parsed.data.permission) {
+      value(await updateAccess({ id: input.accessId, permission: parsed.data.permission }, db));
+      const [snapshot] = await personSnapshots(db, [member.user_id]);
+      await appendMessage(
+        db,
+        allowed.data,
+        input,
+        {
+          kind: "system",
+          system: {
+            code: "permission_changed",
+            params: { member: snapshot!, permission: parsed.data.permission },
+          },
+        },
+        [member.user_id],
+      );
+    }
     await record(db, input, allowed.data.short_id, "chat.member.update", { permission: parsed.data.permission });
     return ok({ success: true as const });
   });
@@ -417,7 +470,7 @@ const updateMember = async (input: ChatContext & { conversationId: string; acces
 const deleteDirect = async (db: typeof sql, row: ConversationRow, member: MemberRow) => {
   await db`DELETE FROM chat.participants WHERE conversation_id = ${row.id}::uuid AND principal_type = 'user' AND principal_id = ${member.user_id}::uuid`;
   value(await deleteAccess({ id: member.access_id }, db)); // FK cascade removes the junction.
-  await db`UPDATE chat.conversations SET member_count = member_count - 1, rev = rev + 1, updated_at = now() WHERE id = ${row.id}::uuid`;
+  await db`UPDATE chat.conversations SET member_count = member_count - 1 WHERE id = ${row.id}::uuid`;
 };
 const removeMember = async (input: ChatContext & { conversationId: string; accessId: string }) => {
   if (!z.uuid().safeParse(input.accessId).success) return notMember(input);
@@ -434,7 +487,11 @@ const removeMember = async (input: ChatContext & { conversationId: string; acces
       input,
     );
     if (!guarded.ok) return guarded;
+    const [snapshot] = await personSnapshots(db, [member.user_id]);
     await deleteDirect(db, allowed.data, member);
+    await appendMessage(db, allowed.data, input, { kind: "system", system: { code: "member_removed", params: { member: snapshot! } } }, [
+      member.user_id,
+    ]);
     await record(db, input, allowed.data.short_id, "chat.member.remove", { count: 1 });
     return ok({ success: true as const });
   });
@@ -462,7 +519,22 @@ const leave = async (input: ChatContext & { conversationId: string; input: unkno
     const guarded = guardManagers(before, after, input);
     if (!guarded.ok) return guarded;
     if (needsSuccessor && successor) value(await updateAccess({ id: successor, permission: "admin" }, db));
+    const successorMember = needsSuccessor ? others.find((row) => row.access_id === successor) : undefined;
+    const [snapshot] = successorMember ? await personSnapshots(db, [successorMember.user_id]) : [];
     await deleteDirect(db, allowed.data, own);
+    await appendMessage(
+      db,
+      allowed.data,
+      input,
+      {
+        kind: "system",
+        system: {
+          code: "member_left",
+          params: snapshot ? { successor: snapshot } : {},
+        },
+      },
+      [own.user_id, ...(successorMember ? [successorMember.user_id] : [])],
+    );
     await record(db, input, allowed.data.short_id, "chat.member.leave", { count: 1, ...(needsSuccessor ? { permission: "admin" } : {}) });
     return ok({ success: true as const });
   });

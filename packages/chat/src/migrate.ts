@@ -20,6 +20,31 @@ export const migrate = async (): Promise<void> => {
       updated_at timestamptz NOT NULL DEFAULT now()
     );
     CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_conversations_short_id ON chat.conversations(short_id);
+    ALTER TABLE chat.conversations ADD COLUMN IF NOT EXISTS changed_rev bigint NOT NULL DEFAULT 0;
+    CREATE TABLE IF NOT EXISTS chat.messages (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      short_id text NOT NULL CHECK (short_id ~ '^[0-9A-Za-z]{10}$'),
+      conversation_id uuid NOT NULL REFERENCES chat.conversations(id) ON DELETE CASCADE,
+      seq bigint NOT NULL,
+      rev bigint NOT NULL,
+      kind text NOT NULL CHECK (kind IN ('text', 'system')),
+      author_type text NOT NULL CHECK (author_type IN ('user', 'service_account')),
+      author_id uuid NOT NULL,
+      author_name text NOT NULL,
+      client_id text CHECK (client_id ~ '^[A-Za-z0-9_-]{1,64}$'),
+      body_md text CHECK (char_length(body_md) <= 20000),
+      system_code text,
+      system_params jsonb,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      CHECK (
+        (kind = 'text' AND body_md IS NOT NULL AND client_id IS NOT NULL AND system_code IS NULL AND system_params IS NULL)
+        OR (kind = 'system' AND system_code IS NOT NULL AND system_params IS NOT NULL AND body_md IS NULL AND client_id IS NULL)
+      )
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_messages_short_id ON chat.messages(short_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_messages_seq ON chat.messages(conversation_id, seq);
+    CREATE INDEX IF NOT EXISTS idx_chat_messages_rev ON chat.messages(conversation_id, rev);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_messages_client ON chat.messages(conversation_id, author_type, author_id, client_id);
     CREATE TABLE IF NOT EXISTS chat.conversation_access (
       conversation_id uuid NOT NULL REFERENCES chat.conversations(id) ON DELETE CASCADE,
       access_id uuid NOT NULL REFERENCES auth.access(id) ON DELETE CASCADE,

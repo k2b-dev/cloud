@@ -10,6 +10,17 @@ updated: 2026-10-11
 
 # Deprecations and migrations
 
+## Spaces day and week views load days in weeks
+
+The Spaces day and week views scroll through their days and load them a week
+at a time, so the internal `GET /api/spaces/workspace/view` endpoint reads
+`from`, `to`, and `includeTray` again, now for `cv=day` and `cv=week` only,
+for at most 366 days. Every calendar snapshot carries `range`, the days it
+loaded from midnight to midnight; a day or week view snapshot holds what lies
+there until 06:00 after the last day, because the night belongs to the day
+before. Other views ignore `from` and `to`, so an old timeline link still
+opens the month of its day. No setting, data, or migration is involved. See [Spaces](/en/apps/spaces).
+
 ## Mail drafts keep the signature outside the body
 
 Mail drafts now store a signature choice separately from the editable body.

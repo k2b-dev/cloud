@@ -5,7 +5,7 @@ section: Work
 order: 130
 description: Shared boards for tasks, events, comments, views, and calendar planning.
 tags: [spaces, tasks, calendar]
-updated: 2026-10-09
+updated: 2026-10-10
 ---
 
 # Spaces
@@ -146,6 +146,26 @@ row shows up to five overdue open tasks of the Space and up to five open tasks
 without a deadline assigned to you, each with **Show all** for the list view
 with the same query. Spaces no longer has a timeline view; an old link with
 `cv=timeline` opens the month view of its day.
+
+In the day and week views a day runs from 06:00 to 06:00, so the night after
+22:00 belongs to the day before. Nights fold unless an entry lies in them. The
+day view runs down through the days with runs of empty days folded into one
+row; the week view scrolls sideways through them, seven at a time or three on
+a phone, and its arrows move by whole weeks. Both load the week before and
+after while you scroll, and the URL follows the first day you see; an item
+opens there in place. Another filter keeps the days already loaded and the
+place you see, and **Back** after an item keeps the day you scrolled to. The count next to the filters counts the days you see.
+Deadlines show as dashed lines with a checkbox, or **Space**, to check the
+task off, and keep their time when you drag them. Free time creates an event
+where it lies, and a task dragged from the row below the day view into free
+time gets that time, keeps its deadline also when it moves later, and leaves
+the row. **H**, **J**, **K**, **1** to **4**, **G**, **N**, and **Shift+N**
+move, switch views, go to a date, and create in the calendar, and the left
+and right arrow keys page like **K** and **J**; the keyboard button of the
+calendar lists them. In the year view, **N** and **Shift+N** open the full
+form on the shown date.
+See [Day and week views](/en/ui/surfaces/calendar#day-and-week-views-with-dayhours)
+for the behavior in detail.
 
 An item's **Links & resources** list holds Cloud resource references and external URLs
 (at most 20 URLs per item). A GitHub issue or pull request link renders as
@@ -443,7 +463,7 @@ Space, the form uses that Space; elsewhere, choose a writable Space first.
 An open writable item contributes explicitly named edit and completion actions.
 Blocked or completed tasks do not offer completion.
 
-Cmd/Ctrl+Shift+K searches the current Space. Cmd/Ctrl+Alt+N opens a new task, or an event in calendar view. Outside inputs, E edits the selected item, M assigns it to you, and D marks it done or reopens it. Completion remains unavailable while blocked. Search actions update the open palette in place. Actions for the selected object appear before page actions.
+Cmd/Ctrl+Shift+K searches the current Space. Cmd/Ctrl+Alt+N opens a new task, or an event in calendar view. Outside inputs, E edits the selected item, M assigns it to you, and D marks it done or reopens it. In the calendar, H, J, K, 1 to 4, G, N, and Shift+N show today, page, switch the view, go to a date, and create an event or a task. Completion remains unavailable while blocked. Search actions update the open palette in place. Actions for the selected object appear before page actions.
 
 ## Image upload privacy
 

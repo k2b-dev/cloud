@@ -176,6 +176,7 @@ export default function ItemRow(props: ItemRowProps) {
     <div
       ref={row}
       data-space-list-row
+      data-collapsing={collapsing() ? "true" : undefined}
       class={`grid transition-[grid-template-rows,opacity] duration-200 ease-out motion-reduce:transition-none ${
         collapsing() ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr]"
       }`}
@@ -204,6 +205,7 @@ export default function ItemRow(props: ItemRowProps) {
           <a
             href={itemUrl()}
             class="focus-ui relative flex min-w-0 flex-1 items-center gap-3 rounded-[var(--ui-radius-control)]"
+            data-spaces-item-link
             aria-current={isSelectedLocal() ? "true" : undefined}
             onClick={(event) => {
               if (!shouldHandleDetailClick(event, event.currentTarget)) return;

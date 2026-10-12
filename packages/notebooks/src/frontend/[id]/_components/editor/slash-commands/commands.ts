@@ -1,5 +1,6 @@
 import { startCompletion } from "@codemirror/autocomplete";
 import { crypto as stdCrypto } from "@k2b/stdlib";
+import { setListKind } from "../../../../lib/editor/list-commands";
 import { openNoteSearchPrompt } from "../../search/openNoteSearchPrompt";
 import { openAttachmentPicker } from "../AttachmentPicker";
 import { insertAtCursor, insertCallout, insertCodeBlock, insertDataBlock, insertLink, insertTable, setHeading } from "../editor-actions";
@@ -141,16 +142,8 @@ export const slashCommands: SlashCommand[] = [
     run: (view) => insertAtCursor(view, "---\n"),
   },
 
-  // ── Lists ────────────────────────────────────────────────
-  //
-  // All three list commands support a count suffix — `/list5` spawns
-  // five empty bullets, `/todo3` three checkboxes, `/numbered7` a
-  // 1.-through-7. ordered list. Without the suffix they behave like
-  // before: insert a single prefix at the cursor.
-  //
-  // We clamp the count to a sensible upper bound (50) to defend
-  // against `/list9999` slowing the editor down. Lists of more than
-  // ~20 items via a slash command are rare in practice anyway.
+  // ── Lists ───────────────────────────────────────────────
+  // Share kind conversion with keys and the toolbar; /nameN adds empty siblings after the subtree.
   {
     name: "list",
     label: "Bullet list",
@@ -159,13 +152,9 @@ export const slashCommands: SlashCommand[] = [
     description: "Bullet list — /listN for N empty items",
     aliases: ["bullet", "ul", "unordered"],
     params: /^(\d+)$/,
-    run: (view, ctx, params) => {
-      if (params) {
-        const n = Math.max(1, Math.min(50, Number.parseInt(params[1]!, 10)));
-        insertAtCursor(view, Array.from({ length: n }, () => "- ").join("\n"));
-      } else {
-        insertAtCursor(view, "- ");
-      }
+    run: (view, _ctx, params) => {
+      const n = params ? Math.max(1, Math.min(50, Number.parseInt(params[1]!, 10))) : 1;
+      setListKind("bullet", n)(view);
     },
   },
   {
@@ -177,12 +166,8 @@ export const slashCommands: SlashCommand[] = [
     aliases: ["ol", "ordered", "enumerate"],
     params: /^(\d+)$/,
     run: (view, _ctx, params) => {
-      if (params) {
-        const n = Math.max(1, Math.min(50, Number.parseInt(params[1]!, 10)));
-        insertAtCursor(view, Array.from({ length: n }, (_, i) => `${i + 1}. `).join("\n"));
-      } else {
-        insertAtCursor(view, "1. ");
-      }
+      const n = params ? Math.max(1, Math.min(50, Number.parseInt(params[1]!, 10))) : 1;
+      setListKind("ordered", n)(view);
     },
   },
   {
@@ -194,12 +179,8 @@ export const slashCommands: SlashCommand[] = [
     aliases: ["checkbox", "task", "tasks"],
     params: /^(\d+)$/,
     run: (view, _ctx, params) => {
-      if (params) {
-        const n = Math.max(1, Math.min(50, Number.parseInt(params[1]!, 10)));
-        insertAtCursor(view, Array.from({ length: n }, () => "- [ ] ").join("\n"));
-      } else {
-        insertAtCursor(view, "- [ ] ");
-      }
+      const n = params ? Math.max(1, Math.min(50, Number.parseInt(params[1]!, 10))) : 1;
+      setListKind("task", n)(view);
     },
   },
 

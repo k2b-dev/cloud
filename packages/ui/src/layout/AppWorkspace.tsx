@@ -20,6 +20,7 @@ import {
   APP_WORKSPACE_DETAIL_CLOSE_EVENT,
   APP_WORKSPACE_DETAIL_STEP_EVENT,
   APP_WORKSPACE_SIDEBAR_HIDE_EVENT,
+  type AppWorkspaceDetailStep,
   installAppWorkspaceController,
 } from "./app-workspace-controller";
 import {
@@ -217,8 +218,14 @@ export type AppWorkspaceDetailProps = {
    * overlaying it as a drawer.
    */
   onClose?: () => void;
-  /** Shows the previous (`-1`) or next (`1`) item; J and K call it while the panel is open. */
-  onStep?: (direction: 1 | -1) => void;
+  /**
+   * Shows the previous (`-1`) or next (`1`) item; J and K call it while the
+   * panel is open. Return the Main element that now shows the selection,
+   * usually its link: Escape and F6 then go there, and the workspace reveals
+   * it beside the panel or above the phone sheet. Returning nothing keeps the
+   * previous item.
+   */
+  onStep?: (direction: 1 | -1) => HTMLElement | null | undefined | void;
 };
 export type AppWorkspaceBottomDrawerHeight = "sm" | "md" | "lg";
 export type AppWorkspaceBottomDrawerProps = {
@@ -630,9 +637,12 @@ function AppWorkspaceDetail(props: AppWorkspaceDetailProps): JSX.Element {
   let aside: HTMLElement | undefined;
   onMount(() => {
     const close = () => props.onClose?.();
+    const isStep = (detail: unknown): detail is AppWorkspaceDetailStep =>
+      typeof detail === "object" && detail !== null && "direction" in detail && (detail.direction === 1 || detail.direction === -1);
     const step = (event: Event) => {
-      const direction = event instanceof CustomEvent ? event.detail?.direction : undefined;
-      if (direction === 1 || direction === -1) props.onStep?.(direction);
+      if (!(event instanceof CustomEvent) || !isStep(event.detail)) return;
+      const item = props.onStep?.(event.detail.direction);
+      if (item instanceof HTMLElement) event.detail.item = item;
     };
     aside?.addEventListener(APP_WORKSPACE_DETAIL_CLOSE_EVENT, close);
     aside?.addEventListener(APP_WORKSPACE_DETAIL_STEP_EVENT, step);

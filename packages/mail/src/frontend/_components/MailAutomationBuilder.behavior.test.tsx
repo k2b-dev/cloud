@@ -2,9 +2,10 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { createComponent, createSignal } from "solid-js";
 import { isServer } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
-import type { MailAutomationConditions } from "../../contracts";
+import { createIncomingAutomationSchema, type MailAutomationConditions, type MailAutomationStep } from "../../contracts";
 import type { IncomingAutomation } from "../../service/incoming-automations";
 import type { MailWorkflowCatalogSnapshot } from "../../workflows/catalog";
+import { initialMailAutomationAction } from "./mail-automation-actions";
 
 const mailboxId = "Box001";
 const now = "2026-08-21T21:00:00.000Z";
@@ -115,6 +116,40 @@ describe("Mail automation builder interactions", () => {
       moveFirstDown();
       await settle();
       expect(values()).toEqual(["Alpha", "Beta"]);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+
+  test("offers exclusion operators for sender and text conditions", async () => {
+    const dom = createDomTestHarness();
+    const [conditions, setConditions] = createSignal<MailAutomationConditions>({
+      mode: "all",
+      items: [
+        { field: "sender_domain", operator: "is_not", value: "example.com" },
+        { field: "subject", operator: "not_contains", value: "Invoice" },
+      ],
+    });
+    const { MailAutomationConditionsEditor, mailAutomationConditionLabel } = await import("./MailAutomationFields");
+    const { render } = await import("solid-js/web");
+    const dispose = render(
+      () =>
+        createComponent(MailAutomationConditionsEditor, {
+          get conditions() {
+            return conditions();
+          },
+          onChange: setConditions,
+        }),
+      dom.document.body,
+    );
+    try {
+      await settle();
+      const groups = Array.from(dom.document.querySelectorAll('[role="group"][aria-label^="Condition"]'));
+      expect(groups[0]?.textContent).toContain("is not");
+      expect(groups[1]?.textContent).toContain("does not contain");
+      expect(mailAutomationConditionLabel(conditions().items[0]!)).toBe("Not from *@example.com");
+      expect(mailAutomationConditionLabel(conditions().items[0]!, "de")).toBe("Nicht von *@example.com");
     } finally {
       dispose();
       dom.cleanup();
@@ -323,6 +358,281 @@ describe("Mail automation builder interactions", () => {
       dom.cleanup();
     }
   });
+
+  test("puts Mark as read in front of an existing move", async () => {
+    const dom = createDomTestHarness();
+    const folders: MailWorkflowCatalogSnapshot = {
+      folders: [
+        { id: "Fold01", name: "Inbox", role: "inbox" },
+        { id: "Fold02", name: "Newsletters" },
+      ],
+      assignableUsers: [],
+    };
+    const automation: IncomingAutomation = {
+      id: "Auto09",
+      mailboxId,
+      workflowId: "00000000-0000-4000-8000-000000000120",
+      workflowVersionId: "00000000-0000-4000-8000-000000000121",
+      name: "File newsletters",
+      enabled: false,
+      scope: { mode: "all" },
+      steps: [{ id: "00000000-0000-4000-8000-000000000122", kind: "mail_action", action: { kind: "move_to_folder", folderId: "Fold02" } }],
+      latestBackfillOperationId: null,
+      workflowSource: "steps: []",
+      revision: 1,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const { dialogCore } = await import("@k2b/ui");
+    const { openIncomingAutomationEditor } = await import("./MailIncomingAutomationSettings");
+    const result = openIncomingAutomationEditor({ mailboxId, catalog: folders, automation, onSaved: () => {} });
+    try {
+      await settle();
+      const stepKinds = () =>
+        Array.from(dom.document.querySelectorAll("strong + span"))
+          .map((element) => element.textContent)
+          .filter((text) => text === "Mark as read" || text === "Move to folder");
+      expect(stepKinds()).toEqual(["Move to folder"]);
+      Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button"))
+        .find((button) => button.textContent?.includes("Add step"))!
+        .click();
+      await settle();
+      const menu = dom.document.querySelector('[role="menu"]');
+      expect(menu?.textContent).not.toContain("Move to folder");
+      Array.from(menu!.querySelectorAll<HTMLElement>("button, [role='menuitem']"))
+        .find((item) => item.textContent?.includes("Mark as read"))!
+        .click();
+      await settle();
+      expect(stepKinds()).toEqual(["Mark as read", "Move to folder"]);
+      // Moving Mark as read below the move would change the message after it left its folder.
+      const firstStepDown = Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button[aria-label]")).find((button) =>
+        /^Move .* down$/.test(button.getAttribute("aria-label") ?? ""),
+      );
+      expect(firstStepDown?.disabled).toBe(true);
+    } finally {
+      dialogCore.close();
+      await result;
+      dom.cleanup();
+    }
+  });
+
+  for (const branch of ["then", "else"] as const) {
+    test(`protects nested ${branch} replacements and additions from later parent provider actions`, async () => {
+      const dom = createDomTestHarness();
+      const classifierId = crypto.randomUUID();
+      const nestedCatalog: MailWorkflowCatalogSnapshot = {
+        folders: [{ id: "Fold01", name: "Archive" }],
+        assignableUsers: [{ id: "00000000-0000-4000-8000-000000000150", name: "Alice" }],
+        localTags: [{ id: "Tag001", name: "Important" }],
+      };
+      const assignment: MailAutomationStep = {
+        id: crypto.randomUUID(),
+        kind: "mail_action",
+        action: { kind: "assign_user", userId: "00000000-0000-4000-8000-000000000150" },
+      };
+      const condition = { sourceStepId: classifierId, operator: "equals" as const, value: "Important" };
+      const inner: Extract<MailAutomationStep, { kind: "if" }> = {
+        id: crypto.randomUUID(),
+        kind: "if",
+        condition,
+        then: [],
+        else: [],
+        [branch]: [assignment],
+      };
+      const outer: Extract<MailAutomationStep, { kind: "if" }> = {
+        id: crypto.randomUUID(),
+        kind: "if",
+        condition,
+        then: [],
+        else: [],
+        [branch]: [inner],
+      };
+      const automation: IncomingAutomation = {
+        id: "Auto10",
+        mailboxId,
+        workflowId: crypto.randomUUID(),
+        workflowVersionId: crypto.randomUUID(),
+        name: "Nested read",
+        enabled: false,
+        scope: { mode: "all" },
+        steps: [
+          {
+            id: classifierId,
+            kind: "ai_classify",
+            instructions: "Classify mail.",
+            choices: [
+              { name: "Important", description: "Needs attention" },
+              { name: "Routine", description: "Routine mail" },
+            ],
+          },
+          outer,
+          { id: crypto.randomUUID(), kind: "mail_action", action: { kind: "mark_read" } },
+        ],
+        latestBackfillOperationId: null,
+        workflowSource: "steps: []",
+        revision: 1,
+        createdAt: now,
+        updatedAt: now,
+      };
+      const { dialogCore } = await import("@k2b/ui");
+      const { openIncomingAutomationEditor } = await import("./MailIncomingAutomationSettings");
+      const result = openIncomingAutomationEditor({ mailboxId, catalog: nestedCatalog, automation, onSaved: () => {} });
+      try {
+        await settle();
+        dom.document.querySelector<HTMLButtonElement>('button[aria-label^="Expand If step 2"]')!.click();
+        await settle();
+        // The first step of each branch starts expanded, including the inner if and assignment.
+        const label = Array.from(dom.document.querySelectorAll("label")).find((element) => element.textContent === "Mail action");
+        const select = dom.document.getElementById(label!.htmlFor)!;
+        select.click();
+        await settle();
+        const labels = Array.from(dom.document.querySelectorAll(`[id="${select.getAttribute("aria-controls")}"] [role="option"]`)).map(
+          (option) => option.textContent?.trim(),
+        );
+        expect(labels).toEqual(["Add tag", "Assign user", "Set status"]);
+        for (const kind of ["add_local_tag", "assign_user", "set_status"] as const) {
+          const replacement = { ...assignment, action: initialMailAutomationAction(kind, nestedCatalog) };
+          const steps = [automation.steps[0], { ...outer, [branch]: [{ ...inner, [branch]: [replacement] }] }, automation.steps[2]];
+          const parsed = createIncomingAutomationSchema.safeParse({ name: automation.name, scope: automation.scope, steps });
+          expect(parsed.error?.issues).toBeUndefined();
+        }
+        select.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+        await settle();
+        const addButtons = Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button")).filter(
+          (button) => button.textContent?.trim() === "Add step",
+        );
+        // All branch menus inherit the trailing mark_read; the last button belongs to the top level.
+        expect(addButtons).toHaveLength(5);
+        const paths: Array<Array<"then" | "else">> =
+          branch === "then"
+            ? [["then", "then"], ["then", "else"], ["then"], ["else"]]
+            : [["then"], ["else", "then"], ["else", "else"], ["else"]];
+        for (const [index, add] of addButtons.slice(0, -1).entries()) {
+          add.click();
+          await settle();
+          const menu = dom.document.getElementById(add.getAttribute("aria-controls")!)!;
+          expect(menu).not.toBeNull();
+          expect(menu.textContent).not.toContain("Move to folder");
+          expect(menu.textContent).not.toContain("Move to Junk");
+          expect(menu.textContent).not.toContain("Move to Trash");
+          const offered = Array.from(menu.querySelectorAll('[role="menuitem"]'))
+            .map((item) => item.textContent?.trim() ?? "")
+            .filter((text) => text.startsWith("Mail action · "));
+          expect(offered.length).toBeGreaterThan(0);
+          for (const label of offered) {
+            const kind =
+              label === "Mail action · Add tag"
+                ? "add_local_tag"
+                : label === "Mail action · Assign user"
+                  ? "assign_user"
+                  : label === "Mail action · Set status"
+                    ? "set_status"
+                    : null;
+            if (!kind) throw new Error(`Unexpected nested mail action: ${label}`);
+            const steps = structuredClone(automation.steps);
+            let destination = steps;
+            for (const direction of paths[index]!) {
+              const conditionStep = destination.find((step) => step.kind === "if");
+              if (!conditionStep || conditionStep.kind !== "if") throw new Error("Missing nested fixture branch");
+              destination = conditionStep[direction];
+            }
+            destination.push({ id: crypto.randomUUID(), kind: "mail_action", action: initialMailAutomationAction(kind, nestedCatalog) });
+            const parsed = createIncomingAutomationSchema.safeParse({ name: automation.name, scope: automation.scope, steps });
+            expect(parsed.error?.issues).toBeUndefined();
+          }
+          menu.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+          await settle();
+        }
+      } finally {
+        dialogCore.close();
+        await result;
+        dom.cleanup();
+      }
+    });
+  }
+
+  for (const preset of ["AI classify", "AI classify many"] as const) {
+    test(`keeps the nested ${preset} fallback before a later parent move`, async () => {
+      const dom = createDomTestHarness();
+      const classifierId = crypto.randomUUID();
+      const userId = "00000000-0000-4000-8000-000000000160";
+      // Status, assignment and Mark as read are used, there is no free tag, and a move follows the branch:
+      // the only fallback left would be a second placement on the same path.
+      const fallbackCatalog: MailWorkflowCatalogSnapshot = {
+        folders: [{ id: "Fold01", name: "Archive" }],
+        assignableUsers: [{ id: userId, name: "Alice" }],
+        localTags: [],
+      };
+      const automation: IncomingAutomation = {
+        id: "Auto11",
+        mailboxId,
+        workflowId: crypto.randomUUID(),
+        workflowVersionId: crypto.randomUUID(),
+        name: "Nested classifier",
+        enabled: false,
+        scope: { mode: "all" },
+        steps: [
+          { id: crypto.randomUUID(), kind: "mail_action", action: { kind: "set_status", status: "done" } },
+          { id: crypto.randomUUID(), kind: "mail_action", action: { kind: "assign_user", userId } },
+          { id: crypto.randomUUID(), kind: "mail_action", action: { kind: "mark_read" } },
+          {
+            id: classifierId,
+            kind: "ai_classify",
+            instructions: "Classify mail.",
+            choices: [
+              { name: "Important", description: "Needs attention" },
+              { name: "Routine", description: "Routine mail" },
+            ],
+          },
+          {
+            id: crypto.randomUUID(),
+            kind: "if",
+            condition: { sourceStepId: classifierId, operator: "equals", value: "Important" },
+            then: [{ id: crypto.randomUUID(), kind: "add_comment", body: { kind: "custom", value: "Check this." } }],
+            else: [],
+          },
+          { id: crypto.randomUUID(), kind: "mail_action", action: { kind: "move_to_folder", folderId: "Fold01" } },
+        ],
+        latestBackfillOperationId: null,
+        workflowSource: "steps: []",
+        revision: 1,
+        createdAt: now,
+        updatedAt: now,
+      };
+      const { dialogCore } = await import("@k2b/ui");
+      const { openIncomingAutomationEditor } = await import("./MailIncomingAutomationSettings");
+      const result = openIncomingAutomationEditor({ mailboxId, catalog: fallbackCatalog, automation, onSaved: () => {} });
+      try {
+        await settle();
+        dom.document.querySelector<HTMLButtonElement>('button[aria-label^="Expand If step 5"]')!.click();
+        await settle();
+        const add = Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button")).find(
+          (button) => button.textContent?.trim() === "Add step",
+        )!;
+        add.click();
+        await settle();
+        const menu = dom.document.getElementById(add.getAttribute("aria-controls")!)!;
+        Array.from(menu.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+          .find((item) => item.textContent?.trim() === preset)!
+          .click();
+        await settle();
+        const moves = Array.from(dom.document.querySelectorAll("strong + span")).filter(
+          (element) => element.textContent === "Move to folder",
+        );
+        expect(moves).toHaveLength(1);
+        // The editor validates with createIncomingAutomationSchema and only then enables saving.
+        expect(dom.document.body.textContent).not.toContain("Put Mark as read and keyword changes before moving the message");
+        const save = Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button")).find((button) =>
+          button.textContent?.includes("Save changes"),
+        );
+        expect(save?.disabled).toBe(false);
+      } finally {
+        dialogCore.close();
+        await result;
+        dom.cleanup();
+      }
+    });
+  }
 
   test("blocks additions in branches after the global step limit is reached", async () => {
     const dom = createDomTestHarness();

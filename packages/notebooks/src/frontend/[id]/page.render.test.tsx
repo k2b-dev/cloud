@@ -367,3 +367,164 @@ test("a visible navigation is server-rendered with its one sidebar and note tree
     expect(await select(html, "[data-workspace-main-region=notebook-notes]")).toEqual([]);
   }
 });
+
+const previewMarkdown = "# Wochenplan\n\nWir sammeln **wichtige** Gedanken für das Team.\n";
+const renderEditorPage = async (
+  options: {
+    mode?: "write" | "readonly" | "versions" | "graph";
+    richMode?: "rich" | "source";
+    markdown?: string | null;
+    snapshot?: string | null;
+    locked?: boolean;
+    historyIncomplete?: boolean;
+  } = {},
+) => {
+  const note = {
+    id: "uuid-note01",
+    shortId: "note01",
+    notebookId: notebook.id,
+    parentId: null,
+    title: "Wochenplan",
+    position: 0,
+    hasChildren: false,
+    historyIncomplete: options.historyIncomplete ?? false,
+    yjsSnapshotAt: timestamp,
+    contentMd: options.markdown === undefined ? previewMarkdown : options.markdown,
+    yjsSnapshot: options.snapshot === undefined ? "c25hcHNob3Q=" : options.snapshot,
+    createdBy: user.id,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    lockedAt: options.locked ? timestamp : null,
+  };
+  spies.push(spyOn(cloudServices, "get").mockResolvedValue("https://cloud.example.test"));
+  spies.push(spyOn(notebooksService.notebook, "getByShortId").mockResolvedValue(notebook));
+  spies.push(spyOn(notebooksService.notebook, "get").mockResolvedValue(notebook));
+  spies.push(spyOn(notebooksService.notebook.permission, "get").mockResolvedValue("write"));
+  spies.push(spyOn(notebooksService.workspaceEvents, "latestCursor").mockResolvedValue("1-0"));
+  spies.push(spyOn(notebooksService.note, "getTree").mockResolvedValue([{ ...note, children: [] }]));
+  spies.push(spyOn(notebooksService.note, "getByShortId").mockResolvedValue(note));
+  spies.push(spyOn(notebooksService.tag, "listForNotebook").mockResolvedValue([]));
+  spies.push(spyOn(notebooksService.note.favorites, "listIds").mockResolvedValue([]));
+  spies.push(spyOn(notebooksService.attachment, "count").mockResolvedValue(0));
+  spies.push(spyOn(notebooksService.notebook, "graph").mockResolvedValue({ nodes: [], edges: [] }));
+  spies.push(spyOn(notebooksService.note.versions, "list").mockRejectedValue(new Error("No saved versions in this fixture")));
+  spies.push(
+    spyOn(notebooksService.note.comments, "listPage").mockResolvedValue({ items: [], page: 1, perPage: 30, total: 0, hasNext: false }),
+  );
+  spies.push(
+    spyOn(routeState, "loadSelectedNoteRouteState").mockResolvedValue({
+      note: { ...note, id: note.shortId },
+      readonlyMode: !!options.locked,
+      tocItems: [],
+      taskProgress: { done: 0, total: 0 },
+      namedBlocks: [],
+      backlinks: [],
+      panelAttachments: [],
+    }),
+  );
+  const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();
+  app.use("*", async (c, next) => {
+    c.set("actor", { kind: "user", user });
+    c.set("user", user);
+    c.set("runtime", { apps: [] });
+    await next();
+  });
+  app.get("/app/notebooks/:id/notes/:noteId", ...handler);
+  const preferences = { notebooks: { book01: { richMode: options.richMode ?? "rich" } } };
+  const response = await app.request(`https://cloud.example.test/app/notebooks/book01/notes/note01?mode=${options.mode ?? "write"}`, {
+    headers: { "accept-language": "de", cookie: `settings-app-notebooks=${encodeURIComponent(JSON.stringify(preferences))}` },
+  });
+  expect(response.status).toBe(200);
+  return response.text();
+};
+
+test("a saved writable note has readable server text before its editor mounts", async () => {
+  const html = await renderEditorPage();
+  const [preview] = await select(html, "#notebook-note-preview");
+  expect(preview?.attributes["data-mode"]).toBe("rich");
+  expect(preview?.text).toContain("Wochenplan");
+  expect(preview?.text).toContain("Wir sammeln wichtige Gedanken für das Team.");
+  expect(preview?.text).not.toContain("**");
+  const rows = await select(html, "#notebook-note-preview .notebook-note-preview__line");
+  expect(rows[0]?.text).toBe("# Wochenplan");
+  expect(await select(html, "#notebook-note-preview .notebook-note-preview__strong")).toHaveLength(1);
+  expect(await select(html, "#notebook-note-preview [class^=cm-]")).toEqual([]);
+});
+
+test.each([{ mode: "readonly" as const }, { locked: true }])(
+  "read-only and locked notes keep their server preview (%j)",
+  async (options) => {
+    const [preview] = await select(await renderEditorPage(options), "#notebook-note-preview");
+    expect(preview?.text).toContain("Wochenplan");
+  },
+);
+
+test.each(["versions", "graph"] as const)("%s mode has no note preview", async (mode) => {
+  const html = await renderEditorPage({ mode });
+  expect(await select(html, "#notebook-note-preview")).toEqual([]);
+  expect(await select(html, 'solid-client[data-file="NoteEditor.client.tsx"]')).toEqual([]);
+});
+
+test("source mode includes line numbers and the literal Markdown markers", async () => {
+  const html = await renderEditorPage({ richMode: "source" });
+  const [preview] = await select(html, "#notebook-note-preview");
+  expect(preview?.attributes["data-mode"]).toBe("source");
+  const rows = await select(html, "#notebook-note-preview .notebook-note-preview__line");
+  expect(rows.map((row) => row.text)).toEqual(previewMarkdown.split("\n"));
+  const numbers = await select(html, "#notebook-note-preview .notebook-note-preview__number");
+  // The hidden spacer first, sized for the last line number like CodeMirror's gutter.
+  expect(numbers.map((row) => row.text)).toEqual(["9", "1", "2", "3", "4"]);
+  expect(numbers.every((row) => row.attributes["aria-hidden"] === "true")).toBe(true);
+});
+
+test("source preview escapes HTML as readable text instead of creating elements", async () => {
+  const markdown = "<script>alert(1)</script>\n<img src=x onerror=alert(1)>";
+  const html = await renderEditorPage({ richMode: "source", markdown });
+  const rows = await select(html, "#notebook-note-preview .notebook-note-preview__line");
+  expect(rows.map((row) => row.text)).toEqual(["&lt;script>alert(1)&lt;/script>", "&lt;img src=x onerror=alert(1)>"]);
+  expect(await select(html, "#notebook-note-preview script, #notebook-note-preview img")).toEqual([]);
+});
+
+test("write mode without a snapshot starts with an empty preview, matching the editor", async () => {
+  const html = await renderEditorPage({ snapshot: null });
+  expect((await select(html, "#notebook-note-preview .notebook-note-preview__line")).map((row) => row.text)).toEqual([""]);
+  expect(await select(html, "#notebook-note-preview .notebook-note-preview__line br")).toHaveLength(1);
+});
+
+test("read-only without a snapshot starts from the saved Markdown", async () => {
+  const html = await renderEditorPage({ mode: "readonly", snapshot: null });
+  expect((await select(html, "#notebook-note-preview"))[0]?.text).toContain("Wir sammeln wichtige Gedanken für das Team.");
+  const [editor] = await select(html, 'solid-client[data-file="NoteEditor.client.tsx"]');
+  expect(editor?.attributes["data-props"]).toContain("initialContent:&quot;# Wochenplan");
+});
+
+test("write mode sends no duplicate initialContent in the editor props", async () => {
+  const [editor] = await select(await renderEditorPage(), 'solid-client[data-file="NoteEditor.client.tsx"]');
+  expect(editor?.attributes["data-props"]).toContain("initialContent:null");
+  expect(editor?.attributes["data-props"]).toContain("contentMd:");
+});
+
+test("the preview shares the incomplete-history notice with the editor", async () => {
+  const html = await renderEditorPage({ historyIncomplete: true });
+  const [notice] = await select(html, '#notebook-note-preview [role="status"]');
+  expect(notice?.text).toContain("Einige Änderungen der Notiz konnten nicht wiederhergestellt werden");
+});
+
+test("a long note ends at the preview budget, and source mode keeps the gutter of its last line", async () => {
+  const markdown = Array.from({ length: 2000 }, (_, index) => `Paragraph ${index} with ordinary prose.`).join("\n\n");
+  for (const richMode of ["rich", "source"] as const) {
+    const html = await renderEditorPage({ markdown, richMode });
+    const [preview] = await select(html, "#notebook-note-preview");
+    expect(preview?.text).toContain("Paragraph 80 with ordinary prose.");
+    expect(preview?.text).not.toContain("Paragraph 81 with ordinary prose.");
+    expect(await select(html, "#notebook-note-preview .notebook-note-preview__line")).toHaveLength(162);
+    const [spacer] = await select(html, "#notebook-note-preview .notebook-note-preview__spacer");
+    expect(spacer?.text).toBe(richMode === "source" ? "9999" : undefined);
+  }
+});
+
+test("null saved text keeps the editor's single empty line", async () => {
+  const html = await renderEditorPage({ mode: "readonly", markdown: null, snapshot: null });
+  expect((await select(html, "#notebook-note-preview .notebook-note-preview__line")).map((row) => row.text)).toEqual([""]);
+  expect(await select(html, "#notebook-note-preview .notebook-note-preview__line br")).toHaveLength(1);
+});

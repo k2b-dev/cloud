@@ -2,6 +2,16 @@ import { describe, expect, test } from "bun:test";
 import { sanitizeEmailHtml } from "./email-html";
 
 describe("email HTML sanitizer", () => {
+  test("keeps quotes and preformatted blocks with only their style attribute", () => {
+    for (const tag of ["blockquote", "pre"]) {
+      expect(
+        sanitizeEmailHtml(
+          `<${tag} style="color:#52525b" class="x" id="x" onclick="alert(1)" cite="https://example.test" data-x="x">text</${tag}>`,
+        ),
+      ).toBe(`<${tag} style="color:#52525b">text</${tag}>`);
+    }
+  });
+
   test("keeps phone links like web and mail links", () => {
     for (const href of ["tel:+49731000000", "tel:+49 731 000000", "tel:+49-731-000000;ext=12", "tel:(0731)%20000.000", "TEL:110"]) {
       expect(sanitizeEmailHtml(`<a href="${href}">Call</a>`)).toBe(`<a href="${href}">Call</a>`);

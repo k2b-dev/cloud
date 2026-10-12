@@ -438,12 +438,13 @@ const uuidArrayWithNulls = (values: readonly (string | null)[]): string => `{${v
  * channel's `authorize`.
  */
 export const getEffectivePermissions = async (params: {
-  accessIds: string[];
+  /** Grant IDs, or a subquery selecting one uuid column from the resource's junction table. */
+  accessIds: string[] | SQLQuery;
   subjects: readonly AccessSubject[];
 }): Promise<PermissionLevel[]> => {
   const { accessIds, subjects } = params;
   if (subjects.length === 0) return [];
-  if (accessIds.length === 0) return subjects.map(() => "none");
+  if (Array.isArray(accessIds) && accessIds.length === 0) return subjects.map(() => "none");
   const userIds = subjects.map((subject) => (subject.type === "user" ? subject.userId : null));
   const serviceAccountIds = subjects.map((subject) => (subject.type === "service_account" ? subject.serviceAccountId : null));
   // The tiers of buildAccessPrincipalTierConditions, evaluated per row of `s`; every subject here is authenticated.
@@ -451,7 +452,7 @@ export const getEffectivePermissions = async (params: {
     SELECT s.position::int AS position, (
       SELECT a.permission
       FROM auth.access a
-      WHERE a.id = ANY(${toPgUuidArray(accessIds)}::uuid[])
+      WHERE ${Array.isArray(accessIds) ? sql`a.id = ANY(${toPgUuidArray(accessIds)}::uuid[])` : sql`a.id IN (${accessIds})`}
         AND (
           a.service_account_id = s.service_account_id
           OR a.user_id = s.user_id

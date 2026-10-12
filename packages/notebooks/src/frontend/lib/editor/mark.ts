@@ -12,8 +12,7 @@ import type { EditorState, Extension, Range, Transaction } from "@codemirror/sta
 import { RangeSet, StateField } from "@codemirror/state";
 import type { DecorationSet } from "@codemirror/view";
 import { Decoration, EditorView } from "@codemirror/view";
-
-const MARK_REGEX = /==(?!=)([^\s=][^=]*?[^\s=]|[^\s=])==(?!=)/g;
+import { MARK_REGEX } from "./_lib/inline-syntax";
 
 const markDecoration = Decoration.mark({ class: "cm-mark-highlight" });
 

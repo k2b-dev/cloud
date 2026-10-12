@@ -53,18 +53,32 @@ Use short paragraphs. Keep one idea per section.
 - Keep one evening open
 ```
 
-## Indent and move list items {icon="keyboard"}
+## Lists {icon="keyboard"}
 
-**Tab** indents in the note editor. You can nest lists and line up code without the mouse. The note stores plain spaces.
+Lists in the note editor follow their structure. The keys work the same for bullet lists, numbered lists and checklists.
+
+| Key | What happens |
+| --- | --- |
+| **Enter** | Adds the next item. At the start of an item's text, it adds an empty item above. On an item with sub-items, the new item becomes its first sub-item. |
+| **Enter** on an empty item | Moves the item one level out. On the top level, the list ends and you write normal text. A top-level item with sub-items stays. |
+| **Backspace** at the start of an item | Moves the item one level out. On the top level, the item becomes normal text. A top-level item with sub-items stays. |
+| **Tab** or **Ctrl/⌘+]** | Nests the item under the item above. Its sub-items move with it. |
+| **Shift+Tab** or **Ctrl/⌘+[** | Moves the item one level out. |
+| **Alt+Up/Down** | Moves the item with its sub-items past the item above or below. It stops at the list edge. |
+| **Ctrl/⌘+Shift+7**, **8**, **9** | Changes the selected lines to a numbered list, a bullet list or a checklist. The depth stays. Press it again on a top-level item to get normal text. The keys are the number keys 7, 8 and 9 on every keyboard layout. |
+| **Ctrl/⌘+Enter** | Checks or unchecks the task at the cursor, also from a later line of the task. |
+| `- `, `1. ` or `[] ` at the start of a line | Starts a bullet list, a numbered list or a checklist. |
+
+**Shift+Enter** starts a new line in the same item. **Backspace** directly after `# ` turns a heading into normal text.
 
 :::reference
-- **Text and code:** **Tab** inserts two spaces at the cursor or indents the selected lines. **Shift+Tab** removes up to two spaces of indentation.
-- **Lists:** **Tab** or **Ctrl/⌘+]** nests the current item under the previous item in its list. Its sub-items move with it. **Shift+Tab** or **Ctrl/⌘+[** moves it back out one level. The first item cannot nest.
+- **Text and code:** **Tab** inserts two spaces at the cursor or indents the selected lines. **Shift+Tab** removes up to two spaces of indentation. The note stores plain spaces.
 - **Without Tab:** **Ctrl/⌘+]** and **Ctrl/⌘+[** work even when Tab moves focus. On a phone, use **Indent** and **Outdent** in the editor toolbar.
-- **Move list items:** **Alt+Up/Down** (**Option+Up/Down** on a Mac) moves an item with its sub-items past the previous or next item in the same list. It stops at the list edge. On Windows and Linux, **Ctrl+Shift+Up/Down** does the same. On a Mac, **⌘+Shift+Up/Down** keeps selecting to the start or end of the note. If your selection covers more than one item, the selected lines move instead.
+- **Move list items:** On a Mac, use **Option+Up/Down**. On Windows and Linux, **Ctrl+Shift+Up/Down** does the same. On a Mac, **⌘+Shift+Up/Down** keeps selecting to the start or end of the note. If your selection covers more than one item, the selected lines move instead.
 - **Numbered lists:** When you add, remove, indent or move items, the list you changed is numbered again in the Markdown. It keeps its first number, also when you remove the first item. Other lists keep their numbers. One undo restores the change and its previous numbers.
+- **Toolbar:** The insert menu has the same three list types. Use it on a phone.
 - **Tables:** **Tab** selects the next cell, **Shift+Tab** the previous cell.
-- **Suggestions:** If a suggestion list is open, **Tab** accepts the highlighted suggestion.
+- **Suggestions:** If a suggestion list is open, **Tab** and **Enter** accept the highlighted suggestion.
 - **Leave the editor:** Press **Esc**, then **Tab** to move to the next control. Press **Esc**, then **Shift+Tab** to move back.
 - **Keep Tab for focus:** Open **Settings → Notebook → View & behavior** and turn on **Tab moves focus instead of indenting**. This browser stores the choice, and it applies immediately.
 :::
@@ -86,7 +100,7 @@ The sidebar shows the notebook's notes as a tree, with the homepage first. Filte
 
 ## Hide the navigation {icon="layout-sidebar-left-collapse"}
 
-Hide the navigation to write with the full width. Hide it also when others can see your screen and must not see your notes and folders.
+Hide the navigation to focus on the note. Hide it also when others can see your screen and must not see your notes and folders.
 
 :::reference
 - **Hide:** Choose **Hide navigation** at the far left of the editor toolbar. You can also press **Cmd/Ctrl+Alt+S**, or type `>` in the Cloud search and run **Hide notebook navigation**. You can also drag the edge of the navigation almost all the way to the left.
@@ -94,6 +108,7 @@ Hide the navigation to write with the full width. Hide it also when others can s
 - **Show:** Choose **Show navigation** in the same place, or press **Cmd/Ctrl+Alt+S** again. You can also type `>` in the Cloud search and run **Show notebook navigation**.
 - **No toolbar:** Some places show no editor toolbar: Book view, an empty notebook, **Read-only**, the graph, and the attachments. There, the button is in the bottom-left corner.
 - **Stays hidden:** This browser stores the choice. It applies to every notebook, even after a reload and in other open tabs. A notebook with hidden navigation opens without it, so its note titles do not appear while the page loads.
+- **Reading width:** On a large screen, the text stays in a column as wide as in Book view, also in the editor and in **Read-only**. When you hide the navigation, the column moves to the middle. The lines do not get longer.
 - **Your place in the note:** When you hide or show the navigation, the cursor stays where it is. The text at the top of the editor or of Book view stays in place.
 - **Phones and tablets:** On small screens, the navigation stays in the menu. On a tablet, the button at the top left opens the navigation over the note. When the navigation is hidden, the button in the bottom-left corner shows it again. On larger screens, the navigation is next to the note.
 :::

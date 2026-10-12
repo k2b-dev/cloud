@@ -53,6 +53,7 @@ import * as scheduledSends from "./scheduled-sends";
 import { cancelSendCommand } from "./scheduled-sends";
 import * as search from "./search";
 import * as security from "./security";
+import * as senderDisposition from "./sender-disposition";
 import * as senderIdentities from "./sender-identities";
 import * as senderIdentityTransports from "./sender-identity-transports";
 import * as settingsContext from "./settings-context";
@@ -135,6 +136,7 @@ export {
   scheduledSends,
   search,
   security,
+  senderDisposition,
   senderIdentities,
   senderIdentityTransports,
   settingsContext,
@@ -187,6 +189,7 @@ export const mailService = {
   scheduledSends,
   search,
   security,
+  senderDisposition,
   senderIdentities,
   senderIdentityTransports,
   settingsContext,

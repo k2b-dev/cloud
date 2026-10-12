@@ -28,10 +28,11 @@ const PRIORITY_COLOR: Record<string, string> = {
 
 const buildItemHref = (baseUrl: string, itemId: string) => `${baseUrl}${baseUrl.includes("?") ? "&" : "?"}item=${itemId}`;
 
-function CellLink(props: { href: string; class?: string; title?: string; tabIndex?: number; children: JSX.Element }) {
+function CellLink(props: { itemLink?: boolean; href: string; class?: string; title?: string; tabIndex?: number; children: JSX.Element }) {
   return (
     <a
       href={props.href}
+      data-spaces-item-link={props.itemLink ? "true" : undefined}
       tabIndex={props.tabIndex}
       class={props.class}
       title={props.title}
@@ -105,6 +106,7 @@ export default function ItemsTable(props: Props) {
           if (col.id === "title") {
             return (
               <CellLink
+                itemLink
                 href={href}
                 class={`block truncate font-medium text-primary hover:underline ${item.completedAt ? "line-through text-dimmed" : ""}`}
                 title={item.title}

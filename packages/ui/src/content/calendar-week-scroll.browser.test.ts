@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { launchBrowser } from "../../test/browser";
+import type { CalendarEvent } from "./Calendar";
 
 const ui = resolve(import.meta.dir, "../..");
 const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
@@ -12,7 +13,7 @@ import { createComponent, render } from "solid-js/web";
 import { Calendar } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 const view = window.__calendarView ?? "week";
 render(() => createComponent(Calendar, {
-  date:"2026-11-14", view, events:[], timeZone:"UTC",
+  date:"2026-11-14", view, events:window.__calendarEvents ?? [], timeZone:"UTC",
   onSlotActivate:(slot) => { window.__slot = slot.start.toISOString(); },
 }), document.getElementById("app"));
 `;
@@ -27,16 +28,27 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const load = async (width: number, view: "week" | "day") => {
+const load = async (width: number, view: "week" | "day", events: CalendarEvent[] = []) => {
   const page = await browser.newPage({ viewport: { width: 800, height: 900 }, reducedMotion: "reduce" });
   await page.setContent(
     `<!doctype html><html lang="en"><head><style>${css}</style></head><body class="k2b-ui" style="margin:0"><div id="app" style="display:flex;width:${width}px;height:720px"></div></body></html>`,
   );
-  await page.addScriptTag({ content: `window.__calendarView = ${JSON.stringify(view)};` });
+  await page.addScriptTag({
+    content: `window.__calendarView = ${JSON.stringify(view)}; window.__calendarEvents = ${JSON.stringify(events)};`,
+  });
   await page.addScriptTag({ content: script });
   await page.locator(".k2b-calendar-time-grid__column").last().waitFor();
   return page;
 };
+
+const waitForColumns = (page: Page) =>
+  page.waitForFunction(() => {
+    const hoursScroll = document.querySelector(".k2b-calendar-time-grid__scroll")!.scrollLeft;
+    return (
+      document.querySelector(".k2b-calendar-time-grid__days")!.scrollLeft === hoursScroll &&
+      document.querySelector(".k2b-calendar-time-grid__all-day")!.scrollLeft === hoursScroll
+    );
+  });
 
 const shape = (page: Page) =>
   page.locator(".k2b-calendar-time-grid").evaluate((grid) => {
@@ -80,7 +92,7 @@ test("a narrow week scrolls its hours sideways; the day rows follow and the hour
     await page.locator(".k2b-calendar-time-grid__scroll").evaluate((scroll) => {
       scroll.scrollLeft = scroll.scrollWidth - scroll.clientWidth;
     });
-    await page.waitForFunction(() => document.querySelector(".k2b-calendar-time-grid__days")!.scrollLeft > 0);
+    await waitForColumns(page);
     const after = await shape(page);
     expect(after.left).toBeGreaterThan(0);
     expect(after.daysLeft).toBeCloseTo(after.left, 0);
@@ -119,12 +131,16 @@ test("a wide week fits without scrolling sideways", async () => {
 }, 30_000);
 
 test("a day view on a phone keeps the header over its column while it scrolls", async () => {
-  const page = await load(390, "day");
+  const page = await load(390, "day", [
+    { id: "first", title: "First meeting", start: "2026-11-14T10:00:00Z", end: "2026-11-14T11:00:00Z" },
+    { id: "second", title: "Second meeting", start: "2026-11-14T10:00:00Z", end: "2026-11-14T11:00:00Z" },
+    { id: "third", title: "Third meeting", start: "2026-11-14T10:00:00Z", end: "2026-11-14T11:00:00Z" },
+  ]);
   try {
     await page.locator(".k2b-calendar-time-grid__scroll").evaluate((scroll) => {
       scroll.scrollLeft = scroll.scrollWidth - scroll.clientWidth;
     });
-    await page.waitForFunction(() => document.querySelector(".k2b-calendar-time-grid__days")!.scrollLeft > 0);
+    await waitForColumns(page);
     const day = await shape(page);
     expect(day.header.left).toBeCloseTo(day.column.left, 0);
     expect(day.header.right).toBeCloseTo(day.column.right, 0);

@@ -7,6 +7,7 @@ import { z } from "zod";
 import {
   type ActorCommandInput,
   type ActorRef,
+  type CommandState,
   type ComposeSafetyApproval,
   draftEditableContentInputSchema,
   type MailCommand,
@@ -1446,17 +1447,38 @@ export const getCommandOutcomes = async (
   return ok(rows.map((row) => ({ id: row.id, state: row.state, code: row.last_error_code })));
 };
 
-export const listCommands = async (context: MailRequestContext, mailboxId: string, limit = 50): Promise<Result<MailCommand[]>> => {
+export const listCommands = async (
+  context: MailRequestContext,
+  mailboxId: string,
+  query: { limit?: number; state?: CommandState; before?: string } = {},
+): Promise<Result<MailCommand[]>> => {
   const access = await requireMailboxAccess(context, mailboxId, "read");
   if (!access.ok) return access;
   const execution = await resolveMailExecution({ mailboxId, operation: "actorRead", context, conversationScoped: true });
   if (!execution.ok) return execution;
-  const boundedLimit = Math.min(Math.max(Math.floor(limit), 1), 100);
+  if (query.before !== undefined) {
+    if (!z.string().uuid().safeParse(query.before).success) return fail(err.badInput("Invalid mail command cursor"));
+    const [anchor] = await sql<{ id: string }[]>`
+      SELECT c.id FROM mail.commands c
+      WHERE c.mailbox_id = ${mailboxId}::uuid AND c.id = ${query.before}::uuid
+        AND ${commandVisibleTo(access.data, mailboxId)}
+    `;
+    if (!anchor) return fail(err.notFound("Mail command"));
+  }
+  const boundedLimit = Math.min(Math.max(Math.floor(query.limit ?? 50), 1), 100);
   const rows = await sql<DbCommand[]>`
     SELECT ${commandColumns}
     FROM mail.commands c
     WHERE c.mailbox_id = ${mailboxId}::uuid
       AND ${commandVisibleTo(access.data, mailboxId)}
+      AND ${query.state ? sql`c.state = ${query.state}` : sql`TRUE`}
+      AND ${
+        query.before
+          ? sql`(c.created_at, c.id) < (
+        SELECT anchor.created_at, anchor.id FROM mail.commands anchor WHERE anchor.id = ${query.before}::uuid
+      )`
+          : sql`TRUE`
+      }
     ORDER BY c.created_at DESC, c.id DESC
     LIMIT ${boundedLimit}
   `;

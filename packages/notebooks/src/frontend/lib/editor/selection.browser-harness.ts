@@ -45,7 +45,7 @@ const makeClient = (parent: HTMLElement, name: string, color: string, seed?: Y.D
         editor.markdownExtension(),
         editor.searchTheme(),
         editor.customLightInit(),
-        EditorView.theme({ ".cm-editor": { minHeight: "100%" }, ".cm-scroller": { width: "100%", minHeight: "100%", padding: "1rem" } }),
+        editor.noteScrollerTheme,
         editor.tablesExtension("n1"),
         editor.imageExtension("n1"),
         editor.listsExtension(),

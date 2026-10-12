@@ -256,3 +256,35 @@ test.each([
   },
   30_000,
 );
+
+describe.each(Object.entries(devices))("editor toolbar list kinds (%s)", (name, device) => {
+  test("the insert menu converts the selected lines instead of stacking prefixes, keeping focus and the caret", async () => {
+    const page = await open(device);
+    try {
+      await load(page, "- Pack\n  - Charger");
+      await page.evaluate(async () => {
+        const harness = (window as unknown as { harness: ToolbarHarness }).harness;
+        harness.placeCaret("Pack", 0);
+        await harness.settle();
+      });
+      // Select from "Pack" to the end so both depths convert.
+      await page.keyboard.press("Shift+ArrowDown");
+      await page.keyboard.press("Shift+End");
+      for (const [label, doc] of [
+        ["Numbered list", "1. Pack\n   1. Charger"],
+        ["Checklist", "- [ ] Pack\n  - [ ] Charger"],
+      ] as const) {
+        const trigger = page.getByRole("button", { name: "Insert content", exact: true });
+        await (name === "phone" ? trigger.tap() : trigger.click());
+        const item = page.getByRole("menuitem", { name: new RegExp(`^${label}`) });
+        await (name === "phone" ? item.tap() : item.click());
+        const state = await read(page);
+        expect(state.doc).toBe(doc);
+        expect(state.hasFocus).toBe(true);
+        expect(state.head).toBe(doc.length);
+      }
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+});

@@ -14,6 +14,42 @@ const attachmentId = "00000000-0000-4000-8000-000000000003";
 const blobId = "00000000-0000-4000-8000-000000000004";
 
 describe("draft provider MIME", () => {
+  test("keeps Markdown quotes and code blocks in the HTML projection (#932)", async () => {
+    const content = draftProviderContentSchema.parse({
+      revision: 1,
+      senderIdentityId: "00000000-0000-4000-8000-000000000005",
+      from: { name: "Support", address: "support@example.com" },
+      replyTo: null,
+      to: [{ name: null, address: "alice@example.com" }],
+      cc: [],
+      bcc: [],
+      subject: "Quoted code",
+      body: "> quoted line\n> second\n\n```ts\nconst a = 1;\nconst b = 2;\n```",
+      format: "markdown",
+      inReplyTo: null,
+      references: [],
+      attachments: [],
+    });
+    const parsed = await simpleParser(
+      buildDraftProviderMimeStream({
+        snapshotId,
+        draftId,
+        content,
+        fingerprint: draftProviderFingerprint(content),
+        messageId: draftProviderMessageId(snapshotId),
+        date: new Date("2026-01-02T03:04:05.000Z"),
+        openAttachment: () => {
+          throw new Error("Unexpected attachment");
+        },
+      }),
+    );
+
+    expect(parsed.html).toContain("<blockquote>\n<p>quoted line<br />second</p>\n</blockquote>");
+    expect(parsed.html).toContain("<pre>const a = 1;\nconst b = 2;</pre>");
+    expect(parsed.html).not.toContain("<span>ts</span>");
+    expect(parsed.html).not.toContain(">ts<");
+  });
+
   test("preserves editable recipients and stable projection headers", async () => {
     const content = draftProviderContentSchema.parse({
       revision: 7,

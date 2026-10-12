@@ -205,6 +205,20 @@ export const mailingListDispositionInputSchema = z
   .strict();
 export type MailingListDispositionInput = z.infer<typeof mailingListDispositionInputSchema>;
 
+export const senderDispositionInputSchema = z
+  .object({
+    match: z.enum(["sender", "domain"]),
+    value: z.string().trim().min(1).max(320),
+    destination: z.enum(["archive", "trash"]).optional(),
+    folderId: ResourceShortIdSchema.optional(),
+    idempotencyKey: z.string().uuid(),
+  })
+  .strict()
+  .refine((input) => (input.destination !== undefined) !== (input.folderId !== undefined), {
+    message: "Choose exactly one destination or folderId",
+  });
+export type SenderDispositionInput = z.infer<typeof senderDispositionInputSchema>;
+
 export const mailingListDispositionResultSchema = z
   .object({
     commandCount: z.number().int().nonnegative(),
@@ -2147,15 +2161,6 @@ export const automaticReplyPreviewInputSchema = z
   });
 export type AutomaticReplyPreviewInput = z.infer<typeof automaticReplyPreviewInputSchema>;
 
-export const automaticReplyPreviewSchema = z
-  .object({
-    subject: z.string(),
-    html: z.string(),
-    text: z.string(),
-  })
-  .strict();
-export type AutomaticReplyPreview = z.infer<typeof automaticReplyPreviewSchema>;
-
 export const createAutomaticReplySetupSchema = z
   .object({
     automaticReply: createAutomaticReplyConfigurationSchema,
@@ -2196,14 +2201,14 @@ export type SenderMatchKind = z.infer<typeof senderMatchKindSchema>;
 export const mailAutomationMatchModeSchema = z.enum(["all", "any"]);
 export type MailAutomationMatchMode = z.infer<typeof mailAutomationMatchModeSchema>;
 
-export const mailAutomationTextOperatorSchema = z.enum(["is", "contains", "starts_with", "ends_with"]);
+export const mailAutomationTextOperatorSchema = z.enum(["is", "contains", "not_contains", "starts_with", "ends_with"]);
 export type MailAutomationTextOperator = z.infer<typeof mailAutomationTextOperatorSchema>;
 
 const mailAutomationTextValueSchema = z.string().trim().min(1).max(1_000);
 
 export const mailAutomationConditionSchema = z.discriminatedUnion("field", [
-  z.object({ field: z.literal("sender_address"), operator: z.literal("is"), value: z.string().trim().min(1).max(320) }).strict(),
-  z.object({ field: z.literal("sender_domain"), operator: z.literal("is"), value: z.string().trim().min(1).max(253) }).strict(),
+  z.object({ field: z.literal("sender_address"), operator: z.enum(["is", "is_not"]), value: z.string().trim().min(1).max(320) }).strict(),
+  z.object({ field: z.literal("sender_domain"), operator: z.enum(["is", "is_not"]), value: z.string().trim().min(1).max(253) }).strict(),
   z.object({ field: z.literal("subject"), operator: mailAutomationTextOperatorSchema, value: mailAutomationTextValueSchema }).strict(),
   z.object({ field: z.literal("body_text"), operator: mailAutomationTextOperatorSchema, value: mailAutomationTextValueSchema }).strict(),
   z.object({ field: z.literal("attachment_presence"), operator: z.literal("is"), value: z.boolean() }).strict(),
@@ -2532,9 +2537,9 @@ const addAutomationStepIssues = (steps: MailAutomationStep[], context: z.Refinem
   };
   visit(steps, new Map(), ["steps"], 0);
 
-  type ActionState = { providerMutation: boolean; assigned: boolean; statusSet: boolean; summarySet: boolean; tagIds: Set<string> };
+  type ActionState = { placed: boolean; assigned: boolean; statusSet: boolean; summarySet: boolean; tagIds: Set<string> };
   const actionStateKey = (state: ActionState): string =>
-    `${state.providerMutation}:${state.assigned}:${state.statusSet}:${state.summarySet}:${[...state.tagIds].sort().join(",")}`;
+    `${state.placed}:${state.assigned}:${state.statusSet}:${state.summarySet}:${[...state.tagIds].sort().join(",")}`;
   const uniqueStates = (states: ActionState[]): ActionState[] => [
     ...new Map(states.map((state) => [actionStateKey(state), state])).values(),
   ];
@@ -2545,11 +2550,10 @@ const addAutomationStepIssues = (steps: MailAutomationStep[], context: z.Refinem
       if (step.kind === "mail_action") {
         const providerMutation = ["junk", "trash", "mark_read", "add_keyword", "move_to_folder"].includes(step.action.kind);
         for (const state of states) {
-          if (providerMutation && state.providerMutation) {
+          if (providerMutation && state.placed) {
             context.addIssue({
               code: "custom",
-              message:
-                "Another step on this path already changes the message on the provider; keep one, or put them in the then and else branches of one if",
+              message: "Put Mark as read and keyword changes before moving the message; one reachable path can move only once",
               path: [...stepPath, "action"],
             });
           }
@@ -2569,7 +2573,7 @@ const addAutomationStepIssues = (steps: MailAutomationStep[], context: z.Refinem
         }
         states = uniqueStates(
           states.map((state) => ({
-            providerMutation: state.providerMutation || providerMutation,
+            placed: state.placed || ["junk", "trash", "move_to_folder"].includes(step.action.kind),
             assigned: state.assigned || step.action.kind === "assign_user",
             statusSet: state.statusSet || step.action.kind === "set_status",
             summarySet: state.summarySet,
@@ -2598,11 +2602,7 @@ const addAutomationStepIssues = (steps: MailAutomationStep[], context: z.Refinem
     });
     return states;
   };
-  validateActionPaths(
-    steps,
-    [{ providerMutation: false, assigned: false, statusSet: false, summarySet: false, tagIds: new Set() }],
-    ["steps"],
-  );
+  validateActionPaths(steps, [{ placed: false, assigned: false, statusSet: false, summarySet: false, tagIds: new Set() }], ["steps"]);
 
   if (total > 40) context.addIssue({ code: "custom", message: "An automation can have at most 40 steps", path: ["steps"] });
   if (aiCalls > 10) context.addIssue({ code: "custom", message: "An automation can make at most 10 AI calls", path: ["steps"] });
@@ -2824,6 +2824,16 @@ export const composeFormattingWarningSchema = z.discriminatedUnion("code", [
 ]);
 export type ComposeFormattingWarning = z.infer<typeof composeFormattingWarningSchema>;
 export const composeFormattingWarningsSchema = z.array(composeFormattingWarningSchema).max(MAX_COMPOSE_FORMATTING_WARNINGS);
+
+export const automaticReplyPreviewSchema = z
+  .object({
+    subject: z.string(),
+    html: z.string(),
+    text: z.string(),
+    formattingWarnings: composeFormattingWarningsSchema,
+  })
+  .strict();
+export type AutomaticReplyPreview = z.infer<typeof automaticReplyPreviewSchema>;
 
 export const composeTemplateKindSchema = z.enum(["signature", "snippet"]);
 export type ComposeTemplateKind = z.infer<typeof composeTemplateKindSchema>;
