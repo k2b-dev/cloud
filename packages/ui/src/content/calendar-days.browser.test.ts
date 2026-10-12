@@ -61,6 +61,7 @@ window.checks = [];
 window.visible = [];
 window.setDate = setDate;
 window.setRange = (from, to) => batch(() => { setFrom(from); setTo(to); });
+window.removeEvent = (id) => setItems((current) => current.filter((event) => event.id !== id));
 const dateKey = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Berlin", year: "numeric", month: "2-digit", day: "2-digit" });
 let gates = [];
 let earlier = 0;
@@ -143,7 +144,7 @@ const phone: BrowserContextOptions = {
   hasTouch: true,
 };
 
-type Options = { view?: "day" | "week"; date?: string; events?: CalendarEvent[] };
+type Options = { view?: "day" | "week"; date?: string; events?: CalendarEvent[]; runningClock?: boolean };
 type Fixture = {
   fixtureOptions: Options;
   dispose: () => void;
@@ -154,12 +155,14 @@ type Fixture = {
   visible: string[];
   setDate: (value: string) => void;
   setRange: (from: string, to: string) => void;
+  removeEvent: (id: string) => void;
   release: () => number;
 };
 
 const open = async (context: BrowserContextOptions, options: Options = {}): Promise<Page> => {
   const page = await browser.newPage({ ...context, timezoneId: "Europe/Berlin", reducedMotion: "reduce" });
-  await page.clock.setFixedTime(new Date("2026-10-09T08:48:00Z"));
+  if (options.runningClock) await page.clock.install({ time: new Date("2026-10-09T08:48:00Z") });
+  else await page.clock.setFixedTime(new Date("2026-10-09T08:48:00Z"));
   await page.setContent(
     `<!doctype html><html lang="en"><head><title>Calendar days</title><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style>` +
       "<style>html, body { margin: 0 } #host { height: calc(100vh - 44px); display: flex; flex-direction: column } #host > * { flex: 1 } #tray { margin: 0; padding: 0 16px } #tray li { height: 44px; display: flex; align-items: center }</style></head>" +
@@ -231,6 +234,104 @@ const dayStart = (page: Page, key: string) =>
   );
 
 describe(`Calendar day and week views in ${browserName}`, () => {
+  test("the day view keeps a focused event when the clock updates its free time", async () => {
+    const page = await open(desktop, { runningClock: true });
+    try {
+      const event = page.locator('[data-calendar-body="2026-10-09"] [data-calendar-entry="planning"] .k2b-calendar-event');
+      await event.focus();
+      await event.evaluate((element) => element.setAttribute("data-mark", "1"));
+      await page.clock.runFor(120_000);
+      await page.waitForFunction(() => document.querySelector(".k2b-calendar-now__time")?.textContent === "10:50");
+      expect(
+        await page.evaluate(() => {
+          const active = document.activeElement;
+          return active instanceof HTMLElement && active.isConnected && active.dataset.mark === "1";
+        }),
+      ).toBe(true);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  test("Tab from the header enters the day on screen without changing the scroll position", async () => {
+    const page = await open(desktop);
+    try {
+      const top = await dayStart(page, "2026-10-13");
+      await page.locator(DAYS).evaluate((element, top) => {
+        element.scrollTop = top;
+      }, top);
+      await page.waitForFunction('window.visible.at(-1) === "2026-10-13"');
+      const before = await scrollTop(page, DAYS);
+      // The view switcher is the last stop of the header before the days.
+      await page.locator('.k2b-calendar-header .k2b-segmented-control__option[tabindex="0"]').focus();
+      await page.keyboard.press("Tab");
+      await page.waitForFunction((before) => {
+        const scroller = document.querySelector(".k2b-calendar-days__scroll");
+        const day = scroller?.querySelector('[data-calendar-keys="2026-10-13"]');
+        return Boolean(scroller && Math.abs(scroller.scrollTop - before) <= 1 && day?.contains(document.activeElement));
+      }, before);
+      expect(Math.abs((await scrollTop(page, DAYS)) - before)).toBeLessThanOrEqual(1);
+      expect(await page.locator('[data-calendar-keys="2026-10-13"]').evaluate((day) => day.contains(document.activeElement))).toBe(true);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  test("the week gives its tab stop and lost focus to a heading when the focused event leaves", async () => {
+    const page = await open(desktop, { view: "week" });
+    try {
+      const event = page.locator('[data-calendar-body="2026-10-07"] [data-calendar-entry="review"] .k2b-calendar-event');
+      // Focus itself sets the grid's tab stop to this entry.
+      await event.focus();
+      expect(await event.getAttribute("tabindex")).toBe("0");
+      await page.evaluate('window.removeEvent("review")');
+      await page.waitForFunction(() => {
+        const scroller = document.querySelector(".k2b-calendar-week__scroll");
+        const tabStops = [...(scroller?.querySelectorAll<HTMLElement>("[data-stop]") ?? [])].filter((stop) => stop.tabIndex === 0);
+        const active = document.activeElement;
+        return (
+          tabStops.length === 1 && active instanceof HTMLElement && active.dataset.stop?.startsWith("h:") && scroller?.contains(active)
+        );
+      });
+      expect(
+        await page
+          .locator(`${WEEK} [data-stop]`)
+          .evaluateAll((stops) => stops.filter((stop) => stop instanceof HTMLElement && stop.tabIndex === 0).length),
+      ).toBe(1);
+      expect(await page.evaluate(() => document.activeElement?.matches('[data-stop^="h:"]'))).toBe(true);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  test("a checkable all-day bar in the week has a checkbox and Space checks it off", async () => {
+    const page = await open(desktop, {
+      view: "week",
+      date: "2026-10-09",
+      events: [{ id: "audit", title: "Audit", start: "2026-10-06", end: "2026-10-09", allDay: true, checked: false, colorHex: "#f59e0b" }],
+    });
+    try {
+      const slot = page.locator(".k2b-calendar-week__slot").filter({ hasText: "Audit" });
+      const checkbox = slot.getByRole("checkbox", { name: "Done: Audit", exact: true });
+      await checkbox.waitFor();
+      expect(await checkbox.getAttribute("aria-checked")).toBe("false");
+      // The end is exclusive: the bar covers October 6, 7, and 8.
+      expect(
+        await slot.evaluate((element) => {
+          const style = getComputedStyle(element);
+          return Number(style.gridColumnEnd) - Number(style.gridColumnStart);
+        }),
+      ).toBe(3);
+      await slot.locator(".k2b-calendar-event").focus();
+      await page.keyboard.press("Space");
+      await page.waitForFunction('JSON.stringify(window.checks) === JSON.stringify([["audit", true]])');
+      expect(await page.evaluate<Fixture["checks"]>("window.checks")).toEqual([["audit", true]]);
+      expect(await checkbox.getAttribute("aria-checked")).toBe("true");
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
   test("a finger that holds a task while the calendar goes away starts no drag", async () => {
     const page = await open(phone);
     try {

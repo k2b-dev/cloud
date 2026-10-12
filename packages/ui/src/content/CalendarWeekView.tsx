@@ -479,6 +479,23 @@ export const CalendarWeekView = (props: TimeViewProps) => {
   };
   const rovingId = () => roving() || `h:${focusDayKey()}`;
   const tabOf = (id: string) => (rovingId() === id ? 0 : -1);
+  // An entry that leaves the days gives the grid's tab stop back to a heading after the page has updated.
+  createEffect(
+    on(
+      view.days,
+      () => {
+        queueMicrotask(() => {
+          if (!scroller || !roving()) return;
+          if ([...scroller.querySelectorAll<HTMLElement>("[data-stop]")].some((stop) => stop.dataset.stop === roving())) return;
+          setRoving("");
+          if (!document.activeElement || document.activeElement === document.body) {
+            scroller.querySelector<HTMLElement>(`[data-stop="h:${focusDayKey()}"]`)?.focus({ preventScroll: true });
+          }
+        });
+      },
+      { defer: true },
+    ),
+  );
   const onKeyDown = (event: KeyboardEvent) => {
     const current = event.target instanceof HTMLElement ? event.target.closest<HTMLElement>("[data-stop]") : null;
     if (!current || event.altKey || event.metaKey || event.ctrlKey) return;
@@ -706,6 +723,7 @@ export const CalendarWeekView = (props: TimeViewProps) => {
                       {(bar) => {
                         const span = bar.endColumn - bar.startColumn + 1;
                         const event = bar.item.item;
+                        const checked = () => view.checkedOf(event);
                         const hint = (target: string, kind: "from" | "until", before = "") => {
                           const text =
                             kind === "from"
@@ -722,12 +740,19 @@ export const CalendarWeekView = (props: TimeViewProps) => {
                         return (
                           <div
                             class="k2b-calendar-week__slot"
+                            data-checkbox={checked() !== undefined ? "true" : undefined}
+                            data-checked={checked() ? "true" : undefined}
+                            data-just-checked={view.justChecked().has(event.id) ? "true" : undefined}
                             style={{
                               "grid-column": `${week.offset + bar.startColumn + 1} / ${week.offset + bar.endColumn + 2}`,
                               "grid-row": String(bar.lane + 1),
+                              "--k2b-calendar-accent": eventAccent(event),
                               display: bar.lane + 1 > allDayRows() ? "none" : undefined,
                             }}
                           >
+                            <Show when={checked() !== undefined}>
+                              <TimeCheck view={view} event={event} tabIndex={-1} />
+                            </Show>
                             <EventChip
                               event={view.normalized(event, bar.item.firstKey)}
                               owner={props.owner}
@@ -736,6 +761,8 @@ export const CalendarWeekView = (props: TimeViewProps) => {
                               compact
                               timeline
                               bar
+                              checkbox={checked() !== undefined}
+                              onCheck={view.checkOf(event)}
                               continuesBefore={bar.continuesBefore}
                               continuesAfter={bar.continuesAfter}
                               hintStart={start()}

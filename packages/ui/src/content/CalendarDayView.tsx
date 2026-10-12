@@ -463,7 +463,10 @@ export const CalendarDayView = (props: TimeViewProps) => {
   let tabbedAt = -1e9;
   onMount(() => {
     const note = (event: KeyboardEvent) => {
-      if (event.key === "Tab") tabbedAt = performance.now();
+      if (event.key === "Tab") {
+        tabbedAt = performance.now();
+        if (scroller) restingTop = scroller.scrollTop;
+      }
     };
     window.addEventListener("keydown", note, true);
     onCleanup(() => window.removeEventListener("keydown", note, true));
@@ -476,13 +479,15 @@ export const CalendarDayView = (props: TimeViewProps) => {
       restingTop = scroller.scrollTop;
       return;
     }
-    if (Math.abs(scroller.scrollTop - restingTop) < 1) return;
-    scroller.scrollTop = restingTop;
+    // Undo the scroll to the focused stop, which some engines make before this runs and some after; a stop on screen
+    // keeps the focus.
+    if (Math.abs(scroller.scrollTop - restingTop) >= 1) scroller.scrollTop = restingTop;
     const bounds = scroller.getBoundingClientRect();
     const visible = (element: Element) => {
       const rect = element.getBoundingClientRect();
       return rect.height > 0 && rect.top >= bounds.top - 1 && rect.bottom <= bounds.bottom + 1;
     };
+    if (event.target instanceof Element && visible(event.target)) return;
     const stops = [...scroller.querySelectorAll<HTMLElement>("a[href],button:not([tabindex='-1'])")].filter(visible);
     const back = Boolean(from && scroller.compareDocumentPosition(from) & Node.DOCUMENT_POSITION_FOLLOWING);
     (back ? stops[stops.length - 1] : stops[0])?.focus({ preventScroll: true });
@@ -572,13 +577,41 @@ const DaySection = (props: {
       to: view.clock(DAY_MINUTES).slice(0, 2),
     });
 
-  // Gaps, bands, and markers in one time order, so Tab runs through the day as it reads.
-  const timeline = createMemo(() =>
-    [
-      ...gaps().map((gap) => ({ at: gap.start, kind: "gap" as const, gap })),
-      ...bands().map((band) => ({ at: Math.max(0, band.start), kind: "band" as const, band })),
-      ...markers().map((marker) => ({ at: marker.minute, kind: "marker" as const, marker })),
-    ].sort((left, right) => left.at - right.at),
+  // Gaps, bands, and markers in one time order, so Tab runs through the day as it reads. Unchanged rows keep their
+  // elements and focus when the clock updates the gaps.
+  const timeline = createMemo<
+    Array<
+      | { at: number; kind: "gap"; gap: ReturnType<typeof gaps>[number] }
+      | { at: number; kind: "band"; band: ReturnType<typeof bands>[number] }
+      | { at: number; kind: "marker"; marker: ReturnType<typeof markers>[number] }
+    >
+  >(
+    (previous) =>
+      [
+        ...gaps().map(
+          (gap) =>
+            previous.find(
+              (row) => row.kind === "gap" && row.gap.start === gap.start && row.gap.end === gap.end && row.gap.past === gap.past,
+            ) ?? { at: gap.start, kind: "gap" as const, gap },
+        ),
+        ...bands().map(
+          (band) =>
+            previous.find((row) => row.kind === "band" && row.band === band) ?? {
+              at: Math.max(0, band.start),
+              kind: "band" as const,
+              band,
+            },
+        ),
+        ...markers().map(
+          (marker) =>
+            previous.find((row) => row.kind === "marker" && row.marker === marker) ?? {
+              at: marker.minute,
+              kind: "marker" as const,
+              marker,
+            },
+        ),
+      ].sort((left, right) => left.at - right.at),
+    [],
   );
 
   const isEmptyTarget = (target: EventTarget | null) =>
