@@ -32,12 +32,14 @@ person will use is a saved Studio App: it appears in their Studio Apps, and
 they can reopen, change and share it. Never answer such a request with a view
 or a one-off chat card.
 
-A small app has one screen and no shared data or uploaded files, such as a
-calculator, unit converter, tip calculator or timer. Build it in one pass:
+A small tool has one screen and keeps at most the person's own settings or
+history: no list of records, no PDF, no uploaded file and no data shared with
+others. Examples are a calculator, unit converter, tip calculator or timer.
+Build it in one pass:
 
 1. Load `code_create`, `code_write`, `code_check` and `code_open` with one
-   `load_tools` call if they are not loaded yet. Read no references and run no exploratory
-   code.
+   `load_tools` call if they are not loaded yet. Read no references and run no
+   exploratory code.
 2. Call `code_create({title, icon, html, steps})` once with the complete app:
    one `index.html` with its script in `<script type="module">` and its CSS in
    `<style>`, plus its `steps.json`.
@@ -73,11 +75,14 @@ The single file follows these rules:
   `click`, `check`, `uncheck`, `fill`, `select`, `press`, `upload` and
   `reload`; targets are `{role,name}`, `{label}` or `{text}`.
 
-Records that several people add or see, such as a team form or a shared list,
-need a table: create it with `code_database` before the check and write rows
-with `cloud.db`; read [Database](references/database.md). `cloud.kv.user` keeps
-data only for the person who entered it. For anything larger, such as uploaded
-files or PDFs, read Source workflow and the closest complete example first.
+Every other app, such as one with records, several people, a PDF or an
+uploaded file, is not a small tool: first read [HTML apps](references/apps.md),
+[Source workflow](references/source-workflow.md) and the closest complete
+[example](references/examples.md), plus the references it uses,
+such as [Database](references/database.md) for records several people add or
+see and [PDF generation](references/pdf.md) for a PDF. Then create it with its
+first `html` and `steps` the same way. `cloud.kv.user` keeps data only for the
+person who entered it.
 
 ## Start from the contract
 
