@@ -248,9 +248,27 @@ afterAll(async () => {
   server?.stop(true);
 });
 
-const pageHtml = (scenario: Scenario, theme: "light" | "dark") =>
+type PointerEnvironment = { hover: string; "any-hover": string; pointer: string; "any-pointer": readonly string[] };
+const tabletWithMouse: PointerEnvironment = { hover: "none", "any-hover": "hover", pointer: "coarse", "any-pointer": ["coarse", "fine"] };
+
+// Neither engine emulates a touch primary pointer with a hovering secondary one, so the stylesheet answers the
+// pointer media queries itself, as in @k2b/ui's row-action-reveal browser test.
+const pointerCss = (source: string, environment: PointerEnvironment) =>
+  source.replace(/\((hover|any-hover|pointer|any-pointer)\s*:\s*(hover|none|fine|coarse)\)/g, (_, feature: string, value: string) => {
+    const matches =
+      feature === "any-pointer"
+        ? environment["any-pointer"].some((pointer) => pointer === value)
+        : feature === "hover"
+          ? environment.hover === value
+          : feature === "any-hover"
+            ? environment["any-hover"] === value
+            : environment.pointer === value;
+    return matches ? "(min-width:0)" : "(max-width:0)";
+  });
+
+const pageHtml = (scenario: Scenario, theme: "light" | "dark", pointer?: PointerEnvironment) =>
   `<!doctype html><html lang="${scenario.locale}" class="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
-  `<link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><style>${css}</style>` +
+  `<link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><style>${pointer ? pointerCss(css, pointer) : css}</style>` +
   "<style>solid-client,solid-island{display:contents}</style></head>" +
   // The workspace main area: a padded flex column the route fills.
   `<body class="k2b-ui" style="margin:0"><main style="display:flex;flex-direction:column;height:100dvh;box-sizing:border-box;padding:var(--ui-space-shell)">${serverBody(scenario)}</main>` +
@@ -259,11 +277,16 @@ const pageHtml = (scenario: Scenario, theme: "light" | "dark") =>
 let caseCounter = 0;
 type View = { width: number; height: number; touch: boolean };
 const phone: View = { width: 390, height: 844, touch: true };
+const tablet: View = { width: 820, height: 1180, touch: true };
 const desktop: View = { width: 1280, height: 800, touch: false };
 
-const open = async (view: View, scenario: Scenario, options: { javaScript?: boolean; theme?: "light" | "dark" } = {}) => {
+const open = async (
+  view: View,
+  scenario: Scenario,
+  options: { javaScript?: boolean; theme?: "light" | "dark"; pointer?: PointerEnvironment } = {},
+) => {
   const id = `case${++caseCounter}`;
-  pages.set(id, pageHtml(scenario, options.theme ?? "light"));
+  pages.set(id, pageHtml(scenario, options.theme ?? "light", options.pointer));
   const context = await browser.newContext({
     viewport: { width: view.width, height: view.height },
     isMobile: view.touch,
@@ -337,7 +360,206 @@ const cardsIn = (page: Page, key: string) =>
     .locator(`[data-spaces-kanban-column="${key}"] [data-spaces-kanban-card]`)
     .evaluateAll((cards) => cards.map((card) => (card as HTMLElement).dataset.itemId));
 
+const cardControls = (page: Page, title: string) =>
+  page
+    .locator("article")
+    .filter({ hasText: title })
+    .evaluate((article) => {
+      const box = (element: Element) => {
+        const { x, y, width, height, top, right } = element.getBoundingClientRect();
+        return { x, y, width, height, top, right };
+      };
+      const control = (selector: string) => {
+        const button = article.querySelector(selector);
+        if (!button) throw new Error(`Missing card control: ${selector}`);
+        let opacity = 1;
+        for (let node: Element | null = button; node; node = node === article ? null : node.parentElement) {
+          opacity *= Number(getComputedStyle(node).opacity);
+        }
+        const rect = box(button);
+        const horizontalReach = (44 - rect.width) / 2 - 2;
+        const verticalReach = (44 - rect.height) / 2 - 2;
+        return {
+          opacity,
+          box: rect,
+          horizontalReach,
+          verticalReach,
+          leftHit: document.elementFromPoint(rect.x - horizontalReach, rect.y + rect.height / 2)?.closest(selector) === button,
+          // Above, not below: on a one-line card the claim button's area, which paints later, takes the strip below the grip.
+          topHit: document.elementFromPoint(rect.x + rect.width / 2, rect.y - verticalReach)?.closest(selector) === button,
+        };
+      };
+      return {
+        article: box(article),
+        border: {
+          top: Number.parseFloat(getComputedStyle(article).borderTopWidth),
+          right: Number.parseFloat(getComputedStyle(article).borderRightWidth),
+        },
+        grip: control("[data-dnd-card-handle]"),
+        claim: control("[data-spaces-claim-action]"),
+      };
+    });
+/** Hover and focus fade the controls in; wait until the fade has finished. */
+const settled = (page: Page) => page.evaluate(() => Promise.all(document.getAnimations().map((animation) => animation.finished)));
+const expectGripBox = (state: Awaited<ReturnType<typeof cardControls>>) => {
+  expect([state.grip.box.width, state.grip.box.height]).toEqual([20, 20]);
+  // Absolute offsets start inside the article's border.
+  expect(state.article.right - state.border.right - state.grip.box.right).toBe(6);
+  expect(state.grip.box.top - state.article.top - state.border.top).toBe(6);
+};
+const expectHitArea = (control: Awaited<ReturnType<typeof cardControls>>["grip"]) => {
+  expect(control.horizontalReach).toBeGreaterThanOrEqual(6);
+  expect(control.verticalReach).toBeGreaterThanOrEqual(6);
+  expect(control.leftHit).toBe(true);
+  expect(control.topHit).toBe(true);
+};
+
 describe("Spaces Kanban board in a browser", () => {
+  for (const [name, view] of [
+    ["phone", phone],
+    ["tablet", tablet],
+  ] as const) {
+    test(`${name}: touch-only card controls stay visible with larger hit areas and text still opens the item`, async () => {
+      const page = await open(view, { locale: "en" });
+      try {
+        const state = await cardControls(page, "Ask the bakery about a stand");
+        expect([state.grip.opacity, state.claim.opacity]).toEqual([1, 1]);
+        expectGripBox(state);
+        expectHitArea(state.grip);
+        expectHitArea(state.claim);
+        // Without the fixture's case parameter the item link differs from the page only in its item, so it opens in place.
+        await page.evaluate(() => history.replaceState(null, "", window.location.pathname));
+        const opening = page.evaluate(
+          () =>
+            new Promise<string>((resolve) => {
+              window.addEventListener(
+                "spaces-detail-navigation",
+                (event) => {
+                  if (!(event instanceof CustomEvent)) return;
+                  const detail: unknown = event.detail;
+                  if (typeof detail === "object" && detail !== null && "href" in detail && typeof detail.href === "string")
+                    resolve(detail.href);
+                },
+                { once: true },
+              );
+            }),
+        );
+        const text = await center(page.locator('[data-item-id="Item01"] p').first());
+        await page.touchscreen.tap(text.x, text.y);
+        expect(new URL(await opening, page.url()).searchParams.get("item")).toBe("Item01");
+      } finally {
+        await page.context().close();
+      }
+    }, 30_000);
+  }
+
+  test("desktop: card controls reveal on hover and focus while my release control stays visible", async () => {
+    const buckets = unfiltered().map((entry) => ({
+      ...entry,
+      items: entry.items.map((task) =>
+        task.id === "Item05"
+          ? {
+              ...task,
+              claim: {
+                id: "55555555-5555-4555-8555-555555555555",
+                actor: { kind: "user" as const, id: me.id },
+                displayName: me.displayName,
+                avatarHash: null,
+                claimedAt: "2026-10-01T08:00:00.000Z",
+              },
+            }
+          : task,
+      ),
+    }));
+    const page = await open(desktop, { locale: "en", buckets });
+    try {
+      const card = page.locator("article").filter({ hasText: "Ask the bakery about a stand" });
+      const rest = await cardControls(page, "Ask the bakery about a stand");
+      expect([rest.grip.opacity, rest.claim.opacity]).toEqual([0, 0]);
+      const released = await cardControls(page, "Collect insurance quotes");
+      expect(released.claim.opacity).toBe(1);
+      expect(await page.locator('[data-spaces-claim-action="release"]').count()).toBe(1);
+      await card.hover();
+      await settled(page);
+      const hovered = await cardControls(page, "Ask the bakery about a stand");
+      expect([hovered.grip.opacity, hovered.claim.opacity]).toEqual([1, 1]);
+      await page.mouse.move(1279, 799);
+      await settled(page);
+      const parked = await cardControls(page, "Ask the bakery about a stand");
+      expect([parked.grip.opacity, parked.claim.opacity]).toEqual([0, 0]);
+      await card.locator("[data-spaces-kanban-card]").focus();
+      await settled(page);
+      const focused = await cardControls(page, "Ask the bakery about a stand");
+      expect([focused.grip.opacity, focused.claim.opacity]).toEqual([1, 1]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("tablet with mouse: card controls reveal on focus and keep coarse-pointer hit areas", async () => {
+    const page = await open(tablet, { locale: "en" }, { pointer: tabletWithMouse });
+    try {
+      const rest = await cardControls(page, "Ask the bakery about a stand");
+      expect([rest.grip.opacity, rest.claim.opacity]).toEqual([0, 0]);
+      await page.locator('[data-item-id="Item02"]').focus();
+      await settled(page);
+      const focused = await cardControls(page, "Ask the bakery about a stand");
+      expect([focused.grip.opacity, focused.claim.opacity]).toEqual([1, 1]);
+      expectGripBox(focused);
+      expectHitArea(focused.grip);
+      expectHitArea(focused.claim);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  // Holding and moving a finger needs Chromium's input protocol: WebKit only supports whole taps.
+  test.skipIf(browserName === "webkit")(
+    "phone: a long-press on the visible grip moves a card to In progress",
+    async () => {
+      const page = await open(phone, { locale: "en" });
+      try {
+        moves.splice(0);
+        const state = await cardControls(page, "Ask the bakery about a stand");
+        expect(state.grip.opacity).toBe(1);
+        const board = page.locator('[role="region"]');
+        await board.evaluate((element) => {
+          element.scrollLeft = 140;
+        });
+        const from = await center(
+          page.locator("article").filter({ hasText: "Ask the bakery about a stand" }).locator("[data-dnd-card-handle]"),
+        );
+        const target = (await page.locator('[data-spaces-kanban-column="column:Col002"] article').first().boundingBox())!;
+        const to = { x: Math.min(target.x + target.width / 2, 360), y: target.y + target.height / 2 };
+        const cdp = await page.context().newCDPSession(page);
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [from] });
+        // dnd.create waits 120 ms on touch and needs 6 px of movement to activate.
+        await page.waitForTimeout(200);
+        for (let step = 1; step <= 20; step++) {
+          await cdp.send("Input.dispatchTouchEvent", {
+            type: "touchMove",
+            touchPoints: [
+              {
+                x: from.x + ((to.x - from.x) * step) / 20,
+                y: from.y + ((to.y - from.y) * step) / 20,
+              },
+            ],
+          });
+          await page.waitForTimeout(16);
+        }
+        const saved = page.waitForResponse((response) => response.url().endsWith("/items/Item02/move"));
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+        await saved;
+        expect(moves).toContainEqual(expect.objectContaining({ columnId: "Col002" }));
+        await page.waitForSelector('[data-spaces-kanban-column="column:Col002"] [data-item-id="Item02"]');
+        expect(await cardsIn(page, "column:Col002")).toContain("Item02");
+      } finally {
+        await page.context().close();
+      }
+    },
+    30_000,
+  );
+
   for (const [name, view] of [
     ["phone", phone],
     ["desktop", desktop],
