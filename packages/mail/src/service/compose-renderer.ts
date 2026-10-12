@@ -88,6 +88,8 @@ ul, ol { margin: 0 0 12px; padding-left: 24px; }
 table { border-collapse: collapse; margin: 12px 0; width: 100%; }
 th, td { border: 1px solid #d4d4d8; padding: 6px 8px; text-align: left; }
 code { background-color: #f4f4f5; border-radius: 3px; font-family: monospace; padding: 1px 3px; }
+blockquote { border-left: 3px solid #d4d4d8; color: #52525b; margin: 0 0 12px; padding-left: 12px; }
+pre { background-color: #f4f4f5; border-radius: 4px; font-family: monospace; margin: 0 0 12px; overflow-wrap: break-word; padding: 8px 12px; white-space: pre-wrap; }
 `.trim();
 
 const validateSelector = (selector: string): string | null => {
@@ -630,7 +632,7 @@ const sanitizedElements = (elements: HtmlElement[]): HtmlElement[] | null => {
 /**
  * Reports what the email renderer removes from HTML written into a Markdown body or template: unsupported
  * elements, attributes such as `class` and `style`, and link addresses it does not allow. Markdown images
- * are reported like `<img>`; other Markdown formatting that email leaves out, such as quote markers, is not.
+ * are reported like `<img>`; other Markdown formatting that email leaves out, such as strikethrough, is not.
  * The body is analyzed as written, so a draft, its preview, and a template with the same source report the
  * same list.
  */

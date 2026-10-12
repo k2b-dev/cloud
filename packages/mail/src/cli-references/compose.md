@@ -97,7 +97,7 @@ cld --json mail compose preview --draft-file draft.json
 
 Pass `--conversation <conversation-id>` when the compose context belongs to an existing conversation. `compose suggestions` accepts an empty query when its optional positional argument is omitted.
 
-Markdown bodies may contain simple HTML. Email keeps `a`, `br`, `code`, `div`, `em`, `h1`–`h3`, `li`, `ol`, `p`, `span`, `strong`, `ul`, and the table elements, and links to `http:`, `https:`, `mailto:`, and `tel:` addresses. A `tel:` address must hold a phone number, such as `tel:+49-731-000000`. Everything else is removed; text stays. Markdown images are removed too and reported as `img`. `compose preview`, `compose template create|update`, `draft create|update`, `reply`, and `forward` report what was removed in `formattingWarnings`:
+Markdown bodies may contain simple HTML. Email keeps `a`, `blockquote`, `br`, `code`, `div`, `em`, `h1`–`h3`, `li`, `ol`, `p`, `pre`, `span`, `strong`, `ul`, and the table elements, and links to `http:`, `https:`, `mailto:`, and `tel:` addresses. A `tel:` address must hold a phone number, such as `tel:+49-731-000000`. Markdown quotes and code blocks are kept, code blocks without their language label. Everything else is removed; text stays. Markdown images are removed too and reported as `img`. `compose preview`, `compose template create|update`, `draft create|update`, `reply`, and `forward` report what was removed in `formattingWarnings`:
 
 ```json
 {

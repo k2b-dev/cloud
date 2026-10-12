@@ -55,6 +55,20 @@ const renderCode = (source: string, language?: string): string => {
   return highlighter ? highlighter(source) : escapeHtml(source);
 };
 
+/**
+ * The label and diagram container need Cloud's styles and scripts; highlight spans only add to the email
+ * element budget. A bare `pre` lets the email design style blocks with `pre` and reserve `code` for inline code.
+ */
+export function plainCodeExtension(): MarkedExtension {
+  return {
+    renderer: {
+      code(token: Tokens.Code): string {
+        return `<pre>${escapeHtml(token.text)}</pre>\n`;
+      },
+    },
+  };
+}
+
 export function codeExtension(): MarkedExtension {
   return {
     renderer: {

@@ -188,6 +188,8 @@ anchor inside a link's text stays text. A Notebooks `note://` or `attach://`
 link renders as its text, because only Notebooks resolves it.
 Pass `{ links: "plain" }` when the HTML is read outside Cloud, for example in
 email. Each link then renders as an ordinary anchor around its text instead.
+Plain output also renders a fenced code block, including a Mermaid fence, as
+its source in a `pre`, without the language label or diagram.
 Email drops the screen-reader styling, so an
 untitled callout shows its type name there as text. HTML that Cloud renders
 without one reader's locale, such as notification batches, announcements, and
