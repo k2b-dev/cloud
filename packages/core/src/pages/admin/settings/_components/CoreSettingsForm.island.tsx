@@ -72,14 +72,14 @@ import { createMemo, createSignal, For, Index, type JSX, Show } from "solid-js";
 import ApprovalStatus from "../../../app-approval/ApprovalStatus";
 import type { ApprovalAvailability } from "../../../app-approval/availability";
 import { appApprovalMessages } from "../../../app-approval/messages";
-import CacheNotice from "../../CacheNotice.island";
+import CacheNotice from "../../CacheNotice";
 import { adminMessages } from "../../messages";
 import { settingsDocumentationHref } from "../documentation";
 import { accountSettingsSection } from "./account-settings";
 import { aiModelChoiceGroups, aiModelGroupFiltersFor } from "./ai-model-choice-groups";
 import { aiSettingsMessages } from "./ai-settings-messages";
 import DocumentationLink from "./DocumentationLink";
-import { LegacySettingsSection } from "./LegacySettingsPanel.island";
+import { LegacySettingsSection } from "./LegacySettingsSection";
 import { settingsMessages } from "./messages";
 import { localizeSettingField } from "./setting-copy";
 
