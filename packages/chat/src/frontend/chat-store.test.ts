@@ -265,3 +265,84 @@ test("a system event already in the SSR page still refreshes older SSR metadata"
   expect(store.openConversation?.messages).toEqual([system]);
   store.dispose();
 });
+
+const storeAt = (rev: number, api: Partial<ChatStoreApi>, sidebar = { items: [conversation], nextCursor: null as string | null }) => {
+  const connection = new ManualConnection();
+  const store = createChatStore(
+    { cursor: "before", sidebar, open: { conversation: { ...conversation, rev }, page: page(rev) } },
+    {
+      api: {
+        conversations: async () => sidebar,
+        conversation: async () => conversation,
+        messages: async () => page(rev),
+        changes: async () => ({ rev, more: false, conversation: null, messages: [] }),
+        ...api,
+      },
+      connection,
+    },
+  );
+  return { store, connection };
+};
+
+test("resync starts at the metadata revision when SSR read the details before the messages", async () => {
+  const afters: number[] = [];
+  const { store, connection } = storeAt(1, {
+    changes: async (_id, after) => {
+      afters.push(after);
+      return { rev: 2, more: false, conversation: { ...conversation, rev: 2, title: "Renamed" }, messages: [] };
+    },
+  });
+  store.open({ cursor: "before", conversation: { ...conversation, rev: 1 }, page: page(2) });
+  await connection.get("conversation").resync();
+  expect(afters).toEqual([1]);
+  expect(store.openConversation?.conversation?.title).toBe("Renamed");
+  expect(store.openConversation?.watermark).toBe(2);
+  store.dispose();
+});
+
+test("a restore to an older revision replaces messages and details", async () => {
+  const { store, connection } = storeAt(100, {
+    changes: async () => "RESYNC_REQUIRED",
+    messages: async () => page(5),
+    conversation: async () => ({ ...conversation, rev: 5, title: "Restored" }),
+  });
+  await connection.get("conversation").resync();
+  expect(store.openConversation?.watermark).toBe(5);
+  expect(store.openConversation?.messages).toEqual([message(5)]);
+  expect(store.openConversation?.conversation?.title).toBe("Restored");
+  store.dispose();
+});
+
+test("a late event the snapshot already covers does not add history before the loaded page", async () => {
+  const { store, connection } = storeAt(100, {});
+  await connection.get("conversation").apply({ type: "message", message: message(1) });
+  expect(store.openConversation?.messages).toEqual([message(100)]);
+  await connection.get("conversation").apply({ type: "message", message: message(101) });
+  expect(store.openConversation?.messages).toEqual([message(100), message(101)]);
+  store.dispose();
+});
+
+test("the sidebar keeps server order and only rows inside its loaded prefix", async () => {
+  const at = (ms: number) => new Date(Date.UTC(2026, 9, 12) + ms).toISOString();
+  // Same millisecond: the server ordered these by microseconds, which the browser cannot see.
+  const first = { ...conversation, id: "aaaaaa", lastActivityAt: at(10) };
+  const second = { ...conversation, id: "zzzzzz", lastActivityAt: at(10) };
+  const older = { ...conversation, id: "mmmmmm", rev: 7, lastActivityAt: at(1) };
+  const newer = { ...conversation, id: "nnnnnn", rev: 8, lastActivityAt: at(20) };
+  const { store, connection } = storeAt(
+    1,
+    { conversation: async (id) => (id === older.id ? older : newer) },
+    { items: [first, second], nextCursor: "more" },
+  );
+  expect(store.sidebar.map((row) => row.id)).toEqual(["aaaaaa", "zzzzzz"]);
+  const summary = (row: typeof older, kind: "text" | "system") => {
+    const data = chatLiveUpdates(row.id, { ...message(row.rev), conversationId: row.id, kind }, null, [])[1]!.data;
+    if (data.type !== "summary") throw new Error("Expected summary");
+    return { ...data, createdAt: row.lastActivityAt };
+  };
+  await connection.get("list").apply(summary(older, "system"));
+  expect(store.sidebar.map((row) => row.id)).toEqual(["aaaaaa", "zzzzzz"]);
+  await connection.get("list").apply(summary(newer, "text"));
+  expect(store.sidebar.map((row) => row.id)).toEqual(["nnnnnn", "aaaaaa", "zzzzzz"]);
+  store.dispose();
+});

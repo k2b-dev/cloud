@@ -53,10 +53,10 @@ suite("Chat live delivery on two replicas", () => {
   const f = messageFixtures();
   beforeAll(async () => {
     origin = publicCloudOrigin(await getSetting<string>("app.url"));
-    for (let i = 0; i < 2; i++) {
-      const routes = new Hono<AuthContext>().route("/api/chat/live", chatLive.routes(chatLiveChannels)).route("/api/chat", chatApi);
+    // Pod A serves the production router's own live route; pod B mounts a second engine, like another replica.
+    const replica = new Hono<AuthContext>().route("/api/chat/live", chatLive.routes(chatLiveChannels)).route("/api/chat", chatApi);
+    for (const routes of [new Hono<AuthContext>().route("/api/chat", chatApi), replica])
       pods.push(Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: routes.fetch, websocket }));
-    }
     stopOutbox = await startLiveOutbox("chat");
   });
   const open = async (pod: number, person: Person) => {

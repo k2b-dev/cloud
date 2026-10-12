@@ -77,7 +77,9 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
   const api = dependencies.api ?? createChatStoreApi();
   const connection = dependencies.connection ?? liveConnection("/api/chat/live");
   const listeners = new Set<() => void>();
-  let rows = new Map<string, Conversation>(snapshot.sidebar.items.map((row) => [row.id, row]));
+  // Rows stay in server order: a contiguous prefix of the sidebar, the whole list when `complete`.
+  let rows = [...snapshot.sidebar.items];
+  let complete = snapshot.sidebar.nextCursor === null;
   let liveStatus: "live" | "stopped" = "live";
   let disposed = false;
   let sidebarWork = Promise.resolve();
@@ -94,7 +96,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     chat.messages.clear();
     chat.subscription?.close();
     chat.subscription = null;
-    rows.delete(chat.view.id);
+    rows = rows.filter((row) => row.id !== chat.view.id);
     notify();
   };
   const stopped = () => {
@@ -104,15 +106,17 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
   const metadata = (chat: Current, conversation: Conversation) => {
     if (active(chat) && conversation.rev >= (chat.view.conversation?.rev ?? 0)) chat.view = { ...chat.view, conversation };
   };
+  // A message the watermark already covers is unknown only when it lies before the loaded history; skip it.
   const applyMessage = (chat: Current, message: Message) => {
     if (!active(chat) || message.conversationId !== chat.view.id) return;
     const known = chat.messages.get(message.id);
-    if (!known || message.rev > known.rev) chat.messages.set(message.id, message);
-    chat.view = {
-      ...chat.view,
-      watermark: Math.max(chat.view.watermark, message.rev),
-      messages: [...chat.messages.values()].sort((a, b) => a.seq - b.seq),
-    };
+    if (known ? message.rev > known.rev : message.rev > chat.view.watermark) chat.messages.set(message.id, message);
+    chat.view = { ...chat.view, watermark: Math.max(chat.view.watermark, message.rev) };
+  };
+  const publishMessages = (chat: Current) => {
+    if (!active(chat)) return;
+    chat.view = { ...chat.view, messages: [...chat.messages.values()].sort((a, b) => a.seq - b.seq) };
+    notify();
   };
   const refreshMetadata = async (chat: Current) => {
     const row = await api.conversation(chat.view.id);
@@ -124,16 +128,19 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     const page = await api.messages(chat.view.id);
     if (!active(chat)) return;
     if (page === null) return noAccess(chat);
-    await refreshMetadata(chat);
+    const conversation = await api.conversation(chat.view.id);
     if (!active(chat)) return;
+    if (conversation === null) return noAccess(chat);
+    // A restored chat can move back in revisions, so the replacement wins over the guard.
     chat.messages = new Map(page.items.map((message) => [message.id, MessageSchema.parse(message)]));
-    chat.view = { ...chat.view, watermark: page.rev, messages: [...chat.messages.values()] };
-    notify();
+    chat.view = { ...chat.view, conversation, watermark: page.rev };
+    publishMessages(chat);
   };
   const resyncConversation = async (chat: Current) => {
     let count = 0;
+    // Start at the older of messages and metadata: an SSR snapshot may have read them at different revisions.
+    let after = Math.min(chat.view.watermark, chat.view.conversation?.rev ?? 0);
     while (active(chat)) {
-      const after = chat.view.watermark;
       const delta = await api.changes(chat.view.id, after);
       if (!active(chat)) return;
       if (delta === null) return noAccess(chat);
@@ -142,9 +149,10 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
       if (delta.conversation) metadata(chat, delta.conversation);
       for (const message of delta.messages) applyMessage(chat, MessageSchema.parse(message));
       chat.view = { ...chat.view, watermark: Math.max(chat.view.watermark, delta.rev) };
-      notify();
+      publishMessages(chat);
       if (!delta.more) return;
-      if (chat.view.watermark <= after) throw new Error("Chat changes did not advance the watermark");
+      if (delta.rev <= after) throw new Error("Chat changes did not advance the watermark");
+      after = delta.rev;
     }
   };
   const open = (next: OpenChatSnapshot) => {
@@ -175,7 +183,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
             if (data.message.kind === "system") await refreshMetadata(chat);
             applyMessage(chat, data.message);
           }
-          notify();
+          publishMessages(chat);
         },
         resync: () => resyncConversation(chat),
         revoked: () => noAccess(chat),
@@ -200,20 +208,32 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
   const reloadSidebar = async () => {
     const page = await api.conversations();
     if (disposed) return;
-    rows = new Map(page.items.map((row) => [row.id, row]));
+    rows = [...page.items];
+    complete = page.nextCursor === null;
     notify();
   };
+  // Server order is last activity, then ID, both descending. A row that sorts after the loaded prefix stays out.
+  const place = (row: Conversation) => {
+    const rest = rows.filter((other) => other.id !== row.id);
+    const index = rest.findIndex(
+      (other) => row.lastActivityAt > other.lastActivityAt || (row.lastActivityAt === other.lastActivityAt && row.id > other.id),
+    );
+    if (index >= 0) rest.splice(index, 0, row);
+    else if (complete) rest.push(row);
+    rows = rest;
+  };
   const applySummary = async (summary: Summary) => {
-    const known = rows.get(summary.conversationId);
+    const known = rows.find((row) => row.id === summary.conversationId);
     if (known && summary.rev <= known.rev) return;
     if (!known || summary.kind === "system") {
       const row = await api.conversation(summary.conversationId);
       if (disposed) return;
       if (row === null) {
-        rows.delete(summary.conversationId);
+        rows = rows.filter((other) => other.id !== summary.conversationId);
         if (current?.view.id === summary.conversationId) noAccess(current);
-      } else rows.set(row.id, row);
-    } else rows.set(known.id, { ...known, rev: summary.rev, lastActivityAt: summary.createdAt });
+      } else if (known && row.lastActivityAt === known.lastActivityAt) rows = rows.map((other) => (other.id === row.id ? row : other));
+      else place(row);
+    } else place({ ...known, rev: summary.rev, lastActivityAt: summary.createdAt });
     notify();
   };
   subscriptions.push(
@@ -251,9 +271,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
   if (snapshot.open) open({ ...snapshot.open, cursor: snapshot.cursor });
   return {
     get sidebar(): readonly Conversation[] {
-      return [...rows.values()].sort(
-        (a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt) || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0),
-      );
+      return rows;
     },
     get openConversation(): OpenChat | null {
       return current?.view ?? null;
