@@ -244,6 +244,24 @@ const assertComposerInViewport = async (page: Page) => {
     fail(`phone composer escaped the visual viewport: ${JSON.stringify(bounds)}`);
 };
 
+/** Header and composer edges of the open chat; on WebKit, which has no Layout Instability API, these must not move. */
+const frameGeometry = (page: Page) =>
+  page.evaluate(() =>
+    [".chat-conversation__header", ".chat-conversation__composer"].map((selector) => {
+      const box = document.querySelector(selector)?.getBoundingClientRect();
+      if (!box) throw new Error(`${selector} is missing`);
+      return { selector, top: box.top, bottom: box.bottom, left: box.left, right: box.right };
+    }),
+  );
+const assertGeometryKept = async (page: Page, before: Awaited<ReturnType<typeof frameGeometry>>) => {
+  const after = await frameGeometry(page);
+  for (const [index, box] of after.entries()) {
+    const start = before[index]!;
+    if ((["top", "bottom", "left", "right"] as const).some((edge) => Math.abs(box[edge] - start[edge]) > 0.5))
+      fail(`phone ${box.selector} moved while messages arrived: ${JSON.stringify({ before: start, after: box })}`);
+  }
+};
+
 const runSmoke = async (fixture: Awaited<ReturnType<typeof createFixture>>) => {
   const desktop = await chromium.launch({ headless: !options.headed, timeout: TIMEOUT });
   try {
@@ -306,6 +324,7 @@ const runSmoke = async (fixture: Awaited<ReturnType<typeof createFixture>>) => {
             await assertComposerInViewport(personPage);
             // Layout Instability excludes the 500 ms after input. Let the phone become idle before arrivals.
             await personPage.waitForTimeout(600);
+            const phoneFrame = await frameGeometry(personPage);
             for (let index = 1; index <= 5; index += 1) {
               const text = `${theme} idle arrival ${index}`;
               messages.push(text);
@@ -313,6 +332,7 @@ const runSmoke = async (fixture: Awaited<ReturnType<typeof createFixture>>) => {
               await seeMessage(personPage, text);
               await settle(personPage);
               await assertComposerInViewport(personPage);
+              await assertGeometryKept(personPage, phoneFrame);
             }
             for (const page of [adminPage, personPage]) {
               for (const text of messages) await seeMessage(page, text);
@@ -327,10 +347,10 @@ const runSmoke = async (fixture: Awaited<ReturnType<typeof createFixture>>) => {
                 return { sum: state.sum, supported: state.supported };
               });
               if (shifts.sum !== 0) fail(`${theme} layout-shift sum was ${shifts.sum} at ${page.url()}`);
-              if (!shifts.supported) console.log("WebKit has no Layout Instability API; composer geometry checked instead.");
+              if (!shifts.supported) console.log("WebKit has no Layout Instability API; header and composer geometry checked instead.");
             }
             if (errors.length) fail(`browser errors:\n${errors.join("\n")}`);
-            ok(`${theme}: both people see all seven messages; phone composer stays in view; observed layout-shift sums are 0`);
+            ok(`${theme}: both people see all seven messages; phone header and composer stay in place; observed layout-shift sums are 0`);
           } finally {
             await person.close();
           }
