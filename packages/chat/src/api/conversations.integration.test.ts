@@ -91,6 +91,7 @@ suite("chat conversations and direct members", () => {
       JOIN chat.conversations c ON c.id = ca.conversation_id WHERE c.short_id = ANY(${toPgTextArray(conversations)}::text[])`
       : [];
     for (const shortId of conversations) {
+      await sql`DELETE FROM events.outbox WHERE app_id = 'chat' AND ordering_key IN (${"c:" + shortId}, ${"l:" + shortId})`;
       await sql`DELETE FROM audit.events WHERE target_type = 'chat_conversation' AND target_id = ${shortId}`;
       await sql`DELETE FROM chat.conversations WHERE short_id = ${shortId}`;
     }

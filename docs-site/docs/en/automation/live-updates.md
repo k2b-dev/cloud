@@ -353,7 +353,7 @@ Update Cloud Core first: its migration creates the outbox.
 ```
 
 Update Core before the applications that define live updates. Contacts,
-Spaces, Mail, and Grids are the built-in applications that do. Core defines
+Spaces, Mail, Grids, and Chat are the built-in applications that do. Core defines
 the AI live updates itself and starts publishing them after its migration.
 
 A replica that stops closes its sockets with `1012`, also those that open
