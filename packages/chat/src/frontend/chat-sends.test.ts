@@ -58,6 +58,8 @@ test("send is pending immediately; a failed send retries with the same identity 
   controller.retry(entry.clientId);
   expect(calls).toHaveLength(2);
   controller.forget(entry.clientId);
+  controller.forget(entry.clientId);
+  controller.forget("missing");
   expect(controller.sends("abcdef")).toEqual([]);
   expect(states).toEqual(["pending", "failed", "pending", "sent", "forgotten"]);
   controller.dispose();

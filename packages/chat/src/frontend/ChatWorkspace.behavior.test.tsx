@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../ui/test/dom";
-import { SendMessageSchema } from "../service/contracts";
+import { ChatSnapshotSchema, MessageViewSchema, SendMessageSchema } from "../service/contracts";
 import type { ChatWorkspaceProps } from "./ChatWorkspace.island";
 
 const load = async () => {
@@ -46,6 +46,19 @@ class FakeWebSocket {
   }
 }
 const settle = () => Bun.sleep(60);
+const message = (seq: number, body = `Message ${seq}`) =>
+  MessageViewSchema.parse({
+    id: String(seq).padStart(10, "0"),
+    conversationId: conversation.id,
+    seq,
+    rev: seq,
+    kind: "text",
+    author: { type: "user", id: viewerId, name: "Robin" },
+    body,
+    system: null,
+    systemText: null,
+    createdAt: now,
+  });
 
 describe("ChatWorkspace interactions", () => {
   if (isServer) {
@@ -60,11 +73,13 @@ describe("ChatWorkspace interactions", () => {
   const originalConsoleError = console.error;
   const consoleErrors: unknown[][] = [];
   const posted: { clientId: string; body: string }[] = [];
+  const snapshots = new Map<string, ReturnType<typeof ChatSnapshotSchema.parse>>();
   let answer: (response: Response) => void;
   beforeEach(() => {
     dom = createDomTestHarness();
     delegateEvents(["click", "input", "keydown"], dom.document);
     posted.length = 0;
+    snapshots.clear();
     consoleErrors.length = 0;
     console.error = (...args: unknown[]) => {
       consoleErrors.push(args);
@@ -76,7 +91,11 @@ describe("ChatWorkspace interactions", () => {
     const fetchChat = Object.assign(
       async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
-        if (url.pathname === "/api/chat/conversations/Chat01/snapshot") return Response.json({}, { status: 404 });
+        const snapshot = /^\/api\/chat\/conversations\/([^/]+)\/snapshot$/.exec(url.pathname);
+        if (snapshot) {
+          const body = snapshots.get(snapshot[1]!);
+          return body ? Response.json(ChatSnapshotSchema.parse(body)) : Response.json({}, { status: 404 });
+        }
         if (url.pathname === "/api/chat/conversations/Chat01/messages" && init?.method === "POST") {
           posted.push(SendMessageSchema.parse(JSON.parse(String(init.body))));
           return new Promise<Response>((resolve) => {
@@ -101,12 +120,12 @@ describe("ChatWorkspace interactions", () => {
     else Reflect.deleteProperty(globalThis, "WebSocket");
     dom.cleanup();
   });
-  const mount = async (open: boolean) => {
+  const mount = async (open: boolean, sidebar = [conversation]) => {
     const { ChatWorkspace, LocaleProvider } = modules!;
     dom.window.history.replaceState(null, "", open ? "/app/chat/c/Chat01" : "/app/chat");
     const props: ChatWorkspaceProps = {
       cursor: "c.0",
-      sidebar: { items: [conversation], nextCursor: null },
+      sidebar: { items: sidebar, nextCursor: null },
       open: open ? { conversation, page: { items: [], seqHead: 0, rev: 0 }, focus: null } : null,
       chatId: open ? conversation.id : null,
       viewerId,
@@ -185,6 +204,49 @@ describe("ChatWorkspace interactions", () => {
     // The open stayed in place: no document-navigation fallback.
     expect(consoleErrors).toEqual([]);
     expect(dom.window.history.state).toEqual({ chatFromList: true });
+  });
+  test("reopening the latest history does not append an older sent message", async () => {
+    const other = { ...conversation, id: "Chat02", title: "Other chat" };
+    snapshots.set(other.id, {
+      cursor: "c.109",
+      conversation: other,
+      page: { items: [{ ...message(109), conversationId: other.id }], seqHead: 109, rev: 109 },
+      focus: null,
+    });
+    await mount(true, [conversation, other]);
+    const field = dom.root.querySelector<HTMLTextAreaElement>('textarea:not([aria-hidden="true"])')!;
+    field.value = "hi";
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    button("Send message").click();
+    await settle();
+    expect(posted).toHaveLength(1);
+    answer(Response.json(message(1, "hi"), { status: 201 }));
+    await settle();
+    expect(dom.root.querySelector('.k2b-message-row[data-status="sent"]')?.textContent).toContain("hi");
+    dom.root.querySelector<HTMLAnchorElement>('a[href="/app/chat/c/Chat02"]')!.click();
+    await settle();
+    expect(dom.window.location.pathname).toBe("/app/chat/c/Chat02");
+    // Another chat's loaded sequence must not prune this chat's uncovered send.
+    snapshots.set(conversation.id, { cursor: "c.0", conversation, page: { items: [], seqHead: 0, rev: 0 }, focus: null });
+    dom.root.querySelector<HTMLAnchorElement>('a[href="/app/chat/c/Chat01"]')!.click();
+    await settle();
+    expect(dom.root.querySelector('.k2b-message-row[data-status="sent"]')?.textContent).toContain("hi");
+    dom.root.querySelector<HTMLAnchorElement>('a[href="/app/chat/c/Chat02"]')!.click();
+    await settle();
+    snapshots.set(conversation.id, {
+      cursor: "c.109",
+      conversation: { ...conversation, rev: 109 },
+      page: { items: Array.from({ length: 50 }, (_, index) => message(index + 60)), seqHead: 109, rev: 109 },
+      focus: null,
+    });
+    dom.root.querySelector<HTMLAnchorElement>('a[href="/app/chat/c/Chat01"]')!.click();
+    await settle();
+    expect(dom.window.location.pathname).toBe("/app/chat/c/Chat01");
+    const rows = [...dom.root.querySelectorAll(".k2b-message-row")];
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.some((row) => row.textContent?.includes("hi"))).toBe(false);
+    expect(rows.at(-1)?.textContent).toContain("Message 109");
+    expect(consoleErrors).toEqual([]);
   });
   // happy-dom has no viewport layout; the 120-message deep link is verified in the browser suite.
 });

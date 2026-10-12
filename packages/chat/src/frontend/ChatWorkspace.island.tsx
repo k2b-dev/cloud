@@ -100,13 +100,24 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const publishTrail = () =>
     layout.update({ breadcrumbs: breadcrumbs(route().chatId ? (conversation()?.title ?? t().noAccessTitle) : undefined) });
 
+  // A sent message the loaded history covers leaves the outbox; its stored row keeps the send's key.
+  const prune = () => {
+    const current = store?.openConversation;
+    if (!current || current.status === "no-access" || !outbox) return;
+    const lastSeq = current.messages.at(-1)?.seq ?? 0;
+    for (const send of outbox.sends(current.id)) {
+      if (!send.message) continue;
+      sendKeys.set(send.message.id, send.clientId);
+      if (send.status === "sent" && send.message.seq <= lastSeq) outbox.forget(send.clientId);
+    }
+  };
+
   const items = createMemo<readonly ChatFeedItem[]>((previous) => {
     const current = openChat();
     if (!current) return [];
     const cache = new Map(previous?.map((item) => [item.key, item]));
     sendsVersion();
     const own = outbox?.sends(current.id) ?? [];
-    for (const send of own) if (send.message) sendKeys.set(send.message.id, send.clientId);
     const stored = new Set(current.messages.map((message) => message.id));
     const reuse = (item: ChatFeedItem) => {
       const known = cache.get(item.key);
@@ -127,8 +138,10 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     });
     // Sends wait at the end of the newest history; a window further back shows them once the reader is there.
     if (!current.hasNewer) {
+      const lastSeq = current.messages.at(-1)?.seq ?? 0;
       for (const send of own) {
         if (send.message && stored.has(send.message.id)) continue;
+        if (send.status === "sent" && (!send.message || send.message.seq <= lastSeq)) continue;
         const status: MessageRowStatus = send.status;
         result.push(
           reuse({
@@ -218,6 +231,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     });
     store = live;
     const sync = () => {
+      prune();
       // The reader's own message moves its chat to the top: that is the reader's action, not a move under the pointer.
       const top = live.sidebar[0];
       const ownTop = top?.lastMessage?.author.id === props.viewerId && top.id === live.openConversation?.id && order()[0] !== top.id;
@@ -235,6 +249,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     const failed = new Set<string>();
     onCleanup(
       box.subscribe(() => {
+        prune();
         const current = route().chatId;
         for (const entry of current ? box.sends(current) : []) {
           if (entry.status === "failed" && !failed.has(entry.clientId)) announce(t().messageNotSent);
