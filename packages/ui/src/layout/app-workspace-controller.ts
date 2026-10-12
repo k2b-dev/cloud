@@ -95,8 +95,13 @@ const sidebarHideable = (root: HTMLElement) => sidebarElement(root)?.dataset.wor
 export const APP_WORKSPACE_SIDEBAR_HIDE_EVENT = "k2b-app-workspace-sidebar-hide";
 /** Asks the owning `AppWorkspace.Detail` to close; its `onClose` decides. */
 export const APP_WORKSPACE_DETAIL_CLOSE_EVENT = "k2b-app-workspace-detail-close";
-/** Asks the owning `AppWorkspace.Detail` for the previous or next item, as `detail.direction` of `-1` or `1`. */
+/**
+ * Asks the owning Detail to step by `detail.direction` (`-1` or `1`). It writes
+ * the Main element showing the selection to `detail.item`, read synchronously
+ * by the controller after dispatch.
+ */
 export const APP_WORKSPACE_DETAIL_STEP_EVENT = "k2b-app-workspace-detail-step";
+export type AppWorkspaceDetailStep = { direction: 1 | -1; item?: HTMLElement };
 const previewSidebarHidden = (root: HTMLElement, hidden: boolean) => {
   const sidebar = sidebarElement(root);
   if (!sidebar) return;
@@ -647,6 +652,36 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     slides.set(root, end);
     root.dataset.workspaceDetailSliding = "";
   };
+  const revealItem = (root: HTMLElement, aside: HTMLElement, snapshot: RememberedItem) => {
+    const pending = revealFrames.get(root);
+    if (pending !== undefined) cancelAnimationFrame(pending);
+    revealFrames.set(
+      root,
+      requestAnimationFrame(() => {
+        revealFrames.delete(root);
+        if (
+          !aside.hidden &&
+          aside.isConnected &&
+          snapshot.item.isConnected &&
+          mainElement(root)?.contains(snapshot.item) &&
+          snapshot.item.closest(ROOT_SELECTOR) === root
+        ) {
+          const behavior = reducedMotion?.matches ? "auto" : "smooth";
+          if (phone?.matches) {
+            const sheetTop = ownerWindow.innerHeight - aside.offsetHeight;
+            const overlap = snapshot.item.getBoundingClientRect().bottom - sheetTop + 8;
+            const main = mainElement(root);
+            if (overlap > 0 && main)
+              (verticalScroller(snapshot.item, main) ?? ownerDocument.scrollingElement)?.scrollBy({ top: overlap, behavior });
+          } else {
+            const cell = snapshot.cell;
+            const target = cell?.isConnected && mainElement(root)?.contains(cell) ? cell : snapshot.item;
+            target.scrollIntoView({ block: "nearest", inline: "nearest", behavior });
+          }
+        }
+      }),
+    );
+  };
   const detailTransition = (aside: HTMLElement, wasHidden: boolean) => {
     const root = aside.closest<HTMLElement>(ROOT_SELECTOR);
     detailHidden.set(aside, Boolean(aside.hidden));
@@ -693,32 +728,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     anchorItem(root, aside, snapshot);
     if (phone?.matches) setDetent(aside, false);
     if (followedInteraction && snapshot) {
-      revealFrames.set(
-        root,
-        requestAnimationFrame(() => {
-          revealFrames.delete(root);
-          if (
-            !aside.hidden &&
-            aside.isConnected &&
-            snapshot.item.isConnected &&
-            mainElement(root)?.contains(snapshot.item) &&
-            snapshot.item.closest(ROOT_SELECTOR) === root
-          ) {
-            const behavior = reducedMotion?.matches ? "auto" : "smooth";
-            if (phone?.matches) {
-              const sheetTop = ownerWindow.innerHeight - aside.offsetHeight;
-              const overlap = snapshot.item.getBoundingClientRect().bottom - sheetTop + 8;
-              const main = mainElement(root);
-              if (overlap > 0 && main)
-                (verticalScroller(snapshot.item, main) ?? ownerDocument.scrollingElement)?.scrollBy({ top: overlap, behavior });
-            } else {
-              const cell = snapshot.cell;
-              const target = cell?.isConnected && mainElement(root)?.contains(cell) ? cell : snapshot.item;
-              target.scrollIntoView({ block: "nearest", inline: "nearest", behavior });
-            }
-          }
-        }),
-      );
+      revealItem(root, aside, snapshot);
       if (snapshot.interaction === "keyboard" || phone?.matches) requestTitle(aside);
     }
   };
@@ -743,11 +753,33 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     const owningRoot = aside?.closest<HTMLElement>(ROOT_SELECTOR);
     if (!aside || !owningRoot) return;
     if (event.key === "Escape" && closable(aside)) requestClose(aside);
-    else if ((event.key.toLowerCase() === "j" || event.key.toLowerCase() === "k") && aside.hasAttribute("data-workspace-detail-steppable"))
-      aside.dispatchEvent(
-        new CustomEvent(APP_WORKSPACE_DETAIL_STEP_EVENT, { detail: { direction: event.key.toLowerCase() === "j" ? 1 : -1 } }),
-      );
-    else if (event.key === "F6") {
+    else if (
+      (event.key.toLowerCase() === "j" || event.key.toLowerCase() === "k") &&
+      aside.hasAttribute("data-workspace-detail-steppable")
+    ) {
+      const main = mainElement(owningRoot);
+      const inMain = remembered.get(owningRoot)?.item.contains(target) || main?.contains(target);
+      const inPanel = aside.contains(target);
+      const detail: AppWorkspaceDetailStep = { direction: event.key.toLowerCase() === "j" ? 1 : -1 };
+      aside.dispatchEvent(new CustomEvent(APP_WORKSPACE_DETAIL_STEP_EVENT, { detail }));
+      const item = detail.item;
+      if (item instanceof HTMLElement && main?.contains(item) && item.closest(ROOT_SELECTOR) === owningRoot) {
+        const snapshot: RememberedItem = {
+          item,
+          cell: null,
+          interaction: "keyboard",
+          scroller: verticalScroller(item, main),
+          scrollTop: 0,
+          top: 0,
+          fresh: false,
+        };
+        refreshItem(snapshot);
+        remembered.set(owningRoot, snapshot);
+        revealItem(owningRoot, aside, snapshot);
+        if (inMain) item.focus({ preventScroll: true });
+        else if (inPanel) requestTitle(aside, true);
+      }
+    } else if (event.key === "F6") {
       if (aside.contains(target)) {
         const item = remembered.get(owningRoot)?.item;
         const main = mainElement(owningRoot);
