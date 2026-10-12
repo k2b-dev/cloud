@@ -20,7 +20,9 @@ export type ConversationRow = {
   icon: string | null;
   purpose: string | null;
   member_count: number;
-  seq_head: bigint;
+  seq_head: bigint | string;
+  rev: bigint | string;
+  changed_rev: bigint | string;
   created_at: Date;
   last_activity_at: Date;
 };

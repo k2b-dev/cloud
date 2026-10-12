@@ -25,6 +25,10 @@ test("publishes every conversation operation with typed request and response sch
     ["/conversations/{conversation}/members/{accessId}", "patch"],
     ["/conversations/{conversation}/members/{accessId}", "delete"],
     ["/conversations/{conversation}/leave", "post"],
+    ["/conversations/{conversation}/messages", "post"],
+    ["/conversations/{conversation}/messages", "get"],
+    ["/conversations/{conversation}/messages/{message}", "get"],
+    ["/conversations/{conversation}/changes", "get"],
   ] as const) {
     const operation = spec.paths[`/api/chat${path}`]?.[method];
     expect(operation).toBeDefined();
@@ -41,4 +45,11 @@ test("documents the request limiter's 429 body, which carries no code, on chat c
     .object({ content: z.object({ "application/json": z.object({ schema: z.object({ required: z.array(z.string()) }) }) }) })
     .parse(SpecSchema.parse(spec).paths["/api/chat/conversations"]?.post?.responses["429"]);
   expect(body.content["application/json"].schema.required).toEqual(["message"]);
+});
+
+test("documents message retry, creation, send limits and restore resync", async () => {
+  const spec = SpecSchema.parse(await generateSpecs(new Hono<AuthContext>().route("/api/chat", chatApi)));
+  const send = spec.paths["/api/chat/conversations/{conversation}/messages"]?.post;
+  for (const status of ["200", "201", "429"]) expect(send?.responses[status]).toBeDefined();
+  expect(spec.paths["/api/chat/conversations/{conversation}/changes"]?.get?.responses["409"]).toBeDefined();
 });

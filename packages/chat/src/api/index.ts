@@ -18,6 +18,8 @@ import { ChatHealthSchema, chatService } from "../service";
 import {
   AddMembersSchema,
   ChangeSchema,
+  ChangesPageSchema,
+  ChangesQuerySchema,
   ConversationPageSchema,
   ConversationParamSchema,
   ConversationQuerySchema,
@@ -28,6 +30,11 @@ import {
   MemberPageSchema,
   MemberParamSchema,
   MemberQuerySchema,
+  MessagePageSchema,
+  MessageParamSchema,
+  MessageQuerySchema,
+  MessageViewSchema,
+  SendMessageSchema,
   SuccessSchema,
   UpdateConversationSchema,
   UpdateMemberSchema,
@@ -108,6 +115,86 @@ const app = new Hono<AuthContext>()
           conversationId: c.req.valid("param").conversation,
           input: c.req.valid("json"),
         }),
+      ),
+  )
+  .post(
+    "/conversations/:conversation/messages",
+    describeRoute({
+      tags: ["Chat"],
+      summary: "Post a Markdown message",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(MessageViewSchema, "Idempotent retry"),
+        201: jsonResponse(MessageViewSchema, "Posted message"),
+        429: {
+          ...jsonResponse(
+            z.object({ code: z.literal("RATE_LIMITED").optional(), message: z.string() }),
+            "Send or request rate limit reached",
+          ),
+          headers: { "Retry-After": { description: "Seconds until retry", schema: { type: "integer", minimum: 1 } } },
+        },
+      },
+    }),
+    validator("param", ConversationParamSchema, invalidInput),
+    validator("json", SendMessageSchema, invalidInput),
+    async (c) => {
+      const result = await chatService.messages.send({
+        ...context(c),
+        conversationId: c.req.valid("param").conversation,
+        input: c.req.valid("json"),
+      });
+      if (!result.ok) {
+        if ("retryAfter" in result) c.header("Retry-After", String(result.retryAfter));
+        return respond(c, result);
+      }
+      return respond(c, ok(result.data.message), result.data.created ? 201 : 200);
+    },
+  )
+  .get(
+    "/conversations/:conversation/messages",
+    description("Page through chat history", MessagePageSchema),
+    validator("param", ConversationParamSchema, invalidInput),
+    validator("query", MessageQuerySchema, invalidInput),
+    async (c) =>
+      respond(
+        c,
+        chatService.messages.list({ ...context(c), conversationId: c.req.valid("param").conversation, query: c.req.valid("query") }),
+      ),
+  )
+  .get(
+    "/conversations/:conversation/messages/:message",
+    description("Read a message and its sequence position", MessageViewSchema),
+    validator("param", MessageParamSchema, invalidInput),
+    async (c) =>
+      respond(
+        c,
+        chatService.messages.get({
+          ...context(c),
+          conversationId: c.req.valid("param").conversation,
+          messageId: c.req.valid("param").message,
+        }),
+      ),
+  )
+  .get(
+    "/conversations/:conversation/changes",
+    describeRoute({
+      tags: ["Chat"],
+      summary: "Catch up with chat changes",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(ChangesPageSchema, "Changes and snapshot watermark"),
+        409: jsonResponse(
+          z.object({ code: z.literal("RESYNC_REQUIRED"), message: z.string() }),
+          "Watermark exceeds the restored chat head",
+        ),
+      },
+    }),
+    validator("param", ConversationParamSchema, invalidInput),
+    validator("query", ChangesQuerySchema, invalidInput),
+    async (c) =>
+      respond(
+        c,
+        chatService.messages.changes({ ...context(c), conversationId: c.req.valid("param").conversation, query: c.req.valid("query") }),
       ),
   )
   .get(
