@@ -65,6 +65,13 @@ test("runtime base comes from the runtime stage, including its digest", () => {
   expect(runtimeImage(`FROM other AS build\nFROM ${image} AS runtime\nUSER bun`)).toBe(image);
   expect(() => runtimeImage("FROM oven/bun:latest AS runtime")).toThrow();
   expect(() => runtimeImage(`FROM ${image} AS build`)).toThrow();
+  const mirrored = `ghcr.io/k2b-dev/mirror/${image}`;
+  expect(runtimeImage(`FROM ${mirrored} AS runtime`)).toBe(mirrored);
+  expect(() => runtimeImage(`FROM ghcr.io/someone/oven/bun:1.4.2-alpine@sha256:${"a".repeat(64)} AS runtime`)).toThrow();
+});
+
+test("the repository Dockerfile's runtime stage passes the runtime image check", async () => {
+  expect(runtimeImage(await Bun.file(join(repository, "Dockerfile")).text())).toContain("oven/bun:");
 });
 
 test("image-declared volumes get named mounts unless already covered by a bind or named volume", () => {
