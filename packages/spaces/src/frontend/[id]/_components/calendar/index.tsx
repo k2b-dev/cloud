@@ -223,17 +223,6 @@ const chooseRecurringEditScope = async (t: ReturnType<typeof useSpaceMessages>):
 
 export default function Calendar(props: CalendarProps) {
   const t = useSpaceMessages();
-  /**
-   * The toolbar counts what the header names: the month's own days, not the padding days of the months around it. It
-   * counts the events the grid paints, so a drag across the month's edge updates it at once.
-   */
-  const shownCount = () => {
-    if (props.view !== "month") return props.items.length;
-    const monthStart = calendar.startOfMonth(props.date, props.dateConfig);
-    const firstKey = calendar.formatDateKey(monthStart, props.dateConfig);
-    const endKey = calendar.formatDateKey(calendar.addMonths(monthStart, 1, props.dateConfig), props.dateConfig);
-    return countCalendarEvents(events(), firstKey, endKey, props.dateConfig);
-  };
   const retryToast = createRetryToasts();
   const [optimisticTimes, setOptimisticTimes] = createSignal<Record<string, CalendarEventTimeChange>>({});
   const [createDialogPending, setCreateDialogPending] = createSignal(false);
@@ -257,11 +246,21 @@ export default function Calendar(props: CalendarProps) {
   );
   /** The date filters and the view switcher keep: the day the reader scrolled to, else the route's. */
   const shownDate = () => visibleDate() ?? props.date;
-  /** The toolbar counts what is in view: the days the day or week view shows, else the month or year. */
+  /**
+   * The toolbar counts what is in view: the days the day or week view shows, or what the header names in the month,
+   * its own days without the padding days of the months around it. The month counts the events the grid paints, so a
+   * drag across the month's edge updates it at once.
+   */
   const shownCount = () => {
-    if (!isScrollingCalendarView(props.view)) return props.items.length;
-    const days = visibleDays() ?? routeDays();
-    return countCalendarDays(props.items, days.first, days.last, props.dateConfig);
+    if (isScrollingCalendarView(props.view)) {
+      const days = visibleDays() ?? routeDays();
+      return countCalendarDays(props.items, days.first, days.last, props.dateConfig);
+    }
+    if (props.view !== "month") return props.items.length;
+    const monthStart = calendar.startOfMonth(props.date, props.dateConfig);
+    const firstKey = calendar.formatDateKey(monthStart, props.dateConfig);
+    const endKey = calendar.formatDateKey(calendar.addMonths(monthStart, 1, props.dateConfig), props.dateConfig);
+    return countCalendarEvents(events(), firstKey, endKey, props.dateConfig);
   };
   /** The days the route opens before the view says what it shows: the day, or its week. */
   const routeDays = () => {
