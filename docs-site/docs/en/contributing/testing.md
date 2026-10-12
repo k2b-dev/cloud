@@ -642,9 +642,10 @@ browser tests or a shared input such as `packages/cloud` or `scripts/` changed.
 The nightly workflow repeats the integration suites against PostgreSQL 15, the
 oldest supported version, and runs the longer acceptance checks that are too
 slow for every pull request. Its `browser-smoke` job builds the Core, gateway,
-Grids, and Mail images, boots them against fresh infrastructure, and runs the
-Grids and Mail browser smokes against that stack. It runs independently of the
-Assistant browser suites, so a failure in one does not hide the other's result.
+Accounts, Grids, Mail, and Chat images, boots them against fresh infrastructure,
+and runs the Grids, Mail, and Chat browser smokes against that stack. It runs
+independently of the Assistant browser suites, so a failure in one does not hide
+the other's result.
 
 ### Read slow statements from a CI run
 

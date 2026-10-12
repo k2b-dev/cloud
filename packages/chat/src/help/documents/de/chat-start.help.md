@@ -11,6 +11,6 @@ Chat ist für Gespräche mit anderen Personen gedacht.
 ## Überblick {icon="layout-grid"}
 
 :::reference
-- **Chats:** Chat zeigt die Chats, in denen du Mitglied bist. Solange du in keinem Chat bist, steht dort, dass es noch keine Chats gibt.
+- **Chats:** Die Liste zeigt die Chats, in denen du Mitglied bist, mit der letzten Nachricht und der Zeit. Solange du in keinem Chat bist, steht dort, dass es noch keine Chats gibt.
 - **Administration:** Administratoren sehen den Zustand des Chat-Dienstes unter `/admin/chat`.
 :::
