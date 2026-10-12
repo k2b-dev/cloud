@@ -577,24 +577,35 @@ export const createTimeView = (props: TimeViewProps) => {
     onDrop: (slot: CalendarEventTimeChange) => void,
     scroller?: HTMLElement,
   ) => {
+    if (pointerEvent.button !== 0 || !pointerEvent.isPrimary) return;
+    cancelGesture?.();
+    cancelGesture = undefined;
     const length = Math.max(15, Math.round(item.minutes));
     const color = item.colorHex ?? COLOR_TOKENS[item.color ?? "blue"]!;
     let token: HTMLElement | undefined;
     let spring: { element: Element; timer: number } | undefined;
-    let held = pointerEvent.pointerType === "mouse";
+    const target =
+      pointerEvent.target instanceof HTMLElement ? pointerEvent.target.closest<HTMLElement>("li, [data-calendar-drag-source]") : null;
+    let held = false;
+    let cleaned = false;
+    const preventContextMenu = (event: Event) => event.preventDefault();
     const preventScroll = (event: TouchEvent) => {
       if (held) event.preventDefault();
     };
     const cleanup = () => {
+      if (cleaned) return;
+      cleaned = true;
+      document.removeEventListener("touchmove", preventScroll);
+      window.removeEventListener("contextmenu", preventContextMenu, true);
+      if (pointerEvent.pointerType === "touch") held = false;
+      if (target) delete target.dataset.lifted;
       token?.remove();
       token = undefined;
       if (spring) window.clearTimeout(spring.timer);
       spring = undefined;
-      document.removeEventListener("touchmove", preventScroll);
       endGesture();
     };
     const begin = () => {
-      cancelGesture?.();
       cancelGesture = startCalendarPointerSession({
         event: pointerEvent,
         scrollContainer: scroller,
@@ -652,27 +663,26 @@ export const createTimeView = (props: TimeViewProps) => {
           });
         },
         onCommit: (next) => {
-          cleanup();
           swallowNextClick();
           if (next.key) onDrop({ ...slot(next.key, next.start, next.end), allDay: false });
         },
-        onCancel: cleanup,
+        onEnd: cleanup,
       });
     };
-    if (held) {
+    if (pointerEvent.pointerType === "mouse") {
       begin();
       return;
     }
     // A finger first holds the entry still, so a short swipe keeps scrolling the list it sits in.
     const origin = { x: pointerEvent.clientX, y: pointerEvent.clientY };
-    const target =
-      pointerEvent.target instanceof HTMLElement ? pointerEvent.target.closest<HTMLElement>("li, [data-calendar-drag-source]") : null;
     const abort = () => {
       window.clearTimeout(timer);
       window.removeEventListener("pointermove", watch);
       window.removeEventListener("pointerup", abort);
       window.removeEventListener("pointercancel", abort);
+      window.removeEventListener("contextmenu", preventContextMenu, true);
       if (target) delete target.dataset.lifted;
+      if (cancelGesture === abort) cancelGesture = undefined;
     };
     const watch = (event: PointerEvent) => {
       if (event.pointerId === pointerEvent.pointerId && Math.hypot(event.clientX - origin.x, event.clientY - origin.y) > 10) abort();
@@ -683,11 +693,14 @@ export const createTimeView = (props: TimeViewProps) => {
       if (target) target.dataset.lifted = "true";
       navigator.vibrate?.(8);
       document.addEventListener("touchmove", preventScroll, { passive: false });
+      window.addEventListener("contextmenu", preventContextMenu, true);
       begin();
     }, 420);
     window.addEventListener("pointermove", watch);
     window.addEventListener("pointerup", abort);
     window.addEventListener("pointercancel", abort);
+    window.addEventListener("contextmenu", preventContextMenu, true);
+    cancelGesture = abort;
   };
 
   return {

@@ -2638,6 +2638,15 @@
   opacity: 0;
 }
 
+/* A finger holds an entry outside the calendar to drag it in; the system's long press, such as a link preview, a
+   callout, or text selection, must not take that hold over. */
+.k2b-ui [data-calendar-drag-source],
+.k2b-ui [data-calendar-drag-source] * {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
 .k2b-ui [data-lifted="true"] {
   box-shadow: var(--k2b-shadow-float);
   transform: scale(1.03);

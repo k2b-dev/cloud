@@ -28,6 +28,8 @@ type CalendarPointerSessionOptions<T> = {
   onPreview: (value: T) => void;
   onCommit: (value: T) => void;
   onCancel?: () => void;
+  /** Called once whenever the session ends, even before activation, after onCommit or onCancel. */
+  onEnd?: () => void;
   scrollContainer?: HTMLElement;
   threshold?: number;
   /**
@@ -114,7 +116,11 @@ export const startCalendarPointerSession = <T>(options: CalendarPointerSessionOp
     if (finished) return;
     finished = true;
     cleanup();
-    if (active) options.onCancel?.();
+    try {
+      if (active) options.onCancel?.();
+    } finally {
+      options.onEnd?.();
+    }
   }
 
   function onMove(event: PointerEvent) {
@@ -132,8 +138,12 @@ export const startCalendarPointerSession = <T>(options: CalendarPointerSessionOp
     if (finished || event.pointerId !== pointerId) return;
     finished = true;
     cleanup();
-    if (active && latest !== null) options.onCommit(latest);
-    else if (active) options.onCancel?.();
+    try {
+      if (active && latest !== null) options.onCommit(latest);
+      else if (active) options.onCancel?.();
+    } finally {
+      options.onEnd?.();
+    }
   }
 
   function onKeyDown(event: KeyboardEvent) {
