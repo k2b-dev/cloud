@@ -817,6 +817,9 @@
   --k2b-workspace-main-keep: 0px;
   /* Space at the end of a `k2b-detail-trail` scroller under the tablet drawer. */
   --k2b-detail-space: 0px;
+  /* Space a host keeps clear along the workspace's bottom edge, such as the
+     home indicator's safe area where the workspace meets the window's bottom. */
+  --k2b-workspace-inset-bottom: 0px;
   --k2b-workspace-radius: var(--k2b-radius-dialog);
   position: relative;
   display: grid;
@@ -926,6 +929,26 @@
 .k2b-ui .k2b-app-workspace__drawer[hidden],
 .k2b-ui .k2b-app-workspace__resize:has(+ [hidden]) {
   display: none;
+}
+
+/* The surfaces on the workspace's bottom edge reach it and keep their content
+   above the host's bottom inset. A transparent border fills the inset with the
+   surface's own background and leaves the padding an application gives them
+   alone. While the drawer is open, it is the surface on that edge. */
+.k2b-ui .k2b-app-workspace__sidebar,
+.k2b-ui .k2b-app-workspace__drawer,
+.k2b-ui .k2b-app-workspace__main:not(.has-panes),
+.k2b-ui .k2b-app-workspace__main.has-panes > [data-workspace-main-region] {
+  border-bottom: var(--k2b-workspace-inset-bottom) solid transparent;
+}
+
+.k2b-ui
+  .k2b-app-workspace:has(
+    > .k2b-app-workspace__drawer:not([hidden]),
+    > :is(solid-island, solid-client) > .k2b-app-workspace__drawer:not([hidden])
+  )
+  .k2b-app-workspace__main {
+  --k2b-workspace-inset-bottom: 0px;
 }
 
 /* Hidden navigation takes the sidebar track and the navigation panes with it,
@@ -1269,7 +1292,7 @@
     position: absolute;
     top: var(--k2b-workspace-detail-inset);
     right: var(--k2b-workspace-detail-inset);
-    bottom: var(--k2b-workspace-detail-inset);
+    bottom: calc(var(--k2b-workspace-detail-inset) + var(--k2b-workspace-inset-bottom));
     left: auto;
     width: max(var(--k2b-workspace-panel-min), 100% - var(--k2b-workspace-detail-inset));
     height: auto;
@@ -1945,11 +1968,13 @@
    the host's mobile chrome or to the compact overlay. */
 @media (max-width: 63.999rem) {
   /* A viewport cap, not a percentage: the grid row is content-sized, so a
-     percentage would be cyclic and collapse the list to one row. */
+     percentage would be cyclic and collapse the list to one row. Above the
+     content, the list is not on the bottom edge and keeps no bottom inset. */
   .k2b-ui .k2b-app-workspace__sidebar[data-mobile="stacked"]:not([hidden]) {
     display: flex;
     max-height: 50dvh;
     grid-area: mobile;
+    border-bottom-width: 0;
   }
 
   .k2b-ui .k2b-app-workspace__sidebar[data-mobile="stacked"] > .k2b-app-workspace__sidebar-desktop {
