@@ -2,6 +2,7 @@ import type { DateContext } from "@k2b/stdlib";
 import type { CalendarItem, SpaceColumn, SpaceItemTemplate, SpaceTag } from "@/contracts";
 import type { CalendarTray } from "../workspace/workspace-types";
 import type { CalendarFilter } from "./filter";
+import type { CalendarRange } from "./range";
 
 export type CalendarView = "day" | "week" | "month" | "year";
 
@@ -36,4 +37,14 @@ export type CalendarProps = {
   weather?: Record<string, DayWeather>;
   /** Overdue and undated tasks below the day view; null while the calendar shows only events or the day loads. */
   tray?: CalendarTray | null;
+  /** The days `items` cover; the day and week views scroll through them. */
+  range?: CalendarRange;
+  /** Day and week views: load the week before or after the loaded days. */
+  onLoadEarlier?: () => unknown;
+  onLoadLater?: () => unknown;
+  /**
+   * Day and week views: names the day the reader scrolled to in the URL, as `href`. Without it the calendar replaces
+   * the URL itself.
+   */
+  onFollowHref?: (href: string) => void;
 };

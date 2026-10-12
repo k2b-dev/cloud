@@ -36,6 +36,8 @@ const WorkspaceAccessDeniedSchema = z.object({
 
 const WorkspaceTitleSchema = z.array(z.object({ title: z.string(), href: z.string().optional() }));
 const CalendarViewSchema = z.enum(["day", "week", "month", "year"]);
+/** The days a calendar snapshot loaded items for, from midnight to midnight; the day and week views extend it while the reader scrolls. */
+const CalendarRangeSchema = z.object({ from: z.string().datetime(), to: z.string().datetime() });
 const DayWeatherSchema = z.object({ tempMin: z.number(), tempMax: z.number(), icon: z.string() });
 /** One part of the tray below the day view: its first tasks and how many it holds in all. */
 const CalendarTrayListSchema = z.object({
@@ -103,6 +105,7 @@ export const SpacesViewSnapshotSchema = z.discriminatedUnion("kind", [
     view: CalendarViewSchema,
     date: z.string().datetime(),
     filter: CalendarFilterSchema,
+    range: CalendarRangeSchema,
     items: z.array(CalendarItemSchema),
     weather: z.record(z.string(), DayWeatherSchema),
     tray: CalendarTraySchema,
@@ -133,6 +136,7 @@ const SpacesWorkspaceStateSchema = z.discriminatedUnion("kind", [
     calendarView: CalendarViewSchema,
     calendarDate: z.string().datetime(),
     calendarFilter: CalendarFilterSchema,
+    calendarRange: CalendarRangeSchema,
     calendarItems: z.array(CalendarItemSchema),
     calendarWeather: z.record(z.string(), DayWeatherSchema),
     calendarTray: CalendarTraySchema,

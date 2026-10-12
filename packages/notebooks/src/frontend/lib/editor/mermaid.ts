@@ -6,6 +6,7 @@ import { mermaidConfig } from "@k2b/cloud/browser/mermaid";
 import mermaid from "mermaid";
 import { createComponent, createSignal } from "solid-js";
 import { render } from "solid-js/web";
+import { codeFenceLanguage } from "../../../lib/markdown-fences";
 import { deriveNoteTitle, hasUsableNoteTitle } from "../../../lib/note-title";
 import {
   blockWidgetLineNavigationExtension,
@@ -191,11 +192,7 @@ export const mermaidExtension = (): Extension => {
         if (type.name === "FencedCode") {
           const text = state.doc.sliceString(from, to);
           const lines = text.split("\n");
-          const language =
-            lines[0]
-              ?.replace(/^(```|~~~)/, "")
-              .trim()
-              .toLowerCase() || "";
+          const language = codeFenceLanguage(lines[0] ?? "");
 
           if (language === "mermaid") {
             ranges.push({ from, to });

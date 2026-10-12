@@ -757,6 +757,12 @@ const calendarDemoEvents = (month: Date): CalendarEvent[] => {
   ];
 };
 
+/** The days of the demo's events: the month of the date, so the day and week views scroll through it. */
+const calendarDemoRange = (month: Date) => ({
+  from: new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth(), 1)),
+  to: new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + 1, 1)),
+});
+
 const isHexColor = (value: string | undefined): value is `#${string}` => value?.startsWith("#") ?? false;
 /** The calendar's events on the timeline view, from the evening before the date through the week after it. */
 const timelineDemoItems = (events: CalendarEvent[]): TimelineItem[] =>
@@ -773,7 +779,7 @@ const timelineDemoRange = (date: Date) => ({
   to: new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + 8)),
 });
 
-/** The month view's quick create: a title for one all-day event over the selected days. */
+/** The quick create: a title for one event over the selected days or the time slot. */
 const CalendarDemoQuickCreate = (props: { onCreate: (title: string) => void }) => {
   const [title, setTitle] = createSignal("");
   const create = () => {
@@ -812,7 +818,7 @@ export const CalendarDemo = () => {
     <DemoCard
       id="calendar"
       chip={{ kind: "component", name: "Calendar", from: "@k2b/ui" }}
-      description="A controlled calendar with overlapping, crowded, all-day, and multi-day events generated for every visible month, and a Timeline added as a fifth view."
+      description="A controlled calendar with overlapping, crowded, all-day, and multi-day events generated for every visible month, and a Timeline added as a fifth view. With dayHours, the day view runs down through the month's days from 06:00 and the week view scrolls sideways through them."
       code={`const initialDate = calendarDemoDate();
 const [date, setDate] = createSignal(initialDate);
 const [events, setEvents] = createSignal(calendarDemoEvents(initialDate));
@@ -833,18 +839,22 @@ const changeDate = (next: Date) => {
   customViews={[{ value: "timeline", label: "Timeline" }]}
   dateConfig={{ timeZone: "UTC", locale: "en" }}
   events={events()}
+  // A day starts at 06:00 and its night folds; the day and week views scroll through the loaded month.
+  dayHours={[6, 22]}
+  range={calendarDemoRange(date())}
   selectedEventId={selectedEventId()}
   onDateChange={changeDate}
   onViewChange={setView}
   onEventActivate={(event) => setSelectedEventId(event.id)}
   onEventDrop={moveEvent}
   onEventResize={resizeEvent}
-  // The month view selects days; its quick create adds one all-day event over them.
+  // The month view selects days and its quick create adds one all-day event over them; the day and week views
+  // open it at a time slot or free time.
   selectionMenu={(_range, { quickCreate }) => [{ label: "New all-day event", icon: "ti ti-sun", action: () => quickCreate() }]}
   renderQuickCreate={(range, { close }) => (
     <CalendarDemoQuickCreate
       onCreate={(title) => {
-        setEvents((current) => [...current, { id: \`new-\${current.length}\`, title, start: range.start, end: range.end, allDay: true }]);
+        setEvents((current) => [...current, { id: \`new-\${current.length}\`, title, start: range.start, end: range.end, allDay: range.allDay }]);
         close();
       }}
     />
@@ -870,6 +880,8 @@ const changeDate = (next: Date) => {
         customViews={[{ value: "timeline", label: "Timeline" }]}
         dateConfig={{ timeZone: "UTC", locale: "en" }}
         events={events()}
+        dayHours={[6, 22]}
+        range={calendarDemoRange(date())}
         selectedEventId={selectedEventId()}
         onDateChange={changeDate}
         onViewChange={setView}
@@ -902,14 +914,15 @@ const changeDate = (next: Date) => {
             ),
           )
         }
-        // The month view selects days; its quick create adds one all-day event over them.
+        // The month view selects days and its quick create adds one all-day event over them; the day and week views
+        // open it at a time slot or free time.
         selectionMenu={(_range, { quickCreate }) => [{ label: "New all-day event", icon: "ti ti-sun", action: () => quickCreate() }]}
         renderQuickCreate={(range, { close }) => (
           <CalendarDemoQuickCreate
             onCreate={(title) => {
               setEvents((current) => [
                 ...current,
-                { id: `new-${current.length}`, title, start: range.start, end: range.end, allDay: true },
+                { id: `new-${current.length}`, title, start: range.start, end: range.end, allDay: range.allDay },
               ]);
               close();
             }}

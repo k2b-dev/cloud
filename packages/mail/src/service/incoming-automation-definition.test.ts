@@ -353,3 +353,55 @@ describe("guided catalog references", () => {
     );
   });
 });
+
+test("compiles and binds negated sender and text conditions with mark-read, keyword, then move", async () => {
+  const source = buildIncomingAutomationWorkflowSource({
+    scope: {
+      mode: "matching",
+      conditions: {
+        mode: "all",
+        items: [
+          { field: "sender_address", operator: "is_not", value: "sorted@example.com" },
+          { field: "sender_domain", operator: "is_not", value: "example.org" },
+          { field: "subject", operator: "not_contains", value: "newsletter" },
+          { field: "body_text", operator: "not_contains", value: "unsubscribe" },
+        ],
+      },
+    },
+    steps: [
+      { id: crypto.randomUUID(), kind: "mail_action", action: { kind: "mark_read" } },
+      { id: crypto.randomUUID(), kind: "mail_action", action: { kind: "add_keyword", keyword: "sorted" } },
+      { id: crypto.randomUUID(), kind: "mail_action", action: { kind: "move_to_folder", folderId: "Arch01" } },
+    ],
+  });
+  const compiled = await compileWorkflow(source, mailWorkflows);
+  expect(compiled.ok).toBe(true);
+  if (!compiled.ok) return;
+  expect(compiled.ir.steps[0]).toMatchObject({
+    kind: "if",
+    condition: {
+      operator: "all",
+      conditions: [
+        { operator: "not", condition: { operator: "equals", operands: ["${{ inputs.message.fromAddress }}", "sorted@example.com"] } },
+        { operator: "not", condition: { operator: "equals", operands: ["${{ inputs.message.fromDomain }}", "example.org"] } },
+        { operator: "not", condition: { operator: "contains", operands: ["${{ inputs.message.subject }}", "newsletter"] } },
+        { operator: "not", condition: { operator: "contains", operands: ["${{ inputs.message.bodyText }}", "unsubscribe"] } },
+      ],
+    },
+  });
+  expect(
+    (
+      await bindMailWorkflow(
+        compiled.ir,
+        buildMailWorkflowCatalog({
+          folders: [{ id: "Arch01", name: "Archive", role: "archive" }],
+          assignableUsers: [],
+          senderIdentities: [],
+          localTags: [],
+        }),
+      )
+    ).ok,
+  ).toBe(true);
+  expect(source.indexOf("addFlag:")).toBeLessThan(source.indexOf("addKeyword:"));
+  expect(source.indexOf("addKeyword:")).toBeLessThan(source.indexOf("moveMessage:"));
+});

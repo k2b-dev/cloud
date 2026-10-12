@@ -11,6 +11,7 @@ import { createLeavingItems } from "../shared/leaving";
 import CreateItemButton from "../sidebar/CreateItemButton";
 import ItemsTable from "../table/ItemsTable";
 import { useSpacesRouteQuery } from "./route-query";
+import { subscribeToSpacesDetailStep } from "./workspace-events";
 
 type Props = {
   spaceId: string;
@@ -30,6 +31,7 @@ type Props = {
 
 export default function SpacesListRoute(props: Props) {
   const t = useSpaceMessages();
+  let scrollArea: HTMLDivElement | undefined;
   const [selectedItemId, setSelectedItemId] = createSignal(props.initialSelectedItemId);
   const view = useSpacesRouteQuery({
     initialSource: props.itemLinkBaseUrl,
@@ -52,6 +54,13 @@ export default function SpacesListRoute(props: Props) {
   onMount(() => {
     const unsubscribe = subscribeToDetailSelection(({ itemId }) => setSelectedItemId(itemId ?? ""));
     onCleanup(unsubscribe);
+    onCleanup(
+      subscribeToSpacesDetailStep(() =>
+        Array.from(scrollArea?.querySelectorAll<HTMLAnchorElement>("[data-spaces-item-link]") ?? []).filter(
+          (link) => !link.closest("[data-collapsing]"),
+        ),
+      ),
+    );
   });
 
   const commitFilterPatch = (patch: Partial<FilterState>) => {
@@ -92,7 +101,7 @@ export default function SpacesListRoute(props: Props) {
       </Show>
       <div class="h-2" />
 
-      <ScrollArea class="flex-1" scrollPreserveKey={`spaces-main-${props.spaceId}`}>
+      <ScrollArea ref={scrollArea} class="flex-1" scrollPreserveKey={`spaces-main-${props.spaceId}`}>
         {itemsResult().items.length === 0 && leaving.held().size === 0 ? (
           !hasActiveFilters(view.filter()) ? (
             <Placeholder

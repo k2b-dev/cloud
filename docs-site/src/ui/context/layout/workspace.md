@@ -62,8 +62,13 @@ as the panel’s close button. A panel rendered on the server only cannot pass a
 function: mark its own close button or link with `data-workspace-detail-close`
 instead, and the same gestures click it. Without either, the panel stays open
 and reflows Main on touch tablets too. `onStep` receives `1` for J and `-1`
-for K; the application chooses the next selection. Neither callback owns the
-`open` state.
+for K; the application chooses the next selection. Return the Main element
+that now shows it, usually the item's link. The workspace remembers it like
+an Enter selection: Escape and F6 go there, and it is revealed beside the
+panel or drawer or above the phone sheet, instantly under reduced motion.
+Focus moves to it from the previous item or elsewhere in Main, or to the
+panel title from inside the panel. Returning nothing keeps the previous item.
+Neither callback owns the `open` state.
 
 Below 48 rem, the half sheet covers the lower 55% of the window, on pages that
 grow with their content as well as on full pages. A frame that embeds a
@@ -524,7 +529,7 @@ type AppWorkspaceMainPaneProps = {
 type AppWorkspaceDetailProps = {
   children: JSX.Element; open: boolean; id: string; class?: string; width?: AppWorkspaceDetailWidth;
   viewTransitionName?: string; resizable?: boolean; minWidth?: number; maxWidth?: number;
-  onClose?: () => void; onStep?: (direction: 1 | -1) => void;
+  onClose?: () => void; onStep?: (direction: 1 | -1) => HTMLElement | null | undefined | void;
 };
 
 type AppWorkspaceBottomDrawerProps = {

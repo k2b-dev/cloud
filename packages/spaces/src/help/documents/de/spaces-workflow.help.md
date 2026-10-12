@@ -87,6 +87,7 @@ Du kannst einen eigenen Kommentar bis zu zehn Minuten nach dem Veröffentlichen 
 
 ## Schnell mit der Tastatur arbeiten {icon="keyboard"}
 
+- Wenn ein Eintrag geöffnet ist, drücke **J** für den nächsten und **K** für den vorherigen Eintrag in Liste, Tabelle und Kanban.
 - Drücke **Cmd/Strg+Alt+N**, um eine Aufgabe oder in der Kalenderansicht einen Termin zu erstellen.
 - Drücke **Cmd/Strg+Umschalt+K**, um den aktuellen Space zu durchsuchen.
 - Fokussiere in Kanban das Board und wechsle mit den Pfeiltasten zwischen Karten. Die Tastatur-Schaltfläche über dem Board listet diese Kürzel.

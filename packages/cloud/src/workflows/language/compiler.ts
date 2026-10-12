@@ -292,7 +292,7 @@ const compileSteps = (
     if (hasOwn(step, "switch")) {
       validateExactKeys(step, ["switch", "cases", "default"], stepPath, context);
       if (!Array.isArray(step.cases) || step.cases.length === 0) {
-        addDiagnostic(context, "switch.cases", "switch requires at least one case", [...stepPath, "cases"]);
+        addDiagnostic(context, "switch.cases", "switch cases must be a non-empty list of { when, do } entries", [...stepPath, "cases"]);
         return;
       }
       const cases: Array<{ when: WorkflowJsonValue; steps: WorkflowIrStep[] }> = [];

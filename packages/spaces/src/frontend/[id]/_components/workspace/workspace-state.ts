@@ -18,6 +18,7 @@ import { resolveRecurringOccurrence } from "@/service/recurrence";
 import { resolveReferenceViews } from "@/service/resource-reference-views";
 import { spaceMessages } from "../../messages";
 import { type CalendarFilter, parseCalendarFilter } from "../calendar/filter";
+import { type CalendarRange, calendarItemsEnd, calendarWindow, isScrollingCalendarView } from "../calendar/range";
 import { TASK_TRAY_SIZE, taskTrayFilters } from "../calendar/tray";
 import type { CalendarView, DayWeather } from "../calendar/types";
 import { boardFilter, defaultFilter, type FilterState, hasActiveFilters, parseFilterFromUrl } from "../filter/types";
@@ -40,6 +41,10 @@ type WorkspaceRequest = {
   cookieHeader?: string;
   authorizationHeader?: string;
   dateConfig?: DateContext;
+  /** The days a day or week view loads instead of its first window, such as the days it already shows. */
+  calendarRange?: CalendarRange;
+  /** False for a week the day or week view adds while the reader scrolls: it keeps the tray it has. */
+  includeTray?: boolean;
 };
 
 type RouteState = {
@@ -259,8 +264,12 @@ const resolveCalendarRange = (params: {
   calendarView: CalendarView;
   calendarDate: Date;
   dateConfig?: DateContext;
+  calendarRange?: CalendarRange;
 }): { from: Date; to: Date } => {
-  if (params.calendarView === "day") return { from: params.calendarDate, to: calendar.addDays(params.calendarDate, 1, params.dateConfig) };
+  if (isScrollingCalendarView(params.calendarView)) {
+    const range = params.calendarRange ?? calendarWindow(params.calendarView, params.calendarDate, params.dateConfig);
+    return { from: new Date(range.from), to: new Date(range.to) };
+  }
   if (params.calendarView !== "year") return calendar.getDateRange(params.calendarView, params.calendarDate, params.dateConfig);
 
   const calendarYear = Number(calendar.formatDateKey(params.calendarDate, params.dateConfig).slice(0, 4));
@@ -285,6 +294,8 @@ const readWeatherLocationCookie = (cookieHeader?: string) => {
 };
 
 const resolveCalendarView = (view: CalendarView | null): CalendarView => (view && CALENDAR_VIEWS.includes(view) ? view : "month");
+
+const serializeRange = (range: { from: Date; to: Date }): CalendarRange => ({ from: range.from.toISOString(), to: range.to.toISOString() });
 
 const overlapsWeatherForecast = (from: Date, to: Date, now = new Date()) => {
   const forecastFrom = new Date(now);
@@ -353,20 +364,31 @@ const loadCalendarState = async (params: {
   user: AuthUser;
   dateConfig?: DateContext;
   cookieHeader?: string;
+  calendarRange?: CalendarRange;
+  includeTray?: boolean;
 }): Promise<{
   calendarView: CalendarView;
   calendarDate: Date;
+  calendarRange: { from: Date; to: Date };
   calendarItems: CalendarItem[];
   calendarWeather: Record<string, DayWeather>;
   calendarTray: CalendarTray | null;
 }> => {
   const calendarView = resolveCalendarView(params.calendarViewParam);
   const calendarDate = calendar.parseCalendarDate(params.calendarDateParam, params.dateConfig);
+  const calendarRange = resolveCalendarRange({
+    calendarView,
+    calendarDate,
+    dateConfig: params.dateConfig,
+    calendarRange: params.calendarRange,
+  });
   if (params.currentView !== "calendar") {
-    return { calendarView, calendarDate, calendarItems: [], calendarWeather: {}, calendarTray: null };
+    return { calendarView, calendarDate, calendarRange, calendarItems: [], calendarWeather: {}, calendarTray: null };
   }
 
-  const { from, to } = resolveCalendarRange({ calendarView, calendarDate, dateConfig: params.dateConfig });
+  const { from, to } = calendarRange;
+  // The night after the last day belongs to it, so the day and week views also need what lies there until 06:00.
+  const itemsTo = isScrollingCalendarView(calendarView) ? new Date(calendarItemsEnd(to.toISOString(), params.dateConfig)) : to;
   const [accessibleItems, calendarWeather, calendarTray] = await Promise.all([
     spacesService.item.calendar.list({
       subject: { type: "user", userId: params.user.id },
@@ -377,11 +399,11 @@ const loadCalendarState = async (params: {
       columnIds: params.calendarFilter.columnIds,
       tagIds: params.calendarFilter.tagIds,
       from: from.toISOString(),
-      to: to.toISOString(),
+      to: itemsTo.toISOString(),
       dateConfig: params.dateConfig,
     }),
     loadCalendarWeather({ cookieHeader: params.cookieHeader, from, to }),
-    calendarView === "day"
+    calendarView === "day" && params.includeTray !== false
       ? loadCalendarTray({ spaceId: params.spaceId, filter: params.calendarFilter, userId: params.user.id, dateConfig: params.dateConfig })
       : Promise.resolve(null),
   ]);
@@ -389,6 +411,7 @@ const loadCalendarState = async (params: {
   return {
     calendarView,
     calendarDate,
+    calendarRange,
     calendarItems: accessibleItems,
     calendarWeather,
     calendarTray,
@@ -725,6 +748,7 @@ const toViewSnapshot = async (params: {
     view: params.calendarState.calendarView,
     date: params.calendarState.calendarDate.toISOString(),
     filter: params.publicCalendarFilter,
+    range: serializeRange(params.calendarState.calendarRange),
     items: await spacesPublicResources.projectCalendarItems(params.calendarState.calendarItems),
     weather: params.calendarState.calendarWeather,
     tray: await projectCalendarTray(params.calendarState.calendarTray),
@@ -763,6 +787,8 @@ export const loadSpacesViewSnapshot = async (
       user: params.user,
       dateConfig: params.dateConfig,
       cookieHeader: params.cookieHeader,
+      calendarRange: params.calendarRange,
+      includeTray: params.includeTray,
     }),
     route.currentView === "kanban"
       ? loadWormholes({
@@ -912,6 +938,7 @@ export const loadSpacesWorkspaceState = async (params: WorkspaceRequest): Promis
     calendarView: calendarState.calendarView,
     calendarDate: calendarState.calendarDate.toISOString(),
     calendarFilter: publicCalendarFilter,
+    calendarRange: serializeRange(calendarState.calendarRange),
     calendarItems: publicCalendarItems,
     calendarWeather: calendarState.calendarWeather,
     calendarTray: publicCalendarTray,
