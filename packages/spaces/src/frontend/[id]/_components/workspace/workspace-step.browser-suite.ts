@@ -294,6 +294,88 @@ describe(`Spaces workspace detail stepping in ${browserName}`, () => {
     }
   }, 30_000);
 
+  test("rapid J J from the panel title keeps focus on the panel title", async () => {
+    const page = await open("list");
+    try {
+      await itemLink(page, "Item01").focus();
+      await page.keyboard.press("Enter");
+      await selected(page, "Item01", "Task 1");
+      await page.waitForFunction(() => document.activeElement?.matches("#k2b-workspace-detail-space-detail-panel h2") === true);
+      // The first step swaps the panel to its loading state, which removes the focused title.
+      let release: (() => void) | undefined;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await page.route("**/items/Item02/detail", async (route) => {
+        await held;
+        await route.continue();
+      });
+      try {
+        await page.keyboard.press("j");
+        await page.keyboard.press("j");
+        await selected(page, "Item03", "Task 3");
+      } finally {
+        release?.();
+      }
+      await page.waitForFunction(
+        () =>
+          document.activeElement?.matches("#k2b-workspace-detail-space-detail-panel h2") === true &&
+          document.activeElement.textContent === "Task 3",
+      );
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("J while the opening detail still loads keeps the panel's own history entry", async () => {
+    const page = await open("list");
+    try {
+      const historyLength = await page.evaluate(() => history.length);
+      let release: (() => void) | undefined;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await page.route("**/items/Item01/detail", async (route) => {
+        await held;
+        await route.continue();
+      });
+      try {
+        await itemLink(page, "Item01").focus();
+        await page.keyboard.press("Enter");
+        await page.keyboard.press("j");
+      } finally {
+        release?.();
+      }
+      await selected(page, "Item02", "Task 2");
+      expect(await page.evaluate(() => history.length)).toBe(historyLength + 1);
+      await page.goBack();
+      await page.waitForFunction(() => !new URL(location.href).searchParams.has("item"));
+      await page.locator("#k2b-workspace-detail-space-detail-panel").waitFor({ state: "hidden" });
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("kanban: a step to an item that is gone returns the highlight to the open card", async () => {
+    const page = await open("kanban");
+    try {
+      await card(page, "Item02").click();
+      await selected(page, "Item02", "Task 2");
+      await page.route("**/items/Item03/detail", (route) => route.fulfill({ status: 404, json: { message: "Not found" } }));
+      await page.keyboard.press("j");
+      await page.getByText("Item not found").waitFor();
+      const highlighted = () =>
+        Array.from(document.querySelectorAll<HTMLElement>("[data-spaces-kanban-card]"))
+          .filter((link) => link.closest("article")?.className.includes("bg-[var(--ui-selected)]"))
+          .map((link) => link.dataset.itemId);
+      await page.waitForFunction(`(${highlighted})().join() === "Item02"`);
+      expect(new URL(page.url()).searchParams.get("item")).toBe("Item02");
+      await page.locator("#k2b-workspace-detail-space-detail-panel").getByRole("heading", { name: "Task 2", exact: true }).waitFor();
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
   for (const name of ["kanban", "folded"] as const) {
     test(`${name}: J crosses columns in DOM order and skips folded cards`, async () => {
       const page = await open(name);
@@ -398,4 +480,48 @@ describe(`Spaces workspace detail stepping in ${browserName}`, () => {
       }
     }, 30_000);
   }
+
+  const phone: Viewport = { width: 390, height: 844, touch: true };
+  test("phone sheet: K reveals the previous row above Main's top", async () => {
+    const page = await open("list", phone);
+    try {
+      // The opening row starts the scrollport, so its predecessor is out of view above.
+      await itemLink(page, "Item25").evaluate((link) => {
+        const scroller = link.closest("[data-scroll-preserve]");
+        const row = link.closest("[data-space-list-row]");
+        if (!(scroller instanceof HTMLElement) || !row) throw new Error("Missing List scrollport");
+        scroller.scrollTop += row.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+      });
+      await itemLink(page, "Item25").click();
+      await selected(page, "Item25", "Task 25");
+      const revealed = () => {
+        const link = document.querySelector('[data-spaces-item-link][href*="item=Item24"]');
+        const scroller = link?.closest("[data-scroll-preserve]");
+        return Boolean(link && scroller && link.getBoundingClientRect().top >= scroller.getBoundingClientRect().top - 1);
+      };
+      expect(await page.evaluate(revealed)).toBe(false);
+      await page.keyboard.press("k");
+      await selected(page, "Item24", "Task 24");
+      await page.waitForFunction(revealed);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("phone sheet: J reveals the next Kanban card in the next column", async () => {
+    const page = await open("kanban", phone);
+    try {
+      await card(page, "Item02").click();
+      await selected(page, "Item02", "Task 2");
+      expect(await card(page, "Item03").evaluate((link) => link.getBoundingClientRect().right)).toBeGreaterThan(390);
+      await page.keyboard.press("j");
+      await selected(page, "Item03", "Task 3");
+      await page.waitForFunction(() => {
+        const box = document.querySelector('[data-spaces-kanban-card][data-item-id="Item03"]')?.getBoundingClientRect();
+        return Boolean(box && box.left >= 0 && box.right <= innerWidth);
+      });
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
 });

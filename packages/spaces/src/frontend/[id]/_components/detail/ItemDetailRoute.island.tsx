@@ -225,19 +225,22 @@ export default function ItemDetailRoute(props: Props) {
   });
 
   const navigateDetail = (href: string, history: DetailHistory, settled?: (error?: Error) => void) => {
-    pending()?.settled?.();
+    const previous = pending();
+    // A step that replaces an open still loading keeps its push, so Back closes the panel.
+    const effectiveHistory = history === "replace" && previous?.history === "push" ? "push" : history;
+    previous?.settled?.();
     const request = detailRequest(href);
     const current = currentDetail();
     if (!request.itemId || (current && detailSource(href) === detailSource(source()))) {
       setPending(null);
       setSource(href);
       committedSource = href;
-      writeHistory(href, history);
+      writeHistory(href, effectiveHistory);
       publishSpacesDetailState(detailState(request.itemId ? current : null));
       settled?.();
       return;
     }
-    setPending({ id: ++nextNavigationId, source: href, history, started: false, settled });
+    setPending({ id: ++nextNavigationId, source: href, history: effectiveHistory, started: false, settled });
     setSource(href);
   };
 

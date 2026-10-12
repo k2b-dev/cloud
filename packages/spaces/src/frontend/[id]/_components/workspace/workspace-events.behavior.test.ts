@@ -103,6 +103,40 @@ test("prefers the focused duplicate, then the last opened duplicate, then the fi
   expect(step(-1, "Duplicate")).toBeUndefined();
 });
 
+test("steps from the clicked duplicate even when the click does not focus it", () => {
+  const first = link("Duplicate");
+  const between = link("Between");
+  const second = link("Duplicate");
+  const last = link("Last");
+  subscribe(() => [first, between, second, last]);
+  const preventNavigation = (event: Event) => event.preventDefault();
+  window.addEventListener("click", preventNavigation);
+  cleanups.push(() => window.removeEventListener("click", preventNavigation));
+
+  expect(step(-1, "Between")).toBe(first);
+  second.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+  if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+  expect(second.contains(document.activeElement)).toBe(false);
+  expect(step(1, "Duplicate")).toBe(last);
+});
+
+test("ignores clicks on anchors outside the supplied links", () => {
+  const first = link("Duplicate");
+  const between = link("Between");
+  const second = link("Duplicate");
+  const last = link("Last");
+  const unrelated = link("Duplicate");
+  subscribe(() => [first, between, second, last]);
+  const preventNavigation = (event: Event) => event.preventDefault();
+  window.addEventListener("click", preventNavigation);
+  cleanups.push(() => window.removeEventListener("click", preventNavigation));
+
+  expect(step(-1, "Last")).toBe(second);
+  unrelated.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+  if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+  expect(step(1, "Duplicate")).toBe(last);
+});
+
 test("ignores an answered event, lets only one subscription answer, and unsubscribes", () => {
   const first = link("First");
   const next = link("Next");

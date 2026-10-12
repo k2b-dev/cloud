@@ -165,10 +165,14 @@ export const requestSpacesDetailStep = (direction: 1 | -1, selection: { itemId: 
 /**
  * Steps through a view's visible item links in DOM order, without wrapping and only through loaded items. A
  * selection the view does not show starts at its first or last link. The step replaces the history entry, so Back
- * leaves the detail instead of replaying every step.
+ * leaves the detail instead of replaying every step. Clicks remember the selected copy of duplicate items.
  */
 export const subscribeToSpacesDetailStep = (links: () => HTMLAnchorElement[], opened?: (link: HTMLAnchorElement) => void) => {
   let lastOpened: HTMLAnchorElement | undefined;
+  const onClick = (event: Event) => {
+    const anchor = event.target instanceof Element ? event.target.closest("a") : null;
+    if (anchor && links().includes(anchor)) lastOpened = anchor;
+  };
   const onStep = (event: Event) => {
     if (!(event instanceof CustomEvent)) return;
     const detail: SpacesDetailStep = event.detail;
@@ -190,5 +194,9 @@ export const subscribeToSpacesDetailStep = (links: () => HTMLAnchorElement[], op
     detail.target = next;
   };
   window.addEventListener(SPACES_DETAIL_STEP_EVENT, onStep);
-  return () => window.removeEventListener(SPACES_DETAIL_STEP_EVENT, onStep);
+  document.addEventListener("click", onClick, true);
+  return () => {
+    window.removeEventListener(SPACES_DETAIL_STEP_EVENT, onStep);
+    document.removeEventListener("click", onClick, true);
+  };
 };
