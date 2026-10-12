@@ -220,10 +220,12 @@ selection and compact status context.
 
 Day and week views carry `k2b-detail-trail` themselves, so applications add
 nothing beside an [AppWorkspace detail panel](/en/ui/layout/workspace#floating-detail).
-Under the touch-tablet drawer, the days narrow into the space beside the
-drawer, and the selected event stays visible there. A day column keeps its
-minimum width and scrolls. The month view keeps its full width under the
-drawer.
+Under the touch-tablet drawer, the week keeps its width and scrolls
+sideways, with its day header and all-day row. Selecting an event scrolls
+its day out beside the drawer. The day view narrows into the space beside
+the drawer, so the hours stay in view. A day with three or more overlapping
+events scrolls at 12 rem per lane. The month view keeps its full width under
+the drawer.
 
 ## Interaction
 

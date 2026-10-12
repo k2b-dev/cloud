@@ -40,7 +40,7 @@ describe("@k2b/ui Cloud content contract", () => {
     const render = (view: CalendarView) =>
       renderToString(() => createComponent(Calendar, { date: "2026-07-19", events: [], view, timeZone: "UTC" }));
     for (const view of ["week", "day"] as const) {
-      expect(render(view)).toContain('class="k2b-calendar-time-grid k2b-detail-trail"');
+      expect(render(view)).toContain(`class="k2b-calendar-time-grid k2b-detail-trail" data-view="${view}"`);
     }
     expect(render("month")).not.toContain("k2b-detail-trail");
   });

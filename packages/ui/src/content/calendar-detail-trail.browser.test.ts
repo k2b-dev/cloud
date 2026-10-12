@@ -21,7 +21,7 @@ render(() => createComponent(PageTrailProvider, { trail:{title:"Calendar",ancest
         events:[{id:"sunday",title:"Sunday meeting",start:"2026-07-19T10:00:00Z",end:"2026-07-19T11:00:00Z"}],
         onEventActivate:() => setOpen(true),
       }); } }),
-      createComponent(AppWorkspace.Detail, { id:"event", get open() { return open(); }, onClose:() => setOpen(false),
+      createComponent(AppWorkspace.Detail, { id:"event", width:document.body.dataset.width, get open() { return open(); }, onClose:() => setOpen(false),
         get children() { return createComponent(DetailPanel, { get children() { return createComponent(DetailPanel.Header, {title:"Selected event"}); } }); },
       }),
     ]; } }),
@@ -41,9 +41,11 @@ afterAll(async () => {
 });
 
 type View = "week" | "day";
+type PanelWidth = "md" | "lg";
 const eventOf = (page: Page) => page.locator("[data-calendar-event]", { hasText: "Sunday meeting" });
+const touch: BrowserContextOptions = { hasTouch: true, isMobile: true };
 // Main's 0.5 rem padding is the one Spaces gives its calendar, so the surface ends one gap before the panel.
-const load = async (width: number, height: number, view: View, options: BrowserContextOptions = {}) => {
+const load = async (width: number, height: number, view: View, options: BrowserContextOptions = {}, panel: PanelWidth = "md") => {
   const page = await browser.newPage({ viewport: { width, height }, reducedMotion: "reduce", ...options });
   await page.setContent(
     `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style><style>
@@ -52,64 +54,119 @@ const load = async (width: number, height: number, view: View, options: BrowserC
     .fixture-calendar{flex:1;min-height:0}
     </style></head><body class="k2b-ui" style="margin:0"><div id="app" style="height:100vh"></div></body></html>`,
   );
-  await page.evaluate((view) => {
-    document.body.dataset.view = view;
-  }, view);
+  await page.evaluate(
+    ([view, panel]) => {
+      document.body.dataset.view = view;
+      document.body.dataset.width = panel;
+    },
+    [view, panel],
+  );
   await page.addScriptTag({ content: script });
   await eventOf(page).waitFor();
   await page.bringToFront();
+  const closed = await columns(page);
   await eventOf(page).click();
   await page.waitForFunction(() => document.querySelector(".k2b-app-workspace__detail")!.getAnimations().length === 0);
-  return page;
+  return { page, closed };
 };
-/** The event's part inside its scroller, measured against the panel's left edge. */
+/** The width of every day column and how far its header cell is off it. */
+const columns = (page: Page) =>
+  page.evaluate(() => {
+    const headers = [...document.querySelectorAll(".k2b-calendar-time-grid__day")];
+    return [...document.querySelectorAll(".k2b-calendar-time-grid__column")].map((column, index) => {
+      const rect = column.getBoundingClientRect();
+      return { width: rect.width, headerOffset: Math.abs(headers[index]!.getBoundingClientRect().left - rect.left) };
+    });
+  });
+/** The event, its grid, and the hour gutter, measured against the panel's left edge. */
 const placement = (page: Page) =>
   eventOf(page).evaluate((event) => {
     const rect = event.getBoundingClientRect();
-    const scroller = event.closest(".k2b-calendar-time-grid__scroll")!.getBoundingClientRect();
-    const left = Math.max(rect.left, scroller.left);
-    const right = Math.min(rect.right, scroller.right);
+    const scroll = event.closest<HTMLElement>(".k2b-calendar-time-grid__scroll")!;
+    const scroller = scroll.getBoundingClientRect();
+    const grid = event.closest<HTMLElement>(".k2b-calendar-time-grid")!;
     const top = Math.max(rect.top, scroller.top);
     const bottom = Math.min(rect.bottom, scroller.bottom);
-    const hit = document.elementFromPoint((left + right) / 2, (top + bottom) / 2);
+    const hit = document.elementFromPoint((rect.left + rect.right) / 2, (top + bottom) / 2);
+    const detail = document.querySelector(".k2b-app-workspace__detail")!;
     return {
       left: rect.left,
       right: rect.right,
-      visibleRight: right,
       scrollerLeft: scroller.left,
-      panel: document.querySelector(".k2b-app-workspace__detail")!.getBoundingClientRect().left,
+      gutterLeft: grid.querySelector(".k2b-calendar-time-grid__gutter")!.getBoundingClientRect().left,
+      gridLeft: grid.getBoundingClientRect().left,
+      gridScroll: grid.scrollLeft,
+      dayScroll: scroll.scrollLeft,
+      dayOverflow: scroll.scrollWidth - scroll.clientWidth,
+      contentRight: scroller.left + scroll.clientWidth,
+      panel: detail.getBoundingClientRect().left,
+      panelSpace: getComputedStyle(detail).getPropertyValue("--k2b-detail-space").trim(),
       hit: hit?.closest("[data-calendar-event]") === event,
     };
   });
 
 describe("calendar beside the workspace detail", () => {
-  for (const view of ["week", "day"] as const) {
-    test(`820×1180 touch tablet: the ${view} view keeps the Sunday event beside the drawer`, async () => {
-      const page = await load(820, 1180, view, { hasTouch: true, isMobile: true });
+  for (const [width, height, panel] of [
+    [820, 1180, "md"],
+    [768, 1024, "md"],
+    // The drawer is capped at the workspace minus 21 rem here, so it is narrower than the large panel.
+    [768, 1024, "lg"],
+  ] as const) {
+    test(`${width}×${height} touch tablet, ${panel} drawer: the week keeps its days and scrolls Sunday out beside the drawer`, async () => {
+      const { page, closed } = await load(width, height, "week", touch, panel);
       try {
         const main = await page.locator(".k2b-app-workspace__main").boundingBox();
         const shape = await placement(page);
         // The drawer overlays Main, which keeps its width.
         expect(shape.panel).toBeLessThan(main!.x + main!.width);
-        expect(shape.left).toBeGreaterThanOrEqual(shape.scrollerLeft);
+        // No day narrows, and the header and all-day row scroll with the days.
+        const open = await columns(page);
+        for (const [index, column] of open.entries()) {
+          expect(column.width).toBeCloseTo(closed[index]!.width, 0);
+          expect(column.headerOffset).toBeLessThan(0.5);
+        }
+        expect(shape.gridScroll).toBeGreaterThan(0);
+        // The whole event ends one gap before the drawer, not further left.
+        expect(shape.right).toBeLessThanOrEqual(shape.panel);
+        expect(shape.right).toBeGreaterThan(shape.panel - 32);
         expect(shape.hit).toBe(true);
-        // A day column is at least 32 rem wide and scrolls when it is wider than the space beside the
-        // drawer; its visible part then ends beside the drawer, as the whole week does.
-        expect(view === "week" ? shape.right : shape.visibleRight).toBeLessThanOrEqual(shape.panel + 0.5);
+        expect(shape.panelSpace).toBe("0px");
       } finally {
         await page.close();
       }
     });
+    test(`${width}×${height} touch tablet, ${panel} drawer: the day narrows beside the drawer and keeps its hours in view`, async () => {
+      const { page } = await load(width, height, "day", touch, panel);
+      try {
+        const shape = await placement(page);
+        expect(shape.dayOverflow).toBe(0);
+        expect(shape.dayScroll).toBe(0);
+        expect(shape.gridScroll).toBe(0);
+        expect(shape.gutterLeft).toBeCloseTo(shape.gridLeft, 0);
+        for (const column of await columns(page)) expect(column.headerOffset).toBeLessThan(0.5);
+        // The day ends one gap before the drawer, and the whole event is beside it.
+        expect(shape.contentRight).toBeLessThanOrEqual(shape.panel);
+        expect(shape.contentRight).toBeGreaterThan(shape.panel - 24);
+        expect(shape.left).toBeGreaterThanOrEqual(shape.scrollerLeft);
+        expect(shape.right).toBeLessThanOrEqual(shape.panel);
+        expect(shape.hit).toBe(true);
+      } finally {
+        await page.close();
+      }
+    });
+  }
+  for (const view of ["week", "day"] as const) {
     for (const [width, height] of [
       [1280, 800],
       [1440, 900],
     ] as const) {
       test(`${width}×${height}: the ${view} view keeps the Sunday event and a rounded surface beside the panel`, async () => {
-        const page = await load(width, height, view);
+        const { page } = await load(width, height, view);
         try {
           const shape = await placement(page);
           expect(shape.right).toBeLessThanOrEqual(shape.panel + 0.5);
           expect(shape.hit).toBe(true);
+          expect(shape.gridScroll).toBe(0);
           const surface = await page.locator(".k2b-content-calendar").evaluate((element) => {
             const style = getComputedStyle(element);
             return {
@@ -126,7 +183,7 @@ describe("calendar beside the workspace detail", () => {
     }
   }
   test("390×844 touch phone: the day view reveals the event above the half sheet", async () => {
-    const page = await load(390, 844, "day", { hasTouch: true });
+    const { page } = await load(390, 844, "day", { hasTouch: true });
     try {
       await page.waitForFunction(
         (event) =>
